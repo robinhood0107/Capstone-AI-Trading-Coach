@@ -30,6 +30,7 @@ from app.lightgbm.bootstrap_control import BootstrapLedger, BootstrapPhase
 from app.lightgbm.bootstrap_executor import (
     DIVERGENCE_CANDIDATES_FILENAME,
     BootstrapAcquisition,
+    _fetch_kis_symbol,
     execute_bootstrap_acquisition,
     materialize_production_feature_bundle,
     provider_query_sha256,
@@ -2665,4 +2666,116 @@ def test_recovery_that_changes_nothing_is_refused(tmp_path: Path) -> None:
     with pytest.raises(LightGbmContractError):
         assess_bootstrap_calendar_recovery(
             approved_root=root, prior_packet_sha256=packet.sha256
+        )
+def _kis_symbol_fetch(
+    *,
+    tmp_path: Path,
+    raw_sessions: tuple[date, ...],
+    expected_sessions: tuple[date, ...],
+    available: tuple[date, ...],
+) -> tuple[tuple[ProductionPriceEvidence, ...], tuple[SourceChunkReceipt, ...]]:
+    """고정된 응답 집합으로 한 종목의 KIS paging을 돌린다. 네트워크는 없다."""
+
+    tmp_path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    source_root = tmp_path / "source"
+    source_root.mkdir(mode=0o700)
+    (source_root / "chunks").mkdir(mode=0o700)
+
+    class Kis:
+        def prepare_access_token(self) -> None:  # pragma: no cover - 호출되지 않는다
+            raise AssertionError("token handoff is out of scope")
+
+        def require_cached_token_only(self) -> None:
+            return None
+
+        def fetch_page(
+            self, *, symbol: str, start: date, end: date
+        ) -> tuple[DailyBar, ...]:
+            window = [day for day in available if start <= day <= end]
+            # provider는 최신 100개만 돌려주고 caller가 cursor를 뒤로 옮긴다.
+            return tuple(
+                DailyBar(
+                    symbol=symbol,
+                    date=day,
+                    open=100,
+                    high=101,
+                    low=99,
+                    close=100,
+                    volume=1000,
+                )
+                for day in window[-100:]
+            )
+
+    return _fetch_kis_symbol(
+        ledger=BootstrapLedger(
+            BootstrapBudget(krx_get=0, kis_get=64, kis_token=1, ecos_get=0),
+            phase=BootstrapPhase.KIS,
+        ),
+        source_root=source_root,
+        provider=Kis(),
+        identity="KR7000001003",
+        symbol="000001",
+        raw_sessions=raw_sessions,
+        expected_sessions=expected_sessions,
+        clock=lambda: datetime(2026, 8, 19, tzinfo=UTC),
+        journal=BootstrapJournal(source_root),
+    )
+
+
+def test_kis_coverage_is_bound_to_krx_trading_evidence(tmp_path: Path) -> None:
+    """union 종목 전원에게 전수 커버리지를 요구하면 상장폐지 종목에서 충족 불가가 된다.
+
+    실측: 010620은 KRX와 KIS 양쪽에서 정확히 910 session(2022-03-29..2025-12-12)이고 그 뒤 거래
+    증거가 없다. 두 provider가 정확히 일치하므로 불일치가 아니라 상장폐지다. horizon union은 전
+    구간 monthly universe의 합집합이라 초기 유동성으로 선정된 종목이 cutoff 전에 상장폐지될 수
+    있고, 그 종목에 1,072 session 전수를 요구하면 수집이 끝까지 갈 수 없다.
+
+    이미 수집한 KRX 일별 projection이 "그 session에 그 종목이 거래됐는가"의 권위다. 느슨하게
+    허용하는 것이 아니라 요구 대상을 정확히 그 증거로 바꾼다.
+    """
+
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 19, 0, 0, tzinfo=UTC))
+    raw = packet.window.raw_sessions[-120:]
+    # 마지막 40 session 전에 상장폐지된 종목을 모사한다.
+    traded = raw[:-40]
+
+    prices, receipts = _kis_symbol_fetch(
+        tmp_path=tmp_path / "delisted",
+        raw_sessions=raw,
+        expected_sessions=traded,
+        available=traded,
+    )
+    assert tuple(row.session_date for row in prices) == traded
+    assert receipts and all(chunk.source_id == "KIS" for chunk in receipts)
+
+    # 증거보다 짧은 역사는 여전히 거부된다. 상장폐지 허용이 잘린 역사 허용은 아니다.
+    with pytest.raises(DatasetUnavailable, match="KIS_HISTORY_UNAVAILABLE"):
+        _kis_symbol_fetch(
+            tmp_path=tmp_path / "truncated",
+            raw_sessions=raw,
+            expected_sessions=traded,
+            available=traded[10:],
+        )
+
+    # KRX 증거에 없는 session을 KIS가 주면 provider 불일치로 거부된다.
+    with pytest.raises(DatasetUnavailable, match="KIS_HISTORY_UNAVAILABLE"):
+        _kis_symbol_fetch(
+            tmp_path=tmp_path / "extra",
+            raw_sessions=raw,
+            expected_sessions=traded[:-1],
+            available=traded,
+        )
+
+
+def test_kis_symbol_without_any_krx_trading_evidence_is_refused(tmp_path: Path) -> None:
+    """union 소속은 거래 관측에서 나오므로 증거가 0인 종목은 있을 수 없다."""
+
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 19, 0, 0, tzinfo=UTC))
+    raw = packet.window.raw_sessions[-10:]
+    with pytest.raises(DatasetUnavailable, match="coverage expectation is absent"):
+        _kis_symbol_fetch(
+            tmp_path=tmp_path / "absent",
+            raw_sessions=raw,
+            expected_sessions=(),
+            available=raw,
         )

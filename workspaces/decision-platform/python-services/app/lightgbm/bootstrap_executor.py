@@ -92,6 +92,8 @@ from app.rag.safe_io import (
 )
 
 
+# 종목 거래 증거를 담는 두 일별 service다. 월별 base-info는 상장 목록이라 권위가 아니다.
+_DAILY_UNIVERSE_SERVICES = ("stk_bydd_trd", "ksq_bydd_trd")
 DIVERGENCE_CANDIDATES_FILENAME = "calendar-divergence-candidates.json"
 DIVERGENCE_BLOCK_VERSION = "s5-calendar-divergence-block-v1"
 MAX_DIVERGENCE_BLOCK_BYTES = 64 * 1024
@@ -268,6 +270,15 @@ def execute_bootstrap_acquisition(
             call=kis.prepare_access_token,
             finalize=lambda _: None,
         )
+    # 종목별로 실제 거래된 session은 이미 수집한 KRX 일별 projection이 권위다. union은 전 구간
+    # 합집합이므로 cutoff 전에 상장폐지된 종목이 들어 있을 수 있고, 그 종목에 전수 커버리지를
+    # 요구하면 충족될 수 없는 조건이 된다.
+    traded_sessions = _derive_traded_sessions(
+        packet=packet,
+        source_root=source_root,
+        chunks=krx_chunks,
+        symbols=frozenset(symbol_by_identity.values()),
+    )
     prices: list[ProductionPriceEvidence] = []
     for identity in identities:
         symbol = symbol_by_identity[identity]
@@ -278,6 +289,7 @@ def execute_bootstrap_acquisition(
             identity=identity,
             symbol=symbol,
             raw_sessions=packet.window.raw_sessions,
+            expected_sessions=traded_sessions[symbol],
             clock=clock,
             journal=journal,
         )
@@ -684,10 +696,16 @@ def _fetch_kis_symbol(
     identity: str,
     symbol: str,
     raw_sessions: Sequence[date],
+    expected_sessions: Sequence[date],
     clock: Callable[[], datetime],
     journal: BootstrapJournal,
 ) -> tuple[tuple[ProductionPriceEvidence, ...], tuple[SourceChunkReceipt, ...]]:
+    # paging window는 packet raw 구간이다. window가 query 신원에 들어가므로 종목별로 좁히면 이미
+    # 봉인된 chunk가 도달 불가가 되고 승인 호출을 다시 태워야 한다.
     start, cursor_end = raw_sessions[0], raw_sessions[-1]
+    expected = frozenset(expected_sessions)
+    if not expected:
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: KIS coverage expectation is absent")
     seen: dict[date, ProductionPriceEvidence] = {}
     receipts: list[SourceChunkReceipt] = []
     page_number = 0
@@ -796,9 +814,10 @@ def _fetch_kis_symbol(
         if oldest <= start:
             break
         if len(page) < 100:
-            raise DatasetUnavailable("KIS_HISTORY_UNAVAILABLE")
+            # 더 과거로 갈 페이지가 없다는 신호다. 잘린 역사인지는 커버리지 대조가 판정한다.
+            break
         cursor_end = oldest - timedelta(days=1)
-    if set(seen) != set(raw_sessions):
+    if set(seen) != expected:
         raise DatasetUnavailable("KIS_HISTORY_UNAVAILABLE")
     return tuple(seen[day] for day in sorted(seen)), tuple(receipts)
 
@@ -1083,6 +1102,43 @@ def _build_index_evidence(
     return tuple(output)
 
 
+def _derive_traded_sessions(
+    *,
+    packet: BootstrapPacket,
+    source_root: Path,
+    chunks: Mapping[tuple[str, date], SourceChunkReceipt],
+    symbols: frozenset[str],
+) -> dict[str, tuple[date, ...]]:
+    """KRX 일별 projection에서 종목별 실제 거래 session을 유도한다.
+
+    일별 projection의 ISU_CD는 KIS가 쓰는 6자리 단축코드와 같다. 이 집합이 KIS 커버리지 요구의
+    권위이며, provider 사이의 진짜 불일치는 정확한 일치 조건이 그대로 걸러낸다.
+    """
+
+    raw = tuple(packet.window.raw_sessions)
+    # 고정 ETF는 일별 stock projection에 없고 월별 etf_bydd_trd에만 나타난다. 계약이 고정한
+    # 종목이므로 전 구간 커버리지 요구를 그대로 유지하고 상장폐지 완화 대상에서 제외한다.
+    output: dict[str, list[date]] = {
+        symbol: [] for symbol in symbols if symbol != FIXED_ETF_SYMBOL
+    }
+    for day in raw:
+        present: set[str] = set()
+        for service in _DAILY_UNIVERSE_SERVICES:
+            for row in _load_string_rows(source_root, chunks[(service, day)]):
+                code = row["ISU_CD"]
+                if code in output:
+                    present.add(code)
+        for code in present:
+            output[code].append(day)
+    if any(not days for days in output.values()):
+        # union 소속은 거래 관측에서 나오므로 증거가 0인 종목은 있을 수 없다.
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: KRX trading evidence is absent")
+    expectations = {symbol: tuple(days) for symbol, days in output.items()}
+    if FIXED_ETF_SYMBOL in symbols:
+        expectations[FIXED_ETF_SYMBOL] = raw
+    return expectations
+
+
 def _build_krx_raw_prices(
     packet: BootstrapPacket,
     source_root: Path,
@@ -1092,7 +1148,7 @@ def _build_krx_raw_prices(
 
     output: dict[tuple[str, date], tuple[float, float]] = {}
     for day in packet.window.raw_sessions:
-        for service in ("stk_bydd_trd", "ksq_bydd_trd"):
+        for service in _DAILY_UNIVERSE_SERVICES:
             for row in _load_string_rows(source_root, chunks[(service, day)]):
                 key = (row["ISU_CD"], day)
                 value = (

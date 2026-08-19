@@ -10,9 +10,18 @@ from app.lightgbm.bootstrap_packet import (
     author_bootstrap_packet,
     latest_publishable_bootstrap_cutoff,
 )
+from app.lightgbm.bootstrap_fresh_authority import (
+    fresh_bootstrap_authority_exists,
+    publish_fresh_bootstrap_authority,
+    read_fresh_bootstrap_authority,
+)
 from app.lightgbm.errors import LightGbmContractError
-from app.lightgbm.private_root import require_private_root
-from app.rag.safe_io import RagSafeIoError, write_approved_new_file
+from app.lightgbm.private_root import (
+    acquire_bootstrap_root_lock,
+    release_run_lock,
+    require_private_root,
+)
+from app.rag.safe_io import RagSafeIoError
 
 
 def main() -> int:
@@ -23,29 +32,47 @@ def main() -> int:
         print("S5_BOOTSTRAP_PACKET=SOURCE_ROOT_UNAVAILABLE")
         return 2
     root = Path(root_value)
-    try:
-        publishable_cutoff = latest_publishable_bootstrap_cutoff(
-            cutoff=datetime.now(UTC)
-        )
-        packet = author_bootstrap_packet(cutoff=publishable_cutoff)
-    except LightGbmContractError:
-        print("S5_BOOTSTRAP_PACKET=DATASET_UNAVAILABLE")
-        return 1
-    filename = f"bootstrap-{packet.sha256}.json"
+    root_lock = -1
     try:
         require_private_root(root)
-        result = write_approved_new_file(
-            approved_root=root,
-            relative_path=filename,
-            content=packet.content,
-            max_bytes=1 * 1024 * 1024,
-        )
-        os.chmod(result.absolute_path, 0o600, follow_symlinks=False)
-    except (OSError, RagSafeIoError, LightGbmContractError):
-        print("S5_BOOTSTRAP_PACKET=PUBLISH_FAILED")
+        root_lock = acquire_bootstrap_root_lock(root)
+    except (OSError, LightGbmContractError):
+        print("S5_BOOTSTRAP_PACKET=DATASET_UNAVAILABLE")
         return 1
-    print(f"S5_BOOTSTRAP_PACKET=AUTHORED sha256={packet.sha256}")
-    return 0
+    try:
+        try:
+            if any(
+                name.startswith(("run-", "calendar-recovery-binding-"))
+                for name in os.listdir(root)
+            ):
+                print("S5_BOOTSTRAP_PACKET=RECOVERY_REQUIRED")
+                return 1
+            if fresh_bootstrap_authority_exists(approved_root=root):
+                selected = read_fresh_bootstrap_authority(approved_root=root)
+            else:
+                selected = None
+            if selected is not None:
+                print(f"S5_BOOTSTRAP_PACKET=SELECTED sha256={selected.packet.sha256}")
+                return 0
+            publishable_cutoff = latest_publishable_bootstrap_cutoff(
+                cutoff=datetime.now(UTC)
+            )
+            packet = author_bootstrap_packet(cutoff=publishable_cutoff)
+        except (OSError, LightGbmContractError):
+            print("S5_BOOTSTRAP_PACKET=DATASET_UNAVAILABLE")
+            return 1
+        try:
+            selected = publish_fresh_bootstrap_authority(
+                approved_root=root,
+                packet=packet,
+            )
+        except (OSError, RagSafeIoError, LightGbmContractError):
+            print("S5_BOOTSTRAP_PACKET=PUBLISH_FAILED")
+            return 1
+        print(f"S5_BOOTSTRAP_PACKET=AUTHORED sha256={selected.packet.sha256}")
+        return 0
+    finally:
+        release_run_lock(root_lock)
 
 
 if __name__ == "__main__":

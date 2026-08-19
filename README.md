@@ -75,9 +75,11 @@ implementation을 구분한다. provider activation과 RiskEngine/OpenAPI endpoi
 [최종 프로젝트 명세서의 S4~P1 실행 순서](docs/최종_프로젝트_명세서.md#171-2026-07-29-s4p1-실행-순서)를
 따른다.
 
-S5.0은 Signal v1/OpenAPI를 변경하지 않는 `AVAILABLE | ABSTAIN` Signal v2 contract lock과
-Python/Spring parity까지만 구현했다. active v2 endpoint, artifact ingest, RiskDecision/order
-wiring은 `NO_GO`다.
+S5.0의 historical Signal v1/v2와 OpenAPI bytes는 보존한다. S5.1~S5.6 repository code,
+safe artifact ingest와 인증형 exact `GET /api/v2/signals/{symbol}`는 구현됐지만, 실제 S5.6
+bootstrap은 승인된 KRX 상한을 2회 초과해야 완성되는 지점에서 fail-closed됐다. 따라서 현재
+실제 dataset/model과 production pointer는 없고 evidence 없는 조회는 all-ABSTAIN이다.
+RiskDecision/order wiring은 계속 `NO_GO`다.
 
 ## Pre-S5 단독 실행 소유권 잠금
 

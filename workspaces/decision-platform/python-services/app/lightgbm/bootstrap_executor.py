@@ -25,7 +25,11 @@ from app.data.kis.parsers import DailyBar
 from app.lightgbm.bootstrap_control import BootstrapLedger, BootstrapPhase
 from app.lightgbm.bootstrap_journal import BootstrapJournal
 from app.lightgbm.bootstrap_packet import BootstrapPacket
-from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
+from app.lightgbm.errors import (
+    CalendarDivergenceSuspected,
+    DatasetUnavailable,
+    LightGbmContractError,
+)
 from app.lightgbm.feature_artifact import (
     FeatureArtifact,
     FeatureBundleProvenance,
@@ -38,7 +42,11 @@ from app.lightgbm.feature_artifact import (
     read_production_feature_bundle,
     write_feature_parquet,
 )
-from app.lightgbm.pit_calendar import previous_xkrx_session
+from app.lightgbm.pit_calendar import (
+    S5_CALENDAR_CORRECTION_SET_SHA256,
+    S5_CALENDAR_POLICY_VERSION,
+    previous_xkrx_session,
+)
 from app.lightgbm.features import (
     IndexEvidence,
     MacroObservation,
@@ -83,6 +91,9 @@ from app.rag.safe_io import (
 )
 
 
+DIVERGENCE_CANDIDATES_FILENAME = "calendar-divergence-candidates.json"
+DIVERGENCE_BLOCK_VERSION = "s5-calendar-divergence-block-v1"
+MAX_DIVERGENCE_BLOCK_BYTES = 64 * 1024
 _DAILY_KRX_SERVICES = ("stk_bydd_trd", "ksq_bydd_trd", "kospi_dd_trd", "kosdaq_dd_trd")
 _MONTHLY_KRX_SERVICES = ("stk_isu_base_info", "ksq_isu_base_info", "etf_bydd_trd")
 _PARQUET_ROW_GROUP_SIZE = 65_536
@@ -91,6 +102,8 @@ _SOURCE_POLICY_SET_SHA256 = hashlib.sha256(
     + canonical_json_bytes(
         {
             "historicalMode": "HISTORICAL_REPLAY_RECONSTRUCTED",
+            "calendarPolicyVersion": S5_CALENDAR_POLICY_VERSION,
+            "calendarCorrectionSetSha256": S5_CALENDAR_CORRECTION_SET_SHA256,
             "temporalPolicyVersion": "s5-temporal-policy-v2",
             "universePolicyVersion": "top30-plus-132030-v1",
             "strictProviderPITClaim": False,
@@ -166,6 +179,7 @@ def execute_bootstrap_acquisition(
     """KRX→KIS→ECOS 순서와 retry 0을 지키며 allowlisted Parquet만 manifest-last publish한다."""
 
     _prepare_private_bundle_root(source_root, resume=resume)
+    _require_absent_divergence_block(source_root)
     journal = BootstrapJournal(source_root)
     ledger = BootstrapLedger(packet.budget)
     ledger.receipts.extend(journal.consumed_receipts)
@@ -173,15 +187,24 @@ def execute_bootstrap_acquisition(
     krx_chunks: dict[tuple[str, date], SourceChunkReceipt] = {}
     for session in packet.window.raw_sessions:
         for service in _DAILY_KRX_SERVICES:
-            _rows, receipt = _fetch_and_seal_krx(
-                ledger=ledger,
-                source_root=source_root,
-                provider=krx,
-                service=service,
-                session=session,
-                clock=clock,
-                journal=journal,
-            )
+            try:
+                _rows, receipt = _fetch_and_seal_krx(
+                    ledger=ledger,
+                    source_root=source_root,
+                    provider=krx,
+                    service=service,
+                    session=session,
+                    clock=clock,
+                    journal=journal,
+                )
+            except CalendarDivergenceSuspected as error:
+                _publish_divergence_candidates(
+                    source_root=source_root,
+                    packet=packet,
+                    error=error,
+                    consumed_physical_calls=len(ledger.receipts),
+                )
+                raise
             krx_chunks[(service, session)] = receipt
             chunks.append(receipt)
     for schedule in packet.schedules:
@@ -216,7 +239,7 @@ def execute_bootstrap_acquisition(
     if set(identities) != set(symbol_by_identity):
         raise DatasetUnavailable("DATASET_UNAVAILABLE: universe identity mapping is incomplete")
 
-    token_query_hash = _query_sha256({"operation": "oauth2/tokenP", "mode": "live"})
+    token_query_hash = provider_query_sha256({"operation": "oauth2/tokenP", "mode": "live"})
     if journal.token_completed(token_query_hash):
         kis.require_cached_token_only()
     else:
@@ -496,6 +519,67 @@ def execute_bootstrap_materialization(
     return BootstrapMaterialization(acquisition=acquisition, feature_bundle=feature_bundle)
 
 
+def _require_absent_divergence_block(source_root: Path) -> None:
+    """해소되지 않은 divergence 후보가 남은 run은 provider를 다시 열지 않는다."""
+
+    if (source_root / DIVERGENCE_CANDIDATES_FILENAME).exists():
+        raise CalendarDivergenceSuspected(
+            "CALENDAR_DIVERGENCE_SUSPECTED: unresolved calendar divergence block is present",
+            operation_id="",
+            session_date="",
+        )
+
+
+def _publish_divergence_candidates(
+    *,
+    source_root: Path,
+    packet: BootstrapPacket,
+    error: CalendarDivergenceSuspected,
+    consumed_physical_calls: int,
+) -> None:
+    """Provider raw 없이 후보 session만 content-free sidecar로 남긴다.
+
+    같은 bytes면 idempotent하게 통과시켜 resume 경로에서 충돌하지 않게 한다.
+    """
+
+    payload = canonical_json_bytes(
+        {
+            "blockVersion": DIVERGENCE_BLOCK_VERSION,
+            "packetSha256": packet.sha256,
+            "calendarPolicyVersion": S5_CALENDAR_POLICY_VERSION,
+            "calendarCorrectionSetSha256": S5_CALENDAR_CORRECTION_SET_SHA256,
+            "candidates": [
+                {
+                    "provider": "KRX",
+                    "operationId": error.operation_id,
+                    "sessionDate": error.session_date,
+                    "evidence": "EMPTY_DAILY_PROJECTION",
+                }
+            ],
+            "consumedPhysicalCalls": consumed_physical_calls,
+            "providerCallsDuringBlock": 0,
+        }
+    )
+    target = source_root / DIVERGENCE_CANDIDATES_FILENAME
+    if target.exists():
+        existing = read_approved_regular_file(
+            approved_root=source_root,
+            relative_path=DIVERGENCE_CANDIDATES_FILENAME,
+            max_bytes=MAX_DIVERGENCE_BLOCK_BYTES,
+        )
+        if existing.content == payload:
+            return
+        raise LightGbmContractError(
+            "calendar divergence block conflicts with prior sealed bytes"
+        )
+    _write_private_new_file(
+        approved_root=source_root,
+        relative_path=DIVERGENCE_CANDIDATES_FILENAME,
+        content=payload,
+        max_bytes=MAX_DIVERGENCE_BLOCK_BYTES,
+    )
+
+
 def _fetch_and_seal_krx(
     *,
     ledger: BootstrapLedger,
@@ -507,7 +591,7 @@ def _fetch_and_seal_krx(
     journal: BootstrapJournal,
 ) -> tuple[tuple[dict[str, str], ...], SourceChunkReceipt]:
     query = {"service": service, "basDd": session.strftime("%Y%m%d")}
-    query_hash = _query_sha256(query)
+    query_hash = provider_query_sha256(query)
     existing = journal.completed_chunk(query_hash)
     if existing is not None:
         _require_reused_chunk(
@@ -520,6 +604,13 @@ def _fetch_and_seal_krx(
 
     def finalize(rows: tuple[dict[str, str], ...]) -> SourceChunkReceipt:
         if not rows:
+            if service in _DAILY_KRX_SERVICES:
+                # 인접 session은 정상인데 이 session만 비어 있으면 달력 권위 결손 징후다.
+                raise CalendarDivergenceSuspected(
+                    "CALENDAR_DIVERGENCE_SUSPECTED: KRX daily projection is empty",
+                    operation_id=service,
+                    session_date=session.isoformat(),
+                )
             raise DatasetUnavailable("DATASET_UNAVAILABLE: KRX projection is empty")
         payload = _string_rows_parquet(rows)
         temporal = _temporal_receipt(
@@ -578,7 +669,7 @@ def _fetch_kis_symbol(
             "adjusted": "0",
             "page": page_number,
         }
-        query_hash = _query_sha256(query)
+        query_hash = provider_query_sha256(query)
         query_key = f"{symbol}:{start.isoformat()}:{cursor_end.isoformat()}:{page_number}"
         existing = journal.completed_chunk(query_hash)
         if existing is not None:
@@ -706,7 +797,7 @@ def _fetch_ecos_series(
             "start": chunk_start.isoformat(),
             "end": chunk_end.isoformat(),
         }
-        query_hash = _query_sha256(query)
+        query_hash = provider_query_sha256(query)
         operation = str(query["operation"])
         query_key = f"{series.series_id}:{chunk_start.isoformat()}:{chunk_end.isoformat()}"
         existing = journal.completed_chunk(query_hash)
@@ -1248,7 +1339,13 @@ def _prepare_private_bundle_root(
             raise LightGbmContractError("production bundle root is not a regular directory")
         entries = {entry.name for entry in root.iterdir()}
         allowed = (
-            {"chunks", "progress.jsonl", "manifest.json"}
+            {
+                "chunks",
+                "progress.jsonl",
+                "manifest.json",
+                "recovery-lineage.json",
+                DIVERGENCE_CANDIDATES_FILENAME,
+            }
             if chunks
             else {"features.parquet", "manifest.json"}
         )
@@ -1362,7 +1459,9 @@ def _production_pit_input_sha256(acquisition: BootstrapAcquisition) -> str:
     ).hexdigest()
 
 
-def _query_sha256(value: Mapping[str, object]) -> str:
+def provider_query_sha256(value: Mapping[str, object]) -> str:
+    """Provider URL/credential 없이 closed logical query를 감사용 SHA-256으로 식별한다."""
+
     return hashlib.sha256(b"s5-provider-query-v1\x00" + canonical_json_bytes(value)).hexdigest()
 
 

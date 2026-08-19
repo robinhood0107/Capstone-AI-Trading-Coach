@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from io import BytesIO
 from pathlib import Path
-from typing import Mapping, Sequence, cast
+from typing import Literal, Mapping, Sequence, cast
 
+import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -19,7 +20,12 @@ from app.data._shared.bounded_json import (
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.krx.production_parsers import S5_PRODUCTION_PROJECTION_FIELDS
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
+from app.lightgbm.pit_calendar import KST, base_calendar
 from app.lightgbm.private_root import require_private_regular_file, require_private_root
+from app.lightgbm.production_policy import (
+    APPROVED_TOTAL_MAX_PHYSICAL_CALLS,
+    MAX_KRX_SUPERSEDED_ALLOWANCE,
+)
 from app.lightgbm.temporal import (
     AvailabilityBasis,
     RevisionBasis,
@@ -36,7 +42,8 @@ SOURCE_MANIFEST_FILENAME = "manifest.json"
 SOURCE_MANIFEST_VERSION = "s5-pit-source-bundle-v1"
 # Exact 6,446 call receipts를 raw-free로 모두 결속하므로 1 MiB로는 정상 bootstrap도 표현할 수 없다.
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
-MAX_CHUNKS = 6_446
+# 승인 총 상한과 recovery allowance 상한에서 유도해 두 곳이 어긋나는 drift를 없앤다.
+MAX_CHUNKS = APPROVED_TOTAL_MAX_PHYSICAL_CALLS + MAX_KRX_SUPERSEDED_ALLOWANCE
 SOURCE_BYTE_CAPS = {"KRX": 16 * 1024**3, "KIS": 2 * 1024**3, "ECOS": 64 * 1024**2}
 # Provider transport 자체의 최대 응답보다 큰 단일 projection은 정상 수집에서 나올 수 없다.
 SOURCE_CHUNK_BYTE_CAPS = {"KRX": 4 * 1024**2, "KIS": 10 * 1024**2, "ECOS": 1024**2}
@@ -283,7 +290,9 @@ def _parse_manifest(content: bytes) -> dict[str, object]:
     return payload
 
 
-def _parse_chunk(value: object) -> SourceChunkReceipt:
+def _parse_chunk(
+    value: object, *, calendar_policy: Literal["current", "legacy-v1"] = "current"
+) -> SourceChunkReceipt:
     if not isinstance(value, Mapping) or set(value) != _CHUNK_FIELDS:
         raise LightGbmContractError("source chunk receipt is not closed")
     receipt_value = value["receipt"]
@@ -336,10 +345,9 @@ def _parse_chunk(value: object) -> SourceChunkReceipt:
         or receipt.revision_basis is not RevisionBasis.CONTENT_SNAPSHOT
     ):
         raise LightGbmContractError("temporal receipt provider policy is invalid")
-    expected_policy_clock = (
-        next_xkrx_evidence_clock(receipt.observation_date)
-        if receipt.source_id == "ECOS"
-        else next_session_evidence_clock(receipt.observation_date)
+    expected_policy_clock = _expected_policy_clock(
+        receipt,
+        calendar_policy=calendar_policy,
     )
     if receipt.policy_effective_at != expected_policy_clock:
         raise LightGbmContractError("temporal receipt fixed-lag clock does not match policy")
@@ -363,10 +371,38 @@ def _parse_chunk(value: object) -> SourceChunkReceipt:
     return chunk
 
 
-def parse_source_chunk_receipt(value: object) -> SourceChunkReceipt:
+def parse_source_chunk_receipt(
+    value: object, *, calendar_policy: Literal["current", "legacy-v1"] = "current"
+) -> SourceChunkReceipt:
     """Durable bootstrap journal이 manifest와 동일한 closed chunk parser를 재사용한다."""
 
-    return _parse_chunk(value)
+    return _parse_chunk(value, calendar_policy=calendar_policy)
+
+
+def _expected_policy_clock(
+    receipt: TemporalReceipt,
+    *,
+    calendar_policy: Literal["current", "legacy-v1"],
+) -> datetime:
+    if calendar_policy == "current":
+        return (
+            next_xkrx_evidence_clock(receipt.observation_date)
+            if receipt.source_id == "ECOS"
+            else next_session_evidence_clock(receipt.observation_date)
+        )
+    calendar = base_calendar()
+    observation = pd.Timestamp(receipt.observation_date)
+    try:
+        if receipt.source_id == "ECOS":
+            target = calendar.date_to_session(observation, direction="next")
+            if target.date() == receipt.observation_date:
+                target = calendar.next_session(target)
+        else:
+            session = calendar.date_to_session(observation, direction="none")
+            target = calendar.next_session(session)
+    except Exception:
+        raise LightGbmContractError("legacy temporal receipt date is invalid") from None
+    return datetime.combine(target.date(), time(8, 10), tzinfo=KST)
 
 
 def _validate_chunks(chunks: Sequence[SourceChunkReceipt]) -> None:

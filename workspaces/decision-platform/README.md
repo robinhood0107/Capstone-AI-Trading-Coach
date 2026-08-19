@@ -522,3 +522,76 @@ probe 성공은 최종 artifact가 아니다. 최종 production 명령이 현재
 검증하고 성공한 뒤에만 원자 게시한다. probe와 final hash 일치는 요구하지 않으며, 실패 evidence와
 성공 acceptance set은 분리한다. direct `curl`, 브라우저 sample, 임시 credential script로
 fixed-origin transport·quota·승인 gate를 우회하지 않는다.
+## Gate 실행 환경 경계
+
+전체 gate를 돌리기 전 아래 preflight를 먼저 확인한다. 실제 실행에서 gate 자체가 아니라 호스트
+경계 때문에 실패한 사례가 반복됐고, 그 원인은 모두 여기 고정한다.
+
+```bash
+cd /home/pjjpj/projects/Capstone-AI-Trading-Coach
+echo "$JAVA_HOME"
+ss -ltn | grep -E '55432|56379|18080'
+docker compose ls -a | grep -E 's21-openapi|capstone-pre-s5-fresh|capstone-rag-local'
+git fetch origin main
+```
+
+**OpenAPI fixture 포트 충돌.** 격리 fixture와 pre-S5 fresh namespace가 같은 `55432`를 쓴다. 다른
+lane이 살아 있으면 `--fixture-port`로만 옮기고 env 파일의 `55432`는 그대로 둔다. env 검증이 포트
+치환보다 먼저 돌기 때문에 env 파일을 손으로 고치면 반드시 실패한다. 강제 종료로 남은
+`s21-openapi-<pid>` project는 다음 실행이 정리하지 않으므로 직접 내린다.
+
+```bash
+docker compose -p s21-openapi-<pid> down -v --remove-orphans
+```
+
+**Compose validation.** 검사에 필요한 dummy 값은 프로세스 환경변수로만 전달되고, 로컬에서는
+암묵적 `.env` 자동 로딩에 노출된다. CI와 같은 해석을 보장하려면 두 방어를 함께 붙인다.
+
+```bash
+COMPOSE_DISABLE_ENV_FILE=1 docker compose --env-file /dev/null \
+  -f infra/docker-compose.infra.yml config --quiet
+```
+
+**Kotlin fresh 증거.** `build`는 Gradle up-to-date 상태를 재사용하므로 release 후보의 실제 test
+실행 증거가 필요하면 `cleanTest`를 선행한다.
+
+```bash
+cd workspaces/decision-platform/spring-api
+./gradlew --no-daemon cleanTest test
+./gradlew --no-daemon ktlintCheck build
+```
+
+**Python gate.** `pytest`는 반드시 `TMPDIR`/`TEMP`/`TMP`를 `/tmp`로 고정해 실행한다. WSL 혼용
+환경에서 임시 경로가 Windows 경로로 잡히면 CI와 결과가 갈린다. `uv lock --check`는 메인
+프로젝트와 `capstone-rag/ocr/{cpu,intel,nvidia}` 네 곳 모두 대상이다.
+
+**S1.4X 수치 환경 pin.** `s1-4x-contract-correctness` workflow는 `pyproject.toml`과 `uv.lock`의
+SHA-256을 고정해 연구 parity 환경의 drift를 막는다. CLI entrypoint 추가처럼 `uv.lock`을 바꾸지 않는
+변경이라도 `pyproject.toml` 해시 pin을 같은 커밋에서 갱신해야 한다. 이 검사는 로컬 gate 목록에 없고
+PR CI에서만 돌므로 entrypoint를 건드렸다면 미리 확인한다.
+
+```bash
+sha256sum workspaces/decision-platform/python-services/pyproject.toml \
+  workspaces/decision-platform/python-services/uv.lock
+grep -n 'sha256sum workspaces/decision-platform/python-services' \
+  .github/workflows/s1-4x-contract-correctness.yml
+```
+
+**Truth-freeze.** `--solo-ownership-public-check`는 `--base` 없이는 검사 범위가 좁다. PR CI와
+같은 범위를 재현하려면 base를 명시한다.
+
+```bash
+uv run --frozen python -m contracts.verify_pre_s5_doc_truth_freeze \
+  --solo-ownership-public-check --base "$(git merge-base origin/main HEAD)"
+```
+
+**컨테이너에서 archive 복원.** Windows Docker CLI는 `/mnt/c` 소스 경로를 UNC로 재해석하므로
+`docker cp`로 dump를 넣지 않는다. Linux stdin으로 직접 전달한다.
+
+```bash
+cat dump.pgcustom | docker exec -i <container> pg_restore -d <db> --no-owner
+```
+
+**Windows 사본 권한.** 사용자 전용 ACL을 적용한 뒤에는 DrvFS 권한 매핑 때문에 WSL 쪽 해시
+재검증이 거부될 수 있다. ACL 적용 → 해시 재검증 순서를 고정하고, 두 사본의 digest parity는 WSL과
+Windows 각각에서 한 번씩 확인한다.

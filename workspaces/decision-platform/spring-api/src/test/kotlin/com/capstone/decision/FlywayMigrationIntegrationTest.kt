@@ -348,36 +348,11 @@ class FlywayMigrationIntegrationTest(
         val releaseManifest = sha256Hex(releaseManifestText)
         val kst = java.time.ZoneId.of("Asia/Seoul")
         // calendar-date 산술 대신 실제 연속 XKRX session fixture를 사용한다.
-        val latestSession = java.time.LocalDate.of(2026, 8, 13)
         val nextSession = java.time.LocalDate.of(2026, 8, 14)
         val postHolidaySession = java.time.LocalDate.of(2026, 8, 18)
-        val asOf = nextSession.atTime(8, 10).atZone(kst).toOffsetDateTime()
+        // activation은 현재 clock과 같은 batch만 허용하므로 대상 pair를 DB clock에서 읽는다.
+        val (latestSession, asOf) = prepareS5CurrentClock()
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { flyway ->
-            flyway
-                .prepareStatement(
-                    """
-                    INSERT INTO trading_sessions(
-                      exchange_mic, session_date, is_open, open_at, close_at, timezone,
-                      reason, chosen_source_id, degraded, fallback_reason, as_of,
-                      confidence_bps, has_conflict, canonical_hash, canonical_rule_version,
-                      confidence_rule_version
-                    ) VALUES (
-                      'XKRX', ?, true, ?, ?, 'Asia/Seoul', NULL, 'S5_6_TEST', false, NULL,
-                      statement_timestamp(), 9900, false, ?, 'S5_6_TEST', 's1.6-confidence-v1'
-                    )
-                    ON CONFLICT (exchange_mic, session_date) DO UPDATE SET
-                      is_open = EXCLUDED.is_open, open_at = EXCLUDED.open_at,
-                      close_at = EXCLUDED.close_at, has_conflict = false
-                    """.trimIndent(),
-                ).use { statement ->
-                    listOf(latestSession, nextSession, postHolidaySession).forEachIndexed { index, session ->
-                        statement.setObject(1, session)
-                        statement.setObject(2, session.atTime(9, 0).atZone(kst).toOffsetDateTime())
-                        statement.setObject(3, session.atTime(15, 30).atZone(kst).toOffsetDateTime())
-                        statement.setString(4, (7 + index).toString().repeat(64))
-                        statement.executeUpdate()
-                    }
-                }
             flyway.prepareStatement("SELECT session_date, as_of FROM s5_signal_batch_clock_at(?)").use { statement ->
                 statement.setObject(
                     1,
@@ -3777,12 +3752,24 @@ class FlywayMigrationIntegrationTest(
                         }
                 }
         }
-        return session to
-            session
-                .plusDays(1)
-                .atTime(8, 10)
-                .atZone(kst)
-                .toOffsetDateTime()
+        // 하드코딩한 pair를 반환하면 마지막 session 경계가 지난 뒤 activation 대상이 어긋난다.
+        // 실제 activation이 비교하는 값과 같은 clock을 DB에서 읽어 어떤 실행 시각에서도 일치시킨다.
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            connection
+                .prepareStatement(
+                    "SELECT session_date, as_of FROM s5_signal_batch_clock_at(statement_timestamp())",
+                ).use { statement ->
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        return result.getObject("session_date", java.time.LocalDate::class.java) to
+                            result
+                                .getTimestamp("as_of")
+                                .toInstant()
+                                .atZone(kst)
+                                .toOffsetDateTime()
+                    }
+                }
+        }
     }
 
     private fun clearS5ProductionState() {

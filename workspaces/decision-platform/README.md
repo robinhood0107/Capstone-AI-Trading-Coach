@@ -565,6 +565,18 @@ cd workspaces/decision-platform/spring-api
 환경에서 임시 경로가 Windows 경로로 잡히면 CI와 결과가 갈린다. `uv lock --check`는 메인
 프로젝트와 `capstone-rag/ocr/{cpu,intel,nvidia}` 네 곳 모두 대상이다.
 
+**S1.4X 수치 환경 pin.** `s1-4x-contract-correctness` workflow는 `pyproject.toml`과 `uv.lock`의
+SHA-256을 고정해 연구 parity 환경의 drift를 막는다. CLI entrypoint 추가처럼 `uv.lock`을 바꾸지 않는
+변경이라도 `pyproject.toml` 해시 pin을 같은 커밋에서 갱신해야 한다. 이 검사는 로컬 gate 목록에 없고
+PR CI에서만 돌므로 entrypoint를 건드렸다면 미리 확인한다.
+
+```bash
+sha256sum workspaces/decision-platform/python-services/pyproject.toml \
+  workspaces/decision-platform/python-services/uv.lock
+grep -n 'sha256sum workspaces/decision-platform/python-services' \
+  .github/workflows/s1-4x-contract-correctness.yml
+```
+
 **Truth-freeze.** `--solo-ownership-public-check`는 `--base` 없이는 검사 범위가 좁다. PR CI와
 같은 범위를 재현하려면 base를 명시한다.
 

@@ -242,8 +242,11 @@ def _validate_adjustment_evidence(
     modification_flag: str,
     revision_reason: str,
 ) -> None:
-    has_adjustment = (
-        falling_code not in {"", "00"} or adjustment_rate > 0 or bool(revision_reason)
-    )
-    if (modification_flag == "Y") != has_adjustment:
+    # mod_yn은 반환된 가격이 수정주가인지를 나타내며 요청한 조정 모드에서 따라온다. 락 구분과
+    # 조정 비율, 사유는 그 날짜의 corporate action 증거이며 mod_yn과 독립이다. 둘을 양방향으로
+    # 묶으면 원주가 응답의 정상적인 배당락 표시를 provider 모순으로 오판한다.
+    if modification_flag not in {"Y", "N"}:
+        raise KISResponseError("ADJUSTMENT_FIELD_INVALID")
+    marked = falling_code not in {"", "00"}
+    if (adjustment_rate > 0 or bool(revision_reason)) and not marked:
         raise KISResponseError("ADJUSTMENT_FIELD_CONTRADICTORY")

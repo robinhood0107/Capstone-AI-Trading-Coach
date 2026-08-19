@@ -2,6 +2,8 @@ import json
 from datetime import date
 from importlib.resources import files
 
+from decimal import Decimal
+
 import pytest
 
 from app.data.kis.parsers import KISResponseError, parse_current_price, parse_daily_bars, parse_holidays
@@ -106,6 +108,8 @@ def test_production_daily_bars_reject_invalid_adjustment_rate(invalid_rate: obje
 
 
 def test_production_daily_bars_reject_contradictory_adjustment_evidence() -> None:
+    """조정 비율이나 사유가 있는데 락 구분이 없으면 provider 응답이 모순이다."""
+
     response = _load("daily_itemchart_005930_page1.json")
     for row in response["output2"]:
         row.update(
@@ -116,9 +120,44 @@ def test_production_daily_bars_reject_contradictory_adjustment_evidence() -> Non
                 "revl_issu_reas": "",
             }
         )
-    response["output2"][0]["mod_yn"] = "Y"
+    response["output2"][0]["prtt_rate"] = "0.5"
 
     with pytest.raises(KISResponseError, match="ADJUSTMENT_FIELD_CONTRADICTORY"):
+        parse_daily_bars(response, symbol="005930", require_adjustment_fields=True)
+
+    response["output2"][0]["prtt_rate"] = "0"
+    response["output2"][0]["revl_issu_reas"] = "권리락"
+    with pytest.raises(KISResponseError, match="ADJUSTMENT_FIELD_CONTRADICTORY"):
+        parse_daily_bars(response, symbol="005930", require_adjustment_fields=True)
+
+
+def test_production_daily_bars_accept_unadjusted_series_with_ex_rights_marker() -> None:
+    """원주가 응답의 락 구분 표시는 정상 데이터이며 mod_yn과 독립이다.
+
+    실측 응답은 원주가 요청에서 mod_yn을 모든 행에 N으로 두고, 락이 있었던 날짜만 락 구분을
+    표시했다. 이를 모순으로 보면 정상 종목 수집이 멈춘다.
+    """
+
+    response = _load("daily_itemchart_005930_page1.json")
+    for row in response["output2"]:
+        row.update(
+            {
+                "flng_cls_code": "00",
+                "prtt_rate": "0",
+                "mod_yn": "N",
+                "revl_issu_reas": "",
+            }
+        )
+    response["output2"][0]["flng_cls_code"] = "02"
+
+    bars = parse_daily_bars(response, symbol="005930", require_adjustment_fields=True)
+    assert bars[0].flng_cls_code == "02"
+    assert bars[0].mod_yn == "N"
+    assert bars[0].prtt_rate == Decimal("0")
+
+    # 조정 모드 표시 자체가 허용 domain을 벗어나면 여전히 거부한다.
+    response["output2"][0]["mod_yn"] = "MAYBE"
+    with pytest.raises(KISResponseError, match="ADJUSTMENT_FIELD_INVALID"):
         parse_daily_bars(response, symbol="005930", require_adjustment_fields=True)
 
 

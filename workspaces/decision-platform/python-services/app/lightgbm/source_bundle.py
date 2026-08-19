@@ -20,9 +20,10 @@ from app.data._shared.bounded_json import (
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.krx.production_parsers import S5_PRODUCTION_PROJECTION_FIELDS
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
-from app.lightgbm.pit_calendar import KST, calendar_for_corrections
+from app.lightgbm.pit_calendar import KST, RAW_SESSION_COUNT, calendar_for_corrections
 from app.lightgbm.private_root import require_private_regular_file, require_private_root
 from app.lightgbm.production_policy import (
+    APPROVED_HORIZON_UNION_SIZE,
     APPROVED_TOTAL_MAX_PHYSICAL_CALLS,
     MAX_KIS_SUPERSEDED_ALLOWANCE,
     MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE,
@@ -54,7 +55,13 @@ MAX_CHUNKS = (
 SOURCE_BYTE_CAPS = {"KRX": 16 * 1024**3, "KIS": 2 * 1024**3, "ECOS": 64 * 1024**2}
 # Provider transport 자체의 최대 응답보다 큰 단일 projection은 정상 수집에서 나올 수 없다.
 SOURCE_CHUNK_BYTE_CAPS = {"KRX": 4 * 1024**2, "KIS": 10 * 1024**2, "ECOS": 1024**2}
-SOURCE_ROW_CAPS = {"KRX": 10_000_000, "KIS": 192_960, "ECOS": 10_000}
+# KIS 행 상한은 승인된 horizon union과 raw session 수에서 유도한다. 이전에는 union 180
+# 시절의 192,960이 상수로 박혀 있어 union이 실측 270으로 승인된 뒤에도 갱신되지 않았다.
+SOURCE_ROW_CAPS = {
+    "KRX": 10_000_000,
+    "KIS": APPROVED_HORIZON_UNION_SIZE * RAW_SESSION_COUNT,
+    "ECOS": 10_000,
+}
 # Provider별 단일 응답 계약보다 큰 projection은 aggregate 상한 안이어도 거부한다.
 SOURCE_CHUNK_ROW_CAPS = {"KRX": 5_000, "KIS": 100, "ECOS": 400}
 _SOURCE_OPERATIONS = {

@@ -321,7 +321,12 @@ def execute_bootstrap_acquisition(
     ledger.advance(BootstrapPhase.ECOS)
 
     indices = _build_index_evidence(packet, source_root, krx_chunks)
-    krx_raw_prices = _build_krx_raw_prices(packet, source_root, krx_chunks)
+    krx_raw_prices = _build_krx_raw_prices(
+        packet,
+        source_root,
+        krx_chunks,
+        symbols=frozenset(symbol_by_identity.values()),
+    )
     # Resume 시 wall clock 변화가 이미 봉인된 manifest를 충돌시키지 않게 retrieval receipt로 결정한다.
     manifest = build_source_manifest(
         created_at=max(chunk.temporal.retrieved_at for chunk in chunks),
@@ -428,21 +433,21 @@ def build_production_feature_table(
     rows: list[Mapping[str, object]] = []
     eligible = set(packet.window.eligible_sessions)
     last_feature_session = packet.window.eligible_sessions[-1]
-    feature_sessions = tuple(
-        session for session in packet.window.raw_sessions if session <= last_feature_session
-    )
     for identity in sorted(prices_by_identity):
+        identity_prices = tuple(
+            price
+            for price in prices_by_identity[identity]
+            if price.session_date <= last_feature_session
+        )
+        # 상장폐지 종목은 폐지 이후 월의 base-info에 없다. 소비처는 그 종목의 가격 행 세션만
+        # 조회하므로 schedule 범위를 소비 대상과 같게 맞춘다.
         market_by_session = _listing_market_schedule(
             identity=identity,
-            sessions=feature_sessions,
+            sessions=tuple(price.session_date for price in identity_prices),
             listing_market_by_membership=acquisition.listing_market_by_membership,
         )
         feature_rows = build_production_core_feature_rows(
-            tuple(
-                price
-                for price in prices_by_identity[identity]
-                if price.session_date <= last_feature_session
-            ),
+            identity_prices,
             acquisition.indices,
             acquisition.macro,
             listing_market_by_session=market_by_session,
@@ -1242,18 +1247,29 @@ def _build_krx_raw_prices(
     packet: BootstrapPacket,
     source_root: Path,
     chunks: Mapping[tuple[str, date], SourceChunkReceipt],
+    *,
+    symbols: frozenset[str],
 ) -> dict[tuple[str, date], tuple[float, float]]:
-    """기업행사 sensitivity에 필요한 KRX raw open/close만 closed projection에서 보존한다."""
+    """기업행사 sensitivity에 필요한 KRX raw open/close만 closed projection에서 보존한다.
+
+    거래량 0인 세션은 시가가 0이고 종가는 기준가다. 그런 세션에는 raw 시가가 존재하지 않으므로
+    항목을 만들지 않는다. sensitivity 소비처는 raw 증거 네 개 중 하나라도 없으면 그 key를
+    건너뛰도록 이미 설계돼 있다. 수치가 아닌 필드는 여전히 거부한다.
+    """
 
     output: dict[tuple[str, date], tuple[float, float]] = {}
     for day in packet.window.raw_sessions:
         for service in _DAILY_UNIVERSE_SERVICES:
             for row in _load_string_rows(source_root, chunks[(service, day)]):
-                key = (row["ISU_CD"], day)
-                value = (
-                    _positive_number(row["TDD_OPNPRC"]),
-                    _positive_number(row["TDD_CLSPRC"]),
-                )
+                symbol = row["ISU_CD"]
+                if symbol not in symbols:
+                    continue
+                open_price = _positive_number(row["TDD_OPNPRC"], allow_zero=True)
+                close_price = _positive_number(row["TDD_CLSPRC"], allow_zero=True)
+                if open_price <= 0 or close_price <= 0:
+                    continue
+                key = (symbol, day)
+                value = (open_price, close_price)
                 prior = output.get(key)
                 if prior is not None and prior != value:
                     raise DatasetUnavailable("SOURCE_SNAPSHOT_CONFLICT: KRX raw price is ambiguous")

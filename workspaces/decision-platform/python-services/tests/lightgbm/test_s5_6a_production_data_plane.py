@@ -5,15 +5,18 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import hashlib
 from io import BytesIO
+import json
 import os
 from pathlib import Path
 import stat
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.ecos.models import ECOSObservation
 from app.data.ecos.series_registry import CANDIDATE_SERIES
 from app.data.ecos.settings import ECOSS5ProductionSettings
@@ -22,24 +25,46 @@ from app.data.krx.production_parsers import (
     S5_PRODUCTION_PROJECTION_FIELDS,
     parse_s5_production_response,
 )
-from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
+from app.lightgbm.errors import CalendarDivergenceSuspected, DatasetUnavailable, LightGbmContractError
 from app.lightgbm.bootstrap_control import BootstrapLedger, BootstrapPhase
 from app.lightgbm.bootstrap_executor import (
+    DIVERGENCE_CANDIDATES_FILENAME,
     BootstrapAcquisition,
     execute_bootstrap_acquisition,
     materialize_production_feature_bundle,
+    provider_query_sha256,
+)
+from app.lightgbm.bootstrap_calendar_recovery import (
+    KrxQuery,
+    _validate_reusable_chunk,
+    assess_bootstrap_calendar_recovery,
+    materialize_recovery_adoption,
+    validate_recovery_receipt,
+    validate_recovery_execution_authority,
+)
+from app.lightgbm.bootstrap_fresh_authority import (
+    fresh_bootstrap_authority_exists,
+    FRESH_AUTHORITY_FILENAME,
+    publish_fresh_bootstrap_authority,
+    read_fresh_bootstrap_authority,
 )
 from app.lightgbm.bootstrap_journal import (
     BootstrapJournal,
+    JournalAttempt,
     build_resume_packet,
     validate_resume_packet,
 )
 from app.lightgbm.bootstrap_packet import (
+    _author_bootstrap_packet,
     author_bootstrap_packet,
     latest_publishable_bootstrap_cutoff,
     validate_bootstrap_packet,
 )
-from app.lightgbm import bootstrap_packet_cli
+from app.lightgbm import (
+    bootstrap_calendar_recovery,
+    bootstrap_execute_cli,
+    bootstrap_packet_cli,
+)
 from app.lightgbm.feature_artifact import (
     FeatureArtifact,
     FeatureBundleProvenance,
@@ -59,12 +84,26 @@ from app.lightgbm.features import (
     build_production_core_feature_rows,
 )
 from app.lightgbm.labels import build_production_exact_labels
-from app.lightgbm.pit_calendar import PitSessionWindow, build_pit_session_window
-from app.lightgbm.private_root import acquire_run_lock, release_run_lock, require_private_root
+from app.lightgbm.pit_calendar import (
+    S5_CALENDAR_CORRECTION_SET_SHA256,
+    S5_CALENDAR_POLICY_VERSION,
+    PitSessionWindow,
+    base_calendar,
+    build_pit_session_window,
+    corrected_calendar,
+)
+from app.lightgbm.private_root import (
+    acquire_bootstrap_root_lock,
+    acquire_run_lock,
+    release_run_lock,
+    require_private_root,
+)
 from app.lightgbm.production_policy import (
+    MAX_KRX_SUPERSEDED_ALLOWANCE,
     BootstrapBudget,
     SecurityClassification,
     author_bootstrap_budget,
+    author_recovery_bootstrap_budget,
     align_macro_observations,
     corporate_action_sensitivity_pass,
     classify_krx_security,
@@ -88,6 +127,7 @@ from app.lightgbm.temporal import (
     feature_as_of,
     label_as_of,
     next_session_evidence_clock,
+    next_xkrx_evidence_clock,
     require_receipt_eligible,
 )
 from app.lightgbm.universe import (
@@ -95,6 +135,7 @@ from app.lightgbm.universe import (
     ProductionUniverseObservation,
     select_production_monthly_universe,
 )
+from app.rag.safe_io import write_approved_new_file
 
 
 def _receipt(digest: str = "1" * 64) -> TemporalReceipt:
@@ -256,6 +297,20 @@ def test_bootstrap_run_lock_allows_only_one_active_process(tmp_path: Path) -> No
         release_run_lock(first)
 
     second = acquire_run_lock(run_root)
+    release_run_lock(second)
+
+
+def test_bootstrap_root_lock_serializes_different_packet_runs(tmp_path: Path) -> None:
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    first = acquire_bootstrap_root_lock(root)
+    try:
+        with pytest.raises(LightGbmContractError, match="root is already active"):
+            acquire_bootstrap_root_lock(root)
+    finally:
+        release_run_lock(first)
+
+    second = acquire_bootstrap_root_lock(root)
     release_run_lock(second)
 
 
@@ -628,6 +683,13 @@ def test_bootstrap_packet_has_exact_1072_1007_51_and_6446_caps() -> None:
     assert len(packet.schedules) == 51
     assert packet.budget.krx_get == 4_441
     assert packet.budget.total == 6_446
+    assert packet.packet_version == "s5-production-bootstrap-packet-v2"
+    assert packet.lineage_mode == "FRESH"
+    assert packet.recovery_binding_sha256 is None
+    assert packet.calendar_policy_version == S5_CALENDAR_POLICY_VERSION
+    assert packet.calendar_correction_set_sha256 == S5_CALENDAR_CORRECTION_SET_SHA256
+    assert packet.window.raw_sessions[0] == date(2022, 3, 31)
+    assert date(2026, 6, 3) not in packet.window.raw_sessions
     assert b'"strictProviderPITClaim":false' in packet.content
     assert validate_bootstrap_packet(packet.content, expected_sha256=packet.sha256) == packet
     with pytest.raises(LightGbmContractError, match="trust anchor"):
@@ -636,6 +698,393 @@ def test_bootstrap_packet_has_exact_1072_1007_51_and_6446_caps() -> None:
     assert (settings.max_calls_per_run, settings.max_attempts_per_request) == (24, 1)
     with pytest.raises(LightGbmContractError, match="label maturity"):
         author_bootstrap_packet(cutoff=cutoff - timedelta(seconds=1))
+
+
+def test_s5_calendar_applies_kis_authority_to_all_feature_and_label_clocks() -> None:
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
+    payload = json.loads(packet.content)
+
+    assert packet.window.raw_sessions[0] == date(2022, 3, 30)
+    assert date(2026, 6, 3) not in packet.window.raw_sessions
+    assert payload["calendarPolicyVersion"] == S5_CALENDAR_POLICY_VERSION
+    assert payload["calendarCorrectionSetSha256"] == S5_CALENDAR_CORRECTION_SET_SHA256
+    assert next_session_evidence_clock(date(2026, 6, 2)) == datetime(
+        2026, 6, 4, 8, 10, tzinfo=next_session_evidence_clock(date(2026, 6, 2)).tzinfo
+    )
+    assert next_xkrx_evidence_clock(date(2026, 6, 3)).date() == date(2026, 6, 4)
+
+    catalog = json.loads(
+        (
+            Path(__file__).resolve().parents[5]
+            / "contracts/catalogs/s5-bootstrap-calendar-recovery-lock.v1.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert catalog["calendar"]["policyVersion"] == S5_CALENDAR_POLICY_VERSION
+    assert (
+        catalog["calendar"]["correctionSetSha256"]
+        == S5_CALENDAR_CORRECTION_SET_SHA256
+    )
+
+
+def test_calendar_recovery_grants_exact_superseded_allowance_and_closes_shortfall(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    legacy = _author_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        calendar=base_calendar(),
+        packet_version="s5-production-bootstrap-packet-v1",
+    )
+    packet_result = write_approved_new_file(
+        approved_root=root,
+        relative_path=f"bootstrap-{legacy.sha256}.json",
+        content=legacy.content,
+        max_bytes=1 * 1024 * 1024,
+    )
+    os.chmod(packet_result.absolute_path, 0o600)
+    run_root = root / f"run-{legacy.sha256}"
+    source_root = run_root / "source"
+    run_root.mkdir(mode=0o700)
+    source_root.mkdir(mode=0o700)
+    (source_root / "chunks").mkdir(mode=0o700)
+    query_hash = provider_query_sha256(
+        {"service": "stk_bydd_trd", "basDd": "20260603"}
+    )
+    journal = BootstrapJournal(source_root, calendar_policy="legacy-v1")
+    for _ in range(2):
+        ordinal = journal.begin(
+            provider="KRX",
+            operation_id="stk_bydd_trd",
+            query_sha256=query_hash,
+        )
+        journal.finish(
+            ordinal=ordinal,
+            provider="KRX",
+            operation_id="stk_bydd_trd",
+            query_sha256=query_hash,
+            success=False,
+            chunk=None,
+        )
+
+    recovery = assess_bootstrap_calendar_recovery(
+        approved_root=root,
+        prior_packet_sha256=legacy.sha256,
+    )
+    receipt = json.loads(recovery.content)
+    assert recovery.status == "READY_TO_SUPERSEDE"
+    assert recovery.corrected_packet.lineage_mode == "CALENDAR_RECOVERY"
+    assert (
+        recovery.corrected_packet.recovery_binding_sha256
+        == recovery.recovery_binding_sha256
+    )
+    assert recovery.missing_krx_queries == 4_441
+    assert recovery.projected_krx_physical_calls == 4_443
+    # Allowance는 증명된 superseded consumed call 수와 정확히 같고 논리 query를 늘리지 않는다.
+    assert len(recovery.superseded_attempts) == 2
+    assert recovery.corrected_packet.budget.krx_superseded_allowance == 2
+    assert recovery.corrected_packet.budget.krx_get == 4_443
+    assert recovery.corrected_packet.budget.total == 6_448
+    assert recovery.krx_shortfall == 0
+    assert receipt["krxSupersededAllowance"] == 2
+    assert receipt["approvedKrxMaxGet"] == 4_443
+    assert receipt["providerCallsDuringRecovery"] == 0
+    assert receipt["failedSessionDate"] == "2026-06-03"
+    assert receipt["calendarCorrectionSetSha256"] == S5_CALENDAR_CORRECTION_SET_SHA256
+
+    validated = validate_recovery_receipt(
+        recovery.content,
+        corrected_packet=recovery.corrected_packet,
+    )
+    assert validated["recoveryBindingSha256"] == recovery.recovery_binding_sha256
+    tampered = dict(receipt)
+    tampered["priorProgressSha256"] = "f" * 64
+    with pytest.raises(LightGbmContractError, match="binding preimage"):
+        validate_recovery_receipt(
+            canonical_json_bytes(tampered),
+            corrected_packet=recovery.corrected_packet,
+        )
+
+    with pytest.raises(LightGbmContractError, match="version is not approved"):
+        validate_bootstrap_packet(legacy.content, expected_sha256=legacy.sha256)
+    assert (
+        validate_bootstrap_packet(
+            legacy.content,
+            expected_sha256=legacy.sha256,
+            allow_historical_v1=True,
+        )
+        == legacy
+    )
+
+
+def test_legacy_journal_receipt_is_read_only_and_requires_temporal_rebinding() -> None:
+    receipt = SourceChunkReceipt(
+        source_id="KRX",
+        operation_id="stk_bydd_trd",
+        query_key="stk_bydd_trd:2026-06-02",
+        content_sha256="a" * 64,
+        row_count=1,
+        byte_count=1,
+        temporal=TemporalReceipt(
+            source_id="KRX",
+            operation_id="stk_bydd_trd",
+            observation_date=date(2026, 6, 2),
+            retrieved_at=datetime(2026, 8, 17, tzinfo=UTC),
+            availability_basis=AvailabilityBasis.PROVIDER_AS_OF_SCHEDULE,
+            revision_basis=RevisionBasis.CONTENT_SNAPSHOT,
+            request_sha256="b" * 64,
+            snapshot_sha256="a" * 64,
+            temporal_quality=TemporalQuality.PROVIDER_AS_OF_NO_VINTAGE,
+            policy_effective_at=datetime(
+                2026, 6, 3, 8, 10, tzinfo=ZoneInfo("Asia/Seoul")
+            ),
+        ),
+    )
+
+    with pytest.raises(LightGbmContractError, match="fixed-lag clock"):
+        parse_source_chunk_receipt(receipt.as_dict())
+    assert (
+        parse_source_chunk_receipt(
+            receipt.as_dict(),
+            calendar_policy="legacy-v1",
+        )
+        == receipt
+    )
+
+
+def test_recovery_rejects_krx_chunk_whose_parquet_rows_belong_to_another_date(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    source_root.mkdir(mode=0o700)
+    (source_root / "chunks").mkdir(mode=0o700)
+    query_date = date(2026, 6, 2)
+    query_sha256 = provider_query_sha256(
+        {"service": "stk_bydd_trd", "basDd": query_date.strftime("%Y%m%d")}
+    )
+    fields = sorted(S5_PRODUCTION_PROJECTION_FIELDS["stk_bydd_trd"])
+    table = pa.Table.from_pylist(
+        [
+            {
+                field: ("20260604" if field == "BAS_DD" else "1")
+                for field in fields
+            }
+        ],
+        schema=pa.schema(
+            [pa.field(field, pa.string(), nullable=False) for field in fields]
+        ),
+    )
+    sink = BytesIO()
+    pq.write_table(
+        table,
+        sink,
+        version="2.6",
+        compression="zstd",
+        use_dictionary=False,
+    )
+    content = sink.getvalue()
+    content_sha256 = hashlib.sha256(content).hexdigest()
+    chunk = SourceChunkReceipt(
+        source_id="KRX",
+        operation_id="stk_bydd_trd",
+        query_key="stk_bydd_trd:2026-06-02",
+        content_sha256=content_sha256,
+        row_count=1,
+        byte_count=len(content),
+        temporal=TemporalReceipt(
+            source_id="KRX",
+            operation_id="stk_bydd_trd",
+            observation_date=query_date,
+            retrieved_at=datetime(2026, 8, 17, tzinfo=UTC),
+            availability_basis=AvailabilityBasis.PROVIDER_AS_OF_SCHEDULE,
+            revision_basis=RevisionBasis.CONTENT_SNAPSHOT,
+            request_sha256=query_sha256,
+            snapshot_sha256=content_sha256,
+            temporal_quality=TemporalQuality.PROVIDER_AS_OF_NO_VINTAGE,
+            policy_effective_at=datetime(
+                2026, 6, 3, 8, 10, tzinfo=ZoneInfo("Asia/Seoul")
+            ),
+        ),
+    )
+    written = write_approved_new_file(
+        approved_root=source_root,
+        relative_path=chunk.relative_path,
+        content=content,
+        max_bytes=4 * 1024 * 1024,
+    )
+    os.chmod(written.absolute_path, 0o600)
+
+    with pytest.raises(LightGbmContractError, match="Parquet row date"):
+        _validate_reusable_chunk(
+            source_root=source_root,
+            attempt=JournalAttempt(
+                ordinal=1,
+                provider="KRX",
+                operation_id="stk_bydd_trd",
+                query_sha256=query_sha256,
+                state="SUCCEEDED",
+                chunk=chunk,
+            ),
+            query=KrxQuery("stk_bydd_trd", query_date, query_sha256),
+        )
+
+
+def test_recovery_authority_and_adoption_stop_before_provider_client_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    legacy = _author_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        calendar=base_calendar(),
+        packet_version="s5-production-bootstrap-packet-v1",
+    )
+    prior_file = write_approved_new_file(
+        approved_root=root,
+        relative_path=f"bootstrap-{legacy.sha256}.json",
+        content=legacy.content,
+        max_bytes=1 * 1024 * 1024,
+    )
+    os.chmod(prior_file.absolute_path, 0o600)
+    source_root = root / f"run-{legacy.sha256}" / "source"
+    source_root.parent.mkdir(mode=0o700)
+    source_root.mkdir(mode=0o700)
+    (source_root / "chunks").mkdir(mode=0o700)
+    reusable_query_hash = provider_query_sha256(
+        {"service": "stk_bydd_trd", "basDd": "20260602"}
+    )
+    fields = sorted(S5_PRODUCTION_PROJECTION_FIELDS["stk_bydd_trd"])
+    table = pa.Table.from_pylist(
+        [{field: ("20260602" if field == "BAS_DD" else "1") for field in fields}],
+        schema=pa.schema(
+            [pa.field(field, pa.string(), nullable=False) for field in fields]
+        ),
+    )
+    sink = BytesIO()
+    pq.write_table(table, sink, version="2.6", compression="zstd", use_dictionary=False)
+    chunk_content = sink.getvalue()
+    chunk_sha256 = hashlib.sha256(chunk_content).hexdigest()
+    reusable_chunk = SourceChunkReceipt(
+        source_id="KRX",
+        operation_id="stk_bydd_trd",
+        query_key="stk_bydd_trd:2026-06-02",
+        content_sha256=chunk_sha256,
+        row_count=1,
+        byte_count=len(chunk_content),
+        temporal=TemporalReceipt(
+            source_id="KRX",
+            operation_id="stk_bydd_trd",
+            observation_date=date(2026, 6, 2),
+            retrieved_at=datetime(2026, 8, 17, tzinfo=UTC),
+            availability_basis=AvailabilityBasis.PROVIDER_AS_OF_SCHEDULE,
+            revision_basis=RevisionBasis.CONTENT_SNAPSHOT,
+            request_sha256=reusable_query_hash,
+            snapshot_sha256=chunk_sha256,
+            temporal_quality=TemporalQuality.PROVIDER_AS_OF_NO_VINTAGE,
+            policy_effective_at=datetime(
+                2026, 6, 3, 8, 10, tzinfo=ZoneInfo("Asia/Seoul")
+            ),
+        ),
+    )
+    chunk_file = write_approved_new_file(
+        approved_root=source_root,
+        relative_path=reusable_chunk.relative_path,
+        content=chunk_content,
+        max_bytes=4 * 1024 * 1024,
+    )
+    os.chmod(chunk_file.absolute_path, 0o600)
+    failed_hash = provider_query_sha256(
+        {"service": "stk_bydd_trd", "basDd": "20260603"}
+    )
+    journal = BootstrapJournal(source_root, calendar_policy="legacy-v1")
+    reusable_ordinal = journal.begin(
+        provider="KRX",
+        operation_id="stk_bydd_trd",
+        query_sha256=reusable_query_hash,
+    )
+    journal.finish(
+        ordinal=reusable_ordinal,
+        provider="KRX",
+        operation_id="stk_bydd_trd",
+        query_sha256=reusable_query_hash,
+        success=True,
+        chunk=reusable_chunk,
+    )
+    for _ in range(2):
+        ordinal = journal.begin(
+            provider="KRX", operation_id="stk_bydd_trd", query_sha256=failed_hash
+        )
+        journal.finish(
+            ordinal=ordinal,
+            provider="KRX",
+            operation_id="stk_bydd_trd",
+            query_sha256=failed_hash,
+            success=False,
+            chunk=None,
+        )
+    recovery = assess_bootstrap_calendar_recovery(
+        approved_root=root,
+        prior_packet_sha256=legacy.sha256,
+    )
+    written = write_approved_new_file(
+        approved_root=root,
+        relative_path=f"bootstrap-{recovery.corrected_packet.sha256}.json",
+        content=recovery.corrected_packet.content,
+        max_bytes=1 * 1024 * 1024,
+    )
+    os.chmod(written.absolute_path, 0o600)
+    lineage = materialize_recovery_adoption(approved_root=root, recovery=recovery)
+    assert lineage["providerCallsDuringAdoption"] == 0
+    assert lineage["adoptedSuccessfulChunks"] == 1
+    adopted_journal = BootstrapJournal(
+        root / f"run-{recovery.corrected_packet.sha256}" / "source"
+    )
+    adopted_chunk = adopted_journal.completed_chunk(reusable_query_hash)
+    assert adopted_chunk is not None
+    assert adopted_chunk.temporal.policy_effective_at == datetime(
+        2026, 6, 4, 8, 10, tzinfo=ZoneInfo("Asia/Seoul")
+    )
+    monkeypatch.setenv("S5_SOURCE_ROOT", str(root))
+    monkeypatch.setenv(
+        "S5_BOOTSTRAP_PACKET_SHA256", recovery.corrected_packet.sha256
+    )
+
+    def forbidden_client(*args: object, **kwargs: object) -> None:
+        raise AssertionError("provider client must not be created")
+
+    monkeypatch.setattr(bootstrap_execute_cli, "KrxOpenApiClient", forbidden_client)
+    monkeypatch.setattr(bootstrap_execute_cli, "KISHttpClient", forbidden_client)
+    monkeypatch.setattr(bootstrap_execute_cli, "ECOSHttpClient", forbidden_client)
+    assert bootstrap_execute_cli.main() == 2
+    assert capsys.readouterr().out == "S5_BOOTSTRAP=PACKET_OR_ROOT_INVALID\n"
+
+    receipt = write_approved_new_file(
+        approved_root=root,
+        relative_path=(
+            "calendar-recovery-binding-"
+            f"{recovery.recovery_binding_sha256}.json"
+        ),
+        content=recovery.content,
+        max_bytes=64 * 1024,
+    )
+    os.chmod(receipt.absolute_path, 0o600)
+    assert (
+        validate_recovery_execution_authority(
+            approved_root=root,
+            packet=recovery.corrected_packet,
+        )
+        == "READY_TO_SUPERSEDE"
+    )
+    # Allowance를 위조해 상한을 넓히려 하면 packet 재생성 자체가 거부된다.
+    forged = dict(json.loads(recovery.content))
+    forged["krxSupersededAllowance"] = 8
+    with pytest.raises(LightGbmContractError):
+        validate_recovery_receipt(
+            canonical_json_bytes(forged),
+            corrected_packet=recovery.corrected_packet,
+        )
 
 
 def test_publishable_bootstrap_cutoff_honors_holiday_chain_and_exact_clock() -> None:
@@ -690,6 +1139,114 @@ def test_bootstrap_packet_cli_uses_latest_publishable_session(
     )
     assert regenerated.content == packet.content
     assert regenerated.sha256 == packet.sha256
+    selected = read_fresh_bootstrap_authority(approved_root=root)
+    assert selected.packet == packet
+    assert stat.S_IMODE((root / FRESH_AUTHORITY_FILENAME).stat().st_mode) == 0o600
+
+    class LaterDatetime:
+        @staticmethod
+        def now(tz: object = None) -> datetime:  # noqa: ANN401
+            return datetime(
+                2026,
+                8,
+                17,
+                23,
+                10,
+                tzinfo=UTC if tz is not None else None,
+            )
+
+    monkeypatch.setattr(bootstrap_packet_cli, "datetime", LaterDatetime)
+    assert bootstrap_packet_cli.main() == 0
+    assert capsys.readouterr().out == (
+        f"S5_BOOTSTRAP_PACKET=SELECTED sha256={packet_sha}\n"
+    )
+    assert sorted(root.glob("bootstrap-*.json")) == [packet_path]
+
+    (root / f"run-{packet_sha}").mkdir(mode=0o700)
+    assert bootstrap_packet_cli.main() == 1
+    assert capsys.readouterr().out == "S5_BOOTSTRAP_PACKET=RECOVERY_REQUIRED\n"
+
+
+def test_fresh_authority_cas_rejects_another_packet_and_run_before_clients(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    selected_packet = author_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC)
+    )
+    other_packet = author_bootstrap_packet(
+        cutoff=datetime(2026, 8, 17, 23, 10, tzinfo=UTC)
+    )
+    root_lock = acquire_bootstrap_root_lock(root)
+    try:
+        selected = publish_fresh_bootstrap_authority(
+            approved_root=root,
+            packet=selected_packet,
+        )
+        assert selected.packet.sha256 == selected_packet.sha256
+        with pytest.raises(LightGbmContractError, match="another packet"):
+            publish_fresh_bootstrap_authority(
+                approved_root=root,
+                packet=other_packet,
+            )
+    finally:
+        release_run_lock(root_lock)
+
+    other_file = write_approved_new_file(
+        approved_root=root,
+        relative_path=f"bootstrap-{other_packet.sha256}.json",
+        content=other_packet.content,
+        max_bytes=1 * 1024 * 1024,
+    )
+    os.chmod(other_file.absolute_path, 0o600)
+    monkeypatch.setenv("S5_SOURCE_ROOT", str(root))
+    monkeypatch.setenv("S5_BOOTSTRAP_PACKET_SHA256", other_packet.sha256)
+
+    def forbidden_client(*args: object, **kwargs: object) -> None:
+        raise AssertionError("provider client must not be created")
+
+    monkeypatch.setattr(bootstrap_execute_cli, "KrxOpenApiClient", forbidden_client)
+    monkeypatch.setattr(bootstrap_execute_cli, "KISHttpClient", forbidden_client)
+    monkeypatch.setattr(bootstrap_execute_cli, "ECOSHttpClient", forbidden_client)
+    assert bootstrap_execute_cli.main() == 2
+    assert capsys.readouterr().out == "S5_BOOTSTRAP=PACKET_OR_ROOT_INVALID\n"
+    assert not (root / f"run-{other_packet.sha256}").exists()
+
+
+def test_active_root_lock_rejects_selected_execution_before_clients(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    packet = author_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC)
+    )
+    root_lock = acquire_bootstrap_root_lock(root)
+    try:
+        publish_fresh_bootstrap_authority(approved_root=root, packet=packet)
+    finally:
+        release_run_lock(root_lock)
+    monkeypatch.setenv("S5_SOURCE_ROOT", str(root))
+    monkeypatch.setenv("S5_BOOTSTRAP_PACKET_SHA256", packet.sha256)
+
+    def forbidden_client(*args: object, **kwargs: object) -> None:
+        raise AssertionError("provider client must not be created")
+
+    monkeypatch.setattr(bootstrap_execute_cli, "KrxOpenApiClient", forbidden_client)
+    monkeypatch.setattr(bootstrap_execute_cli, "KISHttpClient", forbidden_client)
+    monkeypatch.setattr(bootstrap_execute_cli, "ECOSHttpClient", forbidden_client)
+    held_root_lock = acquire_bootstrap_root_lock(root)
+    try:
+        assert bootstrap_execute_cli.main() == 2
+    finally:
+        release_run_lock(held_root_lock)
+    assert capsys.readouterr().out == "S5_BOOTSTRAP=PACKET_OR_ROOT_INVALID\n"
+    assert not (root / f"run-{packet.sha256}").exists()
 
 
 def test_bootstrap_packet_cli_reports_unavailable_without_traceback(
@@ -1131,3 +1688,265 @@ def test_materializer_publishes_feature_bundle_v2_from_verified_source(tmp_path:
     assert bundle.artifact.table.num_rows == 1_007
     assert bundle.provenance.temporal_quality == "RECONSTRUCTED_FIXED_LAG"
     assert stat.S_IMODE(os.stat(tmp_path / "feature" / "manifest.json").st_mode) == 0o600
+def test_fresh_bootstrap_lineage_can_never_carry_superseded_allowance() -> None:
+    fresh = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
+    assert fresh.budget.krx_superseded_allowance == 0
+    assert fresh.budget.krx_get == 4_441
+    assert fresh.budget.total == 6_446
+    assert b"krxSupersededAllowance" in fresh.content
+
+    # Fresh 유도식은 allowance 인자를 아예 받지 않는다.
+    with pytest.raises(TypeError):
+        author_bootstrap_budget(  # type: ignore[call-arg]
+            monthly_schedule_count=51,
+            union_size=180,
+            superseded_allowance=2,
+        )
+    with pytest.raises(LightGbmContractError, match="calendar recovery lineage"):
+        _author_bootstrap_packet(
+            cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+            calendar=corrected_calendar(),
+            packet_version="s5-production-bootstrap-packet-v2",
+            lineage_mode="FRESH",
+            superseded_allowance=1,
+        )
+    # 승인 상한을 allowance 없이 넘기면 budget 자체가 거부된다.
+    with pytest.raises(LightGbmContractError, match="approved provider budget exceeded"):
+        BootstrapBudget(krx_get=4_442, kis_get=1_980, kis_token=1, ecos_get=24)
+    with pytest.raises(LightGbmContractError, match="superseded allowance exceeds"):
+        BootstrapBudget(
+            krx_get=4_441,
+            kis_get=1_980,
+            kis_token=1,
+            ecos_get=24,
+            krx_superseded_allowance=MAX_KRX_SUPERSEDED_ALLOWANCE + 1,
+        )
+    with pytest.raises(LightGbmContractError, match="superseded allowance is invalid"):
+        author_recovery_bootstrap_budget(
+            monthly_schedule_count=51,
+            union_size=180,
+            superseded_allowance=MAX_KRX_SUPERSEDED_ALLOWANCE + 1,
+        )
+    # 과거 v1 packet bytes는 allowance 필드 도입 뒤에도 동결 상태를 유지한다.
+    legacy = _author_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        calendar=base_calendar(),
+        packet_version="s5-production-bootstrap-packet-v1",
+    )
+    assert b"krxSupersededAllowance" not in legacy.content
+    assert (
+        validate_bootstrap_packet(
+            legacy.content,
+            expected_sha256=legacy.sha256,
+            allow_historical_v1=True,
+        )
+        == legacy
+    )
+
+
+def test_journal_bounds_superseded_attempts_and_blocks_when_allowance_is_short(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    legacy = _author_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        calendar=base_calendar(),
+        packet_version="s5-production-bootstrap-packet-v1",
+    )
+    prior = write_approved_new_file(
+        approved_root=root,
+        relative_path=f"bootstrap-{legacy.sha256}.json",
+        content=legacy.content,
+        max_bytes=1 * 1024 * 1024,
+    )
+    os.chmod(prior.absolute_path, 0o600)
+    source_root = root / f"run-{legacy.sha256}" / "source"
+    source_root.parent.mkdir(mode=0o700)
+    source_root.mkdir(mode=0o700)
+    (source_root / "chunks").mkdir(mode=0o700)
+    failed_hash = provider_query_sha256(
+        {"service": "stk_bydd_trd", "basDd": "20260603"}
+    )
+    journal = BootstrapJournal(source_root, calendar_policy="legacy-v1")
+    for _ in range(2):
+        ordinal = journal.begin(
+            provider="KRX", operation_id="stk_bydd_trd", query_sha256=failed_hash
+        )
+        journal.finish(
+            ordinal=ordinal,
+            provider="KRX",
+            operation_id="stk_bydd_trd",
+            query_sha256=failed_hash,
+            success=False,
+            chunk=None,
+        )
+    # 소비 가능한 물리 시도 자체가 query당 2회로 묶여 있어 allowance가 무한히 커질 수 없다.
+    with pytest.raises(LightGbmContractError, match="resume attempt is unavailable"):
+        journal.begin(
+            provider="KRX", operation_id="stk_bydd_trd", query_sha256=failed_hash
+        )
+
+    # 승인 bound가 증명된 superseded 수보다 작으면 allowance를 주지 않고 fail-closed 한다.
+    monkeypatch.setattr(
+        bootstrap_calendar_recovery, "MAX_KRX_SUPERSEDED_ALLOWANCE", 1
+    )
+    recovery = assess_bootstrap_calendar_recovery(
+        approved_root=root,
+        prior_packet_sha256=legacy.sha256,
+    )
+    assert recovery.status == "CAPACITY_EXHAUSTED"
+    assert len(recovery.superseded_attempts) == 2
+    assert recovery.corrected_packet.budget.krx_superseded_allowance == 0
+    assert recovery.corrected_packet.budget.krx_get == 4_441
+    assert recovery.krx_shortfall == 2
+    assert json.loads(recovery.content)["providerCallsDuringRecovery"] == 0
+
+    written = write_approved_new_file(
+        approved_root=root,
+        relative_path=f"bootstrap-{recovery.corrected_packet.sha256}.json",
+        content=recovery.corrected_packet.content,
+        max_bytes=1 * 1024 * 1024,
+    )
+    os.chmod(written.absolute_path, 0o600)
+    receipt = write_approved_new_file(
+        approved_root=root,
+        relative_path=(
+            f"calendar-recovery-binding-{recovery.recovery_binding_sha256}.json"
+        ),
+        content=recovery.content,
+        max_bytes=64 * 1024,
+    )
+    os.chmod(receipt.absolute_path, 0o600)
+    materialize_recovery_adoption(approved_root=root, recovery=recovery)
+    monkeypatch.setenv("S5_SOURCE_ROOT", str(root))
+    monkeypatch.setenv("S5_BOOTSTRAP_PACKET_SHA256", recovery.corrected_packet.sha256)
+
+    def forbidden_client(*args: object, **kwargs: object) -> None:
+        raise AssertionError("provider client must not be created")
+
+    monkeypatch.setattr(bootstrap_execute_cli, "KrxOpenApiClient", forbidden_client)
+    monkeypatch.setattr(bootstrap_execute_cli, "KISHttpClient", forbidden_client)
+    monkeypatch.setattr(bootstrap_execute_cli, "ECOSHttpClient", forbidden_client)
+    assert bootstrap_execute_cli.main() == 1
+    assert capsys.readouterr().out == (
+        "S5_BOOTSTRAP=DATASET_UNAVAILABLE "
+        "reason=KRX_CAPACITY_EXHAUSTED providerCalls=0\n"
+    )
+
+
+def test_empty_daily_projection_becomes_calendar_divergence_and_stops_further_calls(
+    tmp_path: Path,
+) -> None:
+    original = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
+    raw = original.window.raw_sessions[-4:]
+    packet = replace(
+        original,
+        window=PitSessionWindow(
+            cutoff=original.window.cutoff,
+            latest_completed=raw[-1],
+            raw_sessions=raw,
+            eligible_sessions=raw[-1:],
+        ),
+        schedules=(original.schedules[-1],),
+        budget=BootstrapBudget(krx_get=19, kis_get=31, kis_token=1, ecos_get=3),
+    )
+    blocked_session = raw[2]
+    calls: list[str] = []
+
+    class Krx:
+        def fetch(
+            self, *, service: str, session_date: date
+        ) -> tuple[dict[str, str], ...]:
+            calls.append(f"{service}:{session_date.isoformat()}")
+            if session_date == blocked_session and service == "stk_bydd_trd":
+                # 휴장일에 provider가 구조적으로 유효한 빈 응답을 돌려주는 실제 경로다.
+                return ()
+            return (
+                {
+                    field: ("1" if field != "BAS_DD" else session_date.strftime("%Y%m%d"))
+                    for field in S5_PRODUCTION_PROJECTION_FIELDS[service]
+                },
+            )
+
+    class Forbidden:
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError("KRX 이후 provider는 열리지 않아야 한다")
+
+    source_root = tmp_path / "source"
+    with pytest.raises(CalendarDivergenceSuspected):
+        execute_bootstrap_acquisition(
+            packet=packet,
+            source_root=source_root,
+            krx=Krx(),
+            kis=Forbidden(),
+            ecos=Forbidden(),
+            ecos_series=CANDIDATE_SERIES,
+            clock=lambda: datetime(2026, 8, 20, tzinfo=UTC),
+        )
+    block = json.loads(
+        (source_root / DIVERGENCE_CANDIDATES_FILENAME).read_bytes()
+    )
+    assert block["candidates"] == [
+        {
+            "evidence": "EMPTY_DAILY_PROJECTION",
+            "operationId": "stk_bydd_trd",
+            "provider": "KRX",
+            "sessionDate": blocked_session.isoformat(),
+        }
+    ]
+    assert block["providerCallsDuringBlock"] == 0
+    assert block["calendarCorrectionSetSha256"] == S5_CALENDAR_CORRECTION_SET_SHA256
+    # 후보가 발견된 세션 이후의 KRX query는 열리지 않는다.
+    assert calls[-1] == f"stk_bydd_trd:{blocked_session.isoformat()}"
+    consumed = tuple(calls)
+
+    # 해소되지 않은 block이 남아 있으면 재개 자체가 provider 앞에서 멈춘다.
+    with pytest.raises(CalendarDivergenceSuspected, match="unresolved"):
+        execute_bootstrap_acquisition(
+            packet=packet,
+            source_root=source_root,
+            krx=Krx(),
+            kis=Forbidden(),
+            ecos=Forbidden(),
+            ecos_series=CANDIDATE_SERIES,
+            clock=lambda: datetime(2026, 8, 20, tzinfo=UTC),
+            resume=True,
+        )
+    assert tuple(calls) == consumed
+def test_superseded_generation_residue_never_opens_a_second_fresh_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """실제 복구 root에는 이전 세대 packet과 block sidecar가 증거로 남는다.
+
+    그 잔여물이 있어도 authoring은 새 FRESH packet을 만들지 않고 recovery 경로를 요구해야 한다.
+    """
+
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    stale = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
+    for relative, content in (
+        (f"bootstrap-{stale.sha256}.json", stale.content),
+        (f"blocked-bootstrap-{stale.sha256}.json", b"{}"),
+        (f"calendar-recovery-{'0' * 64}.json", b"{}"),
+    ):
+        written = write_approved_new_file(
+            approved_root=root,
+            relative_path=relative,
+            content=content,
+            max_bytes=1 * 1024 * 1024,
+        )
+        os.chmod(written.absolute_path, 0o600)
+    (root / f"run-{stale.sha256}").mkdir(mode=0o700)
+
+    monkeypatch.setenv("S5_SOURCE_ROOT", str(root))
+    assert bootstrap_packet_cli.main() == 1
+    assert capsys.readouterr().out == "S5_BOOTSTRAP_PACKET=RECOVERY_REQUIRED\n"
+    assert not fresh_bootstrap_authority_exists(approved_root=root)
+    assert not any(
+        name.startswith("fresh-bootstrap-authority") for name in os.listdir(root)
+    )

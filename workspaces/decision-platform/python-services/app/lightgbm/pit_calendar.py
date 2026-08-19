@@ -5,13 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from functools import lru_cache
+import hashlib
+from importlib.metadata import version
 import re
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import exchange_calendars as xcals
+from exchange_calendars.exchange_calendar_xkrx import XKRXExchangeCalendar
 import pandas as pd
 
+from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 
 
@@ -21,6 +25,16 @@ LABEL_TAIL_SESSIONS = 6
 ELIGIBLE_SESSION_COUNT = 1_007
 KST = ZoneInfo("Asia/Seoul")
 _EFFECTIVE_MONTH_PATTERN = re.compile(r"^[0-9]{4}-(0[1-9]|1[0-2])$")
+_PINNED_CALENDAR_VERSION = "4.13.2"
+S5_CALENDAR_POLICY_VERSION = "xkrx-4.13.2-kis-corrections-v1"
+
+# CTCA0903R가 XKRX base보다 우선한다는 기존 S1.6 authority를 S5에도 적용한다.
+# 고정 라이브러리에 없는 임시휴장만 contract-change로 추가하며 주말/법정휴일은 중복 기재하지 않는다.
+S5_ADHOC_CLOSED_SESSIONS = (date(2026, 6, 3),)
+S5_CALENDAR_CORRECTION_SET_SHA256 = hashlib.sha256(
+    b"s5-xkrx-calendar-corrections-v1\x00"
+    + canonical_json_bytes([day.isoformat() for day in S5_ADHOC_CLOSED_SESSIONS])
+).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -44,17 +58,48 @@ class MonthlyUniverseSchedule:
     trailing_sessions: tuple[date, ...]
 
 
+class _S5XKRXCalendar(XKRXExchangeCalendar):  # type: ignore[misc]
+    """Pinned XKRX에 승인된 KIS 임시휴장 correction만 덧붙인 결정적 calendar다."""
+
+    @property
+    def adhoc_holidays(self) -> list[pd.Timestamp]:
+        values = {*super().adhoc_holidays}
+        values.update(pd.Timestamp(day) for day in S5_ADHOC_CLOSED_SESSIONS)
+        return sorted(values)
+
+
+def _require_pinned_calendar_version() -> None:
+    if version("exchange-calendars") != _PINNED_CALENDAR_VERSION:
+        raise LightGbmContractError("exchange-calendars version drifted from S5 policy")
+
+
 @lru_cache(maxsize=1)
-def _calendar() -> Any:
+def base_calendar() -> Any:
+    """Historical packet v1 byte validation에만 쓰는 수정 전 pinned XKRX base다."""
+
+    _require_pinned_calendar_version()
     return xcals.get_calendar("XKRX")
+
+
+@lru_cache(maxsize=1)
+def corrected_calendar() -> Any:
+    """S5 feature/label/daily clock 전체가 공유하는 authoritative corrected XKRX다."""
+
+    _require_pinned_calendar_version()
+    return _S5XKRXCalendar()
 
 
 def latest_completed_session(cutoff: datetime) -> date:
     """timezone-aware cutoff 이전에 close가 완료된 가장 최신 XKRX 정규 session을 반환한다."""
 
+    return _latest_completed_session(cutoff, calendar=corrected_calendar())
+
+
+def _latest_completed_session(cutoff: datetime, *, calendar: Any) -> date:
+    """현재/legacy calendar를 명시적으로 받아 hidden policy 전환을 막는다."""
+
     if cutoff.tzinfo is None:
         raise LightGbmContractError("S5 cutoff must be timezone aware")
-    calendar = _calendar()
     cutoff_kst = cutoff.astimezone(KST)
     cutoff_utc = pd.Timestamp(cutoff_kst.astimezone(UTC))
     # exchange_calendars의 date API는 timezone-naive exchange-local calendar date를 요구한다.
@@ -67,7 +112,12 @@ def latest_completed_session(cutoff: datetime) -> date:
 def previous_xkrx_session(session_date: date) -> date:
     """주말·휴일을 건너뛴 직전 XKRX session을 sensitivity alignment에 제공한다."""
 
-    calendar = _calendar()
+    return _previous_xkrx_session(session_date, calendar=corrected_calendar())
+
+
+def _previous_xkrx_session(session_date: date, *, calendar: Any) -> date:
+    """Packet v1 검증은 base, 현재 실행은 corrected calendar를 명시적으로 선택한다."""
+
     session = calendar.date_to_session(pd.Timestamp(session_date), direction="none")
     return cast(date, calendar.previous_session(session).date())
 
@@ -83,6 +133,21 @@ def derive_monthly_universe_schedule(
     아직 도달하지 않은 미래인지 거부하는 상한으로만 사용한다.
     """
 
+    return derive_monthly_universe_schedule_for(
+        effective_month,
+        dataset_cutoff=dataset_cutoff,
+        calendar=corrected_calendar(),
+    )
+
+
+def derive_monthly_universe_schedule_for(
+    effective_month: str,
+    *,
+    dataset_cutoff: datetime,
+    calendar: Any,
+) -> MonthlyUniverseSchedule:
+    """Calendar policy가 packet regeneration 동안 바뀌지 않게 explicit instance를 사용한다."""
+
     if not _EFFECTIVE_MONTH_PATTERN.fullmatch(effective_month):
         raise LightGbmContractError("effective month must use strict YYYY-MM")
     if dataset_cutoff.tzinfo is None:
@@ -95,7 +160,6 @@ def derive_monthly_universe_schedule(
         next_month = date(year, month + 1, 1)
     last_day = date.fromordinal(next_month.toordinal() - 1)
 
-    calendar = _calendar()
     sessions = calendar.sessions_in_range(pd.Timestamp(first_day), pd.Timestamp(last_day))
     if len(sessions) == 0:
         raise DatasetUnavailable("DATASET_UNAVAILABLE: effective month has no XKRX session")
@@ -128,8 +192,13 @@ def derive_monthly_universe_schedule(
 def build_pit_session_window(cutoff: datetime) -> PitSessionWindow:
     """exact 1,072 raw sessions와 t-59..t warm-up 뒤 1,007 labelable sessions를 만든다."""
 
-    calendar = _calendar()
-    latest = pd.Timestamp(latest_completed_session(cutoff))
+    return build_pit_session_window_for(cutoff, calendar=corrected_calendar())
+
+
+def build_pit_session_window_for(cutoff: datetime, *, calendar: Any) -> PitSessionWindow:
+    """현재와 historical packet validator가 같은 arithmetic을 calendar별로 재사용한다."""
+
+    latest = pd.Timestamp(_latest_completed_session(cutoff, calendar=calendar))
     first = calendar.session_offset(latest, -(RAW_SESSION_COUNT - 1))
     raw_index = calendar.sessions_in_range(first, latest)
     raw = tuple(session.date() for session in raw_index)

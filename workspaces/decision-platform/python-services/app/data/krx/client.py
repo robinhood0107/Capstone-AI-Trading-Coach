@@ -126,6 +126,25 @@ def _build_redis_client() -> Any:
         password = ""
 
 
+def attest_quota_backend_credentials() -> None:
+    """Provider socket 앞에서 quota backend 인증만 확인한다.
+
+    KRX/KIS/ECOS 호출은 하지 않는다. 승인된 one-shot 호출을 소비한 뒤에야 Redis credential 불일치가
+    드러나는 일을 막기 위한 read-only preflight다. credential 값은 출력하지 않는다.
+    """
+
+    client = _build_redis_client()
+    try:
+        if not client.ping():
+            raise QuotaUnavailableError("source quota backend did not acknowledge authentication")
+    except QuotaUnavailableError:
+        raise
+    except Exception as error:
+        raise QuotaUnavailableError("source quota backend authentication failed") from error
+    finally:
+        _close_without_raising(client)
+
+
 def _close_without_raising(resource: Any | None) -> None:
     """constructor 실패 시 한 cleanup 예외가 다른 resource 정리를 막지 않게 한다."""
     if resource is None:

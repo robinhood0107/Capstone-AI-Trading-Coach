@@ -89,11 +89,25 @@
   stale/FAIL/drift/missing evidence는 prediction/asOf/HMM state 없는 `ABSTAIN`이다. 실제 PIT
   dataset과 production model/pointer가 없으면 all-ABSTAIN만 반환한다. RiskDecision/order wiring과
   S6.6 이전 cross-market join은 계속 `NO_GO`다.
-- S5.6 production clock은 pinned XKRX calendar에서만 파생한다. feature/label/daily batch `asOf`,
-  stale 및 DB activation에서 calendar-date `+1 day`나 weekday 가정을 쓰지 않고 주말·휴일·
+- S5.6 production clock은 pinned `exchange-calendars==4.13.2` XKRX base와 S1.6의 KIS
+  `CTCA0903R.opnd_yn` field authority에서 승인·hash-bound한 correction set으로 파생한다.
+  feature/label/daily batch `asOf`, stale 및 DB activation에서 calendar-date `+1 day`나 weekday
+  가정을 쓰지 않고 주말·휴일·
   대체공휴일을 건너뛴 다음 XKRX session 08:10 KST를 사용한다. 2026-08-14 다음 session은
   2026-08-17이 아니라 2026-08-18이라는 회귀를 유지한다. S5.6B의 manual release/batch CAS와
   daily refresh는 RiskDecision/order 권한이나 자동 retrain/activation 권한을 만들지 않는다.
+- S5.6 provider 상한은 fresh 유도식 KRX 4,441 / 총 6,446으로 불변이다. calendar recovery lineage만
+  recovery receipt가 증명한 superseded consumed call 수와 정확히 같은 allowance(최대 8)를 가질 수
+  있고, 그 값은 packet bytes·binding preimage·receipt·adoption journal 네 곳에서 재계산된다.
+  allowance는 논리 query 집합을 늘리지 않으며 fresh authoring 경로는 allowance 인자를 받지 않는다.
+- 거래일로 주장된 session의 빈 KRX 일별 projection은 일반 실패가 아니라
+  `CALENDAR_DIVERGENCE_SUSPECTED`다. 후보 session을 content-free sidecar로 남기고 resume packet을
+  만들지 않으며, 해소되지 않은 block은 다음 실행을 provider client 앞에서 멈춘다.
+- 달력 correction set은 packet 해시 결정성을 위해 정적 상수로 유지하되, 후보 session만 실제 KIS
+  `CTCA0903R`로 확정해(최대 32 calls, live 전용, bootstrap 예산과 분리) `trading_sessions`에 적재하고
+  상수와 대조한다. 관측이 없으면 통과가 아니라 `CALENDAR_AUTHORITY_UNVERIFIED`다.
+- bootstrap 실행은 provider client 생성 전에 quota backend credential을 확인한다. credential 값은
+  출력·저장하지 않으며 실패 시 provider 호출은 0이다.
 - Pre-S5 RAG/global-news addendum은
   `contracts/catalogs/pre-s5-rag-news-contract.v1.json`이 SSOT다.
   `OA112_ACTIVE_CONTRACT_LOCKED`는 정확히 14 track × 8의 logical selection일 뿐

@@ -13,7 +13,7 @@ import pandas as pd
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
-from app.lightgbm.pit_calendar import _calendar
+from app.lightgbm.pit_calendar import corrected_calendar
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -140,7 +140,7 @@ def next_session_evidence_clock(observation_date: date, *, extra_sessions: int =
 
     if type(observation_date) is not date or isinstance(extra_sessions, bool) or extra_sessions < 0:
         raise LightGbmContractError("evidence clock input is invalid")
-    calendar = _calendar()
+    calendar = corrected_calendar()
     try:
         session = calendar.date_to_session(pd.Timestamp(observation_date), direction="none")
     except Exception:
@@ -156,7 +156,7 @@ def next_xkrx_evidence_clock(observation_date: date) -> datetime:
 
     if type(observation_date) is not date:
         raise LightGbmContractError("evidence clock input is invalid")
-    calendar = _calendar()
+    calendar = corrected_calendar()
     candidate = calendar.date_to_session(pd.Timestamp(observation_date), direction="next")
     try:
         if candidate.date() == observation_date:

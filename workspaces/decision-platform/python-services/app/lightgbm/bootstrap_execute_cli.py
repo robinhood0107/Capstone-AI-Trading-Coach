@@ -249,7 +249,10 @@ def main() -> int:
             f"candidates={candidates}"
         )
         return 1
-    except Exception:
+    except Exception as error:
+        # 실패 분류만 알린다. 원인을 못 읽는 종료는 승인 호출을 태우고도 진단이 불가능하다.
+        # message는 provider 응답 조각을 담을 수 있어 type 이름만 내보낸다.
+        error_type = type(error).__name__
         try:
             resume_packet = build_resume_packet(
                 bootstrap_packet_sha256=packet_sha256,
@@ -264,10 +267,15 @@ def main() -> int:
             )
             print(
                 "S5_BOOTSTRAP=DATASET_UNAVAILABLE "
+                f"errorType={error_type} "
                 f"resumePacketSha256={resume_packet.sha256}"
             )
-        except Exception:
-            print("S5_BOOTSTRAP=DATASET_UNAVAILABLE")
+        except Exception as resume_error:
+            print(
+                "S5_BOOTSTRAP=DATASET_UNAVAILABLE "
+                f"errorType={error_type} "
+                f"resumeErrorType={type(resume_error).__name__}"
+            )
         return 1
     finally:
         for client in (ecos_client, kis_client, krx_client):

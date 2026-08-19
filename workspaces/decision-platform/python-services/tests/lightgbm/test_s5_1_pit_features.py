@@ -44,6 +44,7 @@ from app.lightgbm.pit_calendar import (
     derive_monthly_universe_schedule,
     latest_completed_session,
 )
+from app.lightgbm.production_policy import APPROVED_HORIZON_UNION_SIZE
 from app.lightgbm.universe import (
     MonthlyUniverse,
     UniverseObservation,
@@ -203,12 +204,12 @@ def test_month_end_top30_tie_order_fixed_etf_and_no_etn() -> None:
         select_monthly_universe(rows, schedule=forged_trailing)
 
 
-def test_monthly_universe_does_not_replace_and_union_181_fails() -> None:
+def test_monthly_universe_does_not_replace_and_union_over_bound_fails() -> None:
     universes = [
         MonthlyUniverse(date(2026, 1, 30), "2026-02", (f"id-{index}",), (f"{index:06d}",))
-        for index in range(181)
+        for index in range(APPROVED_HORIZON_UNION_SIZE + 1)
     ]
-    with pytest.raises(LightGbmContractError, match="180"):
+    with pytest.raises(LightGbmContractError, match="approved instrument bound"):
         validate_horizon_union(universes)
 
 

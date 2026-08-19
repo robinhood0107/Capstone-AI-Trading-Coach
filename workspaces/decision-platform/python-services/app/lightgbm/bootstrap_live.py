@@ -6,6 +6,7 @@ from datetime import date
 
 from app.data.ecos.http_client import ECOSHttpClient
 from app.data.ecos.models import ECOSObservation
+from app.data.ecos.policy import ECOS_MAX_ROWS_PER_REQUEST
 from app.data.ecos.series_registry import ECOSSeries
 from app.data.kis.http_client import DAILY_ITEMCHART_PATH, KISHttpClient
 from app.data.kis.parsers import DailyBar, parse_daily_bars
@@ -60,7 +61,11 @@ class LiveKisBootstrapProvider:
 
 
 class LiveEcosBootstrapProvider:
-    """366-day 이하 date chunk를 page 1..400 한 번으로만 조회한다."""
+    """한 date chunk를 요청당 행 상한 안에서 page 1회로만 조회한다.
+
+    page index는 행 번호이므로 span이 ECOS_MAX_ROWS_PER_REQUEST를 넘으면 ECOS가 거부한다.
+    date chunk 길이는 호출자가 같은 상한에서 유도한다.
+    """
 
     def __init__(self, client: ECOSHttpClient) -> None:
         self._client = client
@@ -73,7 +78,7 @@ class LiveEcosBootstrapProvider:
             start=start,
             end=end,
             page_start=1,
-            page_end=400,
+            page_end=ECOS_MAX_ROWS_PER_REQUEST,
         )
         observations = tuple(page.observations)
         if (
@@ -102,7 +107,7 @@ class LiveEcosDailyProvider:
             start=start,
             end=end,
             page_start=1,
-            page_end=400,
+            page_end=ECOS_MAX_ROWS_PER_REQUEST,
         )
         observations = tuple(page.observations)
         if page.total_count != len(observations) + page.duplicate_count or any(

@@ -17,6 +17,7 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
             {
                 "calendar",
                 "contractId",
+                "coverage",
                 "divergence",
                 "downstream",
                 "holidayAuthority",
@@ -188,11 +189,82 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
         recovery = json.loads(CATALOG.read_text(encoding="utf-8"))["recovery"]
 
         self.assertTrue(recovery["chainableFromSupersededRecoveryPacket"])
-        # 현재 세대 packet이 자기 자신을 supersede하면 누적 회계가 끊긴다.
-        self.assertTrue(recovery["priorPacketMustNotUseCurrentCorrections"])
+        # prior는 체인 head다. supersede 사유가 달력 correction이면 세대 해시가 바뀌지만 승인 상한
+        # 변경이면 같은 세대 안에서 갈리므로, 세대 해시가 아니라 체인 관계가 head를 정한다.
+        self.assertTrue(recovery["priorPacketIsChainHead"])
+        # head는 소비 증거를 모두 포함하는 run이다. ordinal은 세대마다 다시 붙어 신원이 아니다.
+        self.assertTrue(recovery["chainHeadDerivedFromConsumedQueryMultiset"])
+        # 같은 packet을 prior로 삼으면 체인이 자기 자신을 가리켜 누적 회계가 끊긴다.
+        self.assertTrue(recovery["supersedeMustChangePacketIdentity"])
         # prior journal은 그 journal이 봉인된 세대의 clock으로만 읽어야 한다.
         self.assertTrue(recovery["priorJournalReadUnderItsOwnGeneration"])
+        # 체인에서는 superseded query가 세대마다 누적되므로 실패 query 하나로 표현되지 않는다.
+        self.assertTrue(recovery["receiptCarriesSupersededQuerySet"])
+        self.assertTrue(
+            recovery["supersededQueryIdentityResolvedAcrossApprovedGenerations"]
+        )
 
+    def test_supersede_covers_every_provider_that_can_consume_calls(self) -> None:
+        """KRX만 supersede된다는 가정은 달력 correction 사유에서만 성립했다.
+
+        local finalization 결함이 드러나면 이미 소비한 KIS 호출도 세대와 함께 이관해야 한다.
+        그러지 않으면 소진된 query가 영구히 열리지 않아 packet이 완주 불가가 된다.
+        """
+
+        catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
+        recovery = catalog["recovery"]
+
+        self.assertEqual(["KRX", "KIS"], recovery["supersededProviders"])
+        self.assertEqual(["KRX", "KIS"], recovery["adoptedProvidersCarryingChunks"])
+        # Access token 성공은 값이 보존되지 않아 채택할 수 없다. superseded로만 이관된다.
+        self.assertFalse(recovery["kisTokenSuccessAdoptable"])
+        # 이관된 소비 원장이 새 세대의 재시도 자격을 먹으면 이관 자체가 무의미해진다.
+        self.assertEqual("CURRENT_GENERATION", recovery["perQueryRetryBudgetScope"])
+        # 그래도 누적 예산은 SUPERSEDED_CONSUMED까지 세므로 상한은 그대로 지켜진다.
+        self.assertTrue(recovery["supersededConsumedCallsCountTowardCumulativeBudget"])
+        self.assertEqual(2, recovery["physicalAttemptsPerLogicalQuery"])
+        # KIS 논리 query는 수집된 KRX 증거에서 파생돼 packet만으로 열거할 수 없다.
+        self.assertTrue(recovery["kisLogicalQuerySetDerivedFromCollectedKrxEvidence"])
+
+    def test_kis_coverage_is_bound_to_collected_krx_trading_evidence(self) -> None:
+        """union 종목 전원에게 전수 커버리지를 요구하면 상장폐지 종목에서 충족 불가가 된다.
+
+        실측: 010620은 KRX와 KIS 양쪽에서 정확히 910 session(2022-03-29..2025-12-12)이고 그 뒤
+        거래 증거가 없다. 두 provider가 일치하므로 불일치가 아니라 상장폐지다. 수집된 KRX 일별
+        projection이 커버리지 권위이며, 요구는 그 증거와의 정확한 일치다.
+        """
+
+        coverage = json.loads(CATALOG.read_text(encoding="utf-8"))["coverage"]
+
+        self.assertEqual(
+            "COLLECTED_KRX_DAILY_TRADING_EVIDENCE", coverage["kisCoverageAuthority"]
+        )
+        self.assertEqual(
+            "EXACT_MATCH_WITH_KRX_TRADING_EVIDENCE", coverage["kisCoverageRule"]
+        )
+        # 고정 ETF는 일별 stock projection에 없고 월별 etf_bydd_trd에만 나타난다.
+        self.assertEqual("FULL_RAW_WINDOW", coverage["fixedEtfCoverageRule"])
+        # rolling window는 종목 자기 행에 대한 위치 기반이라 중간 결손이 feature 의미를 바꾼다.
+        self.assertTrue(coverage["tradedSessionsMustBeContiguous"])
+        # window는 query 신원에 들어간다. 종목별로 좁히면 봉인된 chunk가 도달 불가가 된다.
+        self.assertEqual("PACKET_RAW_WINDOW", coverage["pagingWindowSource"])
+        # 역사가 정확히 100의 배수로 끝나면 응답 모양만으로는 "더 없음"을 구분할 수 없다.
+        self.assertTrue(coverage["pagingStopsWhenEvidenceIsSatisfied"])
+
+    def test_coverage_divergence_block_names_the_symbol_without_provider_payload(
+        self,
+    ) -> None:
+        """분류 코드만 남기면 원인을 찾는 데 매번 별도 진단이 필요하다."""
+
+        coverage = json.loads(CATALOG.read_text(encoding="utf-8"))["coverage"]
+
+        self.assertEqual("kis-coverage-divergence.json", coverage["blockFile"])
+        self.assertEqual(
+            "s5-kis-coverage-divergence-block-v1", coverage["blockVersion"]
+        )
+        self.assertTrue(coverage["blockNamesDivergingSymbol"])
+        self.assertFalse(coverage["blockCarriesProviderPayload"])
+        self.assertEqual(0, coverage["providerCallsDuringBlock"])
 
 if __name__ == "__main__":
     unittest.main()

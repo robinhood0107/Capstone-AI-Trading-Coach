@@ -32,6 +32,9 @@ class KISRateLimitUnavailable(RuntimeError):
 class KISRateLimitWaitExceeded(RuntimeError):
     """공유 호출 대기가 bounded deadline을 넘으면 무한 queue 대신 실패한다."""
 
+    # 대기 상한을 넘었을 뿐 호출 자격은 남아 있다.
+    outcome_class = "RETRYABLE_TRANSIENT"
+
 
 class TokenBucket:
     def __init__(

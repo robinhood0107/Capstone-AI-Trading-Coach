@@ -43,19 +43,27 @@ class KISHttpError(RuntimeError):
 
 
 class KISRetryableStatus(KISHttpError):
-    pass
+    """provider가 재시도 가능으로 분류한 상태다."""
+
+    outcome_class = "RETRYABLE_TRANSIENT"
 
 
 class KISDistributionRetryableStatus(KISHttpError):
     """KIS gateway 분산/라우팅 실패는 안전한 GET을 다음 quota slot에서 한 번만 재호출한다."""
 
+    outcome_class = "RETRYABLE_TRANSIENT"
+
 
 class KISProviderRateLimitError(KISHttpError):
     """provider가 유량 초과를 반환하면 자동 retry storm 없이 현재 호출을 중단한다."""
 
+    outcome_class = "RETRYABLE_TRANSIENT"
+
 
 class KISTransportError(RuntimeError):
     """credential-bearing request와 원본 httpx exception을 외부 예외에 보존하지 않는다."""
+
+    outcome_class = "RETRYABLE_TRANSIENT"
 
 
 class KISHttpClient:

@@ -31,6 +31,9 @@ APPROVED_KIS_MAX_GET = 2_970
 # 4,441 + 2,970 + 1 + 24 = 7,436. 유도식과 정확히 같은 값만 상한으로 둔다.
 APPROVED_TOTAL_MAX_PHYSICAL_CALLS = 7_436
 MAX_KRX_SUPERSEDED_ALLOWANCE = 8
+# KIS 소비도 같은 증거 결속 규칙을 따르지만 예산이 다르므로 provider별로 셋을 나눈다.
+MAX_KIS_SUPERSEDED_ALLOWANCE = 8
+MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE = 8
 
 
 KRX_OPERATIONS = (
@@ -67,6 +70,8 @@ class BootstrapBudget:
     retry: int = 0
     cost: int = 0
     krx_superseded_allowance: int = 0
+    kis_superseded_allowance: int = 0
+    kis_token_superseded_allowance: int = 0
 
     def __post_init__(self) -> None:
         values = (
@@ -77,22 +82,38 @@ class BootstrapBudget:
             self.retry,
             self.cost,
             self.krx_superseded_allowance,
+            self.kis_superseded_allowance,
+            self.kis_token_superseded_allowance,
         )
         if any(isinstance(value, bool) or value < 0 for value in values):
             raise LightGbmContractError("provider budget must use non-negative integers")
         # Allowance는 recovery receipt가 증명한 superseded consumed call 수만 좁게 복원한다.
-        if self.krx_superseded_allowance > MAX_KRX_SUPERSEDED_ALLOWANCE:
+        if (
+            self.krx_superseded_allowance > MAX_KRX_SUPERSEDED_ALLOWANCE
+            or self.kis_superseded_allowance > MAX_KIS_SUPERSEDED_ALLOWANCE
+            or self.kis_token_superseded_allowance
+            > MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE
+        ):
             raise LightGbmContractError("S5.6 superseded allowance exceeds approved bound")
         if (
             self.krx_get > APPROVED_KRX_MAX_GET + self.krx_superseded_allowance
-            or self.kis_get > APPROVED_KIS_MAX_GET
-            or self.kis_token > 1
+            or self.kis_get > APPROVED_KIS_MAX_GET + self.kis_superseded_allowance
+            or self.kis_token > 1 + self.kis_token_superseded_allowance
             or self.ecos_get > 24
-            or self.total > APPROVED_TOTAL_MAX_PHYSICAL_CALLS + self.krx_superseded_allowance
+            or self.total
+            > APPROVED_TOTAL_MAX_PHYSICAL_CALLS + self.superseded_allowance_total
             or self.retry != 0
             or self.cost != 0
         ):
             raise LightGbmContractError("S5.6 approved provider budget exceeded")
+
+    @property
+    def superseded_allowance_total(self) -> int:
+        return (
+            self.krx_superseded_allowance
+            + self.kis_superseded_allowance
+            + self.kis_token_superseded_allowance
+        )
 
     @property
     def total(self) -> int:
@@ -113,6 +134,8 @@ def author_bootstrap_budget(
         union_size=union_size,
         raw_session_count=raw_session_count,
         superseded_allowance=0,
+        kis_superseded_allowance=0,
+        kis_token_superseded_allowance=0,
     )
 
 
@@ -122,23 +145,29 @@ def author_recovery_bootstrap_budget(
     union_size: int,
     raw_session_count: int = 1_072,
     superseded_allowance: int,
+    kis_superseded_allowance: int = 0,
+    kis_token_superseded_allowance: int = 0,
 ) -> BootstrapBudget:
-    """Calendar recovery만 증명된 superseded consumed call 수만큼 KRX 상한을 복원한다.
+    """Recovery만 증명된 superseded consumed call 수만큼 provider별 상한을 복원한다.
 
     Allowance는 recovery receipt가 재계산으로 증명한 값이어야 하며, packet bytes와 실행 권위에서
     다시 교차검증된다. 이 함수만으로는 provider 호출을 열지 않는다.
     """
 
-    if (
-        isinstance(superseded_allowance, bool)
-        or not 0 <= superseded_allowance <= MAX_KRX_SUPERSEDED_ALLOWANCE
+    for value, bound in (
+        (superseded_allowance, MAX_KRX_SUPERSEDED_ALLOWANCE),
+        (kis_superseded_allowance, MAX_KIS_SUPERSEDED_ALLOWANCE),
+        (kis_token_superseded_allowance, MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE),
     ):
-        raise LightGbmContractError("S5.6 superseded allowance is invalid")
+        if isinstance(value, bool) or not 0 <= value <= bound:
+            raise LightGbmContractError("S5.6 superseded allowance is invalid")
     return _author_bootstrap_budget(
         monthly_schedule_count=monthly_schedule_count,
         union_size=union_size,
         raw_session_count=raw_session_count,
         superseded_allowance=superseded_allowance,
+        kis_superseded_allowance=kis_superseded_allowance,
+        kis_token_superseded_allowance=kis_token_superseded_allowance,
     )
 
 
@@ -148,6 +177,8 @@ def _author_bootstrap_budget(
     union_size: int,
     raw_session_count: int,
     superseded_allowance: int,
+    kis_superseded_allowance: int,
+    kis_token_superseded_allowance: int,
 ) -> BootstrapBudget:
     if (
         not 1 <= union_size <= APPROVED_HORIZON_UNION_SIZE
@@ -159,10 +190,12 @@ def _author_bootstrap_budget(
     kis_get = union_size * math.ceil(raw_session_count / 100)
     return BootstrapBudget(
         krx_get=krx_get + superseded_allowance,
-        kis_get=kis_get,
-        kis_token=1,
+        kis_get=kis_get + kis_superseded_allowance,
+        kis_token=1 + kis_token_superseded_allowance,
         ecos_get=24,
         krx_superseded_allowance=superseded_allowance,
+        kis_superseded_allowance=kis_superseded_allowance,
+        kis_token_superseded_allowance=kis_token_superseded_allowance,
     )
 
 

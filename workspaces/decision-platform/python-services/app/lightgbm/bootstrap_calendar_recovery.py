@@ -9,7 +9,7 @@ from io import BytesIO
 import os
 from pathlib import Path
 import stat
-from typing import Mapping, cast
+from typing import Mapping, Sequence, cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -46,7 +46,12 @@ from app.lightgbm.pit_calendar import (
     calendar_for_corrections,
     corrections_for_sha256,
 )
-from app.lightgbm.production_policy import MAX_KRX_SUPERSEDED_ALLOWANCE
+from app.lightgbm.production_policy import (
+    MAX_KIS_SUPERSEDED_ALLOWANCE,
+    MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE,
+    MAX_KRX_SUPERSEDED_ALLOWANCE,
+)
+from app.lightgbm.source_bundle import expected_projection_fields
 from app.lightgbm.private_root import (
     acquire_run_lock,
     release_run_lock,
@@ -76,6 +81,9 @@ _MONTHLY_KRX_SERVICES = (
 )
 _MAX_PACKET_BYTES = 1 * 1024 * 1024
 _MAX_KRX_CHUNK_BYTES = 4 * 1024 * 1024
+# KIS 단일 응답 projection은 KRX보다 크며 source bundle이 이미 같은 상한을 강제한다.
+_MAX_KIS_CHUNK_BYTES = 10 * 1024 * 1024
+_KIS_TOKEN_OPERATION = "oauth2/tokenP"
 _RECOVERY_FIELDS = frozenset(
     {
         "recoveryVersion",
@@ -103,6 +111,17 @@ _RECOVERY_FIELDS = frozenset(
         "providerCallsDuringRecovery",
     }
 )
+# KIS 관여가 있을 때만 나타나는 필드다. 부재는 KIS supersede가 없었다는 뜻이다.
+_KIS_RECOVERY_FIELDS = frozenset(
+    {
+        "adoptedKisSuccessfulChunks",
+        "supersededKisConsumedCalls",
+        "supersededKisQueries",
+        "kisSupersededAllowance",
+        "kisTokenSupersededAllowance",
+        "approvedKisMaxGet",
+    }
+)
 _LINEAGE_FIELDS = frozenset(
     {
         "lineageVersion",
@@ -116,6 +135,13 @@ _LINEAGE_FIELDS = frozenset(
         "supersededConsumedCalls",
         "consumedKrxPhysicalCalls",
         "providerCallsDuringAdoption",
+    }
+)
+_KIS_LINEAGE_FIELDS = frozenset(
+    {
+        "adoptedKisSuccessfulChunks",
+        "supersededKisConsumedCalls",
+        "consumedPhysicalCalls",
     }
 )
 
@@ -148,6 +174,8 @@ class BootstrapCalendarRecovery:
     reusable_attempts: tuple[JournalAttempt, ...]
     superseded_attempts: tuple[JournalAttempt, ...]
     prior_corrections: tuple[date, ...]
+    kis_adopted_attempts: tuple[JournalAttempt, ...] = ()
+    kis_superseded_attempts: tuple[JournalAttempt, ...] = ()
 
 
 def assess_bootstrap_calendar_recovery(
@@ -196,10 +224,44 @@ def assess_bootstrap_calendar_recovery(
             max_bytes=MAX_JOURNAL_BYTES,
         )
         journal = BootstrapJournal(source_root, policy_corrections=prior_corrections)
-        attempts = journal.attempts
-        if not attempts or any(attempt.provider != "KRX" for attempt in attempts):
+        # KRX 논리 집합은 packet에서 유도되지만 KIS query는 KRX 데이터에서 파생된 union과
+        # paging cursor에 달려 있어 정적으로 열거할 수 없다. 그래서 KRX는 교정 집합과
+        # 대조하고, KIS는 성공 chunk 신원만 그대로 이관한다.
+        attempts = tuple(
+            attempt for attempt in journal.attempts if attempt.provider == "KRX"
+        )
+        kis_attempts = tuple(
+            attempt for attempt in journal.attempts if attempt.provider == "KIS"
+        )
+        if not attempts or len(attempts) + len(kis_attempts) != len(journal.attempts):
             raise LightGbmContractError(
-                "calendar recovery requires a KRX-only failed prefix"
+                "recovery requires a KRX-led KRX/KIS attempt prefix"
+            )
+        kis_adopted = tuple(
+            attempt
+            for attempt in kis_attempts
+            if attempt.state == "SUCCEEDED" and attempt.chunk is not None
+        )
+        # 값이 보존되지 않는 성공(access token)과 실패는 재사용할 수 없어 consumed로만 남는다.
+        kis_superseded = tuple(
+            attempt
+            for attempt in kis_attempts
+            if not (attempt.state == "SUCCEEDED" and attempt.chunk is not None)
+        )
+        if len({attempt.query_sha256 for attempt in kis_adopted}) != len(kis_adopted):
+            raise LightGbmContractError("successful KIS query identity is duplicated")
+        for attempt in kis_adopted:
+            _validate_reusable_kis_chunk(source_root=source_root, attempt=attempt)
+        kis_token_allowance = sum(
+            attempt.operation_id == _KIS_TOKEN_OPERATION for attempt in kis_superseded
+        )
+        kis_allowance = len(kis_superseded) - kis_token_allowance
+        if (
+            kis_allowance > MAX_KIS_SUPERSEDED_ALLOWANCE
+            or kis_token_allowance > MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE
+        ):
+            raise LightGbmContractError(
+                "superseded KIS consumption exceeds the approved allowance bound"
             )
 
         corrected_base = author_bootstrap_packet(cutoff=prior.window.cutoff)
@@ -288,6 +350,15 @@ def assess_bootstrap_calendar_recovery(
             approved_krx_max_get=approved_krx_max_get,
             krx_superseded_allowance=allowance,
             superseded_queries=superseded_queries,
+            kis=_kis_binding_block(
+                adopted=len(kis_adopted),
+                superseded=kis_superseded,
+                kis_allowance=kis_allowance,
+                kis_token_allowance=kis_token_allowance,
+                approved_kis_max_get=(
+                    corrected_base.budget.kis_get + kis_allowance
+                ),
+            ),
         )
         recovery_binding_sha256 = hashlib.sha256(
             canonical_json_bytes(binding_payload)
@@ -296,6 +367,8 @@ def assess_bootstrap_calendar_recovery(
             cutoff=prior.window.cutoff,
             recovery_binding_sha256=recovery_binding_sha256,
             superseded_allowance=allowance,
+            kis_superseded_allowance=kis_allowance,
+            kis_token_superseded_allowance=kis_token_allowance,
         )
         payload = {
             "recoveryVersion": RECOVERY_VERSION,
@@ -325,7 +398,18 @@ def assess_bootstrap_calendar_recovery(
             "krxSupersededAllowance": corrected.budget.krx_superseded_allowance,
             "krxShortfall": shortfall,
             "providerCallsDuringRecovery": 0,
+            **_kis_binding_block(
+                adopted=len(kis_adopted),
+                superseded=kis_superseded,
+                kis_allowance=kis_allowance,
+                kis_token_allowance=kis_token_allowance,
+                approved_kis_max_get=corrected.budget.kis_get,
+            ),
         }
+        # Supersede는 반드시 packet 신원을 바꿔야 한다. 같은 packet을 prior로 삼으면 체인이
+        # 자기 자신을 가리켜 head 유도가 무너지고 같은 세대를 무한히 재발행할 수 있다.
+        if corrected.sha256 == prior_packet_sha256:
+            raise LightGbmContractError("recovery has no superseding effect")
         content = canonical_json_bytes(payload)
         return BootstrapCalendarRecovery(
             content=content,
@@ -343,6 +427,8 @@ def assess_bootstrap_calendar_recovery(
             reusable_attempts=reusable_attempts,
             superseded_attempts=superseded_attempts,
             prior_corrections=tuple(prior_corrections),
+            kis_adopted_attempts=kis_adopted,
+            kis_superseded_attempts=kis_superseded,
         )
     finally:
         release_run_lock(run_lock)
@@ -379,11 +465,13 @@ def validate_recovery_receipt(
         raise LightGbmContractError("calendar recovery block JSON is invalid") from error
     if (
         not isinstance(value, dict)
-        or set(value) != _RECOVERY_FIELDS
+        or set(value)
+        not in ({_RECOVERY_FIELDS, _RECOVERY_FIELDS | _KIS_RECOVERY_FIELDS})
         or canonical_json_bytes(value) != content
     ):
         raise LightGbmContractError("calendar recovery block is not closed canonical JSON")
     payload = value
+    kis_declared = bool(_KIS_RECOVERY_FIELDS & set(payload))
     numeric_fields = (
         "consumedKrxPhysicalCalls",
         "reusableSuccessfulChunks",
@@ -395,6 +483,17 @@ def validate_recovery_receipt(
         "krxSupersededAllowance",
         "krxShortfall",
         "providerCallsDuringRecovery",
+        *(
+            (
+                "adoptedKisSuccessfulChunks",
+                "supersededKisConsumedCalls",
+                "kisSupersededAllowance",
+                "kisTokenSupersededAllowance",
+                "approvedKisMaxGet",
+            )
+            if kis_declared
+            else ()
+        ),
     )
     if any(
         isinstance(payload[field], bool)
@@ -446,6 +545,27 @@ def validate_recovery_receipt(
         not in (0, payload["supersededConsumedCalls"])
     ):
         raise LightGbmContractError("calendar recovery block authority is invalid")
+    if kis_declared and (
+        payload["kisSupersededAllowance"]
+        != corrected_packet.budget.kis_superseded_allowance
+        or payload["kisTokenSupersededAllowance"]
+        != corrected_packet.budget.kis_token_superseded_allowance
+        or payload["approvedKisMaxGet"] != corrected_packet.budget.kis_get
+        or payload["supersededKisConsumedCalls"]
+        != payload["kisSupersededAllowance"] + payload["kisTokenSupersededAllowance"]
+        or payload["supersededKisConsumedCalls"] < 1
+    ):
+        raise LightGbmContractError("recovery KIS allowance authority is invalid")
+    if not kis_declared and (
+        corrected_packet.budget.kis_superseded_allowance
+        or corrected_packet.budget.kis_token_superseded_allowance
+    ):
+        raise LightGbmContractError("recovery KIS allowance is undeclared")
+    if kis_declared:
+        _validate_superseded_kis_queries(
+            payload["supersededKisQueries"],
+            max_count=int(cast(int, payload["supersededKisConsumedCalls"])),
+        )
     superseded_queries = payload["supersededQueries"]
     if not isinstance(superseded_queries, list) or not superseded_queries:
         raise LightGbmContractError("calendar recovery superseded query set is invalid")
@@ -520,6 +640,11 @@ def validate_recovery_receipt(
         superseded_queries=tuple(
             cast(Mapping[str, str], item) for item in superseded_queries
         ),
+        kis=(
+            {field: payload[field] for field in sorted(_KIS_RECOVERY_FIELDS)}
+            if kis_declared
+            else {}
+        ),
     )
     recomputed_binding = hashlib.sha256(
         canonical_json_bytes(binding_payload)
@@ -554,7 +679,9 @@ def materialize_recovery_adoption(
         )
         if journal.attempts != (
             *recovery.reusable_attempts,
+            *recovery.kis_adopted_attempts,
             *recovery.superseded_attempts,
+            *recovery.kis_superseded_attempts,
         ):
             # Assessment keeps reusable queries in corrected order, so compare identities as sets below.
             assessed = {
@@ -564,7 +691,9 @@ def materialize_recovery_adoption(
                 (item.ordinal, item.query_sha256, item.state)
                 for item in (
                     *recovery.reusable_attempts,
+                    *recovery.kis_adopted_attempts,
                     *recovery.superseded_attempts,
+                    *recovery.kis_superseded_attempts,
                 )
             }
             if assessed != expected:
@@ -635,13 +764,57 @@ def materialize_recovery_adoption(
                         chunk=new_chunk,
                     )
                 )
+            for old_attempt in recovery.kis_adopted_attempts:
+                _validate_reusable_kis_chunk(
+                    source_root=prior_source_root, attempt=old_attempt
+                )
+                old_chunk = old_attempt.chunk
+                if old_chunk is None:
+                    raise LightGbmContractError("reusable KIS chunk receipt is missing")
+                source_file = read_approved_regular_file(
+                    approved_root=prior_source_root,
+                    relative_path=old_chunk.relative_path,
+                    max_bytes=old_chunk.byte_count,
+                )
+                if source_file.content_sha256 != old_chunk.content_sha256:
+                    raise LightGbmContractError("reusable KIS chunk changed during adoption")
+                # 달력이 그대로면 재결속은 항등이고, 바뀌었으면 KRX와 같은 규칙으로 옮긴다.
+                new_chunk = replace(
+                    old_chunk,
+                    temporal=replace(
+                        old_chunk.temporal,
+                        policy_effective_at=next_session_evidence_clock(
+                            old_chunk.temporal.observation_date
+                        ),
+                    ),
+                )
+                _publish_private_exact(
+                    root=source_root,
+                    relative_path=new_chunk.relative_path,
+                    content=source_file.content,
+                    max_bytes=_MAX_KIS_CHUNK_BYTES,
+                )
+                expected_chunk_files.add(Path(new_chunk.relative_path).name)
+                adopted.append(
+                    JournalAttempt(
+                        ordinal=len(adopted) + 1,
+                        provider=old_attempt.provider,
+                        operation_id=old_attempt.operation_id,
+                        query_sha256=old_attempt.query_sha256,
+                        state="SUCCEEDED",
+                        chunk=new_chunk,
+                    )
+                )
             actual_chunk_files = set(os.listdir(source_root / "chunks"))
             if actual_chunk_files != expected_chunk_files:
                 raise LightGbmContractError("recovery chunk directory is not exact")
 
             journal_content = build_recovery_journal_bytes(
                 adopted=adopted,
-                superseded=recovery.superseded_attempts,
+                superseded=(
+                    *recovery.superseded_attempts,
+                    *recovery.kis_superseded_attempts,
+                ),
             )
             _publish_private_exact(
                 root=source_root,
@@ -658,11 +831,32 @@ def materialize_recovery_adoption(
                 "priorPacketSha256": recovery.prior_packet_sha256,
                 "priorProgressSha256": recovery.prior_progress_sha256,
                 "adoptedProgressSha256": hashlib.sha256(journal_content).hexdigest(),
-                "adoptedSuccessfulChunks": len(adopted),
+                "adoptedSuccessfulChunks": (
+                    len(adopted) - len(recovery.kis_adopted_attempts)
+                ),
                 "supersededConsumedCalls": len(recovery.superseded_attempts),
-                "consumedKrxPhysicalCalls": len(adopted)
-                + len(recovery.superseded_attempts),
+                "consumedKrxPhysicalCalls": (
+                    len(adopted)
+                    - len(recovery.kis_adopted_attempts)
+                    + len(recovery.superseded_attempts)
+                ),
                 "providerCallsDuringAdoption": 0,
+                **(
+                    {
+                        "adoptedKisSuccessfulChunks": len(
+                            recovery.kis_adopted_attempts
+                        ),
+                        "supersededKisConsumedCalls": len(
+                            recovery.kis_superseded_attempts
+                        ),
+                        "consumedPhysicalCalls": len(adopted)
+                        + len(recovery.superseded_attempts)
+                        + len(recovery.kis_superseded_attempts),
+                    }
+                    if recovery.kis_adopted_attempts
+                    or recovery.kis_superseded_attempts
+                    else {}
+                ),
             }
             lineage_content = canonical_json_bytes(lineage_payload)
             _publish_private_exact(
@@ -719,7 +913,13 @@ def validate_recovery_execution_authority(
         max_bytes=MAX_JOURNAL_BYTES,
     )
     # journal은 append-only다. 채택 prefix만 대조해 이후 물리 호출 기록을 허용한다.
-    adopted_events = 2 * int(cast(int, lineage["consumedKrxPhysicalCalls"]))
+    consumed_total = int(
+        cast(
+            int,
+            lineage.get("consumedPhysicalCalls", lineage["consumedKrxPhysicalCalls"]),
+        )
+    )
+    adopted_events = 2 * consumed_total
     lines = progress.content.splitlines(keepends=True)
     if len(lines) < adopted_events:
         raise LightGbmContractError("adopted bootstrap progress is truncated")
@@ -728,7 +928,23 @@ def validate_recovery_execution_authority(
         raise LightGbmContractError("adopted bootstrap progress digest mismatches lineage")
     journal = BootstrapJournal(source_root)
     # 채택 구간만 회계 대상이다. 이후 append된 물리 호출은 packet ledger가 따로 센다.
-    adopted_attempts = journal.attempts[: int(cast(int, lineage["consumedKrxPhysicalCalls"]))]
+    prefix_attempts = journal.attempts[:consumed_total]
+    if any(item.provider not in {"KRX", "KIS"} for item in prefix_attempts):
+        raise LightGbmContractError("adopted bootstrap provider is not approved")
+    adopted_attempts = tuple(
+        item for item in prefix_attempts if item.provider == "KRX"
+    )
+    kis_attempts = tuple(item for item in prefix_attempts if item.provider == "KIS")
+    kis_adopted = tuple(
+        item
+        for item in kis_attempts
+        if item.state == "SUCCEEDED" and item.chunk is not None
+    )
+    kis_superseded = tuple(
+        item
+        for item in kis_attempts
+        if not (item.state == "SUCCEEDED" and item.chunk is not None)
+    )
     adopted = tuple(item for item in adopted_attempts if item.state == "SUCCEEDED")
     superseded = tuple(
         item for item in adopted_attempts if item.state == SUPERSEDED_CONSUMED
@@ -746,9 +962,29 @@ def validate_recovery_execution_authority(
         (str(item["querySha256"]), str(item["operationId"]))
         for item in cast(list[Mapping[str, str]], receipt["supersededQueries"])
     }
+    kis_identities = {
+        (str(item["querySha256"]), str(item["operationId"]))
+        for item in cast(
+            list[Mapping[str, str]], receipt.get("supersededKisQueries", [])
+        )
+    }
     if (
-        any(item.provider != "KRX" for item in adopted_attempts)
-        or len(adopted) != receipt["reusableSuccessfulChunks"]
+        len(kis_adopted) != receipt.get("adoptedKisSuccessfulChunks", 0)
+        or len(kis_superseded) != receipt.get("supersededKisConsumedCalls", 0)
+        or len(kis_adopted) != lineage.get("adoptedKisSuccessfulChunks", 0)
+        or len(kis_superseded) != lineage.get("supersededKisConsumedCalls", 0)
+        or any(
+            (item.query_sha256, item.operation_id) not in kis_identities
+            for item in kis_superseded
+        )
+        or len({item.query_sha256 for item in kis_adopted}) != len(kis_adopted)
+        or packet.budget.kis_superseded_allowance
+        + packet.budget.kis_token_superseded_allowance
+        != len(kis_superseded)
+    ):
+        raise LightGbmContractError("adopted KIS journal accounting is invalid")
+    if (
+        len(adopted) != receipt["reusableSuccessfulChunks"]
         or len(superseded) != receipt["supersededConsumedCalls"]
         or len(adopted_attempts) != receipt["consumedKrxPhysicalCalls"]
         or len(adopted) != lineage["adoptedSuccessfulChunks"]
@@ -773,6 +1009,8 @@ def validate_recovery_execution_authority(
             attempt=item,
             query=expected_by_hash[item.query_sha256],
         )
+    for item in kis_adopted:
+        _validate_reusable_kis_chunk(source_root=source_root, attempt=item)
     return str(receipt["status"])
 
 
@@ -801,11 +1039,12 @@ def validate_recovery_lineage(
         raise LightGbmContractError("calendar recovery lineage JSON is invalid") from error
     if (
         not isinstance(value, dict)
-        or set(value) != _LINEAGE_FIELDS
+        or set(value) not in ({_LINEAGE_FIELDS, _LINEAGE_FIELDS | _KIS_LINEAGE_FIELDS})
         or canonical_json_bytes(value) != content
     ):
         raise LightGbmContractError("calendar recovery lineage is not closed canonical JSON")
     payload = value
+    kis_declared = bool(_KIS_LINEAGE_FIELDS & set(payload))
     for field in (
         "correctedPacketSha256",
         "recoveryBindingSha256",
@@ -820,6 +1059,15 @@ def validate_recovery_lineage(
         "supersededConsumedCalls",
         "consumedKrxPhysicalCalls",
         "providerCallsDuringAdoption",
+        *(
+            (
+                "adoptedKisSuccessfulChunks",
+                "supersededKisConsumedCalls",
+                "consumedPhysicalCalls",
+            )
+            if kis_declared
+            else ()
+        ),
     ):
         if (
             isinstance(payload[field], bool)
@@ -837,6 +1085,21 @@ def validate_recovery_lineage(
         or payload["providerCallsDuringAdoption"] != 0
     ):
         raise LightGbmContractError("calendar recovery lineage binding is invalid")
+    if kis_declared and (
+        payload["consumedPhysicalCalls"]
+        != payload["consumedKrxPhysicalCalls"]
+        + payload["adoptedKisSuccessfulChunks"]
+        + payload["supersededKisConsumedCalls"]
+        or payload["adoptedKisSuccessfulChunks"]
+        + payload["supersededKisConsumedCalls"]
+        < 1
+    ):
+        raise LightGbmContractError("calendar recovery KIS lineage count is invalid")
+    if not kis_declared and (
+        packet.budget.kis_superseded_allowance
+        or packet.budget.kis_token_superseded_allowance
+    ):
+        raise LightGbmContractError("calendar recovery KIS lineage is undeclared")
     return payload
 
 
@@ -1004,8 +1267,13 @@ def _recovery_binding_payload(
     approved_krx_max_get: int,
     krx_superseded_allowance: int,
     superseded_queries: tuple[Mapping[str, str], ...],
+    kis: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
-    """Authoring과 검증이 공유하는 exact canonical binding preimage다."""
+    """Authoring과 검증이 공유하는 exact canonical binding preimage다.
+
+    KIS block은 KIS supersede가 있을 때만 나타난다. 이미 봉인된 binding의 preimage를 그대로
+    재현하기 위한 조건이며, 부재 자체가 "KIS supersede 없음"이라는 선언이다.
+    """
 
     return {
         "bindingVersion": RECOVERY_BINDING_VERSION,
@@ -1021,7 +1289,135 @@ def _recovery_binding_payload(
         "approvedKrxMaxGet": approved_krx_max_get,
         "krxSupersededAllowance": krx_superseded_allowance,
         "supersededQueries": [dict(item) for item in superseded_queries],
+        **(dict(kis) if kis else {}),
     }
+
+
+def _kis_binding_block(
+    *,
+    adopted: int,
+    superseded: Sequence[JournalAttempt],
+    kis_allowance: int,
+    kis_token_allowance: int,
+    approved_kis_max_get: int,
+) -> dict[str, object]:
+    """KIS 관여가 있을 때만 receipt/binding에 나타나는 회계 block을 만든다."""
+
+    if not adopted and not superseded:
+        return {}
+    return {
+        "adoptedKisSuccessfulChunks": adopted,
+        "supersededKisConsumedCalls": len(superseded),
+        # 한 논리 query가 시도 2회를 모두 소진할 수 있으므로 신원 집합으로 접는다. 회계는
+        # supersededKisConsumedCalls가 유지하고 이 목록은 신원 위조만 막는다.
+        "supersededKisQueries": [
+            {"querySha256": digest, "operationId": operation}
+            for digest, operation in sorted(
+                {
+                    (attempt.query_sha256, attempt.operation_id)
+                    for attempt in superseded
+                }
+            )
+        ],
+        "kisSupersededAllowance": kis_allowance,
+        "kisTokenSupersededAllowance": kis_token_allowance,
+        "approvedKisMaxGet": approved_kis_max_get,
+    }
+
+
+def _validate_superseded_kis_queries(value: object, *, max_count: int) -> None:
+    """Superseded KIS query 신원이 닫힌 canonical 목록인지 확인한다.
+
+    한 논리 query가 시도를 여럿 소비할 수 있어 신원 수는 소비 호출 수보다 적을 수 있다.
+    """
+
+    if not isinstance(value, list) or not 1 <= len(value) <= max_count:
+        raise LightGbmContractError("recovery superseded KIS query set is invalid")
+    seen: set[tuple[str, str]] = set()
+    for item in value:
+        if not isinstance(item, dict) or set(item) != {"querySha256", "operationId"}:
+            raise LightGbmContractError("recovery superseded KIS query is not closed")
+        identity = (_sha(str(item["querySha256"])), str(item["operationId"]))
+        if identity in seen:
+            raise LightGbmContractError("recovery superseded KIS query is duplicated")
+        seen.add(identity)
+    if value != sorted(
+        value, key=lambda item: (str(item["querySha256"]), str(item["operationId"]))
+    ):
+        raise LightGbmContractError("recovery superseded KIS query order is invalid")
+
+
+def _validate_reusable_kis_chunk(
+    *, source_root: Path, attempt: JournalAttempt
+) -> None:
+    """KIS chunk는 논리 query가 KRX 데이터에서 파생되므로 receipt 자기정합성만 검증한다.
+
+    Query 신원은 chunk receipt와 journal intent에 이미 결속돼 있어 다른 응답으로 바꿀 수 없고,
+    Parquet 자체는 source bundle과 같은 경계로 다시 읽는다.
+    """
+
+    chunk = attempt.chunk
+    if (
+        attempt.provider != "KIS"
+        or attempt.operation_id == _KIS_TOKEN_OPERATION
+        or attempt.state != "SUCCEEDED"
+        or chunk is None
+        or chunk.source_id != "KIS"
+        or chunk.operation_id != attempt.operation_id
+        or chunk.temporal.source_id != "KIS"
+        or chunk.temporal.operation_id != attempt.operation_id
+        or chunk.temporal.request_sha256 != attempt.query_sha256
+        or chunk.temporal.snapshot_sha256 != chunk.content_sha256
+        or chunk.row_count <= 0
+        or chunk.byte_count <= 0
+        or chunk.byte_count > _MAX_KIS_CHUNK_BYTES
+    ):
+        raise LightGbmContractError("reusable KIS chunk receipt is invalid")
+    try:
+        payload = read_approved_regular_file(
+            approved_root=source_root,
+            relative_path=chunk.relative_path,
+            max_bytes=chunk.byte_count,
+        )
+    except RagSafeIoError as error:
+        raise LightGbmContractError("reusable KIS chunk file is invalid") from error
+    if (
+        len(payload.content) != chunk.byte_count
+        or payload.content_sha256 != chunk.content_sha256
+    ):
+        raise LightGbmContractError("reusable KIS chunk digest is invalid")
+    try:
+        parquet = pq.ParquetFile(  # type: ignore[no-untyped-call]
+            BytesIO(payload.content),
+            thrift_string_size_limit=1 * 1024 * 1024,
+            thrift_container_size_limit=10_000_000,
+            page_checksum_verification=True,
+        )
+        expected_fields = tuple(sorted(expected_projection_fields(chunk)))
+        metadata = parquet.metadata
+        if (
+            metadata.num_rows != chunk.row_count
+            or metadata.num_columns != len(expected_fields)
+            or tuple(parquet.schema_arrow.names) != expected_fields
+            or parquet.schema_arrow.metadata
+        ):
+            raise LightGbmContractError("reusable KIS Parquet footer or schema is invalid")
+        if any(
+            field.type != pa.string() or field.nullable
+            for field in parquet.schema_arrow
+        ):
+            raise LightGbmContractError("reusable KIS Parquet fields must be non-null strings")
+        rows = 0
+        for batch in parquet.iter_batches(batch_size=8_192, use_threads=False):  # type: ignore[no-untyped-call]
+            rows += batch.num_rows
+        if rows != chunk.row_count:
+            raise LightGbmContractError("reusable KIS Parquet actual row count is invalid")
+    except LightGbmContractError:
+        raise
+    except Exception as error:
+        raise LightGbmContractError(
+            "reusable KIS chunk is not valid bounded Parquet"
+        ) from error
 
 
 def _ensure_private_directory(path: Path) -> None:

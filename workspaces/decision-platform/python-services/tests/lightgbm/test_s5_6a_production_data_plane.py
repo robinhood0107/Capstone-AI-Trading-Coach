@@ -49,14 +49,19 @@ from app.lightgbm.bootstrap_fresh_authority import (
     read_fresh_bootstrap_authority,
 )
 from app.lightgbm.bootstrap_journal import (
+    JOURNAL_FILENAME,
+    MAX_JOURNAL_BYTES,
     BootstrapJournal,
     JournalAttempt,
+    SUPERSEDED_CONSUMED,
+    build_recovery_journal_bytes,
     build_resume_packet,
     validate_resume_packet,
 )
 from app.lightgbm.bootstrap_packet import (
     _author_bootstrap_packet,
     author_bootstrap_packet,
+    author_recovery_bootstrap_packet,
     latest_publishable_bootstrap_cutoff,
     validate_bootstrap_packet,
 )
@@ -105,6 +110,8 @@ from app.lightgbm.private_root import (
 )
 from app.lightgbm.production_policy import (
     APPROVED_KIS_MAX_GET,
+    MAX_KIS_SUPERSEDED_ALLOWANCE,
+    MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE,
     MAX_KRX_SUPERSEDED_ALLOWANCE,
     BootstrapBudget,
     SecurityClassification,
@@ -2200,7 +2207,7 @@ def test_runtime_inputs_derive_execution_target_from_sealed_evidence(
     # 후보가 없는 root에서는 값을 지어내지 않는다.
     empty = tmp_path / "empty-root"
     empty.mkdir(mode=0o700)
-    with pytest.raises(LightGbmContractError, match="not unique"):
+    with pytest.raises(LightGbmContractError, match="head is unavailable"):
         resolve_bootstrap_packet_sha256(approved_root=empty)
 
 
@@ -2398,4 +2405,264 @@ def test_adopted_prefix_survives_further_provider_records(tmp_path: Path) -> Non
     with pytest.raises(LightGbmContractError):
         validate_recovery_execution_authority(
             approved_root=root, packet=recovery.corrected_packet
+        )
+def test_superseded_attempt_does_not_consume_this_generation_retry_budget(
+    tmp_path: Path,
+) -> None:
+    """이관된 소비 원장이 새 세대의 재시도 자격을 먹으면 이관 자체가 무의미해진다.
+
+    실제로 KIS 일별시세 query 하나가 이전 세대에서 시도 2회를 모두 소진했다. 파서 결함을 고친 뒤
+    세대를 이관했는데도 journal이 그 query를 열어주지 않아 packet이 완주 불가였다. 누적 예산은
+    ledger가 SUPERSEDED_CONSUMED까지 세므로 상한은 그대로 지켜진다.
+    """
+
+    root = tmp_path / "source"
+    root.mkdir(mode=0o700)
+    query = "7" * 64
+    journal = BootstrapJournal(root)
+    for _ in range(2):
+        ordinal = journal.begin(
+            provider="KIS", operation_id="FHKST03010100", query_sha256=query
+        )
+        journal.finish(
+            ordinal=ordinal,
+            provider="KIS",
+            operation_id="FHKST03010100",
+            query_sha256=query,
+            success=False,
+            chunk=None,
+        )
+    # 같은 세대 안에서는 두 번째 실패로 자격이 닫힌다.
+    with pytest.raises(LightGbmContractError, match="resume attempt"):
+        BootstrapJournal(root).begin(
+            provider="KIS", operation_id="FHKST03010100", query_sha256=query
+        )
+
+    # 세대를 이관하면 그 시도들은 SUPERSEDED_CONSUMED 원장이 되고 자격이 열린다.
+    carried = tmp_path / "carried"
+    carried.mkdir(mode=0o700)
+    content = build_recovery_journal_bytes(
+        adopted=(),
+        superseded=BootstrapJournal(root).attempts,
+    )
+    written = write_approved_new_file(
+        approved_root=carried,
+        relative_path=JOURNAL_FILENAME,
+        content=content,
+        max_bytes=MAX_JOURNAL_BYTES,
+    )
+    os.chmod(written.absolute_path, 0o600)
+    next_generation = BootstrapJournal(carried)
+    assert len(next_generation.attempts) == 2
+    assert all(
+        attempt.state == SUPERSEDED_CONSUMED for attempt in next_generation.attempts
+    )
+    ordinal = next_generation.begin(
+        provider="KIS", operation_id="FHKST03010100", query_sha256=query
+    )
+    assert ordinal == 3
+    next_generation.finish(
+        ordinal=ordinal,
+        provider="KIS",
+        operation_id="FHKST03010100",
+        query_sha256=query,
+        success=False,
+        chunk=None,
+    )
+    # 새 세대의 자격도 2회로 닫힌다. 이관이 상한을 무한히 열지 않는다.
+    reopened = BootstrapJournal(carried)
+    second = reopened.begin(
+        provider="KIS", operation_id="FHKST03010100", query_sha256=query
+    )
+    reopened.finish(
+        ordinal=second,
+        provider="KIS",
+        operation_id="FHKST03010100",
+        query_sha256=query,
+        success=False,
+        chunk=None,
+    )
+    with pytest.raises(LightGbmContractError, match="resume attempt"):
+        BootstrapJournal(carried).begin(
+            provider="KIS", operation_id="FHKST03010100", query_sha256=query
+        )
+
+
+def test_adopted_success_can_never_be_called_again_across_generations(
+    tmp_path: Path,
+) -> None:
+    """채택된 성공은 결과가 그대로 있으므로 재호출이 승인 호출만 태운다."""
+
+    root = tmp_path / "source"
+    root.mkdir(mode=0o700)
+    (root / "chunks").mkdir(mode=0o700)
+    query = "8" * 64
+    journal = BootstrapJournal(root)
+    ordinal = journal.begin(
+        provider="KIS", operation_id="oauth2/tokenP", query_sha256=query
+    )
+    journal.finish(
+        ordinal=ordinal,
+        provider="KIS",
+        operation_id="oauth2/tokenP",
+        query_sha256=query,
+        success=True,
+        chunk=None,
+    )
+    with pytest.raises(LightGbmContractError, match="cannot be called again"):
+        BootstrapJournal(root).begin(
+            provider="KIS", operation_id="oauth2/tokenP", query_sha256=query
+        )
+
+
+def test_kis_token_success_cannot_be_adopted_because_its_value_is_not_preserved(
+    tmp_path: Path,
+) -> None:
+    """Access token 성공은 값이 남지 않아 재사용할 수 없다. superseded로만 이관된다.
+
+    성공으로 채택하면 새 run은 token 상한을 이미 쓴 상태로 시작해 KIS 호출을 한 건도 못 한다.
+    """
+
+    root = tmp_path / "source"
+    root.mkdir(mode=0o700)
+    journal = BootstrapJournal(root)
+    ordinal = journal.begin(
+        provider="KIS", operation_id="oauth2/tokenP", query_sha256="9" * 64
+    )
+    journal.finish(
+        ordinal=ordinal,
+        provider="KIS",
+        operation_id="oauth2/tokenP",
+        query_sha256="9" * 64,
+        success=True,
+        chunk=None,
+    )
+    attempts = BootstrapJournal(root).attempts
+    with pytest.raises(LightGbmContractError, match="adopted bootstrap attempt"):
+        build_recovery_journal_bytes(adopted=attempts, superseded=())
+    # superseded 경로는 chunk 없는 성공도 소비 원장으로 받아들인다.
+    content = build_recovery_journal_bytes(adopted=(), superseded=attempts)
+    assert content.count(b"SUPERSEDED_CONSUMED") == 1
+
+
+def test_fresh_bootstrap_lineage_can_never_carry_kis_allowance() -> None:
+    """FRESH 경로는 어떤 provider의 allowance도 가질 수 없다."""
+
+    with pytest.raises(LightGbmContractError, match="calendar recovery lineage"):
+        _author_bootstrap_packet(
+            cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+            calendar=corrected_calendar(),
+            packet_version="s5-production-bootstrap-packet-v2",
+            lineage_mode="FRESH",
+            kis_superseded_allowance=1,
+        )
+    with pytest.raises(LightGbmContractError, match="calendar recovery lineage"):
+        _author_bootstrap_packet(
+            cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+            calendar=corrected_calendar(),
+            packet_version="s5-production-bootstrap-packet-v2",
+            lineage_mode="FRESH",
+            kis_token_superseded_allowance=1,
+        )
+    fresh = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
+    assert fresh.budget.kis_superseded_allowance == 0
+    assert fresh.budget.kis_token_superseded_allowance == 0
+    assert fresh.budget.kis_get == APPROVED_KIS_MAX_GET
+    assert fresh.budget.kis_token == 1
+
+
+def test_kis_allowance_is_absent_from_packet_bytes_when_it_is_zero() -> None:
+    """0인 allowance가 bytes에 나타나면 이미 봉인된 packet이 전부 무효가 된다.
+
+    상한 회계를 provider별로 나눌 때마다 과거 세대를 다시 검증할 수 없게 되는 일을 막는다.
+    """
+
+    recovery = author_recovery_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        recovery_binding_sha256="a" * 64,
+        superseded_allowance=3,
+    )
+    limits = json.loads(recovery.content)["limits"]
+    assert limits["krxSupersededAllowance"] == 3
+    assert "kisSupersededAllowance" not in limits
+    assert "kisTokenSupersededAllowance" not in limits
+    assert validate_bootstrap_packet(
+        recovery.content, expected_sha256=recovery.sha256
+    ) == recovery
+
+    widened = author_recovery_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        recovery_binding_sha256="a" * 64,
+        superseded_allowance=3,
+        kis_superseded_allowance=3,
+        kis_token_superseded_allowance=1,
+    )
+    widened_limits = json.loads(widened.content)["limits"]
+    assert widened_limits["kisSupersededAllowance"] == 3
+    assert widened_limits["kisTokenSupersededAllowance"] == 1
+    assert widened.budget.kis_get == APPROVED_KIS_MAX_GET + 3
+    assert widened.budget.kis_token == 2
+    assert widened.sha256 != recovery.sha256
+    assert validate_bootstrap_packet(
+        widened.content, expected_sha256=widened.sha256
+    ) == widened
+
+
+def test_kis_allowance_cannot_exceed_the_approved_bound() -> None:
+    """Allowance는 증명된 소비량만 복원하며 무한 확장을 허용하지 않는다."""
+
+    for kwargs in (
+        {"kis_superseded_allowance": MAX_KIS_SUPERSEDED_ALLOWANCE + 1},
+        {"kis_token_superseded_allowance": MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE + 1},
+    ):
+        with pytest.raises(LightGbmContractError, match="allowance is invalid"):
+            author_recovery_bootstrap_packet(
+                cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+                recovery_binding_sha256="a" * 64,
+                superseded_allowance=0,
+                **kwargs,
+            )
+
+
+def test_recovery_that_changes_nothing_is_refused(tmp_path: Path) -> None:
+    """Supersede는 packet 신원을 바꿔야 한다.
+
+    같은 packet을 prior로 삼으면 체인이 자기 자신을 가리켜 head 유도가 무너지고 같은 세대를
+    무한히 재발행할 수 있다.
+    """
+
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    binding = "b" * 64
+    packet = author_recovery_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        recovery_binding_sha256=binding,
+        superseded_allowance=0,
+    )
+    written = write_approved_new_file(
+        approved_root=root,
+        relative_path=f"bootstrap-{packet.sha256}.json",
+        content=packet.content,
+        max_bytes=1 * 1024 * 1024,
+    )
+    os.chmod(written.absolute_path, 0o600)
+    source_root = root / f"run-{packet.sha256}" / "source"
+    source_root.parent.mkdir(mode=0o700)
+    source_root.mkdir(mode=0o700)
+    (source_root / "chunks").mkdir(mode=0o700)
+    journal = BootstrapJournal(source_root)
+    ordinal = journal.begin(
+        provider="KRX", operation_id="stk_bydd_trd", query_sha256="c" * 64
+    )
+    journal.finish(
+        ordinal=ordinal,
+        provider="KRX",
+        operation_id="stk_bydd_trd",
+        query_sha256="c" * 64,
+        success=False,
+        chunk=None,
+    )
+    with pytest.raises(LightGbmContractError):
+        assess_bootstrap_calendar_recovery(
+            approved_root=root, prior_packet_sha256=packet.sha256
         )

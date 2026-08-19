@@ -70,7 +70,8 @@ def _append_event(
         "unit": unit.as_dict() if unit is not None else {},
         "measured": _canonical_measured(measured),
     }
-    line = canonical_json_bytes(event) + b"\n"
+    # canonical_json_bytes가 마지막 newline을 이미 포함한다.
+    line = canonical_json_bytes(event)
     target = source_root / DIAGNOSTIC_LEDGER_FILENAME
     try:
         if target.exists() and target.stat().st_size + len(line) > MAX_DIAGNOSTIC_BYTES:

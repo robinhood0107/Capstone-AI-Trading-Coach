@@ -65,7 +65,10 @@ def main() -> int:
         f"temporalRebindings={recovery.temporal_rebindings} "
         f"missingKrxQueries={recovery.missing_krx_queries} "
         f"projectedKrxCalls={recovery.projected_krx_physical_calls} "
-        f"krxShortfall={recovery.krx_shortfall} providerCalls=0"
+        f"krxShortfall={recovery.krx_shortfall} "
+        f"adoptedKisChunks={len(recovery.kis_adopted_attempts)} "
+        f"supersededKisCalls={len(recovery.kis_superseded_attempts)} "
+        f"providerCalls=0"
     )
     return 1 if recovery.status == "CAPACITY_EXHAUSTED" else 0
 

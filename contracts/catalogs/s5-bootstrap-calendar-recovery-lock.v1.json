@@ -41,6 +41,19 @@
     "supersededGenerationsArePreserved": true
   },
   "contractId": "s5-bootstrap-calendar-recovery-lock.v1",
+  "coverage": {
+    "blockCarriesProviderPayload": false,
+    "blockFile": "kis-coverage-divergence.json",
+    "blockNamesDivergingSymbol": true,
+    "blockVersion": "s5-kis-coverage-divergence-block-v1",
+    "fixedEtfCoverageRule": "FULL_RAW_WINDOW",
+    "kisCoverageAuthority": "COLLECTED_KRX_DAILY_TRADING_EVIDENCE",
+    "kisCoverageRule": "EXACT_MATCH_WITH_KRX_TRADING_EVIDENCE",
+    "pagingStopsWhenEvidenceIsSatisfied": true,
+    "pagingWindowSource": "PACKET_RAW_WINDOW",
+    "providerCallsDuringBlock": 0,
+    "tradedSessionsMustBeContiguous": true
+  },
   "divergence": {
     "blockBytesDependOnPacketAndCandidatesOnly": true,
     "blockFile": "calendar-divergence-candidates.json",
@@ -98,6 +111,10 @@
     "rootLockFile": ".bootstrap-root.lock"
   },
   "recovery": {
+    "adoptedProvidersCarryingChunks": [
+      "KRX",
+      "KIS"
+    ],
     "adoptionJournalRequired": true,
     "allowanceBindingSurfaces": [
       "PACKET_BYTES",
@@ -107,19 +124,31 @@
     ],
     "approvedKrxMaxPhysicalGet": 4441,
     "blockBeforeProviderClientWhenCapacityExhausted": true,
+    "chainHeadDerivedFromConsumedQueryMultiset": true,
     "chainableFromSupersededRecoveryPacket": true,
     "cumulativeFailedAttemptsConsumeBudget": true,
+    "kisLogicalQuerySetDerivedFromCollectedKrxEvidence": true,
+    "kisTokenSuccessAdoptable": false,
     "logicalQueryCountUnchangedByAllowance": true,
     "maxSupersededAllowance": 8,
+    "perQueryRetryBudgetScope": "CURRENT_GENERATION",
     "physicalAttemptsPerLogicalQuery": 2,
     "priorJournalReadUnderItsOwnGeneration": true,
-    "priorPacketMustNotUseCurrentCorrections": true,
+    "priorPacketIsChainHead": true,
     "providerCallsDuringAssessment": 0,
+    "receiptCarriesSupersededQuerySet": true,
     "receiptMissingResult": "PACKET_OR_ROOT_INVALID",
     "successfulChunkRecall": 0,
+    "supersedeMustChangePacketIdentity": true,
     "supersededAllowanceDerivation": "PROVEN_SUPERSEDED_CONSUMED_CALLS",
     "supersededAllowanceEqualsSupersededConsumedCalls": true,
     "supersededAllowanceLineage": "CALENDAR_RECOVERY",
+    "supersededConsumedCallsCountTowardCumulativeBudget": true,
+    "supersededProviders": [
+      "KRX",
+      "KIS"
+    ],
+    "supersededQueryIdentityResolvedAcrossApprovedGenerations": true,
     "temporalReceiptRebindingRequired": true
   }
 }

@@ -9,7 +9,7 @@ import re
 import unicodedata
 from datetime import date
 from decimal import Decimal
-from typing import Sequence
+from typing import Mapping, Sequence
 
 import numpy as np
 
@@ -23,8 +23,17 @@ from app.lightgbm.metrics import (
 
 
 APPROVED_KRX_MAX_GET = 4_441
-APPROVED_TOTAL_MAX_PHYSICAL_CALLS = 6_446
+# 51개월 universe의 실측 고유 종목 수다. 180은 겹침 가정이었고 실제 증거는 270이었다.
+APPROVED_HORIZON_UNION_SIZE = 270
+# 이전 승인 차원. 이미 소비한 packet을 read-only로 검증할 때만 쓰며 삭제하지 않는다.
+SUPERSEDED_HORIZON_UNION_SIZES: tuple[int, ...] = (180,)
+APPROVED_KIS_MAX_GET = 2_970
+# 4,441 + 2,970 + 1 + 24 = 7,436. 유도식과 정확히 같은 값만 상한으로 둔다.
+APPROVED_TOTAL_MAX_PHYSICAL_CALLS = 7_436
 MAX_KRX_SUPERSEDED_ALLOWANCE = 8
+# KIS 소비도 같은 증거 결속 규칙을 따르지만 예산이 다르므로 provider별로 셋을 나눈다.
+MAX_KIS_SUPERSEDED_ALLOWANCE = 8
+MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE = 8
 
 
 KRX_OPERATIONS = (
@@ -61,6 +70,8 @@ class BootstrapBudget:
     retry: int = 0
     cost: int = 0
     krx_superseded_allowance: int = 0
+    kis_superseded_allowance: int = 0
+    kis_token_superseded_allowance: int = 0
 
     def __post_init__(self) -> None:
         values = (
@@ -71,22 +82,38 @@ class BootstrapBudget:
             self.retry,
             self.cost,
             self.krx_superseded_allowance,
+            self.kis_superseded_allowance,
+            self.kis_token_superseded_allowance,
         )
         if any(isinstance(value, bool) or value < 0 for value in values):
             raise LightGbmContractError("provider budget must use non-negative integers")
         # Allowance는 recovery receipt가 증명한 superseded consumed call 수만 좁게 복원한다.
-        if self.krx_superseded_allowance > MAX_KRX_SUPERSEDED_ALLOWANCE:
+        if (
+            self.krx_superseded_allowance > MAX_KRX_SUPERSEDED_ALLOWANCE
+            or self.kis_superseded_allowance > MAX_KIS_SUPERSEDED_ALLOWANCE
+            or self.kis_token_superseded_allowance
+            > MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE
+        ):
             raise LightGbmContractError("S5.6 superseded allowance exceeds approved bound")
         if (
             self.krx_get > APPROVED_KRX_MAX_GET + self.krx_superseded_allowance
-            or self.kis_get > 1_980
-            or self.kis_token > 1
+            or self.kis_get > APPROVED_KIS_MAX_GET + self.kis_superseded_allowance
+            or self.kis_token > 1 + self.kis_token_superseded_allowance
             or self.ecos_get > 24
-            or self.total > APPROVED_TOTAL_MAX_PHYSICAL_CALLS + self.krx_superseded_allowance
+            or self.total
+            > APPROVED_TOTAL_MAX_PHYSICAL_CALLS + self.superseded_allowance_total
             or self.retry != 0
             or self.cost != 0
         ):
             raise LightGbmContractError("S5.6 approved provider budget exceeded")
+
+    @property
+    def superseded_allowance_total(self) -> int:
+        return (
+            self.krx_superseded_allowance
+            + self.kis_superseded_allowance
+            + self.kis_token_superseded_allowance
+        )
 
     @property
     def total(self) -> int:
@@ -107,6 +134,8 @@ def author_bootstrap_budget(
         union_size=union_size,
         raw_session_count=raw_session_count,
         superseded_allowance=0,
+        kis_superseded_allowance=0,
+        kis_token_superseded_allowance=0,
     )
 
 
@@ -116,23 +145,29 @@ def author_recovery_bootstrap_budget(
     union_size: int,
     raw_session_count: int = 1_072,
     superseded_allowance: int,
+    kis_superseded_allowance: int = 0,
+    kis_token_superseded_allowance: int = 0,
 ) -> BootstrapBudget:
-    """Calendar recovery만 증명된 superseded consumed call 수만큼 KRX 상한을 복원한다.
+    """Recovery만 증명된 superseded consumed call 수만큼 provider별 상한을 복원한다.
 
     Allowance는 recovery receipt가 재계산으로 증명한 값이어야 하며, packet bytes와 실행 권위에서
     다시 교차검증된다. 이 함수만으로는 provider 호출을 열지 않는다.
     """
 
-    if (
-        isinstance(superseded_allowance, bool)
-        or not 0 <= superseded_allowance <= MAX_KRX_SUPERSEDED_ALLOWANCE
+    for value, bound in (
+        (superseded_allowance, MAX_KRX_SUPERSEDED_ALLOWANCE),
+        (kis_superseded_allowance, MAX_KIS_SUPERSEDED_ALLOWANCE),
+        (kis_token_superseded_allowance, MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE),
     ):
-        raise LightGbmContractError("S5.6 superseded allowance is invalid")
+        if isinstance(value, bool) or not 0 <= value <= bound:
+            raise LightGbmContractError("S5.6 superseded allowance is invalid")
     return _author_bootstrap_budget(
         monthly_schedule_count=monthly_schedule_count,
         union_size=union_size,
         raw_session_count=raw_session_count,
         superseded_allowance=superseded_allowance,
+        kis_superseded_allowance=kis_superseded_allowance,
+        kis_token_superseded_allowance=kis_token_superseded_allowance,
     )
 
 
@@ -142,17 +177,25 @@ def _author_bootstrap_budget(
     union_size: int,
     raw_session_count: int,
     superseded_allowance: int,
+    kis_superseded_allowance: int,
+    kis_token_superseded_allowance: int,
 ) -> BootstrapBudget:
-    if not 1 <= union_size <= 180 or monthly_schedule_count < 1 or raw_session_count != 1_072:
+    if (
+        not 1 <= union_size <= APPROVED_HORIZON_UNION_SIZE
+        or monthly_schedule_count < 1
+        or raw_session_count != 1_072
+    ):
         raise DatasetUnavailable("DATASET_UNAVAILABLE: bootstrap dimensions are invalid")
     krx_get = raw_session_count * 4 + monthly_schedule_count * 2 + monthly_schedule_count
     kis_get = union_size * math.ceil(raw_session_count / 100)
     return BootstrapBudget(
         krx_get=krx_get + superseded_allowance,
-        kis_get=kis_get,
-        kis_token=1,
+        kis_get=kis_get + kis_superseded_allowance,
+        kis_token=1 + kis_token_superseded_allowance,
         ecos_get=24,
         krx_superseded_allowance=superseded_allowance,
+        kis_superseded_allowance=kis_superseded_allowance,
+        kis_token_superseded_allowance=kis_token_superseded_allowance,
     )
 
 
@@ -206,14 +249,18 @@ def corporate_action_sensitivity_pass(
     ) <= 0.001
 
 
-def macro_timing_sensitivity_pass(
+def macro_timing_sensitivity_metrics(
     *,
     primary_probabilities: np.ndarray,
     delayed_probabilities: np.ndarray,
     labels: Sequence[int],
     primary_row_count: int,
-) -> bool:
-    """고정 model/calibrator의 +1-session macro timing sensitivity를 검증한다."""
+) -> dict[str, float]:
+    """+1-session macro timing 판정에 쓰이는 지표를 그대로 돌려준다.
+
+    판정만 남기면 네 하위 조건 중 어디서 걸렸는지 알 수 없어 모델 gate 실패와 계산 결함을
+    구분할 수 없다.
+    """
 
     if primary_row_count <= 0 or len(labels) < math.ceil(primary_row_count * 0.98):
         raise DatasetUnavailable("UNIDENTIFIABLE_OUTPUT: macro sensitivity coverage is below 98%")
@@ -224,18 +271,44 @@ def macro_timing_sensitivity_pass(
     labels_array = np.asarray(labels, dtype=np.int64)
     primary_class = tie_aware_argmax(primary_probabilities)
     delayed_class = tie_aware_argmax(delayed_probabilities)
-    disagreement = float(np.mean(primary_class != delayed_class))
-    primary_ece = top_label_ece(labels_array, primary_probabilities)
-    delayed_ece = top_label_ece(labels_array, delayed_probabilities)
-    primary_brier = multiclass_brier(labels_array, primary_probabilities)
-    delayed_brier = multiclass_brier(labels_array, delayed_probabilities)
-    primary_loss = natural_log_loss(labels_array, primary_probabilities)
-    delayed_loss = natural_log_loss(labels_array, delayed_probabilities)
+    return {
+        "disagreement": float(np.mean(primary_class != delayed_class)),
+        "primaryEce": top_label_ece(labels_array, primary_probabilities),
+        "delayedEce": top_label_ece(labels_array, delayed_probabilities),
+        "primaryBrier": multiclass_brier(labels_array, primary_probabilities),
+        "delayedBrier": multiclass_brier(labels_array, delayed_probabilities),
+        "primaryLogLoss": natural_log_loss(labels_array, primary_probabilities),
+        "delayedLogLoss": natural_log_loss(labels_array, delayed_probabilities),
+    }
+
+
+def macro_timing_sensitivity_verdict(metrics: Mapping[str, float]) -> bool:
+    """측정값에서 판정만 파생한다. 임계값은 계약이 고정한 그대로다."""
+
     return (
-        disagreement <= 0.10
-        and delayed_ece - primary_ece <= 0.02
-        and delayed_loss - primary_loss <= 0.02
-        and delayed_brier <= 1.10 * primary_brier
+        metrics["disagreement"] <= 0.10
+        and metrics["delayedEce"] - metrics["primaryEce"] <= 0.02
+        and metrics["delayedLogLoss"] - metrics["primaryLogLoss"] <= 0.02
+        and metrics["delayedBrier"] <= 1.10 * metrics["primaryBrier"]
+    )
+
+
+def macro_timing_sensitivity_pass(
+    *,
+    primary_probabilities: np.ndarray,
+    delayed_probabilities: np.ndarray,
+    labels: Sequence[int],
+    primary_row_count: int,
+) -> bool:
+    """고정 model/calibrator의 +1-session macro timing sensitivity를 검증한다."""
+
+    return macro_timing_sensitivity_verdict(
+        macro_timing_sensitivity_metrics(
+            primary_probabilities=primary_probabilities,
+            delayed_probabilities=delayed_probabilities,
+            labels=labels,
+            primary_row_count=primary_row_count,
+        )
     )
 
 

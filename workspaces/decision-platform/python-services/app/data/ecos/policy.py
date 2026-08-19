@@ -29,6 +29,11 @@ _RETRYABLE_FAILURES: Final = frozenset(
 )
 
 
+# 한 요청이 돌려줄 수 있는 최대 관측 수다. start/end index는 행 번호이며 span이 이 값을
+# 넘으면 ECOS가 거부한다. 호출자의 date chunk 길이는 이 상한에서 유도돼야 한다.
+ECOS_MAX_ROWS_PER_REQUEST = 200
+
+
 def build_keyless_service_path(
     *,
     service: str,
@@ -97,7 +102,7 @@ def _validate_page(*, service: str, start_index: int, end_index: int) -> None:
         or isinstance(end_index, bool)
         or start_index < 1
         or end_index < start_index
-        or end_index - start_index >= 200
+        or end_index - start_index >= ECOS_MAX_ROWS_PER_REQUEST
     ):
         raise ValueError("ECOS service page is invalid")
     hard_end = 400 if service == "StatisticSearch" else 200

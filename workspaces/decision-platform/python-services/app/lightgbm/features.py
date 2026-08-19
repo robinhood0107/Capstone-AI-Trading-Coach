@@ -319,20 +319,18 @@ def build_production_core_feature_rows(
             else previous_xkrx_session(price.session_date)
         )
         require_receipt_eligible(price.receipt, row_clock=row_clock, dataset_cutoff=cutoff)
-        has_adjustment = (
-            price.flng_cls_code not in {"", "00"}
-            or price.prtt_rate > 0
-            or bool(price.revl_issu_reas)
-        )
         if (
             not math.isfinite(price.adjusted_close)
             or price.adjusted_close <= 0
             or not math.isfinite(price.volume)
             or price.volume < 0
             or not math.isfinite(price.prtt_rate)
-            or price.prtt_rate < 0
+            or abs(price.prtt_rate) > 1000
             or price.mod_yn not in {"Y", "N"}
-            or (price.mod_yn == "Y") != has_adjustment
+            or (
+                (price.prtt_rate != 0 or bool(price.revl_issu_reas))
+                and price.flng_cls_code in {"", "00"}
+            )
             or len(price.flng_cls_code) > 32
             or len(price.revl_issu_reas) > 256
         ):

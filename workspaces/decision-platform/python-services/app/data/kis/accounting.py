@@ -57,6 +57,9 @@ class CollectionRunStatus(StrEnum):
 class KISCallBudgetExceeded(RuntimeError):
     """승인된 logical/physical 호출 상한을 넘기기 전에 provider send를 차단한다."""
 
+    # 승인 호출을 소진했다.
+    outcome_class = "BUDGET_EXHAUSTED"
+
 
 class _FrozenModel(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)

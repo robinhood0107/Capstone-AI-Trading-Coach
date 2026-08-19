@@ -21,11 +21,13 @@ import pyarrow.parquet as pq
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.ecos.models import ECOSObservation
+from app.data.ecos.policy import ECOS_MAX_ROWS_PER_REQUEST
 from app.data.ecos.series_registry import ECOSSeries
 from app.data.kis.parsers import DailyBar
 from app.lightgbm.bootstrap_control import BootstrapLedger, BootstrapPhase
 from app.lightgbm.bootstrap_journal import BootstrapJournal
 from app.lightgbm.bootstrap_packet import BootstrapPacket
+from app.lightgbm.diagnostics import DIAGNOSTIC_LEDGER_FILENAME
 from app.lightgbm.errors import (
     CalendarDivergenceSuspected,
     DatasetUnavailable,
@@ -92,6 +94,14 @@ from app.rag.safe_io import (
 )
 
 
+# 종목 거래 증거를 담는 두 일별 service다. 월별 base-info는 상장 목록이라 권위가 아니다.
+_DAILY_UNIVERSE_SERVICES = ("stk_bydd_trd", "ksq_bydd_trd")
+# chunk 달력 길이를 요청당 행 상한 이하로 두면 발행 밀도와 무관하게 한 요청이 상한 안에 든다.
+# 영업일 기준이라 실제로는 더 적지만, 그 가정에 의존하지 않는 것이 요점이다.
+_ECOS_CHUNK_DAYS = ECOS_MAX_ROWS_PER_REQUEST
+assert _ECOS_CHUNK_DAYS <= ECOS_MAX_ROWS_PER_REQUEST
+COVERAGE_DIVERGENCE_FILENAME = "kis-coverage-divergence.json"
+COVERAGE_BLOCK_VERSION = "s5-kis-coverage-divergence-block-v1"
 DIVERGENCE_CANDIDATES_FILENAME = "calendar-divergence-candidates.json"
 DIVERGENCE_BLOCK_VERSION = "s5-calendar-divergence-block-v1"
 MAX_DIVERGENCE_BLOCK_BYTES = 64 * 1024
@@ -268,6 +278,15 @@ def execute_bootstrap_acquisition(
             call=kis.prepare_access_token,
             finalize=lambda _: None,
         )
+    # 종목별로 실제 거래된 session은 이미 수집한 KRX 일별 projection이 권위다. union은 전 구간
+    # 합집합이므로 cutoff 전에 상장폐지된 종목이 들어 있을 수 있고, 그 종목에 전수 커버리지를
+    # 요구하면 충족될 수 없는 조건이 된다.
+    traded_sessions = _derive_traded_sessions(
+        packet=packet,
+        source_root=source_root,
+        chunks=krx_chunks,
+        symbols=frozenset(symbol_by_identity.values()),
+    )
     prices: list[ProductionPriceEvidence] = []
     for identity in identities:
         symbol = symbol_by_identity[identity]
@@ -278,6 +297,7 @@ def execute_bootstrap_acquisition(
             identity=identity,
             symbol=symbol,
             raw_sessions=packet.window.raw_sessions,
+            expected_sessions=traded_sessions[symbol],
             clock=clock,
             journal=journal,
         )
@@ -302,7 +322,12 @@ def execute_bootstrap_acquisition(
     ledger.advance(BootstrapPhase.ECOS)
 
     indices = _build_index_evidence(packet, source_root, krx_chunks)
-    krx_raw_prices = _build_krx_raw_prices(packet, source_root, krx_chunks)
+    krx_raw_prices = _build_krx_raw_prices(
+        packet,
+        source_root,
+        krx_chunks,
+        symbols=frozenset(symbol_by_identity.values()),
+    )
     # Resume 시 wall clock 변화가 이미 봉인된 manifest를 충돌시키지 않게 retrieval receipt로 결정한다.
     manifest = build_source_manifest(
         created_at=max(chunk.temporal.retrieved_at for chunk in chunks),
@@ -409,21 +434,21 @@ def build_production_feature_table(
     rows: list[Mapping[str, object]] = []
     eligible = set(packet.window.eligible_sessions)
     last_feature_session = packet.window.eligible_sessions[-1]
-    feature_sessions = tuple(
-        session for session in packet.window.raw_sessions if session <= last_feature_session
-    )
     for identity in sorted(prices_by_identity):
+        identity_prices = tuple(
+            price
+            for price in prices_by_identity[identity]
+            if price.session_date <= last_feature_session
+        )
+        # 상장폐지 종목은 폐지 이후 월의 base-info에 없다. 소비처는 그 종목의 가격 행 세션만
+        # 조회하므로 schedule 범위를 소비 대상과 같게 맞춘다.
         market_by_session = _listing_market_schedule(
             identity=identity,
-            sessions=feature_sessions,
+            sessions=tuple(price.session_date for price in identity_prices),
             listing_market_by_membership=acquisition.listing_market_by_membership,
         )
         feature_rows = build_production_core_feature_rows(
-            tuple(
-                price
-                for price in prices_by_identity[identity]
-                if price.session_date <= last_feature_session
-            ),
+            identity_prices,
             acquisition.indices,
             acquisition.macro,
             listing_market_by_session=market_by_session,
@@ -684,14 +709,25 @@ def _fetch_kis_symbol(
     identity: str,
     symbol: str,
     raw_sessions: Sequence[date],
+    expected_sessions: Sequence[date],
     clock: Callable[[], datetime],
     journal: BootstrapJournal,
 ) -> tuple[tuple[ProductionPriceEvidence, ...], tuple[SourceChunkReceipt, ...]]:
+    # paging window는 packet raw 구간이다. window가 query 신원에 들어가므로 종목별로 좁히면 이미
+    # 봉인된 chunk가 도달 불가가 되고 승인 호출을 다시 태워야 한다.
     start, cursor_end = raw_sessions[0], raw_sessions[-1]
+    expected = frozenset(expected_sessions)
+    if not expected:
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: KIS coverage expectation is absent")
     seen: dict[date, ProductionPriceEvidence] = {}
     receipts: list[SourceChunkReceipt] = []
     page_number = 0
     while cursor_end >= start:
+        # 증거가 말하는 session을 다 받았으면 더 요청할 것이 없다. 역사가 정확히 100의 배수로
+        # 끝나는 종목은 응답 모양만으로는 "더 없음"을 구분할 수 없어 상장 전 구간을 한 번 더
+        # 요청하고, 그 0행 응답이 하드 실패가 되면서 승인 호출을 태운다.
+        if expected.issubset(seen):
+            break
         page_number += 1
         query = {
             "operation": KIS_OPERATION,
@@ -796,9 +832,18 @@ def _fetch_kis_symbol(
         if oldest <= start:
             break
         if len(page) < 100:
-            raise DatasetUnavailable("KIS_HISTORY_UNAVAILABLE")
+            # 더 과거로 갈 페이지가 없다는 신호다. 잘린 역사인지는 커버리지 대조가 판정한다.
+            break
         cursor_end = oldest - timedelta(days=1)
-    if set(seen) != set(raw_sessions):
+    if set(seen) != expected:
+        # 어떤 종목이 얼마나 어긋났는지 남긴다. 분류와 신원만 담고 provider 응답은 담지 않는다.
+        _publish_coverage_divergence(
+            source_root=source_root,
+            symbol=symbol,
+            identity=identity,
+            expected=expected,
+            observed=frozenset(seen),
+        )
         raise DatasetUnavailable("KIS_HISTORY_UNAVAILABLE")
     return tuple(seen[day] for day in sorted(seen)), tuple(receipts)
 
@@ -823,7 +868,9 @@ def _fetch_ecos_series(
     receipts: list[SourceChunkReceipt] = []
     chunk_start = start
     while chunk_start <= raw_end:
-        chunk_end = min(chunk_start + timedelta(days=365), raw_end)
+        chunk_end = min(
+            chunk_start + timedelta(days=_ECOS_CHUNK_DAYS - 1), raw_end
+        )
         query = {
             "operation": f"{series.stat_code}/{series.item_code1}/{series.cycle}",
             "start": chunk_start.isoformat(),
@@ -1083,22 +1130,147 @@ def _build_index_evidence(
     return tuple(output)
 
 
+def _publish_coverage_divergence(
+    *,
+    source_root: Path,
+    symbol: str,
+    identity: str,
+    expected: frozenset[date],
+    observed: frozenset[date],
+) -> None:
+    """KIS 커버리지가 KRX 증거와 어긋난 지점을 content-free sidecar로 남긴다.
+
+    이전에는 KIS_HISTORY_UNAVAILABLE만 남아 어떤 종목인지 알 수 없었고, 원인을 찾는 데 별도
+    진단 스크립트가 필요했다. 종목 신원은 이미 packet과 manifest에 있는 공개 식별자다.
+    """
+
+    missing = sorted(expected - observed)
+    extra = sorted(observed - expected)
+    entry: dict[str, object] = {
+        "instrumentId": identity,
+        "symbol": symbol,
+        "expectedSessions": len(expected),
+        "observedSessions": len(observed),
+        "missingSessions": len(missing),
+        "extraSessions": len(extra),
+        "firstMissingSession": missing[0].isoformat() if missing else "",
+        "lastMissingSession": missing[-1].isoformat() if missing else "",
+        "firstExtraSession": extra[0].isoformat() if extra else "",
+        "lastExtraSession": extra[-1].isoformat() if extra else "",
+    }
+    # 다른 종목에서 두 번째 결손이 나면 봉인 충돌이 진짜 실패 원인을 가린다. 누적 목록으로 둔다.
+    divergences: list[dict[str, object]] = []
+    target = source_root / COVERAGE_DIVERGENCE_FILENAME
+    if target.exists():
+        existing = read_approved_regular_file(
+            approved_root=source_root,
+            relative_path=COVERAGE_DIVERGENCE_FILENAME,
+            max_bytes=MAX_DIVERGENCE_BLOCK_BYTES,
+        )
+        try:
+            recorded = json.loads(existing.content.decode("utf-8"))["divergences"]
+        except Exception as error:
+            raise LightGbmContractError(
+                "KIS coverage divergence block is unreadable"
+            ) from error
+        if not isinstance(recorded, list):
+            raise LightGbmContractError("KIS coverage divergence block is invalid")
+        if entry in recorded:
+            return
+        divergences = [item for item in recorded if isinstance(item, dict)]
+    divergences.append(entry)
+    payload = canonical_json_bytes(
+        {
+            "blockVersion": COVERAGE_BLOCK_VERSION,
+            "divergences": sorted(
+                divergences, key=lambda item: str(item.get("symbol", ""))
+            ),
+            "providerCallsDuringBlock": 0,
+        }
+    )
+    # 회계 원장이 아니라 진단 artifact다. 갱신 중 중단되면 진단만 잃고 journal은 영향받지 않는다.
+    if target.exists():
+        os.unlink(target)
+    _write_private_new_file(
+        approved_root=source_root,
+        relative_path=COVERAGE_DIVERGENCE_FILENAME,
+        content=payload,
+        max_bytes=MAX_DIVERGENCE_BLOCK_BYTES,
+    )
+
+
+def _derive_traded_sessions(
+    *,
+    packet: BootstrapPacket,
+    source_root: Path,
+    chunks: Mapping[tuple[str, date], SourceChunkReceipt],
+    symbols: frozenset[str],
+) -> dict[str, tuple[date, ...]]:
+    """KRX 일별 projection에서 종목별 실제 거래 session을 유도한다.
+
+    일별 projection의 ISU_CD는 KIS가 쓰는 6자리 단축코드와 같다. 이 집합이 KIS 커버리지 요구의
+    권위이며, provider 사이의 진짜 불일치는 정확한 일치 조건이 그대로 걸러낸다.
+    """
+
+    raw = tuple(packet.window.raw_sessions)
+    # 고정 ETF는 일별 stock projection에 없고 월별 etf_bydd_trd에만 나타난다. 계약이 고정한
+    # 종목이므로 전 구간 커버리지 요구를 그대로 유지하고 상장폐지 완화 대상에서 제외한다.
+    output: dict[str, list[date]] = {
+        symbol: [] for symbol in symbols if symbol != FIXED_ETF_SYMBOL
+    }
+    for day in raw:
+        present: set[str] = set()
+        for service in _DAILY_UNIVERSE_SERVICES:
+            for row in _load_string_rows(source_root, chunks[(service, day)]):
+                code = row["ISU_CD"]
+                if code in output:
+                    present.add(code)
+        for code in present:
+            output[code].append(day)
+    if any(not days for days in output.values()):
+        # union 소속은 거래 관측에서 나오므로 증거가 0인 종목은 있을 수 없다.
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: KRX trading evidence is absent")
+    # rolling window는 그 종목 자기 행에 대한 위치 기반이다. 중간 결손이 있으면 60-session window가
+    # 조용히 더 긴 달력 구간을 덮으므로, 상장/폐지로 끝이 잘리는 것만 허용하고 구멍은 거부한다.
+    position = {day: index for index, day in enumerate(raw)}
+    for days in output.values():
+        if position[days[-1]] - position[days[0]] + 1 != len(days):
+            raise DatasetUnavailable(
+                "DATASET_UNAVAILABLE: KRX trading evidence is not contiguous"
+            )
+    expectations = {symbol: tuple(days) for symbol, days in output.items()}
+    if FIXED_ETF_SYMBOL in symbols:
+        expectations[FIXED_ETF_SYMBOL] = raw
+    return expectations
+
+
 def _build_krx_raw_prices(
     packet: BootstrapPacket,
     source_root: Path,
     chunks: Mapping[tuple[str, date], SourceChunkReceipt],
+    *,
+    symbols: frozenset[str],
 ) -> dict[tuple[str, date], tuple[float, float]]:
-    """기업행사 sensitivity에 필요한 KRX raw open/close만 closed projection에서 보존한다."""
+    """기업행사 sensitivity에 필요한 KRX raw open/close만 closed projection에서 보존한다.
+
+    거래량 0인 세션은 시가가 0이고 종가는 기준가다. 그런 세션에는 raw 시가가 존재하지 않으므로
+    항목을 만들지 않는다. sensitivity 소비처는 raw 증거 네 개 중 하나라도 없으면 그 key를
+    건너뛰도록 이미 설계돼 있다. 수치가 아닌 필드는 여전히 거부한다.
+    """
 
     output: dict[tuple[str, date], tuple[float, float]] = {}
     for day in packet.window.raw_sessions:
-        for service in ("stk_bydd_trd", "ksq_bydd_trd"):
+        for service in _DAILY_UNIVERSE_SERVICES:
             for row in _load_string_rows(source_root, chunks[(service, day)]):
-                key = (row["ISU_CD"], day)
-                value = (
-                    _positive_number(row["TDD_OPNPRC"]),
-                    _positive_number(row["TDD_CLSPRC"]),
-                )
+                symbol = row["ISU_CD"]
+                if symbol not in symbols:
+                    continue
+                open_price = _positive_number(row["TDD_OPNPRC"], allow_zero=True)
+                close_price = _positive_number(row["TDD_CLSPRC"], allow_zero=True)
+                if open_price <= 0 or close_price <= 0:
+                    continue
+                key = (symbol, day)
+                value = (open_price, close_price)
                 prior = output.get(key)
                 if prior is not None and prior != value:
                     raise DatasetUnavailable("SOURCE_SNAPSHOT_CONFLICT: KRX raw price is ambiguous")
@@ -1377,6 +1549,8 @@ def _prepare_private_bundle_root(
                 "manifest.json",
                 "recovery-lineage.json",
                 DIVERGENCE_CANDIDATES_FILENAME,
+                COVERAGE_DIVERGENCE_FILENAME,
+                DIAGNOSTIC_LEDGER_FILENAME,
             }
             if chunks
             else {"features.parquet", "manifest.json"}

@@ -18,6 +18,7 @@ import pytest
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.ecos.models import ECOSObservation
+from app.data.ecos.policy import ECOS_MAX_ROWS_PER_REQUEST, build_keyless_service_path
 from app.data.ecos.series_registry import CANDIDATE_SERIES
 from app.data.ecos.settings import ECOSS5ProductionSettings
 from app.data.kis.parsers import DailyBar, KISResponseError, parse_daily_bars
@@ -27,9 +28,11 @@ from app.data.krx.production_parsers import (
 )
 from app.lightgbm.errors import CalendarDivergenceSuspected, DatasetUnavailable, LightGbmContractError
 from app.lightgbm.bootstrap_control import BootstrapLedger, BootstrapPhase
+from app.lightgbm import bootstrap_executor
 from app.lightgbm.bootstrap_executor import (
     DIVERGENCE_CANDIDATES_FILENAME,
     BootstrapAcquisition,
+    _fetch_kis_symbol,
     execute_bootstrap_acquisition,
     materialize_production_feature_bundle,
     provider_query_sha256,
@@ -49,8 +52,12 @@ from app.lightgbm.bootstrap_fresh_authority import (
     read_fresh_bootstrap_authority,
 )
 from app.lightgbm.bootstrap_journal import (
+    JOURNAL_FILENAME,
+    MAX_JOURNAL_BYTES,
     BootstrapJournal,
     JournalAttempt,
+    SUPERSEDED_CONSUMED,
+    build_recovery_journal_bytes,
     build_resume_packet,
     validate_resume_packet,
 )
@@ -86,6 +93,7 @@ from app.lightgbm.features import (
 )
 from app.lightgbm.labels import build_production_exact_labels
 from app.lightgbm.pit_calendar import (
+    previous_xkrx_session,
     S5_ADHOC_CLOSED_SESSIONS,
     S5_CALENDAR_CORRECTION_SET_SHA256,
     S5_SUPERSEDED_CORRECTION_SETS,
@@ -105,6 +113,9 @@ from app.lightgbm.private_root import (
     require_private_root,
 )
 from app.lightgbm.production_policy import (
+    APPROVED_KIS_MAX_GET,
+    MAX_KIS_SUPERSEDED_ALLOWANCE,
+    MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE,
     MAX_KRX_SUPERSEDED_ALLOWANCE,
     BootstrapBudget,
     SecurityClassification,
@@ -693,7 +704,7 @@ def test_bootstrap_packet_has_exact_1072_1007_51_and_6446_caps() -> None:
     assert len(packet.window.eligible_sessions) == 1_007
     assert len(packet.schedules) == 51
     assert packet.budget.krx_get == 4_441
-    assert packet.budget.total == 6_446
+    assert packet.budget.total == 7_436
     assert packet.packet_version == "s5-production-bootstrap-packet-v2"
     assert packet.lineage_mode == "FRESH"
     assert packet.recovery_binding_sha256 is None
@@ -801,7 +812,7 @@ def test_calendar_recovery_grants_exact_superseded_allowance_and_closes_shortfal
     assert len(recovery.superseded_attempts) == 2
     assert recovery.corrected_packet.budget.krx_superseded_allowance == 2
     assert recovery.corrected_packet.budget.krx_get == 4_443
-    assert recovery.corrected_packet.budget.total == 6_448
+    assert recovery.corrected_packet.budget.total == 7_438
     assert recovery.krx_shortfall == 0
     assert receipt["krxSupersededAllowance"] == 2
     assert receipt["approvedKrxMaxGet"] == 4_443
@@ -1462,7 +1473,7 @@ def test_bootstrap_executor_orders_providers_and_seals_private_manifest(tmp_path
             eligible_sessions=raw[59:],
         ),
         schedules=(schedule,),
-        budget=BootstrapBudget(krx_get=243, kis_get=31, kis_token=1, ecos_get=3),
+        budget=BootstrapBudget(krx_get=243, kis_get=31, kis_token=1, ecos_get=4),
     )
     calls: list[str] = []
 
@@ -1570,7 +1581,7 @@ def test_bootstrap_executor_orders_providers_and_seals_private_manifest(tmp_path
         ecos_series=CANDIDATE_SERIES,
         clock=lambda: datetime(2026, 8, 19, tzinfo=UTC),
     )
-    assert result.budgeted_calls == 278
+    assert result.budgeted_calls == 279
     assert calls[:243] == [
         f"KRX:{service}"
         for _ in raw
@@ -1581,7 +1592,7 @@ def test_bootstrap_executor_orders_providers_and_seals_private_manifest(tmp_path
         "KRX:etf_bydd_trd",
     ]
     assert calls[243] == "KIS:token"
-    assert calls[-3:] == ["ECOS:page", "ECOS:page", "ECOS:page"]
+    assert calls[-4:] == ["ECOS:page"] * 4
     assert len(result.universes[0].symbols) == 31
     assert stat.S_IMODE(os.stat(source_root / "manifest.json").st_mode) == 0o600
     completed_calls = tuple(calls)
@@ -1709,7 +1720,7 @@ def test_fresh_bootstrap_lineage_can_never_carry_superseded_allowance() -> None:
     fresh = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
     assert fresh.budget.krx_superseded_allowance == 0
     assert fresh.budget.krx_get == 4_441
-    assert fresh.budget.total == 6_446
+    assert fresh.budget.total == 7_436
     assert b"krxSupersededAllowance" in fresh.content
 
     # Fresh 유도식은 allowance 인자를 아예 받지 않는다.
@@ -1729,11 +1740,11 @@ def test_fresh_bootstrap_lineage_can_never_carry_superseded_allowance() -> None:
         )
     # 승인 상한을 allowance 없이 넘기면 budget 자체가 거부된다.
     with pytest.raises(LightGbmContractError, match="approved provider budget exceeded"):
-        BootstrapBudget(krx_get=4_442, kis_get=1_980, kis_token=1, ecos_get=24)
+        BootstrapBudget(krx_get=4_442, kis_get=APPROVED_KIS_MAX_GET, kis_token=1, ecos_get=24)
     with pytest.raises(LightGbmContractError, match="superseded allowance exceeds"):
         BootstrapBudget(
             krx_get=4_441,
-            kis_get=1_980,
+            kis_get=APPROVED_KIS_MAX_GET,
             kis_token=1,
             ecos_get=24,
             krx_superseded_allowance=MAX_KRX_SUPERSEDED_ALLOWANCE + 1,
@@ -2132,18 +2143,16 @@ def test_superseded_generation_packet_is_read_only_for_recovery() -> None:
     )
 
 
-def test_recovery_refuses_a_prior_that_already_uses_the_current_corrections(
-    tmp_path: Path,
-) -> None:
-    """현재 세대 packet은 자기 자신을 supersede할 수 없다."""
+def test_recovery_refuses_a_fresh_packet_as_prior(tmp_path: Path) -> None:
+    """fresh packet은 prior가 될 수 없다.
+
+    prior는 수정 전 historical v1이거나 이미 소비된 recovery packet뿐이다. fresh packet을 prior로
+    받으면 아직 소비되지 않은 예산을 supersede 대상으로 취급하게 된다.
+    """
 
     root = tmp_path / "s5-source"
     root.mkdir(mode=0o700)
-    current = author_recovery_bootstrap_packet(
-        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
-        recovery_binding_sha256="c" * 64,
-        superseded_allowance=1,
-    )
+    current = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
     written = write_approved_new_file(
         approved_root=root,
         relative_path=f"bootstrap-{current.sha256}.json",
@@ -2156,11 +2165,27 @@ def test_recovery_refuses_a_prior_that_already_uses_the_current_corrections(
     source_root.mkdir(mode=0o700)
     (source_root / "chunks").mkdir(mode=0o700)
 
-    with pytest.raises(LightGbmContractError, match="already uses the current correction set"):
+    query_hash = provider_query_sha256(
+        {"service": "stk_bydd_trd", "basDd": "20260603"}
+    )
+    journal = BootstrapJournal(source_root)
+    ordinal = journal.begin(
+        provider="KRX", operation_id="stk_bydd_trd", query_sha256=query_hash
+    )
+    journal.finish(
+        ordinal=ordinal,
+        provider="KRX",
+        operation_id="stk_bydd_trd",
+        query_sha256=query_hash,
+        success=False,
+        chunk=None,
+    )
+
+    with pytest.raises(LightGbmContractError, match="prior lineage is invalid"):
         assess_bootstrap_calendar_recovery(
-            approved_root=root,
-            prior_packet_sha256=current.sha256,
+            approved_root=root, prior_packet_sha256=current.sha256
         )
+
 def test_runtime_inputs_derive_execution_target_from_sealed_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2186,7 +2211,7 @@ def test_runtime_inputs_derive_execution_target_from_sealed_evidence(
     # 후보가 없는 root에서는 값을 지어내지 않는다.
     empty = tmp_path / "empty-root"
     empty.mkdir(mode=0o700)
-    with pytest.raises(LightGbmContractError, match="not unique"):
+    with pytest.raises(LightGbmContractError, match="head is unavailable"):
         resolve_bootstrap_packet_sha256(approved_root=empty)
 
 
@@ -2211,3 +2236,796 @@ def test_code_provenance_rejects_values_that_do_not_match_the_repository(
     monkeypatch.setenv("S5_CODE_HEAD_SHA", "0" * 40)
     with pytest.raises(LightGbmContractError, match="does not match the repository"):
         resolve_code_provenance(repository_root=repository_root)
+def test_recovery_receipt_carries_every_superseded_query_identity(tmp_path: Path) -> None:
+    """receipt는 실패 query 하나가 아니라 superseded query 집합 전체를 담아야 한다.
+
+    체인이 길어지면 superseded 항목은 직전 세대보다 앞선 세대의 query일 수 있다. 단수 필드로는
+    그 항목을 대조할 수 없어 실행 권위가 정당한 체인을 거부했다.
+    """
+
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    legacy = _author_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        calendar=base_calendar(),
+        packet_version="s5-production-bootstrap-packet-v1",
+    )
+    written = write_approved_new_file(
+        approved_root=root,
+        relative_path=f"bootstrap-{legacy.sha256}.json",
+        content=legacy.content,
+        max_bytes=1 * 1024 * 1024,
+    )
+    os.chmod(written.absolute_path, 0o600)
+    source_root = root / f"run-{legacy.sha256}" / "source"
+    source_root.parent.mkdir(mode=0o700)
+    source_root.mkdir(mode=0o700)
+    (source_root / "chunks").mkdir(mode=0o700)
+
+    failed_hash = provider_query_sha256(
+        {"service": "stk_bydd_trd", "basDd": "20260603"}
+    )
+    journal = BootstrapJournal(source_root, policy_corrections=())
+    for _ in range(2):
+        ordinal = journal.begin(
+            provider="KRX", operation_id="stk_bydd_trd", query_sha256=failed_hash
+        )
+        journal.finish(
+            ordinal=ordinal,
+            provider="KRX",
+            operation_id="stk_bydd_trd",
+            query_sha256=failed_hash,
+            success=False,
+            chunk=None,
+        )
+
+    recovery = assess_bootstrap_calendar_recovery(
+        approved_root=root, prior_packet_sha256=legacy.sha256
+    )
+    receipt = validate_recovery_receipt(
+        recovery.content, corrected_packet=recovery.corrected_packet
+    )
+    identities = receipt["supersededQueries"]
+    assert isinstance(identities, list) and identities
+    assert all(
+        set(item) == {"operationId", "querySha256", "sessionDate"} for item in identities
+    )
+    # 집합은 query 해시 순으로 정렬되고 중복이 없어야 결정적이다.
+    digests = [str(item["querySha256"]) for item in identities]
+    assert digests == sorted(digests)
+    assert len(set(digests)) == len(digests)
+    # 새로 실패한 query는 반드시 집합에 포함된다.
+    assert str(receipt["failedQuerySha256"]) in digests
+    assert {str(item["sessionDate"]) for item in identities} <= {
+        day.isoformat() for day in S5_ADHOC_CLOSED_SESSIONS
+    }
+
+    # 집합을 위조하면 binding preimage 재계산에서 거부된다.
+    forged = dict(json.loads(recovery.content))
+    forged["supersededQueries"] = [
+        {"operationId": "stk_bydd_trd", "querySha256": "0" * 64, "sessionDate": "2026-06-03"}
+    ]
+    with pytest.raises(LightGbmContractError):
+        validate_recovery_receipt(
+            canonical_json_bytes(forged), corrected_packet=recovery.corrected_packet
+        )
+def test_adopted_prefix_survives_further_provider_records(tmp_path: Path) -> None:
+    """채택 이후 append된 물리 호출 기록이 실행 권위를 깨뜨리지 않아야 한다.
+
+    lineage가 journal 전체 digest를 고정하면 실행이 시작된 run은 영구히 재검증 불가가 되고,
+    계약이 허용한 resume이 막힌다. 채택 prefix만 대조해 불변성과 append를 함께 지킨다.
+    """
+
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    legacy = _author_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        calendar=base_calendar(),
+        packet_version="s5-production-bootstrap-packet-v1",
+    )
+    prior = write_approved_new_file(
+        approved_root=root,
+        relative_path=f"bootstrap-{legacy.sha256}.json",
+        content=legacy.content,
+        max_bytes=1 * 1024 * 1024,
+    )
+    os.chmod(prior.absolute_path, 0o600)
+    prior_source = root / f"run-{legacy.sha256}" / "source"
+    prior_source.parent.mkdir(mode=0o700)
+    prior_source.mkdir(mode=0o700)
+    (prior_source / "chunks").mkdir(mode=0o700)
+
+    failed_hash = provider_query_sha256(
+        {"service": "stk_bydd_trd", "basDd": "20260603"}
+    )
+    journal = BootstrapJournal(prior_source, policy_corrections=())
+    for _ in range(2):
+        ordinal = journal.begin(
+            provider="KRX", operation_id="stk_bydd_trd", query_sha256=failed_hash
+        )
+        journal.finish(
+            ordinal=ordinal,
+            provider="KRX",
+            operation_id="stk_bydd_trd",
+            query_sha256=failed_hash,
+            success=False,
+            chunk=None,
+        )
+
+    recovery = assess_bootstrap_calendar_recovery(
+        approved_root=root, prior_packet_sha256=legacy.sha256
+    )
+    written = write_approved_new_file(
+        approved_root=root,
+        relative_path=f"bootstrap-{recovery.corrected_packet.sha256}.json",
+        content=recovery.corrected_packet.content,
+        max_bytes=1 * 1024 * 1024,
+    )
+    os.chmod(written.absolute_path, 0o600)
+    receipt = write_approved_new_file(
+        approved_root=root,
+        relative_path=(
+            f"calendar-recovery-binding-{recovery.recovery_binding_sha256}.json"
+        ),
+        content=recovery.content,
+        max_bytes=64 * 1024,
+    )
+    os.chmod(receipt.absolute_path, 0o600)
+    materialize_recovery_adoption(approved_root=root, recovery=recovery)
+
+    adopted_source = root / f"run-{recovery.corrected_packet.sha256}" / "source"
+    assert (
+        validate_recovery_execution_authority(
+            approved_root=root, packet=recovery.corrected_packet
+        )
+        == "READY_TO_SUPERSEDE"
+    )
+
+    # 채택 이후 실행이 새 물리 호출을 기록해도 권위는 유지된다.
+    adopted_journal = BootstrapJournal(adopted_source)
+    token_hash = provider_query_sha256({"operation": "oauth2/tokenP"})
+    ordinal = adopted_journal.begin(
+        provider="KIS", operation_id="oauth2/tokenP", query_sha256=token_hash
+    )
+    adopted_journal.finish(
+        ordinal=ordinal,
+        provider="KIS",
+        operation_id="oauth2/tokenP",
+        query_sha256=token_hash,
+        success=True,
+        chunk=None,
+    )
+    assert (
+        validate_recovery_execution_authority(
+            approved_root=root, packet=recovery.corrected_packet
+        )
+        == "READY_TO_SUPERSEDE"
+    )
+
+    # 채택 구간 자체가 훼손되면 여전히 거부한다.
+    raw = (adopted_source / "progress.jsonl").read_bytes().splitlines(keepends=True)
+    tampered = b"".join(raw[1:])
+    (adopted_source / "progress.jsonl").write_bytes(tampered)
+    with pytest.raises(LightGbmContractError):
+        validate_recovery_execution_authority(
+            approved_root=root, packet=recovery.corrected_packet
+        )
+def test_superseded_attempt_does_not_consume_this_generation_retry_budget(
+    tmp_path: Path,
+) -> None:
+    """이관된 소비 원장이 새 세대의 재시도 자격을 먹으면 이관 자체가 무의미해진다.
+
+    실제로 KIS 일별시세 query 하나가 이전 세대에서 시도 2회를 모두 소진했다. 파서 결함을 고친 뒤
+    세대를 이관했는데도 journal이 그 query를 열어주지 않아 packet이 완주 불가였다. 누적 예산은
+    ledger가 SUPERSEDED_CONSUMED까지 세므로 상한은 그대로 지켜진다.
+    """
+
+    root = tmp_path / "source"
+    root.mkdir(mode=0o700)
+    query = "7" * 64
+    journal = BootstrapJournal(root)
+    for _ in range(2):
+        ordinal = journal.begin(
+            provider="KIS", operation_id="FHKST03010100", query_sha256=query
+        )
+        journal.finish(
+            ordinal=ordinal,
+            provider="KIS",
+            operation_id="FHKST03010100",
+            query_sha256=query,
+            success=False,
+            chunk=None,
+        )
+    # 같은 세대 안에서는 두 번째 실패로 자격이 닫힌다.
+    with pytest.raises(LightGbmContractError, match="resume attempt"):
+        BootstrapJournal(root).begin(
+            provider="KIS", operation_id="FHKST03010100", query_sha256=query
+        )
+
+    # 세대를 이관하면 그 시도들은 SUPERSEDED_CONSUMED 원장이 되고 자격이 열린다.
+    carried = tmp_path / "carried"
+    carried.mkdir(mode=0o700)
+    content = build_recovery_journal_bytes(
+        adopted=(),
+        superseded=BootstrapJournal(root).attempts,
+    )
+    written = write_approved_new_file(
+        approved_root=carried,
+        relative_path=JOURNAL_FILENAME,
+        content=content,
+        max_bytes=MAX_JOURNAL_BYTES,
+    )
+    os.chmod(written.absolute_path, 0o600)
+    next_generation = BootstrapJournal(carried)
+    assert len(next_generation.attempts) == 2
+    assert all(
+        attempt.state == SUPERSEDED_CONSUMED for attempt in next_generation.attempts
+    )
+    ordinal = next_generation.begin(
+        provider="KIS", operation_id="FHKST03010100", query_sha256=query
+    )
+    assert ordinal == 3
+    next_generation.finish(
+        ordinal=ordinal,
+        provider="KIS",
+        operation_id="FHKST03010100",
+        query_sha256=query,
+        success=False,
+        chunk=None,
+    )
+    # 새 세대의 자격도 2회로 닫힌다. 이관이 상한을 무한히 열지 않는다.
+    reopened = BootstrapJournal(carried)
+    second = reopened.begin(
+        provider="KIS", operation_id="FHKST03010100", query_sha256=query
+    )
+    reopened.finish(
+        ordinal=second,
+        provider="KIS",
+        operation_id="FHKST03010100",
+        query_sha256=query,
+        success=False,
+        chunk=None,
+    )
+    with pytest.raises(LightGbmContractError, match="resume attempt"):
+        BootstrapJournal(carried).begin(
+            provider="KIS", operation_id="FHKST03010100", query_sha256=query
+        )
+
+
+def test_adopted_success_can_never_be_called_again_across_generations(
+    tmp_path: Path,
+) -> None:
+    """채택된 성공은 결과가 그대로 있으므로 재호출이 승인 호출만 태운다."""
+
+    root = tmp_path / "source"
+    root.mkdir(mode=0o700)
+    (root / "chunks").mkdir(mode=0o700)
+    query = "8" * 64
+    journal = BootstrapJournal(root)
+    ordinal = journal.begin(
+        provider="KIS", operation_id="oauth2/tokenP", query_sha256=query
+    )
+    journal.finish(
+        ordinal=ordinal,
+        provider="KIS",
+        operation_id="oauth2/tokenP",
+        query_sha256=query,
+        success=True,
+        chunk=None,
+    )
+    with pytest.raises(LightGbmContractError, match="cannot be called again"):
+        BootstrapJournal(root).begin(
+            provider="KIS", operation_id="oauth2/tokenP", query_sha256=query
+        )
+
+
+def test_kis_token_success_cannot_be_adopted_because_its_value_is_not_preserved(
+    tmp_path: Path,
+) -> None:
+    """Access token 성공은 값이 남지 않아 재사용할 수 없다. superseded로만 이관된다.
+
+    성공으로 채택하면 새 run은 token 상한을 이미 쓴 상태로 시작해 KIS 호출을 한 건도 못 한다.
+    """
+
+    root = tmp_path / "source"
+    root.mkdir(mode=0o700)
+    journal = BootstrapJournal(root)
+    ordinal = journal.begin(
+        provider="KIS", operation_id="oauth2/tokenP", query_sha256="9" * 64
+    )
+    journal.finish(
+        ordinal=ordinal,
+        provider="KIS",
+        operation_id="oauth2/tokenP",
+        query_sha256="9" * 64,
+        success=True,
+        chunk=None,
+    )
+    attempts = BootstrapJournal(root).attempts
+    with pytest.raises(LightGbmContractError, match="adopted bootstrap attempt"):
+        build_recovery_journal_bytes(adopted=attempts, superseded=())
+    # superseded 경로는 chunk 없는 성공도 소비 원장으로 받아들인다.
+    content = build_recovery_journal_bytes(adopted=(), superseded=attempts)
+    assert content.count(b"SUPERSEDED_CONSUMED") == 1
+
+
+def test_fresh_bootstrap_lineage_can_never_carry_kis_allowance() -> None:
+    """FRESH 경로는 어떤 provider의 allowance도 가질 수 없다."""
+
+    with pytest.raises(LightGbmContractError, match="calendar recovery lineage"):
+        _author_bootstrap_packet(
+            cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+            calendar=corrected_calendar(),
+            packet_version="s5-production-bootstrap-packet-v2",
+            lineage_mode="FRESH",
+            kis_superseded_allowance=1,
+        )
+    with pytest.raises(LightGbmContractError, match="calendar recovery lineage"):
+        _author_bootstrap_packet(
+            cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+            calendar=corrected_calendar(),
+            packet_version="s5-production-bootstrap-packet-v2",
+            lineage_mode="FRESH",
+            kis_token_superseded_allowance=1,
+        )
+    fresh = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
+    assert fresh.budget.kis_superseded_allowance == 0
+    assert fresh.budget.kis_token_superseded_allowance == 0
+    assert fresh.budget.kis_get == APPROVED_KIS_MAX_GET
+    assert fresh.budget.kis_token == 1
+
+
+def test_kis_allowance_is_absent_from_packet_bytes_when_it_is_zero() -> None:
+    """0인 allowance가 bytes에 나타나면 이미 봉인된 packet이 전부 무효가 된다.
+
+    상한 회계를 provider별로 나눌 때마다 과거 세대를 다시 검증할 수 없게 되는 일을 막는다.
+    """
+
+    recovery = author_recovery_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        recovery_binding_sha256="a" * 64,
+        superseded_allowance=3,
+    )
+    limits = json.loads(recovery.content)["limits"]
+    assert limits["krxSupersededAllowance"] == 3
+    assert "kisSupersededAllowance" not in limits
+    assert "kisTokenSupersededAllowance" not in limits
+    assert validate_bootstrap_packet(
+        recovery.content, expected_sha256=recovery.sha256
+    ) == recovery
+
+    widened = author_recovery_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        recovery_binding_sha256="a" * 64,
+        superseded_allowance=3,
+        kis_superseded_allowance=3,
+        kis_token_superseded_allowance=1,
+    )
+    widened_limits = json.loads(widened.content)["limits"]
+    assert widened_limits["kisSupersededAllowance"] == 3
+    assert widened_limits["kisTokenSupersededAllowance"] == 1
+    assert widened.budget.kis_get == APPROVED_KIS_MAX_GET + 3
+    assert widened.budget.kis_token == 2
+    assert widened.sha256 != recovery.sha256
+    assert validate_bootstrap_packet(
+        widened.content, expected_sha256=widened.sha256
+    ) == widened
+
+
+def test_kis_allowance_cannot_exceed_the_approved_bound() -> None:
+    """Allowance는 증명된 소비량만 복원하며 무한 확장을 허용하지 않는다."""
+
+    for kwargs in (
+        {"kis_superseded_allowance": MAX_KIS_SUPERSEDED_ALLOWANCE + 1},
+        {"kis_token_superseded_allowance": MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE + 1},
+    ):
+        with pytest.raises(LightGbmContractError, match="allowance is invalid"):
+            author_recovery_bootstrap_packet(
+                cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+                recovery_binding_sha256="a" * 64,
+                superseded_allowance=0,
+                **kwargs,
+            )
+
+
+def test_recovery_that_changes_nothing_is_refused(tmp_path: Path) -> None:
+    """Supersede는 packet 신원을 바꿔야 한다.
+
+    같은 packet을 prior로 삼으면 체인이 자기 자신을 가리켜 head 유도가 무너지고 같은 세대를
+    무한히 재발행할 수 있다.
+    """
+
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    binding = "b" * 64
+    packet = author_recovery_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        recovery_binding_sha256=binding,
+        superseded_allowance=0,
+    )
+    written = write_approved_new_file(
+        approved_root=root,
+        relative_path=f"bootstrap-{packet.sha256}.json",
+        content=packet.content,
+        max_bytes=1 * 1024 * 1024,
+    )
+    os.chmod(written.absolute_path, 0o600)
+    source_root = root / f"run-{packet.sha256}" / "source"
+    source_root.parent.mkdir(mode=0o700)
+    source_root.mkdir(mode=0o700)
+    (source_root / "chunks").mkdir(mode=0o700)
+    journal = BootstrapJournal(source_root)
+    ordinal = journal.begin(
+        provider="KRX", operation_id="stk_bydd_trd", query_sha256="c" * 64
+    )
+    journal.finish(
+        ordinal=ordinal,
+        provider="KRX",
+        operation_id="stk_bydd_trd",
+        query_sha256="c" * 64,
+        success=False,
+        chunk=None,
+    )
+    with pytest.raises(LightGbmContractError):
+        assess_bootstrap_calendar_recovery(
+            approved_root=root, prior_packet_sha256=packet.sha256
+        )
+def _kis_symbol_fetch(
+    *,
+    tmp_path: Path,
+    raw_sessions: tuple[date, ...],
+    expected_sessions: tuple[date, ...],
+    available: tuple[date, ...],
+    on_fetch: object = None,
+) -> tuple[tuple[ProductionPriceEvidence, ...], tuple[SourceChunkReceipt, ...]]:
+    """고정된 응답 집합으로 한 종목의 KIS paging을 돌린다. 네트워크는 없다."""
+
+    tmp_path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    source_root = tmp_path / "source"
+    source_root.mkdir(mode=0o700)
+    (source_root / "chunks").mkdir(mode=0o700)
+
+    class Kis:
+        def prepare_access_token(self) -> None:  # pragma: no cover - 호출되지 않는다
+            raise AssertionError("token handoff is out of scope")
+
+        def require_cached_token_only(self) -> None:
+            return None
+
+        def fetch_page(
+            self, *, symbol: str, start: date, end: date
+        ) -> tuple[DailyBar, ...]:
+            if on_fetch is not None:
+                on_fetch(start, end)
+            window = [day for day in available if start <= day <= end]
+            # provider는 최신 100개만 돌려주고 caller가 cursor를 뒤로 옮긴다.
+            return tuple(
+                DailyBar(
+                    symbol=symbol,
+                    date=day,
+                    open=100,
+                    high=101,
+                    low=99,
+                    close=100,
+                    volume=1000,
+                )
+                for day in window[-100:]
+            )
+
+    return _fetch_kis_symbol(
+        ledger=BootstrapLedger(
+            BootstrapBudget(krx_get=0, kis_get=64, kis_token=1, ecos_get=0),
+            phase=BootstrapPhase.KIS,
+        ),
+        source_root=source_root,
+        provider=Kis(),
+        identity="KR7000001003",
+        symbol="000001",
+        raw_sessions=raw_sessions,
+        expected_sessions=expected_sessions,
+        clock=lambda: datetime(2026, 8, 19, tzinfo=UTC),
+        journal=BootstrapJournal(source_root),
+    )
+
+
+def test_kis_coverage_is_bound_to_krx_trading_evidence(tmp_path: Path) -> None:
+    """union 종목 전원에게 전수 커버리지를 요구하면 상장폐지 종목에서 충족 불가가 된다.
+
+    실측: 010620은 KRX와 KIS 양쪽에서 정확히 910 session(2022-03-29..2025-12-12)이고 그 뒤 거래
+    증거가 없다. 두 provider가 정확히 일치하므로 불일치가 아니라 상장폐지다. horizon union은 전
+    구간 monthly universe의 합집합이라 초기 유동성으로 선정된 종목이 cutoff 전에 상장폐지될 수
+    있고, 그 종목에 1,072 session 전수를 요구하면 수집이 끝까지 갈 수 없다.
+
+    이미 수집한 KRX 일별 projection이 "그 session에 그 종목이 거래됐는가"의 권위다. 느슨하게
+    허용하는 것이 아니라 요구 대상을 정확히 그 증거로 바꾼다.
+    """
+
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 19, 0, 0, tzinfo=UTC))
+    raw = packet.window.raw_sessions[-120:]
+    # 마지막 40 session 전에 상장폐지된 종목을 모사한다.
+    traded = raw[:-40]
+
+    prices, receipts = _kis_symbol_fetch(
+        tmp_path=tmp_path / "delisted",
+        raw_sessions=raw,
+        expected_sessions=traded,
+        available=traded,
+    )
+    assert tuple(row.session_date for row in prices) == traded
+    assert receipts and all(chunk.source_id == "KIS" for chunk in receipts)
+
+    # 증거보다 짧은 역사는 여전히 거부된다. 상장폐지 허용이 잘린 역사 허용은 아니다.
+    with pytest.raises(DatasetUnavailable, match="KIS_HISTORY_UNAVAILABLE"):
+        _kis_symbol_fetch(
+            tmp_path=tmp_path / "truncated",
+            raw_sessions=raw,
+            expected_sessions=traded,
+            available=traded[10:],
+        )
+
+    # KRX 증거에 없는 session을 KIS가 주면 provider 불일치로 거부된다.
+    with pytest.raises(DatasetUnavailable, match="KIS_HISTORY_UNAVAILABLE"):
+        _kis_symbol_fetch(
+            tmp_path=tmp_path / "extra",
+            raw_sessions=raw,
+            expected_sessions=traded[:-1],
+            available=traded,
+        )
+
+
+def test_kis_symbol_without_any_krx_trading_evidence_is_refused(tmp_path: Path) -> None:
+    """union 소속은 거래 관측에서 나오므로 증거가 0인 종목은 있을 수 없다."""
+
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 19, 0, 0, tzinfo=UTC))
+    raw = packet.window.raw_sessions[-10:]
+    with pytest.raises(DatasetUnavailable, match="coverage expectation is absent"):
+        _kis_symbol_fetch(
+            tmp_path=tmp_path / "absent",
+            raw_sessions=raw,
+            expected_sessions=(),
+            available=raw,
+        )
+def test_kis_coverage_divergence_names_the_symbol_and_survives_resume(
+    tmp_path: Path,
+) -> None:
+    """커버리지 결손이 나면 어떤 종목에서 몇 개가 어긋났는지 실행 하나로 알 수 있어야 한다.
+
+    이전에는 KIS_HISTORY_UNAVAILABLE만 남아 원인을 찾는 데 별도 진단 스크립트가 필요했고, 그
+    비용은 발생할 때마다 반복된다. sidecar는 분류와 신원만 담고 provider 응답은 담지 않는다.
+
+    sidecar를 추가하면서 source root의 정확한 allowlist에 등록하지 않으면 다음 resume이
+    "production bundle root must be empty"로 죽는다. 그 경로도 함께 고정한다.
+    """
+
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 19, 0, 0, tzinfo=UTC))
+    raw = packet.window.raw_sessions[-120:]
+    root = tmp_path / "diverged"
+
+    with pytest.raises(DatasetUnavailable, match="KIS_HISTORY_UNAVAILABLE"):
+        _kis_symbol_fetch(
+            tmp_path=root,
+            raw_sessions=raw,
+            expected_sessions=raw,
+            available=raw[:-40],
+        )
+
+    source_root = root / "source"
+    block = json.loads(
+        (source_root / bootstrap_executor.COVERAGE_DIVERGENCE_FILENAME).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert block["blockVersion"] == bootstrap_executor.COVERAGE_BLOCK_VERSION
+    assert block["providerCallsDuringBlock"] == 0
+    entry = block["divergences"][0]
+    assert entry["symbol"] == "000001"
+    assert entry["missingSessions"] == 40
+    assert entry["extraSessions"] == 0
+    assert entry["firstMissingSession"] == raw[-40].isoformat()
+    assert entry["lastMissingSession"] == raw[-1].isoformat()
+
+    # sidecar가 있어도 같은 run root를 다시 열 수 있어야 한다. allowlist 누락이면 여기서 죽는다.
+    bootstrap_executor._prepare_private_bundle_root(
+        source_root, chunks=True, resume=True
+    )
+
+    # 같은 결손을 다시 만나면 idempotent하고, 다른 종목 결손은 가려지지 않고 함께 쌓인다.
+    stat_before = (source_root / bootstrap_executor.COVERAGE_DIVERGENCE_FILENAME).read_bytes()
+    bootstrap_executor._publish_coverage_divergence(
+        source_root=source_root,
+        symbol="000001",
+        identity="KR7000001003",
+        expected=frozenset(raw),
+        observed=frozenset(raw[:-40]),
+    )
+    assert (
+        source_root / bootstrap_executor.COVERAGE_DIVERGENCE_FILENAME
+    ).read_bytes() == stat_before
+    bootstrap_executor._publish_coverage_divergence(
+        source_root=source_root,
+        symbol="000002",
+        identity="KR7000002001",
+        expected=frozenset(raw),
+        observed=frozenset(raw[:-2]),
+    )
+    updated = json.loads(
+        (source_root / bootstrap_executor.COVERAGE_DIVERGENCE_FILENAME).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert [item["symbol"] for item in updated["divergences"]] == ["000001", "000002"]
+    bootstrap_executor._prepare_private_bundle_root(
+        source_root, chunks=True, resume=True
+    )
+
+
+def test_traded_session_evidence_must_be_contiguous(tmp_path: Path) -> None:
+    """rolling window는 종목 자기 행에 대한 위치 기반이라 중간 결손이 의미를 바꾼다.
+
+    수집된 KRX 증거 3,036 종목 전수 측정에서 중간 결손은 0이었다(전 구간 2,301 / 앞부분만 194 /
+    뒷부분만 541). 지금 성립하는 성질을 요구로 못 박아, 미래 데이터에서 깨지면 조용히 틀린
+    feature를 만드는 대신 fail-closed 한다. 상장/폐지로 끝이 잘리는 것은 그대로 허용한다.
+    """
+
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 19, 0, 0, tzinfo=UTC))
+    raw = packet.window.raw_sessions[-8:]
+    source_root = tmp_path / "source"
+    source_root.mkdir(mode=0o700, parents=True)
+    (source_root / "chunks").mkdir(mode=0o700)
+
+    def seal(session: date, service: str, codes: tuple[str, ...]) -> SourceChunkReceipt:
+        rows = tuple(
+            {
+                field: ("1" if field != "ISU_CD" else code)
+                for field in S5_PRODUCTION_PROJECTION_FIELDS[service]
+            }
+            for code in codes
+        )
+        payload = bootstrap_executor._string_rows_parquet(rows)
+        return bootstrap_executor._seal_projection(
+            source_root=source_root,
+            source="KRX",
+            operation=service,
+            query_key=f"{service}:{session.isoformat()}",
+            rows=len(rows),
+            payload=payload,
+            temporal=bootstrap_executor._temporal_receipt(
+                source="KRX",
+                operation=service,
+                observation_date=session,
+                retrieved_at=datetime(2026, 8, 19, tzinfo=UTC),
+                request_sha256="0" * 64,
+                snapshot_sha256=hashlib.sha256(payload).hexdigest(),
+            ),
+        )
+
+    def build(present: object) -> dict[
+        tuple[str, date], SourceChunkReceipt
+    ]:
+        chunks: dict[tuple[str, date], SourceChunkReceipt] = {}
+        for session in raw:
+            chunks[("stk_bydd_trd", session)] = seal(
+                session, "stk_bydd_trd", present(session)  # type: ignore[operator]
+            )
+            chunks[("ksq_bydd_trd", session)] = seal(session, "ksq_bydd_trd", ("999999",))
+        return chunks
+
+    window = replace(
+        packet.window,
+        raw_sessions=raw,
+        latest_completed=raw[-1],
+        eligible_sessions=raw[-1:],
+    )
+    scoped = replace(packet, window=window)
+
+    # 끝이 잘린 상장폐지는 허용된다.
+    delisted = bootstrap_executor._derive_traded_sessions(
+        packet=scoped,
+        source_root=source_root,
+        chunks=build(
+            lambda session: ("000001",) if session <= raw[4] else ("888888",)
+        ),
+        symbols=frozenset({"000001"}),
+    )
+    assert delisted["000001"] == tuple(raw[:5])
+
+    # 중간 결손은 거부된다.
+    with pytest.raises(DatasetUnavailable, match="not contiguous"):
+        bootstrap_executor._derive_traded_sessions(
+            packet=scoped,
+            source_root=source_root,
+            chunks=build(
+                lambda session: ("000001",) if session != raw[3] else ("888888",)
+            ),
+            symbols=frozenset({"000001"}),
+        )
+def test_paging_stops_when_evidence_is_satisfied_on_a_page_boundary(
+    tmp_path: Path,
+) -> None:
+    """종료 판정이 응답 모양에만 의존하면 100의 배수 역사에서 여분 호출을 태운다.
+
+    실측: 419530은 KRX 증거 900 session(2022-12-06 상장)이고 KIS도 900 session을 9페이지로 이미
+    다 받았다(결손 0, 초과 0). 그런데 9페이지가 정확히 100행이라 start 도달도 100행 미만도
+    성립하지 않아 상장 전 구간을 한 번 더 요청했고, 0행 응답이 하드 실패가 되면서 승인 호출 2건을
+    태우고 packet을 완주 불가로 만들었다.
+
+    커버리지 권위는 이미 KRX 거래 증거다. 그 증거를 다 받았으면 더 요청할 것이 없다.
+    """
+
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 19, 0, 0, tzinfo=UTC))
+    raw = packet.window.raw_sessions[-300:]
+    # 역사가 정확히 페이지 경계에서 끝나고 start에는 닿지 않는 신규상장 종목이다.
+    traded = raw[-200:]
+    assert len(traded) % 100 == 0 and traded[0] != raw[0]
+
+    calls: list[tuple[date, date]] = []
+
+    def record(start: date, end: date) -> None:
+        calls.append((start, end))
+
+    prices, receipts = _kis_symbol_fetch(
+        tmp_path=tmp_path / "boundary",
+        raw_sessions=raw,
+        expected_sessions=traded,
+        available=traded,
+        on_fetch=record,
+    )
+    assert tuple(row.session_date for row in prices) == traded
+    # 두 페이지로 끝나야 한다. 세 번째 요청은 상장 전 구간이라 0행이고 예산만 태운다.
+    assert len(receipts) == 2
+    assert len(calls) == 2
+def test_ecos_page_range_is_valid_without_a_provider_call() -> None:
+    """provider가 요청하는 page 범위는 네트워크 전에 정책을 통과해야 한다.
+
+    실측: bootstrap/daily provider가 page 1..400을 요청했지만 정책은 요청당 span 200행을
+    강제한다(end - start >= 200 이면 거부). ECOS 첫 호출은 네트워크로 나가기도 전에 분류되지 않은
+    ValueError로 죽었고, 그 예외가 실패 시도로 기록되면서 승인 호출 2건을 태우고서야 원인을 알 수
+    있었다. 범위 유효성은 호출 없이 판정되므로 회귀로 닫는다.
+    """
+
+    arguments = ("722Y001", "D", "20220329", "20221114", "0101000")
+    path = build_keyless_service_path(
+        service="StatisticSearch",
+        start_index=1,
+        end_index=ECOS_MAX_ROWS_PER_REQUEST,
+        arguments=arguments,
+    )
+    assert f"/1/{ECOS_MAX_ROWS_PER_REQUEST}/" in path
+
+    # 상한을 한 행이라도 넘으면 거부된다. 이것이 page 1..400이 죽은 이유다.
+    with pytest.raises(ValueError, match="page is invalid"):
+        build_keyless_service_path(
+            service="StatisticSearch",
+            start_index=1,
+            end_index=ECOS_MAX_ROWS_PER_REQUEST + 1,
+            arguments=arguments,
+        )
+
+
+def test_ecos_chunk_length_cannot_exceed_the_request_row_cap() -> None:
+    """chunk 달력 길이가 행 상한을 넘으면 한 요청이 상한을 넘길 수 있다.
+
+    달력 길이를 상한 이하로 두면 발행 밀도와 무관하게 안전하다. 영업일 기준이라 실제로는 더
+    적지만 그 가정에 의존하지 않는 것이 요점이다. 두 상수가 다시 어긋나면 여기서 걸린다.
+    """
+
+    assert bootstrap_executor._ECOS_CHUNK_DAYS <= ECOS_MAX_ROWS_PER_REQUEST
+
+    # 승인 상한 안에 들어가는 논리 query 수인지도 함께 고정한다.
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
+    raw_start = packet.window.raw_sessions[0]
+    raw_end = packet.window.raw_sessions[-1]
+    total = 0
+    for series in CANDIDATE_SERIES:
+        start = (
+            raw_start - timedelta(days=366)
+            if series.series_id == "policy-rate"
+            else previous_xkrx_session(raw_start)
+        )
+        cursor = start
+        while cursor <= raw_end:
+            cursor = min(
+                cursor + timedelta(days=bootstrap_executor._ECOS_CHUNK_DAYS - 1), raw_end
+            ) + timedelta(days=1)
+            total += 1
+    assert total <= packet.budget.ecos_get

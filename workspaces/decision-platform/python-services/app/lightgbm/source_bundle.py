@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from io import BytesIO
 from pathlib import Path
-from typing import Literal, Mapping, Sequence, cast
+from typing import Mapping, Sequence, cast
 
 import pandas as pd
 import pyarrow as pa
@@ -20,7 +20,7 @@ from app.data._shared.bounded_json import (
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.krx.production_parsers import S5_PRODUCTION_PROJECTION_FIELDS
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
-from app.lightgbm.pit_calendar import KST, base_calendar
+from app.lightgbm.pit_calendar import KST, calendar_for_corrections
 from app.lightgbm.private_root import require_private_regular_file, require_private_root
 from app.lightgbm.production_policy import (
     APPROVED_TOTAL_MAX_PHYSICAL_CALLS,
@@ -291,7 +291,7 @@ def _parse_manifest(content: bytes) -> dict[str, object]:
 
 
 def _parse_chunk(
-    value: object, *, calendar_policy: Literal["current", "legacy-v1"] = "current"
+    value: object, *, policy_corrections: tuple[date, ...] | None = None
 ) -> SourceChunkReceipt:
     if not isinstance(value, Mapping) or set(value) != _CHUNK_FIELDS:
         raise LightGbmContractError("source chunk receipt is not closed")
@@ -347,7 +347,7 @@ def _parse_chunk(
         raise LightGbmContractError("temporal receipt provider policy is invalid")
     expected_policy_clock = _expected_policy_clock(
         receipt,
-        calendar_policy=calendar_policy,
+        policy_corrections=policy_corrections,
     )
     if receipt.policy_effective_at != expected_policy_clock:
         raise LightGbmContractError("temporal receipt fixed-lag clock does not match policy")
@@ -372,25 +372,29 @@ def _parse_chunk(
 
 
 def parse_source_chunk_receipt(
-    value: object, *, calendar_policy: Literal["current", "legacy-v1"] = "current"
+    value: object, *, policy_corrections: tuple[date, ...] | None = None
 ) -> SourceChunkReceipt:
-    """Durable bootstrap journal이 manifest와 동일한 closed chunk parser를 재사용한다."""
+    """Durable bootstrap journal이 manifest와 동일한 closed chunk parser를 재사용한다.
 
-    return _parse_chunk(value, calendar_policy=calendar_policy)
+    `policy_corrections`가 None이면 현재 correction 세대의 clock을 쓴다. 이미 소비한 journal을
+    read-only로 검증할 때만 그 journal이 봉인된 세대를 명시한다.
+    """
+
+    return _parse_chunk(value, policy_corrections=policy_corrections)
 
 
 def _expected_policy_clock(
     receipt: TemporalReceipt,
     *,
-    calendar_policy: Literal["current", "legacy-v1"],
+    policy_corrections: tuple[date, ...] | None,
 ) -> datetime:
-    if calendar_policy == "current":
+    if policy_corrections is None:
         return (
             next_xkrx_evidence_clock(receipt.observation_date)
             if receipt.source_id == "ECOS"
             else next_session_evidence_clock(receipt.observation_date)
         )
-    calendar = base_calendar()
+    calendar = calendar_for_corrections(policy_corrections)
     observation = pd.Timestamp(receipt.observation_date)
     try:
         if receipt.source_id == "ECOS":

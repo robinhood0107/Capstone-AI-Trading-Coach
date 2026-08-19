@@ -119,7 +119,11 @@ class BootstrapJournal:
         prior = [attempt for attempt in self._attempts if attempt.query_sha256 == query_sha256]
         if any(attempt.state == "SUCCEEDED" for attempt in prior):
             raise LightGbmContractError("successful bootstrap query cannot be called again")
-        if len(prior) >= 2 or (prior and prior[-1].state != "FAILED"):
+        # SUPERSEDED_CONSUMED는 이전 세대의 소비 원장이다. 누적 예산은 ledger가 그 항목까지
+        # 세므로 상한은 지켜지고, 이 세대의 재시도 자격은 이 세대의 시도만으로 정해진다.
+        # 그러지 않으면 이관된 query를 한 번도 호출할 수 없어 이관이 무의미해진다.
+        current = [attempt for attempt in prior if attempt.state != SUPERSEDED_CONSUMED]
+        if len(current) >= 2 or (current and current[-1].state != "FAILED"):
             raise LightGbmContractError("bootstrap resume attempt is unavailable")
         ordinal = len(self._attempts) + 1
         self._append(
@@ -210,7 +214,9 @@ def build_resume_packet(
     if consumed == 0 or consumed > total_cap:
         raise LightGbmContractError("bootstrap journal has no bounded resume authority")
     if failed is not None and sum(
-        attempt.query_sha256 == failed.query_sha256 for attempt in journal._attempts
+        attempt.query_sha256 == failed.query_sha256
+        and attempt.state != SUPERSEDED_CONSUMED
+        for attempt in journal._attempts
     ) != 1:
         raise LightGbmContractError("bootstrap failed query resume authority is exhausted")
     payload = {
@@ -274,7 +280,10 @@ def build_recovery_journal_bytes(
     )
     for attempt, is_adopted in tagged_attempts:
         if is_adopted and (attempt.state != "SUCCEEDED" or attempt.chunk is None):
+            # Access token 성공은 값이 보존되지 않아 채택할 수 없다. superseded로만 이관된다.
             raise LightGbmContractError("adopted bootstrap attempt is invalid")
+        if not is_adopted and attempt.chunk is not None:
+            raise LightGbmContractError("superseded bootstrap attempt cannot bind a chunk")
         terminal_state = "SUCCEEDED" if is_adopted else SUPERSEDED_CONSUMED
         intent = {
             "eventVersion": "s5-bootstrap-progress-v1",
@@ -385,8 +394,8 @@ def _read_attempts(
             or (not token_without_projection and not empty_daily_policy_rate and chunk is None)
         ):
             raise LightGbmContractError("bootstrap progress receipt shape is invalid")
-        if terminal["state"] == SUPERSEDED_CONSUMED and provider != "KRX":
-            raise LightGbmContractError("only KRX calls may be calendar-superseded")
+        if terminal["state"] == SUPERSEDED_CONSUMED and provider not in {"KRX", "KIS"}:
+            raise LightGbmContractError("only KRX or KIS calls may be superseded")
         if chunk is not None and (
             chunk.source_id != provider or chunk.operation_id != operation_id
         ):

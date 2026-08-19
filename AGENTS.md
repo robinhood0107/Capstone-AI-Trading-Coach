@@ -96,10 +96,25 @@
   대체공휴일을 건너뛴 다음 XKRX session 08:10 KST를 사용한다. 2026-08-14 다음 session은
   2026-08-17이 아니라 2026-08-18이라는 회귀를 유지한다. S5.6B의 manual release/batch CAS와
   daily refresh는 RiskDecision/order 권한이나 자동 retrain/activation 권한을 만들지 않는다.
-- S5.6 provider 상한은 fresh 유도식 KRX 4,441 / 총 6,446으로 불변이다. calendar recovery lineage만
-  recovery receipt가 증명한 superseded consumed call 수와 정확히 같은 allowance(최대 8)를 가질 수
-  있고, 그 값은 packet bytes·binding preimage·receipt·adoption journal 네 곳에서 재계산된다.
-  allowance는 논리 query 집합을 늘리지 않으며 fresh authoring 경로는 allowance 인자를 받지 않는다.
+- S5.6 provider 상한은 fresh 유도식 KRX 4,441 / KIS 기간별시세 2,970 / KIS token 1 / ECOS 24,
+  합계 7,436으로 불변이다. KIS 상한은 실제 수집한 KRX 유동성 증거에서 측정한 horizon union 270과
+  raw session 1,072에서 유도한다(270 × ceil(1072/100)). 승인 차원에서 유도되는 값은 리터럴로
+  중복 선언하지 않는다. recovery lineage만 recovery receipt가 증명한 superseded consumed call 수와
+  정확히 같은 allowance를 provider별로(KRX / KIS 기간별시세 / KIS token, 각 최대 8) 가질 수 있고,
+  그 값은 packet bytes·binding preimage·receipt·adoption journal 네 곳에서 재계산된다. allowance는
+  논리 query 집합을 늘리지 않으며 fresh authoring 경로는 allowance 인자를 받지 않는다. KIS allowance
+  필드는 0이 아닐 때만 packet bytes에 나타나므로 이미 봉인된 세대가 계속 검증된다.
+- supersede는 호출을 소비하는 모든 provider에 열려 있다. 성공 chunk는 내용과 query 신원으로
+  채택하고, 결과가 이관되지 않는 것은 `SUPERSEDED_CONSUMED`로 남긴다. 값이 보존되지 않는 access
+  token 성공이 그 경우이며 채택 대상이 아니다. per-query 물리 시도 상한 2회는 세대 안에서만 세고,
+  이관된 superseded 소비는 누적 예산에 남지만 새 세대의 재시도 자격을 먹지 않는다. prior packet은
+  세대 해시가 아니라 소비 query 다중집합으로 유도한 체인 head이며, supersede는 packet 신원을
+  바꿔야 한다.
+- 종목별 KIS 커버리지 요구는 수집된 KRX 일별 거래 증거와의 정확한 일치다. 전 종목이 전 구간을
+  거래한다고 단정하지 않는다. 상장폐지·신규상장으로 끝이 잘리는 것은 허용하되 중간 결손은
+  거부하며(rolling window가 위치 기반이라 의미가 바뀐다), 거래량 0 세션에는 시가가 존재하지
+  않으므로 raw 시가 항목을 만들지 않는다. paging은 증거를 다 받으면 멈춘다. 응답 모양만으로는
+  역사가 100의 배수로 끝날 때 "더 없음"을 구분할 수 없다.
 - 거래일로 주장된 session의 빈 KRX 일별 projection은 일반 실패가 아니라
   `CALENDAR_DIVERGENCE_SUSPECTED`다. 후보 session을 content-free sidecar로 남기고 resume packet을
   만들지 않으며, 해소되지 않은 block은 다음 실행을 provider client 앞에서 멈춘다.

@@ -35,6 +35,8 @@ from app.lightgbm.pit_calendar import (
     previous_xkrx_session,
 )
 from app.lightgbm.production_policy import (
+    APPROVED_HORIZON_UNION_SIZE,
+    SUPERSEDED_HORIZON_UNION_SIZES,
     ECOS_OPERATIONS,
     KIS_OPERATION,
     KRX_OPERATIONS,
@@ -77,8 +79,10 @@ def author_recovery_bootstrap_packet(
     cutoff: datetime,
     recovery_binding_sha256: str,
     superseded_allowance: int = 0,
+    kis_superseded_allowance: int = 0,
+    kis_token_superseded_allowance: int = 0,
 ) -> BootstrapPacket:
-    """Calendar recovery binding을 packet bytes에 넣어 sidecar 삭제 우회를 막는다.
+    """Recovery binding을 packet bytes에 넣어 sidecar 삭제 우회를 막는다.
 
     Superseded allowance도 packet bytes에 봉인해 실행 권위에서 recovery receipt와 journal과
     3자 교차검증되게 한다.
@@ -92,6 +96,8 @@ def author_recovery_bootstrap_packet(
         lineage_mode="CALENDAR_RECOVERY",
         recovery_binding_sha256=recovery_binding_sha256,
         superseded_allowance=superseded_allowance,
+        kis_superseded_allowance=kis_superseded_allowance,
+        kis_token_superseded_allowance=kis_token_superseded_allowance,
         corrections=S5_ADHOC_CLOSED_SESSIONS,
     )
 
@@ -104,7 +110,10 @@ def _author_bootstrap_packet(
     lineage_mode: str = "HISTORICAL_V1",
     recovery_binding_sha256: str | None = None,
     superseded_allowance: int = 0,
+    kis_superseded_allowance: int = 0,
+    kis_token_superseded_allowance: int = 0,
     corrections: tuple[date, ...] | None = None,
+    union_size: int | None = None,
 ) -> BootstrapPacket:
     """현재 correction 정책과 historical v1을 같은 closed authoring path로 재생성한다."""
 
@@ -125,7 +134,11 @@ def _author_bootstrap_packet(
         _require_sha256(recovery_binding_sha256, "recovery binding")
     else:
         raise LightGbmContractError("bootstrap lineage mode is not approved")
-    if superseded_allowance and lineage_mode != "CALENDAR_RECOVERY":
+    if (
+        superseded_allowance
+        or kis_superseded_allowance
+        or kis_token_superseded_allowance
+    ) and lineage_mode != "CALENDAR_RECOVERY":
         raise LightGbmContractError(
             "superseded allowance is limited to calendar recovery lineage"
         )
@@ -135,6 +148,7 @@ def _author_bootstrap_packet(
     # packet을 read-only로 재생성할 때만 그 packet이 선언한 이전 세대를 넘긴다.
     generation = S5_ADHOC_CLOSED_SESSIONS if corrections is None else corrections
     generation_sha256 = correction_set_sha256(generation)
+    approved_union = APPROVED_HORIZON_UNION_SIZE if union_size is None else union_size
     window = build_pit_session_window_for(cutoff, calendar=calendar)
     if _label_as_of(window.raw_sessions[-1], calendar=calendar) > cutoff:
         raise LightGbmContractError(
@@ -152,14 +166,16 @@ def _author_bootstrap_packet(
     if lineage_mode == "CALENDAR_RECOVERY":
         budget = author_recovery_bootstrap_budget(
             monthly_schedule_count=len(schedules),
-            union_size=180,
+            union_size=approved_union,
             raw_session_count=len(window.raw_sessions),
             superseded_allowance=superseded_allowance,
+            kis_superseded_allowance=kis_superseded_allowance,
+            kis_token_superseded_allowance=kis_token_superseded_allowance,
         )
     else:
         budget = author_bootstrap_budget(
             monthly_schedule_count=len(schedules),
-            union_size=180,
+            union_size=approved_union,
             raw_session_count=len(window.raw_sessions),
         )
     payload = {
@@ -214,6 +230,21 @@ def _author_bootstrap_packet(
             **(
                 {"krxSupersededAllowance": budget.krx_superseded_allowance}
                 if packet_version == "s5-production-bootstrap-packet-v2"
+                else {}
+            ),
+            # 이미 봉인된 packet의 bytes를 보존하려면 KIS allowance는 0이 아닐 때만 나타나야 한다.
+            **(
+                {"kisSupersededAllowance": budget.kis_superseded_allowance}
+                if budget.kis_superseded_allowance
+                else {}
+            ),
+            **(
+                {
+                    "kisTokenSupersededAllowance": (
+                        budget.kis_token_superseded_allowance
+                    )
+                }
+                if budget.kis_token_superseded_allowance
                 else {}
             ),
             "retry": 0,
@@ -316,27 +347,44 @@ def validate_bootstrap_packet(
             value, allow_superseded=allow_superseded_corrections
         )
         if lineage_mode == "FRESH" and recovery_binding is None:
-            regenerated = _author_bootstrap_packet(
-                cutoff=cutoff,
-                calendar=calendar_for_corrections(corrections),
-                packet_version="s5-production-bootstrap-packet-v2",
-                lineage_mode="FRESH",
-                corrections=corrections,
-            )
+            kwargs: dict[str, object] = {"lineage_mode": "FRESH"}
         elif lineage_mode == "CALENDAR_RECOVERY" and isinstance(
             recovery_binding, str
         ):
-            regenerated = _author_bootstrap_packet(
+            kwargs = {
+                "lineage_mode": "CALENDAR_RECOVERY",
+                "recovery_binding_sha256": recovery_binding,
+                "superseded_allowance": _parse_superseded_allowance(value),
+                "kis_superseded_allowance": _parse_optional_allowance(
+                    value, "kisSupersededAllowance"
+                ),
+                "kis_token_superseded_allowance": _parse_optional_allowance(
+                    value, "kisTokenSupersededAllowance"
+                ),
+            }
+        else:
+            raise LightGbmContractError("bootstrap recovery lineage is invalid")
+        # 승인 차원이 바뀌어도 이미 봉인된 packet은 자기 정책으로 재생성돼야 한다.
+        unions: tuple[int, ...] = (APPROVED_HORIZON_UNION_SIZE,)
+        if allow_superseded_corrections:
+            unions = (APPROVED_HORIZON_UNION_SIZE, *SUPERSEDED_HORIZON_UNION_SIZES)
+        regenerated = None
+        for candidate_union in unions:
+            attempt = _author_bootstrap_packet(
                 cutoff=cutoff,
                 calendar=calendar_for_corrections(corrections),
                 packet_version="s5-production-bootstrap-packet-v2",
-                lineage_mode="CALENDAR_RECOVERY",
-                recovery_binding_sha256=recovery_binding,
-                superseded_allowance=_parse_superseded_allowance(value),
                 corrections=corrections,
+                union_size=candidate_union,
+                **kwargs,  # type: ignore[arg-type]
             )
-        else:
-            raise LightGbmContractError("bootstrap recovery lineage is invalid")
+            if attempt.content == content:
+                regenerated = attempt
+                break
+        if regenerated is None:
+            raise LightGbmContractError(
+                "bootstrap packet does not match current calendar policy"
+            )
     elif packet_version == "s5-production-bootstrap-packet-v1" and allow_historical_v1:
         # 이미 소비한 packet/run을 안전하게 supersede할 때만 과거 base-calendar bytes를 검증한다.
         regenerated = _author_bootstrap_packet(
@@ -368,6 +416,20 @@ def _parse_correction_generation(
     if not allow_superseded:
         raise LightGbmContractError("bootstrap packet does not match current calendar policy")
     return corrections_for_sha256(digest)
+
+
+def _parse_optional_allowance(value: Mapping[str, object], field: str) -> int:
+    """0이 아닐 때만 봉인되는 allowance를 읽는다. 부재는 0을 뜻한다."""
+
+    limits = value.get("limits")
+    if not isinstance(limits, dict):
+        raise LightGbmContractError("bootstrap packet limits are invalid")
+    if field not in limits:
+        return 0
+    allowance = limits[field]
+    if not isinstance(allowance, int) or isinstance(allowance, bool) or allowance <= 0:
+        raise LightGbmContractError("bootstrap packet superseded allowance is invalid")
+    return allowance
 
 
 def _parse_superseded_allowance(value: Mapping[str, object]) -> int:

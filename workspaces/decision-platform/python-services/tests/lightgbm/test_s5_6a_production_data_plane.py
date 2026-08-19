@@ -2211,3 +2211,76 @@ def test_code_provenance_rejects_values_that_do_not_match_the_repository(
     monkeypatch.setenv("S5_CODE_HEAD_SHA", "0" * 40)
     with pytest.raises(LightGbmContractError, match="does not match the repository"):
         resolve_code_provenance(repository_root=repository_root)
+def test_recovery_receipt_carries_every_superseded_query_identity(tmp_path: Path) -> None:
+    """receipt는 실패 query 하나가 아니라 superseded query 집합 전체를 담아야 한다.
+
+    체인이 길어지면 superseded 항목은 직전 세대보다 앞선 세대의 query일 수 있다. 단수 필드로는
+    그 항목을 대조할 수 없어 실행 권위가 정당한 체인을 거부했다.
+    """
+
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    legacy = _author_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        calendar=base_calendar(),
+        packet_version="s5-production-bootstrap-packet-v1",
+    )
+    written = write_approved_new_file(
+        approved_root=root,
+        relative_path=f"bootstrap-{legacy.sha256}.json",
+        content=legacy.content,
+        max_bytes=1 * 1024 * 1024,
+    )
+    os.chmod(written.absolute_path, 0o600)
+    source_root = root / f"run-{legacy.sha256}" / "source"
+    source_root.parent.mkdir(mode=0o700)
+    source_root.mkdir(mode=0o700)
+    (source_root / "chunks").mkdir(mode=0o700)
+
+    failed_hash = provider_query_sha256(
+        {"service": "stk_bydd_trd", "basDd": "20260603"}
+    )
+    journal = BootstrapJournal(source_root, policy_corrections=())
+    for _ in range(2):
+        ordinal = journal.begin(
+            provider="KRX", operation_id="stk_bydd_trd", query_sha256=failed_hash
+        )
+        journal.finish(
+            ordinal=ordinal,
+            provider="KRX",
+            operation_id="stk_bydd_trd",
+            query_sha256=failed_hash,
+            success=False,
+            chunk=None,
+        )
+
+    recovery = assess_bootstrap_calendar_recovery(
+        approved_root=root, prior_packet_sha256=legacy.sha256
+    )
+    receipt = validate_recovery_receipt(
+        recovery.content, corrected_packet=recovery.corrected_packet
+    )
+    identities = receipt["supersededQueries"]
+    assert isinstance(identities, list) and identities
+    assert all(
+        set(item) == {"operationId", "querySha256", "sessionDate"} for item in identities
+    )
+    # 집합은 query 해시 순으로 정렬되고 중복이 없어야 결정적이다.
+    digests = [str(item["querySha256"]) for item in identities]
+    assert digests == sorted(digests)
+    assert len(set(digests)) == len(digests)
+    # 새로 실패한 query는 반드시 집합에 포함된다.
+    assert str(receipt["failedQuerySha256"]) in digests
+    assert {str(item["sessionDate"]) for item in identities} <= {
+        day.isoformat() for day in S5_ADHOC_CLOSED_SESSIONS
+    }
+
+    # 집합을 위조하면 binding preimage 재계산에서 거부된다.
+    forged = dict(json.loads(recovery.content))
+    forged["supersededQueries"] = [
+        {"operationId": "stk_bydd_trd", "querySha256": "0" * 64, "sessionDate": "2026-06-03"}
+    ]
+    with pytest.raises(LightGbmContractError):
+        validate_recovery_receipt(
+            canonical_json_bytes(forged), corrected_packet=recovery.corrected_packet
+        )

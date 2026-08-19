@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, datetime
 import hashlib
 from io import BytesIO
 import os
 from pathlib import Path
 import stat
-from typing import Mapping
+from typing import Mapping, cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -31,6 +31,7 @@ from app.lightgbm.bootstrap_journal import (
     build_recovery_journal_bytes,
 )
 from app.lightgbm.bootstrap_packet import (
+    _author_bootstrap_packet,
     BootstrapPacket,
     author_bootstrap_packet,
     author_recovery_bootstrap_packet,
@@ -41,6 +42,8 @@ from app.lightgbm.pit_calendar import (
     S5_ADHOC_CLOSED_SESSIONS,
     S5_CALENDAR_CORRECTION_SET_SHA256,
     S5_CALENDAR_POLICY_VERSION,
+    S5_SUPERSEDED_CORRECTION_SETS,
+    calendar_for_corrections,
     corrections_for_sha256,
 )
 from app.lightgbm.production_policy import MAX_KRX_SUPERSEDED_ALLOWANCE
@@ -87,6 +90,7 @@ _RECOVERY_FIELDS = frozenset(
         "failedQuerySha256",
         "failedOperationId",
         "failedSessionDate",
+        "supersededQueries",
         "consumedKrxPhysicalCalls",
         "reusableSuccessfulChunks",
         "supersededConsumedCalls",
@@ -266,6 +270,10 @@ def assess_bootstrap_calendar_recovery(
             else 0
         )
         approved_krx_max_get = corrected_base.budget.krx_get + allowance
+        superseded_queries = _superseded_query_set(
+            superseded_attempts,
+            _generation_query_identities(prior.window.cutoff, old_by_hash),
+        )
         shortfall = max(0, projected - approved_krx_max_get)
         status = "CAPACITY_EXHAUSTED" if shortfall else "READY_TO_SUPERSEDE"
         binding_payload = _recovery_binding_payload(
@@ -278,6 +286,7 @@ def assess_bootstrap_calendar_recovery(
             projected_krx_physical_calls=projected,
             approved_krx_max_get=approved_krx_max_get,
             krx_superseded_allowance=allowance,
+            superseded_queries=superseded_queries,
         )
         recovery_binding_sha256 = hashlib.sha256(
             canonical_json_bytes(binding_payload)
@@ -302,6 +311,7 @@ def assess_bootstrap_calendar_recovery(
             "failedQuerySha256": failed_query.sha256,
             "failedOperationId": failed_query.service,
             "failedSessionDate": failed_query.session_date.isoformat(),
+            "supersededQueries": [dict(item) for item in superseded_queries],
             "consumedKrxPhysicalCalls": consumed_krx,
             "reusableSuccessfulChunks": len(reusable_attempts),
             "supersededConsumedCalls": len(superseded_attempts),
@@ -433,6 +443,35 @@ def validate_recovery_receipt(
         not in (0, payload["supersededConsumedCalls"])
     ):
         raise LightGbmContractError("calendar recovery block authority is invalid")
+    superseded_queries = payload["supersededQueries"]
+    if not isinstance(superseded_queries, list) or not superseded_queries:
+        raise LightGbmContractError("calendar recovery superseded query set is invalid")
+    seen: set[str] = set()
+    for item in superseded_queries:
+        if not isinstance(item, dict) or set(item) != {
+            "querySha256",
+            "operationId",
+            "sessionDate",
+        }:
+            raise LightGbmContractError("calendar recovery superseded query is not closed")
+        digest = _sha(str(item["querySha256"]))
+        if digest in seen:
+            raise LightGbmContractError("calendar recovery superseded query is duplicated")
+        seen.add(digest)
+        try:
+            date.fromisoformat(str(item["sessionDate"]))
+        except ValueError:
+            raise LightGbmContractError(
+                "calendar recovery superseded session is invalid"
+            ) from None
+    if superseded_queries != sorted(
+        superseded_queries, key=lambda item: str(item["querySha256"])
+    ):
+        raise LightGbmContractError("calendar recovery superseded query order is invalid")
+    if str(payload["failedQuerySha256"]) not in seen:
+        raise LightGbmContractError("calendar recovery failed query is not superseded")
+    if len(seen) > int(payload["supersededConsumedCalls"]):
+        raise LightGbmContractError("calendar recovery superseded query count is invalid")
     expected_shortfall = max(
         0,
         payload["projectedKrxPhysicalCalls"] - payload["approvedKrxMaxGet"],
@@ -471,6 +510,9 @@ def validate_recovery_receipt(
         projected_krx_physical_calls=int(payload["projectedKrxPhysicalCalls"]),
         approved_krx_max_get=int(payload["approvedKrxMaxGet"]),
         krx_superseded_allowance=int(payload["krxSupersededAllowance"]),
+        superseded_queries=tuple(
+            cast(Mapping[str, str], item) for item in superseded_queries
+        ),
     )
     recomputed_binding = hashlib.sha256(
         canonical_json_bytes(binding_payload)
@@ -685,6 +727,10 @@ def validate_recovery_execution_authority(
         receipt_file.content,
         corrected_packet=packet,
     )
+    superseded_identities = {
+        (str(item["querySha256"]), str(item["operationId"]))
+        for item in cast(list[Mapping[str, str]], receipt["supersededQueries"])
+    }
     if (
         any(item.provider != "KRX" for item in journal.attempts)
         or len(adopted) != receipt["reusableSuccessfulChunks"]
@@ -696,8 +742,7 @@ def validate_recovery_execution_authority(
         or len(expected_hashes.difference(adopted_hashes))
         != receipt["missingRequiredKrxQueries"]
         or any(
-            item.query_sha256 != receipt["failedQuerySha256"]
-            or item.operation_id != receipt["failedOperationId"]
+            (item.query_sha256, item.operation_id) not in superseded_identities
             for item in superseded
         )
         or packet.budget.krx_superseded_allowance != receipt["krxSupersededAllowance"]
@@ -891,6 +936,47 @@ def _validate_reusable_chunk(
         ) from error
 
 
+def _generation_query_identities(
+    cutoff: datetime, prior_by_hash: Mapping[str, KrxQuery]
+) -> Mapping[str, KrxQuery]:
+    """승인된 correction 세대 전체의 KRX logical query 신원을 합친다.
+
+    긴 체인에서는 superseded 항목이 직전 세대보다 앞선 세대의 query일 수 있다. 승인된 세대만
+    사용하므로 계약 밖 날짜는 신원을 얻지 못한다.
+    """
+
+    identities: dict[str, KrxQuery] = dict(prior_by_hash)
+    for corrections in (S5_ADHOC_CLOSED_SESSIONS, *S5_SUPERSEDED_CORRECTION_SETS):
+        generation = _author_bootstrap_packet(
+            cutoff=cutoff,
+            calendar=calendar_for_corrections(tuple(corrections)),
+            packet_version="s5-production-bootstrap-packet-v2",
+            lineage_mode="FRESH",
+            corrections=tuple(corrections),
+        )
+        for query in _expected_krx_queries(generation):
+            identities.setdefault(query.sha256, query)
+    return identities
+
+
+def _superseded_query_set(
+    attempts: tuple[JournalAttempt, ...], by_hash: Mapping[str, KrxQuery]
+) -> tuple[Mapping[str, str], ...]:
+    """superseded 물리 시도를 논리 query 신원 집합으로 접는다. 같은 query의 재시도는 하나로 본다."""
+
+    identities: dict[str, Mapping[str, str]] = {}
+    for attempt in attempts:
+        query = by_hash.get(attempt.query_sha256)
+        if query is None:
+            raise LightGbmContractError("superseded attempt has no prior query identity")
+        identities[query.sha256] = {
+            "operationId": query.service,
+            "querySha256": query.sha256,
+            "sessionDate": query.session_date.isoformat(),
+        }
+    return tuple(identities[key] for key in sorted(identities))
+
+
 def _recovery_binding_payload(
     *,
     prior_packet_sha256: str,
@@ -902,6 +988,7 @@ def _recovery_binding_payload(
     projected_krx_physical_calls: int,
     approved_krx_max_get: int,
     krx_superseded_allowance: int,
+    superseded_queries: tuple[Mapping[str, str], ...],
 ) -> dict[str, object]:
     """Authoring과 검증이 공유하는 exact canonical binding preimage다."""
 
@@ -918,6 +1005,7 @@ def _recovery_binding_payload(
         "projectedKrxPhysicalCalls": projected_krx_physical_calls,
         "approvedKrxMaxGet": approved_krx_max_get,
         "krxSupersededAllowance": krx_superseded_allowance,
+        "supersededQueries": [dict(item) for item in superseded_queries],
     }
 
 

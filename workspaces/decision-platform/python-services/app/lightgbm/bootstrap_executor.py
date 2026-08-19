@@ -94,6 +94,8 @@ from app.rag.safe_io import (
 
 # 종목 거래 증거를 담는 두 일별 service다. 월별 base-info는 상장 목록이라 권위가 아니다.
 _DAILY_UNIVERSE_SERVICES = ("stk_bydd_trd", "ksq_bydd_trd")
+COVERAGE_DIVERGENCE_FILENAME = "kis-coverage-divergence.json"
+COVERAGE_BLOCK_VERSION = "s5-kis-coverage-divergence-block-v1"
 DIVERGENCE_CANDIDATES_FILENAME = "calendar-divergence-candidates.json"
 DIVERGENCE_BLOCK_VERSION = "s5-calendar-divergence-block-v1"
 MAX_DIVERGENCE_BLOCK_BYTES = 64 * 1024
@@ -818,6 +820,14 @@ def _fetch_kis_symbol(
             break
         cursor_end = oldest - timedelta(days=1)
     if set(seen) != expected:
+        # 어떤 종목이 얼마나 어긋났는지 남긴다. 분류와 신원만 담고 provider 응답은 담지 않는다.
+        _publish_coverage_divergence(
+            source_root=source_root,
+            symbol=symbol,
+            identity=identity,
+            expected=expected,
+            observed=frozenset(seen),
+        )
         raise DatasetUnavailable("KIS_HISTORY_UNAVAILABLE")
     return tuple(seen[day] for day in sorted(seen)), tuple(receipts)
 
@@ -1102,6 +1112,75 @@ def _build_index_evidence(
     return tuple(output)
 
 
+def _publish_coverage_divergence(
+    *,
+    source_root: Path,
+    symbol: str,
+    identity: str,
+    expected: frozenset[date],
+    observed: frozenset[date],
+) -> None:
+    """KIS 커버리지가 KRX 증거와 어긋난 지점을 content-free sidecar로 남긴다.
+
+    이전에는 KIS_HISTORY_UNAVAILABLE만 남아 어떤 종목인지 알 수 없었고, 원인을 찾는 데 별도
+    진단 스크립트가 필요했다. 종목 신원은 이미 packet과 manifest에 있는 공개 식별자다.
+    """
+
+    missing = sorted(expected - observed)
+    extra = sorted(observed - expected)
+    entry: dict[str, object] = {
+        "instrumentId": identity,
+        "symbol": symbol,
+        "expectedSessions": len(expected),
+        "observedSessions": len(observed),
+        "missingSessions": len(missing),
+        "extraSessions": len(extra),
+        "firstMissingSession": missing[0].isoformat() if missing else "",
+        "lastMissingSession": missing[-1].isoformat() if missing else "",
+        "firstExtraSession": extra[0].isoformat() if extra else "",
+        "lastExtraSession": extra[-1].isoformat() if extra else "",
+    }
+    # 다른 종목에서 두 번째 결손이 나면 봉인 충돌이 진짜 실패 원인을 가린다. 누적 목록으로 둔다.
+    divergences: list[dict[str, object]] = []
+    target = source_root / COVERAGE_DIVERGENCE_FILENAME
+    if target.exists():
+        existing = read_approved_regular_file(
+            approved_root=source_root,
+            relative_path=COVERAGE_DIVERGENCE_FILENAME,
+            max_bytes=MAX_DIVERGENCE_BLOCK_BYTES,
+        )
+        try:
+            recorded = json.loads(existing.content.decode("utf-8"))["divergences"]
+        except Exception as error:
+            raise LightGbmContractError(
+                "KIS coverage divergence block is unreadable"
+            ) from error
+        if not isinstance(recorded, list):
+            raise LightGbmContractError("KIS coverage divergence block is invalid")
+        if entry in recorded:
+            return
+        divergences = [item for item in recorded if isinstance(item, dict)]
+    divergences.append(entry)
+    payload = canonical_json_bytes(
+        {
+            "blockVersion": COVERAGE_BLOCK_VERSION,
+            "divergences": sorted(
+                divergences, key=lambda item: str(item.get("symbol", ""))
+            ),
+            "providerCallsDuringBlock": 0,
+        }
+    )
+    # 회계 원장이 아니라 진단 artifact다. 갱신 중 중단되면 진단만 잃고 journal은 영향받지 않는다.
+    if target.exists():
+        os.unlink(target)
+    _write_private_new_file(
+        approved_root=source_root,
+        relative_path=COVERAGE_DIVERGENCE_FILENAME,
+        content=payload,
+        max_bytes=MAX_DIVERGENCE_BLOCK_BYTES,
+    )
+
+
 def _derive_traded_sessions(
     *,
     packet: BootstrapPacket,
@@ -1133,6 +1212,14 @@ def _derive_traded_sessions(
     if any(not days for days in output.values()):
         # union 소속은 거래 관측에서 나오므로 증거가 0인 종목은 있을 수 없다.
         raise DatasetUnavailable("DATASET_UNAVAILABLE: KRX trading evidence is absent")
+    # rolling window는 그 종목 자기 행에 대한 위치 기반이다. 중간 결손이 있으면 60-session window가
+    # 조용히 더 긴 달력 구간을 덮으므로, 상장/폐지로 끝이 잘리는 것만 허용하고 구멍은 거부한다.
+    position = {day: index for index, day in enumerate(raw)}
+    for days in output.values():
+        if position[days[-1]] - position[days[0]] + 1 != len(days):
+            raise DatasetUnavailable(
+                "DATASET_UNAVAILABLE: KRX trading evidence is not contiguous"
+            )
     expectations = {symbol: tuple(days) for symbol, days in output.items()}
     if FIXED_ETF_SYMBOL in symbols:
         expectations[FIXED_ETF_SYMBOL] = raw
@@ -1433,6 +1520,7 @@ def _prepare_private_bundle_root(
                 "manifest.json",
                 "recovery-lineage.json",
                 DIVERGENCE_CANDIDATES_FILENAME,
+                COVERAGE_DIVERGENCE_FILENAME,
             }
             if chunks
             else {"features.parquet", "manifest.json"}

@@ -27,6 +27,7 @@ from app.data.krx.production_parsers import (
 )
 from app.lightgbm.errors import CalendarDivergenceSuspected, DatasetUnavailable, LightGbmContractError
 from app.lightgbm.bootstrap_control import BootstrapLedger, BootstrapPhase
+from app.lightgbm import bootstrap_executor
 from app.lightgbm.bootstrap_executor import (
     DIVERGENCE_CANDIDATES_FILENAME,
     BootstrapAcquisition,
@@ -2778,4 +2779,158 @@ def test_kis_symbol_without_any_krx_trading_evidence_is_refused(tmp_path: Path) 
             raw_sessions=raw,
             expected_sessions=(),
             available=raw,
+        )
+def test_kis_coverage_divergence_names_the_symbol_and_survives_resume(
+    tmp_path: Path,
+) -> None:
+    """커버리지 결손이 나면 어떤 종목에서 몇 개가 어긋났는지 실행 하나로 알 수 있어야 한다.
+
+    이전에는 KIS_HISTORY_UNAVAILABLE만 남아 원인을 찾는 데 별도 진단 스크립트가 필요했고, 그
+    비용은 발생할 때마다 반복된다. sidecar는 분류와 신원만 담고 provider 응답은 담지 않는다.
+
+    sidecar를 추가하면서 source root의 정확한 allowlist에 등록하지 않으면 다음 resume이
+    "production bundle root must be empty"로 죽는다. 그 경로도 함께 고정한다.
+    """
+
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 19, 0, 0, tzinfo=UTC))
+    raw = packet.window.raw_sessions[-120:]
+    root = tmp_path / "diverged"
+
+    with pytest.raises(DatasetUnavailable, match="KIS_HISTORY_UNAVAILABLE"):
+        _kis_symbol_fetch(
+            tmp_path=root,
+            raw_sessions=raw,
+            expected_sessions=raw,
+            available=raw[:-40],
+        )
+
+    source_root = root / "source"
+    block = json.loads(
+        (source_root / bootstrap_executor.COVERAGE_DIVERGENCE_FILENAME).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert block["blockVersion"] == bootstrap_executor.COVERAGE_BLOCK_VERSION
+    assert block["providerCallsDuringBlock"] == 0
+    entry = block["divergences"][0]
+    assert entry["symbol"] == "000001"
+    assert entry["missingSessions"] == 40
+    assert entry["extraSessions"] == 0
+    assert entry["firstMissingSession"] == raw[-40].isoformat()
+    assert entry["lastMissingSession"] == raw[-1].isoformat()
+
+    # sidecar가 있어도 같은 run root를 다시 열 수 있어야 한다. allowlist 누락이면 여기서 죽는다.
+    bootstrap_executor._prepare_private_bundle_root(
+        source_root, chunks=True, resume=True
+    )
+
+    # 같은 결손을 다시 만나면 idempotent하고, 다른 종목 결손은 가려지지 않고 함께 쌓인다.
+    stat_before = (source_root / bootstrap_executor.COVERAGE_DIVERGENCE_FILENAME).read_bytes()
+    bootstrap_executor._publish_coverage_divergence(
+        source_root=source_root,
+        symbol="000001",
+        identity="KR7000001003",
+        expected=frozenset(raw),
+        observed=frozenset(raw[:-40]),
+    )
+    assert (
+        source_root / bootstrap_executor.COVERAGE_DIVERGENCE_FILENAME
+    ).read_bytes() == stat_before
+    bootstrap_executor._publish_coverage_divergence(
+        source_root=source_root,
+        symbol="000002",
+        identity="KR7000002001",
+        expected=frozenset(raw),
+        observed=frozenset(raw[:-2]),
+    )
+    updated = json.loads(
+        (source_root / bootstrap_executor.COVERAGE_DIVERGENCE_FILENAME).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert [item["symbol"] for item in updated["divergences"]] == ["000001", "000002"]
+    bootstrap_executor._prepare_private_bundle_root(
+        source_root, chunks=True, resume=True
+    )
+
+
+def test_traded_session_evidence_must_be_contiguous(tmp_path: Path) -> None:
+    """rolling window는 종목 자기 행에 대한 위치 기반이라 중간 결손이 의미를 바꾼다.
+
+    수집된 KRX 증거 3,036 종목 전수 측정에서 중간 결손은 0이었다(전 구간 2,301 / 앞부분만 194 /
+    뒷부분만 541). 지금 성립하는 성질을 요구로 못 박아, 미래 데이터에서 깨지면 조용히 틀린
+    feature를 만드는 대신 fail-closed 한다. 상장/폐지로 끝이 잘리는 것은 그대로 허용한다.
+    """
+
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 19, 0, 0, tzinfo=UTC))
+    raw = packet.window.raw_sessions[-8:]
+    source_root = tmp_path / "source"
+    source_root.mkdir(mode=0o700, parents=True)
+    (source_root / "chunks").mkdir(mode=0o700)
+
+    def seal(session: date, service: str, codes: tuple[str, ...]) -> SourceChunkReceipt:
+        rows = tuple(
+            {
+                field: ("1" if field != "ISU_CD" else code)
+                for field in S5_PRODUCTION_PROJECTION_FIELDS[service]
+            }
+            for code in codes
+        )
+        payload = bootstrap_executor._string_rows_parquet(rows)
+        return bootstrap_executor._seal_projection(
+            source_root=source_root,
+            source="KRX",
+            operation=service,
+            query_key=f"{service}:{session.isoformat()}",
+            rows=len(rows),
+            payload=payload,
+            temporal=bootstrap_executor._temporal_receipt(
+                source="KRX",
+                operation=service,
+                observation_date=session,
+                retrieved_at=datetime(2026, 8, 19, tzinfo=UTC),
+                request_sha256="0" * 64,
+                snapshot_sha256=hashlib.sha256(payload).hexdigest(),
+            ),
+        )
+
+    def build(present: object) -> dict[
+        tuple[str, date], SourceChunkReceipt
+    ]:
+        chunks: dict[tuple[str, date], SourceChunkReceipt] = {}
+        for session in raw:
+            chunks[("stk_bydd_trd", session)] = seal(
+                session, "stk_bydd_trd", present(session)  # type: ignore[operator]
+            )
+            chunks[("ksq_bydd_trd", session)] = seal(session, "ksq_bydd_trd", ("999999",))
+        return chunks
+
+    window = replace(
+        packet.window,
+        raw_sessions=raw,
+        latest_completed=raw[-1],
+        eligible_sessions=raw[-1:],
+    )
+    scoped = replace(packet, window=window)
+
+    # 끝이 잘린 상장폐지는 허용된다.
+    delisted = bootstrap_executor._derive_traded_sessions(
+        packet=scoped,
+        source_root=source_root,
+        chunks=build(
+            lambda session: ("000001",) if session <= raw[4] else ("888888",)
+        ),
+        symbols=frozenset({"000001"}),
+    )
+    assert delisted["000001"] == tuple(raw[:5])
+
+    # 중간 결손은 거부된다.
+    with pytest.raises(DatasetUnavailable, match="not contiguous"):
+        bootstrap_executor._derive_traded_sessions(
+            packet=scoped,
+            source_root=source_root,
+            chunks=build(
+                lambda session: ("000001",) if session != raw[3] else ("888888",)
+            ),
+            symbols=frozenset({"000001"}),
         )

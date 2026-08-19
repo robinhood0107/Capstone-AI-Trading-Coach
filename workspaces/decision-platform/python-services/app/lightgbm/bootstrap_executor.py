@@ -27,6 +27,7 @@ from app.data.kis.parsers import DailyBar
 from app.lightgbm.bootstrap_control import BootstrapLedger, BootstrapPhase
 from app.lightgbm.bootstrap_journal import BootstrapJournal
 from app.lightgbm.bootstrap_packet import BootstrapPacket
+from app.lightgbm.diagnostics import DIAGNOSTIC_LEDGER_FILENAME
 from app.lightgbm.errors import (
     CalendarDivergenceSuspected,
     DatasetUnavailable,
@@ -1549,6 +1550,7 @@ def _prepare_private_bundle_root(
                 "recovery-lineage.json",
                 DIVERGENCE_CANDIDATES_FILENAME,
                 COVERAGE_DIVERGENCE_FILENAME,
+                DIAGNOSTIC_LEDGER_FILENAME,
             }
             if chunks
             else {"features.parquet", "manifest.json"}

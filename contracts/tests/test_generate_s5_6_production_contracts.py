@@ -109,7 +109,7 @@ class S56ProductionContractTest(unittest.TestCase):
 
     def test_policy_caps_and_no_go_boundaries_are_exact(self) -> None:
         catalog = self.artifacts[CATALOG]
-        self.assertEqual(6446, catalog["bootstrap"]["totalMaxPhysicalCalls"])
+        self.assertEqual(7436, catalog["bootstrap"]["totalMaxPhysicalCalls"])
         self.assertEqual(0, catalog["bootstrap"]["retry"])
         self.assertEqual(0, catalog["runtime"]["riskDecisionWiring"])
         self.assertEqual(0, catalog["runtime"]["orderWiring"])

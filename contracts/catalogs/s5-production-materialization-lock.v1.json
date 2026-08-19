@@ -4,7 +4,9 @@
     "costMax": 0,
     "ecosMaxGet": 24,
     "freshSupersededAllowance": 0,
-    "kisMaxGet": 1980,
+    "horizonUnionSize": 270,
+    "horizonUnionSizeSource": "MEASURED_FROM_COLLECTED_KRX_LIQUIDITY_EVIDENCE",
+    "kisMaxGet": 2970,
     "kisTokenMax": 1,
     "krxMaxGet": 4441,
     "maxSupersededAllowance": 8,
@@ -16,7 +18,7 @@
     "retry": 0,
     "supersededAllowanceDerivation": "PROVEN_SUPERSEDED_CONSUMED_CALLS",
     "supersededAllowanceLineage": "CALENDAR_RECOVERY",
-    "totalMaxPhysicalCalls": 6446
+    "totalMaxPhysicalCalls": 7436
   },
   "contractId": "s5-production-materialization-lock.v1",
   "futureCollectionMode": "AS_COLLECTED",
@@ -37,7 +39,7 @@
     "krxMaxBytes": 17179869184,
     "krxMaxRows": 10000000,
     "manifestMaxBytes": 16777216,
-    "maxChunks": 6454
+    "maxChunks": 7444
   },
   "strictProviderPITClaim": false,
   "temporalQuality": "RECONSTRUCTED_FIXED_LAG"

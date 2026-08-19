@@ -1,0 +1,89 @@
+{
+  "calendar": {
+    "authorityOrder": [
+      "KIS_CTCA0903R_OPND_YN",
+      "NON_EXPIRED_HEALTHY_NON_CONFLICTED_PRIOR_CANONICAL",
+      "PINNED_XKRX_BASE"
+    ],
+    "baseCalendar": "XKRX",
+    "baseLibrary": "exchange-calendars",
+    "baseVersion": "4.13.2",
+    "correctionSetSha256": "30530e6f4ff06ac3ab71a748c910c87cd9233c70382f348e00c387684cdde169",
+    "corrections": [
+      {
+        "evidenceClass": "CONTRACT_LOCKED_CALENDAR_CORRECTION",
+        "isOpen": false,
+        "reason": "2026_LOCAL_ELECTION_MARKET_CLOSURE",
+        "sessionDate": "2026-06-03"
+      }
+    ],
+    "policyVersion": "xkrx-4.13.2-kis-corrections-v1"
+  },
+  "contractId": "s5-bootstrap-calendar-recovery-lock.v1",
+  "divergence": {
+    "blockFile": "calendar-divergence-candidates.json",
+    "blockVersion": "s5-calendar-divergence-block-v1",
+    "detection": "EMPTY_DAILY_PROJECTION_ON_CLAIMED_SESSION",
+    "providerCallsDuringBlock": 0,
+    "result": "CALENDAR_DIVERGENCE_SUSPECTED",
+    "resumePacketAuthored": false,
+    "unresolvedBlockStopsResume": true
+  },
+  "downstream": {
+    "openApiChange": 0,
+    "orderWiring": 0,
+    "providerRawArtifactInGit": 0,
+    "riskDecisionWiring": 0,
+    "signalContractChange": 0
+  },
+  "holidayAuthority": {
+    "attestationStatuses": [
+      "API_CONFIRMED",
+      "CALENDAR_AUTHORITY_CONFLICT",
+      "CALENDAR_AUTHORITY_UNVERIFIED"
+    ],
+    "canonicalTable": "trading_sessions",
+    "maxPhysicalCalls": 32,
+    "mode": "LIVE_ONLY",
+    "packetHashRemainsStatic": true,
+    "requiredRole": "decision_collector",
+    "scope": "DIVERGENCE_CANDIDATE_SESSIONS_ONLY",
+    "separateFromBootstrapBudget": true,
+    "sourceId": "kis-holiday-ctca0903r",
+    "transactionId": "CTCA0903R",
+    "unobservedCorrectionResult": "CALENDAR_AUTHORITY_UNVERIFIED"
+  },
+  "issue": 135,
+  "packet": {
+    "currentVersion": "s5-production-bootstrap-packet-v2",
+    "freshAuthorityFile": "fresh-bootstrap-authority.v1.json",
+    "freshAuthorityMode": "IMMUTABLE_ABSENT_TO_SHA_CAS",
+    "freshExecutionsPerApprovedRoot": 1,
+    "historicalV1Mode": "READ_ONLY_RECOVERY_VALIDATION",
+    "recoveryBindingRequired": true,
+    "recoveryLineageMode": "CALENDAR_RECOVERY",
+    "rootLockFile": ".bootstrap-root.lock"
+  },
+  "recovery": {
+    "adoptionJournalRequired": true,
+    "allowanceBindingSurfaces": [
+      "PACKET_BYTES",
+      "RECOVERY_BINDING_PREIMAGE",
+      "RECOVERY_RECEIPT",
+      "ADOPTION_JOURNAL"
+    ],
+    "approvedKrxMaxPhysicalGet": 4441,
+    "blockBeforeProviderClientWhenCapacityExhausted": true,
+    "cumulativeFailedAttemptsConsumeBudget": true,
+    "logicalQueryCountUnchangedByAllowance": true,
+    "maxSupersededAllowance": 8,
+    "physicalAttemptsPerLogicalQuery": 2,
+    "providerCallsDuringAssessment": 0,
+    "receiptMissingResult": "PACKET_OR_ROOT_INVALID",
+    "successfulChunkRecall": 0,
+    "supersededAllowanceDerivation": "PROVEN_SUPERSEDED_CONSUMED_CALLS",
+    "supersededAllowanceEqualsSupersededConsumedCalls": true,
+    "supersededAllowanceLineage": "CALENDAR_RECOVERY",
+    "temporalReceiptRebindingRequired": true
+  }
+}

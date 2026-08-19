@@ -25,6 +25,7 @@ ROOT = _REPO_ROOT
 SOURCE_SCHEMA = "contracts/schemas/s5-pit-source-bundle-v1.schema.json"
 FEATURE_SCHEMA = "contracts/schemas/s5-feature-bundle-v2.schema.json"
 CATALOG = "contracts/catalogs/s5-production-materialization-lock.v1.json"
+RECOVERY_CATALOG = "contracts/catalogs/s5-bootstrap-calendar-recovery-lock.v1.json"
 FEATURE_COLUMNS: Final[tuple[str, ...]] = (
     "momentum_5",
     "momentum_20",
@@ -275,7 +276,7 @@ def _source_schema() -> dict[str, Any]:
                 "chunks": {
                     "type": "array",
                     "minItems": 1,
-                    "maxItems": 6_446,
+                    "maxItems": 6_446 + 8,
                     "items": chunk,
                 },
             },
@@ -383,10 +384,14 @@ def _catalog() -> dict[str, Any]:
             "ecosMaxGet": 24,
             "totalMaxPhysicalCalls": 6446,
             "accountBalanceOrderCalls": 0,
+            "freshSupersededAllowance": 0,
+            "maxSupersededAllowance": 8,
+            "supersededAllowanceLineage": "CALENDAR_RECOVERY",
+            "supersededAllowanceDerivation": "PROVEN_SUPERSEDED_CONSUMED_CALLS",
         },
         "sourceBundle": {
             "manifestMaxBytes": 16 * 1024 * 1024,
-            "maxChunks": 6_446,
+            "maxChunks": 6_446 + 8,
             "krxMaxRows": 10_000_000,
             "krxMaxBytes": 16 * 1024**3,
             "kisMaxRows": 192_960,
@@ -400,6 +405,100 @@ def _catalog() -> dict[str, Any]:
             "firstCrossMarketJoin": "S6.6",
             "automaticRetrain": 0,
             "automaticModelActivation": 0,
+        },
+    }
+
+
+def _recovery_catalog() -> dict[str, Any]:
+    return {
+        "contractId": "s5-bootstrap-calendar-recovery-lock.v1",
+        "issue": 135,
+        "calendar": {
+            "authorityOrder": [
+                "KIS_CTCA0903R_OPND_YN",
+                "NON_EXPIRED_HEALTHY_NON_CONFLICTED_PRIOR_CANONICAL",
+                "PINNED_XKRX_BASE",
+            ],
+            "baseCalendar": "XKRX",
+            "baseLibrary": "exchange-calendars",
+            "baseVersion": "4.13.2",
+            "correctionSetSha256": (
+                "30530e6f4ff06ac3ab71a748c910c87cd9233c70382f348e00c387684cdde169"
+            ),
+            "corrections": [
+                {
+                    "evidenceClass": "CONTRACT_LOCKED_CALENDAR_CORRECTION",
+                    "isOpen": False,
+                    "reason": "2026_LOCAL_ELECTION_MARKET_CLOSURE",
+                    "sessionDate": "2026-06-03",
+                }
+            ],
+            "policyVersion": "xkrx-4.13.2-kis-corrections-v1",
+        },
+        "packet": {
+            "currentVersion": "s5-production-bootstrap-packet-v2",
+            "freshAuthorityFile": "fresh-bootstrap-authority.v1.json",
+            "freshAuthorityMode": "IMMUTABLE_ABSENT_TO_SHA_CAS",
+            "freshExecutionsPerApprovedRoot": 1,
+            "historicalV1Mode": "READ_ONLY_RECOVERY_VALIDATION",
+            "recoveryBindingRequired": True,
+            "recoveryLineageMode": "CALENDAR_RECOVERY",
+            "rootLockFile": ".bootstrap-root.lock",
+        },
+        "recovery": {
+            "adoptionJournalRequired": True,
+            "approvedKrxMaxPhysicalGet": 4_441,
+            "blockBeforeProviderClientWhenCapacityExhausted": True,
+            "cumulativeFailedAttemptsConsumeBudget": True,
+            "providerCallsDuringAssessment": 0,
+            "receiptMissingResult": "PACKET_OR_ROOT_INVALID",
+            "successfulChunkRecall": 0,
+            "temporalReceiptRebindingRequired": True,
+            "supersededAllowanceDerivation": "PROVEN_SUPERSEDED_CONSUMED_CALLS",
+            "supersededAllowanceEqualsSupersededConsumedCalls": True,
+            "supersededAllowanceLineage": "CALENDAR_RECOVERY",
+            "maxSupersededAllowance": 8,
+            "logicalQueryCountUnchangedByAllowance": True,
+            "physicalAttemptsPerLogicalQuery": 2,
+            "allowanceBindingSurfaces": [
+                "PACKET_BYTES",
+                "RECOVERY_BINDING_PREIMAGE",
+                "RECOVERY_RECEIPT",
+                "ADOPTION_JOURNAL",
+            ],
+        },
+        "divergence": {
+            "blockFile": "calendar-divergence-candidates.json",
+            "blockVersion": "s5-calendar-divergence-block-v1",
+            "detection": "EMPTY_DAILY_PROJECTION_ON_CLAIMED_SESSION",
+            "result": "CALENDAR_DIVERGENCE_SUSPECTED",
+            "resumePacketAuthored": False,
+            "providerCallsDuringBlock": 0,
+            "unresolvedBlockStopsResume": True,
+        },
+        "holidayAuthority": {
+            "transactionId": "CTCA0903R",
+            "sourceId": "kis-holiday-ctca0903r",
+            "mode": "LIVE_ONLY",
+            "maxPhysicalCalls": 32,
+            "scope": "DIVERGENCE_CANDIDATE_SESSIONS_ONLY",
+            "separateFromBootstrapBudget": True,
+            "requiredRole": "decision_collector",
+            "canonicalTable": "trading_sessions",
+            "attestationStatuses": [
+                "API_CONFIRMED",
+                "CALENDAR_AUTHORITY_CONFLICT",
+                "CALENDAR_AUTHORITY_UNVERIFIED",
+            ],
+            "unobservedCorrectionResult": "CALENDAR_AUTHORITY_UNVERIFIED",
+            "packetHashRemainsStatic": True,
+        },
+        "downstream": {
+            "openApiChange": 0,
+            "orderWiring": 0,
+            "providerRawArtifactInGit": 0,
+            "riskDecisionWiring": 0,
+            "signalContractChange": 0,
         },
     }
 
@@ -478,6 +577,29 @@ def _feature_fixture() -> dict[str, Any]:
     }
 
 
+def _corrected_calendar_feature_fixture() -> dict[str, Any]:
+    """Historical v2 bytes와 분리해 현재 correction-set session 산술을 고정한다."""
+
+    feature = copy.deepcopy(_feature_fixture())
+    feature.update(
+        {
+            "parquetSha256": "9" * 64,
+            "logicalDatasetHash": "a" * 64,
+        }
+    )
+    feature["provenance"].update(
+        {
+            "datasetCutoff": "2026-08-13T23:10:00Z",
+            "rawSessionStart": "2022-03-31",
+            "rawSessionEnd": "2026-08-13",
+            "eligibleSessionStart": "2022-06-27",
+            "eligibleSessionEnd": "2026-08-05",
+            "pitInputSha256": "b" * 64,
+        }
+    )
+    return feature
+
+
 def build_artifacts() -> dict[str, dict[str, Any]]:
     source = _source_fixture()
     feature = _feature_fixture()
@@ -503,10 +625,14 @@ def build_artifacts() -> dict[str, dict[str, Any]]:
     feature_unknown["featureColumns"][0] = "cross_market_score"
     artifacts = {
         CATALOG: _catalog(),
+        RECOVERY_CATALOG: _recovery_catalog(),
         SOURCE_SCHEMA: _source_schema(),
         FEATURE_SCHEMA: _feature_schema(),
         "contracts/examples/s5-pit-source-bundle-v1.valid.json": source,
         "contracts/examples/s5-feature-bundle-v2.valid.json": feature,
+        "contracts/examples/s5-feature-bundle-v2.corrected-calendar.valid.json": (
+            _corrected_calendar_feature_fixture()
+        ),
         "contracts/examples/invalid/s5-pit-source-bundle-v1.unknown-field.invalid.json": source_unknown,
         "contracts/examples/invalid/s5-pit-source-bundle-v1.operation.invalid.json": source_operation,
         "contracts/examples/invalid/s5-pit-source-bundle-v1.receipt-source.invalid.json": source_receipt_mismatch,

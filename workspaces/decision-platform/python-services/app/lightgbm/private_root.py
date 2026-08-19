@@ -33,9 +33,29 @@ def require_private_root(root: Path) -> None:
 def acquire_run_lock(run_root: Path) -> int:
     """한 bootstrap/resume만 provider handoff를 수행하도록 run 단위 exclusive lock을 잡는다."""
 
-    require_private_root(run_root)
+    return _acquire_private_lock(
+        root=run_root,
+        filename=".bootstrap.lock",
+        active_error="S5 bootstrap run is already active",
+    )
+
+
+def acquire_bootstrap_root_lock(root: Path) -> int:
+    """서로 다른 packet/run이 같은 approved root의 provider budget을 병렬 소비하지 못하게 한다."""
+
+    return _acquire_private_lock(
+        root=root,
+        filename=".bootstrap-root.lock",
+        active_error="S5 bootstrap root is already active",
+    )
+
+
+def _acquire_private_lock(*, root: Path, filename: str, active_error: str) -> int:
+    """Owner-private root의 고정 lock inode만 nonblocking exclusive로 연다."""
+
+    require_private_root(root)
     descriptor = os.open(
-        run_root / ".bootstrap.lock",
+        root / filename,
         os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC,
         0o600,
     )
@@ -51,7 +71,7 @@ def acquire_run_lock(run_root: Path) -> int:
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise LightGbmContractError("S5 bootstrap run is already active") from None
+            raise LightGbmContractError(active_error) from None
         return descriptor
     except Exception:
         os.close(descriptor)

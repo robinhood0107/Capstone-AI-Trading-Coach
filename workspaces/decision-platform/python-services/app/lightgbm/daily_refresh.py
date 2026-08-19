@@ -33,7 +33,7 @@ from app.lightgbm.bootstrap_executor import (
     _load_ecos_rows,
     _load_kis_rows,
     _load_string_rows,
-    _query_sha256,
+    provider_query_sha256,
     _require_reused_chunk,
     _seal_projection,
     _string_rows_parquet,
@@ -50,7 +50,7 @@ from app.lightgbm.features import (
     ProductionPriceEvidence,
     build_production_core_feature_rows,
 )
-from app.lightgbm.pit_calendar import _calendar, derive_monthly_universe_schedule
+from app.lightgbm.pit_calendar import corrected_calendar, derive_monthly_universe_schedule
 from app.lightgbm.private_root import require_private_root
 from app.lightgbm.production_policy import (
     ECOS_OPERATIONS,
@@ -354,7 +354,7 @@ def author_daily_refresh_packet(
 
     if cutoff.tzinfo is None:
         raise LightGbmContractError("daily packet cutoff must be timezone aware")
-    calendar = _calendar()
+    calendar = corrected_calendar()
     prior = calendar.date_to_session(state.session_date.isoformat(), direction="none")
     expected = cast(date, calendar.next_session(prior).date())
     from app.lightgbm.pit_calendar import latest_completed_session
@@ -439,9 +439,9 @@ def validate_daily_refresh_packet(
         raise LightGbmContractError("daily packet trust anchor or authority is invalid")
     expected_session = cast(
         date,
-        _calendar()
+        corrected_calendar()
         .next_session(
-            _calendar().date_to_session(state.session_date.isoformat(), direction="none")
+            corrected_calendar().date_to_session(state.session_date.isoformat(), direction="none")
         )
         .date(),
     )
@@ -586,7 +586,7 @@ def _daily_required_query_hashes(
         }
         for operation in ECOS_OPERATIONS
     )
-    expected = frozenset(_query_sha256(query) for query in queries)
+    expected = frozenset(provider_query_sha256(query) for query in queries)
     if len(expected) != len(queries):
         raise LightGbmContractError("daily logical query identity collision")
     return expected
@@ -642,7 +642,7 @@ class _DailyJournalGate:
         load: Callable[[object], object],
         empty_success: bool = False,
     ) -> object:
-        query_sha = _query_sha256(query)
+        query_sha = provider_query_sha256(query)
         completed = self.journal.completed_chunk(query_sha)
         if completed is not None:
             _require_reused_chunk(
@@ -750,7 +750,7 @@ class _JournaledDailyKrx:
                 load=lambda chunk: _load_string_rows(self.gate.root, chunk),  # type: ignore[arg-type]
             ),
         )
-        chunk = self.gate.journal.completed_chunk(_query_sha256(query))
+        chunk = self.gate.journal.completed_chunk(provider_query_sha256(query))
         if chunk is None:
             raise LightGbmContractError("daily KRX projection receipt is missing")
         self.receipts[(service, session_date)] = chunk.temporal
@@ -827,7 +827,7 @@ class _JournaledDailyKis:
                 load=lambda chunk: _load_kis_rows(self.gate.root, chunk),  # type: ignore[arg-type]
             ),
         )
-        chunk = self.gate.journal.completed_chunk(_query_sha256(query))
+        chunk = self.gate.journal.completed_chunk(provider_query_sha256(query))
         if chunk is None:
             raise LightGbmContractError("daily KIS projection receipt is missing")
         self.receipts[symbol] = chunk.temporal
@@ -881,7 +881,7 @@ class _JournaledDailyEcos:
                 empty_success=series.series_id == "policy-rate",
             ),
         )
-        chunk = self.gate.journal.completed_chunk(_query_sha256(query))
+        chunk = self.gate.journal.completed_chunk(provider_query_sha256(query))
         if chunk is None and result:
             raise LightGbmContractError("daily ECOS projection receipt is missing")
         self.receipts[series.series_id] = chunk.temporal if chunk is not None else None
@@ -1260,7 +1260,7 @@ def _daily_price_rows(
         "adjusted": "0",
     }
     snapshot_sha = hashlib.sha256(_kis_rows_parquet(tuple(sorted(bars, key=lambda row: row.date)))).hexdigest()
-    request_sha = _query_sha256(query)
+    request_sha = provider_query_sha256(query)
     if (
         chunk_receipt.source_id != "KIS"
         or chunk_receipt.operation_id != KIS_OPERATION
@@ -1339,7 +1339,7 @@ def _advance_macro(
         "end": target.isoformat(),
     }
     snapshot_sha = hashlib.sha256(_ecos_rows_parquet(observations)).hexdigest() if observations else None
-    request_sha = _query_sha256(request)
+    request_sha = provider_query_sha256(request)
     if observations and (
         chunk_receipt is None
         or chunk_receipt.source_id != "ECOS"
@@ -1454,7 +1454,7 @@ def _require_history(rows: Sequence[DailyKrxProjection], sessions: Sequence[date
 
 
 def _last_sessions(session_date: date, count: int) -> tuple[date, ...]:
-    calendar = _calendar()
+    calendar = corrected_calendar()
     last = calendar.date_to_session(session_date.isoformat(), direction="none")
     first = calendar.session_offset(last, -(count - 1))
     return tuple(cast(date, value.date()) for value in calendar.sessions_in_range(first, last))

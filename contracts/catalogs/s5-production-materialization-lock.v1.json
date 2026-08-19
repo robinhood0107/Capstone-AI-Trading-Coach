@@ -3,15 +3,19 @@
     "accountBalanceOrderCalls": 0,
     "costMax": 0,
     "ecosMaxGet": 24,
+    "freshSupersededAllowance": 0,
     "kisMaxGet": 1980,
     "kisTokenMax": 1,
     "krxMaxGet": 4441,
+    "maxSupersededAllowance": 8,
     "order": [
       "KRX",
       "KIS",
       "ECOS"
     ],
     "retry": 0,
+    "supersededAllowanceDerivation": "PROVEN_SUPERSEDED_CONSUMED_CALLS",
+    "supersededAllowanceLineage": "CALENDAR_RECOVERY",
     "totalMaxPhysicalCalls": 6446
   },
   "contractId": "s5-production-materialization-lock.v1",
@@ -33,7 +37,7 @@
     "krxMaxBytes": 17179869184,
     "krxMaxRows": 10000000,
     "manifestMaxBytes": 16777216,
-    "maxChunks": 6446
+    "maxChunks": 6454
   },
   "strictProviderPITClaim": false,
   "temporalQuality": "RECONSTRUCTED_FIXED_LAG"

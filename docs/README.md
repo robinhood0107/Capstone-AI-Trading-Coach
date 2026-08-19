@@ -210,8 +210,18 @@ calendar-derived monthly schedule, 외부 manifest digest trust anchor와 실제
 0-call/hash 격리 회귀를 고정한다.
 [S5.6 production materialization 변경기록](../contracts/changes/20260816-s5-6-production-materialization-lock.md)은
 reconstructed historical 등급, exact 6,446-call one-shot 상한, KRX→KIS→ECOS fail-stop 순서,
-durable resume receipt와 source/feature bundle v2를 고정한다. 현재 S5.6A data-plane code는
-merge candidate이고 provider 호출·실제 model release·production pointer는 아직 0이다.
+durable resume receipt와 source/feature bundle v2를 고정한다. S5.6A data-plane code는 구현됐고,
+[2026-08-17 calendar recovery 기록](../contracts/changes/20260817-s5-bootstrap-calendar-recovery-lock.md)은
+실제 KRX 4,082 physical calls, 성공 chunk 4,080개 재사용과 그 시점의 `CAPACITY_EXHAUSTED`를
+봉인한다. 원 packet·두 run·4,080개 reusable chunk는 content-addressed 이중 vault에 보존했고 실제
+archive 복원, inventory parity 및 provider-call 0 executor replay를 통과했다.
+[2026-08-19 superseded allowance·달력 권위 기록](../contracts/changes/20260819-s5-superseded-allowance-and-calendar-authority.md)은
+recovery receipt가 증명한 superseded consumed call 수만큼만 KRX 상한을 복원하는 evidence-bound
+allowance를 고정한다. fresh 유도식은 4,441/6,446으로 불변이므로 새 approved root는 더 큰 예산을
+열 수 없고, allowance는 packet bytes·binding preimage·receipt·adoption journal 네 곳에서 재계산된다.
+같은 기록은 거래일로 주장된 session의 빈 KRX 일별 projection을 `CALENDAR_DIVERGENCE_SUSPECTED`로
+분류해 resume packet 없이 멈추는 경계와, 후보 session만 실제 `CTCA0903R`로 확정하는 최대 32-call
+휴장일 권위 생산자를 함께 고정한다. 실제 model release와 pointer는 실행 receipt 전까지 0이다.
 [S5.6B model release 변경기록](../contracts/changes/20260816-s5-6b-model-release-lock.md)은 exact
 four-grid qualification, immutable release/exact-31 batch, V73 역할별 CAS, XKRX 휴일 clock과
 수동 daily refresh의 41-call 상한을 고정한다. repository-local 구현은 실제 provider/qualification

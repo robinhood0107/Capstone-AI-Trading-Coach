@@ -15,9 +15,11 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
 
         self.assertEqual(
             {
+                "autonomy",
                 "calendar",
                 "contractId",
                 "coverage",
+                "diagnostics",
                 "divergence",
                 "downstream",
                 "holidayAuthority",
@@ -250,21 +252,99 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
         self.assertEqual("PACKET_RAW_WINDOW", coverage["pagingWindowSource"])
         # 역사가 정확히 100의 배수로 끝나면 응답 모양만으로는 "더 없음"을 구분할 수 없다.
         self.assertTrue(coverage["pagingStopsWhenEvidenceIsSatisfied"])
+        # 커버리지 결손은 별도 sidecar가 아니라 진단 원장 한 곳에 남는다.
+        self.assertEqual("diagnostics.jsonl", coverage["diagnosticLedger"])
+        self.assertTrue(coverage["ledgerNamesDivergingSymbol"])
+        self.assertFalse(coverage["ledgerCarriesProviderPayload"])
 
-    def test_coverage_divergence_block_names_the_symbol_without_provider_payload(
-        self,
-    ) -> None:
-        """분류 코드만 남기면 원인을 찾는 데 매번 별도 진단이 필요하다."""
+    def test_diagnostic_ledger_lets_the_code_decide_and_fails_closed(self) -> None:
+        """실패가 이유를 들고 나오지 않으면 코드가 재시도·제외·정지를 고를 수 없다.
 
-        coverage = json.loads(CATALOG.read_text(encoding="utf-8"))["coverage"]
+        분류를 선언하지 않은 예외를 재시도나 제외로 넘기면 승인 호출을 태우거나 데이터를 조용히
+        축소한다. 그래서 기본값은 CONTRACT_VIOLATION이다.
+        """
 
-        self.assertEqual("kis-coverage-divergence.json", coverage["blockFile"])
+        diagnostics = json.loads(CATALOG.read_text(encoding="utf-8"))["diagnostics"]
+
+        self.assertEqual("diagnostics.jsonl", diagnostics["ledgerFile"])
+        self.assertTrue(diagnostics["appendOnly"])
+        self.assertFalse(diagnostics["carriesProviderPayload"])
         self.assertEqual(
-            "s5-kis-coverage-divergence-block-v1", coverage["blockVersion"]
+            [
+                "BUDGET_EXHAUSTED",
+                "CONTRACT_VIOLATION",
+                "EVIDENCE_GAP",
+                "RETRYABLE_TRANSIENT",
+            ],
+            diagnostics["outcomeClasses"],
         )
-        self.assertTrue(coverage["blockNamesDivergingSymbol"])
-        self.assertFalse(coverage["blockCarriesProviderPayload"])
-        self.assertEqual(0, coverage["providerCallsDuringBlock"])
+        self.assertEqual(
+            "CONTRACT_VIOLATION", diagnostics["unclassifiedFailureOutcome"]
+        )
+        # 보고는 실패 분류가 아니다. 섞으면 원장을 읽는 코드가 재시도할 것이 있다고 오해한다.
+        self.assertTrue(diagnostics["reportKindsAreNotOutcomeClasses"])
+        for kind in diagnostics["reportKinds"]:
+            self.assertNotIn(kind, diagnostics["outcomeClasses"])
+        # 증거 있는 제외라도 대규모면 조용한 축소다.
+        self.assertEqual(0.01, diagnostics["maxExcludedUnitRatio"])
+        # 진단을 남기지 못하는 것과 데이터가 틀린 것은 다르다.
+        self.assertFalse(diagnostics["recordingFailureChangesCollectionOutcome"])
+
+    def test_divergence_block_stays_a_deletable_gate_token(self) -> None:
+        """존재가 차단을 뜻하는 파일은 append-only 원장으로 접을 수 없다.
+
+        계약이 unresolvedBlockStopsResume으로 못 박았고 실행 경로가 파일 존재를 게이트로 쓴다.
+        원장은 "해소됨"을 표현할 수 없으므로 토큰은 별도로 남기고 사건만 미러링한다.
+        """
+
+        divergence = json.loads(CATALOG.read_text(encoding="utf-8"))["divergence"]
+
+        self.assertEqual("calendar-divergence-candidates.json", divergence["blockFile"])
+        self.assertTrue(divergence["blockIsGateTokenNotLedgerEntry"])
+        self.assertTrue(divergence["mirroredToDiagnosticLedger"])
+        blocking = [
+            item
+            for item in divergence["evidenceClasses"]
+            if item["evidence"] == "EMPTY_DAILY_PROJECTION"
+        ]
+        self.assertEqual(1, len(blocking))
+        self.assertTrue(blocking[0]["unresolvedBlockStopsResume"])
+    def test_autonomy_phases_match_where_a_tick_can_actually_stop(self) -> None:
+        """코드가 지킬 수 없는 구분을 상태로 만들면 전이 검증이 자기 모순을 잡는다.
+
+        provider별로 나누고 싶었지만 execute_bootstrap_materialization이 KRX·KIS·ECOS·bundle을
+        한 호출로 수행한다. 실제로 멈출 수 있는 경계만 단계로 둔다.
+        """
+
+        autonomy = json.loads(CATALOG.read_text(encoding="utf-8"))["autonomy"]
+
+        self.assertEqual(
+            ["MATERIALIZING", "QUALIFYING", "SERVING", "NEEDS_HUMAN"],
+            autonomy["phases"],
+        )
+        self.assertTrue(autonomy["forwardOnlyExceptRequalification"])
+        self.assertEqual("SERVING", autonomy["requalificationReentersFrom"])
+        self.assertTrue(autonomy["needsHumanIsTerminalWithoutOperator"])
+        self.assertTrue(autonomy["stateHistoryAppendOnly"])
+        # tick 중간 종료가 안전한 것은 journal이 이미 query 단위 멱등성을 보장하기 때문이다.
+        self.assertTrue(autonomy["tickIsIdempotent"])
+        self.assertTrue(autonomy["tickReliesOnJournalQueryIdempotence"])
+
+    def test_no_progress_is_not_failure_and_activation_stays_manual(self) -> None:
+        """무진척을 실패로 보면 watchdog이 계속 울려 곧 무시된다.
+
+        자동 재학습은 열되 pointer 전환은 사람이 한다. 서빙 모델이 승인 없이 바뀌지 않는다.
+        """
+
+        autonomy = json.loads(CATALOG.read_text(encoding="utf-8"))["autonomy"]
+
+        self.assertEqual(
+            {"progress": 0, "noProgress": 1, "needsHuman": 2}, autonomy["exitCodes"]
+        )
+        self.assertTrue(autonomy["noProgressIsNotFailure"])
+        self.assertTrue(autonomy["automaticRetrain"])
+        self.assertFalse(autonomy["automaticModelActivation"])
+        self.assertTrue(autonomy["activationRemainsManualCas"])
 
 if __name__ == "__main__":
     unittest.main()

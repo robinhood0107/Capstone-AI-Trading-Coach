@@ -28,6 +28,10 @@ from app.lightgbm.bootstrap_executor import (
     build_production_feature_table,
 )
 from app.lightgbm.bootstrap_packet import BootstrapPacket
+from app.lightgbm.diagnostics import (
+    QUALIFICATION_REPORT_OUTCOME,
+    record_report,
+)
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 from app.lightgbm.feature_artifact import (
     ProductionFeatureBundle,
@@ -305,8 +309,8 @@ def qualify_and_write_production_release(
     if selected is None:
         # 코드 이름만 남기면 모델 gate 실패와 계산 결함을 구분할 수 없다. 어떤 후보의 어떤 fold가
         # 어느 조건에서 걸렸는지 측정값과 함께 남긴다.
-        _publish_qualification_diagnostic(
-            parent=release_root.parent,
+        _record_qualification_diagnostic(
+            source_root=release_root.parent / "source",
             reason="CALIBRATION_FAILED",
             report=sensitivity_report,
         )
@@ -320,8 +324,8 @@ def qualify_and_write_production_release(
     if final_run is None:
         raise LightGbmContractError("qualification candidate selection drifted")
     if loader.access_count != 1 or not final_run.evaluation.passed:
-        _publish_qualification_diagnostic(
-            parent=release_root.parent,
+        _record_qualification_diagnostic(
+            source_root=release_root.parent / "source",
             reason="FINAL_TEST_CALIBRATION_FAILED",
             report=[
                 {
@@ -852,45 +856,51 @@ def _final_arrays(rows: _TrainingRows, split: object) -> Any:
 
 
 
-QUALIFICATION_DIAGNOSTIC_FILENAME = "qualification-diagnostic.json"
 QUALIFICATION_DIAGNOSTIC_VERSION = "s5-qualification-diagnostic-v1"
 
 
 def _rounded(value: float) -> float:
-    """비교 가능한 자리수로만 남긴다. 실수 표현 차이가 bytes를 흔들지 않게 한다."""
+    """비교 가능한 자리수로만 남긴다. 실수 표현 차이가 원장을 흔들지 않게 한다."""
 
     return round(float(value), 6)
 
 
-def _publish_qualification_diagnostic(
-    *, parent: Path, reason: str, report: Sequence[Mapping[str, object]]
+def _record_qualification_diagnostic(
+    *, source_root: Path, reason: str, report: Sequence[Mapping[str, object]]
 ) -> None:
-    """어떤 gate가 걸렸는지 측정값과 함께 남긴다.
+    """어떤 후보의 어떤 fold가 어느 조건에서 걸렸는지 원장에 한 줄씩 남긴다.
 
-    회계 원장이 아니라 진단 artifact다. 우리 모델의 집계 지표만 담고 provider 응답은 담지 않는다.
+    모델 gate 판정은 계약 위반도 증거 결손도 아니다. 재검증 루프가 읽는 보고이므로 실패 분류를
+    쓰지 않는다. 우리 모델의 집계 지표만 담고 provider 응답은 담지 않는다.
     """
 
-    payload = canonical_json_bytes(
-        {
-            "diagnosticVersion": QUALIFICATION_DIAGNOSTIC_VERSION,
-            "reason": reason,
-            "candidates": [dict(item) for item in report],
-        }
-    )
-    target = parent / QUALIFICATION_DIAGNOSTIC_FILENAME
-    try:
-        if target.exists():
-            os.unlink(target)
-        result = write_approved_new_file(
-            approved_root=parent,
-            relative_path=QUALIFICATION_DIAGNOSTIC_FILENAME,
-            content=payload,
-            max_bytes=1 * 1024 * 1024,
-        )
-        os.chmod(result.absolute_path, 0o600, follow_symlinks=False)
-    except (OSError, RagSafeIoError):
-        # 진단을 남기지 못하는 것이 qualification 결과를 바꾸지는 않는다.
-        return
+    for candidate in report:
+        folds = candidate.get("folds")
+        if not isinstance(folds, list):
+            continue
+        for fold in folds:
+            if not isinstance(fold, dict):
+                continue
+            measured: dict[str, object] = {
+                "reason": reason,
+                "diagnosticVersion": QUALIFICATION_DIAGNOSTIC_VERSION,
+                "gridIndex": candidate.get("gridIndex", -1),
+            }
+            for key, value in fold.items():
+                if key == "macro" and isinstance(value, Mapping):
+                    for macro_key, macro_value in value.items():
+                        measured[f"macro{macro_key[:1].upper()}{macro_key[1:]}"] = (
+                            macro_value
+                        )
+                    continue
+                measured[key] = value
+            record_report(
+                source_root=source_root,
+                phase="QUALIFYING",
+                report=QUALIFICATION_REPORT_OUTCOME,
+                measured=measured,
+            )
+
 
 def _corporate_sensitivity(
     *,

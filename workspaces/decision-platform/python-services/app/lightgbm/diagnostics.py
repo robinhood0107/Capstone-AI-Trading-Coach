@@ -24,6 +24,10 @@ DIAGNOSTIC_LEDGER_FILENAME = "diagnostics.jsonl"
 DIAGNOSTIC_EVENT_VERSION = "s5-diagnostic-event-v1"
 # 실패가 아닌 보고다. OutcomeClass를 실패 분류로만 유지하기 위해 값을 분리한다.
 COVERAGE_REPORT_OUTCOME = "COVERAGE_REPORT"
+# 모델 gate 판정은 계약 위반도 증거 결손도 아니다. 재검증 루프가 읽는 보고다.
+QUALIFICATION_REPORT_OUTCOME = "QUALIFICATION_REPORT"
+# 달력 divergence는 차단 게이트 토큰이 따로 있고 원장에는 읽기 편의를 위해 미러링한다.
+DIVERGENCE_MIRROR_OUTCOME = "CALENDAR_DIVERGENCE_SUSPECTED"
 # 한 실행이 남길 수 있는 진단은 승인 호출 수보다 많을 수 없다. 무한 성장을 구조적으로 막는다.
 MAX_DIAGNOSTIC_BYTES = 16 * 1024 * 1024
 
@@ -86,16 +90,34 @@ def _append_event(
         return
 
 
-def record_coverage_report(
-    *, source_root: Path, phase: str, measured: Mapping[str, object]
+def record_report(
+    *,
+    source_root: Path,
+    phase: str,
+    report: str,
+    measured: Mapping[str, object],
+    unit: CollectionUnit | None = None,
 ) -> None:
-    """한 phase의 수집·제외·보류 수를 남긴다. 실패가 아니므로 분류를 쓰지 않는다."""
+    """실패가 아닌 보고를 남긴다. OutcomeClass는 실패 분류로만 유지한다."""
 
     _append_event(
         source_root=source_root,
         phase=phase,
-        outcome=COVERAGE_REPORT_OUTCOME,
-        unit=None,
+        outcome=report,
+        unit=unit,
+        measured=measured,
+    )
+
+
+def record_coverage_report(
+    *, source_root: Path, phase: str, measured: Mapping[str, object]
+) -> None:
+    """한 phase의 수집·제외·보류 수를 남긴다."""
+
+    record_report(
+        source_root=source_root,
+        phase=phase,
+        report=COVERAGE_REPORT_OUTCOME,
         measured=measured,
     )
 

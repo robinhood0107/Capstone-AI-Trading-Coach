@@ -29,8 +29,10 @@ from app.lightgbm.bootstrap_journal import BootstrapJournal
 from app.lightgbm.bootstrap_packet import BootstrapPacket
 from app.lightgbm.diagnostics import (
     DIAGNOSTIC_LEDGER_FILENAME,
+    DIVERGENCE_MIRROR_OUTCOME,
     record_coverage_report,
     record_diagnostic,
+    record_report,
 )
 from app.lightgbm.outcomes import (
     BootstrapEvidenceGap,
@@ -111,8 +113,6 @@ _DAILY_UNIVERSE_SERVICES = ("stk_bydd_trd", "ksq_bydd_trd")
 MAX_EXCLUDED_SYMBOL_RATIO = 0.01
 _ECOS_CHUNK_DAYS = ECOS_MAX_ROWS_PER_REQUEST
 assert _ECOS_CHUNK_DAYS <= ECOS_MAX_ROWS_PER_REQUEST
-COVERAGE_DIVERGENCE_FILENAME = "kis-coverage-divergence.json"
-COVERAGE_BLOCK_VERSION = "s5-kis-coverage-divergence-block-v1"
 DIVERGENCE_CANDIDATES_FILENAME = "calendar-divergence-candidates.json"
 DIVERGENCE_BLOCK_VERSION = "s5-calendar-divergence-block-v1"
 MAX_DIVERGENCE_BLOCK_BYTES = 64 * 1024
@@ -659,6 +659,18 @@ def _publish_divergence_candidates(
         raise LightGbmContractError(
             "calendar divergence block conflicts with prior sealed bytes"
         )
+    # 게이트 토큰은 파일 존재가 차단을 뜻하므로 삭제 가능한 별도 파일로 남긴다. 원장에는
+    # 읽는 곳을 하나로 만들기 위해 같은 사건을 미러링만 한다.
+    record_report(
+        source_root=source_root,
+        phase="COLLECTING_KRX",
+        report=DIVERGENCE_MIRROR_OUTCOME,
+        measured={
+            "operationId": error.operation_id,
+            "sessionDate": error.session_date,
+            "evidence": evidence,
+        },
+    )
     _write_private_new_file(
         approved_root=source_root,
         relative_path=DIVERGENCE_CANDIDATES_FILENAME,
@@ -877,14 +889,9 @@ def _fetch_kis_symbol(
             break
         cursor_end = oldest - timedelta(days=1)
     if set(seen) != expected:
-        # 어떤 종목이 얼마나 어긋났는지 남긴다. 분류와 신원만 담고 provider 응답은 담지 않는다.
-        _publish_coverage_divergence(
-            source_root=source_root,
-            symbol=symbol,
-            identity=identity,
-            expected=expected,
-            observed=frozenset(seen),
-        )
+        # 어떤 종목이 얼마나 어긋났는지 예외가 직접 들고 나온다. 호출자가 원장에 남긴다.
+        missing = sorted(expected - set(seen))
+        extra = sorted(set(seen) - expected)
         raise BootstrapEvidenceGap(
             "KIS_HISTORY_UNAVAILABLE",
             unit=CollectionUnit(
@@ -896,10 +903,15 @@ def _fetch_kis_symbol(
                 label=symbol,
             ),
             measured={
+                "instrumentId": identity,
                 "expectedSessions": len(expected),
                 "observedSessions": len(seen),
-                "missingSessions": len(expected - set(seen)),
-                "extraSessions": len(set(seen) - expected),
+                "missingSessions": len(missing),
+                "extraSessions": len(extra),
+                "firstMissingSession": missing[0].isoformat() if missing else "",
+                "lastMissingSession": missing[-1].isoformat() if missing else "",
+                "firstExtraSession": extra[0].isoformat() if extra else "",
+                "lastExtraSession": extra[-1].isoformat() if extra else "",
             },
         )
     return tuple(seen[day] for day in sorted(seen)), tuple(receipts)
@@ -1203,75 +1215,6 @@ def _require_bounded_exclusion(
         raise LightGbmContractError(
             "bootstrap excluded unit ratio exceeds the approved bound"
         )
-
-
-def _publish_coverage_divergence(
-    *,
-    source_root: Path,
-    symbol: str,
-    identity: str,
-    expected: frozenset[date],
-    observed: frozenset[date],
-) -> None:
-    """KIS 커버리지가 KRX 증거와 어긋난 지점을 content-free sidecar로 남긴다.
-
-    이전에는 KIS_HISTORY_UNAVAILABLE만 남아 어떤 종목인지 알 수 없었고, 원인을 찾는 데 별도
-    진단 스크립트가 필요했다. 종목 신원은 이미 packet과 manifest에 있는 공개 식별자다.
-    """
-
-    missing = sorted(expected - observed)
-    extra = sorted(observed - expected)
-    entry: dict[str, object] = {
-        "instrumentId": identity,
-        "symbol": symbol,
-        "expectedSessions": len(expected),
-        "observedSessions": len(observed),
-        "missingSessions": len(missing),
-        "extraSessions": len(extra),
-        "firstMissingSession": missing[0].isoformat() if missing else "",
-        "lastMissingSession": missing[-1].isoformat() if missing else "",
-        "firstExtraSession": extra[0].isoformat() if extra else "",
-        "lastExtraSession": extra[-1].isoformat() if extra else "",
-    }
-    # 다른 종목에서 두 번째 결손이 나면 봉인 충돌이 진짜 실패 원인을 가린다. 누적 목록으로 둔다.
-    divergences: list[dict[str, object]] = []
-    target = source_root / COVERAGE_DIVERGENCE_FILENAME
-    if target.exists():
-        existing = read_approved_regular_file(
-            approved_root=source_root,
-            relative_path=COVERAGE_DIVERGENCE_FILENAME,
-            max_bytes=MAX_DIVERGENCE_BLOCK_BYTES,
-        )
-        try:
-            recorded = json.loads(existing.content.decode("utf-8"))["divergences"]
-        except Exception as error:
-            raise LightGbmContractError(
-                "KIS coverage divergence block is unreadable"
-            ) from error
-        if not isinstance(recorded, list):
-            raise LightGbmContractError("KIS coverage divergence block is invalid")
-        if entry in recorded:
-            return
-        divergences = [item for item in recorded if isinstance(item, dict)]
-    divergences.append(entry)
-    payload = canonical_json_bytes(
-        {
-            "blockVersion": COVERAGE_BLOCK_VERSION,
-            "divergences": sorted(
-                divergences, key=lambda item: str(item.get("symbol", ""))
-            ),
-            "providerCallsDuringBlock": 0,
-        }
-    )
-    # 회계 원장이 아니라 진단 artifact다. 갱신 중 중단되면 진단만 잃고 journal은 영향받지 않는다.
-    if target.exists():
-        os.unlink(target)
-    _write_private_new_file(
-        approved_root=source_root,
-        relative_path=COVERAGE_DIVERGENCE_FILENAME,
-        content=payload,
-        max_bytes=MAX_DIVERGENCE_BLOCK_BYTES,
-    )
 
 
 def _derive_traded_sessions(
@@ -1624,7 +1567,6 @@ def _prepare_private_bundle_root(
                 "manifest.json",
                 "recovery-lineage.json",
                 DIVERGENCE_CANDIDATES_FILENAME,
-                COVERAGE_DIVERGENCE_FILENAME,
                 DIAGNOSTIC_LEDGER_FILENAME,
             }
             if chunks

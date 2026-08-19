@@ -23,7 +23,11 @@ from app.lightgbm.metrics import (
 
 
 APPROVED_KRX_MAX_GET = 4_441
-APPROVED_TOTAL_MAX_PHYSICAL_CALLS = 6_446
+# 51개월 universe의 실측 고유 종목 수다. 180은 겹침 가정이었고 실제 증거는 270이었다.
+APPROVED_HORIZON_UNION_SIZE = 270
+APPROVED_KIS_MAX_GET = 2_970
+# 4,441 + 2,970 + 1 + 24 = 7,436. 유도식과 정확히 같은 값만 상한으로 둔다.
+APPROVED_TOTAL_MAX_PHYSICAL_CALLS = 7_436
 MAX_KRX_SUPERSEDED_ALLOWANCE = 8
 
 
@@ -79,7 +83,7 @@ class BootstrapBudget:
             raise LightGbmContractError("S5.6 superseded allowance exceeds approved bound")
         if (
             self.krx_get > APPROVED_KRX_MAX_GET + self.krx_superseded_allowance
-            or self.kis_get > 1_980
+            or self.kis_get > APPROVED_KIS_MAX_GET
             or self.kis_token > 1
             or self.ecos_get > 24
             or self.total > APPROVED_TOTAL_MAX_PHYSICAL_CALLS + self.krx_superseded_allowance
@@ -143,7 +147,11 @@ def _author_bootstrap_budget(
     raw_session_count: int,
     superseded_allowance: int,
 ) -> BootstrapBudget:
-    if not 1 <= union_size <= 180 or monthly_schedule_count < 1 or raw_session_count != 1_072:
+    if (
+        not 1 <= union_size <= APPROVED_HORIZON_UNION_SIZE
+        or monthly_schedule_count < 1
+        or raw_session_count != 1_072
+    ):
         raise DatasetUnavailable("DATASET_UNAVAILABLE: bootstrap dimensions are invalid")
     krx_get = raw_session_count * 4 + monthly_schedule_count * 2 + monthly_schedule_count
     kis_get = union_size * math.ceil(raw_session_count / 100)

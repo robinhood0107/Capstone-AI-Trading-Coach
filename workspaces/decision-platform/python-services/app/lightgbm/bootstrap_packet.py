@@ -35,6 +35,7 @@ from app.lightgbm.pit_calendar import (
     previous_xkrx_session,
 )
 from app.lightgbm.production_policy import (
+    APPROVED_HORIZON_UNION_SIZE,
     ECOS_OPERATIONS,
     KIS_OPERATION,
     KRX_OPERATIONS,
@@ -152,14 +153,14 @@ def _author_bootstrap_packet(
     if lineage_mode == "CALENDAR_RECOVERY":
         budget = author_recovery_bootstrap_budget(
             monthly_schedule_count=len(schedules),
-            union_size=180,
+            union_size=APPROVED_HORIZON_UNION_SIZE,
             raw_session_count=len(window.raw_sessions),
             superseded_allowance=superseded_allowance,
         )
     else:
         budget = author_bootstrap_budget(
             monthly_schedule_count=len(schedules),
-            union_size=180,
+            union_size=APPROVED_HORIZON_UNION_SIZE,
             raw_session_count=len(window.raw_sessions),
         )
     payload = {

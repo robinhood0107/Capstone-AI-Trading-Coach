@@ -105,6 +105,7 @@ from app.lightgbm.private_root import (
     require_private_root,
 )
 from app.lightgbm.production_policy import (
+    APPROVED_KIS_MAX_GET,
     MAX_KRX_SUPERSEDED_ALLOWANCE,
     BootstrapBudget,
     SecurityClassification,
@@ -693,7 +694,7 @@ def test_bootstrap_packet_has_exact_1072_1007_51_and_6446_caps() -> None:
     assert len(packet.window.eligible_sessions) == 1_007
     assert len(packet.schedules) == 51
     assert packet.budget.krx_get == 4_441
-    assert packet.budget.total == 6_446
+    assert packet.budget.total == 7_436
     assert packet.packet_version == "s5-production-bootstrap-packet-v2"
     assert packet.lineage_mode == "FRESH"
     assert packet.recovery_binding_sha256 is None
@@ -801,7 +802,7 @@ def test_calendar_recovery_grants_exact_superseded_allowance_and_closes_shortfal
     assert len(recovery.superseded_attempts) == 2
     assert recovery.corrected_packet.budget.krx_superseded_allowance == 2
     assert recovery.corrected_packet.budget.krx_get == 4_443
-    assert recovery.corrected_packet.budget.total == 6_448
+    assert recovery.corrected_packet.budget.total == 7_438
     assert recovery.krx_shortfall == 0
     assert receipt["krxSupersededAllowance"] == 2
     assert receipt["approvedKrxMaxGet"] == 4_443
@@ -1709,7 +1710,7 @@ def test_fresh_bootstrap_lineage_can_never_carry_superseded_allowance() -> None:
     fresh = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
     assert fresh.budget.krx_superseded_allowance == 0
     assert fresh.budget.krx_get == 4_441
-    assert fresh.budget.total == 6_446
+    assert fresh.budget.total == 7_436
     assert b"krxSupersededAllowance" in fresh.content
 
     # Fresh 유도식은 allowance 인자를 아예 받지 않는다.
@@ -1729,11 +1730,11 @@ def test_fresh_bootstrap_lineage_can_never_carry_superseded_allowance() -> None:
         )
     # 승인 상한을 allowance 없이 넘기면 budget 자체가 거부된다.
     with pytest.raises(LightGbmContractError, match="approved provider budget exceeded"):
-        BootstrapBudget(krx_get=4_442, kis_get=1_980, kis_token=1, ecos_get=24)
+        BootstrapBudget(krx_get=4_442, kis_get=APPROVED_KIS_MAX_GET, kis_token=1, ecos_get=24)
     with pytest.raises(LightGbmContractError, match="superseded allowance exceeds"):
         BootstrapBudget(
             krx_get=4_441,
-            kis_get=1_980,
+            kis_get=APPROVED_KIS_MAX_GET,
             kis_token=1,
             ecos_get=24,
             krx_superseded_allowance=MAX_KRX_SUPERSEDED_ALLOWANCE + 1,

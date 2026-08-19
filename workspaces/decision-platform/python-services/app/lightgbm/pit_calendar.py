@@ -30,7 +30,7 @@ S5_CALENDAR_POLICY_VERSION = "xkrx-4.13.2-kis-corrections-v1"
 
 # CTCA0903R가 XKRX base보다 우선한다는 기존 S1.6 authority를 S5에도 적용한다.
 # 고정 라이브러리에 없는 임시휴장만 contract-change로 추가하며 주말/법정휴일은 중복 기재하지 않는다.
-S5_ADHOC_CLOSED_SESSIONS = (date(2026, 6, 3),)
+S5_ADHOC_CLOSED_SESSIONS = (date(2026, 6, 3), date(2026, 7, 17))
 S5_CALENDAR_CORRECTION_SET_SHA256 = hashlib.sha256(
     b"s5-xkrx-calendar-corrections-v1\x00"
     + canonical_json_bytes([day.isoformat() for day in S5_ADHOC_CLOSED_SESSIONS])

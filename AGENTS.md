@@ -103,6 +103,10 @@
 - 거래일로 주장된 session의 빈 KRX 일별 projection은 일반 실패가 아니라
   `CALENDAR_DIVERGENCE_SUSPECTED`다. 후보 session을 content-free sidecar로 남기고 resume packet을
   만들지 않으며, 해소되지 않은 block은 다음 실행을 provider client 앞에서 멈춘다.
+- 인접 session이 정상인데 한 session만 실패하면 `SINGLE_SESSION_QUERY_FAILURE` 후보 증거를 남긴다.
+  provider 일시 오류와 구분할 수 없으므로 이 증거는 계약이 허용한 resume을 막지 않으며, 운영자는
+  별도 예산의 휴장일 권위로 먼저 확인한 뒤 재개하거나 correction을 추가한다. block bytes는 packet과
+  후보 집합에만 의존하고 누적 회계는 append-only journal이 단독 권위다.
 - 달력 correction set은 packet 해시 결정성을 위해 정적 상수로 유지하되, 후보 session만 실제 KIS
   `CTCA0903R`로 확정해(최대 32 calls, live 전용, bootstrap 예산과 분리) `trading_sessions`에 적재하고
   상수와 대조한다. 관측이 없으면 통과가 아니라 `CALENDAR_AUTHORITY_UNVERIFIED`다.

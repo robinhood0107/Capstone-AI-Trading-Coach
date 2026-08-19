@@ -38,6 +38,7 @@ from app.lightgbm.features import (
     select_pit_price_vintages,
 )
 from app.lightgbm.pit_calendar import (
+    S5_ADHOC_CLOSED_SESSIONS,
     MonthlyUniverseSchedule,
     build_pit_session_window,
     derive_monthly_universe_schedule,
@@ -60,7 +61,7 @@ def test_calendar_regression_has_exact_1072_and_1007_sessions() -> None:
 
     assert window.latest_completed == date(2026, 8, 14)
     assert (window.raw_sessions[0], window.raw_sessions[-1], len(window.raw_sessions)) == (
-        date(2022, 3, 31),
+        date(2022, 3, 30),
         date(2026, 8, 14),
         1_072,
     )
@@ -69,9 +70,20 @@ def test_calendar_regression_has_exact_1072_and_1007_sessions() -> None:
         window.eligible_sessions[-1],
         len(window.eligible_sessions),
     ) == (
-        date(2022, 6, 27),
+        date(2022, 6, 24),
         date(2026, 8, 6),
         1_007,
+    )
+    # 승인된 correction은 어떤 경계에도 남아 있으면 안 된다. 새 correction이 추가되면
+    # 위 경계는 정확히 correction 수만큼 앞으로 밀린다.
+    for closed in S5_ADHOC_CLOSED_SESSIONS:
+        assert closed not in window.raw_sessions
+        assert closed not in window.eligible_sessions
+    # eligible은 label이 성숙한 raw의 연속 구간이며 raw 꼬리가 아니다.
+    start = window.raw_sessions.index(window.eligible_sessions[0])
+    assert (
+        window.eligible_sessions
+        == window.raw_sessions[start : start + len(window.eligible_sessions)]
     )
 
 
@@ -372,14 +384,18 @@ def test_forbidden_columns_fail_before_projection() -> None:
 
 
 def _bundle_provenance() -> FeatureBundleProvenance:
+    """달력 경계를 하드코딩하지 않고 유도해 correction 추가에도 fixture가 어긋나지 않게 한다."""
+
+    cutoff = datetime(2026, 8, 15, 8, 10, tzinfo=KST)
+    window = build_pit_session_window(cutoff)
     return FeatureBundleProvenance(
-        dataset_cutoff=datetime(2026, 8, 15, 8, 10, tzinfo=KST),
-        raw_session_start=date(2022, 3, 31),
-        raw_session_end=date(2026, 8, 14),
-        raw_session_count=1_072,
-        eligible_session_start=date(2022, 6, 27),
-        eligible_session_end=date(2026, 8, 6),
-        eligible_session_count=1_007,
+        dataset_cutoff=cutoff,
+        raw_session_start=window.raw_sessions[0],
+        raw_session_end=window.raw_sessions[-1],
+        raw_session_count=len(window.raw_sessions),
+        eligible_session_start=window.eligible_sessions[0],
+        eligible_session_end=window.eligible_sessions[-1],
+        eligible_session_count=len(window.eligible_sessions),
         universe_schedule_sha256="c" * 64,
         pit_input_sha256="d" * 64,
     )

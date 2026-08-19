@@ -17,7 +17,9 @@ from app.data.kis.http_client import (
     KISTransportError,
 )
 from app.data.kis.rate_limiter import KISRateLimitUnavailable, KISRateLimitWaitExceeded
+from app.lightgbm import bootstrap_executor
 from app.lightgbm.diagnostics import (
+    COVERAGE_REPORT_OUTCOME,
     DIAGNOSTIC_LEDGER_FILENAME,
     MAX_DIAGNOSTIC_BYTES,
     read_diagnostics,
@@ -183,3 +185,56 @@ def test_diagnostic_ledger_rejects_a_corrupted_line(tmp_path: Path) -> None:
     (root / DIAGNOSTIC_LEDGER_FILENAME).write_text("{not json}\n", encoding="utf-8")
     with pytest.raises(json.JSONDecodeError):
         read_diagnostics(source_root=root)
+def test_bounded_exclusion_lets_one_unit_go_but_stops_a_silent_shrink(
+    tmp_path: Path,
+) -> None:
+    """한 종목의 증거 결손이 전체 실행을 죽이면 안 되고, 대규모 제외는 멈춰야 한다.
+
+    실측: 010620은 상장폐지로 910 session만 존재한다. 그 한 종목 때문에 7,443호출 실행 전체가
+    죽었다. 반대로 제외를 무제한 허용하면 데이터셋이 조용히 축소된다. 증거 있는 제외라도 비율
+    상한을 둔다.
+    """
+
+    root = tmp_path / "source"
+    root.mkdir(mode=0o700)
+
+    # 270 종목 중 2건 제외는 1% 상한 안이다.
+    bootstrap_executor._require_bounded_exclusion(
+        source_root=root, phase="COLLECTING_KIS", excluded=2, total=270
+    )
+    report = read_diagnostics(source_root=root)[-1]
+    assert report["outcome"] == COVERAGE_REPORT_OUTCOME
+    assert report["measured"]["excludedUnits"] == 2  # type: ignore[index]
+    assert report["measured"]["totalUnits"] == 270  # type: ignore[index]
+
+    # 3건이면 상한을 넘어 멈춘다.
+    with pytest.raises(LightGbmContractError, match="excluded unit ratio"):
+        bootstrap_executor._require_bounded_exclusion(
+            source_root=root, phase="COLLECTING_KIS", excluded=3, total=270
+        )
+    # 멈춘 경우에도 보고는 남아 있어야 진단이 가능하다.
+    assert read_diagnostics(source_root=root)[-1]["measured"]["excludedUnits"] == 3  # type: ignore[index]
+
+
+def test_exclusion_report_is_not_a_failure_classification(tmp_path: Path) -> None:
+    """제외 0건을 재시도 분류로 적으면 원장을 읽는 코드가 재시도할 것이 있다고 오해한다."""
+
+    root = tmp_path / "source"
+    root.mkdir(mode=0o700)
+    bootstrap_executor._require_bounded_exclusion(
+        source_root=root, phase="COLLECTING_KIS", excluded=0, total=270
+    )
+    outcome = read_diagnostics(source_root=root)[-1]["outcome"]
+    assert outcome == COVERAGE_REPORT_OUTCOME
+    assert outcome not in {item.value for item in OutcomeClass}
+
+
+def test_unit_total_of_zero_is_a_contract_violation(tmp_path: Path) -> None:
+    """단위가 0이면 비율 판정 자체가 무의미하므로 조용히 통과시키지 않는다."""
+
+    root = tmp_path / "source"
+    root.mkdir(mode=0o700)
+    with pytest.raises(LightGbmContractError, match="unit total is invalid"):
+        bootstrap_executor._require_bounded_exclusion(
+            source_root=root, phase="COLLECTING_KIS", excluded=0, total=0
+        )

@@ -1,0 +1,15 @@
+[Unit]
+Description=S5 autonomous tick schedule
+
+[Timer]
+# 첫 tick은 부팅 뒤 잠시 기다린다. 컨테이너와 quota backend가 올라올 시간을 준다.
+OnBootSec=5min
+# tick 하나가 한 단계를 끝내므로 짧게 돌 이유가 없다. rate limit 대기가 tick 경계로 흡수된다.
+OnUnitActiveSec=30min
+# tick이 겹치면 run lock에서 하나가 죽는다. 시간을 흩어 그 충돌을 줄인다.
+RandomizedDelaySec=2min
+Persistent=true
+Unit=s5-tick.service
+
+[Install]
+WantedBy=timers.target

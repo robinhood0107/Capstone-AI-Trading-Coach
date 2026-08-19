@@ -29,6 +29,8 @@ from app.data.krx.production_parsers import (
 from app.lightgbm.errors import CalendarDivergenceSuspected, DatasetUnavailable, LightGbmContractError
 from app.lightgbm.bootstrap_control import BootstrapLedger, BootstrapPhase
 from app.lightgbm import bootstrap_executor
+from app.lightgbm.diagnostics import read_diagnostics, record_diagnostic
+from app.lightgbm.outcomes import BootstrapEvidenceGap, OutcomeClass
 from app.lightgbm.bootstrap_executor import (
     DIVERGENCE_CANDIDATES_FILENAME,
     BootstrapAcquisition,
@@ -2791,9 +2793,10 @@ def test_kis_coverage_divergence_names_the_symbol_and_survives_resume(
     """커버리지 결손이 나면 어떤 종목에서 몇 개가 어긋났는지 실행 하나로 알 수 있어야 한다.
 
     이전에는 KIS_HISTORY_UNAVAILABLE만 남아 원인을 찾는 데 별도 진단 스크립트가 필요했고, 그
-    비용은 발생할 때마다 반복된다. sidecar는 분류와 신원만 담고 provider 응답은 담지 않는다.
+    비용은 발생할 때마다 반복된다. 이제 예외가 단위 신원과 측정값을 직접 들고 나오고 호출자가
+    진단 원장에 남긴다. 분류와 신원만 담고 provider 응답은 담지 않는다.
 
-    sidecar를 추가하면서 source root의 정확한 allowlist에 등록하지 않으면 다음 resume이
+    진단 원장을 추가하면서 source root의 정확한 allowlist에 등록하지 않으면 다음 resume이
     "production bundle root must be empty"로 죽는다. 그 경로도 함께 고정한다.
     """
 
@@ -2801,7 +2804,7 @@ def test_kis_coverage_divergence_names_the_symbol_and_survives_resume(
     raw = packet.window.raw_sessions[-120:]
     root = tmp_path / "diverged"
 
-    with pytest.raises(DatasetUnavailable, match="KIS_HISTORY_UNAVAILABLE"):
+    with pytest.raises(BootstrapEvidenceGap) as caught:
         _kis_symbol_fetch(
             tmp_path=root,
             raw_sessions=raw,
@@ -2809,51 +2812,29 @@ def test_kis_coverage_divergence_names_the_symbol_and_survives_resume(
             available=raw[:-40],
         )
 
+    gap = caught.value
+    assert gap.unit.provider == "KIS"
+    assert gap.unit.label == "000001"
+    assert gap.measured["missingSessions"] == 40
+    assert gap.measured["extraSessions"] == 0
+    assert gap.measured["firstMissingSession"] == raw[-40].isoformat()
+    assert gap.measured["lastMissingSession"] == raw[-1].isoformat()
+
+    # 호출자가 원장에 남기는 경로를 그대로 재현한다.
     source_root = root / "source"
-    block = json.loads(
-        (source_root / bootstrap_executor.COVERAGE_DIVERGENCE_FILENAME).read_text(
-            encoding="utf-8"
-        )
-    )
-    assert block["blockVersion"] == bootstrap_executor.COVERAGE_BLOCK_VERSION
-    assert block["providerCallsDuringBlock"] == 0
-    entry = block["divergences"][0]
-    assert entry["symbol"] == "000001"
-    assert entry["missingSessions"] == 40
-    assert entry["extraSessions"] == 0
-    assert entry["firstMissingSession"] == raw[-40].isoformat()
-    assert entry["lastMissingSession"] == raw[-1].isoformat()
-
-    # sidecar가 있어도 같은 run root를 다시 열 수 있어야 한다. allowlist 누락이면 여기서 죽는다.
-    bootstrap_executor._prepare_private_bundle_root(
-        source_root, chunks=True, resume=True
-    )
-
-    # 같은 결손을 다시 만나면 idempotent하고, 다른 종목 결손은 가려지지 않고 함께 쌓인다.
-    stat_before = (source_root / bootstrap_executor.COVERAGE_DIVERGENCE_FILENAME).read_bytes()
-    bootstrap_executor._publish_coverage_divergence(
+    record_diagnostic(
         source_root=source_root,
-        symbol="000001",
-        identity="KR7000001003",
-        expected=frozenset(raw),
-        observed=frozenset(raw[:-40]),
+        phase="COLLECTING_KIS",
+        outcome=OutcomeClass.EVIDENCE_GAP,
+        unit=gap.unit,
+        measured=gap.measured,
     )
-    assert (
-        source_root / bootstrap_executor.COVERAGE_DIVERGENCE_FILENAME
-    ).read_bytes() == stat_before
-    bootstrap_executor._publish_coverage_divergence(
-        source_root=source_root,
-        symbol="000002",
-        identity="KR7000002001",
-        expected=frozenset(raw),
-        observed=frozenset(raw[:-2]),
-    )
-    updated = json.loads(
-        (source_root / bootstrap_executor.COVERAGE_DIVERGENCE_FILENAME).read_text(
-            encoding="utf-8"
-        )
-    )
-    assert [item["symbol"] for item in updated["divergences"]] == ["000001", "000002"]
+    event = read_diagnostics(source_root=source_root)[-1]
+    assert event["outcome"] == "EVIDENCE_GAP"
+    assert event["unit"]["label"] == "000001"  # type: ignore[index]
+    assert event["measured"]["missingSessions"] == 40  # type: ignore[index]
+
+    # 원장이 있어도 같은 run root를 다시 열 수 있어야 한다. allowlist 누락이면 여기서 죽는다.
     bootstrap_executor._prepare_private_bundle_root(
         source_root, chunks=True, resume=True
     )

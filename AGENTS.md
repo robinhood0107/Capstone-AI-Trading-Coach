@@ -111,6 +111,10 @@
   이관된 superseded 소비는 누적 예산에 남지만 새 세대의 재시도 자격을 먹지 않는다. prior packet은
   세대 해시가 아니라 소비 query 다중집합으로 유도한 체인 head이며, supersede는 packet 신원을
   바꿔야 한다.
+- 재검증은 `SERVING`에서 append 세션이 임계치를 넘거나 월 경계를 지날 때만 열린다. 무엇을 이미
+  학습했는지의 권위는 append-only 상태 이력의 watermark이며 별도 표를 두지 않는다. 자동 재학습과
+  release stage는 허용하되 활성 pointer 전환은 계속 수동 CAS다. gate 실패는 계약 위반이 아니라
+  정상 상태이므로 이전 release가 계속 서빙되고, 없으면 ABSTAIN이 유지된다.
 - 승인 차원에서 유도되는 값은 리터럴로 중복 선언하지 않는다. eligible session 수는 raw에서
   warm-up과 label tail을 뺀 값이고, KRX·KIS 상한은 raw session·월 수·horizon union에서 나오며,
   총 상한은 네 provider 상한의 합이고, KIS source 행 상한은 union과 raw session의 곱이다. 두

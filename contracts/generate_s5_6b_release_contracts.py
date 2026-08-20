@@ -170,8 +170,18 @@ def artifacts() -> dict[str, bytes]:
             "freshCurrentSessionBatchRequired": True,
             "oldBatchReuseAllowed": False,
         },
-        "automaticRetrain": 0,
+        # 자동 재학습과 release stage는 허용한다. gate 실패가 종단이면 데이터가 쌓여도 모델이
+        # 영원히 나오지 않는다.
+        "automaticRetrain": 1,
+        "requalificationTriggers": ["APPEND_SESSION_THRESHOLD", "MONTH_BOUNDARY"],
+        "requalificationSessionThreshold": 21,
+        "requalificationWatermarkSource": "RUN_STATE_HISTORY",
+        "stagedReleaseAwaitingManualActivation": 1,
+        # 활성 pointer 전환은 사람이 한다. 서빙 모델이 승인 없이 바뀌지 않는다.
         "automaticModelActivation": 0,
+        "failedRequalificationLeavesActivePointerUntouched": 1,
+        "lastGoodKeepsServingOnGateFailure": 1,
+        "absentLastGoodServesAbstain": 1,
         "riskDecisionWiring": 0,
         "orderWiring": 0,
     }

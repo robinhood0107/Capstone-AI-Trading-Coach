@@ -112,11 +112,19 @@ def read_run_state(*, run_root: Path) -> RunState:
 
 
 def advance_run_state(
-    *, run_root: Path, current: RunState, phase: RunPhase, outcome: str
+    *,
+    run_root: Path,
+    current: RunState,
+    phase: RunPhase,
+    outcome: str,
+    marker: str = "",
 ) -> RunState:
     """전이를 검증하고 상태를 원자적으로 바꾼 뒤 이력에 append한다.
 
     같은 phase에 머무는 것은 허용한다. 한 tick이 그 phase를 다 끝내지 못했을 뿐이기 때문이다.
+
+    `marker`는 호출자가 이 전이에 남기는 watermark다. 무엇을 이미 처리했는지의 권위를 별도 표가
+    아니라 append-only 이력에 두기 위한 것이다.
     """
 
     if phase is not current.phase and phase is not RunPhase.NEEDS_HUMAN:
@@ -125,7 +133,9 @@ def advance_run_state(
     if current.tick >= MAX_TICKS:
         raise LightGbmContractError("run state tick budget is exhausted")
     updated = _build(phase=phase, tick=current.tick + 1, last_outcome=outcome)
-    _append_history(run_root=run_root, previous=current, updated=updated)
+    _append_history(
+        run_root=run_root, previous=current, updated=updated, marker=marker
+    )
     target = run_root / RUN_STATE_FILENAME
     temporary = run_root / f".{RUN_STATE_FILENAME}.tmp"
     descriptor = os.open(
@@ -142,7 +152,9 @@ def advance_run_state(
     return updated
 
 
-def _append_history(*, run_root: Path, previous: RunState, updated: RunState) -> None:
+def _append_history(
+    *, run_root: Path, previous: RunState, updated: RunState, marker: str = ""
+) -> None:
     """전이 이력은 append-only다. 상태 파일이 유실돼도 무엇이 있었는지 남는다."""
 
     # canonical_json_bytes가 마지막 newline을 이미 포함한다.
@@ -153,6 +165,7 @@ def _append_history(*, run_root: Path, previous: RunState, updated: RunState) ->
             "toPhase": str(updated.phase),
             "tick": updated.tick,
             "outcome": updated.last_outcome,
+            "marker": marker[:32],
         }
     )
     target = run_root / RUN_STATE_HISTORY_FILENAME

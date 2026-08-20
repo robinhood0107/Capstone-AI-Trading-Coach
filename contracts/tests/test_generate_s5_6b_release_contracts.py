@@ -81,5 +81,37 @@ class S56BReleaseContractGenerationTest(unittest.TestCase):
         self.assertFalse(catalog["sessionClock"]["calendarDatePlusOneAllowed"])
 
 
+    def test_automatic_retrain_is_open_but_activation_stays_manual(self) -> None:
+        """gate 실패가 종단이면 데이터가 쌓여도 모델이 영원히 나오지 않는다.
+
+        그래서 재학습과 release stage는 자동으로 열되 활성 pointer 전환은 사람이 한다. 서빙
+        모델이 승인 없이 바뀌지 않는다.
+        """
+
+        payload = self._json("contracts/catalogs/s5-production-release-lock.v1.json")
+
+        self.assertEqual(1, payload["automaticRetrain"])
+        self.assertEqual(1, payload["stagedReleaseAwaitingManualActivation"])
+        self.assertEqual(0, payload["automaticModelActivation"])
+        self.assertEqual("MANUAL_EXPECTED_CURRENT_CAS", payload["activation"])
+        self.assertEqual(0, payload["orderWiring"])
+        self.assertEqual(0, payload["riskDecisionWiring"])
+
+    def test_requalification_is_bounded_and_last_good_keeps_serving(self) -> None:
+        """매 tick마다 다시 학습하면 계산과 seal이 무의미하게 쌓인다."""
+
+        payload = self._json("contracts/catalogs/s5-production-release-lock.v1.json")
+
+        self.assertEqual(
+            ["APPEND_SESSION_THRESHOLD", "MONTH_BOUNDARY"],
+            payload["requalificationTriggers"],
+        )
+        self.assertEqual(21, payload["requalificationSessionThreshold"])
+        # 무엇을 이미 학습했는지의 권위는 append-only 상태 이력이다.
+        self.assertEqual("RUN_STATE_HISTORY", payload["requalificationWatermarkSource"])
+        self.assertEqual(1, payload["failedRequalificationLeavesActivePointerUntouched"])
+        self.assertEqual(1, payload["lastGoodKeepsServingOnGateFailure"])
+        self.assertEqual(1, payload["absentLastGoodServesAbstain"])
+
 if __name__ == "__main__":
     unittest.main()

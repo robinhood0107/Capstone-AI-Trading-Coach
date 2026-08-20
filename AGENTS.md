@@ -300,7 +300,6 @@ Decision, Signal, RiskDecision, order, decision hash에 영향을 주지 않는�
 - KIS 원본 응답, 응답 헤더, access token, 계좌 식별자, raw/parquet/csv/jsonl 산출물은 커밋하지 않는다. 테스트에는 마스킹된 offline fixture만 둔다.
 - KIS Live 시장데이터 조회 계획과 KIS Live 주문 기능은 분리한다. 실계좌 주문·정정·취소는 S3 이후 별도 live-order gate가 명시되기 전까지 기본 비활성이다.
 - 로그 예시가 필요하면 값은 반드시 마스킹한다.
-- 커밋 전 gitleaks 또는 GitHub `repo-hygiene` workflow로 secret scan을 통과해야 한다.
 
 ### KIS 호출 유량 불변식
 
@@ -413,7 +412,7 @@ Gradle build), `python-ci.yml`(Python 3.12 품질 게이트)이다. 아래 시�
 - 테스트 삭제·skip·기대값 완화로 통과시키거나 migration/RLS/API parity gate를 생략하지 않는다.
   가설 수정마다 전체 pytest·Gradle·CI를 반복하지 않고, 변경 지점의 가장 가까운 검증부터 실행한 뒤
   동결된 release tree에서 전체 gate를 한 번 수행한다.
-- 변경 유형별 기본 검증은 문서·규칙은 `git diff --check`·링크·hygiene·gitleaks, Python/Kotlin 로직은
+- 변경 유형별 기본 검증은 문서·규칙은 `git diff --check`·링크·hygiene, Python/Kotlin 로직은
   해당 모듈 focused test와 Ruff/mypy 또는 ktlint, DB migration·ACL은 migration contract와 RLS/security
   integration, provider transport는 deterministic fixture와 socket 0 preflight, 공개 계약은 generator와
   OpenAPI/proto byte parity다. release 후보만 전체 local gate와 required CI를 각각 한 번 수행한다.

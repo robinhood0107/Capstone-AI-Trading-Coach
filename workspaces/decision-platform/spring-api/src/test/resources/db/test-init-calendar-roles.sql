@@ -14,6 +14,12 @@ CREATE ROLE decision_disclosure_reader
 CREATE ROLE decision_market_writer
     LOGIN PASSWORD 'market-writer-test'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_market_operational_reader
+    NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_market_research_reader
+    NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_market_retention_admin
+    NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_portfolio_writer
     LOGIN PASSWORD 'portfolio-writer-test'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
@@ -86,6 +92,9 @@ GRANT USAGE ON SCHEMA public TO
     decision_collector,
     decision_disclosure_reader,
     decision_market_writer,
+    decision_market_operational_reader,
+    decision_market_research_reader,
+    decision_market_retention_admin,
     decision_portfolio_writer,
     decision_risk_writer,
     decision_fill_writer,

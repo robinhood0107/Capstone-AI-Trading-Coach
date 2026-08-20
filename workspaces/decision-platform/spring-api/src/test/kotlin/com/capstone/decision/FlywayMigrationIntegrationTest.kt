@@ -214,7 +214,7 @@ class FlywayMigrationIntegrationTest(
     @Test
     fun `V74 preserves audit objects and revokes every LightGBM production mutation capability`() {
         val url = createDatabase("s5_research_only_v74")
-        flyway(url).migrate()
+        flyway(url, target = "74").migrate()
 
         DriverManager.getConnection(url, postgres.username, postgres.password).use { connection ->
             connection.createStatement().use { statement ->
@@ -257,6 +257,106 @@ class FlywayMigrationIntegrationTest(
                         assertEquals(3, result.getInt(1))
                     }
             }
+        }
+    }
+
+    @Test
+    fun `V75 stores neutral market data append only and separates all reader roles`() {
+        val url = createDatabase("s5_7b_market_data_v75")
+        flyway(url).migrate()
+
+        DriverManager.getConnection(url, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement
+                    .executeQuery(
+                        "select version from flyway_schema_history where success order by installed_rank",
+                    ).use { result ->
+                        val versions = mutableListOf<String>()
+                        while (result.next()) versions += result.getString(1)
+                        assertEquals((1..75).map(Int::toString), versions)
+                    }
+                val privileges =
+                    mapOf(
+                        "writer_insert" to
+                            "has_table_privilege('decision_market_writer','market_data_bars','INSERT')",
+                        "writer_update" to
+                            "has_table_privilege('decision_market_writer','market_data_bars','UPDATE')",
+                        "writer_delete" to
+                            "has_table_privilege('decision_market_writer','market_data_bars','DELETE')",
+                        "operational_view" to
+                            "has_table_privilege('decision_market_operational_reader','market_data_operational_bars','SELECT')",
+                        "operational_raw" to
+                            "has_table_privilege('decision_market_operational_reader','market_data_bars','SELECT')",
+                        "research_view" to
+                            "has_table_privilege('decision_market_research_reader','market_data_research_bars','SELECT')",
+                        "app_operational" to
+                            "has_table_privilege('decision_app','market_data_operational_bars','SELECT')",
+                        "app_research" to
+                            "has_table_privilege('decision_app','market_data_research_bars','SELECT')",
+                    )
+                privileges.forEach { (name, expression) ->
+                    statement.executeQuery("select $expression").use { result ->
+                        assertTrue(result.next())
+                        val expected = name in setOf("writer_insert", "operational_view", "research_view")
+                        assertEquals(expected, result.getBoolean(1), name)
+                    }
+                }
+                statement
+                    .executeQuery(
+                        "select has_function_privilege(" +
+                            "'decision_market_retention_admin'," +
+                            "'prune_market_data_macro(date,boolean)','EXECUTE')",
+                    ).use { result ->
+                        assertTrue(result.next())
+                        assertTrue(result.getBoolean(1))
+                    }
+                statement
+                    .executeQuery(
+                        "select has_function_privilege(" +
+                            "'decision_market_writer'," +
+                            "'prune_market_data_macro(date,boolean)','EXECUTE')",
+                    ).use { result ->
+                        assertTrue(result.next())
+                        assertFalse(result.getBoolean(1))
+                    }
+            }
+        }
+
+        val manifestA = "a".repeat(64)
+        val manifestB = "b".repeat(64)
+        val source = "c".repeat(64)
+        val archive = "d".repeat(64)
+        val calendar = "e".repeat(64)
+        val insert =
+            """
+            insert into market_data_manifests (
+              manifest_sha256, manifest_kind, contract_id, session_date, as_of,
+              generation, source_manifest_sha256, archive_sha256,
+              calendar_revision, calendar_sha256, temporal_quality
+            ) values (?, 'SEED', 'market-data-seed.v1', date '2026-08-13',
+              timestamptz '2026-08-19 13:08:04+00', 1, ?, ?,
+              'XKRX-4.13.2+KIS_CTCA0903R', ?, 'RECONSTRUCTED_FIXED_LAG')
+            """.trimIndent()
+        DriverManager.getConnection(url, "decision_market_writer", MARKET_WRITER_PASSWORD).use { writer ->
+            writer.prepareStatement(insert).use { statement ->
+                statement.setString(1, manifestA)
+                statement.setString(2, source)
+                statement.setString(3, archive)
+                statement.setString(4, calendar)
+                assertEquals(1, statement.executeUpdate())
+                assertEquals(0, statement.executeUpdate(), "same session and same SHA must be a no-op")
+            }
+            val conflict =
+                assertThrows<SQLException> {
+                    writer.prepareStatement(insert).use { statement ->
+                        statement.setString(1, manifestB)
+                        statement.setString(2, source)
+                        statement.setString(3, archive)
+                        statement.setString(4, calendar)
+                        statement.executeUpdate()
+                    }
+                }
+            assertTrue(conflict.message.orEmpty().contains("NEEDS_HUMAN"))
         }
     }
 

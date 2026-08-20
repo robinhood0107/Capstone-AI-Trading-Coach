@@ -14,7 +14,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+from datetime import date
 from pathlib import Path
 
 from app.data.ecos.http_client import ECOSHttpClient
@@ -52,6 +54,7 @@ from app.lightgbm.production_release import (
     qualify_and_write_production_release,
 )
 from app.lightgbm.run_state import (
+    RUN_STATE_HISTORY_FILENAME,
     RunPhase,
     RunState,
     advance_run_state,
@@ -62,8 +65,12 @@ from app.lightgbm.runtime_inputs import (
     resolve_code_provenance,
     resolve_repository_root,
 )
+from app.lightgbm.training_append import appended_sessions
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
 
+# 재검증을 여는 새 append 세션 수다. calibration block 하나 분량이며 매 tick마다 다시
+# 학습하지 않도록 유계로 둔다.
+REQUALIFICATION_SESSION_THRESHOLD = 21
 EXIT_PROGRESS = 0
 EXIT_NO_PROGRESS = 1
 EXIT_NEEDS_HUMAN = 2
@@ -160,9 +167,23 @@ def _run_phase(*, run_root: Path, packet: BootstrapPacket, state: RunState) -> i
             )
             print(f"S5_TICK=PROGRESS phase=QUALIFYING next=SERVING outcome={outcome}")
             return EXIT_PROGRESS
-        # SERVING에서 재검증 주기를 판정하는 것은 단계 4다. 그 전까지는 안정 상태다.
-        print(f"S5_TICK=NO_PROGRESS phase={state.phase} reason=STEADY_STATE")
-        return EXIT_NO_PROGRESS
+        decision = requalification_decision(run_root=run_root)
+        if decision is None:
+            print(f"S5_TICK=NO_PROGRESS phase={state.phase} reason=STEADY_STATE")
+            return EXIT_NO_PROGRESS
+        reason, watermark = decision
+        advance_run_state(
+            run_root=run_root,
+            current=state,
+            phase=RunPhase.QUALIFYING,
+            outcome=reason,
+            marker=watermark.isoformat(),
+        )
+        print(
+            f"S5_TICK=PROGRESS phase=SERVING next=QUALIFYING reason={reason} "
+            f"through={watermark.isoformat()}"
+        )
+        return EXIT_PROGRESS
     except Exception as error:
         classification = classify(error)
         if classification in {
@@ -239,6 +260,52 @@ def _qualify(*, run_root: Path, packet: BootstrapPacket) -> str:
     if isinstance(result, QualificationFailure):
         return f"QUALIFICATION_{result.reason}"[:64]
     return "RELEASE_STAGED"
+
+
+def requalification_decision(*, run_root: Path) -> tuple[str, date] | None:
+    """재검증을 열 이유와 그때 소비할 append 세션 경계를 준다. 없으면 안정 상태다.
+
+    무엇을 이미 학습했는지는 상태 이력의 watermark가 권위다. 별도 표를 두면 두 곳이 어긋난다.
+    """
+
+    sessions = appended_sessions(run_root=run_root)
+    if not sessions:
+        return None
+    through = last_qualified_session(run_root=run_root)
+    fresh = [day for day in sessions if through is None or day > through]
+    if not fresh:
+        return None
+    if len(fresh) >= REQUALIFICATION_SESSION_THRESHOLD:
+        return "REQUALIFY_SESSION_THRESHOLD", sessions[-1]
+    if through is not None and fresh[-1].strftime("%Y-%m") != through.strftime("%Y-%m"):
+        return "REQUALIFY_MONTH_BOUNDARY", sessions[-1]
+    return None
+
+
+def last_qualified_session(*, run_root: Path) -> date | None:
+    """마지막 재검증이 소비한 append 세션 경계를 append-only 이력에서 읽는다."""
+
+    history = run_root / RUN_STATE_HISTORY_FILENAME
+    if not history.exists():
+        return None
+    latest: date | None = None
+    with history.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            event = json.loads(line)
+            if event.get("toPhase") != str(RunPhase.QUALIFYING):
+                continue
+            marker = str(event.get("marker", ""))
+            if not marker:
+                continue
+            try:
+                candidate = date.fromisoformat(marker)
+            except ValueError:
+                continue
+            if latest is None or candidate > latest:
+                latest = candidate
+    return latest
 
 
 def _halt(*, run_root: Path, state: RunState, outcome: str) -> None:

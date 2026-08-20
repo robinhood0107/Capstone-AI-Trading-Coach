@@ -1604,23 +1604,24 @@ BEGIN
     IF to_regprocedure(
         'public.stage_signal_model_release(text,text,text,text,text,text,text,text,text,text,text)'
     ) IS NOT NULL THEN
-        -- 기존 volume 재적용도 base table을 열지 않고 S5.6B 역할별 definer capability만 복원한다.
-        GRANT EXECUTE ON FUNCTION
+        -- LightGBM은 연구 전용이다. 기존 volume 재적용도 V74가 회수한 production capability를
+        -- 되살리지 않고 public reader의 clock capability만 보존한다.
+        REVOKE ALL PRIVILEGES ON FUNCTION
             stage_signal_model_release(text,text,text,text,text,text,text,text,text,text,text),
             stage_signal_batch(text,text,text,text,text,text,date,timestamptz,text)
-        TO decision_signal_writer;
-        GRANT EXECUTE ON FUNCTION
+        FROM decision_signal_writer;
+        REVOKE ALL PRIVILEGES ON FUNCTION
             publish_active_signal_batch(text,text,text)
-        TO decision_signal_scheduler;
+        FROM decision_signal_scheduler;
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            suspend_signal_model_for_drift(text,text)
+        FROM decision_signal_scheduler, decision_signal_admin;
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            activate_signal_model_and_batch(text,text,text,text,text,text,text)
+        FROM decision_signal_admin;
         GRANT EXECUTE ON FUNCTION
             current_s5_signal_batch_clock()
         TO decision_app;
-        GRANT EXECUTE ON FUNCTION
-            suspend_signal_model_for_drift(text,text)
-        TO decision_signal_scheduler, decision_signal_admin;
-        GRANT EXECUTE ON FUNCTION
-            activate_signal_model_and_batch(text,text,text,text,text,text,text)
-        TO decision_signal_admin;
     END IF;
 END
 $signal_release_runtime_privileges$;

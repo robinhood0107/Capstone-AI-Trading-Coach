@@ -49,6 +49,12 @@ from app.rag.safe_io import RagSafeIoError, read_approved_regular_file, write_ap
 def main() -> int:
     """path 인자 없이 exact packet/state/CAS trust anchor가 모두 있을 때만 provider를 연다."""
 
+    # 현재 command는 수집과 LightGBM inference/publication이 결합돼 있다. 연구 전용 전환 뒤에는
+    # provider를 열지 않고 닫으며, data-only daily collector는 별도 계약으로 분리한다.
+    print("S5_DAILY_REFRESH=RESEARCH_ONLY")
+    return 2
+
+    # Kept as unreachable historical production implementation for audit reproduction.
     root_value = os.environ.get("S5_SOURCE_ROOT", "")
     packet_sha = os.environ.get("S5_DAILY_PACKET_SHA256", "")
     state_sha = os.environ.get("S5_DAILY_PREVIOUS_STATE_SHA256", "")

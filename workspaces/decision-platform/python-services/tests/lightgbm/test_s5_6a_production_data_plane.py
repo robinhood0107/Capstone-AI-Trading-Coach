@@ -1088,7 +1088,7 @@ def test_recovery_authority_and_adoption_stop_before_provider_client_creation(
     monkeypatch.setattr(bootstrap_execute_cli, "KISHttpClient", forbidden_client)
     monkeypatch.setattr(bootstrap_execute_cli, "ECOSHttpClient", forbidden_client)
     assert bootstrap_execute_cli.main() == 2
-    assert capsys.readouterr().out == "S5_BOOTSTRAP=PACKET_OR_ROOT_INVALID\n"
+    assert capsys.readouterr().out == "S5_BOOTSTRAP=RESEARCH_ONLY\n"
 
     receipt = write_approved_new_file(
         approved_root=root,
@@ -1242,7 +1242,7 @@ def test_fresh_authority_cas_rejects_another_packet_and_run_before_clients(
     monkeypatch.setattr(bootstrap_execute_cli, "KISHttpClient", forbidden_client)
     monkeypatch.setattr(bootstrap_execute_cli, "ECOSHttpClient", forbidden_client)
     assert bootstrap_execute_cli.main() == 2
-    assert capsys.readouterr().out == "S5_BOOTSTRAP=PACKET_OR_ROOT_INVALID\n"
+    assert capsys.readouterr().out == "S5_BOOTSTRAP=RESEARCH_ONLY\n"
     assert not (root / f"run-{other_packet.sha256}").exists()
 
 
@@ -1275,7 +1275,7 @@ def test_active_root_lock_rejects_selected_execution_before_clients(
         assert bootstrap_execute_cli.main() == 2
     finally:
         release_run_lock(held_root_lock)
-    assert capsys.readouterr().out == "S5_BOOTSTRAP=PACKET_OR_ROOT_INVALID\n"
+    assert capsys.readouterr().out == "S5_BOOTSTRAP=RESEARCH_ONLY\n"
     assert not (root / f"run-{packet.sha256}").exists()
 
 
@@ -1860,11 +1860,8 @@ def test_journal_bounds_superseded_attempts_and_blocks_when_allowance_is_short(
     monkeypatch.setattr(bootstrap_execute_cli, "KrxOpenApiClient", forbidden_client)
     monkeypatch.setattr(bootstrap_execute_cli, "KISHttpClient", forbidden_client)
     monkeypatch.setattr(bootstrap_execute_cli, "ECOSHttpClient", forbidden_client)
-    assert bootstrap_execute_cli.main() == 1
-    assert capsys.readouterr().out == (
-        "S5_BOOTSTRAP=DATASET_UNAVAILABLE "
-        "reason=KRX_CAPACITY_EXHAUSTED providerCalls=0\n"
-    )
+    assert bootstrap_execute_cli.main() == 2
+    assert capsys.readouterr().out == "S5_BOOTSTRAP=RESEARCH_ONLY\n"
 
 
 def test_empty_daily_projection_becomes_calendar_divergence_and_stops_further_calls(

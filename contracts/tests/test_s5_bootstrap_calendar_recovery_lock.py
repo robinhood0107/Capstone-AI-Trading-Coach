@@ -19,6 +19,7 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
                 "calendar",
                 "contractId",
                 "coverage",
+                "derivedDimensions",
                 "diagnostics",
                 "divergence",
                 "downstream",
@@ -377,6 +378,31 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
         self.assertTrue(append["holidayTickIsNoOpByCalendarAuthority"])
         # warm-up 역사를 못 채운 새 멤버는 그 달만 제외되고 원장에 남는다.
         self.assertTrue(append["newMonthlyMemberWithoutWarmupIsEvidenceGap"])
+    def test_derived_dimensions_are_not_duplicated_as_literals(self) -> None:
+        """이번 실물화에서 멈춘 7건 중 3건이 이 부류였다.
+
+        KIS 행 상한은 union 180 시절 리터럴이 남아 실제 수집을 거부했고, ECOS page 범위는 요청당
+        행 상한과 한 번도 맞춰지지 않았고, chunk 길이는 그 상한을 넘겼다. 유도식이 상한의 유일한
+        정의여야 승인 차원을 바꿀 때 두 곳이 어긋나지 않는다.
+        """
+
+        derived = json.loads(CATALOG.read_text(encoding="utf-8"))["derivedDimensions"]
+
+        self.assertFalse(derived["literalDuplicationOfDerivedDimension"])
+        self.assertEqual(
+            "RAW_SESSION_COUNT - WARMUP_SESSIONS - LABEL_TAIL_SESSIONS",
+            derived["eligibleSessionCount"],
+        )
+        self.assertEqual("ELIGIBLE_SESSION_COUNT", derived["walkForwardExpectedSessions"])
+        self.assertEqual(
+            "HORIZON_UNION_SIZE * ceil(RAW_SESSION_COUNT / 100)", derived["kisMaxGet"]
+        )
+        self.assertEqual(
+            "HORIZON_UNION_SIZE * RAW_SESSION_COUNT", derived["kisSourceRowCap"]
+        )
+        self.assertEqual("<= ECOS_MAX_ROWS_PER_REQUEST", derived["ecosChunkDays"])
+        # 유도 불가한 계약 상수를 억지로 유도하면 의미가 사라진다.
+        self.assertTrue(derived["walkForwardBlockSizesRemainLiteral"])
 
 if __name__ == "__main__":
     unittest.main()

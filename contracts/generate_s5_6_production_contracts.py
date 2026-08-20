@@ -544,6 +544,19 @@ def _recovery_catalog() -> dict[str, Any]:
             "automaticModelActivation": False,
             "activationRemainsManualCas": True,
         },
+        "derivedDimensions": {
+            "eligibleSessionCount": "RAW_SESSION_COUNT - WARMUP_SESSIONS - LABEL_TAIL_SESSIONS",
+            "walkForwardExpectedSessions": "ELIGIBLE_SESSION_COUNT",
+            "krxMaxGet": "RAW_SESSION_COUNT * 4 + MONTHLY_SCHEDULE_COUNT * 3",
+            "kisMaxGet": "HORIZON_UNION_SIZE * ceil(RAW_SESSION_COUNT / 100)",
+            "totalMaxPhysicalCalls": "krx + kis + kisToken + ecos",
+            "kisSourceRowCap": "HORIZON_UNION_SIZE * RAW_SESSION_COUNT",
+            "ecosChunkDays": "<= ECOS_MAX_ROWS_PER_REQUEST",
+            "dailyTotalMax": "dailyKrx + dailyKis + dailyKisToken + dailyEcos",
+            "literalDuplicationOfDerivedDimension": False,
+            # 유도 불가한 계약 상수는 그대로 둔다. 억지로 유도하면 의미가 사라진다.
+            "walkForwardBlockSizesRemainLiteral": True,
+        },
         "trainingAppend": {
             "directory": "append",
             "indexFile": "index.jsonl",

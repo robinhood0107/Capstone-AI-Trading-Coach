@@ -80,6 +80,18 @@
     "providerCallsDuringBlock": 0,
     "tradedSessionsMustBeContiguous": true
   },
+  "derivedDimensions": {
+    "dailyTotalMax": "dailyKrx + dailyKis + dailyKisToken + dailyEcos",
+    "ecosChunkDays": "<= ECOS_MAX_ROWS_PER_REQUEST",
+    "eligibleSessionCount": "RAW_SESSION_COUNT - WARMUP_SESSIONS - LABEL_TAIL_SESSIONS",
+    "kisMaxGet": "HORIZON_UNION_SIZE * ceil(RAW_SESSION_COUNT / 100)",
+    "kisSourceRowCap": "HORIZON_UNION_SIZE * RAW_SESSION_COUNT",
+    "krxMaxGet": "RAW_SESSION_COUNT * 4 + MONTHLY_SCHEDULE_COUNT * 3",
+    "literalDuplicationOfDerivedDimension": false,
+    "totalMaxPhysicalCalls": "krx + kis + kisToken + ecos",
+    "walkForwardBlockSizesRemainLiteral": true,
+    "walkForwardExpectedSessions": "ELIGIBLE_SESSION_COUNT"
+  },
   "diagnostics": {
     "appendOnly": true,
     "carriesProviderPayload": false,

@@ -1,0 +1,144 @@
+{
+  "$id": "contracts/schemas/market-data-health.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "NO_NEW_SESSION",
+              "WAITING_FOR_EVIDENCE_CLOCK"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "collectorInvocationAllowed": {
+            "const": false
+          },
+          "providerPhysicalCalls": {
+            "const": 0
+          },
+          "retryAllowed": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "ACCEPTED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "collectorInvocationAllowed": {
+            "const": false
+          },
+          "retryAllowed": {
+            "const": false
+          }
+        },
+        "required": [
+          "lastAcceptedManifestSha256",
+          "lastAcceptedAsOf"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "lastAcceptedManifestSha256"
+        ]
+      },
+      "then": {
+        "required": [
+          "lastAcceptedAsOf"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "lastAcceptedAsOf"
+        ]
+      },
+      "then": {
+        "required": [
+          "lastAcceptedManifestSha256"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "checkedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "collectorInvocationAllowed": {
+      "type": "boolean"
+    },
+    "contractId": {
+      "const": "market-data-health.v1"
+    },
+    "details": {
+      "items": {
+        "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+        "type": "string"
+      },
+      "maxItems": 32,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "expectedSessionDate": {
+      "format": "date",
+      "type": "string"
+    },
+    "lastAcceptedAsOf": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "lastAcceptedManifestSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "providerPhysicalCalls": {
+      "maximum": 41,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "retryAllowed": {
+      "type": "boolean"
+    },
+    "status": {
+      "enum": [
+        "ACCEPTED",
+        "PARTIAL",
+        "NO_NEW_SESSION",
+        "WAITING_FOR_EVIDENCE_CLOCK",
+        "CALENDAR_DIVERGENCE_SUSPECTED",
+        "EVIDENCE_GAP",
+        "NEEDS_HUMAN",
+        "NOT_ESTIMABLE"
+      ]
+    }
+  },
+  "required": [
+    "contractId",
+    "status",
+    "checkedAt",
+    "expectedSessionDate",
+    "providerPhysicalCalls",
+    "collectorInvocationAllowed",
+    "retryAllowed",
+    "details"
+  ],
+  "title": "market-data-health.v1",
+  "type": "object"
+}

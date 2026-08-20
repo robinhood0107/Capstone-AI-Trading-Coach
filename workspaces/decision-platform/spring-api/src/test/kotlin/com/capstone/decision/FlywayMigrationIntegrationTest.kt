@@ -212,6 +212,55 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
+    fun `V74 preserves audit objects and revokes every LightGBM production mutation capability`() {
+        val url = createDatabase("s5_research_only_v74")
+        flyway(url).migrate()
+
+        DriverManager.getConnection(url, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement
+                    .executeQuery(
+                        "select version from flyway_schema_history where success order by installed_rank",
+                    ).use { result ->
+                        val versions = mutableListOf<String>()
+                        while (result.next()) versions += result.getString(1)
+                        assertEquals((1..74).map(Int::toString), versions)
+                    }
+                val revoked =
+                    listOf(
+                        "decision_signal_writer" to
+                            "public.stage_signal_model_release(text,text,text,text,text,text,text,text,text,text,text)",
+                        "decision_signal_writer" to
+                            "public.stage_signal_batch(text,text,text,text,text,text,date,timestamp with time zone,text)",
+                        "decision_signal_scheduler" to "public.publish_active_signal_batch(text,text,text)",
+                        "decision_signal_scheduler" to "public.suspend_signal_model_for_drift(text,text)",
+                        "decision_signal_admin" to
+                            "public.activate_signal_model_and_batch(text,text,text,text,text,text,text)",
+                        "decision_signal_admin" to "public.suspend_signal_model_for_drift(text,text)",
+                    )
+                revoked.forEach { (role, function) ->
+                    statement
+                        .executeQuery(
+                            "select has_function_privilege('$role', '$function', 'EXECUTE')",
+                        ).use { result ->
+                            assertTrue(result.next())
+                            assertFalse(result.getBoolean(1), "$role retained EXECUTE on $function")
+                        }
+                }
+                statement
+                    .executeQuery(
+                        "select count(*) from information_schema.tables " +
+                            "where table_schema='public' and table_name in " +
+                            "('signal_model_releases','signal_batches','signal_batch_members')",
+                    ).use { result ->
+                        assertTrue(result.next())
+                        assertEquals(3, result.getInt(1))
+                    }
+            }
+        }
+    }
+
+    @Test
     fun `V72 Signal v2 exact ingest replays rejects conflicts rolls back and blocks fake pointer`() {
         fun payloadDigest(payload: String): String =
             HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(payload.toByteArray()))
@@ -4058,6 +4107,9 @@ class FlywayMigrationIntegrationTest(
             registry.add("spring.datasource.password", postgres::getPassword)
             registry.add("spring.flyway.user", postgres::getUsername)
             registry.add("spring.flyway.password", postgres::getPassword)
+            // V73 historical capability tests remain executable in the primary test database.
+            // V74 is applied and verified independently by the research-only migration test above.
+            registry.add("spring.flyway.target") { "73" }
             registry.add("app.decision.grpc.shared-secret") { SpringApiIntegrationTestBase.TEST_GRPC_SHARED_SECRET }
             registry.add("app.rag.grpc.shared-secret") {
                 SpringApiIntegrationTestBase.TEST_RAG_GRPC_SHARED_SECRET

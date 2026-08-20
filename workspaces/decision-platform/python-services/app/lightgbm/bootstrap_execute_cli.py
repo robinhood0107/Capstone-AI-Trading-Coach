@@ -67,6 +67,12 @@ from app.rag.safe_io import (
 def main() -> int:
     """CLI path 인자는 받지 않고 server root와 승인 digest가 모두 있을 때만 provider를 연다."""
 
+    # LightGBM production bootstrap은 연구 전용 전환으로 폐쇄됐다. 아래 역사 구현은 봉인된
+    # 실행을 감사·재현하기 위해 보존하지만 root, quota credential, provider client보다 먼저 닫는다.
+    print("S5_BOOTSTRAP=RESEARCH_ONLY")
+    return 2
+
+    # Kept as unreachable historical production implementation for audit reproduction.
     root_value = os.environ.get("S5_SOURCE_ROOT", "")
     resume_sha256 = os.environ.get("S5_BOOTSTRAP_RESUME_PACKET_SHA256", "")
     if not root_value:

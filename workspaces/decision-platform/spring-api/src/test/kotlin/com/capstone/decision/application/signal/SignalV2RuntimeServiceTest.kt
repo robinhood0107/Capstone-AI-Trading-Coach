@@ -23,7 +23,7 @@ class SignalV2RuntimeServiceTest {
     }
 
     @Test
-    fun `fresh LightGBM HOLD remains available while missing components force composite abstain`() {
+    fun `fresh LightGBM row remains research-only and cannot enter public runtime`() {
         val session = LocalDate.of(2026, 8, 14)
         val service =
             SignalV2RuntimeService {
@@ -49,15 +49,16 @@ class SignalV2RuntimeServiceTest {
             }
         val result = service.read("005930")
 
-        assertThat(result.components.lightgbm.status).isEqualTo("AVAILABLE")
-        assertThat(result.components.lightgbm.signal).isEqualTo("HOLD")
-        assertThat(result.components.lightgbm.confidence).isZero()
-        assertThat(result.asOf).isEqualTo(Instant.parse("2026-08-14T06:30:00Z"))
+        assertThat(result.components.lightgbm.status).isEqualTo("ABSTAIN")
+        assertThat(result.components.lightgbm.reason).isEqualTo("MISSING_EVIDENCE")
+        assertThat(result.components.lightgbm.signal).isNull()
+        assertThat(result.components.lightgbm.confidence).isNull()
+        assertThat(result.asOf).isNull()
         assertThat(result.composite.status).isEqualTo("ABSTAIN")
     }
 
     @Test
-    fun `stale row becomes abstain without refreshing old asOf`() {
+    fun `stale LightGBM row also remains research-only without refreshing old asOf`() {
         val rowSession = LocalDate.of(2026, 8, 13)
         val service =
             SignalV2RuntimeService {
@@ -81,7 +82,7 @@ class SignalV2RuntimeServiceTest {
                 )
             }
         val result = service.read("005930")
-        assertThat(result.components.lightgbm.reason).isEqualTo("STALE_EVIDENCE")
+        assertThat(result.components.lightgbm.reason).isEqualTo("MISSING_EVIDENCE")
         assertThat(result.components.lightgbm.asOf).isNull()
         assertThat(result.asOf).isNull()
     }
@@ -126,6 +127,6 @@ class SignalV2RuntimeServiceTest {
 
         val result = service.read("005930")
         assertThat(result.components.lightgbm.status).isEqualTo("ABSTAIN")
-        assertThat(result.components.lightgbm.reason).isEqualTo("UNIDENTIFIABLE_OUTPUT")
+        assertThat(result.components.lightgbm.reason).isEqualTo("MISSING_EVIDENCE")
     }
 }

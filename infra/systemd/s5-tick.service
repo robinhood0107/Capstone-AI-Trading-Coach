@@ -1,20 +1,20 @@
 [Unit]
-Description=S5 autonomous tick (one phase step)
+Description=S5 autonomous tick (RETIRED research-only compatibility)
 Documentation=file://%h/projects/Capstone-AI-Trading-Coach/AGENTS.md
-# 네트워크가 없으면 provider 단계가 무진척으로 끝난다. 실패가 아니라 다음 tick으로 넘긴다.
+# Historical unit only. Do not install or enable after the research-only transition.
 After=network-online.target
 
 [Service]
 Type=oneshot
 WorkingDirectory=%h/projects/Capstone-AI-Trading-Coach/workspaces/decision-platform/python-services
-# credential은 파일로 남기지 않고 이 unit의 environment로만 들어온다.
+# Existing installations may still reference the historical owner-private environment file.
 EnvironmentFile=%h/.config/s5-tick/tick.env
 ExecStart=%h/.local/bin/uv run --frozen s5-tick
-# 0 진척, 1 무진척(정상), 2 사람 필요. 1을 실패로 보면 watchdog이 계속 울린다.
+# Current command returns 1 before root, credentials, quota, or providers are accessed.
 SuccessExitStatus=0 1
 TimeoutStartSec=3600
 Nice=10
-# tick은 승인된 root와 저장소만 쓴다.
+# The retained command does not write the root in research-only mode.
 PrivateTmp=true
 NoNewPrivileges=true
 

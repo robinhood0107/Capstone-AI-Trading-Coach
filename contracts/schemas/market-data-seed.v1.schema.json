@@ -1,0 +1,138 @@
+{
+  "$id": "contracts/schemas/market-data-seed.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "archiveSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "artifacts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "firstSessionDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "BARS",
+              "INDICES",
+              "MACRO",
+              "UNIVERSES"
+            ]
+          },
+          "lastSessionDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "relativePath": {
+            "not": {
+              "pattern": "(^|/)\\.\\.(/|$)"
+            },
+            "pattern": "^(bars|indices|macro|universes)/[a-z0-9._/-]+\\.parquet$",
+            "type": "string"
+          },
+          "rowCount": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "temporalQuality": {
+            "enum": [
+              "PROVIDER_VINTAGE",
+              "PROVIDER_AS_OF_NO_VINTAGE",
+              "RECONSTRUCTED_FIXED_LAG",
+              "COLLECTION_ONLY"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "relativePath",
+          "sha256",
+          "rowCount",
+          "firstSessionDate",
+          "lastSessionDate",
+          "temporalQuality"
+        ],
+        "type": "object"
+      },
+      "maxItems": 4,
+      "minItems": 4,
+      "type": "array"
+    },
+    "contractId": {
+      "const": "market-data-seed.v1"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "hardlinkUsed": {
+      "const": false
+    },
+    "historicalProviderIntentCount": {
+      "const": 7230
+    },
+    "historicalUniverseUnionCount": {
+      "const": 270
+    },
+    "operationalHistoryMaxSessions": {
+      "const": 253
+    },
+    "providerCallsDuringAdoption": {
+      "const": 0
+    },
+    "rawChunkCopied": {
+      "const": false
+    },
+    "researchHistoryMaxSessions": {
+      "const": 1260
+    },
+    "sourceChunkCount": {
+      "const": 7218
+    },
+    "sourceManifestSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "sourcePathPersisted": {
+      "const": false
+    },
+    "sourceSessionCount": {
+      "const": 1072
+    },
+    "strictPitPerformanceClaimAllowed": {
+      "const": false
+    },
+    "temporalQuality": {
+      "const": "RECONSTRUCTED_FIXED_LAG"
+    }
+  },
+  "required": [
+    "contractId",
+    "createdAt",
+    "sourceManifestSha256",
+    "sourceChunkCount",
+    "historicalProviderIntentCount",
+    "providerCallsDuringAdoption",
+    "sourceSessionCount",
+    "operationalHistoryMaxSessions",
+    "researchHistoryMaxSessions",
+    "historicalUniverseUnionCount",
+    "temporalQuality",
+    "strictPitPerformanceClaimAllowed",
+    "rawChunkCopied",
+    "hardlinkUsed",
+    "sourcePathPersisted",
+    "artifacts",
+    "archiveSha256"
+  ],
+  "title": "market-data-seed.v1",
+  "type": "object"
+}

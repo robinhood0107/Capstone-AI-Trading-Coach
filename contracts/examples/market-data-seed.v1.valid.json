@@ -1,0 +1,56 @@
+{
+  "archiveSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "artifacts": [
+    {
+      "firstSessionDate": "2022-03-30",
+      "kind": "BARS",
+      "lastSessionDate": "2026-08-14",
+      "relativePath": "bars/bars-v1.parquet",
+      "rowCount": 25000,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG"
+    },
+    {
+      "firstSessionDate": "2022-03-30",
+      "kind": "INDICES",
+      "lastSessionDate": "2026-08-14",
+      "relativePath": "indices/indices-v1.parquet",
+      "rowCount": 1072,
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "temporalQuality": "PROVIDER_AS_OF_NO_VINTAGE"
+    },
+    {
+      "firstSessionDate": "2022-03-30",
+      "kind": "MACRO",
+      "lastSessionDate": "2026-08-14",
+      "relativePath": "macro/macro-v1.parquet",
+      "rowCount": 1072,
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG"
+    },
+    {
+      "firstSessionDate": "2022-03-30",
+      "kind": "UNIVERSES",
+      "lastSessionDate": "2026-08-14",
+      "relativePath": "universes/universes-v1.parquet",
+      "rowCount": 1072,
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "temporalQuality": "PROVIDER_AS_OF_NO_VINTAGE"
+    }
+  ],
+  "contractId": "market-data-seed.v1",
+  "createdAt": "2026-08-20T12:00:00Z",
+  "hardlinkUsed": false,
+  "historicalProviderIntentCount": 7230,
+  "historicalUniverseUnionCount": 270,
+  "operationalHistoryMaxSessions": 253,
+  "providerCallsDuringAdoption": 0,
+  "rawChunkCopied": false,
+  "researchHistoryMaxSessions": 1260,
+  "sourceChunkCount": 7218,
+  "sourceManifestSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "sourcePathPersisted": false,
+  "sourceSessionCount": 1072,
+  "strictPitPerformanceClaimAllowed": false,
+  "temporalQuality": "RECONSTRUCTED_FIXED_LAG"
+}

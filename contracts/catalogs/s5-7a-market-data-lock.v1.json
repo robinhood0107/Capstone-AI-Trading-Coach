@@ -1,0 +1,159 @@
+{
+  "calendar": {
+    "correctionAuthority": "KIS_CTCA0903R_ATTESTED_TRADING_SESSIONS",
+    "evidenceClock": "NEXT_COMPLETED_XKRX_SESSION_08_10_ASIA_SEOUL",
+    "name": "XKRX",
+    "regression": {
+      "lastSession": "2026-08-14",
+      "nextSession": "2026-08-18"
+    },
+    "version": "4.13.2"
+  },
+  "consumerWindows": {
+    "hmmExistingIndexSessionCount": 1072,
+    "monteCarloCloseCount": 61,
+    "operationalRiskCloseMax": 253,
+    "ouObservationCount": 60,
+    "researchSessionMax": 1260
+  },
+  "contractId": "s5-7a-market-data-lock.v1",
+  "contracts": [
+    "market-data-seed.v1",
+    "market-data-daily-shard.v1",
+    "market-data-health.v1"
+  ],
+  "correction": {
+    "approvedGeneration": "APPEND_WITH_SUPERSEDES_SHA256",
+    "overwriteAllowed": false,
+    "sameSessionDifferentSha": "NEEDS_HUMAN",
+    "sameSessionSameSha": "NO_OP"
+  },
+  "dailyShard": {
+    "accountCalls": 0,
+    "balanceCalls": 0,
+    "exactSymbols": 31,
+    "forwardFillAllowed": false,
+    "indexIds": [
+      "KOSPI",
+      "KOSDAQ"
+    ],
+    "macroSeriesMax": 2,
+    "manifestPublication": "LAST_AFTER_COMPLETE_REQUIRED_SET",
+    "membershipPolicy": "MONTHLY_FIXED_TOP30_PLUS_132030",
+    "monthBoundaryPhysicalCallMax": 41,
+    "normalPhysicalCallMax": 38,
+    "orderCalls": 0,
+    "partialRunAcceptedRows": 0,
+    "sessionsPerShard": 1
+  },
+  "dashboard": false,
+  "lightgbmSignalAuthority": "ABSTAIN",
+  "normalizedRows": {
+    "bars": {
+      "fields": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "currency",
+        "temporalQuality",
+        "sourceReceiptSha256"
+      ],
+      "key": [
+        "symbol",
+        "sessionDate",
+        "generation"
+      ]
+    },
+    "indices": {
+      "fields": [
+        "close",
+        "temporalQuality",
+        "sourceReceiptSha256"
+      ],
+      "indexIds": [
+        "KOSPI",
+        "KOSDAQ"
+      ],
+      "key": [
+        "indexId",
+        "sessionDate",
+        "generation"
+      ]
+    },
+    "macro": {
+      "fields": [
+        "value",
+        "temporalQuality",
+        "sourceReceiptSha256"
+      ],
+      "key": [
+        "seriesId",
+        "observationDate",
+        "availableAt",
+        "generation"
+      ]
+    },
+    "universe": {
+      "fields": [
+        "rank",
+        "isFixedMember",
+        "sourceReceiptSha256"
+      ],
+      "historicalUnionIsDailyScope": false,
+      "key": [
+        "membershipMonth",
+        "symbol",
+        "generation"
+      ]
+    }
+  },
+  "operationalReader": {
+    "deliveryScope": "INTERNAL_PYTHON_PORT_ONLY",
+    "maxCloseSessions": 253,
+    "port": "MarketDataOperationalReader",
+    "providerCallsOnRead": 0,
+    "publicApi": false,
+    "scheduler": false,
+    "symbolScope": "CURRENT_EXACT_31"
+  },
+  "orderAuthority": "NONE",
+  "providerAuthorityGranted": false,
+  "publicMarketDataApi": false,
+  "researchReader": {
+    "deliveryScope": "OFFLINE_RESEARCH_ONLY",
+    "maxXkrxSessions": 1260,
+    "port": "ResearchMarketHistoryReader",
+    "providerCallsOnRead": 0,
+    "publicApi": false,
+    "springDecisionAccess": false,
+    "springRiskAccess": false
+  },
+  "retention": {
+    "ecosActiveDaysMax": 365,
+    "entitlementExpiryWins": true,
+    "generalWriterDeleteAllowed": false,
+    "generalWriterTruncateAllowed": false,
+    "generalWriterUpdateAllowed": false,
+    "pruneToolDefault": "DRY_RUN"
+  },
+  "riskDecisionAuthority": "NONE",
+  "runtimeImplemented": false,
+  "scope": "INTERNAL_PYTHON_DATA_PLANE_ONLY",
+  "sourceAdoption": {
+    "featureReadAllowed": false,
+    "finalTestReadAllowed": false,
+    "hardlinkAllowed": false,
+    "historicalProviderIntentCount": 7230,
+    "labelReadAllowed": false,
+    "providerCalls": 0,
+    "rawChunkCopyAllowed": false,
+    "releaseReadAllowed": false,
+    "signalBatchReadAllowed": false,
+    "sourceChunkCount": 7218,
+    "sourcePathPersistenceAllowed": false,
+    "strictPitPerformanceClaimAllowed": false,
+    "temporalQuality": "RECONSTRUCTED_FIXED_LAG"
+  }
+}

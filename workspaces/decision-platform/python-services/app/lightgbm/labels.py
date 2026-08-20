@@ -14,7 +14,10 @@ from app.lightgbm.features import PriceEvidence, ProductionPriceEvidence
 from app.lightgbm.temporal import label_as_of, require_receipt_eligible
 
 
-LABEL_THRESHOLD = 0.006
+# 세 class를 고르게 만드는 경계다. 초기 fit window의 |forward return| 1/3 분위가
+# 0.023577이며 그 값에서 유도한 정책 상수다. 전체 데이터셋 분위를 쓰면 미개봉 final
+# test 구간 정보가 라벨 정의에 새어든다.
+LABEL_THRESHOLD = 0.025
 CLASS_ORDER = {"SELL": 0, "HOLD": 1, "BUY": 2}
 
 

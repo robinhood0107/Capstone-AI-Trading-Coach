@@ -3909,3 +3909,19 @@ S8 전에는 Market Data public API를 만들지 않는다.
 내부 Python DB reader는 분리된 operational/research role과 security-barrier view만 받는다. correction은
 latest generation으로 de-duplicate된 뒤 session 상한을 적용하며, DB stage는 explicit expected manifest
 SHA가 일치하기 전에는 writer DSN을 열지 않는다. 이는 내부 저장 계약이고 public API payload 변경이 아니다.
+
+## S5.7C 수동 daily replay API 비변경 overlay (2026-08-21)
+
+S5.7C의 `market-data-daily-replay`는 내부 Python CLI와 저장 port일 뿐 HTTP/gRPC API가 아니다. 입력은
+owner-private `OFFLINE_REPLAY_ONLY` packet 및 sealed record이고 출력은 기존
+`market-data-daily-shard.v1`/`market-data-health.v1` 내부 계약과 V75 normalized row다.
+
+- public REST/OpenAPI/Signal v2 payload 변경: 0
+- request-time provider 호출: 0
+- 정상/month-boundary replay operation: 38/41, physical provider call: 0
+- Decision/Risk 앱의 raw/operational/research history SELECT 권한: 0
+- scheduler·Dashboard·Market Data endpoint: 미구현
+
+따라서 Market Data daily shard가 ACCEPTED여도 Signal v2 LightGBM은 계속
+`ABSTAIN/MISSING_EVIDENCE`이고 composite, RiskDecision, order authority는 생기지 않는다. S6.5가 별도
+세션에서 계산한 파생 snapshot만 기존 저장 reader 계약으로 연결할 수 있다.

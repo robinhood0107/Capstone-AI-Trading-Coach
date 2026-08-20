@@ -80,6 +80,18 @@
     "providerCallsDuringBlock": 0,
     "tradedSessionsMustBeContiguous": true
   },
+  "derivedDimensions": {
+    "dailyTotalMax": "dailyKrx + dailyKis + dailyKisToken + dailyEcos",
+    "ecosChunkDays": "<= ECOS_MAX_ROWS_PER_REQUEST",
+    "eligibleSessionCount": "RAW_SESSION_COUNT - WARMUP_SESSIONS - LABEL_TAIL_SESSIONS",
+    "kisMaxGet": "HORIZON_UNION_SIZE * ceil(RAW_SESSION_COUNT / 100)",
+    "kisSourceRowCap": "HORIZON_UNION_SIZE * RAW_SESSION_COUNT",
+    "krxMaxGet": "RAW_SESSION_COUNT * 4 + MONTHLY_SCHEDULE_COUNT * 3",
+    "literalDuplicationOfDerivedDimension": false,
+    "totalMaxPhysicalCalls": "krx + kis + kisToken + ecos",
+    "walkForwardBlockSizesRemainLiteral": true,
+    "walkForwardExpectedSessions": "ELIGIBLE_SESSION_COUNT"
+  },
   "diagnostics": {
     "appendOnly": true,
     "carriesProviderPayload": false,
@@ -199,5 +211,22 @@
     ],
     "supersededQueryIdentityResolvedAcrossApprovedGenerations": true,
     "temporalReceiptRebindingRequired": true
+  },
+  "trainingAppend": {
+    "chunksCopiedNotReferenced": true,
+    "conflictingSessionEvidenceRefused": true,
+    "directory": "append",
+    "historyRecollection": 0,
+    "holidayTickIsNoOpByCalendarAuthority": true,
+    "indexAppendOnly": true,
+    "indexFile": "index.jsonl",
+    "indexVersion": "s5-training-append-index-v1",
+    "maxChunksPerSession": 41,
+    "newMonthlyMemberWithoutWarmupIsEvidenceGap": true,
+    "packetWindowUnchanged": true,
+    "replayIsIdempotent": true,
+    "trainingWindowCutoffRederivedFromLatestSession": true,
+    "trainingWindowDerivedFrom": "BUNDLE_UNION_APPEND",
+    "trainingWindowKeepsApprovedDimensions": true
   }
 }

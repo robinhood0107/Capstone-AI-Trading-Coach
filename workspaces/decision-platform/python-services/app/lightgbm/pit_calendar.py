@@ -22,7 +22,10 @@ from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 RAW_SESSION_COUNT = 1_072
 WARMUP_SESSIONS = 59
 LABEL_TAIL_SESSIONS = 6
-ELIGIBLE_SESSION_COUNT = 1_007
+# raw에서 앞쪽 warm-up과 뒤쪽 label tail을 뺀 값이다. 세 수가 어긋날 수 없게 유도한다.
+ELIGIBLE_SESSION_COUNT = RAW_SESSION_COUNT - WARMUP_SESSIONS - LABEL_TAIL_SESSIONS
+# 월별 universe 선정이 보는 직전 거래일 수다. 이름 없이 두면 의미를 잃는다.
+MONTHLY_TRAILING_SESSIONS = 20
 KST = ZoneInfo("Asia/Seoul")
 _EFFECTIVE_MONTH_PATTERN = re.compile(r"^[0-9]{4}-(0[1-9]|1[0-2])$")
 PINNED_CALENDAR_VERSION = "4.13.2"
@@ -210,7 +213,9 @@ def derive_monthly_universe_schedule_for(
         raise DatasetUnavailable("DATASET_UNAVAILABLE: effective month has no XKRX session")
     first = sessions[0]
     selection = calendar.previous_session(first)
-    trailing_first = calendar.session_offset(selection, -19)
+    trailing_first = calendar.session_offset(
+        selection, -(MONTHLY_TRAILING_SESSIONS - 1)
+    )
     trailing_index = calendar.sessions_in_range(trailing_first, selection)
     trailing = tuple(session.date() for session in trailing_index)
     evidence_cutoff = datetime.combine(first.date(), time(8, 10), tzinfo=KST)
@@ -218,7 +223,7 @@ def derive_monthly_universe_schedule_for(
     previous_month = 12 if month == 1 else month - 1
     previous_year = year - 1 if month == 1 else year
     if (
-        len(trailing) != 20
+        len(trailing) != MONTHLY_TRAILING_SESSIONS
         or trailing[-1] != selection.date()
         or (selection.year, selection.month) != (previous_year, previous_month)
     ):

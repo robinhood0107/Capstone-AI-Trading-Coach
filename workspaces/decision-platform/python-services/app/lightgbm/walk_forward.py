@@ -7,6 +7,7 @@ from datetime import date
 from typing import Callable, Generic, Mapping, Sequence, TypeVar
 
 from app.lightgbm.errors import LightGbmContractError
+from app.lightgbm.pit_calendar import ELIGIBLE_SESSION_COUNT
 from app.lightgbm.labels import LabelRow
 
 
@@ -17,7 +18,8 @@ CALIBRATION = 21
 EVALUATION = 63
 FINAL_TEST = 126
 PRIMARY_FOLDS = 3
-EXPECTED_SESSIONS = 1_007
+# eligible session 수는 달력 정책이 유도한다. 여기서 다시 선언하면 두 곳이 어긋난다.
+EXPECTED_SESSIONS = ELIGIBLE_SESSION_COUNT
 
 
 @dataclass(frozen=True)

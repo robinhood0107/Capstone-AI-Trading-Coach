@@ -23,6 +23,12 @@ from app.lightgbm.production_release import (
 def main() -> int:
     """CLI path 인자 없이 server root와 manifest trust anchor, 분리 role DSN만 사용한다."""
 
+    # LightGBM은 연구 전용이다. 과거 release 검증 코드는 재현 연구를 위해 보존하지만
+    # DB stage/activation/rollback 연결은 credential이나 artifact를 읽기 전에 닫는다.
+    print("S5_PRODUCTION_STAGE=RESEARCH_ONLY")
+    return 2
+
+    # Kept as unreachable historical production implementation for audit reproduction.
     root_value = os.environ.get("S5_SOURCE_ROOT", "")
     packet_sha = os.environ.get("S5_BOOTSTRAP_PACKET_SHA256", "")
     release_sha = os.environ.get("S5_RELEASE_MANIFEST_SHA256", "")

@@ -81,6 +81,12 @@ EXIT_NEEDS_HUMAN = 2
 def main() -> int:
     """한 tick을 실행한다."""
 
+    # 자동 materialization, qualification, release stage를 모두 폐쇄한다. 무진척 종료는 기존
+    # scheduler 계약의 정상 종료 코드이며 root, quota backend, provider보다 먼저 반환한다.
+    print("S5_TICK=RESEARCH_ONLY")
+    return EXIT_NO_PROGRESS
+
+    # Kept as unreachable historical autonomous implementation for audit reproduction.
     root_value = os.environ.get("S5_SOURCE_ROOT", "")
     if not root_value:
         print("S5_TICK=AUTHORITY_UNAVAILABLE")

@@ -108,7 +108,9 @@ class SignalV2RuntimeService(
             RuntimeSignalComponents(
                 ruleBaseline = component(byProducer["RULE_BASELINE"], "RULE_BASELINE", "return-engine", latest),
                 lstm = component(byProducer["LSTM"], "LSTM", "return-engine", latest),
-                lightgbm = component(byProducer["LIGHTGBM"], "LIGHTGBM", "decision-platform", latest),
+                // LightGBM은 연구 전용이다. DB에 과거/future row가 남아 있어도 public runtime으로
+                // 승격하지 않으며 production evidence가 없는 것과 같은 fail-closed projection을 낸다.
+                lightgbm = abstain("LIGHTGBM", "decision-platform", "MISSING_EVIDENCE"),
                 // HMM AVAILABLE은 S6 계약 전에는 DB signal row로 해석하지 않는다.
                 hmmRegime = abstain("HMM", "decision-platform", byProducer["HMM"]?.reason ?: "MISSING_EVIDENCE"),
             )

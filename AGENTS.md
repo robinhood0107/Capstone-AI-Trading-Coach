@@ -437,6 +437,25 @@ Gradle build), `python-ci.yml`(Python 3.12 품질 게이트)이다. 아래 시�
 - 이 데이터의 전체 품질은 `RECONSTRUCTED_FIXED_LAG`이며 strict-PIT 성과 주장, LightGBM Signal,
   RiskDecision, order 권한은 계속 0이다. public Market Data API와 scheduler는 구현하지 않는다.
 
+## S5.7C 수동 Market Data runtime 현재 권위
+
+- `market-data-daily-replay`는 `OFFLINE_REPLAY_ONLY` packet과 owner-private sealed record만 읽는 수동
+  명령이다. KRX/KIS/ECOS HTTP client나 credential을 생성하는 live adapter는 존재하지 않으며 provider,
+  account, balance, order physical call cap은 모두 0이다.
+- 실행 순서는 packet·zero-cap·pinned XKRX correction attestation·writer role preflight 뒤 replay root를
+  여는 방식으로 고정한다. 정상 session은 유도된 5 KRX + 31 KIS + 2 ECOS = 38 operations, 실제 월 경계는
+  3 KRX monthly operations를 더한 41 operations다. 중간 월 membership은 직전 membership SHA와 같아야 한다.
+- 각 성공 operation은 content-addressed immutable staging과 fsync journal에 즉시 남긴다. 첫 결손 뒤 남은
+  operation은 읽지 않으며 resume은 staging 성공분을 재사용한다. required set과 packet receipt-set SHA가
+  모두 맞아야 DB transaction을 열고 `daily-shard.json`을 마지막에 게시한다. partial/divergence/binding
+  mismatch는 accepted manifest와 DB row를 만들지 않는다.
+- 휴장·비거래일은 `NO_NEW_SESSION`, 다음 XKRX session 08:10 KST 전에는
+  `WAITING_FOR_EVIDENCE_CLOCK`, 빈 KRX daily projection은 `CALENDAR_DIVERGENCE_SUSPECTED`다.
+  `2026-08-14` 다음 evidence session은 `2026-08-18`이라는 회귀를 유지한다.
+- S5.7C는 scheduler, health worker activation, public REST/OpenAPI/Dashboard, live provider authority를
+  추가하지 않는다. S6은 저장된 operational/research reader만 사용하고 LightGBM Signal은 계속
+  `ABSTAIN/MISSING_EVIDENCE`, RiskDecision/order authority는 0이다.
+
 ## Java/Kotlin/Spring 기준 스택
 
 - JVM은 **JDK 25 LTS**로 고정한다. JDK 26은 최신 feature release지만 이 프로젝트의 기준은 최신 LTS다.

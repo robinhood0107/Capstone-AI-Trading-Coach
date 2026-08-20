@@ -14,6 +14,7 @@ from typing import Mapping, Sequence
 import numpy as np
 
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
+from app.lightgbm.pit_calendar import RAW_SESSION_COUNT
 from app.lightgbm.metrics import (
     multiclass_brier,
     natural_log_loss,
@@ -22,14 +23,26 @@ from app.lightgbm.metrics import (
 )
 
 
-APPROVED_KRX_MAX_GET = 4_441
+# 승인된 packet window가 덮는 월 수다. 상한이 이 차원에서 나오도록 이름을 붙인다.
+APPROVED_MONTHLY_SCHEDULE_COUNT = 51
 # 51개월 universe의 실측 고유 종목 수다. 180은 겹침 가정이었고 실제 증거는 270이었다.
 APPROVED_HORIZON_UNION_SIZE = 270
 # 이전 승인 차원. 이미 소비한 packet을 read-only로 검증할 때만 쓰며 삭제하지 않는다.
 SUPERSEDED_HORIZON_UNION_SIZES: tuple[int, ...] = (180,)
-APPROVED_KIS_MAX_GET = 2_970
-# 4,441 + 2,970 + 1 + 24 = 7,436. 유도식과 정확히 같은 값만 상한으로 둔다.
-APPROVED_TOTAL_MAX_PHYSICAL_CALLS = 7_436
+APPROVED_KIS_TOKEN_MAX = 1
+APPROVED_ECOS_MAX_GET = 24
+# 일별 4개 service × raw session + 월별 3개 service × 월 수. 유도식이 상한의 유일한 정의다.
+APPROVED_KRX_MAX_GET = (
+    RAW_SESSION_COUNT * 4 + APPROVED_MONTHLY_SCHEDULE_COUNT * 3
+)
+# union 종목마다 raw session을 100행 page로 덮는 수다. 리터럴로 두면 union 변경과 어긋난다.
+APPROVED_KIS_MAX_GET = APPROVED_HORIZON_UNION_SIZE * math.ceil(RAW_SESSION_COUNT / 100)
+APPROVED_TOTAL_MAX_PHYSICAL_CALLS = (
+    APPROVED_KRX_MAX_GET
+    + APPROVED_KIS_MAX_GET
+    + APPROVED_KIS_TOKEN_MAX
+    + APPROVED_ECOS_MAX_GET
+)
 MAX_KRX_SUPERSEDED_ALLOWANCE = 8
 # KIS 소비도 같은 증거 결속 규칙을 따르지만 예산이 다르므로 provider별로 셋을 나눈다.
 MAX_KIS_SUPERSEDED_ALLOWANCE = 8
@@ -98,8 +111,9 @@ class BootstrapBudget:
         if (
             self.krx_get > APPROVED_KRX_MAX_GET + self.krx_superseded_allowance
             or self.kis_get > APPROVED_KIS_MAX_GET + self.kis_superseded_allowance
-            or self.kis_token > 1 + self.kis_token_superseded_allowance
-            or self.ecos_get > 24
+            or self.kis_token
+            > APPROVED_KIS_TOKEN_MAX + self.kis_token_superseded_allowance
+            or self.ecos_get > APPROVED_ECOS_MAX_GET
             or self.total
             > APPROVED_TOTAL_MAX_PHYSICAL_CALLS + self.superseded_allowance_total
             or self.retry != 0
@@ -121,7 +135,10 @@ class BootstrapBudget:
 
 
 def author_bootstrap_budget(
-    *, monthly_schedule_count: int, union_size: int, raw_session_count: int = 1_072
+    *,
+    monthly_schedule_count: int,
+    union_size: int,
+    raw_session_count: int = RAW_SESSION_COUNT,
 ) -> BootstrapBudget:
     """Exact plan dimensions에서 physical upper bound를 author한다.
 
@@ -143,7 +160,7 @@ def author_recovery_bootstrap_budget(
     *,
     monthly_schedule_count: int,
     union_size: int,
-    raw_session_count: int = 1_072,
+    raw_session_count: int = RAW_SESSION_COUNT,
     superseded_allowance: int,
     kis_superseded_allowance: int = 0,
     kis_token_superseded_allowance: int = 0,
@@ -183,7 +200,7 @@ def _author_bootstrap_budget(
     if (
         not 1 <= union_size <= APPROVED_HORIZON_UNION_SIZE
         or monthly_schedule_count < 1
-        or raw_session_count != 1_072
+        or raw_session_count != RAW_SESSION_COUNT
     ):
         raise DatasetUnavailable("DATASET_UNAVAILABLE: bootstrap dimensions are invalid")
     krx_get = raw_session_count * 4 + monthly_schedule_count * 2 + monthly_schedule_count
@@ -191,8 +208,8 @@ def _author_bootstrap_budget(
     return BootstrapBudget(
         krx_get=krx_get + superseded_allowance,
         kis_get=kis_get + kis_superseded_allowance,
-        kis_token=1 + kis_token_superseded_allowance,
-        ecos_get=24,
+        kis_token=APPROVED_KIS_TOKEN_MAX + kis_token_superseded_allowance,
+        ecos_get=APPROVED_ECOS_MAX_GET,
         krx_superseded_allowance=superseded_allowance,
         kis_superseded_allowance=kis_superseded_allowance,
         kis_token_superseded_allowance=kis_token_superseded_allowance,

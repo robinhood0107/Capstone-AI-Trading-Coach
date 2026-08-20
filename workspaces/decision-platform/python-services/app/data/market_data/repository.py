@@ -14,6 +14,8 @@ from app.data.market_data.archive import (
     read_artifact_table,
     read_market_data_archive,
 )
+from app.data.market_data.daily_runtime import AcceptedDailyShard
+from app.data._shared.canonical_json import canonical_json_sha256
 
 
 _WRITER_ROLE = "decision_market_writer"
@@ -45,6 +47,19 @@ class ConnectionLike(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class SeedAdoptionResult:
+    manifest_sha256: str
+    outcome: str
+    bars: int
+    indices: int
+    macro: int
+    universes: int
+    provider_calls: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class DailyAdoptionResult:
+    """Atomic DB adoption outcome for one complete daily shard."""
+
     manifest_sha256: str
     outcome: str
     bars: int
@@ -127,6 +142,184 @@ def adopt_seed_archive(
     except Exception:
         connection.rollback()
         raise
+
+
+def stage_daily_shard(
+    *, database_dsn: str, accepted: AcceptedDailyShard, expected_manifest_sha256: str
+) -> DailyAdoptionResult:
+    """Bind the complete shard identity before opening the writer database."""
+
+    if accepted.manifest_sha256 != expected_manifest_sha256:
+        raise MarketDataRepositoryError("daily manifest does not match operator binding")
+    with psycopg.connect(database_dsn, autocommit=False, connect_timeout=2) as connection:
+        return adopt_daily_shard(connection=cast(ConnectionLike, connection), accepted=accepted)
+
+
+def adopt_daily_shard(
+    *, connection: ConnectionLike, accepted: AcceptedDailyShard
+) -> DailyAdoptionResult:
+    """Insert a complete daily manifest and all normalized rows in one transaction."""
+
+    payload = accepted.payload
+    cursor = connection.cursor()
+    try:
+        cursor.execute("SELECT session_user, current_user")
+        identity = cursor.fetchone()
+        if identity != (_WRITER_ROLE, _WRITER_ROLE):
+            raise MarketDataRepositoryError("market-data daily DB connection must use writer role")
+        receipts = cast(list[dict[str, object]], payload["sourceReceipts"])
+        receipt_set_sha256 = canonical_json_sha256(receipts)
+        cursor.execute(
+            """
+            INSERT INTO market_data_manifests (
+                manifest_sha256, manifest_kind, contract_id, session_date, as_of,
+                generation, source_manifest_sha256, previous_manifest_sha256,
+                supersedes_sha256, archive_sha256, receipt_set_sha256,
+                calendar_revision, calendar_sha256, temporal_quality,
+                entitlement_expires_at, status
+            ) VALUES (
+                %s, 'DAILY', 'market-data-daily-shard.v1', %s, %s,
+                %s, %s, %s, %s, %s, %s,
+                %s, %s, 'RECONSTRUCTED_FIXED_LAG', NULL, 'ACCEPTED'
+            )
+            """,
+            (
+                accepted.manifest_sha256,
+                payload["sessionDate"],
+                payload["asOf"],
+                payload["generation"],
+                receipt_set_sha256,
+                payload["previousAcceptedManifestSha256"],
+                payload.get("supersedesSha256"),
+                accepted.manifest_sha256,
+                receipt_set_sha256,
+                cast(dict[str, object], payload["calendar"])["revision"],
+                cast(dict[str, object], payload["calendar"])["attestationSha256"],
+            ),
+        )
+        if cursor.rowcount == 0:
+            connection.commit()
+            return DailyAdoptionResult(
+                manifest_sha256=accepted.manifest_sha256,
+                outcome="NO_OP",
+                bars=0,
+                indices=0,
+                macro=0,
+                universes=0,
+            )
+        if cursor.rowcount != 1:
+            raise MarketDataRepositoryError("daily manifest insert count is invalid")
+        counts = _insert_daily_rows(cursor=cursor, accepted=accepted)
+        connection.commit()
+        return DailyAdoptionResult(
+            manifest_sha256=accepted.manifest_sha256,
+            outcome="INSERTED",
+            bars=counts["bars"],
+            indices=counts["indices"],
+            macro=counts["macro"],
+            universes=counts["universes"],
+        )
+    except Exception:
+        connection.rollback()
+        raise
+
+
+def _insert_daily_rows(
+    *, cursor: CursorLike, accepted: AcceptedDailyShard
+) -> dict[str, int]:
+    payload = accepted.payload
+    generation = payload["generation"]
+    for row in cast(list[dict[str, object]], payload["bars"]):
+        cursor.execute(
+            """
+            INSERT INTO market_data_bars (
+                manifest_sha256, generation, symbol, session_date, open_price,
+                high_price, low_price, close_price, volume, currency,
+                temporal_quality, source_receipt_sha256
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                accepted.manifest_sha256,
+                generation,
+                row["symbol"],
+                row["sessionDate"],
+                row["open"],
+                row["high"],
+                row["low"],
+                row["close"],
+                row["volume"],
+                row["currency"],
+                row["temporalQuality"],
+                row["sourceReceiptSha256"],
+            ),
+        )
+    for row in cast(list[dict[str, object]], payload["indices"]):
+        cursor.execute(
+            """
+            INSERT INTO market_data_indices (
+                manifest_sha256, generation, index_id, session_date, close_value,
+                temporal_quality, source_receipt_sha256
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                accepted.manifest_sha256,
+                generation,
+                row["indexId"],
+                row["sessionDate"],
+                row["close"],
+                row["temporalQuality"],
+                row["sourceReceiptSha256"],
+            ),
+        )
+    for row in cast(list[dict[str, object]], payload["macro"]):
+        cursor.execute(
+            """
+            INSERT INTO market_data_macro (
+                manifest_sha256, generation, series_id, observation_date, available_at,
+                value_text, temporal_quality, source_receipt_sha256, entitlement_expires_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NULL)
+            """,
+            (
+                accepted.manifest_sha256,
+                generation,
+                row["seriesId"],
+                row["observationDate"],
+                row["availableAt"],
+                str(row["value"]),
+                row["temporalQuality"],
+                row["sourceReceiptSha256"],
+            ),
+        )
+    for universe_row in accepted.universe_rows:
+        cursor.execute(
+            """
+            INSERT INTO market_data_universes (
+                manifest_sha256, generation, membership_month, selection_session,
+                effective_from_session, instrument_id, symbol, market, rank,
+                is_fixed_member, temporal_quality, source_receipt_sha256
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                accepted.manifest_sha256,
+                generation,
+                universe_row["membershipMonth"],
+                universe_row["selectionSession"],
+                universe_row["effectiveFromSession"],
+                universe_row["instrumentId"],
+                universe_row["symbol"],
+                universe_row["market"],
+                universe_row["rank"],
+                universe_row["isFixedMember"],
+                universe_row["temporalQuality"],
+                universe_row["sourceReceiptSha256"],
+            ),
+        )
+    return {
+        "bars": len(cast(list[object], payload["bars"])),
+        "indices": len(cast(list[object], payload["indices"])),
+        "macro": len(cast(list[object], payload["macro"])),
+        "universes": len(accepted.universe_rows),
+    }
 
 
 def _copy_artifacts(*, cursor: CursorLike, archive: MarketDataArchive) -> dict[str, int]:

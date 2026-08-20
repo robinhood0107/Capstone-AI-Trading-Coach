@@ -36,9 +36,9 @@
     ]
   ],
   "labelBoundary": {
-    "buy": "r > 0.006",
-    "hold": "-0.006 <= r <= 0.006",
-    "sell": "r < -0.006"
+    "buy": "r > 0.025",
+    "hold": "-0.025 <= r <= 0.025",
+    "sell": "r < -0.025"
   },
   "metrics": {
     "brier": "mean_sum_squared_error_unscaled",

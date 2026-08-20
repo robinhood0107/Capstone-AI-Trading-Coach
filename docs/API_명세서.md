@@ -1878,8 +1878,8 @@ payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view
 ### 8.1 Signal v2 종목 신호 조회
 
 > 현재 상태: `S5_0_AMENDMENT=VERIFIED / S5_5_SYMBOL_ROUTE=IMPLEMENTED /
-> S5_CALENDAR_RECOVERY=READY_TO_SUPERSEDE / REAL_DATASET=DATASET_UNAVAILABLE /
-> REAL_MODEL_AVAILABLE=FALSE / PRODUCTION_POINTER=0 / RISK_DECISION_ORDER_WIRING=NO_GO`.
+> REAL_DATASET=COLLECTED / REAL_MODEL_AVAILABLE=FALSE / LIGHTGBM_MODE=RESEARCH_ONLY /
+> PRODUCTION_POINTER=0 / RISK_DECISION_ORDER_WIRING=NO_GO`.
 > historical Signal v1/v2 bytes를
 > 유지하고 preserved projection 검증 아래 runtime v1 schema와 exact GET path만 추가했다.
 > S5.6A/B production code는 구현됐다. 실제 bootstrap은 KRX 4,082 physical calls 후
@@ -1903,6 +1903,12 @@ payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view
 > `LOCAL_FINALIZATION`으로 재개한다. 수동 rollback도 이전 batch를 재노출하지 않고 이전 ACCEPTED
 > release가 최신 XKRX session에서 새로 만든 별도 `ROLLBACK` exact-31 batch만 expected-current
 > CAS로 활성화한다.
+> 2026-08-20 연구 전용 전환 뒤 위 production release/daily/rollback 경로는 historical contract
+> 재현용으로만 보존한다. writer/scheduler/admin capability는 V74에서 회수했고 public reader는
+> LightGBM DB row를 `ABSTAIN/MISSING_EVIDENCE`로 투영한다. data-only daily collector와 Market/Data
+> API는 별도 contract-change 전까지 미활성이다.
+> production bootstrap과 autonomous tick도 root·quota·provider 접근 전에 연구 전용으로 종료하며,
+> 보존된 systemd unit은 새로 설치·활성화하지 않는다.
 > Source bundle은 provider별 단일 page 행 상한(KRX 5,000/KIS 100/ECOS 400), receipt-derived
 > `createdAt`, dataset-cutoff effective clock 및 latest label maturity를 모두 검증한 뒤에만
 > feature bundle v2 authority가 된다.

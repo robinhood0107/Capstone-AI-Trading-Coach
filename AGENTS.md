@@ -151,6 +151,14 @@
   사건만 원장에 미러링한다.
 - 자동 재학습·qualification·release stage는 허용한다. 자동 pointer activation은 금지이며 활성
   전환은 계속 수동 CAS다. 서빙 모델은 사람 승인 없이 바뀌지 않는다.
+- **2026-08-20 이후 LightGBM은 연구·재현 전용이다.** source/feature/diagnostics와 학습 코드는
+  보존하지만 production Signal projection, release/batch stage, activation, daily inference/publication,
+  rollback, RiskDecision, order 권한은 닫는다. production bootstrap과 `s5-tick`도 root·quota·provider
+  접근 전에 연구 전용으로 종료하고 보존된 systemd unit은 설치·활성화하지 않는다. V73 audit
+  schema는 삭제하지 않고 V74가 역할별 실행 권한을 회수한다. `GET /api/v2/signals/{symbol}`의
+  LightGBM component는 DB row 유무와 관계없이
+  `ABSTAIN/MISSING_EVIDENCE`다. KRX/KIS/ECOS data-only daily collector와 Market/Data projection은
+  모델 publication에서 분리한 별도 contract-change 전까지 활성화하지 않는다.
 - 2026-08-20 S5 qualification continuation은 초기 fit-only 근거로 라벨 경계를 `0.025`로 옮긴 뒤
   승인된 5회 조정(grid 정규화, block 재배분, fit-only label 두 값, macro split-gain 0)을 실측했다.
   마지막 시도는 macro disagreement를 모든 grid/fold에서 `0.0000`으로 만들었지만 fold-3 OVR Platt가

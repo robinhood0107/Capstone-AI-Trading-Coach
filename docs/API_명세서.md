@@ -3896,3 +3896,16 @@ Dashboard는 원천 계산을 다시 정의하는 계층이 아니라, API와 ar
 2. Spring 구현에서 springdoc으로 OpenAPI를 자동 생성하고, CI에서 계약 파일과의 diff를 검사한다. diff가 있으면 빌드를 실패시킨다.
 3. 이 문서의 예시 payload는 `contracts/examples/`의 파일을 기준으로 하며, 예시 변경은 schema validation 테스트를 통과해야 한다.
 4. 계약 변경은 `contracts/changes/`에 기록 후 반영한다. 이 규칙은 문서-코드 불일치(예시 mode 모순 등)의 재발을 구조적으로 방지한다.
+## S5.7B Market Data 내부 저장 overlay (2026-08-21)
+
+S5.7B는 내부 Python archive/reader와 V75 저장 경계만 구현했다. Public REST, OpenAPI, gRPC,
+Dashboard endpoint 추가는 0이며 기존 Signal v2 response도 바뀌지 않는다. Market Data가 저장돼도
+LightGBM component는 계속 `ABSTAIN/MISSING_EVIDENCE`이고 composite/RiskDecision/order 권한은 없다.
+
+Spring `decision_app`은 normalized bars/index/macro/universe 및 research reader에 SELECT 권한이 없다.
+S6.5가 별도 세션에서 만든 파생 risk/report snapshot만 기존 저장 reader 계약으로 연결하며,
+S8 전에는 Market Data public API를 만들지 않는다.
+
+내부 Python DB reader는 분리된 operational/research role과 security-barrier view만 받는다. correction은
+latest generation으로 de-duplicate된 뒤 session 상한을 적용하며, DB stage는 explicit expected manifest
+SHA가 일치하기 전에는 writer DSN을 열지 않는다. 이는 내부 저장 계약이고 public API payload 변경이 아니다.

@@ -151,6 +151,11 @@
   사건만 원장에 미러링한다.
 - 자동 재학습·qualification·release stage는 허용한다. 자동 pointer activation은 금지이며 활성
   전환은 계속 수동 CAS다. 서빙 모델은 사람 승인 없이 바뀌지 않는다.
+- 2026-08-20 S5 qualification continuation은 초기 fit-only 근거로 라벨 경계를 `0.025`로 옮긴 뒤
+  승인된 5회 조정(grid 정규화, block 재배분, fit-only label 두 값, macro split-gain 0)을 실측했다.
+  마지막 시도는 macro disagreement를 모든 grid/fold에서 `0.0000`으로 만들었지만 fold-3 OVR Platt가
+  `dLogLoss +0.0207..+0.0342`, `dBrier +0.0106..+0.0190`으로 실패했다. threshold·gate·final test를
+  완화하거나 재열람하지 않고 `REAL_MODEL_AVAILABLE=FALSE`, `PRODUCTION_POINTER=0`을 유지한다.
 - 종목별 KIS 커버리지 요구는 수집된 KRX 일별 거래 증거와의 정확한 일치다. 전 종목이 전 구간을
   거래한다고 단정하지 않는다. 상장폐지·신규상장으로 끝이 잘리는 것은 허용하되 중간 결손은
   거부하며(rolling window가 위치 기반이라 의미가 바뀐다), 거래량 0 세션에는 시가가 존재하지

@@ -105,7 +105,7 @@ class SignalV2ApiIntegrationTest(
     }
 
     @Test
-    fun `partial HOLD and stale evidence serialize the closed runtime union`() {
+    fun `research-only LightGBM and stale evidence serialize the closed runtime union`() {
         val completed = LocalDate.of(2026, 8, 14)
         fakePort.snapshot =
             SignalReadSnapshot(
@@ -145,9 +145,10 @@ class SignalV2ApiIntegrationTest(
                 .get("/api/v2/signals/005930") { header("Authorization", "Bearer ${token()}") }
                 .andExpect {
                     status { isOk() }
-                    jsonPath("$.data.asOf") { value("2026-08-14T06:30:00Z") }
-                    jsonPath("$.data.components.lightgbm.status") { value("AVAILABLE") }
-                    jsonPath("$.data.components.lightgbm.signal") { value("HOLD") }
+                    jsonPath("$.data.asOf") { doesNotExist() }
+                    jsonPath("$.data.components.lightgbm.status") { value("ABSTAIN") }
+                    jsonPath("$.data.components.lightgbm.reason") { value("MISSING_EVIDENCE") }
+                    jsonPath("$.data.components.lightgbm.signal") { doesNotExist() }
                     jsonPath("$.data.components.lstm.status") { value("ABSTAIN") }
                     jsonPath("$.data.components.lstm.reason") { value("STALE_EVIDENCE") }
                     jsonPath("$.data.components.lstm.asOf") { doesNotExist() }
@@ -161,7 +162,7 @@ class SignalV2ApiIntegrationTest(
     }
 
     @Test
-    fun `drift suspension remains ARTIFACT_DRIFT even when the prior batch session is old`() {
+    fun `research-only LightGBM does not expose a prior drift row`() {
         fakePort.snapshot =
             SignalReadSnapshot(
                 listOf(
@@ -187,7 +188,7 @@ class SignalV2ApiIntegrationTest(
             .andExpect {
                 status { isOk() }
                 jsonPath("$.data.components.lightgbm.status") { value("ABSTAIN") }
-                jsonPath("$.data.components.lightgbm.reason") { value("ARTIFACT_DRIFT") }
+                jsonPath("$.data.components.lightgbm.reason") { value("MISSING_EVIDENCE") }
                 jsonPath("$.data.components.lightgbm.asOf") { doesNotExist() }
             }
     }

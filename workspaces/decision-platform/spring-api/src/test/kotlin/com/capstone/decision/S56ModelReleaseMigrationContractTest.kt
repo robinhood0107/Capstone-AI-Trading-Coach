@@ -9,6 +9,9 @@ class S56ModelReleaseMigrationContractTest {
     private val migrationPath =
         Path.of("src/main/resources/db/migration/V73__s5_6_model_release_signal_batch.sql")
     private val migration by lazy { Files.readString(migrationPath) }
+    private val researchOnlyMigrationPath =
+        Path.of("src/main/resources/db/migration/V74__s5_lightgbm_research_only.sql")
+    private val researchOnlyMigration by lazy { Files.readString(researchOnlyMigrationPath) }
 
     @Test
     fun `V73 is forward-only and release-level LightGBM activation is capability separated`() {
@@ -43,6 +46,26 @@ class S56ModelReleaseMigrationContractTest {
             "TO decision_signal_scheduler;",
             "TO decision_signal_scheduler, decision_signal_admin;",
             "TO decision_signal_admin;",
+        )
+    }
+
+    @Test
+    fun `V74 revokes every LightGBM production mutation capability without deleting audit data`() {
+        assertThat(researchOnlyMigration).contains(
+            "FROM decision_signal_writer;",
+            "FROM decision_signal_scheduler;",
+            "FROM decision_signal_admin;",
+            "public.stage_signal_model_release",
+            "public.stage_signal_batch",
+            "public.publish_active_signal_batch",
+            "public.activate_signal_model_and_batch",
+            "public.suspend_signal_model_for_drift",
+        )
+        assertThat(researchOnlyMigration).doesNotContain(
+            "DROP TABLE",
+            "DELETE FROM",
+            "TRUNCATE",
+            "GRANT EXECUTE",
         )
     }
 }

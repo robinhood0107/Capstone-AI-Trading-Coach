@@ -16,6 +16,10 @@ from app.lightgbm.production_release import (
 def main() -> int:
     """서버 root와 prior release state digest만 사용해 immutable ROLLBACK batch를 만든다."""
 
+    print("S5_ROLLBACK_BATCH=RESEARCH_ONLY")
+    return 2
+
+    # Kept as unreachable historical production implementation for audit reproduction.
     root_value = os.environ.get("S5_SOURCE_ROOT", "")
     state_sha = os.environ.get("S5_ROLLBACK_STATE_SHA256", "")
     bootstrap_sha = os.environ.get("S5_BOOTSTRAP_PACKET_SHA256", "")

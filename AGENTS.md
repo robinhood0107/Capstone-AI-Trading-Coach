@@ -111,6 +111,11 @@
   이관된 superseded 소비는 누적 예산에 남지만 새 세대의 재시도 자격을 먹지 않는다. prior packet은
   세대 해시가 아니라 소비 query 다중집합으로 유도한 체인 head이며, supersede는 packet 신원을
   바꿔야 한다.
+- 승인 차원에서 유도되는 값은 리터럴로 중복 선언하지 않는다. eligible session 수는 raw에서
+  warm-up과 label tail을 뺀 값이고, KRX·KIS 상한은 raw session·월 수·horizon union에서 나오며,
+  총 상한은 네 provider 상한의 합이고, KIS source 행 상한은 union과 raw session의 곱이다. 두
+  상수가 서로를 제약하면(ECOS 요청 행 상한과 chunk 길이) 하나에서 유도한다. walk-forward 블록
+  크기처럼 유도 불가한 계약 상수는 그대로 둔다. 억지로 유도하면 의미가 사라진다.
 - 일일 수집분은 학습 저장소에 누적한다. `DailyInferenceState`는 추론용 bounded snapshot이고 daily
   run은 자체 source manifest를 봉인하지 않으므로 학습 누적은 별도 저장소가 필요하다. bootstrap
   packet window는 건드리지 않는다. window를 옮기면 KIS query 신원이 전부 바뀌어 승인 상한만큼

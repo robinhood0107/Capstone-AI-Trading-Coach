@@ -26,6 +26,7 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
                 "issue",
                 "packet",
                 "recovery",
+                "trainingAppend",
             },
             set(payload),
         )
@@ -345,6 +346,37 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
         self.assertTrue(autonomy["automaticRetrain"])
         self.assertFalse(autonomy["automaticModelActivation"])
         self.assertTrue(autonomy["activationRemainsManualCas"])
+    def test_training_append_grows_the_dataset_without_recollecting_history(self) -> None:
+        """일일 수집분이 누적돼야 코드가 알아서 갱신한다.
+
+        packet window를 옮기면 KIS query 신원이 전부 바뀌어 승인 상한만큼 재수집이 필요해진다.
+        그래서 window 밖 새 세션만 별도 이름공간으로 쌓는다.
+        """
+
+        append = json.loads(CATALOG.read_text(encoding="utf-8"))["trainingAppend"]
+
+        self.assertTrue(append["packetWindowUnchanged"])
+        self.assertEqual(0, append["historyRecollection"])
+        self.assertEqual("BUNDLE_UNION_APPEND", append["trainingWindowDerivedFrom"])
+        self.assertTrue(append["trainingWindowKeepsApprovedDimensions"])
+        # cutoff를 그대로 두면 append된 세션의 label maturity가 cutoff보다 늦어 PIT가 깨진다.
+        self.assertTrue(append["trainingWindowCutoffRederivedFromLatestSession"])
+
+    def test_training_append_index_is_append_only_and_bounded(self) -> None:
+        """index를 고쳐 쓰면 학습 데이터셋이 조용히 달라진다."""
+
+        append = json.loads(CATALOG.read_text(encoding="utf-8"))["trainingAppend"]
+
+        self.assertTrue(append["indexAppendOnly"])
+        self.assertTrue(append["replayIsIdempotent"])
+        self.assertTrue(append["conflictingSessionEvidenceRefused"])
+        self.assertEqual(41, append["maxChunksPerSession"])
+        # 경로 참조는 owner-private 컨테인먼트를 깬다.
+        self.assertTrue(append["chunksCopiedNotReferenced"])
+        # 휴장일은 달력 권위가 이미 다음 session을 고르므로 별도 no-op 분기가 없다.
+        self.assertTrue(append["holidayTickIsNoOpByCalendarAuthority"])
+        # warm-up 역사를 못 채운 새 멤버는 그 달만 제외되고 원장에 남는다.
+        self.assertTrue(append["newMonthlyMemberWithoutWarmupIsEvidenceGap"])
 
 if __name__ == "__main__":
     unittest.main()

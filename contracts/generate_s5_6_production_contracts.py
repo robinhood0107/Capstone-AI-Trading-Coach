@@ -544,6 +544,25 @@ def _recovery_catalog() -> dict[str, Any]:
             "automaticModelActivation": False,
             "activationRemainsManualCas": True,
         },
+        "trainingAppend": {
+            "directory": "append",
+            "indexFile": "index.jsonl",
+            "indexVersion": "s5-training-append-index-v1",
+            "indexAppendOnly": True,
+            # daily run root를 경로로 참조하면 owner-private 컨테인먼트가 깨진다.
+            "chunksCopiedNotReferenced": True,
+            "maxChunksPerSession": 41,
+            "replayIsIdempotent": True,
+            "conflictingSessionEvidenceRefused": True,
+            # window를 옮기면 KIS query 신원이 전부 바뀌어 승인 상한만큼 재수집이 필요해진다.
+            "packetWindowUnchanged": True,
+            "historyRecollection": 0,
+            "trainingWindowDerivedFrom": "BUNDLE_UNION_APPEND",
+            "trainingWindowKeepsApprovedDimensions": True,
+            "trainingWindowCutoffRederivedFromLatestSession": True,
+            "holidayTickIsNoOpByCalendarAuthority": True,
+            "newMonthlyMemberWithoutWarmupIsEvidenceGap": True,
+        },
         "diagnostics": {
             "ledgerFile": "diagnostics.jsonl",
             "eventVersion": "s5-diagnostic-event-v1",

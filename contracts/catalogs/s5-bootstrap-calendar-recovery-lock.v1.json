@@ -199,5 +199,22 @@
     ],
     "supersededQueryIdentityResolvedAcrossApprovedGenerations": true,
     "temporalReceiptRebindingRequired": true
+  },
+  "trainingAppend": {
+    "chunksCopiedNotReferenced": true,
+    "conflictingSessionEvidenceRefused": true,
+    "directory": "append",
+    "historyRecollection": 0,
+    "holidayTickIsNoOpByCalendarAuthority": true,
+    "indexAppendOnly": true,
+    "indexFile": "index.jsonl",
+    "indexVersion": "s5-training-append-index-v1",
+    "maxChunksPerSession": 41,
+    "newMonthlyMemberWithoutWarmupIsEvidenceGap": true,
+    "packetWindowUnchanged": true,
+    "replayIsIdempotent": true,
+    "trainingWindowCutoffRederivedFromLatestSession": true,
+    "trainingWindowDerivedFrom": "BUNDLE_UNION_APPEND",
+    "trainingWindowKeepsApprovedDimensions": true
   }
 }

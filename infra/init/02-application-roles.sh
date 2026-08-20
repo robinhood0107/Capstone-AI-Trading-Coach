@@ -139,6 +139,23 @@ SELECT format(
 )
 \gexec
 
+DO $market_data_roles$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_market_operational_reader') THEN
+        CREATE ROLE decision_market_operational_reader
+            NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_market_research_reader') THEN
+        CREATE ROLE decision_market_research_reader
+            NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_market_retention_admin') THEN
+        CREATE ROLE decision_market_retention_admin
+            NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+    END IF;
+END
+$market_data_roles$;
+
 SELECT format(
     'CREATE ROLE decision_portfolio_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
     :'portfolio_writer_password'
@@ -295,6 +312,9 @@ GRANT CONNECT ON DATABASE :"database_name" TO
     decision_collector,
     decision_disclosure_reader,
     decision_market_writer,
+    decision_market_operational_reader,
+    decision_market_research_reader,
+    decision_market_retention_admin,
     decision_portfolio_writer,
     decision_risk_writer,
     decision_fill_writer,
@@ -311,6 +331,9 @@ GRANT USAGE ON SCHEMA public TO
     decision_collector,
     decision_disclosure_reader,
     decision_market_writer,
+    decision_market_operational_reader,
+    decision_market_research_reader,
+    decision_market_retention_admin,
     decision_portfolio_writer,
     decision_risk_writer,
     decision_fill_writer,
@@ -331,6 +354,12 @@ REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_collector;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_collector;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_disclosure_reader;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_disclosure_reader;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_market_operational_reader;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_market_operational_reader;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_market_research_reader;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_market_research_reader;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_market_retention_admin;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_market_retention_admin;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_market_writer;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_market_writer;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_portfolio_writer;
@@ -1598,6 +1627,48 @@ BEGIN
     END IF;
 END
 $cross_market_runtime_privileges$;
+
+DO $market_data_archive_privileges$
+BEGIN
+    IF to_regclass('public.market_data_manifests') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON TABLE
+            market_data_manifests,
+            market_data_bars,
+            market_data_indices,
+            market_data_macro,
+            market_data_universes,
+            market_data_operational_universe,
+            market_data_operational_bars,
+            market_data_research_bars,
+            market_data_research_indices
+        FROM PUBLIC, decision_app, decision_market_writer,
+             decision_market_operational_reader, decision_market_research_reader,
+             decision_market_retention_admin;
+        GRANT INSERT ON TABLE
+            market_data_manifests,
+            market_data_bars,
+            market_data_indices,
+            market_data_macro,
+            market_data_universes
+        TO decision_market_writer;
+        GRANT SELECT ON TABLE
+            market_data_operational_universe,
+            market_data_operational_bars
+        TO decision_market_operational_reader;
+        GRANT SELECT ON TABLE
+            market_data_research_bars,
+            market_data_research_indices,
+            market_data_macro,
+            market_data_universes
+        TO decision_market_research_reader;
+        REVOKE ALL PRIVILEGES ON FUNCTION prune_market_data_macro(date, boolean)
+        FROM PUBLIC, decision_app, decision_market_writer,
+             decision_market_operational_reader, decision_market_research_reader;
+        GRANT EXECUTE ON FUNCTION prune_market_data_macro(date, boolean)
+        TO decision_market_retention_admin;
+    END IF;
+END
+$market_data_archive_privileges$;
 
 DO $signal_release_runtime_privileges$
 BEGIN

@@ -417,6 +417,26 @@ Gradle build), `python-ci.yml`(Python 3.12 품질 게이트)이다. 아래 시�
 - probe는 기본적으로 retry `0`, endpoint별 physical cap `1`, artifact `0`이며 첫 실패 뒤 남은 provider 호출은 `0`이다. probe 성공은 accepted production 결과가 아니고, 최종 명령이 현재 응답 전체를 독립적으로 다시 검증해 성공한 뒤에만 원자 publish한다. probe와 최종 응답 hash 일치를 강제하지 않는다.
 - 외부 provider 성공을 보장한다고 표현하지 않는다. `curl`, 브라우저 sample, 임시 script로 credential·fixed-origin transport·quota·사용자가 승인한 실행 범위를 우회하지 않고 실패 evidence와 성공 acceptance set을 분리한다.
 
+## S5.7B 중립 Market Data 현재 권위
+
+- S5.7B는 provider-free adoption만 구현한다. `s5-research-market-data-export`는 봉인된 S5 source
+  manifest/chunk만 읽고 feature, label, final test, release, Signal batch는 읽지 않는다.
+- 운영 모듈 `app.data.market_data`는 `app.lightgbm`을 import하지 않는다. 내부 운영 reader는 현재
+  exact-31의 최대 253 close, 연구 reader는 최대 1,260 session만 반환하며 provider-on-read는 0이다.
+- V75의 normalized manifest/bars/indices/macro/universe는 append-only다. 같은 session·generation·SHA는
+  no-op, 다른 SHA는 `NEEDS_HUMAN`, correction은 직전 generation을 `supersedes_sha256`으로 결속한다.
+- correction view는 `(identity, session)`별 가장 높은 generation만 먼저 선택한 뒤 253/1,260 session
+  상한을 적용한다. stage는 운영자가 지정한 exact manifest SHA가 archive와 일치해야 DB를 연다.
+- `decision_market_writer`는 INSERT만, operational/research/retention role은 서로 다른 NOLOGIN capability다.
+  `decision_app`과 Spring Decision/Risk에는 두 history reader 권한을 주지 않는다.
+- ECOS active retention은 최대 365일이고 entitlement 종료가 더 빠르면 그 날짜를 따른다. 삭제는 별도
+  retention role의 명시적 apply에서만 가능하며 `market-data-retention` 기본 모드는 dry-run이다.
+- 실제 adoption 기준 source는 7,218 chunk, historical INTENT 7,230이다. normalized archive는 bars
+  267,788, indices 2,144, macro 3,042, universes 1,581행이며 provider 호출은 0이었다. 역사 union에는
+  KRX 영숫자 단축코드 1개가 있으므로 연구 저장은 6자리 영숫자를 보존하되 현재 exact-31은 숫자 31개다.
+- 이 데이터의 전체 품질은 `RECONSTRUCTED_FIXED_LAG`이며 strict-PIT 성과 주장, LightGBM Signal,
+  RiskDecision, order 권한은 계속 0이다. public Market Data API와 scheduler는 구현하지 않는다.
+
 ## Java/Kotlin/Spring 기준 스택
 
 - JVM은 **JDK 25 LTS**로 고정한다. JDK 26은 최신 feature release지만 이 프로젝트의 기준은 최신 LTS다.

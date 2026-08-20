@@ -859,3 +859,17 @@ A3/A4 복구와 B1 검증은 기존 3개 source snapshot schema, public API, DB/
 이 snapshot을 실제 교환 artifact로 소비하는 cross-workspace handoff는 별도 계약 합의 전까지
 활성 상태로 간주하지 않는다. S1.3K KRX universe 자동화는 이 계약 파일을 변경하지 않은 별도
 내부 트랙이다.
+## S5.7B normalized adoption runtime
+
+S5.7A의 세 계약 bytes는 유지한다. S5.7B는 `market-data-seed.v1`을 실제 source-only exporter와 V75
+append-only storage/reader로 구현했으며 새 public 계약은 추가하지 않았다. 구현은 raw chunk copy,
+hardlink, source path persistence, provider call, LightGBM Signal/Risk/order authority를 만들지 않는다.
+
+실측 source/normalized identity는 contract-change
+`changes/20260821-s5-7b-market-data-normalized-adoption.md`에 기록한다. 역사 union에는 영숫자 KRX
+단축코드가 하나 있으므로 archive/DB 연구 행은 원문을 보존하고, daily shard의 현재 exact-31 계약은
+그대로 숫자 31개를 유지한다.
+
+DB stage는 explicit expected manifest SHA를 필수로 받고, operational/research view는 correction의 최신
+generation을 먼저 고른 뒤 각각 253/1,260 session 상한을 적용한다. 이 구현 보강은 S5.7A JSON Schema
+bytes나 public OpenAPI를 바꾸지 않는다.

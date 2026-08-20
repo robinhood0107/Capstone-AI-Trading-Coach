@@ -8,6 +8,7 @@ import pytest
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.features import PriceEvidence
 from app.lightgbm.labels import (
+    LABEL_THRESHOLD,
     CLASS_ORDER,
     LabelRow,
     build_exact_labels,
@@ -41,19 +42,29 @@ def _price(
 
 
 def test_exact_label_uses_t1_t6_and_tau_equality_is_hold() -> None:
+    """구간은 t+1..t+6이고 경계값 자체는 HOLD다. 경계 상수를 직접 참조해 값 drift를 막는다."""
+
     sessions = [date(2026, 1, 1) + timedelta(days=index) for index in range(8)]
     prices = [_price(session, 100.0) for session in sessions]
-    prices[6] = _price(sessions[6], 101.0)
+    prices[6] = _price(sessions[6], 104.0)
     labels = build_exact_labels(prices)
 
     assert labels[0].interval_start == sessions[1]
     assert labels[0].interval_end == sessions[6]
-    assert labels[0].forward_return == pytest.approx(0.01)
+    assert labels[0].forward_return == pytest.approx(0.04)
     assert labels[0].label == CLASS_ORDER["BUY"]
-    assert classify_forward_return(-0.006) == CLASS_ORDER["HOLD"]
-    assert classify_forward_return(0.006) == CLASS_ORDER["HOLD"]
-    assert classify_forward_return(np.nextafter(-0.006, -1.0)) == CLASS_ORDER["SELL"]
-    assert classify_forward_return(np.nextafter(0.006, 1.0)) == CLASS_ORDER["BUY"]
+    assert classify_forward_return(-LABEL_THRESHOLD) == CLASS_ORDER["HOLD"]
+    assert classify_forward_return(LABEL_THRESHOLD) == CLASS_ORDER["HOLD"]
+    assert (
+        classify_forward_return(np.nextafter(-LABEL_THRESHOLD, -1.0))
+        == CLASS_ORDER["SELL"]
+    )
+    assert (
+        classify_forward_return(np.nextafter(LABEL_THRESHOLD, 1.0))
+        == CLASS_ORDER["BUY"]
+    )
+    # 경계 안쪽은 HOLD다. 이전 경계(0.006)에서 BUY였던 값이 지금은 HOLD여야 한다.
+    assert classify_forward_return(0.01) == CLASS_ORDER["HOLD"]
 
 
 def test_missing_t1_or_t6_open_drops_row_and_zero_fill_does_not_forward_read() -> None:

@@ -156,6 +156,13 @@
   마지막 시도는 macro disagreement를 모든 grid/fold에서 `0.0000`으로 만들었지만 fold-3 OVR Platt가
   `dLogLoss +0.0207..+0.0342`, `dBrier +0.0106..+0.0190`으로 실패했다. threshold·gate·final test를
   완화하거나 재열람하지 않고 `REAL_MODEL_AVAILABLE=FALSE`, `PRODUCTION_POINTER=0`을 유지한다.
+- 같은 날 별도 승인된 calibrator 계약 probe는 final candidate 선택을 강제로 닫은 복제 root에서
+  temperature scaling과 21-session identity-regularized bias-temperature scaling을 현재 feature와
+  macro split-gain 0 각각에 적용해 정확히 4회 실측했다. temperature는 fold-3 `dLogLoss`를 모두
+  `-0.0039..+0.0065`로 만들었지만 fold-2 ECE가 `0.0515..0.0876`이었고, regularized variant는 일부
+  fold-2 ECE를 통과시키는 대신 fold-3 또는 corporate-action subset을 실패했다. 전 실행에서 provider
+  INTENT `7,230`, `finalTestAccessCount=0`, release/batch 0을 유지했으므로 실패한 calibrator를 제품
+  계약에 넣지 않는다. 다음 재검증은 append session 21개 또는 월 경계 evidence가 열 때만 수행한다.
 - 종목별 KIS 커버리지 요구는 수집된 KRX 일별 거래 증거와의 정확한 일치다. 전 종목이 전 구간을
   거래한다고 단정하지 않는다. 상장폐지·신규상장으로 끝이 잘리는 것은 허용하되 중간 결손은
   거부하며(rolling window가 위치 기반이라 의미가 바뀐다), 거래량 0 세션에는 시가가 존재하지

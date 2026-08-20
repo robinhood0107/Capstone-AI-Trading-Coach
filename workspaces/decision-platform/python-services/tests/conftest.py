@@ -11,8 +11,7 @@ import pytest
 from testcontainers.postgres import PostgresContainer
 
 POSTGRES_IMAGE = (
-    "pgvector/pgvector:pg16@sha256:"
-    "1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb"
+    "pgvector/pgvector:pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb"
 )
 MIGRATION_DIR = (
     Path(__file__).resolve().parents[2]
@@ -79,15 +78,9 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
         risk_writer_dsn = (
             f"postgresql://decision_risk_writer:risk-writer-test@{host}:{port}/decision"
         )
-        rag_writer_dsn = (
-            f"postgresql://decision_rag_writer:rag-writer-test@{host}:{port}/decision"
-        )
-        rag_admin_dsn = (
-            f"postgresql://decision_rag_admin:rag-admin-test@{host}:{port}/decision"
-        )
-        rag_query_dsn = (
-            f"postgresql://decision_rag_query:rag-query-test@{host}:{port}/decision"
-        )
+        rag_writer_dsn = f"postgresql://decision_rag_writer:rag-writer-test@{host}:{port}/decision"
+        rag_admin_dsn = f"postgresql://decision_rag_admin:rag-admin-test@{host}:{port}/decision"
+        rag_query_dsn = f"postgresql://decision_rag_query:rag-query-test@{host}:{port}/decision"
         signal_writer_dsn = (
             f"postgresql://decision_signal_writer:signal-writer-test@{host}:{port}/decision"
         )
@@ -109,6 +102,12 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'disclosure-reader-test';
                 CREATE ROLE decision_market_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'market-writer-test';
+                CREATE ROLE decision_market_operational_reader NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS;
+                CREATE ROLE decision_market_research_reader NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS;
+                CREATE ROLE decision_market_retention_admin NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS;
                 CREATE ROLE decision_portfolio_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'portfolio-writer-test';
                 CREATE ROLE decision_risk_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
@@ -153,6 +152,9 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     decision_collector,
                     decision_disclosure_reader,
                     decision_market_writer,
+                    decision_market_operational_reader,
+                    decision_market_research_reader,
+                    decision_market_retention_admin,
                     decision_portfolio_writer,
                     decision_risk_writer,
                     decision_rag_writer,
@@ -168,6 +170,9 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     decision_collector,
                     decision_disclosure_reader,
                     decision_market_writer,
+                    decision_market_operational_reader,
+                    decision_market_research_reader,
+                    decision_market_retention_admin,
                     decision_portfolio_writer,
                     decision_risk_writer,
                     decision_rag_writer,

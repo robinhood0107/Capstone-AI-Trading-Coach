@@ -21,7 +21,7 @@ class RagPreS5VoyageUnknownBillingReapprovalMigrationContractTest {
             }
         assertThat(migrationVersion(migrationPath)).isEqualTo(59)
         assertThat(versions.count { it == 59 }).isEqualTo(1)
-        assertThat(versions.max()).isEqualTo(74)
+        assertThat(versions.max()).isEqualTo(75)
 
         val migration = Files.readString(migrationPath)
         assertThat(migration).contains(

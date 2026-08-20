@@ -443,9 +443,9 @@ def _policy_catalog() -> dict[str, Any]:
         "classOrder": {"SELL": 0, "HOLD": 1, "BUY": 2},
         "objective": {"name": "multiclass", "numClass": 3},
         "labelBoundary": {
-            "sell": "r < -0.006",
-            "hold": "-0.006 <= r <= 0.006",
-            "buy": "r > 0.006",
+            "sell": "r < -0.025",
+            "hold": "-0.025 <= r <= 0.025",
+            "buy": "r > 0.025",
         },
         "probabilityTieOrder": ["HOLD", "SELL", "BUY"],
         "gridOrder": [

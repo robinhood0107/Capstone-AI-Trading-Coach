@@ -2,6 +2,24 @@
 
 워크스페이스 간 유일한 진실 소스. 여기가 고정되기 전까지 각자 폴더 구현을 시작하지 않는다.
 
+## S5.7A model-neutral Market Data contract
+
+`catalogs/s5-7a-market-data-lock.v1.json`은 LightGBM publication과 분리된 내부 Python data plane의
+contract-only authority다. generated artifact는 다음 세 개뿐이다.
+
+- `market-data-seed.v1`: 7,218개 preserved source chunk의 provider-free 중립 adoption manifest
+- `market-data-daily-shard.v1`: 한 XKRX session의 월중 고정 exact-31 + 두 지수 + ECOS 최대 2 series
+- `market-data-health.v1`: freshness/calendar/partial/fail-closed 상태
+
+운영 reader 최대 253 close, 연구 reader 최대 1,260 session, provider-on-read 0을 고정한다. 이 계약은
+DB, runtime, public REST/OpenAPI, Dashboard, scheduler 또는 provider authority를 만들지 않는다.
+
+```bash
+uv run --frozen python contracts/generate_s5_7a_market_data_contracts.py --check
+uv run --frozen python -m unittest contracts.tests.test_s5_7a_market_data_contracts -v
+uv run --frozen python contracts/validate.py
+```
+
 | 폴더 | 내용 |
 |---|---|
 | `schemas/` | principle/signal/backtest_result/risk_decision 등 JSON Schema |

@@ -1,0 +1,730 @@
+{
+  "accepted": true,
+  "asOf": "2026-08-18T23:10:00Z",
+  "bars": [
+    {
+      "close": 10050,
+      "currency": "KRW",
+      "high": 10100,
+      "low": 9900,
+      "open": 10000,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "000000000000000000000000000000000000000000000000000000000000006a",
+      "symbol": "000001",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100000
+    },
+    {
+      "close": 10051,
+      "currency": "KRW",
+      "high": 10101,
+      "low": 9901,
+      "open": 10001,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "000000000000000000000000000000000000000000000000000000000000006b",
+      "symbol": "000001",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100001
+    },
+    {
+      "close": 10052,
+      "currency": "KRW",
+      "high": 10102,
+      "low": 9902,
+      "open": 10002,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "000000000000000000000000000000000000000000000000000000000000006c",
+      "symbol": "000003",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100002
+    },
+    {
+      "close": 10053,
+      "currency": "KRW",
+      "high": 10103,
+      "low": 9903,
+      "open": 10003,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "000000000000000000000000000000000000000000000000000000000000006d",
+      "symbol": "000004",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100003
+    },
+    {
+      "close": 10054,
+      "currency": "KRW",
+      "high": 10104,
+      "low": 9904,
+      "open": 10004,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "000000000000000000000000000000000000000000000000000000000000006e",
+      "symbol": "000005",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100004
+    },
+    {
+      "close": 10055,
+      "currency": "KRW",
+      "high": 10105,
+      "low": 9905,
+      "open": 10005,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "000000000000000000000000000000000000000000000000000000000000006f",
+      "symbol": "000006",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100005
+    },
+    {
+      "close": 10056,
+      "currency": "KRW",
+      "high": 10106,
+      "low": 9906,
+      "open": 10006,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000070",
+      "symbol": "000007",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100006
+    },
+    {
+      "close": 10057,
+      "currency": "KRW",
+      "high": 10107,
+      "low": 9907,
+      "open": 10007,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000071",
+      "symbol": "000008",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100007
+    },
+    {
+      "close": 10058,
+      "currency": "KRW",
+      "high": 10108,
+      "low": 9908,
+      "open": 10008,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000072",
+      "symbol": "000009",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100008
+    },
+    {
+      "close": 10059,
+      "currency": "KRW",
+      "high": 10109,
+      "low": 9909,
+      "open": 10009,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000073",
+      "symbol": "000010",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100009
+    },
+    {
+      "close": 10060,
+      "currency": "KRW",
+      "high": 10110,
+      "low": 9910,
+      "open": 10010,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000074",
+      "symbol": "000011",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100010
+    },
+    {
+      "close": 10061,
+      "currency": "KRW",
+      "high": 10111,
+      "low": 9911,
+      "open": 10011,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000075",
+      "symbol": "000012",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100011
+    },
+    {
+      "close": 10062,
+      "currency": "KRW",
+      "high": 10112,
+      "low": 9912,
+      "open": 10012,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000076",
+      "symbol": "000013",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100012
+    },
+    {
+      "close": 10063,
+      "currency": "KRW",
+      "high": 10113,
+      "low": 9913,
+      "open": 10013,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000077",
+      "symbol": "000014",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100013
+    },
+    {
+      "close": 10064,
+      "currency": "KRW",
+      "high": 10114,
+      "low": 9914,
+      "open": 10014,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000078",
+      "symbol": "000015",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100014
+    },
+    {
+      "close": 10065,
+      "currency": "KRW",
+      "high": 10115,
+      "low": 9915,
+      "open": 10015,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000079",
+      "symbol": "000016",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100015
+    },
+    {
+      "close": 10066,
+      "currency": "KRW",
+      "high": 10116,
+      "low": 9916,
+      "open": 10016,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "000000000000000000000000000000000000000000000000000000000000007a",
+      "symbol": "000017",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100016
+    },
+    {
+      "close": 10067,
+      "currency": "KRW",
+      "high": 10117,
+      "low": 9917,
+      "open": 10017,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "000000000000000000000000000000000000000000000000000000000000007b",
+      "symbol": "000018",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100017
+    },
+    {
+      "close": 10068,
+      "currency": "KRW",
+      "high": 10118,
+      "low": 9918,
+      "open": 10018,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "000000000000000000000000000000000000000000000000000000000000007c",
+      "symbol": "000019",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100018
+    },
+    {
+      "close": 10069,
+      "currency": "KRW",
+      "high": 10119,
+      "low": 9919,
+      "open": 10019,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "000000000000000000000000000000000000000000000000000000000000007d",
+      "symbol": "000020",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100019
+    },
+    {
+      "close": 10070,
+      "currency": "KRW",
+      "high": 10120,
+      "low": 9920,
+      "open": 10020,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "000000000000000000000000000000000000000000000000000000000000007e",
+      "symbol": "000021",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100020
+    },
+    {
+      "close": 10071,
+      "currency": "KRW",
+      "high": 10121,
+      "low": 9921,
+      "open": 10021,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "000000000000000000000000000000000000000000000000000000000000007f",
+      "symbol": "000022",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100021
+    },
+    {
+      "close": 10072,
+      "currency": "KRW",
+      "high": 10122,
+      "low": 9922,
+      "open": 10022,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000080",
+      "symbol": "000023",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100022
+    },
+    {
+      "close": 10073,
+      "currency": "KRW",
+      "high": 10123,
+      "low": 9923,
+      "open": 10023,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000081",
+      "symbol": "000024",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100023
+    },
+    {
+      "close": 10074,
+      "currency": "KRW",
+      "high": 10124,
+      "low": 9924,
+      "open": 10024,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000082",
+      "symbol": "000025",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100024
+    },
+    {
+      "close": 10075,
+      "currency": "KRW",
+      "high": 10125,
+      "low": 9925,
+      "open": 10025,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000083",
+      "symbol": "000026",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100025
+    },
+    {
+      "close": 10076,
+      "currency": "KRW",
+      "high": 10126,
+      "low": 9926,
+      "open": 10026,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000084",
+      "symbol": "000027",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100026
+    },
+    {
+      "close": 10077,
+      "currency": "KRW",
+      "high": 10127,
+      "low": 9927,
+      "open": 10027,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000085",
+      "symbol": "000028",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100027
+    },
+    {
+      "close": 10078,
+      "currency": "KRW",
+      "high": 10128,
+      "low": 9928,
+      "open": 10028,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000086",
+      "symbol": "000029",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100028
+    },
+    {
+      "close": 10079,
+      "currency": "KRW",
+      "high": 10129,
+      "low": 9929,
+      "open": 10029,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000087",
+      "symbol": "000030",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100029
+    },
+    {
+      "close": 10080,
+      "currency": "KRW",
+      "high": 10130,
+      "low": 9930,
+      "open": 10030,
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000088",
+      "symbol": "132030",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "volume": 100030
+    }
+  ],
+  "calendar": {
+    "attestationSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "name": "XKRX",
+    "revision": "kis-ctca0903r-attested-v1",
+    "version": "4.13.2"
+  },
+  "contractId": "market-data-daily-shard.v1",
+  "decisionAuthority": "NONE",
+  "forwardFillUsed": false,
+  "generation": 1,
+  "indices": [
+    {
+      "close": 3200.5,
+      "indexId": "KOSPI",
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000065",
+      "temporalQuality": "PROVIDER_AS_OF_NO_VINTAGE"
+    },
+    {
+      "close": 900.25,
+      "indexId": "KOSDAQ",
+      "sessionDate": "2026-08-18",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000066",
+      "temporalQuality": "PROVIDER_AS_OF_NO_VINTAGE"
+    }
+  ],
+  "macro": [
+    {
+      "availableAt": "2026-08-18T23:10:00Z",
+      "observationDate": "2026-08-18",
+      "seriesId": "722Y001/0101000/D",
+      "sourceReceiptSha256": "0000000000000000000000000000000000000000000000000000000000000089",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "value": 2.5
+    },
+    {
+      "availableAt": "2026-08-18T23:10:00Z",
+      "observationDate": "2026-08-18",
+      "seriesId": "731Y001/0000001/D",
+      "sourceReceiptSha256": "000000000000000000000000000000000000000000000000000000000000008a",
+      "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+      "value": 1380.25
+    }
+  ],
+  "manifestSha256": "7777777777777777777777777777777777777777777777777777777777777777",
+  "membership": [
+    "000001",
+    "000002",
+    "000003",
+    "000004",
+    "000005",
+    "000006",
+    "000007",
+    "000008",
+    "000009",
+    "000010",
+    "000011",
+    "000012",
+    "000013",
+    "000014",
+    "000015",
+    "000016",
+    "000017",
+    "000018",
+    "000019",
+    "000020",
+    "000021",
+    "000022",
+    "000023",
+    "000024",
+    "000025",
+    "000026",
+    "000027",
+    "000028",
+    "000029",
+    "000030",
+    "132030"
+  ],
+  "membershipMonth": "2026-08",
+  "membershipSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "previousAcceptedManifestSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "providerCallsOnRead": 0,
+  "providerPhysicalCalls": 38,
+  "sessionDate": "2026-08-18",
+  "sourceReceipts": [
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000065",
+      "operationId": "DAILY_MARKET_1",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000001",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KRX"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000066",
+      "operationId": "DAILY_MARKET_2",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000002",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KRX"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000067",
+      "operationId": "DAILY_MARKET_3",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000003",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KRX"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000068",
+      "operationId": "DAILY_MARKET_4",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000004",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KRX"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000069",
+      "operationId": "DAILY_MARKET_5",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000005",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KRX"
+    },
+    {
+      "contentSha256": "000000000000000000000000000000000000000000000000000000000000006a",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000006",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "000000000000000000000000000000000000000000000000000000000000006b",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000007",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "000000000000000000000000000000000000000000000000000000000000006c",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000008",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "000000000000000000000000000000000000000000000000000000000000006d",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000009",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "000000000000000000000000000000000000000000000000000000000000006e",
+      "operationId": "FHKST03010100",
+      "querySha256": "000000000000000000000000000000000000000000000000000000000000000a",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "000000000000000000000000000000000000000000000000000000000000006f",
+      "operationId": "FHKST03010100",
+      "querySha256": "000000000000000000000000000000000000000000000000000000000000000b",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000070",
+      "operationId": "FHKST03010100",
+      "querySha256": "000000000000000000000000000000000000000000000000000000000000000c",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000071",
+      "operationId": "FHKST03010100",
+      "querySha256": "000000000000000000000000000000000000000000000000000000000000000d",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000072",
+      "operationId": "FHKST03010100",
+      "querySha256": "000000000000000000000000000000000000000000000000000000000000000e",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000073",
+      "operationId": "FHKST03010100",
+      "querySha256": "000000000000000000000000000000000000000000000000000000000000000f",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000074",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000010",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000075",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000011",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000076",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000012",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000077",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000013",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000078",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000014",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000079",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000015",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "000000000000000000000000000000000000000000000000000000000000007a",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000016",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "000000000000000000000000000000000000000000000000000000000000007b",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000017",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "000000000000000000000000000000000000000000000000000000000000007c",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000018",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "000000000000000000000000000000000000000000000000000000000000007d",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000019",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "000000000000000000000000000000000000000000000000000000000000007e",
+      "operationId": "FHKST03010100",
+      "querySha256": "000000000000000000000000000000000000000000000000000000000000001a",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "000000000000000000000000000000000000000000000000000000000000007f",
+      "operationId": "FHKST03010100",
+      "querySha256": "000000000000000000000000000000000000000000000000000000000000001b",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000080",
+      "operationId": "FHKST03010100",
+      "querySha256": "000000000000000000000000000000000000000000000000000000000000001c",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000081",
+      "operationId": "FHKST03010100",
+      "querySha256": "000000000000000000000000000000000000000000000000000000000000001d",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000082",
+      "operationId": "FHKST03010100",
+      "querySha256": "000000000000000000000000000000000000000000000000000000000000001e",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000083",
+      "operationId": "FHKST03010100",
+      "querySha256": "000000000000000000000000000000000000000000000000000000000000001f",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000084",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000020",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000085",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000021",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000086",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000022",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000087",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000023",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000088",
+      "operationId": "FHKST03010100",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000024",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "KIS"
+    },
+    {
+      "contentSha256": "0000000000000000000000000000000000000000000000000000000000000089",
+      "operationId": "722Y001/0101000/D",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000025",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "ECOS"
+    },
+    {
+      "contentSha256": "000000000000000000000000000000000000000000000000000000000000008a",
+      "operationId": "731Y001/0000001/D",
+      "querySha256": "0000000000000000000000000000000000000000000000000000000000000026",
+      "retrievedAt": "2026-08-18T23:11:00Z",
+      "sourceId": "ECOS"
+    }
+  ]
+}

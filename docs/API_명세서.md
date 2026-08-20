@@ -1909,6 +1909,12 @@ payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view
 > API는 별도 contract-change 전까지 미활성이다.
 > production bootstrap과 autonomous tick도 root·quota·provider 접근 전에 연구 전용으로 종료하며,
 > 보존된 systemd unit은 새로 설치·활성화하지 않는다.
+> S5.7A는 모델과 분리된 내부 data-only 계약만 고정했다. `market-data-seed.v1`, 단일-session
+> `market-data-daily-shard.v1`, `market-data-health.v1`은 public REST payload가 아니다.
+> `MarketDataOperationalReader`와 `ResearchMarketHistoryReader`도 Python 내부 port 이름만 잠겼으며
+> 이 세션에서 OpenAPI route, Dashboard, scheduler, DB/runtime 또는 provider authority를 추가하지 않는다.
+> 운영 reader 상한은 current exact-31의 253 close, 연구 reader 상한은 1,260 XKRX session이고
+> 모든 read-time provider fan-out은 0이다.
 > Source bundle은 provider별 단일 page 행 상한(KRX 5,000/KIS 100/ECOS 400), receipt-derived
 > `createdAt`, dataset-cutoff effective clock 및 latest label maturity를 모두 검증한 뒤에만
 > feature bundle v2 authority가 된다.

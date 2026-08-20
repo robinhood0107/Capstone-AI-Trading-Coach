@@ -1,0 +1,327 @@
+{
+  "$id": "contracts/schemas/market-data-daily-shard.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "else": {
+        "required": [
+          "supersedesSha256"
+        ]
+      },
+      "if": {
+        "properties": {
+          "generation": {
+            "const": 1
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "supersedesSha256"
+          ]
+        }
+      }
+    }
+  ],
+  "properties": {
+    "accepted": {
+      "const": true
+    },
+    "asOf": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "bars": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "close": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "currency": {
+            "const": "KRW"
+          },
+          "high": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "low": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "open": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "sessionDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "sourceReceiptSha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "symbol": {
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          },
+          "temporalQuality": {
+            "const": "RECONSTRUCTED_FIXED_LAG"
+          },
+          "volume": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "symbol",
+          "sessionDate",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume",
+          "currency",
+          "temporalQuality",
+          "sourceReceiptSha256"
+        ],
+        "type": "object"
+      },
+      "maxItems": 31,
+      "minItems": 31,
+      "type": "array"
+    },
+    "calendar": {
+      "additionalProperties": false,
+      "properties": {
+        "attestationSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "name": {
+          "const": "XKRX"
+        },
+        "revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "const": "4.13.2"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "revision",
+        "attestationSha256"
+      ],
+      "type": "object"
+    },
+    "contractId": {
+      "const": "market-data-daily-shard.v1"
+    },
+    "decisionAuthority": {
+      "const": "NONE"
+    },
+    "forwardFillUsed": {
+      "const": false
+    },
+    "generation": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "indices": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "close": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "indexId": {
+            "enum": [
+              "KOSPI",
+              "KOSDAQ"
+            ]
+          },
+          "sessionDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "sourceReceiptSha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "temporalQuality": {
+            "const": "PROVIDER_AS_OF_NO_VINTAGE"
+          }
+        },
+        "required": [
+          "indexId",
+          "sessionDate",
+          "close",
+          "temporalQuality",
+          "sourceReceiptSha256"
+        ],
+        "type": "object"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": "array"
+    },
+    "macro": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "availableAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "observationDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "seriesId": {
+            "enum": [
+              "722Y001/0101000/D",
+              "731Y001/0000001/D"
+            ]
+          },
+          "sourceReceiptSha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "temporalQuality": {
+            "const": "RECONSTRUCTED_FIXED_LAG"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "seriesId",
+          "observationDate",
+          "availableAt",
+          "value",
+          "temporalQuality",
+          "sourceReceiptSha256"
+        ],
+        "type": "object"
+      },
+      "maxItems": 2,
+      "minItems": 1,
+      "type": "array"
+    },
+    "manifestSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "membership": {
+      "items": {
+        "pattern": "^[0-9]{6}$",
+        "type": "string"
+      },
+      "maxItems": 31,
+      "minItems": 31,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "membershipMonth": {
+      "pattern": "^[0-9]{4}-[0-9]{2}$",
+      "type": "string"
+    },
+    "membershipSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "previousAcceptedManifestSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "providerCallsOnRead": {
+      "const": 0
+    },
+    "providerPhysicalCalls": {
+      "maximum": 41,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "sessionDate": {
+      "format": "date",
+      "type": "string"
+    },
+    "sourceReceipts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "contentSha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "operationId": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "querySha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "retrievedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sourceId": {
+            "enum": [
+              "KRX",
+              "KIS",
+              "ECOS"
+            ]
+          }
+        },
+        "required": [
+          "sourceId",
+          "operationId",
+          "querySha256",
+          "contentSha256",
+          "retrievedAt"
+        ],
+        "type": "object"
+      },
+      "maxItems": 41,
+      "minItems": 34,
+      "type": "array"
+    },
+    "supersedesSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractId",
+    "accepted",
+    "generation",
+    "previousAcceptedManifestSha256",
+    "sessionDate",
+    "asOf",
+    "calendar",
+    "membershipMonth",
+    "membershipSha256",
+    "membership",
+    "bars",
+    "indices",
+    "macro",
+    "sourceReceipts",
+    "providerPhysicalCalls",
+    "forwardFillUsed",
+    "providerCallsOnRead",
+    "decisionAuthority",
+    "manifestSha256"
+  ],
+  "title": "market-data-daily-shard.v1",
+  "type": "object"
+}

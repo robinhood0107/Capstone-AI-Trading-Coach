@@ -1,0 +1,12 @@
+{
+  "checkedAt": "2026-08-18T22:00:00Z",
+  "collectorInvocationAllowed": false,
+  "contractId": "market-data-health.v1",
+  "details": [
+    "BEFORE_0810_KST"
+  ],
+  "expectedSessionDate": "2026-08-18",
+  "providerPhysicalCalls": 0,
+  "retryAllowed": false,
+  "status": "ACCEPTED"
+}

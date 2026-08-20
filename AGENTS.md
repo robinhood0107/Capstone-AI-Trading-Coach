@@ -159,6 +159,14 @@
   LightGBM component는 DB row 유무와 관계없이
   `ABSTAIN/MISSING_EVIDENCE`다. KRX/KIS/ECOS data-only daily collector와 Market/Data projection은
   모델 publication에서 분리한 별도 contract-change 전까지 활성화하지 않는다.
+- **S5.7A data-only 계약은 잠겼지만 runtime authority는 아직 0이다.**
+  `market-data-seed.v1`, `market-data-daily-shard.v1`, `market-data-health.v1`과
+  `s5-7a-market-data-lock.v1`만 current authority다. seed adoption은 기존 7,218 source chunk를
+  읽기 전용으로 검증하되 raw copy·hardlink·source path 영속화를 금지하고 provider 호출은 0이다.
+  daily shard는 한 XKRX session, 월중 고정 exact-31, KOSPI/KOSDAQ, ECOS 최대 2 series만 담고
+  complete manifest를 마지막에 게시한다. 내부 운영 reader는 253 close, offline 연구 reader는
+  1,260 XKRX session으로 제한하며 Spring Decision/Risk, public API, Dashboard, scheduler 권한은 없다.
+  저장·reader·runtime·provider authority는 각각 S5.7B/C의 별도 구현과 검증 전에는 미구현이다.
 - 2026-08-20 S5 qualification continuation은 초기 fit-only 근거로 라벨 경계를 `0.025`로 옮긴 뒤
   승인된 5회 조정(grid 정규화, block 재배분, fit-only label 두 값, macro split-gain 0)을 실측했다.
   마지막 시도는 macro disagreement를 모든 grid/fold에서 `0.0000`으로 만들었지만 fold-3 OVR Platt가

@@ -19,6 +19,7 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
                 "calendar",
                 "contractId",
                 "coverage",
+                "derivedDimensions",
                 "diagnostics",
                 "divergence",
                 "downstream",
@@ -26,6 +27,7 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
                 "issue",
                 "packet",
                 "recovery",
+                "trainingAppend",
             },
             set(payload),
         )
@@ -345,6 +347,62 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
         self.assertTrue(autonomy["automaticRetrain"])
         self.assertFalse(autonomy["automaticModelActivation"])
         self.assertTrue(autonomy["activationRemainsManualCas"])
+    def test_training_append_grows_the_dataset_without_recollecting_history(self) -> None:
+        """일일 수집분이 누적돼야 코드가 알아서 갱신한다.
+
+        packet window를 옮기면 KIS query 신원이 전부 바뀌어 승인 상한만큼 재수집이 필요해진다.
+        그래서 window 밖 새 세션만 별도 이름공간으로 쌓는다.
+        """
+
+        append = json.loads(CATALOG.read_text(encoding="utf-8"))["trainingAppend"]
+
+        self.assertTrue(append["packetWindowUnchanged"])
+        self.assertEqual(0, append["historyRecollection"])
+        self.assertEqual("BUNDLE_UNION_APPEND", append["trainingWindowDerivedFrom"])
+        self.assertTrue(append["trainingWindowKeepsApprovedDimensions"])
+        # cutoff를 그대로 두면 append된 세션의 label maturity가 cutoff보다 늦어 PIT가 깨진다.
+        self.assertTrue(append["trainingWindowCutoffRederivedFromLatestSession"])
+
+    def test_training_append_index_is_append_only_and_bounded(self) -> None:
+        """index를 고쳐 쓰면 학습 데이터셋이 조용히 달라진다."""
+
+        append = json.loads(CATALOG.read_text(encoding="utf-8"))["trainingAppend"]
+
+        self.assertTrue(append["indexAppendOnly"])
+        self.assertTrue(append["replayIsIdempotent"])
+        self.assertTrue(append["conflictingSessionEvidenceRefused"])
+        self.assertEqual(41, append["maxChunksPerSession"])
+        # 경로 참조는 owner-private 컨테인먼트를 깬다.
+        self.assertTrue(append["chunksCopiedNotReferenced"])
+        # 휴장일은 달력 권위가 이미 다음 session을 고르므로 별도 no-op 분기가 없다.
+        self.assertTrue(append["holidayTickIsNoOpByCalendarAuthority"])
+        # warm-up 역사를 못 채운 새 멤버는 그 달만 제외되고 원장에 남는다.
+        self.assertTrue(append["newMonthlyMemberWithoutWarmupIsEvidenceGap"])
+    def test_derived_dimensions_are_not_duplicated_as_literals(self) -> None:
+        """이번 실물화에서 멈춘 7건 중 3건이 이 부류였다.
+
+        KIS 행 상한은 union 180 시절 리터럴이 남아 실제 수집을 거부했고, ECOS page 범위는 요청당
+        행 상한과 한 번도 맞춰지지 않았고, chunk 길이는 그 상한을 넘겼다. 유도식이 상한의 유일한
+        정의여야 승인 차원을 바꿀 때 두 곳이 어긋나지 않는다.
+        """
+
+        derived = json.loads(CATALOG.read_text(encoding="utf-8"))["derivedDimensions"]
+
+        self.assertFalse(derived["literalDuplicationOfDerivedDimension"])
+        self.assertEqual(
+            "RAW_SESSION_COUNT - WARMUP_SESSIONS - LABEL_TAIL_SESSIONS",
+            derived["eligibleSessionCount"],
+        )
+        self.assertEqual("ELIGIBLE_SESSION_COUNT", derived["walkForwardExpectedSessions"])
+        self.assertEqual(
+            "HORIZON_UNION_SIZE * ceil(RAW_SESSION_COUNT / 100)", derived["kisMaxGet"]
+        )
+        self.assertEqual(
+            "HORIZON_UNION_SIZE * RAW_SESSION_COUNT", derived["kisSourceRowCap"]
+        )
+        self.assertEqual("<= ECOS_MAX_ROWS_PER_REQUEST", derived["ecosChunkDays"])
+        # 유도 불가한 계약 상수를 억지로 유도하면 의미가 사라진다.
+        self.assertTrue(derived["walkForwardBlockSizesRemainLiteral"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -57,6 +57,7 @@ from app.lightgbm.feature_artifact import (
     write_feature_parquet,
 )
 from app.lightgbm.pit_calendar import (
+    PitSessionWindow,
     S5_CALENDAR_CORRECTION_SET_SHA256,
     S5_CALENDAR_POLICY_VERSION,
     previous_xkrx_session,
@@ -450,11 +451,18 @@ def build_production_feature_table(
     packet: BootstrapPacket,
     acquisition: BootstrapAcquisition,
     macro_delay_sessions: int = 0,
+    window: PitSessionWindow | None = None,
 ) -> pa.Table:
-    """검증된 acquisition에서 primary 또는 +1-session macro sensitivity table을 만든다."""
+    """검증된 acquisition에서 primary 또는 +1-session macro sensitivity table을 만든다.
+
+    `window`를 주면 packet window 대신 그것을 학습 진실로 쓴다. 일일 append로 창이 앞으로 굴러도
+    packet 신원을 바꾸지 않기 위한 경로다.
+    """
 
     if macro_delay_sessions not in {0, 1}:
         raise LightGbmContractError("macro sensitivity delay must be zero or one session")
+    # append 이후에는 packet window가 학습 진실이 아니다. 호출자가 유도한 window를 받는다.
+    training_window = packet.window if window is None else window
     memberships = {
         universe.effective_month: set(universe.instrument_ids) for universe in acquisition.universes
     }
@@ -462,8 +470,8 @@ def build_production_feature_table(
     for price in acquisition.prices:
         prices_by_identity[price.instrument_id].append(price)
     rows: list[Mapping[str, object]] = []
-    eligible = set(packet.window.eligible_sessions)
-    last_feature_session = packet.window.eligible_sessions[-1]
+    eligible = set(training_window.eligible_sessions)
+    last_feature_session = training_window.eligible_sessions[-1]
     for identity in sorted(prices_by_identity):
         identity_prices = tuple(
             price

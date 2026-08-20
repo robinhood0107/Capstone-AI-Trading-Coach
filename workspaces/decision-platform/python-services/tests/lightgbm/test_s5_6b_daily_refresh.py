@@ -11,6 +11,14 @@ import pytest
 from app.data.ecos.http_client import ECOSHttpClient
 from app.data.ecos.models import ECOSObservation, StatisticSearchPage
 from app.data.ecos.series_registry import CANDIDATE_SERIES, ECOSSeries
+from app.lightgbm.bootstrap_packet import author_bootstrap_packet
+from app.lightgbm.daily_refresh import DAILY_TOTAL_MAX
+from app.lightgbm.training_append import (
+    append_from_daily_run,
+    appended_sessions,
+    derive_training_window,
+    read_append_index,
+)
 from app.data.kis.parsers import DailyBar
 from app.lightgbm.calibration import fit_ovr_platt
 from app.lightgbm.bootstrap_journal import BootstrapJournal
@@ -549,3 +557,65 @@ def test_daily_failed_query_resume_reuses_successes_and_retries_only_failed_quer
     )
     assert b'"resumeMode":"LOCAL_FINALIZATION"' in local_resume.content
     assert b'"authorizedAdditionalCalls":0' in local_resume.content
+def test_daily_refresh_output_appends_to_the_training_store(
+    tmp_path: Path,
+) -> None:
+    """일일 수집분이 학습 데이터셋에 누적돼야 "코드가 알아서 갱신"이 실제가 된다.
+
+    역사 재수집은 0이다. append는 window 밖 새 세션만 별도 이름공간으로 쌓는다. bootstrap packet
+    window를 옮기면 KIS query 신원이 전부 바뀌어 승인 상한만큼 재수집이 필요해지기 때문이다.
+    """
+
+    state_root = _private(tmp_path / "daily")
+    state = _state(state_root)
+    target = corrected_calendar().next_session(
+        corrected_calendar().date_to_session(state.session_date.isoformat(), direction="none")
+    ).date()
+    packet = author_daily_refresh_packet(
+        state=state,
+        cutoff=next_xkrx_evidence_clock(target),
+    )
+    daily_run_root = _private(tmp_path / "daily-run")
+    result = execute_daily_refresh(
+        packet=packet,
+        state=state,
+        state_root=state_root,
+        run_root=daily_run_root,
+        release=_actual_release(),
+        krx=_SuccessfulKrx(),
+        kis=_SuccessfulKis(target),
+        ecos=_SuccessfulEcos(),
+        ecos_series=CANDIDATE_SERIES,
+    )
+
+    bootstrap_run_root = _private(tmp_path / "bootstrap-run")
+    entry = append_from_daily_run(
+        run_root=bootstrap_run_root,
+        daily_run_root=daily_run_root,
+        session_date=target,
+        daily_state_sha256=result.state.sha256,
+        effective_month=result.state.universe.effective_month,
+    )
+    assert entry.session_date == target
+    assert appended_sessions(run_root=bootstrap_run_root) == (target,)
+    # 일일 승인 상한 안의 chunk만 누적된다. token 성공은 chunk가 없어 자연히 빠진다.
+    assert 0 < len(entry.chunk_digests) <= DAILY_TOTAL_MAX
+
+    # 같은 세션 재실행은 index를 늘리지 않는다.
+    append_from_daily_run(
+        run_root=bootstrap_run_root,
+        daily_run_root=daily_run_root,
+        session_date=target,
+        daily_state_sha256=result.state.sha256,
+        effective_month=result.state.universe.effective_month,
+    )
+    assert len(read_append_index(run_root=bootstrap_run_root)) == 1
+
+    # 누적된 세션이 학습 window를 앞으로 굴린다.
+    bootstrap = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
+    rolled = derive_training_window(
+        packet_window=bootstrap.window,
+        appended=appended_sessions(run_root=bootstrap_run_root),
+    )
+    assert len(rolled.eligible_sessions) == len(bootstrap.window.eligible_sessions)
+    assert rolled.raw_sessions[-1] == target

@@ -544,6 +544,38 @@ def _recovery_catalog() -> dict[str, Any]:
             "automaticModelActivation": False,
             "activationRemainsManualCas": True,
         },
+        "derivedDimensions": {
+            "eligibleSessionCount": "RAW_SESSION_COUNT - WARMUP_SESSIONS - LABEL_TAIL_SESSIONS",
+            "walkForwardExpectedSessions": "ELIGIBLE_SESSION_COUNT",
+            "krxMaxGet": "RAW_SESSION_COUNT * 4 + MONTHLY_SCHEDULE_COUNT * 3",
+            "kisMaxGet": "HORIZON_UNION_SIZE * ceil(RAW_SESSION_COUNT / 100)",
+            "totalMaxPhysicalCalls": "krx + kis + kisToken + ecos",
+            "kisSourceRowCap": "HORIZON_UNION_SIZE * RAW_SESSION_COUNT",
+            "ecosChunkDays": "<= ECOS_MAX_ROWS_PER_REQUEST",
+            "dailyTotalMax": "dailyKrx + dailyKis + dailyKisToken + dailyEcos",
+            "literalDuplicationOfDerivedDimension": False,
+            # 유도 불가한 계약 상수는 그대로 둔다. 억지로 유도하면 의미가 사라진다.
+            "walkForwardBlockSizesRemainLiteral": True,
+        },
+        "trainingAppend": {
+            "directory": "append",
+            "indexFile": "index.jsonl",
+            "indexVersion": "s5-training-append-index-v1",
+            "indexAppendOnly": True,
+            # daily run root를 경로로 참조하면 owner-private 컨테인먼트가 깨진다.
+            "chunksCopiedNotReferenced": True,
+            "maxChunksPerSession": 41,
+            "replayIsIdempotent": True,
+            "conflictingSessionEvidenceRefused": True,
+            # window를 옮기면 KIS query 신원이 전부 바뀌어 승인 상한만큼 재수집이 필요해진다.
+            "packetWindowUnchanged": True,
+            "historyRecollection": 0,
+            "trainingWindowDerivedFrom": "BUNDLE_UNION_APPEND",
+            "trainingWindowKeepsApprovedDimensions": True,
+            "trainingWindowCutoffRederivedFromLatestSession": True,
+            "holidayTickIsNoOpByCalendarAuthority": True,
+            "newMonthlyMemberWithoutWarmupIsEvidenceGap": True,
+        },
         "diagnostics": {
             "ledgerFile": "diagnostics.jsonl",
             "eventVersion": "s5-diagnostic-event-v1",

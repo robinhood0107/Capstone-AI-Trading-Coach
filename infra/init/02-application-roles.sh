@@ -1796,6 +1796,9 @@ BEGIN
             fail_event_outbox(text, uuid, text, text),
             quarantine_claimed_outbox(text, uuid, text),
             quarantine_unknown_outbox(integer),
+            claim_dlq_outbox(text, integer),
+            complete_dlq_outbox(text, uuid),
+            fail_dlq_outbox(text, uuid),
             create_async_job(text, text, text, jsonb),
             read_async_job_status(text, bigint, text),
             list_async_job_status(text, bigint, text, text, timestamptz, text, integer)
@@ -1808,6 +1811,9 @@ BEGIN
             complete_async_job(text, uuid, jsonb),
             fail_async_job(text, uuid, text, text),
             quarantine_async_job(text, uuid, text, text),
+            record_kafka_poison(text, text, text, text, text, integer, text, text),
+            quarantine_async_work(text, uuid, text, text, text, text, text, integer, text, text),
+            fail_async_work(text, uuid, text, text, text, text, text, integer, text, text),
             commit_async_work(text, text, text, text, text, uuid, text, text, text)
         TO decision_worker;
         GRANT INSERT ON TABLE processed_event TO decision_worker;

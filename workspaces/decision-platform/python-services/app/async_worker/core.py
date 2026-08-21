@@ -55,6 +55,8 @@ class AsyncWork:
     payload_json: bytes
     claim_token: str | None
     transport: str
+    attempt: int = 1
+    source_topic: str | None = None
 
 
 @dataclass(frozen=True)
@@ -90,12 +92,11 @@ class AsyncWorkProcessor:
             raise AsyncRetryableError
         except (AsyncContractError, AsyncPayloadHashConflict) as error:
             conflict = isinstance(error, AsyncPayloadHashConflict)
-            if work.claim_token is not None:
-                self._repository.quarantine(
-                    work,
-                    "PAYLOAD_HASH_CONFLICT" if conflict else "INVALID_EVENT_PAYLOAD",
-                    "CONTRACT_VIOLATION",
-                )
+            self._repository.quarantine(
+                work,
+                "PAYLOAD_HASH_CONFLICT" if conflict else "INVALID_EVENT_PAYLOAD",
+                "CONTRACT_VIOLATION",
+            )
             return AsyncWorkResult(
                 "NEEDS_REVIEW",
                 failure_code="PAYLOAD_HASH_CONFLICT" if conflict else "INVALID_EVENT_PAYLOAD",
@@ -115,6 +116,8 @@ def validate_work(work: AsyncWork) -> dict[str, str]:
         or not _JOB_ID.fullmatch(work.job_id)
         or work.job_type != _EVENT_TYPES[work.event_type]
         or work.transport not in {"DB", "KAFKA"}
+        or work.attempt not in {1, 2, 3}
+        or (work.source_topic is not None and work.source_topic != work.event_type)
         or len(work.payload_json) > 32_768
         or (work.transport == "DB" and (work.claim_token is None or not _TOKEN.fullmatch(work.claim_token)))
         or (work.claim_token is not None and not _TOKEN.fullmatch(work.claim_token))

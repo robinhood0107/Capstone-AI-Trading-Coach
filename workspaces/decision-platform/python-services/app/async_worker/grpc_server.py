@@ -83,6 +83,8 @@ class AsyncWorkerServicer(async_worker_pb2_grpc.AsyncWorkerServiceServicer):
                 payload_json=bytes(request.payload_json),
                 claim_token=request.claim_token or None,
                 transport=transport,
+                attempt=request.attempt,
+                source_topic=request.event_type,
             )
         )
         outcome = {

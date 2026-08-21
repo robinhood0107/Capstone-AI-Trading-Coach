@@ -18,16 +18,15 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 @Component
-@ConditionalOnProperty(name = ["app.async.adapter"], havingValue = "db", matchIfMissing = true)
-class DbAsyncPipelineAdapter(
+class JdbcAsyncRequestWriter(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val objectMapper: ObjectMapper,
     properties: AsyncProperties,
-) : AsyncPipelinePort {
+) {
     private val partitionKey = properties.partitionHmacKey.toByteArray(StandardCharsets.UTF_8)
 
     @Transactional
-    override fun request(command: AsyncJobRequest): AcceptedAsyncJob {
+    fun request(command: AsyncJobRequest): AcceptedAsyncJob {
         validate(command)
         val jobId = "job_${opaqueId()}"
         val eventId = "evt_${opaqueId()}"
@@ -151,4 +150,12 @@ class DbAsyncPipelineAdapter(
                 AsyncJobType.MODEL_EVAL to "model.eval-requested.v1",
             )
     }
+}
+
+@Component
+@ConditionalOnProperty(name = ["app.async.adapter"], havingValue = "db", matchIfMissing = true)
+class DbAsyncPipelineAdapter(
+    private val writer: JdbcAsyncRequestWriter,
+) : AsyncPipelinePort {
+    override fun request(command: AsyncJobRequest): AcceptedAsyncJob = writer.request(command)
 }

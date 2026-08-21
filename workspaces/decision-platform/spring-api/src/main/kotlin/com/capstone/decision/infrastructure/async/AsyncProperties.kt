@@ -9,6 +9,11 @@ enum class AsyncAdapterMode {
     KAFKA,
 }
 
+enum class AsyncDeploymentMode {
+    LOCAL,
+    DEPLOY,
+}
+
 @ConfigurationProperties("app.async")
 data class AsyncProperties(
     val adapter: AsyncAdapterMode = AsyncAdapterMode.DB,
@@ -70,5 +75,40 @@ data class AsyncWorkerProperties(
         }
         require(grpcDeadline in Duration.ofSeconds(1)..Duration.ofSeconds(60))
         require(requestMaxBytes == 65_536 && responseMaxBytes == 4_096)
+    }
+}
+
+@ConfigurationProperties("app.async.kafka")
+data class KafkaAsyncProperties(
+    val bootstrapServers: List<String> = listOf("127.0.0.1:9092"),
+    val deploymentMode: AsyncDeploymentMode = AsyncDeploymentMode.LOCAL,
+    val securityProtocol: String = "PLAINTEXT",
+    val serviceIdentity: String = "",
+    val aclEnforced: Boolean = false,
+    val publishTimeout: Duration = Duration.ofSeconds(5),
+) {
+    fun validate(adapter: AsyncAdapterMode) {
+        if (adapter != AsyncAdapterMode.KAFKA) return
+        require(bootstrapServers.isNotEmpty() && bootstrapServers.all(BOOTSTRAP_SERVER::matches))
+        require(publishTimeout in Duration.ofSeconds(1)..Duration.ofSeconds(30))
+        if (securityProtocol == "PLAINTEXT") {
+            require(deploymentMode == AsyncDeploymentMode.LOCAL && bootstrapServers.all(::isLoopback)) {
+                "Kafka PLAINTEXT is limited to numeric loopback local development."
+            }
+            require(serviceIdentity.isEmpty() && !aclEnforced)
+        } else {
+            require(deploymentMode == AsyncDeploymentMode.DEPLOY)
+            require(securityProtocol in setOf("SSL", "SASL_SSL"))
+            require(SERVICE_IDENTITY.matches(serviceIdentity) && aclEnforced) {
+                "Deploy Kafka requires TLS, service identity, and enforced topic/group ACLs."
+            }
+        }
+    }
+
+    private fun isLoopback(value: String): Boolean = value.startsWith("127.0.0.1:") || value.startsWith("[::1]:")
+
+    private companion object {
+        val BOOTSTRAP_SERVER = Regex("^(127\\.0\\.0\\.1|\\[::1]|[A-Za-z0-9.-]+):[1-9][0-9]{0,4}$")
+        val SERVICE_IDENTITY = Regex("^[A-Za-z0-9][A-Za-z0-9._:-]{2,63}$")
     }
 }

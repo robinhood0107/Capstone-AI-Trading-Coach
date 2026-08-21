@@ -607,18 +607,17 @@ uv run --frozen python contracts/validate.py
 > 계획 타당성: `PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES`.
 > 현재 상태: `S4_8A=CONTRACT_LOCKED / S4_8_CORE6_V2=CONTRACT_LOCKED /
 > S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE /
-> S6.6_CODE=COMPLETE / S6.6_REAL_EMPIRICAL=DATASET_UNAVAILABLE /
-> S6.7_P1_WARN_ONLY_CODE=COMPLETE / S6.7_OPERATIONAL_ACTIVATION=OFF_UNAVAILABLE`.
+> S4_8=VERIFIED_OFFLINE_STORED / S6.6=RETIRED_STRICT_PIT_UNAVAILABLE /
+> S6.7=RETIRED_NO_VALID_THRESHOLD`.
 > 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 DoD가 아니다. 새 agent framework·별도
 > cloud·Kafka는 hard dependency가 아니다.
 >
 > S4.8A의 machine-readable schema·fixture·catalog와 generator/hash parity는 계약으로
 > 고정됐다. S4.8B/C offline-only 구현은 provider 없는 Python fixture/scorer/projection,
-> V23 append-only evidence 저장과 Spring latest snapshot read port를 추가한다. snapshot
-> v2 snapshot materialization, V78 writer/reader와 별도 P1 `WARN_ONLY` overlay는 구현됐다.
-> provider activation과 public cross-market endpoint는 없고, real threshold 부재 시 runtime은
-> `UNAVAILABLE`이며 기본 mode는 `OFF`다.
+> V23 append-only evidence 저장과 Spring latest snapshot read port를 제공한다. S6.6/S6.7
+> 실행 capability는 `s6-contract-lock.v2`와 `s6-capability-disposition.v1`에서 퇴역했다.
+> V78은 historical-only이고 V79가 writer/reader functions와 runtime grants를 제거한다.
 
 순서 0 `S4.READ`는 관련 공개·private 명세 EOF receipt와 충돌 목록만 남기는 read-only
 preflight다. 첫 변경 PR은 아래 일곱 계약과 fixture/generator/parity만 포함하는
@@ -637,10 +636,9 @@ runtime PR은 시작하지 않는다.
 
 S4.8A가 계약·entitlement와 fixture를 잠그고, S4.8B가 provider 호출 없는 offline/EOD
 materialization·append-only projection·순수 scorer kernel을 소유한다. S4.8C는
-`decisionAuthority=NONE`인 cause/analyst 설명만 만든다. S6.6은 scorer output의
-event-study/policy replay와 threshold 동결, S6.7은 snapshot materialization·stored reader와
-P1 `WARN_ONLY` RiskEngine 연결을 소유한다. S7.3은 기존 작업을 예약할 뿐 수집·계산·저장
-소유권이나 provider 권한을 새로 만들지 않는다.
+`decisionAuthority=NONE`인 cause/analyst 설명만 만든다. S6.6 event-study/replay/threshold와
+S6.7 snapshot materialization/RiskEngine 연결은 historical contract로만 보존하며 current
+runtime owner가 없다. 재도입은 strict PIT evidence와 새 versioned contract-change를 요구한다.
 
 S4.8 Core 6 v2는 `KIS`, `OPENDART`, `SEC_EDGAR`, `KRX`, `KOFIA`, `ECOS`의 entitlement,
 probe approval, sanitized receipt를 별도 계약으로 고정한다. KIS current-price·SEC EDGAR
@@ -682,12 +680,12 @@ credential·계좌 데이터는 저장하지 않고, RAG source registry와 기�
   값을 0으로 clamp하지 않으며 적용할 XKRX open이 없을 때만 `NOT_APPLICABLE`로 둔다.
 
 기존 Decision request/response, RAG ask/history, Signal v1/v2 payload에 추가하는 교차시장
-필드는 0이다. `CrossMarketDecisionInput(snapshot, exposure)`는 내부 wrapper이고, 별도 planned
-조회 DTO와 일곱 신규 계약은 기존 payload를 조용히 확장하지 않는다.
+필드는 0이다. historical `CrossMarketDecisionInput(snapshot, exposure)` wrapper와 별도 planned
+조회 DTO는 current runtime에 없고 일곱 신규 계약도 기존 payload를 확장하지 않는다.
 
-P1 교차시장 권한은 적용 대상 신규 BUY의 `ALLOW → WARN`뿐이다. `ENFORCED`의 HOLD/BLOCK,
-SELL, 기존 보유분 매도, 주문 생성, 수량 축소와 KIS Live는 post-P1 별도 계약·승인 전
-비활성이다. 계약 산출물과 재현 명령은
+현재 cross-market Decision/runtime/writer/reader authority는 `NONE`이다. 과거 S6.7
+`ALLOW → WARN`과 `ENFORCED` fixture는 historical-only이며 주문 판단에 참여하지 않는다.
+계약 산출물과 재현 명령은
 [`20260731-s4-8a-cross-market-contract-lock.md`](changes/20260731-s4-8a-cross-market-contract-lock.md)에
 기록한다. 후속 offline runtime·권한·coverage는
 [`20260801-s4-8b-s4-8c-offline-runtime.md`](changes/20260801-s4-8b-s4-8c-offline-runtime.md)를

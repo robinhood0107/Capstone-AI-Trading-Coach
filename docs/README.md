@@ -54,8 +54,8 @@ SearXNG/Vertex smoke에 사용한다. KIS 실제 주문에는 사용하지 않�
 | S4.9 MCP + Strong LLM | `LIVE_VERIFIED` | PR #131 `bd859ec3`, DB V71 | PKCE 1 flow, MCP 5 tools, SearXNG search/read, Vertex Strong LLM | public-only owner isolation, answer validation, V71 direct answer/history `COMMITTED`; exact-tree Security coverage complete/findings 0과 merge-SHA CI green 확인 |
 | S4.9 LangGraph + Google grounding | `LIVE_VERIFIED` | PR #131 `bd859ec3`, V70/V71 | Google autonomous search와 DDG cap fallback 실제 실행 | bounded LangGraph, Pacific-month 4,000 soft cap, source/support provenance; Google no-support는 `RETRIEVAL_ONLY`, DDG CAPTCHA는 typed fail-closed |
 | S6.1~S6.5 금융공학 | `IMPLEMENTED_DRAFT` | local atomic commits, V77, authenticated cross-process smoke | 0 | offline kernel·교육 REST·manual stored batch 구현; UI consumer와 scheduler는 범위 밖 |
-| S6.6 research replay | `IMPLEMENTED_DRAFT` | local code/schema/tests + provider-free runner | 0 | real PIT candidate가 없어 `DATASET_UNAVAILABLE`, performance claim 0 |
-| S6.7 P1 overlay | `IMPLEMENTED_DRAFT` | local V78 storage/reader/overlay/default-OFF composition tests | 0 | component complete, public endpoint E2E는 blocked; production threshold 부재로 `OFF/UNAVAILABLE`; `ENFORCED`는 `NO_GO` |
+| S6.6 research replay | `RETIRED_NOT_APPLICABLE` | historical schema/fixture bytes only | feasibility probe 14, runtime 0 | 무료 historical API가 행별 실제 `availableAt`을 증명하지 못해 실행 코드와 CLI 제거 |
+| S6.7 P1 overlay | `RETIRED_NOT_APPLICABLE` | V78 historical table + V79 capability retirement | runtime 0 | materializer/reader/overlay/config 제거, endpoint·Dashboard·activation gate 없음 |
 
 V64는 V60의 Core 6 direct-read terminal 분류, V61~V62 provider accounting과 V63 empty owner
 library의 generation scope만 제한적으로 허용한다. Core 6 direct-read lane의 complete receipt set을 `AVAILABLE`, 일부 receipt만 있는 terminal set을

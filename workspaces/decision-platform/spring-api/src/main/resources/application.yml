@@ -51,6 +51,16 @@ spring:
       ack-mode: MANUAL
 
 app:
+  financial-engineering:
+    grpc:
+      enabled: ${FINANCIAL_ENGINEERING_GRPC_ENABLED:false}
+      target: ${FINANCIAL_ENGINEERING_GRPC_TARGET:127.0.0.1:50054}
+      shared-secret: ${FINANCIAL_ENGINEERING_GRPC_SHARED_SECRET:}
+      deadline-millis: 2000
+      request-max-bytes: 65536
+      response-max-bytes: 65536
+      concurrency-max: 8
+      retry-count: 0
   s4-9:
     strong-llm:
       enabled: ${S4_9_STRONG_LLM_ENABLED:false}

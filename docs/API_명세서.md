@@ -3790,7 +3790,7 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | 필수 | FinancialEngineeringService |
 | 필수 | Black-Scholes 계산기, Greeks 계산, implied volatility 역산 |
 | 필수 | Auth(login/role), System Health, Kill Switch 상태 조회 |
-| 필수(P1 WARN_ONLY, S4.8B/C offline 구현·S6.6/S6.7/endpoint 미구현) | Cross-market latest risk 조회, offline fixture/EOD producer, event-study/policy replay |
+| 필수(P1 WARN_ONLY code/storage 구현, 운영 activation은 threshold 부재로 OFF) | Cross-market stored risk reader, offline fixture/EOD producer, event-study/policy replay |
 | 고도화 | Async Job 상태 조회, Stream Metric, Artifact Ingest 상태 조회 |
 | 고도화 | SourceRegistryService 고도화 |
 | 고도화 | 이벤트 push 채널(SSE), RAG 답변 스트리밍, Journal 수정/삭제 |

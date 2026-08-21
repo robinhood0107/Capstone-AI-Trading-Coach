@@ -58,15 +58,19 @@ storage 0을 유지한다. 별도 Optional 3 executor는 Finnhub Recommendation/
 ## S4.8→S6.7 교차시장 위험 오버레이
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES`.
-> 구현 상태: `S4_8A=CONTRACT_LOCKED / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE / PROVIDER_ENDPOINT_RISKENGINE=NOT_IMPLEMENTED`.
+> 구현 상태: `S4_8A=CONTRACT_LOCKED / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE /
+> S6.6_CODE=COMPLETE / S6.6_REAL_EMPIRICAL=DATASET_UNAVAILABLE /
+> S6.7_P1_WARN_ONLY_CODE=COMPLETE / PROVIDER_ENDPOINT=NOT_IMPLEMENTED /
+> OPERATIONAL_ACTIVATION=OFF_UNAVAILABLE`.
 > 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 데이터와
 > 실시간 SOX/VIX feed는 post-P1 선택지이고, 새 agent framework·별도 cloud·Kafka는 hard
 > dependency가 아니다.
 >
 > S4.8A는 일곱 schema, `s2-2-system-rule-catalog.v2`, contract-change, fixture/golden vector를
 > 고정한 contract-only 경계다. S4.8B/C는 provider 없는 fixture producer, append-only V23
-> evidence, pure scorer와 latest snapshot read port만 구현했다. provider/live account/live order
-> physical call은 0이며 endpoint와 RiskEngine wiring은 아직 없다.
+> evidence, pure scorer와 legacy latest snapshot read port를 구현했다. S6.7은 별도 V78 v2 writer/reader와
+> 기존 exact-14 판단 뒤의 P1 `WARN_ONLY` overlay를 추가했다. provider/live account/live order
+> physical call은 0이며 public endpoint와 operational activation은 아직 없다.
 
 순서 0 `S4.READ`에서 관련 공개·private 명세를 EOF까지 읽고 receipt·충돌 목록만 남긴다.
 그다음 S4.8A의 일곱 계약, fixture, generator, parity만 담은 contract-only PR을
@@ -74,9 +78,9 @@ storage 0을 유지한다. 별도 Optional 3 executor는 Finnhub Recommendation/
 
 교차시장 모듈은 RAG와 분리된 저장형 위험 evidence를 목표로 한다. Python은 entitlement가 허용된
 offline fixture/EOD 관측, 애널리스트 revision projection, 원인 evidence ledger, 252개 완료
-세션 empirical percentile, S6.6 event-study와 LightGBM BUY policy replay를 소유할 예정이다.
+세션 empirical percentile, S6.6 event-study와 LightGBM BUY policy replay를 소유한다.
 Spring은 provider를 호출하지 않고 owner-scoped latest snapshot과 같은 시점의 versioned
-exposure를 한 내부 입력으로 결속해 S6.7 RiskEngine에 적용할 예정이다.
+exposure를 `CrossMarketDecisionInput(snapshot, exposure)`로 결속해 별도 overlay에서 평가한다.
 
 P1 기본 mode는 `WARN_ONLY`다. versioned exposure catalog에 명시된 종목의 신규 BUY만
 `ALLOW`에서 최대 `WARN`으로 강화할 수 있다. `OFF`와 `SHADOW`는 판단을 바꾸지 않으며,
@@ -111,7 +115,8 @@ P1 기본 mode는 `WARN_ONLY`다. versioned exposure catalog에 명시된 종목
 
 S4.8B는 provider 없는 수동/offline EOD fixture materialization, append-only 저장과 I/O 없는
 결정적 `CrossMarketScorer` kernel을 구현했다. S6.6은 scorer output으로 event-study/replay와
-threshold 동결만 수행하고, S6.7이 snapshot을 materialize해 저장 reader/RiskEngine에 연결한다.
+threshold freeze 계약을 구현했고, S6.7은 snapshot materializer·V78 저장 reader·P1 overlay를
+구현했다. real candidate가 없어 production threshold는 동결하지 않았고 runtime은 OFF다.
 S7.3은 동일 저장 port의 scheduling만 추가하며 새 provider 호출이나 source ownership을 만들지
 않는다.
 

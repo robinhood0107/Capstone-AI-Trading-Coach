@@ -71,7 +71,7 @@ class SyntheticBundle:
             "backtest.json": self.backtest_projection_text,
         }
         for name, value in files.items():
-            (output_dir / name).write_text(value + "\n", encoding="utf-8")
+            _write_idempotent(output_dir / name, value + "\n")
 
 
 def build_synthetic_bundle(config_path: Path) -> SyntheticBundle:
@@ -235,6 +235,16 @@ def _canonical_json(value: Any) -> str:
 
 def _sha256(value: str) -> str:
     return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _write_idempotent(path: Path, content: str) -> None:
+    if path.is_symlink():
+        raise ValueError("synthetic_output_symlink_rejected")
+    if path.exists():
+        if not path.is_file() or path.read_text(encoding="utf-8") != content:
+            raise ValueError("synthetic_output_conflict")
+        return
+    path.write_text(content, encoding="utf-8")
 
 
 def main() -> None:

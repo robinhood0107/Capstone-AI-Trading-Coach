@@ -61,6 +61,25 @@ class S7S8ContractTest(unittest.TestCase):
         with self.assertRaises(ContractValidationError):
             validate_semantics("dashboard-backtest.v1", fixture)
 
+    def test_demo_and_user_test_kit_stay_bounded_and_provider_free(self) -> None:
+        seed = _fixtures()["s8-demo-seed.v1"]
+        self.assertEqual(["ALLOW", "WARN", "BLOCK", "HOLD"], [item["expectedOutcome"] for item in seed["scenarios"]])
+        self.assertEqual(0, seed["providerCalls"])
+        self.assertEqual(0, seed["liveAccountCalls"])
+        self.assertEqual(0, seed["liveOrderCalls"])
+        self.assertEqual("RETIRED_NOT_APPLICABLE", seed["crossMarketCapability"])
+        questionnaire = json.loads(
+            (ROOT / "docs/decision-platform/s8-user-test-kit/questionnaire.v1.json").read_text(encoding="utf-8")
+        )
+        self.assertFalse(questionnaire["freeTextEnabled"])
+        self.assertNotIn("FREE_TEXT", {task["responseType"] for task in questionnaire["tasks"]})
+        manifest = json.loads(
+            (ROOT / "docs/decision-platform/s8-user-test-kit/evidence-manifest.v1.json").read_text(encoding="utf-8")
+        )
+        self.assertFalse(manifest["containsParticipantResults"])
+        self.assertFalse(manifest["containsSecretsOrPii"])
+        self.assertEqual(7, len(manifest["folders"]))
+
     def test_contracts_ci_runs_generator_check(self) -> None:
         workflow = (ROOT / ".github/workflows/contracts-ci.yml").read_text(encoding="utf-8")
         self.assertIn("python contracts/generate_s7_s8_contracts.py --check", workflow)

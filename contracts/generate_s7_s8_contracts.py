@@ -29,6 +29,8 @@ SCHEMA_IDS: Final[tuple[str, ...]] = (
     "dashboard-backtest.v1",
     "dashboard-risk-result.v1",
     "dashboard-rag-sources.v1",
+    "s8-demo-seed.v1",
+    "s8-user-test-response.v1",
 )
 SCHEMA_PATHS: Final[dict[str, str]] = {
     schema_id: f"contracts/schemas/{schema_id}.schema.json" for schema_id in SCHEMA_IDS
@@ -385,6 +387,126 @@ def _rag_view_schema() -> dict[str, Any]:
     return _view_envelope("dashboard-rag-sources.v1", view)
 
 
+def _demo_seed_schema() -> dict[str, Any]:
+    scenario = _closed(
+        ["scenarioId", "expectedOutcome", "authority"],
+        {
+            "scenarioId": {"type": "string", "pattern": "^demo_(allow|warn|block|hold)$"},
+            "expectedOutcome": {"enum": ["ALLOW", "WARN", "BLOCK", "HOLD"]},
+            "authority": {"enum": ["DETERMINISTIC_RISK_ENGINE", "KILL_SWITCH", "MISSING_EVIDENCE"]},
+        },
+    )
+    rag_question = _closed(
+        ["questionId", "classification", "text"],
+        {
+            "questionId": {"type": "string", "pattern": "^demo_rag_q[1-3]$"},
+            "classification": {"const": "INTERNAL_PAPER"},
+            "text": {"type": "string", "minLength": 1, "maxLength": 160},
+        },
+    )
+    body = _closed(
+        [
+            "schemaVersion", "demoProject", "namespace", "fixtureClass", "brokerageMode",
+            "providerCalls", "liveAccountCalls", "liveOrderCalls", "ragAnswerCache",
+            "crossMarketCapability", "scenarios", "ragQuestions", "killSwitchScenario",
+            "asyncAdapters", "performanceClaimAllowed",
+        ],
+        {
+            "schemaVersion": {"const": "1.0.0"},
+            "demoProject": {"const": "capstone-s8-demo"},
+            "namespace": {"const": "demo_s8_offline_0001"},
+            "fixtureClass": {"const": "SYNTHETIC_FAKE_E2E"},
+            "brokerageMode": {"const": "INTERNAL_PAPER"},
+            "providerCalls": {"const": 0},
+            "liveAccountCalls": {"const": 0},
+            "liveOrderCalls": {"const": 0},
+            "ragAnswerCache": {"const": "OFF"},
+            "crossMarketCapability": {"const": "RETIRED_NOT_APPLICABLE"},
+            "scenarios": {
+                "type": "array",
+                "prefixItems": [copy.deepcopy(scenario) for _ in range(4)],
+                "items": False,
+                "minItems": 4,
+                "maxItems": 4,
+            },
+            "ragQuestions": {
+                "type": "array",
+                "prefixItems": [copy.deepcopy(rag_question) for _ in range(3)],
+                "items": False,
+                "minItems": 3,
+                "maxItems": 3,
+            },
+            "killSwitchScenario": _closed(
+                ["scenarioId", "expectedState", "orderAuthority"],
+                {
+                    "scenarioId": {"const": "demo_kill_switch"},
+                    "expectedState": {"const": "ACTIVE"},
+                    "orderAuthority": {"const": "BLOCKED"},
+                },
+            ),
+            "asyncAdapters": {
+                "type": "array",
+                "prefixItems": [{"const": "db"}, {"const": "kafka"}],
+                "items": False,
+                "minItems": 2,
+                "maxItems": 2,
+            },
+            "performanceClaimAllowed": {"const": False},
+        },
+    )
+    return _schema("s8-demo-seed.v1", body)
+
+
+def _user_test_response_schema() -> dict[str, Any]:
+    answers = _closed(
+        [
+            "retiredCapabilityIdentified", "evidenceClassifications", "uncertaintyIdentified",
+            "timingLimitExplained", "automaticTradingAuthorityClaimed", "usabilityScore",
+            "confidenceScore", "improvementTags",
+        ],
+        {
+            "retiredCapabilityIdentified": {"type": "boolean"},
+            "evidenceClassifications": {
+                "type": "array",
+                "items": {"enum": ["CONFIRMED_FACT", "REPORTED_CLAIM", "MARKET_INTERPRETATION", "HYPOTHESIS"]},
+                "minItems": 1,
+                "maxItems": 4,
+                "uniqueItems": True,
+            },
+            "uncertaintyIdentified": {"type": "boolean"},
+            "timingLimitExplained": {"type": "boolean"},
+            "automaticTradingAuthorityClaimed": {"const": False},
+            "usabilityScore": {"type": "integer", "minimum": 1, "maximum": 7},
+            "confidenceScore": {"type": "integer", "minimum": 1, "maximum": 5},
+            "improvementTags": {
+                "type": "array",
+                "items": {"enum": ["NAVIGATION", "TERMINOLOGY", "EVIDENCE", "TIMING", "ACCESSIBILITY", "NONE"]},
+                "maxItems": 3,
+                "uniqueItems": True,
+            },
+        },
+    )
+    return _schema(
+        "s8-user-test-response.v1",
+        _closed(
+            [
+                "schemaVersion", "participantId", "consentVersion", "consentGranted", "collectedAt",
+                "withdrawalCodeHash", "piiCollected", "answers",
+            ],
+            {
+                "schemaVersion": {"const": "1.0.0"},
+                "participantId": {"type": "string", "pattern": "^part_[0-9a-f]{24}$"},
+                "consentVersion": {"const": "S8_USER_TEST_CONSENT_V1"},
+                "consentGranted": {"const": True},
+                "collectedAt": _timestamp(),
+                "withdrawalCodeHash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+                "piiCollected": {"const": False},
+                "answers": answers,
+            },
+        ),
+    )
+
+
 def build_schemas() -> dict[str, dict[str, Any]]:
     schemas = {
         "async-event-envelope.v1": _event_schema(),
@@ -397,6 +519,8 @@ def build_schemas() -> dict[str, dict[str, Any]]:
         "dashboard-backtest.v1": _backtest_view_schema(),
         "dashboard-risk-result.v1": _risk_view_schema(),
         "dashboard-rag-sources.v1": _rag_view_schema(),
+        "s8-demo-seed.v1": _demo_seed_schema(),
+        "s8-user-test-response.v1": _user_test_response_schema(),
     }
     if tuple(schemas) != SCHEMA_IDS:
         raise ContractValidationError("S7/S8 schema order drifted.")
@@ -437,9 +561,40 @@ def _fixtures() -> dict[str, dict[str, Any]]:
         "dashboard-backtest.v1": {"success": True, "data": {"viewState": "READY", "asOf": ts, "freshUntil": later, "evidenceMode": "SYNTHETIC_DEMO", "performanceClaimAllowed": False, "view": {"runId": "demo_fixture_00000001", "fixtureClass": "SYNTHETIC_FAKE_E2E", "strategies": [{"strategy": name, "metrics": copy.deepcopy(metric_values), "curve": []} for name in ("Baseline", "Guide", "Strict")], "heatmap": [], "metricCards": [], "projectionHash": "sha256:" + "5" * 64}}},
         "dashboard-risk-result.v1": {"success": True, "data": copy.deepcopy(empty_view)},
         "dashboard-rag-sources.v1": {"success": True, "data": copy.deepcopy(empty_view)},
+        "s8-demo-seed.v1": {
+            "schemaVersion": "1.0.0", "demoProject": "capstone-s8-demo", "namespace": "demo_s8_offline_0001",
+            "fixtureClass": "SYNTHETIC_FAKE_E2E", "brokerageMode": "INTERNAL_PAPER", "providerCalls": 0,
+            "liveAccountCalls": 0, "liveOrderCalls": 0, "ragAnswerCache": "OFF",
+            "crossMarketCapability": "RETIRED_NOT_APPLICABLE",
+            "scenarios": [
+                {"scenarioId": "demo_allow", "expectedOutcome": "ALLOW", "authority": "DETERMINISTIC_RISK_ENGINE"},
+                {"scenarioId": "demo_warn", "expectedOutcome": "WARN", "authority": "DETERMINISTIC_RISK_ENGINE"},
+                {"scenarioId": "demo_block", "expectedOutcome": "BLOCK", "authority": "KILL_SWITCH"},
+                {"scenarioId": "demo_hold", "expectedOutcome": "HOLD", "authority": "MISSING_EVIDENCE"},
+            ],
+            "ragQuestions": [
+                {"questionId": "demo_rag_q1", "classification": "INTERNAL_PAPER", "text": "손실 한도 원칙은 무엇인가요?"},
+                {"questionId": "demo_rag_q2", "classification": "INTERNAL_PAPER", "text": "경고와 차단은 어떻게 다른가요?"},
+                {"questionId": "demo_rag_q3", "classification": "INTERNAL_PAPER", "text": "근거가 없으면 왜 보류하나요?"},
+            ],
+            "killSwitchScenario": {"scenarioId": "demo_kill_switch", "expectedState": "ACTIVE", "orderAuthority": "BLOCKED"},
+            "asyncAdapters": ["db", "kafka"], "performanceClaimAllowed": False,
+        },
+        "s8-user-test-response.v1": {
+            "schemaVersion": "1.0.0", "participantId": "part_0123456789abcdef01234567",
+            "consentVersion": "S8_USER_TEST_CONSENT_V1", "consentGranted": True, "collectedAt": ts,
+            "withdrawalCodeHash": "sha256:" + "8" * 64, "piiCollected": False,
+            "answers": {
+                "retiredCapabilityIdentified": True,
+                "evidenceClassifications": ["CONFIRMED_FACT", "HYPOTHESIS"],
+                "uncertaintyIdentified": True, "timingLimitExplained": True,
+                "automaticTradingAuthorityClaimed": False, "usabilityScore": 5, "confidenceScore": 4,
+                "improvementTags": ["NONE"],
+            },
+        },
     }
     for schema_id, fixture in fixtures.items():
-        if schema_id not in {"async-event-envelope.v1", "async-dlq-envelope.v1"}:
+        if schema_id not in {"async-event-envelope.v1", "async-dlq-envelope.v1", "s8-demo-seed.v1", "s8-user-test-response.v1"}:
             fixture.update({"requestId": "req_s7s8_fixture_0001", "warnings": [], "error": None})
     return fixtures
 
@@ -461,6 +616,8 @@ def validate_semantics(schema_id: str, value: Mapping[str, Any]) -> None:
         references = value.get("references")
         if not isinstance(references, dict) or not references:
             raise ContractValidationError("Async event must contain reference-only identity.")
+        return
+    if schema_id in {"s8-demo-seed.v1", "s8-user-test-response.v1"}:
         return
     data = value.get("data")
     if not isinstance(data, dict):

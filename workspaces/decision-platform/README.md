@@ -584,3 +584,48 @@ cat dump.pgcustom | docker exec -i <container> pg_restore -d <db> --no-owner
 **Windows 사본 권한.** 사용자 전용 ACL을 적용한 뒤에는 DrvFS 권한 매핑 때문에 WSL 쪽 해시
 재검증이 거부될 수 있다. ACL 적용 → 해시 재검증 순서를 고정하고, 두 사본의 digest parity는 WSL과
 Windows 각각에서 한 번씩 확인한다.
+
+## S7–S8 async runtime과 demo
+
+Spring은 `ASYNC_ADAPTER=db|kafka`로 정확히 하나의 adapter를 선택한다. 기본은 DB이고 polling/worker는
+`ASYNC_POLLING_ENABLED=true`, `ASYNC_WORKER_ENABLED=true`를 명시한 runtime에서만 열린다. Kafka
+compose profile은 adapter를 바꾸지 않는다.
+
+DB worker:
+
+```bash
+cd workspaces/decision-platform/python-services
+uv run --frozen python -m app.async_worker.grpc_server
+```
+
+Kafka worker:
+
+```bash
+cd workspaces/decision-platform/python-services
+uv run --frozen python -m app.async_worker.kafka_consumer
+```
+
+전체 검증:
+
+```bash
+cd workspaces/decision-platform/spring-api
+./gradlew --no-daemon cleanTest test
+./gradlew --no-daemon ktlintCheck build
+
+cd ../python-services
+uv lock --check
+uv run --frozen ruff check .
+uv run --frozen mypy app
+uv run --frozen pytest -q
+```
+
+offline demo는 기존 namespace를 reset하지 않는다.
+
+```bash
+workspaces/decision-platform/demo/s8/run-demo.sh \
+  --prepare --adapter=db --brokerage-mode=INTERNAL_PAPER
+```
+
+네 Dashboard ViewModel, adapter 전환, failure matrix와 운영 경계는
+`docs/decision-platform/S7_S8_P1_구현_및_운영_핸드오프.md`를 따른다. 실제 Return Engine artifact가
+없으므로 `P1_OVERALL=INCOMPLETE_EXTERNAL_ARTIFACT`다.

@@ -29,6 +29,17 @@
 - STAGE 0에서는 런타임 기능 구현을 새로 추가하지 않는다.
 - STAGE 2에서도 세션 범위를 넘겨 구현하지 않는다. S1.1에서는 KIS OAuth 토큰, 국내주식 현재가, 국내주식 기간별시세, 선택적 휴장일 조회 같은 읽기 전용 시장데이터만 다룬다.
 - 어느 단계든 다른 팀원 workspace placeholder 경계와 `contracts/` 변경 절차는 동일하게 적용된다.
+- **S7.0~S7.4와 단독 수행 가능한 S8.1~S8.4는 구현·통합 검증됐다.** DB async가 안전한
+  기본 adapter이고 Kafka는 명시적 선택이며, polling/worker는 환경 opt-in이다. S7.3은 Decision
+  분포·signal freshness·failed job·DLQ stream metric만 소유한다. cross-market scheduler/reader/
+  materializer/`UNAVAILABLE` job 생성은 0이다. S8 Dashboard는 model evaluation, backtest, risk,
+  RAG source 네 latest ViewModel만 추가하며 Experience Dashboard workspace는 수정하지 않는다.
+- S8.1 synthetic artifact E2E는 `S8_1_FAKE_E2E_VERIFIED`이고 실제 Return Engine artifact를
+  대체하지 않는다. 현재 `S8_1_REAL_ARTIFACT_BLOCKED`,
+  `P1_OVERALL=INCOMPLETE_EXTERNAL_ARTIFACT`, `TEAM_A_INTEGRATED=FALSE`다. S8.4는 kit만 준비됐고
+  참가자 실행·IRB 판단은 포함하지 않는다.
+- S1.4 production은 Python/NumPy이며 runtime hot-swap을 만들지 않는다. S1.4X는 real S8.1,
+  S8.4/M4, S1.4R integrity, exact 재승인과 별도 migration ADR 전까지 격리·차단한다.
 - S2.3 현물 Decision `orderIntent`는 MARKET/LIMIT 모두 `estimatedPrice`만 사용한다.
   `price`/`limitPrice` alias를 추가하지 않으며 exact 8개 field는
   `symbol,side,orderType,quantity,estimatedPrice,estimatedAmount,timeframe,strategyId`다.

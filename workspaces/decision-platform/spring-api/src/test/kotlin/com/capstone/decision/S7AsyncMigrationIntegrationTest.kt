@@ -33,20 +33,24 @@ class S7AsyncMigrationIntegrationTest {
         flyway(databaseName = "decision").migrate()
 
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { owner ->
-            owner.createStatement().use { it.executeUpdate("create database s7_fresh") }
+            owner.createStatement().use {
+                it.executeUpdate("create database s7_fresh")
+                it.executeUpdate("create database s7_replay")
+            }
         }
         flyway(databaseName = "s7_fresh").migrate()
+        flyway(databaseName = "s7_replay").migrate()
     }
 
     @Test
-    fun `V80 migrates fresh and V79 upgrade with exact role boundary`() {
+    fun `V82 migrates fresh and V79 upgrade with exact role boundary`() {
         for (database in listOf("decision", "s7_fresh")) {
             connection(database, postgres.username, postgres.password).use { owner ->
                 owner.createStatement().use { statement ->
                     statement.executeQuery("select version from flyway_schema_history order by installed_rank").use { rows ->
                         val versions = mutableListOf<String>()
                         while (rows.next()) versions += rows.getString(1)
-                        assertEquals((1..80).map(Int::toString), versions)
+                        assertEquals((1..82).map(Int::toString), versions)
                     }
                     statement.executeQuery("select count(*) from async_event_registry").use { rows ->
                         assertTrue(rows.next())
@@ -80,6 +84,303 @@ class S7AsyncMigrationIntegrationTest {
                 statement.executeQuery("select payload_hash from processed_event where event_id='evt_legacy_00000001'").use { rows ->
                     assertTrue(rows.next())
                     assertEquals("sha256:" + "0".repeat(64), rows.getString(1))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `replay is dry run by default count fenced append only and creates new identities`() {
+        val sourceJob = "job_replay_source_0001"
+        val sourceEvent = "evt_replay_source_0001"
+        connection("s7_replay", postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use { statement ->
+                statement.executeUpdate(
+                    """
+                    insert into async_job(
+                      job_id,job_type,status,requested_by,payload_json,result_json,next_attempt_at,attempt_count,
+                      error_code,error_class,error_message
+                    ) values (
+                      '$sourceJob','MODEL_EVAL','NEEDS_REVIEW','usr_demo_user',
+                      '{"jobId":"$sourceJob","ownerRef":"usr_demo_user","runId":"run_replay_source_0001",
+                        "contentHash":"sha256:${"c".repeat(64)}"}'::jsonb,'{}'::jsonb,
+                      statement_timestamp()+interval '1 day',3,'RETRY_EXHAUSTED','RETRYABLE_TRANSIENT','RETRY_EXHAUSTED'
+                    ) on conflict do nothing
+                    """.trimIndent(),
+                )
+                statement.executeUpdate(
+                    """
+                    insert into event_outbox(
+                      event_id,event_type,aggregate_type,aggregate_id,partition_key,payload_json,schema_version,
+                      status,retry_count,next_attempt_at,failure_code,error_class,last_error
+                    ) select '$sourceEvent','model.eval-requested.v1','ASYNC_JOB','$sourceJob','hmac-sha256:${"d".repeat(64)}',
+                      payload_json,'1.0.0','DLQ_REQUESTED',3,statement_timestamp()+interval '1 day',
+                      'RETRY_EXHAUSTED','RETRYABLE_TRANSIENT','RETRY_EXHAUSTED'
+                    from async_job where job_id='$sourceJob' on conflict do nothing
+                    """.trimIndent(),
+                )
+            }
+        }
+        connection("s7_replay", APP_USER, APP_PASSWORD).use { app ->
+            fun replay(
+                batch: String,
+                expected: Int,
+                execute: Boolean,
+                securityVersion: Long = 1,
+            ) = app.prepareStatement("select * from replay_async_work(?,?,?,?,?::text[],?,?,?,?)").use { statement ->
+                statement.setString(1, "usr_demo_admin")
+                statement.setLong(2, securityVersion)
+                statement.setString(3, batch)
+                statement.setString(4, "EVENT")
+                statement.setArray(5, app.createArrayOf("text", arrayOf(sourceEvent)))
+                statement.setInt(6, expected)
+                statement.setString(7, "OPERATOR_RECOVERY")
+                statement.setString(8, "sha256:" + "e".repeat(64))
+                statement.setBoolean(9, execute)
+                statement.executeQuery().use { rows ->
+                    val output = mutableListOf<List<String?>>()
+                    while (rows.next()) output += (1..6).map(rows::getString)
+                    output
+                }
+            }
+
+            val dryRun = replay("replay_" + "1".repeat(32), 1, false)
+            assertEquals(1, dryRun.size)
+            assertEquals("DRY_RUN", dryRun.single()[5])
+            assertEquals(null, dryRun.single()[3])
+
+            val mismatch = replay("replay_" + "2".repeat(32), 2, true)
+            assertEquals("COUNT_MISMATCH", mismatch.single()[5])
+
+            val executed = replay("replay_" + "3".repeat(32), 1, true)
+            assertEquals("EXECUTED", executed.single()[5])
+            val newJob = requireNotNull(executed.single()[3])
+            val newEvent = requireNotNull(executed.single()[4])
+            connection("s7_replay", postgres.username, postgres.password).use { owner ->
+                owner
+                    .prepareStatement(
+                        """
+                        select job.status,event.status,job.payload_json->>'replayOf',event.payload_json->>'jobId'
+                        from async_job job join event_outbox event on event.aggregate_id=job.job_id
+                        where job.job_id=? and event.event_id=?
+                        """.trimIndent(),
+                    ).use { statement ->
+                        statement.setString(1, newJob)
+                        statement.setString(2, newEvent)
+                        statement.executeQuery().use { rows ->
+                            assertTrue(rows.next())
+                            assertEquals("REQUESTED", rows.getString(1))
+                            assertEquals("PENDING", rows.getString(2))
+                            assertEquals(sourceEvent, rows.getString(3))
+                            assertEquals(newJob, rows.getString(4))
+                        }
+                    }
+            }
+            assertTrue(replay("replay_" + "4".repeat(32), 1, false, securityVersion = 999).isEmpty())
+            val auditRead =
+                assertThrows<SQLException> {
+                    app.createStatement().use { it.executeQuery("select * from async_replay_audit") }
+                }
+            assertEquals("42501", auditRead.sqlState)
+        }
+        connection("s7_replay", postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use { statement ->
+                statement.executeQuery("select status from async_job where job_id='$sourceJob'").use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals("NEEDS_REVIEW", rows.getString(1))
+                }
+                assertEquals(
+                    3,
+                    statement.executeQuery("select count(*) from async_replay_audit").use { rows ->
+                        assertTrue(rows.next())
+                        rows.getInt(1)
+                    },
+                )
+                val immutable = assertThrows<SQLException> { statement.executeUpdate("delete from async_replay_audit") }
+                assertEquals("42501", immutable.sqlState)
+            }
+        }
+    }
+
+    @Test
+    fun `stream metrics are accurate idempotent append only and signal absence is unavailable`() {
+        connection("s7_fresh", APP_USER, APP_PASSWORD).use { app ->
+            app.createStatement().use { statement ->
+                assertTrue(booleanResult(statement, "select aggregate_decision_distribution()"))
+                assertTrue(booleanResult(statement, "select aggregate_failed_jobs()"))
+                assertTrue(booleanResult(statement, "select aggregate_signal_freshness()"))
+                assertTrue(booleanResult(statement, "select aggregate_dlq_events()"))
+            }
+            app.prepareStatement("select * from read_stream_metric_status(?,?)").use { statement ->
+                statement.setString(1, "usr_demo_admin")
+                statement.setLong(2, 1)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals("UNAVAILABLE", rows.getString("pipeline_health"))
+                    assertEquals("EMPTY", rows.getString("decision_status"))
+                    assertEquals("UNAVAILABLE", rows.getString("signal_status"))
+                    assertEquals(null, rows.getBigDecimal("stale_signal_ratio"))
+                }
+            }
+        }
+
+        connection("decision", postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use { statement ->
+                statement.executeUpdate(
+                    """
+                    insert into principles(
+                      principle_id,user_id,preset_id,title,mode,status,current_version
+                    ) values (
+                      'prn-stream-metric','usr_demo_admin','balanced','Stream metric fixture','GUIDE','ACTIVE',1
+                    ) on conflict do nothing
+                    """.trimIndent(),
+                )
+                statement.executeUpdate(
+                    """
+                    insert into principle_versions(
+                      principle_version_id,principle_id,version,preset_id,title,mode,status,
+                      rules_json,changed_fields,created_by
+                    ) select 'prv-stream-metric-v1','prn-stream-metric',1,'balanced',
+                      'Stream metric fixture','GUIDE','ACTIVE',rules_json,array['title'],'usr_demo_admin'
+                    from principle_presets where preset_id='balanced'
+                    on conflict do nothing
+                    """.trimIndent(),
+                )
+                listOf("ALLOW", "WARN", "HOLD", "BLOCK").forEachIndexed { index, outcome ->
+                    val canSubmit = outcome == "ALLOW" || outcome == "WARN"
+                    val action =
+                        when (outcome) {
+                            "ALLOW" -> "NONE"
+                            "WARN" -> "ACKNOWLEDGE_WARNING"
+                            "HOLD" -> "RE_EVALUATE"
+                            else -> "DO_NOT_SUBMIT"
+                        }
+                    statement.executeUpdate(
+                        """
+                        insert into decisions(
+                          decision_id,evaluation_id,user_id,principle_id,principle_version_id,
+                          principle_version,portfolio_source,symbol,side,outcome,mode,can_submit_order,
+                          enforcement_action,evaluation_as_of,created_at,valid_until,result_schema_version,
+                          snapshot_schema_version,catalog_version,readiness_policy_version,mapping_versions_json,
+                          semantic_input_hash,snapshot_artifact_hash,result_json
+                        ) values (
+                          'dec-stream-$index','eval-stream-$index','usr_demo_admin','prn-stream-metric',
+                          'prv-stream-metric-v1',1,'INTERNAL_PAPER','005930','BUY','$outcome','GUIDE',$canSubmit,
+                          '$action',statement_timestamp(),statement_timestamp(),statement_timestamp()+interval '10 minutes',
+                          'risk-decision.v1','s2.2-metric-snapshot-v2',1,'s2.3-readiness-v1','{}'::jsonb,
+                          repeat('a',64),repeat('b',64),'{}'::jsonb
+                        ) on conflict do nothing
+                        """.trimIndent(),
+                    )
+                }
+                statement.executeUpdate(
+                    """
+                    insert into ingested_signals(
+                      signal_id,producer,source_workspace,symbol,as_of,timeframe,confidence,predicted_return,
+                      feature_summary_json,payload_json,contract_version,status,reason,signal,evaluation_id,
+                      model_version,model_report_id,artifact_sha256,payload_sha256,provenance_sha256,
+                      logical_identity_sha256,fixture,provenance_class,payload_canonical_text,artifact_verified,session_date
+                    ) values (
+                      'sig_stream_metric_0001','RULE_BASELINE','return-engine','005930',statement_timestamp(),'1d',
+                      0.5,0.0,'{}'::jsonb,'{}'::jsonb,'signal-v2-runtime-v1','AVAILABLE',null,'HOLD',
+                      'eval_stream_metric_0001','model_stream_metric','report_stream_metric',repeat('1',64),
+                      repeat('2',64),repeat('3',64),repeat('4',64),false,'PRODUCTION','{}',true,
+                      (statement_timestamp() at time zone 'Asia/Seoul')::date
+                    ) on conflict do nothing
+                    """.trimIndent(),
+                )
+                statement.executeUpdate(
+                    """
+                    insert into async_job(job_id,job_type,status,payload_json,result_json,next_attempt_at,attempt_count)
+                    values ('job_stream_failed_0001','MODEL_EVAL','FAILED','{}'::jsonb,'{}'::jsonb,
+                      statement_timestamp()+interval '1 day',1) on conflict do nothing
+                    """.trimIndent(),
+                )
+                statement.executeUpdate(
+                    """
+                    insert into event_outbox(
+                      event_id,event_type,aggregate_type,aggregate_id,partition_key,payload_json,schema_version,
+                      status,next_attempt_at,failure_code,error_class,last_error
+                    ) values (
+                      'evt_stream_dlq_0001','model.eval-requested.v1','MODEL_EVAL','run_stream_metric',
+                      'opaque_stream_metric','{}'::jsonb,'1.0.0','DLQ_REQUESTED',statement_timestamp()+interval '1 day',
+                      'INVALID_EVENT_PAYLOAD','CONTRACT_VIOLATION','INVALID_EVENT_PAYLOAD'
+                    ) on conflict do nothing
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val expected =
+            connection("decision", postgres.username, postgres.password).use { owner ->
+                owner.createStatement().use { statement ->
+                    statement
+                        .executeQuery(
+                            """
+                            select
+                              count(*) filter (where outcome='ALLOW'),
+                              count(*) filter (where outcome='WARN'),
+                              count(*) filter (where outcome='HOLD'),
+                              count(*) filter (where outcome='BLOCK'),
+                              (select count(*) from async_job where status in ('FAILED','NEEDS_REVIEW')),
+                              (select count(*) from event_outbox where status='DLQ_REQUESTED')
+                            from decisions
+                            where created_at >= ((statement_timestamp() at time zone 'Asia/Seoul')::date::timestamp
+                              at time zone 'Asia/Seoul')
+                            """.trimIndent(),
+                        ).use { rows ->
+                            assertTrue(rows.next())
+                            (1..6).map(rows::getLong)
+                        }
+                }
+            }
+
+        connection("decision", APP_USER, APP_PASSWORD).use { app ->
+            app.createStatement().use { statement ->
+                assertTrue(booleanResult(statement, "select aggregate_decision_distribution()"))
+                assertTrue(booleanResult(statement, "select aggregate_failed_jobs()"))
+                assertTrue(booleanResult(statement, "select aggregate_signal_freshness()"))
+                assertTrue(booleanResult(statement, "select aggregate_dlq_events()"))
+                assertFalse(booleanResult(statement, "select aggregate_decision_distribution()"))
+                assertFalse(booleanResult(statement, "select aggregate_failed_jobs()"))
+                assertFalse(booleanResult(statement, "select aggregate_signal_freshness()"))
+                assertFalse(booleanResult(statement, "select aggregate_dlq_events()"))
+            }
+            app.prepareStatement("select * from read_stream_metric_status(?,?)").use { statement ->
+                statement.setString(1, "usr_demo_admin")
+                statement.setLong(2, 1)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals("DEGRADED", rows.getString("pipeline_health"))
+                    assertEquals(0, rows.getBigDecimal("stale_signal_ratio").compareTo(java.math.BigDecimal.ZERO))
+                    expected.forEachIndexed { index, value -> assertEquals(value, rows.getLong(index + 4)) }
+                    assertFalse(rows.next())
+                }
+            }
+            app.prepareStatement("select count(*) from read_stream_metric_status(?,?)").use { statement ->
+                statement.setString(1, "usr_demo_admin")
+                statement.setLong(2, 999)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals(0, rows.getInt(1))
+                }
+            }
+            val baseRead =
+                assertThrows<SQLException> {
+                    app.createStatement().use { it.executeQuery("select * from stream_metric_snapshot") }
+                }
+            assertEquals("42501", baseRead.sqlState)
+        }
+        connection("decision", postgres.username, postgres.password).use { owner ->
+            val immutable =
+                assertThrows<SQLException> {
+                    owner.createStatement().use { it.executeUpdate("delete from stream_metric_snapshot") }
+                }
+            assertEquals("42501", immutable.sqlState)
+            owner.createStatement().use { statement ->
+                statement.executeQuery("select count(*) from async_job where job_type like '%CROSS%'").use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals(0, rows.getInt(1))
                 }
             }
         }
@@ -395,6 +696,15 @@ class S7AsyncMigrationIntegrationTest {
     ) = DriverManager.getConnection(jdbcUrl(databaseName), username, password)
 
     private fun jdbcUrl(databaseName: String): String = postgres.jdbcUrl.replace("/decision", "/$databaseName")
+
+    private fun booleanResult(
+        statement: java.sql.Statement,
+        sql: String,
+    ): Boolean =
+        statement.executeQuery(sql).use { rows ->
+            assertTrue(rows.next())
+            rows.getBoolean(1)
+        }
 
     companion object {
         private const val APP_USER = "decision_app"

@@ -1,0 +1,167 @@
+{
+  "$id": "contracts/schemas/async-job-list.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "data": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "artifactId": {
+                "oneOf": [
+                  {
+                    "maxLength": 128,
+                    "pattern": "^artifact_[A-Za-z0-9_-]{8,96}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "completedAt": {
+                "oneOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "class": {
+                        "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+                        "type": "string"
+                      },
+                      "code": {
+                        "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "class"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "jobId": {
+                "pattern": "^job_[A-Za-z0-9_-]{8,96}$",
+                "type": "string"
+              },
+              "requestedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "resultRef": {
+                "oneOf": [
+                  {
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{7,127}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sourceId": {
+                "oneOf": [
+                  {
+                    "maxLength": 128,
+                    "pattern": "^src_[A-Za-z0-9_-]{8,96}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "startedAt": {
+                "oneOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "REQUESTED",
+                  "RUNNING",
+                  "COMPLETED",
+                  "FAILED",
+                  "NEEDS_REVIEW"
+                ]
+              },
+              "type": {
+                "enum": [
+                  "RAG_INDEX",
+                  "ARTIFACT_INGEST",
+                  "MODEL_EVAL"
+                ]
+              }
+            },
+            "required": [
+              "jobId",
+              "type",
+              "status",
+              "requestedAt",
+              "startedAt",
+              "completedAt",
+              "sourceId",
+              "artifactId",
+              "resultRef",
+              "error"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "nextCursor": {
+          "oneOf": [
+            {
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]{16,256}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true
+    }
+  },
+  "required": [
+    "success",
+    "data"
+  ],
+  "title": "async-job-list.v1",
+  "type": "object"
+}

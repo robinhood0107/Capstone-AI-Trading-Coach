@@ -158,6 +158,9 @@ tasks.named<ProcessResources>("processResources") {
     from(layout.projectDirectory.file("../../../contracts/schemas/s2-3-decision-response.schema.json")) {
         into("contracts")
     }
+    from(layout.projectDirectory.file("../../../contracts/catalogs/s7-s8-contract-lock.v1.json")) {
+        into("contracts")
+    }
     // S2.4 OpenAPI도 승인된 JSON Schema bytes를 별도 DTO 추론 없이 component로 사용한다.
     from(layout.projectDirectory.file("../../../contracts/schemas/s2-4-kill-switch-request.schema.json")) {
         into("contracts")

@@ -20,6 +20,7 @@ from contracts.generate_principle_contracts import ContractValidationError  # no
 
 SCHEMA_IDS: Final[tuple[str, ...]] = (
     "async-event-envelope.v1",
+    "async-dlq-envelope.v1",
     "async-job-status.v1",
     "async-job-list.v1",
     "stream-metric-status.v1",
@@ -117,6 +118,35 @@ def _event_schema() -> dict[str, Any]:
             ["eventId", "eventType", "schemaVersion", "occurredAt", "partitionKey", "payloadHash", "references"],
             {
                 "eventId": {"type": "string", "pattern": "^evt_[A-Za-z0-9_-]{8,96}$"},
+                "eventType": {"enum": list(BASE_TOPICS)},
+                "schemaVersion": {"const": 1},
+                "occurredAt": _timestamp(),
+                "partitionKey": {"type": "string", "pattern": "^hmac-sha256:[0-9a-f]{64}$"},
+                "payloadHash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+                "references": references,
+            },
+        ),
+    )
+
+
+def _dlq_event_schema() -> dict[str, Any]:
+    references = _closed(
+        ["eventId", "eventType", "payloadHash", "failureCode", "sourceTopic", "attempt"],
+        {
+            "eventId": {"type": "string", "pattern": "^evt_[A-Za-z0-9_-]{8,96}$"},
+            "eventType": {"enum": list(BASE_TOPICS)},
+            "payloadHash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "failureCode": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$"},
+            "sourceTopic": {"enum": list(BASE_TOPICS)},
+            "attempt": {"type": "integer", "minimum": 1, "maximum": 3},
+        },
+    )
+    return _schema(
+        "async-dlq-envelope.v1",
+        _closed(
+            ["eventId", "eventType", "schemaVersion", "occurredAt", "partitionKey", "payloadHash", "references"],
+            {
+                "eventId": {"type": "string", "pattern": "^evt_dlq_[0-9a-f]{32}$"},
                 "eventType": {"enum": list(BASE_TOPICS)},
                 "schemaVersion": {"const": 1},
                 "occurredAt": _timestamp(),
@@ -352,6 +382,7 @@ def _rag_view_schema() -> dict[str, Any]:
 def build_schemas() -> dict[str, dict[str, Any]]:
     schemas = {
         "async-event-envelope.v1": _event_schema(),
+        "async-dlq-envelope.v1": _dlq_event_schema(),
         "async-job-status.v1": _job_status_schema(),
         "async-job-list.v1": _job_list_schema(),
         "stream-metric-status.v1": _stream_metric_schema(),
@@ -383,6 +414,15 @@ def _fixtures() -> dict[str, dict[str, Any]]:
             "occurredAt": ts, "partitionKey": "hmac-sha256:" + "1" * 64, "payloadHash": "sha256:" + "2" * 64,
             "references": {"ownerRef": "usr_fixture_00000001", "sourceRevisionId": "srv_fixture_00000001", "importTicketId": "rti_" + "2" * 32, "profileId": "bge_m3_local_1024_v1", "jobId": "job_rag_index_00000001", "contentHash": "sha256:" + "3" * 64},
         },
+        "async-dlq-envelope.v1": {
+            "eventId": "evt_dlq_" + "a" * 32, "eventType": "rag.index-requested.v1", "schemaVersion": 1,
+            "occurredAt": ts, "partitionKey": "hmac-sha256:" + "6" * 64, "payloadHash": "sha256:" + "7" * 64,
+            "references": {
+                "eventId": "evt_rag_index_00000001", "eventType": "rag.index-requested.v1",
+                "payloadHash": "sha256:" + "2" * 64, "failureCode": "INVALID_EVENT_PAYLOAD",
+                "sourceTopic": "rag.index-requested.v1", "attempt": 1,
+            },
+        },
         "async-job-status.v1": {"success": True, "data": job},
         "async-job-list.v1": {"success": True, "data": {"items": [job], "nextCursor": None}},
         "stream-metric-status.v1": {"success": True, "data": {"lastUpdatedAt": ts, "pipelineHealth": "OK", "signalStaleRatio": 0.0, "decisionDistribution": {"ALLOW": 1, "WARN": 0, "HOLD": 0, "BLOCK": 0}, "failedJobCount": 0, "dlqEventCount": 0, "components": {key: copy.deepcopy(component_ok) for key in ("decisionDistribution", "signalFreshness", "failedJobs", "dlqEvents")}}},
@@ -405,7 +445,7 @@ def _negative_fixtures(fixtures: Mapping[str, dict[str, Any]]) -> dict[str, dict
 
 
 def validate_semantics(schema_id: str, value: Mapping[str, Any]) -> None:
-    if schema_id == "async-event-envelope.v1":
+    if schema_id in {"async-event-envelope.v1", "async-dlq-envelope.v1"}:
         encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         if len(encoded) > 65_536:
             raise ContractValidationError("Kafka envelope exceeds 64 KiB.")

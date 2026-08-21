@@ -21,6 +21,53 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
         self._database_dsn = database_dsn
         self._partition_hmac_key = partition_hmac_key
 
+    def claim_job(self, job_id: str, worker_name: str) -> str | None:
+        try:
+            with psycopg.connect(self._database_dsn, autocommit=True, connect_timeout=2) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT claim_token FROM claim_async_job_by_id(%s,%s)",
+                        (worker_name, job_id),
+                    )
+                    row = cursor.fetchone()
+                    return None if row is None else str(row[0])
+        except psycopg.Error as error:
+            _raise_classified(error)
+
+    def record_poison(
+        self,
+        *,
+        event_id: str,
+        event_type: str,
+        payload_hash: str,
+        source_topic: str,
+        attempt: int,
+        failure_code: str,
+    ) -> bool:
+        digest = hashlib.sha256(
+            f"dlq|{event_id}|{event_type}|{payload_hash}|{failure_code}".encode()
+        ).hexdigest()
+        try:
+            with psycopg.connect(self._database_dsn, autocommit=True, connect_timeout=2) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT record_kafka_poison(%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (
+                            f"evt_dlq_{digest[:32]}",
+                            event_id,
+                            event_type,
+                            payload_hash,
+                            source_topic,
+                            attempt,
+                            failure_code,
+                            self._partition_key(f"dlq:{event_id}"),
+                        ),
+                    )
+                    row = cursor.fetchone()
+                    return row is not None and bool(row[0])
+        except psycopg.Error as error:
+            _raise_classified(error)
+
     def commit(self, work: AsyncWork, result_ref: str) -> str:
         completion_event_id = _completion_event_id(work)
         partition_key = self._partition_key(work.job_id)
@@ -56,12 +103,28 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
     def fail(self, work: AsyncWork, code: str, error_class: str) -> str:
         if work.claim_token is None:
             return "CONFLICT"
+        dlq = self._poison_fields(work, code)
         try:
             with psycopg.connect(self._database_dsn, autocommit=True, connect_timeout=2) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        "SELECT fail_async_job(%s,%s::uuid,%s,%s)",
-                        (work.job_id, work.claim_token, code, error_class),
+                        """
+                        SELECT fail_async_work(
+                          %s,%s::uuid,%s,%s,%s,%s,%s,%s,%s,%s
+                        )
+                        """,
+                        (
+                            work.job_id,
+                            work.claim_token,
+                            dlq[0],
+                            work.event_id,
+                            work.event_type,
+                            work.payload_hash,
+                            work.source_topic or work.event_type,
+                            work.attempt,
+                            code,
+                            dlq[1],
+                        ),
                     )
                     row = cursor.fetchone()
                     return "CONFLICT" if row is None else str(row[0])
@@ -69,23 +132,62 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
             return "CONFLICT"
 
     def quarantine(self, work: AsyncWork, code: str, error_class: str) -> bool:
+        dlq = self._poison_fields(work, code)
         if work.claim_token is None:
-            return False
+            return self.record_poison(
+                event_id=work.event_id,
+                event_type=work.event_type,
+                payload_hash=work.payload_hash,
+                source_topic=work.source_topic or work.event_type,
+                attempt=work.attempt,
+                failure_code=code,
+            )
         try:
             with psycopg.connect(self._database_dsn, autocommit=True, connect_timeout=2) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        "SELECT quarantine_async_job(%s,%s::uuid,%s,%s)",
-                        (work.job_id, work.claim_token, code, error_class),
+                        """
+                        SELECT quarantine_async_work(
+                          %s,%s::uuid,%s,%s,%s,%s,%s,%s,%s,%s
+                        )
+                        """,
+                        (
+                            work.job_id,
+                            work.claim_token,
+                            dlq[0],
+                            work.event_id,
+                            work.event_type,
+                            work.payload_hash,
+                            work.source_topic or work.event_type,
+                            work.attempt,
+                            code,
+                            dlq[1],
+                        ),
                     )
                     row = cursor.fetchone()
-                    return row is not None and bool(row[0])
+                    quarantined = row is not None and bool(row[0])
+                    if quarantined:
+                        return True
+            return self.record_poison(
+                event_id=work.event_id,
+                event_type=work.event_type,
+                payload_hash=work.payload_hash,
+                source_topic=work.source_topic or work.event_type,
+                attempt=work.attempt,
+                failure_code=code,
+            )
         except psycopg.Error:
             return False
 
     def _partition_key(self, job_id: str) -> str:
         digest = hmac.new(self._partition_hmac_key, f"s7:completion:{job_id}".encode(), hashlib.sha256)
         return "hmac-sha256:" + digest.hexdigest()
+
+    def _poison_fields(self, work: AsyncWork, code: str) -> tuple[str, str]:
+        digest = hashlib.sha256(
+            f"dlq|{work.event_id}|{work.event_type}|{work.payload_hash}|{code}".encode()
+        ).hexdigest()
+        return f"evt_dlq_{digest[:32]}", self._partition_key(f"dlq:{work.event_id}")
 
 
 def _completion_event_id(work: AsyncWork) -> str:

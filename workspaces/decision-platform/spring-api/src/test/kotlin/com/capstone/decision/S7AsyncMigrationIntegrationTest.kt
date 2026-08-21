@@ -305,6 +305,70 @@ class S7AsyncMigrationIntegrationTest {
         }
     }
 
+    @Test
+    fun `worker records redacted poison and app publishes exact DLQ topic`() {
+        val dlqEventId = "evt_dlq_" + "a".repeat(32)
+        val originalEventId = "evt_poison_00000001"
+        val payloadHash = "sha256:" + "b".repeat(64)
+        val partitionKey = "hmac-sha256:" + "c".repeat(64)
+        connection("decision", WORKER_USER, WORKER_PASSWORD).use { worker ->
+            worker.prepareStatement("select record_kafka_poison(?,?,?,?,?,?,?,?)").use { statement ->
+                statement.setString(1, dlqEventId)
+                statement.setString(2, originalEventId)
+                statement.setString(3, "artifact.ingest-requested.v1")
+                statement.setString(4, payloadHash)
+                statement.setString(5, "artifact.ingest-requested.v1")
+                statement.setInt(6, 1)
+                statement.setString(7, "INVALID_EVENT_PAYLOAD")
+                statement.setString(8, partitionKey)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertTrue(rows.getBoolean(1))
+                }
+            }
+        }
+        val claimToken =
+            connection("decision", APP_USER, APP_PASSWORD).use { app ->
+                app
+                    .prepareStatement(
+                        "select event_id,topic_name,payload_json::text,claim_token from claim_dlq_outbox(?,?)",
+                    ).use { statement ->
+                        statement.setString(1, "kafka-publisher-test")
+                        statement.setInt(2, 100)
+                        statement.executeQuery().use { rows ->
+                            assertTrue(rows.next())
+                            assertEquals(dlqEventId, rows.getString(1))
+                            assertEquals("artifact.ingest-requested.dlq.v1", rows.getString(2))
+                            val payload = rows.getString(3)
+                            assertTrue(payload.contains(payloadHash))
+                            assertFalse(payload.contains("secret"))
+                            rows.getObject(4, java.util.UUID::class.java)
+                        }
+                    }
+            }
+        connection("decision", APP_USER, APP_PASSWORD).use { app ->
+            app.prepareStatement("select complete_dlq_outbox(?,?)").use { statement ->
+                statement.setString(1, dlqEventId)
+                statement.setObject(2, claimToken)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertTrue(rows.getBoolean(1))
+                }
+            }
+            val denied =
+                assertThrows<SQLException> {
+                    app.prepareStatement("select record_kafka_poison(?,?,?,?,?,?,?,?)").use { statement ->
+                        (1..5).forEach { statement.setString(it, "x") }
+                        statement.setInt(6, 1)
+                        statement.setString(7, "X")
+                        statement.setString(8, "x")
+                        statement.executeQuery()
+                    }
+                }
+            assertEquals("42501", denied.sqlState)
+        }
+    }
+
     private fun flyway(
         databaseName: String,
         target: String? = null,

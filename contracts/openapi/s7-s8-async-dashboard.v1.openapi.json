@@ -96,6 +96,122 @@
         "title": "artifact-ingest-status.v1",
         "type": "object"
       },
+      "AsyncDlqEnvelopeV1": {
+        "$id": "contracts/schemas/async-dlq-envelope.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "eventId": {
+            "pattern": "^evt_dlq_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "eventType": {
+            "enum": [
+              "artifact.ingest-requested.v1",
+              "artifact.ingested.v1",
+              "signal.received.v1",
+              "feature.updated.v1",
+              "lightgbm.signal-generated.v1",
+              "risk.context-updated.v1",
+              "risk.decision-created.v1",
+              "order.event-created.v1",
+              "rag.index-requested.v1",
+              "rag.index-completed.v1",
+              "model.eval-requested.v1",
+              "model.eval-completed.v1"
+            ]
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "partitionKey": {
+            "pattern": "^hmac-sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "payloadHash": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "references": {
+            "additionalProperties": false,
+            "properties": {
+              "attempt": {
+                "maximum": 3,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "eventId": {
+                "pattern": "^evt_[A-Za-z0-9_-]{8,96}$",
+                "type": "string"
+              },
+              "eventType": {
+                "enum": [
+                  "artifact.ingest-requested.v1",
+                  "artifact.ingested.v1",
+                  "signal.received.v1",
+                  "feature.updated.v1",
+                  "lightgbm.signal-generated.v1",
+                  "risk.context-updated.v1",
+                  "risk.decision-created.v1",
+                  "order.event-created.v1",
+                  "rag.index-requested.v1",
+                  "rag.index-completed.v1",
+                  "model.eval-requested.v1",
+                  "model.eval-completed.v1"
+                ]
+              },
+              "failureCode": {
+                "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+                "type": "string"
+              },
+              "payloadHash": {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "sourceTopic": {
+                "enum": [
+                  "artifact.ingest-requested.v1",
+                  "artifact.ingested.v1",
+                  "signal.received.v1",
+                  "feature.updated.v1",
+                  "lightgbm.signal-generated.v1",
+                  "risk.context-updated.v1",
+                  "risk.decision-created.v1",
+                  "order.event-created.v1",
+                  "rag.index-requested.v1",
+                  "rag.index-completed.v1",
+                  "model.eval-requested.v1",
+                  "model.eval-completed.v1"
+                ]
+              }
+            },
+            "required": [
+              "eventId",
+              "eventType",
+              "payloadHash",
+              "failureCode",
+              "sourceTopic",
+              "attempt"
+            ],
+            "type": "object"
+          },
+          "schemaVersion": {
+            "const": 1
+          }
+        },
+        "required": [
+          "eventId",
+          "eventType",
+          "schemaVersion",
+          "occurredAt",
+          "partitionKey",
+          "payloadHash",
+          "references"
+        ],
+        "title": "async-dlq-envelope.v1",
+        "type": "object"
+      },
       "AsyncJobListV1": {
         "$id": "contracts/schemas/async-job-list.v1.schema.json",
         "$schema": "https://json-schema.org/draft/2020-12/schema",

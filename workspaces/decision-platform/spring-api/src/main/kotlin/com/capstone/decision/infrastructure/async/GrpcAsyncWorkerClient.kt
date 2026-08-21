@@ -23,6 +23,7 @@ data class AsyncWorkerResult(
 
 @Component
 @ConditionalOnProperty(name = ["app.async.adapter"], havingValue = "db", matchIfMissing = true)
+@ConditionalOnProperty(name = ["app.async.worker.enabled"], havingValue = "true")
 class GrpcAsyncWorkerClient(
     private val properties: AsyncWorkerProperties,
 ) {

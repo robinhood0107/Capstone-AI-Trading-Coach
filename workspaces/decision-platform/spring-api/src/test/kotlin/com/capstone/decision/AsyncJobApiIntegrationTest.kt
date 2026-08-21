@@ -570,6 +570,7 @@ class AsyncJobApiIntegrationTest(
             registry.add("spring.flyway.user") { "flyway" }
             registry.add("spring.flyway.password") { FLYWAY_PASSWORD }
             registry.add("app.async.polling-enabled") { "false" }
+            registry.add("app.async.worker.enabled") { "true" }
             registry.add("app.async.worker.jdbc-url", postgres::getJdbcUrl)
             registry.add("app.async.worker.grpc-target") { "127.0.0.1:$asyncWorkerPort" }
         }

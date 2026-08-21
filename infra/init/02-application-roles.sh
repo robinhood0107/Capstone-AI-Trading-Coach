@@ -1819,6 +1819,32 @@ BEGIN
         GRANT INSERT ON TABLE processed_event TO decision_worker;
         REVOKE CREATE ON SCHEMA public FROM decision_app, decision_worker;
     END IF;
+
+    IF to_regprocedure('public.read_stream_metric_status(text,bigint)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            aggregate_decision_distribution(),
+            aggregate_signal_freshness(),
+            aggregate_failed_jobs(),
+            aggregate_dlq_events(),
+            read_stream_metric_status(text, bigint)
+        TO decision_app;
+    END IF;
+
+    IF to_regprocedure('public.replay_async_work(text,bigint,text,text,text[],integer,text,text,boolean)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            replay_async_work(text, bigint, text, text, text[], integer, text, text, boolean)
+        TO decision_app;
+    END IF;
+
+    IF to_regprocedure('public.list_artifact_ingest_status(text,bigint)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            stage_synthetic_dashboard_view(text, text, text, text, text, text, text, text, timestamptz, timestamptz),
+            read_dashboard_artifact_view(text, bigint, text, text),
+            read_dashboard_risk_view(text, bigint, text),
+            read_dashboard_rag_sources(text, bigint, text),
+            list_artifact_ingest_status(text, bigint)
+        TO decision_app;
+    END IF;
 END
 $s7_async_runtime_privileges$;
 

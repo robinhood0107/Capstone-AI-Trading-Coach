@@ -5,6 +5,7 @@ import com.zaxxer.hikari.HikariDataSource
 import net.javacrumbs.shedlock.core.LockProvider
 import net.javacrumbs.shedlock.provider.jdbctemplate.JdbcTemplateLockProvider
 import net.javacrumbs.shedlock.spring.annotation.EnableSchedulerLock
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
@@ -42,6 +43,7 @@ class AsyncInfrastructureConfiguration {
     }
 
     @Bean
+    @ConditionalOnBean(DataSource::class)
     fun lockProvider(dataSource: DataSource): LockProvider =
         JdbcTemplateLockProvider(
             JdbcTemplateLockProvider.Configuration
@@ -71,6 +73,7 @@ class AsyncInfrastructureConfiguration {
 
     @Bean(destroyMethod = "close")
     @ConditionalOnProperty(name = ["app.async.adapter"], havingValue = "db", matchIfMissing = true)
+    @ConditionalOnProperty(name = ["app.async.worker.enabled"], havingValue = "true")
     fun asyncWorkerDatabase(properties: AsyncWorkerProperties): AsyncWorkerDatabase =
         AsyncWorkerDatabase(
             HikariDataSource(

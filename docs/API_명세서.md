@@ -1273,14 +1273,17 @@ Kill Switch 활성화 상태에서는 신규 Decision 평가와 S3 주문 제출
 `RISK_UNAVAILABLE`로 fail-closed한다. S3 주문 제출은 Decision 판단 시점의
 generation과 제출 직전 generation을 다시 비교한다.
 
-### 6.4 교차시장 위험 조회
+### 6.4 교차시장 위험 조회 — `HISTORICAL_SUPERSEDED`
 
 `GET /api/v1/risk/cross-market`
 
-> 계획 타당성: `PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES`.
-> 현재 상태: `S4_8A=CONTRACT_LOCKED / S4_8_CORE6_V2=CONTRACT_LOCKED /
-> S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE /
-> S4_8_CORE6_OPTIONAL3_LOCAL_RUNTIME=IMPLEMENTED_DRAFT(V50) / ENDPOINT_RUNTIME=NOT_IMPLEMENTED`.
+> 이 endpoint와 아래 S6.7 DTO/mode는 과거 계획을 재현하기 위한 기록이며 OpenAPI/runtime에
+> 존재하지 않는다. 현재 상태는 `S4_8=VERIFIED_OFFLINE_STORED /
+> S4_8A=CONTRACT_LOCKED / S4_8_CORE6_V2=CONTRACT_LOCKED /
+> S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT /
+> S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE /
+> S6_6=RETIRED_STRICT_PIT_UNAVAILABLE / S6_7=RETIRED_NO_VALID_THRESHOLD /
+> ENDPOINT_RUNTIME=NOT_APPLICABLE`이다.
 > 월 데이터 비용 목표는 `0원`, offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 완료 조건이 아니다. 새 agent framework·별도
 > cloud·Kafka는 hard dependency가 아니다.
@@ -1289,8 +1292,9 @@ generation과 제출 직전 generation을 다시 비교한다.
 > schema·fixture·generator/parity, `s2-2-system-rule-catalog.v2`, contract-change와 v3
 > golden vector를 고정했다. 이 계약 자체는 endpoint, 내부 port, DB projection의 runtime 구현
 > 완료 증거가 아니다. S4.8A main 병합과 post-merge CI 확인 뒤 S4.8B/C offline fixture,
-> V23 evidence store와 Spring snapshot read port를 구현했지만 endpoint와 RiskEngine은 연결하지 않는다.
-> provider/live account/live order physical call은 0이며 P1 권한은 `WARN_ONLY`다.
+> V23 evidence store와 legacy bounded Spring snapshot read port를 구현했지만 endpoint와 RiskEngine은
+> 연결하지 않는다. V79는 S6.7 read/write capability를 폐쇄했고 provider runtime/live account/live
+> order physical call은 0이며 현재 P1 교차시장 판단 권한은 없다.
 > Core 6 v2 contract lock 위에는 KIS current-price, SEC EDGAR submissions/companyfacts, KRX
 > KOSPI/KOSDAQ daily의 local-only one-shot executor가 구현돼 있다. canonical short-expiry packet,
 > exact clean HEAD/tree·CI/security evidence, fixed operation, retry 0을 모두 만족하기 전에는 socket을
@@ -1389,11 +1393,11 @@ selector를 받지 않는다. Spring은 provider를 호출하지 않고 저장 p
 }
 ```
 
-응답 계약:
+historical 응답 계약:
 
 | 필드 | 계약 |
 |---|---|
-| `mode` | `OFF | SHADOW | WARN_ONLY | ENFORCED`; P1은 `WARN_ONLY` |
+| `mode` | historical fixture의 `OFF | SHADOW | WARN_ONLY | ENFORCED`; current runtime config 없음 |
 | `evidenceMode` | `SYNTHETIC_FIXTURE | HISTORICAL_REPLAY | PROSPECTIVE_SHADOW` |
 | `validationStatus` | `UNVALIDATED | VALIDATED`; synthetic은 항상 `UNVALIDATED` |
 | `performanceClaimAllowed` | synthetic은 항상 `false`; 검증된 historical/prospective만 `true` 가능 |
@@ -1417,7 +1421,7 @@ selector를 받지 않는다. Spring은 provider를 호출하지 않고 저장 p
 우회와 무단 crawling은 허용하지 않는다. `derivedDataAllowed=false`이면 파생 projection을
 response·DB·artifact로 전달하거나 저장하지 않고 임시 입력과 함께 폐기한다.
 
-내부 경계는 다음 하나다.
+퇴역 전 설계한 historical 내부 경계는 다음과 같다. 이 타입과 port는 현재 runtime source에 없다.
 
 ```kotlin
 data class CrossMarketDecisionInput(
@@ -1439,11 +1443,9 @@ GET DTO에는 이 내부 exposure를 노출하지 않는다.
 planned GET DTO를 기존 payload에 끼워 넣지 않는다. 변경이 필요해지면 별도 breaking
 contract-change와 consumer 합의를 먼저 거친다.
 
-Decision/Risk/RAG 평가 중 provider fan-out은 0이다. `OFF`와 `SHADOW`는 주문 판단을 바꾸지
-않고, P1 `WARN_ONLY`는 신선한 적용 대상 신규 BUY의 `ALLOW`를 최대 `WARN`으로만 강화한다.
-결측·stale은 warning을 추가하되 P1에서 HOLD/BLOCK을 만들지 않는다. `ENFORCED`의 결측
-신규 BUY `HOLD`와 위험 `BLOCK`은 post-P1 별도 contract·사용자 승인을 통과한 뒤에만
-활성화한다. SELL, 기존 보유분 매도, 주문 생성, 수량 축소는 항상 범위 밖이다.
+Decision/Risk/RAG 평가 중 cross-market reader/provider fan-out은 0이다. 퇴역한 `OFF/SHADOW/
+WARN_ONLY/ENFORCED` overlay는 주문 판단에 참여하지 않으며 재도입에는 strict PIT evidence와 새
+versioned contract-change가 필요하다.
 
 `s2-2-system-rule-catalog.v1`은 그대로 유지한다. 후속 v2의 15번째 system rule
 `cross_market_new_buy_guard`와 `s2.2-metric-snapshot-v3`/hash v3 golden vector는 함께
@@ -2804,6 +2806,13 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 
 금융공학 계산 기능은 투자 권유나 주문 실행을 위한 기능이 아니다. 이 API는 RAG 금융수학 카드, 주문검토 리스크 설명, 백테스트 리포트, 학습 화면에 필요한 계산 결과만 제공한다.
 
+> S6.4 공개 erratum(2026-08-21): request의 `contractId + valuationAt`을 기준으로 서버가
+> effective-dated `option_contract_terms.v1`을 조회하고 `tau=(lastTradingAt-valuationAt)/31536000`
+> (`ACT/365F`)를 계산한다. client가 `optionType`, `strikePrice`, `timeToMaturityYears`,
+> `finalSettlementDate`, 보유·전략평가 기간을 계약조건이나 만기로 지정할 수 없다. valuation은
+> `Q_DISCOUNTED_VALUE`, 예측 평균은 `P_PREDICTIVE_MEAN`으로 분리하며 아래 값은 교육·수치검증용이고
+> Signal, RiskDecision, 주문 또는 보수적 `conservativeRiskDelta` 권한이 없다.
+
 ### 12.1 Black-Scholes 가격 계산
 
 `POST /api/v1/financial-engineering/options/black-scholes`
@@ -2812,10 +2821,9 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 
 ```json
 {
-  "optionType": "CALL",
+  "contractId": "KOSPI200_OPTION_FIXTURE_202609_CALL_75000",
+  "valuationAt": "2026-06-11T09:20:00+09:00",
   "underlyingPrice": 72000,
-  "strikePrice": 75000,
-  "timeToMaturityYears": 0.25,
   "riskFreeRate": 0.032,
   "dividendYield": 0.01,
   "volatility": 0.28
@@ -2830,9 +2838,12 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
   "data": {
     "model": "BLACK_SCHOLES_MERTON",
     "optionType": "CALL",
-    "theoreticalPrice": 2315.42,
-    "d1": -0.0941,
-    "d2": -0.2341,
+    "measure": "Q_DISCOUNTED_VALUE",
+    "theoreticalPrice": 2917.937245391,
+    "d1": -0.182299960859,
+    "d2": -0.322299960859,
+    "timeToMaturityYears": 0.25,
+    "contractTermsHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "assumptions": [
       "European exercise",
       "constant volatility",
@@ -2852,10 +2863,9 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 
 ```json
 {
-  "optionType": "PUT",
+  "contractId": "KOSPI200_OPTION_FIXTURE_202609_PUT_75000",
+  "valuationAt": "2026-06-11T09:20:00+09:00",
   "underlyingPrice": 72000,
-  "strikePrice": 75000,
-  "timeToMaturityYears": 0.25,
   "riskFreeRate": 0.032,
   "dividendYield": 0.01,
   "volatility": 0.28
@@ -2868,18 +2878,21 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 {
   "success": true,
   "data": {
-    "delta": -0.5204,
-    "gamma": 0.000039,
-    "vega": 141.23,
-    "thetaPerYear": -5380.44,
-    "thetaPerDay": -14.74,
-    "rho": -92.18,
+    "measure": "Q_DISCOUNTED_VALUE",
+    "delta": -0.570897306492,
+    "gamma": 0.000038828202272,
+    "vegaPerUnitVolatility": 14089.9780404,
+    "vegaPerVolPoint": 140.899780404,
+    "calendarThetaPerYear": -6810.08298,
+    "calendarThetaPerDay": -18.6577616,
+    "rhoPerUnitRate": -11651.17803,
+    "rhoPerRatePoint": -116.5117803,
     "interpretation": {
       "delta": "기초자산 가격 변화에 대한 옵션가격 민감도",
       "gamma": "Delta 변화율",
-      "vega": "변동성 변화에 대한 민감도",
-      "theta": "시간 경과에 따른 가치 감소",
-      "rho": "금리 변화에 대한 민감도"
+      "vega": "변동성 1.00 또는 1%p 변화에 대한 단위별 민감도",
+      "theta": "ACT/365F calendar time 경과에 대한 연/일 단위 민감도",
+      "rho": "연속복리 금리 1.00 또는 1%p 변화에 대한 단위별 민감도"
     }
   }
 }
@@ -2893,18 +2906,13 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 
 ```json
 {
-  "optionType": "CALL",
-  "marketPrice": 2315.42,
+  "contractId": "KOSPI200_OPTION_FIXTURE_202609_CALL_75000",
+  "valuationAt": "2026-06-11T09:20:00+09:00",
+  "marketPrice": 2917.937245391,
   "underlyingPrice": 72000,
-  "strikePrice": 75000,
-  "timeToMaturityYears": 0.25,
   "riskFreeRate": 0.032,
   "dividendYield": 0.01,
-  "solver": "BISECTION",
-  "lowerVolatility": 0.0001,
-  "upperVolatility": 5.0,
-  "tolerance": 0.000001,
-  "maxIterations": 100
+  "solver": "BISECTION"
 }
 ```
 
@@ -2914,7 +2922,7 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 {
   "success": true,
   "data": {
-    "impliedVolatility": 0.280001,
+    "impliedVolatility": 0.28,
     "solver": "BISECTION",
     "iterations": 37,
     "pricingError": 0.0031,
@@ -2940,14 +2948,34 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 
 | 입력 | 도메인 |
 |---|---|
-| `underlyingPrice`, `strikePrice`, `marketPrice` | > 0 |
-| `timeToMaturityYears` | > 0 |
+| `contractId` | trusted `option_contract_terms.v1`에서 valuation 시점에 유효한 계약만 허용 |
+| `valuationAt` | `lastTradingAt`보다 이전이어야 하며 timezone 포함 |
+| `underlyingPrice`, `marketPrice` | > 0 |
 | `volatility` | > 0 (IV 역산 탐색 범위는 [0.0001, 5.0]) |
 | `riskFreeRate`, `dividendYield` | 연속복리 소수 표기 (3.2% = 0.032) |
 
 도메인 위반은 `VALIDATION_ERROR`(400)로, 계산 자체의 실패(브래킷 실패, 미수렴)는 `IV_NOT_BRACKETED`/`IV_NOT_CONVERGED`로 구분해 반환한다.
 
+`marketPrice=2315.42`를 별도 회귀 fixture로 사용할 때 동일 계약조건의 expected IV는
+`0.237005877501`이다. 이 값과 `marketPrice=2917.937245391 → IV=0.28` round-trip은
+solver identity 검증이며 독립 fair-value 또는 실제 성과 증거가 아니다.
+
 계산 결과는 설명과 리스크 이해를 돕는 보조 정보다. `Decision API`는 이 값을 직접 주문 신호로 해석하지 않는다.
+
+### 12.4 S6 stored artifact와 runtime 권한
+
+현재 S6 authority는 `s6-contract-lock.v2`이며 제품 범위는 S6.1~S6.5다.
+
+- S6.1~S6.3 report는 각각 `hmm_regime_report.v1`, `gbm_monte_carlo_report.v1`,
+  `mean_reversion_report.v1`이며 public REST route를 추가하지 않는다.
+- S6.5는 `financial_engineering_snapshot.v1`과 `financial_engineering_report_manifest.v1`을
+  append-only 저장한다. 주문검토 projection은 `evaluationAsOf`보다 미래 `availableAt`을 읽지 않으며
+  request 경로에서 계산, provider 또는 원시 시세 fan-out을 만들지 않는다.
+- S6.6의 event-study/replay/threshold와 S6.7 risk snapshot v2 schema·fixture는 historical-only다.
+  무료 historical API가 행별 실제 `availableAt`을 증명하지 못해 실행 코드와 CLI를 제거했다.
+- V78 table은 immutable 감사 이력으로 보존하지만 V79가 append/read functions와 runtime grants를
+  제거했다. Spring에는 S6.7 bean/config/Decision endpoint가 없다.
+- 현재 runtime catalog는 exact-14 `s2-2-system-rule-catalog.v1`이며 v2/v3 rule 15를 실행하지 않는다.
 
 ---
 
@@ -3667,9 +3695,7 @@ service SourceRegistryService {
 | Live order gate 미충족 | `RISK_BLOCKED`, 주문 차단 |
 | 원칙 버전 충돌 | `CONFLICT`, 재조회 요구 |
 | Kill Switch 활성 | `RISK_BLOCKED`, 주문 차단 |
-| 교차시장 `WARN_ONLY` fresh high risk | 적용 대상 신규 BUY의 `ALLOW`를 최대 `WARN`으로만 강화 |
-| 교차시장 `WARN_ONLY` missing/stale/incomplete | sanitized warning과 unavailable projection, P1에서 HOLD/BLOCK 생성 0 |
-| 교차시장 `ENFORCED` missing/stale | post-P1 승인 뒤 적용 대상 신규 BUY만 `HOLD`; P1에서는 활성화 금지 |
+| historical 교차시장 overlay | runtime 미노출, Decision 결과와 hash 변화 0 |
 
 필수/선택 입력 분류:
 
@@ -3701,7 +3727,7 @@ service SourceRegistryService {
 | S4.8 | 시장 source entitlement와 RAG source registry를 분리한다. expired/disabled entitlement, retention·raw-store·embedding·external-LLM 권한 불충족은 outbound 전에 거부한다. provider body/PDF/뉴스 원문은 DB·artifact·log에 저장하지 않는다. licensed local file 경로를 열게 되면 approved root, dirfd/`O_NOFOLLOW`, symlink·archive/decompression·MIME·byte/page/time cap과 삭제 영수증을 요구한다. 일반 fixture/EOD 구현의 provider physical call은 0이다 |
 | S5 | artifact endpoint는 trusted producer, owner, manifest hash/schema, 고정 root, file count/size/row cap을 먼저 검증한다. arbitrary path/symlink/archive와 untrusted pickle/joblib/code-loading model은 거부한다. 다운로드는 owner-scoped Bearer 인증과 고정 allowlisted 파일명·MIME만 허용하고 `Content-Disposition: attachment`, `nosniff`, `no-store`를 적용한다. Markdown/CSV/JSON을 임의 inline HTML로 실행하지 않는다 |
 | S6 | 금융공학·시뮬레이션 API는 user별 symbol/period/path/iteration/concurrency/deadline/output cap을 둔다. 입력 snapshot provenance와 owner를 검증하고 계산·모델 출력이 deterministic RiskEngine 검증을 우회하지 못하게 한다 |
-| S6.6/S6.7 | PIT `availableAt` 미래정보, incomplete coverage, fake zero, threshold 재선택을 거부한다. 저장 snapshot reader만 사용하고 Decision/Risk/RAG 평가 중 provider fan-out은 0이다. analyst/RAG/LLM 설명은 판단 hash에서 제외하며 P1 mode를 `WARN_ONLY`보다 강하게 설정하지 않는다 |
+| S6.6/S6.7 historical-only | PIT `availableAt` 미래정보, incomplete coverage, fake zero와 threshold 재선택을 거부한다. strict PIT 부재로 runtime capability를 퇴역했으며 Decision/Risk 평가 중 reader/provider fan-out은 0이다. 재도입은 새 versioned contract-change를 요구한다 |
 | S7 | 로컬 plaintext Kafka는 loopback-only다. 배포 시 TLS+client 인증+topic ACL+schema/message/retention cap을 요구한다. event에 secret/token/account/PII/raw payload를 금지하고 ADMIN replay/DLQ를 audit하며 consumer idempotency/outbox를 검증한다 |
 | S8 | 외부 REST는 TLS, 제한 CORS와 HSTS/CSP/`nosniff`/frame/referrer security header를 적용한다. Dashboard는 access token을 URL·localStorage·IndexedDB·로그에 저장하지 않고 메모리에서만 보유하며, RAG/뉴스/Markdown을 raw HTML로 렌더링하지 않는다. 외부 link는 검증된 scheme과 `noopener noreferrer`를 적용한다. 내부 DB/Redis/Kafka/gRPC를 public bind하지 않고 non-loopback gRPC는 mTLS 전환 후에만 허용한다. 서비스별 outbound는 default-deny egress에서 승인된 provider HTTPS/DNS 목적지만 허용하고 metadata/private/link-local network를 방화벽에서도 차단한다. production container는 non-root, read-only root filesystem, explicit writable volume, `cap_drop=ALL`, `no-new-privileges`, 기본 seccomp와 CPU/memory/PID 제한을 적용한다. production debug/heap/core dump와 Actuator env/config dump를 비활성화하고 진단 절차가 process env를 출력하지 않게 한다. secret rotation, 민감정보별 retention/delete, encrypted backup+restore test, dependency/container/model SCA와 body/query/header redaction을 release gate로 둔다 |
 
@@ -3723,9 +3749,8 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | Cross-market analyst/cause | `BUY` 의견만 바꾼 hash/score/RiskDecision 불변, 목표가·EPS·매출 하향 explanation 반영, broker 3 미만 insufficient, dedupe/supersede/retraction, 상반 evidence와 비확정 인과 보존 |
 | Cross-market PDF entitlement | 기본 `MANUAL_LINK_ONLY`, 권리 확인된 ephemeral 입력도 정확히 여섯 section과 user-confirmed tag만 projection, `derivedDataAllowed=false`이면 파생 결과 저장·응답·외부 전송 0 및 삭제 영수증 |
 | Cross-market timing | 두 formula의 signed millisecond exact 계산, negative detection 거부, pre-open 양수/0/음수의 `EARLY/AT_OPEN/LATE`, 음수 lead zero-clamp 0 |
-| Cross-market scorer/replay | 252 완료 세션, basket/domestic 최소 coverage, adverse percentile·median 결정성, 60/20/20와 5-session purge/embargo, threshold freeze, downside/missed-upside/net-protection 식 검증 |
-| Cross-market Risk API | 인증·query 0·latest-only·max10 evidence, OFF/SHADOW/WARN_ONLY/ENFORCED mode, cross-owner read 0, provider fan-out 0, numeric field별 v3 hash mutation과 analyst/RAG/LLM hash 불변 |
-| Cross-market payload freeze | 기존 Decision request/response·RAG ask/history·Signal v1/v2 schema field diff 0, 내부 `CrossMarketDecisionInput(snapshot, exposure)`와 별도 GET만 허용 |
+| Cross-market retirement | replay CLI/module, S6.7 bean/config/adapter 부재, V79 function/grant 폐쇄, V78 row 불변 |
+| Cross-market payload freeze | 기존 Decision request/response·RAG ask/history·Signal v1/v2 schema field diff 0, 퇴역 타입/별도 GET 미노출 |
 | RAG | 출처 있는 답변, 출처 부족 답변 제한, 피드백 저장 |
 | Signal | 규칙 baseline/LSTM/LightGBM/HMM 결합 신호와 producer/sourceWorkspace 조회 |
 | Backtest | Baseline/Guide/Strict 결과 비교 |
@@ -3766,7 +3791,7 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | 필수 | FinancialEngineeringService |
 | 필수 | Black-Scholes 계산기, Greeks 계산, implied volatility 역산 |
 | 필수 | Auth(login/role), System Health, Kill Switch 상태 조회 |
-| 필수(P1 WARN_ONLY, S4.8B/C offline 구현·S6.6/S6.7/endpoint 미구현) | Cross-market latest risk 조회, offline fixture/EOD producer, event-study/policy replay |
+| offline evidence only | S4.8 fixture/EOD producer·scorer·legacy bounded reader. S6.6/S6.7 runtime은 퇴역 |
 | 고도화 | Async Job 상태 조회, Stream Metric, Artifact Ingest 상태 조회 |
 | 고도화 | SourceRegistryService 고도화 |
 | 고도화 | 이벤트 push 채널(SSE), RAG 답변 스트리밍, Journal 수정/삭제 |

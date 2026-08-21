@@ -1,0 +1,22 @@
+{
+  "artifactHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "availability": "AVAILABLE",
+  "availableAt": "2026-08-21T08:10:00+09:00",
+  "configHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contractId": "cross_market_risk_snapshot.v2",
+  "evidenceMode": "MANUAL_EOD",
+  "exposure": "NEW_BUY",
+  "exposureAvailableAt": "2026-08-21T08:10:00+09:00",
+  "exposureCatalogHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "providerFanoutAllowed": false,
+  "quality": "PASS",
+  "runtimeMode": "WARN_ONLY",
+  "score": 98.2,
+  "semanticInputHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "snapshotId": "00000000-0000-4000-8000-000000000607",
+  "staleAt": "2026-08-22T08:10:00+09:00",
+  "storageMode": "STORED_SNAPSHOT",
+  "symbol": "005930",
+  "thresholdArtifactHash": "9999999999999999999999999999999999999999999999999999999999999999",
+  "thresholdPercentile": 97.5
+}

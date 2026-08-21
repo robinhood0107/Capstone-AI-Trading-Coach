@@ -1,0 +1,40 @@
+{
+  "artifactHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "asOf": "2026-08-20T15:30:00+09:00",
+  "contractId": "gbm_monte_carlo_report.v1",
+  "deterministicStress": {
+    "fatTailProxy": -0.13,
+    "jumpGap": -0.1,
+    "leverageMarginShortfall": 0.0,
+    "liquiditySpreadImpactCrowding": -0.03,
+    "volatilityClusterBurst": -0.08
+  },
+  "drawOrder": "PATH_MAJOR_MAX_DRAW_PREFIX",
+  "fanQuantiles": [
+    0.05,
+    0.25,
+    0.5,
+    0.75,
+    0.95
+  ],
+  "measure": "P_PREDICTIVE_MEAN",
+  "model": "EXACT_EXPONENTIAL_GBM",
+  "nPaths": 10000,
+  "numpyVersion": "2.5.1",
+  "quality": "PASS",
+  "rng": "PCG64",
+  "seed": 20260821,
+  "stochastic": {
+    "batchCount": 20,
+    "lossProbability": 0.48,
+    "lossProbabilityStandardError": 0.005,
+    "tailMeanLoss95Amount": 16.1,
+    "tailMeanLoss95Return": 0.161,
+    "varLoss95Amount": 12.5,
+    "varLoss95Return": 0.125,
+    "wilson95": [
+      0.4702,
+      0.4898
+    ]
+  }
+}

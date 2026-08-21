@@ -6,6 +6,7 @@ import com.capstone.decision.infrastructure.brokerage.PaperBrokerageProperties
 import com.capstone.decision.infrastructure.decision.DecisionProperties
 import com.capstone.decision.infrastructure.grpc.BrokerageGrpcProperties
 import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
+import com.capstone.decision.infrastructure.grpc.FinancialEngineeringGrpcProperties
 import com.capstone.decision.infrastructure.grpc.RagGrpcProperties
 import com.capstone.decision.infrastructure.grpc.RagV2GrpcProperties
 import com.capstone.decision.infrastructure.grpc.StrongLlmAgentGrpcProperties
@@ -60,6 +61,7 @@ import java.security.MessageDigest
     PaperBrokerageProperties::class,
     BrokerageGrpcProperties::class,
     DecisionGrpcProperties::class,
+    FinancialEngineeringGrpcProperties::class,
     RagGuardHistoryProperties::class,
     RagGrpcProperties::class,
     RagV2GrpcProperties::class,
@@ -86,6 +88,7 @@ class SecurityConfig {
         brokerageGrpcProperties: BrokerageGrpcProperties,
         ragGrpcProperties: RagGrpcProperties,
         ragV2GrpcProperties: RagV2GrpcProperties = RagV2GrpcProperties(),
+        financialEngineeringGrpcProperties: FinancialEngineeringGrpcProperties = FinancialEngineeringGrpcProperties(),
     ): AuthSecretSeparation {
         jwtProperties.validate()
         loginProperties.validate()
@@ -102,6 +105,9 @@ class SecurityConfig {
         }
         if (ragV2GrpcProperties.enabled) {
             ragV2GrpcProperties.validate()
+        }
+        if (financialEngineeringGrpcProperties.enabled) {
+            financialEngineeringGrpcProperties.validateEnabled()
         }
         val secrets =
             linkedMapOf(
@@ -134,6 +140,10 @@ class SecurityConfig {
         }
         if (ragV2GrpcProperties.enabled) {
             secrets["RAG v2 gRPC"] = ragV2GrpcProperties.sharedSecret.toByteArray(StandardCharsets.UTF_8)
+        }
+        if (financialEngineeringGrpcProperties.enabled) {
+            secrets["Financial Engineering gRPC"] =
+                financialEngineeringGrpcProperties.sharedSecret.toByteArray(StandardCharsets.UTF_8)
         }
         return try {
             val entries = secrets.entries.toList()

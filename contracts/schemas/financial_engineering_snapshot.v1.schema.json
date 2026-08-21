@@ -1,0 +1,101 @@
+{
+  "$id": "https://capstone.local/contracts/financial_engineering_snapshot.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "asOf": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "availability": {
+      "enum": [
+        "AVAILABLE",
+        "ABSTAIN",
+        "NOT_AVAILABLE"
+      ]
+    },
+    "availableAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "configHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "financial_engineering_snapshot.v1"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "numericPayload": {
+      "additionalProperties": {
+        "type": [
+          "number",
+          "string",
+          "boolean",
+          "null"
+        ]
+      },
+      "maxProperties": 32,
+      "type": "object"
+    },
+    "numericPayloadHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "quality": {
+      "enum": [
+        "PASS",
+        "WARN",
+        "EVIDENCE_GAP"
+      ]
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "sessionDate": {
+      "format": "date",
+      "type": "string"
+    },
+    "sourceManifestHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "staleness": {
+      "enum": [
+        "FRESH",
+        "STALE",
+        "NOT_ESTIMABLE"
+      ]
+    },
+    "symbol": {
+      "pattern": "^[0-9A-Z./-]{1,32}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractId",
+    "schemaVersion",
+    "symbol",
+    "sessionDate",
+    "asOf",
+    "availableAt",
+    "sourceManifestHash",
+    "configHash",
+    "numericPayloadHash",
+    "artifactHash",
+    "availability",
+    "quality",
+    "staleness",
+    "numericPayload",
+    "createdAt"
+  ],
+  "title": "financial_engineering_snapshot.v1",
+  "type": "object"
+}

@@ -1,0 +1,14 @@
+{
+  "candidateArtifactHash": null,
+  "candidateQualificationStatus": "NOT_AVAILABLE",
+  "contractId": "s6-6-dataset-candidate-receipt.v1",
+  "datasetStatus": "DATASET_UNAVAILABLE",
+  "evidenceLabel": "NONE",
+  "lightgbmProduction": "INTENTIONALLY_DISABLED",
+  "performanceClaimAllowed": false,
+  "productionPointerCount": 0,
+  "providerCalls": 0,
+  "reason": "NO_IMMUTABLE_QUALIFIED_AVAILABLE_BUY_CANDIDATE_WITH_MINIMUM_3Y_PIT_DATASET",
+  "realEmpiricalStatus": "DATASET_UNAVAILABLE",
+  "researchOnly": true
+}

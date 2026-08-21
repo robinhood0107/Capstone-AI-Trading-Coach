@@ -1,0 +1,134 @@
+{
+  "$id": "https://capstone.local/contracts/mean_reversion_report.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "adf": {
+      "additionalProperties": false,
+      "properties": {
+        "authority": {
+          "const": "REFERENCE_ONLY"
+        },
+        "autolag": {
+          "const": "AIC"
+        },
+        "criticalValues": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "maxProperties": 8,
+          "minProperties": 1,
+          "type": "object"
+        },
+        "nobs": {
+          "maximum": 60,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "pValue": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "regression": {
+          "const": "c"
+        },
+        "statistic": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "regression",
+        "autolag",
+        "statistic",
+        "pValue",
+        "criticalValues",
+        "nobs",
+        "authority"
+      ],
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "asOf": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "availability": {
+      "enum": [
+        "AVAILABLE",
+        "ABSTAIN"
+      ]
+    },
+    "classification": {
+      "enum": [
+        "MEAN_REVERTING",
+        "NOT_MEAN_REVERTING",
+        "NOT_ESTIMABLE"
+      ]
+    },
+    "contractId": {
+      "const": "mean_reversion_report.v1"
+    },
+    "decisionAuthority": {
+      "const": "WARN_CANDIDATE_ONLY"
+    },
+    "halfLifeSessions": {
+      "exclusiveMinimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "longRunMean": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "phi": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "theta": {
+      "exclusiveMinimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "windowObservations": {
+      "const": 60
+    },
+    "zScore": {
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "contractId",
+    "availability",
+    "asOf",
+    "windowObservations",
+    "phi",
+    "theta",
+    "longRunMean",
+    "halfLifeSessions",
+    "zScore",
+    "classification",
+    "adf",
+    "decisionAuthority",
+    "artifactHash"
+  ],
+  "title": "mean_reversion_report.v1",
+  "type": "object"
+}

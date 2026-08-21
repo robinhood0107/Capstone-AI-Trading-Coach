@@ -1,0 +1,78 @@
+{
+  "$id": "https://capstone.local/contracts/option_contract_terms.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractId": {
+      "const": "option_contract_terms.v1"
+    },
+    "effectiveFrom": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "effectiveTo": {
+      "format": "date-time",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "exerciseStyle": {
+      "const": "EUROPEAN"
+    },
+    "lastTradingAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "multiplier": {
+      "exclusiveMinimum": 0,
+      "type": "number"
+    },
+    "optionRight": {
+      "enum": [
+        "CALL",
+        "PUT"
+      ]
+    },
+    "settlementType": {
+      "const": "CASH"
+    },
+    "sourceHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "sourceUrl": {
+      "format": "uri",
+      "pattern": "^https://",
+      "type": "string"
+    },
+    "strike": {
+      "exclusiveMinimum": 0,
+      "type": "number"
+    },
+    "termsId": {
+      "pattern": "^[A-Z0-9_.-]{1,128}$",
+      "type": "string"
+    },
+    "timezone": {
+      "const": "Asia/Seoul"
+    }
+  },
+  "required": [
+    "contractId",
+    "termsId",
+    "optionRight",
+    "strike",
+    "lastTradingAt",
+    "timezone",
+    "multiplier",
+    "exerciseStyle",
+    "settlementType",
+    "effectiveFrom",
+    "effectiveTo",
+    "sourceUrl",
+    "sourceHash"
+  ],
+  "title": "option_contract_terms.v1",
+  "type": "object"
+}

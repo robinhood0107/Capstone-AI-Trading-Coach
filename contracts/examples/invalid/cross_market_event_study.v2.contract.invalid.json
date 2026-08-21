@@ -1,0 +1,74 @@
+{
+  "artifactHash": "7777777777777777777777777777777777777777777777777777777777777777",
+  "bootstrap": {
+    "blockLengthSessions": 5,
+    "interval": null,
+    "replications": 2000,
+    "seed": 20260821,
+    "superiorityClaimAllowed": false,
+    "unit": "EVENT_DATE"
+  },
+  "causeEvidence": {
+    "conflictDenominator": 0,
+    "evidenceConflictRate": {
+      "estimationStatus": "NOT_ESTIMABLE",
+      "value": null
+    },
+    "unsupportedCausalityRate": {
+      "estimationStatus": "NOT_ESTIMABLE",
+      "value": null
+    },
+    "unsupportedDenominator": 0
+  },
+  "contractId": "cross_market_event_study.v2",
+  "coverageYears": 0,
+  "datasetStatus": "DATASET_UNAVAILABLE",
+  "decisionAuthority": "WARN",
+  "evidenceMode": "PROSPECTIVE_SHADOW",
+  "metrics": {
+    "downsideAvoidedBps": {
+      "estimationStatus": "NOT_ESTIMABLE",
+      "value": null
+    },
+    "falseBlockRate": {
+      "estimationStatus": "NOT_ESTIMABLE",
+      "value": null
+    },
+    "missedUpsideBps": {
+      "estimationStatus": "NOT_ESTIMABLE",
+      "value": null
+    },
+    "netProtectionBps": {
+      "estimationStatus": "NOT_ESTIMABLE",
+      "value": null
+    },
+    "triggerCount": 0
+  },
+  "performanceClaimAllowed": false,
+  "productionSignalAuthority": false,
+  "purgeEmbargoSessions": 5,
+  "researchOnly": true,
+  "runtimeRiskEngineSource": false,
+  "severeLossCutoff": null,
+  "split": [
+    0.6,
+    0.2,
+    0.2
+  ],
+  "thresholdCandidates": [
+    95,
+    97.5,
+    99
+  ],
+  "timing": {
+    "detectionLatencyMillis": null,
+    "estimationStatus": "NOT_ESTIMABLE",
+    "preOpenLeadTimeMillis": null,
+    "preOpenStatus": "NOT_ESTIMABLE"
+  },
+  "transactionCostSensitivityBps": [
+    25,
+    30,
+    35
+  ]
+}

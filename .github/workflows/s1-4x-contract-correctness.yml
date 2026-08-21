@@ -241,11 +241,16 @@ jobs:
             esac
           fi
 
-          # 의존성 amendment가 수치 구현·테스트·fixture를 함께 바꾸는 것을 독립적으로 막는다.
+          # S1.4 production 11함수의 실제 import boundary만 동결한다.
+          # 같은 package에 추가되는 S6 모듈은 별도 계약/테스트를 가지며 S1.4X reference를 바꾸지 않는다.
           git diff --exit-code "$DIFF_BASE" HEAD -- \
             shared-docs/metrics_definitions.md \
-            workspaces/decision-platform/python-services/app/financial_engineering \
-            workspaces/decision-platform/python-services/tests/financial_engineering \
+            workspaces/decision-platform/python-services/app/financial_engineering/__init__.py \
+            workspaces/decision-platform/python-services/app/financial_engineering/_validation.py \
+            workspaces/decision-platform/python-services/app/financial_engineering/returns.py \
+            workspaces/decision-platform/python-services/app/financial_engineering/risk_metrics.py \
+            workspaces/decision-platform/python-services/tests/financial_engineering/test_returns.py \
+            workspaces/decision-platform/python-services/tests/financial_engineering/test_risk_metrics.py \
             workspaces/decision-platform/research/s1-4r-jax-risk/src \
             workspaces/decision-platform/research/s1-4r-jax-risk/tests \
             ":(exclude)$S1_4R_ISOLATION_TEST" \

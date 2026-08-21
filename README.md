@@ -51,17 +51,17 @@ provider 호출, RiskDecision/hash/order 권한, S5 feature 주입은 모두 0�
 `S4_8_CORE6_V2=CONTRACT_ONLY`, `S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE`다. Core 6 v2는
 KIS/OpenDART/SEC EDGAR/KRX/KOFIA/ECOS의 future entitlement·packet·sanitized receipt만 잠그며
 provider adapter/live call은 0이다. provider 없는 fixture/scorer/append-only evidence/설명 경계만
-구현됐다. S6.6/S6.7과
-cross-market REST/RiskEngine runtime은 `NOT_IMPLEMENTED / PLANNED`다. 월 데이터 비용 목표는 `0원`,
+구현됐고 `S4_8=VERIFIED_OFFLINE_STORED`다. S6.6/S6.7 실행 capability는 strict `REAL_PIT`
+자료 부재로 `RETIRED_NOT_APPLICABLE`이며 cross-market REST/RiskEngine runtime은 없다. 월 데이터 비용 목표는 `0원`,
 offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과 실시간 SOX/VIX feed는
 post-P1 선택지이며 완주 조건이 아니다. 새 agent framework·별도 cloud·Kafka hard
 dependency 없이 기존 Spring/Python/PostgreSQL/Redis/gRPC를 재사용한다.
 
-순서 0 read-only `S4.READ`와 S4.8A contract-only merge gate는 충족했다. 이 후속 변경은
-provider 없는 S4.8B/C만 구현하며 S6.6/S6.7은 시작하지 않는다.
+순서 0 read-only `S4.READ`와 S4.8A contract-only merge gate는 충족했고 provider 없는
+S4.8B/C를 구현했다.
 현재 S4.8A/B/C의 Decision/Signal/Risk/order/hash 권한은 0이며, 애널리스트·뉴스·RAG·LLM은
-RiskDecision과 판단 hash를 바꾸지 않는다. S6.6/S6.7의 후속 계획은 `NOT_IMPLEMENTED / PLANNED`이며
-현재 execution task, artifact 또는 S5 entry dependency를 만들지 않는다.
+RiskDecision과 판단 hash를 바꾸지 않는다. S6.6/S6.7 historical artifact는 재현용으로만
+보존하며 현재 execution task, runtime capability 또는 S5 entry dependency를 만들지 않는다.
 기존 Decision/RAG/Signal v1/v2 payload에 추가하는 교차시장 필드는 0이다.
 
 42개는 integration target 조사 행 수이지 사용 가능한 API 수가 아니고, KIS 18개도

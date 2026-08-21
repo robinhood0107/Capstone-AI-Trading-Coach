@@ -28,6 +28,11 @@ def build_lightgbm_policy_replay(
         and candidate.evidence_label in {"REAL_PIT", "SYNTHETIC_FIXTURE"}
         and _is_hash(candidate.artifact_hash)
     )
+    dataset_available = bool(
+        eligible
+        and candidate is not None
+        and (candidate.evidence_label == "SYNTHETIC_FIXTURE" or pit_dataset_available)
+    )
     eligible_candidate = candidate if eligible else None
     real = (
         eligible_candidate is not None
@@ -40,7 +45,7 @@ def build_lightgbm_policy_replay(
         "runtimeRiskEngineSource": False,
         "productionSignalAuthority": False,
         "researchOnly": True,
-        "datasetStatus": "AVAILABLE" if eligible else "DATASET_UNAVAILABLE",
+        "datasetStatus": "AVAILABLE" if dataset_available else "DATASET_UNAVAILABLE",
         "candidateArtifactHash": eligible_candidate.artifact_hash if eligible_candidate is not None else None,
         "candidateQualificationStatus": "AVAILABLE" if eligible else (
             "FAILED" if candidate is not None and candidate.qualification_status == "FAILED" else "NOT_AVAILABLE"

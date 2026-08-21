@@ -27,6 +27,7 @@ class EventObservation:
     required_source_available_ats: tuple[datetime, ...]
     xkrx_open_at: datetime | None
     cause_supported: bool | None = None
+    cause_conflict: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,7 @@ def evaluate_event_study(
         "transactionCostSensitivityBps": list(COST_SENSITIVITY_BPS),
         "timing": timing,
         "metrics": test_metrics,
+        "causeEvidence": _cause_evidence(test),
         "bootstrap": {
             "unit": "EVENT_DATE",
             "blockLengthSessions": BOOTSTRAP_BLOCK_LENGTH,
@@ -151,6 +153,7 @@ def unavailable_event_study(*, evidence_mode: str = "PROSPECTIVE_SHADOW") -> dic
         "transactionCostSensitivityBps": [25, 30, 35],
         "timing": _not_estimable_timing(),
         "metrics": _not_estimable_metrics(),
+        "causeEvidence": _not_estimable_cause_evidence(),
         "bootstrap": {
             "unit": "EVENT_DATE",
             "blockLengthSessions": 5,
@@ -177,16 +180,18 @@ def _validate_observations(rows: list[EventObservation]) -> None:
             raise ValueError("timestamp_must_be_aware")
         if any(value.tzinfo is None for value in row.required_source_available_ats):
             raise ValueError("timestamp_must_be_aware")
+        if row.xkrx_open_at is not None and row.xkrx_open_at.tzinfo is None:
+            raise ValueError("timestamp_must_be_aware")
         if row.snapshot_available_at is not None and row.required_source_available_ats:
             if row.snapshot_available_at < max(row.required_source_available_ats):
                 raise ValueError("INVALID_CHRONOLOGY")
 
 
 def _chronological_split(rows: list[EventObservation]) -> tuple[list[EventObservation], list[EventObservation], list[EventObservation]]:
-    count = len(rows)
-    train_end = int(count * 0.6)
+    usable_count = len(rows) - 2 * PURGE_EMBARGO_SESSIONS
+    train_end = int(usable_count * 0.6)
     validation_start = train_end + PURGE_EMBARGO_SESSIONS
-    validation_end = validation_start + int(count * 0.2)
+    validation_end = validation_start + int(usable_count * 0.2)
     test_start = validation_end + PURGE_EMBARGO_SESSIONS
     train, validation, test = rows[:train_end], rows[validation_start:validation_end], rows[test_start:]
     if min(len(train), len(validation), len(test)) < 5:
@@ -227,22 +232,33 @@ def _contract_metrics(rows: list[EventObservation], threshold: float, severe: fl
 
 
 def _block_bootstrap_interval(rows: list[EventObservation], threshold: float, severe: float, cost: int) -> list[float] | None:
-    values = [
-        max(0.0, -(row.forward_return_bps - cost)) - max(0.0, row.forward_return_bps - cost)
-        for row in rows
-        if row.score_percentile >= threshold
-    ]
-    if not values:
+    if not any(row.score_percentile >= threshold for row in rows):
         return None
     rng = np.random.Generator(np.random.PCG64(BOOTSTRAP_SEED))
-    array = np.asarray(values, dtype=np.float64)
     estimates = np.empty(BOOTSTRAP_REPLICATIONS, dtype=np.float64)
-    for replication in range(BOOTSTRAP_REPLICATIONS):
-        sampled: list[float] = []
-        while len(sampled) < len(array):
-            start = int(rng.integers(0, len(array)))
-            sampled.extend(array.take(np.arange(start, start + BOOTSTRAP_BLOCK_LENGTH) % len(array)).tolist())
-        estimates[replication] = float(np.mean(sampled[: len(array)]))
+    accepted = 0
+    attempts = 0
+    while accepted < BOOTSTRAP_REPLICATIONS and attempts < BOOTSTRAP_REPLICATIONS * 10:
+        attempts += 1
+        sampled_rows: list[EventObservation] = []
+        while len(sampled_rows) < len(rows):
+            start = int(rng.integers(0, len(rows)))
+            sampled_rows.extend(
+                rows[(start + offset) % len(rows)]
+                for offset in range(BOOTSTRAP_BLOCK_LENGTH)
+            )
+        triggered = [row for row in sampled_rows[: len(rows)] if row.score_percentile >= threshold]
+        if not triggered:
+            continue
+        values = [
+            max(0.0, -(row.forward_return_bps - cost))
+            - max(0.0, row.forward_return_bps - cost)
+            for row in triggered
+        ]
+        estimates[accepted] = float(np.mean(values))
+        accepted += 1
+    if accepted != BOOTSTRAP_REPLICATIONS:
+        return None
     low, high = np.quantile(estimates, [0.025, 0.975], method="linear")
     return [float(low), float(high)]
 
@@ -279,6 +295,36 @@ def _not_estimable_metrics() -> dict[str, object]:
         "downsideAvoidedBps": dict(missing),
         "missedUpsideBps": dict(missing),
         "netProtectionBps": dict(missing),
+    }
+
+
+def _cause_evidence(rows: list[EventObservation]) -> dict[str, object]:
+    conflict_rows = [row for row in rows if row.cause_conflict is not None]
+    unsupported_rows = [row for row in rows if row.cause_supported is not None]
+    missing = {"value": None, "estimationStatus": "NOT_ESTIMABLE"}
+    return {
+        "conflictDenominator": len(conflict_rows),
+        "unsupportedDenominator": len(unsupported_rows),
+        "evidenceConflictRate": (
+            _estimated(sum(row.cause_conflict is True for row in conflict_rows) / len(conflict_rows))
+            if conflict_rows
+            else dict(missing)
+        ),
+        "unsupportedCausalityRate": (
+            _estimated(sum(row.cause_supported is False for row in unsupported_rows) / len(unsupported_rows))
+            if unsupported_rows
+            else dict(missing)
+        ),
+    }
+
+
+def _not_estimable_cause_evidence() -> dict[str, object]:
+    missing = {"value": None, "estimationStatus": "NOT_ESTIMABLE"}
+    return {
+        "conflictDenominator": 0,
+        "unsupportedDenominator": 0,
+        "evidenceConflictRate": dict(missing),
+        "unsupportedCausalityRate": dict(missing),
     }
 
 

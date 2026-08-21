@@ -14,7 +14,7 @@
 
 기존 v1 schema/catalog/example과 completion record bytes는 변경하지 않는다. HMM active wire,
 LightGBM production/release/activation, ENFORCED HOLD/BLOCK, provider/live/account/order 호출,
-Return Engine 및 Dashboard 구현은 이 변경의 권한이 아니다.
+외부 workspace 구현은 이 변경의 권한이 아니다.
 
 ## 생성과 검증
 

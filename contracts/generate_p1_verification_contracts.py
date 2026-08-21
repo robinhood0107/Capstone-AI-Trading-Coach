@@ -251,7 +251,7 @@ def _catalog() -> dict[str, object]:
             {
                 "profile": "PROVIDER_READ_SMOKE",
                 "providerAuthority": True,
-                "currentImplementationState": "NOT_IMPLEMENTED",
+                "currentImplementationState": "IMPLEMENTED",
                 "requiredGates": list(LIVE_OPERATIONS),
             },
             {
@@ -420,10 +420,36 @@ def validate_semantics(contract_id: str, payload: object) -> None:
             for gate_id in S0_S5_REQUIRED_GATES
         ):
             raise ContractValidationError("S0-S5 PASS requires provider-free gate success")
+    if payload["profile"] == "PROVIDER_READ_SMOKE":
+        by_id = {gate["gateId"]: gate for gate in gates}
+        if tuple(gate["gateId"] for gate in gates) != LIVE_OPERATIONS:
+            raise ContractValidationError("provider smoke requires the ordered exact six gates")
+        if payload["productDbWrites"] != 0 or payload["kisTokenPhysicalCalls"] not in {0, 1}:
+            raise ContractValidationError("provider smoke accounting is invalid")
+        if payload["providerDataPhysicalCalls"] != sum(
+            gate["physicalCallCount"] for gate in gates
+        ):
+            raise ContractValidationError("provider smoke gate accounting does not balance")
+        if payload["providerDataPhysicalCalls"] + payload["kisTokenPhysicalCalls"] > 7:
+            raise ContractValidationError("provider smoke total physical cap exceeded")
+        stopped = False
+        for gate in gates:
+            if stopped and gate["executionState"] != "NOT_RUN":
+                raise ContractValidationError("provider smoke did not stop after failure")
+            if gate["executionState"] in {"FAIL", "BLOCKED"}:
+                stopped = True
+        failures = [gate for gate in gates if gate["executionState"] == "FAIL"]
+        blocks = [gate for gate in gates if gate["executionState"] == "BLOCKED"]
+        if payload["executionState"] == "PASS" and any(
+            gate["executionState"] != "PASS" for gate in gates
+        ):
+            raise ContractValidationError("provider smoke PASS requires all gates")
+        if payload["executionState"] == "FAIL" and (len(failures) != 1 or blocks):
+            raise ContractValidationError("provider smoke FAIL requires one terminal failure")
+        if payload["executionState"] == "BLOCKED" and (len(blocks) != 1 or failures):
+            raise ContractValidationError("provider smoke BLOCKED requires one blocked gate")
     if payload["profile"] == "PROVIDER_READ_SMOKE" and payload["executionState"] == "PASS":
         by_id = {gate["gateId"]: gate for gate in gates}
-        if set(by_id) != set(LIVE_OPERATIONS):
-            raise ContractValidationError("provider smoke PASS requires the exact six gates")
         if any(
             by_id[operation]["executionState"] != "PASS"
             or by_id[operation]["physicalCallCount"] != 1
@@ -431,7 +457,7 @@ def validate_semantics(contract_id: str, payload: object) -> None:
             for operation in LIVE_OPERATIONS
         ):
             raise ContractValidationError("provider smoke PASS requires six single-attempt successes")
-        if payload["providerDataPhysicalCalls"] != 6 or payload["productDbWrites"] != 0:
+        if payload["providerDataPhysicalCalls"] != 6:
             raise ContractValidationError("provider smoke PASS accounting is invalid")
 
 

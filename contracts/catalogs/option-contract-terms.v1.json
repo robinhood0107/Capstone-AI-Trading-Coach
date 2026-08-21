@@ -3,6 +3,36 @@
   "entries": [
     {
       "contractId": "option_contract_terms.v1",
+      "termsId": "KOSPI200_OPTION_FIXTURE_202609_CALL_75000",
+      "optionRight": "CALL",
+      "strike": 75000,
+      "lastTradingAt": "2026-09-10T15:20:00+09:00",
+      "timezone": "Asia/Seoul",
+      "multiplier": 250000,
+      "exerciseStyle": "EUROPEAN",
+      "settlementType": "CASH",
+      "effectiveFrom": "2026-01-01T00:00:00+09:00",
+      "effectiveTo": null,
+      "sourceUrl": "https://global.krx.co.kr/",
+      "sourceHash": "6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    {
+      "contractId": "option_contract_terms.v1",
+      "termsId": "KOSPI200_OPTION_FIXTURE_202609_PUT_75000",
+      "optionRight": "PUT",
+      "strike": 75000,
+      "lastTradingAt": "2026-09-10T15:20:00+09:00",
+      "timezone": "Asia/Seoul",
+      "multiplier": 250000,
+      "exerciseStyle": "EUROPEAN",
+      "settlementType": "CASH",
+      "effectiveFrom": "2026-01-01T00:00:00+09:00",
+      "effectiveTo": null,
+      "sourceUrl": "https://global.krx.co.kr/",
+      "sourceHash": "6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    {
+      "contractId": "option_contract_terms.v1",
       "termsId": "KOSPI200_OPTION_FIXTURE_202609_CALL_360000",
       "optionRight": "CALL",
       "strike": 360000,

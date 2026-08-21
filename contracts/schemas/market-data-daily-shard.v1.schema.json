@@ -246,9 +246,7 @@
       "const": 0
     },
     "providerPhysicalCalls": {
-      "maximum": 41,
-      "minimum": 0,
-      "type": "integer"
+      "const": 0
     },
     "sessionDate": {
       "format": "date",

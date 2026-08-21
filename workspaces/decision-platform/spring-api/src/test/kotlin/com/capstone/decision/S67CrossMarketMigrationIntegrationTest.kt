@@ -152,8 +152,8 @@ class S67CrossMarketMigrationIntegrationTest {
             listOf(
                 "s6-cross-market-semantic-v2",
                 SYMBOL,
-                "2026-08-21T08:09:00Z",
-                "2026-08-22T08:09:00Z",
+                "2026-08-21T08:09:00.000000Z",
+                "2026-08-22T08:09:00.000000Z",
                 score,
                 THRESHOLD,
                 THRESHOLD_HASH,

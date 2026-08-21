@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -66,3 +66,20 @@ def test_enforced_mode_and_invalid_timing_are_rejected_before_storage() -> None:
         _snapshot(runtime_mode=RuntimeMode.ENFORCED)
     with pytest.raises(ValueError, match="chronology"):
         _snapshot(stale_at=NOW - timedelta(seconds=1))
+
+
+def test_equivalent_offset_timestamps_have_one_utc_semantic_identity() -> None:
+    seoul = timezone(timedelta(hours=9))
+    offset_snapshot = _snapshot(
+        available_at=NOW.astimezone(seoul),
+        stale_at=(NOW + timedelta(hours=24)).astimezone(seoul),
+    )
+    utc_snapshot = _snapshot()
+    assert offset_snapshot.payload["availableAt"] == "2026-08-21T08:10:00.000000Z"
+    assert offset_snapshot.semantic_input_hash == utc_snapshot.semantic_input_hash
+    assert offset_snapshot.payload["snapshotId"] == utc_snapshot.payload["snapshotId"]
+
+
+def test_subsecond_timestamp_mutation_changes_semantic_identity() -> None:
+    changed = _snapshot(available_at=NOW + timedelta(microseconds=1))
+    assert changed.semantic_input_hash != _snapshot().semantic_input_hash

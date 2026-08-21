@@ -110,8 +110,8 @@ BEGIN
   END IF;
   expected_semantic_hash := encode(digest(convert_to(concat_ws(E'\n',
     's6-cross-market-semantic-v2', p_symbol,
-    to_char(p_available_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-    to_char(p_stale_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    to_char(p_available_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+    to_char(p_stale_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
     coalesce(p_score::text, ''), coalesce(p_threshold_percentile::text, ''),
     coalesce(p_threshold_artifact_hash, ''), p_config_hash,
     p_exposure_classification, p_exposure_catalog_hash), 'UTF8'), 'sha256'), 'hex');

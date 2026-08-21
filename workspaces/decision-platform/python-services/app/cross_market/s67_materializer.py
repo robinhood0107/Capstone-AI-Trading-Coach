@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Final, Mapping
@@ -187,4 +187,4 @@ def _sha256(value: bytes) -> str:
 
 
 def _instant(value: datetime) -> str:
-    return value.isoformat(timespec="seconds").replace("+00:00", "Z")
+    return value.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")

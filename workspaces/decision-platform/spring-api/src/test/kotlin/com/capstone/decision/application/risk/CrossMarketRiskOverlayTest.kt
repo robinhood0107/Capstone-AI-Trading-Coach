@@ -70,6 +70,16 @@ class CrossMarketRiskOverlayTest {
     }
 
     @Test
+    fun `SHADOW-authored snapshot cannot be elevated by WARN_ONLY runtime config`() {
+        val shadowOnly = input(runtimeMode = CrossMarketRuntimeMode.SHADOW)
+        val result =
+            CrossMarketRiskOverlay(port(shadowOnly), config(CrossMarketRuntimeMode.WARN_ONLY))
+                .evaluate(request(), ALLOW)
+        assertThat(result.status).isEqualTo(CrossMarketOverlayStatus.UNAVAILABLE)
+        assertThat(result.finalAction).isEqualTo(EvaluationAction.ALLOW)
+    }
+
+    @Test
     fun `missing stale and mismatched exposure remain unavailable without HOLD or BLOCK`() {
         val missing =
             object : CrossMarketRiskPort {
@@ -135,6 +145,7 @@ class CrossMarketRiskOverlayTest {
         classification: CrossMarketExposureClassification = CrossMarketExposureClassification.NEW_BUY,
         staleAt: Instant = NOW.plusSeconds(3600),
         exposureAvailableAt: Instant = AVAILABLE_AT,
+        runtimeMode: CrossMarketRuntimeMode = CrossMarketRuntimeMode.WARN_ONLY,
     ) = CrossMarketDecisionInput(
         snapshot =
             CrossMarketRiskSnapshot(
@@ -145,7 +156,7 @@ class CrossMarketRiskOverlayTest {
                 staleAt,
                 CrossMarketEvidenceMode.SYNTHETIC_FIXTURE,
                 CrossMarketStorageMode.STORED_SNAPSHOT,
-                CrossMarketRuntimeMode.WARN_ONLY,
+                runtimeMode,
                 CrossMarketAvailability.AVAILABLE,
                 BigDecimal("98.125"),
                 THRESHOLD,

@@ -602,6 +602,7 @@ class InfrastructureSecurityIntegrationTest {
                           FROM pg_roles
                           WHERE rolname = ANY (ARRAY[
                             'decision_app',
+                            'decision_worker',
                             'decision_collector',
                             'decision_disclosure_reader',
                             'decision_market_writer',

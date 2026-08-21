@@ -1,0 +1,18 @@
+{
+  "checksumPlan": "SHA256_CANONICAL_MANIFEST_AND_EACH_ARTIFACT",
+  "contractId": "s6-6-data-requirements.v1",
+  "entitlementRequired": true,
+  "expectedBytes": null,
+  "expectedCalls": 0,
+  "expectedCostKrw": 0,
+  "minimumCoverageYears": 3,
+  "pitAvailableAtRequired": true,
+  "providerCallsAuthorized": false,
+  "retention": "PROJECT_POLICY_BOUND",
+  "sources": [
+    "S5_7_STORED_XKRX",
+    "S4_8_STORED_CROSS_MARKET",
+    "QUALIFIED_RESEARCH_CANDIDATE"
+  ],
+  "targetCoverageYears": 5
+}

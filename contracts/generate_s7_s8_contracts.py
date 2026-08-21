@@ -91,8 +91,14 @@ def _schema(schema_id: str, body: dict[str, Any]) -> dict[str, Any]:
 
 def _success(data: dict[str, Any]) -> dict[str, Any]:
     return _closed(
-        ["success", "data"],
-        {"success": {"const": True}, "data": data},
+        ["success", "requestId", "data", "warnings", "error"],
+        {
+            "success": {"const": True},
+            "requestId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"},
+            "data": data,
+            "warnings": {"type": "array", "maxItems": 20, "items": {"type": "object"}},
+            "error": {"type": "null"},
+        },
     )
 
 
@@ -348,7 +354,7 @@ def _risk_view_schema() -> dict[str, Any]:
     view = _closed(
         ["decisionId", "action", "reasons", "principles", "riskItems"],
         {
-            "decisionId": {"type": "string", "pattern": "^decision_[A-Za-z0-9_-]{8,96}$"},
+            "decisionId": {"type": "string", "pattern": "^dec_[A-Za-z0-9_-]{8,96}$"},
             "action": {"enum": ["ALLOW", "WARN", "HOLD", "BLOCK"]},
             "reasons": {"type": "array", "items": text_item, "maxItems": 20},
             "principles": {"type": "array", "items": text_item, "maxItems": 20},
@@ -371,7 +377,7 @@ def _rag_view_schema() -> dict[str, Any]:
     view = _closed(
         ["answerId", "topSources", "expandableSources"],
         {
-            "answerId": {"type": "string", "pattern": "^answer_[A-Za-z0-9_-]{8,96}$"},
+            "answerId": {"type": "string", "pattern": "^rag_[A-Za-z0-9_-]{12,96}$"},
             "topSources": {"type": "array", "items": source, "maxItems": 3},
             "expandableSources": {"type": "array", "items": source, "maxItems": 5},
         },
@@ -432,6 +438,9 @@ def _fixtures() -> dict[str, dict[str, Any]]:
         "dashboard-risk-result.v1": {"success": True, "data": copy.deepcopy(empty_view)},
         "dashboard-rag-sources.v1": {"success": True, "data": copy.deepcopy(empty_view)},
     }
+    for schema_id, fixture in fixtures.items():
+        if schema_id not in {"async-event-envelope.v1", "async-dlq-envelope.v1"}:
+            fixture.update({"requestId": "req_s7s8_fixture_0001", "warnings": [], "error": None})
     return fixtures
 
 
@@ -499,8 +508,8 @@ def _openapi(schemas: Mapping[str, dict[str, Any]]) -> dict[str, Any]:
         "/api/v1/artifacts/ingest-status": {"get": operation("artifact-ingest-status.v1", admin_only=True)},
         "/api/v1/dashboard/model-evaluations/{runId}": {"get": operation("dashboard-model-evaluation.v1", ("runId", "^(run|demo)_[A-Za-z0-9_-]{8,96}$"))},
         "/api/v1/dashboard/backtests/{runId}": {"get": operation("dashboard-backtest.v1", ("runId", "^(run|demo)_[A-Za-z0-9_-]{8,96}$"))},
-        "/api/v1/dashboard/risk-results/{decisionId}": {"get": operation("dashboard-risk-result.v1", ("decisionId", "^decision_[A-Za-z0-9_-]{8,96}$"))},
-        "/api/v1/dashboard/rag-sources/{answerId}": {"get": operation("dashboard-rag-sources.v1", ("answerId", "^answer_[A-Za-z0-9_-]{8,96}$"))},
+        "/api/v1/dashboard/risk-results/{decisionId}": {"get": operation("dashboard-risk-result.v1", ("decisionId", "^dec_[A-Za-z0-9_-]{8,96}$"))},
+        "/api/v1/dashboard/rag-sources/{answerId}": {"get": operation("dashboard-rag-sources.v1", ("answerId", "^rag_[A-Za-z0-9_-]{12,96}$"))},
     }
     paths["/api/v1/async-jobs"]["get"]["parameters"] = [
         {"name": "status", "in": "query", "required": False, "schema": {"type": "string", "enum": ["REQUESTED", "RUNNING", "COMPLETED", "FAILED", "NEEDS_REVIEW"]}},

@@ -16,6 +16,9 @@
     ],
     "nextCursor": null
   },
+  "error": null,
+  "requestId": "req_s7s8_fixture_0001",
   "success": true,
-  "unexpected": true
+  "unexpected": true,
+  "warnings": []
 }

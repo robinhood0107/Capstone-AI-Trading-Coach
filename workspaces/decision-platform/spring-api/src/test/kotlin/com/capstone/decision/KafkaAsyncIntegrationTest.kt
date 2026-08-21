@@ -37,9 +37,11 @@ import tools.jackson.databind.ObjectMapper
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.sql.Timestamp
 import java.time.Duration
 import java.util.Properties
 import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 
 @Testcontainers
 @SpringBootTest
@@ -48,7 +50,9 @@ class KafkaAsyncIntegrationTest(
     @Autowired private val asyncPipelinePort: AsyncPipelinePort,
     @Autowired private val publisher: KafkaOutboxPublisher,
     @Autowired private val objectMapper: ObjectMapper,
+    @Autowired private val applicationDataSource: DataSource,
 ) : SpringApiIntegrationTestBase() {
+    private val appJdbc by lazy { JdbcTemplate(applicationDataSource) }
     private val ownerJdbc by lazy {
         JdbcTemplate(DriverManagerDataSource(postgres.jdbcUrl, postgres.username, postgres.password))
     }
@@ -126,6 +130,10 @@ class KafkaAsyncIntegrationTest(
 
     @Test
     fun `Kafka publisher and real Python consumer materialize exactly once`() {
+        val modelProjection = S8SyntheticProjectionFixture.modelProjection(objectMapper)
+        val backtestProjection = S8SyntheticProjectionFixture.backtestProjection(objectMapper)
+        stage("MODEL_EVALUATION", "model-evaluation.json", modelProjection)
+        stage("BACKTEST", "backtest.json", backtestProjection)
         val process = startPythonConsumer()
         try {
             val accepted =
@@ -135,8 +143,8 @@ class KafkaAsyncIntegrationTest(
                         requestedBy = "usr_demo_user",
                         references =
                             mapOf(
-                                "artifactId" to "artifact_kafka_python_0001",
-                                "contentHash" to "sha256:" + "e".repeat(64),
+                                "artifactId" to S8SyntheticProjectionFixture.ARTIFACT_ID,
+                                "contentHash" to S8SyntheticProjectionFixture.FILE_HASH,
                             ),
                     ),
                 )
@@ -166,9 +174,49 @@ class KafkaAsyncIntegrationTest(
                     accepted.jobId,
                 ),
             )
+            assertEquals(
+                S8SyntheticProjectionFixture.sha256(modelProjection),
+                ownerJdbc.queryForObject(
+                    "select projection_hash from dashboard_artifact_views where view_kind='MODEL_EVALUATION' and run_id=?",
+                    String::class.java,
+                    S8SyntheticProjectionFixture.RUN_ID,
+                ),
+            )
+            assertEquals(
+                S8SyntheticProjectionFixture.sha256(backtestProjection),
+                ownerJdbc.queryForObject(
+                    "select projection_hash from dashboard_artifact_views where view_kind='BACKTEST' and run_id=?",
+                    String::class.java,
+                    S8SyntheticProjectionFixture.RUN_ID,
+                ),
+            )
         } finally {
             terminateProcess(process)
         }
+    }
+
+    private fun stage(
+        kind: String,
+        fileName: String,
+        projection: String,
+    ) {
+        assertEquals(
+            true,
+            appJdbc.queryForObject(
+                "select stage_synthetic_dashboard_view(?,?,?,?,?,?,?,?,?,?)",
+                Boolean::class.java,
+                S8SyntheticProjectionFixture.ARTIFACT_ID,
+                "usr_demo_user",
+                S8SyntheticProjectionFixture.RUN_ID,
+                fileName,
+                S8SyntheticProjectionFixture.FILE_HASH,
+                kind,
+                projection,
+                S8SyntheticProjectionFixture.sha256(projection),
+                Timestamp.from(S8SyntheticProjectionFixture.asOf),
+                Timestamp.from(S8SyntheticProjectionFixture.freshUntil),
+            ),
+        )
     }
 
     private fun startPythonConsumer(): Process {

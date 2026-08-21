@@ -32,18 +32,14 @@ S0_S5_REQUIRED_GATES: Final = frozenset(
         "MARKET_DATA_CHAIN_GUARD",
     }
 )
-PROVIDER_READ_SMOKE_GATES: Final = frozenset(
-    {
-        "KRX_KOSPI_DAILY",
-        "KRX_KOSDAQ_DAILY",
-        "KIS_CURRENT_PRICE",
-        "KIS_DAILY_BAR",
-        "ECOS_POLICY_RATE_DAILY",
-        "ECOS_KRW_USD_DAILY",
-    }
+PROVIDER_READ_SMOKE_GATE_ORDER: Final = (
+    "KRX_KOSPI_DAILY",
+    "KRX_KOSDAQ_DAILY",
+    "KIS_CURRENT_PRICE",
+    "KIS_DAILY_BAR",
+    "ECOS_POLICY_RATE_DAILY",
+    "ECOS_KRW_USD_DAILY",
 )
-
-
 @dataclass(frozen=True, slots=True)
 class GateResult:
     gate_id: str
@@ -191,12 +187,45 @@ class VerificationReport:
                     for gate in by_id.values()
                 ):
                     raise ValueError("S0-S5 PASS requires provider-free gate success")
+        if self.profile == "PROVIDER_READ_SMOKE":
+            by_id = {gate.gate_id: gate for gate in self.gates}
+            if tuple(gate.gate_id for gate in self.gates) != PROVIDER_READ_SMOKE_GATE_ORDER:
+                raise ValueError("provider smoke requires the exact six gates")
+            if (
+                self.product_db_writes != 0
+                or self.kis_token_physical_calls not in {0, 1}
+                or self.provider_data_physical_calls != sum(
+                    gate.physical_call_count for gate in self.gates
+                )
+                or self.provider_data_physical_calls + self.kis_token_physical_calls > 7
+            ):
+                raise ValueError("provider smoke PASS accounting is invalid")
+            stopped = False
+            for gate in self.gates:
+                if stopped and gate.execution_state != "NOT_RUN":
+                    raise ValueError("provider smoke must stop after its first non-pass gate")
+                if gate.execution_state in {"FAIL", "BLOCKED"}:
+                    stopped = True
+            failures = [gate for gate in self.gates if gate.execution_state == "FAIL"]
+            blocks = [gate for gate in self.gates if gate.execution_state == "BLOCKED"]
+            if self.execution_state == "PASS" and any(
+                gate.execution_state != "PASS" for gate in self.gates
+            ):
+                raise ValueError("provider smoke PASS requires every gate to pass")
+            if self.execution_state == "FAIL" and (len(failures) != 1 or blocks):
+                raise ValueError("provider smoke FAIL requires one terminal failed gate")
+            if self.execution_state == "BLOCKED" and (len(blocks) != 1 or failures):
+                raise ValueError("provider smoke BLOCKED requires one blocked gate")
+            if any(
+                gate.execution_state in {"FAIL", "BLOCKED"}
+                and (gate.failure_code is None or gate.evidence_sha256 is not None)
+                for gate in self.gates
+            ):
+                raise ValueError("provider smoke terminal gate evidence is invalid")
+            if self.execution_state == "PASS" and self.provider_data_physical_calls != 6:
+                raise ValueError("provider smoke PASS accounting is invalid")
         if self.profile == "PROVIDER_READ_SMOKE" and self.execution_state == "PASS":
             by_id = {gate.gate_id: gate for gate in self.gates}
-            if set(by_id) != PROVIDER_READ_SMOKE_GATES:
-                raise ValueError("provider smoke PASS requires the exact six gates")
-            if self.provider_data_physical_calls != 6 or self.product_db_writes != 0:
-                raise ValueError("provider smoke PASS accounting is invalid")
             if any(
                 gate.implementation_state != "IMPLEMENTED"
                 or gate.execution_state != "PASS"

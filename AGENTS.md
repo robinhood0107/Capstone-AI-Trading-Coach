@@ -480,6 +480,23 @@ Gradle build), `python-ci.yml`(Python 3.12 품질 게이트)이다. 아래 시�
   실행 권한을 구현하지 않는다. P1.V1 live adapter가 별도 PR로 병합되고 CI가 성공하기 전 live smoke는
   실행하지 않는다. account, balance, order cap은 모든 profile에서 0이다.
 
+## P1.V1 격리 provider read smoke 현재 권위
+
+- 위 P1.V0 절의 `PROVIDER_READ_SMOKE=NOT_IMPLEMENTED` 문구는 역사 상태다. 현재 catalog 구현 상태는
+  `IMPLEMENTED`이고 수동 `p1-verify run --profile PROVIDER_READ_SMOKE --packet ...`만 제공한다.
+- live 실행은 clean merged SHA에서 발급한 TTL 최대 60분 packet을 owner-private one-shot claim ledger에
+  먼저 소비한 뒤에만 가능하다. 같은 packet은 성공·실패·차단 여부와 무관하게 다시 실행하지 않는다.
+- 순서는 KRX KOSPI 1 → KRX KOSDAQ 1 → KIS cached token 확인/필요 시 token 1 → KIS 현재가 1 →
+  KIS 일봉 1 → ECOS 기준금리 1 → ECOS 원/달러 1이다. data physical cap은 6, token cap은 0 또는 1,
+  provider retry/retransmission은 0이다.
+- 첫 terminal 실패 뒤 남은 gate는 모두 `NOT_RUN`이다. report에는 gate 상태, physical count와
+  content-free evidence SHA만 남기고 raw body/header/token/credential/URL/실제 관측값은 남기지 않는다.
+- account, balance, order, product DB write, accepted Market Data manifest 변경은 0이다. 이 smoke 성공은
+  current credential·quota·fixed endpoint·transport·parser health만 뜻하며 S5.7 live daily collector,
+  S6, LightGBM, RiskDecision, order, scheduler activation 증거가 아니다.
+- CI와 fixture 검증의 provider 호출은 계속 0이다. 실제 smoke 결과는 adapter PR 병합과 post-merge CI
+  성공 뒤 발급한 packet의 실측 report만으로 갱신한다.
+
 ## Java/Kotlin/Spring 기준 스택
 
 - JVM은 **JDK 25 LTS**로 고정한다. JDK 26은 최신 feature release지만 이 프로젝트의 기준은 최신 LTS다.

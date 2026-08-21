@@ -3942,3 +3942,23 @@ request/response가 아니다.
 
 Signal v2의 LightGBM component는 Market Data가 존재해도 계속 `ABSTAIN/MISSING_EVIDENCE`다. 이 내부
 report PASS를 full live collector, S6 계산, RiskDecision/order 또는 P1 전체 PASS로 승격하지 않는다.
+
+## P1.V1 격리 provider smoke API 비변경 overlay (2026-08-21)
+
+P1.V0 절의 provider runtime 거부 문구는 역사 상태다. `PROVIDER_READ_SMOKE`는 내부 CLI에서 구현됐지만
+HTTP/gRPC/Public OpenAPI endpoint는 추가하지 않는다.
+
+```bash
+p1-verify author --approval-id <ID> --output-root <OWNER_PRIVATE_ROOT> --kis-token-cap 0|1
+p1-verify run --profile PROVIDER_READ_SMOKE --packet <PACKET> --output-root <OWNER_PRIVATE_ROOT>
+p1-verify verify <REPORT>
+```
+
+- run은 repository binding과 packet TTL을 검증하고 packet을 one-shot claim한 뒤 KRX 2 → KIS token
+  0/1 → KIS 2 → ECOS 2 순서로만 실행한다.
+- data physical cap은 6이고 각 gate cap은 1이다. retry/retransmission, account, balance, order,
+  product DB write와 accepted Market Data manifest 변경은 0이다.
+- 첫 terminal 실패 뒤 후속 gate는 `NOT_RUN`이며 같은 packet을 다시 실행하지 않는다.
+- report는 implementation/execution/aggregate, gate별 physical count와 content-free SHA만 포함한다.
+  raw body/header/token/credential/URL/실제 값은 API나 artifact에 노출하지 않는다.
+- CLI PASS는 full live daily collector, S6, Signal/Risk/order 또는 production activation 상태를 바꾸지 않는다.

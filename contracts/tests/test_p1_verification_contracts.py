@@ -90,7 +90,7 @@ class P1VerificationContractTest(unittest.TestCase):
             for row in catalog["profiles"]
         }
         self.assertEqual("IMPLEMENTED", states["S0_S5_CURRENT"])
-        self.assertEqual("NOT_IMPLEMENTED", states["PROVIDER_READ_SMOKE"])
+        self.assertEqual("IMPLEMENTED", states["PROVIDER_READ_SMOKE"])
         self.assertEqual("NOT_IMPLEMENTED", states["S6_OFFLINE"])
         self.assertEqual("EXTERNAL_PLACEHOLDER", states["P1_FULL"])
 

@@ -361,6 +361,90 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
+    fun `V77 publishes snapshot and complete report atomically with PIT reader and immutable replay`() {
+        val url = createDatabase("s6_5_financial_engineering_v77")
+        flyway(url).migrate()
+        val numeric = "{\"x\":1}"
+        val numericHash = sha256Hex(numeric)
+        val steps =
+            """[{"name":"STORED_COLLECTION"},{"name":"FEATURE"},{"name":"INFERENCE"},""" +
+                """{"name":"SNAPSHOT"},{"name":"REPORT"}]"""
+
+        fun append(artifactHash: String): String =
+            DriverManager.getConnection(url, "decision_market_writer", MARKET_WRITER_PASSWORD).use { writer ->
+                writer
+                    .prepareStatement(
+                        """
+                        select outcome from append_financial_engineering_result(
+                          ?::uuid, 1, '005930', date '2026-08-20',
+                          timestamptz '2026-08-20 06:30:00+00',
+                          timestamptz '2026-08-20 23:10:00+00',
+                          ?, ?, ?, ?, 'AVAILABLE', 'PASS', 'FRESH', ?, '{}', ?, 4096, ?
+                        )
+                        """.trimIndent(),
+                    ).use { statement ->
+                        statement.setString(1, "00000000-0000-4000-8000-000000000605")
+                        statement.setString(2, "1".repeat(64))
+                        statement.setString(3, "2".repeat(64))
+                        statement.setString(4, numericHash)
+                        statement.setString(5, artifactHash)
+                        statement.setString(6, numeric)
+                        statement.setString(7, "5".repeat(64))
+                        statement.setString(8, steps)
+                        statement.executeQuery().use { result ->
+                            assertTrue(result.next())
+                            result.getString(1)
+                        }
+                    }
+            }
+
+        assertEquals("INSERTED", append("4".repeat(64)))
+        assertEquals("NO_OP", append("4".repeat(64)))
+        val conflict = assertThrows<SQLException> { append("6".repeat(64)) }
+        assertEquals("23505", conflict.sqlState)
+
+        DriverManager.getConnection(url, "decision_app", APP_PASSWORD).use { reader ->
+            reader
+                .prepareStatement("select count(*) from read_financial_engineering_snapshot('005930', ?::timestamptz)")
+                .use { statement ->
+                    statement.setString(1, "2026-08-20T23:09:59Z")
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals(0, result.getInt(1))
+                    }
+                    statement.setString(1, "2026-08-20T23:10:00Z")
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals(1, result.getInt(1))
+                    }
+                }
+        }
+        DriverManager.getConnection(url, postgres.username, postgres.password).use { admin ->
+            val immutable =
+                assertThrows<SQLException> {
+                    admin.createStatement().executeUpdate(
+                        "update financial_engineering_snapshots set quality='WARN'",
+                    )
+                }
+            assertEquals("55000", immutable.sqlState)
+        }
+        DriverManager.getConnection(url, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                for (privilege in listOf("SELECT", "INSERT", "UPDATE", "DELETE")) {
+                    statement
+                        .executeQuery(
+                            "select has_table_privilege('decision_app'," +
+                                "'financial_engineering_snapshots','$privilege')",
+                        ).use { result ->
+                            assertTrue(result.next())
+                            assertFalse(result.getBoolean(1), privilege)
+                        }
+                }
+            }
+        }
+    }
+
+    @Test
     fun `V72 Signal v2 exact ingest replays rejects conflicts rolls back and blocks fake pointer`() {
         fun payloadDigest(payload: String): String =
             HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(payload.toByteArray()))

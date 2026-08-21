@@ -6,9 +6,11 @@
   "payloadHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
   "references": {
     "contentHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "importTicketId": "rti_22222222222222222222222222222222",
     "jobId": "job_rag_index_00000001",
     "ownerRef": "usr_fixture_00000001",
-    "sourceRevisionId": "rev_fixture_00000001"
+    "profileId": "bge_m3_local_1024_v1",
+    "sourceRevisionId": "srv_fixture_00000001"
   },
   "schemaVersion": 1
 }

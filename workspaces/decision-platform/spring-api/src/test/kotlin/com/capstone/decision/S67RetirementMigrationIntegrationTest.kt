@@ -22,48 +22,52 @@ import java.util.UUID
 
 @Testcontainers
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class S67CrossMarketMigrationIntegrationTest {
+class S67RetirementMigrationIntegrationTest {
     @BeforeAll
-    fun migrate() {
-        Flyway
-            .configure()
-            .dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
-            .locations("classpath:db/migration")
-            .placeholders(
-                mapOf(
-                    "brokerageDbCapabilityTokenSha256" to
-                        SpringApiIntegrationTestBase.TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
-                ),
-            ).javaMigrations(s21ActorTrustMigration())
-            .load()
-            .migrate()
+    fun migrateAndRetire() {
+        flyway("78").migrate()
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_market_writer", MARKET_WRITER_PASSWORD).use { writer ->
+            assertEquals("INSERTED", appendHistoricalRow(writer))
+        }
+        flyway().migrate()
     }
 
     @Test
-    fun `writer function is idempotent immutable and owner scoped reader is point in time bounded`() {
-        val semanticHash = semanticHash(SCORE)
-        DriverManager.getConnection(postgres.jdbcUrl, "decision_market_writer", MARKET_WRITER_PASSWORD).use { writer ->
-            assertEquals("INSERTED", append(writer, semanticHash, ARTIFACT_HASH))
-            assertEquals("NO_OP", append(writer, semanticHash, ARTIFACT_HASH))
-            val conflict = assertThrows<SQLException> { append(writer, semanticHash, "9".repeat(64)) }
-            assertEquals("23505", conflict.sqlState)
-            assertThrows<SQLException> {
-                writer.createStatement().use { it.executeQuery("select * from cross_market_risk_snapshots_v2") }
-            }
-        }
-
-        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { app ->
-            app.autoCommit = false
-            app.prepareStatement("select set_config('app.actor_user_id', ?, true)").use {
-                it.setString(1, "usr_demo_user")
-                it.executeQuery().use { result -> assertTrue(result.next()) }
-            }
-            assertEquals(0, readCount(app, AVAILABLE_AT.minusSeconds(1)))
-            assertEquals(1, readCount(app, AVAILABLE_AT))
-            app.rollback()
-        }
-
+    fun `V79 preserves immutable audit row and removes reader writer capabilities`() {
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use { statement ->
+                statement.executeQuery("select version from flyway_schema_history order by installed_rank").use { result ->
+                    val versions = mutableListOf<String>()
+                    while (result.next()) versions += result.getString(1)
+                    assertEquals((1..79).map(Int::toString), versions)
+                }
+                statement.executeQuery("select count(*), min(artifact_hash) from cross_market_risk_snapshots_v2").use { result ->
+                    assertTrue(result.next())
+                    assertEquals(1, result.getInt(1))
+                    assertEquals(ARTIFACT_HASH, result.getString(2))
+                }
+                statement
+                    .executeQuery(
+                        "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace " +
+                            "where n.nspname='public' and p.proname in " +
+                            "('append_cross_market_risk_snapshot_v2','read_cross_market_decision_input_v2')",
+                    ).use { result ->
+                        assertTrue(result.next())
+                        assertEquals(0, result.getInt(1))
+                    }
+                for (role in listOf("decision_market_writer", "decision_app")) {
+                    statement
+                        .executeQuery(
+                            "select has_table_privilege('$role','cross_market_risk_snapshots_v2','SELECT')," +
+                                "has_table_privilege('$role','cross_market_risk_snapshots_v2','INSERT')," +
+                                "has_table_privilege('$role','cross_market_risk_snapshots_v2','UPDATE')," +
+                                "has_table_privilege('$role','cross_market_risk_snapshots_v2','DELETE')",
+                        ).use { result ->
+                            assertTrue(result.next())
+                            (1..4).forEach { column -> assertFalse(result.getBoolean(column)) }
+                        }
+                }
+            }
             val immutable =
                 assertThrows<SQLException> {
                     owner.createStatement().use {
@@ -71,52 +75,38 @@ class S67CrossMarketMigrationIntegrationTest {
                     }
                 }
             assertEquals("55000", immutable.sqlState)
-            owner.createStatement().use { statement ->
-                statement
-                    .executeQuery(
-                        "select has_table_privilege('decision_market_writer'," +
-                            "'cross_market_risk_snapshots_v2','INSERT')",
-                    ).use { result ->
-                        assertTrue(result.next())
-                        assertFalse(result.getBoolean(1))
-                    }
-            }
         }
-    }
-
-    @Test
-    fun `canonical integer score and approved threshold publish without numeric scale drift`() {
-        val availableAt = AVAILABLE_AT.plusSeconds(1)
-        val staleAt = STALE_AT.plusSeconds(1)
-        val semanticHash = semanticHash("100", "95", availableAt, staleAt)
 
         DriverManager.getConnection(postgres.jdbcUrl, "decision_market_writer", MARKET_WRITER_PASSWORD).use { writer ->
-            assertEquals(
-                "INSERTED",
-                append(
-                    writer,
-                    semanticHash,
-                    ARTIFACT_HASH,
-                    snapshotId = UUID.fromString("22222222-2222-4222-8222-222222222222"),
-                    score = "100",
-                    threshold = "95",
-                    availableAt = availableAt,
-                    staleAt = staleAt,
-                ),
-            )
+            val unavailable = assertThrows<SQLException> { appendHistoricalRow(writer) }
+            assertEquals("42883", unavailable.sqlState)
+        }
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { app ->
+            val denied =
+                assertThrows<SQLException> {
+                    app.createStatement().use { it.executeQuery("select * from cross_market_risk_snapshots_v2") }
+                }
+            assertEquals("42501", denied.sqlState)
         }
     }
 
-    private fun append(
-        writer: Connection,
-        semanticHash: String,
-        artifactHash: String,
-        snapshotId: UUID = SNAPSHOT_ID,
-        score: String = SCORE,
-        threshold: String = THRESHOLD,
-        availableAt: Instant = AVAILABLE_AT,
-        staleAt: Instant = STALE_AT,
-    ): String =
+    private fun flyway(target: String? = null): Flyway {
+        val configuration =
+            Flyway
+                .configure()
+                .dataSource(postgres.jdbcUrl, postgres.username, postgres.password)
+                .locations("classpath:db/migration")
+                .placeholders(
+                    mapOf(
+                        "brokerageDbCapabilityTokenSha256" to
+                            SpringApiIntegrationTestBase.TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
+                    ),
+                ).javaMigrations(s21ActorTrustMigration())
+        if (target != null) configuration.target(target)
+        return configuration.load()
+    }
+
+    private fun appendHistoricalRow(writer: Connection): String =
         writer
             .prepareStatement(
                 """
@@ -129,26 +119,26 @@ class S67CrossMarketMigrationIntegrationTest {
             ).use { statement ->
                 val values =
                     listOf(
-                        snapshotId.toString(),
+                        SNAPSHOT_ID.toString(),
                         "usr_demo_user",
                         OWNER_SCOPE,
                         SYMBOL,
-                        availableAt.toString(),
-                        staleAt.toString(),
+                        AVAILABLE_AT.toString(),
+                        STALE_AT.toString(),
                         "SYNTHETIC_FIXTURE",
                         "STORED_SNAPSHOT",
                         "WARN_ONLY",
                         "AVAILABLE",
                         "PASS",
-                        score,
-                        threshold,
+                        SCORE,
+                        THRESHOLD,
                         THRESHOLD_HASH,
                         CONFIG_HASH,
                         "NEW_BUY",
-                        availableAt.toString(),
+                        AVAILABLE_AT.toString(),
                         EXPOSURE_HASH,
-                        semanticHash,
-                        artifactHash,
+                        semanticHash(),
+                        ARTIFACT_HASH,
                         "{}",
                         "{}",
                     )
@@ -159,36 +149,15 @@ class S67CrossMarketMigrationIntegrationTest {
                 }
             }
 
-    private fun readCount(
-        connection: Connection,
-        evaluationAsOf: Instant,
-    ): Int =
-        connection
-            .prepareStatement("select count(*) from read_cross_market_decision_input_v2(?, ?, ?::timestamptz)")
-            .use { statement ->
-                statement.setString(1, OWNER_SCOPE)
-                statement.setString(2, SYMBOL)
-                statement.setString(3, evaluationAsOf.toString())
-                statement.executeQuery().use { result ->
-                    assertTrue(result.next())
-                    result.getInt(1)
-                }
-            }
-
-    private fun semanticHash(
-        score: String,
-        threshold: String = THRESHOLD,
-        availableAt: Instant = AVAILABLE_AT,
-        staleAt: Instant = STALE_AT,
-    ): String {
+    private fun semanticHash(): String {
         val preimage =
             listOf(
                 "s6-cross-market-semantic-v2",
                 SYMBOL,
-                canonicalInstant(availableAt),
-                canonicalInstant(staleAt),
-                score,
-                threshold,
+                canonicalInstant(AVAILABLE_AT),
+                canonicalInstant(STALE_AT),
+                SCORE,
+                THRESHOLD,
                 THRESHOLD_HASH,
                 CONFIG_HASH,
                 "NEW_BUY",

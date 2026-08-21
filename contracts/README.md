@@ -607,7 +607,8 @@ uv run --frozen python contracts/validate.py
 > 계획 타당성: `PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES`.
 > 현재 상태: `S4_8A=CONTRACT_LOCKED / S4_8_CORE6_V2=CONTRACT_LOCKED /
 > S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE /
-> S6.6_S6.7=NOT_IMPLEMENTED`.
+> S6.6_CODE=COMPLETE / S6.6_REAL_EMPIRICAL=DATASET_UNAVAILABLE /
+> S6.7_P1_WARN_ONLY_CODE=COMPLETE / S6.7_OPERATIONAL_ACTIVATION=OFF_UNAVAILABLE`.
 > 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 DoD가 아니다. 새 agent framework·별도
 > cloud·Kafka는 hard dependency가 아니다.
@@ -615,7 +616,9 @@ uv run --frozen python contracts/validate.py
 > S4.8A의 machine-readable schema·fixture·catalog와 generator/hash parity는 계약으로
 > 고정됐다. S4.8B/C offline-only 구현은 provider 없는 Python fixture/scorer/projection,
 > V23 append-only evidence 저장과 Spring latest snapshot read port를 추가한다. snapshot
-> materialization, provider activation, OpenAPI endpoint, RiskEngine 연결은 아직 구현되지 않았다.
+> v2 snapshot materialization, V78 writer/reader와 별도 P1 `WARN_ONLY` overlay는 구현됐다.
+> provider activation과 public cross-market endpoint는 없고, real threshold 부재 시 runtime은
+> `UNAVAILABLE`이며 기본 mode는 `OFF`다.
 
 순서 0 `S4.READ`는 관련 공개·private 명세 EOF receipt와 충돌 목록만 남기는 read-only
 preflight다. 첫 변경 PR은 아래 일곱 계약과 fixture/generator/parity만 포함하는

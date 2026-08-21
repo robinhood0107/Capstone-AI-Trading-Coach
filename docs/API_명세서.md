@@ -2804,6 +2804,13 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 
 금융공학 계산 기능은 투자 권유나 주문 실행을 위한 기능이 아니다. 이 API는 RAG 금융수학 카드, 주문검토 리스크 설명, 백테스트 리포트, 학습 화면에 필요한 계산 결과만 제공한다.
 
+> S6.4 공개 erratum(2026-08-21): request의 `contractId + valuationAt`을 기준으로 서버가
+> effective-dated `option_contract_terms.v1`을 조회하고 `tau=(lastTradingAt-valuationAt)/31536000`
+> (`ACT/365F`)를 계산한다. client가 `optionType`, `strikePrice`, `timeToMaturityYears`,
+> `finalSettlementDate`, holding/backtest period를 계약조건이나 만기로 지정할 수 없다. valuation은
+> `Q_DISCOUNTED_VALUE`, 예측 평균은 `P_PREDICTIVE_MEAN`으로 분리하며 아래 값은 교육·수치검증용이고
+> Signal, RiskDecision, 주문 또는 보수적 `conservativeRiskDelta` 권한이 없다.
+
 ### 12.1 Black-Scholes 가격 계산
 
 `POST /api/v1/financial-engineering/options/black-scholes`
@@ -2812,10 +2819,9 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 
 ```json
 {
-  "optionType": "CALL",
+  "contractId": "KOSPI200_OPTION_FIXTURE_202609_CALL_75000",
+  "valuationAt": "2026-06-11T09:20:00+09:00",
   "underlyingPrice": 72000,
-  "strikePrice": 75000,
-  "timeToMaturityYears": 0.25,
   "riskFreeRate": 0.032,
   "dividendYield": 0.01,
   "volatility": 0.28
@@ -2830,9 +2836,12 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
   "data": {
     "model": "BLACK_SCHOLES_MERTON",
     "optionType": "CALL",
-    "theoreticalPrice": 2315.42,
-    "d1": -0.0941,
-    "d2": -0.2341,
+    "measure": "Q_DISCOUNTED_VALUE",
+    "theoreticalPrice": 2917.937245391,
+    "d1": -0.182299960859,
+    "d2": -0.322299960859,
+    "timeToMaturityYears": 0.25,
+    "contractTermsHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "assumptions": [
       "European exercise",
       "constant volatility",
@@ -2852,10 +2861,9 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 
 ```json
 {
-  "optionType": "PUT",
+  "contractId": "KOSPI200_OPTION_FIXTURE_202609_PUT_75000",
+  "valuationAt": "2026-06-11T09:20:00+09:00",
   "underlyingPrice": 72000,
-  "strikePrice": 75000,
-  "timeToMaturityYears": 0.25,
   "riskFreeRate": 0.032,
   "dividendYield": 0.01,
   "volatility": 0.28
@@ -2868,18 +2876,21 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 {
   "success": true,
   "data": {
-    "delta": -0.5204,
-    "gamma": 0.000039,
-    "vega": 141.23,
-    "thetaPerYear": -5380.44,
-    "thetaPerDay": -14.74,
-    "rho": -92.18,
+    "measure": "Q_DISCOUNTED_VALUE",
+    "delta": -0.570897306492,
+    "gamma": 0.000038828202272,
+    "vegaPerUnitVolatility": 14089.9780404,
+    "vegaPerVolPoint": 140.899780404,
+    "calendarThetaPerYear": -6810.08298,
+    "calendarThetaPerDay": -18.6577616,
+    "rhoPerUnitRate": -11651.17803,
+    "rhoPerRatePoint": -116.5117803,
     "interpretation": {
       "delta": "기초자산 가격 변화에 대한 옵션가격 민감도",
       "gamma": "Delta 변화율",
-      "vega": "변동성 변화에 대한 민감도",
-      "theta": "시간 경과에 따른 가치 감소",
-      "rho": "금리 변화에 대한 민감도"
+      "vega": "변동성 1.00 또는 1%p 변화에 대한 단위별 민감도",
+      "theta": "ACT/365F calendar time 경과에 대한 연/일 단위 민감도",
+      "rho": "연속복리 금리 1.00 또는 1%p 변화에 대한 단위별 민감도"
     }
   }
 }
@@ -2893,18 +2904,13 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 
 ```json
 {
-  "optionType": "CALL",
-  "marketPrice": 2315.42,
+  "contractId": "KOSPI200_OPTION_FIXTURE_202609_CALL_75000",
+  "valuationAt": "2026-06-11T09:20:00+09:00",
+  "marketPrice": 2917.937245391,
   "underlyingPrice": 72000,
-  "strikePrice": 75000,
-  "timeToMaturityYears": 0.25,
   "riskFreeRate": 0.032,
   "dividendYield": 0.01,
-  "solver": "BISECTION",
-  "lowerVolatility": 0.0001,
-  "upperVolatility": 5.0,
-  "tolerance": 0.000001,
-  "maxIterations": 100
+  "solver": "BISECTION"
 }
 ```
 
@@ -2914,7 +2920,7 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 {
   "success": true,
   "data": {
-    "impliedVolatility": 0.280001,
+    "impliedVolatility": 0.28,
     "solver": "BISECTION",
     "iterations": 37,
     "pricingError": 0.0031,
@@ -2940,12 +2946,17 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 
 | 입력 | 도메인 |
 |---|---|
-| `underlyingPrice`, `strikePrice`, `marketPrice` | > 0 |
-| `timeToMaturityYears` | > 0 |
+| `contractId` | trusted `option_contract_terms.v1`에서 valuation 시점에 유효한 계약만 허용 |
+| `valuationAt` | `lastTradingAt`보다 이전이어야 하며 timezone 포함 |
+| `underlyingPrice`, `marketPrice` | > 0 |
 | `volatility` | > 0 (IV 역산 탐색 범위는 [0.0001, 5.0]) |
 | `riskFreeRate`, `dividendYield` | 연속복리 소수 표기 (3.2% = 0.032) |
 
 도메인 위반은 `VALIDATION_ERROR`(400)로, 계산 자체의 실패(브래킷 실패, 미수렴)는 `IV_NOT_BRACKETED`/`IV_NOT_CONVERGED`로 구분해 반환한다.
+
+`marketPrice=2315.42`를 별도 회귀 fixture로 사용할 때 동일 계약조건의 expected IV는
+`0.237005877501`이다. 이 값과 `marketPrice=2917.937245391 → IV=0.28` round-trip은
+solver identity 검증이며 독립 fair-value 또는 실제 성과 증거가 아니다.
 
 계산 결과는 설명과 리스크 이해를 돕는 보조 정보다. `Decision API`는 이 값을 직접 주문 신호로 해석하지 않는다.
 

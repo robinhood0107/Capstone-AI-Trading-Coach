@@ -36,6 +36,7 @@ def _rows() -> list[EventObservation]:
                 required_source_available_ats=(source_at, source_at - timedelta(minutes=1)),
                 xkrx_open_at=source_at + timedelta(hours=1),
                 cause_supported=index % 3 == 0,
+                cause_conflict=index % 17 == 0,
             )
         )
     return result
@@ -70,6 +71,8 @@ def test_validation_only_threshold_freeze_and_untouched_test_are_deterministic()
     assert first.event_study["performanceClaimAllowed"] is False
     assert first.event_study["bootstrap"]["replications"] == 2000
     assert first.event_study["bootstrap"]["unit"] == "EVENT_DATE"
+    assert first.event_study["causeEvidence"]["conflictDenominator"] > 0
+    assert first.event_study["causeEvidence"]["unsupportedDenominator"] > 0
     assert set(first.sensitivity_metrics) == {25, 30, 35}
     _validate("cross_market_threshold_freeze.v1", first.threshold_freeze)
     _validate("cross_market_event_study.v2", first.event_study)
@@ -108,6 +111,12 @@ def test_unavailable_dataset_and_zero_denominators_remain_honest() -> None:
     assert report["metrics"]["triggerCount"] == 0
     for name in ("falseBlockRate", "downsideAvoidedBps", "missedUpsideBps", "netProtectionBps"):
         assert report["metrics"][name] == {"value": None, "estimationStatus": "NOT_ESTIMABLE"}
+    assert report["causeEvidence"] == {
+        "conflictDenominator": 0,
+        "unsupportedDenominator": 0,
+        "evidenceConflictRate": {"value": None, "estimationStatus": "NOT_ESTIMABLE"},
+        "unsupportedCausalityRate": {"value": None, "estimationStatus": "NOT_ESTIMABLE"},
+    }
     assert report["performanceClaimAllowed"] is False
     _validate("cross_market_event_study.v2", report)
 
@@ -131,6 +140,14 @@ def test_lightgbm_replay_accepts_only_immutable_available_buy_candidate() -> Non
     assert synthetic["evidenceLabel"] == "SYNTHETIC_FIXTURE"
     assert synthetic["performanceClaimAllowed"] is False
     assert real["performanceClaimAllowed"] is True
+    missing_real_dataset = build_lightgbm_policy_replay(
+        ResearchCandidate("d" * 64, "AVAILABLE", True, "BUY", "REAL_PIT"),
+        pit_dataset_available=False,
+    )
+    assert missing_real_dataset["datasetStatus"] == "DATASET_UNAVAILABLE"
+    assert missing_real_dataset["candidateArtifactHash"] == "d" * 64
+    assert missing_real_dataset["candidateQualificationStatus"] == "AVAILABLE"
+    assert missing_real_dataset["performanceClaimAllowed"] is False
     requirements = data_requirements_packet()
     assert requirements["expectedCalls"] == 0
     assert json.loads(

@@ -29,3 +29,18 @@ __all__ = (
     "historical_var",
     "historical_cvar",
 )
+from app.financial_engineering.hmm_regime import (
+    HMMArtifact,
+    HMMRegimeResult,
+    RegimeObservation,
+    build_causal_features,
+    fit_hmm_regime,
+)
+
+__all__ = [
+    "HMMArtifact",
+    "HMMRegimeResult",
+    "RegimeObservation",
+    "build_causal_features",
+    "fit_hmm_regime",
+]

@@ -75,6 +75,14 @@ class S6ContractTest(unittest.TestCase):
         self.assertEqual("ALLOW_TO_WARN_NEW_BUY_ONLY", v3["crossMarketOverlay"]["maximumAuthority"])
         self.assertFalse(v3["crossMarketOverlay"]["providerFanoutAllowed"])
 
+    def test_zero_denominator_cause_metrics_are_not_estimable(self) -> None:
+        fixture = _load(EXAMPLE_DIR / "cross_market_event_study.v2.valid.json")
+        cause = fixture["causeEvidence"]
+        self.assertIsInstance(cause, dict)
+        cause["evidenceConflictRate"] = {"value": 0, "estimationStatus": "ESTIMATED"}
+        with self.assertRaisesRegex(ContractValidationError, "zero-denominator"):
+            validate_semantics("cross_market_event_study.v2", fixture)
+
     def test_hash_authority_mutation_and_explanation_invariance(self) -> None:
         fixture = _load(EXAMPLE_DIR / "cross_market_risk_snapshot.v2.valid.json")
         included = ["score", "thresholdPercentile", "thresholdArtifactHash", "configHash", "exposureCatalogHash"]

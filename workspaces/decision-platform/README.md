@@ -61,6 +61,7 @@ storage 0을 유지한다. 별도 Optional 3 executor는 Finnhub Recommendation/
 > 구현 상태: `S4_8A=CONTRACT_LOCKED / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE /
 > S6.6_CODE=COMPLETE / S6.6_REAL_EMPIRICAL=DATASET_UNAVAILABLE /
 > S6.7_P1_WARN_ONLY_CODE=COMPLETE / PROVIDER_ENDPOINT=NOT_IMPLEMENTED /
+> S6.7_RUNTIME_COMPOSITION=COMPLETE / S6.7_RUNTIME_E2E=BLOCKED /
 > OPERATIONAL_ACTIVATION=OFF_UNAVAILABLE`.
 > 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 데이터와
 > 실시간 SOX/VIX feed는 post-P1 선택지이고, 새 agent framework·별도 cloud·Kafka는 hard
@@ -115,8 +116,10 @@ P1 기본 mode는 `WARN_ONLY`다. versioned exposure catalog에 명시된 종목
 
 S4.8B는 provider 없는 수동/offline EOD fixture materialization, append-only 저장과 I/O 없는
 결정적 `CrossMarketScorer` kernel을 구현했다. S6.6은 scorer output으로 event-study/replay와
-threshold freeze 계약을 구현했고, S6.7은 snapshot materializer·V78 저장 reader·P1 overlay를
-구현했다. real candidate가 없어 production threshold는 동결하지 않았고 runtime은 OFF다.
+threshold freeze 계약과 bounded provider-free replay runner를 구현했고, S6.7은 snapshot
+materializer·V78 저장 reader·P1 overlay·default-OFF Spring composition을 구현했다. real candidate가
+없어 production threshold는 동결하지 않았고 runtime은 OFF다. 기존 Decision exact-14 payload 뒤의
+endpoint wiring은 additive projection과 운영 config 승인 전이므로 아직 E2E 완료가 아니다.
 S7.3은 동일 저장 port의 scheduling만 추가하며 새 provider 호출이나 source ownership을 만들지
 않는다.
 

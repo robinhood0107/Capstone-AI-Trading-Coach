@@ -33,6 +33,21 @@
         "MANUAL_EOD"
       ]
     },
+    "exposure": {
+      "enum": [
+        "NEW_BUY",
+        "INCREASE_BUY",
+        "SELL",
+        "REDUCE",
+        "LIQUIDATION",
+        "EXISTING_POSITION",
+        "UNCLASSIFIED"
+      ]
+    },
+    "exposureAvailableAt": {
+      "format": "date-time",
+      "type": "string"
+    },
     "exposureCatalogHash": {
       "pattern": "^[0-9a-f]{64}$",
       "type": "string"
@@ -71,6 +86,10 @@
       "pattern": "^[0-9a-f-]{36}$",
       "type": "string"
     },
+    "staleAt": {
+      "format": "date-time",
+      "type": "string"
+    },
     "storageMode": {
       "enum": [
         "ARTIFACT_ONLY",
@@ -106,6 +125,7 @@
     "snapshotId",
     "symbol",
     "availableAt",
+    "staleAt",
     "evidenceMode",
     "storageMode",
     "availability",
@@ -114,6 +134,8 @@
     "thresholdPercentile",
     "thresholdArtifactHash",
     "configHash",
+    "exposure",
+    "exposureAvailableAt",
     "exposureCatalogHash",
     "artifactHash",
     "semanticInputHash",

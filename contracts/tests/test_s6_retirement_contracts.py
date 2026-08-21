@@ -26,6 +26,11 @@ def _load(path):
 
 
 class S6RetirementContractTest(unittest.TestCase):
+    def test_contracts_ci_checks_both_s6_generators(self) -> None:
+        workflow = (ROOT / ".github/workflows/contracts-ci.yml").read_text()
+        self.assertIn("contracts/generate_s6_contracts.py --check", workflow)
+        self.assertIn("contracts/generate_s6_retirement_contracts.py --check", workflow)
+
     def test_generator_is_deterministic_and_checked_in(self) -> None:
         outputs = build_outputs()
         self.assertEqual(4, len(outputs))

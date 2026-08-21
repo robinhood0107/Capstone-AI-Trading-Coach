@@ -97,6 +97,12 @@ jobs:
       - name: Check generated S5.7A market-data contracts
         run: uv run --frozen python contracts/generate_s5_7a_market_data_contracts.py --check
 
+      - name: Check generated S6 financial-engineering contracts
+        run: uv run --frozen python contracts/generate_s6_contracts.py --check
+
+      - name: Check generated S6 retirement contracts
+        run: uv run --frozen python contracts/generate_s6_retirement_contracts.py --check
+
       - name: Check generated P1 verification contracts
         run: uv run --frozen python contracts/generate_p1_verification_contracts.py --check
 

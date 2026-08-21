@@ -5,7 +5,9 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator, FormatChecker
 import numpy as np
+import pytest
 
+from app.s8_demo.demo_seed import build_demo_seed, materialize_demo
 from app.s8_demo.synthetic_bundle import build_synthetic_bundle
 
 
@@ -53,6 +55,34 @@ def test_scalar_metrics_are_reproducible_at_frozen_tolerance() -> None:
     second_metrics = second.backtest_projection["data"]["view"]["strategies"][0]["metrics"]
     for name in first_metrics:
         assert np.isclose(first_metrics[name], second_metrics[name], rtol=1e-12, atol=1e-12)
+
+
+def test_demo_seed_is_explicit_offline_bounded_and_idempotent(tmp_path: Path) -> None:
+    seed = build_demo_seed(brokerage_mode="INTERNAL_PAPER")
+    _validate("s8-demo-seed.v1.schema.json", seed)
+    assert [scenario["expectedOutcome"] for scenario in seed["scenarios"]] == ["ALLOW", "WARN", "BLOCK", "HOLD"]
+    assert len(seed["ragQuestions"]) == 3
+    assert seed["crossMarketCapability"] == "RETIRED_NOT_APPLICABLE"
+    assert seed["providerCalls"] == seed["liveAccountCalls"] == seed["liveOrderCalls"] == 0
+    first = materialize_demo(config_path=CONFIG, output_dir=tmp_path, brokerage_mode="INTERNAL_PAPER")
+    second = materialize_demo(config_path=CONFIG, output_dir=tmp_path, brokerage_mode="INTERNAL_PAPER")
+    assert first == second
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "backtest.json",
+        "demo-receipt.json",
+        "demo-seed.json",
+        "manifest.json",
+        "model-evaluation.json",
+    ]
+
+
+def test_demo_seed_rejects_implicit_mode_and_conflicting_output(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="explicit_internal_paper"):
+        build_demo_seed(brokerage_mode="")
+    materialize_demo(config_path=CONFIG, output_dir=tmp_path, brokerage_mode="INTERNAL_PAPER")
+    (tmp_path / "demo-seed.json").write_text("{}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="demo_seed_conflict"):
+        materialize_demo(config_path=CONFIG, output_dir=tmp_path, brokerage_mode="INTERNAL_PAPER")
 
 
 def _validate(schema_name: str, payload: dict[str, object]) -> None:

@@ -1,0 +1,110 @@
+{
+  "$id": "contracts/schemas/s8-user-test-response.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "answers": {
+      "additionalProperties": false,
+      "properties": {
+        "automaticTradingAuthorityClaimed": {
+          "const": false
+        },
+        "confidenceScore": {
+          "maximum": 5,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "evidenceClassifications": {
+          "items": {
+            "enum": [
+              "CONFIRMED_FACT",
+              "REPORTED_CLAIM",
+              "MARKET_INTERPRETATION",
+              "HYPOTHESIS"
+            ]
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "improvementTags": {
+          "items": {
+            "enum": [
+              "NAVIGATION",
+              "TERMINOLOGY",
+              "EVIDENCE",
+              "TIMING",
+              "ACCESSIBILITY",
+              "NONE"
+            ]
+          },
+          "maxItems": 3,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "retiredCapabilityIdentified": {
+          "type": "boolean"
+        },
+        "timingLimitExplained": {
+          "type": "boolean"
+        },
+        "uncertaintyIdentified": {
+          "type": "boolean"
+        },
+        "usabilityScore": {
+          "maximum": 7,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "retiredCapabilityIdentified",
+        "evidenceClassifications",
+        "uncertaintyIdentified",
+        "timingLimitExplained",
+        "automaticTradingAuthorityClaimed",
+        "usabilityScore",
+        "confidenceScore",
+        "improvementTags"
+      ],
+      "type": "object"
+    },
+    "collectedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "consentGranted": {
+      "const": true
+    },
+    "consentVersion": {
+      "const": "S8_USER_TEST_CONSENT_V1"
+    },
+    "participantId": {
+      "pattern": "^part_[0-9a-f]{24}$",
+      "type": "string"
+    },
+    "piiCollected": {
+      "const": false
+    },
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "withdrawalCodeHash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "participantId",
+    "consentVersion",
+    "consentGranted",
+    "collectedAt",
+    "withdrawalCodeHash",
+    "piiCollected",
+    "answers"
+  ],
+  "title": "s8-user-test-response.v1",
+  "type": "object"
+}

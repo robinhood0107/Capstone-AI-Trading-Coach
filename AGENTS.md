@@ -497,6 +497,21 @@ Gradle build), `python-ci.yml`(Python 3.12 품질 게이트)이다. 아래 시�
 - CI와 fixture 검증의 provider 호출은 계속 0이다. 실제 smoke 결과는 adapter PR 병합과 post-merge CI
   성공 뒤 발급한 packet의 실측 report만으로 갱신한다.
 
+## P1.V1 격리 provider read smoke 실측 현재 상태
+
+- 2026-08-21 clean merged SHA `80ff5fae1b65d2d181497538623657dd664e6958`의 PR 및 post-merge
+  CI 성공 뒤 TTL 60분 one-shot packet `7a5e180b5a6b2066bd74a32a669ac7565c07cc819646388a00caf583e79eed3c`를
+  정확히 한 번 실행했다. evidence clock으로 선택한 대상 XKRX session은 `2026-08-20`이다.
+- content-free report SHA는 `7aefeb03d3ce66b5d16b50ee25031ef38b7c34bf9f0aabea6c464d82d587c938`이며
+  KRX KOSPI, KRX KOSDAQ, KIS 현재가, KIS 일봉, ECOS 기준금리, ECOS 원/달러 여섯 gate가 모두
+  `PASS`했다. data provider physical call은 정확히 6회, KIS token은 cache miss로 1회였고
+  retransmission은 0이다.
+- account, balance, order call과 product DB write는 각각 0이다. raw body/header/token/credential/URL과
+  실제 시장값은 report에 남기지 않았다. 같은 packet은 claim이 소비했으므로 재실행하지 않는다.
+- 이 결과로 `PROVIDER_READ_SMOKE_EXECUTION=PASS`만 갱신한다. `FULL_LIVE_DAILY_COLLECTOR`,
+  `S6_OFFLINE`은 계속 `NOT_IMPLEMENTED`, LightGBM production은 `INTENTIONALLY_DISABLED`,
+  `P1_OVERALL`은 `INCOMPLETE`다.
+
 ## Java/Kotlin/Spring 기준 스택
 
 - JVM은 **JDK 25 LTS**로 고정한다. JDK 26은 최신 feature release지만 이 프로젝트의 기준은 최신 LTS다.

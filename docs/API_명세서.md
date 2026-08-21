@@ -3962,3 +3962,21 @@ p1-verify verify <REPORT>
 - report는 implementation/execution/aggregate, gate별 physical count와 content-free SHA만 포함한다.
   raw body/header/token/credential/URL/실제 값은 API나 artifact에 노출하지 않는다.
 - CLI PASS는 full live daily collector, S6, Signal/Risk/order 또는 production activation 상태를 바꾸지 않는다.
+
+## P1.V1 격리 provider smoke 실측 API 비변경 overlay (2026-08-21)
+
+clean merged SHA `80ff5fae1b65d2d181497538623657dd664e6958`에서 target `2026-08-20`으로
+발급한 one-shot packet `7a5e180b5a6b2066bd74a32a669ac7565c07cc819646388a00caf583e79eed3c`를
+한 번 실행했다. 검증된 content-free report
+`7aefeb03d3ce66b5d16b50ee25031ef38b7c34bf9f0aabea6c464d82d587c938`에서 여섯
+provider gate는 모두 `PASS`, data physical call은 6, KIS token call은 1, retransmission과
+account/balance/order/product DB write는 0이었다.
+
+이 실행으로 추가되거나 변경된 HTTP/gRPC/Public OpenAPI endpoint는 0이다. API current state는 다음과
+같이 유지한다.
+
+- `PROVIDER_READ_SMOKE=PASS`는 provider read health 증거일 뿐이다.
+- `FULL_LIVE_DAILY_COLLECTOR=NOT_IMPLEMENTED`이며 request-time provider fan-out은 없다.
+- Market Data public API와 S6 derived snapshot API는 아직 없다.
+- Signal v2 LightGBM은 계속 `ABSTAIN/MISSING_EVIDENCE`이고 RiskDecision/order 권한은 0이다.
+- P1 전체 판정은 `INCOMPLETE`다.

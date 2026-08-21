@@ -31,9 +31,9 @@ class _ReceiptPublisher:
     def __init__(self) -> None:
         self.publications: list[BatchPublication] = []
 
-    def publish(self, publication: BatchPublication) -> str:
-        self.publications.append(publication)
-        return "INSERTED"
+    def publish_all(self, publications: tuple[BatchPublication, ...]) -> tuple[str, ...]:
+        self.publications.extend(publications)
+        return tuple("INSERTED" for _ in publications)
 
 
 def main() -> int:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 import time
 import tracemalloc
 import uuid
@@ -63,14 +64,22 @@ class BatchResult:
     status: str
     publications: tuple[BatchPublication, ...]
     error_code: str | None
+    diagnostic_steps: tuple[BatchStep, ...] = ()
     provider_calls: int = 0
 
 
 class FinancialEngineeringPublicationPort(Protocol):
-    def publish(self, publication: BatchPublication) -> str: ...
+    def publish_all(self, publications: tuple[BatchPublication, ...]) -> tuple[str, ...]: ...
 
 
 T = TypeVar("T")
+
+
+class BatchStepFailure(RuntimeError):
+    def __init__(self, error_code: str, steps: tuple[BatchStep, ...]) -> None:
+        super().__init__(error_code)
+        self.error_code = error_code
+        self.steps = steps
 
 
 class ManualFinancialEngineeringBatch:
@@ -94,32 +103,42 @@ class ManualFinancialEngineeringBatch:
     def run(self) -> BatchResult:
         publications: list[BatchPublication] = []
         try:
-            for symbol in self._reader.current_symbols():
-                publication = self._run_symbol(symbol)
-                self._publisher.publish(publication)
-                publications.append(publication)
+            symbols = self._reader.current_symbols()
+            if not symbols:
+                raise ValueError("STORED_SYMBOL_SET_EMPTY")
+            for symbol in symbols:
+                publications.append(self._run_symbol(symbol))
+            outcomes = self._publisher.publish_all(tuple(publications))
+            if len(outcomes) != len(publications) or any(
+                outcome not in {"INSERTED", "NO_OP"} for outcome in outcomes
+            ):
+                raise RuntimeError("BATCH_PUBLICATION_INCOMPLETE")
         except Exception as error:
+            diagnostic_steps = error.steps if isinstance(error, BatchStepFailure) else ()
+            error_code = (
+                error.error_code
+                if isinstance(error, BatchStepFailure)
+                else _error_code(error)
+            )
             return BatchResult(
                 status="NOT_AVAILABLE" if not publications else "FAILED",
-                publications=tuple(publications),
-                error_code=type(error).__name__.upper()[:64],
+                publications=(),
+                error_code=error_code,
+                diagnostic_steps=diagnostic_steps,
             )
         return BatchResult("COMPLETE", tuple(publications), None)
 
     def _run_symbol(self, symbol: str) -> BatchPublication:
         steps: list[BatchStep] = []
-        observations, collection_step = _measure(
-            "STORED_COLLECTION", lambda: self._reader.read_closes(symbol)
-        )
-        steps.append(collection_step)
+        observations = _measure(steps, "STORED_COLLECTION", lambda: self._reader.read_closes(symbol))
         if len(observations) < 60:
-            raise ValueError("STORED_HISTORY_INSUFFICIENT")
-        closes, feature_step = _measure(
-            "FEATURE", lambda: np.asarray([float(item.close) for item in observations], dtype=np.float64)
+            _fail_step(steps, "FEATURE", "STORED_HISTORY_INSUFFICIENT")
+        closes = _measure(
+            steps,
+            "FEATURE",
+            lambda: np.asarray([float(item.close) for item in observations], dtype=np.float64),
         )
-        steps.append(feature_step)
-        inference, inference_step = _measure("INFERENCE", lambda: self._infer(closes))
-        steps.append(inference_step)
+        inference = _measure(steps, "INFERENCE", lambda: self._infer(closes))
         now = self._clock()
         if now.tzinfo is None:
             raise ValueError("CLOCK_MUST_BE_AWARE")
@@ -127,7 +146,8 @@ class ManualFinancialEngineeringBatch:
         source_manifest_hash = _hash_text(
             "\n".join(sorted(item.source_receipt_sha256 for item in observations))
         )
-        snapshot, snapshot_step = _measure(
+        snapshot = _measure(
+            steps,
             "SNAPSHOT",
             lambda: _snapshot(
                 symbol,
@@ -138,11 +158,16 @@ class ManualFinancialEngineeringBatch:
                 self._n_paths,
             ),
         )
-        steps.append(snapshot_step)
-        report, report_step = _measure(
-            "REPORT", lambda: _report(snapshot, observations[0].session_date.isoformat(), steps)
+        report = _measure(
+            steps,
+            "REPORT",
+            lambda: _report(snapshot, observations[0].session_date.isoformat(), steps),
         )
-        steps.append(report_step)
+        report_step = steps[-1]
+        report += (
+            f"- {report_step.name}: {report_step.wall_time_millis} ms, "
+            f"peak {report_step.peak_memory_bytes} bytes\n"
+        )
         report_bytes = report.encode()
         if not 1 <= len(report_bytes) <= MAX_REPORT_BYTES:
             raise ValueError("REPORT_SIZE_INVALID")
@@ -198,18 +223,37 @@ class ManualFinancialEngineeringBatch:
         }
 
 
-def _measure(name: str, function: Callable[[], T]) -> tuple[T, BatchStep]:
+def _measure(steps: list[BatchStep], name: str, function: Callable[[], T]) -> T:
     started = time.perf_counter_ns()
     tracemalloc.start()
     try:
         value = function()
         _, peak = tracemalloc.get_traced_memory()
-    except Exception:
+    except Exception as error:
+        _, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
-        raise
+        elapsed = (time.perf_counter_ns() - started) // 1_000_000
+        error_code = _error_code(error)
+        steps.append(
+            BatchStep(name, "FAILED", error_code, min(elapsed, 1_800_000), min(peak, 2_147_483_648))
+        )
+        raise BatchStepFailure(error_code, tuple(steps)) from None
     tracemalloc.stop()
     elapsed = (time.perf_counter_ns() - started) // 1_000_000
-    return value, BatchStep(name, "COMPLETE", None, min(elapsed, 1_800_000), min(peak, 2_147_483_648))
+    steps.append(BatchStep(name, "COMPLETE", None, min(elapsed, 1_800_000), min(peak, 2_147_483_648)))
+    return value
+
+
+def _fail_step(steps: list[BatchStep], name: str, error_code: str) -> None:
+    steps.append(BatchStep(name, "NOT_AVAILABLE", error_code, 0, 0))
+    raise BatchStepFailure(error_code, tuple(steps))
+
+
+def _error_code(error: Exception) -> str:
+    raw_error = str(error)
+    if 1 <= len(raw_error) <= 64 and raw_error.replace("_", "").isalnum():
+        return raw_error.upper()
+    return type(error).__name__.upper()[:64]
 
 
 def _snapshot(
@@ -286,16 +330,32 @@ def _report(snapshot: dict[str, object], window_start: str, prior_steps: list[Ba
 
 
 def write_publications(output_root: Path, publications: tuple[BatchPublication, ...]) -> None:
-    output_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if output_root.is_symlink():
-        raise ValueError("OUTPUT_ROOT_SYMLINK")
-    for publication in publications:
-        symbol = str(publication.snapshot["symbol"])
-        target = output_root / symbol
-        target.mkdir(mode=0o700)
-        _write_new(target / "financial_engineering_snapshot.v1.json", canonical_json_bytes(publication.snapshot))
-        _write_new(target / "financial_engineering_report_manifest.v1.json", canonical_json_bytes(publication.manifest))
-        _write_new(target / "financial_engineering_report.md", publication.report_markdown.encode())
+    if output_root.exists() or output_root.is_symlink():
+        raise ValueError("OUTPUT_ALREADY_EXISTS")
+    output_root.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    staging_root = output_root.parent / f".{output_root.name}.{uuid.uuid4().hex}.staging"
+    staging_root.mkdir(mode=0o700)
+    try:
+        for publication in publications:
+            symbol = str(publication.snapshot["symbol"])
+            target = staging_root / symbol
+            target.mkdir(mode=0o700)
+            _write_new(
+                target / "financial_engineering_snapshot.v1.json",
+                canonical_json_bytes(publication.snapshot),
+            )
+            _write_new(
+                target / "financial_engineering_report_manifest.v1.json",
+                canonical_json_bytes(publication.manifest),
+            )
+            _write_new(
+                target / "financial_engineering_report.md",
+                publication.report_markdown.encode(),
+            )
+        os.replace(staging_root, output_root)
+    except Exception:
+        # The staging directory is deliberately not promoted. A later run uses a new name.
+        raise
 
 
 def _write_new(path: Path, payload: bytes) -> None:

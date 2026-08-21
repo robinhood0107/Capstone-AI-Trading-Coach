@@ -40,23 +40,32 @@ class FinancialEngineeringSpringPythonE2eTest {
                     )
                 val mockMvc = MockMvcBuilders.standaloneSetup(FinancialEngineeringController(service)).build()
 
-                mockMvc.post("/api/v1/financial-engineering/options/black-scholes") {
-                    contentType = MediaType.APPLICATION_JSON
-                    content = request("CALL", "volatility", "0.28")
-                }.andExpect {
-                    status { isOk() }
-                    jsonPath("$.data.discountedValue", closeTo(2917.937245391, 1e-9))
-                    jsonPath("$.data.measure") { value("Q_DISCOUNTED_VALUE") }
-                    jsonPath("$.data.provenance.termsId") { value(CALL_TERMS) }
-                }
+                mockMvc
+                    .post("/api/v1/financial-engineering/options/black-scholes") {
+                        contentType = MediaType.APPLICATION_JSON
+                        content = request("CALL", "volatility", "0.28")
+                    }.andExpect {
+                        status { isOk() }
+                        jsonPath("$.data.discountedValue", closeTo(2917.937245391, 1e-9))
+                        jsonPath("$.data.measure") { value("Q_DISCOUNTED_VALUE") }
+                        jsonPath("$.data.provenance.termsId") { value(CALL_TERMS) }
+                    }
 
-                val greeksResponse = mockMvc.post("/api/v1/financial-engineering/options/greeks") {
-                    contentType = MediaType.APPLICATION_JSON
-                    content = request("PUT", "volatility", "0.28")
-                }.andExpect {
-                    status { isOk() }
-                }.andReturn().response.contentAsString
-                val greeks = JsonMapper.builder().build().readTree(greeksResponse).path("data")
+                val greeksResponse =
+                    mockMvc
+                        .post("/api/v1/financial-engineering/options/greeks") {
+                            contentType = MediaType.APPLICATION_JSON
+                            content = request("PUT", "volatility", "0.28")
+                        }.andExpect {
+                            status { isOk() }
+                        }.andReturn()
+                        .response.contentAsString
+                val greeks =
+                    JsonMapper
+                        .builder()
+                        .build()
+                        .readTree(greeksResponse)
+                        .path("data")
                 assertEquals(-0.570897306492, greeks.path("valuationDelta").doubleValue(), 5e-13)
                 assertEquals(-1.0, greeks.path("conservativeRiskDelta").doubleValue(), 0.0)
                 assertEquals(0.000038828202272, greeks.path("gamma").doubleValue(), 5e-16)
@@ -65,14 +74,15 @@ class FinancialEngineeringSpringPythonE2eTest {
                 assertEquals(-18.6577616, greeks.path("calendarThetaPerDay").doubleValue(), 5e-7)
                 assertEquals(-116.5117803, greeks.path("rhoPerRatePoint").doubleValue(), 5e-7)
 
-                mockMvc.post("/api/v1/financial-engineering/options/implied-volatility") {
-                    contentType = MediaType.APPLICATION_JSON
-                    content = request("CALL", "marketPrice", "2917.937245391")
-                }.andExpect {
-                    status { isOk() }
-                    jsonPath("$.data.impliedVolatility", closeTo(0.28, 5e-9))
-                    jsonPath("$.data.solver") { value("BOUNDED_BISECTION_0.0001_5.0") }
-                }
+                mockMvc
+                    .post("/api/v1/financial-engineering/options/implied-volatility") {
+                        contentType = MediaType.APPLICATION_JSON
+                        content = request("CALL", "marketPrice", "2917.937245391")
+                    }.andExpect {
+                        status { isOk() }
+                        jsonPath("$.data.impliedVolatility", closeTo(0.28, 5e-9))
+                        jsonPath("$.data.solver") { value("BOUNDED_BISECTION_0.0001_5.0") }
+                    }
             } finally {
                 adapter.close()
             }
@@ -94,7 +104,7 @@ class FinancialEngineeringSpringPythonE2eTest {
               "riskFreeRate":0.032,
               "dividendYield":0.01
             }
-        """.trimIndent()
+            """.trimIndent()
     }
 
     private fun withPythonServer(block: (FinancialEngineeringGrpcProperties) -> Unit) {
@@ -116,8 +126,7 @@ class FinancialEngineeringSpringPythonE2eTest {
         }
     }
 
-    private fun reserveLoopbackPort(): Int =
-        ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { it.localPort }
+    private fun reserveLoopbackPort(): Int = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { it.localPort }
 
     private fun startPythonServer(
         port: Int,

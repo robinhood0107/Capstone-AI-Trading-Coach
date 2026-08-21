@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from decimal import Decimal
 
 import psycopg
 
@@ -42,8 +43,8 @@ class PostgresCrossMarketRiskPublisher:
                     payload["runtimeMode"],
                     payload["availability"],
                     payload["quality"],
-                    payload["score"],
-                    payload["thresholdPercentile"],
+                    _numeric_parameter(payload["score"]),
+                    _numeric_parameter(payload["thresholdPercentile"]),
                     payload["thresholdArtifactHash"],
                     payload["configHash"],
                     payload["exposure"],
@@ -62,3 +63,14 @@ class PostgresCrossMarketRiskPublisher:
 
 def _canonical(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _numeric_parameter(value: object) -> str | None:
+    """Match the materializer and V78 numeric text used by the semantic hash."""
+    if value is None:
+        return None
+    decimal = Decimal(str(value))
+    if not decimal.is_finite():
+        raise ValueError("cross-market numeric parameter must be finite")
+    rendered = format(decimal.normalize(), "f")
+    return "0" if rendered in {"-0", ""} else rendered

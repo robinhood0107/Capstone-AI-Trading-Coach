@@ -4005,3 +4005,71 @@ account/balance/order/product DB write는 0이었다.
 - Market Data public API와 S6 derived snapshot API는 아직 없다.
 - Signal v2 LightGBM은 계속 `ABSTAIN/MISSING_EVIDENCE`이고 RiskDecision/order 권한은 0이다.
 - P1 전체 판정은 `INCOMPLETE`다.
+
+## 18. S7–S8 current API overlay (2026-08-22)
+
+machine-readable SSOT는 `contracts/openapi/openapi.json`이다. 이 절은 기존 S7/S8 concept shape를
+현재 구현된 exact route와 보안 경계로 supersede한다.
+
+### 18.1 구현된 exact route
+
+```text
+GET /api/v1/async-jobs
+GET /api/v1/async-jobs/{jobId}
+GET /api/v1/stream-metrics
+GET /api/v1/artifacts/ingest-status
+GET /api/v1/dashboard/model-evaluations/{runId}
+GET /api/v1/dashboard/backtests/{runId}
+GET /api/v1/dashboard/risk-results/{decisionId}
+GET /api/v1/dashboard/rag-sources/{answerId}
+```
+
+async job, metric, artifact status는 current DB `ACTIVE/ADMIN/securityVersion` 재검증을 요구한다. raw
+payload, raw error, requester, actor, provider locator는 응답하지 않는다. cursor/filter는 목적별 HMAC에
+결속되며 cross-owner Admin read는 append-only audit에 남는다.
+
+Dashboard risk/RAG는 JWT `sub`와 DB owner predicate를 모두 적용하고 foreign ID는 404다. model/backtest
+demo projection은 인증된 `demo_` namespace만 읽으며 future real projection은 명시적으로 published된
+sanitized summary만 허용한다. query/cursor/date/symbol/profile/provider selector를 추가하지 않는다.
+
+### 18.2 ViewModel 공통 wire
+
+```text
+success=true
+data.viewState = READY | EMPTY | STALE
+data.asOf = timestamp | null
+data.freshUntil = timestamp | null
+data.evidenceMode = STORED_RUNTIME | REAL_ARTIFACT | SYNTHETIC_DEMO
+data.performanceClaimAllowed = false
+data.view = typed object | null
+```
+
+`loading`은 client-only다. `error`는 표준 4xx/5xx error envelope이고 `EMPTY`/`STALE`은 200의 명시적
+성공 상태다. model 최대 3, timeline 최대 500, sourceRunIds 최대 8, backtest curve 최대 2,000점,
+heatmap 최대 120개월, metric card 최대 11, Risk reason/principle/item 각각 최대 20, RAG top source
+최대 3/expandable 최대 5다. raw chunk/body/internal path/sourceRef/provider/PDF 인용문은 금지한다.
+
+### 18.3 변경하지 않은 API
+
+- Decision `orderIntent`는 exact 8개
+  `symbol,side,orderType,quantity,estimatedPrice,estimatedAmount,timeframe,strategyId`다.
+- `/api/v1/rag/ask`, RAG history와 Signal v1/v2 payload bytes는 유지한다.
+- `GET /api/v1/risk/cross-market`은 `NOT_APPLICABLE`이며 route가 없다.
+- catalog v2 rule 15, metric snapshot v3, Decision hash v3와 `WARN_ONLY` payload는 없다.
+- LightGBM 근거가 없으면 prediction/state/asOf를 꾸미지 않고 `ABSTAIN/MISSING_EVIDENCE`다.
+
+### 18.4 Async 상태와 delivery
+
+outbox는 `PENDING|PUBLISHED|FAILED|DLQ_REQUESTED`, job은
+`REQUESTED|RUNNING|COMPLETED|FAILED|NEEDS_REVIEW`다. REQUESTED→RUNNING→terminal은 job에만
+적용한다. Kafka send와 `published_at`은 하나의 DB transaction이 아니며 duplicate delivery는
+consumer idempotency로 흡수한다.
+
+payload는 DB 32 KiB/Kafka 64 KiB, depth 8, key 64, array 32, string 2,048 bytes로 제한한다. DLQ에는
+ID/type/hash/failure code/source topic/attempt만 허용하며 secret/token/account/PII/raw payload는 0이다.
+
+### 18.5 현재 제한
+
+네 Dashboard API는 server/OpenAPI/schema/example/mock이 준비된 `DASHBOARD_HANDOFF_READY` 상태지만
+Team A workspace integration은 수행하지 않았다. model/backtest 실물 artifact가 없으므로 synthetic
+projection만 검증됐고 `P1_OVERALL=INCOMPLETE_EXTERNAL_ARTIFACT`다.

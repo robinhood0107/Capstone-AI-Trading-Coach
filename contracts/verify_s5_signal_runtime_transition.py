@@ -16,6 +16,7 @@ from contracts.generate_principle_contracts import (
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH: Final = ROOT / "contracts/catalogs/s5-signal-runtime-transition.v1.json"
+S7_S8_CATALOG_PATH: Final = ROOT / "contracts/catalogs/s7-s8-openapi-transition.v1.json"
 OPENAPI_PATH: Final = ROOT / "contracts/openapi/openapi.json"
 
 
@@ -88,6 +89,54 @@ def load_transition_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
     return catalog
 
 
+def load_s7_s8_transition_catalog(path: Path = S7_S8_CATALOG_PATH) -> dict[str, Any]:
+    """승인된 S7/S8 additive OpenAPI fragment의 exact identity를 읽는다."""
+
+    if not path.is_file() or path.is_symlink():
+        raise ContractValidationError("S7/S8 OpenAPI transition catalog is unavailable.")
+    raw = path.read_bytes()
+    catalog = _object(load_json_bytes_strict(raw, source=str(path)), "S7/S8 transition catalog")
+    if raw != canonical_json_bytes(catalog):
+        raise ContractValidationError("S7/S8 OpenAPI transition catalog is not canonical.")
+    if set(catalog) != {"contractId", "allowedPaths", "allowedSchemaNames", "additiveProjectionSha256"}:
+        raise ContractValidationError("S7/S8 OpenAPI transition catalog fields drifted.")
+    if catalog["contractId"] != "s7-s8-openapi-transition.v1":
+        raise ContractValidationError("S7/S8 OpenAPI transition contract ID drifted.")
+    paths = _string_list(catalog["allowedPaths"], "S7/S8 allowedPaths")
+    schemas = _string_list(catalog["allowedSchemaNames"], "S7/S8 allowedSchemaNames")
+    if tuple(sorted(paths)) != paths or tuple(sorted(schemas)) != schemas:
+        raise ContractValidationError("S7/S8 OpenAPI allowlists must be sorted.")
+    digest = catalog["additiveProjectionSha256"]
+    if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        raise ContractValidationError("S7/S8 additive projection digest is invalid.")
+    return catalog
+
+
+def _remove_s7_s8_additive_openapi(
+    document: dict[str, Any], catalog: Mapping[str, Any]
+) -> None:
+    paths = _object(document.get("paths"), "OpenAPI paths")
+    schemas = _object(
+        _object(document.get("components"), "OpenAPI components").get("schemas"),
+        "OpenAPI component schemas",
+    )
+    allowed_paths = _string_list(catalog["allowedPaths"], "S7/S8 allowedPaths")
+    allowed_schemas = _string_list(catalog["allowedSchemaNames"], "S7/S8 allowedSchemaNames")
+    if any(path not in paths for path in allowed_paths) or any(name not in schemas for name in allowed_schemas):
+        raise ContractValidationError("S7/S8 additive OpenAPI fragment is incomplete.")
+    fragment = {
+        "paths": {path: paths[path] for path in allowed_paths},
+        "schemas": {name: schemas[name] for name in allowed_schemas},
+    }
+    actual = hashlib.sha256(canonical_json_bytes(fragment)).hexdigest()
+    if actual != catalog["additiveProjectionSha256"]:
+        raise ContractValidationError("S7/S8 additive OpenAPI fragment drifted.")
+    for path in allowed_paths:
+        paths.pop(path)
+    for name in allowed_schemas:
+        schemas.pop(name)
+
+
 def _remove_allowed_root_tags(document: dict[str, Any], allowed: set[str]) -> None:
     tags = document.get("tags")
     if tags is None:
@@ -146,6 +195,7 @@ def project_preserved_openapi(
 def verify_openapi_transition(
     path: Path = OPENAPI_PATH,
     catalog_path: Path = CATALOG_PATH,
+    s7_s8_catalog_path: Path = S7_S8_CATALOG_PATH,
 ) -> None:
     """current OpenAPI가 historical 의미를 보존하고 exact Signal v2 route만 추가했는지 검증한다."""
 
@@ -156,6 +206,8 @@ def verify_openapi_transition(
     document = _object(
         load_json_bytes_strict(raw, source=str(path)), "OpenAPI document"
     )
+    additive_catalog = load_s7_s8_transition_catalog(s7_s8_catalog_path)
+    _remove_s7_s8_additive_openapi(document, additive_catalog)
     projected = project_preserved_openapi(document, catalog)
     actual = hashlib.sha256(canonical_json_bytes(projected)).hexdigest()
     if actual != catalog["historicalPreservedProjectionSha256"]:

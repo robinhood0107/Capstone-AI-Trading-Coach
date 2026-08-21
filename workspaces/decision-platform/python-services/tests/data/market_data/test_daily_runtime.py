@@ -23,6 +23,7 @@ from app.data.market_data.daily_runtime import (
     write_replay_record,
 )
 from app.data.market_data.repository import stage_daily_shard
+from app.verification.network_guard import deny_outbound_network
 from jsonschema import Draft202012Validator
 
 
@@ -33,12 +34,15 @@ _SHA = "a" * 64
 
 
 class _Sink:
-    def __init__(self) -> None:
+    def __init__(self, *, head_sha256: str = _SHA) -> None:
         self.preflights = 0
         self.adoptions: list[AcceptedDailyShard] = []
+        self.head_sha256 = head_sha256
 
-    def preflight(self) -> None:
+    def preflight(self, packet: DailyReplayPacket) -> None:
         self.preflights += 1
+        if packet.previous_accepted_manifest_sha256 != self.head_sha256:
+            raise DailyMarketDataError("previous accepted manifest is not the sink head")
 
     def adopt(self, accepted: AcceptedDailyShard) -> str:
         self.adoptions.append(accepted)
@@ -50,12 +54,13 @@ def test_normal_replay_publishes_exact_daily_contract_manifest_last(tmp_path: Pa
     replay_root = _seal(tmp_path / "replay", records)
     sink = _Sink()
 
-    result = run_offline_daily(
-        packet=packet,
-        run_root=tmp_path / "runs",
-        replay_factory=lambda: SealedDirectoryReplay(replay_root),
-        sink=sink,
-    )
+    with deny_outbound_network():
+        result = run_offline_daily(
+            packet=packet,
+            run_root=tmp_path / "runs",
+            replay_factory=lambda: SealedDirectoryReplay(replay_root),
+            sink=sink,
+        )
 
     assert result.status == "ACCEPTED"
     assert result.replay_reads == 38
@@ -217,6 +222,27 @@ def test_receipt_binding_mismatch_needs_human_without_manifest_or_db(tmp_path: P
     assert not (tmp_path / "runs" / packet.packet_sha256 / "daily-shard.json").exists()
 
 
+def test_stale_previous_manifest_fails_before_replay_or_run_root(tmp_path: Path) -> None:
+    packet, records = _packet_and_records()
+    constructed = False
+
+    def factory() -> SealedDirectoryReplay:
+        nonlocal constructed
+        constructed = True
+        return SealedDirectoryReplay(_seal(tmp_path / "replay", records))
+
+    with pytest.raises(DailyMarketDataError, match="sink head"):
+        run_offline_daily(
+            packet=packet,
+            run_root=tmp_path / "runs",
+            replay_factory=factory,
+            sink=_Sink(head_sha256="f" * 64),
+        )
+
+    assert constructed is False
+    assert not (tmp_path / "runs").exists()
+
+
 def test_replay_root_symlink_is_rejected(tmp_path: Path) -> None:
     packet, records = _packet_and_records()
     real_root = _seal(tmp_path / "real-replay", records)
@@ -302,6 +328,127 @@ def test_daily_db_adoption_is_atomic_idempotent_and_conflict_closed(
             accepted=conflict,
             expected_manifest_sha256="f" * 64,
         )
+
+
+def test_db_commit_before_manifest_publish_recovers_as_no_op(
+    tmp_path: Path, isolated_postgres_cluster: dict[str, str]
+) -> None:
+    packet, records = _packet_and_records()
+    replay_root = _seal(tmp_path / "replay", records)
+    run_root = tmp_path / "runs"
+    with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
+        connection.execute(
+            """
+            INSERT INTO market_data_manifests (
+                manifest_sha256, manifest_kind, contract_id, session_date, as_of,
+                generation, source_manifest_sha256, archive_sha256,
+                calendar_revision, calendar_sha256, temporal_quality
+            ) VALUES (%s, 'SEED', 'market-data-seed.v1', %s,
+                      timestamptz '2026-08-18 00:00:00+00', 1, %s, %s, %s, %s,
+                      'RECONSTRUCTED_FIXED_LAG')
+            """,
+            (
+                _SHA,
+                packet.previous_session_date,
+                "1" * 64,
+                "2" * 64,
+                _CALENDAR_REVISION,
+                "3" * 64,
+            ),
+        )
+
+    class _CommitThenCrashSink(_Sink):
+        def adopt(self, accepted: AcceptedDailyShard) -> str:
+            stage_daily_shard(
+                database_dsn=isolated_postgres_cluster["market_writer_dsn"],
+                accepted=accepted,
+                expected_manifest_sha256=accepted.manifest_sha256,
+            )
+            raise RuntimeError("simulated crash after DB commit")
+
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        run_offline_daily(
+            packet=packet,
+            run_root=run_root,
+            replay_factory=lambda: SealedDirectoryReplay(replay_root),
+            sink=_CommitThenCrashSink(),
+        )
+    manifest_path = run_root / packet.packet_sha256 / "daily-shard.json"
+    assert not manifest_path.exists()
+
+    class _DatabaseSink(_Sink):
+        outcomes: list[str]
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.outcomes = []
+
+        def adopt(self, accepted: AcceptedDailyShard) -> str:
+            outcome = stage_daily_shard(
+                database_dsn=isolated_postgres_cluster["market_writer_dsn"],
+                accepted=accepted,
+                expected_manifest_sha256=accepted.manifest_sha256,
+            ).outcome
+            self.outcomes.append(outcome)
+            return outcome
+
+    sink = _DatabaseSink()
+    recovered = run_offline_daily(
+        packet=packet,
+        run_root=run_root,
+        replay_factory=lambda: SealedDirectoryReplay(replay_root),
+        sink=sink,
+    )
+
+    assert recovered.status == "ACCEPTED"
+    assert recovered.replay_reads == 0
+    assert sink.outcomes == ["NO_OP"]
+    assert manifest_path.is_file()
+    with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
+        count = connection.execute(
+            "SELECT count(*) FROM market_data_manifests WHERE manifest_kind = 'DAILY'"
+        ).fetchone()
+    assert count == (1,)
+
+
+def test_v76_rejects_disconnected_daily_chain(
+    isolated_postgres_cluster: dict[str, str],
+) -> None:
+    with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
+        connection.execute(
+            """
+            INSERT INTO market_data_manifests (
+                manifest_sha256, manifest_kind, contract_id, session_date, as_of,
+                generation, source_manifest_sha256, archive_sha256,
+                calendar_revision, calendar_sha256, temporal_quality
+            ) VALUES (%s, 'SEED', 'market-data-seed.v1', date '2026-08-14',
+                      timestamptz '2026-08-18 00:00:00+00', 1, %s, %s, %s, %s,
+                      'RECONSTRUCTED_FIXED_LAG')
+            """,
+            (_SHA, "1" * 64, "2" * 64, _CALENDAR_REVISION, "3" * 64),
+        )
+        with pytest.raises(psycopg.Error, match="previous accepted market-data manifest"):
+            connection.execute(
+                """
+                INSERT INTO market_data_manifests (
+                    manifest_sha256, manifest_kind, contract_id, session_date, as_of,
+                    generation, source_manifest_sha256, previous_manifest_sha256,
+                    archive_sha256, receipt_set_sha256, calendar_revision,
+                    calendar_sha256, temporal_quality
+                ) VALUES (%s, 'DAILY', 'market-data-daily-shard.v1', date '2026-08-18',
+                          timestamptz '2026-08-19 23:10:00+00', 1, %s, %s, %s, %s,
+                          %s, %s, 'RECONSTRUCTED_FIXED_LAG')
+                """,
+                (
+                    "4" * 64,
+                    "5" * 64,
+                    "f" * 64,
+                    "4" * 64,
+                    "6" * 64,
+                    _CALENDAR_REVISION,
+                    "7" * 64,
+                ),
+            )
 
 
 def _packet_and_records(

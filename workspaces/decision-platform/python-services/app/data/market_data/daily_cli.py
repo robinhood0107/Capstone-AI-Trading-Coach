@@ -11,32 +11,45 @@ from typing import Any, cast
 import psycopg
 from app.data.market_data.daily_runtime import (
     AcceptedDailyShard,
+    DailyReplayPacket,
     DailyShardSink,
     SealedDirectoryReplay,
     load_packet,
     run_offline_daily,
 )
-from app.data.market_data.repository import stage_daily_shard
-
-
-_WRITER_ROLE = "decision_market_writer"
+from app.data.market_data.repository import (
+    ConnectionLike,
+    require_previous_accepted_head,
+    stage_daily_shard,
+)
 
 
 class _PostgresDailySink(DailyShardSink):
     def __init__(self, database_dsn: str) -> None:
         self._database_dsn = database_dsn
 
-    def preflight(self) -> None:
+    def preflight(self, packet: DailyReplayPacket) -> None:
         """Verify the least-privilege writer before opening replay evidence."""
 
         with psycopg.connect(
-            self._database_dsn, autocommit=True, connect_timeout=2
+            self._database_dsn, autocommit=False, connect_timeout=2
         ) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT session_user, current_user")
-                identity = cursor.fetchone()
-        if identity != (_WRITER_ROLE, _WRITER_ROLE):
-            raise RuntimeError("market-data daily CLI requires the exact writer role")
+            probe = AcceptedDailyShard(
+                payload={
+                    "manifestSha256": "0" * 64,
+                    "previousAcceptedManifestSha256": packet.previous_accepted_manifest_sha256,
+                    "sessionDate": packet.session_date.isoformat(),
+                },
+                universe_rows=(),
+            )
+            head = require_previous_accepted_head(
+                connection=cast(ConnectionLike, connection), accepted=probe
+            )
+            if head.session_date != packet.previous_session_date:
+                raise RuntimeError(
+                    "NEEDS_HUMAN: previous accepted market-data session is not the packet predecessor"
+                )
+            connection.rollback()
 
     def adopt(self, accepted: AcceptedDailyShard) -> str:
         result = stage_daily_shard(

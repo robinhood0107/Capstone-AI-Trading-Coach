@@ -3925,3 +3925,20 @@ owner-private `OFFLINE_REPLAY_ONLY` packet 및 sealed record이고 출력은 기
 따라서 Market Data daily shard가 ACCEPTED여도 Signal v2 LightGBM은 계속
 `ABSTAIN/MISSING_EVIDENCE`이고 composite, RiskDecision, order authority는 생기지 않는다. S6.5가 별도
 세션에서 계산한 파생 snapshot만 기존 저장 reader 계약으로 연결할 수 있다.
+
+## P1.V0 검증 하네스 API 비변경 overlay (2026-08-21)
+
+`p1-verify author|run|verify`는 내부 Python CLI이며 HTTP/gRPC/Public OpenAPI surface가 아니다.
+`p1-verification-packet.v1`과 `p1-verification-report.v1`도 operator 검증 artifact 계약일 뿐 product
+request/response가 아니다.
+
+- Public REST/OpenAPI/Signal v2 payload 변경: 0
+- P1.V0 provider/account/balance/order physical call: 0
+- Product DB 영속 변경: 0; Testcontainers disposable DB만 사용
+- Market Data lane의 Signal/Risk/order 호출: 0
+- `S0_S5_CURRENT`: 네 provider-free gate PASS
+- `PROVIDER_READ_SMOKE`: P1.V0에서 `NOT_IMPLEMENTED`, 실행 명령은 fail-closed
+- `38/41`: offline replay operation 수이며 live/provider 호출 수가 아님
+
+Signal v2의 LightGBM component는 Market Data가 존재해도 계속 `ABSTAIN/MISSING_EVIDENCE`다. 이 내부
+report PASS를 full live collector, S6 계산, RiskDecision/order 또는 P1 전체 PASS로 승격하지 않는다.

@@ -261,7 +261,7 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `V75 stores neutral market data append only and separates all reader roles`() {
+    fun `V76 preserves neutral market data roles and locks the daily chain`() {
         val url = createDatabase("s5_7b_market_data_v75")
         flyway(url).migrate()
 
@@ -273,7 +273,7 @@ class FlywayMigrationIntegrationTest(
                     ).use { result ->
                         val versions = mutableListOf<String>()
                         while (result.next()) versions += result.getString(1)
-                        assertEquals((1..75).map(Int::toString), versions)
+                        assertEquals((1..76).map(Int::toString), versions)
                     }
                 val privileges =
                     mapOf(

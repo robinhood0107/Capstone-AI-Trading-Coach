@@ -1,0 +1,33 @@
+{
+  "accountCallCap": 0,
+  "approvalId": "P1.V1-20260821-READ-SMOKE",
+  "balanceCallCap": 0,
+  "contractCatalogSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "contractId": "p1-verification-packet.v1",
+  "expiresAt": "2026-08-21T10:00:00Z",
+  "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "issuedAt": "2026-08-21T09:00:00Z",
+  "kisTokenPhysicalCallCap": 1,
+  "operations": [
+    "KRX_KOSPI_DAILY",
+    "KRX_KOSDAQ_DAILY",
+    "KIS_CURRENT_PRICE",
+    "KIS_DAILY_BAR",
+    "ECOS_POLICY_RATE_DAILY",
+    "ECOS_KRW_USD_DAILY"
+  ],
+  "orderCallCap": 0,
+  "productDbWriteAllowed": false,
+  "profile": "PROVIDER_READ_SMOKE",
+  "providerDataPhysicalCallCap": 6,
+  "retransmissionAllowed": false,
+  "target": {
+    "ecosFrom": "2026-07-22",
+    "ecosTo": "2026-08-20",
+    "sessionDate": "2026-08-20",
+    "symbol": "005930"
+  },
+  "totalPhysicalCallCap": 7,
+  "treeSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "uvLockSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+}

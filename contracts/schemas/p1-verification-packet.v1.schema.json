@@ -1,0 +1,147 @@
+{
+  "$id": "contracts/schemas/p1-verification-packet.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accountCallCap": {
+      "const": 0
+    },
+    "approvalId": {
+      "pattern": "^[A-Z0-9][A-Z0-9._-]{7,95}$",
+      "type": "string"
+    },
+    "balanceCallCap": {
+      "const": 0
+    },
+    "contractCatalogSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "p1-verification-packet.v1"
+    },
+    "expiresAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "headSha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "issuedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "kisTokenPhysicalCallCap": {
+      "enum": [
+        0,
+        1
+      ]
+    },
+    "operations": {
+      "items": false,
+      "maxItems": 6,
+      "minItems": 6,
+      "prefixItems": [
+        {
+          "const": "KRX_KOSPI_DAILY"
+        },
+        {
+          "const": "KRX_KOSDAQ_DAILY"
+        },
+        {
+          "const": "KIS_CURRENT_PRICE"
+        },
+        {
+          "const": "KIS_DAILY_BAR"
+        },
+        {
+          "const": "ECOS_POLICY_RATE_DAILY"
+        },
+        {
+          "const": "ECOS_KRW_USD_DAILY"
+        }
+      ],
+      "type": "array"
+    },
+    "orderCallCap": {
+      "const": 0
+    },
+    "productDbWriteAllowed": {
+      "const": false
+    },
+    "profile": {
+      "const": "PROVIDER_READ_SMOKE"
+    },
+    "providerDataPhysicalCallCap": {
+      "const": 6
+    },
+    "retransmissionAllowed": {
+      "const": false
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "ecosFrom": {
+          "format": "date",
+          "type": "string"
+        },
+        "ecosTo": {
+          "format": "date",
+          "type": "string"
+        },
+        "sessionDate": {
+          "format": "date",
+          "type": "string"
+        },
+        "symbol": {
+          "const": "005930"
+        }
+      },
+      "required": [
+        "sessionDate",
+        "symbol",
+        "ecosFrom",
+        "ecosTo"
+      ],
+      "type": "object"
+    },
+    "totalPhysicalCallCap": {
+      "enum": [
+        6,
+        7
+      ]
+    },
+    "treeSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "uvLockSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractId",
+    "approvalId",
+    "profile",
+    "issuedAt",
+    "expiresAt",
+    "headSha",
+    "treeSha256",
+    "uvLockSha256",
+    "contractCatalogSha256",
+    "target",
+    "operations",
+    "providerDataPhysicalCallCap",
+    "kisTokenPhysicalCallCap",
+    "totalPhysicalCallCap",
+    "retransmissionAllowed",
+    "accountCallCap",
+    "balanceCallCap",
+    "orderCallCap",
+    "productDbWriteAllowed"
+  ],
+  "title": "p1-verification-packet.v1",
+  "type": "object"
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 import hashlib
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -67,6 +68,14 @@ class DailyAdoptionResult:
     macro: int
     universes: int
     provider_calls: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class AcceptedManifestHead:
+    """Latest accepted manifest strictly before a candidate daily session."""
+
+    manifest_sha256: str
+    session_date: date
 
 
 def stage_seed_archive(
@@ -167,6 +176,7 @@ def adopt_daily_shard(
         identity = cursor.fetchone()
         if identity != (_WRITER_ROLE, _WRITER_ROLE):
             raise MarketDataRepositoryError("market-data daily DB connection must use writer role")
+        _require_previous_accepted_head(cursor=cursor, accepted=accepted)
         receipts = cast(list[dict[str, object]], payload["sourceReceipts"])
         receipt_set_sha256 = canonical_json_sha256(receipts)
         cursor.execute(
@@ -222,6 +232,42 @@ def adopt_daily_shard(
     except Exception:
         connection.rollback()
         raise
+
+
+def require_previous_accepted_head(
+    *, connection: ConnectionLike, accepted: AcceptedDailyShard
+) -> AcceptedManifestHead:
+    """Read and bind the authoritative predecessor without mutating stored state."""
+
+    cursor = connection.cursor()
+    cursor.execute("SELECT session_user, current_user")
+    identity = cursor.fetchone()
+    if identity != (_WRITER_ROLE, _WRITER_ROLE):
+        raise MarketDataRepositoryError("market-data daily DB connection must use writer role")
+    return _require_previous_accepted_head(cursor=cursor, accepted=accepted)
+
+
+def _require_previous_accepted_head(
+    *, cursor: CursorLike, accepted: AcceptedDailyShard
+) -> AcceptedManifestHead:
+    payload = accepted.payload
+    cursor.execute(
+        """
+        SELECT manifest_sha256, session_date
+        FROM current_market_data_manifest_head(%s)
+        """,
+        (payload["sessionDate"],),
+    )
+    row = cursor.fetchone()
+    expected = payload["previousAcceptedManifestSha256"]
+    if row is None or row[0] != expected:
+        raise MarketDataRepositoryError(
+            "NEEDS_HUMAN: previous accepted market-data manifest is not the DB head"
+        )
+    session_date = row[1]
+    if not isinstance(session_date, date):
+        raise MarketDataRepositoryError("market-data accepted head session is invalid")
+    return AcceptedManifestHead(manifest_sha256=cast(str, row[0]), session_date=session_date)
 
 
 def _insert_daily_rows(

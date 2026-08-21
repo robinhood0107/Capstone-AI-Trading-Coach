@@ -150,7 +150,7 @@ class OfflineReplayPort(Protocol):
 class DailyShardSink(Protocol):
     """Transactional destination for an accepted daily shard."""
 
-    def preflight(self) -> None: ...
+    def preflight(self, packet: DailyReplayPacket) -> None: ...
 
     def adopt(self, accepted: "AcceptedDailyShard") -> str: ...
 
@@ -247,12 +247,12 @@ def run_offline_daily(
     """Replay one complete session with provider calls fixed at zero."""
 
     _validate_packet(packet)
-    sink.preflight()
     clock_status = _clock_status(packet)
     if clock_status is not None:
         health = _health(packet=packet, status=clock_status, details=(clock_status,))
         _publish_health(run_root=run_root, packet=packet, health=health)
         return DailyRunResult(clock_status, health, None, 0)
+    sink.preflight(packet)
 
     run = _prepare_run_root(run_root, packet.packet_sha256)
     replay = replay_factory()

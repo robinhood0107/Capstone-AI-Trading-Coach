@@ -40,10 +40,11 @@
     "macroSeriesMax": 2,
     "manifestPublication": "LAST_AFTER_COMPLETE_REQUIRED_SET",
     "membershipPolicy": "MONTHLY_FIXED_TOP30_PLUS_132030",
-    "monthBoundaryPhysicalCallMax": 41,
-    "normalPhysicalCallMax": 38,
+    "monthBoundaryReplayOperationCount": 41,
+    "normalReplayOperationCount": 38,
     "orderCalls": 0,
     "partialRunAcceptedRows": 0,
+    "providerPhysicalCallMax": 0,
     "sessionsPerShard": 1
   },
   "dashboard": false,

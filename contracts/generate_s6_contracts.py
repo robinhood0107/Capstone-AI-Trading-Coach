@@ -11,6 +11,7 @@ SCHEMA_DIR = ROOT / "contracts" / "schemas"
 EXAMPLE_DIR = ROOT / "contracts" / "examples"
 INVALID_DIR = EXAMPLE_DIR / "invalid"
 CATALOG_DIR = ROOT / "contracts" / "catalogs"
+OPENAPI_DIR = ROOT / "contracts" / "openapi"
 
 HASH_PATTERN = "^[0-9a-f]{64}$"
 SYMBOL_PATTERN = "^[0-9A-Z./-]{1,32}$"
@@ -433,6 +434,130 @@ def _build_catalog_v3() -> dict[str, Any]:
     return v3
 
 
+def _build_s6_option_openapi() -> dict[str, Any]:
+    common_request = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["contractId", "valuationAt", "spot", "riskFreeRate", "dividendYield"],
+        "properties": {
+            "contractId": {"type": "string", "minLength": 1, "maxLength": 128},
+            "valuationAt": {"type": "string", "format": "date-time"},
+            "spot": {"type": "number", "exclusiveMinimum": 0},
+            "riskFreeRate": {"type": "number"},
+            "dividendYield": {"type": "number"},
+        },
+    }
+    bsm_request = json.loads(json.dumps(common_request))
+    bsm_request["required"].append("volatility")
+    bsm_request["properties"]["volatility"] = {"type": "number", "exclusiveMinimum": 0}
+    iv_request = json.loads(json.dumps(common_request))
+    iv_request["required"].extend(["marketPrice", "maxIterations"])
+    iv_request["properties"].update(
+        {
+            "marketPrice": {"type": "number", "exclusiveMinimum": 0},
+            "maxIterations": {"type": "integer", "minimum": 1, "maximum": 1000},
+        }
+    )
+    provenance = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["termsId", "sourceUrl", "sourceHash", "multiplier", "exerciseStyle", "settlementType", "timezone"],
+        "properties": {
+            "termsId": {"type": "string"},
+            "sourceUrl": {"type": "string", "format": "uri"},
+            "sourceHash": _hash(),
+            "multiplier": {"type": "number", "exclusiveMinimum": 0},
+            "exerciseStyle": {"const": "EUROPEAN"},
+            "settlementType": {"const": "CASH"},
+            "timezone": {"const": "Asia/Seoul"},
+        },
+    }
+    response_fields = {
+        "timeToMaturityYears": {"type": "number", "exclusiveMinimum": 0},
+        "provenance": {"$ref": "#/components/schemas/S64ContractProvenance"},
+    }
+    bsm_response = _object(
+        "s6-4-bsm-response.v1",
+        ["contractId", "measure", "discountedValue", "timeToMaturityYears", "provenance"],
+        {"measure": {"const": "Q_DISCOUNTED_VALUE"}, "discountedValue": _number(0), **response_fields},
+    )
+    greeks_response = _object(
+        "s6-4-greeks-response.v1",
+        ["contractId", "measure", "valuationDelta", "conservativeRiskDelta", "gamma", "vegaPerUnitVolatility", "vegaPerVolPoint", "calendarThetaPerYear", "calendarThetaPerDay", "rhoPerUnitRate", "rhoPerRatePoint", "timeToMaturityYears", "provenance"],
+        {
+            "measure": {"const": "Q_DISCOUNTED_VALUE"},
+            "valuationDelta": _number(),
+            "conservativeRiskDelta": {"enum": [-1, 1]},
+            "gamma": _number(0),
+            "vegaPerUnitVolatility": _number(0),
+            "vegaPerVolPoint": _number(0),
+            "calendarThetaPerYear": _number(),
+            "calendarThetaPerDay": _number(),
+            "rhoPerUnitRate": _number(),
+            "rhoPerRatePoint": _number(),
+            **response_fields,
+        },
+    )
+    iv_response = _object(
+        "s6-4-iv-response.v1",
+        ["contractId", "impliedVolatility", "solver", "measure", "timeToMaturityYears", "provenance"],
+        {
+            "impliedVolatility": {"type": "number", "minimum": 0.0001, "maximum": 5},
+            "solver": {"const": "BOUNDED_BISECTION_0.0001_5.0"},
+            "measure": {"const": "Q_DISCOUNTED_VALUE"},
+            **response_fields,
+        },
+    )
+
+    def operation(summary: str, request_ref: str, response_ref: str) -> dict[str, Any]:
+        return {
+            "summary": summary,
+            "security": [{"bearerAuth": []}],
+            "requestBody": {"required": True, "content": {"application/json": {"schema": {"$ref": request_ref}}}},
+            "responses": {
+                "200": {"description": "Educational valuation result", "content": {"application/json": {"schema": {"$ref": response_ref}}}},
+                "400": {"description": "VALIDATION_ERROR, IV_NOT_BRACKETED, or IV_NOT_CONVERGED", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/S64ErrorEnvelope"}}}},
+                "401": {"description": "Authentication required", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/S64ErrorEnvelope"}}}},
+                "503": {"description": "Bounded Python service unavailable", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/S64ErrorEnvelope"}}}},
+            },
+        }
+
+    return {
+        "openapi": "3.1.1",
+        "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
+        "info": {"title": "Capstone S6.4 educational option valuation", "version": "1.0.0"},
+        "paths": {
+            "/api/v1/financial-engineering/options/black-scholes": {"post": operation("Black-Scholes valuation", "#/components/schemas/S64BlackScholesRequest", "#/components/schemas/S64BlackScholesResponse")},
+            "/api/v1/financial-engineering/options/greeks": {"post": operation("Black-Scholes Greeks", "#/components/schemas/S64GreeksRequest", "#/components/schemas/S64GreeksResponse")},
+            "/api/v1/financial-engineering/options/implied-volatility": {"post": operation("Bounded implied volatility", "#/components/schemas/S64ImpliedVolatilityRequest", "#/components/schemas/S64ImpliedVolatilityResponse")},
+        },
+        "components": {
+            "securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}},
+            "schemas": {
+                "S64BlackScholesRequest": bsm_request,
+                "S64GreeksRequest": bsm_request,
+                "S64ImpliedVolatilityRequest": iv_request,
+                "S64ContractProvenance": provenance,
+                "S64BlackScholesResponse": bsm_response,
+                "S64GreeksResponse": greeks_response,
+                "S64ImpliedVolatilityResponse": iv_response,
+                "S64ErrorEnvelope": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["success", "requestId", "data", "warnings", "error"],
+                    "properties": {
+                        "success": {"const": False},
+                        "requestId": {"type": "string"},
+                        "data": {"type": "null"},
+                        "warnings": {"type": "array", "maxItems": 0},
+                        "error": {"type": "object", "required": ["code", "message", "details"], "properties": {"code": {"enum": ["VALIDATION_ERROR", "PYTHON_SERVICE_UNAVAILABLE"]}, "message": {"type": "string"}, "details": {"type": "object"}}},
+                    },
+                },
+            },
+        },
+    }
+
+
 def build_outputs() -> dict[Path, bytes]:
     outputs: dict[Path, bytes] = {}
     for schema_id, schema in SCHEMAS.items():
@@ -443,6 +568,7 @@ def build_outputs() -> dict[Path, bytes]:
         invalid[field] = value
         outputs[INVALID_DIR / f"{schema_id}.contract.invalid.json"] = _canonical_bytes(invalid)
     outputs[CATALOG_DIR / "s2-2-system-rule-catalog.v3.json"] = _canonical_bytes(_build_catalog_v3())
+    outputs[OPENAPI_DIR / "s6-financial-engineering.v1.openapi.json"] = _canonical_bytes(_build_s6_option_openapi())
     lock = {
         "contractId": "s6-contract-lock.v1",
         "schemaIds": list(SCHEMA_IDS),

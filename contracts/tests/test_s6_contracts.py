@@ -39,7 +39,7 @@ def _load(path: Path) -> dict[str, object]:
 class S6ContractTest(unittest.TestCase):
     def test_generator_is_deterministic_and_complete(self) -> None:
         outputs = build_outputs()
-        self.assertEqual(32, len(outputs))
+        self.assertEqual(33, len(outputs))
         for path, expected in outputs.items():
             self.assertTrue(path.exists(), path)
             self.assertEqual(expected, path.read_bytes(), path)

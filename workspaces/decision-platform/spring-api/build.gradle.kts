@@ -105,6 +105,7 @@ sourceSets {
             include("brokerage.proto")
             include("rag.proto")
             include("strong_llm_agent.proto")
+            include("financial_engineering.proto")
         }
     }
 }
@@ -168,6 +169,9 @@ tasks.named<ProcessResources>("processResources") {
     }
     // S5.5 Signal v2 runtime OpenAPI도 annotation 추론 대신 승인된 closed union schema bytes를 사용한다.
     from(layout.projectDirectory.file("../../../contracts/schemas/signal-v2-runtime-v1.schema.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/catalogs/option-contract-terms.v1.json")) {
         into("contracts")
     }
     // S3.1 Brokerage Mock도 canonical JSON Schema bytes를 OpenAPI component로 직접 노출한다.

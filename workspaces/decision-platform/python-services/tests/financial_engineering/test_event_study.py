@@ -69,6 +69,7 @@ def test_validation_only_threshold_freeze_and_untouched_test_are_deterministic()
     assert first.event_study["thresholdCandidates"] == [95.0, 97.5, 99.0]
     assert first.event_study["transactionCostSensitivityBps"] == [25, 30, 35]
     assert first.event_study["performanceClaimAllowed"] is False
+    assert first.event_study["bootstrap"]["superiorityClaimAllowed"] is False
     assert first.event_study["bootstrap"]["replications"] == 2000
     assert first.event_study["bootstrap"]["unit"] == "EVENT_DATE"
     assert first.event_study["causeEvidence"]["conflictDenominator"] > 0

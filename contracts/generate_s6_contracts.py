@@ -626,6 +626,8 @@ def validate_semantics(schema_id: str, payload: dict[str, Any]) -> None:
             }:
                 raise ContractValidationError("zero-denominator cause evidence must be NOT_ESTIMABLE")
         interval = payload["bootstrap"]["interval"]
+        if payload["evidenceMode"] != "HISTORICAL_REPLAY" and payload["bootstrap"]["superiorityClaimAllowed"]:
+            raise ValueError("non-historical evidence cannot claim superiority")
         if interval is not None and interval[0] <= 0 <= interval[1] and payload["bootstrap"]["superiorityClaimAllowed"]:
             raise ContractValidationError("zero-containing CI forbids superiority claim")
     if schema_id == "lightgbm_policy_replay.v1":

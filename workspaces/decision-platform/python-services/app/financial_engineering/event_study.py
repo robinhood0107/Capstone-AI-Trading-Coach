@@ -124,7 +124,11 @@ def evaluate_event_study(
             "replications": BOOTSTRAP_REPLICATIONS,
             "seed": BOOTSTRAP_SEED,
             "interval": interval,
-            "superiorityClaimAllowed": interval is not None and not (interval[0] <= 0 <= interval[1]),
+            "superiorityClaimAllowed": (
+                evidence_mode == "HISTORICAL_REPLAY"
+                and interval is not None
+                and not (interval[0] <= 0 <= interval[1])
+            ),
         },
         "performanceClaimAllowed": (
             evidence_mode == "HISTORICAL_REPLAY"

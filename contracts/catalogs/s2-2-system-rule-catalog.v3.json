@@ -81,10 +81,15 @@
       "artifactHash"
     ],
     "semanticInputIncludedFields": [
+      "symbol",
+      "availableAt",
+      "staleAt",
       "score",
       "selectedPercentile",
       "thresholdArtifactHash",
       "configHash",
+      "exposure",
+      "exposureAvailableAt",
       "exposureCatalogHash"
     ]
   },

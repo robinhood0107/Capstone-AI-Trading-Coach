@@ -1,0 +1,205 @@
+{
+  "$id": "https://capstone.local/contracts/s6-capability-disposition.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "activeSessions": {
+      "items": false,
+      "maxItems": 5,
+      "minItems": 5,
+      "prefixItems": [
+        {
+          "const": "S6.1"
+        },
+        {
+          "const": "S6.2"
+        },
+        {
+          "const": "S6.3"
+        },
+        {
+          "const": "S6.4"
+        },
+        {
+          "const": "S6.5"
+        }
+      ],
+      "type": "array"
+    },
+    "contractId": {
+      "const": "s6-capability-disposition.v1"
+    },
+    "crossMarketAuthorities": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "const": "NONE"
+        },
+        "order": {
+          "const": "NONE"
+        },
+        "reader": {
+          "const": "NONE"
+        },
+        "runtime": {
+          "const": "NONE"
+        },
+        "signal": {
+          "const": "NONE"
+        },
+        "writer": {
+          "const": "NONE"
+        }
+      },
+      "required": [
+        "decision",
+        "runtime",
+        "writer",
+        "reader",
+        "signal",
+        "order"
+      ],
+      "type": "object"
+    },
+    "decidedOn": {
+      "const": "2026-08-21"
+    },
+    "feasibilityProbe": {
+      "additionalProperties": false,
+      "properties": {
+        "costKrw": {
+          "const": 0
+        },
+        "liveAccountCalls": {
+          "const": 0
+        },
+        "orderCalls": {
+          "const": 0
+        },
+        "physicalCalls": {
+          "const": 14
+        },
+        "rawProviderMaterialStored": {
+          "const": false
+        },
+        "retryCount": {
+          "const": 0
+        },
+        "runtimeProviderCalls": {
+          "const": 0
+        }
+      },
+      "required": [
+        "physicalCalls",
+        "retryCount",
+        "costKrw",
+        "runtimeProviderCalls",
+        "liveAccountCalls",
+        "orderCalls",
+        "rawProviderMaterialStored"
+      ],
+      "type": "object"
+    },
+    "historicalOnlyCatalogs": {
+      "items": false,
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "const": "s2-2-system-rule-catalog.v2"
+        },
+        {
+          "const": "s2-2-system-rule-catalog.v3"
+        }
+      ],
+      "type": "array"
+    },
+    "historicalOnlyContracts": {
+      "items": false,
+      "maxItems": 4,
+      "minItems": 4,
+      "prefixItems": [
+        {
+          "const": "cross_market_event_study.v2"
+        },
+        {
+          "const": "lightgbm_policy_replay.v1"
+        },
+        {
+          "const": "cross_market_threshold_freeze.v1"
+        },
+        {
+          "const": "cross_market_risk_snapshot.v2"
+        }
+      ],
+      "type": "array"
+    },
+    "priorArtifactHashes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "maxItems": 8,
+      "minItems": 8,
+      "type": "array"
+    },
+    "retiredSessions": {
+      "items": false,
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "const": "S6.6"
+        },
+        {
+          "const": "S6.7"
+        }
+      ],
+      "type": "array"
+    },
+    "retirementReason": {
+      "const": "STRICT_REAL_PIT_UNAVAILABLE_FREE_NOW"
+    },
+    "runtimeCatalog": {
+      "const": "s2-2-system-rule-catalog.v1"
+    },
+    "s4_8Status": {
+      "const": "VERIFIED_OFFLINE_STORED"
+    },
+    "strictPitStatus": {
+      "const": "RETIRED_NOT_APPLICABLE"
+    }
+  },
+  "required": [
+    "contractId",
+    "decidedOn",
+    "activeSessions",
+    "retiredSessions",
+    "retirementReason",
+    "strictPitStatus",
+    "s4_8Status",
+    "runtimeCatalog",
+    "historicalOnlyCatalogs",
+    "historicalOnlyContracts",
+    "crossMarketAuthorities",
+    "feasibilityProbe",
+    "priorArtifactHashes"
+  ],
+  "title": "s6-capability-disposition.v1",
+  "type": "object"
+}

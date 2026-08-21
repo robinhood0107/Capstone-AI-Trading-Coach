@@ -5,7 +5,9 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE ROLE decision_app
-    LOGIN PASSWORD 'app-test' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+  LOGIN PASSWORD 'app-test' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_worker
+  LOGIN PASSWORD 'worker-test-secret-0001' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_collector
     LOGIN PASSWORD 'collector-test' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_disclosure_reader
@@ -59,6 +61,11 @@ ALTER ROLE decision_app SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_app SET statement_timeout = '2s';
 ALTER ROLE decision_app SET lock_timeout = '500ms';
 ALTER ROLE decision_app SET idle_in_transaction_session_timeout = '5s';
+ALTER ROLE decision_worker SET log_parameter_max_length = 0;
+ALTER ROLE decision_worker SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_worker SET statement_timeout = '60s';
+ALTER ROLE decision_worker SET lock_timeout = '500ms';
+ALTER ROLE decision_worker SET idle_in_transaction_session_timeout = '60s';
 ALTER ROLE decision_rag_writer SET log_parameter_max_length = 0;
 ALTER ROLE decision_rag_writer SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_rag_writer SET statement_timeout = '2s';
@@ -89,6 +96,7 @@ ALTER ROLE flyway SET log_parameter_max_length_on_error = 0;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO
     decision_app,
+    decision_worker,
     decision_collector,
     decision_disclosure_reader,
     decision_market_writer,

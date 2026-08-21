@@ -47,6 +47,9 @@ abstract class SpringApiIntegrationTestBase {
         internal val TEST_RAG_PROVIDER_USAGE_HMAC_KEY: String = "u" + "g".repeat(63)
         internal val TEST_RAG_RATE_LIMIT_HMAC_KEY: String = "r" + "l".repeat(63)
         internal val TEST_RAG_HISTORY_CURSOR_HMAC_KEY: String = "h" + "c".repeat(63)
+        internal val TEST_ASYNC_CURSOR_HMAC_KEY: String = "a" + "c".repeat(63)
+        internal val TEST_ASYNC_PARTITION_HMAC_KEY: String = "a" + "p".repeat(63)
+        internal val TEST_ASYNC_WORKER_GRPC_SHARED_SECRET: String = "a" + "w".repeat(63)
         internal const val TEST_RAG_KEK_VERSION: String = "kek-v1"
         internal val TEST_RAG_SECRET_DIRECTORY: String = prepareRagSecretDirectory()
         internal val TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256: String =
@@ -115,6 +118,10 @@ abstract class SpringApiIntegrationTestBase {
             registry.add("app.rag.history-cursor-hmac-key") {
                 TEST_RAG_HISTORY_CURSOR_HMAC_KEY
             }
+            registry.add("app.async.cursor-hmac-key") { TEST_ASYNC_CURSOR_HMAC_KEY }
+            registry.add("app.async.partition-hmac-key") { TEST_ASYNC_PARTITION_HMAC_KEY }
+            registry.add("app.async.worker.password") { "worker-test-secret-0001" }
+            registry.add("app.async.worker.grpc-shared-secret") { TEST_ASYNC_WORKER_GRPC_SHARED_SECRET }
             registry.add("spring.flyway.placeholders.brokerageDbCapabilityTokenSha256") {
                 TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256
             }

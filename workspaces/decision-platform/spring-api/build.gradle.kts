@@ -106,6 +106,7 @@ sourceSets {
             include("rag.proto")
             include("strong_llm_agent.proto")
             include("financial_engineering.proto")
+            include("async_worker.proto")
         }
     }
 }

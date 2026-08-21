@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package capstone.financialengineering.v1;
+
+option java_multiple_files = true;
+option java_package = "com.capstone.decision.contract.financialengineering.v1";
+
+service FinancialEngineeringService {
+  rpc BlackScholes(BlackScholesRequest) returns (BlackScholesResponse);
+  rpc Greeks(GreeksRequest) returns (GreeksResponse);
+  rpc ImpliedVolatility(ImpliedVolatilityRequest) returns (ImpliedVolatilityResponse);
+}
+
+message BlackScholesRequest {
+  string option_right = 1;
+  double spot = 2;
+  double strike = 3;
+  double time_to_maturity_years = 4;
+  double volatility = 5;
+  double risk_free_rate = 6;
+  double dividend_yield = 7;
+}
+
+message BlackScholesResponse { double discounted_value = 1; }
+
+message GreeksRequest {
+  string option_right = 1;
+  double spot = 2;
+  double strike = 3;
+  double time_to_maturity_years = 4;
+  double volatility = 5;
+  double risk_free_rate = 6;
+  double dividend_yield = 7;
+}
+
+message GreeksResponse {
+  double delta = 1;
+  double gamma = 2;
+  double vega_per_unit_volatility = 3;
+  double vega_per_vol_point = 4;
+  double calendar_theta_per_year = 5;
+  double calendar_theta_per_day = 6;
+  double rho_per_unit_rate = 7;
+  double rho_per_rate_point = 8;
+}
+
+message ImpliedVolatilityRequest {
+  string option_right = 1;
+  double spot = 2;
+  double strike = 3;
+  double time_to_maturity_years = 4;
+  double risk_free_rate = 5;
+  double dividend_yield = 6;
+  double market_price = 7;
+  int32 max_iterations = 8;
+}
+
+message ImpliedVolatilityResponse { double implied_volatility = 1; }

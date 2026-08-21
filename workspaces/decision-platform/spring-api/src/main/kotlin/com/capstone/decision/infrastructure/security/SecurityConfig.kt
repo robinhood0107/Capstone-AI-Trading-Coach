@@ -6,6 +6,7 @@ import com.capstone.decision.infrastructure.brokerage.PaperBrokerageProperties
 import com.capstone.decision.infrastructure.decision.DecisionProperties
 import com.capstone.decision.infrastructure.grpc.BrokerageGrpcProperties
 import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
+import com.capstone.decision.infrastructure.grpc.FinancialEngineeringGrpcProperties
 import com.capstone.decision.infrastructure.grpc.RagGrpcProperties
 import com.capstone.decision.infrastructure.grpc.RagV2GrpcProperties
 import com.capstone.decision.infrastructure.grpc.StrongLlmAgentGrpcProperties
@@ -60,6 +61,7 @@ import java.security.MessageDigest
     PaperBrokerageProperties::class,
     BrokerageGrpcProperties::class,
     DecisionGrpcProperties::class,
+    FinancialEngineeringGrpcProperties::class,
     RagGuardHistoryProperties::class,
     RagGrpcProperties::class,
     RagV2GrpcProperties::class,

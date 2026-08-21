@@ -274,7 +274,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     ),
     "cross_market_event_study.v2": _object(
         "cross_market_event_study.v2",
-        ["contractId", *list(_research_authority_properties()), "evidenceMode", "datasetStatus", "coverageYears", "split", "purgeEmbargoSessions", "thresholdCandidates", "severeLossCutoff", "transactionCostSensitivityBps", "timing", "metrics", "bootstrap", "performanceClaimAllowed", "artifactHash"],
+        ["contractId", *list(_research_authority_properties()), "evidenceMode", "datasetStatus", "coverageYears", "split", "purgeEmbargoSessions", "thresholdCandidates", "severeLossCutoff", "transactionCostSensitivityBps", "timing", "metrics", "causeEvidence", "bootstrap", "performanceClaimAllowed", "artifactHash"],
         {
             **_research_authority_properties(),
             "evidenceMode": {"enum": ["SYNTHETIC_FIXTURE", "HISTORICAL_REPLAY", "PROSPECTIVE_SHADOW"]},
@@ -303,6 +303,16 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "properties": {
                     "triggerCount": {"type": "integer", "minimum": 0},
                     **{name: {"type": "object", "additionalProperties": False, "required": ["value", "estimationStatus"], "properties": {"value": {"type": ["number", "null"]}, "estimationStatus": {"enum": ["ESTIMATED", "NOT_ESTIMABLE"]}}} for name in ("falseBlockRate", "downsideAvoidedBps", "missedUpsideBps", "netProtectionBps")},
+                },
+            },
+            "causeEvidence": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["conflictDenominator", "unsupportedDenominator", "evidenceConflictRate", "unsupportedCausalityRate"],
+                "properties": {
+                    "conflictDenominator": {"type": "integer", "minimum": 0},
+                    "unsupportedDenominator": {"type": "integer", "minimum": 0},
+                    **{name: {"type": "object", "additionalProperties": False, "required": ["value", "estimationStatus"], "properties": {"value": {"type": ["number", "null"], "minimum": 0, "maximum": 1}, "estimationStatus": {"enum": ["ESTIMATED", "NOT_ESTIMABLE"]}}} for name in ("evidenceConflictRate", "unsupportedCausalityRate")},
                 },
             },
             "bootstrap": {
@@ -389,7 +399,7 @@ VALID_FIXTURES: dict[str, dict[str, Any]] = {
     "financial_engineering_snapshot.v1": {"contractId": "financial_engineering_snapshot.v1", "schemaVersion": 1, "symbol": "005930", "sessionDate": "2026-08-20", "asOf": "2026-08-20T15:30:00+09:00", "availableAt": "2026-08-21T08:10:00+09:00", "sourceManifestHash": _sha("1"), "configHash": _sha("2"), "numericPayloadHash": _sha("3"), "artifactHash": _sha("4"), "availability": "AVAILABLE", "quality": "PASS", "staleness": "FRESH", "numericPayload": {"annualizedVolatility": 0.21, "hmmRiskOffPosterior": 0.8, "ouZScore": 2.1}, "createdAt": "2026-08-21T08:11:00+09:00"},
     "financial_engineering_report_manifest.v1": {"contractId": "financial_engineering_report_manifest.v1", "runId": "00000000-0000-4000-8000-000000000601", "snapshotArtifactHash": _sha("4"), "reportArtifactHash": _sha("5"), "reportBytes": 4096, "complete": True, "steps": [{"name": name, "status": "COMPLETE", "errorCode": None, "wallTimeMillis": 10, "peakMemoryBytes": 1024} for name in ("STORED_COLLECTION", "FEATURE", "INFERENCE", "SNAPSHOT", "REPORT")], "createdAt": "2026-08-21T08:12:00+09:00"},
     "option_contract_terms.v1": {"contractId": "option_contract_terms.v1", "termsId": "KOSPI200_OPTION_FIXTURE_202609_CALL_75000", "optionRight": "CALL", "strike": 75000, "lastTradingAt": "2026-09-10T15:20:00+09:00", "timezone": "Asia/Seoul", "multiplier": 250000, "exerciseStyle": "EUROPEAN", "settlementType": "CASH", "effectiveFrom": "2026-01-01T00:00:00+09:00", "effectiveTo": None, "sourceUrl": "https://global.krx.co.kr/", "sourceHash": _sha("6")},
-    "cross_market_event_study.v2": {"contractId": "cross_market_event_study.v2", **{k: v["const"] for k, v in _research_authority_properties().items()}, "evidenceMode": "PROSPECTIVE_SHADOW", "datasetStatus": "DATASET_UNAVAILABLE", "coverageYears": 0, "split": [0.6, 0.2, 0.2], "purgeEmbargoSessions": 5, "thresholdCandidates": [95, 97.5, 99], "severeLossCutoff": None, "transactionCostSensitivityBps": [25, 30, 35], "timing": {"detectionLatencyMillis": None, "preOpenLeadTimeMillis": None, "preOpenStatus": "NOT_ESTIMABLE", "estimationStatus": "NOT_ESTIMABLE"}, "metrics": {"triggerCount": 0, **{name: {"value": None, "estimationStatus": "NOT_ESTIMABLE"} for name in ("falseBlockRate", "downsideAvoidedBps", "missedUpsideBps", "netProtectionBps")}}, "bootstrap": {"unit": "EVENT_DATE", "blockLengthSessions": 5, "replications": 2000, "seed": 20260821, "interval": None, "superiorityClaimAllowed": False}, "performanceClaimAllowed": False, "artifactHash": _sha("7")},
+    "cross_market_event_study.v2": {"contractId": "cross_market_event_study.v2", **{k: v["const"] for k, v in _research_authority_properties().items()}, "evidenceMode": "PROSPECTIVE_SHADOW", "datasetStatus": "DATASET_UNAVAILABLE", "coverageYears": 0, "split": [0.6, 0.2, 0.2], "purgeEmbargoSessions": 5, "thresholdCandidates": [95, 97.5, 99], "severeLossCutoff": None, "transactionCostSensitivityBps": [25, 30, 35], "timing": {"detectionLatencyMillis": None, "preOpenLeadTimeMillis": None, "preOpenStatus": "NOT_ESTIMABLE", "estimationStatus": "NOT_ESTIMABLE"}, "metrics": {"triggerCount": 0, **{name: {"value": None, "estimationStatus": "NOT_ESTIMABLE"} for name in ("falseBlockRate", "downsideAvoidedBps", "missedUpsideBps", "netProtectionBps")}}, "causeEvidence": {"conflictDenominator": 0, "unsupportedDenominator": 0, "evidenceConflictRate": {"value": None, "estimationStatus": "NOT_ESTIMABLE"}, "unsupportedCausalityRate": {"value": None, "estimationStatus": "NOT_ESTIMABLE"}}, "bootstrap": {"unit": "EVENT_DATE", "blockLengthSessions": 5, "replications": 2000, "seed": 20260821, "interval": None, "superiorityClaimAllowed": False}, "performanceClaimAllowed": False, "artifactHash": _sha("7")},
     "lightgbm_policy_replay.v1": {"contractId": "lightgbm_policy_replay.v1", **{k: v["const"] for k, v in _research_authority_properties().items()}, "datasetStatus": "DATASET_UNAVAILABLE", "candidateArtifactHash": None, "candidateQualificationStatus": "NOT_AVAILABLE", "eligibleSide": "BUY", "evidenceLabel": "NONE", "performanceClaimAllowed": False, "artifactHash": _sha("8")},
     "cross_market_threshold_freeze.v1": {"contractId": "cross_market_threshold_freeze.v1", "selectedOn": "VALIDATION_ONLY", "selectedPercentile": 97.5, "candidatePercentiles": [95, 97.5, 99], "selectionMetricOrder": ["MAX_NET_PROTECTION_BPS", "MAX_SEVERE_LOSS_RECALL", "MAX_SEVERE_LOSS_PRECISION", "MIN_FALSE_BLOCK_RATE", "HIGHER_PERCENTILE"], "validationArtifactHash": _sha("9"), "configHash": _sha("a"), "immutable": True, "createdAt": "2026-08-21T08:15:00+09:00"},
     "cross_market_risk_snapshot.v2": {"contractId": "cross_market_risk_snapshot.v2", "snapshotId": "00000000-0000-4000-8000-000000000607", "symbol": "005930", "availableAt": "2026-08-21T08:10:00+09:00", "staleAt": "2026-08-22T08:10:00+09:00", "evidenceMode": "MANUAL_EOD", "storageMode": "STORED_SNAPSHOT", "availability": "AVAILABLE", "quality": "PASS", "score": 98.2, "thresholdPercentile": 97.5, "thresholdArtifactHash": _sha("9"), "configHash": _sha("a"), "exposure": "NEW_BUY", "exposureAvailableAt": "2026-08-21T08:10:00+09:00", "exposureCatalogHash": _sha("b"), "artifactHash": _sha("c"), "semanticInputHash": _sha("d"), "runtimeMode": "WARN_ONLY", "providerFanoutAllowed": False},
@@ -605,6 +615,16 @@ def validate_semantics(schema_id: str, payload: dict[str, Any]) -> None:
             for name in ("falseBlockRate", "downsideAvoidedBps", "missedUpsideBps", "netProtectionBps"):
                 if metrics[name] != {"value": None, "estimationStatus": "NOT_ESTIMABLE"}:
                     raise ContractValidationError("zero-trigger metrics must be NOT_ESTIMABLE")
+        cause = payload["causeEvidence"]
+        for denominator, name in (
+            ("conflictDenominator", "evidenceConflictRate"),
+            ("unsupportedDenominator", "unsupportedCausalityRate"),
+        ):
+            if cause[denominator] == 0 and cause[name] != {
+                "value": None,
+                "estimationStatus": "NOT_ESTIMABLE",
+            }:
+                raise ContractValidationError("zero-denominator cause evidence must be NOT_ESTIMABLE")
         interval = payload["bootstrap"]["interval"]
         if interval is not None and interval[0] <= 0 <= interval[1] and payload["bootstrap"]["superiorityClaimAllowed"]:
             raise ContractValidationError("zero-containing CI forbids superiority claim")

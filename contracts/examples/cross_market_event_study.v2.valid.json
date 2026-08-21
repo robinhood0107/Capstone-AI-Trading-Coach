@@ -8,6 +8,18 @@
     "superiorityClaimAllowed": false,
     "unit": "EVENT_DATE"
   },
+  "causeEvidence": {
+    "conflictDenominator": 0,
+    "evidenceConflictRate": {
+      "estimationStatus": "NOT_ESTIMABLE",
+      "value": null
+    },
+    "unsupportedCausalityRate": {
+      "estimationStatus": "NOT_ESTIMABLE",
+      "value": null
+    },
+    "unsupportedDenominator": 0
+  },
   "contractId": "cross_market_event_study.v2",
   "coverageYears": 0,
   "datasetStatus": "DATASET_UNAVAILABLE",

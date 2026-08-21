@@ -53,6 +53,74 @@
       ],
       "type": "object"
     },
+    "causeEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "conflictDenominator": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "evidenceConflictRate": {
+          "additionalProperties": false,
+          "properties": {
+            "estimationStatus": {
+              "enum": [
+                "ESTIMATED",
+                "NOT_ESTIMABLE"
+              ]
+            },
+            "value": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "estimationStatus"
+          ],
+          "type": "object"
+        },
+        "unsupportedCausalityRate": {
+          "additionalProperties": false,
+          "properties": {
+            "estimationStatus": {
+              "enum": [
+                "ESTIMATED",
+                "NOT_ESTIMABLE"
+              ]
+            },
+            "value": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "estimationStatus"
+          ],
+          "type": "object"
+        },
+        "unsupportedDenominator": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "conflictDenominator",
+        "unsupportedDenominator",
+        "evidenceConflictRate",
+        "unsupportedCausalityRate"
+      ],
+      "type": "object"
+    },
     "contractId": {
       "const": "cross_market_event_study.v2"
     },
@@ -281,6 +349,7 @@
     "transactionCostSensitivityBps",
     "timing",
     "metrics",
+    "causeEvidence",
     "bootstrap",
     "performanceClaimAllowed",
     "artifactHash"

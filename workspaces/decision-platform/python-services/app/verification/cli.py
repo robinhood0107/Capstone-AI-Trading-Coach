@@ -9,6 +9,7 @@ from typing import Sequence
 
 from app.verification.artifacts import publish_packet, publish_report, read_packet, read_report
 from app.verification.packet import author_provider_read_smoke_packet
+from app.verification.provider_smoke import run_provider_read_smoke
 from app.verification.runner import run_s0_s5_current
 
 
@@ -47,7 +48,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "run":
         _require_external_output_root(args.output_root)
         if args.profile == "PROVIDER_READ_SMOKE":
-            parser.error("PROVIDER_READ_SMOKE runtime is NOT_IMPLEMENTED in P1.V0")
+            if args.packet is None:
+                parser.error("PROVIDER_READ_SMOKE requires --packet")
+            packet = read_packet(args.packet.absolute())
+            report = run_provider_read_smoke(
+                repository_root=_REPOSITORY_ROOT,
+                output_root=args.output_root,
+                packet=packet,
+            )
+            path = publish_report(args.output_root, report)
+            print(f"P1_VERIFICATION_REPORT={report.to_dict()['evidenceSha256']} PATH={path}")
+            return 0 if report.execution_state == "PASS" else 1
         if args.packet is not None:
             parser.error("S0_S5_CURRENT does not accept a provider packet")
         report = run_s0_s5_current(repository_root=_REPOSITORY_ROOT)

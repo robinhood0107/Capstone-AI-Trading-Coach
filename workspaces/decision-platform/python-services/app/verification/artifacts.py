@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import stat
+from datetime import UTC, datetime
 from typing import Mapping, cast
 
 from app.data._shared.canonical_json import canonical_json_bytes
@@ -50,6 +51,53 @@ def publish_report(root: Path, report: VerificationReport) -> Path:
         f"report-{report.to_dict()['evidenceSha256']}.json",
         canonical_json_bytes(report.to_dict()),
     )
+
+
+def claim_packet_execution(
+    root: Path,
+    packet: P1VerificationPacket,
+    *,
+    claimed_at: datetime,
+) -> Path:
+    """Consume one live packet exactly once before constructing provider clients."""
+
+    if claimed_at.tzinfo is None:
+        raise VerificationArtifactError("P1 verification claim time must be timezone aware")
+    content = canonical_json_bytes(
+        {
+            "claimedAt": claimed_at.astimezone(UTC).isoformat().replace("+00:00", "Z"),
+            "contractId": "p1-verification-execution-claim.v1",
+            "headSha": packet.head_sha,
+            "packetSha256": packet.packet_sha256,
+            "profile": "PROVIDER_READ_SMOKE",
+        }
+    )
+    directory = ensure_owner_private_directory(root)
+    filename = f"claim-{packet.packet_sha256}.json"
+    directory_fd = os.open(
+        directory,
+        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+    )
+    try:
+        try:
+            file_fd = os.open(
+                filename,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                0o600,
+                dir_fd=directory_fd,
+            )
+        except FileExistsError:
+            raise VerificationArtifactError(
+                "P1 verification packet was already claimed"
+            ) from None
+        with os.fdopen(file_fd, "wb", closefd=True) as output:
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+    return directory / filename
 
 
 def read_packet(path: Path) -> P1VerificationPacket:

@@ -38,7 +38,7 @@
       ]
     },
     {
-      "currentImplementationState": "NOT_IMPLEMENTED",
+      "currentImplementationState": "IMPLEMENTED",
       "profile": "PROVIDER_READ_SMOKE",
       "providerAuthority": true,
       "requiredGates": [

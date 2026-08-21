@@ -1,0 +1,80 @@
+{
+  "activeSessions": [
+    "S6.1",
+    "S6.2",
+    "S6.3",
+    "S6.4",
+    "S6.5"
+  ],
+  "contractId": "s6-capability-disposition.v1",
+  "crossMarketAuthorities": {
+    "decision": "NONE",
+    "order": "NONE",
+    "reader": "NONE",
+    "runtime": "NONE",
+    "signal": "NONE",
+    "writer": "NONE"
+  },
+  "decidedOn": "2026-08-21",
+  "feasibilityProbe": {
+    "costKrw": 0,
+    "liveAccountCalls": 0,
+    "orderCalls": 0,
+    "physicalCalls": 14,
+    "rawProviderMaterialStored": false,
+    "retryCount": 0,
+    "runtimeProviderCalls": 0
+  },
+  "historicalOnlyCatalogs": [
+    "s2-2-system-rule-catalog.v2",
+    "s2-2-system-rule-catalog.v3"
+  ],
+  "historicalOnlyContracts": [
+    "cross_market_event_study.v2",
+    "lightgbm_policy_replay.v1",
+    "cross_market_threshold_freeze.v1",
+    "cross_market_risk_snapshot.v2"
+  ],
+  "priorArtifactHashes": [
+    {
+      "path": "contracts/catalogs/s2-2-system-rule-catalog.v1.json",
+      "sha256": "a4714ee9ce3031199b9067919b15931fb42e106857da5f8d8ad7a95bafa8ad7b"
+    },
+    {
+      "path": "contracts/catalogs/s2-2-system-rule-catalog.v2.json",
+      "sha256": "bd812439694cc55aa8eca61f7e8aebe371ef0a55040f2e2134f103449b18da70"
+    },
+    {
+      "path": "contracts/catalogs/s2-2-system-rule-catalog.v3.json",
+      "sha256": "3361e9ec2f4a572573592a20f3da360c35fcd5123a84657acb06fa2730ed55e5"
+    },
+    {
+      "path": "contracts/catalogs/s6-contract-lock.v1.json",
+      "sha256": "07b9405f224661343127056a020a37ec9c7453dd1b923db35c37e5371964c646"
+    },
+    {
+      "path": "contracts/schemas/cross_market_event_study.v2.schema.json",
+      "sha256": "388802c074031d5f55b03c678cf490bf646c3b492408be42cc731b1647a8aca7"
+    },
+    {
+      "path": "contracts/schemas/cross_market_risk_snapshot.v2.schema.json",
+      "sha256": "78934ca6cce44a0ea1cc79c9b271c1f967275c49437d4422c36bec9364e32a1e"
+    },
+    {
+      "path": "contracts/schemas/cross_market_threshold_freeze.v1.schema.json",
+      "sha256": "4f3c25f8e39f04dba4db3095a4ec90beb98d3be25577e7aa4c826db2204cc76c"
+    },
+    {
+      "path": "contracts/schemas/lightgbm_policy_replay.v1.schema.json",
+      "sha256": "048d2a3f05579dbe69c77daacc0213634c61d61c112412295d281ee895c6b663"
+    }
+  ],
+  "retiredSessions": [
+    "S6.6",
+    "S6.7"
+  ],
+  "retirementReason": "STRICT_REAL_PIT_UNAVAILABLE_FREE_NOW",
+  "runtimeCatalog": "s2-2-system-rule-catalog.v1",
+  "s4_8Status": "VERIFIED_OFFLINE_STORED",
+  "strictPitStatus": "RETIRED_NOT_APPLICABLE"
+}

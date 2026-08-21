@@ -236,7 +236,8 @@
               "nextCursor": {
                 "oneOf": [
                   {
-                    "maxLength": 128,
+                    "maxLength": 256,
+                    "minLength": 16,
                     "pattern": "^[A-Za-z0-9_-]{16,256}$",
                     "type": "string"
                   },
@@ -1680,10 +1681,13 @@
                 }
               }
             },
-            "description": "Bounded owner-scoped response"
+            "description": "Bounded ADMIN operational response"
           },
           "401": {
             "description": "Authentication required"
+          },
+          "403": {
+            "description": "Current ADMIN role required"
           },
           "404": {
             "description": "Resource not found"
@@ -1698,6 +1702,56 @@
     },
     "/api/v1/async-jobs": {
       "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "REQUESTED",
+                "RUNNING",
+                "COMPLETED",
+                "FAILED",
+                "NEEDS_REVIEW"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "enum": [
+                "RAG_INDEX",
+                "ARTIFACT_INGEST",
+                "MODEL_EVAL"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "pattern": "^[A-Za-z0-9_-]{16,256}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1707,10 +1761,13 @@
                 }
               }
             },
-            "description": "Bounded owner-scoped response"
+            "description": "Bounded ADMIN operational response"
           },
           "401": {
             "description": "Authentication required"
+          },
+          "403": {
+            "description": "Current ADMIN role required"
           },
           "404": {
             "description": "Resource not found"
@@ -1745,10 +1802,13 @@
                 }
               }
             },
-            "description": "Bounded owner-scoped response"
+            "description": "Bounded ADMIN operational response"
           },
           "401": {
             "description": "Authentication required"
+          },
+          "403": {
+            "description": "Current ADMIN role required"
           },
           "404": {
             "description": "Resource not found"
@@ -1788,6 +1848,9 @@
           "401": {
             "description": "Authentication required"
           },
+          "403": {
+            "description": "Access denied"
+          },
           "404": {
             "description": "Resource not found"
           }
@@ -1825,6 +1888,9 @@
           },
           "401": {
             "description": "Authentication required"
+          },
+          "403": {
+            "description": "Access denied"
           },
           "404": {
             "description": "Resource not found"
@@ -1864,6 +1930,9 @@
           "401": {
             "description": "Authentication required"
           },
+          "403": {
+            "description": "Access denied"
+          },
           "404": {
             "description": "Resource not found"
           }
@@ -1902,6 +1971,9 @@
           "401": {
             "description": "Authentication required"
           },
+          "403": {
+            "description": "Access denied"
+          },
           "404": {
             "description": "Resource not found"
           }
@@ -1924,10 +1996,13 @@
                 }
               }
             },
-            "description": "Bounded owner-scoped response"
+            "description": "Bounded ADMIN operational response"
           },
           "401": {
             "description": "Authentication required"
+          },
+          "403": {
+            "description": "Current ADMIN role required"
           },
           "404": {
             "description": "Resource not found"

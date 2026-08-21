@@ -13,6 +13,7 @@ from app.cross_market.s67_materializer import (
     StorageMode,
     ThresholdFreeze,
 )
+from app.cross_market.s67_repository import _numeric_parameter
 
 
 NOW = datetime(2026, 8, 21, 8, 10, tzinfo=UTC)
@@ -83,3 +84,14 @@ def test_equivalent_offset_timestamps_have_one_utc_semantic_identity() -> None:
 def test_subsecond_timestamp_mutation_changes_semantic_identity() -> None:
     changed = _snapshot(available_at=NOW + timedelta(microseconds=1))
     assert changed.semantic_input_hash != _snapshot().semantic_input_hash
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    ((95.0, "95"), (97.5, "97.5"), (99.0, "99"), (100.0, "100"), (98.1, "98.1")),
+)
+def test_postgres_numeric_parameters_preserve_semantic_hash_rendering(
+    value: float,
+    expected: str,
+) -> None:
+    assert _numeric_parameter(value) == expected

@@ -120,13 +120,46 @@ class CrossMarketRiskOverlayTest {
     }
 
     @Test
+    fun `equivalent threshold scales retain WARN authority`() {
+        val overlay =
+            CrossMarketRiskOverlay(
+                port(input(threshold = BigDecimal("95.00"))),
+                config(CrossMarketRuntimeMode.WARN_ONLY, BigDecimal("95.0")),
+            )
+
+        val result = overlay.evaluate(request(), ALLOW)
+
+        assertThat(result.status).isEqualTo(CrossMarketOverlayStatus.WARNED)
+        assertThat(result.finalAction).isEqualTo(EvaluationAction.WARN)
+    }
+
+    @Test
+    fun `invalid stored projection fails safe as unavailable`() {
+        val invalid =
+            object : CrossMarketRiskPort {
+                override fun load(request: EvaluationSourceRequest): CrossMarketDecisionInput =
+                    throw IllegalArgumentException("stored projection is invalid")
+            }
+
+        val result =
+            CrossMarketRiskOverlay(invalid, config(CrossMarketRuntimeMode.WARN_ONLY))
+                .evaluate(request(), ALLOW)
+
+        assertThat(result.status).isEqualTo(CrossMarketOverlayStatus.UNAVAILABLE)
+        assertThat(result.finalAction).isEqualTo(EvaluationAction.ALLOW)
+    }
+
+    @Test
     fun `ENFORCED P1 activation is rejected`() {
         assertThatThrownBy { CrossMarketOverlayConfig(mode = CrossMarketRuntimeMode.ENFORCED) }
             .isInstanceOf(IllegalArgumentException::class.java)
             .hasMessageContaining("MODE_NOT_APPROVED")
     }
 
-    private fun config(mode: CrossMarketRuntimeMode) = CrossMarketOverlayConfig(mode, THRESHOLD, THRESHOLD_HASH, CONFIG_HASH)
+    private fun config(
+        mode: CrossMarketRuntimeMode,
+        threshold: BigDecimal = THRESHOLD,
+    ) = CrossMarketOverlayConfig(mode, threshold, THRESHOLD_HASH, CONFIG_HASH)
 
     private fun port(value: CrossMarketDecisionInput) =
         object : CrossMarketRiskPort {
@@ -146,6 +179,7 @@ class CrossMarketRiskOverlayTest {
         staleAt: Instant = NOW.plusSeconds(3600),
         exposureAvailableAt: Instant = AVAILABLE_AT,
         runtimeMode: CrossMarketRuntimeMode = CrossMarketRuntimeMode.WARN_ONLY,
+        threshold: BigDecimal = THRESHOLD,
     ) = CrossMarketDecisionInput(
         snapshot =
             CrossMarketRiskSnapshot(
@@ -159,7 +193,7 @@ class CrossMarketRiskOverlayTest {
                 runtimeMode,
                 CrossMarketAvailability.AVAILABLE,
                 BigDecimal("98.125"),
-                THRESHOLD,
+                threshold,
                 THRESHOLD_HASH,
                 CONFIG_HASH,
                 "4".repeat(64),

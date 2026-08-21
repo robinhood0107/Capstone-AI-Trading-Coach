@@ -63,7 +63,7 @@ data class CrossMarketRiskSnapshot(
         require(symbol.matches(SYMBOL))
         require(!staleAt.isBefore(availableAt))
         require(score == null || score in BigDecimal.ZERO..BigDecimal("100"))
-        require(thresholdPercentile == null || thresholdPercentile in APPROVED_THRESHOLDS)
+        require(thresholdPercentile == null || thresholdPercentile.isApprovedThreshold())
         require(thresholdArtifactHash == null || SHA256.matches(thresholdArtifactHash))
         require(SHA256.matches(configHash))
         require(SHA256.matches(semanticInputHash))
@@ -107,3 +107,5 @@ class CrossMarketInputUnavailableException(
 internal val SHA256 = Regex(EvaluationBounds.SANITIZED_SHA256_PATTERN)
 internal val SYMBOL = Regex("^[0-9A-Z./-]{1,32}$")
 internal val APPROVED_THRESHOLDS = setOf(BigDecimal("95"), BigDecimal("97.5"), BigDecimal("99"))
+
+internal fun BigDecimal.isApprovedThreshold() = APPROVED_THRESHOLDS.any { compareTo(it) == 0 }

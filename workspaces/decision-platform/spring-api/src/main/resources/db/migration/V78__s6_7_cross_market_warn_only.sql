@@ -122,7 +122,9 @@ BEGIN
     RAISE EXCEPTION 'cross-market exposure chronology mismatch' USING ERRCODE = '22023';
   END IF;
 
-  PERFORM pg_advisory_xact_lock(hashtextextended(p_snapshot_id::text, 0));
+  PERFORM pg_advisory_xact_lock(hashtextextended(concat_ws(E'\n',
+    p_owner_scope_hash, p_symbol,
+    to_char(p_available_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')), 0));
   SELECT * INTO existing FROM public.cross_market_risk_snapshots_v2 s
   WHERE s.owner_scope_hash = p_owner_scope_hash AND s.symbol = p_symbol
     AND s.available_at = p_available_at;

@@ -84,10 +84,38 @@ class S67CrossMarketMigrationIntegrationTest {
         }
     }
 
+    @Test
+    fun `canonical integer score and approved threshold publish without numeric scale drift`() {
+        val availableAt = AVAILABLE_AT.plusSeconds(1)
+        val staleAt = STALE_AT.plusSeconds(1)
+        val semanticHash = semanticHash("100", "95", availableAt, staleAt)
+
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_market_writer", MARKET_WRITER_PASSWORD).use { writer ->
+            assertEquals(
+                "INSERTED",
+                append(
+                    writer,
+                    semanticHash,
+                    ARTIFACT_HASH,
+                    snapshotId = UUID.fromString("22222222-2222-4222-8222-222222222222"),
+                    score = "100",
+                    threshold = "95",
+                    availableAt = availableAt,
+                    staleAt = staleAt,
+                ),
+            )
+        }
+    }
+
     private fun append(
         writer: Connection,
         semanticHash: String,
         artifactHash: String,
+        snapshotId: UUID = SNAPSHOT_ID,
+        score: String = SCORE,
+        threshold: String = THRESHOLD,
+        availableAt: Instant = AVAILABLE_AT,
+        staleAt: Instant = STALE_AT,
     ): String =
         writer
             .prepareStatement(
@@ -101,23 +129,23 @@ class S67CrossMarketMigrationIntegrationTest {
             ).use { statement ->
                 val values =
                     listOf(
-                        SNAPSHOT_ID.toString(),
+                        snapshotId.toString(),
                         "usr_demo_user",
                         OWNER_SCOPE,
                         SYMBOL,
-                        AVAILABLE_AT.toString(),
-                        STALE_AT.toString(),
+                        availableAt.toString(),
+                        staleAt.toString(),
                         "SYNTHETIC_FIXTURE",
                         "STORED_SNAPSHOT",
                         "WARN_ONLY",
                         "AVAILABLE",
                         "PASS",
-                        SCORE,
-                        THRESHOLD,
+                        score,
+                        threshold,
                         THRESHOLD_HASH,
                         CONFIG_HASH,
                         "NEW_BUY",
-                        AVAILABLE_AT.toString(),
+                        availableAt.toString(),
                         EXPOSURE_HASH,
                         semanticHash,
                         artifactHash,
@@ -147,15 +175,20 @@ class S67CrossMarketMigrationIntegrationTest {
                 }
             }
 
-    private fun semanticHash(score: String): String {
+    private fun semanticHash(
+        score: String,
+        threshold: String = THRESHOLD,
+        availableAt: Instant = AVAILABLE_AT,
+        staleAt: Instant = STALE_AT,
+    ): String {
         val preimage =
             listOf(
                 "s6-cross-market-semantic-v2",
                 SYMBOL,
-                "2026-08-21T08:09:00.000000Z",
-                "2026-08-22T08:09:00.000000Z",
+                canonicalInstant(availableAt),
+                canonicalInstant(staleAt),
                 score,
-                THRESHOLD,
+                threshold,
                 THRESHOLD_HASH,
                 CONFIG_HASH,
                 "NEW_BUY",
@@ -163,6 +196,8 @@ class S67CrossMarketMigrationIntegrationTest {
             ).joinToString("\n")
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(preimage.toByteArray()))
     }
+
+    private fun canonicalInstant(value: Instant): String = value.toString().replace("Z", ".000000Z")
 
     companion object {
         private const val APP_PASSWORD = "app-test"

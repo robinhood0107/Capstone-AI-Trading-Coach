@@ -13,7 +13,7 @@ data class CrossMarketOverlayConfig(
 ) {
     init {
         require(mode != CrossMarketRuntimeMode.ENFORCED) { "MODE_NOT_APPROVED" }
-        require(thresholdPercentile == null || thresholdPercentile in APPROVED_THRESHOLDS)
+        require(thresholdPercentile == null || thresholdPercentile.isApprovedThreshold())
         require(thresholdArtifactHash == null || SHA256.matches(thresholdArtifactHash))
         require(configHash == null || SHA256.matches(configHash))
     }
@@ -67,6 +67,8 @@ class CrossMarketRiskOverlay(
                 port.load(request)
             } catch (_: CrossMarketInputUnavailableException) {
                 return result(baseResult, baseResult.action, CrossMarketOverlayStatus.UNAVAILABLE)
+            } catch (_: IllegalArgumentException) {
+                return result(baseResult, baseResult.action, CrossMarketOverlayStatus.UNAVAILABLE)
             }
         val snapshot = input.snapshot
         val exposure = input.exposure
@@ -78,7 +80,9 @@ class CrossMarketRiskOverlay(
         }
         if (
             snapshot.availability != CrossMarketAvailability.AVAILABLE ||
-            snapshot.thresholdPercentile != config.thresholdPercentile ||
+            snapshot.thresholdPercentile == null ||
+            config.thresholdPercentile == null ||
+            snapshot.thresholdPercentile.compareTo(config.thresholdPercentile) != 0 ||
             snapshot.thresholdArtifactHash != config.thresholdArtifactHash ||
             snapshot.configHash != config.configHash ||
             snapshot.runtimeMode == CrossMarketRuntimeMode.ENFORCED ||
@@ -91,7 +95,7 @@ class CrossMarketRiskOverlay(
         ) {
             return result(baseResult, baseResult.action, CrossMarketOverlayStatus.UNAVAILABLE, snapshot.semanticInputHash)
         }
-        val trigger = snapshot.score!! >= snapshot.thresholdPercentile!!
+        val trigger = snapshot.score!! >= snapshot.thresholdPercentile
         val eligible =
             request.orderIntent.side == "BUY" &&
                 exposure.classification == CrossMarketExposureClassification.NEW_BUY

@@ -1,0 +1,46 @@
+{
+  "complete": false,
+  "contractId": "financial_engineering_report_manifest.v1",
+  "createdAt": "2026-08-21T08:12:00+09:00",
+  "reportArtifactHash": "5555555555555555555555555555555555555555555555555555555555555555",
+  "reportBytes": 4096,
+  "runId": "00000000-0000-4000-8000-000000000601",
+  "snapshotArtifactHash": "4444444444444444444444444444444444444444444444444444444444444444",
+  "steps": [
+    {
+      "errorCode": null,
+      "name": "STORED_COLLECTION",
+      "peakMemoryBytes": 1024,
+      "status": "COMPLETE",
+      "wallTimeMillis": 10
+    },
+    {
+      "errorCode": null,
+      "name": "FEATURE",
+      "peakMemoryBytes": 1024,
+      "status": "COMPLETE",
+      "wallTimeMillis": 10
+    },
+    {
+      "errorCode": null,
+      "name": "INFERENCE",
+      "peakMemoryBytes": 1024,
+      "status": "COMPLETE",
+      "wallTimeMillis": 10
+    },
+    {
+      "errorCode": null,
+      "name": "SNAPSHOT",
+      "peakMemoryBytes": 1024,
+      "status": "COMPLETE",
+      "wallTimeMillis": 10
+    },
+    {
+      "errorCode": null,
+      "name": "REPORT",
+      "peakMemoryBytes": 1024,
+      "status": "COMPLETE",
+      "wallTimeMillis": 10
+    }
+  ]
+}

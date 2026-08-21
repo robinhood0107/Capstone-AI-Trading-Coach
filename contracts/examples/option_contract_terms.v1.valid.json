@@ -1,0 +1,15 @@
+{
+  "contractId": "option_contract_terms.v1",
+  "effectiveFrom": "2026-01-01T00:00:00+09:00",
+  "effectiveTo": null,
+  "exerciseStyle": "EUROPEAN",
+  "lastTradingAt": "2026-09-10T15:20:00+09:00",
+  "multiplier": 250000,
+  "optionRight": "CALL",
+  "settlementType": "CASH",
+  "sourceHash": "6666666666666666666666666666666666666666666666666666666666666666",
+  "sourceUrl": "https://global.krx.co.kr/",
+  "strike": 75000,
+  "termsId": "KOSPI200_OPTION_FIXTURE_202609_CALL_75000",
+  "timezone": "Asia/Seoul"
+}

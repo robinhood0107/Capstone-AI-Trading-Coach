@@ -1,0 +1,14 @@
+{
+  "artifactHash": "8888888888888888888888888888888888888888888888888888888888888888",
+  "candidateArtifactHash": null,
+  "candidateQualificationStatus": "NOT_AVAILABLE",
+  "contractId": "lightgbm_policy_replay.v1",
+  "datasetStatus": "DATASET_UNAVAILABLE",
+  "decisionAuthority": "NONE",
+  "eligibleSide": "BUY",
+  "evidenceLabel": "NONE",
+  "performanceClaimAllowed": false,
+  "productionSignalAuthority": false,
+  "researchOnly": true,
+  "runtimeRiskEngineSource": false
+}

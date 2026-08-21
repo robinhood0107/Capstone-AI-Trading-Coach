@@ -1,0 +1,27 @@
+{
+  "catalog": "s2-2-system-rule-catalog.v3",
+  "contractId": "s6-contract-lock.v1",
+  "enforcedRuntimeAllowed": false,
+  "generatedSetHash": "75b5f833c56dd458f2939450551d2e55faf13c0f2c1c81bb4c0e9f8ae15da2df",
+  "hmmActiveWireAllowed": false,
+  "lightgbmProductionAllowed": false,
+  "p1RuntimeModes": [
+    "OFF",
+    "SHADOW",
+    "WARN_ONLY"
+  ],
+  "providerCallsAllowed": false,
+  "publicOptionValuation": true,
+  "schemaIds": [
+    "hmm_regime_report.v1",
+    "gbm_monte_carlo_report.v1",
+    "mean_reversion_report.v1",
+    "financial_engineering_snapshot.v1",
+    "financial_engineering_report_manifest.v1",
+    "option_contract_terms.v1",
+    "cross_market_event_study.v2",
+    "lightgbm_policy_replay.v1",
+    "cross_market_threshold_freeze.v1",
+    "cross_market_risk_snapshot.v2"
+  ]
+}

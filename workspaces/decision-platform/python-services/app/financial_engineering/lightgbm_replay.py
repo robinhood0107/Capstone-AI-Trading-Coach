@@ -19,6 +19,7 @@ def build_lightgbm_policy_replay(
     candidate: ResearchCandidate | None,
     *,
     pit_dataset_available: bool,
+    empirical_performance_claim_allowed: bool = True,
 ) -> dict[str, object]:
     eligible = (
         candidate is not None
@@ -46,13 +47,21 @@ def build_lightgbm_policy_replay(
         "productionSignalAuthority": False,
         "researchOnly": True,
         "datasetStatus": "AVAILABLE" if dataset_available else "DATASET_UNAVAILABLE",
-        "candidateArtifactHash": eligible_candidate.artifact_hash if eligible_candidate is not None else None,
-        "candidateQualificationStatus": "AVAILABLE" if eligible else (
-            "FAILED" if candidate is not None and candidate.qualification_status == "FAILED" else "NOT_AVAILABLE"
+        "candidateArtifactHash": eligible_candidate.artifact_hash
+        if eligible_candidate is not None
+        else None,
+        "candidateQualificationStatus": "AVAILABLE"
+        if eligible
+        else (
+            "FAILED"
+            if candidate is not None and candidate.qualification_status == "FAILED"
+            else "NOT_AVAILABLE"
         ),
         "eligibleSide": "BUY",
-        "evidenceLabel": eligible_candidate.evidence_label if eligible_candidate is not None else "NONE",
-        "performanceClaimAllowed": bool(real),
+        "evidenceLabel": eligible_candidate.evidence_label
+        if eligible_candidate is not None
+        else "NONE",
+        "performanceClaimAllowed": bool(real and empirical_performance_claim_allowed),
     }
     payload["artifactHash"] = hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
     return payload

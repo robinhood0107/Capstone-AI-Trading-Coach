@@ -85,13 +85,30 @@
             ],
             "type": "object"
           },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
           "success": {
             "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
           }
         },
         "required": [
           "success",
-          "data"
+          "requestId",
+          "data",
+          "warnings",
+          "error"
         ],
         "title": "artifact-ingest-status.v1",
         "type": "object"
@@ -369,13 +386,30 @@
             ],
             "type": "object"
           },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
           "success": {
             "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
           }
         },
         "required": [
           "success",
-          "data"
+          "requestId",
+          "data",
+          "warnings",
+          "error"
         ],
         "title": "async-job-list.v1",
         "type": "object"
@@ -510,13 +544,30 @@
             ],
             "type": "object"
           },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
           "success": {
             "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
           }
         },
         "required": [
           "success",
-          "data"
+          "requestId",
+          "data",
+          "warnings",
+          "error"
         ],
         "title": "async-job-status.v1",
         "type": "object"
@@ -998,13 +1049,30 @@
             ],
             "type": "object"
           },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
           "success": {
             "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
           }
         },
         "required": [
           "success",
-          "data"
+          "requestId",
+          "data",
+          "warnings",
+          "error"
         ],
         "title": "dashboard-backtest.v1",
         "type": "object"
@@ -1223,13 +1291,30 @@
             ],
             "type": "object"
           },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
           "success": {
             "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
           }
         },
         "required": [
           "success",
-          "data"
+          "requestId",
+          "data",
+          "warnings",
+          "error"
         ],
         "title": "dashboard-model-evaluation.v1",
         "type": "object"
@@ -1280,7 +1365,7 @@
                     "additionalProperties": false,
                     "properties": {
                       "answerId": {
-                        "pattern": "^answer_[A-Za-z0-9_-]{8,96}$",
+                        "pattern": "^rag_[A-Za-z0-9_-]{12,96}$",
                         "type": "string"
                       },
                       "expandableSources": {
@@ -1388,13 +1473,30 @@
             ],
             "type": "object"
           },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
           "success": {
             "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
           }
         },
         "required": [
           "success",
-          "data"
+          "requestId",
+          "data",
+          "warnings",
+          "error"
         ],
         "title": "dashboard-rag-sources.v1",
         "type": "object"
@@ -1453,7 +1555,7 @@
                         ]
                       },
                       "decisionId": {
-                        "pattern": "^decision_[A-Za-z0-9_-]{8,96}$",
+                        "pattern": "^dec_[A-Za-z0-9_-]{8,96}$",
                         "type": "string"
                       },
                       "principles": {
@@ -1538,13 +1640,30 @@
             ],
             "type": "object"
           },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
           "success": {
             "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
           }
         },
         "required": [
           "success",
-          "data"
+          "requestId",
+          "data",
+          "warnings",
+          "error"
         ],
         "title": "dashboard-risk-result.v1",
         "type": "object"
@@ -1759,13 +1878,30 @@
             ],
             "type": "object"
           },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
           "success": {
             "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
           }
         },
         "required": [
           "success",
-          "data"
+          "requestId",
+          "data",
+          "warnings",
+          "error"
         ],
         "title": "stream-metric-status.v1",
         "type": "object"
@@ -2027,7 +2163,7 @@
             "name": "answerId",
             "required": true,
             "schema": {
-              "pattern": "^answer_[A-Za-z0-9_-]{8,96}$",
+              "pattern": "^rag_[A-Za-z0-9_-]{12,96}$",
               "type": "string"
             }
           }
@@ -2068,7 +2204,7 @@
             "name": "decisionId",
             "required": true,
             "schema": {
-              "pattern": "^decision_[A-Za-z0-9_-]{8,96}$",
+              "pattern": "^dec_[A-Za-z0-9_-]{8,96}$",
               "type": "string"
             }
           }

@@ -208,13 +208,30 @@
       ],
       "type": "object"
     },
+    "error": {
+      "type": "null"
+    },
+    "requestId": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+      "type": "string"
+    },
     "success": {
       "const": true
+    },
+    "warnings": {
+      "items": {
+        "type": "object"
+      },
+      "maxItems": 20,
+      "type": "array"
     }
   },
   "required": [
     "success",
-    "data"
+    "requestId",
+    "data",
+    "warnings",
+    "error"
   ],
   "title": "stream-metric-status.v1",
   "type": "object"

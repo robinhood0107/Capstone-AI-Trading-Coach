@@ -456,6 +456,30 @@ Gradle build), `python-ci.yml`(Python 3.12 품질 게이트)이다. 아래 시�
   추가하지 않는다. S6은 저장된 operational/research reader만 사용하고 LightGBM Signal은 계속
   `ABSTAIN/MISSING_EVIDENCE`, RiskDecision/order authority는 0이다.
 
+## P1.V0 provider-0 검증 하네스 현재 권위
+
+- `contracts/catalogs/p1-verification-catalog.v1.json`은 profile별 구현 상태, 필수 gate와 provider
+  authority를 분리하는 SSOT다. `implementationState`와 `executionState`를 합쳐 쓰지 않으며 전체
+  결과도 `PASS | FAIL | BLOCKED | INCOMPLETE` 중 하나로 보고한다.
+- `p1-verify run --profile S0_S5_CURRENT`는 provider 권한 없이 두 독립 lane을 검증한다. Market Data
+  lane은 sealed replay→staging/journal→V75/V76→253/1,260 reader를, Decision lane은 sanitized fixture
+  writer→Principle→Decision→INTERNAL_PAPER→fill/reconciliation을 확인한다. 이는 단일 live
+  S0~S5 black-box 파이프라인이 아니다.
+- V76은 daily INSERT를 직렬화하고 DB가 인정한 직전 accepted manifest SHA와 packet의 predecessor가
+  같은지 preflight와 trigger에서 모두 확인한다. writer에는 base table SELECT를 주지 않고 bounded
+  `SECURITY DEFINER` head 조회만 허용한다. DB commit 뒤 local manifest 게시 전 종료는 재실행에서 DB
+  `NO_OP` 후 누락 manifest만 게시해야 한다.
+- S5.7의 `38/41`은 sealed replay operation 수이고 provider physical call 수가 아니다. 현재 offline
+  shard/health의 provider physical call은 정확히 0이다.
+- P1.V0 report는 raw body/header/token/credential/URL/실제 시장값이나 명령 출력을 저장하지 않고 gate
+  상태·physical count·content-free evidence SHA만 저장한다. owner-private report는 Git 밖에 둔다.
+- 현재 판정은 `S0_S5_CURRENT=PASS`, `PROVIDER_READ_SMOKE=NOT_IMPLEMENTED`,
+  `FULL_LIVE_DAILY_COLLECTOR=NOT_IMPLEMENTED`, `S6_OFFLINE=NOT_IMPLEMENTED`,
+  `P1_OVERALL=INCOMPLETE`, `LIGHTGBM_PRODUCTION=INTENTIONALLY_DISABLED`다.
+- `p1-verify author`는 clean HEAD/tree/lock/catalog과 TTL 최대 60분을 결속하는 packet만 만들며 provider
+  실행 권한을 구현하지 않는다. P1.V1 live adapter가 별도 PR로 병합되고 CI가 성공하기 전 live smoke는
+  실행하지 않는다. account, balance, order cap은 모든 profile에서 0이다.
+
 ## Java/Kotlin/Spring 기준 스택
 
 - JVM은 **JDK 25 LTS**로 고정한다. JDK 26은 최신 feature release지만 이 프로젝트의 기준은 최신 LTS다.

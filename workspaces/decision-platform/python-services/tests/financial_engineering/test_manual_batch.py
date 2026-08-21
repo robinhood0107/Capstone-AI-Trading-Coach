@@ -39,9 +39,9 @@ class Publisher:
     def __init__(self) -> None:
         self.values: list[BatchPublication] = []
 
-    def publish(self, publication: BatchPublication) -> str:
-        self.values.append(publication)
-        return "INSERTED"
+    def publish_all(self, publications: tuple[BatchPublication, ...]) -> tuple[str, ...]:
+        self.values.extend(publications)
+        return tuple("INSERTED" for _ in publications)
 
 
 def test_manual_batch_publishes_only_complete_snapshot_and_report(tmp_path: Path) -> None:
@@ -84,5 +84,60 @@ def test_incomplete_history_is_not_published() -> None:
     publisher = Publisher()
     result = ManualFinancialEngineeringBatch(Reader(59), publisher, n_paths=1_000).run()
     assert result.status == "NOT_AVAILABLE"
-    assert result.error_code == "VALUEERROR"
+    assert result.error_code == "STORED_HISTORY_INSUFFICIENT"
+    assert [step.status for step in result.diagnostic_steps] == ["COMPLETE", "NOT_AVAILABLE"]
+    assert result.diagnostic_steps[-1].error_code == "STORED_HISTORY_INSUFFICIENT"
     assert publisher.values == []
+
+
+def test_empty_stored_symbol_set_is_not_available_and_not_published() -> None:
+    class EmptyReader(Reader):
+        def current_symbols(self) -> tuple[str, ...]:
+            return ()
+
+    publisher = Publisher()
+    result = ManualFinancialEngineeringBatch(EmptyReader(), publisher, n_paths=1_000).run()
+    assert result.status == "NOT_AVAILABLE"
+    assert result.error_code == "STORED_SYMBOL_SET_EMPTY"
+    assert result.publications == ()
+    assert publisher.values == []
+
+
+def test_multi_symbol_failure_never_calls_atomic_publisher_or_returns_partial_publications() -> None:
+    class TwoSymbolReader(Reader):
+        def current_symbols(self) -> tuple[str, ...]:
+            return ("005930", "000660")
+
+        def read_closes(self, symbol: str, *, limit: int = 253) -> tuple[CloseObservation, ...]:
+            if symbol == "000660":
+                return super().read_closes(symbol, limit=limit)[:59]
+            return super().read_closes(symbol, limit=limit)
+
+    publisher = Publisher()
+    result = ManualFinancialEngineeringBatch(TwoSymbolReader(), publisher, n_paths=1_000).run()
+    assert result.status == "FAILED"
+    assert result.publications == ()
+    assert publisher.values == []
+
+
+def test_local_output_is_promoted_only_after_every_file_is_written(tmp_path: Path) -> None:
+    publisher = Publisher()
+    result = ManualFinancialEngineeringBatch(Reader(), publisher, n_paths=1_000).run()
+    output = tmp_path / "published"
+    write_publications(output, result.publications)
+    assert output.is_dir()
+    assert not list(tmp_path.glob(".published.*.staging"))
+
+
+def test_local_output_failure_never_promotes_partial_root(tmp_path: Path) -> None:
+    publisher = Publisher()
+    result = ManualFinancialEngineeringBatch(Reader(), publisher, n_paths=1_000).run()
+    duplicated = (result.publications[0], result.publications[0])
+    output = tmp_path / "published"
+    try:
+        write_publications(output, duplicated)
+    except FileExistsError:
+        pass
+    else:
+        raise AssertionError("duplicate symbol should fail before promotion")
+    assert not output.exists()

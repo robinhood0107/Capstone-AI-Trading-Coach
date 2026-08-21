@@ -352,11 +352,12 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     ),
     "cross_market_risk_snapshot.v2": _object(
         "cross_market_risk_snapshot.v2",
-        ["contractId", "snapshotId", "symbol", "availableAt", "evidenceMode", "storageMode", "availability", "quality", "score", "thresholdPercentile", "thresholdArtifactHash", "configHash", "exposureCatalogHash", "artifactHash", "semanticInputHash", "runtimeMode", "providerFanoutAllowed"],
+        ["contractId", "snapshotId", "symbol", "availableAt", "staleAt", "evidenceMode", "storageMode", "availability", "quality", "score", "thresholdPercentile", "thresholdArtifactHash", "configHash", "exposure", "exposureAvailableAt", "exposureCatalogHash", "artifactHash", "semanticInputHash", "runtimeMode", "providerFanoutAllowed"],
         {
             "snapshotId": {"type": "string", "pattern": "^[0-9a-f-]{36}$"},
             "symbol": {"type": "string", "pattern": SYMBOL_PATTERN},
             "availableAt": _timestamp(),
+            "staleAt": _timestamp(),
             "evidenceMode": {"enum": ["SYNTHETIC_FIXTURE", "HISTORICAL_REPLAY", "PROSPECTIVE_SHADOW", "MANUAL_EOD"]},
             "storageMode": {"enum": ["ARTIFACT_ONLY", "STORED_SNAPSHOT"]},
             "availability": {"enum": ["AVAILABLE", "UNAVAILABLE", "STALE"]},
@@ -365,6 +366,8 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "thresholdPercentile": {"type": ["number", "null"], "enum": [95, 97.5, 99, None]},
             "thresholdArtifactHash": {"type": ["string", "null"], "pattern": HASH_PATTERN},
             "configHash": _hash(),
+            "exposure": {"enum": ["NEW_BUY", "INCREASE_BUY", "SELL", "REDUCE", "LIQUIDATION", "EXISTING_POSITION", "UNCLASSIFIED"]},
+            "exposureAvailableAt": _timestamp(),
             "exposureCatalogHash": _hash(),
             "artifactHash": _hash(),
             "semanticInputHash": _hash(),
@@ -389,7 +392,7 @@ VALID_FIXTURES: dict[str, dict[str, Any]] = {
     "cross_market_event_study.v2": {"contractId": "cross_market_event_study.v2", **{k: v["const"] for k, v in _research_authority_properties().items()}, "evidenceMode": "PROSPECTIVE_SHADOW", "datasetStatus": "DATASET_UNAVAILABLE", "coverageYears": 0, "split": [0.6, 0.2, 0.2], "purgeEmbargoSessions": 5, "thresholdCandidates": [95, 97.5, 99], "severeLossCutoff": None, "transactionCostSensitivityBps": [25, 30, 35], "timing": {"detectionLatencyMillis": None, "preOpenLeadTimeMillis": None, "preOpenStatus": "NOT_ESTIMABLE", "estimationStatus": "NOT_ESTIMABLE"}, "metrics": {"triggerCount": 0, **{name: {"value": None, "estimationStatus": "NOT_ESTIMABLE"} for name in ("falseBlockRate", "downsideAvoidedBps", "missedUpsideBps", "netProtectionBps")}}, "bootstrap": {"unit": "EVENT_DATE", "blockLengthSessions": 5, "replications": 2000, "seed": 20260821, "interval": None, "superiorityClaimAllowed": False}, "performanceClaimAllowed": False, "artifactHash": _sha("7")},
     "lightgbm_policy_replay.v1": {"contractId": "lightgbm_policy_replay.v1", **{k: v["const"] for k, v in _research_authority_properties().items()}, "datasetStatus": "DATASET_UNAVAILABLE", "candidateArtifactHash": None, "candidateQualificationStatus": "NOT_AVAILABLE", "eligibleSide": "BUY", "evidenceLabel": "NONE", "performanceClaimAllowed": False, "artifactHash": _sha("8")},
     "cross_market_threshold_freeze.v1": {"contractId": "cross_market_threshold_freeze.v1", "selectedOn": "VALIDATION_ONLY", "selectedPercentile": 97.5, "candidatePercentiles": [95, 97.5, 99], "selectionMetricOrder": ["MAX_NET_PROTECTION_BPS", "MAX_SEVERE_LOSS_RECALL", "MAX_SEVERE_LOSS_PRECISION", "MIN_FALSE_BLOCK_RATE", "HIGHER_PERCENTILE"], "validationArtifactHash": _sha("9"), "configHash": _sha("a"), "immutable": True, "createdAt": "2026-08-21T08:15:00+09:00"},
-    "cross_market_risk_snapshot.v2": {"contractId": "cross_market_risk_snapshot.v2", "snapshotId": "00000000-0000-4000-8000-000000000607", "symbol": "005930", "availableAt": "2026-08-21T08:10:00+09:00", "evidenceMode": "MANUAL_EOD", "storageMode": "STORED_SNAPSHOT", "availability": "AVAILABLE", "quality": "PASS", "score": 98.2, "thresholdPercentile": 97.5, "thresholdArtifactHash": _sha("9"), "configHash": _sha("a"), "exposureCatalogHash": _sha("b"), "artifactHash": _sha("c"), "semanticInputHash": _sha("d"), "runtimeMode": "WARN_ONLY", "providerFanoutAllowed": False},
+    "cross_market_risk_snapshot.v2": {"contractId": "cross_market_risk_snapshot.v2", "snapshotId": "00000000-0000-4000-8000-000000000607", "symbol": "005930", "availableAt": "2026-08-21T08:10:00+09:00", "staleAt": "2026-08-22T08:10:00+09:00", "evidenceMode": "MANUAL_EOD", "storageMode": "STORED_SNAPSHOT", "availability": "AVAILABLE", "quality": "PASS", "score": 98.2, "thresholdPercentile": 97.5, "thresholdArtifactHash": _sha("9"), "configHash": _sha("a"), "exposure": "NEW_BUY", "exposureAvailableAt": "2026-08-21T08:10:00+09:00", "exposureCatalogHash": _sha("b"), "artifactHash": _sha("c"), "semanticInputHash": _sha("d"), "runtimeMode": "WARN_ONLY", "providerFanoutAllowed": False},
 }
 
 
@@ -614,6 +617,8 @@ def validate_semantics(schema_id: str, payload: dict[str, Any]) -> None:
         if payload["availability"] == "AVAILABLE":
             if payload["thresholdPercentile"] not in (95, 97.5, 99) or payload["thresholdArtifactHash"] is None:
                 raise ContractValidationError("available snapshot requires immutable S6.6 threshold")
+        if payload["availableAt"] != payload["exposureAvailableAt"]:
+            raise ContractValidationError("snapshot and exposure must share availableAt")
 
 
 def write_or_check(*, check: bool) -> None:

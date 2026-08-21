@@ -1,0 +1,359 @@
+{
+  "$id": "https://capstone.local/contracts/cross_market_event_study.v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "bootstrap": {
+      "additionalProperties": false,
+      "properties": {
+        "blockLengthSessions": {
+          "const": 5
+        },
+        "interval": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "replications": {
+          "const": 2000
+        },
+        "seed": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "superiorityClaimAllowed": {
+          "type": "boolean"
+        },
+        "unit": {
+          "const": "EVENT_DATE"
+        }
+      },
+      "required": [
+        "unit",
+        "blockLengthSessions",
+        "replications",
+        "seed",
+        "interval",
+        "superiorityClaimAllowed"
+      ],
+      "type": "object"
+    },
+    "causeEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "conflictDenominator": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "evidenceConflictRate": {
+          "additionalProperties": false,
+          "properties": {
+            "estimationStatus": {
+              "enum": [
+                "ESTIMATED",
+                "NOT_ESTIMABLE"
+              ]
+            },
+            "value": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "estimationStatus"
+          ],
+          "type": "object"
+        },
+        "unsupportedCausalityRate": {
+          "additionalProperties": false,
+          "properties": {
+            "estimationStatus": {
+              "enum": [
+                "ESTIMATED",
+                "NOT_ESTIMABLE"
+              ]
+            },
+            "value": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "estimationStatus"
+          ],
+          "type": "object"
+        },
+        "unsupportedDenominator": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "conflictDenominator",
+        "unsupportedDenominator",
+        "evidenceConflictRate",
+        "unsupportedCausalityRate"
+      ],
+      "type": "object"
+    },
+    "contractId": {
+      "const": "cross_market_event_study.v2"
+    },
+    "coverageYears": {
+      "maximum": 10,
+      "minimum": 0,
+      "type": "number"
+    },
+    "datasetStatus": {
+      "enum": [
+        "AVAILABLE",
+        "DATASET_UNAVAILABLE",
+        "NOT_ESTIMABLE"
+      ]
+    },
+    "decisionAuthority": {
+      "const": "NONE"
+    },
+    "evidenceMode": {
+      "enum": [
+        "SYNTHETIC_FIXTURE",
+        "HISTORICAL_REPLAY",
+        "PROSPECTIVE_SHADOW"
+      ]
+    },
+    "metrics": {
+      "additionalProperties": false,
+      "properties": {
+        "downsideAvoidedBps": {
+          "additionalProperties": false,
+          "properties": {
+            "estimationStatus": {
+              "enum": [
+                "ESTIMATED",
+                "NOT_ESTIMABLE"
+              ]
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "estimationStatus"
+          ],
+          "type": "object"
+        },
+        "falseBlockRate": {
+          "additionalProperties": false,
+          "properties": {
+            "estimationStatus": {
+              "enum": [
+                "ESTIMATED",
+                "NOT_ESTIMABLE"
+              ]
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "estimationStatus"
+          ],
+          "type": "object"
+        },
+        "missedUpsideBps": {
+          "additionalProperties": false,
+          "properties": {
+            "estimationStatus": {
+              "enum": [
+                "ESTIMATED",
+                "NOT_ESTIMABLE"
+              ]
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "estimationStatus"
+          ],
+          "type": "object"
+        },
+        "netProtectionBps": {
+          "additionalProperties": false,
+          "properties": {
+            "estimationStatus": {
+              "enum": [
+                "ESTIMATED",
+                "NOT_ESTIMABLE"
+              ]
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "estimationStatus"
+          ],
+          "type": "object"
+        },
+        "triggerCount": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "triggerCount",
+        "falseBlockRate",
+        "downsideAvoidedBps",
+        "missedUpsideBps",
+        "netProtectionBps"
+      ],
+      "type": "object"
+    },
+    "performanceClaimAllowed": {
+      "type": "boolean"
+    },
+    "productionSignalAuthority": {
+      "const": false
+    },
+    "purgeEmbargoSessions": {
+      "const": 5
+    },
+    "researchOnly": {
+      "const": true
+    },
+    "runtimeRiskEngineSource": {
+      "const": false
+    },
+    "severeLossCutoff": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "split": {
+      "const": [
+        0.6,
+        0.2,
+        0.2
+      ]
+    },
+    "thresholdCandidates": {
+      "const": [
+        95,
+        97.5,
+        99
+      ]
+    },
+    "timing": {
+      "additionalProperties": false,
+      "properties": {
+        "detectionLatencyMillis": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "estimationStatus": {
+          "enum": [
+            "ESTIMATED",
+            "NOT_ESTIMABLE"
+          ]
+        },
+        "preOpenLeadTimeMillis": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "preOpenStatus": {
+          "enum": [
+            "EARLY",
+            "AT_OPEN",
+            "LATE",
+            "NOT_ESTIMABLE"
+          ]
+        }
+      },
+      "required": [
+        "detectionLatencyMillis",
+        "preOpenLeadTimeMillis",
+        "preOpenStatus",
+        "estimationStatus"
+      ],
+      "type": "object"
+    },
+    "transactionCostSensitivityBps": {
+      "const": [
+        25,
+        30,
+        35
+      ]
+    }
+  },
+  "required": [
+    "contractId",
+    "decisionAuthority",
+    "runtimeRiskEngineSource",
+    "productionSignalAuthority",
+    "researchOnly",
+    "evidenceMode",
+    "datasetStatus",
+    "coverageYears",
+    "split",
+    "purgeEmbargoSessions",
+    "thresholdCandidates",
+    "severeLossCutoff",
+    "transactionCostSensitivityBps",
+    "timing",
+    "metrics",
+    "causeEvidence",
+    "bootstrap",
+    "performanceClaimAllowed",
+    "artifactHash"
+  ],
+  "title": "cross_market_event_study.v2",
+  "type": "object"
+}

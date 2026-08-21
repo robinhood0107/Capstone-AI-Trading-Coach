@@ -21,7 +21,7 @@ production-only pointer reader와 인증형 `GET /api/v2/signals/{symbol}`를 �
 현재 승인된 실제 PIT source rows가 없어 `DATASET_UNAVAILABLE`, real AVAILABLE model false,
 production pointer 0이다. fake는 항상 `FAKE_CONTRACT`이고 성능 증거가 아니며 production pointer로
 승격할 수 없다. evidence 없는 public 조회는 root 시각을 만들지 않는 all-ABSTAIN이다.
-RiskDecision/order wiring, provider/data acquisition과 S6.6 이전 cross-market join은 계속 금지한다.
+RiskDecision/order wiring과 cross-market join은 계속 금지한다.
 
 ## 세팅
 
@@ -55,18 +55,21 @@ Optional 3의 정확히 9개 typed state/sanitized projection을 구현한다. V
 storage 0을 유지한다. 별도 Optional 3 executor는 Finnhub Recommendation/Earnings, Twelve Data, Massive에
 대해 one packet/one physical call/retry 0/raw storage 0만 허용하고, 그것도 fresh evidence가 없으면 0이다.
 
-## S4.8→S6.7 교차시장 위험 오버레이
+## S4.8 offline 교차시장 evidence
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES`.
-> 구현 상태: `S4_8A=CONTRACT_LOCKED / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE / PROVIDER_ENDPOINT_RISKENGINE=NOT_IMPLEMENTED`.
+> 구현 상태: `S4_8A=CONTRACT_LOCKED / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE /
+> S4_8=VERIFIED_OFFLINE_STORED / S6.6=RETIRED_STRICT_PIT_UNAVAILABLE /
+> S6.7=RETIRED_NO_VALID_THRESHOLD / CROSS_MARKET_RUNTIME_AUTHORITY=NONE`.
 > 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 데이터와
 > 실시간 SOX/VIX feed는 post-P1 선택지이고, 새 agent framework·별도 cloud·Kafka는 hard
 > dependency가 아니다.
 >
 > S4.8A는 일곱 schema, `s2-2-system-rule-catalog.v2`, contract-change, fixture/golden vector를
 > 고정한 contract-only 경계다. S4.8B/C는 provider 없는 fixture producer, append-only V23
-> evidence, pure scorer와 latest snapshot read port만 구현했다. provider/live account/live order
-> physical call은 0이며 endpoint와 RiskEngine wiring은 아직 없다.
+> evidence, pure scorer와 legacy latest snapshot read port를 구현했다. S6.6/S6.7 실행 코드는
+> 제거됐고 V79가 V78 runtime functions/grants를 폐쇄했다. provider runtime, live account,
+> live order physical call은 0이며 public endpoint와 operational activation 계획은 없다.
 
 순서 0 `S4.READ`에서 관련 공개·private 명세를 EOF까지 읽고 receipt·충돌 목록만 남긴다.
 그다음 S4.8A의 일곱 계약, fixture, generator, parity만 담은 contract-only PR을
@@ -74,14 +77,11 @@ storage 0을 유지한다. 별도 Optional 3 executor는 Finnhub Recommendation/
 
 교차시장 모듈은 RAG와 분리된 저장형 위험 evidence를 목표로 한다. Python은 entitlement가 허용된
 offline fixture/EOD 관측, 애널리스트 revision projection, 원인 evidence ledger, 252개 완료
-세션 empirical percentile, S6.6 event-study와 LightGBM BUY policy replay를 소유할 예정이다.
-Spring은 provider를 호출하지 않고 owner-scoped latest snapshot과 같은 시점의 versioned
-exposure를 한 내부 입력으로 결속해 S6.7 RiskEngine에 적용할 예정이다.
+세션 empirical percentile을 소유한다. Spring은 provider를 호출하지 않고 owner-scoped legacy
+snapshot을 읽는 bounded port만 유지하며 RiskEngine overlay에는 연결하지 않는다.
 
-P1 기본 mode는 `WARN_ONLY`다. versioned exposure catalog에 명시된 종목의 신규 BUY만
-`ALLOW`에서 최대 `WARN`으로 강화할 수 있다. `OFF`와 `SHADOW`는 판단을 바꾸지 않으며,
-`ENFORCED`의 HOLD/BLOCK은 post-P1 별도 승인 전 비활성이다. SELL, 기존 보유분 자동매도,
-주문 생성, 수량 축소는 범위 밖이다.
+historical S6.7 계약의 `WARN_ONLY` mode는 current runtime capability가 아니다. 현재 Decision은
+exact-14 catalog v1만 사용하며 교차시장 evidence로 `ALLOW/WARN/HOLD/BLOCK`을 바꾸지 않는다.
 
 다음 경계를 지킨다.
 
@@ -99,21 +99,16 @@ P1 기본 mode는 `WARN_ONLY`다. versioned exposure catalog에 명시된 종목
   저장·전달하지 않고 임시 입력과 함께 폐기한다.
 - provider body, PDF·뉴스 원문, credential·계좌 식별자는 DB와 test fixture에 저장하지 않는다.
 - 기존 Decision request/response, RAG ask/history, Signal v1/v2 payload에 추가하는 교차시장
-  필드는 0이다. 내부 `CrossMarketDecisionInput(snapshot, exposure)` wrapper와 별도 planned
-  조회 DTO만 사용한다.
-- 가격·신선도·설정·exposure처럼 판단에 사용한 field는 Decision semantic/artifact hash v3에
-  포함하고, 애널리스트·뉴스·원인 text·RAG·LLM 설명과 snapshot identity 시각은 판단 hash에서
-  제외한다. 별도 저장 snapshot artifact는 bounded provenance/evidence를 포함할 수 있고 자신의
-  `artifactHash`를 canonical preimage에 넣지 않는다.
-- synthetic fixture 결과는 실제 성과로 표시하지 않는다. 최소 3년 PIT 자료가 없으면
-  event-study 결과는 `DATASET_UNAVAILABLE`이다. `evidenceMode=SYNTHETIC_FIXTURE`이면
-  `validationStatus=UNVALIDATED`, `performanceClaimAllowed=false`를 강제한다.
+  필드는 0이다. historical wrapper/schema는 실행 package에서 제거됐다.
+- S4.8 artifact hash는 bounded provenance/evidence 재현에만 사용한다. Decision semantic hash에는
+  교차시장 field, 애널리스트·뉴스·원인 text·RAG·LLM 설명을 넣지 않는다.
+- synthetic fixture 결과는 실제 성과로 표시하지 않는다. 최소 3년 strict PIT 자료가 없으므로
+  event-study 실행 capability 자체를 퇴역했고 historical fixture는 재현용으로만 보존한다.
 
 S4.8B는 provider 없는 수동/offline EOD fixture materialization, append-only 저장과 I/O 없는
-결정적 `CrossMarketScorer` kernel을 구현했다. S6.6은 scorer output으로 event-study/replay와
-threshold 동결만 수행하고, S6.7이 snapshot을 materialize해 저장 reader/RiskEngine에 연결한다.
-S7.3은 동일 저장 port의 scheduling만 추가하며 새 provider 호출이나 source ownership을 만들지
-않는다.
+결정적 `CrossMarketScorer` kernel을 구현했다. S6.6/S6.7 schema·fixture·V78은 historical-only이며
+실행 모듈, CLI, writer/reader functions, Spring bean/config는 제거됐다. 재도입은 최소 3년의
+행별 historical `availableAt`, 실제 qualified candidate와 새 versioned contract-change를 요구한다.
 
 관측 가능 시간 지표는 signed integer milliseconds로 분리한다.
 
@@ -134,15 +129,9 @@ cd ../spring-api
 ./gradlew --no-daemon test --tests '*CrossMarket*'
 ```
 
-S8/P1의 planned 공개 조회는 query parameter가 없는 인증형
-`GET /api/v1/risk/cross-market`이다. 구현되면 저장된 네 점수, 정확히 네 component freshness,
-config version, artifact hash, evidence/validation/performance-claim 상태와 원인·반론을 합친
-최대 10개 sanitized evidence만 반환한다. versioned exposure는 내부 Decision 입력에만 결속하고
-공개 DTO에는 노출하지 않는다.
-
-S8.4 사용자 과제는 synthetic/paper 화면에서 `WARN_ONLY`, `LATE`, 근거와 반론을 구분하고
-교차시장 evidence가 주문 생성·매도·BLOCK을 직접 만들지 않음을 확인하는 것이다. 사용자
-피드백은 사용성·이해도·경고 후 수정/보류 여부만 수집하며 실거래를 요구하지 않는다.
+과거 S8/P1의 `GET /api/v1/risk/cross-market` 계획과 `WARN_ONLY` Dashboard 과제는
+`HISTORICAL_SUPERSEDED`다. endpoint, runtime DTO, Dashboard consumer gate는 현재 범위에 없고
+S6.6/S6.7 재도입에는 strict PIT evidence와 새 versioned contract-change가 필요하다.
 
 ## S2.3 stored-source 경계
 

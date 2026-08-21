@@ -1,0 +1,165 @@
+{
+  "$id": "contracts/schemas/dashboard-rag-sources.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "data": {
+      "additionalProperties": false,
+      "properties": {
+        "asOf": {
+          "oneOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidenceMode": {
+          "enum": [
+            "STORED_RUNTIME",
+            "REAL_ARTIFACT",
+            "SYNTHETIC_DEMO"
+          ]
+        },
+        "freshUntil": {
+          "oneOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "performanceClaimAllowed": {
+          "const": false
+        },
+        "view": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "answerId": {
+                  "pattern": "^answer_[A-Za-z0-9_-]{8,96}$",
+                  "type": "string"
+                },
+                "expandableSources": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "classification": {
+                        "enum": [
+                          "OFFICIAL",
+                          "SCHOLARLY",
+                          "INTERNAL_PAPER"
+                        ]
+                      },
+                      "sourceId": {
+                        "pattern": "^src_[A-Za-z0-9_-]{8,96}$",
+                        "type": "string"
+                      },
+                      "summary": {
+                        "maxLength": 512,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "title": {
+                        "maxLength": 160,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "sourceId",
+                      "title",
+                      "classification",
+                      "summary"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 5,
+                  "type": "array"
+                },
+                "topSources": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "classification": {
+                        "enum": [
+                          "OFFICIAL",
+                          "SCHOLARLY",
+                          "INTERNAL_PAPER"
+                        ]
+                      },
+                      "sourceId": {
+                        "pattern": "^src_[A-Za-z0-9_-]{8,96}$",
+                        "type": "string"
+                      },
+                      "summary": {
+                        "maxLength": 512,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "title": {
+                        "maxLength": 160,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "sourceId",
+                      "title",
+                      "classification",
+                      "summary"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 3,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "answerId",
+                "topSources",
+                "expandableSources"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "viewState": {
+          "enum": [
+            "READY",
+            "EMPTY",
+            "STALE"
+          ]
+        }
+      },
+      "required": [
+        "viewState",
+        "asOf",
+        "freshUntil",
+        "evidenceMode",
+        "performanceClaimAllowed",
+        "view"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true
+    }
+  },
+  "required": [
+    "success",
+    "data"
+  ],
+  "title": "dashboard-rag-sources.v1",
+  "type": "object"
+}

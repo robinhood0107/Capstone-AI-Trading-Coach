@@ -1,0 +1,14 @@
+{
+  "eventId": "evt_rag_index_00000001",
+  "eventType": "rag.index-requested.v1",
+  "occurredAt": "2026-08-22T00:00:00Z",
+  "partitionKey": "hmac-sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "payloadHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "references": {
+    "contentHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "jobId": "job_rag_index_00000001",
+    "ownerRef": "usr_fixture_00000001",
+    "sourceRevisionId": "rev_fixture_00000001"
+  },
+  "schemaVersion": 1
+}

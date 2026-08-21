@@ -1,0 +1,225 @@
+{
+  "$id": "contracts/schemas/dashboard-model-evaluation.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "data": {
+      "additionalProperties": false,
+      "properties": {
+        "asOf": {
+          "oneOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidenceMode": {
+          "enum": [
+            "STORED_RUNTIME",
+            "REAL_ARTIFACT",
+            "SYNTHETIC_DEMO"
+          ]
+        },
+        "freshUntil": {
+          "oneOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "performanceClaimAllowed": {
+          "const": false
+        },
+        "view": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "models": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "metrics": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cagr": {
+                            "oneOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "cvar95": {
+                            "oneOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "mdd": {
+                            "oneOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sharpe": {
+                            "oneOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sortino": {
+                            "oneOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "var95": {
+                            "oneOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "cagr",
+                          "mdd",
+                          "sharpe",
+                          "sortino",
+                          "var95",
+                          "cvar95"
+                        ],
+                        "type": "object"
+                      },
+                      "modelId": {
+                        "enum": [
+                          "BASELINE",
+                          "LSTM",
+                          "LIGHTGBM"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "AVAILABLE",
+                          "ABSTAIN"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "modelId",
+                      "status",
+                      "metrics"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 3,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "runId": {
+                  "pattern": "^(run|demo)_[A-Za-z0-9_-]{8,96}$",
+                  "type": "string"
+                },
+                "sourceRunIds": {
+                  "items": {
+                    "maxLength": 96,
+                    "type": "string"
+                  },
+                  "maxItems": 8,
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                "timeline": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "at": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "at",
+                      "value"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 500,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "runId",
+                "models",
+                "timeline",
+                "sourceRunIds"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "viewState": {
+          "enum": [
+            "READY",
+            "EMPTY",
+            "STALE"
+          ]
+        }
+      },
+      "required": [
+        "viewState",
+        "asOf",
+        "freshUntil",
+        "evidenceMode",
+        "performanceClaimAllowed",
+        "view"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true
+    }
+  },
+  "required": [
+    "success",
+    "data"
+  ],
+  "title": "dashboard-model-evaluation.v1",
+  "type": "object"
+}

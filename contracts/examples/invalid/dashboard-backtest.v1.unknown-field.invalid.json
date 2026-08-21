@@ -1,0 +1,56 @@
+{
+  "data": {
+    "asOf": "2026-08-22T00:00:00Z",
+    "evidenceMode": "SYNTHETIC_DEMO",
+    "freshUntil": "2026-08-22T00:05:00Z",
+    "performanceClaimAllowed": false,
+    "view": {
+      "fixtureClass": "SYNTHETIC_FAKE_E2E",
+      "heatmap": [],
+      "metricCards": [],
+      "projectionHash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "runId": "demo_fixture_00000001",
+      "strategies": [
+        {
+          "curve": [],
+          "metrics": {
+            "cagr": null,
+            "cvar95": null,
+            "mdd": null,
+            "sharpe": null,
+            "sortino": null,
+            "var95": null
+          },
+          "strategy": "Baseline"
+        },
+        {
+          "curve": [],
+          "metrics": {
+            "cagr": null,
+            "cvar95": null,
+            "mdd": null,
+            "sharpe": null,
+            "sortino": null,
+            "var95": null
+          },
+          "strategy": "Guide"
+        },
+        {
+          "curve": [],
+          "metrics": {
+            "cagr": null,
+            "cvar95": null,
+            "mdd": null,
+            "sharpe": null,
+            "sortino": null,
+            "var95": null
+          },
+          "strategy": "Strict"
+        }
+      ]
+    },
+    "viewState": "READY"
+  },
+  "success": true,
+  "unexpected": true
+}

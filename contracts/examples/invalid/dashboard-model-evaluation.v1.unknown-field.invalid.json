@@ -1,0 +1,12 @@
+{
+  "data": {
+    "asOf": null,
+    "evidenceMode": "SYNTHETIC_DEMO",
+    "freshUntil": null,
+    "performanceClaimAllowed": false,
+    "view": null,
+    "viewState": "EMPTY"
+  },
+  "success": true,
+  "unexpected": true
+}

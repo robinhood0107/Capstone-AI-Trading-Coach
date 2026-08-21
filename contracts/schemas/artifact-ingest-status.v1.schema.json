@@ -1,0 +1,95 @@
+{
+  "$id": "contracts/schemas/artifact-ingest-status.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "data": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "artifactId": {
+                "pattern": "^artifact_[A-Za-z0-9_-]{8,96}$",
+                "type": "string"
+              },
+              "duplicate": {
+                "type": "boolean"
+              },
+              "fileHash": {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "fileName": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+                "type": "string"
+              },
+              "lastIngestedAt": {
+                "oneOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "producer": {
+                "enum": [
+                  "decision-platform",
+                  "return-engine"
+                ]
+              },
+              "runId": {
+                "pattern": "^(run|demo)_[A-Za-z0-9_-]{8,96}$",
+                "type": "string"
+              },
+              "schemaVersion": {
+                "pattern": "^[1-9][0-9]*\\.[0-9]+\\.[0-9]+$",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "DISCOVERED",
+                  "VALIDATED",
+                  "INGESTED",
+                  "FAILED",
+                  "SKIPPED"
+                ]
+              }
+            },
+            "required": [
+              "artifactId",
+              "fileName",
+              "producer",
+              "runId",
+              "fileHash",
+              "schemaVersion",
+              "status",
+              "lastIngestedAt",
+              "duplicate"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true
+    }
+  },
+  "required": [
+    "success",
+    "data"
+  ],
+  "title": "artifact-ingest-status.v1",
+  "type": "object"
+}

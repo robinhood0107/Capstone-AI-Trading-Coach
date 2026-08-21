@@ -1,0 +1,221 @@
+{
+  "$id": "contracts/schemas/stream-metric-status.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "data": {
+      "additionalProperties": false,
+      "properties": {
+        "components": {
+          "additionalProperties": false,
+          "properties": {
+            "decisionDistribution": {
+              "additionalProperties": false,
+              "properties": {
+                "observedAt": {
+                  "oneOf": [
+                    {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "OK",
+                    "EMPTY",
+                    "UNAVAILABLE"
+                  ]
+                }
+              },
+              "required": [
+                "status",
+                "observedAt"
+              ],
+              "type": "object"
+            },
+            "dlqEvents": {
+              "additionalProperties": false,
+              "properties": {
+                "observedAt": {
+                  "oneOf": [
+                    {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "OK",
+                    "EMPTY",
+                    "UNAVAILABLE"
+                  ]
+                }
+              },
+              "required": [
+                "status",
+                "observedAt"
+              ],
+              "type": "object"
+            },
+            "failedJobs": {
+              "additionalProperties": false,
+              "properties": {
+                "observedAt": {
+                  "oneOf": [
+                    {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "OK",
+                    "EMPTY",
+                    "UNAVAILABLE"
+                  ]
+                }
+              },
+              "required": [
+                "status",
+                "observedAt"
+              ],
+              "type": "object"
+            },
+            "signalFreshness": {
+              "additionalProperties": false,
+              "properties": {
+                "observedAt": {
+                  "oneOf": [
+                    {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "OK",
+                    "EMPTY",
+                    "UNAVAILABLE"
+                  ]
+                }
+              },
+              "required": [
+                "status",
+                "observedAt"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "decisionDistribution",
+            "signalFreshness",
+            "failedJobs",
+            "dlqEvents"
+          ],
+          "type": "object"
+        },
+        "decisionDistribution": {
+          "additionalProperties": false,
+          "properties": {
+            "ALLOW": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "BLOCK": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "HOLD": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "WARN": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "ALLOW",
+            "WARN",
+            "HOLD",
+            "BLOCK"
+          ],
+          "type": "object"
+        },
+        "dlqEventCount": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "failedJobCount": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lastUpdatedAt": {
+          "oneOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pipelineHealth": {
+          "enum": [
+            "OK",
+            "DEGRADED",
+            "UNAVAILABLE"
+          ]
+        },
+        "signalStaleRatio": {
+          "oneOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "lastUpdatedAt",
+        "pipelineHealth",
+        "signalStaleRatio",
+        "decisionDistribution",
+        "failedJobCount",
+        "dlqEventCount",
+        "components"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true
+    }
+  },
+  "required": [
+    "success",
+    "data"
+  ],
+  "title": "stream-metric-status.v1",
+  "type": "object"
+}

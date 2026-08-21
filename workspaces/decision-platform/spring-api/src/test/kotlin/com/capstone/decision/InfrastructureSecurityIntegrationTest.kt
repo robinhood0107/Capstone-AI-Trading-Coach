@@ -824,6 +824,7 @@ class InfrastructureSecurityIntegrationTest {
         private const val MIGRATION_USER = "flyway"
         private val adminPassword: String = "a" + "p".repeat(24)
         private val runtimePassword: String = "r" + "p".repeat(24)
+        private val workerPassword: String = "w" + "a".repeat(24)
         private val migrationPassword: String = "m" + "p".repeat(24)
         private val collectorPassword: String = "c" + "p".repeat(24)
         private val disclosureReaderPassword: String = "d" + "r".repeat(24)
@@ -851,6 +852,7 @@ class InfrastructureSecurityIntegrationTest {
                 .withUsername("postgres")
                 .withPassword(adminPassword)
                 .withEnv("POSTGRES_APP_PASSWORD", runtimePassword)
+                .withEnv("POSTGRES_WORKER_PASSWORD", workerPassword)
                 .withEnv("POSTGRES_MIGRATION_PASSWORD", migrationPassword)
                 .withEnv("POSTGRES_COLLECTOR_PASSWORD", collectorPassword)
                 .withEnv("POSTGRES_DISCLOSURE_READER_PASSWORD", disclosureReaderPassword)

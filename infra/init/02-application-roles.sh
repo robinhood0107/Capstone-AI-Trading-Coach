@@ -17,6 +17,7 @@ set -Eeuo pipefail
 : "${POSTGRES_SIGNAL_WRITER_PASSWORD:?POSTGRES_SIGNAL_WRITER_PASSWORD is required}"
 : "${POSTGRES_SIGNAL_SCHEDULER_PASSWORD:?POSTGRES_SIGNAL_SCHEDULER_PASSWORD is required}"
 : "${POSTGRES_SIGNAL_ADMIN_PASSWORD:?POSTGRES_SIGNAL_ADMIN_PASSWORD is required}"
+: "${POSTGRES_WORKER_PASSWORD:?POSTGRES_WORKER_PASSWORD is required}"
 
 # psql argv나 shell-expanded SQL에 password를 넣지 않고 process environment에서 안전하게 인용한다.
 export PGPASSWORD="${POSTGRES_PASSWORD:-}"
@@ -36,6 +37,7 @@ psql -v ON_ERROR_STOP=1 --no-password --username "$POSTGRES_USER" --dbname "$POS
 \getenv signal_writer_password POSTGRES_SIGNAL_WRITER_PASSWORD
 \getenv signal_scheduler_password POSTGRES_SIGNAL_SCHEDULER_PASSWORD
 \getenv signal_admin_password POSTGRES_SIGNAL_ADMIN_PASSWORD
+\getenv worker_password POSTGRES_WORKER_PASSWORD
 
 -- role password DDL 전에 session 전체의 statement·duration·sampling log를 닫는다.
 SET log_statement = 'none';
@@ -82,6 +84,25 @@ ALTER ROLE decision_app SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_app SET statement_timeout = '2s';
 ALTER ROLE decision_app SET lock_timeout = '500ms';
 ALTER ROLE decision_app SET idle_in_transaction_session_timeout = '5s';
+
+SELECT format(
+    'CREATE ROLE decision_worker LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'worker_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_worker')
+\gexec
+
+SELECT format(
+    'ALTER ROLE decision_worker WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'worker_password'
+)
+\gexec
+
+ALTER ROLE decision_worker SET log_parameter_max_length = 0;
+ALTER ROLE decision_worker SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_worker SET statement_timeout = '60s';
+ALTER ROLE decision_worker SET lock_timeout = '500ms';
+ALTER ROLE decision_worker SET idle_in_transaction_session_timeout = '60s';
 
 SELECT format(
     'CREATE ROLE flyway LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
@@ -309,6 +330,7 @@ ALTER ROLE decision_signal_admin SET idle_in_transaction_session_timeout = '5s';
 REVOKE ALL ON DATABASE :"database_name" FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"database_name" TO
     decision_app,
+    decision_worker,
     decision_collector,
     decision_disclosure_reader,
     decision_market_writer,
@@ -328,6 +350,7 @@ GRANT CONNECT ON DATABASE :"database_name" TO
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO
     decision_app,
+    decision_worker,
     decision_collector,
     decision_disclosure_reader,
     decision_market_writer,
@@ -350,6 +373,8 @@ GRANT CREATE ON SCHEMA public TO flyway;
 -- 필요한 application table에만 명시적으로 추가하고, bootstrap에서 미리 전체 DML을 주지 않는다.
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_app;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_worker;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_worker;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_collector;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_collector;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_disclosure_reader;
@@ -1751,11 +1776,52 @@ BEGIN
 END
 $signal_release_runtime_privileges$;
 
+DO $s7_async_runtime_privileges$
+BEGIN
+    IF to_regprocedure('public.claim_event_outbox(text,integer)') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_worker;
+        REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_worker;
+        REVOKE ALL PRIVILEGES ON TABLE
+            async_event_registry,
+            event_outbox_transition_audit,
+            async_job_transition_audit,
+            async_job_admin_read_audit,
+            async_materialization_receipt,
+            shedlock
+        FROM PUBLIC, decision_app, decision_worker;
+        GRANT EXECUTE ON FUNCTION
+            claim_event_outbox(text, integer),
+            claim_db_async_outbox(text, integer),
+            complete_event_outbox(text, uuid),
+            fail_event_outbox(text, uuid, text, text),
+            quarantine_claimed_outbox(text, uuid, text),
+            quarantine_unknown_outbox(integer),
+            create_async_job(text, text, text, jsonb),
+            read_async_job_status(text, bigint, text),
+            list_async_job_status(text, bigint, text, text, timestamptz, text, integer)
+        TO decision_app;
+        GRANT SELECT, INSERT, UPDATE ON TABLE shedlock TO decision_app;
+        GRANT EXECUTE ON FUNCTION
+            claim_async_jobs(text, integer),
+            claim_async_job_by_id(text, text),
+            heartbeat_async_job(text, uuid),
+            complete_async_job(text, uuid, jsonb),
+            fail_async_job(text, uuid, text, text),
+            quarantine_async_job(text, uuid, text, text),
+            commit_async_work(text, text, text, text, text, uuid, text, text, text)
+        TO decision_worker;
+        GRANT INSERT ON TABLE processed_event TO decision_worker;
+        REVOKE CREATE ON SCHEMA public FROM decision_app, decision_worker;
+    END IF;
+END
+$s7_async_runtime_privileges$;
+
 DO $block$
 BEGIN
     IF to_regclass('public.flyway_schema_history') IS NOT NULL THEN
         -- 기존 volume에 role bootstrap을 재적용해도 runtime이 migration 이력을 변조하지 못한다.
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_app;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_worker;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_collector;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_disclosure_reader;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_fill_writer;

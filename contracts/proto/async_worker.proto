@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package capstone.asyncworker.v1;
+
+option java_multiple_files = true;
+option java_package = "com.capstone.decision.contract.asyncworker.v1";
+
+service AsyncWorkerService {
+  rpc Process(AsyncWorkRequest) returns (AsyncWorkResponse);
+}
+
+enum AsyncTransport {
+  ASYNC_TRANSPORT_UNSPECIFIED = 0;
+  ASYNC_TRANSPORT_DB = 1;
+  ASYNC_TRANSPORT_KAFKA = 2;
+}
+
+enum AsyncWorkOutcome {
+  ASYNC_WORK_OUTCOME_UNSPECIFIED = 0;
+  ASYNC_WORK_COMPLETED = 1;
+  ASYNC_WORK_DUPLICATE = 2;
+  ASYNC_WORK_FAILED = 3;
+  ASYNC_WORK_NEEDS_REVIEW = 4;
+}
+
+message AsyncWorkRequest {
+  string event_id = 1;
+  string event_type = 2;
+  int32 schema_version = 3;
+  string payload_hash = 4;
+  string job_id = 5;
+  string job_type = 6;
+  bytes payload_json = 7;
+  string claim_token = 8;
+  AsyncTransport transport = 9;
+}
+
+message AsyncWorkResponse {
+  string job_id = 1;
+  AsyncWorkOutcome outcome = 2;
+  string result_ref = 3;
+  string failure_code = 4;
+}

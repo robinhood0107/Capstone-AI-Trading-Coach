@@ -1,6 +1,8 @@
 package com.capstone.decision.infrastructure.security
 
 import com.capstone.decision.api.common.ApiResponseWriter
+import com.capstone.decision.infrastructure.async.AsyncProperties
+import com.capstone.decision.infrastructure.async.AsyncWorkerProperties
 import com.capstone.decision.infrastructure.brokerage.BrokerageProperties
 import com.capstone.decision.infrastructure.brokerage.PaperBrokerageProperties
 import com.capstone.decision.infrastructure.decision.DecisionProperties
@@ -70,6 +72,7 @@ import java.security.MessageDigest
     S49StrongLlmProperties::class,
     S49GoogleGroundingProperties::class,
     StrongLlmAgentGrpcProperties::class,
+    AsyncProperties::class,
 )
 class SecurityConfig {
     @Bean
@@ -166,6 +169,59 @@ class SecurityConfig {
             AuthSecretSeparation
         } finally {
             secrets.values.forEach { secret -> secret.fill(0) }
+        }
+    }
+
+    @Bean
+    @DependsOn("authSecretSeparation", "asyncPropertiesValidation", "asyncWorkerPropertiesValidation")
+    fun asyncSecretSeparation(
+        asyncProperties: AsyncProperties,
+        asyncWorkerProperties: AsyncWorkerProperties,
+        jwtProperties: JwtProperties,
+        loginProperties: LoginAttemptLimiterProperties,
+        principleProperties: PrincipleProperties,
+        decisionProperties: DecisionProperties,
+        brokerageProperties: BrokerageProperties,
+        ragProperties: RagGuardHistoryProperties,
+        decisionGrpcProperties: DecisionGrpcProperties,
+    ): AsyncSecretSeparation {
+        asyncProperties.validate()
+        val asyncSecrets =
+            listOf(
+                asyncProperties.cursorHmacKey.toByteArray(StandardCharsets.UTF_8),
+                asyncProperties.partitionHmacKey.toByteArray(StandardCharsets.UTF_8),
+            ) +
+                if (asyncWorkerProperties.enabled &&
+                    asyncProperties.adapter == com.capstone.decision.infrastructure.async.AsyncAdapterMode.DB
+                ) {
+                    listOf(asyncWorkerProperties.grpcSharedSecret.toByteArray(StandardCharsets.UTF_8))
+                } else {
+                    emptyList()
+                }
+        val existingSecrets =
+            listOf(
+                jwtProperties.secret,
+                loginProperties.scopeHmacKey,
+                principleProperties.cursorHmacKey,
+                decisionProperties.idempotencyScopeHmacKey,
+                brokerageProperties.idempotencyScopeHmacKey,
+                brokerageProperties.databaseCapabilityToken,
+                ragProperties.idempotencyScopeHmacKey,
+                ragProperties.requestFingerprintHmacKey,
+                ragProperties.providerUsageHmacKey,
+                ragProperties.rateLimitHmacKey,
+                ragProperties.historyCursorHmacKey,
+                decisionGrpcProperties.sharedSecret,
+            ).map { it.toByteArray(StandardCharsets.UTF_8) }
+        return try {
+            asyncSecrets.forEach { candidate ->
+                require(existingSecrets.none { existing -> MessageDigest.isEqual(candidate, existing) }) {
+                    "Async secrets must be purpose-separated from existing application secrets."
+                }
+            }
+            AsyncSecretSeparation
+        } finally {
+            (asyncSecrets + existingSecrets).forEach { it.fill(0) }
         }
     }
 
@@ -281,6 +337,13 @@ class SecurityConfig {
                     .requestMatchers("/actuator/**")
                     .hasRole("ADMIN")
                 authorize
+                    .requestMatchers(
+                        HttpMethod.GET,
+                        "/api/v1/async-jobs/**",
+                        "/api/v1/stream-metrics",
+                        "/api/v1/artifacts/ingest-status",
+                    ).hasRole("ADMIN")
+                authorize
                     // ADMIN route는 method security와 filter-chain 양쪽에서 기능 수준 권한을 고정한다.
                     .requestMatchers(HttpMethod.POST, "/api/v1/brokerage/orders/*/reconcile")
                     .hasRole("ADMIN")
@@ -329,6 +392,8 @@ class SecurityConfig {
 
 // 이 marker bean은 JWT, login limiter, credential evidence key 분리 검증이 startup에 완료됐음을 나타낸다.
 object AuthSecretSeparation
+
+object AsyncSecretSeparation
 
 // 이 marker bean은 enabled RAG gRPC가 Disclosure wire credential과 분리되었음을 나타낸다.
 object RagGrpcSecretSeparation

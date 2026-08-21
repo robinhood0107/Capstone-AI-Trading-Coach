@@ -1625,8 +1625,54 @@ BEGIN
             read_latest_s48_runtime_sanitized_projection(text)
         TO decision_app;
     END IF;
+    IF to_regprocedure(
+        'public.append_cross_market_risk_snapshot_v2(uuid,text,text,text,timestamptz,timestamptz,text,text,text,text,text,numeric,numeric,text,text,text,timestamptz,text,text,text,text,text)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+        'public.read_cross_market_decision_input_v2(text,text,timestamptz)'
+    ) IS NOT NULL THEN
+        -- V78도 raw table DML 없이 writer append와 app point-in-time read capability만 복원한다.
+        REVOKE ALL PRIVILEGES ON TABLE cross_market_risk_snapshots_v2
+        FROM decision_app, decision_market_writer;
+        GRANT EXECUTE ON FUNCTION
+            append_cross_market_risk_snapshot_v2(
+                uuid, text, text, text, timestamptz, timestamptz, text, text, text,
+                text, text, numeric, numeric, text, text, text, timestamptz, text,
+                text, text, text, text
+            )
+        TO decision_market_writer;
+        GRANT EXECUTE ON FUNCTION
+            read_cross_market_decision_input_v2(text, text, timestamptz)
+        TO decision_app;
+    END IF;
 END
 $cross_market_runtime_privileges$;
+
+DO $financial_engineering_runtime_privileges$
+BEGIN
+    IF to_regprocedure(
+        'public.append_financial_engineering_result(uuid,integer,text,date,timestamptz,timestamptz,text,text,text,text,text,text,text,text,text,text,integer,text)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+        'public.read_financial_engineering_snapshot(text,timestamptz)'
+    ) IS NOT NULL THEN
+        -- V77 snapshot/report table은 직접 노출하지 않고 atomic append와 bounded read만 복원한다.
+        REVOKE ALL PRIVILEGES ON TABLE
+            financial_engineering_snapshots,
+            financial_engineering_report_manifests
+        FROM decision_app, decision_market_writer;
+        GRANT EXECUTE ON FUNCTION
+            append_financial_engineering_result(
+                uuid, integer, text, date, timestamptz, timestamptz, text, text,
+                text, text, text, text, text, text, text, text, integer, text
+            )
+        TO decision_market_writer;
+        GRANT EXECUTE ON FUNCTION
+            read_financial_engineering_snapshot(text, timestamptz)
+        TO decision_app;
+    END IF;
+END
+$financial_engineering_runtime_privileges$;
 
 DO $market_data_archive_privileges$
 BEGIN

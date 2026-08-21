@@ -1,0 +1,40 @@
+{
+  "activeSchemaIds": [
+    "hmm_regime_report.v1",
+    "gbm_monte_carlo_report.v1",
+    "mean_reversion_report.v1",
+    "financial_engineering_snapshot.v1",
+    "financial_engineering_report_manifest.v1",
+    "option_contract_terms.v1"
+  ],
+  "activeSessions": [
+    "S6.1",
+    "S6.2",
+    "S6.3",
+    "S6.4",
+    "S6.5"
+  ],
+  "contractId": "s6-contract-lock.v2",
+  "crossMarketRuntimeAuthority": "NONE",
+  "dispositionContract": "s6-capability-disposition.v1",
+  "generatedSetHash": "1698356025c66cde16a541d4a0806f002313d62353872d7105fc33a7b56f4949",
+  "historicalOnlyCatalogs": [
+    "s2-2-system-rule-catalog.v2",
+    "s2-2-system-rule-catalog.v3"
+  ],
+  "historicalOnlyContracts": [
+    "cross_market_event_study.v2",
+    "lightgbm_policy_replay.v1",
+    "cross_market_threshold_freeze.v1",
+    "cross_market_risk_snapshot.v2"
+  ],
+  "priorLockHash": "07b9405f224661343127056a020a37ec9c7453dd1b923db35c37e5371964c646",
+  "providerRuntimeCallsAllowed": false,
+  "retiredSessions": [
+    "S6.6",
+    "S6.7"
+  ],
+  "retiredStatus": "RETIRED_NOT_APPLICABLE",
+  "runtimeCatalog": "s2-2-system-rule-catalog.v1",
+  "supersedesCurrentAuthority": "s6-contract-lock.v1"
+}

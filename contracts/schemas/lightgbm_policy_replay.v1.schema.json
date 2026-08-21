@@ -1,0 +1,76 @@
+{
+  "$id": "https://capstone.local/contracts/lightgbm_policy_replay.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "candidateArtifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "candidateQualificationStatus": {
+      "enum": [
+        "AVAILABLE",
+        "FAILED",
+        "NOT_AVAILABLE"
+      ]
+    },
+    "contractId": {
+      "const": "lightgbm_policy_replay.v1"
+    },
+    "datasetStatus": {
+      "enum": [
+        "AVAILABLE",
+        "DATASET_UNAVAILABLE",
+        "NOT_ESTIMABLE"
+      ]
+    },
+    "decisionAuthority": {
+      "const": "NONE"
+    },
+    "eligibleSide": {
+      "const": "BUY"
+    },
+    "evidenceLabel": {
+      "enum": [
+        "REAL_PIT",
+        "SYNTHETIC_FIXTURE",
+        "NONE"
+      ]
+    },
+    "performanceClaimAllowed": {
+      "type": "boolean"
+    },
+    "productionSignalAuthority": {
+      "const": false
+    },
+    "researchOnly": {
+      "const": true
+    },
+    "runtimeRiskEngineSource": {
+      "const": false
+    }
+  },
+  "required": [
+    "contractId",
+    "decisionAuthority",
+    "runtimeRiskEngineSource",
+    "productionSignalAuthority",
+    "researchOnly",
+    "datasetStatus",
+    "candidateArtifactHash",
+    "candidateQualificationStatus",
+    "eligibleSide",
+    "evidenceLabel",
+    "performanceClaimAllowed",
+    "artifactHash"
+  ],
+  "title": "lightgbm_policy_replay.v1",
+  "type": "object"
+}

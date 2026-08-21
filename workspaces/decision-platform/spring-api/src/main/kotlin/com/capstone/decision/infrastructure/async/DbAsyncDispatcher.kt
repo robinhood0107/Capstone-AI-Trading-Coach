@@ -9,6 +9,7 @@ import tools.jackson.databind.ObjectMapper
 
 @Component
 @ConditionalOnProperty(name = ["app.async.adapter"], havingValue = "db", matchIfMissing = true)
+@ConditionalOnProperty(name = ["app.async.worker.enabled"], havingValue = "true")
 class DbAsyncDispatcher(
     private val outboxQueue: DbAsyncOutboxQueue,
     private val workerQueue: DbAsyncWorkerQueue,

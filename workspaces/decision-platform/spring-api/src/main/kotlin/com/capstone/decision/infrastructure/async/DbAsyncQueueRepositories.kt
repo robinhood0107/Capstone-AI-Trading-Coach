@@ -1,5 +1,6 @@
 package com.capstone.decision.infrastructure.async
 
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -30,11 +31,11 @@ data class ClaimedAsyncJob(
 @Repository
 @ConditionalOnProperty(name = ["app.async.adapter"], havingValue = "db", matchIfMissing = true)
 class DbAsyncOutboxQueue(
-    private val jdbc: NamedParameterJdbcTemplate,
+    private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
 ) {
     fun quarantineUnknown(limit: Int): Int =
         requireNotNull(
-            jdbc.jdbcTemplate.queryForObject(
+            jdbc().jdbcTemplate.queryForObject(
                 "SELECT quarantine_unknown_outbox(?)",
                 Int::class.java,
                 limit,
@@ -45,7 +46,7 @@ class DbAsyncOutboxQueue(
         worker: String,
         limit: Int,
     ): List<ClaimedOutboxEvent> =
-        jdbc.jdbcTemplate.query(
+        jdbc().jdbcTemplate.query(
             "SELECT * FROM claim_db_async_outbox(?, ?)",
             { statement ->
                 statement.setString(1, worker)
@@ -64,7 +65,7 @@ class DbAsyncOutboxQueue(
         }
 
     fun complete(event: ClaimedOutboxEvent): Boolean =
-        jdbc.jdbcTemplate.queryForObject(
+        jdbc().jdbcTemplate.queryForObject(
             "SELECT complete_event_outbox(?, ?)",
             Boolean::class.java,
             event.eventId,
@@ -77,7 +78,7 @@ class DbAsyncOutboxQueue(
         errorClass: String,
     ): String =
         requireNotNull(
-            jdbc.jdbcTemplate.queryForObject(
+            jdbc().jdbcTemplate.queryForObject(
                 "SELECT fail_event_outbox(?, ?, ?, ?)",
                 String::class.java,
                 event.eventId,
@@ -91,17 +92,21 @@ class DbAsyncOutboxQueue(
         event: ClaimedOutboxEvent,
         failureCode: String,
     ): Boolean =
-        jdbc.jdbcTemplate.queryForObject(
+        jdbc().jdbcTemplate.queryForObject(
             "SELECT quarantine_claimed_outbox(?, ?, ?)",
             Boolean::class.java,
             event.eventId,
             event.claimToken,
             failureCode,
         ) == true
+
+    private fun jdbc(): NamedParameterJdbcTemplate =
+        jdbcProvider.getIfAvailable() ?: throw IllegalStateException("Async outbox JDBC access is unavailable.")
 }
 
 @Repository
 @ConditionalOnProperty(name = ["app.async.adapter"], havingValue = "db", matchIfMissing = true)
+@ConditionalOnProperty(name = ["app.async.worker.enabled"], havingValue = "true")
 class DbAsyncWorkerQueue(
     database: AsyncWorkerDatabase,
 ) {

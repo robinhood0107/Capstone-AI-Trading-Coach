@@ -1,0 +1,21 @@
+{
+  "candidatePercentiles": [
+    95,
+    97.5,
+    99
+  ],
+  "configHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contractId": "cross_market_threshold_freeze.v1",
+  "createdAt": "2026-08-21T08:15:00+09:00",
+  "immutable": true,
+  "selectedOn": "VALIDATION_ONLY",
+  "selectedPercentile": 97.5,
+  "selectionMetricOrder": [
+    "MAX_NET_PROTECTION_BPS",
+    "MAX_SEVERE_LOSS_RECALL",
+    "MAX_SEVERE_LOSS_PRECISION",
+    "MIN_FALSE_BLOCK_RATE",
+    "HIGHER_PERCENTILE"
+  ],
+  "validationArtifactHash": "9999999999999999999999999999999999999999999999999999999999999999"
+}

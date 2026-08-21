@@ -2960,6 +2960,19 @@ solver identity 검증이며 독립 fair-value 또는 실제 성과 증거가 �
 
 계산 결과는 설명과 리스크 이해를 돕는 보조 정보다. `Decision API`는 이 값을 직접 주문 신호로 해석하지 않는다.
 
+### 12.4 S6 stored artifact와 runtime 권한
+
+- S6.1~S6.3 report는 각각 `hmm_regime_report.v1`, `gbm_monte_carlo_report.v1`,
+  `mean_reversion_report.v1`이며 public REST route를 추가하지 않는다.
+- S6.5는 `financial_engineering_snapshot.v1`과 `financial_engineering_report_manifest.v1`을
+  append-only 저장한다. 주문검토 projection은 `evaluationAsOf`보다 미래 `availableAt`을 읽지 않으며
+  request 경로에서 계산, provider 또는 원시 시세 fan-out을 만들지 않는다.
+- S6.6의 `cross_market_event_study.v2`와 `lightgbm_policy_replay.v1`은 research-only artifact다.
+  real PIT candidate가 없으면 `DATASET_UNAVAILABLE` 또는 `NOT_ESTIMABLE`이고 성과 주장을 금지한다.
+- S6.7 `cross_market_risk_snapshot.v2` schema는 `OFF|SHADOW|WARN_ONLY|ENFORCED`를 표현하지만 P1
+  runtime은 `ENFORCED`를 `MODE_NOT_APPROVED`로 거부한다. stored immutable threshold가 없으면
+  `80`이나 `0`을 합성하지 않고 unavailable이다.
+
 ---
 
 ## 12A. Market Calendar API (계획 — 미구현)

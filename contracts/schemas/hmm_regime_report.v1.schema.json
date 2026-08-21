@@ -1,0 +1,115 @@
+{
+  "$id": "https://capstone.local/contracts/hmm_regime_report.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "activeWireAuthority": {
+      "const": "NONE"
+    },
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "asOf": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "availability": {
+      "enum": [
+        "AVAILABLE",
+        "ABSTAIN"
+      ]
+    },
+    "contractId": {
+      "const": "hmm_regime_report.v1"
+    },
+    "featureContract": {
+      "const": "LOG_RETURN_CAUSAL_VOL20_DDOF1_TRAIN_SCALE_DDOF0"
+    },
+    "normalizedEntropy": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "posterior": {
+      "additionalProperties": false,
+      "properties": {
+        "RISK_OFF": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "RISK_ON": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "maxPosterior": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "RISK_ON",
+        "RISK_OFF",
+        "maxPosterior"
+      ],
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "selectedSeed": {
+      "enum": [
+        11,
+        29,
+        47,
+        71,
+        101,
+        null
+      ],
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "state": {
+      "enum": [
+        "RISK_ON",
+        "RISK_OFF",
+        null
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "warnings": {
+      "items": {
+        "maxLength": 128,
+        "type": "string"
+      },
+      "maxItems": 16,
+      "type": "array"
+    }
+  },
+  "required": [
+    "contractId",
+    "availability",
+    "asOf",
+    "featureContract",
+    "selectedSeed",
+    "state",
+    "posterior",
+    "normalizedEntropy",
+    "warnings",
+    "activeWireAuthority",
+    "artifactHash"
+  ],
+  "title": "hmm_regime_report.v1",
+  "type": "object"
+}

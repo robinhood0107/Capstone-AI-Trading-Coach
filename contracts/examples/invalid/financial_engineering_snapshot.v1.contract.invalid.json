@@ -1,0 +1,21 @@
+{
+  "artifactHash": "4444444444444444444444444444444444444444444444444444444444444444",
+  "asOf": "2026-08-20T15:30:00+09:00",
+  "availability": "AVAILABLE",
+  "availableAt": "2026-08-21T08:10:00+09:00",
+  "configHash": "2222222222222222222222222222222222222222222222222222222222222222",
+  "contractId": "financial_engineering_snapshot.v1",
+  "createdAt": "2026-08-21T08:11:00+09:00",
+  "numericPayload": {
+    "annualizedVolatility": 0.21,
+    "hmmRiskOffPosterior": 0.8,
+    "ouZScore": 2.1
+  },
+  "numericPayloadHash": "3333333333333333333333333333333333333333333333333333333333333333",
+  "quality": "PASS",
+  "schemaVersion": 1,
+  "sessionDate": "2026-08-20",
+  "sourceManifestHash": "1111111111111111111111111111111111111111111111111111111111111111",
+  "staleness": "FRESH",
+  "symbol": "../../secret"
+}

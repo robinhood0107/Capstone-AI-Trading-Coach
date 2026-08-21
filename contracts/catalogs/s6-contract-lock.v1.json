@@ -2,7 +2,7 @@
   "catalog": "s2-2-system-rule-catalog.v3",
   "contractId": "s6-contract-lock.v1",
   "enforcedRuntimeAllowed": false,
-  "generatedSetHash": "4d76af14227a31535595d487079fddd64288ca06f32b7614fb1a6ba9c71541af",
+  "generatedSetHash": "9d49db81094e66c34326304e22f45a048b0bf6a89c449fe5841b2658e5aad68d",
   "hmmActiveWireAllowed": false,
   "lightgbmProductionAllowed": false,
   "p1RuntimeModes": [

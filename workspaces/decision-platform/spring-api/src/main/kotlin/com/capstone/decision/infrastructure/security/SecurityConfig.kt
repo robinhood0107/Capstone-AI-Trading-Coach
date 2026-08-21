@@ -88,6 +88,7 @@ class SecurityConfig {
         brokerageGrpcProperties: BrokerageGrpcProperties,
         ragGrpcProperties: RagGrpcProperties,
         ragV2GrpcProperties: RagV2GrpcProperties = RagV2GrpcProperties(),
+        financialEngineeringGrpcProperties: FinancialEngineeringGrpcProperties = FinancialEngineeringGrpcProperties(),
     ): AuthSecretSeparation {
         jwtProperties.validate()
         loginProperties.validate()
@@ -104,6 +105,9 @@ class SecurityConfig {
         }
         if (ragV2GrpcProperties.enabled) {
             ragV2GrpcProperties.validate()
+        }
+        if (financialEngineeringGrpcProperties.enabled) {
+            financialEngineeringGrpcProperties.validateEnabled()
         }
         val secrets =
             linkedMapOf(
@@ -136,6 +140,10 @@ class SecurityConfig {
         }
         if (ragV2GrpcProperties.enabled) {
             secrets["RAG v2 gRPC"] = ragV2GrpcProperties.sharedSecret.toByteArray(StandardCharsets.UTF_8)
+        }
+        if (financialEngineeringGrpcProperties.enabled) {
+            secrets["Financial Engineering gRPC"] =
+                financialEngineeringGrpcProperties.sharedSecret.toByteArray(StandardCharsets.UTF_8)
         }
         return try {
             val entries = secrets.entries.toList()

@@ -4,6 +4,7 @@ import com.capstone.decision.infrastructure.brokerage.BrokerageProperties
 import com.capstone.decision.infrastructure.decision.DecisionProperties
 import com.capstone.decision.infrastructure.grpc.BrokerageGrpcProperties
 import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
+import com.capstone.decision.infrastructure.grpc.FinancialEngineeringGrpcProperties
 import com.capstone.decision.infrastructure.grpc.RagGrpcProperties
 import com.capstone.decision.infrastructure.principle.PrincipleProperties
 import com.capstone.decision.infrastructure.rag.RagGuardHistoryProperties
@@ -141,6 +142,8 @@ class DemoCredentialBundlePolicyTest {
         val decisionGrpc = DecisionGrpcProperties(sharedSecret = "D".repeat(32))
         val brokerageGrpc = BrokerageGrpcProperties(enabled = true, sharedSecret = "G".repeat(32))
         val ragGrpc = RagGrpcProperties(enabled = true, sharedSecret = "W".repeat(32))
+        val financialEngineeringGrpc =
+            FinancialEngineeringGrpcProperties(enabled = true, sharedSecret = "F".repeat(32))
 
         assertDoesNotThrow {
             SecurityConfig().authSecretSeparation(
@@ -154,8 +157,26 @@ class DemoCredentialBundlePolicyTest {
                 decisionGrpc,
                 brokerageGrpc,
                 ragGrpc,
+                financialEngineeringGrpcProperties = financialEngineeringGrpc,
             )
         }
+        financialEngineeringGrpc.sharedSecret = decisionGrpc.sharedSecret
+        assertThrows<IllegalArgumentException> {
+            SecurityConfig().authSecretSeparation(
+                jwt,
+                login,
+                properties,
+                principle,
+                decision,
+                brokerage,
+                rag,
+                decisionGrpc,
+                brokerageGrpc,
+                ragGrpc,
+                financialEngineeringGrpcProperties = financialEngineeringGrpc,
+            )
+        }
+        financialEngineeringGrpc.sharedSecret = "F".repeat(32)
         assertThrows<IllegalArgumentException> {
             DemoCredentialBundlePolicy.decodeSeparationKey(
                 Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(31)),

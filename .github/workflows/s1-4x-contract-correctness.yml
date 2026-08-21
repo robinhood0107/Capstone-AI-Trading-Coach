@@ -201,7 +201,7 @@ jobs:
           test "${S5_6_RUNTIME_PATHS[*]}" = \
             "workspaces/decision-platform/python-services/pyproject.toml"
           test "$(sha256sum workspaces/decision-platform/python-services/pyproject.toml | cut -d' ' -f1)" = \
-            "012f3c0e76dee316c99d4edd8e0fb60d21f8e8496ec64d74b3cfcacf2c115c38"
+            "175c61dffdd5d1f842f7bdd847f2801f5d3a6340c9a692f68c98e731f421d3a8"
           test "$(sha256sum workspaces/decision-platform/python-services/uv.lock | cut -d' ' -f1)" = \
             "783ab5d3e5bf9ec1f972c5412b216c75fda92b17aaa57d3317bd8ea4a7677b2a"
 

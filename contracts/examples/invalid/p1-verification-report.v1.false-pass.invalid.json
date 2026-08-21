@@ -1,0 +1,76 @@
+{
+  "accountCalls": 0,
+  "aggregateOutcome": "PASS",
+  "balanceCalls": 0,
+  "completedAt": "2026-08-21T09:02:00Z",
+  "contractId": "p1-verification-report.v1",
+  "evidenceSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "executionState": "PASS",
+  "gates": [
+    {
+      "evidenceSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "executionState": "PASS",
+      "failureCode": null,
+      "gateId": "KRX_KOSPI_DAILY",
+      "implementationState": "IMPLEMENTED",
+      "physicalCallCount": 1,
+      "required": true
+    },
+    {
+      "evidenceSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "executionState": "PASS",
+      "failureCode": null,
+      "gateId": "KRX_KOSDAQ_DAILY",
+      "implementationState": "IMPLEMENTED",
+      "physicalCallCount": 1,
+      "required": true
+    },
+    {
+      "evidenceSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "executionState": "PASS",
+      "failureCode": null,
+      "gateId": "KIS_CURRENT_PRICE",
+      "implementationState": "IMPLEMENTED",
+      "physicalCallCount": 1,
+      "required": true
+    },
+    {
+      "evidenceSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "executionState": "PASS",
+      "failureCode": null,
+      "gateId": "KIS_DAILY_BAR",
+      "implementationState": "IMPLEMENTED",
+      "physicalCallCount": 1,
+      "required": true
+    },
+    {
+      "evidenceSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "executionState": "PASS",
+      "failureCode": null,
+      "gateId": "ECOS_POLICY_RATE_DAILY",
+      "implementationState": "IMPLEMENTED",
+      "physicalCallCount": 1,
+      "required": true
+    },
+    {
+      "evidenceSha256": "6666666666666666666666666666666666666666666666666666666666666666",
+      "executionState": "PASS",
+      "failureCode": null,
+      "gateId": "ECOS_KRW_USD_DAILY",
+      "implementationState": "IMPLEMENTED",
+      "physicalCallCount": 1,
+      "required": true
+    }
+  ],
+  "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "implementationState": "IMPLEMENTED",
+  "kisTokenPhysicalCalls": 0,
+  "liveOrderCalls": 0,
+  "orderCalls": 0,
+  "packetSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "productDbWrites": 0,
+  "profile": "PROVIDER_READ_SMOKE",
+  "providerDataPhysicalCalls": 5,
+  "runId": "p1v1-20260821-read-smoke",
+  "startedAt": "2026-08-21T09:01:00Z"
+}

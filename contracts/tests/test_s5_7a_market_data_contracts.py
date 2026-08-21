@@ -115,6 +115,9 @@ class S57aMarketDataContractTest(unittest.TestCase):
         self.assertFalse(catalog["providerAuthorityGranted"])
         self.assertFalse(catalog["publicMarketDataApi"])
         self.assertEqual("ABSTAIN", catalog["lightgbmSignalAuthority"])
+        self.assertEqual(38, catalog["dailyShard"]["normalReplayOperationCount"])
+        self.assertEqual(41, catalog["dailyShard"]["monthBoundaryReplayOperationCount"])
+        self.assertEqual(0, catalog["dailyShard"]["providerPhysicalCallMax"])
 
 
 if __name__ == "__main__":

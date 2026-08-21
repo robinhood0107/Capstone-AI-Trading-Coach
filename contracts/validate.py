@@ -70,6 +70,10 @@ from contracts.generate_s5_7a_market_data_contracts import (  # noqa: E402
     SCHEMA_IDS as S5_7A_MARKET_DATA_SCHEMA_IDS,
     validate_semantics as validate_s5_7a_market_data_semantics,
 )
+from contracts.generate_p1_verification_contracts import (  # noqa: E402
+    SCHEMA_IDS as P1_VERIFICATION_SCHEMA_IDS,
+    validate_semantics as validate_p1_verification_semantics,
+)
 
 SCHEMA_DIR = REPO_ROOT / "contracts" / "schemas"
 EXAMPLES_DIR = REPO_ROOT / "contracts" / "examples"
@@ -104,6 +108,7 @@ VERSIONED_EXAMPLE_SCHEMAS = {
     **{schema_id: schema_id for schema_id in S4_8_CORE6_SCHEMA_IDS},
     **{schema_id: schema_id for schema_id in PRE_S5_RAG_NEWS_SCHEMA_IDS},
     **{schema_id: schema_id for schema_id in S5_7A_MARKET_DATA_SCHEMA_IDS},
+    **{schema_id: schema_id for schema_id in P1_VERIFICATION_SCHEMA_IDS},
     "s2-2-hash-vector.v3": "s2-2-hash-vector.v3",
 }
 
@@ -235,6 +240,9 @@ def validate_example_semantics(
         return
     if schema_name in S5_7A_MARKET_DATA_SCHEMA_IDS:
         validate_s5_7a_market_data_semantics(schema_name, example)
+        return
+    if schema_name in P1_VERIFICATION_SCHEMA_IDS:
+        validate_p1_verification_semantics(schema_name, example)
         return
     if schema_name == "lightgbm-signal-artifact-v1":
         # closed JSON Schema가 AVAILABLE/ABSTAIN 및 fake provenance 결합을 직접 고정한다.

@@ -16,7 +16,9 @@ DB, runtime, public REST/OpenAPI, Dashboard, scheduler 또는 provider authority
 
 ```bash
 uv run --frozen python contracts/generate_s5_7a_market_data_contracts.py --check
+uv run --frozen python contracts/generate_p1_verification_contracts.py --check
 uv run --frozen python -m unittest contracts.tests.test_s5_7a_market_data_contracts -v
+uv run --frozen python -m unittest contracts.tests.test_p1_verification_contracts -v
 uv run --frozen python contracts/validate.py
 ```
 

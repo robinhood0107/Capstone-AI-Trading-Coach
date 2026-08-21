@@ -445,7 +445,7 @@
   "membershipSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
   "previousAcceptedManifestSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "providerCallsOnRead": 0,
-  "providerPhysicalCalls": 38,
+  "providerPhysicalCalls": 0,
   "sessionDate": "2026-08-18",
   "sourceReceipts": [
     {

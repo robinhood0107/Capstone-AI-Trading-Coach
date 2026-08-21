@@ -1,0 +1,99 @@
+{
+  "aggregateOutcomes": [
+    "PASS",
+    "FAIL",
+    "BLOCKED",
+    "INCOMPLETE"
+  ],
+  "contractId": "p1-verification-catalog.v1",
+  "executionStates": [
+    "PASS",
+    "FAIL",
+    "BLOCKED",
+    "NOT_RUN",
+    "NOT_APPLICABLE"
+  ],
+  "implementationStates": [
+    "IMPLEMENTED",
+    "INTENTIONALLY_DISABLED",
+    "NOT_IMPLEMENTED",
+    "EXTERNAL_PLACEHOLDER"
+  ],
+  "lightgbmProduction": "INTENTIONALLY_DISABLED",
+  "offlineReplay": {
+    "monthBoundaryOperationCount": 41,
+    "normalOperationCount": 38,
+    "providerPhysicalCalls": 0
+  },
+  "profiles": [
+    {
+      "currentImplementationState": "IMPLEMENTED",
+      "profile": "S0_S5_CURRENT",
+      "providerAuthority": false,
+      "requiredGates": [
+        "MARKET_DATA_OFFLINE_STATE_CHAIN",
+        "DECISION_INTERNAL_PAPER_STATE_CHAIN",
+        "LIGHTGBM_RESEARCH_ONLY_BOUNDARY",
+        "MARKET_DATA_CHAIN_GUARD"
+      ]
+    },
+    {
+      "currentImplementationState": "NOT_IMPLEMENTED",
+      "profile": "PROVIDER_READ_SMOKE",
+      "providerAuthority": true,
+      "requiredGates": [
+        "KRX_KOSPI_DAILY",
+        "KRX_KOSDAQ_DAILY",
+        "KIS_CURRENT_PRICE",
+        "KIS_DAILY_BAR",
+        "ECOS_POLICY_RATE_DAILY",
+        "ECOS_KRW_USD_DAILY"
+      ]
+    },
+    {
+      "currentImplementationState": "NOT_IMPLEMENTED",
+      "profile": "S6_OFFLINE",
+      "providerAuthority": false
+    },
+    {
+      "currentImplementationState": "NOT_IMPLEMENTED",
+      "profile": "S7_RUNTIME",
+      "providerAuthority": false
+    },
+    {
+      "currentImplementationState": "EXTERNAL_PLACEHOLDER",
+      "profile": "P1_DEMO",
+      "providerAuthority": false
+    },
+    {
+      "currentImplementationState": "NOT_IMPLEMENTED",
+      "profile": "P1_LIVE_READINESS",
+      "providerAuthority": false
+    },
+    {
+      "currentImplementationState": "EXTERNAL_PLACEHOLDER",
+      "profile": "P1_FULL",
+      "providerAuthority": false
+    }
+  ],
+  "providerReadSmoke": {
+    "accountCallCap": 0,
+    "balanceCallCap": 0,
+    "dataPhysicalCallCap": 6,
+    "kisTokenPhysicalCallCap": 1,
+    "liveOrderCallCap": 0,
+    "operations": [
+      "KRX_KOSPI_DAILY",
+      "KRX_KOSDAQ_DAILY",
+      "KIS_CURRENT_PRICE",
+      "KIS_DAILY_BAR",
+      "ECOS_POLICY_RATE_DAILY",
+      "ECOS_KRW_USD_DAILY"
+    ],
+    "productDbWriteAllowed": false,
+    "retransmissionAllowed": false,
+    "ttlSecondsMax": 3600
+  },
+  "publicApi": false,
+  "scheduler": false
+}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import math
 import os
+import shutil
 import time
 import tracemalloc
 import uuid
@@ -338,7 +339,7 @@ def write_publications(output_root: Path, publications: tuple[BatchPublication, 
     try:
         for publication in publications:
             symbol = str(publication.snapshot["symbol"])
-            target = staging_root / symbol
+            target = staging_root / _safe_symbol_path_component(symbol)
             target.mkdir(mode=0o700)
             _write_new(
                 target / "financial_engineering_snapshot.v1.json",
@@ -354,7 +355,7 @@ def write_publications(output_root: Path, publications: tuple[BatchPublication, 
             )
         os.replace(staging_root, output_root)
     except Exception:
-        # The staging directory is deliberately not promoted. A later run uses a new name.
+        shutil.rmtree(staging_root)
         raise
 
 
@@ -364,6 +365,15 @@ def _write_new(path: Path, payload: bytes) -> None:
     with path.open("xb") as stream:
         stream.write(payload)
     path.chmod(0o600)
+
+
+def _safe_symbol_path_component(symbol: str) -> str:
+    if not symbol or len(symbol) > 32 or not all(character.isascii() and (character.isalnum() or character in "./-") for character in symbol):
+        raise ValueError("SYMBOL_INVALID")
+    return "".join(
+        character if character.isalnum() or character == "-" else f"%{ord(character):02X}"
+        for character in symbol
+    )
 
 
 def _risk_off(hmm: HMMRegimeResult, posterior: tuple[float, float]) -> float:

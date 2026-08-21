@@ -173,6 +173,44 @@ class AsyncJobApiIntegrationTest(
     }
 
     @Test
+    fun `stream metric API is ADMIN only bounded and preserves unavailable signal`() {
+        appJdbc.queryForObject("select aggregate_decision_distribution()", Boolean::class.java)
+        appJdbc.queryForObject("select aggregate_failed_jobs()", Boolean::class.java)
+        appJdbc.queryForObject("select aggregate_signal_freshness()", Boolean::class.java)
+        appJdbc.queryForObject("select aggregate_dlq_events()", Boolean::class.java)
+
+        mockMvc.get("/api/v1/stream-metrics").andExpect { status { isUnauthorized() } }
+        val userToken = login("demo-user", userPassword())
+        mockMvc.get("/api/v1/stream-metrics") { bearer(userToken) }.andExpect { status { isForbidden() } }
+        val adminToken = login("demo-admin", adminPassword())
+        mockMvc
+            .get("/api/v1/stream-metrics") {
+                bearer(adminToken)
+                header("X-Request-Id", "req-stream-metric")
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.success") { value(true) }
+                jsonPath("$.requestId") { value("req-stream-metric") }
+                jsonPath("$.data.pipelineHealth") { value("UNAVAILABLE") }
+                jsonPath("$.data.signalStaleRatio") { doesNotExist() }
+                jsonPath("$.data.decisionDistribution.ALLOW") { value(0) }
+                jsonPath("$.data.decisionDistribution.WARN") { value(0) }
+                jsonPath("$.data.decisionDistribution.HOLD") { value(0) }
+                jsonPath("$.data.decisionDistribution.BLOCK") { value(0) }
+                jsonPath("$.data.failedJobCount") { value(0) }
+                jsonPath("$.data.dlqEventCount") { value(0) }
+                jsonPath("$.data.components.signalFreshness.status") { value("UNAVAILABLE") }
+            }
+        mockMvc.get("/api/v1/stream-metrics?symbol=005930") { bearer(adminToken) }.andExpect {
+            status { isBadRequest() }
+        }
+        assertEquals(
+            1,
+            ownerJdbc.queryForObject("select count(*) from stream_metric_admin_read_audit", Int::class.java),
+        )
+    }
+
+    @Test
     fun `DB adapter commits job and outbox together and rolls both back on outbox denial`() {
         val accepted =
             asyncPipelinePort.request(

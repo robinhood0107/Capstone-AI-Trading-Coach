@@ -1,0 +1,252 @@
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import hmac
+import json
+import os
+import re
+import stat
+import sys
+import uuid
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any, NoReturn
+
+import psycopg
+
+_ID = re.compile(r"^(?:evt|job)_[A-Za-z0-9_-]{8,96}$")
+_REASON = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$")
+_USER = re.compile(r"^usr_[A-Za-z0-9_-]{8,64}$")
+_MAX_TARGETS = 100
+
+
+class ReplayCliError(RuntimeError):
+    pass
+
+
+def _canonical(value: dict[str, Any]) -> bytes:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+
+
+def _read_secret(path: Path, *, minimum: int = 32) -> bytes:
+    info = path.stat()
+    if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077:
+        raise ReplayCliError("SECRET_FILE_PERMISSIONS_INVALID")
+    value = path.read_bytes().rstrip(b"\r\n")
+    if len(value) < minimum:
+        raise ReplayCliError("SECRET_FILE_TOO_SHORT")
+    return value
+
+
+def author_packet(args: argparse.Namespace, *, now: datetime | None = None) -> dict[str, Any]:
+    issued_at = (now or datetime.now(UTC)).replace(microsecond=0)
+    target_ids = list(args.target_id)
+    if not 1 <= len(target_ids) <= _MAX_TARGETS or len(target_ids) != len(set(target_ids)):
+        raise ReplayCliError("TARGET_COUNT_INVALID")
+    prefix = "evt_" if args.target_kind == "EVENT" else "job_"
+    if any(not _ID.fullmatch(item) or not item.startswith(prefix) for item in target_ids):
+        raise ReplayCliError("TARGET_ID_INVALID")
+    if not _USER.fullmatch(args.actor_user_id) or not _REASON.fullmatch(args.reason_code):
+        raise ReplayCliError("PACKET_FIELD_INVALID")
+    if args.security_version <= 0 or not 1 <= args.expected_count <= _MAX_TARGETS:
+        raise ReplayCliError("PACKET_FIELD_INVALID")
+    unsigned: dict[str, Any] = {
+        "version": "s7-async-replay-packet.v1",
+        "replayBatchId": f"replay_{uuid.uuid4().hex}",
+        "issuedAt": issued_at.isoformat().replace("+00:00", "Z"),
+        "expiresAt": (issued_at + timedelta(minutes=5)).isoformat().replace("+00:00", "Z"),
+        "actorUserId": args.actor_user_id,
+        "securityVersion": args.security_version,
+        "targetKind": args.target_kind,
+        "targetIds": target_ids,
+        "expectedCount": args.expected_count,
+        "reasonCode": args.reason_code,
+        "executeAuthorized": bool(args.authorize_execute),
+    }
+    key = _read_secret(args.signing_key_file)
+    return unsigned | {"signature": hmac.new(key, _canonical(unsigned), hashlib.sha256).hexdigest()}
+
+
+def validate_packet(packet: dict[str, Any], key: bytes, *, execute: bool, now: datetime | None = None) -> None:
+    signature = packet.get("signature")
+    unsigned = {name: value for name, value in packet.items() if name != "signature"}
+    if not isinstance(signature, str) or not hmac.compare_digest(
+        signature, hmac.new(key, _canonical(unsigned), hashlib.sha256).hexdigest()
+    ):
+        raise ReplayCliError("PACKET_SIGNATURE_INVALID")
+    required = {
+        "version",
+        "replayBatchId",
+        "issuedAt",
+        "expiresAt",
+        "actorUserId",
+        "securityVersion",
+        "targetKind",
+        "targetIds",
+        "expectedCount",
+        "reasonCode",
+        "executeAuthorized",
+    }
+    if set(unsigned) != required or unsigned["version"] != "s7-async-replay-packet.v1":
+        raise ReplayCliError("PACKET_SCHEMA_INVALID")
+    current = now or datetime.now(UTC)
+    issued = _instant(unsigned["issuedAt"])
+    expires = _instant(unsigned["expiresAt"])
+    if issued > current + timedelta(seconds=30) or expires <= current or expires - issued != timedelta(minutes=5):
+        raise ReplayCliError("PACKET_EXPIRED")
+    targets = unsigned["targetIds"]
+    prefix = "evt_" if unsigned["targetKind"] == "EVENT" else "job_"
+    if (
+        not isinstance(targets, list)
+        or not 1 <= len(targets) <= _MAX_TARGETS
+        or len(targets) != len(set(targets))
+        or any(not isinstance(item, str) or not _ID.fullmatch(item) or not item.startswith(prefix) for item in targets)
+    ):
+        raise ReplayCliError("TARGET_ID_INVALID")
+    if execute and unsigned["executeAuthorized"] is not True:
+        raise ReplayCliError("EXECUTE_NOT_AUTHORIZED")
+
+
+def _instant(value: Any) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise ReplayCliError("PACKET_TIME_INVALID")
+    try:
+        return datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as error:
+        raise ReplayCliError("PACKET_TIME_INVALID") from error
+
+
+def _b64_json(value: str) -> dict[str, Any]:
+    try:
+        decoded = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+        parsed = json.loads(decoded)
+    except (ValueError, json.JSONDecodeError) as error:
+        raise ReplayCliError("JWT_INVALID") from error
+    if not isinstance(parsed, dict):
+        raise ReplayCliError("JWT_INVALID")
+    return parsed
+
+
+def validate_jwt(token: str, secret: bytes, issuer: str, audience: str, *, now: datetime | None = None) -> dict[str, Any]:
+    parts = token.strip().split(".")
+    if len(parts) != 3:
+        raise ReplayCliError("JWT_INVALID")
+    header = _b64_json(parts[0])
+    claims = _b64_json(parts[1])
+    expected = hmac.new(secret, f"{parts[0]}.{parts[1]}".encode(), hashlib.sha256).digest()
+    try:
+        supplied = base64.urlsafe_b64decode(parts[2] + "=" * (-len(parts[2]) % 4))
+    except ValueError as error:
+        raise ReplayCliError("JWT_INVALID") from error
+    current = int((now or datetime.now(UTC)).timestamp())
+    aud = claims.get("aud")
+    if (
+        header != {"alg": "HS256", "typ": "JWT"}
+        or not hmac.compare_digest(expected, supplied)
+        or claims.get("iss") != issuer
+        or aud not in (audience, [audience])
+        or claims.get("role") != "ADMIN"
+        or not isinstance(claims.get("iat"), int)
+        or not isinstance(claims.get("exp"), int)
+        or claims["iat"] > current + 60
+        or claims["exp"] <= current
+        or claims["exp"] <= claims["iat"]
+        or not isinstance(claims.get("securityVersion"), int)
+        or claims["securityVersion"] <= 0
+        or not isinstance(claims.get("sub"), str)
+    ):
+        raise ReplayCliError("JWT_INVALID")
+    return claims
+
+
+def execute_packet(args: argparse.Namespace) -> list[dict[str, Any]]:
+    packet = json.loads(args.packet.read_text(encoding="utf-8"))
+    if not isinstance(packet, dict):
+        raise ReplayCliError("PACKET_SCHEMA_INVALID")
+    validate_packet(packet, _read_secret(args.signing_key_file), execute=args.execute)
+    token = sys.stdin.readline(8193)
+    if not token or len(token) > 8192 or sys.stdin.read(1):
+        raise ReplayCliError("JWT_STDIN_INVALID")
+    claims = validate_jwt(token.strip(), _read_secret(args.jwt_secret_file), args.jwt_issuer, args.jwt_audience)
+    if claims["sub"] != packet["actorUserId"] or claims["securityVersion"] != packet["securityVersion"]:
+        raise ReplayCliError("JWT_PACKET_ACTOR_MISMATCH")
+    dsn = _read_secret(args.database_dsn_file, minimum=16).decode("utf-8")
+    packet_hash = "sha256:" + hashlib.sha256(_canonical(packet)).hexdigest()
+    with psycopg.connect(dsn, autocommit=False, connect_timeout=2) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "select * from replay_async_work(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (
+                    packet["actorUserId"],
+                    packet["securityVersion"],
+                    packet["replayBatchId"],
+                    packet["targetKind"],
+                    packet["targetIds"],
+                    packet["expectedCount"],
+                    packet["reasonCode"],
+                    packet_hash,
+                    args.execute,
+                ),
+            )
+            columns = [item.name for item in cursor.description or ()]
+            rows = [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
+        if not rows:
+            raise ReplayCliError("CURRENT_ADMIN_REVALIDATION_FAILED")
+        connection.commit()
+    return rows
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="python -m app.async_worker.replay_cli")
+    commands = parser.add_subparsers(dest="command", required=True)
+    author = commands.add_parser("author")
+    author.add_argument("--actor-user-id", required=True)
+    author.add_argument("--security-version", required=True, type=int)
+    author.add_argument("--target-kind", required=True, choices=("EVENT", "JOB"))
+    author.add_argument("--target-id", required=True, action="append")
+    author.add_argument("--expected-count", required=True, type=int)
+    author.add_argument("--reason-code", required=True)
+    author.add_argument("--authorize-execute", action="store_true")
+    author.add_argument("--signing-key-file", required=True, type=Path)
+    author.add_argument("--output", required=True, type=Path)
+    run = commands.add_parser("run")
+    run.add_argument("--packet", required=True, type=Path)
+    run.add_argument("--signing-key-file", required=True, type=Path)
+    run.add_argument("--jwt-secret-file", required=True, type=Path)
+    run.add_argument("--jwt-issuer", required=True)
+    run.add_argument("--jwt-audience", required=True)
+    run.add_argument("--database-dsn-file", required=True, type=Path)
+    run.add_argument("--execute", action="store_true")
+    return parser
+
+
+def _write_new(path: Path, payload: dict[str, Any]) -> None:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+        json.dump(payload, output, sort_keys=True, separators=(",", ":"))
+        output.write("\n")
+
+
+def _fail(code: str) -> NoReturn:
+    print(json.dumps({"success": False, "code": code}, separators=(",", ":")))
+    raise SystemExit(2)
+
+
+def main() -> None:
+    args = _parser().parse_args()
+    try:
+        if args.command == "author":
+            packet = author_packet(args)
+            _write_new(args.output, packet)
+            print(json.dumps({"success": True, "packet": str(args.output)}, separators=(",", ":")))
+        else:
+            rows = execute_packet(args)
+            print(json.dumps({"success": True, "executed": bool(args.execute), "items": rows}, separators=(",", ":")))
+    except (OSError, UnicodeError, json.JSONDecodeError, psycopg.Error, ReplayCliError) as error:
+        _fail(str(error) if isinstance(error, ReplayCliError) else "REPLAY_OPERATION_FAILED")
+
+
+if __name__ == "__main__":
+    main()

@@ -60,6 +60,15 @@ class AsyncInfrastructureConfiguration {
             setAwaitTerminationSeconds(10)
         }
 
+    @Bean("streamMetricTaskScheduler")
+    fun streamMetricTaskScheduler(): ThreadPoolTaskScheduler =
+        ThreadPoolTaskScheduler().apply {
+            poolSize = 1
+            setThreadNamePrefix("s7-stream-metric-")
+            setWaitForTasksToCompleteOnShutdown(false)
+            setRemoveOnCancelPolicy(true)
+        }
+
     @Bean(destroyMethod = "close")
     @ConditionalOnProperty(name = ["app.async.adapter"], havingValue = "db", matchIfMissing = true)
     fun asyncWorkerDatabase(properties: AsyncWorkerProperties): AsyncWorkerDatabase =

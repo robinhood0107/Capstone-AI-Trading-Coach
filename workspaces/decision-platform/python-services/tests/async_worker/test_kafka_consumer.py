@@ -71,6 +71,16 @@ class FakeConsumer:
         self.committed.append(message)
 
 
+class CrashBeforeDbCommitRepository(FakeRepository):
+    def commit(self, work: AsyncWork, result_ref: str) -> str:
+        raise RuntimeError("injected crash before DB commit")
+
+
+class CrashAfterDbCommitConsumer(FakeConsumer):
+    def commit(self, message: FakeMessage, asynchronous: bool) -> None:
+        raise RuntimeError("injected crash after DB commit before offset ack")
+
+
 def envelope() -> bytes:
     references = {
         "artifactId": "artifact_fixture_00000001",
@@ -124,3 +134,38 @@ def test_poison_records_only_sanitized_identity_and_commits_offset() -> None:
         "failure_code",
     }
     assert "must-not-be-forwarded" not in json.dumps(poison)
+
+
+def test_crash_before_db_commit_leaves_offset_unacked_for_redelivery() -> None:
+    message = FakeMessage(envelope())
+    repository = CrashBeforeDbCommitRepository()
+    consumer = FakeConsumer()
+    try:
+        KafkaAsyncMessageHandler(repository, consumer).handle(message)  # type: ignore[arg-type]
+    except RuntimeError as error:
+        assert str(error) == "injected crash before DB commit"
+    else:
+        raise AssertionError("crash injection did not escape the handler")
+    assert consumer.committed == []
+
+
+def test_crash_after_db_commit_is_redelivered_and_idempotency_absorbs_duplicate() -> None:
+    message = FakeMessage(envelope())
+    repository = FakeRepository()
+    try:
+        KafkaAsyncMessageHandler(repository, CrashAfterDbCommitConsumer()).handle(message)  # type: ignore[arg-type]
+    except RuntimeError as error:
+        assert str(error) == "injected crash after DB commit before offset ack"
+    else:
+        raise AssertionError("ack crash injection did not escape the handler")
+    assert len(repository.commits) == 1
+
+    class DuplicateRepository(FakeRepository):
+        def commit(self, work: AsyncWork, result_ref: str) -> str:
+            self.commits.append(work)
+            return "DUPLICATE"
+
+    duplicate_repository = DuplicateRepository()
+    recovered_consumer = FakeConsumer()
+    assert KafkaAsyncMessageHandler(duplicate_repository, recovered_consumer).handle(message) == "DUPLICATE"  # type: ignore[arg-type]
+    assert recovered_consumer.committed == [message]

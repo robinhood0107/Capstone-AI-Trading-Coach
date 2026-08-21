@@ -141,3 +141,21 @@ def test_local_output_failure_never_promotes_partial_root(tmp_path: Path) -> Non
     else:
         raise AssertionError("duplicate symbol should fail before promotion")
     assert not output.exists()
+    assert not list(tmp_path.glob(".published.*.staging"))
+
+
+def test_local_output_encodes_symbol_as_one_safe_path_component(tmp_path: Path) -> None:
+    publisher = Publisher()
+    result = ManualFinancialEngineeringBatch(Reader(), publisher, n_paths=1_000).run()
+    original = result.publications[0]
+    escaped = BatchPublication(
+        {**original.snapshot, "symbol": "../X"},
+        original.manifest,
+        original.report_markdown,
+    )
+
+    output = tmp_path / "published"
+    write_publications(output, (escaped,))
+
+    assert (output / "%2E%2E%2FX" / "financial_engineering_report.md").is_file()
+    assert not (tmp_path / "X").exists()

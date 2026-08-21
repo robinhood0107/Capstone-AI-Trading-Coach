@@ -31,6 +31,22 @@ class S6RetirementContractTest(unittest.TestCase):
         self.assertIn("contracts/generate_s6_contracts.py --check", workflow)
         self.assertIn("contracts/generate_s6_retirement_contracts.py --check", workflow)
 
+    def test_s1_4x_provenance_freezes_exact_s1_4_files_not_s6_siblings(self) -> None:
+        workflow = (ROOT / ".github/workflows/s1-4x-contract-correctness.yml").read_text()
+        provenance = workflow.split("# S1.4 production 11함수의 실제 import boundary만 동결한다.", 1)[1]
+        provenance = provenance.split("- name: Check and sync frozen oracle environment", 1)[0]
+        for relative in (
+            "app/financial_engineering/__init__.py",
+            "app/financial_engineering/_validation.py",
+            "app/financial_engineering/returns.py",
+            "app/financial_engineering/risk_metrics.py",
+            "tests/financial_engineering/test_returns.py",
+            "tests/financial_engineering/test_risk_metrics.py",
+        ):
+            self.assertIn(relative, provenance)
+        self.assertNotIn("python-services/app/financial_engineering \\", provenance)
+        self.assertNotIn("python-services/tests/financial_engineering \\", provenance)
+
     def test_generator_is_deterministic_and_checked_in(self) -> None:
         outputs = build_outputs()
         self.assertEqual(4, len(outputs))

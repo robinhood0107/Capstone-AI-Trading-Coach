@@ -211,6 +211,7 @@ BEGIN
   IF NEW.status IS DISTINCT FROM OLD.status THEN
     IF NOT (
       (OLD.status IN ('PENDING', 'FAILED') AND NEW.status IN ('PUBLISHED', 'FAILED', 'DLQ_REQUESTED'))
+      OR (OLD.status = 'DLQ_REQUESTED' AND NEW.status = 'PUBLISHED')
     ) THEN
       RAISE EXCEPTION 'invalid event outbox transition' USING ERRCODE = '23514';
     END IF;
@@ -287,6 +288,7 @@ RETURNS TABLE(
   aggregate_id text,
   partition_key text,
   payload_json jsonb,
+  occurred_at timestamptz,
   outbox_schema_version text,
   kafka_schema_version integer,
   topic_name text,
@@ -332,7 +334,7 @@ BEGIN
     RETURNING item.*
   )
   SELECT claimed.event_id, claimed.event_type, claimed.aggregate_type, claimed.aggregate_id,
-         claimed.partition_key, claimed.payload_json, claimed.schema_version,
+         claimed.partition_key, claimed.payload_json, claimed.created_at, claimed.schema_version,
          registry.kafka_schema_version, registry.topic_name, claimed.claim_token,
          claimed.retry_count + 1
   FROM claimed
@@ -892,6 +894,204 @@ BEGIN
 END
 $quarantine_async_job$;
 
+CREATE FUNCTION record_kafka_poison(
+  p_dlq_event_id text,
+  p_event_id text,
+  p_event_type text,
+  p_payload_hash text,
+  p_source_topic text,
+  p_attempt integer,
+  p_failure_code text,
+  p_partition_key text
+)
+RETURNS boolean
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $record_kafka_poison$
+BEGIN
+  IF session_user <> 'decision_worker' THEN
+    RAISE EXCEPTION 'Kafka poison record role denied' USING ERRCODE = '42501';
+  END IF;
+  IF p_dlq_event_id !~ '^evt_dlq_[0-9a-f]{32}$'
+     OR p_event_id !~ '^evt_[A-Za-z0-9_-]{8,96}$'
+     OR p_payload_hash !~ '^sha256:[0-9a-f]{64}$'
+     OR p_source_topic <> p_event_type
+     OR p_attempt < 1 OR p_attempt > 3
+     OR p_failure_code !~ '^[A-Z][A-Z0-9_]{2,63}$'
+     OR p_partition_key !~ '^hmac-sha256:[0-9a-f]{64}$'
+     OR NOT EXISTS (
+       SELECT 1 FROM public.async_event_registry registry
+       WHERE registry.event_type = p_event_type AND registry.topic_name = p_source_topic AND registry.enabled
+     ) THEN
+    RAISE EXCEPTION 'invalid Kafka poison record' USING ERRCODE = '22023';
+  END IF;
+  INSERT INTO public.event_outbox(
+    event_id, event_type, aggregate_type, aggregate_id, partition_key,
+    payload_json, schema_version, status, failure_code, error_class, last_error
+  ) VALUES (
+    p_dlq_event_id, p_event_type, 'ASYNC_DLQ', p_event_id, p_partition_key,
+    jsonb_build_object(
+      'eventId', p_event_id, 'eventType', p_event_type, 'payloadHash', p_payload_hash,
+      'failureCode', p_failure_code, 'sourceTopic', p_source_topic, 'attempt', p_attempt
+    ),
+    '1.0.0', 'DLQ_REQUESTED', p_failure_code, 'CONTRACT_VIOLATION', p_failure_code
+  ) ON CONFLICT (event_id) DO NOTHING;
+  RETURN FOUND;
+END
+$record_kafka_poison$;
+
+CREATE FUNCTION quarantine_async_work(
+  p_job_id text, p_claim_token uuid, p_dlq_event_id text, p_event_id text,
+  p_event_type text, p_payload_hash text, p_source_topic text, p_attempt integer,
+  p_failure_code text, p_partition_key text
+)
+RETURNS boolean
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $quarantine_async_work$
+BEGIN
+  IF session_user <> 'decision_worker' THEN
+    RAISE EXCEPTION 'async quarantine role denied' USING ERRCODE = '42501';
+  END IF;
+  IF NOT public.quarantine_async_job(
+    p_job_id, p_claim_token, p_failure_code, 'CONTRACT_VIOLATION'
+  ) THEN
+    RETURN false;
+  END IF;
+  PERFORM public.record_kafka_poison(
+    p_dlq_event_id, p_event_id, p_event_type, p_payload_hash, p_source_topic,
+    p_attempt, p_failure_code, p_partition_key
+  );
+  RETURN true;
+END
+$quarantine_async_work$;
+
+CREATE FUNCTION fail_async_work(
+  p_job_id text, p_claim_token uuid, p_dlq_event_id text, p_event_id text,
+  p_event_type text, p_payload_hash text, p_source_topic text, p_attempt integer,
+  p_failure_code text, p_partition_key text
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $fail_async_work$
+DECLARE next_status text;
+BEGIN
+  IF session_user <> 'decision_worker' THEN
+    RAISE EXCEPTION 'async failure role denied' USING ERRCODE = '42501';
+  END IF;
+  next_status := public.fail_async_job(
+    p_job_id, p_claim_token, p_failure_code, 'RETRYABLE_TRANSIENT'
+  );
+  IF next_status = 'NEEDS_REVIEW' THEN
+    PERFORM public.record_kafka_poison(
+      p_dlq_event_id, p_event_id, p_event_type, p_payload_hash, p_source_topic,
+      p_attempt, p_failure_code, p_partition_key
+    );
+  END IF;
+  RETURN next_status;
+END
+$fail_async_work$;
+
+CREATE FUNCTION claim_dlq_outbox(p_worker text, p_limit integer DEFAULT 100)
+RETURNS TABLE(
+  event_id text, event_type text, aggregate_type text, aggregate_id text,
+  partition_key text, payload_json jsonb, occurred_at timestamptz,
+  outbox_schema_version text, kafka_schema_version integer, topic_name text,
+  claim_token uuid, attempt_count integer
+)
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $claim_dlq_outbox$
+BEGIN
+  IF session_user <> 'decision_app' THEN
+    RAISE EXCEPTION 'DLQ outbox claim role denied' USING ERRCODE = '42501';
+  END IF;
+  IF p_worker !~ '^[A-Za-z0-9][A-Za-z0-9._:-]{2,63}$' OR p_limit < 1 OR p_limit > 100 THEN
+    RAISE EXCEPTION 'invalid DLQ claim request' USING ERRCODE = '22023';
+  END IF;
+  RETURN QUERY
+  WITH candidates AS (
+    SELECT item.event_id
+    FROM public.event_outbox item
+    JOIN public.async_event_registry registry
+      ON registry.event_type = item.event_type AND registry.outbox_schema_version = item.schema_version
+    WHERE item.status = 'DLQ_REQUESTED' AND item.retry_count < 3
+      AND item.next_attempt_at <= statement_timestamp()
+      AND (item.lease_expires_at IS NULL OR item.lease_expires_at <= statement_timestamp())
+    ORDER BY item.next_attempt_at, item.created_at, item.event_id
+    FOR UPDATE OF item SKIP LOCKED LIMIT p_limit
+  ), claimed AS (
+    UPDATE public.event_outbox item
+    SET claim_token = gen_random_uuid(), claimed_by = p_worker,
+        lease_expires_at = statement_timestamp() + interval '30 seconds', updated_at = statement_timestamp()
+    FROM candidates WHERE item.event_id = candidates.event_id RETURNING item.*
+  )
+  SELECT claimed.event_id, claimed.event_type, claimed.aggregate_type, claimed.aggregate_id,
+         claimed.partition_key, claimed.payload_json, claimed.created_at, claimed.schema_version,
+         registry.kafka_schema_version,
+         regexp_replace(registry.topic_name, '\.v1$', '.dlq.v1'),
+         claimed.claim_token, claimed.retry_count + 1
+  FROM claimed JOIN public.async_event_registry registry ON registry.event_type = claimed.event_type
+  ORDER BY claimed.next_attempt_at, claimed.created_at, claimed.event_id;
+END
+$claim_dlq_outbox$;
+
+CREATE FUNCTION complete_dlq_outbox(p_event_id text, p_claim_token uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $complete_dlq_outbox$
+DECLARE changed integer;
+BEGIN
+  IF session_user <> 'decision_app' THEN
+    RAISE EXCEPTION 'DLQ completion role denied' USING ERRCODE = '42501';
+  END IF;
+  UPDATE public.event_outbox
+  SET status = 'PUBLISHED', published_at = statement_timestamp(), claim_token = NULL,
+      claimed_by = NULL, lease_expires_at = NULL, updated_at = statement_timestamp()
+  WHERE event_id = p_event_id AND claim_token = p_claim_token
+    AND status = 'DLQ_REQUESTED' AND lease_expires_at > statement_timestamp();
+  GET DIAGNOSTICS changed = ROW_COUNT;
+  RETURN changed = 1;
+END
+$complete_dlq_outbox$;
+
+CREATE FUNCTION fail_dlq_outbox(p_event_id text, p_claim_token uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $fail_dlq_outbox$
+DECLARE changed integer;
+BEGIN
+  IF session_user <> 'decision_app' THEN
+    RAISE EXCEPTION 'DLQ failure role denied' USING ERRCODE = '42501';
+  END IF;
+  UPDATE public.event_outbox
+  SET retry_count = retry_count + 1,
+      next_attempt_at = statement_timestamp() + CASE retry_count WHEN 0 THEN interval '1 second' ELSE interval '5 seconds' END,
+      claim_token = NULL, claimed_by = NULL, lease_expires_at = NULL,
+      failure_code = 'KAFKA_PUBLISH_FAILED', error_class = 'RETRYABLE_TRANSIENT',
+      last_error = 'KAFKA_PUBLISH_FAILED', updated_at = statement_timestamp()
+  WHERE event_id = p_event_id AND claim_token = p_claim_token
+    AND status = 'DLQ_REQUESTED' AND retry_count < 3;
+  GET DIAGNOSTICS changed = ROW_COUNT;
+  RETURN changed = 1;
+END
+$fail_dlq_outbox$;
+
 CREATE FUNCTION read_async_job_status(p_actor_user_id text, p_security_version bigint, p_job_id text)
 RETURNS TABLE(
   job_id text, job_type text, status text, requested_at timestamptz, started_at timestamptz,
@@ -1010,6 +1210,12 @@ ALTER FUNCTION complete_async_job(text, uuid, jsonb) OWNER TO flyway;
 ALTER FUNCTION commit_async_work(text, text, text, text, text, uuid, text, text, text) OWNER TO flyway;
 ALTER FUNCTION fail_async_job(text, uuid, text, text) OWNER TO flyway;
 ALTER FUNCTION quarantine_async_job(text, uuid, text, text) OWNER TO flyway;
+ALTER FUNCTION record_kafka_poison(text, text, text, text, text, integer, text, text) OWNER TO flyway;
+ALTER FUNCTION quarantine_async_work(text, uuid, text, text, text, text, text, integer, text, text) OWNER TO flyway;
+ALTER FUNCTION fail_async_work(text, uuid, text, text, text, text, text, integer, text, text) OWNER TO flyway;
+ALTER FUNCTION claim_dlq_outbox(text, integer) OWNER TO flyway;
+ALTER FUNCTION complete_dlq_outbox(text, uuid) OWNER TO flyway;
+ALTER FUNCTION fail_dlq_outbox(text, uuid) OWNER TO flyway;
 ALTER FUNCTION read_async_job_status(text, bigint, text) OWNER TO flyway;
 ALTER FUNCTION list_async_job_status(text, bigint, text, text, timestamptz, text, integer) OWNER TO flyway;
 
@@ -1024,6 +1230,10 @@ REVOKE ALL ON FUNCTION claim_event_outbox(text, integer), claim_db_async_outbox(
   claim_async_jobs(text, integer), claim_async_job_by_id(text, text), heartbeat_async_job(text, uuid),
   complete_async_job(text, uuid, jsonb), fail_async_job(text, uuid, text, text),
   quarantine_async_job(text, uuid, text, text),
+  record_kafka_poison(text, text, text, text, text, integer, text, text),
+  quarantine_async_work(text, uuid, text, text, text, text, text, integer, text, text),
+  fail_async_work(text, uuid, text, text, text, text, text, integer, text, text),
+  claim_dlq_outbox(text, integer), complete_dlq_outbox(text, uuid), fail_dlq_outbox(text, uuid),
   commit_async_work(text, text, text, text, text, uuid, text, text, text),
   read_async_job_status(text, bigint, text),
   list_async_job_status(text, bigint, text, text, timestamptz, text, integer) FROM PUBLIC;
@@ -1032,6 +1242,7 @@ GRANT EXECUTE ON FUNCTION claim_event_outbox(text, integer), claim_db_async_outb
   complete_event_outbox(text, uuid),
   fail_event_outbox(text, uuid, text, text), quarantine_claimed_outbox(text, uuid, text),
   quarantine_unknown_outbox(integer),
+  claim_dlq_outbox(text, integer), complete_dlq_outbox(text, uuid), fail_dlq_outbox(text, uuid),
   create_async_job(text, text, text, jsonb),
   read_async_job_status(text, bigint, text),
   list_async_job_status(text, bigint, text, text, timestamptz, text, integer) TO decision_app;
@@ -1046,6 +1257,9 @@ BEGIN
       heartbeat_async_job(text, uuid),
       complete_async_job(text, uuid, jsonb), fail_async_job(text, uuid, text, text),
       quarantine_async_job(text, uuid, text, text),
+      record_kafka_poison(text, text, text, text, text, integer, text, text),
+      quarantine_async_work(text, uuid, text, text, text, text, text, integer, text, text),
+      fail_async_work(text, uuid, text, text, text, text, text, integer, text, text),
       commit_async_work(text, text, text, text, text, uuid, text, text, text)
       TO decision_worker;
     GRANT INSERT ON TABLE processed_event TO decision_worker;
@@ -1066,6 +1280,8 @@ GRANT EXECUTE ON FUNCTION public.claim_event_outbox(text, integer),
   public.fail_event_outbox(text, uuid, text, text),
   public.quarantine_claimed_outbox(text, uuid, text),
   public.quarantine_unknown_outbox(integer),
+  public.claim_dlq_outbox(text, integer), public.complete_dlq_outbox(text, uuid),
+  public.fail_dlq_outbox(text, uuid),
   public.create_async_job(text, text, text, jsonb),
   public.read_async_job_status(text, bigint, text),
   public.list_async_job_status(text, bigint, text, text, timestamptz, text, integer)
@@ -1074,5 +1290,8 @@ GRANT EXECUTE ON FUNCTION public.claim_async_jobs(text, integer),
   public.claim_async_job_by_id(text, text), public.heartbeat_async_job(text, uuid),
   public.complete_async_job(text, uuid, jsonb), public.fail_async_job(text, uuid, text, text),
   public.quarantine_async_job(text, uuid, text, text),
+  public.record_kafka_poison(text, text, text, text, text, integer, text, text),
+  public.quarantine_async_work(text, uuid, text, text, text, text, text, integer, text, text),
+  public.fail_async_work(text, uuid, text, text, text, text, text, integer, text, text),
   public.commit_async_work(text, text, text, text, text, uuid, text, text, text)
   TO decision_worker;

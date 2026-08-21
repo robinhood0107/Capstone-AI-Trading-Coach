@@ -104,6 +104,13 @@ def test_worker_commit_is_atomic_idempotent_and_least_privileged(
         assert admin.execute(
             "SELECT count(*) FROM event_outbox WHERE aggregate_id=%s", (job_id,)
         ).fetchone() == (2,)
+        dlq = admin.execute(
+            "SELECT status,payload_json::text FROM event_outbox WHERE aggregate_id=%s AND status='DLQ_REQUESTED'",
+            (event_id,),
+        ).fetchone()
+        assert dlq is not None and dlq[0] == "DLQ_REQUESTED"
+        assert "PAYLOAD_HASH_CONFLICT" in dlq[1]
+        assert "replayOf" not in dlq[1]
 
     with psycopg.connect(isolated_postgres_cluster["worker_dsn"]) as worker:
         for table in ("principles", "orders", "users", "flyway_schema_history"):

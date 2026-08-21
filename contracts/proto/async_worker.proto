@@ -33,6 +33,7 @@ message AsyncWorkRequest {
   bytes payload_json = 7;
   string claim_token = 8;
   AsyncTransport transport = 9;
+  int32 attempt = 10;
 }
 
 message AsyncWorkResponse {

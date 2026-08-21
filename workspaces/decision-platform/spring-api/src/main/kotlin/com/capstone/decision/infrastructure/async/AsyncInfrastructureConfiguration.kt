@@ -15,7 +15,7 @@ import javax.sql.DataSource
 
 @Configuration
 @EnableSchedulerLock(defaultLockAtMostFor = "PT30S")
-@EnableConfigurationProperties(AsyncProperties::class, AsyncWorkerProperties::class)
+@EnableConfigurationProperties(AsyncProperties::class, AsyncWorkerProperties::class, KafkaAsyncProperties::class)
 class AsyncInfrastructureConfiguration {
     @Bean
     fun asyncPropertiesValidation(properties: AsyncProperties): AsyncPropertiesValidation {
@@ -30,6 +30,15 @@ class AsyncInfrastructureConfiguration {
     ): AsyncWorkerPropertiesValidation {
         workerProperties.validate(properties.adapter)
         return AsyncWorkerPropertiesValidation
+    }
+
+    @Bean
+    fun kafkaAsyncPropertiesValidation(
+        properties: AsyncProperties,
+        kafkaProperties: KafkaAsyncProperties,
+    ): KafkaAsyncPropertiesValidation {
+        kafkaProperties.validate(properties.adapter)
+        return KafkaAsyncPropertiesValidation
     }
 
     @Bean
@@ -80,3 +89,5 @@ class AsyncWorkerDatabase(
 object AsyncPropertiesValidation
 
 object AsyncWorkerPropertiesValidation
+
+object KafkaAsyncPropertiesValidation

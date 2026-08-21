@@ -1,0 +1,97 @@
+{
+  "$id": "https://capstone.local/contracts/financial_engineering_report_manifest.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "complete": {
+      "const": true
+    },
+    "contractId": {
+      "const": "financial_engineering_report_manifest.v1"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "reportArtifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "reportBytes": {
+      "maximum": 1048576,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "runId": {
+      "pattern": "^[0-9a-f-]{36}$",
+      "type": "string"
+    },
+    "snapshotArtifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "steps": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "errorCode": {
+            "maxLength": 64,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "enum": [
+              "STORED_COLLECTION",
+              "FEATURE",
+              "INFERENCE",
+              "SNAPSHOT",
+              "REPORT"
+            ]
+          },
+          "peakMemoryBytes": {
+            "maximum": 2147483648,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "COMPLETE",
+              "NOT_AVAILABLE",
+              "FAILED"
+            ]
+          },
+          "wallTimeMillis": {
+            "maximum": 1800000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "errorCode",
+          "wallTimeMillis",
+          "peakMemoryBytes"
+        ],
+        "type": "object"
+      },
+      "maxItems": 5,
+      "minItems": 5,
+      "type": "array"
+    }
+  },
+  "required": [
+    "contractId",
+    "runId",
+    "snapshotArtifactHash",
+    "reportArtifactHash",
+    "reportBytes",
+    "complete",
+    "steps",
+    "createdAt"
+  ],
+  "title": "financial_engineering_report_manifest.v1",
+  "type": "object"
+}

@@ -1,0 +1,164 @@
+{
+  "$id": "https://capstone.local/contracts/gbm_monte_carlo_report.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "asOf": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "gbm_monte_carlo_report.v1"
+    },
+    "deterministicStress": {
+      "additionalProperties": false,
+      "properties": {
+        "fatTailProxy": {
+          "type": "number"
+        },
+        "jumpGap": {
+          "type": "number"
+        },
+        "leverageMarginShortfall": {
+          "type": "number"
+        },
+        "liquiditySpreadImpactCrowding": {
+          "type": "number"
+        },
+        "volatilityClusterBurst": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "jumpGap",
+        "fatTailProxy",
+        "volatilityClusterBurst",
+        "leverageMarginShortfall",
+        "liquiditySpreadImpactCrowding"
+      ],
+      "type": "object"
+    },
+    "drawOrder": {
+      "const": "PATH_MAJOR_MAX_DRAW_PREFIX"
+    },
+    "fanQuantiles": {
+      "const": [
+        0.05,
+        0.25,
+        0.5,
+        0.75,
+        0.95
+      ]
+    },
+    "measure": {
+      "const": "P_PREDICTIVE_MEAN"
+    },
+    "model": {
+      "const": "EXACT_EXPONENTIAL_GBM"
+    },
+    "nPaths": {
+      "maximum": 10000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "numpyVersion": {
+      "maxLength": 32,
+      "minLength": 1,
+      "type": "string"
+    },
+    "quality": {
+      "enum": [
+        "PASS",
+        "WARN",
+        "UNCERTAIN"
+      ]
+    },
+    "rng": {
+      "const": "PCG64"
+    },
+    "seed": {
+      "maximum": 4294967295,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "stochastic": {
+      "additionalProperties": false,
+      "properties": {
+        "batchCount": {
+          "const": 20
+        },
+        "lossProbability": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "lossProbabilityStandardError": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "tailMeanLoss95Amount": {
+          "type": "number"
+        },
+        "tailMeanLoss95Return": {
+          "type": "number"
+        },
+        "varLoss95Amount": {
+          "type": "number"
+        },
+        "varLoss95Return": {
+          "type": "number"
+        },
+        "wilson95": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            }
+          ],
+          "type": "array"
+        }
+      },
+      "required": [
+        "lossProbability",
+        "lossProbabilityStandardError",
+        "wilson95",
+        "varLoss95Amount",
+        "tailMeanLoss95Amount",
+        "varLoss95Return",
+        "tailMeanLoss95Return",
+        "batchCount"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "contractId",
+    "asOf",
+    "model",
+    "measure",
+    "nPaths",
+    "seed",
+    "rng",
+    "numpyVersion",
+    "drawOrder",
+    "fanQuantiles",
+    "stochastic",
+    "deterministicStress",
+    "quality",
+    "artifactHash"
+  ],
+  "title": "gbm_monte_carlo_report.v1",
+  "type": "object"
+}

@@ -1,0 +1,125 @@
+{
+  "$id": "https://capstone.local/contracts/cross_market_risk_snapshot.v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "availability": {
+      "enum": [
+        "AVAILABLE",
+        "UNAVAILABLE",
+        "STALE"
+      ]
+    },
+    "availableAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "configHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "cross_market_risk_snapshot.v2"
+    },
+    "evidenceMode": {
+      "enum": [
+        "SYNTHETIC_FIXTURE",
+        "HISTORICAL_REPLAY",
+        "PROSPECTIVE_SHADOW",
+        "MANUAL_EOD"
+      ]
+    },
+    "exposureCatalogHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "providerFanoutAllowed": {
+      "const": false
+    },
+    "quality": {
+      "enum": [
+        "PASS",
+        "WARN",
+        "EVIDENCE_GAP"
+      ]
+    },
+    "runtimeMode": {
+      "enum": [
+        "OFF",
+        "SHADOW",
+        "WARN_ONLY",
+        "ENFORCED"
+      ]
+    },
+    "score": {
+      "maximum": 100,
+      "minimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "semanticInputHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "snapshotId": {
+      "pattern": "^[0-9a-f-]{36}$",
+      "type": "string"
+    },
+    "storageMode": {
+      "enum": [
+        "ARTIFACT_ONLY",
+        "STORED_SNAPSHOT"
+      ]
+    },
+    "symbol": {
+      "pattern": "^[0-9A-Z./-]{1,32}$",
+      "type": "string"
+    },
+    "thresholdArtifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "thresholdPercentile": {
+      "enum": [
+        95,
+        97.5,
+        99,
+        null
+      ],
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "contractId",
+    "snapshotId",
+    "symbol",
+    "availableAt",
+    "evidenceMode",
+    "storageMode",
+    "availability",
+    "quality",
+    "score",
+    "thresholdPercentile",
+    "thresholdArtifactHash",
+    "configHash",
+    "exposureCatalogHash",
+    "artifactHash",
+    "semanticInputHash",
+    "runtimeMode",
+    "providerFanoutAllowed"
+  ],
+  "title": "cross_market_risk_snapshot.v2",
+  "type": "object"
+}

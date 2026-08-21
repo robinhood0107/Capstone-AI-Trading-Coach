@@ -1,0 +1,17 @@
+{
+  "activeWireAuthority": "NONE",
+  "artifactHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "asOf": "2026-08-20T15:30:00+09:00",
+  "availability": "AVAILABLE",
+  "contractId": "hmm_regime_report.v1",
+  "featureContract": "LOG_RETURN_CAUSAL_VOL20_DDOF1_TRAIN_SCALE_DDOF0",
+  "normalizedEntropy": 0.7219,
+  "posterior": {
+    "RISK_OFF": 0.8,
+    "RISK_ON": 0.2,
+    "maxPosterior": 0.8
+  },
+  "selectedSeed": 11,
+  "state": "RISK_OFF",
+  "warnings": []
+}

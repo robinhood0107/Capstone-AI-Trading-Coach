@@ -1,0 +1,64 @@
+{
+  "$id": "https://capstone.local/contracts/cross_market_threshold_freeze.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidatePercentiles": {
+      "const": [
+        95,
+        97.5,
+        99
+      ]
+    },
+    "configHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "cross_market_threshold_freeze.v1"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "immutable": {
+      "const": true
+    },
+    "selectedOn": {
+      "const": "VALIDATION_ONLY"
+    },
+    "selectedPercentile": {
+      "enum": [
+        95,
+        97.5,
+        99
+      ]
+    },
+    "selectionMetricOrder": {
+      "const": [
+        "MAX_NET_PROTECTION_BPS",
+        "MAX_SEVERE_LOSS_RECALL",
+        "MAX_SEVERE_LOSS_PRECISION",
+        "MIN_FALSE_BLOCK_RATE",
+        "HIGHER_PERCENTILE"
+      ]
+    },
+    "validationArtifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractId",
+    "selectedOn",
+    "selectedPercentile",
+    "candidatePercentiles",
+    "selectionMetricOrder",
+    "validationArtifactHash",
+    "configHash",
+    "immutable",
+    "createdAt"
+  ],
+  "title": "cross_market_threshold_freeze.v1",
+  "type": "object"
+}

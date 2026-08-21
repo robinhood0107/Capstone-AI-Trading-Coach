@@ -37,6 +37,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
+import java.sql.Timestamp
 import java.util.concurrent.TimeUnit
 import javax.sql.DataSource
 
@@ -324,6 +325,100 @@ class AsyncJobApiIntegrationTest(
                     accepted.jobId,
                 ),
             )
+        }
+    }
+
+    @Test
+    fun `synthetic artifact publishes exact owner scoped Dashboard views and ADMIN status`() {
+        val artifactId = S8SyntheticProjectionFixture.ARTIFACT_ID
+        val runId = S8SyntheticProjectionFixture.RUN_ID
+        val fileHash = S8SyntheticProjectionFixture.FILE_HASH
+        val asOf = S8SyntheticProjectionFixture.asOf
+        val freshUntil = S8SyntheticProjectionFixture.freshUntil
+        val modelProjection = S8SyntheticProjectionFixture.modelProjection(objectMapper)
+        val backtestProjection = S8SyntheticProjectionFixture.backtestProjection(objectMapper)
+
+        fun stage(
+            kind: String,
+            fileName: String,
+            projection: String,
+        ): Boolean =
+            appJdbc.queryForObject(
+                "select stage_synthetic_dashboard_view(?,?,?,?,?,?,?,?,?,?)",
+                Boolean::class.java,
+                artifactId,
+                "usr_demo_user",
+                runId,
+                fileName,
+                fileHash,
+                kind,
+                projection,
+                S8SyntheticProjectionFixture.sha256(projection),
+                Timestamp.from(asOf),
+                Timestamp.from(freshUntil),
+            ) == true
+
+        assertEquals(true, stage("MODEL_EVALUATION", "model-evaluation.json", modelProjection))
+        assertEquals(false, stage("MODEL_EVALUATION", "model-evaluation.json", modelProjection))
+        assertEquals(true, stage("BACKTEST", "backtest.json", backtestProjection))
+
+        withPythonWorker {
+            val accepted =
+                asyncPipelinePort.request(
+                    AsyncJobRequest(
+                        type = AsyncJobType.ARTIFACT_INGEST,
+                        requestedBy = "usr_demo_user",
+                        references = mapOf("artifactId" to artifactId, "contentHash" to fileHash),
+                    ),
+                )
+            dbAsyncDispatcher.poll()
+            assertEquals(
+                "COMPLETED",
+                ownerJdbc.queryForObject("select status from async_job where job_id=?", String::class.java, accepted.jobId),
+            )
+        }
+        assertEquals(
+            2,
+            ownerJdbc.queryForObject(
+                "select count(*) from dashboard_artifact_views where artifact_id=?",
+                Int::class.java,
+                artifactId,
+            ),
+        )
+        assertEquals(
+            S8SyntheticProjectionFixture.sha256(modelProjection),
+            ownerJdbc.queryForObject(
+                "select projection_hash from dashboard_artifact_views where view_kind='MODEL_EVALUATION' and run_id=?",
+                String::class.java,
+                runId,
+            ),
+        )
+
+        val userToken = login("demo-user", userPassword())
+        mockMvc
+            .get("/api/v1/dashboard/model-evaluations/$runId") { bearer(userToken) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.data.viewState") { value("READY") }
+                jsonPath("$.data.evidenceMode") { value("SYNTHETIC_DEMO") }
+                jsonPath("$.data.performanceClaimAllowed") { value(false) }
+                jsonPath("$.data.view.models[0].status") { value("ABSTAIN") }
+                jsonPath("$.data.view.models[0].prediction") { doesNotExist() }
+            }
+        val adminToken = login("demo-admin", adminPassword())
+        mockMvc.get("/api/v1/dashboard/model-evaluations/$runId") { bearer(adminToken) }.andExpect {
+            status { isNotFound() }
+        }
+        mockMvc.get("/api/v1/artifacts/ingest-status") { bearer(userToken) }.andExpect { status { isForbidden() } }
+        mockMvc
+            .get("/api/v1/artifacts/ingest-status") { bearer(adminToken) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.data.items[0].artifactId") { value(artifactId) }
+                jsonPath("$.data.items[0].ownerUserId") { doesNotExist() }
+            }
+        assertThrows(RuntimeException::class.java) {
+            appJdbc.queryForObject("select count(*) from dashboard_artifact_views", Int::class.java)
         }
     }
 

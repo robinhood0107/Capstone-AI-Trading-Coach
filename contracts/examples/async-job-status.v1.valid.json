@@ -11,5 +11,8 @@
     "status": "COMPLETED",
     "type": "RAG_INDEX"
   },
-  "success": true
+  "error": null,
+  "requestId": "req_s7s8_fixture_0001",
+  "success": true,
+  "warnings": []
 }

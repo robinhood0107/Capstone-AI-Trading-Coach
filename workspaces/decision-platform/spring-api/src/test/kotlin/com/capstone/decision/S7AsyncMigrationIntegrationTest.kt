@@ -43,14 +43,14 @@ class S7AsyncMigrationIntegrationTest {
     }
 
     @Test
-    fun `V82 migrates fresh and V79 upgrade with exact role boundary`() {
+    fun `V83 migrates fresh and V79 upgrade with exact role boundary`() {
         for (database in listOf("decision", "s7_fresh")) {
             connection(database, postgres.username, postgres.password).use { owner ->
                 owner.createStatement().use { statement ->
                     statement.executeQuery("select version from flyway_schema_history order by installed_rank").use { rows ->
                         val versions = mutableListOf<String>()
                         while (rows.next()) versions += rows.getString(1)
-                        assertEquals((1..82).map(Int::toString), versions)
+                        assertEquals((1..83).map(Int::toString), versions)
                     }
                     statement.executeQuery("select count(*) from async_event_registry").use { rows ->
                         assertTrue(rows.next())

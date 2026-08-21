@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import tempfile
+import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import psycopg
 import pytest
@@ -52,6 +53,30 @@ class PostgresTestCluster(TypedDict):
     signal_admin_dsn: str
 
 
+def _connect_postgres_admin_with_host_readiness_retry(
+    admin_dsn: str,
+    *,
+    attempts: int = 50,
+    delay_seconds: float = 0.1,
+) -> psycopg.Connection[Any]:
+    """Bridge container-internal readiness and the WSL host port mapping."""
+
+    if attempts < 1:
+        raise ValueError("attempts must be positive")
+    if delay_seconds < 0:
+        raise ValueError("delay_seconds must be non-negative")
+
+    for attempt in range(attempts):
+        try:
+            return psycopg.connect(admin_dsn, autocommit=True)
+        except psycopg.OperationalError:
+            if attempt + 1 == attempts:
+                raise
+            time.sleep(delay_seconds)
+
+    raise AssertionError("unreachable PostgreSQL readiness loop")
+
+
 def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
     """운영 PostgreSQL 이미지와 실제 migration/role 경계를 Python 통합 테스트 전체에 공유한다."""
     container = PostgresContainer(
@@ -91,7 +116,7 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
             f"postgresql://decision_signal_admin:signal-admin-test@{host}:{port}/decision"
         )
 
-        with psycopg.connect(admin_dsn, autocommit=True) as connection:
+        with _connect_postgres_admin_with_host_readiness_retry(admin_dsn) as connection:
             connection.execute(
                 """
                 CREATE ROLE decision_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE

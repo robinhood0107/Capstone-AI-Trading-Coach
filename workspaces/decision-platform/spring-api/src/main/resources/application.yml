@@ -51,12 +51,6 @@ spring:
       ack-mode: MANUAL
 
 app:
-  cross-market:
-    overlay:
-      mode: ${CROSS_MARKET_OVERLAY_MODE:OFF}
-      threshold-percentile: ${CROSS_MARKET_THRESHOLD_PERCENTILE:}
-      threshold-artifact-hash: ${CROSS_MARKET_THRESHOLD_ARTIFACT_HASH:}
-      config-hash: ${CROSS_MARKET_CONFIG_HASH:}
   financial-engineering:
     grpc:
       enabled: ${FINANCIAL_ENGINEERING_GRPC_ENABLED:false}

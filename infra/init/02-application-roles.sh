@@ -1666,6 +1666,14 @@ BEGIN
              decision_market_operational_reader, decision_market_research_reader;
         GRANT EXECUTE ON FUNCTION prune_market_data_macro(date, boolean)
         TO decision_market_retention_admin;
+        IF to_regprocedure('public.current_market_data_manifest_head(date)') IS NOT NULL THEN
+            -- V76 writer는 base table SELECT 없이 candidate session 직전 head만 읽는다.
+            REVOKE ALL PRIVILEGES ON FUNCTION current_market_data_manifest_head(date)
+            FROM PUBLIC, decision_app, decision_market_operational_reader,
+                 decision_market_research_reader, decision_market_retention_admin;
+            GRANT EXECUTE ON FUNCTION current_market_data_manifest_head(date)
+            TO decision_market_writer;
+        END IF;
     END IF;
 END
 $market_data_archive_privileges$;

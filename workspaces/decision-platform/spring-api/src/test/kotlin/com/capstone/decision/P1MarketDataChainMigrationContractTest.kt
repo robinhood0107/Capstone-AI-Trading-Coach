@@ -10,6 +10,7 @@ class P1MarketDataChainMigrationContractTest {
         Files.readString(
             Path.of("src/main/resources/db/migration/V76__p1_market_data_chain_guard.sql"),
         )
+    private val bootstrapRoles = Files.readString(Path.of("../../../infra/init/02-application-roles.sh"))
 
     @Test
     fun `V76 locks the accepted predecessor and keeps provider authority absent`() {
@@ -26,5 +27,11 @@ class P1MarketDataChainMigrationContractTest {
         )
         assertTrue(!migration.contains("GRANT INSERT"))
         assertTrue(!migration.contains("decision_signal"))
+        assertTrue(bootstrapRoles.contains("current_market_data_manifest_head(date)"))
+        assertTrue(
+            bootstrapRoles.contains(
+                "GRANT EXECUTE ON FUNCTION current_market_data_manifest_head(date)",
+            ),
+        )
     }
 }

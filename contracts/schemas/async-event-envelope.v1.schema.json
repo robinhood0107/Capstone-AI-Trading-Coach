@@ -46,6 +46,10 @@
           "pattern": "^sha256:[0-9a-f]{64}$",
           "type": "string"
         },
+        "importTicketId": {
+          "pattern": "^rti_[0-9a-f]{32}$",
+          "type": "string"
+        },
         "jobId": {
           "pattern": "^job_[A-Za-z0-9_-]{8,96}$",
           "type": "string"
@@ -53,6 +57,12 @@
         "ownerRef": {
           "pattern": "^usr_[A-Za-z0-9_-]{8,64}$",
           "type": "string"
+        },
+        "profileId": {
+          "enum": [
+            "bge_m3_local_1024_v1",
+            "voyage_context_4_1024_v1"
+          ]
         },
         "replayOf": {
           "pattern": "^evt_[A-Za-z0-9_-]{8,96}$",
@@ -67,7 +77,7 @@
           "type": "string"
         },
         "sourceRevisionId": {
-          "pattern": "^rev_[A-Za-z0-9_-]{8,96}$",
+          "pattern": "^srv_[a-z0-9][a-z0-9_-]{2,95}$",
           "type": "string"
         }
       },

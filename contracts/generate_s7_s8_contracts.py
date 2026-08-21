@@ -100,7 +100,9 @@ def _event_schema() -> dict[str, Any]:
         [],
         {
             "ownerRef": {"type": "string", "pattern": "^usr_[A-Za-z0-9_-]{8,64}$"},
-            "sourceRevisionId": {"type": "string", "pattern": "^rev_[A-Za-z0-9_-]{8,96}$"},
+            "sourceRevisionId": {"type": "string", "pattern": "^srv_[a-z0-9][a-z0-9_-]{2,95}$"},
+            "importTicketId": {"type": "string", "pattern": "^rti_[0-9a-f]{32}$"},
+            "profileId": {"enum": ["bge_m3_local_1024_v1", "voyage_context_4_1024_v1"]},
             "artifactId": {"type": "string", "pattern": "^artifact_[A-Za-z0-9_-]{8,96}$"},
             "runId": {"type": "string", "pattern": "^(run|demo)_[A-Za-z0-9_-]{8,96}$"},
             "jobId": {"type": "string", "pattern": "^job_[A-Za-z0-9_-]{8,96}$"},
@@ -164,7 +166,17 @@ def _job_list_schema() -> dict[str, Any]:
         ["items", "nextCursor"],
         {
             "items": {"type": "array", "items": _job_item(), "maxItems": 100},
-            "nextCursor": _nullable_string("^[A-Za-z0-9_-]{16,256}$"),
+            "nextCursor": {
+                "oneOf": [
+                    {
+                        "type": "string",
+                        "minLength": 16,
+                        "maxLength": 256,
+                        "pattern": "^[A-Za-z0-9_-]{16,256}$",
+                    },
+                    {"type": "null"},
+                ]
+            },
         },
     )
     return _schema("async-job-list.v1", _success(data))
@@ -369,7 +381,7 @@ def _fixtures() -> dict[str, dict[str, Any]]:
         "async-event-envelope.v1": {
             "eventId": "evt_rag_index_00000001", "eventType": "rag.index-requested.v1", "schemaVersion": 1,
             "occurredAt": ts, "partitionKey": "hmac-sha256:" + "1" * 64, "payloadHash": "sha256:" + "2" * 64,
-            "references": {"ownerRef": "usr_fixture_00000001", "sourceRevisionId": "rev_fixture_00000001", "jobId": "job_rag_index_00000001", "contentHash": "sha256:" + "3" * 64},
+            "references": {"ownerRef": "usr_fixture_00000001", "sourceRevisionId": "srv_fixture_00000001", "importTicketId": "rti_" + "2" * 32, "profileId": "bge_m3_local_1024_v1", "jobId": "job_rag_index_00000001", "contentHash": "sha256:" + "3" * 64},
         },
         "async-job-status.v1": {"success": True, "data": job},
         "async-job-list.v1": {"success": True, "data": {"items": [job], "nextCursor": None}},
@@ -420,12 +432,18 @@ def validate_semantics(schema_id: str, value: Mapping[str, Any]) -> None:
 def _openapi(schemas: Mapping[str, dict[str, Any]]) -> dict[str, Any]:
     component_names = {schema_id: "".join(part.title() for part in schema_id.replace(".", "-").split("-")) for schema_id in SCHEMA_IDS[1:]}
 
-    def operation(schema_id: str, parameter: tuple[str, str] | None = None) -> dict[str, Any]:
+    def operation(
+        schema_id: str,
+        parameter: tuple[str, str] | None = None,
+        *,
+        admin_only: bool = False,
+    ) -> dict[str, Any]:
         result: dict[str, Any] = {
             "security": [{"bearerAuth": []}],
             "responses": {
-                "200": {"description": "Bounded owner-scoped response", "content": {"application/json": {"schema": {"$ref": f"#/components/schemas/{component_names[schema_id]}"}}}},
+                "200": {"description": "Bounded ADMIN operational response" if admin_only else "Bounded owner-scoped response", "content": {"application/json": {"schema": {"$ref": f"#/components/schemas/{component_names[schema_id]}"}}}},
                 "401": {"description": "Authentication required"},
+                "403": {"description": "Current ADMIN role required"} if admin_only else {"description": "Access denied"},
                 "404": {"description": "Resource not found"},
             },
         }
@@ -435,15 +453,21 @@ def _openapi(schemas: Mapping[str, dict[str, Any]]) -> dict[str, Any]:
         return result
 
     paths = {
-        "/api/v1/async-jobs/{jobId}": {"get": operation("async-job-status.v1", ("jobId", "^job_[A-Za-z0-9_-]{8,96}$"))},
-        "/api/v1/async-jobs": {"get": operation("async-job-list.v1")},
-        "/api/v1/stream-metrics": {"get": operation("stream-metric-status.v1")},
-        "/api/v1/artifacts/ingest-status": {"get": operation("artifact-ingest-status.v1")},
+        "/api/v1/async-jobs/{jobId}": {"get": operation("async-job-status.v1", ("jobId", "^job_[A-Za-z0-9_-]{8,96}$"), admin_only=True)},
+        "/api/v1/async-jobs": {"get": operation("async-job-list.v1", admin_only=True)},
+        "/api/v1/stream-metrics": {"get": operation("stream-metric-status.v1", admin_only=True)},
+        "/api/v1/artifacts/ingest-status": {"get": operation("artifact-ingest-status.v1", admin_only=True)},
         "/api/v1/dashboard/model-evaluations/{runId}": {"get": operation("dashboard-model-evaluation.v1", ("runId", "^(run|demo)_[A-Za-z0-9_-]{8,96}$"))},
         "/api/v1/dashboard/backtests/{runId}": {"get": operation("dashboard-backtest.v1", ("runId", "^(run|demo)_[A-Za-z0-9_-]{8,96}$"))},
         "/api/v1/dashboard/risk-results/{decisionId}": {"get": operation("dashboard-risk-result.v1", ("decisionId", "^decision_[A-Za-z0-9_-]{8,96}$"))},
         "/api/v1/dashboard/rag-sources/{answerId}": {"get": operation("dashboard-rag-sources.v1", ("answerId", "^answer_[A-Za-z0-9_-]{8,96}$"))},
     }
+    paths["/api/v1/async-jobs"]["get"]["parameters"] = [
+        {"name": "status", "in": "query", "required": False, "schema": {"type": "string", "enum": ["REQUESTED", "RUNNING", "COMPLETED", "FAILED", "NEEDS_REVIEW"]}},
+        {"name": "type", "in": "query", "required": False, "schema": {"type": "string", "enum": ["RAG_INDEX", "ARTIFACT_INGEST", "MODEL_EVAL"]}},
+        {"name": "cursor", "in": "query", "required": False, "schema": {"type": "string", "pattern": "^[A-Za-z0-9_-]{16,256}$"}},
+        {"name": "size", "in": "query", "required": False, "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 50}},
+    ]
     return {
         "openapi": "3.1.1",
         "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",

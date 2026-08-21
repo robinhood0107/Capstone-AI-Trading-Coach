@@ -64,6 +64,7 @@ class S7S8ContractTest(unittest.TestCase):
     def test_contracts_ci_runs_generator_check(self) -> None:
         workflow = (ROOT / ".github/workflows/contracts-ci.yml").read_text(encoding="utf-8")
         self.assertIn("python contracts/generate_s7_s8_contracts.py --check", workflow)
+        self.assertIn("python contracts/generate_async_worker_proto.py --check", workflow)
 
 
 if __name__ == "__main__":

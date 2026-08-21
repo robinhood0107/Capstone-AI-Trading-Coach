@@ -138,7 +138,8 @@
         "nextCursor": {
           "oneOf": [
             {
-              "maxLength": 128,
+              "maxLength": 256,
+              "minLength": 16,
               "pattern": "^[A-Za-z0-9_-]{16,256}$",
               "type": "string"
             },

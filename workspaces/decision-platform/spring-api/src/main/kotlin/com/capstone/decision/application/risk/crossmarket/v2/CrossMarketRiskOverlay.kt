@@ -82,6 +82,10 @@ class CrossMarketRiskOverlay(
             snapshot.thresholdArtifactHash != config.thresholdArtifactHash ||
             snapshot.configHash != config.configHash ||
             snapshot.runtimeMode == CrossMarketRuntimeMode.ENFORCED ||
+            (
+                config.mode == CrossMarketRuntimeMode.WARN_ONLY &&
+                    snapshot.runtimeMode != CrossMarketRuntimeMode.WARN_ONLY
+            ) ||
             snapshot.symbol != request.orderIntent.symbol ||
             exposure.symbol != request.orderIntent.symbol
         ) {

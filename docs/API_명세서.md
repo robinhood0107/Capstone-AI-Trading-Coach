@@ -2809,7 +2809,7 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 > S6.4 공개 erratum(2026-08-21): request의 `contractId + valuationAt`을 기준으로 서버가
 > effective-dated `option_contract_terms.v1`을 조회하고 `tau=(lastTradingAt-valuationAt)/31536000`
 > (`ACT/365F`)를 계산한다. client가 `optionType`, `strikePrice`, `timeToMaturityYears`,
-> `finalSettlementDate`, holding/backtest period를 계약조건이나 만기로 지정할 수 없다. valuation은
+> `finalSettlementDate`, 보유·전략평가 기간을 계약조건이나 만기로 지정할 수 없다. valuation은
 > `Q_DISCOUNTED_VALUE`, 예측 평균은 `P_PREDICTIVE_MEAN`으로 분리하며 아래 값은 교육·수치검증용이고
 > Signal, RiskDecision, 주문 또는 보수적 `conservativeRiskDelta` 권한이 없다.
 

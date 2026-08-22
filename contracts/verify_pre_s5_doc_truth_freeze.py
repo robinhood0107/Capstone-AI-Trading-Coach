@@ -283,6 +283,11 @@ TEAMMATE_DEPENDENCY_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"\blive\b|\bblocker\b|필수\s*artifact|required\s*artifact|\bs5\s*entry\b|s5\s*진입)",
     re.IGNORECASE,
 )
+TEAMMATE_ROLE_ASSIGNMENT_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"(?:\bowns?\b|담당(?:한다|자|:)?|소유(?:한다|자|권)?|"
+    r"역할(?:을|은|:)|구현\s*담당|작업\s*배정)",
+    re.IGNORECASE,
+)
 APPROVED_NON_ROLE_COMPONENT_LINES: Final[frozenset[tuple[str, str]]] = frozenset(
     {
         (
@@ -828,7 +833,7 @@ def new_teammate_dependency_errors(root: Path, base: str) -> list[str]:
             continue
         if TEAMMATE_DEPENDENCY_PATTERN.search(line):
             errors.append(f"{relative}: new teammate dependency was added")
-        else:
+        elif TEAMMATE_ROLE_ASSIGNMENT_PATTERN.search(line):
             errors.append(f"{relative}: new teammate role was added outside the exact catalog")
     return errors
 

@@ -243,6 +243,21 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
 
             self.assertEqual([], verify_solo_ownership_lock(root, base))
 
+    def test_solo_ownership_lock_allows_bounded_post_s5_non_assignment_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            status = root / "docs/s8-current-status.md"
+            status.write_text(
+                "Team A integration은 수행하지 않았다.\n"
+                "synthetic fixture는 Team B Return Engine artifact가 아니다.\n"
+                "model/backtest는 sanitized projection만 읽는다.\n",
+                encoding="utf-8",
+            )
+            self._commit(root, "bounded post-s5 status")
+
+            self.assertEqual([], verify_solo_ownership_lock(root, base))
+
     def test_solo_ownership_lock_rejects_conflicting_authority_assignment(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

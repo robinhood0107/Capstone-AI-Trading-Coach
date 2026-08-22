@@ -153,6 +153,14 @@ class S5SignalRuntimeContractTest(unittest.TestCase):
             with self.assertRaisesRegex(ContractValidationError, "outside"):
                 verify_openapi_transition(path)
 
+        additive = json.loads((ROOT / "contracts/openapi/openapi.json").read_text())
+        additive["paths"]["/api/v1/stream-metrics"]["get"]["summary"] = "smuggled"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "openapi.json"
+            path.write_bytes(canonical_json_bytes(additive))
+            with self.assertRaisesRegex(ContractValidationError, "additive OpenAPI fragment drifted"):
+                verify_openapi_transition(path)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,2679 @@
+{
+  "components": {
+    "schemas": {
+      "ArtifactIngestStatusV1": {
+        "$id": "contracts/schemas/artifact-ingest-status.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "items": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "artifactId": {
+                      "pattern": "^artifact_[A-Za-z0-9_-]{8,96}$",
+                      "type": "string"
+                    },
+                    "duplicate": {
+                      "type": "boolean"
+                    },
+                    "fileHash": {
+                      "pattern": "^sha256:[0-9a-f]{64}$",
+                      "type": "string"
+                    },
+                    "fileName": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+                      "type": "string"
+                    },
+                    "lastIngestedAt": {
+                      "oneOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "producer": {
+                      "enum": [
+                        "decision-platform",
+                        "return-engine"
+                      ]
+                    },
+                    "runId": {
+                      "pattern": "^(run|demo)_[A-Za-z0-9_-]{8,96}$",
+                      "type": "string"
+                    },
+                    "schemaVersion": {
+                      "pattern": "^[1-9][0-9]*\\.[0-9]+\\.[0-9]+$",
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "DISCOVERED",
+                        "VALIDATED",
+                        "INGESTED",
+                        "FAILED",
+                        "SKIPPED"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "artifactId",
+                    "fileName",
+                    "producer",
+                    "runId",
+                    "fileHash",
+                    "schemaVersion",
+                    "status",
+                    "lastIngestedAt",
+                    "duplicate"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "type": "array"
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
+          "success": {
+            "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "requestId",
+          "data",
+          "warnings",
+          "error"
+        ],
+        "title": "artifact-ingest-status.v1",
+        "type": "object"
+      },
+      "AsyncDlqEnvelopeV1": {
+        "$id": "contracts/schemas/async-dlq-envelope.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "eventId": {
+            "pattern": "^evt_dlq_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "eventType": {
+            "enum": [
+              "artifact.ingest-requested.v1",
+              "artifact.ingested.v1",
+              "signal.received.v1",
+              "feature.updated.v1",
+              "lightgbm.signal-generated.v1",
+              "risk.context-updated.v1",
+              "risk.decision-created.v1",
+              "order.event-created.v1",
+              "rag.index-requested.v1",
+              "rag.index-completed.v1",
+              "model.eval-requested.v1",
+              "model.eval-completed.v1"
+            ]
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "partitionKey": {
+            "pattern": "^hmac-sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "payloadHash": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "references": {
+            "additionalProperties": false,
+            "properties": {
+              "attempt": {
+                "maximum": 3,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "eventId": {
+                "pattern": "^evt_[A-Za-z0-9_-]{8,96}$",
+                "type": "string"
+              },
+              "eventType": {
+                "enum": [
+                  "artifact.ingest-requested.v1",
+                  "artifact.ingested.v1",
+                  "signal.received.v1",
+                  "feature.updated.v1",
+                  "lightgbm.signal-generated.v1",
+                  "risk.context-updated.v1",
+                  "risk.decision-created.v1",
+                  "order.event-created.v1",
+                  "rag.index-requested.v1",
+                  "rag.index-completed.v1",
+                  "model.eval-requested.v1",
+                  "model.eval-completed.v1"
+                ]
+              },
+              "failureCode": {
+                "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+                "type": "string"
+              },
+              "payloadHash": {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "sourceTopic": {
+                "enum": [
+                  "artifact.ingest-requested.v1",
+                  "artifact.ingested.v1",
+                  "signal.received.v1",
+                  "feature.updated.v1",
+                  "lightgbm.signal-generated.v1",
+                  "risk.context-updated.v1",
+                  "risk.decision-created.v1",
+                  "order.event-created.v1",
+                  "rag.index-requested.v1",
+                  "rag.index-completed.v1",
+                  "model.eval-requested.v1",
+                  "model.eval-completed.v1"
+                ]
+              }
+            },
+            "required": [
+              "eventId",
+              "eventType",
+              "payloadHash",
+              "failureCode",
+              "sourceTopic",
+              "attempt"
+            ],
+            "type": "object"
+          },
+          "schemaVersion": {
+            "const": 1
+          }
+        },
+        "required": [
+          "eventId",
+          "eventType",
+          "schemaVersion",
+          "occurredAt",
+          "partitionKey",
+          "payloadHash",
+          "references"
+        ],
+        "title": "async-dlq-envelope.v1",
+        "type": "object"
+      },
+      "AsyncJobListV1": {
+        "$id": "contracts/schemas/async-job-list.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "items": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "artifactId": {
+                      "oneOf": [
+                        {
+                          "maxLength": 128,
+                          "pattern": "^artifact_[A-Za-z0-9_-]{8,96}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "completedAt": {
+                      "oneOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "error": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "class": {
+                              "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+                              "type": "string"
+                            },
+                            "code": {
+                              "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "class"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "jobId": {
+                      "pattern": "^job_[A-Za-z0-9_-]{8,96}$",
+                      "type": "string"
+                    },
+                    "requestedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "resultRef": {
+                      "oneOf": [
+                        {
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z][A-Za-z0-9_-]{7,127}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sourceId": {
+                      "oneOf": [
+                        {
+                          "maxLength": 128,
+                          "pattern": "^src_[A-Za-z0-9_-]{8,96}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "startedAt": {
+                      "oneOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "status": {
+                      "enum": [
+                        "REQUESTED",
+                        "RUNNING",
+                        "COMPLETED",
+                        "FAILED",
+                        "NEEDS_REVIEW"
+                      ]
+                    },
+                    "type": {
+                      "enum": [
+                        "RAG_INDEX",
+                        "ARTIFACT_INGEST",
+                        "MODEL_EVAL"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "jobId",
+                    "type",
+                    "status",
+                    "requestedAt",
+                    "startedAt",
+                    "completedAt",
+                    "sourceId",
+                    "artifactId",
+                    "resultRef",
+                    "error"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "nextCursor": {
+                "oneOf": [
+                  {
+                    "maxLength": 256,
+                    "minLength": 16,
+                    "pattern": "^[A-Za-z0-9_-]{16,256}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
+          "success": {
+            "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "requestId",
+          "data",
+          "warnings",
+          "error"
+        ],
+        "title": "async-job-list.v1",
+        "type": "object"
+      },
+      "AsyncJobStatusV1": {
+        "$id": "contracts/schemas/async-job-status.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "artifactId": {
+                "oneOf": [
+                  {
+                    "maxLength": 128,
+                    "pattern": "^artifact_[A-Za-z0-9_-]{8,96}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "completedAt": {
+                "oneOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "class": {
+                        "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+                        "type": "string"
+                      },
+                      "code": {
+                        "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "class"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "jobId": {
+                "pattern": "^job_[A-Za-z0-9_-]{8,96}$",
+                "type": "string"
+              },
+              "requestedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "resultRef": {
+                "oneOf": [
+                  {
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{7,127}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sourceId": {
+                "oneOf": [
+                  {
+                    "maxLength": 128,
+                    "pattern": "^src_[A-Za-z0-9_-]{8,96}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "startedAt": {
+                "oneOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "REQUESTED",
+                  "RUNNING",
+                  "COMPLETED",
+                  "FAILED",
+                  "NEEDS_REVIEW"
+                ]
+              },
+              "type": {
+                "enum": [
+                  "RAG_INDEX",
+                  "ARTIFACT_INGEST",
+                  "MODEL_EVAL"
+                ]
+              }
+            },
+            "required": [
+              "jobId",
+              "type",
+              "status",
+              "requestedAt",
+              "startedAt",
+              "completedAt",
+              "sourceId",
+              "artifactId",
+              "resultRef",
+              "error"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
+          "success": {
+            "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "requestId",
+          "data",
+          "warnings",
+          "error"
+        ],
+        "title": "async-job-status.v1",
+        "type": "object"
+      },
+      "DashboardBacktestV1": {
+        "$id": "contracts/schemas/dashboard-backtest.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "asOf": {
+                "oneOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "evidenceMode": {
+                "enum": [
+                  "STORED_RUNTIME",
+                  "REAL_ARTIFACT",
+                  "SYNTHETIC_DEMO"
+                ]
+              },
+              "freshUntil": {
+                "oneOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "performanceClaimAllowed": {
+                "const": false
+              },
+              "view": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "fixtureClass": {
+                        "enum": [
+                          "REAL_ARTIFACT",
+                          "SYNTHETIC_FAKE_E2E"
+                        ]
+                      },
+                      "heatmap": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "month": {
+                              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+                              "type": "string"
+                            },
+                            "return": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "month",
+                            "return"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 120,
+                        "type": "array"
+                      },
+                      "metricCards": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "metric": {
+                              "maxLength": 48,
+                              "type": "string"
+                            },
+                            "value": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "metric",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 11,
+                        "type": "array"
+                      },
+                      "projectionHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "runId": {
+                        "pattern": "^(run|demo)_[A-Za-z0-9_-]{8,96}$",
+                        "type": "string"
+                      },
+                      "strategies": {
+                        "items": false,
+                        "maxItems": 3,
+                        "minItems": 3,
+                        "prefixItems": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "curve": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "at": {
+                                      "format": "date-time",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "at",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 2000,
+                                "type": "array"
+                              },
+                              "metrics": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "cagr": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cvar95": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "mdd": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "sharpe": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "sortino": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "var95": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "cagr",
+                                  "mdd",
+                                  "sharpe",
+                                  "sortino",
+                                  "var95",
+                                  "cvar95"
+                                ],
+                                "type": "object"
+                              },
+                              "strategy": {
+                                "const": "Baseline"
+                              }
+                            },
+                            "required": [
+                              "strategy",
+                              "metrics",
+                              "curve"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "curve": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "at": {
+                                      "format": "date-time",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "at",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 2000,
+                                "type": "array"
+                              },
+                              "metrics": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "cagr": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cvar95": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "mdd": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "sharpe": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "sortino": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "var95": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "cagr",
+                                  "mdd",
+                                  "sharpe",
+                                  "sortino",
+                                  "var95",
+                                  "cvar95"
+                                ],
+                                "type": "object"
+                              },
+                              "strategy": {
+                                "const": "Guide"
+                              }
+                            },
+                            "required": [
+                              "strategy",
+                              "metrics",
+                              "curve"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "curve": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "at": {
+                                      "format": "date-time",
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "at",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 2000,
+                                "type": "array"
+                              },
+                              "metrics": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "cagr": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "cvar95": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "mdd": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "sharpe": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "sortino": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "var95": {
+                                    "oneOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "cagr",
+                                  "mdd",
+                                  "sharpe",
+                                  "sortino",
+                                  "var95",
+                                  "cvar95"
+                                ],
+                                "type": "object"
+                              },
+                              "strategy": {
+                                "const": "Strict"
+                              }
+                            },
+                            "required": [
+                              "strategy",
+                              "metrics",
+                              "curve"
+                            ],
+                            "type": "object"
+                          }
+                        ],
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "runId",
+                      "fixtureClass",
+                      "strategies",
+                      "heatmap",
+                      "metricCards",
+                      "projectionHash"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "viewState": {
+                "enum": [
+                  "READY",
+                  "EMPTY",
+                  "STALE"
+                ]
+              }
+            },
+            "required": [
+              "viewState",
+              "asOf",
+              "freshUntil",
+              "evidenceMode",
+              "performanceClaimAllowed",
+              "view"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
+          "success": {
+            "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "requestId",
+          "data",
+          "warnings",
+          "error"
+        ],
+        "title": "dashboard-backtest.v1",
+        "type": "object"
+      },
+      "DashboardModelEvaluationV1": {
+        "$id": "contracts/schemas/dashboard-model-evaluation.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "asOf": {
+                "oneOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "evidenceMode": {
+                "enum": [
+                  "STORED_RUNTIME",
+                  "REAL_ARTIFACT",
+                  "SYNTHETIC_DEMO"
+                ]
+              },
+              "freshUntil": {
+                "oneOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "performanceClaimAllowed": {
+                "const": false
+              },
+              "view": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "models": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "metrics": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "cagr": {
+                                  "oneOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "cvar95": {
+                                  "oneOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "mdd": {
+                                  "oneOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "sharpe": {
+                                  "oneOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "sortino": {
+                                  "oneOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "var95": {
+                                  "oneOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "cagr",
+                                "mdd",
+                                "sharpe",
+                                "sortino",
+                                "var95",
+                                "cvar95"
+                              ],
+                              "type": "object"
+                            },
+                            "modelId": {
+                              "enum": [
+                                "BASELINE",
+                                "LSTM",
+                                "LIGHTGBM"
+                              ]
+                            },
+                            "status": {
+                              "enum": [
+                                "AVAILABLE",
+                                "ABSTAIN"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "modelId",
+                            "status",
+                            "metrics"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 3,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "runId": {
+                        "pattern": "^(run|demo)_[A-Za-z0-9_-]{8,96}$",
+                        "type": "string"
+                      },
+                      "sourceRunIds": {
+                        "items": {
+                          "maxLength": 96,
+                          "type": "string"
+                        },
+                        "maxItems": 8,
+                        "type": "array",
+                        "uniqueItems": true
+                      },
+                      "timeline": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "at": {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "at",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 500,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "runId",
+                      "models",
+                      "timeline",
+                      "sourceRunIds"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "viewState": {
+                "enum": [
+                  "READY",
+                  "EMPTY",
+                  "STALE"
+                ]
+              }
+            },
+            "required": [
+              "viewState",
+              "asOf",
+              "freshUntil",
+              "evidenceMode",
+              "performanceClaimAllowed",
+              "view"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
+          "success": {
+            "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "requestId",
+          "data",
+          "warnings",
+          "error"
+        ],
+        "title": "dashboard-model-evaluation.v1",
+        "type": "object"
+      },
+      "DashboardRagSourcesV1": {
+        "$id": "contracts/schemas/dashboard-rag-sources.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "asOf": {
+                "oneOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "evidenceMode": {
+                "enum": [
+                  "STORED_RUNTIME",
+                  "REAL_ARTIFACT",
+                  "SYNTHETIC_DEMO"
+                ]
+              },
+              "freshUntil": {
+                "oneOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "performanceClaimAllowed": {
+                "const": false
+              },
+              "view": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "answerId": {
+                        "pattern": "^rag_[A-Za-z0-9_-]{12,96}$",
+                        "type": "string"
+                      },
+                      "expandableSources": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "classification": {
+                              "enum": [
+                                "OFFICIAL",
+                                "SCHOLARLY",
+                                "INTERNAL_PAPER"
+                              ]
+                            },
+                            "sourceId": {
+                              "pattern": "^src_[A-Za-z0-9_-]{8,96}$",
+                              "type": "string"
+                            },
+                            "summary": {
+                              "maxLength": 512,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "title": {
+                              "maxLength": 160,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "sourceId",
+                            "title",
+                            "classification",
+                            "summary"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 5,
+                        "type": "array"
+                      },
+                      "topSources": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "classification": {
+                              "enum": [
+                                "OFFICIAL",
+                                "SCHOLARLY",
+                                "INTERNAL_PAPER"
+                              ]
+                            },
+                            "sourceId": {
+                              "pattern": "^src_[A-Za-z0-9_-]{8,96}$",
+                              "type": "string"
+                            },
+                            "summary": {
+                              "maxLength": 512,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "title": {
+                              "maxLength": 160,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "sourceId",
+                            "title",
+                            "classification",
+                            "summary"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 3,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "answerId",
+                      "topSources",
+                      "expandableSources"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "viewState": {
+                "enum": [
+                  "READY",
+                  "EMPTY",
+                  "STALE"
+                ]
+              }
+            },
+            "required": [
+              "viewState",
+              "asOf",
+              "freshUntil",
+              "evidenceMode",
+              "performanceClaimAllowed",
+              "view"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
+          "success": {
+            "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "requestId",
+          "data",
+          "warnings",
+          "error"
+        ],
+        "title": "dashboard-rag-sources.v1",
+        "type": "object"
+      },
+      "DashboardRiskResultV1": {
+        "$id": "contracts/schemas/dashboard-risk-result.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "asOf": {
+                "oneOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "evidenceMode": {
+                "enum": [
+                  "STORED_RUNTIME",
+                  "REAL_ARTIFACT",
+                  "SYNTHETIC_DEMO"
+                ]
+              },
+              "freshUntil": {
+                "oneOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "performanceClaimAllowed": {
+                "const": false
+              },
+              "view": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "action": {
+                        "enum": [
+                          "ALLOW",
+                          "WARN",
+                          "HOLD",
+                          "BLOCK"
+                        ]
+                      },
+                      "decisionId": {
+                        "pattern": "^dec_[A-Za-z0-9_-]{8,96}$",
+                        "type": "string"
+                      },
+                      "principles": {
+                        "items": {
+                          "maxLength": 256,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 20,
+                        "type": "array"
+                      },
+                      "reasons": {
+                        "items": {
+                          "maxLength": 256,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 20,
+                        "type": "array"
+                      },
+                      "riskItems": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "code": {
+                              "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+                              "type": "string"
+                            },
+                            "severity": {
+                              "enum": [
+                                "INFO",
+                                "WARN",
+                                "BLOCK"
+                              ]
+                            },
+                            "summary": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "severity",
+                            "summary"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 20,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "decisionId",
+                      "action",
+                      "reasons",
+                      "principles",
+                      "riskItems"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "viewState": {
+                "enum": [
+                  "READY",
+                  "EMPTY",
+                  "STALE"
+                ]
+              }
+            },
+            "required": [
+              "viewState",
+              "asOf",
+              "freshUntil",
+              "evidenceMode",
+              "performanceClaimAllowed",
+              "view"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
+          "success": {
+            "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "requestId",
+          "data",
+          "warnings",
+          "error"
+        ],
+        "title": "dashboard-risk-result.v1",
+        "type": "object"
+      },
+      "S8DemoSeedV1": {
+        "$id": "contracts/schemas/s8-demo-seed.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "asyncAdapters": {
+            "items": false,
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "const": "db"
+              },
+              {
+                "const": "kafka"
+              }
+            ],
+            "type": "array"
+          },
+          "brokerageMode": {
+            "const": "INTERNAL_PAPER"
+          },
+          "crossMarketCapability": {
+            "const": "RETIRED_NOT_APPLICABLE"
+          },
+          "demoProject": {
+            "const": "capstone-s8-demo"
+          },
+          "fixtureClass": {
+            "const": "SYNTHETIC_FAKE_E2E"
+          },
+          "killSwitchScenario": {
+            "additionalProperties": false,
+            "properties": {
+              "expectedState": {
+                "const": "ACTIVE"
+              },
+              "orderAuthority": {
+                "const": "BLOCKED"
+              },
+              "scenarioId": {
+                "const": "demo_kill_switch"
+              }
+            },
+            "required": [
+              "scenarioId",
+              "expectedState",
+              "orderAuthority"
+            ],
+            "type": "object"
+          },
+          "liveAccountCalls": {
+            "const": 0
+          },
+          "liveOrderCalls": {
+            "const": 0
+          },
+          "namespace": {
+            "const": "demo_s8_offline_0001"
+          },
+          "performanceClaimAllowed": {
+            "const": false
+          },
+          "providerCalls": {
+            "const": 0
+          },
+          "ragAnswerCache": {
+            "const": "OFF"
+          },
+          "ragQuestions": {
+            "items": false,
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "classification": {
+                    "const": "INTERNAL_PAPER"
+                  },
+                  "questionId": {
+                    "pattern": "^demo_rag_q[1-3]$",
+                    "type": "string"
+                  },
+                  "text": {
+                    "maxLength": 160,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "questionId",
+                  "classification",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "classification": {
+                    "const": "INTERNAL_PAPER"
+                  },
+                  "questionId": {
+                    "pattern": "^demo_rag_q[1-3]$",
+                    "type": "string"
+                  },
+                  "text": {
+                    "maxLength": 160,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "questionId",
+                  "classification",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "classification": {
+                    "const": "INTERNAL_PAPER"
+                  },
+                  "questionId": {
+                    "pattern": "^demo_rag_q[1-3]$",
+                    "type": "string"
+                  },
+                  "text": {
+                    "maxLength": 160,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "questionId",
+                  "classification",
+                  "text"
+                ],
+                "type": "object"
+              }
+            ],
+            "type": "array"
+          },
+          "scenarios": {
+            "items": false,
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "authority": {
+                    "enum": [
+                      "DETERMINISTIC_RISK_ENGINE",
+                      "KILL_SWITCH",
+                      "MISSING_EVIDENCE"
+                    ]
+                  },
+                  "expectedOutcome": {
+                    "enum": [
+                      "ALLOW",
+                      "WARN",
+                      "BLOCK",
+                      "HOLD"
+                    ]
+                  },
+                  "scenarioId": {
+                    "pattern": "^demo_(allow|warn|block|hold)$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "scenarioId",
+                  "expectedOutcome",
+                  "authority"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "authority": {
+                    "enum": [
+                      "DETERMINISTIC_RISK_ENGINE",
+                      "KILL_SWITCH",
+                      "MISSING_EVIDENCE"
+                    ]
+                  },
+                  "expectedOutcome": {
+                    "enum": [
+                      "ALLOW",
+                      "WARN",
+                      "BLOCK",
+                      "HOLD"
+                    ]
+                  },
+                  "scenarioId": {
+                    "pattern": "^demo_(allow|warn|block|hold)$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "scenarioId",
+                  "expectedOutcome",
+                  "authority"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "authority": {
+                    "enum": [
+                      "DETERMINISTIC_RISK_ENGINE",
+                      "KILL_SWITCH",
+                      "MISSING_EVIDENCE"
+                    ]
+                  },
+                  "expectedOutcome": {
+                    "enum": [
+                      "ALLOW",
+                      "WARN",
+                      "BLOCK",
+                      "HOLD"
+                    ]
+                  },
+                  "scenarioId": {
+                    "pattern": "^demo_(allow|warn|block|hold)$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "scenarioId",
+                  "expectedOutcome",
+                  "authority"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "authority": {
+                    "enum": [
+                      "DETERMINISTIC_RISK_ENGINE",
+                      "KILL_SWITCH",
+                      "MISSING_EVIDENCE"
+                    ]
+                  },
+                  "expectedOutcome": {
+                    "enum": [
+                      "ALLOW",
+                      "WARN",
+                      "BLOCK",
+                      "HOLD"
+                    ]
+                  },
+                  "scenarioId": {
+                    "pattern": "^demo_(allow|warn|block|hold)$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "scenarioId",
+                  "expectedOutcome",
+                  "authority"
+                ],
+                "type": "object"
+              }
+            ],
+            "type": "array"
+          },
+          "schemaVersion": {
+            "const": "1.0.0"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "demoProject",
+          "namespace",
+          "fixtureClass",
+          "brokerageMode",
+          "providerCalls",
+          "liveAccountCalls",
+          "liveOrderCalls",
+          "ragAnswerCache",
+          "crossMarketCapability",
+          "scenarios",
+          "ragQuestions",
+          "killSwitchScenario",
+          "asyncAdapters",
+          "performanceClaimAllowed"
+        ],
+        "title": "s8-demo-seed.v1",
+        "type": "object"
+      },
+      "S8UserTestResponseV1": {
+        "$id": "contracts/schemas/s8-user-test-response.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "answers": {
+            "additionalProperties": false,
+            "properties": {
+              "automaticTradingAuthorityClaimed": {
+                "const": false
+              },
+              "confidenceScore": {
+                "maximum": 5,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "evidenceClassifications": {
+                "items": {
+                  "enum": [
+                    "CONFIRMED_FACT",
+                    "REPORTED_CLAIM",
+                    "MARKET_INTERPRETATION",
+                    "HYPOTHESIS"
+                  ]
+                },
+                "maxItems": 4,
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "improvementTags": {
+                "items": {
+                  "enum": [
+                    "NAVIGATION",
+                    "TERMINOLOGY",
+                    "EVIDENCE",
+                    "TIMING",
+                    "ACCESSIBILITY",
+                    "NONE"
+                  ]
+                },
+                "maxItems": 3,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "retiredCapabilityIdentified": {
+                "type": "boolean"
+              },
+              "timingLimitExplained": {
+                "type": "boolean"
+              },
+              "uncertaintyIdentified": {
+                "type": "boolean"
+              },
+              "usabilityScore": {
+                "maximum": 7,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "retiredCapabilityIdentified",
+              "evidenceClassifications",
+              "uncertaintyIdentified",
+              "timingLimitExplained",
+              "automaticTradingAuthorityClaimed",
+              "usabilityScore",
+              "confidenceScore",
+              "improvementTags"
+            ],
+            "type": "object"
+          },
+          "collectedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "consentGranted": {
+            "const": true
+          },
+          "consentVersion": {
+            "const": "S8_USER_TEST_CONSENT_V1"
+          },
+          "participantId": {
+            "pattern": "^part_[0-9a-f]{24}$",
+            "type": "string"
+          },
+          "piiCollected": {
+            "const": false
+          },
+          "schemaVersion": {
+            "const": "1.0.0"
+          },
+          "withdrawalCodeHash": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "participantId",
+          "consentVersion",
+          "consentGranted",
+          "collectedAt",
+          "withdrawalCodeHash",
+          "piiCollected",
+          "answers"
+        ],
+        "title": "s8-user-test-response.v1",
+        "type": "object"
+      },
+      "StreamMetricStatusV1": {
+        "$id": "contracts/schemas/stream-metric-status.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "components": {
+                "additionalProperties": false,
+                "properties": {
+                  "decisionDistribution": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "observedAt": {
+                        "oneOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "OK",
+                          "EMPTY",
+                          "UNAVAILABLE"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "observedAt"
+                    ],
+                    "type": "object"
+                  },
+                  "dlqEvents": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "observedAt": {
+                        "oneOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "OK",
+                          "EMPTY",
+                          "UNAVAILABLE"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "observedAt"
+                    ],
+                    "type": "object"
+                  },
+                  "failedJobs": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "observedAt": {
+                        "oneOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "OK",
+                          "EMPTY",
+                          "UNAVAILABLE"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "observedAt"
+                    ],
+                    "type": "object"
+                  },
+                  "signalFreshness": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "observedAt": {
+                        "oneOf": [
+                          {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "OK",
+                          "EMPTY",
+                          "UNAVAILABLE"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "observedAt"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "decisionDistribution",
+                  "signalFreshness",
+                  "failedJobs",
+                  "dlqEvents"
+                ],
+                "type": "object"
+              },
+              "decisionDistribution": {
+                "additionalProperties": false,
+                "properties": {
+                  "ALLOW": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "BLOCK": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "HOLD": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "WARN": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "ALLOW",
+                  "WARN",
+                  "HOLD",
+                  "BLOCK"
+                ],
+                "type": "object"
+              },
+              "dlqEventCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "failedJobCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "lastUpdatedAt": {
+                "oneOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pipelineHealth": {
+                "enum": [
+                  "OK",
+                  "DEGRADED",
+                  "UNAVAILABLE"
+                ]
+              },
+              "signalStaleRatio": {
+                "oneOf": [
+                  {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "lastUpdatedAt",
+              "pipelineHealth",
+              "signalStaleRatio",
+              "decisionDistribution",
+              "failedJobCount",
+              "dlqEventCount",
+              "components"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+            "type": "string"
+          },
+          "success": {
+            "const": true
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "requestId",
+          "data",
+          "warnings",
+          "error"
+        ],
+        "title": "stream-metric-status.v1",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "S7/S8 Async and Dashboard Contract",
+    "version": "1.0.0"
+  },
+  "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
+  "openapi": "3.1.1",
+  "paths": {
+    "/api/v1/artifacts/ingest-status": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactIngestStatusV1"
+                }
+              }
+            },
+            "description": "Bounded ADMIN operational response"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Current ADMIN role required"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/async-jobs": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "REQUESTED",
+                "RUNNING",
+                "COMPLETED",
+                "FAILED",
+                "NEEDS_REVIEW"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "enum": [
+                "RAG_INDEX",
+                "ARTIFACT_INGEST",
+                "MODEL_EVAL"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "pattern": "^[A-Za-z0-9_-]{16,256}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncJobListV1"
+                }
+              }
+            },
+            "description": "Bounded ADMIN operational response"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Current ADMIN role required"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/async-jobs/{jobId}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "schema": {
+              "pattern": "^job_[A-Za-z0-9_-]{8,96}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncJobStatusV1"
+                }
+              }
+            },
+            "description": "Bounded ADMIN operational response"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Current ADMIN role required"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/dashboard/backtests/{runId}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "pattern": "^(run|demo)_[A-Za-z0-9_-]{8,96}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardBacktestV1"
+                }
+              }
+            },
+            "description": "Bounded owner-scoped response"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Access denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/dashboard/model-evaluations/{runId}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "pattern": "^(run|demo)_[A-Za-z0-9_-]{8,96}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardModelEvaluationV1"
+                }
+              }
+            },
+            "description": "Bounded owner-scoped response"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Access denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/dashboard/rag-sources/{answerId}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "answerId",
+            "required": true,
+            "schema": {
+              "pattern": "^rag_[A-Za-z0-9_-]{12,96}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardRagSourcesV1"
+                }
+              }
+            },
+            "description": "Bounded owner-scoped response"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Access denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/dashboard/risk-results/{decisionId}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "decisionId",
+            "required": true,
+            "schema": {
+              "pattern": "^dec_[A-Za-z0-9_-]{8,96}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardRiskResultV1"
+                }
+              }
+            },
+            "description": "Bounded owner-scoped response"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Access denied"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/stream-metrics": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamMetricStatusV1"
+                }
+              }
+            },
+            "description": "Bounded ADMIN operational response"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Current ADMIN role required"
+          },
+          "404": {
+            "description": "Resource not found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  }
+}

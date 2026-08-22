@@ -32,9 +32,9 @@ class PrincipleContractMigrationIntegrationTest(
     @Autowired private val principleRuleJsonCodec: PrincipleRuleJsonCodec,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean V1 through V79 migration preserves the exact Principle schema and seed`() {
+    fun `clean V1 through V85 migration preserves the exact Principle schema and seed`() {
         assertEquals(
-            (1..79).map(Int::toString),
+            (1..85).map(Int::toString),
             jdbcTemplate.query(
                 "select version from flyway_schema_history where success order by installed_rank",
             ) { result, _ -> result.getString(1) },
@@ -281,16 +281,16 @@ class PrincipleContractMigrationIntegrationTest(
         assertFalse(tablePrivilege("principle_presets", "UPDATE"))
         assertFalse(tablePrivilege("principle_presets", "DELETE"))
 
-        assertTrue(tablePrivilege("principles", "SELECT"))
-        assertTrue(tablePrivilege("principles", "INSERT"))
+        assertFalse(tablePrivilege("principles", "SELECT"))
+        assertFalse(tablePrivilege("principles", "INSERT"))
         assertFalse(tablePrivilege("principles", "UPDATE"))
-        assertTrue(columnPrivilege("principles", "title", "UPDATE"))
-        assertTrue(columnPrivilege("principles", "current_version", "UPDATE"))
+        assertFalse(columnPrivilege("principles", "title", "UPDATE"))
+        assertFalse(columnPrivilege("principles", "current_version", "UPDATE"))
         assertFalse(columnPrivilege("principles", "user_id", "UPDATE"))
         assertFalse(tablePrivilege("principles", "DELETE"))
 
-        assertTrue(tablePrivilege("principle_versions", "SELECT"))
-        assertTrue(tablePrivilege("principle_versions", "INSERT"))
+        assertFalse(tablePrivilege("principle_versions", "SELECT"))
+        assertFalse(tablePrivilege("principle_versions", "INSERT"))
         assertFalse(tablePrivilege("principle_versions", "UPDATE"))
         assertFalse(tablePrivilege("principle_versions", "DELETE"))
         assertTrue(tablePrivilege("audit_logs", "INSERT"))
@@ -299,8 +299,29 @@ class PrincipleContractMigrationIntegrationTest(
         assertFalse(tablePrivilege("audit_logs", "DELETE"))
         assertFalse(tablePrivilege("flyway_schema_history", "SELECT"))
         assertFalse(schemaPrivilege("public", "CREATE"))
+        listOf(
+            "insert_principle_authorized(text,text,text,text,text,text,text,integer,timestamp with time zone,timestamp with time zone)",
+            "insert_principle_version_authorized(text,text,text,text,integer,text,text,text,text,jsonb,text[],timestamp with time zone)",
+            "insert_principle_audit_authorized(text,text,text,text,text,integer,text[],timestamp with time zone)",
+            "read_owned_principle_authorized(text,text,text)",
+            "list_owned_principles_authorized(text,text,integer,text,timestamp with time zone,text)",
+            "update_owned_principle_authorized(text,text,text,integer,text,text,text,timestamp with time zone)",
+            "list_owned_principle_versions_authorized(text,text,text,integer,text,integer)",
+            "read_active_owned_principle_snapshot_authorized(text,text,text)",
+            "lock_active_owned_principle_authorized(text,text,text,integer,text,text)",
+        ).forEach { function ->
+            assertTrue(functionPrivilege(function), "decision_app must execute $function")
+        }
 
         assertDecisionAppAllowed("select count(*) from principle_presets")
+        assertDecisionAppDenied("select count(*) from principles")
+        assertDecisionAppDenied(
+            """
+            insert into principles (principle_id, user_id, preset_id, title, mode, status, current_version)
+            values ('prc_00000000000000000000000000000000', 'usr_demo_user', 'prs_value_01',
+                    'forbidden', 'GUIDE', 'ACTIVE', 1)
+            """.trimIndent(),
+        )
         assertDecisionAppDenied("update principle_presets set is_active = false")
         assertDecisionAppDenied("update principle_versions set title = 'forbidden'")
         assertDecisionAppDenied("delete from principle_versions")
@@ -396,6 +417,13 @@ class PrincipleContractMigrationIntegrationTest(
             Boolean::class.java,
             schema,
             privilege,
+        ) ?: false
+
+    private fun functionPrivilege(signature: String): Boolean =
+        jdbcTemplate.queryForObject(
+            "select has_function_privilege('decision_app', ?, 'EXECUTE')",
+            Boolean::class.java,
+            signature,
         ) ?: false
 
     private fun assertDecisionAppAllowed(sql: String) {

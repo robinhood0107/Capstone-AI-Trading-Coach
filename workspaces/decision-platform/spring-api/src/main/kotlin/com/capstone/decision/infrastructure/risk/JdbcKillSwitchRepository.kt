@@ -332,46 +332,15 @@ class JdbcKillSwitchRepository(
         jdbc: NamedParameterJdbcTemplate,
         next: KillSwitchState,
     ) {
-        val payload =
-            linkedMapOf(
-                "active" to next.active,
-                "changedAt" to next.changedAt.toString(),
-            )
-        jdbc.update(
-            """
-            INSERT INTO event_outbox (
-              event_id,
-              event_type,
-              aggregate_type,
-              aggregate_id,
-              partition_key,
-              payload_json,
-              schema_version,
-              status,
-              retry_count,
-              created_at,
-              updated_at
-            )
-            VALUES (
-              :eventId,
-              'kill-switch.changed',
-              'KILL_SWITCH',
-              'GLOBAL',
-              'GLOBAL',
-              CAST(:payloadJson AS jsonb),
-              '1.0.0',
-              'PENDING',
-              0,
-              :changedAt,
-              :changedAt
-            )
-            """.trimIndent(),
+        jdbc.queryForObject(
+            "SELECT append_kill_switch_outbox(:eventId,:active,:changedAt)",
             mapOf(
                 "eventId" to id("evt"),
-                "payloadJson" to objectMapper.writeValueAsString(payload),
+                "active" to next.active,
                 "changedAt" to next.changedAt.utc(),
             ),
-        )
+            Boolean::class.java,
+        ) ?: error("Kill switch outbox append failed.")
     }
 
     private fun mutationParameters(

@@ -35,6 +35,18 @@ REQUIRED_NAMES: Final[tuple[str, ...]] = (
     "POSTGRES_SIGNAL_WRITER_PASSWORD",
     "POSTGRES_SIGNAL_SCHEDULER_PASSWORD",
     "POSTGRES_SIGNAL_ADMIN_PASSWORD",
+    "POSTGRES_WORKER_PASSWORD",
+    "POSTGRES_REPLAY_PASSWORD",
+    "POSTGRES_IDENTITY_PASSWORD",
+    "POSTGRES_REPLAY_AUTHORIZER_PASSWORD",
+    "POSTGRES_DEMO_PASSWORD",
+    "KAFKA_UI_USERNAME",
+    "KAFKA_UI_PASSWORD",
+    "ASYNC_POLLING_ENABLED",
+    "ASYNC_WORKER_ENABLED",
+    "ASYNC_CURSOR_HMAC_KEY",
+    "ASYNC_PARTITION_HMAC_KEY",
+    "ASYNC_WORKER_GRPC_SHARED_SECRET",
     "DECISION_GRPC_SHARED_SECRET",
     "RAG_GRPC_SHARED_SECRET",
     "PYTHON_GRPC_SHARED_SECRET",
@@ -192,6 +204,15 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
         "POSTGRES_SIGNAL_WRITER_PASSWORD",
         "POSTGRES_SIGNAL_SCHEDULER_PASSWORD",
         "POSTGRES_SIGNAL_ADMIN_PASSWORD",
+        "POSTGRES_WORKER_PASSWORD",
+        "POSTGRES_REPLAY_PASSWORD",
+        "POSTGRES_IDENTITY_PASSWORD",
+        "POSTGRES_REPLAY_AUTHORIZER_PASSWORD",
+        "POSTGRES_DEMO_PASSWORD",
+        "KAFKA_UI_PASSWORD",
+        "ASYNC_CURSOR_HMAC_KEY",
+        "ASYNC_PARTITION_HMAC_KEY",
+        "ASYNC_WORKER_GRPC_SHARED_SECRET",
         "DECISION_GRPC_SHARED_SECRET",
         "RAG_GRPC_SHARED_SECRET",
         "REDIS_PASSWORD",
@@ -261,11 +282,16 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
             "Demo credential separation key must be purpose-separated."
         )
 
-    for name in ("JWT_ISSUER", "JWT_AUDIENCE"):
+    for name in ("JWT_ISSUER", "JWT_AUDIENCE", "KAFKA_UI_USERNAME"):
         if _SAFE_LABEL.fullmatch(values[name]) is None:
             raise OpenApiEnvironmentError(f"{name} has an unsafe or invalid shape.")
     if values["JWT_ISSUER"] == values["JWT_AUDIENCE"]:
         raise OpenApiEnvironmentError("JWT issuer and audience must be distinct.")
+    if values["KAFKA_UI_USERNAME"] != "admin":
+        raise OpenApiEnvironmentError("KAFKA_UI_USERNAME must equal the isolated ADMIN fixture identity.")
+    for name in ("ASYNC_POLLING_ENABLED", "ASYNC_WORKER_ENABLED"):
+        if values[name] != "false":
+            raise OpenApiEnvironmentError(f"{name} must be false for isolated OpenAPI generation.")
 
 
 def _require_bundle_shapes(values: dict[str, str]) -> None:

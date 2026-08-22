@@ -72,9 +72,16 @@ jobs:
           POSTGRES_SIGNAL_WRITER_PASSWORD: validation-dummy-signal-writer
           POSTGRES_SIGNAL_SCHEDULER_PASSWORD: validation-dummy-signal-scheduler
           POSTGRES_SIGNAL_ADMIN_PASSWORD: validation-dummy-signal-admin
+          POSTGRES_WORKER_PASSWORD: validation-dummy-worker
+          POSTGRES_REPLAY_PASSWORD: validation-dummy-replay
+          POSTGRES_IDENTITY_PASSWORD: validation-dummy-identity
+          POSTGRES_REPLAY_AUTHORIZER_PASSWORD: validation-dummy-replay-authorizer
+          POSTGRES_DEMO_PASSWORD: validation-dummy-demo
           REDIS_PASSWORD: validation-dummy-redis-password-0001
           SEARXNG_SECRET: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
           MCP_SEARXNG_AUTH_TOKEN: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+          KAFKA_UI_USERNAME: validation-admin
+          KAFKA_UI_PASSWORD: validation-dummy-kafka-ui
         run: docker compose -f infra/docker-compose.infra.yml config --quiet
 
       - name: Parse Python project metadata

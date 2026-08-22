@@ -986,6 +986,21 @@ class DecisionApiIntegrationTest(
             "PORTFOLIO_CONTEXT_UNAVAILABLE",
             firstData.at("/riskDecision/issues/0/code").stringValue(),
         )
+        mockMvc
+            .get("/api/v1/dashboard/risk-results/$decisionId") { bearer(token) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.data.evidenceMode") { value("STORED_RUNTIME") }
+                jsonPath("$.data.performanceClaimAllowed") { value(false) }
+                jsonPath("$.data.view.decisionId") { value(decisionId) }
+                jsonPath("$.data.view.action") { value("HOLD") }
+                jsonPath("$.data.view.riskItems[0].code") { value("RISK_PORTFOLIO_CONTEXT_UNAVAILABLE") }
+                jsonPath("$.data.view.accountId") { doesNotExist() }
+            }
+        val foreignToken = login("demo-admin", adminPassword())
+        mockMvc.get("/api/v1/dashboard/risk-results/$decisionId") { bearer(foreignToken) }.andExpect {
+            status { isNotFound() }
+        }
 
         val replay = evaluate(token, key, "req-decision-replay", request)
         assertEquals(200, replay.response.status)

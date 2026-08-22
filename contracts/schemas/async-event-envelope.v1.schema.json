@@ -1,0 +1,98 @@
+{
+  "$id": "contracts/schemas/async-event-envelope.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "eventId": {
+      "pattern": "^evt_[A-Za-z0-9_-]{8,96}$",
+      "type": "string"
+    },
+    "eventType": {
+      "enum": [
+        "artifact.ingest-requested.v1",
+        "artifact.ingested.v1",
+        "signal.received.v1",
+        "feature.updated.v1",
+        "lightgbm.signal-generated.v1",
+        "risk.context-updated.v1",
+        "risk.decision-created.v1",
+        "order.event-created.v1",
+        "rag.index-requested.v1",
+        "rag.index-completed.v1",
+        "model.eval-requested.v1",
+        "model.eval-completed.v1"
+      ]
+    },
+    "occurredAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "partitionKey": {
+      "pattern": "^hmac-sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "payloadHash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "references": {
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "pattern": "^artifact_[A-Za-z0-9_-]{8,96}$",
+          "type": "string"
+        },
+        "contentHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "importTicketId": {
+          "pattern": "^rti_[0-9a-f]{32}$",
+          "type": "string"
+        },
+        "jobId": {
+          "pattern": "^job_[A-Za-z0-9_-]{8,96}$",
+          "type": "string"
+        },
+        "profileId": {
+          "enum": [
+            "bge_m3_local_1024_v1",
+            "voyage_context_4_1024_v1"
+          ]
+        },
+        "replayOf": {
+          "pattern": "^evt_[A-Za-z0-9_-]{8,96}$",
+          "type": "string"
+        },
+        "resultRef": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "runId": {
+          "pattern": "^(run|demo)_[A-Za-z0-9_-]{8,96}$",
+          "type": "string"
+        },
+        "sourceRevisionId": {
+          "pattern": "^srv_[a-z0-9][a-z0-9_-]{2,95}$",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "schemaVersion": {
+      "const": 1
+    }
+  },
+  "required": [
+    "eventId",
+    "eventType",
+    "schemaVersion",
+    "occurredAt",
+    "partitionKey",
+    "payloadHash",
+    "references"
+  ],
+  "title": "async-event-envelope.v1",
+  "type": "object"
+}

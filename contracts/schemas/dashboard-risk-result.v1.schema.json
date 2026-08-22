@@ -1,0 +1,167 @@
+{
+  "$id": "contracts/schemas/dashboard-risk-result.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "data": {
+      "additionalProperties": false,
+      "properties": {
+        "asOf": {
+          "oneOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidenceMode": {
+          "enum": [
+            "STORED_RUNTIME",
+            "REAL_ARTIFACT",
+            "SYNTHETIC_DEMO"
+          ]
+        },
+        "freshUntil": {
+          "oneOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "performanceClaimAllowed": {
+          "const": false
+        },
+        "view": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "ALLOW",
+                    "WARN",
+                    "HOLD",
+                    "BLOCK"
+                  ]
+                },
+                "decisionId": {
+                  "pattern": "^dec_[A-Za-z0-9_-]{8,96}$",
+                  "type": "string"
+                },
+                "principles": {
+                  "items": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                "reasons": {
+                  "items": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                "riskItems": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+                        "type": "string"
+                      },
+                      "severity": {
+                        "enum": [
+                          "INFO",
+                          "WARN",
+                          "BLOCK"
+                        ]
+                      },
+                      "summary": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "severity",
+                      "summary"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "decisionId",
+                "action",
+                "reasons",
+                "principles",
+                "riskItems"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "viewState": {
+          "enum": [
+            "READY",
+            "EMPTY",
+            "STALE"
+          ]
+        }
+      },
+      "required": [
+        "viewState",
+        "asOf",
+        "freshUntil",
+        "evidenceMode",
+        "performanceClaimAllowed",
+        "view"
+      ],
+      "type": "object"
+    },
+    "error": {
+      "type": "null"
+    },
+    "requestId": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+      "type": "string"
+    },
+    "success": {
+      "const": true
+    },
+    "warnings": {
+      "items": {
+        "type": "object"
+      },
+      "maxItems": 20,
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "requestId",
+    "data",
+    "warnings",
+    "error"
+  ],
+  "title": "dashboard-risk-result.v1",
+  "type": "object"
+}

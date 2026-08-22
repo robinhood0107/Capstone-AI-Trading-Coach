@@ -1,0 +1,14 @@
+{
+  "data": {
+    "asOf": null,
+    "evidenceMode": "SYNTHETIC_DEMO",
+    "freshUntil": null,
+    "performanceClaimAllowed": false,
+    "view": null,
+    "viewState": "EMPTY"
+  },
+  "error": null,
+  "requestId": "req_s7s8_fixture_0001",
+  "success": true,
+  "warnings": []
+}

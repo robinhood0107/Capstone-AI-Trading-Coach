@@ -1,0 +1,16 @@
+name: capstone-s8-demo
+
+include:
+  - path: ../../../../infra/docker-compose.infra.yml
+
+services:
+  postgres:
+    ports: !override ["127.0.0.1:55438:5432"]
+  redis:
+    ports: !override ["127.0.0.1:56388:6379"]
+  kafka:
+    ports: !override ["127.0.0.1:59092:9092"]
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://127.0.0.1:59092
+  kafka-ui:
+    ports: !override ["127.0.0.1:58081:8080"]

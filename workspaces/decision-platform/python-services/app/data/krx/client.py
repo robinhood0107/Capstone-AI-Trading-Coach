@@ -4,6 +4,8 @@ import os
 import ssl
 import time
 import math
+import hashlib
+import re
 from collections.abc import Callable, Mapping
 from datetime import date
 from pathlib import Path
@@ -141,6 +143,27 @@ def attest_quota_backend_credentials() -> None:
         raise
     except Exception as error:
         raise QuotaUnavailableError("source quota backend authentication failed") from error
+    finally:
+        _close_without_raising(client)
+
+
+def claim_provider_verification_authorization(packet_sha256: str, approval_id: str) -> None:
+    """Consume one packet in the deployment-global Redis control plane before provider setup."""
+
+    if re.fullmatch(r"[0-9a-f]{64}", packet_sha256) is None or re.fullmatch(
+        r"[A-Z0-9][A-Z0-9._-]{2,63}", approval_id
+    ) is None:
+        raise QuotaUnavailableError("provider verification claim identity is invalid")
+    digest = hashlib.sha256(f"p1-provider-read|{packet_sha256}|{approval_id}".encode()).hexdigest()
+    client = _build_redis_client()
+    try:
+        claimed = client.set(f"p1:verification:claim:{digest}", "1", nx=True)
+        if claimed is not True:
+            raise QuotaUnavailableError("provider verification packet was already consumed")
+    except QuotaUnavailableError:
+        raise
+    except Exception as error:
+        raise QuotaUnavailableError("provider verification global claim failed") from error
     finally:
         _close_without_raising(client)
 

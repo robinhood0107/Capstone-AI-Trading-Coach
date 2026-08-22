@@ -85,6 +85,7 @@ def _run(tmp_path: Path, backend: _FakeBackend) -> VerificationReport:
         backend_factory=lambda _: backend,
         binding_verifier=lambda *_: None,
         claim=lambda *_: tmp_path / "claim.json",
+        global_claim=lambda *_: None,
         now=lambda: clock,
     )
 
@@ -152,10 +153,11 @@ def test_repository_binding_and_claim_precede_backend_construction(tmp_path: Pat
         backend_factory=lambda _: events.append("backend") or backend,
         binding_verifier=lambda *_: events.append("binding"),
         claim=lambda *_: events.append("claim") or tmp_path / "claim.json",
+        global_claim=lambda *_: events.append("global-claim"),
         now=lambda: datetime(2026, 8, 21, 0, 30, tzinfo=UTC),
     )
 
-    assert events == ["binding", "claim", "backend"]
+    assert events == ["binding", "global-claim", "claim", "backend"]
 
 
 def test_packet_execution_claim_is_not_idempotently_reusable(tmp_path: Path) -> None:

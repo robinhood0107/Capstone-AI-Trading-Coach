@@ -876,3 +876,44 @@ hardlink, source path persistence, provider call, LightGBM Signal/Risk/order aut
 DB stage는 explicit expected manifest SHA를 필수로 받고, operational/research view는 correction의 최신
 generation을 먼저 고른 뒤 각각 253/1,260 session 상한을 적용한다. 이 구현 보강은 S5.7A JSON Schema
 bytes나 public OpenAPI를 바꾸지 않는다.
+
+## S7–S8 async와 Dashboard 계약
+
+`generate_s7_s8_contracts.py`는 async envelope/topic/job/Admin/stream metric/artifact status, 네
+Dashboard ViewModel, synthetic demo/user-test schema, positive/negative fixture와 OpenAPI fragment를
+deterministically 생성한다. `--check`와 contract tests가 tracked bytes를 잠근다.
+
+구현 route는 정확히 다음 여덟 개다.
+
+```text
+GET /api/v1/async-jobs
+GET /api/v1/async-jobs/{jobId}
+GET /api/v1/stream-metrics
+GET /api/v1/artifacts/ingest-status
+GET /api/v1/dashboard/model-evaluations/{runId}
+GET /api/v1/dashboard/backtests/{runId}
+GET /api/v1/dashboard/risk-results/{decisionId}
+GET /api/v1/dashboard/rag-sources/{answerId}
+```
+
+`contracts/catalogs/s7-s8-openapi-transition.v1.json`은 이 additive fragment의 exact path/component와
+canonical hash만 허용한다. historical S5 preserved projection은 먼저 S7/S8 fragment를 exact hash로
+검증·제거한 뒤 기존 freeze를 그대로 검증한다. 임의의 추가 route/component나 허용 route mutation은
+거부된다.
+
+Dashboard common state는 `READY|EMPTY|STALE`, nullable `asOf/freshUntil`, exact evidence mode,
+`performanceClaimAllowed=false`다. loading은 client-only이고 error는 표준 HTTP error envelope다.
+cross-market schema/API/field는 생성하지 않는다.
+
+Kafka async envelope는 stable owner ID를 포함하지 않고 opaque `partitionKey`와 canonical references hash만
+전달한다. DB gRPC request도 claimed outbox의 partition key를 명시적으로 운반해 worker commit이
+event/type/job/partition/hash를 authoritative row에 bind하도록 한다. synthetic projection은 Python generator가
+만든 exact artifact/run/content/projection bytes를 Spring E2E fixture와 공유한다.
+
+재현:
+
+```bash
+uv run --frozen python contracts/generate_s7_s8_contracts.py --check
+uv run --frozen python -m unittest discover -s contracts/tests -v
+uv run --frozen python contracts/validate.py
+```

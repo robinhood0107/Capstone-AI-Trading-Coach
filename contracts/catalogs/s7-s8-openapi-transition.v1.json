@@ -1,0 +1,34 @@
+{
+  "additiveProjectionSha256": "c80fe50b26e7757101ac6b68c45d07be70ea127e18bade0942a62f7ca488891e",
+  "allowedPaths": [
+    "/api/v1/artifacts/ingest-status",
+    "/api/v1/async-jobs",
+    "/api/v1/async-jobs/{jobId}",
+    "/api/v1/dashboard/backtests/{runId}",
+    "/api/v1/dashboard/model-evaluations/{runId}",
+    "/api/v1/dashboard/rag-sources/{answerId}",
+    "/api/v1/dashboard/risk-results/{decisionId}",
+    "/api/v1/stream-metrics"
+  ],
+  "allowedSchemaNames": [
+    "ApiResponseAsyncJobDto",
+    "ApiResponseAsyncJobListDto",
+    "ApiResponseJsonNode",
+    "ApiResponseStreamMetricDto",
+    "ArtifactIngestStatusDto",
+    "ArtifactIngestStatusListDto",
+    "AsyncJobDto",
+    "AsyncJobErrorDto",
+    "AsyncJobListDto",
+    "DecisionDistributionDto",
+    "JsonNode",
+    "S7AsyncJobListSuccessResponse",
+    "S7AsyncJobStatusSuccessResponse",
+    "S7StreamMetricSuccessResponse",
+    "S8ArtifactIngestStatusSuccessResponse",
+    "StreamMetricComponentDto",
+    "StreamMetricComponentsDto",
+    "StreamMetricDto"
+  ],
+  "contractId": "s7-s8-openapi-transition.v1"
+}

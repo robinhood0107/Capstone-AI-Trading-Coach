@@ -1,0 +1,61 @@
+{
+  "asyncAdapters": [
+    "db",
+    "kafka"
+  ],
+  "brokerageMode": "INTERNAL_PAPER",
+  "crossMarketCapability": "RETIRED_NOT_APPLICABLE",
+  "demoProject": "capstone-s8-demo",
+  "fixtureClass": "SYNTHETIC_FAKE_E2E",
+  "killSwitchScenario": {
+    "expectedState": "ACTIVE",
+    "orderAuthority": "BLOCKED",
+    "scenarioId": "demo_kill_switch"
+  },
+  "liveAccountCalls": 0,
+  "liveOrderCalls": 0,
+  "namespace": "demo_s8_offline_0001",
+  "performanceClaimAllowed": false,
+  "providerCalls": 0,
+  "ragAnswerCache": "OFF",
+  "ragQuestions": [
+    {
+      "classification": "INTERNAL_PAPER",
+      "questionId": "demo_rag_q1",
+      "text": "손실 한도 원칙은 무엇인가요?"
+    },
+    {
+      "classification": "INTERNAL_PAPER",
+      "questionId": "demo_rag_q2",
+      "text": "경고와 차단은 어떻게 다른가요?"
+    },
+    {
+      "classification": "INTERNAL_PAPER",
+      "questionId": "demo_rag_q3",
+      "text": "근거가 없으면 왜 보류하나요?"
+    }
+  ],
+  "scenarios": [
+    {
+      "authority": "DETERMINISTIC_RISK_ENGINE",
+      "expectedOutcome": "ALLOW",
+      "scenarioId": "demo_allow"
+    },
+    {
+      "authority": "DETERMINISTIC_RISK_ENGINE",
+      "expectedOutcome": "WARN",
+      "scenarioId": "demo_warn"
+    },
+    {
+      "authority": "KILL_SWITCH",
+      "expectedOutcome": "BLOCK",
+      "scenarioId": "demo_block"
+    },
+    {
+      "authority": "MISSING_EVIDENCE",
+      "expectedOutcome": "HOLD",
+      "scenarioId": "demo_hold"
+    }
+  ],
+  "schemaVersion": "1.0.0"
+}

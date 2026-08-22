@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from app.data._shared.canonical_json import canonical_json_bytes
-from app.verification.artifacts import publish_packet, read_packet
+from app.verification.artifacts import VerificationArtifactError, publish_packet, read_packet
 from app.verification.packet import (
     VerificationPacketError,
     author_provider_read_smoke_packet,
@@ -85,3 +85,16 @@ def test_packet_rejects_operation_and_ecos_window_drift(tmp_path: Path) -> None:
         packet_from_dict(window_drift)
 
     assert canonical_json_bytes(packet.to_dict()).endswith(b"\n")
+
+
+def test_packet_reader_rejects_symlinks_and_excessive_json_depth(tmp_path: Path) -> None:
+    target = tmp_path / "packet.json"
+    target.write_bytes(b'{"nested":' + b"[" * 20 + b"0" + b"]" * 20 + b"}\n")
+    target.chmod(0o600)
+    link = tmp_path / "packet-link.json"
+    link.symlink_to(target)
+
+    with pytest.raises(VerificationArtifactError, match="unavailable"):
+        read_packet(link.absolute())
+    with pytest.raises(VerificationArtifactError, match="invalid JSON"):
+        read_packet(target.absolute())

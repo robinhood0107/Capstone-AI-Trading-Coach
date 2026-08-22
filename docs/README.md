@@ -274,3 +274,39 @@ authority이며 공개 문서에는 전체 목록을 복제하지 않는다.
 | `decision-platform/` | Decision Platform 공개 기술 문서 — S1.2 OpenDART 근거와 S1.6 offline 상태 경계를 포함 |
 
 [ADR-027]: adr/ADR-027-s1-4x-isolated-numeric-parity.md
+
+## S7–S8/P1 현재 상태 (2026-08-22)
+
+S7.0~S7.4와 단독 수행 가능한 S8.1~S8.4는 구현·통합 검증됐다. DB adapter가 기본이고 Kafka는
+선택 가능하며, S7.3은 stream metric 네 종만 소유한다. cross-market runtime/scheduler/API는
+`RETIRED_NOT_APPLICABLE` 상태를 유지한다.
+
+V84는 direct outbox/processed-event DML을 회수하고 authoritative payload hash binding, expired lease/hard
+deadline fencing, replay/demo 전용 DB role, exact synthetic bundle provenance를 잠근다. 현재 Kafka build는
+local numeric-loopback PLAINTEXT만 지원하며 non-loopback/deploy는 TLS 설정도 거부한다.
+
+V85는 application의 broad users/Principle 권한과 worker의 ID-only claim을 회수한다. owner/Admin 작업은
+별도 `decision_identity`가 발급한 current-actor one-use capability로만 실행되고, replay는
+`decision_replay_authorizer`와 `decision_replay`의 분리된 2단계 authorization을 요구한다. Kafka poison은
+broker topic/partition/offset provenance와 bounded admission을 사용하며 demo/replay file input은
+nofollow·bounded pre-parse 경계를 따른다.
+
+| 범위 | 상태 | 설명 |
+|---|---|---|
+| S7.0 | `VERIFIED_DB` | secure outbox/job claim, gRPC worker, Admin status |
+| S7.1 | `VERIFIED_KAFKA_SELECTABLE` | KRaft/topic initializer/publisher, DB default 유지 |
+| S7.2 | `VERIFIED_PYTHON_WORKER` | manual ack, processed-event idempotency |
+| S7.3 | `VERIFIED_STREAM_METRICS_ONLY` | Decision/stale/failed/DLQ, cross-market scheduling 0 |
+| S7.4 | `VERIFIED` | DB/Kafka failure matrix와 bounded replay CLI |
+| S7.5 | `DEFERRED_P2` | 이번 production 범위 아님 |
+| S8.1 | `FAKE_E2E_VERIFIED` | synthetic DB/Kafka projection parity |
+| S8.1 real | `BLOCKED` | Return Engine 실물 artifact 없음 |
+| S8.2 | `API_IMPLEMENTED_NO_CROSS_MARKET` | 네 ViewModel, Team A integration은 미수행 |
+| S8.3 | `OFFLINE_DEMO_VERIFIED` | 별도 demo project, explicit INTERNAL_PAPER |
+| S8.4 | `KIT_READY_PARTICIPANT_RUN_NOT_EXECUTED` | 실제 참가자·IRB 판단 없음 |
+| P1 | `INCOMPLETE_EXTERNAL_ARTIFACT` | real artifact 검증 전 완료 주장 금지 |
+
+운영·API handoff는
+[S7–S8/P1 구현 및 운영 핸드오프](decision-platform/S7_S8_P1_구현_및_운영_핸드오프.md), 외부
+artifact가 도착한 뒤 절차는
+[P1 실물 artifact 잔여 체크리스트](decision-platform/P1_실물_artifact_잔여_체크리스트.md)를 따른다.

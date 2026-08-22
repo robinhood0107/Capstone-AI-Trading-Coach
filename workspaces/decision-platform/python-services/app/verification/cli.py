@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import UTC, datetime
 from pathlib import Path
+import subprocess
 from typing import Sequence
 
 from app.verification.artifacts import publish_packet, publish_report, read_packet, read_report
@@ -66,13 +67,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"P1_VERIFICATION_REPORT={report.to_dict()['evidenceSha256']} PATH={path}")
         return 0 if report.execution_state == "PASS" else 1
     artifact = args.artifact
+    current_head = _current_clean_head()
     if artifact.name.startswith("packet-"):
         packet = read_packet(artifact)
-        print(f"P1_VERIFICATION_PACKET=VERIFIED SHA256={packet.packet_sha256}")
+        if packet.head_sha != current_head:
+            raise ValueError("P1 verification packet does not match the current clean HEAD")
+        print(f"P1_VERIFICATION_PACKET=STRUCTURALLY_VALID_CURRENT_HEAD SHA256={packet.packet_sha256}")
     else:
         report = read_report(artifact)
+        if report.head_sha != current_head:
+            raise ValueError("P1 verification report does not match the current clean HEAD")
         print(
-            "P1_VERIFICATION_REPORT=VERIFIED "
+            "P1_VERIFICATION_REPORT=STRUCTURALLY_VALID_CURRENT_HEAD "
             f"OUTCOME={report.aggregate_outcome} PROFILE={report.profile}"
         )
     return 0
@@ -85,6 +91,26 @@ def _require_external_output_root(output_root: Path) -> None:
     except ValueError:
         return
     raise ValueError("P1 verification artifacts must remain outside the Git repository")
+
+
+def _current_clean_head() -> str:
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=_REPOSITORY_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        cwd=_REPOSITORY_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    if dirty:
+        raise ValueError("P1 verification requires a clean tracked worktree")
+    return head
 
 
 if __name__ == "__main__":

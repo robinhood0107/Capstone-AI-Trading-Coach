@@ -1,0 +1,505 @@
+{
+  "$id": "contracts/schemas/dashboard-backtest.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "data": {
+      "additionalProperties": false,
+      "properties": {
+        "asOf": {
+          "oneOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidenceMode": {
+          "enum": [
+            "STORED_RUNTIME",
+            "REAL_ARTIFACT",
+            "SYNTHETIC_DEMO"
+          ]
+        },
+        "freshUntil": {
+          "oneOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "performanceClaimAllowed": {
+          "const": false
+        },
+        "view": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "fixtureClass": {
+                  "enum": [
+                    "REAL_ARTIFACT",
+                    "SYNTHETIC_FAKE_E2E"
+                  ]
+                },
+                "heatmap": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "month": {
+                        "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+                        "type": "string"
+                      },
+                      "return": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "month",
+                      "return"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 120,
+                  "type": "array"
+                },
+                "metricCards": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "metric": {
+                        "maxLength": 48,
+                        "type": "string"
+                      },
+                      "value": {
+                        "oneOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "metric",
+                      "value"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 11,
+                  "type": "array"
+                },
+                "projectionHash": {
+                  "pattern": "^sha256:[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "runId": {
+                  "pattern": "^(run|demo)_[A-Za-z0-9_-]{8,96}$",
+                  "type": "string"
+                },
+                "strategies": {
+                  "items": false,
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "prefixItems": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "curve": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "at": {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "at",
+                              "value"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 2000,
+                          "type": "array"
+                        },
+                        "metrics": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "cagr": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "cvar95": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "mdd": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "sharpe": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "sortino": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "var95": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "cagr",
+                            "mdd",
+                            "sharpe",
+                            "sortino",
+                            "var95",
+                            "cvar95"
+                          ],
+                          "type": "object"
+                        },
+                        "strategy": {
+                          "const": "Baseline"
+                        }
+                      },
+                      "required": [
+                        "strategy",
+                        "metrics",
+                        "curve"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "curve": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "at": {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "at",
+                              "value"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 2000,
+                          "type": "array"
+                        },
+                        "metrics": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "cagr": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "cvar95": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "mdd": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "sharpe": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "sortino": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "var95": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "cagr",
+                            "mdd",
+                            "sharpe",
+                            "sortino",
+                            "var95",
+                            "cvar95"
+                          ],
+                          "type": "object"
+                        },
+                        "strategy": {
+                          "const": "Guide"
+                        }
+                      },
+                      "required": [
+                        "strategy",
+                        "metrics",
+                        "curve"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "curve": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "at": {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "at",
+                              "value"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 2000,
+                          "type": "array"
+                        },
+                        "metrics": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "cagr": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "cvar95": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "mdd": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "sharpe": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "sortino": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "var95": {
+                              "oneOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "cagr",
+                            "mdd",
+                            "sharpe",
+                            "sortino",
+                            "var95",
+                            "cvar95"
+                          ],
+                          "type": "object"
+                        },
+                        "strategy": {
+                          "const": "Strict"
+                        }
+                      },
+                      "required": [
+                        "strategy",
+                        "metrics",
+                        "curve"
+                      ],
+                      "type": "object"
+                    }
+                  ],
+                  "type": "array"
+                }
+              },
+              "required": [
+                "runId",
+                "fixtureClass",
+                "strategies",
+                "heatmap",
+                "metricCards",
+                "projectionHash"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "viewState": {
+          "enum": [
+            "READY",
+            "EMPTY",
+            "STALE"
+          ]
+        }
+      },
+      "required": [
+        "viewState",
+        "asOf",
+        "freshUntil",
+        "evidenceMode",
+        "performanceClaimAllowed",
+        "view"
+      ],
+      "type": "object"
+    },
+    "error": {
+      "type": "null"
+    },
+    "requestId": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+      "type": "string"
+    },
+    "success": {
+      "const": true
+    },
+    "warnings": {
+      "items": {
+        "type": "object"
+      },
+      "maxItems": 20,
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "requestId",
+    "data",
+    "warnings",
+    "error"
+  ],
+  "title": "dashboard-backtest.v1",
+  "type": "object"
+}

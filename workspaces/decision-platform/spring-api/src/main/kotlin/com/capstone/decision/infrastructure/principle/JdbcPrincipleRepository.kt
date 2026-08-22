@@ -15,6 +15,7 @@ import com.capstone.decision.domain.principle.PrincipleStatus
 import com.capstone.decision.domain.principle.PrincipleSummary
 import com.capstone.decision.domain.principle.PrincipleVersion
 import com.capstone.decision.domain.principle.PrincipleVersionId
+import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.RowMapper
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
@@ -24,7 +25,6 @@ import tools.jackson.databind.ObjectMapper
 import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
-import java.util.UUID
 
 // 모든 Principle SQL은 actor user_id를 같은 statement에 포함하며 sort fragment는 enum allowlist에서만 선택한다.
 @Repository
@@ -32,6 +32,7 @@ class JdbcPrincipleRepository(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val objectMapper: ObjectMapper,
     private val ruleJsonCodec: PrincipleRuleJsonCodec,
+    private val actorCapabilityIssuer: ActorCapabilityIssuer,
 ) : PrincipleRepository {
     override fun listActivePresets(): List<PrinciplePreset> =
         jdbc().query(
@@ -60,17 +61,16 @@ class JdbcPrincipleRepository(
             ).singleOrNull()
 
     override fun insertPrinciple(current: PrincipleCurrent) {
-        jdbc().update(
+        requireAuthorizedChange(
             """
-            INSERT INTO principles (
-              principle_id, user_id, preset_id, title, mode, status, current_version, created_at, updated_at
-            )
-            VALUES (
-              :principleId, :userId, :presetId, :title, :mode, :status, :version, :createdAt, :updatedAt
+            SELECT insert_principle_authorized(
+              :capability, :userId, :principleId, :presetId, :title, :mode, :status,
+              :version, :createdAt, :updatedAt
             )
             """.trimIndent(),
             mapOf(
                 "principleId" to current.principleId.value,
+                "capability" to capability(current.userId),
                 "userId" to current.userId,
                 "presetId" to current.presetId.value,
                 "title" to current.title,
@@ -88,21 +88,17 @@ class JdbcPrincipleRepository(
         version: PrincipleVersion,
         createdBy: String,
     ) {
-        jdbc().update(
+        requireAuthorizedChange(
             """
-            INSERT INTO principle_versions (
-              principle_version_id, principle_id, version, preset_id, title, mode, status,
-              rules_json, changed_fields, created_by, created_at
-            )
-            VALUES (
-              :versionId, :principleId, :version, :presetId, :title, :mode, :status,
-              CAST(:rulesJson AS jsonb),
-              ARRAY(SELECT jsonb_array_elements_text(CAST(:changedFieldsJson AS jsonb))),
-              :createdBy, :createdAt
+            SELECT insert_principle_version_authorized(
+              :capability, :createdBy, :versionId, :principleId, :version, :presetId,
+              :title, :mode, :status, CAST(:rulesJson AS jsonb),
+              ARRAY(SELECT jsonb_array_elements_text(CAST(:changedFieldsJson AS jsonb))), :createdAt
             )
             """.trimIndent(),
             mapOf(
                 "versionId" to versionId.value,
+                "capability" to capability(createdBy),
                 "principleId" to version.principleId.value,
                 "version" to version.version,
                 "presetId" to version.presetId.value,
@@ -125,31 +121,21 @@ class JdbcPrincipleRepository(
         changedFields: List<String>,
         createdAt: OffsetDateTime,
     ) {
-        val payload =
-            mapOf(
-                "principleId" to principleId.value,
-                "newVersion" to newVersion,
-                "changedFields" to changedFields,
-            )
-        jdbc().update(
+        requireAuthorizedChange(
             """
-            INSERT INTO audit_logs (
-              audit_log_id, user_id, actor_role, action, target_type, target_id,
-              request_id, payload_json, created_at
-            )
-            VALUES (
-              :auditId, :userId, :actorRole, :action, 'PRINCIPLE', :principleId,
-              :requestId, CAST(:payloadJson AS jsonb), :createdAt
+            SELECT insert_principle_audit_authorized(
+              :capability, :userId, :requestId, :action, :principleId, :newVersion,
+              ARRAY(SELECT jsonb_array_elements_text(CAST(:changedFieldsJson AS jsonb))), :createdAt
             )
             """.trimIndent(),
             mapOf(
-                "auditId" to "aud_${UUID.randomUUID().toString().replace("-", "")}",
+                "capability" to capability(actor.userId),
                 "userId" to actor.userId,
-                "actorRole" to actor.role,
                 "action" to action,
                 "principleId" to principleId.value,
                 "requestId" to actor.requestId,
-                "payloadJson" to objectMapper.writeValueAsString(payload),
+                "newVersion" to newVersion,
+                "changedFieldsJson" to objectMapper.writeValueAsString(changedFields),
                 "createdAt" to createdAt,
             ),
         )
@@ -162,18 +148,11 @@ class JdbcPrincipleRepository(
         jdbc()
             .query(
                 """
-                SELECT p.principle_id, p.user_id, p.preset_id, p.title, p.mode, p.status,
-                       p.current_version, p.created_at, p.updated_at,
-                       v.rules_json::text AS rules_json
-                FROM principles p
-                JOIN principle_versions v
-                  ON v.principle_id = p.principle_id
-                 AND v.version = p.current_version
-                WHERE p.principle_id = :principleId
-                  AND p.user_id = :userId
+                SELECT * FROM read_owned_principle_authorized(:capability, :userId, :principleId)
                 """.trimIndent(),
                 mapOf(
                     "principleId" to principleId.value,
+                    "capability" to capability(userId),
                     "userId" to userId,
                 ),
                 currentRowMapper,
@@ -185,33 +164,19 @@ class JdbcPrincipleRepository(
         sort: OwnerSort,
         after: OwnerCursor?,
     ): List<PrincipleSummary> {
-        val ascending = sort == OwnerSort.UPDATED_AT_ASC
-        val comparison = if (ascending) ">" else "<"
-        val direction = if (ascending) "ASC" else "DESC"
-        val cursorClause =
-            if (after == null) {
-                ""
-            } else {
-                "AND (p.updated_at, p.principle_id) $comparison (:afterUpdatedAt, :afterPrincipleId)"
-            }
         val parameters =
             MapSqlParameterSource()
+                .addValue("capability", capability(userId))
                 .addValue("userId", userId)
                 .addValue("limit", size)
-        if (after != null) {
-            parameters
-                .addValue("afterUpdatedAt", after.updatedAt)
-                .addValue("afterPrincipleId", after.principleId)
-        }
+                .addValue("sort", sort.name)
+                .addValue("afterUpdatedAt", after?.updatedAt)
+                .addValue("afterPrincipleId", after?.principleId)
         return jdbc().query(
             """
-            SELECT p.principle_id, p.preset_id, p.title, p.mode, p.status,
-                   p.current_version, p.created_at, p.updated_at
-            FROM principles p
-            WHERE p.user_id = :userId
-              $cursorClause
-            ORDER BY p.updated_at $direction, p.principle_id $direction
-            LIMIT :limit
+            SELECT * FROM list_owned_principles_authorized(
+              :capability, :userId, :limit, :sort, :afterUpdatedAt, :afterPrincipleId
+            )
             """.trimIndent(),
             parameters,
             summaryRowMapper,
@@ -230,30 +195,26 @@ class JdbcPrincipleRepository(
         jdbc()
             .query(
                 """
-                UPDATE principles
-                SET title = :title,
-                    mode = :mode,
-                    status = :status,
-                    current_version = current_version + 1,
-                    updated_at = :updatedAt
-                WHERE principle_id = :principleId
-                  AND user_id = :userId
-                  AND current_version = :expectedVersion
-                  AND current_version < :maxVersion
-                RETURNING current_version
+                SELECT update_owned_principle_authorized(
+                  :capability, :userId, :principleId, :expectedVersion,
+                  :title, :mode, :status, :updatedAt
+                ) AS current_version
                 """.trimIndent(),
                 mapOf(
                     "title" to title,
+                    "capability" to capability(userId),
                     "mode" to mode.name,
                     "status" to status.name,
                     "updatedAt" to updatedAt,
                     "principleId" to principleId.value,
                     "userId" to userId,
                     "expectedVersion" to expectedVersion,
-                    "maxVersion" to Int.MAX_VALUE,
                 ),
-            ) { resultSet, _ -> resultSet.getInt("current_version") }
-            .singleOrNull()
+            ) { resultSet, _ ->
+                resultSet.getInt("current_version").let { value ->
+                    if (resultSet.wasNull()) null else value
+                }
+            }.singleOrNull()
 
     override fun listOwnedVersions(
         userId: String,
@@ -262,35 +223,19 @@ class JdbcPrincipleRepository(
         sort: HistorySort,
         after: HistoryCursor?,
     ): List<PrincipleVersion> {
-        val ascending = sort == HistorySort.VERSION_ASC
-        val comparison = if (ascending) ">" else "<"
-        val direction = if (ascending) "ASC" else "DESC"
-        val cursorClause =
-            if (after == null) {
-                ""
-            } else {
-                "AND v.version $comparison :afterVersion"
-            }
         val parameters =
             MapSqlParameterSource()
+                .addValue("capability", capability(userId))
                 .addValue("userId", userId)
                 .addValue("principleId", principleId.value)
                 .addValue("limit", size)
-        if (after != null) {
-            parameters.addValue("afterVersion", after.version)
-        }
+                .addValue("sort", sort.name)
+                .addValue("afterVersion", after?.version)
         return jdbc().query(
             """
-            SELECT v.principle_id, v.version, v.preset_id, v.title, v.mode, v.status,
-                   v.rules_json::text AS rules_json, v.changed_fields, v.created_at
-            FROM principle_versions v
-            JOIN principles p
-              ON p.principle_id = v.principle_id
-             AND p.user_id = :userId
-            WHERE v.principle_id = :principleId
-              $cursorClause
-            ORDER BY v.version $direction
-            LIMIT :limit
+            SELECT * FROM list_owned_principle_versions_authorized(
+              :capability, :userId, :principleId, :limit, :sort, :afterVersion
+            )
             """.trimIndent(),
             parameters,
             versionRowMapper,
@@ -300,6 +245,17 @@ class JdbcPrincipleRepository(
     private fun jdbc(): NamedParameterJdbcTemplate =
         jdbcProvider.getIfAvailable()
             ?: error("Principle JDBC access is unavailable without a configured DataSource.")
+
+    private fun capability(userId: String): String = actorCapabilityIssuer.issue(userId)
+
+    private fun requireAuthorizedChange(
+        sql: String,
+        parameters: Map<String, Any>,
+    ) {
+        check(jdbc().queryForObject(sql, parameters, Boolean::class.java) == true) {
+            "Authorized principle mutation did not change one row."
+        }
+    }
 
     private fun ResultSet.kst(column: String): OffsetDateTime = getObject(column, OffsetDateTime::class.java).withOffsetSameInstant(KST)
 

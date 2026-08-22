@@ -1,0 +1,298 @@
+{
+  "$id": "contracts/schemas/s8-demo-seed.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "asyncAdapters": {
+      "items": false,
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "const": "db"
+        },
+        {
+          "const": "kafka"
+        }
+      ],
+      "type": "array"
+    },
+    "brokerageMode": {
+      "const": "INTERNAL_PAPER"
+    },
+    "crossMarketCapability": {
+      "const": "RETIRED_NOT_APPLICABLE"
+    },
+    "demoProject": {
+      "const": "capstone-s8-demo"
+    },
+    "fixtureClass": {
+      "const": "SYNTHETIC_FAKE_E2E"
+    },
+    "killSwitchScenario": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedState": {
+          "const": "ACTIVE"
+        },
+        "orderAuthority": {
+          "const": "BLOCKED"
+        },
+        "scenarioId": {
+          "const": "demo_kill_switch"
+        }
+      },
+      "required": [
+        "scenarioId",
+        "expectedState",
+        "orderAuthority"
+      ],
+      "type": "object"
+    },
+    "liveAccountCalls": {
+      "const": 0
+    },
+    "liveOrderCalls": {
+      "const": 0
+    },
+    "namespace": {
+      "const": "demo_s8_offline_0001"
+    },
+    "performanceClaimAllowed": {
+      "const": false
+    },
+    "providerCalls": {
+      "const": 0
+    },
+    "ragAnswerCache": {
+      "const": "OFF"
+    },
+    "ragQuestions": {
+      "items": false,
+      "maxItems": 3,
+      "minItems": 3,
+      "prefixItems": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "classification": {
+              "const": "INTERNAL_PAPER"
+            },
+            "questionId": {
+              "pattern": "^demo_rag_q[1-3]$",
+              "type": "string"
+            },
+            "text": {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "questionId",
+            "classification",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "classification": {
+              "const": "INTERNAL_PAPER"
+            },
+            "questionId": {
+              "pattern": "^demo_rag_q[1-3]$",
+              "type": "string"
+            },
+            "text": {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "questionId",
+            "classification",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "classification": {
+              "const": "INTERNAL_PAPER"
+            },
+            "questionId": {
+              "pattern": "^demo_rag_q[1-3]$",
+              "type": "string"
+            },
+            "text": {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "questionId",
+            "classification",
+            "text"
+          ],
+          "type": "object"
+        }
+      ],
+      "type": "array"
+    },
+    "scenarios": {
+      "items": false,
+      "maxItems": 4,
+      "minItems": 4,
+      "prefixItems": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "authority": {
+              "enum": [
+                "DETERMINISTIC_RISK_ENGINE",
+                "KILL_SWITCH",
+                "MISSING_EVIDENCE"
+              ]
+            },
+            "expectedOutcome": {
+              "enum": [
+                "ALLOW",
+                "WARN",
+                "BLOCK",
+                "HOLD"
+              ]
+            },
+            "scenarioId": {
+              "pattern": "^demo_(allow|warn|block|hold)$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "scenarioId",
+            "expectedOutcome",
+            "authority"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "authority": {
+              "enum": [
+                "DETERMINISTIC_RISK_ENGINE",
+                "KILL_SWITCH",
+                "MISSING_EVIDENCE"
+              ]
+            },
+            "expectedOutcome": {
+              "enum": [
+                "ALLOW",
+                "WARN",
+                "BLOCK",
+                "HOLD"
+              ]
+            },
+            "scenarioId": {
+              "pattern": "^demo_(allow|warn|block|hold)$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "scenarioId",
+            "expectedOutcome",
+            "authority"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "authority": {
+              "enum": [
+                "DETERMINISTIC_RISK_ENGINE",
+                "KILL_SWITCH",
+                "MISSING_EVIDENCE"
+              ]
+            },
+            "expectedOutcome": {
+              "enum": [
+                "ALLOW",
+                "WARN",
+                "BLOCK",
+                "HOLD"
+              ]
+            },
+            "scenarioId": {
+              "pattern": "^demo_(allow|warn|block|hold)$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "scenarioId",
+            "expectedOutcome",
+            "authority"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "authority": {
+              "enum": [
+                "DETERMINISTIC_RISK_ENGINE",
+                "KILL_SWITCH",
+                "MISSING_EVIDENCE"
+              ]
+            },
+            "expectedOutcome": {
+              "enum": [
+                "ALLOW",
+                "WARN",
+                "BLOCK",
+                "HOLD"
+              ]
+            },
+            "scenarioId": {
+              "pattern": "^demo_(allow|warn|block|hold)$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "scenarioId",
+            "expectedOutcome",
+            "authority"
+          ],
+          "type": "object"
+        }
+      ],
+      "type": "array"
+    },
+    "schemaVersion": {
+      "const": "1.0.0"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "demoProject",
+    "namespace",
+    "fixtureClass",
+    "brokerageMode",
+    "providerCalls",
+    "liveAccountCalls",
+    "liveOrderCalls",
+    "ragAnswerCache",
+    "crossMarketCapability",
+    "scenarios",
+    "ragQuestions",
+    "killSwitchScenario",
+    "asyncAdapters",
+    "performanceClaimAllowed"
+  ],
+  "title": "s8-demo-seed.v1",
+  "type": "object"
+}

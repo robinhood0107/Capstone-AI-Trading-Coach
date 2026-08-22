@@ -1,0 +1,73 @@
+{
+  "asyncAdapter": {
+    "allowed": [
+      "db",
+      "kafka"
+    ],
+    "default": "db",
+    "dualActive": false,
+    "silentFallback": false
+  },
+  "contractId": "s7-s8-contract-lock.v1",
+  "crossMarketRuntimePaths": [],
+  "limits": {
+    "arrayItems": 32,
+    "attempts": 3,
+    "claimPageSize": 100,
+    "dbPayloadBytes": 32768,
+    "errorBytes": 128,
+    "jsonDepth": 8,
+    "jsonKeys": 64,
+    "kafkaEnvelopeBytes": 65536,
+    "stringBytes": 2048
+  },
+  "performanceClaimAllowed": false,
+  "publicPaths": [
+    "/api/v1/async-jobs/{jobId}",
+    "/api/v1/async-jobs",
+    "/api/v1/stream-metrics",
+    "/api/v1/artifacts/ingest-status",
+    "/api/v1/dashboard/model-evaluations/{runId}",
+    "/api/v1/dashboard/backtests/{runId}",
+    "/api/v1/dashboard/risk-results/{decisionId}",
+    "/api/v1/dashboard/rag-sources/{answerId}"
+  ],
+  "topics": [
+    "artifact.ingest-requested.v1",
+    "artifact.ingest-requested.retry.v1",
+    "artifact.ingest-requested.dlq.v1",
+    "artifact.ingested.v1",
+    "artifact.ingested.retry.v1",
+    "artifact.ingested.dlq.v1",
+    "signal.received.v1",
+    "signal.received.retry.v1",
+    "signal.received.dlq.v1",
+    "feature.updated.v1",
+    "feature.updated.retry.v1",
+    "feature.updated.dlq.v1",
+    "lightgbm.signal-generated.v1",
+    "lightgbm.signal-generated.retry.v1",
+    "lightgbm.signal-generated.dlq.v1",
+    "risk.context-updated.v1",
+    "risk.context-updated.retry.v1",
+    "risk.context-updated.dlq.v1",
+    "risk.decision-created.v1",
+    "risk.decision-created.retry.v1",
+    "risk.decision-created.dlq.v1",
+    "order.event-created.v1",
+    "order.event-created.retry.v1",
+    "order.event-created.dlq.v1",
+    "rag.index-requested.v1",
+    "rag.index-requested.retry.v1",
+    "rag.index-requested.dlq.v1",
+    "rag.index-completed.v1",
+    "rag.index-completed.retry.v1",
+    "rag.index-completed.dlq.v1",
+    "model.eval-requested.v1",
+    "model.eval-requested.retry.v1",
+    "model.eval-requested.dlq.v1",
+    "model.eval-completed.v1",
+    "model.eval-completed.retry.v1",
+    "model.eval-completed.dlq.v1"
+  ]
+}

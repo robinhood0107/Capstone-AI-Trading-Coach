@@ -106,6 +106,7 @@ sourceSets {
             include("rag.proto")
             include("strong_llm_agent.proto")
             include("financial_engineering.proto")
+            include("async_worker.proto")
         }
     }
 }
@@ -135,6 +136,7 @@ tasks.withType<Test> {
     // Spring/Testcontainers 통합 suite는 동일 worker에서 context를 누적하므로 기본 512MiB로는
     // 전체 검증 중 OOM이 난다. 실행 격리나 assertion을 줄이지 않고 CI에서도 재현 가능한 상한만 명시한다.
     maxHeapSize = "1g"
+    environment("POSTGRES_IDENTITY_PASSWORD", "identity-test-secret-0001")
     useJUnitPlatform()
 }
 
@@ -155,6 +157,9 @@ tasks.named<ProcessResources>("processResources") {
         into("contracts")
     }
     from(layout.projectDirectory.file("../../../contracts/schemas/s2-3-decision-response.schema.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/catalogs/s7-s8-contract-lock.v1.json")) {
         into("contracts")
     }
     // S2.4 OpenAPI도 승인된 JSON Schema bytes를 별도 DTO 추론 없이 component로 사용한다.

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0.0",
+  "containsParticipantResults": false,
+  "containsSecretsOrPii": false,
+  "folders": [
+    {"name": "01-contracts", "allowed": ["schema-hash", "openapi-hash", "change-record"]},
+    {"name": "02-implementation", "allowed": ["commit-sha", "component-map"]},
+    {"name": "03-tests", "allowed": ["test-count", "suite-status", "sanitized-log-hash"]},
+    {"name": "04-security", "allowed": ["finding-count", "scanner-version", "sanitized-report-hash"]},
+    {"name": "05-demo", "allowed": ["seed-hash", "rehearsal-duration", "provider-call-count"]},
+    {"name": "06-user-study", "allowed": ["irb-status", "kit-version", "deidentified-aggregate-count"]},
+    {"name": "07-report", "allowed": ["claim-id", "supporting-evidence-id", "limitation-tag"]}
+  ],
+  "forbidden": ["name", "email", "studentId", "phone", "account", "token", "credential", "freeText", "rawResponse"]
+}

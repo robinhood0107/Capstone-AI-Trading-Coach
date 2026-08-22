@@ -23,7 +23,11 @@ from app.data.kis.http_client import KISHttpClient
 from app.data.kis.market_client import KISMarketClient
 from app.data.kis.settings import KISSettings
 from app.data.krx.catalog import ENABLED_UNIVERSE_ENDPOINTS_BY_SERVICE
-from app.data.krx.client import KrxOpenApiClient, attest_quota_backend_credentials
+from app.data.krx.client import (
+    KrxOpenApiClient,
+    attest_quota_backend_credentials,
+    claim_provider_verification_authorization,
+)
 from app.data.krx.parsers import is_kis_compatible_symbol
 from app.data.krx.settings import KrxOpenApiSettings
 from app.verification.artifacts import claim_packet_execution
@@ -348,6 +352,7 @@ class ProductionProviderSmokeBackend:
 BackendFactory = Callable[[P1VerificationPacket], ProviderSmokeBackend]
 BindingVerifier = Callable[[P1VerificationPacket, Path], None]
 ClaimFunction = Callable[[Path, P1VerificationPacket], Path]
+GlobalClaimFunction = Callable[[str, str], None]
 
 
 def run_provider_read_smoke(
@@ -358,12 +363,14 @@ def run_provider_read_smoke(
     backend_factory: BackendFactory = ProductionProviderSmokeBackend,
     binding_verifier: BindingVerifier = verify_repository_binding,
     claim: ClaimFunction | None = None,
+    global_claim: GlobalClaimFunction = claim_provider_verification_authorization,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> VerificationReport:
     """Run exactly six sequential reads; the first terminal failure stops the rest."""
 
     started_at = now().astimezone(UTC)
     binding_verifier(packet, repository_root.resolve(strict=True))
+    global_claim(packet.packet_sha256, packet.approval_id)
     claim_call = claim or (
         lambda root, value: claim_packet_execution(root, value, claimed_at=started_at)
     )
@@ -527,4 +534,3 @@ def _packet_deadline(packet: P1VerificationPacket) -> float:
     if remaining <= 0:
         raise VerificationPacketError("P1 verification packet expired")
     return time.monotonic() + remaining
-

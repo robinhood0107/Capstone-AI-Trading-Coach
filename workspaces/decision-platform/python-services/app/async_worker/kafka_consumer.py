@@ -11,6 +11,7 @@ from confluent_kafka import Consumer, KafkaError, KafkaException, Message
 
 from app.async_worker.core import AsyncContractError, AsyncWork, AsyncWorkProcessor
 from app.async_worker.postgres import PostgresAsyncWorkRepository, is_decision_worker_dsn
+from app.data._shared.bounded_json import BoundedJsonError, BoundedJsonLimits, parse_bounded_json_bytes
 
 
 _TOPICS = (
@@ -23,6 +24,15 @@ _PARTITION_KEY = re.compile(r"^hmac-sha256:[0-9a-f]{64}$")
 _HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
 _MAX_ENVELOPE_BYTES = 65_536
 _GROUP_ID = "decision-python-async-v1"
+_ENVELOPE_JSON_LIMITS = BoundedJsonLimits(
+    max_bytes=_MAX_ENVELOPE_BYTES,
+    max_depth=8,
+    max_list_items=32,
+    max_object_keys=64,
+    max_text_codepoints=2_048,
+    max_text_bytes=2_048,
+    max_number_characters=64,
+)
 
 
 class KafkaMessage(Protocol):
@@ -90,8 +100,8 @@ def decode_message(message: KafkaMessage) -> AsyncWork:
     if set(headers) != {"event-type", "schema-version", "attempt"}:
         raise AsyncContractError
     try:
-        envelope = json.loads(raw.decode("utf-8", errors="strict"), object_pairs_hook=_closed_object)
-    except (UnicodeError, json.JSONDecodeError, AsyncContractError) as error:
+        envelope = parse_bounded_json_bytes(raw, limits=_ENVELOPE_JSON_LIMITS)
+    except BoundedJsonError as error:
         raise AsyncContractError from error
     if not isinstance(envelope, dict) or set(envelope) != {
         "eventId",

@@ -12,8 +12,10 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
+import java.security.MessageDigest
 import java.sql.DriverManager
 import java.sql.SQLException
+import java.util.HexFormat
 import java.util.UUID
 
 @Testcontainers
@@ -43,14 +45,14 @@ class S7AsyncMigrationIntegrationTest {
     }
 
     @Test
-    fun `V84 migrates fresh and V79 upgrade with exact role boundary`() {
+    fun `V85 migrates fresh and V79 upgrade with exact role boundary`() {
         for (database in listOf("decision", "s7_fresh")) {
             connection(database, postgres.username, postgres.password).use { owner ->
                 owner.createStatement().use { statement ->
                     statement.executeQuery("select version from flyway_schema_history order by installed_rank").use { rows ->
                         val versions = mutableListOf<String>()
                         while (rows.next()) versions += rows.getString(1)
-                        assertEquals((1..84).map(Int::toString), versions)
+                        assertEquals((1..85).map(Int::toString), versions)
                     }
                     statement.executeQuery("select count(*) from async_event_registry").use { rows ->
                         assertTrue(rows.next())
@@ -72,6 +74,18 @@ class S7AsyncMigrationIntegrationTest {
                                 "has_function_privilege('decision_worker','claim_async_jobs(text,integer)','EXECUTE')," +
                                 "has_function_privilege('decision_worker','complete_async_job(text,uuid,jsonb)','EXECUTE')," +
                                 "has_function_privilege('decision_worker','quarantine_async_job(text,uuid,text,text)','EXECUTE')",
+                        ).use { rows ->
+                            assertTrue(rows.next())
+                            (1..6).forEach { assertFalse(rows.getBoolean(it)) }
+                        }
+                    statement
+                        .executeQuery(
+                            "select has_table_privilege('decision_app','users','SELECT')," +
+                                "has_table_privilege('decision_app','principles','SELECT')," +
+                                "has_table_privilege('decision_app','principles','INSERT')," +
+                                "has_table_privilege('decision_app','principles','UPDATE')," +
+                                "has_table_privilege('decision_app','principle_versions','INSERT')," +
+                                "has_function_privilege('decision_worker','claim_async_job_by_id(text,text)','EXECUTE')",
                         ).use { rows ->
                             assertTrue(rows.next())
                             (1..6).forEach { assertFalse(rows.getBoolean(it)) }
@@ -126,7 +140,7 @@ class S7AsyncMigrationIntegrationTest {
                         statement.executeQuery()
                     }
                 }
-            assertEquals("22023", ownerMismatch.sqlState)
+            assertEquals("42501", ownerMismatch.sqlState)
 
             for (invalidPayload in listOf(
                 "{\"jobId\":\"job_missing_ref_0001\",\"ownerRef\":\"usr_demo_user\"," +
@@ -146,7 +160,7 @@ class S7AsyncMigrationIntegrationTest {
                             statement.executeQuery()
                         }
                     }
-                assertEquals("22023", invalid.sqlState)
+                assertEquals("42501", invalid.sqlState)
             }
         }
         connection("decision", WORKER_USER, WORKER_PASSWORD).use { worker ->
@@ -171,6 +185,76 @@ class S7AsyncMigrationIntegrationTest {
                     }
                 }
             assertEquals("42501", forgedClaim.sqlState)
+            val legacyClaim =
+                assertThrows<SQLException> {
+                    worker.createStatement().use {
+                        it.executeQuery("select * from claim_async_job_by_id('decision-python-async-v1','job_forged_00000001')")
+                    }
+                }
+            assertEquals("42501", legacyClaim.sqlState)
+        }
+    }
+
+    @Test
+    fun `actor capability is current owner bound one use and bounded cleanup`() {
+        val jobId = "job_capability_00000001"
+        connection("decision", postgres.username, postgres.password).use { owner ->
+            owner
+                .prepareStatement(
+                    "insert into async_job(job_id,job_type,requested_by,payload_json) values (?,?,?,?::jsonb) on conflict do nothing",
+                ).use { statement ->
+                    statement.setString(1, jobId)
+                    statement.setString(2, "MODEL_EVAL")
+                    statement.setString(3, "usr_demo_user")
+                    statement.setString(
+                        4,
+                        "{\"jobId\":\"$jobId\",\"ownerRef\":\"usr_demo_user\"," +
+                            "\"runId\":\"run_capability_00000001\",\"contentHash\":\"sha256:${"a".repeat(64)}\"}",
+                    )
+                    statement.executeUpdate()
+                }
+        }
+        val capability = issueCapability("decision", "usr_demo_admin")
+        connection("decision", APP_USER, APP_PASSWORD).use { app ->
+            app.prepareStatement("select * from read_async_job_status_authorized(?,?,?,?)").use { statement ->
+                statement.setString(1, capability)
+                statement.setString(2, "usr_demo_user")
+                statement.setLong(3, 1)
+                statement.setString(4, jobId)
+                statement.executeQuery().use { rows ->
+                    assertFalse(rows.next())
+                }
+                statement.setString(2, "usr_demo_admin")
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals(jobId, rows.getString("job_id"))
+                }
+                statement.executeQuery().use { rows ->
+                    assertFalse(rows.next())
+                }
+            }
+        }
+        connection("decision", postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use { statement ->
+                statement.executeUpdate(
+                    "update actor_request_capability set issued_at=statement_timestamp()-interval '90 seconds', " +
+                        "expires_at=statement_timestamp()-interval '1 minute' " +
+                        "where actor_user_id='usr_demo_admin'",
+                )
+            }
+        }
+        issueCapability("decision", "usr_demo_admin")
+        connection("decision", postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use { statement ->
+                statement
+                    .executeQuery(
+                        "select count(*) from actor_request_capability where expires_at<=statement_timestamp()",
+                    ).use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals(0, rows.getInt(1))
+                    }
+                statement.executeUpdate("delete from async_job where job_id='$jobId'")
+            }
         }
     }
 
@@ -212,20 +296,33 @@ class S7AsyncMigrationIntegrationTest {
                 expected: Int,
                 execute: Boolean,
                 securityVersion: Long = 1,
-            ) = app.prepareStatement("select * from replay_async_work(?,?,?,?,?::text[],?,?,?,?)").use { statement ->
-                statement.setString(1, "usr_demo_admin")
-                statement.setLong(2, securityVersion)
-                statement.setString(3, batch)
-                statement.setString(4, "EVENT")
-                statement.setArray(5, app.createArrayOf("text", arrayOf(sourceEvent)))
-                statement.setInt(6, expected)
-                statement.setString(7, "OPERATOR_RECOVERY")
-                statement.setString(8, "sha256:" + "e".repeat(64))
-                statement.setBoolean(9, execute)
-                statement.executeQuery().use { rows ->
-                    val output = mutableListOf<List<String?>>()
-                    while (rows.next()) output += (1..6).map(rows::getString)
-                    output
+                targetIds: Array<String> = arrayOf(sourceEvent),
+            ): List<List<String?>> {
+                val packetHash = "sha256:" + sha256Hex(batch.toByteArray())
+                authorizeReplay(
+                    databaseName = "s7_replay",
+                    batch = batch,
+                    targetIds = targetIds,
+                    expected = expected,
+                    execute = execute,
+                    securityVersion = securityVersion,
+                    packetHash = packetHash,
+                )
+                return app.prepareStatement("select * from replay_async_work(?,?,?,?,?::text[],?,?,?,?)").use { statement ->
+                    statement.setString(1, "usr_demo_admin")
+                    statement.setLong(2, securityVersion)
+                    statement.setString(3, batch)
+                    statement.setString(4, "EVENT")
+                    statement.setArray(5, app.createArrayOf("text", targetIds))
+                    statement.setInt(6, expected)
+                    statement.setString(7, "OPERATOR_RECOVERY")
+                    statement.setString(8, packetHash)
+                    statement.setBoolean(9, execute)
+                    statement.executeQuery().use { rows ->
+                        val output = mutableListOf<List<String?>>()
+                        while (rows.next()) output += (1..6).map(rows::getString)
+                        output
+                    }
                 }
             }
 
@@ -234,8 +331,15 @@ class S7AsyncMigrationIntegrationTest {
             assertEquals("DRY_RUN", dryRun.single()[5])
             assertEquals(null, dryRun.single()[3])
 
-            val mismatch = replay("replay_" + "2".repeat(32), 2, true)
-            assertEquals("COUNT_MISMATCH", mismatch.single()[5])
+            val mismatch =
+                replay(
+                    "replay_" + "2".repeat(32),
+                    2,
+                    true,
+                    targetIds = arrayOf(sourceEvent, "evt_missing_00000001"),
+                )
+            assertEquals(2, mismatch.size)
+            assertTrue(mismatch.all { it[5] == "COUNT_MISMATCH" })
 
             val executed = replay("replay_" + "3".repeat(32), 1, true)
             assertEquals("EXECUTED", executed.single()[5])
@@ -261,7 +365,11 @@ class S7AsyncMigrationIntegrationTest {
                         }
                     }
             }
-            assertTrue(replay("replay_" + "4".repeat(32), 1, false, securityVersion = 999).isEmpty())
+            val staleAdmin =
+                assertThrows<SQLException> {
+                    replay("replay_" + "4".repeat(32), 1, false, securityVersion = 999)
+                }
+            assertEquals("42501", staleAdmin.sqlState)
             val auditRead =
                 assertThrows<SQLException> {
                     app.createStatement().use { it.executeQuery("select * from async_replay_audit") }
@@ -296,9 +404,10 @@ class S7AsyncMigrationIntegrationTest {
                 assertTrue(booleanResult(statement, "select aggregate_signal_freshness()"))
                 assertTrue(booleanResult(statement, "select aggregate_dlq_events()"))
             }
-            app.prepareStatement("select * from read_stream_metric_status(?,?)").use { statement ->
-                statement.setString(1, "usr_demo_admin")
-                statement.setLong(2, 1)
+            app.prepareStatement("select * from read_stream_metric_status_authorized(?,?,?)").use { statement ->
+                statement.setString(1, issueCapability("s7_fresh", "usr_demo_admin"))
+                statement.setString(2, "usr_demo_admin")
+                statement.setLong(3, 1)
                 statement.executeQuery().use { rows ->
                     assertTrue(rows.next())
                     assertEquals("UNAVAILABLE", rows.getString("pipeline_health"))
@@ -431,9 +540,10 @@ class S7AsyncMigrationIntegrationTest {
                 assertFalse(booleanResult(statement, "select aggregate_signal_freshness()"))
                 assertFalse(booleanResult(statement, "select aggregate_dlq_events()"))
             }
-            app.prepareStatement("select * from read_stream_metric_status(?,?)").use { statement ->
-                statement.setString(1, "usr_demo_admin")
-                statement.setLong(2, 1)
+            app.prepareStatement("select * from read_stream_metric_status_authorized(?,?,?)").use { statement ->
+                statement.setString(1, issueCapability("decision", "usr_demo_admin"))
+                statement.setString(2, "usr_demo_admin")
+                statement.setLong(3, 1)
                 statement.executeQuery().use { rows ->
                     assertTrue(rows.next())
                     assertEquals("DEGRADED", rows.getString("pipeline_health"))
@@ -442,9 +552,10 @@ class S7AsyncMigrationIntegrationTest {
                     assertFalse(rows.next())
                 }
             }
-            app.prepareStatement("select count(*) from read_stream_metric_status(?,?)").use { statement ->
-                statement.setString(1, "usr_demo_admin")
-                statement.setLong(2, 999)
+            app.prepareStatement("select count(*) from read_stream_metric_status_authorized(?,?,?)").use { statement ->
+                statement.setString(1, issueCapability("decision", "usr_demo_admin"))
+                statement.setString(2, "usr_demo_admin")
+                statement.setLong(3, 999)
                 statement.executeQuery().use { rows ->
                     assertTrue(rows.next())
                     assertEquals(0, rows.getInt(1))
@@ -479,44 +590,30 @@ class S7AsyncMigrationIntegrationTest {
         val payload =
             "{\"jobId\":\"$jobId\",\"ownerRef\":\"usr_demo_user\"," +
                 "\"runId\":\"run_fixture_00000001\",\"contentHash\":\"sha256:${"b".repeat(64)}\"}"
-        connection("decision", APP_USER, APP_PASSWORD).use { app ->
-            app.prepareStatement("select create_async_job(?,?,?,?::jsonb)").use { statement ->
-                statement.setString(1, jobId)
-                statement.setString(2, "MODEL_EVAL")
-                statement.setString(3, "usr_demo_user")
-                statement.setString(4, payload)
-                statement.executeQuery().use { rows ->
-                    assertTrue(rows.next())
-                    assertTrue(rows.getBoolean(1))
-                }
-            }
-            app.prepareStatement("select append_async_request_outbox(?,?,?,?,?::jsonb)").use { statement ->
-                statement.setString(1, eventId)
-                statement.setString(2, "model.eval-requested.v1")
-                statement.setString(3, jobId)
-                statement.setString(4, partitionKey)
-                statement.setString(5, payload)
-                statement.executeQuery().use { rows ->
-                    assertTrue(rows.next())
-                    assertTrue(rows.getBoolean(1))
-                }
-            }
-        }
+        createAsyncRequest("decision", jobId, eventId, payload, partitionKey)
+        val payloadHash = claimAndBindOutbox("decision", eventId)
 
         val token =
             connection("decision", WORKER_USER, WORKER_PASSWORD).use { worker ->
-                worker.prepareStatement("select job_id,claim_token,attempt_count from claim_async_job_by_id(?,?)").use { statement ->
-                    statement.setString(1, "worker:test")
-                    statement.setString(2, jobId)
-                    statement.executeQuery().use { rows ->
-                        assertTrue(rows.next())
-                        assertEquals(jobId, rows.getString(1))
-                        assertEquals(1, rows.getInt(3))
-                        val claimed = rows.getObject(2, UUID::class.java)
-                        assertFalse(rows.next())
-                        claimed
+                worker
+                    .prepareStatement(
+                        "select job_id,claim_token,attempt_count from claim_async_job_by_event(?,?,?,?,?,?)",
+                    ).use { statement ->
+                        statement.setString(1, "worker:test")
+                        statement.setString(2, eventId)
+                        statement.setString(3, "model.eval-requested.v1")
+                        statement.setString(4, jobId)
+                        statement.setString(5, payloadHash)
+                        statement.setString(6, partitionKey)
+                        statement.executeQuery().use { rows ->
+                            assertTrue(rows.next())
+                            assertEquals(jobId, rows.getString(1))
+                            assertEquals(1, rows.getInt(3))
+                            val claimed = rows.getObject(2, UUID::class.java)
+                            assertFalse(rows.next())
+                            claimed
+                        }
                     }
-                }
             }
 
         connection("decision", WORKER_USER, WORKER_PASSWORD).use { worker ->
@@ -530,20 +627,6 @@ class S7AsyncMigrationIntegrationTest {
                 }
             assertEquals("42501", bulkClaimDenied.sqlState)
 
-            val payloadHash =
-                connection("decision", postgres.username, postgres.password).use { owner ->
-                    owner
-                        .prepareStatement(
-                            "select 'sha256:'||encode(digest(payload_json::text,'sha256'),'hex') " +
-                                "from event_outbox where event_id=?",
-                        ).use { statement ->
-                            statement.setString(1, eventId)
-                            statement.executeQuery().use { rows ->
-                                assertTrue(rows.next())
-                                rows.getString(1)
-                            }
-                        }
-                }
             worker.prepareStatement("select commit_async_work(?,?,?,?,?,?::uuid,?,?,?)").use { statement ->
                 statement.setString(1, eventId)
                 statement.setString(2, "model.eval-requested.v1")
@@ -577,25 +660,24 @@ class S7AsyncMigrationIntegrationTest {
         }
 
         val expiredJobId = "job_expired_claim_00000001"
+        val expiredEventId = "evt_expired_claim_00000001"
+        val expiredPartitionKey = "hmac-sha256:${"f".repeat(64)}"
         val expiredPayload =
             "{\"jobId\":\"$expiredJobId\",\"ownerRef\":\"usr_demo_user\"," +
                 "\"runId\":\"run_expired_claim_0001\"," +
                 "\"contentHash\":\"sha256:${"f".repeat(64)}\"}"
-        connection("decision", APP_USER, APP_PASSWORD).use { app ->
-            app.createStatement().use {
-                assertTrue(
-                    booleanResult(
-                        it,
-                        "select create_async_job('$expiredJobId','MODEL_EVAL','usr_demo_user'," +
-                            "'$expiredPayload'::jsonb)",
-                    ),
-                )
-            }
-        }
+        createAsyncRequest("decision", expiredJobId, expiredEventId, expiredPayload, expiredPartitionKey)
+        val expiredPayloadHash = claimAndBindOutbox("decision", expiredEventId)
         val expiredToken =
             connection("decision", WORKER_USER, WORKER_PASSWORD).use { worker ->
-                worker.createStatement().use { statement ->
-                    statement.executeQuery("select claim_token from claim_async_job_by_id('worker:expired','$expiredJobId')").use { rows ->
+                worker.prepareStatement("select claim_token from claim_async_job_by_event(?,?,?,?,?,?)").use { statement ->
+                    statement.setString(1, "worker:expired")
+                    statement.setString(2, expiredEventId)
+                    statement.setString(3, "model.eval-requested.v1")
+                    statement.setString(4, expiredJobId)
+                    statement.setString(5, expiredPayloadHash)
+                    statement.setString(6, expiredPartitionKey)
+                    statement.executeQuery().use { rows ->
                         assertTrue(rows.next())
                         rows.getObject(1, UUID::class.java)
                     }
@@ -716,34 +798,27 @@ class S7AsyncMigrationIntegrationTest {
     @Test
     fun `ADMIN status read revalidates current actor and audits cross owner access`() {
         val jobId = "job_admin_view_00000001"
+        val eventId = "evt_admin_view_00000001"
+        val payload =
+            "{\"jobId\":\"$jobId\",\"ownerRef\":\"usr_demo_user\"," +
+                "\"runId\":\"run_fixture_00000001\",\"contentHash\":\"sha256:${"f".repeat(64)}\"}"
+        createAsyncRequest("decision", jobId, eventId, payload, "hmac-sha256:${"a".repeat(64)}")
         connection("decision", APP_USER, APP_PASSWORD).use { app ->
-            app.prepareStatement("select create_async_job(?,?,?,?::jsonb)").use { statement ->
-                statement.setString(1, jobId)
-                statement.setString(2, "MODEL_EVAL")
-                statement.setString(3, "usr_demo_user")
-                statement.setString(
-                    4,
-                    "{\"jobId\":\"$jobId\",\"ownerRef\":\"usr_demo_user\"," +
-                        "\"runId\":\"run_fixture_00000001\",\"contentHash\":\"sha256:${"f".repeat(64)}\"}",
-                )
-                statement.executeQuery().use { rows ->
-                    assertTrue(rows.next())
-                    assertTrue(rows.getBoolean(1))
-                }
-            }
-            app.prepareStatement("select count(*) from read_async_job_status(?,?,?)").use { statement ->
-                statement.setString(1, "usr_demo_user")
-                statement.setLong(2, 1)
-                statement.setString(3, jobId)
+            app.prepareStatement("select count(*) from read_async_job_status_authorized(?,?,?,?)").use { statement ->
+                statement.setString(1, issueCapability("decision", "usr_demo_user"))
+                statement.setString(2, "usr_demo_user")
+                statement.setLong(3, 1)
+                statement.setString(4, jobId)
                 statement.executeQuery().use { rows ->
                     assertTrue(rows.next())
                     assertEquals(0, rows.getInt(1))
                 }
             }
-            app.prepareStatement("select job_id,status from read_async_job_status(?,?,?)").use { statement ->
-                statement.setString(1, "usr_demo_admin")
-                statement.setLong(2, 1)
-                statement.setString(3, jobId)
+            app.prepareStatement("select job_id,status from read_async_job_status_authorized(?,?,?,?)").use { statement ->
+                statement.setString(1, issueCapability("decision", "usr_demo_admin"))
+                statement.setString(2, "usr_demo_admin")
+                statement.setLong(3, 1)
+                statement.setString(4, jobId)
                 statement.executeQuery().use { rows ->
                     assertTrue(rows.next())
                     assertEquals(jobId, rows.getString(1))
@@ -751,24 +826,26 @@ class S7AsyncMigrationIntegrationTest {
                     assertFalse(rows.next())
                 }
             }
-            app.prepareStatement("select job_id from list_async_job_status(?,?,?,?,?,?,?)").use { statement ->
-                statement.setString(1, "usr_demo_admin")
-                statement.setLong(2, 1)
-                statement.setString(3, "REQUESTED")
-                statement.setString(4, "MODEL_EVAL")
-                statement.setObject(5, null)
+            app.prepareStatement("select job_id from list_async_job_status_authorized(?,?,?,?,?,?,?,?)").use { statement ->
+                statement.setString(1, issueCapability("decision", "usr_demo_admin"))
+                statement.setString(2, "usr_demo_admin")
+                statement.setLong(3, 1)
+                statement.setString(4, "REQUESTED")
+                statement.setString(5, "MODEL_EVAL")
                 statement.setObject(6, null)
-                statement.setInt(7, 51)
+                statement.setObject(7, null)
+                statement.setInt(8, 51)
                 statement.executeQuery().use { rows ->
                     assertTrue(rows.next())
                     assertEquals(jobId, rows.getString(1))
                     assertFalse(rows.next())
                 }
             }
-            app.prepareStatement("select count(*) from read_async_job_status(?,?,?)").use { statement ->
-                statement.setString(1, "usr_demo_admin")
-                statement.setLong(2, 999)
-                statement.setString(3, jobId)
+            app.prepareStatement("select count(*) from read_async_job_status_authorized(?,?,?,?)").use { statement ->
+                statement.setString(1, issueCapability("decision", "usr_demo_admin"))
+                statement.setString(2, "usr_demo_admin")
+                statement.setLong(3, 999)
+                statement.setString(4, jobId)
                 statement.executeQuery().use { rows ->
                     assertTrue(rows.next())
                     assertEquals(0, rows.getInt(1))
@@ -807,20 +884,26 @@ class S7AsyncMigrationIntegrationTest {
 
     @Test
     fun `worker records redacted poison and app publishes exact DLQ topic`() {
-        val dlqEventId = "evt_dlq_" + "a".repeat(32)
         val originalEventId = "evt_poison_00000001"
+        val dlqEventId =
+            "evt_dlq_" +
+                HexFormat
+                    .of()
+                    .formatHex(MessageDigest.getInstance("SHA-256").digest("artifact.ingest-requested.v1|1|42".toByteArray()))
+                    .take(32)
         val payloadHash = "sha256:" + "b".repeat(64)
         val partitionKey = "hmac-sha256:" + "c".repeat(64)
         connection("decision", WORKER_USER, WORKER_PASSWORD).use { worker ->
-            worker.prepareStatement("select record_kafka_poison(?,?,?,?,?,?,?,?)").use { statement ->
-                statement.setString(1, dlqEventId)
-                statement.setString(2, originalEventId)
-                statement.setString(3, "artifact.ingest-requested.v1")
-                statement.setString(4, payloadHash)
-                statement.setString(5, "artifact.ingest-requested.v1")
-                statement.setInt(6, 1)
-                statement.setString(7, "INVALID_EVENT_PAYLOAD")
-                statement.setString(8, partitionKey)
+            worker.prepareStatement("select record_kafka_poison(?,?,?,?,?,?,?,?,?)").use { statement ->
+                statement.setString(1, originalEventId)
+                statement.setString(2, "artifact.ingest-requested.v1")
+                statement.setString(3, payloadHash)
+                statement.setString(4, "artifact.ingest-requested.v1")
+                statement.setInt(5, 1)
+                statement.setLong(6, 42)
+                statement.setInt(7, 1)
+                statement.setString(8, "INVALID_EVENT_PAYLOAD")
+                statement.setString(9, partitionKey)
                 statement.executeQuery().use { rows ->
                     assertTrue(rows.next())
                     assertTrue(rows.getBoolean(1))
@@ -890,11 +973,13 @@ class S7AsyncMigrationIntegrationTest {
             }
             val denied =
                 assertThrows<SQLException> {
-                    app.prepareStatement("select record_kafka_poison(?,?,?,?,?,?,?,?)").use { statement ->
-                        (1..5).forEach { statement.setString(it, "x") }
-                        statement.setInt(6, 1)
-                        statement.setString(7, "X")
-                        statement.setString(8, "x")
+                    app.prepareStatement("select record_kafka_poison(?,?,?,?,?,?,?,?,?)").use { statement ->
+                        (1..4).forEach { statement.setString(it, "x") }
+                        statement.setInt(5, 1)
+                        statement.setLong(6, 42)
+                        statement.setInt(7, 1)
+                        statement.setString(8, "X")
+                        statement.setString(9, "x")
                         statement.executeQuery()
                     }
                 }
@@ -927,6 +1012,116 @@ class S7AsyncMigrationIntegrationTest {
         password: String,
     ) = DriverManager.getConnection(jdbcUrl(databaseName), username, password)
 
+    private fun issueCapability(
+        databaseName: String,
+        actorUserId: String,
+    ): String =
+        connection(databaseName, IDENTITY_USER, IDENTITY_PASSWORD).use { identity ->
+            identity.prepareStatement("select issue_actor_request_capability(?)").use { statement ->
+                statement.setString(1, actorUserId)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    requireNotNull(rows.getString(1))
+                }
+            }
+        }
+
+    private fun createAsyncRequest(
+        databaseName: String,
+        jobId: String,
+        eventId: String,
+        payload: String,
+        partitionKey: String,
+    ) {
+        connection(databaseName, APP_USER, APP_PASSWORD).use { app ->
+            app.prepareStatement("select create_async_request_authorized(?,?,?,?,?,?,?,?::jsonb)").use { statement ->
+                statement.setString(1, issueCapability(databaseName, "usr_demo_user"))
+                statement.setString(2, eventId)
+                statement.setString(3, "model.eval-requested.v1")
+                statement.setString(4, partitionKey)
+                statement.setString(5, jobId)
+                statement.setString(6, "MODEL_EVAL")
+                statement.setString(7, "usr_demo_user")
+                statement.setString(8, payload)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertTrue(rows.getBoolean(1))
+                }
+            }
+        }
+    }
+
+    private fun claimAndBindOutbox(
+        databaseName: String,
+        eventId: String,
+    ): String =
+        connection(databaseName, APP_USER, APP_PASSWORD).use { app ->
+            app
+                .prepareStatement(
+                    "select event_id,payload_json::text,claim_token from claim_db_async_outbox(?,?) where event_id=?",
+                ).use { statement ->
+                    statement.setString(1, "spring-db-test")
+                    statement.setInt(2, 100)
+                    statement.setString(3, eventId)
+                    statement.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        val payloadHash =
+                            connection(databaseName, postgres.username, postgres.password).use { owner ->
+                                owner.prepareStatement("select 'sha256:'||encode(digest(?,'sha256'),'hex')").use { hash ->
+                                    hash.setString(1, rows.getString(2))
+                                    hash.executeQuery().use { result ->
+                                        assertTrue(result.next())
+                                        result.getString(1)
+                                    }
+                                }
+                            }
+                        app.prepareStatement("select bind_claimed_outbox_payload_hash(?,?,?)").use { bind ->
+                            bind.setString(1, eventId)
+                            bind.setObject(2, rows.getObject(3, UUID::class.java))
+                            bind.setString(3, payloadHash)
+                            bind.executeQuery().use { result ->
+                                assertTrue(result.next())
+                                assertTrue(result.getBoolean(1))
+                            }
+                        }
+                        payloadHash
+                    }
+                }
+        }
+
+    private fun authorizeReplay(
+        databaseName: String,
+        batch: String,
+        targetIds: Array<String>,
+        expected: Int,
+        execute: Boolean,
+        securityVersion: Long,
+        packetHash: String,
+    ) {
+        connection(databaseName, REPLAY_AUTHORIZER_USER, REPLAY_AUTHORIZER_PASSWORD).use { authorizer ->
+            authorizer.prepareStatement("select authorize_async_replay(?,?,?,?,?,?::text[],?,?,?,?,?)").use { statement ->
+                val issuedAt = java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC)
+                statement.setString(1, packetHash)
+                statement.setString(2, "usr_demo_admin")
+                statement.setLong(3, securityVersion)
+                statement.setString(4, batch)
+                statement.setString(5, "EVENT")
+                statement.setArray(6, authorizer.createArrayOf("text", targetIds))
+                statement.setInt(7, expected)
+                statement.setString(8, "OPERATOR_RECOVERY")
+                statement.setBoolean(9, execute)
+                statement.setObject(10, issuedAt)
+                statement.setObject(11, issuedAt.plusMinutes(5))
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertTrue(rows.getBoolean(1))
+                }
+            }
+        }
+    }
+
+    private fun sha256Hex(value: ByteArray): String = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value))
+
     private fun jdbcUrl(databaseName: String): String = postgres.jdbcUrl.replace("/decision", "/$databaseName")
 
     private fun booleanResult(
@@ -945,6 +1140,10 @@ class S7AsyncMigrationIntegrationTest {
         private const val WORKER_PASSWORD = "worker-test-secret-0001"
         private const val REPLAY_USER = "decision_replay"
         private const val REPLAY_PASSWORD = "replay-test-secret-0001"
+        private const val IDENTITY_USER = "decision_identity"
+        private const val IDENTITY_PASSWORD = "identity-test-secret-0001"
+        private const val REPLAY_AUTHORIZER_USER = "decision_replay_authorizer"
+        private const val REPLAY_AUTHORIZER_PASSWORD = "replay-authorizer-test-0001"
         private val postgresImage =
             DockerImageName
                 .parse(

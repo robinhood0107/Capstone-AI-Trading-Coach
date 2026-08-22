@@ -19,6 +19,8 @@ set -Eeuo pipefail
 : "${POSTGRES_SIGNAL_ADMIN_PASSWORD:?POSTGRES_SIGNAL_ADMIN_PASSWORD is required}"
 : "${POSTGRES_WORKER_PASSWORD:?POSTGRES_WORKER_PASSWORD is required}"
 : "${POSTGRES_REPLAY_PASSWORD:?POSTGRES_REPLAY_PASSWORD is required}"
+: "${POSTGRES_IDENTITY_PASSWORD:?POSTGRES_IDENTITY_PASSWORD is required}"
+: "${POSTGRES_REPLAY_AUTHORIZER_PASSWORD:?POSTGRES_REPLAY_AUTHORIZER_PASSWORD is required}"
 : "${POSTGRES_DEMO_PASSWORD:?POSTGRES_DEMO_PASSWORD is required}"
 
 # psql argv나 shell-expanded SQL에 password를 넣지 않고 process environment에서 안전하게 인용한다.
@@ -41,6 +43,8 @@ psql -v ON_ERROR_STOP=1 --no-password --username "$POSTGRES_USER" --dbname "$POS
 \getenv signal_admin_password POSTGRES_SIGNAL_ADMIN_PASSWORD
 \getenv worker_password POSTGRES_WORKER_PASSWORD
 \getenv replay_password POSTGRES_REPLAY_PASSWORD
+\getenv identity_password POSTGRES_IDENTITY_PASSWORD
+\getenv replay_authorizer_password POSTGRES_REPLAY_AUTHORIZER_PASSWORD
 \getenv demo_password POSTGRES_DEMO_PASSWORD
 
 -- role password DDL 전에 session 전체의 statement·duration·sampling log를 닫는다.
@@ -122,6 +126,40 @@ SELECT format(
 ALTER ROLE decision_replay SET statement_timeout = '5s';
 ALTER ROLE decision_replay SET lock_timeout = '500ms';
 ALTER ROLE decision_replay SET idle_in_transaction_session_timeout = '5s';
+
+SELECT format(
+    'CREATE ROLE decision_identity LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'identity_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_identity')
+\gexec
+SELECT format(
+    'ALTER ROLE decision_identity WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'identity_password'
+)
+\gexec
+ALTER ROLE decision_identity SET log_parameter_max_length = 0;
+ALTER ROLE decision_identity SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_identity SET statement_timeout = '2s';
+ALTER ROLE decision_identity SET lock_timeout = '500ms';
+ALTER ROLE decision_identity SET idle_in_transaction_session_timeout = '5s';
+
+SELECT format(
+    'CREATE ROLE decision_replay_authorizer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'replay_authorizer_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_replay_authorizer')
+\gexec
+SELECT format(
+    'ALTER ROLE decision_replay_authorizer WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'replay_authorizer_password'
+)
+\gexec
+ALTER ROLE decision_replay_authorizer SET log_parameter_max_length = 0;
+ALTER ROLE decision_replay_authorizer SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_replay_authorizer SET statement_timeout = '2s';
+ALTER ROLE decision_replay_authorizer SET lock_timeout = '500ms';
+ALTER ROLE decision_replay_authorizer SET idle_in_transaction_session_timeout = '5s';
 
 SELECT format(
     'CREATE ROLE decision_demo LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
@@ -366,6 +404,8 @@ GRANT CONNECT ON DATABASE :"database_name" TO
     decision_app,
     decision_worker,
     decision_replay,
+    decision_identity,
+    decision_replay_authorizer,
     decision_demo,
     decision_collector,
     decision_disclosure_reader,
@@ -388,6 +428,8 @@ GRANT USAGE ON SCHEMA public TO
     decision_app,
     decision_worker,
     decision_replay,
+    decision_identity,
+    decision_replay_authorizer,
     decision_demo,
     decision_collector,
     decision_disclosure_reader,
@@ -413,9 +455,13 @@ REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_app;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_worker;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_replay;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_identity;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_replay_authorizer;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_demo;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_worker;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_replay;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_identity;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_replay_authorizer;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_demo;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_collector;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_collector;
@@ -1858,11 +1904,14 @@ BEGIN
             claim_async_job_by_event(text, text, text, text, text, text),
             heartbeat_async_job(text, uuid),
             fail_async_job(text, uuid, text, text),
-            record_kafka_poison(text, text, text, text, text, integer, text, text),
             quarantine_async_work(text, uuid, text, text, text, text, text, integer, text, text),
             fail_async_work(text, uuid, text, text, text, text, text, integer, text, text),
             commit_async_work(text, text, text, text, text, uuid, text, text, text)
         TO decision_worker;
+        IF to_regprocedure('public.record_kafka_poison(text,text,text,text,text,integer,text,text)') IS NOT NULL THEN
+            GRANT EXECUTE ON FUNCTION record_kafka_poison(text,text,text,text,text,integer,text,text)
+            TO decision_worker;
+        END IF;
         REVOKE EXECUTE ON FUNCTION
             claim_async_jobs(text, integer),
             complete_async_job(text, uuid, jsonb),
@@ -1903,6 +1952,58 @@ BEGIN
 END
 $s7_async_runtime_privileges$;
 
+DO $s7_p1_security_closure_privileges$
+BEGIN
+    IF to_regprocedure('public.issue_actor_request_capability(text)') IS NOT NULL THEN
+        REVOKE SELECT ON TABLE public.users FROM decision_app;
+        REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLE public.principles, public.principle_versions FROM decision_app;
+        REVOKE EXECUTE ON FUNCTION
+            create_async_job(text,text,text,jsonb),
+            append_async_request_outbox(text,text,text,text,jsonb),
+            read_async_job_status(text,bigint,text),
+            list_async_job_status(text,bigint,text,text,timestamptz,text,integer),
+            read_stream_metric_status(text,bigint),
+            read_dashboard_artifact_view(text,bigint,text,text),
+            read_dashboard_risk_view(text,bigint,text),
+            read_dashboard_rag_sources(text,bigint,text),
+            list_artifact_ingest_status(text,bigint)
+        FROM decision_app;
+        REVOKE EXECUTE ON FUNCTION claim_async_job_by_id(text,text) FROM decision_worker;
+        GRANT EXECUTE ON FUNCTION
+            read_demo_credentials(),
+            read_user_actor(text),
+            create_async_request_authorized(text,text,text,text,text,text,text,jsonb),
+            read_async_job_status_authorized(text,text,bigint,text),
+            list_async_job_status_authorized(text,text,bigint,text,text,timestamptz,text,integer),
+            read_stream_metric_status_authorized(text,text,bigint),
+            read_dashboard_artifact_view_authorized(text,text,bigint,text,text),
+            read_dashboard_risk_view_authorized(text,text,bigint,text),
+            read_dashboard_rag_sources_authorized(text,text,bigint,text),
+            list_artifact_ingest_status_authorized(text,text,bigint),
+            insert_principle_authorized(text,text,text,text,text,text,text,integer,timestamptz,timestamptz),
+            insert_principle_version_authorized(text,text,text,text,integer,text,text,text,text,jsonb,text[],timestamptz),
+            insert_principle_audit_authorized(text,text,text,text,text,integer,text[],timestamptz),
+            read_owned_principle_authorized(text,text,text),
+            list_owned_principles_authorized(text,text,integer,text,timestamptz,text),
+            update_owned_principle_authorized(text,text,text,integer,text,text,text,timestamptz),
+            list_owned_principle_versions_authorized(text,text,text,integer,text,integer),
+            read_active_owned_principle_snapshot_authorized(text,text,text),
+            lock_active_owned_principle_authorized(text,text,text,integer,text,text)
+        TO decision_app;
+        GRANT EXECUTE ON FUNCTION
+            claim_async_job_by_event(text,text,text,text,text,text),
+            resolve_completed_async_event(text,text,text,text,text),
+            record_kafka_poison(text,text,text,text,integer,bigint,integer,text,text)
+        TO decision_worker;
+        GRANT EXECUTE ON FUNCTION issue_actor_request_capability(text) TO decision_identity;
+        GRANT EXECUTE ON FUNCTION
+            authorize_async_replay(text,text,bigint,text,text,text[],integer,text,boolean,timestamptz,timestamptz)
+        TO decision_replay_authorizer;
+        REVOKE CREATE ON SCHEMA public FROM decision_identity, decision_replay_authorizer;
+    END IF;
+END
+$s7_p1_security_closure_privileges$;
+
 DO $block$
 BEGIN
     IF to_regclass('public.flyway_schema_history') IS NOT NULL THEN
@@ -1910,6 +2011,8 @@ BEGIN
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_app;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_worker;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_replay;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_identity;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_replay_authorizer;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_demo;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_collector;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_disclosure_reader;

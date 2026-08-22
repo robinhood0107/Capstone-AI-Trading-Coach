@@ -5,7 +5,6 @@ import com.zaxxer.hikari.HikariDataSource
 import net.javacrumbs.shedlock.core.LockProvider
 import net.javacrumbs.shedlock.provider.jdbctemplate.JdbcTemplateLockProvider
 import net.javacrumbs.shedlock.spring.annotation.EnableSchedulerLock
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
@@ -43,7 +42,7 @@ class AsyncInfrastructureConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean(DataSource::class)
+    @ConditionalOnProperty(name = ["app.async.polling-enabled"], havingValue = "true")
     fun lockProvider(dataSource: DataSource): LockProvider =
         JdbcTemplateLockProvider(
             JdbcTemplateLockProvider.Configuration

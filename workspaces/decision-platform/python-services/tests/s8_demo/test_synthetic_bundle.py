@@ -7,6 +7,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 import numpy as np
 import pytest
 
+from app.s8_demo import synthetic_bundle
 from app.s8_demo.demo_seed import build_demo_seed, materialize_demo
 from app.s8_demo.synthetic_bundle import build_synthetic_bundle
 
@@ -93,6 +94,27 @@ def test_demo_seed_rejects_implicit_mode_and_conflicting_output(tmp_path: Path) 
     (tmp_path / "demo-seed.json").write_text("{}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="demo_seed_conflict"):
         materialize_demo(config_path=CONFIG, output_dir=tmp_path, brokerage_mode="INTERNAL_PAPER")
+
+
+def test_demo_reader_is_bounded_nofollow_and_tolerates_short_reads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "config.yaml"
+    source.write_bytes(b"modelComparison: {}\n")
+    original_read = synthetic_bundle.os.read
+    monkeypatch.setattr(synthetic_bundle.os, "read", lambda descriptor, size: original_read(descriptor, min(size, 3)))
+    assert synthetic_bundle._read_bounded_regular(source, maximum=64) == source.read_bytes()
+
+    oversized = tmp_path / "oversized.yaml"
+    oversized.write_bytes(b"x" * 65)
+    with pytest.raises(ValueError, match="demo_input_too_large"):
+        synthetic_bundle._read_bounded_regular(oversized, maximum=64)
+
+    link = tmp_path / "config-link.yaml"
+    link.symlink_to(source)
+    with pytest.raises(OSError):
+        synthetic_bundle._read_bounded_regular(link, maximum=64)
 
 
 def _validate(schema_name: str, payload: dict[str, object]) -> None:

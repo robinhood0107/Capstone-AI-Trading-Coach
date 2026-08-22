@@ -174,7 +174,8 @@ class PrincipleService(
         return current
     }
 
-    @Transactional(readOnly = true)
+    // Owner reads consume a one-use DB capability, so the transaction must permit that audit mutation.
+    @Transactional
     fun get(
         userId: String,
         principleId: PrincipleId,
@@ -182,7 +183,7 @@ class PrincipleService(
         repository.findOwnedCurrent(userId, principleId)
             ?: throw PrincipleNotFoundException()
 
-    @Transactional(readOnly = true)
+    @Transactional
     fun list(
         userId: String,
         query: OwnerPageQuery,
@@ -269,7 +270,7 @@ class PrincipleService(
         return updated
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     fun listVersions(
         userId: String,
         principleId: PrincipleId,

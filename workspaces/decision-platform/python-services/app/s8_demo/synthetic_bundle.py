@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
+import stat
 from typing import Any
 
 import yaml
@@ -75,7 +77,8 @@ class SyntheticBundle:
 
 
 def build_synthetic_bundle(config_path: Path) -> SyntheticBundle:
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config = yaml.safe_load(_read_bounded_regular(config_path, maximum=65_536).decode("utf-8", errors="strict"))
+    _validate_bounded_yaml(config)
     scenarios = config["modelComparison"]["scenarios"]
     if scenarios != ["Baseline", "Guide", "Strict"]:
         raise ValueError("synthetic_scenarios_not_exact")
@@ -238,13 +241,81 @@ def _sha256(value: str) -> str:
 
 
 def _write_idempotent(path: Path, content: str) -> None:
-    if path.is_symlink():
-        raise ValueError("synthetic_output_symlink_rejected")
-    if path.exists():
-        if not path.is_file() or path.read_text(encoding="utf-8") != content:
+    encoded = content.encode("utf-8")
+    try:
+        existing = _read_bounded_regular(path, maximum=max(1, len(encoded)))
+    except FileNotFoundError:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(path, flags, 0o600)
+        try:
+            view = memoryview(encoded)
+            while view:
+                written = os.write(descriptor, view)
+                view = view[written:]
+        finally:
+            os.close(descriptor)
+    else:
+        if existing != encoded:
             raise ValueError("synthetic_output_conflict")
-        return
-    path.write_text(content, encoding="utf-8")
+
+
+def _read_bounded_regular(path: Path, *, maximum: int) -> bytes:
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(path, flags)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("demo_input_not_regular")
+        if info.st_size > maximum:
+            raise ValueError("demo_input_too_large")
+        chunks: list[bytes] = []
+        remaining = maximum + 1
+        while remaining:
+            chunk = os.read(descriptor, min(65_536, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        value = b"".join(chunks)
+        if len(value) > maximum:
+            raise ValueError("demo_input_too_large")
+        return value
+    finally:
+        os.close(descriptor)
+
+
+def _validate_bounded_yaml(value: Any) -> None:
+    seen: set[int] = set()
+    nodes = 0
+
+    def visit(item: Any, depth: int) -> None:
+        nonlocal nodes
+        nodes += 1
+        if depth > 8 or nodes > 256:
+            raise ValueError("synthetic_config_structure_invalid")
+        if isinstance(item, (dict, list)):
+            identity = id(item)
+            if identity in seen:
+                raise ValueError("synthetic_config_alias_rejected")
+            seen.add(identity)
+        if isinstance(item, dict):
+            for key, child in item.items():
+                if not isinstance(key, str) or len(key.encode("utf-8")) > 128:
+                    raise ValueError("synthetic_config_key_invalid")
+                visit(child, depth + 1)
+        elif isinstance(item, list):
+            if len(item) > 64:
+                raise ValueError("synthetic_config_array_invalid")
+            for child in item:
+                visit(child, depth + 1)
+        elif isinstance(item, str) and len(item.encode("utf-8")) > 2_048:
+            raise ValueError("synthetic_config_string_invalid")
+
+    visit(value, 1)
 
 
 def main() -> None:

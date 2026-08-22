@@ -10,6 +10,10 @@ CREATE ROLE decision_worker
   LOGIN PASSWORD 'worker-test-secret-0001' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_replay
   LOGIN PASSWORD 'replay-test-secret-0001' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_identity
+  LOGIN PASSWORD 'identity-test-secret-0001' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_replay_authorizer
+  LOGIN PASSWORD 'replay-authorizer-test-0001' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_demo
   LOGIN PASSWORD 'demo-test-secret-0001' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_collector
@@ -102,6 +106,8 @@ GRANT USAGE ON SCHEMA public TO
     decision_app,
     decision_worker,
     decision_replay,
+    decision_identity,
+    decision_replay_authorizer,
     decision_demo,
     decision_collector,
     decision_disclosure_reader,

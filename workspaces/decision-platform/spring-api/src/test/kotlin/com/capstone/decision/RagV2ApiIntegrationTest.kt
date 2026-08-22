@@ -1,5 +1,6 @@
 package com.capstone.decision
 
+import com.capstone.decision.application.dashboard.DashboardViewService
 import com.capstone.decision.application.rag.RagHistoryCryptoPort
 import com.capstone.decision.application.rag.RagHistoryIdentity
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -44,6 +45,7 @@ class RagV2ApiIntegrationTest(
     @Autowired private val webApplicationContext: WebApplicationContext,
     @Autowired private val objectMapper: ObjectMapper,
     @Autowired private val cryptoPort: RagHistoryCryptoPort,
+    @Autowired private val dashboardViewService: DashboardViewService,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
     private val ownerJdbc: JdbcTemplate by lazy {
@@ -446,6 +448,29 @@ class RagV2ApiIntegrationTest(
                     jsonPath("$.success") { doesNotExist() }
                 }.andReturn()
         assertSanitized(json(detail))
+
+        assertTrue(dashboardViewService.rag("usr_demo_user", 1, answerId)?.isObject == true)
+
+        val dashboard =
+            mockMvc
+                .get("/api/v1/dashboard/rag-sources/$answerId") {
+                    bearer(token)
+                    header("X-Request-Id", "req_rag_v2_dashboard_sources")
+                }.andExpect {
+                    status { isOk() }
+                    jsonPath("$.data.evidenceMode") { value("STORED_RUNTIME") }
+                    jsonPath("$.data.performanceClaimAllowed") { value(false) }
+                    jsonPath("$.data.view.answerId") { value(answerId) }
+                    jsonPath("$.data.view.topSources.length()") { value(1) }
+                    jsonPath("$.data.view.topSources[0].sourceId") { value("src_s4_7d_contract_001") }
+                    jsonPath("$.data.view.topSources[0].canonicalUrl") { doesNotExist() }
+                    jsonPath("$.data.view.topSources[0].locator") { doesNotExist() }
+                }.andReturn()
+        assertFalse(dashboard.response.contentAsString.contains("example.org"))
+        val foreignToken = login("demo-admin", adminPassword(), "req_rag_v2_dashboard_foreign")
+        mockMvc.get("/api/v1/dashboard/rag-sources/$answerId") { bearer(foreignToken) }.andExpect {
+            status { isNotFound() }
+        }
     }
 
     @Test

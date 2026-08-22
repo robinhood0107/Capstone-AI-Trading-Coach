@@ -3728,7 +3728,7 @@ service SourceRegistryService {
 | S5 | artifact endpoint는 trusted producer, owner, manifest hash/schema, 고정 root, file count/size/row cap을 먼저 검증한다. arbitrary path/symlink/archive와 untrusted pickle/joblib/code-loading model은 거부한다. 다운로드는 owner-scoped Bearer 인증과 고정 allowlisted 파일명·MIME만 허용하고 `Content-Disposition: attachment`, `nosniff`, `no-store`를 적용한다. Markdown/CSV/JSON을 임의 inline HTML로 실행하지 않는다 |
 | S6 | 금융공학·시뮬레이션 API는 user별 symbol/period/path/iteration/concurrency/deadline/output cap을 둔다. 입력 snapshot provenance와 owner를 검증하고 계산·모델 출력이 deterministic RiskEngine 검증을 우회하지 못하게 한다 |
 | S6.6/S6.7 historical-only | PIT `availableAt` 미래정보, incomplete coverage, fake zero와 threshold 재선택을 거부한다. strict PIT 부재로 runtime capability를 퇴역했으며 Decision/Risk 평가 중 reader/provider fan-out은 0이다. 재도입은 새 versioned contract-change를 요구한다 |
-| S7 | 로컬 plaintext Kafka는 loopback-only다. 배포 시 TLS+client 인증+topic ACL+schema/message/retention cap을 요구한다. event에 secret/token/account/PII/raw payload를 금지하고 ADMIN replay/DLQ를 audit하며 consumer idempotency/outbox를 검증한다 |
+| S7 | 현재 구현의 Kafka는 numeric-loopback PLAINTEXT만 지원하며 non-loopback/deploy는 TLS 값을 넣어도 fail-closed한다. 향후 배포는 TLS+client 인증+topic ACL을 broker/client에 실제 연결하고 별도 검증하기 전까지 금지한다. event에 secret/token/account/PII/raw payload를 금지하고 stable owner ID도 Kafka envelope에서 제거한다. ADMIN replay/DLQ audit, authoritative outbox hash binding, consumer idempotency를 검증한다 |
 | S8 | 외부 REST는 TLS, 제한 CORS와 HSTS/CSP/`nosniff`/frame/referrer security header를 적용한다. Dashboard는 access token을 URL·localStorage·IndexedDB·로그에 저장하지 않고 메모리에서만 보유하며, RAG/뉴스/Markdown을 raw HTML로 렌더링하지 않는다. 외부 link는 검증된 scheme과 `noopener noreferrer`를 적용한다. 내부 DB/Redis/Kafka/gRPC를 public bind하지 않고 non-loopback gRPC는 mTLS 전환 후에만 허용한다. 서비스별 outbound는 default-deny egress에서 승인된 provider HTTPS/DNS 목적지만 허용하고 metadata/private/link-local network를 방화벽에서도 차단한다. production container는 non-root, read-only root filesystem, explicit writable volume, `cap_drop=ALL`, `no-new-privileges`, 기본 seccomp와 CPU/memory/PID 제한을 적용한다. production debug/heap/core dump와 Actuator env/config dump를 비활성화하고 진단 절차가 process env를 출력하지 않게 한다. secret rotation, 민감정보별 retention/delete, encrypted backup+restore test, dependency/container/model SCA와 body/query/header redaction을 release gate로 둔다 |
 
 ---
@@ -4005,3 +4005,75 @@ account/balance/order/product DB write는 0이었다.
 - Market Data public API와 S6 derived snapshot API는 아직 없다.
 - Signal v2 LightGBM은 계속 `ABSTAIN/MISSING_EVIDENCE`이고 RiskDecision/order 권한은 0이다.
 - P1 전체 판정은 `INCOMPLETE`다.
+
+## 18. S7–S8 current API overlay (2026-08-22)
+
+machine-readable SSOT는 `contracts/openapi/openapi.json`이다. 이 절은 기존 S7/S8 concept shape를
+현재 구현된 exact route와 보안 경계로 supersede한다.
+
+### 18.1 구현된 exact route
+
+```text
+GET /api/v1/async-jobs
+GET /api/v1/async-jobs/{jobId}
+GET /api/v1/stream-metrics
+GET /api/v1/artifacts/ingest-status
+GET /api/v1/dashboard/model-evaluations/{runId}
+GET /api/v1/dashboard/backtests/{runId}
+GET /api/v1/dashboard/risk-results/{decisionId}
+GET /api/v1/dashboard/rag-sources/{answerId}
+```
+
+async job, metric, artifact status는 current DB `ACTIVE/ADMIN/securityVersion` 재검증을 요구한다. raw
+payload, raw error, requester, actor, provider locator는 응답하지 않는다. cursor/filter는 목적별 HMAC에
+결속되며 cross-owner Admin read는 append-only audit에 남는다.
+
+async write 경계는 app requester와 payload `ownerRef`, job type, 필수 reference를 exact 결속한다. 일반 app은
+`replayOf`를 만들 수 없고 worker는 event-bound claim과 atomic materialization capability만 실행한다.
+legacy bulk claim/direct complete/direct quarantine execute는 worker에 부여하지 않는다.
+
+Dashboard risk/RAG는 JWT `sub`와 DB owner predicate를 모두 적용하고 foreign ID는 404다. model/backtest
+demo projection은 인증된 `demo_` namespace만 읽으며 future real projection은 명시적으로 published된
+sanitized summary만 허용한다. query/cursor/date/symbol/profile/provider selector를 추가하지 않는다.
+
+### 18.2 ViewModel 공통 wire
+
+```text
+success=true
+data.viewState = READY | EMPTY | STALE
+data.asOf = timestamp | null
+data.freshUntil = timestamp | null
+data.evidenceMode = STORED_RUNTIME | REAL_ARTIFACT | SYNTHETIC_DEMO
+data.performanceClaimAllowed = false
+data.view = typed object | null
+```
+
+`loading`은 client-only다. `error`는 표준 4xx/5xx error envelope이고 `EMPTY`/`STALE`은 200의 명시적
+성공 상태다. model 최대 3, timeline 최대 500, sourceRunIds 최대 8, backtest curve 최대 2,000점,
+heatmap 최대 120개월, metric card 최대 11, Risk reason/principle/item 각각 최대 20, RAG top source
+최대 3/expandable 최대 5다. raw chunk/body/internal path/sourceRef/provider/PDF 인용문은 금지한다.
+
+### 18.3 변경하지 않은 API
+
+- Decision `orderIntent`는 exact 8개
+  `symbol,side,orderType,quantity,estimatedPrice,estimatedAmount,timeframe,strategyId`다.
+- `/api/v1/rag/ask`, RAG history와 Signal v1/v2 payload bytes는 유지한다.
+- `GET /api/v1/risk/cross-market`은 `NOT_APPLICABLE`이며 route가 없다.
+- catalog v2 rule 15, metric snapshot v3, Decision hash v3와 `WARN_ONLY` payload는 없다.
+- LightGBM 근거가 없으면 prediction/state/asOf를 꾸미지 않고 `ABSTAIN/MISSING_EVIDENCE`다.
+
+### 18.4 Async 상태와 delivery
+
+outbox는 `PENDING|PUBLISHED|FAILED|DLQ_REQUESTED`, job은
+`REQUESTED|RUNNING|COMPLETED|FAILED|NEEDS_REVIEW`다. REQUESTED→RUNNING→terminal은 job에만
+적용한다. Kafka send와 `published_at`은 하나의 DB transaction이 아니며 duplicate delivery는
+consumer idempotency로 흡수한다.
+
+payload는 DB 32 KiB/Kafka 64 KiB, depth 8, key 64, array 32, string 2,048 bytes로 제한한다. DLQ에는
+ID/type/hash/failure code/source topic/attempt만 허용하며 secret/token/account/PII/raw payload는 0이다.
+
+### 18.5 현재 제한
+
+네 Dashboard API는 server/OpenAPI/schema/example/mock이 준비된 `DASHBOARD_HANDOFF_READY` 상태지만
+Team A workspace integration은 수행하지 않았다. model/backtest 실물 artifact가 없으므로 synthetic
+projection만 검증됐고 `P1_OVERALL=INCOMPLETE_EXTERNAL_ARTIFACT`다.

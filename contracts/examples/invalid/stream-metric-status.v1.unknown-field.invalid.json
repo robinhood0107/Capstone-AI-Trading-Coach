@@ -1,0 +1,38 @@
+{
+  "data": {
+    "components": {
+      "decisionDistribution": {
+        "observedAt": "2026-08-22T00:00:00Z",
+        "status": "OK"
+      },
+      "dlqEvents": {
+        "observedAt": "2026-08-22T00:00:00Z",
+        "status": "OK"
+      },
+      "failedJobs": {
+        "observedAt": "2026-08-22T00:00:00Z",
+        "status": "OK"
+      },
+      "signalFreshness": {
+        "observedAt": "2026-08-22T00:00:00Z",
+        "status": "OK"
+      }
+    },
+    "decisionDistribution": {
+      "ALLOW": 1,
+      "BLOCK": 0,
+      "HOLD": 0,
+      "WARN": 0
+    },
+    "dlqEventCount": 0,
+    "failedJobCount": 0,
+    "lastUpdatedAt": "2026-08-22T00:00:00Z",
+    "pipelineHealth": "OK",
+    "signalStaleRatio": 0.0
+  },
+  "error": null,
+  "requestId": "req_s7s8_fixture_0001",
+  "success": true,
+  "unexpected": true,
+  "warnings": []
+}

@@ -46,6 +46,80 @@
         },
         "type": "object"
       },
+      "ApiResponseAsyncJobDto": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AsyncJobDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAsyncJobListDto": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AsyncJobListDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponseDecisionAuditProjection": {
         "properties": {
           "data": {
@@ -89,6 +163,43 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/DecisionProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseJsonNode": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/JsonNode"
               },
               {
                 "type": "null"
@@ -823,6 +934,43 @@
         },
         "type": "object"
       },
+      "ApiResponseStreamMetricDto": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StreamMetricDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ApiWarning": {
         "properties": {
           "code": {
@@ -834,6 +982,141 @@
           },
           "message": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ArtifactIngestStatusDto": {
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "duplicate": {
+            "type": "boolean"
+          },
+          "fileHash": {
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "lastIngestedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "producer": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "schemaVersion": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ArtifactIngestStatusListDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactIngestStatusDto"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "AsyncJobDto": {
+        "properties": {
+          "artifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AsyncJobErrorDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "requestedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "resultRef": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AsyncJobErrorDto": {
+        "properties": {
+          "class": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AsyncJobListDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AsyncJobDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -912,6 +1195,27 @@
           },
           "requestId": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DecisionDistributionDto": {
+        "properties": {
+          "ALLOW": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "BLOCK": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "HOLD": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "WARN": {
+            "format": "int64",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -1036,6 +1340,95 @@
           },
           "source": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "JsonNode": {
+        "properties": {
+          "array": {
+            "type": "boolean"
+          },
+          "bigDecimal": {
+            "type": "boolean"
+          },
+          "bigInteger": {
+            "type": "boolean"
+          },
+          "binary": {
+            "type": "boolean"
+          },
+          "boolean": {
+            "type": "boolean"
+          },
+          "container": {
+            "type": "boolean"
+          },
+          "double": {
+            "type": "boolean"
+          },
+          "embeddedValue": {
+            "type": "boolean"
+          },
+          "empty": {
+            "type": "boolean"
+          },
+          "float": {
+            "type": "boolean"
+          },
+          "floatingPointNumber": {
+            "type": "boolean"
+          },
+          "int": {
+            "type": "boolean"
+          },
+          "integralNumber": {
+            "type": "boolean"
+          },
+          "long": {
+            "type": "boolean"
+          },
+          "missingNode": {
+            "type": "boolean"
+          },
+          "nodeType": {
+            "enum": [
+              "ARRAY",
+              "BINARY",
+              "BOOLEAN",
+              "MISSING",
+              "NULL",
+              "NUMBER",
+              "OBJECT",
+              "POJO",
+              "STRING"
+            ],
+            "type": "string"
+          },
+          "null": {
+            "type": "boolean"
+          },
+          "number": {
+            "type": "boolean"
+          },
+          "object": {
+            "type": "boolean"
+          },
+          "pojo": {
+            "type": "boolean"
+          },
+          "short": {
+            "type": "boolean"
+          },
+          "string": {
+            "type": "boolean"
+          },
+          "textual": {
+            "deprecated": true,
+            "type": "boolean"
+          },
+          "valueNode": {
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -7623,6 +8016,62 @@
         ],
         "type": "object"
       },
+      "S7AsyncJobListSuccessResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AsyncJobListDto"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "S7AsyncJobStatusSuccessResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AsyncJobDto"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "S7StreamMetricSuccessResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/StreamMetricDto"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "S8ArtifactIngestStatusSuccessResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ArtifactIngestStatusListDto"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "SignalV2RuntimeErrorResponse": {
         "additionalProperties": false,
         "properties": {
@@ -8297,6 +8746,73 @@
         ],
         "type": "object"
       },
+      "StreamMetricComponentDto": {
+        "properties": {
+          "observedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StreamMetricComponentsDto": {
+        "properties": {
+          "decisionDistribution": {
+            "$ref": "#/components/schemas/StreamMetricComponentDto"
+          },
+          "dlqEvents": {
+            "$ref": "#/components/schemas/StreamMetricComponentDto"
+          },
+          "failedJobs": {
+            "$ref": "#/components/schemas/StreamMetricComponentDto"
+          },
+          "signalFreshness": {
+            "$ref": "#/components/schemas/StreamMetricComponentDto"
+          }
+        },
+        "type": "object"
+      },
+      "StreamMetricDto": {
+        "properties": {
+          "components": {
+            "$ref": "#/components/schemas/StreamMetricComponentsDto"
+          },
+          "decisionDistribution": {
+            "$ref": "#/components/schemas/DecisionDistributionDto"
+          },
+          "dlqEventCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "failedJobCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lastUpdatedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pipelineHealth": {
+            "type": "string"
+          },
+          "signalStaleRatio": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "SystemHealthResponse": {
         "properties": {
           "asOf": {
@@ -8341,6 +8857,174 @@
   "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
   "openapi": "3.1.1",
   "paths": {
+    "/api/v1/artifacts/ingest-status": {
+      "get": {
+        "operationId": "list_1",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S8ArtifactIngestStatusSuccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Current DB ADMIN-only bounded artifact ingest status.",
+        "tags": [
+          "artifact-ingest-status-controller"
+        ]
+      }
+    },
+    "/api/v1/async-jobs": {
+      "get": {
+        "operationId": "list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": "50",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S7AsyncJobListSuccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAsyncJobListDto"
+                }
+              }
+            },
+            "description": "Invalid filter or cursor."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAsyncJobListDto"
+                }
+              }
+            },
+            "description": "Authentication required."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAsyncJobListDto"
+                }
+              }
+            },
+            "description": "Current ADMIN role required."
+          }
+        },
+        "summary": "현재 DB의 ADMIN 권한을 재검증해 bounded async job 목록을 조회한다.",
+        "tags": [
+          "async-job-controller"
+        ]
+      }
+    },
+    "/api/v1/async-jobs/{jobId}": {
+      "get": {
+        "operationId": "get_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S7AsyncJobStatusSuccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAsyncJobDto"
+                }
+              }
+            },
+            "description": "Authentication required."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAsyncJobDto"
+                }
+              }
+            },
+            "description": "Current ADMIN role required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAsyncJobDto"
+                }
+              }
+            },
+            "description": "Job not found."
+          }
+        },
+        "summary": "현재 DB의 ADMIN 권한을 재검증해 bounded async job 상태를 조회한다.",
+        "tags": [
+          "async-job-controller"
+        ]
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "description": "DB-backed demo credential을 검증하고 internal userId를 subject로 쓰는 Bearer JWT를 발급한다.",
@@ -9377,6 +10061,130 @@
         "summary": "Append-only EXTERNAL_AI_RAG_V1 consent event를 기록한다.",
         "tags": [
           "rag-consent-controller"
+        ]
+      }
+    },
+    "/api/v1/dashboard/backtests/{runId}": {
+      "get": {
+        "operationId": "backtest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseJsonNode"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Owner-scoped sanitized backtest ViewModel.",
+        "tags": [
+          "dashboard-controller"
+        ]
+      }
+    },
+    "/api/v1/dashboard/model-evaluations/{runId}": {
+      "get": {
+        "operationId": "modelEvaluation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseJsonNode"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Owner-scoped sanitized model evaluation ViewModel.",
+        "tags": [
+          "dashboard-controller"
+        ]
+      }
+    },
+    "/api/v1/dashboard/rag-sources/{answerId}": {
+      "get": {
+        "operationId": "rag",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "answerId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseJsonNode"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Owner-scoped bounded RAG source ViewModel without raw content or locator.",
+        "tags": [
+          "dashboard-controller"
+        ]
+      }
+    },
+    "/api/v1/dashboard/risk-results/{decisionId}": {
+      "get": {
+        "operationId": "risk",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "decisionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseJsonNode"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Owner-scoped persisted Decision/Risk ViewModel.",
+        "tags": [
+          "dashboard-controller"
         ]
       }
     },
@@ -10614,6 +11422,47 @@
         "summary": "현재 owner-scoped portfolio 리스크를 stored observation으로 조회한다.",
         "tags": [
           "risk-controller"
+        ]
+      }
+    },
+    "/api/v1/stream-metrics": {
+      "get": {
+        "operationId": "get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S7StreamMetricSuccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseStreamMetricDto"
+                }
+              }
+            },
+            "description": "Authentication required."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseStreamMetricDto"
+                }
+              }
+            },
+            "description": "Current ADMIN role required."
+          }
+        },
+        "summary": "현재 DB의 ADMIN 권한을 재검증해 최신 stream metric snapshot을 조회한다.",
+        "tags": [
+          "stream-metric-controller"
         ]
       }
     },

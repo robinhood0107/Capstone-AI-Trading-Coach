@@ -17,6 +17,7 @@ _JOB_ID = re.compile(r"^job_[A-Za-z0-9_-]{8,96}$")
 _EVENT_ID = re.compile(r"^evt_[A-Za-z0-9_-]{8,96}$")
 _HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
 _TOKEN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+_PARTITION_KEY = re.compile(r"^hmac-sha256:[0-9a-f]{64}$")
 _ALLOWED_KEYS = {
     "jobId",
     "ownerRef",
@@ -57,6 +58,7 @@ class AsyncWork:
     transport: str
     attempt: int = 1
     source_topic: str | None = None
+    partition_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -118,6 +120,8 @@ def validate_work(work: AsyncWork) -> dict[str, str]:
         or work.transport not in {"DB", "KAFKA"}
         or work.attempt not in {1, 2, 3}
         or (work.source_topic is not None and work.source_topic != work.event_type)
+        or work.partition_key is None
+        or _PARTITION_KEY.fullmatch(work.partition_key) is None
         or len(work.payload_json) > 32_768
         or (work.transport == "DB" and (work.claim_token is None or not _TOKEN.fullmatch(work.claim_token)))
         or (work.claim_token is not None and not _TOKEN.fullmatch(work.claim_token))
@@ -137,10 +141,14 @@ def validate_work(work: AsyncWork) -> dict[str, str]:
     if set(payload) - _ALLOWED_KEYS:
         raise AsyncContractError
     required = {
-        "RAG_INDEX": {"ownerRef", "sourceId", "sourceRevisionId", "importTicketId", "profileId"},
+        "RAG_INDEX": {"sourceId", "sourceRevisionId", "importTicketId", "profileId"},
         "ARTIFACT_INGEST": {"artifactId", "contentHash"},
         "MODEL_EVAL": {"runId", "contentHash"},
     }[work.job_type]
+    if work.transport == "DB" and work.job_type == "RAG_INDEX":
+        required.add("ownerRef")
+    if work.transport == "KAFKA" and "ownerRef" in payload:
+        raise AsyncContractError
     if not required.issubset(payload):
         raise AsyncContractError
     if any(not isinstance(key, str) or not isinstance(value, str) for key, value in payload.items()):

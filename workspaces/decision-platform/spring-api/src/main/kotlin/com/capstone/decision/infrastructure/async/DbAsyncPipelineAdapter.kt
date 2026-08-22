@@ -46,34 +46,19 @@ class JdbcAsyncRequestWriter(
             ) == true
         if (!created) throw AsyncJobRequestConflictException()
         val eventType = EVENT_TYPES.getValue(command.type)
-        jdbc().update(
-            """
-            INSERT INTO event_outbox(
-              event_id,
-              event_type,
-              aggregate_type,
-              aggregate_id,
-              partition_key,
-              payload_json,
-              schema_version
-            ) VALUES (
-              :eventId,
-              :eventType,
-              'ASYNC_JOB',
-              :jobId,
-              :partitionKey,
-              CAST(:payload AS jsonb),
-              '1.0.0'
-            )
-            """.trimIndent(),
-            mapOf(
-                "eventId" to eventId,
-                "eventType" to eventType,
-                "jobId" to jobId,
-                "partitionKey" to opaquePartitionKey(command.requestedBy, command.type),
-                "payload" to payloadJson,
-            ),
-        )
+        val appended =
+            jdbc().queryForObject(
+                "SELECT append_async_request_outbox(:eventId,:eventType,:jobId,:partitionKey,CAST(:payload AS jsonb))",
+                mapOf(
+                    "eventId" to eventId,
+                    "eventType" to eventType,
+                    "jobId" to jobId,
+                    "partitionKey" to opaquePartitionKey(command.requestedBy, command.type),
+                    "payload" to payloadJson,
+                ),
+                Boolean::class.java,
+            ) == true
+        if (!appended) throw AsyncJobRequestConflictException()
         return AcceptedAsyncJob(jobId, eventId)
     }
 

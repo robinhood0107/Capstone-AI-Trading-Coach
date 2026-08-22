@@ -108,7 +108,6 @@ def _event_schema() -> dict[str, Any]:
     references = _closed(
         [],
         {
-            "ownerRef": {"type": "string", "pattern": "^usr_[A-Za-z0-9_-]{8,64}$"},
             "sourceRevisionId": {"type": "string", "pattern": "^srv_[a-z0-9][a-z0-9_-]{2,95}$"},
             "importTicketId": {"type": "string", "pattern": "^rti_[0-9a-f]{32}$"},
             "profileId": {"enum": ["bge_m3_local_1024_v1", "voyage_context_4_1024_v1"]},
@@ -542,7 +541,7 @@ def _fixtures() -> dict[str, dict[str, Any]]:
         "async-event-envelope.v1": {
             "eventId": "evt_rag_index_00000001", "eventType": "rag.index-requested.v1", "schemaVersion": 1,
             "occurredAt": ts, "partitionKey": "hmac-sha256:" + "1" * 64, "payloadHash": "sha256:" + "2" * 64,
-            "references": {"ownerRef": "usr_fixture_00000001", "sourceRevisionId": "srv_fixture_00000001", "importTicketId": "rti_" + "2" * 32, "profileId": "bge_m3_local_1024_v1", "jobId": "job_rag_index_00000001", "contentHash": "sha256:" + "3" * 64},
+            "references": {"sourceRevisionId": "srv_fixture_00000001", "importTicketId": "rti_" + "2" * 32, "profileId": "bge_m3_local_1024_v1", "jobId": "job_rag_index_00000001", "contentHash": "sha256:" + "3" * 64},
         },
         "async-dlq-envelope.v1": {
             "eventId": "evt_dlq_" + "a" * 32, "eventType": "rag.index-requested.v1", "schemaVersion": 1,

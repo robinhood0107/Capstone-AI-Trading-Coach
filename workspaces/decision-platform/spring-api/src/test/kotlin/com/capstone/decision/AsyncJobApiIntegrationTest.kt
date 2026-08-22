@@ -59,6 +59,9 @@ class AsyncJobApiIntegrationTest(
     private val ownerJdbc by lazy {
         JdbcTemplate(DriverManagerDataSource(postgres.jdbcUrl, postgres.username, postgres.password))
     }
+    private val demoJdbc by lazy {
+        JdbcTemplate(DriverManagerDataSource(postgres.jdbcUrl, "decision_demo", "demo-test-secret-0001"))
+    }
 
     @BeforeEach
     fun setUp() {
@@ -81,7 +84,14 @@ class AsyncJobApiIntegrationTest(
 
     @Test
     fun `async status requires current ADMIN and never exposes payload or requester`() {
-        seed("job_api_status_00000001", "RAG_INDEX", "usr_demo_user", "{\"sourceId\":\"src_fixture_00000001\"}")
+        seed(
+            "job_api_status_00000001",
+            "RAG_INDEX",
+            "usr_demo_user",
+            "{\"jobId\":\"job_api_status_00000001\",\"ownerRef\":\"usr_demo_user\"," +
+                "\"sourceId\":\"src_fixture_00000001\",\"sourceRevisionId\":\"srv_fixture_00000001\"," +
+                "\"importTicketId\":\"rti_${"a".repeat(32)}\",\"profileId\":\"bge_m3_local_1024_v1\"}",
+        )
 
         mockMvc.get("/api/v1/async-jobs/job_api_status_00000001").andExpect {
             status { isUnauthorized() }
@@ -125,8 +135,20 @@ class AsyncJobApiIntegrationTest(
 
     @Test
     fun `async list binds cursor to ADMIN filters and rejects tampering`() {
-        seed("job_api_list_00000001", "MODEL_EVAL", "usr_demo_user", "{\"runId\":\"run_fixture_00000001\"}")
-        seed("job_api_list_00000002", "MODEL_EVAL", "usr_demo_user", "{\"runId\":\"run_fixture_00000002\"}")
+        seed(
+            "job_api_list_00000001",
+            "MODEL_EVAL",
+            "usr_demo_user",
+            "{\"jobId\":\"job_api_list_00000001\",\"ownerRef\":\"usr_demo_user\",\"runId\":\"run_fixture_00000001\"," +
+                "\"contentHash\":\"sha256:${"b".repeat(64)}\"}",
+        )
+        seed(
+            "job_api_list_00000002",
+            "MODEL_EVAL",
+            "usr_demo_user",
+            "{\"jobId\":\"job_api_list_00000002\",\"ownerRef\":\"usr_demo_user\",\"runId\":\"run_fixture_00000002\"," +
+                "\"contentHash\":\"sha256:${"c".repeat(64)}\"}",
+        )
         val token = login("demo-admin", adminPassword())
         val first =
             mockMvc
@@ -161,7 +183,13 @@ class AsyncJobApiIntegrationTest(
 
     @Test
     fun `stale ADMIN token loses async status access after DB role change`() {
-        seed("job_api_drift_00000001", "MODEL_EVAL", "usr_demo_user", "{\"runId\":\"run_fixture_00000003\"}")
+        seed(
+            "job_api_drift_00000001",
+            "MODEL_EVAL",
+            "usr_demo_user",
+            "{\"jobId\":\"job_api_drift_00000001\",\"ownerRef\":\"usr_demo_user\",\"runId\":\"run_fixture_00000003\"," +
+                "\"contentHash\":\"sha256:${"d".repeat(64)}\"}",
+        )
         val token = login("demo-admin", adminPassword())
         ownerJdbc.update("update users set role='USER',security_version=2 where user_id='usr_demo_admin'")
 
@@ -245,7 +273,9 @@ class AsyncJobApiIntegrationTest(
             ),
         )
 
-        ownerJdbc.execute("revoke insert on event_outbox from decision_app")
+        ownerJdbc.execute(
+            "revoke execute on function append_async_request_outbox(text,text,text,text,jsonb) from decision_app",
+        )
         val jobsBefore = ownerJdbc.queryForObject("select count(*) from async_job", Int::class.java)
         try {
             assertThrows(RuntimeException::class.java) {
@@ -262,7 +292,9 @@ class AsyncJobApiIntegrationTest(
                 )
             }
         } finally {
-            ownerJdbc.execute("grant insert on event_outbox to decision_app")
+            ownerJdbc.execute(
+                "grant execute on function append_async_request_outbox(text,text,text,text,jsonb) to decision_app",
+            )
         }
         assertEquals(jobsBefore, ownerJdbc.queryForObject("select count(*) from async_job", Int::class.java))
     }
@@ -343,7 +375,7 @@ class AsyncJobApiIntegrationTest(
             fileName: String,
             projection: String,
         ): Boolean =
-            appJdbc.queryForObject(
+            demoJdbc.queryForObject(
                 "select stage_synthetic_dashboard_view(?,?,?,?,?,?,?,?,?,?)",
                 Boolean::class.java,
                 artifactId,
@@ -358,6 +390,42 @@ class AsyncJobApiIntegrationTest(
                 Timestamp.from(freshUntil),
             ) == true
 
+        assertThrows(RuntimeException::class.java) {
+            appJdbc.queryForObject(
+                "select stage_synthetic_dashboard_view(?,?,?,?,?,?,?,?,?,?)",
+                Boolean::class.java,
+                artifactId,
+                "usr_demo_user",
+                runId,
+                "model-evaluation.json",
+                fileHash,
+                "MODEL_EVALUATION",
+                modelProjection,
+                S8SyntheticProjectionFixture.sha256(modelProjection),
+                Timestamp.from(asOf),
+                Timestamp.from(freshUntil),
+            )
+        }
+        assertThrows(RuntimeException::class.java) {
+            demoJdbc.queryForObject(
+                "select stage_synthetic_dashboard_view(?,?,?,?,?,?,?,?,?,?)",
+                Boolean::class.java,
+                artifactId,
+                "usr_demo_admin",
+                runId,
+                "model-evaluation.json",
+                fileHash,
+                "MODEL_EVALUATION",
+                modelProjection,
+                S8SyntheticProjectionFixture.sha256(modelProjection),
+                Timestamp.from(asOf),
+                Timestamp.from(freshUntil),
+            )
+        }
+        val forgedProjection = modelProjection.replace("\"performanceClaimAllowed\":false", "\"performanceClaimAllowed\":true")
+        assertThrows(RuntimeException::class.java) {
+            stage("MODEL_EVALUATION", "model-evaluation.json", forgedProjection)
+        }
         assertEquals(true, stage("MODEL_EVALUATION", "model-evaluation.json", modelProjection))
         assertEquals(false, stage("MODEL_EVALUATION", "model-evaluation.json", modelProjection))
         assertEquals(true, stage("BACKTEST", "backtest.json", backtestProjection))
@@ -402,8 +470,9 @@ class AsyncJobApiIntegrationTest(
                 jsonPath("$.data.viewState") { value("READY") }
                 jsonPath("$.data.evidenceMode") { value("SYNTHETIC_DEMO") }
                 jsonPath("$.data.performanceClaimAllowed") { value(false) }
-                jsonPath("$.data.view.models[0].status") { value("ABSTAIN") }
-                jsonPath("$.data.view.models[0].prediction") { doesNotExist() }
+                jsonPath("$.data.view.models[2].status") { value("ABSTAIN") }
+                jsonPath("$.data.view.models[2].modelId") { value("LIGHTGBM") }
+                jsonPath("$.data.view.models[2].prediction") { doesNotExist() }
             }
         val adminToken = login("demo-admin", adminPassword())
         mockMvc.get("/api/v1/dashboard/model-evaluations/$runId") { bearer(adminToken) }.andExpect {

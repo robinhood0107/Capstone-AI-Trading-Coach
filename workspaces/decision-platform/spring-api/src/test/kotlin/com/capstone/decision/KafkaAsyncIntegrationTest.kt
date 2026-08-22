@@ -56,6 +56,9 @@ class KafkaAsyncIntegrationTest(
     private val ownerJdbc by lazy {
         JdbcTemplate(DriverManagerDataSource(postgres.jdbcUrl, postgres.username, postgres.password))
     }
+    private val demoJdbc by lazy {
+        JdbcTemplate(DriverManagerDataSource(postgres.jdbcUrl, "decision_demo", "demo-test-secret-0001"))
+    }
 
     @BeforeEach
     fun clean() {
@@ -115,6 +118,7 @@ class KafkaAsyncIntegrationTest(
         assertEquals(setOf(accepted.eventId), envelopes.map { it.path("eventId").stringValue() }.toSet())
         assertEquals(setOf(1), envelopes.map { it.path("schemaVersion").intValue() }.toSet())
         assertFalse(matching.any { SECRET_PATTERN.containsMatchIn(it) })
+        assertFalse(matching.any { it.contains("ownerRef") || it.contains("usr_demo_user") })
     }
 
     @Test
@@ -124,6 +128,13 @@ class KafkaAsyncIntegrationTest(
                 bootstrapServers = listOf("kafka.internal:9092"),
                 deploymentMode = AsyncDeploymentMode.DEPLOY,
                 securityProtocol = "PLAINTEXT",
+            ).validate(AsyncAdapterMode.KAFKA)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            KafkaAsyncProperties(
+                bootstrapServers = listOf("kafka.internal:9093"),
+                deploymentMode = AsyncDeploymentMode.DEPLOY,
+                securityProtocol = "SSL",
             ).validate(AsyncAdapterMode.KAFKA)
         }
     }
@@ -202,7 +213,7 @@ class KafkaAsyncIntegrationTest(
     ) {
         assertEquals(
             true,
-            appJdbc.queryForObject(
+            demoJdbc.queryForObject(
                 "select stage_synthetic_dashboard_view(?,?,?,?,?,?,?,?,?,?)",
                 Boolean::class.java,
                 S8SyntheticProjectionFixture.ARTIFACT_ID,

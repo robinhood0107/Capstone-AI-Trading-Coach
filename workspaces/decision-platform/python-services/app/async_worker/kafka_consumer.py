@@ -10,7 +10,7 @@ from typing import Any, Protocol, cast
 from confluent_kafka import Consumer, KafkaError, KafkaException, Message
 
 from app.async_worker.core import AsyncContractError, AsyncWork, AsyncWorkProcessor
-from app.async_worker.postgres import PostgresAsyncWorkRepository
+from app.async_worker.postgres import PostgresAsyncWorkRepository, is_decision_worker_dsn
 
 
 _TOPICS = (
@@ -52,7 +52,7 @@ class KafkaAsyncMessageHandler:
         raw = message.value() or b""
         try:
             work = decode_message(message)
-            claim_token = self._repository.claim_job(work.job_id, _GROUP_ID)
+            claim_token = self._repository.claim_job(work, _GROUP_ID)
             result = self._processor.process(replace(work, claim_token=claim_token))
             if result.outcome == "FAILED":
                 return "RETRY"
@@ -141,6 +141,7 @@ def decode_message(message: KafkaMessage) -> AsyncWork:
         transport="KAFKA",
         attempt=attempt,
         source_topic=topic,
+        partition_key=partition_key,
     )
 
 
@@ -160,7 +161,7 @@ def run() -> None:
                 if error.code() == KafkaError._PARTITION_EOF:
                     continue
                 raise KafkaException(error)
-            handler.handle(cast(KafkaMessage, message))
+            _handle_or_stop(handler, cast(KafkaMessage, message))
     finally:
         consumer.close()
 
@@ -169,15 +170,13 @@ def _settings_from_env() -> dict[str, Any]:
     bootstrap = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "").strip()
     database_dsn = os.environ.get("ASYNC_WORKER_DATABASE_DSN", "").strip()
     partition_key = os.environ.get("ASYNC_PARTITION_HMAC_KEY", "").encode()
-    if not bootstrap or "decision_worker" not in database_dsn or not 32 <= len(partition_key) <= 128:
+    if not bootstrap or not is_decision_worker_dsn(database_dsn) or not 32 <= len(partition_key) <= 128:
         raise ValueError("Kafka async worker configuration is incomplete")
     security = os.environ.get("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT").strip()
-    if security == "PLAINTEXT" and not (
+    if security != "PLAINTEXT" or not (
         bootstrap.startswith("127.0.0.1:") or bootstrap.startswith("[::1]:")
     ):
-        raise ValueError("Kafka PLAINTEXT worker is loopback-only")
-    if security not in {"PLAINTEXT", "SSL", "SASL_SSL"}:
-        raise ValueError("Kafka security protocol is invalid")
+        raise ValueError("this worker build supports only loopback PLAINTEXT Kafka")
     return {
         "database_dsn": database_dsn,
         "partition_key": partition_key,
@@ -191,6 +190,17 @@ def _settings_from_env() -> dict[str, Any]:
             "fetch.message.max.bytes": _MAX_ENVELOPE_BYTES,
         },
     }
+
+
+class KafkaRetryStop(RuntimeError):
+    """Stops the consumer before a later same-partition offset can be committed."""
+
+
+def _handle_or_stop(handler: KafkaAsyncMessageHandler, message: KafkaMessage) -> str:
+    outcome = handler.handle(message)
+    if outcome == "RETRY":
+        raise KafkaRetryStop("retryable Kafka record must be redelivered before later offsets")
+    return outcome
 
 
 def _closed_headers(headers: list[tuple[str, bytes | None]] | None) -> dict[str, str]:

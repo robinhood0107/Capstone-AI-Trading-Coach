@@ -64,6 +64,7 @@ class GrpcAsyncWorkerClient(
                 ).setClaimToken(job?.claimToken?.toString().orEmpty())
                 .setTransport(AsyncTransport.ASYNC_TRANSPORT_DB)
                 .setAttempt(event.attempt)
+                .setPartitionKey(event.partitionKey)
                 .build()
         require(request.serializedSize <= properties.requestMaxBytes)
         val response =

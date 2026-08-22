@@ -17,12 +17,23 @@ from typing import Any, NoReturn
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
 
+from app.data._shared.bounded_json import BoundedJsonError, BoundedJsonLimits, parse_bounded_json_bytes
+
 _ID = re.compile(r"^(?:evt|job)_[A-Za-z0-9_-]{8,96}$")
 _REASON = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$")
 _USER = re.compile(r"^usr_[A-Za-z0-9_-]{8,64}$")
 _MAX_TARGETS = 100
 _MAX_PACKET_BYTES = 1_048_576
 _MAX_SECRET_BYTES = 4_096
+_PACKET_JSON_LIMITS = BoundedJsonLimits(
+    max_bytes=_MAX_PACKET_BYTES,
+    max_depth=8,
+    max_list_items=_MAX_TARGETS,
+    max_object_keys=16,
+    max_text_codepoints=2_048,
+    max_text_bytes=2_048,
+    max_number_characters=32,
+)
 
 
 class ReplayCliError(RuntimeError):
@@ -189,7 +200,13 @@ def validate_jwt(token: str, secret: bytes, issuer: str, audience: str, *, now: 
 
 
 def execute_packet(args: argparse.Namespace) -> list[dict[str, Any]]:
-    packet = json.loads(_read_private_file(args.packet, maximum=_MAX_PACKET_BYTES, code="PACKET"))
+    try:
+        packet = parse_bounded_json_bytes(
+            _read_private_file(args.packet, maximum=_MAX_PACKET_BYTES, code="PACKET"),
+            limits=_PACKET_JSON_LIMITS,
+        )
+    except BoundedJsonError as error:
+        raise ReplayCliError("PACKET_SCHEMA_INVALID") from error
     if not isinstance(packet, dict):
         raise ReplayCliError("PACKET_SCHEMA_INVALID")
     validate_packet(packet, _read_secret(args.signing_key_file), execute=args.execute)

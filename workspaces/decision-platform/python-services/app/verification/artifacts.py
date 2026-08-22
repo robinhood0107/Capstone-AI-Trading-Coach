@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 import stat
@@ -10,12 +9,24 @@ from datetime import UTC, datetime
 from typing import Mapping, cast
 
 from app.data._shared.canonical_json import canonical_json_bytes
+from app.data._shared.bounded_json import BoundedJsonError, BoundedJsonLimits, parse_bounded_json_bytes
 from app.verification.models import VerificationReport
 from app.verification.packet import P1VerificationPacket, packet_from_dict
 
 
 class VerificationArtifactError(RuntimeError):
     """A verification artifact path or canonical document is unsafe."""
+
+
+_JSON_LIMITS = BoundedJsonLimits(
+    max_bytes=1_000_000,
+    max_depth=16,
+    max_list_items=1_024,
+    max_object_keys=256,
+    max_text_codepoints=262_144,
+    max_text_bytes=1_000_000,
+    max_number_characters=64,
+)
 
 
 def ensure_owner_private_directory(path: Path) -> Path:
@@ -146,8 +157,8 @@ def _publish_immutable(root: Path, filename: str, content: bytes) -> Path:
 def _read_canonical(path: Path) -> Mapping[str, object]:
     content = _read_regular(path)
     try:
-        value = json.loads(content)
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        value = parse_bounded_json_bytes(content, limits=_JSON_LIMITS)
+    except BoundedJsonError as error:
         raise VerificationArtifactError("P1 verification artifact is invalid JSON") from error
     if not isinstance(value, dict) or canonical_json_bytes(value) != content:
         raise VerificationArtifactError("P1 verification artifact is not canonical JSON")
@@ -155,19 +166,35 @@ def _read_canonical(path: Path) -> Mapping[str, object]:
 
 
 def _read_regular(path: Path) -> bytes:
-    if not path.is_absolute() or path.is_symlink():
+    if not path.is_absolute():
         raise VerificationArtifactError("P1 verification artifact path is unsafe")
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
     try:
-        info = path.stat()
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise VerificationArtifactError("P1 verification artifact is unavailable") from error
+    try:
+        info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o077:
             raise VerificationArtifactError("P1 verification artifact must be owner-private")
-        with path.open("rb") as source:
-            content = source.read(1_000_001)
-    except FileNotFoundError as error:
-        raise VerificationArtifactError("P1 verification artifact is unavailable") from error
-    if len(content) > 1_000_000:
-        raise VerificationArtifactError("P1 verification artifact exceeds size limit")
-    return content
+        if info.st_size > _JSON_LIMITS.max_bytes:
+            raise VerificationArtifactError("P1 verification artifact exceeds size limit")
+        chunks: list[bytes] = []
+        remaining = _JSON_LIMITS.max_bytes + 1
+        while remaining:
+            chunk = os.read(descriptor, min(65_536, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        content = b"".join(chunks)
+        if len(content) > _JSON_LIMITS.max_bytes:
+            raise VerificationArtifactError("P1 verification artifact exceeds size limit")
+        return content
+    finally:
+        os.close(descriptor)
 
 
 def _fsync_directory(path: Path) -> None:

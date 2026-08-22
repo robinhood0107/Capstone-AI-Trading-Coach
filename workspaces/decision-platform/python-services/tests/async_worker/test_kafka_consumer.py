@@ -155,6 +155,33 @@ def test_poison_records_only_sanitized_identity_and_commits_offset() -> None:
     assert "must-not-be-forwarded" not in json.dumps(poison)
 
 
+def test_excessive_json_depth_is_quarantined_before_job_claim() -> None:
+    nested: Any = "value"
+    for _ in range(10):
+        nested = [nested]
+    message = FakeMessage(
+        json.dumps(
+            {
+                "eventId": "evt_fixture_00000001",
+                "eventType": "artifact.ingest-requested.v1",
+                "schemaVersion": 1,
+                "occurredAt": "2026-08-22T00:00:00Z",
+                "partitionKey": "hmac-sha256:" + "c" * 64,
+                "payloadHash": "sha256:" + "a" * 64,
+                "references": {"jobId": "job_fixture_00000001", "nested": nested},
+            },
+            separators=(",", ":"),
+        ).encode()
+    )
+    repository = FakeRepository()
+    consumer = FakeConsumer()
+
+    assert KafkaAsyncMessageHandler(repository, consumer).handle(message) == "NEEDS_REVIEW"  # type: ignore[arg-type]
+    assert repository.commits == []
+    assert len(repository.poisons) == 1
+    assert consumer.committed == [message]
+
+
 def test_crash_before_db_commit_leaves_offset_unacked_for_redelivery() -> None:
     message = FakeMessage(envelope())
     repository = CrashBeforeDbCommitRepository()

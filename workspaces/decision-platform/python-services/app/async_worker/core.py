@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import hmac
-import json
 import re
 from typing import Any, Protocol
+
+from app.data._shared.bounded_json import BoundedJsonError, BoundedJsonLimits, parse_bounded_json_bytes
 
 
 _EVENT_TYPES = {
@@ -31,6 +32,15 @@ _ALLOWED_KEYS = {
     "resultRef",
     "replayOf",
 }
+_PAYLOAD_JSON_LIMITS = BoundedJsonLimits(
+    max_bytes=32_768,
+    max_depth=8,
+    max_list_items=32,
+    max_object_keys=64,
+    max_text_codepoints=2_048,
+    max_text_bytes=2_048,
+    max_number_characters=64,
+)
 
 
 class AsyncContractError(ValueError):
@@ -139,9 +149,8 @@ def validate_work(work: AsyncWork) -> dict[str, str]:
     if not hmac.compare_digest(actual_hash, work.payload_hash):
         raise AsyncContractError
     try:
-        decoded = work.payload_json.decode("utf-8", errors="strict")
-        payload = json.loads(decoded, object_pairs_hook=_closed_object)
-    except (UnicodeError, json.JSONDecodeError, AsyncContractError) as error:
+        payload = parse_bounded_json_bytes(work.payload_json, limits=_PAYLOAD_JSON_LIMITS)
+    except BoundedJsonError as error:
         raise AsyncContractError from error
     _validate_json(payload, depth=1, counts={"keys": 0})
     if not isinstance(payload, dict) or payload.get("jobId") != work.job_id:

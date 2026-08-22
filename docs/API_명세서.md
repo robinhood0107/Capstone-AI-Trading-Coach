@@ -3728,7 +3728,7 @@ service SourceRegistryService {
 | S5 | artifact endpoint는 trusted producer, owner, manifest hash/schema, 고정 root, file count/size/row cap을 먼저 검증한다. arbitrary path/symlink/archive와 untrusted pickle/joblib/code-loading model은 거부한다. 다운로드는 owner-scoped Bearer 인증과 고정 allowlisted 파일명·MIME만 허용하고 `Content-Disposition: attachment`, `nosniff`, `no-store`를 적용한다. Markdown/CSV/JSON을 임의 inline HTML로 실행하지 않는다 |
 | S6 | 금융공학·시뮬레이션 API는 user별 symbol/period/path/iteration/concurrency/deadline/output cap을 둔다. 입력 snapshot provenance와 owner를 검증하고 계산·모델 출력이 deterministic RiskEngine 검증을 우회하지 못하게 한다 |
 | S6.6/S6.7 historical-only | PIT `availableAt` 미래정보, incomplete coverage, fake zero와 threshold 재선택을 거부한다. strict PIT 부재로 runtime capability를 퇴역했으며 Decision/Risk 평가 중 reader/provider fan-out은 0이다. 재도입은 새 versioned contract-change를 요구한다 |
-| S7 | 로컬 plaintext Kafka는 loopback-only다. 배포 시 TLS+client 인증+topic ACL+schema/message/retention cap을 요구한다. event에 secret/token/account/PII/raw payload를 금지하고 ADMIN replay/DLQ를 audit하며 consumer idempotency/outbox를 검증한다 |
+| S7 | 현재 구현의 Kafka는 numeric-loopback PLAINTEXT만 지원하며 non-loopback/deploy는 TLS 값을 넣어도 fail-closed한다. 향후 배포는 TLS+client 인증+topic ACL을 broker/client에 실제 연결하고 별도 검증하기 전까지 금지한다. event에 secret/token/account/PII/raw payload를 금지하고 stable owner ID도 Kafka envelope에서 제거한다. ADMIN replay/DLQ audit, authoritative outbox hash binding, consumer idempotency를 검증한다 |
 | S8 | 외부 REST는 TLS, 제한 CORS와 HSTS/CSP/`nosniff`/frame/referrer security header를 적용한다. Dashboard는 access token을 URL·localStorage·IndexedDB·로그에 저장하지 않고 메모리에서만 보유하며, RAG/뉴스/Markdown을 raw HTML로 렌더링하지 않는다. 외부 link는 검증된 scheme과 `noopener noreferrer`를 적용한다. 내부 DB/Redis/Kafka/gRPC를 public bind하지 않고 non-loopback gRPC는 mTLS 전환 후에만 허용한다. 서비스별 outbound는 default-deny egress에서 승인된 provider HTTPS/DNS 목적지만 허용하고 metadata/private/link-local network를 방화벽에서도 차단한다. production container는 non-root, read-only root filesystem, explicit writable volume, `cap_drop=ALL`, `no-new-privileges`, 기본 seccomp와 CPU/memory/PID 제한을 적용한다. production debug/heap/core dump와 Actuator env/config dump를 비활성화하고 진단 절차가 process env를 출력하지 않게 한다. secret rotation, 민감정보별 retention/delete, encrypted backup+restore test, dependency/container/model SCA와 body/query/header redaction을 release gate로 둔다 |
 
 ---
@@ -4027,6 +4027,10 @@ GET /api/v1/dashboard/rag-sources/{answerId}
 async job, metric, artifact status는 current DB `ACTIVE/ADMIN/securityVersion` 재검증을 요구한다. raw
 payload, raw error, requester, actor, provider locator는 응답하지 않는다. cursor/filter는 목적별 HMAC에
 결속되며 cross-owner Admin read는 append-only audit에 남는다.
+
+async write 경계는 app requester와 payload `ownerRef`, job type, 필수 reference를 exact 결속한다. 일반 app은
+`replayOf`를 만들 수 없고 worker는 event-bound claim과 atomic materialization capability만 실행한다.
+legacy bulk claim/direct complete/direct quarantine execute는 worker에 부여하지 않는다.
 
 Dashboard risk/RAG는 JWT `sub`와 DB owner predicate를 모두 적용하고 foreign ID는 404다. model/backtest
 demo projection은 인증된 `demo_` namespace만 읽으며 future real projection은 명시적으로 published된

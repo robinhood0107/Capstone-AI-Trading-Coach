@@ -32,7 +32,8 @@ transaction에 속하며, 이후 처리는 at-least-once와 `processed_event` �
 - 애플리케이션 자체의 polling/worker 기본값은 안전하게 OFF다. `.env`에서 두 값을 명시적으로 true로
   설정한 로컬 runtime만 worker를 연다.
 - `docker compose --profile kafka`는 인프라만 켠다. adapter를 자동 전환하지 않는다.
-- 알 수 없는 adapter, 준비되지 않은 Kafka, non-loopback PLAINTEXT는 fail-closed다.
+- 알 수 없는 adapter와 준비되지 않은 Kafka는 fail-closed다. 현재 build는 Kafka를 local numeric-loopback
+  PLAINTEXT로만 지원하며 non-loopback/deploy 설정은 TLS 값을 넣어도 모두 거부한다.
 - provider, live account, live order는 기본 OFF다. 외부 장애가 `INTERNAL_PAPER`로 자동 전환하지 않는다.
 - S6.6/S6.7 cross-market runtime과 공개 API는 퇴역했다. scheduler, `WARN_ONLY` overlay, 주문 권한이 없다.
 - LightGBM은 연구·재현 전용이며 Signal v2에서는 근거가 없으면 `ABSTAIN/MISSING_EVIDENCE`다.
@@ -98,7 +99,8 @@ set +a
 
 ## Kafka 선택 실행과 DB 복귀
 
-Kafka는 로컬 loopback 개발에서만 PLAINTEXT를 허용한다.
+Kafka는 현재 build에서 로컬 numeric-loopback PLAINTEXT만 지원한다. TLS/service identity/topic·group ACL
+구현은 별도 승인된 deploy 변경으로 남아 있으므로 `deploy`, non-loopback, `SSL`/`SASL_SSL` 설정은 시작 전에 거부된다.
 
 ```bash
 docker compose --env-file .env -f infra/docker-compose.infra.yml \

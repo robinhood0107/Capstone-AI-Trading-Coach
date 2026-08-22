@@ -591,6 +591,10 @@ Spring은 `ASYNC_ADAPTER=db|kafka`로 정확히 하나의 adapter를 선택한�
 `ASYNC_POLLING_ENABLED=true`, `ASYNC_WORKER_ENABLED=true`를 명시한 runtime에서만 열린다. Kafka
 compose profile은 adapter를 바꾸지 않는다.
 
+현재 Kafka build는 numeric-loopback PLAINTEXT만 지원한다. non-loopback/deploy는 `SSL`/`SASL_SSL`을
+설정해도 거부하며, TLS/service identity/topic·group ACL 실제 구현은 별도 승인 범위다. V84는 direct
+outbox/processed-event DML을 회수하고 replay/demo를 전용 DB role로 분리한다.
+
 DB worker:
 
 ```bash

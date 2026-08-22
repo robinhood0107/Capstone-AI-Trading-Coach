@@ -8,7 +8,17 @@ import psycopg
 import pytest
 
 from app.async_worker.core import AsyncWork, AsyncWorkProcessor
-from app.async_worker.postgres import PostgresAsyncWorkRepository
+from app.async_worker.postgres import PostgresAsyncWorkRepository, is_decision_worker_dsn
+
+
+def test_worker_dsn_requires_the_exact_login_role() -> None:
+    assert is_decision_worker_dsn("postgresql://decision_worker:secret@127.0.0.1:5432/decision")
+    assert not is_decision_worker_dsn("postgresql://decision_worker_backup:secret@127.0.0.1:5432/decision")
+    with pytest.raises(ValueError, match="purpose-scoped DB"):
+        PostgresAsyncWorkRepository(
+            "postgresql://decision_worker_backup:secret@127.0.0.1:5432/decision",
+            b"p" * 64,
+        )
 
 
 def test_worker_commit_is_atomic_idempotent_and_least_privileged(
@@ -28,12 +38,8 @@ def test_worker_commit_is_atomic_idempotent_and_least_privileged(
             "SELECT create_async_job(%s,%s,%s,%s::jsonb)",
             (job_id, "ARTIFACT_INGEST", "usr_demo_user", payload_bytes.decode()),
         ).fetchone() == (True,)
-        app.execute(
-            """
-            INSERT INTO event_outbox(
-              event_id,event_type,aggregate_type,aggregate_id,partition_key,payload_json,schema_version
-            ) VALUES (%s,%s,'ASYNC_JOB',%s,%s,%s::jsonb,'1.0.0')
-            """,
+        assert app.execute(
+            "SELECT append_async_request_outbox(%s,%s,%s,%s,%s::jsonb)",
             (
                 event_id,
                 "artifact.ingest-requested.v1",
@@ -41,12 +47,13 @@ def test_worker_commit_is_atomic_idempotent_and_least_privileged(
                 "hmac-sha256:" + "b" * 64,
                 payload_bytes.decode(),
             ),
-        )
+        ).fetchone() == (True,)
         claimed_event = app.execute(
-            "SELECT event_id,claim_token FROM claim_db_async_outbox(%s,100)",
+            "SELECT event_id,claim_token,payload_json::text,partition_key FROM claim_db_async_outbox(%s,100)",
             ("spring-db-dispatcher",),
         ).fetchone()
         assert claimed_event is not None and claimed_event[0] == event_id
+        dispatched_payload = claimed_event[2].encode()
 
     with psycopg.connect(
         isolated_postgres_cluster["worker_dsn"], autocommit=True
@@ -62,12 +69,13 @@ def test_worker_commit_is_atomic_idempotent_and_least_privileged(
         event_id=event_id,
         event_type="artifact.ingest-requested.v1",
         schema_version=1,
-        payload_hash="sha256:" + hashlib.sha256(payload_bytes).hexdigest(),
+        payload_hash="sha256:" + hashlib.sha256(dispatched_payload).hexdigest(),
         job_id=job_id,
         job_type="ARTIFACT_INGEST",
-        payload_json=payload_bytes,
+        payload_json=dispatched_payload,
         claim_token=claim_token,
         transport="DB",
+        partition_key=claimed_event[3],
     )
     repository = PostgresAsyncWorkRepository(
         isolated_postgres_cluster["worker_dsn"], b"p" * 64

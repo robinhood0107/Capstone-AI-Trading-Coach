@@ -11,7 +11,7 @@ import grpc
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 
 from app.async_worker.core import AsyncWork, AsyncWorkProcessor
-from app.async_worker.postgres import PostgresAsyncWorkRepository
+from app.async_worker.postgres import PostgresAsyncWorkRepository, is_decision_worker_dsn
 from app.generated import async_worker_pb2, async_worker_pb2_grpc
 
 
@@ -49,7 +49,7 @@ class AsyncWorkerSettings:
             raise ValueError("async worker gRPC must bind to numeric loopback")
         if _SECRET.fullmatch(self.shared_secret) is None:
             raise ValueError("async worker gRPC secret is invalid")
-        if "decision_worker" not in self.database_dsn:
+        if not is_decision_worker_dsn(self.database_dsn):
             raise ValueError("async worker must use the decision_worker DSN")
         if not 32 <= len(self.partition_hmac_key) <= 128:
             raise ValueError("async worker partition key is invalid")
@@ -85,6 +85,7 @@ class AsyncWorkerServicer(async_worker_pb2_grpc.AsyncWorkerServiceServicer):
                 transport=transport,
                 attempt=request.attempt,
                 source_topic=request.event_type,
+                partition_key=request.partition_key or None,
             )
         )
         outcome = {

@@ -413,23 +413,15 @@ class JdbcDecisionPersistenceAdapter(
         jdbc: NamedParameterJdbcTemplate,
         request: DecisionWriteRequest,
     ) {
-        jdbc.update(
-            """
-            INSERT INTO event_outbox (
-              event_id, event_type, aggregate_type, aggregate_id, partition_key,
-              payload_json, schema_version, status, retry_count, created_at, updated_at
-            )
-            VALUES (
-              :eventId, 'risk.decision-created.v1', 'DECISION', :decisionId, :decisionId,
-              CAST(:payloadJson AS jsonb), '1.0.0', 'PENDING', 0, :createdAt, :createdAt
-            )
-            """.trimIndent(),
+        jdbc.queryForObject(
+            "SELECT append_decision_created_outbox(:eventId,:decisionId,CAST(:payloadJson AS jsonb),:createdAt)",
             referencePayloadParameters(request) +
                 mapOf(
                     "eventId" to id("evt"),
                     "createdAt" to request.projection.createdAt.utc(),
                 ),
-        )
+            Boolean::class.java,
+        ) ?: error("Decision outbox append failed.")
     }
 
     private fun insertIdempotency(

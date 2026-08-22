@@ -28,7 +28,7 @@ ASYNC_WORK_FAILED: AsyncWorkOutcome
 ASYNC_WORK_NEEDS_REVIEW: AsyncWorkOutcome
 
 class AsyncWorkRequest(_message.Message):
-    __slots__ = ("event_id", "event_type", "schema_version", "payload_hash", "job_id", "job_type", "payload_json", "claim_token", "transport", "attempt")
+    __slots__ = ("event_id", "event_type", "schema_version", "payload_hash", "job_id", "job_type", "payload_json", "claim_token", "transport", "attempt", "partition_key")
     EVENT_ID_FIELD_NUMBER: _ClassVar[int]
     EVENT_TYPE_FIELD_NUMBER: _ClassVar[int]
     SCHEMA_VERSION_FIELD_NUMBER: _ClassVar[int]
@@ -39,6 +39,7 @@ class AsyncWorkRequest(_message.Message):
     CLAIM_TOKEN_FIELD_NUMBER: _ClassVar[int]
     TRANSPORT_FIELD_NUMBER: _ClassVar[int]
     ATTEMPT_FIELD_NUMBER: _ClassVar[int]
+    PARTITION_KEY_FIELD_NUMBER: _ClassVar[int]
     event_id: str
     event_type: str
     schema_version: int
@@ -49,7 +50,8 @@ class AsyncWorkRequest(_message.Message):
     claim_token: str
     transport: AsyncTransport
     attempt: int
-    def __init__(self, event_id: _Optional[str] = ..., event_type: _Optional[str] = ..., schema_version: _Optional[int] = ..., payload_hash: _Optional[str] = ..., job_id: _Optional[str] = ..., job_type: _Optional[str] = ..., payload_json: _Optional[bytes] = ..., claim_token: _Optional[str] = ..., transport: _Optional[_Union[AsyncTransport, str]] = ..., attempt: _Optional[int] = ...) -> None: ...
+    partition_key: str
+    def __init__(self, event_id: _Optional[str] = ..., event_type: _Optional[str] = ..., schema_version: _Optional[int] = ..., payload_hash: _Optional[str] = ..., job_id: _Optional[str] = ..., job_type: _Optional[str] = ..., payload_json: _Optional[bytes] = ..., claim_token: _Optional[str] = ..., transport: _Optional[_Union[AsyncTransport, str]] = ..., attempt: _Optional[int] = ..., partition_key: _Optional[str] = ...) -> None: ...
 
 class AsyncWorkResponse(_message.Message):
     __slots__ = ("job_id", "outcome", "result_ref", "failure_code")

@@ -5,7 +5,9 @@ import json
 from typing import Any
 
 from app.async_worker.core import AsyncWork
-from app.async_worker.kafka_consumer import KafkaAsyncMessageHandler, decode_message
+import pytest
+
+from app.async_worker.kafka_consumer import KafkaAsyncMessageHandler, KafkaRetryStop, _handle_or_stop, decode_message
 
 
 class FakeMessage:
@@ -41,8 +43,10 @@ class FakeRepository:
         self.commits: list[AsyncWork] = []
         self.poisons: list[dict[str, Any]] = []
 
-    def claim_job(self, job_id: str, worker_name: str) -> str:
-        assert job_id == "job_fixture_00000001"
+    def claim_job(self, work: AsyncWork, worker_name: str) -> str:
+        assert work.job_id == "job_fixture_00000001"
+        assert work.event_id == "evt_fixture_00000001"
+        assert work.partition_key == "hmac-sha256:" + "c" * 64
         assert worker_name == "decision-python-async-v1"
         return "123e4567-e89b-42d3-a456-426614174000"
 
@@ -81,12 +85,19 @@ class CrashAfterDbCommitConsumer(FakeConsumer):
         raise RuntimeError("injected crash after DB commit before offset ack")
 
 
+class RetryRepository(FakeRepository):
+    def commit(self, work: AsyncWork, result_ref: str) -> str:
+        return "CONFLICT"
+
+    def fail(self, work: AsyncWork, code: str, error_class: str) -> str:
+        return "FAILED"
+
+
 def envelope() -> bytes:
     references = {
         "artifactId": "artifact_fixture_00000001",
         "contentHash": "sha256:" + "a" * 64,
         "jobId": "job_fixture_00000001",
-        "ownerRef": "usr_demo_user",
     }
     payload = json.dumps(references, ensure_ascii=False, separators=(",", ":")).encode()
     return json.dumps(
@@ -169,3 +180,12 @@ def test_crash_after_db_commit_is_redelivered_and_idempotency_absorbs_duplicate(
     recovered_consumer = FakeConsumer()
     assert KafkaAsyncMessageHandler(duplicate_repository, recovered_consumer).handle(message) == "DUPLICATE"  # type: ignore[arg-type]
     assert recovered_consumer.committed == [message]
+
+
+def test_retryable_record_stops_before_any_later_offset_can_be_committed() -> None:
+    message = FakeMessage(envelope())
+    consumer = FakeConsumer()
+    handler = KafkaAsyncMessageHandler(RetryRepository(), consumer)  # type: ignore[arg-type]
+    with pytest.raises(KafkaRetryStop, match="must be redelivered"):
+        _handle_or_stop(handler, message)
+    assert consumer.committed == []

@@ -33,7 +33,19 @@ class JdbcDashboardViewAdapter(
                 ) { result, _ ->
                     val envelope = objectMapper.readTree(result.getString("projection_json"))
                     require(envelope.path("success").asBoolean() && envelope.path("data").isObject)
-                    envelope.path("data")
+                    val embedded = envelope.path("data")
+                    val viewState = embedded.path("viewState").stringValue()
+                    require(viewState in setOf("READY", "EMPTY", "STALE"))
+                    node(
+                        mapOf(
+                            "viewState" to viewState,
+                            "asOf" to result.instant("as_of").toString(),
+                            "freshUntil" to result.instant("fresh_until").toString(),
+                            "evidenceMode" to result.getString("evidence_mode"),
+                            "performanceClaimAllowed" to false,
+                            "view" to embedded.path("view"),
+                        ),
+                    )
                 }.singleOrNull()
         }
 

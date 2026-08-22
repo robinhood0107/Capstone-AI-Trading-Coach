@@ -34,6 +34,7 @@ message AsyncWorkRequest {
   string claim_token = 8;
   AsyncTransport transport = 9;
   int32 attempt = 10;
+  string partition_key = 11;
 }
 
 message AsyncWorkResponse {

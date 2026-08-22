@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from typing import NoReturn
+from typing import Any, NoReturn
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict
 
 from app.async_worker.core import (
     AsyncContractError,
@@ -16,18 +17,20 @@ from app.async_worker.core import (
 
 class PostgresAsyncWorkRepository(AsyncWorkRepository):
     def __init__(self, database_dsn: str, partition_hmac_key: bytes) -> None:
-        if "decision_worker" not in database_dsn or len(partition_hmac_key) < 32:
+        if not is_decision_worker_dsn(database_dsn) or len(partition_hmac_key) < 32:
             raise ValueError("async worker requires purpose-scoped DB and partition credentials")
         self._database_dsn = database_dsn
         self._partition_hmac_key = partition_hmac_key
 
-    def claim_job(self, job_id: str, worker_name: str) -> str | None:
+    def claim_job(self, work: AsyncWork, worker_name: str) -> str | None:
+        if work.partition_key is None:
+            raise AsyncContractError
         try:
-            with psycopg.connect(self._database_dsn, autocommit=True, connect_timeout=2) as connection:
+            with self._connect(autocommit=True) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        "SELECT claim_token FROM claim_async_job_by_id(%s,%s)",
-                        (worker_name, job_id),
+                        "SELECT claim_token FROM claim_async_job_by_event(%s,%s,%s,%s,%s,%s)",
+                        (worker_name, work.event_id, work.event_type, work.job_id, work.payload_hash, work.partition_key),
                     )
                     row = cursor.fetchone()
                     return None if row is None else str(row[0])
@@ -48,7 +51,7 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
             f"dlq|{event_id}|{event_type}|{payload_hash}|{failure_code}".encode()
         ).hexdigest()
         try:
-            with psycopg.connect(self._database_dsn, autocommit=True, connect_timeout=2) as connection:
+            with self._connect(autocommit=True) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         "SELECT record_kafka_poison(%s,%s,%s,%s,%s,%s,%s,%s)",
@@ -70,9 +73,10 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
 
     def commit(self, work: AsyncWork, result_ref: str) -> str:
         completion_event_id = _completion_event_id(work)
-        partition_key = self._partition_key(work.job_id)
+        if work.partition_key is None:
+            raise AsyncContractError
         try:
-            with psycopg.connect(self._database_dsn, autocommit=False, connect_timeout=2) as connection:
+            with self._connect(autocommit=False) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
@@ -89,7 +93,7 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
                             work.claim_token,
                             result_ref,
                             completion_event_id,
-                            partition_key,
+                            work.partition_key,
                         ),
                     )
                     row = cursor.fetchone()
@@ -105,7 +109,7 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
             return "CONFLICT"
         dlq = self._poison_fields(work, code)
         try:
-            with psycopg.connect(self._database_dsn, autocommit=True, connect_timeout=2) as connection:
+            with self._connect(autocommit=True) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
@@ -143,7 +147,7 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
                 failure_code=code,
             )
         try:
-            with psycopg.connect(self._database_dsn, autocommit=True, connect_timeout=2) as connection:
+            with self._connect(autocommit=True) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
@@ -179,6 +183,22 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
         except psycopg.Error:
             return False
 
+    def _connect(self, *, autocommit: bool) -> psycopg.Connection[Any]:
+        connection: psycopg.Connection[Any] = psycopg.connect(
+            self._database_dsn,
+            autocommit=autocommit,
+            connect_timeout=2,
+        )
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT current_user, session_user")
+                if cursor.fetchone() != ("decision_worker", "decision_worker"):
+                    raise ValueError("async worker effective database role mismatch")
+        except Exception:
+            connection.close()
+            raise
+        return connection
+
     def _partition_key(self, job_id: str) -> str:
         digest = hmac.new(self._partition_hmac_key, f"s7:completion:{job_id}".encode(), hashlib.sha256)
         return "hmac-sha256:" + digest.hexdigest()
@@ -188,6 +208,13 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
             f"dlq|{work.event_id}|{work.event_type}|{work.payload_hash}|{code}".encode()
         ).hexdigest()
         return f"evt_dlq_{digest[:32]}", self._partition_key(f"dlq:{work.event_id}")
+
+
+def is_decision_worker_dsn(database_dsn: str) -> bool:
+    try:
+        return conninfo_to_dict(database_dsn).get("user") == "decision_worker"
+    except psycopg.Error:
+        return False
 
 
 def _completion_event_id(work: AsyncWork) -> str:

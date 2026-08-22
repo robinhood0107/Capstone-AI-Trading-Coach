@@ -281,6 +281,10 @@ S7.0~S7.4와 단독 수행 가능한 S8.1~S8.4는 구현·통합 검증됐다. D
 선택 가능하며, S7.3은 stream metric 네 종만 소유한다. cross-market runtime/scheduler/API는
 `RETIRED_NOT_APPLICABLE` 상태를 유지한다.
 
+V84는 direct outbox/processed-event DML을 회수하고 authoritative payload hash binding, expired lease/hard
+deadline fencing, replay/demo 전용 DB role, exact synthetic bundle provenance를 잠근다. 현재 Kafka build는
+local numeric-loopback PLAINTEXT만 지원하며 non-loopback/deploy는 TLS 설정도 거부한다.
+
 | 범위 | 상태 | 설명 |
 |---|---|---|
 | S7.0 | `VERIFIED_DB` | secure outbox/job claim, gRPC worker, Admin status |

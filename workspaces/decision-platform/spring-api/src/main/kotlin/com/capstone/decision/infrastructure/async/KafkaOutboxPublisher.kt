@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
+import tools.jackson.databind.node.ObjectNode
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.OffsetDateTime
@@ -16,6 +17,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 data class KafkaClaimedEvent(
+    val storageEventId: String,
     val eventId: String,
     val eventType: String,
     val aggregateId: String,
@@ -49,6 +51,7 @@ class KafkaOutboxQueue(
             },
         ) { result, _ ->
             KafkaClaimedEvent(
+                storageEventId = result.getString("event_id"),
                 eventId = result.getString("event_id"),
                 eventType = result.getString("event_type"),
                 aggregateId = result.getString("aggregate_id"),
@@ -75,6 +78,7 @@ class KafkaOutboxQueue(
             },
         ) { result, _ ->
             KafkaClaimedEvent(
+                storageEventId = result.getString("storage_event_id"),
                 eventId = result.getString("event_id"),
                 eventType = result.getString("event_type"),
                 aggregateId = result.getString("aggregate_id"),
@@ -93,7 +97,7 @@ class KafkaOutboxQueue(
         jdbc.queryForObject(
             if (event.dlq) "SELECT complete_dlq_outbox(?, ?)" else "SELECT complete_event_outbox(?, ?)",
             Boolean::class.java,
-            event.eventId,
+            event.storageEventId,
             event.claimToken,
         ) == true
 
@@ -106,7 +110,7 @@ class KafkaOutboxQueue(
                 jdbc.queryForObject(
                     "SELECT fail_dlq_outbox(?, ?)",
                     Boolean::class.java,
-                    event.eventId,
+                    event.storageEventId,
                     event.claimToken,
                 ) == true
             return if (changed) "DLQ_REQUESTED" else "CONFLICT"
@@ -115,7 +119,7 @@ class KafkaOutboxQueue(
             jdbc.queryForObject(
                 "SELECT fail_event_outbox(?, ?, ?, 'RETRYABLE_TRANSIENT')",
                 String::class.java,
-                event.eventId,
+                event.storageEventId,
                 event.claimToken,
                 code,
             ),
@@ -129,9 +133,21 @@ class KafkaOutboxQueue(
         jdbc.queryForObject(
             "SELECT quarantine_claimed_outbox(?, ?, ?)",
             Boolean::class.java,
-            event.eventId,
+            event.storageEventId,
             event.claimToken,
             code,
+        ) == true
+
+    fun bindPayloadHash(
+        event: KafkaClaimedEvent,
+        payloadHash: String,
+    ): Boolean =
+        jdbc.queryForObject(
+            "SELECT bind_claimed_outbox_payload_hash(?, ?, ?)",
+            Boolean::class.java,
+            event.storageEventId,
+            event.claimToken,
+            payloadHash,
         ) == true
 }
 
@@ -160,10 +176,14 @@ class KafkaOutboxPublisher(
             if (event.dlq) catalog.requireTopic(event.topicName) else catalog.requireBaseTopic(event.topicName)
             require(event.schemaVersion == 1 && event.attempt in 1..3)
             require(PARTITION_KEY.matches(event.partitionKey))
-            val references = objectMapper.readTree(event.payloadJson)
-            require(references.isObject && references.size() <= 64)
+            val storedReferences = objectMapper.readTree(event.payloadJson)
+            require(storedReferences.isObject && storedReferences.size() <= 64)
+            val references = storedReferences.deepCopy() as ObjectNode
+            references.remove("ownerRef")
             val canonicalReferences = objectMapper.writeValueAsBytes(references)
             require(canonicalReferences.size <= 32_768)
+            val payloadHash = "sha256:${sha256(canonicalReferences)}"
+            if (!event.dlq) require(queue.bindPayloadHash(event, payloadHash))
             val envelope =
                 linkedMapOf(
                     "eventId" to event.eventId,
@@ -171,7 +191,7 @@ class KafkaOutboxPublisher(
                     "schemaVersion" to event.schemaVersion,
                     "occurredAt" to event.occurredAt.toInstant().toString(),
                     "partitionKey" to event.partitionKey,
-                    "payloadHash" to "sha256:${sha256(canonicalReferences)}",
+                    "payloadHash" to payloadHash,
                     "references" to references,
                 )
             val value = objectMapper.writeValueAsString(envelope)

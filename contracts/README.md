@@ -905,6 +905,11 @@ Dashboard common state는 `READY|EMPTY|STALE`, nullable `asOf/freshUntil`, exact
 `performanceClaimAllowed=false`다. loading은 client-only이고 error는 표준 HTTP error envelope다.
 cross-market schema/API/field는 생성하지 않는다.
 
+Kafka async envelope는 stable owner ID를 포함하지 않고 opaque `partitionKey`와 canonical references hash만
+전달한다. DB gRPC request도 claimed outbox의 partition key를 명시적으로 운반해 worker commit이
+event/type/job/partition/hash를 authoritative row에 bind하도록 한다. synthetic projection은 Python generator가
+만든 exact artifact/run/content/projection bytes를 Spring E2E fixture와 공유한다.
+
 재현:
 
 ```bash

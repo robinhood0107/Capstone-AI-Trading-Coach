@@ -14,6 +14,7 @@ from app.s8_demo.synthetic_bundle import build_synthetic_bundle
 ROOT = Path(__file__).resolve().parents[5]
 CONFIG = ROOT / "shared-docs" / "backtest_config.yaml"
 SCHEMAS = ROOT / "contracts" / "schemas"
+SPRING_FIXTURE = ROOT / "workspaces" / "decision-platform" / "spring-api" / "src" / "test" / "resources" / "s8-fake-e2e"
 
 
 def test_bundle_is_deterministic_bounded_and_contract_valid(tmp_path: Path) -> None:
@@ -46,6 +47,15 @@ def test_bundle_is_deterministic_bounded_and_contract_valid(tmp_path: Path) -> N
         "model-evaluation.json",
     ]
     assert all(path.is_file() and not path.is_symlink() and path.stat().st_size < 524_288 for path in tmp_path.iterdir())
+
+
+def test_spring_e2e_uses_the_exact_python_generated_bundle() -> None:
+    expected = build_synthetic_bundle(CONFIG)
+    assert (SPRING_FIXTURE / "manifest.json").read_text(encoding="utf-8").strip() == json.dumps(
+        expected.manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    assert (SPRING_FIXTURE / "model-evaluation.json").read_text(encoding="utf-8").strip() == expected.model_projection_text
+    assert (SPRING_FIXTURE / "backtest.json").read_text(encoding="utf-8").strip() == expected.backtest_projection_text
 
 
 def test_scalar_metrics_are_reproducible_at_frozen_tolerance() -> None:

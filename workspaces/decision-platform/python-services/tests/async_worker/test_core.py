@@ -48,6 +48,7 @@ def _work(payload: dict[str, object] | None = None) -> AsyncWork:
         payload_json=body,
         claim_token="00000000-0000-4000-8000-000000000001",
         transport="DB",
+        partition_key="hmac-sha256:" + "b" * 64,
     )
 
 

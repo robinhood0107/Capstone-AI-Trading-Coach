@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict
 
 _ID = re.compile(r"^(?:evt|job)_[A-Za-z0-9_-]{8,96}$")
 _REASON = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$")
@@ -173,9 +174,17 @@ def execute_packet(args: argparse.Namespace) -> list[dict[str, Any]]:
     if claims["sub"] != packet["actorUserId"] or claims["securityVersion"] != packet["securityVersion"]:
         raise ReplayCliError("JWT_PACKET_ACTOR_MISMATCH")
     dsn = _read_secret(args.database_dsn_file, minimum=16).decode("utf-8")
+    try:
+        if conninfo_to_dict(dsn).get("user") != "decision_replay":
+            raise ReplayCliError("REPLAY_DATABASE_ROLE_INVALID")
+    except psycopg.Error as error:
+        raise ReplayCliError("REPLAY_DATABASE_DSN_INVALID") from error
     packet_hash = "sha256:" + hashlib.sha256(_canonical(packet)).hexdigest()
     with psycopg.connect(dsn, autocommit=False, connect_timeout=2) as connection:
         with connection.cursor() as cursor:
+            cursor.execute("select current_user, session_user")
+            if cursor.fetchone() != ("decision_replay", "decision_replay"):
+                raise ReplayCliError("REPLAY_DATABASE_ROLE_INVALID")
             cursor.execute(
                 "select * from replay_async_work(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (

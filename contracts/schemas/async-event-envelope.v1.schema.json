@@ -54,10 +54,6 @@
           "pattern": "^job_[A-Za-z0-9_-]{8,96}$",
           "type": "string"
         },
-        "ownerRef": {
-          "pattern": "^usr_[A-Za-z0-9_-]{8,64}$",
-          "type": "string"
-        },
         "profileId": {
           "enum": [
             "bge_m3_local_1024_v1",

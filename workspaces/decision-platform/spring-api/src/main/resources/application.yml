@@ -242,8 +242,6 @@ app:
       bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:127.0.0.1:9092}
       deployment-mode: ${KAFKA_DEPLOYMENT_MODE:local}
       security-protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
-      service-identity: ${KAFKA_SERVICE_IDENTITY:}
-      acl-enforced: ${KAFKA_ACL_ENFORCED:false}
       publish-timeout: PT5S
 
 management:

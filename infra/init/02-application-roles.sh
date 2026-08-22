@@ -18,6 +18,8 @@ set -Eeuo pipefail
 : "${POSTGRES_SIGNAL_SCHEDULER_PASSWORD:?POSTGRES_SIGNAL_SCHEDULER_PASSWORD is required}"
 : "${POSTGRES_SIGNAL_ADMIN_PASSWORD:?POSTGRES_SIGNAL_ADMIN_PASSWORD is required}"
 : "${POSTGRES_WORKER_PASSWORD:?POSTGRES_WORKER_PASSWORD is required}"
+: "${POSTGRES_REPLAY_PASSWORD:?POSTGRES_REPLAY_PASSWORD is required}"
+: "${POSTGRES_DEMO_PASSWORD:?POSTGRES_DEMO_PASSWORD is required}"
 
 # psql argv나 shell-expanded SQL에 password를 넣지 않고 process environment에서 안전하게 인용한다.
 export PGPASSWORD="${POSTGRES_PASSWORD:-}"
@@ -38,6 +40,8 @@ psql -v ON_ERROR_STOP=1 --no-password --username "$POSTGRES_USER" --dbname "$POS
 \getenv signal_scheduler_password POSTGRES_SIGNAL_SCHEDULER_PASSWORD
 \getenv signal_admin_password POSTGRES_SIGNAL_ADMIN_PASSWORD
 \getenv worker_password POSTGRES_WORKER_PASSWORD
+\getenv replay_password POSTGRES_REPLAY_PASSWORD
+\getenv demo_password POSTGRES_DEMO_PASSWORD
 
 -- role password DDL 전에 session 전체의 statement·duration·sampling log를 닫는다.
 SET log_statement = 'none';
@@ -103,6 +107,36 @@ ALTER ROLE decision_worker SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_worker SET statement_timeout = '60s';
 ALTER ROLE decision_worker SET lock_timeout = '500ms';
 ALTER ROLE decision_worker SET idle_in_transaction_session_timeout = '60s';
+
+SELECT format(
+    'CREATE ROLE decision_replay LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'replay_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_replay')
+\gexec
+SELECT format(
+    'ALTER ROLE decision_replay WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'replay_password'
+)
+\gexec
+ALTER ROLE decision_replay SET statement_timeout = '5s';
+ALTER ROLE decision_replay SET lock_timeout = '500ms';
+ALTER ROLE decision_replay SET idle_in_transaction_session_timeout = '5s';
+
+SELECT format(
+    'CREATE ROLE decision_demo LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'demo_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_demo')
+\gexec
+SELECT format(
+    'ALTER ROLE decision_demo WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'demo_password'
+)
+\gexec
+ALTER ROLE decision_demo SET statement_timeout = '5s';
+ALTER ROLE decision_demo SET lock_timeout = '500ms';
+ALTER ROLE decision_demo SET idle_in_transaction_session_timeout = '5s';
 
 SELECT format(
     'CREATE ROLE flyway LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
@@ -331,6 +365,8 @@ REVOKE ALL ON DATABASE :"database_name" FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"database_name" TO
     decision_app,
     decision_worker,
+    decision_replay,
+    decision_demo,
     decision_collector,
     decision_disclosure_reader,
     decision_market_writer,
@@ -351,6 +387,8 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO
     decision_app,
     decision_worker,
+    decision_replay,
+    decision_demo,
     decision_collector,
     decision_disclosure_reader,
     decision_market_writer,
@@ -374,7 +412,11 @@ GRANT CREATE ON SCHEMA public TO flyway;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_app;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_worker;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_replay;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_demo;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_worker;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_replay;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_demo;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_collector;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_collector;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_disclosure_reader;
@@ -563,10 +605,12 @@ BEGIN
             decision_artifacts,
             decision_traces,
             audit_logs,
-            event_outbox,
             decision_idempotency_results
         TO decision_app;
         GRANT EXECUTE ON FUNCTION
+            append_decision_created_outbox(text, text, jsonb, timestamptz),
+            append_kill_switch_outbox(text, boolean, timestamptz),
+            append_async_request_outbox(text, text, text, text, jsonb),
             read_decision_owner_projection(),
             read_decision_audit_projection(),
             find_decision_idempotency_result(text, text, timestamptz),
@@ -877,7 +921,8 @@ BEGIN
             'PUBLIC, decision_app, decision_collector, decision_disclosure_reader, ' ||
             'decision_market_writer, decision_portfolio_writer, decision_risk_writer, ' ||
             'decision_fill_writer, decision_rag_writer, decision_rag_admin, decision_rag_query, ' ||
-            'decision_signal_writer, decision_signal_scheduler, decision_signal_admin',
+            'decision_signal_writer, decision_signal_scheduler, decision_signal_admin, ' ||
+            'decision_worker, decision_replay, decision_demo',
             routine.signature
         );
     END LOOP;
@@ -1790,6 +1835,9 @@ BEGIN
             shedlock
         FROM PUBLIC, decision_app, decision_worker;
         GRANT EXECUTE ON FUNCTION
+            append_async_request_outbox(text, text, text, text, jsonb),
+            append_decision_created_outbox(text, text, jsonb, timestamptz),
+            append_kill_switch_outbox(text, boolean, timestamptz),
             claim_event_outbox(text, integer),
             claim_db_async_outbox(text, integer),
             complete_event_outbox(text, uuid),
@@ -1797,6 +1845,7 @@ BEGIN
             quarantine_claimed_outbox(text, uuid, text),
             quarantine_unknown_outbox(integer),
             claim_dlq_outbox(text, integer),
+            bind_claimed_outbox_payload_hash(text, uuid, text),
             complete_dlq_outbox(text, uuid),
             fail_dlq_outbox(text, uuid),
             create_async_job(text, text, text, jsonb),
@@ -1805,18 +1854,20 @@ BEGIN
         TO decision_app;
         GRANT SELECT, INSERT, UPDATE ON TABLE shedlock TO decision_app;
         GRANT EXECUTE ON FUNCTION
-            claim_async_jobs(text, integer),
             claim_async_job_by_id(text, text),
+            claim_async_job_by_event(text, text, text, text, text, text),
             heartbeat_async_job(text, uuid),
-            complete_async_job(text, uuid, jsonb),
             fail_async_job(text, uuid, text, text),
-            quarantine_async_job(text, uuid, text, text),
             record_kafka_poison(text, text, text, text, text, integer, text, text),
             quarantine_async_work(text, uuid, text, text, text, text, text, integer, text, text),
             fail_async_work(text, uuid, text, text, text, text, text, integer, text, text),
             commit_async_work(text, text, text, text, text, uuid, text, text, text)
         TO decision_worker;
-        GRANT INSERT ON TABLE processed_event TO decision_worker;
+        REVOKE EXECUTE ON FUNCTION
+            claim_async_jobs(text, integer),
+            complete_async_job(text, uuid, jsonb),
+            quarantine_async_job(text, uuid, text, text)
+        FROM decision_worker;
         REVOKE CREATE ON SCHEMA public FROM decision_app, decision_worker;
     END IF;
 
@@ -1831,19 +1882,23 @@ BEGIN
     END IF;
 
     IF to_regprocedure('public.replay_async_work(text,bigint,text,text,text[],integer,text,text,boolean)') IS NOT NULL THEN
-        GRANT EXECUTE ON FUNCTION
-            replay_async_work(text, bigint, text, text, text[], integer, text, text, boolean)
-        TO decision_app;
+        REVOKE EXECUTE ON FUNCTION replay_async_work(text, bigint, text, text, text[], integer, text, text, boolean)
+        FROM decision_app;
+        GRANT EXECUTE ON FUNCTION replay_async_work(text, bigint, text, text, text[], integer, text, text, boolean)
+        TO decision_replay;
     END IF;
 
     IF to_regprocedure('public.list_artifact_ingest_status(text,bigint)') IS NOT NULL THEN
         GRANT EXECUTE ON FUNCTION
-            stage_synthetic_dashboard_view(text, text, text, text, text, text, text, text, timestamptz, timestamptz),
             read_dashboard_artifact_view(text, bigint, text, text),
             read_dashboard_risk_view(text, bigint, text),
             read_dashboard_rag_sources(text, bigint, text),
             list_artifact_ingest_status(text, bigint)
         TO decision_app;
+        REVOKE EXECUTE ON FUNCTION stage_synthetic_dashboard_view(text, text, text, text, text, text, text, text, timestamptz, timestamptz)
+        FROM decision_app;
+        GRANT EXECUTE ON FUNCTION stage_synthetic_dashboard_view(text, text, text, text, text, text, text, text, timestamptz, timestamptz)
+        TO decision_demo;
     END IF;
 END
 $s7_async_runtime_privileges$;
@@ -1854,6 +1909,8 @@ BEGIN
         -- 기존 volume에 role bootstrap을 재적용해도 runtime이 migration 이력을 변조하지 못한다.
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_app;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_worker;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_replay;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_demo;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_collector;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_disclosure_reader;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_fill_writer;

@@ -7,7 +7,13 @@ from typing import Any
 from app.async_worker.core import AsyncWork
 import pytest
 
-from app.async_worker.kafka_consumer import KafkaAsyncMessageHandler, KafkaRetryStop, _handle_or_stop, decode_message
+from app.async_worker.kafka_consumer import (
+    KafkaAsyncMessageHandler,
+    KafkaRetryStop,
+    _handle_or_stop,
+    _is_single_loopback_endpoint,
+    decode_message,
+)
 
 
 class FakeMessage:
@@ -141,6 +147,8 @@ def test_poison_records_only_sanitized_identity_and_commits_offset() -> None:
         "event_type",
         "payload_hash",
         "source_topic",
+        "source_partition",
+        "source_offset",
         "attempt",
         "failure_code",
     }
@@ -158,6 +166,26 @@ def test_crash_before_db_commit_leaves_offset_unacked_for_redelivery() -> None:
     else:
         raise AssertionError("crash injection did not escape the handler")
     assert consumer.committed == []
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "127.0.0.1:9092,evil.example:9092",
+        "[::1]:9092,127.0.0.1:9092",
+        "localhost:9092",
+        "127.0.0.1:0",
+        "127.0.0.1:65536",
+        "PLAINTEXT://127.0.0.1:9092",
+    ),
+)
+def test_loopback_bootstrap_rejects_endpoint_smuggling(value: str) -> None:
+    assert not _is_single_loopback_endpoint(value)
+
+
+def test_loopback_bootstrap_accepts_one_literal_endpoint() -> None:
+    assert _is_single_loopback_endpoint("127.0.0.1:9092")
+    assert _is_single_loopback_endpoint("[::1]:9092")
 
 
 def test_crash_after_db_commit_is_redelivered_and_idempotency_absorbs_duplicate() -> None:

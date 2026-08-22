@@ -29,8 +29,8 @@ class SignalV2MigrationContractTest {
                     .sorted()
                     .toList()
             }
-        assertThat(versions.last()).isEqualTo(84)
-        assertThat(versions.takeLast(13)).containsExactly(72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84)
+        assertThat(versions.last()).isEqualTo(85)
+        assertThat(versions.takeLast(14)).containsExactly(72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85)
     }
 
     @Test

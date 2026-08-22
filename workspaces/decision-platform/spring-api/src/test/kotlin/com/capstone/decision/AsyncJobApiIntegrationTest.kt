@@ -70,8 +70,8 @@ class AsyncJobApiIntegrationTest(
             ownerJdbc.queryForObject(
                 "select has_table_privilege('decision_app','public.users','SELECT')",
                 Boolean::class.java,
-            ) == true,
-        ) { "decision_app users SELECT grant missing" }
+            ) == false,
+        ) { "decision_app users SELECT must remain revoked" }
         ownerJdbc.update("delete from event_outbox")
         ownerJdbc.update("delete from async_job")
         ownerJdbc.update("update users set role='ADMIN',status='ACTIVE',security_version=1 where user_id='usr_demo_admin'")
@@ -274,7 +274,7 @@ class AsyncJobApiIntegrationTest(
         )
 
         ownerJdbc.execute(
-            "revoke execute on function append_async_request_outbox(text,text,text,text,jsonb) from decision_app",
+            "revoke execute on function create_async_request_authorized(text,text,text,text,text,text,text,jsonb) from decision_app",
         )
         val jobsBefore = ownerJdbc.queryForObject("select count(*) from async_job", Int::class.java)
         try {
@@ -293,7 +293,7 @@ class AsyncJobApiIntegrationTest(
             }
         } finally {
             ownerJdbc.execute(
-                "grant execute on function append_async_request_outbox(text,text,text,text,jsonb) to decision_app",
+                "grant execute on function create_async_request_authorized(text,text,text,text,text,text,text,jsonb) to decision_app",
             )
         }
         assertEquals(jobsBefore, ownerJdbc.queryForObject("select count(*) from async_job", Int::class.java))
@@ -568,10 +568,9 @@ class AsyncJobApiIntegrationTest(
         payload: String,
     ) {
         assertEquals(
-            true,
-            appJdbc.queryForObject(
-                "select create_async_job(?,?,?,?::jsonb)",
-                Boolean::class.java,
+            1,
+            ownerJdbc.update(
+                "insert into async_job(job_id,job_type,requested_by,payload_json) values (?,?,?,?::jsonb)",
                 jobId,
                 type,
                 requestedBy,

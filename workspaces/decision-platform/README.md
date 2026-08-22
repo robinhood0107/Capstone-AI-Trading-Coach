@@ -594,6 +594,10 @@ compose profile은 adapter를 바꾸지 않는다.
 현재 Kafka build는 numeric-loopback PLAINTEXT만 지원한다. non-loopback/deploy는 `SSL`/`SASL_SSL`을
 설정해도 거부하며, TLS/service identity/topic·group ACL 실제 구현은 별도 승인 범위다. V84는 direct
 outbox/processed-event DML을 회수하고 replay/demo를 전용 DB role로 분리한다.
+V85는 별도 `decision_identity`의 15초 one-use actor capability로 app의 owner/Admin DB 작업을 묶고,
+`decision_replay_authorizer`와 `decision_replay`를 분리한다. 두 role password는 `.env.example`의
+`POSTGRES_IDENTITY_PASSWORD`, `POSTGRES_REPLAY_AUTHORIZER_PASSWORD`로 각각 주입한다. Kafka poison은
+실제 topic/partition/offset을 unique provenance로 사용하며 legacy ID-only worker claim은 실행할 수 없다.
 
 DB worker:
 

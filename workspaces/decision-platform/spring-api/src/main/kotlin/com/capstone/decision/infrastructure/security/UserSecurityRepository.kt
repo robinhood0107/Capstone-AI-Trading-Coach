@@ -21,13 +21,9 @@ class JdbcUserSecurityRepository(
         jdbcTemplate().query(
             """
             select user_id, username, password_hash, role, status, security_version
-            from users
-            where user_id in (?, ?)
-            order by user_id
+            from read_demo_credentials()
             """.trimIndent(),
             USER_SECURITY_ROW_MAPPER,
-            DemoAccounts.identities[0].userId,
-            DemoAccounts.identities[1].userId,
         )
 
     override fun findByUserId(userId: String): UserSecurityActorRecord? =
@@ -35,8 +31,7 @@ class JdbcUserSecurityRepository(
             .query(
                 """
                 select user_id, username, role, status, security_version
-                from users
-                where user_id = ?
+                from read_user_actor(?)
                 """.trimIndent(),
                 USER_SECURITY_ACTOR_ROW_MAPPER,
                 userId,

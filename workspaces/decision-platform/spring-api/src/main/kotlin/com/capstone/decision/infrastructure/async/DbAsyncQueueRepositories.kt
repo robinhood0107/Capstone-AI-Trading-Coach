@@ -102,6 +102,18 @@ class DbAsyncOutboxQueue(
             failureCode,
         ) == true
 
+    fun bindPayloadHash(
+        event: ClaimedOutboxEvent,
+        payloadHash: String,
+    ): Boolean =
+        jdbc().jdbcTemplate.queryForObject(
+            "SELECT bind_claimed_outbox_payload_hash(?, ?, ?)",
+            Boolean::class.java,
+            event.eventId,
+            event.claimToken,
+            payloadHash,
+        ) == true
+
     private fun jdbc(): NamedParameterJdbcTemplate =
         jdbcProvider.getIfAvailable() ?: throw IllegalStateException("Async outbox JDBC access is unavailable.")
 }
@@ -114,16 +126,21 @@ class DbAsyncWorkerQueue(
 ) {
     private val jdbc = JdbcTemplate(database.dataSource)
 
-    fun claimById(
+    fun claimByEvent(
         worker: String,
-        jobId: String,
+        event: ClaimedOutboxEvent,
+        payloadHash: String,
     ): ClaimedAsyncJob? =
         jdbc
             .query(
-                "SELECT * FROM claim_async_job_by_id(?, ?)",
+                "SELECT * FROM claim_async_job_by_event(?, ?, ?, ?, ?, ?)",
                 { statement ->
                     statement.setString(1, worker)
-                    statement.setString(2, jobId)
+                    statement.setString(2, event.eventId)
+                    statement.setString(3, event.eventType)
+                    statement.setString(4, event.aggregateId)
+                    statement.setString(5, payloadHash)
+                    statement.setString(6, event.partitionKey)
                 },
             ) { result, _ ->
                 ClaimedAsyncJob(
@@ -135,6 +152,20 @@ class DbAsyncWorkerQueue(
                     hardDeadline = result.getObject("hard_deadline_at", OffsetDateTime::class.java).toInstant(),
                 )
             }.singleOrNull()
+
+    fun resolveCompleted(
+        event: ClaimedOutboxEvent,
+        payloadHash: String,
+    ): Boolean =
+        jdbc.queryForObject(
+            "SELECT resolve_completed_async_event(?, ?, ?, ?, ?)",
+            Boolean::class.java,
+            event.eventId,
+            event.eventType,
+            event.aggregateId,
+            payloadHash,
+            event.partitionKey,
+        ) == true
 
     fun fail(
         job: ClaimedAsyncJob,

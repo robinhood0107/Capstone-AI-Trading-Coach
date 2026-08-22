@@ -5,6 +5,7 @@ import com.capstone.decision.application.async.AsyncJobRequest
 import com.capstone.decision.application.async.AsyncJobRequestConflictException
 import com.capstone.decision.application.async.AsyncJobType
 import com.capstone.decision.application.async.AsyncPipelinePort
+import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -21,6 +22,7 @@ import javax.crypto.spec.SecretKeySpec
 class JdbcAsyncRequestWriter(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val objectMapper: ObjectMapper,
+    private val actorCapabilityIssuer: ActorCapabilityIssuer,
     properties: AsyncProperties,
 ) {
     private val partitionKey = properties.partitionHmacKey.toByteArray(StandardCharsets.UTF_8)
@@ -33,10 +35,20 @@ class JdbcAsyncRequestWriter(
         val payload = linkedMapOf("jobId" to jobId, "ownerRef" to command.requestedBy) + command.references
         val payloadJson = objectMapper.writeValueAsString(payload)
         require(payloadJson.toByteArray(StandardCharsets.UTF_8).size <= DB_PAYLOAD_BYTES)
+        val eventType = EVENT_TYPES.getValue(command.type)
         val created =
             jdbc().queryForObject(
-                "SELECT create_async_job(:jobId, :jobType, :requestedBy, CAST(:payload AS jsonb))",
+                """
+                SELECT create_async_request_authorized(
+                  :capability,:eventId,:eventType,:partitionKey,
+                  :jobId,:jobType,:requestedBy,CAST(:payload AS jsonb)
+                )
+                """.trimIndent(),
                 mapOf(
+                    "capability" to actorCapabilityIssuer.issue(command.requestedBy),
+                    "eventId" to eventId,
+                    "eventType" to eventType,
+                    "partitionKey" to opaquePartitionKey(command.requestedBy, command.type),
                     "jobId" to jobId,
                     "jobType" to command.type.name,
                     "requestedBy" to command.requestedBy,
@@ -45,20 +57,6 @@ class JdbcAsyncRequestWriter(
                 Boolean::class.java,
             ) == true
         if (!created) throw AsyncJobRequestConflictException()
-        val eventType = EVENT_TYPES.getValue(command.type)
-        val appended =
-            jdbc().queryForObject(
-                "SELECT append_async_request_outbox(:eventId,:eventType,:jobId,:partitionKey,CAST(:payload AS jsonb))",
-                mapOf(
-                    "eventId" to eventId,
-                    "eventType" to eventType,
-                    "jobId" to jobId,
-                    "partitionKey" to opaquePartitionKey(command.requestedBy, command.type),
-                    "payload" to payloadJson,
-                ),
-                Boolean::class.java,
-            ) == true
-        if (!appended) throw AsyncJobRequestConflictException()
         return AcceptedAsyncJob(jobId, eventId)
     }
 

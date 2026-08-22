@@ -59,6 +59,8 @@ object OpenApiFixtureEnvironmentWriter {
                     "POSTGRES_SIGNAL_ADMIN_PASSWORD" to randomToken(random, 32),
                     "POSTGRES_WORKER_PASSWORD" to randomToken(random, 32),
                     "POSTGRES_REPLAY_PASSWORD" to randomToken(random, 32),
+                    "POSTGRES_IDENTITY_PASSWORD" to randomToken(random, 32),
+                    "POSTGRES_REPLAY_AUTHORIZER_PASSWORD" to randomToken(random, 32),
                     "POSTGRES_DEMO_PASSWORD" to randomToken(random, 32),
                     "KAFKA_UI_USERNAME" to "admin",
                     "KAFKA_UI_PASSWORD" to randomToken(random, 32),

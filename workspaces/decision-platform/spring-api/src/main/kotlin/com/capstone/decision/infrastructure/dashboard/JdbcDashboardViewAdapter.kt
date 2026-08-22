@@ -4,6 +4,7 @@ import com.capstone.decision.application.dashboard.ArtifactIngestStatusView
 import com.capstone.decision.application.dashboard.DashboardArtifactKind
 import com.capstone.decision.application.dashboard.DashboardUnavailableException
 import com.capstone.decision.application.dashboard.DashboardViewPort
+import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
@@ -18,6 +19,7 @@ class JdbcDashboardViewAdapter(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
+    private val actorCapabilityIssuer: ActorCapabilityIssuer,
 ) : DashboardViewPort {
     override fun artifact(
         actorUserId: String,
@@ -28,8 +30,14 @@ class JdbcDashboardViewAdapter(
         protect {
             jdbc()
                 .query(
-                    "SELECT * FROM read_dashboard_artifact_view(:actor,:version,:kind,:runId)",
-                    mapOf("actor" to actorUserId, "version" to securityVersion, "kind" to kind.name, "runId" to runId),
+                    "SELECT * FROM read_dashboard_artifact_view_authorized(:capability,:actor,:version,:kind,:runId)",
+                    mapOf(
+                        "capability" to actorCapabilityIssuer.issue(actorUserId),
+                        "actor" to actorUserId,
+                        "version" to securityVersion,
+                        "kind" to kind.name,
+                        "runId" to runId,
+                    ),
                 ) { result, _ ->
                     val envelope = objectMapper.readTree(result.getString("projection_json"))
                     require(envelope.path("success").asBoolean() && envelope.path("data").isObject)
@@ -57,8 +65,13 @@ class JdbcDashboardViewAdapter(
         protect {
             jdbc()
                 .query(
-                    "SELECT * FROM read_dashboard_risk_view(:actor,:version,:decisionId)",
-                    mapOf("actor" to actorUserId, "version" to securityVersion, "decisionId" to decisionId),
+                    "SELECT * FROM read_dashboard_risk_view_authorized(:capability,:actor,:version,:decisionId)",
+                    mapOf(
+                        "capability" to actorCapabilityIssuer.issue(actorUserId),
+                        "actor" to actorUserId,
+                        "version" to securityVersion,
+                        "decisionId" to decisionId,
+                    ),
                 ) { result, _ ->
                     val asOf = result.instant("evaluation_as_of")
                     val freshUntil = result.instant("valid_until")
@@ -90,8 +103,13 @@ class JdbcDashboardViewAdapter(
         protect {
             jdbc()
                 .query(
-                    "SELECT * FROM read_dashboard_rag_sources(:actor,:version,:answerId)",
-                    mapOf("actor" to actorUserId, "version" to securityVersion, "answerId" to answerId),
+                    "SELECT * FROM read_dashboard_rag_sources_authorized(:capability,:actor,:version,:answerId)",
+                    mapOf(
+                        "capability" to actorCapabilityIssuer.issue(actorUserId),
+                        "actor" to actorUserId,
+                        "version" to securityVersion,
+                        "answerId" to answerId,
+                    ),
                 ) { result, _ ->
                     val createdAt = result.instant("created_at")
                     val expiresAt = result.instant("expires_at")
@@ -119,11 +137,13 @@ class JdbcDashboardViewAdapter(
         securityVersion: Long,
     ): List<ArtifactIngestStatusView>? =
         protect {
-            val active = currentActorActive(actorUserId, securityVersion)
-            if (!active) return@protect null
             jdbc().query(
-                "SELECT * FROM list_artifact_ingest_status(:actor,:version)",
-                mapOf("actor" to actorUserId, "version" to securityVersion),
+                "SELECT * FROM list_artifact_ingest_status_authorized(:capability,:actor,:version)",
+                mapOf(
+                    "capability" to actorCapabilityIssuer.issue(actorUserId),
+                    "actor" to actorUserId,
+                    "version" to securityVersion,
+                ),
             ) { result, _ ->
                 ArtifactIngestStatusView(
                     artifactId = result.getString("artifact_id"),
@@ -138,16 +158,6 @@ class JdbcDashboardViewAdapter(
                 )
             }
         }
-
-    private fun currentActorActive(
-        actorUserId: String,
-        securityVersion: Long,
-    ): Boolean =
-        jdbc().queryForObject(
-            "SELECT EXISTS(SELECT 1 FROM users WHERE user_id=:actor AND status='ACTIVE' AND role='ADMIN' AND security_version=:version)",
-            mapOf("actor" to actorUserId, "version" to securityVersion),
-            Boolean::class.java,
-        ) == true
 
     private fun ResultSet.instant(column: String) = getObject(column, OffsetDateTime::class.java).toInstant()
 

@@ -3,12 +3,14 @@ package com.capstone.decision.infrastructure.async
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 
 /** DB-only observability aggregation over persisted Decision Platform records. */
 @Component
+@ConditionalOnProperty(name = ["app.async.polling-enabled"], havingValue = "true")
 class StreamMetricAggregator(
     private val jdbcProvider: ObjectProvider<JdbcTemplate>,
 ) {

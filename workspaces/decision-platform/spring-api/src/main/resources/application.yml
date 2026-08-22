@@ -243,6 +243,10 @@ app:
       deployment-mode: ${KAFKA_DEPLOYMENT_MODE:local}
       security-protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
       publish-timeout: PT5S
+  identity:
+    jdbc-url: ${ACTOR_IDENTITY_JDBC_URL:${spring.datasource.url}}
+    username: decision_identity
+    password: ${POSTGRES_IDENTITY_PASSWORD}
 
 management:
   endpoints:

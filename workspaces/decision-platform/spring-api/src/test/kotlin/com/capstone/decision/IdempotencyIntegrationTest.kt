@@ -43,6 +43,7 @@ import java.util.concurrent.TimeUnit
 @SpringBootTest(
     properties = [
         "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration,org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration",
+        "app.identity.enabled=false",
         "app.idempotency.max-request-body-bytes=256",
         "app.idempotency.max-response-body-bytes=256",
         "app.idempotency.max-key-length=64",

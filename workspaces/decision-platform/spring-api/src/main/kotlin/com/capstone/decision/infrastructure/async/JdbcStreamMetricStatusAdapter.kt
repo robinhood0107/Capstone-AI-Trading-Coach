@@ -7,6 +7,7 @@ import com.capstone.decision.application.async.StreamMetricComponentStatus
 import com.capstone.decision.application.async.StreamMetricStatus
 import com.capstone.decision.application.async.StreamMetricStatusPort
 import com.capstone.decision.application.async.StreamMetricUnavailableException
+import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
@@ -16,6 +17,7 @@ import java.time.OffsetDateTime
 @Repository
 class JdbcStreamMetricStatusAdapter(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
+    private val actorCapabilityIssuer: ActorCapabilityIssuer,
 ) : StreamMetricStatusPort {
     override fun read(
         actorUserId: String,
@@ -24,8 +26,12 @@ class JdbcStreamMetricStatusAdapter(
         protect {
             jdbc()
                 .query(
-                    "SELECT * FROM read_stream_metric_status(:actorUserId, :securityVersion)",
-                    mapOf("actorUserId" to actorUserId, "securityVersion" to securityVersion),
+                    "SELECT * FROM read_stream_metric_status_authorized(:capability,:actorUserId,:securityVersion)",
+                    mapOf(
+                        "capability" to actorCapabilityIssuer.issue(actorUserId),
+                        "actorUserId" to actorUserId,
+                        "securityVersion" to securityVersion,
+                    ),
                 ) { result, _ -> result.toStatus() }
                 .singleOrNull()
         }

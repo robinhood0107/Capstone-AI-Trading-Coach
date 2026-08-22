@@ -40,6 +40,7 @@ PROVIDER_READ_SMOKE_GATE_ORDER: Final = (
     "ECOS_POLICY_RATE_DAILY",
     "ECOS_KRW_USD_DAILY",
 )
+NON_EXECUTABLE_PROFILE_IDS: Final = PROFILE_IDS - {"S0_S5_CURRENT", "PROVIDER_READ_SMOKE"}
 @dataclass(frozen=True, slots=True)
 class GateResult:
     gate_id: str
@@ -233,6 +234,16 @@ class VerificationReport:
                 for gate in by_id.values()
             ):
                 raise ValueError("provider smoke PASS requires six single-attempt successes")
+        if self.profile in NON_EXECUTABLE_PROFILE_IDS:
+            if (
+                self.execution_state not in {"NOT_RUN", "NOT_APPLICABLE"}
+                or self.aggregate_outcome != "INCOMPLETE"
+                or self.provider_data_physical_calls != 0
+                or self.kis_token_physical_calls != 0
+                or self.product_db_writes != 0
+                or any(gate.execution_state == "PASS" for gate in self.gates)
+            ):
+                raise ValueError("non-executable P1 profile cannot attest completion")
 
 
 def _gate_from_dict(value: object) -> GateResult:

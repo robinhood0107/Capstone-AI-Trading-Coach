@@ -58,6 +58,8 @@ class AsyncWork:
     transport: str
     attempt: int = 1
     source_topic: str | None = None
+    source_partition: int | None = None
+    source_offset: int | None = None
     partition_key: str | None = None
 
 
@@ -120,6 +122,12 @@ def validate_work(work: AsyncWork) -> dict[str, str]:
         or work.transport not in {"DB", "KAFKA"}
         or work.attempt not in {1, 2, 3}
         or (work.source_topic is not None and work.source_topic != work.event_type)
+        or (work.transport == "KAFKA" and (
+            work.source_partition is None
+            or work.source_partition not in range(0, 1024)
+            or work.source_offset is None
+            or work.source_offset < 0
+        ))
         or work.partition_key is None
         or _PARTITION_KEY.fullmatch(work.partition_key) is None
         or len(work.payload_json) > 32_768

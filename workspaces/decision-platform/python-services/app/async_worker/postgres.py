@@ -44,23 +44,23 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
         event_type: str,
         payload_hash: str,
         source_topic: str,
+        source_partition: int,
+        source_offset: int,
         attempt: int,
         failure_code: str,
     ) -> bool:
-        digest = hashlib.sha256(
-            f"dlq|{event_id}|{event_type}|{payload_hash}|{failure_code}".encode()
-        ).hexdigest()
         try:
             with self._connect(autocommit=True) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        "SELECT record_kafka_poison(%s,%s,%s,%s,%s,%s,%s,%s)",
+                        "SELECT record_kafka_poison(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                         (
-                            f"evt_dlq_{digest[:32]}",
                             event_id,
                             event_type,
                             payload_hash,
                             source_topic,
+                            source_partition,
+                            source_offset,
                             attempt,
                             failure_code,
                             self._partition_key(f"dlq:{event_id}"),
@@ -143,6 +143,8 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
                 event_type=work.event_type,
                 payload_hash=work.payload_hash,
                 source_topic=work.source_topic or work.event_type,
+                source_partition=work.source_partition if work.source_partition is not None else -1,
+                source_offset=work.source_offset if work.source_offset is not None else -1,
                 attempt=work.attempt,
                 failure_code=code,
             )
@@ -170,13 +172,17 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
                     )
                     row = cursor.fetchone()
                     quarantined = row is not None and bool(row[0])
-                    if quarantined:
-                        return True
+            if quarantined:
+                return True
+            if work.transport != "KAFKA" or work.source_partition is None or work.source_offset is None:
+                return False
             return self.record_poison(
                 event_id=work.event_id,
                 event_type=work.event_type,
                 payload_hash=work.payload_hash,
                 source_topic=work.source_topic or work.event_type,
+                source_partition=work.source_partition if work.source_partition is not None else -1,
+                source_offset=work.source_offset if work.source_offset is not None else -1,
                 attempt=work.attempt,
                 failure_code=code,
             )

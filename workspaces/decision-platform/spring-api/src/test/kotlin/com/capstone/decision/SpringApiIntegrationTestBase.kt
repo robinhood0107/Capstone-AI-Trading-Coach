@@ -1,5 +1,6 @@
 package com.capstone.decision
 
+import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import com.capstone.decision.infrastructure.security.DemoAccounts
 import com.capstone.decision.infrastructure.security.DemoCredentialBundlePolicy
 import com.capstone.decision.infrastructure.security.DemoRole
@@ -205,6 +206,13 @@ internal fun s21ActorTrustMigration(
 // DataSource를 의도적으로 제외한 web 계약 테스트도 production과 동일한 repository port를 거친다.
 @TestConfiguration(proxyBeanMethods = false)
 class TestAuthRepositoryConfiguration {
+    @Bean
+    @Primary
+    fun testActorCapabilityIssuer(): ActorCapabilityIssuer =
+        object : ActorCapabilityIssuer {
+            override fun issue(actorUserId: String): String = "test-actor-capability"
+        }
+
     @Bean
     @Primary
     fun testUserSecurityRepository(): UserSecurityRepository {

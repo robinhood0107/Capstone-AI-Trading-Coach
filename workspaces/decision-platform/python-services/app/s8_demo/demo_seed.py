@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app.s8_demo.synthetic_bundle import _write_idempotent as _write_synthetic_idempotent
 from app.s8_demo.synthetic_bundle import build_synthetic_bundle
 
 
@@ -92,13 +93,12 @@ def materialize_demo(*, config_path: Path, output_dir: Path, brokerage_mode: str
 
 
 def _write_idempotent(path: Path, content: str) -> None:
-    if path.is_symlink():
-        raise ValueError("demo_output_symlink_rejected")
-    if path.exists():
-        if not path.is_file() or path.read_text(encoding="utf-8") != content:
-            raise ValueError("demo_seed_conflict")
-        return
-    path.write_text(content, encoding="utf-8")
+    try:
+        _write_synthetic_idempotent(path, content)
+    except ValueError as error:
+        if str(error) == "synthetic_output_conflict":
+            raise ValueError("demo_seed_conflict") from error
+        raise
 
 
 def _canonical_json(value: object) -> str:

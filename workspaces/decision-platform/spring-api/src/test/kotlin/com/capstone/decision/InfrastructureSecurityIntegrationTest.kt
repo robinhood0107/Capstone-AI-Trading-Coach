@@ -114,8 +114,7 @@ class InfrastructureSecurityIntegrationTest {
             assertFalse(hasTablePrivilege(connection, "decision_collector", "calendar_observations", "UPDATE"))
             assertFalse(hasTablePrivilege(connection, "decision_collector", "flyway_schema_history", "SELECT"))
             assertTrue(hasTablePrivilege(connection, "decision_app", "trading_sessions", "SELECT"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "users", "SELECT"))
-            listOf("INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+            listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
                 assertFalse(hasTablePrivilege(connection, "decision_app", "users", privilege))
             }
             assertFalse(hasTablePrivilege(connection, "decision_app", "calendar_observations", "SELECT"))
@@ -291,19 +290,26 @@ class InfrastructureSecurityIntegrationTest {
             }
 
             assertTrue(hasTablePrivilege(connection, "decision_app", "principle_presets", "SELECT"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "principles", "SELECT"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "principles", "INSERT"))
-            assertFalse(hasTablePrivilege(connection, "decision_app", "principles", "UPDATE"))
-            listOf("title", "mode", "status", "current_version", "updated_at").forEach { column ->
-                assertTrue(hasColumnPrivilege(connection, "decision_app", "principles", column, "UPDATE"))
+            listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                assertFalse(hasTablePrivilege(connection, "decision_app", "principles", privilege))
+                assertFalse(hasTablePrivilege(connection, "decision_app", "principle_versions", privilege))
             }
-            listOf("principle_id", "user_id", "preset_id", "created_at").forEach { column ->
-                assertFalse(hasColumnPrivilege(connection, "decision_app", "principles", column, "UPDATE"))
+            listOf(
+                "insert_principle_authorized(text,text,text,text,text,text,text,integer,timestamp with time zone,timestamp with time zone)",
+                "insert_principle_version_authorized(text,text,text,text,integer,text,text,text,text,jsonb,text[],timestamp with time zone)",
+                "insert_principle_audit_authorized(text,text,text,text,text,integer,text[],timestamp with time zone)",
+                "read_owned_principle_authorized(text,text,text)",
+                "list_owned_principles_authorized(text,text,integer,text,timestamp with time zone,text)",
+                "update_owned_principle_authorized(text,text,text,integer,text,text,text,timestamp with time zone)",
+                "list_owned_principle_versions_authorized(text,text,text,integer,text,integer)",
+                "read_active_owned_principle_snapshot_authorized(text,text,text)",
+                "lock_active_owned_principle_authorized(text,text,text,integer,text,text)",
+            ).forEach { function ->
+                assertTrue(
+                    hasFunctionPrivilege(connection, "decision_app", function),
+                    "decision_app must retain the owner-scoped Principle capability $function",
+                )
             }
-            assertTrue(hasTablePrivilege(connection, "decision_app", "principle_versions", "SELECT"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "principle_versions", "INSERT"))
-            assertFalse(hasTablePrivilege(connection, "decision_app", "principle_versions", "UPDATE"))
-            assertFalse(hasTablePrivilege(connection, "decision_app", "principle_versions", "DELETE"))
             assertTrue(hasTablePrivilege(connection, "decision_app", "audit_logs", "INSERT"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "SELECT"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "UPDATE"))
@@ -311,9 +317,6 @@ class InfrastructureSecurityIntegrationTest {
             listOf("INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
                 assertFalse(hasTablePrivilege(connection, "decision_app", "principle_presets", privilege))
             }
-            assertFalse(hasTablePrivilege(connection, "decision_app", "principles", "DELETE"))
-            assertFalse(hasTablePrivilege(connection, "decision_app", "principles", "TRUNCATE"))
-            assertFalse(hasTablePrivilege(connection, "decision_app", "principle_versions", "TRUNCATE"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "TRUNCATE"))
             assertTrue(hasTablePrivilege(connection, "decision_app", "decisions", "INSERT"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "decisions", "SELECT"))
@@ -829,6 +832,8 @@ class InfrastructureSecurityIntegrationTest {
         private val runtimePassword: String = "r" + "p".repeat(24)
         private val workerPassword: String = "w" + "a".repeat(24)
         private val replayPassword: String = "r" + "y".repeat(24)
+        private val identityPassword: String = "i" + "d".repeat(24)
+        private val replayAuthorizerPassword: String = "z" + "a".repeat(24)
         private val demoPassword: String = "d" + "m".repeat(24)
         private val migrationPassword: String = "m" + "p".repeat(24)
         private val collectorPassword: String = "c" + "p".repeat(24)
@@ -859,6 +864,8 @@ class InfrastructureSecurityIntegrationTest {
                 .withEnv("POSTGRES_APP_PASSWORD", runtimePassword)
                 .withEnv("POSTGRES_WORKER_PASSWORD", workerPassword)
                 .withEnv("POSTGRES_REPLAY_PASSWORD", replayPassword)
+                .withEnv("POSTGRES_IDENTITY_PASSWORD", identityPassword)
+                .withEnv("POSTGRES_REPLAY_AUTHORIZER_PASSWORD", replayAuthorizerPassword)
                 .withEnv("POSTGRES_DEMO_PASSWORD", demoPassword)
                 .withEnv("POSTGRES_MIGRATION_PASSWORD", migrationPassword)
                 .withEnv("POSTGRES_COLLECTOR_PASSWORD", collectorPassword)

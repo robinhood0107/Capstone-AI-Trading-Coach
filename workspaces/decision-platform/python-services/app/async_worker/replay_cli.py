@@ -21,6 +21,8 @@ _ID = re.compile(r"^(?:evt|job)_[A-Za-z0-9_-]{8,96}$")
 _REASON = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$")
 _USER = re.compile(r"^usr_[A-Za-z0-9_-]{8,64}$")
 _MAX_TARGETS = 100
+_MAX_PACKET_BYTES = 1_048_576
+_MAX_SECRET_BYTES = 4_096
 
 
 class ReplayCliError(RuntimeError):
@@ -31,11 +33,35 @@ def _canonical(value: dict[str, Any]) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
 
 
+def _read_private_file(path: Path, *, maximum: int, code: str) -> bytes:
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(path, flags)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.geteuid():
+            raise ReplayCliError(f"{code}_PERMISSIONS_INVALID")
+        if info.st_size > maximum:
+            raise ReplayCliError(f"{code}_TOO_LARGE")
+        chunks: list[bytes] = []
+        remaining = maximum + 1
+        while remaining:
+            chunk = os.read(descriptor, min(65_536, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        value = b"".join(chunks)
+        if len(value) > maximum:
+            raise ReplayCliError(f"{code}_TOO_LARGE")
+        return value
+    finally:
+        os.close(descriptor)
+
+
 def _read_secret(path: Path, *, minimum: int = 32) -> bytes:
-    info = path.stat()
-    if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077:
-        raise ReplayCliError("SECRET_FILE_PERMISSIONS_INVALID")
-    value = path.read_bytes().rstrip(b"\r\n")
+    value = _read_private_file(path, maximum=_MAX_SECRET_BYTES, code="SECRET_FILE").rstrip(b"\r\n")
     if len(value) < minimum:
         raise ReplayCliError("SECRET_FILE_TOO_SHORT")
     return value
@@ -163,7 +189,7 @@ def validate_jwt(token: str, secret: bytes, issuer: str, audience: str, *, now: 
 
 
 def execute_packet(args: argparse.Namespace) -> list[dict[str, Any]]:
-    packet = json.loads(args.packet.read_text(encoding="utf-8"))
+    packet = json.loads(_read_private_file(args.packet, maximum=_MAX_PACKET_BYTES, code="PACKET"))
     if not isinstance(packet, dict):
         raise ReplayCliError("PACKET_SCHEMA_INVALID")
     validate_packet(packet, _read_secret(args.signing_key_file), execute=args.execute)
@@ -174,12 +200,40 @@ def execute_packet(args: argparse.Namespace) -> list[dict[str, Any]]:
     if claims["sub"] != packet["actorUserId"] or claims["securityVersion"] != packet["securityVersion"]:
         raise ReplayCliError("JWT_PACKET_ACTOR_MISMATCH")
     dsn = _read_secret(args.database_dsn_file, minimum=16).decode("utf-8")
+    authorizer_dsn = _read_secret(args.authorizer_dsn_file, minimum=16).decode("utf-8")
     try:
         if conninfo_to_dict(dsn).get("user") != "decision_replay":
             raise ReplayCliError("REPLAY_DATABASE_ROLE_INVALID")
+        if conninfo_to_dict(authorizer_dsn).get("user") != "decision_replay_authorizer":
+            raise ReplayCliError("REPLAY_AUTHORIZER_DATABASE_ROLE_INVALID")
     except psycopg.Error as error:
         raise ReplayCliError("REPLAY_DATABASE_DSN_INVALID") from error
     packet_hash = "sha256:" + hashlib.sha256(_canonical(packet)).hexdigest()
+    with psycopg.connect(authorizer_dsn, autocommit=False, connect_timeout=2) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select current_user, session_user")
+            if cursor.fetchone() != ("decision_replay_authorizer", "decision_replay_authorizer"):
+                raise ReplayCliError("REPLAY_AUTHORIZER_DATABASE_ROLE_INVALID")
+            cursor.execute(
+                "select authorize_async_replay(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (
+                    packet_hash,
+                    packet["actorUserId"],
+                    packet["securityVersion"],
+                    packet["replayBatchId"],
+                    packet["targetKind"],
+                    packet["targetIds"],
+                    packet["expectedCount"],
+                    packet["reasonCode"],
+                    args.execute,
+                    _instant(packet["issuedAt"]),
+                    _instant(packet["expiresAt"]),
+                ),
+            )
+            row = cursor.fetchone()
+            if row is None or row[0] is not True:
+                raise ReplayCliError("REPLAY_AUTHORIZATION_CONFLICT")
+        connection.commit()
     with psycopg.connect(dsn, autocommit=False, connect_timeout=2) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select current_user, session_user")
@@ -227,6 +281,7 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--jwt-issuer", required=True)
     run.add_argument("--jwt-audience", required=True)
     run.add_argument("--database-dsn-file", required=True, type=Path)
+    run.add_argument("--authorizer-dsn-file", required=True, type=Path)
     run.add_argument("--execute", action="store_true")
     return parser
 

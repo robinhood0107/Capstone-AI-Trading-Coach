@@ -285,6 +285,12 @@ V84는 direct outbox/processed-event DML을 회수하고 authoritative payload h
 deadline fencing, replay/demo 전용 DB role, exact synthetic bundle provenance를 잠근다. 현재 Kafka build는
 local numeric-loopback PLAINTEXT만 지원하며 non-loopback/deploy는 TLS 설정도 거부한다.
 
+V85는 application의 broad users/Principle 권한과 worker의 ID-only claim을 회수한다. owner/Admin 작업은
+별도 `decision_identity`가 발급한 current-actor one-use capability로만 실행되고, replay는
+`decision_replay_authorizer`와 `decision_replay`의 분리된 2단계 authorization을 요구한다. Kafka poison은
+broker topic/partition/offset provenance와 bounded admission을 사용하며 demo/replay file input은
+nofollow·bounded pre-parse 경계를 따른다.
+
 | 범위 | 상태 | 설명 |
 |---|---|---|
 | S7.0 | `VERIFIED_DB` | secure outbox/job claim, gRPC worker, Admin status |

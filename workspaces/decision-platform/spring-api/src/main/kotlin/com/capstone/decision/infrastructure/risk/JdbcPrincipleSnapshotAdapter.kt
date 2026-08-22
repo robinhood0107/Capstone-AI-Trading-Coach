@@ -7,6 +7,7 @@ import com.capstone.decision.domain.principle.PrincipleMode
 import com.capstone.decision.domain.principle.PrincipleStatus
 import com.capstone.decision.domain.principle.PrincipleVersionId
 import com.capstone.decision.infrastructure.principle.PrincipleRuleJsonCodec
+import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Repository
 class JdbcPrincipleSnapshotAdapter(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val ruleJsonCodec: PrincipleRuleJsonCodec,
+    private val actorCapabilityIssuer: ActorCapabilityIssuer,
 ) : PrincipleSnapshotPort {
     override fun findActiveOwned(
         actorUserId: String,
@@ -24,22 +26,12 @@ class JdbcPrincipleSnapshotAdapter(
         jdbc()
             .query(
                 """
-                SELECT p.principle_id,
-                       v.principle_version_id,
-                       v.version,
-                       v.mode,
-                       v.status,
-                       v.rules_json::text AS rules_json
-                FROM principles p
-                JOIN principle_versions v
-                  ON v.principle_id = p.principle_id
-                 AND v.version = p.current_version
-                WHERE p.principle_id = :principleId
-                  AND p.user_id = :actorUserId
-                  AND p.status = 'ACTIVE'
-                  AND v.status = 'ACTIVE'
+                SELECT * FROM read_active_owned_principle_snapshot_authorized(
+                  :capability, :actorUserId, :principleId
+                )
                 """.trimIndent(),
                 mapOf(
+                    "capability" to actorCapabilityIssuer.issue(actorUserId),
                     "principleId" to principleId.value,
                     "actorUserId" to actorUserId,
                 ),

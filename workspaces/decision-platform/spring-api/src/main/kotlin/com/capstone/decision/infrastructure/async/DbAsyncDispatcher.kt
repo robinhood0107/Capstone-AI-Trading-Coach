@@ -6,6 +6,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
+import java.security.MessageDigest
+import java.util.HexFormat
 
 @Component
 @ConditionalOnProperty(name = ["app.async.adapter"], havingValue = "db", matchIfMissing = true)
@@ -32,11 +34,18 @@ class DbAsyncDispatcher(
             val payload = validatePayload(event)
             val jobId = payload.path("jobId").stringValue()
             val jobType = EVENT_JOB_TYPES.getValue(event.eventType)
-            job = workerQueue.claimById(WORKER_ID, jobId)
-            if (job != null) {
-                require(job.jobId == event.aggregateId && job.jobType == jobType)
-                require(objectMapper.readTree(job.payloadJson) == payload)
+            val payloadHash = "sha256:${sha256(event.payloadJson.toByteArray(Charsets.UTF_8))}"
+            require(outboxQueue.bindPayloadHash(event, payloadHash))
+            job = workerQueue.claimByEvent(WORKER_ID, event, payloadHash)
+            if (job == null) {
+                if (workerQueue.resolveCompleted(event, payloadHash)) {
+                    require(outboxQueue.complete(event))
+                    return
+                }
+                error("event-bound async job is unavailable")
             }
+            require(job.jobId == event.aggregateId && job.jobType == jobType)
+            require(objectMapper.readTree(job.payloadJson) == payload)
             val result = workerClient.process(event, job, jobId, jobType)
             when (result.outcome) {
                 AsyncWorkOutcome.ASYNC_WORK_COMPLETED,
@@ -74,6 +83,8 @@ class DbAsyncDispatcher(
         if (jobId == null || !JOB_ID.matches(jobId) || jobId != event.aggregateId) throw AsyncPayloadContractException()
         return root
     }
+
+    private fun sha256(value: ByteArray): String = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value))
 
     private companion object {
         const val WORKER_ID = "spring-db-dispatcher"

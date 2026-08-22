@@ -59,7 +59,9 @@ class KafkaAsyncMessageHandler:
             self._consumer.commit(message=message, asynchronous=False)
             return result.outcome
         except (AsyncContractError, UnicodeError, json.JSONDecodeError, ValueError):
-            event_type = message.topic() if message.topic() in _TOPICS else _TOPICS[0]
+            event_type = message.topic()
+            if event_type not in _TOPICS:
+                raise KafkaRetryStop("record outside the exact topic catalog must not be acknowledged")
             raw_hash = "sha256:" + hashlib.sha256(raw).hexdigest()
             identity_hash = hashlib.sha256(
                 f"{message.topic()}|{message.partition()}|{message.offset()}|{raw_hash}".encode()
@@ -69,6 +71,8 @@ class KafkaAsyncMessageHandler:
                 event_type=event_type,
                 payload_hash=raw_hash,
                 source_topic=event_type,
+                source_partition=message.partition(),
+                source_offset=message.offset(),
                 attempt=_safe_attempt(message.headers()),
                 failure_code="INVALID_EVENT_PAYLOAD",
             )
@@ -141,6 +145,8 @@ def decode_message(message: KafkaMessage) -> AsyncWork:
         transport="KAFKA",
         attempt=attempt,
         source_topic=topic,
+        source_partition=message.partition(),
+        source_offset=message.offset(),
         partition_key=partition_key,
     )
 
@@ -173,9 +179,7 @@ def _settings_from_env() -> dict[str, Any]:
     if not bootstrap or not is_decision_worker_dsn(database_dsn) or not 32 <= len(partition_key) <= 128:
         raise ValueError("Kafka async worker configuration is incomplete")
     security = os.environ.get("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT").strip()
-    if security != "PLAINTEXT" or not (
-        bootstrap.startswith("127.0.0.1:") or bootstrap.startswith("[::1]:")
-    ):
+    if security != "PLAINTEXT" or not _is_single_loopback_endpoint(bootstrap):
         raise ValueError("this worker build supports only loopback PLAINTEXT Kafka")
     return {
         "database_dsn": database_dsn,
@@ -190,6 +194,11 @@ def _settings_from_env() -> dict[str, Any]:
             "fetch.message.max.bytes": _MAX_ENVELOPE_BYTES,
         },
     }
+
+
+def _is_single_loopback_endpoint(value: str) -> bool:
+    match = re.fullmatch(r"(?:127\.0\.0\.1|\[::1\]):([1-9][0-9]{0,4})", value)
+    return match is not None and int(match.group(1)) <= 65_535
 
 
 class KafkaRetryStop(RuntimeError):

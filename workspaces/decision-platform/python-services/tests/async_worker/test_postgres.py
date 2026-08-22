@@ -33,18 +33,22 @@ def test_worker_commit_is_atomic_idempotent_and_least_privileged(
         "contentHash": "sha256:" + "a" * 64,
     }
     payload_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    with psycopg.connect(isolated_postgres_cluster["identity_dsn"], autocommit=True) as identity:
+        capability = identity.execute(
+            "SELECT issue_actor_request_capability(%s)", ("usr_demo_user",)
+        ).fetchone()
+        assert capability is not None and isinstance(capability[0], str)
     with psycopg.connect(isolated_postgres_cluster["app_dsn"], autocommit=True) as app:
         assert app.execute(
-            "SELECT create_async_job(%s,%s,%s,%s::jsonb)",
-            (job_id, "ARTIFACT_INGEST", "usr_demo_user", payload_bytes.decode()),
-        ).fetchone() == (True,)
-        assert app.execute(
-            "SELECT append_async_request_outbox(%s,%s,%s,%s,%s::jsonb)",
+            "SELECT create_async_request_authorized(%s,%s,%s,%s,%s,%s,%s,%s::jsonb)",
             (
+                capability[0],
                 event_id,
                 "artifact.ingest-requested.v1",
-                job_id,
                 "hmac-sha256:" + "b" * 64,
+                job_id,
+                "ARTIFACT_INGEST",
+                "usr_demo_user",
                 payload_bytes.decode(),
             ),
         ).fetchone() == (True,)
@@ -54,13 +58,25 @@ def test_worker_commit_is_atomic_idempotent_and_least_privileged(
         ).fetchone()
         assert claimed_event is not None and claimed_event[0] == event_id
         dispatched_payload = claimed_event[2].encode()
+        payload_hash = "sha256:" + hashlib.sha256(dispatched_payload).hexdigest()
+        assert app.execute(
+            "SELECT bind_claimed_outbox_payload_hash(%s,%s,%s)",
+            (event_id, claimed_event[1], payload_hash),
+        ).fetchone() == (True,)
 
     with psycopg.connect(
         isolated_postgres_cluster["worker_dsn"], autocommit=True
     ) as worker:
         claimed_job = worker.execute(
-            "SELECT claim_token FROM claim_async_job_by_id(%s,%s)",
-            ("spring-db-dispatcher", job_id),
+            "SELECT claim_token FROM claim_async_job_by_event(%s,%s,%s,%s,%s,%s)",
+            (
+                "spring-db-dispatcher",
+                event_id,
+                "artifact.ingest-requested.v1",
+                job_id,
+                payload_hash,
+                claimed_event[3],
+            ),
         ).fetchone()
         assert claimed_job is not None
         claim_token = str(claimed_job[0])
@@ -69,7 +85,7 @@ def test_worker_commit_is_atomic_idempotent_and_least_privileged(
         event_id=event_id,
         event_type="artifact.ingest-requested.v1",
         schema_version=1,
-        payload_hash="sha256:" + hashlib.sha256(dispatched_payload).hexdigest(),
+        payload_hash=payload_hash,
         job_id=job_id,
         job_type="ARTIFACT_INGEST",
         payload_json=dispatched_payload,
@@ -112,13 +128,10 @@ def test_worker_commit_is_atomic_idempotent_and_least_privileged(
         assert admin.execute(
             "SELECT count(*) FROM event_outbox WHERE aggregate_id=%s", (job_id,)
         ).fetchone() == (2,)
-        dlq = admin.execute(
-            "SELECT status,payload_json::text FROM event_outbox WHERE aggregate_id=%s AND status='DLQ_REQUESTED'",
+        assert admin.execute(
+            "SELECT count(*) FROM event_outbox WHERE aggregate_id=%s AND status='DLQ_REQUESTED'",
             (event_id,),
-        ).fetchone()
-        assert dlq is not None and dlq[0] == "DLQ_REQUESTED"
-        assert "PAYLOAD_HASH_CONFLICT" in dlq[1]
-        assert "replayOf" not in dlq[1]
+        ).fetchone() == (0,)
 
     with psycopg.connect(isolated_postgres_cluster["worker_dsn"]) as worker:
         for table in ("principles", "orders", "users", "flyway_schema_history"):

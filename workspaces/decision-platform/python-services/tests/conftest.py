@@ -117,6 +117,7 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
             f"postgresql://decision_signal_admin:signal-admin-test@{host}:{port}/decision"
         )
         worker_dsn = f"postgresql://decision_worker:worker-test-secret-0001@{host}:{port}/decision"
+        identity_dsn = f"postgresql://decision_identity:identity-test-secret-0001@{host}:{port}/decision"
 
         with _connect_postgres_admin_with_host_readiness_retry(admin_dsn) as connection:
             connection.execute(
@@ -125,6 +126,14 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'app-test';
                 CREATE ROLE decision_worker LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'worker-test-secret-0001';
+                CREATE ROLE decision_replay LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'replay-test-secret-0001';
+                CREATE ROLE decision_identity LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'identity-test-secret-0001';
+                CREATE ROLE decision_replay_authorizer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'replay-authorizer-test-0001';
+                CREATE ROLE decision_demo LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'demo-test-secret-0001';
                 CREATE ROLE decision_collector LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'collector-test';
                 CREATE ROLE decision_disclosure_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
@@ -182,6 +191,10 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                 GRANT CONNECT ON DATABASE decision TO
                     decision_app,
                     decision_worker,
+                    decision_replay,
+                    decision_identity,
+                    decision_replay_authorizer,
+                    decision_demo,
                     decision_collector,
                     decision_disclosure_reader,
                     decision_market_writer,
@@ -201,6 +214,10 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                 GRANT USAGE ON SCHEMA public TO
                     decision_app,
                     decision_worker,
+                    decision_replay,
+                    decision_identity,
+                    decision_replay_authorizer,
+                    decision_demo,
                     decision_collector,
                     decision_disclosure_reader,
                     decision_market_writer,
@@ -229,6 +246,11 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                         # Java V7 migration은 Python SQL runner 대상이 아니므로 V8 전에 FK용 test identity만 모사한다.
                         connection.execute(
                             """
+                            ALTER TABLE users
+                              ADD COLUMN security_version bigint NOT NULL DEFAULT 1,
+                              ADD COLUMN credential_reuse_tag bytea,
+                              ADD COLUMN credential_bundle_mac bytea,
+                              ADD COLUMN credential_policy_version smallint;
                             INSERT INTO users (user_id, username, role, password_hash)
                             VALUES
                               ('usr_demo_user', 'python-fixture-user', 'USER', 'test-only-hash'),
@@ -269,6 +291,7 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
             "signal_scheduler_dsn": signal_scheduler_dsn,
             "signal_admin_dsn": signal_admin_dsn,
             "worker_dsn": worker_dsn,
+            "identity_dsn": identity_dsn,
         }
 
 

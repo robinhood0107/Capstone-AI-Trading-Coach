@@ -12,6 +12,7 @@ import com.capstone.decision.application.decision.StoredDecisionIdempotencyResul
 import com.capstone.decision.application.risk.KillSwitchBlockedException
 import com.capstone.decision.application.risk.KillSwitchUnavailableException
 import com.capstone.decision.infrastructure.risk.ActorScopedReadQuery
+import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
@@ -31,6 +32,7 @@ class JdbcDecisionPersistenceAdapter(
     private val actorScopedReadQuery: ActorScopedReadQuery,
     private val projectionFactory: com.capstone.decision.application.decision.DecisionProjectionFactory,
     private val objectMapper: ObjectMapper,
+    private val actorCapabilityIssuer: ActorCapabilityIssuer,
 ) : DecisionPersistencePort {
     override fun findIdempotencyResult(
         scopeHash: String,
@@ -222,23 +224,15 @@ class JdbcDecisionPersistenceAdapter(
         val locked =
             jdbc.query(
                 """
-                SELECT principle.principle_id
-                FROM principles principle
-                JOIN principle_versions version
-                  ON version.principle_id = principle.principle_id
-                 AND version.version = principle.current_version
-                WHERE principle.principle_id = :principleId
-                  AND principle.user_id = :actorUserId
-                  AND principle.status = 'ACTIVE'
-                  AND principle.current_version = :principleVersion
-                  AND version.principle_version_id = :principleVersionId
-                  AND version.status = 'ACTIVE'
-                  AND version.mode = :mode
-                FOR SHARE OF principle
+                SELECT lock_active_owned_principle_authorized(
+                  :capability, :actorUserId, :principleId, :principleVersion,
+                  :principleVersionId, :mode
+                ) AS locked
                 """.trimIndent(),
-                decisionParameters(request),
-            ) { result, _ -> result.getString("principle_id") }
-        if (locked.size != 1) {
+                decisionParameters(request) +
+                    ("capability" to actorCapabilityIssuer.issue(request.actor.userId)),
+            ) { result, _ -> result.getBoolean("locked") }
+        if (locked.singleOrNull() != true) {
             throw DecisionVersionConflictException()
         }
     }

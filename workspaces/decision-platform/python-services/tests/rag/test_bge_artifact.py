@@ -33,6 +33,12 @@ _CORE6_HISTORICAL_FIXTURE_SHA256 = frozenset(
         "9aef7a439b432717704b6097a29d39e7007ff73b0809392643a30a7ed4e04f3d",
     }
 )
+_B86_PUBLIC_SOURCE_CARD_SHA256 = frozenset(
+    {
+        "4281e92a878cdf08ab9cd3d52cfd4a564fef3509e85f689f03922464380d98cc",
+        "3137be113762703bbf5632ee8bdc317c182391ed04476a12a5b7b93d481db952",
+    }
+)
 _UNAPPROVED_SECRET_LIKE_SHA256 = "f" * 64
 
 
@@ -51,20 +57,58 @@ def test_public_digest_allowlist_keeps_only_the_exact_approved_values() -> None:
     with (repo_root / ".gitleaks.toml").open("rb") as config_file:
         config = tomllib.load(config_file)
 
-    allowlist = config["allowlist"]
+    allowlists = config["allowlists"]
     expected_digests = _CORE6_HISTORICAL_FIXTURE_SHA256 | {_TOKENIZER_SHA256}
     expected_regexes = {f"^{digest}$" for digest in expected_digests}
+    b86_expected_regexes = {f"^{digest}$" for digest in _B86_PUBLIC_SOURCE_CARD_SHA256}
 
     assert config["extend"]["useDefault"] is True
-    assert set(allowlist) == {"description", "regexes"}
-    assert "regexTarget" not in allowlist
-    assert set(allowlist["regexes"]) == expected_regexes
-    assert len(allowlist["regexes"]) == len(expected_regexes)
-    assert all(re.fullmatch(r"\^[0-9a-f]{64}\$", pattern) for pattern in allowlist["regexes"])
+    assert len(allowlists) == 2
+    assert all(set(allowlist) == {"description", "regexes"} for allowlist in allowlists)
+    assert all("regexTarget" not in allowlist for allowlist in allowlists)
+    assert set(allowlists[0]["regexes"]) == expected_regexes
+    assert set(allowlists[1]["regexes"]) == b86_expected_regexes
     assert all(
-        re.fullmatch(pattern, _UNAPPROVED_SECRET_LIKE_SHA256) is None
+        re.fullmatch(r"\^[0-9a-f]{64}\$", pattern)
+        for allowlist in allowlists
         for pattern in allowlist["regexes"]
     )
+    assert all(
+        re.fullmatch(pattern, _UNAPPROVED_SECRET_LIKE_SHA256) is None
+        for allowlist in allowlists
+        for pattern in allowlist["regexes"]
+    )
+
+
+def test_b86_public_digest_allowlist_is_copied_from_historical_source_cards() -> None:
+    repo_root = Path(__file__).resolve().parents[5]
+    migration_root = (
+        repo_root
+        / "workspaces"
+        / "decision-platform"
+        / "spring-api"
+        / "src"
+        / "main"
+        / "resources"
+        / "db"
+        / "migration"
+    )
+    baseline = (
+        migration_root.parent / "baseline" / "B86__p1_offline_demo_baseline.sql"
+    ).read_text(encoding="utf-8")
+    historical = "\n".join(
+        (migration_root / filename).read_text(encoding="utf-8")
+        for filename in (
+            "V36__s4_7d_public_bge_staging_writer.sql",
+            "V37__s4_7d_external_exact30_voyage_staging_writer.sql",
+        )
+    )
+
+    for digest in _B86_PUBLIC_SOURCE_CARD_SHA256:
+        assert historical.count(digest) == 1
+        assert baseline.count(digest) == 1
+        assert "src_project_kis_discovery_write_boundary_001" in historical
+        assert "src_project_kis_discovery_write_boundary_001" in baseline
 
 
 def test_approved_bge_packet_is_exactly_pinned_to_ten_files() -> None:

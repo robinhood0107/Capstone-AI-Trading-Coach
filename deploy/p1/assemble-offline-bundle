@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+REPOSITORY_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd -P)
+
+die() { printf 'P1_BUNDLE_ERROR=%s\n' "$1" >&2; exit 1; }
+require_command() { command -v "$1" >/dev/null 2>&1 || die "missing_$1"; }
+sha() { sha256sum "$1" | awk '{print $1}'; }
+
+[[ $# == 3 ]] || die usage_mode_version_output_directory
+mode=$1
+version=$2
+output_parent=$3
+stage=${P1_RELEASE_STAGE:-PREVIEW}
+[[ $mode == db || $mode == kafka ]] || die invalid_mode
+[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die invalid_version
+[[ $stage == PREVIEW || $stage == FINAL ]] || die invalid_stage
+
+for command in docker git python3 sha256sum tar zstd; do require_command "$command"; done
+if command -v syft >/dev/null 2>&1; then
+  sbom_tool=syft
+elif docker scout version >/dev/null 2>&1; then
+  sbom_tool=docker-scout
+else
+  die missing_sbom_tool
+fi
+[[ -d $output_parent && ! -L $output_parent ]] || die invalid_output_parent
+[[ -z $(git -C "$REPOSITORY_ROOT" status --porcelain --untracked-files=all) ]] || die dirty_worktree
+
+commit_sha=$(git -C "$REPOSITORY_ROOT" rev-parse HEAD)
+tree_sha=$(git -C "$REPOSITORY_ROOT" rev-parse 'HEAD^{tree}')
+spring_ref=${P1_SPRING_IMAGE:?P1_SPRING_IMAGE is required}
+python_ref=${P1_PYTHON_IMAGE:?P1_PYTHON_IMAGE is required}
+postgres_ref=${P1_POSTGRES_IMAGE:?P1_POSTGRES_IMAGE is required}
+[[ $spring_ref =~ ^ghcr\.io/robinhood0107/capstone-spring-api@sha256:[0-9a-f]{64}$ ]] || die spring_digest_reference
+[[ $python_ref =~ ^ghcr\.io/robinhood0107/capstone-python-services@sha256:[0-9a-f]{64}$ ]] || die python_digest_reference
+[[ $postgres_ref =~ ^ghcr\.io/robinhood0107/capstone-postgres-pgvector@sha256:[0-9a-f]{64}$ ]] || die postgres_digest_reference
+
+declare -a components=(runtime-netns postgres redis spring-api python-services)
+declare -a references=(
+  'alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce'
+  "$postgres_ref"
+  'redis:7.2-alpine@sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8'
+  "$spring_ref"
+  "$python_ref"
+)
+if [[ $mode == kafka ]]; then
+  components+=(kafka)
+  references+=(
+    'apache/kafka-native:4.3.1@sha256:e50f6ad232dc9e524134ef6babba8285ba8a793326cb27ca2efc20fa83e45a0b'
+  )
+fi
+
+for index in "${!components[@]}"; do
+  reference=${references[$index]}
+  docker image inspect "$reference" >/dev/null 2>&1 || die "image_not_loaded_${components[$index]}"
+  [[ $(docker image inspect "$reference" --format '{{.Os}}/{{.Architecture}}') == linux/amd64 ]] || die "image_platform_${components[$index]}"
+done
+for reference in "$spring_ref" "$python_ref" "$postgres_ref"; do
+  [[ $(docker image inspect "$reference" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$commit_sha" ]] || die application_revision_label
+  [[ $(docker image inspect "$reference" --format '{{index .Config.Labels "org.opencontainers.image.version"}}') == "$version" ]] || die application_version_label
+done
+[[ $(docker image inspect "$spring_ref" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}') == AGPL-3.0-only ]] || die spring_license_label
+[[ $(docker image inspect "$python_ref" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}') == AGPL-3.0-only ]] || die python_license_label
+[[ $(docker image inspect "$postgres_ref" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}') == PostgreSQL ]] || die postgres_license_label
+
+bundle_name="capstone-p1-offline-demo-${mode}-${version}-amd64"
+final_directory=$output_parent/$bundle_name
+archive=$output_parent/$bundle_name.tar.zst
+[[ ! -e $final_directory && ! -e $archive ]] || die output_exists
+temporary=$(mktemp -d "$output_parent/.${bundle_name}.XXXXXX")
+cleanup() { rm -rf -- "$temporary"; }
+trap cleanup EXIT
+bundle=$temporary/$bundle_name
+install -d -m 700 "$bundle/deploy/p1/docker" "$bundle/infra/init" "$bundle/sbom" "$bundle/provenance" "$bundle/signatures"
+
+for file in p1ctl verify-release verify-offline-runtime backup restore-test compose.db.yml compose.kafka.yml compose.offline.db.yml compose.offline.kafka.yml demo.env.example release-manifest.schema.json THIRD_PARTY_NOTICES.md; do
+  cp -- "$SCRIPT_DIR/$file" "$bundle/deploy/p1/$file"
+done
+cp -- "$REPOSITORY_ROOT/LICENSE" "$bundle/LICENSE"
+cp -- "$SCRIPT_DIR/docker/secret-entrypoint.sh" "$bundle/deploy/p1/docker/"
+cp -- "$REPOSITORY_ROOT/infra/init/01-extensions.sql" "$REPOSITORY_ROOT/infra/init/02-application-roles.sh" "$bundle/infra/init/"
+chmod 0555 "$bundle/deploy/p1/p1ctl" "$bundle/deploy/p1/verify-release" "$bundle/deploy/p1/verify-offline-runtime" "$bundle/deploy/p1/backup" "$bundle/deploy/p1/restore-test" "$bundle/deploy/p1/docker/"*.sh "$bundle/infra/init/02-application-roles.sh"
+chmod 0444 "$bundle/LICENSE"
+printf 'P1_SPRING_IMAGE=%s\nP1_PYTHON_IMAGE=%s\nP1_POSTGRES_IMAGE=%s\n' "$spring_ref" "$python_ref" "$postgres_ref" > "$bundle/deploy/p1/release.env"
+chmod 0444 "$bundle/deploy/p1/release.env"
+
+images_tsv=$temporary/images.tsv
+for index in "${!components[@]}"; do
+  printf '%s\t%s\t%s\tlinux/amd64\n' "${components[$index]}" "${references[$index]}" "${references[$index]##*@}" >> "$images_tsv"
+done
+docker save --output "$bundle/images.tar" "${references[@]}"
+
+sbom_tsv=$temporary/sbom.tsv
+for index in "${!components[@]}"; do
+  component=${components[$index]}
+  reference=${references[$index]}
+  for format in spdx cyclonedx; do
+    path="sbom/${component}.${format}.json"
+    if [[ $sbom_tool == syft ]]; then
+      syft "docker:$reference" -o "${format}-json=$bundle/$path" >/dev/null
+    else
+      docker scout sbom --platform linux/amd64 --format "$format" --output "$bundle/$path" "local://$reference" >/dev/null
+    fi
+    printf '%s\t%s\t%s\t%s\n' "$component" "${format^^}" "$path" "$(sha "$bundle/$path")" >> "$sbom_tsv"
+  done
+done
+
+compose_tsv=$temporary/compose.tsv
+compose_paths=(deploy/p1/compose.db.yml deploy/p1/compose.offline.db.yml)
+if [[ $mode == kafka ]]; then compose_paths+=(deploy/p1/compose.kafka.yml deploy/p1/compose.offline.kafka.yml); fi
+for path in "${compose_paths[@]}"; do printf '%s\t%s\n' "$path" "$(sha "$bundle/$path")" >> "$compose_tsv"; done
+
+parity_sha=$(printf '%s\n%s\n' "$spring_ref" "$python_ref" | sha256sum | awk '{print $1}')
+python3 - "$bundle/provenance/source.json" "$commit_sha" "$tree_sha" "$version" "$mode" "$parity_sha" <<'PY'
+import json
+import sys
+
+path, commit_sha, tree_sha, version, mode, parity_sha = sys.argv[1:]
+document = {
+    "applicationImageParitySha256": parity_sha,
+    "buildType": "P1_OFFLINE_DEMO",
+    "bundleMode": mode.upper(),
+    "commitSha": commit_sha,
+    "platform": "linux/amd64",
+    "providerLiveAccountOrderCalls": 0,
+    "releaseVersion": version,
+    "treeSha": tree_sha,
+}
+with open(path, "x", encoding="utf-8", newline="\n") as handle:
+    json.dump(document, handle, ensure_ascii=True, indent=2, sort_keys=True)
+    handle.write("\n")
+PY
+provenance_tsv=$temporary/provenance.tsv
+printf 'SOURCE_PROVENANCE\tprovenance/source.json\t%s\n' "$(sha "$bundle/provenance/source.json")" > "$provenance_tsv"
+
+signatures_tsv=$temporary/signatures.tsv
+if [[ $stage == FINAL ]]; then
+  evidence_dir=${P1_RELEASE_EVIDENCE_DIR:?P1_RELEASE_EVIDENCE_DIR is required for FINAL}
+  [[ -d $evidence_dir && ! -L $evidence_dir ]] || die invalid_evidence_directory
+  for item in SPRING_OCI_MANIFEST:spring-manifest.json PYTHON_OCI_MANIFEST:python-manifest.json POSTGRES_OCI_MANIFEST:postgres-manifest.json; do
+    kind=${item%%:*}
+    file=${item#*:}
+    [[ -f $evidence_dir/$file && ! -L $evidence_dir/$file ]] || die "missing_$file"
+    cp -- "$evidence_dir/$file" "$bundle/provenance/$file"
+    printf '%s\t%s\t%s\n' "$kind" "provenance/$file" "$(sha "$bundle/provenance/$file")" >> "$provenance_tsv"
+  done
+  for item in COSIGN_SPRING_MANIFEST:cosign-spring-manifest.bundle.json COSIGN_PYTHON_MANIFEST:cosign-python-manifest.bundle.json COSIGN_POSTGRES_MANIFEST:cosign-postgres-manifest.bundle.json GITHUB_SPRING:github-spring.attestation.jsonl GITHUB_PYTHON:github-python.attestation.jsonl GITHUB_POSTGRES:github-postgres.attestation.jsonl GITHUB_TRUST_ROOT:github-trusted-root.jsonl; do
+    kind=${item%%:*}
+    file=${item#*:}
+    [[ -f $evidence_dir/$file && ! -L $evidence_dir/$file ]] || die "missing_$file"
+    cp -- "$evidence_dir/$file" "$bundle/signatures/$file"
+    printf '%s\t%s\t%s\n' "$kind" "signatures/$file" "$(sha "$bundle/signatures/$file")" >> "$signatures_tsv"
+  done
+fi
+
+python3 - "$bundle/release-manifest.json" "$stage" "$mode" "$version" "$commit_sha" "$tree_sha" "$parity_sha" "$images_tsv" "$compose_tsv" "$sbom_tsv" "$provenance_tsv" "$signatures_tsv" "$bundle/images.tar" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+(output, stage, mode, version, commit_sha, tree_sha, parity_sha, images_path,
+ compose_path, sbom_path, provenance_path, signatures_path, archive_path) = sys.argv[1:]
+
+def rows(path: str) -> list[list[str]]:
+    value = Path(path)
+    if not value.exists() or value.stat().st_size == 0:
+        return []
+    return [line.split("\t") for line in value.read_text(encoding="utf-8").splitlines()]
+
+document = {
+    "applicationImageParitySha256": parity_sha,
+    "bundleMode": mode.upper(),
+    "commitSha": commit_sha,
+    "compose": [{"path": path, "sha256": digest} for path, digest in rows(compose_path)],
+    "contractId": "p1-offline-demo-release-manifest.v1",
+    "crossMarketRuntime": "RETIRED_NOT_APPLICABLE",
+    "images": [
+        {"component": component, "reference": reference, "digest": digest, "platform": platform}
+        for component, reference, digest, platform in rows(images_path)
+    ],
+    "imagesArchiveSha256": hashlib.sha256(Path(archive_path).read_bytes()).hexdigest(),
+    "platform": "linux/amd64",
+    "providerLiveAccountOrderCalls": 0,
+    "provenance": [{"kind": kind, "path": path, "sha256": digest} for kind, path, digest in rows(provenance_path)],
+    "releaseName": "P1_OFFLINE_DEMO",
+    "releaseStage": stage,
+    "releaseVersion": version,
+    "sbom": [
+        {"component": component, "format": fmt, "path": path, "sha256": digest}
+        for component, fmt, path, digest in rows(sbom_path)
+    ],
+    "signatures": [{"kind": kind, "path": path, "sha256": digest} for kind, path, digest in rows(signatures_path)],
+    "treeSha": tree_sha,
+}
+with open(output, "x", encoding="utf-8", newline="\n") as handle:
+    json.dump(document, handle, ensure_ascii=True, indent=2, sort_keys=True)
+    handle.write("\n")
+PY
+
+(
+  cd "$bundle"
+  find . -type f ! -name SHA256SUMS -printf '%P\0' | LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS
+)
+mv -- "$bundle" "$final_directory"
+tar --zstd --sort=name --mtime="@$(( $(git -C "$REPOSITORY_ROOT" show -s --format=%ct HEAD) ))" --owner=0 --group=0 --numeric-owner -cf "$archive" -C "$output_parent" "$bundle_name"
+trap - EXIT
+rm -rf -- "$temporary"
+printf 'P1_BUNDLE_DIRECTORY=%s\nP1_BUNDLE_ARCHIVE=%s\n' "$final_directory" "$archive"

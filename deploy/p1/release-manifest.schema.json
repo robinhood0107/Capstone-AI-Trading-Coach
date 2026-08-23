@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone.local/contracts/p1-release-manifest.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractId", "releaseName", "releaseStage", "bundleMode", "releaseVersion",
+    "commitSha", "treeSha", "platform", "applicationImageParitySha256", "images",
+    "compose", "imagesArchiveSha256", "providerLiveAccountOrderCalls",
+    "crossMarketRuntime", "sbom", "provenance", "signatures"
+  ],
+  "properties": {
+    "contractId": {"const": "p1-offline-demo-release-manifest.v1"},
+    "releaseName": {"const": "P1_OFFLINE_DEMO"},
+    "releaseStage": {"enum": ["PREVIEW", "FINAL"]},
+    "bundleMode": {"enum": ["DB", "KAFKA"]},
+    "releaseVersion": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "commitSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "treeSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "platform": {"const": "linux/amd64"},
+    "applicationImageParitySha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "images": {
+      "type": "array", "minItems": 5, "maxItems": 6,
+      "items": {"$ref": "#/$defs/image"}
+    },
+    "compose": {
+      "type": "array", "minItems": 2, "maxItems": 4,
+      "items": {"$ref": "#/$defs/fileDigest"}
+    },
+    "imagesArchiveSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "providerLiveAccountOrderCalls": {"const": 0},
+    "crossMarketRuntime": {"const": "RETIRED_NOT_APPLICABLE"},
+    "sbom": {
+      "type": "array", "minItems": 10, "maxItems": 12,
+      "items": {"$ref": "#/$defs/sbom"}
+    },
+    "provenance": {
+      "type": "array", "minItems": 1, "maxItems": 8,
+      "items": {"$ref": "#/$defs/evidence"}
+    },
+    "signatures": {
+      "type": "array", "maxItems": 7,
+      "items": {"$ref": "#/$defs/evidence"}
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"releaseStage": {"const": "FINAL"}}},
+      "then": {"properties": {"signatures": {"minItems": 7}}}
+    }
+  ],
+  "$defs": {
+    "safePath": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "fileDigest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {"path": {"$ref": "#/$defs/safePath"}, "sha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "image": {
+      "type": "object", "additionalProperties": false,
+      "required": ["component", "reference", "digest", "platform"],
+      "properties": {
+        "component": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$"},
+        "reference": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9./_:-]{0,199}@sha256:[0-9a-f]{64}$"},
+        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "platform": {"const": "linux/amd64"}
+      }
+    },
+    "sbom": {
+      "type": "object", "additionalProperties": false,
+      "required": ["component", "format", "path", "sha256"],
+      "properties": {
+        "component": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$"},
+        "format": {"enum": ["SPDX", "CYCLONEDX"]},
+        "path": {"$ref": "#/$defs/safePath"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "path", "sha256"],
+      "properties": {
+        "kind": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,63}$"},
+        "path": {"$ref": "#/$defs/safePath"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

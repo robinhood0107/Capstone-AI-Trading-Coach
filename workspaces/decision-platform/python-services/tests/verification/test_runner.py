@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+import copy
 
+import pytest
+from app.data._shared.canonical_json import canonical_json_sha256
 from app.verification.models import VerificationReport
 from app.verification.runner import (
     Command,
@@ -34,6 +37,21 @@ def test_s0_s5_current_reports_exact_provider_free_gates(tmp_path: Path) -> None
     assert report.account_calls == report.balance_calls == report.order_calls == 0
     assert VerificationReport.from_dict(report.to_dict()) == report
     assert commands
+
+    for mutation in ("extra", "contract", "type", "duplicate_gate"):
+        value = copy.deepcopy(report.to_dict())
+        if mutation == "extra":
+            value["unexpected"] = True
+        elif mutation == "contract":
+            value["contractId"] = "p1-verification-report.v0"
+        elif mutation == "type":
+            value["providerDataPhysicalCalls"] = "0"
+        else:
+            value["gates"] = [value["gates"][0], value["gates"][0]]
+        value.pop("evidenceSha256")
+        value["evidenceSha256"] = canonical_json_sha256(value)
+        with pytest.raises(ValueError):
+            VerificationReport.from_dict(value)
 
 
 def test_s0_s5_current_keeps_lanes_independent_after_failure(tmp_path: Path) -> None:

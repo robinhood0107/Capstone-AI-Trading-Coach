@@ -126,6 +126,7 @@ abstract class SpringApiIntegrationTestBase {
             registry.add("spring.flyway.placeholders.brokerageDbCapabilityTokenSha256") {
                 TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256
             }
+            registry.add("spring.flyway.locations") { "classpath:db/migration" }
             registry.add("app.decision.grpc.shared-secret") { TEST_GRPC_SHARED_SECRET }
             registry.add("app.rag.grpc.shared-secret") { TEST_RAG_GRPC_SHARED_SECRET }
             registry.add("app.demo-credentials.user-credential-bundle") { TEST_USER_CREDENTIAL_BUNDLE }

@@ -20,6 +20,7 @@ set -Eeuo pipefail
 : "${POSTGRES_WORKER_PASSWORD:?POSTGRES_WORKER_PASSWORD is required}"
 : "${POSTGRES_REPLAY_PASSWORD:?POSTGRES_REPLAY_PASSWORD is required}"
 : "${POSTGRES_IDENTITY_PASSWORD:?POSTGRES_IDENTITY_PASSWORD is required}"
+: "${POSTGRES_AUTH_PASSWORD:?POSTGRES_AUTH_PASSWORD is required}"
 : "${POSTGRES_REPLAY_AUTHORIZER_PASSWORD:?POSTGRES_REPLAY_AUTHORIZER_PASSWORD is required}"
 : "${POSTGRES_DEMO_PASSWORD:?POSTGRES_DEMO_PASSWORD is required}"
 
@@ -44,6 +45,7 @@ psql -v ON_ERROR_STOP=1 --no-password --username "$POSTGRES_USER" --dbname "$POS
 \getenv worker_password POSTGRES_WORKER_PASSWORD
 \getenv replay_password POSTGRES_REPLAY_PASSWORD
 \getenv identity_password POSTGRES_IDENTITY_PASSWORD
+\getenv auth_password POSTGRES_AUTH_PASSWORD
 \getenv replay_authorizer_password POSTGRES_REPLAY_AUTHORIZER_PASSWORD
 \getenv demo_password POSTGRES_DEMO_PASSWORD
 
@@ -143,6 +145,23 @@ ALTER ROLE decision_identity SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_identity SET statement_timeout = '2s';
 ALTER ROLE decision_identity SET lock_timeout = '500ms';
 ALTER ROLE decision_identity SET idle_in_transaction_session_timeout = '5s';
+
+SELECT format(
+    'CREATE ROLE decision_auth LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'auth_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_auth')
+\gexec
+SELECT format(
+    'ALTER ROLE decision_auth WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'auth_password'
+)
+\gexec
+ALTER ROLE decision_auth SET log_parameter_max_length = 0;
+ALTER ROLE decision_auth SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_auth SET statement_timeout = '2s';
+ALTER ROLE decision_auth SET lock_timeout = '500ms';
+ALTER ROLE decision_auth SET idle_in_transaction_session_timeout = '5s';
 
 SELECT format(
     'CREATE ROLE decision_replay_authorizer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
@@ -405,6 +424,7 @@ GRANT CONNECT ON DATABASE :"database_name" TO
     decision_worker,
     decision_replay,
     decision_identity,
+    decision_auth,
     decision_replay_authorizer,
     decision_demo,
     decision_collector,
@@ -429,6 +449,7 @@ GRANT USAGE ON SCHEMA public TO
     decision_worker,
     decision_replay,
     decision_identity,
+    decision_auth,
     decision_replay_authorizer,
     decision_demo,
     decision_collector,
@@ -456,11 +477,13 @@ REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_worker;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_replay;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_identity;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_auth;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_replay_authorizer;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_demo;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_worker;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_replay;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_identity;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_auth;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_replay_authorizer;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_demo;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_collector;
@@ -2001,6 +2024,34 @@ BEGIN
         TO decision_replay_authorizer;
         REVOKE CREATE ON SCHEMA public FROM decision_identity, decision_replay_authorizer;
     END IF;
+    IF to_regprocedure('public.persist_decision_bundle_authorized(text,jsonb)') IS NOT NULL THEN
+        REVOKE UPDATE ON TABLE public.risk_kill_switch FROM decision_app;
+        REVOKE INSERT ON TABLE public.risk_kill_switch_transitions FROM decision_app;
+        REVOKE INSERT ON TABLE public.audit_logs FROM decision_app;
+        REVOKE INSERT ON TABLE public.decisions, public.decision_violations,
+            public.decision_artifacts, public.decision_traces,
+            public.decision_idempotency_results FROM decision_app;
+        REVOKE EXECUTE ON FUNCTION
+            append_decision_created_outbox(text,text,jsonb,timestamptz),
+            append_kill_switch_outbox(text,boolean,timestamptz),
+            invalidate_unused_decisions_for_kill_switch(bigint,timestamptz,text),
+            revalidate_kill_switch_admin(text,bigint),
+            read_demo_credentials(),
+            read_user_actor(text)
+        FROM PUBLIC, decision_app;
+        GRANT EXECUTE ON FUNCTION
+            transition_kill_switch_authorized(text,text,bigint,boolean,bigint,text),
+            persist_decision_bundle_authorized(text,jsonb)
+        TO decision_app;
+        REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_auth;
+        REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_auth;
+        GRANT EXECUTE ON FUNCTION read_demo_credentials(), read_user_actor(text) TO decision_auth;
+        REVOKE CREATE ON SCHEMA public FROM decision_auth;
+        GRANT EXECUTE ON FUNCTION
+            stage_p1_synthetic_async_request(text,text),
+            verify_p1_synthetic_async_request(text)
+        TO decision_demo;
+    END IF;
 END
 $s7_p1_security_closure_privileges$;
 
@@ -2012,6 +2063,7 @@ BEGIN
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_worker;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_replay;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_identity;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_auth;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_replay_authorizer;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_demo;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_collector;

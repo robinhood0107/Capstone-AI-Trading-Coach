@@ -448,7 +448,7 @@ class DemoCredentialRotationIntegrationTest {
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_rotation")
                 .withUsername("decision")
                 .withPassword("decision")

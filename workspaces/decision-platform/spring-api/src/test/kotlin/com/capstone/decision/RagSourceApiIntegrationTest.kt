@@ -788,7 +788,7 @@ class RagSourceApiIntegrationTest(
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_rag_sources")
                 .withUsername("decision")
                 .withPassword("decision")

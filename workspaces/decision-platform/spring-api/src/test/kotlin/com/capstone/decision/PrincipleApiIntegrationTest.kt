@@ -947,7 +947,7 @@ class PrincipleApiIntegrationTest(
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_principle")
                 .withUsername("decision")
                 .withPassword("decision")

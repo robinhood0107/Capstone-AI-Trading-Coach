@@ -261,7 +261,7 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `V85 preserves neutral market data roles and locks the V76 daily chain`() {
+    fun `V86 preserves neutral market data roles and locks the V76 daily chain`() {
         val url = createDatabase("s5_7b_market_data_v75")
         flyway(url).migrate()
 
@@ -273,7 +273,7 @@ class FlywayMigrationIntegrationTest(
                     ).use { result ->
                         val versions = mutableListOf<String>()
                         while (result.next()) versions += result.getString(1)
-                        assertEquals((1..85).map(Int::toString), versions)
+                        assertEquals((1..86).map(Int::toString), versions)
                     }
                 val privileges =
                     mapOf(
@@ -4277,7 +4277,7 @@ class FlywayMigrationIntegrationTest(
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision")
                 .withUsername("decision")
                 .withPassword("decision")

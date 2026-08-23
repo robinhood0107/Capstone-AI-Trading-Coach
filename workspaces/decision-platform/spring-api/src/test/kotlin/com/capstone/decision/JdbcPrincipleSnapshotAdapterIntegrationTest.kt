@@ -174,7 +174,7 @@ class JdbcPrincipleSnapshotAdapterIntegrationTest(
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_s2_2_snapshot")
                 .withUsername("decision")
                 .withPassword("decision")

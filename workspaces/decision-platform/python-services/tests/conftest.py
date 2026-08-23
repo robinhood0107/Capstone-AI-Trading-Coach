@@ -130,6 +130,8 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'replay-test-secret-0001';
                 CREATE ROLE decision_identity LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'identity-test-secret-0001';
+                CREATE ROLE decision_auth LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'auth-test-secret-0001';
                 CREATE ROLE decision_replay_authorizer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'replay-authorizer-test-0001';
                 CREATE ROLE decision_demo LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
@@ -193,6 +195,7 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     decision_worker,
                     decision_replay,
                     decision_identity,
+                    decision_auth,
                     decision_replay_authorizer,
                     decision_demo,
                     decision_collector,
@@ -216,6 +219,7 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     decision_worker,
                     decision_replay,
                     decision_identity,
+                    decision_auth,
                     decision_replay_authorizer,
                     decision_demo,
                     decision_collector,

@@ -10,7 +10,13 @@ from app.verification.artifacts import (
     claim_packet_execution,
 )
 from app.verification.models import VerificationReport
-from app.verification.packet import P1VerificationPacket, VerificationTarget
+from app.verification.packet import (
+    LIVE_OPERATIONS,
+    P1SignedApprovalPacket,
+    P1VerificationPacket,
+    VerificationPacketError,
+    VerificationTarget,
+)
 from app.verification.provider_smoke import (
     OPERATION_ORDER,
     OperationResult,
@@ -37,6 +43,7 @@ class _FakeBackend:
         self.provider_data_physical_calls = 0
         self.kis_token_physical_calls = token_calls
         self.operations: list[str] = []
+        self.targets: list[VerificationTarget] = []
         self.closed = False
 
     def preflight(self) -> None:
@@ -45,6 +52,7 @@ class _FakeBackend:
 
     def execute(self, operation: str, target: VerificationTarget) -> OperationResult:
         assert target.symbol == "005930"
+        self.targets.append(target)
         self.operations.append(operation)
         self.provider_data_physical_calls += 1
         if operation == self.fail_at:
@@ -61,18 +69,20 @@ def canonical_evidence(operation: str) -> str:
     return canonical_json_sha256({"operation": operation, "rowCount": 1})
 
 
-def _packet(*, token_cap: int = 1) -> P1VerificationPacket:
+def _packet(*, token_cap: int = 1) -> P1SignedApprovalPacket:
     now = datetime(2026, 8, 21, 0, tzinfo=UTC)
-    return P1VerificationPacket(
+    return P1SignedApprovalPacket(
         approval_id="P1.V1-20260821-READ-SMOKE",
-        issued_at=now,
-        expires_at=now + timedelta(minutes=60),
+        nonce="e" * 32,
+        issuer_key_id="P1.TEST",
+        allowed_operations=LIVE_OPERATIONS,
+        physical_call_cap=len(LIVE_OPERATIONS) + token_cap,
         head_sha="a" * 40,
         tree_sha256="b" * 64,
-        uv_lock_sha256="c" * 64,
-        contract_catalog_sha256="d" * 64,
         target=VerificationTarget(date(2026, 8, 20)),
-        kis_token_physical_call_cap=token_cap,
+        expires_at=now + timedelta(minutes=5),
+        reason_code="P1_READ_SMOKE",
+        signature="A" * 86,
     )
 
 
@@ -104,6 +114,8 @@ def test_provider_smoke_passes_only_six_single_physical_attempts(tmp_path: Path)
     assert report.account_calls == report.balance_calls == report.order_calls == 0
     assert report.product_db_writes == 0
     assert backend.operations == list(OPERATION_ORDER)
+    assert len(backend.targets) == 6
+    assert set(backend.targets) == {VerificationTarget(date(2026, 8, 20))}
     assert backend.closed
     assert VerificationReport.from_dict(report.to_dict()) == report
 
@@ -272,16 +284,18 @@ def test_production_backend_composes_existing_typed_clients_with_retry_zero(monk
     monkeypatch.setattr(smoke, "KISHttpClient", FakeKisHttpClient)
     monkeypatch.setattr(smoke, "ECOSHttpClient", FakeEcosClient)
     now = datetime.now(UTC)
-    packet = P1VerificationPacket(
+    packet = P1SignedApprovalPacket(
         approval_id="P1.V1-20260821-READ-SMOKE",
-        issued_at=now - timedelta(minutes=1),
-        expires_at=now + timedelta(minutes=30),
+        nonce="e" * 32,
+        issuer_key_id="P1.TEST",
+        allowed_operations=LIVE_OPERATIONS,
+        physical_call_cap=len(LIVE_OPERATIONS) + 1,
         head_sha="a" * 40,
         tree_sha256="b" * 64,
-        uv_lock_sha256="c" * 64,
-        contract_catalog_sha256="d" * 64,
         target=VerificationTarget(date(2026, 8, 20)),
-        kis_token_physical_call_cap=1,
+        expires_at=now + timedelta(minutes=4),
+        reason_code="P1_READ_SMOKE",
+        signature="A" * 86,
     )
     backend = ProductionProviderSmokeBackend(packet)
 
@@ -297,6 +311,30 @@ def test_production_backend_composes_existing_typed_clients_with_retry_zero(monk
     assert observed_settings["kis"][0].kis_retry_attempts == 1
     assert len(observed_settings["ecos"]) == 2
     assert all(settings.max_attempts_per_request == 1 for settings in observed_settings["ecos"])
+
+
+def test_legacy_unsigned_packet_has_no_execution_authority(tmp_path: Path) -> None:
+    now = datetime(2026, 8, 21, 0, tzinfo=UTC)
+    legacy = P1VerificationPacket(
+        approval_id="P1.V1-20260821-READ-SMOKE",
+        issued_at=now,
+        expires_at=now + timedelta(minutes=60),
+        head_sha="a" * 40,
+        tree_sha256="b" * 64,
+        uv_lock_sha256="c" * 64,
+        contract_catalog_sha256="d" * 64,
+        target=VerificationTarget(date(2026, 8, 20)),
+        kis_token_physical_call_cap=0,
+    )
+
+    with pytest.raises(VerificationPacketError, match="v1 has no execution authority"):
+        run_provider_read_smoke(  # type: ignore[arg-type]
+            repository_root=tmp_path,
+            output_root=tmp_path / "artifacts",
+            packet=legacy,
+            binding_verifier=lambda *_: None,
+            backend_factory=lambda _: _FakeBackend(),
+        )
 
 
 def test_provider_smoke_has_no_direct_transport_db_or_brokerage_authority() -> None:

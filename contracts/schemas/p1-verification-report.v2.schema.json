@@ -1,0 +1,205 @@
+{
+  "$id": "contracts/schemas/p1-verification-report.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "const": "PROVIDER_READ_SMOKE"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "packetSha256"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "accountCalls": {
+      "const": 0
+    },
+    "aggregateOutcome": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "BLOCKED",
+        "INCOMPLETE"
+      ]
+    },
+    "balanceCalls": {
+      "const": 0
+    },
+    "completedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "p1-verification-report.v2"
+    },
+    "evidenceSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "executionState": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "BLOCKED",
+        "NOT_RUN",
+        "NOT_APPLICABLE"
+      ]
+    },
+    "gates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "evidenceSha256": {
+            "oneOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "executionState": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "BLOCKED",
+              "NOT_RUN",
+              "NOT_APPLICABLE"
+            ]
+          },
+          "failureCode": {
+            "oneOf": [
+              {
+                "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gateId": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+            "type": "string"
+          },
+          "implementationState": {
+            "enum": [
+              "IMPLEMENTED",
+              "INTENTIONALLY_DISABLED",
+              "NOT_IMPLEMENTED",
+              "EXTERNAL_PLACEHOLDER"
+            ]
+          },
+          "physicalCallCount": {
+            "maximum": 7,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "gateId",
+          "required",
+          "implementationState",
+          "executionState",
+          "physicalCallCount",
+          "evidenceSha256",
+          "failureCode"
+        ],
+        "type": "object"
+      },
+      "maxItems": 32,
+      "minItems": 1,
+      "type": "array"
+    },
+    "headSha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "implementationState": {
+      "enum": [
+        "IMPLEMENTED",
+        "INTENTIONALLY_DISABLED",
+        "NOT_IMPLEMENTED",
+        "EXTERNAL_PLACEHOLDER"
+      ]
+    },
+    "kisTokenPhysicalCalls": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "liveOrderCalls": {
+      "const": 0
+    },
+    "orderCalls": {
+      "const": 0
+    },
+    "packetSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "productDbWrites": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "profile": {
+      "enum": [
+        "S0_S5_CURRENT",
+        "PROVIDER_READ_SMOKE",
+        "S6_OFFLINE",
+        "S7_RUNTIME",
+        "P1_DEMO",
+        "P1_LIVE_READINESS",
+        "P1_FULL"
+      ]
+    },
+    "providerDataPhysicalCalls": {
+      "maximum": 6,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "runId": {
+      "pattern": "^[a-z0-9][a-z0-9._-]{7,95}$",
+      "type": "string"
+    },
+    "startedAt": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractId",
+    "runId",
+    "profile",
+    "headSha",
+    "startedAt",
+    "completedAt",
+    "implementationState",
+    "executionState",
+    "aggregateOutcome",
+    "providerDataPhysicalCalls",
+    "kisTokenPhysicalCalls",
+    "accountCalls",
+    "balanceCalls",
+    "orderCalls",
+    "liveOrderCalls",
+    "productDbWrites",
+    "gates",
+    "evidenceSha256"
+  ],
+  "title": "p1-verification-report.v2",
+  "type": "object"
+}

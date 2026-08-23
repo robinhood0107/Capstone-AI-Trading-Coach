@@ -623,7 +623,7 @@ class AsyncJobApiIntegrationTest(
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_async_api")
                 .withUsername("decision")
                 .withPassword("decision")

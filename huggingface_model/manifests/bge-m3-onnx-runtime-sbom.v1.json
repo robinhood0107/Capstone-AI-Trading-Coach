@@ -1,8 +1,8 @@
 {
   "schemaVersion": "runtime-sbom/v1",
-  "generatedAt": "2026-08-15T06:35:13Z",
+  "generatedAt": "2026-08-23T17:48:10Z",
   "pythonVersion": "3.12.13",
-  "lockfileSha256": "783ab5d3e5bf9ec1f972c5412b216c75fda92b17aaa57d3317bd8ea4a7677b2a",
+  "lockfileSha256": "638035da3f2be41ee2add40e56b60b1188ec7bfd268bb2e5aba20b2c482d1276",
   "components": [
     {
       "name": "onnxruntime",

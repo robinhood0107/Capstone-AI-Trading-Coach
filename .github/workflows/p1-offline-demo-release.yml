@@ -1,0 +1,432 @@
+name: P1 offline demo release
+
+on:
+  workflow_dispatch:
+    inputs:
+      releaseVersion:
+        description: SemVer for the P1_OFFLINE_DEMO bundle
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p1-offline-demo-release
+  cancel-in-progress: false
+
+jobs:
+  build-scan-publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      REGISTRY: ghcr.io
+      SPRING_IMAGE: ghcr.io/robinhood0107/capstone-spring-api
+      PYTHON_IMAGE: ghcr.io/robinhood0107/capstone-python-services
+      POSTGRES_IMAGE: ghcr.io/robinhood0107/capstone-postgres-pgvector
+    steps:
+      - name: Checkout exact merge source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Validate release identity
+        id: identity
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.releaseVersion }}
+        run: |
+          set -Eeuo pipefail
+          version=$RELEASE_VERSION
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ $(git status --porcelain --untracked-files=all) == '' ]]
+          sha=$(git rev-parse HEAD)
+          tree=$(git rev-parse 'HEAD^{tree}')
+          tag="p1-offline-demo-${version}-${sha:0:12}"
+          {
+            echo "sha=$sha"
+            echo "tree=$tree"
+            echo "tag=$tag"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Build Spring image for scan
+        id: spring_build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: deploy/p1/docker/spring-api.Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: ${{ env.SPRING_IMAGE }}:${{ steps.identity.outputs.tag }}
+          build-args: |
+            SOURCE_REVISION=${{ steps.identity.outputs.sha }}
+            RELEASE_VERSION=${{ steps.identity.outputs.version }}
+
+      - name: Build Python image for scan
+        id: python_build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: deploy/p1/docker/python-services.Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: ${{ env.PYTHON_IMAGE }}:${{ steps.identity.outputs.tag }}
+          build-args: |
+            SOURCE_REVISION=${{ steps.identity.outputs.sha }}
+            RELEASE_VERSION=${{ steps.identity.outputs.version }}
+
+      - name: Build PostgreSQL pgvector image for scan
+        id: postgres_build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: deploy/p1/docker/postgres-pgvector.Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: ${{ env.POSTGRES_IMAGE }}:${{ steps.identity.outputs.tag }}
+          build-args: |
+            SOURCE_REVISION=${{ steps.identity.outputs.sha }}
+            RELEASE_VERSION=${{ steps.identity.outputs.version }}
+
+      - name: Bind built digests before scan
+        id: local_identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ $(docker image inspect "$SPRING_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
+          [[ $(docker image inspect "$PYTHON_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
+          [[ $(docker image inspect "$POSTGRES_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
+          spring_config=$(docker image inspect "$SPRING_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{.Id}}')
+          python_config=$(docker image inspect "$PYTHON_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{.Id}}')
+          postgres_config=$(docker image inspect "$POSTGRES_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{.Id}}')
+          [[ $spring_config =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ $python_config =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ $postgres_config =~ ^sha256:[0-9a-f]{64}$ ]]
+          {
+            echo "spring_config=$spring_config"
+            echo "python_config=$python_config"
+            echo "postgres_config=$postgres_config"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Scan Spring image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.SPRING_IMAGE }}:${{ steps.identity.outputs.tag }}
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: Scan Python image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.PYTHON_IMAGE }}:${{ steps.identity.outputs.tag }}
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: Scan PostgreSQL pgvector image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.POSTGRES_IMAGE }}:${{ steps.identity.outputs.tag }}
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: Scan bundled infrastructure images
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          images=(
+            'alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce'
+            'redis:7.2-alpine@sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8'
+            'apache/kafka-native:4.3.1@sha256:e50f6ad232dc9e524134ef6babba8285ba8a793326cb27ca2efc20fa83e45a0b'
+          )
+          for image in "${images[@]}"; do docker pull --platform linux/amd64 "$image"; done
+
+      - name: Trivy infrastructure gate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: Trivy Redis gate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: redis:7.2-alpine@sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: Trivy Kafka gate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: apache/kafka-native:4.3.1@sha256:e50f6ad232dc9e524134ef6babba8285ba8a793326cb27ca2efc20fa83e45a0b
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          exit-code: '1'
+
+      - name: Generate Spring SPDX SBOM
+        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        with:
+          image: ${{ env.SPRING_IMAGE }}:${{ steps.identity.outputs.tag }}
+          format: spdx-json
+          output-file: spring-api.spdx.json
+          upload-artifact: false
+
+      - name: Generate Python SPDX SBOM
+        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        with:
+          image: ${{ env.PYTHON_IMAGE }}:${{ steps.identity.outputs.tag }}
+          format: spdx-json
+          output-file: python-services.spdx.json
+          upload-artifact: false
+
+      - name: Generate PostgreSQL pgvector SPDX SBOM
+        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        with:
+          image: ${{ env.POSTGRES_IMAGE }}:${{ steps.identity.outputs.tag }}
+          format: spdx-json
+          output-file: postgres-pgvector.spdx.json
+          upload-artifact: false
+
+      - name: Install Syft for complete bundle SBOMs
+        id: syft
+        uses: anchore/sbom-action/download-syft@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+
+      - name: Check image histories for embedded secrets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for image in "$SPRING_IMAGE:${{ steps.identity.outputs.tag }}" "$PYTHON_IMAGE:${{ steps.identity.outputs.tag }}" "$POSTGRES_IMAGE:${{ steps.identity.outputs.tag }}"; do
+            history=$(docker history --no-trunc --format '{{.CreatedBy}}' "$image")
+            if grep -Eiq '(password|secret|token|account)[=:][^ $]+' <<<"$history"; then
+              echo 'embedded secret-like value in image history' >&2
+              exit 1
+            fi
+          done
+
+      - name: Log in only after all scans pass
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push scanned local images and bind registry digests
+        id: push
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker push "$SPRING_IMAGE:${{ steps.identity.outputs.tag }}"
+          docker push "$PYTHON_IMAGE:${{ steps.identity.outputs.tag }}"
+          docker push "$POSTGRES_IMAGE:${{ steps.identity.outputs.tag }}"
+          spring_digest="sha256:$(docker buildx imagetools inspect "$SPRING_IMAGE:${{ steps.identity.outputs.tag }}" --raw | sha256sum | awk '{print $1}')"
+          python_digest="sha256:$(docker buildx imagetools inspect "$PYTHON_IMAGE:${{ steps.identity.outputs.tag }}" --raw | sha256sum | awk '{print $1}')"
+          postgres_digest="sha256:$(docker buildx imagetools inspect "$POSTGRES_IMAGE:${{ steps.identity.outputs.tag }}" --raw | sha256sum | awk '{print $1}')"
+          [[ $spring_digest =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ $python_digest =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ $postgres_digest =~ ^sha256:[0-9a-f]{64}$ ]]
+          spring_ref="$SPRING_IMAGE@$spring_digest"
+          python_ref="$PYTHON_IMAGE@$python_digest"
+          postgres_ref="$POSTGRES_IMAGE@$postgres_digest"
+          docker pull --platform linux/amd64 "$spring_ref"
+          docker pull --platform linux/amd64 "$python_ref"
+          docker pull --platform linux/amd64 "$postgres_ref"
+          [[ $(docker image inspect "$spring_ref" --format '{{.Id}}') == '${{ steps.local_identity.outputs.spring_config }}' ]]
+          [[ $(docker image inspect "$python_ref" --format '{{.Id}}') == '${{ steps.local_identity.outputs.python_config }}' ]]
+          [[ $(docker image inspect "$postgres_ref" --format '{{.Id}}') == '${{ steps.local_identity.outputs.postgres_config }}' ]]
+          [[ $(docker image inspect "$spring_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
+          [[ $(docker image inspect "$python_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
+          [[ $(docker image inspect "$postgres_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
+          {
+            echo "spring_ref=$spring_ref"
+            echo "python_ref=$python_ref"
+            echo "spring_digest=$spring_digest"
+            echo "python_digest=$python_digest"
+            echo "postgres_ref=$postgres_ref"
+            echo "postgres_digest=$postgres_digest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Attest Spring image provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-name: ${{ env.SPRING_IMAGE }}
+          subject-digest: ${{ steps.push.outputs.spring_digest }}
+          push-to-registry: true
+
+      - name: Attest Python image provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-name: ${{ env.PYTHON_IMAGE }}
+          subject-digest: ${{ steps.push.outputs.python_digest }}
+          push-to-registry: true
+
+      - name: Attest PostgreSQL pgvector image provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-name: ${{ env.POSTGRES_IMAGE }}
+          subject-digest: ${{ steps.push.outputs.postgres_digest }}
+          push-to-registry: true
+
+      - name: Attest Spring SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-name: ${{ env.SPRING_IMAGE }}
+          subject-digest: ${{ steps.push.outputs.spring_digest }}
+          sbom-path: spring-api.spdx.json
+          push-to-registry: true
+
+      - name: Attest Python SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-name: ${{ env.PYTHON_IMAGE }}
+          subject-digest: ${{ steps.push.outputs.python_digest }}
+          sbom-path: python-services.spdx.json
+          push-to-registry: true
+
+      - name: Attest PostgreSQL pgvector SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-name: ${{ env.POSTGRES_IMAGE }}
+          subject-digest: ${{ steps.push.outputs.postgres_digest }}
+          sbom-path: postgres-pgvector.spdx.json
+          push-to-registry: true
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
+
+      - name: Sign exact image digests and collect offline evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -d -m 700 release-evidence/spring release-evidence/python release-evidence/postgres
+          docker buildx imagetools inspect '${{ steps.push.outputs.spring_ref }}' --raw > release-evidence/spring-manifest.json
+          docker buildx imagetools inspect '${{ steps.push.outputs.python_ref }}' --raw > release-evidence/python-manifest.json
+          docker buildx imagetools inspect '${{ steps.push.outputs.postgres_ref }}' --raw > release-evidence/postgres-manifest.json
+          [[ "sha256:$(sha256sum release-evidence/spring-manifest.json | awk '{print $1}')" == '${{ steps.push.outputs.spring_digest }}' ]]
+          [[ "sha256:$(sha256sum release-evidence/python-manifest.json | awk '{print $1}')" == '${{ steps.push.outputs.python_digest }}' ]]
+          [[ "sha256:$(sha256sum release-evidence/postgres-manifest.json | awk '{print $1}')" == '${{ steps.push.outputs.postgres_digest }}' ]]
+          cosign sign --yes '${{ steps.push.outputs.spring_ref }}'
+          cosign sign --yes '${{ steps.push.outputs.python_ref }}'
+          cosign sign --yes '${{ steps.push.outputs.postgres_ref }}'
+          cosign sign-blob --yes --bundle release-evidence/cosign-spring-manifest.bundle.json release-evidence/spring-manifest.json
+          cosign sign-blob --yes --bundle release-evidence/cosign-python-manifest.bundle.json release-evidence/python-manifest.json
+          cosign sign-blob --yes --bundle release-evidence/cosign-postgres-manifest.bundle.json release-evidence/postgres-manifest.json
+          (cd release-evidence/spring && gh attestation download 'oci://${{ steps.push.outputs.spring_ref }}' -R robinhood0107/Capstone-AI-Trading-Coach)
+          (cd release-evidence/python && gh attestation download 'oci://${{ steps.push.outputs.python_ref }}' -R robinhood0107/Capstone-AI-Trading-Coach)
+          (cd release-evidence/postgres && gh attestation download 'oci://${{ steps.push.outputs.postgres_ref }}' -R robinhood0107/Capstone-AI-Trading-Coach)
+          [[ $(find release-evidence/spring -maxdepth 1 -type f -name '*.jsonl' | wc -l) == 1 ]]
+          [[ $(find release-evidence/python -maxdepth 1 -type f -name '*.jsonl' | wc -l) == 1 ]]
+          [[ $(find release-evidence/postgres -maxdepth 1 -type f -name '*.jsonl' | wc -l) == 1 ]]
+          mv -- release-evidence/spring/*.jsonl release-evidence/github-spring.attestation.jsonl
+          mv -- release-evidence/python/*.jsonl release-evidence/github-python.attestation.jsonl
+          mv -- release-evidence/postgres/*.jsonl release-evidence/github-postgres.attestation.jsonl
+          rmdir release-evidence/spring release-evidence/python release-evidence/postgres
+          gh attestation trusted-root > release-evidence/github-trusted-root.jsonl
+
+      - name: Install zstd
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zstd
+
+      - name: Assemble exact DB and Kafka offline bundles
+        env:
+          P1_RELEASE_STAGE: FINAL
+          P1_RELEASE_EVIDENCE_DIR: ${{ github.workspace }}/release-evidence
+          P1_SPRING_IMAGE: ${{ steps.push.outputs.spring_ref }}
+          P1_PYTHON_IMAGE: ${{ steps.push.outputs.python_ref }}
+          P1_POSTGRES_IMAGE: ${{ steps.push.outputs.postgres_ref }}
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -d -m 700 release-output
+          deploy/p1/assemble-offline-bundle db "$RELEASE_VERSION" release-output
+          deploy/p1/assemble-offline-bundle kafka "$RELEASE_VERSION" release-output
+
+      - name: Sign complete bundle roots and rebuild deterministic archives
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          source_epoch=$(git show -s --format=%ct HEAD)
+          for mode in db kafka; do
+            name="capstone-p1-offline-demo-${mode}-${RELEASE_VERSION}-amd64"
+            directory="release-output/$name"
+            cosign sign-blob --yes --bundle "$directory/bundle-root-signature.bundle.json" "$directory/SHA256SUMS"
+            rm -- "release-output/$name.tar.zst"
+            tar --zstd --sort=name --mtime="@$source_epoch" --owner=0 --group=0 --numeric-owner \
+              -cf "release-output/$name.tar.zst" -C release-output "$name"
+            (cd release-output && sha256sum "$name.tar.zst" > "$name.tar.zst.sha256")
+            cosign sign-blob --yes --bundle "release-output/$name.tar.zst.sha256.bundle.json" \
+              "release-output/$name.tar.zst.sha256"
+          done
+
+      - name: Verify bundles with network disabled
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for bundle in release-output/capstone-p1-offline-demo-{db,kafka}-"$RELEASE_VERSION"-amd64; do
+            sudo env "PATH=$PATH" unshare --net --mount-proc deploy/p1/verify-release "$bundle"
+          done
+
+      - name: Run isolated DB and Kafka bundle lifecycle
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for mode in db kafka; do
+            bundle="release-output/capstone-p1-offline-demo-${mode}-${RELEASE_VERSION}-amd64"
+            "$bundle/deploy/p1/verify-offline-runtime" "$bundle" "$mode"
+          done
+
+      - name: Attest DB offline archive
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: release-output/capstone-p1-offline-demo-db-${{ steps.identity.outputs.version }}-amd64.tar.zst
+
+      - name: Attest Kafka offline archive
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: release-output/capstone-p1-offline-demo-kafka-${{ steps.identity.outputs.version }}-amd64.tar.zst
+
+      - name: Upload release evidence and offline bundles
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p1-offline-demo-${{ steps.identity.outputs.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          path: |
+            release-output/*.tar.zst
+            release-output/*.tar.zst.sha256*
+            release-output/*/release-manifest.json
+            release-output/*/SHA256SUMS
+            spring-api.spdx.json
+            python-services.spdx.json
+            postgres-pgvector.spdx.json
+            release-evidence/*

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 from datetime import UTC, datetime
 import json
 import os
@@ -154,7 +155,6 @@ def _approval_trust_anchor(
         raise ValueError("P1 approval issuer key id is not pinned")
     if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
         raise ValueError("P1 approval public key digest is not pinned")
-    import hashlib
 
     public_key = _read_protected_policy_file(
         path,

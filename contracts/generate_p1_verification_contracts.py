@@ -19,8 +19,10 @@ if str(ROOT) not in sys.path:
 from contracts.generated_artifact_io import write_generated_artifact  # noqa: E402
 from contracts.generate_principle_contracts import ContractValidationError  # noqa: E402
 SCHEMA_IDS: Final[tuple[str, ...]] = (
+    "p1-approval-packet.v2",
     "p1-verification-packet.v1",
     "p1-verification-report.v1",
+    "p1-verification-report.v2",
 )
 SCHEMA_PATHS: Final[dict[str, str]] = {
     schema_id: f"contracts/schemas/{schema_id}.schema.json" for schema_id in SCHEMA_IDS
@@ -148,6 +150,59 @@ def _packet_schema() -> dict[str, Any]:
     }
 
 
+def _signed_packet_schema() -> dict[str, Any]:
+    body = _closed(
+        [
+            "contractId",
+            "approvalId",
+            "nonce",
+            "issuerKeyId",
+            "allowedOperations",
+            "physicalCallCap",
+            "headSha",
+            "treeSha",
+            "expiresAt",
+            "reasonCode",
+            "target",
+            "signature",
+        ],
+        {
+            "contractId": {"const": "p1-approval-packet.v2"},
+            "approvalId": {"type": "string", "pattern": "^[A-Z0-9][A-Z0-9._-]{7,95}$"},
+            "nonce": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+            "issuerKeyId": {"type": "string", "pattern": "^[A-Z0-9][A-Z0-9._-]{2,63}$"},
+            "allowedOperations": {
+                "type": "array",
+                "prefixItems": [{"const": operation} for operation in LIVE_OPERATIONS],
+                "items": False,
+                "minItems": len(LIVE_OPERATIONS),
+                "maxItems": len(LIVE_OPERATIONS),
+            },
+            "physicalCallCap": {"enum": [6, 7]},
+            "headSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "treeSha": _sha256(),
+            "expiresAt": _timestamp(),
+            "reasonCode": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$"},
+            "target": _closed(
+                ["ecosFrom", "ecosTo", "sessionDate", "symbol"],
+                {
+                    "ecosFrom": {"type": "string", "format": "date"},
+                    "ecosTo": {"type": "string", "format": "date"},
+                    "sessionDate": {"type": "string", "format": "date"},
+                    "symbol": {"const": "005930"},
+                },
+            ),
+            "signature": {"type": "string", "pattern": "^[A-Za-z0-9_-]{86}$"},
+        },
+    )
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": SCHEMA_PATHS["p1-approval-packet.v2"],
+        "title": "p1-approval-packet.v2",
+        **body,
+    }
+
+
 def _gate_result() -> dict[str, Any]:
     nullable_sha = {"oneOf": [_sha256(), {"type": "null"}]}
     nullable_failure = {
@@ -178,7 +233,7 @@ def _gate_result() -> dict[str, Any]:
     )
 
 
-def _report_schema() -> dict[str, Any]:
+def _report_schema(contract_id: str) -> dict[str, Any]:
     body = _closed(
         [
             "contractId",
@@ -201,7 +256,7 @@ def _report_schema() -> dict[str, Any]:
             "evidenceSha256",
         ],
         {
-            "contractId": {"const": "p1-verification-report.v1"},
+            "contractId": {"const": contract_id},
             "runId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{7,95}$"},
             "profile": {"enum": list(PROFILE_IDS)},
             "packetSha256": _sha256(),
@@ -227,12 +282,20 @@ def _report_schema() -> dict[str, Any]:
             "evidenceSha256": _sha256(),
         },
     )
-    return {
+    schema = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": SCHEMA_PATHS["p1-verification-report.v1"],
-        "title": "p1-verification-report.v1",
+        "$id": SCHEMA_PATHS[contract_id],
+        "title": contract_id,
         **body,
     }
+    if contract_id == "p1-verification-report.v2":
+        schema["allOf"] = [
+            {
+                "if": {"properties": {"profile": {"const": "PROVIDER_READ_SMOKE"}}},
+                "then": {"required": ["packetSha256"]},
+            }
+        ]
+    return schema
 
 
 def _catalog() -> dict[str, object]:
@@ -331,7 +394,29 @@ def _valid_packet() -> dict[str, object]:
     }
 
 
-def _valid_report() -> dict[str, object]:
+def _valid_signed_packet() -> dict[str, object]:
+    return {
+        "contractId": "p1-approval-packet.v2",
+        "approvalId": "P1.V2-20260823-READ-SMOKE",
+        "nonce": "e" * 32,
+        "issuerKeyId": "P1.DEMO.2026",
+        "allowedOperations": list(LIVE_OPERATIONS),
+        "physicalCallCap": 7,
+        "headSha": "a" * 40,
+        "treeSha": "b" * 64,
+        "expiresAt": "2026-08-23T09:05:00Z",
+        "reasonCode": "P1_READ_SMOKE",
+        "target": {
+            "ecosFrom": "2026-07-25",
+            "ecosTo": "2026-08-23",
+            "sessionDate": "2026-08-23",
+            "symbol": "005930",
+        },
+        "signature": "A" * 86,
+    }
+
+
+def _valid_report(contract_id: str) -> dict[str, object]:
     gates = [
         {
             "gateId": operation,
@@ -345,7 +430,7 @@ def _valid_report() -> dict[str, object]:
         for index, operation in enumerate(LIVE_OPERATIONS, start=1)
     ]
     return {
-        "contractId": "p1-verification-report.v1",
+        "contractId": contract_id,
         "runId": "p1v1-20260821-read-smoke",
         "profile": "PROVIDER_READ_SMOKE",
         "packetSha256": "e" * 64,
@@ -370,6 +455,20 @@ def _valid_report() -> dict[str, object]:
 def validate_semantics(contract_id: str, payload: object) -> None:
     if not isinstance(payload, dict):
         raise ContractValidationError("P1 verification payload must be an object")
+    if contract_id == "p1-approval-packet.v2":
+        if tuple(payload["allowedOperations"]) != LIVE_OPERATIONS:
+            raise ContractValidationError("P1 signed approval operation order drifted")
+        if payload["physicalCallCap"] not in {6, 7}:
+            raise ContractValidationError("P1 signed approval physical cap is invalid")
+        target = payload["target"]
+        if not isinstance(target, dict):
+            raise ContractValidationError("P1 signed approval target is invalid")
+        session = date.fromisoformat(str(target["sessionDate"]))
+        if date.fromisoformat(str(target["ecosTo"])) != session:
+            raise ContractValidationError("P1 signed approval ECOS end date drifted")
+        if (session - date.fromisoformat(str(target["ecosFrom"]))).days != 29:
+            raise ContractValidationError("P1 signed approval ECOS window drifted")
+        return
     if contract_id == "p1-verification-packet.v1":
         issued = datetime.fromisoformat(str(payload["issuedAt"]).replace("Z", "+00:00"))
         expires = datetime.fromisoformat(str(payload["expiresAt"]).replace("Z", "+00:00"))
@@ -391,8 +490,14 @@ def validate_semantics(contract_id: str, payload: object) -> None:
         if payload["totalPhysicalCallCap"] != 6 + token_cap:
             raise ContractValidationError("P1 total physical cap is not derived from data plus token")
         return
-    if contract_id != "p1-verification-report.v1":
+    if contract_id not in {"p1-verification-report.v1", "p1-verification-report.v2"}:
         raise ContractValidationError("unknown P1 verification contract")
+    if (
+        contract_id == "p1-verification-report.v2"
+        and payload["profile"] == "PROVIDER_READ_SMOKE"
+        and "packetSha256" not in payload
+    ):
+        raise ContractValidationError("P1 v2 provider report must bind its signed packet")
     started = datetime.fromisoformat(str(payload["startedAt"]).replace("Z", "+00:00"))
     completed = datetime.fromisoformat(str(payload["completedAt"]).replace("Z", "+00:00"))
     if started.tzinfo is None or completed.tzinfo is None or completed < started:
@@ -463,25 +568,34 @@ def validate_semantics(contract_id: str, payload: object) -> None:
 
 def artifacts() -> dict[str, bytes]:
     packet = _valid_packet()
-    report = _valid_report()
+    signed_packet = _valid_signed_packet()
+    report_v1 = _valid_report("p1-verification-report.v1")
+    report_v2 = _valid_report("p1-verification-report.v2")
     invalid_ttl = copy.deepcopy(packet)
     invalid_ttl["expiresAt"] = "2026-08-21T10:00:01Z"
     invalid_cap = copy.deepcopy(packet)
     invalid_cap["totalPhysicalCallCap"] = 6
-    invalid_raw = copy.deepcopy(report)
+    invalid_raw = copy.deepcopy(report_v1)
     invalid_raw["providerBody"] = {"secret": "forbidden"}
-    invalid_pass = copy.deepcopy(report)
+    invalid_pass = copy.deepcopy(report_v1)
     invalid_pass["providerDataPhysicalCalls"] = 5
+    invalid_signed = copy.deepcopy(signed_packet)
+    invalid_signed["allowedOperations"] = list(reversed(LIVE_OPERATIONS))
     values: dict[str, object] = {
+        SCHEMA_PATHS["p1-approval-packet.v2"]: _signed_packet_schema(),
         SCHEMA_PATHS["p1-verification-packet.v1"]: _packet_schema(),
-        SCHEMA_PATHS["p1-verification-report.v1"]: _report_schema(),
+        SCHEMA_PATHS["p1-verification-report.v1"]: _report_schema("p1-verification-report.v1"),
+        SCHEMA_PATHS["p1-verification-report.v2"]: _report_schema("p1-verification-report.v2"),
         "contracts/catalogs/p1-verification-catalog.v1.json": _catalog(),
+        "contracts/examples/p1-approval-packet.v2.valid.json": signed_packet,
         "contracts/examples/p1-verification-packet.v1.valid.json": packet,
-        "contracts/examples/p1-verification-report.v1.valid.json": report,
+        "contracts/examples/p1-verification-report.v1.valid.json": report_v1,
+        "contracts/examples/p1-verification-report.v2.valid.json": report_v2,
         "contracts/examples/invalid/p1-verification-packet.v1.ttl.invalid.json": invalid_ttl,
         "contracts/examples/invalid/p1-verification-packet.v1.cap.invalid.json": invalid_cap,
         "contracts/examples/invalid/p1-verification-report.v1.raw.invalid.json": invalid_raw,
         "contracts/examples/invalid/p1-verification-report.v1.false-pass.invalid.json": invalid_pass,
+        "contracts/examples/invalid/p1-approval-packet.v2.operation.invalid.json": invalid_signed,
     }
     return {
         relative: (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode()

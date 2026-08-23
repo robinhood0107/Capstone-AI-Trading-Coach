@@ -44,7 +44,13 @@ class P1VerificationContractTest(unittest.TestCase):
 
     def test_exact_closed_contracts_accept_positive_fixtures(self) -> None:
         self.assertEqual(
-            {"p1-verification-packet.v1", "p1-verification-report.v1"}, set(SCHEMA_IDS)
+            {
+                "p1-approval-packet.v2",
+                "p1-verification-packet.v1",
+                "p1-verification-report.v1",
+                "p1-verification-report.v2",
+            },
+            set(SCHEMA_IDS),
         )
         for schema_id in SCHEMA_IDS:
             schema = _load(SCHEMA_PATHS[schema_id])
@@ -54,10 +60,11 @@ class P1VerificationContractTest(unittest.TestCase):
             validate_semantics(schema_id, payload)
 
     def test_negative_fixtures_fail_schema_or_semantics(self) -> None:
-        fixtures = sorted(
-            (ROOT / "contracts/examples/invalid").glob("p1-verification-*.invalid.json")
+        invalid_root = ROOT / "contracts/examples/invalid"
+        fixtures = sorted(invalid_root.glob("p1-verification-*.invalid.json")) + sorted(
+            invalid_root.glob("p1-approval-*.invalid.json")
         )
-        self.assertEqual(4, len(fixtures))
+        self.assertEqual(5, len(fixtures))
         validators = {
             schema_id: Draft202012Validator(
                 _load(path), format_checker=FormatChecker()

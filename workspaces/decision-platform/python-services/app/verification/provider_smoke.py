@@ -39,10 +39,9 @@ from app.verification.models import (
     VerificationReport,
 )
 from app.verification.packet import (
-    P1VerificationPacket,
+    P1SignedApprovalPacket,
     VerificationPacketError,
     VerificationTarget,
-    verify_repository_binding,
 )
 
 
@@ -84,7 +83,7 @@ class ProviderSmokeBackend(Protocol):
 class ProductionProviderSmokeBackend:
     """Reuse the production transports/parsers while exposing only bounded evidence hashes."""
 
-    def __init__(self, packet: P1VerificationPacket) -> None:
+    def __init__(self, packet: P1SignedApprovalPacket) -> None:
         self._packet = packet
         self._provider_calls = 0
         self._kis_token_calls = 0
@@ -349,9 +348,9 @@ class ProductionProviderSmokeBackend:
         self._packet.validate(now=datetime.now(UTC))
 
 
-BackendFactory = Callable[[P1VerificationPacket], ProviderSmokeBackend]
-BindingVerifier = Callable[[P1VerificationPacket, Path], None]
-ClaimFunction = Callable[[Path, P1VerificationPacket], Path]
+BackendFactory = Callable[[P1SignedApprovalPacket], ProviderSmokeBackend]
+BindingVerifier = Callable[[P1SignedApprovalPacket, Path], None]
+ClaimFunction = Callable[[Path, P1SignedApprovalPacket], Path]
 GlobalClaimFunction = Callable[[str, str], None]
 
 
@@ -359,15 +358,17 @@ def run_provider_read_smoke(
     *,
     repository_root: Path,
     output_root: Path,
-    packet: P1VerificationPacket,
+    packet: P1SignedApprovalPacket,
+    binding_verifier: BindingVerifier,
     backend_factory: BackendFactory = ProductionProviderSmokeBackend,
-    binding_verifier: BindingVerifier = verify_repository_binding,
     claim: ClaimFunction | None = None,
     global_claim: GlobalClaimFunction = claim_provider_verification_authorization,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> VerificationReport:
     """Run exactly six sequential reads; the first terminal failure stops the rest."""
 
+    if not isinstance(packet, P1SignedApprovalPacket):
+        raise VerificationPacketError("P1 verification packet v1 has no execution authority")
     started_at = now().astimezone(UTC)
     binding_verifier(packet, repository_root.resolve(strict=True))
     global_claim(packet.packet_sha256, packet.approval_id)
@@ -444,7 +445,7 @@ def run_provider_read_smoke(
 
 def _provider_report(
     *,
-    packet: P1VerificationPacket,
+    packet: P1SignedApprovalPacket,
     started_at: datetime,
     completed_at: datetime,
     gates: tuple[GateResult, ...],
@@ -527,7 +528,7 @@ def _stable_failure_code(error: BaseException) -> str:
     return allowlisted.get(name, "P1_PROVIDER_INTERNAL_FAILED")
 
 
-def _packet_deadline(packet: P1VerificationPacket) -> float:
+def _packet_deadline(packet: P1SignedApprovalPacket) -> float:
     import time
 
     remaining = (packet.expires_at - datetime.now(UTC)).total_seconds()

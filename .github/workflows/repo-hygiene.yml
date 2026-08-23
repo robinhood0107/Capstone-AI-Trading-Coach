@@ -75,6 +75,7 @@ jobs:
           POSTGRES_WORKER_PASSWORD: validation-dummy-worker
           POSTGRES_REPLAY_PASSWORD: validation-dummy-replay
           POSTGRES_IDENTITY_PASSWORD: validation-dummy-identity
+          POSTGRES_AUTH_PASSWORD: validation-dummy-auth
           POSTGRES_REPLAY_AUTHORIZER_PASSWORD: validation-dummy-replay-authorizer
           POSTGRES_DEMO_PASSWORD: validation-dummy-demo
           REDIS_PASSWORD: validation-dummy-redis-password-0001

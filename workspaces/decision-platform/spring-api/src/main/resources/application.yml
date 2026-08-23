@@ -25,9 +25,9 @@ spring:
     properties:
       hibernate.default_batch_fetch_size: 100
   flyway:
-    locations: classpath:db/migration
+    locations: classpath:db/migration,classpath:db/baseline
     user: flyway
-    password: ${POSTGRES_MIGRATION_PASSWORD}
+    password: ${POSTGRES_MIGRATION_PASSWORD:__MISSING_MIGRATION_PASSWORD__}
     placeholders:
       brokerageDbCapabilityTokenSha256: ${BROKERAGE_DB_CAPABILITY_TOKEN_SHA256}
   data:
@@ -247,6 +247,10 @@ app:
     jdbc-url: ${ACTOR_IDENTITY_JDBC_URL:${spring.datasource.url}}
     username: decision_identity
     password: ${POSTGRES_IDENTITY_PASSWORD}
+  auth:
+    jdbc-url: ${AUTH_DATABASE_DSN:${spring.datasource.url}}
+    username: decision_auth
+    password: ${POSTGRES_AUTH_PASSWORD}
 
 management:
   endpoints:

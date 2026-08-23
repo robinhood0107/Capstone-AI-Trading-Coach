@@ -122,14 +122,14 @@ class RagSourceRegistryMigrationIntegrationTest {
     }
 
     @Test
-    fun `V62 through V85 forward repairs preserve empty owner scope and ACL`() {
+    fun `V62 through V86 forward repairs preserve empty owner scope and ACL`() {
         withPreparedDatabase("empty_owner_generation_scope_upgrade") { jdbcUrl ->
             flyway(jdbcUrl, target = "62").migrate()
             flyway(jdbcUrl).migrate()
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("85")
+                    .isEqualTo("86")
                 assertThat(
                     queryString(
                         connection,
@@ -157,7 +157,7 @@ class RagSourceRegistryMigrationIntegrationTest {
     }
 
     @Test
-    fun `V65 to V85 preserves S4 9 boundaries and existing rows`() {
+    fun `V65 to V86 preserves S4 9 boundaries and existing rows`() {
         withPreparedDatabase("s49_forward_upgrade") { jdbcUrl ->
             flyway(jdbcUrl, target = "65").migrate()
             adminConnection(jdbcUrl).use { connection ->
@@ -173,7 +173,7 @@ class RagSourceRegistryMigrationIntegrationTest {
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("85")
+                    .isEqualTo("86")
                 assertThat(queryString(connection, "select count(*)::text from users where user_id = 'usr_s49_preserved'"))
                     .isEqualTo("1")
                 assertThat(queryString(connection, "select count(*)::text from public.s4_9_saved_answer_history"))
@@ -629,7 +629,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("85")
+                    .isEqualTo("86")
 
                 expectedTables.forEach { table ->
                     assertThat(
@@ -2071,7 +2071,7 @@ class RagSourceRegistryMigrationIntegrationTest {
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_s4_migration_admin")
                 .withUsername("decision")
                 .withPassword("decision")

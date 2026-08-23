@@ -497,7 +497,7 @@ class RagGuardHistoryApiIntegrationTest(
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_rag_guard_history")
                 .withUsername("decision")
                 .withPassword("decision")

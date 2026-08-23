@@ -356,7 +356,7 @@ class KafkaAsyncIntegrationTest(
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_kafka_async")
                 .withUsername("decision")
                 .withPassword("decision")

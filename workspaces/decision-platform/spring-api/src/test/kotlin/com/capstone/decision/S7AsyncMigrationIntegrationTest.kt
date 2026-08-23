@@ -38,21 +38,78 @@ class S7AsyncMigrationIntegrationTest {
             owner.createStatement().use {
                 it.executeUpdate("create database s7_fresh")
                 it.executeUpdate("create database s7_replay")
+                it.executeUpdate("create database s7_p1_demo")
             }
         }
         flyway(databaseName = "s7_fresh").migrate()
         flyway(databaseName = "s7_replay").migrate()
+        flyway(databaseName = "s7_p1_demo").migrate()
     }
 
     @Test
-    fun `V85 migrates fresh and V79 upgrade with exact role boundary`() {
+    fun `P1 container smoke capability is exact idempotent and demo-only`() {
+        val partitionKey = "hmac-sha256:${"a".repeat(64)}"
+        connection("s7_p1_demo", DEMO_USER, DEMO_PASSWORD).use { demo ->
+            val inactive =
+                assertThrows<SQLException> {
+                    demo.prepareStatement("select stage_p1_synthetic_async_request('DB',?)").use { statement ->
+                        statement.setString(1, partitionKey)
+                        statement.executeQuery()
+                    }
+                }
+            assertEquals("42501", inactive.sqlState)
+        }
+        connection("s7_p1_demo", postgres.username, postgres.password).use { owner ->
+            owner
+                .prepareStatement(
+                    "insert into p1_offline_demo_authority(" +
+                        "authority_id,active,credential_bundle_digest) values ('P1_OFFLINE_DEMO',true,?)",
+                ).use { statement ->
+                    statement.setString(1, "b".repeat(64))
+                    assertEquals(1, statement.executeUpdate())
+                }
+        }
+        connection("s7_p1_demo", DEMO_USER, DEMO_PASSWORD).use { demo ->
+            repeat(2) {
+                demo.prepareStatement("select stage_p1_synthetic_async_request('DB',?)").use { statement ->
+                    statement.setString(1, partitionKey)
+                    statement.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals("job_p1_container_db_0001", rows.getString(1))
+                    }
+                }
+            }
+            demo.createStatement().use { statement ->
+                assertFalse(booleanResult(statement, "select verify_p1_synthetic_async_request('DB')"))
+                val directRead = assertThrows<SQLException> { statement.executeQuery("select * from async_job") }
+                assertEquals("42501", directRead.sqlState)
+                val authorityWrite =
+                    assertThrows<SQLException> {
+                        statement.executeUpdate("update p1_offline_demo_authority set active=false")
+                    }
+                assertEquals("42501", authorityWrite.sqlState)
+            }
+        }
+        connection("s7_p1_demo", APP_USER, APP_PASSWORD).use { app ->
+            val denied =
+                assertThrows<SQLException> {
+                    app.createStatement().use {
+                        it.executeQuery("select stage_p1_synthetic_async_request('DB','$partitionKey')")
+                    }
+                }
+            assertEquals("42501", denied.sqlState)
+        }
+    }
+
+    @Test
+    fun `V86 migrates fresh and V79 upgrade with exact role boundary`() {
         for (database in listOf("decision", "s7_fresh")) {
             connection(database, postgres.username, postgres.password).use { owner ->
                 owner.createStatement().use { statement ->
                     statement.executeQuery("select version from flyway_schema_history order by installed_rank").use { rows ->
                         val versions = mutableListOf<String>()
                         while (rows.next()) versions += rows.getString(1)
-                        assertEquals((1..85).map(Int::toString), versions)
+                        assertEquals((1..86).map(Int::toString), versions)
                     }
                     statement.executeQuery("select count(*) from async_event_registry").use { rows ->
                         assertTrue(rows.next())
@@ -718,6 +775,74 @@ class S7AsyncMigrationIntegrationTest {
                     assertFalse(rows.getBoolean(1))
                 }
             }
+            worker.prepareStatement("select count(*) from claim_async_job_by_event(?,?,?,?,?,?)").use { statement ->
+                statement.setString(1, "worker:expired-reclaim")
+                statement.setString(2, expiredEventId)
+                statement.setString(3, "model.eval-requested.v1")
+                statement.setString(4, expiredJobId)
+                statement.setString(5, expiredPayloadHash)
+                statement.setString(6, expiredPartitionKey)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals(0, rows.getInt(1))
+                }
+            }
+        }
+        connection("decision", postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use { statement ->
+                statement.executeQuery("select status,error_code from async_job where job_id='$expiredJobId'").use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals("NEEDS_REVIEW", rows.getString(1))
+                    assertEquals("LEASE_EXPIRED", rows.getString(2))
+                }
+                statement
+                    .executeQuery(
+                        "select count(*) from async_job_transition_audit where job_id='$expiredJobId' " +
+                            "and previous_status='RUNNING' and next_status='FAILED' and failure_code='LEASE_EXPIRED'",
+                    ).use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals(1, rows.getInt(1))
+                    }
+            }
+        }
+
+        val reclaimJobId = "job_reclaim_claim_00000001"
+        val reclaimEventId = "evt_reclaim_claim_00000001"
+        val reclaimPartitionKey = "hmac-sha256:${"9".repeat(64)}"
+        val reclaimPayload =
+            "{\"jobId\":\"$reclaimJobId\",\"ownerRef\":\"usr_demo_user\"," +
+                "\"runId\":\"run_reclaim_claim_0001\",\"contentHash\":\"sha256:${"9".repeat(64)}\"}"
+        createAsyncRequest("decision", reclaimJobId, reclaimEventId, reclaimPayload, reclaimPartitionKey)
+        val reclaimPayloadHash = claimAndBindOutbox("decision", reclaimEventId)
+        val firstReclaimToken =
+            claimJob(reclaimEventId, reclaimJobId, reclaimPayloadHash, reclaimPartitionKey, "worker:reclaim-1")
+        connection("decision", postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use {
+                it.executeUpdate(
+                    "update async_job set lease_expires_at=statement_timestamp()-interval '1 second'," +
+                        "hard_deadline_at=statement_timestamp()+interval '10 minutes' where job_id='$reclaimJobId'",
+                )
+            }
+        }
+        val secondReclaimToken =
+            claimJob(reclaimEventId, reclaimJobId, reclaimPayloadHash, reclaimPartitionKey, "worker:reclaim-2")
+        assertFalse(firstReclaimToken == secondReclaimToken)
+        connection("decision", postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use { statement ->
+                statement.executeQuery("select status,attempt_count from async_job where job_id='$reclaimJobId'").use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals("RUNNING", rows.getString(1))
+                    assertEquals(2, rows.getInt(2))
+                }
+                statement
+                    .executeQuery(
+                        "select count(*) from async_job_transition_audit where job_id='$reclaimJobId' " +
+                            "and previous_status='RUNNING' and next_status='FAILED' and failure_code='LEASE_EXPIRED'",
+                    ).use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals(1, rows.getInt(1))
+                    }
+            }
         }
 
         connection("decision", postgres.username, postgres.password).use { owner ->
@@ -910,6 +1035,53 @@ class S7AsyncMigrationIntegrationTest {
                 }
             }
         }
+        connection("decision", postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use {
+                it.executeUpdate(
+                    "insert into kafka_poison_receipt(source_topic,source_partition,source_offset,event_id,payload_hash,failure_code) " +
+                        "select 'artifact.ingest-requested.v1',2,value,'evt_quota_'||lpad(value::text,12,'0')," +
+                        "'sha256:${"d".repeat(64)}','INVALID_EVENT_PAYLOAD' from generate_series(1,999) value",
+                )
+            }
+        }
+        connection("decision", WORKER_USER, WORKER_PASSWORD).use { worker ->
+            worker.prepareStatement("select record_kafka_poison(?,?,?,?,?,?,?,?,?)").use { statement ->
+                statement.setString(1, originalEventId)
+                statement.setString(2, "artifact.ingest-requested.v1")
+                statement.setString(3, payloadHash)
+                statement.setString(4, "artifact.ingest-requested.v1")
+                statement.setInt(5, 1)
+                statement.setLong(6, 42)
+                statement.setInt(7, 1)
+                statement.setString(8, "INVALID_EVENT_PAYLOAD")
+                statement.setString(9, partitionKey)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertFalse(rows.getBoolean(1))
+                }
+            }
+            val novelDenied =
+                assertThrows<SQLException> {
+                    worker.prepareStatement("select record_kafka_poison(?,?,?,?,?,?,?,?,?)").use { statement ->
+                        statement.setString(1, "evt_poison_novel_0001")
+                        statement.setString(2, "artifact.ingest-requested.v1")
+                        statement.setString(3, payloadHash)
+                        statement.setString(4, "artifact.ingest-requested.v1")
+                        statement.setInt(5, 1)
+                        statement.setLong(6, 43)
+                        statement.setInt(7, 1)
+                        statement.setString(8, "INVALID_EVENT_PAYLOAD")
+                        statement.setString(9, partitionKey)
+                        statement.executeQuery()
+                    }
+                }
+            assertEquals("54000", novelDenied.sqlState)
+        }
+        connection("decision", postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use {
+                it.executeUpdate("delete from kafka_poison_receipt where source_partition=2")
+            }
+        }
         val claimToken =
             connection("decision", APP_USER, APP_PASSWORD).use { app ->
                 app
@@ -1022,6 +1194,28 @@ class S7AsyncMigrationIntegrationTest {
                 statement.executeQuery().use { rows ->
                     assertTrue(rows.next())
                     requireNotNull(rows.getString(1))
+                }
+            }
+        }
+
+    private fun claimJob(
+        eventId: String,
+        jobId: String,
+        payloadHash: String,
+        partitionKey: String,
+        workerId: String,
+    ): UUID =
+        connection("decision", WORKER_USER, WORKER_PASSWORD).use { worker ->
+            worker.prepareStatement("select claim_token from claim_async_job_by_event(?,?,?,?,?,?)").use { statement ->
+                statement.setString(1, workerId)
+                statement.setString(2, eventId)
+                statement.setString(3, "model.eval-requested.v1")
+                statement.setString(4, jobId)
+                statement.setString(5, payloadHash)
+                statement.setString(6, partitionKey)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    rows.getObject(1, UUID::class.java)
                 }
             }
         }
@@ -1144,6 +1338,8 @@ class S7AsyncMigrationIntegrationTest {
         private const val IDENTITY_PASSWORD = "identity-test-secret-0001"
         private const val REPLAY_AUTHORIZER_USER = "decision_replay_authorizer"
         private const val REPLAY_AUTHORIZER_PASSWORD = "replay-authorizer-test-0001"
+        private const val DEMO_USER = "decision_demo"
+        private const val DEMO_PASSWORD = "demo-test-secret-0001"
         private val postgresImage =
             DockerImageName
                 .parse(
@@ -1154,7 +1350,7 @@ class S7AsyncMigrationIntegrationTest {
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision")
                 .withUsername("decision")
                 .withPassword("decision")

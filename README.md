@@ -250,3 +250,9 @@ P1 전체 완료를 주장하지 않는다. 사용자 테스트 kit는 준비됐
 - [계약과 검증 방법](contracts/README.md)
 - [Decision Platform 개발 문서](workspaces/decision-platform/README.md)
 - [작업·보안 규칙](AGENTS.md)
+
+## 라이선스
+
+이 프로젝트의 자체 작성 코드는 [GNU Affero General Public License v3.0](LICENSE),
+SPDX 식별자 `AGPL-3.0-only`에 따라 배포한다. 제3자 구성 요소와 데이터에는 각각의 별도
+라이선스와 이용 조건이 적용된다.

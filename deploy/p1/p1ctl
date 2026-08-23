@@ -249,6 +249,9 @@ up_mode() {
   local running
   running=$(compose kafka ps --status running --services 2>/dev/null || true)
   if grep -qx spring-api <<<"$running"; then die stop_before_adapter_switch; fi
+  if [[ $mode == db ]]; then
+    compose kafka rm -f -s kafka kafka-topic-init >/dev/null
+  fi
   compose "$mode" up -d --force-recreate
   printf '%s\n' "$mode" > "$ADAPTER_FILE"
   chmod 600 "$ADAPTER_FILE"

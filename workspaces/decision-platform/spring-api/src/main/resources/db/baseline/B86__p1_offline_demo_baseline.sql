@@ -20509,7 +20509,7 @@ $$;
 ALTER FUNCTION public.settle_s4_9_google_grounding_budget(p_owner_user_id text, p_reservation_id text, p_outcome text, p_actual_query_count integer) OWNER TO flyway;
 
 
-CREATE FUNCTION public.stage_p1_synthetic_async_request(p_mode text, p_partition_key text) RETURNS text
+CREATE FUNCTION public.stage_p1_synthetic_async_request(p_mode text, p_partition_key text, p_run_id text) RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog'
     AS $_$
@@ -20518,7 +20518,8 @@ DECLARE target_job_id text; target_event_id text; payload jsonb; existing_job pu
   existing_event public.event_outbox%ROWTYPE;
 BEGIN
   IF session_user <> 'decision_demo' OR p_mode NOT IN ('DB','KAFKA')
-     OR p_partition_key !~ '^hmac-sha256:[0-9a-f]{64}$' THEN
+     OR p_partition_key !~ '^hmac-sha256:[0-9a-f]{64}$'
+     OR p_run_id !~ '^[0-9a-f]{32}$' THEN
     RAISE EXCEPTION 'P1 synthetic async staging denied' USING ERRCODE='42501';
   END IF;
   IF NOT EXISTS (
@@ -20527,8 +20528,8 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'P1 offline demo authority inactive' USING ERRCODE='42501';
   END IF;
-  target_job_id:=CASE p_mode WHEN 'DB' THEN 'job_p1_container_db_0001' ELSE 'job_p1_container_kafka_0001' END;
-  target_event_id:=CASE p_mode WHEN 'DB' THEN 'evt_p1_container_db_0001' ELSE 'evt_p1_container_kafka_0001' END;
+  target_job_id:='job_p1_container_'||lower(p_mode)||'_'||p_run_id;
+  target_event_id:='evt_p1_container_'||lower(p_mode)||'_'||p_run_id;
   payload:=jsonb_build_object(
     'jobId',target_job_id,
     'ownerRef','usr_demo_user',
@@ -20562,7 +20563,7 @@ END
 $_$;
 
 
-ALTER FUNCTION public.stage_p1_synthetic_async_request(p_mode text, p_partition_key text) OWNER TO flyway;
+ALTER FUNCTION public.stage_p1_synthetic_async_request(p_mode text, p_partition_key text, p_run_id text) OWNER TO flyway;
 
 
 CREATE FUNCTION public.stage_rag_v2_immutable_external_exact30_voyage_document(p_payload jsonb) RETURNS TABLE(component_generation_id text, materialization_run_id text, state text, source_reused boolean, source_count integer, chunk_count integer)
@@ -25304,13 +25305,14 @@ $$;
 ALTER FUNCTION public.validate_cross_market_fixture_payload(p_record jsonb, p_key_profile jsonb) OWNER TO flyway;
 
 
-CREATE FUNCTION public.verify_p1_synthetic_async_request(p_mode text) RETURNS boolean
+CREATE FUNCTION public.verify_p1_synthetic_async_request(p_mode text, p_run_id text) RETURNS boolean
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog'
-    AS $$
+    AS $_$
 DECLARE target_job_id text; target_event_id text;
 BEGIN
-  IF session_user <> 'decision_demo' OR p_mode NOT IN ('DB','KAFKA') THEN
+  IF session_user <> 'decision_demo' OR p_mode NOT IN ('DB','KAFKA')
+     OR p_run_id !~ '^[0-9a-f]{32}$' THEN
     RAISE EXCEPTION 'P1 synthetic async verification denied' USING ERRCODE='42501';
   END IF;
   IF NOT EXISTS (
@@ -25319,8 +25321,8 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'P1 offline demo authority inactive' USING ERRCODE='42501';
   END IF;
-  target_job_id:=CASE p_mode WHEN 'DB' THEN 'job_p1_container_db_0001' ELSE 'job_p1_container_kafka_0001' END;
-  target_event_id:=CASE p_mode WHEN 'DB' THEN 'evt_p1_container_db_0001' ELSE 'evt_p1_container_kafka_0001' END;
+  target_job_id:='job_p1_container_'||lower(p_mode)||'_'||p_run_id;
+  target_event_id:='evt_p1_container_'||lower(p_mode)||'_'||p_run_id;
   RETURN EXISTS (
     SELECT 1 FROM public.async_job job
     JOIN public.async_materialization_receipt receipt ON receipt.job_id=job.job_id AND receipt.event_id=target_event_id
@@ -25331,10 +25333,10 @@ BEGIN
       AND requested.status='PUBLISHED'
   );
 END
-$$;
+$_$;
 
 
-ALTER FUNCTION public.verify_p1_synthetic_async_request(p_mode text) OWNER TO flyway;
+ALTER FUNCTION public.verify_p1_synthetic_async_request(p_mode text, p_run_id text) OWNER TO flyway;
 
 
 CREATE TABLE public.disclosure_risk_state_transitions (
@@ -36185,8 +36187,8 @@ GRANT ALL ON FUNCTION public.settle_s4_9_google_grounding_budget(p_owner_user_id
 
 
 
-REVOKE ALL ON FUNCTION public.stage_p1_synthetic_async_request(p_mode text, p_partition_key text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.stage_p1_synthetic_async_request(p_mode text, p_partition_key text) TO decision_demo;
+REVOKE ALL ON FUNCTION public.stage_p1_synthetic_async_request(p_mode text, p_partition_key text, p_run_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.stage_p1_synthetic_async_request(p_mode text, p_partition_key text, p_run_id text) TO decision_demo;
 
 
 
@@ -36272,8 +36274,8 @@ REVOKE ALL ON FUNCTION public.validate_cross_market_fixture_payload(p_record jso
 
 
 
-REVOKE ALL ON FUNCTION public.verify_p1_synthetic_async_request(p_mode text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.verify_p1_synthetic_async_request(p_mode text) TO decision_demo;
+REVOKE ALL ON FUNCTION public.verify_p1_synthetic_async_request(p_mode text, p_run_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.verify_p1_synthetic_async_request(p_mode text, p_run_id text) TO decision_demo;
 
 
 

@@ -22,6 +22,22 @@ uv run --frozen python -m unittest contracts.tests.test_p1_verification_contract
 uv run --frozen python contracts/validate.py
 ```
 
+## P1 security and offline release addendum
+
+`generate_p1_verification_contracts.py`가 P1 verification report v1 historical schema, v2 current schema와 Ed25519 approval packet v2의
+closed JSON Schema 및 positive/negative fixtures를 결정적으로 생성한다. runtime report reader는 생성된
+schema와 같은 required key, `additionalProperties=false`, type/enum/bound, gate uniqueness를 먼저
+검증하고 그 뒤 semantic/hash를 확인한다.
+
+approval packet v2는 exact operation, signed closed provider target, physical cap, current head/tree, 5분 이하 expiry, nonce와
+`issuerKeyId`를 서명 body에 포함한다. authorizer private key는 executor/container/repository에 들어가지
+않고 executor는 `/etc/capstone-p1/approval-trust-root.json`의 root-owned closed policy와 digest-bound public key만 신뢰한다. v1 packet은 historical evidence이며 신규 실행 authority가
+없다.
+
+V86과 B86, `P1_OFFLINE_DEMO` container 배포의 변경 이유와 호환성은
+[`20260823-p1-security-container-release.md`](changes/20260823-p1-security-container-release.md)에
+기록한다. public Decision/Signal/RAG/Dashboard bytes와 cross-market retirement는 변경하지 않는다.
+
 | 폴더 | 내용 |
 |---|---|
 | `schemas/` | principle/signal/backtest_result/risk_decision 등 JSON Schema |

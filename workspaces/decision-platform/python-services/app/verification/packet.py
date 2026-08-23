@@ -214,6 +214,19 @@ def author_signed_provider_read_smoke_packet(
     if kis_token_physical_call_cap not in {0, 1}:
         raise VerificationPacketError("P1 approval token cap is invalid")
     root = repository_root.resolve(strict=True)
+    private_key_absolute = private_key_path.absolute()
+    try:
+        private_key_absolute.relative_to(root)
+    except ValueError:
+        pass
+    else:
+        raise VerificationPacketError("P1 approval private key must remain outside the repository")
+    try:
+        private_key_absolute.resolve(strict=True).relative_to(root)
+    except ValueError:
+        pass
+    else:
+        raise VerificationPacketError("P1 approval private key must remain outside the repository")
     head_sha, tree_sha256 = git_identity(root)
     unsigned = P1SignedApprovalPacket(
         approval_id=approval_id,
@@ -521,7 +534,7 @@ def _read_bounded_key(path: Path, *, owner_only: bool) -> bytes:
     if (
         stat.S_ISLNK(info.st_mode)
         or not stat.S_ISREG(info.st_mode)
-        or info.st_uid != os.geteuid()
+        or (info.st_uid != os.geteuid() if owner_only else info.st_uid not in {0, os.geteuid()})
         or (
             stat.S_IMODE(info.st_mode) != 0o600
             if owner_only
@@ -588,9 +601,12 @@ def _base64url(value: bytes) -> str:
 
 def _base64url_decode(value: str) -> bytes:
     try:
-        return base64.urlsafe_b64decode(value + "==")
+        decoded = base64.b64decode(value + "==", altchars=b"-_", validate=True)
     except ValueError as error:
         raise VerificationPacketError("P1 approval signature encoding is invalid") from error
+    if _base64url(decoded) != value:
+        raise VerificationPacketError("P1 approval signature encoding is invalid")
+    return decoded
 
 
 def _datetime(value: str) -> datetime:

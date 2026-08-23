@@ -2048,8 +2048,8 @@ BEGIN
         GRANT EXECUTE ON FUNCTION read_demo_credentials(), read_user_actor(text) TO decision_auth;
         REVOKE CREATE ON SCHEMA public FROM decision_auth;
         GRANT EXECUTE ON FUNCTION
-            stage_p1_synthetic_async_request(text,text),
-            verify_p1_synthetic_async_request(text)
+            stage_p1_synthetic_async_request(text,text,text),
+            verify_p1_synthetic_async_request(text,text)
         TO decision_demo;
     END IF;
 END

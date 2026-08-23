@@ -2,6 +2,18 @@
 
 팀 배포 기준 문서. 원본 관리처는 로컬(개인 정리 폴더)이며, 갱신 시 이 폴더에 같은 파일명으로 동기화한다.
 
+## Current P1 authority
+
+이전 표의 merge SHA와 live provider 영수증은 historical evidence다. 현재 P1 authority는
+[S7–S8/P1 구현·운영 핸드오프](decision-platform/S7_S8_P1_구현_및_운영_핸드오프.md)와
+[P1 Offline Demo 배포·검증](decision-platform/P1_OFFLINE_DEMO_배포_및_검증.md)이다.
+
+- S7.0~S7.4와 solo 가능한 S8은 구현돼 있다.
+- clean install은 `B86` 하나, 기존 install은 V1~V86 history를 유지한다.
+- 공식 배포는 `P1_OFFLINE_DEMO`, `linux/amd64`, DB default/Kafka selectable이다.
+- provider/live/account/order와 cross-market runtime은 0/retired다.
+- 실제 Return Engine artifact와 Team A consumer 통합이 없어 P1 전체는 완료가 아니다.
+
 ## 현재 검증 상태
 
 이 표는 `main=bd859ec3…`와 2026-08-15 S4.9 V71 post-merge release evidence를 기준으로 한 Pre-S5

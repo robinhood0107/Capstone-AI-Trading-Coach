@@ -97,6 +97,9 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
 
     def test_adapter_start_recreates_only_containers_and_preserves_state(self) -> None:
         p1ctl = (REPOSITORY_ROOT / "deploy" / "p1" / "p1ctl").read_text(encoding="utf-8")
+        kafka_cleanup = 'compose kafka rm -f -s kafka kafka-topic-init'
+        self.assertIn(kafka_cleanup, p1ctl)
+        self.assertLess(p1ctl.index(kafka_cleanup), p1ctl.index('compose "$mode" up -d --force-recreate'))
         self.assertIn('compose "$mode" up -d --force-recreate', p1ctl)
         self.assertNotIn("down -v", p1ctl)
         self.assertNotIn("volume rm", p1ctl)
@@ -117,6 +120,20 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         self.assertIn("restore_demo_authority", restore)
         self.assertIn("restore_owner", restore)
         self.assertIn("VOLUME_PRESERVED=TRUE", restore)
+
+    def test_existing_database_upgrade_bootstraps_auth_role_before_flyway(self) -> None:
+        compose = (REPOSITORY_ROOT / "infra" / "docker-compose.infra.yml").read_text(
+            encoding="utf-8"
+        )
+        readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("  role-bootstrap:\n", compose)
+        self.assertIn("PGHOST: postgres", compose)
+        self.assertIn(
+            'entrypoint: ["bash", "/opt/capstone/02-application-roles.sh"]', compose
+        )
+        bootstrap = "docker compose --env-file .env -f infra/docker-compose.infra.yml run --rm role-bootstrap"
+        self.assertIn(bootstrap, readme)
+        self.assertLess(readme.index(bootstrap), readme.index("./gradlew bootRun"))
 
     def test_postgres_extension_image_is_pinned_non_root_and_scanned(self) -> None:
         dockerfile = POSTGRES_DOCKERFILE.read_text(encoding="utf-8")
@@ -233,10 +250,21 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         self.assertNotIn("p1-edge", runtime_block)
         self.assertIn("p1-internal:\n    internal: true", compose)
         self.assertIn("api-edge: {pull_policy: never}", offline)
+        self.assertIn("role-bootstrap: {pull_policy: never}", offline)
         self.assertIn('UPSTREAM_HOST = "runtime-netns"', proxy)
         self.assertIn("UPSTREAM_PORT = 8080", proxy)
         self.assertIn("MAX_CONNECTIONS = 64", proxy)
         self.assertIn("IDLE_TIMEOUT_SECONDS = 30.0", proxy)
+
+    def test_signed_author_command_documents_all_required_security_arguments(self) -> None:
+        api = (REPOSITORY_ROOT / "docs" / "API_명세서.md").read_text(encoding="utf-8")
+        start = api.index("p1-verify author --approval-id")
+        command = api[start : api.index("p1-verify run", start)]
+        for argument in (
+            "--approval-id", "--output-root", "--kis-token-cap",
+            "--private-key", "--issuer-key-id", "--reason-code",
+        ):
+            self.assertIn(argument, command)
 
 
 if __name__ == "__main__":

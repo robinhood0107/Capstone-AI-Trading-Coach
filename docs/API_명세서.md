@@ -3974,7 +3974,9 @@ P1.V0 절의 provider runtime 거부 문구는 역사 상태다. `PROVIDER_READ_
 HTTP/gRPC/Public OpenAPI endpoint는 추가하지 않는다.
 
 ```bash
-p1-verify author --approval-id <ID> --output-root <OWNER_PRIVATE_ROOT> --kis-token-cap 0|1
+p1-verify author --approval-id <ID> --output-root <OWNER_PRIVATE_ROOT> --kis-token-cap 0|1 \
+  --private-key <REPOSITORY_OUTSIDE_OWNER_PRIVATE_ED25519_KEY> \
+  --issuer-key-id <PINNED_ISSUER_KEY_ID> --reason-code <APPROVED_REASON_CODE>
 p1-verify run --profile PROVIDER_READ_SMOKE --packet <PACKET> --output-root <OWNER_PRIVATE_ROOT>
 p1-verify verify <REPORT>
 ```

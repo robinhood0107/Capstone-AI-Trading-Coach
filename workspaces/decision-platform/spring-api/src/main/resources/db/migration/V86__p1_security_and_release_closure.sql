@@ -546,7 +546,7 @@ CREATE TABLE public.p1_offline_demo_authority (
 ALTER TABLE public.p1_offline_demo_authority OWNER TO flyway;
 REVOKE ALL PRIVILEGES ON TABLE public.p1_offline_demo_authority FROM PUBLIC;
 
-CREATE FUNCTION public.stage_p1_synthetic_async_request(p_mode text,p_partition_key text)
+CREATE FUNCTION public.stage_p1_synthetic_async_request(p_mode text,p_partition_key text,p_run_id text)
 RETURNS text
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
 AS $stage_p1_synthetic_async_request$
@@ -555,7 +555,8 @@ DECLARE target_job_id text; target_event_id text; payload jsonb; existing_job pu
   existing_event public.event_outbox%ROWTYPE;
 BEGIN
   IF session_user <> 'decision_demo' OR p_mode NOT IN ('DB','KAFKA')
-     OR p_partition_key !~ '^hmac-sha256:[0-9a-f]{64}$' THEN
+     OR p_partition_key !~ '^hmac-sha256:[0-9a-f]{64}$'
+     OR p_run_id !~ '^[0-9a-f]{32}$' THEN
     RAISE EXCEPTION 'P1 synthetic async staging denied' USING ERRCODE='42501';
   END IF;
   IF NOT EXISTS (
@@ -564,8 +565,8 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'P1 offline demo authority inactive' USING ERRCODE='42501';
   END IF;
-  target_job_id:=CASE p_mode WHEN 'DB' THEN 'job_p1_container_db_0001' ELSE 'job_p1_container_kafka_0001' END;
-  target_event_id:=CASE p_mode WHEN 'DB' THEN 'evt_p1_container_db_0001' ELSE 'evt_p1_container_kafka_0001' END;
+  target_job_id:='job_p1_container_'||lower(p_mode)||'_'||p_run_id;
+  target_event_id:='evt_p1_container_'||lower(p_mode)||'_'||p_run_id;
   payload:=jsonb_build_object(
     'jobId',target_job_id,
     'ownerRef','usr_demo_user',
@@ -598,13 +599,14 @@ BEGIN
 END
 $stage_p1_synthetic_async_request$;
 
-CREATE FUNCTION public.verify_p1_synthetic_async_request(p_mode text)
+CREATE FUNCTION public.verify_p1_synthetic_async_request(p_mode text,p_run_id text)
 RETURNS boolean
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog
 AS $verify_p1_synthetic_async_request$
 DECLARE target_job_id text; target_event_id text;
 BEGIN
-  IF session_user <> 'decision_demo' OR p_mode NOT IN ('DB','KAFKA') THEN
+  IF session_user <> 'decision_demo' OR p_mode NOT IN ('DB','KAFKA')
+     OR p_run_id !~ '^[0-9a-f]{32}$' THEN
     RAISE EXCEPTION 'P1 synthetic async verification denied' USING ERRCODE='42501';
   END IF;
   IF NOT EXISTS (
@@ -613,8 +615,8 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'P1 offline demo authority inactive' USING ERRCODE='42501';
   END IF;
-  target_job_id:=CASE p_mode WHEN 'DB' THEN 'job_p1_container_db_0001' ELSE 'job_p1_container_kafka_0001' END;
-  target_event_id:=CASE p_mode WHEN 'DB' THEN 'evt_p1_container_db_0001' ELSE 'evt_p1_container_kafka_0001' END;
+  target_job_id:='job_p1_container_'||lower(p_mode)||'_'||p_run_id;
+  target_event_id:='evt_p1_container_'||lower(p_mode)||'_'||p_run_id;
   RETURN EXISTS (
     SELECT 1 FROM public.async_job job
     JOIN public.async_materialization_receipt receipt ON receipt.job_id=job.job_id AND receipt.event_id=target_event_id
@@ -656,8 +658,8 @@ ALTER FUNCTION public.read_user_actor(text) OWNER TO flyway;
 ALTER FUNCTION public.persist_decision_bundle_authorized(text,jsonb) OWNER TO flyway;
 ALTER FUNCTION public.claim_async_job_by_event(text,text,text,text,text,text) OWNER TO flyway;
 ALTER FUNCTION public.record_kafka_poison(text,text,text,text,integer,bigint,integer,text,text) OWNER TO flyway;
-ALTER FUNCTION public.stage_p1_synthetic_async_request(text,text) OWNER TO flyway;
-ALTER FUNCTION public.verify_p1_synthetic_async_request(text) OWNER TO flyway;
+ALTER FUNCTION public.stage_p1_synthetic_async_request(text,text,text) OWNER TO flyway;
+ALTER FUNCTION public.verify_p1_synthetic_async_request(text,text) OWNER TO flyway;
 ALTER FUNCTION public.reject_direct_p1_audit_write() OWNER TO flyway;
 
 REVOKE ALL ON FUNCTION public.transition_kill_switch_authorized(text,text,bigint,boolean,bigint,text),
@@ -685,10 +687,10 @@ GRANT INSERT ON TABLE public.risk_kill_switch_transitions,public.decision_invali
 REVOKE EXECUTE ON FUNCTION public.read_demo_credentials() FROM PUBLIC,decision_app;
 REVOKE EXECUTE ON FUNCTION public.read_user_actor(text) FROM PUBLIC,decision_app;
 GRANT EXECUTE ON FUNCTION public.read_demo_credentials(),public.read_user_actor(text) TO decision_auth;
-REVOKE ALL ON FUNCTION public.stage_p1_synthetic_async_request(text,text),
-  public.verify_p1_synthetic_async_request(text) FROM PUBLIC,decision_app,decision_worker;
-GRANT EXECUTE ON FUNCTION public.stage_p1_synthetic_async_request(text,text),
-  public.verify_p1_synthetic_async_request(text) TO decision_demo;
+REVOKE ALL ON FUNCTION public.stage_p1_synthetic_async_request(text,text,text),
+  public.verify_p1_synthetic_async_request(text,text) FROM PUBLIC,decision_app,decision_worker;
+GRANT EXECUTE ON FUNCTION public.stage_p1_synthetic_async_request(text,text,text),
+  public.verify_p1_synthetic_async_request(text,text) TO decision_demo;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_auth;
 GRANT USAGE ON SCHEMA public TO decision_auth;
 REVOKE CREATE ON SCHEMA public FROM decision_auth;

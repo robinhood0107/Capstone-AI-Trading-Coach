@@ -73,7 +73,13 @@ class InfrastructureSecurityIntegrationTest {
             }
         }
         // 기존 volume에서 bootstrap을 재적용해도 migration의 calendar·Principle 최소권한을 되돌리면 안 된다.
-        assertTrue(postgres.execInContainer("bash", "-ec", "bash /tmp/02-application-roles.sh").exitCode == 0)
+        val bootstrapResult = postgres.execInContainer("bash", "-ec", "bash /tmp/02-application-roles.sh")
+        assertEquals(
+            0,
+            bootstrapResult.exitCode,
+            "role bootstrap failed after migration: stdout=${bootstrapResult.stdout} " +
+                "stderr=${bootstrapResult.stderr}",
+        )
 
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { connection ->
             val bootstrappedPrivilegeFingerprint = privilegeFingerprint(connection)

@@ -38,6 +38,10 @@ repositories {
     mavenCentral()
 }
 
+dependencyLocking {
+    lockAllConfigurations()
+}
+
 dependencyManagement {
     imports {
         mavenBom("io.grpc:grpc-bom:1.81.0")
@@ -69,7 +73,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-kafka")
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.flywaydb:flyway-database-postgresql")
-    runtimeOnly("org.postgresql:postgresql")
+    runtimeOnly("org.postgresql:postgresql:42.7.12")
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-gson:0.12.6")
@@ -137,6 +141,7 @@ tasks.withType<Test> {
     // 전체 검증 중 OOM이 난다. 실행 격리나 assertion을 줄이지 않고 CI에서도 재현 가능한 상한만 명시한다.
     maxHeapSize = "1g"
     environment("POSTGRES_IDENTITY_PASSWORD", "identity-test-secret-0001")
+    environment("POSTGRES_AUTH_PASSWORD", "auth-test-secret-0001")
     useJUnitPlatform()
 }
 
@@ -546,6 +551,16 @@ tasks.register<JavaExec>("prepareOpenApiFixtureEnv") {
     doNotTrackState("OpenAPI fixture credentials are intentionally regenerated.")
 }
 
+tasks.register<JavaExec>("generateP1Baseline") {
+    group = "verification"
+    description = "pristine PostgreSQL 16 V1..V86 state에서 deterministic P1 baseline을 생성한다."
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("com.capstone.decision.P1BaselineGenerator")
+    args(rootProject.projectDir.parentFile.parentFile.parentFile.absolutePath)
+    doNotTrackState("P1 baseline generation starts a pristine PostgreSQL reference database.")
+}
+
 val cleanAuthCutoverEvidence by tasks.registering(Delete::class) {
     group = "operations"
     description = "로컬 auth cutover 사전 증거 파일만 삭제한다."
@@ -558,6 +573,15 @@ tasks.register<JavaExec>("rotateDemoCredential") {
     dependsOn(tasks.named("classes"))
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.capstone.decision.infrastructure.security.DemoCredentialRotation")
+    outputs.upToDateWhen { false }
+}
+
+tasks.register<JavaExec>("bootstrapDemoIdentities") {
+    group = "operations"
+    description = "P1 baseline DB에 attested USER/ADMIN identity를 one-shot transaction으로 설치한다."
+    dependsOn(tasks.named("classes"))
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.capstone.decision.infrastructure.security.DemoIdentityBootstrap")
     outputs.upToDateWhen { false }
 }
 

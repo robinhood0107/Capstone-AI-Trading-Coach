@@ -637,3 +637,23 @@ workspaces/decision-platform/demo/s8/run-demo.sh \
 네 Dashboard ViewModel, adapter 전환, failure matrix와 운영 경계는
 `docs/decision-platform/S7_S8_P1_구현_및_운영_핸드오프.md`를 따른다. 실제 Return Engine artifact가
 없으므로 `P1_OVERALL=INCOMPLETE_EXTERNAL_ARTIFACT`다.
+
+## P1 Offline Demo container distribution
+
+source 실행과 별도로 `deploy/p1`은 `linux/amd64` DB/Kafka bundle을 제공한다. 두 mode는 같은
+Spring/Python image digest를 사용하고 provider/live/account/order 설정은 OFF로 고정된다.
+
+```bash
+deploy/p1/p1ctl init
+deploy/p1/p1ctl verify
+deploy/p1/p1ctl up db
+deploy/p1/p1ctl smoke
+deploy/p1/p1ctl stop
+deploy/p1/p1ctl up kafka
+deploy/p1/p1ctl smoke
+```
+
+공식 archive에서는 실행 전에 host 신뢰 경계에서 checksum, cosign/GitHub attestation, exact merge SHA를
+먼저 확인한다. 자세한 절차는
+`docs/decision-platform/P1_OFFLINE_DEMO_배포_및_검증.md`를 따른다. `p1ctl`은 reset/volume delete/
+credential rotation을 제공하지 않으며 stop, backup, 격리 restore-test만 제공한다.

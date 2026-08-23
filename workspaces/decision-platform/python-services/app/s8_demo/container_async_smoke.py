@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import os
 import re
+import secrets
 import time
 from typing import Any
 
@@ -12,6 +13,7 @@ from psycopg.conninfo import conninfo_to_dict
 
 
 _MODE = re.compile(r"^(DB|KAFKA)$")
+_RUN_ID = re.compile(r"^[0-9a-f]{32}$")
 
 
 def partition_key(secret: bytes) -> str:
@@ -25,17 +27,26 @@ def run(database_dsn: str, secret: bytes, mode: str) -> str:
     if _MODE.fullmatch(mode) is None or conninfo_to_dict(database_dsn).get("user") != "decision_demo":
         raise ValueError("P1 smoke execution boundary is invalid")
     key = partition_key(secret)
+    run_id = secrets.token_hex(16)
+    if _RUN_ID.fullmatch(run_id) is None:
+        raise RuntimeError("P1 smoke run identity is invalid")
     with psycopg.connect(database_dsn, autocommit=True, connect_timeout=3) as connection:
         _require_demo_role(connection)
         with connection.cursor() as cursor:
-            cursor.execute("SELECT stage_p1_synthetic_async_request(%s,%s)", (mode, key))
+            cursor.execute(
+                "SELECT stage_p1_synthetic_async_request(%s,%s,%s)",
+                (mode, key, run_id),
+            )
             row = cursor.fetchone()
             if row is None or not isinstance(row[0], str):
                 raise RuntimeError("P1 synthetic async request was not staged")
             job_id = row[0]
         for _ in range(90):
             with connection.cursor() as cursor:
-                cursor.execute("SELECT verify_p1_synthetic_async_request(%s)", (mode,))
+                cursor.execute(
+                    "SELECT verify_p1_synthetic_async_request(%s,%s)",
+                    (mode, run_id),
+                )
                 verified = cursor.fetchone()
             if verified is not None and verified[0] is True:
                 return job_id

@@ -5,6 +5,7 @@ services:
   api-edge: {pull_policy: never}
   postgres: {pull_policy: never}
   redis: {pull_policy: never}
+  role-bootstrap: {pull_policy: never}
   migrate: {pull_policy: never}
   identity-bootstrap: {pull_policy: never}
   python-worker: {pull_policy: never}

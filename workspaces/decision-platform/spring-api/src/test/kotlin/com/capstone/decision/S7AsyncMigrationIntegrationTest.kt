@@ -49,11 +49,13 @@ class S7AsyncMigrationIntegrationTest {
     @Test
     fun `P1 container smoke capability is exact idempotent and demo-only`() {
         val partitionKey = "hmac-sha256:${"a".repeat(64)}"
+        val runId = "1".repeat(32)
         connection("s7_p1_demo", DEMO_USER, DEMO_PASSWORD).use { demo ->
             val inactive =
                 assertThrows<SQLException> {
-                    demo.prepareStatement("select stage_p1_synthetic_async_request('DB',?)").use { statement ->
+                    demo.prepareStatement("select stage_p1_synthetic_async_request('DB',?,?)").use { statement ->
                         statement.setString(1, partitionKey)
+                        statement.setString(2, runId)
                         statement.executeQuery()
                     }
                 }
@@ -71,16 +73,27 @@ class S7AsyncMigrationIntegrationTest {
         }
         connection("s7_p1_demo", DEMO_USER, DEMO_PASSWORD).use { demo ->
             repeat(2) {
-                demo.prepareStatement("select stage_p1_synthetic_async_request('DB',?)").use { statement ->
+                demo.prepareStatement("select stage_p1_synthetic_async_request('DB',?,?)").use { statement ->
                     statement.setString(1, partitionKey)
+                    statement.setString(2, runId)
                     statement.executeQuery().use { rows ->
                         assertTrue(rows.next())
-                        assertEquals("job_p1_container_db_0001", rows.getString(1))
+                        assertEquals("job_p1_container_db_$runId", rows.getString(1))
                     }
                 }
             }
+            val nextRunId = "2".repeat(32)
+            demo.prepareStatement("select stage_p1_synthetic_async_request('DB',?,?)").use { statement ->
+                statement.setString(1, partitionKey)
+                statement.setString(2, nextRunId)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals("job_p1_container_db_$nextRunId", rows.getString(1))
+                }
+            }
             demo.createStatement().use { statement ->
-                assertFalse(booleanResult(statement, "select verify_p1_synthetic_async_request('DB')"))
+                assertFalse(booleanResult(statement, "select verify_p1_synthetic_async_request('DB','$runId')"))
+                assertFalse(booleanResult(statement, "select verify_p1_synthetic_async_request('DB','$nextRunId')"))
                 val directRead = assertThrows<SQLException> { statement.executeQuery("select * from async_job") }
                 assertEquals("42501", directRead.sqlState)
                 val authorityWrite =
@@ -94,7 +107,7 @@ class S7AsyncMigrationIntegrationTest {
             val denied =
                 assertThrows<SQLException> {
                     app.createStatement().use {
-                        it.executeQuery("select stage_p1_synthetic_async_request('DB','$partitionKey')")
+                        it.executeQuery("select stage_p1_synthetic_async_request('DB','$partitionKey','$runId')")
                     }
                 }
             assertEquals("42501", denied.sqlState)

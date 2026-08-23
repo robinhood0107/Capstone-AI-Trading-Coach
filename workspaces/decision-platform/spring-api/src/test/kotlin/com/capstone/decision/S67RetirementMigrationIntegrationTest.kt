@@ -33,13 +33,13 @@ class S67RetirementMigrationIntegrationTest {
     }
 
     @Test
-    fun `V85 preserves V84 immutable audit row and removed reader writer capabilities`() {
+    fun `V86 preserves V84 immutable audit row and removed reader writer capabilities`() {
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { owner ->
             owner.createStatement().use { statement ->
                 statement.executeQuery("select version from flyway_schema_history order by installed_rank").use { result ->
                     val versions = mutableListOf<String>()
                     while (result.next()) versions += result.getString(1)
-                    assertEquals((1..85).map(Int::toString), versions)
+                    assertEquals((1..86).map(Int::toString), versions)
                 }
                 statement.executeQuery("select count(*), min(artifact_hash) from cross_market_risk_snapshots_v2").use { result ->
                     assertTrue(result.next())
@@ -192,7 +192,7 @@ class S67RetirementMigrationIntegrationTest {
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision")
                 .withUsername("decision")
                 .withPassword("decision")

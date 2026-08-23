@@ -2822,7 +2822,7 @@ class BrokerageApiIntegrationTest(
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_s31")
                 .withUsername("decision")
                 .withPassword("decision")

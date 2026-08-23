@@ -14,7 +14,7 @@ interface UserSecurityRepository {
 // DataSource를 제외한 web slice도 시작할 수 있게 provider를 지연 해석하되 production 조회는 DB 부재 시 fail-closed한다.
 @Repository
 class JdbcUserSecurityRepository(
-    private val jdbcTemplateProvider: ObjectProvider<JdbcTemplate>,
+    private val authDatabaseProvider: ObjectProvider<AuthDatabase>,
 ) : UserSecurityRepository {
     override fun findDemoCredentials(): List<UserSecurityRecord> =
         // 요청 username을 SQL에 전달하지 않고 고정된 두 row를 함께 읽어 peer BCrypt 검증을 강제한다.
@@ -38,8 +38,10 @@ class JdbcUserSecurityRepository(
             ).singleOrNull()
 
     private fun jdbcTemplate(): JdbcTemplate =
-        jdbcTemplateProvider.ifAvailable
-            ?: throw IllegalStateException("Authentication user repository is unavailable.")
+        JdbcTemplate(
+            authDatabaseProvider.ifAvailable?.dataSource
+                ?: throw IllegalStateException("Authentication user repository is unavailable."),
+        )
 
     companion object {
         private val USER_SECURITY_ROW_MAPPER =

@@ -32,9 +32,9 @@ class PrincipleContractMigrationIntegrationTest(
     @Autowired private val principleRuleJsonCodec: PrincipleRuleJsonCodec,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean V1 through V85 migration preserves the exact Principle schema and seed`() {
+    fun `clean V1 through V86 migration preserves the exact Principle schema and seed`() {
         assertEquals(
-            (1..85).map(Int::toString),
+            (1..86).map(Int::toString),
             jdbcTemplate.query(
                 "select version from flyway_schema_history where success order by installed_rank",
             ) { result, _ -> result.getString(1) },
@@ -293,7 +293,7 @@ class PrincipleContractMigrationIntegrationTest(
         assertFalse(tablePrivilege("principle_versions", "INSERT"))
         assertFalse(tablePrivilege("principle_versions", "UPDATE"))
         assertFalse(tablePrivilege("principle_versions", "DELETE"))
-        assertTrue(tablePrivilege("audit_logs", "INSERT"))
+        assertFalse(tablePrivilege("audit_logs", "INSERT"))
         assertFalse(tablePrivilege("audit_logs", "SELECT"))
         assertFalse(tablePrivilege("audit_logs", "UPDATE"))
         assertFalse(tablePrivilege("audit_logs", "DELETE"))
@@ -563,7 +563,7 @@ class PrincipleContractMigrationIntegrationTest(
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision")
                 .withUsername("decision")
                 .withPassword("decision")

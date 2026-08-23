@@ -90,7 +90,7 @@ class RagExternalExact30VoyageFlywayLifecycleIntegrationTest {
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_v37_lifecycle")
                 .withUsername("decision")
                 .withPassword("decision")

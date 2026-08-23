@@ -310,7 +310,7 @@ class InfrastructureSecurityIntegrationTest {
                     "decision_app must retain the owner-scoped Principle capability $function",
                 )
             }
-            assertTrue(hasTablePrivilege(connection, "decision_app", "audit_logs", "INSERT"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "INSERT"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "SELECT"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "UPDATE"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "DELETE"))
@@ -318,7 +318,7 @@ class InfrastructureSecurityIntegrationTest {
                 assertFalse(hasTablePrivilege(connection, "decision_app", "principle_presets", privilege))
             }
             assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "TRUNCATE"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "decisions", "INSERT"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "decisions", "INSERT"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "decisions", "SELECT"))
             listOf("UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
                 assertFalse(hasTablePrivilege(connection, "decision_app", "decisions", privilege))
@@ -326,7 +326,7 @@ class InfrastructureSecurityIntegrationTest {
             assertTrue(hasTablePrivilege(connection, "decision_app", "decision_owner_projection", "SELECT"))
             assertTrue(hasTablePrivilege(connection, "decision_app", "decision_audit_projection", "SELECT"))
             assertTrue(hasTablePrivilege(connection, "decision_app", "risk_kill_switch", "SELECT"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "risk_kill_switch_transitions", "INSERT"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "risk_kill_switch_transitions", "INSERT"))
             assertTrue(hasTablePrivilege(connection, "decision_app", "kill_switch_user_projection", "SELECT"))
             listOf(
                 "active",
@@ -337,7 +337,7 @@ class InfrastructureSecurityIntegrationTest {
                 "changed_at",
                 "request_id",
             ).forEach { column ->
-                assertTrue(hasColumnPrivilege(connection, "decision_app", "risk_kill_switch", column, "UPDATE"))
+                assertFalse(hasColumnPrivilege(connection, "decision_app", "risk_kill_switch", column, "UPDATE"))
             }
             listOf("INSERT", "DELETE", "TRUNCATE").forEach { privilege ->
                 assertFalse(hasTablePrivilege(connection, "decision_app", "risk_kill_switch", privilege))
@@ -350,10 +350,10 @@ class InfrastructureSecurityIntegrationTest {
             }
             listOf(
                 "read_kill_switch_gate()",
-                "revalidate_kill_switch_admin(text,bigint)",
                 "read_kill_switch_audit_projection()",
                 "read_decision_usability()",
-                "invalidate_unused_decisions_for_kill_switch(bigint,timestamp with time zone,text)",
+                "transition_kill_switch_authorized(text,text,bigint,boolean,bigint,text)",
+                "persist_decision_bundle_authorized(text,jsonb)",
                 "read_mock_order_decision(text,text,text)",
                 "find_mock_order_idempotency_result(text,text,timestamp with time zone,text)",
                 "read_mock_order_owner_projection(text,text,text)",
@@ -361,6 +361,23 @@ class InfrastructureSecurityIntegrationTest {
                 "request_mock_order_cancel(jsonb,text)",
             ).forEach { function ->
                 assertTrue(hasFunctionPrivilege(connection, "decision_app", function))
+            }
+            listOf(
+                "revalidate_kill_switch_admin(text,bigint)",
+                "invalidate_unused_decisions_for_kill_switch(bigint,timestamp with time zone,text)",
+                "append_decision_created_outbox(text,text,jsonb,timestamp with time zone)",
+                "append_kill_switch_outbox(text,boolean,timestamp with time zone)",
+                "read_demo_credentials()",
+                "read_user_actor(text)",
+            ).forEach { function ->
+                assertFalse(hasFunctionPrivilege(connection, "decision_app", function))
+            }
+            assertTrue(hasFunctionPrivilege(connection, "decision_auth", "read_demo_credentials()"))
+            assertTrue(hasFunctionPrivilege(connection, "decision_auth", "read_user_actor(text)"))
+            listOf("users", "decisions", "audit_logs", "flyway_schema_history").forEach { table ->
+                listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                    assertFalse(hasTablePrivilege(connection, "decision_auth", table, privilege))
+                }
             }
             listOf("orders", "order_events", "mock_order_owner_projection", "brokerage_db_capability_keys").forEach { table ->
                 listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
@@ -405,6 +422,34 @@ class InfrastructureSecurityIntegrationTest {
                 hasFunctionPrivilege(connection, "decision_fill_writer", "read_decision_owner_projection()"),
             )
         }
+
+        DriverManager
+            .getConnection(
+                postgres.jdbcUrl,
+                Properties().apply {
+                    setProperty("user", "decision_auth")
+                    setProperty("password", authPassword)
+                },
+            ).use { connection ->
+                connection.createStatement().use { statement ->
+                    assertEquals(
+                        "2",
+                        queryScalar(statement, "select count(*)::text from read_demo_credentials()"),
+                    )
+                    val denied = assertThrows<SQLException> { statement.executeQuery("select * from users") }
+                    assertEquals("42501", denied.sqlState)
+                    statement
+                        .executeQuery(
+                            "select rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls " +
+                                "from pg_roles where rolname = current_user",
+                        ).use { result ->
+                            assertTrue(result.next())
+                            for (column in 1..5) {
+                                assertFalse(result.getBoolean(column))
+                            }
+                        }
+                }
+            }
 
         DriverManager.getConnection(postgres.jdbcUrl, runtimeProperties()).use { connection ->
             connection.createStatement().use { statement ->
@@ -493,13 +538,16 @@ class InfrastructureSecurityIntegrationTest {
                         "'idempotencyScopeHash', repeat('1', 64)" +
                         "), '1.0.0', 'PENDING', 0, now(), now())",
                     "select * from decisions limit 0",
+                    "insert into decisions default values",
                     "update decisions set outcome = outcome where false",
                     "delete from decisions where false",
                     "truncate table decisions",
                     "insert into risk_kill_switch (" +
                         "kill_switch_id,active,reason_class,generation,changed_by,changed_by_role,changed_at" +
                         ") values ('OTHER',true,'USER_MANUAL_STOP',2,'usr_demo_user','USER',now())",
+                    "update risk_kill_switch set active = active where kill_switch_id = 'GLOBAL'",
                     "delete from risk_kill_switch where false",
+                    "insert into risk_kill_switch_transitions default values",
                     "update risk_kill_switch_transitions set reason_class = reason_class where false",
                     "delete from risk_kill_switch_transitions where false",
                     "insert into decision_invalidations (" +
@@ -511,6 +559,7 @@ class InfrastructureSecurityIntegrationTest {
                     "insert into order_events default values",
                     "select * from mock_order_owner_projection",
                     "select * from brokerage_db_capability_keys",
+                    "select * from read_demo_credentials()",
                 ).forEach { sql ->
                     val mutationFailure = assertThrows<SQLException> { statement.execute(sql) }
                     assertTrue(mutationFailure.sqlState == "42501")
@@ -605,6 +654,7 @@ class InfrastructureSecurityIntegrationTest {
                           FROM pg_roles
                           WHERE rolname = ANY (ARRAY[
                             'decision_app',
+                            'decision_auth',
                             'decision_worker',
                             'decision_replay',
                             'decision_demo',
@@ -833,6 +883,7 @@ class InfrastructureSecurityIntegrationTest {
         private val workerPassword: String = "w" + "a".repeat(24)
         private val replayPassword: String = "r" + "y".repeat(24)
         private val identityPassword: String = "i" + "d".repeat(24)
+        private val authPassword: String = "a" + "u".repeat(24)
         private val replayAuthorizerPassword: String = "z" + "a".repeat(24)
         private val demoPassword: String = "d" + "m".repeat(24)
         private val migrationPassword: String = "m" + "p".repeat(24)
@@ -857,7 +908,7 @@ class InfrastructureSecurityIntegrationTest {
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("trading")
                 .withUsername("postgres")
                 .withPassword(adminPassword)
@@ -865,6 +916,7 @@ class InfrastructureSecurityIntegrationTest {
                 .withEnv("POSTGRES_WORKER_PASSWORD", workerPassword)
                 .withEnv("POSTGRES_REPLAY_PASSWORD", replayPassword)
                 .withEnv("POSTGRES_IDENTITY_PASSWORD", identityPassword)
+                .withEnv("POSTGRES_AUTH_PASSWORD", authPassword)
                 .withEnv("POSTGRES_REPLAY_AUTHORIZER_PASSWORD", replayAuthorizerPassword)
                 .withEnv("POSTGRES_DEMO_PASSWORD", demoPassword)
                 .withEnv("POSTGRES_MIGRATION_PASSWORD", migrationPassword)

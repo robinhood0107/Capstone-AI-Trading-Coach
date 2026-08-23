@@ -4341,7 +4341,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_rag_v2_immutable")
                 .withUsername("decision")
                 .withPassword("decision")

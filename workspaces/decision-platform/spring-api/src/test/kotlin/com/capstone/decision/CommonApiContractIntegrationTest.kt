@@ -253,6 +253,7 @@ class CommonApiContractIntegrationTest(
     @Test
     fun `login limiter stores only purpose separated opaque scopes`() {
         loginAttemptLimiter.tryAcquire("198.51.100.201", "raw-probe-user")
+        loginAttemptLimiter.recordFailure("198.51.100.201", "raw-probe-user")
 
         val attemptsField = LoginAttemptLimiter::class.java.getDeclaredField("attempts")
         attemptsField.isAccessible = true
@@ -260,7 +261,7 @@ class CommonApiContractIntegrationTest(
         val storedKeys = (attemptsField.get(loginAttemptLimiter) as Map<String, *>).keys
 
         assertTrue(storedKeys.any { it.startsWith("login:v1:user:") })
-        assertTrue(storedKeys.any { it.startsWith("login:v1:ip:") })
+        assertTrue(storedKeys.any { it.startsWith("login:v1:deployment:") })
         assertTrue(storedKeys.none { it.contains("raw-probe-user") || it.contains("198.51.100.201") })
     }
 

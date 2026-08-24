@@ -29,6 +29,8 @@ class LoginAttemptLimiter(
     private val properties: LoginAttemptLimiterProperties,
 ) {
     private val attempts = LinkedHashMap<String, Attempt>(16, 0.75f, true)
+    private val reservations = mutableMapOf<String, Int>()
+    private val localReservation = ThreadLocal<Reservation>()
     private val lock = Any()
 
     init {
@@ -40,17 +42,23 @@ class LoginAttemptLimiter(
         username: String,
     ): Boolean =
         synchronized(lock) {
+            localReservation.remove()
             val now = Instant.now()
             pruneExpired(now)
-            val userKey = userKey(remoteAddress, username)
-            val ipKey = ipKey(remoteAddress)
-            if (!allowed(userKey, USER_FAILURE_LIMIT, now) || !allowed(ipKey, IP_FAILURE_LIMIT, now)) {
+            val userKey = userKey(username)
+            val deploymentKey = deploymentKey()
+            if (
+                !allowed(userKey, USER_FAILURE_LIMIT, now) ||
+                !allowed(deploymentKey, DEPLOYMENT_FAILURE_LIMIT, now) ||
+                reservationCount(userKey) >= USER_FAILURE_LIMIT ||
+                reservationCount(deploymentKey) >= DEPLOYMENT_RESERVATION_LIMIT
+            ) {
                 return@synchronized false
             }
-            // check와 reservation을 같은 lock 안에서 수행해 병렬 첫 burst도 제한을 넘지 못하게 한다.
-            increment(userKey, now)
-            increment(ipKey, now)
-            evictOverflow()
+            // password verification concurrency는 failure history와 분리해 성공 요청이 lockout을 만들지 않는다.
+            reserve(userKey)
+            reserve(deploymentKey)
+            localReservation.set(Reservation(userKey, deploymentKey))
             true
         }
 
@@ -58,8 +66,42 @@ class LoginAttemptLimiter(
         remoteAddress: String,
         username: String,
     ) {
+        finish(failed = false)
+    }
+
+    fun recordFailure(
+        remoteAddress: String,
+        username: String,
+    ) {
+        finish(failed = true)
+    }
+
+    private fun finish(failed: Boolean) {
         synchronized(lock) {
-            attempts.remove(userKey(remoteAddress, username))
+            val reservation = localReservation.get() ?: return
+            localReservation.remove()
+            release(reservation.userKey)
+            release(reservation.deploymentKey)
+            if (failed) {
+                val now = Instant.now()
+                increment(reservation.userKey, now)
+                increment(reservation.deploymentKey, now)
+                evictOverflow()
+            }
+        }
+    }
+
+    private fun reservationCount(key: String): Int = reservations[key] ?: 0
+
+    private fun reserve(key: String) {
+        reservations[key] = Math.addExact(reservationCount(key), 1)
+    }
+
+    private fun release(key: String) {
+        val current = reservationCount(key)
+        when {
+            current <= 1 -> reservations.remove(key)
+            else -> reservations[key] = current - 1
         }
     }
 
@@ -107,12 +149,9 @@ class LoginAttemptLimiter(
         }
     }
 
-    private fun userKey(
-        remoteAddress: String,
-        username: String,
-    ): String = scopeKey(USER_PURPOSE, remoteAddress, username.lowercase(Locale.ROOT))
+    private fun userKey(username: String): String = scopeKey(USER_PURPOSE, username.lowercase(Locale.ROOT))
 
-    private fun ipKey(remoteAddress: String): String = scopeKey(IP_PURPOSE, remoteAddress)
+    private fun deploymentKey(): String = scopeKey(DEPLOYMENT_PURPOSE, KEY_VERSION)
 
     private fun scopeKey(
         purpose: String,
@@ -134,13 +173,19 @@ class LoginAttemptLimiter(
         val startedAt: Instant,
     )
 
+    private data class Reservation(
+        val userKey: String,
+        val deploymentKey: String,
+    )
+
     companion object {
         private const val USER_FAILURE_LIMIT = 5
-        private const val IP_FAILURE_LIMIT = 50
+        private const val DEPLOYMENT_RESERVATION_LIMIT = 50
         private const val MAX_TRACKED_KEYS = 20_000
+        private const val DEPLOYMENT_FAILURE_LIMIT = MAX_TRACKED_KEYS
         private const val KEY_VERSION = "v1"
         private const val USER_PURPOSE = "user"
-        private const val IP_PURPOSE = "ip"
+        private const val DEPLOYMENT_PURPOSE = "deployment"
         private val WINDOW: Duration = Duration.ofMinutes(15)
     }
 }

@@ -1536,3 +1536,93 @@ REVOKE ALL ON FUNCTION public.consume_p1_provider_approval(text,text,text,text,i
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.p1_provider_approval_claim TO flyway;
 GRANT EXECUTE ON FUNCTION public.consume_p1_provider_approval(text,text,text,text,integer,timestamptz)
   TO decision_replay;
+
+
+-- Refresh is a one-shot DB claim bound to the current actor security version.
+CREATE FUNCTION public.consume_s4_9_mcp_refresh_token(
+  p_token_sha256 text
+)
+RETURNS TABLE(
+  client_id text,owner_user_id text,security_version bigint,resource_uri text,scopes text[]
+)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $consume_s4_9_mcp_refresh_token$
+BEGIN
+  IF session_user<>'decision_app' OR p_token_sha256!~'^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'S4.9 refresh token claim denied' USING ERRCODE='42501';
+  END IF;
+  RETURN QUERY
+  UPDATE public.s4_9_mcp_oauth_refresh_tokens token
+  SET rotated_at=statement_timestamp()
+  FROM public.users actor,public.s4_9_mcp_oauth_clients client
+  WHERE token.token_sha256=p_token_sha256
+    AND token.owner_user_id=actor.user_id
+    AND token.client_id=client.client_id
+    AND token.rotated_at IS NULL AND token.revoked_at IS NULL
+    AND token.expires_at>statement_timestamp()
+    AND actor.status='ACTIVE' AND actor.security_version=token.security_version
+    AND client.status='ACTIVE'
+  RETURNING token.client_id,token.owner_user_id,token.security_version,token.resource_uri,token.scopes;
+END
+$consume_s4_9_mcp_refresh_token$;
+
+ALTER FUNCTION public.consume_s4_9_mcp_refresh_token(text) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.consume_s4_9_mcp_refresh_token(text)
+  FROM PUBLIC,decision_worker,decision_replay,decision_identity;
+GRANT EXECUTE ON FUNCTION public.consume_s4_9_mcp_refresh_token(text) TO decision_app;
+
+
+-- New refresh tokens preserve the consumed claim security version and cannot cross credential rotation.
+CREATE OR REPLACE FUNCTION public.rotate_s4_9_mcp_refresh_token_hash(
+  p_token_sha256 text,p_client_id text,p_owner_user_id text,p_security_version bigint,
+  p_resource_uri text,p_scopes text[],p_expires_at timestamptz
+)
+RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $rotate_s4_9_mcp_refresh_token_hash$
+DECLARE family_id text;
+DECLARE previous_hash text;
+BEGIN
+  IF session_user<>'decision_app'
+     OR p_token_sha256!~'^[0-9a-f]{64}$'
+     OR p_owner_user_id!~'^usr_[a-z0-9][a-z0-9_-]{2,95}$'
+     OR p_security_version<=0
+     OR p_expires_at<=transaction_timestamp()
+     OR p_expires_at>transaction_timestamp()+interval '7 days 1 minute'
+     OR NOT p_scopes<@ARRAY[
+       'mcp:rag.public','mcp:rag.owner','mcp:web.read','mcp:answer.validate','mcp:history.write'
+     ]::text[]
+     OR NOT EXISTS(
+       SELECT 1 FROM public.users actor
+       WHERE actor.user_id=p_owner_user_id AND actor.status='ACTIVE'
+         AND actor.security_version=p_security_version
+     ) THEN
+    RAISE EXCEPTION 'S4.9 refresh token hash is invalid' USING ERRCODE='22023';
+  END IF;
+  IF EXISTS(
+    SELECT 1 FROM public.s4_9_mcp_oauth_refresh_tokens
+    WHERE token_sha256=p_token_sha256
+  ) THEN
+    RETURN;
+  END IF;
+  family_id:='mrf_'||substr(encode(public.digest(
+    p_client_id||':'||p_owner_user_id,'sha256'
+  ),'hex'),1,32);
+  SELECT token_sha256 INTO previous_hash
+  FROM public.s4_9_mcp_oauth_refresh_tokens
+  WHERE token_family_id=family_id AND rotated_at IS NULL AND revoked_at IS NULL
+  FOR UPDATE;
+  IF FOUND THEN
+    UPDATE public.s4_9_mcp_oauth_refresh_tokens
+    SET rotated_at=transaction_timestamp()
+    WHERE token_sha256=previous_hash;
+  END IF;
+  INSERT INTO public.s4_9_mcp_oauth_refresh_tokens(
+    token_sha256,token_family_id,client_id,owner_user_id,security_version,
+    resource_uri,scopes,previous_token_sha256,expires_at
+  ) VALUES (
+    p_token_sha256,family_id,p_client_id,p_owner_user_id,p_security_version,
+    p_resource_uri,p_scopes,previous_hash,p_expires_at
+  );
+END
+$rotate_s4_9_mcp_refresh_token_hash$;

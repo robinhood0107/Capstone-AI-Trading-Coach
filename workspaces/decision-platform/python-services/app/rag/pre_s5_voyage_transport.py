@@ -24,6 +24,11 @@ from typing import Final, Literal, NoReturn, Protocol
 import numpy as np
 from numpy.typing import NDArray
 
+from app.data._shared.bounded_json import (
+    BoundedJsonError,
+    BoundedJsonLimits,
+    parse_bounded_json_bytes,
+)
 from app.rag.pre_s5_provider_control import (
     PreS5VoyageActivation,
     PreS5VoyageDocumentBatchActivation,
@@ -944,11 +949,19 @@ def _parse_contextualized_response(
     decoded: object | None = None
     parse_failed = False
     try:
-        decoded = json.loads(
-            response.body.decode("utf-8", errors="strict"),
-            object_pairs_hook=_unique_json_object,
+        decoded = parse_bounded_json_bytes(
+            response.body,
+            limits=BoundedJsonLimits(
+                max_bytes=byte_cap,
+                max_depth=8,
+                max_list_items=max(_MAX_CHUNKS, _OUTPUT_DIMENSION),
+                max_object_keys=16,
+                max_text_codepoints=256,
+                max_text_bytes=1_024,
+                max_number_characters=64,
+            ),
         )
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+    except BoundedJsonError:
         parse_failed = True
     if parse_failed:
         # JSON exception이 raw provider bytes를 exception chain에 붙이지 않게 except 밖에서 닫는다.
@@ -1113,17 +1126,6 @@ def _safe_provider_status_class(status: object) -> str:
     if 500 <= status <= 599:
         return "HTTP_5XX"
     return "HTTP_OTHER"
-
-
-def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    """duplicate response key를 last-write-wins parsing으로 해석하지 않는다."""
-
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("duplicate JSON key")
-        result[key] = value
-    return result
 
 
 def _canonical_hash(value: object) -> str:

@@ -1487,3 +1487,52 @@ TO decision_outbox_publisher;
 GRANT EXECUTE ON FUNCTION public.p1_record_kafka_poison_receipt(
   text,text,text,text,integer,bigint,integer,text,text,text,text
 ) TO decision_poison_recorder;
+
+-- Signed provider authority has one durable claim store; Redis and output roots are evidence only.
+CREATE TABLE public.p1_provider_approval_claim (
+  packet_hash text PRIMARY KEY CHECK (packet_hash ~ '^sha256:[0-9a-f]{64}$'),
+  approval_id_hash text NOT NULL CHECK (approval_id_hash ~ '^sha256:[0-9a-f]{64}$'),
+  nonce_hash text NOT NULL UNIQUE CHECK (nonce_hash ~ '^sha256:[0-9a-f]{64}$'),
+  operation_set_hash text NOT NULL CHECK (operation_set_hash ~ '^sha256:[0-9a-f]{64}$'),
+  physical_call_cap integer NOT NULL CHECK (physical_call_cap BETWEEN 1 AND 112),
+  expires_at timestamptz NOT NULL,
+  consumed_at timestamptz NOT NULL DEFAULT statement_timestamp()
+);
+
+CREATE FUNCTION public.consume_p1_provider_approval(
+  p_packet_hash text,p_approval_id_hash text,p_nonce_hash text,p_operation_set_hash text,
+  p_physical_call_cap integer,p_expires_at timestamptz
+)
+RETURNS boolean
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
+AS $consume_p1_provider_approval$
+DECLARE changed integer;
+BEGIN
+  IF session_user <> 'decision_replay'
+     OR p_packet_hash !~ '^sha256:[0-9a-f]{64}$'
+     OR p_approval_id_hash !~ '^sha256:[0-9a-f]{64}$'
+     OR p_nonce_hash !~ '^sha256:[0-9a-f]{64}$'
+     OR p_operation_set_hash !~ '^sha256:[0-9a-f]{64}$'
+     OR p_physical_call_cap NOT BETWEEN 1 AND 112
+     OR p_expires_at <= statement_timestamp()
+     OR p_expires_at > statement_timestamp() + interval '5 minutes' THEN
+    RAISE EXCEPTION 'P1 provider approval claim denied' USING ERRCODE='42501';
+  END IF;
+  INSERT INTO public.p1_provider_approval_claim(
+    packet_hash,approval_id_hash,nonce_hash,operation_set_hash,physical_call_cap,expires_at
+  ) VALUES (
+    p_packet_hash,p_approval_id_hash,p_nonce_hash,p_operation_set_hash,p_physical_call_cap,p_expires_at
+  ) ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS changed=ROW_COUNT;
+  RETURN changed=1;
+END
+$consume_p1_provider_approval$;
+
+ALTER TABLE public.p1_provider_approval_claim OWNER TO flyway;
+ALTER FUNCTION public.consume_p1_provider_approval(text,text,text,text,integer,timestamptz) OWNER TO flyway;
+REVOKE ALL ON TABLE public.p1_provider_approval_claim FROM PUBLIC,decision_app,decision_worker,decision_identity;
+REVOKE ALL ON FUNCTION public.consume_p1_provider_approval(text,text,text,text,integer,timestamptz)
+  FROM PUBLIC,decision_app,decision_worker,decision_identity;
+GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.p1_provider_approval_claim TO flyway;
+GRANT EXECUTE ON FUNCTION public.consume_p1_provider_approval(text,text,text,text,integer,timestamptz)
+  TO decision_replay;

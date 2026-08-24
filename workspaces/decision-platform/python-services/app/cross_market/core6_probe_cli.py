@@ -20,11 +20,22 @@ from app.cross_market.core6_probe import (
     core6_receipt_file_name,
 )
 from app.cross_market.core6_probe_backends import build_core6_backend
+from app.data._shared.canonical_json import canonical_json_sha256
 from app.rag.oa112_downloader import Oa112DownloadError, _read_private_control_file
+from app.verification.execution_approval import (
+    ExecutionApprovalError,
+    load_and_verify_execution_approval,
+    scope_digest,
+)
+from app.verification.provider_claim import (
+    ProviderApprovalClaimError,
+    claim_signed_provider_approval,
+)
 
 
 _CONTROL_ROOT_RELATIVE: Final[Path] = Path("capstone-rag/secrets/core6-probes")
 _EVIDENCE_FILE: Final[str] = "core6-probe-execution-evidence.v1.json"
+_APPROVAL_FILE: Final[str] = "p1-approval-packet.v2.json"
 _DEFAULT_PACKET_FILE: Final[str] = "core6-probe-approval.v2.json"
 _LEAF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -63,12 +74,34 @@ def main(argv: Sequence[str] | None = None) -> int:
             control_root=control_root,
             repository_root=repository_root,
         )
+        approval = load_and_verify_execution_approval(
+            (control_root / _APPROVAL_FILE).absolute(),
+            provider_family=packet.provider_family,
+            exact_operations=(packet.operation,),
+            payload_sha256=packet.packet_sha256(),
+            repository_digest=canonical_json_sha256(
+                {"headSha": binding.head_sha, "treeSha256": binding.tree_sha256}
+            ),
+            evidence_digest=canonical_json_sha256(
+                {"ciDigest": binding.ci_digest, "securityDigest": binding.security_digest}
+            ),
+            credential_scope_digest=scope_digest(
+                f"{packet.provider_family}:{packet.operation}"
+            ),
+            physical_call_cap=packet.physical_call_cap,
+            cost_cap_microusd=packet.cost_cap_microusd,
+            now=now,
+        )
+        claim_signed_provider_approval(approval)
         backend = build_core6_backend(operation=packet.operation)
         receipt = Core6ProbeExecutor(control_root=control_root, backend=backend).execute(
             packet=packet,
             binding=binding,
             now=now,
         )
+    except (ExecutionApprovalError, ProviderApprovalClaimError):
+        _emit("P1_EXECUTION_APPROVAL_REJECTED", provider_physical_calls=0)
+        return 2
     except Core6ProbeError as error:
         _emit(error.code, provider_physical_calls=error.physical_call_count)
         return 2

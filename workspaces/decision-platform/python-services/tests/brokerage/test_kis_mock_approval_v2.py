@@ -141,6 +141,7 @@ def test_v2_accepts_merged_main_execution_head_without_weakening_legacy_open_pr_
 
 def test_v3_full_packet_is_exactly_seven_reconciliation_steps_and_seven_calls(
     secure_directory: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     document = _packet_document(secure_directory, schema_version=3, pull_request=104)
     document["steps"] = [
@@ -163,6 +164,25 @@ def test_v3_full_packet_is_exactly_seven_reconciliation_steps_and_seven_calls(
     assert packet.physical_caps.token_p == 1
     assert packet.physical_caps.brokerage == 7
     assert packet.retry_count == 0
+
+    captured: dict[str, object] = {}
+    approval = object()
+    monkeypatch.setattr(
+        probe,
+        "load_and_verify_execution_approval",
+        lambda *args, **kwargs: captured.update(kwargs) or approval,
+    )
+    monkeypatch.setattr(
+        probe,
+        "claim_signed_provider_approval",
+        lambda value: captured.update(claim=value),
+    )
+    probe._consume_exact_approval_once(packet, datetime(2030, 1, 2, 3, 10, tzinfo=UTC))
+
+    assert captured["payload_sha256"] == packet.packet_sha256
+    assert captured["exact_operations"] == packet.steps
+    assert captured["physical_call_cap"] == 8
+    assert captured["claim"] is approval
 
 
 @pytest.mark.parametrize(

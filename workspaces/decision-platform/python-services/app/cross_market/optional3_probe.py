@@ -18,6 +18,11 @@ from pathlib import Path
 from typing import Any, Final, Protocol
 from urllib.parse import quote
 
+from app.data._shared.bounded_json import (
+    BoundedJsonError,
+    BoundedJsonLimits,
+    parse_bounded_json_bytes,
+)
 from app.rag.oa112_downloader import (
     Oa112DownloadError,
     _Oa112SourceDeadline,
@@ -36,6 +41,15 @@ _RECEIPT_CONTRACT_ID: Final[str] = "s4-8-optional3-probe-receipt-v2"
 _MAX_PACKET_BYTES: Final[int] = 16 * 1024
 _MAX_RESPONSE_BYTES: Final[int] = 256 * 1024
 _REQUEST_TIMEOUT_SECONDS: Final[float] = 10.0
+_RESPONSE_JSON_LIMITS: Final = BoundedJsonLimits(
+    max_bytes=_MAX_RESPONSE_BYTES,
+    max_depth=12,
+    max_list_items=4_096,
+    max_object_keys=128,
+    max_text_codepoints=65_536,
+    max_text_bytes=_MAX_RESPONSE_BYTES,
+    max_number_characters=64,
+)
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _HEAD_SHA = re.compile(r"^[0-9a-f]{40}$")
 _APPROVAL_ID = re.compile(r"^o3p_[a-z0-9]{32,64}$")
@@ -83,9 +97,9 @@ class _FixedRequestPlan:
         if not body or len(body) > _MAX_RESPONSE_BYTES:
             raise Optional3ProbeError("OPTIONAL3_PROBE_RESPONSE_BOUND")
         try:
-            payload = json.loads(body.decode("utf-8", errors="strict"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise Optional3ProbeError("OPTIONAL3_PROBE_RESPONSE_JSON_INVALID") from error
+            payload = parse_bounded_json_bytes(body, limits=_RESPONSE_JSON_LIMITS)
+        except BoundedJsonError:
+            raise Optional3ProbeError("OPTIONAL3_PROBE_RESPONSE_JSON_INVALID") from None
         if self.operation.startswith("FINNHUB_"):
             # Finnhub Recommendation/Earnings는 document가 아니라 top-level array를 반환한다.
             if not isinstance(payload, list):

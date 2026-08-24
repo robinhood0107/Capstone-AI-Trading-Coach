@@ -3,12 +3,10 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
-import hmac
 import json
 import os
 import re
 import stat
-import sys
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -16,6 +14,9 @@ from typing import Any, NoReturn
 
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
 from app.data._shared.bounded_json import BoundedJsonError, BoundedJsonLimits, parse_bounded_json_bytes
 
@@ -25,6 +26,7 @@ _USER = re.compile(r"^usr_[A-Za-z0-9_-]{8,64}$")
 _MAX_TARGETS = 100
 _MAX_PACKET_BYTES = 1_048_576
 _MAX_SECRET_BYTES = 4_096
+_SIGNATURE = re.compile(r"^[A-Za-z0-9_-]{86}$")
 _PACKET_JSON_LIMITS = BoundedJsonLimits(
     max_bytes=_MAX_PACKET_BYTES,
     max_depth=8,
@@ -78,6 +80,64 @@ def _read_secret(path: Path, *, minimum: int = 32) -> bytes:
     return value
 
 
+def _read_public_file(path: Path, *, maximum: int = _MAX_SECRET_BYTES) -> bytes:
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(path, flags)
+    try:
+        info = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_mode & 0o022
+            or info.st_uid not in {0, os.geteuid()}
+            or info.st_size > maximum
+        ):
+            raise ReplayCliError("PUBLIC_KEY_FILE_PERMISSIONS_INVALID")
+        value = os.read(descriptor, maximum + 1)
+        if len(value) > maximum or os.read(descriptor, 1):
+            raise ReplayCliError("PUBLIC_KEY_FILE_TOO_LARGE")
+        return value
+    finally:
+        os.close(descriptor)
+
+
+def _load_private_key(path: Path) -> Ed25519PrivateKey:
+    try:
+        key = serialization.load_pem_private_key(_read_secret(path), password=None)
+    except (TypeError, ValueError) as error:
+        raise ReplayCliError("PRIVATE_KEY_INVALID") from error
+    if not isinstance(key, Ed25519PrivateKey):
+        raise ReplayCliError("PRIVATE_KEY_INVALID")
+    return key
+
+
+def _load_public_key(path: Path) -> Ed25519PublicKey:
+    try:
+        key = serialization.load_pem_public_key(_read_public_file(path))
+    except (TypeError, ValueError) as error:
+        raise ReplayCliError("PUBLIC_KEY_INVALID") from error
+    if not isinstance(key, Ed25519PublicKey):
+        raise ReplayCliError("PUBLIC_KEY_INVALID")
+    return key
+
+
+def _b64url(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
+
+
+def _b64url_decode(value: str) -> bytes:
+    if _SIGNATURE.fullmatch(value) is None:
+        raise ReplayCliError("PACKET_SIGNATURE_INVALID")
+    try:
+        decoded = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+    except ValueError as error:
+        raise ReplayCliError("PACKET_SIGNATURE_INVALID") from error
+    if _b64url(decoded) != value:
+        raise ReplayCliError("PACKET_SIGNATURE_INVALID")
+    return decoded
+
+
 def author_packet(args: argparse.Namespace, *, now: datetime | None = None) -> dict[str, Any]:
     issued_at = (now or datetime.now(UTC)).replace(microsecond=0)
     target_ids = list(args.target_id)
@@ -103,17 +163,25 @@ def author_packet(args: argparse.Namespace, *, now: datetime | None = None) -> d
         "reasonCode": args.reason_code,
         "executeAuthorized": bool(args.authorize_execute),
     }
-    key = _read_secret(args.signing_key_file)
-    return unsigned | {"signature": hmac.new(key, _canonical(unsigned), hashlib.sha256).hexdigest()}
+    signature = _load_private_key(args.private_key_file).sign(_canonical(unsigned))
+    return unsigned | {"signature": _b64url(signature)}
 
 
-def validate_packet(packet: dict[str, Any], key: bytes, *, execute: bool, now: datetime | None = None) -> None:
+def validate_packet(
+    packet: dict[str, Any],
+    public_key: Ed25519PublicKey,
+    *,
+    execute: bool,
+    now: datetime | None = None,
+) -> None:
     signature = packet.get("signature")
     unsigned = {name: value for name, value in packet.items() if name != "signature"}
-    if not isinstance(signature, str) or not hmac.compare_digest(
-        signature, hmac.new(key, _canonical(unsigned), hashlib.sha256).hexdigest()
-    ):
+    if not isinstance(signature, str):
         raise ReplayCliError("PACKET_SIGNATURE_INVALID")
+    try:
+        public_key.verify(_b64url_decode(signature), _canonical(unsigned))
+    except InvalidSignature as error:
+        raise ReplayCliError("PACKET_SIGNATURE_INVALID") from error
     required = {
         "version",
         "replayBatchId",
@@ -156,50 +224,7 @@ def _instant(value: Any) -> datetime:
         raise ReplayCliError("PACKET_TIME_INVALID") from error
 
 
-def _b64_json(value: str) -> dict[str, Any]:
-    try:
-        decoded = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
-        parsed = json.loads(decoded)
-    except (ValueError, json.JSONDecodeError) as error:
-        raise ReplayCliError("JWT_INVALID") from error
-    if not isinstance(parsed, dict):
-        raise ReplayCliError("JWT_INVALID")
-    return parsed
-
-
-def validate_jwt(token: str, secret: bytes, issuer: str, audience: str, *, now: datetime | None = None) -> dict[str, Any]:
-    parts = token.strip().split(".")
-    if len(parts) != 3:
-        raise ReplayCliError("JWT_INVALID")
-    header = _b64_json(parts[0])
-    claims = _b64_json(parts[1])
-    expected = hmac.new(secret, f"{parts[0]}.{parts[1]}".encode(), hashlib.sha256).digest()
-    try:
-        supplied = base64.urlsafe_b64decode(parts[2] + "=" * (-len(parts[2]) % 4))
-    except ValueError as error:
-        raise ReplayCliError("JWT_INVALID") from error
-    current = int((now or datetime.now(UTC)).timestamp())
-    aud = claims.get("aud")
-    if (
-        header != {"alg": "HS256", "typ": "JWT"}
-        or not hmac.compare_digest(expected, supplied)
-        or claims.get("iss") != issuer
-        or aud not in (audience, [audience])
-        or claims.get("role") != "ADMIN"
-        or not isinstance(claims.get("iat"), int)
-        or not isinstance(claims.get("exp"), int)
-        or claims["iat"] > current + 60
-        or claims["exp"] <= current
-        or claims["exp"] <= claims["iat"]
-        or not isinstance(claims.get("securityVersion"), int)
-        or claims["securityVersion"] <= 0
-        or not isinstance(claims.get("sub"), str)
-    ):
-        raise ReplayCliError("JWT_INVALID")
-    return claims
-
-
-def execute_packet(args: argparse.Namespace) -> list[dict[str, Any]]:
+def _load_and_validate_packet(args: argparse.Namespace) -> dict[str, Any]:
     try:
         packet = parse_bounded_json_bytes(
             _read_private_file(args.packet, maximum=_MAX_PACKET_BYTES, code="PACKET"),
@@ -209,18 +234,14 @@ def execute_packet(args: argparse.Namespace) -> list[dict[str, Any]]:
         raise ReplayCliError("PACKET_SCHEMA_INVALID") from error
     if not isinstance(packet, dict):
         raise ReplayCliError("PACKET_SCHEMA_INVALID")
-    validate_packet(packet, _read_secret(args.signing_key_file), execute=args.execute)
-    token = sys.stdin.readline(8193)
-    if not token or len(token) > 8192 or sys.stdin.read(1):
-        raise ReplayCliError("JWT_STDIN_INVALID")
-    claims = validate_jwt(token.strip(), _read_secret(args.jwt_secret_file), args.jwt_issuer, args.jwt_audience)
-    if claims["sub"] != packet["actorUserId"] or claims["securityVersion"] != packet["securityVersion"]:
-        raise ReplayCliError("JWT_PACKET_ACTOR_MISMATCH")
-    dsn = _read_secret(args.database_dsn_file, minimum=16).decode("utf-8")
+    validate_packet(packet, _load_public_key(args.public_key_file), execute=args.execute)
+    return packet
+
+
+def authorize_packet(args: argparse.Namespace) -> dict[str, Any]:
+    packet = _load_and_validate_packet(args)
     authorizer_dsn = _read_secret(args.authorizer_dsn_file, minimum=16).decode("utf-8")
     try:
-        if conninfo_to_dict(dsn).get("user") != "decision_replay":
-            raise ReplayCliError("REPLAY_DATABASE_ROLE_INVALID")
         if conninfo_to_dict(authorizer_dsn).get("user") != "decision_replay_authorizer":
             raise ReplayCliError("REPLAY_AUTHORIZER_DATABASE_ROLE_INVALID")
     except psycopg.Error as error:
@@ -242,7 +263,7 @@ def execute_packet(args: argparse.Namespace) -> list[dict[str, Any]]:
                     packet["targetIds"],
                     packet["expectedCount"],
                     packet["reasonCode"],
-                    args.execute,
+                    packet["executeAuthorized"],
                     _instant(packet["issuedAt"]),
                     _instant(packet["expiresAt"]),
                 ),
@@ -251,6 +272,18 @@ def execute_packet(args: argparse.Namespace) -> list[dict[str, Any]]:
             if row is None or row[0] is not True:
                 raise ReplayCliError("REPLAY_AUTHORIZATION_CONFLICT")
         connection.commit()
+    return packet
+
+
+def execute_packet(args: argparse.Namespace) -> list[dict[str, Any]]:
+    packet = _load_and_validate_packet(args)
+    dsn = _read_secret(args.database_dsn_file, minimum=16).decode("utf-8")
+    try:
+        if conninfo_to_dict(dsn).get("user") != "decision_replay":
+            raise ReplayCliError("REPLAY_DATABASE_ROLE_INVALID")
+    except psycopg.Error as error:
+        raise ReplayCliError("REPLAY_DATABASE_DSN_INVALID") from error
+    packet_hash = "sha256:" + hashlib.sha256(_canonical(packet)).hexdigest()
     with psycopg.connect(dsn, autocommit=False, connect_timeout=2) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select current_user, session_user")
@@ -289,16 +322,17 @@ def _parser() -> argparse.ArgumentParser:
     author.add_argument("--expected-count", required=True, type=int)
     author.add_argument("--reason-code", required=True)
     author.add_argument("--authorize-execute", action="store_true")
-    author.add_argument("--signing-key-file", required=True, type=Path)
+    author.add_argument("--private-key-file", required=True, type=Path)
     author.add_argument("--output", required=True, type=Path)
+    authorize = commands.add_parser("authorize")
+    authorize.add_argument("--packet", required=True, type=Path)
+    authorize.add_argument("--public-key-file", required=True, type=Path)
+    authorize.add_argument("--authorizer-dsn-file", required=True, type=Path)
+    authorize.add_argument("--execute", action="store_true")
     run = commands.add_parser("run")
     run.add_argument("--packet", required=True, type=Path)
-    run.add_argument("--signing-key-file", required=True, type=Path)
-    run.add_argument("--jwt-secret-file", required=True, type=Path)
-    run.add_argument("--jwt-issuer", required=True)
-    run.add_argument("--jwt-audience", required=True)
+    run.add_argument("--public-key-file", required=True, type=Path)
     run.add_argument("--database-dsn-file", required=True, type=Path)
-    run.add_argument("--authorizer-dsn-file", required=True, type=Path)
     run.add_argument("--execute", action="store_true")
     return parser
 
@@ -322,6 +356,9 @@ def main() -> None:
             packet = author_packet(args)
             _write_new(args.output, packet)
             print(json.dumps({"success": True, "packet": str(args.output)}, separators=(",", ":")))
+        elif args.command == "authorize":
+            packet = authorize_packet(args)
+            print(json.dumps({"success": True, "authorized": True, "replayBatchId": packet["replayBatchId"]}, separators=(",", ":")))
         else:
             rows = execute_packet(args)
             print(json.dumps({"success": True, "executed": bool(args.execute), "items": rows}, separators=(",", ":")))

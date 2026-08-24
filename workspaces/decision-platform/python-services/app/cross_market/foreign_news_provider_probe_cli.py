@@ -32,11 +32,22 @@ from app.cross_market.foreign_news_repository import (
     ForeignNewsWriterAuthorityError,
     PostgresForeignNewsSentimentRepository,
 )
+from app.data._shared.canonical_json import canonical_json_sha256
 from app.rag.oa112_downloader import Oa112DownloadError, _read_private_control_file
+from app.verification.execution_approval import (
+    ExecutionApprovalError,
+    load_and_verify_execution_approval,
+    scope_digest,
+)
+from app.verification.provider_claim import (
+    ProviderApprovalClaimError,
+    claim_signed_provider_approval,
+)
 
 
 _CONTROL_ROOT_RELATIVE: Final[Path] = Path("capstone-rag/secrets/foreign-news-probes")
 _EVIDENCE_FILE: Final[str] = "foreign-news-provider-probe-execution-evidence.v1.json"
+_APPROVAL_FILE: Final[str] = "p1-approval-packet.v2.json"
 _DEFAULT_PACKET_FILE: Final[str] = "foreign-news-provider-probe-approval.v1.json"
 _OWNER_SCOPE_FILE: Final[str] = "foreign-news-provider-owner-scope.v1.json"
 _WRITER_DSN_ENV: Final[str] = "DECISION_MARKET_WRITER_DATABASE_DSN"
@@ -125,8 +136,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         repository = PostgresForeignNewsSentimentRepository(database_dsn)
         # DB 권한 실패는 packet consume/provider socket보다 먼저 멈춰 single-use call을 낭비하지 않는다.
         repository.preflight()
-        binding = _load_execution_binding(control_root=control_root, repository_root=_repository_root())
-        credential_name = foreign_news_provider_credential_environment_variable(operation=packet.operation)
+        binding = _load_execution_binding(
+            control_root=control_root,
+            repository_root=_repository_root(),
+        )
+        credential_name = foreign_news_provider_credential_environment_variable(
+            operation=packet.operation
+        )
+        approval = load_and_verify_execution_approval(
+            (control_root / _APPROVAL_FILE).absolute(),
+            provider_family=packet.provider_family,
+            exact_operations=(packet.operation,),
+            payload_sha256=packet.packet_sha256(),
+            repository_digest=canonical_json_sha256(
+                {"headSha": binding.head_sha, "treeSha256": binding.tree_sha256}
+            ),
+            evidence_digest=canonical_json_sha256(
+                {"ciDigest": binding.ci_digest, "securityDigest": binding.security_digest}
+            ),
+            owner_scope_digest=scope_digest(
+                f"{owner_scope.owner_user_id}\0{owner_scope.symbol}"
+            ),
+            account_scope_digest=scope_digest("decision_market_writer"),
+            credential_scope_digest=scope_digest(credential_name or "PUBLIC_OFFICIAL"),
+            physical_call_cap=packet.physical_call_cap,
+            cost_cap_microusd=packet.cost_cap_microusd,
+            now=now,
+        )
+        claim_signed_provider_approval(approval)
         api_key = os.environ.get(credential_name, "") if credential_name is not None else None
         result = ForeignNewsProviderProbeExecutor(
             control_root=control_root,
@@ -139,6 +176,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             now=now,
             user_agent=os.environ.get("FOREIGN_NEWS_PROVIDER_USER_AGENT", ""),
         )
+    except (ExecutionApprovalError, ProviderApprovalClaimError):
+        _emit("P1_EXECUTION_APPROVAL_REJECTED", provider_physical_calls=0)
+        return 2
     except (ForeignNewsProviderProbeError, ForeignNewsWriterAuthorityError, ValueError) as error:
         code = (
             error.code

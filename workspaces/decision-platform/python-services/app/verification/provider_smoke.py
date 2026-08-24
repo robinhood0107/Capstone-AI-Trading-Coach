@@ -26,11 +26,11 @@ from app.data.krx.catalog import ENABLED_UNIVERSE_ENDPOINTS_BY_SERVICE
 from app.data.krx.client import (
     KrxOpenApiClient,
     attest_quota_backend_credentials,
-    claim_provider_verification_authorization,
 )
 from app.data.krx.parsers import is_kis_compatible_symbol
 from app.data.krx.settings import KrxOpenApiSettings
 from app.verification.artifacts import claim_packet_execution
+from app.verification.provider_claim import claim_signed_provider_approval
 from app.verification.models import (
     AggregateOutcome,
     ExecutionState,
@@ -242,7 +242,8 @@ class ProductionProviderSmokeBackend:
         series = _ECOS_SERIES[operation]
         start = target.session_date - timedelta(days=29)
         client = ECOSHttpClient(
-            ECOSSettings(max_calls_per_run=1, max_attempts_per_request=1)
+            ECOSSettings(max_calls_per_run=1, max_attempts_per_request=1),
+            approval_deadline_monotonic=_packet_deadline(self._packet),
         )
         before = self._provider_calls
         try:
@@ -351,7 +352,7 @@ class ProductionProviderSmokeBackend:
 BackendFactory = Callable[[P1SignedApprovalPacket], ProviderSmokeBackend]
 BindingVerifier = Callable[[P1SignedApprovalPacket, Path], None]
 ClaimFunction = Callable[[Path, P1SignedApprovalPacket], Path]
-GlobalClaimFunction = Callable[[str, str], None]
+GlobalClaimFunction = Callable[[P1SignedApprovalPacket], None]
 
 
 def run_provider_read_smoke(
@@ -362,7 +363,7 @@ def run_provider_read_smoke(
     binding_verifier: BindingVerifier,
     backend_factory: BackendFactory = ProductionProviderSmokeBackend,
     claim: ClaimFunction | None = None,
-    global_claim: GlobalClaimFunction = claim_provider_verification_authorization,
+    global_claim: GlobalClaimFunction = claim_signed_provider_approval,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> VerificationReport:
     """Run exactly six sequential reads; the first terminal failure stops the rest."""
@@ -371,7 +372,7 @@ def run_provider_read_smoke(
         raise VerificationPacketError("P1 verification packet v1 has no execution authority")
     started_at = now().astimezone(UTC)
     binding_verifier(packet, repository_root.resolve(strict=True))
-    global_claim(packet.packet_sha256, packet.approval_id)
+    global_claim(packet)
     claim_call = claim or (
         lambda root, value: claim_packet_execution(root, value, claimed_at=started_at)
     )

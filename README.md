@@ -395,7 +395,7 @@ curl -sS -X POST http://127.0.0.1:8080/api/v1/auth/login \
 | S6 | 금융공학 리포트 | 저장된 S6 projection | cross-market runtime 퇴역 |
 | S7 | DB/Kafka async, metrics, replay | Admin async/metric API와 통합 테스트 | Kafka는 선택 사항 |
 | S8 | synthetic E2E, ViewModel, offline demo | 아래 demo runner | 실제 Return Engine artifact 없음 |
-| P1 | 통합 검증 | P1 잔여 checklist | external artifact 때문에 미완료 |
+| P1 | Core release와 외부 종결 | [공개 상태 권위](docs/README.md#현재-상태) | Core와 전체 P1 상태를 분리 |
 
 ## 15분 offline demo
 
@@ -465,38 +465,12 @@ docker compose --env-file .env -f infra/docker-compose.infra.yml ps
 - Testcontainers의 일시 연결 거부는 실패 클래스를 먼저 재실행하고 전체 gate로 다시 확인한다.
 - volume 삭제, `git clean`, 강제 reset은 이 runbook에 포함되지 않는다.
 
-## 현재 정직한 제한
+## 현재 상태
 
-```text
-S8_1_FAKE_E2E_VERIFIED
-S8_1_REAL_ARTIFACT_BLOCKED
-P1_OVERALL=INCOMPLETE_EXTERNAL_ARTIFACT
-TEAM_A_INTEGRATED=FALSE
-S1_4_PYTHON_DEFAULT_VERIFIED_NOT_RUNTIME_SWITCHABLE
-S1_4X_ENTRY_BLOCKED_S8_1_REAL_ARTIFACT
-```
-
-Pre-S5 단독 소유권과 offline 경계는 사용자 실행 이력과 무관하게 계속 유지한다.
-
-```text
-S1_3G=OFFLINE_ONLY
-NEW_TEAMMATE_IMPLEMENTATION_TASKS=0
-NEW_TEAMMATE_ISSUES_OR_PRS=0
-REQUIRED_TEAMMATE_ARTIFACTS_FOR_S5_ENTRY=0
-TEAMMATE_WORKSPACE_DIFF=0
-GDELT_MODE=DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY
-GDELT_EXISTING_OFFLINE_PRODUCER_UNCHANGED=1
-GDELT_HTTP_TRANSPORT=NOT_ACTIVATED
-GDELT_OUTBOUND_IMPLEMENTATION=0
-GDELT_OUTBOUND_CALLS=0
-GDELT_OFFLINE_REFERENCE_ONLY=1
-NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED
-RAG_NEWS_ANALYST_DECISION_SIGNAL_ORDER_AUTHORITY=0
-```
-
-실제 Return Engine artifact가 없으므로 real ingest, 독립 재계산, Baseline/Guide/Strict 허용오차 표와
-P1 전체 완료를 주장하지 않는다. 사용자 테스트 kit는 준비됐지만 참가자 모집·응답·IRB 판단은
-실행하지 않았다. provider/live/account/live-order physical call은 S7/S8 구현 과정에서 0건이다.
+현재 상태와 상태 용어의 단일 권위는 [문서 색인과 현재 상태](docs/README.md)다. Core `1.0.0`은
+최종 보안·CI·merge·release 검증 전까지 `EXTERNAL_BLOCKED`이며, Core가 공개된 뒤에도 실제 Return
+Engine artifact, Team A integration, fresh KIS_MOCK v3 reconciliation과 closure PR이 끝날 때까지 P1
+전체는 `EXTERNAL_BLOCKED`다. provider/account/order 호출은 별도 승인 전까지 0이다.
 
 ## 상세 문서
 
@@ -507,7 +481,6 @@ P1 전체 완료를 주장하지 않는다. 사용자 테스트 kit는 준비됐
 - [S8 offline demo 시나리오](docs/decision-platform/S8_오프라인_시연_시나리오.md)
 - [S8 사용자 테스트 kit](docs/decision-platform/s8-user-test-kit/README.md)
 - [P1 Offline Demo 배포·검증](docs/decision-platform/P1_OFFLINE_DEMO_배포_및_검증.md)
-- [P1 전수 코드리뷰 요약](docs/decision-platform/P1_전수_코드리뷰_요약.md)
 - [계약과 검증 방법](contracts/README.md)
 - [Decision Platform 개발 문서](workspaces/decision-platform/README.md)
 - [작업·보안 규칙](AGENTS.md)

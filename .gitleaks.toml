@@ -22,5 +22,22 @@ regexes = [
   '''^3137be113762703bbf5632ee8bdc317c182391ed04476a12a5b7b93d481db952$'''
 ]
 
+[[allowlists]]
+description = "Exact non-secret CORS header, public SHA-256, and PEM marker literals"
+regexes = [
+  '^X-Rag-V2-Vertex-Scope-Claim$',
+  '^5b6cf53650253e7338e1a8121e8e067d6a95f8d436e0663f1fdbf593e00be582$',
+  '^-----BEGIN[ ]PRIVATE[ ]KEY-----$'
+]
+
+[[allowlists]]
+description = "Historical runtime-generated PEM marker in exact Vertex validation sources"
+condition = "AND"
+targetRules = ["private-key"]
+commits = ["c70e02201c5d195708b371b5cef636d505fd9b6d"]
+paths = ["^workspaces/decision-platform/spring-api/src/(test|main)/kotlin/com/capstone/decision/infrastructure/vertex/PreS5VertexCredentialProvider(Test)?[.]kt$"]
+regexTarget = "match"
+regexes = ["-----BEGIN[ ]PRIVATE[ ]KEY-----"]
+
 [extend]
 useDefault = true

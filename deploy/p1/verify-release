@@ -143,6 +143,11 @@ require(
     image_map["postgres"].startswith("ghcr.io/robinhood0107/capstone-postgres-pgvector@"),
     "PostgreSQL image",
 )
+if manifest["bundleMode"] == "KAFKA":
+    require(
+        image_map["kafka"].startswith("ghcr.io/robinhood0107/capstone-kafka@"),
+        "Kafka image",
+    )
 parity = hashlib.sha256(
     f'{image_map["spring-api"]}\n{image_map["python-services"]}\n'.encode()
 ).hexdigest()
@@ -198,10 +203,16 @@ require(
     == manifest["sourceArchiveSha256"],
     "source archive provenance",
 )
-require({item["kind"] for item in manifest["signatures"]} == {
+expected_signatures = {
     "COSIGN_SPRING_MANIFEST", "COSIGN_PYTHON_MANIFEST", "COSIGN_POSTGRES_MANIFEST",
     "GITHUB_SPRING", "GITHUB_PYTHON", "GITHUB_POSTGRES", "GITHUB_TRUST_ROOT"
-}, "signature inventory")
+}
+if manifest["bundleMode"] == "KAFKA":
+    expected_signatures |= {"COSIGN_KAFKA_MANIFEST", "GITHUB_KAFKA"}
+require(
+    {item["kind"] for item in manifest["signatures"]} == expected_signatures,
+    "signature inventory",
+)
 provenance = {item["kind"]: root / item["path"] for item in manifest["provenance"]}
 source = json.loads(provenance["SOURCE_PROVENANCE"].read_text(encoding="utf-8"))
 require(
@@ -235,13 +246,22 @@ require(
     == image_map["postgres"].rsplit("@sha256:", 1)[1],
     "PostgreSQL OCI manifest",
 )
+if manifest["bundleMode"] == "KAFKA":
+    require(
+        hashlib.sha256(provenance["KAFKA_OCI_MANIFEST"].read_bytes()).hexdigest()
+        == image_map["kafka"].rsplit("@sha256:", 1)[1],
+        "Kafka OCI manifest",
+    )
 
 release_lines = (root / "deploy/p1/release.env").read_text(encoding="utf-8").splitlines()
-require(release_lines == [
+expected_release_lines = [
     f'P1_SPRING_IMAGE={image_map["spring-api"]}',
     f'P1_PYTHON_IMAGE={image_map["python-services"]}',
     f'P1_POSTGRES_IMAGE={image_map["postgres"]}',
-], "release image authority")
+]
+if manifest["bundleMode"] == "KAFKA":
+    expected_release_lines.append(f'P1_KAFKA_IMAGE={image_map["kafka"]}')
+require(release_lines == expected_release_lines, "release image authority")
 with inventory_path.open("x", encoding="utf-8") as handle:
     handle.write(f'STAGE\t{manifest["releaseStage"]}\n')
     handle.write(f'MODE\t{manifest["bundleMode"]}\n')
@@ -256,6 +276,7 @@ commit=$(awk -F '\t' '$1 == "COMMIT" {print $2}' "$inventory")
 spring_ref=$(awk -F '\t' '$1 == "IMAGE" && $2 == "spring-api" {print $3}' "$inventory")
 python_ref=$(awk -F '\t' '$1 == "IMAGE" && $2 == "python-services" {print $3}' "$inventory")
 postgres_ref=$(awk -F '\t' '$1 == "IMAGE" && $2 == "postgres" {print $3}' "$inventory")
+kafka_ref=$(awk -F '\t' '$1 == "IMAGE" && $2 == "kafka" {print $3}' "$inventory")
 archive_sha=$(awk -F '\t' '$1 == "ARCHIVE_SHA" {print $2}' "$inventory")
 python3 - "$bundle/release-manifest.json" "$archive_inventory" <<'PY'
 import json
@@ -278,6 +299,11 @@ cosign verify-blob --offline --bundle "$bundle/signatures/cosign-python-manifest
 cosign verify-blob --offline --bundle "$bundle/signatures/cosign-postgres-manifest.bundle.json" \
   --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   "$bundle/provenance/postgres-manifest.json" >/dev/null
+if [[ $mode == kafka ]]; then
+  cosign verify-blob --offline --bundle "$bundle/signatures/cosign-kafka-manifest.bundle.json" \
+    --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    "$bundle/provenance/kafka-manifest.json" >/dev/null
+fi
 gh attestation verify "$bundle/provenance/spring-manifest.json" -R robinhood0107/Capstone-AI-Trading-Coach \
   --bundle "$bundle/signatures/github-spring.attestation.jsonl" \
   --custom-trusted-root "$bundle/signatures/github-trusted-root.jsonl" \
@@ -290,6 +316,12 @@ gh attestation verify "$bundle/provenance/postgres-manifest.json" -R robinhood01
   --bundle "$bundle/signatures/github-postgres.attestation.jsonl" \
   --custom-trusted-root "$bundle/signatures/github-trusted-root.jsonl" \
   --cert-identity "$identity" --source-digest "$commit" >/dev/null
+if [[ $mode == kafka ]]; then
+  gh attestation verify "$bundle/provenance/kafka-manifest.json" -R robinhood0107/Capstone-AI-Trading-Coach \
+    --bundle "$bundle/signatures/github-kafka.attestation.jsonl" \
+    --custom-trusted-root "$bundle/signatures/github-trusted-root.jsonl" \
+    --cert-identity "$identity" --source-digest "$commit" >/dev/null
+fi
 
 python3 "$bundle/deploy/p1/release_guard.py" archive-compare "$archive_stage/images.tar" "$archive_inventory"
 docker load --input "$archive_stage/images.tar" >/dev/null
@@ -306,6 +338,10 @@ done < "$inventory"
 [[ $(docker image inspect "$spring_ref" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}') == AGPL-3.0-only ]]
 [[ $(docker image inspect "$python_ref" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}') == AGPL-3.0-only ]]
 [[ $(docker image inspect "$postgres_ref" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}') == PostgreSQL ]]
+if [[ $mode == kafka ]]; then
+  [[ $(docker image inspect "$kafka_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$commit" ]]
+  [[ $(docker image inspect "$kafka_ref" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}') == Apache-2.0 ]]
+fi
 
 files=(-f "$bundle/deploy/p1/compose.db.yml")
 [[ $mode == kafka ]] && files+=(-f "$bundle/deploy/p1/compose.kafka.yml")
@@ -313,11 +349,11 @@ files+=(-f "$bundle/deploy/p1/compose.offline.db.yml")
 [[ $mode == kafka ]] && files+=(-f "$bundle/deploy/p1/compose.offline.kafka.yml")
 P1_SECRETS_DIR="$bundle/non-secret-placeholder" P1_SECRET_GID=1000 P1_API_PORT=18080 docker compose \
   --env-file "$bundle/deploy/p1/release.env" "${files[@]}" config --format json > "$compose_json"
-python3 - "$compose_json" "$mode" "$spring_ref" "$python_ref" "$postgres_ref" <<'PY'
+python3 - "$compose_json" "$mode" "$spring_ref" "$python_ref" "$postgres_ref" "$kafka_ref" <<'PY'
 import json
 import sys
 
-path, mode, spring_ref, python_ref, postgres_ref = sys.argv[1:]
+path, mode, spring_ref, python_ref, postgres_ref, kafka_ref = sys.argv[1:]
 document = json.load(open(path, encoding="utf-8"))
 services = document["services"]
 def require(condition: bool, message: str) -> None:
@@ -342,6 +378,7 @@ require(services["identity-bootstrap"]["image"] == spring_ref, "bootstrap compos
 require(services["postgres"]["image"] == postgres_ref, "PostgreSQL compose image")
 if mode == "kafka":
     require(services["kafka-topic-init"]["image"] == python_ref, "topic initializer compose image")
+    require(services["kafka"]["image"] == kafka_ref, "Kafka compose image")
 require(document["networks"]["p1-internal"]["internal"] is True, "internal network")
 require(services["runtime-netns"]["networks"] == {"p1-internal": None}, "application namespace network")
 require(set(services["api-edge"]["networks"]) == {"p1-internal", "p1-edge"}, "edge network boundary")

@@ -80,6 +80,7 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         self.assertIn("Scan PostgreSQL pgvector image", workflow)
         self.assertIn("Attest PostgreSQL pgvector image provenance", workflow)
         self.assertIn("P1_POSTGRES_IMAGE: ${{ steps.push.outputs.postgres_ref }}", workflow)
+        self.assertIn("P1_KAFKA_IMAGE: ${{ steps.push.outputs.kafka_ref }}", workflow)
         self.assertIn(
             'require(expected == set(services), "compose service inventory")',
             VERIFY_RELEASE.read_text(encoding="utf-8"),
@@ -210,7 +211,7 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
             workflow.count(
                 'context: "https://github.com/${{ github.repository }}.git#${{ steps.identity.outputs.sha }}"'
             ),
-            3,
+            4,
         )
         self.assertNotIn("          context: .\n", workflow)
         self.assertIn("P1_RELEASE_VERSION_COLLISION", workflow)
@@ -263,7 +264,11 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
             encoding="utf-8"
         )
         verifier = VERIFY_RELEASE.read_text(encoding="utf-8")
-        self.assertIn("apache/kafka:4.3.1@sha256:ccd1314e47ec", compose)
+        self.assertIn("${P1_KAFKA_IMAGE:-capstone-kafka:p1-local}", compose)
+        kafka_dockerfile = (REPOSITORY_ROOT / "deploy" / "p1" / "docker" / "kafka.Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("FROM apache/kafka:4.3.1@sha256:ccd1314e47ec", kafka_dockerfile)
+        self.assertIn("/opt/kafka/libs/jline-3.30.4.jar", kafka_dockerfile)
+        self.assertNotIn("org/jline/jline", kafka_dockerfile)
         self.assertIn('entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "kafka-admin"]', compose)
         self.assertIn('command: ["python", "-m", "app.async_worker.kafka_topics"]', compose)
         self.assertNotIn("kafka-ui", compose)

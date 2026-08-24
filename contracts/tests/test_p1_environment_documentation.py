@@ -72,8 +72,9 @@ class P1EnvironmentDocumentationTest(unittest.TestCase):
             "P1_SPRING_IMAGE",
             "P1_PYTHON_IMAGE",
             "P1_POSTGRES_IMAGE",
+            "P1_KAFKA_IMAGE",
         }
-        release = {"P1_SPRING_IMAGE", "P1_PYTHON_IMAGE", "P1_POSTGRES_IMAGE"}
+        release = {"P1_SPRING_IMAGE", "P1_PYTHON_IMAGE", "P1_POSTGRES_IMAGE", "P1_KAFKA_IMAGE"}
         self.assertEqual(_readme_keys("RUNTIME_ENV"), runtime)
         self.assertEqual(_readme_keys("RELEASE_ENV"), release)
         for key in runtime:

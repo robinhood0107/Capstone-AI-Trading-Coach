@@ -80,6 +80,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql:42.7.12")
+    runtimeOnly("commons-logging:commons-logging:1.3.6")
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-gson:0.12.6")

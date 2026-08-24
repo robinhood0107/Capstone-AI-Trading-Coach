@@ -627,7 +627,20 @@ class DecisionApiIntegrationTest(
                     select changed from transition_kill_switch_authorized(?, ?, ?, ?, ?, ?)
                     """.trimIndent(),
                     Boolean::class.java,
-                    actorCapabilityIssuer.issue("usr_demo_user"),
+                    actorCapabilityIssuer.issue(
+                        "usr_demo_user",
+                        com.capstone.decision.infrastructure.security.ActorCapabilityBinding.request(
+                            "TRANSITION_KILL_SWITCH",
+                            "KILL_SWITCH",
+                            "GLOBAL",
+                            com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy.OWNER,
+                            "usr_demo_user",
+                            "1",
+                            "true",
+                            "2",
+                            "req-risk-kill-stale-generation",
+                        ),
+                    ),
                     "usr_demo_user",
                     1L,
                     true,

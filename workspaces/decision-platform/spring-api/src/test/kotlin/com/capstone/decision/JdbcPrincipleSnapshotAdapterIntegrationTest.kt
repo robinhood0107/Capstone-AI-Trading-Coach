@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.ApplicationContext
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.testcontainers.junit.jupiter.Container
@@ -35,14 +36,18 @@ import org.testcontainers.utility.DockerImageName
     ],
 )
 class JdbcPrincipleSnapshotAdapterIntegrationTest(
-    @Autowired private val jdbcTemplate: JdbcTemplate,
     @Autowired private val adapter: JdbcPrincipleSnapshotAdapter,
     @Autowired private val applicationContext: ApplicationContext,
 ) : SpringApiIntegrationTestBase() {
+    private val adminJdbc =
+        JdbcTemplate(
+            DriverManagerDataSource(postgres.jdbcUrl, postgres.username, postgres.password),
+        )
+
     @BeforeEach
     fun resetPrinciples() {
-        jdbcTemplate.update("delete from principle_versions")
-        jdbcTemplate.update("delete from principles")
+        adminJdbc.update("delete from principle_versions")
+        adminJdbc.update("delete from principles")
     }
 
     @Test
@@ -68,7 +73,7 @@ class JdbcPrincipleSnapshotAdapterIntegrationTest(
         insertPrincipleWithTwoVersions()
 
         val crossOwner = adapter.findActiveOwned("usr_demo_admin", PRINCIPLE_ID)
-        jdbcTemplate.update(
+        adminJdbc.update(
             "update principles set status = 'ARCHIVED' where principle_id = ?",
             PRINCIPLE_ID.value,
         )
@@ -118,7 +123,7 @@ class JdbcPrincipleSnapshotAdapterIntegrationTest(
     }
 
     private fun insertPrincipleWithTwoVersions() {
-        jdbcTemplate.update(
+        adminJdbc.update(
             """
             insert into principles (
               principle_id, user_id, preset_id, title, mode, status, current_version
@@ -129,7 +134,7 @@ class JdbcPrincipleSnapshotAdapterIntegrationTest(
         )
         val rulesJson =
             requireNotNull(
-                jdbcTemplate.queryForObject(
+                adminJdbc.queryForObject(
                     "select rules_json::text from principle_presets where preset_id = 'balanced'",
                     String::class.java,
                 ),
@@ -143,7 +148,7 @@ class JdbcPrincipleSnapshotAdapterIntegrationTest(
         version: Int,
         rulesJson: String,
     ) {
-        jdbcTemplate.update(
+        adminJdbc.update(
             """
             insert into principle_versions (
               principle_version_id, principle_id, version, preset_id, title, mode, status,
@@ -184,8 +189,8 @@ class JdbcPrincipleSnapshotAdapterIntegrationTest(
         @JvmStatic
         fun postgresProperties(registry: DynamicPropertyRegistry) {
             registry.add("spring.datasource.url", postgres::getJdbcUrl)
-            registry.add("spring.datasource.username", postgres::getUsername)
-            registry.add("spring.datasource.password", postgres::getPassword)
+            registry.add("spring.datasource.username") { "decision_app" }
+            registry.add("spring.datasource.password") { "app-test" }
             registry.add("spring.flyway.user", postgres::getUsername)
             registry.add("spring.flyway.password", postgres::getPassword)
         }

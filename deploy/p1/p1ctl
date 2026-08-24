@@ -142,7 +142,7 @@ init_state() {
   local role
   for role in APP MIGRATION COLLECTOR DISCLOSURE_READER MARKET_WRITER PORTFOLIO_WRITER RISK_WRITER \
     FILL_WRITER RAG_WRITER RAG_ADMIN RAG_QUERY SIGNAL_WRITER SIGNAL_SCHEDULER SIGNAL_ADMIN WORKER REPLAY \
-    IDENTITY AUTH REPLAY_AUTHORIZER DEMO; do
+    OUTBOX_PUBLISHER POISON_RECORDER IDENTITY AUTH REPLAY_AUTHORIZER DEMO; do
     db[$role]=$(random_secret)
   done
   local postgres_password redis_password grpc_secret partition_key
@@ -150,13 +150,23 @@ init_state() {
   redis_password=$(random_secret)
   grpc_secret=$(random_secret)
   partition_key=$(random_secret)
+  local actor_capability_secret actor_private_der_b64 actor_public_der_b64 actor_private_key actor_public_key
+  actor_capability_secret=$(random_secret)
+  actor_private_der_b64=$(openssl genpkey -algorithm ED25519 | openssl pkey -outform DER | base64 -w0)
+  actor_public_der_b64=$(printf '%s' "$actor_private_der_b64" | base64 -d | openssl pkey -inform DER -pubout -outform DER | base64 -w0)
+  actor_private_key=$(printf '%s' "$actor_private_der_b64" | tr '+/' '-_' | tr -d '=')
+  actor_public_key=$(printf '%s' "$actor_public_der_b64" | tr '+/' '-_' | tr -d '=')
 
   : > "$SECRETS_DIR/postgres.env"
   write_line POSTGRES_PASSWORD "$postgres_password" "$SECRETS_DIR/postgres.env"
   for role in "${!db[@]}"; do write_line "POSTGRES_${role}_PASSWORD" "${db[$role]}" "$SECRETS_DIR/postgres.env"; done
   LC_ALL=C sort -o "$SECRETS_DIR/postgres.env" "$SECRETS_DIR/postgres.env"
-  printf 'POSTGRES_ADMIN_USER=postgres\nPOSTGRES_PASSWORD=%s\nPOSTGRES_AUTH_PASSWORD=%s\n' \
-    "$postgres_password" "${db[AUTH]}" > "$SECRETS_DIR/role-bootstrap.env"
+  : > "$SECRETS_DIR/role-bootstrap.env"
+  write_line POSTGRES_ADMIN_USER postgres "$SECRETS_DIR/role-bootstrap.env"
+  write_line POSTGRES_PASSWORD "$postgres_password" "$SECRETS_DIR/role-bootstrap.env"
+  write_line POSTGRES_AUTH_PASSWORD "${db[AUTH]}" "$SECRETS_DIR/role-bootstrap.env"
+  write_line POSTGRES_OUTBOX_PUBLISHER_PASSWORD "${db[OUTBOX_PUBLISHER]}" "$SECRETS_DIR/role-bootstrap.env"
+  write_line POSTGRES_POISON_RECORDER_PASSWORD "${db[POISON_RECORDER]}" "$SECRETS_DIR/role-bootstrap.env"
   printf 'REDIS_PASSWORD=%s\n' "$redis_password" > "$SECRETS_DIR/redis.env"
 
   local user_bundle admin_bundle
@@ -177,8 +187,14 @@ init_state() {
   : > "$SECRETS_DIR/spring.env"
   write_line POSTGRES_APP_PASSWORD "${db[APP]}" "$SECRETS_DIR/spring.env"
   write_line POSTGRES_WORKER_PASSWORD "${db[WORKER]}" "$SECRETS_DIR/spring.env"
-  write_line POSTGRES_IDENTITY_PASSWORD "${db[IDENTITY]}" "$SECRETS_DIR/spring.env"
   write_line POSTGRES_AUTH_PASSWORD "${db[AUTH]}" "$SECRETS_DIR/spring.env"
+  write_line ACTOR_CAPABILITY_SHARED_SECRET "$actor_capability_secret" "$SECRETS_DIR/spring.env"
+  write_line ACTOR_CAPABILITY_PUBLIC_KEY "$actor_public_key" "$SECRETS_DIR/spring.env"
+  : > "$SECRETS_DIR/actor-capability-authority.env"
+  write_line POSTGRES_IDENTITY_PASSWORD "${db[IDENTITY]}" "$SECRETS_DIR/actor-capability-authority.env"
+  write_line ACTOR_CAPABILITY_SHARED_SECRET "$actor_capability_secret" "$SECRETS_DIR/actor-capability-authority.env"
+  write_line ACTOR_CAPABILITY_PRIVATE_KEY "$actor_private_key" "$SECRETS_DIR/actor-capability-authority.env"
+  write_line ACTOR_CAPABILITY_PUBLIC_KEY "$actor_public_key" "$SECRETS_DIR/actor-capability-authority.env"
   write_line REDIS_PASSWORD "$redis_password" "$SECRETS_DIR/spring.env"
   write_line JWT_ISSUER capstone-p1-offline-demo "$SECRETS_DIR/spring.env"
   write_line JWT_AUDIENCE capstone-p1-offline-demo-users "$SECRETS_DIR/spring.env"
@@ -222,7 +238,7 @@ EOF
 verify_state() {
   require_state
   verify_runtime_env
-  local expected=(bootstrap.env demo-admin.bundle demo-admin.password demo-credential-separation.key demo.env demo-user.bundle \
+  local expected=(actor-capability-authority.env bootstrap.env demo-admin.bundle demo-admin.password demo-credential-separation.key demo.env demo-user.bundle \
     demo-user.password migration.env postgres.env python.env \
     rag-history-kek-v1.key redis.env role-bootstrap.env spring.env)
   local actual

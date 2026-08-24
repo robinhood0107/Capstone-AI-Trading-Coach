@@ -18,6 +18,8 @@ set -Eeuo pipefail
 : "${POSTGRES_SIGNAL_SCHEDULER_PASSWORD:?POSTGRES_SIGNAL_SCHEDULER_PASSWORD is required}"
 : "${POSTGRES_SIGNAL_ADMIN_PASSWORD:?POSTGRES_SIGNAL_ADMIN_PASSWORD is required}"
 : "${POSTGRES_WORKER_PASSWORD:?POSTGRES_WORKER_PASSWORD is required}"
+: "${POSTGRES_OUTBOX_PUBLISHER_PASSWORD:?POSTGRES_OUTBOX_PUBLISHER_PASSWORD is required}"
+: "${POSTGRES_POISON_RECORDER_PASSWORD:?POSTGRES_POISON_RECORDER_PASSWORD is required}"
 : "${POSTGRES_REPLAY_PASSWORD:?POSTGRES_REPLAY_PASSWORD is required}"
 : "${POSTGRES_IDENTITY_PASSWORD:?POSTGRES_IDENTITY_PASSWORD is required}"
 : "${POSTGRES_AUTH_PASSWORD:?POSTGRES_AUTH_PASSWORD is required}"
@@ -43,6 +45,8 @@ psql -v ON_ERROR_STOP=1 --no-password --username "$POSTGRES_USER" --dbname "$POS
 \getenv signal_scheduler_password POSTGRES_SIGNAL_SCHEDULER_PASSWORD
 \getenv signal_admin_password POSTGRES_SIGNAL_ADMIN_PASSWORD
 \getenv worker_password POSTGRES_WORKER_PASSWORD
+\getenv outbox_publisher_password POSTGRES_OUTBOX_PUBLISHER_PASSWORD
+\getenv poison_recorder_password POSTGRES_POISON_RECORDER_PASSWORD
 \getenv replay_password POSTGRES_REPLAY_PASSWORD
 \getenv identity_password POSTGRES_IDENTITY_PASSWORD
 \getenv auth_password POSTGRES_AUTH_PASSWORD
@@ -113,6 +117,40 @@ ALTER ROLE decision_worker SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_worker SET statement_timeout = '60s';
 ALTER ROLE decision_worker SET lock_timeout = '500ms';
 ALTER ROLE decision_worker SET idle_in_transaction_session_timeout = '60s';
+
+SELECT format(
+    'CREATE ROLE decision_outbox_publisher LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'outbox_publisher_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_outbox_publisher')
+\gexec
+SELECT format(
+    'ALTER ROLE decision_outbox_publisher WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'outbox_publisher_password'
+)
+\gexec
+ALTER ROLE decision_outbox_publisher SET log_parameter_max_length = 0;
+ALTER ROLE decision_outbox_publisher SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_outbox_publisher SET statement_timeout = '30s';
+ALTER ROLE decision_outbox_publisher SET lock_timeout = '500ms';
+ALTER ROLE decision_outbox_publisher SET idle_in_transaction_session_timeout = '30s';
+
+SELECT format(
+    'CREATE ROLE decision_poison_recorder LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'poison_recorder_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_poison_recorder')
+\gexec
+SELECT format(
+    'ALTER ROLE decision_poison_recorder WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'poison_recorder_password'
+)
+\gexec
+ALTER ROLE decision_poison_recorder SET log_parameter_max_length = 0;
+ALTER ROLE decision_poison_recorder SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_poison_recorder SET statement_timeout = '5s';
+ALTER ROLE decision_poison_recorder SET lock_timeout = '500ms';
+ALTER ROLE decision_poison_recorder SET idle_in_transaction_session_timeout = '5s';
 
 SELECT format(
     'CREATE ROLE decision_replay LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
@@ -422,6 +460,8 @@ REVOKE ALL ON DATABASE :"database_name" FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"database_name" TO
     decision_app,
     decision_worker,
+    decision_outbox_publisher,
+    decision_poison_recorder,
     decision_replay,
     decision_identity,
     decision_auth,
@@ -447,6 +487,8 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO
     decision_app,
     decision_worker,
+    decision_outbox_publisher,
+    decision_poison_recorder,
     decision_replay,
     decision_identity,
     decision_auth,
@@ -475,12 +517,16 @@ GRANT CREATE ON SCHEMA public TO flyway;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_app;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_worker;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_outbox_publisher;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_poison_recorder;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_replay;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_identity;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_auth;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_replay_authorizer;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_demo;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_worker;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_outbox_publisher;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_poison_recorder;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_replay;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_identity;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_auth;

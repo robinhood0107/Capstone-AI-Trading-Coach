@@ -2101,12 +2101,57 @@ BEGIN
 END
 $s7_p1_security_closure_privileges$;
 
+DO $p1_v87_runtime_privileges$
+BEGIN
+    IF to_regprocedure('public.register_actor_request_capability_v2(text,text,text,bigint,text,text,text,text,text,text,text,timestamptz,timestamptz,text)') IS NOT NULL THEN
+        REVOKE EXECUTE ON FUNCTION
+            activate_signal_v2_production_pointer(text),
+            create_async_request_authorized(text,text,text,text,text,text,text,jsonb),
+            insert_principle_version_authorized(text,text,text,text,integer,text,text,text,text,jsonb,text[],timestamptz),
+            insert_principle_audit_authorized(text,text,text,text,text,integer,text[],timestamptz),
+            lock_active_owned_principle_authorized(text,text,text,integer,text,text),
+            persist_decision_bundle_authorized(text,jsonb)
+        FROM decision_app;
+        GRANT EXECUTE ON FUNCTION
+            register_actor_request_capability_v2(text,text,text,bigint,text,text,text,text,text,text,text,timestamptz,timestamptz,text),
+            read_actor_capability_subject(text)
+        TO decision_identity;
+        GRANT EXECUTE ON FUNCTION
+            create_async_request_authorized(text,text,text,text,text,text,text,text),
+            insert_principle_version_authorized_v2(text,text,text,text,integer,text,text,text,text,text,text,timestamptz),
+            insert_principle_audit_authorized_v2(text,text,text,text,text,integer,text,timestamptz),
+            persist_decision_bundle_authorized_v2(text,text),
+            consume_s4_9_mcp_refresh_token(text)
+        TO decision_app;
+        GRANT EXECUTE ON FUNCTION
+            consume_p1_provider_approval(text,text,text,text,integer,timestamptz)
+        TO decision_replay;
+        GRANT EXECUTE ON FUNCTION
+            p1_claim_kafka_outbox(text,integer),
+            p1_claim_kafka_dlq_outbox(text,integer),
+            p1_bind_kafka_outbox_payload_hash(text,uuid,text),
+            p1_complete_kafka_outbox(text,uuid),
+            p1_complete_kafka_dlq_outbox(text,uuid),
+            p1_fail_kafka_outbox(text,uuid,text),
+            p1_fail_kafka_dlq_outbox(text,uuid,text),
+            p1_quarantine_kafka_outbox(text,uuid,text),
+            p1_quarantine_unknown_kafka_outbox(integer)
+        TO decision_outbox_publisher;
+        GRANT EXECUTE ON FUNCTION
+            p1_record_kafka_poison_receipt(text,text,text,text,integer,bigint,integer,text,text,text,text)
+        TO decision_poison_recorder;
+    END IF;
+END
+$p1_v87_runtime_privileges$;
+
 DO $block$
 BEGIN
     IF to_regclass('public.flyway_schema_history') IS NOT NULL THEN
         -- 기존 volume에 role bootstrap을 재적용해도 runtime이 migration 이력을 변조하지 못한다.
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_app;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_worker;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_outbox_publisher;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_poison_recorder;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_replay;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_identity;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_auth;

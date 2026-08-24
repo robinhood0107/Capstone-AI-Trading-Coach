@@ -274,7 +274,7 @@ class AsyncJobApiIntegrationTest(
         )
 
         ownerJdbc.execute(
-            "revoke execute on function create_async_request_authorized(text,text,text,text,text,text,text,jsonb) from decision_app",
+            "revoke execute on function create_async_request_authorized(text,text,text,text,text,text,text,text) from decision_app",
         )
         val jobsBefore = ownerJdbc.queryForObject("select count(*) from async_job", Int::class.java)
         try {
@@ -293,7 +293,7 @@ class AsyncJobApiIntegrationTest(
             }
         } finally {
             ownerJdbc.execute(
-                "grant execute on function create_async_request_authorized(text,text,text,text,text,text,text,jsonb) to decision_app",
+                "grant execute on function create_async_request_authorized(text,text,text,text,text,text,text,text) to decision_app",
             )
         }
         assertEquals(jobsBefore, ownerJdbc.queryForObject("select count(*) from async_job", Int::class.java))

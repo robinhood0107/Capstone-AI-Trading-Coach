@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from io import BytesIO
 from pathlib import Path
-from typing import Mapping, Sequence, cast
+from typing import cast
 
 import pandas as pd
 import pyarrow as pa
@@ -39,7 +40,6 @@ from app.lightgbm.temporal import (
     receipt_set_sha256,
 )
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
-
 
 SOURCE_MANIFEST_FILENAME = "manifest.json"
 SOURCE_MANIFEST_VERSION = "s5-pit-source-bundle-v1"
@@ -178,13 +178,14 @@ def build_source_manifest(
     _require_utc(created_at, "createdAt")
     if dataset_cutoff.tzinfo is None:
         raise LightGbmContractError("datasetCutoff must be timezone aware")
-    ordered = tuple(sorted(chunks, key=lambda item: (item.source_id, item.operation_id, item.query_key)))
+    ordered = tuple(
+        sorted(chunks, key=lambda item: (item.source_id, item.operation_id, item.query_key))
+    )
     _validate_chunks(ordered)
     if created_at != max(chunk.temporal.retrieved_at for chunk in ordered):
         raise LightGbmContractError("createdAt must equal the latest receipt retrieval time")
     if any(
-        chunk.temporal.effective_at is None
-        or chunk.temporal.effective_at > dataset_cutoff
+        chunk.temporal.effective_at is None or chunk.temporal.effective_at > dataset_cutoff
         for chunk in ordered
     ):
         raise LightGbmContractError("source receipt is effective after dataset cutoff")
@@ -202,9 +203,7 @@ def build_source_manifest(
     )
 
 
-def read_source_bundle(
-    *, approved_root: Path, expected_manifest_sha256: str
-) -> SourceBundle:
+def read_source_bundle(*, approved_root: Path, expected_manifest_sha256: str) -> SourceBundle:
     """External manifest digest부터 각 content-addressed projection까지 no-follow 검증한다."""
 
     _require_sha256(expected_manifest_sha256, "source manifest")
@@ -236,14 +235,13 @@ def read_source_bundle(
     if created_at != max(chunk.temporal.retrieved_at for chunk in chunks):
         raise LightGbmContractError("createdAt must equal the latest receipt retrieval time")
     if any(
-        chunk.temporal.effective_at is None
-        or chunk.temporal.effective_at > dataset_cutoff
+        chunk.temporal.effective_at is None or chunk.temporal.effective_at > dataset_cutoff
         for chunk in chunks
     ):
         raise LightGbmContractError("source receipt is effective after dataset cutoff")
-    source_bytes = {source: 0 for source in SOURCE_BYTE_CAPS}
-    source_decoded = {source: 0 for source in SOURCE_BYTE_CAPS}
-    source_rows = {source: 0 for source in SOURCE_ROW_CAPS}
+    source_bytes = dict.fromkeys(SOURCE_BYTE_CAPS, 0)
+    source_decoded = dict.fromkeys(SOURCE_BYTE_CAPS, 0)
+    source_rows = dict.fromkeys(SOURCE_ROW_CAPS, 0)
     for chunk in chunks:
         try:
             safe = read_approved_regular_file(
@@ -337,7 +335,9 @@ def _parse_chunk(
         revision_basis=revision_basis,
         request_sha256=_text(receipt_value["requestSha256"], "requestSha256"),
         snapshot_sha256=_text(receipt_value["snapshotSha256"], "snapshotSha256"),
-        temporal_policy_version=_text(receipt_value["temporalPolicyVersion"], "temporalPolicyVersion"),
+        temporal_policy_version=_text(
+            receipt_value["temporalPolicyVersion"], "temporalPolicyVersion"
+        ),
         temporal_quality=temporal_quality,
     )
     expected_temporal = {
@@ -355,9 +355,9 @@ def _parse_chunk(
         ),
     }[receipt.source_id]
     if (
-        (receipt.availability_basis, receipt.temporal_quality) != expected_temporal
-        or receipt.revision_basis is not RevisionBasis.CONTENT_SNAPSHOT
-    ):
+        receipt.availability_basis,
+        receipt.temporal_quality,
+    ) != expected_temporal or receipt.revision_basis is not RevisionBasis.CONTENT_SNAPSHOT:
         raise LightGbmContractError("temporal receipt provider policy is invalid")
     expected_policy_clock = _expected_policy_clock(
         receipt,

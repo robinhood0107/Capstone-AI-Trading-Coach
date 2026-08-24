@@ -11,8 +11,10 @@ import yaml
 from app.rag.official_evidence import (
     OFFICIAL_SOURCE_IDS,
     OfficialEvidenceError,
-    main as official_evidence_main,
     validate_official_evidence_manifest,
+)
+from app.rag.official_evidence import (
+    main as official_evidence_main,
 )
 
 _VERIFIED_AT = "2026-07-30T05:07:41Z"
@@ -291,15 +293,13 @@ def test_official_evidence_validator_rejects_canonical_url_drift(tmp_path: Path)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     drifted_url = "https://example.com/official-looking"
     manifest["evidence"][0]["canonicalUrl"] = drifted_url
-    manifest["evidence"][0]["canonicalUrlSha256"] = hashlib.sha256(
-        drifted_url.encode()
-    ).hexdigest()
+    manifest["evidence"][0]["canonicalUrlSha256"] = hashlib.sha256(drifted_url.encode()).hexdigest()
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
-    with pytest.raises(OfficialEvidenceError, match="canonical URL drifted"):
+    with pytest.raises(OfficialEvidenceError, match=r"canonical URL drifted"):
         validate_official_evidence_manifest(
             manifest_path=manifest_path,
             bind_local_artifacts=False,
@@ -329,7 +329,7 @@ def test_official_evidence_validator_rejects_wrong_upstream_binding(
         encoding="utf-8",
     )
 
-    with pytest.raises(OfficialEvidenceError, match="not bound"):
+    with pytest.raises(OfficialEvidenceError, match=r"not bound"):
         validate_official_evidence_manifest(
             manifest_path=manifest_path,
             evidence_root=evidence_root,
@@ -380,7 +380,7 @@ def test_official_evidence_validator_rejects_non_exact_manifest_row_count(
         encoding="utf-8",
     )
 
-    with pytest.raises(OfficialEvidenceError, match="constants|exact five"):
+    with pytest.raises(OfficialEvidenceError, match=r"constants|exact five"):
         validate_official_evidence_manifest(
             manifest_path=manifest_path,
             bind_local_artifacts=False,

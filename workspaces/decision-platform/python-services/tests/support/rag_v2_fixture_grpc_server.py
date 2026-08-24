@@ -10,7 +10,7 @@ creates any provider transport.  Startup still reads the exact production enviro
 from __future__ import annotations
 
 import hashlib
-from typing import Sequence
+from collections.abc import Sequence
 
 from app.rag.authorized_retrieval import (
     EMBEDDING_DIMENSION,
@@ -25,7 +25,6 @@ from app.rag.rag_v2_rpc import (
     RagV2ServerResources,
     create_rag_v2_server,
 )
-
 
 _BGE_PROFILE = "bge_m3_local_1024_v1"
 
@@ -51,9 +50,7 @@ class DeterministicRagV2FixtureQueryEmbedder:
             raise TypeError("RAG fixture question must be text")
         digest = hashlib.sha256(question.encode("utf-8")).digest()
         position = int.from_bytes(digest[:2], byteorder="big") % EMBEDDING_DIMENSION
-        return tuple(
-            1.0 if index == position else 0.0 for index in range(EMBEDDING_DIMENSION)
-        )
+        return tuple(1.0 if index == position else 0.0 for index in range(EMBEDDING_DIMENSION))
 
 
 def create_fixture_rag_v2_server(

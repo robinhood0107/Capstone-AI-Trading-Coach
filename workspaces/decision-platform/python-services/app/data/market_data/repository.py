@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import date
-import hashlib
 from pathlib import Path
 from typing import Any, Protocol, cast
 
 import psycopg
+
+from app.data._shared.canonical_json import canonical_json_sha256
 from app.data.market_data.archive import (
     MarketDataArchive,
     MarketDataArchiveError,
@@ -16,8 +18,6 @@ from app.data.market_data.archive import (
     read_market_data_archive,
 )
 from app.data.market_data.daily_runtime import AcceptedDailyShard
-from app.data._shared.canonical_json import canonical_json_sha256
-
 
 _WRITER_ROLE = "decision_market_writer"
 _CALENDAR_REVISION = "XKRX-4.13.2+KIS_CTCA0903R"
@@ -270,9 +270,7 @@ def _require_previous_accepted_head(
     return AcceptedManifestHead(manifest_sha256=cast(str, row[0]), session_date=session_date)
 
 
-def _insert_daily_rows(
-    *, cursor: CursorLike, accepted: AcceptedDailyShard
-) -> dict[str, int]:
+def _insert_daily_rows(*, cursor: CursorLike, accepted: AcceptedDailyShard) -> dict[str, int]:
     payload = accepted.payload
     generation = payload["generation"]
     for row in cast(list[dict[str, object]], payload["bars"]):

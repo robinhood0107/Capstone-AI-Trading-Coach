@@ -5,11 +5,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from app.async_worker import replay_cli
 from app.async_worker.replay_cli import ReplayCliError, author_packet, validate_packet
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 def _secret(path: Path, value: bytes) -> Path:
@@ -79,7 +79,9 @@ def test_private_reader_is_bounded_nofollow_and_tolerates_short_reads(
 ) -> None:
     packet = _secret(tmp_path / "packet.json", b"{" + b"x" * 127 + b"}")
     original_read = replay_cli.os.read
-    monkeypatch.setattr(replay_cli.os, "read", lambda descriptor, size: original_read(descriptor, min(size, 7)))
+    monkeypatch.setattr(
+        replay_cli.os, "read", lambda descriptor, size: original_read(descriptor, min(size, 7))
+    )
     assert replay_cli._read_private_file(packet, maximum=256, code="PACKET") == packet.read_bytes()
 
     oversized = _secret(tmp_path / "oversized.json", b"x" * 257)

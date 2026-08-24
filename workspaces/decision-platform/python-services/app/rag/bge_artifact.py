@@ -6,9 +6,10 @@ import json
 import os
 import stat
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Iterable, Literal
+from typing import Literal
 from urllib.parse import SplitResult, unquote, urlsplit
 
 _SHA256_HEX_LENGTH = 64
@@ -298,7 +299,8 @@ def validate_onnx_graph_contract(contract: OnnxGraphContract) -> None:
     ):
         raise BgeArtifactError("ONNX_CUSTOM_DOMAIN")
     if (
-        set(contract.input_names) not in (
+        set(contract.input_names)
+        not in (
             {"input_ids", "attention_mask"},
             {"input_ids", "attention_mask", "token_type_ids"},
         )
@@ -307,8 +309,7 @@ def validate_onnx_graph_contract(contract: OnnxGraphContract) -> None:
         or (
             contract.output_dimension != 1024
             and not (
-                contract.output_dimension == -1
-                and "sentence_embedding" in contract.output_names
+                contract.output_dimension == -1 and "sentence_embedding" in contract.output_names
             )
         )
         or not contract.dynamic_batch
@@ -336,9 +337,7 @@ def inspect_onnx_graph_contract(
         expected_sha256=expected_sha256,
     )
     graph_fields = [
-        field
-        for field in _iter_proto_fields(raw)
-        if field.number == 7 and field.wire_type == 2
+        field for field in _iter_proto_fields(raw) if field.number == 7 and field.wire_type == 2
     ]
     if len(graph_fields) != 1:
         raise BgeArtifactError("ONNX_GRAPH_PROTO_MISSING")
@@ -366,9 +365,7 @@ def inspect_onnx_graph_contract(
                 key=lambda value: value.encode("utf-8"),
             )
         ),
-        node_domains=tuple(
-            sorted(set(node_domains), key=lambda value: value.encode("utf-8"))
-        ),
+        node_domains=tuple(sorted(set(node_domains), key=lambda value: value.encode("utf-8"))),
         input_names=tuple(value.name for value in input_values),
         output_names=tuple(value.name for value in output_values),
         output_dtype=_onnx_dtype_name(output.element_type),

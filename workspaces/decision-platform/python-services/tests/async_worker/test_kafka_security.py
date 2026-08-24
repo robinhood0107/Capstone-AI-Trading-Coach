@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 
+import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
@@ -9,7 +10,6 @@ from cryptography.hazmat.primitives.serialization import (
     PrivateFormat,
     PublicFormat,
 )
-import pytest
 
 from app.async_worker.kafka_security import (
     CONTRACT,
@@ -18,7 +18,6 @@ from app.async_worker.kafka_security import (
     KafkaEnvelopeVerifier,
     deterministic_partition,
 )
-
 
 TOPIC = "artifact.ingest-requested.v1"
 KEY = "hmac-sha256:" + "c" * 64

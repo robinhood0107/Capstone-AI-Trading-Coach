@@ -11,11 +11,11 @@ import pytest
 from pydantic import SecretStr
 
 from app.brokerage.kis_mock_order_gateway import (
-    KISMockOrderGateway,
-    LiveOrderGateClosed,
     MOCK_BUY_TR_ID,
     MOCK_SELL_TR_ID,
     ORDER_CASH_PATH,
+    KISMockOrderGateway,
+    LiveOrderGateClosed,
     MockOrderIntent,
     MockOrderRejected,
 )
@@ -534,7 +534,7 @@ def test_private_online_transport_enforces_mock_response_cap_before_full_stream(
     tmp_path: Path,
 ) -> None:
     online = importlib.import_module("app.brokerage.kis_mock_online_client")
-    stream = CountingByteStream(size_bytes=online._MAX_RESPONSE_BYTES + 1)  # noqa: SLF001
+    stream = CountingByteStream(size_bytes=online._MAX_RESPONSE_BYTES + 1)
     transport = StreamingTransport(stream)
     client = online.KISMockBrokerageHttpClient(
         settings=online.KISSettings(
@@ -567,7 +567,7 @@ def test_private_online_transport_enforces_mock_response_cap_before_full_stream(
     assert transport.calls == 1
     assert stream.closed is True
     assert stream.completed is False
-    assert stream.bytes_yielded <= online._MAX_RESPONSE_BYTES + stream.chunk_size  # noqa: SLF001
+    assert stream.bytes_yielded <= online._MAX_RESPONSE_BYTES + stream.chunk_size
     assert captured.value.reason_code == "BROKERAGE_RESPONSE_TOO_LARGE"
 
 
@@ -663,7 +663,7 @@ def test_exhausted_brokerage_cap_rejects_before_shared_limiter_or_provider(
 
     assert limiter.acquire_calls == 0
     assert sender.calls == 0
-    assert client._budget.counts["brokerage"] == 0  # noqa: SLF001
+    assert client._budget.counts["brokerage"] == 0
 
 
 def test_approval_deadline_guard_blocks_transport_handoff_before_reservation(
@@ -714,7 +714,7 @@ def test_approval_deadline_guard_blocks_transport_handoff_before_reservation(
 
     assert limiter.acquire_calls == 0
     assert sender.calls == 0
-    assert client._budget.counts == {"tokenP": 0, "brokerage": 0}  # noqa: SLF001
+    assert client._budget.counts == {"tokenP": 0, "brokerage": 0}
 
 
 def test_encrypted_reference_store_never_persists_provider_reference_plaintext() -> None:

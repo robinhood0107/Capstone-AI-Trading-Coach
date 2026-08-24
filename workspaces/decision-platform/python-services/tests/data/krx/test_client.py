@@ -11,12 +11,12 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from app.data.krx import _credential_transport, client as client_module
+from app.data.krx import _credential_transport
+from app.data.krx import client as client_module
 from app.data.krx._credential_transport import KrxCredentialError
 from app.data.krx.catalog import KOSDAQ_DAILY, KOSPI_DAILY, KrxEndpoint
 from app.data.krx.client import KrxHttpError, KrxOpenApiClient
 from app.data.krx.settings import KrxOpenApiSettings
-
 
 _AS_OF = date(2026, 7, 15)
 
@@ -88,7 +88,7 @@ def _client(
 
 
 def test_test_factory_accepts_only_mock_transport() -> None:
-    with pytest.raises(ValueError, match="MockTransport"):
+    with pytest.raises(ValueError, match=r"MockTransport"):
         KrxOpenApiClient._for_test(
             settings=KrxOpenApiSettings(_env_file=None),
             transport=_NonMockTransport(),
@@ -104,7 +104,7 @@ def test_s5_production_method_requires_dedicated_settings(
 
     client, _ = _client(monkeypatch, httpx.MockTransport(handler))
 
-    with pytest.raises(ValueError, match="production settings"):
+    with pytest.raises(ValueError, match=r"production settings"):
         client.fetch_s5_production_rows(_AS_OF, service="stk_bydd_trd")
 
 
@@ -298,7 +298,7 @@ def test_fetch_service_rows_rejects_non_allowlisted_service_before_outbound(
 
     client, quota = _client(monkeypatch, httpx.MockTransport(handler))
     try:
-        with pytest.raises(ValueError, match="service"):
+        with pytest.raises(ValueError, match=r"service"):
             client.fetch_service_rows(_AS_OF, service=service)  # type: ignore[arg-type]
     finally:
         client.close()
@@ -321,7 +321,7 @@ def test_fetch_service_rows_rejects_expired_bound_deadline_before_outbound(
 
     client, quota = _client(monkeypatch, httpx.MockTransport(handler))
     try:
-        with pytest.raises(KrxCredentialError, match="logical_deadline_exceeded"):
+        with pytest.raises(KrxCredentialError, match=r"logical_deadline_exceeded"):
             client.fetch_service_rows(
                 _AS_OF,
                 service="stk_bydd_trd",
@@ -404,7 +404,7 @@ def test_selected_kosdaq_probe_read_timeout_has_one_attempt_and_no_kospi_call(
         ),
     )
     try:
-        with pytest.raises(KrxCredentialError, match="read_timeout") as exc_info:
+        with pytest.raises(KrxCredentialError, match=r"read_timeout") as exc_info:
             client.fetch_service_rows(_AS_OF, service="ksq_bydd_trd")
     finally:
         client.close()
@@ -453,9 +453,9 @@ def test_production_constructor_rejects_private_dependency_overrides() -> None:
     transport = httpx.MockTransport(lambda _: httpx.Response(200))
     quota = _RecordingQuota()
 
-    with pytest.raises(ValueError, match="private|override"):
+    with pytest.raises(ValueError, match=r"private|override"):
         KrxOpenApiClient(settings, transport=transport)
-    with pytest.raises(ValueError, match="private|override"):
+    with pytest.raises(ValueError, match=r"private|override"):
         KrxOpenApiClient(settings, quota=quota)
 
 
@@ -546,7 +546,7 @@ def test_production_dependency_logs_cannot_bypass_transport_scrubbing(
 
         client = KrxOpenApiClient(KrxOpenApiSettings(_env_file=None))
         try:
-            with pytest.raises(KrxCredentialError, match="response_unavailable"):
+            with pytest.raises(KrxCredentialError, match=r"response_unavailable"):
                 client.fetch_universe_rows(_AS_OF)
         finally:
             client.close()
@@ -645,7 +645,7 @@ def test_constructor_cleanup_failure_is_sanitized_and_still_closes_redis(
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError(primary_marker)),
     )
 
-    with pytest.raises(KrxCredentialError, match="initialization_unavailable") as exc_info:
+    with pytest.raises(KrxCredentialError, match=r"initialization_unavailable") as exc_info:
         KrxOpenApiClient(KrxOpenApiSettings(_env_file=None))
 
     rendered = f"{exc_info.value!r} {exc_info.value}"
@@ -733,7 +733,7 @@ def test_redirect_is_not_followed_or_retried(
 
     client, quota = _client(monkeypatch, httpx.MockTransport(handler))
     try:
-        with pytest.raises(RuntimeError, match="redirect|http_status"):
+        with pytest.raises(RuntimeError, match=r"redirect|http_status"):
             client.fetch_universe_rows(_AS_OF)
     finally:
         client.close()
@@ -761,7 +761,7 @@ def test_retryable_status_still_has_zero_automatic_retries(
 
     client, quota = _client(monkeypatch, httpx.MockTransport(handler))
     try:
-        with pytest.raises(RuntimeError, match="http_status"):
+        with pytest.raises(RuntimeError, match=r"http_status"):
             client.fetch_universe_rows(_AS_OF)
     finally:
         client.close()
@@ -783,7 +783,7 @@ def test_first_endpoint_read_timeout_is_not_retried_and_keeps_exact_accounting(
 
     client, quota = _client(monkeypatch, httpx.MockTransport(handler))
     try:
-        with pytest.raises(KrxCredentialError, match="read_timeout") as exc_info:
+        with pytest.raises(KrxCredentialError, match=r"read_timeout") as exc_info:
             client.fetch_universe_rows(_AS_OF)
     finally:
         client.close()
@@ -824,7 +824,7 @@ def test_second_endpoint_failure_makes_whole_fetch_fail_without_partial_return(
 
     client, quota = _client(monkeypatch, httpx.MockTransport(handler))
     try:
-        with pytest.raises(RuntimeError, match="http_status"):
+        with pytest.raises(RuntimeError, match=r"http_status"):
             client.fetch_universe_rows(_AS_OF)
     finally:
         client.close()
@@ -897,7 +897,7 @@ def test_parse_failure_is_not_retried_and_does_not_call_second_endpoint(
 
     client, quota = _client(monkeypatch, httpx.MockTransport(handler))
     try:
-        with pytest.raises(RuntimeError, match="parse|row|field|date"):
+        with pytest.raises(RuntimeError, match=r"parse|row|field|date"):
             client.fetch_universe_rows(_AS_OF)
     finally:
         client.close()
@@ -1145,7 +1145,7 @@ def test_fetch_rejects_non_session_date_before_any_outbound(
 
     client, quota = _client(monkeypatch, httpx.MockTransport(handler))
     try:
-        with pytest.raises(ValueError, match="trading|session"):
+        with pytest.raises(ValueError, match=r"trading|session"):
             client.fetch_universe_rows(date(2026, 7, 12))
     finally:
         client.close()
@@ -1167,7 +1167,7 @@ def test_fetch_rejects_date_before_official_service_start_before_any_outbound(
 
     client, quota = _client(monkeypatch, httpx.MockTransport(handler))
     try:
-        with pytest.raises(ValueError, match="supported|range"):
+        with pytest.raises(ValueError, match=r"supported|range"):
             client.fetch_universe_rows(date(2009, 12, 30))
     finally:
         client.close()
@@ -1194,7 +1194,7 @@ def test_fetch_sanitizes_calendar_failure_before_any_outbound(
     )
     client, quota = _client(monkeypatch, httpx.MockTransport(handler))
     try:
-        with pytest.raises(ValueError, match="calendar_unavailable") as exc_info:
+        with pytest.raises(ValueError, match=r"calendar_unavailable") as exc_info:
             client.fetch_universe_rows(_AS_OF)
     finally:
         client.close()
@@ -1239,10 +1239,10 @@ def test_close_failure_is_stable_and_attempts_all_resource_cleanup(
     )
     http_client = FailingHttp()
     redis_client = RecordingRedis()
-    client._http = http_client  # type: ignore[assignment]  # noqa: SLF001
-    client._redis_client = redis_client  # noqa: SLF001
+    client._http = http_client  # type: ignore[assignment]
+    client._redis_client = redis_client
 
-    with pytest.raises(KrxCredentialError, match="cleanup_unavailable") as exc_info:
+    with pytest.raises(KrxCredentialError, match=r"cleanup_unavailable") as exc_info:
         client.close()
 
     assert marker not in str(exc_info.value)

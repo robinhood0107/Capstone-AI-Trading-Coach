@@ -1,5 +1,5 @@
-from datetime import date
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -82,7 +82,9 @@ def test_online_backfill_requires_hard_caps_before_building_client(
     assert build_calls == 0
 
 
-def test_offline_backfill_cli_writes_parquet_and_markdown_report(tmp_path: Path, monkeypatch) -> None:
+def test_offline_backfill_cli_writes_parquet_and_markdown_report(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setenv("KIS_OFFLINE", "1")
     monkeypatch.setenv("KIS_DATA_DIR", str(tmp_path))
 
@@ -107,7 +109,9 @@ def test_offline_backfill_cli_writes_parquet_and_markdown_report(tmp_path: Path,
     assert "offline fixture" in report
 
 
-def test_backfill_cli_moves_non_trading_end_date_to_previous_session(tmp_path: Path, monkeypatch) -> None:
+def test_backfill_cli_moves_non_trading_end_date_to_previous_session(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setenv("KIS_OFFLINE", "1")
     monkeypatch.setenv("KIS_DATA_DIR", str(tmp_path))
     captured: dict[str, date] = {}
@@ -145,7 +149,9 @@ def test_backfill_cli_moves_non_trading_end_date_to_previous_session(tmp_path: P
     assert captured["end"] == date(2026, 7, 10)
 
 
-def test_online_backfill_skips_non_trading_day_before_building_client(tmp_path: Path, monkeypatch) -> None:
+def test_online_backfill_skips_non_trading_day_before_building_client(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setenv("KIS_MODE", "mock")
     monkeypatch.setenv("KIS_OFFLINE", "0")
     monkeypatch.setenv("KIS_MOCK_APP_KEY", "mock-key")

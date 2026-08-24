@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
-from app.lightgbm.bootstrap_packet import (
-    author_bootstrap_packet,
-    latest_publishable_bootstrap_cutoff,
-)
 from app.lightgbm.bootstrap_fresh_authority import (
     fresh_bootstrap_authority_exists,
     publish_fresh_bootstrap_authority,
     read_fresh_bootstrap_authority,
+)
+from app.lightgbm.bootstrap_packet import (
+    author_bootstrap_packet,
+    latest_publishable_bootstrap_cutoff,
 )
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.private_root import (
@@ -42,8 +42,7 @@ def main() -> int:
     try:
         try:
             if any(
-                name.startswith(("run-", "calendar-recovery-binding-"))
-                for name in os.listdir(root)
+                name.startswith(("run-", "calendar-recovery-binding-")) for name in os.listdir(root)
             ):
                 print("S5_BOOTSTRAP_PACKET=RECOVERY_REQUIRED")
                 return 1
@@ -54,9 +53,7 @@ def main() -> int:
             if selected is not None:
                 print(f"S5_BOOTSTRAP_PACKET=SELECTED sha256={selected.packet.sha256}")
                 return 0
-            publishable_cutoff = latest_publishable_bootstrap_cutoff(
-                cutoff=datetime.now(UTC)
-            )
+            publishable_cutoff = latest_publishable_bootstrap_cutoff(cutoff=datetime.now(UTC))
             packet = author_bootstrap_packet(cutoff=publishable_cutoff)
         except (OSError, LightGbmContractError):
             print("S5_BOOTSTRAP_PACKET=DATASET_UNAVAILABLE")

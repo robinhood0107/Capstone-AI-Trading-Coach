@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Mapping
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.errors import LightGbmContractError
@@ -127,15 +127,16 @@ def advance_run_state(
     아니라 append-only 이력에 두기 위한 것이다.
     """
 
-    if phase is not current.phase and phase is not RunPhase.NEEDS_HUMAN:
-        if phase not in _FORWARD[current.phase]:
-            raise LightGbmContractError("run state transition is not approved")
+    if (
+        phase is not current.phase
+        and phase is not RunPhase.NEEDS_HUMAN
+        and phase not in _FORWARD[current.phase]
+    ):
+        raise LightGbmContractError("run state transition is not approved")
     if current.tick >= MAX_TICKS:
         raise LightGbmContractError("run state tick budget is exhausted")
     updated = _build(phase=phase, tick=current.tick + 1, last_outcome=outcome)
-    _append_history(
-        run_root=run_root, previous=current, updated=updated, marker=marker
-    )
+    _append_history(run_root=run_root, previous=current, updated=updated, marker=marker)
     target = run_root / RUN_STATE_FILENAME
     temporary = run_root / f".{RUN_STATE_FILENAME}.tmp"
     descriptor = os.open(

@@ -4,44 +4,29 @@ import hashlib
 import json
 import re
 import struct
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 import psycopg
 import pytest
 
+from app.rag import rag_v2_public_voyage_evaluator as voyage_evaluator
 from app.rag.document_ir_materializer import (
     RagV2CanonicalDocumentChunk,
     RagV2DocumentMaterialization,
 )
 from app.rag.oa112_active_registry import Oa112ActiveRegistry, Oa112RegistryEntry
 from app.rag.oa_release_manifest import OA_TRACK_IDS
-from app.rag.rag_v2_bge_materializer import (
-    RagV2BgeDocumentEmbedding,
-    RagV2BgeMaterializedPublicDocument,
-)
-from app.rag.rag_v2_public_bge_evaluator import (
-    PublicBgeEvaluationQuery,
-    PublicBgePairEvaluationError,
-    evaluate_public_bge_pair,
-    evaluation_plan_digest,
-    load_exact30_evaluation_queries,
-    load_oa112_evaluation_queries,
-    load_public_bge_pair_evaluation_evidence,
-    _pg_trgm_similarity,
-    write_public_bge_pair_evaluation_receipt,
-)
-from app.rag.rag_v2_public_bge_staging import (
-    PublicBgeSourceMetadata,
-    build_public_bge_component_context,
-)
-from app.rag.rag_v2_public_bge_staging_repository import PublicBgeRecord
 from app.rag.rag_v2_authorized_retrieval import (
     RagV2QueryEmbeddingError,
     RagV2QueryEmbeddingReceipt,
     RagV2RetrievalFailureCode,
+)
+from app.rag.rag_v2_bge_materializer import (
+    RagV2BgeDocumentEmbedding,
+    RagV2BgeMaterializedPublicDocument,
 )
 from app.rag.rag_v2_external_exact30_voyage_runner import (
     PublicVoyageSourceMetadata,
@@ -50,14 +35,29 @@ from app.rag.rag_v2_external_exact30_voyage_runner import (
     build_external_exact30_public_voyage_component_context,
 )
 from app.rag.rag_v2_oa112_voyage_runner import build_oa112_public_voyage_component_context
-from app.rag import rag_v2_public_voyage_evaluator as voyage_evaluator
+from app.rag.rag_v2_public_bge_evaluator import (
+    PublicBgeEvaluationQuery,
+    PublicBgePairEvaluationError,
+    _pg_trgm_similarity,
+    evaluate_public_bge_pair,
+    evaluation_plan_digest,
+    load_exact30_evaluation_queries,
+    load_oa112_evaluation_queries,
+    load_public_bge_pair_evaluation_evidence,
+    write_public_bge_pair_evaluation_receipt,
+)
+from app.rag.rag_v2_public_bge_staging import (
+    PublicBgeSourceMetadata,
+    build_public_bge_component_context,
+)
+from app.rag.rag_v2_public_bge_staging_repository import PublicBgeRecord
+from app.rag.rag_v2_public_voyage_evaluation_manifest import (
+    prepare_public_voyage_evaluation_manifests,
+)
 from app.rag.rag_v2_public_voyage_evaluator import (
     PublicVoyagePairEvaluationError,
     evaluate_public_voyage_pair,
     evaluation_query_id_by_sha256,
-)
-from app.rag.rag_v2_public_voyage_evaluation_manifest import (
-    prepare_public_voyage_evaluation_manifests,
 )
 from app.rag.source_card_corpus import load_frozen_source_card_corpus
 
@@ -115,7 +115,9 @@ class _FixtureVoyageQueryEmbedder:
         self._loaded_components.add(component)
         vector = [0.0] * 1024
         vector[coordinate] = 1.0
-        return RagV2QueryEmbeddingReceipt(vector=tuple(vector), voyage_physical_calls=physical_calls)
+        return RagV2QueryEmbeddingReceipt(
+            vector=tuple(vector), voyage_physical_calls=physical_calls
+        )
 
     def embed_query(self, question: str) -> Sequence[float]:
         del question
@@ -169,7 +171,9 @@ def test_public_pair_evaluator_runs_full_local_rrf_and_persists_reusable_content
     assert "exact evidence" not in stored
 
 
-def test_public_pair_evaluator_fails_acceptance_when_actual_local_query_vector_misses_gold() -> None:
+def test_public_pair_evaluator_fails_acceptance_when_actual_local_query_vector_misses_gold() -> (
+    None
+):
     exact_records = tuple(_record("EXACT30", index) for index in range(30))
     oa_records = tuple(_record("OA112", index) for index in range(112))
     registry = _registry()
@@ -193,7 +197,9 @@ def test_public_pair_evaluator_fails_acceptance_when_actual_local_query_vector_m
     assert evaluation.acceptance_passed is False
 
 
-def test_public_voyage_pair_evaluator_runs_all_packet_accounted_queries_without_bge_fallback() -> None:
+def test_public_voyage_pair_evaluator_runs_all_packet_accounted_queries_without_bge_fallback() -> (
+    None
+):
     exact_records = tuple(_voyage_record("EXACT30", index) for index in range(30))
     oa_records = tuple(_voyage_record("OA112", index) for index in range(112))
     registry = _registry()
@@ -225,10 +231,13 @@ def test_public_voyage_pair_evaluator_runs_all_packet_accounted_queries_without_
     assert evaluation.exact30.provider_physical_call_count == 1
     assert evaluation.oa112.provider_physical_call_count == 1
     assert len(query_embedder.calls) == 122
-    assert evaluation_query_id_by_sha256(
-        exact30_queries=exact_queries,
-        oa112_queries=oa_queries,
-    )[hashlib.sha256(exact_queries[0].question.encode("utf-8")).hexdigest()] == "q01"
+    assert (
+        evaluation_query_id_by_sha256(
+            exact30_queries=exact_queries,
+            oa112_queries=oa_queries,
+        )[hashlib.sha256(exact_queries[0].question.encode("utf-8")).hexdigest()]
+        == "q01"
+    )
 
 
 def test_public_voyage_evaluation_scores_precise_single_source_ranking_without_weakening_runtime(
@@ -287,7 +296,9 @@ def test_public_voyage_pair_evaluator_stops_after_one_failed_physical_query_atte
     registry = _registry()
     query_embedder = _FixtureVoyageQueryEmbedder(fail_on_call=11)
 
-    with pytest.raises(PublicVoyagePairEvaluationError, match="PUBLIC_VOYAGE_EVALUATION_QUERY_FAILED"):
+    with pytest.raises(
+        PublicVoyagePairEvaluationError, match="PUBLIC_VOYAGE_EVALUATION_QUERY_FAILED"
+    ):
         evaluate_public_voyage_pair(
             exact30_records=exact_records,
             exact30_context=build_external_exact30_public_voyage_component_context(
@@ -348,7 +359,9 @@ def test_voyage_evaluation_manifest_preparation_keeps_tracked_exact_fixture_immu
     local_root = tmp_path / "private"
     local_root.mkdir(mode=0o700)
     registry = _registry()
-    tracked_fixture = Path(__file__).resolve().parents[5] / "capstone-rag/eval/s4-2b-30-card-smoke.v1.json"
+    tracked_fixture = (
+        Path(__file__).resolve().parents[5] / "capstone-rag/eval/s4-2b-30-card-smoke.v1.json"
+    )
     before = tracked_fixture.read_bytes()
     expected_source_ids = tuple(
         item["expectedSourceIds"][0] for item in json.loads(before)["queries"]
@@ -357,13 +370,15 @@ def test_voyage_evaluation_manifest_preparation_keeps_tracked_exact_fixture_immu
     first = prepare_public_voyage_evaluation_manifests(
         local_root=local_root,
         exact30_source_card_corpus_manifest_sha256="e" * 64,
-        exact30_source_ids=expected_source_ids + tuple(f"src_extra_{index:02d}" for index in range(20)),
+        exact30_source_ids=expected_source_ids
+        + tuple(f"src_extra_{index:02d}" for index in range(20)),
         registry=registry,
     )
     second = prepare_public_voyage_evaluation_manifests(
         local_root=local_root,
         exact30_source_card_corpus_manifest_sha256="e" * 64,
-        exact30_source_ids=expected_source_ids + tuple(f"src_extra_{index:02d}" for index in range(20)),
+        exact30_source_ids=expected_source_ids
+        + tuple(f"src_extra_{index:02d}" for index in range(20)),
         registry=registry,
     )
 
@@ -378,10 +393,13 @@ def test_voyage_evaluation_manifest_preparation_keeps_tracked_exact_fixture_immu
     assert len(exact_queries) == 10
     assert len(oa_queries) == 112
     assert all(query.expected_source_id not in query.question for query in oa_queries)
-    assert all((input_root / name).stat().st_mode & 0o777 == 0o600 for name in (
-        "exact30-evaluation-manifest.v1.json",
-        "oa112-evaluation-manifest.v1.json",
-    ))
+    assert all(
+        (input_root / name).stat().st_mode & 0o777 == 0o600
+        for name in (
+            "exact30-evaluation-manifest.v1.json",
+            "oa112-evaluation-manifest.v1.json",
+        )
+    )
 
 
 def test_exact30_fixture_is_bound_to_the_frozen_source_card_manifest() -> None:
@@ -537,7 +555,9 @@ def _record(scope: str, index: int) -> PublicBgeRecord:
             ),
         ),
         source_revision_sha256=hashlib.sha256(
-            json.dumps(document_ir, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+            json.dumps(
+                document_ir, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+            ).encode()
         ).hexdigest(),
         document_ir=document_ir,
     )
@@ -547,7 +567,9 @@ def _record(scope: str, index: int) -> PublicBgeRecord:
             citation_title=f"{prefix} title {index}",
             retrieval_topics=("METHODOLOGY",),
             canonical_https_url=canonical_url,
-            source_card_sha256=(hashlib.sha256(f"card-{index}".encode()).hexdigest() if scope == "EXACT30" else None),
+            source_card_sha256=(
+                hashlib.sha256(f"card-{index}".encode()).hexdigest() if scope == "EXACT30" else None
+            ),
             oa_track_id=_track_for_index(index) if scope == "OA112" else None,
             source_card=(
                 _source_card(
@@ -559,8 +581,14 @@ def _record(scope: str, index: int) -> PublicBgeRecord:
                 if scope == "OA112"
                 else None
             ),
-            license_evidence_sha256=(hashlib.sha256(f"license-{index}".encode()).hexdigest() if scope == "OA112" else None),
-            access_evidence_sha256=(hashlib.sha256(f"access-{index}".encode()).hexdigest() if scope == "OA112" else None),
+            license_evidence_sha256=(
+                hashlib.sha256(f"license-{index}".encode()).hexdigest()
+                if scope == "OA112"
+                else None
+            ),
+            access_evidence_sha256=(
+                hashlib.sha256(f"access-{index}".encode()).hexdigest() if scope == "OA112" else None
+            ),
             machine_fetch_allowed=scope == "OA112",
             local_processing_allowed=True,
             external_embedding_allowed=scope == "OA112",
@@ -596,7 +624,7 @@ def _voyage_record(scope: str, index: int) -> RagV2VoyageMaterializedPublicDocum
                 chunk_id=embedding.chunk_id,
                 embedding_input_hash=embedding.embedding_input_hash,
                 context_set_hash=hashlib.sha256(
-                    f"voyage-context-{scope}-{index}".encode("utf-8")
+                    f"voyage-context-{scope}-{index}".encode()
                 ).hexdigest(),
                 embedding=np.array(embedding.embedding, dtype=np.float32, copy=True),
             )

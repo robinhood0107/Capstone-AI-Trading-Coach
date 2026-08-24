@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, date, datetime
 import hashlib
 import json
-from pathlib import Path, PurePosixPath
 import re
-from typing import Mapping, cast
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
+from pathlib import Path, PurePosixPath
+from typing import cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
-
 
 SEED_MANIFEST_FILENAME = "manifest.json"
 SEED_CONTRACT_ID = "market-data-seed.v1"

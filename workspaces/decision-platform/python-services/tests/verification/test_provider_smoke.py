@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
-from pathlib import Path
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
+
+from app.data.ecos.models import ECOSObservation, StatisticSearchPage
+from app.data.kis.accounting import PhysicalChannel
+from app.data.krx.catalog import ENABLED_UNIVERSE_ENDPOINTS_BY_SERVICE
+from app.data.krx.parsers import KrxDailyRow
 from app.verification.artifacts import (
     VerificationArtifactError,
     claim_packet_execution,
@@ -20,14 +25,10 @@ from app.verification.packet import (
 from app.verification.provider_smoke import (
     OPERATION_ORDER,
     OperationResult,
-    ProviderSmokeError,
     ProductionProviderSmokeBackend,
+    ProviderSmokeError,
     run_provider_read_smoke,
 )
-from app.data.ecos.models import ECOSObservation, StatisticSearchPage
-from app.data.kis.accounting import PhysicalChannel
-from app.data.krx.catalog import ENABLED_UNIVERSE_ENDPOINTS_BY_SERVICE
-from app.data.krx.parsers import KrxDailyRow
 
 
 class _FakeBackend:
@@ -340,6 +341,7 @@ def test_legacy_unsigned_packet_has_no_execution_authority(tmp_path: Path) -> No
 
 def test_provider_smoke_has_no_direct_transport_db_or_brokerage_authority() -> None:
     import inspect
+
     import app.verification.provider_smoke as smoke
 
     source = inspect.getsource(smoke)

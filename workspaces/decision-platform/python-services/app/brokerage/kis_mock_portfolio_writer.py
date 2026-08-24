@@ -110,7 +110,9 @@ def load_kis_mock_portfolio_fixture(path: Path) -> KisMockPortfolioObservation:
     raw_positions = root["positions"]
     if not isinstance(raw_positions, list) or len(raw_positions) > _MAX_POSITIONS:
         raise ValueError("KIS_MOCK portfolio position size is invalid")
-    positions = tuple(sorted((_position(value) for value in raw_positions), key=lambda row: row.symbol))
+    positions = tuple(
+        sorted((_position(value) for value in raw_positions), key=lambda row: row.symbol)
+    )
     if len({position.symbol for position in positions}) != len(positions):
         raise ValueError("KIS_MOCK portfolio contains duplicate symbols")
 

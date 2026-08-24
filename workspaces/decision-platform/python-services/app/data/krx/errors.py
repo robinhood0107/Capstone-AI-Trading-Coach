@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Self
 
-
 _VALIDATION_STAGE_BY_LEAF = {
     "content_type_missing": "media_type",
     "content_type_multiple": "media_type",

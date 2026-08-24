@@ -93,9 +93,9 @@ def test_b86_public_digest_allowlist_is_copied_from_historical_source_cards() ->
         / "db"
         / "migration"
     )
-    baseline = (
-        migration_root.parent / "baseline" / "B86__p1_offline_demo_baseline.sql"
-    ).read_text(encoding="utf-8")
+    baseline = (migration_root.parent / "baseline" / "B86__p1_offline_demo_baseline.sql").read_text(
+        encoding="utf-8"
+    )
     historical = "\n".join(
         (migration_root / filename).read_text(encoding="utf-8")
         for filename in (
@@ -149,13 +149,13 @@ def test_packet_verifier_requires_exact_hash_size_mode_and_membership(
     forbidden = packet_root / "pytorch_model.bin"
     forbidden.write_bytes(b"pickle-like payload")
     forbidden.chmod(0o600)
-    with pytest.raises(BgeArtifactError, match="UNEXPECTED_ARTIFACT"):
+    with pytest.raises(BgeArtifactError, match=r"UNEXPECTED_ARTIFACT"):
         verify_bge_packet(packet_root, spec=spec)
     forbidden.unlink()
 
     model_path = packet_root / "onnx/model.onnx"
     model_path.chmod(0o644)
-    with pytest.raises(BgeArtifactError, match="MODE_MISMATCH"):
+    with pytest.raises(BgeArtifactError, match=r"MODE_MISMATCH"):
         verify_bge_packet(packet_root, spec=spec)
 
 
@@ -168,7 +168,7 @@ def test_packet_verifier_rejects_symlink_hardlink_hash_and_path_escape(
 
     model_path.unlink()
     model_path.symlink_to(posix_tmp_path / "outside.onnx")
-    with pytest.raises(BgeArtifactError, match="NON_REGULAR_ARTIFACT"):
+    with pytest.raises(BgeArtifactError, match=r"NON_REGULAR_ARTIFACT"):
         verify_bge_packet(packet_root, spec=spec)
 
     model_path.unlink()
@@ -176,12 +176,12 @@ def test_packet_verifier_rejects_symlink_hardlink_hash_and_path_escape(
     model_path.chmod(0o600)
     hardlink = posix_tmp_path / "outside-hardlink.onnx"
     os.link(model_path, hardlink)
-    with pytest.raises(BgeArtifactError, match="HARDLINK_ARTIFACT"):
+    with pytest.raises(BgeArtifactError, match=r"HARDLINK_ARTIFACT"):
         verify_bge_packet(packet_root, spec=spec)
     hardlink.unlink()
 
     model_path.write_bytes(b"drift")
-    with pytest.raises(BgeArtifactError, match="SIZE_MISMATCH|SHA256_MISMATCH"):
+    with pytest.raises(BgeArtifactError, match=r"SIZE_MISMATCH|SHA256_MISMATCH"):
         verify_bge_packet(packet_root, spec=spec)
 
     escaped_spec = replace(
@@ -194,7 +194,7 @@ def test_packet_verifier_rejects_symlink_hardlink_hash_and_path_escape(
             ),
         ),
     )
-    with pytest.raises(BgeArtifactError, match="UNSAFE_ARTIFACT_PATH"):
+    with pytest.raises(BgeArtifactError, match=r"UNSAFE_ARTIFACT_PATH"):
         verify_bge_packet(packet_root, spec=escaped_spec)
 
 
@@ -209,7 +209,7 @@ def test_packet_verifier_rejects_symlink_hardlink_hash_and_path_escape(
     ],
 )
 def test_download_redirect_rejects_unsafe_or_unapproved_targets(location: str) -> None:
-    with pytest.raises(BgeArtifactError, match="UNSAFE_DOWNLOAD_REDIRECT"):
+    with pytest.raises(BgeArtifactError, match=r"UNSAFE_DOWNLOAD_REDIRECT"):
         validate_download_redirect(location)
 
 

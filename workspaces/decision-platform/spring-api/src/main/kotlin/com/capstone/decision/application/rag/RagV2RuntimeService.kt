@@ -1236,7 +1236,7 @@ class RagV2RuntimeService(
         MessageDigest
             .getInstance("SHA-256")
             .digest(value.toByteArray(StandardCharsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
+            .joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
 
     /** 외부 provider 호출 사이에는 PostgreSQL transaction을 열어 두지 않는다. */
     private fun <T> inDatabaseTransaction(block: () -> T): T =

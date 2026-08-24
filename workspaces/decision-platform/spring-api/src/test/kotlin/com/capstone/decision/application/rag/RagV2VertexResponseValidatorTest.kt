@@ -196,6 +196,6 @@ class RagV2VertexResponseValidatorTest {
 
     private fun sha256(value: String): String =
         MessageDigest.getInstance("SHA-256").digest(value.toByteArray(StandardCharsets.UTF_8)).joinToString("") {
-            "%02x".format(it)
+            "%02x".format(java.util.Locale.ROOT, it)
         }
 }

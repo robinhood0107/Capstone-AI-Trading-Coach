@@ -8,9 +8,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 CATALOG_PATH = REPO_ROOT / "contracts/catalogs/s4-rag-contract.v1.json"
-CATALOG_SHA256_MANIFEST_PATH = (
-    REPO_ROOT / "contracts/catalogs/s4-rag-contract.v1.sha256.json"
-)
+CATALOG_SHA256_MANIFEST_PATH = REPO_ROOT / "contracts/catalogs/s4-rag-contract.v1.sha256.json"
 PROFILE_IDS = ("bge_m3_local_1024_v1", "voyage_context_4_1024_v1")
 POLICY_IDS = ("bge_only_v1", "voyage_only_v1", "bge_then_voyage_on_sla_v1")
 FORBIDDEN_PROFILE_IDS = frozenset({"voyage_context_3_1024_v1"})
@@ -92,9 +90,7 @@ def load_rag_contract_catalog(path: Path = CATALOG_PATH) -> RagContractCatalog:
     digest = hashlib.sha256(raw).hexdigest()
     manifest = _load_digest_manifest()
     if digest != manifest["sha256"]:
-        raise RagContractCatalogError(
-            "S4 RAG catalog digest does not match the approved manifest."
-        )
+        raise RagContractCatalogError("S4 RAG catalog digest does not match the approved manifest.")
     try:
         data = json.loads(
             raw.decode("utf-8"),
@@ -255,8 +251,7 @@ def _load_digest_manifest() -> dict[str, str | int]:
         raise RagContractCatalogError("S4 RAG catalog digest manifest shape drifted.")
     if (
         manifest["catalogPath"] != "contracts/catalogs/s4-rag-contract.v1.json"
-        or manifest["contractChangePath"]
-        != "contracts/changes/20260729-s4-rag-contract-catalog.md"
+        or manifest["contractChangePath"] != "contracts/changes/20260729-s4-rag-contract-catalog.md"
         or manifest["schemaVersion"] != 1
         or not isinstance(manifest["sha256"], str)
         or len(manifest["sha256"]) != 64
@@ -349,9 +344,7 @@ def _parse_profiles(value: Any) -> dict[str, RagEmbeddingProfile]:
         raise RagContractCatalogError("BGE local data-only artifact contract drifted.")
     if not profiles["voyage_context_4_1024_v1"].external_provider:
         raise RagContractCatalogError("Voyage context-4 profile must remain provider-backed.")
-    voyage = next(
-        item for item in value if item["profileId"] == "voyage_context_4_1024_v1"
-    )
+    voyage = next(item for item in value if item["profileId"] == "voyage_context_4_1024_v1")
     if (
         voyage.get("provider") != "VOYAGE"
         or voyage.get("model") != "voyage-context-4"

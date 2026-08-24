@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import date
-from dataclasses import dataclass
 import hashlib
 import json
 import os
-from pathlib import Path
 import stat
-from typing import Mapping, Sequence, cast
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+from typing import cast
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.bootstrap_control import BootstrapCallReceipt
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.production_policy import ECOS_OPERATIONS, KIS_OPERATION, KRX_OPERATIONS
 from app.lightgbm.source_bundle import SourceChunkReceipt, parse_source_chunk_receipt
-
 
 JOURNAL_FILENAME = "progress.jsonl"
 MAX_JOURNAL_BYTES = 16 * 1024 * 1024
@@ -81,7 +81,9 @@ class BootstrapJournal:
         failures = [attempt for attempt in self._attempts if attempt.state == "FAILED"]
         if not failures:
             return None
-        succeeded = {attempt.query_sha256 for attempt in self._attempts if attempt.state == "SUCCEEDED"}
+        succeeded = {
+            attempt.query_sha256 for attempt in self._attempts if attempt.state == "SUCCEEDED"
+        }
         unresolved = [attempt for attempt in failures if attempt.query_sha256 not in succeeded]
         return unresolved[-1] if unresolved else None
 
@@ -161,9 +163,7 @@ class BootstrapJournal:
             }
         )
 
-    def _append(
-        self, event: Mapping[str, object], *, allow_incomplete: bool = False
-    ) -> None:
+    def _append(self, event: Mapping[str, object], *, allow_incomplete: bool = False) -> None:
         line = canonical_json_bytes(dict(event)).removesuffix(b"\n") + b"\n"
         descriptor = os.open(
             self._path,
@@ -182,9 +182,7 @@ class BootstrapJournal:
             while offset < len(line):
                 written = os.write(descriptor, line[offset:])
                 if written <= 0:
-                    raise LightGbmContractError(
-                        "bootstrap progress journal write made no progress"
-                    )
+                    raise LightGbmContractError("bootstrap progress journal write made no progress")
                 offset += written
             os.fsync(descriptor)
         finally:
@@ -213,11 +211,14 @@ def build_resume_packet(
     consumed = len(journal.consumed_receipts)
     if consumed == 0 or consumed > total_cap:
         raise LightGbmContractError("bootstrap journal has no bounded resume authority")
-    if failed is not None and sum(
-        attempt.query_sha256 == failed.query_sha256
-        and attempt.state != SUPERSEDED_CONSUMED
-        for attempt in journal._attempts
-    ) != 1:
+    if (
+        failed is not None
+        and sum(
+            attempt.query_sha256 == failed.query_sha256 and attempt.state != SUPERSEDED_CONSUMED
+            for attempt in journal._attempts
+        )
+        != 1
+    ):
         raise LightGbmContractError("bootstrap failed query resume authority is exhausted")
     payload = {
         "resumePacketVersion": RESUME_PACKET_VERSION,
@@ -306,9 +307,7 @@ def build_recovery_journal_bytes(
         ordinal += 1
     if not events:
         raise LightGbmContractError("calendar recovery journal cannot be empty")
-    return b"".join(
-        canonical_json_bytes(event).removesuffix(b"\n") + b"\n" for event in events
-    )
+    return b"".join(canonical_json_bytes(event).removesuffix(b"\n") + b"\n" for event in events)
 
 
 def _read_attempts(

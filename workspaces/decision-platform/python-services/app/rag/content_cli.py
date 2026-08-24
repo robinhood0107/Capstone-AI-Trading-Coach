@@ -13,6 +13,10 @@ from app.rag.bge_acquisition import DEFAULT_MODEL_ROOT
 from app.rag.bge_runtime import BgeRuntimeError, BgeStaticTokenizer, load_bge_onnx_embedder
 from app.rag.local_document_parser import DocumentParseError, LocalDocumentParser
 from app.rag.oa112_downloader import Oa112DownloadError, load_oa112_execution_binding
+from app.rag.oa_release_manifest import (
+    OaReleaseManifestError,
+    load_oa_release_manifest,
+)
 from app.rag.owner_file_io import OwnerFileIoError, read_owner_regular_file
 from app.rag.pre_s5_provider_control import (
     PreS5ProviderActivationError,
@@ -29,11 +33,6 @@ from app.rag.pre_s5_voyage_transport import (
     PreS5VoyageTransportError,
     UrllibPreS5VoyageHttpSender,
 )
-from app.rag.rag_v2_local_cache import RagV2LocalCacheError, clean_local_rag_cache
-from app.rag.oa_release_manifest import (
-    OaReleaseManifestError,
-    load_oa_release_manifest,
-)
 from app.rag.rag_v2_bge_materializer import (
     RagV2BgeMaterializationError,
     RagV2BgeMaterializedOwnerDocument,
@@ -41,6 +40,7 @@ from app.rag.rag_v2_bge_materializer import (
     materialize_owner_bge_document,
     prepare_owner_document_for_embedding,
 )
+from app.rag.rag_v2_local_cache import RagV2LocalCacheError, clean_local_rag_cache
 from app.rag.rag_v2_local_import_control import (
     RagV2LocalDeleteControlError,
     RagV2LocalImportControlError,
@@ -57,6 +57,11 @@ from app.rag.rag_v2_owner_bge_staging import (
     OwnerBgeStagingMetadata,
     PsycopgRagV2OwnerBgeStagingRepository,
 )
+from app.rag.rag_v2_owner_overlay import (
+    OwnerOverlayError,
+    PsycopgRagV2OwnerOverlayRepository,
+    RagV2OwnerOverlayReceipt,
+)
 from app.rag.rag_v2_owner_voyage_import import (
     OwnerVoyageAttemptLease,
     OwnerVoyageImportError,
@@ -67,12 +72,6 @@ from app.rag.rag_v2_owner_voyage_import import (
     build_owner_voyage_import_item,
     build_owner_voyage_import_plan,
 )
-from app.rag.rag_v2_owner_overlay import (
-    OwnerOverlayError,
-    PsycopgRagV2OwnerOverlayRepository,
-    RagV2OwnerOverlayReceipt,
-)
-
 
 _IMPORT_COMMANDS: Final = {
     "import-auto",
@@ -269,9 +268,7 @@ def _execute_owner_voyage_import(
         raise OwnerVoyageImportError("OWNER_VOYAGE_PROFILE_REQUIRED")
     local_root = _local_root()
     tokenizer_root = _voyage_tokenizer_root()
-    tokenizer_sha256 = _required_sha256_environment(
-        "CAPSTONE_RAG_VOYAGE_TOKENIZER_SHA256"
-    )
+    tokenizer_sha256 = _required_sha256_environment("CAPSTONE_RAG_VOYAGE_TOKENIZER_SHA256")
     voyage_tokenizer = LocalPreS5VoyageContext4Tokenizer.from_local_root(
         local_root=tokenizer_root,
         expected_sha256=tokenizer_sha256,
@@ -478,9 +475,7 @@ def _load_owner_voyage_manifest(
         value = json.loads(result.content.decode("utf-8", errors="strict"))
         if not isinstance(value, dict):
             raise OwnerVoyageImportError("OWNER_VOYAGE_MANIFEST_INVALID")
-        expires_at = datetime.fromisoformat(
-            str(value.get("expiresAt", "")).replace("Z", "+00:00")
-        )
+        expires_at = datetime.fromisoformat(str(value.get("expiresAt", "")).replace("Z", "+00:00"))
     except OwnerVoyageImportError:
         raise
     except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:

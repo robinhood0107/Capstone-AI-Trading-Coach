@@ -32,7 +32,9 @@ def test_cache_clean_removes_only_fixed_local_cache_directories(tmp_path: Path) 
     assert protected.read_text(encoding="utf-8") == "private-control"
 
 
-def test_cache_clean_rejects_symlink_or_shared_writable_tree_before_deletion(tmp_path: Path) -> None:
+def test_cache_clean_rejects_symlink_or_shared_writable_tree_before_deletion(
+    tmp_path: Path,
+) -> None:
     _secure_root(tmp_path)
     cache = tmp_path / "cache"
     cache.mkdir(mode=0o700)

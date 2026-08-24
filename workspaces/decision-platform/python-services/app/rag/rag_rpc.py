@@ -23,7 +23,6 @@ from app.rag.fixture_answering import EvidenceChunk, build_fixture_prompt, parse
 from app.rag.guardrail import BoundedFixtureGuardrail, GuardrailDecision
 from app.rag.s4_5_evaluation import load_s4_5_manifest
 
-
 _MAX_REQUEST_BYTES = 65_536
 _MAX_RESPONSE_BYTES = 262_144
 _MAX_CONCURRENCY = 8
@@ -37,9 +36,7 @@ _SOURCE_ID = re.compile(r"^src_project_[a-z0-9][a-z0-9_]*_[0-9]{3}$")
 _FLAG = re.compile(r"^[A-Z0-9_]{1,64}$")
 _POLICY_VERSION = re.compile(r"^(?:NONE|EXTERNAL_AI_RAG_V1)$")
 _SYMBOL = re.compile(r"^[0-9]{6}$")
-_TOPICS = frozenset(
-    {"API", "DATA", "FINANCIAL_ENGINEERING", "METHODOLOGY", "PRODUCT_RISK", "RISK"}
-)
+_TOPICS = frozenset({"API", "DATA", "FINANCIAL_ENGINEERING", "METHODOLOGY", "PRODUCT_RISK", "RISK"})
 _PROFILES = frozenset({"bge_m3_local_1024_v1", "voyage_context_4_1024_v1"})
 _POLICIES = frozenset({"bge_only_v1", "voyage_only_v1", "bge_then_voyage_on_sla_v1"})
 
@@ -100,9 +97,7 @@ class S45FixtureRagEngine:
     def __init__(self) -> None:
         corpus = load_external_processing_corpus()
         self._cards = {card.source_id: card for card in corpus.cards}
-        self._questions = {
-            item["question"]: item for item in load_s4_5_manifest()["questions"]
-        }
+        self._questions = {item["question"]: item for item in load_s4_5_manifest()["questions"]}
         self._guardrail = BoundedFixtureGuardrail()
         self._fusion = RrfFusion()
 
@@ -224,9 +219,7 @@ class S45FixtureRagEngine:
             model_sensitive=card.front_matter.get("modelSensitive") is True,
             assumption_keys=assumptions,
             limitations=tuple(str(value) for value in card.front_matter["limitations"]),
-            contradicts_card_ids=tuple(
-                str(value) for value in card.front_matter["contradicts"]
-            ),
+            contradicts_card_ids=tuple(str(value) for value in card.front_matter["contradicts"]),
             scope_claim_id="rag_scope_" + "0" * 32,
             owner_user_id="fixture-owner",
             session_id="fixture-session-0001",
@@ -235,9 +228,7 @@ class S45FixtureRagEngine:
             policy_version=1,
         )
 
-    def _evidence(
-        self, source_id: str, citation_index: int, generation_id: str
-    ) -> EvidenceChunk:
+    def _evidence(self, source_id: str, citation_index: int, generation_id: str) -> EvidenceChunk:
         card = self._cards[source_id]
         digest = _source_digest(source_id)
         return EvidenceChunk(
@@ -255,9 +246,7 @@ class S45FixtureRagEngine:
             external_processing_allowed=True,
         )
 
-    def _citation(
-        self, source_id: str, citation_index: int, generation_id: str
-    ) -> RagRpcCitation:
+    def _citation(self, source_id: str, citation_index: int, generation_id: str) -> RagRpcCitation:
         card = self._cards[source_id]
         digest = _source_digest(source_id)
         return RagRpcCitation(
@@ -356,19 +345,13 @@ def create_rag_server(
 
 
 def _require_authenticated(context: grpc.ServicerContext, shared_secret: str) -> None:
-    values = [
-        value
-        for key, value in context.invocation_metadata()
-        if key == _AUTH_METADATA_KEY
-    ]
+    values = [value for key, value in context.invocation_metadata() if key == _AUTH_METADATA_KEY]
     supplied = values[0] if len(values) == 1 else None
     if not isinstance(supplied, str) or not compare_digest(supplied, shared_secret):
         _abort(context, grpc.StatusCode.UNAUTHENTICATED, "RAG gRPC authentication failed")
 
 
-def _validate_request(
-    request: rag_pb2.RagAskRequest, context: grpc.ServicerContext
-) -> None:
+def _validate_request(request: rag_pb2.RagAskRequest, context: grpc.ServicerContext) -> None:
     if request.ByteSize() > _MAX_REQUEST_BYTES:
         _abort(context, grpc.StatusCode.RESOURCE_EXHAUSTED, "RAG request exceeded bound")
     policy = request.policy_context
@@ -395,15 +378,19 @@ def _validate_request(
         or policy.policy_version < 1
         or _GENERATION_ID.fullmatch(policy.active_generation_id) is None
         or policy.embedding_profile_id not in _PROFILES
-        or (policy.policy_id == "bge_only_v1" and policy.embedding_profile_id != "bge_m3_local_1024_v1")
-        or (policy.policy_id == "voyage_only_v1" and policy.embedding_profile_id != "voyage_context_4_1024_v1")
+        or (
+            policy.policy_id == "bge_only_v1"
+            and policy.embedding_profile_id != "bge_m3_local_1024_v1"
+        )
+        or (
+            policy.policy_id == "voyage_only_v1"
+            and policy.embedding_profile_id != "voyage_context_4_1024_v1"
+        )
     ):
         _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "RAG request contract is invalid")
 
 
-def _validate_engine_result(
-    result: RagEngineResult, request: rag_pb2.RagAskRequest
-) -> None:
+def _validate_engine_result(result: RagEngineResult, request: rag_pb2.RagAskRequest) -> None:
     if (
         result.provider_physical_total
         != result.gemini_physical_calls
@@ -424,8 +411,7 @@ def _validate_engine_result(
         or len(set(result.guardrail_flags)) != len(result.guardrail_flags)
         or any(_FLAG.fullmatch(value) is None for value in result.guardrail_flags)
         or len(result.citations) > 5
-        or len({item.chunk_revision_id for item in result.citations})
-        != len(result.citations)
+        or len({item.chunk_revision_id for item in result.citations}) != len(result.citations)
         or len(result.authorized_top5_chunk_revision_ids) > 5
         or len(set(result.authorized_top5_chunk_revision_ids))
         != len(result.authorized_top5_chunk_revision_ids)
@@ -478,9 +464,7 @@ def _validate_engine_result(
             raise ValueError("RAG withheld result invalid")
 
 
-def _to_response(
-    request: rag_pb2.RagAskRequest, result: RagEngineResult
-) -> rag_pb2.RagAskResponse:
+def _to_response(request: rag_pb2.RagAskRequest, result: RagEngineResult) -> rag_pb2.RagAskResponse:
     response = rag_pb2.RagAskResponse(
         request_id=request.request_id,
         status=_PROTO_STATUS[result.status],

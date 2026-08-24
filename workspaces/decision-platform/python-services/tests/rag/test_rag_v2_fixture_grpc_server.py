@@ -8,7 +8,6 @@ from types import ModuleType
 from app.rag.rag_v2_grpc_server import RagV2GrpcServerSettings
 from app.rag.rag_v2_rpc import BgeRagV2RetrievalOnlyEngine
 
-
 _FIXTURE_SERVER_PATH = (
     Path(__file__).resolve().parents[1] / "support" / "rag_v2_fixture_grpc_server.py"
 )
@@ -65,7 +64,9 @@ def test_fixture_server_reuses_production_settings_and_query_path_without_a_bge_
 
 
 def _load_fixture_module() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("rag_v2_fixture_grpc_server_test", _FIXTURE_SERVER_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "rag_v2_fixture_grpc_server_test", _FIXTURE_SERVER_PATH
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

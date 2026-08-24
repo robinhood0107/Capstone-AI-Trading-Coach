@@ -14,8 +14,8 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Mapping
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.outcomes import CollectionUnit, OutcomeClass
@@ -128,7 +128,7 @@ def _canonical_measured(measured: Mapping[str, object] | None) -> dict[str, obje
 
     output: dict[str, object] = {}
     for key, value in sorted((measured or {}).items()):
-        if isinstance(value, bool) or isinstance(value, int):
+        if isinstance(value, (bool, int)):
             output[str(key)] = value
         elif isinstance(value, float):
             output[str(key)] = round(value, 6)

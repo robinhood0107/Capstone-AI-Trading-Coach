@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import uuid
 import re
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -56,7 +56,9 @@ _OPERATION_PRIORITIES = {
 
 
 class QuotaReservationRepository(Protocol):
-    def reserve(self, usage_date: date, config: OpenDARTQuotaConfig, grant_token: str) -> object: ...
+    def reserve(
+        self, usage_date: date, config: OpenDARTQuotaConfig, grant_token: str
+    ) -> object: ...
 
     def mark_exhausted(self, usage_date: date, reason: str) -> None: ...
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
 EXPECTED = {
     "setup-rag-content.bat": "setup",
     "rag-import-auto.bat": "import-auto",
@@ -56,9 +55,7 @@ def test_ocr_subprojects_have_independent_frozen_locks_and_ignore_venvs() -> Non
         assert (project / "pyproject.toml").is_file()
         assert (project / "uv.lock").is_file()
         assert ".venv" in (project / ".gitignore").read_text(encoding="utf-8")
-    assert "UNLIMITED_GGUF" not in (
-        ocr_root / "cpu/pyproject.toml"
-    ).read_text(encoding="utf-8")
+    assert "UNLIMITED_GGUF" not in (ocr_root / "cpu/pyproject.toml").read_text(encoding="utf-8")
 
     intel = (ocr_root / "intel/pyproject.toml").read_text(encoding="utf-8")
     for dependency in (

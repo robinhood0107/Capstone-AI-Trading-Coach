@@ -7,9 +7,9 @@ import hashlib
 import hmac
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from threading import Lock
-from collections.abc import Mapping
 from typing import Any, Literal, Protocol, cast
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -253,9 +253,10 @@ class EncryptedRedisOrderReferenceStore:
         }
         if "approvalAnchor" in pending:
             approval_anchor = pending["approvalAnchor"]
-            if not isinstance(approval_anchor, str) or _APPROVAL_ANCHOR.fullmatch(
-                approval_anchor
-            ) is None:
+            if (
+                not isinstance(approval_anchor, str)
+                or _APPROVAL_ANCHOR.fullmatch(approval_anchor) is None
+            ):
                 raise MockOrderReferenceUnavailable("mock order reference is invalid")
             payload["approvalAnchor"] = approval_anchor
         encrypted = self._encrypt(payload)
@@ -302,9 +303,7 @@ class EncryptedRedisOrderReferenceStore:
                     "mock order reference storage is unavailable"
                 ) from None
             if not isinstance(stored, (bytes, bytearray, memoryview)):
-                raise MockOrderReferenceUnavailable(
-                    "mock order reference storage is unavailable"
-                )
+                raise MockOrderReferenceUnavailable("mock order reference storage is unavailable")
             expected = bytes(stored)
         pending = self._decode(expected, order_id, account_id)
         return expected, pending
@@ -709,8 +708,7 @@ def _validate_approval_outcome(outcome: KISMockApprovalOutcome) -> None:
         or outcome.probe_type not in {"FULL", "CANCEL_RECOVERY"}
         or _APPROVAL_ANCHOR.fullmatch(outcome.reference_anchor) is None
         or (
-            outcome.failed_step is not None
-            and _OUTCOME_STEP.fullmatch(outcome.failed_step) is None
+            outcome.failed_step is not None and _OUTCOME_STEP.fullmatch(outcome.failed_step) is None
         )
     ):
         raise ValueError("approval outcome is invalid")

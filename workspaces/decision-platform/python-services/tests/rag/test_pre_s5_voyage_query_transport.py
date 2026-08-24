@@ -20,7 +20,6 @@ from app.rag.rag_v2_authorized_retrieval import (
     RagV2RetrievalFailureCode,
 )
 
-
 _NOW = datetime(2026, 8, 9, 1, tzinfo=UTC)
 _QUESTION = "공개 근거를 비교해 보여 주세요."
 _SCOPE = "rvs_" + "a" * 32
@@ -125,7 +124,9 @@ def test_voyage_query_transport_sends_one_nested_query_and_returns_one_1024d_rec
     }
 
 
-def test_voyage_query_transport_requires_consent_and_exact_question_scope_binding_before_a_call() -> None:
+def test_voyage_query_transport_requires_consent_and_exact_question_scope_binding_before_a_call() -> (
+    None
+):
     lease = _Lease()
     sender = _Sender()
     embedder = _embedder(lease=lease, sender=sender)
@@ -151,7 +152,9 @@ def test_voyage_query_transport_requires_consent_and_exact_question_scope_bindin
     assert sender.requests == []
 
 
-def test_voyage_query_transport_marks_unknown_billing_after_one_invalid_provider_response_without_retry() -> None:
+def test_voyage_query_transport_marks_unknown_billing_after_one_invalid_provider_response_without_retry() -> (
+    None
+):
     lease = _Lease()
     sender = _Sender(response=PreS5VoyageHttpResponse(status=500, headers={}, body=b""))
     embedder = _embedder(lease=lease, sender=sender)
@@ -386,7 +389,9 @@ def _write_packet(path: Path, *, tokenizer_sha256: str) -> None:
         "costCapMicrousd": 8_192,
         "date": "NONE",
         "endpoint": "/v1/contextualizedembeddings",
-        "expiresAt": (_NOW + timedelta(minutes=5)).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "expiresAt": (_NOW + timedelta(minutes=5))
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z"),
         "headCommit": "a" * 40,
         "inputMicrousdPerToken": 1,
         "issuedAt": _NOW.isoformat(timespec="seconds").replace("+00:00", "Z"),

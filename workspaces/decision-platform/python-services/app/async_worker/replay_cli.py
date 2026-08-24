@@ -13,12 +13,16 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 import psycopg
-from psycopg.conninfo import conninfo_to_dict
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from psycopg.conninfo import conninfo_to_dict
 
-from app.data._shared.bounded_json import BoundedJsonError, BoundedJsonLimits, parse_bounded_json_bytes
+from app.data._shared.bounded_json import (
+    BoundedJsonError,
+    BoundedJsonLimits,
+    parse_bounded_json_bytes,
+)
 
 _ID = re.compile(r"^(?:evt|job)_[A-Za-z0-9_-]{8,96}$")
 _REASON = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$")
@@ -200,7 +204,11 @@ def validate_packet(
     current = now or datetime.now(UTC)
     issued = _instant(unsigned["issuedAt"])
     expires = _instant(unsigned["expiresAt"])
-    if issued > current + timedelta(seconds=30) or expires <= current or expires - issued != timedelta(minutes=5):
+    if (
+        issued > current + timedelta(seconds=30)
+        or expires <= current
+        or expires - issued != timedelta(minutes=5)
+    ):
         raise ReplayCliError("PACKET_EXPIRED")
     targets = unsigned["targetIds"]
     prefix = "evt_" if unsigned["targetKind"] == "EVENT" else "job_"
@@ -208,7 +216,10 @@ def validate_packet(
         not isinstance(targets, list)
         or not 1 <= len(targets) <= _MAX_TARGETS
         or len(targets) != len(set(targets))
-        or any(not isinstance(item, str) or not _ID.fullmatch(item) or not item.startswith(prefix) for item in targets)
+        or any(
+            not isinstance(item, str) or not _ID.fullmatch(item) or not item.startswith(prefix)
+            for item in targets
+        )
     ):
         raise ReplayCliError("TARGET_ID_INVALID")
     if execute and unsigned["executeAuthorized"] is not True:
@@ -358,10 +369,20 @@ def main() -> None:
             print(json.dumps({"success": True, "packet": str(args.output)}, separators=(",", ":")))
         elif args.command == "authorize":
             packet = authorize_packet(args)
-            print(json.dumps({"success": True, "authorized": True, "replayBatchId": packet["replayBatchId"]}, separators=(",", ":")))
+            print(
+                json.dumps(
+                    {"success": True, "authorized": True, "replayBatchId": packet["replayBatchId"]},
+                    separators=(",", ":"),
+                )
+            )
         else:
             rows = execute_packet(args)
-            print(json.dumps({"success": True, "executed": bool(args.execute), "items": rows}, separators=(",", ":")))
+            print(
+                json.dumps(
+                    {"success": True, "executed": bool(args.execute), "items": rows},
+                    separators=(",", ":"),
+                )
+            )
     except (OSError, UnicodeError, json.JSONDecodeError, psycopg.Error, ReplayCliError) as error:
         _fail(str(error) if isinstance(error, ReplayCliError) else "REPLAY_OPERATION_FAILED")
 

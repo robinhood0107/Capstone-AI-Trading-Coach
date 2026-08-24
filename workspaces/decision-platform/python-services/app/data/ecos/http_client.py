@@ -20,8 +20,8 @@ from app.data.ecos._credential_transport import (
     _ECOS_DEADLINE_EXTENSION,
     _ECOS_SAFE_RESPONSE_EXTENSION,
     ECOSCredentialError,
-    _CredentialTransport,
     _canonical_client_headers,
+    _CredentialTransport,
 )
 from app.data.ecos.errors import ECOSApplicationError, ECOSDiagnostic, ECOSError
 from app.data.ecos.models import (
@@ -43,13 +43,13 @@ from app.data.ecos.policy import (
 )
 from app.data.ecos.quota import (
     ECOSQuota,
+    _build_redis_client,
     apply_ecos_application_cooldown,
     build_ecos_quota_reservation,
     build_s5_ecos_quota_reservation,
-    _build_redis_client,
 )
 from app.data.ecos.series_registry import ECOSSeries
-from app.data.ecos.settings import ECOSSettings, ECOSS5ProductionSettings
+from app.data.ecos.settings import ECOSS5ProductionSettings, ECOSSettings
 
 _ResultT = TypeVar("_ResultT")
 _TLS_ENVIRONMENT_OVERRIDES = ("SSL_CERT_FILE", "SSL_CERT_DIR", "SSLKEYLOGFILE")
@@ -82,7 +82,6 @@ def _build_tls_context() -> ssl.SSLContext:
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.check_hostname = True
     context.verify_mode = ssl.CERT_REQUIRED
-    setattr(context, "keylog_filename", None)
     return context
 
 
@@ -143,7 +142,7 @@ class ECOSHttpClient:
         retry_sleeper: Callable[[float], None] | None = None,
         monotonic: Callable[[], float] | None = None,
         approval_deadline_monotonic: float | None = None,
-    ) -> "ECOSHttpClient":
+    ) -> ECOSHttpClient:
         """socket/env 없이 synthetic credential과 MockTransport만 쓰는 비공개 test factory다."""
         if not isinstance(transport, httpx.MockTransport):
             raise ValueError("ECOS test factory requires a private mock transport")
@@ -309,7 +308,7 @@ class ECOSHttpClient:
             if callable(close):
                 close()
 
-    def __enter__(self) -> "ECOSHttpClient":
+    def __enter__(self) -> ECOSHttpClient:
         return self
 
     def __exit__(self, *_: object) -> None:

@@ -11,11 +11,14 @@ def test_confidence_uses_exact_integer_tier_base(tier: int, expected: int) -> No
 
 
 def test_confidence_counts_each_independent_origin_once_and_penalizes_conflict_once() -> None:
-    assert confidence_bps(
-        tier=2,
-        agreeing_origin_groups={"origin-a", "origin-b", "origin-a"},
-        has_conflict=True,
-    ) == 6000
+    assert (
+        confidence_bps(
+            tier=2,
+            agreeing_origin_groups={"origin-a", "origin-b"},
+            has_conflict=True,
+        )
+        == 6000
+    )
 
 
 def test_confidence_clamps_to_9900_and_never_uses_float() -> None:

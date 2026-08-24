@@ -12,11 +12,12 @@ import ipaddress
 import math
 import re
 import unicodedata
+from collections.abc import Mapping
 from concurrent import futures
 from dataclasses import dataclass
 from enum import StrEnum
 from hmac import compare_digest
-from typing import Mapping, Never, Protocol, cast
+from typing import Never, Protocol, cast
 from urllib.parse import urlsplit
 
 import grpc
@@ -32,7 +33,6 @@ from app.rag.rag_v2_authorized_retrieval import (
     RagV2RetrievalOutcome,
 )
 
-
 _MAX_REQUEST_BYTES = 65_536
 _MAX_RESPONSE_BYTES = 262_144
 _MAX_CONCURRENCY = 8
@@ -47,9 +47,7 @@ _DOCUMENT_ID = re.compile(r"^doc_[a-z0-9][a-z0-9_-]{10,95}$")
 _FLAG = re.compile(r"^[A-Z0-9_]{1,64}$")
 _FAILURE_CODE = re.compile(r"^[A-Z0-9_]{1,96}$")
 _SYMBOL = re.compile(r"^[0-9]{6}$")
-_TOPICS = frozenset(
-    {"API", "DATA", "FINANCIAL_ENGINEERING", "METHODOLOGY", "PRODUCT_RISK", "RISK"}
-)
+_TOPICS = frozenset({"API", "DATA", "FINANCIAL_ENGINEERING", "METHODOLOGY", "PRODUCT_RISK", "RISK"})
 _BGE_PROFILE = "bge_m3_local_1024_v1"
 _VOYAGE_PROFILE = "voyage_context_4_1024_v1"
 _RETRIEVAL_PROFILES = frozenset({_BGE_PROFILE, _VOYAGE_PROFILE})
@@ -238,9 +236,7 @@ class ProfileSelectedRagV2RetrievalOnlyEngine:
                 },
             )
         except (ConnectionError, OSError, RuntimeError, TimeoutError, ValueError):
-            return _retrieval_failure(
-                "RAG_RETRIEVAL_CHANNEL_UNAVAILABLE", scope=scope
-            )
+            return _retrieval_failure("RAG_RETRIEVAL_CHANNEL_UNAVAILABLE", scope=scope)
         outcome = execution.outcome
         if outcome.failure_code is not None or not outcome.retrieval_permitted:
             return _retrieval_failure(
@@ -415,13 +411,13 @@ def _citation_from_candidate(
     if not 1 <= ordinal <= 5 or not _candidate_matches_scope(candidate, scope):
         raise ValueError("RAG v2 retrieval candidate scope is invalid")
     locator = _validated_locator(candidate.locator)
-    common = dict(
-        citation_id=f"cit_{ordinal}",
-        source_id=candidate.source_id,
-        source_revision_id=candidate.source_revision_id,
-        chunk_revision_id=candidate.chunk_id,
-        generation_id=candidate.generation_id,
-    )
+    common = {
+        "citation_id": f"cit_{ordinal}",
+        "source_id": candidate.source_id,
+        "source_revision_id": candidate.source_revision_id,
+        "chunk_revision_id": candidate.chunk_id,
+        "generation_id": candidate.generation_id,
+    }
     if candidate.source_scope in {"EXACT30", "OA112"}:
         if (
             candidate.owner_user_id is not None
@@ -547,11 +543,7 @@ def _retrieval_failure(
 
 
 def _require_authenticated(context: grpc.ServicerContext, shared_secret: str) -> None:
-    values = [
-        value
-        for key, value in context.invocation_metadata()
-        if key == _AUTH_METADATA_KEY
-    ]
+    values = [value for key, value in context.invocation_metadata() if key == _AUTH_METADATA_KEY]
     supplied = values[0] if len(values) == 1 else None
     if not isinstance(supplied, str) or not compare_digest(supplied, shared_secret):
         _abort(context, grpc.StatusCode.UNAUTHENTICATED, "RAG v2 gRPC authentication failed")
@@ -610,12 +602,14 @@ def _validate_engine_result(result: RagV2EngineResult) -> None:
         or len(set(result.guardrail_flags)) != len(result.guardrail_flags)
         or any(_FLAG.fullmatch(flag) is None for flag in result.guardrail_flags)
         or len(result.citations) > 5
-        or len({item.chunk_revision_id for item in result.citations})
-        != len(result.citations)
+        or len({item.chunk_revision_id for item in result.citations}) != len(result.citations)
         or len(result.authorized_top5_chunk_revision_ids) > 5
         or len(set(result.authorized_top5_chunk_revision_ids))
         != len(result.authorized_top5_chunk_revision_ids)
-        or any(_CHUNK_ID.fullmatch(value) is None for value in result.authorized_top5_chunk_revision_ids)
+        or any(
+            _CHUNK_ID.fullmatch(value) is None
+            for value in result.authorized_top5_chunk_revision_ids
+        )
         or (result.failure_code and _FAILURE_CODE.fullmatch(result.failure_code) is None)
     ):
         raise ValueError("RAG v2 engine result envelope is invalid")
@@ -749,13 +743,12 @@ def _validate_citation(
         or (citation.public_web is None) == (citation.local_document is None)
     ):
         raise ValueError("RAG v2 citation identity is invalid")
-    if citation.public_web is not None:
-        if (
-            not _bounded_text(citation.public_web.title, 1_024)
-            or not _safe_public_https_url(citation.public_web.canonical_url)
-            or _validated_locator(citation.public_web.locator) != citation.public_web.locator
-        ):
-            raise ValueError("RAG v2 public citation is invalid")
+    if citation.public_web is not None and (
+        not _bounded_text(citation.public_web.title, 1_024)
+        or not _safe_public_https_url(citation.public_web.canonical_url)
+        or _validated_locator(citation.public_web.locator) != citation.public_web.locator
+    ):
+        raise ValueError("RAG v2 public citation is invalid")
     if citation.local_document is not None and (
         _DOCUMENT_ID.fullmatch(citation.local_document.document_id) is None
         or not _bounded_display_name(citation.local_document.display_name)
@@ -861,9 +854,8 @@ def _locator_text(value: object, *, maximum: int) -> bool:
 def _bounded_display_name(value: object) -> bool:
     if not isinstance(value, str):
         return False
-    return (
-        _bounded_text(value, 160)
-        and not any(character in value for character in ("/", "\\", ":"))
+    return _bounded_text(value, 160) and not any(
+        character in value for character in ("/", "\\", ":")
     )
 
 
@@ -893,7 +885,9 @@ def _safe_public_https_url(value: object) -> bool:
     ):
         return False
     host = parsed.hostname.rstrip(".").casefold()
-    if host == "localhost" or host.endswith((".localhost", ".local", ".internal", ".home.arpa", ".test")):
+    if host == "localhost" or host.endswith(
+        (".localhost", ".local", ".internal", ".home.arpa", ".test")
+    ):
         return False
     try:
         address = ipaddress.ip_address(host)

@@ -18,7 +18,10 @@ from pathlib import Path
 from typing import Final
 
 from app.cross_market.foreign_news import ForeignNewsModelSelectionError, ForeignNewsSelectionRun
-from app.cross_market.foreign_news_evaluator import ForeignNewsEvaluationExample, ForeignNewsLocalCandidate
+from app.cross_market.foreign_news_evaluator import (
+    ForeignNewsEvaluationExample,
+    ForeignNewsLocalCandidate,
+)
 from app.cross_market.foreign_news_local_evaluation import (
     DEFAULT_FINBERT_EVALUATION_ROOT,
     ForeignNewsDatasetReceipt,
@@ -32,7 +35,6 @@ from app.cross_market.foreign_news_local_evaluation import (
     load_tfns_stress_split,
     run_local_model_selection,
 )
-
 
 _RECEIPT_NAME: Final[str] = "sentivent-gold-plus-tfns-stress.v1.json"
 _LOCK_NAME: Final[str] = ".sentivent-gold-plus-tfns-stress.lock"
@@ -143,7 +145,9 @@ def _evaluate_once(*, evaluation_root: Path) -> dict[str, object]:
         if existing is not None:
             return _summary(existing, code="FOREIGN_NEWS_LOCAL_EVALUATION_REUSED", state="REUSED")
         _fail_if_test_reservation_exists(reservation_path)
-        validation = load_sentivent_gold_split(dataset_root=evaluation_root / "sentivent", split="validation")
+        validation = load_sentivent_gold_split(
+            dataset_root=evaluation_root / "sentivent", split="validation"
+        )
         candidates, model_artifacts = build_local_model_candidates(evaluation_root=evaluation_root)
         input_digest = _input_digest(validation.receipt, model_artifacts)
         blind_test: ForeignNewsLoadedExamples | None = None
@@ -232,7 +236,9 @@ def _receipt_payload(
 ) -> dict[str, object]:
     if _SHA256.fullmatch(evaluation_input_digest) is None:
         raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_EVALUATION_DIGEST_INVALID")
-    if result.selection.test_evaluation_count == 0 and (blind_test is not None or tfns_stress is not None):
+    if result.selection.test_evaluation_count == 0 and (
+        blind_test is not None or tfns_stress is not None
+    ):
         raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_EVALUATION_TEST_BOUNDARY")
     if result.selection.test_evaluation_count == 1 and blind_test is None:
         raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_EVALUATION_TEST_BOUNDARY")
@@ -398,7 +404,8 @@ def _write_test_reservation(
     if (
         _SHA256.fullmatch(evaluation_input_digest) is None
         or selection.selection_status != "SELECTED_PENDING_TEST"
-        or selection.selected_model not in {
+        or selection.selected_model
+        not in {
             "PROSUSAI_FINBERT",
             "YIYANGHKUST_FINBERT_TONE",
             "LOUGHRAN_MCDONALD_BASELINE",
@@ -416,7 +423,9 @@ def _write_test_reservation(
     try:
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     except FileExistsError as error:
-        raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_TEST_EVALUATION_RESUME_BLOCKED") from error
+        raise ForeignNewsEvaluationCliError(
+            "FOREIGN_NEWS_TEST_EVALUATION_RESUME_BLOCKED"
+        ) from error
     try:
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600:
@@ -532,7 +541,9 @@ def _read_regular_bytes(path: Path, *, maximum_bytes: int) -> bytes:
 
 
 def _canonical(value: object) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
 
 
 def _sha256(value: bytes) -> str:

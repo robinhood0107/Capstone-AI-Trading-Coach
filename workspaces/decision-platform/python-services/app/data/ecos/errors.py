@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Final
 
-
 _FAILURE_STAGES: Final = frozenset(
     {
         "response_headers",
@@ -137,9 +136,7 @@ class ECOSDiagnostic:
         if self.http_status is not None and not 100 <= self.http_status <= 599:
             raise ValueError("ECOS diagnostic HTTP status is invalid")
 
-    def with_context(
-        self, *, request_ordinal: int, service: str, series_id: str
-    ) -> "ECOSDiagnostic":
+    def with_context(self, *, request_ordinal: int, service: str, series_id: str) -> ECOSDiagnostic:
         """결정적 preflight 순서와 candidate identity만 더하고 기존 진단값은 변경하지 않는다."""
         return replace(
             self,
@@ -154,7 +151,7 @@ class ECOSDiagnostic:
         http_status: int | None,
         content_type_class: str | None,
         response_bytes: int | None,
-    ) -> "ECOSDiagnostic":
+    ) -> ECOSDiagnostic:
         """transport가 만든 allowlist scalar만 더하고 기존 leaf 분류는 그대로 유지한다."""
         return replace(
             self,

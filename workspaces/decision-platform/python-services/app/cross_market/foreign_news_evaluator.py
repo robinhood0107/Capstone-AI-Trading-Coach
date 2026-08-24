@@ -20,7 +20,6 @@ from app.cross_market.foreign_news import (
     ForeignNewsSelectionRun,
 )
 
-
 _LABELS: Final[tuple[str, ...]] = ("NEGATIVE", "NEUTRAL", "POSITIVE")
 _MAX_EVALUATION_EXAMPLES: Final[int] = 10_000
 _MAX_TRANSIENT_TEXT_BYTES: Final[int] = 32 * 1024
@@ -129,7 +128,9 @@ class ForeignNewsEvaluationHarness:
         """정확히 세 후보를 같은 transient validation set으로 평가한 뒤 선택만 반환한다."""
 
         ordered = _validate_exact_candidates(candidates)
-        metrics = tuple(self.evaluate_candidate(candidate=item, examples=examples) for item in ordered)
+        metrics = tuple(
+            self.evaluate_candidate(candidate=item, examples=examples) for item in ordered
+        )
         return ForeignNewsSelectionRun.from_validation(
             selection_id=selection_id,
             selection_generation=selection_generation,
@@ -147,7 +148,10 @@ class ForeignNewsEvaluationHarness:
 
         if selection.test_evaluation_count != 0:
             raise ForeignNewsModelSelectionError("FOREIGN_NEWS_TEST_ALREADY_EVALUATED")
-        if selection.selection_status != "SELECTED_PENDING_TEST" or selection.selected_model is None:
+        if (
+            selection.selection_status != "SELECTED_PENDING_TEST"
+            or selection.selected_model is None
+        ):
             raise ForeignNewsModelSelectionError("FOREIGN_NEWS_TEST_NOT_ELIGIBLE")
         ordered = _validate_exact_candidates(candidates)
         selected = next(
@@ -171,10 +175,7 @@ class ForeignNewsEvaluationHarness:
         """one local candidate를 측정해 metric-only ``ForeignNewsSelectionMetrics``로 축소한다."""
 
         checked_examples = _validate_examples(examples)
-        confusion = {
-            expected: {predicted: 0 for predicted in _LABELS}
-            for expected in _LABELS
-        }
+        confusion = {expected: dict.fromkeys(_LABELS, 0) for expected in _LABELS}
         bin_counts = [0] * _ECE_BIN_COUNT
         bin_confidence_sums = [0.0] * _ECE_BIN_COUNT
         bin_correct_counts = [0] * _ECE_BIN_COUNT
@@ -187,7 +188,9 @@ class ForeignNewsEvaluationHarness:
                 prediction = candidate.classifier.predict(example.text)
             except Exception as error:
                 # local model failure도 raw input 없이 typed evaluation failure로만 남긴다.
-                raise ForeignNewsModelSelectionError("FOREIGN_NEWS_MODEL_EXECUTION_FAILED") from error
+                raise ForeignNewsModelSelectionError(
+                    "FOREIGN_NEWS_MODEL_EXECUTION_FAILED"
+                ) from error
             finished = _clock_value(self.clock_ns)
             if not isinstance(prediction, ForeignNewsPrediction):
                 raise ForeignNewsModelSelectionError("FOREIGN_NEWS_PREDICTION_INVALID")
@@ -250,10 +253,7 @@ def _clock_value(clock_ns: Callable[[], int]) -> int:
 
 
 def _class_recalls(confusion: Mapping[str, Mapping[str, int]]) -> dict[str, float]:
-    return {
-        label: confusion[label][label] / sum(confusion[label].values())
-        for label in _LABELS
-    }
+    return {label: confusion[label][label] / sum(confusion[label].values()) for label in _LABELS}
 
 
 def _class_f1_scores(confusion: Mapping[str, Mapping[str, int]]) -> dict[str, float]:

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import ROUND_HALF_EVEN, Decimal
 from enum import StrEnum
-from typing import Final, Sequence
-
+from typing import Final
 
 _HISTORY_SESSIONS: Final[int] = 252
 _SCORE_QUANTUM: Final[Decimal] = Decimal("0.000001")
@@ -123,9 +123,7 @@ class CrossMarketScorer:
             if percentile is not None:
                 grouped[item.component].append((item.instrument, percentile))
 
-        components = tuple(
-            self._component(name, grouped[name]) for name in ComponentName
-        )
+        components = tuple(self._component(name, grouped[name]) for name in ComponentName)
         return CrossMarketScoreResult(
             config_version=self._config_version,
             evaluated_at=evaluated_at,
@@ -183,9 +181,7 @@ def _series_percentile(
     lower = sum(value < adverse_current for value in adverse_history)
     equal = sum(value == adverse_current for value in adverse_history)
     return (
-        (Decimal(lower) + Decimal(equal) / Decimal(2))
-        * Decimal(100)
-        / Decimal(_HISTORY_SESSIONS)
+        (Decimal(lower) + Decimal(equal) / Decimal(2)) * Decimal(100) / Decimal(_HISTORY_SESSIONS)
     )
 
 

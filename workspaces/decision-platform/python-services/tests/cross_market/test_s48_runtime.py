@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.cross_market.core6_probe import Core6ProbeReceipt, core6_endpoint_set_identity_hash
 from app.cross_market.s48_runtime import (
     S48AuthorizedProjection,
     S48DirectProbeProjection,
@@ -11,7 +12,6 @@ from app.cross_market.s48_runtime import (
     S48RuntimeInMemoryRepository,
     S48RuntimeMaterializer,
 )
-from app.cross_market.core6_probe import Core6ProbeReceipt, core6_endpoint_set_identity_hash
 
 
 def test_runtime_materializes_exact_nine_fixture_first_lanes_without_provider_calls() -> None:
@@ -55,7 +55,9 @@ def test_runtime_materializes_exact_nine_fixture_first_lanes_without_provider_ca
         assert "query" not in record
 
 
-def test_projection_only_lanes_can_reuse_sanitized_authorized_projection_without_direct_call() -> None:
+def test_projection_only_lanes_can_reuse_sanitized_authorized_projection_without_direct_call() -> (
+    None
+):
     batch = S48RuntimeMaterializer().materialize(
         evaluated_at=datetime(2026, 8, 9, 1, tzinfo=UTC),
         authorized_projections=(
@@ -111,7 +113,9 @@ def test_runtime_batch_is_atomic_replay_safe_and_rejects_outbound_materializatio
         )
 
 
-def test_complete_core6_receipt_sets_make_only_kis_sec_and_krx_available_without_runtime_outbound() -> None:
+def test_complete_core6_receipt_sets_make_only_kis_sec_and_krx_available_without_runtime_outbound() -> (
+    None
+):
     projections = tuple(
         S48DirectProbeProjection.from_core6_receipt(_successful_receipt(operation, index))
         for index, operation in enumerate(

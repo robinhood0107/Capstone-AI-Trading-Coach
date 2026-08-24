@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import json
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from datetime import UTC, date, datetime
-import hashlib
 from io import BytesIO
-import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Callable, cast
+from typing import cast
 
 import numpy as np
 import pyarrow as pa
@@ -18,7 +19,11 @@ from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.calibration import fit_ovr_platt
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.features import CORE_FEATURE_COLUMNS
-from app.lightgbm.production_db import Connection, activate_release_and_batch, stage_release_and_batch
+from app.lightgbm.production_db import (
+    Connection,
+    activate_release_and_batch,
+    stage_release_and_batch,
+)
 from app.lightgbm.production_release import (
     QUALIFICATION_RECEIPT,
     RELEASE_FILES,
@@ -36,7 +41,9 @@ from app.lightgbm.production_stage_cli import _manual_action
 from app.lightgbm.training import exact_grid, fit_lightgbm_reproducible, raw_margins
 
 
-def test_manual_stage_action_requires_explicit_valid_rollback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_manual_stage_action_requires_explicit_valid_rollback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("S5_MANUAL_ACTION", raising=False)
     monkeypatch.delenv("S5_MANUAL_ACTIVATE", raising=False)
     assert _manual_action() == "STAGE"
@@ -45,7 +52,7 @@ def test_manual_stage_action_requires_explicit_valid_rollback(monkeypatch: pytes
     monkeypatch.setenv("S5_MANUAL_ACTION", "ROLLBACK")
     assert _manual_action() == "ROLLBACK"
     monkeypatch.setenv("S5_MANUAL_ACTION", "AUTO")
-    with pytest.raises(ValueError, match="manual action"):
+    with pytest.raises(ValueError, match=r"manual action"):
         _manual_action()
 
 
@@ -65,7 +72,9 @@ def test_production_qualification_no_pass_never_projects_final_test(
     manifest_sha = "a" * 64
     bundle = SimpleNamespace(
         manifest_sha256=manifest_sha,
-        provenance=SimpleNamespace(base=SimpleNamespace(dataset_cutoff=datetime(2026, 8, 18, tzinfo=UTC))),
+        provenance=SimpleNamespace(
+            base=SimpleNamespace(dataset_cutoff=datetime(2026, 8, 18, tzinfo=UTC))
+        ),
         artifact=SimpleNamespace(table=object()),
     )
     materialization = SimpleNamespace(
@@ -76,7 +85,9 @@ def test_production_qualification_no_pass_never_projects_final_test(
         fit_sessions=(), early_sessions=(), calibration_sessions=(), evaluation_sessions=()
     )
     monkeypatch.setattr(release_module, "read_production_feature_bundle", lambda **_: bundle)
-    monkeypatch.setattr(release_module, "build_production_exact_labels", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(
+        release_module, "build_production_exact_labels", lambda *_args, **_kwargs: {}
+    )
     monkeypatch.setattr(release_module, "_training_rows", lambda *_args: rows)
     monkeypatch.setattr(
         release_module,
@@ -196,7 +207,7 @@ def _release(root: Path) -> tuple[str, dict[str, object]]:
             {
                 "reportVersion": "s5-gain-importance-v1",
                 "featureNames": list(CORE_FEATURE_COLUMNS),
-                "gain": {name: 1.0 for name in CORE_FEATURE_COLUMNS},
+                "gain": dict.fromkeys(CORE_FEATURE_COLUMNS, 1.0),
             }
         ),
         "contribution-report.json": canonical_json_bytes(
@@ -258,7 +269,9 @@ def _release(root: Path) -> tuple[str, dict[str, object]]:
         "status": "QUALIFIED",
         "files": {name: hashlib.sha256(content).hexdigest() for name, content in files.items()},
     }
-    semantic = hashlib.sha256(b"s5-model-release-v1\x00" + canonical_json_bytes(preimage)).hexdigest()
+    semantic = hashlib.sha256(
+        b"s5-model-release-v1\x00" + canonical_json_bytes(preimage)
+    ).hexdigest()
     manifest = {
         **preimage,
         "modelReleaseId": f"lgr-{semantic[:12]}",
@@ -313,7 +326,9 @@ def _batch(
         "fixture": False,
         "provenanceClass": "PRODUCTION",
     }
-    semantic = hashlib.sha256(b"s5-signal-batch-v1\x00" + canonical_json_bytes(preimage)).hexdigest()
+    semantic = hashlib.sha256(
+        b"s5-signal-batch-v1\x00" + canonical_json_bytes(preimage)
+    ).hexdigest()
     manifest = canonical_json_bytes(
         {**preimage, "signalBatchId": f"sgb-{semantic[:12]}", "semanticSha256": semantic}
     )
@@ -334,7 +349,9 @@ def _rewrite_report(root: Path, mutate: Callable[[dict[str, object]], None]) -> 
     _write(root, "qualification.json", canonical_json_bytes(qualification))
     manifest = json.loads((root / "release.json").read_bytes())
     manifest["modelReportId"] = report_id
-    manifest["files"]["report.json"] = hashlib.sha256((root / "report.json").read_bytes()).hexdigest()
+    manifest["files"]["report.json"] = hashlib.sha256(
+        (root / "report.json").read_bytes()
+    ).hexdigest()
     manifest["files"]["qualification.json"] = hashlib.sha256(
         (root / "qualification.json").read_bytes()
     ).hexdigest()
@@ -376,7 +393,7 @@ def test_release_rejects_digest_mutation_fake_and_symlink(tmp_path: Path) -> Non
     root = _private_root(tmp_path / "release")
     digest, _ = _release(root)
     (root / "report.json").write_text("{}\n")
-    with pytest.raises(LightGbmContractError, match="digest mismatch"):
+    with pytest.raises(LightGbmContractError, match=r"digest mismatch"):
         validate_production_model_release(approved_root=root, expected_manifest_sha256=digest)
 
     other = _private_root(tmp_path / "other")
@@ -399,7 +416,7 @@ def test_release_rejects_self_consistent_but_failed_qualification(tmp_path: Path
         final_test["passed"] = False
 
     digest = _rewrite_report(root, fail_final)
-    with pytest.raises(LightGbmContractError, match="final test qualification"):
+    with pytest.raises(LightGbmContractError, match=r"final test qualification"):
         validate_production_model_release(
             approved_root=root,
             expected_manifest_sha256=digest,
@@ -418,7 +435,7 @@ def test_release_rejects_a_passing_candidate_that_violates_locked_ranking(tmp_pa
             cast(dict[str, object], fold["calibrated"])["logLoss"] = 0.69
 
     digest = _rewrite_report(root, make_second_candidate_better)
-    with pytest.raises(LightGbmContractError, match="locked ranking"):
+    with pytest.raises(LightGbmContractError, match=r"locked ranking"):
         validate_production_model_release(
             approved_root=root,
             expected_manifest_sha256=digest,
@@ -437,7 +454,7 @@ def test_signal_batch_clock_skips_xkrx_substitute_holiday(tmp_path: Path) -> Non
         str(manifest["modelReportId"]),
         as_of="2026-08-16T23:10:00Z",
     )
-    with pytest.raises(LightGbmContractError, match="session clock"):
+    with pytest.raises(LightGbmContractError, match=r"session clock"):
         validate_production_signal_batch(
             approved_root=batch_root,
             expected_manifest_sha256=batch_sha,
@@ -507,7 +524,7 @@ def test_signal_batch_rejects_decoded_parquet_amplification_before_full_read(
             return self._delegate.iter_batches(*args, **kwargs)
 
     monkeypatch.setattr(release_module.pq, "ParquetFile", _ParquetFile)
-    with pytest.raises(LightGbmContractError, match="declared decoded|actual decoded"):
+    with pytest.raises(LightGbmContractError, match=r"declared decoded|actual decoded"):
         validate_production_signal_batch(
             approved_root=batch_root,
             expected_manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest(),

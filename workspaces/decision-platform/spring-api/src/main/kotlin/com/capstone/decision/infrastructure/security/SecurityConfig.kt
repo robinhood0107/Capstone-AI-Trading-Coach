@@ -150,8 +150,8 @@ class SecurityConfig {
         }
         return try {
             val entries = secrets.entries.toList()
-            entries.indices.forEach { leftIndex ->
-                ((leftIndex + 1) until entries.size).forEach { rightIndex ->
+            for (leftIndex in entries.indices) {
+                for (rightIndex in (leftIndex + 1) until entries.size) {
                     require(
                         !MessageDigest.isEqual(
                             entries[leftIndex].value,

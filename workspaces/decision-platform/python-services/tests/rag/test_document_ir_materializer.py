@@ -58,9 +58,10 @@ def test_document_ir_materializer_is_deterministic_and_excludes_raw_path() -> No
     assert [chunk.locator for chunk in first.chunks] == [{"page": 1}, {"page": 2}]
     assert first.chunks[0].heading_path == ("Valuation",)
     assert "| Metric | Value |" in first.chunks[0].canonical_text
-    assert first.chunks[0].canonical_text_sha256 == hashlib.sha256(
-        first.chunks[0].canonical_text.encode("utf-8")
-    ).hexdigest()
+    assert (
+        first.chunks[0].canonical_text_sha256
+        == hashlib.sha256(first.chunks[0].canonical_text.encode("utf-8")).hexdigest()
+    )
 
     receipt = first.content_free_receipt()
     encoded = json.dumps(receipt, ensure_ascii=False, sort_keys=True)

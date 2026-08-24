@@ -13,25 +13,26 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, NoReturn
 
+from pydantic import SecretStr
+
+from app.brokerage.kis_mock_approval_environment import (
+    KISMockApprovalEnvironmentRejected,
+    load_kis_mock_approval_environment,
+)
 from app.brokerage.kis_mock_approval_probe import (
     _REQUIRED_CI_CHECKS,
+    KISMockApprovalPacketV2,
+    KISMockApprovalPacketV3,
     _canonical_json,
     _git_revision,
     _require_clean_repository,
     _validate_v2_security_evidence,
-    KISMockApprovalPacketV2,
-    KISMockApprovalPacketV3,
-)
-from app.brokerage.kis_mock_approval_environment import (
-    KISMockApprovalEnvironmentRejected,
-    load_kis_mock_approval_environment,
 )
 from app.brokerage.mock_order_reference_store import (
     EncryptedRedisApprovalOutcomeStore,
     KISMockApprovalOutcomeUnavailable,
 )
 from app.data.kis._credential_transport import _build_redis_client, _provider_scope
-from pydantic import SecretStr
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
 _MAX_PACKET_BYTES = 64 * 1024
@@ -350,11 +351,11 @@ def _require_recovery_source_outcome(
     """CANCEL_RECOVERY author는 operator CLI 입력이 아닌 source executor receipt만 신뢰한다."""
 
     try:
-        encryption_key = load_kis_mock_approval_environment(
+        encryption_key = load_kis_mock_approval_environment("KIS_MOCK_ORDER_REFERENCE_KEY")[
             "KIS_MOCK_ORDER_REFERENCE_KEY"
-        )["KIS_MOCK_ORDER_REFERENCE_KEY"]
+        ]
     except KISMockApprovalEnvironmentRejected:
-        raise KISMockApprovalAuthorRejected("recovery source outcome is unavailable")
+        raise KISMockApprovalAuthorRejected("recovery source outcome is unavailable") from None
     redis_client: Any | None = None
     try:
         redis_client = _build_redis_client()

@@ -52,15 +52,18 @@ def implied_volatility(
         _raise_stable("IV_NOT_BRACKETED")
 
     def residual(volatility: float) -> float:
-        return black_scholes(
-            option_right=option_right,
-            underlying_price=underlying_price,
-            strike=strike,
-            tau=tau,
-            risk_free_rate=risk_free_rate,
-            dividend_yield=dividend_yield,
-            volatility=volatility,
-        ).theoretical_price - price
+        return (
+            black_scholes(
+                option_right=option_right,
+                underlying_price=underlying_price,
+                strike=strike,
+                tau=tau,
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield,
+                volatility=volatility,
+            ).theoretical_price
+            - price
+        )
 
     low = LOWER_VOLATILITY
     high = UPPER_VOLATILITY

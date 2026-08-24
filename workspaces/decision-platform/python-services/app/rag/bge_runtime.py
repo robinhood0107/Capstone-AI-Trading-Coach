@@ -328,9 +328,7 @@ def load_bge_onnx_embedder(packet_root: Path) -> BgeOnnxEmbedder:
         raise BgeRuntimeError("BGE_PACKET_VERIFICATION_FAILED") from error
 
     model_entry = next(
-        item
-        for item in APPROVED_BGE_ARTIFACT_SPEC.files
-        if item.relative_path == "onnx/model.onnx"
+        item for item in APPROVED_BGE_ARTIFACT_SPEC.files if item.relative_path == "onnx/model.onnx"
     )
     external_file_sizes = {
         Path(item.relative_path).name: item.size_bytes
@@ -414,7 +412,9 @@ def load_bge_onnx_embedder(packet_root: Path) -> BgeOnnxEmbedder:
         == ("sentence_embedding" if output_mode == "POOLED_OUTPUT" else "last_hidden_state")
     )
     output_shape = tuple(output.shape)
-    output_dimension = output_shape[-1] if output_shape and isinstance(output_shape[-1], int) else -1
+    output_dimension = (
+        output_shape[-1] if output_shape and isinstance(output_shape[-1], int) else -1
+    )
     expected_output_dimension = (
         graph_contract.output_dimension
         if graph_contract.output_dimension != -1
@@ -442,10 +442,7 @@ def _capture_onnx_memory_snapshot(
 ) -> _BgeOnnxMemorySnapshot:
     """native loader가 pathname을 재해석하지 않도록 exact 승인 파일을 stable memory로 복사한다."""
 
-    entries = {
-        entry.relative_path: entry
-        for entry in APPROVED_BGE_ARTIFACT_SPEC.files
-    }
+    entries = {entry.relative_path: entry for entry in APPROVED_BGE_ARTIFACT_SPEC.files}
     model_entry = entries.get("onnx/model.onnx")
     allowed_external_paths = {
         "onnx/Constant_7_attr__value",
@@ -650,7 +647,9 @@ def load_model_dimension(
 
 
 def _select_output_name(output_names: tuple[str, ...], output_mode: OutputMode) -> str:
-    expected = "last_hidden_state" if output_mode == "LAST_HIDDEN_STATE_CLS" else "sentence_embedding"
+    expected = (
+        "last_hidden_state" if output_mode == "LAST_HIDDEN_STATE_CLS" else "sentence_embedding"
+    )
     if expected not in output_names:
         raise BgeRuntimeError("BGE_OUTPUT_CONTRACT")
     return expected
@@ -668,8 +667,7 @@ def _validate_tokenizer_json(payload: object) -> None:
             raise BgeRuntimeError("TOKENIZER_JSON_BOUND")
         if isinstance(value, dict):
             if len(value) > 500_000 or any(
-                not isinstance(key, str) or len(key.encode("utf-8")) > 8_192
-                for key in value
+                not isinstance(key, str) or len(key.encode("utf-8")) > 8_192 for key in value
             ):
                 raise BgeRuntimeError("TOKENIZER_JSON_CONTRACT")
             stack.extend((child, depth + 1) for child in value.values())
@@ -678,10 +676,7 @@ def _validate_tokenizer_json(payload: object) -> None:
                 raise BgeRuntimeError("TOKENIZER_JSON_BOUND")
             stack.extend((child, depth + 1) for child in value)
         elif isinstance(value, str):
-            if (
-                len(value.encode("utf-8")) > _MAX_TOKENIZER_JSON_STRING_BYTES
-                or "\x00" in value
-            ):
+            if len(value.encode("utf-8")) > _MAX_TOKENIZER_JSON_STRING_BYTES or "\x00" in value:
                 raise BgeRuntimeError("TOKENIZER_JSON_CONTRACT")
         elif isinstance(value, float):
             if not math.isfinite(value):

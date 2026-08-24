@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from hashlib import sha256
-from collections.abc import Mapping, Sequence
 from pathlib import Path
 from uuid import UUID, uuid4
 

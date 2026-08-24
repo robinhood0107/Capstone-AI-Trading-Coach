@@ -24,13 +24,16 @@ def test_client_disclosure_list_passes_official_filter_params_without_secret() -
 
     assert "settings" not in vars(client)
 
-    assert client.disclosure_list(
-        corp_code="00126380",
-        start=date(2026, 6, 9),
-        end=date(2026, 7, 9),
-        disclosure_type="B",
-        disclosure_detail_type="B001",
-    ) == []
+    assert (
+        client.disclosure_list(
+            corp_code="00126380",
+            start=date(2026, 6, 9),
+            end=date(2026, 7, 9),
+            disclosure_type="B",
+            disclosure_detail_type="B001",
+        )
+        == []
+    )
 
     assert fake_http.calls == [
         (
@@ -304,7 +307,9 @@ def test_client_company_profile_and_financial_statement_add_required_params() ->
         }
     )
 
-    assert OpenDARTClient(_settings(), profile_http).company_profile("00126380").stock_code == "005930"
+    assert (
+        OpenDARTClient(_settings(), profile_http).company_profile("00126380").stock_code == "005930"
+    )
     assert (
         OpenDARTClient(_settings(), financial_http)
         .financial_statement(corp_code="00126380", business_year="2025", report_code="11011")[0]
@@ -419,8 +424,18 @@ def test_client_s1_2c_financial_indicators_batch_joins_corp_codes() -> None:
         {
             "status": "000",
             "list": [
-                {"corp_code": "00126380", "idx_cl_code": "M220000", "idx_nm": "부채비율", "idx_val": "45.67"},
-                {"corp_code": "00164779", "idx_cl_code": "M220000", "idx_nm": "부채비율", "idx_val": "88.10"},
+                {
+                    "corp_code": "00126380",
+                    "idx_cl_code": "M220000",
+                    "idx_nm": "부채비율",
+                    "idx_val": "45.67",
+                },
+                {
+                    "corp_code": "00164779",
+                    "idx_cl_code": "M220000",
+                    "idx_nm": "부채비율",
+                    "idx_val": "88.10",
+                },
             ],
         }
     )
@@ -497,7 +512,9 @@ def test_client_s1_2c_ownership_disclosure_endpoints_pass_corp_code_without_secr
     )
 
     major = OpenDARTClient(_settings(), major_http).major_stock_reports(corp_code="00126380")
-    ele = OpenDARTClient(_settings(), ele_http).executive_major_shareholder_reports(corp_code="00126380")
+    ele = OpenDARTClient(_settings(), ele_http).executive_major_shareholder_reports(
+        corp_code="00126380"
+    )
 
     assert major_http.calls == [("/api/majorstock.json", {"corp_code": "00126380"})]
     assert ele_http.calls == [("/api/elestock.json", {"corp_code": "00126380"})]

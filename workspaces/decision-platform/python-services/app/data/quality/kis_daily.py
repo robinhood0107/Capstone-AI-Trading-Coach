@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+import errno
+import hashlib
+import os
+import re
+import stat
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-import errno
-import hashlib
 from io import BytesIO
-import os
 from pathlib import Path, PurePosixPath
-import re
-import stat
 from typing import Any
 
 import exchange_calendars as xcals
@@ -40,7 +40,6 @@ from app.data.quality.policy import (
     MAX_SYMBOLS,
     MAX_TOTAL_INPUT_BYTES,
 )
-
 
 _DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _RELATIVE_IDENTIFIER = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._/-]{0,238}[A-Za-z0-9])?")
@@ -179,7 +178,10 @@ def load_quality_snapshot(
             if _daily_parquet_names(root_path) != expected_names:
                 raise KISQualityInputError("dataset inventory did not match manifest")
 
-            if sum(item.byte_size for item in dataset_manifest.files) > active_limits.max_total_bytes:
+            if (
+                sum(item.byte_size for item in dataset_manifest.files)
+                > active_limits.max_total_bytes
+            ):
                 raise KISQualityInputError("dataset total byte limit exceeded")
             datasets: list[SymbolDataset] = []
             total_rows = 0
@@ -218,9 +220,7 @@ def load_quality_snapshot(
                 software_revision=software_revision,
                 window_start=window_start,
                 window_end=window_end,
-                expected_last_completed_xkrx_session=(
-                    calendar.expected_last_completed_session
-                ),
+                expected_last_completed_xkrx_session=(calendar.expected_last_completed_session),
                 sessions=calendar.sessions,
                 universe_symbols=tuple(symbols),
                 universe_manifest=universe_reference,
@@ -284,7 +284,12 @@ def _parse_universe_symbols(content: bytes, max_symbols: int) -> tuple[str, ...]
         if not isinstance(item, dict):
             raise KISQualityInputError("universe symbol entry was invalid")
         symbol = item.get("symbol")
-        if not isinstance(symbol, str) or len(symbol) != 6 or not symbol.isascii() or not symbol.isdigit():
+        if (
+            not isinstance(symbol, str)
+            or len(symbol) != 6
+            or not symbol.isascii()
+            or not symbol.isdigit()
+        ):
             raise KISQualityInputError("universe symbol entry was invalid")
         symbols.append(symbol)
     if len(set(symbols)) != len(symbols):
@@ -346,8 +351,7 @@ def _verify_dataset_identifier(
     manifest: SuccessfulDatasetManifest,
 ) -> None:
     expected = (
-        f"datasets/{manifest.created_at:%Y/%m/%d}/"
-        f"{manifest.dataset_manifest_id}/manifest.json"
+        f"datasets/{manifest.created_at:%Y/%m/%d}/{manifest.dataset_manifest_id}/manifest.json"
     )
     if identifier != expected:
         raise KISQualityInputError("dataset manifest identity did not match")
@@ -358,10 +362,7 @@ def _verify_collection_identifier(
     summary: CollectionRunSummary,
 ) -> None:
     completed_at = summary.completed_at.astimezone(UTC)
-    expected = (
-        f"collection-runs/{completed_at:%Y/%m/%d}/"
-        f"{summary.collection_run_id}/summary.json"
-    )
+    expected = f"collection-runs/{completed_at:%Y/%m/%d}/{summary.collection_run_id}/summary.json"
     if identifier != expected:
         raise KISQualityInputError("collection run identity did not match")
 

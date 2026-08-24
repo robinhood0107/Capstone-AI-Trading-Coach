@@ -10,7 +10,6 @@ from typing import Any
 from app.s8_demo.synthetic_bundle import _write_idempotent as _write_synthetic_idempotent
 from app.s8_demo.synthetic_bundle import build_synthetic_bundle
 
-
 _SEED: dict[str, Any] = {
     "schemaVersion": "1.0.0",
     "demoProject": "capstone-s8-demo",
@@ -45,9 +44,21 @@ _SEED: dict[str, Any] = {
         },
     ],
     "ragQuestions": [
-        {"questionId": "demo_rag_q1", "classification": "INTERNAL_PAPER", "text": "손실 한도 원칙은 무엇인가요?"},
-        {"questionId": "demo_rag_q2", "classification": "INTERNAL_PAPER", "text": "경고와 차단은 어떻게 다른가요?"},
-        {"questionId": "demo_rag_q3", "classification": "INTERNAL_PAPER", "text": "근거가 없으면 왜 보류하나요?"},
+        {
+            "questionId": "demo_rag_q1",
+            "classification": "INTERNAL_PAPER",
+            "text": "손실 한도 원칙은 무엇인가요?",
+        },
+        {
+            "questionId": "demo_rag_q2",
+            "classification": "INTERNAL_PAPER",
+            "text": "경고와 차단은 어떻게 다른가요?",
+        },
+        {
+            "questionId": "demo_rag_q3",
+            "classification": "INTERNAL_PAPER",
+            "text": "근거가 없으면 왜 보류하나요?",
+        },
     ],
     "killSwitchScenario": {
         "scenarioId": "demo_kill_switch",
@@ -102,7 +113,9 @@ def _write_idempotent(path: Path, content: str) -> None:
 
 
 def _canonical_json(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
 
 
 def _sha256(value: str) -> str:

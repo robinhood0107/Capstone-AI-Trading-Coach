@@ -12,7 +12,6 @@ from app.data.krx.catalog import KOSDAQ_DAILY, KOSPI_DAILY, KrxEndpoint
 from app.data.krx.errors import KrxParseError
 from app.data.krx.parsers import KrxDailyRow, parse_daily_response
 
-
 _FIXTURE_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "krx"
 _REQUESTED_DATE = date(2026, 7, 15)
 

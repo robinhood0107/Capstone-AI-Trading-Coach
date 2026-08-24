@@ -2,8 +2,8 @@
 
 from app.data.market_data.archive import (
     MarketDataArchive,
-    MarketDataArtifact,
     MarketDataArchiveError,
+    MarketDataArtifact,
     read_market_data_archive,
 )
 from app.data.market_data.daily_runtime import (

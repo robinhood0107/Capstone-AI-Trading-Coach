@@ -32,7 +32,6 @@ from app.verification.provider_claim import (
     claim_signed_provider_approval,
 )
 
-
 _CONTROL_ROOT_RELATIVE: Final[Path] = Path("capstone-rag/secrets/core6-probes")
 _EVIDENCE_FILE: Final[str] = "core6-probe-execution-evidence.v1.json"
 _APPROVAL_FILE: Final[str] = "p1-approval-packet.v2.json"
@@ -85,9 +84,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             evidence_digest=canonical_json_sha256(
                 {"ciDigest": binding.ci_digest, "securityDigest": binding.security_digest}
             ),
-            credential_scope_digest=scope_digest(
-                f"{packet.provider_family}:{packet.operation}"
-            ),
+            credential_scope_digest=scope_digest(f"{packet.provider_family}:{packet.operation}"),
             physical_call_cap=packet.physical_call_cap,
             cost_cap_microusd=packet.cost_cap_microusd,
             now=now,
@@ -179,7 +176,14 @@ def _current_clean_git_identity(repository_root: Path) -> tuple[str, str]:
         raise Core6ProbeError("CORE6_PROBE_REPOSITORY_INVALID")
     try:
         status = subprocess.run(
-            ["git", "-C", str(repository_root), "status", "--porcelain=v1", "--untracked-files=all"],
+            [
+                "git",
+                "-C",
+                str(repository_root),
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+            ],
             check=True,
             capture_output=True,
             text=True,
@@ -226,7 +230,9 @@ def _repository_root() -> Path:
 
 
 def _canonical_bytes(value: object) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
 
 
 def _emit(

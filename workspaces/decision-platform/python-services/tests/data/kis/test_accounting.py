@@ -8,8 +8,8 @@ from pydantic import ValidationError
 
 from app.data.kis.accounting import (
     CollectionRunRecorder,
-    CollectionRunSummary,
     CollectionRunStatus,
+    CollectionRunSummary,
     FailureCode,
     KISCallBudgetExceeded,
     LogicalOperation,
@@ -17,7 +17,6 @@ from app.data.kis.accounting import (
     SkipCode,
     stable_failure_code,
 )
-
 
 RUN_ID = UUID("123e4567-e89b-42d3-a456-426614174000")
 STARTED_AT = datetime(2026, 7, 21, 1, 0, tzinfo=UTC)

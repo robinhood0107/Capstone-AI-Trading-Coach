@@ -53,14 +53,14 @@ class JdbcPreS5VertexUsageLedgerTest {
         } returns listOf(expectedUsageEventId to expiresAt)
 
         JdbcPreS5VertexUsageLedger(provider, TestTransactionManager(), fingerprintPort)
-            .reserve(command(expiresAt), activation)
+            .reserve(command(), activation)
 
         assertThat(parameters.captured["expiresAt"])
             .isEqualTo(OffsetDateTime.ofInstant(expiresAt, ZoneOffset.UTC))
             .isNotInstanceOf(Instant::class.java)
     }
 
-    private fun command(expiresAt: Instant) =
+    private fun command() =
         RagV2VertexGenerationCommand(
             ownerUserId = "usr_demo_user",
             requestId = "req_vertex_1234567890",
@@ -138,7 +138,7 @@ class JdbcPreS5VertexUsageLedgerTest {
             MessageDigest
                 .getInstance("SHA-256")
                 .digest(seed)
-                .joinToString("") { "%02x".format(it) }
+                .joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
                 .take(32)
     }
 

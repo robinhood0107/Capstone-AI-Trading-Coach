@@ -187,7 +187,7 @@ class SafePublicWebReader(
                 RegexOption.IGNORE_CASE,
             )
         val READ_DEADLINE: Duration = Duration.ofSeconds(10)
-        val DNS_EXECUTOR =
+        val DNS_EXECUTOR: java.util.concurrent.ExecutorService =
             Executors.newFixedThreadPool(2) { runnable ->
                 Thread(runnable, "s49-public-dns").apply { isDaemon = true }
             }

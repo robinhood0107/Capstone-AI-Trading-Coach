@@ -132,7 +132,7 @@ def exact30_source_revision_id(card: FrozenSourceCard) -> str:
     """source bytes/card semantics가 바뀔 때만 변하는 immutable exact-30 revision ID다."""
 
     digest = hashlib.sha256(
-        f"{card.source_id}\0{card.card_sha256}\0{card.content_sha256}".encode("utf-8")
+        f"{card.source_id}\0{card.card_sha256}\0{card.content_sha256}".encode()
     ).hexdigest()
     return f"srv_exact30_{digest[:32]}"
 
@@ -141,7 +141,7 @@ def exact30_document_id(card: FrozenSourceCard) -> str:
     """card revision과 분리된 stable exact-30 document identity를 반환한다."""
 
     digest = hashlib.sha256(
-        f"{card.source_id}\0{exact30_source_revision_id(card)}".encode("utf-8")
+        f"{card.source_id}\0{exact30_source_revision_id(card)}".encode()
     ).hexdigest()
     return f"doc_exact30_{digest[:32]}"
 

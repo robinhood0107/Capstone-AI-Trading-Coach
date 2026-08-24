@@ -11,16 +11,16 @@ from app.rag.ocr_benchmark import (
     CandidateReceipt,
     EvaluationDocument,
     GroundedSpan,
-    OcrLine,
     LaneReceipt,
+    OcrLine,
     QualityReceipt,
     compute_character_error_rate,
     compute_kendall_tau,
     evaluate_quality,
-    quality_receipt_projection,
     parse_grounded_ocr_output,
-    retain_expected_critical_spans,
+    quality_receipt_projection,
     reading_order_from_grounded_spans,
+    retain_expected_critical_spans,
     sanitize_paddle_ocr_lines,
     select_production_backend,
     validate_benchmark_receipt,
@@ -165,9 +165,7 @@ def test_unlimited_grounding_parser_preserves_text_and_normalized_boxes() -> Non
 
 
 def test_unlimited_grounding_parser_drops_malformed_boxes_but_keeps_bounded_text() -> None:
-    parsed = parse_grounded_ocr_output(
-        "<|det|>text [-1, 20, 200, 80]<|/det|>Kept text"
-    )
+    parsed = parse_grounded_ocr_output("<|det|>text [-1, 20, 200, 80]<|/det|>Kept text")
 
     assert parsed.text == "Kept text"
     assert parsed.spans == ()
@@ -400,23 +398,23 @@ def test_unlimited_runner_uses_the_pinned_official_deterministic_ocr_prompt() ->
 
 def test_paddle_runner_bounds_each_region_generation_to_the_official_chart_limit() -> None:
     repository_root = Path(__file__).resolve().parents[5]
-    runner = (
-        repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py"
-    ).read_text(encoding="utf-8")
+    runner = (repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "max_new_tokens=2048" in runner
 
 
 def test_structured_candidate_reads_printed_chart_values_without_chart_generation() -> None:
     repository_root = Path(__file__).resolve().parents[5]
-    runner = (
-        repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py"
-    ).read_text(encoding="utf-8")
+    runner = (repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py").read_text(
+        encoding="utf-8"
+    )
     structured = runner.split("def _structured", 1)[1].split("def _vl", 1)[0]
     manifest = json.loads(
-        (
-            repository_root / "capstone-rag/ocr/benchmark/benchmark-manifest.v1.json"
-        ).read_text(encoding="utf-8")
+        (repository_root / "capstone-rag/ocr/benchmark/benchmark-manifest.v1.json").read_text(
+            encoding="utf-8"
+        )
     )
 
     assert "use_chart_recognition=False" in structured
@@ -429,9 +427,9 @@ def test_structured_candidate_reads_printed_chart_values_without_chart_generatio
 
 def test_vl_candidate_uses_ocr_for_image_blocks_without_chart_generation() -> None:
     repository_root = Path(__file__).resolve().parents[5]
-    runner = (
-        repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py"
-    ).read_text(encoding="utf-8")
+    runner = (repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py").read_text(
+        encoding="utf-8"
+    )
     vl = runner.split("def _vl", 1)[1].split("def _run", 1)[0]
 
     assert "use_chart_recognition=False" in vl
@@ -441,16 +439,16 @@ def test_vl_candidate_uses_ocr_for_image_blocks_without_chart_generation() -> No
 
 def test_vl_candidate_pins_auxiliary_printed_chart_ocr() -> None:
     repository_root = Path(__file__).resolve().parents[5]
-    runner = (
-        repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py"
-    ).read_text(encoding="utf-8")
-    evaluator = (
-        repository_root / "capstone-rag/ocr/benchmark/evaluate_candidate.py"
-    ).read_text(encoding="utf-8")
+    runner = (repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py").read_text(
+        encoding="utf-8"
+    )
+    evaluator = (repository_root / "capstone-rag/ocr/benchmark/evaluate_candidate.py").read_text(
+        encoding="utf-8"
+    )
     manifest = json.loads(
-        (
-            repository_root / "capstone-rag/ocr/benchmark/benchmark-manifest.v1.json"
-        ).read_text(encoding="utf-8")
+        (repository_root / "capstone-rag/ocr/benchmark/benchmark-manifest.v1.json").read_text(
+            encoding="utf-8"
+        )
     )
     model_directories = set(manifest["candidates"]["PADDLE_VL"]["modelDirectories"])
 
@@ -494,18 +492,18 @@ def test_candidate_runners_publish_only_through_the_safe_receipt_writer() -> Non
         repository_root / "capstone-rag/ocr/benchmark/unlimited_candidate_runner.py"
     ).read_text(encoding="utf-8")
     assert "parse_grounded_ocr_output" in unlimited
-    paddle = (
-        repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py"
-    ).read_text(encoding="utf-8")
+    paddle = (repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py").read_text(
+        encoding="utf-8"
+    )
     assert "sanitize_paddle_ocr_lines" in paddle
 
 
 def test_intel_vl_lane_pins_official_openvino_sources_and_rejects_any_cpu_fallback() -> None:
     repository_root = Path(__file__).resolve().parents[5]
     manifest = json.loads(
-        (
-            repository_root / "capstone-rag/ocr/benchmark/benchmark-manifest.v1.json"
-        ).read_text(encoding="utf-8")
+        (repository_root / "capstone-rag/ocr/benchmark/benchmark-manifest.v1.json").read_text(
+            encoding="utf-8"
+        )
     )
     evidence = manifest["intelOpenVinoPaddleVl"]
 
@@ -519,9 +517,7 @@ def test_intel_vl_lane_pins_official_openvino_sources_and_rejects_any_cpu_fallba
         "modeling_paddleocr_vl.py": (
             "26f6bc752a30e8d00a71a056869dca948185811fca8a8c9d0332c18fa3f3ac5e"
         ),
-        "ov_paddleocr_vl.py": (
-            "b02408445fb9fdd3755794a2e87ce5a16ff54a29a95f27dbe23b1a3f5ee8da4d"
-        ),
+        "ov_paddleocr_vl.py": ("b02408445fb9fdd3755794a2e87ce5a16ff54a29a95f27dbe23b1a3f5ee8da4d"),
     }
 
     runner = (
@@ -549,9 +545,7 @@ def test_published_benchmark_summary_selects_only_quality_and_hardware_verified_
         "UNLIMITED_GGUF",
     }
     assert summary["candidates"]["PADDLE_STRUCTURED"]["status"] == "FAILED"
-    assert summary["candidates"]["PADDLE_STRUCTURED"]["failureCode"] == (
-        "OCR_QUALITY_GATE_FAILED"
-    )
+    assert summary["candidates"]["PADDLE_STRUCTURED"]["failureCode"] == ("OCR_QUALITY_GATE_FAILED")
     selected = summary["candidates"]["PADDLE_VL"]
     assert selected["status"] == "SUCCEEDED"
     assert selected["quality"] == {

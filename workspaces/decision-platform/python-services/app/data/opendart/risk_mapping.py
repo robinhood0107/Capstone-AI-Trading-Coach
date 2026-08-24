@@ -40,7 +40,11 @@ class DisclosureRiskMapping:
 
 def load_default_risk_mapping() -> DisclosureRiskMapping:
     """패키지에 포함된 S1.2 YAML mapping을 읽어 scorer가 같은 버전을 재사용하게 한다."""
-    content = files("app.data.opendart").joinpath("disclosure_risk_mapping.yaml").read_text(encoding="utf-8")
+    content = (
+        files("app.data.opendart")
+        .joinpath("disclosure_risk_mapping.yaml")
+        .read_text(encoding="utf-8")
+    )
     loaded = yaml.safe_load(content)
     if not isinstance(loaded, dict):
         raise RiskMappingValidationError("OpenDART risk mapping root must be an object")
@@ -106,26 +110,38 @@ def _parse_entry(raw: dict[str, Any]) -> RiskMappingEntry:
 
 def _validate_active(entry: RiskMappingEntry) -> None:
     if entry.score is None or not 0.0 <= entry.score <= 1.0:
-        raise RiskMappingValidationError(f"Active mapping {entry.code} must define score between 0 and 1")
+        raise RiskMappingValidationError(
+            f"Active mapping {entry.code} must define score between 0 and 1"
+        )
     if not entry.official_endpoint and not entry.official_filter_code:
         # report_nm 문자열 매칭을 active 근거로 쓰지 못하게 공식 endpoint/filter 증거를 강제한다.
         raise RiskMappingValidationError(
             f"Active mapping {entry.code} must define official_endpoint or official_filter_code"
         )
     if entry.condition_field and not entry.condition_values:
-        raise RiskMappingValidationError(f"Conditional mapping {entry.code} must define condition_values")
+        raise RiskMappingValidationError(
+            f"Conditional mapping {entry.code} must define condition_values"
+        )
     if not entry.evidence_level or not entry.calibration_status:
-        raise RiskMappingValidationError(f"Active mapping {entry.code} must define evidence_level and calibration_status")
+        raise RiskMappingValidationError(
+            f"Active mapping {entry.code} must define evidence_level and calibration_status"
+        )
     if entry.effective_window_days is None:
         # 상태 지속형(부도/감사의견 등)이 30일 기본값에 묶여 조용히 사라지는 회귀를 막으려고 명시 유효기간을 강제한다.
-        raise RiskMappingValidationError(f"Active mapping {entry.code} must define effective_window_days")
+        raise RiskMappingValidationError(
+            f"Active mapping {entry.code} must define effective_window_days"
+        )
     if entry.calibration_status not in {"policy_v1_unvalidated", "korea_market_calibrated"}:
-        raise RiskMappingValidationError(f"Unsupported calibration_status for active mapping {entry.code}")
+        raise RiskMappingValidationError(
+            f"Unsupported calibration_status for active mapping {entry.code}"
+        )
 
 
 def _validate_blocked(entry: RiskMappingEntry) -> None:
     if not entry.blocked_reason or not entry.source_gap:
-        raise RiskMappingValidationError(f"Blocked mapping {entry.code} must define blocked_reason and source_gap")
+        raise RiskMappingValidationError(
+            f"Blocked mapping {entry.code} must define blocked_reason and source_gap"
+        )
 
 
 def _required_str(data: dict[str, Any], key: str) -> str:

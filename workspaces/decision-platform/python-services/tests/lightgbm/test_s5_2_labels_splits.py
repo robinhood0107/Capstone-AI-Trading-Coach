@@ -8,8 +8,8 @@ import pytest
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.features import PriceEvidence
 from app.lightgbm.labels import (
-    LABEL_THRESHOLD,
     CLASS_ORDER,
+    LABEL_THRESHOLD,
     LabelRow,
     build_exact_labels,
     classify_forward_return,
@@ -55,14 +55,8 @@ def test_exact_label_uses_t1_t6_and_tau_equality_is_hold() -> None:
     assert labels[0].label == CLASS_ORDER["BUY"]
     assert classify_forward_return(-LABEL_THRESHOLD) == CLASS_ORDER["HOLD"]
     assert classify_forward_return(LABEL_THRESHOLD) == CLASS_ORDER["HOLD"]
-    assert (
-        classify_forward_return(np.nextafter(-LABEL_THRESHOLD, -1.0))
-        == CLASS_ORDER["SELL"]
-    )
-    assert (
-        classify_forward_return(np.nextafter(LABEL_THRESHOLD, 1.0))
-        == CLASS_ORDER["BUY"]
-    )
+    assert classify_forward_return(np.nextafter(-LABEL_THRESHOLD, -1.0)) == CLASS_ORDER["SELL"]
+    assert classify_forward_return(np.nextafter(LABEL_THRESHOLD, 1.0)) == CLASS_ORDER["BUY"]
     # 경계 안쪽은 HOLD다. 이전 경계(0.006)에서 BUY였던 값이 지금은 HOLD여야 한다.
     assert classify_forward_return(0.01) == CLASS_ORDER["HOLD"]
 

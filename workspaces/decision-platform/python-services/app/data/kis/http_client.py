@@ -8,17 +8,17 @@ from typing import Any, cast
 
 import httpx
 
+from app.data.kis._credential_transport import (
+    KISCredentialError,
+    _build_redis_client,
+    _CredentialTransport,
+    _provider_scope,
+    _TokenIssuer,
+)
 from app.data.kis.accounting import (
     CollectionRunRecorder,
     FailureCode,
     PhysicalChannel,
-)
-from app.data.kis._credential_transport import (
-    KISCredentialError,
-    _CredentialTransport,
-    _TokenIssuer,
-    _build_redis_client,
-    _provider_scope,
 )
 from app.data.kis.auth import KISTokenManager
 from app.data.kis.rate_limiter import RateLimiter, RedisIntervalLimiter, TokenBucket
@@ -316,7 +316,10 @@ class KISHttpClient:
 
 def _is_reserved_parameter(name: str) -> bool:
     normalized = re.sub(r"[^a-z0-9]", "", name.lower())
-    return any(marker in normalized for marker in ("key", "secret", "token", "auth", "credential", "account"))
+    return any(
+        marker in normalized
+        for marker in ("key", "secret", "token", "auth", "credential", "account")
+    )
 
 
 def _default_retry_delay(attempt_number: int) -> float:

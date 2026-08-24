@@ -296,7 +296,7 @@ class S49VertexStrongLlmGenerationAdapterTest {
         }
 
     private fun sha256(value: String): String =
-        MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
+        MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
 
     private class QueueHttpClient(
         vararg responses: ByteArray,

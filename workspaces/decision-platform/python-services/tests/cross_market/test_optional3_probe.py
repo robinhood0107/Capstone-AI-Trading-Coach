@@ -4,6 +4,7 @@ import json
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -17,7 +18,6 @@ from app.cross_market.optional3_probe import (
     optional3_endpoint_set_digest,
     optional3_request_plan_digest,
 )
-
 
 _NOW = datetime(2026, 8, 9, 4, 5, 6, tzinfo=UTC)
 
@@ -111,14 +111,14 @@ class _StaticResolver:
 
 class _Response:
     status_code = 200
-    headers = {"content-type": "application/json", "content-length": "15"}
+    headers: ClassVar[dict[str, str]] = {"content-type": "application/json", "content-length": "15"}
 
     def set_read_timeout_seconds(self, *, timeout_seconds: float) -> None:
         assert timeout_seconds > 0
 
     def iter_raw(self, *, chunk_size: int):  # type: ignore[no-untyped-def]
         assert chunk_size == 16 * 1024
-        yield b'[]'
+        yield b"[]"
 
 
 class _Connection:
@@ -127,7 +127,7 @@ class _Connection:
     def __init__(self) -> None:
         self.captured: dict[str, object] = {}
 
-    def __enter__(self) -> "_Connection":
+    def __enter__(self) -> _Connection:
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -189,7 +189,7 @@ def test_packet_binds_fixed_provider_operation_and_nonsecret_request_plan() -> N
 def test_executor_rejects_drift_before_transport_or_claim_write(tmp_path: Path) -> None:
     control_root = _private_root(tmp_path)
     transport = _RecordingTransport(
-        response=Optional3ProbeHttpResponse(status_code=200, body=b'[]'),
+        response=Optional3ProbeHttpResponse(status_code=200, body=b"[]"),
     )
     executor = Optional3ProbeExecutor(
         control_root=control_root,
@@ -301,8 +301,11 @@ def test_stdlib_transport_pins_dns_and_adds_secret_only_at_request_handoff() -> 
         maximum_response_bytes=262_144,
     )
 
-    assert response == Optional3ProbeHttpResponse(status_code=200, body=b'[]')
-    assert connection.captured["target"] == "/api/v1/stock/recommendation?symbol=AAPL&token=test-secret-value"
+    assert response == Optional3ProbeHttpResponse(status_code=200, body=b"[]")
+    assert (
+        connection.captured["target"]
+        == "/api/v1/stock/recommendation?symbol=AAPL&token=test-secret-value"
+    )
     assert connection.captured["headers"] == {
         "Accept": "application/json",
         "Accept-Encoding": "identity",
@@ -354,7 +357,7 @@ def test_post_request_receipt_failure_reports_the_one_physical_call(
     executor = Optional3ProbeExecutor(
         control_root=_private_root(tmp_path),
         transport=_RecordingTransport(
-            response=Optional3ProbeHttpResponse(status_code=200, body=b'[]'),
+            response=Optional3ProbeHttpResponse(status_code=200, body=b"[]"),
         ),
     )
 
@@ -373,7 +376,9 @@ def test_post_request_receipt_failure_reports_the_one_physical_call(
     assert caught.value.physical_call_count == 1
 
 
-def test_packet_file_reader_rejects_noncanonical_or_unsafe_local_control_files(tmp_path: Path) -> None:
+def test_packet_file_reader_rejects_noncanonical_or_unsafe_local_control_files(
+    tmp_path: Path,
+) -> None:
     control_root = _private_root(tmp_path)
     packet = _packet()
     packet_path = control_root / "approval.json"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -158,8 +159,9 @@ def generate_terminal_prices(
     rng = np.random.Generator(np.random.PCG64(validated_seed))
     draws = rng.standard_normal((paths, steps), dtype=np.float64)
     exponent = (
-        (validated_mu - 0.5 * validated_sigma * validated_sigma) * validated_dt * steps
-        + validated_sigma * math.sqrt(validated_dt) * np.sum(draws, axis=1, dtype=np.float64)
+        validated_mu - 0.5 * validated_sigma * validated_sigma
+    ) * validated_dt * steps + validated_sigma * math.sqrt(validated_dt) * np.sum(
+        draws, axis=1, dtype=np.float64
     )
     with np.errstate(over="ignore", invalid="ignore"):
         terminal = validated_s0 * np.exp(exponent)
@@ -173,7 +175,11 @@ def _wilson_interval(successes: int, total: int) -> ConfidenceInterval:
     proportion = successes / total
     denominator = 1.0 + z * z / total
     center = (proportion + z * z / (2.0 * total)) / denominator
-    radius = z * math.sqrt(proportion * (1 - proportion) / total + z * z / (4 * total * total)) / denominator
+    radius = (
+        z
+        * math.sqrt(proportion * (1 - proportion) / total + z * z / (4 * total * total))
+        / denominator
+    )
     return ConfidenceInterval(center - radius, center + radius)
 
 
@@ -186,7 +192,9 @@ def _batch_estimate(
     value = float(estimator(values))
     standard_error = float(np.std(estimates, ddof=1, dtype=np.float64) / math.sqrt(20.0))
     half_width = T19_975 * standard_error
-    return BatchEstimate(value, standard_error, ConfidenceInterval(value - half_width, value + half_width))
+    return BatchEstimate(
+        value, standard_error, ConfidenceInterval(value - half_width, value + half_width)
+    )
 
 
 def _tail_mean(values: FloatArray) -> float:
@@ -201,10 +209,13 @@ def calculate_stochastic_metrics(terminal_prices: FloatArray, *, s0: float) -> S
     losses = int(np.count_nonzero(terminal_prices < s0))
     probability = losses / terminal_prices.size
     probability_se = math.sqrt(probability * (1.0 - probability) / terminal_prices.size)
+
     def quantile(values: FloatArray) -> float:
         return float(np.quantile(values, 0.95, method="linear"))
 
-    fan = tuple(float(value) for value in np.quantile(terminal_prices, FAN_QUANTILES, method="linear"))
+    fan = tuple(
+        float(value) for value in np.quantile(terminal_prices, FAN_QUANTILES, method="linear")
+    )
     return StochasticMetrics(
         path_count=int(terminal_prices.size),
         loss_probability=probability,
@@ -267,10 +278,14 @@ def run_gbm_monte_carlo(
     counts = [count for count in PREFIX_PATHS if count <= terminal.size]
     if not counts or counts[-1] != terminal.size:
         counts.append(int(terminal.size))
-    metrics = tuple(calculate_stochastic_metrics(terminal[:count], s0=validated_s0) for count in counts)
+    metrics = tuple(
+        calculate_stochastic_metrics(terminal[:count], s0=validated_s0) for count in counts
+    )
     warnings: list[str] = []
     final = metrics[-1]
-    wilson_half_width = (final.loss_probability_wilson95.upper - final.loss_probability_wilson95.lower) / 2.0
+    wilson_half_width = (
+        final.loss_probability_wilson95.upper - final.loss_probability_wilson95.lower
+    ) / 2.0
     if wilson_half_width > 0.02:
         warnings.append("LOSS_PROBABILITY_HALF_WIDTH_EXCEEDED")
     for name, estimate in (
@@ -279,7 +294,7 @@ def run_gbm_monte_carlo(
     ):
         if _relative_or_absolute_failed(estimate):
             warnings.append(f"{name}_STANDARD_ERROR_EXCEEDED")
-    if any(_adjacent_unstable(left, right) for left, right in zip(metrics, metrics[1:])):
+    if any(_adjacent_unstable(left, right) for left, right in itertools.pairwise(metrics)):
         warnings.append("ADJACENT_PREFIX_DELTA_EXCEEDED")
     quality = "PASS" if not warnings else ("UNCERTAIN" if terminal.size < 1_000 else "WARN")
     return GBMMonteCarloReport(

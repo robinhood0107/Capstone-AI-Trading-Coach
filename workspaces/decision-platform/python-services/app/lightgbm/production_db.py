@@ -169,9 +169,7 @@ def suspend_for_drift(
         raise
 
 
-def _single_generation_call(
-    connection: Connection, query: str, params: tuple[object, ...]
-) -> int:
+def _single_generation_call(connection: Connection, query: str, params: tuple[object, ...]) -> int:
     try:
         with connection.cursor() as cursor:
             cursor.execute(query, params)

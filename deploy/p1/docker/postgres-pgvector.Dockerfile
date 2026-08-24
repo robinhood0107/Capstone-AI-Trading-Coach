@@ -7,6 +7,9 @@ FROM ${POSTGRES_IMAGE} AS pgvector-build
 ARG PGVECTOR_VERSION=0.8.6
 ARG PGVECTOR_SHA256=10bf9938906e5d643bbc4a7eea104b6f57ba4898e5b76b20e60484ea1d5a7f8f
 
+# The build stage is disposable; package versions come from the digest-pinned Alpine repository snapshot.
+# wget output and the pipe are bounded by an exact source checksum and fail-fast shell.
+# hadolint ignore=DL3018,DL3047,DL4006
 RUN set -eux; \
     apk add --no-cache --virtual .pgvector-build-deps \
         build-base \

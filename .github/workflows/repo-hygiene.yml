@@ -114,7 +114,9 @@ jobs:
           git check-ignore -q workspaces/decision-platform/python-services/tests/fixtures/validation-dummy.pem
           git check-ignore -q .direnv/env
           git check-ignore -q local.p12
-          ! git check-ignore -q .env.example
+          if git check-ignore -q .env.example; then
+            exit 1
+          fi
           git check-ignore -q workspaces/return-engine/example.py
           git check-ignore -q workspaces/experience-dashboard/app/page.tsx
           git check-ignore -q artifacts/decision-platform/run-001/result.json

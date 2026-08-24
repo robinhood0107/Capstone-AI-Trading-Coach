@@ -66,7 +66,9 @@ class PostgresS48RuntimeRepository:
                         raise RuntimeError("unexpected append disposition")
         except psycopg.Error as error:
             if error.sqlstate == "23505":
-                raise S48RuntimeWriterAuthorityError("S4.8 runtime logical identity conflict") from error
+                raise S48RuntimeWriterAuthorityError(
+                    "S4.8 runtime logical identity conflict"
+                ) from error
             raise
         return S48RuntimeAppendSummary(inserted=inserted, replayed=replayed)
 

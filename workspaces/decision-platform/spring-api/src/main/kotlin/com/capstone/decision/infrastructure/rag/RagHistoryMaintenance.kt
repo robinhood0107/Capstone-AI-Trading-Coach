@@ -60,6 +60,6 @@ class RagHistoryPurgeJob(
     private companion object {
         const val PURGE_BATCH_SIZE = 500
         const val ALERT_LAG_SECONDS = 3_600L
-        val logger = LoggerFactory.getLogger(RagHistoryPurgeJob::class.java)
+        val logger: org.slf4j.Logger = LoggerFactory.getLogger(RagHistoryPurgeJob::class.java)
     }
 }

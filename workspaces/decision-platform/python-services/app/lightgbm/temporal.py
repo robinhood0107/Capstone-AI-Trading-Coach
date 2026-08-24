@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from enum import StrEnum
-import hashlib
-from typing import Callable, Iterable, TypeVar
+from typing import TypeVar
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -14,7 +15,6 @@ import pandas as pd
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 from app.lightgbm.pit_calendar import corrected_calendar
-
 
 KST = ZoneInfo("Asia/Seoul")
 TEMPORAL_POLICY_VERSION = "s5-temporal-policy-v2"

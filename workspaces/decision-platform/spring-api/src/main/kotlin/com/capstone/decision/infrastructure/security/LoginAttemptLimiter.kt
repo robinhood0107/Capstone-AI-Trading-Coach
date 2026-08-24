@@ -38,7 +38,7 @@ class LoginAttemptLimiter(
     }
 
     fun tryAcquire(
-        remoteAddress: String,
+        ignoredRemoteAddress: String,
         username: String,
     ): Boolean =
         synchronized(lock) {
@@ -63,15 +63,15 @@ class LoginAttemptLimiter(
         }
 
     fun recordSuccess(
-        remoteAddress: String,
-        username: String,
+        ignoredRemoteAddress: String,
+        ignoredUsername: String,
     ) {
         finish(failed = false)
     }
 
     fun recordFailure(
-        remoteAddress: String,
-        username: String,
+        ignoredRemoteAddress: String,
+        ignoredUsername: String,
     ) {
         finish(failed = true)
     }

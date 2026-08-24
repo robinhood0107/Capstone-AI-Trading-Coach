@@ -3,8 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Sequence
 from dataclasses import replace
-from typing import Sequence
 
 import pytest
 
@@ -28,7 +28,6 @@ from app.rag.authorized_retrieval import (
     RrfFusion,
 )
 from app.rag.source_card_corpus import REPO_ROOT
-
 
 OWNER_ID = "00000000-0000-0000-0000-000000000001"
 OTHER_OWNER_ID = "00000000-0000-0000-0000-000000000002"
@@ -591,13 +590,8 @@ def test_dense_only_top_candidate_is_not_sufficient_relevance() -> None:
 
 
 def test_tracked_s4_3_benchmark_is_hash_bound_and_passed() -> None:
-    report_path = (
-        REPO_ROOT
-        / "capstone-rag/reports/s4-3-authorized-retrieval-benchmark.v1.json"
-    )
-    query_path = (
-        REPO_ROOT / "capstone-rag/eval/s4-3-authorized-retrieval-smoke.v1.json"
-    )
+    report_path = REPO_ROOT / "capstone-rag/reports/s4-3-authorized-retrieval-benchmark.v1.json"
+    query_path = REPO_ROOT / "capstone-rag/eval/s4-3-authorized-retrieval-smoke.v1.json"
     report = json.loads(report_path.read_text(encoding="utf-8"))
     expected_hash = report.pop("benchmarkReportSha256")
     actual_hash = hashlib.sha256(

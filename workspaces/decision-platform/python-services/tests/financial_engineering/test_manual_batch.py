@@ -73,9 +73,10 @@ def test_manual_batch_publishes_only_complete_snapshot_and_report(tmp_path: Path
         ("financial_engineering_report_manifest.v1", publication.manifest),
     ):
         schema = json.loads((repo / f"contracts/schemas/{schema_name}.schema.json").read_text())
-        assert list(
-            Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(payload)
-        ) == []
+        assert (
+            list(Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(payload))
+            == []
+        )
     write_publications(tmp_path / "output", result.publications)
     assert (tmp_path / "output/005930/financial_engineering_report.md").is_file()
 
@@ -103,7 +104,9 @@ def test_empty_stored_symbol_set_is_not_available_and_not_published() -> None:
     assert publisher.values == []
 
 
-def test_multi_symbol_failure_never_calls_atomic_publisher_or_returns_partial_publications() -> None:
+def test_multi_symbol_failure_never_calls_atomic_publisher_or_returns_partial_publications() -> (
+    None
+):
     class TwoSymbolReader(Reader):
         def current_symbols(self) -> tuple[str, ...]:
             return ("005930", "000660")

@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import ctypes
-from dataclasses import dataclass
-from datetime import UTC, datetime
 import errno
 import hashlib
 import os
-from pathlib import Path
 import secrets
 import stat
 from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
@@ -23,7 +23,6 @@ from app.data.quality.policy import (
     MAX_REPORT_MARKDOWN_BYTES,
 )
 from app.data.quality.report import render_markdown, report_json_bytes
-
 
 _DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _BUNDLE_FILES = ("report.json", "report.md", "manifest.json")
@@ -43,7 +42,7 @@ class BundleReportFile(_FrozenModel):
     sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def _validate_name_specific_cap(self) -> "BundleReportFile":
+    def _validate_name_specific_cap(self) -> BundleReportFile:
         cap = MAX_REPORT_JSON_BYTES if self.name == "report.json" else MAX_REPORT_MARKDOWN_BYTES
         if self.byte_size > cap:
             raise ValueError("bundle report file exceeded its size limit")
@@ -83,7 +82,7 @@ class QualityBundleManifest(_FrozenModel):
         return value.astimezone(UTC)
 
     @model_validator(mode="after")
-    def _validate_file_order(self) -> "QualityBundleManifest":
+    def _validate_file_order(self) -> QualityBundleManifest:
         if tuple(item.name for item in self.files) != ("report.json", "report.md"):
             raise ValueError("bundle files must use the canonical order")
         return self
@@ -258,7 +257,10 @@ def _existing_bundle_state(
         if set(os.listdir(bundle_fd)) != set(_BUNDLE_FILES):
             raise QualityBundleStorageError("existing bundle was invalid")
         for filename in _BUNDLE_FILES:
-            if _read_existing_file(bundle_fd, filename, len(expected[filename])) != expected[filename]:
+            if (
+                _read_existing_file(bundle_fd, filename, len(expected[filename]))
+                != expected[filename]
+            ):
                 raise QualityBundleStorageError("existing bundle was invalid")
     finally:
         os.close(bundle_fd)

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import copy
 from datetime import UTC, datetime
 from pathlib import Path
-import copy
 
 import pytest
+
 from app.data._shared.canonical_json import canonical_json_sha256
 from app.verification.models import VerificationReport
 from app.verification.runner import (
+    S0_S5_GATE_IDS,
     Command,
     CommandEvidence,
-    S0_S5_GATE_IDS,
     run_s0_s5_current,
 )
 

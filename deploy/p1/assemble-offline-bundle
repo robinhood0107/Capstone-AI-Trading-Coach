@@ -76,13 +76,13 @@ trap cleanup EXIT
 bundle=$temporary/$bundle_name
 install -d -m 700 "$bundle/deploy/p1/docker" "$bundle/infra/init" "$bundle/sbom" "$bundle/provenance" "$bundle/signatures"
 
-for file in p1ctl verify-release verify-offline-runtime backup restore-test compose.db.yml compose.kafka.yml compose.offline.db.yml compose.offline.kafka.yml demo.env.example release-manifest.schema.json THIRD_PARTY_NOTICES.md; do
+for file in p1ctl verify-release verify-offline-runtime backup restore-test release_guard.py compose.db.yml compose.kafka.yml compose.offline.db.yml compose.offline.kafka.yml demo.env.example release-manifest.schema.json THIRD_PARTY_NOTICES.md; do
   cp -- "$SCRIPT_DIR/$file" "$bundle/deploy/p1/$file"
 done
 cp -- "$REPOSITORY_ROOT/LICENSE" "$bundle/LICENSE"
 cp -- "$SCRIPT_DIR/docker/secret-entrypoint.sh" "$bundle/deploy/p1/docker/"
 cp -- "$REPOSITORY_ROOT/infra/init/01-extensions.sql" "$REPOSITORY_ROOT/infra/init/02-application-roles.sh" "$bundle/infra/init/"
-chmod 0555 "$bundle/deploy/p1/p1ctl" "$bundle/deploy/p1/verify-release" "$bundle/deploy/p1/verify-offline-runtime" "$bundle/deploy/p1/backup" "$bundle/deploy/p1/restore-test" "$bundle/deploy/p1/docker/"*.sh "$bundle/infra/init/02-application-roles.sh"
+chmod 0555 "$bundle/deploy/p1/p1ctl" "$bundle/deploy/p1/verify-release" "$bundle/deploy/p1/verify-offline-runtime" "$bundle/deploy/p1/backup" "$bundle/deploy/p1/restore-test" "$bundle/deploy/p1/release_guard.py" "$bundle/deploy/p1/docker/"*.sh "$bundle/infra/init/02-application-roles.sh"
 chmod 0444 "$bundle/LICENSE"
 printf 'P1_SPRING_IMAGE=%s\nP1_PYTHON_IMAGE=%s\nP1_POSTGRES_IMAGE=%s\n' "$spring_ref" "$python_ref" "$postgres_ref" > "$bundle/deploy/p1/release.env"
 chmod 0444 "$bundle/deploy/p1/release.env"
@@ -92,6 +92,8 @@ for index in "${!components[@]}"; do
   printf '%s\t%s\t%s\tlinux/amd64\n' "${components[$index]}" "${references[$index]}" "${references[$index]##*@}" >> "$images_tsv"
 done
 docker save --output "$bundle/images.tar" "${references[@]}"
+archive_entries=$temporary/images-archive.json
+python3 "$SCRIPT_DIR/release_guard.py" archive-inventory "$bundle/images.tar" "$archive_entries"
 
 sbom_tsv=$temporary/sbom.tsv
 for index in "${!components[@]}"; do
@@ -112,18 +114,26 @@ compose_tsv=$temporary/compose.tsv
 compose_paths=(deploy/p1/compose.db.yml deploy/p1/compose.offline.db.yml)
 if [[ $mode == kafka ]]; then compose_paths+=(deploy/p1/compose.kafka.yml deploy/p1/compose.offline.kafka.yml); fi
 for path in "${compose_paths[@]}"; do printf '%s\t%s\n' "$path" "$(sha "$bundle/$path")" >> "$compose_tsv"; done
+release_env_sha=$(sha "$bundle/deploy/p1/release.env")
+config_sha=$( { cat "$compose_tsv"; printf 'deploy/p1/release.env\t%s\n' "$release_env_sha"; } | LC_ALL=C sort | sha256sum | awk '{print $1}')
+license_sha=$(sha "$bundle/LICENSE")
+git -C "$REPOSITORY_ROOT" archive --format=tar --output="$bundle/provenance/source.tar" HEAD
+source_archive_sha=$(sha "$bundle/provenance/source.tar")
 
 parity_sha=$(printf '%s\n%s\n' "$spring_ref" "$python_ref" | sha256sum | awk '{print $1}')
-python3 - "$bundle/provenance/source.json" "$commit_sha" "$tree_sha" "$version" "$mode" "$parity_sha" <<'PY'
+python3 - "$bundle/provenance/source.json" "$commit_sha" "$tree_sha" "$version" "$mode" "$parity_sha" "$config_sha" "$source_archive_sha" "$license_sha" <<'PY'
 import json
 import sys
 
-path, commit_sha, tree_sha, version, mode, parity_sha = sys.argv[1:]
+path, commit_sha, tree_sha, version, mode, parity_sha, config_sha, source_archive_sha, license_sha = sys.argv[1:]
 document = {
     "applicationImageParitySha256": parity_sha,
     "buildType": "P1_OFFLINE_DEMO",
     "bundleMode": mode.upper(),
     "commitSha": commit_sha,
+    "configSha256": config_sha,
+    "licenseSha256": license_sha,
+    "sourceArchiveSha256": source_archive_sha,
     "platform": "linux/amd64",
     "providerLiveAccountOrderCalls": 0,
     "releaseVersion": version,
@@ -135,6 +145,7 @@ with open(path, "x", encoding="utf-8", newline="\n") as handle:
 PY
 provenance_tsv=$temporary/provenance.tsv
 printf 'SOURCE_PROVENANCE\tprovenance/source.json\t%s\n' "$(sha "$bundle/provenance/source.json")" > "$provenance_tsv"
+printf 'SOURCE_ARCHIVE\tprovenance/source.tar\t%s\n' "$source_archive_sha" >> "$provenance_tsv"
 
 signatures_tsv=$temporary/signatures.tsv
 if [[ $stage == FINAL ]]; then
@@ -156,14 +167,15 @@ if [[ $stage == FINAL ]]; then
   done
 fi
 
-python3 - "$bundle/release-manifest.json" "$stage" "$mode" "$version" "$commit_sha" "$tree_sha" "$parity_sha" "$images_tsv" "$compose_tsv" "$sbom_tsv" "$provenance_tsv" "$signatures_tsv" "$bundle/images.tar" <<'PY'
+python3 - "$bundle/release-manifest.json" "$stage" "$mode" "$version" "$commit_sha" "$tree_sha" "$parity_sha" "$config_sha" "$source_archive_sha" "$license_sha" "$images_tsv" "$compose_tsv" "$sbom_tsv" "$provenance_tsv" "$signatures_tsv" "$archive_entries" "$bundle/images.tar" <<'PY'
 import hashlib
 import json
 from pathlib import Path
 import sys
 
-(output, stage, mode, version, commit_sha, tree_sha, parity_sha, images_path,
- compose_path, sbom_path, provenance_path, signatures_path, archive_path) = sys.argv[1:]
+(output, stage, mode, version, commit_sha, tree_sha, parity_sha, config_sha,
+ source_archive_sha, license_sha, images_path, compose_path, sbom_path, provenance_path,
+ signatures_path, archive_entries_path, archive_path) = sys.argv[1:]
 
 def rows(path: str) -> list[list[str]]:
     value = Path(path)
@@ -175,6 +187,7 @@ document = {
     "applicationImageParitySha256": parity_sha,
     "bundleMode": mode.upper(),
     "commitSha": commit_sha,
+    "configSha256": config_sha,
     "compose": [{"path": path, "sha256": digest} for path, digest in rows(compose_path)],
     "contractId": "p1-offline-demo-release-manifest.v1",
     "crossMarketRuntime": "RETIRED_NOT_APPLICABLE",
@@ -182,13 +195,16 @@ document = {
         {"component": component, "reference": reference, "digest": digest, "platform": platform}
         for component, reference, digest, platform in rows(images_path)
     ],
+    "imageArchiveEntries": json.loads(Path(archive_entries_path).read_text(encoding="utf-8")),
     "imagesArchiveSha256": hashlib.sha256(Path(archive_path).read_bytes()).hexdigest(),
+    "licenseSha256": license_sha,
     "platform": "linux/amd64",
     "providerLiveAccountOrderCalls": 0,
     "provenance": [{"kind": kind, "path": path, "sha256": digest} for kind, path, digest in rows(provenance_path)],
     "releaseName": "P1_OFFLINE_DEMO",
     "releaseStage": stage,
     "releaseVersion": version,
+    "sourceArchiveSha256": source_archive_sha,
     "sbom": [
         {"component": component, "format": fmt, "path": path, "sha256": digest}
         for component, fmt, path, digest in rows(sbom_path)
@@ -205,8 +221,10 @@ PY
   cd "$bundle"
   find . -type f ! -name SHA256SUMS -printf '%P\0' | LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS
 )
-mv -- "$bundle" "$final_directory"
-tar --zstd --sort=name --mtime="@$(( $(git -C "$REPOSITORY_ROOT" show -s --format=%ct HEAD) ))" --owner=0 --group=0 --numeric-owner -cf "$archive" -C "$output_parent" "$bundle_name"
+archive_staging=$temporary/$bundle_name.tar.zst
+tar --zstd --sort=name --mtime="@$(( $(git -C "$REPOSITORY_ROOT" show -s --format=%ct HEAD) ))" --owner=0 --group=0 --numeric-owner -cf "$archive_staging" -C "$temporary" "$bundle_name"
+python3 "$SCRIPT_DIR/release_guard.py" publish-directory "$bundle" "$output_parent" "$bundle_name"
+python3 "$SCRIPT_DIR/release_guard.py" publish-file "$archive_staging" "$archive"
 trap - EXIT
 rm -rf -- "$temporary"
 printf 'P1_BUNDLE_DIRECTORY=%s\nP1_BUNDLE_ARCHIVE=%s\n' "$final_directory" "$archive"

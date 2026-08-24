@@ -70,7 +70,7 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         runtime = VERIFY_RUNTIME.read_text(encoding="utf-8")
         assembler = ASSEMBLER.read_text(encoding="utf-8")
-        self.assertIn('for mode in db kafka; do', workflow)
+        self.assertIn("for mode in db kafka; do", workflow)
         self.assertIn('verify-offline-runtime" "$bundle" "$mode"', workflow)
         self.assertIn("Sign complete bundle roots", workflow)
         self.assertIn('sudo env "PATH=$PATH" unshare --net --mount-proc', workflow)
@@ -86,7 +86,7 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         )
         for command in ('up "$mode"', "smoke", "backup", "restore-test"):
             self.assertIn(command, runtime)
-        self.assertLess(runtime.index("verify-release"), runtime.index('p1ctl'))
+        self.assertLess(runtime.index("verify-release"), runtime.index("p1ctl"))
         self.assertNotIn("kafka-ui", runtime)
         self.assertNotIn("kafbat", workflow.lower())
         self.assertIn("verify-offline-runtime", assembler)
@@ -97,9 +97,11 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
 
     def test_adapter_start_recreates_only_containers_and_preserves_state(self) -> None:
         p1ctl = (REPOSITORY_ROOT / "deploy" / "p1" / "p1ctl").read_text(encoding="utf-8")
-        kafka_cleanup = 'compose kafka rm -f -s kafka kafka-topic-init'
+        kafka_cleanup = "compose kafka rm -f -s kafka kafka-topic-init"
         self.assertIn(kafka_cleanup, p1ctl)
-        self.assertLess(p1ctl.index(kafka_cleanup), p1ctl.index('compose "$mode" up -d --force-recreate'))
+        self.assertLess(
+            p1ctl.index(kafka_cleanup), p1ctl.index('compose "$mode" up -d --force-recreate')
+        )
         self.assertIn('compose "$mode" up -d --force-recreate', p1ctl)
         self.assertNotIn("down -v", p1ctl)
         self.assertNotIn("volume rm", p1ctl)
@@ -113,7 +115,8 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         restore = RESTORE.read_text(encoding="utf-8")
         for script in (backup, restore):
             self.assertIn("compose.offline.db.yml", script)
-            self.assertIn('[[ -d $STATE_DIR && ! -L $STATE_DIR', script)
+            self.assertIn('python3 "$RELEASE_GUARD" state-check "$STATE_DIR"', script)
+            self.assertIn('python3 "$RELEASE_GUARD" state-', script)
         self.assertIn('--project-name "$PROJECT_NAME"', backup)
         self.assertIn('--project-name "$restore_project"', restore)
         self.assertIn("restore_identity_trust_root", restore)
@@ -128,9 +131,7 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("  role-bootstrap:\n", compose)
         self.assertIn("PGHOST: postgres", compose)
-        self.assertIn(
-            'entrypoint: ["bash", "/opt/capstone/02-application-roles.sh"]', compose
-        )
+        self.assertIn('entrypoint: ["bash", "/opt/capstone/02-application-roles.sh"]', compose)
         bootstrap = "docker compose --env-file .env -f infra/docker-compose.infra.yml run --rm role-bootstrap"
         self.assertIn(bootstrap, readme)
         self.assertLess(readme.index(bootstrap), readme.index("./gradlew bootRun"))
@@ -140,9 +141,16 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         compose = (REPOSITORY_ROOT / "deploy" / "p1" / "compose.db.yml").read_text(encoding="utf-8")
         assembler = ASSEMBLER.read_text(encoding="utf-8")
         verifier = VERIFY_RELEASE.read_text(encoding="utf-8")
+        self.assertIn(
+            "# syntax=docker/dockerfile:1.10@sha256:865e5dd094beca432e8c0a1d5e1c465db5f998dca4e439981029b3b81fb39ed5",
+            dockerfile,
+        )
         self.assertIn("postgres:16.14-alpine3.24@sha256:", dockerfile)
         self.assertIn("PGVECTOR_VERSION=0.8.6", dockerfile)
-        self.assertIn("PGVECTOR_SHA256=10bf9938906e5d643bbc4a7eea104b6f57ba4898e5b76b20e60484ea1d5a7f8f", dockerfile)
+        self.assertIn(
+            "PGVECTOR_SHA256=10bf9938906e5d643bbc4a7eea104b6f57ba4898e5b76b20e60484ea1d5a7f8f",
+            dockerfile,
+        )
         self.assertIn("RUN rm -f /usr/local/bin/gosu", dockerfile)
         self.assertIn("USER 70:70", dockerfile)
         self.assertIn("${P1_POSTGRES_IMAGE:-capstone-postgres-pgvector:p1-local}", compose)
@@ -162,6 +170,9 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         compose = (REPOSITORY_ROOT / "deploy" / "p1" / "compose.db.yml").read_text(encoding="utf-8")
         p1ctl = (REPOSITORY_ROOT / "deploy" / "p1" / "p1ctl").read_text(encoding="utf-8")
+        frontend = "# syntax=docker/dockerfile:1.10@sha256:865e5dd094beca432e8c0a1d5e1c465db5f998dca4e439981029b3b81fb39ed5"
+        self.assertIn(frontend, python_dockerfile)
+        self.assertIn(frontend, spring_dockerfile)
         self.assertIn("cgr.dev/chainguard/python:latest-dev@sha256:", python_dockerfile)
         self.assertIn("python-3.14=3.14.7-r1", python_dockerfile)
         self.assertIn("libgomp=16.2.0-r0", python_dockerfile)
@@ -177,7 +188,9 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         project = REPOSITORY_ROOT / "workspaces" / "decision-platform" / "spring-api"
         build = (project / "build.gradle.kts").read_text(encoding="utf-8")
         lock = (project / "gradle.lockfile").read_text(encoding="utf-8")
-        verification = (project / "gradle" / "verification-metadata.xml").read_text(encoding="utf-8")
+        verification = (project / "gradle" / "verification-metadata.xml").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("lockAllConfigurations()", build)
         self.assertIn("org.postgresql:postgresql:42.7.12", lock)
         self.assertIn("<verification-metadata", verification)
@@ -189,12 +202,40 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         self.assertIn("deploy/p1/.state/**", dockerignore.splitlines())
         self.assertIn("**/.state", dockerignore.splitlines())
 
+    def test_release_builds_only_from_exact_git_context_and_binds_manifest_inputs(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        assembler = ASSEMBLER.read_text(encoding="utf-8")
+        verifier = VERIFY_RELEASE.read_text(encoding="utf-8")
+        self.assertEqual(
+            workflow.count(
+                'context: "https://github.com/${{ github.repository }}.git#${{ steps.identity.outputs.sha }}"'
+            ),
+            3,
+        )
+        self.assertNotIn("          context: .\n", workflow)
+        self.assertIn("P1_RELEASE_VERSION_COLLISION", workflow)
+        self.assertIn('git -C "$REPOSITORY_ROOT" archive --format=tar --output=', assembler)
+        for field in (
+            "configSha256",
+            "sourceArchiveSha256",
+            "licenseSha256",
+            "imageArchiveEntries",
+        ):
+            self.assertIn(field, assembler)
+            self.assertIn(field, verifier)
+        self.assertIn('stage-archive "$bundle/images.tar"', verifier)
+        self.assertLess(verifier.index("archive-compare"), verifier.index("docker load"))
+        self.assertIn("publish-directory", assembler)
+        self.assertIn("publish-file", assembler)
+        self.assertIn("publish-file", workflow)
+        self.assertNotIn('rm -- "release-output/$name.tar.zst"', workflow)
+
     def test_release_publishes_pre_extract_signed_archive_checksums(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         checksum = workflow.index('sha256sum "$name.tar.zst"')
         signature = workflow.index('"release-output/$name.tar.zst.sha256"')
         self.assertLess(checksum, signature)
-        self.assertIn('release-output/*.tar.zst.sha256*', workflow)
+        self.assertIn("release-output/*.tar.zst.sha256*", workflow)
 
     def test_release_carries_the_repository_agpl_license_exactly(self) -> None:
         spring_dockerfile = (
@@ -207,7 +248,9 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         verifier = VERIFY_RELEASE.read_text(encoding="utf-8")
         license_text = (REPOSITORY_ROOT / "LICENSE").read_text(encoding="utf-8")
 
-        self.assertTrue(license_text.startswith("                    GNU AFFERO GENERAL PUBLIC LICENSE\n"))
+        self.assertTrue(
+            license_text.startswith("                    GNU AFFERO GENERAL PUBLIC LICENSE\n")
+        )
         self.assertIn('org.opencontainers.image.licenses="AGPL-3.0-only"', spring_dockerfile)
         self.assertIn('org.opencontainers.image.licenses="AGPL-3.0-only"', python_dockerfile)
         self.assertIn('cp -- "$REPOSITORY_ROOT/LICENSE" "$bundle/LICENSE"', assembler)
@@ -216,7 +259,9 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         self.assertIn("bundle AGPL license text is incomplete", verifier)
 
     def test_kafka_release_uses_sasl_capable_jvm_broker_without_unscanned_ui(self) -> None:
-        compose = (REPOSITORY_ROOT / "deploy" / "p1" / "compose.kafka.yml").read_text(encoding="utf-8")
+        compose = (REPOSITORY_ROOT / "deploy" / "p1" / "compose.kafka.yml").read_text(
+            encoding="utf-8"
+        )
         verifier = VERIFY_RELEASE.read_text(encoding="utf-8")
         self.assertIn("apache/kafka:4.3.1@sha256:ccd1314e47ec", compose)
         self.assertIn('entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "kafka-admin"]', compose)
@@ -262,8 +307,12 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         start = api.index("p1-verify author --approval-id")
         command = api[start : api.index("p1-verify run", start)]
         for argument in (
-            "--approval-id", "--output-root", "--kis-token-cap",
-            "--private-key", "--issuer-key-id", "--reason-code",
+            "--approval-id",
+            "--output-root",
+            "--kis-token-cap",
+            "--private-key",
+            "--issuer-key-id",
+            "--reason-code",
         ):
             self.assertIn(argument, command)
 

@@ -7,14 +7,43 @@ from pathlib import Path
 import subprocess
 import tarfile
 import tempfile
+import tomllib
 import unittest
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 GUARD = REPOSITORY_ROOT / "deploy" / "p1" / "release_guard.py"
+GITLEAKS_CONFIG = REPOSITORY_ROOT / ".gitleaks.toml"
 
 
 class P1ReleaseGuardTest(unittest.TestCase):
+    def test_history_secret_allowlists_stay_exact_and_conjunctive(self) -> None:
+        config = tomllib.loads(GITLEAKS_CONFIG.read_text(encoding="utf-8"))
+        allowlists = {entry["description"]: entry for entry in config["allowlists"]}
+        public_literals = allowlists[
+            "Exact non-secret CORS header, public SHA-256, and PEM marker literals"
+        ]
+        self.assertEqual(
+            public_literals["regexes"],
+            [
+                "^X-Rag-V2-Vertex-Scope-Claim$",
+                "^5b6cf53650253e7338e1a8121e8e067d6a95f8d436e0663f1fdbf593e00be582$",
+                "^-----BEGIN[ ]PRIVATE[ ]KEY-----$",
+            ],
+        )
+        historical_pem = allowlists[
+            "Historical runtime-generated PEM marker in exact Vertex validation sources"
+        ]
+        self.assertEqual(historical_pem["condition"], "AND")
+        self.assertEqual(historical_pem["targetRules"], ["private-key"])
+        self.assertEqual(
+            historical_pem["commits"],
+            ["c70e02201c5d195708b371b5cef636d505fd9b6d"],
+        )
+        self.assertEqual(len(historical_pem["paths"]), 1)
+        self.assertEqual(historical_pem["regexTarget"], "match")
+        self.assertEqual(historical_pem["regexes"], ["-----BEGIN[ ]PRIVATE[ ]KEY-----"])
+
     def run_guard(
         self,
         *arguments: str,

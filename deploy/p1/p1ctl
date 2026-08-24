@@ -58,6 +58,9 @@ load_release_images() {
       P1_POSTGRES_IMAGE)
         [[ $value =~ ^ghcr\.io/robinhood0107/capstone-postgres-pgvector@sha256:[0-9a-f]{64}$ ]] || die release_image_reference
         ;;
+      P1_KAFKA_IMAGE)
+        [[ $value =~ ^ghcr\.io/robinhood0107/capstone-kafka@sha256:[0-9a-f]{64}$ ]] || die release_image_reference
+        ;;
       *) die release_env_key ;;
     esac
     [[ $seen != *"|$key|"* ]] || die release_env_duplicate
@@ -65,7 +68,9 @@ load_release_images() {
     export "$key=$value"
     count=$((count + 1))
   done < "$RELEASE_ENV"
-  [[ $count == 3 && $seen == *'|P1_SPRING_IMAGE|'* && $seen == *'|P1_PYTHON_IMAGE|'* && $seen == *'|P1_POSTGRES_IMAGE|'* ]] || die release_env_inventory
+  [[ $count == 3 || $count == 4 ]] || die release_env_inventory
+  [[ $seen == *'|P1_SPRING_IMAGE|'* && $seen == *'|P1_PYTHON_IMAGE|'* && $seen == *'|P1_POSTGRES_IMAGE|'* ]] || die release_env_inventory
+  [[ $count == 3 || $seen == *'|P1_KAFKA_IMAGE|'* ]] || die release_env_inventory
 }
 
 compose() {
@@ -104,12 +109,15 @@ verify_runtime_env() {
       P1_POSTGRES_IMAGE)
         [[ $value == capstone-postgres-pgvector:p1-local || $value =~ ^ghcr\.io/robinhood0107/capstone-postgres-pgvector@sha256:[0-9a-f]{64}$ ]] || die runtime_env_image
         ;;
+      P1_KAFKA_IMAGE)
+        [[ $value == capstone-kafka:p1-local || $value =~ ^ghcr\.io/robinhood0107/capstone-kafka@sha256:[0-9a-f]{64}$ ]] || die runtime_env_image
+        ;;
       *) die runtime_env_key ;;
     esac
     seen="$seen$key|"
     count=$((count + 1))
   done < "$RUNTIME_ENV"
-  [[ $count == 6 ]] || die runtime_env_inventory
+  [[ $count == 7 ]] || die runtime_env_inventory
   [[ $secret_gid == "$(id -g)" ]] || die runtime_env_secret_gid
   [[ $api_port =~ ^[0-9]{4,5}$ && $api_port -ge 1024 && $api_port -le 65535 ]] || die runtime_env_api_port
 }
@@ -293,6 +301,7 @@ init_state() {
     "P1_SPRING_IMAGE=$spring_image" \
     "P1_PYTHON_IMAGE=${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}" \
     "P1_POSTGRES_IMAGE=${P1_POSTGRES_IMAGE:-capstone-postgres-pgvector:p1-local}" \
+    "P1_KAFKA_IMAGE=${P1_KAFKA_IMAGE:-capstone-kafka:p1-local}" \
     | state_write_file "$RUNTIME_ENV" 0600
   chmod 640 "$SECRETS_DIR"/*
   accept_release

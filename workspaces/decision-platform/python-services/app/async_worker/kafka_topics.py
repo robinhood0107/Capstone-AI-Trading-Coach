@@ -98,7 +98,11 @@ def exact_acl_bindings() -> tuple[AclBinding, ...]:
     return tuple(bindings)
 
 
-def materialize_exact_acls(admin: AdminClient) -> None:
+def materialize_exact_acls(
+    admin: AdminClient,
+    *,
+    deadline_seconds: float = 10.0,
+) -> None:
     expected = exact_acl_bindings()
     futures = cast(
         dict[AclBinding, _AdminFuture],
@@ -106,20 +110,26 @@ def materialize_exact_acls(admin: AdminClient) -> None:
     )
     for future in futures.values():
         future.result()
-    inventory = admin.describe_acls(
-        AclBindingFilter(
-            ResourceType.ANY,
-            cast(str, None),
-            ResourcePatternType.ANY,
-            cast(str, None),
-            cast(str, None),
-            AclOperation.ANY,
-            AclPermissionType.ANY,
-        ),
-        request_timeout=10.0,
-    ).result()
-    if set(inventory) != set(expected):
-        raise RuntimeError("Kafka ACL inventory mismatch.")
+    deadline = time.monotonic() + deadline_seconds
+    while True:
+        remaining = deadline - time.monotonic()
+        inventory = admin.describe_acls(
+            AclBindingFilter(
+                ResourceType.ANY,
+                cast(str, None),
+                ResourcePatternType.ANY,
+                cast(str, None),
+                cast(str, None),
+                AclOperation.ANY,
+                AclPermissionType.ANY,
+            ),
+            request_timeout=min(10.0, max(1.0, remaining)),
+        ).result()
+        if set(inventory) == set(expected):
+            return
+        if remaining <= 0:
+            raise RuntimeError("Kafka ACL inventory mismatch.")
+        time.sleep(min(0.25, remaining))
 
 
 def materialize_exact_topics(

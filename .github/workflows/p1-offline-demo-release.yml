@@ -29,6 +29,7 @@ jobs:
       SPRING_IMAGE: ghcr.io/robinhood0107/capstone-spring-api
       PYTHON_IMAGE: ghcr.io/robinhood0107/capstone-python-services
       POSTGRES_IMAGE: ghcr.io/robinhood0107/capstone-postgres-pgvector
+      KAFKA_IMAGE: ghcr.io/robinhood0107/capstone-kafka
     steps:
       - name: Checkout exact merge source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -119,6 +120,21 @@ jobs:
             SOURCE_REVISION=${{ steps.identity.outputs.sha }}
             RELEASE_VERSION=${{ steps.identity.outputs.version }}
 
+      - name: Build Kafka image for scan
+        id: kafka_build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: "https://github.com/${{ github.repository }}.git#${{ steps.identity.outputs.sha }}"
+          secrets: |
+            GIT_AUTH_TOKEN=${{ github.token }}
+          file: deploy/p1/docker/kafka.Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: ${{ env.KAFKA_IMAGE }}:${{ steps.identity.outputs.tag }}
+          build-args: |
+            SOURCE_REVISION=${{ steps.identity.outputs.sha }}
+            RELEASE_VERSION=${{ steps.identity.outputs.version }}
+
       - name: Bind built digests before scan
         id: local_identity
         shell: bash
@@ -127,16 +143,20 @@ jobs:
           [[ $(docker image inspect "$SPRING_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
           [[ $(docker image inspect "$PYTHON_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
           [[ $(docker image inspect "$POSTGRES_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
+          [[ $(docker image inspect "$KAFKA_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
           spring_config=$(docker image inspect "$SPRING_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{.Id}}')
           python_config=$(docker image inspect "$PYTHON_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{.Id}}')
           postgres_config=$(docker image inspect "$POSTGRES_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{.Id}}')
+          kafka_config=$(docker image inspect "$KAFKA_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{.Id}}')
           [[ $spring_config =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ $python_config =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ $postgres_config =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ $kafka_config =~ ^sha256:[0-9a-f]{64}$ ]]
           {
             echo "spring_config=$spring_config"
             echo "python_config=$python_config"
             echo "postgres_config=$postgres_config"
+            echo "kafka_config=$kafka_config"
           } >> "$GITHUB_OUTPUT"
 
       - name: Scan Spring image
@@ -166,6 +186,15 @@ jobs:
           ignore-unfixed: false
           exit-code: '1'
 
+      - name: Scan Kafka image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.KAFKA_IMAGE }}:${{ steps.identity.outputs.tag }}
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          exit-code: '1'
+
       - name: Scan bundled infrastructure images
         shell: bash
         run: |
@@ -173,7 +202,6 @@ jobs:
           images=(
             'alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce'
             'redis:7.2-alpine@sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8'
-            'apache/kafka:4.3.1@sha256:ccd1314e47ec76909e01f86308b4dcf2064f19f7c89759234322314b0e319e26'
           )
           for image in "${images[@]}"; do docker pull --platform linux/amd64 "$image"; done
 
@@ -190,15 +218,6 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: redis:7.2-alpine@sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8
-          scanners: vuln,secret
-          severity: CRITICAL,HIGH
-          ignore-unfixed: false
-          exit-code: '1'
-
-      - name: Trivy Kafka gate
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: apache/kafka:4.3.1@sha256:ccd1314e47ec76909e01f86308b4dcf2064f19f7c89759234322314b0e319e26
           scanners: vuln,secret
           severity: CRITICAL,HIGH
           ignore-unfixed: false
@@ -228,6 +247,14 @@ jobs:
           output-file: postgres-pgvector.spdx.json
           upload-artifact: false
 
+      - name: Generate Kafka SPDX SBOM
+        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        with:
+          image: ${{ env.KAFKA_IMAGE }}:${{ steps.identity.outputs.tag }}
+          format: spdx-json
+          output-file: kafka.spdx.json
+          upload-artifact: false
+
       - name: Install Syft for complete bundle SBOMs
         id: syft
         uses: anchore/sbom-action/download-syft@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
@@ -236,7 +263,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          for image in "$SPRING_IMAGE:${{ steps.identity.outputs.tag }}" "$PYTHON_IMAGE:${{ steps.identity.outputs.tag }}" "$POSTGRES_IMAGE:${{ steps.identity.outputs.tag }}"; do
+          for image in "$SPRING_IMAGE:${{ steps.identity.outputs.tag }}" "$PYTHON_IMAGE:${{ steps.identity.outputs.tag }}" "$POSTGRES_IMAGE:${{ steps.identity.outputs.tag }}" "$KAFKA_IMAGE:${{ steps.identity.outputs.tag }}"; do
             history=$(docker history --no-trunc --format '{{.CreatedBy}}' "$image")
             if grep -Eiq '(password|secret|token|account)[=:][^ $]+' <<<"$history"; then
               echo 'embedded secret-like value in image history' >&2
@@ -258,7 +285,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          for image in "$SPRING_IMAGE" "$PYTHON_IMAGE" "$POSTGRES_IMAGE"; do
+          for image in "$SPRING_IMAGE" "$PYTHON_IMAGE" "$POSTGRES_IMAGE" "$KAFKA_IMAGE"; do
             for tag in "$RELEASE_VERSION" "$RELEASE_TAG"; do
               if docker buildx imagetools inspect "$image:$tag" >/dev/null 2>&1; then
                 echo P1_RELEASE_VERSION_COLLISION >&2
@@ -275,24 +302,31 @@ jobs:
           docker push "$SPRING_IMAGE:${{ steps.identity.outputs.tag }}"
           docker push "$PYTHON_IMAGE:${{ steps.identity.outputs.tag }}"
           docker push "$POSTGRES_IMAGE:${{ steps.identity.outputs.tag }}"
+          docker push "$KAFKA_IMAGE:${{ steps.identity.outputs.tag }}"
           spring_digest="sha256:$(docker buildx imagetools inspect "$SPRING_IMAGE:${{ steps.identity.outputs.tag }}" --raw | sha256sum | awk '{print $1}')"
           python_digest="sha256:$(docker buildx imagetools inspect "$PYTHON_IMAGE:${{ steps.identity.outputs.tag }}" --raw | sha256sum | awk '{print $1}')"
           postgres_digest="sha256:$(docker buildx imagetools inspect "$POSTGRES_IMAGE:${{ steps.identity.outputs.tag }}" --raw | sha256sum | awk '{print $1}')"
+          kafka_digest="sha256:$(docker buildx imagetools inspect "$KAFKA_IMAGE:${{ steps.identity.outputs.tag }}" --raw | sha256sum | awk '{print $1}')"
           [[ $spring_digest =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ $python_digest =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ $postgres_digest =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ $kafka_digest =~ ^sha256:[0-9a-f]{64}$ ]]
           spring_ref="$SPRING_IMAGE@$spring_digest"
           python_ref="$PYTHON_IMAGE@$python_digest"
           postgres_ref="$POSTGRES_IMAGE@$postgres_digest"
+          kafka_ref="$KAFKA_IMAGE@$kafka_digest"
           docker pull --platform linux/amd64 "$spring_ref"
           docker pull --platform linux/amd64 "$python_ref"
           docker pull --platform linux/amd64 "$postgres_ref"
+          docker pull --platform linux/amd64 "$kafka_ref"
           [[ $(docker image inspect "$spring_ref" --format '{{.Id}}') == '${{ steps.local_identity.outputs.spring_config }}' ]]
           [[ $(docker image inspect "$python_ref" --format '{{.Id}}') == '${{ steps.local_identity.outputs.python_config }}' ]]
           [[ $(docker image inspect "$postgres_ref" --format '{{.Id}}') == '${{ steps.local_identity.outputs.postgres_config }}' ]]
+          [[ $(docker image inspect "$kafka_ref" --format '{{.Id}}') == '${{ steps.local_identity.outputs.kafka_config }}' ]]
           [[ $(docker image inspect "$spring_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
           [[ $(docker image inspect "$python_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
           [[ $(docker image inspect "$postgres_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
+          [[ $(docker image inspect "$kafka_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
           {
             echo "spring_ref=$spring_ref"
             echo "python_ref=$python_ref"
@@ -300,6 +334,8 @@ jobs:
             echo "python_digest=$python_digest"
             echo "postgres_ref=$postgres_ref"
             echo "postgres_digest=$postgres_digest"
+            echo "kafka_ref=$kafka_ref"
+            echo "kafka_digest=$kafka_digest"
           } >> "$GITHUB_OUTPUT"
 
       - name: Attest Spring image provenance
@@ -321,6 +357,13 @@ jobs:
         with:
           subject-name: ${{ env.POSTGRES_IMAGE }}
           subject-digest: ${{ steps.push.outputs.postgres_digest }}
+          push-to-registry: true
+
+      - name: Attest Kafka image provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-name: ${{ env.KAFKA_IMAGE }}
+          subject-digest: ${{ steps.push.outputs.kafka_digest }}
           push-to-registry: true
 
       - name: Attest Spring SBOM
@@ -347,6 +390,14 @@ jobs:
           sbom-path: postgres-pgvector.spdx.json
           push-to-registry: true
 
+      - name: Attest Kafka SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-name: ${{ env.KAFKA_IMAGE }}
+          subject-digest: ${{ steps.push.outputs.kafka_digest }}
+          sbom-path: kafka.spdx.json
+          push-to-registry: true
+
       - name: Install Cosign
         uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
 
@@ -356,32 +407,40 @@ jobs:
           SPRING_DIGEST: ${{ steps.push.outputs.spring_digest }}
           PYTHON_DIGEST: ${{ steps.push.outputs.python_digest }}
           POSTGRES_DIGEST: ${{ steps.push.outputs.postgres_digest }}
+          KAFKA_DIGEST: ${{ steps.push.outputs.kafka_digest }}
         shell: bash
         run: |
           set -Eeuo pipefail
-          install -d -m 700 release-evidence/spring release-evidence/python release-evidence/postgres
+          install -d -m 700 release-evidence/spring release-evidence/python release-evidence/postgres release-evidence/kafka
           docker buildx imagetools inspect '${{ steps.push.outputs.spring_ref }}' --raw > release-evidence/spring-manifest.json
           docker buildx imagetools inspect '${{ steps.push.outputs.python_ref }}' --raw > release-evidence/python-manifest.json
           docker buildx imagetools inspect '${{ steps.push.outputs.postgres_ref }}' --raw > release-evidence/postgres-manifest.json
+          docker buildx imagetools inspect '${{ steps.push.outputs.kafka_ref }}' --raw > release-evidence/kafka-manifest.json
           [[ "sha256:$(sha256sum release-evidence/spring-manifest.json | awk '{print $1}')" == "$SPRING_DIGEST" ]]
           [[ "sha256:$(sha256sum release-evidence/python-manifest.json | awk '{print $1}')" == "$PYTHON_DIGEST" ]]
           [[ "sha256:$(sha256sum release-evidence/postgres-manifest.json | awk '{print $1}')" == "$POSTGRES_DIGEST" ]]
+          [[ "sha256:$(sha256sum release-evidence/kafka-manifest.json | awk '{print $1}')" == "$KAFKA_DIGEST" ]]
           cosign sign --yes '${{ steps.push.outputs.spring_ref }}'
           cosign sign --yes '${{ steps.push.outputs.python_ref }}'
           cosign sign --yes '${{ steps.push.outputs.postgres_ref }}'
+          cosign sign --yes '${{ steps.push.outputs.kafka_ref }}'
           cosign sign-blob --yes --bundle release-evidence/cosign-spring-manifest.bundle.json release-evidence/spring-manifest.json
           cosign sign-blob --yes --bundle release-evidence/cosign-python-manifest.bundle.json release-evidence/python-manifest.json
           cosign sign-blob --yes --bundle release-evidence/cosign-postgres-manifest.bundle.json release-evidence/postgres-manifest.json
+          cosign sign-blob --yes --bundle release-evidence/cosign-kafka-manifest.bundle.json release-evidence/kafka-manifest.json
           (cd release-evidence/spring && gh attestation download 'oci://${{ steps.push.outputs.spring_ref }}' -R robinhood0107/Capstone-AI-Trading-Coach)
           (cd release-evidence/python && gh attestation download 'oci://${{ steps.push.outputs.python_ref }}' -R robinhood0107/Capstone-AI-Trading-Coach)
           (cd release-evidence/postgres && gh attestation download 'oci://${{ steps.push.outputs.postgres_ref }}' -R robinhood0107/Capstone-AI-Trading-Coach)
+          (cd release-evidence/kafka && gh attestation download 'oci://${{ steps.push.outputs.kafka_ref }}' -R robinhood0107/Capstone-AI-Trading-Coach)
           [[ $(find release-evidence/spring -maxdepth 1 -type f -name '*.jsonl' | wc -l) == 1 ]]
           [[ $(find release-evidence/python -maxdepth 1 -type f -name '*.jsonl' | wc -l) == 1 ]]
           [[ $(find release-evidence/postgres -maxdepth 1 -type f -name '*.jsonl' | wc -l) == 1 ]]
+          [[ $(find release-evidence/kafka -maxdepth 1 -type f -name '*.jsonl' | wc -l) == 1 ]]
           mv -- release-evidence/spring/*.jsonl release-evidence/github-spring.attestation.jsonl
           mv -- release-evidence/python/*.jsonl release-evidence/github-python.attestation.jsonl
           mv -- release-evidence/postgres/*.jsonl release-evidence/github-postgres.attestation.jsonl
-          rmdir release-evidence/spring release-evidence/python release-evidence/postgres
+          mv -- release-evidence/kafka/*.jsonl release-evidence/github-kafka.attestation.jsonl
+          rmdir release-evidence/spring release-evidence/python release-evidence/postgres release-evidence/kafka
           gh attestation trusted-root > release-evidence/github-trusted-root.jsonl
 
       - name: Install zstd
@@ -397,6 +456,7 @@ jobs:
           P1_SPRING_IMAGE: ${{ steps.push.outputs.spring_ref }}
           P1_PYTHON_IMAGE: ${{ steps.push.outputs.python_ref }}
           P1_POSTGRES_IMAGE: ${{ steps.push.outputs.postgres_ref }}
+          P1_KAFKA_IMAGE: ${{ steps.push.outputs.kafka_ref }}
           RELEASE_VERSION: ${{ steps.identity.outputs.version }}
         shell: bash
         run: |
@@ -474,4 +534,5 @@ jobs:
             spring-api.spdx.json
             python-services.spdx.json
             postgres-pgvector.spdx.json
+            kafka.spdx.json
             release-evidence/*

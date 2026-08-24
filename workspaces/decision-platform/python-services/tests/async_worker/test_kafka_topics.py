@@ -61,6 +61,19 @@ def test_acl_materializer_waits_for_every_binding() -> None:
     admin.describe_acls.assert_called_once()
 
 
+def test_acl_materializer_waits_for_broker_inventory_convergence() -> None:
+    success = Mock()
+    success.result.return_value = None
+    admin = Mock()
+    bindings = exact_acl_bindings()
+    admin.create_acls.return_value = dict.fromkeys(bindings, success)
+    admin.describe_acls.return_value.result.side_effect = [[], list(bindings)]
+
+    materialize_exact_acls(admin, deadline_seconds=1.0)
+
+    assert admin.describe_acls.call_count == 2
+
+
 def test_materializer_accepts_existing_topics_without_retry() -> None:
     expected = exact_topic_configs()
     already_exists = Mock()

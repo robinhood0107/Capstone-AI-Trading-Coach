@@ -37,6 +37,11 @@ postgres_ref=${P1_POSTGRES_IMAGE:?P1_POSTGRES_IMAGE is required}
 [[ $spring_ref =~ ^ghcr\.io/robinhood0107/capstone-spring-api@sha256:[0-9a-f]{64}$ ]] || die spring_digest_reference
 [[ $python_ref =~ ^ghcr\.io/robinhood0107/capstone-python-services@sha256:[0-9a-f]{64}$ ]] || die python_digest_reference
 [[ $postgres_ref =~ ^ghcr\.io/robinhood0107/capstone-postgres-pgvector@sha256:[0-9a-f]{64}$ ]] || die postgres_digest_reference
+kafka_ref=''
+if [[ $mode == kafka ]]; then
+  kafka_ref=${P1_KAFKA_IMAGE:?P1_KAFKA_IMAGE is required}
+  [[ $kafka_ref =~ ^ghcr\.io/robinhood0107/capstone-kafka@sha256:[0-9a-f]{64}$ ]] || die kafka_digest_reference
+fi
 
 declare -a components=(runtime-netns postgres redis spring-api python-services)
 declare -a references=(
@@ -49,7 +54,7 @@ declare -a references=(
 if [[ $mode == kafka ]]; then
   components+=(kafka)
   references+=(
-    'apache/kafka:4.3.1@sha256:ccd1314e47ec76909e01f86308b4dcf2064f19f7c89759234322314b0e319e26'
+    "$kafka_ref"
   )
 fi
 
@@ -65,6 +70,11 @@ done
 [[ $(docker image inspect "$spring_ref" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}') == AGPL-3.0-only ]] || die spring_license_label
 [[ $(docker image inspect "$python_ref" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}') == AGPL-3.0-only ]] || die python_license_label
 [[ $(docker image inspect "$postgres_ref" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}') == PostgreSQL ]] || die postgres_license_label
+if [[ $mode == kafka ]]; then
+  [[ $(docker image inspect "$kafka_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$commit_sha" ]] || die kafka_revision_label
+  [[ $(docker image inspect "$kafka_ref" --format '{{index .Config.Labels "org.opencontainers.image.version"}}') == "$version" ]] || die kafka_version_label
+  [[ $(docker image inspect "$kafka_ref" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}') == Apache-2.0 ]] || die kafka_license_label
+fi
 
 bundle_name="capstone-p1-offline-demo-${mode}-${version}-amd64"
 final_directory=$output_parent/$bundle_name
@@ -85,6 +95,7 @@ cp -- "$REPOSITORY_ROOT/infra/init/01-extensions.sql" "$REPOSITORY_ROOT/infra/in
 chmod 0555 "$bundle/deploy/p1/p1ctl" "$bundle/deploy/p1/verify-release" "$bundle/deploy/p1/verify-offline-runtime" "$bundle/deploy/p1/backup" "$bundle/deploy/p1/restore-test" "$bundle/deploy/p1/release_guard.py" "$bundle/deploy/p1/docker/"*.sh "$bundle/infra/init/02-application-roles.sh"
 chmod 0444 "$bundle/LICENSE"
 printf 'P1_SPRING_IMAGE=%s\nP1_PYTHON_IMAGE=%s\nP1_POSTGRES_IMAGE=%s\n' "$spring_ref" "$python_ref" "$postgres_ref" > "$bundle/deploy/p1/release.env"
+if [[ $mode == kafka ]]; then printf 'P1_KAFKA_IMAGE=%s\n' "$kafka_ref" >> "$bundle/deploy/p1/release.env"; fi
 chmod 0444 "$bundle/deploy/p1/release.env"
 
 images_tsv=$temporary/images.tsv
@@ -151,14 +162,18 @@ signatures_tsv=$temporary/signatures.tsv
 if [[ $stage == FINAL ]]; then
   evidence_dir=${P1_RELEASE_EVIDENCE_DIR:?P1_RELEASE_EVIDENCE_DIR is required for FINAL}
   [[ -d $evidence_dir && ! -L $evidence_dir ]] || die invalid_evidence_directory
-  for item in SPRING_OCI_MANIFEST:spring-manifest.json PYTHON_OCI_MANIFEST:python-manifest.json POSTGRES_OCI_MANIFEST:postgres-manifest.json; do
+  manifest_items=(SPRING_OCI_MANIFEST:spring-manifest.json PYTHON_OCI_MANIFEST:python-manifest.json POSTGRES_OCI_MANIFEST:postgres-manifest.json)
+  if [[ $mode == kafka ]]; then manifest_items+=(KAFKA_OCI_MANIFEST:kafka-manifest.json); fi
+  for item in "${manifest_items[@]}"; do
     kind=${item%%:*}
     file=${item#*:}
     [[ -f $evidence_dir/$file && ! -L $evidence_dir/$file ]] || die "missing_$file"
     cp -- "$evidence_dir/$file" "$bundle/provenance/$file"
     printf '%s\t%s\t%s\n' "$kind" "provenance/$file" "$(sha "$bundle/provenance/$file")" >> "$provenance_tsv"
   done
-  for item in COSIGN_SPRING_MANIFEST:cosign-spring-manifest.bundle.json COSIGN_PYTHON_MANIFEST:cosign-python-manifest.bundle.json COSIGN_POSTGRES_MANIFEST:cosign-postgres-manifest.bundle.json GITHUB_SPRING:github-spring.attestation.jsonl GITHUB_PYTHON:github-python.attestation.jsonl GITHUB_POSTGRES:github-postgres.attestation.jsonl GITHUB_TRUST_ROOT:github-trusted-root.jsonl; do
+  signature_items=(COSIGN_SPRING_MANIFEST:cosign-spring-manifest.bundle.json COSIGN_PYTHON_MANIFEST:cosign-python-manifest.bundle.json COSIGN_POSTGRES_MANIFEST:cosign-postgres-manifest.bundle.json GITHUB_SPRING:github-spring.attestation.jsonl GITHUB_PYTHON:github-python.attestation.jsonl GITHUB_POSTGRES:github-postgres.attestation.jsonl GITHUB_TRUST_ROOT:github-trusted-root.jsonl)
+  if [[ $mode == kafka ]]; then signature_items+=(COSIGN_KAFKA_MANIFEST:cosign-kafka-manifest.bundle.json GITHUB_KAFKA:github-kafka.attestation.jsonl); fi
+  for item in "${signature_items[@]}"; do
     kind=${item%%:*}
     file=${item#*:}
     [[ -f $evidence_dir/$file && ! -L $evidence_dir/$file ]] || die "missing_$file"

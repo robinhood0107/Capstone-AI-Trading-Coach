@@ -81,7 +81,20 @@ class P1EnvironmentDocumentationTest(unittest.TestCase):
         for key in release:
             self.assertIn(key, p1ctl)
 
-        for profile, documented_name in (("postgres", "POSTGRES"), ("role-bootstrap", "ROLE_BOOTSTRAP"), ("spring", "SPRING"), ("migration", "MIGRATION"), ("bootstrap", "BOOTSTRAP"), ("python", "PYTHON"), ("demo", "DEMO"), ("redis", "REDIS")):
+        for profile, documented_name in (
+            ("postgres", "POSTGRES"),
+            ("role-bootstrap", "ROLE_BOOTSTRAP"),
+            ("spring", "SPRING"),
+            ("authority", "AUTHORITY"),
+            ("kafka-publisher", "KAFKA_PUBLISHER"),
+            ("poison-recorder", "POISON_RECORDER"),
+            ("kafka-admin", "KAFKA_ADMIN"),
+            ("migration", "MIGRATION"),
+            ("bootstrap", "BOOTSTRAP"),
+            ("python", "PYTHON"),
+            ("demo", "DEMO"),
+            ("redis", "REDIS"),
+        ):
             documented = _readme_keys(f"{documented_name}_ENV")
             required = _required_profile_keys(entrypoint, profile)
             allowed = set(re.findall(rf"(?<![A-Za-z0-9-]){re.escape(profile)}:([A-Z][A-Z0-9_]*)", entrypoint))

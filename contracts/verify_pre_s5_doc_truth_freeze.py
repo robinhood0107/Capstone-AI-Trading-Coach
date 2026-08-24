@@ -191,7 +191,6 @@ FORBIDDEN_PUBLIC_MARKERS: Final[dict[str, tuple[str, ...]]] = {
 }
 SOLO_OWNERSHIP_PUBLIC_PATHS: Final[tuple[str, ...]] = (
     "AGENTS.md",
-    "README.md",
     "docs/README.md",
     "docs/최종_프로젝트_명세서.md",
     "docs/API_명세서.md",

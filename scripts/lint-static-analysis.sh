@@ -62,4 +62,3 @@ uv --project "$python_project" run pymarkdown \
   -d '*' \
   -e md001,md025,md040,md042,md051,md052,md053 \
   scan "${markdown_files[@]}"
-

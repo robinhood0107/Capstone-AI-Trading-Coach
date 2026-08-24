@@ -42,11 +42,13 @@ class S7AsyncMigrationIntegrationTest {
                 it.executeUpdate("create database s7_fresh")
                 it.executeUpdate("create database s7_replay")
                 it.executeUpdate("create database s7_p1_demo")
+                it.executeUpdate("create database s7_kafka_roles")
             }
         }
         flyway(databaseName = "s7_fresh").migrate()
         flyway(databaseName = "s7_replay").migrate()
         flyway(databaseName = "s7_p1_demo").migrate()
+        flyway(databaseName = "s7_kafka_roles").migrate()
     }
 
     @Test
@@ -265,6 +267,109 @@ class S7AsyncMigrationIntegrationTest {
                     }
                 }
             assertEquals("42501", legacyClaim.sqlState)
+        }
+    }
+
+    @Test
+    fun `Kafka publisher and poison recorder roles are exact and one purpose only`() {
+        val database = "s7_kafka_roles"
+        val eventId = "evt_kafka_role_boundary_0001"
+        val partitionKey = "hmac-sha256:${"a".repeat(64)}"
+        connection(database, postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use { statement ->
+                statement.executeUpdate(
+                    """
+                    insert into event_outbox(
+                      event_id,event_type,aggregate_type,aggregate_id,partition_key,payload_json,
+                      schema_version,status,retry_count,next_attempt_at
+                    ) values (
+                      '$eventId','artifact.ingest-requested.v1','ASYNC_JOB','job_kafka_role_boundary_0001',
+                      '$partitionKey',
+                      '{"jobId":"job_kafka_role_boundary_0001","artifactId":"artifact_kafka_role_boundary_0001",
+                        "contentHash":"sha256:${"b".repeat(64)}"}'::jsonb,
+                      '1.0.0','PENDING',0,statement_timestamp()
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        for ((user, password) in listOf(APP_USER to APP_PASSWORD, WORKER_USER to WORKER_PASSWORD)) {
+            connection(database, user, password).use { denied ->
+                val error =
+                    assertThrows<SQLException> {
+                        denied.createStatement().use {
+                            it.executeQuery("select * from p1_claim_kafka_outbox('p1-kafka-outbox-publisher',100)")
+                        }
+                    }
+                assertEquals("42501", error.sqlState)
+            }
+        }
+
+        var claimToken: UUID? = null
+        connection(database, OUTBOX_USER, OUTBOX_PASSWORD).use { publisher ->
+            publisher.createStatement().use { statement ->
+                statement.executeQuery("select * from p1_claim_kafka_outbox('p1-kafka-outbox-publisher',100)").use { rows ->
+                    while (rows.next()) {
+                        if (rows.getString("event_id") == eventId) claimToken = rows.getObject("claim_token", UUID::class.java)
+                    }
+                }
+                assertTrue(claimToken != null)
+                assertTrue(
+                    booleanResult(
+                        statement,
+                        "select p1_bind_kafka_outbox_payload_hash('$eventId','$claimToken','sha256:${"c".repeat(64)}')",
+                    ),
+                )
+                assertTrue(booleanResult(statement, "select p1_complete_kafka_outbox('$eventId','$claimToken')"))
+                val tableRead = assertThrows<SQLException> { statement.executeQuery("select * from event_outbox") }
+                assertEquals("42501", tableRead.sqlState)
+                val poison =
+                    assertThrows<SQLException> {
+                        statement.executeQuery(
+                            "select p1_record_kafka_poison_receipt(" +
+                                "'evt_poison_denied_00000001','artifact.ingest-requested.v1','sha256:${"d".repeat(64)}'," +
+                                "'artifact.ingest-requested.v1',1,7,1,'INVALID_EVENT_PAYLOAD','$partitionKey',null,null)",
+                        )
+                    }
+                assertEquals("42501", poison.sqlState)
+            }
+        }
+
+        val poisonEvent = "evt_poison_role_boundary_0001"
+        connection(database, POISON_USER, POISON_PASSWORD).use { recorder ->
+            recorder.createStatement().use { statement ->
+                val sql =
+                    "select p1_record_kafka_poison_receipt(" +
+                        "'$poisonEvent','artifact.ingest-requested.v1','sha256:${"d".repeat(64)}'," +
+                        "'artifact.ingest-requested.v1',1,7,1,'INVALID_EVENT_SIGNATURE','$partitionKey',null,null)"
+                assertTrue(booleanResult(statement, sql))
+                assertTrue(booleanResult(statement, sql))
+                val tableRead = assertThrows<SQLException> { statement.executeQuery("select * from p1_kafka_poison_receipt") }
+                assertEquals("42501", tableRead.sqlState)
+                val publisherClaim =
+                    assertThrows<SQLException> {
+                        statement.executeQuery("select * from p1_claim_kafka_outbox('p1-kafka-outbox-publisher',100)")
+                    }
+                assertEquals("42501", publisherClaim.sqlState)
+            }
+        }
+        connection(database, postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use { statement ->
+                assertEquals(
+                    1,
+                    statement
+                        .executeQuery(
+                            "select count(*) from p1_kafka_poison_receipt where source_topic='artifact.ingest-requested.v1' " +
+                                "and source_partition=1 and source_offset=7",
+                        ).use { rows ->
+                            assertTrue(rows.next())
+                            rows.getInt(1)
+                        },
+                )
+                val immutable = assertThrows<SQLException> { statement.executeUpdate("delete from p1_kafka_poison_receipt") }
+                assertEquals("42501", immutable.sqlState)
+            }
         }
     }
 
@@ -1466,6 +1571,10 @@ class S7AsyncMigrationIntegrationTest {
         private const val APP_PASSWORD = "app-test"
         private const val WORKER_USER = "decision_worker"
         private const val WORKER_PASSWORD = "worker-test-secret-0001"
+        private const val OUTBOX_USER = "decision_outbox_publisher"
+        private const val OUTBOX_PASSWORD = "outbox-publisher-test-0001"
+        private const val POISON_USER = "decision_poison_recorder"
+        private const val POISON_PASSWORD = "poison-recorder-test-0001"
         private const val REPLAY_USER = "decision_replay"
         private const val REPLAY_PASSWORD = "replay-test-secret-0001"
         private const val IDENTITY_USER = "decision_identity"

@@ -150,6 +150,16 @@ init_state() {
   redis_password=$(random_secret)
   grpc_secret=$(random_secret)
   partition_key=$(random_secret)
+  local kafka_admin_password kafka_publisher_password kafka_worker_password poison_recorder_secret
+  kafka_admin_password=$(random_secret)
+  kafka_publisher_password=$(random_secret)
+  kafka_worker_password=$(random_secret)
+  poison_recorder_secret=$(random_secret)
+  local kafka_private_der_b64 kafka_public_der_b64 kafka_private_key kafka_public_key
+  kafka_private_der_b64=$(openssl genpkey -algorithm ED25519 | openssl pkey -outform DER | base64 -w0)
+  kafka_public_der_b64=$(printf '%s' "$kafka_private_der_b64" | base64 -d | openssl pkey -inform DER -pubout -outform DER | base64 -w0)
+  kafka_private_key=$(printf '%s' "$kafka_private_der_b64" | tr '+/' '-_' | tr -d '=')
+  kafka_public_key=$(printf '%s' "$kafka_public_der_b64" | tr '+/' '-_' | tr -d '=')
   local actor_capability_secret actor_private_der_b64 actor_public_der_b64 actor_private_key actor_public_key
   actor_capability_secret=$(random_secret)
   actor_private_der_b64=$(openssl genpkey -algorithm ED25519 | openssl pkey -outform DER | base64 -w0)
@@ -216,6 +226,31 @@ init_state() {
   write_line ASYNC_WORKER_DATABASE_DSN "postgresql://decision_worker:${db[WORKER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/python.env"
   write_line ASYNC_PARTITION_HMAC_KEY "$partition_key" "$SECRETS_DIR/python.env"
   write_line ASYNC_WORKER_GRPC_SHARED_SECRET "$grpc_secret" "$SECRETS_DIR/python.env"
+  write_line KAFKA_SASL_USERNAME p1_async_worker "$SECRETS_DIR/python.env"
+  write_line KAFKA_SASL_PASSWORD "$kafka_worker_password" "$SECRETS_DIR/python.env"
+  write_line KAFKA_ENVELOPE_PUBLIC_KEY "$kafka_public_key" "$SECRETS_DIR/python.env"
+  write_line POISON_RECORDER_URL http://127.0.0.1:18082/internal/kafka/poison-receipts "$SECRETS_DIR/python.env"
+  write_line POISON_RECORDER_SHARED_SECRET "$poison_recorder_secret" "$SECRETS_DIR/python.env"
+  : > "$SECRETS_DIR/kafka-publisher.env"
+  write_line OUTBOX_PUBLISHER_DATABASE_DSN "postgresql://decision_outbox_publisher:${db[OUTBOX_PUBLISHER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/kafka-publisher.env"
+  write_line KAFKA_SASL_USERNAME p1_outbox_publisher "$SECRETS_DIR/kafka-publisher.env"
+  write_line KAFKA_SASL_PASSWORD "$kafka_publisher_password" "$SECRETS_DIR/kafka-publisher.env"
+  write_line KAFKA_ENVELOPE_PRIVATE_KEY "$kafka_private_key" "$SECRETS_DIR/kafka-publisher.env"
+  : > "$SECRETS_DIR/poison-recorder.env"
+  write_line POISON_RECORDER_DATABASE_DSN "postgresql://decision_poison_recorder:${db[POISON_RECORDER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/poison-recorder.env"
+  write_line POISON_RECORDER_SHARED_SECRET "$poison_recorder_secret" "$SECRETS_DIR/poison-recorder.env"
+  : > "$SECRETS_DIR/kafka-admin.env"
+  write_line KAFKA_SASL_USERNAME p1_kafka_admin "$SECRETS_DIR/kafka-admin.env"
+  write_line KAFKA_SASL_PASSWORD "$kafka_admin_password" "$SECRETS_DIR/kafka-admin.env"
+  printf '%s\n' \
+    'KafkaServer {' \
+    '  org.apache.kafka.common.security.plain.PlainLoginModule required' \
+    "  username=\"p1_kafka_admin\"" \
+    "  password=\"$kafka_admin_password\"" \
+    "  user_p1_kafka_admin=\"$kafka_admin_password\"" \
+    "  user_p1_outbox_publisher=\"$kafka_publisher_password\"" \
+    "  user_p1_async_worker=\"$kafka_worker_password\";" \
+    '};' > "$SECRETS_DIR/kafka-broker-jaas.conf"
   : > "$SECRETS_DIR/demo.env"
   write_line P1_DEMO_DATABASE_DSN "postgresql://decision_demo:${db[DEMO]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/demo.env"
   write_line ASYNC_PARTITION_HMAC_KEY "$partition_key" "$SECRETS_DIR/demo.env"
@@ -239,8 +274,8 @@ verify_state() {
   require_state
   verify_runtime_env
   local expected=(actor-capability-authority.env bootstrap.env demo-admin.bundle demo-admin.password demo-credential-separation.key demo.env demo-user.bundle \
-    demo-user.password migration.env postgres.env python.env \
-    rag-history-kek-v1.key redis.env role-bootstrap.env spring.env)
+    demo-user.password kafka-admin.env kafka-broker-jaas.conf kafka-publisher.env migration.env poison-recorder.env \
+    postgres.env python.env rag-history-kek-v1.key redis.env role-bootstrap.env spring.env)
   local actual
   actual=$(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
   [[ $actual == "$(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)" ]] || die secret_inventory

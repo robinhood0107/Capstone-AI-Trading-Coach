@@ -26,6 +26,7 @@ WORKDIR /app
 COPY --from=build --chown=65532:65532 /opt/venv /opt/venv
 COPY --from=build --chown=65532:65532 /source/workspaces/decision-platform/python-services/app /app/app
 COPY --chown=65532:65532 deploy/p1/docker/secret-entrypoint.sh /usr/local/bin/p1-secret-entrypoint
+RUN chmod 0555 /usr/local/bin/p1-secret-entrypoint
 USER 65532:65532
 EXPOSE 50056
 ENTRYPOINT ["/usr/local/bin/p1-secret-entrypoint", "python"]

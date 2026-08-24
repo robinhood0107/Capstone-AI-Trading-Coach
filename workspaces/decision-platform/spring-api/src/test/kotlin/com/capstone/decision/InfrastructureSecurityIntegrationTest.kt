@@ -302,19 +302,25 @@ class InfrastructureSecurityIntegrationTest {
             }
             listOf(
                 "insert_principle_authorized(text,text,text,text,text,text,text,integer,timestamp with time zone,timestamp with time zone)",
-                "insert_principle_version_authorized(text,text,text,text,integer,text,text,text,text,jsonb,text[],timestamp with time zone)",
-                "insert_principle_audit_authorized(text,text,text,text,text,integer,text[],timestamp with time zone)",
+                "insert_principle_version_authorized_v2(text,text,text,text,integer,text,text,text,text,text,text,timestamp with time zone)",
+                "insert_principle_audit_authorized_v2(text,text,text,text,text,integer,text,timestamp with time zone)",
                 "read_owned_principle_authorized(text,text,text)",
                 "list_owned_principles_authorized(text,text,integer,text,timestamp with time zone,text)",
                 "update_owned_principle_authorized(text,text,text,integer,text,text,text,timestamp with time zone)",
                 "list_owned_principle_versions_authorized(text,text,text,integer,text,integer)",
                 "read_active_owned_principle_snapshot_authorized(text,text,text)",
-                "lock_active_owned_principle_authorized(text,text,text,integer,text,text)",
             ).forEach { function ->
                 assertTrue(
                     hasFunctionPrivilege(connection, "decision_app", function),
                     "decision_app must retain the owner-scoped Principle capability $function",
                 )
+            }
+            listOf(
+                "insert_principle_version_authorized(text,text,text,text,integer,text,text,text,text,jsonb,text[],timestamp with time zone)",
+                "insert_principle_audit_authorized(text,text,text,text,text,integer,text[],timestamp with time zone)",
+                "lock_active_owned_principle_authorized(text,text,text,integer,text,text)",
+            ).forEach { function ->
+                assertFalse(hasFunctionPrivilege(connection, "decision_app", function))
             }
             assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "INSERT"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "SELECT"))
@@ -359,7 +365,7 @@ class InfrastructureSecurityIntegrationTest {
                 "read_kill_switch_audit_projection()",
                 "read_decision_usability()",
                 "transition_kill_switch_authorized(text,text,bigint,boolean,bigint,text)",
-                "persist_decision_bundle_authorized(text,jsonb)",
+                "persist_decision_bundle_authorized_v2(text,text)",
                 "read_mock_order_decision(text,text,text)",
                 "find_mock_order_idempotency_result(text,text,timestamp with time zone,text)",
                 "read_mock_order_owner_projection(text,text,text)",
@@ -375,6 +381,7 @@ class InfrastructureSecurityIntegrationTest {
                 "append_kill_switch_outbox(text,boolean,timestamp with time zone)",
                 "read_demo_credentials()",
                 "read_user_actor(text)",
+                "persist_decision_bundle_authorized(text,jsonb)",
             ).forEach { function ->
                 assertFalse(hasFunctionPrivilege(connection, "decision_app", function))
             }
@@ -662,11 +669,18 @@ class InfrastructureSecurityIntegrationTest {
                             'decision_app',
                             'decision_auth',
                             'decision_worker',
+                            'decision_outbox_publisher',
+                            'decision_poison_recorder',
                             'decision_replay',
+                            'decision_identity',
+                            'decision_replay_authorizer',
                             'decision_demo',
                             'decision_collector',
                             'decision_disclosure_reader',
                             'decision_market_writer',
+                            'decision_market_operational_reader',
+                            'decision_market_research_reader',
+                            'decision_market_retention_admin',
                             'decision_portfolio_writer',
                             'decision_risk_writer',
                             'decision_fill_writer',
@@ -887,6 +901,8 @@ class InfrastructureSecurityIntegrationTest {
         private val adminPassword: String = "a" + "p".repeat(24)
         private val runtimePassword: String = "r" + "p".repeat(24)
         private val workerPassword: String = "w" + "a".repeat(24)
+        private val outboxPublisherPassword: String = "o" + "p".repeat(24)
+        private val poisonRecorderPassword: String = "p" + "r".repeat(24)
         private val replayPassword: String = "r" + "y".repeat(24)
         private val identityPassword: String = "i" + "d".repeat(24)
         private val authPassword: String = "a" + "u".repeat(24)
@@ -920,6 +936,8 @@ class InfrastructureSecurityIntegrationTest {
                 .withPassword(adminPassword)
                 .withEnv("POSTGRES_APP_PASSWORD", runtimePassword)
                 .withEnv("POSTGRES_WORKER_PASSWORD", workerPassword)
+                .withEnv("POSTGRES_OUTBOX_PUBLISHER_PASSWORD", outboxPublisherPassword)
+                .withEnv("POSTGRES_POISON_RECORDER_PASSWORD", poisonRecorderPassword)
                 .withEnv("POSTGRES_REPLAY_PASSWORD", replayPassword)
                 .withEnv("POSTGRES_IDENTITY_PASSWORD", identityPassword)
                 .withEnv("POSTGRES_AUTH_PASSWORD", authPassword)

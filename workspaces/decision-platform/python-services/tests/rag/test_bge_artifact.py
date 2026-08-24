@@ -63,19 +63,20 @@ def test_public_digest_allowlist_keeps_only_the_exact_approved_values() -> None:
     b86_expected_regexes = {f"^{digest}$" for digest in _B86_PUBLIC_SOURCE_CARD_SHA256}
 
     assert config["extend"]["useDefault"] is True
-    assert len(allowlists) == 2
-    assert all(set(allowlist) == {"description", "regexes"} for allowlist in allowlists)
-    assert all("regexTarget" not in allowlist for allowlist in allowlists)
-    assert set(allowlists[0]["regexes"]) == expected_regexes
-    assert set(allowlists[1]["regexes"]) == b86_expected_regexes
+    assert len(allowlists) == 4
+    digest_allowlists = allowlists[:2]
+    assert all(set(allowlist) == {"description", "regexes"} for allowlist in digest_allowlists)
+    assert all("regexTarget" not in allowlist for allowlist in digest_allowlists)
+    assert set(digest_allowlists[0]["regexes"]) == expected_regexes
+    assert set(digest_allowlists[1]["regexes"]) == b86_expected_regexes
     assert all(
         re.fullmatch(r"\^[0-9a-f]{64}\$", pattern)
-        for allowlist in allowlists
+        for allowlist in digest_allowlists
         for pattern in allowlist["regexes"]
     )
     assert all(
         re.fullmatch(pattern, _UNAPPROVED_SECRET_LIKE_SHA256) is None
-        for allowlist in allowlists
+        for allowlist in digest_allowlists
         for pattern in allowlist["regexes"]
     )
 

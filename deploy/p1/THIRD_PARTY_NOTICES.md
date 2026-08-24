@@ -1,6 +1,6 @@
 # P1 offline demo third-party notices
 
-The bundle redistributes unmodified container images and application dependencies under their respective licenses.
+The bundle redistributes container images and application dependencies under their respective licenses.
 The generated SPDX and CycloneDX SBOM files are the authoritative package inventories for a specific bundle.
 
 - Eclipse Temurin: GPL-2.0 with Classpath Exception.

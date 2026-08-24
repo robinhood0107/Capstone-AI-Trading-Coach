@@ -58,6 +58,8 @@ object OpenApiFixtureEnvironmentWriter {
                     "POSTGRES_SIGNAL_SCHEDULER_PASSWORD" to randomToken(random, 32),
                     "POSTGRES_SIGNAL_ADMIN_PASSWORD" to randomToken(random, 32),
                     "POSTGRES_WORKER_PASSWORD" to randomToken(random, 32),
+                    "POSTGRES_OUTBOX_PUBLISHER_PASSWORD" to randomToken(random, 32),
+                    "POSTGRES_POISON_RECORDER_PASSWORD" to randomToken(random, 32),
                     "POSTGRES_REPLAY_PASSWORD" to randomToken(random, 32),
                     "POSTGRES_IDENTITY_PASSWORD" to randomToken(random, 32),
                     "POSTGRES_AUTH_PASSWORD" to randomToken(random, 32),

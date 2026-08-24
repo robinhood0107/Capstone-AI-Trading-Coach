@@ -135,7 +135,9 @@ def test_context_set_hash_changes_when_any_document_chunk_changes() -> None:
     original = build_canonical_chunks(
         source_id="src_kis_openapi_overview_001",
         source_revision_id="src_rev_demo",
-        blocks=parse_markdown_document("# A\n\none two three four five.\n\nsix seven eight nine ten."),
+        blocks=parse_markdown_document(
+            "# A\n\none two three four five.\n\nsix seven eight nine ten."
+        ),
         tokenizer=TOKENIZER,
         min_tokens=4,
         max_tokens=5,
@@ -143,7 +145,9 @@ def test_context_set_hash_changes_when_any_document_chunk_changes() -> None:
     changed = build_canonical_chunks(
         source_id="src_kis_openapi_overview_001",
         source_revision_id="src_rev_demo",
-        blocks=parse_markdown_document("# A\n\none two three four five.\n\nsix seven eight nine changed."),
+        blocks=parse_markdown_document(
+            "# A\n\none two three four five.\n\nsix seven eight nine changed."
+        ),
         tokenizer=TOKENIZER,
         min_tokens=4,
         max_tokens=5,
@@ -189,9 +193,7 @@ def test_canonical_chunks_never_merge_across_heading_boundaries() -> None:
     chunks = build_canonical_chunks(
         source_id="src_project_heading_boundary_001",
         source_revision_id="src_rev_heading_boundary",
-        blocks=parse_markdown_document(
-            "# 첫 절\n\none two three\n\n# 둘째 절\n\nfour five six"
-        ),
+        blocks=parse_markdown_document("# 첫 절\n\none two three\n\n# 둘째 절\n\nfour five six"),
         tokenizer=TOKENIZER,
         min_tokens=5,
         max_tokens=10,
@@ -277,10 +279,7 @@ def test_large_paragraph_retokenizes_each_context_sensitive_chunk_boundary() -> 
 
 
 def test_bge_context_uses_independent_seven_point_five_percent_side_budgets() -> None:
-    chunks = tuple(
-        _chunk(sequence, prefix)
-        for sequence, prefix in ((1, "p"), (2, "c"), (3, "n"))
-    )
+    chunks = tuple(_chunk(sequence, prefix) for sequence, prefix in ((1, "p"), (2, "c"), (3, "n")))
 
     inputs = build_embedding_inputs(
         chunks,
@@ -299,8 +298,7 @@ def test_bge_context_uses_independent_seven_point_five_percent_side_budgets() ->
 
 def test_neighbor_change_keeps_canonical_hash_but_changes_embedding_input_hash() -> None:
     original = tuple(
-        _chunk(sequence, prefix)
-        for sequence, prefix in ((1, "p"), (2, "c"), (3, "n"))
+        _chunk(sequence, prefix) for sequence, prefix in ((1, "p"), (2, "c"), (3, "n"))
     )
     changed_neighbor = (
         _chunk(1, "x"),

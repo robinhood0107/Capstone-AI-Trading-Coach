@@ -20,9 +20,9 @@ def _repo_root() -> Path:
 def test_rag_python_descriptor_matches_tracked_canonical_descriptor() -> None:
     root = _repo_root()
     descriptor_bytes = (root / "contracts/proto/rag.descriptor.pb").read_bytes()
-    expected_hash = (root / "contracts/proto/rag.descriptor.sha256").read_text(
-        encoding="ascii"
-    ).strip()
+    expected_hash = (
+        (root / "contracts/proto/rag.descriptor.sha256").read_text(encoding="ascii").strip()
+    )
     descriptor_set = descriptor_pb2.FileDescriptorSet.FromString(descriptor_bytes)
 
     assert hashlib.sha256(descriptor_bytes).hexdigest() == expected_hash
@@ -40,7 +40,8 @@ def test_rag_descriptor_locks_service_method_and_field_numbers() -> None:
     assert method.input_type.full_name == "capstone.decision.v1.RagAskRequest"
     assert method.output_type.full_name == "capstone.decision.v1.RagAskResponse"
     assert {
-        field.name: field.number for field in descriptor.message_types_by_name["RagAskRequest"].fields
+        field.name: field.number
+        for field in descriptor.message_types_by_name["RagAskRequest"].fields
     } == {
         "request_id": 1,
         "owner_scope_claim": 2,
@@ -52,7 +53,8 @@ def test_rag_descriptor_locks_service_method_and_field_numbers() -> None:
         "policy_context": 8,
     }
     assert {
-        field.name: field.number for field in descriptor.message_types_by_name["RagAskResponse"].fields
+        field.name: field.number
+        for field in descriptor.message_types_by_name["RagAskResponse"].fields
     } == {
         "request_id": 1,
         "status": 2,

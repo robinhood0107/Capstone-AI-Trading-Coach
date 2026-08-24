@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from threading import Lock
-import time
 from typing import Any
 from uuid import UUID
 
@@ -14,17 +14,17 @@ import pytest
 from pydantic import SecretStr
 
 from app.data.kis import _credential_transport
+from app.data.kis._credential_transport import (
+    KISCredentialError,
+    _build_redis_client,
+    _Credentials,
+    _provider_scope,
+    _TokenIssuer,
+)
 from app.data.kis.accounting import (
     CollectionRunRecorder,
     CollectionRunStatus,
     PhysicalChannel,
-)
-from app.data.kis._credential_transport import (
-    KISCredentialError,
-    _Credentials,
-    _build_redis_client,
-    _provider_scope,
-    _TokenIssuer,
 )
 from app.data.kis.auth import KISTokenCacheError, KISTokenManager, _token_cache_key
 from app.data.kis.rate_limiter import TokenBucket
@@ -60,7 +60,11 @@ def test_token_issuer_injects_credentials_only_inside_private_fixed_origin_trans
         assert request.read().decode().find(app_secret) >= 0
         return httpx.Response(
             200,
-            json={"access_token": "validation-dummy-token", "expires_in": 86400, "appsecret": app_secret},
+            json={
+                "access_token": "validation-dummy-token",
+                "expires_in": 86400,
+                "appsecret": app_secret,
+            },
         )
 
     class RecordingLimiter:
@@ -169,7 +173,9 @@ def test_provider_scope_is_opaque_and_mode_separated(monkeypatch: pytest.MonkeyP
 
     assert mock_scope != live_scope
     assert len(mock_scope) == 64
-    assert all(value not in mock_scope + live_scope for value in (app_key, app_secret, "mock", "live"))
+    assert all(
+        value not in mock_scope + live_scope for value in (app_key, app_secret, "mock", "live")
+    )
 
 
 def test_private_redis_client_uses_bounded_socket_timeouts(
@@ -206,7 +212,9 @@ def test_token_issuer_drops_provider_error_body_and_credentials(
     monkeypatch.setattr(
         _credential_transport,
         "_read_credentials",
-        lambda _: _Credentials(app_key=SecretStr("validation-dummy-key"), app_secret=SecretStr(marker)),
+        lambda _: _Credentials(
+            app_key=SecretStr("validation-dummy-key"), app_secret=SecretStr(marker)
+        ),
     )
     issuer = _TokenIssuer(
         KISSettings(kis_mode="mock", kis_offline=False, _env_file=None),
@@ -227,7 +235,9 @@ def test_token_transport_failure_scrubs_credential_traceback_locals(
     monkeypatch.setattr(
         _credential_transport,
         "_read_credentials",
-        lambda _: _Credentials(app_key=SecretStr("validation-dummy-key"), app_secret=SecretStr(marker)),
+        lambda _: _Credentials(
+            app_key=SecretStr("validation-dummy-key"), app_secret=SecretStr(marker)
+        ),
     )
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -253,7 +263,9 @@ def test_token_issuer_allowlists_fields_and_drops_embedded_or_deep_credential_ec
     monkeypatch.setattr(
         _credential_transport,
         "_read_credentials",
-        lambda _: _Credentials(app_key=SecretStr("validation-dummy-key"), app_secret=SecretStr(marker)),
+        lambda _: _Credentials(
+            app_key=SecretStr("validation-dummy-key"), app_secret=SecretStr(marker)
+        ),
     )
     nested: object = f"echo::{marker}::end"
     for _ in range(80):
@@ -280,17 +292,23 @@ def test_token_issuer_allowlists_fields_and_drops_embedded_or_deep_credential_ec
     assert marker not in repr(result)
 
 
-def test_token_issuer_rejects_credential_echo_in_access_token(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_token_issuer_rejects_credential_echo_in_access_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     marker = "validation-dummy-secret"
     monkeypatch.setattr(
         _credential_transport,
         "_read_credentials",
-        lambda _: _Credentials(app_key=SecretStr("validation-dummy-key"), app_secret=SecretStr(marker)),
+        lambda _: _Credentials(
+            app_key=SecretStr("validation-dummy-key"), app_secret=SecretStr(marker)
+        ),
     )
     issuer = _TokenIssuer(
         KISSettings(kis_mode="mock", kis_offline=False, _env_file=None),
         transport=httpx.MockTransport(
-            lambda _: httpx.Response(200, json={"access_token": f"prefix-{marker}-suffix", "expires_in": 86400})
+            lambda _: httpx.Response(
+                200, json={"access_token": f"prefix-{marker}-suffix", "expires_in": 86400}
+            )
         ),
         rate_limiter=TokenBucket(rate_per_second=1000),
     )

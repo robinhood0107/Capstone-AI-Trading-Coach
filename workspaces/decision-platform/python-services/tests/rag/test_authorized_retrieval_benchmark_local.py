@@ -7,7 +7,8 @@ import platform
 import subprocess
 import time
 from collections import defaultdict
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 import numpy as np
 import onnxruntime as ort
@@ -53,12 +54,8 @@ pytestmark = pytest.mark.skipif(
     reason="pinned local BGE와 isolated PostgreSQL을 쓰는 명시적 S4.3 benchmark다.",
 )
 
-_BATCH_REPORT_PATH = (
-    REPO_ROOT / "capstone-rag/reports/s4-2b-batch-memory-benchmark.v1.json"
-)
-_QUERY_SET_PATH = (
-    REPO_ROOT / "capstone-rag/eval/s4-3-authorized-retrieval-smoke.v1.json"
-)
+_BATCH_REPORT_PATH = REPO_ROOT / "capstone-rag/reports/s4-2b-batch-memory-benchmark.v1.json"
+_QUERY_SET_PATH = REPO_ROOT / "capstone-rag/eval/s4-3-authorized-retrieval-smoke.v1.json"
 _RESULT_MARKER = "S4_3_AUTHORIZED_RETRIEVAL_RESULT "
 _T = TypeVar("_T")
 
@@ -197,18 +194,14 @@ def test_s4_3_authorized_retrieval_exact_10_smoke_and_benchmark(
     batch_report = json.loads(_BATCH_REPORT_PATH.read_text(encoding="utf-8"))
     batch_receipt = batch_receipt_from_report(batch_report)
     environment = _environment_payload()
-    assert _canonical_json_hash(environment) == (
-        batch_receipt.environment_fingerprint_sha256
-    )
+    assert _canonical_json_hash(environment) == (batch_receipt.environment_fingerprint_sha256)
 
     corpus = load_frozen_source_card_corpus()
     artifact = verify_bge_completion_manifest(
         DEFAULT_MODEL_ROOT,
         manifest_path=DEFAULT_MODEL_MANIFEST,
     )
-    tokenizer = BgeStaticTokenizer.from_file(
-        DEFAULT_MODEL_ROOT / "onnx/tokenizer.json"
-    )
+    tokenizer = BgeStaticTokenizer.from_file(DEFAULT_MODEL_ROOT / "onnx/tokenizer.json")
     plan = prepare_bge_full_generation(
         corpus=corpus,
         tokenizer=tokenizer,
@@ -311,9 +304,7 @@ def test_s4_3_authorized_retrieval_exact_10_smoke_and_benchmark(
         query = queries[index % len(queries)]
         started = time.perf_counter_ns()
         outcome = _run_one(hybrid=hybrid, scope=scope, query=query)
-        recorder.samples["total"].append(
-            _elapsed_ms(time.perf_counter_ns(), started)
-        )
+        recorder.samples["total"].append(_elapsed_ms(time.perf_counter_ns(), started))
         query_id = str(query["id"])
         expected_failure = query["expectedFailure"]
         if expected_failure is None:
@@ -324,9 +315,7 @@ def test_s4_3_authorized_retrieval_exact_10_smoke_and_benchmark(
                 expected_hit_count += 1
             per_query_receipts[query_id] = {
                 "failure": (
-                    outcome.failure_code.value
-                    if outcome.failure_code is not None
-                    else None
+                    outcome.failure_code.value if outcome.failure_code is not None else None
                 ),
                 "top5SourceIds": [item.source_id for item in outcome.evidence],
             }
@@ -339,16 +328,13 @@ def test_s4_3_authorized_retrieval_exact_10_smoke_and_benchmark(
                 refusal_count += 1
             per_query_receipts[query_id] = {
                 "failure": (
-                    outcome.failure_code.value
-                    if outcome.failure_code is not None
-                    else None
+                    outcome.failure_code.value if outcome.failure_code is not None else None
                 ),
                 "top5SourceIds": [],
             }
 
     stage_percentiles = {
-        stage: _percentiles(values)
-        for stage, values in sorted(recorder.samples.items())
+        stage: _percentiles(values) for stage, values in sorted(recorder.samples.items())
     }
     with psycopg.connect(cluster["admin_dsn"]) as connection:
         postgres_version = str(connection.execute("SHOW server_version").fetchone()[0])
@@ -386,9 +372,7 @@ def test_s4_3_authorized_retrieval_exact_10_smoke_and_benchmark(
         "inputStrategyVersion": plan.input_strategy_version,
         "host": {
             **environment,
-            "memoryBytes": (
-                os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-            ),
+            "memoryBytes": (os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")),
         },
         "environmentFingerprintSha256": plan.environment_fingerprint_sha256,
         "postgresVersion": postgres_version,

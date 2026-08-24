@@ -11,6 +11,7 @@ from app.rag.oa_release_manifest import (
     load_oa_release_manifest,
 )
 
+
 def main(argv: Sequence[str] | None = None) -> int:
     """historical OA release manifest를 네트워크 없이 검증한다.
 

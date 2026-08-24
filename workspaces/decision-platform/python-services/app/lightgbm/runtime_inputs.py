@@ -10,12 +10,12 @@ S5 CLI들은 packet SHA와 code provenance를 환경변수로 받아왔다. 그 
 
 from __future__ import annotations
 
-from collections import Counter
 import hashlib
 import json
 import os
 import re
 import subprocess
+from collections import Counter
 from pathlib import Path
 
 from app.lightgbm.bootstrap_fresh_authority import (
@@ -58,8 +58,7 @@ def resolve_bootstrap_packet_sha256(*, approved_root: Path) -> str:
         [
             digest
             for digest, corrections in _adopted_packets(approved_root).items()
-            if corrections == S5_CALENDAR_CORRECTION_SET_SHA256
-            and digest not in superseded
+            if corrections == S5_CALENDAR_CORRECTION_SET_SHA256 and digest not in superseded
         ],
     )
 
@@ -75,11 +74,7 @@ def resolve_recovery_prior_packet_sha256(*, approved_root: Path) -> str:
     superseded = _superseded_priors(approved_root)
     return _chain_head(
         approved_root,
-        [
-            digest
-            for digest in _consumed_packets(approved_root)
-            if digest not in superseded
-        ],
+        [digest for digest in _consumed_packets(approved_root) if digest not in superseded],
     )
 
 
@@ -121,9 +116,7 @@ def _chain_head(approved_root: Path, candidates: list[str]) -> str:
         raise LightGbmContractError("bootstrap chain head is unavailable")
     if len(candidates) == 1:
         return candidates[0]
-    consumed = {
-        digest: _consumed_query_attempts(approved_root, digest) for digest in candidates
-    }
+    consumed = {digest: _consumed_query_attempts(approved_root, digest) for digest in candidates}
     head = max(candidates, key=lambda digest: sum(consumed[digest].values()))
     total = sum(consumed[head].values())
     for digest in candidates:
@@ -132,9 +125,7 @@ def _chain_head(approved_root: Path, candidates: list[str]) -> str:
         if sum(consumed[digest].values()) == total or any(
             count > consumed[head][query] for query, count in consumed[digest].items()
         ):
-            raise LightGbmContractError(
-                "bootstrap chain head is not unique in the approved root"
-            )
+            raise LightGbmContractError("bootstrap chain head is not unique in the approved root")
     return head
 
 
@@ -235,7 +226,7 @@ def resolve_repository_root() -> Path:
 
 def _git_output(repository_root: Path, *args: str) -> str:
     try:
-        completed = subprocess.run(  # noqa: S603 - 고정 인자만 쓰는 read-only git 조회다.
+        completed = subprocess.run(
             ["git", "-C", str(repository_root), *args],
             capture_output=True,
             check=True,

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Callable, Generic, Mapping, Sequence, TypeVar
+from typing import Generic, TypeVar
 
 from app.lightgbm.errors import LightGbmContractError
-from app.lightgbm.pit_calendar import ELIGIBLE_SESSION_COUNT
 from app.lightgbm.labels import LabelRow
-
+from app.lightgbm.pit_calendar import ELIGIBLE_SESSION_COUNT
 
 INITIAL_FIT = 504
 EMBARGO = 5
@@ -128,9 +128,7 @@ def validate_zero_overlap(plan: WalkForwardPlan, label_rows: Sequence[LabelRow])
     for row in label_rows:
         rows_by_session.setdefault(row.session_date, []).append(row)
     for split in (*plan.folds, plan.final):
-        future = set(
-            (*split.early_sessions, *split.calibration_sessions, *split.evaluation_sessions)
-        )
+        future = {*split.early_sessions, *split.calibration_sessions, *split.evaluation_sessions}
         for session in split.fit_sessions:
             for row in rows_by_session.get(
                 session, ()

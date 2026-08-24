@@ -1,5 +1,5 @@
-from datetime import UTC, datetime
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -8,19 +8,19 @@ import pytest
 from pydantic import SecretStr
 
 from app.data.kis import _credential_transport
+from app.data.kis._credential_transport import (
+    KISCredentialError,
+    KISResponseTooLargeError,
+    _Credentials,
+    _CredentialSettings,
+    _CredentialTransport,
+    _TokenIssuer,
+)
 from app.data.kis.accounting import (
     CollectionRunRecorder,
     CollectionRunStatus,
     KISCallBudgetExceeded,
     PhysicalChannel,
-)
-from app.data.kis._credential_transport import (
-    KISCredentialError,
-    KISResponseTooLargeError,
-    _CredentialSettings,
-    _CredentialTransport,
-    _Credentials,
-    _TokenIssuer,
 )
 from app.data.kis.http_client import (
     KISHttpClient,
@@ -117,7 +117,9 @@ def test_get_market_data_retries_retryable_status(tmp_path: Path) -> None:
         retry_delay=lambda _: 0.0,
     )
 
-    assert client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})["output"] == {"ok": "yes"}
+    assert client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})[
+        "output"
+    ] == {"ok": "yes"}
     assert attempts == 2
     assert quota_reservations == 2
 
@@ -306,7 +308,9 @@ def test_get_market_data_retries_timeout_once_then_succeeds(tmp_path: Path) -> N
         retry_delay=lambda _: 0.0,
     )
 
-    assert client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})["output"] == {"ok": "yes"}
+    assert client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})[
+        "output"
+    ] == {"ok": "yes"}
     assert attempts == 2
     assert quota_reservations == 2
 
@@ -450,9 +454,16 @@ def test_market_quota_failure_does_not_read_static_credentials(
 
 @pytest.mark.parametrize(
     "unsafe_path",
-    ["https://attacker.invalid/collect", "//attacker.invalid/collect", "/uapi/test?redirect=x", "/uapi/test#x"],
+    [
+        "https://attacker.invalid/collect",
+        "//attacker.invalid/collect",
+        "/uapi/test?redirect=x",
+        "/uapi/test#x",
+    ],
 )
-def test_http_client_rejects_paths_outside_fixed_endpoint_allowlist(tmp_path: Path, unsafe_path: str) -> None:
+def test_http_client_rejects_paths_outside_fixed_endpoint_allowlist(
+    tmp_path: Path, unsafe_path: str
+) -> None:
     attempts = 0
 
     def handler(_: httpx.Request) -> httpx.Response:
@@ -519,7 +530,10 @@ def test_transport_error_drops_request_and_credentials(
         _private_transport_get(client)
 
     assert marker not in f"{exc_info.value!r} {exc_info.value}"
-    assert all(name not in exc_info.value.request.headers for name in ("appkey", "appsecret", "authorization"))
+    assert all(
+        name not in exc_info.value.request.headers
+        for name in ("appkey", "appsecret", "authorization")
+    )
     _assert_traceback_locals_do_not_contain(exc_info.value, marker)
 
 
@@ -566,7 +580,9 @@ def test_deep_response_failure_drops_credential_traceback_locals(
 
 
 def test_http_client_rejects_non_get_method(tmp_path: Path) -> None:
-    client = KISHttpClient(_settings(tmp_path), transport=httpx.MockTransport(lambda _: httpx.Response(200)))
+    client = KISHttpClient(
+        _settings(tmp_path), transport=httpx.MockTransport(lambda _: httpx.Response(200))
+    )
 
     with pytest.raises(KISHttpError, match="read-only GET"):
         client.request("POST", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})
@@ -593,7 +609,9 @@ def test_distribution_routing_failure_is_recalled_once_in_next_quota_slot(
         nonlocal attempts
         attempts += 1
         if attempts == 1:
-            return httpx.Response(200, json={"rt_cd": "1", "msg_cd": routing_code, "msg1": "routing"})
+            return httpx.Response(
+                200, json={"rt_cd": "1", "msg_cd": routing_code, "msg1": "routing"}
+            )
         return httpx.Response(200, json={"rt_cd": "0", "output": {"ok": "yes"}})
 
     client = KISHttpClient(

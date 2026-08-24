@@ -172,7 +172,15 @@ def _attest_admin_connection(connection: psycopg.Connection[Any]) -> None:
     if connection.execute("SELECT current_user").fetchone() != (_ADMIN_ROLE,):
         raise OwnerOverlayError("OWNER_OVERLAY_ADMIN_ROLE")
     for table in _ADMIN_FORBIDDEN_TABLES:
-        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+        for privilege in (
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "TRUNCATE",
+            "REFERENCES",
+            "TRIGGER",
+        ):
             row = connection.execute(
                 "SELECT has_table_privilege(current_user, %s, %s)",
                 (f"public.{table}", privilege),
@@ -198,7 +206,9 @@ def _prepared_overlay_receipt(row: tuple[object, ...] | None) -> _PreparedOwnerO
         or not _BUNDLE_ID.fullmatch(row[0])
         or not isinstance(row[1], str)
         or not _GENERATION_ID.fullmatch(row[1])
-        or (row[2] is not None and (not isinstance(row[2], str) or not _BUNDLE_ID.fullmatch(row[2])))
+        or (
+            row[2] is not None and (not isinstance(row[2], str) or not _BUNDLE_ID.fullmatch(row[2]))
+        )
         or type(row[3]) is not int
         or row[3] < 0
         or type(row[4]) is not int

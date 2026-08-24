@@ -448,7 +448,7 @@ object RagSourceCardV2Contract {
         MessageDigest
             .getInstance("SHA-256")
             .digest(bytes)
-            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+            .joinToString("") { byte -> "%02x".format(java.util.Locale.ROOT, byte.toInt() and 0xff) }
 
     private const val MAX_CARD_BYTES = 32_768L
     private const val SCHEMA_RESOURCE = "contracts/rag-source-card-v2.schema.json"

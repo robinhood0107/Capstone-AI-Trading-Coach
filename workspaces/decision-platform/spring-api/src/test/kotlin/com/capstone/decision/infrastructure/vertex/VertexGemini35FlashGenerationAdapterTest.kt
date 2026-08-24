@@ -237,7 +237,7 @@ class VertexGemini35FlashGenerationAdapterTest {
         MessageDigest
             .getInstance("SHA-256")
             .digest(value.toByteArray(StandardCharsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
+            .joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
 
     private fun successResponse(
         generatedJson: String = validGeneratedJson(),

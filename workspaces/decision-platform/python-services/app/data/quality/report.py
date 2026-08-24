@@ -6,7 +6,6 @@ from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.quality.models import KISDataQualityReport, ManifestReference
 from app.data.quality.policy import MAX_REPORT_JSON_BYTES, MAX_REPORT_MARKDOWN_BYTES
 
-
 _ABSOLUTE_PATH = re.compile(rb"(?:^|[\s\"'`])/(?:home|mnt|Users|private|tmp)/")
 _SENSITIVE_OUTPUT = (
     b"authorization:",
@@ -107,8 +106,7 @@ def render_markdown(report: KISDataQualityReport) -> bytes:
     if report.bounded_samples:
         for sample in report.bounded_samples:
             derived = ", ".join(
-                f"{escape_markdown(key)}={value}"
-                for key, value in sorted(sample.derived.items())
+                f"{escape_markdown(key)}={value}" for key, value in sorted(sample.derived.items())
             )
             lines.append(
                 f"| {escape_markdown(sample.rule_code)} | {sample.symbol} | "
@@ -170,7 +168,11 @@ def _reference_line(label: str, reference: ManifestReference) -> str:
 
 def _validate_serialized_output(content: bytes) -> None:
     lowered = content.lower()
-    if _ABSOLUTE_PATH.search(content) is not None or b"http://" in lowered or b"https://" in lowered:
+    if (
+        _ABSOLUTE_PATH.search(content) is not None
+        or b"http://" in lowered
+        or b"https://" in lowered
+    ):
         raise QualityReportRenderError("quality report contained a forbidden path or URL")
     if any(marker in lowered for marker in _SENSITIVE_OUTPUT):
         raise QualityReportRenderError("quality report contained a forbidden sensitive marker")

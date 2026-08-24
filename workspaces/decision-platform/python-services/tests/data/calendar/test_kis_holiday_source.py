@@ -92,9 +92,7 @@ def test_mock_mode_skip_never_claims_calendar_authority() -> None:
 
 def test_missing_opnd_yn_fails_instead_of_defaulting_to_open() -> None:
     day = date(2026, 6, 3)
-    client = _Client(
-        {day: {"rt_cd": "0", "output": [{"bass_dt": day.strftime("%Y%m%d")}]}}
-    )
+    client = _Client({day: {"rt_cd": "0", "output": [{"bass_dt": day.strftime("%Y%m%d")}]}})
     authority = KISHolidayAuthority(client)
 
     with pytest.raises(AdapterValidationError, match="opnd_yn is required"):

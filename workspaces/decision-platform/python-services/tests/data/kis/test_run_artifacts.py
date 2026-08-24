@@ -1,6 +1,6 @@
-from datetime import UTC, date, datetime
 import json
 import os
+from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -20,7 +20,6 @@ from app.data.kis.run_artifacts import (
     reference_input_artifact,
 )
 from app.data.kis.storage import upsert_daily_bars
-
 
 RUN_ID = UUID("123e4567-e89b-42d3-a456-426614174000")
 STARTED_AT = datetime(2026, 7, 21, 1, 0, tzinfo=UTC)

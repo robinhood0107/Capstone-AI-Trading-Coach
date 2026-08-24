@@ -17,21 +17,21 @@ from app.rag.rag_v2_bge_materializer import (
     RagV2BgeDocumentEmbedding,
     RagV2BgeMaterializedPublicDocument,
 )
+from app.rag.rag_v2_public_bge_activation_repository import (
+    PsycopgRagV2PublicBgeActivationRepository,
+    PublicBgeActivationRequest,
+)
 from app.rag.rag_v2_public_bge_staging import (
     PublicBgeSourceMetadata,
-    RagV2PublicBgeStagingError,
     RagV2PublicBgeComponentContext,
+    RagV2PublicBgeStagingError,
     build_public_bge_component_context,
     build_public_bge_staging_payload,
 )
-from app.rag.rag_v2_public_bge_activation_repository import (
-    PublicBgeActivationRequest,
-    PsycopgRagV2PublicBgeActivationRepository,
-)
 from app.rag.rag_v2_public_bge_staging_repository import (
+    PsycopgRagV2PublicBgeStagingRepository,
     PublicBgeEvaluationEvidence,
     PublicBgeStagingRepositoryError,
-    PsycopgRagV2PublicBgeStagingRepository,
 )
 from app.rag.source_card_corpus import S4_7B_CORPUS_MANIFEST_PATH
 
@@ -48,7 +48,9 @@ def test_public_writer_stages_exact30_evaluates_and_has_no_raw_table_grant(
     receipts = repository.stage_component(records=records, context=context)
 
     assert len(receipts) == 30
-    assert all(receipt.component_generation_id == context.component_generation_id for receipt in receipts)
+    assert all(
+        receipt.component_generation_id == context.component_generation_id for receipt in receipts
+    )
     assert all(receipt.component_scope == "EXACT30" for receipt in receipts)
     assert all(receipt.source_reused is False for receipt in receipts)
     assert receipts[-1].state == "STAGED"
@@ -64,14 +66,19 @@ def test_public_writer_stages_exact30_evaluates_and_has_no_raw_table_grant(
     fractional_evaluation = _evaluation_evidence("fractional").as_payload()
     fractional_evaluation["providerPhysicalCallCount"] = 0.4
     with pytest.raises(psycopg.Error):
-        with psycopg.connect(isolated_postgres_cluster["rag_writer_dsn"], autocommit=False) as connection:
+        with psycopg.connect(
+            isolated_postgres_cluster["rag_writer_dsn"], autocommit=False
+        ) as connection:
             with connection.transaction():
                 connection.execute(
                     """
                     SELECT *
                     FROM public.evaluate_rag_v2_immutable_public_bge_component(%s, %s::jsonb)
                     """,
-                    (context.component_generation_id, json.dumps(fractional_evaluation, separators=(",", ":"))),
+                    (
+                        context.component_generation_id,
+                        json.dumps(fractional_evaluation, separators=(",", ":")),
+                    ),
                 ).fetchall()
 
     evidence = _evaluation_evidence("a")
@@ -109,7 +116,9 @@ def test_public_writer_stages_exact30_evaluates_and_has_no_raw_table_grant(
             """
         ).fetchone() == (30,)
 
-    with psycopg.connect(isolated_postgres_cluster["rag_writer_dsn"], autocommit=True) as connection:
+    with psycopg.connect(
+        isolated_postgres_cluster["rag_writer_dsn"], autocommit=True
+    ) as connection:
         for table in (
             "rag_v2_immutable_source_revisions",
             "rag_v2_immutable_chunks",
@@ -133,16 +142,24 @@ def test_evaluated_public_bge_pair_activates_through_admin_definers_only(
         database_dsn=isolated_postgres_cluster["rag_writer_dsn"],
     )
 
-    assert writer.stage_component(records=exact_records, context=exact_context)[-1].state == "STAGED"
+    assert (
+        writer.stage_component(records=exact_records, context=exact_context)[-1].state == "STAGED"
+    )
     assert writer.stage_component(records=oa_records, context=oa_context)[-1].state == "STAGED"
-    assert writer.evaluate(
-        context=exact_context,
-        evidence=_evaluation_evidence("activation-exact30"),
-    ).state == "EVALUATED"
-    assert writer.evaluate(
-        context=oa_context,
-        evidence=_evaluation_evidence("activation-oa112"),
-    ).state == "EVALUATED"
+    assert (
+        writer.evaluate(
+            context=exact_context,
+            evidence=_evaluation_evidence("activation-exact30"),
+        ).state
+        == "EVALUATED"
+    )
+    assert (
+        writer.evaluate(
+            context=oa_context,
+            evidence=_evaluation_evidence("activation-oa112"),
+        ).state
+        == "EVALUATED"
+    )
 
     repository = PsycopgRagV2PublicBgeActivationRepository(
         database_dsn=isolated_postgres_cluster["rag_admin_dsn"],
@@ -174,9 +191,7 @@ def test_evaluated_public_bge_pair_activates_through_admin_definers_only(
 
     with psycopg.connect(isolated_postgres_cluster["rag_admin_dsn"], autocommit=True) as connection:
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            connection.execute(
-                "SELECT * FROM rag_v2_immutable_public_bundle_pointers"
-            ).fetchall()
+            connection.execute("SELECT * FROM rag_v2_immutable_public_bundle_pointers").fetchall()
 
 
 def test_public_writer_allows_oa112_card_only_through_definer_rls_policy(
@@ -209,7 +224,9 @@ def test_public_writer_allows_oa112_card_only_through_definer_rls_policy(
     assert isinstance(source, dict)
     source["machineFetchAllowed"] = False
     with pytest.raises(psycopg.Error):
-        with psycopg.connect(isolated_postgres_cluster["rag_writer_dsn"], autocommit=False) as connection:
+        with psycopg.connect(
+            isolated_postgres_cluster["rag_writer_dsn"], autocommit=False
+        ) as connection:
             with connection.transaction():
                 connection.execute("SET LOCAL statement_timeout = '60s'")
                 connection.execute("SET LOCAL lock_timeout = '10s'")
@@ -233,8 +250,9 @@ def test_public_writer_member_digest_uses_real_double_newline_for_multichunk_oa(
 ) -> None:
     """실제 OA처럼 다중 청크인 source도 Python과 DB manifest digest가 같아야 한다."""
 
-    records = (_multichunk_record("OA112", 0),) + tuple(
-        _record("OA112", index) for index in range(1, 112)
+    records = (
+        _multichunk_record("OA112", 0),
+        *tuple(_record("OA112", index) for index in range(1, 112)),
     )
     context = build_public_bge_component_context(records)
     repository = PsycopgRagV2PublicBgeStagingRepository(
@@ -267,7 +285,9 @@ def test_public_writer_rejects_exact30_frozen_card_digest_drift(
     source["sourceCardSha256"] = "0" * 64
 
     with pytest.raises(psycopg.Error):
-        with psycopg.connect(isolated_postgres_cluster["rag_writer_dsn"], autocommit=False) as connection:
+        with psycopg.connect(
+            isolated_postgres_cluster["rag_writer_dsn"], autocommit=False
+        ) as connection:
             with connection.transaction():
                 connection.execute(
                     "SELECT * FROM public.stage_rag_v2_immutable_public_bge_document(%s::jsonb)",
@@ -301,9 +321,9 @@ def test_same_source_staged_by_concurrent_generations_reuses_one_immutable_graph
     isolated_postgres_cluster: dict[str, str],
 ) -> None:
     base_records = tuple(_record("EXACT30", index) for index in range(30))
-    refreshed_records = (base_records[0],) + tuple(
-        _record("EXACT30", index, revision_variant="refresh")
-        for index in range(1, 30)
+    refreshed_records = (
+        base_records[0],
+        *tuple(_record("EXACT30", index, revision_variant="refresh") for index in range(1, 30)),
     )
     first_context = build_public_bge_component_context(base_records)
     second_context = build_public_bge_component_context(refreshed_records)
@@ -403,9 +423,12 @@ def _shuffled_member_context(
         }
     )
     component_generation_id = f"rgr_{generation_hash[:32]}"
-    materialization_run_id = "rgr_run_" + hashlib.sha256(
-        f"rag-v2-public-bge-run|{component_generation_id}|{manifest_hash}".encode("utf-8")
-    ).hexdigest()[:32]
+    materialization_run_id = (
+        "rgr_run_"
+        + hashlib.sha256(
+            f"rag-v2-public-bge-run|{component_generation_id}|{manifest_hash}".encode()
+        ).hexdigest()[:32]
+    )
     return RagV2PublicBgeComponentContext(
         component_scope=context.component_scope,
         component_generation_id=component_generation_id,
@@ -433,15 +456,21 @@ def _record(
 ) -> tuple[RagV2BgeMaterializedPublicDocument, PublicBgeSourceMetadata]:
     exact_card = _exact30_card(index) if scope == "EXACT30" else None
     marker = hashlib.sha256(f"{scope}-{index}-{revision_variant}".encode()).hexdigest()
-    source_id = exact_card["sourceId"] if exact_card is not None else f"src_{scope.lower()}_{index:03d}"
+    source_id = (
+        exact_card["sourceId"] if exact_card is not None else f"src_{scope.lower()}_{index:03d}"
+    )
     variant_suffix = f"_{revision_variant}" if revision_variant else ""
     source_revision_id = f"srv_{scope.lower()}_{index:03d}{variant_suffix}"
     document_id = f"doc_{scope.lower()}_{index:03d}{variant_suffix}_fixture"
     chunk_id = f"rag_v2_chk_{marker[:32]}"
-    raw_hash = exact_card["contentSha256"] if exact_card is not None else hashlib.sha256(
-        f"raw-{scope}-{index}".encode()
+    raw_hash = (
+        exact_card["contentSha256"]
+        if exact_card is not None
+        else hashlib.sha256(f"raw-{scope}-{index}".encode()).hexdigest()
+    )
+    normalized_hash = hashlib.sha256(
+        f"normalized-{scope}-{index}-{revision_variant}".encode()
     ).hexdigest()
-    normalized_hash = hashlib.sha256(f"normalized-{scope}-{index}-{revision_variant}".encode()).hexdigest()
     canonical_text = f"{scope} evidence fixture {index} {revision_variant}."
     canonical_hash = hashlib.sha256(canonical_text.encode()).hexdigest()
     document_ir = {
@@ -510,7 +539,9 @@ def _record(
             ),
         ),
         source_revision_sha256=hashlib.sha256(
-            json.dumps(document_ir, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+            json.dumps(
+                document_ir, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+            ).encode()
         ).hexdigest(),
         document_ir=document_ir,
     )
@@ -562,9 +593,9 @@ def _multichunk_record(
     materialized, metadata = _record(scope, index)
     first_chunk = materialized.document.chunks[0]
     second_text = f"{scope} second evidence fixture {index}."
-    second_chunk_id = "rag_v2_chk_" + hashlib.sha256(
-        f"{scope}-{index}-second-chunk".encode()
-    ).hexdigest()[:32]
+    second_chunk_id = (
+        "rag_v2_chk_" + hashlib.sha256(f"{scope}-{index}-second-chunk".encode()).hexdigest()[:32]
+    )
     second_chunk = RagV2CanonicalDocumentChunk(
         chunk_id=second_chunk_id,
         document_id=materialized.document.document_id,
@@ -579,7 +610,9 @@ def _multichunk_record(
     second_vector = np.zeros(1024, dtype=np.float32)
     second_vector[(index + 1) % 1024] = 1.0
     document_ir = json.loads(
-        json.dumps(materialized.document_ir, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        json.dumps(
+            materialized.document_ir, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        )
     )
     assert isinstance(document_ir, dict)
     blocks = document_ir["blocks"]
@@ -602,7 +635,8 @@ def _multichunk_record(
         normalized_content_sha256=normalized_hash,
         chunks=(first_chunk, second_chunk),
     )
-    embeddings = materialized.embeddings + (
+    embeddings = (
+        *materialized.embeddings,
         RagV2BgeDocumentEmbedding(
             chunk_id=second_chunk_id,
             embedding_input_hash=hashlib.sha256(second_text.encode()).hexdigest(),

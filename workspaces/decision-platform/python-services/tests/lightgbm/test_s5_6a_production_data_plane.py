@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import stat
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-import hashlib
 from io import BytesIO
-import json
-import os
 from pathlib import Path
-import stat
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -26,11 +26,21 @@ from app.data.krx.production_parsers import (
     S5_PRODUCTION_PROJECTION_FIELDS,
     parse_s5_production_response,
 )
-from app.lightgbm.errors import CalendarDivergenceSuspected, DatasetUnavailable, LightGbmContractError
+from app.lightgbm import (
+    bootstrap_calendar_recovery,
+    bootstrap_execute_cli,
+    bootstrap_executor,
+    bootstrap_packet_cli,
+)
+from app.lightgbm.bootstrap_calendar_recovery import (
+    KrxQuery,
+    _validate_reusable_chunk,
+    assess_bootstrap_calendar_recovery,
+    materialize_recovery_adoption,
+    validate_recovery_execution_authority,
+    validate_recovery_receipt,
+)
 from app.lightgbm.bootstrap_control import BootstrapLedger, BootstrapPhase
-from app.lightgbm import bootstrap_executor
-from app.lightgbm.diagnostics import read_diagnostics, record_diagnostic
-from app.lightgbm.outcomes import BootstrapEvidenceGap, OutcomeClass
 from app.lightgbm.bootstrap_executor import (
     DIVERGENCE_CANDIDATES_FILENAME,
     BootstrapAcquisition,
@@ -39,26 +49,18 @@ from app.lightgbm.bootstrap_executor import (
     materialize_production_feature_bundle,
     provider_query_sha256,
 )
-from app.lightgbm.bootstrap_calendar_recovery import (
-    KrxQuery,
-    _validate_reusable_chunk,
-    assess_bootstrap_calendar_recovery,
-    materialize_recovery_adoption,
-    validate_recovery_receipt,
-    validate_recovery_execution_authority,
-)
 from app.lightgbm.bootstrap_fresh_authority import (
-    fresh_bootstrap_authority_exists,
     FRESH_AUTHORITY_FILENAME,
+    fresh_bootstrap_authority_exists,
     publish_fresh_bootstrap_authority,
     read_fresh_bootstrap_authority,
 )
 from app.lightgbm.bootstrap_journal import (
     JOURNAL_FILENAME,
     MAX_JOURNAL_BYTES,
+    SUPERSEDED_CONSUMED,
     BootstrapJournal,
     JournalAttempt,
-    SUPERSEDED_CONSUMED,
     build_recovery_journal_bytes,
     build_resume_packet,
     validate_resume_packet,
@@ -70,10 +72,11 @@ from app.lightgbm.bootstrap_packet import (
     latest_publishable_bootstrap_cutoff,
     validate_bootstrap_packet,
 )
-from app.lightgbm import (
-    bootstrap_calendar_recovery,
-    bootstrap_execute_cli,
-    bootstrap_packet_cli,
+from app.lightgbm.diagnostics import read_diagnostics, record_diagnostic
+from app.lightgbm.errors import (
+    CalendarDivergenceSuspected,
+    DatasetUnavailable,
+    LightGbmContractError,
 )
 from app.lightgbm.feature_artifact import (
     FeatureArtifact,
@@ -94,19 +97,20 @@ from app.lightgbm.features import (
     build_production_core_feature_rows,
 )
 from app.lightgbm.labels import build_production_exact_labels
+from app.lightgbm.outcomes import BootstrapEvidenceGap, OutcomeClass
 from app.lightgbm.pit_calendar import (
-    previous_xkrx_session,
     S5_ADHOC_CLOSED_SESSIONS,
     S5_CALENDAR_CORRECTION_SET_SHA256,
-    S5_SUPERSEDED_CORRECTION_SETS,
-    calendar_for_corrections,
-    correction_set_sha256,
-    corrections_for_sha256,
     S5_CALENDAR_POLICY_VERSION,
+    S5_SUPERSEDED_CORRECTION_SETS,
     PitSessionWindow,
     base_calendar,
     build_pit_session_window,
+    calendar_for_corrections,
     corrected_calendar,
+    correction_set_sha256,
+    corrections_for_sha256,
+    previous_xkrx_session,
 )
 from app.lightgbm.private_root import (
     acquire_bootstrap_root_lock,
@@ -121,11 +125,11 @@ from app.lightgbm.production_policy import (
     MAX_KRX_SUPERSEDED_ALLOWANCE,
     BootstrapBudget,
     SecurityClassification,
+    align_macro_observations,
     author_bootstrap_budget,
     author_recovery_bootstrap_budget,
-    align_macro_observations,
-    corporate_action_sensitivity_pass,
     classify_krx_security,
+    corporate_action_sensitivity_pass,
     is_spac_name,
     macro_timing_sensitivity_pass,
     require_standard_stock_identity,
@@ -197,9 +201,7 @@ def test_temporal_receipt_uses_row_clock_and_never_fabricates_provider_fields() 
     receipt = _receipt()
     assert receipt.provider_available_at is None
     assert receipt.provider_revision is None
-    assert feature_as_of(date(2026, 8, 14)) == datetime.fromisoformat(
-        "2026-08-18T08:10:00+09:00"
-    )
+    assert feature_as_of(date(2026, 8, 14)) == datetime.fromisoformat("2026-08-18T08:10:00+09:00")
     assert label_as_of(date(2026, 8, 14)) == feature_as_of(date(2026, 8, 14))
     require_receipt_eligible(
         receipt,
@@ -216,17 +218,25 @@ def test_temporal_receipt_uses_row_clock_and_never_fabricates_provider_fields() 
     with pytest.raises(LightGbmContractError, match="provider revision"):
         replace(receipt, provider_revision="hash-is-not-revision")
     with pytest.raises(LightGbmContractError, match="UTC"):
-        replace(receipt, retrieved_at=datetime(2026, 8, 16, 9, tzinfo=feature_as_of(date(2026, 8, 14)).tzinfo))
+        replace(
+            receipt,
+            retrieved_at=datetime(2026, 8, 16, 9, tzinfo=feature_as_of(date(2026, 8, 14)).tzinfo),
+        )
 
 
 def test_duplicate_snapshot_collapses_and_conflict_fails_without_sha_ordering() -> None:
     first = ("key", _receipt("1" * 64))
     duplicate = ("key", _receipt("1" * 64))
-    assert len(
-        collapse_or_reject_snapshots(
-            [first, duplicate], logical_key=lambda value: value[0], receipt_of=lambda value: value[1]
+    assert (
+        len(
+            collapse_or_reject_snapshots(
+                [first, duplicate],
+                logical_key=lambda value: value[0],
+                receipt_of=lambda value: value[1],
+            )
         )
-    ) == 1
+        == 1
+    )
     conflict = ("key", _receipt("f" * 64))
     with pytest.raises(LightGbmContractError, match="SOURCE_SNAPSHOT_CONFLICT"):
         collapse_or_reject_snapshots(
@@ -236,9 +246,7 @@ def test_duplicate_snapshot_collapses_and_conflict_fails_without_sha_ordering() 
 
 def test_bootstrap_budget_and_universe_identity_rules() -> None:
     budget = author_bootstrap_budget(monthly_schedule_count=51, union_size=180)
-    assert budget == BootstrapBudget(
-        krx_get=4_441, kis_get=1_980, kis_token=1, ecos_get=24
-    )
+    assert budget == BootstrapBudget(krx_get=4_441, kis_get=1_980, kis_token=1, ecos_get=24)
     assert budget.total == 6_446
 
 
@@ -251,18 +259,24 @@ def test_bootstrap_cap_rejects_dimensions_that_do_not_fit() -> None:
     assert require_standard_stock_identity("KR7005930003") == "KR7005930003"
     with pytest.raises(DatasetUnavailable, match="identity"):
         require_standard_stock_identity("005930")
-    assert classify_krx_security(
-        security_group="주권",
-        stock_kind="보통주",
-        official_name="삼성전자",
-        source_service="stk_isu_base_info",
-    ) is SecurityClassification.COMMON_STOCK
-    assert classify_krx_security(
-        security_group="주권",
-        stock_kind="보통주",
-        official_name="테스트스팩1호",
-        source_service="ksq_isu_base_info",
-    ) is SecurityClassification.SPAC
+    assert (
+        classify_krx_security(
+            security_group="주권",
+            stock_kind="보통주",
+            official_name="삼성전자",
+            source_service="stk_isu_base_info",
+        )
+        is SecurityClassification.COMMON_STOCK
+    )
+    assert (
+        classify_krx_security(
+            security_group="주권",
+            stock_kind="보통주",
+            official_name="테스트스팩1호",
+            source_service="ksq_isu_base_info",
+        )
+        is SecurityClassification.SPAC
+    )
 
 
 def test_kis_adjustment_fields_are_preserved_and_closed() -> None:
@@ -286,7 +300,10 @@ def test_kis_adjustment_fields_are_preserved_and_closed() -> None:
     }
     row = parse_daily_bars(payload, "005930")[0]
     assert (row.flng_cls_code, row.prtt_rate, row.mod_yn, row.revl_issu_reas) == (
-        "01", Decimal("0.5"), "Y", "액면분할"
+        "01",
+        Decimal("0.5"),
+        "Y",
+        "액면분할",
     )
     payload["output2"][0]["mod_yn"] = "UNKNOWN"
     with pytest.raises(KISResponseError, match="ADJUSTMENT_FIELD_INVALID"):
@@ -339,9 +356,13 @@ def test_bootstrap_root_lock_serializes_different_packet_runs(tmp_path: Path) ->
 
 
 def test_corporate_action_and_macro_sensitivity_gates() -> None:
-    assert corporate_action_sensitivity_pass([0.01] * 1000, [0.01] * 1000, [0.02] * 1000, [0.02] * 1000)
+    assert corporate_action_sensitivity_pass(
+        [0.01] * 1000, [0.01] * 1000, [0.02] * 1000, [0.02] * 1000
+    )
     changed = [0.01] * 998 + [0.02, 0.02]
-    assert not corporate_action_sensitivity_pass([0.01] * 1000, changed, [0.02] * 1000, [0.02] * 1000)
+    assert not corporate_action_sensitivity_pass(
+        [0.01] * 1000, changed, [0.02] * 1000, [0.02] * 1000
+    )
 
     labels = [0, 1, 2] * 10
     primary = np.eye(3, dtype=np.float64)[labels] * 0.8 + 0.2 / 3
@@ -448,7 +469,7 @@ def test_source_bundle_uses_manifest_trust_anchor_and_digest_derived_path(tmp_pa
         "revlIssuReas",
     )
     table = pa.Table.from_pylist(
-        [{field: "1" for field in fields}],
+        [dict.fromkeys(fields, "1")],
         schema=pa.schema([pa.field(field, pa.string(), nullable=False) for field in fields]),
     )
     sink = BytesIO()
@@ -527,12 +548,15 @@ def test_source_bundle_uses_manifest_trust_anchor_and_digest_derived_path(tmp_pa
 
 def test_bootstrap_failure_stops_remaining_calls_and_resume_targets_failed_chunk() -> None:
     ledger = BootstrapLedger(BootstrapBudget(krx_get=3, kis_get=1, kis_token=1, ecos_get=1))
-    assert ledger.physical_call(
-        provider="KRX",
-        operation_id="stk_bydd_trd",
-        query_key_sha256="1" * 64,
-        call=lambda: "ok",
-    ) == "ok"
+    assert (
+        ledger.physical_call(
+            provider="KRX",
+            operation_id="stk_bydd_trd",
+            query_key_sha256="1" * 64,
+            call=lambda: "ok",
+        )
+        == "ok"
+    )
     with pytest.raises(RuntimeError, match="provider failed"):
         ledger.physical_call(
             provider="KRX",
@@ -548,20 +572,21 @@ def test_bootstrap_failure_stops_remaining_calls_and_resume_targets_failed_chunk
             call=lambda: "forbidden",
         )
     ledger.resume_failed(query_key_sha256="2" * 64)
-    assert ledger.physical_call(
-        provider="KRX",
-        operation_id="ksq_bydd_trd",
-        query_key_sha256="2" * 64,
-        call=lambda: "resumed",
-    ) == "resumed"
+    assert (
+        ledger.physical_call(
+            provider="KRX",
+            operation_id="ksq_bydd_trd",
+            query_key_sha256="2" * 64,
+            call=lambda: "resumed",
+        )
+        == "resumed"
+    )
     ledger.advance(BootstrapPhase.KRX)
     assert ledger.phase is BootstrapPhase.KIS
 
 
 def test_failed_token_call_consumes_the_only_token_budget() -> None:
-    ledger = BootstrapLedger(
-        BootstrapBudget(krx_get=0, kis_get=1, kis_token=1, ecos_get=0)
-    )
+    ledger = BootstrapLedger(BootstrapBudget(krx_get=0, kis_get=1, kis_token=1, ecos_get=0))
     ledger.advance(BootstrapPhase.KRX)
     query = "c" * 64
     with pytest.raises(RuntimeError):
@@ -585,9 +610,7 @@ def test_durable_journal_authors_one_bounded_resume_packet(tmp_path: Path) -> No
     root = tmp_path / "source"
     root.mkdir(mode=0o700)
     journal = BootstrapJournal(root)
-    ordinal = journal.begin(
-        provider="KRX", operation_id="stk_bydd_trd", query_sha256="1" * 64
-    )
+    ordinal = journal.begin(provider="KRX", operation_id="stk_bydd_trd", query_sha256="1" * 64)
     journal.finish(
         ordinal=ordinal,
         provider="KRX",
@@ -601,17 +624,18 @@ def test_durable_journal_authors_one_bounded_resume_packet(tmp_path: Path) -> No
         journal=BootstrapJournal(root),
         total_cap=10,
     )
-    assert validate_resume_packet(
-        packet.content,
-        expected_sha256=packet.sha256,
-        bootstrap_packet_sha256="2" * 64,
-        journal=BootstrapJournal(root),
-        total_cap=10,
-    ) == packet
-    retry = BootstrapJournal(root)
-    second = retry.begin(
-        provider="KRX", operation_id="stk_bydd_trd", query_sha256="1" * 64
+    assert (
+        validate_resume_packet(
+            packet.content,
+            expected_sha256=packet.sha256,
+            bootstrap_packet_sha256="2" * 64,
+            journal=BootstrapJournal(root),
+            total_cap=10,
+        )
+        == packet
     )
+    retry = BootstrapJournal(root)
+    second = retry.begin(provider="KRX", operation_id="stk_bydd_trd", query_sha256="1" * 64)
     retry.finish(
         ordinal=second,
         provider="KRX",
@@ -636,9 +660,7 @@ def test_durable_journal_allows_provider_free_local_finalization_resume(tmp_path
     root = tmp_path / "source"
     root.mkdir(mode=0o700)
     journal = BootstrapJournal(root)
-    ordinal = journal.begin(
-        provider="KIS", operation_id="oauth2/tokenP", query_sha256="3" * 64
-    )
+    ordinal = journal.begin(provider="KIS", operation_id="oauth2/tokenP", query_sha256="3" * 64)
     journal.finish(
         ordinal=ordinal,
         provider="KIS",
@@ -750,10 +772,7 @@ def test_s5_calendar_applies_kis_authority_to_all_feature_and_label_clocks() -> 
         ).read_text(encoding="utf-8")
     )
     assert catalog["calendar"]["policyVersion"] == S5_CALENDAR_POLICY_VERSION
-    assert (
-        catalog["calendar"]["correctionSetSha256"]
-        == S5_CALENDAR_CORRECTION_SET_SHA256
-    )
+    assert catalog["calendar"]["correctionSetSha256"] == S5_CALENDAR_CORRECTION_SET_SHA256
 
 
 def test_calendar_recovery_grants_exact_superseded_allowance_and_closes_shortfall(
@@ -778,9 +797,7 @@ def test_calendar_recovery_grants_exact_superseded_allowance_and_closes_shortfal
     run_root.mkdir(mode=0o700)
     source_root.mkdir(mode=0o700)
     (source_root / "chunks").mkdir(mode=0o700)
-    query_hash = provider_query_sha256(
-        {"service": "stk_bydd_trd", "basDd": "20260603"}
-    )
+    query_hash = provider_query_sha256({"service": "stk_bydd_trd", "basDd": "20260603"})
     journal = BootstrapJournal(source_root, policy_corrections=())
     for _ in range(2):
         ordinal = journal.begin(
@@ -804,10 +821,7 @@ def test_calendar_recovery_grants_exact_superseded_allowance_and_closes_shortfal
     receipt = json.loads(recovery.content)
     assert recovery.status == "READY_TO_SUPERSEDE"
     assert recovery.corrected_packet.lineage_mode == "CALENDAR_RECOVERY"
-    assert (
-        recovery.corrected_packet.recovery_binding_sha256
-        == recovery.recovery_binding_sha256
-    )
+    assert recovery.corrected_packet.recovery_binding_sha256 == recovery.recovery_binding_sha256
     assert recovery.missing_krx_queries == 4_441
     assert recovery.projected_krx_physical_calls == 4_443
     # Allowance는 증명된 superseded consumed call 수와 정확히 같고 논리 query를 늘리지 않는다.
@@ -865,9 +879,7 @@ def test_legacy_journal_receipt_is_read_only_and_requires_temporal_rebinding() -
             request_sha256="b" * 64,
             snapshot_sha256="a" * 64,
             temporal_quality=TemporalQuality.PROVIDER_AS_OF_NO_VINTAGE,
-            policy_effective_at=datetime(
-                2026, 6, 3, 8, 10, tzinfo=ZoneInfo("Asia/Seoul")
-            ),
+            policy_effective_at=datetime(2026, 6, 3, 8, 10, tzinfo=ZoneInfo("Asia/Seoul")),
         ),
     )
 
@@ -894,15 +906,8 @@ def test_recovery_rejects_krx_chunk_whose_parquet_rows_belong_to_another_date(
     )
     fields = sorted(S5_PRODUCTION_PROJECTION_FIELDS["stk_bydd_trd"])
     table = pa.Table.from_pylist(
-        [
-            {
-                field: ("20260604" if field == "BAS_DD" else "1")
-                for field in fields
-            }
-        ],
-        schema=pa.schema(
-            [pa.field(field, pa.string(), nullable=False) for field in fields]
-        ),
+        [{field: ("20260604" if field == "BAS_DD" else "1") for field in fields}],
+        schema=pa.schema([pa.field(field, pa.string(), nullable=False) for field in fields]),
     )
     sink = BytesIO()
     pq.write_table(
@@ -931,9 +936,7 @@ def test_recovery_rejects_krx_chunk_whose_parquet_rows_belong_to_another_date(
             request_sha256=query_sha256,
             snapshot_sha256=content_sha256,
             temporal_quality=TemporalQuality.PROVIDER_AS_OF_NO_VINTAGE,
-            policy_effective_at=datetime(
-                2026, 6, 3, 8, 10, tzinfo=ZoneInfo("Asia/Seoul")
-            ),
+            policy_effective_at=datetime(2026, 6, 3, 8, 10, tzinfo=ZoneInfo("Asia/Seoul")),
         ),
     )
     written = write_approved_new_file(
@@ -982,15 +985,11 @@ def test_recovery_authority_and_adoption_stop_before_provider_client_creation(
     source_root.parent.mkdir(mode=0o700)
     source_root.mkdir(mode=0o700)
     (source_root / "chunks").mkdir(mode=0o700)
-    reusable_query_hash = provider_query_sha256(
-        {"service": "stk_bydd_trd", "basDd": "20260602"}
-    )
+    reusable_query_hash = provider_query_sha256({"service": "stk_bydd_trd", "basDd": "20260602"})
     fields = sorted(S5_PRODUCTION_PROJECTION_FIELDS["stk_bydd_trd"])
     table = pa.Table.from_pylist(
         [{field: ("20260602" if field == "BAS_DD" else "1") for field in fields}],
-        schema=pa.schema(
-            [pa.field(field, pa.string(), nullable=False) for field in fields]
-        ),
+        schema=pa.schema([pa.field(field, pa.string(), nullable=False) for field in fields]),
     )
     sink = BytesIO()
     pq.write_table(table, sink, version="2.6", compression="zstd", use_dictionary=False)
@@ -1013,9 +1012,7 @@ def test_recovery_authority_and_adoption_stop_before_provider_client_creation(
             request_sha256=reusable_query_hash,
             snapshot_sha256=chunk_sha256,
             temporal_quality=TemporalQuality.PROVIDER_AS_OF_NO_VINTAGE,
-            policy_effective_at=datetime(
-                2026, 6, 3, 8, 10, tzinfo=ZoneInfo("Asia/Seoul")
-            ),
+            policy_effective_at=datetime(2026, 6, 3, 8, 10, tzinfo=ZoneInfo("Asia/Seoul")),
         ),
     )
     chunk_file = write_approved_new_file(
@@ -1025,9 +1022,7 @@ def test_recovery_authority_and_adoption_stop_before_provider_client_creation(
         max_bytes=4 * 1024 * 1024,
     )
     os.chmod(chunk_file.absolute_path, 0o600)
-    failed_hash = provider_query_sha256(
-        {"service": "stk_bydd_trd", "basDd": "20260603"}
-    )
+    failed_hash = provider_query_sha256({"service": "stk_bydd_trd", "basDd": "20260603"})
     journal = BootstrapJournal(source_root, policy_corrections=())
     reusable_ordinal = journal.begin(
         provider="KRX",
@@ -1068,18 +1063,14 @@ def test_recovery_authority_and_adoption_stop_before_provider_client_creation(
     lineage = materialize_recovery_adoption(approved_root=root, recovery=recovery)
     assert lineage["providerCallsDuringAdoption"] == 0
     assert lineage["adoptedSuccessfulChunks"] == 1
-    adopted_journal = BootstrapJournal(
-        root / f"run-{recovery.corrected_packet.sha256}" / "source"
-    )
+    adopted_journal = BootstrapJournal(root / f"run-{recovery.corrected_packet.sha256}" / "source")
     adopted_chunk = adopted_journal.completed_chunk(reusable_query_hash)
     assert adopted_chunk is not None
     assert adopted_chunk.temporal.policy_effective_at == datetime(
         2026, 6, 4, 8, 10, tzinfo=ZoneInfo("Asia/Seoul")
     )
     monkeypatch.setenv("S5_SOURCE_ROOT", str(root))
-    monkeypatch.setenv(
-        "S5_BOOTSTRAP_PACKET_SHA256", recovery.corrected_packet.sha256
-    )
+    monkeypatch.setenv("S5_BOOTSTRAP_PACKET_SHA256", recovery.corrected_packet.sha256)
 
     def forbidden_client(*args: object, **kwargs: object) -> None:
         raise AssertionError("provider client must not be created")
@@ -1092,10 +1083,7 @@ def test_recovery_authority_and_adoption_stop_before_provider_client_creation(
 
     receipt = write_approved_new_file(
         approved_root=root,
-        relative_path=(
-            "calendar-recovery-binding-"
-            f"{recovery.recovery_binding_sha256}.json"
-        ),
+        relative_path=(f"calendar-recovery-binding-{recovery.recovery_binding_sha256}.json"),
         content=recovery.content,
         max_bytes=64 * 1024,
     )
@@ -1130,9 +1118,7 @@ def test_publishable_bootstrap_cutoff_honors_holiday_chain_and_exact_clock() -> 
     with pytest.raises(LightGbmContractError, match="timezone aware"):
         latest_publishable_bootstrap_cutoff(cutoff=datetime(2026, 8, 17, 23, 10))
     with pytest.raises(LightGbmContractError, match="calendar bounds"):
-        latest_publishable_bootstrap_cutoff(
-            cutoff=datetime(1990, 1, 1, tzinfo=UTC)
-        )
+        latest_publishable_bootstrap_cutoff(cutoff=datetime(1990, 1, 1, tzinfo=UTC))
 
 
 def test_bootstrap_packet_cli_uses_latest_publishable_session(
@@ -1146,7 +1132,7 @@ def test_bootstrap_packet_cli_uses_latest_publishable_session(
 
     class FixedDatetime:
         @staticmethod
-        def now(tz: object = None) -> datetime:  # noqa: ANN401
+        def now(tz: object = None) -> datetime:
             return datetime(2026, 8, 17, 3, 0, tzinfo=UTC if tz is not None else None)
 
     cutoff = datetime(2026, 8, 17, 3, 0, tzinfo=UTC)
@@ -1164,9 +1150,7 @@ def test_bootstrap_packet_cli_uses_latest_publishable_session(
     assert packet.window.latest_completed == date(2026, 8, 13)
     assert packet.window.raw_sessions[-1] == date(2026, 8, 13)
     assert packet.window.eligible_sessions[-1] == date(2026, 8, 5)
-    regenerated = author_bootstrap_packet(
-        cutoff=latest_publishable_bootstrap_cutoff(cutoff=cutoff)
-    )
+    regenerated = author_bootstrap_packet(cutoff=latest_publishable_bootstrap_cutoff(cutoff=cutoff))
     assert regenerated.content == packet.content
     assert regenerated.sha256 == packet.sha256
     selected = read_fresh_bootstrap_authority(approved_root=root)
@@ -1175,7 +1159,7 @@ def test_bootstrap_packet_cli_uses_latest_publishable_session(
 
     class LaterDatetime:
         @staticmethod
-        def now(tz: object = None) -> datetime:  # noqa: ANN401
+        def now(tz: object = None) -> datetime:
             return datetime(
                 2026,
                 8,
@@ -1187,9 +1171,7 @@ def test_bootstrap_packet_cli_uses_latest_publishable_session(
 
     monkeypatch.setattr(bootstrap_packet_cli, "datetime", LaterDatetime)
     assert bootstrap_packet_cli.main() == 0
-    assert capsys.readouterr().out == (
-        f"S5_BOOTSTRAP_PACKET=SELECTED sha256={packet_sha}\n"
-    )
+    assert capsys.readouterr().out == (f"S5_BOOTSTRAP_PACKET=SELECTED sha256={packet_sha}\n")
     assert sorted(root.glob("bootstrap-*.json")) == [packet_path]
 
     (root / f"run-{packet_sha}").mkdir(mode=0o700)
@@ -1204,12 +1186,8 @@ def test_fresh_authority_cas_rejects_another_packet_and_run_before_clients(
 ) -> None:
     root = tmp_path / "s5-source"
     root.mkdir(mode=0o700)
-    selected_packet = author_bootstrap_packet(
-        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC)
-    )
-    other_packet = author_bootstrap_packet(
-        cutoff=datetime(2026, 8, 17, 23, 10, tzinfo=UTC)
-    )
+    selected_packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
+    other_packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 17, 23, 10, tzinfo=UTC))
     root_lock = acquire_bootstrap_root_lock(root)
     try:
         selected = publish_fresh_bootstrap_authority(
@@ -1253,9 +1231,7 @@ def test_active_root_lock_rejects_selected_execution_before_clients(
 ) -> None:
     root = tmp_path / "s5-source"
     root.mkdir(mode=0o700)
-    packet = author_bootstrap_packet(
-        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC)
-    )
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
     root_lock = acquire_bootstrap_root_lock(root)
     try:
         publish_fresh_bootstrap_authority(approved_root=root, packet=packet)
@@ -1339,12 +1315,8 @@ def test_production_universe_uses_temporal_receipts_and_exact_31() -> None:
             security_type="ETF",
             common_share=False,
             listed=True,
-            trading_receipt=_krx_receipt(
-                schedule.selection_session, "etf_bydd_trd", "b" * 64
-            ),
-            identity_receipt=_krx_receipt(
-                schedule.selection_session, "etf_bydd_trd", "b" * 64
-            ),
+            trading_receipt=_krx_receipt(schedule.selection_session, "etf_bydd_trd", "b" * 64),
+            identity_receipt=_krx_receipt(schedule.selection_session, "etf_bydd_trd", "b" * 64),
         )
     )
     universe = select_production_monthly_universe(rows, schedule=schedule)
@@ -1352,7 +1324,9 @@ def test_production_universe_uses_temporal_receipts_and_exact_31() -> None:
     assert universe.symbols[-1] == "132030"
     assert universe.symbols[:3] == ("000001", "000002", "000003")
 
-    conflict = replace(rows[0], trading_receipt=replace(rows[0].trading_receipt, snapshot_sha256="f" * 64))
+    conflict = replace(
+        rows[0], trading_receipt=replace(rows[0].trading_receipt, snapshot_sha256="f" * 64)
+    )
     with pytest.raises(LightGbmContractError, match="SOURCE_SNAPSHOT_CONFLICT"):
         select_production_monthly_universe([*rows, conflict], schedule=schedule)
 
@@ -1432,14 +1406,7 @@ def test_production_feature_and_label_use_row_specific_clocks() -> None:
     assert len(rows) == 7
     assert len(build_production_exact_labels(prices, dataset_cutoff=cutoff)) == 60
     before_last_maturity = label_as_of(sessions[-1]) - timedelta(seconds=1)
-    assert (
-        len(
-            build_production_exact_labels(
-                prices, dataset_cutoff=before_last_maturity
-            )
-        )
-        == 59
-    )
+    assert len(build_production_exact_labels(prices, dataset_cutoff=before_last_maturity)) == 59
 
     leaked = list(prices)
     leaked[10] = replace(
@@ -1480,7 +1447,7 @@ def test_bootstrap_executor_orders_providers_and_seals_private_manifest(tmp_path
     calls: list[str] = []
 
     def full(service: str, values: dict[str, str]) -> dict[str, str]:
-        row = {field: "1" for field in S5_PRODUCTION_PROJECTION_FIELDS[service]}
+        row = dict.fromkeys(S5_PRODUCTION_PROJECTION_FIELDS[service], "1")
         row.update(values)
         return row
 
@@ -1544,9 +1511,7 @@ def test_bootstrap_executor_orders_providers_and_seals_private_manifest(tmp_path
         def require_cached_token_only(self) -> None:
             return None
 
-        def fetch_page(
-            self, *, symbol: str, start: date, end: date
-        ) -> tuple[DailyBar, ...]:
+        def fetch_page(self, *, symbol: str, start: date, end: date) -> tuple[DailyBar, ...]:
             calls.append("KIS:page")
             return tuple(
                 DailyBar(
@@ -1565,13 +1530,11 @@ def test_bootstrap_executor_orders_providers_and_seals_private_manifest(tmp_path
     class Ecos:
         def fetch(self, *, series: object, start: date, end: date) -> tuple[ECOSObservation, ...]:
             calls.append("ECOS:page")
-            series_id = getattr(series, "series_id")
+            series_id = series.series_id
             days = [day for day in raw if start <= day <= end]
             if series_id == "policy-rate" and not days:
                 days = [start]
-            return tuple(
-                ECOSObservation(time=day.strftime("%Y%m%d"), value="2.5") for day in days
-            )
+            return tuple(ECOSObservation(time=day.strftime("%Y%m%d"), value="2.5") for day in days)
 
     source_root = tmp_path / "source"
     result = execute_bootstrap_acquisition(
@@ -1669,9 +1632,7 @@ def test_materializer_publishes_feature_bundle_v2_from_verified_source(tmp_path:
             series_id="policy-rate",
             observation_date=packet.window.raw_sessions[0],
             value=2.5,
-            receipt=receipt(
-                "ECOS", "722Y001/0101000/D", packet.window.raw_sessions[0], 4_000
-            ),
+            receipt=receipt("ECOS", "722Y001/0101000/D", packet.window.raw_sessions[0], 4_000),
         ),
         *tuple(
             MacroObservation(
@@ -1718,6 +1679,8 @@ def test_materializer_publishes_feature_bundle_v2_from_verified_source(tmp_path:
     assert bundle.artifact.table.num_rows == 1_007
     assert bundle.provenance.temporal_quality == "RECONSTRUCTED_FIXED_LAG"
     assert stat.S_IMODE(os.stat(tmp_path / "feature" / "manifest.json").st_mode) == 0o600
+
+
 def test_fresh_bootstrap_lineage_can_never_carry_superseded_allowance() -> None:
     fresh = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
     assert fresh.budget.krx_superseded_allowance == 0
@@ -1797,9 +1760,7 @@ def test_journal_bounds_superseded_attempts_and_blocks_when_allowance_is_short(
     source_root.parent.mkdir(mode=0o700)
     source_root.mkdir(mode=0o700)
     (source_root / "chunks").mkdir(mode=0o700)
-    failed_hash = provider_query_sha256(
-        {"service": "stk_bydd_trd", "basDd": "20260603"}
-    )
+    failed_hash = provider_query_sha256({"service": "stk_bydd_trd", "basDd": "20260603"})
     journal = BootstrapJournal(source_root, policy_corrections=())
     for _ in range(2):
         ordinal = journal.begin(
@@ -1815,14 +1776,10 @@ def test_journal_bounds_superseded_attempts_and_blocks_when_allowance_is_short(
         )
     # 소비 가능한 물리 시도 자체가 query당 2회로 묶여 있어 allowance가 무한히 커질 수 없다.
     with pytest.raises(LightGbmContractError, match="resume attempt is unavailable"):
-        journal.begin(
-            provider="KRX", operation_id="stk_bydd_trd", query_sha256=failed_hash
-        )
+        journal.begin(provider="KRX", operation_id="stk_bydd_trd", query_sha256=failed_hash)
 
     # 승인 bound가 증명된 superseded 수보다 작으면 allowance를 주지 않고 fail-closed 한다.
-    monkeypatch.setattr(
-        bootstrap_calendar_recovery, "MAX_KRX_SUPERSEDED_ALLOWANCE", 1
-    )
+    monkeypatch.setattr(bootstrap_calendar_recovery, "MAX_KRX_SUPERSEDED_ALLOWANCE", 1)
     recovery = assess_bootstrap_calendar_recovery(
         approved_root=root,
         prior_packet_sha256=legacy.sha256,
@@ -1843,9 +1800,7 @@ def test_journal_bounds_superseded_attempts_and_blocks_when_allowance_is_short(
     os.chmod(written.absolute_path, 0o600)
     receipt = write_approved_new_file(
         approved_root=root,
-        relative_path=(
-            f"calendar-recovery-binding-{recovery.recovery_binding_sha256}.json"
-        ),
+        relative_path=(f"calendar-recovery-binding-{recovery.recovery_binding_sha256}.json"),
         content=recovery.content,
         max_bytes=64 * 1024,
     )
@@ -1884,9 +1839,7 @@ def test_empty_daily_projection_becomes_calendar_divergence_and_stops_further_ca
     calls: list[str] = []
 
     class Krx:
-        def fetch(
-            self, *, service: str, session_date: date
-        ) -> tuple[dict[str, str], ...]:
+        def fetch(self, *, service: str, session_date: date) -> tuple[dict[str, str], ...]:
             calls.append(f"{service}:{session_date.isoformat()}")
             if session_date == blocked_session and service == "stk_bydd_trd":
                 # 휴장일에 provider가 구조적으로 유효한 빈 응답을 돌려주는 실제 경로다.
@@ -1913,9 +1866,7 @@ def test_empty_daily_projection_becomes_calendar_divergence_and_stops_further_ca
             ecos_series=CANDIDATE_SERIES,
             clock=lambda: datetime(2026, 8, 20, tzinfo=UTC),
         )
-    block = json.loads(
-        (source_root / DIVERGENCE_CANDIDATES_FILENAME).read_bytes()
-    )
+    block = json.loads((source_root / DIVERGENCE_CANDIDATES_FILENAME).read_bytes())
     assert block["candidates"] == [
         {
             "evidence": "EMPTY_DAILY_PROJECTION",
@@ -1943,6 +1894,8 @@ def test_empty_daily_projection_becomes_calendar_divergence_and_stops_further_ca
             resume=True,
         )
     assert tuple(calls) == consumed
+
+
 def test_superseded_generation_residue_never_opens_a_second_fresh_budget(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1974,9 +1927,9 @@ def test_superseded_generation_residue_never_opens_a_second_fresh_budget(
     assert bootstrap_packet_cli.main() == 1
     assert capsys.readouterr().out == "S5_BOOTSTRAP_PACKET=RECOVERY_REQUIRED\n"
     assert not fresh_bootstrap_authority_exists(approved_root=root)
-    assert not any(
-        name.startswith("fresh-bootstrap-authority") for name in os.listdir(root)
-    )
+    assert not any(name.startswith("fresh-bootstrap-authority") for name in os.listdir(root))
+
+
 def test_corrected_calendar_fixture_matches_the_live_calendar() -> None:
     """계약 fixture의 session 경계가 실제 correction-set 달력과 어긋나지 않게 고정한다.
 
@@ -2002,6 +1955,8 @@ def test_corrected_calendar_fixture_matches_the_live_calendar() -> None:
     assert provenance["eligibleSessionCount"] == len(window.eligible_sessions)
     for closed in S5_ADHOC_CLOSED_SESSIONS:
         assert closed not in window.raw_sessions
+
+
 def test_single_session_query_failure_records_a_divergence_candidate(tmp_path: Path) -> None:
     """앞선 session이 정상인데 한 session만 실패하면 후보 증거를 남기고 resume은 허용한다.
 
@@ -2026,9 +1981,7 @@ def test_single_session_query_failure_records_a_divergence_candidate(tmp_path: P
     calls: list[str] = []
 
     class Krx:
-        def fetch(
-            self, *, service: str, session_date: date
-        ) -> tuple[dict[str, str], ...]:
+        def fetch(self, *, service: str, session_date: date) -> tuple[dict[str, str], ...]:
             calls.append(f"{service}:{session_date.isoformat()}")
             if session_date == blocked_session and service == "stk_bydd_trd":
                 raise RuntimeError("provider rejected the request")
@@ -2080,6 +2033,8 @@ def test_single_session_query_failure_records_a_divergence_candidate(tmp_path: P
             resume=True,
         )
     assert len(calls) > len(consumed)
+
+
 def test_correction_generation_authority_is_closed() -> None:
     """승인된 correction 세대만 해시로 되돌릴 수 있어야 한다."""
 
@@ -2122,9 +2077,7 @@ def test_superseded_generation_packet_is_read_only_for_recovery() -> None:
     assert superseded.calendar_correction_set_sha256 != S5_CALENDAR_CORRECTION_SET_SHA256
 
     with pytest.raises(LightGbmContractError, match="current calendar policy"):
-        validate_bootstrap_packet(
-            superseded.content, expected_sha256=superseded.sha256
-        )
+        validate_bootstrap_packet(superseded.content, expected_sha256=superseded.sha256)
     assert (
         validate_bootstrap_packet(
             superseded.content,
@@ -2136,10 +2089,7 @@ def test_superseded_generation_packet_is_read_only_for_recovery() -> None:
 
     # 현재 세대 packet은 flag 없이도 그대로 검증된다.
     current = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
-    assert (
-        validate_bootstrap_packet(current.content, expected_sha256=current.sha256)
-        == current
-    )
+    assert validate_bootstrap_packet(current.content, expected_sha256=current.sha256) == current
 
 
 def test_recovery_refuses_a_fresh_packet_as_prior(tmp_path: Path) -> None:
@@ -2164,13 +2114,9 @@ def test_recovery_refuses_a_fresh_packet_as_prior(tmp_path: Path) -> None:
     source_root.mkdir(mode=0o700)
     (source_root / "chunks").mkdir(mode=0o700)
 
-    query_hash = provider_query_sha256(
-        {"service": "stk_bydd_trd", "basDd": "20260603"}
-    )
+    query_hash = provider_query_sha256({"service": "stk_bydd_trd", "basDd": "20260603"})
     journal = BootstrapJournal(source_root)
-    ordinal = journal.begin(
-        provider="KRX", operation_id="stk_bydd_trd", query_sha256=query_hash
-    )
+    ordinal = journal.begin(provider="KRX", operation_id="stk_bydd_trd", query_sha256=query_hash)
     journal.finish(
         ordinal=ordinal,
         provider="KRX",
@@ -2181,9 +2127,8 @@ def test_recovery_refuses_a_fresh_packet_as_prior(tmp_path: Path) -> None:
     )
 
     with pytest.raises(LightGbmContractError, match="prior lineage is invalid"):
-        assess_bootstrap_calendar_recovery(
-            approved_root=root, prior_packet_sha256=current.sha256
-        )
+        assess_bootstrap_calendar_recovery(approved_root=root, prior_packet_sha256=current.sha256)
+
 
 def test_runtime_inputs_derive_execution_target_from_sealed_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -2235,6 +2180,8 @@ def test_code_provenance_rejects_values_that_do_not_match_the_repository(
     monkeypatch.setenv("S5_CODE_HEAD_SHA", "0" * 40)
     with pytest.raises(LightGbmContractError, match="does not match the repository"):
         resolve_code_provenance(repository_root=repository_root)
+
+
 def test_recovery_receipt_carries_every_superseded_query_identity(tmp_path: Path) -> None:
     """receipt는 실패 query 하나가 아니라 superseded query 집합 전체를 담아야 한다.
 
@@ -2261,9 +2208,7 @@ def test_recovery_receipt_carries_every_superseded_query_identity(tmp_path: Path
     source_root.mkdir(mode=0o700)
     (source_root / "chunks").mkdir(mode=0o700)
 
-    failed_hash = provider_query_sha256(
-        {"service": "stk_bydd_trd", "basDd": "20260603"}
-    )
+    failed_hash = provider_query_sha256({"service": "stk_bydd_trd", "basDd": "20260603"})
     journal = BootstrapJournal(source_root, policy_corrections=())
     for _ in range(2):
         ordinal = journal.begin(
@@ -2286,9 +2231,7 @@ def test_recovery_receipt_carries_every_superseded_query_identity(tmp_path: Path
     )
     identities = receipt["supersededQueries"]
     assert isinstance(identities, list) and identities
-    assert all(
-        set(item) == {"operationId", "querySha256", "sessionDate"} for item in identities
-    )
+    assert all(set(item) == {"operationId", "querySha256", "sessionDate"} for item in identities)
     # 집합은 query 해시 순으로 정렬되고 중복이 없어야 결정적이다.
     digests = [str(item["querySha256"]) for item in identities]
     assert digests == sorted(digests)
@@ -2308,6 +2251,8 @@ def test_recovery_receipt_carries_every_superseded_query_identity(tmp_path: Path
         validate_recovery_receipt(
             canonical_json_bytes(forged), corrected_packet=recovery.corrected_packet
         )
+
+
 def test_adopted_prefix_survives_further_provider_records(tmp_path: Path) -> None:
     """채택 이후 append된 물리 호출 기록이 실행 권위를 깨뜨리지 않아야 한다.
 
@@ -2334,9 +2279,7 @@ def test_adopted_prefix_survives_further_provider_records(tmp_path: Path) -> Non
     prior_source.mkdir(mode=0o700)
     (prior_source / "chunks").mkdir(mode=0o700)
 
-    failed_hash = provider_query_sha256(
-        {"service": "stk_bydd_trd", "basDd": "20260603"}
-    )
+    failed_hash = provider_query_sha256({"service": "stk_bydd_trd", "basDd": "20260603"})
     journal = BootstrapJournal(prior_source, policy_corrections=())
     for _ in range(2):
         ordinal = journal.begin(
@@ -2363,9 +2306,7 @@ def test_adopted_prefix_survives_further_provider_records(tmp_path: Path) -> Non
     os.chmod(written.absolute_path, 0o600)
     receipt = write_approved_new_file(
         approved_root=root,
-        relative_path=(
-            f"calendar-recovery-binding-{recovery.recovery_binding_sha256}.json"
-        ),
+        relative_path=(f"calendar-recovery-binding-{recovery.recovery_binding_sha256}.json"),
         content=recovery.content,
         max_bytes=64 * 1024,
     )
@@ -2374,9 +2315,7 @@ def test_adopted_prefix_survives_further_provider_records(tmp_path: Path) -> Non
 
     adopted_source = root / f"run-{recovery.corrected_packet.sha256}" / "source"
     assert (
-        validate_recovery_execution_authority(
-            approved_root=root, packet=recovery.corrected_packet
-        )
+        validate_recovery_execution_authority(approved_root=root, packet=recovery.corrected_packet)
         == "READY_TO_SUPERSEDE"
     )
 
@@ -2395,9 +2334,7 @@ def test_adopted_prefix_survives_further_provider_records(tmp_path: Path) -> Non
         chunk=None,
     )
     assert (
-        validate_recovery_execution_authority(
-            approved_root=root, packet=recovery.corrected_packet
-        )
+        validate_recovery_execution_authority(approved_root=root, packet=recovery.corrected_packet)
         == "READY_TO_SUPERSEDE"
     )
 
@@ -2406,9 +2343,9 @@ def test_adopted_prefix_survives_further_provider_records(tmp_path: Path) -> Non
     tampered = b"".join(raw[1:])
     (adopted_source / "progress.jsonl").write_bytes(tampered)
     with pytest.raises(LightGbmContractError):
-        validate_recovery_execution_authority(
-            approved_root=root, packet=recovery.corrected_packet
-        )
+        validate_recovery_execution_authority(approved_root=root, packet=recovery.corrected_packet)
+
+
 def test_superseded_attempt_does_not_consume_this_generation_retry_budget(
     tmp_path: Path,
 ) -> None:
@@ -2424,9 +2361,7 @@ def test_superseded_attempt_does_not_consume_this_generation_retry_budget(
     query = "7" * 64
     journal = BootstrapJournal(root)
     for _ in range(2):
-        ordinal = journal.begin(
-            provider="KIS", operation_id="FHKST03010100", query_sha256=query
-        )
+        ordinal = journal.begin(provider="KIS", operation_id="FHKST03010100", query_sha256=query)
         journal.finish(
             ordinal=ordinal,
             provider="KIS",
@@ -2457,9 +2392,7 @@ def test_superseded_attempt_does_not_consume_this_generation_retry_budget(
     os.chmod(written.absolute_path, 0o600)
     next_generation = BootstrapJournal(carried)
     assert len(next_generation.attempts) == 2
-    assert all(
-        attempt.state == SUPERSEDED_CONSUMED for attempt in next_generation.attempts
-    )
+    assert all(attempt.state == SUPERSEDED_CONSUMED for attempt in next_generation.attempts)
     ordinal = next_generation.begin(
         provider="KIS", operation_id="FHKST03010100", query_sha256=query
     )
@@ -2474,9 +2407,7 @@ def test_superseded_attempt_does_not_consume_this_generation_retry_budget(
     )
     # 새 세대의 자격도 2회로 닫힌다. 이관이 상한을 무한히 열지 않는다.
     reopened = BootstrapJournal(carried)
-    second = reopened.begin(
-        provider="KIS", operation_id="FHKST03010100", query_sha256=query
-    )
+    second = reopened.begin(provider="KIS", operation_id="FHKST03010100", query_sha256=query)
     reopened.finish(
         ordinal=second,
         provider="KIS",
@@ -2501,9 +2432,7 @@ def test_adopted_success_can_never_be_called_again_across_generations(
     (root / "chunks").mkdir(mode=0o700)
     query = "8" * 64
     journal = BootstrapJournal(root)
-    ordinal = journal.begin(
-        provider="KIS", operation_id="oauth2/tokenP", query_sha256=query
-    )
+    ordinal = journal.begin(provider="KIS", operation_id="oauth2/tokenP", query_sha256=query)
     journal.finish(
         ordinal=ordinal,
         provider="KIS",
@@ -2529,9 +2458,7 @@ def test_kis_token_success_cannot_be_adopted_because_its_value_is_not_preserved(
     root = tmp_path / "source"
     root.mkdir(mode=0o700)
     journal = BootstrapJournal(root)
-    ordinal = journal.begin(
-        provider="KIS", operation_id="oauth2/tokenP", query_sha256="9" * 64
-    )
+    ordinal = journal.begin(provider="KIS", operation_id="oauth2/tokenP", query_sha256="9" * 64)
     journal.finish(
         ordinal=ordinal,
         provider="KIS",
@@ -2589,9 +2516,7 @@ def test_kis_allowance_is_absent_from_packet_bytes_when_it_is_zero() -> None:
     assert limits["krxSupersededAllowance"] == 3
     assert "kisSupersededAllowance" not in limits
     assert "kisTokenSupersededAllowance" not in limits
-    assert validate_bootstrap_packet(
-        recovery.content, expected_sha256=recovery.sha256
-    ) == recovery
+    assert validate_bootstrap_packet(recovery.content, expected_sha256=recovery.sha256) == recovery
 
     widened = author_recovery_bootstrap_packet(
         cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
@@ -2606,9 +2531,7 @@ def test_kis_allowance_is_absent_from_packet_bytes_when_it_is_zero() -> None:
     assert widened.budget.kis_get == APPROVED_KIS_MAX_GET + 3
     assert widened.budget.kis_token == 2
     assert widened.sha256 != recovery.sha256
-    assert validate_bootstrap_packet(
-        widened.content, expected_sha256=widened.sha256
-    ) == widened
+    assert validate_bootstrap_packet(widened.content, expected_sha256=widened.sha256) == widened
 
 
 def test_kis_allowance_cannot_exceed_the_approved_bound() -> None:
@@ -2654,9 +2577,7 @@ def test_recovery_that_changes_nothing_is_refused(tmp_path: Path) -> None:
     source_root.mkdir(mode=0o700)
     (source_root / "chunks").mkdir(mode=0o700)
     journal = BootstrapJournal(source_root)
-    ordinal = journal.begin(
-        provider="KRX", operation_id="stk_bydd_trd", query_sha256="c" * 64
-    )
+    ordinal = journal.begin(provider="KRX", operation_id="stk_bydd_trd", query_sha256="c" * 64)
     journal.finish(
         ordinal=ordinal,
         provider="KRX",
@@ -2666,9 +2587,9 @@ def test_recovery_that_changes_nothing_is_refused(tmp_path: Path) -> None:
         chunk=None,
     )
     with pytest.raises(LightGbmContractError):
-        assess_bootstrap_calendar_recovery(
-            approved_root=root, prior_packet_sha256=packet.sha256
-        )
+        assess_bootstrap_calendar_recovery(approved_root=root, prior_packet_sha256=packet.sha256)
+
+
 def _kis_symbol_fetch(
     *,
     tmp_path: Path,
@@ -2691,9 +2612,7 @@ def _kis_symbol_fetch(
         def require_cached_token_only(self) -> None:
             return None
 
-        def fetch_page(
-            self, *, symbol: str, start: date, end: date
-        ) -> tuple[DailyBar, ...]:
+        def fetch_page(self, *, symbol: str, start: date, end: date) -> tuple[DailyBar, ...]:
             if on_fetch is not None:
                 on_fetch(start, end)
             window = [day for day in available if start <= day <= end]
@@ -2784,6 +2703,8 @@ def test_kis_symbol_without_any_krx_trading_evidence_is_refused(tmp_path: Path) 
             expected_sessions=(),
             available=raw,
         )
+
+
 def test_kis_coverage_divergence_names_the_symbol_and_survives_resume(
     tmp_path: Path,
 ) -> None:
@@ -2832,9 +2753,7 @@ def test_kis_coverage_divergence_names_the_symbol_and_survives_resume(
     assert event["measured"]["missingSessions"] == 40  # type: ignore[index]
 
     # 원장이 있어도 같은 run root를 다시 열 수 있어야 한다. allowlist 누락이면 여기서 죽는다.
-    bootstrap_executor._prepare_private_bundle_root(
-        source_root, chunks=True, resume=True
-    )
+    bootstrap_executor._prepare_private_bundle_root(source_root, chunks=True, resume=True)
 
 
 def test_traded_session_evidence_must_be_contiguous(tmp_path: Path) -> None:
@@ -2877,13 +2796,13 @@ def test_traded_session_evidence_must_be_contiguous(tmp_path: Path) -> None:
             ),
         )
 
-    def build(present: object) -> dict[
-        tuple[str, date], SourceChunkReceipt
-    ]:
+    def build(present: object) -> dict[tuple[str, date], SourceChunkReceipt]:
         chunks: dict[tuple[str, date], SourceChunkReceipt] = {}
         for session in raw:
             chunks[("stk_bydd_trd", session)] = seal(
-                session, "stk_bydd_trd", present(session)  # type: ignore[operator]
+                session,
+                "stk_bydd_trd",
+                present(session),  # type: ignore[operator]
             )
             chunks[("ksq_bydd_trd", session)] = seal(session, "ksq_bydd_trd", ("999999",))
         return chunks
@@ -2900,9 +2819,7 @@ def test_traded_session_evidence_must_be_contiguous(tmp_path: Path) -> None:
     delisted = bootstrap_executor._derive_traded_sessions(
         packet=scoped,
         source_root=source_root,
-        chunks=build(
-            lambda session: ("000001",) if session <= raw[4] else ("888888",)
-        ),
+        chunks=build(lambda session: ("000001",) if session <= raw[4] else ("888888",)),
         symbols=frozenset({"000001"}),
     )
     assert delisted["000001"] == tuple(raw[:5])
@@ -2912,11 +2829,11 @@ def test_traded_session_evidence_must_be_contiguous(tmp_path: Path) -> None:
         bootstrap_executor._derive_traded_sessions(
             packet=scoped,
             source_root=source_root,
-            chunks=build(
-                lambda session: ("000001",) if session != raw[3] else ("888888",)
-            ),
+            chunks=build(lambda session: ("000001",) if session != raw[3] else ("888888",)),
             symbols=frozenset({"000001"}),
         )
+
+
 def test_paging_stops_when_evidence_is_satisfied_on_a_page_boundary(
     tmp_path: Path,
 ) -> None:
@@ -2952,6 +2869,8 @@ def test_paging_stops_when_evidence_is_satisfied_on_a_page_boundary(
     # 두 페이지로 끝나야 한다. 세 번째 요청은 상장 전 구간이라 0행이고 예산만 태운다.
     assert len(receipts) == 2
     assert len(calls) == 2
+
+
 def test_ecos_page_range_is_valid_without_a_provider_call() -> None:
     """provider가 요청하는 page 범위는 네트워크 전에 정책을 통과해야 한다.
 

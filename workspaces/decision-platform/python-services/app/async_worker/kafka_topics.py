@@ -18,7 +18,6 @@ from confluent_kafka.admin import (  # type: ignore[attr-defined]
 )
 from confluent_kafka.cimpl import KafkaError, NewTopic
 
-
 BASE_TOPICS = (
     "artifact.ingest-requested.v1",
     "artifact.ingested.v1",

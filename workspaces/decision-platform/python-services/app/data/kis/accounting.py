@@ -78,7 +78,7 @@ class LogicalOperationSummary(_FrozenModel):
     failure_codes: tuple[FailureCount, ...] = Field(alias="failureCodes")
 
     @model_validator(mode="after")
-    def _validate_terminal_count(self) -> "LogicalOperationSummary":
+    def _validate_terminal_count(self) -> LogicalOperationSummary:
         if self.started != self.succeeded + self.terminal_failures:
             raise ValueError("logical operation counts must balance")
         if self.terminal_failures != sum(item.count for item in self.failure_codes):
@@ -96,7 +96,7 @@ class PhysicalAttemptSummary(_FrozenModel):
     failure_codes: tuple[FailureCount, ...] = Field(alias="failureCodes")
 
     @model_validator(mode="after")
-    def _validate_attempt_count(self) -> "PhysicalAttemptSummary":
+    def _validate_attempt_count(self) -> PhysicalAttemptSummary:
         if self.attempts != self.successes + self.failures:
             raise ValueError("physical attempt counts must balance")
         if self.failures != sum(item.count for item in self.failure_codes):
@@ -135,27 +135,20 @@ class CollectionRunSummary(_FrozenModel):
     ingest_duplicates: IngestDuplicateSummary = Field(alias="ingestDuplicates")
 
     @model_validator(mode="after")
-    def _validate_time_and_status(self) -> "CollectionRunSummary":
+    def _validate_time_and_status(self) -> CollectionRunSummary:
         if self.started_at.tzinfo is None or self.completed_at.tzinfo is None:
             raise ValueError("collection run timestamps must be timezone-aware")
         if self.completed_at < self.started_at:
             raise ValueError("collection run completion cannot precede start")
-        if tuple(item.operation for item in self.logical_operations) != tuple(
-            LogicalOperation
-        ):
+        if tuple(item.operation for item in self.logical_operations) != tuple(LogicalOperation):
             raise ValueError("logical operation inventory must be canonical")
-        if tuple(item.channel for item in self.physical_attempts) != tuple(
-            PhysicalChannel
-        ):
+        if tuple(item.channel for item in self.physical_attempts) != tuple(PhysicalChannel):
             raise ValueError("physical attempt inventory must be canonical")
         skip_codes = tuple(item.code for item in self.skips)
         canonical_skip_codes = tuple(code for code in SkipCode if code in skip_codes)
         if len(set(skip_codes)) != len(skip_codes) or skip_codes != canonical_skip_codes:
             raise ValueError("skip inventory must be unique and canonical")
-        if (
-            self.status == CollectionRunStatus.SUCCESS
-            and self.ingest_duplicates.conflicting_groups
-        ):
+        if self.status == CollectionRunStatus.SUCCESS and self.ingest_duplicates.conflicting_groups:
             raise ValueError("conflicting duplicates cannot produce a successful run")
         return self
 
@@ -443,9 +436,7 @@ def stable_failure_code(error: BaseException) -> FailureCode:
 
 def _failure_counts(counts: Counter[FailureCode]) -> tuple[FailureCount, ...]:
     return tuple(
-        FailureCount(code=code, count=counts[code])
-        for code in FailureCode
-        if counts[code]
+        FailureCount(code=code, count=counts[code]) for code in FailureCode if counts[code]
     )
 
 

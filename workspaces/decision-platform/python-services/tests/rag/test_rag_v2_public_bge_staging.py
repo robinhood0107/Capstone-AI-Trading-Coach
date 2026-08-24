@@ -64,7 +64,7 @@ def test_public_context_rejects_incomplete_mixed_or_source_identity_drift() -> N
         build_public_bge_component_context(records[:-1])
 
     with pytest.raises(RagV2PublicBgeStagingError, match="PUBLIC_BGE_COMPONENT_SCOPE"):
-        build_public_bge_component_context(records[:-1] + (_record("OA112", 0),))
+        build_public_bge_component_context((*records[:-1], _record("OA112", 0)))
 
     materialized, metadata = records[0]
     with pytest.raises(RagV2PublicBgeStagingError, match="PUBLIC_BGE_SOURCE_IDENTITY"):
@@ -153,7 +153,9 @@ def _record(
             ),
         ),
         source_revision_sha256=hashlib.sha256(
-            json.dumps(document_ir, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+            json.dumps(
+                document_ir, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+            ).encode()
         ).hexdigest(),
         document_ir=document_ir,
     )

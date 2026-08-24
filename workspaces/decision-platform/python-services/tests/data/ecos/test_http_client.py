@@ -11,12 +11,13 @@ import pytest
 from pydantic import SecretStr
 
 from app.data._shared.redis_quota import QuotaUnavailableError
-from app.data.ecos import _credential_transport, http_client as ecos_http_client
+from app.data.ecos import _credential_transport
+from app.data.ecos import http_client as ecos_http_client
 from app.data.ecos._credential_transport import (
     ECOSCredentialError,
-    _CredentialTransport,
     _canonical_client_headers,
     _canonical_request_headers,
+    _CredentialTransport,
 )
 from app.data.ecos.errors import ECOSApplicationError
 from app.data.ecos.http_client import ECOSHttpClient, ECOSHttpError, _build_tls_context

@@ -6,14 +6,17 @@ import json
 import os
 from pathlib import Path
 
+from app.data._shared.redis_quota import QuotaUnavailableError
 from app.data.ecos.http_client import ECOSHttpClient
 from app.data.ecos.series_registry import CANDIDATE_SERIES
 from app.data.ecos.settings import ECOSS5ProductionSettings
 from app.data.kis.http_client import KISHttpClient
 from app.data.kis.settings import KISSettings
 from app.data.krx.client import KrxOpenApiClient, attest_quota_backend_credentials
-from app.data._shared.redis_quota import QuotaUnavailableError
 from app.data.krx.settings import KrxS5ProductionSettings
+from app.lightgbm.bootstrap_calendar_recovery import (
+    validate_recovery_execution_authority,
+)
 from app.lightgbm.bootstrap_executor import (
     DIVERGENCE_CANDIDATES_FILENAME,
     MAX_DIVERGENCE_BLOCK_BYTES,
@@ -22,9 +25,6 @@ from app.lightgbm.bootstrap_executor import (
 )
 from app.lightgbm.bootstrap_fresh_authority import (
     validate_fresh_bootstrap_execution_authority,
-)
-from app.lightgbm.bootstrap_calendar_recovery import (
-    validate_recovery_execution_authority,
 )
 from app.lightgbm.bootstrap_journal import (
     BootstrapJournal,
@@ -37,13 +37,8 @@ from app.lightgbm.bootstrap_live import (
     LiveKrxBootstrapProvider,
 )
 from app.lightgbm.bootstrap_packet import validate_bootstrap_packet
-from app.lightgbm.errors import CalendarDivergenceSuspected, LightGbmContractError
 from app.lightgbm.daily_refresh import write_initial_daily_state
-from app.lightgbm.runtime_inputs import (
-    resolve_bootstrap_packet_sha256,
-    resolve_code_provenance,
-    resolve_repository_root,
-)
+from app.lightgbm.errors import CalendarDivergenceSuspected, LightGbmContractError
 from app.lightgbm.private_root import (
     acquire_bootstrap_root_lock,
     acquire_run_lock,
@@ -55,6 +50,11 @@ from app.lightgbm.production_release import (
     qualify_and_write_production_release,
     validate_qualification_bindings,
     write_production_signal_batch,
+)
+from app.lightgbm.runtime_inputs import (
+    resolve_bootstrap_packet_sha256,
+    resolve_code_provenance,
+    resolve_repository_root,
 )
 from app.lightgbm.temporal import next_xkrx_evidence_clock
 from app.rag.safe_io import (
@@ -95,9 +95,7 @@ def main() -> int:
             relative_path=f"bootstrap-{packet_sha256}.json",
             max_bytes=1 * 1024 * 1024,
         )
-        packet = validate_bootstrap_packet(
-            packet_file.content, expected_sha256=packet_sha256
-        )
+        packet = validate_bootstrap_packet(packet_file.content, expected_sha256=packet_sha256)
         if packet.lineage_mode == "FRESH":
             validate_fresh_bootstrap_execution_authority(
                 approved_root=root,
@@ -117,10 +115,7 @@ def main() -> int:
             run_lock = -1
             release_run_lock(root_lock)
             root_lock = -1
-            print(
-                "S5_BOOTSTRAP=DATASET_UNAVAILABLE "
-                "reason=KRX_CAPACITY_EXHAUSTED providerCalls=0"
-            )
+            print("S5_BOOTSTRAP=DATASET_UNAVAILABLE reason=KRX_CAPACITY_EXHAUSTED providerCalls=0")
             return 1
         if resume_sha256:
             resume_file = read_approved_regular_file(
@@ -153,10 +148,7 @@ def main() -> int:
                 release_run_lock(run_lock)
             if root_lock >= 0:
                 release_run_lock(root_lock)
-            print(
-                "S5_BOOTSTRAP=CREDENTIALS_UNAVAILABLE "
-                "reason=QUOTA_BACKEND_AUTH providerCalls=0"
-            )
+            print("S5_BOOTSTRAP=CREDENTIALS_UNAVAILABLE reason=QUOTA_BACKEND_AUTH providerCalls=0")
             return 2
     except (OSError, RagSafeIoError, LightGbmContractError):
         if run_lock >= 0:
@@ -206,9 +198,7 @@ def main() -> int:
             packet=packet,
             acquisition=result.acquisition,
         )
-        inference_effective_day = next_xkrx_evidence_clock(
-            packet.window.latest_completed
-        ).date()
+        inference_effective_day = next_xkrx_evidence_clock(packet.window.latest_completed).date()
         inference_effective_month = (
             f"{inference_effective_day.year:04d}-{inference_effective_day.month:02d}"
         )

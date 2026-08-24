@@ -9,6 +9,8 @@ class DatasetUnavailable(LightGbmContractError):
     """필수 point-in-time evidence가 없어 실제 dataset을 만들 수 없음을 나타낸다."""
 
     code = "DATASET_UNAVAILABLE"
+
+
 class CalendarDivergenceSuspected(DatasetUnavailable):
     """달력이 거래일로 본 session에 provider 증거가 없음을 별도 유형으로 보고한다.
 

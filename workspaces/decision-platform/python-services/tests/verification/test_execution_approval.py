@@ -1,36 +1,41 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
 import hashlib
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.verification import cli
 from app.verification.execution_approval import (
-    ExecutionApprovalError,
     ZERO_SCOPE_SHA256,
+    ExecutionApprovalError,
     author_execution_approval,
     load_and_verify_execution_approval,
     scope_digest,
 )
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 def _keys(tmp_path: Path) -> tuple[Path, Path, str]:
     key = Ed25519PrivateKey.generate()
     private = tmp_path / "private.pem"
     public = tmp_path / "public.pem"
-    private.write_bytes(key.private_bytes(
-        serialization.Encoding.PEM,
-        serialization.PrivateFormat.PKCS8,
-        serialization.NoEncryption(),
-    ))
-    public.write_bytes(key.public_key().public_bytes(
-        serialization.Encoding.PEM,
-        serialization.PublicFormat.SubjectPublicKeyInfo,
-    ))
+    private.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    public.write_bytes(
+        key.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+    )
     private.chmod(0o600)
     public.chmod(0o644)
     return private, public, hashlib.sha256(public.read_bytes()).hexdigest()
@@ -105,18 +110,18 @@ def test_common_approval_rejects_scope_drift_and_signature_tamper(
     packet_path.write_bytes(canonical_json_bytes(approval.to_dict()))
     packet_path.chmod(0o600)
     monkeypatch.setattr(cli, "_approval_trust_anchor", lambda: (public, "P1.TEST", public_digest))
-    common = dict(
-        approval_path=packet_path.absolute(),
-        provider_family="CORE6",
-        exact_operations=("SEC_EDGAR_SUBMISSIONS",),
-        payload_sha256="a" * 64,
-        repository_digest="b" * 64,
-        evidence_digest="c" * 64,
-        credential_scope_digest=scope_digest("SEC_EDGAR:SEC_EDGAR_SUBMISSIONS"),
-        physical_call_cap=1,
-        cost_cap_microusd=0,
-        now=now + timedelta(minutes=1),
-    )
+    common = {
+        "approval_path": packet_path.absolute(),
+        "provider_family": "CORE6",
+        "exact_operations": ("SEC_EDGAR_SUBMISSIONS",),
+        "payload_sha256": "a" * 64,
+        "repository_digest": "b" * 64,
+        "evidence_digest": "c" * 64,
+        "credential_scope_digest": scope_digest("SEC_EDGAR:SEC_EDGAR_SUBMISSIONS"),
+        "physical_call_cap": 1,
+        "cost_cap_microusd": 0,
+        "now": now + timedelta(minutes=1),
+    }
     with pytest.raises(ExecutionApprovalError, match="SCOPE_MISMATCH"):
         load_and_verify_execution_approval(**{**common, "payload_sha256": "d" * 64})
 

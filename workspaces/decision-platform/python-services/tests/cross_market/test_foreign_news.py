@@ -118,8 +118,12 @@ def test_model_selection_uses_exact_validation_order_and_one_test_only() -> None
         selection_generation=1,
         results=(
             _metrics("PROSUSAI_FINBERT", macro_f1=0.84, ece=0.08, cpu_p95=16.0, footprint=100),
-            _metrics("YIYANGHKUST_FINBERT_TONE", macro_f1=0.84, ece=0.06, cpu_p95=19.0, footprint=90),
-            _metrics("LOUGHRAN_MCDONALD_BASELINE", macro_f1=0.79, ece=0.03, cpu_p95=1.0, footprint=1),
+            _metrics(
+                "YIYANGHKUST_FINBERT_TONE", macro_f1=0.84, ece=0.06, cpu_p95=19.0, footprint=90
+            ),
+            _metrics(
+                "LOUGHRAN_MCDONALD_BASELINE", macro_f1=0.79, ece=0.03, cpu_p95=1.0, footprint=1
+            ),
         ),
     )
 

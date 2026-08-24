@@ -36,9 +36,7 @@ class LiveKisBootstrapProvider:
     def require_cached_token_only(self) -> None:
         self._client.freeze_access_token_refresh()
 
-    def fetch_page(
-        self, *, symbol: str, start: date, end: date
-    ) -> tuple[DailyBar, ...]:
+    def fetch_page(self, *, symbol: str, start: date, end: date) -> tuple[DailyBar, ...]:
         response = self._client.request(
             "GET",
             DAILY_ITEMCHART_PATH,
@@ -52,9 +50,7 @@ class LiveKisBootstrapProvider:
                 "FID_ORG_ADJ_PRC": "0",
             },
         )
-        rows = tuple(
-            parse_daily_bars(response, symbol=symbol, require_adjustment_fields=True)
-        )
+        rows = tuple(parse_daily_bars(response, symbol=symbol, require_adjustment_fields=True))
         if len(rows) > 100:
             raise DatasetUnavailable("KIS_HISTORY_UNAVAILABLE")
         return rows
@@ -70,9 +66,7 @@ class LiveEcosBootstrapProvider:
     def __init__(self, client: ECOSHttpClient) -> None:
         self._client = client
 
-    def fetch(
-        self, *, series: ECOSSeries, start: date, end: date
-    ) -> tuple[ECOSObservation, ...]:
+    def fetch(self, *, series: ECOSSeries, start: date, end: date) -> tuple[ECOSObservation, ...]:
         page = self._client.statistic_search(
             series=series,
             start=start,
@@ -97,9 +91,7 @@ class LiveEcosDailyProvider:
     def __init__(self, client: ECOSHttpClient) -> None:
         self._client = client
 
-    def fetch(
-        self, *, series: ECOSSeries, start: date, end: date
-    ) -> tuple[ECOSObservation, ...]:
+    def fetch(self, *, series: ECOSSeries, start: date, end: date) -> tuple[ECOSObservation, ...]:
         if start != end:
             raise DatasetUnavailable("DATASET_UNAVAILABLE: daily ECOS range is invalid")
         page = self._client.statistic_search(

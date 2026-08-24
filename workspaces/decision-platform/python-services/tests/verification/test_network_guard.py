@@ -3,6 +3,7 @@ from __future__ import annotations
 import socket
 
 import pytest
+
 from app.verification.network_guard import OutboundNetworkDenied, deny_outbound_network
 
 

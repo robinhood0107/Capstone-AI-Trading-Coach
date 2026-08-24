@@ -20,7 +20,6 @@ from app.rag.source_card_corpus import (
     parse_source_card_v2_markdown,
 )
 
-
 REPO_ROOT = Path(__file__).resolve().parents[5]
 GENERATOR_PATH = REPO_ROOT / "capstone-rag/generate_s4_7b_source_cards.py"
 
@@ -63,8 +62,7 @@ def test_exact_stable_assumption_coverage_is_one() -> None:
     corpus = load_frozen_source_card_corpus()
     actual = {
         card.source_id: tuple(
-            assumption["key"]
-            for assumption in card.front_matter["modelAssumptions"]
+            assumption["key"] for assumption in card.front_matter["modelAssumptions"]
         )
         for card in corpus.cards
         if card.front_matter["modelAssumptions"]
@@ -90,10 +88,7 @@ def test_manifest_is_current_deterministic_and_excludes_upstream_count() -> None
     assert tracked["upstreamReferenceCardsExcluded"] == 20
     assert tracked["corpusManifestSha256"] == corpus.corpus_manifest_sha256
     assert "generatedAt" not in tracked
-    assert all(
-        not Path(card["relativePath"]).is_absolute()
-        for card in tracked["cards"]
-    )
+    assert all(not Path(card["relativePath"]).is_absolute() for card in tracked["cards"])
 
 
 def test_manifest_validation_rejects_same_identity_card_drift(

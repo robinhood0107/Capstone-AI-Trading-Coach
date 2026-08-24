@@ -185,6 +185,8 @@ def test_diagnostic_ledger_rejects_a_corrupted_line(tmp_path: Path) -> None:
     (root / DIAGNOSTIC_LEDGER_FILENAME).write_text("{not json}\n", encoding="utf-8")
     with pytest.raises(json.JSONDecodeError):
         read_diagnostics(source_root=root)
+
+
 def test_bounded_exclusion_lets_one_unit_go_but_stops_a_silent_shrink(
     tmp_path: Path,
 ) -> None:

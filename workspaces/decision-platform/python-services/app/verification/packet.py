@@ -2,27 +2,28 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
 import base64
 import hashlib
-from importlib.metadata import version
 import os
-from pathlib import Path
 import re
 import secrets
 import stat
-from typing import Callable, Final, Mapping, cast
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, time, timedelta
+from importlib.metadata import version
+from pathlib import Path
+from typing import Final, cast
 from zoneinfo import ZoneInfo
 
 import exchange_calendars as xcals
-from app.data._shared.canonical_json import canonical_json_bytes, canonical_json_sha256
-from app.verification.git_identity import current_clean_git_identity
+import pandas as pd
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
-import pandas as pd
 
+from app.data._shared.canonical_json import canonical_json_bytes, canonical_json_sha256
+from app.verification.git_identity import current_clean_git_identity
 
 LIVE_OPERATIONS: Final[tuple[str, ...]] = (
     "KRX_KOSPI_DAILY",

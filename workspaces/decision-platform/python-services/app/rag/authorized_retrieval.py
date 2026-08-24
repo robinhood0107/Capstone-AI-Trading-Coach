@@ -3,9 +3,10 @@ from __future__ import annotations
 import math
 import re
 import unicodedata
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Mapping, Protocol, Sequence
+from typing import Protocol
 
 ALLOWED_RAG_TOPICS = frozenset(
     {
@@ -38,9 +39,7 @@ RRF_K = 60
 EMBEDDING_DIMENSION = 1024
 _MAX_LEXICAL_QUERY_BYTES = 12_288
 _MAX_EXACT_IDENTIFIERS = 16
-_ALLOWED_REQUEST_FIELDS = frozenset(
-    {"question", "answerMode", "relatedSymbols", "topics"}
-)
+_ALLOWED_REQUEST_FIELDS = frozenset({"question", "answerMode", "relatedSymbols", "topics"})
 _ANSWER_MODES = frozenset({"CONCISE", "DETAILED"})
 _SIX_DIGIT_SYMBOL = re.compile(r"(?<![0-9])[0-9]{6}(?![0-9])")
 _SOURCE_ID = re.compile(
@@ -104,8 +103,7 @@ class AuthorizedRetrievalScope:
             or _OWNER_ID.fullmatch(self.owner_user_id) is None
             or _SESSION_ID.fullmatch(self.session_id) is None
             or _GENERATION_ID.fullmatch(self.generation_id) is None
-            or self.embedding_profile_id
-            not in {"bge_m3_local_1024_v1", "voyage_context_4_1024_v1"}
+            or self.embedding_profile_id not in {"bge_m3_local_1024_v1", "voyage_context_4_1024_v1"}
             or self.policy_version < 1
             or not 1 <= len(self.allowed_topics) <= len(ALLOWED_RAG_TOPICS)
             or len(set(self.allowed_topics)) != len(self.allowed_topics)
@@ -260,8 +258,7 @@ class QueryNormalizer:
             or question_octets > 8192
             or unicodedata.normalize("NFC", question) != question
             or any(
-                (ord(character) < 0x20 and character not in "\t\n")
-                or ord(character) == 0x7F
+                (ord(character) < 0x20 and character not in "\t\n") or ord(character) == 0x7F
                 for character in question
             )
             or not question.strip()
@@ -378,8 +375,7 @@ class EvidenceSufficiencyPolicy:
         sensitive = tuple(item for item in evidence if item.model_sensitive)
         if sensitive:
             if not any(
-                item.evidence_class == "PRIMARY_RESEARCH"
-                or "METHODOLOGY" in item.public_topics
+                item.evidence_class == "PRIMARY_RESEARCH" or "METHODOLOGY" in item.public_topics
                 for item in evidence
             ):
                 return EvidenceDecision(False, False, ())
@@ -388,8 +384,7 @@ class EvidenceSufficiencyPolicy:
                     return EvidenceDecision(False, False, ())
                 for key in item.assumption_keys:
                     if not any(
-                        key in cited.assumption_keys and cited.limitations
-                        for cited in evidence
+                        key in cited.assumption_keys and cited.limitations for cited in evidence
                     ):
                         return EvidenceDecision(False, False, ())
 
@@ -400,9 +395,7 @@ class EvidenceSufficiencyPolicy:
             if intersections:
                 conflict_cards.add(item.card_id)
                 conflict_cards.update(intersections)
-        ordered_conflicts = tuple(
-            sorted(conflict_cards, key=lambda value: value.encode("utf-8"))
-        )
+        ordered_conflicts = tuple(sorted(conflict_cards, key=lambda value: value.encode("utf-8")))
         return EvidenceDecision(True, bool(ordered_conflicts), ordered_conflicts)
 
 
@@ -454,14 +447,9 @@ class AuthorizedHybridRetrieval:
         except QueryValidationError:
             return _failure(RetrievalFailureCode.INVALID_QUERY)
         try:
-            if (
-                self._query_embedder.embedding_profile_id
-                != scope.embedding_profile_id
-            ):
+            if self._query_embedder.embedding_profile_id != scope.embedding_profile_id:
                 raise ValueError("RAG query embedding profile drifted.")
-            query_vector = _validated_query_vector(
-                self._query_embedder.embed_query(query.question)
-            )
+            query_vector = _validated_query_vector(self._query_embedder.embed_query(query.question))
         except (ArithmeticError, AttributeError, TypeError, ValueError):
             return _failure(RetrievalFailureCode.QUERY_EMBEDDING_INVALID)
         try:

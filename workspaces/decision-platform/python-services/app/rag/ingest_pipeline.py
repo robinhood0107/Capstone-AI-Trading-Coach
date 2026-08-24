@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, Literal, Protocol
+from typing import Literal, Protocol
 
 from app.rag.contract_catalog import PROFILE_IDS, RagContractCatalogError
 
@@ -85,7 +86,9 @@ def parse_markdown_document(text: str) -> tuple[RagParsedBlock, ...]:
     def flush_paragraph() -> None:
         nonlocal paragraph
         if paragraph:
-            blocks.append(_make_block("paragraph", heading_stack, "\n".join(paragraph), len(blocks)))
+            blocks.append(
+                _make_block("paragraph", heading_stack, "\n".join(paragraph), len(blocks))
+            )
             paragraph = []
 
     def flush_table() -> None:
@@ -346,7 +349,9 @@ def _split_large_paragraph_block(
         remaining_spans = _validated_token_spans(remaining, tokenizer=tokenizer)
         if not remaining_spans:
             if remaining.strip():
-                raise RagIngestError("RAG tokenizer paragraph spans did not preserve the full text.")
+                raise RagIngestError(
+                    "RAG tokenizer paragraph spans did not preserve the full text."
+                )
             character_cursor = len(block.text)
             break
         # SentencePiece/BPE는 같은 문자열도 문서 중간과 chunk 선두에서 token 수가 달라질 수 있다.
@@ -418,9 +423,7 @@ def _make_chunk(
 ) -> RagCanonicalChunk:
     text = _join_blocks(blocks)
     content_hash = _sha256_text(text)
-    chunk_identity = _sha256_text(
-        f"{source_revision_id}\0{sequence + 1}\0{content_hash}"
-    )
+    chunk_identity = _sha256_text(f"{source_revision_id}\0{sequence + 1}\0{content_hash}")
     chunk_revision_id = f"rag_chk_{chunk_identity[:32]}"
     heading_path = _common_heading_prefix(blocks)
     return RagCanonicalChunk(

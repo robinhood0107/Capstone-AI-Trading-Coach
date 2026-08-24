@@ -8,7 +8,6 @@ import pytest
 
 from tests.data.calendar.conftest import PostgresTestCluster
 
-
 REPO_ROOT = Path(__file__).resolve().parents[6]
 
 
@@ -16,30 +15,16 @@ def test_repo_hygiene_supplies_required_collector_and_disclosure_reader_password
     """Compose 검증도 collector/reader 필수 비밀번호를 주입해 실제 CI 경계를 재현한다."""
 
     compose = (REPO_ROOT / "infra/docker-compose.infra.yml").read_text(encoding="utf-8")
-    workflow = (REPO_ROOT / ".github/workflows/repo-hygiene.yml").read_text(
-        encoding="utf-8"
-    )
+    workflow = (REPO_ROOT / ".github/workflows/repo-hygiene.yml").read_text(encoding="utf-8")
 
-    assert (
-        "${POSTGRES_COLLECTOR_PASSWORD:?POSTGRES_COLLECTOR_PASSWORD is required}"
-        in compose
-    )
+    assert "${POSTGRES_COLLECTOR_PASSWORD:?POSTGRES_COLLECTOR_PASSWORD is required}" in compose
     assert (
         "${POSTGRES_DISCLOSURE_READER_PASSWORD:?POSTGRES_DISCLOSURE_READER_PASSWORD is required}"
         in compose
     )
-    assert (
-        "${POSTGRES_RAG_WRITER_PASSWORD:?POSTGRES_RAG_WRITER_PASSWORD is required}"
-        in compose
-    )
-    assert (
-        "${POSTGRES_RAG_ADMIN_PASSWORD:?POSTGRES_RAG_ADMIN_PASSWORD is required}"
-        in compose
-    )
-    assert (
-        "${POSTGRES_RAG_QUERY_PASSWORD:?POSTGRES_RAG_QUERY_PASSWORD is required}"
-        in compose
-    )
+    assert "${POSTGRES_RAG_WRITER_PASSWORD:?POSTGRES_RAG_WRITER_PASSWORD is required}" in compose
+    assert "${POSTGRES_RAG_ADMIN_PASSWORD:?POSTGRES_RAG_ADMIN_PASSWORD is required}" in compose
+    assert "${POSTGRES_RAG_QUERY_PASSWORD:?POSTGRES_RAG_QUERY_PASSWORD is required}" in compose
     assert "POSTGRES_COLLECTOR_PASSWORD: validation-dummy-collector" in workflow
     assert "POSTGRES_DISCLOSURE_READER_PASSWORD: validation-dummy-disclosure-reader" in workflow
     assert "POSTGRES_RAG_WRITER_PASSWORD: validation-dummy-rag-writer" in workflow
@@ -50,9 +35,7 @@ def test_repo_hygiene_supplies_required_collector_and_disclosure_reader_password
 def test_role_bootstrap_disables_all_duration_and_statement_logging_before_password_ddl() -> None:
     """password literal DDL 전에 session logging을 닫고 effective 값까지 fail-closed 검증한다."""
 
-    script = (REPO_ROOT / "infra/init/02-application-roles.sh").read_text(
-        encoding="utf-8"
-    )
+    script = (REPO_ROOT / "infra/init/02-application-roles.sh").read_text(encoding="utf-8")
     begin = script.index("BEGIN;")
     first_password_ddl = script.index("PASSWORD %L")
     settings = {
@@ -72,16 +55,11 @@ def test_role_bootstrap_disables_all_duration_and_statement_logging_before_passw
 
 
 def test_role_bootstrap_sets_bounded_application_query_and_transaction_timeouts() -> None:
-    script = (REPO_ROOT / "infra/init/02-application-roles.sh").read_text(
-        encoding="utf-8"
-    )
+    script = (REPO_ROOT / "infra/init/02-application-roles.sh").read_text(encoding="utf-8")
 
     assert "ALTER ROLE decision_app SET statement_timeout = '2s'" in script
     assert "ALTER ROLE decision_app SET lock_timeout = '500ms'" in script
-    assert (
-        "ALTER ROLE decision_app SET idle_in_transaction_session_timeout = '5s'"
-        in script
-    )
+    assert "ALTER ROLE decision_app SET idle_in_transaction_session_timeout = '5s'" in script
 
 
 def test_collector_can_only_perform_allowlisted_calendar_operations(

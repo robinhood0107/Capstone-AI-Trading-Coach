@@ -45,7 +45,9 @@ def write_raw_observation(
         raise ValueError("OpenDART source_id must be a bounded lowercase identifier")
     observation_id = str(uuid.uuid4())
     masked_payload = _mask_payload(payload, depth=0)
-    raw_bytes = json.dumps(masked_payload, ensure_ascii=False, sort_keys=True, indent=2).encode("utf-8")
+    raw_bytes = json.dumps(masked_payload, ensure_ascii=False, sort_keys=True, indent=2).encode(
+        "utf-8"
+    )
     if len(raw_bytes) > MAX_RAW_OBSERVATION_BYTES:
         raise ValueError("OpenDART raw observation exceeded the storage limit")
     # 저장본 기준 hash를 남긴다. raw 파일도 마스킹 후 ignored data 경로에만 보관한다.

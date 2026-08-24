@@ -7,10 +7,11 @@ import signal
 import subprocess
 import threading
 import time
+from collections.abc import Callable, Mapping
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Callable, Final, Mapping
+from typing import BinaryIO, Final
 
 
 class BoundedProcessError(RuntimeError):
@@ -94,7 +95,7 @@ def run_bounded_process(
     job_handle: int | None = None
     try:
         if os.name == "nt":
-            process = subprocess.Popen(  # noqa: S603 - absolute executable.
+            process = subprocess.Popen(
                 command,
                 cwd=str(working_directory),
                 env=child_environment,
@@ -105,7 +106,7 @@ def run_bounded_process(
                 creationflags=0x00000200,  # CREATE_NEW_PROCESS_GROUP
             )
         else:
-            process = subprocess.Popen(  # noqa: S603 - absolute executable.
+            process = subprocess.Popen(
                 command,
                 cwd=str(working_directory),
                 env=child_environment,
@@ -293,14 +294,17 @@ def _assign_windows_job(
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
 
     class IoCounters(ctypes.Structure):
-        _fields_ = [(name, ctypes.c_ulonglong) for name in (
-            "read_operation_count",
-            "write_operation_count",
-            "other_operation_count",
-            "read_transfer_count",
-            "write_transfer_count",
-            "other_transfer_count",
-        )]
+        _fields_ = [
+            (name, ctypes.c_ulonglong)
+            for name in (
+                "read_operation_count",
+                "write_operation_count",
+                "other_operation_count",
+                "read_transfer_count",
+                "write_transfer_count",
+                "other_transfer_count",
+            )
+        ]
 
     class BasicLimitInformation(ctypes.Structure):
         _fields_ = [
@@ -342,7 +346,8 @@ def _assign_windows_job(
     assign.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
     assign.restype = wintypes.BOOL
     if not set_information(job, 9, ctypes.byref(info), ctypes.sizeof(info)) or not assign(
-        job, process._handle  # type: ignore[attr-defined]
+        job,
+        process._handle,  # type: ignore[attr-defined]
     ):
         kernel32.CloseHandle(job)
         process.kill()

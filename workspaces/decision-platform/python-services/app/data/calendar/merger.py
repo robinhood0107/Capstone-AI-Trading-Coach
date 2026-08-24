@@ -100,8 +100,14 @@ def merge_trading_session(
     if kis is not None:
         source_ids.add(kis.source_id)
     source_ids.update("kasi-rest-de-info" for _ in reasons)
-    source_refs = tuple(sorted(_opaque_source_ref(source_id, xkrx.session_date.isoformat()) for source_id in source_ids))
-    conflict_rows = tuple(sorted(conflicts, key=lambda item: (item.field_name, item.competing_source_id)))
+    source_refs = tuple(
+        sorted(
+            _opaque_source_ref(source_id, xkrx.session_date.isoformat()) for source_id in source_ids
+        )
+    )
+    conflict_rows = tuple(
+        sorted(conflicts, key=lambda item: (item.field_name, item.competing_source_id))
+    )
     projection = {
         "exchange_mic": "XKRX",
         "session_date": xkrx.session_date,

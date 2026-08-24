@@ -11,7 +11,6 @@ import pytest
 from app.data.ecos.errors import ECOSApplicationError, ECOSParseError
 from app.data.ecos.parsers import parse_statistic_search
 
-
 _FIXTURE_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "ecos"
 
 

@@ -5,8 +5,8 @@ import json
 import tomllib
 from pathlib import Path
 
-from app.rag.oa_release_manifest import OA_TRACK_IDS, canonical_release_digest
 from app.rag import oa_release_manifest_cli
+from app.rag.oa_release_manifest import OA_TRACK_IDS, canonical_release_digest
 from app.rag.oa_release_manifest_cli import main
 
 
@@ -127,9 +127,9 @@ def test_historical_fetch_mode_is_hard_disabled_before_any_network_or_receipt_wr
 def test_tracked_remote_hash_receipt_matches_release_manifest_without_payloads() -> None:
     repository_root = Path(__file__).resolve().parents[5]
     manifest = json.loads(
-        (
-            repository_root / "capstone-rag/manifests/s4-7d-oa140-release.v1.json"
-        ).read_text(encoding="utf-8")
+        (repository_root / "capstone-rag/manifests/s4-7d-oa140-release.v1.json").read_text(
+            encoding="utf-8"
+        )
     )
     receipt = json.loads(
         (
@@ -163,18 +163,20 @@ def test_tracked_remote_hash_receipt_matches_release_manifest_without_payloads()
 def test_distribution_metadata_uses_same_manifest_digest_and_metadata_only_assets() -> None:
     repository_root = Path(__file__).resolve().parents[5]
     manifest = json.loads(
-        (
-            repository_root / "capstone-rag/manifests/s4-7d-oa140-release.v1.json"
-        ).read_text(encoding="utf-8")
+        (repository_root / "capstone-rag/manifests/s4-7d-oa140-release.v1.json").read_text(
+            encoding="utf-8"
+        )
     )
     distribution = json.loads(
-        (
-            repository_root / "capstone-rag/manifests/s4-7d-oa140-distribution.v1.json"
-        ).read_text(encoding="utf-8")
+        (repository_root / "capstone-rag/manifests/s4-7d-oa140-distribution.v1.json").read_text(
+            encoding="utf-8"
+        )
     )
     checksum_lines = (
-        repository_root / "capstone-rag/manifests/s4-7d-oa140-checksums.sha256"
-    ).read_text(encoding="utf-8").splitlines()
+        (repository_root / "capstone-rag/manifests/s4-7d-oa140-checksums.sha256")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
 
     assert distribution["contractId"] == "s4-7d-oa140-distribution/v1"
     assert distribution["manifestId"] == manifest["manifestId"]

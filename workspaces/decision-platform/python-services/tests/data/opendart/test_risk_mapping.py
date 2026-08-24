@@ -13,8 +13,13 @@ def test_default_mapping_keeps_active_and_blocked_entries_separate() -> None:
     assert mapping.version == "s1.2-v1"
     assert mapping.active_by_code["OPENDART:piicDecsn"].score == 0.6
     assert mapping.active_by_code["OPENDART:cvbdIsDecsn"].score == 0.6
-    assert mapping.active_by_code["OPENDART:cvbdIsDecsn"].calibration_status == "policy_v1_unvalidated"
-    assert mapping.active_by_code["OPENDART:cvbdIsDecsn"].evidence_level == "B_CONFLICTING_KOREA_MARKET_EVIDENCE"
+    assert (
+        mapping.active_by_code["OPENDART:cvbdIsDecsn"].calibration_status == "policy_v1_unvalidated"
+    )
+    assert (
+        mapping.active_by_code["OPENDART:cvbdIsDecsn"].evidence_level
+        == "B_CONFLICTING_KOREA_MARKET_EVIDENCE"
+    )
     assert mapping.active_by_code["OPENDART:lwstLg"].score == 0.4
     assert "OPENDART:KRX_MANAGEMENT_OR_DELISTING" in mapping.blocked_by_code
 

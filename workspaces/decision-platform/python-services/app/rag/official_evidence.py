@@ -5,10 +5,11 @@ import hashlib
 import json
 import re
 import unicodedata
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping, Sequence, cast
+from typing import Any, cast
 
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
 from app.rag.source_card import (
@@ -71,9 +72,7 @@ _EXPECTED_UPSTREAM_SOURCE_IDS = {
         "src_krx_openapi_service_catalog_001",
         "src_krx_openapi_terms_001",
     ),
-    "src_project_gold_futures_etf_132030_001": (
-        "src_samsungfund_gold_futures_etf_001",
-    ),
+    "src_project_gold_futures_etf_132030_001": ("src_samsungfund_gold_futures_etf_001",),
 }
 _EXPECTED_EVIDENCE_PATHS = {
     "src_project_kis_adjusted_price_001": "kis-adjusted-price.txt",
@@ -217,11 +216,7 @@ def _load_manifest(path: Path) -> dict[str, Any]:
     try:
         raw = path.read_bytes()
         text = raw.decode("utf-8", errors="strict")
-        if (
-            not text.endswith("\n")
-            or "\r" in text
-            or unicodedata.normalize("NFC", text) != text
-        ):
+        if not text.endswith("\n") or "\r" in text or unicodedata.normalize("NFC", text) != text:
             raise OfficialEvidenceError(
                 "S4.7A official evidence manifest canonicalization drifted."
             )
@@ -268,8 +263,7 @@ def _validate_manifest_semantics(manifest: Mapping[str, Any]) -> tuple[dict[str,
         if (
             _require_text(row, "institution") != _EXPECTED_INSTITUTIONS[source_id]
             or _require_text(row, "captureKind") != _EXPECTED_CAPTURE_KINDS[source_id]
-            or _require_text(row, "licenseDecision")
-            != "REFERENCE_ONLY_NO_EXTERNAL_PROCESSING"
+            or _require_text(row, "licenseDecision") != "REFERENCE_ONLY_NO_EXTERNAL_PROCESSING"
             or _require_text(row, "producer") != "s4-7a-read-only-evidence-capture"
         ):
             raise OfficialEvidenceError("S4.7A official evidence authority metadata drifted.")
@@ -296,9 +290,11 @@ def _validate_manifest_semantics(manifest: Mapping[str, Any]) -> tuple[dict[str,
         if len(_require_text(row, "locator")) > 500:
             raise OfficialEvidenceError("S4.7A official evidence locator exceeds its bound.")
         _require_utc_datetime(row.get("verifiedAt"))
-        if source_id == "src_project_ecos_pit_availability_001":
-            if row.get("scopeDecision") != "PIT_SUPPORT_NOT_PROVEN":
-                raise OfficialEvidenceError("S4.7A ECOS scope decision drifted.")
+        if (
+            source_id == "src_project_ecos_pit_availability_001"
+            and row.get("scopeDecision") != "PIT_SUPPORT_NOT_PROVEN"
+        ):
+            raise OfficialEvidenceError("S4.7A ECOS scope decision drifted.")
     return typed_rows
 
 

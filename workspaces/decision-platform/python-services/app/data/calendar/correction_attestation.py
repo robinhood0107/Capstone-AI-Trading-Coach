@@ -7,9 +7,10 @@ provider 호출과 쓰기는 하지 않는다.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Sequence
+from typing import Any
 
 import psycopg
 
@@ -47,9 +48,7 @@ def attest_correction_set(
 
     if window_end < window_start:
         raise ValueError("attestation window is inverted")
-    expected = tuple(
-        sorted({day for day in corrections if window_start <= day <= window_end})
-    )
+    expected = tuple(sorted({day for day in corrections if window_start <= day <= window_end}))
     rows = connection.execute(
         """
         SELECT session_date, is_open
@@ -70,9 +69,7 @@ def attest_correction_set(
 
     if contradicted or unexpected:
         status = ATTESTATION_CONFLICT
-    elif unobserved:
-        status = ATTESTATION_UNVERIFIED
-    elif not observed:
+    elif unobserved or not observed:
         status = ATTESTATION_UNVERIFIED
     else:
         status = ATTESTATION_CONFIRMED

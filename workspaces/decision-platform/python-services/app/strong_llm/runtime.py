@@ -66,7 +66,9 @@ class BoundedStrongLlmGraph:
         graph = StateGraph(AgentState)
         graph.add_node("google", self._google)
         graph.add_node("fallback", self._fallback)
-        graph.add_conditional_edges(START, self._route, {"google": "google", "fallback": "fallback"})
+        graph.add_conditional_edges(
+            START, self._route, {"google": "google", "fallback": "fallback"}
+        )
         graph.add_edge("google", END)
         graph.add_edge("fallback", END)
         self._graph = graph.compile()
@@ -125,13 +127,12 @@ class BoundedStrongLlmGraph:
         messages: list[BaseMessage] = []
         prompt_tokens = 0
         output_tokens = 0
-        vertex_calls = 0
         for round_index in range(request.max_tool_rounds + 1):
             tools_enabled = round_index < request.max_tool_rounds
             call_id = f"fallback_{round_index + 1}"
             state["permit"](call_id, "SEARXNG_TOOL" if tools_enabled else "FINAL", False)
             turn = provider.invoke_fallback(request, messages, tools_enabled=tools_enabled)
-            vertex_calls += 1
+            vertex_calls = round_index + 1
             prompt_tokens += turn["prompt_tokens"]
             output_tokens += turn["output_tokens"]
             calls = provider.tool_calls(turn["message"])
@@ -145,7 +146,9 @@ class BoundedStrongLlmGraph:
             call = calls[0]
             name = str(call.get("name", ""))
             arguments = call.get("args")
-            if name not in {"capstone_web_search", "capstone_web_read"} or not isinstance(arguments, dict):
+            if name not in {"capstone_web_search", "capstone_web_read"} or not isinstance(
+                arguments, dict
+            ):
                 raise ValueError("STRONG_LLM_TOOL_CALL_INVALID")
             result_json = state["execute_tool"](str(call.get("id", "")), name, arguments)
             messages = provider.append_tool_result(messages, turn["message"], call, result_json)
@@ -185,11 +188,15 @@ def _run_result(
         for item in source["grounding_supports"]
     )
     return RunResult(
-        answer_json=json.dumps(json.loads(result["answer_json"]), ensure_ascii=False, separators=(",", ":")),
+        answer_json=json.dumps(
+            json.loads(result["answer_json"]), ensure_ascii=False, separators=(",", ":")
+        ),
         prompt_token_count=result["prompt_tokens"],
         output_token_count=result["output_tokens"],
         vertex_generate_call_count=vertex_calls,
-        google_grounding_query_count=source.get("google_query_count", len(source["google_queries"])),
+        google_grounding_query_count=source.get(
+            "google_query_count", len(source["google_queries"])
+        ),
         search_backend=backend,
         evidence_validation_mode="GOOGLE_GROUNDING" if roots else "CANONICAL_EXACT",
         grounding_roots=roots,

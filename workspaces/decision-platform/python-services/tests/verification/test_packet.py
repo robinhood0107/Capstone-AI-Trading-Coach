@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
 import hashlib
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from app.data._shared.canonical_json import canonical_json_bytes
-from app.verification.artifacts import VerificationArtifactError, publish_packet, read_packet
 from app.verification import packet as packet_module
+from app.verification.artifacts import VerificationArtifactError, publish_packet, read_packet
 from app.verification.packet import (
     VerificationPacketError,
     VerificationTarget,
@@ -20,9 +23,6 @@ from app.verification.packet import (
     signed_packet_from_dict,
     verify_signed_packet,
 )
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
 
 _KST = ZoneInfo("Asia/Seoul")
 

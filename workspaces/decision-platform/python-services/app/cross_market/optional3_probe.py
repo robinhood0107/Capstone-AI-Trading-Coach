@@ -26,15 +26,14 @@ from app.data._shared.bounded_json import (
 from app.rag.oa112_downloader import (
     Oa112DownloadError,
     _Oa112SourceDeadline,
-    _SocketOa112DnsResolver,
-    _StdlibOa112HttpsTransport,
     _open_private_root,
     _read_private_control_file,
     _resolve_public_addresses,
+    _SocketOa112DnsResolver,
+    _StdlibOa112HttpsTransport,
     _validate_peer,
     _write_new_private_file,
 )
-
 
 _CONTRACT_ID: Final[str] = "s4-8-optional3-probe-approval-v2"
 _RECEIPT_CONTRACT_ID: Final[str] = "s4-8-optional3-probe-receipt-v2"
@@ -170,7 +169,7 @@ class Optional3ProbeTransport(Protocol):
         expires_at: datetime,
         timeout_seconds: float,
         maximum_response_bytes: int,
-    ) -> "Optional3ProbeHttpResponse": ...
+    ) -> Optional3ProbeHttpResponse: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,10 +289,13 @@ class Optional3ProbeExecutionBinding:
     tree_sha256: str
 
     def __post_init__(self) -> None:
-        if not all(
-            _SHA256.fullmatch(value) is not None
-            for value in (self.ci_digest, self.security_digest, self.tree_sha256)
-        ) or _HEAD_SHA.fullmatch(self.head_sha) is None:
+        if (
+            not all(
+                _SHA256.fullmatch(value) is not None
+                for value in (self.ci_digest, self.security_digest, self.tree_sha256)
+            )
+            or _HEAD_SHA.fullmatch(self.head_sha) is None
+        ):
             raise Optional3ProbeError("OPTIONAL3_PROBE_EXECUTION_BINDING_INVALID")
 
 
@@ -339,16 +341,19 @@ class Optional3ProbePacket:
             raise Optional3ProbeError("OPTIONAL3_PROBE_CAP_INVALID")
         if self.tracked_raw_artifact_count != 0 or not 0 <= self.cost_cap_microusd <= 1_000_000:
             raise Optional3ProbeError("OPTIONAL3_PROBE_ARTIFACT_OR_COST_INVALID")
-        if not all(
-            _SHA256.fullmatch(value) is not None
-            for value in (
-                self.ci_digest,
-                self.endpoint_set_digest,
-                self.request_plan_digest,
-                self.security_digest,
-                self.tree_sha256,
+        if (
+            not all(
+                _SHA256.fullmatch(value) is not None
+                for value in (
+                    self.ci_digest,
+                    self.endpoint_set_digest,
+                    self.request_plan_digest,
+                    self.security_digest,
+                    self.tree_sha256,
+                )
             )
-        ) or _HEAD_SHA.fullmatch(self.head_sha) is None:
+            or _HEAD_SHA.fullmatch(self.head_sha) is None
+        ):
             raise Optional3ProbeError("OPTIONAL3_PROBE_PACKET_HASH_INVALID")
         if self.endpoint_set_digest != optional3_endpoint_set_digest():
             raise Optional3ProbeError("OPTIONAL3_PROBE_ENDPOINT_SET_DRIFT")
@@ -414,7 +419,7 @@ class Optional3ProbePacket:
         }
 
     @classmethod
-    def from_local_document(cls, document: Mapping[str, object]) -> "Optional3ProbePacket":
+    def from_local_document(cls, document: Mapping[str, object]) -> Optional3ProbePacket:
         """Unknown field를 허용하지 않아 local JSON이 execution semantics를 추가할 수 없게 한다."""
 
         expected = {
@@ -475,7 +480,7 @@ class Optional3ProbePacket:
         control_root: Path,
         relative_path: str,
         now: datetime,
-    ) -> "Optional3ProbePacket":
+    ) -> Optional3ProbePacket:
         """0700 root/0600 regular local file의 exact canonical packet만 읽는다."""
 
         if _LEAF.fullmatch(relative_path) is None:
@@ -489,7 +494,9 @@ class Optional3ProbePacket:
             )
         except Oa112DownloadError as error:
             raise Optional3ProbeError("OPTIONAL3_PROBE_PACKET_UNSAFE") from error
-        document = _parse_canonical_document(content, code="OPTIONAL3_PROBE_PACKET_CANONICAL_INVALID")
+        document = _parse_canonical_document(
+            content, code="OPTIONAL3_PROBE_PACKET_CANONICAL_INVALID"
+        )
         packet = cls.from_local_document(document)
         packet.require_current(now=now)
         return packet
@@ -520,7 +527,13 @@ class Optional3ProbeReceipt:
             raise Optional3ProbeError("OPTIONAL3_PROBE_OPERATION_PROVIDER_INVALID")
         if self.logical_call_count != 1 or self.physical_call_count != 1:
             raise Optional3ProbeError("OPTIONAL3_PROBE_RECEIPT_CAP_INVALID")
-        if self.provider_status_class not in {"HTTP_2XX", "HTTP_4XX", "HTTP_5XX", "TRANSPORT", "PROTOCOL"}:
+        if self.provider_status_class not in {
+            "HTTP_2XX",
+            "HTTP_4XX",
+            "HTTP_5XX",
+            "TRANSPORT",
+            "PROTOCOL",
+        }:
             raise Optional3ProbeError("OPTIONAL3_PROBE_RECEIPT_STATUS_INVALID")
         if self.outcome == "SUCCESS":
             if self.provider_status_class != "HTTP_2XX" or self.projection_hash is None:
@@ -663,7 +676,9 @@ class Optional3ProbeExecutor:
             "schemaVersion": 2,
         }
         try:
-            root_fd = _open_private_root(self._control_root, error_code="OPTIONAL3_PROBE_CONTROL_UNSAFE")
+            root_fd = _open_private_root(
+                self._control_root, error_code="OPTIONAL3_PROBE_CONTROL_UNSAFE"
+            )
         except Oa112DownloadError as error:
             raise Optional3ProbeError("OPTIONAL3_PROBE_CONTROL_UNSAFE") from error
         try:
@@ -684,7 +699,9 @@ class Optional3ProbeExecutor:
         """Provider call 후 receipt write가 실패하면 silently lose하지 않고 fail-closed한다."""
 
         try:
-            root_fd = _open_private_root(self._control_root, error_code="OPTIONAL3_PROBE_CONTROL_UNSAFE")
+            root_fd = _open_private_root(
+                self._control_root, error_code="OPTIONAL3_PROBE_CONTROL_UNSAFE"
+            )
         except Oa112DownloadError as error:
             raise Optional3ProbeError("OPTIONAL3_PROBE_CONTROL_UNSAFE") from error
         try:
@@ -799,9 +816,8 @@ def _validate_http_response_boundary(
     if content_type != "application/json":
         raise Optional3ProbeError("OPTIONAL3_PROBE_RESPONSE_MIME_INVALID")
     length = normalized.get("content-length")
-    if length is not None:
-        if not length.isdecimal() or int(length) > maximum_response_bytes:
-            raise Optional3ProbeError("OPTIONAL3_PROBE_RESPONSE_BOUND")
+    if length is not None and (not length.isdecimal() or int(length) > maximum_response_bytes):
+        raise Optional3ProbeError("OPTIONAL3_PROBE_RESPONSE_BOUND")
 
 
 def _read_bounded_response_body(
@@ -896,9 +912,7 @@ def _receipt(
 
 
 def _claim_key(packet: Optional3ProbePacket) -> str:
-    return _sha256(
-        f"{packet.approval_id}\0{packet.packet_sha256()}\0{packet.nonce}".encode("utf-8")
-    )
+    return _sha256(f"{packet.approval_id}\0{packet.packet_sha256()}\0{packet.nonce}".encode())
 
 
 def _successful_parse_projection_hash(*, packet: Optional3ProbePacket) -> str:
@@ -931,7 +945,9 @@ def _completed_at(now: datetime) -> datetime:
 
 
 def _canonical_bytes(value: object) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
 
 
 def _sha256(value: bytes) -> str:

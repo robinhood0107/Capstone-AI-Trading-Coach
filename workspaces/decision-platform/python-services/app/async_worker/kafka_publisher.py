@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
 import hashlib
 import json
 import os
 import re
 import time
-from typing import Any, Protocol, cast
 import uuid
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Protocol, cast
 
-from confluent_kafka import KafkaError, Producer
 import psycopg
+from confluent_kafka import KafkaError, Producer
 from psycopg.conninfo import conninfo_to_dict
 
 from app.async_worker.kafka_security import (
@@ -26,7 +26,6 @@ from app.data._shared.bounded_json import (
     BoundedJsonLimits,
     parse_bounded_json_bytes,
 )
-
 
 _WORKER_ID = "p1-kafka-outbox-publisher"
 _INPUT_TOPICS = {

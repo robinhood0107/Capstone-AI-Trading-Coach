@@ -71,7 +71,9 @@ def test_external_exact30_voyage_staging_rejects_a_record_outside_the_bound_mani
         embedder=_FixtureVoyageEmbedder(),
         corpus=load_external_processing_corpus(),
     )
-    with pytest.raises(ExternalExact30VoyageStagingError, match="EXTERNAL_EXACT30_VOYAGE_MEMBER_MANIFEST"):
+    with pytest.raises(
+        ExternalExact30VoyageStagingError, match="EXTERNAL_EXACT30_VOYAGE_MEMBER_MANIFEST"
+    ):
         build_external_exact30_voyage_staging_payload(
             materialization.records[0],
             context=materialization.context.__class__(

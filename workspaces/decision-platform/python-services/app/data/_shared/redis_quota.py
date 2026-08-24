@@ -6,7 +6,6 @@ from threading import Lock
 from typing import Literal, Protocol, cast
 from uuid import UUID
 
-
 REDIS_QUOTA_LUA = r"""
 local key = KEYS[1]
 local now_parts = redis.call('TIME')

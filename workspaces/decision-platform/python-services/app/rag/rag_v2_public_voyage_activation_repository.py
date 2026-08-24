@@ -18,7 +18,6 @@ import psycopg
 from app.rag.rag_v2_external_exact30_voyage_runner import RagV2PublicVoyageComponentContext
 from app.rag.rag_v2_oa112_voyage_runner import RagV2Oa112VoyageComponentContext
 
-
 _ADMIN_ROLE = "decision_rag_admin"
 _VOYAGE_PROFILE_ID = "voyage_context_4_1024_v1"
 _GENERATION_ID = re.compile(r"^rgr_[0-9a-f]{32}$")
@@ -256,9 +255,12 @@ def _validate_oa112_context(context: RagV2Oa112VoyageComponentContext) -> None:
 def _run_id(*, prefix: str, component_generation_id: str, manifest_hash: str) -> str:
     """writer/activation이 same deterministic run identity를 share하도록 full prefix를 pin한다."""
 
-    return "rgr_run_" + hashlib.sha256(
-        f"{prefix}|{component_generation_id}|{manifest_hash}".encode("utf-8")
-    ).hexdigest()[:32]
+    return (
+        "rgr_run_"
+        + hashlib.sha256(
+            f"{prefix}|{component_generation_id}|{manifest_hash}".encode()
+        ).hexdigest()[:32]
+    )
 
 
 def _set_transaction_timeouts(connection: psycopg.Connection[Any]) -> None:
@@ -275,7 +277,15 @@ def _attest_admin_connection(connection: psycopg.Connection[Any]) -> None:
     if connection.execute("SELECT current_user").fetchone() != (_ADMIN_ROLE,):
         raise PublicVoyageActivationError("PUBLIC_VOYAGE_ACTIVATION_ADMIN_ROLE")
     for table in _ADMIN_FORBIDDEN_TABLES:
-        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+        for privilege in (
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "TRUNCATE",
+            "REFERENCES",
+            "TRIGGER",
+        ):
             row = connection.execute(
                 "SELECT has_table_privilege(current_user, %s, %s)",
                 (f"public.{table}", privilege),

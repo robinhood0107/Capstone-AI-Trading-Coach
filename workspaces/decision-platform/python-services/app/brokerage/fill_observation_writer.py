@@ -53,10 +53,7 @@ def load_fill_observation_fixture(path: Path) -> tuple[FillObservationRecord, ..
         raise ValueError("fill observation schemaVersion is invalid")
     source_version = _bounded_text(root["sourceVersion"], "sourceVersion")
     observations = root["observations"]
-    if (
-        not isinstance(observations, list)
-        or not 1 <= len(observations) <= _MAX_OBSERVATIONS
-    ):
+    if not isinstance(observations, list) or not 1 <= len(observations) <= _MAX_OBSERVATIONS:
         raise ValueError("fill observation fixture size is invalid")
 
     records = tuple(
@@ -68,9 +65,7 @@ def load_fill_observation_fixture(path: Path) -> tuple[FillObservationRecord, ..
         )
         for value in observations
     )
-    identities = [
-        (record.order_id, record.provider_exec_ref_hash) for record in records
-    ]
+    identities = [(record.order_id, record.provider_exec_ref_hash) for record in records]
     if len(identities) != len(set(identities)):
         raise ValueError("fill observation fixture contains duplicate execution refs")
     return tuple(
@@ -146,10 +141,7 @@ def _record(
     provider_ref = value["providerExecRefHash"]
     if not isinstance(order_id, str) or _ORDER_ID.fullmatch(order_id) is None:
         raise ValueError("fill observation orderId is invalid")
-    if (
-        not isinstance(provider_ref, str)
-        or _SHA256.fullmatch(provider_ref) is None
-    ):
+    if not isinstance(provider_ref, str) or _SHA256.fullmatch(provider_ref) is None:
         raise ValueError("fill observation providerExecRefHash is invalid")
     exec_type = value["execType"]
     if exec_type not in {"PARTIAL_FILL", "FILL", "CANCELLED", "REJECTED"}:
@@ -182,10 +174,7 @@ def _record(
     if completeness not in {"COMPLETE", "PARTIAL"}:
         raise ValueError("fill observation completeness is invalid")
     source_ref = value["sourceRef"]
-    if (
-        not isinstance(source_ref, str)
-        or _SOURCE_REF.fullmatch(source_ref) is None
-    ):
+    if not isinstance(source_ref, str) or _SOURCE_REF.fullmatch(source_ref) is None:
         raise ValueError("fill observation sourceRef is invalid")
 
     identity = _canonical_json(

@@ -22,12 +22,12 @@ from typing import Protocol
 
 from app.rag.bge_acquisition import (
     BgeAcquisitionError,
+    _open_checked_response,
     _SocketBgeDnsResolver,
     _StdlibBgeHttpsTransport,
-    _open_checked_response,
 )
-from app.rag.owner_file_io import OwnerFileIoError, read_owner_regular_file
 from app.rag.oa112_downloader import Oa112DownloadError, load_oa112_execution_binding
+from app.rag.owner_file_io import OwnerFileIoError, read_owner_regular_file
 from app.rag.pre_s5_provider_control import PreS5ProviderBinding
 from app.rag.pre_s5_voyage_tokenizer import (
     PreS5VoyageTokenizerError,
@@ -133,9 +133,7 @@ class _PinnedHuggingFaceFetcher:
 
     def fetch(self, *, url: str, byte_cap: int) -> bytes:
         if url != _URL or byte_cap != _MAX_ARTIFACT_BYTES:
-            raise PreS5VoyageTokenizerAcquisitionError(
-                "PRE_S5_VOYAGE_TOKENIZER_DOWNLOAD_SCOPE"
-            )
+            raise PreS5VoyageTokenizerAcquisitionError("PRE_S5_VOYAGE_TOKENIZER_DOWNLOAD_SCOPE")
         try:
             with _open_checked_response(
                 url,
@@ -208,9 +206,7 @@ def acquire_pre_s5_voyage_tokenizer(
     try:
         raw = active_fetcher.fetch(url=_URL, byte_cap=packet.byte_cap)
         if not isinstance(raw, bytes) or not 1 <= len(raw) <= packet.byte_cap:
-            raise PreS5VoyageTokenizerAcquisitionError(
-                "PRE_S5_VOYAGE_TOKENIZER_DOWNLOAD_SIZE"
-            )
+            raise PreS5VoyageTokenizerAcquisitionError("PRE_S5_VOYAGE_TOKENIZER_DOWNLOAD_SIZE")
         try:
             _, tokenizer_sha256 = validate_pre_s5_voyage_tokenizer_bytes(raw)
         except PreS5VoyageTokenizerError:
@@ -274,9 +270,7 @@ def main(argv: tuple[str, ...] | None = None) -> int:
     return 0
 
 
-def _load_packet(
-    *, local_root: Path, binding: PreS5ProviderBinding, now: datetime
-) -> _Packet:
+def _load_packet(*, local_root: Path, binding: PreS5ProviderBinding, now: datetime) -> _Packet:
     _secure_directory(local_root)
     try:
         packet_file = read_owner_regular_file(
@@ -327,7 +321,9 @@ def _load_packet(
         or _GIT_OBJECT.fullmatch(payload["headCommit"]) is None
         or not isinstance(payload.get("treeObject"), str)
         or _GIT_OBJECT.fullmatch(payload["treeObject"]) is None
-        or any(not isinstance(value, str) or _SHA256.fullmatch(value) is None for value in hash_fields)
+        or any(
+            not isinstance(value, str) or _SHA256.fullmatch(value) is None for value in hash_fields
+        )
         or not isinstance(payload.get("nonce"), str)
         or _NONCE.fullmatch(payload["nonce"]) is None
         or not isinstance(payload.get("operator"), str)
@@ -347,7 +343,7 @@ def _load_packet(
     return _Packet(
         packet_sha256=hashlib.sha256(packet_file.content).hexdigest(),
         claim_sha256=hashlib.sha256(
-            f"voyage-tokenizer-nonce\0{payload['nonce']}".encode("utf-8")
+            f"voyage-tokenizer-nonce\0{payload['nonce']}".encode()
         ).hexdigest(),
         head_commit=payload["headCommit"],
         tree_object=payload["treeObject"],
@@ -365,9 +361,7 @@ def _repository_root() -> Path:
     for candidate in (Path(__file__).resolve(), *Path(__file__).resolve().parents):
         if (candidate / ".git").exists():
             return candidate
-    raise PreS5VoyageTokenizerAcquisitionError(
-        "PRE_S5_VOYAGE_TOKENIZER_REPOSITORY_UNAVAILABLE"
-    )
+    raise PreS5VoyageTokenizerAcquisitionError("PRE_S5_VOYAGE_TOKENIZER_REPOSITORY_UNAVAILABLE")
 
 
 def _prepare_destination(local_root: Path) -> tuple[Path, Path, Path, Path]:
@@ -445,9 +439,7 @@ def _secure_directory(path: Path) -> None:
         or metadata.st_uid != os.getuid()
         or stat.S_IMODE(metadata.st_mode) != 0o700
     ):
-        raise PreS5VoyageTokenizerAcquisitionError(
-            "PRE_S5_VOYAGE_TOKENIZER_LOCAL_BOUNDARY"
-        )
+        raise PreS5VoyageTokenizerAcquisitionError("PRE_S5_VOYAGE_TOKENIZER_LOCAL_BOUNDARY")
 
 
 def _ensure_directory(path: Path) -> Path:

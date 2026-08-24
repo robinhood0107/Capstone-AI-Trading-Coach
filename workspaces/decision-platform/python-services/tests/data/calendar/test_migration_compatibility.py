@@ -120,9 +120,13 @@ def test_event_status_uses_only_the_frozen_lifecycle_enum(
         )
     """
     with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
-        connection.execute(statement, ("evt-actual", "series-actual", "source-actual", "ACTUAL", "a" * 64))
+        connection.execute(
+            statement, ("evt-actual", "series-actual", "source-actual", "ACTUAL", "a" * 64)
+        )
         with pytest.raises(psycopg.errors.CheckViolation):
-            connection.execute(statement, ("evt-active", "series-active", "source-active", "ACTIVE", "b" * 64))
+            connection.execute(
+                statement, ("evt-active", "series-active", "source-active", "ACTIVE", "b" * 64)
+            )
 
 
 def test_observation_deduplication_keeps_distinct_effective_windows(

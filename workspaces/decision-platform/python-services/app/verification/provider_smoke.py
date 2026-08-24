@@ -30,11 +30,10 @@ from app.data.krx.client import (
 from app.data.krx.parsers import is_kis_compatible_symbol
 from app.data.krx.settings import KrxOpenApiSettings
 from app.verification.artifacts import claim_packet_execution
-from app.verification.provider_claim import claim_signed_provider_approval
 from app.verification.models import (
+    PROVIDER_READ_SMOKE_GATE_ORDER,
     AggregateOutcome,
     ExecutionState,
-    PROVIDER_READ_SMOKE_GATE_ORDER,
     GateResult,
     VerificationReport,
 )
@@ -43,7 +42,7 @@ from app.verification.packet import (
     VerificationPacketError,
     VerificationTarget,
 )
-
+from app.verification.provider_claim import claim_signed_provider_approval
 
 OPERATION_ORDER: Final[tuple[str, ...]] = PROVIDER_READ_SMOKE_GATE_ORDER
 _KRX_SERVICE: Final[Mapping[str, str]] = {

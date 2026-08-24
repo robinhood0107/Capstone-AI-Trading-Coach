@@ -26,6 +26,11 @@ from app.rag.pre_s5_provider_control import (
     PreS5VoyageQueryActivation,
     load_pre_s5_voyage_query_activation,
 )
+from app.rag.pre_s5_voyage_tokenizer import (
+    LocalPreS5VoyageContext4Tokenizer,
+    PreS5VoyageTokenCounter,
+    PreS5VoyageTokenizerError,
+)
 from app.rag.pre_s5_voyage_transport import (
     OutboundDisabledPreS5VoyageHttpSender,
     PreS5VoyageAttemptLease,
@@ -34,11 +39,6 @@ from app.rag.pre_s5_voyage_transport import (
     PreS5VoyageHttpSender,
     PreS5VoyageResponseValidationError,
     _parse_contextualized_response,
-)
-from app.rag.pre_s5_voyage_tokenizer import (
-    LocalPreS5VoyageContext4Tokenizer,
-    PreS5VoyageTokenCounter,
-    PreS5VoyageTokenizerError,
 )
 from app.rag.rag_v2_authorized_retrieval import (
     RagV2QueryEmbeddingError,
@@ -144,9 +144,7 @@ class PacketGatedPreS5VoyageContext4QueryEmbedder:
         """Load/consume a fresh exact packet and perform the one allowed query embedding attempt."""
 
         if not external_query_consent_granted:
-            raise RagV2QueryEmbeddingError(
-                RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE
-            )
+            raise RagV2QueryEmbeddingError(RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE)
         try:
             now = _utc_now(self._clock)
             activation = load_pre_s5_voyage_query_activation(
@@ -354,9 +352,7 @@ class PreS5VoyageContext4QueryEmbedder:
                 RagV2RetrievalFailureCode.QUERY_EMBEDDING_INVALID
             ) from None
         if not external_query_consent_granted:
-            raise RagV2QueryEmbeddingError(
-                RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE
-            )
+            raise RagV2QueryEmbeddingError(RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE)
         if not _activation_matches_request(
             activation=self._activation,
             question=question,
@@ -364,9 +360,7 @@ class PreS5VoyageContext4QueryEmbedder:
             now=_utc_now(self._clock),
         ) or isinstance(self._sender, OutboundDisabledPreS5VoyageHttpSender):
             # A missing/expired packet, disabled sender, or a different question never makes a physical attempt.
-            raise RagV2QueryEmbeddingError(
-                RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE
-            )
+            raise RagV2QueryEmbeddingError(RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE)
         try:
             expected_input_tokens = _expected_query_token_count(
                 question=question,
@@ -409,14 +403,20 @@ class PreS5VoyageContext4QueryEmbedder:
             self._mark_unknown_billing()
         except Exception:
             self._mark_unknown_billing()
-        if response is None:  # pragma: no cover - Protocol boundary is exercised by the generic exception path.
+        if (
+            response is None
+        ):  # pragma: no cover - Protocol boundary is exercised by the generic exception path.
             self._raise_after_attempt()
         try:
             return RagV2QueryEmbeddingReceipt(
                 vector=parsed.vector,
                 voyage_physical_calls=1,
             )
-        except (AttributeError, TypeError, ValueError):  # pragma: no cover - _parse_response closes this shape.
+        except (
+            AttributeError,
+            TypeError,
+            ValueError,
+        ):  # pragma: no cover - _parse_response closes this shape.
             self._raise_after_attempt()
 
     def _claim_before_outbound(self) -> None:
@@ -431,7 +431,9 @@ class PreS5VoyageContext4QueryEmbedder:
             try:
                 self._lease.claim_attempt(now=now)
             except Exception:
-                raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_LEASE_UNAVAILABLE") from None
+                raise PreS5VoyageQueryTransportError(
+                    "PRE_S5_VOYAGE_QUERY_LEASE_UNAVAILABLE"
+                ) from None
             self._consumed = True
 
     def _record_sender_handoff(self) -> None:
@@ -463,7 +465,7 @@ class PreS5VoyageContext4QueryEmbedder:
             voyage_physical_calls=self._external_physical_calls,
         )
         if self._response_validation_leaf is not None:
-            setattr(error, "response_validation_leaf", self._response_validation_leaf)
+            error.response_validation_leaf = self._response_validation_leaf
         raise error from None
 
 
@@ -495,8 +497,7 @@ def _validate_activation(activation: object) -> None:
         or not 1 <= activation.cost_cap_microusd <= 1_000_000_000
         or type(activation.input_microusd_per_token) is not int
         or not 1 <= activation.input_microusd_per_token <= 1_000_000
-        or activation.token_cap * activation.input_microusd_per_token
-        > activation.cost_cap_microusd
+        or activation.token_cap * activation.input_microusd_per_token > activation.cost_cap_microusd
         or activation.retry_count != 0
         or activation.raw_artifact_count != 0
     ):

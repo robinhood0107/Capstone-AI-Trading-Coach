@@ -225,7 +225,9 @@ def prepare_external_exact30_public_voyage_component(
     try:
         selected_corpus = corpus or load_external_processing_corpus()
     except ExternalProcessingCorpusError as error:
-        raise RagV2ExternalExact30VoyageRunnerError("EXTERNAL_EXACT30_SOURCE_CARD_CORPUS") from error
+        raise RagV2ExternalExact30VoyageRunnerError(
+            "EXTERNAL_EXACT30_SOURCE_CARD_CORPUS"
+        ) from error
     cards = tuple(sorted(selected_corpus.cards, key=lambda card: card.source_id.encode("utf-8")))
     if (
         selected_corpus.manifest.get("profileId") != S4_7C_PROFILE_ID
@@ -273,11 +275,15 @@ def prepare_external_exact30_public_voyage_component(
                 item = _prepared_from_checkpoint(card=card, prepared=checkpoint.prepared)
                 checkpoint_reused_count += 1
         except RagV2VoyageCheckpointError as error:
-            raise RagV2ExternalExact30VoyageRunnerError("EXTERNAL_EXACT30_DOCUMENT_MATERIALIZATION") from error
+            raise RagV2ExternalExact30VoyageRunnerError(
+                "EXTERNAL_EXACT30_DOCUMENT_MATERIALIZATION"
+            ) from error
         provisional_items.append(item)
     provisional = tuple(provisional_items)
     if len(provisional) != 30 or tuple(item.group.source_id for item in provisional) != tuple(
-        sorted((item.group.source_id for item in provisional), key=lambda value: value.encode("utf-8"))
+        sorted(
+            (item.group.source_id for item in provisional), key=lambda value: value.encode("utf-8")
+        )
     ):
         raise RagV2ExternalExact30VoyageRunnerError("EXTERNAL_EXACT30_SOURCE_CARD_MEMBERSHIP")
     return ExternalExact30PublicVoyagePreparation(
@@ -355,7 +361,9 @@ def materialize_prepared_external_exact30_public_voyage_component(
             )
         )
         cursor = next_cursor
-    if cursor != len(validated_vectors):  # pragma: no cover - expected row invariant above closes this path.
+    if cursor != len(
+        validated_vectors
+    ):  # pragma: no cover - expected row invariant above closes this path.
         raise RagV2ExternalExact30VoyageRunnerError("VOYAGE_COMPONENT_EMBEDDING")
 
     context = build_external_exact30_public_voyage_component_context(
@@ -431,9 +439,12 @@ def build_external_exact30_public_voyage_component_context(
         }
     )
     component_generation_id = f"rgr_{generation_hash[:32]}"
-    materialization_run_id = "rgr_run_" + hashlib.sha256(
-        f"rag-v2-external-exact30-voyage-run|{component_generation_id}|{manifest_hash}".encode("utf-8")
-    ).hexdigest()[:32]
+    materialization_run_id = (
+        "rgr_run_"
+        + hashlib.sha256(
+            f"rag-v2-external-exact30-voyage-run|{component_generation_id}|{manifest_hash}".encode()
+        ).hexdigest()[:32]
+    )
     return RagV2PublicVoyageComponentContext(
         component_scope=_COMPONENT_SCOPE,
         component_generation_id=component_generation_id,
@@ -490,7 +501,9 @@ def _prepare_document(
             tokenizer=tokenizer,
         )
         embedding_inputs = build_embedding_inputs(
-            _canonical_chunks(document.chunks, source_id=card.source_id, source_revision_id=source_revision_id),
+            _canonical_chunks(
+                document.chunks, source_id=card.source_id, source_revision_id=source_revision_id
+            ),
             embedding_profile_id=_VOYAGE_PROFILE_ID,
         )
     except (
@@ -498,7 +511,9 @@ def _prepare_document(
         ExternalExact30SourceCardParserError,
         RagIngestError,
     ) as error:
-        raise RagV2ExternalExact30VoyageRunnerError("EXTERNAL_EXACT30_DOCUMENT_MATERIALIZATION") from error
+        raise RagV2ExternalExact30VoyageRunnerError(
+            "EXTERNAL_EXACT30_DOCUMENT_MATERIALIZATION"
+        ) from error
     if (
         not document.external_processing_eligible
         or len(document.chunks) != len(embedding_inputs)
@@ -680,7 +695,8 @@ def external_exact30_voyage_source_member_digest(
         {
             "canonicalTextSha256": hashlib.sha256(
                 "\n\n".join(
-                    chunk.canonical_text for chunk in sorted(document.chunks, key=lambda value: value.sequence)
+                    chunk.canonical_text
+                    for chunk in sorted(document.chunks, key=lambda value: value.sequence)
                 ).encode("utf-8")
             ).hexdigest(),
             "chunks": chunks,

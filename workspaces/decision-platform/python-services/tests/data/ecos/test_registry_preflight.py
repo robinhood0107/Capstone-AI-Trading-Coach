@@ -8,10 +8,9 @@ from typing import Any
 import pytest
 
 from app.data.ecos.errors import ECOSParseError
-from app.data.ecos.parsers import parse_statistic_item_list, parse_statistic_table_list
 from app.data.ecos.models import StatisticItemMetadata, StatisticTableMetadata
+from app.data.ecos.parsers import parse_statistic_item_list, parse_statistic_table_list
 from app.data.ecos.series_registry import CANDIDATE_SERIES, ECOSSeries
-
 
 _FIXTURE_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "ecos"
 _VERIFIED_AT = datetime(2026, 7, 14, 1, 2, 3, tzinfo=UTC)

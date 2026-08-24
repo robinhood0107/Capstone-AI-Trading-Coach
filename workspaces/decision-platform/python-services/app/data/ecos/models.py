@@ -96,7 +96,7 @@ class ECOSSeriesSnapshot(_ECOSSnapshotModel):
     observations: tuple[ECOSObservation, ...] = Field(max_length=400)
 
     @model_validator(mode="after")
-    def _validate_series_contract(self) -> "ECOSSeriesSnapshot":
+    def _validate_series_contract(self) -> ECOSSeriesSnapshot:
         requested_from = _calendar_day(self.requested_from)
         requested_to = _calendar_day(self.requested_to)
         if requested_from > requested_to:
@@ -139,7 +139,7 @@ class ECOSMacroSnapshot(_ECOSSnapshotModel):
         return value
 
     @model_validator(mode="after")
-    def _validate_snapshot_contract(self) -> "ECOSMacroSnapshot":
+    def _validate_snapshot_contract(self) -> ECOSMacroSnapshot:
         identities = [(entry.series_id, entry.stat_code, entry.item_code1) for entry in self.series]
         if len(set(identities)) != 2:
             raise ValueError("ECOS snapshot series must be unique")
@@ -170,7 +170,7 @@ class ECOSCollectionResult(_ECOSSnapshotModel):
     duplicate_count: int = Field(default=0, ge=0, le=800)
 
     @model_validator(mode="after")
-    def _match_snapshot(self) -> "ECOSCollectionResult":
+    def _match_snapshot(self) -> ECOSCollectionResult:
         if (
             self.series_results != self.snapshot.series
             or self.partial != self.snapshot.partial

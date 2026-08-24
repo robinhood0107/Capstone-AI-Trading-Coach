@@ -88,6 +88,11 @@ def _event_date(row: dict[str, Any], receipt_no: str) -> date:
 
 
 def _digits(value: object, *, length: int, label: str) -> str:
-    if not isinstance(value, str) or len(value) != length or not value.isascii() or not value.isdigit():
+    if (
+        not isinstance(value, str)
+        or len(value) != length
+        or not value.isascii()
+        or not value.isdigit()
+    ):
         raise AdapterValidationError(f"OpenDART {label} is invalid")
     return value

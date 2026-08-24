@@ -68,15 +68,24 @@ def test_overlay_repository_uses_only_admin_definer_functions_and_activates_once
         lambda *_args, **_kwargs: connection,
     )
 
-    receipt = PsycopgRagV2OwnerOverlayRepository(database_dsn="postgresql://admin").prepare_and_activate(
-        owner_user_id="usr_demo_user"
-    )
+    receipt = PsycopgRagV2OwnerOverlayRepository(
+        database_dsn="postgresql://admin"
+    ).prepare_and_activate(owner_user_id="usr_demo_user")
 
     assert receipt.state == "READY"
     assert receipt.source_count == 2
     assert receipt.chunk_count == 6
-    assert sum("activate_rag_v2_immutable_owner_bundle" in statement for statement, _ in connection.statements) == 1
-    assert all("rag_v2_immutable_source_revisions" not in statement for statement, _ in connection.statements)
+    assert (
+        sum(
+            "activate_rag_v2_immutable_owner_bundle" in statement
+            for statement, _ in connection.statements
+        )
+        == 1
+    )
+    assert all(
+        "rag_v2_immutable_source_revisions" not in statement
+        for statement, _ in connection.statements
+    )
 
 
 def test_overlay_repository_reuses_the_already_active_exact_bundle_without_second_activation(
@@ -88,12 +97,15 @@ def test_overlay_repository_reuses_the_already_active_exact_bundle_without_secon
         lambda *_args, **_kwargs: connection,
     )
 
-    receipt = PsycopgRagV2OwnerOverlayRepository(database_dsn="postgresql://admin").prepare_and_activate(
-        owner_user_id="usr_demo_user"
-    )
+    receipt = PsycopgRagV2OwnerOverlayRepository(
+        database_dsn="postgresql://admin"
+    ).prepare_and_activate(owner_user_id="usr_demo_user")
 
     assert receipt.state == "READY"
-    assert not any("activate_rag_v2_immutable_owner_bundle" in statement for statement, _ in connection.statements)
+    assert not any(
+        "activate_rag_v2_immutable_owner_bundle" in statement
+        for statement, _ in connection.statements
+    )
 
 
 def test_overlay_repository_rejects_invalid_owner_before_database_access() -> None:

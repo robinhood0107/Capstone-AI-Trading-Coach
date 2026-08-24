@@ -16,7 +16,6 @@ from app.async_worker.kafka_topics import (
     materialize_exact_topics,
 )
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
 
 
@@ -54,7 +53,7 @@ def test_acl_materializer_waits_for_every_binding() -> None:
     success.result.return_value = None
     admin = Mock()
     bindings = exact_acl_bindings()
-    admin.create_acls.return_value = {binding: success for binding in bindings}
+    admin.create_acls.return_value = dict.fromkeys(bindings, success)
     admin.describe_acls.return_value.result.return_value = list(bindings)
     materialize_exact_acls(admin)
     assert admin.create_acls.call_count == 1
@@ -67,7 +66,7 @@ def test_materializer_accepts_existing_topics_without_retry() -> None:
     already_exists = Mock()
     already_exists.result.side_effect = _topic_exists()
     admin = Mock()
-    admin.create_topics.return_value = {name: already_exists for name in expected}
+    admin.create_topics.return_value = dict.fromkeys(expected, already_exists)
     _configure_topic_state(admin, expected)
 
     materialize_exact_topics(admin, deadline_seconds=1.0)
@@ -82,7 +81,7 @@ def test_materializer_rejects_unregistered_topic() -> None:
     success = Mock()
     success.result.return_value = None
     admin = Mock()
-    admin.create_topics.return_value = {name: success for name in expected}
+    admin.create_topics.return_value = dict.fromkeys(expected, success)
     admin.list_topics.return_value = SimpleNamespace(
         topics={name: _topic_metadata() for name in expected} | {"foreign.topic.v1": object()}
     )
@@ -96,7 +95,7 @@ def test_materializer_rejects_partition_or_replica_drift() -> None:
     success = Mock()
     success.result.return_value = None
     admin = Mock()
-    admin.create_topics.return_value = {name: success for name in expected}
+    admin.create_topics.return_value = dict.fromkeys(expected, success)
     _configure_topic_state(admin, expected)
     first = next(iter(expected))
     admin.list_topics.return_value.topics[first] = _topic_metadata(partition_count=2)
@@ -110,7 +109,7 @@ def test_materializer_rejects_retention_drift() -> None:
     success = Mock()
     success.result.return_value = None
     admin = Mock()
-    admin.create_topics.return_value = {name: success for name in expected}
+    admin.create_topics.return_value = dict.fromkeys(expected, success)
     first = next(iter(expected))
     _configure_topic_state(admin, expected, retention_overrides={first: "1"})
 

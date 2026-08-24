@@ -62,7 +62,13 @@ class FakeProvider:
         if self.tool_call and not messages:
             message = AIMessage(
                 content="",
-                tool_calls=[{"name": "capstone_web_search", "args": {"query": "diversification"}, "id": "call_1"}],
+                tool_calls=[
+                    {
+                        "name": "capstone_web_search",
+                        "args": {"query": "diversification"},
+                        "id": "call_1",
+                    }
+                ],
             )
             result = _result([])
             result["message"] = message
@@ -187,7 +193,7 @@ def test_google_search_and_native_schema_share_the_official_bind_contract(
         def __init__(self, **kwargs: object) -> None:
             constructor_calls.append(kwargs)
 
-        def bind(self, **kwargs: object) -> "FakeModel":
+        def bind(self, **kwargs: object) -> FakeModel:
             bind_calls.append(kwargs)
             return self
 
@@ -342,11 +348,11 @@ def test_fallback_tool_round_keeps_native_structured_output_binding(
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def bind(self, **kwargs: object) -> "FakeModel":
+        def bind(self, **kwargs: object) -> FakeModel:
             bind_calls.append(kwargs)
             return self
 
-        def bind_tools(self, tools: list[dict[str, object]]) -> "FakeModel":
+        def bind_tools(self, tools: list[dict[str, object]]) -> FakeModel:
             tool_calls.append(tools)
             return self
 
@@ -398,10 +404,10 @@ def test_fallback_tool_result_preserves_initial_policy_and_question(
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def bind(self, **_kwargs: object) -> "FakeModel":
+        def bind(self, **_kwargs: object) -> FakeModel:
             return self
 
-        def bind_tools(self, _tools: list[dict[str, object]]) -> "FakeModel":
+        def bind_tools(self, _tools: list[dict[str, object]]) -> FakeModel:
             return self
 
         def invoke(self, _messages: object) -> AIMessage:
@@ -466,10 +472,10 @@ def test_fallback_final_accepts_only_host_issued_read_citation(
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def bind(self, **_kwargs: object) -> "FakeModel":
+        def bind(self, **_kwargs: object) -> FakeModel:
             return self
 
-        def bind_tools(self, _tools: list[dict[str, object]]) -> "FakeModel":
+        def bind_tools(self, _tools: list[dict[str, object]]) -> FakeModel:
             return self
 
         def invoke(self, _messages: object) -> AIMessage:
@@ -523,7 +529,14 @@ def test_vertex_schema_uses_only_the_provider_supported_structural_subset() -> N
     schema = _vertex_response_schema()
     serialized = json.dumps(schema, sort_keys=True)
 
-    for unsupported in ("$defs", "$ref", "additionalProperties", "minLength", "maxLength", "pattern"):
+    for unsupported in (
+        "$defs",
+        "$ref",
+        "additionalProperties",
+        "minLength",
+        "maxLength",
+        "pattern",
+    ):
         assert unsupported not in serialized
     assert schema["required"] == ["basis", "answer", "sentences", "warnings"]
 
@@ -590,7 +603,11 @@ def test_langchain_content_block_citation_is_the_grounding_fallback() -> None:
                         "start_index": 0,
                         "end_index": 32,
                         "cited_text": "Diversification can reduce risk.",
-                        "extras": {"google_ai_metadata": {"web_search_queries": ["Investor.gov diversification"]}},
+                        "extras": {
+                            "google_ai_metadata": {
+                                "web_search_queries": ["Investor.gov diversification"]
+                            }
+                        },
                     }
                 ],
             }
@@ -634,7 +651,7 @@ def test_google_support_segment_may_exactly_contain_the_structured_sentence() ->
         {
             "start_index": 0,
             "end_index": 70,
-            "text": '\"text\":\"Diversification can reduce risk.\",\"citationIds\":[]',
+            "text": '"text":"Diversification can reduce risk.","citationIds":[]',
             "chunk_indices": (0,),
         }
     ]
@@ -701,9 +718,7 @@ def test_google_grounding_rebuilds_mismatched_duplicate_sentence_contract() -> N
         {
             "text": "2026년 8월 15일 최신 보도자료입니다.",
             "citationIds": ["cit_1"],
-            "evidenceSpans": [
-                {"citationId": "cit_1", "quote": "2026년 8월 15일 최신 보도자료"}
-            ],
+            "evidenceSpans": [{"citationId": "cit_1", "quote": "2026년 8월 15일 최신 보도자료"}],
             "numericSpans": [
                 {"value": "2026년", "citationIds": ["cit_1"]},
                 {"value": "15일", "citationIds": ["cit_1"]},
@@ -768,7 +783,9 @@ def test_google_support_uses_an_unused_citation_id_without_discarding_local_evid
         }
     ]
 
-    normalized = json.loads(_normalize_grounded_answer(json.dumps(answer, ensure_ascii=False), roots, supports))
+    normalized = json.loads(
+        _normalize_grounded_answer(json.dumps(answer, ensure_ascii=False), roots, supports)
+    )
 
     assert roots[0]["citation_id"] == "cit_2"
     assert normalized["sentences"][0]["citationIds"] == ["cit_1", "cit_2"]
@@ -829,7 +846,9 @@ def test_google_support_rebinds_model_invented_label_only_by_exact_provider_supp
     ]
 
 
-def test_owner_final_accepts_exact_intermediate_support_quote_without_copying_it_into_sentence() -> None:
+def test_owner_final_accepts_exact_intermediate_support_quote_without_copying_it_into_sentence() -> (
+    None
+):
     answer = {
         "basis": "EVIDENCE",
         "answer": "분산투자는 자산 움직임의 차이를 이용해 전체 위험을 낮출 수 있습니다.",
@@ -837,7 +856,9 @@ def test_owner_final_accepts_exact_intermediate_support_quote_without_copying_it
             {
                 "text": "분산투자는 자산 움직임의 차이를 이용해 전체 위험을 낮출 수 있습니다.",
                 "citationIds": ["cit_2"],
-                "evidenceSpans": [{"citationId": "cit_2", "quote": "Diversification can reduce risk."}],
+                "evidenceSpans": [
+                    {"citationId": "cit_2", "quote": "Diversification can reduce risk."}
+                ],
                 "numericSpans": [],
             }
         ],
@@ -862,7 +883,9 @@ def test_owner_final_accepts_exact_intermediate_support_quote_without_copying_it
         }
     ]
 
-    normalized = json.loads(_normalize_grounded_answer(json.dumps(answer, ensure_ascii=False), roots, supports))
+    normalized = json.loads(
+        _normalize_grounded_answer(json.dumps(answer, ensure_ascii=False), roots, supports)
+    )
 
     assert normalized["basis"] == "EVIDENCE"
     assert normalized["warnings"] == ["GOOGLE_GROUNDING_ONLY"]

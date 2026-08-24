@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
-
+from decimal import ROUND_HALF_UP, Decimal
 
 SCHEMA_VERSION = 1
 METRIC_POLICY_VERSION = "s1-5-quality-report-v1"

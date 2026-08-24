@@ -30,7 +30,7 @@ class BrokerageGrpcServerSettings:
     reference_ttl_seconds: int
 
     @classmethod
-    def from_env(cls) -> "BrokerageGrpcServerSettings":
+    def from_env(cls) -> BrokerageGrpcServerSettings:
         enabled = os.environ.get("KIS_MOCK_BROKERAGE_ONLINE_ENABLED", "false").lower()
         if enabled not in {"true", "false"}:
             raise ValueError("KIS_MOCK_BROKERAGE_ONLINE_ENABLED must be true or false")
@@ -49,9 +49,7 @@ class BrokerageGrpcServerSettings:
             online_enabled=enabled == "true",
             token_p_physical_cap=token_cap,
             brokerage_physical_cap=brokerage_cap,
-            reference_key=SecretStr(
-                os.environ.get("KIS_MOCK_ORDER_REFERENCE_KEY", "").strip()
-            ),
+            reference_key=SecretStr(os.environ.get("KIS_MOCK_ORDER_REFERENCE_KEY", "").strip()),
             reference_ttl_seconds=ttl,
         )
         settings.validate()

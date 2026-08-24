@@ -189,7 +189,7 @@ internal class JdbcPreS5VertexUsageLedger(
                 MessageDigest
                     .getInstance("SHA-256")
                     .digest(seed)
-                    .joinToString("") { "%02x".format(it) }
+                    .joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
                     .take(32)
         } finally {
             seed.fill(0)

@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, Sequence, cast
+from typing import Any, Literal, Protocol, cast
 from urllib.parse import urlsplit
 
 import numpy as np
@@ -175,13 +176,9 @@ def prepare_bge_poc(
             strict=True,
         )
     }
-    if (
-        set(evidence_by_source_id) != {card.source_id for card in cards}
-        or any(
-            evidence_by_source_id[card.source_id]
-            != (card.evidence_content_sha256, card.content_sha256)
-            for card in cards
-        )
+    if set(evidence_by_source_id) != {card.source_id for card in cards} or any(
+        evidence_by_source_id[card.source_id] != (card.evidence_content_sha256, card.content_sha256)
+        for card in cards
     ):
         # identity만 유지한 card drift도 DB materialization 전에 manifest receipt에서 차단한다.
         raise BgePocError("OFFICIAL_EVIDENCE_CARD_BINDING")
@@ -341,9 +338,7 @@ class PsycopgBgePocRepository:
                 with connection.transaction():
                     connection.execute("set local statement_timeout = '30s'")
                     connection.execute("set local lock_timeout = '1s'")
-                    connection.execute(
-                        "set local idle_in_transaction_session_timeout = '45s'"
-                    )
+                    connection.execute("set local idle_in_transaction_session_timeout = '45s'")
                     _insert_cards_and_chunks(connection, plan=plan)
                     _insert_generation_membership(connection, plan=plan)
                     _copy_staging_rows(connection, rows=rows)
@@ -597,8 +592,9 @@ def _copy_staging_rows(
     *,
     rows: tuple[BgeStagedEmbedding, ...],
 ) -> None:
-    with connection.cursor() as cursor:
-        with cursor.copy(
+    with (
+        connection.cursor() as cursor,
+        cursor.copy(
             """
             COPY rag_embedding_staging (
               generation_id, materialization_run_id, chunk_revision_id,
@@ -606,20 +602,21 @@ def _copy_staging_rows(
               embedding, staging_row_hash
             ) FROM STDIN
             """
-        ) as copy:
-            for row in rows:
-                copy.write_row(
-                    (
-                        row.generation_id,
-                        row.materialization_run_id,
-                        row.chunk_revision_id,
-                        row.embedding_profile_id,
-                        row.embedding_input_hash,
-                        row.context_set_hash,
-                        _vector_text(row.embedding),
-                        row.staging_row_hash,
-                    )
+        ) as copy,
+    ):
+        for row in rows:
+            copy.write_row(
+                (
+                    row.generation_id,
+                    row.materialization_run_id,
+                    row.chunk_revision_id,
+                    row.embedding_profile_id,
+                    row.embedding_input_hash,
+                    row.context_set_hash,
+                    _vector_text(row.embedding),
+                    row.staging_row_hash,
                 )
+            )
 
 
 def _attest_writer_connection(connection: psycopg.Connection[Any]) -> None:
@@ -716,8 +713,7 @@ def _required_int(row: tuple[object, ...] | None) -> int:
 
 def _canonical_json_hash(payload: object) -> str:
     serialized = (
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-        + "\n"
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
     ).encode("utf-8")
     return hashlib.sha256(serialized).hexdigest()
 

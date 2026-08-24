@@ -13,15 +13,15 @@ from app.brokerage.kis_mock_portfolio_writer import (
     append_kis_mock_portfolio_fixture,
     load_kis_mock_portfolio_fixture,
 )
-from app.decision_source_cli import attest_source_writer_dsn
-from app.data.kis.market_quote_observation_writer import (
-    append_market_quote_fixture,
-    load_market_quote_fixture,
-)
 from app.data.decision.deterministic_observation_writer import (
     append_deterministic_metric_fixture,
     load_deterministic_metric_fixture,
 )
+from app.data.kis.market_quote_observation_writer import (
+    append_market_quote_fixture,
+    load_market_quote_fixture,
+)
+from app.decision_source_cli import attest_source_writer_dsn
 from app.offline_fixture_io import read_bounded_fixture
 from tests.conftest import PostgresTestCluster
 
@@ -257,10 +257,9 @@ def test_source_writer_dsn_attestation_requires_exact_role_and_target(
 
 def test_source_writers_have_no_provider_live_order_or_fallback_dependency() -> None:
     from app.brokerage import kis_mock_portfolio_writer
-    from app.data.kis import instrument_catalog_writer
-    from app.data.kis import market_quote_observation_writer
-    from app.data.opendart import corporation_registry_writer
     from app.data.decision import deterministic_observation_writer
+    from app.data.kis import instrument_catalog_writer, market_quote_observation_writer
+    from app.data.opendart import corporation_registry_writer
 
     source = "\n".join(
         inspect.getsource(module)

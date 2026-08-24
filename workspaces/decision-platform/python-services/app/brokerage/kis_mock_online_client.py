@@ -16,10 +16,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.data.kis._credential_transport import (
     KISCredentialError,
     KISResponseTooLargeError,
-    _CredentialTransport,
-    _TokenIssuer,
     _build_redis_client,
+    _CredentialTransport,
     _provider_scope,
+    _TokenIssuer,
 )
 from app.data.kis.accounting import KISCallBudgetExceeded
 from app.data.kis.auth import KISTokenCacheError, KISTokenManager
@@ -191,9 +191,7 @@ class KISMockBrokerageError(RuntimeError):
         self.reason_code = reason.value
         self.provider_code = _bounded_provider_code(provider_code)
         self.http_status = (
-            http_status
-            if type(http_status) is int and 100 <= http_status <= 599
-            else None
+            http_status if type(http_status) is int and 100 <= http_status <= 599 else None
         )
 
 
@@ -419,9 +417,7 @@ class KISMockBrokerageHttpClient:
             if path == ORDER_CASH_PATH:
                 allowed = expected | {"EXCG_ID_DVSN_CD"}
                 if fields != expected and fields != allowed:
-                    raise ValueError(
-                        "KIS mock brokerage POST field allowlist rejected the request"
-                    )
+                    raise ValueError("KIS mock brokerage POST field allowlist rejected the request")
             elif fields != expected:
                 raise ValueError("KIS mock brokerage POST field allowlist rejected the request")
             body = dict(json_body)
@@ -464,22 +460,14 @@ class KISMockBrokerageHttpClient:
                 params=query,
                 json=body,
             )
-        except (
-            KISBrokerageCallBudgetExceeded,
-        ):
+        except KISBrokerageCallBudgetExceeded:
             raise
         except KISResponseTooLargeError:
-            raise KISMockBrokerageError(
-                KISMockFailureReason.RESPONSE_TOO_LARGE
-            ) from None
+            raise KISMockBrokerageError(KISMockFailureReason.RESPONSE_TOO_LARGE) from None
         except (KISRateLimitUnavailable, KISRateLimitWaitExceeded):
-            raise KISMockBrokerageError(
-                KISMockFailureReason.RATE_LIMIT_UNAVAILABLE
-            ) from None
+            raise KISMockBrokerageError(KISMockFailureReason.RATE_LIMIT_UNAVAILABLE) from None
         except KISTokenCacheError:
-            raise KISMockBrokerageError(
-                KISMockFailureReason.CREDENTIAL_UNAVAILABLE
-            ) from None
+            raise KISMockBrokerageError(KISMockFailureReason.CREDENTIAL_UNAVAILABLE) from None
         except KISCredentialError:
             reason = (
                 KISMockFailureReason.RESPONSE_SANITIZATION_FAILED
@@ -492,9 +480,7 @@ class KISMockBrokerageHttpClient:
                 "KIS brokerage physical reservation cap exhausted"
             ) from None
         except Exception:
-            raise KISMockBrokerageError(
-                KISMockFailureReason.TRANSPORT_UNAVAILABLE
-            ) from None
+            raise KISMockBrokerageError(KISMockFailureReason.TRANSPORT_UNAVAILABLE) from None
         finally:
             if body is not None:
                 body.clear()
@@ -510,9 +496,7 @@ class KISMockBrokerageHttpClient:
         try:
             raw: object = response.json()
         except ValueError:
-            raise KISMockBrokerageError(
-                KISMockFailureReason.RESPONSE_INVALID
-            ) from None
+            raise KISMockBrokerageError(KISMockFailureReason.RESPONSE_INVALID) from None
         if not isinstance(raw, dict):
             raise KISMockBrokerageError(KISMockFailureReason.RESPONSE_INVALID)
         payload = cast(dict[str, Any], raw)

@@ -32,7 +32,9 @@ async def test_proxy_relays_to_the_fixed_upstream(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
-async def test_proxy_fails_closed_when_upstream_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_proxy_fails_closed_when_upstream_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     unavailable = await asyncio.start_server(lambda _reader, _writer: None, "127.0.0.1", 0)
     unavailable_port = unavailable.sockets[0].getsockname()[1]
     unavailable.close()

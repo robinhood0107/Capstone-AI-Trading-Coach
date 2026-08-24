@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import Protocol
 
 
 class PayloadConflictError(RuntimeError):
@@ -316,7 +317,14 @@ def _cause_evidence(
         ),
     )
     records: list[dict[str, object]] = []
-    for evidence_id, counterargument, classification, relation, contradictions, summary in definitions:
+    for (
+        evidence_id,
+        counterargument,
+        classification,
+        relation,
+        contradictions,
+        summary,
+    ) in definitions:
         core: dict[str, object] = {
             "availableAt": _instant(occurred + timedelta(minutes=3)),
             "classification": classification,
@@ -406,8 +414,10 @@ def _reject_forbidden_fields(batch: CrossMarketFixtureBatch) -> None:
 
 def _required_hash(record: dict[str, object], field: str) -> str:
     value = record.get(field)
-    if not isinstance(value, str) or len(value) != 64 or any(
-        character not in "0123456789abcdef" for character in value
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
     ):
         raise ValueError(f"cross-market {field} is invalid")
     return value

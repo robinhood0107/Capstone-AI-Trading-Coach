@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, cast
 
 import psycopg
 
 from app.lightgbm.artifact_ingest import ValidatedSignalBundle, validate_signal_bundle
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.fake_artifacts import signal_row_payload_bytes
-
 
 ConnectionFactory = Callable[..., AbstractContextManager[psycopg.Connection[Any]]]
 

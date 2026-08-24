@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 
-
 LISTEN_HOST = "0.0.0.0"
 LISTEN_PORT = 8080
 UPSTREAM_HOST = "runtime-netns"

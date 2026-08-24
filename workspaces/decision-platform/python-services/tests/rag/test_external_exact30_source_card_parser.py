@@ -62,7 +62,9 @@ def test_external_exact30_parser_rejects_root_locator_revision_language_and_prof
     card = corpus.cards[0]
     parser = ExternalExact30SourceCardDocumentParser(corpus=corpus)
 
-    with pytest.raises(ExternalExact30SourceCardParserError, match="EXTERNAL_EXACT30_CARD_ROOT_DRIFT"):
+    with pytest.raises(
+        ExternalExact30SourceCardParserError, match="EXTERNAL_EXACT30_CARD_ROOT_DRIFT"
+    ):
         parser.parse_approved_document(
             approved_root=Path("/tmp"),
             relative_path=Path(card.relative_path).name,
@@ -71,7 +73,9 @@ def test_external_exact30_parser_rejects_root_locator_revision_language_and_prof
             language_tags=EXTERNAL_EXACT30_LANGUAGE_TAGS,
         )
 
-    with pytest.raises(ExternalExact30SourceCardParserError, match="EXTERNAL_EXACT30_CARD_LOCATOR_DRIFT"):
+    with pytest.raises(
+        ExternalExact30SourceCardParserError, match="EXTERNAL_EXACT30_CARD_LOCATOR_DRIFT"
+    ):
         parser.parse_approved_document(
             approved_root=S4_7C_SOURCE_CARD_ROOT,
             relative_path="card.md",
@@ -80,7 +84,9 @@ def test_external_exact30_parser_rejects_root_locator_revision_language_and_prof
             language_tags=EXTERNAL_EXACT30_LANGUAGE_TAGS,
         )
 
-    with pytest.raises(ExternalExact30SourceCardParserError, match="EXTERNAL_EXACT30_CARD_REVISION_DRIFT"):
+    with pytest.raises(
+        ExternalExact30SourceCardParserError, match="EXTERNAL_EXACT30_CARD_REVISION_DRIFT"
+    ):
         parser.parse_approved_document(
             approved_root=S4_7C_SOURCE_CARD_ROOT,
             relative_path=Path(card.relative_path).name,
@@ -89,7 +95,9 @@ def test_external_exact30_parser_rejects_root_locator_revision_language_and_prof
             language_tags=EXTERNAL_EXACT30_LANGUAGE_TAGS,
         )
 
-    with pytest.raises(ExternalExact30SourceCardParserError, match="EXTERNAL_EXACT30_CARD_LANGUAGE_DRIFT"):
+    with pytest.raises(
+        ExternalExact30SourceCardParserError, match="EXTERNAL_EXACT30_CARD_LANGUAGE_DRIFT"
+    ):
         parser.parse_approved_document(
             approved_root=S4_7C_SOURCE_CARD_ROOT,
             relative_path=Path(card.relative_path).name,
@@ -98,7 +106,9 @@ def test_external_exact30_parser_rejects_root_locator_revision_language_and_prof
             language_tags=("en",),
         )
 
-    with pytest.raises(ExternalExact30SourceCardParserError, match="EXTERNAL_EXACT30_CARD_MEMBERSHIP"):
+    with pytest.raises(
+        ExternalExact30SourceCardParserError, match="EXTERNAL_EXACT30_CARD_MEMBERSHIP"
+    ):
         parser.parse_approved_document(
             approved_root=S4_7C_SOURCE_CARD_ROOT,
             relative_path=Path(card.relative_path).name,

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 import hashlib
 import hmac
 import json
@@ -8,6 +7,7 @@ import logging
 import os
 import re
 import time
+from dataclasses import dataclass, replace
 from typing import Any, Protocol, cast
 
 from confluent_kafka import Consumer, KafkaError, KafkaException, Message, TopicPartition
@@ -17,19 +17,18 @@ from app.async_worker.kafka_security import (
     KafkaEnvelopeSecurityError,
     KafkaEnvelopeVerifier,
 )
-from app.async_worker.postgres import PostgresAsyncWorkRepository, is_decision_worker_dsn
 from app.async_worker.poison_recorder import (
     HttpPoisonRecorderClient,
     PoisonReceipt,
     PoisonReceiptError,
     PoisonRecorderPort,
 )
+from app.async_worker.postgres import PostgresAsyncWorkRepository, is_decision_worker_dsn
 from app.data._shared.bounded_json import (
     BoundedJsonError,
     BoundedJsonLimits,
     parse_bounded_json_bytes,
 )
-
 
 _TOPICS = (
     "artifact.ingest-requested.v1",
@@ -139,7 +138,7 @@ class KafkaAsyncMessageHandler:
             ):
                 raise KafkaRetryStop(
                     "record outside the exact topic catalog must not be acknowledged"
-                )
+                ) from error
             raw_hash = "sha256:" + hashlib.sha256(raw).hexdigest()
             identity_hash = hashlib.sha256(
                 f"{message.topic()}|{message.partition()}|{message.offset()}|{raw_hash}".encode()

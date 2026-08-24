@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from types import MappingProxyType
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
-from typing import Final, Literal, Mapping
-
+from types import MappingProxyType
+from typing import Final, Literal
 
 KrxMarket = Literal["KOSPI", "KOSDAQ"]
 KrxServiceCategory = Literal["지수", "주식", "증권상품", "채권", "파생상품", "일반상품", "ESG"]

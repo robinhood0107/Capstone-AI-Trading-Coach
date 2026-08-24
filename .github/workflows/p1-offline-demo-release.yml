@@ -353,6 +353,9 @@ jobs:
       - name: Sign exact image digests and collect offline evidence
         env:
           GH_TOKEN: ${{ github.token }}
+          SPRING_DIGEST: ${{ steps.push.outputs.spring_digest }}
+          PYTHON_DIGEST: ${{ steps.push.outputs.python_digest }}
+          POSTGRES_DIGEST: ${{ steps.push.outputs.postgres_digest }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -360,9 +363,9 @@ jobs:
           docker buildx imagetools inspect '${{ steps.push.outputs.spring_ref }}' --raw > release-evidence/spring-manifest.json
           docker buildx imagetools inspect '${{ steps.push.outputs.python_ref }}' --raw > release-evidence/python-manifest.json
           docker buildx imagetools inspect '${{ steps.push.outputs.postgres_ref }}' --raw > release-evidence/postgres-manifest.json
-          [[ "sha256:$(sha256sum release-evidence/spring-manifest.json | awk '{print $1}')" == '${{ steps.push.outputs.spring_digest }}' ]]
-          [[ "sha256:$(sha256sum release-evidence/python-manifest.json | awk '{print $1}')" == '${{ steps.push.outputs.python_digest }}' ]]
-          [[ "sha256:$(sha256sum release-evidence/postgres-manifest.json | awk '{print $1}')" == '${{ steps.push.outputs.postgres_digest }}' ]]
+          [[ "sha256:$(sha256sum release-evidence/spring-manifest.json | awk '{print $1}')" == "$SPRING_DIGEST" ]]
+          [[ "sha256:$(sha256sum release-evidence/python-manifest.json | awk '{print $1}')" == "$PYTHON_DIGEST" ]]
+          [[ "sha256:$(sha256sum release-evidence/postgres-manifest.json | awk '{print $1}')" == "$POSTGRES_DIGEST" ]]
           cosign sign --yes '${{ steps.push.outputs.spring_ref }}'
           cosign sign --yes '${{ steps.push.outputs.python_ref }}'
           cosign sign --yes '${{ steps.push.outputs.postgres_ref }}'

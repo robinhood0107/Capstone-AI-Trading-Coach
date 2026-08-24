@@ -44,7 +44,9 @@ def parse_kasi_holidays(
     media_type = content_type.split(";", maxsplit=1)[0].strip().lower()
     if media_type not in _XML_CONTENT_TYPES:
         raise AdapterValidationError("KASI content type is not XML")
-    if compressed_size is not None and (compressed_size < 0 or compressed_size > MAX_KASI_COMPRESSED_BYTES):
+    if compressed_size is not None and (
+        compressed_size < 0 or compressed_size > MAX_KASI_COMPRESSED_BYTES
+    ):
         raise AdapterValidationError("KASI compressed size exceeded the safety limit")
     if len(payload) > MAX_KASI_RESPONSE_BYTES:
         raise AdapterValidationError("KASI response size exceeded the safety limit")

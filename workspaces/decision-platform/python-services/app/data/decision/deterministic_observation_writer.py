@@ -230,8 +230,12 @@ def _risk_observation(
     if received_at < observed_at:
         raise ValueError("deterministic risk receivedAt precedes observedAt")
     completeness = _completeness(value["completeness"], "risk")
-    daily_loss_rate = _optional_decimal(value["dailyLossRate"], "dailyLossRate", Decimal("-1"), Decimal("0"))
-    max_drawdown = _optional_decimal(value["maxDrawdown"], "maxDrawdown", Decimal("-1"), Decimal("0"))
+    daily_loss_rate = _optional_decimal(
+        value["dailyLossRate"], "dailyLossRate", Decimal("-1"), Decimal("0")
+    )
+    max_drawdown = _optional_decimal(
+        value["maxDrawdown"], "maxDrawdown", Decimal("-1"), Decimal("0")
+    )
     annualized_volatility = _optional_decimal(
         value["annualizedVolatility"],
         "annualizedVolatility",

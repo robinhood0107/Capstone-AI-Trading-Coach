@@ -70,19 +70,47 @@ def test_final_or_empty_ds001_page_marks_cursor_complete() -> None:
     "response, expected",
     [
         (
-            {"status": "000", "page_no": 1, "page_count": 99, "total_count": 1, "total_page": 1, "list": [{}]},
+            {
+                "status": "000",
+                "page_no": 1,
+                "page_count": 99,
+                "total_count": 1,
+                "total_page": 1,
+                "list": [{}],
+            },
             "page_count",
         ),
         (
-            {"status": "000", "page_no": 2, "page_count": 100, "total_count": 1, "total_page": 1, "list": [{}]},
+            {
+                "status": "000",
+                "page_no": 2,
+                "page_count": 100,
+                "total_count": 1,
+                "total_page": 1,
+                "list": [{}],
+            },
             "page number",
         ),
         (
-            {"status": "000", "page_no": 1, "page_count": 100, "total_count": 101, "total_page": 1, "list": [{}]},
+            {
+                "status": "000",
+                "page_no": 1,
+                "page_count": 100,
+                "total_count": 101,
+                "total_page": 1,
+                "list": [{}],
+            },
             "total_page",
         ),
         (
-            {"status": "000", "page_no": 1, "page_count": 100, "total_count": 1, "total_page": 1, "list": "raw"},
+            {
+                "status": "000",
+                "page_no": 1,
+                "page_count": 100,
+                "total_count": 1,
+                "total_page": 1,
+                "list": "raw",
+            },
             "list",
         ),
     ],

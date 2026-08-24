@@ -4,12 +4,12 @@ import hashlib
 import ipaddress
 import re
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
 from types import MappingProxyType
-from typing import Mapping
 from urllib.parse import SplitResult, urlsplit
 
 import yaml
@@ -295,7 +295,9 @@ def _parse_locator(value: object) -> RagSourceLocator:
     parsed = _require_safe_https_url(canonical_url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
     if allowed_origin != origin:
-        raise RagSourceRegistryError("RAG source allowed origin must exactly match canonical URL origin.")
+        raise RagSourceRegistryError(
+            "RAG source allowed origin must exactly match canonical URL origin."
+        )
     path_and_query = parsed.path + (f"?{parsed.query}" if parsed.query else "")
     if allowed_path != path_and_query:
         raise RagSourceRegistryError(
@@ -327,7 +329,10 @@ def _parse_retention(value: object) -> RagSourceRetention:
 def _require_safe_https_url(url: str) -> SplitResult:
     if (
         not url
-        or any(character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F for character in url)
+        or any(
+            character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F
+            for character in url
+        )
         or "\\" in url
         or "%" in url
     ):
@@ -370,7 +375,9 @@ def _require_safe_https_url(url: str) -> SplitResult:
     except ValueError:
         labels = hostname.split(".")
         if all(re.fullmatch(r"(?:0x[0-9a-f]+|0[0-7]+|[0-9]+)", label) for label in labels):
-            raise RagSourceRegistryError("RAG source URL alternate IP spelling is forbidden.")
+            raise RagSourceRegistryError(
+                "RAG source URL alternate IP spelling is forbidden."
+            ) from None
     else:
         raise RagSourceRegistryError("RAG source URL IP literal is forbidden.")
     canonical = f"https://{parsed.netloc}{parsed.path}"

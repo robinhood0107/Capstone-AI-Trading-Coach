@@ -71,7 +71,7 @@ class PreS5VertexServiceAccountCredentialProviderTest {
     }
 
     private companion object {
-        val DIRECTORY_PERMISSIONS = PosixFilePermissions.fromString("rwx------")
-        val FILE_PERMISSIONS = PosixFilePermissions.fromString("rw-------")
+        val DIRECTORY_PERMISSIONS: Set<java.nio.file.attribute.PosixFilePermission> = PosixFilePermissions.fromString("rwx------")
+        val FILE_PERMISSIONS: Set<java.nio.file.attribute.PosixFilePermission> = PosixFilePermissions.fromString("rw-------")
     }
 }

@@ -133,7 +133,7 @@ def test_approval_metadata_mismatch_stops_before_client_or_publisher(
         CANDIDATE_SERIES[1],
     )
 
-    with pytest.raises(RegistryNotVerifiedError, match="registry_not_verified"):
+    with pytest.raises(RegistryNotVerifiedError, match=r"registry_not_verified"):
         collector.collect(
             series=mismatched,
             start=date(2026, 7, 1),
@@ -184,7 +184,7 @@ def test_both_series_failure_never_publishes() -> None:
     publisher = _Publisher()
     collector = ECOSCollector(client=client, publisher=publisher)
 
-    with pytest.raises(ECOSCollectionError, match="all_series_failed"):
+    with pytest.raises(ECOSCollectionError, match=r"all_series_failed"):
         collector.collect(
             series=series,
             start=date(2026, 7, 1),
@@ -218,7 +218,7 @@ def test_strict_mode_stops_after_first_incomplete_series_without_publishing(
     publisher = _Publisher()
     collector = ECOSCollector(client=client, publisher=publisher)
 
-    with pytest.raises(ECOSCollectionError, match="complete|incomplete"):
+    with pytest.raises(ECOSCollectionError, match=r"complete|incomplete"):
         collector.collect(
             series=series,
             start=date(2026, 7, 1),
@@ -274,7 +274,7 @@ def test_collection_pages_at_two_hundred_rows_and_bounds_lookback_to_366_days() 
         "20260714",
     ]
 
-    with pytest.raises(ECOSCollectionError, match="lookback"):
+    with pytest.raises(ECOSCollectionError, match=r"lookback"):
         collector.collect(
             series=series,
             start=date(2025, 7, 13),
@@ -405,7 +405,7 @@ def test_total_count_mismatch_across_all_series_raises_all_series_failed() -> No
         )
     collector = ECOSCollector(client=_FakeClient(responses), publisher=_Publisher())
 
-    with pytest.raises(ECOSCollectionError, match="all_series_failed"):
+    with pytest.raises(ECOSCollectionError, match=r"all_series_failed"):
         collector.collect(
             series=series,
             start=date(2026, 7, 1),

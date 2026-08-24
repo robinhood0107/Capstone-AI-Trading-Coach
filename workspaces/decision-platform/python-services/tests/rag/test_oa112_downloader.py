@@ -5,27 +5,30 @@ import json
 import os
 import socket
 import sys
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any
 
 import fitz
 import pytest
 
+from app.rag import oa112_downloader
 from app.rag.oa112_active_registry import Oa112RegistryEntry
 from app.rag.oa112_downloader import (
-    Oa112DownloadError,
     Oa112DownloadBinding,
+    Oa112DownloadError,
     Oa112DownloadPacket,
     Oa112DownloadReceipt,
     Oa112DownloadResponse,
     consume_oa112_download_packet,
-    download_oa112_local_cache as _download_oa112_local_cache,
     load_oa112_execution_binding,
     oa112_source_endpoint_digest,
 )
-from app.rag import oa112_downloader
+from app.rag.oa112_downloader import (
+    download_oa112_local_cache as _download_oa112_local_cache,
+)
 
 
 def download_oa112_local_cache(**kwargs: Any) -> Oa112DownloadReceipt:
@@ -498,9 +501,7 @@ def test_expired_pending_source_is_not_counted_as_a_physical_attempt(
         ),
     )
     start = datetime(2026, 8, 3, tzinfo=UTC)
-    clock = _SequenceUtcClock(
-        values=[start, start + timedelta(seconds=1)]
-    )
+    clock = _SequenceUtcClock(values=[start, start + timedelta(seconds=1)])
     monkeypatch.setattr(oa112_downloader, "_utc_now", clock.now)
     transport = _FixtureTransport([])
 
@@ -583,9 +584,7 @@ def test_watchdog_socket_close_removes_zero_byte_state_and_allows_new_packet_ret
     assert not (cache_root / "download-staging" / "src_oa_fixture_001.part").exists()
     assert not (cache_root / "download-staging" / "src_oa_fixture_001.resume.json").exists()
 
-    retry_transport = _FixtureTransport(
-        [_Response(200, _headers("text/plain", body), body)]
-    )
+    retry_transport = _FixtureTransport([_Response(200, _headers("text/plain", body), body)])
     receipt = download_oa112_local_cache(
         entries=(source,),
         registry_digest="c" * 64,
@@ -954,10 +953,10 @@ class _DeadlineDribblingResponse:
 class _FixtureConnection:
     peer_ip = "8.8.8.8"
 
-    def __init__(self, transport: "_FixtureTransport") -> None:
+    def __init__(self, transport: _FixtureTransport) -> None:
         self._transport = transport
 
-    def __enter__(self) -> "_FixtureConnection":
+    def __enter__(self) -> _FixtureConnection:
         return self
 
     def __exit__(self, *_args: object) -> None:
@@ -986,7 +985,7 @@ class _FixtureConnection:
 class _DeadlineHeaderConnection(_FixtureConnection):
     def __init__(
         self,
-        transport: "_DeadlineHeaderTransport",
+        transport: _DeadlineHeaderTransport,
         *,
         clock: _MutableMonotonicClock,
         advance_seconds: float,
@@ -1075,7 +1074,7 @@ class _WatchdogSocketConnection:
             lambda: oa112_downloader._abort_socket(self._client)
         )
 
-    def __enter__(self) -> "_WatchdogSocketConnection":
+    def __enter__(self) -> _WatchdogSocketConnection:
         return self
 
     def __exit__(self, *_args: object) -> None:

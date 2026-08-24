@@ -1,6 +1,6 @@
+import math
 from copy import deepcopy
 from datetime import UTC, date, datetime, timedelta
-import math
 from uuid import UUID
 
 import pytest
@@ -49,8 +49,7 @@ def _context(
     collection_reference = (
         ManifestReference(
             identifier=(
-                "collection-runs/2026/07/21/"
-                "123e4567-e89b-42d3-a456-426614174000/summary.json"
+                "collection-runs/2026/07/21/123e4567-e89b-42d3-a456-426614174000/summary.json"
             ),
             sha256="c" * 64,
         )
@@ -70,10 +69,7 @@ def _context(
             sha256="a" * 64,
         ),
         dataset_manifest=ManifestReference(
-            identifier=(
-                "datasets/2026/07/21/"
-                "123e4567-e89b-42d3-a456-426614174001/manifest.json"
-            ),
+            identifier=("datasets/2026/07/21/123e4567-e89b-42d3-a456-426614174001/manifest.json"),
             sha256="b" * 64,
         ),
         collection_run=collection_reference,
@@ -175,7 +171,7 @@ def test_dataset_freshness_fails_while_per_symbol_stale_only_warns() -> None:
         ({"low": 110}, None),
         ({"symbol": "000660"}, None),
         ({"date": date(2026, 5, 29)}, None),
-        ({}, CANONICAL_DAILY_COLUMNS + ("extra",)),
+        ({}, (*CANONICAL_DAILY_COLUMNS, "extra")),
     ],
 )
 def test_required_schema_integrity_rejects_invalid_rows_and_columns(
@@ -448,10 +444,10 @@ def test_sample_candidates_are_bounded_while_missing_matrix_is_scanned(
     report = analyze_quality(_context(sessions=sessions, symbols=symbols), ())
 
     assert observed_retained
-    assert sum(
-        sample.rule_code == "CURRENT_UNIVERSE_MISSING"
-        for sample in report.bounded_samples
-    ) == MAX_SAMPLES_PER_RULE
+    assert (
+        sum(sample.rule_code == "CURRENT_UNIVERSE_MISSING" for sample in report.bounded_samples)
+        == MAX_SAMPLES_PER_RULE
+    )
     assert all(
         sum(item.rule_code == sample.rule_code for item in report.bounded_samples)
         <= MAX_SAMPLES_PER_RULE

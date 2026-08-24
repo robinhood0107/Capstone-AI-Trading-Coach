@@ -113,7 +113,9 @@ def build_public_bge_component_context(
             raise RagV2PublicBgeStagingError("PUBLIC_BGE_COMPONENT_SCOPE")
         digest = _validate_public_record(materialized, metadata, scope=scope)
         validated.append((materialized, metadata, digest))
-    ordered = tuple(sorted(validated, key=lambda value: value[0].document.source_id.encode("utf-8")))
+    ordered = tuple(
+        sorted(validated, key=lambda value: value[0].document.source_id.encode("utf-8"))
+    )
     source_ids = tuple(value[0].document.source_id for value in ordered)
     source_revisions = tuple(value[0].document.source_revision_id for value in ordered)
     document_ids = tuple(value[0].document.document_id for value in ordered)
@@ -148,9 +150,12 @@ def build_public_bge_component_context(
         }
     )
     component_generation_id = f"rgr_{generation_hash[:32]}"
-    materialization_run_id = "rgr_run_" + hashlib.sha256(
-        f"rag-v2-public-bge-run|{component_generation_id}|{manifest_hash}".encode("utf-8")
-    ).hexdigest()[:32]
+    materialization_run_id = (
+        "rgr_run_"
+        + hashlib.sha256(
+            f"rag-v2-public-bge-run|{component_generation_id}|{manifest_hash}".encode()
+        ).hexdigest()[:32]
+    )
     return RagV2PublicBgeComponentContext(
         component_scope=cast(_COMPONENT_SCOPE, scope),
         component_generation_id=component_generation_id,
@@ -199,16 +204,19 @@ def build_public_bge_staging_payload(
     document = materialized.document
     ordered_chunks = tuple(sorted(document.chunks, key=lambda value: value.sequence))
     embeddings_by_chunk = {embedding.chunk_id: embedding for embedding in materialized.embeddings}
-    if (
-        len(ordered_chunks) != len(embeddings_by_chunk)
-        or tuple(chunk.sequence for chunk in ordered_chunks) != tuple(range(1, len(ordered_chunks) + 1))
-    ):
+    if len(ordered_chunks) != len(embeddings_by_chunk) or tuple(
+        chunk.sequence for chunk in ordered_chunks
+    ) != tuple(range(1, len(ordered_chunks) + 1)):
         raise RagV2PublicBgeStagingError("PUBLIC_BGE_SOURCE_CHUNKS")
     chunks: list[dict[str, object]] = []
     embeddings: list[dict[str, object]] = []
     for chunk in ordered_chunks:
         embedding = embeddings_by_chunk.get(chunk.chunk_id)
-        if embedding is None or embedding.context_set_hash is not None or not _is_sha256(embedding.embedding_input_hash):
+        if (
+            embedding is None
+            or embedding.context_set_hash is not None
+            or not _is_sha256(embedding.embedding_input_hash)
+        ):
             raise RagV2PublicBgeStagingError("PUBLIC_BGE_SOURCE_EMBEDDING")
         vector = np.asarray(embedding.embedding, dtype=np.float32)
         if (
@@ -284,7 +292,9 @@ def build_public_bge_staging_payload(
         "source": source,
     }
     _assert_path_free(payload)
-    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
     if len(encoded) > 16 * 1024 * 1024:
         raise RagV2PublicBgeStagingError("PUBLIC_BGE_SOURCE_PAYLOAD_BOUND")
     return payload
@@ -327,7 +337,8 @@ def _validate_public_record(
         if (
             _CHUNK_ID.fullmatch(chunk.chunk_id) is None
             or not _is_sha256(chunk.canonical_text_sha256)
-            or hashlib.sha256(chunk.canonical_text.encode("utf-8")).hexdigest() != chunk.canonical_text_sha256
+            or hashlib.sha256(chunk.canonical_text.encode("utf-8")).hexdigest()
+            != chunk.canonical_text_sha256
             or not 1 <= chunk.token_count <= 600
         ):
             raise RagV2PublicBgeStagingError("PUBLIC_BGE_SOURCE_CHUNKS")
@@ -341,7 +352,10 @@ def _validate_public_record(
     return _canonical_hash(
         {
             "canonicalTextSha256": hashlib.sha256(
-                "\n\n".join(chunk.canonical_text for chunk in sorted(document.chunks, key=lambda value: value.sequence)).encode("utf-8")
+                "\n\n".join(
+                    chunk.canonical_text
+                    for chunk in sorted(document.chunks, key=lambda value: value.sequence)
+                ).encode("utf-8")
             ).hexdigest(),
             "chunks": chunk_projection,
             "documentId": document.document_id,
@@ -364,15 +378,21 @@ def _validate_metadata(
         not isinstance(metadata.citation_title, str)
         or not 1 <= len(metadata.citation_title) <= 500
         or not metadata.citation_title.strip()
-        or any(ord(character) < 32 or ord(character) == 127 for character in metadata.citation_title)
+        or any(
+            ord(character) < 32 or ord(character) == 127 for character in metadata.citation_title
+        )
         or not isinstance(metadata.canonical_https_url, str)
         or not metadata.canonical_https_url.startswith("https://")
-        or any(character.isspace() or character in "\\\r\n" for character in metadata.canonical_https_url)
+        or any(
+            character.isspace() or character in "\\\r\n"
+            for character in metadata.canonical_https_url
+        )
         or not isinstance(metadata.retrieval_topics, tuple)
         or not 1 <= len(metadata.retrieval_topics) <= len(ALLOWED_RAG_TOPICS)
         or len(set(metadata.retrieval_topics)) != len(metadata.retrieval_topics)
         or not set(metadata.retrieval_topics) <= ALLOWED_RAG_TOPICS
-        or tuple(sorted(metadata.retrieval_topics, key=lambda value: value.encode("utf-8"))) != metadata.retrieval_topics
+        or tuple(sorted(metadata.retrieval_topics, key=lambda value: value.encode("utf-8")))
+        != metadata.retrieval_topics
         or any(
             type(value) is not bool
             for value in (
@@ -448,7 +468,9 @@ def _validate_metadata(
 
 
 def _copy_document_ir(document_ir: Mapping[str, object]) -> dict[str, object]:
-    copied = json.loads(json.dumps(document_ir, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+    copied = json.loads(
+        json.dumps(document_ir, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    )
     if not isinstance(copied, dict):  # pragma: no cover - caller type is already a mapping.
         raise RagV2PublicBgeStagingError("PUBLIC_BGE_SOURCE_IDENTITY")
     return cast(dict[str, object], copied)
@@ -457,7 +479,9 @@ def _copy_document_ir(document_ir: Mapping[str, object]) -> dict[str, object]:
 def _copy_source_card(value: Mapping[str, object] | None) -> dict[str, object] | None:
     if value is None:
         return None
-    copied = json.loads(json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+    copied = json.loads(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    )
     if not isinstance(copied, dict):
         raise RagV2PublicBgeStagingError("PUBLIC_BGE_OA112_SOURCE_CARD")
     return cast(dict[str, object], copied)
@@ -469,7 +493,12 @@ def _parser_version(document_ir: Mapping[str, object]) -> str:
         raise RagV2PublicBgeStagingError("PUBLIC_BGE_SOURCE_IDENTITY")
     version = evidence.get("parserVersion")
     artifact_hash = evidence.get("parserArtifactSha256")
-    if not isinstance(version, str) or not version or len(version) > 128 or not _is_sha256(artifact_hash):
+    if (
+        not isinstance(version, str)
+        or not version
+        or len(version) > 128
+        or not _is_sha256(artifact_hash)
+    ):
         raise RagV2PublicBgeStagingError("PUBLIC_BGE_SOURCE_IDENTITY")
     return version
 

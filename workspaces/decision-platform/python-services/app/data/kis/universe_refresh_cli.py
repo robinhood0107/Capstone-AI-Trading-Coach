@@ -22,7 +22,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     # manifest는 machine-readable 입력이고 report는 사람이 검토하는 증거다.
     # 둘 다 ignored data path에 두는 전제로 raw KRX export를 Git에 올리지 않는다.
-    report_path = Path(args.report_path) if args.report_path else data_dir / "reports" / "universe_refresh.md"
+    report_path = (
+        Path(args.report_path) if args.report_path else data_dir / "reports" / "universe_refresh.md"
+    )
     write_universe_markdown_report(report_path, manifest)
     print(f"KIS S1.1b universe manifest written to {manifest_path}")
     print(f"KIS S1.1b universe report written to {report_path}")
@@ -30,9 +32,17 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Refresh KIS S1.1b read-only universe from KRX export")
-    parser.add_argument("--krx-export", required=True, help="KRX CSV/TSV/TXT export with market cap and trading value")
-    parser.add_argument("--as-of", required=True, help="Universe ranking base date in YYYY-MM-DD format")
+    parser = argparse.ArgumentParser(
+        description="Refresh KIS S1.1b read-only universe from KRX export"
+    )
+    parser.add_argument(
+        "--krx-export",
+        required=True,
+        help="KRX CSV/TSV/TXT export with market cap and trading value",
+    )
+    parser.add_argument(
+        "--as-of", required=True, help="Universe ranking base date in YYYY-MM-DD format"
+    )
     parser.add_argument("--data-dir")
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--report-path")

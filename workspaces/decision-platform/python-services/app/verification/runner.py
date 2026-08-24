@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-import hashlib
 from pathlib import Path
-import subprocess
 from typing import Final, Protocol
 
 from app.data._shared.canonical_json import canonical_json_sha256
@@ -58,7 +58,11 @@ def s0_s5_gate_specs(repository_root: Path) -> tuple[GateSpec, ...]:
             (
                 Command(
                     (
-                        "uv", "run", "--frozen", "pytest", "-q",
+                        "uv",
+                        "run",
+                        "--frozen",
+                        "pytest",
+                        "-q",
                         "tests/data/market_data",
                         "tests/verification/test_network_guard.py",
                     ),
@@ -70,7 +74,14 @@ def s0_s5_gate_specs(repository_root: Path) -> tuple[GateSpec, ...]:
             "DECISION_INTERNAL_PAPER_STATE_CHAIN",
             (
                 Command(
-                    ("uv", "run", "--frozen", "pytest", "-q", "tests/test_decision_source_writers.py"),
+                    (
+                        "uv",
+                        "run",
+                        "--frozen",
+                        "pytest",
+                        "-q",
+                        "tests/test_decision_source_writers.py",
+                    ),
                     python_root,
                 ),
                 Command(
@@ -78,7 +89,8 @@ def s0_s5_gate_specs(repository_root: Path) -> tuple[GateSpec, ...]:
                         gradle,
                         "--no-daemon",
                         "test",
-                        "--tests", "com.capstone.decision.BrokerageApiIntegrationTest",
+                        "--tests",
+                        "com.capstone.decision.BrokerageApiIntegrationTest",
                     ),
                     spring_root,
                 ),
@@ -89,7 +101,11 @@ def s0_s5_gate_specs(repository_root: Path) -> tuple[GateSpec, ...]:
             (
                 Command(
                     (
-                        "uv", "run", "--frozen", "pytest", "-q",
+                        "uv",
+                        "run",
+                        "--frozen",
+                        "pytest",
+                        "-q",
                         "tests/lightgbm/test_s5_research_only_runtime.py",
                     ),
                     python_root,
@@ -99,7 +115,8 @@ def s0_s5_gate_specs(repository_root: Path) -> tuple[GateSpec, ...]:
                         gradle,
                         "--no-daemon",
                         "test",
-                        "--tests", "com.capstone.decision.SignalV2ApiIntegrationTest",
+                        "--tests",
+                        "com.capstone.decision.SignalV2ApiIntegrationTest",
                     ),
                     spring_root,
                 ),
@@ -113,7 +130,8 @@ def s0_s5_gate_specs(repository_root: Path) -> tuple[GateSpec, ...]:
                         gradle,
                         "--no-daemon",
                         "test",
-                        "--tests", "com.capstone.decision.P1MarketDataChainMigrationContractTest",
+                        "--tests",
+                        "com.capstone.decision.P1MarketDataChainMigrationContractTest",
                     ),
                     spring_root,
                 ),

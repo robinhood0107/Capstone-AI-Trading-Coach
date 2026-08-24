@@ -23,7 +23,10 @@ def test_owner_batch_control_requires_exact_nine_formats_and_unique_tickets(
 
     control = load_owner_voyage_batch_control(local_root=tmp_path)
 
-    assert tuple(document.format_id for document in control.documents) == OWNER_VOYAGE_SYNTHETIC_FORMATS
+    assert (
+        tuple(document.format_id for document in control.documents)
+        == OWNER_VOYAGE_SYNTHETIC_FORMATS
+    )
     assert len({document.import_ticket_id for document in control.documents}) == 9
     assert {document.embedding_profile_id for document in control.documents} == {
         "voyage_context_4_1024_v1"

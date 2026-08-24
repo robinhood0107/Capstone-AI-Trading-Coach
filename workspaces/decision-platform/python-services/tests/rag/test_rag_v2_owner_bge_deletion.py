@@ -57,9 +57,7 @@ def test_deletion_repository_uses_one_ticket_bound_atomic_wrapper(
         lambda *_args, **_kwargs: connection,
     )
 
-    receipt = PsycopgRagV2OwnerBgeDeletionRepository(
-        database_dsn="postgresql://admin"
-    ).delete(
+    receipt = PsycopgRagV2OwnerBgeDeletionRepository(database_dsn="postgresql://admin").delete(
         owner_user_id="usr_demo_user",
         document_id="doc_owner_delete_0001",
         delete_ticket_id="rtd_11111111111111111111111111111111",
@@ -83,10 +81,15 @@ def test_deletion_repository_uses_one_ticket_bound_atomic_wrapper(
         or "SELECT public.replace_and_delete_rag_v2_immutable_owner_document(" in statement
         for statement, _ in connection.statements
     )
-    assert all("rag_v2_immutable_source_revisions" not in statement for statement, _ in connection.statements)
+    assert all(
+        "rag_v2_immutable_source_revisions" not in statement
+        for statement, _ in connection.statements
+    )
 
 
-def test_deletion_repository_rejects_invalid_owner_document_or_ticket_before_database_access() -> None:
+def test_deletion_repository_rejects_invalid_owner_document_or_ticket_before_database_access() -> (
+    None
+):
     repository = PsycopgRagV2OwnerBgeDeletionRepository(database_dsn="postgresql://admin")
 
     with pytest.raises(OwnerBgeDeletionError, match="OWNER_BGE_DELETE_ARGUMENT"):

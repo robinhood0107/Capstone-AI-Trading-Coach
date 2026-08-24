@@ -18,7 +18,6 @@ from app.rag.fixture_answering import (
 )
 from app.rag.source_card_corpus import REPO_ROOT, FrozenSourceCardCorpus
 
-
 VOYAGE_MODEL: Final[str] = "voyage-context-4"
 VOYAGE_PROFILE_ID: Final[str] = "voyage_context_4_1024_v1"
 VOYAGE_OUTPUT_DIMENSION: Final[int] = 1024
@@ -49,12 +48,8 @@ def build_s4_5_provider_report() -> dict[str, Any]:
     from app.rag.s4_5_evaluation import build_s4_5_manifest
 
     corpus = load_external_processing_corpus_for_report()
-    project_fingerprint = _sha256(
-        b"S4.5_OFFLINE_FIXTURE_PROJECT_FINGERPRINT_NOT_PROVIDER_PROJECT"
-    )
-    balance_snapshot = _sha256(
-        b"S4.5_NO_PROVIDER_BALANCE_SNAPSHOT_OFFLINE_FIXTURE_ONLY"
-    )
+    project_fingerprint = _sha256(b"S4.5_OFFLINE_FIXTURE_PROJECT_FINGERPRINT_NOT_PROVIDER_PROJECT")
+    balance_snapshot = _sha256(b"S4.5_NO_PROVIDER_BALANCE_SNAPSHOT_OFFLINE_FIXTURE_ONLY")
     plan = build_voyage_generation_plan(
         corpus=corpus,
         project_fingerprint_sha256=project_fingerprint,
@@ -106,9 +101,7 @@ def build_s4_5_provider_report() -> dict[str, Any]:
             "model": GEMINI_MODEL,
             "apiPath": GEMINI_INTERACTIONS_PATH,
             "requestShapeSha256": _sha256(_canonical_json(sample_request)),
-            "responseSchemaSha256": _sha256(
-                _canonical_json(_GEMINI_RESPONSE_SCHEMA)
-            ),
+            "responseSchemaSha256": _sha256(_canonical_json(_GEMINI_RESPONSE_SCHEMA)),
             "promptVersion": GEMINI_PROMPT_VERSION,
             "store": False,
             "outputTokenCap": 800,
@@ -126,9 +119,7 @@ def build_s4_5_provider_report() -> dict[str, Any]:
             "approvalPacket": "ABSENT",
             "paidZdrEvidence": "ABSENT",
             "outboundExecutor": "HARD_DISABLED",
-            "officialDocumentation": (
-                "https://ai.google.dev/api/interactions-api-v1"
-            ),
+            "officialDocumentation": ("https://ai.google.dev/api/interactions-api-v1"),
         },
         "providerPhysicalCalls": {"gemini": 0, "voyage": 0},
         "partialGenerationCount": 0,
@@ -136,9 +127,7 @@ def build_s4_5_provider_report() -> dict[str, Any]:
     }
 
 
-def load_s4_5_provider_report(
-    *, path: Path = S4_5_PROVIDER_REPORT_PATH
-) -> dict[str, Any]:
+def load_s4_5_provider_report(*, path: Path = S4_5_PROVIDER_REPORT_PATH) -> dict[str, Any]:
     """tracked provider report가 current offline plan과 정확히 같은지 확인한다."""
 
     try:
@@ -298,9 +287,7 @@ def build_voyage_generation_plan(
         )
         if would_overflow:
             batches.append(
-                _voyage_batch(
-                    len(batches), pending, pending_tokens, pending_bytes, pending_chunks
-                )
+                _voyage_batch(len(batches), pending, pending_tokens, pending_bytes, pending_chunks)
             )
             pending = []
             pending_tokens = pending_bytes = pending_chunks = 0
@@ -310,9 +297,7 @@ def build_voyage_generation_plan(
         pending_chunks += chunk_count
     if pending:
         batches.append(
-            _voyage_batch(
-                len(batches), pending, pending_tokens, pending_bytes, pending_chunks
-            )
+            _voyage_batch(len(batches), pending, pending_tokens, pending_bytes, pending_chunks)
         )
     if not batches:
         raise ProviderControlPlaneError("voyage_plan_empty")
@@ -463,9 +448,7 @@ class NetworkDisabledVoyageTransport:
     def external_physical_calls(self) -> int:
         return 0
 
-    def post_batch(
-        self, *, batch: VoyageBatch
-    ) -> Mapping[str, Sequence[Sequence[float]]]:
+    def post_batch(self, *, batch: VoyageBatch) -> Mapping[str, Sequence[Sequence[float]]]:
         self.fixture_attempts += 1
         if batch.batch_index in self._failures:
             raise ProviderControlPlaneError("voyage_fixture_transport_failed")
@@ -537,9 +520,7 @@ class OutboundDisabledVoyageExecutor:
     def external_physical_calls(self) -> int:
         return 0
 
-    def execute(
-        self, *, plan: VoyageGenerationPlan, approval: VoyageApproval | None
-    ) -> None:
+    def execute(self, *, plan: VoyageGenerationPlan, approval: VoyageApproval | None) -> None:
         del plan, approval
         raise ProviderControlPlaneError("voyage_outbound_disabled")
 
@@ -605,9 +586,7 @@ class ProviderUsageLedger:
         self._records[request_id] = candidate
         return candidate
 
-    def commit(
-        self, *, request_id: str, input_tokens: int, output_tokens: int
-    ) -> UsageRecord:
+    def commit(self, *, request_id: str, input_tokens: int, output_tokens: int) -> UsageRecord:
         current = self._reserved(request_id)
         if min(input_tokens, output_tokens) < 0:
             raise ProviderControlPlaneError("usage_commit_invalid")
@@ -624,9 +603,7 @@ class ProviderUsageLedger:
 
     def mark_unknown_billing(self, *, request_id: str) -> UsageRecord:
         current = self._reserved(request_id)
-        unknown = UsageRecord(
-            **{**current.__dict__, "state": UsageState.UNKNOWN_BILLING}
-        )
+        unknown = UsageRecord(**{**current.__dict__, "state": UsageState.UNKNOWN_BILLING})
         self._records[request_id] = unknown
         return unknown
 
@@ -846,9 +823,7 @@ def execute_gemini_fixture(
             or usage.get("total_cached_tokens") != 0
             or usage.get("total_tool_use_tokens") != 0
         ):
-            return GeminiFixtureResult(
-                None, GeminiFixtureFailure.STORAGE_POLICY_VIOLATION
-            )
+            return GeminiFixtureResult(None, GeminiFixtureFailure.STORAGE_POLICY_VIOLATION)
         steps = root.get("steps")
         if not isinstance(steps, list) or len(steps) != 1:
             raise ProviderControlPlaneError("gemini_response_steps_invalid")
@@ -888,9 +863,7 @@ class OutboundDisabledGeminiExecutor:
     def external_physical_calls(self) -> int:
         return 0
 
-    def execute(
-        self, *, request: Mapping[str, Any], approval: GeminiApproval | None
-    ) -> None:
+    def execute(self, *, request: Mapping[str, Any], approval: GeminiApproval | None) -> None:
         del request, approval
         raise ProviderControlPlaneError("gemini_outbound_disabled")
 

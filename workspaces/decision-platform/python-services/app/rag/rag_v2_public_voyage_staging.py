@@ -23,11 +23,11 @@ from app.rag.rag_v2_external_exact30_voyage_runner import (
     RagV2VoyageMaterializedPublicDocument,
     external_exact30_voyage_source_member_digest,
 )
-from app.rag.rag_v2_voyage_types import PublicVoyageSourceMetadata
 from app.rag.rag_v2_oa112_voyage_runner import (
     RagV2Oa112VoyageComponentContext,
     oa112_voyage_source_member_digest,
 )
+from app.rag.rag_v2_voyage_types import PublicVoyageSourceMetadata
 
 _VOYAGE_PROFILE_ID = "voyage_context_4_1024_v1"
 _SCOPE_COUNTS = {"EXACT30": 30, "OA112": 112}
@@ -90,7 +90,11 @@ def build_public_voyage_staging_payload(
         or _canonical_hash(document_ir) != record.source_revision_sha256
     ):
         raise RagV2PublicVoyageStagingError("PUBLIC_VOYAGE_SOURCE_IDENTITY")
-    _validate_metadata(metadata, scope=scope, document_external_processing_eligible=document.external_processing_eligible)
+    _validate_metadata(
+        metadata,
+        scope=scope,
+        document_external_processing_eligible=document.external_processing_eligible,
+    )
 
     chunks = tuple(sorted(document.chunks, key=lambda value: value.sequence))
     embeddings_by_chunk = {embedding.chunk_id: embedding for embedding in record.embeddings}
@@ -189,7 +193,9 @@ def build_public_voyage_staging_payload(
         "source": source,
     }
     _assert_path_free(payload)
-    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
     if len(encoded) > 16 * 1024 * 1024:
         raise RagV2PublicVoyageStagingError("PUBLIC_VOYAGE_SOURCE_PAYLOAD_BOUND")
     return payload
@@ -201,13 +207,14 @@ def _validate_context(context: PublicVoyageComponentContext) -> None:
     if expected_source_count is None:
         raise RagV2PublicVoyageStagingError("PUBLIC_VOYAGE_COMPONENT_CONTEXT")
     run_prefix = (
-        "rag-v2-external-exact30-voyage-run"
-        if scope == "EXACT30"
-        else "rag-v2-oa112-voyage-run"
+        "rag-v2-external-exact30-voyage-run" if scope == "EXACT30" else "rag-v2-oa112-voyage-run"
     )
-    expected_run_id = "rgr_run_" + hashlib.sha256(
-        f"{run_prefix}|{context.component_generation_id}|{context.manifest_hash}".encode("utf-8")
-    ).hexdigest()[:32]
+    expected_run_id = (
+        "rgr_run_"
+        + hashlib.sha256(
+            f"{run_prefix}|{context.component_generation_id}|{context.manifest_hash}".encode()
+        ).hexdigest()[:32]
+    )
     if (
         context.embedding_profile_id != _VOYAGE_PROFILE_ID
         or context.expected_source_count != expected_source_count
@@ -254,10 +261,15 @@ def _validate_metadata(
         not isinstance(metadata.citation_title, str)
         or not 1 <= len(metadata.citation_title) <= 500
         or not metadata.citation_title.strip()
-        or any(ord(character) < 32 or ord(character) == 127 for character in metadata.citation_title)
+        or any(
+            ord(character) < 32 or ord(character) == 127 for character in metadata.citation_title
+        )
         or not isinstance(metadata.canonical_https_url, str)
         or not metadata.canonical_https_url.startswith("https://")
-        or any(character.isspace() or character in "\\\r\n" for character in metadata.canonical_https_url)
+        or any(
+            character.isspace() or character in "\\\r\n"
+            for character in metadata.canonical_https_url
+        )
         or not isinstance(metadata.retrieval_topics, tuple)
         or not 1 <= len(metadata.retrieval_topics) <= len(ALLOWED_RAG_TOPICS)
         or len(set(metadata.retrieval_topics)) != len(metadata.retrieval_topics)
@@ -320,8 +332,12 @@ def _parser_version(document_ir: Mapping[str, object]) -> str:
 
 
 def _copy_document_ir(value: Mapping[str, object]) -> dict[str, object]:
-    copied = json.loads(json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
-    if not isinstance(copied, dict):  # pragma: no cover - source runner already closes this boundary.
+    copied = json.loads(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    )
+    if not isinstance(
+        copied, dict
+    ):  # pragma: no cover - source runner already closes this boundary.
         raise RagV2PublicVoyageStagingError("PUBLIC_VOYAGE_SOURCE_IDENTITY")
     return copied
 
@@ -331,7 +347,9 @@ def _copy_optional_source_card(value: object) -> dict[str, object] | None:
         return None
     if not isinstance(value, Mapping):
         raise RagV2PublicVoyageStagingError("PUBLIC_VOYAGE_SOURCE_METADATA")
-    copied = json.loads(json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+    copied = json.loads(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    )
     if not isinstance(copied, dict):  # pragma: no cover - Mapping input is normalized above.
         raise RagV2PublicVoyageStagingError("PUBLIC_VOYAGE_SOURCE_METADATA")
     return copied

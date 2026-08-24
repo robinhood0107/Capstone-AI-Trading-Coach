@@ -358,7 +358,9 @@ class PreS5VoyageContext4Transport:
             raise PreS5VoyageTransportError("PRE_S5_VOYAGE_ACTIVATION_EXPIRED")
         groups = _validate_full_bundle(bundle=bundle, activation=self._activation)
         result = self._embed_validated_groups(groups)
-        if not isinstance(result, np.ndarray):  # pragma: no cover - activation type closes this branch.
+        if not isinstance(
+            result, np.ndarray
+        ):  # pragma: no cover - activation type closes this branch.
             raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID")
         return result
 
@@ -586,10 +588,7 @@ def _validate_full_bundle(
         raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID")
     components = _validate_full_bundle_components(bundle.components)
     calculated = _full_bundle_manifest_sha256(components)
-    if (
-        bundle.manifest_sha256 != calculated
-        or activation.bundle_manifest_sha256 != calculated
-    ):
+    if bundle.manifest_sha256 != calculated or activation.bundle_manifest_sha256 != calculated:
         raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID")
     groups = tuple(group for component in components for group in component.groups)
     _validate_groups(groups)
@@ -641,10 +640,16 @@ def _validate_full_bundle_components(
     revision_ids: set[str] = set()
     chunk_ids: set[str] = set()
     for expected_scope, component in zip(_FULL_BUNDLE_SCOPES, components, strict=True):
-        if not isinstance(component, PreS5VoyageBundleComponent) or component.component_scope != expected_scope:
+        if (
+            not isinstance(component, PreS5VoyageBundleComponent)
+            or component.component_scope != expected_scope
+        ):
             raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID")
         if expected_scope in _PUBLIC_SCOPE_GROUP_COUNTS:
-            if component.owner_scope_sha256 is not None or len(component.groups) != _PUBLIC_SCOPE_GROUP_COUNTS[expected_scope]:
+            if (
+                component.owner_scope_sha256 is not None
+                or len(component.groups) != _PUBLIC_SCOPE_GROUP_COUNTS[expected_scope]
+            ):
                 raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID")
         elif component.owner_scope_sha256 is None:
             # 전역 public base는 어떤 owner 원문도 provider input에 넣지 않는다.
@@ -661,7 +666,9 @@ def _validate_full_bundle_components(
                 raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID") from None
             del metrics
         component_source_ids = tuple(group.source_id for group in component.groups)
-        if component_source_ids != tuple(sorted(component_source_ids, key=lambda value: value.encode("utf-8"))):
+        if component_source_ids != tuple(
+            sorted(component_source_ids, key=lambda value: value.encode("utf-8"))
+        ):
             raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID")
         for group in component.groups:
             if group.source_id in source_ids or group.source_revision_id in revision_ids:
@@ -797,7 +804,9 @@ def _validate_activation_shape(activation: object) -> None:
         or type(activation.token_cap) is not int
         or not 1 <= activation.token_cap <= 120_000
         or type(activation.byte_cap) is not int
-        or not 1 <= activation.byte_cap <= (
+        or not 1
+        <= activation.byte_cap
+        <= (
             _DOCUMENT_BATCH_MAX_RESPONSE_BYTES
             if isinstance(activation, PreS5VoyageDocumentBatchActivation)
             else 4_194_304
@@ -972,8 +981,7 @@ def _parse_contextualized_response(
         _raise_response_validation(PreS5VoyageResponseValidationLeaf.ENVELOPE_REQUIRED_FIELDS)
     chunker_version = decoded.get("chunker_version")
     if "chunker_version" in decoded and not (
-        chunker_version is None
-        or (isinstance(chunker_version, str) and bool(chunker_version))
+        chunker_version is None or (isinstance(chunker_version, str) and bool(chunker_version))
     ):
         _raise_response_validation(PreS5VoyageResponseValidationLeaf.ENVELOPE_REQUIRED_FIELDS)
     if decoded.get("model") != model:
@@ -1016,9 +1024,7 @@ def _parse_contextualized_response(
                 or type(received_chunk.get("index")) is not int
                 or received_chunk.get("index") != chunk_index
             ):
-                _raise_response_validation(
-                    PreS5VoyageResponseValidationLeaf.CHUNK_FIELDS_OR_INDEX
-                )
+                _raise_response_validation(PreS5VoyageResponseValidationLeaf.CHUNK_FIELDS_OR_INDEX)
             if "text" in received_chunk and (
                 not isinstance(received_chunk.get("text"), str)
                 or received_chunk.get("text") != expected_text

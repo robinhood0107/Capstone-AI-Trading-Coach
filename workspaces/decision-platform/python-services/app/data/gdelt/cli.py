@@ -3,9 +3,9 @@ from __future__ import annotations
 import argparse
 import os
 import stat
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Sequence
 
 from app.data.gdelt.approval import validate_approval_packet
 from app.data.gdelt.collector import GdeltCollector

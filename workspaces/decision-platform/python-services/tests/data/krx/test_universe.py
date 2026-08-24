@@ -18,7 +18,6 @@ from app.data.krx.universe import (
     resolve_latest_available_date,
 )
 
-
 _AS_OF = date(2026, 7, 15)
 _GENERATED_AT = datetime(2026, 7, 15, 0, 0, tzinfo=UTC)
 _SOURCE = "krx-open-api:stk_bydd_trd+ksq_bydd_trd"
@@ -102,7 +101,7 @@ def test_latest_available_date_uses_0810_kst_cutoff_and_previous_xkrx_session(
 
 
 def test_latest_available_date_rejects_naive_now() -> None:
-    with pytest.raises(ValueError, match="timezone|aware"):
+    with pytest.raises(ValueError, match=r"timezone|aware"):
         resolve_latest_available_date(datetime(2026, 7, 15, 8, 10))
 
 
@@ -201,7 +200,7 @@ def test_alphanumeric_krx_issue_code_is_hashed_but_not_selected_for_kis_universe
 
 
 def test_online_refresh_rejects_29_candidates_instead_of_publishing_short_universe() -> None:
-    with pytest.raises(ValueError, match="30|candidate"):
+    with pytest.raises(ValueError, match=r"30|candidate"):
         refresh_universe_from_krx_openapi(
             _as_client(_FakeClient(rows=_valid_rows(29))),
             as_of=_AS_OF,
@@ -266,7 +265,7 @@ def test_zero_value_rows_still_fail_when_only_twenty_nine_liquid_candidates_rema
     rows[0] = replace(rows[0], trading_value=0)
     rows[1] = replace(rows[1], market_cap=0)
 
-    with pytest.raises(ValueError, match="30|candidate"):
+    with pytest.raises(ValueError, match=r"30|candidate"):
         refresh_universe_from_krx_openapi(
             _as_client(_FakeClient(rows=tuple(rows))),
             as_of=_AS_OF,
@@ -275,7 +274,7 @@ def test_zero_value_rows_still_fail_when_only_twenty_nine_liquid_candidates_rema
 
 
 def test_online_refresh_rejects_non_top30_limit() -> None:
-    with pytest.raises(ValueError, match="limit|30"):
+    with pytest.raises(ValueError, match=r"limit|30"):
         refresh_universe_from_krx_openapi(
             _as_client(_FakeClient(rows=_valid_rows(31))),
             as_of=_AS_OF,
@@ -296,7 +295,7 @@ def test_failure_on_either_endpoint_preserves_existing_manifest_bytes(
         physical_attempt_count=2,
     )
 
-    with pytest.raises(RuntimeError, match="endpoint"):
+    with pytest.raises(RuntimeError, match=r"endpoint"):
         refresh_universe_from_krx_openapi(
             _as_client(fake),
             as_of=_AS_OF,

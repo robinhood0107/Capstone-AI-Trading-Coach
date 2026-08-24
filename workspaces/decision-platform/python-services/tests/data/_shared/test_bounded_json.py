@@ -51,7 +51,7 @@ def test_content_length_over_limit_is_rejected_before_stream_read() -> None:
         stream=stream,
     )
 
-    with pytest.raises(BoundedJsonError, match="byte limit"):
+    with pytest.raises(BoundedJsonError, match=r"byte limit"):
         parse_bounded_json_response(response, limits=_limits(max_bytes=128))
 
     assert stream.iterated is False
@@ -65,7 +65,7 @@ def test_decompressed_stream_bytes_are_bounded() -> None:
         stream=_RecordingStream([gzip.compress(raw)]),
     )
 
-    with pytest.raises(BoundedJsonError, match="byte limit"):
+    with pytest.raises(BoundedJsonError, match=r"byte limit"):
         parse_bounded_json_response(response, limits=_limits(max_bytes=64))
 
 
@@ -85,12 +85,12 @@ def test_valid_json_object_is_returned_after_bounded_stream_read() -> None:
 def test_bounded_json_bytes_reuses_structure_and_byte_limits() -> None:
     assert parse_bounded_json_bytes(b'{"items":[1,2]}', limits=_limits()) == {"items": [1, 2]}
 
-    with pytest.raises(BoundedJsonError, match="byte limit"):
+    with pytest.raises(BoundedJsonError, match=r"byte limit"):
         parse_bounded_json_bytes(
             b'{"value":"' + (b"x" * 80) + b'"}',
             limits=_limits(max_bytes=32),
         )
-    with pytest.raises(BoundedJsonError, match="depth"):
+    with pytest.raises(BoundedJsonError, match=r"depth"):
         parse_bounded_json_bytes(
             b'{"a":{"b":{"c":1}}}',
             limits=_limits(max_depth=2),
@@ -156,7 +156,7 @@ def test_duplicate_object_keys_are_rejected_before_overwrite_or_key_cap_bypass(
         content=payload,
     )
 
-    with pytest.raises(BoundedJsonError, match="duplicate") as exc_info:
+    with pytest.raises(BoundedJsonError, match=r"duplicate") as exc_info:
         parse_bounded_json_response(response, limits=_limits(max_object_keys=1))
 
     assert exc_info.value.__cause__ is None
@@ -178,7 +178,7 @@ def test_lone_surrogate_in_key_or_value_maps_to_stable_unicode_error(payload: by
         content=payload,
     )
 
-    with pytest.raises(BoundedJsonError, match="invalid Unicode") as exc_info:
+    with pytest.raises(BoundedJsonError, match=r"invalid Unicode") as exc_info:
         parse_bounded_json_response(response, limits=_limits())
 
     assert exc_info.value.__cause__ is None
@@ -191,7 +191,7 @@ def test_close_failure_cannot_override_an_existing_stable_error() -> None:
         stream=_CloseFailingStream([b'{"ok":true}']),
     )
 
-    with pytest.raises(BoundedJsonError, match="content type") as exc_info:
+    with pytest.raises(BoundedJsonError, match=r"content type") as exc_info:
         parse_bounded_json_response(response, limits=_limits())
 
     rendered = f"{exc_info.value!r} {exc_info.value}"
@@ -207,7 +207,7 @@ def test_close_failure_after_valid_read_becomes_a_stable_cleanup_error() -> None
         stream=_CloseFailingStream([b'{"ok":true}']),
     )
 
-    with pytest.raises(BoundedJsonError, match="stream|cleanup") as exc_info:
+    with pytest.raises(BoundedJsonError, match=r"stream|cleanup") as exc_info:
         parse_bounded_json_response(response, limits=_limits())
 
     rendered = f"{exc_info.value!r} {exc_info.value}"

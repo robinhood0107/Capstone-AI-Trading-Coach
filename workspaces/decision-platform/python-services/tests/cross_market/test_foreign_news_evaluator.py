@@ -13,7 +13,9 @@ from app.cross_market.foreign_news_evaluator import (
 )
 
 
-def test_validation_measures_all_exact_candidates_and_runs_only_the_selected_model_on_test() -> None:
+def test_validation_measures_all_exact_candidates_and_runs_only_the_selected_model_on_test() -> (
+    None
+):
     prosus = _Classifier(
         {
             "validation-negative": ForeignNewsPrediction("NEGATIVE", 1.0),
@@ -93,7 +95,9 @@ def test_validation_rejects_dataset_without_every_required_class() -> None:
         footprint_bytes=1,
     )
 
-    with pytest.raises(ForeignNewsModelSelectionError, match="FOREIGN_NEWS_EVALUATION_CLASS_COVERAGE"):
+    with pytest.raises(
+        ForeignNewsModelSelectionError, match="FOREIGN_NEWS_EVALUATION_CLASS_COVERAGE"
+    ):
         harness.evaluate_candidate(
             candidate=candidate,
             examples=(

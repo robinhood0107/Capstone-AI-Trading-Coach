@@ -135,7 +135,9 @@ def test_failed_post_claim_attempt_seals_one_failed_receipt(tmp_path: Path) -> N
 def test_packet_loader_requires_canonical_private_regular_file(tmp_path: Path) -> None:
     _secure_root(tmp_path)
     packet = _packet()
-    payload = json.dumps(packet.to_local_document(), ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    payload = json.dumps(
+        packet.to_local_document(), ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    )
     path = tmp_path / "packet.json"
     path.write_text(payload, encoding="utf-8")
     os.chmod(path, 0o600)
@@ -184,7 +186,9 @@ def test_receipt_loader_accepts_only_closed_canonical_content_free_shape(tmp_pat
         )
 
 
-def test_executor_rechecks_packet_expiry_immediately_before_provider_handoff(tmp_path: Path) -> None:
+def test_executor_rechecks_packet_expiry_immediately_before_provider_handoff(
+    tmp_path: Path,
+) -> None:
     _secure_root(tmp_path)
     initial_now = datetime(2026, 8, 9, 1, tzinfo=UTC)
     backend = _ExpiryAdvancingBackend()
@@ -223,7 +227,6 @@ def test_receipt_rejects_endpoint_identity_not_owned_by_its_provider() -> None:
             source_id="S48_CORE6_SEC_EDGAR",
             started_at=now,
         )
-
 
 
 class _Backend:

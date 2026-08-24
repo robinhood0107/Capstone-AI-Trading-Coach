@@ -213,7 +213,8 @@ def _validate_activation(activation: object) -> None:
     if (
         not isinstance(activation, PreS5VoyageEvaluationBatchActivation)
         or activation.component_scope not in {"EXACT30", "OA112"}
-        or activation.expected_query_count != (10 if activation.component_scope == "EXACT30" else 112)
+        or activation.expected_query_count
+        != (10 if activation.component_scope == "EXACT30" else 112)
         or activation.provider != "VOYAGE"
         or activation.operation != "CONTEXTUALIZED_QUERY_EMBEDDING"
         or activation.origin != _ORIGIN
@@ -224,9 +225,7 @@ def _validate_activation(activation: object) -> None:
         or activation.raw_artifact_count != 0
         or not 1 <= activation.expected_token_count <= activation.token_cap <= 8_192
     ):
-        raise PreS5VoyageEvaluationBatchTransportError(
-            "PRE_S5_VOYAGE_EVALUATION_BATCH_ACTIVATION"
-        )
+        raise PreS5VoyageEvaluationBatchTransportError("PRE_S5_VOYAGE_EVALUATION_BATCH_ACTIVATION")
 
 
 def _validate_queries(
@@ -245,9 +244,7 @@ def _validate_queries(
         or len({item[1] for item in queries}) != len(queries)
         or any(not 1 <= len(item[1].encode("utf-8")) <= 8_192 for item in queries)
     ):
-        raise PreS5VoyageEvaluationBatchTransportError(
-            "PRE_S5_VOYAGE_EVALUATION_BATCH_ARGUMENT"
-        )
+        raise PreS5VoyageEvaluationBatchTransportError("PRE_S5_VOYAGE_EVALUATION_BATCH_ARGUMENT")
     return queries
 
 
@@ -270,9 +267,7 @@ def _build_request(
         separators=(",", ":"),
     ).encode("utf-8")
     if not 1 <= len(body) <= activation.byte_cap:
-        raise PreS5VoyageEvaluationBatchTransportError(
-            "PRE_S5_VOYAGE_EVALUATION_BATCH_REQUEST"
-        )
+        raise PreS5VoyageEvaluationBatchTransportError("PRE_S5_VOYAGE_EVALUATION_BATCH_REQUEST")
     return PreS5VoyageHttpRequest(
         url=f"{_ORIGIN}{_ENDPOINT}",
         headers={
@@ -311,7 +306,5 @@ def _parse_response(
 def _utc_now(clock: Callable[[], datetime]) -> datetime:
     value = clock()
     if not isinstance(value, datetime) or value.tzinfo is None:
-        raise PreS5VoyageEvaluationBatchTransportError(
-            "PRE_S5_VOYAGE_EVALUATION_BATCH_CLOCK"
-        )
+        raise PreS5VoyageEvaluationBatchTransportError("PRE_S5_VOYAGE_EVALUATION_BATCH_CLOCK")
     return value.astimezone(UTC)

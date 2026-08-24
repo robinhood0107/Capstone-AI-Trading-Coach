@@ -12,7 +12,9 @@ from app.financial_engineering.mean_reversion import (
 )
 
 
-def _exact_ou_closes(*, phi: float, long_run_mean: float = 4.5, rows: int = 600, seed: int = 11) -> np.ndarray:
+def _exact_ou_closes(
+    *, phi: float, long_run_mean: float = 4.5, rows: int = 600, seed: int = 11
+) -> np.ndarray:
     rng = np.random.default_rng(seed)
     levels = np.empty(rows)
     levels[0] = long_run_mean
@@ -65,7 +67,10 @@ def test_sixty_window_is_causal_and_includes_current_observation() -> None:
     assert rolling_mean_reversion(mutated)[: len(baseline)] == baseline
     changed_current = closes[:60].copy()
     changed_current[-1] *= 1.2
-    assert diagnose_mean_reversion(changed_current).z_score != diagnose_mean_reversion(closes[:60]).z_score
+    assert (
+        diagnose_mean_reversion(changed_current).z_score
+        != diagnose_mean_reversion(closes[:60]).z_score
+    )
 
 
 def test_adf_output_is_reference_metadata_not_a_gate() -> None:

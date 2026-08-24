@@ -29,9 +29,13 @@ def test_voyage_query_usage_lease_claims_exact_packet_once_without_persisting_qu
     lease.claim_attempt(now=datetime.now(UTC))
     lease.commit(expected_input_tokens=3, total_tokens=7, actual_cost_microusd=7)
 
-    with pytest.raises(PreS5VoyageQueryUsageRepositoryError, match="PRE_S5_VOYAGE_QUERY_LEASE_CLAIM_REJECTED"):
+    with pytest.raises(
+        PreS5VoyageQueryUsageRepositoryError, match="PRE_S5_VOYAGE_QUERY_LEASE_CLAIM_REJECTED"
+    ):
         lease.claim_attempt(now=datetime.now(UTC))
-    with pytest.raises(PreS5VoyageQueryUsageRepositoryError, match="PRE_S5_VOYAGE_QUERY_LEASE_RESERVATION_REJECTED"):
+    with pytest.raises(
+        PreS5VoyageQueryUsageRepositoryError, match="PRE_S5_VOYAGE_QUERY_LEASE_RESERVATION_REJECTED"
+    ):
         repository.reserve(activation=activation)
 
     with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
@@ -118,9 +122,13 @@ def test_voyage_query_usage_lease_records_unknown_billing_once_after_claim(
     lease.claim_attempt(now=datetime.now(UTC))
     lease.mark_unknown_billing()
 
-    with pytest.raises(PreS5VoyageQueryUsageRepositoryError, match="PRE_S5_VOYAGE_QUERY_LEASE_COMMIT_REJECTED"):
+    with pytest.raises(
+        PreS5VoyageQueryUsageRepositoryError, match="PRE_S5_VOYAGE_QUERY_LEASE_COMMIT_REJECTED"
+    ):
         lease.commit(expected_input_tokens=3, total_tokens=7, actual_cost_microusd=7)
-    with pytest.raises(PreS5VoyageQueryUsageRepositoryError, match="PRE_S5_VOYAGE_QUERY_LEASE_UNKNOWN_REJECTED"):
+    with pytest.raises(
+        PreS5VoyageQueryUsageRepositoryError, match="PRE_S5_VOYAGE_QUERY_LEASE_UNKNOWN_REJECTED"
+    ):
         lease.mark_unknown_billing()
 
     with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
@@ -146,12 +154,14 @@ def test_voyage_evaluation_batch_uses_one_aggregate_ledger_row_per_component(
         repository.reserve(activation=activation, evaluation_component_scope="OA112")
     lease = repository.reserve(activation=activation, evaluation_component_scope="EXACT30")
     lease.claim_attempt(now=datetime.now(UTC))
-    query_sha256s = tuple(hashlib.sha256(f"question-{index}".encode()).hexdigest() for index in range(10))
+    query_sha256s = tuple(
+        hashlib.sha256(f"question-{index}".encode()).hexdigest() for index in range(10)
+    )
     vector = (1.0,) + (0.0,) * 1023
     repository.stage_evaluation_batch(
         activation=activation,
         lease=lease,
-        vectors_by_query_sha256={query_sha256: vector for query_sha256 in query_sha256s},
+        vectors_by_query_sha256=dict.fromkeys(query_sha256s, vector),
         expected_input_tokens=10,
         total_tokens=10,
         actual_cost_microusd=10,

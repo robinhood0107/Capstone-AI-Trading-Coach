@@ -5,6 +5,7 @@ import hashlib
 import json
 from typing import Any
 
+import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
@@ -12,9 +13,8 @@ from cryptography.hazmat.primitives.serialization import (
     PrivateFormat,
     PublicFormat,
 )
-from app.async_worker.core import AsyncWork
-import pytest
 
+from app.async_worker.core import AsyncWork
 from app.async_worker.kafka_consumer import (
     KafkaAsyncMessageHandler,
     KafkaRetryStop,
@@ -29,7 +29,6 @@ from app.async_worker.kafka_security import (
     deterministic_partition,
 )
 from app.async_worker.poison_recorder import PoisonReceipt, PoisonReceiptError
-
 
 TOPIC = "artifact.ingest-requested.v1"
 PARTITION_KEY = "hmac-sha256:" + "c" * 64

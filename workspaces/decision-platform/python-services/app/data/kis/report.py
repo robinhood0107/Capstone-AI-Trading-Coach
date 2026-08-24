@@ -110,7 +110,9 @@ def _render_report(
     for result in results:
         coverage = "-"
         if result.upsert.min_date and result.upsert.max_date:
-            coverage = f"{result.upsert.min_date.isoformat()} ~ {result.upsert.max_date.isoformat()}"
+            coverage = (
+                f"{result.upsert.min_date.isoformat()} ~ {result.upsert.max_date.isoformat()}"
+            )
         lines.append(
             "| "
             f"{result.symbol} | {result.current_price.price} | {result.fetched_rows} | "

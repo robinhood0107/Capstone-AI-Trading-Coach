@@ -20,7 +20,9 @@ from app.data.calendar.errors import AdapterValidationError, NetworkActivationEr
 
 def test_kasi_xml_parses_holiday_reason_without_market_authority() -> None:
     result = parse_kasi_holidays(
-        _xml("<item><locdate>20260505</locdate><dateName>어린이날</dateName><isHoliday>Y</isHoliday></item>")
+        _xml(
+            "<item><locdate>20260505</locdate><dateName>어린이날</dateName><isHoliday>Y</isHoliday></item>"
+        )
     )
 
     assert result == [
@@ -77,7 +79,11 @@ def test_kasi_xml_enforces_size_depth_node_and_text_caps() -> None:
             )
         )
     with pytest.raises(AdapterValidationError, match="text"):
-        parse_kasi_holidays(_xml(f"<item><locdate>20260505</locdate><dateName>{'가' * (MAX_KASI_TEXT_CHARS + 1)}</dateName></item>"))
+        parse_kasi_holidays(
+            _xml(
+                f"<item><locdate>20260505</locdate><dateName>{'가' * (MAX_KASI_TEXT_CHARS + 1)}</dateName></item>"
+            )
+        )
 
 
 def test_kasi_network_is_fail_closed_until_exact_https_origin_is_verified() -> None:

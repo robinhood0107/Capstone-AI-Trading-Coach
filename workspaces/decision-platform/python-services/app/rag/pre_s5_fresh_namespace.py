@@ -305,13 +305,10 @@ def main() -> int:
             FreshNamespacePaths(
                 source_env=repository_root / "capstone-rag/secrets/docker-compose-rag.env",
                 target_env=(
-                    repository_root
-                    / "capstone-rag/secrets/docker-compose-pre-s5-fresh.env"
+                    repository_root / "capstone-rag/secrets/docker-compose-pre-s5-fresh.env"
                 ),
                 source_root=repository_root / "capstone-rag/runtime/local-corpus",
-                output_root=(
-                    repository_root / "capstone-rag/runtime/pre-s5-fresh/local-corpus"
-                ),
+                output_root=(repository_root / "capstone-rag/runtime/pre-s5-fresh/local-corpus"),
             )
         )
     except FreshNamespaceError:

@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, date, datetime
 import errno
 import hashlib
-from io import BytesIO
 import os
-from pathlib import Path, PurePosixPath
 import re
 import secrets
 import stat
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
+from io import BytesIO
+from pathlib import Path, PurePosixPath
 from typing import Literal
 from uuid import UUID
 
@@ -26,7 +26,6 @@ from pydantic import (
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.kis.accounting import CollectionRunSummary
 from app.data.kis.symbols import normalize_symbol
-
 
 _DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _PARQUET_COLUMNS = ("symbol", "date", "open", "high", "low", "close", "volume", "turnover")
@@ -77,7 +76,7 @@ class DatasetFileInventory(_FrozenModel):
         return value
 
     @model_validator(mode="after")
-    def _validate_inventory(self) -> "DatasetFileInventory":
+    def _validate_inventory(self) -> DatasetFileInventory:
         if self.path != f"daily/{self.symbol}.parquet":
             raise ValueError("dataset file path must match symbol")
         if self.columns != _PARQUET_COLUMNS:
@@ -85,9 +84,7 @@ class DatasetFileInventory(_FrozenModel):
         if self.row_count == 0 and (self.min_date is not None or self.max_date is not None):
             raise ValueError("empty dataset file cannot have a date range")
         if self.row_count > 0 and (
-            self.min_date is None
-            or self.max_date is None
-            or self.min_date > self.max_date
+            self.min_date is None or self.max_date is None or self.min_date > self.max_date
         ):
             raise ValueError("dataset file date range is invalid")
         return self
@@ -122,7 +119,7 @@ class SuccessfulDatasetManifest(_FrozenModel):
         return value.astimezone(UTC)
 
     @model_validator(mode="after")
-    def _validate_counts_and_order(self) -> "SuccessfulDatasetManifest":
+    def _validate_counts_and_order(self) -> SuccessfulDatasetManifest:
         if self.file_count != len(self.files):
             raise ValueError("dataset fileCount must match files")
         if self.row_count != sum(item.row_count for item in self.files):
@@ -152,9 +149,7 @@ def publish_collection_summary(
 ) -> PublishedKISArtifact:
     """sanitized aggregate summary를 UUID/date partition에 immutable mode 0600으로 게시한다."""
     day = summary.completed_at.astimezone(UTC).date()
-    identifier = (
-        f"collection-runs/{day:%Y/%m/%d}/{summary.collection_run_id}/summary.json"
-    )
+    identifier = f"collection-runs/{day:%Y/%m/%d}/{summary.collection_run_id}/summary.json"
     content = canonical_json_bytes(summary.model_dump(mode="json", by_alias=True))
     if len(content) > _MAX_SUMMARY_BYTES:
         raise KISRunArtifactError("collection summary exceeded the size limit")
@@ -195,11 +190,7 @@ def inventory_daily_dataset(
         os.close(root_fd)
     try:
         expected_names = {f"{symbol}.parquet" for symbol in normalized}
-        actual_names = {
-            name
-            for name in os.listdir(daily_fd)
-            if name.endswith(".parquet")
-        }
+        actual_names = {name for name in os.listdir(daily_fd) if name.endswith(".parquet")}
     finally:
         os.close(daily_fd)
 
@@ -250,13 +241,14 @@ def publish_successful_dataset_manifest(
         manifest.universe_manifest
     ):
         raise KISRunArtifactError("universe manifest hash did not match")
-    if reference_input_artifact(root, manifest.collection_run.identifier) != manifest.collection_run:
+    if (
+        reference_input_artifact(root, manifest.collection_run.identifier)
+        != manifest.collection_run
+    ):
         raise KISRunArtifactError("collection summary hash did not match")
 
     day = manifest.created_at.astimezone(UTC).date()
-    identifier = (
-        f"datasets/{day:%Y/%m/%d}/{manifest.dataset_manifest_id}/manifest.json"
-    )
+    identifier = f"datasets/{day:%Y/%m/%d}/{manifest.dataset_manifest_id}/manifest.json"
     content = canonical_json_bytes(manifest.model_dump(mode="json", by_alias=True))
     if len(content) > _MAX_MANIFEST_BYTES:
         raise KISRunArtifactError("dataset manifest exceeded the size limit")

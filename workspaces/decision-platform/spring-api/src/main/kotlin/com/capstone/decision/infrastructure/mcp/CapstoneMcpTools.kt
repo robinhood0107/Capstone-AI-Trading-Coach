@@ -285,10 +285,12 @@ class CapstoneMcpTools(
     private fun evidenceItem(value: RagV2VertexEvidence) = McpEvidenceItem(value.citationId, value.canonicalText, value.canonicalTextSha256)
 
     private fun sha256(value: String): String =
-        MessageDigest.getInstance("SHA-256").digest(value.toByteArray(StandardCharsets.UTF_8)).joinToString("") { "%02x".format(it) }
+        MessageDigest.getInstance("SHA-256").digest(value.toByteArray(StandardCharsets.UTF_8)).joinToString("") {
+            "%02x".format(java.util.Locale.ROOT, it)
+        }
 
     private companion object {
-        val logger = LoggerFactory.getLogger(CapstoneMcpTools::class.java)
+        val logger: org.slf4j.Logger = LoggerFactory.getLogger(CapstoneMcpTools::class.java)
         val OWNER_ID = Regex("^usr_[a-z0-9][a-z0-9_-]{2,95}$")
         val MCP_CLIENT_ID = Regex("^mcp_[a-z0-9][a-z0-9._-]{2,95}$")
         val CIMD_CLIENT_ID = Regex("^https://[A-Za-z0-9.-]+/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{1,190}$")

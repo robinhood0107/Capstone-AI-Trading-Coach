@@ -10,8 +10,8 @@ from app.lightgbm.bootstrap_calendar_recovery import (
     materialize_recovery_adoption,
 )
 from app.lightgbm.errors import LightGbmContractError
-from app.lightgbm.runtime_inputs import resolve_recovery_prior_packet_sha256
 from app.lightgbm.private_root import require_private_root
+from app.lightgbm.runtime_inputs import resolve_recovery_prior_packet_sha256
 from app.rag.safe_io import (
     RagSafeIoError,
     read_approved_regular_file,

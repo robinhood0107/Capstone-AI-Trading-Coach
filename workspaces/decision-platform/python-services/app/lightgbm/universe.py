@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Iterable
 
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
-from app.lightgbm.production_policy import APPROVED_HORIZON_UNION_SIZE
 from app.lightgbm.pit_calendar import MonthlyUniverseSchedule, derive_monthly_universe_schedule
+from app.lightgbm.production_policy import APPROVED_HORIZON_UNION_SIZE
 from app.lightgbm.temporal import TemporalReceipt, require_receipt_eligible
-
 
 FIXED_ETF_SYMBOL = "132030"
 MAX_UNION_SYMBOLS = APPROVED_HORIZON_UNION_SIZE
@@ -223,9 +222,7 @@ def validate_horizon_union(universes: Iterable[MonthlyUniverse]) -> tuple[str, .
         {identity for universe in universes for identity in universe.instrument_ids}
     )
     if len(identities) > MAX_UNION_SYMBOLS:
-        raise LightGbmContractError(
-            "PIT universe union exceeds the approved instrument bound"
-        )
+        raise LightGbmContractError("PIT universe union exceeds the approved instrument bound")
     return tuple(identities)
 
 

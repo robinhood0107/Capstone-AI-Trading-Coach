@@ -6,7 +6,7 @@
 
 ## 구조
 
-```
+```text
 spring-api/            # Gradle Kotlin 프로젝트 — Controller/Application/Domain/Infrastructure
 python-services/        # uv 프로젝트 — LightGBM/RAG/금융공학/데이터클라이언트/브로커리지 어댑터
 ```

@@ -67,7 +67,7 @@ class LocalPreS5VoyageContext4Tokenizer:
         *,
         local_root: Path,
         expected_sha256: str,
-    ) -> "LocalPreS5VoyageContext4Tokenizer":
+    ) -> LocalPreS5VoyageContext4Tokenizer:
         """0700 root 아래 0600 regular artifact를 hash 확인 후 loading한다.
 
         경로나 URL은 caller가 고를 수 없다. artifact acquisition은 별도 rights/evidence gate의

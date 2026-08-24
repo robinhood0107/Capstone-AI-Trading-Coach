@@ -7,11 +7,11 @@ import re
 import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from urllib.parse import unquote
 
 
-class GuardrailDecision(str, Enum):
+class GuardrailDecision(StrEnum):
     ALLOW = "ALLOW"
     BLOCKED_SENSITIVE = "BLOCKED_SENSITIVE"
     BLOCKED_ADVICE = "BLOCKED_ADVICE"
@@ -84,10 +84,7 @@ def _blocked(flag: str) -> GuardrailResult:
 def _is_bounded_question(question: object) -> bool:
     if not isinstance(question, str) or not 1 <= len(question) <= 1_000:
         return False
-    if any(
-        unicodedata.category(character) in {"Cc", "Cs"}
-        for character in question
-    ):
+    if any(unicodedata.category(character) in {"Cc", "Cs"} for character in question):
         return False
     try:
         return len(question.encode("utf-8")) <= 8_192

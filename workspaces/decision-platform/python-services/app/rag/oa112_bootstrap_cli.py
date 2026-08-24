@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import UTC, datetime
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 
 from app.data._shared.canonical_json import canonical_json_sha256
 from app.rag import oa112_bootstrap
@@ -14,9 +14,9 @@ from app.rag.oa112_active_registry import Oa112ActiveRegistryError, load_oa112_a
 from app.rag.oa112_bootstrap import Oa112BootstrapError
 from app.rag.oa112_downloader import (
     Oa112DownloadError,
+    _packet_digest,
     load_oa112_download_packet,
     load_oa112_execution_binding,
-    _packet_digest,
 )
 from app.rag.oa_release_manifest import REPO_ROOT
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file, write_approved_new_file
@@ -62,7 +62,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ExecutionApprovalError, ProviderApprovalClaimError):
         _emit({"code": "P1_EXECUTION_APPROVAL_REJECTED", "state": "FAILED"})
         return 2
-    except (Oa112BootstrapError, Oa112DownloadError, Oa112ActiveRegistryError, RagSafeIoError) as error:
+    except (
+        Oa112BootstrapError,
+        Oa112DownloadError,
+        Oa112ActiveRegistryError,
+        RagSafeIoError,
+    ) as error:
         code = error.code if isinstance(error, Oa112DownloadError) else str(error)
         _emit({"code": code, "state": "FAILED"})
         return 2
@@ -81,7 +86,9 @@ def _prepare_candidates() -> int:
         target.lstat()
     except FileNotFoundError:
         content = (
-            json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+                "utf-8"
+            )
             + b"\n"
         )
         write_approved_new_file(

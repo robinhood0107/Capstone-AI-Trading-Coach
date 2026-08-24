@@ -18,7 +18,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol, cast
 
-from app.rag.authorized_retrieval import ALLOWED_RAG_TOPICS, EMBEDDING_DIMENSION, ExactIdentifierExtractor, QueryNormalizer
+from app.rag.authorized_retrieval import (
+    ALLOWED_RAG_TOPICS,
+    EMBEDDING_DIMENSION,
+    ExactIdentifierExtractor,
+    QueryNormalizer,
+)
 from app.rag.oa112_active_registry import Oa112ActiveRegistry
 from app.rag.oa_release_manifest import OA_TRACK_IDS
 from app.rag.pre_s5_provider_control import (
@@ -38,11 +43,11 @@ from app.rag.pre_s5_voyage_query_transport import (
     PreS5VoyageQueryTransportError,
     PreS5VoyageQueryUsageReservationPort,
 )
-from app.rag.pre_s5_voyage_transport import PreS5VoyageAttemptLease, PreS5VoyageHttpSender
 from app.rag.pre_s5_voyage_tokenizer import (
     LocalPreS5VoyageContext4Tokenizer,
     PreS5VoyageTokenizerError,
 )
+from app.rag.pre_s5_voyage_transport import PreS5VoyageAttemptLease, PreS5VoyageHttpSender
 from app.rag.rag_v2_authorized_retrieval import (
     RagV2AuthorizedHybridRetrieval,
     RagV2BundleScope,
@@ -59,9 +64,9 @@ from app.rag.rag_v2_external_exact30_voyage_runner import (
 from app.rag.rag_v2_oa112_voyage_runner import RagV2Oa112VoyageComponentContext
 from app.rag.rag_v2_public_bge_evaluator import (
     PublicBgeEvaluationQuery,
+    _direct_advice_block_rate,
     _InMemoryCandidate,
     _InMemoryPublicChannels,
-    _direct_advice_block_rate,
     _minimum_track_recall,
     _p95_millis,
     _ratio,
@@ -286,7 +291,9 @@ class PacketGatedPublicVoyageEvaluationQueryEmbedder:
             PreS5VoyageTokenizerError,
             ValueError,
         ):
-            raise RagV2QueryEmbeddingError(RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE) from None
+            raise RagV2QueryEmbeddingError(
+                RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE
+            ) from None
         component_scope = "EXACT30" if evaluation_query_id.startswith("q") else "OA112"
         try:
             receipt = request_embedder.embed_query_with_receipt(
@@ -478,9 +485,7 @@ class PacketGatedPublicVoyageEvaluationBatchEmbedder:
             )
             lease = self._usage_repository.reserve(
                 activation=activation,
-                evaluation_component_scope=cast(
-                    Literal["EXACT30", "OA112"], component_scope
-                ),
+                evaluation_component_scope=cast(Literal["EXACT30", "OA112"], component_scope),
             )
             result = PreS5VoyageEvaluationBatchTransport(
                 activation=activation,
@@ -820,7 +825,9 @@ def _build_candidates(
                 title=record.metadata.citation_title,
                 topics=record.metadata.retrieval_topics,
             )
-            candidates.append(_InMemoryCandidate(candidate=candidate, vector=_vector(embedding.embedding)))
+            candidates.append(
+                _InMemoryCandidate(candidate=candidate, vector=_vector(embedding.embedding))
+            )
             seen_chunks.add(chunk.chunk_id)
     return tuple(candidates)
 
@@ -849,17 +856,19 @@ def _validate_inputs(
         or oa112_context.expected_source_count != 112
         or len(exact30_context.member_digests) != 30
         or len(oa112_context.member_digests) != 112
-        or any(_SHA256.fullmatch(value) is None for value in (oa112_registry_digest, exact30_fixture_digest, oa112_manifest_digest))
+        or any(
+            _SHA256.fullmatch(value) is None
+            for value in (oa112_registry_digest, exact30_fixture_digest, oa112_manifest_digest)
+        )
         or query_embedder.embedding_profile_id != _VOYAGE_PROFILE_ID
     ):
         raise PublicVoyagePairEvaluationError("PUBLIC_VOYAGE_EVALUATION_ARGUMENT")
     _validate_queries(exact30_queries=exact30_queries, oa112_queries=oa112_queries)
-    if (
-        {query.expected_source_id for query in exact30_queries}
-        - {record.document.source_id for record in exact30_records}
-        or {query.expected_source_id for query in oa112_queries}
-        != {record.document.source_id for record in oa112_records}
-    ):
+    if {query.expected_source_id for query in exact30_queries} - {
+        record.document.source_id for record in exact30_records
+    } or {query.expected_source_id for query in oa112_queries} != {
+        record.document.source_id for record in oa112_records
+    }:
         raise PublicVoyagePairEvaluationError("PUBLIC_VOYAGE_EVALUATION_ARGUMENT")
 
 
@@ -874,8 +883,10 @@ def _validate_queries(
         or len(oa112_queries) != 112
         or len({query.query_id for query in all_queries}) != 122
         or len({query.question for query in all_queries}) != 122
-        or tuple(query.query_id for query in exact30_queries) != tuple(f"q{index:02d}" for index in range(1, 11))
-        or tuple(query.query_id for query in oa112_queries) != tuple(f"oa112-q{index:03d}" for index in range(1, 113))
+        or tuple(query.query_id for query in exact30_queries)
+        != tuple(f"q{index:02d}" for index in range(1, 11))
+        or tuple(query.query_id for query in oa112_queries)
+        != tuple(f"oa112-q{index:03d}" for index in range(1, 113))
         or any(query.track_id is not None for query in exact30_queries)
         or tuple(query.track_id for query in oa112_queries)
         != tuple(track_id for track_id in OA_TRACK_IDS for _ in range(8))
@@ -914,7 +925,7 @@ def _evaluation_scope(
         (
             "public-voyage-evaluation-scope-v1\0"
             f"{exact30_context.component_generation_id}\0{oa112_context.component_generation_id}\0{plan_digest}"
-        ).encode("utf-8")
+        ).encode()
     ).hexdigest()
     return RagV2BundleScope(
         claim_id=f"rvs_{claim[:32]}",
@@ -929,7 +940,9 @@ def _evaluation_scope(
     )
 
 
-def _context_identity(context: RagV2PublicVoyageComponentContext | RagV2Oa112VoyageComponentContext) -> dict[str, object]:
+def _context_identity(
+    context: RagV2PublicVoyageComponentContext | RagV2Oa112VoyageComponentContext,
+) -> dict[str, object]:
     return {
         "componentGenerationId": context.component_generation_id,
         "expectedChunkCount": context.expected_chunk_count,

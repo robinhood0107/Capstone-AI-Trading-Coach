@@ -3,14 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from app.cross_market import foreign_news_provider_probe_cli
-from app.cross_market.foreign_news_evaluation_cli import ForeignNewsEvaluationCliError
 from app.cross_market.foreign_news import ForeignNewsTransientLaneAggregate
+from app.cross_market.foreign_news_evaluation_cli import ForeignNewsEvaluationCliError
 from app.cross_market.foreign_news_provider_probe import ForeignNewsProviderProbeError
 from app.cross_market.foreign_news_repository import ForeignNewsWriterAuthorityError
 
@@ -66,7 +66,9 @@ def test_model_gate_blocks_before_execution_evidence_or_transport(monkeypatch, c
     }
 
 
-def test_owner_scope_gate_blocks_before_writer_preflight_or_provider_transport(monkeypatch, capsys) -> None:
+def test_owner_scope_gate_blocks_before_writer_preflight_or_provider_transport(
+    monkeypatch, capsys
+) -> None:
     packet = type("Packet", (), {"symbol": "005930.KS"})()
     monkeypatch.setattr(
         foreign_news_provider_probe_cli.ForeignNewsProviderProbePacket,
@@ -93,7 +95,9 @@ def test_owner_scope_gate_blocks_before_writer_preflight_or_provider_transport(m
     }
 
 
-def test_owner_scope_is_canonical_local_binding_and_rejects_other_packet_symbol(tmp_path: Path) -> None:
+def test_owner_scope_is_canonical_local_binding_and_rejects_other_packet_symbol(
+    tmp_path: Path,
+) -> None:
     control_root = tmp_path / "foreign-news-control"
     control_root.mkdir(mode=0o700)
     control_root.chmod(0o700)
@@ -135,7 +139,9 @@ def test_writer_preflight_blocks_before_provider_executor(monkeypatch, capsys) -
         "load_from_control_root",
         lambda **_: packet,
     )
-    monkeypatch.setattr(foreign_news_provider_probe_cli, "load_verified_selected_local_candidate", lambda: object())
+    monkeypatch.setattr(
+        foreign_news_provider_probe_cli, "load_verified_selected_local_candidate", lambda: object()
+    )
     monkeypatch.setattr(
         foreign_news_provider_probe_cli,
         "_load_owner_scope",
@@ -144,7 +150,9 @@ def test_writer_preflight_blocks_before_provider_executor(monkeypatch, capsys) -
             symbol="005930",
         ),
     )
-    monkeypatch.setenv("DECISION_MARKET_WRITER_DATABASE_DSN", "postgresql://fixture.invalid/decision")
+    monkeypatch.setenv(
+        "DECISION_MARKET_WRITER_DATABASE_DSN", "postgresql://fixture.invalid/decision"
+    )
 
     class _FailingRepository:
         def __init__(self, _dsn: str) -> None:
@@ -153,7 +161,11 @@ def test_writer_preflight_blocks_before_provider_executor(monkeypatch, capsys) -
         def preflight(self) -> None:
             raise ForeignNewsWriterAuthorityError("writer unavailable")
 
-    monkeypatch.setattr(foreign_news_provider_probe_cli, "PostgresForeignNewsSentimentRepository", _FailingRepository)
+    monkeypatch.setattr(
+        foreign_news_provider_probe_cli,
+        "PostgresForeignNewsSentimentRepository",
+        _FailingRepository,
+    )
 
     assert foreign_news_provider_probe_cli.main(("execute",)) == 2
 
@@ -178,7 +190,9 @@ def test_successful_probe_materializes_only_sanitized_owner_record(monkeypatch, 
         "load_from_control_root",
         lambda **_: packet,
     )
-    monkeypatch.setattr(foreign_news_provider_probe_cli, "load_verified_selected_local_candidate", lambda: object())
+    monkeypatch.setattr(
+        foreign_news_provider_probe_cli, "load_verified_selected_local_candidate", lambda: object()
+    )
     monkeypatch.setattr(
         foreign_news_provider_probe_cli,
         "_load_owner_scope",
@@ -193,7 +207,9 @@ def test_successful_probe_materializes_only_sanitized_owner_record(monkeypatch, 
         security_digest="d" * 64,
         tree_sha256="e" * 64,
     )
-    monkeypatch.setattr(foreign_news_provider_probe_cli, "_load_execution_binding", lambda **_: binding)
+    monkeypatch.setattr(
+        foreign_news_provider_probe_cli, "_load_execution_binding", lambda **_: binding
+    )
     approval = object()
     monkeypatch.setattr(
         foreign_news_provider_probe_cli,
@@ -205,7 +221,9 @@ def test_successful_probe_materializes_only_sanitized_owner_record(monkeypatch, 
         "claim_signed_provider_approval",
         lambda value: None if value is approval else (_ for _ in ()).throw(AssertionError()),
     )
-    monkeypatch.setenv("DECISION_MARKET_WRITER_DATABASE_DSN", "postgresql://fixture.invalid/decision")
+    monkeypatch.setenv(
+        "DECISION_MARKET_WRITER_DATABASE_DSN", "postgresql://fixture.invalid/decision"
+    )
 
     appended: list[object] = []
 
@@ -228,7 +246,9 @@ def test_successful_probe_materializes_only_sanitized_owner_record(monkeypatch, 
             official_release_locator="SEC_OFFICIAL_RELEASES",
         ),
         receipt=SimpleNamespace(
-            started_at=foreign_news_provider_probe_cli.datetime(2026, 8, 10, 2, 3, 4, tzinfo=foreign_news_provider_probe_cli.UTC),
+            started_at=foreign_news_provider_probe_cli.datetime(
+                2026, 8, 10, 2, 3, 4, tzinfo=foreign_news_provider_probe_cli.UTC
+            ),
             physical_call_count=1,
             outcome="SUCCESS",
             provider_family="SEC_OFFICIAL",
@@ -243,16 +263,20 @@ def test_successful_probe_materializes_only_sanitized_owner_record(monkeypatch, 
         def execute(self, **_: object) -> object:
             return result
 
-    monkeypatch.setattr(foreign_news_provider_probe_cli, "PostgresForeignNewsSentimentRepository", _Repository)
-    monkeypatch.setattr(foreign_news_provider_probe_cli, "ForeignNewsProviderProbeExecutor", _Executor)
+    monkeypatch.setattr(
+        foreign_news_provider_probe_cli, "PostgresForeignNewsSentimentRepository", _Repository
+    )
+    monkeypatch.setattr(
+        foreign_news_provider_probe_cli, "ForeignNewsProviderProbeExecutor", _Executor
+    )
 
     assert foreign_news_provider_probe_cli.main(("execute",)) == 0
 
     assert len(appended) == 1
     record = appended[0]
-    assert getattr(record, "owner_user_id") == "usr_demo_user"
-    assert getattr(record, "symbol") == "005930"
-    assert getattr(record, "to_storage_payload")()["lanes"] == [
+    assert record.owner_user_id == "usr_demo_user"
+    assert record.symbol == "005930"
+    assert record.to_storage_payload()["lanes"] == [
         {"laneId": "FINNHUB_PERSONAL_LOCAL", "state": "NOT_ACTIVATED"},
         {"laneId": "SEC_OFFICIAL", "state": "AVAILABLE"},
         {"laneId": "FED_OFFICIAL", "state": "NOT_ACTIVATED"},

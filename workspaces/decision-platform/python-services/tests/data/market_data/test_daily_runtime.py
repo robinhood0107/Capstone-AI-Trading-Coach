@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import date, datetime
 import hashlib
 import json
+from dataclasses import replace
+from datetime import date, datetime
 from pathlib import Path
 from typing import cast
 from zoneinfo import ZoneInfo
 
 import psycopg
 import pytest
+from jsonschema import Draft202012Validator
+
 from app.data._shared.canonical_json import canonical_json_sha256
 from app.data.market_data.daily_runtime import (
     AcceptedDailyShard,
@@ -24,8 +26,6 @@ from app.data.market_data.daily_runtime import (
 )
 from app.data.market_data.repository import stage_daily_shard
 from app.verification.network_guard import deny_outbound_network
-from jsonschema import Draft202012Validator
-
 
 _ROOT = Path(__file__).resolve().parents[6]
 _KST = ZoneInfo("Asia/Seoul")
@@ -133,7 +133,9 @@ def test_empty_krx_projection_stops_before_all_later_replay_operations(tmp_path:
     packet, records = _packet_and_records()
     first = records[0]
     empty_payload = {**first.payload, "nonEmpty": False}
-    records[0] = replace(first, payload=empty_payload, content_sha256=canonical_json_sha256(empty_payload))
+    records[0] = replace(
+        first, payload=empty_payload, content_sha256=canonical_json_sha256(empty_payload)
+    )
     packet = _bind_receipts(packet, records)
     replay_root = _seal(tmp_path / "replay", records)
 
@@ -185,7 +187,7 @@ def test_partial_run_has_no_manifest_and_resume_reuses_successes(tmp_path: Path)
 
 def test_mid_month_membership_change_fails_before_replay_root(tmp_path: Path) -> None:
     packet, _ = _packet_and_records()
-    changed = ("999999",) + packet.membership[1:]
+    changed = ("999999", *packet.membership[1:])
     invalid = replace(packet, membership=changed)
     constructed = False
 
@@ -454,7 +456,7 @@ def test_v76_rejects_disconnected_daily_chain(
 def _packet_and_records(
     *, month_boundary: bool = False
 ) -> tuple[DailyReplayPacket, list[ReplayRecord]]:
-    membership = tuple(f"{number:06d}" for number in range(1, 31)) + ("132030",)
+    membership = (*tuple(f"{number:06d}" for number in range(1, 31)), "132030")
     membership_sha = canonical_json_sha256(list(membership))
     session_date = date(2026, 9, 1) if month_boundary else date(2026, 8, 18)
     previous_session_date = date(2026, 8, 31) if month_boundary else date(2026, 8, 14)
@@ -478,9 +480,7 @@ def _packet_and_records(
     return _bind_receipts(packet, records), records
 
 
-def _record(
-    operation: str, packet: DailyReplayPacket, membership: tuple[str, ...]
-) -> ReplayRecord:
+def _record(operation: str, packet: DailyReplayPacket, membership: tuple[str, ...]) -> ReplayRecord:
     if operation == "KRX_DAILY_01":
         payload: dict[str, object] = {
             "kind": "TRADING_EVIDENCE",
@@ -553,9 +553,7 @@ def _record(
 def _bind_receipts(packet: DailyReplayPacket, records: list[ReplayRecord]) -> DailyReplayPacket:
     return replace(
         packet,
-        expected_receipt_set_sha256=canonical_json_sha256(
-            [record.receipt() for record in records]
-        ),
+        expected_receipt_set_sha256=canonical_json_sha256([record.receipt() for record in records]),
     )
 
 

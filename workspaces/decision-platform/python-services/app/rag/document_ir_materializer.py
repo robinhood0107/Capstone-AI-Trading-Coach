@@ -14,7 +14,6 @@ from app.rag.ingest_pipeline import (
     build_canonical_chunks,
 )
 
-
 DocumentSourceScope = Literal["EXACT30", "OA112", "OWNER_PRIVATE"]
 
 _DOCUMENT_ID = re.compile(r"^doc_[a-z0-9][a-z0-9_-]{10,95}$")
@@ -214,12 +213,17 @@ def _validate_document_ir(
         raise DocumentIrMaterializationError("DOCUMENT_IR_HASH_INVALID")
 
     safety = document_ir.get("safetyClassification")
-    if not isinstance(safety, Mapping) or set(safety) != {
-        "externalLlmEligible",
-        "piiDetected",
-        "promptInjectionDetected",
-        "secretDetected",
-    } or any(not isinstance(value, bool) for value in safety.values()):
+    if (
+        not isinstance(safety, Mapping)
+        or set(safety)
+        != {
+            "externalLlmEligible",
+            "piiDetected",
+            "promptInjectionDetected",
+            "secretDetected",
+        }
+        or any(not isinstance(value, bool) for value in safety.values())
+    ):
         raise DocumentIrMaterializationError("DOCUMENT_IR_SAFETY_INVALID")
 
     blocks = document_ir.get("blocks")
@@ -274,7 +278,11 @@ def _validate_block(block: Mapping[str, object]) -> dict[str, object]:
     ):
         raise DocumentIrMaterializationError("DOCUMENT_IR_BLOCK_INVALID")
     copied_locator = _copy_locator(locator)
-    copied: dict[str, object] = {"blockType": block_type, "locator": copied_locator, "readingOrder": reading_order}
+    copied: dict[str, object] = {
+        "blockType": block_type,
+        "locator": copied_locator,
+        "readingOrder": reading_order,
+    }
     if block_type == "HEADING":
         level = block.get("level")
         text = _required_text(block, "text")
@@ -304,7 +312,9 @@ def _validate_block(block: Mapping[str, object]) -> dict[str, object]:
             or any(not isinstance(item, str) or not item.strip() for item in items)
         ):
             raise DocumentIrMaterializationError("DOCUMENT_IR_BLOCK_INVALID")
-        copied.update({"items": tuple(cast(str, item).strip() for item in items), "ordered": ordered})
+        copied.update(
+            {"items": tuple(cast(str, item).strip() for item in items), "ordered": ordered}
+        )
     elif block_type == "TABLE":
         cells = block.get("cells")
         row_count = block.get("rowCount")
@@ -324,10 +334,7 @@ def _validate_block(block: Mapping[str, object]) -> dict[str, object]:
             raise DocumentIrMaterializationError("DOCUMENT_IR_BLOCK_INVALID")
         if row_count * column_count > _MAX_RENDERED_TABLE_CELLS:
             raise DocumentIrMaterializationError("DOCUMENT_IR_TABLE_AREA_EXCEEDED")
-        copied_cells = tuple(
-            _validate_table_cell(cell, row_count, column_count)
-            for cell in cells
-        )
+        copied_cells = tuple(_validate_table_cell(cell, row_count, column_count) for cell in cells)
         copied.update({"cells": copied_cells, "rowCount": row_count, "columnCount": column_count})
     else:
         copied.update(
@@ -408,7 +415,10 @@ def _block_text_characters(block: Mapping[str, object]) -> int:
     if block_type == "LIST":
         return sum(len(item) for item in cast(tuple[str, ...], block["items"]))
     if block_type == "TABLE":
-        return sum(len(cell[4]) for cell in cast(tuple[tuple[int, int, int, int, str], ...], block["cells"]))
+        return sum(
+            len(cell[4])
+            for cell in cast(tuple[tuple[int, int, int, int, str], ...], block["cells"])
+        )
     return len(cast(str, block["sourceText"])) + len(cast(str, block["normalizedFormula"]))
 
 
@@ -508,9 +518,8 @@ def _to_document_chunk(
 ) -> RagV2CanonicalDocumentChunk:
     identity = hashlib.sha256(
         (
-            f"{request.document_id}\0{request.source_revision_id}\0{sequence}\0"
-            f"{chunk.content_hash}"
-        ).encode("utf-8")
+            f"{request.document_id}\0{request.source_revision_id}\0{sequence}\0{chunk.content_hash}"
+        ).encode()
     ).hexdigest()
     return RagV2CanonicalDocumentChunk(
         chunk_id=f"rag_v2_chk_{identity[:32]}",

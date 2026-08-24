@@ -25,7 +25,6 @@ from app.data.krx.catalog import (
 )
 from app.data.krx.errors import KrxSafeResponseMetadata
 
-
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
 _AUTH_HEADER = "AUTH_KEY"
 _MAX_RESPONSE_BYTES = 4 * 1024 * 1024

@@ -79,7 +79,9 @@ class PostgresForeignNewsSentimentRepository:
             ) as connection:
                 _attest_exact_writer_authority(connection)
         except psycopg.Error as error:
-            raise ForeignNewsWriterAuthorityError("foreign-news writer preflight rejected") from error
+            raise ForeignNewsWriterAuthorityError(
+                "foreign-news writer preflight rejected"
+            ) from error
 
 
 def _attest_exact_writer_authority(connection: psycopg.Connection[Any]) -> None:

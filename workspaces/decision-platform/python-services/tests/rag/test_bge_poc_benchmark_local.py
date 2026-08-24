@@ -61,9 +61,7 @@ def test_preliminary_five_card_warm_p95(
         approved_root=OFFICIAL_SOURCE_CARD_ROOT,
         relative_paths=_CARD_PATHS,
     )
-    tokenizer = BgeStaticTokenizer.from_file(
-        DEFAULT_MODEL_ROOT / "onnx/tokenizer.json"
-    )
+    tokenizer = BgeStaticTokenizer.from_file(DEFAULT_MODEL_ROOT / "onnx/tokenizer.json")
     plan = prepare_bge_poc(
         cards=cards,
         tokenizer=tokenizer,
@@ -124,9 +122,7 @@ def test_preliminary_five_card_warm_p95(
             FROM rag_embedding_policy_state WHERE state_id = 'default'
             """
         ).fetchone()
-        database_version = str(
-            connection.execute("SHOW server_version").fetchone()[0]
-        )
+        database_version = str(connection.execute("SHOW server_version").fetchone()[0])
         extension_versions = dict(
             connection.execute(
                 """
@@ -175,10 +171,7 @@ def test_preliminary_five_card_warm_p95(
         "postgresVersion": database_version,
         "pythonVersion": platform.python_version(),
         "querySetSha256": hashlib.sha256(_QUERY_SET_PATH.read_bytes()).hexdigest(),
-        "stagesMs": {
-            stage: _percentiles(values)
-            for stage, values in sorted(samples.items())
-        },
+        "stagesMs": {stage: _percentiles(values) for stage, values in sorted(samples.items())},
         "tokenizersVersion": tokenizers.__version__,
         "warmup": 20,
     }

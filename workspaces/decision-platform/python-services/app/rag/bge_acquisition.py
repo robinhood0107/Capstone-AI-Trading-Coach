@@ -12,10 +12,10 @@ import shutil
 import socket
 import ssl
 import stat
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
-from typing import Protocol, Sequence
+from typing import Protocol
 from urllib.parse import SplitResult, parse_qs, quote, unquote, urlsplit, urlunsplit
 
 from app.rag.bge_artifact import (
@@ -52,9 +52,7 @@ _REQUEST_HEADERS = {
 _REPO_ROOT = Path(__file__).resolve().parents[5]
 _MODEL_PARENT = _REPO_ROOT / "huggingface_model" / "BAAI" / "bge-m3"
 DEFAULT_MODEL_ROOT = _MODEL_PARENT / APPROVED_BGE_ARTIFACT_SPEC.revision
-DEFAULT_MODEL_MANIFEST = _MODEL_PARENT / (
-    f".{APPROVED_BGE_ARTIFACT_SPEC.revision}.approved.json"
-)
+DEFAULT_MODEL_MANIFEST = _MODEL_PARENT / (f".{APPROVED_BGE_ARTIFACT_SPEC.revision}.approved.json")
 
 
 class BgeAcquisitionError(ValueError):
@@ -121,10 +119,7 @@ class _SocketBgeDnsResolver:
                 type=socket.SOCK_STREAM,
                 proto=socket.IPPROTO_TCP,
             )
-            addresses = {
-                str(ipaddress.ip_address(result[4][0]))
-                for result in results
-            }
+            addresses = {str(ipaddress.ip_address(result[4][0])) for result in results}
         except (OSError, ValueError) as error:
             raise BgeAcquisitionError("DOWNLOAD_DNS_RESOLUTION") from error
         return sorted(
@@ -511,10 +506,7 @@ def _resolve_and_validate(
     resolver: BgeDnsResolver,
 ) -> list[str]:
     try:
-        addresses = [
-            str(ipaddress.ip_address(address))
-            for address in resolver.resolve(hostname)
-        ]
+        addresses = [str(ipaddress.ip_address(address)) for address in resolver.resolve(hostname)]
         validate_resolved_addresses(hostname, addresses)
     except (RagSourceRegistryError, ValueError, OSError) as error:
         raise BgeAcquisitionError("DOWNLOAD_DNS_POLICY") from error
@@ -557,8 +549,7 @@ def resolve_download_redirect(
             raise BgeAcquisitionError("DOWNLOAD_REDIRECT") from error
 
     expected_path = (
-        f"/api/resolve-cache/models/{spec.repository}/{spec.revision}/"
-        f"{entry.relative_path}"
+        f"/api/resolve-cache/models/{spec.repository}/{spec.revision}/{entry.relative_path}"
     )
     encoded_expected_path = (
         f"/api/resolve-cache/models/{spec.repository}/{spec.revision}/"
@@ -689,9 +680,7 @@ def _publish_manifest(
     content = (
         json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
     ).encode("utf-8")
-    temporary_path = manifest_path.parent / (
-        f".{manifest_path.name}.tmp-{secrets.token_hex(12)}"
-    )
+    temporary_path = manifest_path.parent / (f".{manifest_path.name}.tmp-{secrets.token_hex(12)}")
     file_descriptor = os.open(
         temporary_path,
         os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,

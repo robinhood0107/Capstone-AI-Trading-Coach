@@ -208,7 +208,9 @@ def _safe_manual_https_url(value: str) -> bool:
     ):
         return False
     normalized_host = host.rstrip(".").casefold()
-    if normalized_host == "localhost" or normalized_host.endswith((".localhost", ".local", ".internal")):
+    if normalized_host == "localhost" or normalized_host.endswith(
+        (".localhost", ".local", ".internal")
+    ):
         return False
     try:
         address = ipaddress.ip_address(normalized_host)
@@ -225,7 +227,9 @@ def _safe_manual_https_url(value: str) -> bool:
 
 
 def _bounded_text(value: str, maximum: int) -> bool:
-    return bool(value.strip()) and len(value) <= maximum and "\x00" not in value and "\n" not in value
+    return (
+        bool(value.strip()) and len(value) <= maximum and "\x00" not in value and "\n" not in value
+    )
 
 
 def _instant(value: datetime) -> str:

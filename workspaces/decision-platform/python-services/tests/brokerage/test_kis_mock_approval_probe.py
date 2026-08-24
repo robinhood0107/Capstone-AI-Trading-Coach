@@ -468,7 +468,7 @@ def test_full_probe_uses_packet_order_division_for_buyable_and_submit(
         ) -> object:
             assert order_id == packet.order.order_id
             assert account_id == packet.order.account_id
-            submit_order_divisions.append(getattr(intent, "order_division"))
+            submit_order_divisions.append(intent.order_division)
             return type("Receipt", (), {"accepted": True})()
 
     operations = object.__new__(probe._KISMockProbeOperations)

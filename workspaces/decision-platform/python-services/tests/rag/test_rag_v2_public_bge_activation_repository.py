@@ -8,9 +8,9 @@ import psycopg
 import pytest
 
 from app.rag.rag_v2_public_bge_activation_repository import (
+    PsycopgRagV2PublicBgeActivationRepository,
     PublicBgeActivationError,
     PublicBgeActivationRequest,
-    PsycopgRagV2PublicBgeActivationRepository,
 )
 from app.rag.rag_v2_public_bge_staging import RagV2PublicBgeComponentContext
 
@@ -73,15 +73,24 @@ def test_public_activation_uses_same_transaction_definer_prepare_and_cas(
     assert receipt.state == "ACTIVE"
     assert receipt.previous_pointer_version == 7
     assert receipt.new_pointer_version == 8
-    assert sum(
-        "prepare_rag_v2_immutable_public_base_activation" in statement
+    assert (
+        sum(
+            "prepare_rag_v2_immutable_public_base_activation" in statement
+            for statement, _ in connection.statements
+        )
+        == 1
+    )
+    assert (
+        sum(
+            "activate_rag_v2_immutable_public_base" in statement
+            for statement, _ in connection.statements
+        )
+        == 1
+    )
+    assert all(
+        "rag_v2_immutable_source_revisions" not in statement
         for statement, _ in connection.statements
-    ) == 1
-    assert sum(
-        "activate_rag_v2_immutable_public_base" in statement
-        for statement, _ in connection.statements
-    ) == 1
-    assert all("rag_v2_immutable_source_revisions" not in statement for statement, _ in connection.statements)
+    )
 
 
 def test_public_activation_is_idempotent_for_the_same_active_pair(
@@ -105,7 +114,9 @@ def test_public_activation_is_idempotent_for_the_same_active_pair(
     )
 
 
-def test_public_activation_rejects_incomplete_or_profile_drifted_context_before_database_access() -> None:
+def test_public_activation_rejects_incomplete_or_profile_drifted_context_before_database_access() -> (
+    None
+):
     request = _request()
     invalid_exact = RagV2PublicBgeComponentContext(
         component_scope="EXACT30",
@@ -162,19 +173,18 @@ def _context(
     marker: str,
 ) -> RagV2PublicBgeComponentContext:
     member_digests = tuple(
-        hashlib.sha256(f"{scope}|{marker}|{index}".encode("utf-8")).hexdigest()
+        hashlib.sha256(f"{scope}|{marker}|{index}".encode()).hexdigest()
         for index in range(source_count)
     )
-    manifest_hash = hashlib.sha256(
-        f"{scope}|manifest|{marker}".encode("utf-8")
-    ).hexdigest()
-    generation_hash = hashlib.sha256(
-        f"{scope}|generation|{marker}".encode("utf-8")
-    ).hexdigest()
+    manifest_hash = hashlib.sha256(f"{scope}|manifest|{marker}".encode()).hexdigest()
+    generation_hash = hashlib.sha256(f"{scope}|generation|{marker}".encode()).hexdigest()
     component_generation_id = f"rgr_{generation_hash[:32]}"
-    materialization_run_id = "rgr_run_" + hashlib.sha256(
-        f"rag-v2-public-bge-run|{component_generation_id}|{manifest_hash}".encode("utf-8")
-    ).hexdigest()[:32]
+    materialization_run_id = (
+        "rgr_run_"
+        + hashlib.sha256(
+            f"rag-v2-public-bge-run|{component_generation_id}|{manifest_hash}".encode()
+        ).hexdigest()[:32]
+    )
     return RagV2PublicBgeComponentContext(
         component_scope=scope,  # type: ignore[arg-type]
         component_generation_id=component_generation_id,

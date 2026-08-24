@@ -11,6 +11,9 @@ case "$profile" in
   migration) secret_file=/run/secrets/migration_env ;;
   bootstrap) secret_file=/run/secrets/bootstrap_env ;;
   python) secret_file=/run/secrets/python_env ;;
+  kafka-publisher) secret_file=/run/secrets/kafka_publisher_env ;;
+  poison-recorder) secret_file=/run/secrets/poison_recorder_env ;;
+  kafka-admin) secret_file=/run/secrets/kafka_admin_env ;;
   demo) secret_file=/run/secrets/demo_env ;;
   postgres) secret_file=/run/secrets/postgres_env ;;
   redis) secret_file=/run/secrets/redis_env ;;
@@ -35,7 +38,10 @@ allowed_key() {
     authority:POSTGRES_IDENTITY_PASSWORD|authority:ACTOR_CAPABILITY_SHARED_SECRET|authority:ACTOR_CAPABILITY_PRIVATE_KEY|authority:ACTOR_CAPABILITY_PUBLIC_KEY) return 0 ;;
     migration:POSTGRES_MIGRATION_PASSWORD|migration:BROKERAGE_DB_CAPABILITY_TOKEN_SHA256|migration:DEMO_CREDENTIAL_SEPARATION_KEY|migration:DEMO_USER_CREDENTIAL_BUNDLE|migration:DEMO_ADMIN_CREDENTIAL_BUNDLE) return 0 ;;
     bootstrap:POSTGRES_MIGRATION_PASSWORD|bootstrap:DEMO_CREDENTIAL_SEPARATION_KEY|bootstrap:DEMO_USER_CREDENTIAL_BUNDLE|bootstrap:DEMO_ADMIN_CREDENTIAL_BUNDLE) return 0 ;;
-    python:ASYNC_WORKER_DATABASE_DSN|python:ASYNC_PARTITION_HMAC_KEY|python:ASYNC_WORKER_GRPC_SHARED_SECRET) return 0 ;;
+    python:ASYNC_WORKER_DATABASE_DSN|python:ASYNC_PARTITION_HMAC_KEY|python:ASYNC_WORKER_GRPC_SHARED_SECRET|python:KAFKA_SASL_USERNAME|python:KAFKA_SASL_PASSWORD|python:KAFKA_ENVELOPE_PUBLIC_KEY|python:POISON_RECORDER_URL|python:POISON_RECORDER_SHARED_SECRET) return 0 ;;
+    kafka-publisher:OUTBOX_PUBLISHER_DATABASE_DSN|kafka-publisher:KAFKA_SASL_USERNAME|kafka-publisher:KAFKA_SASL_PASSWORD|kafka-publisher:KAFKA_ENVELOPE_PRIVATE_KEY) return 0 ;;
+    poison-recorder:POISON_RECORDER_DATABASE_DSN|poison-recorder:POISON_RECORDER_SHARED_SECRET) return 0 ;;
+    kafka-admin:KAFKA_SASL_USERNAME|kafka-admin:KAFKA_SASL_PASSWORD) return 0 ;;
     demo:P1_DEMO_DATABASE_DSN|demo:ASYNC_PARTITION_HMAC_KEY) return 0 ;;
     redis:REDIS_PASSWORD) return 0 ;;
     *) return 1 ;;
@@ -50,7 +56,10 @@ required_keys() {
     authority) printf '%s\n' 'POSTGRES_IDENTITY_PASSWORD ACTOR_CAPABILITY_SHARED_SECRET ACTOR_CAPABILITY_PRIVATE_KEY ACTOR_CAPABILITY_PUBLIC_KEY' ;;
     migration) printf '%s\n' 'POSTGRES_MIGRATION_PASSWORD BROKERAGE_DB_CAPABILITY_TOKEN_SHA256 DEMO_CREDENTIAL_SEPARATION_KEY DEMO_USER_CREDENTIAL_BUNDLE DEMO_ADMIN_CREDENTIAL_BUNDLE' ;;
     bootstrap) printf '%s\n' 'POSTGRES_MIGRATION_PASSWORD DEMO_CREDENTIAL_SEPARATION_KEY DEMO_USER_CREDENTIAL_BUNDLE DEMO_ADMIN_CREDENTIAL_BUNDLE' ;;
-    python) printf '%s\n' 'ASYNC_WORKER_DATABASE_DSN ASYNC_PARTITION_HMAC_KEY ASYNC_WORKER_GRPC_SHARED_SECRET' ;;
+    python) printf '%s\n' 'ASYNC_WORKER_DATABASE_DSN ASYNC_PARTITION_HMAC_KEY ASYNC_WORKER_GRPC_SHARED_SECRET KAFKA_SASL_USERNAME KAFKA_SASL_PASSWORD KAFKA_ENVELOPE_PUBLIC_KEY POISON_RECORDER_URL POISON_RECORDER_SHARED_SECRET' ;;
+    kafka-publisher) printf '%s\n' 'OUTBOX_PUBLISHER_DATABASE_DSN KAFKA_SASL_USERNAME KAFKA_SASL_PASSWORD KAFKA_ENVELOPE_PRIVATE_KEY' ;;
+    poison-recorder) printf '%s\n' 'POISON_RECORDER_DATABASE_DSN POISON_RECORDER_SHARED_SECRET' ;;
+    kafka-admin) printf '%s\n' 'KAFKA_SASL_USERNAME KAFKA_SASL_PASSWORD' ;;
     demo) printf '%s\n' 'P1_DEMO_DATABASE_DSN ASYNC_PARTITION_HMAC_KEY' ;;
     redis) printf '%s\n' 'REDIS_PASSWORD' ;;
   esac

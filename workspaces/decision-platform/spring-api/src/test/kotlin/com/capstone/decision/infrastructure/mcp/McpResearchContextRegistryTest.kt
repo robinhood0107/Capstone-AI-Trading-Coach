@@ -4,6 +4,9 @@ import com.capstone.decision.application.rag.RagV2RetrievalScope
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
 import java.util.concurrent.Executors
 
 class McpResearchContextRegistryTest {
@@ -67,6 +70,28 @@ class McpResearchContextRegistryTest {
             .isInstanceOf(IllegalArgumentException::class.java)
     }
 
+    @Test
+    fun `expired and explicitly closed contexts close matching facade sessions`() {
+        val clock = MutableClock(Instant.parse("2026-08-24T00:00:00Z"))
+        val closed = mutableListOf<String>()
+        val registry =
+            McpResearchContextRegistry(
+                RagWebToolProperties(enabled = true, receiptHmacKey = "h".repeat(32)),
+                clock,
+            )
+        registry.bindCloseListener(closed::add)
+        val first = createContext(registry, "req_mcp_context_expiry_0001", "CONCISE")
+        clock.current = clock.current.plusSeconds(901)
+
+        assertThatThrownBy { registry.requireById(first.id, "usr_demo_user", "mcp_demo_client") }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        assertThat(closed).containsExactly(first.id)
+
+        val second = createContext(registry, "req_mcp_context_close_0002", "CONCISE")
+        registry.close(second.id)
+        assertThat(closed).containsExactly(first.id, second.id)
+    }
+
     private fun createContext(
         registry: McpResearchContextRegistry,
         requestId: String,
@@ -102,4 +127,14 @@ class McpResearchContextRegistryTest {
                 .map { executor.submit<Boolean> { runCatching(action).isSuccess } }
                 .count { it.get() }
         }
+
+    private class MutableClock(
+        var current: Instant,
+    ) : Clock() {
+        override fun getZone(): ZoneId = ZoneId.of("UTC")
+
+        override fun withZone(zone: ZoneId): Clock = this
+
+        override fun instant(): Instant = current
+    }
 }

@@ -25,11 +25,30 @@ internal class HashingMcpOAuthAuthorizationService(
     private val users: UserSecurityRepository,
     private val properties: McpOAuthProperties,
     private val jdbc: NamedParameterJdbcTemplate,
+    private val refreshClaims: McpRefreshClaimContext,
     private val delegate: OAuth2AuthorizationService = InMemoryOAuth2AuthorizationService(),
 ) : OAuth2AuthorizationService {
     override fun save(authorization: OAuth2Authorization) {
+        try {
+            saveBound(authorization)
+        } finally {
+            refreshClaims.clear()
+        }
+    }
+
+    private fun saveBound(authorization: OAuth2Authorization) {
         val client = requireNotNull(clients.findById(authorization.registeredClientId))
         val actor = users.findDemoCredentials().single { it.username == authorization.principalName && it.status == "ACTIVE" }
+        val refreshClaim = refreshClaims.optional()
+        if (refreshClaim != null) {
+            require(
+                refreshClaim.clientId == client.clientId &&
+                    refreshClaim.ownerUserId == actor.userId &&
+                    refreshClaim.resourceUri == properties.resourceUri &&
+                    refreshClaim.scopes == authorization.authorizedScopes,
+            )
+        }
+        val boundSecurityVersion = refreshClaim?.securityVersion ?: actor.securityVersion
         authorization.getToken(OAuth2AuthorizationCode::class.java)?.let { codeState ->
             val code = codeState.token
             val request =
@@ -52,7 +71,7 @@ internal class HashingMcpOAuthAuthorizationService(
                         "codeHash" to sha256(code.tokenValue),
                         "clientId" to client.clientId,
                         "ownerUserId" to actor.userId,
-                        "securityVersion" to actor.securityVersion,
+                        "securityVersion" to boundSecurityVersion,
                         "redirectUri" to requireNotNull(request.redirectUri),
                         "resourceUri" to properties.resourceUri,
                         "scopes" to authorization.authorizedScopes.toTypedArray(),
@@ -89,7 +108,7 @@ internal class HashingMcpOAuthAuthorizationService(
                             "tokenHash" to sha256(refresh.tokenValue),
                             "clientId" to client.clientId,
                             "ownerUserId" to actor.userId,
-                            "securityVersion" to actor.securityVersion,
+                            "securityVersion" to boundSecurityVersion,
                             "resourceUri" to properties.resourceUri,
                             "scopes" to authorization.authorizedScopes.toTypedArray(),
                             "expiresAt" to OffsetDateTime.ofInstant(requireNotNull(refresh.expiresAt), ZoneOffset.UTC),
@@ -124,7 +143,46 @@ internal class HashingMcpOAuthAuthorizationService(
     override fun findByToken(
         token: String,
         tokenType: OAuth2TokenType?,
-    ): OAuth2Authorization? = delegate.findByToken(token, tokenType)
+    ): OAuth2Authorization? {
+        val authorization = delegate.findByToken(token, tokenType) ?: return null
+        val refresh = authorization.getToken(OAuth2RefreshToken::class.java)?.token
+        if (refresh?.tokenValue != token || (tokenType != null && tokenType.value != REFRESH_TOKEN_TYPE)) {
+            return authorization
+        }
+        refreshClaims.clear()
+        val client = clients.findById(authorization.registeredClientId) ?: return null
+        val actor =
+            users.findDemoCredentials().singleOrNull {
+                it.username == authorization.principalName && it.status == "ACTIVE"
+            } ?: return null
+        val claimed =
+            jdbc
+                .query(
+                    "SELECT * FROM public.consume_s4_9_mcp_refresh_token(:tokenHash)",
+                    mapOf("tokenHash" to sha256(token)),
+                ) { result, _ ->
+                    McpRefreshClaim(
+                        clientId = result.getString("client_id"),
+                        ownerUserId = result.getString("owner_user_id"),
+                        securityVersion = result.getLong("security_version"),
+                        resourceUri = result.getString("resource_uri"),
+                        scopes = (result.getArray("scopes").array as Array<*>).map { it.toString() }.toSet(),
+                    )
+                }.singleOrNull() ?: return null
+        val valid =
+            claimed.clientId == client.clientId &&
+                claimed.ownerUserId == actor.userId &&
+                claimed.securityVersion == actor.securityVersion &&
+                claimed.resourceUri == properties.resourceUri &&
+                claimed.scopes == authorization.authorizedScopes
+        if (!valid) return null
+        refreshClaims.bind(claimed)
+        return authorization
+    }
+
+    private companion object {
+        const val REFRESH_TOKEN_TYPE = "refresh_token"
+    }
 
     private fun sha256(value: String): String {
         val bytes = value.toByteArray(StandardCharsets.US_ASCII)

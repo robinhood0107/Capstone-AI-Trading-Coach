@@ -11,7 +11,7 @@ class SafePublicWebReaderTest {
     fun `private userinfo http fragment and nonstandard port are rejected before socket`() {
         val calls = AtomicInteger()
         val transport =
-            PublicHttpsTransport { _, _, _ ->
+            PublicHttpsTransport { _, _, _, _ ->
                 calls.incrementAndGet()
                 throw AssertionError("transport must not run")
             }
@@ -119,11 +119,30 @@ class SafePublicWebReaderTest {
     }
 
     @Test
+    fun `public PDF is rejected instead of parsed in the API process`() {
+        val reader =
+            SafePublicWebReader(
+                fixedResolver(),
+                PublicHttpsTransport { _, _, _, _ ->
+                    PublicHttpsResponse(
+                        200,
+                        mapOf("content-type" to listOf("application/pdf")),
+                        "%PDF-1.7\n%%EOF".toByteArray(),
+                    )
+                },
+            )
+
+        assertThatThrownBy { reader.read("https://example.com/evidence.pdf") }
+            .isInstanceOf(S49WebReadRejectedException::class.java)
+            .hasMessage("S4_9_WEB_READ_MIME_REJECTED")
+    }
+
+    @Test
     fun `unsupported response exposes only a typed MIME leaf`() {
         val reader =
             SafePublicWebReader(
                 fixedResolver(),
-                PublicHttpsTransport { _, _, _ ->
+                PublicHttpsTransport { _, _, _, _ ->
                     PublicHttpsResponse(200, mapOf("content-type" to listOf("application/octet-stream")), byteArrayOf(1))
                 },
             )
@@ -160,7 +179,7 @@ class SafePublicWebReaderTest {
     private fun fixedResolver() = PublicHostResolver { listOf(InetAddress.getByName("93.184.216.34")) }
 
     private fun responseTransport(body: String) =
-        PublicHttpsTransport { _, _, _ ->
+        PublicHttpsTransport { _, _, _, _ ->
             PublicHttpsResponse(200, mapOf("content-type" to listOf("text/html; charset=utf-8")), body.toByteArray())
         }
 }

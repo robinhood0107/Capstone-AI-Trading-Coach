@@ -1,6 +1,7 @@
 package com.capstone.decision.infrastructure.mcp
 
 import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -22,6 +23,7 @@ fun interface PublicHttpsTransport {
         uri: URI,
         pinnedAddress: InetAddress,
         maximumBodyBytes: Int,
+        deadlineNanos: Long,
     ): PublicHttpsResponse
 }
 
@@ -34,14 +36,15 @@ class PinnedPublicHttpsTransport(
         uri: URI,
         pinnedAddress: InetAddress,
         maximumBodyBytes: Int,
+        deadlineNanos: Long,
     ): PublicHttpsResponse {
         require(uri.scheme == "https" && uri.port in setOf(-1, 443))
         require(maximumBodyBytes in 1..2_000_000)
         val path = (uri.rawPath?.ifBlank { "/" } ?: "/") + (uri.rawQuery?.let { "?$it" } ?: "")
         require(path.all { it.code in 0x21..0x7e } && '\r' !in path && '\n' !in path)
         val plain = Socket()
-        plain.connect(InetSocketAddress(pinnedAddress, 443), timeout.toMillis().toInt())
-        plain.soTimeout = timeout.toMillis().toInt()
+        plain.connect(InetSocketAddress(pinnedAddress, 443), remainingTimeoutMillis(deadlineNanos))
+        plain.soTimeout = remainingTimeoutMillis(deadlineNanos)
         val socket = socketFactory.createSocket(plain, uri.host, 443, true) as SSLSocket
         socket.use { tls ->
             tls.sslParameters =
@@ -49,12 +52,13 @@ class PinnedPublicHttpsTransport(
                     endpointIdentificationAlgorithm = "HTTPS"
                     serverNames = listOf(SNIHostName(uri.host))
                 }
+            tls.soTimeout = remainingTimeoutMillis(deadlineNanos)
             tls.startHandshake()
             val request =
                 buildString {
                     append("GET ").append(path).append(" HTTP/1.1\r\n")
                     append("Host: ").append(uri.host).append("\r\n")
-                    append("Accept: text/html,text/plain,application/pdf\r\n")
+                    append("Accept: text/html,text/plain\r\n")
                     append("Accept-Encoding: identity\r\n")
                     append("User-Agent: Capstone-S4.9-EvidenceReader/1.0\r\n")
                     append("Connection: close\r\n\r\n")
@@ -65,15 +69,17 @@ class PinnedPublicHttpsTransport(
             } finally {
                 request.fill(0)
             }
-            return parseResponse(BufferedInputStream(tls.inputStream), maximumBodyBytes)
+            tls.soTimeout = remainingTimeoutMillis(deadlineNanos)
+            return parseResponse(BufferedInputStream(tls.inputStream), maximumBodyBytes, deadlineNanos)
         }
     }
 
     internal fun parseResponse(
         input: BufferedInputStream,
         maximumBodyBytes: Int,
+        deadlineNanos: Long = Long.MAX_VALUE,
     ): PublicHttpsResponse {
-        val statusLine = readLine(input, 256)
+        val statusLine = readLine(input, 256, deadlineNanos)
         val status =
             STATUS
                 .matchEntire(statusLine)
@@ -85,7 +91,7 @@ class PinnedPublicHttpsTransport(
         var headerBytes = statusLine.length + 2
         repeat(64) {
             // CSP 같은 안전한 비핵심 헤더는 길 수 있으므로 전체 32 KiB 상한 안에서 한 줄 16 KiB까지 허용한다.
-            val line = readLine(input, MAX_HEADER_LINE_BYTES)
+            val line = readLine(input, MAX_HEADER_LINE_BYTES, deadlineNanos)
             headerBytes += line.length + 2
             require(headerBytes <= 32_768)
             if (line.isEmpty()) {
@@ -98,10 +104,10 @@ class PinnedPublicHttpsTransport(
                     when {
                         length != null -> {
                             require(length in 0..maximumBodyBytes)
-                            readExactly(input, length)
+                            readExactly(input, length, deadlineNanos)
                         }
-                        transfer == "chunked" -> readChunked(input, maximumBodyBytes)
-                        transfer == null -> readUntilEof(input, maximumBodyBytes)
+                        transfer == "chunked" -> readChunked(input, maximumBodyBytes, deadlineNanos)
+                        transfer == null -> readUntilEof(input, maximumBodyBytes, deadlineNanos)
                         else -> throw IllegalArgumentException("Unsupported transfer encoding")
                     }
                 return PublicHttpsResponse(status, headers.mapValues { entry -> entry.value.toList() }, body)
@@ -121,46 +127,60 @@ class PinnedPublicHttpsTransport(
     private fun readChunked(
         input: BufferedInputStream,
         maximum: Int,
+        deadlineNanos: Long,
     ): ByteArray {
-        val bytes = ArrayList<Byte>()
+        val output = ByteArrayOutputStream(maximum)
+        var chunkCount = 0
         while (true) {
-            val sizeText = readLine(input, 64).substringBefore(';')
-            val size = sizeText.toIntOrNull(16) ?: throw IllegalArgumentException("Invalid chunk")
-            require(size >= 0 && bytes.size + size <= maximum)
+            require(++chunkCount <= MAX_CHUNKS)
+            val sizeText = readLine(input, 64, deadlineNanos).substringBefore(';')
+            val parsed = sizeText.toLongOrNull(16) ?: throw IllegalArgumentException("Invalid chunk")
+            require(parsed in 0..Int.MAX_VALUE.toLong())
+            val size = parsed.toInt()
+            require(output.size() <= maximum && size <= maximum - output.size())
             if (size == 0) {
-                while (readLine(input, 8_192).isNotEmpty()) {
-                    require(bytes.size <= maximum)
+                var trailerCount = 0
+                var trailerBytes = 0
+                while (true) {
+                    val trailer = readLine(input, MAX_TRAILER_LINE_BYTES, deadlineNanos)
+                    if (trailer.isEmpty()) return output.toByteArray()
+                    require(++trailerCount <= MAX_TRAILERS)
+                    trailerBytes = Math.addExact(trailerBytes, trailer.length + 2)
+                    require(trailerBytes <= MAX_TRAILER_BYTES)
                 }
-                return bytes.toByteArray()
             }
-            readExactly(input, size).forEach(bytes::add)
-            require(readLine(input, 2).isEmpty())
+            output.write(readExactly(input, size, deadlineNanos))
+            require(readLine(input, 2, deadlineNanos).isEmpty())
         }
     }
 
     private fun readUntilEof(
         input: BufferedInputStream,
         maximum: Int,
+        deadlineNanos: Long,
     ): ByteArray {
-        val bytes = ArrayList<Byte>()
+        val output = ByteArrayOutputStream(maximum)
         val buffer = ByteArray(8_192)
         while (true) {
+            requireDeadline(deadlineNanos)
             val count = input.read(buffer)
             if (count < 0) break
-            require(bytes.size + count <= maximum)
-            repeat(count) { index -> bytes.add(buffer[index]) }
+            require(output.size() <= maximum && count <= maximum - output.size())
+            output.write(buffer, 0, count)
         }
         buffer.fill(0)
-        return bytes.toByteArray()
+        return output.toByteArray()
     }
 
     private fun readExactly(
         input: BufferedInputStream,
         count: Int,
+        deadlineNanos: Long,
     ): ByteArray {
         val output = ByteArray(count)
         var offset = 0
         while (offset < count) {
+            requireDeadline(deadlineNanos)
             val read = input.read(output, offset, count - offset)
             require(read > 0)
             offset += read
@@ -171,12 +191,15 @@ class PinnedPublicHttpsTransport(
     private fun readLine(
         input: BufferedInputStream,
         maximum: Int,
+        deadlineNanos: Long,
     ): String {
         val bytes = ArrayList<Byte>()
         while (bytes.size <= maximum) {
+            requireDeadline(deadlineNanos)
             val value = input.read()
             require(value >= 0)
             if (value == '\r'.code) {
+                requireDeadline(deadlineNanos)
                 require(input.read() == '\n'.code)
                 return bytes.toByteArray().toString(StandardCharsets.US_ASCII)
             }
@@ -186,9 +209,24 @@ class PinnedPublicHttpsTransport(
         throw IllegalArgumentException("HTTP line exceeds cap")
     }
 
+    private fun remainingTimeoutMillis(deadlineNanos: Long): Int {
+        val remainingNanos = deadlineNanos - System.nanoTime()
+        require(remainingNanos > 0)
+        val remainingMillis = Math.max(1L, Duration.ofNanos(remainingNanos).toMillis())
+        return minOf(timeout.toMillis(), remainingMillis, Int.MAX_VALUE.toLong()).toInt()
+    }
+
+    private fun requireDeadline(deadlineNanos: Long) {
+        require(System.nanoTime() < deadlineNanos) { "Public HTTPS deadline exceeded" }
+    }
+
     private companion object {
         val STATUS = Regex("^HTTP/1\\.[01] ([1-5][0-9]{2})(?: .*)?$")
         val HEADER_NAME = Regex("^[a-z0-9!#$%&'*+.^_`|~-]{1,128}$")
         const val MAX_HEADER_LINE_BYTES = 16_384
+        const val MAX_CHUNKS = 4_096
+        const val MAX_TRAILERS = 32
+        const val MAX_TRAILER_LINE_BYTES = 8_192
+        const val MAX_TRAILER_BYTES = 32_768
     }
 }

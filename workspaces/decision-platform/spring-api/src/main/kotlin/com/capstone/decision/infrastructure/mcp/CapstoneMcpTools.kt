@@ -70,6 +70,10 @@ class CapstoneMcpTools(
 ) {
     private val validator = RagV2VertexResponseValidator()
 
+    init {
+        contexts.bindCloseListener(researchTools::closeSession)
+    }
+
     @McpTool(
         name = "capstone_rag_search",
         description = "Search the consented Capstone public and owner RAG corpus and create an owner-bound research context.",
@@ -113,9 +117,14 @@ class CapstoneMcpTools(
                 result.citations,
                 result.evidence,
             )
-        researchTools.openSession(context.id)
-        researchTools.registerUserRoots(context.id, question)
-        return McpRagSearchResponse(receipt, context.expiresAt, contexts.evidenceSnapshot(context).map(::evidenceItem))
+        try {
+            researchTools.openSession(context.id)
+            researchTools.registerUserRoots(context.id, question)
+            return McpRagSearchResponse(receipt, context.expiresAt, contexts.evidenceSnapshot(context).map(::evidenceItem))
+        } catch (error: Exception) {
+            contexts.close(context.id)
+            throw error
+        }
     }
 
     @McpTool(
@@ -217,6 +226,7 @@ class CapstoneMcpTools(
         val contextId = validationReceipts.contextId(caller, validationReceipt, draft)
         requireCurrentContext(contexts.requireById(contextId, caller.ownerUserId, caller.oauthClientId), caller)
         val answerId = validationReceipts.consume(caller, validationReceipt, draft)
+        contexts.close(contextId)
         return McpAnswerSaveResponse(true, answerId)
     }
 

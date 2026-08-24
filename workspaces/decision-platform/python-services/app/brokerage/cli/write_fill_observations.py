@@ -37,9 +37,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    print(
-        f"source=fill_observation operation=append code=complete inserted={inserted}"
-    )
+    print(f"source=fill_observation operation=append code=complete inserted={inserted}")
     return 0
 
 

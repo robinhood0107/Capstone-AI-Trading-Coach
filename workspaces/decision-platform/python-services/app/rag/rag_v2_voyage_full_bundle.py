@@ -17,12 +17,18 @@ from numpy.typing import NDArray
 
 from app.rag.ingest_pipeline import RagTokenizer
 from app.rag.oa112_active_registry import Oa112ActiveRegistry
+from app.rag.pre_s5_voyage_tokenizer import PreS5VoyageTokenCounter
+from app.rag.pre_s5_voyage_transport import (
+    PreS5VoyageBundleComponent,
+    PreS5VoyageFullBundle,
+    build_pre_s5_voyage_full_bundle,
+)
 from app.rag.rag_v2_bge_materializer import ApprovedDocumentParser
 from app.rag.rag_v2_external_exact30_voyage_runner import (
     ExternalExact30PublicVoyageMaterialization,
     ExternalExact30PublicVoyagePreparation,
-    prepare_external_exact30_public_voyage_component,
     materialize_prepared_external_exact30_public_voyage_component,
+    prepare_external_exact30_public_voyage_component,
     validate_voyage_document_vectors,
 )
 from app.rag.rag_v2_oa112_voyage_runner import (
@@ -31,19 +37,13 @@ from app.rag.rag_v2_oa112_voyage_runner import (
     materialize_prepared_oa112_public_voyage_component,
     prepare_oa112_public_voyage_component,
 )
-from app.rag.source_card_corpus import FrozenSourceCardCorpus
-from app.rag.pre_s5_voyage_transport import (
-    PreS5VoyageBundleComponent,
-    PreS5VoyageFullBundle,
-    build_pre_s5_voyage_full_bundle,
-)
-from app.rag.pre_s5_voyage_tokenizer import PreS5VoyageTokenCounter
 from app.rag.rag_v2_voyage_batching import (
     PublicVoyageBatchPlan,
     VoyageBatchVectorAccumulator,
     VoyagePreparedComponent,
     build_public_voyage_batch_plan,
 )
+from app.rag.source_card_corpus import FrozenSourceCardCorpus
 
 
 class RagV2VoyageFullBundleError(ValueError):

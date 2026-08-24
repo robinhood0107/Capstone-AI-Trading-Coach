@@ -6,7 +6,7 @@
 
 예상 구조 (최종 프로젝트 명세서 6.1):
 
-```
+```text
 src/
   data/            # Decision Platform이 제공한 계약 price/news/macro snapshot·artifact consumer
   features/        # technical/news/macro feature builder

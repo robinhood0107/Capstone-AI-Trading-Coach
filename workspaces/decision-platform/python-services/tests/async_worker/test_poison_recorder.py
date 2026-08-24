@@ -12,7 +12,6 @@ from app.async_worker.poison_recorder import (
     PoisonRecorderHttpServer,
 )
 
-
 SECRET = "poison-recorder-shared-secret-0000000001"
 
 

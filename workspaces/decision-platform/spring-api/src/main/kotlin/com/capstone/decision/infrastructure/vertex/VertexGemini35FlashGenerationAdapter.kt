@@ -136,10 +136,14 @@ internal class VertexGemini35FlashGenerationAdapter(
             } finally {
                 body.fill(0)
             }
-        } catch (error: Exception) {
-            if (error is PreS5VertexOAuthException) {
-                LOGGER.warn("pre_s5_vertex_oauth_failed leaf={}", error.failureLeaf.name)
+        } catch (error: PreS5VertexOAuthException) {
+            LOGGER.warn("pre_s5_vertex_oauth_failed leaf={}", error.failureLeaf.name)
+            LOGGER.warn("pre_s5_vertex_generation_failed leaf={}", failureLeaf.name)
+            if (lease != null && !outcomeRecorded) {
+                runCatching { usageLedger.markUnknownBilling(lease) }
             }
+            return unavailable()
+        } catch (error: Exception) {
             val contentFreeLeaf =
                 when (error) {
                     is PreS5VertexGenerationException -> error.failureLeaf
@@ -417,7 +421,7 @@ internal class VertexGemini35FlashGenerationAdapter(
     private fun sha256(value: String): String {
         val bytes = value.toByteArray(StandardCharsets.UTF_8)
         return try {
-            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
         } finally {
             bytes.fill(0)
         }
@@ -437,7 +441,7 @@ internal class VertexGemini35FlashGenerationAdapter(
     )
 
     private companion object {
-        val LOGGER = LoggerFactory.getLogger(VertexGemini35FlashGenerationAdapter::class.java)
+        val LOGGER: org.slf4j.Logger = LoggerFactory.getLogger(VertexGemini35FlashGenerationAdapter::class.java)
         val OWNER_ID = Regex("^usr_[a-z0-9][a-z0-9_-]{2,95}$")
         val REQUEST_ID = Regex("^req_[A-Za-z0-9_-]{12,96}$")
         val CITATION_ID = Regex("^cit_[1-5]$")

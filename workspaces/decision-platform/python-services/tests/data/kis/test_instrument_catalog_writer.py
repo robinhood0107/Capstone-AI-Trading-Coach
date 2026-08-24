@@ -16,10 +16,7 @@ from app.data.kis.instrument_catalog_writer import (
 from tests.data.calendar.conftest import PostgresTestCluster
 
 FIXTURE = (
-    Path(__file__).resolve().parents[2]
-    / "fixtures"
-    / "decision"
-    / "instrument_catalog.v1.json"
+    Path(__file__).resolve().parents[2] / "fixtures" / "decision" / "instrument_catalog.v1.json"
 )
 
 
@@ -73,8 +70,7 @@ def test_sanitized_fixture_appends_once_and_latest_projection_keeps_exact_fields
     assert all(len(row[7]) == 64 and len(row[8]) == 64 for row in rows)
     forbidden = ("account", "token", "authorization", "providerheader", "appkey")
     assert all(
-        not any(marker in payload.lower() for marker in forbidden)
-        for (payload,) in stored_payloads
+        not any(marker in payload.lower() for marker in forbidden) for (payload,) in stored_payloads
     )
 
 

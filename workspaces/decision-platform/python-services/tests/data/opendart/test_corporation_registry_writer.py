@@ -15,10 +15,7 @@ from app.data.opendart.corporation_registry_writer import (
 from tests.conftest import PostgresTestCluster
 
 FIXTURE = (
-    Path(__file__).resolve().parents[2]
-    / "fixtures"
-    / "decision"
-    / "corporation_registry.v1.json"
+    Path(__file__).resolve().parents[2] / "fixtures" / "decision" / "corporation_registry.v1.json"
 )
 
 

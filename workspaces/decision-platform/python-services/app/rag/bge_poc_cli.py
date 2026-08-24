@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from typing import Sequence
+from collections.abc import Sequence
 
 from app.rag.bge_acquisition import (
     DEFAULT_MODEL_MANIFEST,
@@ -65,9 +65,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             approved_root=OFFICIAL_SOURCE_CARD_ROOT,
             relative_paths=_CARD_PATHS,
         )
-        tokenizer = BgeStaticTokenizer.from_file(
-            DEFAULT_MODEL_ROOT / "onnx/tokenizer.json"
-        )
+        tokenizer = BgeStaticTokenizer.from_file(DEFAULT_MODEL_ROOT / "onnx/tokenizer.json")
         plan = prepare_bge_poc(
             cards=cards,
             tokenizer=tokenizer,

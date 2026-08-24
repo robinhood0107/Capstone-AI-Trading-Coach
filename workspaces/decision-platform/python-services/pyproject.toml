@@ -1,4 +1,31 @@
 # S4.7D parser/OCR runtime 의존성 변경은 S1.4X reference lock amendment로 추적한다.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "pytest-asyncio",
+  "testcontainers[postgres]==4.14.2",
+  "fakeredis>=2.23",
+  "ruff==0.15.20",
+  "mypy==2.2.0",
+  "yamllint==1.38.0",
+  "toml-sort==0.24.4",
+  "pymarkdownlnt==0.9.39",
+  "grpcio-tools>=1.81.1",
+  "grpcio-reflection>=1.81.1",
+  "types-grpcio>=1.0.0.20260614",
+  "types-grpcio-health-checking>=1.0.0.20260518",
+  "types-grpcio-reflection>=1.0.0.20260508",
+  "types-PyYAML>=6.0",
+  "types-defusedxml>=0.7",
+  "pandas-stubs>=2.2",
+  "types-openpyxl==3.1.5.20260724"
+]
+
 [project]
 name = "decision-platform-services"
 version = "0.1.0"
@@ -43,7 +70,7 @@ dependencies = [
   "langchain==1.3.15",
   "langgraph==1.2.11",
   "langchain-google-genai==4.3.4",
-  "google-auth==2.56.3",
+  "google-auth==2.56.3"
 ]
 
 [project.scripts]
@@ -98,38 +125,6 @@ market-data-daily-replay = "app.data.market_data.daily_cli:main"
 market-data-retention = "app.data.market_data.retention_cli:main"
 p1-verify = "app.verification.cli:main"
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[dependency-groups]
-dev = [
-  "pytest>=8",
-  "pytest-asyncio",
-  "testcontainers[postgres]==4.14.2",
-  "fakeredis>=2.23",
-  "ruff>=0.5",
-  "mypy>=1.10",
-  "grpcio-tools>=1.81.1",
-  "grpcio-reflection>=1.81.1",
-  "types-grpcio>=1.0.0.20260614",
-  "types-grpcio-health-checking>=1.0.0.20260518",
-  "types-grpcio-reflection>=1.0.0.20260508",
-  "types-PyYAML>=6.0",
-  "types-defusedxml>=0.7",
-  "pandas-stubs>=2.2",
-  "types-openpyxl==3.1.5.20260724",
-]
-
-[tool.ruff]
-line-length = 100
-target-version = "py312"
-extend-exclude = ["app/generated"]
-
-[tool.pytest.ini_options]
-pythonpath = ["."]
-addopts = ["--capture=no"]
-
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
 
@@ -149,3 +144,28 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["fitz", "fitz.*"]
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+addopts = ["--capture=no"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["app/generated"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "C4", "PIE", "SIM", "RUF"]
+# E501 is delegated to the canonical formatter; Korean punctuation is intentional.
+# Explicit cleanup and transaction nesting stays visible in security-sensitive code.
+# Runtime type aliases remain compatible with libraries that inspect typing metadata.
+ignore = ["E501", "RUF001", "RUF002", "RUF003", "SIM105", "SIM117", "UP040", "UP046", "UP047"]
+
+[tool.ruff.lint.per-file-ignores]
+# Public financial-engineering export order is a tested API contract.
+"app/financial_engineering/__init__.py" = ["RUF022"]
+# These callbacks are consumed synchronously inside the same loop iteration.
+"app/lightgbm/bootstrap_executor.py" = ["B023"]
+"app/lightgbm/calibration.py" = ["B023"]
+"app/rag/oa112_bootstrap.py" = ["B023"]
+"app/rag/oa112_downloader.py" = ["B023"]

@@ -1,0 +1,100 @@
+config:
+  validation: true
+  warningsAsErrors: true
+  checkExhaustiveness: false
+  excludes: []
+
+# P1 keeps Detekt narrow and type-aware. Ktlint owns formatting; broad
+# complexity thresholds would force unrelated refactors during security closure.
+comments:
+  active: false
+complexity:
+  active: false
+coroutines:
+  active: false
+empty-blocks:
+  active: false
+exceptions:
+  active: true
+  InstanceOfCheckForException:
+    active: true
+  SwallowedException:
+    active: false
+  TooGenericExceptionCaught:
+    active: false
+naming:
+  active: false
+performance:
+  active: true
+  ArrayPrimitive:
+    active: true
+  ForEachOnRange:
+    active: true
+    # Fixture loop size is bounded and performance is irrelevant.
+    excludes: ["**/test/**"]
+  SpreadOperator:
+    active: true
+    # Fixture argument arrays are small and immutable.
+    excludes: ["**/test/**"]
+  UnnecessaryTemporaryInstantiation:
+    active: true
+potential-bugs:
+  active: true
+  AvoidReferentialEquality:
+    active: true
+    forbiddenTypePatterns:
+      - kotlin.String
+  DoubleMutabilityForCollection:
+    active: true
+  EqualsAlwaysReturnsTrueOrFalse:
+    active: true
+  EqualsWithHashCodeExist:
+    active: true
+  ExplicitGarbageCollectionCall:
+    active: true
+  HasPlatformType:
+    active: true
+  IgnoredReturnValue:
+    active: true
+    restrictToConfig: true
+    # Test builders intentionally ignore fluent return values.
+    excludes: ["**/test/**"]
+  ImplicitDefaultLocale:
+    active: true
+  InvalidRange:
+    active: true
+  IteratorHasNextCallsNextMethod:
+    active: true
+  IteratorNotThrowingNoSuchElementException:
+    active: true
+  MapGetWithNotNullAssertionOperator:
+    active: true
+  NullCheckOnMutableProperty:
+    active: true
+  UnconditionalJumpStatementInLoop:
+    active: true
+  UnreachableCatchBlock:
+    active: true
+  UnreachableCode:
+    active: true
+style:
+  active: true
+  UnusedParameter:
+    active: true
+    allowedNames: ignored.*|expected|command
+    # Test fixture APIs retain named slots for readability.
+    excludes: ["**/test/**"]
+  UnusedPrivateClass:
+    active: true
+    excludes: ["**/test/**"]
+  UnusedPrivateFunction:
+    active: true
+    excludes: ["**/test/**"]
+  UnusedPrivateProperty:
+    active: true
+    allowedNames: ignored|expected|serialVersionUID
+    excludes: ["**/test/**"]
+  UnusedVariable:
+    active: true
+    allowedNames: ignored|_
+    excludes: ["**/test/**"]

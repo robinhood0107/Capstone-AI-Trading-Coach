@@ -8,19 +8,21 @@ from typing import Any
 
 import pytest
 
+from app.rag import contract_catalog
 from app.rag.contract_catalog import (
     CATALOG_PATH,
     RagContractCatalogError,
     load_rag_contract_catalog,
     parse_rag_contract_catalog,
 )
-from app.rag import contract_catalog
 
 
 def test_python_rag_catalog_reads_exact_two_profiles_and_three_policies() -> None:
     catalog = load_rag_contract_catalog()
 
-    assert catalog.catalog_sha256 == "9b9881f9b25b6486f20999f27c0dd7043048fc26491e33cf2af892817dabbe0a"
+    assert (
+        catalog.catalog_sha256 == "9b9881f9b25b6486f20999f27c0dd7043048fc26491e33cf2af892817dabbe0a"
+    )
     assert catalog.profile_ids == (
         "bge_m3_local_1024_v1",
         "voyage_context_4_1024_v1",

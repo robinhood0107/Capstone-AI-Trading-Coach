@@ -36,7 +36,9 @@ def test_voyage_usage_lease_claims_packet_once_and_commits_sanitized_usage(
 
     with pytest.raises(PreS5VoyageUsageRepositoryError, match="PRE_S5_VOYAGE_LEASE_CLAIM_REJECTED"):
         lease.claim_attempt(now=datetime.now(UTC))
-    with pytest.raises(PreS5VoyageUsageRepositoryError, match="PRE_S5_VOYAGE_LEASE_RESERVATION_REJECTED"):
+    with pytest.raises(
+        PreS5VoyageUsageRepositoryError, match="PRE_S5_VOYAGE_LEASE_RESERVATION_REJECTED"
+    ):
         repository.reserve(activation=activation, bundle=bundle)
 
     with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
@@ -100,9 +102,13 @@ def test_voyage_usage_lease_records_unknown_billing_once_after_claim(
     lease.claim_attempt(now=datetime.now(UTC))
     lease.mark_unknown_billing()
 
-    with pytest.raises(PreS5VoyageUsageRepositoryError, match="PRE_S5_VOYAGE_LEASE_COMMIT_REJECTED"):
+    with pytest.raises(
+        PreS5VoyageUsageRepositoryError, match="PRE_S5_VOYAGE_LEASE_COMMIT_REJECTED"
+    ):
         lease.commit(expected_input_tokens=142, total_tokens=143, actual_cost_microusd=143)
-    with pytest.raises(PreS5VoyageUsageRepositoryError, match="PRE_S5_VOYAGE_LEASE_UNKNOWN_REJECTED"):
+    with pytest.raises(
+        PreS5VoyageUsageRepositoryError, match="PRE_S5_VOYAGE_LEASE_UNKNOWN_REJECTED"
+    ):
         lease.mark_unknown_billing()
 
     with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:

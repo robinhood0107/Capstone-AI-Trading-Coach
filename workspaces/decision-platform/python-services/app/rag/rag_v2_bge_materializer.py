@@ -405,7 +405,9 @@ def materialize_public_bge_document(
     except BgeRuntimeError as error:
         raise RagV2BgeMaterializationError(str(error)) from error
 
-    if len(prepared.embedding_inputs) != len(prepared.document.chunks):  # pragma: no cover - closed helper contract.
+    if len(prepared.embedding_inputs) != len(
+        prepared.document.chunks
+    ):  # pragma: no cover - closed helper contract.
         raise RagV2BgeMaterializationError("BGE_INPUT_CHUNK_CARDINALITY")
     embeddings = tuple(
         RagV2BgeDocumentEmbedding(
@@ -612,7 +614,11 @@ def _canonical_chunks(
 
 
 def _is_sha256(value: object) -> bool:
-    return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _source_revision_sha256(document_ir: Mapping[str, object]) -> str:
@@ -638,6 +644,8 @@ def _copy_document_ir(document_ir: Mapping[str, object]) -> dict[str, object]:
             sort_keys=True,
         )
     )
-    if not isinstance(copied, dict):  # pragma: no cover - parser contract가 이미 mapping을 보장한다.
+    if not isinstance(
+        copied, dict
+    ):  # pragma: no cover - parser contract가 이미 mapping을 보장한다.
         raise RagV2BgeMaterializationError("DOCUMENT_IR_COPY_INVALID")
     return copied

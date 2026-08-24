@@ -11,19 +11,13 @@ import pytest
 from app.data.ecos.http_client import ECOSHttpClient
 from app.data.ecos.models import ECOSObservation, StatisticSearchPage
 from app.data.ecos.series_registry import CANDIDATE_SERIES, ECOSSeries
-from app.lightgbm.bootstrap_packet import author_bootstrap_packet
-from app.lightgbm.daily_refresh import DAILY_TOTAL_MAX
-from app.lightgbm.training_append import (
-    append_from_daily_run,
-    appended_sessions,
-    derive_training_window,
-    read_append_index,
-)
 from app.data.kis.parsers import DailyBar
-from app.lightgbm.calibration import fit_ovr_platt
 from app.lightgbm.bootstrap_journal import BootstrapJournal
 from app.lightgbm.bootstrap_live import LiveEcosDailyProvider
+from app.lightgbm.bootstrap_packet import author_bootstrap_packet
+from app.lightgbm.calibration import fit_ovr_platt
 from app.lightgbm.daily_refresh import (
+    DAILY_TOTAL_MAX,
     DailyInferenceState,
     DailyKrxProjection,
     _daily_krx_operations,
@@ -37,9 +31,10 @@ from app.lightgbm.daily_refresh import (
     write_daily_rollback_batch,
 )
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
-from app.lightgbm.features import IndexEvidence, MacroObservation, ProductionPriceEvidence
 from app.lightgbm.feature_artifact import ProductionFeatureBundle
+from app.lightgbm.features import IndexEvidence, MacroObservation, ProductionPriceEvidence
 from app.lightgbm.pit_calendar import corrected_calendar, derive_monthly_universe_schedule
+from app.lightgbm.production_release import QualifiedProductionRelease
 from app.lightgbm.temporal import (
     AvailabilityBasis,
     RevisionBasis,
@@ -48,8 +43,13 @@ from app.lightgbm.temporal import (
     next_session_evidence_clock,
     next_xkrx_evidence_clock,
 )
-from app.lightgbm.production_release import QualifiedProductionRelease
 from app.lightgbm.training import exact_grid, fit_lightgbm_reproducible, raw_margins
+from app.lightgbm.training_append import (
+    append_from_daily_run,
+    appended_sessions,
+    derive_training_window,
+    read_append_index,
+)
 from app.lightgbm.universe import MonthlyUniverse
 
 
@@ -117,12 +117,13 @@ def _state(root: Path) -> DailyInferenceState:
     sessions = tuple(value.date() for value in calendar.sessions_in_range(first, last))
     symbols = tuple(sorted([f"{value:06d}" for value in range(1, 30)] + ["005930", "132030"]))
     identities = tuple(
-        "XKRX:ETF:132030" if symbol == "132030" else f"KR{symbol}0000"
-        for symbol in symbols
+        "XKRX:ETF:132030" if symbol == "132030" else f"KR{symbol}0000" for symbol in symbols
     )
     schedule = derive_monthly_universe_schedule(
         "2026-08",
-        dataset_cutoff=datetime(2026, 8, 17, 8, 10, tzinfo=next_xkrx_evidence_clock(sessions[-1]).tzinfo),
+        dataset_cutoff=datetime(
+            2026, 8, 17, 8, 10, tzinfo=next_xkrx_evidence_clock(sessions[-1]).tzinfo
+        ),
     )
     universe = MonthlyUniverse(
         selection_session=schedule.selection_session,
@@ -195,7 +196,7 @@ def _state(root: Path) -> DailyInferenceState:
         session_date=sessions[-1],
         as_of=next_xkrx_evidence_clock(sessions[-1]),
         universe=universe,
-        listing_markets={identity: "KOSPI" for identity in identities},
+        listing_markets=dict.fromkeys(identities, "KOSPI"),
         prices=prices,
         indices=indices,
         macro=macro,
@@ -227,7 +228,9 @@ def test_daily_state_and_packet_are_digest_anchored_and_single_session(tmp_path:
         author_daily_refresh_packet(
             state=state,
             cutoff=next_xkrx_evidence_clock(
-                calendar.next_session(calendar.date_to_session(next_session, direction="none")).date()
+                calendar.next_session(
+                    calendar.date_to_session(next_session, direction="none")
+                ).date()
             ),
         )
     # 놓친 날은 최신 session으로 건너뛰지 않고 바로 다음 XKRX session packet만 명시적으로 복구한다.
@@ -309,9 +312,13 @@ class _NoEcos:
 def test_daily_refresh_stops_all_remaining_providers_after_first_failure(tmp_path: Path) -> None:
     state_root = _private(tmp_path / "daily")
     state = _state(state_root)
-    next_session = corrected_calendar().next_session(
-        corrected_calendar().date_to_session(state.session_date.isoformat(), direction="none")
-    ).date()
+    next_session = (
+        corrected_calendar()
+        .next_session(
+            corrected_calendar().date_to_session(state.session_date.isoformat(), direction="none")
+        )
+        .date()
+    )
     packet = author_daily_refresh_packet(
         state=state,
         cutoff=next_xkrx_evidence_clock(next_session),
@@ -343,9 +350,21 @@ class _SuccessfulKrx:
     def fetch(self, *, service: str, session_date: date) -> tuple[dict[str, str], ...]:
         self.calls.append(service)
         if service == "kospi_dd_trd":
-            return ({"BAS_DD": session_date.strftime("%Y%m%d"), "IDX_NM": "KOSPI", "CLSPRC_IDX": "2100"},)
+            return (
+                {
+                    "BAS_DD": session_date.strftime("%Y%m%d"),
+                    "IDX_NM": "KOSPI",
+                    "CLSPRC_IDX": "2100",
+                },
+            )
         if service == "kosdaq_dd_trd":
-            return ({"BAS_DD": session_date.strftime("%Y%m%d"), "IDX_NM": "KOSDAQ", "CLSPRC_IDX": "900"},)
+            return (
+                {
+                    "BAS_DD": session_date.strftime("%Y%m%d"),
+                    "IDX_NM": "KOSDAQ",
+                    "CLSPRC_IDX": "900",
+                },
+            )
         return ({"BAS_DD": session_date.strftime("%Y%m%d"), "ISU_CD": "005930"},)
 
 
@@ -406,9 +425,7 @@ class _SuccessfulEcos:
     def __init__(self) -> None:
         self.calls = 0
 
-    def fetch(
-        self, *, series: ECOSSeries, start: date, end: date
-    ) -> tuple[ECOSObservation, ...]:
+    def fetch(self, *, series: ECOSSeries, start: date, end: date) -> tuple[ECOSObservation, ...]:
         assert start == end
         self.calls += 1
         if series.series_id == "policy-rate":
@@ -442,9 +459,13 @@ def test_daily_refresh_builds_real_lightgbm_exact_31_batch_with_bounded_calls(
 ) -> None:
     state_root = _private(tmp_path / "daily")
     state = _state(state_root)
-    target = corrected_calendar().next_session(
-        corrected_calendar().date_to_session(state.session_date.isoformat(), direction="none")
-    ).date()
+    target = (
+        corrected_calendar()
+        .next_session(
+            corrected_calendar().date_to_session(state.session_date.isoformat(), direction="none")
+        )
+        .date()
+    )
     packet = author_daily_refresh_packet(
         state=state,
         cutoff=next_xkrx_evidence_clock(target),
@@ -498,9 +519,13 @@ def test_daily_failed_query_resume_reuses_successes_and_retries_only_failed_quer
 ) -> None:
     state_root = _private(tmp_path / "daily")
     state = _state(state_root)
-    target = corrected_calendar().next_session(
-        corrected_calendar().date_to_session(state.session_date.isoformat(), direction="none")
-    ).date()
+    target = (
+        corrected_calendar()
+        .next_session(
+            corrected_calendar().date_to_session(state.session_date.isoformat(), direction="none")
+        )
+        .date()
+    )
     packet = author_daily_refresh_packet(
         state=state,
         cutoff=next_xkrx_evidence_clock(target),
@@ -522,13 +547,16 @@ def test_daily_failed_query_resume_reuses_successes_and_retries_only_failed_quer
     assert first_krx.calls == ["stk_bydd_trd", "ksq_bydd_trd", "kospi_dd_trd"]
     journal = BootstrapJournal(run_root / "source")
     resume = build_daily_resume_packet(packet=packet, state=state, journal=journal)
-    assert validate_daily_resume_packet(
-        resume.content,
-        expected_sha256=resume.sha256,
-        packet=packet,
-        state=state,
-        journal=journal,
-    ) == resume
+    assert (
+        validate_daily_resume_packet(
+            resume.content,
+            expected_sha256=resume.sha256,
+            packet=packet,
+            state=state,
+            journal=journal,
+        )
+        == resume
+    )
 
     resumed_krx = _SuccessfulKrx()
     kis = _SuccessfulKis(target)
@@ -557,6 +585,8 @@ def test_daily_failed_query_resume_reuses_successes_and_retries_only_failed_quer
     )
     assert b'"resumeMode":"LOCAL_FINALIZATION"' in local_resume.content
     assert b'"authorizedAdditionalCalls":0' in local_resume.content
+
+
 def test_daily_refresh_output_appends_to_the_training_store(
     tmp_path: Path,
 ) -> None:
@@ -568,9 +598,13 @@ def test_daily_refresh_output_appends_to_the_training_store(
 
     state_root = _private(tmp_path / "daily")
     state = _state(state_root)
-    target = corrected_calendar().next_session(
-        corrected_calendar().date_to_session(state.session_date.isoformat(), direction="none")
-    ).date()
+    target = (
+        corrected_calendar()
+        .next_session(
+            corrected_calendar().date_to_session(state.session_date.isoformat(), direction="none")
+        )
+        .date()
+    )
     packet = author_daily_refresh_packet(
         state=state,
         cutoff=next_xkrx_evidence_clock(target),

@@ -10,21 +10,6 @@ from types import SimpleNamespace
 import pytest
 
 from app.cross_market.foreign_news import MODEL_CANDIDATES
-from app.cross_market.foreign_news_evaluator import (
-    ForeignNewsEvaluationExample,
-    ForeignNewsEvaluationHarness,
-    ForeignNewsLocalCandidate,
-    ForeignNewsPrediction,
-)
-from app.cross_market.foreign_news_local_evaluation import (
-    ForeignNewsLocalEvaluationInputs,
-    ForeignNewsModelArtifactReceipt,
-    _LocalFinBertClassifier,
-    _load_loughran_mcdonald_candidate,
-    load_sentivent_gold_split,
-    load_tfns_stress_split,
-    run_local_model_selection,
-)
 from app.cross_market.foreign_news_evaluation_cli import (
     _TEST_RESERVATION_CONTRACT_ID,
     _TEST_RESERVATION_NAME,
@@ -34,6 +19,21 @@ from app.cross_market.foreign_news_evaluation_cli import (
     _write_new_receipt,
     load_verified_selected_local_candidate,
 )
+from app.cross_market.foreign_news_evaluator import (
+    ForeignNewsEvaluationExample,
+    ForeignNewsEvaluationHarness,
+    ForeignNewsLocalCandidate,
+    ForeignNewsPrediction,
+)
+from app.cross_market.foreign_news_local_evaluation import (
+    ForeignNewsLocalEvaluationInputs,
+    ForeignNewsModelArtifactReceipt,
+    _load_loughran_mcdonald_candidate,
+    _LocalFinBertClassifier,
+    load_sentivent_gold_split,
+    load_tfns_stress_split,
+    run_local_model_selection,
+)
 
 
 def test_sentivent_loader_keeps_only_unambiguous_three_class_event_polarity(tmp_path: Path) -> None:
@@ -41,7 +41,9 @@ def test_sentivent_loader_keeps_only_unambiguous_three_class_event_polarity(tmp_
     split_path = dataset_root / "data" / "sentivent_unified_sentence" / "validation.jsonl"
     split_path.parent.mkdir(parents=True)
     (dataset_root / "metadata").mkdir()
-    (dataset_root / "metadata" / "build_info.json").write_text('{"revision":"test"}\n', encoding="utf-8")
+    (dataset_root / "metadata" / "build_info.json").write_text(
+        '{"revision":"test"}\n', encoding="utf-8"
+    )
     (dataset_root / "LICENSE").write_text("CC-BY-4.0\n", encoding="utf-8")
     rows = (
         _sentivent_row("good outlook", ("positive",)),
@@ -61,7 +63,9 @@ def test_sentivent_loader_keeps_only_unambiguous_three_class_event_polarity(tmp_
     assert "good outlook" not in str(loaded.receipt.to_payload())
 
 
-def test_tfns_loader_maps_bearish_bullish_and_neutral_without_retaining_text(tmp_path: Path) -> None:
+def test_tfns_loader_maps_bearish_bullish_and_neutral_without_retaining_text(
+    tmp_path: Path,
+) -> None:
     dataset_root = tmp_path / "tfns"
     dataset_root.mkdir()
     (dataset_root / "README.md").write_text("MIT\n", encoding="utf-8")
@@ -87,10 +91,7 @@ def test_tfns_loader_maps_bearish_bullish_and_neutral_without_retaining_text(tmp
 def test_loughran_mcdonald_master_dictionary_uses_nonzero_year_membership(tmp_path: Path) -> None:
     dictionary_path = tmp_path / "loughran-mcdonald-master-dictionary.csv"
     dictionary_path.write_text(
-        "Word,Negative,Positive\n"
-        "LOSS,2009,0\n"
-        "GAIN,0,2009\n"
-        "FLAT,0,0\n",
+        "Word,Negative,Positive\nLOSS,2009,0\nGAIN,0,2009\nFLAT,0,0\n",
         encoding="utf-8",
     )
 
@@ -119,7 +120,7 @@ def test_finbert_prediction_applies_softmax_once_before_selecting_confidence() -
 
 
 def test_local_selection_runs_blind_and_stress_only_for_the_validation_winner() -> None:
-    counters = {candidate: 0 for candidate in MODEL_CANDIDATES}
+    counters = dict.fromkeys(MODEL_CANDIDATES, 0)
     candidates = tuple(
         ForeignNewsLocalCandidate(
             candidate_model=candidate,
@@ -149,10 +150,10 @@ def test_local_selection_runs_blind_and_stress_only_for_the_validation_winner() 
     result = run_local_model_selection(
         inputs=ForeignNewsLocalEvaluationInputs(
             candidates=candidates,
-                validation_examples=_examples(prefix="validation"),
-                blind_test_loader=blind_loader,
-                before_blind_test=reserve_selected_test,
-                tfns_stress_loader=stress_loader,
+            validation_examples=_examples(prefix="validation"),
+            blind_test_loader=blind_loader,
+            before_blind_test=reserve_selected_test,
+            tfns_stress_loader=stress_loader,
             harness=ForeignNewsEvaluationHarness(clock_ns=_clock(step_ns=1_000_000)),
         ),
         selection_id="fns_local_eval_000001",
@@ -224,11 +225,15 @@ def test_local_receipt_is_content_free_single_create_and_can_be_reloaded(tmp_pat
     assert _load_receipt_if_present(receipt_path) == payload
     assert oct(receipt_path.stat().st_mode & 0o777) == "0o600"
     assert "text" not in receipt_path.read_text(encoding="utf-8").casefold()
-    with pytest.raises(ForeignNewsEvaluationCliError, match="FOREIGN_NEWS_EVALUATION_RECEIPT_EXISTS"):
+    with pytest.raises(
+        ForeignNewsEvaluationCliError, match="FOREIGN_NEWS_EVALUATION_RECEIPT_EXISTS"
+    ):
         _write_new_receipt(receipt_path, payload)
 
 
-def test_stale_test_reservation_blocks_evaluation_before_any_dataset_is_read(tmp_path: Path) -> None:
+def test_stale_test_reservation_blocks_evaluation_before_any_dataset_is_read(
+    tmp_path: Path,
+) -> None:
     evaluation_root = tmp_path / "finbert-eval"
     evaluation_root.mkdir(mode=0o700)
     receipts = evaluation_root / "receipts"
@@ -248,7 +253,9 @@ def test_stale_test_reservation_blocks_evaluation_before_any_dataset_is_read(tmp
     )
     reservation.chmod(0o600)
 
-    with pytest.raises(ForeignNewsEvaluationCliError, match="FOREIGN_NEWS_TEST_EVALUATION_RESUME_BLOCKED"):
+    with pytest.raises(
+        ForeignNewsEvaluationCliError, match="FOREIGN_NEWS_TEST_EVALUATION_RESUME_BLOCKED"
+    ):
         _evaluate_once(evaluation_root=evaluation_root)
 
 
@@ -301,7 +308,9 @@ def test_runtime_model_loader_requires_a_passed_selected_only_blind_test(
         encoding="utf-8",
     )
     receipt_path.chmod(0o600)
-    with pytest.raises(ForeignNewsEvaluationCliError, match="FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED"):
+    with pytest.raises(
+        ForeignNewsEvaluationCliError, match="FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED"
+    ):
         load_verified_selected_local_candidate(evaluation_root=evaluation_root)
 
 
@@ -356,7 +365,9 @@ def test_runtime_model_loader_rejects_model_artifact_drift_after_passed_receipt(
         lambda *, evaluation_root: ((candidate,), drifted),
     )
 
-    with pytest.raises(ForeignNewsEvaluationCliError, match="FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED"):
+    with pytest.raises(
+        ForeignNewsEvaluationCliError, match="FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED"
+    ):
         load_verified_selected_local_candidate(evaluation_root=evaluation_root)
 
 
@@ -403,7 +414,12 @@ class _SingleSoftmaxTorch:
 class _Tokenizer:
     def __call__(self, text: str, **kwargs: object) -> dict[str, object]:
         assert text == "profit outlook improved"
-        assert kwargs == {"max_length": 512, "padding": False, "return_tensors": "pt", "truncation": True}
+        assert kwargs == {
+            "max_length": 512,
+            "padding": False,
+            "return_tensors": "pt",
+            "truncation": True,
+        }
         return {"input_ids": object()}
 
 
@@ -485,5 +501,7 @@ def _evaluation_input_digest(
         "modelArtifacts": [artifact.to_payload() for artifact in artifacts],
         "sentiventValidation": validation_receipt,
     }
-    canonical = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    canonical = json.dumps(
+        payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()

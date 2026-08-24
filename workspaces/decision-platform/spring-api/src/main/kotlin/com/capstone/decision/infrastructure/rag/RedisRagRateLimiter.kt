@@ -53,7 +53,7 @@ class RedisRagRateLimiter(
         return try {
             val mac = Mac.getInstance("HmacSHA256")
             mac.init(SecretKeySpec(key, "HmacSHA256"))
-            mac.doFinal(message).joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+            mac.doFinal(message).joinToString("") { byte -> "%02x".format(java.util.Locale.ROOT, byte.toInt() and 0xff) }
         } finally {
             key.fill(0)
             message.fill(0)

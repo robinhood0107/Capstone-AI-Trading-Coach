@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from hmac import compare_digest
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 import re
-from typing import Protocol
 import urllib.error
 import urllib.request
+from dataclasses import asdict, dataclass
+from hmac import compare_digest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Protocol
 
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
-
 
 _PATH = "/internal/kafka/poison-receipts"
 _LOOPBACK_URL = re.compile(r"^http://127\.0\.0\.1:[1-9][0-9]{0,4}/internal/kafka/poison-receipts$")
@@ -77,37 +76,39 @@ class PostgresPoisonRecorder:
 
     def record(self, receipt: PoisonReceipt) -> bool:
         receipt.validate()
-        with psycopg.connect(
-            self._database_dsn,
-            autocommit=True,
-            connect_timeout=2,
-        ) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT current_user,session_user")
-                if cursor.fetchone() != ("decision_poison_recorder", "decision_poison_recorder"):
-                    raise PoisonReceiptError
-                cursor.execute(
-                    """
+        with (
+            psycopg.connect(
+                self._database_dsn,
+                autocommit=True,
+                connect_timeout=2,
+            ) as connection,
+            connection.cursor() as cursor,
+        ):
+            cursor.execute("SELECT current_user,session_user")
+            if cursor.fetchone() != ("decision_poison_recorder", "decision_poison_recorder"):
+                raise PoisonReceiptError
+            cursor.execute(
+                """
                     SELECT p1_record_kafka_poison_receipt(
                       %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
                     )
                     """,
-                    (
-                        receipt.event_id,
-                        receipt.event_type,
-                        receipt.payload_hash,
-                        receipt.source_topic,
-                        receipt.source_partition,
-                        receipt.source_offset,
-                        receipt.attempt,
-                        receipt.failure_code,
-                        receipt.partition_key,
-                        receipt.job_id,
-                        receipt.claim_token,
-                    ),
-                )
-                row = cursor.fetchone()
-                return row is not None and row[0] is True
+                (
+                    receipt.event_id,
+                    receipt.event_type,
+                    receipt.payload_hash,
+                    receipt.source_topic,
+                    receipt.source_partition,
+                    receipt.source_offset,
+                    receipt.attempt,
+                    receipt.failure_code,
+                    receipt.partition_key,
+                    receipt.job_id,
+                    receipt.claim_token,
+                ),
+            )
+            row = cursor.fetchone()
+            return row is not None and row[0] is True
 
 
 class HttpPoisonRecorderClient:

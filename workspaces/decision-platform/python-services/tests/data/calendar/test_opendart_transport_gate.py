@@ -18,7 +18,9 @@ from app.data.opendart.http_client import (
 from app.data.opendart.settings import OpenDARTSettings
 
 
-def test_reservation_hook_runs_after_limiter_and_immediately_before_transport(tmp_path: Path) -> None:
+def test_reservation_hook_runs_after_limiter_and_immediately_before_transport(
+    tmp_path: Path,
+) -> None:
     events: list[str] = []
 
     class Limiter:
@@ -65,7 +67,7 @@ def test_reservation_failure_is_fail_closed_with_zero_transport_attempts(tmp_pat
         before_send=reserve,
         on_handoff=lambda: None,
     )
-    with pytest.raises(RuntimeError, match="ambiguous"):
+    with pytest.raises(RuntimeError, match=r"ambiguous"):
         client.get_json("/api/list.json", {})
     assert attempts == 0
 
@@ -193,7 +195,7 @@ def test_online_constructor_rejects_injected_transport_and_rate_limiter(tmp_path
         opendart_retry_attempts=1,
         opendart_rate_limit_per_second=1,
     )
-    with pytest.raises(ValueError, match="online.*injection"):
+    with pytest.raises(ValueError, match=r"online.*injection"):
         OpenDARTHttpClient(
             online,
             transport=httpx.MockTransport(lambda _: httpx.Response(200)),
@@ -210,14 +212,14 @@ def test_online_constructor_requires_both_reservation_hooks(tmp_path: Path) -> N
         opendart_rate_limit_per_second=1,
     )
 
-    with pytest.raises(ValueError, match="reservation and handoff hooks"):
+    with pytest.raises(ValueError, match=r"reservation and handoff hooks"):
         OpenDARTHttpClient(online, on_handoff=lambda: None)
-    with pytest.raises(ValueError, match="reservation and handoff hooks"):
+    with pytest.raises(ValueError, match=r"reservation and handoff hooks"):
         OpenDARTHttpClient(online, before_send=lambda _: None)
 
 
 def test_online_factory_rejects_offline_settings(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="OPENDART_OFFLINE=false"):
+    with pytest.raises(ValueError, match=r"OPENDART_OFFLINE=false"):
         OpenDARTHttpClient.for_online_collector(
             _settings(tmp_path),
             before_send=lambda _: None,

@@ -1,4 +1,6 @@
 # syntax=docker/dockerfile:1.10@sha256:865e5dd094beca432e8c0a1d5e1c465db5f998dca4e439981029b3b81fb39ed5
+# CI deliberately produces one amd64 artifact; the constant platform prevents host-dependent inputs.
+# hadolint ignore=DL3029
 FROM --platform=linux/amd64 eclipse-temurin:25-jdk-jammy@sha256:89565961a318534f01c971c7b1d030e60713c66995b887c94010cef938dbc53e AS build
 WORKDIR /source
 COPY workspaces/decision-platform/spring-api/gradlew workspaces/decision-platform/spring-api/gradlew
@@ -10,6 +12,8 @@ RUN --mount=type=cache,target=/root/.gradle \
     workspaces/decision-platform/spring-api/gradlew \
       -p workspaces/decision-platform/spring-api --no-daemon bootJar
 
+# CI deliberately produces one amd64 artifact; the constant platform prevents host-dependent inputs.
+# hadolint ignore=DL3029
 FROM --platform=linux/amd64 cgr.dev/chainguard/wolfi-base:latest@sha256:a31344ab2cb8618db84f535eec56f76f6178b142cb92cb2e48676cc2dcebea72
 ARG SOURCE_REVISION=unknown
 ARG RELEASE_VERSION=dev

@@ -41,11 +41,12 @@ from app.rag.rag_v2_authorized_retrieval import (
     RagV2RrfFusion,
 )
 from app.rag.rag_v2_public_bge_staging import RagV2PublicBgeComponentContext
-from app.rag.rag_v2_public_bge_staging_repository import PublicBgeEvaluationEvidence
-from app.rag.rag_v2_public_bge_staging_repository import PublicBgeStagingRepositoryError
-from app.rag.rag_v2_public_bge_staging_repository import PublicBgeRecord
+from app.rag.rag_v2_public_bge_staging_repository import (
+    PublicBgeEvaluationEvidence,
+    PublicBgeRecord,
+    PublicBgeStagingRepositoryError,
+)
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
-
 
 _REPO_ROOT = Path(__file__).resolve().parents[5]
 _DEFAULT_EXACT30_FIXTURE = _REPO_ROOT / "capstone-rag/eval/s4-2b-30-card-smoke.v1.json"
@@ -57,9 +58,7 @@ _MAX_OA112_MANIFEST_BYTES = 2 * 1024 * 1024
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SOURCE_ID = re.compile(r"^src_[a-z0-9][a-z0-9_-]{2,95}$")
 _QUERY_ID = re.compile(r"^[a-z][a-z0-9_-]{1,95}$")
-_EXACT_FIXTURE_KEYS = frozenset(
-    {"schemaVersion", "datasetId", "corpusManifestSha256", "queries"}
-)
+_EXACT_FIXTURE_KEYS = frozenset({"schemaVersion", "datasetId", "corpusManifestSha256", "queries"})
 _EXACT_QUERY_KEYS = frozenset({"id", "text", "expectedSourceIds"})
 _OA112_MANIFEST_KEYS = frozenset(
     {
@@ -71,9 +70,7 @@ _OA112_MANIFEST_KEYS = frozenset(
         "evaluationManifestDigest",
     }
 )
-_OA112_QUERY_KEYS = frozenset(
-    {"id", "question", "expectedSourceId", "trackId", "topics"}
-)
+_OA112_QUERY_KEYS = frozenset({"id", "question", "expectedSourceId", "trackId", "topics"})
 _RECEIPT_KEYS = frozenset(
     {
         "acceptancePassed",
@@ -307,7 +304,9 @@ class _InMemoryPublicChannels:
         ranked = sorted(
             (
                 (
-                    -math.fsum(left * right for left, right in zip(query_vector, item.vector, strict=True)),
+                    -math.fsum(
+                        left * right for left, right in zip(query_vector, item.vector, strict=True)
+                    ),
                     item.candidate.source_id.encode("utf-8"),
                     item.candidate.chunk_id.encode("utf-8"),
                     item.candidate,
@@ -315,7 +314,9 @@ class _InMemoryPublicChannels:
                 for item in self._candidates
                 if _candidate_matches_topics(item.candidate, topics)
                 and 1.0
-                - math.fsum(left * right for left, right in zip(query_vector, item.vector, strict=True))
+                - math.fsum(
+                    left * right for left, right in zip(query_vector, item.vector, strict=True)
+                )
                 <= 0.55
             ),
             key=lambda item: (item[0], item[1], item[2]),
@@ -385,7 +386,13 @@ def load_oa112_evaluation_queries(
             max_bytes=_MAX_OA112_MANIFEST_BYTES,
         )
         payload = _parse_object_json(source.content)
-    except (RagSafeIoError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
+    except (
+        RagSafeIoError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+    ) as error:
         raise PublicBgePairEvaluationError("PUBLIC_BGE_EVALUATION_OA_MANIFEST") from error
     raw_queries = payload.get("queries")
     if (
@@ -429,11 +436,9 @@ def load_oa112_evaluation_queries(
                 track_id=entry.track_id,
             )
         )
-    if (
-        {query.expected_source_id for query in queries} != set(active_by_source)
-        or tuple(query.track_id for query in queries)
-        != tuple(track_id for track_id in OA_TRACK_IDS for _ in range(8))
-    ):
+    if {query.expected_source_id for query in queries} != set(active_by_source) or tuple(
+        query.track_id for query in queries
+    ) != tuple(track_id for track_id in OA_TRACK_IDS for _ in range(8)):
         raise PublicBgePairEvaluationError("PUBLIC_BGE_EVALUATION_OA_BINDING")
     digest = payload["evaluationManifestDigest"]
     assert isinstance(digest, str)
@@ -524,7 +529,9 @@ def evaluate_public_bge_pair(
     )
     track_recall = _minimum_track_recall(queries=tuple(oa112_queries), hits=oa_hits)
     exact_rate = _ratio(len(exact_hits), len(exact30_queries))
-    citation_coverage = _ratio(len(exact_citations) + len(oa_citations), len(exact30_queries) + len(oa112_queries))
+    citation_coverage = _ratio(
+        len(exact_citations) + len(oa_citations), len(exact30_queries) + len(oa112_queries)
+    )
     direct_advice_block_rate = _direct_advice_block_rate()
     warm_p95_millis = _p95_millis(durations)
     evaluation_digest = _sha256_json(
@@ -564,12 +571,15 @@ def write_public_bge_pair_evaluation_receipt(
     changed state but OA112's subsequent writer transition was interrupted.
     """
 
-    payload = json.dumps(
-        evaluation.content_free_receipt(),
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8") + b"\n"
+    payload = (
+        json.dumps(
+            evaluation.content_free_receipt(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        + b"\n"
+    )
     try:
         write_benchmark_receipt(
             approved_root=approved_root,
@@ -600,9 +610,18 @@ def load_public_bge_pair_evaluation_evidence(
             max_bytes=64 * 1024,
         )
         payload = _parse_object_json(read.content)
-    except (RagSafeIoError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
+    except (
+        RagSafeIoError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+    ) as error:
         raise PublicBgePairEvaluationError("PUBLIC_BGE_EVALUATION_RECEIPT") from error
-    if set(payload) != _RECEIPT_KEYS or payload.get("evaluationPlanDigest") != evaluation_plan_digest:
+    if (
+        set(payload) != _RECEIPT_KEYS
+        or payload.get("evaluationPlanDigest") != evaluation_plan_digest
+    ):
         return None
     if (
         payload.get("contractId") != "rag-v2-public-bge-pair-evaluation-receipt-v1"
@@ -684,7 +703,9 @@ def _evaluate_queries(
             },
         )
         durations.append((time.perf_counter_ns() - started) / 1_000_000)
-        evidence = tuple(item for item in outcome.evidence if item.source_id == query.expected_source_id)
+        evidence = tuple(
+            item for item in outcome.evidence if item.source_id == query.expected_source_id
+        )
         if outcome.retrieval_permitted and evidence:
             hits.add(query.query_id)
             if all(_valid_public_citation(item) for item in evidence):
@@ -995,7 +1016,12 @@ def _ratio(numerator: int, denominator: int) -> float:
 def _read_tracked_json(path: Path, *, maximum_bytes: int) -> tuple[dict[str, object], str]:
     try:
         metadata = path.lstat()
-        if not path.is_file() or path.is_symlink() or metadata.st_size <= 0 or metadata.st_size > maximum_bytes:
+        if (
+            not path.is_file()
+            or path.is_symlink()
+            or metadata.st_size <= 0
+            or metadata.st_size > maximum_bytes
+        ):
             raise OSError("unsafe exact fixture")
         raw = path.read_bytes()
         if len(raw) != metadata.st_size:

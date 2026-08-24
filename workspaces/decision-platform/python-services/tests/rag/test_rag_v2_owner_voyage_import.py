@@ -12,26 +12,26 @@ import numpy as np
 import psycopg
 import pytest
 
+from app.rag.local_document_parser import LocalDocumentParser
 from app.rag.pre_s5_voyage_transport import (
     PreS5VoyageDocumentBatchResult,
     PreS5VoyageTransportError,
 )
-from app.rag.rag_v2_external_exact30_voyage_runner import (
-    VoyagePreChunkedChunk,
-    VoyagePreChunkedDocumentGroup,
-)
-from app.rag.local_document_parser import LocalDocumentParser
 from app.rag.rag_v2_bge_materializer import (
     RagV2OwnerDocumentRequest,
     materialize_owner_bge_document,
     prepare_owner_document_for_embedding,
 )
+from app.rag.rag_v2_external_exact30_voyage_runner import (
+    VoyagePreChunkedChunk,
+    VoyagePreChunkedDocumentGroup,
+)
+from app.rag.rag_v2_owner_bge_deletion import PsycopgRagV2OwnerBgeDeletionRepository
 from app.rag.rag_v2_owner_bge_staging import (
     OwnerBgeStagingError,
     OwnerBgeStagingMetadata,
     PsycopgRagV2OwnerBgeStagingRepository,
 )
-from app.rag.rag_v2_owner_bge_deletion import PsycopgRagV2OwnerBgeDeletionRepository
 from app.rag.rag_v2_owner_overlay import PsycopgRagV2OwnerOverlayRepository
 
 
@@ -84,8 +84,8 @@ class _Transport:
         self.calls.append((batch_plan_sha256, batch))
         if self.fail:
             raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
-        chunk_count = getattr(batch, "chunk_count")
-        token_count = getattr(batch, "token_count")
+        chunk_count = batch.chunk_count
+        token_count = batch.token_count
         vectors = np.zeros((chunk_count, 1024), dtype=np.float32)
         vectors[:, 0] = 1.0
         return PreS5VoyageDocumentBatchResult(
@@ -132,11 +132,15 @@ class _FailingCompletionRepository(_AttemptRepository):
         raise RuntimeError("synthetic atomic completion failure")
 
 
-def test_owner_voyage_plan_binds_nine_tickets_to_one_content_free_batch_and_one_atomic_completion() -> None:
+def test_owner_voyage_plan_binds_nine_tickets_to_one_content_free_batch_and_one_atomic_completion() -> (
+    None
+):
     module = importlib.import_module("app.rag.rag_v2_owner_voyage_import")
     texts = tuple(f"safe owner document {index}" for index in range(1, 10))
-    counter = _TokenCounter({text: 10 for text in texts})
-    items = tuple(_item(module, index=index, text=text, token_count=10) for index, text in enumerate(texts, 1))
+    counter = _TokenCounter(dict.fromkeys(texts, 10))
+    items = tuple(
+        _item(module, index=index, text=text, token_count=10) for index, text in enumerate(texts, 1)
+    )
 
     plan = module.build_owner_voyage_import_plan(
         owner_user_id="usr_demo_user",
@@ -346,13 +350,13 @@ def test_psycopg_owner_voyage_repository_completes_usage_and_staging_in_one_func
             return ("rgr_" + "9" * 32, 9, 9, "STAGED")
 
     class _Connection:
-        def __enter__(self) -> "_Connection":
+        def __enter__(self) -> _Connection:
             return self
 
         def __exit__(self, *_args: object) -> None:
             return None
 
-        def transaction(self) -> "_Connection":
+        def transaction(self) -> _Connection:
             return self
 
         def execute(self, sql: str, params: tuple[object, ...] = ()) -> _Cursor:
@@ -373,7 +377,9 @@ def test_psycopg_owner_voyage_repository_completes_usage_and_staging_in_one_func
         items=tuple({"importTicketId": f"rti_{index:032x}"} for index in range(1, 10)),
     )
 
-    completion_calls = [sql for sql, _params in calls if "complete_rag_v2_owner_voyage_import" in sql]
+    completion_calls = [
+        sql for sql, _params in calls if "complete_rag_v2_owner_voyage_import" in sql
+    ]
     assert len(completion_calls) == 1
     assert row == {
         "componentGenerationId": "rgr_" + "9" * 32,
@@ -417,10 +423,7 @@ def test_owner_voyage_postgres_attempt_commits_usage_ticket_and_vector_atomicall
         ),
         tokenizer_version="voyage-context-4-official-tokenizer-v1",
     )
-    counts = {
-        chunk.canonical_text: chunk.token_count
-        for chunk in item.group.chunks
-    }
+    counts = {chunk.canonical_text: chunk.token_count for chunk in item.group.chunks}
     plan = module.build_owner_voyage_import_plan(
         owner_user_id="usr_demo_user",
         items=(item,),
@@ -691,11 +694,14 @@ def test_active_owner_overlay_delete_rebuild_counts_only_per_document_staging_ge
     deletion = PsycopgRagV2OwnerBgeDeletionRepository(
         database_dsn=isolated_postgres_cluster["rag_admin_dsn"],
     )
-    assert deletion.delete(
-        owner_user_id="usr_demo_user",
-        document_id=documents[0],
-        delete_ticket_id=first_delete_ticket,
-    ).state == "DELETED"
+    assert (
+        deletion.delete(
+            owner_user_id="usr_demo_user",
+            document_id=documents[0],
+            delete_ticket_id=first_delete_ticket,
+        ).state
+        == "DELETED"
+    )
 
     with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
         assert connection.execute(
@@ -720,11 +726,14 @@ def test_active_owner_overlay_delete_rebuild_counts_only_per_document_staging_ge
         document_id=documents[1],
         ticket_id=second_delete_ticket,
     )
-    assert deletion.delete(
-        owner_user_id="usr_demo_user",
-        document_id=documents[1],
-        delete_ticket_id=second_delete_ticket,
-    ).state == "DELETED"
+    assert (
+        deletion.delete(
+            owner_user_id="usr_demo_user",
+            document_id=documents[1],
+            delete_ticket_id=second_delete_ticket,
+        ).state
+        == "DELETED"
+    )
 
     with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
         assert connection.execute(

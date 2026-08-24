@@ -11,9 +11,8 @@ from datetime import UTC, date, datetime
 from hmac import compare_digest
 from typing import Never, Protocol
 
-import psycopg
-
 import grpc
+import psycopg
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 
 from app.data.opendart.models import DisclosureRiskEvent
@@ -204,11 +203,7 @@ class DisclosureObservationServicer(
         source_refs = sorted(
             [
                 *batch.source_refs,
-                *(
-                    source_ref
-                    for event in batch.events
-                    for source_ref in event.source_refs
-                ),
+                *(source_ref for event in batch.events for source_ref in event.source_refs),
             ]
         )
         response = disclosure_observation_pb2.GetDisclosureEventsResponse(
@@ -277,11 +272,7 @@ def create_disclosure_server(
 
 
 def _require_authenticated(context: grpc.ServicerContext, shared_secret: str) -> None:
-    values = [
-        value
-        for key, value in context.invocation_metadata()
-        if key == _AUTH_METADATA_KEY
-    ]
+    values = [value for key, value in context.invocation_metadata() if key == _AUTH_METADATA_KEY]
     value = values[0] if len(values) == 1 else None
     if not isinstance(value, str) or not compare_digest(value, shared_secret):
         _abort(
@@ -307,11 +298,7 @@ def _validate_request(
         window_to = date.fromisoformat(request.window_to)
     except ValueError:
         _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "date field is invalid")
-    if (
-        window_from > window_to
-        or window_to != as_of
-        or (window_to - window_from).days > 365
-    ):
+    if window_from > window_to or window_to != as_of or (window_to - window_from).days > 365:
         _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "disclosure window is invalid")
     return symbol, corp_code, as_of, window_from, window_to
 
@@ -340,10 +327,7 @@ def _validate_batch(
     event_identities: set[tuple[object, ...]] = set()
     source_refs: set[str] = set()
     for source_ref in batch.source_refs:
-        if (
-            not _SOURCE_REF_PATTERN.fullmatch(source_ref)
-            or source_ref in source_refs
-        ):
+        if not _SOURCE_REF_PATTERN.fullmatch(source_ref) or source_ref in source_refs:
             _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure source reference is invalid")
         source_refs.add(source_ref)
     for event in batch.events:
@@ -367,10 +351,7 @@ def _validate_batch(
         ):
             _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure event is malformed")
         for source_ref in event.source_refs:
-            if (
-                not _SOURCE_REF_PATTERN.fullmatch(source_ref)
-                or source_ref in source_refs
-            ):
+            if not _SOURCE_REF_PATTERN.fullmatch(source_ref) or source_ref in source_refs:
                 _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure source reference is invalid")
             source_refs.add(source_ref)
     if len(source_refs) > _MAX_SOURCE_REFS:

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
-from typing import Callable, Literal, Sequence, TypeVar
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from typing import Literal, TypeVar
 
 import lightgbm as lgb
 import numpy as np
@@ -16,7 +17,6 @@ from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.features import CORE_FEATURE_COLUMNS
 from app.lightgbm.metrics import CalibrationMetrics, calibration_metrics, tie_aware_argmax
 from app.lightgbm.walk_forward import UntouchedTestLoader
-
 
 ClassWeightMode = Literal["NONE", "CAPPED_BALANCED"]
 GRID: tuple[tuple[int, ClassWeightMode], ...] = (

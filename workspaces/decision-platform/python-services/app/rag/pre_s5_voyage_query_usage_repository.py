@@ -84,7 +84,7 @@ class PsycopgPreS5VoyageQueryUsageRepository:
         scope_claim_id: str,
         question_sha256: str,
         tokenizer_sha256: str,
-    ) -> tuple[PreS5VoyageQueryActivation, "PsycopgPreS5VoyageQueryUsageLease"]:
+    ) -> tuple[PreS5VoyageQueryActivation, PsycopgPreS5VoyageQueryUsageLease]:
         """Consume one Spring-issued S4.9 authorization and bind it to the immutable V46 ledger.
 
         The DB receives only the opaque scope and question hash. It generates the one-shot packet/nonce
@@ -293,7 +293,9 @@ class PsycopgPreS5VoyageQueryUsageRepository:
         ):
             raise PreS5VoyageQueryUsageRepositoryError("PRE_S5_VOYAGE_EVALUATION_RESUME_ARGUMENT")
         try:
-            with psycopg.connect(self._database_dsn, autocommit=False, connect_timeout=2) as connection:
+            with psycopg.connect(
+                self._database_dsn, autocommit=False, connect_timeout=2
+            ) as connection:
                 _attest_writer_connection(connection)
                 with connection.transaction():
                     _set_transaction_timeouts(connection)
@@ -314,9 +316,7 @@ class PsycopgPreS5VoyageQueryUsageRepository:
             return None
         vectors = {str(row[0]): _parse_vector(row[1]) for row in rows if len(row) == 2}
         if len(vectors) != expected_count or set(vectors) != set(expected):
-            raise PreS5VoyageQueryUsageRepositoryError(
-                "PRE_S5_VOYAGE_EVALUATION_RESUME_RECEIPT"
-            )
+            raise PreS5VoyageQueryUsageRepositoryError("PRE_S5_VOYAGE_EVALUATION_RESUME_RECEIPT")
         return vectors
 
     def stage_evaluation_batch(
@@ -356,7 +356,9 @@ class PsycopgPreS5VoyageQueryUsageRepository:
             "vectors": rows,
         }
         try:
-            with psycopg.connect(self._database_dsn, autocommit=False, connect_timeout=2) as connection:
+            with psycopg.connect(
+                self._database_dsn, autocommit=False, connect_timeout=2
+            ) as connection:
                 _attest_writer_connection(connection)
                 with connection.transaction():
                     _set_transaction_timeouts(connection)
@@ -374,9 +376,7 @@ class PsycopgPreS5VoyageQueryUsageRepository:
                 "PRE_S5_VOYAGE_EVALUATION_STAGE_REJECTED"
             ) from None
         if row != (activation.component_scope, expected_count, False):
-            raise PreS5VoyageQueryUsageRepositoryError(
-                "PRE_S5_VOYAGE_EVALUATION_STAGE_RECEIPT"
-            )
+            raise PreS5VoyageQueryUsageRepositoryError("PRE_S5_VOYAGE_EVALUATION_STAGE_RECEIPT")
 
 
 class PsycopgPreS5VoyageQueryUsageLease:
@@ -403,7 +403,11 @@ class PsycopgPreS5VoyageQueryUsageLease:
     def claim_attempt(self, *, now: datetime) -> None:
         """Append the physical-attempt row immediately before bytes may be sent to Voyage."""
 
-        if not isinstance(now, datetime) or now.tzinfo is None or now.astimezone(UTC) >= self._expires_at:
+        if (
+            not isinstance(now, datetime)
+            or now.tzinfo is None
+            or now.astimezone(UTC) >= self._expires_at
+        ):
             raise PreS5VoyageQueryUsageRepositoryError("PRE_S5_VOYAGE_QUERY_LEASE_CLAIM_REJECTED")
         self._execute_transition(
             sql="SELECT public.claim_rag_v2_immutable_voyage_query_usage_attempt(%s)",
@@ -508,7 +512,11 @@ class PsycopgPreS5VoyageEvaluationBatchUsageLease(PsycopgPreS5VoyageQueryUsageLe
         self.packet_sha256 = packet_sha256
 
     def claim_attempt(self, *, now: datetime) -> None:
-        if not isinstance(now, datetime) or now.tzinfo is None or now.astimezone(UTC) >= self._expires_at:
+        if (
+            not isinstance(now, datetime)
+            or now.tzinfo is None
+            or now.astimezone(UTC) >= self._expires_at
+        ):
             raise PreS5VoyageQueryUsageRepositoryError("PRE_S5_VOYAGE_QUERY_LEASE_CLAIM_REJECTED")
         self._execute_transition(
             sql=(
@@ -576,8 +584,7 @@ def _validate_activation(activation: object) -> None:
         or not 1 <= activation.cost_cap_microusd <= 1_000_000_000
         or type(activation.input_microusd_per_token) is not int
         or not 1 <= activation.input_microusd_per_token <= 1_000_000
-        or activation.token_cap * activation.input_microusd_per_token
-        > activation.cost_cap_microusd
+        or activation.token_cap * activation.input_microusd_per_token > activation.cost_cap_microusd
         or activation.retry_count != 0
         or activation.raw_artifact_count != 0
     ):
@@ -594,7 +601,7 @@ def _usage_event_id(
             "pre-s5-voyage-query-usage-v1\0"
             f"{activation.packet_sha256}\0{activation.nonce_sha256}\0"
             f"{activation.query_sha256}\0{activation.scope_claim_sha256}"
-        ).encode("utf-8")
+        ).encode()
     ).hexdigest()
     return f"rgr_vqu_{digest[:32]}"
 
@@ -613,13 +620,23 @@ def _attest_writer_connection(connection: psycopg.Connection[Any]) -> None:
     if connection.execute("SELECT current_user").fetchone() != (_WRITER_ROLE,):
         raise PreS5VoyageQueryUsageRepositoryError("PRE_S5_VOYAGE_QUERY_LEASE_WRITER_ROLE")
     for table in _WRITER_FORBIDDEN_TABLES:
-        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+        for privilege in (
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "TRUNCATE",
+            "REFERENCES",
+            "TRIGGER",
+        ):
             row = connection.execute(
                 "SELECT has_table_privilege(current_user, %s, %s)",
                 (f"public.{table}", privilege),
             ).fetchone()
             if row is not None and row[0] is True:
-                raise PreS5VoyageQueryUsageRepositoryError("PRE_S5_VOYAGE_QUERY_LEASE_WRITER_PRIVILEGE")
+                raise PreS5VoyageQueryUsageRepositoryError(
+                    "PRE_S5_VOYAGE_QUERY_LEASE_WRITER_PRIVILEGE"
+                )
     for function in (
         _RESERVE_FUNCTION,
         _CLAIM_FUNCTION,
@@ -695,7 +712,5 @@ def _parse_vector(value: object) -> tuple[float, ...]:
         or not bool(np.isfinite(vector).all())
         or not math.isclose(float(np.linalg.norm(vector)), 1.0, rel_tol=0.0, abs_tol=1e-5)
     ):
-        raise PreS5VoyageQueryUsageRepositoryError(
-            "PRE_S5_VOYAGE_EVALUATION_RESUME_RECEIPT"
-        )
+        raise PreS5VoyageQueryUsageRepositoryError("PRE_S5_VOYAGE_EVALUATION_RESUME_RECEIPT")
     return tuple(float(item) for item in vector)

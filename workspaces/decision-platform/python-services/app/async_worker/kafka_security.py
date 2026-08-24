@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass
 import hashlib
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -14,7 +14,6 @@ from cryptography.hazmat.primitives.serialization import (
     load_der_private_key,
     load_der_public_key,
 )
-
 
 CONTRACT = "p1-kafka-envelope.v1"
 PARTITION_COUNT = 3
@@ -63,7 +62,7 @@ class KafkaEnvelopeSigner:
     _signer: Ed25519PrivateKey
 
     @classmethod
-    def from_base64url(cls, encoded: str) -> "KafkaEnvelopeSigner":
+    def from_base64url(cls, encoded: str) -> KafkaEnvelopeSigner:
         key = load_der_private_key(_decode_key(encoded), password=None)
         if not isinstance(key, Ed25519PrivateKey):
             raise KafkaEnvelopeSecurityError
@@ -95,7 +94,7 @@ class KafkaEnvelopeVerifier:
     public_key: Ed25519PublicKey
 
     @classmethod
-    def from_base64url(cls, encoded: str) -> "KafkaEnvelopeVerifier":
+    def from_base64url(cls, encoded: str) -> KafkaEnvelopeVerifier:
         key = load_der_public_key(_decode_key(encoded))
         if not isinstance(key, Ed25519PublicKey):
             raise KafkaEnvelopeSecurityError

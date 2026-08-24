@@ -27,7 +27,9 @@ def test_local_voyage_tokenizer_requires_hash_pinned_0700_0600_artifact_and_coun
     assert tokenizer.count_texts(texts=("alpha beta", "alpha"), token_cap=8) == 3
 
 
-def test_local_voyage_tokenizer_rejects_packet_hash_or_permissions_before_a_count(tmp_path: Path) -> None:
+def test_local_voyage_tokenizer_rejects_packet_hash_or_permissions_before_a_count(
+    tmp_path: Path,
+) -> None:
     raw = _write_tokenizer(tmp_path)
     with pytest.raises(PreS5VoyageTokenizerError, match="PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_SHA256"):
         LocalPreS5VoyageContext4Tokenizer.from_local_root(
@@ -37,14 +39,18 @@ def test_local_voyage_tokenizer_rejects_packet_hash_or_permissions_before_a_coun
 
     tokenizer_path = tmp_path / "artifacts" / "voyage-context-4" / "tokenizer.json"
     os.chmod(tokenizer_path, 0o644)
-    with pytest.raises(PreS5VoyageTokenizerError, match="PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_BOUNDARY"):
+    with pytest.raises(
+        PreS5VoyageTokenizerError, match="PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_BOUNDARY"
+    ):
         LocalPreS5VoyageContext4Tokenizer.from_local_root(
             local_root=tmp_path,
             expected_sha256=hashlib.sha256(raw).hexdigest(),
         )
 
 
-def test_local_voyage_tokenizer_rejects_token_cap_without_using_a_byte_approximation(tmp_path: Path) -> None:
+def test_local_voyage_tokenizer_rejects_token_cap_without_using_a_byte_approximation(
+    tmp_path: Path,
+) -> None:
     raw = _write_tokenizer(tmp_path)
     tokenizer = LocalPreS5VoyageContext4Tokenizer.from_local_root(
         local_root=tmp_path,

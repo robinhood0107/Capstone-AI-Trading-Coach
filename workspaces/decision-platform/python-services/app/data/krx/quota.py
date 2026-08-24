@@ -4,7 +4,6 @@ from typing import Final
 
 from app.data._shared.redis_quota import QuotaWindow, RedisQuotaPolicy
 
-
 _KRX_QUOTA_KEY: Final = "s1.3:quota:krx:krx-openapi:primary"
 _KRX_QUOTA_POLICY: Final = RedisQuotaPolicy(
     version="s1.3-krx-openapi-quota-v1",

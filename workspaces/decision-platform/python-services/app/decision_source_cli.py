@@ -12,13 +12,13 @@ from typing import Any
 import psycopg
 
 from app.brokerage.kis_mock_portfolio_writer import append_kis_mock_portfolio_fixture
+from app.data.decision.deterministic_observation_writer import (
+    append_deterministic_metric_fixture,
+)
 from app.data.kis.instrument_catalog_writer import append_instrument_catalog_fixture
 from app.data.kis.market_quote_observation_writer import append_market_quote_fixture
 from app.data.opendart.corporation_registry_writer import (
     append_corporation_registry_fixture,
-)
-from app.data.decision.deterministic_observation_writer import (
-    append_deterministic_metric_fixture,
 )
 
 FixtureWriter = Callable[..., int]
@@ -154,7 +154,9 @@ def attest_source_writer_dsn(
                 raise ValueError("offline source writer has unexpected source INSERT privilege")
             for privilege in ("SELECT", "UPDATE", "DELETE", "TRUNCATE"):
                 if _has_table_privilege(connection, table, privilege):
-                    raise ValueError("offline source writer has unexpected source read/write privilege")
+                    raise ValueError(
+                        "offline source writer has unexpected source read/write privilege"
+                    )
         for table in _FORBIDDEN_MUTATION_TABLES:
             for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
                 if _has_table_privilege(connection, table, privilege):

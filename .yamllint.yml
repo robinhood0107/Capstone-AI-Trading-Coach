@@ -1,0 +1,16 @@
+extends: default
+
+# This fixture must contain a duplicate key so contract validation can reject it.
+ignore: |
+  contracts/examples/invalid/rag-source-card-v2.duplicate-key.invalid.yaml
+
+rules:
+  # Action SHA comments intentionally use the conventional single separator.
+  comments: disable
+  document-start: disable
+  line-length: disable
+  truthy:
+    allowed-values:
+      - "true"
+      - "false"
+    check-keys: false

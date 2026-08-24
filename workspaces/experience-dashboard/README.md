@@ -6,7 +6,7 @@
 
 예상 구조 (최종 프로젝트 명세서 6.1):
 
-```
+```text
 src/
   app/                    # Next.js routes
   features/

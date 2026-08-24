@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date, datetime
 import os
-from pathlib import Path
 import sys
 import time
 from collections.abc import Callable
+from datetime import date, datetime
+from pathlib import Path
 from typing import NoReturn
 
 from app.data.quality.kis_daily import QualityReadLimits, load_quality_snapshot

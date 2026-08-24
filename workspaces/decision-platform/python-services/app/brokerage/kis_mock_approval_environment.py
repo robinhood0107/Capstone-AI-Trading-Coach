@@ -55,9 +55,7 @@ def _read_private_operator_environment() -> dict[str, str]:
     try:
         name = _OPERATOR_ENV_FILE.name
         if name in {"", ".", ".."} or "/" in name:
-            raise KISMockApprovalEnvironmentRejected(
-                "operator approval environment is unavailable"
-            )
+            raise KISMockApprovalEnvironmentRejected("operator approval environment is unavailable")
         descriptor = os.open(name, flags, dir_fd=parent_descriptor)
         metadata = os.fstat(descriptor)
         if (
@@ -67,9 +65,7 @@ def _read_private_operator_environment() -> dict[str, str]:
             or metadata.st_nlink != 1
             or metadata.st_size > _MAX_ENV_BYTES
         ):
-            raise KISMockApprovalEnvironmentRejected(
-                "operator approval environment is unavailable"
-            )
+            raise KISMockApprovalEnvironmentRejected("operator approval environment is unavailable")
         chunks: list[bytes] = []
         remaining = _MAX_ENV_BYTES + 1
         while remaining > 0:
@@ -80,12 +76,12 @@ def _read_private_operator_environment() -> dict[str, str]:
             remaining -= len(chunk)
         contents = b"".join(chunks)
         if len(contents) > _MAX_ENV_BYTES:
-            raise KISMockApprovalEnvironmentRejected(
-                "operator approval environment is unavailable"
-            )
+            raise KISMockApprovalEnvironmentRejected("operator approval environment is unavailable")
         return _parse_operator_environment(contents.decode("utf-8"))
     except (OSError, UnicodeDecodeError):
-        raise KISMockApprovalEnvironmentRejected("operator approval environment is unavailable") from None
+        raise KISMockApprovalEnvironmentRejected(
+            "operator approval environment is unavailable"
+        ) from None
     finally:
         if descriptor is not None:
             os.close(descriptor)
@@ -112,7 +108,9 @@ def _open_no_follow_parent(directory: Path) -> int:
     except OSError:
         if descriptor is not None:
             os.close(descriptor)
-        raise KISMockApprovalEnvironmentRejected("operator approval environment is unavailable") from None
+        raise KISMockApprovalEnvironmentRejected(
+            "operator approval environment is unavailable"
+        ) from None
 
 
 def _parse_operator_environment(contents: str) -> dict[str, str]:

@@ -12,6 +12,7 @@ from app.data.kis.accounting import (
     SkipCode,
     stable_failure_code,
 )
+from app.data.kis.http_client import CURRENT_PRICE_PATH, DAILY_ITEMCHART_PATH, HOLIDAY_PATH
 from app.data.kis.parsers import (
     CurrentPrice,
     DailyBar,
@@ -20,7 +21,6 @@ from app.data.kis.parsers import (
     parse_daily_bars,
     parse_holidays,
 )
-from app.data.kis.http_client import CURRENT_PRICE_PATH, DAILY_ITEMCHART_PATH, HOLIDAY_PATH
 from app.data.kis.settings import KISSettings
 from app.data.kis.symbols import normalize_symbol
 
@@ -54,7 +54,7 @@ class KISMarketClient:
         """market, token, Redis runtime 자원을 성공·실패 경로 모두에서 닫는다."""
         self.http_client.close()
 
-    def __enter__(self) -> "KISMarketClient":
+    def __enter__(self) -> KISMarketClient:
         return self
 
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
@@ -167,7 +167,9 @@ class KISMarketClient:
                 response = _load_fixture(fixture_name)
             except FileNotFoundError:
                 break
-            bars.extend(bar for bar in parse_daily_bars(response, symbol=symbol) if start <= bar.date <= end)
+            bars.extend(
+                bar for bar in parse_daily_bars(response, symbol=symbol) if start <= bar.date <= end
+            )
             page += 1
         if not bars:
             # fixture 누락은 조용히 빈 parquet을 만들면 smoke 신뢰도를 해치므로 명시 실패로 드러낸다.
@@ -192,6 +194,7 @@ class KISMarketClient:
     def _record_skip(self, code: SkipCode) -> None:
         if self.accounting is not None:
             self.accounting.record_skip(code)
+
 
 def _load_fixture(name: str) -> dict[str, Any]:
     content = files("app.data.kis.fixtures").joinpath(name).read_text(encoding="utf-8")

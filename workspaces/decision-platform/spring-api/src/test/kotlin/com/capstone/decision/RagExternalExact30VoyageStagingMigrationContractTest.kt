@@ -69,7 +69,7 @@ class RagExternalExact30VoyageStagingMigrationContractTest {
             MessageDigest
                 .getInstance("SHA-256")
                 .digest(Files.readAllBytes(migrationPath))
-                .joinToString("") { "%02x".format(it) }
+                .joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
 
         assertThat(digest).isEqualTo("65d9e77011ccfae2e955bd549f10e977d8ec69c3b61b4746ae53112ebd403432")
     }

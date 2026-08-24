@@ -9,14 +9,21 @@ buildscript {
 }
 
 plugins {
-    kotlin("jvm") version "2.4.0"
-    kotlin("plugin.spring") version "2.4.0" // @Service 등 all-open
-    kotlin("plugin.jpa") version "2.4.0" // 엔티티 no-arg 생성자
+    kotlin("jvm") version "2.4.10"
+    kotlin("plugin.spring") version "2.4.10" // @Service 등 all-open
+    kotlin("plugin.jpa") version "2.4.10" // 엔티티 no-arg 생성자
     id("org.springframework.boot") version "4.1.0"
     id("org.springdoc.openapi-gradle-plugin") version "1.9.0"
     id("io.spring.dependency-management") version "1.1.7"
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0" // 13.1.0+ Gradle 9, 14.0.1+ Gradle 9.1/Java 25 대응
+    id("dev.detekt") version "2.0.0-alpha.6"
     id("com.google.protobuf") version "0.10.0"
+}
+
+detekt {
+    config.setFrom(files("config/detekt/p1-detekt.yml"))
+    buildUponDefaultConfig = false
+    parallel = true
 }
 
 group = "com.capstone"

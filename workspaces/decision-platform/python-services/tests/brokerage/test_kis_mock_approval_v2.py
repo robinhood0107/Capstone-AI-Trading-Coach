@@ -571,9 +571,7 @@ def test_v2_merged_main_revalidation_rejects_remote_drift_and_spoofed_check_app(
                 "baseRefName": "main",
                 "mergeCommit": {"oid": "a" * 40},
             }
-        elif arguments[:2] == ["gh", "api"] and arguments[4].endswith(
-            "/git/ref/heads/main"
-        ):
+        elif arguments[:2] == ["gh", "api"] and arguments[4].endswith("/git/ref/heads/main"):
             payload = {"object": {"sha": remote_main_sha}}
         else:
             payload = {
@@ -935,8 +933,7 @@ def test_author_collects_merged_main_head_and_post_merge_checks(
     assert branch == "main"
     assert head == "a" * 40
     assert checks == [
-        {"name": name, "conclusion": "SUCCESS"}
-        for name in sorted(probe._REQUIRED_CI_CHECKS)
+        {"name": name, "conclusion": "SUCCESS"} for name in sorted(probe._REQUIRED_CI_CHECKS)
     ]
 
 

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
@@ -196,10 +197,7 @@ class PsycopgAuthorizedRetrievalAdapter:
                 )
             source_id = _required_text(row, "source_id")
             metadata = self._card_evidence.get(source_id)
-            if (
-                metadata is None
-                or metadata.card_id != _required_text(row, "card_id")
-            ):
+            if metadata is None or metadata.card_id != _required_text(row, "card_id"):
                 raise AuthorizedRetrievalAdapterError(
                     "RAG immutable card evidence identity drifted."
                 )
@@ -256,24 +254,16 @@ def build_immutable_card_evidence(
             or not isinstance(limitations, list)
             or not isinstance(contradicts, list)
         ):
-            raise AuthorizedRetrievalAdapterError(
-                "RAG immutable card evidence shape is invalid."
-            )
+            raise AuthorizedRetrievalAdapterError("RAG immutable card evidence shape is invalid.")
         assumption_keys: list[str] = []
         for assumption in assumptions:
             if not isinstance(assumption, Mapping):
-                raise AuthorizedRetrievalAdapterError(
-                    "RAG immutable card assumption is invalid."
-                )
+                raise AuthorizedRetrievalAdapterError("RAG immutable card assumption is invalid.")
             assumption_keys.append(_required_text(assumption, "key"))
         if not all(isinstance(value, str) and value for value in limitations):
-            raise AuthorizedRetrievalAdapterError(
-                "RAG immutable card limitation is invalid."
-            )
+            raise AuthorizedRetrievalAdapterError("RAG immutable card limitation is invalid.")
         if not all(isinstance(value, str) and value for value in contradicts):
-            raise AuthorizedRetrievalAdapterError(
-                "RAG immutable card contradiction is invalid."
-            )
+            raise AuthorizedRetrievalAdapterError("RAG immutable card contradiction is invalid.")
         evidence[card.source_id] = ImmutableCardEvidence(
             source_id=card.source_id,
             card_id=card.card_id,
@@ -304,27 +294,21 @@ def _effective_topics(
 def _required_text(mapping: Mapping[str, Any], field: str) -> str:
     value = mapping.get(field)
     if not isinstance(value, str) or not value:
-        raise AuthorizedRetrievalAdapterError(
-            f"RAG authorized retrieval field {field} is invalid."
-        )
+        raise AuthorizedRetrievalAdapterError(f"RAG authorized retrieval field {field} is invalid.")
     return value
 
 
 def _required_int(mapping: Mapping[str, Any], field: str) -> int:
     value = mapping.get(field)
     if type(value) is not int:
-        raise AuthorizedRetrievalAdapterError(
-            f"RAG authorized retrieval field {field} is invalid."
-        )
+        raise AuthorizedRetrievalAdapterError(f"RAG authorized retrieval field {field} is invalid.")
     return value
 
 
 def _required_bool(mapping: Mapping[str, Any], field: str) -> bool:
     value = mapping.get(field)
     if type(value) is not bool:
-        raise AuthorizedRetrievalAdapterError(
-            f"RAG authorized retrieval field {field} is invalid."
-        )
+        raise AuthorizedRetrievalAdapterError(f"RAG authorized retrieval field {field} is invalid.")
     return value
 
 
@@ -336,7 +320,5 @@ def _required_text_array(
     if not isinstance(value, (list, tuple)) or not all(
         isinstance(item, str) and item for item in value
     ):
-        raise AuthorizedRetrievalAdapterError(
-            f"RAG authorized retrieval field {field} is invalid."
-        )
+        raise AuthorizedRetrievalAdapterError(f"RAG authorized retrieval field {field} is invalid.")
     return tuple(value)

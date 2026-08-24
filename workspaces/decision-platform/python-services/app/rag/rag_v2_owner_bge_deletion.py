@@ -90,7 +90,7 @@ class PsycopgRagV2OwnerBgeDeletionRepository:
         deletion_receipt_id = f"rgr_del_{uuid.uuid4().hex}"
         activation_receipt_id = f"rgr_act_{uuid.uuid4().hex}"
         reason_hash = hashlib.sha256(
-            f"rag-v2-owner-local-delete-v2|{delete_ticket_id}|{document_id}".encode("utf-8")
+            f"rag-v2-owner-local-delete-v2|{delete_ticket_id}|{document_id}".encode()
         ).hexdigest()
         if (
             not _DELETION_RECEIPT_ID.fullmatch(deletion_receipt_id)
@@ -180,7 +180,15 @@ def _attest_admin_connection(connection: psycopg.Connection[Any]) -> None:
     if connection.execute("SELECT current_user").fetchone() != (_ADMIN_ROLE,):
         raise OwnerBgeDeletionError("OWNER_BGE_DELETE_ADMIN_ROLE")
     for table in _ADMIN_FORBIDDEN_TABLES:
-        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+        for privilege in (
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "TRUNCATE",
+            "REFERENCES",
+            "TRIGGER",
+        ):
             row = connection.execute(
                 "SELECT has_table_privilege(current_user, %s, %s)",
                 (f"public.{table}", privilege),

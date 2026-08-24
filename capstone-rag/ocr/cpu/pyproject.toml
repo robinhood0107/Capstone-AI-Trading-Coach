@@ -8,7 +8,7 @@ dependencies = [
   "paddle2onnx==2.1.0",
   "pillow==12.1.1",
   "psutil==7.2.2",
-  "pymupdf==1.27.2.2",
+  "pymupdf==1.27.2.2"
 ]
 
 [tool.uv]

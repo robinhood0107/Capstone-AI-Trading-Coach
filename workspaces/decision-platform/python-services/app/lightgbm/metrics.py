@@ -8,7 +8,6 @@ import numpy as np
 
 from app.lightgbm.errors import LightGbmContractError
 
-
 CLASS_COUNT = 3
 TIE_ORDER = (1, 0, 2)  # HOLD, SELL, BUY
 ECE_BINS = 10

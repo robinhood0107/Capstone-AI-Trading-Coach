@@ -296,7 +296,12 @@ def test_parse_financial_indicator_batch_preserves_per_row_corp_code() -> None:
 
 
 def test_parse_financial_indicator_batch_no_data_returns_empty() -> None:
-    assert parse_financial_indicator_batch_rows({"status": "013", "message": "조회된 데이타가 없습니다."}) == []
+    assert (
+        parse_financial_indicator_batch_rows(
+            {"status": "013", "message": "조회된 데이타가 없습니다."}
+        )
+        == []
+    )
 
 
 def test_parse_major_stock_report_rows_normalizes_counts_and_dates() -> None:
@@ -391,7 +396,9 @@ def test_corp_code_zip_rejects_oversized_xml_field() -> None:
 
 
 def test_corp_code_zip_rejects_dtd_before_xml_parsing() -> None:
-    payload = _corp_code_zip("<!DOCTYPE result [<!ENTITY x 'unsafe'>]><result><list><corp_name>&x;</corp_name></list></result>")
+    payload = _corp_code_zip(
+        "<!DOCTYPE result [<!ENTITY x 'unsafe'>]><result><list><corp_name>&x;</corp_name></list></result>"
+    )
 
     with pytest.raises(OpenDARTResponseError, match="DTD"):
         parse_corp_code_zip(payload)

@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
 from app.verification import provider_claim
 
 
@@ -14,7 +15,7 @@ class _Cursor:
         self.query_count = 0
         self.arguments: tuple[object, ...] | None = None
 
-    def __enter__(self) -> "_Cursor":
+    def __enter__(self) -> _Cursor:
         return self
 
     def __exit__(self, *_: object) -> None:
@@ -36,7 +37,7 @@ class _Connection:
         self.cursor_value = _Cursor(claim_result)
         self.committed = False
 
-    def __enter__(self) -> "_Connection":
+    def __enter__(self) -> _Connection:
         return self
 
     def __exit__(self, *_: object) -> None:

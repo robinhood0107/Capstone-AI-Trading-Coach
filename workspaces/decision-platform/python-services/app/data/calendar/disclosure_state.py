@@ -83,7 +83,11 @@ class DisclosureStateMachine:
         if exact is not None:
             return exact
         corrected = next(
-            (item for item in reversed(self._transitions) if item.source_event_key == event.source_event_key),
+            (
+                item
+                for item in reversed(self._transitions)
+                if item.source_event_key == event.source_event_key
+            ),
             None,
         )
         current = active_state(self._transitions, state_key=event.state_key)

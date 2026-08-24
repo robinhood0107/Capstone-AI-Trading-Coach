@@ -21,16 +21,9 @@ from app.rag.fixture_answering import (
 from app.rag.guardrail import BoundedFixtureGuardrail, GuardrailDecision
 from app.rag.source_card_corpus import REPO_ROOT
 
-
-S4_5_CORPUS_SHA256: Final[str] = (
-    "bdc42bfb735b411156ec2f79626d6fd2cf56662c57d83e2cdb960fb74e7b0e04"
-)
-S4_5_EVAL_MANIFEST_PATH: Final[Path] = (
-    REPO_ROOT / "capstone-rag/eval/s4-5-evaluation-60.v1.json"
-)
-S4_5_REPORT_PATH: Final[Path] = (
-    REPO_ROOT / "capstone-rag/reports/s4-5-fixture-evaluation.v1.json"
-)
+S4_5_CORPUS_SHA256: Final[str] = "bdc42bfb735b411156ec2f79626d6fd2cf56662c57d83e2cdb960fb74e7b0e04"
+S4_5_EVAL_MANIFEST_PATH: Final[Path] = REPO_ROOT / "capstone-rag/eval/s4-5-evaluation-60.v1.json"
+S4_5_REPORT_PATH: Final[Path] = REPO_ROOT / "capstone-rag/reports/s4-5-fixture-evaluation.v1.json"
 _GENERATION_ID = "rag_gen_" + "e" * 32
 _CATEGORY_COUNTS: Final[dict[str, int]] = {
     "ADVERSARIAL_ADVICE": 2,
@@ -114,9 +107,7 @@ def build_s4_5_manifest() -> dict[str, Any]:
         raise S4_5EvaluationError("s4_5_assumption_card_count_drift")
     for offset, card in enumerate(assumption_cards, start=31):
         assumption = card.front_matter["modelAssumptions"][0]
-        if not isinstance(assumption, Mapping) or not isinstance(
-            assumption.get("key"), str
-        ):
+        if not isinstance(assumption, Mapping) or not isinstance(assumption.get("key"), str):
             raise S4_5EvaluationError("s4_5_assumption_shape_drift")
         representative = card.front_matter.get("representativeQuestions")
         question = (
@@ -154,9 +145,7 @@ def build_s4_5_manifest() -> dict[str, Any]:
             _allowed_question(
                 question_id=_question_id(offset),
                 category="MULTI_SOURCE_METHODOLOGY",
-                question=(
-                    f"공개 근거 {pair[0]}와 {pair[1]}의 방법론 경계를 함께 비교해 주세요."
-                ),
+                question=(f"공개 근거 {pair[0]}와 {pair[1]}의 방법론 경계를 함께 비교해 주세요."),
                 gold=pair,
                 channels={
                     "exact": (pair[0],),
@@ -252,9 +241,7 @@ def build_s4_5_manifest() -> dict[str, Any]:
     return identity
 
 
-def load_s4_5_manifest(
-    *, path: Path = S4_5_EVAL_MANIFEST_PATH
-) -> dict[str, Any]:
+def load_s4_5_manifest(*, path: Path = S4_5_EVAL_MANIFEST_PATH) -> dict[str, Any]:
     """tracked exact-60 bytes가 generator 결과와 같을 때만 manifest를 반환한다."""
 
     tracked = _read_json(path)
@@ -299,9 +286,7 @@ def evaluate_s4_5_manifest(manifest: Mapping[str, Any]) -> dict[str, Any]:
     injection_escapes: list[str] = []
     unauthorized_count = 0
     unauthorized_failures: list[str] = []
-    category_pass: dict[str, list[bool]] = {
-        category: [] for category in _CATEGORY_COUNTS
-    }
+    category_pass: dict[str, list[bool]] = {category: [] for category in _CATEGORY_COUNTS}
     category_ids: dict[str, list[str]] = {category: [] for category in _CATEGORY_COUNTS}
 
     for item in manifest["questions"]:
@@ -586,9 +571,7 @@ def _allowed_question(
     }
 
 
-def _validate_manifest(
-    manifest: Mapping[str, Any], *, allow_hash_drift: bool = False
-) -> None:
+def _validate_manifest(manifest: Mapping[str, Any], *, allow_hash_drift: bool = False) -> None:
     if (
         manifest.get("schemaVersion") != "s4-5-evaluation/v1"
         or manifest.get("corpusManifestSha256") != S4_5_CORPUS_SHA256
@@ -625,9 +608,7 @@ def _validate_manifest(
         ):
             if not isinstance(item[field], list) or len(set(item[field])) != len(item[field]):
                 raise S4_5EvaluationError("s4_5_question_set_invalid")
-        referenced = set(item["authorizedCitationSourceIds"]) | set(
-            item["goldRelevantSourceIds"]
-        )
+        referenced = set(item["authorizedCitationSourceIds"]) | set(item["goldRelevantSourceIds"])
         for values in item["fixtureChannels"].values():
             if not isinstance(values, list):
                 raise S4_5EvaluationError("s4_5_fixture_channel_invalid")

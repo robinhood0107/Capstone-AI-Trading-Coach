@@ -17,7 +17,6 @@ import psycopg
 
 from app.rag.rag_v2_public_bge_staging import RagV2PublicBgeComponentContext
 
-
 _ADMIN_ROLE = "decision_rag_admin"
 _BGE_PROFILE_ID = "bge_m3_local_1024_v1"
 _GENERATION_ID = re.compile(r"^rgr_[0-9a-f]{32}$")
@@ -201,12 +200,14 @@ def _validate_context(
 ) -> None:
     """caller-generated context의 count/hash/run binding을 fail-close한다."""
 
-    expected_run_id = "rgr_run_" + hashlib.sha256(
-        (
-            "rag-v2-public-bge-run|"
-            f"{context.component_generation_id}|{context.manifest_hash}"
-        ).encode("utf-8")
-    ).hexdigest()[:32]
+    expected_run_id = (
+        "rgr_run_"
+        + hashlib.sha256(
+            (
+                f"rag-v2-public-bge-run|{context.component_generation_id}|{context.manifest_hash}"
+            ).encode()
+        ).hexdigest()[:32]
+    )
     if (
         context.component_scope != scope
         or context.expected_source_count != expected_source_count
@@ -239,7 +240,15 @@ def _attest_admin_connection(connection: psycopg.Connection[Any]) -> None:
     if connection.execute("SELECT current_user").fetchone() != (_ADMIN_ROLE,):
         raise PublicBgeActivationError("PUBLIC_BGE_ACTIVATION_ADMIN_ROLE")
     for table in _ADMIN_FORBIDDEN_TABLES:
-        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+        for privilege in (
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "TRUNCATE",
+            "REFERENCES",
+            "TRIGGER",
+        ):
             row = connection.execute(
                 "SELECT has_table_privilege(current_user, %s, %s)",
                 (f"public.{table}", privilege),

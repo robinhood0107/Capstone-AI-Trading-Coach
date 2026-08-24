@@ -15,7 +15,6 @@ from app.rag.rag_rpc import (
     create_rag_server,
 )
 
-
 SHARED_SECRET = "rag-grpc-shared-secret-for-s4-6-tests-0001"
 AUTH = (("x-decision-grpc-auth", SHARED_SECRET),)
 ACTIVE_GENERATION = "rag_gen_789b3ba9589ad399373194c0e3c0e76f"
@@ -78,7 +77,7 @@ def test_fixture_rag_rpc_answers_with_authorized_top5_and_zero_provider_calls() 
     assert response.retrieval_failure is False
     assert 1 <= len(response.citations) <= 5
     assert [item.citation_id for item in response.citations] == ["cit_1"]
-    assert set(item.chunk_revision_id for item in response.citations) <= set(
+    assert {item.chunk_revision_id for item in response.citations} <= set(
         response.authorized_top5_chunk_revision_ids
     )
     assert all(item.generation_id == ACTIVE_GENERATION for item in response.citations)
@@ -100,9 +99,7 @@ def test_effective_consent_context_uses_existing_s4_4_policy_without_enabling_pr
     request.consent_context.granted = True
     request.consent_context.policy_version = "EXTERNAL_AI_RAG_V1"
     try:
-        response = rag_pb2_grpc.RagServiceStub(channel).Ask(
-            request, metadata=AUTH, timeout=2
-        )
+        response = rag_pb2_grpc.RagServiceStub(channel).Ask(request, metadata=AUTH, timeout=2)
         assert response.status == rag_pb2.RAG_RESPONSE_STATUS_ANSWERED
         assert response.provider_physical_counts.total == 0
         assert response.external_provider_candidate is False
@@ -168,13 +165,7 @@ def test_rpc_requires_auth_rejects_scope_drift_and_disables_reflection() -> None
         with pytest.raises(grpc.RpcError) as reflection_error:
             tuple(
                 reflection.ServerReflectionInfo(
-                    iter(
-                        [
-                            reflection_pb2.ServerReflectionRequest(
-                                list_services=""
-                            )
-                        ]
-                    ),
+                    iter([reflection_pb2.ServerReflectionRequest(list_services="")]),
                     timeout=1,
                 )
             )

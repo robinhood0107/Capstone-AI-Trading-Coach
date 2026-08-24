@@ -119,13 +119,9 @@ class PsycopgRagV2AuthorizedRetrievalAdapter:
                 session_id=_required_text(row, "session_id"),
                 exact30_generation_id=_required_text(row, "exact30_generation_id"),
                 oa112_generation_id=_required_text(row, "oa112_generation_id"),
-                owner_private_generation_id=_optional_text(
-                    row, "owner_private_generation_id"
-                ),
+                owner_private_generation_id=_optional_text(row, "owner_private_generation_id"),
                 embedding_profile_id=_required_text(row, "embedding_profile_id"),
-                owner_embedding_profile_id=_optional_text(
-                    row, "owner_embedding_profile_id"
-                ),
+                owner_embedding_profile_id=_optional_text(row, "owner_embedding_profile_id"),
                 policy_version=_required_int(row, "policy_version"),
                 allowed_topics=_required_text_array(row, "allowed_topics"),
             )
@@ -210,9 +206,7 @@ class PsycopgRagV2AuthorizedRetrievalAdapter:
 
         vector = _validated_vector_text(query_vector)
         owner_vector = (
-            _validated_vector_text(owner_query_vector)
-            if owner_query_vector is not None
-            else None
+            _validated_vector_text(owner_query_vector) if owner_query_vector is not None else None
         )
         rows = self._execute(
             """
@@ -254,9 +248,7 @@ class PsycopgRagV2AuthorizedRetrievalAdapter:
                     # claim/row cap은 그대로 두고 query usage lease와 같은 5초 안에서만 완료를 허용한다.
                     connection.execute("SET LOCAL statement_timeout = '5s'")
                     connection.execute("SET LOCAL lock_timeout = '250ms'")
-                    connection.execute(
-                        "SET LOCAL idle_in_transaction_session_timeout = '5s'"
-                    )
+                    connection.execute("SET LOCAL idle_in_transaction_session_timeout = '5s'")
                     rows = connection.execute(statement, parameters).fetchall()
         except RagV2AuthorizedRetrievalAdapterError:
             raise
@@ -309,9 +301,7 @@ class PsycopgRagV2AuthorizedRetrievalAdapter:
             try:
                 candidate = RagV2RetrievalCandidate(
                     canonical_content=_required_text(row, "canonical_content"),
-                    canonical_content_sha256=_required_text(
-                        row, "canonical_content_sha256"
-                    ),
+                    canonical_content_sha256=_required_text(row, "canonical_content_sha256"),
                     canonical_https_url=_optional_text(row, "canonical_https_url"),
                     chunk_id=_required_text(row, "chunk_id"),
                     document_id=_optional_text(row, "document_id"),
@@ -324,9 +314,7 @@ class PsycopgRagV2AuthorizedRetrievalAdapter:
                     locator=_required_mapping(row, "locator"),
                     owner_user_id=_optional_text(row, "candidate_owner_user_id"),
                     policy_version=_required_int(row, "policy_version"),
-                    sanitized_display_name=_optional_text(
-                        row, "sanitized_display_name"
-                    ),
+                    sanitized_display_name=_optional_text(row, "sanitized_display_name"),
                     scope_claim_id=_required_text(row, "scope_claim_id"),
                     session_id=_required_text(row, "session_id"),
                     source_id=_required_text(row, "source_id"),
@@ -336,9 +324,7 @@ class PsycopgRagV2AuthorizedRetrievalAdapter:
                     topics=_required_text_array(row, "retrieval_topics"),
                 )
             except (TypeError, ValueError) as error:
-                raise RagV2AuthorizedRetrievalAdapterError(
-                    "RAG_V2_QUERY_RECEIPT"
-                ) from error
+                raise RagV2AuthorizedRetrievalAdapterError("RAG_V2_QUERY_RECEIPT") from error
             if not _candidate_receipt_matches(scope, candidate):
                 raise RagV2AuthorizedRetrievalAdapterError("RAG_V2_QUERY_RECEIPT")
             candidates.append(candidate)

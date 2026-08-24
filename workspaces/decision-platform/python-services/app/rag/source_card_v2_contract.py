@@ -4,10 +4,11 @@ import hashlib
 import json
 import re
 import unicodedata
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
 from urllib.parse import parse_qsl, urlsplit
 
 import yaml
@@ -21,9 +22,7 @@ from app.rag.source_registry import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-RAG_SOURCE_CARD_V2_SCHEMA_PATH = (
-    REPO_ROOT / "contracts/schemas/rag-source-card-v2.schema.json"
-)
+RAG_SOURCE_CARD_V2_SCHEMA_PATH = REPO_ROOT / "contracts/schemas/rag-source-card-v2.schema.json"
 MAX_SOURCE_CARD_V2_FRONT_MATTER_BYTES = 32_768
 _OFFICIAL_VARIANT = "OFFICIAL_UPSTREAM_CARD"
 _SCHOLARLY_VARIANT = "SCHOLARLY_PRIMARY_CARD"
@@ -56,18 +55,16 @@ _REDIRECT_QUERY_KEYS = frozenset(
     }
 )
 _INSTRUCTION_LIKE_PATTERN = re.compile(
-    (
-        r"(?i)(ignore\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior)\s+instructions"
-        r"|system\s+prompt"
-        r"|(?:reveal|print|exfiltrate)\b.{0,40}\b(?:secret|token|credential)s?\b"
-        r"|(?:execute|run)\b.{0,30}\b(?:shell|command|code)\b"
-        r"|(?:call|invoke)\b.{0,30}\b(?:tool|mcp|plugin)\b"
-        r"|(?:place|submit|cancel)\b.{0,30}\border\b"
-        r"|(?:이전|기존)\s*지시.{0,12}무시"
-        r"|시스템\s*프롬프트"
-        r"|비밀.{0,20}(?:출력|노출)"
-        r"|도구.{0,20}(?:호출|실행))"
-    )
+    r"(?i)(ignore\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior)\s+instructions"
+    r"|system\s+prompt"
+    r"|(?:reveal|print|exfiltrate)\b.{0,40}\b(?:secret|token|credential)s?\b"
+    r"|(?:execute|run)\b.{0,30}\b(?:shell|command|code)\b"
+    r"|(?:call|invoke)\b.{0,30}\b(?:tool|mcp|plugin)\b"
+    r"|(?:place|submit|cancel)\b.{0,30}\border\b"
+    r"|(?:이전|기존)\s*지시.{0,12}무시"
+    r"|시스템\s*프롬프트"
+    r"|비밀.{0,20}(?:출력|노출)"
+    r"|도구.{0,20}(?:호출|실행))"
 )
 _PRIVATE_PATH_PATTERN = re.compile(
     r"(?i)(?:^|[\s\"'])("
@@ -92,16 +89,12 @@ def _construct_unique_mapping(
     deep: bool = False,
 ) -> dict[object, object]:
     if not isinstance(node, MappingNode):
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 YAML mapping node is invalid."
-        )
+        raise RagSourceCardV2ContractError("RAG source card v2 YAML mapping node is invalid.")
     result: dict[object, object] = {}
     for key_node, value_node in node.value:
         key = loader.construct_object(key_node, deep=deep)
         if key == "<<":
-            raise RagSourceCardV2ContractError(
-                "RAG source card v2 YAML merge keys are forbidden."
-            )
+            raise RagSourceCardV2ContractError("RAG source card v2 YAML merge keys are forbidden.")
         try:
             duplicate = key in result
         except TypeError as error:
@@ -109,9 +102,7 @@ def _construct_unique_mapping(
                 "RAG source card v2 YAML keys must be scalar."
             ) from error
         if duplicate:
-            raise RagSourceCardV2ContractError(
-                "RAG source card v2 YAML contains a duplicate key."
-            )
+            raise RagSourceCardV2ContractError("RAG source card v2 YAML contains a duplicate key.")
         result[key] = loader.construct_object(value_node, deep=deep)
     return result
 
@@ -130,9 +121,7 @@ def parse_source_card_v2_front_matter(raw: bytes) -> Mapping[str, Any]:
     """
 
     if not raw or len(raw) > MAX_SOURCE_CARD_V2_FRONT_MATTER_BYTES:
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 front matter size is invalid."
-        )
+        raise RagSourceCardV2ContractError("RAG source card v2 front matter size is invalid.")
     try:
         text = raw.decode("utf-8", errors="strict")
     except UnicodeDecodeError as error:
@@ -140,15 +129,10 @@ def parse_source_card_v2_front_matter(raw: bytes) -> Mapping[str, Any]:
             "RAG source card v2 front matter must be strict UTF-8."
         ) from error
     if "\r" in text or unicodedata.normalize("NFC", text) != text:
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 front matter must use NFC and LF."
-        )
+        raise RagSourceCardV2ContractError("RAG source card v2 front matter must use NFC and LF.")
     try:
         tokens = yaml.scan(text)
-        if any(
-            isinstance(token, (AnchorToken, AliasToken, TagToken))
-            for token in tokens
-        ):
+        if any(isinstance(token, (AnchorToken, AliasToken, TagToken)) for token in tokens):
             raise RagSourceCardV2ContractError(
                 "RAG source card v2 YAML tags, anchors, and aliases are forbidden."
             )
@@ -156,12 +140,8 @@ def parse_source_card_v2_front_matter(raw: bytes) -> Mapping[str, Any]:
     except RagSourceCardV2ContractError:
         raise
     except yaml.YAMLError as error:
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 YAML is invalid."
-        ) from error
-    if not isinstance(loaded, dict) or not all(
-        isinstance(key, str) for key in loaded
-    ):
+        raise RagSourceCardV2ContractError("RAG source card v2 YAML is invalid.") from error
+    if not isinstance(loaded, dict) or not all(isinstance(key, str) for key in loaded):
         raise RagSourceCardV2ContractError(
             "RAG source card v2 front matter must be a string-keyed object."
         )
@@ -191,9 +171,7 @@ def validate_source_card_v2_payload(
             f"RAG source card v2 schema rejected payload: {errors[0].message}"
         )
     if not isinstance(payload, dict):
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 payload must be an object."
-        )
+        raise RagSourceCardV2ContractError("RAG source card v2 payload must be an object.")
     _validate_semantics(payload)
     return MappingProxyType(dict(payload))
 
@@ -210,8 +188,7 @@ def _load_schema(path: Path) -> dict[str, Any]:
         ) from error
     if (
         not isinstance(schema, dict)
-        or schema.get("$id")
-        != "contracts/schemas/rag-source-card-v2.schema.json"
+        or schema.get("$id") != "contracts/schemas/rag-source-card-v2.schema.json"
         or schema.get("type") != "object"
         or schema.get("additionalProperties") is not False
         or not isinstance(schema.get("properties"), dict)
@@ -219,9 +196,7 @@ def _load_schema(path: Path) -> dict[str, Any]:
         or not isinstance(schema.get("oneOf"), list)
         or len(schema["oneOf"]) != 2
     ):
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 canonical schema root drifted."
-        )
+        raise RagSourceCardV2ContractError("RAG source card v2 canonical schema root drifted.")
     return schema
 
 
@@ -254,13 +229,9 @@ def _walk_text(value: Any) -> list[str]:
 
 def _validate_text(text: str) -> None:
     if unicodedata.normalize("NFC", text) != text:
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 text must be NFC-normalized."
-        )
+        raise RagSourceCardV2ContractError("RAG source card v2 text must be NFC-normalized.")
     if any(
-        ord(character) < 0x20
-        or ord(character) == 0x7F
-        or 0xD800 <= ord(character) <= 0xDFFF
+        ord(character) < 0x20 or ord(character) == 0x7F or 0xD800 <= ord(character) <= 0xDFFF
         for character in text
     ):
         raise RagSourceCardV2ContractError(
@@ -297,42 +268,27 @@ def _validate_semantics(card: Mapping[str, Any]) -> None:
         )
     contradicts = _required_text_list(card, "contradicts")
     if card_id in contradicts:
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 cannot contradict itself."
-        )
+        raise RagSourceCardV2ContractError("RAG source card v2 cannot contradict itself.")
 
     verified_at = _required_text(card, "verifiedAt")
     try:
-        parsed_verified_at = datetime.fromisoformat(
-            verified_at.removesuffix("Z") + "+00:00"
-        )
+        parsed_verified_at = datetime.fromisoformat(verified_at.removesuffix("Z") + "+00:00")
     except ValueError as error:
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 verifiedAt is invalid."
-        ) from error
+        raise RagSourceCardV2ContractError("RAG source card v2 verifiedAt is invalid.") from error
     if not verified_at.endswith("Z") or parsed_verified_at.tzinfo != UTC:
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 verifiedAt must use UTC Z."
-        )
+        raise RagSourceCardV2ContractError("RAG source card v2 verifiedAt must use UTC Z.")
 
     canonical_url = _required_text(card, "canonicalUrl")
     _validate_url(canonical_url)
-    if card.get("canonicalUrlSha256") != hashlib.sha256(
-        canonical_url.encode("utf-8")
-    ).hexdigest():
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 canonical URL digest mismatched."
-        )
+    if card.get("canonicalUrlSha256") != hashlib.sha256(canonical_url.encode("utf-8")).hexdigest():
+        raise RagSourceCardV2ContractError("RAG source card v2 canonical URL digest mismatched.")
 
     variant = _required_text(card, "cardVariant")
     institution = _required_text(card, "institution")
     upstream_ids = _required_text_list(card, "upstreamSourceIds")
     evidence_class = _required_text(card, "evidenceClass")
     if variant == _OFFICIAL_VARIANT:
-        if not any(
-            upstream_id.startswith(f"src_{institution}_")
-            for upstream_id in upstream_ids
-        ):
+        if not any(upstream_id.startswith(f"src_{institution}_") for upstream_id in upstream_ids):
             raise RagSourceCardV2ContractError(
                 "RAG source card v2 official authority mismatched upstream lineage."
             )
@@ -350,9 +306,7 @@ def _validate_semantics(card: Mapping[str, Any]) -> None:
             )
         _validate_bibliography(card, canonical_url)
     else:
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 discriminator is invalid."
-        )
+        raise RagSourceCardV2ContractError("RAG source card v2 discriminator is invalid.")
 
     external_allowed = card.get("externalProcessingAllowed")
     content_class = _required_text(card, "contentClass")
@@ -375,9 +329,7 @@ def _validate_semantics(card: Mapping[str, Any]) -> None:
 
     assumptions = card.get("modelAssumptions")
     if not isinstance(assumptions, list):
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 modelAssumptions must be an array."
-        )
+        raise RagSourceCardV2ContractError("RAG source card v2 modelAssumptions must be an array.")
     model_sensitive = card.get("modelSensitive")
     if model_sensitive is not bool(assumptions):
         raise RagSourceCardV2ContractError(
@@ -398,9 +350,7 @@ def _validate_url(url: str) -> None:
     try:
         validate_canonical_https_url(url)
     except RagSourceRegistryError as error:
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 canonical URL is unsafe."
-        ) from error
+        raise RagSourceCardV2ContractError("RAG source card v2 canonical URL is unsafe.") from error
     parsed = urlsplit(url)
     try:
         query_pairs = parse_qsl(
@@ -413,9 +363,7 @@ def _validate_url(url: str) -> None:
             "RAG source card v2 canonical URL query is invalid."
         ) from error
     if any(key.lower() in _REDIRECT_QUERY_KEYS for key, _ in query_pairs):
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 redirect URL is forbidden."
-        )
+        raise RagSourceCardV2ContractError("RAG source card v2 redirect URL is forbidden.")
 
 
 def _validate_bibliography(
@@ -425,14 +373,9 @@ def _validate_bibliography(
     locator = card.get("bibliographicLocator")
     metadata = card.get("bibliographicMetadata")
     if not isinstance(locator, Mapping) or not isinstance(metadata, Mapping):
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 scholarly bibliography is missing."
-        )
+        raise RagSourceCardV2ContractError("RAG source card v2 scholarly bibliography is missing.")
     hostname = urlsplit(canonical_url).hostname or ""
-    if any(
-        hostname == blocked or hostname.endswith(f".{blocked}")
-        for blocked in _SECONDARY_HOSTS
-    ):
+    if any(hostname == blocked or hostname.endswith(f".{blocked}") for blocked in _SECONDARY_HOSTS):
         raise RagSourceCardV2ContractError(
             "RAG source card v2 secondary blog cannot be primary evidence."
         )
@@ -449,9 +392,7 @@ def _validate_bibliography(
             is None
             or canonical_url != f"https://doi.org/{value}"
         ):
-            raise RagSourceCardV2ContractError(
-                "RAG source card v2 DOI locator is invalid."
-            )
+            raise RagSourceCardV2ContractError("RAG source card v2 DOI locator is invalid.")
     elif locator_type == "ISBN":
         compact = re.sub(r"[- ]", "", value)
         if (
@@ -463,9 +404,7 @@ def _validate_bibliography(
             }
             or re.fullmatch(r"(?:[0-9]{9}[0-9X]|[0-9]{13})", compact) is None
         ):
-            raise RagSourceCardV2ContractError(
-                "RAG source card v2 ISBN locator is invalid."
-            )
+            raise RagSourceCardV2ContractError("RAG source card v2 ISBN locator is invalid.")
     elif locator_type == "OFFICIAL_URL":
         if (
             authority_type
@@ -476,21 +415,15 @@ def _validate_bibliography(
             }
             or value != canonical_url
         ):
-            raise RagSourceCardV2ContractError(
-                "RAG source card v2 official locator is invalid."
-            )
+            raise RagSourceCardV2ContractError("RAG source card v2 official locator is invalid.")
     else:
-        raise RagSourceCardV2ContractError(
-            "RAG source card v2 locator type is invalid."
-        )
+        raise RagSourceCardV2ContractError("RAG source card v2 locator type is invalid.")
 
 
 def _required_text(mapping: Mapping[str, Any], field: str) -> str:
     value = mapping.get(field)
     if not isinstance(value, str) or not value:
-        raise RagSourceCardV2ContractError(
-            f"RAG source card v2 {field} must be non-empty text."
-        )
+        raise RagSourceCardV2ContractError(f"RAG source card v2 {field} must be non-empty text.")
     return value
 
 
@@ -499,10 +432,6 @@ def _required_text_list(
     field: str,
 ) -> list[str]:
     value = mapping.get(field)
-    if not isinstance(value, list) or not all(
-        isinstance(item, str) for item in value
-    ):
-        raise RagSourceCardV2ContractError(
-            f"RAG source card v2 {field} must be a text array."
-        )
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise RagSourceCardV2ContractError(f"RAG source card v2 {field} must be a text array.")
     return value

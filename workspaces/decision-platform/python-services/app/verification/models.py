@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
-import re
 from typing import Final, Literal, cast
 
 from app.data._shared.canonical_json import canonical_json_sha256
-
 
 ImplementationState = Literal[
     "IMPLEMENTED", "INTENTIONALLY_DISABLED", "NOT_IMPLEMENTED", "EXTERNAL_PLACEHOLDER"
@@ -149,7 +148,7 @@ class VerificationReport:
         return {**body, "evidenceSha256": canonical_json_sha256(body)}
 
     @classmethod
-    def from_dict(cls, value: dict[str, object]) -> "VerificationReport":
+    def from_dict(cls, value: dict[str, object]) -> VerificationReport:
         _validate_report_structure(value)
         evidence = value.get("evidenceSha256")
         body = {key: item for key, item in value.items() if key != "evidenceSha256"}
@@ -278,16 +277,15 @@ class VerificationReport:
                 for gate in by_id.values()
             ):
                 raise ValueError("provider smoke PASS requires six single-attempt successes")
-        if self.profile in NON_EXECUTABLE_PROFILE_IDS:
-            if (
-                self.execution_state not in {"NOT_RUN", "NOT_APPLICABLE"}
-                or self.aggregate_outcome != "INCOMPLETE"
-                or self.provider_data_physical_calls != 0
-                or self.kis_token_physical_calls != 0
-                or self.product_db_writes != 0
-                or any(gate.execution_state == "PASS" for gate in self.gates)
-            ):
-                raise ValueError("non-executable P1 profile cannot attest completion")
+        if self.profile in NON_EXECUTABLE_PROFILE_IDS and (
+            self.execution_state not in {"NOT_RUN", "NOT_APPLICABLE"}
+            or self.aggregate_outcome != "INCOMPLETE"
+            or self.provider_data_physical_calls != 0
+            or self.kis_token_physical_calls != 0
+            or self.product_db_writes != 0
+            or any(gate.execution_state == "PASS" for gate in self.gates)
+        ):
+            raise ValueError("non-executable P1 profile cannot attest completion")
 
 
 def _gate_from_dict(value: object) -> GateResult:
@@ -306,7 +304,7 @@ def _gate_from_dict(value: object) -> GateResult:
 
 def _validate_report_structure(value: dict[str, object]) -> None:
     keys = frozenset(value)
-    if not _REPORT_REQUIRED_KEYS <= keys or keys - (_REPORT_REQUIRED_KEYS | {"packetSha256"}):
+    if not keys >= _REPORT_REQUIRED_KEYS or keys - (_REPORT_REQUIRED_KEYS | {"packetSha256"}):
         raise ValueError("P1 verification report fields are not closed")
     if value.get("contractId") not in {
         "p1-verification-report.v1",

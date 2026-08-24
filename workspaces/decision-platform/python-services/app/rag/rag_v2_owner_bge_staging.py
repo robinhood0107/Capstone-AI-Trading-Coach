@@ -14,8 +14,10 @@ from psycopg.types.json import Jsonb
 
 from app.rag.authorized_retrieval import ALLOWED_RAG_TOPICS
 from app.rag.document_ir_materializer import RagV2DocumentMaterialization
-from app.rag.rag_v2_bge_materializer import RagV2BgeMaterializedOwnerDocument
-from app.rag.rag_v2_bge_materializer import RagV2PreparedOwnerDocument
+from app.rag.rag_v2_bge_materializer import (
+    RagV2BgeMaterializedOwnerDocument,
+    RagV2PreparedOwnerDocument,
+)
 
 _BGE_PROFILE_ID = "bge_m3_local_1024_v1"
 _TOKENIZER_VERSION = "bge-m3-5617a9f-tokenizer-400-600-v1"
@@ -298,7 +300,9 @@ class PsycopgRagV2OwnerBgeStagingRepository:
         successful return에는 content-free identifiers/counts만 남긴다.
         """
 
-        if not _OWNER_ID.fullmatch(owner_user_id) or not _IMPORT_TICKET_ID.fullmatch(import_ticket_id):
+        if not _OWNER_ID.fullmatch(owner_user_id) or not _IMPORT_TICKET_ID.fullmatch(
+            import_ticket_id
+        ):
             raise OwnerBgeStagingError("OWNER_BGE_STAGE_ARGUMENT")
         payload = build_owner_bge_staging_payload(materialized, metadata=metadata)
         try:
@@ -444,7 +448,15 @@ def _attest_writer_connection(connection: psycopg.Connection[Any]) -> None:
     if connection.execute("SELECT current_user").fetchone() != (_WRITER_ROLE,):
         raise OwnerBgeStagingError("OWNER_BGE_STAGE_WRITER_ROLE")
     for table in _WRITER_FORBIDDEN_TABLES:
-        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+        for privilege in (
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "TRUNCATE",
+            "REFERENCES",
+            "TRIGGER",
+        ):
             row = connection.execute(
                 "SELECT has_table_privilege(current_user, %s, %s)",
                 (f"public.{table}", privilege),

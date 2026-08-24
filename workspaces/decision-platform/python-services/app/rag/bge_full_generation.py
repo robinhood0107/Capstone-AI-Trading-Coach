@@ -5,9 +5,10 @@ import json
 import math
 import os
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal, Mapping, Protocol, Sequence, cast
+from typing import Any, Literal, Protocol, cast
 from urllib.parse import urlsplit
 
 import numpy as np
@@ -32,22 +33,14 @@ from app.rag.source_card_corpus import (
 
 _PROFILE_ID = "bge_m3_local_1024_v1"
 _MODEL_REVISION = "5617a9f61b028005a4858fdac845db406aefb181"
-_ARTIFACT_MANIFEST_SHA256 = (
-    "a0ae6372b2d735b593d806d24c1155cb48dd7188adebe7d6b7619a1622fb71aa"
-)
-_TOKENIZER_SHA256 = (
-    "6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790"
-)
+_ARTIFACT_MANIFEST_SHA256 = "a0ae6372b2d735b593d806d24c1155cb48dd7188adebe7d6b7619a1622fb71aa"
+_TOKENIZER_SHA256 = "6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790"
 _PARSER_VERSION = "rag-source-card-v2-markdown-v1"
 _CANONICALIZER_VERSION = "utf8-nfc-lf-source-card-body-v1"
 _CHUNKER_VERSION = "bge-tokenizer-heading-400-600-v1"
 _INPUT_STRATEGY_VERSION = "adjacent-7.5pct-per-side-no-reallocation-v1"
-_S4_7B_CORPUS_MANIFEST_SHA256 = (
-    "7f2b4d72dcbaccf57cbe49a980973b17b4a9bfd85bec4694fd66fd7fd2a9decd"
-)
-_S4_7C_CORPUS_MANIFEST_SHA256 = (
-    "bdc42bfb735b411156ec2f79626d6fd2cf56662c57d83e2cdb960fb74e7b0e04"
-)
+_S4_7B_CORPUS_MANIFEST_SHA256 = "7f2b4d72dcbaccf57cbe49a980973b17b4a9bfd85bec4694fd66fd7fd2a9decd"
+_S4_7C_CORPUS_MANIFEST_SHA256 = "bdc42bfb735b411156ec2f79626d6fd2cf56662c57d83e2cdb960fb74e7b0e04"
 _ALLOWED_CORPUS_BINDINGS = {
     _S4_7B_CORPUS_MANIFEST_SHA256: (
         "s4-7b-project-source-cards-30",
@@ -277,21 +270,15 @@ def prepare_bge_full_generation(
     external_processing_allowed = binding[2] is not None
     corpus_profile_id = binding[2] or "s4_7b_internal_v1"
     source_registry_version = (
-        "s4-7c-source-card-v2"
-        if external_processing_allowed
-        else "s4-7b-source-card-v2"
+        "s4-7c-source-card-v2" if external_processing_allowed else "s4-7b-source-card-v2"
     )
 
-    intermediate: list[
-        tuple[FrozenSourceCard, str, str, RagCanonicalChunk]
-    ] = []
+    intermediate: list[tuple[FrozenSourceCard, str, str, RagCanonicalChunk]] = []
     for card in sorted(
         corpus.cards,
         key=lambda value: value.source_id.encode("utf-8"),
     ):
-        source_revision_id = (
-            f"src_rev_{_hash_parts(card.source_id, card.card_sha256)[:32]}"
-        )
+        source_revision_id = f"src_rev_{_hash_parts(card.source_id, card.card_sha256)[:32]}"
         ingest_run_id = (
             "rag_ing_"
             + _hash_parts(
@@ -397,9 +384,7 @@ def prepare_bge_full_generation(
         input_strategy_version=_INPUT_STRATEGY_VERSION,
         batch_size=batch_benchmark.selected_batch_size,
         batch_benchmark_sha256=batch_benchmark.benchmark_sha256,
-        environment_fingerprint_sha256=(
-            batch_benchmark.environment_fingerprint_sha256
-        ),
+        environment_fingerprint_sha256=(batch_benchmark.environment_fingerprint_sha256),
         items=items,
     )
 
@@ -422,8 +407,7 @@ def execute_bge_full_generation(
             plan.external_processing_allowed,
         )
         != (
-            _ALLOWED_CORPUS_BINDINGS[plan.corpus_hash][2]
-            or "s4_7b_internal_v1",
+            _ALLOWED_CORPUS_BINDINGS[plan.corpus_hash][2] or "s4_7b_internal_v1",
             (
                 "s4-7c-source-card-v2"
                 if _ALLOWED_CORPUS_BINDINGS[plan.corpus_hash][2] is not None
@@ -442,8 +426,7 @@ def execute_bge_full_generation(
             expected_rows=len(batch_texts),
         )
         vectors.extend(
-            cast(NDArray[np.float32], np.asarray(row, dtype=np.float32))
-            for row in batch
+            cast(NDArray[np.float32], np.asarray(row, dtype=np.float32)) for row in batch
         )
     if len(vectors) != len(plan.items):
         raise BgeFullGenerationError("FULL_GENERATION_VECTOR_COUNT")
@@ -489,10 +472,7 @@ def verify_bge_full_generation_parity(
 ) -> BgeGenerationParityReceipt:
     """독립 DB projection을 reread해 membership, row hash와 float32 vector parity를 검증한다."""
 
-    expected = {
-        row.chunk_revision_id: row
-        for row in materialized.rows
-    }
+    expected = {row.chunk_revision_id: row for row in materialized.rows}
     if len(expected) != _EXPECTED_CARD_COUNT:
         raise BgeFullGenerationError("PARITY_EXPECTED_MEMBERSHIP")
     persisted = reader.read_embeddings(
@@ -592,8 +572,7 @@ def activate_bge_full_generation(
         or not _is_sha256(benchmark.report_sha256)
         or not _is_sha256(benchmark.query_set_sha256)
         or not _is_sha256(benchmark.environment_fingerprint_sha256)
-        or benchmark.environment_fingerprint_sha256
-        != plan.environment_fingerprint_sha256
+        or benchmark.environment_fingerprint_sha256 != plan.environment_fingerprint_sha256
     ):
         raise BgeFullGenerationError("FINAL_BENCHMARK")
     if (
@@ -666,9 +645,7 @@ class PsycopgBgeFullGenerationWriterRepository:
                 with connection.transaction():
                     connection.execute("set local statement_timeout = '60s'")
                     connection.execute("set local lock_timeout = '1s'")
-                    connection.execute(
-                        "set local idle_in_transaction_session_timeout = '75s'"
-                    )
+                    connection.execute("set local idle_in_transaction_session_timeout = '75s'")
                     _insert_cards_and_chunks(connection, plan=plan)
                     _insert_generation_membership(connection, plan=plan)
                     _copy_staging_rows(connection, rows=rows)
@@ -821,9 +798,7 @@ class PsycopgBgeFullGenerationAdminRepository:
                 with connection.transaction():
                     connection.execute("set local statement_timeout = '5s'")
                     connection.execute("set local lock_timeout = '500ms'")
-                    connection.execute(
-                        "set local idle_in_transaction_session_timeout = '5s'"
-                    )
+                    connection.execute("set local idle_in_transaction_session_timeout = '5s'")
                     row = connection.execute(
                         """
                         SELECT
@@ -899,8 +874,7 @@ def _validate_corpus_binding(corpus: FrozenSourceCardCorpus) -> None:
         or corpus.manifest.get("corpusManifestSha256") != corpus.corpus_manifest_sha256
         or corpus.manifest.get("corpusId") != corpus_id
         or corpus.manifest.get("status") != status
-        or corpus.manifest.get("profileId") != profile_id
-        and profile_id is not None
+        or (corpus.manifest.get("profileId") != profile_id and profile_id is not None)
         or corpus.manifest.get("projectCards") != _EXPECTED_CARD_COUNT
         or corpus.manifest.get("parserVersion") != _PARSER_VERSION
         or corpus.manifest.get("chunkerVersion") != _CHUNKER_VERSION
@@ -1020,7 +994,7 @@ def _aggregate_row_hash(rows: Sequence[BgeFullStagedEmbedding]) -> str:
 def _generation_vector_hash(
     rows: Sequence[tuple[str, NDArray[np.float32]]] | Any,
 ) -> str:
-    ordered = sorted(tuple(rows), key=lambda value: value[0].encode("utf-8"))
+    ordered = sorted(rows, key=lambda value: value[0].encode("utf-8"))
     digest = hashlib.sha256()
     for chunk_id, vector in ordered:
         digest.update(chunk_id.encode("utf-8"))
@@ -1143,9 +1117,7 @@ def _insert_cards_and_chunks(
 
         verified_at_text = _required_mapping_text(payload, "verifiedAt")
         try:
-            verified_at = datetime.fromisoformat(
-                verified_at_text.replace("Z", "+00:00")
-            )
+            verified_at = datetime.fromisoformat(verified_at_text.replace("Z", "+00:00"))
         except ValueError as error:
             raise BgeFullGenerationError("FULL_CARD_VERIFIEDAT") from error
         registration = connection.execute(
@@ -1329,8 +1301,9 @@ def _copy_staging_rows(
     *,
     rows: tuple[BgeFullStagedEmbedding, ...],
 ) -> None:
-    with connection.cursor() as cursor:
-        with cursor.copy(
+    with (
+        connection.cursor() as cursor,
+        cursor.copy(
             """
             COPY rag_embedding_staging (
               generation_id, materialization_run_id, chunk_revision_id,
@@ -1338,20 +1311,21 @@ def _copy_staging_rows(
               embedding, staging_row_hash
             ) FROM STDIN
             """
-        ) as copy:
-            for row in rows:
-                copy.write_row(
-                    (
-                        row.generation_id,
-                        row.materialization_run_id,
-                        row.chunk_revision_id,
-                        row.embedding_profile_id,
-                        row.embedding_input_hash,
-                        row.context_set_hash,
-                        _vector_text(row.embedding),
-                        row.staging_row_hash,
-                    )
+        ) as copy,
+    ):
+        for row in rows:
+            copy.write_row(
+                (
+                    row.generation_id,
+                    row.materialization_run_id,
+                    row.chunk_revision_id,
+                    row.embedding_profile_id,
+                    row.embedding_input_hash,
+                    row.context_set_hash,
+                    _vector_text(row.embedding),
+                    row.staging_row_hash,
                 )
+            )
 
 
 def _attest_writer_connection(connection: psycopg.Connection[Any]) -> None:
@@ -1462,11 +1436,7 @@ def _has_function_privilege(
 
 
 def _parse_vector_text(value: str) -> NDArray[np.float32]:
-    if (
-        len(value) > 32_768
-        or not value.startswith("[")
-        or not value.endswith("]")
-    ):
+    if len(value) > 32_768 or not value.startswith("[") or not value.endswith("]"):
         raise BgeFullGenerationError("FULL_READER_VECTOR_TEXT")
     parts = value[1:-1].split(",")
     if len(parts) != 1024:
@@ -1490,8 +1460,7 @@ def _coerce_activation_receipt(value: object) -> BgeActivationReceipt:
     version = value.get("policyVersion")
     status = value.get("generationStatus")
     if (
-        previous is not None
-        and not isinstance(previous, str)
+        (previous is not None and not isinstance(previous, str))
         or not isinstance(active, str)
         or type(version) is not int
         or status != "ACTIVE"

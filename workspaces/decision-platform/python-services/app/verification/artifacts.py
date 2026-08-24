@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import stat
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Mapping, cast
+from pathlib import Path
+from typing import cast
 
+from app.data._shared.bounded_json import (
+    BoundedJsonError,
+    BoundedJsonLimits,
+    parse_bounded_json_bytes,
+)
 from app.data._shared.canonical_json import canonical_json_bytes
-from app.data._shared.bounded_json import BoundedJsonError, BoundedJsonLimits, parse_bounded_json_bytes
 from app.verification.models import VerificationReport
 from app.verification.packet import (
     P1SignedApprovalPacket,
@@ -103,9 +108,7 @@ def claim_packet_execution(
                 dir_fd=directory_fd,
             )
         except FileExistsError:
-            raise VerificationArtifactError(
-                "P1 verification packet was already claimed"
-            ) from None
+            raise VerificationArtifactError("P1 verification packet was already claimed") from None
         with os.fdopen(file_fd, "wb", closefd=True) as output:
             output.write(content)
             output.flush()

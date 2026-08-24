@@ -1,12 +1,11 @@
+import socket
 from datetime import date
 from pathlib import Path
-import socket
 
 import pytest
 
 from app.data.quality.cli import main
 from tests.data.quality.helpers import prepare_snapshot
-
 
 REVISION = "7131f695293472ea16ee05322ed9b05f7b69d129"
 

@@ -117,9 +117,10 @@ def test_materialize_reuses_selected_content_free_core6_receipt_without_provider
         lambda: datetime(2026, 8, 9, 3, 4, 5, tzinfo=UTC),
     )
 
-    assert s48_runtime_cli.main(
-        ("materialize", "--core6-receipt", "receipt-" + "a" * 64 + ".json")
-    ) == 0
+    assert (
+        s48_runtime_cli.main(("materialize", "--core6-receipt", "receipt-" + "a" * 64 + ".json"))
+        == 0
+    )
 
     assert captured == {
         "control_root": tmp_path / "capstone-rag/secrets/core6-probes",
@@ -138,7 +139,9 @@ def test_materialize_reuses_selected_content_free_core6_receipt_without_provider
     }
 
 
-def test_materialize_rejects_arbitrary_core6_receipt_path(capsys: pytest.CaptureFixture[str]) -> None:
+def test_materialize_rejects_arbitrary_core6_receipt_path(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     assert s48_runtime_cli.main(("materialize", "--core6-receipt", "../receipt.json")) == 2
 
     assert json.loads(capsys.readouterr().out) == {

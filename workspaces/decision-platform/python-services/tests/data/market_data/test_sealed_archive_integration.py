@@ -8,7 +8,6 @@ import pytest
 
 from app.data.market_data.repository import stage_seed_archive
 
-
 _ARCHIVE_ROOT = os.environ.get("S5_7B_ARCHIVE_ROOT")
 _ARCHIVE_MANIFEST_SHA256 = "e3f26485c93d5e8bd9cdbd7f9ea7cc46cf3f446cf42e9d65b28f1f5b89bd9a5c"
 

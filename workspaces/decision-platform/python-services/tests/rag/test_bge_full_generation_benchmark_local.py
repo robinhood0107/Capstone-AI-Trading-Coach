@@ -42,9 +42,7 @@ pytestmark = pytest.mark.skipif(
     reason="exact ignored local model의 명시적 30-card final benchmark에서만 실행한다.",
 )
 
-_BATCH_REPORT_PATH = (
-    REPO_ROOT / "capstone-rag/reports/s4-2b-batch-memory-benchmark.v1.json"
-)
+_BATCH_REPORT_PATH = REPO_ROOT / "capstone-rag/reports/s4-2b-batch-memory-benchmark.v1.json"
 _QUERY_SET_PATH = REPO_ROOT / "capstone-rag/eval/s4-2b-30-card-smoke.v1.json"
 _IDENTIFIER_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_]{2,}|[0-9]{3,}")
 
@@ -75,17 +73,13 @@ def test_exact_30_generation_parity_benchmark_and_atomic_activation(
     batch_report = json.loads(_BATCH_REPORT_PATH.read_text(encoding="utf-8"))
     batch_receipt = batch_receipt_from_report(batch_report)
     environment = _environment_payload()
-    assert _canonical_json_hash(environment) == (
-        batch_receipt.environment_fingerprint_sha256
-    )
+    assert _canonical_json_hash(environment) == (batch_receipt.environment_fingerprint_sha256)
 
     artifact = verify_bge_completion_manifest(
         DEFAULT_MODEL_ROOT,
         manifest_path=DEFAULT_MODEL_MANIFEST,
     )
-    tokenizer = BgeStaticTokenizer.from_file(
-        DEFAULT_MODEL_ROOT / "onnx/tokenizer.json"
-    )
+    tokenizer = BgeStaticTokenizer.from_file(DEFAULT_MODEL_ROOT / "onnx/tokenizer.json")
     plan = prepare_bge_full_generation(
         corpus=load_frozen_source_card_corpus(),
         tokenizer=tokenizer,
@@ -149,9 +143,7 @@ def test_exact_30_generation_parity_benchmark_and_atomic_activation(
             if expected.intersection(item["sourceId"] for item in result[:5]):
                 expected_hits += 1
 
-        database_version = str(
-            connection.execute("SHOW server_version").fetchone()[0]
-        )
+        database_version = str(connection.execute("SHOW server_version").fetchone()[0])
         extension_versions = dict(
             connection.execute(
                 """
@@ -163,10 +155,7 @@ def test_exact_30_generation_parity_benchmark_and_atomic_activation(
             ).fetchall()
         )
 
-    stage_percentiles = {
-        stage: _percentiles(values)
-        for stage, values in sorted(samples.items())
-    }
+    stage_percentiles = {stage: _percentiles(values) for stage, values in sorted(samples.items())}
     warm_p95_ms = stage_percentiles["total"]["p95"]
     expected_pointer_after = {
         "generationId": plan.generation_id,
@@ -199,21 +188,15 @@ def test_exact_30_generation_parity_benchmark_and_atomic_activation(
         "batchSize": plan.batch_size,
         "batchBenchmarkSha256": plan.batch_benchmark_sha256,
         "environment": environment,
-        "environmentFingerprintSha256": (
-            plan.environment_fingerprint_sha256
-        ),
+        "environmentFingerprintSha256": (plan.environment_fingerprint_sha256),
         "host": {
             **environment,
-            "memoryBytes": (
-                os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-            ),
+            "memoryBytes": (os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")),
         },
         "postgresVersion": database_version,
         "postgresExtensions": extension_versions,
         "queryDatasetId": query_set["datasetId"],
-        "querySetSha256": hashlib.sha256(
-            _QUERY_SET_PATH.read_bytes()
-        ).hexdigest(),
+        "querySetSha256": hashlib.sha256(_QUERY_SET_PATH.read_bytes()).hexdigest(),
         "warmup": 20,
         "measured": 100,
         "concurrency": 1,
@@ -242,9 +225,7 @@ def test_exact_30_generation_parity_benchmark_and_atomic_activation(
             "gemini": 0,
             "openai": 0,
         },
-        "hashScope": (
-            "CANONICAL_JSON_WITHOUT_BENCHMARK_REPORT_SHA256"
-        ),
+        "hashScope": ("CANONICAL_JSON_WITHOUT_BENCHMARK_REPORT_SHA256"),
     }
     benchmark_report_sha256 = _canonical_json_hash(report)
     report["benchmarkReportSha256"] = benchmark_report_sha256
@@ -259,10 +240,7 @@ def test_exact_30_generation_parity_benchmark_and_atomic_activation(
         voyage_physical_calls=0,
         gemini_physical_calls=0,
         openai_physical_calls=0,
-        passed=(
-            warm_p95_ms <= 1500.0
-            and report["expectedTop5HitRate"] == 1.0
-        ),
+        passed=(warm_p95_ms <= 1500.0 and report["expectedTop5HitRate"] == 1.0),
     )
 
     activation = activate_bge_full_generation(
@@ -291,10 +269,7 @@ def test_exact_30_generation_parity_benchmark_and_atomic_activation(
     assert active_projection
     assert all(str(row[1]).startswith("src_project_") for row in active_projection)
 
-    print(
-        "S4_2B_FULL_GENERATION_RESULT "
-        + json.dumps(report, ensure_ascii=False, sort_keys=True)
-    )
+    print("S4_2B_FULL_GENERATION_RESULT " + json.dumps(report, ensure_ascii=False, sort_keys=True))
     assert materialized.database_receipt.active_pointer_changed is False
     assert report["expectedTop5HitRate"] == 1.0
     assert warm_p95_ms <= 1500.0
@@ -312,11 +287,7 @@ def _run_query(
     normalized_at = time.perf_counter_ns()
     query_vector = embedder.embed_query(normalized)
     embedded_at = time.perf_counter_ns()
-    vector_text = (
-        "["
-        + ",".join(format(float(value), ".9g") for value in query_vector)
-        + "]"
-    )
+    vector_text = "[" + ",".join(format(float(value), ".9g") for value in query_vector) + "]"
     identifiers = sorted(set(_IDENTIFIER_PATTERN.findall(normalized)))
 
     exact = (

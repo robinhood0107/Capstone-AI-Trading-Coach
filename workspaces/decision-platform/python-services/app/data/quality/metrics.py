@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import itertools
+import math
+from bisect import insort_right
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from bisect import insort_right
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, ROUND_HALF_UP
-import math
+from decimal import ROUND_HALF_UP, Decimal
 from statistics import median
 from uuid import UUID, uuid5
 
@@ -41,7 +42,6 @@ from app.data.quality.policy import (
     TRAILING_OBSERVATIONS,
     rate_ppm,
 )
-
 
 _REPORT_NAMESPACE = UUID("c24453a2-6a19-55d6-8aa1-6cb3e48f6c16")
 _SYMBOL_DIGITS = frozenset("0123456789")
@@ -208,9 +208,7 @@ def analyze_quality(
         calendar=CalendarSummary(
             windowStart=context.window_start,
             windowEnd=context.window_end,
-            expectedLastCompletedXkrxSession=(
-                context.expected_last_completed_xkrx_session
-            ),
+            expectedLastCompletedXkrxSession=(context.expected_last_completed_xkrx_session),
         ),
         inputProvenance=InputProvenance(
             universeManifest=context.universe_manifest,
@@ -504,7 +502,7 @@ def _market_shape_metrics(
         ordered = sorted(by_symbol.get(symbol, ()), key=lambda item: item.session_date)
         for segment in _continuous_segments(ordered, session_index):
             returns: list[tuple[date, float, float]] = []
-            for previous, current in zip(segment, segment[1:], strict=False):
+            for previous, current in itertools.pairwise(segment):
                 simple_return = (current.close - previous.close) / previous.close
                 log_return = math.log(current.close / previous.close)
                 returns.append((current.session_date, log_return, simple_return))
@@ -536,13 +534,9 @@ def _market_shape_metrics(
                         )
                     )
 
-            volume_values = tuple(
-                (row.session_date, math.log1p(row.volume)) for row in segment
-            )
+            volume_values = tuple((row.session_date, math.log1p(row.volume)) for row in segment)
             for index, (session_date, value) in enumerate(volume_values):
-                history = tuple(
-                    item[1] for item in volume_values[max(0, index - 60) : index]
-                )
+                history = tuple(item[1] for item in volume_values[max(0, index - 60) : index])
                 score = modified_z_score(value, history)
                 if score is None:
                     continue
@@ -633,11 +627,7 @@ def _accounting_metrics(
         failure=MetricStatus.FAIL,
     )
     market_data = next(
-        (
-            item
-            for item in summary.physical_attempts
-            if item.channel == PhysicalChannel.MARKET_DATA
-        ),
+        (item for item in summary.physical_attempts if item.channel == PhysicalChannel.MARKET_DATA),
         None,
     )
     if market_data is None or market_data.attempts == 0:
@@ -756,12 +746,8 @@ def _analysis_fingerprint(context: AnalysisContext) -> str:
             "sessions": [day.isoformat() for day in context.sessions],
         },
         "inputProvenance": {
-            "universeManifest": context.universe_manifest.model_dump(
-                mode="json", by_alias=True
-            ),
-            "datasetManifest": context.dataset_manifest.model_dump(
-                mode="json", by_alias=True
-            ),
+            "universeManifest": context.universe_manifest.model_dump(mode="json", by_alias=True),
+            "datasetManifest": context.dataset_manifest.model_dump(mode="json", by_alias=True),
             "collectionRun": collection,
         },
     }

@@ -13,9 +13,8 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.strong_llm.models import RunRequest, StrongLlmAnswer
-from app.strong_llm.prompt import require_google_grounding, render_discovery_prompt, render_prompt
+from app.strong_llm.prompt import render_discovery_prompt, render_prompt, require_google_grounding
 from app.strong_llm.runtime import ProviderResult
-
 
 _VERTEX_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 _NUMERIC_TOKEN = re.compile(
@@ -53,7 +52,7 @@ class VertexProviderSettings:
         self.thinking_level = thinking_level
 
     @classmethod
-    def from_env(cls) -> "VertexProviderSettings":
+    def from_env(cls) -> VertexProviderSettings:
         if os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"):
             raise ValueError("STRONG_LLM_API_KEY_FALLBACK_FORBIDDEN")
         path = Path(os.environ.get("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_JSON", ""))
@@ -321,7 +320,11 @@ def _provider_result(
         segment = support["segment"]
         support_text = str(segment.get("text", ""))
         indices = support.get("grounding_chunk_indices") or []
-        if support_text and isinstance(indices, list) and all(isinstance(value, int) for value in indices):
+        if (
+            support_text
+            and isinstance(indices, list)
+            and all(isinstance(value, int) for value in indices)
+        ):
             supports.append(
                 {
                     "start_index": _metadata_index(segment.get("start_index")),
@@ -390,7 +393,11 @@ def _content_block_grounding(
                 continue
             url = annotation.get("url")
             cited_text = annotation.get("cited_text")
-            if not isinstance(url, str) or not url.startswith("https://") or not isinstance(cited_text, str):
+            if (
+                not isinstance(url, str)
+                or not url.startswith("https://")
+                or not isinstance(cited_text, str)
+            ):
                 continue
             parsed = urlparse(url)
             if not parsed.hostname or not cited_text.strip():
@@ -404,7 +411,9 @@ def _content_block_grounding(
                 roots.append(
                     {
                         "result_id": f"google_{index + 1}",
-                        "title": title[:500] if isinstance(title, str) and title.strip() else parsed.hostname,
+                        "title": title[:500]
+                        if isinstance(title, str) and title.strip()
+                        else parsed.hostname,
                         "uri": url[:2048],
                         "domain": parsed.hostname[:253],
                         "chunk_index": index,
@@ -433,7 +442,9 @@ def _exact_text_containment(left: str, right: str) -> bool:
 
     left_value = left.strip()
     right_value = right.strip()
-    return bool(left_value and right_value and (left_value in right_value or right_value in left_value))
+    return bool(
+        left_value and right_value and (left_value in right_value or right_value in left_value)
+    )
 
 
 def _message_text(message: AIMessage) -> str:
@@ -452,7 +463,9 @@ def _canonical_answer_json(value: str) -> str:
     """Native schema 본문만 canonicalize하고 설명문·복수 JSON·비객체 root는 허용하지 않는다."""
 
     candidate = value.strip()
-    fenced = re.fullmatch(r"```(?:json)?\s*(\{.*\})\s*```", candidate, flags=re.IGNORECASE | re.DOTALL)
+    fenced = re.fullmatch(
+        r"```(?:json)?\s*(\{.*\})\s*```", candidate, flags=re.IGNORECASE | re.DOTALL
+    )
     if fenced is not None:
         candidate = fenced.group(1).strip()
     if not candidate:
@@ -517,7 +530,11 @@ def _normalize_grounded_answer(
                 "warnings": [],
             }
         answer = StrongLlmAnswer.model_validate(payload)
-        if any(citation_id not in allowed for sentence in answer.sentences for citation_id in sentence.citationIds):
+        if any(
+            citation_id not in allowed
+            for sentence in answer.sentences
+            for citation_id in sentence.citationIds
+        ):
             raise ValueError("STRONG_LLM_PROVIDER_CITATION_UNBOUND")
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     used_local_ids = _valid_provider_citation_ids(payload, allowed)
@@ -764,7 +781,9 @@ def _bind_provider_grounding_citations(
         numeric_spans = sentence.get("numericSpans")
         if isinstance(numeric_spans, list):
             for numeric in numeric_spans:
-                if not isinstance(numeric, dict) or not isinstance(numeric.get("citationIds"), list):
+                if not isinstance(numeric, dict) or not isinstance(
+                    numeric.get("citationIds"), list
+                ):
                     continue
                 numeric["citationIds"] = [
                     value

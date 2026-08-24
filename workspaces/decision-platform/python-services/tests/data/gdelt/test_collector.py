@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -12,7 +12,6 @@ from app.data.gdelt.errors import GdeltAggregateError
 from app.data.gdelt.policy import QueryDefinition, QueryRegistry
 from app.data.gdelt.scoring import build_news_sentiment_summary
 from app.data.gdelt.transport import FixtureResponse, FixtureTransport, validate_online_target
-
 
 FIXTURE_ROOT = Path(__file__).with_name("fixtures")
 WINDOW_START = datetime(2026, 7, 30, tzinfo=UTC)

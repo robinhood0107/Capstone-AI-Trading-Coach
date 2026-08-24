@@ -33,7 +33,6 @@ from app.verification.provider_claim import (
     claim_signed_provider_approval,
 )
 
-
 _CONTROL_ROOT_RELATIVE: Final[Path] = Path("capstone-rag/secrets/optional3-probes")
 _EVIDENCE_FILE: Final[str] = "optional3-probe-execution-evidence.v1.json"
 _APPROVAL_FILE: Final[str] = "p1-approval-packet.v2.json"
@@ -183,7 +182,14 @@ def _current_clean_git_identity(repository_root: Path) -> tuple[str, str]:
         raise Optional3ProbeError("OPTIONAL3_PROBE_REPOSITORY_INVALID")
     try:
         status = subprocess.run(
-            ["git", "-C", str(repository_root), "status", "--porcelain=v1", "--untracked-files=all"],
+            [
+                "git",
+                "-C",
+                str(repository_root),
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+            ],
             check=True,
             capture_output=True,
             text=True,
@@ -230,7 +236,9 @@ def _repository_root() -> Path:
 
 
 def _canonical_bytes(value: object) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
 
 
 def _emit(

@@ -8,17 +8,18 @@ understand the S5 source bundle, while every operational consumer imports only
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
+import os
+import stat
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
-import hashlib
 from io import BytesIO
-import json
-import os
 from pathlib import Path
-import stat
 from types import SimpleNamespace
-from typing import Any, Sequence, cast
+from typing import Any, cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -50,7 +51,6 @@ from app.lightgbm.source_bundle import SourceBundle, SourceChunkReceipt, read_so
 from app.lightgbm.temporal import receipt_set_sha256
 from app.lightgbm.universe import MonthlyUniverse, validate_horizon_union
 from app.rag.safe_io import RagSafeIoError, write_approved_new_file
-
 
 _PROGRESS_FILENAME = "progress.jsonl"
 _PARQUET_ROW_GROUP_SIZE = 8_192

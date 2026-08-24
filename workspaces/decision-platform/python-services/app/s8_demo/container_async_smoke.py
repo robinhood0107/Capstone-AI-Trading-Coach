@@ -11,7 +11,6 @@ from typing import Any
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
 
-
 _MODE = re.compile(r"^(DB|KAFKA)$")
 _RUN_ID = re.compile(r"^[0-9a-f]{32}$")
 
@@ -24,7 +23,10 @@ def partition_key(secret: bytes) -> str:
 
 
 def run(database_dsn: str, secret: bytes, mode: str) -> str:
-    if _MODE.fullmatch(mode) is None or conninfo_to_dict(database_dsn).get("user") != "decision_demo":
+    if (
+        _MODE.fullmatch(mode) is None
+        or conninfo_to_dict(database_dsn).get("user") != "decision_demo"
+    ):
         raise ValueError("P1 smoke execution boundary is invalid")
     key = partition_key(secret)
     run_id = secrets.token_hex(16)

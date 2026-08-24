@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
+import math
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
-import hashlib
 from io import BytesIO
-import math
 from pathlib import Path
-import re
-from typing import Any, Mapping, cast
+from typing import Any, cast
 
 import lightgbm as lgb
 import pyarrow.parquet as pq
@@ -26,7 +27,6 @@ from app.lightgbm.fake_artifacts import (
     signal_row_provenance_sha256,
 )
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
-
 
 FILE_LIMITS = {
     "manifest.json": 1 * 1024 * 1024,

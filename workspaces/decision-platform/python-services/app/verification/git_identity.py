@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 import re
 import subprocess
-
+from pathlib import Path
 
 _HEAD = re.compile(r"^[0-9a-f]{40}$")
 

@@ -1,6 +1,5 @@
 package com.capstone.decision
 
-import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import com.capstone.decision.infrastructure.security.DemoAccounts
 import com.capstone.decision.infrastructure.security.DemoCredentialBundlePolicy
 import com.capstone.decision.infrastructure.security.DemoRole
@@ -10,6 +9,7 @@ import com.capstone.decision.infrastructure.security.UserSecurityRepository
 import com.capstone.decision.infrastructure.security.V7__s2_1_actor_trust
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.context.DynamicPropertyRegistry
@@ -22,6 +22,7 @@ import java.util.Base64
 import java.util.HexFormat
 
 // 테스트 credential과 hash는 런타임에 생성해 실제 secret이나 고정 BCrypt material을 fixture에 남기지 않는다.
+@Import(TestActorCapabilityConfiguration::class)
 abstract class SpringApiIntegrationTestBase {
     protected fun userPassword(): String = TEST_USER_PASSWORD
 
@@ -92,6 +93,7 @@ abstract class SpringApiIntegrationTestBase {
         @DynamicPropertySource
         @JvmStatic
         fun registerApplicationProperties(registry: DynamicPropertyRegistry) {
+            registry.add("app.actor-capability.transport") { "test" }
             registry.add("app.jwt.secret") { TEST_JWT_SECRET }
             registry.add("app.jwt.issuer") { TEST_JWT_ISSUER }
             registry.add("app.jwt.audience") { TEST_JWT_AUDIENCE }
@@ -207,13 +209,6 @@ internal fun s21ActorTrustMigration(
 // DataSource를 의도적으로 제외한 web 계약 테스트도 production과 동일한 repository port를 거친다.
 @TestConfiguration(proxyBeanMethods = false)
 class TestAuthRepositoryConfiguration {
-    @Bean
-    @Primary
-    fun testActorCapabilityIssuer(): ActorCapabilityIssuer =
-        object : ActorCapabilityIssuer {
-            override fun issue(actorUserId: String): String = "test-actor-capability"
-        }
-
     @Bean
     @Primary
     fun testUserSecurityRepository(): UserSecurityRepository {

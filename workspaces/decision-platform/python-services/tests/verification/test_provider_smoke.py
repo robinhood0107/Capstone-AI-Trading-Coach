@@ -264,8 +264,9 @@ def test_production_backend_composes_existing_typed_clients_with_retry_zero(monk
             return None
 
     class FakeEcosClient:
-        def __init__(self, settings) -> None:
+        def __init__(self, settings, **kwargs) -> None:
             observed_settings["ecos"].append(settings)
+            assert kwargs["approval_deadline_monotonic"] > 0
             self.physical_attempt_count = 0
 
         def statistic_search(self, **kwargs):

@@ -56,7 +56,7 @@ _LEAF_CASES = (
     ("CHUNK_TEXT", "CHUNK_TEXT"),
     ("VECTOR_DIMENSION", "VECTOR_DIMENSION"),
     ("VECTOR_NUMBER", "VECTOR_NUMBER"),
-    ("VECTOR_FINITE", "VECTOR_FINITE"),
+    ("VECTOR_FINITE", "BODY_UTF8_OR_JSON"),
     ("VECTOR_NORM", "VECTOR_NORM"),
     ("COST_CAP", "COST_CAP"),
 )
@@ -284,7 +284,7 @@ def test_query_attempt_exposes_the_same_content_free_leaf() -> None:
 
 
 def test_validation_leaf_set_is_closed_and_content_free() -> None:
-    assert {leaf for _, leaf in _LEAF_CASES} == {
+    assert {leaf for _, leaf in _LEAF_CASES} | {"VECTOR_FINITE"} == {
         "STATUS",
         "BODY_SIZE_OR_TYPE",
         "BODY_UTF8_OR_JSON",

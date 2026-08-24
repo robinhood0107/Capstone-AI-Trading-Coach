@@ -1557,6 +1557,43 @@ class S7AsyncMigrationIntegrationTest {
 
     private fun jdbcUrl(databaseName: String): String = postgres.jdbcUrl.replace("/decision", "/$databaseName")
 
+    @Test
+    fun `V87 provider approval is atomic one-shot and replay role has no table access`() {
+        val packetHash = "sha256:" + "1".repeat(64)
+        val approvalHash = "sha256:" + "2".repeat(64)
+        val nonceHash = "sha256:" + "3".repeat(64)
+        val operationHash = "sha256:" + "4".repeat(64)
+        connection("decision", REPLAY_USER, REPLAY_PASSWORD).use { replay ->
+            replay.createStatement().use { statement ->
+                val sql =
+                    "select consume_p1_provider_approval(" +
+                        "'$packetHash','$approvalHash','$nonceHash','$operationHash',8," +
+                        "statement_timestamp() + interval '5 minutes')"
+                assertTrue(booleanResult(statement, sql))
+                assertFalse(booleanResult(statement, sql))
+                val denied =
+                    assertThrows<SQLException> {
+                        statement.executeQuery("select count(*) from p1_provider_approval_claim")
+                    }
+                assertEquals("42501", denied.sqlState)
+            }
+        }
+        connection("decision", APP_USER, APP_PASSWORD).use { app ->
+            val denied =
+                assertThrows<SQLException> {
+                    app.createStatement().use {
+                        it.executeQuery(
+                            "select consume_p1_provider_approval(" +
+                                "'sha256:${"5".repeat(64)}','sha256:${"6".repeat(64)}'," +
+                                "'sha256:${"7".repeat(64)}','sha256:${"8".repeat(64)}',1," +
+                                "statement_timestamp() + interval '5 minutes')",
+                        )
+                    }
+                }
+            assertEquals("42501", denied.sqlState)
+        }
+    }
+
     private fun booleanResult(
         statement: java.sql.Statement,
         sql: String,

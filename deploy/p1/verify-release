@@ -55,7 +55,9 @@ PY
 
 inventory=$(mktemp)
 compose_json=$(mktemp)
-cleanup() { rm -f -- "$inventory" "$compose_json"; }
+archive_inventory=$(mktemp)
+archive_stage=$(mktemp -d)
+cleanup() { rm -f -- "$inventory" "$compose_json" "$archive_inventory" "$archive_stage/images.tar"; rmdir -- "$archive_stage" 2>/dev/null || true; }
 trap cleanup EXIT
 python3 - "$bundle" "$inventory" <<'PY'
 import hashlib
@@ -76,8 +78,9 @@ def require(condition: bool, message: str) -> None:
 
 required = {
     "contractId", "releaseName", "releaseStage", "bundleMode", "releaseVersion",
-    "commitSha", "treeSha", "platform", "applicationImageParitySha256", "images",
-    "compose", "imagesArchiveSha256", "providerLiveAccountOrderCalls",
+    "commitSha", "treeSha", "configSha256", "sourceArchiveSha256", "licenseSha256",
+    "platform", "applicationImageParitySha256", "images", "compose",
+    "imageArchiveEntries", "imagesArchiveSha256", "providerLiveAccountOrderCalls",
     "crossMarketRuntime", "sbom", "provenance", "signatures",
 }
 require(isinstance(manifest, dict) and set(manifest) == required, "manifest fields")
@@ -88,6 +91,8 @@ require(manifest["bundleMode"] in {"DB", "KAFKA"}, "bundle mode")
 require(bool(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", manifest["releaseVersion"])), "release version")
 require(bool(re.fullmatch(r"[0-9a-f]{40}", manifest["commitSha"])), "commit sha")
 require(bool(re.fullmatch(r"[0-9a-f]{40}", manifest["treeSha"])), "tree sha")
+for field in ("configSha256", "sourceArchiveSha256", "licenseSha256", "imagesArchiveSha256"):
+    require(bool(re.fullmatch(r"[0-9a-f]{64}", manifest[field])), field)
 require(manifest["platform"] == "linux/amd64", "platform")
 require(bool(re.fullmatch(r"[0-9a-f]{64}", manifest["applicationImageParitySha256"])), "image parity")
 require(
@@ -152,6 +157,15 @@ for item in compose:
     require(isinstance(item, dict) and set(item) == {"path", "sha256"}, "compose entry")
     checked_file(item["path"], item["sha256"])
 
+release_env_digest = hashlib.sha256((root / "deploy/p1/release.env").read_bytes()).hexdigest()
+config_lines = [f'{item["path"]}\t{item["sha256"]}' for item in compose]
+config_lines.append(f"deploy/p1/release.env\t{release_env_digest}")
+config_digest = hashlib.sha256(("\n".join(sorted(config_lines)) + "\n").encode()).hexdigest()
+require(config_digest == manifest["configSha256"], "config digest")
+checked_file("provenance/source.tar", manifest["sourceArchiveSha256"])
+require(hashlib.sha256((root / "LICENSE").read_bytes()).hexdigest() == manifest["licenseSha256"], "license digest")
+archive_entries = manifest["imageArchiveEntries"]
+require(isinstance(archive_entries, list) and 0 < len(archive_entries) <= 4096, "archive inventory")
 archive_digest = hashlib.sha256((root / "images.tar").read_bytes()).hexdigest()
 require(archive_digest == manifest["imagesArchiveSha256"], "image archive digest")
 
@@ -175,12 +189,37 @@ for key in ("provenance", "signatures"):
         require(item["kind"] not in kinds, f"{key} duplicate kind")
         kinds.add(item["kind"])
         checked_file(item["path"], item["sha256"])
-require({item["kind"] for item in manifest["provenance"]} >= {"SOURCE_PROVENANCE"}, "source provenance")
+require(
+    {item["kind"] for item in manifest["provenance"]} >= {"SOURCE_PROVENANCE", "SOURCE_ARCHIVE"},
+    "source provenance",
+)
+require(
+    next(item["sha256"] for item in manifest["provenance"] if item["kind"] == "SOURCE_ARCHIVE")
+    == manifest["sourceArchiveSha256"],
+    "source archive provenance",
+)
 require({item["kind"] for item in manifest["signatures"]} == {
     "COSIGN_SPRING_MANIFEST", "COSIGN_PYTHON_MANIFEST", "COSIGN_POSTGRES_MANIFEST",
     "GITHUB_SPRING", "GITHUB_PYTHON", "GITHUB_POSTGRES", "GITHUB_TRUST_ROOT"
 }, "signature inventory")
 provenance = {item["kind"]: root / item["path"] for item in manifest["provenance"]}
+source = json.loads(provenance["SOURCE_PROVENANCE"].read_text(encoding="utf-8"))
+require(
+    source == {
+        "applicationImageParitySha256": manifest["applicationImageParitySha256"],
+        "buildType": "P1_OFFLINE_DEMO",
+        "bundleMode": manifest["bundleMode"],
+        "commitSha": manifest["commitSha"],
+        "configSha256": manifest["configSha256"],
+        "licenseSha256": manifest["licenseSha256"],
+        "platform": "linux/amd64",
+        "providerLiveAccountOrderCalls": 0,
+        "releaseVersion": manifest["releaseVersion"],
+        "sourceArchiveSha256": manifest["sourceArchiveSha256"],
+        "treeSha": manifest["treeSha"],
+    },
+    "source provenance identity",
+)
 require(
     hashlib.sha256(provenance["SPRING_OCI_MANIFEST"].read_bytes()).hexdigest()
     == image_map["spring-api"].rsplit("@sha256:", 1)[1],
@@ -207,6 +246,7 @@ with inventory_path.open("x", encoding="utf-8") as handle:
     handle.write(f'STAGE\t{manifest["releaseStage"]}\n')
     handle.write(f'MODE\t{manifest["bundleMode"]}\n')
     handle.write(f'COMMIT\t{manifest["commitSha"]}\n')
+    handle.write(f'ARCHIVE_SHA\t{manifest["imagesArchiveSha256"]}\n')
     for component in sorted(image_map):
         handle.write(f'IMAGE\t{component}\t{image_map[component]}\n')
 PY
@@ -216,6 +256,18 @@ commit=$(awk -F '\t' '$1 == "COMMIT" {print $2}' "$inventory")
 spring_ref=$(awk -F '\t' '$1 == "IMAGE" && $2 == "spring-api" {print $3}' "$inventory")
 python_ref=$(awk -F '\t' '$1 == "IMAGE" && $2 == "python-services" {print $3}' "$inventory")
 postgres_ref=$(awk -F '\t' '$1 == "IMAGE" && $2 == "postgres" {print $3}' "$inventory")
+archive_sha=$(awk -F '\t' '$1 == "ARCHIVE_SHA" {print $2}' "$inventory")
+python3 - "$bundle/release-manifest.json" "$archive_inventory" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+manifest, output = map(Path, sys.argv[1:])
+document = json.loads(manifest.read_text(encoding="utf-8"))
+output.write_text(json.dumps(document["imageArchiveEntries"], sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+PY
+python3 "$bundle/deploy/p1/release_guard.py" stage-archive "$bundle/images.tar" "$archive_sha" "$archive_stage/images.tar"
+python3 "$bundle/deploy/p1/release_guard.py" archive-compare "$archive_stage/images.tar" "$archive_inventory"
 
 cosign verify-blob --offline --bundle "$bundle/signatures/cosign-spring-manifest.bundle.json" \
   --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com \
@@ -239,7 +291,8 @@ gh attestation verify "$bundle/provenance/postgres-manifest.json" -R robinhood01
   --custom-trusted-root "$bundle/signatures/github-trusted-root.jsonl" \
   --cert-identity "$identity" --source-digest "$commit" >/dev/null
 
-docker load --input "$bundle/images.tar" >/dev/null
+python3 "$bundle/deploy/p1/release_guard.py" archive-compare "$archive_stage/images.tar" "$archive_inventory"
+docker load --input "$archive_stage/images.tar" >/dev/null
 while IFS=$'\t' read -r kind component reference; do
   [[ $kind == IMAGE ]] || continue
   [[ $(docker image inspect "$reference" --format '{{.Os}}/{{.Architecture}}') == linux/amd64 ]] || {

@@ -165,7 +165,14 @@ def test_writer_preflight_blocks_before_provider_executor(monkeypatch, capsys) -
 
 
 def test_successful_probe_materializes_only_sanitized_owner_record(monkeypatch, capsys) -> None:
-    packet = type("Packet", (), {"operation": "SEC_OFFICIAL_RELEASES", "symbol": "005930"})()
+    packet = SimpleNamespace(
+        operation="SEC_OFFICIAL_RELEASES",
+        symbol="005930",
+        provider_family="SEC_OFFICIAL",
+        physical_call_cap=1,
+        cost_cap_microusd=0,
+        packet_sha256=lambda: "a" * 64,
+    )
     monkeypatch.setattr(
         foreign_news_provider_probe_cli.ForeignNewsProviderProbePacket,
         "load_from_control_root",
@@ -180,7 +187,24 @@ def test_successful_probe_materializes_only_sanitized_owner_record(monkeypatch, 
             symbol="005930",
         ),
     )
-    monkeypatch.setattr(foreign_news_provider_probe_cli, "_load_execution_binding", lambda **_: object())
+    binding = SimpleNamespace(
+        ci_digest="b" * 64,
+        head_sha="c" * 40,
+        security_digest="d" * 64,
+        tree_sha256="e" * 64,
+    )
+    monkeypatch.setattr(foreign_news_provider_probe_cli, "_load_execution_binding", lambda **_: binding)
+    approval = object()
+    monkeypatch.setattr(
+        foreign_news_provider_probe_cli,
+        "load_and_verify_execution_approval",
+        lambda *args, **kwargs: approval,
+    )
+    monkeypatch.setattr(
+        foreign_news_provider_probe_cli,
+        "claim_signed_provider_approval",
+        lambda value: None if value is approval else (_ for _ in ()).throw(AssertionError()),
+    )
     monkeypatch.setenv("DECISION_MARKET_WRITER_DATABASE_DSN", "postgresql://fixture.invalid/decision")
 
     appended: list[object] = []

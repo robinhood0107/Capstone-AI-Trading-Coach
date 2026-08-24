@@ -95,6 +95,7 @@ class ECOSHttpClient:
         *,
         transport: httpx.BaseTransport | None = None,
         quota: _Quota | None = None,
+        approval_deadline_monotonic: float | None = None,
     ) -> None:
         """운영 client는 caller transport/quota override를 거부하고 private wiring만 사용한다."""
         if transport is not None or quota is not None:
@@ -123,6 +124,7 @@ class ECOSHttpClient:
                 retry_sleeper=time.sleep,
                 redis_client=redis_client,
                 monotonic=time.monotonic,
+                approval_deadline_monotonic=approval_deadline_monotonic,
             )
         except Exception:
             if inner is not None:
@@ -140,6 +142,7 @@ class ECOSHttpClient:
         credential: SecretStr,
         retry_sleeper: Callable[[float], None] | None = None,
         monotonic: Callable[[], float] | None = None,
+        approval_deadline_monotonic: float | None = None,
     ) -> "ECOSHttpClient":
         """socket/env 없이 synthetic credential과 MockTransport만 쓰는 비공개 test factory다."""
         if not isinstance(transport, httpx.MockTransport):
@@ -153,6 +156,7 @@ class ECOSHttpClient:
             retry_sleeper=retry_sleeper or (lambda _: None),
             redis_client=None,
             monotonic=monotonic or time.monotonic,
+            approval_deadline_monotonic=approval_deadline_monotonic,
         )
         return client
 
@@ -166,6 +170,7 @@ class ECOSHttpClient:
         retry_sleeper: Callable[[float], None],
         redis_client: object | None,
         monotonic: Callable[[], float],
+        approval_deadline_monotonic: float | None,
     ) -> None:
         credential_transport = _CredentialTransport(
             transport,
@@ -208,6 +213,9 @@ class ECOSHttpClient:
             settings.pool_timeout_seconds,
         )
         self._monotonic = monotonic
+        if approval_deadline_monotonic is not None and approval_deadline_monotonic <= monotonic():
+            raise ValueError("ECOS approval deadline has expired")
+        self._approval_deadline_monotonic = approval_deadline_monotonic
         self._redis_client = redis_client
         self._closed = False
 
@@ -337,6 +345,10 @@ class ECOSHttpClient:
             raise ValueError("ECOS retry attempt count is out of bounds")
         started = self._monotonic()
         deadline = started + self._logical_deadline_seconds
+        if self._approval_deadline_monotonic is not None:
+            deadline = min(deadline, self._approval_deadline_monotonic)
+        if deadline <= started:
+            raise ECOSHttpError("logical_deadline_exceeded")
         attempt = 1
         while True:
             failure: Exception | None = None

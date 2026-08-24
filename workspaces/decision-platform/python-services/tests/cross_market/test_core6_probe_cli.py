@@ -60,6 +60,17 @@ def test_execute_constructs_only_fixed_backend_and_emits_content_free_receipt(
         classmethod(lambda cls, **kwargs: packet),
     )
     monkeypatch.setattr(core6_probe_cli, "_load_execution_binding", lambda **kwargs: binding)
+    approval = object()
+    monkeypatch.setattr(
+        core6_probe_cli,
+        "load_and_verify_execution_approval",
+        lambda *args, **kwargs: approval,
+    )
+    monkeypatch.setattr(
+        core6_probe_cli,
+        "claim_signed_provider_approval",
+        lambda value: None if value is approval else (_ for _ in ()).throw(AssertionError()),
+    )
     monkeypatch.setattr(
         core6_probe_cli,
         "build_core6_backend",

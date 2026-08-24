@@ -56,11 +56,23 @@ from app.brokerage.mock_order_reference_store import (
     KISMockApprovalOutcomeUnavailable,
     MockProviderOrderReference,
 )
+from app.data._shared.canonical_json import canonical_json_sha256
 from app.data.kis._credential_transport import KISCredentialError, _build_redis_client
+from app.verification.execution_approval import (
+    ExecutionApprovalError,
+    ZERO_SCOPE_SHA256,
+    load_and_verify_execution_approval,
+    scope_digest,
+)
+from app.verification.provider_claim import (
+    ProviderApprovalClaimError,
+    claim_signed_provider_approval,
+)
 from app.data.kis.settings import KISSettings
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
 _MAX_PACKET_BYTES = 64 * 1024
+_P1_APPROVAL_PATH = Path("/run/secrets/p1-kis-mock-approval-v2.json")
 _SHA256 = r"^[0-9a-f]{64}$"
 _GIT_SHA = r"^[0-9a-f]{40}$"
 _NONCE = r"^[0-9a-f]{64}$"
@@ -932,32 +944,38 @@ def approval_anchor_for_source(source_packet_sha256: str, source_nonce: str) -> 
 
 
 def _consume_exact_approval_once(packet: ApprovalPacket, now: datetime) -> None:
-    """Redis 원자 claim으로 exact packet 재실행을 성공/실패와 무관하게 차단한다."""
-    current = now.astimezone(UTC)
-    remaining_ms = int((packet.expires_at - current).total_seconds() * 1000)
-    if remaining_ms <= 0:
-        raise KISMockApprovalRejected("approval packet is not inside its TTL")
-    key_material = f"{packet.approval_id}\0{packet.packet_sha256}".encode()
-    if isinstance(packet, KISMockApprovalPacketV3):
-        version = "v3"
-    elif isinstance(packet, KISMockApprovalPacketV2):
-        version = "v2"
-    else:
-        version = "v1"
-    redis_key = (
-        f"kis:mock:approval-consumed:{version}:" + hashlib.sha256(key_material).hexdigest()
-    )
-    redis_client: Any | None = None
+    """Only signed v3 packets receive durable PostgreSQL execution authority."""
+
+    if not isinstance(packet, KISMockApprovalPacketV3):
+        raise KISMockApprovalRejected("legacy or unsigned approval has no execution authority")
     try:
-        redis_client = _build_redis_client()
-        claimed = redis_client.set(redis_key, "1", nx=True, px=remaining_ms)
-    except Exception:
-        raise KISMockApprovalRejected("approval consumption state is unavailable") from None
-    finally:
-        if redis_client is not None:
-            redis_client.close()
-    if claimed is not True:
-        raise KISMockApprovalRejected("approval packet was already consumed")
+        approval = load_and_verify_execution_approval(
+            _P1_APPROVAL_PATH,
+            provider_family="KIS_MOCK",
+            exact_operations=packet.steps,
+            payload_sha256=packet.packet_sha256,
+            repository_digest=canonical_json_sha256(
+                {
+                    "headSha": packet.repository.head_sha,
+                    "pullRequest": packet.repository.pull_request,
+                    "remoteHeadSha": packet.repository.remote_head_sha,
+                }
+            ),
+            evidence_digest=canonical_json_sha256(
+                packet.evidence.model_dump(mode="json", by_alias=True)
+            ),
+            owner_scope_digest=ZERO_SCOPE_SHA256,
+            account_scope_digest=scope_digest(packet.order.account_id),
+            credential_scope_digest=scope_digest("KIS_MOCK"),
+            physical_call_cap=(
+                packet.physical_caps.token_p + packet.physical_caps.brokerage
+            ),
+            cost_cap_microusd=0,
+            now=now,
+        )
+        claim_signed_provider_approval(approval)
+    except (ExecutionApprovalError, ProviderApprovalClaimError) as error:
+        raise KISMockApprovalRejected("signed approval was rejected") from error
 
 
 def _read_secure_packet(packet_path: Path) -> tuple[Path, bytes]:

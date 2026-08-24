@@ -275,6 +275,10 @@ secrets:
   actor_capability_authority_env: {file: "${P1_SECRETS_DIR}/actor-capability-authority.env"}
   spring_env: {file: "${P1_SECRETS_DIR}/spring.env"}
   python_env: {file: "${P1_SECRETS_DIR}/python.env"}
+  kafka_publisher_env: {file: "${P1_SECRETS_DIR}/kafka-publisher.env"}
+  poison_recorder_env: {file: "${P1_SECRETS_DIR}/poison-recorder.env"}
+  kafka_admin_env: {file: "${P1_SECRETS_DIR}/kafka-admin.env"}
+  kafka_broker_jaas: {file: "${P1_SECRETS_DIR}/kafka-broker-jaas.conf"}
   demo_env: {file: "${P1_SECRETS_DIR}/demo.env"}
   rag_history_kek: {file: "${P1_SECRETS_DIR}/rag-history-kek-v1.key"}
 

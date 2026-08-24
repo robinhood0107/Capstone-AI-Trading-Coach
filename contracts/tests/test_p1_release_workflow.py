@@ -215,11 +215,12 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         self.assertIn('root / "LICENSE"', verifier)
         self.assertIn("bundle AGPL license text is incomplete", verifier)
 
-    def test_kafka_release_uses_native_broker_without_unscanned_ui(self) -> None:
+    def test_kafka_release_uses_sasl_capable_jvm_broker_without_unscanned_ui(self) -> None:
         compose = (REPOSITORY_ROOT / "deploy" / "p1" / "compose.kafka.yml").read_text(encoding="utf-8")
         verifier = VERIFY_RELEASE.read_text(encoding="utf-8")
-        self.assertIn("apache/kafka-native:4.3.1@sha256:", compose)
-        self.assertIn('entrypoint: ["python", "-m", "app.async_worker.kafka_topics"]', compose)
+        self.assertIn("apache/kafka:4.3.1@sha256:ccd1314e47ec", compose)
+        self.assertIn('entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "kafka-admin"]', compose)
+        self.assertIn('command: ["python", "-m", "app.async_worker.kafka_topics"]', compose)
         self.assertNotIn("kafka-ui", compose)
         self.assertIn("kafka-volume-init:", compose)
         self.assertIn("cap_add: [CHOWN, FOWNER]", compose)

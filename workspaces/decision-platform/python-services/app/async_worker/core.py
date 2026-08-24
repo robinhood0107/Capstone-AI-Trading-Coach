@@ -88,9 +88,18 @@ class AsyncWorkRepository(Protocol):
     def quarantine(self, work: AsyncWork, code: str, error_class: str) -> bool: ...
 
 
+class AsyncPoisonRecorder(Protocol):
+    def quarantine(self, work: AsyncWork, code: str, error_class: str) -> bool: ...
+
+
 class AsyncWorkProcessor:
-    def __init__(self, repository: AsyncWorkRepository) -> None:
+    def __init__(
+        self,
+        repository: AsyncWorkRepository,
+        poison_recorder: AsyncPoisonRecorder | None = None,
+    ) -> None:
         self._repository = repository
+        self._poison_recorder = poison_recorder or repository
 
     def process(self, work: AsyncWork) -> AsyncWorkResult:
         try:
@@ -106,11 +115,13 @@ class AsyncWorkProcessor:
             raise AsyncRetryableError
         except (AsyncContractError, AsyncPayloadHashConflict) as error:
             conflict = isinstance(error, AsyncPayloadHashConflict)
-            self._repository.quarantine(
+            recorded = self._poison_recorder.quarantine(
                 work,
                 "PAYLOAD_HASH_CONFLICT" if conflict else "INVALID_EVENT_PAYLOAD",
                 "CONTRACT_VIOLATION",
             )
+            if not recorded:
+                return AsyncWorkResult("FAILED", failure_code="POISON_RECEIPT_UNAVAILABLE")
             return AsyncWorkResult(
                 "NEEDS_REVIEW",
                 failure_code="PAYLOAD_HASH_CONFLICT" if conflict else "INVALID_EVENT_PAYLOAD",

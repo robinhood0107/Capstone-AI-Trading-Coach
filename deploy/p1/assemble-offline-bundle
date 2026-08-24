@@ -49,7 +49,7 @@ declare -a references=(
 if [[ $mode == kafka ]]; then
   components+=(kafka)
   references+=(
-    'apache/kafka-native:4.3.1@sha256:e50f6ad232dc9e524134ef6babba8285ba8a793326cb27ca2efc20fa83e45a0b'
+    'apache/kafka:4.3.1@sha256:ccd1314e47ec76909e01f86308b4dcf2064f19f7c89759234322314b0e319e26'
   )
 fi
 

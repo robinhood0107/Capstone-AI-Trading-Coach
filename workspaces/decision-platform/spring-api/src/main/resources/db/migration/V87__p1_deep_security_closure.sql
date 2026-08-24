@@ -1107,3 +1107,383 @@ REVOKE ALL ON FUNCTION
   public.consume_current_actor_capability(text,text),
   public.lock_active_owned_principle_authorized(text,text,text,integer,text,text)
 FROM PUBLIC,decision_app,decision_worker,decision_replay;
+
+CREATE TABLE public.p1_kafka_poison_receipt (
+  source_topic text NOT NULL,
+  source_partition integer NOT NULL,
+  source_offset bigint NOT NULL,
+  event_id text NOT NULL,
+  event_type text NOT NULL,
+  payload_hash text NOT NULL,
+  attempt integer NOT NULL,
+  failure_code text NOT NULL,
+  job_id text,
+  recorded_at timestamptz NOT NULL DEFAULT statement_timestamp(),
+  PRIMARY KEY(source_topic,source_partition,source_offset),
+  CHECK(source_partition BETWEEN 0 AND 2),
+  CHECK(source_offset >= 0),
+  CHECK(source_topic=event_type),
+  CHECK(attempt BETWEEN 1 AND 3)
+);
+ALTER TABLE public.p1_kafka_poison_receipt OWNER TO flyway;
+CREATE TRIGGER p1_kafka_poison_receipt_append_only
+BEFORE UPDATE OR DELETE ON public.p1_kafka_poison_receipt
+FOR EACH ROW EXECUTE FUNCTION public.reject_s7_append_only_mutation();
+REVOKE ALL ON TABLE public.p1_kafka_poison_receipt FROM PUBLIC,decision_app,decision_worker,decision_replay;
+
+CREATE FUNCTION public.p1_claim_kafka_outbox(p_worker text,p_limit integer)
+RETURNS TABLE(
+  event_id text,event_type text,aggregate_type text,aggregate_id text,partition_key text,
+  payload_json jsonb,occurred_at timestamptz,outbox_schema_version text,
+  kafka_schema_version integer,topic_name text,claim_token uuid,attempt_count integer
+)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $p1_claim_kafka_outbox$
+BEGIN
+  IF session_user<>'decision_outbox_publisher' THEN
+    RAISE EXCEPTION 'Kafka outbox publisher role denied' USING ERRCODE='42501';
+  END IF;
+  IF p_worker<>'p1-kafka-outbox-publisher' OR p_limit<>100 THEN
+    RAISE EXCEPTION 'Kafka outbox claim bounds denied' USING ERRCODE='22023';
+  END IF;
+  RETURN QUERY
+  WITH candidates AS (
+    SELECT item.event_id
+    FROM public.event_outbox item
+    JOIN public.async_event_registry registry
+      ON registry.event_type=item.event_type
+     AND registry.outbox_schema_version=item.schema_version
+     AND registry.enabled
+    WHERE item.status IN ('PENDING','FAILED')
+      AND item.retry_count<3
+      AND item.next_attempt_at<=statement_timestamp()
+      AND (item.lease_expires_at IS NULL OR item.lease_expires_at<=statement_timestamp())
+    ORDER BY item.next_attempt_at,item.created_at,item.event_id
+    FOR UPDATE OF item SKIP LOCKED LIMIT p_limit
+  ), claimed AS (
+    UPDATE public.event_outbox item
+    SET claim_token=gen_random_uuid(),claimed_by=p_worker,
+        lease_expires_at=statement_timestamp()+interval '30 seconds',updated_at=statement_timestamp()
+    FROM candidates WHERE item.event_id=candidates.event_id RETURNING item.*
+  )
+  SELECT claimed.event_id,claimed.event_type,claimed.aggregate_type,claimed.aggregate_id,
+    claimed.partition_key,claimed.payload_json,claimed.created_at,claimed.schema_version,
+    registry.kafka_schema_version,registry.topic_name,claimed.claim_token,claimed.retry_count+1
+  FROM claimed JOIN public.async_event_registry registry ON registry.event_type=claimed.event_type
+  ORDER BY claimed.next_attempt_at,claimed.created_at,claimed.event_id;
+END
+$p1_claim_kafka_outbox$;
+
+CREATE FUNCTION public.p1_claim_kafka_dlq_outbox(p_worker text,p_limit integer)
+RETURNS TABLE(
+  event_id text,event_type text,aggregate_type text,aggregate_id text,partition_key text,
+  payload_json jsonb,occurred_at timestamptz,outbox_schema_version text,
+  kafka_schema_version integer,topic_name text,claim_token uuid,attempt_count integer
+)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $p1_claim_kafka_dlq_outbox$
+BEGIN
+  IF session_user<>'decision_outbox_publisher' THEN
+    RAISE EXCEPTION 'Kafka DLQ publisher role denied' USING ERRCODE='42501';
+  END IF;
+  IF p_worker<>'p1-kafka-outbox-publisher' OR p_limit<>100 THEN
+    RAISE EXCEPTION 'Kafka DLQ claim bounds denied' USING ERRCODE='22023';
+  END IF;
+  RETURN QUERY
+  WITH candidates AS (
+    SELECT item.event_id
+    FROM public.event_outbox item
+    JOIN public.async_event_registry registry
+      ON registry.event_type=item.event_type
+     AND registry.outbox_schema_version=item.schema_version
+     AND registry.enabled
+    WHERE item.status='DLQ_REQUESTED' AND item.retry_count<3
+      AND item.next_attempt_at<=statement_timestamp()
+      AND (item.lease_expires_at IS NULL OR item.lease_expires_at<=statement_timestamp())
+    ORDER BY item.next_attempt_at,item.created_at,item.event_id
+    FOR UPDATE OF item SKIP LOCKED LIMIT p_limit
+  ), claimed AS (
+    UPDATE public.event_outbox item
+    SET claim_token=gen_random_uuid(),claimed_by=p_worker,
+        lease_expires_at=statement_timestamp()+interval '30 seconds',updated_at=statement_timestamp()
+    FROM candidates WHERE item.event_id=candidates.event_id RETURNING item.*
+  )
+  SELECT claimed.event_id,claimed.event_type,claimed.aggregate_type,claimed.aggregate_id,
+    claimed.partition_key,claimed.payload_json,claimed.created_at,claimed.schema_version,
+    registry.kafka_schema_version,regexp_replace(registry.topic_name,'\.v1$','.dlq.v1'),
+    claimed.claim_token,claimed.retry_count+1
+  FROM claimed JOIN public.async_event_registry registry ON registry.event_type=claimed.event_type
+  ORDER BY claimed.next_attempt_at,claimed.created_at,claimed.event_id;
+END
+$p1_claim_kafka_dlq_outbox$;
+
+CREATE FUNCTION public.p1_bind_kafka_outbox_payload_hash(
+  p_event_id text,p_claim_token uuid,p_payload_hash text
+)
+RETURNS boolean
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $p1_bind_kafka_outbox_payload_hash$
+DECLARE changed integer;
+BEGIN
+  IF session_user<>'decision_outbox_publisher' THEN
+    RAISE EXCEPTION 'Kafka outbox hash role denied' USING ERRCODE='42501';
+  END IF;
+  IF p_payload_hash!~'^sha256:[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'Kafka outbox hash invalid' USING ERRCODE='22023';
+  END IF;
+  UPDATE public.event_outbox SET transport_payload_hash=p_payload_hash,updated_at=statement_timestamp()
+  WHERE event_id=p_event_id AND claim_token=p_claim_token AND claimed_by='p1-kafka-outbox-publisher'
+    AND status IN ('PENDING','FAILED') AND lease_expires_at>statement_timestamp()
+    AND (transport_payload_hash IS NULL OR transport_payload_hash=p_payload_hash);
+  GET DIAGNOSTICS changed=ROW_COUNT;
+  RETURN changed=1;
+END
+$p1_bind_kafka_outbox_payload_hash$;
+
+CREATE FUNCTION public.p1_complete_kafka_outbox(p_event_id text,p_claim_token uuid)
+RETURNS boolean
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $p1_complete_kafka_outbox$
+DECLARE changed integer;
+BEGIN
+  IF session_user<>'decision_outbox_publisher' THEN
+    RAISE EXCEPTION 'Kafka outbox completion role denied' USING ERRCODE='42501';
+  END IF;
+  UPDATE public.event_outbox
+  SET status='PUBLISHED',published_at=statement_timestamp(),claim_token=NULL,claimed_by=NULL,
+      lease_expires_at=NULL,failure_code=NULL,error_class=NULL,last_error=NULL,updated_at=statement_timestamp()
+  WHERE event_id=p_event_id AND claim_token=p_claim_token AND claimed_by='p1-kafka-outbox-publisher'
+    AND status IN ('PENDING','FAILED') AND lease_expires_at>statement_timestamp();
+  GET DIAGNOSTICS changed=ROW_COUNT;
+  RETURN changed=1;
+END
+$p1_complete_kafka_outbox$;
+
+CREATE FUNCTION public.p1_complete_kafka_dlq_outbox(p_event_id text,p_claim_token uuid)
+RETURNS boolean
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $p1_complete_kafka_dlq_outbox$
+DECLARE changed integer;
+BEGIN
+  IF session_user<>'decision_outbox_publisher' THEN
+    RAISE EXCEPTION 'Kafka DLQ completion role denied' USING ERRCODE='42501';
+  END IF;
+  UPDATE public.event_outbox
+  SET status='PUBLISHED',published_at=statement_timestamp(),claim_token=NULL,claimed_by=NULL,
+      lease_expires_at=NULL,updated_at=statement_timestamp()
+  WHERE event_id=p_event_id AND claim_token=p_claim_token AND claimed_by='p1-kafka-outbox-publisher'
+    AND status='DLQ_REQUESTED' AND lease_expires_at>statement_timestamp();
+  GET DIAGNOSTICS changed=ROW_COUNT;
+  RETURN changed=1;
+END
+$p1_complete_kafka_dlq_outbox$;
+
+CREATE FUNCTION public.p1_fail_kafka_outbox(p_event_id text,p_claim_token uuid,p_failure_code text)
+RETURNS boolean
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $p1_fail_kafka_outbox$
+DECLARE changed integer;
+BEGIN
+  IF session_user<>'decision_outbox_publisher' OR p_failure_code<>'KAFKA_PUBLISH_FAILED' THEN
+    RAISE EXCEPTION 'Kafka outbox failure denied' USING ERRCODE='42501';
+  END IF;
+  UPDATE public.event_outbox
+  SET status=CASE WHEN retry_count+1>=3 THEN 'DLQ_REQUESTED' ELSE 'FAILED' END,
+      retry_count=retry_count+1,next_attempt_at=statement_timestamp()+CASE retry_count WHEN 0 THEN interval '1 second' ELSE interval '5 seconds' END,
+      claim_token=NULL,claimed_by=NULL,lease_expires_at=NULL,failure_code=p_failure_code,
+      error_class='RETRYABLE_TRANSIENT',last_error=p_failure_code,updated_at=statement_timestamp()
+  WHERE event_id=p_event_id AND claim_token=p_claim_token AND claimed_by='p1-kafka-outbox-publisher'
+    AND status IN ('PENDING','FAILED') AND retry_count<3;
+  GET DIAGNOSTICS changed=ROW_COUNT;
+  RETURN changed=1;
+END
+$p1_fail_kafka_outbox$;
+
+CREATE FUNCTION public.p1_fail_kafka_dlq_outbox(p_event_id text,p_claim_token uuid,p_failure_code text)
+RETURNS boolean
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $p1_fail_kafka_dlq_outbox$
+DECLARE changed integer;
+BEGIN
+  IF session_user<>'decision_outbox_publisher' OR p_failure_code<>'KAFKA_PUBLISH_FAILED' THEN
+    RAISE EXCEPTION 'Kafka DLQ failure denied' USING ERRCODE='42501';
+  END IF;
+  UPDATE public.event_outbox
+  SET retry_count=retry_count+1,
+      next_attempt_at=statement_timestamp()+CASE retry_count WHEN 0 THEN interval '1 second' ELSE interval '5 seconds' END,
+      claim_token=NULL,claimed_by=NULL,lease_expires_at=NULL,failure_code=p_failure_code,
+      error_class='RETRYABLE_TRANSIENT',last_error=p_failure_code,updated_at=statement_timestamp()
+  WHERE event_id=p_event_id AND claim_token=p_claim_token AND claimed_by='p1-kafka-outbox-publisher'
+    AND status='DLQ_REQUESTED' AND retry_count<3;
+  GET DIAGNOSTICS changed=ROW_COUNT;
+  RETURN changed=1;
+END
+$p1_fail_kafka_dlq_outbox$;
+
+CREATE FUNCTION public.p1_quarantine_kafka_outbox(
+  p_event_id text,p_claim_token uuid,p_failure_code text
+)
+RETURNS boolean
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $p1_quarantine_kafka_outbox$
+DECLARE changed integer;
+BEGIN
+  IF session_user<>'decision_outbox_publisher'
+     OR p_failure_code!~'^[A-Z][A-Z0-9_]{2,63}$' THEN
+    RAISE EXCEPTION 'Kafka outbox quarantine denied' USING ERRCODE='42501';
+  END IF;
+  UPDATE public.event_outbox
+  SET status='DLQ_REQUESTED',claim_token=NULL,claimed_by=NULL,lease_expires_at=NULL,
+      failure_code=p_failure_code,error_class='CONTRACT_VIOLATION',last_error=p_failure_code,
+      updated_at=statement_timestamp()
+  WHERE event_id=p_event_id AND claim_token=p_claim_token AND claimed_by='p1-kafka-outbox-publisher'
+    AND status IN ('PENDING','FAILED') AND lease_expires_at>statement_timestamp();
+  GET DIAGNOSTICS changed=ROW_COUNT;
+  RETURN changed=1;
+END
+$p1_quarantine_kafka_outbox$;
+
+CREATE FUNCTION public.p1_quarantine_unknown_kafka_outbox(p_limit integer)
+RETURNS integer
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $p1_quarantine_unknown_kafka_outbox$
+DECLARE changed integer;
+BEGIN
+  IF session_user<>'decision_outbox_publisher' OR p_limit<>100 THEN
+    RAISE EXCEPTION 'Kafka unknown quarantine denied' USING ERRCODE='42501';
+  END IF;
+  WITH candidates AS (
+    SELECT item.event_id FROM public.event_outbox item
+    LEFT JOIN public.async_event_registry registry
+      ON registry.event_type=item.event_type
+     AND registry.outbox_schema_version=item.schema_version
+     AND registry.enabled
+    WHERE item.status IN ('PENDING','FAILED') AND registry.event_type IS NULL
+    ORDER BY item.created_at,item.event_id FOR UPDATE OF item SKIP LOCKED LIMIT p_limit
+  )
+  UPDATE public.event_outbox item
+  SET status='DLQ_REQUESTED',failure_code='UNREGISTERED_EVENT',error_class='CONTRACT_VIOLATION',
+      last_error='UNREGISTERED_EVENT',claim_token=NULL,claimed_by=NULL,lease_expires_at=NULL,
+      updated_at=statement_timestamp()
+  FROM candidates WHERE item.event_id=candidates.event_id;
+  GET DIAGNOSTICS changed=ROW_COUNT;
+  RETURN changed;
+END
+$p1_quarantine_unknown_kafka_outbox$;
+
+CREATE FUNCTION public.p1_record_kafka_poison_receipt(
+  p_event_id text,p_event_type text,p_payload_hash text,p_source_topic text,
+  p_source_partition integer,p_source_offset bigint,p_attempt integer,p_failure_code text,
+  p_partition_key text,p_job_id text,p_claim_token text
+)
+RETURNS boolean
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $p1_record_kafka_poison_receipt$
+DECLARE
+  dlq_event_id text;
+  changed integer;
+BEGIN
+  IF session_user<>'decision_poison_recorder' THEN
+    RAISE EXCEPTION 'Kafka poison recorder role denied' USING ERRCODE='42501';
+  END IF;
+  IF p_event_id!~'^evt_[A-Za-z0-9_-]{8,96}$'
+     OR p_payload_hash!~'^sha256:[0-9a-f]{64}$'
+     OR p_source_topic<>p_event_type
+     OR p_source_partition NOT BETWEEN 0 AND 2 OR p_source_offset<0
+     OR p_attempt NOT BETWEEN 1 AND 3
+     OR p_failure_code!~'^[A-Z][A-Z0-9_]{2,63}$'
+     OR p_partition_key!~'^hmac-sha256:[0-9a-f]{64}$'
+     OR ((p_job_id IS NULL)<>(p_claim_token IS NULL))
+     OR (p_job_id IS NOT NULL AND (p_job_id!~'^job_[A-Za-z0-9_-]{8,96}$'
+       OR p_claim_token!~'^[0-9a-f-]{36}$'))
+     OR NOT EXISTS(
+       SELECT 1 FROM public.async_event_registry registry
+       WHERE registry.event_type=p_event_type AND registry.topic_name=p_source_topic AND registry.enabled
+     ) THEN
+    RAISE EXCEPTION 'Kafka poison receipt invalid' USING ERRCODE='22023';
+  END IF;
+
+  IF EXISTS(
+    SELECT 1 FROM public.p1_kafka_poison_receipt receipt
+    WHERE receipt.source_topic=p_source_topic AND receipt.source_partition=p_source_partition
+      AND receipt.source_offset=p_source_offset AND receipt.event_id=p_event_id
+      AND receipt.payload_hash=p_payload_hash AND receipt.failure_code=p_failure_code
+  ) THEN
+    RETURN true;
+  END IF;
+
+  IF p_job_id IS NOT NULL THEN
+    UPDATE public.async_job
+    SET status='NEEDS_REVIEW',claim_token=NULL,claimed_by=NULL,lease_expires_at=NULL,
+        error_code=p_failure_code,error_class='CONTRACT_VIOLATION',error_message=p_failure_code,
+        completed_at=statement_timestamp(),updated_at=statement_timestamp()
+    WHERE job_id=p_job_id AND claim_token=p_claim_token::uuid AND status='RUNNING';
+    GET DIAGNOSTICS changed=ROW_COUNT;
+    IF changed<>1 THEN RETURN false; END IF;
+  END IF;
+
+  INSERT INTO public.p1_kafka_poison_receipt(
+    source_topic,source_partition,source_offset,event_id,event_type,payload_hash,
+    attempt,failure_code,job_id
+  ) VALUES (
+    p_source_topic,p_source_partition,p_source_offset,p_event_id,p_event_type,p_payload_hash,
+    p_attempt,p_failure_code,p_job_id
+  ) ON CONFLICT DO NOTHING;
+  IF NOT FOUND THEN RETURN false; END IF;
+
+  dlq_event_id:='evt_dlq_'||encode(public.digest(
+    p_source_topic||'|'||p_source_partition::text||'|'||p_source_offset::text,'sha256'
+  ),'hex')::text;
+  dlq_event_id:=left(dlq_event_id,40);
+  INSERT INTO public.event_outbox(
+    event_id,event_type,aggregate_type,aggregate_id,partition_key,payload_json,
+    schema_version,status,failure_code,error_class,last_error
+  ) VALUES (
+    dlq_event_id,p_event_type,'ASYNC_DLQ',p_event_id,p_partition_key,
+    jsonb_build_object('eventId',p_event_id,'eventType',p_event_type,'payloadHash',p_payload_hash,
+      'failureCode',p_failure_code,'sourceTopic',p_source_topic,'sourcePartition',p_source_partition,
+      'sourceOffset',p_source_offset,'attempt',p_attempt),
+    '1.0.0','DLQ_REQUESTED',p_failure_code,'CONTRACT_VIOLATION',p_failure_code
+  ) ON CONFLICT(event_id) DO NOTHING;
+  RETURN true;
+END
+$p1_record_kafka_poison_receipt$;
+
+ALTER FUNCTION public.p1_claim_kafka_outbox(text,integer) OWNER TO flyway;
+ALTER FUNCTION public.p1_claim_kafka_dlq_outbox(text,integer) OWNER TO flyway;
+ALTER FUNCTION public.p1_bind_kafka_outbox_payload_hash(text,uuid,text) OWNER TO flyway;
+ALTER FUNCTION public.p1_complete_kafka_outbox(text,uuid) OWNER TO flyway;
+ALTER FUNCTION public.p1_complete_kafka_dlq_outbox(text,uuid) OWNER TO flyway;
+ALTER FUNCTION public.p1_fail_kafka_outbox(text,uuid,text) OWNER TO flyway;
+ALTER FUNCTION public.p1_fail_kafka_dlq_outbox(text,uuid,text) OWNER TO flyway;
+ALTER FUNCTION public.p1_quarantine_kafka_outbox(text,uuid,text) OWNER TO flyway;
+ALTER FUNCTION public.p1_quarantine_unknown_kafka_outbox(integer) OWNER TO flyway;
+ALTER FUNCTION public.p1_record_kafka_poison_receipt(
+  text,text,text,text,integer,bigint,integer,text,text,text,text
+) OWNER TO flyway;
+REVOKE ALL ON FUNCTION
+  public.p1_claim_kafka_outbox(text,integer),
+  public.p1_claim_kafka_dlq_outbox(text,integer),
+  public.p1_bind_kafka_outbox_payload_hash(text,uuid,text),
+  public.p1_complete_kafka_outbox(text,uuid),
+  public.p1_complete_kafka_dlq_outbox(text,uuid),
+  public.p1_fail_kafka_outbox(text,uuid,text),
+  public.p1_fail_kafka_dlq_outbox(text,uuid,text),
+  public.p1_quarantine_kafka_outbox(text,uuid,text),
+  public.p1_quarantine_unknown_kafka_outbox(integer),
+  public.p1_record_kafka_poison_receipt(text,text,text,text,integer,bigint,integer,text,text,text,text)
+FROM PUBLIC,decision_app,decision_worker,decision_replay;
+GRANT EXECUTE ON FUNCTION
+  public.p1_claim_kafka_outbox(text,integer),
+  public.p1_claim_kafka_dlq_outbox(text,integer),
+  public.p1_bind_kafka_outbox_payload_hash(text,uuid,text),
+  public.p1_complete_kafka_outbox(text,uuid),
+  public.p1_complete_kafka_dlq_outbox(text,uuid),
+  public.p1_fail_kafka_outbox(text,uuid,text),
+  public.p1_fail_kafka_dlq_outbox(text,uuid,text),
+  public.p1_quarantine_kafka_outbox(text,uuid,text),
+  public.p1_quarantine_unknown_kafka_outbox(integer)
+TO decision_outbox_publisher;
+GRANT EXECUTE ON FUNCTION public.p1_record_kafka_poison_receipt(
+  text,text,text,text,integer,bigint,integer,text,text,text,text
+) TO decision_poison_recorder;

@@ -3,9 +3,19 @@ from __future__ import annotations
 import os
 import re
 import time
+from typing import Protocol, cast
 
 from confluent_kafka import KafkaException
-from confluent_kafka.admin import AdminClient, ConfigResource  # type: ignore[attr-defined]
+from confluent_kafka.admin import (  # type: ignore[attr-defined]
+    AclBinding,
+    AclBindingFilter,
+    AclOperation,
+    AclPermissionType,
+    AdminClient,
+    ConfigResource,
+    ResourcePatternType,
+    ResourceType,
+)
 from confluent_kafka.cimpl import KafkaError, NewTopic
 
 
@@ -25,6 +35,10 @@ BASE_TOPICS = (
 )
 
 
+class _AdminFuture(Protocol):
+    def result(self) -> object: ...
+
+
 def exact_topic_configs() -> dict[str, dict[str, str]]:
     topics: dict[str, dict[str, str]] = {}
     for base_topic in BASE_TOPICS:
@@ -33,6 +47,80 @@ def exact_topic_configs() -> dict[str, dict[str, str]]:
         topics[f"{stem}.retry.v1"] = {"retention.ms": "604800000"}
         topics[f"{stem}.dlq.v1"] = {"retention.ms": "2592000000"}
     return topics
+
+
+def exact_acl_bindings() -> tuple[AclBinding, ...]:
+    allow = AclPermissionType.ALLOW
+    literal = ResourcePatternType.LITERAL
+    bindings: list[AclBinding] = []
+    publisher = "User:p1_outbox_publisher"
+    consumer = "User:p1_async_worker"
+    for topic in sorted(BASE_TOPICS):
+        for operation in (AclOperation.DESCRIBE, AclOperation.WRITE):
+            bindings.append(
+                AclBinding(ResourceType.TOPIC, topic, literal, publisher, "*", operation, allow)
+            )
+        dlq_topic = topic.removesuffix(".v1") + ".dlq.v1"
+        for operation in (AclOperation.DESCRIBE, AclOperation.WRITE):
+            bindings.append(
+                AclBinding(ResourceType.TOPIC, dlq_topic, literal, publisher, "*", operation, allow)
+            )
+    bindings.append(
+        AclBinding(
+            ResourceType.BROKER,
+            "kafka-cluster",
+            literal,
+            publisher,
+            "*",
+            AclOperation.IDEMPOTENT_WRITE,
+            allow,
+        )
+    )
+    for topic in (
+        "artifact.ingest-requested.v1",
+        "model.eval-requested.v1",
+        "rag.index-requested.v1",
+    ):
+        for operation in (AclOperation.DESCRIBE, AclOperation.READ):
+            bindings.append(
+                AclBinding(ResourceType.TOPIC, topic, literal, consumer, "*", operation, allow)
+            )
+    bindings.append(
+        AclBinding(
+            ResourceType.GROUP,
+            "decision-python-async-v1",
+            literal,
+            consumer,
+            "*",
+            AclOperation.READ,
+            allow,
+        )
+    )
+    return tuple(bindings)
+
+
+def materialize_exact_acls(admin: AdminClient) -> None:
+    expected = exact_acl_bindings()
+    futures = cast(
+        dict[AclBinding, _AdminFuture],
+        admin.create_acls(list(expected), request_timeout=10.0),
+    )
+    for future in futures.values():
+        future.result()
+    inventory = admin.describe_acls(
+        AclBindingFilter(
+            ResourceType.ANY,
+            cast(str, None),
+            ResourcePatternType.ANY,
+            cast(str, None),
+            cast(str, None),
+            AclOperation.ANY,
+            AclPermissionType.ANY,
+        ),
+        request_timeout=10.0,
+    ).result()
+    if set(inventory) != set(expected):
+        raise RuntimeError("Kafka ACL inventory mismatch.")
 
 
 def materialize_exact_topics(
@@ -105,17 +193,29 @@ def materialize_exact_topics(
 
 def main() -> None:
     bootstrap = os.environ.get("KAFKA_BOOTSTRAP_SERVER", "")
+    protocol = os.environ.get("KAFKA_SECURITY_PROTOCOL", "")
+    username = os.environ.get("KAFKA_SASL_USERNAME", "")
+    password = os.environ.get("KAFKA_SASL_PASSWORD", "")
     if re.fullmatch(r"127\.0\.0\.1:[1-9][0-9]{0,4}", bootstrap) is None:
         raise RuntimeError("KAFKA_BOOTSTRAP_SERVER must be numeric loopback.")
-    materialize_exact_topics(
-        AdminClient(
-            {
-                "bootstrap.servers": bootstrap,
-                "security.protocol": "PLAINTEXT",
-                "client.id": "p1-offline-topic-initializer",
-            }
-        )
+    if (
+        protocol != "SASL_PLAINTEXT"
+        or username != "p1_kafka_admin"
+        or not 32 <= len(password.encode()) <= 128
+    ):
+        raise RuntimeError("Kafka topic initializer principal is invalid.")
+    admin = AdminClient(
+        {
+            "bootstrap.servers": bootstrap,
+            "security.protocol": protocol,
+            "sasl.mechanism": "PLAIN",
+            "sasl.username": username,
+            "sasl.password": password,
+            "client.id": "p1-offline-topic-initializer",
+        }
     )
+    materialize_exact_topics(admin)
+    materialize_exact_acls(admin)
 
 
 if __name__ == "__main__":

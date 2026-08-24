@@ -8,7 +8,13 @@ from unittest.mock import Mock
 import pytest
 from confluent_kafka.admin import ConfigResource
 
-from app.async_worker.kafka_topics import exact_topic_configs, main, materialize_exact_topics
+from app.async_worker.kafka_topics import (
+    exact_acl_bindings,
+    exact_topic_configs,
+    main,
+    materialize_exact_acls,
+    materialize_exact_topics,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
@@ -24,6 +30,36 @@ def test_topic_catalog_matches_generated_contract() -> None:
     assert set(configs) == set(contract["topics"])
     assert len(configs) == 36
     assert sum(name.endswith(".dlq.v1") for name in configs) == 12
+
+
+def test_acl_catalog_separates_publisher_consumer_and_group() -> None:
+    bindings = exact_acl_bindings()
+    publisher = [binding for binding in bindings if binding.principal == "User:p1_outbox_publisher"]
+    consumer = [binding for binding in bindings if binding.principal == "User:p1_async_worker"]
+    assert len(publisher) == 49
+    assert len(consumer) == 7
+    assert all(binding.permission_type.name == "ALLOW" for binding in bindings)
+    assert all(binding.principal != "User:ANONYMOUS" for binding in bindings)
+    assert {binding.operation.name for binding in publisher} == {
+        "DESCRIBE",
+        "WRITE",
+        "IDEMPOTENT_WRITE",
+    }
+    assert {binding.operation.name for binding in consumer} == {"DESCRIBE", "READ"}
+    assert sum(binding.restype.name == "GROUP" for binding in consumer) == 1
+
+
+def test_acl_materializer_waits_for_every_binding() -> None:
+    success = Mock()
+    success.result.return_value = None
+    admin = Mock()
+    bindings = exact_acl_bindings()
+    admin.create_acls.return_value = {binding: success for binding in bindings}
+    admin.describe_acls.return_value.result.return_value = list(bindings)
+    materialize_exact_acls(admin)
+    assert admin.create_acls.call_count == 1
+    assert success.result.call_count == len(bindings)
+    admin.describe_acls.assert_called_once()
 
 
 def test_materializer_accepts_existing_topics_without_retry() -> None:
@@ -84,6 +120,9 @@ def test_materializer_rejects_retention_drift() -> None:
 
 def test_main_rejects_non_loopback_before_admin_creation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("KAFKA_BOOTSTRAP_SERVER", "kafka:9092")
+    monkeypatch.setenv("KAFKA_SECURITY_PROTOCOL", "SASL_PLAINTEXT")
+    monkeypatch.setenv("KAFKA_SASL_USERNAME", "p1_kafka_admin")
+    monkeypatch.setenv("KAFKA_SASL_PASSWORD", "a" * 32)
     with pytest.raises(RuntimeError, match="numeric loopback"):
         main()
 

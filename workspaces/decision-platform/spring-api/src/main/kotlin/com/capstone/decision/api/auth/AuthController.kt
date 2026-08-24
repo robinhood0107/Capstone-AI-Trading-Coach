@@ -71,7 +71,11 @@ class AuthController(
             demoAccountService.authenticate(
                 username = request.username,
                 password = request.password,
-            ) ?: throw ApiException(ErrorCode.UNAUTHORIZED, "Invalid username or password.")
+            )
+        if (account == null) {
+            loginAttemptLimiter.recordFailure(servletRequest.remoteAddr, request.username)
+            throw ApiException(ErrorCode.UNAUTHORIZED, "Invalid username or password.")
+        }
         loginAttemptLimiter.recordSuccess(servletRequest.remoteAddr, request.username)
         val issuedToken = jwtService.issue(account)
         return ApiResponseFactory.success(

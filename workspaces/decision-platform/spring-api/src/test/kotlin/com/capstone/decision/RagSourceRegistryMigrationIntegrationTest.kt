@@ -129,7 +129,7 @@ class RagSourceRegistryMigrationIntegrationTest {
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("86")
+                    .isEqualTo("87")
                 assertThat(
                     queryString(
                         connection,
@@ -173,7 +173,7 @@ class RagSourceRegistryMigrationIntegrationTest {
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("86")
+                    .isEqualTo("87")
                 assertThat(queryString(connection, "select count(*)::text from users where user_id = 'usr_s49_preserved'"))
                     .isEqualTo("1")
                 assertThat(queryString(connection, "select count(*)::text from public.s4_9_saved_answer_history"))
@@ -493,6 +493,74 @@ class RagSourceRegistryMigrationIntegrationTest {
     }
 
     @Test
+    fun `V87 refresh token claim is one shot and bound to current security version`() {
+        withPreparedDatabase("s49_refresh_claim") { jdbcUrl ->
+            flyway(jdbcUrl).migrate()
+            adminConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    val passwordHash = "\$2b\$12\$" + "a".repeat(53)
+                    statement.executeUpdate(
+                        "insert into users(user_id, username, password_hash, role, status, security_version) " +
+                            "values ('usr_s49_refresh', 's49_refresh', '$passwordHash', " +
+                            "'USER', 'ACTIVE', 1)",
+                    )
+                }
+            }
+            appConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.execute(
+                        "select public.sync_s4_9_mcp_oauth_client(" +
+                            "'mcp_s49_refresh','S4.9 refresh',repeat('1',64)," +
+                            "array['http://127.0.0.1/callback'],array['mcp:rag.public'],'STATIC_ALLOWLIST')",
+                    )
+                    statement.execute(
+                        "select public.rotate_s4_9_mcp_refresh_token_hash(" +
+                            "repeat('d',64),'mcp_s49_refresh','usr_s49_refresh',1," +
+                            "'http://127.0.0.1:8080/mcp',array['mcp:rag.public']," +
+                            "transaction_timestamp() + interval '6 days')",
+                    )
+                    statement
+                        .executeQuery(
+                            "select owner_user_id,security_version from " +
+                                "public.consume_s4_9_mcp_refresh_token(repeat('d',64))",
+                        ).use { result ->
+                            assertTrue(result.next())
+                            assertThat(result.getString("owner_user_id")).isEqualTo("usr_s49_refresh")
+                            assertThat(result.getLong("security_version")).isEqualTo(1)
+                            assertThat(result.next()).isFalse()
+                        }
+                    statement
+                        .executeQuery(
+                            "select count(*) from public.consume_s4_9_mcp_refresh_token(repeat('d',64))",
+                        ).use { result ->
+                            assertTrue(result.next())
+                            assertThat(result.getInt(1)).isZero()
+                        }
+                }
+            }
+            adminConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use {
+                    it.executeUpdate(
+                        "update users set security_version=2 where user_id='usr_s49_refresh'",
+                    )
+                }
+            }
+            appConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    assertThrows(SQLException::class.java) {
+                        statement.execute(
+                            "select public.rotate_s4_9_mcp_refresh_token_hash(" +
+                                "repeat('e',64),'mcp_s49_refresh','usr_s49_refresh',1," +
+                                "'http://127.0.0.1:8080/mcp',array['mcp:rag.public']," +
+                                "transaction_timestamp() + interval '6 days')",
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     fun `V66 validation receipt saves encrypted history once and content free ledgers pass RLS`() {
         withPreparedDatabase("s49_receipt_save") { jdbcUrl ->
             flyway(jdbcUrl).migrate()
@@ -629,7 +697,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("86")
+                    .isEqualTo("87")
 
                 expectedTables.forEach { table ->
                     assertThat(

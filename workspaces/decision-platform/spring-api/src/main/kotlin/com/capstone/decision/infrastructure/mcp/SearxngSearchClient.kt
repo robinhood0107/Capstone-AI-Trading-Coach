@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component
 import tools.jackson.core.StreamReadConstraints
 import tools.jackson.core.json.JsonFactory
 import tools.jackson.databind.json.JsonMapper
+import java.io.InputStream
 import java.net.Proxy
 import java.net.ProxySelector
 import java.net.SocketAddress
@@ -84,8 +85,11 @@ class SearxngSearchClient(
                 .header("Accept", "application/json")
                 .GET()
                 .build()
-        val response = client.send(request, HttpResponse.BodyHandlers.ofByteArray())
-        val body = response.body()
+        val response = client.send(request, HttpResponse.BodyHandlers.ofInputStream())
+        val body =
+            response.body().use { stream ->
+                readBounded(stream, response.headers().firstValueAsLong("Content-Length").orElse(-1L))
+            }
         try {
             when (response.statusCode()) {
                 403 -> throw S49SearchUnavailableException("S4_9_SEARCH_UNAVAILABLE_ACCESS_DENIED")
@@ -159,6 +163,21 @@ class SearxngSearchClient(
         } finally {
             body.fill(0)
         }
+    }
+
+    internal fun readBounded(
+        stream: InputStream,
+        declaredLength: Long,
+    ): ByteArray {
+        if (declaredLength > MAX_RESPONSE_BYTES) {
+            throw S49SearchUnavailableException("S4_9_SEARCH_UNAVAILABLE_RESPONSE_TOO_LARGE")
+        }
+        val body = stream.readNBytes(MAX_RESPONSE_BYTES + 1)
+        if (body.size > MAX_RESPONSE_BYTES) {
+            body.fill(0)
+            throw S49SearchUnavailableException("S4_9_SEARCH_UNAVAILABLE_RESPONSE_TOO_LARGE")
+        }
+        return body
     }
 
     private companion object {

@@ -67,7 +67,6 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
     implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")
     implementation("org.jsoup:jsoup:1.21.2")
-    implementation("org.apache.pdfbox:pdfbox:3.0.6")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-aspectj")
     implementation("org.springframework.boot:spring-boot-starter-kafka")

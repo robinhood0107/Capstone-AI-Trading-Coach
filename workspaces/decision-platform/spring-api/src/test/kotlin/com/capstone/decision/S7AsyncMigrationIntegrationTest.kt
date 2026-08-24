@@ -1,5 +1,7 @@
 package com.capstone.decision
-
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.DatabaseActorCapabilityAuthority
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -12,6 +14,7 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
+import java.security.KeyPairGenerator
 import java.security.MessageDigest
 import java.sql.DriverManager
 import java.sql.SQLException
@@ -115,14 +118,14 @@ class S7AsyncMigrationIntegrationTest {
     }
 
     @Test
-    fun `V86 migrates fresh and V79 upgrade with exact role boundary`() {
+    fun `V87 migrates fresh and V79 upgrade with exact role boundary`() {
         for (database in listOf("decision", "s7_fresh")) {
             connection(database, postgres.username, postgres.password).use { owner ->
                 owner.createStatement().use { statement ->
                     statement.executeQuery("select version from flyway_schema_history order by installed_rank").use { rows ->
                         val versions = mutableListOf<String>()
                         while (rows.next()) versions += rows.getString(1)
-                        assertEquals((1..86).map(Int::toString), versions)
+                        assertEquals((1..87).map(Int::toString), versions)
                     }
                     statement.executeQuery("select count(*) from async_event_registry").use { rows ->
                         assertTrue(rows.next())
@@ -284,7 +287,12 @@ class S7AsyncMigrationIntegrationTest {
                     statement.executeUpdate()
                 }
         }
-        val capability = issueCapability("decision", "usr_demo_admin")
+        val capability =
+            issueCapability(
+                "decision",
+                "usr_demo_admin",
+                ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", jobId, ActorCapabilityRolePolicy.ADMIN_ONLY),
+            )
         connection("decision", APP_USER, APP_PASSWORD).use { app ->
             app.prepareStatement("select * from read_async_job_status_authorized(?,?,?,?)").use { statement ->
                 statement.setString(1, capability)
@@ -313,7 +321,11 @@ class S7AsyncMigrationIntegrationTest {
                 )
             }
         }
-        issueCapability("decision", "usr_demo_admin")
+        issueCapability(
+            "decision",
+            "usr_demo_admin",
+            ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", jobId, ActorCapabilityRolePolicy.ADMIN_ONLY),
+        )
         connection("decision", postgres.username, postgres.password).use { owner ->
             owner.createStatement().use { statement ->
                 statement
@@ -475,7 +487,19 @@ class S7AsyncMigrationIntegrationTest {
                 assertTrue(booleanResult(statement, "select aggregate_dlq_events()"))
             }
             app.prepareStatement("select * from read_stream_metric_status_authorized(?,?,?)").use { statement ->
-                statement.setString(1, issueCapability("s7_fresh", "usr_demo_admin"))
+                statement.setString(
+                    1,
+                    issueCapability(
+                        "s7_fresh",
+                        "usr_demo_admin",
+                        ActorCapabilityBinding.request(
+                            "READ_STREAM_METRICS",
+                            "STREAM_METRICS",
+                            "stream-metrics",
+                            ActorCapabilityRolePolicy.ADMIN_ONLY,
+                        ),
+                    ),
+                )
                 statement.setString(2, "usr_demo_admin")
                 statement.setLong(3, 1)
                 statement.executeQuery().use { rows ->
@@ -611,7 +635,19 @@ class S7AsyncMigrationIntegrationTest {
                 assertFalse(booleanResult(statement, "select aggregate_dlq_events()"))
             }
             app.prepareStatement("select * from read_stream_metric_status_authorized(?,?,?)").use { statement ->
-                statement.setString(1, issueCapability("decision", "usr_demo_admin"))
+                statement.setString(
+                    1,
+                    issueCapability(
+                        "decision",
+                        "usr_demo_admin",
+                        ActorCapabilityBinding.request(
+                            "READ_STREAM_METRICS",
+                            "STREAM_METRICS",
+                            "stream-metrics",
+                            ActorCapabilityRolePolicy.ADMIN_ONLY,
+                        ),
+                    ),
+                )
                 statement.setString(2, "usr_demo_admin")
                 statement.setLong(3, 1)
                 statement.executeQuery().use { rows ->
@@ -623,7 +659,19 @@ class S7AsyncMigrationIntegrationTest {
                 }
             }
             app.prepareStatement("select count(*) from read_stream_metric_status_authorized(?,?,?)").use { statement ->
-                statement.setString(1, issueCapability("decision", "usr_demo_admin"))
+                statement.setString(
+                    1,
+                    issueCapability(
+                        "decision",
+                        "usr_demo_admin",
+                        ActorCapabilityBinding.request(
+                            "READ_STREAM_METRICS",
+                            "STREAM_METRICS",
+                            "stream-metrics",
+                            ActorCapabilityRolePolicy.ADMIN_ONLY,
+                        ),
+                    ),
+                )
                 statement.setString(2, "usr_demo_admin")
                 statement.setLong(3, 999)
                 statement.executeQuery().use { rows ->
@@ -943,7 +991,14 @@ class S7AsyncMigrationIntegrationTest {
         createAsyncRequest("decision", jobId, eventId, payload, "hmac-sha256:${"a".repeat(64)}")
         connection("decision", APP_USER, APP_PASSWORD).use { app ->
             app.prepareStatement("select count(*) from read_async_job_status_authorized(?,?,?,?)").use { statement ->
-                statement.setString(1, issueCapability("decision", "usr_demo_user"))
+                statement.setString(
+                    1,
+                    issueCapability(
+                        "decision",
+                        "usr_demo_user",
+                        ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", jobId, ActorCapabilityRolePolicy.OWNER),
+                    ),
+                )
                 statement.setString(2, "usr_demo_user")
                 statement.setLong(3, 1)
                 statement.setString(4, jobId)
@@ -953,7 +1008,14 @@ class S7AsyncMigrationIntegrationTest {
                 }
             }
             app.prepareStatement("select job_id,status from read_async_job_status_authorized(?,?,?,?)").use { statement ->
-                statement.setString(1, issueCapability("decision", "usr_demo_admin"))
+                statement.setString(
+                    1,
+                    issueCapability(
+                        "decision",
+                        "usr_demo_admin",
+                        ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", jobId, ActorCapabilityRolePolicy.ADMIN_ONLY),
+                    ),
+                )
                 statement.setString(2, "usr_demo_admin")
                 statement.setLong(3, 1)
                 statement.setString(4, jobId)
@@ -965,7 +1027,24 @@ class S7AsyncMigrationIntegrationTest {
                 }
             }
             app.prepareStatement("select job_id from list_async_job_status_authorized(?,?,?,?,?,?,?,?)").use { statement ->
-                statement.setString(1, issueCapability("decision", "usr_demo_admin"))
+                statement.setString(
+                    1,
+                    issueCapability(
+                        "decision",
+                        "usr_demo_admin",
+                        ActorCapabilityBinding.request(
+                            "LIST_ASYNC_JOBS",
+                            "ASYNC_JOB_LIST",
+                            "async-jobs",
+                            ActorCapabilityRolePolicy.ADMIN_ONLY,
+                            "REQUESTED",
+                            "MODEL_EVAL",
+                            null,
+                            null,
+                            "51",
+                        ),
+                    ),
+                )
                 statement.setString(2, "usr_demo_admin")
                 statement.setLong(3, 1)
                 statement.setString(4, "REQUESTED")
@@ -980,7 +1059,14 @@ class S7AsyncMigrationIntegrationTest {
                 }
             }
             app.prepareStatement("select count(*) from read_async_job_status_authorized(?,?,?,?)").use { statement ->
-                statement.setString(1, issueCapability("decision", "usr_demo_admin"))
+                statement.setString(
+                    1,
+                    issueCapability(
+                        "decision",
+                        "usr_demo_admin",
+                        ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", jobId, ActorCapabilityRolePolicy.ADMIN_ONLY),
+                    ),
+                )
                 statement.setString(2, "usr_demo_admin")
                 statement.setLong(3, 999)
                 statement.setString(4, jobId)
@@ -1211,6 +1297,22 @@ class S7AsyncMigrationIntegrationTest {
             }
         }
 
+    private fun issueCapability(
+        databaseName: String,
+        actorUserId: String,
+        binding: ActorCapabilityBinding,
+    ): String =
+        DatabaseActorCapabilityAuthority(
+            dataSource =
+                org.springframework.jdbc.datasource.DriverManagerDataSource(
+                    jdbcUrl(databaseName),
+                    IDENTITY_USER,
+                    IDENTITY_PASSWORD,
+                ),
+            privateKey = ACTOR_CAPABILITY_KEY_PAIR.private,
+            publicKey = ACTOR_CAPABILITY_KEY_PAIR.public,
+        ).issue(actorUserId, binding)
+
     private fun claimJob(
         eventId: String,
         jobId: String,
@@ -1241,8 +1343,27 @@ class S7AsyncMigrationIntegrationTest {
         partitionKey: String,
     ) {
         connection(databaseName, APP_USER, APP_PASSWORD).use { app ->
-            app.prepareStatement("select create_async_request_authorized(?,?,?,?,?,?,?,?::jsonb)").use { statement ->
-                statement.setString(1, issueCapability(databaseName, "usr_demo_user"))
+            app.prepareStatement("select create_async_request_authorized(?,?,?,?,?,?,?,?)").use { statement ->
+                statement.setString(
+                    1,
+                    issueCapability(
+                        databaseName,
+                        "usr_demo_user",
+                        ActorCapabilityBinding.request(
+                            "CREATE_ASYNC_REQUEST",
+                            "ASYNC_JOB",
+                            jobId,
+                            ActorCapabilityRolePolicy.OWNER,
+                            eventId,
+                            "model.eval-requested.v1",
+                            partitionKey,
+                            jobId,
+                            "MODEL_EVAL",
+                            "usr_demo_user",
+                            payload,
+                        ),
+                    ),
+                )
                 statement.setString(2, eventId)
                 statement.setString(3, "model.eval-requested.v1")
                 statement.setString(4, partitionKey)
@@ -1353,6 +1474,7 @@ class S7AsyncMigrationIntegrationTest {
         private const val REPLAY_AUTHORIZER_PASSWORD = "replay-authorizer-test-0001"
         private const val DEMO_USER = "decision_demo"
         private const val DEMO_PASSWORD = "demo-test-secret-0001"
+        private val ACTOR_CAPABILITY_KEY_PAIR = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
         private val postgresImage =
             DockerImageName
                 .parse(

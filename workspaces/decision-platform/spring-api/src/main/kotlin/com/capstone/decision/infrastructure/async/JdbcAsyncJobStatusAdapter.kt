@@ -7,7 +7,9 @@ import com.capstone.decision.application.async.AsyncJobStatusPort
 import com.capstone.decision.application.async.AsyncJobStatusUnavailableException
 import com.capstone.decision.application.async.AsyncJobType
 import com.capstone.decision.application.async.AsyncJobView
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
@@ -26,11 +28,18 @@ class JdbcAsyncJobStatusAdapter(
         jobId: String,
     ): AsyncJobView? =
         protect {
+            val binding =
+                ActorCapabilityBinding.target(
+                    "READ_ASYNC_JOB",
+                    "ASYNC_JOB",
+                    jobId,
+                    ActorCapabilityRolePolicy.ADMIN_ONLY,
+                )
             jdbc()
                 .query(
                     "SELECT * FROM read_async_job_status_authorized(:capability,:actorUserId,:securityVersion,:jobId)",
                     mapOf(
-                        "capability" to actorCapabilityIssuer.issue(actorUserId),
+                        "capability" to actorCapabilityIssuer.issue(actorUserId, binding),
                         "actorUserId" to actorUserId,
                         "securityVersion" to securityVersion,
                         "jobId" to jobId,
@@ -41,6 +50,18 @@ class JdbcAsyncJobStatusAdapter(
 
     override fun list(query: AsyncJobPageQuery): List<AsyncJobView> =
         protect {
+            val binding =
+                ActorCapabilityBinding.request(
+                    "LIST_ASYNC_JOBS",
+                    "ASYNC_JOB_LIST",
+                    "async-jobs",
+                    ActorCapabilityRolePolicy.ADMIN_ONLY,
+                    query.status?.name,
+                    query.type?.name,
+                    query.beforeRequestedAt?.toEpochMilli()?.toString(),
+                    query.beforeJobId,
+                    (query.size + 1).toString(),
+                )
             jdbc().query(
                 """
                 SELECT *
@@ -56,7 +77,7 @@ class JdbcAsyncJobStatusAdapter(
                 )
                 """.trimIndent(),
                 mapOf(
-                    "capability" to actorCapabilityIssuer.issue(query.actorUserId),
+                    "capability" to actorCapabilityIssuer.issue(query.actorUserId, binding),
                     "actorUserId" to query.actorUserId,
                     "securityVersion" to query.securityVersion,
                     "status" to query.status?.name,

@@ -168,6 +168,25 @@ services:
     restart: "no"
     networks: [p1-internal]
 
+  actor-capability-authority:
+    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "authority"]
+    command:
+      - java
+      - -Dloader.main=com.capstone.decision.infrastructure.security.ActorCapabilityAuthorityMain
+      - -cp
+      - /app/app.jar
+      - org.springframework.boot.loader.launch.PropertiesLauncher
+    environment:
+      ACTOR_CAPABILITY_AUTHORITY_PORT: "18081"
+      ACTOR_IDENTITY_JDBC_URL: jdbc:postgresql://postgres:5432/capstone_p1
+    secrets: [actor_capability_authority_env]
+    depends_on:
+      identity-bootstrap: {condition: service_completed_successfully}
+    network_mode: service:runtime-netns
+    <<: *app-security
+    restart: on-failure:3
+
   python-worker:
     image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
     environment:
@@ -202,6 +221,8 @@ services:
       SERVER_ADDRESS: 0.0.0.0
       SERVER_PORT: "8080"
       SPRING_FLYWAY_ENABLED: "false"
+      ACTOR_CAPABILITY_TRANSPORT: http
+      ACTOR_CAPABILITY_AUTHORITY_URL: http://127.0.0.1:18081/internal/actor-capabilities/issue
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: capstone_p1
@@ -227,6 +248,7 @@ services:
     secrets: [spring_env, rag_history_kek]
     depends_on:
       identity-bootstrap: {condition: service_completed_successfully}
+      actor-capability-authority: {condition: service_started}
       redis: {condition: service_healthy}
       python-worker: {condition: service_started}
     network_mode: service:runtime-netns
@@ -250,6 +272,7 @@ secrets:
   role_bootstrap_env: {file: "${P1_SECRETS_DIR}/role-bootstrap.env"}
   migration_env: {file: "${P1_SECRETS_DIR}/migration.env"}
   bootstrap_env: {file: "${P1_SECRETS_DIR}/bootstrap.env"}
+  actor_capability_authority_env: {file: "${P1_SECRETS_DIR}/actor-capability-authority.env"}
   spring_env: {file: "${P1_SECRETS_DIR}/spring.env"}
   python_env: {file: "${P1_SECRETS_DIR}/python.env"}
   demo_env: {file: "${P1_SECRETS_DIR}/demo.env"}

@@ -11,8 +11,10 @@ import com.capstone.decision.application.risk.KillSwitchPublicState
 import com.capstone.decision.application.risk.KillSwitchQueryPort
 import com.capstone.decision.application.risk.KillSwitchUnauthorizedException
 import com.capstone.decision.domain.risk.KillSwitchReasonClass
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityDeniedException
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.dao.DataAccessException
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -68,6 +70,22 @@ class JdbcKillSwitchRepository(
             throw KillSwitchForbiddenException()
         }
         val observedGeneration = readGate().generation
+        val binding =
+            ActorCapabilityBinding.request(
+                "TRANSITION_KILL_SWITCH",
+                "KILL_SWITCH",
+                "GLOBAL",
+                if (command.requestedActive) {
+                    ActorCapabilityRolePolicy.OWNER
+                } else {
+                    ActorCapabilityRolePolicy.ADMIN_ONLY
+                },
+                command.actor.userId,
+                command.actor.securityVersion.toString(),
+                command.requestedActive.toString(),
+                observedGeneration.toString(),
+                command.actor.requestId,
+            )
         try {
             return jdbc
                 .query(
@@ -80,7 +98,7 @@ class JdbcKillSwitchRepository(
                     )
                     """.trimIndent(),
                     mapOf(
-                        "capability" to actorCapabilityIssuer.issue(command.actor.userId),
+                        "capability" to actorCapabilityIssuer.issue(command.actor.userId, binding),
                         "actorUserId" to command.actor.userId,
                         "securityVersion" to command.actor.securityVersion,
                         "requestedActive" to command.requestedActive,

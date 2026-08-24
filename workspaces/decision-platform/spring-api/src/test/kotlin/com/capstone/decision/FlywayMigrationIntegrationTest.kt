@@ -273,7 +273,7 @@ class FlywayMigrationIntegrationTest(
                     ).use { result ->
                         val versions = mutableListOf<String>()
                         while (result.next()) versions += result.getString(1)
-                        assertEquals((1..86).map(Int::toString), versions)
+                        assertEquals((1..87).map(Int::toString), versions)
                     }
                 val privileges =
                     mapOf(

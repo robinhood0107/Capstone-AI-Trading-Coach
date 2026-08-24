@@ -7,9 +7,6 @@ import com.capstone.decision.infrastructure.security.DemoIdentityBootstrap
 import com.capstone.decision.infrastructure.security.P1DatabaseRoleBootstrap
 import com.capstone.decision.infrastructure.security.P1FlywayMigrate
 import org.flywaydb.core.Flyway
-import org.flywaydb.core.api.MigrationVersion
-import org.flywaydb.core.api.migration.Context
-import org.flywaydb.core.api.migration.JavaMigration
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
@@ -35,8 +32,6 @@ class P1BaselineIntegrationTest {
             BASELINE_DB,
             UPGRADE_DB,
             BOOTSTRAP_DB,
-            NEXT_HISTORICAL_DB,
-            NEXT_BASELINE_DB,
             HISTORICAL_CANONICAL_DB,
             BASELINE_CANONICAL_DB,
         ).forEach(::createDatabase)
@@ -50,20 +45,18 @@ class P1BaselineIntegrationTest {
         assertTrue(roleExists("decision_auth"))
         P1DatabaseRoleBootstrap.bootstrap(p1RoleEnvironment(UPGRADE_DB))
         assertTrue(roleExists("decision_auth"))
+        assertTrue(roleExists("decision_outbox_publisher"))
+        assertTrue(roleExists("decision_poison_recorder"))
         P1FlywayMigrate.migrate(p1MigrationEnvironment(UPGRADE_DB))
         P1FlywayMigrate.migrate(p1MigrationEnvironment(BOOTSTRAP_DB))
-        migrate(NEXT_HISTORICAL_DB, locations = arrayOf("classpath:db/migration")).migrate()
-        P1FlywayMigrate.migrate(p1MigrationEnvironment(NEXT_BASELINE_DB))
-        migrateWithSyntheticNext(NEXT_HISTORICAL_DB)
-        migrateWithSyntheticNext(NEXT_BASELINE_DB)
     }
 
     @Test
-    fun `fresh database applies only B86 while existing database applies V86`() {
-        assertEquals(listOf("86" to "SQL_BASELINE"), history(BASELINE_DB))
-        assertEquals(86, history(HISTORICAL_DB).size)
-        assertEquals("86" to "SQL", history(HISTORICAL_DB).last())
-        assertEquals("86" to "SQL", history(UPGRADE_DB).last())
+    fun `fresh database applies B86 then V87 while existing database applies V1 through V87`() {
+        assertEquals(listOf("86" to "SQL_BASELINE", "87" to "SQL"), history(BASELINE_DB))
+        assertEquals(87, history(HISTORICAL_DB).size)
+        assertEquals("87" to "SQL", history(HISTORICAL_DB).last())
+        assertEquals("87" to "SQL", history(UPGRADE_DB).last())
         assertTrue(history(UPGRADE_DB).none { it.second == "SQL_BASELINE" })
     }
 
@@ -99,13 +92,14 @@ class P1BaselineIntegrationTest {
     }
 
     @Test
-    fun `historical and baseline paths accept exactly one synthetic next migration`() {
-        assertEquals("87" to "JDBC", history(NEXT_HISTORICAL_DB).last())
-        assertEquals("87" to "JDBC", history(NEXT_BASELINE_DB).last())
-        assertEquals("preserved", scalar(NEXT_HISTORICAL_DB, "select marker from p1_synthetic_v87"))
-        assertEquals("preserved", scalar(NEXT_BASELINE_DB, "select marker from p1_synthetic_v87"))
-        assertEquals(1L, count(NEXT_HISTORICAL_DB, "brokerage_db_capability_keys"))
-        assertEquals(1L, count(NEXT_BASELINE_DB, "brokerage_db_capability_keys"))
+    fun `historical and baseline paths install exact V87 capability constraints`() {
+        listOf(HISTORICAL_DB, BASELINE_DB).forEach { database ->
+            assertEquals(0L, count(database, "actor_request_capability"))
+            assertEquals(
+                "87",
+                scalar(database, "select version from flyway_schema_history where success order by installed_rank desc limit 1"),
+            )
+        }
     }
 
     @Test
@@ -261,6 +255,8 @@ class P1BaselineIntegrationTest {
             "POSTGRES_ADMIN_USER" to postgres.username,
             "POSTGRES_PASSWORD" to "baseline-admin-test",
             "POSTGRES_AUTH_PASSWORD" to "a".repeat(64),
+            "POSTGRES_OUTBOX_PUBLISHER_PASSWORD" to "b".repeat(64),
+            "POSTGRES_POISON_RECORDER_PASSWORD" to "c".repeat(64),
         )
 
     private fun roleExists(role: String): Boolean =
@@ -270,48 +266,6 @@ class P1BaselineIntegrationTest {
                 statement.executeQuery().use { rows ->
                     check(rows.next())
                     rows.getBoolean(1)
-                }
-            }
-        }
-
-    private fun migrateWithSyntheticNext(database: String) {
-        Flyway
-            .configure()
-            .dataSource(jdbcUrl(database), "flyway", FLYWAY_PASSWORD)
-            .locations("classpath:db/migration", "classpath:db/baseline")
-            .placeholders(
-                mapOf(
-                    "brokerageDbCapabilityTokenSha256" to
-                        SpringApiIntegrationTestBase.TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
-                ),
-            ).javaMigrations(s21ActorTrustMigration(), syntheticNextMigration())
-            .load()
-            .migrate()
-    }
-
-    private fun syntheticNextMigration(): JavaMigration =
-        object : JavaMigration {
-            override fun getVersion(): MigrationVersion = MigrationVersion.fromVersion("87")
-
-            override fun getDescription(): String = "p1 synthetic next migration"
-
-            override fun getChecksum(): Int = 8701
-
-            override fun canExecuteInTransaction(): Boolean = true
-
-            override fun migrate(context: Context) {
-                context.connection.createStatement().use { statement ->
-                    statement.execute(
-                        """
-                        create table public.p1_synthetic_v87(
-                          singleton boolean primary key default true check(singleton),
-                          marker text not null check(marker='preserved')
-                        )
-                        """.trimIndent(),
-                    )
-                    statement.execute(
-                        "insert into public.p1_synthetic_v87(singleton,marker) values (true,'preserved')",
-                    )
                 }
             }
         }
@@ -505,8 +459,6 @@ class P1BaselineIntegrationTest {
         private const val BASELINE_DB = "p1_baseline"
         private const val UPGRADE_DB = "p1_upgrade"
         private const val BOOTSTRAP_DB = "p1_bootstrap"
-        private const val NEXT_HISTORICAL_DB = "p1_next_historical"
-        private const val NEXT_BASELINE_DB = "p1_next_baseline"
         private const val HISTORICAL_CANONICAL_DB = "p1_historical_canonical"
         private const val BASELINE_CANONICAL_DB = "p1_baseline_canonical"
         private val STATIC_TABLES =

@@ -8,6 +8,10 @@ CREATE ROLE decision_app
   LOGIN PASSWORD 'app-test' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_worker
   LOGIN PASSWORD 'worker-test-secret-0001' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_outbox_publisher
+  LOGIN PASSWORD 'outbox-publisher-test-0001' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_poison_recorder
+  LOGIN PASSWORD 'poison-recorder-test-0001' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_replay
   LOGIN PASSWORD 'replay-test-secret-0001' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_identity
@@ -76,6 +80,16 @@ ALTER ROLE decision_worker SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_worker SET statement_timeout = '60s';
 ALTER ROLE decision_worker SET lock_timeout = '500ms';
 ALTER ROLE decision_worker SET idle_in_transaction_session_timeout = '60s';
+ALTER ROLE decision_outbox_publisher SET log_parameter_max_length = 0;
+ALTER ROLE decision_outbox_publisher SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_outbox_publisher SET statement_timeout = '30s';
+ALTER ROLE decision_outbox_publisher SET lock_timeout = '500ms';
+ALTER ROLE decision_outbox_publisher SET idle_in_transaction_session_timeout = '30s';
+ALTER ROLE decision_poison_recorder SET log_parameter_max_length = 0;
+ALTER ROLE decision_poison_recorder SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_poison_recorder SET statement_timeout = '5s';
+ALTER ROLE decision_poison_recorder SET lock_timeout = '500ms';
+ALTER ROLE decision_poison_recorder SET idle_in_transaction_session_timeout = '5s';
 ALTER ROLE decision_rag_writer SET log_parameter_max_length = 0;
 ALTER ROLE decision_rag_writer SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_rag_writer SET statement_timeout = '2s';
@@ -107,6 +121,8 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO
     decision_app,
     decision_worker,
+    decision_outbox_publisher,
+    decision_poison_recorder,
     decision_replay,
     decision_identity,
     decision_auth,

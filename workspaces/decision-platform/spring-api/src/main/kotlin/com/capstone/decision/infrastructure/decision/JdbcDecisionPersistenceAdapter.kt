@@ -12,7 +12,9 @@ import com.capstone.decision.application.decision.StoredDecisionIdempotencyResul
 import com.capstone.decision.application.risk.KillSwitchBlockedException
 import com.capstone.decision.application.risk.KillSwitchUnavailableException
 import com.capstone.decision.infrastructure.risk.ActorScopedReadQuery
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.dao.DataAccessException
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -67,16 +69,25 @@ class JdbcDecisionPersistenceAdapter(
     override fun persist(request: DecisionWriteRequest) {
         val jdbc = jdbc()
         try {
+            val bundle = objectMapper.writeValueAsString(decisionBundle(request))
+            val binding =
+                ActorCapabilityBinding.request(
+                    "PERSIST_DECISION_BUNDLE",
+                    "DECISION",
+                    request.decisionId,
+                    ActorCapabilityRolePolicy.OWNER,
+                    bundle,
+                )
             val result =
                 jdbc
                     .query(
                         """
                         SELECT outcome, result_canonical_json
-                        FROM persist_decision_bundle_authorized(:capability, CAST(:bundle AS jsonb))
+                        FROM persist_decision_bundle_authorized_v2(:capability, :bundle)
                         """.trimIndent(),
                         mapOf(
-                            "capability" to actorCapabilityIssuer.issue(request.actor.userId),
-                            "bundle" to objectMapper.writeValueAsString(decisionBundle(request)),
+                            "capability" to actorCapabilityIssuer.issue(request.actor.userId, binding),
+                            "bundle" to bundle,
                         ),
                     ) { row, _ -> row.getString("outcome") to row.getString("result_canonical_json") }
                     .single()

@@ -4,7 +4,9 @@ import com.capstone.decision.application.dashboard.ArtifactIngestStatusView
 import com.capstone.decision.application.dashboard.DashboardArtifactKind
 import com.capstone.decision.application.dashboard.DashboardUnavailableException
 import com.capstone.decision.application.dashboard.DashboardViewPort
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
@@ -28,11 +30,20 @@ class JdbcDashboardViewAdapter(
         runId: String,
     ): JsonNode? =
         protect {
+            val binding =
+                ActorCapabilityBinding.request(
+                    "READ_DASHBOARD_ARTIFACT",
+                    "DASHBOARD_ARTIFACT",
+                    runId,
+                    ActorCapabilityRolePolicy.OWNER,
+                    kind.name,
+                    runId,
+                )
             jdbc()
                 .query(
                     "SELECT * FROM read_dashboard_artifact_view_authorized(:capability,:actor,:version,:kind,:runId)",
                     mapOf(
-                        "capability" to actorCapabilityIssuer.issue(actorUserId),
+                        "capability" to actorCapabilityIssuer.issue(actorUserId, binding),
                         "actor" to actorUserId,
                         "version" to securityVersion,
                         "kind" to kind.name,
@@ -63,11 +74,18 @@ class JdbcDashboardViewAdapter(
         decisionId: String,
     ): JsonNode? =
         protect {
+            val binding =
+                ActorCapabilityBinding.target(
+                    "READ_DASHBOARD_RISK",
+                    "RISK_DECISION",
+                    decisionId,
+                    ActorCapabilityRolePolicy.OWNER,
+                )
             jdbc()
                 .query(
                     "SELECT * FROM read_dashboard_risk_view_authorized(:capability,:actor,:version,:decisionId)",
                     mapOf(
-                        "capability" to actorCapabilityIssuer.issue(actorUserId),
+                        "capability" to actorCapabilityIssuer.issue(actorUserId, binding),
                         "actor" to actorUserId,
                         "version" to securityVersion,
                         "decisionId" to decisionId,
@@ -101,11 +119,18 @@ class JdbcDashboardViewAdapter(
         answerId: String,
     ): JsonNode? =
         protect {
+            val binding =
+                ActorCapabilityBinding.target(
+                    "READ_DASHBOARD_RAG",
+                    "RAG_ANSWER",
+                    answerId,
+                    ActorCapabilityRolePolicy.OWNER,
+                )
             jdbc()
                 .query(
                     "SELECT * FROM read_dashboard_rag_sources_authorized(:capability,:actor,:version,:answerId)",
                     mapOf(
-                        "capability" to actorCapabilityIssuer.issue(actorUserId),
+                        "capability" to actorCapabilityIssuer.issue(actorUserId, binding),
                         "actor" to actorUserId,
                         "version" to securityVersion,
                         "answerId" to answerId,
@@ -137,10 +162,17 @@ class JdbcDashboardViewAdapter(
         securityVersion: Long,
     ): List<ArtifactIngestStatusView>? =
         protect {
+            val binding =
+                ActorCapabilityBinding.request(
+                    "LIST_ARTIFACT_STATUS",
+                    "ARTIFACT_STATUS_LIST",
+                    "artifact-statuses",
+                    ActorCapabilityRolePolicy.ADMIN_ONLY,
+                )
             jdbc().query(
                 "SELECT * FROM list_artifact_ingest_status_authorized(:capability,:actor,:version)",
                 mapOf(
-                    "capability" to actorCapabilityIssuer.issue(actorUserId),
+                    "capability" to actorCapabilityIssuer.issue(actorUserId, binding),
                     "actor" to actorUserId,
                     "version" to securityVersion,
                 ),

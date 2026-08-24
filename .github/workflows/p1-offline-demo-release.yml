@@ -55,6 +55,22 @@ jobs:
             echo "version=$version"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Reject tag or release collision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_VERSION" >/dev/null 2>&1; then
+            echo P1_RELEASE_VERSION_COLLISION >&2
+            exit 1
+          fi
+          if gh release view "$RELEASE_VERSION" >/dev/null 2>&1; then
+            echo P1_RELEASE_VERSION_COLLISION >&2
+            exit 1
+          fi
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
@@ -62,7 +78,9 @@ jobs:
         id: spring_build
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
-          context: .
+          context: "https://github.com/${{ github.repository }}.git#${{ steps.identity.outputs.sha }}"
+          secrets: |
+            GIT_AUTH_TOKEN=${{ github.token }}
           file: deploy/p1/docker/spring-api.Dockerfile
           platforms: linux/amd64
           load: true
@@ -75,7 +93,9 @@ jobs:
         id: python_build
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
-          context: .
+          context: "https://github.com/${{ github.repository }}.git#${{ steps.identity.outputs.sha }}"
+          secrets: |
+            GIT_AUTH_TOKEN=${{ github.token }}
           file: deploy/p1/docker/python-services.Dockerfile
           platforms: linux/amd64
           load: true
@@ -88,7 +108,9 @@ jobs:
         id: postgres_build
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
-          context: .
+          context: "https://github.com/${{ github.repository }}.git#${{ steps.identity.outputs.sha }}"
+          secrets: |
+            GIT_AUTH_TOKEN=${{ github.token }}
           file: deploy/p1/docker/postgres-pgvector.Dockerfile
           platforms: linux/amd64
           load: true
@@ -151,7 +173,7 @@ jobs:
           images=(
             'alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce'
             'redis:7.2-alpine@sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8'
-            'apache/kafka-native:4.3.1@sha256:e50f6ad232dc9e524134ef6babba8285ba8a793326cb27ca2efc20fa83e45a0b'
+            'apache/kafka:4.3.1@sha256:ccd1314e47ec76909e01f86308b4dcf2064f19f7c89759234322314b0e319e26'
           )
           for image in "${images[@]}"; do docker pull --platform linux/amd64 "$image"; done
 
@@ -176,7 +198,7 @@ jobs:
       - name: Trivy Kafka gate
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: apache/kafka-native:4.3.1@sha256:e50f6ad232dc9e524134ef6babba8285ba8a793326cb27ca2efc20fa83e45a0b
+          image-ref: apache/kafka:4.3.1@sha256:ccd1314e47ec76909e01f86308b4dcf2064f19f7c89759234322314b0e319e26
           scanners: vuln,secret
           severity: CRITICAL,HIGH
           ignore-unfixed: false
@@ -228,6 +250,22 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Reject GHCR release tag collision
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+          RELEASE_TAG: ${{ steps.identity.outputs.tag }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for image in "$SPRING_IMAGE" "$PYTHON_IMAGE" "$POSTGRES_IMAGE"; do
+            for tag in "$RELEASE_VERSION" "$RELEASE_TAG"; do
+              if docker buildx imagetools inspect "$image:$tag" >/dev/null 2>&1; then
+                echo P1_RELEASE_VERSION_COLLISION >&2
+                exit 1
+              fi
+            done
+          done
 
       - name: Push scanned local images and bind registry digests
         id: push
@@ -375,9 +413,13 @@ jobs:
             name="capstone-p1-offline-demo-${mode}-${RELEASE_VERSION}-amd64"
             directory="release-output/$name"
             cosign sign-blob --yes --bundle "$directory/bundle-root-signature.bundle.json" "$directory/SHA256SUMS"
-            rm -- "release-output/$name.tar.zst"
+            staging=$(mktemp -d release-output/.signed-archive.XXXXXX)
             tar --zstd --sort=name --mtime="@$source_epoch" --owner=0 --group=0 --numeric-owner \
-              -cf "release-output/$name.tar.zst" -C release-output "$name"
+              -cf "$staging/$name.tar.zst" -C release-output "$name"
+            python3 deploy/p1/release_guard.py publish-file \
+              "$staging/$name.tar.zst" "release-output/$name.tar.zst" --replace
+            rm -- "$staging/$name.tar.zst"
+            rmdir -- "$staging"
             (cd release-output && sha256sum "$name.tar.zst" > "$name.tar.zst.sha256")
             cosign sign-blob --yes --bundle "release-output/$name.tar.zst.sha256.bundle.json" \
               "release-output/$name.tar.zst.sha256"

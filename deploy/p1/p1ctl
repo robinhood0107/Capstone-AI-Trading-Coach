@@ -12,12 +12,24 @@ KAFKA_COMPOSE=$SCRIPT_DIR/compose.kafka.yml
 OFFLINE_DB_COMPOSE=$SCRIPT_DIR/compose.offline.db.yml
 OFFLINE_KAFKA_COMPOSE=$SCRIPT_DIR/compose.offline.kafka.yml
 RELEASE_ENV=$SCRIPT_DIR/release.env
+RELEASE_MANIFEST=$SCRIPT_DIR/../../release-manifest.json
+RELEASE_GUARD=$SCRIPT_DIR/release_guard.py
 
 die() { printf 'P1_ERROR=%s\n' "$1" >&2; exit 1; }
 require_command() { command -v "$1" >/dev/null 2>&1 || die "missing_$1"; }
 random_secret() { openssl rand -hex 32; }
 base64url_key() { openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'; }
-write_line() { printf '%s=%s\n' "$1" "$2" >> "$3"; }
+state_relative() {
+  [[ $1 == "$STATE_DIR/"* ]] || die state_path
+  printf '%s\n' "${1#"$STATE_DIR/"}"
+}
+state_write_file() {
+  local path=$1 mode=$2
+  python3 "$RELEASE_GUARD" state-write "$STATE_DIR" "$(state_relative "$path")" "$mode"
+}
+write_line() {
+  printf '%s=%s\n' "$1" "$2" | python3 "$RELEASE_GUARD" state-append "$STATE_DIR" "$(state_relative "$3")" 0640
+}
 docker_bind_source() {
   local source=$1 endpoint
   endpoint=$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)
@@ -66,6 +78,7 @@ compose() {
 }
 
 require_state() {
+  python3 "$RELEASE_GUARD" state-check "$STATE_DIR" || die state_boundary
   [[ -d $STATE_DIR && -f $RUNTIME_ENV && -d $SECRETS_DIR ]] || die not_initialized
   [[ ! -L $STATE_DIR && ! -L $SECRETS_DIR && ! -L $RUNTIME_ENV ]] || die state_symlink
   [[ $(stat -c '%a' "$STATE_DIR") == 700 ]] || die state_mode
@@ -117,11 +130,22 @@ author_bundle() {
     -cp /app/app.jar org.springframework.boot.loader.launch.PropertiesLauncher >/dev/null
 }
 
+verify_release_boundary() {
+  [[ -f $RELEASE_ENV ]] || return 0
+  "$SCRIPT_DIR/verify-release" "$SCRIPT_DIR/../.." >/dev/null
+}
+
+accept_release() {
+  [[ -f $RELEASE_ENV ]] || return 0
+  python3 "$RELEASE_GUARD" release-accept "$STATE_DIR" "$RELEASE_MANIFEST" || die release_rollback_or_collision
+}
+
 init_state() {
   require_command docker
   require_command openssl
-  [[ ! -e $STATE_DIR ]] || die already_initialized
-  install -d -m 700 "$SECRETS_DIR"
+  require_command python3
+  verify_release_boundary
+  python3 "$RELEASE_GUARD" state-init "$STATE_DIR" || die state_init
   local spring_image=${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
   docker image inspect "$spring_image" >/dev/null 2>&1 || die spring_image_missing
 
@@ -131,12 +155,18 @@ init_state() {
   separation_key=$(base64url_key)
   broker_token=$(random_secret)
   broker_digest=$(printf '%s' "$broker_token" | sha256sum | awk '{print $1}')
-  printf '%s' "$user_password" > "$SECRETS_DIR/demo-user.password"
-  printf '%s' "$admin_password" > "$SECRETS_DIR/demo-admin.password"
-  printf '%s' "$separation_key" > "$SECRETS_DIR/demo-credential-separation.key"
-  openssl rand 32 > "$SECRETS_DIR/rag-history-kek-v1.key"
+  printf '%s' "$user_password" | state_write_file "$SECRETS_DIR/demo-user.password" 0640
+  printf '%s' "$admin_password" | state_write_file "$SECRETS_DIR/demo-admin.password" 0640
+  printf '%s' "$separation_key" | state_write_file "$SECRETS_DIR/demo-credential-separation.key" 0640
+  openssl rand 32 | state_write_file "$SECRETS_DIR/rag-history-kek-v1.key" 0640
   author_bundle "$spring_image" usr_demo_user "$SECRETS_DIR/demo-user.password" "$SECRETS_DIR/demo-user.bundle"
   author_bundle "$spring_image" usr_demo_admin "$SECRETS_DIR/demo-admin.password" "$SECRETS_DIR/demo-admin.bundle"
+  local authored_bundle
+  authored_bundle=$(<"$SECRETS_DIR/demo-user.bundle")
+  printf "%s" "$authored_bundle" | state_write_file "$SECRETS_DIR/demo-user.bundle" 0640
+  authored_bundle=$(<"$SECRETS_DIR/demo-admin.bundle")
+  printf "%s" "$authored_bundle" | state_write_file "$SECRETS_DIR/demo-admin.bundle" 0640
+  unset authored_bundle
 
   declare -A db
   local role
@@ -167,40 +197,40 @@ init_state() {
   actor_private_key=$(printf '%s' "$actor_private_der_b64" | tr '+/' '-_' | tr -d '=')
   actor_public_key=$(printf '%s' "$actor_public_der_b64" | tr '+/' '-_' | tr -d '=')
 
-  : > "$SECRETS_DIR/postgres.env"
+  printf '' | state_write_file "$SECRETS_DIR/postgres.env" 0640
   write_line POSTGRES_PASSWORD "$postgres_password" "$SECRETS_DIR/postgres.env"
   for role in "${!db[@]}"; do write_line "POSTGRES_${role}_PASSWORD" "${db[$role]}" "$SECRETS_DIR/postgres.env"; done
   LC_ALL=C sort -o "$SECRETS_DIR/postgres.env" "$SECRETS_DIR/postgres.env"
-  : > "$SECRETS_DIR/role-bootstrap.env"
+  printf '' | state_write_file "$SECRETS_DIR/role-bootstrap.env" 0640
   write_line POSTGRES_ADMIN_USER postgres "$SECRETS_DIR/role-bootstrap.env"
   write_line POSTGRES_PASSWORD "$postgres_password" "$SECRETS_DIR/role-bootstrap.env"
   write_line POSTGRES_AUTH_PASSWORD "${db[AUTH]}" "$SECRETS_DIR/role-bootstrap.env"
   write_line POSTGRES_OUTBOX_PUBLISHER_PASSWORD "${db[OUTBOX_PUBLISHER]}" "$SECRETS_DIR/role-bootstrap.env"
   write_line POSTGRES_POISON_RECORDER_PASSWORD "${db[POISON_RECORDER]}" "$SECRETS_DIR/role-bootstrap.env"
-  printf 'REDIS_PASSWORD=%s\n' "$redis_password" > "$SECRETS_DIR/redis.env"
+  printf 'REDIS_PASSWORD=%s\n' "$redis_password" | state_write_file "$SECRETS_DIR/redis.env" 0640
 
   local user_bundle admin_bundle
   user_bundle=$(<"$SECRETS_DIR/demo-user.bundle")
   admin_bundle=$(<"$SECRETS_DIR/demo-admin.bundle")
-  : > "$SECRETS_DIR/migration.env"
+  printf '' | state_write_file "$SECRETS_DIR/migration.env" 0640
   write_line DEMO_CREDENTIAL_SEPARATION_KEY "$separation_key" "$SECRETS_DIR/migration.env"
   write_line DEMO_USER_CREDENTIAL_BUNDLE "$user_bundle" "$SECRETS_DIR/migration.env"
   write_line DEMO_ADMIN_CREDENTIAL_BUNDLE "$admin_bundle" "$SECRETS_DIR/migration.env"
   write_line POSTGRES_MIGRATION_PASSWORD "${db[MIGRATION]}" "$SECRETS_DIR/migration.env"
   write_line BROKERAGE_DB_CAPABILITY_TOKEN_SHA256 "$broker_digest" "$SECRETS_DIR/migration.env"
-  : > "$SECRETS_DIR/bootstrap.env"
+  printf '' | state_write_file "$SECRETS_DIR/bootstrap.env" 0640
   write_line POSTGRES_MIGRATION_PASSWORD "${db[MIGRATION]}" "$SECRETS_DIR/bootstrap.env"
   write_line DEMO_CREDENTIAL_SEPARATION_KEY "$separation_key" "$SECRETS_DIR/bootstrap.env"
   write_line DEMO_USER_CREDENTIAL_BUNDLE "$user_bundle" "$SECRETS_DIR/bootstrap.env"
   write_line DEMO_ADMIN_CREDENTIAL_BUNDLE "$admin_bundle" "$SECRETS_DIR/bootstrap.env"
 
-  : > "$SECRETS_DIR/spring.env"
+  printf '' | state_write_file "$SECRETS_DIR/spring.env" 0640
   write_line POSTGRES_APP_PASSWORD "${db[APP]}" "$SECRETS_DIR/spring.env"
   write_line POSTGRES_WORKER_PASSWORD "${db[WORKER]}" "$SECRETS_DIR/spring.env"
   write_line POSTGRES_AUTH_PASSWORD "${db[AUTH]}" "$SECRETS_DIR/spring.env"
   write_line ACTOR_CAPABILITY_SHARED_SECRET "$actor_capability_secret" "$SECRETS_DIR/spring.env"
   write_line ACTOR_CAPABILITY_PUBLIC_KEY "$actor_public_key" "$SECRETS_DIR/spring.env"
-  : > "$SECRETS_DIR/actor-capability-authority.env"
+  printf '' | state_write_file "$SECRETS_DIR/actor-capability-authority.env" 0640
   write_line POSTGRES_IDENTITY_PASSWORD "${db[IDENTITY]}" "$SECRETS_DIR/actor-capability-authority.env"
   write_line ACTOR_CAPABILITY_SHARED_SECRET "$actor_capability_secret" "$SECRETS_DIR/actor-capability-authority.env"
   write_line ACTOR_CAPABILITY_PRIVATE_KEY "$actor_private_key" "$SECRETS_DIR/actor-capability-authority.env"
@@ -222,7 +252,7 @@ init_state() {
     write_line "$key" "$(random_secret)" "$SECRETS_DIR/spring.env"
   done
 
-  : > "$SECRETS_DIR/python.env"
+  printf '' | state_write_file "$SECRETS_DIR/python.env" 0640
   write_line ASYNC_WORKER_DATABASE_DSN "postgresql://decision_worker:${db[WORKER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/python.env"
   write_line ASYNC_PARTITION_HMAC_KEY "$partition_key" "$SECRETS_DIR/python.env"
   write_line ASYNC_WORKER_GRPC_SHARED_SECRET "$grpc_secret" "$SECRETS_DIR/python.env"
@@ -231,15 +261,15 @@ init_state() {
   write_line KAFKA_ENVELOPE_PUBLIC_KEY "$kafka_public_key" "$SECRETS_DIR/python.env"
   write_line POISON_RECORDER_URL http://127.0.0.1:18082/internal/kafka/poison-receipts "$SECRETS_DIR/python.env"
   write_line POISON_RECORDER_SHARED_SECRET "$poison_recorder_secret" "$SECRETS_DIR/python.env"
-  : > "$SECRETS_DIR/kafka-publisher.env"
+  printf '' | state_write_file "$SECRETS_DIR/kafka-publisher.env" 0640
   write_line OUTBOX_PUBLISHER_DATABASE_DSN "postgresql://decision_outbox_publisher:${db[OUTBOX_PUBLISHER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/kafka-publisher.env"
   write_line KAFKA_SASL_USERNAME p1_outbox_publisher "$SECRETS_DIR/kafka-publisher.env"
   write_line KAFKA_SASL_PASSWORD "$kafka_publisher_password" "$SECRETS_DIR/kafka-publisher.env"
   write_line KAFKA_ENVELOPE_PRIVATE_KEY "$kafka_private_key" "$SECRETS_DIR/kafka-publisher.env"
-  : > "$SECRETS_DIR/poison-recorder.env"
+  printf '' | state_write_file "$SECRETS_DIR/poison-recorder.env" 0640
   write_line POISON_RECORDER_DATABASE_DSN "postgresql://decision_poison_recorder:${db[POISON_RECORDER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/poison-recorder.env"
   write_line POISON_RECORDER_SHARED_SECRET "$poison_recorder_secret" "$SECRETS_DIR/poison-recorder.env"
-  : > "$SECRETS_DIR/kafka-admin.env"
+  printf '' | state_write_file "$SECRETS_DIR/kafka-admin.env" 0640
   write_line KAFKA_SASL_USERNAME p1_kafka_admin "$SECRETS_DIR/kafka-admin.env"
   write_line KAFKA_SASL_PASSWORD "$kafka_admin_password" "$SECRETS_DIR/kafka-admin.env"
   printf '%s\n' \
@@ -250,22 +280,22 @@ init_state() {
     "  user_p1_kafka_admin=\"$kafka_admin_password\"" \
     "  user_p1_outbox_publisher=\"$kafka_publisher_password\"" \
     "  user_p1_async_worker=\"$kafka_worker_password\";" \
-    '};' > "$SECRETS_DIR/kafka-broker-jaas.conf"
-  : > "$SECRETS_DIR/demo.env"
+    '};' | state_write_file "$SECRETS_DIR/kafka-broker-jaas.conf" 0640
+  printf '' | state_write_file "$SECRETS_DIR/demo.env" 0640
   write_line P1_DEMO_DATABASE_DSN "postgresql://decision_demo:${db[DEMO]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/demo.env"
   write_line ASYNC_PARTITION_HMAC_KEY "$partition_key" "$SECRETS_DIR/demo.env"
   local compose_secrets_dir
   compose_secrets_dir=$(docker_bind_source "$SECRETS_DIR")
-  cat > "$RUNTIME_ENV" <<EOF
-P1_SECRETS_DIR=$compose_secrets_dir
-P1_SECRET_GID=$(id -g)
-P1_API_PORT=${P1_API_PORT:-18080}
-P1_SPRING_IMAGE=$spring_image
-P1_PYTHON_IMAGE=${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
-P1_POSTGRES_IMAGE=${P1_POSTGRES_IMAGE:-capstone-postgres-pgvector:p1-local}
-EOF
-  chmod 600 "$RUNTIME_ENV"
+  printf '%s\n' \
+    "P1_SECRETS_DIR=$compose_secrets_dir" \
+    "P1_SECRET_GID=$(id -g)" \
+    "P1_API_PORT=${P1_API_PORT:-18080}" \
+    "P1_SPRING_IMAGE=$spring_image" \
+    "P1_PYTHON_IMAGE=${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}" \
+    "P1_POSTGRES_IMAGE=${P1_POSTGRES_IMAGE:-capstone-postgres-pgvector:p1-local}" \
+    | state_write_file "$RUNTIME_ENV" 0600
   chmod 640 "$SECRETS_DIR"/*
+  accept_release
   printf 'P1_INITIALIZED=TRUE\nP1_LOGIN_PASSWORD_FILES=%s,%s\n' \
     "$SECRETS_DIR/demo-user.password" "$SECRETS_DIR/demo-admin.password"
 }
@@ -303,9 +333,10 @@ up_mode() {
   if [[ $mode == db ]]; then
     compose kafka rm -f -s kafka kafka-topic-init >/dev/null
   fi
+  verify_release_boundary
+  accept_release
   compose "$mode" up -d --force-recreate
-  printf '%s\n' "$mode" > "$ADAPTER_FILE"
-  chmod 600 "$ADAPTER_FILE"
+  printf '%s\n' "$mode" | state_write_file "$ADAPTER_FILE" 0600
   printf 'P1_UP=%s\n' "$mode"
 }
 

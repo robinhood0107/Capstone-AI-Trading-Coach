@@ -6,6 +6,8 @@ import com.capstone.decision.infrastructure.security.ActorCapabilityDeniedExcept
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import com.capstone.decision.infrastructure.security.ActorCapabilityPacketCodec
 import com.capstone.decision.infrastructure.security.DatabaseActorCapabilityAuthority
+import com.capstone.decision.infrastructure.security.AuthDatabase
+import com.capstone.decision.infrastructure.security.DatabaseActorIdentityHandleIssuer
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import org.springframework.boot.test.context.TestConfiguration
@@ -50,16 +52,41 @@ class TestActorCapabilityIssuer(
         } else {
             null
         }
+    private val authDataSource: HikariDataSource? =
+        if (dataSource != null) {
+            HikariDataSource(
+                HikariConfig().apply {
+                    jdbcUrl = environment.getRequiredProperty("spring.datasource.url")
+                    username = "decision_auth"
+                    password = AUTH_PASSWORD
+                    maximumPoolSize = 2
+                    minimumIdle = 0
+                    connectionTimeout = 1_000
+                    validationTimeout = 500
+                    initializationFailTimeout = -1
+                    poolName = "test-actor-identity-handle-issuer"
+                },
+            )
+        } else {
+            null
+        }
+    private val identityHandleIssuer: DatabaseActorIdentityHandleIssuer? =
+        authDataSource?.let { DatabaseActorIdentityHandleIssuer(AuthDatabase(it)) }
     private val authority: DatabaseActorCapabilityAuthority? =
         dataSource?.let { DatabaseActorCapabilityAuthority(it, keys.private, keys.public, clock) }
 
     override fun issue(
         actorUserId: String,
         binding: ActorCapabilityBinding,
-    ): String = authority?.issue(actorUserId, binding) ?: offlineToken(actorUserId, binding)
+    ): String =
+        authority?.issue(
+            requireNotNull(identityHandleIssuer).issue(actorUserId, binding),
+            binding,
+        ) ?: offlineToken(actorUserId, binding)
 
     override fun close() {
         dataSource?.close()
+        authDataSource?.close()
     }
 
     private fun offlineToken(
@@ -92,5 +119,6 @@ class TestActorCapabilityIssuer(
 
     private companion object {
         const val IDENTITY_PASSWORD = "identity-test-secret-0001"
+        const val AUTH_PASSWORD = "auth-test-secret-0001"
     }
 }

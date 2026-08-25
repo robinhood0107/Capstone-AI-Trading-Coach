@@ -2114,8 +2114,11 @@ BEGIN
         FROM decision_app;
         GRANT EXECUTE ON FUNCTION
             register_actor_request_capability_v2(text,text,text,bigint,text,text,text,text,text,text,text,timestamptz,timestamptz,text),
-            read_actor_capability_subject(text)
+            consume_actor_identity_handle_v1(text,text,text,text,text,text)
         TO decision_identity;
+        GRANT EXECUTE ON FUNCTION
+            register_actor_identity_handle_v1(text,text,text,text,text,text,integer)
+        TO decision_auth;
         GRANT EXECUTE ON FUNCTION
             create_async_request_authorized(text,text,text,text,text,text,text,text),
             insert_principle_version_authorized_v2(text,text,text,text,integer,text,text,text,text,text,text,timestamptz),

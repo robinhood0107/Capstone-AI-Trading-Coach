@@ -26,12 +26,12 @@ object ActorCapabilityWire {
     const val MAX_BODY_BYTES = 2_048
 
     fun encode(
-        actorUserId: String,
+        identityHandle: String,
         binding: ActorCapabilityBinding,
     ): ByteArray =
         listOf(
             "p1-actor-capability-request.v1",
-            actorUserId,
+            identityHandle,
             binding.operation,
             binding.targetKind,
             binding.targetId,
@@ -43,9 +43,9 @@ object ActorCapabilityWire {
         require(bytes.size in 1..MAX_BODY_BYTES)
         val values = bytes.toString(StandardCharsets.UTF_8).split('\n')
         require(values.size == 7 && values[0] == "p1-actor-capability-request.v1")
-        val actorUserId = values[1]
-        require(actorUserId.matches(Regex("^usr_[A-Za-z0-9_-]{4,96}$")))
-        return actorUserId to
+        val identityHandle = values[1]
+        require(identityHandle.matches(Regex("^idh1_[0-9a-f]{64}$")))
+        return identityHandle to
             ActorCapabilityBinding(
                 operation = values[2],
                 targetKind = values[3],
@@ -84,12 +84,15 @@ data class ActorCapabilityClientProperties(
 @ConditionalOnProperty(prefix = "app.actor-capability", name = ["transport"], havingValue = "http")
 class ActorCapabilityClientConfiguration {
     @Bean
-    fun httpActorCapabilityIssuer(properties: ActorCapabilityClientProperties): ActorCapabilityIssuer =
-        HttpActorCapabilityIssuer(properties)
+    fun httpActorCapabilityIssuer(
+        properties: ActorCapabilityClientProperties,
+        identityHandleIssuer: ActorIdentityHandleIssuer,
+    ): ActorCapabilityIssuer = HttpActorCapabilityIssuer(properties, identityHandleIssuer)
 }
 
 class HttpActorCapabilityIssuer(
     properties: ActorCapabilityClientProperties,
+    private val identityHandleIssuer: ActorIdentityHandleIssuer,
     private val client: HttpClient =
         HttpClient
             .newBuilder()
@@ -105,13 +108,14 @@ class HttpActorCapabilityIssuer(
         actorUserId: String,
         binding: ActorCapabilityBinding,
     ): String {
+        val identityHandle = identityHandleIssuer.issue(actorUserId, binding)
         val request =
             HttpRequest
                 .newBuilder(uri)
                 .timeout(Duration.ofSeconds(2))
                 .header("Authorization", "Bearer $sharedSecret")
                 .header("Content-Type", ActorCapabilityWire.CONTENT_TYPE)
-                .POST(HttpRequest.BodyPublishers.ofByteArray(ActorCapabilityWire.encode(actorUserId, binding)))
+                .POST(HttpRequest.BodyPublishers.ofByteArray(ActorCapabilityWire.encode(identityHandle, binding)))
                 .build()
         val response = client.send(request, HttpResponse.BodyHandlers.ofByteArray())
         if (response.statusCode() != 200 || response.body().size !in 120..1_024) {
@@ -187,8 +191,8 @@ object ActorCapabilityAuthorityMain {
             }
             val body = exchange.requestBody.use { it.readNBytes(ActorCapabilityWire.MAX_BODY_BYTES + 1) }
             if (body.size != declaredLength || body.size > ActorCapabilityWire.MAX_BODY_BYTES) return exchange.respond(400)
-            val (actorUserId, binding) = ActorCapabilityWire.decode(body)
-            exchange.respond(200, authority.issue(actorUserId, binding).toByteArray(StandardCharsets.US_ASCII))
+            val (identityHandle, binding) = ActorCapabilityWire.decode(body)
+            exchange.respond(200, authority.issue(identityHandle, binding).toByteArray(StandardCharsets.US_ASCII))
         } catch (_: IllegalArgumentException) {
             exchange.respond(400)
         } catch (_: ActorCapabilityDeniedException) {

@@ -517,13 +517,19 @@ val verifyS4RagContractResources by tasks.registering {
     }
 }
 
+val openApiServerPort = providers.environmentVariable("OPENAPI_SERVER_PORT").orElse("18080").get()
+val openApiServerPortNumber = openApiServerPort.toIntOrNull()
+check(openApiServerPortNumber != null && openApiServerPortNumber in 1024..65535) {
+    "OPENAPI_SERVER_PORT must be an unprivileged TCP port."
+}
+
 openApi {
-    apiDocsUrl.set("http://127.0.0.1:18080/v3/api-docs")
+    apiDocsUrl.set("http://127.0.0.1:$openApiServerPort/v3/api-docs")
     outputDir.set(layout.buildDirectory)
     outputFileName.set("openapi.json")
     waitTimeInSeconds.set(90)
     customBootRun {
-        args.set(listOf("--spring.profiles.active=openapi", "--server.port=18080"))
+        args.set(listOf("--spring.profiles.active=openapi", "--server.port=$openApiServerPort"))
     }
 }
 

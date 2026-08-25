@@ -11,7 +11,15 @@ class McpRefreshClaimCleanupFilterTest {
     @Test
     fun `claim is empty at request entry and cleared after failure`() {
         val claims = McpRefreshClaimContext()
-        val claim = McpRefreshClaim("mcp_client", "usr_owner", 1, "https://resource", setOf("mcp:rag.public"))
+        val claim =
+            McpRefreshClaim(
+                "a".repeat(64),
+                "mcp_client",
+                "usr_owner",
+                1,
+                "https://resource",
+                setOf("mcp:rag.public"),
+            )
         claims.bind(claim)
         val chain =
             FilterChain { _, _ ->

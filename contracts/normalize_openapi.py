@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -26,17 +27,25 @@ from contracts.generated_artifact_io import write_generated_path
 
 
 REPO_ROOT = _SCRIPT_REPO_ROOT
-DEFAULT_INPUT = REPO_ROOT / "workspaces" / "decision-platform" / "spring-api" / "build" / "openapi.json"
+DEFAULT_INPUT = (
+    REPO_ROOT
+    / "workspaces"
+    / "decision-platform"
+    / "spring-api"
+    / "build"
+    / "openapi.json"
+)
 DEFAULT_EXPECTED = REPO_ROOT / "contracts" / "openapi" / "openapi.json"
 OAS_BASE_DIALECT = "https://spec.openapis.org/oas/3.1/dialect/base"
+CANONICAL_GENERATED_SERVER = {
+    "description": "Generated server url",
+    "url": "http://127.0.0.1:18080",
+}
+_LOOPBACK_GENERATED_SERVER_RE = re.compile(r"http://127\.0\.0\.1:([0-9]{4,5})")
 CONTRACT_ID = "s2-1-principle-contract/v1"
-S23_CATALOG_PATH = (
-    REPO_ROOT / "contracts/catalogs/s2-3-decision-contract.v1.json"
-)
+S23_CATALOG_PATH = REPO_ROOT / "contracts/catalogs/s2-3-decision-contract.v1.json"
 S23_CONTRACT_ID = "s2-3-decision-contract/v1"
-S32_CATALOG_PATH = (
-    REPO_ROOT / "contracts/catalogs/s3-2-internal-paper-contract.v1.json"
-)
+S32_CATALOG_PATH = REPO_ROOT / "contracts/catalogs/s3-2-internal-paper-contract.v1.json"
 S32_CONTRACT_ID = "s3-2-internal-paper-contract/v1"
 S33_CATALOG_PATH = REPO_ROOT / "contracts/catalogs/s3-3-fill-contract.v1.json"
 S33_CONTRACT_ID = "s3-3-fill-contract/v1"
@@ -117,9 +126,15 @@ def _load_document(raw: bytes, *, source: str) -> dict[str, Any]:
         raise OpenApiNormalizationError(f"{source}: OpenAPI root must be an object.")
     for key in ("openapi", "jsonSchemaDialect", "info", "paths", "components"):
         if key not in value:
-            raise OpenApiNormalizationError(f"{source}: required root field {key} is missing.")
-    if not isinstance(value["paths"], dict) or not isinstance(value["components"], dict):
-        raise OpenApiNormalizationError(f"{source}: paths and components must be objects.")
+            raise OpenApiNormalizationError(
+                f"{source}: required root field {key} is missing."
+            )
+    if not isinstance(value["paths"], dict) or not isinstance(
+        value["components"], dict
+    ):
+        raise OpenApiNormalizationError(
+            f"{source}: paths and components must be objects."
+        )
     return value
 
 
@@ -131,7 +146,9 @@ def _catalog_digest(catalog_bytes: bytes) -> str:
         raise OpenApiNormalizationError(str(error)) from error
     canonical = canonical_json_bytes(catalog)
     if catalog_bytes != canonical:
-        raise OpenApiNormalizationError("Catalog bytes must be canonical before OpenAPI generation.")
+        raise OpenApiNormalizationError(
+            "Catalog bytes must be canonical before OpenAPI generation."
+        )
     return hashlib.sha256(catalog_bytes).hexdigest()
 
 
@@ -173,15 +190,25 @@ def _assert_contract_roots(
     amendment: bool,
 ) -> None:
     if document.get("jsonSchemaDialect") != OAS_BASE_DIALECT:
-        raise OpenApiNormalizationError(f"{source}: OAS 3.1 base dialect is missing or different.")
+        raise OpenApiNormalizationError(
+            f"{source}: OAS 3.1 base dialect is missing or different."
+        )
     if document.get("x-s2-1-contract-id") != CONTRACT_ID:
-        raise OpenApiNormalizationError(f"{source}: S2.1 contract ID extension is invalid.")
+        raise OpenApiNormalizationError(
+            f"{source}: S2.1 contract ID extension is invalid."
+        )
     if document.get("x-s2-1-contract-sha256") != digest:
-        raise OpenApiNormalizationError(f"{source}: S2.1 catalog digest extension is invalid.")
+        raise OpenApiNormalizationError(
+            f"{source}: S2.1 catalog digest extension is invalid."
+        )
     if document.get("x-s2-3-contract-id") != S23_CONTRACT_ID:
-        raise OpenApiNormalizationError(f"{source}: S2.3 contract ID extension is invalid.")
+        raise OpenApiNormalizationError(
+            f"{source}: S2.3 contract ID extension is invalid."
+        )
     if document.get("x-s2-3-contract-sha256") != _s23_catalog_digest():
-        raise OpenApiNormalizationError(f"{source}: S2.3 catalog digest extension is invalid.")
+        raise OpenApiNormalizationError(
+            f"{source}: S2.3 catalog digest extension is invalid."
+        )
     if not amendment:
         if document.get("x-s3-2-contract-id") != S32_CONTRACT_ID:
             raise OpenApiNormalizationError(
@@ -201,7 +228,9 @@ def _assert_contract_roots(
             )
 
 
-def _assert_no_premature_principle_paths(document: dict[str, Any], *, source: str) -> None:
+def _assert_no_premature_principle_paths(
+    document: dict[str, Any], *, source: str
+) -> None:
     paths = document["paths"]
     premature = [
         path
@@ -239,7 +268,9 @@ def _assert_decision_components(
 ) -> None:
     schemas = document["components"].get("schemas", {})
     if not isinstance(schemas, dict):
-        raise OpenApiNormalizationError(f"{source}: component schemas must be an object.")
+        raise OpenApiNormalizationError(
+            f"{source}: component schemas must be an object."
+        )
     actual = {name for name in schemas if name.startswith("S23")}
     expected = set() if amendment else DECISION_COMPONENTS
     if actual != expected:
@@ -259,11 +290,9 @@ def _assert_s32_paths(
             if isinstance(key, str) and key.lower() in HTTP_METHODS
         }
         for path, item in paths.items()
-        if (
-            path.startswith("/api/v1/brokerage/paper/")
-            and not path.endswith("/fills")
-        )
-        or path in {
+        if (path.startswith("/api/v1/brokerage/paper/") and not path.endswith("/fills"))
+        or path
+        in {
             "/api/v1/brokerage/orders/{orderId}",
             "/api/v1/brokerage/orders/{orderId}/cancel",
         }
@@ -280,7 +309,9 @@ def _assert_s32_components(
 ) -> None:
     schemas = document["components"].get("schemas", {})
     if not isinstance(schemas, dict):
-        raise OpenApiNormalizationError(f"{source}: component schemas must be an object.")
+        raise OpenApiNormalizationError(
+            f"{source}: component schemas must be an object."
+        )
     actual = {name for name in schemas if name.startswith("S32")}
     expected = set() if amendment else S32_COMPONENTS
     if actual != expected:
@@ -314,7 +345,9 @@ def _assert_s33_components(
 ) -> None:
     schemas = document["components"].get("schemas", {})
     if not isinstance(schemas, dict):
-        raise OpenApiNormalizationError(f"{source}: component schemas must be an object.")
+        raise OpenApiNormalizationError(
+            f"{source}: component schemas must be an object."
+        )
     actual = {name for name in schemas if name.startswith("S33")}
     expected = set() if amendment else S33_COMPONENTS
     if actual != expected:
@@ -384,6 +417,30 @@ def normalize_generated_openapi(
 
     normalized = copy.deepcopy(generated)
     normalized["openapi"] = "3.1.1"
+    servers = normalized.get("servers")
+    if servers is not None:
+        if (
+            not isinstance(servers, list)
+            or len(servers) != 1
+            or not isinstance(servers[0], dict)
+        ):
+            raise OpenApiNormalizationError(
+                "generated OpenAPI: servers must be the single generated loopback server."
+            )
+        generated_server = servers[0]
+        match = _LOOPBACK_GENERATED_SERVER_RE.fullmatch(
+            str(generated_server.get("url", ""))
+        )
+        if (
+            set(generated_server) != {"description", "url"}
+            or generated_server.get("description") != "Generated server url"
+            or match is None
+            or int(match.group(1)) not in range(1024, 65536)
+        ):
+            raise OpenApiNormalizationError(
+                "generated OpenAPI: server is not the approved unprivileged loopback endpoint."
+            )
+        normalized["servers"] = [copy.deepcopy(CANONICAL_GENERATED_SERVER)]
     _validate_openapi_schema(normalized, source="normalized OpenAPI")
     return canonical_json_bytes(normalized)
 
@@ -452,7 +509,7 @@ def check_normalized_openapi(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Normalize only the approved OpenAPI 3.1.0 to 3.1.1 root patch."
+        description="Normalize the approved OpenAPI version and generated loopback server roots."
     )
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--check", action="store_true")

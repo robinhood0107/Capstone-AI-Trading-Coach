@@ -72,7 +72,7 @@ class JdbcRagV2VertexEvidenceRepository(
                       :ownerUserId,
                       :requestId,
                       :scopeClaimId,
-                      CAST(:citations AS jsonb)
+                      :citations
                     )
                     """.trimIndent(),
                     mapOf(

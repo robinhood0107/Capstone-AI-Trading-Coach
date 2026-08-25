@@ -1,6 +1,7 @@
 package com.capstone.decision.infrastructure.mcp
 
 import com.capstone.decision.api.common.ApiResponseWriter
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import com.capstone.decision.infrastructure.security.LoginAttemptLimiter
 import com.capstone.decision.infrastructure.security.UserSecurityRepository
 import com.capstone.decision.infrastructure.web.HttpRequestProperties
@@ -326,7 +327,8 @@ class McpOAuthSecurityConfig {
         properties: McpOAuthProperties,
         jdbc: NamedParameterJdbcTemplate,
         refreshClaims: McpRefreshClaimContext,
-    ): OAuth2AuthorizationService = HashingMcpOAuthAuthorizationService(clients, users, properties, jdbc, refreshClaims)
+        actorRlsScope: ActorRlsScope,
+    ): OAuth2AuthorizationService = HashingMcpOAuthAuthorizationService(clients, users, properties, jdbc, refreshClaims, actorRlsScope)
 
     private fun validateActor(
         jwt: Jwt,

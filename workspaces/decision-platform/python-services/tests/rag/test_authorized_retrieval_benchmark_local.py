@@ -441,7 +441,7 @@ def _create_scope(
             connection=connection,
             actor_user_id=owner_user_id,
             actor_role="USER",
-            operation="CLAIM_RAG_RETRIEVAL",
+            operation="ISSUE_RAG_RETRIEVAL_SCOPE",
             target_kind="RAG_SESSION",
             target_id=session_id,
         )

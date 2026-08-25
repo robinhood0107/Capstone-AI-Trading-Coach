@@ -96,7 +96,7 @@ internal class JdbcS49GroundingProvenanceRepository(
             ),
         )
         jdbcTemplate.queryForObject(
-            "SELECT public.record_s4_9_grounding_provenance(?,?,CAST(? AS jsonb),CAST(? AS jsonb)) IS NULL",
+            "SELECT public.record_s4_9_grounding_provenance(?,?,?,?) IS NULL",
             Boolean::class.java,
             ownerUserId,
             requestId,
@@ -184,11 +184,12 @@ internal class JdbcS49GroundingProvenanceRepository(
             ),
         )
         jdbcTemplate.queryForObject(
-            "SELECT public.record_s4_9_search_attempt(?,?,?,?,?,?) IS NULL",
+            "SELECT public.record_s4_9_search_attempt(?,?,?,?,?,?,?) IS NULL",
             Boolean::class.java,
             "s49_sra_${sha256("$requestId:$backend:$ordinal").take(32)}",
             ownerUserId,
             requestId,
+            ordinal,
             backend,
             outcome,
             resultCount,

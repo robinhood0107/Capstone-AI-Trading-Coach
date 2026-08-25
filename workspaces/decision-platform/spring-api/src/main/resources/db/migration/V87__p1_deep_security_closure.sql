@@ -2599,3 +2599,500 @@ BEGIN
   );
 END
 $rotate_s4_9_mcp_refresh_token_hash$;
+
+-- Retain the stable internal OAuth function names as narrow wrappers while making the V66/V87
+-- implementations unreachable to the application role.  Opaque code/token hashes are their exact
+-- target; the only owner-bearing write (code issuance) is additionally actor-capability-bound below.
+ALTER FUNCTION public.sync_s4_9_mcp_oauth_client(text,text,text,text[],text[],text)
+RENAME TO sync_s4_9_mcp_oauth_client_legacy_v87;
+REVOKE ALL ON FUNCTION public.sync_s4_9_mcp_oauth_client_legacy_v87(text,text,text,text[],text[],text)
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity,decision_auth;
+CREATE FUNCTION public.sync_s4_9_mcp_oauth_client(
+  p_client_id text,p_client_name text,p_metadata_sha256 text,
+  p_redirect_uris text[],p_allowed_scopes text[],p_client_kind text
+)
+RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $sync_s4_9_mcp_oauth_client_wrapper_v87$
+BEGIN
+  IF session_user<>'decision_app' THEN
+    RAISE EXCEPTION 'S4.9 OAuth client sync denied' USING ERRCODE='42501';
+  END IF;
+  PERFORM public.sync_s4_9_mcp_oauth_client_legacy_v87(
+    p_client_id,p_client_name,p_metadata_sha256,p_redirect_uris,p_allowed_scopes,p_client_kind
+  );
+END
+$sync_s4_9_mcp_oauth_client_wrapper_v87$;
+
+ALTER FUNCTION public.consume_s4_9_mcp_oauth_code_hash(text)
+RENAME TO consume_s4_9_mcp_oauth_code_hash_legacy_v87;
+REVOKE ALL ON FUNCTION public.consume_s4_9_mcp_oauth_code_hash_legacy_v87(text)
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity,decision_auth;
+CREATE FUNCTION public.consume_s4_9_mcp_oauth_code_hash(p_code_sha256 text)
+RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $consume_s4_9_mcp_oauth_code_hash_wrapper_v87$
+BEGIN
+  IF session_user<>'decision_app' OR p_code_sha256!~'^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'S4.9 OAuth code consume denied' USING ERRCODE='42501';
+  END IF;
+  PERFORM public.consume_s4_9_mcp_oauth_code_hash_legacy_v87(p_code_sha256);
+END
+$consume_s4_9_mcp_oauth_code_hash_wrapper_v87$;
+
+ALTER FUNCTION public.revoke_s4_9_mcp_refresh_token_family(text)
+RENAME TO revoke_s4_9_mcp_refresh_token_family_legacy_v87;
+REVOKE ALL ON FUNCTION public.revoke_s4_9_mcp_refresh_token_family_legacy_v87(text)
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity,decision_auth;
+CREATE FUNCTION public.revoke_s4_9_mcp_refresh_token_family(p_token_sha256 text)
+RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $revoke_s4_9_mcp_refresh_token_family_wrapper_v87$
+BEGIN
+  IF session_user<>'decision_app' OR p_token_sha256!~'^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'S4.9 OAuth refresh revoke denied' USING ERRCODE='42501';
+  END IF;
+  PERFORM public.revoke_s4_9_mcp_refresh_token_family_legacy_v87(p_token_sha256);
+END
+$revoke_s4_9_mcp_refresh_token_family_wrapper_v87$;
+
+ALTER FUNCTION public.consume_s4_9_mcp_refresh_token(text)
+RENAME TO consume_s4_9_mcp_refresh_token_legacy_v87;
+REVOKE ALL ON FUNCTION public.consume_s4_9_mcp_refresh_token_legacy_v87(text)
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity,decision_auth;
+CREATE FUNCTION public.consume_s4_9_mcp_refresh_token(p_token_sha256 text)
+RETURNS TABLE(
+  client_id text,owner_user_id text,security_version bigint,resource_uri text,scopes text[]
+)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $consume_s4_9_mcp_refresh_token_wrapper_v87$
+BEGIN
+  IF session_user<>'decision_app' OR p_token_sha256!~'^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'S4.9 OAuth refresh consume denied' USING ERRCODE='42501';
+  END IF;
+  RETURN QUERY SELECT * FROM public.consume_s4_9_mcp_refresh_token_legacy_v87(p_token_sha256);
+END
+$consume_s4_9_mcp_refresh_token_wrapper_v87$;
+
+ALTER FUNCTION public.sync_s4_9_mcp_oauth_client(text,text,text,text[],text[],text) OWNER TO flyway;
+ALTER FUNCTION public.consume_s4_9_mcp_oauth_code_hash(text) OWNER TO flyway;
+ALTER FUNCTION public.revoke_s4_9_mcp_refresh_token_family(text) OWNER TO flyway;
+ALTER FUNCTION public.consume_s4_9_mcp_refresh_token(text) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.sync_s4_9_mcp_oauth_client(text,text,text,text[],text[],text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.consume_s4_9_mcp_oauth_code_hash(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.revoke_s4_9_mcp_refresh_token_family(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.consume_s4_9_mcp_refresh_token(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.sync_s4_9_mcp_oauth_client(text,text,text,text[],text[],text) TO decision_app;
+GRANT EXECUTE ON FUNCTION public.consume_s4_9_mcp_oauth_code_hash(text) TO decision_app;
+GRANT EXECUTE ON FUNCTION public.revoke_s4_9_mcp_refresh_token_family(text) TO decision_app;
+GRANT EXECUTE ON FUNCTION public.consume_s4_9_mcp_refresh_token(text) TO decision_app;
+
+-- OAuth token rotation is bound to one consumed authorization-code or refresh-token hash.  The
+-- caller supplies no owner/client/securityVersion; those values are derived from the one-shot DB
+-- claim and the current users/client rows.
+ALTER TABLE public.s4_9_mcp_oauth_authorization_codes
+  ADD COLUMN rotation_consumed_at timestamptz;
+ALTER TABLE public.s4_9_mcp_oauth_refresh_tokens
+  ADD COLUMN rotation_consumed_at timestamptz;
+
+ALTER FUNCTION public.rotate_s4_9_mcp_refresh_token_hash(text,text,text,bigint,text,text[],timestamptz)
+RENAME TO rotate_s4_9_mcp_refresh_token_hash_legacy_v87;
+REVOKE ALL ON FUNCTION public.rotate_s4_9_mcp_refresh_token_hash_legacy_v87(
+  text,text,text,bigint,text,text[],timestamptz
+) FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity,decision_auth;
+
+CREATE FUNCTION public.rotate_s4_9_mcp_refresh_token_hash(
+  p_token_sha256 text,p_binding_token_sha256 text,p_resource_uri text,
+  p_scopes text[],p_expires_at timestamptz
+)
+RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $rotate_s4_9_mcp_refresh_token_hash_bound_v87$
+DECLARE binding record;
+DECLARE family_id text;
+DECLARE previous_hash text;
+BEGIN
+  IF session_user<>'decision_app'
+     OR p_token_sha256!~'^[0-9a-f]{64}$'
+     OR p_binding_token_sha256!~'^[0-9a-f]{64}$'
+     OR p_token_sha256=p_binding_token_sha256
+     OR p_expires_at<=transaction_timestamp()
+     OR p_expires_at>transaction_timestamp()+interval '7 days 1 minute'
+     OR NOT p_scopes<@ARRAY[
+       'mcp:rag.public','mcp:rag.owner','mcp:web.read','mcp:answer.validate','mcp:history.write'
+     ]::text[] THEN
+    RAISE EXCEPTION 'S4.9 refresh token binding is invalid' USING ERRCODE='22023';
+  END IF;
+  IF EXISTS(
+    SELECT 1 FROM public.s4_9_mcp_oauth_refresh_tokens
+    WHERE token_sha256=p_token_sha256
+  ) THEN
+    RETURN;
+  END IF;
+
+  UPDATE public.s4_9_mcp_oauth_authorization_codes code
+  SET rotation_consumed_at=statement_timestamp()
+  FROM public.users actor,public.s4_9_mcp_oauth_clients client
+  WHERE code.code_sha256=p_binding_token_sha256
+    AND code.rotation_consumed_at IS NULL AND code.consumed_at IS NOT NULL
+    AND code.expires_at>statement_timestamp()
+    AND code.owner_user_id=actor.user_id AND code.client_id=client.client_id
+    AND actor.status='ACTIVE' AND actor.security_version=code.security_version
+    AND client.status='ACTIVE'
+    AND code.resource_uri=p_resource_uri AND code.scopes=p_scopes
+  RETURNING code.client_id,code.owner_user_id,code.security_version,NULL::text AS token_family_id
+  INTO binding;
+
+  IF NOT FOUND THEN
+    UPDATE public.s4_9_mcp_oauth_refresh_tokens token
+    SET rotation_consumed_at=statement_timestamp()
+    FROM public.users actor,public.s4_9_mcp_oauth_clients client
+    WHERE token.token_sha256=p_binding_token_sha256
+      AND token.rotation_consumed_at IS NULL AND token.rotated_at IS NOT NULL
+      AND token.revoked_at IS NULL AND token.expires_at>statement_timestamp()
+      AND token.owner_user_id=actor.user_id AND token.client_id=client.client_id
+      AND actor.status='ACTIVE' AND actor.security_version=token.security_version
+      AND client.status='ACTIVE'
+      AND token.resource_uri=p_resource_uri AND token.scopes=p_scopes
+    RETURNING token.client_id,token.owner_user_id,token.security_version,token.token_family_id
+    INTO binding;
+    previous_hash:=p_binding_token_sha256;
+  END IF;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'S4.9 refresh token binding is unavailable' USING ERRCODE='55000';
+  END IF;
+
+  family_id:=coalesce(
+    binding.token_family_id,
+    'mrf_'||substr(encode(public.digest(
+      binding.client_id||':'||binding.owner_user_id,'sha256'
+    ),'hex'),1,32)
+  );
+  INSERT INTO public.s4_9_mcp_oauth_refresh_tokens(
+    token_sha256,token_family_id,client_id,owner_user_id,security_version,
+    resource_uri,scopes,previous_token_sha256,expires_at
+  ) VALUES (
+    p_token_sha256,family_id,binding.client_id,binding.owner_user_id,binding.security_version,
+    p_resource_uri,p_scopes,previous_hash,p_expires_at
+  );
+END
+$rotate_s4_9_mcp_refresh_token_hash_bound_v87$;
+ALTER FUNCTION public.rotate_s4_9_mcp_refresh_token_hash(text,text,text,text[],timestamptz) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.rotate_s4_9_mcp_refresh_token_hash(text,text,text,text[],timestamptz)
+FROM PUBLIC,decision_worker,decision_replay,decision_identity,decision_auth;
+GRANT EXECUTE ON FUNCTION public.rotate_s4_9_mcp_refresh_token_hash(text,text,text,text[],timestamptz)
+TO decision_app;
+
+-- A generic owner RLS scope is plumbing, not the final privileged operation boundary.  The
+-- wrappers below are the only decision_app entry points for the legacy RAG functions: each one
+-- proves the exact operation, target and payload already consumed on this backend/transaction.
+CREATE FUNCTION public.assert_actor_rag_wrapper_scope_v1(
+  p_actor_user_id text,p_operations text,p_target_kind text,p_target_id text,p_payload_hash text
+)
+RETURNS void
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog
+AS $assert_actor_rag_wrapper_scope_v1$
+BEGIN
+  IF session_user<>'decision_app' OR NOT EXISTS (
+    SELECT 1 FROM public.actor_rls_scope_v1 scope
+    WHERE scope.backend_pid=pg_backend_pid()
+      AND scope.transaction_id=txid_current()
+      AND scope.actor_user_id=p_actor_user_id
+      AND scope.operation=ANY(string_to_array(p_operations,','))
+      AND scope.target_kind=p_target_kind
+      AND scope.target_id=p_target_id
+      AND scope.payload_hash=p_payload_hash
+      AND scope.expires_at>statement_timestamp()
+  ) THEN
+    RAISE EXCEPTION 'exact RAG operation scope denied' USING ERRCODE='42501';
+  END IF;
+END
+$assert_actor_rag_wrapper_scope_v1$;
+ALTER FUNCTION public.assert_actor_rag_wrapper_scope_v1(text,text,text,text,text) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.assert_actor_rag_wrapper_scope_v1(text,text,text,text,text)
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity,decision_auth;
+
+-- These target-bound functions use ActorCapabilityBinding.target(), whose payload is sha256(target).
+-- Generate fixed-name wrappers from the catalog so the historical signatures and return shapes remain
+-- byte-compatible while the renamed implementations lose all decision_app reachability.
+DO $p1_v87_exact_rag_target_wrappers$
+DECLARE item record;
+DECLARE procedure_row record;
+DECLARE input_declarations text;
+DECLARE input_names text;
+DECLARE return_clause text;
+DECLARE forward_statement text;
+DECLARE wrapper_sql text;
+DECLARE legacy_name text;
+DECLARE payload_expression text;
+BEGIN
+  FOR item IN
+    SELECT fixed.*,NULL::text AS payload_expression FROM (VALUES
+      ('read_rag_v2_corpus_status','READ_RAG_V2_CORPUS','OWNER','p_owner_user_id'),
+      ('record_rag_v2_immutable_consent','RECORD_RAG_V2_CONSENT','OWNER','p_owner_user_id'),
+      ('record_rag_v2_immutable_consent_v2','RECORD_RAG_V2_CONSENT','OWNER','p_owner_user_id'),
+      ('read_rag_v2_immutable_effective_consent','READ_RAG_V2_CONSENT','OWNER','p_owner_user_id'),
+      ('issue_rag_v2_immutable_import_ticket','ISSUE_RAG_V2_IMPORT','RAG_TICKET','p_ticket_id'),
+      ('issue_rag_v2_immutable_import_ticket_v2','ISSUE_RAG_V2_IMPORT','RAG_TICKET','p_ticket_id'),
+      ('issue_rag_v2_immutable_owner_delete_ticket','ISSUE_RAG_V2_DELETE','RAG_DOCUMENT','p_document_id'),
+      ('persist_rag_v2_immutable_retrieval_history','PERSIST_RAG_V2_RETRIEVAL','RAG_REQUEST','p_request_id'),
+      ('persist_s4_9_strong_llm_history_v2','PERSIST_STRONG_LLM_HISTORY','RAG_REQUEST','p_request_id'),
+      ('read_rag_v2_history_metadata','LIST_RAG_V2_HISTORY','OWNER','p_owner_user_id'),
+      ('read_rag_v2_history_detail','READ_RAG_V2_HISTORY','RAG_ANSWER','p_answer_id'),
+      ('delete_owned_rag_v2_history','DELETE_RAG_V2_HISTORY','RAG_ANSWER','p_answer_id'),
+      ('issue_rag_v2_retrieval_scope','ISSUE_RAG_V2_SCOPE','RAG_REQUEST','p_session_id'),
+      ('issue_rag_v2_retrieval_scope_v2','ISSUE_RAG_V2_SCOPE,ISSUE_MCP_RAG_SCOPE','RAG_REQUEST','p_session_id'),
+      ('issue_rag_v2_retrieval_scope_v3','ISSUE_RAG_V2_SCOPE','RAG_REQUEST','p_session_id'),
+      ('issue_s4_9_mcp_retrieval_scope','ISSUE_MCP_RAG_SCOPE','RAG_REQUEST','p_session_id'),
+      ('authorize_s4_9_runtime_voyage_query','AUTHORIZE_VOYAGE_QUERY','RAG_SCOPE','p_scope_claim_id'),
+      ('read_rag_v2_vertex_prepared_scope','READ_VERTEX_PREPARED_SCOPE','RAG_SCOPE','p_scope_claim_id'),
+      ('read_rag_v2_vertex_prepared_scope_v2','READ_VERTEX_PREPARED_SCOPE','RAG_SCOPE','p_scope_claim_id'),
+      ('reserve_rag_v2_immutable_vertex_usage','RESERVE_VERTEX_USAGE','VERTEX_USAGE','p_usage_event_id'),
+      ('claim_rag_v2_immutable_vertex_token_attempt','CLAIM_VERTEX_TOKEN','VERTEX_USAGE','p_usage_event_id'),
+      ('claim_rag_v2_immutable_vertex_generate_content_attempt','CLAIM_VERTEX_GENERATION','VERTEX_USAGE','p_usage_event_id'),
+      ('commit_rag_v2_immutable_vertex_usage','COMMIT_VERTEX_USAGE','VERTEX_USAGE','p_usage_event_id'),
+      ('mark_rag_v2_immutable_vertex_usage_unknown_billing','MARK_VERTEX_BILLING_UNKNOWN','VERTEX_USAGE','p_usage_event_id'),
+      ('reserve_s4_9_google_grounding_budget','RESERVE_GROUNDING_BUDGET','RAG_REQUEST','p_request_id'),
+      ('settle_s4_9_google_grounding_budget','SETTLE_GROUNDING_BUDGET','BUDGET_RESERVATION','p_reservation_id'),
+      ('claim_rag_answer','CLAIM_RAG_ANSWER','RAG_CLAIM','p_scope_hmac'),
+      ('complete_rag_answer','COMPLETE_RAG_ANSWER','RAG_ANSWER','p_answer_id'),
+      ('fail_rag_answer_before_provider','FAIL_RAG_BEFORE_PROVIDER','RAG_CLAIM','p_scope_hmac'),
+      ('mark_rag_answer_unknown_after_provider','MARK_RAG_UNKNOWN','RAG_CLAIM','p_scope_hmac'),
+      ('read_rag_history_detail','READ_RAG_HISTORY','RAG_ANSWER','p_answer_id'),
+      ('read_rag_history_citations','READ_RAG_CITATIONS','RAG_ANSWER','p_answer_id'),
+      ('read_rag_history_metadata','LIST_RAG_HISTORY','OWNER','p_owner_user_id'),
+      ('delete_owned_rag_history','DELETE_RAG_HISTORY','RAG_ANSWER','p_answer_id'),
+      ('upsert_owned_rag_answer_feedback','UPSERT_RAG_FEEDBACK','RAG_ANSWER','p_answer_id'),
+      ('create_rag_retrieval_scope_claim','ISSUE_RAG_RETRIEVAL_SCOPE','RAG_SESSION','p_session_id'),
+      ('record_rag_consent_event','RECORD_RAG_CONSENT','RAG_CONSENT','p_consent_event_id'),
+      ('read_effective_rag_consent','READ_RAG_CONSENT','OWNER','p_owner_user_id')
+    ) AS fixed(function_name,operations,target_kind,target_argument)
+    UNION ALL
+    SELECT * FROM (VALUES
+      ('record_s4_9_web_evidence_metadata','RECORD_WEB_EVIDENCE','RESEARCH_CONTEXT','p_research_context_id',
+       'public.actor_capability_payload_hash(p_owner_user_id,p_oauth_client_id,p_research_context_id,p_canonical_url,p_title,p_content_sha256)'),
+      ('record_s4_9_read_provenance','RECORD_READ_PROVENANCE','RAG_REQUEST','p_request_id',
+       'public.actor_capability_payload_hash(p_owner_user_id,p_request_id,p_source_node_id,p_result_id,p_citation_id,p_content_sha256)'),
+      ('upsert_s4_9_mcp_oauth_code_hash','ISSUE_MCP_OAUTH_CODE','OAUTH_CODE','p_code_sha256',
+       'public.actor_capability_payload_hash(p_owner_user_id,p_client_id,p_security_version::text,p_redirect_uri,p_resource_uri,array_to_string(ARRAY(SELECT scope FROM unnest(p_scopes) scope ORDER BY scope),'',''),p_code_challenge)'),
+      ('issue_s4_9_answer_validation_receipt','ISSUE_ANSWER_VALIDATION','RESEARCH_CONTEXT','p_research_context_id',
+       'public.actor_capability_payload_hash(p_owner_user_id,p_oauth_client_id,p_research_context_id,p_source_set_sha256,p_draft_sha256,p_validation_status)'),
+      ('consume_s4_9_validation_and_save_history','CONSUME_ANSWER_VALIDATION','RAG_ANSWER','p_answer_id',
+       'public.actor_capability_payload_hash(p_owner_user_id,p_oauth_client_id,p_answer_id,p_draft_sha256)'),
+      ('record_s4_9_strong_llm_usage','RECORD_STRONG_LLM_USAGE','RAG_REQUEST','p_request_id',
+       'public.actor_capability_payload_hash(p_owner_user_id,p_request_id,p_model_id,p_answer_basis,p_outcome,p_evidence_set_sha256)'),
+      ('record_s4_9_strong_llm_usage_v2','RECORD_STRONG_LLM_USAGE','RAG_REQUEST','p_request_id',
+       'public.actor_capability_payload_hash(p_owner_user_id,p_request_id,p_model_id,p_answer_basis,p_outcome,p_evidence_set_sha256,p_failure_leaf)')
+    ) AS request_bound(function_name,operations,target_kind,target_argument,payload_expression)
+  LOOP
+    SELECT procedure.*,pg_get_function_identity_arguments(procedure.oid) AS identity_arguments
+    INTO STRICT procedure_row
+    FROM pg_proc procedure
+    JOIN pg_namespace namespace ON namespace.oid=procedure.pronamespace
+    WHERE namespace.nspname='public' AND procedure.prokind='f'
+      AND procedure.proname=item.function_name;
+
+    SELECT string_agg(
+             format('%I %s',procedure_row.proargnames[position],
+               format_type(procedure_row.proargtypes[position-1],NULL)),',' ORDER BY position
+           ),
+           string_agg(format('%I',procedure_row.proargnames[position]),',' ORDER BY position)
+    INTO input_declarations,input_names
+    FROM generate_series(1,procedure_row.pronargs) position;
+    IF input_declarations IS NULL OR input_names IS NULL
+       OR NOT (item.target_argument=ANY(procedure_row.proargnames[1:procedure_row.pronargs])) THEN
+      RAISE EXCEPTION 'invalid exact RAG wrapper metadata for %',item.function_name;
+    END IF;
+
+    legacy_name:=item.function_name||'_legacy_v87';
+    EXECUTE format('ALTER FUNCTION public.%I(%s) RENAME TO %I',
+      item.function_name,procedure_row.identity_arguments,legacy_name);
+    EXECUTE format('REVOKE ALL ON FUNCTION public.%I(%s) FROM PUBLIC,decision_app,decision_worker,'||
+      'decision_replay,decision_identity,decision_auth',legacy_name,procedure_row.identity_arguments);
+
+    return_clause:=pg_get_function_result(procedure_row.oid);
+    IF procedure_row.proretset THEN
+      forward_statement:=format('RETURN QUERY SELECT * FROM public.%I(%s);',legacy_name,input_names);
+    ELSIF procedure_row.prorettype='pg_catalog.void'::regtype THEN
+      forward_statement:=format('PERFORM public.%I(%s); RETURN;',legacy_name,input_names);
+    ELSE
+      forward_statement:=format('RETURN public.%I(%s);',legacy_name,input_names);
+    END IF;
+    payload_expression:=coalesce(
+      item.payload_expression,
+      format('''sha256:''||encode(public.digest(convert_to(%I,''UTF8''),''sha256''),''hex'')',item.target_argument)
+    );
+    wrapper_sql:=format($wrapper_ddl$
+      CREATE FUNCTION public.%I(%s) RETURNS %s
+      LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+      AS $exact_rag_wrapper$
+      BEGIN
+        PERFORM public.assert_actor_rag_wrapper_scope_v1(
+          p_owner_user_id,%L,%L,%I,
+          %s
+        );
+        %s
+      END
+      $exact_rag_wrapper$
+    $wrapper_ddl$,item.function_name,input_declarations,return_clause,
+      item.operations,item.target_kind,item.target_argument,payload_expression,forward_statement);
+    EXECUTE wrapper_sql;
+    EXECUTE format('ALTER FUNCTION public.%I(%s) OWNER TO flyway',
+      item.function_name,procedure_row.identity_arguments);
+    EXECUTE format('REVOKE ALL ON FUNCTION public.%I(%s) FROM PUBLIC,decision_worker,'||
+      'decision_replay,decision_identity,decision_auth',item.function_name,procedure_row.identity_arguments);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION public.%I(%s) TO decision_app',
+      item.function_name,procedure_row.identity_arguments);
+  END LOOP;
+END
+$p1_v87_exact_rag_target_wrappers$;
+
+-- Grounding provenance keeps the exact serialized JSON bytes until the capability payload is
+-- checked. Search provenance carries the ordinal explicitly because it is otherwise only present
+-- inside an opaque attempt id and cannot be reconstructed at the SQL boundary.
+ALTER FUNCTION public.record_s4_9_grounding_provenance(text,text,jsonb,jsonb)
+RENAME TO record_s4_9_grounding_provenance_legacy_v87;
+REVOKE ALL ON FUNCTION public.record_s4_9_grounding_provenance_legacy_v87(text,text,jsonb,jsonb)
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity,decision_auth;
+CREATE FUNCTION public.record_s4_9_grounding_provenance(
+  p_owner_user_id text,p_request_id text,p_sources_json text,p_supports_json text
+)
+RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $record_s4_9_grounding_provenance_exact_v87$
+BEGIN
+  PERFORM public.assert_actor_rag_wrapper_scope_v1(
+    p_owner_user_id,'RECORD_GROUNDING_PROVENANCE','RAG_REQUEST',p_request_id,
+    public.actor_capability_payload_hash(
+      p_owner_user_id,p_request_id,p_sources_json,p_supports_json
+    )
+  );
+  PERFORM public.record_s4_9_grounding_provenance_legacy_v87(
+    p_owner_user_id,p_request_id,p_sources_json::jsonb,p_supports_json::jsonb
+  );
+END
+$record_s4_9_grounding_provenance_exact_v87$;
+ALTER FUNCTION public.record_s4_9_grounding_provenance(text,text,text,text) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.record_s4_9_grounding_provenance(text,text,text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_s4_9_grounding_provenance(text,text,text,text) TO decision_app;
+
+ALTER FUNCTION public.record_s4_9_search_attempt(text,text,text,text,text,integer)
+RENAME TO record_s4_9_search_attempt_legacy_v87;
+REVOKE ALL ON FUNCTION public.record_s4_9_search_attempt_legacy_v87(text,text,text,text,text,integer)
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity,decision_auth;
+CREATE FUNCTION public.record_s4_9_search_attempt(
+  p_search_attempt_id text,p_owner_user_id text,p_request_id text,p_ordinal integer,
+  p_backend text,p_outcome text,p_result_count integer
+)
+RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $record_s4_9_search_attempt_exact_v87$
+BEGIN
+  PERFORM public.assert_actor_rag_wrapper_scope_v1(
+    p_owner_user_id,'RECORD_SEARCH_ATTEMPT','RAG_REQUEST',p_request_id,
+    public.actor_capability_payload_hash(
+      p_owner_user_id,p_request_id,p_ordinal::text,p_backend,p_result_count::text,p_outcome
+    )
+  );
+  PERFORM public.record_s4_9_search_attempt_legacy_v87(
+    p_search_attempt_id,p_owner_user_id,p_request_id,p_backend,p_outcome,p_result_count
+  );
+END
+$record_s4_9_search_attempt_exact_v87$;
+ALTER FUNCTION public.record_s4_9_search_attempt(text,text,text,integer,text,text,integer) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.record_s4_9_search_attempt(text,text,text,integer,text,text,integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.record_s4_9_search_attempt(text,text,text,integer,text,text,integer)
+TO decision_app;
+
+-- JSON payload operations retain the caller's exact serialized bytes until after capability
+-- verification, avoiding a jsonb re-render that would change the canonical payload hash.
+ALTER FUNCTION public.issue_rag_rpc_scope(text,text,jsonb) RENAME TO issue_rag_rpc_scope_legacy_v87;
+REVOKE ALL ON FUNCTION public.issue_rag_rpc_scope_legacy_v87(text,text,jsonb)
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity,decision_auth;
+CREATE FUNCTION public.issue_rag_rpc_scope(
+  p_owner_user_id text,p_session_id text,p_allowed_topics_json text
+)
+RETURNS TABLE(scope_claim_id text,policy_id text,policy_version bigint,
+  active_generation_id text,effective_profile_id text)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $issue_rag_rpc_scope_exact_v87$
+BEGIN
+  PERFORM public.assert_actor_rag_wrapper_scope_v1(
+    p_owner_user_id,'ISSUE_RAG_RPC_SCOPE','RAG_SESSION',p_session_id,
+    public.actor_capability_payload_hash(p_owner_user_id,p_session_id,p_allowed_topics_json)
+  );
+  RETURN QUERY SELECT * FROM public.issue_rag_rpc_scope_legacy_v87(
+    p_owner_user_id,p_session_id,p_allowed_topics_json::jsonb
+  );
+END
+$issue_rag_rpc_scope_exact_v87$;
+ALTER FUNCTION public.issue_rag_rpc_scope(text,text,text) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.issue_rag_rpc_scope(text,text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.issue_rag_rpc_scope(text,text,text) TO decision_app;
+
+ALTER FUNCTION public.recheck_rag_rpc_citations(text,text,text,text,bigint,text,text,jsonb)
+RENAME TO recheck_rag_rpc_citations_legacy_v87;
+REVOKE ALL ON FUNCTION public.recheck_rag_rpc_citations_legacy_v87(
+  text,text,text,text,bigint,text,text,jsonb
+) FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity,decision_auth;
+CREATE FUNCTION public.recheck_rag_rpc_citations(
+  p_owner_user_id text,p_session_id text,p_scope_claim_id text,p_policy_id text,
+  p_policy_version bigint,p_active_generation_id text,p_effective_profile_id text,p_citations_json text
+)
+RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $recheck_rag_rpc_citations_exact_v87$
+BEGIN
+  PERFORM public.assert_actor_rag_wrapper_scope_v1(
+    p_owner_user_id,'RECHECK_RAG_RPC_CITATIONS','RAG_SCOPE',p_scope_claim_id,
+    public.actor_capability_payload_hash(
+      p_owner_user_id,p_session_id,p_scope_claim_id,p_citations_json
+    )
+  );
+  PERFORM public.recheck_rag_rpc_citations_legacy_v87(
+    p_owner_user_id,p_session_id,p_scope_claim_id,p_policy_id,p_policy_version,
+    p_active_generation_id,p_effective_profile_id,p_citations_json::jsonb
+  );
+END
+$recheck_rag_rpc_citations_exact_v87$;
+ALTER FUNCTION public.recheck_rag_rpc_citations(text,text,text,text,bigint,text,text,text) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.recheck_rag_rpc_citations(text,text,text,text,bigint,text,text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.recheck_rag_rpc_citations(text,text,text,text,bigint,text,text,text)
+TO decision_app;
+
+ALTER FUNCTION public.read_rag_v2_vertex_generation_evidence(text,text,text,jsonb)
+RENAME TO read_rag_v2_vertex_generation_evidence_legacy_v87;
+REVOKE ALL ON FUNCTION public.read_rag_v2_vertex_generation_evidence_legacy_v87(text,text,text,jsonb)
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity,decision_auth;
+CREATE FUNCTION public.read_rag_v2_vertex_generation_evidence(
+  p_owner_user_id text,p_request_id text,p_scope_claim_id text,p_citations_json text
+)
+RETURNS TABLE(ordinal integer,citation_id text,chunk_revision_id text,
+  canonical_content text,canonical_content_sha256 text)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $read_rag_v2_vertex_evidence_exact_v87$
+BEGIN
+  PERFORM public.assert_actor_rag_wrapper_scope_v1(
+    p_owner_user_id,'READ_VERTEX_EVIDENCE','RAG_SCOPE',p_scope_claim_id,
+    public.actor_capability_payload_hash(
+      p_owner_user_id,p_request_id,p_scope_claim_id,p_citations_json
+    )
+  );
+  RETURN QUERY SELECT * FROM public.read_rag_v2_vertex_generation_evidence_legacy_v87(
+    p_owner_user_id,p_request_id,p_scope_claim_id,p_citations_json::jsonb
+  );
+END
+$read_rag_v2_vertex_evidence_exact_v87$;
+ALTER FUNCTION public.read_rag_v2_vertex_generation_evidence(text,text,text,text) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.read_rag_v2_vertex_generation_evidence(text,text,text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.read_rag_v2_vertex_generation_evidence(text,text,text,text)
+TO decision_app;
+
+-- Dormant superseded entry points have no current Spring call site and remain unreachable.
+REVOKE ALL ON FUNCTION
+  public.mark_rag_provider_attempt(text,text,text,text,text,text,jsonb),
+  public.persist_rag_v2_immutable_vertex_history(
+    text,text,text,text,text,text,double precision,text[],text,
+    bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,timestamptz,jsonb
+  )
+FROM decision_app;

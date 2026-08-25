@@ -307,6 +307,65 @@ class RagV2ApiIntegrationTest(
                 }
             }
         }
+
+        val wrapperMismatches =
+            listOf(
+                ActorCapabilityBinding.target(
+                    "READ_RAG_V2_CONSENT",
+                    "OWNER",
+                    "usr_demo_user",
+                    ActorCapabilityRolePolicy.OWNER,
+                ) to "usr_demo_user",
+                ActorCapabilityBinding.target(
+                    "READ_RAG_V2_CORPUS",
+                    "OWNER",
+                    "usr_demo_user",
+                    ActorCapabilityRolePolicy.OWNER,
+                ) to "usr_demo_admin",
+                ActorCapabilityBinding(
+                    operation = "READ_RAG_V2_CORPUS",
+                    targetKind = "OWNER",
+                    targetId = "usr_demo_user",
+                    payloadHash = "sha256:${"0".repeat(64)}",
+                    rolePolicy = ActorCapabilityRolePolicy.OWNER,
+                ) to "usr_demo_user",
+            )
+        wrapperMismatches.forEach { (wrapperBinding, requestedOwner) ->
+            assertThrows<DataAccessException> {
+                asActor {
+                    TransactionTemplate(transactionManager).executeWithoutResult {
+                        actorRlsScope.open(appJdbc, "usr_demo_user", wrapperBinding)
+                        appJdbc.queryForObject(
+                            "select state from read_rag_v2_corpus_status(:owner)",
+                            mapOf("owner" to requestedOwner),
+                            String::class.java,
+                        )
+                    }
+                }
+            }
+        }
+
+        assertThrows<DataAccessException> {
+            asActor {
+                TransactionTemplate(transactionManager).executeWithoutResult {
+                    actorRlsScope.open(
+                        appJdbc,
+                        "usr_demo_user",
+                        ActorCapabilityBinding.target(
+                            "READ_RAG_V2_CORPUS",
+                            "OWNER",
+                            "usr_demo_user",
+                            ActorCapabilityRolePolicy.OWNER,
+                        ),
+                    )
+                    appJdbc.queryForObject(
+                        "select state from read_rag_v2_corpus_status_legacy_v87(:owner)",
+                        mapOf("owner" to "usr_demo_user"),
+                        String::class.java,
+                    )
+                }
+            }
+        }
     }
 
     @Test

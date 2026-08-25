@@ -246,7 +246,13 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             try {
-                openTestActorScope(connection, "usr_demo_user", "READ_VERTEX_PREPARED_SCOPE", "RAG_SCOPE")
+                openTestActorScope(
+                    connection,
+                    "usr_demo_user",
+                    "READ_VERTEX_PREPARED_SCOPE",
+                    "RAG_SCOPE",
+                    scopeClaimId,
+                )
                 assertEquals(
                     scopeClaimId,
                     callSingleRow(
@@ -335,7 +341,13 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
                 connection.autoCommit = false
                 try {
-                    openTestActorScope(connection, "usr_demo_user", "AUTHORIZE_VOYAGE_QUERY", "RAG_SCOPE")
+                    openTestActorScope(
+                        connection,
+                        "usr_demo_user",
+                        "AUTHORIZE_VOYAGE_QUERY",
+                        "RAG_SCOPE",
+                        scopeClaimId,
+                    )
                     val value =
                         callSingleRow(
                             connection,
@@ -447,6 +459,13 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                 hasFunctionPrivilege(
                     connection,
                     "decision_app",
+                    "issue_rag_v2_immutable_import_ticket_v2(text,text,text,text,text)",
+                ),
+            )
+            assertTrue(
+                hasFunctionPrivilege(
+                    connection,
+                    "decision_app",
                     "issue_rag_v2_immutable_import_ticket(text,text,text,text)",
                 ),
             )
@@ -516,8 +535,10 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                         callSingleRow(
                             connection,
                             """
-                            select record_rag_v2_immutable_consent(
-                              'usr_demo_admin', 'cns_v2_33333333333333333333333333333333', 'GRANT', repeat('c', 64)
+                            select record_rag_v2_immutable_consent_v2(
+                              'usr_demo_admin', 'cns_v2_33333333333333333333333333333333',
+                              'rce_cross_owner_000000000001', 'GRANT', repeat('c', 64),
+                              repeat('e', 64), repeat('f', 64)
                             )
                             """.trimIndent(),
                         )
@@ -526,7 +547,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                     }
                 }
             }
-        assertEquals("22023", crossOwnerAttempt.sqlState)
+        assertEquals("42501", crossOwnerAttempt.sqlState)
         assertPermissionDenied("decision_app", APP_PASSWORD, "select * from rag_v2_immutable_consent_events")
     }
 
@@ -686,7 +707,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         val preparedRead =
             """
             select scope_claim_id
-            from read_rag_v2_vertex_prepared_scope(
+            from read_rag_v2_vertex_prepared_scope_v2(
               'usr_demo_user', '$requestId', '$scopeClaimId', array['FINANCIAL_ENGINEERING']
             )
             """.trimIndent()
@@ -696,7 +717,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             assertThrows<SQLException> {
                 callAsAppWithActor("usr_demo_admin", preparedRead)
             }
-        assertEquals("22023", crossOwner.sqlState)
+        assertEquals("42501", crossOwner.sqlState)
         val topicMutation =
             assertThrows<SQLException> {
                 callAsAppWithActor(
@@ -723,6 +744,13 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         assertEquals("55000", stalePointer.sqlState)
 
         adminConnection().use { connection ->
+            assertTrue(
+                hasFunctionPrivilege(
+                    connection,
+                    "decision_app",
+                    "read_rag_v2_vertex_prepared_scope_v2(text,text,text,text[])",
+                ),
+            )
             assertTrue(
                 hasFunctionPrivilege(
                     connection,
@@ -2830,7 +2858,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             try {
-                openTestActorScope(connection, ownerUserId, "ISSUE_RAG_V2_IMPORT", "RAG_TICKET")
+                openTestActorScope(connection, ownerUserId, "ISSUE_RAG_V2_IMPORT", "RAG_TICKET", ticketId)
                 callSingleRow(
                     connection,
                     """
@@ -2926,7 +2954,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             connection.autoCommit = false
             try {
                 val binding = exactRagScopeBinding(query)
-                openTestActorScope(connection, ownerUserId, binding.first, binding.second)
+                openTestActorScope(connection, ownerUserId, binding.first, binding.second, binding.third)
                 val result = callSingleRow(connection, query)
                 connection.commit()
                 result
@@ -2941,6 +2969,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         actorUserId: String,
         operation: String = "TEST_APP_ACTOR_SCOPE",
         targetKind: String = "OWNER",
+        targetId: String = actorUserId,
     ) {
         TestActorRlsScope.open(
             jdbcUrl = postgres.jdbcUrl,
@@ -2948,22 +2977,47 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             actorUserId = actorUserId,
             operation = operation,
             targetKind = targetKind,
-            targetId = actorUserId,
+            targetId = targetId,
             actorRole = if (actorUserId == "usr_demo_admin") "ADMIN" else "USER",
         )
     }
 
-    private fun exactRagScopeBinding(query: String): Pair<String, String> =
-        when {
-            query.contains("issue_rag_v2_immutable_owner_delete_ticket") -> "ISSUE_RAG_V2_DELETE" to "RAG_DOCUMENT"
-            query.contains("record_rag_v2_immutable_consent") -> "RECORD_RAG_V2_CONSENT" to "OWNER"
-            query.contains("read_rag_v2_corpus_status") -> "READ_RAG_V2_CORPUS" to "OWNER"
-            query.contains("persist_rag_v2_immutable_retrieval_history") -> "PERSIST_RAG_V2_RETRIEVAL" to "RAG_REQUEST"
-            query.contains("issue_rag_v2_immutable_import_ticket") -> "ISSUE_RAG_V2_IMPORT" to "RAG_TICKET"
-            query.contains("issue_rag_v2_retrieval_scope") -> "ISSUE_RAG_V2_SCOPE" to "RAG_REQUEST"
-            query.contains("issue_s4_9_mcp_retrieval_scope") -> "ISSUE_MCP_RAG_SCOPE" to "RAG_REQUEST"
-            else -> "TEST_APP_ACTOR_SCOPE" to "OWNER"
+    private fun exactRagScopeBinding(query: String): Triple<String, String, String> {
+        val arguments = Regex("'([^']*)'").findAll(query).map { it.groupValues[1] }.toList()
+        return when {
+            query.contains("issue_rag_v2_immutable_owner_delete_ticket") ->
+                Triple("ISSUE_RAG_V2_DELETE", "RAG_DOCUMENT", arguments[1])
+            query.contains("record_rag_v2_immutable_consent") ->
+                Triple("RECORD_RAG_V2_CONSENT", "OWNER", arguments[0])
+            query.contains("read_rag_v2_corpus_status") ->
+                Triple("READ_RAG_V2_CORPUS", "OWNER", arguments[0])
+            query.contains("persist_rag_v2_immutable_retrieval_history") ->
+                Triple("PERSIST_RAG_V2_RETRIEVAL", "RAG_REQUEST", arguments[2])
+            query.contains("issue_rag_v2_immutable_import_ticket") ->
+                Triple("ISSUE_RAG_V2_IMPORT", "RAG_TICKET", arguments[1])
+            query.contains("issue_rag_v2_retrieval_scope") ->
+                Triple("ISSUE_RAG_V2_SCOPE", "RAG_REQUEST", arguments[1])
+            query.contains("issue_s4_9_mcp_retrieval_scope") ->
+                Triple("ISSUE_MCP_RAG_SCOPE", "RAG_REQUEST", arguments[1])
+            query.contains("authorize_s4_9_runtime_voyage_query") ->
+                Triple("AUTHORIZE_VOYAGE_QUERY", "RAG_SCOPE", arguments[1])
+            query.contains("read_rag_v2_vertex_prepared_scope_v2") ->
+                Triple("READ_VERTEX_PREPARED_SCOPE", "RAG_SCOPE", arguments[2])
+            query.contains("canonicalize_rag_v2_immutable_retrieval_citations") ->
+                Triple("CANONICALIZE_RAG_V2_CITATIONS", "RAG_SCOPE", arguments[2])
+            query.contains("reserve_rag_v2_immutable_vertex_usage") ->
+                Triple("RESERVE_VERTEX_USAGE", "VERTEX_USAGE", arguments[0])
+            query.contains("claim_rag_v2_immutable_vertex_token_attempt") ->
+                Triple("CLAIM_VERTEX_TOKEN", "VERTEX_USAGE", arguments[0])
+            query.contains("claim_rag_v2_immutable_vertex_generate_content_attempt") ->
+                Triple("CLAIM_VERTEX_GENERATION", "VERTEX_USAGE", arguments[0])
+            query.contains("commit_rag_v2_immutable_vertex_usage") ->
+                Triple("COMMIT_VERTEX_USAGE", "VERTEX_USAGE", arguments[0])
+            query.contains("mark_rag_v2_immutable_vertex_usage_unknown_billing") ->
+                Triple("MARK_VERTEX_BILLING_UNKNOWN", "VERTEX_USAGE", arguments[0])
+            else -> Triple("TEST_APP_ACTOR_SCOPE", "OWNER", arguments.firstOrNull() ?: "test")
         }
+    }
 
     private fun appendForeignNewsSentiment(
         ownerUserId: String,
@@ -3043,13 +3097,13 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             try {
-                openTestActorScope(connection, ownerUserId, "ISSUE_RAG_V2_SCOPE", "RAG_REQUEST")
+                openTestActorScope(connection, ownerUserId, "ISSUE_RAG_V2_SCOPE", "RAG_REQUEST", sessionId)
                 val scopeClaimId =
                     callSingleRow(
                         connection,
                         """
                         select scope_claim_id
-                        from issue_rag_v2_retrieval_scope(
+                        from issue_rag_v2_retrieval_scope_v2(
                           '$ownerUserId', '$sessionId', array['FINANCIAL_ENGINEERING']
                         )
                         """.trimIndent(),
@@ -3066,7 +3120,13 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             try {
-                openTestActorScope(connection, "usr_demo_user", "ISSUE_MCP_RAG_SCOPE", "RAG_REQUEST")
+                openTestActorScope(
+                    connection,
+                    "usr_demo_user",
+                    "ISSUE_MCP_RAG_SCOPE",
+                    "RAG_REQUEST",
+                    "req_mcp_public_scope_0001",
+                )
                 val scopeClaimId =
                     callSingleRow(
                         connection,
@@ -3095,12 +3155,14 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             try {
-                openTestActorScope(connection, ownerUserId, "RECORD_RAG_V2_CONSENT", "OWNER")
+                openTestActorScope(connection, ownerUserId, "RECORD_RAG_V2_CONSENT", "OWNER", ownerUserId)
                 callSingleRow(
                     connection,
                     """
-                    select record_rag_v2_immutable_consent(
-                      '$ownerUserId', '$consentEventId', '$action', '$disclosureDigest'
+                    select record_rag_v2_immutable_consent_v2(
+                      '$ownerUserId', '$consentEventId',
+                      'rce_${consentEventId.removePrefix("cns_v2_")}', '$action', '$disclosureDigest',
+                      repeat('e', 64), repeat('f', 64)
                     )
                     """.trimIndent(),
                 )
@@ -3123,7 +3185,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             try {
-                openTestActorScope(connection, ownerUserId, "RECORD_RAG_V2_CONSENT", "OWNER")
+                openTestActorScope(connection, ownerUserId, "RECORD_RAG_V2_CONSENT", "OWNER", ownerUserId)
                 callSingleRow(
                     connection,
                     """

@@ -53,7 +53,7 @@ class JdbcRagRetrievalScopeRepository(
                     FROM issue_rag_rpc_scope(
                       :ownerUserId,
                       :sessionId,
-                      CAST(:topics AS jsonb)
+                      :topics
                     )
                     """.trimIndent(),
                     mapOf(
@@ -121,7 +121,7 @@ class JdbcRagRetrievalScopeRepository(
                   :policyVersion,
                   :activeGenerationId,
                   :embeddingProfileId,
-                  CAST(:citations AS jsonb)
+                  :citations
                 )
                 """.trimIndent(),
                 mapOf(

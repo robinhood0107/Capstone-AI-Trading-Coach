@@ -82,7 +82,7 @@ demo credential bundle을 채운다. secret은 32 bytes 이상의 서로 다른 
 값에서 파생한다.
 
 ```bash
-printf '%s' "$BROKERAGE_DB_CAPABILITY_TOKEN" | sha256sum
+openssl rand -hex 32 | sha256sum # historical migration placeholder; runtime bearer is retired
 printf 'ASYNC_WORKER_DATABASE_DSN=postgresql://decision_worker:%s@127.0.0.1:5432/trading?sslmode=disable\n' \
   "$POSTGRES_WORKER_PASSWORD"
 ```
@@ -171,8 +171,6 @@ PRINCIPLE_CURSOR_HMAC_KEY
 DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY
 DECISION_GRPC_SHARED_SECRET
 BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY
-BROKERAGE_DB_CAPABILITY_TOKEN
-BROKERAGE_DB_CAPABILITY_TOKEN_SHA256
 RAG_IDEMPOTENCY_SCOPE_HMAC_KEY
 RAG_REQUEST_FINGERPRINT_HMAC_KEY
 RAG_PROVIDER_USAGE_HMAC_KEY

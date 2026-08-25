@@ -7,21 +7,23 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
 import re
 import secrets
 import stat
 import sys
 import tarfile
+from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, NoReturn, cast
-
 
 _DIGEST = re.compile(r"[0-9a-f]{64}")
 _VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 _SAFE_ARCHIVE_PATH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,239}")
 _MAX_STATE_BYTES = 4 * 1024 * 1024
+_MAX_BUNDLE_BYTES = 32 * 1024 * 1024 * 1024
+_MAX_BUNDLE_ENTRIES = 50_000
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _DIRECTORY = getattr(os, "O_DIRECTORY", 0)
+_SAFE_BUNDLE_COMPONENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
 
 def _fail(message: str) -> NoReturn:
@@ -507,6 +509,132 @@ def stage_archive(source: Path, expected_digest: str, destination: Path) -> None
         os.close(source_descriptor)
 
 
+def _file_identity(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_nlink,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _require_bundle_source(metadata: os.stat_result, *, directory: bool) -> None:
+    expected_type = stat.S_ISDIR(metadata.st_mode) if directory else stat.S_ISREG(metadata.st_mode)
+    if not expected_type or metadata.st_uid != os.geteuid():
+        _fail("bundle source ownership or type")
+    if stat.S_IMODE(metadata.st_mode) & 0o022:
+        _fail("bundle source is mutable by group or other")
+    if not directory and metadata.st_nlink != 1:
+        _fail("bundle hardlink is forbidden")
+
+
+def _copy_bundle_directory(
+    source: int,
+    destination: int,
+    counters: list[int],
+) -> None:
+    source_before = os.fstat(source)
+    _require_bundle_source(source_before, directory=True)
+    names = sorted(os.listdir(source))
+    if len(names) != len(set(names)):
+        _fail("bundle duplicate entry")
+    for name in names:
+        if _SAFE_BUNDLE_COMPONENT.fullmatch(name) is None:
+            _fail("bundle path component")
+        counters[0] += 1
+        if counters[0] > _MAX_BUNDLE_ENTRIES:
+            _fail("bundle entry cap")
+        entry_before = os.stat(name, dir_fd=source, follow_symlinks=False)
+        if stat.S_ISDIR(entry_before.st_mode):
+            _require_bundle_source(entry_before, directory=True)
+            child_source = os.open(name, os.O_RDONLY | _DIRECTORY | _NOFOLLOW, dir_fd=source)
+            child_destination = -1
+            try:
+                if _file_identity(os.fstat(child_source)) != _file_identity(entry_before):
+                    _fail("bundle directory replaced before copy")
+                os.mkdir(name, 0o700, dir_fd=destination)
+                child_destination = os.open(
+                    name,
+                    os.O_RDONLY | _DIRECTORY | _NOFOLLOW,
+                    dir_fd=destination,
+                )
+                _copy_bundle_directory(child_source, child_destination, counters)
+                os.fsync(child_destination)
+                os.fchmod(child_destination, 0o700)
+                entry_after = os.stat(name, dir_fd=source, follow_symlinks=False)
+                if _file_identity(entry_before) != _file_identity(entry_after):
+                    _fail("bundle directory changed during copy")
+            finally:
+                if child_destination >= 0:
+                    os.close(child_destination)
+                os.close(child_source)
+            continue
+        _require_bundle_source(entry_before, directory=False)
+        counters[1] += entry_before.st_size
+        if counters[1] > _MAX_BUNDLE_BYTES:
+            _fail("bundle byte cap")
+        child_source = os.open(name, os.O_RDONLY | _NOFOLLOW, dir_fd=source)
+        child_destination = -1
+        try:
+            if _file_identity(os.fstat(child_source)) != _file_identity(entry_before):
+                _fail("bundle file replaced before copy")
+            mode = 0o500 if stat.S_IMODE(entry_before.st_mode) & 0o111 else 0o400
+            child_destination = os.open(
+                name,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW,
+                mode,
+                dir_fd=destination,
+            )
+            while chunk := os.read(child_source, 1024 * 1024):
+                view = memoryview(chunk)
+                while view:
+                    view = view[os.write(child_destination, view) :]
+            os.fsync(child_destination)
+            os.fchmod(child_destination, mode)
+            if _file_identity(os.fstat(child_source)) != _file_identity(entry_before):
+                _fail("bundle file changed during copy")
+            entry_after = os.stat(name, dir_fd=source, follow_symlinks=False)
+            if _file_identity(entry_before) != _file_identity(entry_after):
+                _fail("bundle file replaced during copy")
+        finally:
+            if child_destination >= 0:
+                os.close(child_destination)
+            os.close(child_source)
+    if names != sorted(os.listdir(source)) or _file_identity(source_before) != _file_identity(
+        os.fstat(source)
+    ):
+        _fail("bundle directory changed during copy")
+
+
+def stage_bundle(source: Path, destination: Path) -> None:
+    source_descriptor = _open_directory(source)
+    destination_parent = _open_directory(destination.absolute().parent)
+    destination_descriptor = -1
+    try:
+        _require_bundle_source(os.fstat(source_descriptor), directory=True)
+        _require_owned_directory(destination_parent)
+        os.mkdir(destination.name, 0o700, dir_fd=destination_parent)
+        destination_descriptor = os.open(
+            destination.name,
+            os.O_RDONLY | _DIRECTORY | _NOFOLLOW,
+            dir_fd=destination_parent,
+        )
+        _require_owned_directory(destination_descriptor)
+        _copy_bundle_directory(source_descriptor, destination_descriptor, [0, 0])
+        os.fsync(destination_descriptor)
+        os.fsync(destination_parent)
+    finally:
+        if destination_descriptor >= 0:
+            os.close(destination_descriptor)
+        os.close(destination_parent)
+        os.close(source_descriptor)
+
+
 def _require_output_directory(descriptor: int) -> None:
     metadata = os.fstat(descriptor)
     if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid():
@@ -633,6 +761,9 @@ def main() -> None:
     stage.add_argument("source", type=Path)
     stage.add_argument("digest")
     stage.add_argument("destination", type=Path)
+    bundle = subparsers.add_parser("stage-bundle")
+    bundle.add_argument("source", type=Path)
+    bundle.add_argument("destination", type=Path)
     publish_dir = subparsers.add_parser("publish-directory")
     publish_dir.add_argument("source", type=Path)
     publish_dir.add_argument("destination_parent", type=Path)
@@ -665,6 +796,8 @@ def main() -> None:
         archive_compare(args.archive, args.inventory)
     elif args.command == "stage-archive":
         stage_archive(args.source, args.digest, args.destination)
+    elif args.command == "stage-bundle":
+        stage_bundle(args.source, args.destination)
     elif args.command == "publish-directory":
         publish_directory(args.source, args.destination_parent, args.name)
     elif args.command == "publish-file":

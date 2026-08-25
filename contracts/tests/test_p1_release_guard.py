@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
-from pathlib import Path
 import subprocess
 import tarfile
 import tempfile
 import tomllib
 import unittest
-
+from pathlib import Path
+from unittest import mock
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 GUARD = REPOSITORY_ROOT / "deploy" / "p1" / "release_guard.py"
@@ -54,8 +55,7 @@ class P1ReleaseGuardTest(unittest.TestCase):
         return subprocess.run(
             ["python3", str(GUARD), *arguments],
             input=input_bytes,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             env=env,
             check=check,
         )
@@ -160,6 +160,85 @@ class P1ReleaseGuardTest(unittest.TestCase):
             self.run_guard("stage-archive", str(archive), digest, str(staged))
             self.run_guard("archive-compare", str(staged), str(inventory))
             self.assertEqual(staged.stat().st_mode & 0o777, 0o600)
+
+            extra = root / "images-extra.tar"
+            with tarfile.open(extra, "w") as output:
+                output.add(payload, arcname="manifest.json")
+                output.add(payload, arcname="unexpected.json")
+            rejected = self.run_guard("archive-compare", str(extra), str(inventory), check=False)
+            self.assertNotEqual(rejected.returncode, 0)
+
+    def test_bundle_snapshot_is_owner_only_and_rejects_unsafe_entries(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp") as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir(mode=0o700)
+            (source / "nested").mkdir(mode=0o700)
+            executable = source / "nested" / "p1ctl"
+            executable.write_bytes(b"#!/bin/sh\n")
+            executable.chmod(0o500)
+            plain = source / "manifest.json"
+            plain.write_bytes(b"{}")
+            plain.chmod(0o400)
+            destination = root / "sealed"
+
+            self.run_guard("stage-bundle", str(source), str(destination))
+
+            self.assertEqual((destination / "nested" / "p1ctl").read_bytes(), b"#!/bin/sh\n")
+            self.assertEqual((destination / "nested" / "p1ctl").stat().st_mode & 0o777, 0o500)
+            self.assertEqual((destination / "manifest.json").stat().st_mode & 0o777, 0o400)
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o700)
+
+            for unsafe in ("mutable", "symlink", "hardlink"):
+                with self.subTest(unsafe=unsafe):
+                    hostile = root / f"source-{unsafe}"
+                    hostile.mkdir(mode=0o700)
+                    leaf = hostile / "leaf"
+                    if unsafe == "mutable":
+                        leaf.write_bytes(b"unsafe")
+                        leaf.chmod(0o660)
+                    elif unsafe == "symlink":
+                        leaf.symlink_to(plain)
+                    else:
+                        os.link(plain, leaf)
+                    rejected = self.run_guard(
+                        "stage-bundle",
+                        str(hostile),
+                        str(root / f"sealed-{unsafe}"),
+                        check=False,
+                    )
+                    self.assertNotEqual(rejected.returncode, 0)
+
+    def test_bundle_snapshot_rejects_inode_replacement_during_copy(self) -> None:
+        spec = importlib.util.spec_from_file_location("p1_release_guard_test", GUARD)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory(dir="/tmp") as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir(mode=0o700)
+            leaf = source / "images.tar"
+            leaf.write_bytes(b"a" * (2 * 1024 * 1024))
+            leaf.chmod(0o400)
+            replacement = source / "replacement"
+            replacement.write_bytes(b"b")
+            replacement.chmod(0o400)
+            original_read = module.os.read
+            replaced = False
+
+            def replace_after_first_read(descriptor: int, size: int) -> bytes:
+                nonlocal replaced
+                data = original_read(descriptor, size)
+                if data and not replaced:
+                    replaced = True
+                    os.replace(replacement, leaf)
+                return data
+
+            with mock.patch.object(module.os, "read", side_effect=replace_after_first_read):
+                with self.assertRaisesRegex(ValueError, "(changed|replaced) during copy"):
+                    module.stage_bundle(source, root / "sealed")
 
 
 if __name__ == "__main__":

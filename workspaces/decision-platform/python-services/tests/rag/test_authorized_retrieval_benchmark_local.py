@@ -48,6 +48,7 @@ from app.rag.bge_full_generation import (
 from app.rag.bge_full_generation_benchmark_cli import batch_receipt_from_report
 from app.rag.bge_runtime import BgeStaticTokenizer, load_bge_onnx_embedder
 from app.rag.source_card_corpus import REPO_ROOT, load_frozen_source_card_corpus
+from tests.support.actor_rls_scope import open_actor_rls_scope
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("S4_3_AUTHORIZED_RETRIEVAL_BENCHMARK") != "1",
@@ -259,6 +260,7 @@ def test_s4_3_authorized_retrieval_exact_10_smoke_and_benchmark(
 
     scope = _create_scope(
         app_dsn=cluster["app_dsn"],
+        identity_dsn=cluster["identity_dsn"],
         generation_id=plan.generation_id,
         policy_version=policy_version_after,
     )
@@ -419,6 +421,7 @@ def test_s4_3_authorized_retrieval_exact_10_smoke_and_benchmark(
 def _create_scope(
     *,
     app_dsn: str,
+    identity_dsn: str,
     generation_id: str,
     policy_version: int,
 ) -> AuthorizedRetrievalScope:
@@ -433,9 +436,14 @@ def _create_scope(
         "RISK",
     )
     with psycopg.connect(app_dsn, autocommit=False) as connection:
-        connection.execute(
-            "SELECT set_config('app.actor_user_id', %s, true)",
-            (owner_user_id,),
+        open_actor_rls_scope(
+            identity_dsn=identity_dsn,
+            connection=connection,
+            actor_user_id=owner_user_id,
+            actor_role="USER",
+            operation="CLAIM_RAG_RETRIEVAL",
+            target_kind="RAG_SESSION",
+            target_id=session_id,
         )
         row = connection.execute(
             """

@@ -1,5 +1,6 @@
 package com.capstone.decision.infrastructure.security
 
+import com.capstone.decision.application.security.ActorRlsScopePort
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Component
@@ -13,7 +14,26 @@ import java.sql.Connection
 @Component
 class ActorRlsScope(
     private val actorCapabilityIssuer: ActorCapabilityIssuer,
-) {
+) : ActorRlsScopePort {
+    override fun open(
+        jdbc: NamedParameterJdbcTemplate,
+        actorUserId: String,
+        operation: String,
+        targetKind: String,
+        targetId: String,
+    ) {
+        open(
+            jdbc,
+            actorUserId,
+            ActorCapabilityBinding.target(
+                operation,
+                targetKind,
+                targetId,
+                ActorCapabilityRolePolicy.OWNER,
+            ),
+        )
+    }
+
     fun open(
         jdbc: NamedParameterJdbcTemplate,
         actorUserId: String,

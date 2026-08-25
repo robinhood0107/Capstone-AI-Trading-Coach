@@ -1,8 +1,6 @@
 package com.capstone.decision.application.rag
 
-import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
-import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
-import com.capstone.decision.infrastructure.security.ActorRlsScope
+import com.capstone.decision.application.security.ActorRlsScopePort
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Service
@@ -56,7 +54,7 @@ class RagV2RuntimeService(
     private val vertexQuestionFingerprintPort: RagV2VertexQuestionFingerprintPort,
     private val objectMapper: ObjectMapper,
     private val transactionManagerProvider: ObjectProvider<PlatformTransactionManager>,
-    private val actorRlsScope: ActorRlsScope,
+    private val actorRlsScope: ActorRlsScopePort,
 ) {
     /**
      * owner-private overlay 상태는 DB actor setting과 definer function으로만 읽는다.
@@ -1237,12 +1235,9 @@ class RagV2RuntimeService(
         actorRlsScope.open(
             jdbc(),
             ownerUserId,
-            ActorCapabilityBinding.target(
-                operation,
-                targetKind,
-                targetId,
-                ActorCapabilityRolePolicy.OWNER,
-            ),
+            operation,
+            targetKind,
+            targetId,
         )
     }
 

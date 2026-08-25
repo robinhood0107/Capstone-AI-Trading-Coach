@@ -17,6 +17,7 @@ import com.capstone.decision.infrastructure.risk.JdbcPortfolioContextAdapter
 import com.capstone.decision.infrastructure.risk.JdbcStoredMarginAdapter
 import org.flywaydb.core.Flyway
 import org.flywaydb.core.api.FlywayException
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -66,11 +67,16 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val orderMetricPort: OrderMetricPort,
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
+    @AfterEach
+    fun revokeHistoricalS5CapabilitiesAfterTest() {
+        revokeHistoricalS5Capabilities()
+    }
+
     @Test
-    fun `clean database applies V1 through V73 migrations and creates required objects`() {
+    fun `clean database applies V1 through V87 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
         // V7 is a Java migration and must appear alongside the SQL migrations.
-        assertEquals((1..73).map(Int::toString), versions)
+        assertEquals((1..87).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -513,7 +519,7 @@ class FlywayMigrationIntegrationTest(
                         statement.execute()
                     }
                 }
-            assertEquals("22023", pointerError.sqlState)
+            assertEquals("42501", pointerError.sqlState)
             connection.rollback()
 
             connection.autoCommit = false
@@ -558,6 +564,7 @@ class FlywayMigrationIntegrationTest(
 
     @Test
     fun `V73 stages exact release batch activates atomically and suspends LightGBM on drift`() {
+        grantHistoricalS5Capabilities()
         clearS5ProductionState()
         val releaseId = "lgr-${"1".repeat(12)}"
         val modelVersion = "lgbm-v1-${"2".repeat(12)}"
@@ -862,6 +869,7 @@ class FlywayMigrationIntegrationTest(
                 }
             }
         }
+        revokeHistoricalS5Capabilities()
         listOf(
             "signal_model_releases",
             "signal_batches",
@@ -876,7 +884,7 @@ class FlywayMigrationIntegrationTest(
                 assertFalse(hasTablePrivilege("decision_signal_admin", table, privilege))
             }
         }
-        assertTrue(
+        assertFalse(
             hasFunctionPrivilege(
                 "decision_signal_writer",
                 "stage_signal_model_release(text,text,text,text,text,text,text,text,text,text,text)",
@@ -885,7 +893,7 @@ class FlywayMigrationIntegrationTest(
         assertFalse(
             hasFunctionPrivilege("decision_signal_writer", "publish_active_signal_batch(text,text,text)"),
         )
-        assertTrue(
+        assertFalse(
             hasFunctionPrivilege("decision_signal_scheduler", "publish_active_signal_batch(text,text,text)"),
         )
         assertFalse(
@@ -894,7 +902,7 @@ class FlywayMigrationIntegrationTest(
                 "activate_signal_model_and_batch(text,text,text,text,text,text,text)",
             ),
         )
-        assertTrue(
+        assertFalse(
             hasFunctionPrivilege(
                 "decision_signal_admin",
                 "activate_signal_model_and_batch(text,text,text,text,text,text,text)",
@@ -910,6 +918,7 @@ class FlywayMigrationIntegrationTest(
 
     @Test
     fun `V73 manual rollback publishes a fresh batch and never re-exposes the old signal`() {
+        grantHistoricalS5Capabilities()
         val (session, asOf) = prepareS5CurrentClock()
         clearS5ProductionState()
         val prior = stageS5Candidate("a", session, asOf, "BUY")
@@ -977,6 +986,7 @@ class FlywayMigrationIntegrationTest(
 
     @Test
     fun `V73 empty pointer activation CAS serializes concurrent admins`() {
+        grantHistoricalS5Capabilities()
         val (session, asOf) = prepareS5CurrentClock()
         clearS5ProductionState()
         val first = stageS5Candidate("c", session, asOf, "HOLD")
@@ -1109,12 +1119,18 @@ class FlywayMigrationIntegrationTest(
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             connection.createStatement().use { statement ->
-                statement.execute("select set_config('app.actor_user_id', 'usr_demo_user', true)")
+                openTestActorScope(connection, "usr_demo_user")
                 statement.executeQuery("select count(*) from latest_cross_market_risk_snapshots").use { result ->
                     assertTrue(result.next())
                     assertEquals(1L, result.getLong(1))
                 }
-                statement.execute("select set_config('app.actor_user_id', 'usr_demo_admin', true)")
+            }
+            connection.rollback()
+        }
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
+            connection.autoCommit = false
+            connection.createStatement().use { statement ->
+                openTestActorScope(connection, "usr_demo_admin")
                 statement.executeQuery("select count(*) from latest_cross_market_risk_snapshots").use { result ->
                     assertTrue(result.next())
                     assertEquals(0L, result.getLong(1))
@@ -1248,12 +1264,12 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `decision application role receives only V15 brokerage capabilities`() {
+    fun `decision application role receives only V87 brokerage capabilities`() {
         assertTrue(hasTablePrivilege("decision_app", "risk_kill_switch", "SELECT"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "INSERT"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "DELETE"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "TRUNCATE"))
-        assertTrue(hasTablePrivilege("decision_app", "risk_kill_switch_transitions", "INSERT"))
+        assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch_transitions", "INSERT"))
         assertTrue(hasTablePrivilege("decision_app", "kill_switch_user_projection", "SELECT"))
         listOf("orders", "order_events", "mock_order_owner_projection", "brokerage_db_capability_keys").forEach { table ->
             listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
@@ -1284,9 +1300,13 @@ class FlywayMigrationIntegrationTest(
         }
         listOf(
             "read_kill_switch_gate()",
-            "revalidate_kill_switch_admin(text,bigint)",
             "read_kill_switch_audit_projection()",
             "read_decision_usability()",
+        ).forEach { function ->
+            assertTrue(hasFunctionPrivilege("decision_app", function), "missing bounded read EXECUTE on $function")
+        }
+        listOf(
+            "revalidate_kill_switch_admin(text,bigint)",
             "invalidate_unused_decisions_for_kill_switch(bigint,timestamp with time zone,text)",
             "read_mock_order_decision(text,text,text)",
             "find_mock_order_idempotency_result(text,text,timestamp with time zone,text)",
@@ -1299,7 +1319,22 @@ class FlywayMigrationIntegrationTest(
             "read_paper_balance_projection(text,text,text)",
             "create_paper_order(jsonb,text)",
         ).forEach { function ->
-            assertTrue(hasFunctionPrivilege("decision_app", function), "missing EXECUTE on $function")
+            assertFalse(hasFunctionPrivilege("decision_app", function), "legacy EXECUTE remains on $function")
+        }
+        listOf(
+            "transition_kill_switch_authorized(text,text,bigint,boolean,bigint,text)",
+            "read_mock_order_decision_authorized_v2(text,text,text)",
+            "find_mock_order_idempotency_result_authorized_v2(text,text,text,text,text)",
+            "read_mock_order_owner_projection_authorized_v2(text,text,text)",
+            "create_mock_order_authorized_v2(text,text)",
+            "request_mock_order_cancel_authorized_v2(text,text)",
+            "record_mock_order_provider_outcome_authorized_v2(text,text)",
+            "read_paper_order_context_authorized_v2(text,text,text)",
+            "find_paper_order_idempotency_result_authorized_v2(text,text,text,text,text)",
+            "read_paper_balance_projection_authorized_v2(text,text,text)",
+            "create_paper_order_authorized_v2(text,text)",
+        ).forEach { function ->
+            assertTrue(hasFunctionPrivilege("decision_app", function), "missing V87 EXECUTE on $function")
         }
         assertFalse(
             hasFunctionPrivilege("decision_app", "assert_brokerage_database_capability(text)"),
@@ -1821,7 +1856,7 @@ class FlywayMigrationIntegrationTest(
                 """.trimIndent(),
             )
 
-            DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
                 connection
                     .prepareStatement(
                         """
@@ -2225,7 +2260,7 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `decision application role has exact append only V9 privileges`() {
+    fun `decision application role has no direct append privileges after V87`() {
         listOf(
             "decisions",
             "decision_violations",
@@ -2235,7 +2270,7 @@ class FlywayMigrationIntegrationTest(
             "event_outbox",
             "decision_idempotency_results",
         ).forEach { table ->
-            assertTrue(hasTablePrivilege("decision_app", table, "INSERT"), "missing INSERT on $table")
+            assertFalse(hasTablePrivilege("decision_app", table, "INSERT"), "unexpected INSERT on $table")
         }
         listOf(
             "decision_owner_projection",
@@ -2665,8 +2700,17 @@ class FlywayMigrationIntegrationTest(
         assertEquals(java.time.Instant.parse("2031-02-03T04:06:06Z"), balance.freshUntil)
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive())
 
+        jdbcTemplate.update(
+            """
+            insert into users(user_id,username,password_hash,role,status,security_version)
+            values ('usr_empty_context','empty-context',
+              concat(chr(36),'2b',chr(36),'12',chr(36),repeat('a',53)),
+              'USER','ACTIVE',1)
+            on conflict (user_id) do nothing
+            """.trimIndent(),
+        )
         assertTrue(
-            portfolioContextAdapter.resolve("usr_missing_context", PortfolioSource.KIS_MOCK)
+            portfolioContextAdapter.resolve("usr_empty_context", PortfolioSource.KIS_MOCK)
                 is PortfolioContextResolution.Unavailable,
         )
     }
@@ -3061,12 +3105,7 @@ class FlywayMigrationIntegrationTest(
         )
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
-            connection
-                .prepareStatement("select set_config('app.actor_user_id', ?, true)")
-                .use { statement ->
-                    statement.setString(1, "usr_demo_user")
-                    statement.executeQuery().close()
-                }
+            openTestActorScope(connection, "usr_demo_user")
             connection
                 .prepareStatement(
                     "select count(*) from latest_portfolio_balance_observations where account_scope_hash = ?",
@@ -3129,16 +3168,16 @@ class FlywayMigrationIntegrationTest(
     fun `processed event rejects duplicate event per consumer`() {
         jdbcTemplate.update(
             """
-            insert into processed_event (event_id, consumer_name, processed_at)
-            values ('evt-duplicate', 'risk-consumer', now())
+            insert into processed_event (event_id, consumer_name, processed_at, payload_hash)
+            values ('evt-duplicate', 'risk-consumer', now(), 'sha256:' || repeat('a', 64))
             """.trimIndent(),
         )
 
         assertUniqueViolation {
             jdbcTemplate.update(
                 """
-                insert into processed_event (event_id, consumer_name, processed_at)
-                values ('evt-duplicate', 'risk-consumer', now())
+                insert into processed_event (event_id, consumer_name, processed_at, payload_hash)
+                values ('evt-duplicate', 'risk-consumer', now(), 'sha256:' || repeat('a', 64))
                 """.trimIndent(),
             )
         }
@@ -3403,10 +3442,7 @@ class FlywayMigrationIntegrationTest(
     ) {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
-            connection.prepareStatement("select set_config('app.actor_user_id', ?, true)").use { statement ->
-                statement.setString(1, actorUserId)
-                statement.executeQuery().close()
-            }
+            openTestActorScope(connection, actorUserId)
             connection.createStatement().use { statement ->
                 statement.executeQuery("select count(*) from decision_invalidations").use { result ->
                     assertTrue(result.next())
@@ -3418,7 +3454,7 @@ class FlywayMigrationIntegrationTest(
     }
 
     private fun revalidateKillSwitchAdmin(securityVersion: Long): String =
-        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
             connection.prepareStatement("select revalidate_kill_switch_admin('usr_demo_admin', ?)").use { statement ->
                 statement.setLong(1, securityVersion)
                 statement.executeQuery().use { result ->
@@ -3444,10 +3480,7 @@ class FlywayMigrationIntegrationTest(
     ) {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
-            connection.prepareStatement("select set_config('app.actor_user_id', ?, true)").use { statement ->
-                statement.setString(1, actorUserId)
-                statement.executeQuery().close()
-            }
+            openTestActorScope(connection, actorUserId)
             connection.prepareStatement("select set_config('app.requested_decision_id', ?, true)").use { statement ->
                 statement.setString(1, decisionId)
                 statement.executeQuery().close()
@@ -3465,6 +3498,21 @@ class FlywayMigrationIntegrationTest(
             }
             connection.rollback()
         }
+    }
+
+    private fun openTestActorScope(
+        connection: java.sql.Connection,
+        actorUserId: String,
+    ) {
+        TestActorRlsScope.open(
+            jdbcUrl = postgres.jdbcUrl,
+            connection = connection,
+            actorUserId = actorUserId,
+            operation = "TEST_APP_ACTOR_SCOPE",
+            targetKind = "OWNER",
+            targetId = actorUserId,
+            actorRole = if (actorUserId == "usr_demo_admin") "ADMIN" else "USER",
+        )
     }
 
     private fun insertAdminDecisionFixture() {
@@ -4099,6 +4147,37 @@ class FlywayMigrationIntegrationTest(
         return S5Candidate(releaseId, batchId, releaseManifest, batchManifest)
     }
 
+    private fun grantHistoricalS5Capabilities() {
+        jdbcTemplate.execute(
+            "GRANT EXECUTE ON FUNCTION stage_signal_model_release(text,text,text,text,text,text,text,text,text,text,text), " +
+                "stage_signal_batch(text,text,text,text,text,text,date,timestamptz,text) TO decision_signal_writer",
+        )
+        jdbcTemplate.execute(
+            "GRANT EXECUTE ON FUNCTION publish_active_signal_batch(text,text,text), " +
+                "suspend_signal_model_for_drift(text,text) TO decision_signal_scheduler",
+        )
+        jdbcTemplate.execute(
+            "GRANT EXECUTE ON FUNCTION activate_signal_model_and_batch(text,text,text,text,text,text,text), " +
+                "suspend_signal_model_for_drift(text,text) TO decision_signal_admin",
+        )
+    }
+
+    private fun revokeHistoricalS5Capabilities() {
+        jdbcTemplate.execute(
+            "REVOKE ALL PRIVILEGES ON FUNCTION " +
+                "stage_signal_model_release(text,text,text,text,text,text,text,text,text,text,text), " +
+                "stage_signal_batch(text,text,text,text,text,text,date,timestamptz,text) FROM decision_signal_writer",
+        )
+        jdbcTemplate.execute(
+            "REVOKE ALL PRIVILEGES ON FUNCTION publish_active_signal_batch(text,text,text), " +
+                "suspend_signal_model_for_drift(text,text) FROM decision_signal_scheduler",
+        )
+        jdbcTemplate.execute(
+            "REVOKE ALL PRIVILEGES ON FUNCTION activate_signal_model_and_batch(text,text,text,text,text,text,text), " +
+                "suspend_signal_model_for_drift(text,text) FROM decision_signal_admin",
+        )
+    }
+
     private fun activateS5(
         connection: java.sql.Connection,
         candidate: S5Candidate,
@@ -4291,9 +4370,9 @@ class FlywayMigrationIntegrationTest(
             registry.add("spring.datasource.password", postgres::getPassword)
             registry.add("spring.flyway.user", postgres::getUsername)
             registry.add("spring.flyway.password", postgres::getPassword)
-            // V73 historical capability tests remain executable in the primary test database.
-            // V74 is applied and verified independently by the research-only migration test above.
-            registry.add("spring.flyway.target") { "73" }
+            // The primary integration database exercises current adapters against the current schema.
+            // Historical migration boundaries remain covered by their explicitly targeted databases.
+            registry.add("spring.flyway.target") { "87" }
             registry.add("app.decision.grpc.shared-secret") { SpringApiIntegrationTestBase.TEST_GRPC_SHARED_SECRET }
             registry.add("app.rag.grpc.shared-secret") {
                 SpringApiIntegrationTestBase.TEST_RAG_GRPC_SHARED_SECRET

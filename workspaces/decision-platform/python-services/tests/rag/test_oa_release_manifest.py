@@ -87,7 +87,7 @@ def test_released_manifest_requires_exact_tracks_roles_unique_sources_and_digest
     assert loaded.manifest_id == "oa140_s4_7d_release_v1"
     assert loaded.source_count == 112
     assert loaded.release_digest == manifest["releaseDigest"]
-    assert loaded.track_counts == {track_id: 8 for track_id in OA_TRACK_IDS}
+    assert loaded.track_counts == dict.fromkeys(OA_TRACK_IDS, 8)
 
 
 def test_tracked_oa112_release_manifest_is_default_install_candidate() -> None:
@@ -96,7 +96,7 @@ def test_tracked_oa112_release_manifest_is_default_install_candidate() -> None:
     assert loaded.manifest_id == "oa140_s4_7d_release_v1"
     assert loaded.source_count == 112
     assert len(loaded.release_digest) == 64
-    assert loaded.track_counts == {track_id: 8 for track_id in OA_TRACK_IDS}
+    assert loaded.track_counts == dict.fromkeys(OA_TRACK_IDS, 8)
 
 
 @pytest.mark.parametrize(

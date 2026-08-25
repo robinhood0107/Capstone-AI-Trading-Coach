@@ -4,14 +4,15 @@ import argparse
 import hashlib
 import json
 import os
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import psycopg
 
-from app.rag.source_registry import RagSourceDefinition
 from app.rag.source_registry import (
-    RagSourceRegistryError,
+    RagSourceDefinition,
     RagSourceRegistry,
+    RagSourceRegistryError,
     load_default_source_registry,
 )
 
@@ -161,8 +162,9 @@ def _attest_rag_writer_connection(connection: psycopg.Connection[Any]) -> None:
                 raise ValueError("RAG source writer can access a forbidden table")
     if bool(
         _required_scalar(
-            connection.execute("select has_schema_privilege(current_user, 'public', 'CREATE')")
-            .fetchone()
+            connection.execute(
+                "select has_schema_privilege(current_user, 'public', 'CREATE')"
+            ).fetchone()
         )
     ):
         raise ValueError("RAG source writer must not create schema objects")
@@ -323,9 +325,7 @@ def _verify_registered_sources(
             """,
             (list(registry.sources),),
         ).fetchall()
-        actual_revisions = {
-            str(row[0]): _revision_row_mapping(row) for row in revision_rows
-        }
+        actual_revisions = {str(row[0]): _revision_row_mapping(row) for row in revision_rows}
         if actual_revisions != expected_revisions:
             raise RagSourceRegistryError("registered RAG source revision drifted")
 
@@ -478,7 +478,9 @@ def _metadata_hash(
         "tier": source.tier,
         "title": source.title,
     }
-    return _sha256_text(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+    return _sha256_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    )
 
 
 def _has_table_privilege(

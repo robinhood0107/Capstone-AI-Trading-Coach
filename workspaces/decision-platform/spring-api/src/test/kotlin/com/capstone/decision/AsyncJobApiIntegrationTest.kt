@@ -53,6 +53,7 @@ class AsyncJobApiIntegrationTest(
     @Autowired private val applicationDataSource: DataSource,
     @Autowired private val asyncPipelinePort: AsyncPipelinePort,
     @Autowired private val dbAsyncDispatcher: DbAsyncDispatcher,
+    @Autowired private val actorCapabilityIssuer: TestActorCapabilityIssuer,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
     private val appJdbc by lazy { JdbcTemplate(applicationDataSource) }
@@ -242,19 +243,21 @@ class AsyncJobApiIntegrationTest(
     @Test
     fun `DB adapter commits job and outbox together and rolls both back on outbox denial`() {
         val accepted =
-            asyncPipelinePort.request(
-                AsyncJobRequest(
-                    type = AsyncJobType.RAG_INDEX,
-                    requestedBy = "usr_demo_user",
-                    references =
-                        mapOf(
-                            "sourceId" to "src_fixture_00000011",
-                            "sourceRevisionId" to "srv_fixture_00000011",
-                            "importTicketId" to "rti_" + "1".repeat(32),
-                            "profileId" to "bge_m3_local_1024_v1",
-                        ),
-                ),
-            )
+            asTestActor(actorCapabilityIssuer) {
+                asyncPipelinePort.request(
+                    AsyncJobRequest(
+                        type = AsyncJobType.RAG_INDEX,
+                        requestedBy = "usr_demo_user",
+                        references =
+                            mapOf(
+                                "sourceId" to "src_fixture_00000011",
+                                "sourceRevisionId" to "srv_fixture_00000011",
+                                "importTicketId" to "rti_" + "1".repeat(32),
+                                "profileId" to "bge_m3_local_1024_v1",
+                            ),
+                    ),
+                )
+            }
         assertEquals(
             1,
             ownerJdbc.queryForObject(
@@ -274,7 +277,7 @@ class AsyncJobApiIntegrationTest(
         )
 
         ownerJdbc.execute(
-            "revoke execute on function create_async_request_authorized(text,text,text,text,text,text,text,jsonb) from decision_app",
+            "revoke execute on function create_async_request_authorized(text,text,text,text,text,text,text,text) from decision_app",
         )
         val jobsBefore = ownerJdbc.queryForObject("select count(*) from async_job", Int::class.java)
         try {
@@ -293,7 +296,7 @@ class AsyncJobApiIntegrationTest(
             }
         } finally {
             ownerJdbc.execute(
-                "grant execute on function create_async_request_authorized(text,text,text,text,text,text,text,jsonb) to decision_app",
+                "grant execute on function create_async_request_authorized(text,text,text,text,text,text,text,text) to decision_app",
             )
         }
         assertEquals(jobsBefore, ownerJdbc.queryForObject("select count(*) from async_job", Int::class.java))
@@ -303,17 +306,19 @@ class AsyncJobApiIntegrationTest(
     fun `DB dispatcher completes synthetic artifact through the real Python worker`() {
         withPythonWorker {
             val accepted =
-                asyncPipelinePort.request(
-                    AsyncJobRequest(
-                        type = AsyncJobType.ARTIFACT_INGEST,
-                        requestedBy = "usr_demo_user",
-                        references =
-                            mapOf(
-                                "artifactId" to "artifact_fixture_00000001",
-                                "contentHash" to "sha256:" + "b".repeat(64),
-                            ),
-                    ),
-                )
+                asTestActor(actorCapabilityIssuer) {
+                    asyncPipelinePort.request(
+                        AsyncJobRequest(
+                            type = AsyncJobType.ARTIFACT_INGEST,
+                            requestedBy = "usr_demo_user",
+                            references =
+                                mapOf(
+                                    "artifactId" to "artifact_fixture_00000001",
+                                    "contentHash" to "sha256:" + "b".repeat(64),
+                                ),
+                        ),
+                    )
+                }
 
             dbAsyncDispatcher.poll()
 
@@ -432,13 +437,15 @@ class AsyncJobApiIntegrationTest(
 
         withPythonWorker {
             val accepted =
-                asyncPipelinePort.request(
-                    AsyncJobRequest(
-                        type = AsyncJobType.ARTIFACT_INGEST,
-                        requestedBy = "usr_demo_user",
-                        references = mapOf("artifactId" to artifactId, "contentHash" to fileHash),
-                    ),
-                )
+                asTestActor(actorCapabilityIssuer) {
+                    asyncPipelinePort.request(
+                        AsyncJobRequest(
+                            type = AsyncJobType.ARTIFACT_INGEST,
+                            requestedBy = "usr_demo_user",
+                            references = mapOf("artifactId" to artifactId, "contentHash" to fileHash),
+                        ),
+                    )
+                }
             dbAsyncDispatcher.poll()
             assertEquals(
                 "COMPLETED",
@@ -623,7 +630,7 @@ class AsyncJobApiIntegrationTest(
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_async_api")
                 .withUsername("decision")
                 .withPassword("decision")

@@ -1,5 +1,7 @@
 package com.capstone.decision
-
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.DatabaseActorCapabilityAuthority
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -12,6 +14,7 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
+import java.security.KeyPairGenerator
 import java.security.MessageDigest
 import java.sql.DriverManager
 import java.sql.SQLException
@@ -38,21 +41,93 @@ class S7AsyncMigrationIntegrationTest {
             owner.createStatement().use {
                 it.executeUpdate("create database s7_fresh")
                 it.executeUpdate("create database s7_replay")
+                it.executeUpdate("create database s7_p1_demo")
+                it.executeUpdate("create database s7_kafka_roles")
             }
         }
         flyway(databaseName = "s7_fresh").migrate()
         flyway(databaseName = "s7_replay").migrate()
+        flyway(databaseName = "s7_p1_demo").migrate()
+        flyway(databaseName = "s7_kafka_roles").migrate()
     }
 
     @Test
-    fun `V85 migrates fresh and V79 upgrade with exact role boundary`() {
+    fun `P1 container smoke capability is exact idempotent and demo-only`() {
+        val partitionKey = "hmac-sha256:${"a".repeat(64)}"
+        val runId = "1".repeat(32)
+        connection("s7_p1_demo", DEMO_USER, DEMO_PASSWORD).use { demo ->
+            val inactive =
+                assertThrows<SQLException> {
+                    demo.prepareStatement("select stage_p1_synthetic_async_request('DB',?,?)").use { statement ->
+                        statement.setString(1, partitionKey)
+                        statement.setString(2, runId)
+                        statement.executeQuery()
+                    }
+                }
+            assertEquals("42501", inactive.sqlState)
+        }
+        connection("s7_p1_demo", postgres.username, postgres.password).use { owner ->
+            owner
+                .prepareStatement(
+                    "insert into p1_offline_demo_authority(" +
+                        "authority_id,active,credential_bundle_digest) values ('P1_OFFLINE_DEMO',true,?)",
+                ).use { statement ->
+                    statement.setString(1, "b".repeat(64))
+                    assertEquals(1, statement.executeUpdate())
+                }
+        }
+        connection("s7_p1_demo", DEMO_USER, DEMO_PASSWORD).use { demo ->
+            repeat(2) {
+                demo.prepareStatement("select stage_p1_synthetic_async_request('DB',?,?)").use { statement ->
+                    statement.setString(1, partitionKey)
+                    statement.setString(2, runId)
+                    statement.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals("job_p1_container_db_$runId", rows.getString(1))
+                    }
+                }
+            }
+            val nextRunId = "2".repeat(32)
+            demo.prepareStatement("select stage_p1_synthetic_async_request('DB',?,?)").use { statement ->
+                statement.setString(1, partitionKey)
+                statement.setString(2, nextRunId)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals("job_p1_container_db_$nextRunId", rows.getString(1))
+                }
+            }
+            demo.createStatement().use { statement ->
+                assertFalse(booleanResult(statement, "select verify_p1_synthetic_async_request('DB','$runId')"))
+                assertFalse(booleanResult(statement, "select verify_p1_synthetic_async_request('DB','$nextRunId')"))
+                val directRead = assertThrows<SQLException> { statement.executeQuery("select * from async_job") }
+                assertEquals("42501", directRead.sqlState)
+                val authorityWrite =
+                    assertThrows<SQLException> {
+                        statement.executeUpdate("update p1_offline_demo_authority set active=false")
+                    }
+                assertEquals("42501", authorityWrite.sqlState)
+            }
+        }
+        connection("s7_p1_demo", APP_USER, APP_PASSWORD).use { app ->
+            val denied =
+                assertThrows<SQLException> {
+                    app.createStatement().use {
+                        it.executeQuery("select stage_p1_synthetic_async_request('DB','$partitionKey','$runId')")
+                    }
+                }
+            assertEquals("42501", denied.sqlState)
+        }
+    }
+
+    @Test
+    fun `V87 migrates fresh and V79 upgrade with exact role boundary`() {
         for (database in listOf("decision", "s7_fresh")) {
             connection(database, postgres.username, postgres.password).use { owner ->
                 owner.createStatement().use { statement ->
                     statement.executeQuery("select version from flyway_schema_history order by installed_rank").use { rows ->
                         val versions = mutableListOf<String>()
                         while (rows.next()) versions += rows.getString(1)
-                        assertEquals((1..85).map(Int::toString), versions)
+                        assertEquals((1..87).map(Int::toString), versions)
                     }
                     statement.executeQuery("select count(*) from async_event_registry").use { rows ->
                         assertTrue(rows.next())
@@ -196,6 +271,109 @@ class S7AsyncMigrationIntegrationTest {
     }
 
     @Test
+    fun `Kafka publisher and poison recorder roles are exact and one purpose only`() {
+        val database = "s7_kafka_roles"
+        val eventId = "evt_kafka_role_boundary_0001"
+        val partitionKey = "hmac-sha256:${"a".repeat(64)}"
+        connection(database, postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use { statement ->
+                statement.executeUpdate(
+                    """
+                    insert into event_outbox(
+                      event_id,event_type,aggregate_type,aggregate_id,partition_key,payload_json,
+                      schema_version,status,retry_count,next_attempt_at
+                    ) values (
+                      '$eventId','artifact.ingest-requested.v1','ASYNC_JOB','job_kafka_role_boundary_0001',
+                      '$partitionKey',
+                      '{"jobId":"job_kafka_role_boundary_0001","artifactId":"artifact_kafka_role_boundary_0001",
+                        "contentHash":"sha256:${"b".repeat(64)}"}'::jsonb,
+                      '1.0.0','PENDING',0,statement_timestamp()
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        for ((user, password) in listOf(APP_USER to APP_PASSWORD, WORKER_USER to WORKER_PASSWORD)) {
+            connection(database, user, password).use { denied ->
+                val error =
+                    assertThrows<SQLException> {
+                        denied.createStatement().use {
+                            it.executeQuery("select * from p1_claim_kafka_outbox('p1-kafka-outbox-publisher',100)")
+                        }
+                    }
+                assertEquals("42501", error.sqlState)
+            }
+        }
+
+        var claimToken: UUID? = null
+        connection(database, OUTBOX_USER, OUTBOX_PASSWORD).use { publisher ->
+            publisher.createStatement().use { statement ->
+                statement.executeQuery("select * from p1_claim_kafka_outbox('p1-kafka-outbox-publisher',100)").use { rows ->
+                    while (rows.next()) {
+                        if (rows.getString("event_id") == eventId) claimToken = rows.getObject("claim_token", UUID::class.java)
+                    }
+                }
+                assertTrue(claimToken != null)
+                assertTrue(
+                    booleanResult(
+                        statement,
+                        "select p1_bind_kafka_outbox_payload_hash('$eventId','$claimToken','sha256:${"c".repeat(64)}')",
+                    ),
+                )
+                assertTrue(booleanResult(statement, "select p1_complete_kafka_outbox('$eventId','$claimToken')"))
+                val tableRead = assertThrows<SQLException> { statement.executeQuery("select * from event_outbox") }
+                assertEquals("42501", tableRead.sqlState)
+                val poison =
+                    assertThrows<SQLException> {
+                        statement.executeQuery(
+                            "select p1_record_kafka_poison_receipt(" +
+                                "'evt_poison_denied_00000001','artifact.ingest-requested.v1','sha256:${"d".repeat(64)}'," +
+                                "'artifact.ingest-requested.v1',1,7,1,'INVALID_EVENT_PAYLOAD','$partitionKey',null,null)",
+                        )
+                    }
+                assertEquals("42501", poison.sqlState)
+            }
+        }
+
+        val poisonEvent = "evt_poison_role_boundary_0001"
+        connection(database, POISON_USER, POISON_PASSWORD).use { recorder ->
+            recorder.createStatement().use { statement ->
+                val sql =
+                    "select p1_record_kafka_poison_receipt(" +
+                        "'$poisonEvent','artifact.ingest-requested.v1','sha256:${"d".repeat(64)}'," +
+                        "'artifact.ingest-requested.v1',1,7,1,'INVALID_EVENT_SIGNATURE','$partitionKey',null,null)"
+                assertTrue(booleanResult(statement, sql))
+                assertTrue(booleanResult(statement, sql))
+                val tableRead = assertThrows<SQLException> { statement.executeQuery("select * from p1_kafka_poison_receipt") }
+                assertEquals("42501", tableRead.sqlState)
+                val publisherClaim =
+                    assertThrows<SQLException> {
+                        statement.executeQuery("select * from p1_claim_kafka_outbox('p1-kafka-outbox-publisher',100)")
+                    }
+                assertEquals("42501", publisherClaim.sqlState)
+            }
+        }
+        connection(database, postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use { statement ->
+                assertEquals(
+                    1,
+                    statement
+                        .executeQuery(
+                            "select count(*) from p1_kafka_poison_receipt where source_topic='artifact.ingest-requested.v1' " +
+                                "and source_partition=1 and source_offset=7",
+                        ).use { rows ->
+                            assertTrue(rows.next())
+                            rows.getInt(1)
+                        },
+                )
+                val immutable = assertThrows<SQLException> { statement.executeUpdate("delete from p1_kafka_poison_receipt") }
+                assertEquals("42501", immutable.sqlState)
+            }
+        }
+    }
+
+    @Test
     fun `actor capability is current owner bound one use and bounded cleanup`() {
         val jobId = "job_capability_00000001"
         connection("decision", postgres.username, postgres.password).use { owner ->
@@ -214,7 +392,12 @@ class S7AsyncMigrationIntegrationTest {
                     statement.executeUpdate()
                 }
         }
-        val capability = issueCapability("decision", "usr_demo_admin")
+        val capability =
+            issueCapability(
+                "decision",
+                "usr_demo_admin",
+                ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", jobId, ActorCapabilityRolePolicy.ADMIN_ONLY),
+            )
         connection("decision", APP_USER, APP_PASSWORD).use { app ->
             app.prepareStatement("select * from read_async_job_status_authorized(?,?,?,?)").use { statement ->
                 statement.setString(1, capability)
@@ -243,7 +426,11 @@ class S7AsyncMigrationIntegrationTest {
                 )
             }
         }
-        issueCapability("decision", "usr_demo_admin")
+        issueCapability(
+            "decision",
+            "usr_demo_admin",
+            ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", jobId, ActorCapabilityRolePolicy.ADMIN_ONLY),
+        )
         connection("decision", postgres.username, postgres.password).use { owner ->
             owner.createStatement().use { statement ->
                 statement
@@ -405,7 +592,19 @@ class S7AsyncMigrationIntegrationTest {
                 assertTrue(booleanResult(statement, "select aggregate_dlq_events()"))
             }
             app.prepareStatement("select * from read_stream_metric_status_authorized(?,?,?)").use { statement ->
-                statement.setString(1, issueCapability("s7_fresh", "usr_demo_admin"))
+                statement.setString(
+                    1,
+                    issueCapability(
+                        "s7_fresh",
+                        "usr_demo_admin",
+                        ActorCapabilityBinding.request(
+                            "READ_STREAM_METRICS",
+                            "STREAM_METRICS",
+                            "stream-metrics",
+                            ActorCapabilityRolePolicy.ADMIN_ONLY,
+                        ),
+                    ),
+                )
                 statement.setString(2, "usr_demo_admin")
                 statement.setLong(3, 1)
                 statement.executeQuery().use { rows ->
@@ -541,7 +740,19 @@ class S7AsyncMigrationIntegrationTest {
                 assertFalse(booleanResult(statement, "select aggregate_dlq_events()"))
             }
             app.prepareStatement("select * from read_stream_metric_status_authorized(?,?,?)").use { statement ->
-                statement.setString(1, issueCapability("decision", "usr_demo_admin"))
+                statement.setString(
+                    1,
+                    issueCapability(
+                        "decision",
+                        "usr_demo_admin",
+                        ActorCapabilityBinding.request(
+                            "READ_STREAM_METRICS",
+                            "STREAM_METRICS",
+                            "stream-metrics",
+                            ActorCapabilityRolePolicy.ADMIN_ONLY,
+                        ),
+                    ),
+                )
                 statement.setString(2, "usr_demo_admin")
                 statement.setLong(3, 1)
                 statement.executeQuery().use { rows ->
@@ -553,7 +764,19 @@ class S7AsyncMigrationIntegrationTest {
                 }
             }
             app.prepareStatement("select count(*) from read_stream_metric_status_authorized(?,?,?)").use { statement ->
-                statement.setString(1, issueCapability("decision", "usr_demo_admin"))
+                statement.setString(
+                    1,
+                    issueCapability(
+                        "decision",
+                        "usr_demo_admin",
+                        ActorCapabilityBinding.request(
+                            "READ_STREAM_METRICS",
+                            "STREAM_METRICS",
+                            "stream-metrics",
+                            ActorCapabilityRolePolicy.ADMIN_ONLY,
+                        ),
+                    ),
+                )
                 statement.setString(2, "usr_demo_admin")
                 statement.setLong(3, 999)
                 statement.executeQuery().use { rows ->
@@ -718,6 +941,74 @@ class S7AsyncMigrationIntegrationTest {
                     assertFalse(rows.getBoolean(1))
                 }
             }
+            worker.prepareStatement("select count(*) from claim_async_job_by_event(?,?,?,?,?,?)").use { statement ->
+                statement.setString(1, "worker:expired-reclaim")
+                statement.setString(2, expiredEventId)
+                statement.setString(3, "model.eval-requested.v1")
+                statement.setString(4, expiredJobId)
+                statement.setString(5, expiredPayloadHash)
+                statement.setString(6, expiredPartitionKey)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals(0, rows.getInt(1))
+                }
+            }
+        }
+        connection("decision", postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use { statement ->
+                statement.executeQuery("select status,error_code from async_job where job_id='$expiredJobId'").use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals("NEEDS_REVIEW", rows.getString(1))
+                    assertEquals("LEASE_EXPIRED", rows.getString(2))
+                }
+                statement
+                    .executeQuery(
+                        "select count(*) from async_job_transition_audit where job_id='$expiredJobId' " +
+                            "and previous_status='RUNNING' and next_status='FAILED' and failure_code='LEASE_EXPIRED'",
+                    ).use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals(1, rows.getInt(1))
+                    }
+            }
+        }
+
+        val reclaimJobId = "job_reclaim_claim_00000001"
+        val reclaimEventId = "evt_reclaim_claim_00000001"
+        val reclaimPartitionKey = "hmac-sha256:${"9".repeat(64)}"
+        val reclaimPayload =
+            "{\"jobId\":\"$reclaimJobId\",\"ownerRef\":\"usr_demo_user\"," +
+                "\"runId\":\"run_reclaim_claim_0001\",\"contentHash\":\"sha256:${"9".repeat(64)}\"}"
+        createAsyncRequest("decision", reclaimJobId, reclaimEventId, reclaimPayload, reclaimPartitionKey)
+        val reclaimPayloadHash = claimAndBindOutbox("decision", reclaimEventId)
+        val firstReclaimToken =
+            claimJob(reclaimEventId, reclaimJobId, reclaimPayloadHash, reclaimPartitionKey, "worker:reclaim-1")
+        connection("decision", postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use {
+                it.executeUpdate(
+                    "update async_job set lease_expires_at=statement_timestamp()-interval '1 second'," +
+                        "hard_deadline_at=statement_timestamp()+interval '10 minutes' where job_id='$reclaimJobId'",
+                )
+            }
+        }
+        val secondReclaimToken =
+            claimJob(reclaimEventId, reclaimJobId, reclaimPayloadHash, reclaimPartitionKey, "worker:reclaim-2")
+        assertFalse(firstReclaimToken == secondReclaimToken)
+        connection("decision", postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use { statement ->
+                statement.executeQuery("select status,attempt_count from async_job where job_id='$reclaimJobId'").use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals("RUNNING", rows.getString(1))
+                    assertEquals(2, rows.getInt(2))
+                }
+                statement
+                    .executeQuery(
+                        "select count(*) from async_job_transition_audit where job_id='$reclaimJobId' " +
+                            "and previous_status='RUNNING' and next_status='FAILED' and failure_code='LEASE_EXPIRED'",
+                    ).use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals(1, rows.getInt(1))
+                    }
+            }
         }
 
         connection("decision", postgres.username, postgres.password).use { owner ->
@@ -805,7 +1096,14 @@ class S7AsyncMigrationIntegrationTest {
         createAsyncRequest("decision", jobId, eventId, payload, "hmac-sha256:${"a".repeat(64)}")
         connection("decision", APP_USER, APP_PASSWORD).use { app ->
             app.prepareStatement("select count(*) from read_async_job_status_authorized(?,?,?,?)").use { statement ->
-                statement.setString(1, issueCapability("decision", "usr_demo_user"))
+                statement.setString(
+                    1,
+                    issueCapability(
+                        "decision",
+                        "usr_demo_user",
+                        ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", jobId, ActorCapabilityRolePolicy.OWNER),
+                    ),
+                )
                 statement.setString(2, "usr_demo_user")
                 statement.setLong(3, 1)
                 statement.setString(4, jobId)
@@ -815,7 +1113,14 @@ class S7AsyncMigrationIntegrationTest {
                 }
             }
             app.prepareStatement("select job_id,status from read_async_job_status_authorized(?,?,?,?)").use { statement ->
-                statement.setString(1, issueCapability("decision", "usr_demo_admin"))
+                statement.setString(
+                    1,
+                    issueCapability(
+                        "decision",
+                        "usr_demo_admin",
+                        ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", jobId, ActorCapabilityRolePolicy.ADMIN_ONLY),
+                    ),
+                )
                 statement.setString(2, "usr_demo_admin")
                 statement.setLong(3, 1)
                 statement.setString(4, jobId)
@@ -827,7 +1132,24 @@ class S7AsyncMigrationIntegrationTest {
                 }
             }
             app.prepareStatement("select job_id from list_async_job_status_authorized(?,?,?,?,?,?,?,?)").use { statement ->
-                statement.setString(1, issueCapability("decision", "usr_demo_admin"))
+                statement.setString(
+                    1,
+                    issueCapability(
+                        "decision",
+                        "usr_demo_admin",
+                        ActorCapabilityBinding.request(
+                            "LIST_ASYNC_JOBS",
+                            "ASYNC_JOB_LIST",
+                            "async-jobs",
+                            ActorCapabilityRolePolicy.ADMIN_ONLY,
+                            "REQUESTED",
+                            "MODEL_EVAL",
+                            null,
+                            null,
+                            "51",
+                        ),
+                    ),
+                )
                 statement.setString(2, "usr_demo_admin")
                 statement.setLong(3, 1)
                 statement.setString(4, "REQUESTED")
@@ -842,7 +1164,14 @@ class S7AsyncMigrationIntegrationTest {
                 }
             }
             app.prepareStatement("select count(*) from read_async_job_status_authorized(?,?,?,?)").use { statement ->
-                statement.setString(1, issueCapability("decision", "usr_demo_admin"))
+                statement.setString(
+                    1,
+                    issueCapability(
+                        "decision",
+                        "usr_demo_admin",
+                        ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", jobId, ActorCapabilityRolePolicy.ADMIN_ONLY),
+                    ),
+                )
                 statement.setString(2, "usr_demo_admin")
                 statement.setLong(3, 999)
                 statement.setString(4, jobId)
@@ -908,6 +1237,53 @@ class S7AsyncMigrationIntegrationTest {
                     assertTrue(rows.next())
                     assertTrue(rows.getBoolean(1))
                 }
+            }
+        }
+        connection("decision", postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use {
+                it.executeUpdate(
+                    "insert into kafka_poison_receipt(source_topic,source_partition,source_offset,event_id,payload_hash,failure_code) " +
+                        "select 'artifact.ingest-requested.v1',2,value,'evt_quota_'||lpad(value::text,12,'0')," +
+                        "'sha256:${"d".repeat(64)}','INVALID_EVENT_PAYLOAD' from generate_series(1,999) value",
+                )
+            }
+        }
+        connection("decision", WORKER_USER, WORKER_PASSWORD).use { worker ->
+            worker.prepareStatement("select record_kafka_poison(?,?,?,?,?,?,?,?,?)").use { statement ->
+                statement.setString(1, originalEventId)
+                statement.setString(2, "artifact.ingest-requested.v1")
+                statement.setString(3, payloadHash)
+                statement.setString(4, "artifact.ingest-requested.v1")
+                statement.setInt(5, 1)
+                statement.setLong(6, 42)
+                statement.setInt(7, 1)
+                statement.setString(8, "INVALID_EVENT_PAYLOAD")
+                statement.setString(9, partitionKey)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertFalse(rows.getBoolean(1))
+                }
+            }
+            val novelDenied =
+                assertThrows<SQLException> {
+                    worker.prepareStatement("select record_kafka_poison(?,?,?,?,?,?,?,?,?)").use { statement ->
+                        statement.setString(1, "evt_poison_novel_0001")
+                        statement.setString(2, "artifact.ingest-requested.v1")
+                        statement.setString(3, payloadHash)
+                        statement.setString(4, "artifact.ingest-requested.v1")
+                        statement.setInt(5, 1)
+                        statement.setLong(6, 43)
+                        statement.setInt(7, 1)
+                        statement.setString(8, "INVALID_EVENT_PAYLOAD")
+                        statement.setString(9, partitionKey)
+                        statement.executeQuery()
+                    }
+                }
+            assertEquals("54000", novelDenied.sqlState)
+        }
+        connection("decision", postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use {
+                it.executeUpdate("delete from kafka_poison_receipt where source_partition=2")
             }
         }
         val claimToken =
@@ -1026,6 +1402,78 @@ class S7AsyncMigrationIntegrationTest {
             }
         }
 
+    private fun issueCapability(
+        databaseName: String,
+        actorUserId: String,
+        binding: ActorCapabilityBinding,
+    ): String {
+        val sessionHandle =
+            connection(databaseName, AUTH_USER, AUTH_PASSWORD).use { auth ->
+                auth.prepareStatement("select session_handle from authenticate_demo_actor_session_v1(?,?,43200)").use { statement ->
+                    statement.setString(1, if (actorUserId == "usr_demo_admin") "demo-admin" else "demo-user")
+                    statement.setString(
+                        2,
+                        if (actorUserId == "usr_demo_admin") {
+                            SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD
+                        } else {
+                            SpringApiIntegrationTestBase.TEST_USER_PASSWORD
+                        },
+                    )
+                    statement.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        requireNotNull(rows.getString(1))
+                    }
+                }
+            }
+        val identityHandle =
+            connection(databaseName, AUTH_USER, AUTH_PASSWORD).use { auth ->
+                auth.prepareStatement("select register_actor_identity_handle_v1(?,?,?,?,?,?,15)").use { statement ->
+                    statement.setString(1, sessionHandle)
+                    statement.setString(2, binding.operation)
+                    statement.setString(3, binding.targetKind)
+                    statement.setString(4, binding.targetId)
+                    statement.setString(5, binding.payloadHash)
+                    statement.setString(6, binding.rolePolicy.name)
+                    statement.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        requireNotNull(rows.getString(1))
+                    }
+                }
+            }
+        return DatabaseActorCapabilityAuthority(
+            dataSource =
+                org.springframework.jdbc.datasource.DriverManagerDataSource(
+                    jdbcUrl(databaseName),
+                    IDENTITY_USER,
+                    IDENTITY_PASSWORD,
+                ),
+            privateKey = ACTOR_CAPABILITY_KEY_PAIR.private,
+            publicKey = ACTOR_CAPABILITY_KEY_PAIR.public,
+        ).issue(identityHandle, binding)
+    }
+
+    private fun claimJob(
+        eventId: String,
+        jobId: String,
+        payloadHash: String,
+        partitionKey: String,
+        workerId: String,
+    ): UUID =
+        connection("decision", WORKER_USER, WORKER_PASSWORD).use { worker ->
+            worker.prepareStatement("select claim_token from claim_async_job_by_event(?,?,?,?,?,?)").use { statement ->
+                statement.setString(1, workerId)
+                statement.setString(2, eventId)
+                statement.setString(3, "model.eval-requested.v1")
+                statement.setString(4, jobId)
+                statement.setString(5, payloadHash)
+                statement.setString(6, partitionKey)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    rows.getObject(1, UUID::class.java)
+                }
+            }
+        }
+
     private fun createAsyncRequest(
         databaseName: String,
         jobId: String,
@@ -1034,8 +1482,27 @@ class S7AsyncMigrationIntegrationTest {
         partitionKey: String,
     ) {
         connection(databaseName, APP_USER, APP_PASSWORD).use { app ->
-            app.prepareStatement("select create_async_request_authorized(?,?,?,?,?,?,?,?::jsonb)").use { statement ->
-                statement.setString(1, issueCapability(databaseName, "usr_demo_user"))
+            app.prepareStatement("select create_async_request_authorized(?,?,?,?,?,?,?,?)").use { statement ->
+                statement.setString(
+                    1,
+                    issueCapability(
+                        databaseName,
+                        "usr_demo_user",
+                        ActorCapabilityBinding.request(
+                            "CREATE_ASYNC_REQUEST",
+                            "ASYNC_JOB",
+                            jobId,
+                            ActorCapabilityRolePolicy.OWNER,
+                            eventId,
+                            "model.eval-requested.v1",
+                            partitionKey,
+                            jobId,
+                            "MODEL_EVAL",
+                            "usr_demo_user",
+                            payload,
+                        ),
+                    ),
+                )
                 statement.setString(2, eventId)
                 statement.setString(3, "model.eval-requested.v1")
                 statement.setString(4, partitionKey)
@@ -1124,6 +1591,43 @@ class S7AsyncMigrationIntegrationTest {
 
     private fun jdbcUrl(databaseName: String): String = postgres.jdbcUrl.replace("/decision", "/$databaseName")
 
+    @Test
+    fun `V87 provider approval is atomic one-shot and replay role has no table access`() {
+        val packetHash = "sha256:" + "1".repeat(64)
+        val approvalHash = "sha256:" + "2".repeat(64)
+        val nonceHash = "sha256:" + "3".repeat(64)
+        val operationHash = "sha256:" + "4".repeat(64)
+        connection("decision", REPLAY_USER, REPLAY_PASSWORD).use { replay ->
+            replay.createStatement().use { statement ->
+                val sql =
+                    "select consume_p1_provider_approval(" +
+                        "'$packetHash','$approvalHash','$nonceHash','$operationHash',8," +
+                        "statement_timestamp() + interval '5 minutes')"
+                assertTrue(booleanResult(statement, sql))
+                assertFalse(booleanResult(statement, sql))
+                val denied =
+                    assertThrows<SQLException> {
+                        statement.executeQuery("select count(*) from p1_provider_approval_claim")
+                    }
+                assertEquals("42501", denied.sqlState)
+            }
+        }
+        connection("decision", APP_USER, APP_PASSWORD).use { app ->
+            val denied =
+                assertThrows<SQLException> {
+                    app.createStatement().use {
+                        it.executeQuery(
+                            "select consume_p1_provider_approval(" +
+                                "'sha256:${"5".repeat(64)}','sha256:${"6".repeat(64)}'," +
+                                "'sha256:${"7".repeat(64)}','sha256:${"8".repeat(64)}',1," +
+                                "statement_timestamp() + interval '5 minutes')",
+                        )
+                    }
+                }
+            assertEquals("42501", denied.sqlState)
+        }
+    }
+
     private fun booleanResult(
         statement: java.sql.Statement,
         sql: String,
@@ -1138,12 +1642,21 @@ class S7AsyncMigrationIntegrationTest {
         private const val APP_PASSWORD = "app-test"
         private const val WORKER_USER = "decision_worker"
         private const val WORKER_PASSWORD = "worker-test-secret-0001"
+        private const val OUTBOX_USER = "decision_outbox_publisher"
+        private const val OUTBOX_PASSWORD = "outbox-publisher-test-0001"
+        private const val POISON_USER = "decision_poison_recorder"
+        private const val POISON_PASSWORD = "poison-recorder-test-0001"
         private const val REPLAY_USER = "decision_replay"
         private const val REPLAY_PASSWORD = "replay-test-secret-0001"
         private const val IDENTITY_USER = "decision_identity"
         private const val IDENTITY_PASSWORD = "identity-test-secret-0001"
+        private const val AUTH_USER = "decision_auth"
+        private const val AUTH_PASSWORD = "auth-test-secret-0001"
         private const val REPLAY_AUTHORIZER_USER = "decision_replay_authorizer"
         private const val REPLAY_AUTHORIZER_PASSWORD = "replay-authorizer-test-0001"
+        private const val DEMO_USER = "decision_demo"
+        private const val DEMO_PASSWORD = "demo-test-secret-0001"
+        private val ACTOR_CAPABILITY_KEY_PAIR = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
         private val postgresImage =
             DockerImageName
                 .parse(
@@ -1154,7 +1667,7 @@ class S7AsyncMigrationIntegrationTest {
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision")
                 .withUsername("decision")
                 .withPassword("decision")

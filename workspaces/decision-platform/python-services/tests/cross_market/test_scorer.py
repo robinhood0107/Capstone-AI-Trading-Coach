@@ -10,7 +10,6 @@ from app.cross_market.scorer import (
     ScorerSeries,
 )
 
-
 EVALUATED_AT = datetime(2026, 7, 31, 0, 30, tzinfo=UTC)
 
 
@@ -31,8 +30,7 @@ def _series(
         current_value=current,
         current_complete=complete,
         current_available_at=available_at or EVALUATED_AT - timedelta(minutes=1),
-        completed_history=history
-        or tuple(Decimal(value) for value in range(1, 253)),
+        completed_history=history or tuple(Decimal(value) for value in range(1, 253)),
     )
 
 
@@ -73,9 +71,7 @@ def test_scorer_uses_exact_252_adverse_percentiles_and_equal_weight_median() -> 
     assert result.component(ComponentName.SEMICONDUCTOR).score == Decimal("69.246032")
     assert result.component(ComponentName.BROAD_MARKET).score == Decimal("89.384921")
     assert result.component(ComponentName.FX).score == Decimal("100.000000")
-    assert result.component(ComponentName.DOMESTIC_AMPLIFICATION).score == Decimal(
-        "79.166667"
-    )
+    assert result.component(ComponentName.DOMESTIC_AMPLIFICATION).score == Decimal("79.166667")
     assert all(item.history_session_count == 252 for item in result.components)
     assert b"threshold" not in result.canonical_bytes()
     assert b"decision" not in result.canonical_bytes()
@@ -93,7 +89,9 @@ def test_scorer_is_byte_identical_under_input_reordering_and_changes_on_mutation
     assert first != scorer.score(tuple(mutated), evaluated_at=EVALUATED_AT).canonical_bytes()
 
 
-def test_ties_are_midrank_and_missing_future_incomplete_nonfinite_are_unavailable_not_zero() -> None:
+def test_ties_are_midrank_and_missing_future_incomplete_nonfinite_are_unavailable_not_zero() -> (
+    None
+):
     tied = tuple(Decimal("7") for _ in range(252))
     valid_tie = _series(
         "USDKRW",
@@ -119,9 +117,7 @@ def test_ties_are_midrank_and_missing_future_incomplete_nonfinite_are_unavailabl
         valid_tie,
     )
 
-    result = CrossMarketScorer("cross-market-score.v1").score(
-        invalid, evaluated_at=EVALUATED_AT
-    )
+    result = CrossMarketScorer("cross-market-score.v1").score(invalid, evaluated_at=EVALUATED_AT)
 
     assert result.component(ComponentName.FX).score == Decimal("50.000000")
     semiconductor = result.component(ComponentName.SEMICONDUCTOR)

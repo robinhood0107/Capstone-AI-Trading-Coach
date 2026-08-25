@@ -42,12 +42,11 @@ from app.data.krx.settings import KrxOpenApiSettings
 from app.rag.oa112_downloader import (
     Oa112DownloadError,
     _Oa112SourceDeadline,
+    _resolve_public_addresses,
     _SocketOa112DnsResolver,
     _StdlibOa112HttpsTransport,
-    _resolve_public_addresses,
     _validate_peer,
 )
-
 
 _SEC_HOSTNAME: Final[str] = "data.sec.gov"
 _SEC_MAX_RESPONSE_BYTES: Final[int] = 512 * 1024
@@ -265,7 +264,9 @@ class Core6SecEdgarBackend(Core6ProbeBackend):
         user_agent_reader: Callable[[], str] | None = None,
     ) -> None:
         self._transport = transport or StdlibSecEdgarProbeTransport()
-        self._user_agent_reader = user_agent_reader or (lambda: os.environ.get("SEC_EDGAR_USER_AGENT", ""))
+        self._user_agent_reader = user_agent_reader or (
+            lambda: os.environ.get("SEC_EDGAR_USER_AGENT", "")
+        )
         self._user_agent = ""
 
     def preflight(self, *, packet: Core6ProbePacket) -> None:
@@ -485,7 +486,9 @@ class StdlibSecEdgarProbeTransport:
                             "Host": _SEC_HOSTNAME,
                             "User-Agent": user_agent,
                         },
-                        read_timeout_seconds=min(_SEC_TIMEOUT_SECONDS, deadline.remaining_seconds()),
+                        read_timeout_seconds=min(
+                            _SEC_TIMEOUT_SECONDS, deadline.remaining_seconds()
+                        ),
                     )
                     _validate_sec_response_headers(response.headers)
                     body = _read_sec_body(

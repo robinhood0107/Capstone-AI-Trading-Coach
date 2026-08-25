@@ -45,9 +45,7 @@ def test_forward_transitions_only(tmp_path: Path) -> None:
     root = _root(tmp_path)
     state = initial_run_state()
     for phase in (RunPhase.QUALIFYING, RunPhase.SERVING):
-        state = advance_run_state(
-            run_root=root, current=state, phase=phase, outcome="ok"
-        )
+        state = advance_run_state(run_root=root, current=state, phase=phase, outcome="ok")
     assert state.phase is RunPhase.SERVING
     assert state.tick == 2
 
@@ -62,9 +60,7 @@ def test_forward_transitions_only(tmp_path: Path) -> None:
     # 단계를 건너뛰는 것도 거부된다. 이 검증이 실제로 tick 구현의 건너뛰기를 잡아냈다.
     fresh = initial_run_state()
     with pytest.raises(LightGbmContractError, match="transition is not approved"):
-        advance_run_state(
-            run_root=root, current=fresh, phase=RunPhase.SERVING, outcome="skip"
-        )
+        advance_run_state(run_root=root, current=fresh, phase=RunPhase.SERVING, outcome="skip")
 
 
 def test_staying_in_a_phase_is_allowed(tmp_path: Path) -> None:
@@ -87,9 +83,7 @@ def test_serving_can_reenter_qualification_for_requalification(tmp_path: Path) -
     root = _root(tmp_path)
     state = initial_run_state()
     for phase in (RunPhase.QUALIFYING, RunPhase.SERVING):
-        state = advance_run_state(
-            run_root=root, current=state, phase=phase, outcome="ok"
-        )
+        state = advance_run_state(run_root=root, current=state, phase=phase, outcome="ok")
     state = advance_run_state(
         run_root=root, current=state, phase=RunPhase.QUALIFYING, outcome="requalify"
     )
@@ -108,9 +102,7 @@ def test_needs_human_is_reachable_but_not_escapable(tmp_path: Path) -> None:
     )
     assert state.needs_human
     with pytest.raises(LightGbmContractError, match="transition is not approved"):
-        advance_run_state(
-            run_root=root, current=state, phase=RunPhase.QUALIFYING, outcome="retry"
-        )
+        advance_run_state(run_root=root, current=state, phase=RunPhase.QUALIFYING, outcome="retry")
 
 
 def test_state_round_trips_and_history_is_append_only(tmp_path: Path) -> None:

@@ -9,8 +9,8 @@ import os
 import re
 import socket
 import ssl
-import subprocess
 import stat
+import subprocess
 import sys
 import threading
 import time
@@ -144,7 +144,7 @@ class Oa112HttpsConnection(Protocol):
 
     peer_ip: str
 
-    def __enter__(self) -> "Oa112HttpsConnection": ...
+    def __enter__(self) -> Oa112HttpsConnection: ...
 
     def __exit__(self, *args: object) -> None: ...
 
@@ -167,7 +167,7 @@ class Oa112HttpsTransport(Protocol):
         pinned_ip: str,
         connect_timeout_seconds: float,
         read_timeout_seconds: float,
-        deadline: "_Oa112SourceDeadline",
+        deadline: _Oa112SourceDeadline,
     ) -> Oa112HttpsConnection: ...
 
 
@@ -205,7 +205,7 @@ class Oa112DownloadPacket:
         *,
         entries: Sequence[Oa112RegistryEntry],
         registry_digest: str,
-        execution_binding: "Oa112DownloadBinding",
+        execution_binding: Oa112DownloadBinding,
         now: datetime,
     ) -> None:
         """packet은 current registry와 exact source order를 모두 보지 못하면 outbound를 열지 않는다."""
@@ -277,12 +277,9 @@ class Oa112DownloadBinding:
     def validate(self) -> None:
         """ambient 값은 packet loader가 신뢰할 수 없으므로 각 형식을 독립적으로 제한한다."""
 
-        if (
-            _HEAD_SHA.fullmatch(self.head_sha) is None
-            or any(
-                _SHA256.fullmatch(value) is None
-                for value in (self.tree_sha256, self.ci_digest, self.security_digest)
-            )
+        if _HEAD_SHA.fullmatch(self.head_sha) is None or any(
+            _SHA256.fullmatch(value) is None
+            for value in (self.tree_sha256, self.ci_digest, self.security_digest)
         ):
             raise Oa112DownloadError("OA112_EXECUTION_EVIDENCE_INVALID")
 
@@ -369,7 +366,7 @@ class _Oa112SourceDeadline:
         self._timer.daemon = True
         self._timer.start()
 
-    def __enter__(self) -> "_Oa112SourceDeadline":
+    def __enter__(self) -> _Oa112SourceDeadline:
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -456,9 +453,9 @@ class _SocketOa112DnsResolver:
     def resolve(self, hostname: str, *, timeout_seconds: float) -> list[str]:
         if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise Oa112DownloadError("OA112_DOWNLOAD_TIME_BOUND")
-        payload = json.dumps(
-            {"hostname": hostname}, separators=(",", ":"), sort_keys=True
-        ).encode("utf-8")
+        payload = json.dumps({"hostname": hostname}, separators=(",", ":"), sort_keys=True).encode(
+            "utf-8"
+        )
         if not payload or len(payload) >= _DNS_WORKER_INPUT_MAX_BYTES:
             raise Oa112DownloadError("OA112_DOWNLOAD_DNS")
         try:
@@ -515,7 +512,9 @@ def _abort_socket(connected_socket: socket.socket | ssl.SSLSocket | None) -> Non
 
 
 class _StdlibOa112DownloadResponse:
-    def __init__(self, response: http.client.HTTPResponse, *, connected_socket: ssl.SSLSocket) -> None:
+    def __init__(
+        self, response: http.client.HTTPResponse, *, connected_socket: ssl.SSLSocket
+    ) -> None:
         self._response = response
         self._socket = connected_socket
         self.status_code = response.status
@@ -708,7 +707,9 @@ def load_oa112_download_packet(
 
     if not _is_leaf(relative_path):
         raise Oa112DownloadError("OA112_PACKET_UNSAFE")
-    content = _read_private_control_file(root=approved_root, name=relative_path, maximum=_MAX_PACKET_BYTES)
+    content = _read_private_control_file(
+        root=approved_root, name=relative_path, maximum=_MAX_PACKET_BYTES
+    )
     try:
         payload = _parse_canonical_json(content)
         packet = _packet_from_payload(payload)
@@ -717,7 +718,10 @@ def load_oa112_download_packet(
     except (TypeError, ValueError) as error:
         raise Oa112DownloadError("OA112_PACKET_INVALID") from error
     check_now = now or _utc_now()
-    if packet.expires_at.tzinfo != UTC or not check_now < packet.expires_at <= check_now + timedelta(hours=1):
+    if (
+        packet.expires_at.tzinfo != UTC
+        or not check_now < packet.expires_at <= check_now + timedelta(hours=1)
+    ):
         raise Oa112DownloadError("OA112_PACKET_INVALID")
     return packet
 
@@ -794,9 +798,7 @@ def consume_oa112_download_packet(*, packet: Oa112DownloadPacket, control_root: 
     claims_fd = -1
     try:
         claims_fd = _open_or_create_private_directory(root_fd, "oa112-packet-claims")
-        claim_name = hashlib.sha256(
-            f"oa112-download-nonce\0{packet.nonce}".encode("utf-8")
-        ).hexdigest()
+        claim_name = hashlib.sha256(f"oa112-download-nonce\0{packet.nonce}".encode()).hexdigest()
         content = json.dumps(
             {
                 "packetDigest": _packet_digest(packet),
@@ -990,7 +992,9 @@ def download_oa112_local_cache(
         result = Oa112DownloadReceipt(
             attempt_count=attempt_count,
             physical_call_count=physical_call_count,
-            downloaded_source_count=sum(item.state in {"DOWNLOADED", "RESUMED"} for item in ordered),
+            downloaded_source_count=sum(
+                item.state in {"DOWNLOADED", "RESUMED"} for item in ordered
+            ),
             reused_source_count=sum(item.state == "REUSED" for item in ordered),
             sources=ordered,
         )
@@ -1344,7 +1348,9 @@ def _validate_response(
     if mime_type != entry.mime_type:
         raise Oa112DownloadError("OA112_DOWNLOAD_MIME")
     declared_bytes = _content_length(headers)
-    if declared_bytes is not None and (declared_bytes <= 0 or offset + declared_bytes > maximum_source_bytes):
+    if declared_bytes is not None and (
+        declared_bytes <= 0 or offset + declared_bytes > maximum_source_bytes
+    ):
         raise Oa112DownloadError("OA112_DOWNLOAD_BYTE_BOUND")
     if offset == 0:
         if status != 200 or "content-range" in headers:
@@ -1382,9 +1388,7 @@ def _stream_to_part(
     iterator = response.iter_raw(chunk_size=_DOWNLOAD_CHUNK_BYTES)
     while True:
         remaining = deadline.remaining_seconds()
-        response.set_read_timeout_seconds(
-            timeout_seconds=min(_READ_TIMEOUT_SECONDS, remaining)
-        )
+        response.set_read_timeout_seconds(timeout_seconds=min(_READ_TIMEOUT_SECONDS, remaining))
         try:
             chunk = next(iterator)
         except StopIteration:
@@ -1427,7 +1431,9 @@ def _read_verified_cached_raw(
         raise
     if hashlib.sha256(payload).hexdigest() != entry.raw_content_sha256:
         raise Oa112DownloadError("OA112_LOCAL_CACHE_SOURCE_DRIFT")
-    _validate_complete_payload(payload=payload, mime_type=entry.mime_type, maximum_pages=maximum_pages)
+    _validate_complete_payload(
+        payload=payload, mime_type=entry.mime_type, maximum_pages=maximum_pages
+    )
     return Oa112DownloadedSourceReceipt(
         source_id=entry.source_id,
         source_revision_id=entry.source_revision_id,
@@ -1528,9 +1534,10 @@ def _validate_complete_payload(*, payload: bytes, mime_type: str, maximum_pages:
         finally:
             document.close()
         return
-    if mime_type == "text/html":
-        if not payload.lstrip().lower().startswith((b"<!doctype html", b"<html")):
-            raise Oa112DownloadError("OA112_DOWNLOAD_MIME_MAGIC")
+    if mime_type == "text/html" and not payload.lstrip().lower().startswith(
+        (b"<!doctype html", b"<html")
+    ):
+        raise Oa112DownloadError("OA112_DOWNLOAD_MIME_MAGIC")
     if mime_type in {"text/html", "text/plain"}:
         try:
             text = payload.decode("utf-8", errors="strict")
@@ -1564,7 +1571,10 @@ def _parse_https_url(value: str) -> SplitResult:
         or not parsed.path.startswith("/")
         or "//" in parsed.path
         or any(segment in {".", ".."} for segment in parsed.path.split("/"))
-        or any(character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F for character in value)
+        or any(
+            character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F
+            for character in value
+        )
         or "\\" in value
     ):
         raise Oa112DownloadError("OA112_DOWNLOAD_URL")
@@ -2036,7 +2046,12 @@ def _require_source_id(value: object) -> str:
 
 
 def _is_leaf(relative_path: str) -> bool:
-    if not relative_path or relative_path.startswith("/") or "\\" in relative_path or "\x00" in relative_path:
+    if (
+        not relative_path
+        or relative_path.startswith("/")
+        or "\\" in relative_path
+        or "\x00" in relative_path
+    ):
         return False
     parts = Path(relative_path).parts
     return len(parts) == 1 and parts[0] not in {"", ".", ".."}

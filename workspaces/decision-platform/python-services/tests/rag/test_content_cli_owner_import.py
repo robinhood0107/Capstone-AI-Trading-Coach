@@ -134,7 +134,9 @@ def test_voyage_selected_import_never_loads_bge_or_falls_back(
         lambda *_args, **_kwargs: pytest.fail("Voyage selection must not load BGE"),
     )
 
-    def execute_voyage(**values: object) -> tuple[RagV2OwnerBgeStagingReceipt, RagV2OwnerOverlayReceipt]:
+    def execute_voyage(
+        **values: object,
+    ) -> tuple[RagV2OwnerBgeStagingReceipt, RagV2OwnerOverlayReceipt]:
         assert values["control"] == control
         return (
             RagV2OwnerBgeStagingReceipt(

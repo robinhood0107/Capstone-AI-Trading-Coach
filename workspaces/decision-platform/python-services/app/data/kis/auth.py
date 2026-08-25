@@ -23,7 +23,7 @@ _OPAQUE_SCOPE_PATTERN = re.compile(r"[A-Za-z0-9_-]{8,128}")
 
 
 class PipelineLike(Protocol):
-    def __enter__(self) -> "PipelineLike": ...
+    def __enter__(self) -> PipelineLike: ...
 
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None: ...
 
@@ -121,9 +121,9 @@ class KISTokenManager:
             expires_at = self._now() + timedelta(seconds=expires_in)
             payload.update(
                 {
-                "mode": self._mode,
-                "access_token": token,
-                "expires_at": expires_at.isoformat(),
+                    "mode": self._mode,
+                    "access_token": token,
+                    "expires_at": expires_at.isoformat(),
                 }
             )
             ttl = max(1, expires_in - REFRESH_SKEW_SECONDS)

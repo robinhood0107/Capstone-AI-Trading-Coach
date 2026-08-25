@@ -354,7 +354,7 @@ class GrpcDisclosureRiskAdapter(
     }
 
     private companion object {
-        val log = LoggerFactory.getLogger(GrpcDisclosureRiskAdapter::class.java)
+        val log: org.slf4j.Logger = LoggerFactory.getLogger(GrpcDisclosureRiskAdapter::class.java)
         val AUTH_HEADER: Metadata.Key<String> =
             Metadata.Key.of("x-decision-grpc-auth", Metadata.ASCII_STRING_MARSHALLER)
         const val TRACE_ID_MDC_KEY = "trace_id"

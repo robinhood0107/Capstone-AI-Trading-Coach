@@ -3,6 +3,7 @@ package com.capstone.decision.infrastructure.mcp
 import com.capstone.decision.application.rag.RagV2RetrievalScope
 import com.capstone.decision.application.rag.RagV2RetrievedCitation
 import com.capstone.decision.application.rag.RagV2VertexEvidence
+import jakarta.annotation.PreDestroy
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import java.nio.charset.StandardCharsets
@@ -42,8 +43,28 @@ class McpResearchContextRegistry(
 ) {
     private val contexts = ConcurrentHashMap<String, McpResearchContext>()
 
+    @Volatile private var closeListener: (String) -> Unit = NOOP_CLOSE_LISTENER
+
     init {
         properties.validate()
+    }
+
+    fun bindCloseListener(listener: (String) -> Unit) {
+        synchronized(contexts) {
+            check(closeListener === NOOP_CLOSE_LISTENER) { "Research context lifecycle listener is already bound" }
+            closeListener = listener
+        }
+    }
+
+    fun close(id: String) {
+        if (contexts.remove(id) != null) closeListener(id)
+    }
+
+    @PreDestroy
+    fun closeAll() {
+        val ids = contexts.keys.toList()
+        contexts.clear()
+        ids.forEach(closeListener)
     }
 
     fun create(
@@ -174,7 +195,7 @@ class McpResearchContextRegistry(
 
     private fun requireCurrent(context: McpResearchContext) {
         if (!context.expiresAt.isAfter(clock.instant())) {
-            contexts.remove(context.id, context)
+            if (contexts.remove(context.id, context)) closeListener(context.id)
             throw IllegalArgumentException("Research context expired")
         }
     }
@@ -182,7 +203,12 @@ class McpResearchContextRegistry(
     /** 다음 context 생성 시 만료된 원문/evidence 참조를 제거해 메모리 보존 시간을 TTL로 제한한다. */
     private fun pruneExpired() {
         val now = clock.instant()
-        contexts.entries.removeIf { !it.value.expiresAt.isAfter(now) }
+        val expired = contexts.values.filter { !it.expiresAt.isAfter(now) }.map { it.id }
+        expired.forEach(::close)
+    }
+
+    private companion object {
+        val NOOP_CLOSE_LISTENER: (String) -> Unit = {}
     }
 
     private fun receipt(context: McpResearchContext): String =

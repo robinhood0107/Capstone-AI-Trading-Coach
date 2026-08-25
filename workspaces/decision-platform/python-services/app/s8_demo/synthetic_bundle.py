@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
 import os
-from pathlib import Path
 import stat
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -18,7 +18,6 @@ from app.financial_engineering import (
     sharpe_ratio,
     sortino_ratio,
 )
-
 
 _RUN_ID = "demo_s8_fake_e2e_0001"
 _AS_OF = "2026-08-22T00:00:00Z"
@@ -77,7 +76,9 @@ class SyntheticBundle:
 
 
 def build_synthetic_bundle(config_path: Path) -> SyntheticBundle:
-    config = yaml.safe_load(_read_bounded_regular(config_path, maximum=65_536).decode("utf-8", errors="strict"))
+    config = yaml.safe_load(
+        _read_bounded_regular(config_path, maximum=65_536).decode("utf-8", errors="strict")
+    )
     _validate_bounded_yaml(config)
     scenarios = config["modelComparison"]["scenarios"]
     if scenarios != ["Baseline", "Guide", "Strict"]:
@@ -115,7 +116,7 @@ def build_synthetic_bundle(config_path: Path) -> SyntheticBundle:
     projection_hash = _sha256(_canonical_json(projection_core))
     backtest_view = {**projection_core, "projectionHash": projection_hash}
     baseline_metrics = strategies[0]["metrics"]
-    empty_metrics = {key: None for key in baseline_metrics}
+    empty_metrics = dict.fromkeys(baseline_metrics)
     model_view = {
         "runId": _RUN_ID,
         "models": [
@@ -233,7 +234,9 @@ def _stable_number(value: float) -> float:
 
 
 def _canonical_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
 
 
 def _sha256(value: str) -> str:
@@ -321,7 +324,9 @@ def _validate_bounded_yaml(value: Any) -> None:
 def main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Build the offline-only S8 synthetic fake E2E bundle.")
+    parser = argparse.ArgumentParser(
+        description="Build the offline-only S8 synthetic fake E2E bundle."
+    )
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()

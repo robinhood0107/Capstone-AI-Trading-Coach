@@ -47,9 +47,7 @@ def test_exact_local_model_materializes_official_five_card_poc(
         approved_root=OFFICIAL_SOURCE_CARD_ROOT,
         relative_paths=_CARD_PATHS,
     )
-    tokenizer = BgeStaticTokenizer.from_file(
-        DEFAULT_MODEL_ROOT / "onnx/tokenizer.json"
-    )
+    tokenizer = BgeStaticTokenizer.from_file(DEFAULT_MODEL_ROOT / "onnx/tokenizer.json")
     plan = prepare_bge_poc(
         cards=cards,
         tokenizer=tokenizer,

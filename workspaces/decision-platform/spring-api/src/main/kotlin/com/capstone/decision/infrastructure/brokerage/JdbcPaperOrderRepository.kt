@@ -16,8 +16,12 @@ import com.capstone.decision.application.brokerage.paper.PaperOrderPersistencePo
 import com.capstone.decision.application.brokerage.paper.PaperOrderWriteRequest
 import com.capstone.decision.application.brokerage.paper.StoredPaperBalance
 import com.capstone.decision.application.risk.KillSwitchBlockedException
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.domain.brokerage.PaperFillDecision
 import com.capstone.decision.domain.brokerage.PaperPriceObservation
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
@@ -25,7 +29,6 @@ import org.springframework.transaction.annotation.Transactional
 import tools.jackson.databind.ObjectMapper
 import java.time.Instant
 import java.time.OffsetDateTime
-import java.time.ZoneOffset
 import java.util.UUID
 
 /**
@@ -36,26 +39,42 @@ import java.util.UUID
 class JdbcPaperOrderRepository(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val objectMapper: ObjectMapper,
-    private val properties: BrokerageProperties,
+    private val actorCapabilityIssuer: ActorCapabilityIssuer,
 ) : PaperOrderPersistencePort {
     override fun findIdempotencyResult(
+        actorUserId: String,
         scopeHash: String,
         ownerScopeHash: String,
         now: Instant,
-    ): StoredBrokerageIdempotencyResult? =
-        jdbc()
+    ): StoredBrokerageIdempotencyResult? {
+        val nowText = now.toString()
+        val capability =
+            actorCapabilityIssuer.issue(
+                AuthenticatedActorRef.current(actorUserId),
+                ActorCapabilityBinding.request(
+                    "READ_PAPER_IDEMPOTENCY",
+                    "BROKERAGE_IDEMPOTENCY",
+                    scopeHash,
+                    ActorCapabilityRolePolicy.OWNER,
+                    scopeHash,
+                    ownerScopeHash,
+                    nowText,
+                ),
+            )
+        return jdbc()
             .query(
                 """
                 SELECT request_hash, result_canonical_json, expires_at
-                FROM find_paper_order_idempotency_result(
-                  :scopeHash, :ownerScopeHash, :now, :capabilityToken
+                FROM find_paper_order_idempotency_result_authorized_v2(
+                  :capability, :actorUserId, :scopeHash, :ownerScopeHash, :nowText
                 )
                 """.trimIndent(),
                 mapOf(
+                    "capability" to capability,
+                    "actorUserId" to actorUserId,
                     "scopeHash" to scopeHash,
                     "ownerScopeHash" to ownerScopeHash,
-                    "now" to now.utc(),
-                    "capabilityToken" to properties.databaseCapabilityToken,
+                    "nowText" to nowText,
                 ),
             ) { row, _ ->
                 StoredBrokerageIdempotencyResult(
@@ -64,6 +83,7 @@ class JdbcPaperOrderRepository(
                     expiresAt = row.getObject("expires_at", OffsetDateTime::class.java).toInstant(),
                 )
             }.singleOrNull()
+    }
 
     override fun findOrderContext(
         actorUserId: String,
@@ -78,14 +98,20 @@ class JdbcPaperOrderRepository(
                        invalidated, consumed_by_order_id, account_id, account_status,
                        quote_observation_id, quote_price_krw,
                        quote_previous_close_krw, quote_completeness, quote_observed_at
-                FROM read_paper_order_context(
-                  :actorUserId, :decisionId, :capabilityToken
+                FROM read_paper_order_context_authorized_v2(
+                  :capability, :actorUserId, :decisionId
                 )
                 """.trimIndent(),
                 mapOf(
+                    "capability" to
+                        targetCapability(
+                            actorUserId,
+                            "READ_PAPER_ORDER_CONTEXT",
+                            "DECISION",
+                            decisionId,
+                        ),
                     "actorUserId" to actorUserId,
                     "decisionId" to decisionId,
-                    "capabilityToken" to properties.databaseCapabilityToken,
                 ),
             ) { row, _ ->
                 val quoteId = row.getString("quote_observation_id")
@@ -122,19 +148,21 @@ class JdbcPaperOrderRepository(
 
     @Transactional
     override fun persist(request: PaperOrderWriteRequest) {
+        val payloadJson = createOrderPayload(request)
+        val capability = capability(request.actor.userId, "CREATE_PAPER_ORDER", "ORDER", request.orderId, payloadJson)
         val result =
             jdbc()
                 .query(
                     """
                     SELECT operation_outcome, projection_canonical_json
-                    FROM create_paper_order(
-                      CAST(:payloadJson AS jsonb),
-                      :capabilityToken
+                    FROM create_paper_order_authorized_v2(
+                      :capability,
+                      :payloadJson
                     )
                     """.trimIndent(),
                     mapOf(
-                        "payloadJson" to createOrderPayload(request),
-                        "capabilityToken" to properties.databaseCapabilityToken,
+                        "payloadJson" to payloadJson,
+                        "capability" to capability,
                     ),
                 ) { row, _ ->
                     CreateOrderFunctionResult(
@@ -174,14 +202,14 @@ class JdbcPaperOrderRepository(
                 """
                 SELECT account_id, cash_krw, total_equity_krw,
                        positions_json::text AS positions_json, as_of
-                FROM read_paper_balance_projection(
-                  :actorUserId, :accountId, :capabilityToken
+                FROM read_paper_balance_projection_authorized_v2(
+                  :capability, :actorUserId, :accountId
                 )
                 """.trimIndent(),
                 mapOf(
+                    "capability" to targetCapability(actorUserId, "READ_PAPER_BALANCE", "ACCOUNT", accountId),
                     "actorUserId" to actorUserId,
                     "accountId" to accountId,
-                    "capabilityToken" to properties.databaseCapabilityToken,
                 ),
             ) { row, _ ->
                 StoredPaperBalance(
@@ -272,13 +300,40 @@ class JdbcPaperOrderRepository(
 
     private fun java.sql.ResultSet.getLongOrNull(column: String): Long? = getObject(column)?.let { getLong(column) }
 
+    private fun targetCapability(
+        actorUserId: String,
+        operation: String,
+        targetKind: String,
+        targetId: String,
+    ): String =
+        actorCapabilityIssuer.issue(
+            AuthenticatedActorRef.current(actorUserId),
+            ActorCapabilityBinding.target(operation, targetKind, targetId, ActorCapabilityRolePolicy.OWNER),
+        )
+
+    private fun capability(
+        actorUserId: String,
+        operation: String,
+        targetKind: String,
+        targetId: String,
+        payloadJson: String,
+    ): String =
+        actorCapabilityIssuer.issue(
+            AuthenticatedActorRef.current(actorUserId),
+            ActorCapabilityBinding.request(
+                operation,
+                targetKind,
+                targetId,
+                ActorCapabilityRolePolicy.OWNER,
+                payloadJson,
+            ),
+        )
+
     private fun jdbc(): NamedParameterJdbcTemplate =
         jdbcProvider.getIfAvailable()
             ?: error("Paper brokerage JDBC access is unavailable without a configured DataSource.")
 
     private fun id(prefix: String): String = "${prefix}_${UUID.randomUUID().toString().replace("-", "")}"
-
-    private fun Instant.utc(): OffsetDateTime = OffsetDateTime.ofInstant(this, ZoneOffset.UTC)
 
     private data class CreateOrderFunctionResult(
         val outcome: String,

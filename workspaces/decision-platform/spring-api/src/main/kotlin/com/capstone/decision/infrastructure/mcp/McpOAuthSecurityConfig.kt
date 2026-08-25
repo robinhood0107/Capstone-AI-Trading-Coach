@@ -1,6 +1,15 @@
 package com.capstone.decision.infrastructure.mcp
 
+import com.capstone.decision.api.common.ApiResponseWriter
+import com.capstone.decision.application.security.AppPrincipal
+import com.capstone.decision.application.security.AuthenticatedActorRef
+import com.capstone.decision.infrastructure.security.ActorRlsScope
+import com.capstone.decision.infrastructure.security.DemoAccountService
+import com.capstone.decision.infrastructure.security.LoginAttemptLimiter
+import com.capstone.decision.infrastructure.security.MAX_ACTOR_SESSION_TTL
 import com.capstone.decision.infrastructure.security.UserSecurityRepository
+import com.capstone.decision.infrastructure.web.HttpRequestProperties
+import com.capstone.decision.infrastructure.web.RequestBodyLimitFilter
 import com.nimbusds.jose.jwk.ECKey
 import com.nimbusds.jose.jwk.JWKSet
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet
@@ -13,10 +22,11 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.core.annotation.Order
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
-import org.springframework.security.config.Customizer
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration
 import org.springframework.security.config.http.SessionCreationPolicy
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.core.userdetails.User
 import org.springframework.security.core.userdetails.UserDetailsService
 import org.springframework.security.oauth2.core.AuthorizationGrantType
@@ -40,7 +50,13 @@ import org.springframework.security.oauth2.server.authorization.token.OAuth2Toke
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint
+import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler
+import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler
+import org.springframework.security.web.context.DelegatingSecurityContextRepository
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository
 import org.springframework.security.web.context.SecurityContextHolderFilter
+import org.springframework.security.web.context.SecurityContextRepository
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
@@ -54,10 +70,20 @@ import java.util.UUID
 @EnableConfigurationProperties(McpOAuthProperties::class)
 class McpOAuthSecurityConfig {
     @Bean
+    fun mcpSecurityContextRepository(): SecurityContextRepository =
+        DelegatingSecurityContextRepository(
+            RequestAttributeSecurityContextRepository(),
+            HttpSessionSecurityContextRepository(),
+        )
+
+    @Bean
     @Order(1)
     fun authorizationServerSecurityFilterChain(
         http: HttpSecurity,
         properties: McpOAuthProperties,
+        requestProperties: HttpRequestProperties,
+        responseWriter: ApiResponseWriter,
+        refreshClaims: McpRefreshClaimContext,
     ): SecurityFilterChain {
         http
             .oauth2AuthorizationServer { authorizationServer ->
@@ -70,7 +96,13 @@ class McpOAuthSecurityConfig {
                 )
                 // Authorization Server endpoint filters are configurer-owned and have no global HttpSecurity order.
                 // Anchor after the registered context filter so the resource check still runs before OAuth processing.
-            }.addFilterAfter(McpResourceIndicatorFilter(properties.resourceUri), SecurityContextHolderFilter::class.java)
+            }.addFilterBefore(
+                McpRefreshClaimCleanupFilter(refreshClaims),
+                SecurityContextHolderFilter::class.java,
+            ).addFilterAfter(
+                RequestBodyLimitFilter(requestProperties, responseWriter),
+                McpRefreshClaimCleanupFilter::class.java,
+            ).addFilterAfter(McpResourceIndicatorFilter(properties.resourceUri), SecurityContextHolderFilter::class.java)
         return http.build()
     }
 
@@ -79,6 +111,8 @@ class McpOAuthSecurityConfig {
     fun mcpResourceSecurityFilterChain(
         http: HttpSecurity,
         jwtDecoder: JwtDecoder,
+        requestProperties: HttpRequestProperties,
+        responseWriter: ApiResponseWriter,
     ): SecurityFilterChain {
         val converter = JwtAuthenticationConverter()
         return http
@@ -88,22 +122,96 @@ class McpOAuthSecurityConfig {
             .authorizeHttpRequests { it.anyRequest().authenticated() }
             .oauth2ResourceServer { resource ->
                 resource.jwt { jwt -> jwt.decoder(jwtDecoder).jwtAuthenticationConverter(converter) }
-            }.build()
+            }.addFilterBefore(
+                RequestBodyLimitFilter(requestProperties, responseWriter),
+                SecurityContextHolderFilter::class.java,
+            ).build()
     }
 
     @Bean
     @Order(3)
-    fun mcpLoginSecurityFilterChain(http: HttpSecurity): SecurityFilterChain =
-        http
+    fun mcpLoginSecurityFilterChain(
+        http: HttpSecurity,
+        limiter: LoginAttemptLimiter,
+        demoAccounts: DemoAccountService,
+        securityContextRepository: SecurityContextRepository,
+        requestProperties: HttpRequestProperties,
+        responseWriter: ApiResponseWriter,
+    ): SecurityFilterChain {
+        val success = SavedRequestAwareAuthenticationSuccessHandler()
+        val failure = SimpleUrlAuthenticationFailureHandler("/login?error")
+        return http
             .securityMatcher("/login")
+            .securityContext { it.securityContextRepository(securityContextRepository) }
             .authorizeHttpRequests { it.anyRequest().permitAll() }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED) }
-            .formLogin(Customizer.withDefaults())
-            .build()
+            .formLogin { form ->
+                form.successHandler { request, response, authentication ->
+                    val account =
+                        try {
+                            demoAccounts.authenticate(
+                                request.getParameter("username").orEmpty(),
+                                request.getParameter("password").orEmpty(),
+                                MAX_ACTOR_SESSION_TTL,
+                            )
+                        } catch (exception: RuntimeException) {
+                            limiter.releaseReservation()
+                            throw exception
+                        }
+                    if (account == null) {
+                        limiter.recordFailure(request.remoteAddr, authentication.name)
+                        return@successHandler failure.onAuthenticationFailure(
+                            request,
+                            response,
+                            org.springframework.security.authentication
+                                .BadCredentialsException("Invalid credentials"),
+                        )
+                    }
+                    val actorAuthentication =
+                        UsernamePasswordAuthenticationToken(
+                            AppPrincipal(
+                                userId = account.userId,
+                                username = account.username,
+                                role = account.role.name,
+                                securityVersion = account.securityVersion,
+                                actorRef =
+                                    AuthenticatedActorRef(
+                                        sessionHandle = account.sessionHandle,
+                                        expectedUserId = account.userId,
+                                        securityVersion = account.securityVersion,
+                                    ),
+                            ),
+                            null,
+                            authentication.authorities,
+                        ).also { it.details = authentication.details }
+                    val actorContext = SecurityContextHolder.createEmptyContext()
+                    actorContext.authentication = actorAuthentication
+                    SecurityContextHolder.setContext(actorContext)
+                    // Form filter가 handler 호출 전에 저장한 generic User principal을 sid-bound principal로 교체한다.
+                    securityContextRepository.saveContext(actorContext, request, response)
+                    limiter.recordSuccess(request.remoteAddr, authentication.name)
+                    success.onAuthenticationSuccess(request, response, actorAuthentication)
+                }
+                form.failureHandler { request, response, error ->
+                    limiter.recordFailure(request.remoteAddr, request.getParameter("username").orEmpty())
+                    failure.onAuthenticationFailure(request, response, error)
+                }
+            }.addFilterBefore(
+                RequestBodyLimitFilter(requestProperties, responseWriter),
+                SecurityContextHolderFilter::class.java,
+            ).build()
+    }
 
     @Bean
-    fun mcpUserDetailsService(users: UserSecurityRepository): UserDetailsService =
+    fun mcpUserDetailsService(
+        users: UserSecurityRepository,
+        limiter: LoginAttemptLimiter,
+    ): UserDetailsService =
         UserDetailsService { username ->
+            if (!limiter.tryAcquire("mcp-oauth", username)) {
+                throw org.springframework.security.authentication
+                    .LockedException("Authentication temporarily unavailable")
+            }
             val row =
                 users.findDemoCredentials().singleOrNull { it.username == username && it.status == "ACTIVE" }
                     ?: throw org.springframework.security.core.userdetails
@@ -201,7 +309,7 @@ class McpOAuthSecurityConfig {
                             TokenSettings
                                 .builder()
                                 .accessTokenTimeToLive(Duration.ofMinutes(15))
-                                .refreshTokenTimeToLive(Duration.ofDays(7))
+                                .refreshTokenTimeToLive(MAX_ACTOR_SESSION_TTL)
                                 .reuseRefreshTokens(false)
                                 .idTokenSignatureAlgorithm(SignatureAlgorithm.ES256)
                                 .build(),
@@ -240,17 +348,39 @@ class McpOAuthSecurityConfig {
     fun mcpTokenCustomizer(
         users: UserSecurityRepository,
         properties: McpOAuthProperties,
+        refreshClaims: McpRefreshClaimContext,
     ): OAuth2TokenCustomizer<JwtEncodingContext> =
         OAuth2TokenCustomizer { context ->
             // Authorization Server access token 기본값 RS256이 P-256 JWK와 어긋나지 않도록 서명 알고리즘을 고정한다.
             context.jwsHeader.algorithm(SignatureAlgorithm.ES256)
             if (context.tokenType == OAuth2TokenType.ACCESS_TOKEN) {
                 val principal = requireNotNull(context.getPrincipal<org.springframework.security.core.Authentication>())
+                val actor =
+                    principal.principal as? AppPrincipal
+                        ?: throw IllegalStateException("MCP actor session is unavailable")
                 val row = users.findDemoCredentials().single { it.username == principal.name && it.status == "ACTIVE" }
+                require(
+                    actor.userId == row.userId &&
+                        actor.securityVersion == row.securityVersion &&
+                        actor.actorRef.expectedUserId == row.userId,
+                )
+                val securityVersion =
+                    if (context.authorizationGrantType == AuthorizationGrantType.REFRESH_TOKEN) {
+                        val claim = refreshClaims.requireCurrent()
+                        require(
+                            claim.ownerUserId == row.userId &&
+                                claim.clientId == context.registeredClient.clientId &&
+                                claim.securityVersion == row.securityVersion,
+                        )
+                        claim.securityVersion
+                    } else {
+                        row.securityVersion
+                    }
                 context.claims.subject(row.userId)
                 context.claims.audience(listOf(properties.resourceUri))
-                context.claims.claim("securityVersion", row.securityVersion)
+                context.claims.claim("securityVersion", securityVersion)
                 context.claims.claim("client_id", context.registeredClient.clientId)
+                context.claims.claim("sid", actor.actorRef.sessionHandle)
             }
         }
 
@@ -259,12 +389,17 @@ class McpOAuthSecurityConfig {
         AuthorizationServerSettings.builder().issuer(properties.issuer).build()
 
     @Bean
+    fun mcpRefreshClaimContext(): McpRefreshClaimContext = McpRefreshClaimContext()
+
+    @Bean
     fun mcpAuthorizationService(
         clients: RegisteredClientRepository,
         users: UserSecurityRepository,
         properties: McpOAuthProperties,
         jdbc: NamedParameterJdbcTemplate,
-    ): OAuth2AuthorizationService = HashingMcpOAuthAuthorizationService(clients, users, properties, jdbc)
+        refreshClaims: McpRefreshClaimContext,
+        actorRlsScope: ActorRlsScope,
+    ): OAuth2AuthorizationService = HashingMcpOAuthAuthorizationService(clients, users, properties, jdbc, refreshClaims, actorRlsScope)
 
     private fun validateActor(
         jwt: Jwt,
@@ -272,11 +407,16 @@ class McpOAuthSecurityConfig {
         users: UserSecurityRepository,
     ): OAuth2TokenValidatorResult {
         val row = jwt.subject?.let(users::findByUserId)
+        val session = jwt.getClaimAsString("sid")?.let(users::findBySessionHandle)
         val securityVersion =
             jwt.getClaimAsString("securityVersion")?.toLongOrNull()
                 ?: (jwt.claims["securityVersion"] as? Number)?.toLong()
         return if (jwt.audience?.contains(properties.resourceUri) == true &&
             row != null &&
+            session != null &&
+            session.userId == row.userId &&
+            session.role == row.role &&
+            session.securityVersion == row.securityVersion &&
             row.status == "ACTIVE" &&
             row.securityVersion == securityVersion &&
             row.securityVersion > 0

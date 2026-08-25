@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+import errno
+import fcntl
+import os
+import secrets
+import stat
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
-import errno
-import fcntl
-import os
 from pathlib import Path
-import secrets
-import stat
 from typing import Any, cast
 
 import pandas as pd
@@ -61,9 +61,7 @@ def upsert_daily_bars(data_dir: Path, symbol: str, bars: list[DailyBar]) -> Upse
             incoming["date"] = pd.to_datetime(incoming["date"])
             combined = pd.concat([existing, incoming], ignore_index=True)
         if not combined.empty:
-            combined, exact_duplicate_rows, conflicting_groups = _resolve_exact_duplicates(
-                combined
-            )
+            combined, exact_duplicate_rows, conflicting_groups = _resolve_exact_duplicates(combined)
             if conflicting_groups:
                 raise KISConflictingDuplicateError(
                     exact_duplicate_rows=exact_duplicate_rows,
@@ -73,7 +71,11 @@ def upsert_daily_bars(data_dir: Path, symbol: str, bars: list[DailyBar]) -> Upse
             exact_duplicate_rows = 0
         _write_parquet_atomic(directory_fd, filename, combined)
         path = daily_dir / filename
-        dates = pd.to_datetime(combined["date"]) if not combined.empty else pd.Series(dtype="datetime64[ns]")
+        dates = (
+            pd.to_datetime(combined["date"])
+            if not combined.empty
+            else pd.Series(dtype="datetime64[ns]")
+        )
         combined_keys = _frame_keys(combined)
     return UpsertResult(
         path=path,
@@ -109,7 +111,9 @@ def missing_daily_ranges(
         ranges.append((start, min(end, existing_start - timedelta(days=1))))
     if end > existing_end:
         ranges.append((max(start, existing_end + timedelta(days=1)), end))
-    return [(range_start, range_end) for range_start, range_end in ranges if range_start <= range_end]
+    return [
+        (range_start, range_end) for range_start, range_end in ranges if range_start <= range_end
+    ]
 
 
 def _read_existing(directory_fd: int, filename: str) -> pd.DataFrame:
@@ -282,8 +286,7 @@ def _resolve_exact_duplicates(frame: pd.DataFrame) -> tuple[pd.DataFrame, int, i
     value_columns = ["open", "high", "low", "close", "volume", "turnover"]
     for _, group in frame.groupby(["symbol", "date"], sort=False, dropna=False):
         normalized_values = {
-            tuple(int(row[column]) for column in value_columns)
-            for _, row in group.iterrows()
+            tuple(int(row[column]) for column in value_columns) for _, row in group.iterrows()
         }
         if len(normalized_values) > 1:
             conflicting_groups += 1

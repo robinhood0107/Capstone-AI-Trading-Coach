@@ -84,7 +84,9 @@ class PsycopgRagV2VoyageBatchRepository:
             lease=lease,
         )
         try:
-            with psycopg.connect(self._database_dsn, autocommit=False, connect_timeout=2) as connection:
+            with psycopg.connect(
+                self._database_dsn, autocommit=False, connect_timeout=2
+            ) as connection:
                 _attest_writer_connection(connection)
                 with connection.transaction():
                     _set_transaction_timeouts(connection)
@@ -107,7 +109,9 @@ class PsycopgRagV2VoyageBatchRepository:
 
         accumulator = VoyageBatchVectorAccumulator(plan=plan)
         try:
-            with psycopg.connect(self._database_dsn, autocommit=False, connect_timeout=2) as connection:
+            with psycopg.connect(
+                self._database_dsn, autocommit=False, connect_timeout=2
+            ) as connection:
                 _attest_writer_connection(connection)
                 with connection.transaction():
                     _set_transaction_timeouts(connection)
@@ -152,7 +156,9 @@ class PsycopgRagV2VoyageBatchRepository:
         """partial BGE generation을 삭제/활성화하지 않고 terminal supersession marker만 기록한다."""
 
         try:
-            with psycopg.connect(self._database_dsn, autocommit=False, connect_timeout=2) as connection:
+            with psycopg.connect(
+                self._database_dsn, autocommit=False, connect_timeout=2
+            ) as connection:
                 _attest_writer_connection(connection)
                 with connection.transaction():
                     _set_transaction_timeouts(connection)
@@ -212,9 +218,7 @@ def build_voyage_batch_stage_payload(
             )
             cursor += 1
     vector_set_sha256 = hashlib.sha256(
-        "\n".join(
-            f"{row['chunkId']}:{row['vectorSha256']}" for row in vector_rows
-        ).encode("utf-8")
+        "\n".join(f"{row['chunkId']}:{row['vectorSha256']}" for row in vector_rows).encode("utf-8")
     ).hexdigest()
     return {
         "batch": {
@@ -320,7 +324,15 @@ def _attest_writer_connection(connection: psycopg.Connection[Any]) -> None:
     if connection.execute("SELECT current_user").fetchone() != (_WRITER_ROLE,):
         raise RagV2VoyageBatchRepositoryError("VOYAGE_BATCH_WRITER_ROLE")
     for table in _FORBIDDEN_TABLES:
-        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+        for privilege in (
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "TRUNCATE",
+            "REFERENCES",
+            "TRIGGER",
+        ):
             row = connection.execute(
                 "SELECT has_table_privilege(current_user, %s, %s)",
                 (f"public.{table}", privilege),

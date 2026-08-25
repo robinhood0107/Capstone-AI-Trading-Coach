@@ -1,8 +1,11 @@
 package com.capstone.decision
 
 import com.capstone.decision.infrastructure.risk.ActorScopedReadQuery
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import io.mockk.every
+import io.mockk.mockk
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -21,6 +24,9 @@ import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.util.Properties
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import javax.sql.DataSource
 
 // 실제 init script와 Flyway migration을 함께 적용해 runtime/migration role 분리가 선언뿐인지 검증한다.
@@ -73,7 +79,13 @@ class InfrastructureSecurityIntegrationTest {
             }
         }
         // 기존 volume에서 bootstrap을 재적용해도 migration의 calendar·Principle 최소권한을 되돌리면 안 된다.
-        assertTrue(postgres.execInContainer("bash", "-ec", "bash /tmp/02-application-roles.sh").exitCode == 0)
+        val bootstrapResult = postgres.execInContainer("bash", "-ec", "bash /tmp/02-application-roles.sh")
+        assertEquals(
+            0,
+            bootstrapResult.exitCode,
+            "role bootstrap failed after migration: stdout=${bootstrapResult.stdout} " +
+                "stderr=${bootstrapResult.stderr}",
+        )
 
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { connection ->
             val bootstrappedPrivilegeFingerprint = privilegeFingerprint(connection)
@@ -121,26 +133,67 @@ class InfrastructureSecurityIntegrationTest {
             assertFalse(hasTablePrivilege(connection, "decision_app", "opendart_quota_usage", "SELECT"))
 
             listOf(
-                "issue_rag_rpc_scope(text,text,jsonb)",
-                "recheck_rag_rpc_citations(text,text,text,text,bigint,text,text,jsonb)",
+                "issue_rag_rpc_scope(text,text,text)",
+                "recheck_rag_rpc_citations(text,text,text,text,bigint,text,text,text)",
                 "read_rag_v2_corpus_status(text)",
+                "record_rag_v2_immutable_consent(text,text,text,text)",
                 "read_rag_v2_history_metadata(text,timestamp with time zone,text,integer)",
                 "read_rag_v2_history_detail(text,text)",
                 "delete_owned_rag_v2_history(text,text)",
-                "record_rag_v2_immutable_consent(text,text,text,text)",
                 "record_rag_v2_immutable_consent_v2(text,text,text,text,text,text,text)",
                 "read_rag_v2_immutable_effective_consent(text)",
                 "issue_rag_v2_immutable_import_ticket(text,text,text,text)",
                 "issue_rag_v2_immutable_import_ticket_v2(text,text,text,text,text)",
                 "issue_rag_v2_immutable_owner_delete_ticket(text,text,text)",
+                "issue_rag_v2_retrieval_scope(text,text,text[])",
                 "issue_rag_v2_retrieval_scope_v2(text,text,text[])",
                 "issue_rag_v2_retrieval_scope_v3(text,text,text[])",
+                "read_rag_v2_vertex_prepared_scope(text,text,text,text[])",
                 "read_rag_v2_vertex_prepared_scope_v2(text,text,text,text[])",
+                "canonicalize_rag_v2_immutable_retrieval_citations(text,text,text,jsonb)",
                 "authorize_s4_9_runtime_voyage_query(text,text,text)",
+                "read_rag_v2_vertex_generation_evidence(text,text,text,text)",
+                "claim_rag_v2_immutable_vertex_token_attempt(text,text)",
+                "claim_rag_v2_immutable_vertex_generate_content_attempt(text,text)",
+                "commit_rag_v2_immutable_vertex_usage(text,text,integer,integer,integer)",
+                "mark_rag_v2_immutable_vertex_usage_unknown_billing(text,text)",
+                "create_rag_retrieval_scope_claim(text,text,text[])",
+                "sync_s4_9_mcp_oauth_client(text,text,text,text[],text[],text)",
+                "upsert_s4_9_mcp_oauth_code_hash(text,text,text,bigint,text,text,text[],text,timestamp with time zone)",
+                "consume_s4_9_mcp_oauth_code_hash(text)",
+                "rotate_s4_9_mcp_refresh_token_hash(text,text,text,text[],timestamp with time zone)",
+                "consume_s4_9_mcp_refresh_token(text)",
+                "revoke_s4_9_mcp_refresh_token_family(text)",
             ).forEach { function ->
                 assertTrue(
                     hasFunctionPrivilege(connection, "decision_app", function),
                     "bootstrap removed the RAG owner-scoped function grant for $function",
+                )
+            }
+            listOf(
+                "issue_rag_rpc_scope_legacy_v87(text,text,jsonb)",
+                "recheck_rag_rpc_citations_legacy_v87(text,text,text,text,bigint,text,text,jsonb)",
+                "read_rag_v2_vertex_generation_evidence_legacy_v87(text,text,text,jsonb)",
+                "record_rag_v2_immutable_consent_legacy_v87(text,text,text,text)",
+                "issue_rag_v2_immutable_import_ticket_legacy_v87(text,text,text,text)",
+                "issue_rag_v2_retrieval_scope_legacy_v87(text,text,text[])",
+                "read_rag_v2_vertex_prepared_scope_legacy_v87(text,text,text,text[])",
+                "claim_rag_v2_immutable_vertex_token_attempt_legacy_v87(text,text)",
+                "claim_rag_v2_immutable_vertex_generate_content_attempt_legacy_v87(text,text)",
+                "commit_rag_v2_immutable_vertex_usage_legacy_v87(text,text,integer,integer,integer)",
+                "mark_rag_v2_immutable_vertex_usage_unknown_billing_legacy_v87(text,text)",
+                "create_rag_retrieval_scope_claim_legacy_v87(text,text,text[])",
+                "record_s4_9_strong_llm_usage_legacy_v87(text,text,text,text,text,text,text,integer,integer,integer,integer,integer,text)",
+                "sync_s4_9_mcp_oauth_client_legacy_v87(text,text,text,text[],text[],text)",
+                "upsert_s4_9_mcp_oauth_code_hash_legacy_v87(text,text,text,bigint,text,text,text[],text,timestamp with time zone)",
+                "consume_s4_9_mcp_oauth_code_hash_legacy_v87(text)",
+                "rotate_s4_9_mcp_refresh_token_hash_legacy_v87(text,text,text,bigint,text,text[],timestamp with time zone)",
+                "consume_s4_9_mcp_refresh_token_legacy_v87(text)",
+                "revoke_s4_9_mcp_refresh_token_family_legacy_v87(text)",
+            ).forEach { function ->
+                assertFalse(
+                    hasFunctionPrivilege(connection, "decision_app", function),
+                    "decision_app retained direct legacy RAG execution for $function",
                 )
             }
             assertFalse(
@@ -296,21 +349,27 @@ class InfrastructureSecurityIntegrationTest {
             }
             listOf(
                 "insert_principle_authorized(text,text,text,text,text,text,text,integer,timestamp with time zone,timestamp with time zone)",
-                "insert_principle_version_authorized(text,text,text,text,integer,text,text,text,text,jsonb,text[],timestamp with time zone)",
-                "insert_principle_audit_authorized(text,text,text,text,text,integer,text[],timestamp with time zone)",
+                "insert_principle_version_authorized_v2(text,text,text,text,integer,text,text,text,text,text,text,timestamp with time zone)",
+                "insert_principle_audit_authorized_v2(text,text,text,text,text,integer,text,timestamp with time zone)",
                 "read_owned_principle_authorized(text,text,text)",
                 "list_owned_principles_authorized(text,text,integer,text,timestamp with time zone,text)",
                 "update_owned_principle_authorized(text,text,text,integer,text,text,text,timestamp with time zone)",
                 "list_owned_principle_versions_authorized(text,text,text,integer,text,integer)",
                 "read_active_owned_principle_snapshot_authorized(text,text,text)",
-                "lock_active_owned_principle_authorized(text,text,text,integer,text,text)",
             ).forEach { function ->
                 assertTrue(
                     hasFunctionPrivilege(connection, "decision_app", function),
                     "decision_app must retain the owner-scoped Principle capability $function",
                 )
             }
-            assertTrue(hasTablePrivilege(connection, "decision_app", "audit_logs", "INSERT"))
+            listOf(
+                "insert_principle_version_authorized(text,text,text,text,integer,text,text,text,text,jsonb,text[],timestamp with time zone)",
+                "insert_principle_audit_authorized(text,text,text,text,text,integer,text[],timestamp with time zone)",
+                "lock_active_owned_principle_authorized(text,text,text,integer,text,text)",
+            ).forEach { function ->
+                assertFalse(hasFunctionPrivilege(connection, "decision_app", function))
+            }
+            assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "INSERT"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "SELECT"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "UPDATE"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "DELETE"))
@@ -318,7 +377,7 @@ class InfrastructureSecurityIntegrationTest {
                 assertFalse(hasTablePrivilege(connection, "decision_app", "principle_presets", privilege))
             }
             assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "TRUNCATE"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "decisions", "INSERT"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "decisions", "INSERT"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "decisions", "SELECT"))
             listOf("UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
                 assertFalse(hasTablePrivilege(connection, "decision_app", "decisions", privilege))
@@ -326,7 +385,7 @@ class InfrastructureSecurityIntegrationTest {
             assertTrue(hasTablePrivilege(connection, "decision_app", "decision_owner_projection", "SELECT"))
             assertTrue(hasTablePrivilege(connection, "decision_app", "decision_audit_projection", "SELECT"))
             assertTrue(hasTablePrivilege(connection, "decision_app", "risk_kill_switch", "SELECT"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "risk_kill_switch_transitions", "INSERT"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "risk_kill_switch_transitions", "INSERT"))
             assertTrue(hasTablePrivilege(connection, "decision_app", "kill_switch_user_projection", "SELECT"))
             listOf(
                 "active",
@@ -337,7 +396,7 @@ class InfrastructureSecurityIntegrationTest {
                 "changed_at",
                 "request_id",
             ).forEach { column ->
-                assertTrue(hasColumnPrivilege(connection, "decision_app", "risk_kill_switch", column, "UPDATE"))
+                assertFalse(hasColumnPrivilege(connection, "decision_app", "risk_kill_switch", column, "UPDATE"))
             }
             listOf("INSERT", "DELETE", "TRUNCATE").forEach { privilege ->
                 assertFalse(hasTablePrivilege(connection, "decision_app", "risk_kill_switch", privilege))
@@ -350,19 +409,69 @@ class InfrastructureSecurityIntegrationTest {
             }
             listOf(
                 "read_kill_switch_gate()",
-                "revalidate_kill_switch_admin(text,bigint)",
                 "read_kill_switch_audit_projection()",
                 "read_decision_usability()",
+                "transition_kill_switch_authorized(text,text,bigint,boolean,bigint,text)",
+                "persist_decision_bundle_authorized_v2(text,text)",
+                "read_mock_order_decision_authorized_v2(text,text,text)",
+                "find_mock_order_idempotency_result_authorized_v2(text,text,text,text,text)",
+                "read_mock_order_owner_projection_authorized_v2(text,text,text)",
+                "read_mock_balance_projection_authorized_v2(text,text,text,text)",
+                "create_mock_order_authorized_v2(text,text)",
+                "request_mock_order_cancel_authorized_v2(text,text)",
+                "record_mock_order_provider_outcome_authorized_v2(text,text)",
+                "read_paper_order_context_authorized_v2(text,text,text)",
+                "find_paper_order_idempotency_result_authorized_v2(text,text,text,text,text)",
+                "read_paper_balance_projection_authorized_v2(text,text,text)",
+                "create_paper_order_authorized_v2(text,text)",
+                "rebuild_paper_state_authorized_v2(text,text,text)",
+                "acquire_order_fill_reconciliation_lock_authorized_v2(text,text)",
+                "read_order_reconciliation_state_authorized_v2(text,text)",
+                "apply_stored_order_fills_authorized_v2(text,text)",
+                "read_owned_order_fills_authorized_v2(text,text)",
+            ).forEach { function ->
+                assertTrue(hasFunctionPrivilege(connection, "decision_app", function))
+            }
+            listOf(
+                "revalidate_kill_switch_admin(text,bigint)",
                 "invalidate_unused_decisions_for_kill_switch(bigint,timestamp with time zone,text)",
+                "append_decision_created_outbox(text,text,jsonb,timestamp with time zone)",
+                "append_kill_switch_outbox(text,boolean,timestamp with time zone)",
+                "read_demo_credentials()",
+                "read_user_actor(text)",
+                "persist_decision_bundle_authorized(text,jsonb)",
                 "read_mock_order_decision(text,text,text)",
                 "find_mock_order_idempotency_result(text,text,timestamp with time zone,text)",
                 "read_mock_order_owner_projection(text,text,text)",
                 "create_mock_order(jsonb,text)",
                 "request_mock_order_cancel(jsonb,text)",
+                "record_mock_order_provider_outcome(jsonb,text)",
+                "read_paper_order_context(text,text,text)",
+                "find_paper_order_idempotency_result(text,text,timestamp with time zone,text)",
+                "read_paper_balance_projection(text,text,text)",
+                "create_paper_order(jsonb,text)",
+                "rebuild_paper_state(text,text)",
+                "acquire_order_fill_reconciliation_lock(jsonb,text)",
+                "read_order_reconciliation_state(jsonb,text)",
+                "apply_stored_order_fills(jsonb,text)",
+                "read_owned_order_fills(jsonb,text)",
             ).forEach { function ->
-                assertTrue(hasFunctionPrivilege(connection, "decision_app", function))
+                assertFalse(hasFunctionPrivilege(connection, "decision_app", function))
             }
-            listOf("orders", "order_events", "mock_order_owner_projection", "brokerage_db_capability_keys").forEach { table ->
+            assertTrue(hasFunctionPrivilege(connection, "decision_auth", "read_demo_credentials()"))
+            assertTrue(hasFunctionPrivilege(connection, "decision_auth", "read_user_actor(text)"))
+            listOf("users", "decisions", "audit_logs", "flyway_schema_history").forEach { table ->
+                listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                    assertFalse(hasTablePrivilege(connection, "decision_auth", table, privilege))
+                }
+            }
+            listOf(
+                "orders",
+                "order_events",
+                "mock_order_owner_projection",
+                "brokerage_db_capability_keys",
+                "brokerage_internal_scope",
+            ).forEach { table ->
                 listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
                     assertFalse(hasTablePrivilege(connection, "decision_app", table, privilege))
                 }
@@ -405,6 +514,83 @@ class InfrastructureSecurityIntegrationTest {
                 hasFunctionPrivilege(connection, "decision_fill_writer", "read_decision_owner_projection()"),
             )
         }
+
+        DriverManager
+            .getConnection(
+                postgres.jdbcUrl,
+                Properties().apply {
+                    setProperty("user", "decision_auth")
+                    setProperty("password", authPassword)
+                },
+            ).use { connection ->
+                connection.createStatement().use { statement ->
+                    assertEquals(
+                        "2",
+                        queryScalar(statement, "select count(*)::text from read_demo_credentials()"),
+                    )
+                    val denied = assertThrows<SQLException> { statement.executeQuery("select * from users") }
+                    assertEquals("42501", denied.sqlState)
+                    assertTrue(
+                        hasFunctionPrivilege(
+                            connection,
+                            "decision_auth",
+                            "register_actor_identity_handle_v1(text,text,text,text,text,text,integer)",
+                        ),
+                    )
+                    val sessionHandle =
+                        queryScalar(
+                            statement,
+                            "select session_handle from authenticate_demo_actor_session_v1(" +
+                                "'demo-admin','${SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD}',3600)",
+                        )
+                    val callerSelectedActor =
+                        assertThrows<SQLException> {
+                            statement.executeQuery(
+                                """
+                                select register_actor_identity_handle_v1(
+                                  'usr_demo_user','READ_ASYNC_JOB','ASYNC_JOB','job_identity_handle_test',
+                                  'sha256:${"a".repeat(64)}','ADMIN_ONLY',15
+                                )
+                                """.trimIndent(),
+                            )
+                        }
+                    assertEquals("42501", callerSelectedActor.sqlState)
+                    val handle =
+                        queryScalar(
+                            statement,
+                            """
+                            select register_actor_identity_handle_v1(
+                              '$sessionHandle','READ_ASYNC_JOB','ASYNC_JOB','job_identity_handle_test',
+                              'sha256:${"a".repeat(64)}','ADMIN_ONLY',15
+                            )
+                            """.trimIndent(),
+                        )
+                    assertTrue(handle.matches(Regex("^idh1_[0-9a-f]{64}$")))
+                    verifyIdentityHandleIsExactAndOneShot(handle)
+                    val concurrentHandle =
+                        queryScalar(
+                            statement,
+                            """
+                            select register_actor_identity_handle_v1(
+                              '$sessionHandle','READ_ASYNC_JOB','ASYNC_JOB','job_identity_handle_concurrent',
+                              'sha256:${"b".repeat(64)}','ADMIN_ONLY',15
+                            )
+                            """.trimIndent(),
+                        )
+                    verifyIdentityHandleConcurrentConsume(concurrentHandle)
+                    verifyRejectedActorSessions(statement)
+                    statement
+                        .executeQuery(
+                            "select rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls " +
+                                "from pg_roles where rolname = current_user",
+                        ).use { result ->
+                            assertTrue(result.next())
+                            for (column in 1..5) {
+                                assertFalse(result.getBoolean(column))
+                            }
+                        }
+                }
+            }
 
         DriverManager.getConnection(postgres.jdbcUrl, runtimeProperties()).use { connection ->
             connection.createStatement().use { statement ->
@@ -493,13 +679,16 @@ class InfrastructureSecurityIntegrationTest {
                         "'idempotencyScopeHash', repeat('1', 64)" +
                         "), '1.0.0', 'PENDING', 0, now(), now())",
                     "select * from decisions limit 0",
+                    "insert into decisions default values",
                     "update decisions set outcome = outcome where false",
                     "delete from decisions where false",
                     "truncate table decisions",
                     "insert into risk_kill_switch (" +
                         "kill_switch_id,active,reason_class,generation,changed_by,changed_by_role,changed_at" +
                         ") values ('OTHER',true,'USER_MANUAL_STOP',2,'usr_demo_user','USER',now())",
+                    "update risk_kill_switch set active = active where kill_switch_id = 'GLOBAL'",
                     "delete from risk_kill_switch where false",
+                    "insert into risk_kill_switch_transitions default values",
                     "update risk_kill_switch_transitions set reason_class = reason_class where false",
                     "delete from risk_kill_switch_transitions where false",
                     "insert into decision_invalidations (" +
@@ -511,6 +700,7 @@ class InfrastructureSecurityIntegrationTest {
                     "insert into order_events default values",
                     "select * from mock_order_owner_projection",
                     "select * from brokerage_db_capability_keys",
+                    "select * from read_demo_credentials()",
                 ).forEach { sql ->
                     val mutationFailure = assertThrows<SQLException> { statement.execute(sql) }
                     assertTrue(mutationFailure.sqlState == "42501")
@@ -540,6 +730,161 @@ class InfrastructureSecurityIntegrationTest {
         }
         assertRuntimeLockTimeout()
         assertActorScopedPoolStateIsReset()
+    }
+
+    private fun verifyIdentityHandleIsExactAndOneShot(handle: String) {
+        DriverManager
+            .getConnection(
+                postgres.jdbcUrl,
+                Properties().apply {
+                    setProperty("user", "decision_identity")
+                    setProperty("password", identityPassword)
+                },
+            ).use { identity ->
+                identity
+                    .prepareStatement(
+                        """
+                        select actor_user_id,actor_role,actor_security_version
+                        from consume_actor_identity_handle_v1(?,?,?,?,?,?)
+                        """.trimIndent(),
+                    ).use { statement ->
+                        fun execute(operation: String): List<String> {
+                            statement.setString(1, handle)
+                            statement.setString(2, operation)
+                            statement.setString(3, "ASYNC_JOB")
+                            statement.setString(4, "job_identity_handle_test")
+                            statement.setString(5, "sha256:${"a".repeat(64)}")
+                            statement.setString(6, "ADMIN_ONLY")
+                            return statement.executeQuery().use { result ->
+                                buildList {
+                                    while (result.next()) add(result.getString(1))
+                                }
+                            }
+                        }
+                        assertEquals(emptyList<String>(), execute("LIST_ASYNC_JOBS"))
+                        assertEquals(listOf("usr_demo_admin"), execute("READ_ASYNC_JOB"))
+                        assertEquals(emptyList<String>(), execute("READ_ASYNC_JOB"))
+                    }
+                val selectedActor =
+                    assertThrows<SQLException> {
+                        identity.createStatement().executeQuery("select * from read_actor_capability_subject('usr_demo_user')")
+                    }
+                assertEquals("42501", selectedActor.sqlState)
+            }
+    }
+
+    private fun verifyIdentityHandleConcurrentConsume(handle: String) {
+        val ready = CountDownLatch(2)
+        val start = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val results =
+                (1..2).map {
+                    pool.submit<Boolean> {
+                        DriverManager
+                            .getConnection(
+                                postgres.jdbcUrl,
+                                Properties().apply {
+                                    setProperty("user", "decision_identity")
+                                    setProperty("password", identityPassword)
+                                },
+                            ).use { identity ->
+                                ready.countDown()
+                                check(start.await(5, TimeUnit.SECONDS))
+                                identity
+                                    .prepareStatement(
+                                        """
+                                        select actor_user_id from consume_actor_identity_handle_v1(?,?,?,?,?,?)
+                                        """.trimIndent(),
+                                    ).use { statement ->
+                                        statement.setString(1, handle)
+                                        statement.setString(2, "READ_ASYNC_JOB")
+                                        statement.setString(3, "ASYNC_JOB")
+                                        statement.setString(4, "job_identity_handle_concurrent")
+                                        statement.setString(5, "sha256:${"b".repeat(64)}")
+                                        statement.setString(6, "ADMIN_ONLY")
+                                        statement.executeQuery().use { result -> result.next() }
+                                    }
+                            }
+                    }
+                }
+            assertTrue(ready.await(5, TimeUnit.SECONDS))
+            start.countDown()
+            assertEquals(1, results.count { it.get(5, TimeUnit.SECONDS) })
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    private fun verifyRejectedActorSessions(statement: java.sql.Statement) {
+        fun createSession(): String =
+            queryScalar(
+                statement,
+                "select session_handle from authenticate_demo_actor_session_v1(" +
+                    "'demo-admin','${SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD}',3600)",
+            )
+
+        fun registrationFailure(sessionHandle: String): SQLException =
+            assertThrows {
+                statement.executeQuery(
+                    """
+                    select register_actor_identity_handle_v1(
+                      '$sessionHandle','READ_ASYNC_JOB','ASYNC_JOB','job_rejected_session',
+                      'sha256:${"c".repeat(64)}','ADMIN_ONLY',15
+                    )
+                    """.trimIndent(),
+                )
+            }
+
+        assertEquals("42501", registrationFailure("sid1_${"0".repeat(64)}").sqlState)
+
+        val revoked = createSession()
+        mutateSession(revoked, "revoked_at=statement_timestamp()")
+        assertEquals("42501", registrationFailure(revoked).sqlState)
+
+        val expired = createSession()
+        mutateSession(
+            expired,
+            "issued_at=statement_timestamp()-interval '2 hours'," +
+                "expires_at=statement_timestamp()-interval '1 hour'",
+        )
+        assertEquals("42501", registrationFailure(expired).sqlState)
+
+        val stale = createSession()
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { admin ->
+            admin.createStatement().use { it.executeUpdate("update users set security_version=2 where user_id='usr_demo_admin'") }
+        }
+        try {
+            assertEquals("42501", registrationFailure(stale).sqlState)
+        } finally {
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { admin ->
+                admin.createStatement().use { it.executeUpdate("update users set security_version=1 where user_id='usr_demo_admin'") }
+            }
+        }
+
+        val userSession =
+            queryScalar(
+                statement,
+                "select session_handle from authenticate_demo_actor_session_v1(" +
+                    "'demo-user','${SpringApiIntegrationTestBase.TEST_USER_PASSWORD}',3600)",
+            )
+        assertEquals("42501", registrationFailure(userSession).sqlState)
+    }
+
+    private fun mutateSession(
+        sessionHandle: String,
+        assignment: String,
+    ) {
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { admin ->
+            admin
+                .prepareStatement(
+                    "update actor_auth_session set $assignment " +
+                        "where session_hash='sha256:'||encode(digest(?,'sha256'),'hex')",
+                ).use { update ->
+                    update.setString(1, sessionHandle)
+                    assertEquals(1, update.executeUpdate())
+                }
+        }
     }
 
     private fun runtimeProperties(): Properties =
@@ -605,12 +950,20 @@ class InfrastructureSecurityIntegrationTest {
                           FROM pg_roles
                           WHERE rolname = ANY (ARRAY[
                             'decision_app',
+                            'decision_auth',
                             'decision_worker',
+                            'decision_outbox_publisher',
+                            'decision_poison_recorder',
                             'decision_replay',
+                            'decision_identity',
+                            'decision_replay_authorizer',
                             'decision_demo',
                             'decision_collector',
                             'decision_disclosure_reader',
                             'decision_market_writer',
+                            'decision_market_operational_reader',
+                            'decision_market_research_reader',
+                            'decision_market_retention_admin',
                             'decision_portfolio_writer',
                             'decision_risk_writer',
                             'decision_fill_writer',
@@ -780,6 +1133,16 @@ class InfrastructureSecurityIntegrationTest {
             val reader =
                 ActorScopedReadQuery(
                     beanFactory.getBeanProvider(DataSource::class.java),
+                    mockk<ActorRlsScope>().also { scope ->
+                        every { scope.open(any<Connection>(), any(), any()) } answers {
+                            firstArg<Connection>()
+                                .prepareStatement("SELECT set_config('app.actor_user_id', ?, true)")
+                                .use { statement ->
+                                    statement.setString(1, secondArg<String>())
+                                    statement.executeQuery().use { result -> check(result.next()) }
+                                }
+                        }
+                    },
                 )
             val scopedValues =
                 reader.query(
@@ -831,8 +1194,11 @@ class InfrastructureSecurityIntegrationTest {
         private val adminPassword: String = "a" + "p".repeat(24)
         private val runtimePassword: String = "r" + "p".repeat(24)
         private val workerPassword: String = "w" + "a".repeat(24)
+        private val outboxPublisherPassword: String = "o" + "p".repeat(24)
+        private val poisonRecorderPassword: String = "p" + "r".repeat(24)
         private val replayPassword: String = "r" + "y".repeat(24)
         private val identityPassword: String = "i" + "d".repeat(24)
+        private val authPassword: String = "a" + "u".repeat(24)
         private val replayAuthorizerPassword: String = "z" + "a".repeat(24)
         private val demoPassword: String = "d" + "m".repeat(24)
         private val migrationPassword: String = "m" + "p".repeat(24)
@@ -857,14 +1223,17 @@ class InfrastructureSecurityIntegrationTest {
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("trading")
                 .withUsername("postgres")
                 .withPassword(adminPassword)
                 .withEnv("POSTGRES_APP_PASSWORD", runtimePassword)
                 .withEnv("POSTGRES_WORKER_PASSWORD", workerPassword)
+                .withEnv("POSTGRES_OUTBOX_PUBLISHER_PASSWORD", outboxPublisherPassword)
+                .withEnv("POSTGRES_POISON_RECORDER_PASSWORD", poisonRecorderPassword)
                 .withEnv("POSTGRES_REPLAY_PASSWORD", replayPassword)
                 .withEnv("POSTGRES_IDENTITY_PASSWORD", identityPassword)
+                .withEnv("POSTGRES_AUTH_PASSWORD", authPassword)
                 .withEnv("POSTGRES_REPLAY_AUTHORIZER_PASSWORD", replayAuthorizerPassword)
                 .withEnv("POSTGRES_DEMO_PASSWORD", demoPassword)
                 .withEnv("POSTGRES_MIGRATION_PASSWORD", migrationPassword)

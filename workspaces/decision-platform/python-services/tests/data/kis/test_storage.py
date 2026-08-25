@@ -1,5 +1,5 @@
-from datetime import date
 import os
+from datetime import date
 from pathlib import Path
 from threading import Event, Thread
 

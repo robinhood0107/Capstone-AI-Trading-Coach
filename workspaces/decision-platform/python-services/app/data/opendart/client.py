@@ -74,7 +74,9 @@ class OpenDARTHttpLike(Protocol):
 class OpenDARTClient:
     """OpenDART 공식 read-only API를 Python 서비스의 정규화 타입으로 감싸는 client다."""
 
-    def __init__(self, settings: OpenDARTSettings, http_client: OpenDARTHttpLike | None = None) -> None:
+    def __init__(
+        self, settings: OpenDARTSettings, http_client: OpenDARTHttpLike | None = None
+    ) -> None:
         """인증정보가 없는 설정에서 필요한 경로만 복사하고 설정 객체 자체는 보관하지 않는다."""
         self._data_dir = settings.data_dir
         self.http_client = http_client or OpenDARTHttpClient(settings)
@@ -151,9 +153,13 @@ class OpenDARTClient:
             error_message=_error_message(response),
         )
         # raw 관측치는 parse 전에도 남긴다. 후속(S1.2+) aggregator가 원 응답 상태를 재현해야 하기 때문이다.
-        return ObservedDisclosureList(items=parse_disclosure_list(response), raw_observation=observation)
+        return ObservedDisclosureList(
+            items=parse_disclosure_list(response), raw_observation=observation
+        )
 
-    def financial_statement(self, *, corp_code: str, business_year: str, report_code: str) -> list[FinancialStatementRow]:
+    def financial_statement(
+        self, *, corp_code: str, business_year: str, report_code: str
+    ) -> list[FinancialStatementRow]:
         """단일회사 주요계정 조회를 감싸며 전체 XBRL 원문 수집은 S1.2 범위에 넣지 않는다."""
         response = self.http_client.get_json(
             FINANCIAL_STATEMENT_PATH,
@@ -219,12 +225,16 @@ class OpenDARTClient:
         response = self.http_client.get_json(MAJOR_STOCK_PATH, {"corp_code": corp_code})
         return parse_major_stock_report_rows(response)
 
-    def executive_major_shareholder_reports(self, *, corp_code: str) -> list[ExecutiveMajorShareholderReportRow]:
+    def executive_major_shareholder_reports(
+        self, *, corp_code: str
+    ) -> list[ExecutiveMajorShareholderReportRow]:
         """임원ㆍ주요주주 소유보고(`elestock`)를 insider ownership 설명·feature 후보로 정규화한다.
 
         개인정보성 항목은 저장/노출을 최소화하고, S1.2c에서는 주문 차단 점수에 연결하지 않는다.
         """
-        response = self.http_client.get_json(EXECUTIVE_MAJOR_SHAREHOLDER_PATH, {"corp_code": corp_code})
+        response = self.http_client.get_json(
+            EXECUTIVE_MAJOR_SHAREHOLDER_PATH, {"corp_code": corp_code}
+        )
         return parse_executive_major_shareholder_report_rows(response)
 
     def major_matter_events(
@@ -266,7 +276,9 @@ class OpenDARTClient:
             AUDIT_OPINION_PATH,
             {"corp_code": corp_code, "bsns_year": business_year, "reprt_code": report_code},
         )
-        return parse_audit_opinion_events(response, symbol=symbol, fallback_event_date=fallback_event_date)
+        return parse_audit_opinion_events(
+            response, symbol=symbol, fallback_event_date=fallback_event_date
+        )
 
     def _disclosure_list_params(
         self,

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
-import hashlib
-from typing import Any, Mapping, cast
+from typing import Any, cast
 
-from exchange_calendars.errors import DateOutOfBounds, RequestedSessionOutOfBounds
 import pandas as pd
+from exchange_calendars.errors import DateOutOfBounds, RequestedSessionOutOfBounds
 
 from app.data._shared.bounded_json import (
     BoundedJsonError,
@@ -18,28 +19,28 @@ from app.data._shared.bounded_json import (
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.pit_calendar import (
-    MonthlyUniverseSchedule,
-    PitSessionWindow,
     KST,
     S5_ADHOC_CLOSED_SESSIONS,
     S5_CALENDAR_CORRECTION_SET_SHA256,
     S5_CALENDAR_POLICY_VERSION,
+    MonthlyUniverseSchedule,
+    PitSessionWindow,
     base_calendar,
+    build_pit_session_window_for,
     calendar_for_corrections,
+    corrected_calendar,
     correction_set_sha256,
     corrections_for_sha256,
-    build_pit_session_window_for,
-    corrected_calendar,
     derive_monthly_universe_schedule_for,
     latest_completed_session,
     previous_xkrx_session,
 )
 from app.lightgbm.production_policy import (
     APPROVED_HORIZON_UNION_SIZE,
-    SUPERSEDED_HORIZON_UNION_SIZES,
     ECOS_OPERATIONS,
     KIS_OPERATION,
     KRX_OPERATIONS,
+    SUPERSEDED_HORIZON_UNION_SIZES,
     BootstrapBudget,
     author_bootstrap_budget,
     author_recovery_bootstrap_budget,
@@ -135,13 +136,9 @@ def _author_bootstrap_packet(
     else:
         raise LightGbmContractError("bootstrap lineage mode is not approved")
     if (
-        superseded_allowance
-        or kis_superseded_allowance
-        or kis_token_superseded_allowance
+        superseded_allowance or kis_superseded_allowance or kis_token_superseded_allowance
     ) and lineage_mode != "CALENDAR_RECOVERY":
-        raise LightGbmContractError(
-            "superseded allowance is limited to calendar recovery lineage"
-        )
+        raise LightGbmContractError("superseded allowance is limited to calendar recovery lineage")
     if cutoff.tzinfo is None:
         raise LightGbmContractError("bootstrap cutoff must be timezone aware")
     # v2 packet은 author된 correction 세대를 bytes에 선언한다. 현재 세대가 기본이며, 이미 소비한
@@ -151,9 +148,7 @@ def _author_bootstrap_packet(
     approved_union = APPROVED_HORIZON_UNION_SIZE if union_size is None else union_size
     window = build_pit_session_window_for(cutoff, calendar=calendar)
     if _label_as_of(window.raw_sessions[-1], calendar=calendar) > cutoff:
-        raise LightGbmContractError(
-            "bootstrap cutoff precedes the latest label maturity clock"
-        )
+        raise LightGbmContractError("bootstrap cutoff precedes the latest label maturity clock")
     months = _months_between(window.eligible_sessions[0], window.raw_sessions[-1])
     schedules = tuple(
         derive_monthly_universe_schedule_for(
@@ -239,11 +234,7 @@ def _author_bootstrap_packet(
                 else {}
             ),
             **(
-                {
-                    "kisTokenSupersededAllowance": (
-                        budget.kis_token_superseded_allowance
-                    )
-                }
+                {"kisTokenSupersededAllowance": (budget.kis_token_superseded_allowance)}
                 if budget.kis_token_superseded_allowance
                 else {}
             ),
@@ -268,9 +259,7 @@ def _author_bootstrap_packet(
             else None
         ),
         calendar_correction_set_sha256=(
-            generation_sha256
-            if packet_version == "s5-production-bootstrap-packet-v2"
-            else None
+            generation_sha256 if packet_version == "s5-production-bootstrap-packet-v2" else None
         ),
         lineage_mode=lineage_mode,
         recovery_binding_sha256=recovery_binding_sha256,
@@ -348,9 +337,7 @@ def validate_bootstrap_packet(
         )
         if lineage_mode == "FRESH" and recovery_binding is None:
             kwargs: dict[str, object] = {"lineage_mode": "FRESH"}
-        elif lineage_mode == "CALENDAR_RECOVERY" and isinstance(
-            recovery_binding, str
-        ):
+        elif lineage_mode == "CALENDAR_RECOVERY" and isinstance(recovery_binding, str):
             kwargs = {
                 "lineage_mode": "CALENDAR_RECOVERY",
                 "recovery_binding_sha256": recovery_binding,
@@ -382,9 +369,7 @@ def validate_bootstrap_packet(
                 regenerated = attempt
                 break
         if regenerated is None:
-            raise LightGbmContractError(
-                "bootstrap packet does not match current calendar policy"
-            )
+            raise LightGbmContractError("bootstrap packet does not match current calendar policy")
     elif packet_version == "s5-production-bootstrap-packet-v1" and allow_historical_v1:
         # 이미 소비한 packet/run을 안전하게 supersede할 때만 과거 base-calendar bytes를 검증한다.
         regenerated = _author_bootstrap_packet(

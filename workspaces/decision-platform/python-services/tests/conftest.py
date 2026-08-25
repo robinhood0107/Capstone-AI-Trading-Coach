@@ -117,7 +117,9 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
             f"postgresql://decision_signal_admin:signal-admin-test@{host}:{port}/decision"
         )
         worker_dsn = f"postgresql://decision_worker:worker-test-secret-0001@{host}:{port}/decision"
-        identity_dsn = f"postgresql://decision_identity:identity-test-secret-0001@{host}:{port}/decision"
+        identity_dsn = (
+            f"postgresql://decision_identity:identity-test-secret-0001@{host}:{port}/decision"
+        )
 
         with _connect_postgres_admin_with_host_readiness_retry(admin_dsn) as connection:
             connection.execute(
@@ -126,10 +128,16 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'app-test';
                 CREATE ROLE decision_worker LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'worker-test-secret-0001';
+                CREATE ROLE decision_outbox_publisher LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'outbox-publisher-test-0001';
+                CREATE ROLE decision_poison_recorder LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'poison-recorder-test-0001';
                 CREATE ROLE decision_replay LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'replay-test-secret-0001';
                 CREATE ROLE decision_identity LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'identity-test-secret-0001';
+                CREATE ROLE decision_auth LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'auth-test-secret-0001';
                 CREATE ROLE decision_replay_authorizer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'replay-authorizer-test-0001';
                 CREATE ROLE decision_demo LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
@@ -193,6 +201,7 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     decision_worker,
                     decision_replay,
                     decision_identity,
+                    decision_auth,
                     decision_replay_authorizer,
                     decision_demo,
                     decision_collector,
@@ -216,6 +225,7 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     decision_worker,
                     decision_replay,
                     decision_identity,
+                    decision_auth,
                     decision_replay_authorizer,
                     decision_demo,
                     decision_collector,
@@ -234,6 +244,8 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     decision_signal_admin,
                     flyway;
                 GRANT CREATE ON SCHEMA public TO flyway;
+                REVOKE SET ON PARAMETER app.required_actor_operation, app.required_actor_target_kind FROM PUBLIC;
+                GRANT SET ON PARAMETER app.required_actor_operation, app.required_actor_target_kind TO flyway;
                 """
             )
             connection.execute("CREATE EXTENSION IF NOT EXISTS vector")

@@ -122,14 +122,14 @@ class RagSourceRegistryMigrationIntegrationTest {
     }
 
     @Test
-    fun `V62 through V85 forward repairs preserve empty owner scope and ACL`() {
+    fun `V62 through V87 forward repairs preserve empty owner scope and ACL`() {
         withPreparedDatabase("empty_owner_generation_scope_upgrade") { jdbcUrl ->
             flyway(jdbcUrl, target = "62").migrate()
             flyway(jdbcUrl).migrate()
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("85")
+                    .isEqualTo("87")
                 assertThat(
                     queryString(
                         connection,
@@ -157,7 +157,7 @@ class RagSourceRegistryMigrationIntegrationTest {
     }
 
     @Test
-    fun `V65 to V85 preserves S4 9 boundaries and existing rows`() {
+    fun `V65 to V86 preserves S4 9 boundaries and existing rows`() {
         withPreparedDatabase("s49_forward_upgrade") { jdbcUrl ->
             flyway(jdbcUrl, target = "65").migrate()
             adminConnection(jdbcUrl).use { connection ->
@@ -173,7 +173,7 @@ class RagSourceRegistryMigrationIntegrationTest {
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("85")
+                    .isEqualTo("87")
                 assertThat(queryString(connection, "select count(*)::text from users where user_id = 'usr_s49_preserved'"))
                     .isEqualTo("1")
                 assertThat(queryString(connection, "select count(*)::text from public.s4_9_saved_answer_history"))
@@ -235,7 +235,6 @@ class RagSourceRegistryMigrationIntegrationTest {
             }
             appConnection(jdbcUrl).use { connection ->
                 connection.autoCommit = false
-                connection.createStatement().use { it.execute("select set_config('app.actor_user_id','usr_s49_budget',true)") }
 
                 fun reserve(
                     id: String,
@@ -243,28 +242,48 @@ class RagSourceRegistryMigrationIntegrationTest {
                     fingerprint: String,
                     count: Int,
                     cap: Int,
-                ): Boolean =
-                    connection
-                        .prepareStatement(
-                            "select public.reserve_s4_9_google_grounding_budget(?,?,?,?,date '2026-08-01',?,?)",
-                        ).use { statement ->
-                            statement.setString(1, id)
-                            statement.setString(2, "usr_s49_budget")
-                            statement.setString(3, request)
-                            statement.setString(4, fingerprint)
-                            statement.setInt(5, count)
-                            statement.setInt(6, cap)
-                            statement.executeQuery().use { result ->
-                                assertTrue(result.next())
-                                result.getBoolean(1)
+                ): Boolean {
+                    TestActorRlsScope.open(
+                        jdbcUrl,
+                        connection,
+                        "usr_s49_budget",
+                        "RESERVE_GROUNDING_BUDGET",
+                        "RAG_REQUEST",
+                        request,
+                    )
+                    val accepted =
+                        connection
+                            .prepareStatement(
+                                "select public.reserve_s4_9_google_grounding_budget(?,?,?,?,date '2026-08-01',?,?)",
+                            ).use { statement ->
+                                statement.setString(1, id)
+                                statement.setString(2, "usr_s49_budget")
+                                statement.setString(3, request)
+                                statement.setString(4, fingerprint)
+                                statement.setInt(5, count)
+                                statement.setInt(6, cap)
+                                statement.executeQuery().use { result ->
+                                    assertTrue(result.next())
+                                    result.getBoolean(1)
+                                }
                             }
-                        }
+                    connection.commit()
+                    return accepted
+                }
 
                 fun settle(
                     id: String,
                     state: String,
                     actual: Int?,
                 ) {
+                    TestActorRlsScope.open(
+                        jdbcUrl,
+                        connection,
+                        "usr_s49_budget",
+                        "SETTLE_GROUNDING_BUDGET",
+                        "BUDGET_RESERVATION",
+                        id,
+                    )
                     connection.prepareStatement("select public.settle_s4_9_google_grounding_budget(?,?,?,?)").use { statement ->
                         statement.setString(1, "usr_s49_budget")
                         statement.setString(2, id)
@@ -272,6 +291,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                         if (actual == null) statement.setNull(4, java.sql.Types.INTEGER) else statement.setInt(4, actual)
                         statement.executeQuery().close()
                     }
+                    connection.commit()
                 }
 
                 val fingerprint = "7".repeat(64)
@@ -299,7 +319,6 @@ class RagSourceRegistryMigrationIntegrationTest {
                         8,
                     ),
                 )
-                connection.rollback()
             }
         }
     }
@@ -318,26 +337,74 @@ class RagSourceRegistryMigrationIntegrationTest {
             }
             appConnection(jdbcUrl).use { connection ->
                 connection.autoCommit = false
+                val sourcesJson =
+                    """[{"sourceNodeId":"s49_src_${"1".repeat(
+                        32,
+                    )}","resultId":"google_1","citationId":"cit_2","title":"Investor.gov","canonicalUrl":"https://www.investor.gov/diversification","domain":"investor.gov","chunkIndex":0}]"""
+                val supportsJson =
+                    """[{"supportId":"s49_sup_${"2".repeat(
+                        32,
+                    )}","segmentSha256":"${"3".repeat(64)}","startIndex":0,"endIndex":24,"chunkIndices":[0]}]"""
+                TestActorRlsScope.open(
+                    jdbcUrl,
+                    connection,
+                    "usr_s49_ground",
+                    "RECORD_GROUNDING_PROVENANCE",
+                    "RAG_REQUEST",
+                    "req_s49_grounding_0001",
+                    payloadValues =
+                        listOf(
+                            "usr_s49_ground",
+                            "req_s49_grounding_0001",
+                            sourcesJson,
+                            supportsJson,
+                        ),
+                )
+                connection.prepareStatement("select public.record_s4_9_grounding_provenance(?,?,?,?)").use { statement ->
+                    statement.setString(1, "usr_s49_ground")
+                    statement.setString(2, "req_s49_grounding_0001")
+                    statement.setString(3, sourcesJson)
+                    statement.setString(4, supportsJson)
+                    statement.execute()
+                }
+                connection.commit()
+                TestActorRlsScope.open(
+                    jdbcUrl,
+                    connection,
+                    "usr_s49_ground",
+                    "RECORD_SEARCH_ATTEMPT",
+                    "RAG_REQUEST",
+                    "req_s49_grounding_0001",
+                    payloadValues =
+                        listOf("usr_s49_ground", "req_s49_grounding_0001", "1", "VERTEX_GOOGLE", "1", "COMMITTED"),
+                )
                 connection.createStatement().use { statement ->
-                    statement.execute("select set_config('app.actor_user_id','usr_s49_ground',true)")
-                    statement.execute(
-                        """
-                        select public.record_s4_9_grounding_provenance(
-                          'usr_s49_ground','req_s49_grounding_0001',
-                          '[{"sourceNodeId":"s49_src_${"1".repeat(
-                            32,
-                        )}","resultId":"google_1","citationId":"cit_2","title":"Investor.gov","canonicalUrl":"https://www.investor.gov/diversification","domain":"investor.gov","chunkIndex":0}]'::jsonb,
-                          '[{"supportId":"s49_sup_${"2".repeat(
-                            32,
-                        )}","segmentSha256":"${"3".repeat(64)}","startIndex":0,"endIndex":24,"chunkIndices":[0]}]'::jsonb
-                        )
-                        """.trimIndent(),
-                    )
                     statement.execute(
                         "select public.record_s4_9_search_attempt(" +
                             "'s49_sra_${"4".repeat(32)}','usr_s49_ground','req_s49_grounding_0001'," +
-                            "'VERTEX_GOOGLE','COMMITTED',1)",
+                            "1,'VERTEX_GOOGLE','COMMITTED',1)",
                     )
+                }
+                connection.commit()
+                TestActorRlsScope.open(
+                    jdbcUrl,
+                    connection,
+                    "usr_s49_ground",
+                    "RECORD_STRONG_LLM_USAGE",
+                    "RAG_REQUEST",
+                    "req_s49_grounding_0001",
+                    payloadValues =
+                        listOf(
+                            "usr_s49_ground",
+                            "req_s49_grounding_0001",
+                            "gemini-3.5-flash",
+                            "EVIDENCE",
+                            "COMMITTED",
+                            "6".repeat(64),
+                            null,
+                        ),
+                )
+                connection.createStatement().use { statement ->
                     statement.execute(
                         """
                         select public.record_s4_9_strong_llm_usage_v2(
@@ -388,8 +455,24 @@ class RagSourceRegistryMigrationIntegrationTest {
             }
             appConnection(jdbcUrl).use { connection ->
                 connection.autoCommit = false
+                TestActorRlsScope.open(
+                    jdbcUrl,
+                    connection,
+                    "usr_s49_searxng",
+                    "RECORD_READ_PROVENANCE",
+                    "RAG_REQUEST",
+                    "req_s49_searxng_0001",
+                    payloadValues =
+                        listOf(
+                            "usr_s49_searxng",
+                            "req_s49_searxng_0001",
+                            "s49_src_${"1".repeat(32)}",
+                            "searxng_${"2".repeat(24)}",
+                            "cit_1",
+                            "3".repeat(64),
+                        ),
+                )
                 connection.createStatement().use { statement ->
-                    statement.execute("select set_config('app.actor_user_id','usr_s49_searxng',true)")
                     statement.execute(
                         "select public.record_s4_9_read_provenance(" +
                             "'usr_s49_searxng','req_s49_searxng_0001','s49_src_${"1".repeat(32)}'," +
@@ -434,6 +517,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 }
             }
             appConnection(jdbcUrl).use { connection ->
+                connection.autoCommit = false
                 connection.createStatement().use { statement ->
                     statement
                         .executeQuery(
@@ -445,24 +529,50 @@ class RagSourceRegistryMigrationIntegrationTest {
                             assertTrue(result.next())
                             assertTrue(result.getBoolean(1))
                         }
+                    connection.commit()
+                    TestActorRlsScope.open(
+                        jdbcUrl,
+                        connection,
+                        "usr_s49_oauth",
+                        "ISSUE_MCP_OAUTH_CODE",
+                        "OAUTH_CODE",
+                        "a".repeat(64),
+                        payloadValues =
+                            listOf(
+                                "usr_s49_oauth",
+                                "mcp_s49_test",
+                                "1",
+                                "http://127.0.0.1/callback",
+                                "http://127.0.0.1:8080/mcp",
+                                "mcp:rag.public",
+                                "A".repeat(43),
+                            ),
+                    )
                     statement.execute(
                         "select public.upsert_s4_9_mcp_oauth_code_hash(" +
                             "repeat('a',64),'mcp_s49_test','usr_s49_oauth',1,'http://127.0.0.1/callback'," +
                             "'http://127.0.0.1:8080/mcp',array['mcp:rag.public'],repeat('A',43)," +
                             "transaction_timestamp() + interval '3 minutes')",
                     )
+                    connection.commit()
                     statement.execute("select public.consume_s4_9_mcp_oauth_code_hash(repeat('a',64))")
+                    connection.commit()
                     statement.execute(
                         "select public.rotate_s4_9_mcp_refresh_token_hash(" +
-                            "repeat('b',64),'mcp_s49_test','usr_s49_oauth',1,'http://127.0.0.1:8080/mcp'," +
+                            "repeat('b',64),repeat('a',64),'http://127.0.0.1:8080/mcp'," +
                             "array['mcp:rag.public'],transaction_timestamp() + interval '6 days')",
                     )
+                    connection.commit()
+                    statement.execute("select * from public.consume_s4_9_mcp_refresh_token(repeat('b',64))")
+                    connection.commit()
                     statement.execute(
                         "select public.rotate_s4_9_mcp_refresh_token_hash(" +
-                            "repeat('c',64),'mcp_s49_test','usr_s49_oauth',1,'http://127.0.0.1:8080/mcp'," +
+                            "repeat('c',64),repeat('b',64),'http://127.0.0.1:8080/mcp'," +
                             "array['mcp:rag.public'],transaction_timestamp() + interval '6 days')",
                     )
+                    connection.commit()
                     statement.execute("select public.revoke_s4_9_mcp_refresh_token_family(repeat('c',64))")
+                    connection.commit()
                 }
                 assertThrows(SQLException::class.java) {
                     connection.createStatement().use { it.executeQuery("select * from public.s4_9_mcp_oauth_refresh_tokens") }
@@ -493,6 +603,104 @@ class RagSourceRegistryMigrationIntegrationTest {
     }
 
     @Test
+    fun `V87 refresh token claim is one shot and bound to current security version`() {
+        withPreparedDatabase("s49_refresh_claim") { jdbcUrl ->
+            flyway(jdbcUrl).migrate()
+            adminConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    val passwordHash = "\$2b\$12\$" + "a".repeat(53)
+                    statement.executeUpdate(
+                        "insert into users(user_id, username, password_hash, role, status, security_version) " +
+                            "values ('usr_s49_refresh', 's49_refresh', '$passwordHash', " +
+                            "'USER', 'ACTIVE', 1)",
+                    )
+                }
+            }
+            appConnection(jdbcUrl).use { connection ->
+                connection.autoCommit = false
+                connection.createStatement().use { statement ->
+                    statement.execute(
+                        "select public.sync_s4_9_mcp_oauth_client(" +
+                            "'mcp_s49_refresh','S4.9 refresh',repeat('1',64)," +
+                            "array['http://127.0.0.1/callback'],array['mcp:rag.public'],'STATIC_ALLOWLIST')",
+                    )
+                    connection.commit()
+                    TestActorRlsScope.open(
+                        jdbcUrl,
+                        connection,
+                        "usr_s49_refresh",
+                        "ISSUE_MCP_OAUTH_CODE",
+                        "OAUTH_CODE",
+                        "c".repeat(64),
+                        payloadValues =
+                            listOf(
+                                "usr_s49_refresh",
+                                "mcp_s49_refresh",
+                                "1",
+                                "http://127.0.0.1/callback",
+                                "http://127.0.0.1:8080/mcp",
+                                "mcp:rag.public",
+                                "A".repeat(43),
+                            ),
+                    )
+                    statement.execute(
+                        "select public.upsert_s4_9_mcp_oauth_code_hash(" +
+                            "repeat('c',64),'mcp_s49_refresh','usr_s49_refresh',1,'http://127.0.0.1/callback'," +
+                            "'http://127.0.0.1:8080/mcp',array['mcp:rag.public'],repeat('A',43)," +
+                            "transaction_timestamp() + interval '3 minutes')",
+                    )
+                    connection.commit()
+                    statement.execute("select public.consume_s4_9_mcp_oauth_code_hash(repeat('c',64))")
+                    connection.commit()
+                    statement.execute(
+                        "select public.rotate_s4_9_mcp_refresh_token_hash(" +
+                            "repeat('d',64),repeat('c',64),'http://127.0.0.1:8080/mcp',array['mcp:rag.public']," +
+                            "transaction_timestamp() + interval '6 days')",
+                    )
+                    connection.commit()
+                    statement
+                        .executeQuery(
+                            "select owner_user_id,security_version from " +
+                                "public.consume_s4_9_mcp_refresh_token(repeat('d',64))",
+                        ).use { result ->
+                            assertTrue(result.next())
+                            assertThat(result.getString("owner_user_id")).isEqualTo("usr_s49_refresh")
+                            assertThat(result.getLong("security_version")).isEqualTo(1)
+                            assertThat(result.next()).isFalse()
+                        }
+                    connection.commit()
+                    statement
+                        .executeQuery(
+                            "select count(*) from public.consume_s4_9_mcp_refresh_token(repeat('d',64))",
+                        ).use { result ->
+                            assertTrue(result.next())
+                            assertThat(result.getInt(1)).isZero()
+                        }
+                    connection.commit()
+                }
+            }
+            adminConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use {
+                    it.executeUpdate(
+                        "update users set security_version=2 where user_id='usr_s49_refresh'",
+                    )
+                }
+            }
+            appConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    assertThrows(SQLException::class.java) {
+                        statement.execute(
+                            "select public.rotate_s4_9_mcp_refresh_token_hash(" +
+                                "repeat('e',64),repeat('d',64),'http://127.0.0.1:8080/mcp',array['mcp:rag.public']," +
+                                "transaction_timestamp() + interval '6 days')",
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     fun `V66 validation receipt saves encrypted history once and content free ledgers pass RLS`() {
         withPreparedDatabase("s49_receipt_save") { jdbcUrl ->
             flyway(jdbcUrl).migrate()
@@ -506,18 +714,49 @@ class RagSourceRegistryMigrationIntegrationTest {
             }
             appConnection(jdbcUrl).use { connection ->
                 connection.autoCommit = false
+                val contextId = "s49_ctx_${"1".repeat(32)}"
+                val sourceSetHash = "2".repeat(64)
+                val draftHash = "3".repeat(64)
+                val evidenceHash = "5".repeat(64)
+                val usageEvidenceHash = "7".repeat(64)
                 connection.createStatement().use { statement ->
                     statement.execute(
                         "select public.sync_s4_9_mcp_oauth_client(" +
                             "'mcp_s49_save','S4.9 save',repeat('1',64)," +
                             "array['http://127.0.0.1/callback'],array['mcp:answer.validate','mcp:history.write'],'STATIC_ALLOWLIST')",
                     )
-                    statement.execute("select set_config('app.actor_user_id','usr_s49_save',true)")
+                }
+                connection.commit()
+
+                TestActorRlsScope.open(
+                    jdbcUrl,
+                    connection,
+                    "usr_s49_save",
+                    "ISSUE_ANSWER_VALIDATION",
+                    "RESEARCH_CONTEXT",
+                    contextId,
+                    payloadValues =
+                        listOf("usr_s49_save", "mcp_s49_save", contextId, sourceSetHash, draftHash, "VALID"),
+                )
+                connection.createStatement().use { statement ->
                     statement.execute(
                         "select public.issue_s4_9_answer_validation_receipt(" +
                             "repeat('d',64),'usr_s49_save','mcp_s49_save','s49_ctx_' || repeat('1',32)," +
                             "repeat('2',64),repeat('3',64),'VALID',transaction_timestamp() + interval '4 minutes')",
                     )
+                }
+                connection.commit()
+
+                TestActorRlsScope.open(
+                    jdbcUrl,
+                    connection,
+                    "usr_s49_save",
+                    "CONSUME_ANSWER_VALIDATION",
+                    "RAG_ANSWER",
+                    "rag_s49_answer_0001",
+                    payloadValues = listOf("usr_s49_save", "mcp_s49_save", "rag_s49_answer_0001", draftHash),
+                )
+                connection.createStatement().use { statement ->
                     statement.execute(
                         "select public.consume_s4_9_validation_and_save_history(" +
                             "repeat('d',64),'usr_s49_save','mcp_s49_save','rag_s49_answer_0001',repeat('3',64),'kek-v1'," +
@@ -525,12 +764,54 @@ class RagSourceRegistryMigrationIntegrationTest {
                             "decode(repeat('04',12),'hex'),decode('05','hex'),decode(repeat('06',16),'hex')," +
                             "decode(repeat('07',12),'hex'),decode('08','hex'),decode(repeat('09',16),'hex'),transaction_timestamp())",
                     )
+                }
+                connection.commit()
+
+                TestActorRlsScope.open(
+                    jdbcUrl,
+                    connection,
+                    "usr_s49_save",
+                    "RECORD_WEB_EVIDENCE",
+                    "RESEARCH_CONTEXT",
+                    contextId,
+                    payloadValues =
+                        listOf(
+                            "usr_s49_save",
+                            "mcp_s49_save",
+                            contextId,
+                            "https://example.com/evidence",
+                            "Evidence",
+                            evidenceHash,
+                        ),
+                )
+                connection.createStatement().use { statement ->
                     statement.execute(
                         "select public.record_s4_9_web_evidence_metadata(" +
                             "'s49_web_' || repeat('4',32),'usr_s49_save','mcp_s49_save','s49_ctx_' || repeat('1',32)," +
                             "'https://example.com/evidence','Evidence',null,transaction_timestamp(),repeat('5',64)," +
                             "transaction_timestamp() + interval '1 hour')",
                     )
+                }
+                connection.commit()
+
+                TestActorRlsScope.open(
+                    jdbcUrl,
+                    connection,
+                    "usr_s49_save",
+                    "RECORD_STRONG_LLM_USAGE",
+                    "RAG_REQUEST",
+                    "req_s49_usage_0001",
+                    payloadValues =
+                        listOf(
+                            "usr_s49_save",
+                            "req_s49_usage_0001",
+                            "gemini-3.5-flash",
+                            "MODEL_KNOWLEDGE",
+                            "COMMITTED",
+                            usageEvidenceHash,
+                        ),
+                )
+                connection.createStatement().use { statement ->
                     statement.execute(
                         "select public.record_s4_9_strong_llm_usage(" +
                             "'s49_llu_' || repeat('6',32),'usr_s49_save','req_s49_usage_0001','VERTEX_AI','gemini-3.5-flash'," +
@@ -539,8 +820,16 @@ class RagSourceRegistryMigrationIntegrationTest {
                 }
                 connection.commit()
 
+                TestActorRlsScope.open(
+                    jdbcUrl,
+                    connection,
+                    "usr_s49_save",
+                    "CONSUME_ANSWER_VALIDATION",
+                    "RAG_ANSWER",
+                    "rag_s49_answer_0002",
+                    payloadValues = listOf("usr_s49_save", "mcp_s49_save", "rag_s49_answer_0002", draftHash),
+                )
                 connection.createStatement().use { statement ->
-                    statement.execute("select set_config('app.actor_user_id','usr_s49_save',true)")
                     assertThrows(SQLException::class.java) {
                         statement.execute(
                             "select public.consume_s4_9_validation_and_save_history(" +
@@ -629,7 +918,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("85")
+                    .isEqualTo("87")
 
                 expectedTables.forEach { table ->
                     assertThat(
@@ -873,7 +1162,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                         ),
                     ).isEqualTo("flyway")
                 }
-                assertThat(
+                val guardedFunctionSearchPaths =
                     queryStrings(
                         connection,
                         """
@@ -893,8 +1182,13 @@ class RagSourceRegistryMigrationIntegrationTest {
                           'public.purge_rag_embedding_staging(text,text)'::regprocedure
                         )
                         """.trimIndent(),
-                    ),
-                ).allMatch { it == "search_path=pg_catalog, public, pg_temp" }
+                    )
+                assertThat(guardedFunctionSearchPaths).allMatch {
+                    it == "search_path=pg_catalog, public, pg_temp" ||
+                        it == "search_path=public, pg_catalog, pg_temp"
+                }
+                assertThat(guardedFunctionSearchPaths.count { it == "search_path=public, pg_catalog, pg_temp" })
+                    .isEqualTo(1)
             }
         }
     }
@@ -2071,7 +2365,7 @@ class RagSourceRegistryMigrationIntegrationTest {
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_s4_migration_admin")
                 .withUsername("decision")
                 .withPassword("decision")

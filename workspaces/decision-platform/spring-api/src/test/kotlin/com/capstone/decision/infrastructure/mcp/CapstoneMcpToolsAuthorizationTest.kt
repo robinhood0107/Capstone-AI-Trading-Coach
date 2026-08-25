@@ -61,7 +61,7 @@ class CapstoneMcpToolsAuthorizationTest {
 
     private fun fixture(): Fixture {
         val ragService = mockk<RagV2RuntimeService>()
-        val contexts = mockk<McpResearchContextRegistry>()
+        val contexts = mockk<McpResearchContextRegistry>(relaxed = true)
         val properties = RagWebToolProperties(enabled = true, receiptHmacKey = "h".repeat(32))
         val strong =
             S49StrongLlmProperties(

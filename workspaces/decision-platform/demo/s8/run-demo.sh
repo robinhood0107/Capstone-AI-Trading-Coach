@@ -23,11 +23,6 @@ for argument in "$@"; do
   esac
 done
 
-if [[ "${mode}" != "INTERNAL_PAPER" ]]; then
-  echo "S8_DEMO_EXPLICIT_INTERNAL_PAPER_REQUIRED" >&2
-  exit 2
-fi
-
 export POSTGRES_HOST_PORT=55438
 export POSTGRES_PORT=55438
 export REDIS_HOST_PORT=56388
@@ -45,25 +40,128 @@ export BROKERAGE_GRPC_ENABLED=false
 export KIS_MOCK_BROKERAGE_ONLINE_ENABLED=false
 export KIS_OFFLINE=1
 
-mkdir -p "${DEMO_OUTPUT}"
 FIXTURE_ENV="${DEMO_OUTPUT}/demo.env"
-if [[ -L "${FIXTURE_ENV}" ]]; then
-  echo "S8_DEMO_ENV_SYMLINK_REJECTED" >&2
+FINGERPRINT_FILE="${DEMO_OUTPUT}/runtime-fingerprint"
+PROJECT_NAME="capstone-s8-demo"
+
+validate_env() {
+  local env_file="$1"
+  local mode_bits size line key
+  local -A expected=()
+  local -A observed=()
+  local keys=(
+    ACTOR_CAPABILITY_AUTHORITY_URL ACTOR_CAPABILITY_PUBLIC_KEY ACTOR_CAPABILITY_SHARED_SECRET
+    ACTOR_CAPABILITY_TRANSPORT
+    ASYNC_CURSOR_HMAC_KEY ASYNC_PARTITION_HMAC_KEY ASYNC_POLLING_ENABLED
+    ASYNC_WORKER_ENABLED ASYNC_WORKER_GRPC_SHARED_SECRET BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY
+    BROKERAGE_DB_CAPABILITY_TOKEN_SHA256
+    DECISION_GRPC_SHARED_SECRET DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY
+    DEMO_ADMIN_CREDENTIAL_BUNDLE DEMO_CREDENTIAL_SEPARATION_KEY DEMO_USER_CREDENTIAL_BUNDLE
+    JWT_AUDIENCE JWT_ISSUER JWT_SECRET KAFKA_UI_PASSWORD KAFKA_UI_USERNAME
+    LOGIN_SCOPE_HMAC_KEY MCP_SEARXNG_AUTH_TOKEN POSTGRES_ADMIN_PASSWORD POSTGRES_ADMIN_USER
+    POSTGRES_APP_PASSWORD POSTGRES_AUTH_PASSWORD POSTGRES_COLLECTOR_PASSWORD POSTGRES_DB
+    POSTGRES_DEMO_PASSWORD POSTGRES_DISCLOSURE_READER_PASSWORD POSTGRES_FILL_WRITER_PASSWORD
+    POSTGRES_HOST POSTGRES_HOST_PORT POSTGRES_IDENTITY_PASSWORD POSTGRES_MARKET_WRITER_PASSWORD
+    POSTGRES_MIGRATION_PASSWORD POSTGRES_PORT POSTGRES_PORTFOLIO_WRITER_PASSWORD
+    POSTGRES_RAG_ADMIN_PASSWORD POSTGRES_RAG_QUERY_PASSWORD POSTGRES_RAG_WRITER_PASSWORD
+    POSTGRES_REPLAY_AUTHORIZER_PASSWORD POSTGRES_REPLAY_PASSWORD POSTGRES_RISK_WRITER_PASSWORD
+    POSTGRES_SIGNAL_ADMIN_PASSWORD POSTGRES_SIGNAL_SCHEDULER_PASSWORD
+    POSTGRES_SIGNAL_WRITER_PASSWORD POSTGRES_WORKER_PASSWORD POSTGRES_OUTBOX_PUBLISHER_PASSWORD
+    POSTGRES_POISON_RECORDER_PASSWORD PRINCIPLE_CURSOR_HMAC_KEY
+    PYTHON_GRPC_SHARED_SECRET RAG_GRPC_SHARED_SECRET RAG_HISTORY_CURRENT_KEK_VERSION
+    RAG_HISTORY_CURSOR_HMAC_KEY RAG_HISTORY_SECRET_DIRECTORY RAG_IDEMPOTENCY_SCOPE_HMAC_KEY
+    RAG_PROVIDER_USAGE_HMAC_KEY RAG_RATE_LIMIT_HMAC_KEY RAG_REQUEST_FINGERPRINT_HMAC_KEY
+    REDIS_PASSWORD SEARXNG_SECRET
+  )
+  if [[ -L "${env_file}" || ! -f "${env_file}" ]]; then
+    echo "S8_DEMO_ENV_REGULAR_FILE_REQUIRED" >&2
+    exit 2
+  fi
+  mode_bits="$(stat -c '%a' -- "${env_file}")"
+  size="$(stat -c '%s' -- "${env_file}")"
+  if [[ "${mode_bits}" != "600" || "${size}" -lt 1 || "${size}" -gt 65536 ]]; then
+    echo "S8_DEMO_ENV_MODE_OR_SIZE_REJECTED" >&2
+    exit 2
+  fi
+  for key in "${keys[@]}"; do expected["${key}"]=1; done
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    if [[ ! "${line}" =~ ^[A-Z][A-Z0-9_]*=.{1,4096}$ ]]; then
+      echo "S8_DEMO_ENV_FORMAT_REJECTED" >&2
+      exit 2
+    fi
+    key="${line%%=*}"
+    if [[ -z "${expected[${key}]+set}" || -n "${observed[${key}]+set}" ]]; then
+      echo "S8_DEMO_ENV_KEYSET_REJECTED" >&2
+      exit 2
+    fi
+    observed["${key}"]=1
+  done < "${env_file}"
+  if [[ "${#observed[@]}" -ne "${#expected[@]}" ]]; then
+    echo "S8_DEMO_ENV_KEYSET_REJECTED" >&2
+    exit 2
+  fi
+}
+
+if [[ "${action}" == "stop" ]]; then
+  existing_containers="$(docker ps -aq --filter "label=com.docker.compose.project=${PROJECT_NAME}")"
+  existing_volumes="$(docker volume ls -q --filter "label=com.docker.compose.project=${PROJECT_NAME}")"
+  if [[ ! -e "${FIXTURE_ENV}" && -z "${existing_containers}" && -z "${existing_volumes}" ]]; then
+    echo "S8_DEMO_NOT_INITIALIZED"
+    exit 0
+  fi
+  if [[ -e "${FIXTURE_ENV}" ]]; then
+    if [[ -L "${FIXTURE_ENV}" || ! -f "${FIXTURE_ENV}" || "$(stat -c '%a' -- "${FIXTURE_ENV}")" != "600" ]]; then
+      echo "S8_DEMO_ENV_MODE_REJECTED" >&2
+      exit 2
+    fi
+  fi
+  if [[ -n "${existing_containers}" ]]; then
+    mapfile -t container_ids <<< "${existing_containers}"
+    docker stop "${container_ids[@]}" >/dev/null
+  fi
+  echo "S8_DEMO_STOPPED_VOLUMES_PRESERVED"
+  exit 0
+fi
+
+if [[ "${mode}" != "INTERNAL_PAPER" ]]; then
+  echo "S8_DEMO_EXPLICIT_INTERNAL_PAPER_REQUIRED" >&2
   exit 2
 fi
-if [[ ! -f "${FIXTURE_ENV}" ]]; then
+
+existing_volumes="$(docker volume ls -q --filter "label=com.docker.compose.project=${PROJECT_NAME}")"
+if [[ ! -e "${FIXTURE_ENV}" && -n "${existing_volumes}" ]]; then
+  echo "S8_DEMO_ENV_MISSING_WITH_EXISTING_VOLUME" >&2
+  exit 2
+fi
+
+mkdir -p "${DEMO_OUTPUT}"
+chmod 0700 "${DEMO_OUTPUT}"
+if [[ ! -e "${FIXTURE_ENV}" ]]; then
   "${SPRING_ROOT}/gradlew" -p "${SPRING_ROOT}" --no-daemon prepareOpenApiFixtureEnv >/dev/null
   umask 077
   cp -- "${SPRING_ROOT}/build/openapi-fixture/openapi.env" "${FIXTURE_ENV}"
 fi
-chmod 0600 "${FIXTURE_ENV}"
+validate_env "${FIXTURE_ENV}"
 
-compose=(docker compose --project-name capstone-s8-demo --env-file "${FIXTURE_ENV}" -f "${COMPOSE_FILE}")
-
-if [[ "${action}" == "stop" ]]; then
-  "${compose[@]}" --profile kafka --profile kafka-ui stop
-  echo "S8_DEMO_STOPPED_VOLUMES_PRESERVED"
-  exit 0
+compose=(docker compose --project-name "${PROJECT_NAME}" --env-file "${FIXTURE_ENV}" -f "${COMPOSE_FILE}")
+compose_sha="$("${compose[@]}" config | sha256sum | cut -d' ' -f1)"
+env_sha="$(sha256sum -- "${FIXTURE_ENV}" | cut -d' ' -f1)"
+expected_fingerprint="PROJECT=${PROJECT_NAME} ENV_SHA256=${env_sha} COMPOSE_SHA256=${compose_sha}"
+if [[ -e "${FINGERPRINT_FILE}" ]]; then
+  if [[ -L "${FINGERPRINT_FILE}" || ! -f "${FINGERPRINT_FILE}" || "$(stat -c '%a' -- "${FINGERPRINT_FILE}")" != "600" ]]; then
+    echo "S8_DEMO_FINGERPRINT_REJECTED" >&2
+    exit 2
+  fi
+  if [[ "$(<"${FINGERPRINT_FILE}")" != "${expected_fingerprint}" ]]; then
+    echo "S8_DEMO_ENV_VOLUME_FINGERPRINT_CONFLICT" >&2
+    exit 2
+  fi
+elif [[ -n "${existing_volumes}" ]]; then
+  echo "S8_DEMO_VOLUME_WITHOUT_FINGERPRINT" >&2
+  exit 2
+else
+  umask 077
+  printf '%s\n' "${expected_fingerprint}" > "${FINGERPRINT_FILE}"
 fi
 
 "${compose[@]}" config --quiet

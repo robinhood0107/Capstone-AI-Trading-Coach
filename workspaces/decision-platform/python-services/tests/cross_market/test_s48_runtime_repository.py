@@ -7,8 +7,8 @@ import pytest
 
 from app.cross_market.s48_runtime import S48RuntimeMaterializer
 from app.cross_market.s48_runtime_repository import (
-    S48RuntimeWriterAuthorityError,
     PostgresS48RuntimeRepository,
+    S48RuntimeWriterAuthorityError,
 )
 
 

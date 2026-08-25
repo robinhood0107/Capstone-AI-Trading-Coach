@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import psycopg
+
 from app.data.market_data.daily_runtime import (
     AcceptedDailyShard,
     DailyReplayPacket,
@@ -31,9 +32,7 @@ class _PostgresDailySink(DailyShardSink):
     def preflight(self, packet: DailyReplayPacket) -> None:
         """Verify the least-privilege writer before opening replay evidence."""
 
-        with psycopg.connect(
-            self._database_dsn, autocommit=False, connect_timeout=2
-        ) as connection:
+        with psycopg.connect(self._database_dsn, autocommit=False, connect_timeout=2) as connection:
             probe = AcceptedDailyShard(
                 payload={
                     "manifestSha256": "0" * 64,

@@ -109,7 +109,7 @@ class DbAsyncDispatcher(
                 "artifact.ingest-requested.v1" to "ARTIFACT_INGEST",
                 "model.eval-requested.v1" to "MODEL_EVAL",
             )
-        val logger = LoggerFactory.getLogger(DbAsyncDispatcher::class.java)
+        val logger: org.slf4j.Logger = LoggerFactory.getLogger(DbAsyncDispatcher::class.java)
     }
 }
 

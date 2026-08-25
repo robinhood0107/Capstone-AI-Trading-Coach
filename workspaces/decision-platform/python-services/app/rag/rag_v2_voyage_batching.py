@@ -181,7 +181,9 @@ class VoyageBatchVectorAccumulator:
     def completed_batch_ids(self) -> tuple[str, ...]:
         """receipt용 content-free completed batch identity를 plan order로 반환한다."""
 
-        return tuple(batch.batch_id for batch in self._plan.batches if batch.batch_id in self._completed)
+        return tuple(
+            batch.batch_id for batch in self._plan.batches if batch.batch_id in self._completed
+        )
 
     @property
     def complete(self) -> bool:
@@ -192,7 +194,11 @@ class VoyageBatchVectorAccumulator:
     def record_success(self, *, batch: VoyageDocumentBatch, vectors: object) -> None:
         """한 성공 batch를 exactly once 기록하고 duplicate/mixed/invalid vector를 거부한다."""
 
-        expected = self._batch_by_id.get(batch.batch_id) if isinstance(batch, VoyageDocumentBatch) else None
+        expected = (
+            self._batch_by_id.get(batch.batch_id)
+            if isinstance(batch, VoyageDocumentBatch)
+            else None
+        )
         if expected != batch or batch.batch_id in self._completed:
             raise RagV2VoyageBatchingError("VOYAGE_BATCH_RESUME_STATE")
         expected_rows = batch.chunk_count
@@ -229,9 +235,15 @@ class VoyageBatchVectorAccumulator:
         if not self.complete:
             raise RagV2VoyageBatchingError("VOYAGE_BATCH_INCOMPLETE")
         chunk_ids = tuple(chunk.chunk_id for group in groups for chunk in group.chunks)
-        if not chunk_ids or len(set(chunk_ids)) != len(chunk_ids) or any(chunk_id not in self._vectors for chunk_id in chunk_ids):
+        if (
+            not chunk_ids
+            or len(set(chunk_ids)) != len(chunk_ids)
+            or any(chunk_id not in self._vectors for chunk_id in chunk_ids)
+        ):
             raise RagV2VoyageBatchingError("VOYAGE_BATCH_RESUME_STATE")
-        return np.stack(tuple(self._vectors[chunk_id] for chunk_id in chunk_ids)).astype(np.float32, copy=False)
+        return np.stack(tuple(self._vectors[chunk_id] for chunk_id in chunk_ids)).astype(
+            np.float32, copy=False
+        )
 
 
 def build_public_voyage_batch_plan(
@@ -328,7 +340,10 @@ def _validate_public_components(
     if not isinstance(components, tuple) or len(components) != 3:
         raise RagV2VoyageBatchingError("VOYAGE_BATCH_PUBLIC_MEMBERSHIP")
     for expected, component in zip(_SCOPES, components, strict=True):
-        if not isinstance(component, VoyagePreparedComponent) or component.component_scope != expected:
+        if (
+            not isinstance(component, VoyagePreparedComponent)
+            or component.component_scope != expected
+        ):
             raise RagV2VoyageBatchingError("VOYAGE_BATCH_PUBLIC_MEMBERSHIP")
     exact30, oa112, owner = components
     if (
@@ -475,7 +490,8 @@ def _segment_group(
 def _fits(existing: list[VoyageContextSegment], candidate: VoyageContextSegment) -> bool:
     return (
         sum(item.token_count for item in existing) + candidate.token_count <= _TOKEN_CAP
-        and sum(len(item.group.chunks) for item in existing) + len(candidate.group.chunks) <= _CHUNK_CAP
+        and sum(len(item.group.chunks) for item in existing) + len(candidate.group.chunks)
+        <= _CHUNK_CAP
         and _estimated_response_bytes(
             sum(len(item.group.chunks) for item in existing) + len(candidate.group.chunks)
         )

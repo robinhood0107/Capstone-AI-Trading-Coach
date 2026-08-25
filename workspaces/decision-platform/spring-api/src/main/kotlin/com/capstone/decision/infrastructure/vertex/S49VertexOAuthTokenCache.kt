@@ -136,7 +136,7 @@ internal class S49VertexOAuthTokenCache(
     )
 
     private companion object {
-        val TOKEN_ENDPOINT = URI.create("https://oauth2.googleapis.com/token")
+        val TOKEN_ENDPOINT: URI = URI.create("https://oauth2.googleapis.com/token")
         const val CLOUD_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
         const val GRANT_PREFIX = "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion="
     }

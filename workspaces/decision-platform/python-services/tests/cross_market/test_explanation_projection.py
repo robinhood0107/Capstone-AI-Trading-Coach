@@ -12,7 +12,6 @@ from app.cross_market.explanation_projection import (
 )
 from app.cross_market.fixture_producer import SyntheticEodFixtureFactory
 
-
 EVALUATED_AT = datetime(2026, 7, 31, 0, 30, tzinfo=UTC)
 
 

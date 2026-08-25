@@ -1,15 +1,16 @@
 package com.capstone.decision
 
-import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import com.capstone.decision.infrastructure.security.DemoAccounts
 import com.capstone.decision.infrastructure.security.DemoCredentialBundlePolicy
 import com.capstone.decision.infrastructure.security.DemoRole
 import com.capstone.decision.infrastructure.security.UserSecurityActorRecord
 import com.capstone.decision.infrastructure.security.UserSecurityRecord
 import com.capstone.decision.infrastructure.security.UserSecurityRepository
+import com.capstone.decision.infrastructure.security.UserSecuritySessionRecord
 import com.capstone.decision.infrastructure.security.V7__s2_1_actor_trust
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.context.DynamicPropertyRegistry
@@ -22,6 +23,7 @@ import java.util.Base64
 import java.util.HexFormat
 
 // 테스트 credential과 hash는 런타임에 생성해 실제 secret이나 고정 BCrypt material을 fixture에 남기지 않는다.
+@Import(TestActorCapabilityConfiguration::class)
 abstract class SpringApiIntegrationTestBase {
     protected fun userPassword(): String = TEST_USER_PASSWORD
 
@@ -92,6 +94,7 @@ abstract class SpringApiIntegrationTestBase {
         @DynamicPropertySource
         @JvmStatic
         fun registerApplicationProperties(registry: DynamicPropertyRegistry) {
+            registry.add("app.actor-capability.transport") { "test" }
             registry.add("app.jwt.secret") { TEST_JWT_SECRET }
             registry.add("app.jwt.issuer") { TEST_JWT_ISSUER }
             registry.add("app.jwt.audience") { TEST_JWT_AUDIENCE }
@@ -126,6 +129,7 @@ abstract class SpringApiIntegrationTestBase {
             registry.add("spring.flyway.placeholders.brokerageDbCapabilityTokenSha256") {
                 TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256
             }
+            registry.add("spring.flyway.locations") { "classpath:db/migration" }
             registry.add("app.decision.grpc.shared-secret") { TEST_GRPC_SHARED_SECRET }
             registry.add("app.rag.grpc.shared-secret") { TEST_RAG_GRPC_SHARED_SECRET }
             registry.add("app.demo-credentials.user-credential-bundle") { TEST_USER_CREDENTIAL_BUNDLE }
@@ -208,13 +212,6 @@ internal fun s21ActorTrustMigration(
 class TestAuthRepositoryConfiguration {
     @Bean
     @Primary
-    fun testActorCapabilityIssuer(): ActorCapabilityIssuer =
-        object : ActorCapabilityIssuer {
-            override fun issue(actorUserId: String): String = "test-actor-capability"
-        }
-
-    @Bean
-    @Primary
     fun testUserSecurityRepository(): UserSecurityRepository {
         val users =
             listOf(
@@ -236,9 +233,62 @@ class TestAuthRepositoryConfiguration {
                 ),
             )
         return object : UserSecurityRepository {
+            private val sessions = mutableMapOf<String, UserSecuritySessionRecord>()
+
             override fun findDemoCredentials(): List<UserSecurityRecord> = users
 
             override fun findByUserId(userId: String): UserSecurityActorRecord? = users.firstOrNull { it.userId == userId }?.toActorRecord()
+
+            override fun createAuthenticatedSession(
+                username: String,
+                password: String,
+                ttlSeconds: Int,
+            ): UserSecuritySessionRecord? {
+                val user = users.singleOrNull { it.username == username } ?: return null
+                val expectedPassword =
+                    if (username == "demo-admin") {
+                        SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD
+                    } else {
+                        SpringApiIntegrationTestBase.TEST_USER_PASSWORD
+                    }
+                if (password != expectedPassword) return null
+                val handle =
+                    if (username == "demo-admin") {
+                        "sid1_" + "a".repeat(64)
+                    } else {
+                        "sid1_" + "b".repeat(64)
+                    }
+                return UserSecuritySessionRecord(
+                    sessionHandle = handle,
+                    userId = user.userId,
+                    username = user.username,
+                    role = user.role,
+                    securityVersion = user.securityVersion,
+                    expiresAt =
+                        java.time.OffsetDateTime
+                            .now()
+                            .plusSeconds(ttlSeconds.toLong()),
+                ).also { sessions[handle] = it }
+            }
+
+            override fun findBySessionHandle(sessionHandle: String): UserSecuritySessionRecord? =
+                sessions[sessionHandle]
+                    ?: sessionHandle
+                        .takeIf { it == "sid1_" + "b".repeat(64) }
+                        ?.let {
+                            val user = users.single { item -> item.userId == "usr_demo_user" }
+                            UserSecuritySessionRecord(
+                                sessionHandle = sessionHandle,
+                                userId = user.userId,
+                                username = user.username,
+                                role = user.role,
+                                securityVersion = user.securityVersion,
+                                expiresAt =
+                                    java.time.OffsetDateTime
+                                        .now()
+                                        .plusHours(12),
+                            )
+                        }
         }
     }
 

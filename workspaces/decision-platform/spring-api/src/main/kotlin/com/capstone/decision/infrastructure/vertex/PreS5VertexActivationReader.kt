@@ -304,7 +304,10 @@ internal class PreS5VertexActivationReader(
 
     private fun linkCount(path: Path): Long = (Files.getAttribute(path, "unix:nlink", LinkOption.NOFOLLOW_LINKS) as Number).toLong()
 
-    private fun sha256(value: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(value).joinToString("") { "%02x".format(it) }
+    private fun sha256(value: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(value).joinToString("") {
+            "%02x".format(java.util.Locale.ROOT, it)
+        }
 
     private companion object {
         const val CONTROL_DIRECTORY = "control"

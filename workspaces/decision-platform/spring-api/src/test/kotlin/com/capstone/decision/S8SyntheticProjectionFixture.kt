@@ -16,7 +16,8 @@ object S8SyntheticProjectionFixture {
     fun backtestProjection(objectMapper: ObjectMapper): String = projection(objectMapper, "backtest.json")
 
     fun sha256(value: String): String =
-        "sha256:" + MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
+        "sha256:" +
+            MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
 
     private fun projection(
         objectMapper: ObjectMapper,

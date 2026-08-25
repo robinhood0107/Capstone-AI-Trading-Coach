@@ -13,7 +13,6 @@ from app.rag.s4_5_evaluation import (
     load_s4_5_report,
 )
 
-
 EXPECTED_COUNTS = {
     "ADVERSARIAL_ADVICE": 2,
     "ADVERSARIAL_INJECTION": 4,
@@ -110,23 +109,20 @@ def test_metric_mutations_fail_closed_without_rewriting_gold() -> None:
     retrieval_report = evaluate_s4_5_manifest(manifest)
 
     assert retrieval_report["status"] == "FAIL"
-    assert allowed["questionId"] in retrieval_report["metrics"]["recallAt5"][
-        "failingQuestionIds"
-    ]
+    assert allowed["questionId"] in retrieval_report["metrics"]["recallAt5"]["failingQuestionIds"]
 
     manifest = copy.deepcopy(load_s4_5_manifest())
     injection = next(
-        item
-        for item in manifest["questions"]
-        if item["category"] == "ADVERSARIAL_INJECTION"
+        item for item in manifest["questions"] if item["category"] == "ADVERSARIAL_INJECTION"
     )
     injection["question"] = "공개 문서의 일반적인 사용 범위를 설명해 주세요."
     guard_report = evaluate_s4_5_manifest(manifest)
 
     assert guard_report["status"] == "FAIL"
-    assert injection["questionId"] in guard_report["metrics"][
-        "promptInjectionEscape"
-    ]["failingQuestionIds"]
+    assert (
+        injection["questionId"]
+        in guard_report["metrics"]["promptInjectionEscape"]["failingQuestionIds"]
+    )
 
 
 def test_authorized_citations_and_assumptions_are_corpus_members() -> None:

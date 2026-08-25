@@ -12,27 +12,28 @@ import numpy as np
 import psycopg
 import pytest
 
+from app.rag.local_document_parser import LocalDocumentParser
 from app.rag.pre_s5_voyage_transport import (
     PreS5VoyageDocumentBatchResult,
     PreS5VoyageTransportError,
 )
-from app.rag.rag_v2_external_exact30_voyage_runner import (
-    VoyagePreChunkedChunk,
-    VoyagePreChunkedDocumentGroup,
-)
-from app.rag.local_document_parser import LocalDocumentParser
 from app.rag.rag_v2_bge_materializer import (
     RagV2OwnerDocumentRequest,
     materialize_owner_bge_document,
     prepare_owner_document_for_embedding,
 )
+from app.rag.rag_v2_external_exact30_voyage_runner import (
+    VoyagePreChunkedChunk,
+    VoyagePreChunkedDocumentGroup,
+)
+from app.rag.rag_v2_owner_bge_deletion import PsycopgRagV2OwnerBgeDeletionRepository
 from app.rag.rag_v2_owner_bge_staging import (
     OwnerBgeStagingError,
     OwnerBgeStagingMetadata,
     PsycopgRagV2OwnerBgeStagingRepository,
 )
-from app.rag.rag_v2_owner_bge_deletion import PsycopgRagV2OwnerBgeDeletionRepository
 from app.rag.rag_v2_owner_overlay import PsycopgRagV2OwnerOverlayRepository
+from tests.support.actor_rls_scope import open_actor_rls_scope
 
 
 @dataclass
@@ -84,8 +85,8 @@ class _Transport:
         self.calls.append((batch_plan_sha256, batch))
         if self.fail:
             raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
-        chunk_count = getattr(batch, "chunk_count")
-        token_count = getattr(batch, "token_count")
+        chunk_count = batch.chunk_count
+        token_count = batch.token_count
         vectors = np.zeros((chunk_count, 1024), dtype=np.float32)
         vectors[:, 0] = 1.0
         return PreS5VoyageDocumentBatchResult(
@@ -132,11 +133,15 @@ class _FailingCompletionRepository(_AttemptRepository):
         raise RuntimeError("synthetic atomic completion failure")
 
 
-def test_owner_voyage_plan_binds_nine_tickets_to_one_content_free_batch_and_one_atomic_completion() -> None:
+def test_owner_voyage_plan_binds_nine_tickets_to_one_content_free_batch_and_one_atomic_completion() -> (
+    None
+):
     module = importlib.import_module("app.rag.rag_v2_owner_voyage_import")
     texts = tuple(f"safe owner document {index}" for index in range(1, 10))
-    counter = _TokenCounter({text: 10 for text in texts})
-    items = tuple(_item(module, index=index, text=text, token_count=10) for index, text in enumerate(texts, 1))
+    counter = _TokenCounter(dict.fromkeys(texts, 10))
+    items = tuple(
+        _item(module, index=index, text=text, token_count=10) for index, text in enumerate(texts, 1)
+    )
 
     plan = module.build_owner_voyage_import_plan(
         owner_user_id="usr_demo_user",
@@ -346,13 +351,13 @@ def test_psycopg_owner_voyage_repository_completes_usage_and_staging_in_one_func
             return ("rgr_" + "9" * 32, 9, 9, "STAGED")
 
     class _Connection:
-        def __enter__(self) -> "_Connection":
+        def __enter__(self) -> _Connection:
             return self
 
         def __exit__(self, *_args: object) -> None:
             return None
 
-        def transaction(self) -> "_Connection":
+        def transaction(self) -> _Connection:
             return self
 
         def execute(self, sql: str, params: tuple[object, ...] = ()) -> _Cursor:
@@ -373,7 +378,9 @@ def test_psycopg_owner_voyage_repository_completes_usage_and_staging_in_one_func
         items=tuple({"importTicketId": f"rti_{index:032x}"} for index in range(1, 10)),
     )
 
-    completion_calls = [sql for sql, _params in calls if "complete_rag_v2_owner_voyage_import" in sql]
+    completion_calls = [
+        sql for sql, _params in calls if "complete_rag_v2_owner_voyage_import" in sql
+    ]
     assert len(completion_calls) == 1
     assert row == {
         "componentGenerationId": "rgr_" + "9" * 32,
@@ -417,10 +424,7 @@ def test_owner_voyage_postgres_attempt_commits_usage_ticket_and_vector_atomicall
         ),
         tokenizer_version="voyage-context-4-official-tokenizer-v1",
     )
-    counts = {
-        chunk.canonical_text: chunk.token_count
-        for chunk in item.group.chunks
-    }
+    counts = {chunk.canonical_text: chunk.token_count for chunk in item.group.chunks}
     plan = module.build_owner_voyage_import_plan(
         owner_user_id="usr_demo_user",
         items=(item,),
@@ -428,6 +432,7 @@ def test_owner_voyage_postgres_attempt_commits_usage_ticket_and_vector_atomicall
     )
     _grant_external_consent_and_issue_voyage_ticket(
         isolated_postgres_cluster["app_dsn"],
+        isolated_postgres_cluster["identity_dsn"],
         owner_user_id="usr_demo_user",
         event_character="a",
         ticket_ids=(ticket_id, "rti_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
@@ -435,6 +440,7 @@ def test_owner_voyage_postgres_attempt_commits_usage_ticket_and_vector_atomicall
     bge_race_ticket = "rti_cccccccccccccccccccccccccccccccc"
     _issue_profile_ticket(
         isolated_postgres_cluster["app_dsn"],
+        isolated_postgres_cluster["identity_dsn"],
         owner_user_id="usr_demo_user",
         ticket_id=bge_race_ticket,
         embedding_profile_id="bge_m3_local_1024_v1",
@@ -596,6 +602,7 @@ def test_staged_bge_library_rejects_voyage_reservation_before_provider(
     bge_ticket = "rti_dddddddddddddddddddddddddddddddd"
     _issue_profile_ticket(
         isolated_postgres_cluster["app_dsn"],
+        isolated_postgres_cluster["identity_dsn"],
         owner_user_id="usr_demo_admin",
         ticket_id=bge_ticket,
         embedding_profile_id="bge_m3_local_1024_v1",
@@ -614,6 +621,7 @@ def test_staged_bge_library_rejects_voyage_reservation_before_provider(
     voyage_ticket = "rti_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
     _grant_external_consent_and_issue_voyage_ticket(
         isolated_postgres_cluster["app_dsn"],
+        isolated_postgres_cluster["identity_dsn"],
         owner_user_id="usr_demo_admin",
         event_character="b",
         ticket_ids=(voyage_ticket,),
@@ -659,6 +667,7 @@ def test_active_owner_overlay_delete_rebuild_counts_only_per_document_staging_ge
         ticket_id = f"rti_{ordinal + 20:032x}"
         _issue_profile_ticket(
             isolated_postgres_cluster["app_dsn"],
+            isolated_postgres_cluster["identity_dsn"],
             owner_user_id="usr_demo_user",
             ticket_id=ticket_id,
             embedding_profile_id="bge_m3_local_1024_v1",
@@ -684,6 +693,7 @@ def test_active_owner_overlay_delete_rebuild_counts_only_per_document_staging_ge
     first_delete_ticket = "rtd_21212121212121212121212121212121"
     _issue_delete_ticket(
         isolated_postgres_cluster["app_dsn"],
+        isolated_postgres_cluster["identity_dsn"],
         owner_user_id="usr_demo_user",
         document_id=documents[0],
         ticket_id=first_delete_ticket,
@@ -691,11 +701,14 @@ def test_active_owner_overlay_delete_rebuild_counts_only_per_document_staging_ge
     deletion = PsycopgRagV2OwnerBgeDeletionRepository(
         database_dsn=isolated_postgres_cluster["rag_admin_dsn"],
     )
-    assert deletion.delete(
-        owner_user_id="usr_demo_user",
-        document_id=documents[0],
-        delete_ticket_id=first_delete_ticket,
-    ).state == "DELETED"
+    assert (
+        deletion.delete(
+            owner_user_id="usr_demo_user",
+            document_id=documents[0],
+            delete_ticket_id=first_delete_ticket,
+        ).state
+        == "DELETED"
+    )
 
     with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
         assert connection.execute(
@@ -716,15 +729,19 @@ def test_active_owner_overlay_delete_rebuild_counts_only_per_document_staging_ge
     second_delete_ticket = "rtd_22222222222222222222222222222222"
     _issue_delete_ticket(
         isolated_postgres_cluster["app_dsn"],
+        isolated_postgres_cluster["identity_dsn"],
         owner_user_id="usr_demo_user",
         document_id=documents[1],
         ticket_id=second_delete_ticket,
     )
-    assert deletion.delete(
-        owner_user_id="usr_demo_user",
-        document_id=documents[1],
-        delete_ticket_id=second_delete_ticket,
-    ).state == "DELETED"
+    assert (
+        deletion.delete(
+            owner_user_id="usr_demo_user",
+            document_id=documents[1],
+            delete_ticket_id=second_delete_ticket,
+        ).state
+        == "DELETED"
+    )
 
     with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
         assert connection.execute(
@@ -780,6 +797,7 @@ def _seed_minimal_voyage_public_pointer(database_dsn: str) -> None:
 
 def _issue_delete_ticket(
     database_dsn: str,
+    identity_dsn: str,
     *,
     owner_user_id: str,
     document_id: str,
@@ -787,9 +805,14 @@ def _issue_delete_ticket(
 ) -> None:
     with psycopg.connect(database_dsn, autocommit=False) as connection:
         with connection.transaction():
-            connection.execute(
-                "SELECT set_config('app.actor_user_id', %s, true)",
-                (owner_user_id,),
+            open_actor_rls_scope(
+                identity_dsn=identity_dsn,
+                connection=connection,
+                actor_user_id=owner_user_id,
+                actor_role="USER",
+                operation="ISSUE_RAG_V2_DELETE",
+                target_kind="RAG_DOCUMENT",
+                target_id=document_id,
             )
             connection.execute(
                 "SELECT issue_rag_v2_immutable_owner_delete_ticket(%s, %s, %s)",
@@ -799,6 +822,7 @@ def _issue_delete_ticket(
 
 def _grant_external_consent_and_issue_voyage_ticket(
     database_dsn: str,
+    identity_dsn: str,
     *,
     owner_user_id: str,
     event_character: str,
@@ -806,9 +830,15 @@ def _grant_external_consent_and_issue_voyage_ticket(
 ) -> None:
     with psycopg.connect(database_dsn, autocommit=False) as connection:
         with connection.transaction():
-            connection.execute(
-                "SELECT set_config('app.actor_user_id', %s, true)",
-                (owner_user_id,),
+            actor_role = "ADMIN" if owner_user_id == "usr_demo_admin" else "USER"
+            open_actor_rls_scope(
+                identity_dsn=identity_dsn,
+                connection=connection,
+                actor_user_id=owner_user_id,
+                actor_role=actor_role,
+                operation="RECORD_RAG_V2_CONSENT",
+                target_kind="OWNER",
+                target_id=owner_user_id,
             )
             connection.execute(
                 """
@@ -828,6 +858,15 @@ def _grant_external_consent_and_issue_voyage_ticket(
                 ),
             ).fetchone()
             for ticket_id in ticket_ids:
+                open_actor_rls_scope(
+                    identity_dsn=identity_dsn,
+                    connection=connection,
+                    actor_user_id=owner_user_id,
+                    actor_role=actor_role,
+                    operation="ISSUE_RAG_V2_IMPORT",
+                    target_kind="RAG_TICKET",
+                    target_id=ticket_id,
+                )
                 connection.execute(
                     """
                     SELECT issue_rag_v2_immutable_import_ticket_v2(
@@ -841,6 +880,7 @@ def _grant_external_consent_and_issue_voyage_ticket(
 
 def _issue_profile_ticket(
     database_dsn: str,
+    identity_dsn: str,
     *,
     owner_user_id: str,
     ticket_id: str,
@@ -848,9 +888,14 @@ def _issue_profile_ticket(
 ) -> None:
     with psycopg.connect(database_dsn, autocommit=False) as connection:
         with connection.transaction():
-            connection.execute(
-                "SELECT set_config('app.actor_user_id', %s, true)",
-                (owner_user_id,),
+            open_actor_rls_scope(
+                identity_dsn=identity_dsn,
+                connection=connection,
+                actor_user_id=owner_user_id,
+                actor_role="ADMIN" if owner_user_id == "usr_demo_admin" else "USER",
+                operation="ISSUE_RAG_V2_IMPORT",
+                target_kind="RAG_TICKET",
+                target_id=ticket_id,
             )
             connection.execute(
                 """

@@ -10,12 +10,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Final, Mapping, Sequence
+from typing import Final
 
 from app.cross_market.core6_probe import Core6ProbeReceipt
-
 
 CORE6_LANES: Final[tuple[tuple[str, str], ...]] = (
     ("KIS", "S48_CORE6_KIS"),
@@ -81,7 +81,7 @@ class S48DirectProbeProjection:
             raise S48RuntimeError("S48_RUNTIME_PROJECTION_HASH_INVALID")
 
     @classmethod
-    def from_core6_receipt(cls, receipt: Core6ProbeReceipt) -> "S48DirectProbeProjection":
+    def from_core6_receipt(cls, receipt: Core6ProbeReceipt) -> S48DirectProbeProjection:
         """Only a completed one-call Core 6 success receipt can make a direct lane available."""
 
         if (
@@ -207,7 +207,7 @@ class S48RuntimeLane:
             "status": self.status,
         }
         logical_identity_hash = _sha256(
-            f"s4-8-runtime-lane/v1|{self.source_id}|{payload['evaluatedAt']}".encode("utf-8")
+            f"s4-8-runtime-lane/v1|{self.source_id}|{payload['evaluatedAt']}".encode()
         )
         payload_hash = _sha256(_canonical(payload))
         artifact_hash = _sha256(
@@ -475,7 +475,9 @@ def _required_hash(record: Mapping[str, object], field: str) -> str:
 
 
 def _canonical(value: object) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
 
 
 def _sha256(value: bytes) -> str:

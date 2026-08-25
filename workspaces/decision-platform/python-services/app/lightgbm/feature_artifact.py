@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
+import struct
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-import hashlib
 from io import BytesIO
 from pathlib import Path
-import struct
-from typing import Any, ClassVar, Iterable, Mapping, Sequence, cast
+from typing import Any, ClassVar, cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -36,7 +37,6 @@ from app.lightgbm.pit_calendar import (
 from app.lightgbm.private_root import require_private_regular_file, require_private_root
 from app.lightgbm.universe import MonthlyUniverse
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
-
 
 MAX_PHYSICAL_BYTES = 256 * 1024 * 1024
 MAX_DECODED_BYTES = 256 * 1024 * 1024
@@ -297,8 +297,10 @@ def read_feature_bundle(
     if row_count == 0:
         raise DatasetUnavailable("DATASET_UNAVAILABLE: source feature rows are absent")
     column_count = _require_integer(manifest["columnCount"], "columnCount")
-    if row_count < 0 or row_count > MAX_ROWS or column_count != len(KEY_COLUMNS) + len(
-        CORE_FEATURE_COLUMNS
+    if (
+        row_count < 0
+        or row_count > MAX_ROWS
+        or column_count != len(KEY_COLUMNS) + len(CORE_FEATURE_COLUMNS)
     ):
         raise LightGbmContractError("feature manifest row or column count is invalid")
     provenance = _parse_feature_provenance(manifest["provenance"])

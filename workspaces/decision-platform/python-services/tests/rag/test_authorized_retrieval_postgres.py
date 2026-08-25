@@ -33,6 +33,7 @@ from app.rag.bge_full_generation import (
     verify_bge_full_generation_parity,
 )
 from app.rag.source_card_corpus import load_frozen_source_card_corpus
+from tests.support.actor_rls_scope import open_actor_rls_scope
 
 
 class _WhitespaceTokenizer:
@@ -114,9 +115,14 @@ def test_postgres_three_channels_share_only_active_opaque_scope(
         "RISK",
     )
     with psycopg.connect(cluster["app_dsn"], autocommit=False) as connection:
-        connection.execute(
-            "SELECT set_config('app.actor_user_id', %s, true)",
-            (owner_user_id,),
+        open_actor_rls_scope(
+            identity_dsn=cluster["identity_dsn"],
+            connection=connection,
+            actor_user_id=owner_user_id,
+            actor_role="USER",
+            operation="ISSUE_RAG_RETRIEVAL_SCOPE",
+            target_kind="RAG_SESSION",
+            target_id=session_id,
         )
         claim_row = connection.execute(
             """
@@ -188,11 +194,16 @@ def test_postgres_three_channels_share_only_active_opaque_scope(
             "topics": ["API", "DATA"],
         }
     )
-    assert adapter.retrieve_exact(
-        scope=scope,
-        query=tr_id_query,
-        identifiers=ExactIdentifierExtractor().extract(tr_id_query.question),
-    ).items[0].source_id == "src_project_kis_current_price_snapshot_001"
+    assert (
+        adapter.retrieve_exact(
+            scope=scope,
+            query=tr_id_query,
+            identifiers=ExactIdentifierExtractor().extract(tr_id_query.question),
+        )
+        .items[0]
+        .source_id
+        == "src_project_kis_current_price_snapshot_001"
+    )
 
     symbol_query = normalizer.normalize(
         {
@@ -202,11 +213,16 @@ def test_postgres_three_channels_share_only_active_opaque_scope(
             "topics": ["DATA"],
         }
     )
-    assert adapter.retrieve_exact(
-        scope=scope,
-        query=symbol_query,
-        identifiers=ExactIdentifierExtractor().extract(symbol_query.question),
-    ).items[0].source_id == "src_project_gold_futures_etf_132030_001"
+    assert (
+        adapter.retrieve_exact(
+            scope=scope,
+            query=symbol_query,
+            identifiers=ExactIdentifierExtractor().extract(symbol_query.question),
+        )
+        .items[0]
+        .source_id
+        == "src_project_gold_futures_etf_132030_001"
+    )
 
     hybrid = AuthorizedHybridRetrieval(
         query_normalizer=normalizer,
@@ -238,20 +254,29 @@ def test_postgres_three_channels_share_only_active_opaque_scope(
         replace(scope, session_id="s4-3-session-00000002"),
         replace(scope, claim_id="rag_scope_" + "f" * 32),
     ):
-        assert adapter.retrieve_exact(
-            scope=crossed_scope,
-            query=api_query,
-            identifiers=identifiers,
-        ).items == ()
-        assert adapter.retrieve_lexical(
-            scope=crossed_scope,
-            query=api_query,
-        ).items == ()
-        assert adapter.retrieve_dense(
-            scope=crossed_scope,
-            query=api_query,
-            query_vector=_FixtureEmbedder().embed_query(api_query.question),
-        ).items == ()
+        assert (
+            adapter.retrieve_exact(
+                scope=crossed_scope,
+                query=api_query,
+                identifiers=identifiers,
+            ).items
+            == ()
+        )
+        assert (
+            adapter.retrieve_lexical(
+                scope=crossed_scope,
+                query=api_query,
+            ).items
+            == ()
+        )
+        assert (
+            adapter.retrieve_dense(
+                scope=crossed_scope,
+                query=api_query,
+                query_vector=_FixtureEmbedder().embed_query(api_query.question),
+            ).items
+            == ()
+        )
 
     malicious_query = normalizer.normalize(
         {
@@ -260,11 +285,14 @@ def test_postgres_three_channels_share_only_active_opaque_scope(
             "topics": ["API"],
         }
     )
-    assert adapter.retrieve_exact(
-        scope=scope,
-        query=malicious_query,
-        identifiers=ExactIdentifierExtractor().extract(malicious_query.question),
-    ).items == ()
+    assert (
+        adapter.retrieve_exact(
+            scope=scope,
+            query=malicious_query,
+            identifiers=ExactIdentifierExtractor().extract(malicious_query.question),
+        ).items
+        == ()
+    )
 
     with psycopg.connect(cluster["rag_query_dsn"]) as connection:
         assert connection.execute("SHOW statement_timeout").fetchone() == ("1500ms",)
@@ -292,9 +320,7 @@ def _artifact_receipt() -> BgeVerifiedPacket:
         revision="5617a9f61b028005a4858fdac845db406aefb181",
         file_count=10,
         total_bytes=2_289_781_803,
-        file_manifest_sha256=(
-            "a0ae6372b2d735b593d806d24c1155cb48dd7188adebe7d6b7619a1622fb71aa"
-        ),
+        file_manifest_sha256=("a0ae6372b2d735b593d806d24c1155cb48dd7188adebe7d6b7619a1622fb71aa"),
     )
 
 

@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
-import math
-from typing import Mapping, Protocol, Sequence
+from typing import Protocol
 
 import numpy as np
 
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 from app.lightgbm.pit_calendar import previous_xkrx_session
 from app.lightgbm.temporal import TemporalReceipt, feature_as_of, require_receipt_eligible
-
 
 FORBIDDEN_COLUMN_PREFIXES = (
     "cross_market_",

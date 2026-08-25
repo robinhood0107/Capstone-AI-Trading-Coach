@@ -8,12 +8,12 @@ import psycopg
 import pytest
 
 from app.data.calendar.collector import CalendarCollector, CollectionTask
+from app.data.calendar.disclosure_state import DisclosureStateTransition
 from app.data.calendar.errors import (
     CollectorAlreadyRunning,
     PrivacyProjectionError,
     QuotaReservationDenied,
 )
-from app.data.calendar.disclosure_state import DisclosureStateTransition
 from app.data.calendar.models import (
     CalendarConflictRecord,
     CalendarEventSource,
@@ -305,8 +305,18 @@ def test_page_commit_is_atomic_idempotent_and_keeps_every_audit_relation(
                 canonical_key="XKRX:2026-08-03",
                 field_name="is_open",
                 competing_values=(
-                    {"source_id": "kis-holiday-ctca0903r", "tier": 1, "origin_group": "kis", "value": False},
-                    {"source_id": "xkrx-4.13.2", "tier": 2, "origin_group": "exchange-calendars", "value": True},
+                    {
+                        "source_id": "kis-holiday-ctca0903r",
+                        "tier": 1,
+                        "origin_group": "kis",
+                        "value": False,
+                    },
+                    {
+                        "source_id": "xkrx-4.13.2",
+                        "tier": 2,
+                        "origin_group": "exchange-calendars",
+                        "value": True,
+                    },
                 ),
                 chosen_value=False,
                 chosen_source_id="kis-holiday-ctca0903r",

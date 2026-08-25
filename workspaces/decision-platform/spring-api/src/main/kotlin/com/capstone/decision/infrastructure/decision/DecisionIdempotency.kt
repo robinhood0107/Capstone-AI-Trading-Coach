@@ -76,7 +76,7 @@ class DecisionIdempotencyHasher(
         return try {
             val mac = Mac.getInstance("HmacSHA256")
             mac.init(SecretKeySpec(keyBytes, "HmacSHA256"))
-            mac.doFinal(messageBytes).joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+            mac.doFinal(messageBytes).joinToString("") { byte -> "%02x".format(java.util.Locale.ROOT, byte.toInt() and 0xff) }
         } finally {
             keyBytes.fill(0)
             messageBytes.fill(0)

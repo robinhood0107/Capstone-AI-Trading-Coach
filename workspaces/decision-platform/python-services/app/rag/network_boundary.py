@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping, Protocol
+from typing import Protocol
 
 from app.rag.source_registry import (
     RagSourceLocator,
@@ -35,6 +36,9 @@ class RagTransportPolicy:
     follow_redirects: bool = False
     timeout_seconds: float = 2.0
     maximum_response_bytes: int = 1_048_576
+
+
+_DEFAULT_RAG_TRANSPORT_POLICY = RagTransportPolicy()
 
 
 @dataclass(frozen=True)
@@ -82,7 +86,7 @@ def check_source_with_fixtures(
     locator: RagSourceLocator,
     resolver: RagResolver,
     transport: RagFixtureTransport,
-    policy: RagTransportPolicy = RagTransportPolicy(),
+    policy: RagTransportPolicy = _DEFAULT_RAG_TRANSPORT_POLICY,
 ) -> RagCheckedResponse:
     """두 번의 DNS 검증·IP pin·peer 확인·bounded response를 fixture로만 검증한다.
 
@@ -140,7 +144,11 @@ def _split_approved_locator(locator: RagSourceLocator) -> tuple[str, str]:
         raise RagNetworkBoundaryError("RAG source origin is not approved HTTPS.")
     authority = locator.allowed_origin.removeprefix(origin_prefix)
     hostname = authority.removesuffix(":443")
-    if not hostname or locator.allowed_path.startswith("//") or not locator.allowed_path.startswith("/"):
+    if (
+        not hostname
+        or locator.allowed_path.startswith("//")
+        or not locator.allowed_path.startswith("/")
+    ):
         raise RagNetworkBoundaryError("RAG source locator shape is invalid.")
     expected = locator.allowed_origin + locator.allowed_path
     if expected != locator.canonical_url:
@@ -206,9 +214,7 @@ def _validate_magic(mime_type: str, body: bytes) -> None:
         raise RagNetworkBoundaryError("RAG source PDF magic does not match MIME.")
     if mime_type == "application/json" and not stripped.startswith((b"{", b"[")):
         raise RagNetworkBoundaryError("RAG source JSON magic does not match MIME.")
-    if mime_type == "text/html" and not stripped.lower().startswith(
-        (b"<!doctype html", b"<html")
-    ):
+    if mime_type == "text/html" and not stripped.lower().startswith((b"<!doctype html", b"<html")):
         raise RagNetworkBoundaryError("RAG source HTML magic does not match MIME.")
     if mime_type in {"text/plain", "text/markdown"}:
         try:

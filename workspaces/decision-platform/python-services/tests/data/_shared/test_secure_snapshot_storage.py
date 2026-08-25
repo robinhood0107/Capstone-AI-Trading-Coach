@@ -13,7 +13,6 @@ from app.data._shared.secure_snapshot_storage import (
     publish_source_snapshot,
 )
 
-
 _SNAPSHOT_PATH = "ecos/2026/07/14/00000000-0000-4000-8000-000000000001/snapshot.json"
 
 
@@ -71,7 +70,7 @@ def test_absolute_traversal_and_dot_segment_paths_are_rejected(
 ) -> None:
     snapshot_bytes = b"{}\n"
 
-    with pytest.raises(SecureSnapshotStorageError, match="path"):
+    with pytest.raises(SecureSnapshotStorageError, match=r"path"):
         publish_source_snapshot(
             root=tmp_path / "snapshots",
             snapshot_path=unsafe_path,
@@ -101,7 +100,7 @@ def test_root_parent_and_final_symlinks_are_rejected_without_touching_target(
         leaf.mkdir(parents=True)
         (leaf / f"{symlink_level}.json").symlink_to(target)
 
-    with pytest.raises(SecureSnapshotStorageError, match="safe|symlink|exist"):
+    with pytest.raises(SecureSnapshotStorageError, match=r"safe|symlink|exist"):
         _publish(root)
 
     assert target.read_bytes() == b"do-not-touch"
@@ -112,7 +111,7 @@ def test_existing_artifact_is_never_overwritten(tmp_path: Path) -> None:
     first = b'{"version":1}\n'
     _publish(root, first)
 
-    with pytest.raises(SecureSnapshotStorageError, match="exist|overwrite"):
+    with pytest.raises(SecureSnapshotStorageError, match=r"exist|overwrite"):
         _publish(root, b'{"version":2}\n')
 
     assert (root / _SNAPSHOT_PATH).read_bytes() == first
@@ -126,7 +125,7 @@ def test_manifest_path_or_hash_mismatch_is_rejected_before_write(tmp_path: Path)
         b"0" * 64,
     )
 
-    with pytest.raises(SecureSnapshotStorageError, match="hash"):
+    with pytest.raises(SecureSnapshotStorageError, match=r"hash"):
         publish_source_snapshot(
             root=root,
             snapshot_path=_SNAPSHOT_PATH,
@@ -148,7 +147,7 @@ def test_manifest_publish_failure_leaves_only_an_ignored_orphan_snapshot(
 
     monkeypatch.setattr(secure_snapshot_storage.os, "link", fail_manifest_link)
 
-    with pytest.raises(SecureSnapshotStorageError, match="publish"):
+    with pytest.raises(SecureSnapshotStorageError, match=r"publish"):
         _publish(root)
 
     leaf = root / Path(_SNAPSHOT_PATH).parent

@@ -20,14 +20,17 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
-from app.cross_market.foreign_news import MODEL_CANDIDATES, ForeignNewsSelectionMetrics, ForeignNewsSelectionRun
+from app.cross_market.foreign_news import (
+    MODEL_CANDIDATES,
+    ForeignNewsSelectionMetrics,
+    ForeignNewsSelectionRun,
+)
 from app.cross_market.foreign_news_evaluator import (
     ForeignNewsEvaluationExample,
     ForeignNewsEvaluationHarness,
     ForeignNewsLocalCandidate,
     ForeignNewsPrediction,
 )
-
 
 _LABELS: Final[frozenset[str]] = frozenset({"NEGATIVE", "NEUTRAL", "POSITIVE"})
 _SENTIVENT_POLARITY_MAP: Final[Mapping[str, str]] = {
@@ -78,7 +81,8 @@ class ForeignNewsDatasetReceipt:
 
     def __post_init__(self) -> None:
         if (
-            self.dataset_id not in {"GillesJacobs/sentivent", "zeroshot/twitter-financial-news-sentiment"}
+            self.dataset_id
+            not in {"GillesJacobs/sentivent", "zeroshot/twitter-financial-news-sentiment"}
             or self.split not in {"validation", "test", "stress-validation"}
             or self.included_example_count <= 0
             or self.excluded_ambiguous_or_unlabeled_count < 0
@@ -192,9 +196,13 @@ class ForeignNewsLocalSelectionResult:
         """selection schema payload와 content-free optional results를 결합한다."""
 
         return {
-            "blindTest": None if self.blind_test_metrics is None else self.blind_test_metrics.to_payload(),
+            "blindTest": None
+            if self.blind_test_metrics is None
+            else self.blind_test_metrics.to_payload(),
             "selection": self.selection.to_storage_payload(),
-            "tfnsStress": None if self.tfns_stress_metrics is None else self.tfns_stress_metrics.to_payload(),
+            "tfnsStress": None
+            if self.tfns_stress_metrics is None
+            else self.tfns_stress_metrics.to_payload(),
         }
 
 
@@ -343,7 +351,11 @@ def run_local_model_selection(
             tfns_stress_metrics=None,
         )
     selected = next(
-        (candidate for candidate in inputs.candidates if candidate.candidate_model == tested.selection.selected_model),
+        (
+            candidate
+            for candidate in inputs.candidates
+            if candidate.candidate_model == tested.selection.selected_model
+        ),
         None,
     )
     if selected is None:
@@ -409,10 +421,10 @@ class _LocalFinBertClassifier:
         try:
             torch: Any = importlib.import_module("torch")
             transformers: Any = importlib.import_module("transformers")
-            bert_config: Any = getattr(transformers, "BertConfig")
-            bert_model: Any = getattr(transformers, "BertForSequenceClassification")
-            bert_tokenizer: Any = getattr(transformers, "BertTokenizer")
-            transformers_logging: Any = getattr(transformers, "logging")
+            bert_config: Any = transformers.BertConfig
+            bert_model: Any = transformers.BertForSequenceClassification
+            bert_tokenizer: Any = transformers.BertTokenizer
+            transformers_logging: Any = transformers.logging
         except (AttributeError, ImportError) as error:
             raise ForeignNewsLocalEvaluationError("FOREIGN_NEWS_FINBERT_RUNTIME_MISSING") from error
         transformers_logging.set_verbosity_error()
@@ -435,8 +447,14 @@ class _LocalFinBertClassifier:
             ).to("cpu")
             model.eval()
         except Exception as error:
-            raise ForeignNewsLocalEvaluationError("FOREIGN_NEWS_FINBERT_MODEL_LOAD_FAILED") from error
-        if model.config.num_labels != 3 or set(label_map) != {0, 1, 2} or set(label_map.values()) != _LABELS:
+            raise ForeignNewsLocalEvaluationError(
+                "FOREIGN_NEWS_FINBERT_MODEL_LOAD_FAILED"
+            ) from error
+        if (
+            model.config.num_labels != 3
+            or set(label_map) != {0, 1, 2}
+            or set(label_map.values()) != _LABELS
+        ):
             raise ForeignNewsLocalEvaluationError("FOREIGN_NEWS_FINBERT_LABEL_MAP_INVALID")
         self._label_map = dict(label_map)
         self._model = model
@@ -461,7 +479,9 @@ class _LocalFinBertClassifier:
             index = int(self._torch.argmax(probabilities).item())
             confidence = float(probabilities[index].item())
         except Exception as error:
-            raise ForeignNewsLocalEvaluationError("FOREIGN_NEWS_FINBERT_MODEL_EXECUTION_FAILED") from error
+            raise ForeignNewsLocalEvaluationError(
+                "FOREIGN_NEWS_FINBERT_MODEL_EXECUTION_FAILED"
+            ) from error
         label = self._label_map.get(index)
         if label is None:
             raise ForeignNewsLocalEvaluationError("FOREIGN_NEWS_FINBERT_LABEL_MAP_INVALID")
@@ -478,7 +498,12 @@ class _LoughranMcDonaldClassifier:
         self._positive_words = positive_words
 
     def predict(self, text: str) -> ForeignNewsPrediction:
-        words = tuple(token.upper() for token in _WORD.findall(_validated_text(text, code="FOREIGN_NEWS_LOUGHRAN_TEXT_INVALID")))
+        words = tuple(
+            token.upper()
+            for token in _WORD.findall(
+                _validated_text(text, code="FOREIGN_NEWS_LOUGHRAN_TEXT_INVALID")
+            )
+        )
         negative = sum(token in self._negative_words for token in words)
         positive = sum(token in self._positive_words for token in words)
         if positive > negative:
@@ -496,7 +521,9 @@ def _load_finbert_candidate(
 ) -> tuple[_LocalFinBertClassifier, ForeignNewsModelArtifactReceipt]:
     root = _regular_directory(model_root, PurePosixPath(directory_name))
     config_path = _regular_file(root, PurePosixPath("config.json"), maximum_bytes=256 * 1024)
-    weights_path = _regular_file(root, PurePosixPath("pytorch_model.bin"), maximum_bytes=_MAX_MODEL_FILE_BYTES)
+    weights_path = _regular_file(
+        root, PurePosixPath("pytorch_model.bin"), maximum_bytes=_MAX_MODEL_FILE_BYTES
+    )
     vocabulary_path = _regular_file(
         root,
         PurePosixPath("vocab.txt"),
@@ -508,11 +535,15 @@ def _load_finbert_candidate(
     receipt = ForeignNewsModelArtifactReceipt(
         candidate_model=candidate_model,
         config_sha256=_sha256(_read_regular_bytes(config_path, maximum_bytes=256 * 1024)),
-        footprint_bytes=sum(path.stat().st_size for path in (config_path, weights_path, vocabulary_path)),
+        footprint_bytes=sum(
+            path.stat().st_size for path in (config_path, weights_path, vocabulary_path)
+        ),
         tokenizer_sha256=_sha256(
             _read_regular_bytes(vocabulary_path, maximum_bytes=_MAX_VOCABULARY_FILE_BYTES)
         ),
-        weights_sha256=_sha256(_read_regular_bytes(weights_path, maximum_bytes=_MAX_MODEL_FILE_BYTES)),
+        weights_sha256=_sha256(
+            _read_regular_bytes(weights_path, maximum_bytes=_MAX_MODEL_FILE_BYTES)
+        ),
     )
     return classifier, receipt
 

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Callable, TypeVar
+from typing import TypeVar
 
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.production_policy import BootstrapBudget
@@ -44,8 +45,8 @@ class BootstrapLedger:
         provider: str,
         operation_id: str,
         query_key_sha256: str,
-        call: Callable[[], "_T"],
-    ) -> "_T":
+        call: Callable[[], _T],
+    ) -> _T:
         """한 provider handoff를 예약하고 성공/실패 모두 누적 budget에 반영한다."""
 
         if self.phase in {BootstrapPhase.FAILED, BootstrapPhase.COMPLETE}:
@@ -100,7 +101,10 @@ class BootstrapLedger:
     def resume_failed(self, *, query_key_sha256: str) -> None:
         """동일 failed chunk만 한 번 재개하며 성공 chunk는 재호출하지 않는다."""
 
-        if self.phase is not BootstrapPhase.FAILED or self.failed_query_key_sha256 != query_key_sha256:
+        if (
+            self.phase is not BootstrapPhase.FAILED
+            or self.failed_query_key_sha256 != query_key_sha256
+        ):
             raise LightGbmContractError("bootstrap resume target is not the failed chunk")
         if sum(not receipt.success for receipt in self.receipts) != 1:
             raise LightGbmContractError("bootstrap failed chunk retry budget is exhausted")

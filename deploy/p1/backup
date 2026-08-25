@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+STATE_DIR=${P1_STATE_DIR:-$SCRIPT_DIR/.state}
+RUNTIME_ENV=$STATE_DIR/runtime.env
+BACKUP_DIR=$STATE_DIR/backups
+RELEASE_GUARD=$SCRIPT_DIR/release_guard.py
+PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-offline-demo}
+[[ $PROJECT_NAME =~ ^[a-z0-9][a-z0-9_-]{2,62}$ ]] || { echo 'P1_ERROR=invalid_project_name' >&2; exit 1; }
+python3 "$RELEASE_GUARD" state-check "$STATE_DIR" || {
+  echo 'P1_ERROR=state_boundary' >&2
+  exit 1
+}
+[[ -f $RUNTIME_ENV && ! -L $RUNTIME_ENV && $(stat -c '%a' "$RUNTIME_ENV") == 600 ]] || {
+  echo 'P1_ERROR=not_initialized' >&2
+  exit 1
+}
+python3 "$RELEASE_GUARD" state-mkdir "$STATE_DIR" backups || {
+  echo 'P1_ERROR=backup_directory_boundary' >&2
+  exit 1
+}
+name=capstone-p1-$(date -u +%Y%m%dT%H%M%SZ).dump
+output=$BACKUP_DIR/$name
+[[ ! -e $output && ! -e $output.sha256 ]] || { echo 'P1_ERROR=backup_name_collision' >&2; exit 1; }
+temporary=$(mktemp)
+cleanup() { rm -f -- "$temporary"; }
+trap cleanup EXIT
+compose=(docker compose --project-name "$PROJECT_NAME" --env-file "$RUNTIME_ENV" -f "$SCRIPT_DIR/compose.db.yml")
+[[ ! -f $SCRIPT_DIR/release.env ]] || compose+=(-f "$SCRIPT_DIR/compose.offline.db.yml")
+"${compose[@]}" exec -T postgres pg_dump --username postgres --dbname capstone_p1 --format=custom > "$temporary"
+[[ -s $temporary ]] || { echo 'P1_ERROR=empty_backup' >&2; exit 1; }
+python3 "$RELEASE_GUARD" state-write "$STATE_DIR" "backups/$name" 0600 < "$temporary"
+digest=$(sha256sum "$temporary" | awk '{print $1}')
+printf '%s  %s\n' "$digest" "$name" | python3 "$RELEASE_GUARD" state-write "$STATE_DIR" "backups/$name.sha256" 0600
+rm -f -- "$temporary"
+trap - EXIT
+printf 'P1_BACKUP_CREATED=%s\n' "$output"

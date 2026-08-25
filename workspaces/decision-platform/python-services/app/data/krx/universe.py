@@ -18,7 +18,6 @@ from app.data.krx.parsers import (
     is_krx_issue_code,
 )
 
-
 KRX_OPENAPI_UNIVERSE_SOURCE = "krx-open-api:stk_bydd_trd+ksq_bydd_trd"
 _KST = ZoneInfo("Asia/Seoul")
 _SAFE_AVAILABILITY_CUTOFF = time(8, 10)
@@ -61,9 +60,7 @@ def refresh_universe_from_krx_openapi(
     candidates = [
         row
         for row in all_ranked
-        if is_kis_compatible_symbol(row.symbol)
-        and row.market_cap > 0
-        and row.trading_value > 0
+        if is_kis_compatible_symbol(row.symbol) and row.market_cap > 0 and row.trading_value > 0
     ]
     if len(candidates) < limit:
         raise ValueError("KRX Open API universe requires at least 30 candidates")

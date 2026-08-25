@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-import hashlib
-import math
 from pathlib import Path
 from typing import cast
 
@@ -33,12 +33,12 @@ from app.lightgbm.bootstrap_executor import (
     _load_ecos_rows,
     _load_kis_rows,
     _load_string_rows,
-    provider_query_sha256,
     _require_reused_chunk,
     _seal_projection,
     _string_rows_parquet,
     _temporal_receipt,
     load_verified_krx_projection,
+    provider_query_sha256,
 )
 from app.lightgbm.bootstrap_journal import BootstrapJournal
 from app.lightgbm.bootstrap_packet import BootstrapPacket
@@ -66,8 +66,8 @@ from app.lightgbm.production_release import (
     write_production_signal_batch,
 )
 from app.lightgbm.temporal import (
-    AvailabilityBasis,
     KST,
+    AvailabilityBasis,
     RevisionBasis,
     TemporalQuality,
     TemporalReceipt,
@@ -81,7 +81,6 @@ from app.lightgbm.universe import (
     select_production_monthly_universe,
 )
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file, write_approved_new_file
-
 
 DAILY_STATE_VERSION = "s5-daily-inference-state-v1"
 DAILY_PACKET_VERSION = "s5-daily-refresh-packet-v1"
@@ -301,7 +300,10 @@ def read_daily_state(*, state_root: Path, expected_sha256: str) -> DailyInferenc
     if safe.content_sha256 != expected_sha256:
         raise LightGbmContractError("daily state trust anchor mismatch")
     payload = _parse_mapping(safe.content, _STATE_FIELDS, "daily state")
-    if canonical_json_bytes(payload) != safe.content or payload["stateVersion"] != DAILY_STATE_VERSION:
+    if (
+        canonical_json_bytes(payload) != safe.content
+        or payload["stateVersion"] != DAILY_STATE_VERSION
+    ):
         raise LightGbmContractError("daily state is noncanonical or version invalid")
     universe = _parse_universe(payload["universe"])
     listing_markets = _parse_listing_markets(payload["listingMarkets"], universe)
@@ -480,14 +482,14 @@ def build_daily_resume_packet(
     successful_queries = {
         attempt.query_sha256 for attempt in attempts if attempt.state == "SUCCEEDED"
     }
-    if (
-        any(attempt.query_sha256 not in expected_queries for attempt in attempts)
-        or (failed is None and successful_queries != expected_queries)
+    if any(attempt.query_sha256 not in expected_queries for attempt in attempts) or (
+        failed is None and successful_queries != expected_queries
     ):
         raise LightGbmContractError("daily local finalization journal is incomplete")
-    if failed is not None and sum(
-        attempt.query_sha256 == failed.query_sha256 for attempt in attempts
-    ) != 1:
+    if (
+        failed is not None
+        and sum(attempt.query_sha256 == failed.query_sha256 for attempt in attempts) != 1
+    ):
         raise LightGbmContractError("daily failed query resume authority is exhausted")
     journal_projection = [
         {
@@ -500,15 +502,19 @@ def build_daily_resume_packet(
         }
         for attempt in attempts
     ]
-    provider_count = sum(
-        attempt.provider == failed.provider
-        and (
-            failed.provider != "KIS"
-            or (attempt.operation_id == "oauth2/tokenP")
-            == (failed.operation_id == "oauth2/tokenP")
+    provider_count = (
+        sum(
+            attempt.provider == failed.provider
+            and (
+                failed.provider != "KIS"
+                or (attempt.operation_id == "oauth2/tokenP")
+                == (failed.operation_id == "oauth2/tokenP")
+            )
+            for attempt in attempts
         )
-        for attempt in attempts
-    ) if failed is not None else 0
+        if failed is not None
+        else 0
+    )
     provider_cap = (
         {
             "KRX": DAILY_KRX_MAX,
@@ -524,7 +530,9 @@ def build_daily_resume_packet(
     failed_class = (
         (
             failed.provider,
-            "TOKEN" if failed.provider == "KIS" and failed.operation_id == "oauth2/tokenP" else "GET",
+            "TOKEN"
+            if failed.provider == "KIS" and failed.operation_id == "oauth2/tokenP"
+            else "GET",
         )
         if failed is not None
         else None
@@ -652,7 +660,9 @@ class _DailyJournalGate:
             return load(completed)
         if self.journal.query_completed(query_sha):
             if not empty_success:
-                raise LightGbmContractError("daily completed query is missing its sealed projection")
+                raise LightGbmContractError(
+                    "daily completed query is missing its sealed projection"
+                )
             return ()
 
         failed = self.journal.failed_attempt
@@ -671,8 +681,7 @@ class _DailyJournalGate:
             if attempt.provider == provider
             and (
                 provider != "KIS"
-                or (attempt.operation_id == "oauth2/tokenP")
-                == (operation == "oauth2/tokenP")
+                or (attempt.operation_id == "oauth2/tokenP") == (operation == "oauth2/tokenP")
             )
         ]
         provider_cap = {
@@ -709,7 +718,9 @@ class _DailyJournalGate:
 
 
 class _JournaledDailyKrx:
-    def __init__(self, provider: KrxBootstrapProvider, gate: _DailyJournalGate, clock: Callable[[], datetime]):
+    def __init__(
+        self, provider: KrxBootstrapProvider, gate: _DailyJournalGate, clock: Callable[[], datetime]
+    ):
         self.provider, self.gate, self.clock = provider, gate, clock
         self.receipts: dict[tuple[str, date], TemporalReceipt] = {}
 
@@ -759,7 +770,9 @@ class _JournaledDailyKrx:
 
 
 class _JournaledDailyKis:
-    def __init__(self, provider: KisBootstrapProvider, gate: _DailyJournalGate, clock: Callable[[], datetime]):
+    def __init__(
+        self, provider: KisBootstrapProvider, gate: _DailyJournalGate, clock: Callable[[], datetime]
+    ):
         self.provider, self.gate, self.clock = provider, gate, clock
         self.receipts: dict[str, TemporalReceipt] = {}
 
@@ -836,7 +849,12 @@ class _JournaledDailyKis:
 
 
 class _JournaledDailyEcos:
-    def __init__(self, provider: EcosBootstrapProvider, gate: _DailyJournalGate, clock: Callable[[], datetime]):
+    def __init__(
+        self,
+        provider: EcosBootstrapProvider,
+        gate: _DailyJournalGate,
+        clock: Callable[[], datetime],
+    ):
         self.provider, self.gate, self.clock = provider, gate, clock
         self.receipts: dict[str, TemporalReceipt | None] = {}
 
@@ -978,8 +996,11 @@ def execute_daily_refresh(
             target=target,
             chunk_receipt=journaled_ecos.receipts[series.series_id],
         )
-    expected_budget = len(krx_operations) + DAILY_KIS_TOKEN_MAX + len(universe.symbols) + len(
-        _validated_series(ecos_series)
+    expected_budget = (
+        len(krx_operations)
+        + DAILY_KIS_TOKEN_MAX
+        + len(universe.symbols)
+        + len(_validated_series(ecos_series))
     )
     if budgeted_calls != expected_budget or budgeted_calls > DAILY_TOTAL_MAX:
         raise LightGbmContractError("daily provider operation budget is invalid")
@@ -1139,7 +1160,9 @@ def _resolve_daily_universe(
         return state.universe, dict(state.listing_markets)
     schedule = derive_monthly_universe_schedule(effective_month, dataset_cutoff=packet.as_of)
     if schedule.selection_session != packet.session_date:
-        raise DatasetUnavailable("DATASET_UNAVAILABLE: monthly universe rollover evidence is missing")
+        raise DatasetUnavailable(
+            "DATASET_UNAVAILABLE: monthly universe rollover evidence is missing"
+        )
     by_service_day = {(row.service, row.session_date): row for row in history}
     base_rows: dict[str, tuple[dict[str, str], str, str]] = {}
     for service, market in (("stk_isu_base_info", "KOSPI"), ("ksq_isu_base_info", "KOSDAQ")):
@@ -1229,7 +1252,7 @@ def _build_inference_table(
             symbol_prices,
             indices,
             macro,
-            listing_market_by_session={day: listing_markets[identity] for day in sessions},
+            listing_market_by_session=dict.fromkeys(sessions, listing_markets[identity]),
             cutoff=as_of,
         )
         current = [row for row in feature_rows if row.session_date == session_date]
@@ -1260,7 +1283,9 @@ def _daily_price_rows(
         "end": end.isoformat(),
         "adjusted": "0",
     }
-    snapshot_sha = hashlib.sha256(_kis_rows_parquet(tuple(sorted(bars, key=lambda row: row.date)))).hexdigest()
+    snapshot_sha = hashlib.sha256(
+        _kis_rows_parquet(tuple(sorted(bars, key=lambda row: row.date)))
+    ).hexdigest()
     request_sha = provider_query_sha256(query)
     if (
         chunk_receipt.source_id != "KIS"
@@ -1339,7 +1364,9 @@ def _advance_macro(
         "start": target.isoformat(),
         "end": target.isoformat(),
     }
-    snapshot_sha = hashlib.sha256(_ecos_rows_parquet(observations)).hexdigest() if observations else None
+    snapshot_sha = (
+        hashlib.sha256(_ecos_rows_parquet(observations)).hexdigest() if observations else None
+    )
     request_sha = provider_query_sha256(request)
     if observations and (
         chunk_receipt is None
@@ -1354,7 +1381,9 @@ def _advance_macro(
     bound_receipt = cast(TemporalReceipt, chunk_receipt) if observations else None
     if any(datetime.strptime(row.time, "%Y%m%d").date() != target for row in observations):
         raise DatasetUnavailable("DATASET_UNAVAILABLE: daily ECOS observation date is invalid")
-    output = [row for row in prior if row.series_id != series.series_id or row.observation_date != target]
+    output = [
+        row for row in prior if row.series_id != series.series_id or row.observation_date != target
+    ]
     for observation in observations:
         day = datetime.strptime(observation.time, "%Y%m%d").date()
         value = Decimal(observation.value)
@@ -1408,11 +1437,19 @@ def _trim_macro(
     rows: Sequence[MacroObservation], sessions: Sequence[date]
 ) -> tuple[MacroObservation, ...]:
     session_set = set(sessions)
-    fx = [row for row in rows if row.series_id == "krw-usd-rate" and row.observation_date in session_set]
+    fx = [
+        row
+        for row in rows
+        if row.series_id == "krw-usd-rate" and row.observation_date in session_set
+    ]
     if {row.observation_date for row in fx} != session_set:
         raise DatasetUnavailable("DATASET_UNAVAILABLE: daily USDKRW window is incomplete")
     rate_rows = sorted(
-        (row for row in rows if row.series_id == "policy-rate" and row.observation_date <= sessions[-1]),
+        (
+            row
+            for row in rows
+            if row.series_id == "policy-rate" and row.observation_date <= sessions[-1]
+        ),
         key=lambda row: row.observation_date,
     )
     seed = [row for row in rate_rows if row.observation_date <= sessions[0]]
@@ -1448,7 +1485,9 @@ def _require_index_window(rows: Sequence[IndexEvidence], sessions: Sequence[date
 
 
 def _require_history(rows: Sequence[DailyKrxProjection], sessions: Sequence[date]) -> None:
-    expected = {(service, session) for service in ("stk_bydd_trd", "ksq_bydd_trd") for session in sessions}
+    expected = {
+        (service, session) for service in ("stk_bydd_trd", "ksq_bydd_trd") for session in sessions
+    }
     actual = {(row.service, row.session_date) for row in rows}
     if actual != expected or len(rows) != len(expected):
         raise DatasetUnavailable("DATASET_UNAVAILABLE: daily KRX history is incomplete")
@@ -1467,9 +1506,11 @@ def _validated_series(series: Sequence[ECOSSeries]) -> tuple[ECOSSeries, ...]:
         ("policy-rate", "722Y001", "0101000", "D"),
         ("krw-usd-rate", "731Y001", "0000001", "D"),
     }
-    if len(values) != 2 or any(not row.verified for row in values) or {
-        (row.series_id, row.stat_code, row.item_code1, row.cycle) for row in values
-    } != expected:
+    if (
+        len(values) != 2
+        or any(not row.verified for row in values)
+        or {(row.series_id, row.stat_code, row.item_code1, row.cycle) for row in values} != expected
+    ):
         raise LightGbmContractError("daily ECOS series are not exact")
     return values
 
@@ -1564,10 +1605,19 @@ def _krx_projection_mapping(row: DailyKrxProjection) -> dict[str, object]:
 
 
 def _parse_universe(value: object) -> MonthlyUniverse:
-    row = _closed(value, {"selectionSession", "effectiveMonth", "instrumentIds", "symbols"}, "universe")
-    identities = tuple(_text(item, "instrumentId") for item in _list(row["instrumentIds"], "instrumentIds"))
+    row = _closed(
+        value, {"selectionSession", "effectiveMonth", "instrumentIds", "symbols"}, "universe"
+    )
+    identities = tuple(
+        _text(item, "instrumentId") for item in _list(row["instrumentIds"], "instrumentIds")
+    )
     symbols = tuple(_text(item, "symbol") for item in _list(row["symbols"], "symbols"))
-    if len(identities) != 31 or len(symbols) != 31 or len(set(identities)) != 31 or len(set(symbols)) != 31:
+    if (
+        len(identities) != 31
+        or len(symbols) != 31
+        or len(set(identities)) != 31
+        or len(set(symbols)) != 31
+    ):
         raise LightGbmContractError("daily universe must be exact 31")
     return MonthlyUniverse(
         selection_session=_date(row["selectionSession"], "selectionSession"),
@@ -1590,8 +1640,17 @@ def _parse_price(value: object) -> ProductionPriceEvidence:
     row = _closed(
         value,
         {
-            "instrumentId", "symbol", "sessionDate", "adjustedOpen", "adjustedClose",
-            "volume", "flngClsCode", "prttRate", "modYn", "revlIssuReas", "receipt",
+            "instrumentId",
+            "symbol",
+            "sessionDate",
+            "adjustedOpen",
+            "adjustedClose",
+            "volume",
+            "flngClsCode",
+            "prttRate",
+            "modYn",
+            "revlIssuReas",
+            "receipt",
         },
         "price",
     )
@@ -1638,8 +1697,13 @@ def _parse_krx_projection(value: object) -> DailyKrxProjection:
         raise LightGbmContractError("daily KRX history service is invalid")
     parsed_rows = []
     for item in _list(row["rows"], "rows"):
-        if not isinstance(item, dict) or not item or any(
-            not isinstance(key, str) or not isinstance(child, str) for key, child in item.items()
+        if (
+            not isinstance(item, dict)
+            or not item
+            or any(
+                not isinstance(key, str) or not isinstance(child, str)
+                for key, child in item.items()
+            )
         ):
             raise LightGbmContractError("daily KRX history row is invalid")
         parsed_rows.append(dict(cast(dict[str, str], item)))
@@ -1653,12 +1717,23 @@ def _parse_krx_projection(value: object) -> DailyKrxProjection:
 
 def _parse_receipt(value: object) -> TemporalReceipt:
     required = {
-        "sourceId", "operationId", "observationDate", "retrievedAt", "availabilityBasis",
-        "revisionBasis", "requestSha256", "snapshotSha256", "temporalPolicyVersion",
+        "sourceId",
+        "operationId",
+        "observationDate",
+        "retrievedAt",
+        "availabilityBasis",
+        "revisionBasis",
+        "requestSha256",
+        "snapshotSha256",
+        "temporalPolicyVersion",
         "temporalQuality",
     }
     optional = {"providerAvailableAt", "policyEffectiveAt", "providerRevision"}
-    if not isinstance(value, dict) or not required.issubset(value) or not set(value).issubset(required | optional):
+    if (
+        not isinstance(value, dict)
+        or not required.issubset(value)
+        or not set(value).issubset(required | optional)
+    ):
         raise LightGbmContractError("daily temporal receipt is not closed")
     row = cast(dict[str, object], value)
     try:
@@ -1667,22 +1742,27 @@ def _parse_receipt(value: object) -> TemporalReceipt:
             operation_id=_text(row["operationId"], "operationId"),
             observation_date=_date(row["observationDate"], "observationDate"),
             retrieved_at=_datetime(row["retrievedAt"], "retrievedAt"),
-            availability_basis=AvailabilityBasis(_text(row["availabilityBasis"], "availabilityBasis")),
+            availability_basis=AvailabilityBasis(
+                _text(row["availabilityBasis"], "availabilityBasis")
+            ),
             revision_basis=RevisionBasis(_text(row["revisionBasis"], "revisionBasis")),
             request_sha256=_sha(row["requestSha256"], "requestSha256"),
             snapshot_sha256=_sha(row["snapshotSha256"], "snapshotSha256"),
             temporal_quality=TemporalQuality(_text(row["temporalQuality"], "temporalQuality")),
             provider_available_at=(
                 _datetime(row["providerAvailableAt"], "providerAvailableAt")
-                if "providerAvailableAt" in row else None
+                if "providerAvailableAt" in row
+                else None
             ),
             policy_effective_at=(
                 _datetime(row["policyEffectiveAt"], "policyEffectiveAt")
-                if "policyEffectiveAt" in row else None
+                if "policyEffectiveAt" in row
+                else None
             ),
             provider_revision=(
                 _text(row["providerRevision"], "providerRevision")
-                if "providerRevision" in row else None
+                if "providerRevision" in row
+                else None
             ),
             temporal_policy_version=_text(row["temporalPolicyVersion"], "temporalPolicyVersion"),
         )
@@ -1727,7 +1807,11 @@ def _date(value: object, label: str) -> date:
 def _datetime(value: object, label: str) -> datetime:
     text = _text(value, label)
     try:
-        parsed = datetime.fromisoformat(text[:-1] + "+00:00") if text.endswith("Z") else datetime.fromisoformat(text)
+        parsed = (
+            datetime.fromisoformat(text[:-1] + "+00:00")
+            if text.endswith("Z")
+            else datetime.fromisoformat(text)
+        )
     except ValueError:
         raise LightGbmContractError(f"{label} datetime is invalid") from None
     if parsed.tzinfo is None:

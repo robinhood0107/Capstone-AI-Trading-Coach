@@ -41,9 +41,7 @@ class FinancialEngineeringGrpcSettings:
             bind_address=os.environ.get(
                 "FINANCIAL_ENGINEERING_GRPC_BIND_ADDRESS", "127.0.0.1:50054"
             ).strip(),
-            shared_secret=os.environ.get(
-                "FINANCIAL_ENGINEERING_GRPC_SHARED_SECRET", ""
-            ).strip(),
+            shared_secret=os.environ.get("FINANCIAL_ENGINEERING_GRPC_SHARED_SECRET", "").strip(),
         )
 
 
@@ -168,8 +166,16 @@ def _pricing_arguments(
 
 def _authenticate(context: grpc.ServicerContext, shared_secret: str) -> None:
     values = [value for key, value in context.invocation_metadata() if key == AUTH_METADATA_KEY]
-    if len(values) != 1 or not isinstance(values[0], str) or not compare_digest(values[0], shared_secret):
-        _abort(context, grpc.StatusCode.UNAUTHENTICATED, "financial engineering grpc authentication failed")
+    if (
+        len(values) != 1
+        or not isinstance(values[0], str)
+        or not compare_digest(values[0], shared_secret)
+    ):
+        _abort(
+            context,
+            grpc.StatusCode.UNAUTHENTICATED,
+            "financial engineering grpc authentication failed",
+        )
 
 
 def _invalid(context: grpc.ServicerContext, error: ValueError) -> Never:

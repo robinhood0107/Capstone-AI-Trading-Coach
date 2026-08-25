@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 import re
 import subprocess
-
+from pathlib import Path
 
 _HEAD = re.compile(r"^[0-9a-f]{40}$")
 
@@ -27,7 +26,7 @@ def current_clean_git_identity(repository_root: Path) -> tuple[str, str]:
     for command in commands:
         try:
             completed = subprocess.run(
-                ("git", "-C", str(repository_root), *command),
+                ("/usr/bin/git", "-C", str(repository_root), *command),
                 check=False,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,

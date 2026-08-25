@@ -262,14 +262,12 @@ def test_failed_probe_keeps_exact_packet_consumed(
     assert replay_builds == 0
 
 
-def test_redis_approval_consumer_uses_atomic_single_use_claim(
+def test_legacy_unsigned_approval_has_no_execution_authority(
     secure_tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     packet_path, packet_sha = _write_packet(secure_tmp_path)
-    redis_client = FakeRedis()
     monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
-    monkeypatch.setattr(probe, "_build_redis_client", lambda: redis_client)
     packet = probe._load_packet(
         packet_path,
         now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
@@ -278,47 +276,11 @@ def test_redis_approval_consumer_uses_atomic_single_use_claim(
         repository_root=secure_tmp_path,
     )
 
-    probe._consume_exact_approval_once(packet, datetime(2030, 1, 2, 3, 10, tzinfo=UTC))
-
-    assert redis_client.closed is True
-    assert len(redis_client.calls) == 1
-    key, value, nx, px = redis_client.calls[0]
-    assert key.startswith("kis:mock:approval-consumed:v1:")
-    assert packet.approval_id not in key
-    assert packet.packet_sha256 not in key
-    assert value == "1"
-    assert nx is True
-    assert px == 3_000_000
-
-
-@pytest.mark.parametrize(
-    ("redis_client", "message"),
-    [
-        (FakeRedis(result=None), "already consumed"),
-        (FakeRedis(error=RuntimeError("synthetic")), "approval consumption"),
-    ],
-)
-def test_redis_approval_consumer_fails_closed(
-    secure_tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    redis_client: FakeRedis,
-    message: str,
-) -> None:
-    packet_path, packet_sha = _write_packet(secure_tmp_path)
-    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
-    monkeypatch.setattr(probe, "_build_redis_client", lambda: redis_client)
-    packet = probe._load_packet(
-        packet_path,
-        now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
-        expected_approval_id="approval-s3-online-test",
-        expected_packet_sha256=packet_sha,
-        repository_root=secure_tmp_path,
-    )
-
-    with pytest.raises(probe.KISMockApprovalRejected, match=message):
-        probe._consume_exact_approval_once(packet, datetime(2030, 1, 2, 3, 10, tzinfo=UTC))
-
-    assert redis_client.closed is True
+    with pytest.raises(probe.KISMockApprovalRejected, match="legacy or unsigned"):
+        probe._consume_exact_approval_once(
+            packet,
+            datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+        )
 
 
 def test_exact_packet_preflight_rejects_missing_latch_before_runtime_factory(
@@ -506,7 +468,7 @@ def test_full_probe_uses_packet_order_division_for_buyable_and_submit(
         ) -> object:
             assert order_id == packet.order.order_id
             assert account_id == packet.order.account_id
-            submit_order_divisions.append(getattr(intent, "order_division"))
+            submit_order_divisions.append(intent.order_division)
             return type("Receipt", (), {"accepted": True})()
 
     operations = object.__new__(probe._KISMockProbeOperations)

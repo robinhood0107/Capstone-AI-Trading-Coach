@@ -4,10 +4,11 @@ import hashlib
 import json
 import re
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
 
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
 from app.rag.source_card_v2_contract import (
@@ -24,9 +25,7 @@ MAX_SOURCE_CARD_BYTES = 65_536
 MAX_CORPUS_MANIFEST_BYTES = 262_144
 PARSER_VERSION = "rag-source-card-v2-markdown-v1"
 CHUNKER_VERSION = "bge-tokenizer-heading-400-600-v1"
-TOKENIZER_SHA256 = (
-    "6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790"
-)
+TOKENIZER_SHA256 = "6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790"
 SOURCE_CARD_HEADINGS = (
     "핵심 claim",
     "적용 범위와 전제",
@@ -77,40 +76,22 @@ EXPECTED_OFFICIAL_SOURCE_IDS = frozenset(
 )
 REQUIRED_STABLE_ASSUMPTIONS = MappingProxyType(
     {
-        "src_project_bsm_risk_neutral_001": (
-            "RISK_NEUTRAL_NOT_PHYSICAL_PROBABILITY"
-        ),
-        "src_project_bsm_time_to_expiry_001": (
-            "TIME_TO_EXPIRY_NOT_HOLDING_PERIOD"
-        ),
-        "src_project_delta_hedge_residual_cost_001": (
-            "DELTA_HEDGE_RESIDUAL_RISK"
-        ),
+        "src_project_bsm_risk_neutral_001": ("RISK_NEUTRAL_NOT_PHYSICAL_PROBABILITY"),
+        "src_project_bsm_time_to_expiry_001": ("TIME_TO_EXPIRY_NOT_HOLDING_PERIOD"),
+        "src_project_delta_hedge_residual_cost_001": ("DELTA_HEDGE_RESIDUAL_RISK"),
         "src_project_expected_payoff_measure_discount_001": (
             "EXPECTED_PAYOFF_REQUIRES_MEASURE_AND_DISCOUNTING"
         ),
-        "src_project_finance_diffusion_not_ddpm_001": (
-            "FINANCE_DIFFUSION_NOT_DDPM"
-        ),
-        "src_project_hmm_latent_state_boundary_001": (
-            "HMM_STATE_NOT_CAUSAL_FACT"
-        ),
-        "src_project_kis_discovery_write_boundary_001": (
-            "DISCOVERY_NOT_WRITE_ACTIVATION"
-        ),
-        "src_project_krx_last_trading_settlement_001": (
-            "LAST_TRADING_AT_NOT_SETTLEMENT_DATE"
-        ),
+        "src_project_finance_diffusion_not_ddpm_001": ("FINANCE_DIFFUSION_NOT_DDPM"),
+        "src_project_hmm_latent_state_boundary_001": ("HMM_STATE_NOT_CAUSAL_FACT"),
+        "src_project_kis_discovery_write_boundary_001": ("DISCOVERY_NOT_WRITE_ACTIVATION"),
+        "src_project_krx_last_trading_settlement_001": ("LAST_TRADING_AT_NOT_SETTLEMENT_DATE"),
         "src_project_monte_carlo_not_stress_probability_001": (
             "STOCHASTIC_PROBABILITY_NOT_STRESS_PROBABILITY"
         ),
         "src_project_notional_not_exposure_001": "NOTIONAL_NOT_EXPOSURE",
-        "src_project_threshold_cvar_not_exact_es_001": (
-            "THRESHOLD_CVAR_NOT_EXACT_ES"
-        ),
-        "src_project_valuation_delta_not_guard_delta_001": (
-            "VALUATION_DELTA_NOT_HARD_RISK_DELTA"
-        ),
+        "src_project_threshold_cvar_not_exact_es_001": ("THRESHOLD_CVAR_NOT_EXACT_ES"),
+        "src_project_valuation_delta_not_guard_delta_001": ("VALUATION_DELTA_NOT_HARD_RISK_DELTA"),
     }
 )
 PUBLIC_TOPICS_BY_SOURCE_ID = MappingProxyType(
@@ -202,18 +183,16 @@ _MIGRATED_S4_7A_SOURCE_IDS = frozenset(
 )
 _RAW_HTML_PATTERN = re.compile(r"<(?:[A-Za-z!/][^>\n]*)>")
 _INSTRUCTION_LIKE_PATTERN = re.compile(
-    (
-        r"(?i)(ignore\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior)\s+instructions"
-        r"|system\s+prompt"
-        r"|(?:reveal|print|exfiltrate)\b.{0,40}\b(?:secret|token|credential)s?\b"
-        r"|(?:execute|run)\b.{0,30}\b(?:shell|command|code)\b"
-        r"|(?:call|invoke)\b.{0,30}\b(?:tool|mcp|plugin)\b"
-        r"|(?:place|submit|cancel)\b.{0,30}\border\b"
-        r"|(?:이전|기존)\s*지시.{0,12}무시"
-        r"|시스템\s*프롬프트"
-        r"|비밀.{0,20}(?:출력|노출)"
-        r"|도구.{0,20}(?:호출|실행))"
-    )
+    r"(?i)(ignore\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior)\s+instructions"
+    r"|system\s+prompt"
+    r"|(?:reveal|print|exfiltrate)\b.{0,40}\b(?:secret|token|credential)s?\b"
+    r"|(?:execute|run)\b.{0,30}\b(?:shell|command|code)\b"
+    r"|(?:call|invoke)\b.{0,30}\b(?:tool|mcp|plugin)\b"
+    r"|(?:place|submit|cancel)\b.{0,30}\border\b"
+    r"|(?:이전|기존)\s*지시.{0,12}무시"
+    r"|시스템\s*프롬프트"
+    r"|비밀.{0,20}(?:출력|노출)"
+    r"|도구.{0,20}(?:호출|실행))"
 )
 _PRIVATE_PATH_PATTERN = re.compile(
     r"(?i)(?:^|[\s\"'])("
@@ -273,36 +252,20 @@ def parse_source_card_v2_markdown(
     try:
         text = raw.decode("utf-8", errors="strict")
     except UnicodeDecodeError as error:
-        raise RagSourceCardCorpusError(
-            "RAG source card must be strict UTF-8."
-        ) from error
-    if (
-        "\r" in text
-        or unicodedata.normalize("NFC", text) != text
-        or not text.endswith("\n")
-    ):
-        raise RagSourceCardCorpusError(
-            "RAG source card must use NFC, LF, and a final newline."
-        )
+        raise RagSourceCardCorpusError("RAG source card must be strict UTF-8.") from error
+    if "\r" in text or unicodedata.normalize("NFC", text) != text or not text.endswith("\n"):
+        raise RagSourceCardCorpusError("RAG source card must use NFC, LF, and a final newline.")
     if not text.startswith("---\n"):
-        raise RagSourceCardCorpusError(
-            "RAG source card must start with exact YAML front matter."
-        )
+        raise RagSourceCardCorpusError("RAG source card must start with exact YAML front matter.")
     closing_index = text.find("\n---\n", 4)
     if closing_index < 0:
-        raise RagSourceCardCorpusError(
-            "RAG source card front matter closing delimiter is missing."
-        )
+        raise RagSourceCardCorpusError("RAG source card front matter closing delimiter is missing.")
     front_matter_text = text[4:closing_index]
     body = text[closing_index + 5 :]
     if not front_matter_text or not body:
-        raise RagSourceCardCorpusError(
-            "RAG source card front matter and body must be non-empty."
-        )
+        raise RagSourceCardCorpusError("RAG source card front matter and body must be non-empty.")
     try:
-        front_matter = parse_source_card_v2_front_matter(
-            front_matter_text.encode("utf-8")
-        )
+        front_matter = parse_source_card_v2_front_matter(front_matter_text.encode("utf-8"))
     except RagSourceCardV2ContractError as error:
         raise RagSourceCardCorpusError(
             "RAG source card v2 front matter validation failed."
@@ -362,10 +325,7 @@ def build_source_card_corpus_manifest(
         "requiredStableAssumptionKeys": required_keys,
         "stableAssumptionCoverage": 1.0,
         "corpusManifestSha256": corpus_manifest_sha256,
-        "cards": [
-            _manifest_card_projection(card)
-            for card in cards
-        ],
+        "cards": [_manifest_card_projection(card) for card in cards],
     }
 
 
@@ -385,9 +345,7 @@ def load_frozen_source_card_corpus(
         )
     corpus_manifest_sha256 = tracked.get("corpusManifestSha256")
     if not isinstance(corpus_manifest_sha256, str):
-        raise RagSourceCardCorpusError(
-            "RAG source-card corpus manifest identity is missing."
-        )
+        raise RagSourceCardCorpusError("RAG source-card corpus manifest identity is missing.")
     return FrozenSourceCardCorpus(
         cards=cards,
         manifest=MappingProxyType(tracked),
@@ -417,20 +375,14 @@ def _load_and_validate_exact_cards(
                 max_bytes=MAX_SOURCE_CARD_BYTES,
             )
         except RagSafeIoError as error:
-            raise RagSourceCardCorpusError(
-                "RAG source-card safe read failed."
-            ) from error
+            raise RagSourceCardCorpusError("RAG source-card safe read failed.") from error
         cards.append(
             parse_source_card_v2_markdown(
                 result.content,
-                relative_path=(
-                    f"capstone-rag/source-cards/s4-7b/{entry.name}"
-                ),
+                relative_path=(f"capstone-rag/source-cards/s4-7b/{entry.name}"),
             )
         )
-    ordered = tuple(
-        sorted(cards, key=lambda card: card.source_id.encode("utf-8"))
-    )
+    ordered = tuple(sorted(cards, key=lambda card: card.source_id.encode("utf-8")))
     _validate_exact_membership(ordered)
     return ordered
 
@@ -462,27 +414,17 @@ def _validate_exact_membership(cards: tuple[FrozenSourceCard, ...]) -> None:
         payload = card.front_matter
         expected_filename = f"{card.source_id}.md"
         if Path(card.relative_path).name != expected_filename:
-            raise RagSourceCardCorpusError(
-                "RAG source-card filename must equal its sourceId."
-            )
+            raise RagSourceCardCorpusError("RAG source-card filename must equal its sourceId.")
         if card.source_id in EXPECTED_FINANCE_SOURCE_IDS:
             if payload["cardVariant"] != "SCHOLARLY_PRIMARY_CARD":
                 raise RagSourceCardCorpusError(
                     "Finance source cards must use scholarly primary lineage."
                 )
         elif payload["cardVariant"] != "OFFICIAL_UPSTREAM_CARD":
-            raise RagSourceCardCorpusError(
-                "Official source cards must use exact upstream lineage."
-            )
-        expected_session = (
-            "S4.7A"
-            if card.source_id in _MIGRATED_S4_7A_SOURCE_IDS
-            else "S4.7B"
-        )
+            raise RagSourceCardCorpusError("Official source cards must use exact upstream lineage.")
+        expected_session = "S4.7A" if card.source_id in _MIGRATED_S4_7A_SOURCE_IDS else "S4.7B"
         if payload["adoptedSession"] != expected_session:
-            raise RagSourceCardCorpusError(
-                "RAG source-card adoption session drifted."
-            )
+            raise RagSourceCardCorpusError("RAG source-card adoption session drifted.")
         if (
             payload["status"] != "VERIFIED"
             or payload["contentClass"] != "PROJECT_AUTHORED_SANITIZED_CARD"
@@ -509,16 +451,12 @@ def _validate_exact_membership(cards: tuple[FrozenSourceCard, ...]) -> None:
                 )
             actual_assumptions[card.source_id] = assumptions[0]["key"]
     if actual_assumptions != dict(REQUIRED_STABLE_ASSUMPTIONS):
-        raise RagSourceCardCorpusError(
-            "RAG source-card stable assumption coverage drifted."
-        )
+        raise RagSourceCardCorpusError("RAG source-card stable assumption coverage drifted.")
 
 
 def _validate_body_safety(body: str) -> None:
     if _RAW_HTML_PATTERN.search(body):
-        raise RagSourceCardCorpusError(
-            "RAG source-card body contains raw HTML."
-        )
+        raise RagSourceCardCorpusError("RAG source-card body contains raw HTML.")
     if _INSTRUCTION_LIKE_PATTERN.search(body):
         raise RagSourceCardCorpusError(
             "RAG source-card body contains instruction-like control text."
@@ -528,7 +466,7 @@ def _validate_body_safety(body: str) -> None:
             "RAG source-card body contains a private filesystem locator."
         )
     if any(
-        ord(character) < 0x20 and character != "\n"
+        (ord(character) < 0x20 and character != "\n")
         or ord(character) == 0x7F
         or 0xD800 <= ord(character) <= 0xDFFF
         for character in body
@@ -545,30 +483,16 @@ def _parse_exact_body_sections(
     lines = body.splitlines()
     expected_title = f"# Source Card: {_required_text(front_matter, 'title')}"
     if not lines or lines[0] != expected_title:
-        raise RagSourceCardCorpusError(
-            "RAG source-card body title must match front matter."
-        )
-    headings = [
-        (index, line[3:])
-        for index, line in enumerate(lines)
-        if line.startswith("## ")
-    ]
+        raise RagSourceCardCorpusError("RAG source-card body title must match front matter.")
+    headings = [(index, line[3:]) for index, line in enumerate(lines) if line.startswith("## ")]
     if tuple(heading for _, heading in headings) != SOURCE_CARD_HEADINGS:
-        raise RagSourceCardCorpusError(
-            "RAG source-card body headings or ordering drifted."
-        )
+        raise RagSourceCardCorpusError("RAG source-card body headings or ordering drifted.")
     sections: dict[str, str] = {}
     for offset, (line_index, heading) in enumerate(headings):
-        next_index = (
-            headings[offset + 1][0]
-            if offset + 1 < len(headings)
-            else len(lines)
-        )
+        next_index = headings[offset + 1][0] if offset + 1 < len(headings) else len(lines)
         content = "\n".join(lines[line_index + 1 : next_index]).strip()
         if not content:
-            raise RagSourceCardCorpusError(
-                "RAG source-card body section must be non-empty."
-            )
+            raise RagSourceCardCorpusError("RAG source-card body section must be non-empty.")
         sections[heading] = content
     if sections["핵심 claim"] != _required_text(front_matter, "claim"):
         raise RagSourceCardCorpusError(
@@ -579,11 +503,7 @@ def _parse_exact_body_sections(
 
 def _manifest_card_projection(card: FrozenSourceCard) -> dict[str, Any]:
     payload = card.front_matter
-    category = (
-        "FINANCE"
-        if card.source_id in EXPECTED_FINANCE_SOURCE_IDS
-        else "OFFICIAL_API"
-    )
+    category = "FINANCE" if card.source_id in EXPECTED_FINANCE_SOURCE_IDS else "OFFICIAL_API"
     return {
         "sourceId": card.source_id,
         "cardId": card.card_id,
@@ -614,9 +534,7 @@ def _read_manifest(path: Path) -> dict[str, Any]:
         )
         text = result.content.decode("utf-8", errors="strict")
         if "\r" in text or unicodedata.normalize("NFC", text) != text:
-            raise RagSourceCardCorpusError(
-                "RAG source-card corpus manifest must use NFC and LF."
-            )
+            raise RagSourceCardCorpusError("RAG source-card corpus manifest must use NFC and LF.")
         value = json.loads(text, object_pairs_hook=_reject_duplicate_json_keys)
     except (
         RagSafeIoError,
@@ -628,9 +546,7 @@ def _read_manifest(path: Path) -> dict[str, Any]:
             "RAG source-card corpus manifest could not be read."
         ) from error
     if not isinstance(value, dict):
-        raise RagSourceCardCorpusError(
-            "RAG source-card corpus manifest must be an object."
-        )
+        raise RagSourceCardCorpusError("RAG source-card corpus manifest must be an object.")
     return value
 
 
@@ -648,9 +564,7 @@ def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def _required_text(mapping: Mapping[str, Any], field: str) -> str:
     value = mapping.get(field)
     if not isinstance(value, str) or not value:
-        raise RagSourceCardCorpusError(
-            f"RAG source-card {field} must be non-empty text."
-        )
+        raise RagSourceCardCorpusError(f"RAG source-card {field} must be non-empty text.")
     return value
 
 

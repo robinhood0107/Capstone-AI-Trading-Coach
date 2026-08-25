@@ -28,6 +28,10 @@ from pydantic import (
     model_validator,
 )
 
+from app.brokerage.kis_mock_approval_environment import (
+    KISMockApprovalEnvironmentRejected,
+    load_kis_mock_approval_environment,
+)
 from app.brokerage.kis_mock_online_client import (
     KISBrokerageCallBudget,
     KISBrokerageCallBudgetExceeded,
@@ -40,27 +44,35 @@ from app.brokerage.kis_mock_online_runtime import (
     KISMockOnlineBalanceReader,
     KISMockProjectionError,
 )
-from app.brokerage.kis_mock_approval_environment import (
-    KISMockApprovalEnvironmentRejected,
-    load_kis_mock_approval_environment,
-)
 from app.brokerage.kis_mock_order_gateway import (
     KISMockOrderGateway,
     MockOrderIntent,
     MockOrderRecoveryError,
 )
 from app.brokerage.mock_order_reference_store import (
-    EncryptedRedisOrderReferenceStore,
     EncryptedRedisApprovalOutcomeStore,
+    EncryptedRedisOrderReferenceStore,
     KISMockApprovalOutcome,
     KISMockApprovalOutcomeUnavailable,
     MockProviderOrderReference,
 )
+from app.data._shared.canonical_json import canonical_json_sha256
 from app.data.kis._credential_transport import KISCredentialError, _build_redis_client
 from app.data.kis.settings import KISSettings
+from app.verification.execution_approval import (
+    ZERO_SCOPE_SHA256,
+    ExecutionApprovalError,
+    load_and_verify_execution_approval,
+    scope_digest,
+)
+from app.verification.provider_claim import (
+    ProviderApprovalClaimError,
+    claim_signed_provider_approval,
+)
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
 _MAX_PACKET_BYTES = 64 * 1024
+_P1_APPROVAL_PATH = Path("/run/secrets/p1-kis-mock-approval-v2.json")
 _SHA256 = r"^[0-9a-f]{64}$"
 _GIT_SHA = r"^[0-9a-f]{40}$"
 _NONCE = r"^[0-9a-f]{64}$"
@@ -126,14 +138,11 @@ class KISMockProbeFailed(RuntimeError):
         )
         self.provider_code = (
             provider_code
-            if provider_code is not None
-            and _PROVIDER_CODE.fullmatch(provider_code) is not None
+            if provider_code is not None and _PROVIDER_CODE.fullmatch(provider_code) is not None
             else None
         )
         self.http_status = (
-            http_status
-            if type(http_status) is int and 100 <= http_status <= 599
-            else None
+            http_status if type(http_status) is int and 100 <= http_status <= 599 else None
         )
 
 
@@ -166,7 +175,7 @@ class RepositoryEvidenceV2(_StrictModel):
     )
 
     @model_validator(mode="after")
-    def _branch_matches_evidence_mode(self) -> "RepositoryEvidenceV2":
+    def _branch_matches_evidence_mode(self) -> RepositoryEvidenceV2:
         if self.evidence_mode == "MERGED_MAIN" and self.branch_ref != "main":
             raise ValueError("merged main evidence must bind origin/main")
         if self.evidence_mode == "OPEN_PR" and re.fullmatch(_BRANCH, self.branch_ref) is None:
@@ -193,7 +202,7 @@ class ApprovalEvidence(_StrictModel):
     security_report_sha256: str = Field(alias="securityReportSha256", pattern=_SHA256)
 
     @model_validator(mode="after")
-    def _checks_are_unique(self) -> "ApprovalEvidence":
+    def _checks_are_unique(self) -> ApprovalEvidence:
         names = tuple(check.name for check in self.required_checks)
         if len(set(names)) != len(names):
             raise ValueError("required CI checks must be unique")
@@ -242,7 +251,7 @@ class ApprovalOrder(_StrictModel):
     )
 
     @model_validator(mode="after")
-    def _exchange_contract(self) -> "ApprovalOrder":
+    def _exchange_contract(self) -> ApprovalOrder:
         if self.exchange_division != "KRX":
             raise ValueError("KIS_MOCK cash-order probe supports KRX only")
         return self
@@ -254,7 +263,7 @@ class ExecutionWindow(_StrictModel):
     recent: StrictBool
 
     @model_validator(mode="after")
-    def _bounded_window(self) -> "ExecutionWindow":
+    def _bounded_window(self) -> ExecutionWindow:
         if self.recent is not True:
             raise ValueError("execution read must use the recent mock TR")
         if self.start > self.end or (self.end - self.start).days > 31:
@@ -315,19 +324,14 @@ class KISMockApprovalPacket(_StrictModel):
         return value
 
     @model_validator(mode="after")
-    def _cross_field_contract(self) -> "KISMockApprovalPacket":
+    def _cross_field_contract(self) -> KISMockApprovalPacket:
         if self.kis_live_order_enabled is not False:
             raise ValueError("KIS_LIVE order must remain disabled")
         expected_steps = (
-            _CANONICAL_STEPS
-            if self.probe_type == "FULL"
-            else _BALANCE_DIAGNOSTIC_STEPS
+            _CANONICAL_STEPS if self.probe_type == "FULL" else _BALANCE_DIAGNOSTIC_STEPS
         )
         expected_brokerage_cap = 5 if self.probe_type == "FULL" else 1
-        if (
-            self.steps != expected_steps
-            or self.physical_caps.brokerage != expected_brokerage_cap
-        ):
+        if self.steps != expected_steps or self.physical_caps.brokerage != expected_brokerage_cap:
             raise ValueError("approval steps and caps must match the probe type")
         if not self.issued_at < self.expires_at:
             raise ValueError("approval TTL must be positive")
@@ -391,7 +395,7 @@ class KISMockApprovalPacketV2(_StrictModel):
         return value
 
     @model_validator(mode="after")
-    def _cross_field_contract(self) -> "KISMockApprovalPacketV2":
+    def _cross_field_contract(self) -> KISMockApprovalPacketV2:
         if self.kis_live_order_enabled is not False:
             raise ValueError("KIS_LIVE order must remain disabled")
         expected_steps: tuple[str, ...]
@@ -480,7 +484,7 @@ class KISMockApprovalPacketV3(_StrictModel):
         return value
 
     @model_validator(mode="after")
-    def _cross_field_contract(self) -> "KISMockApprovalPacketV3":
+    def _cross_field_contract(self) -> KISMockApprovalPacketV3:
         if (
             self.kis_live_order_enabled is not False
             or self.steps != _V3_CANONICAL_STEPS
@@ -566,8 +570,7 @@ def execute_approved_probe(
     deadline_rejection: KISMockApprovalRejected | None = None
     failed_step_for_outcome: str | None = None
     record_outcome = (
-        isinstance(packet, KISMockApprovalPacketV2)
-        and packet.probe_type != "BALANCE_DIAGNOSTIC"
+        isinstance(packet, KISMockApprovalPacketV2) and packet.probe_type != "BALANCE_DIAGNOSTIC"
     )
     outcome_recording_active = False
     try:
@@ -932,32 +935,36 @@ def approval_anchor_for_source(source_packet_sha256: str, source_nonce: str) -> 
 
 
 def _consume_exact_approval_once(packet: ApprovalPacket, now: datetime) -> None:
-    """Redis 원자 claim으로 exact packet 재실행을 성공/실패와 무관하게 차단한다."""
-    current = now.astimezone(UTC)
-    remaining_ms = int((packet.expires_at - current).total_seconds() * 1000)
-    if remaining_ms <= 0:
-        raise KISMockApprovalRejected("approval packet is not inside its TTL")
-    key_material = f"{packet.approval_id}\0{packet.packet_sha256}".encode()
-    if isinstance(packet, KISMockApprovalPacketV3):
-        version = "v3"
-    elif isinstance(packet, KISMockApprovalPacketV2):
-        version = "v2"
-    else:
-        version = "v1"
-    redis_key = (
-        f"kis:mock:approval-consumed:{version}:" + hashlib.sha256(key_material).hexdigest()
-    )
-    redis_client: Any | None = None
+    """Only signed v3 packets receive durable PostgreSQL execution authority."""
+
+    if not isinstance(packet, KISMockApprovalPacketV3):
+        raise KISMockApprovalRejected("legacy or unsigned approval has no execution authority")
     try:
-        redis_client = _build_redis_client()
-        claimed = redis_client.set(redis_key, "1", nx=True, px=remaining_ms)
-    except Exception:
-        raise KISMockApprovalRejected("approval consumption state is unavailable") from None
-    finally:
-        if redis_client is not None:
-            redis_client.close()
-    if claimed is not True:
-        raise KISMockApprovalRejected("approval packet was already consumed")
+        approval = load_and_verify_execution_approval(
+            _P1_APPROVAL_PATH,
+            provider_family="KIS_MOCK",
+            exact_operations=packet.steps,
+            payload_sha256=packet.packet_sha256,
+            repository_digest=canonical_json_sha256(
+                {
+                    "headSha": packet.repository.head_sha,
+                    "pullRequest": packet.repository.pull_request,
+                    "remoteHeadSha": packet.repository.remote_head_sha,
+                }
+            ),
+            evidence_digest=canonical_json_sha256(
+                packet.evidence.model_dump(mode="json", by_alias=True)
+            ),
+            owner_scope_digest=ZERO_SCOPE_SHA256,
+            account_scope_digest=scope_digest(packet.order.account_id),
+            credential_scope_digest=scope_digest("KIS_MOCK"),
+            physical_call_cap=(packet.physical_caps.token_p + packet.physical_caps.brokerage),
+            cost_cap_microusd=0,
+            now=now,
+        )
+        claim_signed_provider_approval(approval)
+    except (ExecutionApprovalError, ProviderApprovalClaimError) as error:
+        raise KISMockApprovalRejected("signed approval was rejected") from error
 
 
 def _read_secure_packet(packet_path: Path) -> tuple[Path, bytes]:
@@ -1108,8 +1115,10 @@ def _validate_v2_security_evidence(evidence: ApprovalEvidenceV2, head_sha: str) 
         findings = json.loads(findings_bytes, object_pairs_hook=_unique_object)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
         raise KISMockApprovalRejected("security scan evidence is invalid") from None
-    if not isinstance(manifest, dict) or not isinstance(coverage, dict) or not isinstance(
-        findings, dict
+    if (
+        not isinstance(manifest, dict)
+        or not isinstance(coverage, dict)
+        or not isinstance(findings, dict)
     ):
         raise KISMockApprovalRejected("security scan evidence is invalid")
     scan = manifest.get("scan")
@@ -1134,14 +1143,18 @@ def _validate_v2_security_evidence(evidence: ApprovalEvidenceV2, head_sha: str) 
     ):
         raise KISMockApprovalRejected("security scan coverage or findings are incomplete")
     artifacts = scan.get("artifacts")
-    if not isinstance(artifacts, list) or not _manifest_artifact_digest_matches(
-        artifacts,
-        Path(evidence.security_coverage_path).name,
-        evidence.security_coverage_sha256,
-    ) or not _manifest_artifact_digest_matches(
-        artifacts,
-        Path(evidence.security_findings_path).name,
-        evidence.security_findings_sha256,
+    if (
+        not isinstance(artifacts, list)
+        or not _manifest_artifact_digest_matches(
+            artifacts,
+            Path(evidence.security_coverage_path).name,
+            evidence.security_coverage_sha256,
+        )
+        or not _manifest_artifact_digest_matches(
+            artifacts,
+            Path(evidence.security_findings_path).name,
+            evidence.security_findings_sha256,
+        )
     ):
         raise KISMockApprovalRejected("security scan evidence digest does not match")
 
@@ -1262,12 +1275,14 @@ class _KISMockProbeOperations:
         self._submission_anchor: str | None = None
         self._recovery_anchor: str | None = None
         self._pre_balance_digest: str | None = None
-        if isinstance(packet, (KISMockApprovalPacketV2, KISMockApprovalPacketV3)):
-            if packet.probe_type == "FULL":
-                self._submission_anchor = approval_anchor_for_source(
-                    packet.packet_sha256,
-                    packet.nonce,
-                )
+        if (
+            isinstance(packet, (KISMockApprovalPacketV2, KISMockApprovalPacketV3))
+            and packet.probe_type == "FULL"
+        ):
+            self._submission_anchor = approval_anchor_for_source(
+                packet.packet_sha256,
+                packet.nonce,
+            )
         self._client = KISMockBrokerageHttpClient(
             settings=KISSettings(kis_mode="mock", kis_offline=False),
             budget=self._budget,
@@ -1319,7 +1334,10 @@ class _KISMockProbeOperations:
     def activate(self, packet: ApprovalPacket) -> None:
         """target packet을 claim한 뒤 recovery source를 한 번만 claim하고 provider dispatch를 연다."""
 
-        if not isinstance(packet, KISMockApprovalPacketV2) or packet.probe_type != "CANCEL_RECOVERY":
+        if (
+            not isinstance(packet, KISMockApprovalPacketV2)
+            or packet.probe_type != "CANCEL_RECOVERY"
+        ):
             return
         if self._outcome_store is None or packet.recovery_of is None:
             raise KISMockApprovalRejected("recovery source outcome is unavailable")
@@ -1345,7 +1363,10 @@ class _KISMockProbeOperations:
     def record_outcome(self, packet: ApprovalPacket, failed_step: str | None) -> None:
         """FULL/recovery 종료를 close 전에 봉인해 다음 recovery가 실제 failure만 참조하게 한다."""
 
-        if not isinstance(packet, KISMockApprovalPacketV2) or packet.probe_type == "BALANCE_DIAGNOSTIC":
+        if (
+            not isinstance(packet, KISMockApprovalPacketV2)
+            or packet.probe_type == "BALANCE_DIAGNOSTIC"
+        ):
             return
         if self._outcome_store is None:
             raise KISMockApprovalRejected("approval source outcome is unavailable")
@@ -1368,9 +1389,7 @@ class _KISMockProbeOperations:
     def run(self, operation: str, packet: ApprovalPacket) -> None:
         """canonical operation 이름을 exact packet parameter에만 매핑한다."""
         if operation in {"balance", "preBalance", "postBalance"}:
-            balance_response = self._balance_reader.probe_balance_source(
-                packet.order.account_id
-            )
+            balance_response = self._balance_reader.probe_balance_source(packet.order.account_id)
             if balance_response is None or balance_response.account_id != packet.order.account_id:
                 raise KISMockProjectionError(
                     KISMockFailureReason.BALANCE_PROBE_RESPONSE_INVALID,
@@ -1529,9 +1548,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         expected_approval_id = _operator_approval_value("S3_KIS_MOCK_EXACT_APPROVAL_ID")
-        expected_packet_sha256 = _operator_approval_value(
-            "S3_KIS_MOCK_EXACT_APPROVAL_SHA256"
-        )
+        expected_packet_sha256 = _operator_approval_value("S3_KIS_MOCK_EXACT_APPROVAL_SHA256")
         summary = execute_approved_probe(
             args.approval_packet,
             now=datetime.now(tz=UTC),

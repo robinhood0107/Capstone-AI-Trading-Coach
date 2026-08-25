@@ -88,26 +88,36 @@ class DatabaseActorCapabilityAuthority(
     private val jdbc = JdbcTemplate(dataSource)
 
     fun issue(
-        actorUserId: String,
+        identityHandle: String,
         binding: ActorCapabilityBinding,
     ): String {
         val subject =
             jdbc
                 .query(
-                    "SELECT actor_role,actor_security_version FROM read_actor_capability_subject(?)",
-                    { statement -> statement.setString(1, actorUserId) },
-                ) { rows, _ -> rows.getString(1) to rows.getLong(2) }
+                    """
+                    SELECT actor_user_id,actor_role,actor_security_version
+                    FROM consume_actor_identity_handle_v1(?,?,?,?,?,?)
+                    """.trimIndent(),
+                    { statement ->
+                        statement.setString(1, identityHandle)
+                        statement.setString(2, binding.operation)
+                        statement.setString(3, binding.targetKind)
+                        statement.setString(4, binding.targetId)
+                        statement.setString(5, binding.payloadHash)
+                        statement.setString(6, binding.rolePolicy.name)
+                    },
+                ) { rows, _ -> Triple(rows.getString(1), rows.getString(2), rows.getLong(3)) }
                 .singleOrNull()
                 ?: throw ActorCapabilityDeniedException("Actor is unavailable.")
-        if (!binding.rolePolicy.accepts(subject.first)) {
+        if (!binding.rolePolicy.accepts(subject.second)) {
             throw ActorCapabilityDeniedException("Actor role is unavailable.")
         }
         val issuedAt = Instant.now(clock).truncatedTo(ChronoUnit.SECONDS)
         val claims =
             ActorCapabilityClaims(
-                actorUserId = actorUserId,
-                actorRole = subject.first,
-                actorSecurityVersion = subject.second,
+                actorUserId = subject.first,
+                actorRole = subject.second,
+                actorSecurityVersion = subject.third,
                 operation = binding.operation,
                 targetKind = binding.targetKind,
                 targetId = binding.targetId,

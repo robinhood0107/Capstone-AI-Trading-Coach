@@ -451,6 +451,25 @@ class InfrastructureSecurityIntegrationTest {
                     )
                     val denied = assertThrows<SQLException> { statement.executeQuery("select * from users") }
                     assertEquals("42501", denied.sqlState)
+                    assertTrue(
+                        hasFunctionPrivilege(
+                            connection,
+                            "decision_auth",
+                            "register_actor_identity_handle_v1(text,text,text,text,text,text,integer)",
+                        ),
+                    )
+                    val handle =
+                        queryScalar(
+                            statement,
+                            """
+                            select register_actor_identity_handle_v1(
+                              'usr_demo_admin','READ_ASYNC_JOB','ASYNC_JOB','job_identity_handle_test',
+                              'sha256:${"a".repeat(64)}','ADMIN_ONLY',15
+                            )
+                            """.trimIndent(),
+                        )
+                    assertTrue(handle.matches(Regex("^idh1_[0-9a-f]{64}$")))
+                    verifyIdentityHandleIsExactAndOneShot(handle)
                     statement
                         .executeQuery(
                             "select rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls " +
@@ -602,6 +621,46 @@ class InfrastructureSecurityIntegrationTest {
         }
         assertRuntimeLockTimeout()
         assertActorScopedPoolStateIsReset()
+    }
+
+    private fun verifyIdentityHandleIsExactAndOneShot(handle: String) {
+        DriverManager
+            .getConnection(
+                postgres.jdbcUrl,
+                Properties().apply {
+                    setProperty("user", "decision_identity")
+                    setProperty("password", identityPassword)
+                },
+            ).use { identity ->
+                identity.prepareStatement(
+                    """
+                    select actor_user_id,actor_role,actor_security_version
+                    from consume_actor_identity_handle_v1(?,?,?,?,?,?)
+                    """.trimIndent(),
+                ).use { statement ->
+                    fun execute(operation: String): List<String> {
+                        statement.setString(1, handle)
+                        statement.setString(2, operation)
+                        statement.setString(3, "ASYNC_JOB")
+                        statement.setString(4, "job_identity_handle_test")
+                        statement.setString(5, "sha256:${"a".repeat(64)}")
+                        statement.setString(6, "ADMIN_ONLY")
+                        return statement.executeQuery().use { result ->
+                            buildList {
+                                while (result.next()) add(result.getString(1))
+                            }
+                        }
+                    }
+                    assertEquals(emptyList<String>(), execute("LIST_ASYNC_JOBS"))
+                    assertEquals(listOf("usr_demo_admin"), execute("READ_ASYNC_JOB"))
+                    assertEquals(emptyList<String>(), execute("READ_ASYNC_JOB"))
+                }
+                val selectedActor =
+                    assertThrows<SQLException> {
+                        identity.createStatement().executeQuery("select * from read_actor_capability_subject('usr_demo_user')")
+                    }
+                assertEquals("42501", selectedActor.sqlState)
+            }
     }
 
     private fun runtimeProperties(): Properties =

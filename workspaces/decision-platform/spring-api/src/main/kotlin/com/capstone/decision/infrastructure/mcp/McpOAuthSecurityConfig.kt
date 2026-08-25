@@ -6,6 +6,7 @@ import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.infrastructure.security.ActorRlsScope
 import com.capstone.decision.infrastructure.security.DemoAccountService
 import com.capstone.decision.infrastructure.security.LoginAttemptLimiter
+import com.capstone.decision.infrastructure.security.MAX_ACTOR_SESSION_TTL
 import com.capstone.decision.infrastructure.security.UserSecurityRepository
 import com.capstone.decision.infrastructure.web.HttpRequestProperties
 import com.capstone.decision.infrastructure.web.RequestBodyLimitFilter
@@ -51,7 +52,11 @@ import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint
 import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler
+import org.springframework.security.web.context.DelegatingSecurityContextRepository
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository
 import org.springframework.security.web.context.SecurityContextHolderFilter
+import org.springframework.security.web.context.SecurityContextRepository
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
@@ -64,6 +69,13 @@ import java.util.UUID
 @ConditionalOnProperty(name = ["app.s4-9.mcp-oauth.enabled"], havingValue = "true")
 @EnableConfigurationProperties(McpOAuthProperties::class)
 class McpOAuthSecurityConfig {
+    @Bean
+    fun mcpSecurityContextRepository(): SecurityContextRepository =
+        DelegatingSecurityContextRepository(
+            RequestAttributeSecurityContextRepository(),
+            HttpSessionSecurityContextRepository(),
+        )
+
     @Bean
     @Order(1)
     fun authorizationServerSecurityFilterChain(
@@ -122,6 +134,7 @@ class McpOAuthSecurityConfig {
         http: HttpSecurity,
         limiter: LoginAttemptLimiter,
         demoAccounts: DemoAccountService,
+        securityContextRepository: SecurityContextRepository,
         requestProperties: HttpRequestProperties,
         responseWriter: ApiResponseWriter,
     ): SecurityFilterChain {
@@ -129,6 +142,7 @@ class McpOAuthSecurityConfig {
         val failure = SimpleUrlAuthenticationFailureHandler("/login?error")
         return http
             .securityMatcher("/login")
+            .securityContext { it.securityContextRepository(securityContextRepository) }
             .authorizeHttpRequests { it.anyRequest().permitAll() }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED) }
             .formLogin { form ->
@@ -138,6 +152,7 @@ class McpOAuthSecurityConfig {
                             demoAccounts.authenticate(
                                 request.getParameter("username").orEmpty(),
                                 request.getParameter("password").orEmpty(),
+                                MAX_ACTOR_SESSION_TTL,
                             )
                         } catch (exception: RuntimeException) {
                             limiter.releaseReservation()
@@ -169,7 +184,11 @@ class McpOAuthSecurityConfig {
                             null,
                             authentication.authorities,
                         ).also { it.details = authentication.details }
-                    SecurityContextHolder.getContext().authentication = actorAuthentication
+                    val actorContext = SecurityContextHolder.createEmptyContext()
+                    actorContext.authentication = actorAuthentication
+                    SecurityContextHolder.setContext(actorContext)
+                    // Form filter가 handler 호출 전에 저장한 generic User principal을 sid-bound principal로 교체한다.
+                    securityContextRepository.saveContext(actorContext, request, response)
                     limiter.recordSuccess(request.remoteAddr, authentication.name)
                     success.onAuthenticationSuccess(request, response, actorAuthentication)
                 }
@@ -290,7 +309,7 @@ class McpOAuthSecurityConfig {
                             TokenSettings
                                 .builder()
                                 .accessTokenTimeToLive(Duration.ofMinutes(15))
-                                .refreshTokenTimeToLive(Duration.ofDays(7))
+                                .refreshTokenTimeToLive(MAX_ACTOR_SESSION_TTL)
                                 .reuseRefreshTokens(false)
                                 .idTokenSignatureAlgorithm(SignatureAlgorithm.ES256)
                                 .build(),

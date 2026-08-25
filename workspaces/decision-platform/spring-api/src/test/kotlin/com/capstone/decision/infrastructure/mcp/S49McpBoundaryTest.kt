@@ -1,5 +1,7 @@
 package com.capstone.decision.infrastructure.mcp
 
+import com.capstone.decision.application.security.AppPrincipal
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.infrastructure.rag.RagV2UnavailableVertexGenerationAdapter
 import jakarta.servlet.FilterChain
 import org.assertj.core.api.Assertions.assertThat
@@ -11,9 +13,11 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperties
 import org.springframework.core.annotation.AnnotatedElementUtils
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.config.ObjectPostProcessor
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.web.context.SecurityContextHolderFilter
 import java.nio.file.Files
 import java.nio.file.Path
@@ -21,6 +25,30 @@ import kotlin.reflect.full.declaredFunctions
 import kotlin.reflect.jvm.javaMethod
 
 class S49McpBoundaryTest {
+    @Test
+    fun `MCP login security context persists the sid bound actor principal`() {
+        val repository = McpOAuthSecurityConfig().mcpSecurityContextRepository()
+        val actorRef =
+            AuthenticatedActorRef(
+                sessionHandle = "sid1_${"a".repeat(64)}",
+                expectedUserId = "usr_demo_user",
+                securityVersion = 3,
+            )
+        val principal = AppPrincipal("usr_demo_user", "demo-user", "USER", 3, actorRef)
+        val authentication = UsernamePasswordAuthenticationToken(principal, null, emptyList())
+        val context = SecurityContextHolder.createEmptyContext().also { it.authentication = authentication }
+        val loginRequest = MockHttpServletRequest("POST", "/login")
+
+        repository.saveContext(context, loginRequest, MockHttpServletResponse())
+
+        val authorizationRequest = MockHttpServletRequest("GET", "/oauth2/authorize")
+        authorizationRequest.setSession(requireNotNull(loginRequest.session))
+        val restored = requireNotNull(repository.loadDeferredContext(authorizationRequest).get().authentication)
+
+        assertThat(restored.principal).isEqualTo(principal)
+        assertThat((restored.principal as AppPrincipal).actorRef).isEqualTo(actorRef)
+    }
+
     @Test
     fun `Strong LLM activation excludes the unavailable generation adapter`() {
         val conditions =

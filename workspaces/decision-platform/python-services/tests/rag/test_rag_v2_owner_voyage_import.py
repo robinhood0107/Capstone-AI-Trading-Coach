@@ -33,6 +33,7 @@ from app.rag.rag_v2_owner_bge_staging import (
     PsycopgRagV2OwnerBgeStagingRepository,
 )
 from app.rag.rag_v2_owner_overlay import PsycopgRagV2OwnerOverlayRepository
+from tests.support.actor_rls_scope import open_actor_rls_scope
 
 
 @dataclass
@@ -431,6 +432,7 @@ def test_owner_voyage_postgres_attempt_commits_usage_ticket_and_vector_atomicall
     )
     _grant_external_consent_and_issue_voyage_ticket(
         isolated_postgres_cluster["app_dsn"],
+        isolated_postgres_cluster["identity_dsn"],
         owner_user_id="usr_demo_user",
         event_character="a",
         ticket_ids=(ticket_id, "rti_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
@@ -438,6 +440,7 @@ def test_owner_voyage_postgres_attempt_commits_usage_ticket_and_vector_atomicall
     bge_race_ticket = "rti_cccccccccccccccccccccccccccccccc"
     _issue_profile_ticket(
         isolated_postgres_cluster["app_dsn"],
+        isolated_postgres_cluster["identity_dsn"],
         owner_user_id="usr_demo_user",
         ticket_id=bge_race_ticket,
         embedding_profile_id="bge_m3_local_1024_v1",
@@ -599,6 +602,7 @@ def test_staged_bge_library_rejects_voyage_reservation_before_provider(
     bge_ticket = "rti_dddddddddddddddddddddddddddddddd"
     _issue_profile_ticket(
         isolated_postgres_cluster["app_dsn"],
+        isolated_postgres_cluster["identity_dsn"],
         owner_user_id="usr_demo_admin",
         ticket_id=bge_ticket,
         embedding_profile_id="bge_m3_local_1024_v1",
@@ -617,6 +621,7 @@ def test_staged_bge_library_rejects_voyage_reservation_before_provider(
     voyage_ticket = "rti_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
     _grant_external_consent_and_issue_voyage_ticket(
         isolated_postgres_cluster["app_dsn"],
+        isolated_postgres_cluster["identity_dsn"],
         owner_user_id="usr_demo_admin",
         event_character="b",
         ticket_ids=(voyage_ticket,),
@@ -662,6 +667,7 @@ def test_active_owner_overlay_delete_rebuild_counts_only_per_document_staging_ge
         ticket_id = f"rti_{ordinal + 20:032x}"
         _issue_profile_ticket(
             isolated_postgres_cluster["app_dsn"],
+            isolated_postgres_cluster["identity_dsn"],
             owner_user_id="usr_demo_user",
             ticket_id=ticket_id,
             embedding_profile_id="bge_m3_local_1024_v1",
@@ -687,6 +693,7 @@ def test_active_owner_overlay_delete_rebuild_counts_only_per_document_staging_ge
     first_delete_ticket = "rtd_21212121212121212121212121212121"
     _issue_delete_ticket(
         isolated_postgres_cluster["app_dsn"],
+        isolated_postgres_cluster["identity_dsn"],
         owner_user_id="usr_demo_user",
         document_id=documents[0],
         ticket_id=first_delete_ticket,
@@ -722,6 +729,7 @@ def test_active_owner_overlay_delete_rebuild_counts_only_per_document_staging_ge
     second_delete_ticket = "rtd_22222222222222222222222222222222"
     _issue_delete_ticket(
         isolated_postgres_cluster["app_dsn"],
+        isolated_postgres_cluster["identity_dsn"],
         owner_user_id="usr_demo_user",
         document_id=documents[1],
         ticket_id=second_delete_ticket,
@@ -789,6 +797,7 @@ def _seed_minimal_voyage_public_pointer(database_dsn: str) -> None:
 
 def _issue_delete_ticket(
     database_dsn: str,
+    identity_dsn: str,
     *,
     owner_user_id: str,
     document_id: str,
@@ -796,9 +805,14 @@ def _issue_delete_ticket(
 ) -> None:
     with psycopg.connect(database_dsn, autocommit=False) as connection:
         with connection.transaction():
-            connection.execute(
-                "SELECT set_config('app.actor_user_id', %s, true)",
-                (owner_user_id,),
+            open_actor_rls_scope(
+                identity_dsn=identity_dsn,
+                connection=connection,
+                actor_user_id=owner_user_id,
+                actor_role="USER",
+                operation="ISSUE_RAG_V2_DELETE",
+                target_kind="RAG_DOCUMENT",
+                target_id=document_id,
             )
             connection.execute(
                 "SELECT issue_rag_v2_immutable_owner_delete_ticket(%s, %s, %s)",
@@ -808,6 +822,7 @@ def _issue_delete_ticket(
 
 def _grant_external_consent_and_issue_voyage_ticket(
     database_dsn: str,
+    identity_dsn: str,
     *,
     owner_user_id: str,
     event_character: str,
@@ -815,9 +830,15 @@ def _grant_external_consent_and_issue_voyage_ticket(
 ) -> None:
     with psycopg.connect(database_dsn, autocommit=False) as connection:
         with connection.transaction():
-            connection.execute(
-                "SELECT set_config('app.actor_user_id', %s, true)",
-                (owner_user_id,),
+            actor_role = "ADMIN" if owner_user_id == "usr_demo_admin" else "USER"
+            open_actor_rls_scope(
+                identity_dsn=identity_dsn,
+                connection=connection,
+                actor_user_id=owner_user_id,
+                actor_role=actor_role,
+                operation="RECORD_RAG_V2_CONSENT",
+                target_kind="OWNER",
+                target_id=owner_user_id,
             )
             connection.execute(
                 """
@@ -837,6 +858,15 @@ def _grant_external_consent_and_issue_voyage_ticket(
                 ),
             ).fetchone()
             for ticket_id in ticket_ids:
+                open_actor_rls_scope(
+                    identity_dsn=identity_dsn,
+                    connection=connection,
+                    actor_user_id=owner_user_id,
+                    actor_role=actor_role,
+                    operation="ISSUE_RAG_V2_IMPORT",
+                    target_kind="RAG_TICKET",
+                    target_id=ticket_id,
+                )
                 connection.execute(
                     """
                     SELECT issue_rag_v2_immutable_import_ticket_v2(
@@ -850,6 +880,7 @@ def _grant_external_consent_and_issue_voyage_ticket(
 
 def _issue_profile_ticket(
     database_dsn: str,
+    identity_dsn: str,
     *,
     owner_user_id: str,
     ticket_id: str,
@@ -857,9 +888,14 @@ def _issue_profile_ticket(
 ) -> None:
     with psycopg.connect(database_dsn, autocommit=False) as connection:
         with connection.transaction():
-            connection.execute(
-                "SELECT set_config('app.actor_user_id', %s, true)",
-                (owner_user_id,),
+            open_actor_rls_scope(
+                identity_dsn=identity_dsn,
+                connection=connection,
+                actor_user_id=owner_user_id,
+                actor_role="ADMIN" if owner_user_id == "usr_demo_admin" else "USER",
+                operation="ISSUE_RAG_V2_IMPORT",
+                target_kind="RAG_TICKET",
+                target_id=ticket_id,
             )
             connection.execute(
                 """

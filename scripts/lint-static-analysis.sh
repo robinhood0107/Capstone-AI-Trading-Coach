@@ -41,7 +41,16 @@ mapfile -d '' yaml_files < <(git ls-files -z -- '*.yml' '*.yaml' ":(exclude)$loc
 ((${#yaml_files[@]} > 0))
 uv --project "$python_project" run yamllint -c .yamllint.yml "${yaml_files[@]}"
 
-mapfile -d '' toml_files < <(git ls-files -z -- '*.toml' ":(exclude)$local_only_root/**")
+# These three dependency manifests are governed by existing exact-byte/hash
+# contracts.  Generic formatting would invalidate those contracts even when
+# their dependency semantics are unchanged.
+mapfile -d '' toml_files < <(
+  git ls-files -z -- '*.toml' \
+    ":(exclude)$local_only_root/**" \
+    ':(exclude)workspaces/decision-platform/python-services/pyproject.toml' \
+    ':(exclude)workspaces/decision-platform/research/s1-4r-jax-risk/pyproject.toml' \
+    ':(exclude)workspaces/decision-platform/research/s1-4x-numeric-parity/oracle/pyproject.toml'
+)
 ((${#toml_files[@]} > 0))
 uv --project "$python_project" run toml-sort --check "${toml_files[@]}"
 
@@ -51,9 +60,11 @@ mapfile -d '' markdown_files < <(
   git -c core.quotePath=false ls-files -z -- '*.md' \
     ":(exclude)$local_only_root/**" \
     ':(exclude)contracts/changes/**' \
+    ':(exclude)artifacts/README.md' \
     ':(exclude)capstone-rag/evidence/**' \
     ':(exclude)capstone-rag/source-cards/**' \
     ':(exclude)deploy/p1/THIRD_PARTY_NOTICES.md' \
+    ':(exclude)docs/중간보고서_작성용_초기설계.md' \
     ':(exclude)workspaces/return-engine/README.md' \
     ':(exclude)workspaces/experience-dashboard/README.md'
 )

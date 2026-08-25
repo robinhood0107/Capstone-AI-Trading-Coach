@@ -2,6 +2,9 @@ package com.capstone.decision.infrastructure.vertex
 
 import com.capstone.decision.application.rag.RagV2VertexEvidence
 import com.capstone.decision.application.rag.StrongLlmAnswerBasis
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.jdbc.core.JdbcTemplate
@@ -70,6 +73,7 @@ internal interface S49GoogleGroundingBudgetPort {
 internal class JdbcS49GoogleGroundingBudget(
     private val jdbcTemplate: JdbcTemplate,
     private val properties: S49GoogleGroundingProperties,
+    private val actorRlsScope: ActorRlsScope,
     private val clock: Clock = Clock.systemUTC(),
 ) : S49GoogleGroundingBudgetPort {
     init {
@@ -82,8 +86,8 @@ internal class JdbcS49GoogleGroundingBudget(
         requestId: String,
     ): S49GoogleBudgetPermit {
         if (!properties.enabled) return S49GoogleBudgetPermit(false, null)
-        setActor(ownerUserId)
         val reservationId = "s49_gbr_${UUID.randomUUID().toString().replace("-", "")}"
+        setActor(ownerUserId, "RESERVE_GROUNDING_BUDGET", requestId)
         val period = s49GoogleBillingPeriodStart(clock, properties.billingPeriodZone)
         val accepted =
             jdbcTemplate.queryForObject(
@@ -125,7 +129,7 @@ internal class JdbcS49GoogleGroundingBudget(
         outcome: String,
         actual: Int?,
     ) {
-        setActor(ownerUserId)
+        setActor(ownerUserId, "SETTLE_GROUNDING_BUDGET", reservationId)
         jdbcTemplate.queryForObject(
             "SELECT public.settle_s4_9_google_grounding_budget(?,?,?,?) IS NULL",
             Boolean::class.java,
@@ -136,8 +140,21 @@ internal class JdbcS49GoogleGroundingBudget(
         )
     }
 
-    private fun setActor(ownerUserId: String) {
-        jdbcTemplate.queryForObject("SELECT set_config('app.actor_user_id', ?, true)", String::class.java, ownerUserId)
+    private fun setActor(
+        ownerUserId: String,
+        operation: String,
+        targetId: String,
+    ) {
+        actorRlsScope.open(
+            jdbcTemplate,
+            ownerUserId,
+            ActorCapabilityBinding.target(
+                operation,
+                if (operation.startsWith("RESERVE")) "RAG_REQUEST" else "BUDGET_RESERVATION",
+                targetId,
+                ActorCapabilityRolePolicy.OWNER,
+            ),
+        )
     }
 }
 
@@ -219,6 +236,7 @@ internal class TransactionalS49StrongLlmCompletion(
 @ConditionalOnProperty(name = ["app.s4-9.strong-llm.enabled"], havingValue = "true")
 internal class JdbcS49StrongLlmUsageV2Ledger(
     private val jdbcTemplate: JdbcTemplate,
+    private val actorRlsScope: ActorRlsScope,
 ) : S49StrongLlmUsageV2Port {
     @Transactional
     override fun commit(
@@ -260,9 +278,25 @@ internal class JdbcS49StrongLlmUsageV2Ledger(
         usage: S49StrongLlmUsageV2,
         failureLeaf: String?,
     ) {
-        jdbcTemplate.queryForObject("SELECT set_config('app.actor_user_id', ?, true)", String::class.java, ownerUserId)
         val evidenceHash = sha256(evidence.joinToString("\n") { "${it.citationId}:${it.canonicalTextSha256}" })
         val eventId = "s49_llu_${sha256("$requestId:v2:$outcome:$evidenceHash").take(32)}"
+        actorRlsScope.open(
+            jdbcTemplate,
+            ownerUserId,
+            ActorCapabilityBinding.request(
+                "RECORD_STRONG_LLM_USAGE",
+                "RAG_REQUEST",
+                requestId,
+                ActorCapabilityRolePolicy.OWNER,
+                ownerUserId,
+                requestId,
+                modelId,
+                basis,
+                outcome,
+                evidenceHash,
+                failureLeaf,
+            ),
+        )
         jdbcTemplate.queryForObject(
             """
             SELECT public.record_s4_9_strong_llm_usage_v2(

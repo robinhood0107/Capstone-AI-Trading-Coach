@@ -6,6 +6,7 @@ import com.capstone.decision.application.rag.RagV2RetrievalScope
 import com.capstone.decision.application.rag.RagV2VertexEvidence
 import com.capstone.decision.application.rag.RagV2VertexGenerationCommand
 import com.capstone.decision.application.rag.RagV2VertexQuestionFingerprintPort
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -38,13 +39,6 @@ class JdbcPreS5VertexUsageLedgerTest {
         every { provider.getIfAvailable() } returns jdbc
         every { fingerprintPort.fingerprint(any(), any()) } returns fingerprint
         every {
-            jdbc.queryForObject(
-                match { it.contains("set_config") },
-                any<Map<String, *>>(),
-                String::class.java,
-            )
-        } returns "usr_demo_user"
-        every {
             jdbc.query(
                 match { it.contains("reserve_rag_v2_immutable_vertex_usage") },
                 capture(parameters),
@@ -52,8 +46,12 @@ class JdbcPreS5VertexUsageLedgerTest {
             )
         } returns listOf(expectedUsageEventId to expiresAt)
 
-        JdbcPreS5VertexUsageLedger(provider, TestTransactionManager(), fingerprintPort)
-            .reserve(command(), activation)
+        JdbcPreS5VertexUsageLedger(
+            provider,
+            TestTransactionManager(),
+            fingerprintPort,
+            mockk<ActorRlsScope>(relaxed = true),
+        ).reserve(command(), activation)
 
         assertThat(parameters.captured["expiresAt"])
             .isEqualTo(OffsetDateTime.ofInstant(expiresAt, ZoneOffset.UTC))

@@ -4,6 +4,9 @@ import com.capstone.decision.application.rag.RagCitation
 import com.capstone.decision.application.rag.RagGuardHistoryUnavailableException
 import com.capstone.decision.application.rag.RagRetrievalScope
 import com.capstone.decision.application.rag.RagRetrievalScopePort
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -16,6 +19,7 @@ import tools.jackson.databind.ObjectMapper
 class JdbcRagRetrievalScopeRepository(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val objectMapper: ObjectMapper,
+    private val actorRlsScope: ActorRlsScope,
 ) : RagRetrievalScopePort {
     /**
      * SECURITY DEFINER projection이 owner/session/topic을 재검증하고 table SELECT 권한 없이 opaque claim만 반환한다.
@@ -28,10 +32,19 @@ class JdbcRagRetrievalScopeRepository(
     ): RagRetrievalScope =
         guarded {
             val jdbc = jdbcProvider.getIfAvailable() ?: throw RagGuardHistoryUnavailableException()
-            jdbc.queryForObject(
-                "SELECT set_config('app.actor_user_id', :ownerUserId, true)",
-                mapOf("ownerUserId" to ownerUserId),
-                String::class.java,
+            val topicsJson = objectMapper.writeValueAsString(topics)
+            actorRlsScope.open(
+                jdbc,
+                ownerUserId,
+                ActorCapabilityBinding.request(
+                    "ISSUE_RAG_RPC_SCOPE",
+                    "RAG_SESSION",
+                    sessionId,
+                    ActorCapabilityRolePolicy.OWNER,
+                    ownerUserId,
+                    sessionId,
+                    topicsJson,
+                ),
             )
             jdbc
                 .query(
@@ -46,7 +59,7 @@ class JdbcRagRetrievalScopeRepository(
                     mapOf(
                         "ownerUserId" to ownerUserId,
                         "sessionId" to sessionId,
-                        "topics" to objectMapper.writeValueAsString(topics),
+                        "topics" to topicsJson,
                     ),
                 ) { result, _ ->
                     RagRetrievalScope(
@@ -68,10 +81,35 @@ class JdbcRagRetrievalScopeRepository(
     ) {
         guarded {
             val jdbc = jdbcProvider.getIfAvailable() ?: throw RagGuardHistoryUnavailableException()
-            jdbc.queryForObject(
-                "SELECT set_config('app.actor_user_id', :ownerUserId, true)",
-                mapOf("ownerUserId" to ownerUserId),
-                String::class.java,
+            val citationsJson =
+                objectMapper.writeValueAsString(
+                    citations.mapIndexed { index, citation ->
+                        mapOf(
+                            "ordinal" to index + 1,
+                            "citationId" to citation.citationId,
+                            "sourceId" to citation.sourceId,
+                            "sourceRevisionId" to citation.sourceRevisionId,
+                            "chunkRevisionId" to citation.chunkRevisionId,
+                            "generationId" to citation.generationId,
+                            "title" to citation.title,
+                            "sectionTitle" to citation.sectionTitle,
+                            "canonicalUrl" to citation.canonicalUrl,
+                        )
+                    },
+                )
+            actorRlsScope.open(
+                jdbc,
+                ownerUserId,
+                ActorCapabilityBinding.request(
+                    "RECHECK_RAG_RPC_CITATIONS",
+                    "RAG_SCOPE",
+                    scope.scopeClaimId,
+                    ActorCapabilityRolePolicy.OWNER,
+                    ownerUserId,
+                    sessionId,
+                    scope.scopeClaimId,
+                    citationsJson,
+                ),
             )
             jdbc.queryForObject(
                 """
@@ -94,22 +132,7 @@ class JdbcRagRetrievalScopeRepository(
                     "policyVersion" to scope.policyVersion,
                     "activeGenerationId" to scope.activeGenerationId,
                     "embeddingProfileId" to scope.embeddingProfileId,
-                    "citations" to
-                        objectMapper.writeValueAsString(
-                            citations.mapIndexed { index, citation ->
-                                mapOf(
-                                    "ordinal" to index + 1,
-                                    "citationId" to citation.citationId,
-                                    "sourceId" to citation.sourceId,
-                                    "sourceRevisionId" to citation.sourceRevisionId,
-                                    "chunkRevisionId" to citation.chunkRevisionId,
-                                    "generationId" to citation.generationId,
-                                    "title" to citation.title,
-                                    "sectionTitle" to citation.sectionTitle,
-                                    "canonicalUrl" to citation.canonicalUrl,
-                                )
-                            },
-                        ),
+                    "citations" to citationsJson,
                 ),
                 Any::class.java,
             )

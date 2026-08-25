@@ -1,5 +1,8 @@
 package com.capstone.decision.application.rag
 
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Service
@@ -53,15 +56,16 @@ class RagV2RuntimeService(
     private val vertexQuestionFingerprintPort: RagV2VertexQuestionFingerprintPort,
     private val objectMapper: ObjectMapper,
     private val transactionManagerProvider: ObjectProvider<PlatformTransactionManager>,
+    private val actorRlsScope: ActorRlsScope,
 ) {
     /**
      * owner-private overlay 상태는 DB actor setting과 definer function으로만 읽는다.
      * 원본 파일명, 경로, hash receipt는 status API에 절대 노출하지 않는다.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     fun corpusStatus(ownerUserId: String): RagV2CorpusStatus {
         val jdbc = jdbc()
-        setActor(ownerUserId)
+        setActor(ownerUserId, "READ_RAG_V2_CORPUS", "OWNER", ownerUserId)
         return jdbc
             .query(
                 """
@@ -90,7 +94,7 @@ class RagV2RuntimeService(
         command: RagV2ExternalConsentCommand,
     ) {
         val jdbc = jdbc()
-        setActor(ownerUserId)
+        setActor(ownerUserId, "RECORD_RAG_V2_CONSENT", "OWNER", ownerUserId)
         jdbc.queryForObject(
             """
             SELECT record_rag_v2_immutable_consent_v2(
@@ -119,10 +123,10 @@ class RagV2RuntimeService(
     /**
      * consent가 없으면 fabricated digest 없이 conflict로 fail-closed하며, 다른 owner event는 DB function이 읽지 못하게 한다.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     fun effectiveConsent(ownerUserId: String): RagV2EffectiveConsent {
         val jdbc = jdbc()
-        setActor(ownerUserId)
+        setActor(ownerUserId, "READ_RAG_V2_CONSENT", "OWNER", ownerUserId)
         val stored =
             jdbc
                 .query(
@@ -163,7 +167,7 @@ class RagV2RuntimeService(
     ): RagV2ImportTicket {
         val jdbc = jdbc()
         val ticketId = id("rti")
-        setActor(ownerUserId)
+        setActor(ownerUserId, "ISSUE_RAG_V2_IMPORT", "RAG_TICKET", ticketId)
         val expiresAt =
             jdbc
                 .queryForObject(
@@ -202,7 +206,7 @@ class RagV2RuntimeService(
     ): RagV2DeleteTicket {
         val jdbc = jdbc()
         val ticketId = id("rtd")
-        setActor(ownerUserId)
+        setActor(ownerUserId, "ISSUE_RAG_V2_DELETE", "RAG_DOCUMENT", documentId)
         val expiresAt =
             jdbc
                 .queryForObject(
@@ -431,7 +435,7 @@ class RagV2RuntimeService(
         evaluation: RagV2EvaluationResult,
     ): RagV2Answer =
         inDatabaseTransaction {
-            setActor(ownerUserId)
+            setActor(ownerUserId, "PERSIST_RAG_V2_RETRIEVAL", "RAG_REQUEST", requestId)
             // transaction_timestamp를 AAD와 DB row에 같은 값으로 사용해 ciphertext row transplant를 막는다.
             val createdAt = databaseNow()
             val identity = RagHistoryIdentity(id("rag"), ownerUserId, createdAt)
@@ -528,7 +532,7 @@ class RagV2RuntimeService(
                 basis,
             )
         return inDatabaseTransaction {
-            setActor(ownerUserId)
+            setActor(ownerUserId, "PERSIST_STRONG_LLM_HISTORY", "RAG_REQUEST", requestId)
             val createdAt = databaseNow()
             val identity = RagHistoryIdentity(id("rag"), ownerUserId, createdAt)
             val encrypted =
@@ -568,7 +572,7 @@ class RagV2RuntimeService(
         }
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     fun listHistory(
         ownerUserId: String,
         cursor: String?,
@@ -576,7 +580,7 @@ class RagV2RuntimeService(
     ): RagV2HistoryPage {
         val point = cursor?.let { cursorPort.decode(ownerUserId, it) }
         val jdbc = jdbc()
-        setActor(ownerUserId)
+        setActor(ownerUserId, "LIST_RAG_V2_HISTORY", "OWNER", ownerUserId)
         val rows =
             jdbc.query(
                 """
@@ -614,13 +618,13 @@ class RagV2RuntimeService(
         return RagV2HistoryPage(items = items, nextCursor = nextCursor)
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     fun getHistory(
         ownerUserId: String,
         answerId: String,
     ): RagV2HistoryDetail {
         val jdbc = jdbc()
-        setActor(ownerUserId)
+        setActor(ownerUserId, "READ_RAG_V2_HISTORY", "RAG_ANSWER", answerId)
         return jdbc
             .query(
                 """
@@ -640,7 +644,7 @@ class RagV2RuntimeService(
         answerId: String,
     ) {
         val jdbc = jdbc()
-        setActor(ownerUserId)
+        setActor(ownerUserId, "DELETE_RAG_V2_HISTORY", "RAG_ANSWER", answerId)
         jdbc.queryForObject(
             "SELECT delete_owned_rag_v2_history(:ownerUserId, :answerId)",
             mapOf("ownerUserId" to ownerUserId, "answerId" to answerId),
@@ -698,7 +702,7 @@ class RagV2RuntimeService(
         providerPreparation: Boolean = false,
     ): RagV2RetrievalScope {
         val jdbc = jdbc()
-        setActor(ownerUserId)
+        setActor(ownerUserId, "ISSUE_RAG_V2_SCOPE", "RAG_REQUEST", requestId)
         val topicsJson = objectMapper.writeValueAsString(topics)
         val issuerSql =
             if (providerPreparation) {
@@ -750,7 +754,7 @@ class RagV2RuntimeService(
         includeOwner: Boolean,
     ): RagV2RetrievalScope {
         val jdbc = jdbc()
-        setActor(ownerUserId)
+        setActor(ownerUserId, "ISSUE_MCP_RAG_SCOPE", "RAG_REQUEST", requestId)
         val topicsJson = objectMapper.writeValueAsString(topics)
         return jdbc
             .query(
@@ -793,7 +797,7 @@ class RagV2RuntimeService(
         question: String,
     ) {
         val jdbc = jdbc()
-        setActor(ownerUserId)
+        setActor(ownerUserId, "AUTHORIZE_VOYAGE_QUERY", "RAG_SCOPE", scopeClaimId)
         val authorizationId =
             jdbc.queryForObject(
                 """
@@ -826,7 +830,7 @@ class RagV2RuntimeService(
         topics: List<String>,
     ): RagV2PreparedScope {
         val jdbc = jdbc()
-        setActor(ownerUserId)
+        setActor(ownerUserId, "READ_VERTEX_PREPARED_SCOPE", "RAG_SCOPE", scopeClaimId)
         val topicsJson = objectMapper.writeValueAsString(topics)
         return jdbc
             .query(
@@ -1224,11 +1228,21 @@ class RagV2RuntimeService(
             .asSequence()
             .toList()
 
-    private fun setActor(ownerUserId: String) {
-        jdbc().queryForObject(
-            "SELECT set_config('app.actor_user_id', :ownerUserId, true)",
-            mapOf("ownerUserId" to ownerUserId),
-            String::class.java,
+    private fun setActor(
+        ownerUserId: String,
+        operation: String,
+        targetKind: String,
+        targetId: String,
+    ) {
+        actorRlsScope.open(
+            jdbc(),
+            ownerUserId,
+            ActorCapabilityBinding.target(
+                operation,
+                targetKind,
+                targetId,
+                ActorCapabilityRolePolicy.OWNER,
+            ),
         )
     }
 

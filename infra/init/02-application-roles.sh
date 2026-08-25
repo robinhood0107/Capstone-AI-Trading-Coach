@@ -2140,6 +2140,8 @@ BEGIN
             register_actor_identity_handle_v1(text,text,text,text,text,text,integer)
         TO decision_auth;
         GRANT EXECUTE ON FUNCTION
+            open_actor_rls_scope_v1(text,text,text,text,text,text),
+            actor_rls_scope_is_open_v1(),
             create_async_request_authorized(text,text,text,text,text,text,text,text),
             insert_principle_version_authorized_v2(text,text,text,text,integer,text,text,text,text,text,text,timestamptz),
             insert_principle_audit_authorized_v2(text,text,text,text,text,integer,text,timestamptz),

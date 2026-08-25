@@ -1,8 +1,11 @@
 package com.capstone.decision
 
 import com.capstone.decision.infrastructure.risk.ActorScopedReadQuery
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import io.mockk.every
+import io.mockk.mockk
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -942,6 +945,16 @@ class InfrastructureSecurityIntegrationTest {
             val reader =
                 ActorScopedReadQuery(
                     beanFactory.getBeanProvider(DataSource::class.java),
+                    mockk<ActorRlsScope>().also { scope ->
+                        every { scope.open(any<Connection>(), any(), any()) } answers {
+                            firstArg<Connection>()
+                                .prepareStatement("SELECT set_config('app.actor_user_id', ?, true)")
+                                .use { statement ->
+                                    statement.setString(1, secondArg<String>())
+                                    statement.executeQuery().use { result -> check(result.next()) }
+                                }
+                        }
+                    },
                 )
             val scopedValues =
                 reader.query(

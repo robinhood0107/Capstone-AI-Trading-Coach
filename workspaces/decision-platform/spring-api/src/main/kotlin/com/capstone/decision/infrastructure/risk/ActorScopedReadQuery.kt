@@ -1,6 +1,9 @@
 package com.capstone.decision.infrastructure.risk
 
 import com.capstone.decision.domain.risk.EvaluationBounds
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Component
 import org.springframework.transaction.support.TransactionSynchronizationManager
@@ -15,6 +18,7 @@ import javax.sql.DataSource
 @Component
 class ActorScopedReadQuery(
     private val dataSourceProvider: ObjectProvider<DataSource>,
+    private val actorRlsScope: ActorRlsScope,
 ) {
     fun <T> query(
         actorUserId: String,
@@ -50,14 +54,29 @@ class ActorScopedReadQuery(
                 "Actor-scoped source connection must begin outside an existing transaction."
             }
             try {
-                connection.isReadOnly = true
+                // Capability consumption is an authorization-ledger write; business SQL below remains SELECT-only.
+                connection.isReadOnly = false
                 connection.autoCommit = false
-                connection
-                    .prepareStatement("SELECT set_config('app.actor_user_id', ?, true)")
-                    .use { statement ->
-                        statement.setString(1, actorUserId)
-                        statement.executeQuery().use { result -> check(result.next()) }
+                val targetKind =
+                    when {
+                        requestedDecisionId != null -> "DECISION"
+                        requestedOrderId != null -> "ORDER"
+                        else -> "OWNER"
                     }
+                val targetId = requestedDecisionId ?: requestedOrderId ?: actorUserId
+                actorRlsScope.open(
+                    connection,
+                    actorUserId,
+                    ActorCapabilityBinding.request(
+                        "READ_STORED_SOURCE",
+                        targetKind,
+                        targetId,
+                        ActorCapabilityRolePolicy.OWNER,
+                        actorUserId,
+                        requestedDecisionId,
+                        requestedOrderId,
+                    ),
+                )
                 connection
                     .prepareStatement("SELECT set_config('statement_timeout', '500ms', true)")
                     .use { statement ->

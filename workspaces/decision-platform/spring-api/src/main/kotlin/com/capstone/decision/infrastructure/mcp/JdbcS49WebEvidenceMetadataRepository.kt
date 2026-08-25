@@ -1,5 +1,8 @@
 package com.capstone.decision.infrastructure.mcp
 
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Component
@@ -28,6 +31,7 @@ fun interface S49WebEvidenceMetadataPort {
 class JdbcS49WebEvidenceMetadataRepository(
     private val jdbc: NamedParameterJdbcTemplate,
     private val transactionManager: PlatformTransactionManager,
+    private val actorRlsScope: ActorRlsScope,
     private val clock: Clock = Clock.systemUTC(),
 ) : S49WebEvidenceMetadataPort {
     override fun record(
@@ -41,10 +45,21 @@ class JdbcS49WebEvidenceMetadataRepository(
         val now = clock.instant()
         val id = "s49_web_${sha256("$researchContextId|$canonicalUrl|$contentSha256").take(32)}"
         TransactionTemplate(transactionManager).executeWithoutResult {
-            jdbc.queryForObject(
-                "SELECT set_config('app.actor_user_id', :ownerUserId, true)",
-                mapOf("ownerUserId" to ownerUserId),
-                String::class.java,
+            actorRlsScope.open(
+                jdbc,
+                ownerUserId,
+                ActorCapabilityBinding.request(
+                    "RECORD_WEB_EVIDENCE",
+                    "RESEARCH_CONTEXT",
+                    researchContextId,
+                    ActorCapabilityRolePolicy.OWNER,
+                    ownerUserId,
+                    oauthClientId,
+                    researchContextId,
+                    canonicalUrl,
+                    title,
+                    contentSha256,
+                ),
             )
             require(
                 jdbc.queryForObject(

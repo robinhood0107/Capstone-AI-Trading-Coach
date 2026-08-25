@@ -3,6 +3,9 @@ package com.capstone.decision.infrastructure.grpc
 import com.capstone.decision.contract.internal.s49.GroundingRoot
 import com.capstone.decision.contract.internal.s49.GroundingSupport
 import com.capstone.decision.infrastructure.mcp.RegisteredResearchSource
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
@@ -43,6 +46,7 @@ internal interface S49GroundingProvenancePort {
 internal class JdbcS49GroundingProvenanceRepository(
     private val jdbcTemplate: JdbcTemplate,
     private val objectMapper: ObjectMapper,
+    private val actorRlsScope: ActorRlsScope,
 ) : S49GroundingProvenancePort {
     @Transactional
     override fun record(
@@ -52,7 +56,6 @@ internal class JdbcS49GroundingProvenanceRepository(
         supports: List<GroundingSupport>,
     ) {
         require(roots.isNotEmpty() && supports.isNotEmpty())
-        jdbcTemplate.queryForObject("SELECT set_config('app.actor_user_id', ?, true)", String::class.java, ownerUserId)
         val sources =
             roots.map { root ->
                 linkedMapOf(
@@ -76,13 +79,29 @@ internal class JdbcS49GroundingProvenanceRepository(
                     "chunkIndices" to support.chunkIndicesList,
                 )
             }
+        val sourcesJson = objectMapper.writeValueAsString(sources)
+        val supportsJson = objectMapper.writeValueAsString(supportReceipts)
+        actorRlsScope.open(
+            jdbcTemplate,
+            ownerUserId,
+            ActorCapabilityBinding.request(
+                "RECORD_GROUNDING_PROVENANCE",
+                "RAG_REQUEST",
+                requestId,
+                ActorCapabilityRolePolicy.OWNER,
+                ownerUserId,
+                requestId,
+                sourcesJson,
+                supportsJson,
+            ),
+        )
         jdbcTemplate.queryForObject(
             "SELECT public.record_s4_9_grounding_provenance(?,?,CAST(? AS jsonb),CAST(? AS jsonb)) IS NULL",
             Boolean::class.java,
             ownerUserId,
             requestId,
-            objectMapper.writeValueAsString(sources),
-            objectMapper.writeValueAsString(supportReceipts),
+            sourcesJson,
+            supportsJson,
         )
     }
 
@@ -94,8 +113,23 @@ internal class JdbcS49GroundingProvenanceRepository(
         citationId: String,
         contentSha256: String,
     ) {
-        jdbcTemplate.queryForObject("SELECT set_config('app.actor_user_id', ?, true)", String::class.java, ownerUserId)
         val sourceNodeId = "s49_src_${sha256("$requestId:${source.resultId}").take(32)}"
+        actorRlsScope.open(
+            jdbcTemplate,
+            ownerUserId,
+            ActorCapabilityBinding.request(
+                "RECORD_READ_PROVENANCE",
+                "RAG_REQUEST",
+                requestId,
+                ActorCapabilityRolePolicy.OWNER,
+                ownerUserId,
+                requestId,
+                sourceNodeId,
+                source.resultId,
+                citationId,
+                contentSha256,
+            ),
+        )
         jdbcTemplate.queryForObject(
             """
             SELECT public.record_s4_9_read_provenance(
@@ -133,7 +167,22 @@ internal class JdbcS49GroundingProvenanceRepository(
                 resultCount in 0..128 &&
                 outcome in setOf("COMMITTED", "NO_RESULTS", "SEARCH_UNAVAILABLE", "UNKNOWN_BILLING"),
         )
-        jdbcTemplate.queryForObject("SELECT set_config('app.actor_user_id', ?, true)", String::class.java, ownerUserId)
+        actorRlsScope.open(
+            jdbcTemplate,
+            ownerUserId,
+            ActorCapabilityBinding.request(
+                "RECORD_SEARCH_ATTEMPT",
+                "RAG_REQUEST",
+                requestId,
+                ActorCapabilityRolePolicy.OWNER,
+                ownerUserId,
+                requestId,
+                ordinal.toString(),
+                backend,
+                resultCount.toString(),
+                outcome,
+            ),
+        )
         jdbcTemplate.queryForObject(
             "SELECT public.record_s4_9_search_attempt(?,?,?,?,?,?) IS NULL",
             Boolean::class.java,

@@ -8,6 +8,8 @@ import com.capstone.decision.infrastructure.security.P1DatabaseRoleBootstrap
 import com.capstone.decision.infrastructure.security.P1FlywayMigrate
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -92,6 +94,42 @@ class P1BaselineIntegrationTest {
                 "87",
                 scalar(database, "select version from flyway_schema_history where success order by installed_rank desc limit 1"),
             )
+        }
+    }
+
+    @Test
+    fun `caller selected actor GUC cannot authorize a legacy owner function`() {
+        listOf(HISTORICAL_DB, BASELINE_DB).forEach { database ->
+            connection(database, "decision_app", "app-test").use { connection ->
+                connection.autoCommit = false
+                connection
+                    .prepareStatement("select pg_catalog.set_config('app.actor_user_id',?,true)")
+                    .use { statement ->
+                        statement.setString(1, "usr_forged_owner")
+                        statement.executeQuery().use { rows -> assertTrue(rows.next()) }
+                    }
+                connection
+                    .createStatement()
+                    .executeQuery(
+                        "select public.current_setting('app.actor_user_id',true)," +
+                            "public.actor_rls_scope_is_open_v1()",
+                    ).use { rows ->
+                        assertTrue(rows.next())
+                        assertNull(rows.getString(1))
+                        assertFalse(rows.getBoolean(2))
+                    }
+                val denied =
+                    org.junit.jupiter.api.assertThrows<java.sql.SQLException> {
+                        connection
+                            .prepareStatement("select * from read_effective_rag_consent(?)")
+                            .use { statement ->
+                                statement.setString(1, "usr_forged_owner")
+                                statement.executeQuery()
+                            }
+                    }
+                assertEquals("42501", denied.sqlState)
+                connection.rollback()
+            }
         }
     }
 

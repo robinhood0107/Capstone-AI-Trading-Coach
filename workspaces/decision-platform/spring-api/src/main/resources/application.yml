@@ -202,8 +202,6 @@ app:
   brokerage:
     idempotency-scope-hmac-key: ${BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY}
     # DB에는 digest만 migration으로 저장하고 raw capability는 prepared bind로만 전달한다.
-    database-capability-token: ${BROKERAGE_DB_CAPABILITY_TOKEN}
-    database-capability-token-sha256: ${BROKERAGE_DB_CAPABILITY_TOKEN_SHA256}
     idempotency-ttl-hours: 24
     paper:
       slippage-bps: 5

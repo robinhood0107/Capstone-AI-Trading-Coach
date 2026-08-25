@@ -795,13 +795,15 @@ BEGIN
             FROM decision_app;
             REVOKE ALL ON FUNCTION assert_brokerage_database_capability(text)
             FROM decision_app;
-            GRANT EXECUTE ON FUNCTION
-                read_mock_order_decision(text, text, text),
-                find_mock_order_idempotency_result(text, text, timestamptz, text),
-                read_mock_order_owner_projection(text, text, text),
-                create_mock_order(jsonb, text),
-                request_mock_order_cancel(jsonb, text)
-            TO decision_app;
+            IF to_regprocedure('public.read_mock_order_decision_authorized_v2(text,text,text)') IS NULL THEN
+                GRANT EXECUTE ON FUNCTION
+                    read_mock_order_decision(text, text, text),
+                    find_mock_order_idempotency_result(text, text, timestamptz, text),
+                    read_mock_order_owner_projection(text, text, text),
+                    create_mock_order(jsonb, text),
+                    request_mock_order_cancel(jsonb, text)
+                TO decision_app;
+            END IF;
         ELSE
             GRANT INSERT, SELECT ON TABLE orders TO decision_app;
             GRANT INSERT, SELECT ON TABLE order_events TO decision_app;
@@ -1063,7 +1065,8 @@ BEGIN
             invalidate_unused_decisions_for_kill_switch(bigint, timestamptz, text)
         TO decision_app;
     END IF;
-    IF to_regprocedure('public.read_mock_order_decision(text,text,text)') IS NOT NULL THEN
+    IF to_regprocedure('public.read_mock_order_decision(text,text,text)') IS NOT NULL
+       AND to_regprocedure('public.read_mock_order_decision_authorized_v2(text,text,text)') IS NULL THEN
         GRANT EXECUTE ON FUNCTION
             read_mock_order_decision(text, text, text),
             find_mock_order_idempotency_result(text, text, timestamptz, text),
@@ -1072,7 +1075,8 @@ BEGIN
             request_mock_order_cancel(jsonb, text)
         TO decision_app;
     END IF;
-    IF to_regprocedure('public.read_paper_order_context(text,text,text)') IS NOT NULL THEN
+    IF to_regprocedure('public.read_paper_order_context(text,text,text)') IS NOT NULL
+       AND to_regprocedure('public.read_paper_order_context_authorized_v2(text,text,text)') IS NULL THEN
         GRANT EXECUTE ON FUNCTION
             read_paper_order_context(text, text, text),
             find_paper_order_idempotency_result(text, text, timestamptz, text),
@@ -1080,7 +1084,8 @@ BEGIN
             create_paper_order(jsonb, text)
         TO decision_app;
     END IF;
-    IF to_regprocedure('public.read_order_reconciliation_state(jsonb,text)') IS NOT NULL THEN
+    IF to_regprocedure('public.read_order_reconciliation_state(jsonb,text)') IS NOT NULL
+       AND to_regprocedure('public.read_order_reconciliation_state_authorized_v2(text,text)') IS NULL THEN
         GRANT EXECUTE ON FUNCTION
             read_order_reconciliation_state(jsonb, text),
             acquire_order_fill_reconciliation_lock(jsonb, text),
@@ -2110,7 +2115,22 @@ BEGIN
             insert_principle_version_authorized(text,text,text,text,integer,text,text,text,text,jsonb,text[],timestamptz),
             insert_principle_audit_authorized(text,text,text,text,text,integer,text[],timestamptz),
             lock_active_owned_principle_authorized(text,text,text,integer,text,text),
-            persist_decision_bundle_authorized(text,jsonb)
+            persist_decision_bundle_authorized(text,jsonb),
+            read_mock_order_decision(text,text,text),
+            find_mock_order_idempotency_result(text,text,timestamptz,text),
+            read_mock_order_owner_projection(text,text,text),
+            create_mock_order(jsonb,text),
+            request_mock_order_cancel(jsonb,text),
+            record_mock_order_provider_outcome(jsonb,text),
+            read_paper_order_context(text,text,text),
+            find_paper_order_idempotency_result(text,text,timestamptz,text),
+            read_paper_balance_projection(text,text,text),
+            create_paper_order(jsonb,text),
+            rebuild_paper_state(text,text),
+            acquire_order_fill_reconciliation_lock(jsonb,text),
+            read_order_reconciliation_state(jsonb,text),
+            apply_stored_order_fills(jsonb,text),
+            read_owned_order_fills(jsonb,text)
         FROM decision_app;
         GRANT EXECUTE ON FUNCTION
             register_actor_request_capability_v2(text,text,text,bigint,text,text,text,text,text,text,text,timestamptz,timestamptz,text),
@@ -2124,6 +2144,22 @@ BEGIN
             insert_principle_version_authorized_v2(text,text,text,text,integer,text,text,text,text,text,text,timestamptz),
             insert_principle_audit_authorized_v2(text,text,text,text,text,integer,text,timestamptz),
             persist_decision_bundle_authorized_v2(text,text),
+            read_mock_order_decision_authorized_v2(text,text,text),
+            find_mock_order_idempotency_result_authorized_v2(text,text,text,text,text),
+            read_mock_order_owner_projection_authorized_v2(text,text,text),
+            read_mock_balance_projection_authorized_v2(text,text,text,text),
+            create_mock_order_authorized_v2(text,text),
+            request_mock_order_cancel_authorized_v2(text,text),
+            record_mock_order_provider_outcome_authorized_v2(text,text),
+            read_paper_order_context_authorized_v2(text,text,text),
+            find_paper_order_idempotency_result_authorized_v2(text,text,text,text,text),
+            read_paper_balance_projection_authorized_v2(text,text,text),
+            create_paper_order_authorized_v2(text,text),
+            rebuild_paper_state_authorized_v2(text,text,text),
+            acquire_order_fill_reconciliation_lock_authorized_v2(text,text),
+            read_order_reconciliation_state_authorized_v2(text,text),
+            apply_stored_order_fills_authorized_v2(text,text),
+            read_owned_order_fills_authorized_v2(text,text),
             consume_s4_9_mcp_refresh_token(text)
         TO decision_app;
         GRANT EXECUTE ON FUNCTION

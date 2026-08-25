@@ -61,34 +61,27 @@ class P1BaselineIntegrationTest {
     }
 
     @Test
-    fun `fresh baseline installs the exact brokerage capability without rotating historical state`() {
-        assertEquals(
-            SpringApiIntegrationTestBase.TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
-            scalar(BASELINE_DB, "select token_sha256 from brokerage_db_capability_keys where capability_id='S3_1_RUNTIME'"),
-        )
+    fun `fresh baseline retires the historical brokerage bearer without restoring it`() {
+        assertEquals(0L, count(BASELINE_DB, "brokerage_db_capability_keys"))
         connection(BASELINE_DB, "decision_app", "app-test").use { connection ->
-            connection
-                .prepareStatement(
-                    "select count(*) from read_mock_order_decision(?,?,?)",
-                ).use { statement ->
-                    statement.setString(1, "usr_missing_actor")
-                    statement.setString(2, "dec_missing_decision")
-                    statement.setString(3, SpringApiIntegrationTestBase.TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
-                    statement.executeQuery().use { rows ->
-                        assertTrue(rows.next())
-                        assertEquals(0L, rows.getLong(1))
-                    }
+            val denied =
+                org.junit.jupiter.api.assertThrows<java.sql.SQLException> {
+                    connection
+                        .prepareStatement(
+                            "select count(*) from read_mock_order_decision(?,?,?)",
+                        ).use { statement ->
+                            statement.setString(1, "usr_missing_actor")
+                            statement.setString(2, "dec_missing_decision")
+                            statement.setString(3, SpringApiIntegrationTestBase.TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
+                            statement.executeQuery()
+                        }
                 }
+            assertEquals("42501", denied.sqlState)
         }
         val conflicting = p1MigrationEnvironment(BASELINE_DB).toMutableMap()
         conflicting["BROKERAGE_DB_CAPABILITY_TOKEN_SHA256"] = "0".repeat(64)
-        org.junit.jupiter.api.assertThrows<IllegalStateException> {
-            P1FlywayMigrate.migrate(conflicting)
-        }
-        assertEquals(
-            SpringApiIntegrationTestBase.TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
-            scalar(BASELINE_DB, "select token_sha256 from brokerage_db_capability_keys where capability_id='S3_1_RUNTIME'"),
-        )
+        P1FlywayMigrate.migrate(conflicting)
+        assertEquals(0L, count(BASELINE_DB, "brokerage_db_capability_keys"))
     }
 
     @Test

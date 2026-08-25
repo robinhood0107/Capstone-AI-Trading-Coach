@@ -1,0 +1,38 @@
+name: capstone-p1-full-app
+
+services:
+  seed-import:
+    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "seed-import"]
+    command:
+      - python
+      - -m
+      - app.release.public_rag_seed_cli
+      - import
+      - --manifest
+      - /opt/capstone/public-rag-seed/public-rag-seed.v1.manifest.json
+    user: "65532:65532"
+    group_add: ["${P1_SECRET_GID}"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 1g
+    cpus: 1.0
+    restart: "no"
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    secrets: [seed_import_env]
+    volumes:
+      - ./seed/public-rag:/opt/capstone/public-rag-seed:ro
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    networks: [p1-internal]
+
+  identity-bootstrap:
+    depends_on:
+      seed-import: {condition: service_completed_successfully}
+
+secrets:
+  seed_import_env: {file: "${P1_SECRETS_DIR}/seed-import.env"}

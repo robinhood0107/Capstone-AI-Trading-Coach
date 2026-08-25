@@ -5,6 +5,7 @@
 ```text
 P1_CORE=MERGED_REVALIDATION_REQUIRED
 PUBLIC_RAG_SEED=IMPLEMENTED_MERGE_CANDIDATE
+FULL_APP_INSTALLER=IMPLEMENTED_FAIL_CLOSED_MERGE_CANDIDATE
 OWNER_RAG_BACKEND=IMPLEMENTATION_REQUIRED
 BGE_OCR_CPU_INTEL=IMPLEMENTATION_REQUIRED
 PROVIDER_LIVE_READ=HISTORICAL_PARTIAL_REVALIDATION_REQUIRED
@@ -37,6 +38,20 @@ fresh V87 PostgreSQL 통합 검증에서 migration → hash 검증 → transacti
 activation이 `IMPORTED_FULL_READY`로 통과했고, 같은 Seed 재실행은
 `NOOP_MATCHING_ACTIVE_SEED`였다. 이 증거는 Seed 구현의 merge-candidate 판정이며 아직 Compose E2E,
 owner RAG, 모델 설치, provider live gate 또는 전체 `PUBLIC_RAG_SEED=PASS`를 뜻하지 않는다.
+
+## G2 installer와 Compose Seed dependency
+
+repository root의 `./capstone`과 `capstone.ps1`은 동일한 여덟 운영 명령을 제공한다. full 기본 lane은
+공개 Seed 조각을 host에서 다시 hash 검증하고 BGE-M3, PaddleOCR-VL, Team B real artifact가 없으면
+0600 local stage marker를 남긴 뒤 종료한다. 현재 상태에서 이 종료는 의도된
+`BLOCKED_REQUIRED_ARTIFACTS`이며 full-app 실행 성공이 아니다.
+
+기존 provider-free Core는 명시적 `--degraded`에서만 실행하며 매 실행이
+`CAPSTONE_RELEASE_AUTHORITY=NONE`을 출력한다. 새 Compose overlay의 실제 의존성은
+`migrate -> seed-import -> identity-bootstrap`이고 Seed importer는 전용 Docker secret의 migration
+DSN과 read-only Seed mount만 받는다. G7 atomic restore가 없으므로 공개 `restore` 명령은
+`BLOCKED_G7_ATOMIC_RESTORE_NOT_IMPLEMENTED`로 닫혀 있다. 따라서 이 단위는 설치기/Seed wiring의
+merge candidate일 뿐 `COMPOSE_E2E=PASS`가 아니다.
 
 세부 실행 입력은 [Team A Dashboard 요청서](P1_TEAM_A_DASHBOARD_완료_요청서.md),
 [Team B Return Engine 요청서](P1_TEAM_B_RETURN_ENGINE_완료_요청서.md),

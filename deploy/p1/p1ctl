@@ -170,12 +170,29 @@ accept_release() {
   python3 "$RELEASE_GUARD" release-accept "$STATE_DIR" "$RELEASE_MANIFEST" || die release_rollback_or_collision
 }
 
+prepare_initial_state() {
+  if [[ ! -e $STATE_DIR ]]; then
+    python3 "$RELEASE_GUARD" state-init "$STATE_DIR" || die state_init
+    return
+  fi
+  python3 "$RELEASE_GUARD" state-check "$STATE_DIR" || die state_init_resume_boundary
+  [[ ! -e $RUNTIME_ENV ]] || die already_initialized
+  local inventory
+  inventory=$(find "$STATE_DIR" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
+  [[ $inventory == secrets || $inventory == $'full-app-stage\nsecrets' ]] || die state_init_resume_inventory
+  [[ -z $(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -print -quit) ]] || die state_init_resume_secrets
+  if [[ -e $STATE_DIR/full-app-stage ]]; then
+    [[ -f $STATE_DIR/full-app-stage && ! -L $STATE_DIR/full-app-stage && $(stat -c '%a' "$STATE_DIR/full-app-stage") == 600 ]] \
+      || die state_init_resume_marker
+  fi
+}
+
 init_state() {
   require_command docker
   require_command openssl
   require_command python3
   verify_release_boundary
-  python3 "$RELEASE_GUARD" state-init "$STATE_DIR" || die state_init
+  prepare_initial_state
   local spring_image=${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
   docker image inspect "$spring_image" >/dev/null 2>&1 || die spring_image_missing
 
@@ -247,6 +264,8 @@ init_state() {
   write_line DEMO_ADMIN_CREDENTIAL_BUNDLE "$admin_bundle" "$SECRETS_DIR/migration.env"
   write_line POSTGRES_MIGRATION_PASSWORD "${db[MIGRATION]}" "$SECRETS_DIR/migration.env"
   write_line BROKERAGE_DB_CAPABILITY_TOKEN_SHA256 "$broker_digest" "$SECRETS_DIR/migration.env"
+  printf '' | state_write_file "$SECRETS_DIR/seed-import.env" 0640
+  write_line P1_SEED_DATABASE_DSN "postgresql://flyway:${db[MIGRATION]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/seed-import.env"
   printf '' | state_write_file "$SECRETS_DIR/bootstrap.env" 0640
   write_line POSTGRES_MIGRATION_PASSWORD "${db[MIGRATION]}" "$SECRETS_DIR/bootstrap.env"
   write_line DEMO_CREDENTIAL_SEPARATION_KEY "$separation_key" "$SECRETS_DIR/bootstrap.env"
@@ -333,7 +352,7 @@ verify_state() {
   verify_runtime_env
   local expected=(actor-capability-authority.env bootstrap.env demo-admin.bundle demo-admin.password demo-credential-separation.key demo.env demo-user.bundle \
     demo-user.password kafka-admin.env kafka-broker-jaas.conf kafka-publisher.env migration.env poison-recorder.env \
-    postgres.env python.env rag-history-kek-v1.key redis.env role-bootstrap.env spring.env)
+    postgres.env python.env rag-history-kek-v1.key redis.env role-bootstrap.env seed-import.env spring.env)
   local actual
   actual=$(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
   [[ $actual == "$(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)" ]] || die secret_inventory

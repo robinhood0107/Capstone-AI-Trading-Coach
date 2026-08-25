@@ -4,7 +4,7 @@
 
 ```text
 P1_CORE=MERGED_REVALIDATION_REQUIRED
-PUBLIC_RAG_SEED=NOT_MATERIALIZED
+PUBLIC_RAG_SEED=IMPLEMENTED_MERGE_CANDIDATE
 OWNER_RAG_BACKEND=IMPLEMENTATION_REQUIRED
 BGE_OCR_CPU_INTEL=IMPLEMENTATION_REQUIRED
 PROVIDER_LIVE_READ=HISTORICAL_PARTIAL_REVALIDATION_REQUIRED
@@ -25,6 +25,18 @@ P1_1_0_0_RELEASED=FALSE
 `deploy/p1/full-app-release-manifest.v2.schema.json`이다. 기존 `deploy/p1/release-manifest.schema.json`과
 `.github/workflows/p1-offline-demo-release.yml`은 Core-only 역사 회귀이며 full-app `1.0.0` 발행 권위가
 없다.
+
+## G3 public RAG Seed
+
+V73 active public pointer에서 도달 가능한 공개 행만 data-only Seed로 export했다. 원문 PDF, 계정,
+대화, owner 문서, provider ledger와 secret은 포함하지 않는다. canonical manifest는
+`deploy/p1/seed/public-rag/public-rag-seed.v1.manifest.json`이며 source/chunk/dimension은 정확히
+`142/7,871/1024`, archive는 SHA-256 결속된 32MiB 이하 2개 조각이다.
+
+fresh V87 PostgreSQL 통합 검증에서 migration → hash 검증 → transaction staging → pointer-last
+activation이 `IMPORTED_FULL_READY`로 통과했고, 같은 Seed 재실행은
+`NOOP_MATCHING_ACTIVE_SEED`였다. 이 증거는 Seed 구현의 merge-candidate 판정이며 아직 Compose E2E,
+owner RAG, 모델 설치, provider live gate 또는 전체 `PUBLIC_RAG_SEED=PASS`를 뜻하지 않는다.
 
 세부 실행 입력은 [Team A Dashboard 요청서](P1_TEAM_A_DASHBOARD_완료_요청서.md),
 [Team B Return Engine 요청서](P1_TEAM_B_RETURN_ENGINE_완료_요청서.md),

@@ -97,6 +97,24 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertNotIn("gh release create", workflow)
         self.assertNotIn("contents: write", workflow)
 
+    def test_cross_platform_full_app_entrypoints_are_fail_closed(self) -> None:
+        linux = (ROOT / "capstone").read_text(encoding="utf-8")
+        controller = (ROOT / "deploy/p1/full-appctl").read_text(encoding="utf-8")
+        windows = (ROOT / "capstone.ps1").read_text(encoding="utf-8")
+        overlay = (ROOT / "deploy/p1/compose.full.seed.yml").read_text(encoding="utf-8")
+        for command in ("install", "start", "stop", "status", "doctor", "backup", "restore", "verify"):
+            self.assertIn(command, controller)
+            self.assertIn(command, windows)
+        self.assertIn("full-appctl", linux)
+        self.assertIn("FULL_INSTALL_BLOCKED_REQUIRED_ARTIFACTS", controller)
+        self.assertIn("CAPSTONE_RELEASE_AUTHORITY=NONE", controller)
+        self.assertIn("selected_project_name", controller)
+        self.assertIn("state_init_resume_inventory", (ROOT / "deploy/p1/p1ctl").read_text(encoding="utf-8"))
+        self.assertIn("BLOCKED_G7_ATOMIC_RESTORE_NOT_IMPLEMENTED", controller)
+        self.assertIn("migrate: {condition: service_completed_successfully}", overlay)
+        self.assertIn("seed-import: {condition: service_completed_successfully}", overlay)
+        self.assertNotIn('PROVIDER_LIVE_CALLS_ENABLED: "true"', overlay)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -91,6 +91,7 @@ class P1EnvironmentDocumentationTest(unittest.TestCase):
             ("poison-recorder", "POISON_RECORDER"),
             ("kafka-admin", "KAFKA_ADMIN"),
             ("migration", "MIGRATION"),
+            ("seed-import", "SEED_IMPORT"),
             ("bootstrap", "BOOTSTRAP"),
             ("python", "PYTHON"),
             ("demo", "DEMO"),

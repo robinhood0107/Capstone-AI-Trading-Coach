@@ -13,6 +13,9 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
+import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.security.oauth2.jwt.Jwt
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.nio.charset.StandardCharsets
@@ -80,6 +83,32 @@ class ActorCapabilityTransportTest {
 
         assertThrows(IllegalArgumentException::class.java) {
             ActorCapabilityWire.decode(ActorCapabilityWire.encode("usr_demo_admin", binding))
+        }
+    }
+
+    @Test
+    fun `MCP JWT actor ref is derived from the validated internal session claim`() {
+        val now = Instant.now()
+        val token =
+            Jwt(
+                "token",
+                now,
+                now.plusSeconds(60),
+                mapOf("alg" to "ES256"),
+                mapOf(
+                    "sub" to "usr_demo_user",
+                    "sid" to SESSION_HANDLE,
+                    "securityVersion" to 1L,
+                ),
+            )
+        SecurityContextHolder.getContext().authentication = JwtAuthenticationToken(token)
+        try {
+            assertEquals(actor("usr_demo_user"), AuthenticatedActorRef.current("usr_demo_user", 1))
+            assertThrows(IllegalStateException::class.java) {
+                AuthenticatedActorRef.current("usr_demo_admin", 1)
+            }
+        } finally {
+            SecurityContextHolder.clearContext()
         }
     }
 

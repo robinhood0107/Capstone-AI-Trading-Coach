@@ -40,7 +40,7 @@ jobs:
           uv tool install yamllint==1.38.0
           uv tool install toml-sort==0.24.4
           uv tool install pymarkdownlnt==0.9.39
-          echo "$(uv tool dir --bin)" >> "$GITHUB_PATH"
+          uv tool dir --bin >> "$GITHUB_PATH"
 
       - name: Install checksum-pinned native linters
         shell: bash

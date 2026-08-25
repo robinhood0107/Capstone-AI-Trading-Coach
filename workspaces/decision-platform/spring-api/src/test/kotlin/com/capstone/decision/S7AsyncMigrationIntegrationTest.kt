@@ -1406,8 +1406,23 @@ class S7AsyncMigrationIntegrationTest {
         databaseName: String,
         actorUserId: String,
         binding: ActorCapabilityBinding,
-    ): String =
-        DatabaseActorCapabilityAuthority(
+    ): String {
+        val identityHandle =
+            connection(databaseName, AUTH_USER, AUTH_PASSWORD).use { auth ->
+                auth.prepareStatement("select register_actor_identity_handle_v1(?,?,?,?,?,?,15)").use { statement ->
+                    statement.setString(1, actorUserId)
+                    statement.setString(2, binding.operation)
+                    statement.setString(3, binding.targetKind)
+                    statement.setString(4, binding.targetId)
+                    statement.setString(5, binding.payloadHash)
+                    statement.setString(6, binding.rolePolicy.name)
+                    statement.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        requireNotNull(rows.getString(1))
+                    }
+                }
+            }
+        return DatabaseActorCapabilityAuthority(
             dataSource =
                 org.springframework.jdbc.datasource.DriverManagerDataSource(
                     jdbcUrl(databaseName),
@@ -1416,7 +1431,8 @@ class S7AsyncMigrationIntegrationTest {
                 ),
             privateKey = ACTOR_CAPABILITY_KEY_PAIR.private,
             publicKey = ACTOR_CAPABILITY_KEY_PAIR.public,
-        ).issue(actorUserId, binding)
+        ).issue(identityHandle, binding)
+    }
 
     private fun claimJob(
         eventId: String,
@@ -1616,6 +1632,8 @@ class S7AsyncMigrationIntegrationTest {
         private const val REPLAY_PASSWORD = "replay-test-secret-0001"
         private const val IDENTITY_USER = "decision_identity"
         private const val IDENTITY_PASSWORD = "identity-test-secret-0001"
+        private const val AUTH_USER = "decision_auth"
+        private const val AUTH_PASSWORD = "auth-test-secret-0001"
         private const val REPLAY_AUTHORIZER_USER = "decision_replay_authorizer"
         private const val REPLAY_AUTHORIZER_PASSWORD = "replay-authorizer-test-0001"
         private const val DEMO_USER = "decision_demo"

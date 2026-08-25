@@ -246,10 +246,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             try {
-                connection.prepareStatement("select set_config('app.actor_user_id', ?, false)").use { statement ->
-                    statement.setString(1, "usr_demo_user")
-                    statement.execute()
-                }
+                openTestActorScope(connection, "usr_demo_user")
                 assertEquals(
                     scopeClaimId,
                     callSingleRow(
@@ -338,10 +335,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
                 connection.autoCommit = false
                 try {
-                    connection.prepareStatement("select set_config('app.actor_user_id', ?, false)").use { statement ->
-                        statement.setString(1, "usr_demo_user")
-                        statement.execute()
-                    }
+                    openTestActorScope(connection, "usr_demo_user")
                     val value =
                         callSingleRow(
                             connection,
@@ -518,10 +512,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                 DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
                     connection.autoCommit = false
                     try {
-                        connection.prepareStatement("select set_config('app.actor_user_id', ?, false)").use { statement ->
-                            statement.setString(1, "usr_demo_user")
-                            statement.execute()
-                        }
+                        openTestActorScope(connection, "usr_demo_user")
                         callSingleRow(
                             connection,
                             """
@@ -2301,6 +2292,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             )
         }
         DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_query", RAG_QUERY_PASSWORD).use { connection ->
+            connection.autoCommit = false
             assertEquals(
                 ownerGenerationId,
                 callSingleRow(
@@ -2329,6 +2321,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                     """.trimIndent(),
                 ),
             )
+            connection.rollback()
         }
 
         // active owner document deletion은 source를 먼저 없애지 않는다. V33이 empty replacement
@@ -2837,10 +2830,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             try {
-                connection.prepareStatement("select set_config('app.actor_user_id', ?, false)").use { statement ->
-                    statement.setString(1, ownerUserId)
-                    statement.execute()
-                }
+                openTestActorScope(connection, ownerUserId)
                 callSingleRow(
                     connection,
                     """
@@ -2935,10 +2925,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             try {
-                connection.prepareStatement("select set_config('app.actor_user_id', ?, false)").use { statement ->
-                    statement.setString(1, ownerUserId)
-                    statement.execute()
-                }
+                openTestActorScope(connection, ownerUserId)
                 val result = callSingleRow(connection, query)
                 connection.commit()
                 result
@@ -2947,6 +2934,21 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                 throw error
             }
         }
+
+    private fun openTestActorScope(
+        connection: Connection,
+        actorUserId: String,
+    ) {
+        TestActorRlsScope.open(
+            jdbcUrl = postgres.jdbcUrl,
+            connection = connection,
+            actorUserId = actorUserId,
+            operation = "TEST_APP_ACTOR_SCOPE",
+            targetKind = "OWNER",
+            targetId = actorUserId,
+            actorRole = if (actorUserId == "usr_demo_admin") "ADMIN" else "USER",
+        )
+    }
 
     private fun appendForeignNewsSentiment(
         ownerUserId: String,
@@ -2973,10 +2975,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             try {
-                connection.prepareStatement("select set_config('app.actor_user_id', ?, true)").use { statement ->
-                    statement.setString(1, actorUserId)
-                    statement.execute()
-                }
+                openTestActorScope(connection, actorUserId)
                 val payload =
                     connection
                         .prepareStatement(
@@ -3029,10 +3028,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             try {
-                connection.prepareStatement("select set_config('app.actor_user_id', ?, false)").use { statement ->
-                    statement.setString(1, ownerUserId)
-                    statement.execute()
-                }
+                openTestActorScope(connection, ownerUserId)
                 val scopeClaimId =
                     callSingleRow(
                         connection,
@@ -3055,10 +3051,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             try {
-                connection.prepareStatement("select set_config('app.actor_user_id', ?, false)").use { statement ->
-                    statement.setString(1, "usr_demo_user")
-                    statement.execute()
-                }
+                openTestActorScope(connection, "usr_demo_user")
                 val scopeClaimId =
                     callSingleRow(
                         connection,
@@ -3087,10 +3080,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             try {
-                connection.prepareStatement("select set_config('app.actor_user_id', ?, false)").use { statement ->
-                    statement.setString(1, ownerUserId)
-                    statement.execute()
-                }
+                openTestActorScope(connection, ownerUserId)
                 callSingleRow(
                     connection,
                     """
@@ -3118,10 +3108,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             try {
-                connection.prepareStatement("select set_config('app.actor_user_id', ?, false)").use { statement ->
-                    statement.setString(1, ownerUserId)
-                    statement.execute()
-                }
+                openTestActorScope(connection, ownerUserId)
                 callSingleRow(
                     connection,
                     """

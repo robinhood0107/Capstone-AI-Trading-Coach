@@ -1,6 +1,6 @@
 package com.capstone.decision.application.rag
 
-import com.capstone.decision.infrastructure.security.ActorRlsScope
+import com.capstone.decision.application.security.ActorRlsScopePort
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -761,7 +761,7 @@ class RagV2RuntimeServiceTest {
             vertexQuestionFingerprintPort = vertexQuestionFingerprint,
             objectMapper = JsonMapper.builder().build(),
             transactionManagerProvider = transactionManagerProvider,
-            actorRlsScope = mockk<ActorRlsScope>(relaxed = true),
+            actorRlsScope = mockk<ActorRlsScopePort>(relaxed = true),
         )
     }
 

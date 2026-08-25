@@ -235,7 +235,14 @@ class RagSourceRegistryMigrationIntegrationTest {
             }
             appConnection(jdbcUrl).use { connection ->
                 connection.autoCommit = false
-                connection.createStatement().use { it.execute("select set_config('app.actor_user_id','usr_s49_budget',true)") }
+                TestActorRlsScope.open(
+                    jdbcUrl,
+                    connection,
+                    "usr_s49_budget",
+                    "MANAGE_GOOGLE_GROUNDING_BUDGET",
+                    "OWNER",
+                    "usr_s49_budget",
+                )
 
                 fun reserve(
                     id: String,
@@ -318,8 +325,15 @@ class RagSourceRegistryMigrationIntegrationTest {
             }
             appConnection(jdbcUrl).use { connection ->
                 connection.autoCommit = false
+                TestActorRlsScope.open(
+                    jdbcUrl,
+                    connection,
+                    "usr_s49_ground",
+                    "RECORD_GROUNDING_PROVENANCE",
+                    "REQUEST",
+                    "req_s49_grounding_0001",
+                )
                 connection.createStatement().use { statement ->
-                    statement.execute("select set_config('app.actor_user_id','usr_s49_ground',true)")
                     statement.execute(
                         """
                         select public.record_s4_9_grounding_provenance(
@@ -388,8 +402,15 @@ class RagSourceRegistryMigrationIntegrationTest {
             }
             appConnection(jdbcUrl).use { connection ->
                 connection.autoCommit = false
+                TestActorRlsScope.open(
+                    jdbcUrl,
+                    connection,
+                    "usr_s49_searxng",
+                    "RECORD_SEARXNG_READ_PROVENANCE",
+                    "REQUEST",
+                    "req_s49_searxng_0001",
+                )
                 connection.createStatement().use { statement ->
-                    statement.execute("select set_config('app.actor_user_id','usr_s49_searxng',true)")
                     statement.execute(
                         "select public.record_s4_9_read_provenance(" +
                             "'usr_s49_searxng','req_s49_searxng_0001','s49_src_${"1".repeat(32)}'," +
@@ -574,13 +595,20 @@ class RagSourceRegistryMigrationIntegrationTest {
             }
             appConnection(jdbcUrl).use { connection ->
                 connection.autoCommit = false
+                TestActorRlsScope.open(
+                    jdbcUrl,
+                    connection,
+                    "usr_s49_save",
+                    "ISSUE_ANSWER_VALIDATION",
+                    "OWNER",
+                    "usr_s49_save",
+                )
                 connection.createStatement().use { statement ->
                     statement.execute(
                         "select public.sync_s4_9_mcp_oauth_client(" +
                             "'mcp_s49_save','S4.9 save',repeat('1',64)," +
                             "array['http://127.0.0.1/callback'],array['mcp:answer.validate','mcp:history.write'],'STATIC_ALLOWLIST')",
                     )
-                    statement.execute("select set_config('app.actor_user_id','usr_s49_save',true)")
                     statement.execute(
                         "select public.issue_s4_9_answer_validation_receipt(" +
                             "repeat('d',64),'usr_s49_save','mcp_s49_save','s49_ctx_' || repeat('1',32)," +
@@ -607,8 +635,15 @@ class RagSourceRegistryMigrationIntegrationTest {
                 }
                 connection.commit()
 
+                TestActorRlsScope.open(
+                    jdbcUrl,
+                    connection,
+                    "usr_s49_save",
+                    "REUSE_ANSWER_VALIDATION",
+                    "OWNER",
+                    "usr_s49_save",
+                )
                 connection.createStatement().use { statement ->
-                    statement.execute("select set_config('app.actor_user_id','usr_s49_save',true)")
                     assertThrows(SQLException::class.java) {
                         statement.execute(
                             "select public.consume_s4_9_validation_and_save_history(" +
@@ -941,7 +976,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                         ),
                     ).isEqualTo("flyway")
                 }
-                assertThat(
+                val guardedFunctionSearchPaths =
                     queryStrings(
                         connection,
                         """
@@ -961,8 +996,13 @@ class RagSourceRegistryMigrationIntegrationTest {
                           'public.purge_rag_embedding_staging(text,text)'::regprocedure
                         )
                         """.trimIndent(),
-                    ),
-                ).allMatch { it == "search_path=pg_catalog, public, pg_temp" }
+                    )
+                assertThat(guardedFunctionSearchPaths).allMatch {
+                    it == "search_path=pg_catalog, public, pg_temp" ||
+                        it == "search_path=public, pg_catalog, pg_temp"
+                }
+                assertThat(guardedFunctionSearchPaths.count { it == "search_path=public, pg_catalog, pg_temp" })
+                    .isEqualTo(1)
             }
         }
     }

@@ -1,31 +1,57 @@
 package com.capstone.decision
 
+import com.capstone.decision.infrastructure.risk.ActorScopedReadQuery
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityClaims
 import com.capstone.decision.infrastructure.security.ActorCapabilityDeniedException
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import com.capstone.decision.infrastructure.security.ActorCapabilityPacketCodec
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import com.capstone.decision.infrastructure.security.AuthDatabase
 import com.capstone.decision.infrastructure.security.DatabaseActorCapabilityAuthority
 import com.capstone.decision.infrastructure.security.DatabaseActorIdentityHandleIssuer
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import org.springframework.beans.factory.support.StaticListableBeanFactory
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Primary
 import org.springframework.core.env.Environment
+import org.springframework.jdbc.datasource.DriverManagerDataSource
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.time.Clock
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
+import javax.sql.DataSource
 
 @TestConfiguration(proxyBeanMethods = false)
 class TestActorCapabilityConfiguration {
     @Bean(destroyMethod = "close")
     @Primary
     fun testActorCapabilityIssuer(environment: Environment): TestActorCapabilityIssuer = TestActorCapabilityIssuer(environment)
+
+    @Bean
+    @Primary
+    fun testActorScopedReadQuery(
+        environment: Environment,
+        actorRlsScope: ActorRlsScope,
+    ): ActorScopedReadQuery {
+        val dataSource =
+            DriverManagerDataSource(
+                environment.getProperty(
+                    "spring.datasource.url",
+                    "jdbc:postgresql://127.0.0.1:5432/decision",
+                ),
+                "decision_app",
+                "app-test",
+            )
+        val provider =
+            StaticListableBeanFactory(mapOf("actorScopedDataSource" to dataSource))
+                .getBeanProvider(DataSource::class.java)
+        return ActorScopedReadQuery(provider, actorRlsScope)
+    }
 }
 
 class TestActorCapabilityIssuer(

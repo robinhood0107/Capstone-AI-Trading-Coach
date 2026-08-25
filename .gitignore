@@ -73,16 +73,14 @@ workspaces/decision-platform/research/s1-4x-numeric-parity/haskell/.stack-root/
 workspaces/decision-platform/research/s1-4x-numeric-parity/**/.tool-bin/
 workspaces/decision-platform/research/s1-4x-numeric-parity/**/artifacts/
 
-# --- Node (workspaces/experience-dashboard, 팀원 A 담당 — 이 계정에서는 내용 없음) ---
+# --- Node / full-app workspace generated outputs ---
 node_modules/
 .next/
 dist/
 
-# --- 다른 팀원 워크스페이스: 이 계정에서는 코드/산출물을 만들지 않음 ---
-workspaces/return-engine/*
-!workspaces/return-engine/README.md
-workspaces/experience-dashboard/*
-!workspaces/experience-dashboard/README.md
+# --- full-app v2 upstream intake는 local-only, 검토된 production source만 추적 ---
+workspaces/return-engine/dev/
+workspaces/experience-dashboard/dev/
 
 # --- artifacts: 계약된 결과물만, 로컬 실행 산출물은 커밋 금지 ---
 artifacts/return-engine/*

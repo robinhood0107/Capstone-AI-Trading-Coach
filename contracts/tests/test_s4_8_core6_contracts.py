@@ -412,7 +412,7 @@ class S48Core6ContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ContractValidationError, "failed receipt"):
             validate_semantics(payload["contractId"], payload)
 
-    def test_v1_contracts_and_workspace_boundaries_are_byte_stable(self) -> None:
+    def test_v1_contracts_are_byte_stable_and_post_core_intake_is_untracked(self) -> None:
         for relative_path, expected_hash in FROZEN_V1_HASHES.items():
             self.assertEqual(
                 expected_hash,
@@ -420,13 +420,16 @@ class S48Core6ContractTest(unittest.TestCase):
                 relative_path,
             )
 
+        tracked = subprocess.run(
+            ["git", "ls-files", "--", "workspaces/return-engine", "workspaces/experience-dashboard"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+        self.assertFalse([path for path in tracked if "/dev/" in path])
         for workspace in ("return-engine", "experience-dashboard"):
-            files = sorted(
-                path.relative_to(ROOT / "workspaces" / workspace).as_posix()
-                for path in (ROOT / "workspaces" / workspace).rglob("*")
-                if path.is_file() and not path.is_symlink()
-            )
-            self.assertEqual(["README.md"], files)
+            self.assertTrue((ROOT / "workspaces" / workspace / "README.md").is_file())
 
     def test_contract_change_keeps_gdelt_as_decision_platform_offline_only(self) -> None:
         change = (

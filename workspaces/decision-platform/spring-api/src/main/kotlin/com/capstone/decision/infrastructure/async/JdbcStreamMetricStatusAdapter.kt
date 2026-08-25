@@ -7,6 +7,7 @@ import com.capstone.decision.application.async.StreamMetricComponentStatus
 import com.capstone.decision.application.async.StreamMetricStatus
 import com.capstone.decision.application.async.StreamMetricStatusPort
 import com.capstone.decision.application.async.StreamMetricUnavailableException
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
@@ -37,7 +38,7 @@ class JdbcStreamMetricStatusAdapter(
                 .query(
                     "SELECT * FROM read_stream_metric_status_authorized(:capability,:actorUserId,:securityVersion)",
                     mapOf(
-                        "capability" to actorCapabilityIssuer.issue(actorUserId, binding),
+                        "capability" to actorCapabilityIssuer.issue(AuthenticatedActorRef.current(actorUserId, securityVersion), binding),
                         "actorUserId" to actorUserId,
                         "securityVersion" to securityVersion,
                     ),

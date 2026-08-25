@@ -38,6 +38,7 @@ import org.testcontainers.utility.DockerImageName
 class JdbcPrincipleSnapshotAdapterIntegrationTest(
     @Autowired private val adapter: JdbcPrincipleSnapshotAdapter,
     @Autowired private val applicationContext: ApplicationContext,
+    @Autowired private val actorCapabilityIssuer: TestActorCapabilityIssuer,
 ) : SpringApiIntegrationTestBase() {
     private val adminJdbc =
         JdbcTemplate(
@@ -55,10 +56,12 @@ class JdbcPrincipleSnapshotAdapterIntegrationTest(
         insertPrincipleWithTwoVersions()
 
         val snapshot =
-            adapter.findActiveOwned(
-                actorUserId = "usr_demo_user",
-                principleId = PRINCIPLE_ID,
-            )
+            asTestActor(actorCapabilityIssuer) {
+                adapter.findActiveOwned(
+                    actorUserId = "usr_demo_user",
+                    principleId = PRINCIPLE_ID,
+                )
+            }
         val pinned = requireNotNull(snapshot)
 
         assertThat(snapshot).isNotNull
@@ -72,17 +75,22 @@ class JdbcPrincipleSnapshotAdapterIntegrationTest(
     fun `missing cross owner and inactive targets are the same not found result`() {
         insertPrincipleWithTwoVersions()
 
-        val crossOwner = adapter.findActiveOwned("usr_demo_admin", PRINCIPLE_ID)
+        val crossOwner =
+            asTestActor(actorCapabilityIssuer, "usr_demo_admin") {
+                adapter.findActiveOwned("usr_demo_admin", PRINCIPLE_ID)
+            }
         adminJdbc.update(
             "update principles set status = 'ARCHIVED' where principle_id = ?",
             PRINCIPLE_ID.value,
         )
-        val inactive = adapter.findActiveOwned("usr_demo_user", PRINCIPLE_ID)
+        val inactive = asTestActor(actorCapabilityIssuer) { adapter.findActiveOwned("usr_demo_user", PRINCIPLE_ID) }
         val missing =
-            adapter.findActiveOwned(
-                "usr_demo_user",
-                PrincipleId("prc_ffffffffffffffffffffffffffffffff"),
-            )
+            asTestActor(actorCapabilityIssuer) {
+                adapter.findActiveOwned(
+                    "usr_demo_user",
+                    PrincipleId("prc_ffffffffffffffffffffffffffffffff"),
+                )
+            }
 
         assertThat(crossOwner).isNull()
         assertThat(inactive).isNull()

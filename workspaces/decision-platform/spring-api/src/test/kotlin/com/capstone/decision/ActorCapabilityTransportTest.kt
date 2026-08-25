@@ -1,4 +1,5 @@
 package com.capstone.decision
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityClaims
 import com.capstone.decision.infrastructure.security.ActorCapabilityClientProperties
@@ -41,7 +42,7 @@ class ActorCapabilityTransportTest {
                 ActorCapabilityPacketCodec.sign(claims("usr_demo_admin", requestedBinding), keyPair.private)
             }
 
-        val token = issuer.issue("usr_demo_admin", binding)
+        val token = issuer.issue(actor("usr_demo_admin"), binding)
 
         assertEquals(
             "job_12345678",
@@ -63,7 +64,7 @@ class ActorCapabilityTransportTest {
             }
 
         assertThrows(IllegalArgumentException::class.java) {
-            issuer.issue("usr_demo_admin", binding)
+            issuer.issue(actor("usr_demo_admin"), binding)
         }
     }
 
@@ -129,7 +130,10 @@ class ActorCapabilityTransportTest {
         )
     }
 
+    private fun actor(userId: String): AuthenticatedActorRef = AuthenticatedActorRef(SESSION_HANDLE, userId, 1)
+
     private companion object {
         const val IDENTITY_HANDLE = "idh1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        const val SESSION_HANDLE = "sid1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     }
 }

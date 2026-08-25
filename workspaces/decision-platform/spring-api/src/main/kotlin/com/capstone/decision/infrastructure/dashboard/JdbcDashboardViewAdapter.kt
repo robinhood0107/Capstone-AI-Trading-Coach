@@ -4,6 +4,7 @@ import com.capstone.decision.application.dashboard.ArtifactIngestStatusView
 import com.capstone.decision.application.dashboard.DashboardArtifactKind
 import com.capstone.decision.application.dashboard.DashboardUnavailableException
 import com.capstone.decision.application.dashboard.DashboardViewPort
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
@@ -43,7 +44,7 @@ class JdbcDashboardViewAdapter(
                 .query(
                     "SELECT * FROM read_dashboard_artifact_view_authorized(:capability,:actor,:version,:kind,:runId)",
                     mapOf(
-                        "capability" to actorCapabilityIssuer.issue(actorUserId, binding),
+                        "capability" to actorCapabilityIssuer.issue(AuthenticatedActorRef.current(actorUserId, securityVersion), binding),
                         "actor" to actorUserId,
                         "version" to securityVersion,
                         "kind" to kind.name,
@@ -85,7 +86,7 @@ class JdbcDashboardViewAdapter(
                 .query(
                     "SELECT * FROM read_dashboard_risk_view_authorized(:capability,:actor,:version,:decisionId)",
                     mapOf(
-                        "capability" to actorCapabilityIssuer.issue(actorUserId, binding),
+                        "capability" to actorCapabilityIssuer.issue(AuthenticatedActorRef.current(actorUserId, securityVersion), binding),
                         "actor" to actorUserId,
                         "version" to securityVersion,
                         "decisionId" to decisionId,
@@ -130,7 +131,7 @@ class JdbcDashboardViewAdapter(
                 .query(
                     "SELECT * FROM read_dashboard_rag_sources_authorized(:capability,:actor,:version,:answerId)",
                     mapOf(
-                        "capability" to actorCapabilityIssuer.issue(actorUserId, binding),
+                        "capability" to actorCapabilityIssuer.issue(AuthenticatedActorRef.current(actorUserId, securityVersion), binding),
                         "actor" to actorUserId,
                         "version" to securityVersion,
                         "answerId" to answerId,
@@ -172,7 +173,7 @@ class JdbcDashboardViewAdapter(
             jdbc().query(
                 "SELECT * FROM list_artifact_ingest_status_authorized(:capability,:actor,:version)",
                 mapOf(
-                    "capability" to actorCapabilityIssuer.issue(actorUserId, binding),
+                    "capability" to actorCapabilityIssuer.issue(AuthenticatedActorRef.current(actorUserId, securityVersion), binding),
                     "actor" to actorUserId,
                     "version" to securityVersion,
                 ),

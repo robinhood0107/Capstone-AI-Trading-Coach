@@ -24,6 +24,9 @@ import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.util.Properties
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import javax.sql.DataSource
 
 // 실제 init script와 Flyway migration을 함께 적용해 runtime/migration role 분리가 선언뿐인지 검증한다.
@@ -493,18 +496,48 @@ class InfrastructureSecurityIntegrationTest {
                             "register_actor_identity_handle_v1(text,text,text,text,text,text,integer)",
                         ),
                     )
+                    val sessionHandle =
+                        queryScalar(
+                            statement,
+                            "select session_handle from authenticate_demo_actor_session_v1(" +
+                                "'demo-admin','${SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD}',3600)",
+                        )
+                    val callerSelectedActor =
+                        assertThrows<SQLException> {
+                            statement.executeQuery(
+                                """
+                                select register_actor_identity_handle_v1(
+                                  'usr_demo_user','READ_ASYNC_JOB','ASYNC_JOB','job_identity_handle_test',
+                                  'sha256:${"a".repeat(64)}','ADMIN_ONLY',15
+                                )
+                                """.trimIndent(),
+                            )
+                        }
+                    assertEquals("42501", callerSelectedActor.sqlState)
                     val handle =
                         queryScalar(
                             statement,
                             """
                             select register_actor_identity_handle_v1(
-                              'usr_demo_admin','READ_ASYNC_JOB','ASYNC_JOB','job_identity_handle_test',
+                              '$sessionHandle','READ_ASYNC_JOB','ASYNC_JOB','job_identity_handle_test',
                               'sha256:${"a".repeat(64)}','ADMIN_ONLY',15
                             )
                             """.trimIndent(),
                         )
                     assertTrue(handle.matches(Regex("^idh1_[0-9a-f]{64}$")))
                     verifyIdentityHandleIsExactAndOneShot(handle)
+                    val concurrentHandle =
+                        queryScalar(
+                            statement,
+                            """
+                            select register_actor_identity_handle_v1(
+                              '$sessionHandle','READ_ASYNC_JOB','ASYNC_JOB','job_identity_handle_concurrent',
+                              'sha256:${"b".repeat(64)}','ADMIN_ONLY',15
+                            )
+                            """.trimIndent(),
+                        )
+                    verifyIdentityHandleConcurrentConsume(concurrentHandle)
+                    verifyRejectedActorSessions(statement)
                     statement
                         .executeQuery(
                             "select rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls " +
@@ -697,6 +730,120 @@ class InfrastructureSecurityIntegrationTest {
                     }
                 assertEquals("42501", selectedActor.sqlState)
             }
+    }
+
+    private fun verifyIdentityHandleConcurrentConsume(handle: String) {
+        val ready = CountDownLatch(2)
+        val start = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val results =
+                (1..2).map {
+                    pool.submit<Boolean> {
+                        DriverManager
+                            .getConnection(
+                                postgres.jdbcUrl,
+                                Properties().apply {
+                                    setProperty("user", "decision_identity")
+                                    setProperty("password", identityPassword)
+                                },
+                            ).use { identity ->
+                                ready.countDown()
+                                check(start.await(5, TimeUnit.SECONDS))
+                                identity
+                                    .prepareStatement(
+                                        """
+                                        select actor_user_id from consume_actor_identity_handle_v1(?,?,?,?,?,?)
+                                        """.trimIndent(),
+                                    ).use { statement ->
+                                        statement.setString(1, handle)
+                                        statement.setString(2, "READ_ASYNC_JOB")
+                                        statement.setString(3, "ASYNC_JOB")
+                                        statement.setString(4, "job_identity_handle_concurrent")
+                                        statement.setString(5, "sha256:${"b".repeat(64)}")
+                                        statement.setString(6, "ADMIN_ONLY")
+                                        statement.executeQuery().use { result -> result.next() }
+                                    }
+                            }
+                    }
+                }
+            assertTrue(ready.await(5, TimeUnit.SECONDS))
+            start.countDown()
+            assertEquals(1, results.count { it.get(5, TimeUnit.SECONDS) })
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    private fun verifyRejectedActorSessions(statement: java.sql.Statement) {
+        fun createSession(): String =
+            queryScalar(
+                statement,
+                "select session_handle from authenticate_demo_actor_session_v1(" +
+                    "'demo-admin','${SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD}',3600)",
+            )
+
+        fun registrationFailure(sessionHandle: String): SQLException =
+            assertThrows {
+                statement.executeQuery(
+                    """
+                    select register_actor_identity_handle_v1(
+                      '$sessionHandle','READ_ASYNC_JOB','ASYNC_JOB','job_rejected_session',
+                      'sha256:${"c".repeat(64)}','ADMIN_ONLY',15
+                    )
+                    """.trimIndent(),
+                )
+            }
+
+        assertEquals("42501", registrationFailure("sid1_${"0".repeat(64)}").sqlState)
+
+        val revoked = createSession()
+        mutateSession(revoked, "revoked_at=statement_timestamp()")
+        assertEquals("42501", registrationFailure(revoked).sqlState)
+
+        val expired = createSession()
+        mutateSession(
+            expired,
+            "issued_at=statement_timestamp()-interval '2 hours'," +
+                "expires_at=statement_timestamp()-interval '1 hour'",
+        )
+        assertEquals("42501", registrationFailure(expired).sqlState)
+
+        val stale = createSession()
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { admin ->
+            admin.createStatement().use { it.executeUpdate("update users set security_version=2 where user_id='usr_demo_admin'") }
+        }
+        try {
+            assertEquals("42501", registrationFailure(stale).sqlState)
+        } finally {
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { admin ->
+                admin.createStatement().use { it.executeUpdate("update users set security_version=1 where user_id='usr_demo_admin'") }
+            }
+        }
+
+        val userSession =
+            queryScalar(
+                statement,
+                "select session_handle from authenticate_demo_actor_session_v1(" +
+                    "'demo-user','${SpringApiIntegrationTestBase.TEST_USER_PASSWORD}',3600)",
+            )
+        assertEquals("42501", registrationFailure(userSession).sqlState)
+    }
+
+    private fun mutateSession(
+        sessionHandle: String,
+        assignment: String,
+    ) {
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { admin ->
+            admin
+                .prepareStatement(
+                    "update actor_auth_session set $assignment " +
+                        "where session_hash='sha256:'||encode(digest(?,'sha256'),'hex')",
+                ).use { update ->
+                    update.setString(1, sessionHandle)
+                    assertEquals(1, update.executeUpdate())
+                }
+        }
     }
 
     private fun runtimeProperties(): Properties =

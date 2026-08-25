@@ -10,6 +10,7 @@ import com.capstone.decision.application.risk.KillSwitchMutationResult
 import com.capstone.decision.application.risk.KillSwitchPublicState
 import com.capstone.decision.application.risk.KillSwitchQueryPort
 import com.capstone.decision.application.risk.KillSwitchUnauthorizedException
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.domain.risk.KillSwitchReasonClass
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityDeniedException
@@ -98,7 +99,11 @@ class JdbcKillSwitchRepository(
                     )
                     """.trimIndent(),
                     mapOf(
-                        "capability" to actorCapabilityIssuer.issue(command.actor.userId, binding),
+                        "capability" to
+                            actorCapabilityIssuer.issue(
+                                AuthenticatedActorRef.current(command.actor.userId, command.actor.securityVersion),
+                                binding,
+                            ),
                         "actorUserId" to command.actor.userId,
                         "securityVersion" to command.actor.securityVersion,
                         "requestedActive" to command.requestedActive,

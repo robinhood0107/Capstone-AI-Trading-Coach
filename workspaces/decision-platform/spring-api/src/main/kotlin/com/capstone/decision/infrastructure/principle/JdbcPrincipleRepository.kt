@@ -6,6 +6,7 @@ import com.capstone.decision.application.principle.OwnerCursor
 import com.capstone.decision.application.principle.OwnerSort
 import com.capstone.decision.application.principle.PrincipleActor
 import com.capstone.decision.application.principle.PrincipleRepository
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.domain.principle.PrincipleCurrent
 import com.capstone.decision.domain.principle.PrincipleId
 import com.capstone.decision.domain.principle.PrincipleMode
@@ -358,7 +359,7 @@ class JdbcPrincipleRepository(
     private fun capability(
         userId: String,
         binding: ActorCapabilityBinding,
-    ): String = actorCapabilityIssuer.issue(userId, binding)
+    ): String = actorCapabilityIssuer.issue(AuthenticatedActorRef.current(userId), binding)
 
     private fun requireAuthorizedChange(
         sql: String,

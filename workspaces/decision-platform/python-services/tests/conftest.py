@@ -244,6 +244,8 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     decision_signal_admin,
                     flyway;
                 GRANT CREATE ON SCHEMA public TO flyway;
+                REVOKE SET ON PARAMETER app.required_actor_operation, app.required_actor_target_kind FROM PUBLIC;
+                GRANT SET ON PARAMETER app.required_actor_operation, app.required_actor_target_kind TO flyway;
                 """
             )
             connection.execute("CREATE EXTENSION IF NOT EXISTS vector")

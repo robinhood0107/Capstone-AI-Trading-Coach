@@ -1,5 +1,6 @@
 package com.capstone.decision.infrastructure.security
 
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import com.zaxxer.hikari.HikariConfig
@@ -105,10 +106,10 @@ class HttpActorCapabilityIssuer(
     private val publicKey = ActorCapabilityKeyCodec.publicKey(properties.publicKey)
 
     override fun issue(
-        actorUserId: String,
+        actor: AuthenticatedActorRef,
         binding: ActorCapabilityBinding,
     ): String {
-        val identityHandle = identityHandleIssuer.issue(actorUserId, binding)
+        val identityHandle = identityHandleIssuer.issue(actor, binding)
         val request =
             HttpRequest
                 .newBuilder(uri)
@@ -122,7 +123,7 @@ class HttpActorCapabilityIssuer(
             throw ActorCapabilityDeniedException()
         }
         val token = response.body().toString(StandardCharsets.US_ASCII)
-        ActorCapabilityPacketCodec.verifyBound(token, publicKey, actorUserId, binding)
+        ActorCapabilityPacketCodec.verifyBound(token, publicKey, actor.expectedUserId, binding)
         return token
     }
 }

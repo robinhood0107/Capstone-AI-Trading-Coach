@@ -1,6 +1,7 @@
 package com.capstone.decision.infrastructure.security
 
 import com.capstone.decision.application.security.AppPrincipal
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import io.jsonwebtoken.JwtException
 import io.jsonwebtoken.Jwts
 import io.jsonwebtoken.security.Keys
@@ -26,7 +27,8 @@ class JwtService(
 
     fun issue(account: DemoAccount): IssuedToken {
         val now = OffsetDateTime.now(clock)
-        val expiresAt = now.plusHours(properties.ttlHours)
+        val expiresAt = account.expiresAt
+        require(expiresAt.isAfter(now) && !expiresAt.isAfter(now.plusHours(properties.ttlHours).plusSeconds(5)))
         val token =
             // JWT에는 userId와 role만 담아 민감정보가 토큰 payload에 들어가지 않게 한다.
             Jwts
@@ -38,6 +40,7 @@ class JwtService(
                 .subject(account.userId)
                 .claim("role", account.role.name)
                 .claim("securityVersion", account.securityVersion)
+                .claim("sid", account.sessionHandle)
                 .issuedAt(Date.from(now.toInstant()))
                 .expiration(Date.from(expiresAt.toInstant()))
                 .signWith(signingKey(), Jwts.SIG.HS256)
@@ -78,11 +81,14 @@ class JwtService(
         }
         val claimedRole = parseRole(claims["role"])
         val claimedSecurityVersion = parseSecurityVersion(claims["securityVersion"])
+        val sessionHandle =
+            (claims["sid"] as? String)?.takeIf { it.matches(SESSION_HANDLE) }
+                ?: throw JwtException("JWT session is invalid.")
         val storedUser =
-            userSecurityRepository.findByUserId(subject)
+            userSecurityRepository.findBySessionHandle(sessionHandle)
                 ?: throw JwtException("JWT actor is invalid.")
         if (
-            storedUser.status != ACTIVE_STATUS ||
+            storedUser.userId != subject ||
             storedUser.role != claimedRole ||
             storedUser.securityVersion != claimedSecurityVersion ||
             storedUser.securityVersion <= 0
@@ -94,6 +100,12 @@ class JwtService(
             username = storedUser.username,
             role = storedUser.role.name,
             securityVersion = storedUser.securityVersion,
+            actorRef =
+                AuthenticatedActorRef(
+                    sessionHandle = sessionHandle,
+                    expectedUserId = storedUser.userId,
+                    securityVersion = storedUser.securityVersion,
+                ),
         )
     }
 
@@ -119,8 +131,8 @@ class JwtService(
     }
 
     companion object {
-        private const val ACTIVE_STATUS = "ACTIVE"
         private const val MAX_FUTURE_ISSUED_AT_SECONDS = 60L
+        private val SESSION_HANDLE = Regex("^sid1_[0-9a-f]{64}$")
     }
 }
 

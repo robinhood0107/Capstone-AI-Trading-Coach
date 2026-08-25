@@ -1,6 +1,7 @@
 package com.capstone.decision.infrastructure.security
 
 import com.capstone.decision.application.security.ActorRlsScopePort
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Component
@@ -39,7 +40,7 @@ class ActorRlsScope(
         actorUserId: String,
         binding: ActorCapabilityBinding,
     ) {
-        val capability = actorCapabilityIssuer.issue(actorUserId, binding)
+        val capability = actorCapabilityIssuer.issue(AuthenticatedActorRef.current(actorUserId), binding)
         check(
             jdbc.queryForObject(
                 """
@@ -58,6 +59,7 @@ class ActorRlsScope(
                 Boolean::class.java,
             ) == true,
         )
+        assertExact(jdbc, actorUserId, binding)
     }
 
     fun open(
@@ -65,7 +67,7 @@ class ActorRlsScope(
         actorUserId: String,
         binding: ActorCapabilityBinding,
     ) {
-        val capability = actorCapabilityIssuer.issue(actorUserId, binding)
+        val capability = actorCapabilityIssuer.issue(AuthenticatedActorRef.current(actorUserId), binding)
         check(
             jdbc.queryForObject(
                 "SELECT open_actor_rls_scope_v1(?,?,?,?,?,?)",
@@ -78,6 +80,7 @@ class ActorRlsScope(
                 binding.payloadHash,
             ) == true,
         )
+        assertExact(jdbc, actorUserId, binding)
     }
 
     fun open(
@@ -85,7 +88,7 @@ class ActorRlsScope(
         actorUserId: String,
         binding: ActorCapabilityBinding,
     ) {
-        val capability = actorCapabilityIssuer.issue(actorUserId, binding)
+        val capability = actorCapabilityIssuer.issue(AuthenticatedActorRef.current(actorUserId), binding)
         connection
             .prepareStatement("SELECT open_actor_rls_scope_v1(?,?,?,?,?,?)")
             .use { statement ->
@@ -97,5 +100,57 @@ class ActorRlsScope(
                 statement.setString(6, binding.payloadHash)
                 statement.executeQuery().use { result -> check(result.next() && result.getBoolean(1)) }
             }
+        connection
+            .prepareStatement("SELECT assert_actor_rls_scope_exact_v1(?,?,?,?,?)")
+            .use { statement ->
+                statement.setString(1, actorUserId)
+                statement.setString(2, binding.operation)
+                statement.setString(3, binding.targetKind)
+                statement.setString(4, binding.targetId)
+                statement.setString(5, binding.payloadHash)
+                statement.executeQuery().use { result -> check(result.next() && result.getBoolean(1)) }
+            }
+    }
+
+    private fun assertExact(
+        jdbc: NamedParameterJdbcTemplate,
+        actorUserId: String,
+        binding: ActorCapabilityBinding,
+    ) {
+        check(
+            jdbc.queryForObject(
+                """
+                SELECT assert_actor_rls_scope_exact_v1(
+                  :actorUserId,:operation,:targetKind,:targetId,:payloadHash
+                )
+                """.trimIndent(),
+                mapOf(
+                    "actorUserId" to actorUserId,
+                    "operation" to binding.operation,
+                    "targetKind" to binding.targetKind,
+                    "targetId" to binding.targetId,
+                    "payloadHash" to binding.payloadHash,
+                ),
+                Boolean::class.java,
+            ) == true,
+        )
+    }
+
+    private fun assertExact(
+        jdbc: JdbcTemplate,
+        actorUserId: String,
+        binding: ActorCapabilityBinding,
+    ) {
+        check(
+            jdbc.queryForObject(
+                "SELECT assert_actor_rls_scope_exact_v1(?,?,?,?,?)",
+                Boolean::class.java,
+                actorUserId,
+                binding.operation,
+                binding.targetKind,
+                binding.targetId,
+                binding.payloadHash,
+            ) == true,
+        )
     }
 }

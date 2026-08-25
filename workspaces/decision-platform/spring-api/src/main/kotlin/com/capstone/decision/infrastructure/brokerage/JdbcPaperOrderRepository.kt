@@ -16,6 +16,7 @@ import com.capstone.decision.application.brokerage.paper.PaperOrderPersistencePo
 import com.capstone.decision.application.brokerage.paper.PaperOrderWriteRequest
 import com.capstone.decision.application.brokerage.paper.StoredPaperBalance
 import com.capstone.decision.application.risk.KillSwitchBlockedException
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.domain.brokerage.PaperFillDecision
 import com.capstone.decision.domain.brokerage.PaperPriceObservation
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
@@ -49,7 +50,7 @@ class JdbcPaperOrderRepository(
         val nowText = now.toString()
         val capability =
             actorCapabilityIssuer.issue(
-                actorUserId,
+                AuthenticatedActorRef.current(actorUserId),
                 ActorCapabilityBinding.request(
                     "READ_PAPER_IDEMPOTENCY",
                     "BROKERAGE_IDEMPOTENCY",
@@ -306,7 +307,7 @@ class JdbcPaperOrderRepository(
         targetId: String,
     ): String =
         actorCapabilityIssuer.issue(
-            actorUserId,
+            AuthenticatedActorRef.current(actorUserId),
             ActorCapabilityBinding.target(operation, targetKind, targetId, ActorCapabilityRolePolicy.OWNER),
         )
 
@@ -318,7 +319,7 @@ class JdbcPaperOrderRepository(
         payloadJson: String,
     ): String =
         actorCapabilityIssuer.issue(
-            actorUserId,
+            AuthenticatedActorRef.current(actorUserId),
             ActorCapabilityBinding.request(
                 operation,
                 targetKind,

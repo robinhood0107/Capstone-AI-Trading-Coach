@@ -124,6 +124,16 @@ class BoundedStrongLlmGraph:
     def _fallback(state: AgentState) -> dict[str, RunResult]:
         request = state["request"]
         provider = state["provider"]
+        if request.owner_evidence:
+            # Owner-private evidence may be sent only to a tool-free final turn.  Supplying it
+            # to a model with public-search tools attached would let the model derive a public
+            # query from private text even if the host later rejected the tool response.
+            state["permit"]("owner_final", "OWNER_FINAL", False)
+            turn = provider.invoke_fallback(request, [], tools_enabled=False)
+            if provider.tool_calls(turn["message"]):
+                raise ValueError("STRONG_LLM_OWNER_PUBLIC_DISCOVERY_FORBIDDEN")
+            StrongLlmAnswer.model_validate_json(turn["answer_json"])
+            return {"result": _run_result(turn, vertex_calls=1, backend="NONE")}
         messages: list[BaseMessage] = []
         prompt_tokens = 0
         output_tokens = 0

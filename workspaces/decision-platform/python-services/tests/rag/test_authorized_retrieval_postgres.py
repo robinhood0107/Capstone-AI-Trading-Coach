@@ -33,6 +33,7 @@ from app.rag.bge_full_generation import (
     verify_bge_full_generation_parity,
 )
 from app.rag.source_card_corpus import load_frozen_source_card_corpus
+from tests.support.actor_rls_scope import open_actor_rls_scope
 
 
 class _WhitespaceTokenizer:
@@ -114,9 +115,14 @@ def test_postgres_three_channels_share_only_active_opaque_scope(
         "RISK",
     )
     with psycopg.connect(cluster["app_dsn"], autocommit=False) as connection:
-        connection.execute(
-            "SELECT set_config('app.actor_user_id', %s, true)",
-            (owner_user_id,),
+        open_actor_rls_scope(
+            identity_dsn=cluster["identity_dsn"],
+            connection=connection,
+            actor_user_id=owner_user_id,
+            actor_role="USER",
+            operation="CLAIM_RAG_RETRIEVAL",
+            target_kind="RAG_SESSION",
+            target_id=session_id,
         )
         claim_row = connection.execute(
             """

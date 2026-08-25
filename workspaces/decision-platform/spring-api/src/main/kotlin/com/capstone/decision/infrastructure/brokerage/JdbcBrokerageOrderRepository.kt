@@ -19,6 +19,7 @@ import com.capstone.decision.application.brokerage.OrderableDecision
 import com.capstone.decision.application.brokerage.StoredBrokerageIdempotencyResult
 import com.capstone.decision.application.brokerage.StoredMockBalance
 import com.capstone.decision.application.risk.KillSwitchBlockedException
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.domain.brokerage.TickSizePolicy
 import com.capstone.decision.domain.brokerage.TickValidation
 import com.capstone.decision.domain.risk.OrderIntentSnapshot
@@ -54,7 +55,7 @@ class JdbcBrokerageOrderRepository(
         val nowText = now.toString()
         val capability =
             actorCapabilityIssuer.issue(
-                actorUserId,
+                AuthenticatedActorRef.current(actorUserId),
                 ActorCapabilityBinding.request(
                     "READ_MOCK_IDEMPOTENCY",
                     "BROKERAGE_IDEMPOTENCY",
@@ -584,7 +585,7 @@ class JdbcBrokerageOrderRepository(
         targetId: String,
     ): String =
         actorCapabilityIssuer.issue(
-            actorUserId,
+            AuthenticatedActorRef.current(actorUserId),
             ActorCapabilityBinding.target(
                 operation,
                 targetKind,
@@ -601,7 +602,7 @@ class JdbcBrokerageOrderRepository(
         payloadJson: String,
     ): String =
         actorCapabilityIssuer.issue(
-            actorUserId,
+            AuthenticatedActorRef.current(actorUserId),
             ActorCapabilityBinding.request(
                 operation,
                 targetKind,

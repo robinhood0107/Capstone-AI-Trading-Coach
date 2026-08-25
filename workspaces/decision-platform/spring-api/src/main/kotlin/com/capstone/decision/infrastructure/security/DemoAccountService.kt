@@ -11,6 +11,7 @@ import java.util.Base64
 class DemoAccountService(
     private val userSecurityRepository: UserSecurityRepository,
     private val passwordEncoder: PasswordEncoder,
+    private val jwtProperties: JwtProperties,
 ) {
     // unknown username도 동일 cost의 BCrypt 경로를 지나 username enumeration timing 차이를 줄인다.
     private val dummyPassword: String = randomDummyPassword()
@@ -61,11 +62,27 @@ class DemoAccountService(
         ) {
             return null
         }
+        val session =
+            userSecurityRepository.createAuthenticatedSession(
+                username = username,
+                password = password,
+                ttlSeconds = Math.multiplyExact(jwtProperties.ttlHours, 3_600L).toInt(),
+            ) ?: return null
+        if (
+            session.userId != storedUser.userId ||
+            session.username != storedUser.username ||
+            session.role != storedUser.role ||
+            session.securityVersion != storedUser.securityVersion
+        ) {
+            return null
+        }
         return DemoAccount(
-            userId = storedUser.userId,
-            username = storedUser.username,
-            role = storedUser.role,
-            securityVersion = storedUser.securityVersion,
+            userId = session.userId,
+            username = session.username,
+            role = session.role,
+            securityVersion = session.securityVersion,
+            sessionHandle = session.sessionHandle,
+            expiresAt = session.expiresAt,
         )
     }
 
@@ -95,6 +112,8 @@ data class DemoAccount(
     val username: String,
     val role: DemoRole,
     val securityVersion: Long,
+    val sessionHandle: String,
+    val expiresAt: java.time.OffsetDateTime,
 )
 
 // S0.3 권한 테스트는 USER와 ADMIN의 최소 역할 차이만 확인한다.

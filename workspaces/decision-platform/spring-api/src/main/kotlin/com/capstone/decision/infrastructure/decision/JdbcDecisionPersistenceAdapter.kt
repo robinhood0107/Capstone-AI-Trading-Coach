@@ -11,6 +11,7 @@ import com.capstone.decision.application.decision.DecisionWriteRequest
 import com.capstone.decision.application.decision.StoredDecisionIdempotencyResult
 import com.capstone.decision.application.risk.KillSwitchBlockedException
 import com.capstone.decision.application.risk.KillSwitchUnavailableException
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.infrastructure.risk.ActorScopedReadQuery
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
@@ -86,7 +87,11 @@ class JdbcDecisionPersistenceAdapter(
                         FROM persist_decision_bundle_authorized_v2(:capability, :bundle)
                         """.trimIndent(),
                         mapOf(
-                            "capability" to actorCapabilityIssuer.issue(request.actor.userId, binding),
+                            "capability" to
+                                actorCapabilityIssuer.issue(
+                                    AuthenticatedActorRef.current(request.actor.userId),
+                                    binding,
+                                ),
                             "bundle" to bundle,
                         ),
                     ) { row, _ -> row.getString("outcome") to row.getString("result_canonical_json") }

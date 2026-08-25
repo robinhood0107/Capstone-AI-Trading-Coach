@@ -3,6 +3,112 @@
 -- Capabilities live for at most 30 seconds, so no pre-V87 capability may cross this boundary.
 DELETE FROM public.actor_request_capability;
 
+CREATE TABLE public.actor_auth_session (
+  session_hash text PRIMARY KEY,
+  actor_user_id text NOT NULL REFERENCES public.users(user_id) ON DELETE CASCADE,
+  actor_role text NOT NULL CHECK (actor_role IN ('USER','ADMIN')),
+  actor_security_version bigint NOT NULL CHECK (actor_security_version > 0),
+  issued_at timestamptz NOT NULL,
+  expires_at timestamptz NOT NULL,
+  revoked_at timestamptz,
+  CHECK (expires_at > issued_at AND expires_at <= issued_at + interval '24 hours')
+);
+ALTER TABLE public.actor_auth_session OWNER TO flyway;
+CREATE INDEX actor_auth_session_expiry_idx
+  ON public.actor_auth_session(expires_at) WHERE revoked_at IS NULL;
+REVOKE ALL ON TABLE public.actor_auth_session FROM PUBLIC,decision_app,decision_worker,decision_replay,
+  decision_identity,decision_auth;
+GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.actor_auth_session TO flyway;
+
+-- The database performs the credential check that creates a session. decision_auth can no longer
+-- select an actor and then register a capability handle for that selection.
+CREATE FUNCTION public.authenticate_demo_actor_session_v1(
+  p_username text,p_password text,p_ttl_seconds integer
+)
+RETURNS TABLE(
+  session_handle text,actor_user_id text,username text,actor_role text,
+  actor_security_version bigint,expires_at timestamptz
+)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $authenticate_demo_actor_session_v1$
+DECLARE demo_user public.users%ROWTYPE;
+DECLARE demo_admin public.users%ROWTYPE;
+DECLARE user_matches boolean;
+DECLARE admin_matches boolean;
+DECLARE selected_actor public.users%ROWTYPE;
+DECLARE raw_session text;
+DECLARE now_at timestamptz:=statement_timestamp();
+DECLARE password_bytes integer:=octet_length(coalesce(p_password,''));
+BEGIN
+  IF session_user<>'decision_auth'
+     OR char_length(coalesce(p_username,'')) NOT BETWEEN 1 AND 128
+     OR p_ttl_seconds NOT BETWEEN 1 AND 86400 THEN
+    RAISE EXCEPTION 'demo authentication denied' USING ERRCODE='42501';
+  END IF;
+
+  SELECT * INTO demo_user FROM public.users WHERE user_id='usr_demo_user' FOR SHARE;
+  SELECT * INTO demo_admin FROM public.users WHERE user_id='usr_demo_admin' FOR SHARE;
+  IF demo_user.user_id IS NULL OR demo_admin.user_id IS NULL
+     OR demo_user.username<>'demo-user' OR demo_user.role<>'USER' OR demo_user.status<>'ACTIVE'
+     OR demo_admin.username<>'demo-admin' OR demo_admin.role<>'ADMIN' OR demo_admin.status<>'ACTIVE'
+     OR demo_user.security_version<=0 OR demo_admin.security_version<=0
+     OR demo_user.password_hash!~'^\$2[aby]\$12\$[./A-Za-z0-9]{53}$'
+     OR demo_admin.password_hash!~'^\$2[aby]\$12\$[./A-Za-z0-9]{53}$' THEN
+    RAISE EXCEPTION 'demo authentication denied' USING ERRCODE='42501';
+  END IF;
+
+  -- Always pay both BCrypt costs. The byte bound is checked only after both comparisons so
+  -- unknown and overlong credentials do not create a cheaper actor-enumeration path.
+  user_matches:=public.crypt(coalesce(p_password,''),demo_user.password_hash)=demo_user.password_hash;
+  admin_matches:=public.crypt(coalesce(p_password,''),demo_admin.password_hash)=demo_admin.password_hash;
+  IF password_bytes NOT BETWEEN 1 AND 72 THEN
+    RETURN;
+  ELSIF p_username='demo-user' AND user_matches AND NOT admin_matches THEN
+    selected_actor:=demo_user;
+  ELSIF p_username='demo-admin' AND admin_matches AND NOT user_matches THEN
+    selected_actor:=demo_admin;
+  ELSE
+    RETURN;
+  END IF;
+
+  DELETE FROM public.actor_auth_session expired
+  WHERE expired.expires_at<=now_at OR expired.revoked_at IS NOT NULL;
+  raw_session:='sid1_'||encode(public.gen_random_bytes(32),'hex');
+  INSERT INTO public.actor_auth_session(
+    session_hash,actor_user_id,actor_role,actor_security_version,issued_at,expires_at
+  ) VALUES (
+    'sha256:'||encode(public.digest(raw_session,'sha256'),'hex'),
+    selected_actor.user_id,selected_actor.role,selected_actor.security_version,
+    now_at,now_at+make_interval(secs=>p_ttl_seconds)
+  );
+  RETURN QUERY SELECT raw_session,selected_actor.user_id,selected_actor.username,
+    selected_actor.role,selected_actor.security_version,now_at+make_interval(secs=>p_ttl_seconds);
+END
+$authenticate_demo_actor_session_v1$;
+ALTER FUNCTION public.authenticate_demo_actor_session_v1(text,text,integer) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.authenticate_demo_actor_session_v1(text,text,integer)
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity;
+GRANT EXECUTE ON FUNCTION public.authenticate_demo_actor_session_v1(text,text,integer) TO decision_auth;
+
+CREATE FUNCTION public.read_actor_auth_session_v1(p_session_handle text)
+RETURNS TABLE(actor_user_id text,username text,actor_role text,actor_security_version bigint,expires_at timestamptz)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog
+AS $read_actor_auth_session_v1$
+  SELECT actor.user_id,actor.username,actor.role,actor.security_version,session.expires_at
+  FROM public.actor_auth_session session
+  JOIN public.users actor ON actor.user_id=session.actor_user_id
+  WHERE session_user='decision_auth'
+    AND p_session_handle~'^sid1_[0-9a-f]{64}$'
+    AND session.session_hash='sha256:'||encode(public.digest(p_session_handle,'sha256'),'hex')
+    AND session.revoked_at IS NULL AND session.expires_at>statement_timestamp()
+    AND actor.status='ACTIVE' AND actor.role=session.actor_role
+    AND actor.security_version=session.actor_security_version
+$read_actor_auth_session_v1$;
+ALTER FUNCTION public.read_actor_auth_session_v1(text) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.read_actor_auth_session_v1(text)
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity;
+GRANT EXECUTE ON FUNCTION public.read_actor_auth_session_v1(text) TO decision_auth;
+
 CREATE TABLE public.actor_identity_handle (
   handle_hash text PRIMARY KEY,
   actor_user_id text NOT NULL REFERENCES public.users(user_id),
@@ -26,7 +132,7 @@ REVOKE ALL ON TABLE public.actor_identity_handle FROM PUBLIC,decision_app,decisi
 GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.actor_identity_handle TO flyway;
 
 CREATE FUNCTION public.register_actor_identity_handle_v1(
-  p_actor_user_id text,
+  p_session_handle text,
   p_operation text,
   p_target_kind text,
   p_target_id text,
@@ -42,7 +148,7 @@ DECLARE raw_handle text;
 DECLARE now_at timestamptz:=statement_timestamp();
 BEGIN
   IF session_user<>'decision_auth'
-     OR p_actor_user_id!~'^usr_[A-Za-z0-9_-]{4,96}$'
+     OR p_session_handle!~'^sid1_[0-9a-f]{64}$'
      OR p_operation!~'^[A-Z][A-Z0-9_]{2,63}$'
      OR p_target_kind!~'^[A-Z][A-Z0-9_]{2,31}$'
      OR char_length(p_target_id) NOT BETWEEN 1 AND 160
@@ -51,8 +157,15 @@ BEGIN
      OR p_ttl_seconds NOT BETWEEN 1 AND 15 THEN
     RAISE EXCEPTION 'actor identity handle registration denied' USING ERRCODE='42501';
   END IF;
-  SELECT role,status,security_version INTO actor
-  FROM public.users WHERE user_id=p_actor_user_id FOR SHARE;
+  SELECT current_actor.user_id,current_actor.role,current_actor.status,current_actor.security_version
+  INTO actor
+  FROM public.actor_auth_session session
+  JOIN public.users current_actor ON current_actor.user_id=session.actor_user_id
+  WHERE session.session_hash='sha256:'||encode(public.digest(p_session_handle,'sha256'),'hex')
+    AND session.revoked_at IS NULL AND session.expires_at>now_at
+    AND current_actor.role=session.actor_role
+    AND current_actor.security_version=session.actor_security_version
+  FOR SHARE OF current_actor;
   IF NOT FOUND OR actor.status<>'ACTIVE'
      OR actor.role NOT IN ('USER','ADMIN')
      OR (p_role_policy='ADMIN_ONLY' AND actor.role<>'ADMIN') THEN
@@ -66,7 +179,7 @@ BEGIN
     operation,target_kind,target_id,payload_hash,role_policy,issued_at,expires_at
   ) VALUES (
     'sha256:'||encode(public.digest(raw_handle,'sha256'),'hex'),
-    p_actor_user_id,actor.role,actor.security_version,
+    actor.user_id,actor.role,actor.security_version,
     p_operation,p_target_kind,p_target_id,p_payload_hash,p_role_policy,
     now_at,now_at+make_interval(secs=>p_ttl_seconds)
   );
@@ -279,9 +392,9 @@ BEGIN
   WHERE scope.expires_at<=statement_timestamp()
      OR (scope.backend_pid=pg_backend_pid() AND scope.transaction_id<>txid_current());
   INSERT INTO public.actor_rls_scope_v1(
-    backend_pid,transaction_id,actor_user_id,operation,target_kind,target_id,expires_at
+    backend_pid,transaction_id,actor_user_id,operation,target_kind,target_id,payload_hash,expires_at
   ) VALUES (
-    pg_backend_pid(),txid_current(),p_actor_user_id,p_operation,p_target_kind,p_target_id,
+    pg_backend_pid(),txid_current(),p_actor_user_id,p_operation,p_target_kind,p_target_id,p_payload_hash,
     statement_timestamp()+interval '30 seconds'
   )
   ON CONFLICT (backend_pid,transaction_id) DO UPDATE
@@ -289,6 +402,7 @@ BEGIN
       operation=EXCLUDED.operation,
       target_kind=EXCLUDED.target_kind,
       target_id=EXCLUDED.target_id,
+      payload_hash=EXCLUDED.payload_hash,
       opened_at=statement_timestamp(),
       expires_at=EXCLUDED.expires_at
   WHERE public.actor_rls_scope_v1.actor_user_id=EXCLUDED.actor_user_id;
@@ -629,12 +743,14 @@ CREATE TABLE public.actor_rls_scope_v1 (
   operation text NOT NULL,
   target_kind text NOT NULL,
   target_id text NOT NULL,
+  payload_hash text NOT NULL,
   opened_at timestamptz NOT NULL DEFAULT statement_timestamp(),
   expires_at timestamptz NOT NULL,
   PRIMARY KEY (backend_pid,transaction_id),
   CHECK (operation ~ '^[A-Z][A-Z0-9_]{2,63}$'),
   CHECK (target_kind ~ '^[A-Z][A-Z0-9_]{2,31}$'),
   CHECK (char_length(target_id) BETWEEN 1 AND 160),
+  CHECK (payload_hash ~ '^sha256:[0-9a-f]{64}$'),
   CHECK (expires_at>opened_at AND expires_at<=opened_at+interval '30 seconds')
 );
 ALTER TABLE public.actor_rls_scope_v1 OWNER TO flyway;
@@ -665,6 +781,37 @@ FROM PUBLIC,decision_worker,decision_replay,decision_identity,decision_auth;
 GRANT EXECUTE ON FUNCTION public.open_actor_rls_scope_v1(text,text,text,text,text,text)
 TO decision_app;
 
+-- Every privileged actor call must prove the exact capability binding again at its SQL boundary.
+-- This is intentionally a fixed assertion, not a caller-selected function dispatcher.
+CREATE FUNCTION public.assert_actor_rls_scope_exact_v1(
+  p_actor_user_id text,p_operation text,p_target_kind text,p_target_id text,p_payload_hash text
+)
+RETURNS boolean
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog
+AS $assert_actor_rls_scope_exact_v1$
+BEGIN
+  IF session_user<>'decision_app' OR NOT EXISTS (
+    SELECT 1 FROM public.actor_rls_scope_v1 scope
+    WHERE scope.backend_pid=pg_backend_pid()
+      AND scope.transaction_id=txid_current()
+      AND scope.actor_user_id=p_actor_user_id
+      AND scope.operation=p_operation
+      AND scope.target_kind=p_target_kind
+      AND scope.target_id=p_target_id
+      AND scope.payload_hash=p_payload_hash
+      AND scope.expires_at>statement_timestamp()
+  ) THEN
+    RAISE EXCEPTION 'exact actor RLS scope denied' USING ERRCODE='42501';
+  END IF;
+  RETURN true;
+END
+$assert_actor_rls_scope_exact_v1$;
+ALTER FUNCTION public.assert_actor_rls_scope_exact_v1(text,text,text,text,text) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.assert_actor_rls_scope_exact_v1(text,text,text,text,text)
+FROM PUBLIC,decision_worker,decision_replay,decision_identity,decision_auth;
+GRANT EXECUTE ON FUNCTION public.assert_actor_rls_scope_exact_v1(text,text,text,text,text)
+TO decision_app;
+
 CREATE FUNCTION public.actor_rls_scope_is_open_v1()
 RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog
@@ -676,6 +823,14 @@ AS $actor_rls_scope_is_open_v1$
       WHERE scope.backend_pid=pg_backend_pid()
         AND scope.transaction_id=txid_current()
         AND scope.actor_user_id=nullif(current_setting('app.actor_user_id',true),'')
+        AND (
+          nullif(current_setting('app.required_actor_operation',true),'') IS NULL
+          OR scope.operation=ANY(string_to_array(current_setting('app.required_actor_operation',true),','))
+        )
+        AND (
+          nullif(current_setting('app.required_actor_target_kind',true),'') IS NULL
+          OR scope.target_kind=ANY(string_to_array(current_setting('app.required_actor_target_kind',true),','))
+        )
         AND scope.expires_at>statement_timestamp()
     )
   END
@@ -700,6 +855,18 @@ AS $guarded_current_setting$
       WHERE scope.backend_pid=pg_backend_pid()
         AND scope.transaction_id=txid_current()
         AND scope.actor_user_id=nullif(pg_catalog.current_setting('app.actor_user_id',true),'')
+        AND (
+          nullif(pg_catalog.current_setting('app.required_actor_operation',true),'') IS NULL
+          OR scope.operation=ANY(
+            pg_catalog.string_to_array(pg_catalog.current_setting('app.required_actor_operation',true),',')
+          )
+        )
+        AND (
+          nullif(pg_catalog.current_setting('app.required_actor_target_kind',true),'') IS NULL
+          OR scope.target_kind=ANY(
+            pg_catalog.string_to_array(pg_catalog.current_setting('app.required_actor_target_kind',true),',')
+          )
+        )
         AND scope.expires_at>statement_timestamp()
       ) THEN pg_catalog.current_setting('app.actor_user_id',true)
     ELSE NULL
@@ -729,6 +896,54 @@ BEGIN
   END LOOP;
 END
 $p1_v87_guard_legacy_actor_functions$;
+
+-- Legacy RAG functions keep their frozen bodies, but decision_app can reach them only while the
+-- transaction carries the operation and target-kind binding assigned here. A READ capability can
+-- therefore never authorize a consent/import/history mutation even though both use owner RLS.
+DO $p1_v87_rag_exact_operation_boundaries$
+DECLARE item record;
+BEGIN
+  FOR item IN
+    SELECT procedure.oid::regprocedure AS function_identity,binding.operation,binding.target_kind
+    FROM (VALUES
+      ('read_rag_v2_corpus_status','READ_RAG_V2_CORPUS','OWNER'),
+      ('record_rag_v2_immutable_consent_v2','RECORD_RAG_V2_CONSENT','OWNER'),
+      ('read_rag_v2_immutable_effective_consent','READ_RAG_V2_CONSENT','OWNER'),
+      ('issue_rag_v2_immutable_import_ticket_v2','ISSUE_RAG_V2_IMPORT','RAG_TICKET'),
+      ('issue_rag_v2_immutable_owner_delete_ticket','ISSUE_RAG_V2_DELETE','RAG_DOCUMENT'),
+      ('persist_rag_v2_immutable_retrieval_history','PERSIST_RAG_V2_RETRIEVAL','RAG_REQUEST'),
+      ('persist_s4_9_strong_llm_history_v2','PERSIST_STRONG_LLM_HISTORY','RAG_REQUEST'),
+      ('read_rag_v2_history_metadata','LIST_RAG_V2_HISTORY','OWNER'),
+      ('read_rag_v2_history_detail','READ_RAG_V2_HISTORY','RAG_ANSWER'),
+      ('delete_owned_rag_v2_history','DELETE_RAG_V2_HISTORY','RAG_ANSWER'),
+      ('issue_rag_v2_retrieval_scope_v2','ISSUE_RAG_V2_SCOPE,ISSUE_MCP_RAG_SCOPE','RAG_REQUEST'),
+      ('issue_rag_v2_retrieval_scope_v3','ISSUE_RAG_V2_SCOPE','RAG_REQUEST'),
+      ('issue_s4_9_mcp_retrieval_scope','ISSUE_MCP_RAG_SCOPE','RAG_REQUEST'),
+      ('authorize_s4_9_runtime_voyage_query','AUTHORIZE_VOYAGE_QUERY','RAG_SCOPE'),
+      ('read_rag_v2_vertex_prepared_scope_v2','READ_VERTEX_PREPARED_SCOPE','RAG_SCOPE'),
+      ('claim_rag_answer','CLAIM_RAG_ANSWER','RAG_CLAIM'),
+      ('complete_rag_answer','COMPLETE_RAG_ANSWER','RAG_ANSWER'),
+      ('fail_rag_answer_before_provider','FAIL_RAG_ANSWER','RAG_ANSWER'),
+      ('mark_rag_answer_unknown_after_provider','UNKNOWN_RAG_ANSWER','RAG_ANSWER'),
+      ('read_rag_history_detail','READ_RAG_HISTORY','RAG_ANSWER'),
+      ('read_rag_history_citations','READ_RAG_CITATIONS','RAG_ANSWER'),
+      ('read_rag_history_metadata','LIST_RAG_HISTORY','OWNER'),
+      ('delete_owned_rag_history','DELETE_RAG_HISTORY','RAG_ANSWER'),
+      ('upsert_owned_rag_answer_feedback','UPSERT_RAG_FEEDBACK','RAG_ANSWER'),
+      ('record_rag_consent_event','RECORD_RAG_CONSENT','RAG_CONSENT'),
+      ('read_effective_rag_consent','READ_RAG_CONSENT','OWNER'),
+      ('issue_rag_rpc_scope','ISSUE_RAG_RPC_SCOPE','RAG_REQUEST'),
+      ('recheck_rag_rpc_citations','RECHECK_RAG_CITATIONS','RAG_REQUEST'),
+      ('read_rag_v2_vertex_generation_evidence','READ_VERTEX_EVIDENCE','RAG_ANSWER')
+    ) AS binding(function_name,operation,target_kind)
+    JOIN pg_proc procedure ON procedure.proname=binding.function_name
+    JOIN pg_namespace namespace ON namespace.oid=procedure.pronamespace AND namespace.nspname='public'
+  LOOP
+    EXECUTE format('ALTER FUNCTION %s SET app.required_actor_operation=%L',item.function_identity,item.operation);
+    EXECUTE format('ALTER FUNCTION %s SET app.required_actor_target_kind=%L',item.function_identity,item.target_kind);
+  END LOOP;
+END
+$p1_v87_rag_exact_operation_boundaries$;
 
 -- Preserve the effective V87 policy expressions from either B86 or V1..V86, while making
 -- every policy that trusts app.actor_user_id also require the server-created transaction scope.

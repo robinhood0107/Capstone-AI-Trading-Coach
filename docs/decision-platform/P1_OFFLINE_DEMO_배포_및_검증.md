@@ -131,16 +131,16 @@ runtime env는 0600, service별 secret file은 0640이다. 현재 host group만 
 
 ## DB 설치와 upgrade
 
-새 DB는 `B86__p1_offline_demo_baseline.sql` 하나로 최종 schema를 설치한다. 기존 DB는 V1~V85 history를
-보존한 채 V86만 적용한다. 두 경로 모두 `role-bootstrap`이 전용 `decision_auth` 역할과 최소 권한을 먼저
+새 DB는 `B86__p1_offline_demo_baseline.sql`로 baseline schema를 설치한 뒤 V87 forward migration을
+적용한다. 기존 DB는 V1~V86 history를 보존한 채 V87을 적용한다. 두 경로 모두 `role-bootstrap`이 전용 `decision_auth` 역할과 최소 권한을 먼저
 보장한 뒤 Flyway가 실행되므로 PostgreSQL fresh-init script에만 의존하지 않는다. baseline은
 credential/verifier와 runtime/audit/outbox/RAG/user data를 포함하지 않으며 one-shot identity bootstrap이
 demo identity를 별도로 설치한다.
 
 다음 동등성은 자동 검증 대상이다.
 
-- historical V1→V86과 B86 fresh schema/ACL/RLS/function/trigger/static seed parity
-- V85→V86 upgrade
+- historical V1→V87과 B86→V87 fresh schema/ACL/RLS/function/trigger/static seed parity
+- V86→V87 upgrade
 - 기존 DB에서 baseline 적용 0
 - fresh DB에서 하위 V migration 적용 0
 - 양 경로에서 다음 synthetic V migration 적용 가능
@@ -166,7 +166,7 @@ DB→Kafka→DB로 adapter를 전환하고 매 단계 smoke/restart를 수행하
 확인한다. 이 과정과 cleanup은 container만 중지하고 volume을 삭제하지 않는다.
 
 backup은 owner metadata를 보존하는 custom dump를 exact Compose project에서 만들고 owner-only mode로
-저장한다. `restore-test`는 별도 격리 project/volume에 ownership을 포함해 복원한 뒤 Flyway version 86,
+저장한다. `restore-test`는 별도 격리 project/volume에 ownership을 포함해 복원한 뒤 Flyway version 87,
 핵심 table/function owner `flyway`, active demo trust root, active approval authority를 확인한다. 운영 DB에
 restore하지 않으며 격리 volume도 자동 삭제하지 않고 출력된 project 이름으로 회수 가능하게 남긴다.
 

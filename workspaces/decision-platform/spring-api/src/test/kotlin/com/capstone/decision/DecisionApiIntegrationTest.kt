@@ -5,7 +5,6 @@ import com.capstone.decision.application.risk.KillSwitchMutationCommand
 import com.capstone.decision.application.risk.KillSwitchMutationPort
 import com.capstone.decision.domain.risk.KillSwitchActorRole
 import com.capstone.decision.domain.risk.KillSwitchReasonClass
-import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import io.micrometer.core.instrument.MeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -70,7 +69,7 @@ class DecisionApiIntegrationTest(
     @Autowired private val redisTemplate: StringRedisTemplate,
     @Autowired private val meterRegistry: MeterRegistry,
     @Autowired private val killSwitchMutationPort: KillSwitchMutationPort,
-    @Autowired private val actorCapabilityIssuer: ActorCapabilityIssuer,
+    @Autowired private val actorCapabilityIssuer: TestActorCapabilityIssuer,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
     private val jdbcTemplate: JdbcTemplate by lazy {
@@ -628,7 +627,7 @@ class DecisionApiIntegrationTest(
                     """.trimIndent(),
                     Boolean::class.java,
                     actorCapabilityIssuer.issue(
-                        "usr_demo_user",
+                        actorCapabilityIssuer.actorRef("usr_demo_user"),
                         com.capstone.decision.infrastructure.security.ActorCapabilityBinding.request(
                             "TRANSITION_KILL_SWITCH",
                             "KILL_SWITCH",
@@ -664,19 +663,21 @@ class DecisionApiIntegrationTest(
             storedFuture,
         )
         val result =
-            killSwitchMutationPort.mutate(
-                KillSwitchMutationCommand(
-                    actor =
-                        KillSwitchActor(
-                            userId = "usr_demo_user",
-                            role = KillSwitchActorRole.USER,
-                            securityVersion = 1,
-                            requestId = "req-risk-kill-clock-behind",
-                        ),
-                    requestedActive = true,
-                    reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
-                ),
-            )
+            asTestActor(actorCapabilityIssuer) {
+                killSwitchMutationPort.mutate(
+                    KillSwitchMutationCommand(
+                        actor =
+                            KillSwitchActor(
+                                userId = "usr_demo_user",
+                                role = KillSwitchActorRole.USER,
+                                securityVersion = 1,
+                                requestId = "req-risk-kill-clock-behind",
+                            ),
+                        requestedActive = true,
+                        reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
+                    ),
+                )
+            }
 
         assertTrue(result.changed)
         assertEquals(
@@ -691,19 +692,21 @@ class DecisionApiIntegrationTest(
     @Test
     fun `Kill Switch mutation derives the reason class without trusting the request value`() {
         val result =
-            killSwitchMutationPort.mutate(
-                KillSwitchMutationCommand(
-                    actor =
-                        KillSwitchActor(
-                            userId = "usr_demo_user",
-                            role = KillSwitchActorRole.USER,
-                            securityVersion = 1,
-                            requestId = "req-risk-kill-policy-drift",
-                        ),
-                    requestedActive = true,
-                    reasonClass = KillSwitchReasonClass.DATA_FRESHNESS_STOP,
-                ),
-            )
+            asTestActor(actorCapabilityIssuer) {
+                killSwitchMutationPort.mutate(
+                    KillSwitchMutationCommand(
+                        actor =
+                            KillSwitchActor(
+                                userId = "usr_demo_user",
+                                role = KillSwitchActorRole.USER,
+                                securityVersion = 1,
+                                requestId = "req-risk-kill-policy-drift",
+                            ),
+                        requestedActive = true,
+                        reasonClass = KillSwitchReasonClass.DATA_FRESHNESS_STOP,
+                    ),
+                )
+            }
         assertTrue(result.changed)
         assertEquals(KillSwitchReasonClass.USER_MANUAL_STOP, result.state.reasonClass)
 

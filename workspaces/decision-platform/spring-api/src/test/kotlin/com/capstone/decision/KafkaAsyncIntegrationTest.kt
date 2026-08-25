@@ -34,6 +34,7 @@ class KafkaAsyncIntegrationTest(
     @Autowired private val context: ApplicationContext,
     @Autowired private val asyncPipelinePort: AsyncPipelinePort,
     @Autowired private val applicationDataSource: DataSource,
+    @Autowired private val actorCapabilityIssuer: TestActorCapabilityIssuer,
 ) : SpringApiIntegrationTestBase() {
     private val appJdbc by lazy { JdbcTemplate(applicationDataSource) }
     private val ownerJdbc by lazy {
@@ -56,17 +57,19 @@ class KafkaAsyncIntegrationTest(
         assertEquals(1, context.getBeansOfType(KafkaAsyncPipelineAdapter::class.java).size)
         assertEquals(0, context.getBeansOfType(DbAsyncPipelineAdapter::class.java).size)
         val accepted =
-            asyncPipelinePort.request(
-                AsyncJobRequest(
-                    type = AsyncJobType.ARTIFACT_INGEST,
-                    requestedBy = "usr_demo_user",
-                    references =
-                        mapOf(
-                            "artifactId" to "artifact_kafka_00000001",
-                            "contentHash" to "sha256:" + "d".repeat(64),
-                        ),
-                ),
-            )
+            asTestActor(actorCapabilityIssuer) {
+                asyncPipelinePort.request(
+                    AsyncJobRequest(
+                        type = AsyncJobType.ARTIFACT_INGEST,
+                        requestedBy = "usr_demo_user",
+                        references =
+                            mapOf(
+                                "artifactId" to "artifact_kafka_00000001",
+                                "contentHash" to "sha256:" + "d".repeat(64),
+                            ),
+                    ),
+                )
+            }
 
         assertEquals(
             "PENDING",

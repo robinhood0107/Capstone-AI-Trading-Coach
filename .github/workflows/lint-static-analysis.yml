@@ -62,4 +62,4 @@ jobs:
         run: uv sync --project workspaces/decision-platform/python-services --frozen
 
       - name: Run check-only lint and static analysis
-        run: scripts/lint-static-analysis.sh
+        run: bash scripts/lint-static-analysis.sh

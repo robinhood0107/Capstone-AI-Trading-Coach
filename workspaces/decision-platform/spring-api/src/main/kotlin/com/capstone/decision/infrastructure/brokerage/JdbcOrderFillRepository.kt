@@ -14,6 +14,7 @@ import com.capstone.decision.application.brokerage.OrderFillRecord
 import com.capstone.decision.application.brokerage.ReconciliationProjection
 import com.capstone.decision.application.brokerage.StoredFillObservation
 import com.capstone.decision.application.brokerage.StoredOrderFillState
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.domain.brokerage.FillExecutionType
 import com.capstone.decision.domain.brokerage.OrderFillState
 import com.capstone.decision.domain.brokerage.OrderFillStatus
@@ -407,7 +408,7 @@ class JdbcOrderFillRepository(
         admin: Boolean = false,
     ): String =
         actorCapabilityIssuer.issue(
-            actorUserId,
+            AuthenticatedActorRef.current(actorUserId),
             ActorCapabilityBinding.request(
                 operation,
                 targetKind,

@@ -11,7 +11,6 @@ import com.capstone.decision.domain.risk.KillSwitchReasonClass
 import com.capstone.decision.infrastructure.brokerage.BrokerageIdempotencyHasher
 import com.capstone.decision.infrastructure.brokerage.RedisPaperIdempotencyClaimAdapter
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
-import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
 import com.capstone.decision.infrastructure.security.DemoAccount
 import com.capstone.decision.infrastructure.security.DemoRole
@@ -72,7 +71,7 @@ class BrokerageApiIntegrationTest(
     @Autowired private val appDataSource: DataSource,
     @Autowired private val brokerageIdempotencyHasher: BrokerageIdempotencyHasher,
     @Autowired private val jwtService: JwtService,
-    @Autowired private val actorCapabilityIssuer: ActorCapabilityIssuer,
+    @Autowired private val actorCapabilityIssuer: TestActorCapabilityIssuer,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
     private val jdbcTemplate: JdbcTemplate by lazy {
@@ -305,6 +304,24 @@ class BrokerageApiIntegrationTest(
                     "usr_demo_admin",
                 ),
             )
+            val demotedSessionHandle = "sid1_" + "d".repeat(64)
+            val demotedSessionExpiresAt = OffsetDateTime.now().plusHours(12)
+            assertEquals(
+                1,
+                jdbcTemplate.update(
+                    """
+                    insert into actor_auth_session(
+                      session_hash,actor_user_id,actor_role,actor_security_version,issued_at,expires_at
+                    ) values ('sha256:'||encode(digest(?,'sha256'),'hex'),?,?,?,?,?)
+                    """.trimIndent(),
+                    demotedSessionHandle,
+                    "usr_demo_admin",
+                    "USER",
+                    demotedSecurityVersion,
+                    OffsetDateTime.now(),
+                    demotedSessionExpiresAt,
+                ),
+            )
             val demotedToken =
                 jwtService
                     .issue(
@@ -313,6 +330,8 @@ class BrokerageApiIntegrationTest(
                             username = "demo-admin",
                             role = DemoRole.USER,
                             securityVersion = demotedSecurityVersion,
+                            sessionHandle = demotedSessionHandle,
+                            expiresAt = demotedSessionExpiresAt,
                         ),
                     ).token
 
@@ -1407,19 +1426,21 @@ class BrokerageApiIntegrationTest(
         assertEquals("DECISION_EXPIRED", json(expired).at("/error/code").stringValue())
 
         val blockedDecision = createDecision(token, "14", orderIntent(), portfolioSource = "INTERNAL_PAPER")
-        killSwitchMutationPort.mutate(
-            KillSwitchMutationCommand(
-                actor =
-                    KillSwitchActor(
-                        userId = "usr_demo_user",
-                        role = KillSwitchActorRole.USER,
-                        securityVersion = 1,
-                        requestId = "req-paper-kill-switch",
-                    ),
-                requestedActive = true,
-                reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
-            ),
-        )
+        asTestActor(actorCapabilityIssuer) {
+            killSwitchMutationPort.mutate(
+                KillSwitchMutationCommand(
+                    actor =
+                        KillSwitchActor(
+                            userId = "usr_demo_user",
+                            role = KillSwitchActorRole.USER,
+                            securityVersion = 1,
+                            requestId = "req-paper-kill-switch",
+                        ),
+                    requestedActive = true,
+                    reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
+                ),
+            )
+        }
         val blocked =
             submitPaperOrder(
                 token,
@@ -1782,19 +1803,21 @@ class BrokerageApiIntegrationTest(
         assertEquals("DECISION_EXPIRED", json(expired).at("/error/code").stringValue())
 
         val invalidatedDecisionId = createDecision(token, suffix = "04", order = orderIntent())
-        killSwitchMutationPort.mutate(
-            KillSwitchMutationCommand(
-                actor =
-                    KillSwitchActor(
-                        userId = "usr_demo_user",
-                        role = KillSwitchActorRole.USER,
-                        securityVersion = 1,
-                        requestId = "req-brokerage-kill-switch",
-                    ),
-                requestedActive = true,
-                reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
-            ),
-        )
+        asTestActor(actorCapabilityIssuer) {
+            killSwitchMutationPort.mutate(
+                KillSwitchMutationCommand(
+                    actor =
+                        KillSwitchActor(
+                            userId = "usr_demo_user",
+                            role = KillSwitchActorRole.USER,
+                            securityVersion = 1,
+                            requestId = "req-brokerage-kill-switch",
+                        ),
+                    requestedActive = true,
+                    reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
+                ),
+            )
+        }
         val blocked =
             submitMockOrder(
                 token,
@@ -2333,7 +2356,7 @@ class BrokerageApiIntegrationTest(
                     "orderIntent" to order,
                 ),
             )
-        assertEquals(200, response.response.status)
+        assertEquals(200, response.response.status, response.response.contentAsString)
         assertEquals(
             "ALLOW",
             json(response).at("/data/riskDecision/decision").stringValue(),
@@ -2851,7 +2874,7 @@ class BrokerageApiIntegrationTest(
         admin: Boolean = false,
     ): String =
         actorCapabilityIssuer.issue(
-            actorUserId,
+            actorCapabilityIssuer.actorRef(actorUserId),
             if (payloadJson == null) {
                 ActorCapabilityBinding.target(
                     operation,

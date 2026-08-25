@@ -7,6 +7,7 @@ import com.capstone.decision.application.async.AsyncJobStatusPort
 import com.capstone.decision.application.async.AsyncJobStatusUnavailableException
 import com.capstone.decision.application.async.AsyncJobType
 import com.capstone.decision.application.async.AsyncJobView
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
@@ -39,7 +40,7 @@ class JdbcAsyncJobStatusAdapter(
                 .query(
                     "SELECT * FROM read_async_job_status_authorized(:capability,:actorUserId,:securityVersion,:jobId)",
                     mapOf(
-                        "capability" to actorCapabilityIssuer.issue(actorUserId, binding),
+                        "capability" to actorCapabilityIssuer.issue(AuthenticatedActorRef.current(actorUserId, securityVersion), binding),
                         "actorUserId" to actorUserId,
                         "securityVersion" to securityVersion,
                         "jobId" to jobId,
@@ -77,7 +78,11 @@ class JdbcAsyncJobStatusAdapter(
                 )
                 """.trimIndent(),
                 mapOf(
-                    "capability" to actorCapabilityIssuer.issue(query.actorUserId, binding),
+                    "capability" to
+                        actorCapabilityIssuer.issue(
+                            AuthenticatedActorRef.current(query.actorUserId, query.securityVersion),
+                            binding,
+                        ),
                     "actorUserId" to query.actorUserId,
                     "securityVersion" to query.securityVersion,
                     "status" to query.status?.name,

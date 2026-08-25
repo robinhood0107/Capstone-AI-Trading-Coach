@@ -1,12 +1,13 @@
 package com.capstone.decision.infrastructure.security
 
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 
 fun interface ActorIdentityHandleIssuer {
     fun issue(
-        actorUserId: String,
+        actor: AuthenticatedActorRef,
         binding: ActorCapabilityBinding,
     ): String
 }
@@ -19,7 +20,7 @@ class DatabaseActorIdentityHandleIssuer(
     private val jdbc = JdbcTemplate(authDatabase.dataSource)
 
     override fun issue(
-        actorUserId: String,
+        actor: AuthenticatedActorRef,
         binding: ActorCapabilityBinding,
     ): String =
         jdbc.queryForObject(
@@ -27,7 +28,7 @@ class DatabaseActorIdentityHandleIssuer(
             SELECT register_actor_identity_handle_v1(?,?,?,?,?,?,?)
             """.trimIndent(),
             String::class.java,
-            actorUserId,
+            actor.sessionHandle,
             binding.operation,
             binding.targetKind,
             binding.targetId,

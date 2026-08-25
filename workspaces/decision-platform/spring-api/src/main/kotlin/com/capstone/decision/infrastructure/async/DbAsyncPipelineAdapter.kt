@@ -5,6 +5,7 @@ import com.capstone.decision.application.async.AsyncJobRequest
 import com.capstone.decision.application.async.AsyncJobRequestConflictException
 import com.capstone.decision.application.async.AsyncJobType
 import com.capstone.decision.application.async.AsyncPipelinePort
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
@@ -62,7 +63,7 @@ class JdbcAsyncRequestWriter(
                 )
                 """.trimIndent(),
                 mapOf(
-                    "capability" to actorCapabilityIssuer.issue(command.requestedBy, binding),
+                    "capability" to actorCapabilityIssuer.issue(AuthenticatedActorRef.current(command.requestedBy), binding),
                     "eventId" to eventId,
                     "eventType" to eventType,
                     "partitionKey" to partitionKey,

@@ -5,6 +5,7 @@ import com.capstone.decision.application.risk.port.InstrumentCatalogPort
 import com.capstone.decision.application.risk.port.OrderMetricPort
 import com.capstone.decision.application.risk.port.PortfolioContextResolution
 import com.capstone.decision.application.risk.port.RiskSnapshotPort
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.domain.risk.MetricCell
 import com.capstone.decision.domain.risk.MetricSource
 import com.capstone.decision.domain.risk.MetricValue
@@ -66,6 +67,7 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val instrumentCatalogPort: InstrumentCatalogPort,
     @Autowired private val orderMetricPort: OrderMetricPort,
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
+    @Autowired private val actorCapabilityIssuer: TestActorCapabilityIssuer,
 ) : SpringApiIntegrationTestBase() {
     @AfterEach
     fun revokeHistoricalS5CapabilitiesAfterTest() {
@@ -2669,8 +2671,10 @@ class FlywayMigrationIntegrationTest(
 
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive())
         val context =
-            portfolioContextAdapter.resolve("usr_demo_user", PortfolioSource.KIS_MOCK)
-                as PortfolioContextResolution.Available
+            asTestActor(actorCapabilityIssuer) {
+                portfolioContextAdapter.resolve("usr_demo_user", PortfolioSource.KIS_MOCK)
+                    as PortfolioContextResolution.Available
+            }
         val sourceRequest =
             EvaluationSourceRequest(
                 actorUserId = "usr_demo_user",
@@ -2689,9 +2693,9 @@ class FlywayMigrationIntegrationTest(
                 evaluationAsOf = java.time.Instant.parse(observedAt),
             )
 
-        val price = marketQuoteAdapter.load(sourceRequest) as MetricCell.Available
-        val balance = kisMockBalanceAdapter.load(sourceRequest) as MetricCell.Available
-        val margin = storedMarginAdapter.load(sourceRequest) as MetricCell.Available
+        val price = asTestActor(actorCapabilityIssuer) { marketQuoteAdapter.load(sourceRequest) } as MetricCell.Available
+        val balance = asTestActor(actorCapabilityIssuer) { kisMockBalanceAdapter.load(sourceRequest) } as MetricCell.Available
+        val margin = asTestActor(actorCapabilityIssuer) { storedMarginAdapter.load(sourceRequest) } as MetricCell.Available
         assertEquals(70000L, (price.value as MetricValue.Whole).value)
         assertEquals(1000000L, balance.value.portfolioEquityKrw)
         assertEquals(listOf("005930"), balance.value.positions.map { it.symbol })
@@ -2709,9 +2713,25 @@ class FlywayMigrationIntegrationTest(
             on conflict (user_id) do nothing
             """.trimIndent(),
         )
+        val emptySessionHandle = "sid1_" + "e".repeat(64)
+        jdbcTemplate.update(
+            """
+            insert into actor_auth_session(
+              session_hash,actor_user_id,actor_role,actor_security_version,issued_at,expires_at
+            ) values ('sha256:'||encode(digest(?,'sha256'),'hex'),?,'USER',1,now(),now()+interval '1 hour')
+            on conflict (session_hash) do nothing
+            """.trimIndent(),
+            emptySessionHandle,
+            "usr_empty_context",
+        )
         assertTrue(
-            portfolioContextAdapter.resolve("usr_empty_context", PortfolioSource.KIS_MOCK)
-                is PortfolioContextResolution.Unavailable,
+            asTestActor(
+                AuthenticatedActorRef(emptySessionHandle, "usr_empty_context", 1),
+                "empty-context",
+                "USER",
+            ) {
+                portfolioContextAdapter.resolve("usr_empty_context", PortfolioSource.KIS_MOCK)
+            } is PortfolioContextResolution.Unavailable,
         )
     }
 
@@ -2871,8 +2891,10 @@ class FlywayMigrationIntegrationTest(
             """.trimIndent(),
         )
         val resolution =
-            portfolioContextAdapter.resolve("usr_demo_admin", PortfolioSource.INTERNAL_PAPER)
-                as PortfolioContextResolution.Available
+            asTestActor(actorCapabilityIssuer, "usr_demo_admin") {
+                portfolioContextAdapter.resolve("usr_demo_admin", PortfolioSource.INTERNAL_PAPER)
+                    as PortfolioContextResolution.Available
+            }
         val request =
             EvaluationSourceRequest(
                 actorUserId = "usr_demo_admin",
@@ -2891,8 +2913,10 @@ class FlywayMigrationIntegrationTest(
                 evaluationAsOf = java.time.Instant.parse("2031-02-03T04:05:06Z"),
             )
 
-        assertTrue(internalPaperBalanceAdapter.load(request) is MetricCell.Incomplete)
-        assertTrue(storedMarginAdapter.load(request) is MetricCell.Missing)
+        assertTrue(
+            asTestActor(actorCapabilityIssuer, "usr_demo_admin") { internalPaperBalanceAdapter.load(request) } is MetricCell.Incomplete,
+        )
+        assertTrue(asTestActor(actorCapabilityIssuer, "usr_demo_admin") { storedMarginAdapter.load(request) } is MetricCell.Missing)
 
         jdbcTemplate.update(
             """
@@ -2902,10 +2926,15 @@ class FlywayMigrationIntegrationTest(
             """.trimIndent(),
         )
         val explicitResolution =
-            portfolioContextAdapter.resolve("usr_demo_admin", PortfolioSource.INTERNAL_PAPER)
-                as PortfolioContextResolution.Available
+            asTestActor(actorCapabilityIssuer, "usr_demo_admin") {
+                portfolioContextAdapter.resolve("usr_demo_admin", PortfolioSource.INTERNAL_PAPER)
+                    as PortfolioContextResolution.Available
+            }
         val explicitRequest = request.copy(portfolioContext = explicitResolution.context)
-        val explicitMargin = storedMarginAdapter.load(explicitRequest) as MetricCell.Available
+        val explicitMargin =
+            asTestActor(actorCapabilityIssuer, "usr_demo_admin") {
+                storedMarginAdapter.load(explicitRequest)
+            } as MetricCell.Available
         assertEquals(0L, (explicitMargin.value as MetricValue.Whole).value)
     }
 
@@ -2992,7 +3021,7 @@ class FlywayMigrationIntegrationTest(
                 evaluationAsOf = evaluationAsOf,
             )
 
-        val instrument = instrumentCatalogPort.load(request) as MetricCell.Available
+        val instrument = asTestActor(actorCapabilityIssuer) { instrumentCatalogPort.load(request) } as MetricCell.Available
         assertEquals("catalog-v2", instrument.value.catalogVersion)
         assertEquals(MetricSource.INSTRUMENT_CATALOG, instrument.source)
         assertEquals(
@@ -3002,12 +3031,12 @@ class FlywayMigrationIntegrationTest(
                 ?.toPlainString(),
         )
 
-        val risk = riskSnapshotPort.load(request)
+        val risk = asTestActor(actorCapabilityIssuer) { riskSnapshotPort.load(request) }
         assertEquals("-0.0125", metricDecimal(risk.dailyLossRate))
         assertEquals("-0.08", metricDecimal(risk.maxDrawdown))
         assertEquals("0.22", metricDecimal(risk.annualizedVolatility))
 
-        val orderCount = orderMetricPort.loadDailyOrderCount(request) as MetricCell.Available
+        val orderCount = asTestActor(actorCapabilityIssuer) { orderMetricPort.loadDailyOrderCount(request) } as MetricCell.Available
         assertEquals(0L, (orderCount.value as MetricValue.Whole).value)
     }
 

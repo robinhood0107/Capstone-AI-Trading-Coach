@@ -236,8 +236,11 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "PYTHON_GRPC_SHARED_SECRET",
             "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY",
             "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY",
-            "BROKERAGE_DB_CAPABILITY_TOKEN",
             "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256",
+            "ACTOR_CAPABILITY_TRANSPORT",
+            "ACTOR_CAPABILITY_AUTHORITY_URL",
+            "ACTOR_CAPABILITY_SHARED_SECRET",
+            "ACTOR_CAPABILITY_PUBLIC_KEY",
             "RAG_HISTORY_SECRET_DIRECTORY",
             "RAG_HISTORY_CURRENT_KEK_VERSION",
             "RAG_IDEMPOTENCY_SCOPE_HMAC_KEY",
@@ -247,10 +250,6 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "RAG_HISTORY_CURSOR_HMAC_KEY",
         ):
             self.assertIn(name, parsed)
-        self.assertEqual(
-            hashlib.sha256(parsed["BROKERAGE_DB_CAPABILITY_TOKEN"].encode("utf-8")).hexdigest(),
-            parsed["BROKERAGE_DB_CAPABILITY_TOKEN_SHA256"],
-        )
         self.assertEqual(
             parsed["DECISION_GRPC_SHARED_SECRET"],
             parsed["PYTHON_GRPC_SHARED_SECRET"],
@@ -284,14 +283,6 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "rag-grpc-reused-as-jwt": valid.replace(
                 f"RAG_GRPC_SHARED_SECRET='{'5' * 43}'",
                 f"RAG_GRPC_SHARED_SECRET='{'F' * 43}'",
-            ),
-            "rag-grpc-reused-as-brokerage-capability": valid.replace(
-                f"RAG_GRPC_SHARED_SECRET='{'5' * 43}'",
-                f"RAG_GRPC_SHARED_SECRET='{'U' * 43}'",
-            ),
-            "capability-digest-mismatch": valid.replace(
-                f"BROKERAGE_DB_CAPABILITY_TOKEN_SHA256='{hashlib.sha256(('U' * 43).encode()).hexdigest()}'",
-                f"BROKERAGE_DB_CAPABILITY_TOKEN_SHA256='{'0' * 64}'",
             ),
             "crlf": valid.replace("\n", "\r\n"),
         }
@@ -392,8 +383,11 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "PRINCIPLE_CURSOR_HMAC_KEY": "H" * 43,
             "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY": "Q" * 43,
             "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY": "T" * 43,
-            "BROKERAGE_DB_CAPABILITY_TOKEN": "U" * 43,
             "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256": hashlib.sha256(("U" * 43).encode()).hexdigest(),
+            "ACTOR_CAPABILITY_TRANSPORT": "http",
+            "ACTOR_CAPABILITY_AUTHORITY_URL": "http://127.0.0.1:18081/internal/actor-capabilities/issue",
+            "ACTOR_CAPABILITY_SHARED_SECRET": "U" * 43,
+            "ACTOR_CAPABILITY_PUBLIC_KEY": "B" * 59,
             "RAG_HISTORY_SECRET_DIRECTORY": "/tmp/capstone-openapi-rag-secrets",
             "RAG_HISTORY_CURRENT_KEK_VERSION": "kek-v1",
             "RAG_IDEMPOTENCY_SCOPE_HMAC_KEY": "Z" * 43,

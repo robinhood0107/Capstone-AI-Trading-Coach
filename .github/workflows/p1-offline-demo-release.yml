@@ -7,6 +7,10 @@ on:
         description: SemVer for the P1_OFFLINE_DEMO bundle
         required: true
         type: string
+      expectedMergeSha:
+        description: Exact merge commit currently at main HEAD
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -21,6 +25,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      checks: read
     outputs:
       archive_sha256: ${{ steps.export.outputs.archive_sha256 }}
       sha: ${{ steps.identity.outputs.sha }}
@@ -39,6 +44,8 @@ jobs:
       - name: Checkout exact merge source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
+          ref: ${{ inputs.expectedMergeSha }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Validate release identity
@@ -46,12 +53,34 @@ jobs:
         shell: bash
         env:
           RELEASE_VERSION: ${{ inputs.releaseVersion }}
+          EXPECTED_MERGE_SHA: ${{ inputs.expectedMergeSha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           version=$RELEASE_VERSION
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$version" == '1.0.0' ]]
           [[ $(git status --porcelain --untracked-files=all) == '' ]]
           sha=$(git rev-parse HEAD)
+          [[ "$EXPECTED_MERGE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$sha" == "$EXPECTED_MERGE_SHA" ]]
+          [[ $(git ls-remote origin refs/heads/main | cut -f1) == "$sha" ]]
+          [[ $(git rev-list --parents -n 1 "$sha" | wc -w) == 3 ]]
+          required=(
+            'Kotlin ktlint and build'
+            'Python quality gates'
+            'Contract schema validation'
+            'Spring OpenAPI drift'
+            'Repo hygiene'
+            'Lint & Static Analysis'
+          )
+          checks=$(gh api --paginate \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs?per_page=100" \
+            --jq '.check_runs[] | [.name,.status,.conclusion] | @tsv')
+          for context in "${required[@]}"; do
+            latest=$(printf '%s\n' "$checks" | awk -F '\t' -v expected="$context" '$1==expected {print; exit}')
+            [[ "$latest" == "$context"$'\t'completed$'\t'success ]]
+          done
           tree=$(git rev-parse 'HEAD^{tree}')
           tag="p1-offline-demo-${version}-${sha:0:12}"
           {
@@ -327,6 +356,8 @@ jobs:
       - name: Checkout exact merge source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
+          ref: ${{ inputs.expectedMergeSha }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Validate scanned source identity
@@ -343,6 +374,8 @@ jobs:
           [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ $(git status --porcelain --untracked-files=all) == '' ]]
           [[ $(git rev-parse HEAD) == "$EXPECTED_SHA" ]]
+          [[ "$EXPECTED_SHA" == '${{ inputs.expectedMergeSha }}' ]]
+          [[ $(git ls-remote origin refs/heads/main | cut -f1) == "$EXPECTED_SHA" ]]
           [[ $(git rev-parse 'HEAD^{tree}') == "$EXPECTED_TREE" ]]
           [[ "$RELEASE_VERSION" == "$EXPECTED_VERSION" ]]
           [[ "p1-offline-demo-${EXPECTED_VERSION}-${EXPECTED_SHA:0:12}" == "$EXPECTED_TAG" ]]
@@ -474,6 +507,28 @@ jobs:
             echo "kafka_ref=$kafka_ref"
             echo "kafka_digest=$kafka_digest"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Attach immutable 1.0.0 aliases without rebuilding
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+          SPRING_DIGEST: ${{ steps.push.outputs.spring_digest }}
+          PYTHON_DIGEST: ${{ steps.push.outputs.python_digest }}
+          POSTGRES_DIGEST: ${{ steps.push.outputs.postgres_digest }}
+          KAFKA_DIGEST: ${{ steps.push.outputs.kafka_digest }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for entry in \
+            "$SPRING_IMAGE:$SPRING_DIGEST" \
+            "$PYTHON_IMAGE:$PYTHON_DIGEST" \
+            "$POSTGRES_IMAGE:$POSTGRES_DIGEST" \
+            "$KAFKA_IMAGE:$KAFKA_DIGEST"; do
+            image=${entry%%:*}
+            digest=sha256:${entry##*:sha256:}
+            docker buildx imagetools create --tag "$image:$RELEASE_VERSION" "$image@$digest"
+            observed="sha256:$(docker buildx imagetools inspect "$image:$RELEASE_VERSION" --raw | sha256sum | awk '{print $1}')"
+            [[ "$observed" == "$digest" ]]
+          done
 
       - name: Attest Spring image provenance
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
@@ -671,3 +726,47 @@ jobs:
             postgres-pgvector.spdx.json
             kafka.spdx.json
             release-evidence/*
+
+  finalize-release:
+    if: github.ref == 'refs/heads/main'
+    needs: [build-scan, publish]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact merge source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.expectedMergeSha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download verified release payload
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: p1-offline-demo-${{ needs.build-scan.outputs.sha }}
+          path: release-final
+
+      - name: Create exact tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_MERGE_SHA: ${{ inputs.expectedMergeSha }}
+          RELEASE_VERSION: ${{ needs.build-scan.outputs.version }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$RELEASE_VERSION" == '1.0.0' ]]
+          [[ $(git rev-parse HEAD) == "$EXPECTED_MERGE_SHA" ]]
+          [[ $(git ls-remote origin refs/heads/main | cut -f1) == "$EXPECTED_MERGE_SHA" ]]
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_VERSION" >/dev/null 2>&1 || \
+             gh release view "$RELEASE_VERSION" >/dev/null 2>&1; then
+            echo P1_RELEASE_VERSION_COLLISION >&2
+            exit 1
+          fi
+          mapfile -d '' assets < <(find release-final -type f -print0 | sort -z)
+          test "${#assets[@]}" -gt 0
+          gh release create "$RELEASE_VERSION" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$EXPECTED_MERGE_SHA" \
+            --title "P1 Offline Demo $RELEASE_VERSION" \
+            --notes "Exact merge SHA: $EXPECTED_MERGE_SHA"

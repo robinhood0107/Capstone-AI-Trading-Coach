@@ -66,6 +66,8 @@ CREATE ROLE decision_signal_admin
 CREATE ROLE flyway
     LOGIN PASSWORD 'flyway-test'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+REVOKE SET ON PARAMETER app.required_actor_operation, app.required_actor_target_kind FROM PUBLIC;
+GRANT SET ON PARAMETER app.required_actor_operation, app.required_actor_target_kind TO flyway;
 
 -- Spring 통합 migration user와 실제 flyway role 모두 production의 bind-log 기본값을 재현한다.
 ALTER ROLE decision SET log_parameter_max_length = 0;

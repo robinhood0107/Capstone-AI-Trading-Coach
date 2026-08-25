@@ -4,17 +4,26 @@ import com.capstone.decision.application.dashboard.DashboardViewService
 import com.capstone.decision.application.market.ForeignNewsSentimentReadPort
 import com.capstone.decision.application.rag.RagHistoryCryptoPort
 import com.capstone.decision.application.rag.RagHistoryIdentity
+import com.capstone.decision.application.security.AppPrincipal
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.dao.DataAccessException
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
@@ -25,6 +34,8 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.setup.DefaultMockMvcBuilder
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.context.WebApplicationContext
 import org.testcontainers.containers.GenericContainer
 import org.testcontainers.junit.jupiter.Container
@@ -49,6 +60,10 @@ class RagV2ApiIntegrationTest(
     @Autowired private val cryptoPort: RagHistoryCryptoPort,
     @Autowired private val dashboardViewService: DashboardViewService,
     @Autowired private val foreignNewsSentimentReadPort: ForeignNewsSentimentReadPort,
+    @Autowired private val testActorCapabilityIssuer: TestActorCapabilityIssuer,
+    @Autowired private val actorRlsScope: ActorRlsScope,
+    @Autowired private val appJdbc: NamedParameterJdbcTemplate,
+    @Autowired private val transactionManager: PlatformTransactionManager,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
     private val ownerJdbc: JdbcTemplate by lazy {
@@ -121,7 +136,7 @@ class RagV2ApiIntegrationTest(
         val userToken = login("demo-user", userPassword(), "req_foreign_news_user_login")
         val adminToken = login("demo-admin", adminPassword(), "req_foreign_news_admin_login")
 
-        assertNull(foreignNewsSentimentReadPort.findLatest("usr_demo_user", "005930"))
+        asActor { assertNull(foreignNewsSentimentReadPort.findLatest("usr_demo_user", "005930")) }
 
         mockMvc
             .get("/api/v2/market-evidence/005930/foreign-news-sentiment") {
@@ -236,6 +251,62 @@ class RagV2ApiIntegrationTest(
                 status { isBadRequest() }
                 jsonPath("$.code") { value("FOREIGN_NEWS_VALIDATION_FAILED") }
             }
+    }
+
+    @Test
+    fun `exact RLS binding rejects operation target payload mismatches and READ cannot write consent`() {
+        val binding =
+            ActorCapabilityBinding.target(
+                "READ_RAG_CONSENT",
+                "OWNER",
+                "usr_demo_user",
+                ActorCapabilityRolePolicy.OWNER,
+            )
+        listOf(
+            listOf("RECORD_RAG_CONSENT", binding.targetKind, binding.targetId, binding.payloadHash),
+            listOf(binding.operation, "RAG_CONSENT", binding.targetId, binding.payloadHash),
+            listOf(binding.operation, binding.targetKind, "usr_demo_admin", binding.payloadHash),
+            listOf(binding.operation, binding.targetKind, binding.targetId, "sha256:${"0".repeat(64)}"),
+        ).forEach { asserted ->
+            assertThrows<DataAccessException> {
+                asActor {
+                    TransactionTemplate(transactionManager).executeWithoutResult {
+                        actorRlsScope.open(appJdbc, "usr_demo_user", binding)
+                        appJdbc.queryForObject(
+                            "select assert_actor_rls_scope_exact_v1(:actor,:operation,:kind,:target,:payload)",
+                            mapOf(
+                                "actor" to "usr_demo_user",
+                                "operation" to asserted[0],
+                                "kind" to asserted[1],
+                                "target" to asserted[2],
+                                "payload" to asserted[3],
+                            ),
+                            Boolean::class.java,
+                        )
+                    }
+                }
+            }
+        }
+
+        assertThrows<DataAccessException> {
+            asActor {
+                TransactionTemplate(transactionManager).executeWithoutResult {
+                    actorRlsScope.open(appJdbc, "usr_demo_user", binding)
+                    appJdbc.queryForObject(
+                        """
+                        select consent_event_id from record_rag_consent_event(
+                          :owner,:eventId,'GRANT','p1-read-must-not-write'
+                        )
+                        """.trimIndent(),
+                        mapOf(
+                            "owner" to "usr_demo_user",
+                            "eventId" to "consent_read_capability_write_denied",
+                        ),
+                        String::class.java,
+                    )
+                }
+            }
+        }
     }
 
     @Test
@@ -454,7 +525,7 @@ class RagV2ApiIntegrationTest(
                 }.andReturn()
         assertSanitized(json(detail))
 
-        assertTrue(dashboardViewService.rag("usr_demo_user", 1, answerId)?.isObject == true)
+        asActor { assertTrue(dashboardViewService.rag("usr_demo_user", 1, answerId)?.isObject == true) }
 
         val dashboard =
             mockMvc
@@ -781,6 +852,24 @@ class RagV2ApiIntegrationTest(
     }
 
     private fun json(result: MvcResult): JsonNode = objectMapper.readTree(result.response.contentAsString)
+
+    private fun <T> asActor(block: () -> T): T {
+        val previous = SecurityContextHolder.getContext()
+        val context = SecurityContextHolder.createEmptyContext()
+        val actorRef = testActorCapabilityIssuer.actorRef("usr_demo_user")
+        context.authentication =
+            UsernamePasswordAuthenticationToken(
+                AppPrincipal("usr_demo_user", "demo-user", "USER", 1, actorRef),
+                null,
+                emptyList(),
+            )
+        SecurityContextHolder.setContext(context)
+        return try {
+            block()
+        } finally {
+            SecurityContextHolder.setContext(previous)
+        }
+    }
 
     private fun assertSanitized(node: JsonNode) {
         val text = node.toString()

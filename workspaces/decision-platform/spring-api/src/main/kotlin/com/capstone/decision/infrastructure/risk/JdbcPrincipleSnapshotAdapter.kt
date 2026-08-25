@@ -2,6 +2,7 @@ package com.capstone.decision.infrastructure.risk
 
 import com.capstone.decision.application.risk.port.ActivePrincipleSnapshot
 import com.capstone.decision.application.risk.port.PrincipleSnapshotPort
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.domain.principle.PrincipleId
 import com.capstone.decision.domain.principle.PrincipleMode
 import com.capstone.decision.domain.principle.PrincipleStatus
@@ -35,7 +36,7 @@ class JdbcPrincipleSnapshotAdapter(
                 mapOf(
                     "capability" to
                         actorCapabilityIssuer.issue(
-                            actorUserId,
+                            AuthenticatedActorRef.current(actorUserId),
                             ActorCapabilityBinding.target(
                                 "READ_ACTIVE_PRINCIPLE",
                                 "PRINCIPLE",

@@ -249,6 +249,8 @@ SELECT format(
 -- migration/rotation이 statement logging을 허용해도 credential bind 값은 서버 로그에 남기지 않는다.
 ALTER ROLE flyway SET log_parameter_max_length = 0;
 ALTER ROLE flyway SET log_parameter_max_length_on_error = 0;
+REVOKE SET ON PARAMETER app.required_actor_operation, app.required_actor_target_kind FROM PUBLIC;
+GRANT SET ON PARAMETER app.required_actor_operation, app.required_actor_target_kind TO flyway;
 
 SELECT format(
     'CREATE ROLE decision_collector LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
@@ -2137,10 +2139,13 @@ BEGIN
             consume_actor_identity_handle_v1(text,text,text,text,text,text)
         TO decision_identity;
         GRANT EXECUTE ON FUNCTION
+            authenticate_demo_actor_session_v1(text,text,integer),
+            read_actor_auth_session_v1(text),
             register_actor_identity_handle_v1(text,text,text,text,text,text,integer)
         TO decision_auth;
         GRANT EXECUTE ON FUNCTION
             open_actor_rls_scope_v1(text,text,text,text,text,text),
+            assert_actor_rls_scope_exact_v1(text,text,text,text,text),
             actor_rls_scope_is_open_v1(),
             create_async_request_authorized(text,text,text,text,text,text,text,text),
             insert_principle_version_authorized_v2(text,text,text,text,integer,text,text,text,text,text,text,timestamptz),

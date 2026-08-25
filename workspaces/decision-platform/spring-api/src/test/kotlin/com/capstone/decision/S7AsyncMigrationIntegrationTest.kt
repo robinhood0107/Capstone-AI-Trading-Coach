@@ -1407,10 +1407,28 @@ class S7AsyncMigrationIntegrationTest {
         actorUserId: String,
         binding: ActorCapabilityBinding,
     ): String {
+        val sessionHandle =
+            connection(databaseName, AUTH_USER, AUTH_PASSWORD).use { auth ->
+                auth.prepareStatement("select session_handle from authenticate_demo_actor_session_v1(?,?,43200)").use { statement ->
+                    statement.setString(1, if (actorUserId == "usr_demo_admin") "demo-admin" else "demo-user")
+                    statement.setString(
+                        2,
+                        if (actorUserId == "usr_demo_admin") {
+                            SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD
+                        } else {
+                            SpringApiIntegrationTestBase.TEST_USER_PASSWORD
+                        },
+                    )
+                    statement.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        requireNotNull(rows.getString(1))
+                    }
+                }
+            }
         val identityHandle =
             connection(databaseName, AUTH_USER, AUTH_PASSWORD).use { auth ->
                 auth.prepareStatement("select register_actor_identity_handle_v1(?,?,?,?,?,?,15)").use { statement ->
-                    statement.setString(1, actorUserId)
+                    statement.setString(1, sessionHandle)
                     statement.setString(2, binding.operation)
                     statement.setString(3, binding.targetKind)
                     statement.setString(4, binding.targetId)

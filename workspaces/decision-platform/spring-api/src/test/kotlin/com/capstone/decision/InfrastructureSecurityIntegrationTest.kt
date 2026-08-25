@@ -366,11 +366,22 @@ class InfrastructureSecurityIntegrationTest {
                 "read_decision_usability()",
                 "transition_kill_switch_authorized(text,text,bigint,boolean,bigint,text)",
                 "persist_decision_bundle_authorized_v2(text,text)",
-                "read_mock_order_decision(text,text,text)",
-                "find_mock_order_idempotency_result(text,text,timestamp with time zone,text)",
-                "read_mock_order_owner_projection(text,text,text)",
-                "create_mock_order(jsonb,text)",
-                "request_mock_order_cancel(jsonb,text)",
+                "read_mock_order_decision_authorized_v2(text,text,text)",
+                "find_mock_order_idempotency_result_authorized_v2(text,text,text,text,text)",
+                "read_mock_order_owner_projection_authorized_v2(text,text,text)",
+                "read_mock_balance_projection_authorized_v2(text,text,text,text)",
+                "create_mock_order_authorized_v2(text,text)",
+                "request_mock_order_cancel_authorized_v2(text,text)",
+                "record_mock_order_provider_outcome_authorized_v2(text,text)",
+                "read_paper_order_context_authorized_v2(text,text,text)",
+                "find_paper_order_idempotency_result_authorized_v2(text,text,text,text,text)",
+                "read_paper_balance_projection_authorized_v2(text,text,text)",
+                "create_paper_order_authorized_v2(text,text)",
+                "rebuild_paper_state_authorized_v2(text,text,text)",
+                "acquire_order_fill_reconciliation_lock_authorized_v2(text,text)",
+                "read_order_reconciliation_state_authorized_v2(text,text)",
+                "apply_stored_order_fills_authorized_v2(text,text)",
+                "read_owned_order_fills_authorized_v2(text,text)",
             ).forEach { function ->
                 assertTrue(hasFunctionPrivilege(connection, "decision_app", function))
             }
@@ -382,6 +393,21 @@ class InfrastructureSecurityIntegrationTest {
                 "read_demo_credentials()",
                 "read_user_actor(text)",
                 "persist_decision_bundle_authorized(text,jsonb)",
+                "read_mock_order_decision(text,text,text)",
+                "find_mock_order_idempotency_result(text,text,timestamp with time zone,text)",
+                "read_mock_order_owner_projection(text,text,text)",
+                "create_mock_order(jsonb,text)",
+                "request_mock_order_cancel(jsonb,text)",
+                "record_mock_order_provider_outcome(jsonb,text)",
+                "read_paper_order_context(text,text,text)",
+                "find_paper_order_idempotency_result(text,text,timestamp with time zone,text)",
+                "read_paper_balance_projection(text,text,text)",
+                "create_paper_order(jsonb,text)",
+                "rebuild_paper_state(text,text)",
+                "acquire_order_fill_reconciliation_lock(jsonb,text)",
+                "read_order_reconciliation_state(jsonb,text)",
+                "apply_stored_order_fills(jsonb,text)",
+                "read_owned_order_fills(jsonb,text)",
             ).forEach { function ->
                 assertFalse(hasFunctionPrivilege(connection, "decision_app", function))
             }
@@ -392,7 +418,13 @@ class InfrastructureSecurityIntegrationTest {
                     assertFalse(hasTablePrivilege(connection, "decision_auth", table, privilege))
                 }
             }
-            listOf("orders", "order_events", "mock_order_owner_projection", "brokerage_db_capability_keys").forEach { table ->
+            listOf(
+                "orders",
+                "order_events",
+                "mock_order_owner_projection",
+                "brokerage_db_capability_keys",
+                "brokerage_internal_scope",
+            ).forEach { table ->
                 listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
                     assertFalse(hasTablePrivilege(connection, "decision_app", table, privilege))
                 }
@@ -632,29 +664,30 @@ class InfrastructureSecurityIntegrationTest {
                     setProperty("password", identityPassword)
                 },
             ).use { identity ->
-                identity.prepareStatement(
-                    """
-                    select actor_user_id,actor_role,actor_security_version
-                    from consume_actor_identity_handle_v1(?,?,?,?,?,?)
-                    """.trimIndent(),
-                ).use { statement ->
-                    fun execute(operation: String): List<String> {
-                        statement.setString(1, handle)
-                        statement.setString(2, operation)
-                        statement.setString(3, "ASYNC_JOB")
-                        statement.setString(4, "job_identity_handle_test")
-                        statement.setString(5, "sha256:${"a".repeat(64)}")
-                        statement.setString(6, "ADMIN_ONLY")
-                        return statement.executeQuery().use { result ->
-                            buildList {
-                                while (result.next()) add(result.getString(1))
+                identity
+                    .prepareStatement(
+                        """
+                        select actor_user_id,actor_role,actor_security_version
+                        from consume_actor_identity_handle_v1(?,?,?,?,?,?)
+                        """.trimIndent(),
+                    ).use { statement ->
+                        fun execute(operation: String): List<String> {
+                            statement.setString(1, handle)
+                            statement.setString(2, operation)
+                            statement.setString(3, "ASYNC_JOB")
+                            statement.setString(4, "job_identity_handle_test")
+                            statement.setString(5, "sha256:${"a".repeat(64)}")
+                            statement.setString(6, "ADMIN_ONLY")
+                            return statement.executeQuery().use { result ->
+                                buildList {
+                                    while (result.next()) add(result.getString(1))
+                                }
                             }
                         }
+                        assertEquals(emptyList<String>(), execute("LIST_ASYNC_JOBS"))
+                        assertEquals(listOf("usr_demo_admin"), execute("READ_ASYNC_JOB"))
+                        assertEquals(emptyList<String>(), execute("READ_ASYNC_JOB"))
                     }
-                    assertEquals(emptyList<String>(), execute("LIST_ASYNC_JOBS"))
-                    assertEquals(listOf("usr_demo_admin"), execute("READ_ASYNC_JOB"))
-                    assertEquals(emptyList<String>(), execute("READ_ASYNC_JOB"))
-                }
                 val selectedActor =
                     assertThrows<SQLException> {
                         identity.createStatement().executeQuery("select * from read_actor_capability_subject('usr_demo_user')")

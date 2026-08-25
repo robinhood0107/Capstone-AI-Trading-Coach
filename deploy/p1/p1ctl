@@ -246,8 +246,6 @@ init_state() {
   write_line REDIS_PASSWORD "$redis_password" "$SECRETS_DIR/spring.env"
   write_line JWT_ISSUER capstone-p1-offline-demo "$SECRETS_DIR/spring.env"
   write_line JWT_AUDIENCE capstone-p1-offline-demo-users "$SECRETS_DIR/spring.env"
-  write_line BROKERAGE_DB_CAPABILITY_TOKEN "$broker_token" "$SECRETS_DIR/spring.env"
-  write_line BROKERAGE_DB_CAPABILITY_TOKEN_SHA256 "$broker_digest" "$SECRETS_DIR/spring.env"
   write_line DEMO_CREDENTIAL_SEPARATION_KEY "$separation_key" "$SECRETS_DIR/spring.env"
   write_line DEMO_USER_CREDENTIAL_BUNDLE "$user_bundle" "$SECRETS_DIR/spring.env"
   write_line DEMO_ADMIN_CREDENTIAL_BUNDLE "$admin_bundle" "$SECRETS_DIR/spring.env"

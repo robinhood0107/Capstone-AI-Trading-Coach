@@ -78,6 +78,35 @@ object P1FlywayMigrate {
         DriverManager.getConnection(jdbcUrl, "flyway", password).use { connection ->
             connection.autoCommit = false
             try {
+                val retired =
+                    connection
+                        .createStatement()
+                        .use { statement ->
+                            statement
+                                .executeQuery(
+                                    "select to_regclass('public.brokerage_internal_scope') is not null",
+                                ).use { rows ->
+                                    check(rows.next())
+                                    rows.getBoolean(1)
+                                }
+                        }
+                if (retired) {
+                    val remaining =
+                        connection
+                            .createStatement()
+                            .use { statement ->
+                                statement
+                                    .executeQuery(
+                                        "select count(*) from public.brokerage_db_capability_keys",
+                                    ).use { rows ->
+                                        check(rows.next())
+                                        rows.getLong(1)
+                                    }
+                            }
+                    check(remaining == 0L) { "Retired brokerage bearer registry must stay empty" }
+                    connection.commit()
+                    return
+                }
                 connection
                     .prepareStatement(
                         """

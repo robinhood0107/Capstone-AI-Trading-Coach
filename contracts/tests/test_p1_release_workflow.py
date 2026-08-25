@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import unittest
-
+from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "p1-offline-demo-release.yml"
@@ -203,17 +202,26 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         self.assertIn("deploy/p1/.state/**", dockerignore.splitlines())
         self.assertIn("**/.state", dockerignore.splitlines())
 
-    def test_release_builds_only_from_exact_git_context_and_binds_manifest_inputs(self) -> None:
+    def test_release_build_is_unprivileged_and_publish_uses_only_scanned_images(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         assembler = ASSEMBLER.read_text(encoding="utf-8")
         verifier = VERIFY_RELEASE.read_text(encoding="utf-8")
-        self.assertEqual(
-            workflow.count(
-                'context: "https://github.com/${{ github.repository }}.git#${{ steps.identity.outputs.sha }}"'
-            ),
-            4,
+        build = workflow.split("  build-scan:\n", 1)[1].split("\n  publish:\n", 1)[0]
+        publish = workflow.split("\n  publish:\n", 1)[1]
+        self.assertEqual(workflow.count("          context: .\n"), 4)
+        self.assertNotIn("GIT_AUTH_TOKEN", workflow)
+        self.assertNotIn("packages: write", build)
+        self.assertNotIn("id-token: write", build)
+        self.assertNotIn("attestations: write", build)
+        self.assertIn("packages: write", publish)
+        self.assertNotIn("docker/build-push-action", publish)
+        self.assertNotIn("apt-get", publish)
+        self.assertIn("Upload scanned immutable build outputs", build)
+        self.assertIn("Load only the scanned image archive", publish)
+        self.assertLess(
+            publish.index("Load only the scanned image archive"),
+            publish.index("Log in only after all scans pass"),
         )
-        self.assertNotIn("          context: .\n", workflow)
         self.assertIn("P1_RELEASE_VERSION_COLLISION", workflow)
         self.assertIn('git -C "$REPOSITORY_ROOT" archive --format=tar --output=', assembler)
         for field in (
@@ -225,11 +233,23 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
             self.assertIn(field, assembler)
             self.assertIn(field, verifier)
         self.assertIn('stage-archive "$bundle/images.tar"', verifier)
+        self.assertIn('stage-bundle "$source" "$stage_parent/bundle"', verifier)
         self.assertLess(verifier.index("archive-compare"), verifier.index("docker load"))
         self.assertIn("publish-directory", assembler)
         self.assertIn("publish-file", assembler)
         self.assertIn("publish-file", workflow)
         self.assertNotIn('rm -- "release-output/$name.tar.zst"', workflow)
+
+    def test_activation_rebinds_every_release_path_to_verified_snapshot(self) -> None:
+        p1ctl = (REPOSITORY_ROOT / "deploy" / "p1" / "p1ctl").read_text(encoding="utf-8")
+        prepare = p1ctl.index("prepare_release_boundary")
+        load = p1ctl.index("load_release_images", p1ctl.rindex("prepare_release_boundary"))
+        self.assertLess(prepare, load)
+        self.assertIn('verify-release" --stage-to "$sealed_root"', p1ctl)
+        self.assertIn("RELEASE_MANIFEST=$sealed_root/release-manifest.json", p1ctl)
+        self.assertIn("RELEASE_GUARD=$SCRIPT_DIR/release_guard.py", p1ctl)
+        self.assertIn('verify-release" --sealed', p1ctl)
+        self.assertIn('P1_STATE_DIR="$STATE_DIR" P1_PROJECT_NAME="$PROJECT_NAME"', p1ctl)
 
     def test_release_publishes_pre_extract_signed_archive_checksums(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -265,7 +285,9 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         )
         verifier = VERIFY_RELEASE.read_text(encoding="utf-8")
         self.assertIn("${P1_KAFKA_IMAGE:-capstone-kafka:p1-local}", compose)
-        kafka_dockerfile = (REPOSITORY_ROOT / "deploy" / "p1" / "docker" / "kafka.Dockerfile").read_text(encoding="utf-8")
+        kafka_dockerfile = (
+            REPOSITORY_ROOT / "deploy" / "p1" / "docker" / "kafka.Dockerfile"
+        ).read_text(encoding="utf-8")
         self.assertIn("FROM apache/kafka:4.3.1@sha256:ccd1314e47ec", kafka_dockerfile)
         self.assertIn("/opt/kafka/libs/jline-3.30.4.jar", kafka_dockerfile)
         self.assertNotIn("org/jline/jline", kafka_dockerfile)

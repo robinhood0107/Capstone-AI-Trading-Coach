@@ -29,7 +29,7 @@ object OpenApiFixtureEnvironmentWriter {
         val separationKey = ByteArray(32).also(random::nextBytes)
         val decisionGrpcSharedSecret = randomToken(random, 32)
         val ragGrpcSharedSecret = randomToken(random, 32)
-        val brokerageDatabaseCapability = randomToken(random, 32)
+        val brokerageMigrationPlaceholder = sha256(randomToken(random, 32))
         val ragSecretDirectory = prepareRagSecretDirectory(output.parent, random)
         val userPassword = randomToken(random, 18).toCharArray()
         val adminPassword = randomToken(random, 18).toCharArray()
@@ -85,8 +85,7 @@ object OpenApiFixtureEnvironmentWriter {
                     "PRINCIPLE_CURSOR_HMAC_KEY" to randomToken(random, 32),
                     "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY" to randomToken(random, 32),
                     "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY" to randomToken(random, 32),
-                    "BROKERAGE_DB_CAPABILITY_TOKEN" to brokerageDatabaseCapability,
-                    "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256" to sha256(brokerageDatabaseCapability),
+                    "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256" to brokerageMigrationPlaceholder,
                     "RAG_HISTORY_SECRET_DIRECTORY" to ragSecretDirectory.toString(),
                     "RAG_HISTORY_CURRENT_KEK_VERSION" to "kek-v1",
                     "RAG_IDEMPOTENCY_SCOPE_HMAC_KEY" to randomToken(random, 32),

@@ -51,9 +51,11 @@ docker pull 'ghcr.io/robinhood0107/capstone-postgres-pgvector@sha256:<DIGEST>'
 unset GHCR_READ_TOKEN
 ```
 
-공식 workflow는 exact merge SHA에서 amd64 이미지를 build하고 Critical/High vulnerability와 secret을
-검사한 뒤에만 push한다. 같은 digest에 provenance/SBOM attestation을 붙이고 DB/Kafka offline bundle도
-그 digest로 생성한다. scan과 signature 사이에 이미지를 다시 build하지 않는다.
+공식 workflow는 exact merge SHA에서 amd64 이미지를 packages-write 권한이 없는 별도 job으로 build하고
+Critical/High vulnerability와 secret을 검사한다. scan을 통과한 image archive와 SBOM/tool bytes는 SHA-256에
+묶어 다음 job으로 전달한다. packages-write/OIDC 권한이 있는 publish job은 이 archive만 load하며 Dockerfile을
+실행하거나 package를 설치하지 않는다. 같은 digest에 provenance/SBOM attestation을 붙이고 DB/Kafka offline
+bundle도 그 digest로 생성한다. scan과 signature 사이에 이미지를 다시 build하지 않는다.
 
 ## Offline bundle
 
@@ -81,6 +83,11 @@ cd deploy/p1
 ./p1ctl smoke
 ./p1ctl status
 ```
+
+`verify-release`와 `p1ctl`은 원본 경로를 직접 활성화하지 않는다. owner-only destination에 symlink, hardlink,
+special file, group/other-writable file을 거부하면서 전체 bundle을 descriptor-relative로 복사하고, 복사 전후
+inode/size/time identity가 같은 sealed snapshot만 검증한다. 이후 manifest, release env, Compose, guard,
+backup/restore script와 image archive는 모두 그 snapshot 경로에서만 다시 열린다.
 
 Kafka 경로는 먼저 DB mode를 중지하고 선택한다.
 

@@ -4,7 +4,10 @@ import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
+import java.time.Duration
 import java.util.Base64
+
+internal val MAX_ACTOR_SESSION_TTL: Duration = Duration.ofDays(7)
 
 // demo login도 DB users를 source of truth로 사용해 이후 owner FK와 같은 user_id namespace를 보장한다.
 @Service
@@ -23,7 +26,20 @@ class DemoAccountService(
     fun authenticate(
         username: String,
         password: String,
+    ): DemoAccount? =
+        authenticate(
+            username = username,
+            password = password,
+            sessionTtl = Duration.ofHours(jwtProperties.ttlHours),
+        )
+
+    // OAuth refresh family처럼 login 종류가 더 오래 지속되면 같은 DB session도 그 계약만큼만 연장한다.
+    fun authenticate(
+        username: String,
+        password: String,
+        sessionTtl: Duration,
     ): DemoAccount? {
+        require(!sessionTtl.isZero && !sessionTtl.isNegative && sessionTtl <= MAX_ACTOR_SESSION_TTL)
         val expectedIdentity = DemoAccounts.byUsername(username)
         val storedUsers = userSecurityRepository.findDemoCredentials()
         val verifiedRows =
@@ -66,7 +82,7 @@ class DemoAccountService(
             userSecurityRepository.createAuthenticatedSession(
                 username = username,
                 password = password,
-                ttlSeconds = Math.multiplyExact(jwtProperties.ttlHours, 3_600L).toInt(),
+                ttlSeconds = Math.toIntExact(sessionTtl.seconds),
             ) ?: return null
         if (
             session.userId != storedUser.userId ||

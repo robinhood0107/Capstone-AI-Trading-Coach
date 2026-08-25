@@ -5,6 +5,7 @@ import com.capstone.decision.infrastructure.security.ActorCapabilityClientProper
 import com.capstone.decision.infrastructure.security.ActorCapabilityPacketCodec
 import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
 import com.capstone.decision.infrastructure.security.ActorCapabilityWire
+import com.capstone.decision.infrastructure.security.ActorIdentityHandleIssuer
 import com.capstone.decision.infrastructure.security.HttpActorCapabilityIssuer
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.AfterEach
@@ -34,10 +35,10 @@ class ActorCapabilityTransportTest {
     fun `API sends exact binding and accepts only the authority signed response`() {
         val binding = ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", "job_12345678", ActorCapabilityRolePolicy.ADMIN_ONLY)
         val issuer =
-            issuer { actorUserId, requestedBinding ->
-                assertEquals("usr_demo_admin", actorUserId)
+            issuer { identityHandle, requestedBinding ->
+                assertEquals(IDENTITY_HANDLE, identityHandle)
                 assertEquals(binding, requestedBinding)
-                ActorCapabilityPacketCodec.sign(claims(actorUserId, requestedBinding), keyPair.private)
+                ActorCapabilityPacketCodec.sign(claims("usr_demo_admin", requestedBinding), keyPair.private)
             }
 
         val token = issuer.issue("usr_demo_admin", binding)
@@ -52,17 +53,32 @@ class ActorCapabilityTransportTest {
     fun `API rejects an authority response bound to another target`() {
         val binding = ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", "job_12345678", ActorCapabilityRolePolicy.ADMIN_ONLY)
         val issuer =
-            issuer { actorUserId, requestedBinding ->
+            issuer { _, requestedBinding ->
                 val forged =
                     requestedBinding.copy(
                         targetId = "job_other",
                         payloadHash = ActorCapabilityBinding.sha256("job_other"),
                     )
-                ActorCapabilityPacketCodec.sign(claims(actorUserId, forged), keyPair.private)
+                ActorCapabilityPacketCodec.sign(claims("usr_demo_admin", forged), keyPair.private)
             }
 
         assertThrows(IllegalArgumentException::class.java) {
             issuer.issue("usr_demo_admin", binding)
+        }
+    }
+
+    @Test
+    fun `authority wire rejects caller selected actor identity`() {
+        val binding =
+            ActorCapabilityBinding.target(
+                "READ_ASYNC_JOB",
+                "ASYNC_JOB",
+                "job_12345678",
+                ActorCapabilityRolePolicy.ADMIN_ONLY,
+            )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ActorCapabilityWire.decode(ActorCapabilityWire.encode("usr_demo_admin", binding))
         }
     }
 
@@ -72,9 +88,9 @@ class ActorCapabilityTransportTest {
         authority.executor = executor
         authority.createContext(ActorCapabilityWire.ISSUE_PATH) { exchange ->
             val body = exchange.requestBody.use { it.readAllBytes() }
-            val (actorUserId, binding) = ActorCapabilityWire.decode(body)
+            val (identityHandle, binding) = ActorCapabilityWire.decode(body)
             assertEquals("Bearer $sharedSecret", exchange.requestHeaders.getFirst("Authorization"))
-            val response = sign(actorUserId, binding).toByteArray(StandardCharsets.US_ASCII)
+            val response = sign(identityHandle, binding).toByteArray(StandardCharsets.US_ASCII)
             exchange.sendResponseHeaders(200, response.size.toLong())
             exchange.responseBody.use { it.write(response) }
             exchange.close()
@@ -88,6 +104,7 @@ class ActorCapabilityTransportTest {
                 sharedSecret = sharedSecret,
                 publicKey = publicKey,
             ),
+            ActorIdentityHandleIssuer { _, _ -> IDENTITY_HANDLE },
         )
     }
 
@@ -110,5 +127,9 @@ class ActorCapabilityTransportTest {
             issuedAt = now,
             expiresAt = now.plusSeconds(15),
         )
+    }
+
+    private companion object {
+        const val IDENTITY_HANDLE = "idh1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }
 }

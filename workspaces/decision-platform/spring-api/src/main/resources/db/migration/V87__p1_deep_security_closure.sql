@@ -3,6 +3,131 @@
 -- Capabilities live for at most 30 seconds, so no pre-V87 capability may cross this boundary.
 DELETE FROM public.actor_request_capability;
 
+CREATE TABLE public.actor_identity_handle (
+  handle_hash text PRIMARY KEY,
+  actor_user_id text NOT NULL REFERENCES public.users(user_id),
+  actor_role text NOT NULL CHECK (actor_role IN ('USER','ADMIN')),
+  actor_security_version bigint NOT NULL CHECK (actor_security_version > 0),
+  operation text NOT NULL CHECK (operation ~ '^[A-Z][A-Z0-9_]{2,63}$'),
+  target_kind text NOT NULL CHECK (target_kind ~ '^[A-Z][A-Z0-9_]{2,31}$'),
+  target_id text NOT NULL CHECK (char_length(target_id) BETWEEN 1 AND 160),
+  payload_hash text NOT NULL CHECK (payload_hash ~ '^sha256:[0-9a-f]{64}$'),
+  role_policy text NOT NULL CHECK (role_policy IN ('OWNER','ADMIN_ONLY')),
+  issued_at timestamptz NOT NULL,
+  expires_at timestamptz NOT NULL,
+  consumed_at timestamptz,
+  CHECK (expires_at > issued_at AND expires_at <= issued_at + interval '15 seconds')
+);
+ALTER TABLE public.actor_identity_handle OWNER TO flyway;
+CREATE INDEX actor_identity_handle_expiry_idx
+  ON public.actor_identity_handle(expires_at) WHERE consumed_at IS NULL;
+REVOKE ALL ON TABLE public.actor_identity_handle FROM PUBLIC,decision_app,decision_worker,decision_replay,
+  decision_identity,decision_auth;
+GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.actor_identity_handle TO flyway;
+
+CREATE FUNCTION public.register_actor_identity_handle_v1(
+  p_actor_user_id text,
+  p_operation text,
+  p_target_kind text,
+  p_target_id text,
+  p_payload_hash text,
+  p_role_policy text,
+  p_ttl_seconds integer
+)
+RETURNS text
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $register_actor_identity_handle_v1$
+DECLARE actor record;
+DECLARE raw_handle text;
+DECLARE now_at timestamptz:=statement_timestamp();
+BEGIN
+  IF session_user<>'decision_auth'
+     OR p_actor_user_id!~'^usr_[A-Za-z0-9_-]{4,96}$'
+     OR p_operation!~'^[A-Z][A-Z0-9_]{2,63}$'
+     OR p_target_kind!~'^[A-Z][A-Z0-9_]{2,31}$'
+     OR char_length(p_target_id) NOT BETWEEN 1 AND 160
+     OR p_payload_hash!~'^sha256:[0-9a-f]{64}$'
+     OR p_role_policy NOT IN ('OWNER','ADMIN_ONLY')
+     OR p_ttl_seconds NOT BETWEEN 1 AND 15 THEN
+    RAISE EXCEPTION 'actor identity handle registration denied' USING ERRCODE='42501';
+  END IF;
+  SELECT role,status,security_version INTO actor
+  FROM public.users WHERE user_id=p_actor_user_id FOR SHARE;
+  IF NOT FOUND OR actor.status<>'ACTIVE'
+     OR actor.role NOT IN ('USER','ADMIN')
+     OR (p_role_policy='ADMIN_ONLY' AND actor.role<>'ADMIN') THEN
+    RAISE EXCEPTION 'actor identity handle registration denied' USING ERRCODE='42501';
+  END IF;
+  DELETE FROM public.actor_identity_handle expired
+  WHERE expired.expires_at<=now_at OR expired.consumed_at IS NOT NULL;
+  raw_handle:='idh1_'||encode(public.gen_random_bytes(32),'hex');
+  INSERT INTO public.actor_identity_handle(
+    handle_hash,actor_user_id,actor_role,actor_security_version,
+    operation,target_kind,target_id,payload_hash,role_policy,issued_at,expires_at
+  ) VALUES (
+    'sha256:'||encode(public.digest(raw_handle,'sha256'),'hex'),
+    p_actor_user_id,actor.role,actor.security_version,
+    p_operation,p_target_kind,p_target_id,p_payload_hash,p_role_policy,
+    now_at,now_at+make_interval(secs=>p_ttl_seconds)
+  );
+  RETURN raw_handle;
+END
+$register_actor_identity_handle_v1$;
+ALTER FUNCTION public.register_actor_identity_handle_v1(text,text,text,text,text,text,integer) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.register_actor_identity_handle_v1(text,text,text,text,text,text,integer)
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity;
+GRANT EXECUTE ON FUNCTION public.register_actor_identity_handle_v1(text,text,text,text,text,text,integer)
+TO decision_auth;
+
+CREATE FUNCTION public.consume_actor_identity_handle_v1(
+  p_handle text,
+  p_operation text,
+  p_target_kind text,
+  p_target_id text,
+  p_payload_hash text,
+  p_role_policy text
+)
+RETURNS TABLE(actor_user_id text,actor_role text,actor_security_version bigint)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $consume_actor_identity_handle_v1$
+BEGIN
+  IF session_user<>'decision_identity'
+     OR p_handle!~'^idh1_[0-9a-f]{64}$'
+     OR p_operation!~'^[A-Z][A-Z0-9_]{2,63}$'
+     OR p_target_kind!~'^[A-Z][A-Z0-9_]{2,31}$'
+     OR char_length(p_target_id) NOT BETWEEN 1 AND 160
+     OR p_payload_hash!~'^sha256:[0-9a-f]{64}$'
+     OR p_role_policy NOT IN ('OWNER','ADMIN_ONLY') THEN
+    RAISE EXCEPTION 'actor identity handle denied' USING ERRCODE='42501';
+  END IF;
+  RETURN QUERY
+  WITH consumed AS (
+    UPDATE public.actor_identity_handle handle
+    SET consumed_at=statement_timestamp()
+    WHERE handle.handle_hash='sha256:'||encode(public.digest(p_handle,'sha256'),'hex')
+      AND handle.operation=p_operation
+      AND handle.target_kind=p_target_kind
+      AND handle.target_id=p_target_id
+      AND handle.payload_hash=p_payload_hash
+      AND handle.role_policy=p_role_policy
+      AND handle.consumed_at IS NULL
+      AND handle.expires_at>statement_timestamp()
+    RETURNING handle.actor_user_id,handle.actor_role,handle.actor_security_version
+  )
+  SELECT consumed.actor_user_id,consumed.actor_role,consumed.actor_security_version
+  FROM consumed
+  JOIN public.users actor ON actor.user_id=consumed.actor_user_id
+  WHERE actor.status='ACTIVE'
+    AND actor.role=consumed.actor_role
+    AND actor.security_version=consumed.actor_security_version;
+END
+$consume_actor_identity_handle_v1$;
+ALTER FUNCTION public.consume_actor_identity_handle_v1(text,text,text,text,text,text) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.consume_actor_identity_handle_v1(text,text,text,text,text,text)
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_auth;
+GRANT EXECUTE ON FUNCTION public.consume_actor_identity_handle_v1(text,text,text,text,text,text)
+TO decision_identity;
+
 ALTER TABLE public.actor_request_capability
   ADD COLUMN operation text NOT NULL,
   ADD COLUMN target_kind text NOT NULL,
@@ -183,14 +308,7 @@ RETURNS TABLE(actor_role text,actor_security_version bigint)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog
 AS $read_actor_capability_subject$
 BEGIN
-  IF session_user <> 'decision_identity'
-     OR p_actor_user_id !~ '^usr_[A-Za-z0-9_-]{4,96}$' THEN
-    RAISE EXCEPTION 'actor capability subject denied' USING ERRCODE='42501';
-  END IF;
-  RETURN QUERY SELECT actor.role,actor.security_version
-  FROM public.users actor
-  WHERE actor.user_id=p_actor_user_id AND actor.status='ACTIVE'
-    AND actor.role IN ('USER','ADMIN');
+  RAISE EXCEPTION 'actor-selected capability subject lookup is retired' USING ERRCODE='42501';
 END
 $read_actor_capability_subject$;
 ALTER FUNCTION public.read_actor_capability_subject(text) OWNER TO flyway;
@@ -202,7 +320,8 @@ BEGIN
     GRANT EXECUTE ON FUNCTION public.register_actor_request_capability_v2(
       text,text,text,bigint,text,text,text,text,text,text,text,timestamptz,timestamptz,text
     ) TO decision_identity;
-    GRANT EXECUTE ON FUNCTION public.read_actor_capability_subject(text) TO decision_identity;
+    GRANT EXECUTE ON FUNCTION public.consume_actor_identity_handle_v1(text,text,text,text,text,text)
+    TO decision_identity;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='decision_outbox_publisher') THEN
     GRANT USAGE ON SCHEMA public TO decision_outbox_publisher;

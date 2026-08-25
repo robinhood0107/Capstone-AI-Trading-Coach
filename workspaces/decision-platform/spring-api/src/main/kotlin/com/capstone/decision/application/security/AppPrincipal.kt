@@ -1,6 +1,8 @@
 package com.capstone.decision.application.security
 
 import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
+import java.security.Principal
 
 data class AuthenticatedActorRef(
     val sessionHandle: String,
@@ -21,9 +23,25 @@ data class AuthenticatedActorRef(
             expectedUserId: String,
             expectedSecurityVersion: Long? = null,
         ): AuthenticatedActorRef {
-            val principal =
-                SecurityContextHolder.getContext().authentication?.principal as? AppPrincipal
-                    ?: throw IllegalStateException("Authenticated actor session is unavailable.")
+            val authentication = SecurityContextHolder.getContext().authentication
+            val principal = authentication?.principal as? AppPrincipal
+            if (principal == null && authentication is JwtAuthenticationToken) {
+                val securityVersion =
+                    authentication.token.getClaimAsString("securityVersion")?.toLongOrNull()
+                        ?: (authentication.token.claims["securityVersion"] as? Number)?.toLong()
+                        ?: throw IllegalStateException("Authenticated actor version is unavailable.")
+                return AuthenticatedActorRef(
+                    sessionHandle = requireNotNull(authentication.token.getClaimAsString("sid")),
+                    expectedUserId = requireNotNull(authentication.token.subject),
+                    securityVersion = securityVersion,
+                ).also {
+                    check(it.expectedUserId == expectedUserId) { "Authenticated actor mismatch." }
+                    if (expectedSecurityVersion != null) {
+                        check(it.securityVersion == expectedSecurityVersion) { "Authenticated actor version mismatch." }
+                    }
+                }
+            }
+            principal ?: throw IllegalStateException("Authenticated actor session is unavailable.")
             check(principal.userId == expectedUserId) { "Authenticated actor mismatch." }
             if (expectedSecurityVersion != null) {
                 check(principal.securityVersion == expectedSecurityVersion) { "Authenticated actor version mismatch." }
@@ -40,4 +58,6 @@ data class AppPrincipal(
     val role: String,
     val securityVersion: Long,
     val actorRef: AuthenticatedActorRef,
-)
+) : Principal {
+    override fun getName(): String = username
+}

@@ -251,6 +251,17 @@ class CommonApiContractIntegrationTest(
     }
 
     @Test
+    fun `aborted authentication releases its reservation without recording a credential failure`() {
+        assertTrue(loginAttemptLimiter.tryAcquire("198.51.100.202", "aborted-rate-limit-probe"))
+        loginAttemptLimiter.releaseReservation()
+
+        repeat(5) {
+            assertTrue(loginAttemptLimiter.tryAcquire("198.51.100.202", "aborted-rate-limit-probe"))
+            loginAttemptLimiter.releaseReservation()
+        }
+    }
+
+    @Test
     fun `login limiter stores only purpose separated opaque scopes`() {
         loginAttemptLimiter.tryAcquire("198.51.100.201", "raw-probe-user")
         loginAttemptLimiter.recordFailure("198.51.100.201", "raw-probe-user")

@@ -42,12 +42,19 @@ def _manifest(stage: str = "CANDIDATE") -> dict[str, object]:
         "platform": "linux/amd64",
         "images": [dict(image, component=f"component-{index}") for index in range(8)],
         "publicRagSeed": {
-            "schemaVersion": "V87",
+            "schemaVersion": "p1-public-rag-seed.v1",
+            "sourceSchemaVersion": "73",
+            "targetSchemaVersion": "87",
+            "manifestPath": "deploy/p1/seed/public-rag/public-rag-seed.v1.manifest.json",
+            "manifestSha256": ZERO_SHA,
             "archiveSha256": ZERO_SHA,
             "sources": 142,
             "chunks": 7871,
             "dimensions": 1024,
-            "parts": [{"path": "seed/part-0001", "size": 1024, "sha256": ZERO_SHA}],
+            "parts": [
+                {"path": "seed/part-0001", "size": 1024, "sha256": ZERO_SHA},
+                {"path": "seed/part-0002", "size": 1024, "sha256": ZERO_SHA},
+            ],
         },
         "modelAssets": [
             {

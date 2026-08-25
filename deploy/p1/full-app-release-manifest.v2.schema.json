@@ -95,17 +95,34 @@
     "publicRagSeed": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schemaVersion", "archiveSha256", "sources", "chunks", "dimensions", "parts"],
+      "required": [
+        "schemaVersion",
+        "sourceSchemaVersion",
+        "targetSchemaVersion",
+        "manifestPath",
+        "manifestSha256",
+        "archiveSha256",
+        "sources",
+        "chunks",
+        "dimensions",
+        "parts"
+      ],
       "properties": {
-        "schemaVersion": {"type": "string", "minLength": 1, "maxLength": 64},
+        "schemaVersion": {"const": "p1-public-rag-seed.v1"},
+        "sourceSchemaVersion": {"const": "73"},
+        "targetSchemaVersion": {"const": "87"},
+        "manifestPath": {
+          "const": "deploy/p1/seed/public-rag/public-rag-seed.v1.manifest.json"
+        },
+        "manifestSha256": {"$ref": "#/$defs/sha256"},
         "archiveSha256": {"$ref": "#/$defs/sha256"},
         "sources": {"const": 142},
         "chunks": {"const": 7871},
         "dimensions": {"const": 1024},
         "parts": {
           "type": "array",
-          "minItems": 1,
-          "maxItems": 4096,
+          "minItems": 2,
+          "maxItems": 2,
           "items": {"$ref": "#/$defs/fileDigest"}
         }
       }

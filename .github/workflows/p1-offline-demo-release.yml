@@ -286,9 +286,11 @@ jobs:
             'alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce' \
             'redis:7.2-alpine@sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8' \
             | release-build/zstd -T0 -19 -o release-build/scanned-images.tar.zst
-          echo "archive_sha256=$(sha256sum release-build/scanned-images.tar.zst | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "syft_sha256=$(sha256sum release-build/syft | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "zstd_sha256=$(sha256sum release-build/zstd | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          {
+            echo "archive_sha256=$(sha256sum release-build/scanned-images.tar.zst | awk '{print $1}')"
+            echo "syft_sha256=$(sha256sum release-build/syft | awk '{print $1}')"
+            echo "zstd_sha256=$(sha256sum release-build/zstd | awk '{print $1}')"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload scanned immutable build outputs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

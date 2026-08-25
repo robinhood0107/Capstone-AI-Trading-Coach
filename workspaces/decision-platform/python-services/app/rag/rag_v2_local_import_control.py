@@ -168,7 +168,10 @@ def load_pending_owner_import_control(
     except OwnerFileIoError as error:
         raise RagV2LocalImportControlError("LOCAL_IMPORT_CONTROL_BOUNDARY") from error
     after = _assert_control_record_boundary(local_root, filename=_IMPORT_CONTROL_FILENAME)
-    if before != after or len(raw) != before.st_size:
+    if (
+        _stable_control_record_metadata(before) != _stable_control_record_metadata(after)
+        or len(raw) != before.st_size
+    ):
         raise RagV2LocalImportControlError("LOCAL_IMPORT_CONTROL_BOUNDARY")
     try:
         payload = json.loads(raw.decode("utf-8", errors="strict"))
@@ -222,7 +225,10 @@ def load_pending_owner_delete_control(
     except OwnerFileIoError as error:
         raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_BOUNDARY") from error
     after = _assert_control_record_boundary(local_root, filename=_DELETE_CONTROL_FILENAME)
-    if before != after or len(raw) != before.st_size:
+    if (
+        _stable_control_record_metadata(before) != _stable_control_record_metadata(after)
+        or len(raw) != before.st_size
+    ):
         raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_BOUNDARY")
     try:
         payload = json.loads(raw.decode("utf-8", errors="strict"))
@@ -403,6 +409,22 @@ def _assert_control_record_boundary(
     ):
         raise RagV2LocalImportControlError("LOCAL_IMPORT_CONTROL_BOUNDARY")
     return metadata
+
+
+def _stable_control_record_metadata(value: os.stat_result) -> tuple[int, ...]:
+    """읽기 자체로 바뀔 수 있는 access time을 제외한 변조 감지 필드만 반환한다."""
+
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_uid,
+        value.st_gid,
+        value.st_mode,
+        value.st_nlink,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
 
 
 def _require_pattern(value: object, pattern: re.Pattern[str]) -> str:

@@ -19,7 +19,6 @@ from app.verification.packet import (
     author_signed_provider_read_smoke_packet,
     verify_signed_repository_binding,
 )
-from app.verification.provider_smoke import run_provider_read_smoke
 from app.verification.runner import run_s0_s5_current
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
@@ -64,6 +63,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "run":
         _require_external_output_root(args.output_root)
         if args.profile == "PROVIDER_READ_SMOKE":
+            # Keep every credential-capable provider module unloaded until after the
+            # packet and protected trust root have been parsed successfully.
+            from app.verification.provider_smoke import run_provider_read_smoke
+
             if args.packet is None:
                 parser.error("PROVIDER_READ_SMOKE requires --packet")
             loaded_packet = read_packet(args.packet.absolute())
@@ -204,14 +207,14 @@ def _require_external_output_root(output_root: Path) -> None:
 
 def _current_clean_head() -> str:
     head = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
+        ["/usr/bin/git", "rev-parse", "HEAD"],
         cwd=_REPOSITORY_ROOT,
         check=True,
         capture_output=True,
         text=True,
     ).stdout.strip()
     dirty = subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=all"],
+        ["/usr/bin/git", "status", "--porcelain", "--untracked-files=all"],
         cwd=_REPOSITORY_ROOT,
         check=True,
         capture_output=True,

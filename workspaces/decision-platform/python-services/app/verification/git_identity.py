@@ -26,7 +26,7 @@ def current_clean_git_identity(repository_root: Path) -> tuple[str, str]:
     for command in commands:
         try:
             completed = subprocess.run(
-                ("git", "-C", str(repository_root), *command),
+                ("/usr/bin/git", "-C", str(repository_root), *command),
                 check=False,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,

@@ -2,9 +2,34 @@
 set -Eeuo pipefail
 umask 077
 
-[[ $# -le 1 ]] || { echo 'P1_RELEASE_VERIFY=UNEXPECTED_ARGUMENTS' >&2; exit 1; }
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-bundle=${1:-$script_dir/../..}
+case ${1:-} in
+  --sealed)
+    [[ $# == 2 ]] || { echo 'P1_RELEASE_VERIFY=UNEXPECTED_ARGUMENTS' >&2; exit 1; }
+    bundle=$2
+    ;;
+  --stage-to)
+    [[ $# == 3 ]] || { echo 'P1_RELEASE_VERIFY=UNEXPECTED_ARGUMENTS' >&2; exit 1; }
+    destination=$2
+    source=$3
+    [[ -d $source && ! -L $source ]] || { echo 'P1_RELEASE_VERIFY=INVALID_DIRECTORY' >&2; exit 1; }
+    source=$(cd -- "$source" && pwd -P)
+    python3 "$source/deploy/p1/release_guard.py" stage-bundle "$source" "$destination"
+    exec "$destination/deploy/p1/verify-release" --sealed "$destination"
+    ;;
+  *)
+    [[ $# -le 1 ]] || { echo 'P1_RELEASE_VERIFY=UNEXPECTED_ARGUMENTS' >&2; exit 1; }
+    source=${1:-$script_dir/../..}
+    [[ -d $source && ! -L $source ]] || { echo 'P1_RELEASE_VERIFY=INVALID_DIRECTORY' >&2; exit 1; }
+    source=$(cd -- "$source" && pwd -P)
+    stage_parent=$(mktemp -d)
+    cleanup_stage() { rm -rf -- "$stage_parent"; }
+    trap cleanup_stage EXIT
+    python3 "$source/deploy/p1/release_guard.py" stage-bundle "$source" "$stage_parent/bundle"
+    "$stage_parent/bundle/deploy/p1/verify-release" --sealed "$stage_parent/bundle"
+    exit $?
+    ;;
+esac
 [[ -d $bundle && ! -L $bundle ]] || { echo 'P1_RELEASE_VERIFY=INVALID_DIRECTORY' >&2; exit 1; }
 bundle=$(cd -- "$bundle" && pwd -P)
 for command in sha256sum docker python3 cosign gh; do

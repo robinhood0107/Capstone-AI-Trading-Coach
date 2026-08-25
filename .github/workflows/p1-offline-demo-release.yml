@@ -16,14 +16,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-scan-publish:
+  build-scan:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      packages: write
-      id-token: write
-      attestations: write
+    outputs:
+      archive_sha256: ${{ steps.export.outputs.archive_sha256 }}
+      sha: ${{ steps.identity.outputs.sha }}
+      tag: ${{ steps.identity.outputs.tag }}
+      tree: ${{ steps.identity.outputs.tree }}
+      version: ${{ steps.identity.outputs.version }}
+      syft_sha256: ${{ steps.export.outputs.syft_sha256 }}
+      zstd_sha256: ${{ steps.export.outputs.zstd_sha256 }}
     env:
       REGISTRY: ghcr.io
       SPRING_IMAGE: ghcr.io/robinhood0107/capstone-spring-api
@@ -79,9 +84,7 @@ jobs:
         id: spring_build
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
-          context: "https://github.com/${{ github.repository }}.git#${{ steps.identity.outputs.sha }}"
-          secrets: |
-            GIT_AUTH_TOKEN=${{ github.token }}
+          context: .
           file: deploy/p1/docker/spring-api.Dockerfile
           platforms: linux/amd64
           load: true
@@ -94,9 +97,7 @@ jobs:
         id: python_build
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
-          context: "https://github.com/${{ github.repository }}.git#${{ steps.identity.outputs.sha }}"
-          secrets: |
-            GIT_AUTH_TOKEN=${{ github.token }}
+          context: .
           file: deploy/p1/docker/python-services.Dockerfile
           platforms: linux/amd64
           load: true
@@ -109,9 +110,7 @@ jobs:
         id: postgres_build
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
-          context: "https://github.com/${{ github.repository }}.git#${{ steps.identity.outputs.sha }}"
-          secrets: |
-            GIT_AUTH_TOKEN=${{ github.token }}
+          context: .
           file: deploy/p1/docker/postgres-pgvector.Dockerfile
           platforms: linux/amd64
           load: true
@@ -124,9 +123,7 @@ jobs:
         id: kafka_build
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
-          context: "https://github.com/${{ github.repository }}.git#${{ steps.identity.outputs.sha }}"
-          secrets: |
-            GIT_AUTH_TOKEN=${{ github.token }}
+          context: .
           file: deploy/p1/docker/kafka.Dockerfile
           platforms: linux/amd64
           load: true
@@ -270,6 +267,144 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Export scanned images with credentialless compression tool
+        id: export
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zstd
+          install -d -m 700 release-build
+          install -m 0555 "$(command -v syft)" release-build/syft
+          install -m 0555 "$(command -v zstd)" release-build/zstd
+          docker save \
+            "$SPRING_IMAGE:${{ steps.identity.outputs.tag }}" \
+            "$PYTHON_IMAGE:${{ steps.identity.outputs.tag }}" \
+            "$POSTGRES_IMAGE:${{ steps.identity.outputs.tag }}" \
+            "$KAFKA_IMAGE:${{ steps.identity.outputs.tag }}" \
+            'alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce' \
+            'redis:7.2-alpine@sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8' \
+            | release-build/zstd -T0 -19 -o release-build/scanned-images.tar.zst
+          echo "archive_sha256=$(sha256sum release-build/scanned-images.tar.zst | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "syft_sha256=$(sha256sum release-build/syft | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "zstd_sha256=$(sha256sum release-build/zstd | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload scanned immutable build outputs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p1-scanned-build-${{ steps.identity.outputs.sha }}
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          path: |
+            release-build/scanned-images.tar.zst
+            release-build/syft
+            release-build/zstd
+            spring-api.spdx.json
+            python-services.spdx.json
+            postgres-pgvector.spdx.json
+            kafka.spdx.json
+
+  publish:
+    if: github.ref == 'refs/heads/main'
+    needs: build-scan
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      REGISTRY: ghcr.io
+      SPRING_IMAGE: ghcr.io/robinhood0107/capstone-spring-api
+      PYTHON_IMAGE: ghcr.io/robinhood0107/capstone-python-services
+      POSTGRES_IMAGE: ghcr.io/robinhood0107/capstone-postgres-pgvector
+      KAFKA_IMAGE: ghcr.io/robinhood0107/capstone-kafka
+    steps:
+      - name: Checkout exact merge source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Validate scanned source identity
+        id: identity
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ needs.build-scan.outputs.sha }}
+          EXPECTED_TAG: ${{ needs.build-scan.outputs.tag }}
+          EXPECTED_TREE: ${{ needs.build-scan.outputs.tree }}
+          EXPECTED_VERSION: ${{ needs.build-scan.outputs.version }}
+          RELEASE_VERSION: ${{ inputs.releaseVersion }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ $(git status --porcelain --untracked-files=all) == '' ]]
+          [[ $(git rev-parse HEAD) == "$EXPECTED_SHA" ]]
+          [[ $(git rev-parse 'HEAD^{tree}') == "$EXPECTED_TREE" ]]
+          [[ "$RELEASE_VERSION" == "$EXPECTED_VERSION" ]]
+          [[ "p1-offline-demo-${EXPECTED_VERSION}-${EXPECTED_SHA:0:12}" == "$EXPECTED_TAG" ]]
+          {
+            echo "sha=$EXPECTED_SHA"
+            echo "tree=$EXPECTED_TREE"
+            echo "tag=$EXPECTED_TAG"
+            echo "version=$EXPECTED_VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download scanned immutable build outputs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: p1-scanned-build-${{ needs.build-scan.outputs.sha }}
+          path: .
+
+      - name: Recheck tag and release collision before credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_VERSION" >/dev/null 2>&1; then
+            echo P1_RELEASE_VERSION_COLLISION >&2
+            exit 1
+          fi
+          if gh release view "$RELEASE_VERSION" >/dev/null 2>&1; then
+            echo P1_RELEASE_VERSION_COLLISION >&2
+            exit 1
+          fi
+
+      - name: Load only the scanned image archive
+        env:
+          EXPECTED_ARCHIVE_SHA256: ${{ needs.build-scan.outputs.archive_sha256 }}
+          EXPECTED_SYFT_SHA256: ${{ needs.build-scan.outputs.syft_sha256 }}
+          EXPECTED_ZSTD_SHA256: ${{ needs.build-scan.outputs.zstd_sha256 }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ $(sha256sum release-build/scanned-images.tar.zst | awk '{print $1}') == "$EXPECTED_ARCHIVE_SHA256" ]]
+          [[ $(sha256sum release-build/syft | awk '{print $1}') == "$EXPECTED_SYFT_SHA256" ]]
+          [[ $(sha256sum release-build/zstd | awk '{print $1}') == "$EXPECTED_ZSTD_SHA256" ]]
+          install -d -m 700 "$RUNNER_TEMP/p1-tools"
+          install -m 0555 release-build/syft "$RUNNER_TEMP/p1-tools/syft"
+          install -m 0555 release-build/zstd "$RUNNER_TEMP/p1-tools/zstd"
+          echo "$RUNNER_TEMP/p1-tools" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/p1-tools/zstd" -dc release-build/scanned-images.tar.zst | docker load
+
+      - name: Bind loaded scanned image identities
+        id: local_identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ $(docker image inspect "$SPRING_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
+          [[ $(docker image inspect "$PYTHON_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
+          [[ $(docker image inspect "$POSTGRES_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
+          [[ $(docker image inspect "$KAFKA_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == '${{ steps.identity.outputs.sha }}' ]]
+          {
+            echo "spring_config=$(docker image inspect "$SPRING_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{.Id}}')"
+            echo "python_config=$(docker image inspect "$PYTHON_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{.Id}}')"
+            echo "postgres_config=$(docker image inspect "$POSTGRES_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{.Id}}')"
+            echo "kafka_config=$(docker image inspect "$KAFKA_IMAGE:${{ steps.identity.outputs.tag }}" --format '{{.Id}}')"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Log in only after all scans pass
         uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
@@ -443,12 +578,6 @@ jobs:
           rmdir release-evidence/spring release-evidence/python release-evidence/postgres release-evidence/kafka
           gh attestation trusted-root > release-evidence/github-trusted-root.jsonl
 
-      - name: Install zstd
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends zstd
-
       - name: Assemble exact DB and Kafka offline bundles
         env:
           P1_RELEASE_STAGE: FINAL
@@ -495,7 +624,11 @@ jobs:
         run: |
           set -Eeuo pipefail
           for bundle in release-output/capstone-p1-offline-demo-{db,kafka}-"$RELEASE_VERSION"-amd64; do
-            sudo env "PATH=$PATH" unshare --net --mount-proc deploy/p1/verify-release "$bundle"
+            sealed_parent=$(mktemp -d)
+            python3 deploy/p1/release_guard.py stage-bundle "$bundle" "$sealed_parent/bundle"
+            sudo env "PATH=$PATH" unshare --net --mount-proc \
+              "$sealed_parent/bundle/deploy/p1/verify-release" --sealed "$sealed_parent/bundle"
+            rm -rf -- "$sealed_parent"
           done
 
       - name: Run isolated DB and Kafka bundle lifecycle

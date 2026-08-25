@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import subprocess
+import sys
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -281,10 +284,18 @@ def test_production_backend_composes_existing_typed_clients_with_retry_zero(monk
         def close(self) -> None:
             return None
 
-    monkeypatch.setattr(smoke, "attest_quota_backend_credentials", lambda: None)
-    monkeypatch.setattr(smoke, "KrxOpenApiClient", FakeKrxClient)
-    monkeypatch.setattr(smoke, "KISHttpClient", FakeKisHttpClient)
-    monkeypatch.setattr(smoke, "ECOSHttpClient", FakeEcosClient)
+    real_dependencies = smoke._load_provider_dependencies()
+    monkeypatch.setattr(
+        smoke,
+        "_load_provider_dependencies",
+        lambda: replace(
+            real_dependencies,
+            attest_quota_backend_credentials=lambda: None,
+            krx_open_api_client=FakeKrxClient,
+            kis_http_client=FakeKisHttpClient,
+            ecos_http_client=FakeEcosClient,
+        ),
+    )
     now = datetime.now(UTC)
     packet = P1SignedApprovalPacket(
         approval_id="P1.V1-20260821-READ-SMOKE",
@@ -351,3 +362,25 @@ def test_provider_smoke_has_no_direct_transport_db_or_brokerage_authority() -> N
     assert "production_db" not in source
     assert "account_no" not in source.lower()
     assert "order_client" not in source.lower()
+
+
+def test_import_keeps_credential_capable_provider_modules_unloaded() -> None:
+    module_names = (
+        "app.data.ecos.http_client",
+        "app.data.kis.http_client",
+        "app.data.kis.market_client",
+        "app.data.krx.client",
+    )
+    program = (
+        "import sys; import app.verification.provider_smoke; "
+        f"assert not set({module_names!r}) & set(sys.modules)"
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-I", "-c", program],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr

@@ -6,29 +6,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Final, Protocol, cast
+from typing import Any, Final, Protocol, cast
 from uuid import uuid4
 
-from app.data._shared.canonical_json import canonical_json_sha256
-from app.data.ecos.http_client import ECOSHttpClient
-from app.data.ecos.series_registry import CANDIDATE_SERIES, ECOSSeries
-from app.data.ecos.settings import ECOSSettings
-from app.data.kis.accounting import (
-    CollectionRunRecorder,
-    CollectionRunStatus,
-    LogicalOperation,
-    PhysicalChannel,
-)
-from app.data.kis.http_client import KISHttpClient
-from app.data.kis.market_client import KISMarketClient
-from app.data.kis.settings import KISSettings
-from app.data.krx.catalog import ENABLED_UNIVERSE_ENDPOINTS_BY_SERVICE
-from app.data.krx.client import (
-    KrxOpenApiClient,
-    attest_quota_backend_credentials,
-)
-from app.data.krx.parsers import is_kis_compatible_symbol
-from app.data.krx.settings import KrxOpenApiSettings
 from app.verification.artifacts import claim_packet_execution
 from app.verification.models import (
     PROVIDER_READ_SMOKE_GATE_ORDER,
@@ -49,10 +29,71 @@ _KRX_SERVICE: Final[Mapping[str, str]] = {
     "KRX_KOSPI_DAILY": "stk_bydd_trd",
     "KRX_KOSDAQ_DAILY": "ksq_bydd_trd",
 }
-_ECOS_SERIES: Final[Mapping[str, ECOSSeries]] = {
-    "ECOS_POLICY_RATE_DAILY": CANDIDATE_SERIES[0],
-    "ECOS_KRW_USD_DAILY": CANDIDATE_SERIES[1],
+_ECOS_SERIES_INDEX: Final[Mapping[str, int]] = {
+    "ECOS_POLICY_RATE_DAILY": 0,
+    "ECOS_KRW_USD_DAILY": 1,
 }
+
+
+@dataclass(frozen=True, slots=True)
+class _ProviderDependencies:
+    canonical_json_sha256: Callable[[object], str]
+    ecos_http_client: type[Any]
+    ecos_series: tuple[Any, ...]
+    ecos_settings: type[Any]
+    collection_run_recorder: type[Any]
+    collection_run_status: Any
+    logical_operation: Any
+    physical_channel: Any
+    kis_http_client: type[Any]
+    kis_market_client: type[Any]
+    kis_settings: type[Any]
+    enabled_universe_endpoints_by_service: Mapping[str, Any]
+    krx_open_api_client: type[Any]
+    attest_quota_backend_credentials: Callable[[], None]
+    is_kis_compatible_symbol: Callable[[str], bool]
+    krx_open_api_settings: type[Any]
+
+
+def _load_provider_dependencies() -> _ProviderDependencies:
+    """Load credential-capable transports only after binding and one-shot claims."""
+
+    from app.data._shared.canonical_json import canonical_json_sha256
+    from app.data.ecos.http_client import ECOSHttpClient
+    from app.data.ecos.series_registry import CANDIDATE_SERIES
+    from app.data.ecos.settings import ECOSSettings
+    from app.data.kis.accounting import (
+        CollectionRunRecorder,
+        CollectionRunStatus,
+        LogicalOperation,
+        PhysicalChannel,
+    )
+    from app.data.kis.http_client import KISHttpClient
+    from app.data.kis.market_client import KISMarketClient
+    from app.data.kis.settings import KISSettings
+    from app.data.krx.catalog import ENABLED_UNIVERSE_ENDPOINTS_BY_SERVICE
+    from app.data.krx.client import KrxOpenApiClient, attest_quota_backend_credentials
+    from app.data.krx.parsers import is_kis_compatible_symbol
+    from app.data.krx.settings import KrxOpenApiSettings
+
+    return _ProviderDependencies(
+        canonical_json_sha256=canonical_json_sha256,
+        ecos_http_client=ECOSHttpClient,
+        ecos_series=CANDIDATE_SERIES,
+        ecos_settings=ECOSSettings,
+        collection_run_recorder=CollectionRunRecorder,
+        collection_run_status=CollectionRunStatus,
+        logical_operation=LogicalOperation,
+        physical_channel=PhysicalChannel,
+        kis_http_client=KISHttpClient,
+        kis_market_client=KISMarketClient,
+        kis_settings=KISSettings,
+        enabled_universe_endpoints_by_service=ENABLED_UNIVERSE_ENDPOINTS_BY_SERVICE,
+        krx_open_api_client=KrxOpenApiClient,
+        attest_quota_backend_credentials=attest_quota_backend_credentials,
+        is_kis_compatible_symbol=is_kis_compatible_symbol,
+        krx_open_api_settings=KrxOpenApiSettings,
+    )
 
 
 class ProviderSmokeError(RuntimeError):
@@ -83,12 +124,13 @@ class ProductionProviderSmokeBackend:
     """Reuse the production transports/parsers while exposing only bounded evidence hashes."""
 
     def __init__(self, packet: P1SignedApprovalPacket) -> None:
+        self._dependencies = _load_provider_dependencies()
         self._packet = packet
         self._provider_calls = 0
         self._kis_token_calls = 0
-        self._kis_recorder: CollectionRunRecorder | None = None
-        self._kis_client: KISHttpClient | None = None
-        self._kis_market: KISMarketClient | None = None
+        self._kis_recorder: Any | None = None
+        self._kis_client: Any | None = None
+        self._kis_market: Any | None = None
 
     @property
     def provider_data_physical_calls(self) -> int:
@@ -101,7 +143,7 @@ class ProductionProviderSmokeBackend:
 
     def preflight(self) -> None:
         # All three provider families use the same authenticated Redis quota boundary.
-        attest_quota_backend_credentials()
+        self._dependencies.attest_quota_backend_credentials()
 
     def execute(self, operation: str, target: VerificationTarget) -> OperationResult:
         self._require_packet_current()
@@ -111,7 +153,7 @@ class ProductionProviderSmokeBackend:
             return self._execute_kis_current(target)
         if operation == "KIS_DAILY_BAR":
             return self._execute_kis_daily(target)
-        if operation in _ECOS_SERIES:
+        if operation in _ECOS_SERIES_INDEX:
             return self._execute_ecos(operation, target)
         raise ProviderSmokeError("P1_PROVIDER_OPERATION_NOT_ALLOWED")
 
@@ -123,9 +165,10 @@ class ProductionProviderSmokeBackend:
             market.close()
 
     def _execute_krx(self, operation: str, target: VerificationTarget) -> OperationResult:
+        dependencies = self._dependencies
         service = _KRX_SERVICE[operation]
-        client = KrxOpenApiClient(
-            KrxOpenApiSettings(
+        client = dependencies.krx_open_api_client(
+            dependencies.krx_open_api_settings(
                 max_calls_per_run=1,
                 max_attempts_per_request=1,
                 logical_deadline_seconds=130.0,
@@ -138,7 +181,7 @@ class ProductionProviderSmokeBackend:
                 service=service,
                 deadline_monotonic=_packet_deadline(self._packet),
             )
-            expected_market = ENABLED_UNIVERSE_ENDPOINTS_BY_SERVICE[service].market
+            expected_market = dependencies.enabled_universe_endpoints_by_service[service].market
             if not rows or any(
                 row.as_of_date != target.session_date or row.market != expected_market
                 for row in rows
@@ -147,7 +190,7 @@ class ProductionProviderSmokeBackend:
             positive = sum(
                 1
                 for row in rows
-                if is_kis_compatible_symbol(row.symbol)
+                if dependencies.is_kis_compatible_symbol(row.symbol)
                 and row.market_cap > 0
                 and row.trading_value > 0
             )
@@ -156,7 +199,7 @@ class ProductionProviderSmokeBackend:
             evidence = {
                 "operation": operation,
                 "positiveCandidateCount": positive,
-                "projectionSha256": canonical_json_sha256(
+                "projectionSha256": dependencies.canonical_json_sha256(
                     [
                         {
                             "date": row.as_of_date.isoformat(),
@@ -176,10 +219,11 @@ class ProductionProviderSmokeBackend:
             client.close()
         return OperationResult(
             physical_call_count=self._provider_calls - before,
-            evidence_sha256=canonical_json_sha256(evidence),
+            evidence_sha256=dependencies.canonical_json_sha256(evidence),
         )
 
     def _execute_kis_current(self, target: VerificationTarget) -> OperationResult:
+        dependencies = self._dependencies
         market = self._ensure_kis()
         before = self._provider_calls
         try:
@@ -188,7 +232,7 @@ class ProductionProviderSmokeBackend:
                 raise ProviderSmokeError("P1_KIS_CURRENT_PRICE_INVALID")
             evidence = {
                 "operation": "KIS_CURRENT_PRICE",
-                "projectionSha256": canonical_json_sha256(
+                "projectionSha256": dependencies.canonical_json_sha256(
                     {
                         "price": current.price,
                         "symbol": current.symbol,
@@ -201,10 +245,11 @@ class ProductionProviderSmokeBackend:
             self._refresh_kis_counts()
         return OperationResult(
             physical_call_count=self._provider_calls - before,
-            evidence_sha256=canonical_json_sha256(evidence),
+            evidence_sha256=dependencies.canonical_json_sha256(evidence),
         )
 
     def _execute_kis_daily(self, target: VerificationTarget) -> OperationResult:
+        dependencies = self._dependencies
         market = self._ensure_kis()
         before = self._provider_calls
         try:
@@ -219,7 +264,7 @@ class ProductionProviderSmokeBackend:
             bar = bars[0]
             evidence = {
                 "operation": "KIS_DAILY_BAR",
-                "projectionSha256": canonical_json_sha256(
+                "projectionSha256": dependencies.canonical_json_sha256(
                     {
                         "close": bar.close,
                         "date": bar.date.isoformat(),
@@ -234,14 +279,15 @@ class ProductionProviderSmokeBackend:
             self._refresh_kis_counts()
         return OperationResult(
             physical_call_count=self._provider_calls - before,
-            evidence_sha256=canonical_json_sha256(evidence),
+            evidence_sha256=dependencies.canonical_json_sha256(evidence),
         )
 
     def _execute_ecos(self, operation: str, target: VerificationTarget) -> OperationResult:
-        series = _ECOS_SERIES[operation]
+        dependencies = self._dependencies
+        series = dependencies.ecos_series[_ECOS_SERIES_INDEX[operation]]
         start = target.session_date - timedelta(days=29)
-        client = ECOSHttpClient(
-            ECOSSettings(max_calls_per_run=1, max_attempts_per_request=1),
+        client = dependencies.ecos_http_client(
+            dependencies.ecos_settings(max_calls_per_run=1, max_attempts_per_request=1),
             approval_deadline_monotonic=_packet_deadline(self._packet),
         )
         before = self._provider_calls
@@ -259,46 +305,47 @@ class ProductionProviderSmokeBackend:
                 "cycle": series.cycle,
                 "from": start.isoformat(),
                 "itemCode": series.item_code1,
-                "nameSha256": canonical_json_sha256(series.name),
+                "nameSha256": dependencies.canonical_json_sha256(series.name),
                 "operation": operation,
-                "projectionSha256": canonical_json_sha256(
+                "projectionSha256": dependencies.canonical_json_sha256(
                     [item.model_dump(mode="json") for item in page.observations]
                 ),
                 "rowCount": len(page.observations),
                 "statCode": series.stat_code,
                 "to": target.session_date.isoformat(),
-                "unitSha256": canonical_json_sha256(series.unit),
+                "unitSha256": dependencies.canonical_json_sha256(series.unit),
             }
         finally:
             self._provider_calls += client.physical_attempt_count
             client.close()
         return OperationResult(
             physical_call_count=self._provider_calls - before,
-            evidence_sha256=canonical_json_sha256(evidence),
+            evidence_sha256=dependencies.canonical_json_sha256(evidence),
         )
 
-    def _ensure_kis(self) -> KISMarketClient:
+    def _ensure_kis(self) -> Any:
         if self._kis_market is not None:
             return self._kis_market
-        settings = KISSettings(
+        dependencies = self._dependencies
+        settings = dependencies.kis_settings(
             kis_mode="live",
             kis_offline=False,
             kis_retry_attempts=1,
         )
-        recorder = CollectionRunRecorder(
+        recorder = dependencies.collection_run_recorder(
             run_id=uuid4(),
             started_at=datetime.now(UTC),
             logical_caps={
-                LogicalOperation.CURRENT_PRICE: 1,
-                LogicalOperation.DAILY_BARS: 1,
-                LogicalOperation.HOLIDAY: 0,
+                dependencies.logical_operation.CURRENT_PRICE: 1,
+                dependencies.logical_operation.DAILY_BARS: 1,
+                dependencies.logical_operation.HOLIDAY: 0,
             },
             physical_caps={
-                PhysicalChannel.MARKET_DATA: 2,
-                PhysicalChannel.TOKEN_P: self._packet.kis_token_physical_call_cap,
+                dependencies.physical_channel.MARKET_DATA: 2,
+                dependencies.physical_channel.TOKEN_P: self._packet.kis_token_physical_call_cap,
             },
         )
-        client = KISHttpClient(
+        client = dependencies.kis_http_client(
             settings,
             accounting=recorder,
             require_cached_token=self._packet.kis_token_physical_call_cap == 0,
@@ -317,7 +364,7 @@ class ProductionProviderSmokeBackend:
             client.close()
             self._kis_client = None
             raise
-        self._kis_market = KISMarketClient(settings, client, accounting=recorder)
+        self._kis_market = dependencies.kis_market_client(settings, client, accounting=recorder)
         self._refresh_kis_counts()
         return self._kis_market
 
@@ -327,17 +374,17 @@ class ProductionProviderSmokeBackend:
             return
         summary = recorder.snapshot(
             completed_at=datetime.now(UTC),
-            status=CollectionRunStatus.SUCCESS,
+            status=self._dependencies.collection_run_status.SUCCESS,
         )
         data_count = next(
             item.attempts
             for item in summary.physical_attempts
-            if item.channel == PhysicalChannel.MARKET_DATA
+            if item.channel == self._dependencies.physical_channel.MARKET_DATA
         )
         token_count = next(
             item.attempts
             for item in summary.physical_attempts
-            if item.channel == PhysicalChannel.TOKEN_P
+            if item.channel == self._dependencies.physical_channel.TOKEN_P
         )
         non_kis_calls = self._provider_calls - getattr(self, "_last_kis_data_calls", 0)
         self._provider_calls = non_kis_calls + data_count

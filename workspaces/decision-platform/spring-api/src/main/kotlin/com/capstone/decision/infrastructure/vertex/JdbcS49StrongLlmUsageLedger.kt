@@ -2,6 +2,9 @@ package com.capstone.decision.infrastructure.vertex
 
 import com.capstone.decision.application.rag.RagV2VertexEvidence
 import com.capstone.decision.application.rag.StrongLlmAnswerBasis
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
@@ -42,6 +45,7 @@ internal interface S49StrongLlmUsagePort {
 @ConditionalOnProperty(name = ["app.s4-9.strong-llm.enabled"], havingValue = "true")
 internal class JdbcS49StrongLlmUsageLedger(
     private val jdbcTemplate: JdbcTemplate,
+    private val actorRlsScope: ActorRlsScope,
 ) : S49StrongLlmUsagePort {
     override fun commit(
         ownerUserId: String,
@@ -82,6 +86,22 @@ internal class JdbcS49StrongLlmUsageLedger(
         val evidenceSetSha256 =
             sha256(evidence.joinToString("\n") { "${it.citationId}:${it.canonicalTextSha256}" })
         val usageEventId = "s49_llu_${sha256("$requestId:$outcome:$evidenceSetSha256").take(32)}"
+        actorRlsScope.open(
+            jdbcTemplate,
+            ownerUserId,
+            ActorCapabilityBinding.request(
+                "RECORD_STRONG_LLM_USAGE",
+                "RAG_REQUEST",
+                requestId,
+                ActorCapabilityRolePolicy.OWNER,
+                ownerUserId,
+                requestId,
+                modelId,
+                basis,
+                outcome,
+                evidenceSetSha256,
+            ),
+        )
         val recorded =
             jdbcTemplate.queryForObject(
                 """

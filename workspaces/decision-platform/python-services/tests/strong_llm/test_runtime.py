@@ -138,6 +138,85 @@ def test_searxng_fallback_is_bounded_and_returns_tool_result_to_same_message() -
     assert result.search_backend == "SEARXNG"
 
 
+def test_owner_private_evidence_forces_tool_free_fallback_and_zero_public_queries() -> None:
+    provider = FakeProvider()
+    permits: list[tuple[str, str, bool]] = []
+    public_tool_calls: list[tuple[str, str, dict[str, object]]] = []
+
+    result = BoundedStrongLlmGraph().run(
+        _request(google=False, owner=True),
+        provider,
+        lambda call_id, phase, attached: permits.append((call_id, phase, attached)),
+        lambda call_id, name, args: public_tool_calls.append((call_id, name, args)) or "{}",
+    )
+
+    assert permits == [("owner_final", "OWNER_FINAL", False)]
+    assert provider.invocations == [("fallback", False)]
+    assert public_tool_calls == []
+    assert result.vertex_generate_call_count == 1
+    assert result.search_backend == "NONE"
+    assert result.web_search_queries == ()
+
+
+def test_owner_private_fallback_rejects_model_generated_public_query_before_execution() -> None:
+    provider = FakeProvider(tool_call=True)
+    public_tool_calls: list[tuple[str, str, dict[str, object]]] = []
+
+    with pytest.raises(ValueError, match="STRONG_LLM_OWNER_PUBLIC_DISCOVERY_FORBIDDEN"):
+        BoundedStrongLlmGraph().run(
+            _request(google=False, owner=True),
+            provider,
+            lambda *_: None,
+            lambda call_id, name, args: public_tool_calls.append((call_id, name, args)) or "{}",
+        )
+
+    assert provider.invocations == [("fallback", False)]
+    assert public_tool_calls == []
+
+
+def test_vertex_provider_rejects_owner_evidence_with_public_tools_before_model_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = tmp_path / "service-account.json"
+    credential.write_text("{}", encoding="utf-8")
+    credential.chmod(0o600)
+    invocations: list[object] = []
+
+    class FakeCredentials:
+        project_id = "project-id"
+
+    class FakeModel:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def bind(self, **_kwargs: object) -> FakeModel:
+            return self
+
+        def bind_tools(self, _tools: list[dict[str, object]]) -> FakeModel:
+            return self
+
+        def invoke(self, messages: object) -> AIMessage:
+            invocations.append(messages)
+            return AIMessage(content=_answer())
+
+    monkeypatch.setattr(
+        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_file",
+        lambda *_args, **_kwargs: FakeCredentials(),
+    )
+    monkeypatch.setattr("app.strong_llm.vertex_provider.ChatGoogleGenerativeAI", FakeModel)
+    request = _request(google=False, owner=True)
+    provider = LangChainVertexProvider(
+        request,
+        VertexProviderSettings(service_account_path=credential),
+    )
+
+    with pytest.raises(ValueError, match="STRONG_LLM_OWNER_PUBLIC_DISCOVERY_FORBIDDEN"):
+        provider.invoke_fallback(request, [], tools_enabled=True)
+
+    assert invocations == []
+
+
 def test_explicit_service_account_acl_rejects_non_0600(tmp_path: Path) -> None:
     credential = tmp_path / "service-account.json"
     credential.write_text("{}", encoding="utf-8")

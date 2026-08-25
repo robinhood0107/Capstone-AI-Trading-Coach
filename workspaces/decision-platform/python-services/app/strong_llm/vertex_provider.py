@@ -166,6 +166,8 @@ class LangChainVertexProvider:
         *,
         tools_enabled: bool,
     ) -> ProviderResult:
+        if tools_enabled and request.owner_evidence:
+            raise ValueError("STRONG_LLM_OWNER_PUBLIC_DISCOVERY_FORBIDDEN")
         prompt = render_prompt(request, request.public_evidence + request.owner_evidence)
         if messages:
             history = messages

@@ -377,7 +377,7 @@ class RagGuardHistoryApiIntegrationTest(
     }
 
     private fun readEffectiveConsent(): Boolean =
-        appTransaction { connection ->
+        appTransaction("READ_RAG_CONSENT", "OWNER", "usr_demo_user") { connection ->
             connection
                 .prepareStatement("select granted from read_effective_rag_consent(?)")
                 .use { statement ->
@@ -393,7 +393,7 @@ class RagGuardHistoryApiIntegrationTest(
         scopeHmac: String,
         fingerprint: String,
     ): String =
-        appTransaction { connection ->
+        appTransaction("CLAIM_RAG_ANSWER", "RAG_CLAIM", scopeHmac) { connection ->
             connection
                 .prepareStatement(
                     "select outcome from claim_rag_answer(?, ?, ?, 120)",
@@ -414,7 +414,7 @@ class RagGuardHistoryApiIntegrationTest(
         usageEventId: String,
         contextCitations: String,
     ) {
-        appTransaction { connection ->
+        appTransaction("RECORD_RAG_PROVIDER_ATTEMPT", "RAG_CLAIM", scopeHmac) { connection ->
             connection
                 .prepareStatement(
                     "select mark_rag_provider_attempt(?, ?, ?, ?, ?, 'GEMINI', cast(? as jsonb))",
@@ -439,19 +439,25 @@ class RagGuardHistoryApiIntegrationTest(
         }]
         """.trimIndent()
 
-    private fun <T> appTransaction(block: (Connection) -> T): T {
+    private fun <T> appTransaction(
+        operation: String,
+        targetKind: String,
+        targetId: String,
+        block: (Connection) -> T,
+    ): T {
         DriverManager
             .getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD)
             .use { connection ->
                 connection.autoCommit = false
                 try {
-                    connection
-                        .prepareStatement(
-                            "select set_config('app.actor_user_id', ?, true)",
-                        ).use { statement ->
-                            statement.setString(1, "usr_demo_user")
-                            statement.execute()
-                        }
+                    TestActorRlsScope.open(
+                        jdbcUrl = postgres.jdbcUrl,
+                        connection = connection,
+                        actorUserId = "usr_demo_user",
+                        operation = operation,
+                        targetKind = targetKind,
+                        targetId = targetId,
+                    )
                     val result = block(connection)
                     connection.commit()
                     return result

@@ -2,6 +2,7 @@ package com.capstone.decision.infrastructure.security
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
@@ -28,6 +29,7 @@ data class AuthDatabaseProperties(
 
 @Configuration
 @EnableConfigurationProperties(AuthDatabaseProperties::class)
+@ConditionalOnProperty(prefix = "app.identity", name = ["enabled"], havingValue = "true", matchIfMissing = true)
 class AuthDatabaseConfiguration {
     @Bean(destroyMethod = "close")
     @Lazy

@@ -1,5 +1,6 @@
 package com.capstone.decision.infrastructure.security
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 
@@ -11,6 +12,7 @@ fun interface ActorIdentityHandleIssuer {
 }
 
 @Component
+@ConditionalOnProperty(prefix = "app.identity", name = ["enabled"], havingValue = "true", matchIfMissing = true)
 class DatabaseActorIdentityHandleIssuer(
     authDatabase: AuthDatabase,
 ) : ActorIdentityHandleIssuer {

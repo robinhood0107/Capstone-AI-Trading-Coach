@@ -3,6 +3,9 @@ package com.capstone.decision.infrastructure.mcp
 import com.capstone.decision.application.rag.RagHistoryCryptoPort
 import com.capstone.decision.application.rag.RagHistoryIdentity
 import com.capstone.decision.application.rag.RagV2VertexEvidence
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Component
@@ -36,6 +39,7 @@ class McpAnswerValidationReceiptRegistry(
     private val jdbc: NamedParameterJdbcTemplate,
     private val transactionManager: PlatformTransactionManager,
     private val crypto: RagHistoryCryptoPort,
+    private val actorRlsScope: ActorRlsScope,
     private val clock: Clock = Clock.systemUTC(),
 ) {
     private val entries = ConcurrentHashMap<String, Entry>()
@@ -66,7 +70,22 @@ class McpAnswerValidationReceiptRegistry(
         }
         try {
             TransactionTemplate(transactionManager).executeWithoutResult {
-                setActor(caller.ownerUserId)
+                actorRlsScope.open(
+                    jdbc,
+                    caller.ownerUserId,
+                    ActorCapabilityBinding.request(
+                        "ISSUE_ANSWER_VALIDATION",
+                        "RESEARCH_CONTEXT",
+                        context.id,
+                        ActorCapabilityRolePolicy.OWNER,
+                        caller.ownerUserId,
+                        caller.oauthClientId,
+                        context.id,
+                        sourceSetHash,
+                        draftHash,
+                        status,
+                    ),
+                )
                 require(
                     jdbc.queryForObject(
                         """
@@ -115,7 +134,20 @@ class McpAnswerValidationReceiptRegistry(
         val encrypted = crypto.encrypt(identity, entry.question, draft)
         try {
             TransactionTemplate(transactionManager).executeWithoutResult {
-                setActor(caller.ownerUserId)
+                actorRlsScope.open(
+                    jdbc,
+                    caller.ownerUserId,
+                    ActorCapabilityBinding.request(
+                        "CONSUME_ANSWER_VALIDATION",
+                        "RAG_ANSWER",
+                        answerId,
+                        ActorCapabilityRolePolicy.OWNER,
+                        caller.ownerUserId,
+                        caller.oauthClientId,
+                        answerId,
+                        entry.draftSha256,
+                    ),
+                )
                 require(
                     jdbc.queryForObject(
                         """
@@ -188,14 +220,6 @@ class McpAnswerValidationReceiptRegistry(
     private fun pruneExpired() {
         val now = clock.instant()
         entries.entries.removeIf { !it.value.expiresAt.isAfter(now) }
-    }
-
-    private fun setActor(ownerUserId: String) {
-        jdbc.queryForObject(
-            "SELECT set_config('app.actor_user_id', :ownerUserId, true)",
-            mapOf("ownerUserId" to ownerUserId),
-            String::class.java,
-        )
     }
 
     private fun hmac(value: String): String {

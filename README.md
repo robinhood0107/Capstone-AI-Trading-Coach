@@ -235,6 +235,12 @@ BROKERAGE_DB_CAPABILITY_TOKEN_SHA256
 ```
 <!-- P1_MIGRATION_ENV_KEYS_END -->
 
+<!-- P1_SEED_IMPORT_ENV_KEYS_BEGIN -->
+```text
+P1_SEED_DATABASE_DSN
+```
+<!-- P1_SEED_IMPORT_ENV_KEYS_END -->
+
 <!-- P1_BOOTSTRAP_ENV_KEYS_BEGIN -->
 ```text
 POSTGRES_MIGRATION_PASSWORD
@@ -348,6 +354,25 @@ secret file은 0640으로 생성한다. 서비스마다 필요한 파일만 moun
 부여하므로 container는 root로 전환하지 않는다.
 기존 state나 volume을 reset하거나 덮어쓰지 않는다. 개발용 source 실행이 필요한 경우에만 아래 절차를
 사용한다.
+
+## P1 full-app v2 공통 설치 진입점
+
+Linux/WSL은 repository root의 `./capstone`, Windows PowerShell은 `capstone.ps1`을 사용한다. 두
+진입점은 `install`, `start`, `stop`, `status`, `doctor`, `backup`, `restore`, `verify`를 같은 의미로
+전달한다. 기본 lane은 full-app이며 공개 Seed 조각, BGE-M3, PaddleOCR-VL 또는 Team B real artifact가
+없으면 중단 단계를 0600 local state에 기록하고 fail-closed한다. 현재 누락 artifact를 우회해 full
+release로 판정하는 옵션은 없다.
+
+```bash
+./capstone doctor
+./capstone install
+./capstone start
+```
+
+명시적인 `--degraded`는 기존 provider-free Core 회귀만 설치·실행한다. 이 모드는 full-app hard gate나
+release authority를 만들지 않는다. Seed용 migration DSN은 별도 Docker secret으로 생성되며 실제 full
+lane의 one-shot 의존성은 `migrate -> seed-import -> identity-bootstrap` 순서를 강제한다. `restore`는
+G7의 원자적 교체 구현 전까지 명시적으로 차단된다.
 
 ## 개발용 DB 기본 실행
 

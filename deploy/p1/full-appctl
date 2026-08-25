@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd -P)
+P1CTL=$SCRIPT_DIR/p1ctl
+STATE_DIR=${P1_STATE_DIR:-$SCRIPT_DIR/.state}
+STAGE_FILE=$STATE_DIR/full-app-stage
+SEED_MANIFEST=$SCRIPT_DIR/seed/public-rag/public-rag-seed.v1.manifest.json
+FULL_SEED_COMPOSE=$SCRIPT_DIR/compose.full.seed.yml
+MODEL_ROOT=${CAPSTONE_MODEL_ROOT:-$STATE_DIR/models}
+FULL_PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-full-app}
+DEGRADED_PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-offline-demo}
+RETURN_MANIFEST=$REPO_ROOT/workspaces/return-engine/artifacts/p1-return-engine-manifest.v1.json
+DASHBOARD_LOCK=$REPO_ROOT/workspaces/experience-dashboard/package-lock.json
+DASHBOARD_DOCKERFILE=$REPO_ROOT/workspaces/experience-dashboard/Dockerfile
+
+die() { printf 'CAPSTONE_ERROR=%s\n' "$1" >&2; exit 1; }
+require_command() { command -v "$1" >/dev/null 2>&1 || die "MISSING_COMMAND_$1"; }
+
+usage() {
+  cat <<'EOF'
+Usage: ./capstone <install|start|stop|status|doctor|backup|restore|verify> [--degraded]
+
+The default lane is the full P1 application and fails closed while a required artifact is absent.
+Only install, start, doctor, and verify accept --degraded. Degraded mode runs the preserved
+provider-free Core lane and never implies a full-app release gate PASS.
+EOF
+}
+
+ensure_state_boundary() {
+  require_command python3
+  if [[ ! -e $STATE_DIR ]]; then
+    python3 "$SCRIPT_DIR/release_guard.py" state-init "$STATE_DIR" || die STATE_INIT
+  fi
+  python3 "$SCRIPT_DIR/release_guard.py" state-check "$STATE_DIR" || die STATE_BOUNDARY
+}
+
+record_stage() {
+  ensure_state_boundary
+  printf '%s\n' "$1" | python3 "$SCRIPT_DIR/release_guard.py" state-write "$STATE_DIR" full-app-stage 0600
+}
+
+is_regular() {
+  [[ -f $1 && ! -L $1 ]]
+}
+
+full_preflight() {
+  local missing=0
+  require_command docker
+  require_command python3
+  docker compose version >/dev/null 2>&1 || die DOCKER_COMPOSE_UNAVAILABLE
+  if ! is_regular "$SEED_MANIFEST"; then
+    printf 'CAPSTONE_FULL_BLOCKER=PUBLIC_RAG_SEED_MANIFEST_MISSING\n' >&2
+    missing=1
+  elif ! "$SCRIPT_DIR/verify-public-rag-seed" "$SEED_MANIFEST" >/dev/null; then
+    printf 'CAPSTONE_FULL_BLOCKER=PUBLIC_RAG_SEED_INTEGRITY_FAILED\n' >&2
+    missing=1
+  fi
+  if ! is_regular "$MODEL_ROOT/bge-m3/model-asset-manifest.v1.json"; then
+    printf 'CAPSTONE_FULL_BLOCKER=BGE_M3_MODEL_ASSET_MISSING\n' >&2
+    missing=1
+  fi
+  if ! is_regular "$MODEL_ROOT/paddleocr-vl-1.6/model-asset-manifest.v1.json"; then
+    printf 'CAPSTONE_FULL_BLOCKER=PADDLEOCR_VL_MODEL_ASSET_MISSING\n' >&2
+    missing=1
+  fi
+  if ! is_regular "$RETURN_MANIFEST"; then
+    printf 'CAPSTONE_FULL_BLOCKER=TEAM_B_REAL_ARTIFACT_MISSING\n' >&2
+    missing=1
+  fi
+  if ! is_regular "$DASHBOARD_LOCK" || ! is_regular "$DASHBOARD_DOCKERFILE"; then
+    printf 'CAPSTONE_FULL_CAPABILITY=DASHBOARD_UI_PARTIAL_TEAM_A_ACTION_REQUIRED\n' >&2
+  fi
+  if ((missing)); then
+    record_stage BLOCKED_REQUIRED_ARTIFACTS
+    return 1
+  fi
+  printf 'CAPSTONE_PUBLIC_RAG_SEED_STATIC=PASS\n'
+  printf 'CAPSTONE_FULL_PREFLIGHT=PASS\n'
+}
+
+degraded_doctor() {
+  require_command docker
+  require_command openssl
+  require_command python3
+  docker compose version >/dev/null 2>&1 || die DOCKER_COMPOSE_UNAVAILABLE
+  printf 'CAPSTONE_DEGRADED_DOCTOR=PASS\n'
+  printf 'CAPSTONE_RELEASE_AUTHORITY=NONE\n'
+}
+
+state_initialized() {
+  [[ -f $STATE_DIR/runtime.env && ! -L $STATE_DIR/runtime.env ]]
+}
+
+selected_project_name() {
+  if [[ -f $STAGE_FILE && ! -L $STAGE_FILE ]] && grep -q '^DEGRADED_' "$STAGE_FILE"; then
+    printf '%s\n' "$DEGRADED_PROJECT_NAME"
+  else
+    printf '%s\n' "$FULL_PROJECT_NAME"
+  fi
+}
+
+install_degraded() {
+  if ! state_initialized; then
+    P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$DEGRADED_PROJECT_NAME "$P1CTL" init
+  else
+    P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$DEGRADED_PROJECT_NAME "$P1CTL" verify >/dev/null
+  fi
+  record_stage DEGRADED_INSTALLED
+  printf 'CAPSTONE_INSTALL=DEGRADED_CORE_ONLY\n'
+  printf 'CAPSTONE_RELEASE_AUTHORITY=NONE\n'
+}
+
+install_full() {
+  full_preflight || die FULL_INSTALL_BLOCKED_REQUIRED_ARTIFACTS
+  if ! state_initialized; then
+    P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$FULL_PROJECT_NAME "$P1CTL" init
+  fi
+  P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$FULL_PROJECT_NAME "$P1CTL" verify >/dev/null
+  local runtime_env=$STATE_DIR/runtime.env
+  docker compose --project-name "$FULL_PROJECT_NAME" \
+    --env-file "$runtime_env" -f "$SCRIPT_DIR/compose.db.yml" -f "$FULL_SEED_COMPOSE" config --quiet
+  record_stage FULL_INSTALLED_NOT_STARTED
+  printf 'CAPSTONE_INSTALL=FULL_ASSETS_VERIFIED\n'
+}
+
+start_degraded() {
+  state_initialized || die NOT_INSTALLED
+  P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$DEGRADED_PROJECT_NAME "$P1CTL" up db
+  record_stage DEGRADED_RUNNING
+  printf 'CAPSTONE_START=DEGRADED_CORE_ONLY\n'
+  printf 'CAPSTONE_RELEASE_AUTHORITY=NONE\n'
+}
+
+start_full() {
+  full_preflight || die FULL_START_BLOCKED_REQUIRED_ARTIFACTS
+  state_initialized || die NOT_INSTALLED
+  P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$FULL_PROJECT_NAME "$P1CTL" verify >/dev/null
+  local runtime_env=$STATE_DIR/runtime.env
+  docker compose --project-name "$FULL_PROJECT_NAME" \
+    --env-file "$runtime_env" -f "$SCRIPT_DIR/compose.db.yml" -f "$FULL_SEED_COMPOSE" \
+    up -d --force-recreate
+  record_stage FULL_SEED_AND_CORE_RUNNING
+  printf 'CAPSTONE_START=FULL_SEED_AND_CORE_RUNNING\n'
+}
+
+show_status() {
+  if [[ -f $STAGE_FILE && ! -L $STAGE_FILE ]]; then
+    printf 'CAPSTONE_INSTALL_STAGE=%s\n' "$(<"$STAGE_FILE")"
+  else
+    printf 'CAPSTONE_INSTALL_STAGE=NOT_INSTALLED\n'
+  fi
+  if state_initialized; then
+    P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME="$(selected_project_name)" "$P1CTL" status
+  fi
+}
+
+mode=full
+command=${1:-}
+[[ -n $command ]] || { usage >&2; exit 1; }
+shift
+if [[ ${1:-} == --degraded ]]; then
+  mode=degraded
+  shift
+fi
+[[ $# == 0 ]] || die UNEXPECTED_ARGUMENTS
+
+case $command in
+  install) [[ $mode == degraded ]] && install_degraded || install_full ;;
+  start) [[ $mode == degraded ]] && start_degraded || start_full ;;
+  stop) [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED; P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME="$(selected_project_name)" "$P1CTL" stop ;;
+  status) [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED; show_status ;;
+  doctor) [[ $mode == degraded ]] && degraded_doctor || full_preflight ;;
+  backup) [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED; P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME="$(selected_project_name)" "$P1CTL" backup ;;
+  restore)
+    [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED
+    printf 'CAPSTONE_RESTORE=BLOCKED_G7_ATOMIC_RESTORE_NOT_IMPLEMENTED\n' >&2
+    exit 1
+    ;;
+  verify)
+    if [[ $mode == degraded ]]; then
+      degraded_doctor
+      state_initialized || die NOT_INSTALLED
+      P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$DEGRADED_PROJECT_NAME "$P1CTL" verify
+    else
+      full_preflight
+      state_initialized || die NOT_INSTALLED
+      P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$FULL_PROJECT_NAME "$P1CTL" verify
+    fi
+    ;;
+  -h|--help|help) usage ;;
+  *) usage >&2; die UNKNOWN_COMMAND ;;
+esac

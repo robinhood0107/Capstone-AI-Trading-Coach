@@ -14,9 +14,13 @@ import com.capstone.decision.application.brokerage.OrderFillRecord
 import com.capstone.decision.application.brokerage.ReconciliationProjection
 import com.capstone.decision.application.brokerage.StoredFillObservation
 import com.capstone.decision.application.brokerage.StoredOrderFillState
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.domain.brokerage.FillExecutionType
 import com.capstone.decision.domain.brokerage.OrderFillState
 import com.capstone.decision.domain.brokerage.OrderFillStatus
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.dao.DataAccessException
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -37,23 +41,25 @@ import java.util.UUID
 class JdbcOrderFillRepository(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val objectMapper: ObjectMapper,
-    private val properties: BrokerageProperties,
+    private val actorCapabilityIssuer: ActorCapabilityIssuer,
 ) : OrderFillPersistencePort {
     override fun acquireReconciliationLock(
         actor: BrokerageActor,
         orderId: String,
     ) {
+        val payloadJson = actorOrderPayload(actor, orderId)
+        val capability = capability(actor.userId, "LOCK_ORDER_FILL", "ORDER", orderId, payloadJson, admin = true)
         val outcome =
             jdbc().queryForObject(
                 """
-                SELECT acquire_order_fill_reconciliation_lock(
-                  CAST(:payloadJson AS jsonb),
-                  :capabilityToken
+                SELECT acquire_order_fill_reconciliation_lock_authorized_v2(
+                  :capability,
+                  :payloadJson
                 )
                 """.trimIndent(),
                 mapOf(
-                    "payloadJson" to actorOrderPayload(actor, orderId),
-                    "capabilityToken" to properties.databaseCapabilityToken,
+                    "payloadJson" to payloadJson,
+                    "capability" to capability,
                 ),
                 String::class.java,
             )
@@ -71,19 +77,22 @@ class JdbcOrderFillRepository(
         orderId: String,
         reconciledAt: Instant,
     ): StoredOrderFillState {
+        val payloadJson = readPayload(actor, orderId, reconciledAt)
+        val capability =
+            capability(actor.userId, "READ_ORDER_FILL_STATE", "ORDER", orderId, payloadJson, admin = true)
         val row =
             jdbc()
                 .query(
                     """
                     SELECT operation_outcome, state_json
-                    FROM read_order_reconciliation_state(
-                      CAST(:payloadJson AS jsonb),
-                      :capabilityToken
+                    FROM read_order_reconciliation_state_authorized_v2(
+                      :capability,
+                      :payloadJson
                     )
                     """.trimIndent(),
                     mapOf(
-                        "payloadJson" to readPayload(actor, orderId, reconciledAt),
-                        "capabilityToken" to properties.databaseCapabilityToken,
+                        "payloadJson" to payloadJson,
+                        "capability" to capability,
                     ),
                 ) { result, _ ->
                     ReadStateResult(
@@ -102,6 +111,9 @@ class JdbcOrderFillRepository(
     }
 
     override fun applyStoredFills(request: OrderFillApplyRequest): OrderFillReconciliationProjection {
+        val payloadJson = applyPayload(request)
+        val capability =
+            capability(request.actor.userId, "APPLY_ORDER_FILLS", "ORDER", request.orderId, payloadJson, admin = true)
         val result =
             try {
                 jdbc()
@@ -111,14 +123,14 @@ class JdbcOrderFillRepository(
                                filled_quantity, leaves_quantity, unfilled_terminated_quantity,
                                average_fill_price_krw, reconciliation_status, reconciled_at,
                                applied_event_count, has_more
-                        FROM apply_stored_order_fills(
-                          CAST(:payloadJson AS jsonb),
-                          :capabilityToken
+                        FROM apply_stored_order_fills_authorized_v2(
+                          :capability,
+                          :payloadJson
                         )
                         """.trimIndent(),
                         mapOf(
-                            "payloadJson" to applyPayload(request),
-                            "capabilityToken" to properties.databaseCapabilityToken,
+                            "payloadJson" to payloadJson,
+                            "capability" to capability,
                         ),
                     ) { row, _ ->
                         ApplyResult(
@@ -168,19 +180,22 @@ class JdbcOrderFillRepository(
     }
 
     override fun readOwnedFills(request: OrderFillPageRequest): List<OrderFillRecord> {
+        val payloadJson = pagePayload(request)
+        val capability =
+            capability(request.actor.userId, "READ_ORDER_FILLS", "ACCOUNT", request.accountId, payloadJson)
         val row =
             jdbc()
                 .query(
                     """
                     SELECT operation_outcome, page_json
-                    FROM read_owned_order_fills(
-                      CAST(:payloadJson AS jsonb),
-                      :capabilityToken
+                    FROM read_owned_order_fills_authorized_v2(
+                      :capability,
+                      :payloadJson
                     )
                     """.trimIndent(),
                     mapOf(
-                        "payloadJson" to pagePayload(request),
-                        "capabilityToken" to properties.databaseCapabilityToken,
+                        "payloadJson" to payloadJson,
+                        "capability" to capability,
                     ),
                 ) { result, _ ->
                     FillPageResult(
@@ -383,6 +398,25 @@ class JdbcOrderFillRepository(
         }
         return null
     }
+
+    private fun capability(
+        actorUserId: String,
+        operation: String,
+        targetKind: String,
+        targetId: String,
+        payloadJson: String,
+        admin: Boolean = false,
+    ): String =
+        actorCapabilityIssuer.issue(
+            AuthenticatedActorRef.current(actorUserId),
+            ActorCapabilityBinding.request(
+                operation,
+                targetKind,
+                targetId,
+                if (admin) ActorCapabilityRolePolicy.ADMIN_ONLY else ActorCapabilityRolePolicy.OWNER,
+                payloadJson,
+            ),
+        )
 
     private fun jdbc(): NamedParameterJdbcTemplate =
         jdbcProvider.getIfAvailable()

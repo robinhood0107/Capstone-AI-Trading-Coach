@@ -4,6 +4,7 @@ import com.capstone.decision.application.risk.EvaluationSourceCallCoordinator
 import com.capstone.decision.domain.risk.EvaluationBounds
 import jakarta.annotation.PreDestroy
 import org.slf4j.MDC
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Component
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.RejectedExecutionException
@@ -45,18 +46,24 @@ class BoundedEvaluationSourceCallCoordinator :
         }
         val timeoutNanos = min(EvaluationBounds.SOURCE_DEADLINE.toNanos(), remainingNanos)
         val callerMdc = MDC.getCopyOfContextMap()
+        val callerAuthentication = SecurityContextHolder.getContext().authentication
         val future =
             try {
                 executor.submit<T> {
                     val workerMdc = MDC.getCopyOfContextMap()
+                    val workerContext = SecurityContextHolder.getContext()
                     try {
                         if (callerMdc == null) {
                             MDC.clear()
                         } else {
                             MDC.setContextMap(callerMdc)
                         }
+                        val delegatedContext = SecurityContextHolder.createEmptyContext()
+                        delegatedContext.authentication = callerAuthentication
+                        SecurityContextHolder.setContext(delegatedContext)
                         operation()
                     } finally {
+                        SecurityContextHolder.setContext(workerContext)
                         if (workerMdc == null) {
                             MDC.clear()
                         } else {

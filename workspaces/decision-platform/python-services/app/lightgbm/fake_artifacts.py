@@ -13,7 +13,6 @@ import pyarrow.parquet as pq
 
 from app.data._shared.canonical_json import canonical_json_bytes
 
-
 SIGNAL_ROW_SCHEMA = pa.schema(
     [
         pa.field("symbol", pa.string(), nullable=False),

@@ -18,8 +18,11 @@ set -Eeuo pipefail
 : "${POSTGRES_SIGNAL_SCHEDULER_PASSWORD:?POSTGRES_SIGNAL_SCHEDULER_PASSWORD is required}"
 : "${POSTGRES_SIGNAL_ADMIN_PASSWORD:?POSTGRES_SIGNAL_ADMIN_PASSWORD is required}"
 : "${POSTGRES_WORKER_PASSWORD:?POSTGRES_WORKER_PASSWORD is required}"
+: "${POSTGRES_OUTBOX_PUBLISHER_PASSWORD:?POSTGRES_OUTBOX_PUBLISHER_PASSWORD is required}"
+: "${POSTGRES_POISON_RECORDER_PASSWORD:?POSTGRES_POISON_RECORDER_PASSWORD is required}"
 : "${POSTGRES_REPLAY_PASSWORD:?POSTGRES_REPLAY_PASSWORD is required}"
 : "${POSTGRES_IDENTITY_PASSWORD:?POSTGRES_IDENTITY_PASSWORD is required}"
+: "${POSTGRES_AUTH_PASSWORD:?POSTGRES_AUTH_PASSWORD is required}"
 : "${POSTGRES_REPLAY_AUTHORIZER_PASSWORD:?POSTGRES_REPLAY_AUTHORIZER_PASSWORD is required}"
 : "${POSTGRES_DEMO_PASSWORD:?POSTGRES_DEMO_PASSWORD is required}"
 
@@ -42,8 +45,11 @@ psql -v ON_ERROR_STOP=1 --no-password --username "$POSTGRES_USER" --dbname "$POS
 \getenv signal_scheduler_password POSTGRES_SIGNAL_SCHEDULER_PASSWORD
 \getenv signal_admin_password POSTGRES_SIGNAL_ADMIN_PASSWORD
 \getenv worker_password POSTGRES_WORKER_PASSWORD
+\getenv outbox_publisher_password POSTGRES_OUTBOX_PUBLISHER_PASSWORD
+\getenv poison_recorder_password POSTGRES_POISON_RECORDER_PASSWORD
 \getenv replay_password POSTGRES_REPLAY_PASSWORD
 \getenv identity_password POSTGRES_IDENTITY_PASSWORD
+\getenv auth_password POSTGRES_AUTH_PASSWORD
 \getenv replay_authorizer_password POSTGRES_REPLAY_AUTHORIZER_PASSWORD
 \getenv demo_password POSTGRES_DEMO_PASSWORD
 
@@ -113,6 +119,40 @@ ALTER ROLE decision_worker SET lock_timeout = '500ms';
 ALTER ROLE decision_worker SET idle_in_transaction_session_timeout = '60s';
 
 SELECT format(
+    'CREATE ROLE decision_outbox_publisher LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'outbox_publisher_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_outbox_publisher')
+\gexec
+SELECT format(
+    'ALTER ROLE decision_outbox_publisher WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'outbox_publisher_password'
+)
+\gexec
+ALTER ROLE decision_outbox_publisher SET log_parameter_max_length = 0;
+ALTER ROLE decision_outbox_publisher SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_outbox_publisher SET statement_timeout = '30s';
+ALTER ROLE decision_outbox_publisher SET lock_timeout = '500ms';
+ALTER ROLE decision_outbox_publisher SET idle_in_transaction_session_timeout = '30s';
+
+SELECT format(
+    'CREATE ROLE decision_poison_recorder LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'poison_recorder_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_poison_recorder')
+\gexec
+SELECT format(
+    'ALTER ROLE decision_poison_recorder WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'poison_recorder_password'
+)
+\gexec
+ALTER ROLE decision_poison_recorder SET log_parameter_max_length = 0;
+ALTER ROLE decision_poison_recorder SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_poison_recorder SET statement_timeout = '5s';
+ALTER ROLE decision_poison_recorder SET lock_timeout = '500ms';
+ALTER ROLE decision_poison_recorder SET idle_in_transaction_session_timeout = '5s';
+
+SELECT format(
     'CREATE ROLE decision_replay LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
     :'replay_password'
 )
@@ -143,6 +183,23 @@ ALTER ROLE decision_identity SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_identity SET statement_timeout = '2s';
 ALTER ROLE decision_identity SET lock_timeout = '500ms';
 ALTER ROLE decision_identity SET idle_in_transaction_session_timeout = '5s';
+
+SELECT format(
+    'CREATE ROLE decision_auth LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'auth_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_auth')
+\gexec
+SELECT format(
+    'ALTER ROLE decision_auth WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'auth_password'
+)
+\gexec
+ALTER ROLE decision_auth SET log_parameter_max_length = 0;
+ALTER ROLE decision_auth SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_auth SET statement_timeout = '2s';
+ALTER ROLE decision_auth SET lock_timeout = '500ms';
+ALTER ROLE decision_auth SET idle_in_transaction_session_timeout = '5s';
 
 SELECT format(
     'CREATE ROLE decision_replay_authorizer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
@@ -192,6 +249,8 @@ SELECT format(
 -- migration/rotation이 statement logging을 허용해도 credential bind 값은 서버 로그에 남기지 않는다.
 ALTER ROLE flyway SET log_parameter_max_length = 0;
 ALTER ROLE flyway SET log_parameter_max_length_on_error = 0;
+REVOKE SET ON PARAMETER app.required_actor_operation, app.required_actor_target_kind FROM PUBLIC;
+GRANT SET ON PARAMETER app.required_actor_operation, app.required_actor_target_kind TO flyway;
 
 SELECT format(
     'CREATE ROLE decision_collector LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
@@ -403,8 +462,11 @@ REVOKE ALL ON DATABASE :"database_name" FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"database_name" TO
     decision_app,
     decision_worker,
+    decision_outbox_publisher,
+    decision_poison_recorder,
     decision_replay,
     decision_identity,
+    decision_auth,
     decision_replay_authorizer,
     decision_demo,
     decision_collector,
@@ -427,8 +489,11 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO
     decision_app,
     decision_worker,
+    decision_outbox_publisher,
+    decision_poison_recorder,
     decision_replay,
     decision_identity,
+    decision_auth,
     decision_replay_authorizer,
     decision_demo,
     decision_collector,
@@ -454,13 +519,19 @@ GRANT CREATE ON SCHEMA public TO flyway;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_app;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_worker;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_outbox_publisher;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_poison_recorder;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_replay;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_identity;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_auth;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_replay_authorizer;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_demo;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_worker;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_outbox_publisher;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_poison_recorder;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_replay;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_identity;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_auth;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_replay_authorizer;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_demo;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_collector;
@@ -726,13 +797,15 @@ BEGIN
             FROM decision_app;
             REVOKE ALL ON FUNCTION assert_brokerage_database_capability(text)
             FROM decision_app;
-            GRANT EXECUTE ON FUNCTION
-                read_mock_order_decision(text, text, text),
-                find_mock_order_idempotency_result(text, text, timestamptz, text),
-                read_mock_order_owner_projection(text, text, text),
-                create_mock_order(jsonb, text),
-                request_mock_order_cancel(jsonb, text)
-            TO decision_app;
+            IF to_regprocedure('public.read_mock_order_decision_authorized_v2(text,text,text)') IS NULL THEN
+                GRANT EXECUTE ON FUNCTION
+                    read_mock_order_decision(text, text, text),
+                    find_mock_order_idempotency_result(text, text, timestamptz, text),
+                    read_mock_order_owner_projection(text, text, text),
+                    create_mock_order(jsonb, text),
+                    request_mock_order_cancel(jsonb, text)
+                TO decision_app;
+            END IF;
         ELSE
             GRANT INSERT, SELECT ON TABLE orders TO decision_app;
             GRANT INSERT, SELECT ON TABLE order_events TO decision_app;
@@ -994,7 +1067,8 @@ BEGIN
             invalidate_unused_decisions_for_kill_switch(bigint, timestamptz, text)
         TO decision_app;
     END IF;
-    IF to_regprocedure('public.read_mock_order_decision(text,text,text)') IS NOT NULL THEN
+    IF to_regprocedure('public.read_mock_order_decision(text,text,text)') IS NOT NULL
+       AND to_regprocedure('public.read_mock_order_decision_authorized_v2(text,text,text)') IS NULL THEN
         GRANT EXECUTE ON FUNCTION
             read_mock_order_decision(text, text, text),
             find_mock_order_idempotency_result(text, text, timestamptz, text),
@@ -1003,7 +1077,8 @@ BEGIN
             request_mock_order_cancel(jsonb, text)
         TO decision_app;
     END IF;
-    IF to_regprocedure('public.read_paper_order_context(text,text,text)') IS NOT NULL THEN
+    IF to_regprocedure('public.read_paper_order_context(text,text,text)') IS NOT NULL
+       AND to_regprocedure('public.read_paper_order_context_authorized_v2(text,text,text)') IS NULL THEN
         GRANT EXECUTE ON FUNCTION
             read_paper_order_context(text, text, text),
             find_paper_order_idempotency_result(text, text, timestamptz, text),
@@ -1011,7 +1086,8 @@ BEGIN
             create_paper_order(jsonb, text)
         TO decision_app;
     END IF;
-    IF to_regprocedure('public.read_order_reconciliation_state(jsonb,text)') IS NOT NULL THEN
+    IF to_regprocedure('public.read_order_reconciliation_state(jsonb,text)') IS NOT NULL
+       AND to_regprocedure('public.read_order_reconciliation_state_authorized_v2(text,text)') IS NULL THEN
         GRANT EXECUTE ON FUNCTION
             read_order_reconciliation_state(jsonb, text),
             acquire_order_fill_reconciliation_lock(jsonb, text),
@@ -1052,7 +1128,6 @@ BEGIN
             record_rag_consent_event(text, text, text, text),
             read_effective_rag_consent(text),
             claim_rag_answer(text, text, text, integer),
-            mark_rag_provider_attempt(text, text, text, text, text, text, jsonb),
             complete_rag_answer(
                 text, text, text, text, text, text,
                 double precision, boolean, text[],
@@ -1068,6 +1143,9 @@ BEGIN
             upsert_owned_rag_answer_feedback(text, text, boolean),
             purge_expired_rag_history(integer)
         TO decision_app;
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            mark_rag_provider_attempt(text, text, text, text, text, text, jsonb)
+        FROM decision_app;
     END IF;
     IF to_regprocedure('public.read_active_rag_chunks(text,integer)') IS NOT NULL THEN
         GRANT EXECUTE ON FUNCTION
@@ -1106,7 +1184,7 @@ BEGIN
     IF to_regprocedure(
         'public.create_rag_retrieval_scope_claim(text,text,text[])'
     ) IS NOT NULL THEN
-        -- 인증된 app만 active pointer에 묶인 짧은 owner/session claim을 발급한다.
+        -- V87 keeps the S4.3 projection only through its exact session-bound wrapper.
         GRANT EXECUTE ON FUNCTION
             create_rag_retrieval_scope_claim(text, text, text[])
         TO decision_app;
@@ -1136,7 +1214,15 @@ BEGIN
             )
         TO decision_rag_admin;
     END IF;
-    IF to_regprocedure('public.issue_rag_rpc_scope(text,text,jsonb)') IS NOT NULL THEN
+    IF to_regprocedure('public.issue_rag_rpc_scope(text,text,text)') IS NOT NULL THEN
+        -- V87 wrappers retain serialized JSON bytes until exact capability-payload verification.
+        GRANT EXECUTE ON FUNCTION
+            issue_rag_rpc_scope(text, text, text),
+            recheck_rag_rpc_citations(
+                text, text, text, text, bigint, text, text, text
+            )
+        TO decision_app;
+    ELSIF to_regprocedure('public.issue_rag_rpc_scope(text,text,jsonb)') IS NOT NULL THEN
         -- V22의 Spring→Python RPC 경계는 app actor scope와 citation 재검증 함수만 노출한다.
         GRANT EXECUTE ON FUNCTION
             issue_rag_rpc_scope(text, text, jsonb),
@@ -1160,7 +1246,7 @@ BEGIN
     IF to_regprocedure(
         'public.issue_rag_v2_immutable_import_ticket(text,text,text,text)'
     ) IS NOT NULL THEN
-        -- V25의 owner capability는 raw table grant 없이 app→writer→admin 세 role로 나눈다.
+        -- V87 keeps these names only as exact argument-bound wrappers; renamed implementations stay revoked.
         GRANT EXECUTE ON FUNCTION
             record_rag_v2_immutable_consent(text, text, text, text),
             issue_rag_v2_immutable_import_ticket(text, text, text, text)
@@ -1261,20 +1347,29 @@ BEGIN
         TO decision_rag_writer;
     END IF;
     IF to_regprocedure(
-        'public.read_rag_v2_vertex_generation_evidence(text,text,text,jsonb)'
-    ) IS NOT NULL
-       AND to_regprocedure(
-           'public.persist_rag_v2_immutable_vertex_history(text,text,text,text,text,text,double precision,text[],text,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,timestamp with time zone,jsonb)'
-       ) IS NOT NULL THEN
-        -- V39의 앱은 sanitized evidence와 암호화 history definer pair만 다시 받는다.
+        'public.read_rag_v2_vertex_generation_evidence(text,text,text,text)'
+    ) IS NOT NULL THEN
         GRANT EXECUTE ON FUNCTION
-            read_rag_v2_vertex_generation_evidence(text, text, text, jsonb),
+            read_rag_v2_vertex_generation_evidence(text, text, text, text)
+        TO decision_app;
+    ELSIF to_regprocedure(
+        'public.read_rag_v2_vertex_generation_evidence(text,text,text,jsonb)'
+    ) IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            read_rag_v2_vertex_generation_evidence(text, text, text, jsonb)
+        TO decision_app;
+    END IF;
+    IF to_regprocedure(
+        'public.persist_rag_v2_immutable_vertex_history(text,text,text,text,text,text,double precision,text[],text,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,timestamp with time zone,jsonb)'
+    ) IS NOT NULL THEN
+        -- Superseded history projection has no current Spring call site.
+        REVOKE ALL PRIVILEGES ON FUNCTION
             persist_rag_v2_immutable_vertex_history(
                 text, text, text, text, text, text, double precision, text[], text,
                 bytea, bytea, bytea, bytea, bytea, bytea, bytea, bytea, bytea,
                 timestamptz, jsonb
             )
-        TO decision_app;
+        FROM decision_app;
     END IF;
     IF to_regprocedure(
         'public.reserve_rag_v2_immutable_vertex_usage(text,text,text,text,text,text,text,text,text,text,text,timestamp with time zone,integer,integer,integer,bigint,bigint,bigint,integer,integer,text,jsonb)'
@@ -1508,7 +1603,7 @@ BEGIN
        AND to_regprocedure(
            'public.persist_rag_v2_immutable_retrieval_history(text,text,text,text,text,text,double precision,text[],text,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,timestamp with time zone,jsonb)'
        ) IS NOT NULL THEN
-        -- 앱은 claim 발급과 content-free encrypted history definer capability만 재획득한다.
+        -- V87 compatibility names remain callable only through exact argument-bound wrappers.
         GRANT EXECUTE ON FUNCTION
             issue_rag_v2_retrieval_scope(text, text, text[]),
             canonicalize_rag_v2_immutable_retrieval_citations(text, text, text, jsonb),
@@ -1522,7 +1617,7 @@ BEGIN
     IF to_regprocedure(
         'public.read_rag_v2_vertex_prepared_scope(text,text,text,text[])'
     ) IS NOT NULL THEN
-        -- V48은 app이 raw scope table 없이 packet-bound two-minute claim만 resume하게 한다.
+        -- V87 preserves this compatibility name as an exact argument-bound wrapper.
         GRANT EXECUTE ON FUNCTION
             read_rag_v2_vertex_prepared_scope(text, text, text, text[])
         TO decision_app;
@@ -1628,7 +1723,7 @@ BEGIN
             ),
             consume_s4_9_mcp_oauth_code_hash(text),
             rotate_s4_9_mcp_refresh_token_hash(
-                text, text, text, bigint, text, text[], timestamptz
+                text, text, text, text[], timestamptz
             ),
             revoke_s4_9_mcp_refresh_token_family(text),
             issue_s4_9_answer_validation_receipt(
@@ -1677,11 +1772,11 @@ BEGIN
         GRANT EXECUTE ON FUNCTION
             reserve_s4_9_google_grounding_budget(text, text, text, text, date, integer, integer),
             settle_s4_9_google_grounding_budget(text, text, text, integer),
-            record_s4_9_grounding_provenance(text, text, jsonb, jsonb),
+            record_s4_9_grounding_provenance(text, text, text, text),
             record_s4_9_read_provenance(
                 text, text, text, text, text, text, text, text, text, text
             ),
-            record_s4_9_search_attempt(text, text, text, text, text, integer),
+            record_s4_9_search_attempt(text, text, text, integer, text, text, integer),
             canonicalize_s4_9_strong_llm_citations_v2(text, text, text, text, jsonb),
             persist_s4_9_strong_llm_history_v2(
                 text, text, text, text, text, text, text, double precision, text[], text,
@@ -2001,8 +2096,118 @@ BEGIN
         TO decision_replay_authorizer;
         REVOKE CREATE ON SCHEMA public FROM decision_identity, decision_replay_authorizer;
     END IF;
+    IF to_regprocedure('public.persist_decision_bundle_authorized(text,jsonb)') IS NOT NULL THEN
+        REVOKE UPDATE ON TABLE public.risk_kill_switch FROM decision_app;
+        REVOKE INSERT ON TABLE public.risk_kill_switch_transitions FROM decision_app;
+        REVOKE INSERT ON TABLE public.audit_logs FROM decision_app;
+        REVOKE INSERT ON TABLE public.decisions, public.decision_violations,
+            public.decision_artifacts, public.decision_traces,
+            public.decision_idempotency_results FROM decision_app;
+        REVOKE EXECUTE ON FUNCTION
+            append_decision_created_outbox(text,text,jsonb,timestamptz),
+            append_kill_switch_outbox(text,boolean,timestamptz),
+            invalidate_unused_decisions_for_kill_switch(bigint,timestamptz,text),
+            revalidate_kill_switch_admin(text,bigint),
+            read_demo_credentials(),
+            read_user_actor(text)
+        FROM PUBLIC, decision_app;
+        GRANT EXECUTE ON FUNCTION
+            transition_kill_switch_authorized(text,text,bigint,boolean,bigint,text),
+            persist_decision_bundle_authorized(text,jsonb)
+        TO decision_app;
+        REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_auth;
+        REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_auth;
+        GRANT EXECUTE ON FUNCTION read_demo_credentials(), read_user_actor(text) TO decision_auth;
+        REVOKE CREATE ON SCHEMA public FROM decision_auth;
+        GRANT EXECUTE ON FUNCTION
+            stage_p1_synthetic_async_request(text,text,text),
+            verify_p1_synthetic_async_request(text,text)
+        TO decision_demo;
+    END IF;
 END
 $s7_p1_security_closure_privileges$;
+
+DO $p1_v87_runtime_privileges$
+BEGIN
+    IF to_regprocedure('public.register_actor_request_capability_v2(text,text,text,bigint,text,text,text,text,text,text,text,timestamptz,timestamptz,text)') IS NOT NULL THEN
+        REVOKE EXECUTE ON FUNCTION
+            activate_signal_v2_production_pointer(text),
+            create_async_request_authorized(text,text,text,text,text,text,text,jsonb),
+            insert_principle_version_authorized(text,text,text,text,integer,text,text,text,text,jsonb,text[],timestamptz),
+            insert_principle_audit_authorized(text,text,text,text,text,integer,text[],timestamptz),
+            lock_active_owned_principle_authorized(text,text,text,integer,text,text),
+            persist_decision_bundle_authorized(text,jsonb),
+            read_mock_order_decision(text,text,text),
+            find_mock_order_idempotency_result(text,text,timestamptz,text),
+            read_mock_order_owner_projection(text,text,text),
+            create_mock_order(jsonb,text),
+            request_mock_order_cancel(jsonb,text),
+            record_mock_order_provider_outcome(jsonb,text),
+            read_paper_order_context(text,text,text),
+            find_paper_order_idempotency_result(text,text,timestamptz,text),
+            read_paper_balance_projection(text,text,text),
+            create_paper_order(jsonb,text),
+            rebuild_paper_state(text,text),
+            acquire_order_fill_reconciliation_lock(jsonb,text),
+            read_order_reconciliation_state(jsonb,text),
+            apply_stored_order_fills(jsonb,text),
+            read_owned_order_fills(jsonb,text)
+        FROM decision_app;
+        GRANT EXECUTE ON FUNCTION
+            register_actor_request_capability_v2(text,text,text,bigint,text,text,text,text,text,text,text,timestamptz,timestamptz,text),
+            consume_actor_identity_handle_v1(text,text,text,text,text,text)
+        TO decision_identity;
+        GRANT EXECUTE ON FUNCTION
+            authenticate_demo_actor_session_v1(text,text,integer),
+            read_actor_auth_session_v1(text),
+            register_actor_identity_handle_v1(text,text,text,text,text,text,integer)
+        TO decision_auth;
+        GRANT EXECUTE ON FUNCTION
+            open_actor_rls_scope_v1(text,text,text,text,text,text),
+            assert_actor_rls_scope_exact_v1(text,text,text,text,text),
+            actor_rls_scope_is_open_v1(),
+            create_async_request_authorized(text,text,text,text,text,text,text,text),
+            insert_principle_version_authorized_v2(text,text,text,text,integer,text,text,text,text,text,text,timestamptz),
+            insert_principle_audit_authorized_v2(text,text,text,text,text,integer,text,timestamptz),
+            persist_decision_bundle_authorized_v2(text,text),
+            read_mock_order_decision_authorized_v2(text,text,text),
+            find_mock_order_idempotency_result_authorized_v2(text,text,text,text,text),
+            read_mock_order_owner_projection_authorized_v2(text,text,text),
+            read_mock_balance_projection_authorized_v2(text,text,text,text),
+            create_mock_order_authorized_v2(text,text),
+            request_mock_order_cancel_authorized_v2(text,text),
+            record_mock_order_provider_outcome_authorized_v2(text,text),
+            read_paper_order_context_authorized_v2(text,text,text),
+            find_paper_order_idempotency_result_authorized_v2(text,text,text,text,text),
+            read_paper_balance_projection_authorized_v2(text,text,text),
+            create_paper_order_authorized_v2(text,text),
+            rebuild_paper_state_authorized_v2(text,text,text),
+            acquire_order_fill_reconciliation_lock_authorized_v2(text,text),
+            read_order_reconciliation_state_authorized_v2(text,text),
+            apply_stored_order_fills_authorized_v2(text,text),
+            read_owned_order_fills_authorized_v2(text,text),
+            consume_s4_9_mcp_refresh_token(text)
+        TO decision_app;
+        GRANT EXECUTE ON FUNCTION
+            consume_p1_provider_approval(text,text,text,text,integer,timestamptz)
+        TO decision_replay;
+        GRANT EXECUTE ON FUNCTION
+            p1_claim_kafka_outbox(text,integer),
+            p1_claim_kafka_dlq_outbox(text,integer),
+            p1_bind_kafka_outbox_payload_hash(text,uuid,text),
+            p1_complete_kafka_outbox(text,uuid),
+            p1_complete_kafka_dlq_outbox(text,uuid),
+            p1_fail_kafka_outbox(text,uuid,text),
+            p1_fail_kafka_dlq_outbox(text,uuid,text),
+            p1_quarantine_kafka_outbox(text,uuid,text),
+            p1_quarantine_unknown_kafka_outbox(integer)
+        TO decision_outbox_publisher;
+        GRANT EXECUTE ON FUNCTION
+            p1_record_kafka_poison_receipt(text,text,text,text,integer,bigint,integer,text,text,text,text)
+        TO decision_poison_recorder;
+    END IF;
+END
+$p1_v87_runtime_privileges$;
 
 DO $block$
 BEGIN
@@ -2010,8 +2215,11 @@ BEGIN
         -- 기존 volume에 role bootstrap을 재적용해도 runtime이 migration 이력을 변조하지 못한다.
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_app;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_worker;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_outbox_publisher;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_poison_recorder;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_replay;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_identity;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_auth;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_replay_authorizer;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_demo;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_collector;

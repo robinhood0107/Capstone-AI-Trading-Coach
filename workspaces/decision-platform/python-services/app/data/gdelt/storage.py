@@ -97,11 +97,8 @@ def _is_sensitive_key(key: str, value: object) -> bool:
     if key in {"articleMetadataStored", "rawProviderDataStored"}:
         return value is not False
     normalized = key.casefold()
-    return (
-        normalized in _FORBIDDEN_METADATA_KEYS
-        or normalized.startswith("article")
-        or normalized.startswith("publisher")
-        or normalized.startswith("rawprovider")
+    return normalized in _FORBIDDEN_METADATA_KEYS or normalized.startswith(
+        ("article", "publisher", "rawprovider")
     )
 
 

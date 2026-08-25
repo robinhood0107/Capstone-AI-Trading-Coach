@@ -80,7 +80,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     close_failed = False
     try:
         collector = _build_collector(settings)
-        collect = getattr(collector, "collect")
+        collect = collector.collect
         result = collect(
             series=approved,
             start=start,

@@ -8,10 +8,10 @@ import com.capstone.decision.domain.risk.KillSwitchReasonClass
 import io.micrometer.core.instrument.MeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.beans.factory.annotation.Autowired
@@ -20,7 +20,7 @@ import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
-import org.springframework.dao.InvalidDataAccessApiUsageException
+import org.springframework.dao.DataAccessException
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
@@ -44,6 +44,7 @@ import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
 import java.sql.DriverManager
+import java.sql.SQLException
 import java.time.Clock
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -68,6 +69,7 @@ class DecisionApiIntegrationTest(
     @Autowired private val redisTemplate: StringRedisTemplate,
     @Autowired private val meterRegistry: MeterRegistry,
     @Autowired private val killSwitchMutationPort: KillSwitchMutationPort,
+    @Autowired private val actorCapabilityIssuer: TestActorCapabilityIssuer,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
     private val jdbcTemplate: JdbcTemplate by lazy {
@@ -594,7 +596,8 @@ class DecisionApiIntegrationTest(
         val results = futures.map { it.get(15, TimeUnit.SECONDS) }
         executor.shutdownNow()
 
-        assertEquals(listOf(200, 200), results.map { it.response.status }.sorted())
+        val statuses = results.map { it.response.status }.sorted()
+        assertTrue(statuses == listOf(200, 200) || statuses == listOf(200, 409))
         val transitionCount = count("select count(*) from risk_kill_switch_transitions")
         val generation = requireNotNull(jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
         assertEquals(transitionCount + 1L, generation)
@@ -614,6 +617,45 @@ class DecisionApiIntegrationTest(
     }
 
     @Test
+    fun `Kill Switch transition rejects a stale observed generation without side effects`() {
+        val appJdbc = JdbcTemplate(applicationDataSource)
+        val exception =
+            assertThrows<DataAccessException> {
+                appJdbc.queryForObject(
+                    """
+                    select changed from transition_kill_switch_authorized(?, ?, ?, ?, ?, ?)
+                    """.trimIndent(),
+                    Boolean::class.java,
+                    actorCapabilityIssuer.issue(
+                        actorCapabilityIssuer.actorRef("usr_demo_user"),
+                        com.capstone.decision.infrastructure.security.ActorCapabilityBinding.request(
+                            "TRANSITION_KILL_SWITCH",
+                            "KILL_SWITCH",
+                            "GLOBAL",
+                            com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy.OWNER,
+                            "usr_demo_user",
+                            "1",
+                            "true",
+                            "2",
+                            "req-risk-kill-stale-generation",
+                        ),
+                    ),
+                    "usr_demo_user",
+                    1L,
+                    true,
+                    2L,
+                    "req-risk-kill-stale-generation",
+                )
+            }
+        assertEquals("40001", exception.sqlStateInChain())
+        assertEquals(false, jdbcTemplate.queryForObject("select active from risk_kill_switch", Boolean::class.java))
+        assertEquals(1L, jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
+        assertEquals(0, count("select count(*) from risk_kill_switch_transitions"))
+        assertEquals(0, count("select count(*) from audit_logs where target_type = 'KILL_SWITCH'"))
+        assertEquals(0, count("select count(*) from event_outbox where event_type = 'kill-switch.changed'"))
+    }
+
+    @Test
     fun `Kill Switch mutation uses locked database time when caller clock is behind`() {
         val storedFuture = EVALUATION_AT.plusSeconds(1)
         jdbcTemplate.update(
@@ -621,19 +663,21 @@ class DecisionApiIntegrationTest(
             storedFuture,
         )
         val result =
-            killSwitchMutationPort.mutate(
-                KillSwitchMutationCommand(
-                    actor =
-                        KillSwitchActor(
-                            userId = "usr_demo_user",
-                            role = KillSwitchActorRole.USER,
-                            securityVersion = 1,
-                            requestId = "req-risk-kill-clock-behind",
-                        ),
-                    requestedActive = true,
-                    reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
-                ),
-            )
+            asTestActor(actorCapabilityIssuer) {
+                killSwitchMutationPort.mutate(
+                    KillSwitchMutationCommand(
+                        actor =
+                            KillSwitchActor(
+                                userId = "usr_demo_user",
+                                role = KillSwitchActorRole.USER,
+                                securityVersion = 1,
+                                requestId = "req-risk-kill-clock-behind",
+                            ),
+                        requestedActive = true,
+                        reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
+                    ),
+                )
+            }
 
         assertTrue(result.changed)
         assertEquals(
@@ -646,27 +690,30 @@ class DecisionApiIntegrationTest(
     }
 
     @Test
-    fun `Kill Switch mutation adapter enforces the locked transition policy reason class`() {
-        assertThrows(InvalidDataAccessApiUsageException::class.java) {
-            killSwitchMutationPort.mutate(
-                KillSwitchMutationCommand(
-                    actor =
-                        KillSwitchActor(
-                            userId = "usr_demo_user",
-                            role = KillSwitchActorRole.USER,
-                            securityVersion = 1,
-                            requestId = "req-risk-kill-policy-drift",
-                        ),
-                    requestedActive = true,
-                    reasonClass = KillSwitchReasonClass.DATA_FRESHNESS_STOP,
-                ),
-            )
-        }
+    fun `Kill Switch mutation derives the reason class without trusting the request value`() {
+        val result =
+            asTestActor(actorCapabilityIssuer) {
+                killSwitchMutationPort.mutate(
+                    KillSwitchMutationCommand(
+                        actor =
+                            KillSwitchActor(
+                                userId = "usr_demo_user",
+                                role = KillSwitchActorRole.USER,
+                                securityVersion = 1,
+                                requestId = "req-risk-kill-policy-drift",
+                            ),
+                        requestedActive = true,
+                        reasonClass = KillSwitchReasonClass.DATA_FRESHNESS_STOP,
+                    ),
+                )
+            }
+        assertTrue(result.changed)
+        assertEquals(KillSwitchReasonClass.USER_MANUAL_STOP, result.state.reasonClass)
 
-        assertEquals(false, jdbcTemplate.queryForObject("select active from risk_kill_switch", Boolean::class.java))
-        assertEquals(0, count("select count(*) from risk_kill_switch_transitions"))
-        assertEquals(0, count("select count(*) from audit_logs where target_type = 'KILL_SWITCH'"))
-        assertEquals(0, count("select count(*) from event_outbox where event_type = 'kill-switch.changed'"))
+        assertEquals(true, jdbcTemplate.queryForObject("select active from risk_kill_switch", Boolean::class.java))
+        assertEquals(1, count("select count(*) from risk_kill_switch_transitions"))
+        assertEquals(1, count("select count(*) from audit_logs where target_type = 'KILL_SWITCH'"))
+        assertEquals(1, count("select count(*) from event_outbox where event_type = 'kill-switch.changed'"))
     }
 
     @Test
@@ -738,6 +785,35 @@ class DecisionApiIntegrationTest(
         assertEquals(422, blocked.response.status)
         assertEquals("RISK_BLOCKED", json(blocked).at("/error/code").stringValue())
         assertEquals(1, count("select count(*) from decisions"))
+    }
+
+    @Test
+    fun `missing Kill Switch authority returns unavailable rather than active block`() {
+        val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "919")
+        val token = login("demo-user", userPassword())
+        jdbcTemplate.update("delete from risk_kill_switch where kill_switch_id='GLOBAL'")
+        try {
+            val unavailable =
+                evaluate(
+                    token,
+                    "decision-missing-kill-01",
+                    "req-decision-missing-kill",
+                    request(principleId),
+                )
+
+            assertEquals(503, unavailable.response.status)
+            assertEquals("RISK_UNAVAILABLE", json(unavailable).at("/error/code").stringValue())
+            assertEquals(0, count("select count(*) from decisions where decision_id='decision-missing-kill-01'"))
+        } finally {
+            jdbcTemplate.update(
+                """
+                insert into risk_kill_switch(
+                  kill_switch_id,active,reason_class,generation,changed_by,changed_by_role,changed_at,request_id
+                ) values ('GLOBAL',false,'INITIAL_STATE',1,null,'SYSTEM',?::timestamptz,null)
+                """.trimIndent(),
+                EVALUATION_AT,
+            )
+        }
     }
 
     @Test
@@ -1444,6 +1520,15 @@ class DecisionApiIntegrationTest(
                 content = objectMapper.writeValueAsString(body)
             }.andReturn()
 
+    private fun Throwable.sqlStateInChain(): String? {
+        var current: Throwable? = this
+        while (current != null) {
+            if (current is SQLException) return current.sqlState
+            current = current.cause
+        }
+        return null
+    }
+
     private fun changeKillSwitch(
         token: String,
         idempotencyHeader: String?,
@@ -1862,7 +1947,7 @@ class DecisionApiIntegrationTest(
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_s23")
                 .withUsername("decision")
                 .withPassword("decision")

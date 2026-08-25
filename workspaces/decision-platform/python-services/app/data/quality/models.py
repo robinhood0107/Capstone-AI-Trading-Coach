@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from enum import StrEnum
-import re
 from typing import Literal
 from uuid import UUID
 
@@ -26,7 +26,6 @@ from app.data.quality.policy import (
     MAX_SYMBOLS,
     METRIC_IDS,
 )
-
 
 _RELATIVE_IDENTIFIER = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._/-]{0,238}[A-Za-z0-9])?")
 _SAMPLE_RULE = re.compile(r"[A-Z][A-Z0-9_]{2,63}")
@@ -118,7 +117,7 @@ class AnalysisContext(_FrozenModel):
         return value
 
     @model_validator(mode="after")
-    def _validate_context(self) -> "AnalysisContext":
+    def _validate_context(self) -> AnalysisContext:
         if self.window_start > self.window_end:
             raise ValueError("analysis window is invalid")
         if len(self.sessions) > MAX_SESSIONS or tuple(sorted(set(self.sessions))) != self.sessions:
@@ -141,9 +140,7 @@ class CalendarSummary(_FrozenModel):
     timezone: Literal["Asia/Seoul"] = "Asia/Seoul"
     window_start: date = Field(alias="windowStart")
     window_end: date = Field(alias="windowEnd")
-    expected_last_completed_xkrx_session: date = Field(
-        alias="expectedLastCompletedXkrxSession"
-    )
+    expected_last_completed_xkrx_session: date = Field(alias="expectedLastCompletedXkrxSession")
 
 
 class InputProvenance(_FrozenModel):
@@ -175,11 +172,13 @@ class RateMetric(_FrozenModel):
     sample_count: StrictInt = Field(alias="sampleCount", ge=0, le=MAX_SAMPLES_PER_RULE)
 
     @model_validator(mode="after")
-    def _validate_rate_state(self) -> "RateMetric":
+    def _validate_rate_state(self) -> RateMetric:
         if self.metric_id not in METRIC_IDS:
             raise ValueError("metricId is not allowlisted")
         if self.status in {MetricStatus.NOT_AVAILABLE, MetricStatus.NOT_APPLICABLE}:
-            if any(value is not None for value in (self.numerator, self.denominator, self.rate_ppm)):
+            if any(
+                value is not None for value in (self.numerator, self.denominator, self.rate_ppm)
+            ):
                 raise ValueError("unavailable metric counts must be null")
             return self
         if self.status == MetricStatus.NOT_EVALUATED:
@@ -236,9 +235,7 @@ class BoundedSample(_FrozenModel):
 
 
 class DataClassification(_FrozenModel):
-    classification: Literal["INTERNAL_SANITIZED_AGGREGATE"] = (
-        "INTERNAL_SANITIZED_AGGREGATE"
-    )
+    classification: Literal["INTERNAL_SANITIZED_AGGREGATE"] = "INTERNAL_SANITIZED_AGGREGATE"
     raw_ohlcv_included: Literal[False] = Field(default=False, alias="rawOhlcvIncluded")
     provider_payload_included: Literal[False] = Field(
         default=False, alias="providerPayloadIncluded"
@@ -257,10 +254,13 @@ class RetentionMetadata(_FrozenModel):
         default=28, alias="ordinaryRetentionDaysAfterEvaluationEvent"
     )
     pinned: bool = False
-    hold_reason: Literal[
-        "HOLD_UNTIL_EVENT_DATE_CONFIGURED",
-        "PINNED_UNTIL_FINAL_SUBMISSION_COMPLETE",
-    ] | None = Field(default="HOLD_UNTIL_EVENT_DATE_CONFIGURED", alias="holdReason")
+    hold_reason: (
+        Literal[
+            "HOLD_UNTIL_EVENT_DATE_CONFIGURED",
+            "PINNED_UNTIL_FINAL_SUBMISSION_COMPLETE",
+        ]
+        | None
+    ) = Field(default="HOLD_UNTIL_EVENT_DATE_CONFIGURED", alias="holdReason")
 
 
 class KISDataQualityReport(_FrozenModel):
@@ -302,7 +302,7 @@ class KISDataQualityReport(_FrozenModel):
         return value.astimezone(UTC)
 
     @model_validator(mode="after")
-    def _validate_report_shape(self) -> "KISDataQualityReport":
+    def _validate_report_shape(self) -> KISDataQualityReport:
         if tuple(item.metric_id for item in self.metrics) != METRIC_IDS:
             raise ValueError("report metrics must use the canonical order")
         if len(self.bounded_samples) > MAX_SAMPLES:

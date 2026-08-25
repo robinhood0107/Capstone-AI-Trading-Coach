@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
 import hashlib
+from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 
+import psycopg
 import pyarrow as pa
 import pyarrow.parquet as pq
-import psycopg
 import pytest
 
 from app.data._shared.canonical_json import canonical_json_bytes
@@ -34,11 +34,11 @@ def test_operational_and_research_readers_enforce_distinct_bounds(tmp_path: Path
     assert len(operational.read_closes("000001")) == 253
     assert len(research.read_symbol_closes("000001")) == 300
     assert len(research.read_index_closes("KOSPI")) == 300
-    with pytest.raises(MarketDataArchiveError, match="outside the current exact-31"):
+    with pytest.raises(MarketDataArchiveError, match=r"outside the current exact-31"):
         operational.read_closes("999999")
-    with pytest.raises(MarketDataArchiveError, match="1..253"):
+    with pytest.raises(MarketDataArchiveError, match=r"1..253"):
         operational.read_closes("000001", limit=254)
-    with pytest.raises(MarketDataArchiveError, match="1..1260"):
+    with pytest.raises(MarketDataArchiveError, match=r"1..1260"):
         research.read_index_closes("KOSPI", limit=1261)
 
 
@@ -55,7 +55,7 @@ def test_manifest_last_digest_tampering_is_rejected(tmp_path: Path) -> None:
     target.write_bytes(target.read_bytes() + b"tamper")
     target.chmod(0o600)
 
-    with pytest.raises(MarketDataArchiveError, match="digest mismatch"):
+    with pytest.raises(MarketDataArchiveError, match=r"digest mismatch"):
         ParquetMarketDataOperationalReader(root)
 
 
@@ -154,14 +154,14 @@ def test_seed_archive_db_adoption_is_atomic_and_replays_as_no_op(
         assert len(research.read_symbol_closes("000001")) == 300
         assert len(research.read_index_closes("KOSPI")) == 300
     with psycopg.connect(postgres_cluster["app_dsn"]) as connection:
-        with pytest.raises(MarketDataArchiveError, match="research_reader"):
+        with pytest.raises(MarketDataArchiveError, match=r"research_reader"):
             PostgresResearchMarketHistoryReader(connection)  # type: ignore[arg-type]
 
 
 def test_seed_stage_requires_exact_operator_manifest_binding(tmp_path: Path) -> None:
     root = _seed_archive(tmp_path)
 
-    with pytest.raises(MarketDataArchiveError, match="operator binding"):
+    with pytest.raises(MarketDataArchiveError, match=r"operator binding"):
         stage_seed_archive(
             database_dsn="postgresql://must-not-connect.invalid/db",
             archive_root=root,

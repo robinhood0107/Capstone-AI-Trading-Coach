@@ -7,7 +7,6 @@ from app.data.opendart.models import DisclosureRiskEvent
 from app.data.opendart.risk_mapping import load_default_risk_mapping
 from app.data.opendart.scorer import MAX_EVENTS_PER_SCORE, score_disclosure_risk
 
-
 AS_OF = date(2026, 7, 9)
 
 
@@ -97,7 +96,15 @@ def test_persisting_distress_still_scores_beyond_thirty_days() -> None:
     )
     audit = score_disclosure_risk(
         "105560",
-        [_event("105560", "00999999", "OPENDART:accnutAdtorNmNdAdtOpinion", old, attributes={"adt_opinion": "의견거절"})],
+        [
+            _event(
+                "105560",
+                "00999999",
+                "OPENDART:accnutAdtorNmNdAdtOpinion",
+                old,
+                attributes={"adt_opinion": "의견거절"},
+            )
+        ],
         as_of=AS_OF,
         mapping=mapping,
     )
@@ -160,10 +167,16 @@ def test_s1_2b_bw_eb_expire_after_thirty_days() -> None:
     mapping = load_default_risk_mapping()
     for code in ("OPENDART:bdwtIsDecsn", "OPENDART:exbdIsDecsn"):
         fresh = score_disclosure_risk(
-            "900000", [_event("900000", "00999999", code, AS_OF - timedelta(days=29))], as_of=AS_OF, mapping=mapping
+            "900000",
+            [_event("900000", "00999999", code, AS_OF - timedelta(days=29))],
+            as_of=AS_OF,
+            mapping=mapping,
         )
         stale = score_disclosure_risk(
-            "900000", [_event("900000", "00999999", code, AS_OF - timedelta(days=31))], as_of=AS_OF, mapping=mapping
+            "900000",
+            [_event("900000", "00999999", code, AS_OF - timedelta(days=31))],
+            as_of=AS_OF,
+            mapping=mapping,
         )
         assert fresh.score == 0.6
         assert stale.score == 0.0
@@ -172,12 +185,23 @@ def test_s1_2b_bw_eb_expire_after_thirty_days() -> None:
 def test_s1_2b_reorg_events_persist_within_ninety_days() -> None:
     # 합병·분할·분할합병·영업양도는 reorg라 90일 window. 90일은 살아있고 91일은 0.
     mapping = load_default_risk_mapping()
-    for code in ("OPENDART:cmpMgDecsn", "OPENDART:cmpDvDecsn", "OPENDART:cmpDvmgDecsn", "OPENDART:bsnTrfDecsn"):
+    for code in (
+        "OPENDART:cmpMgDecsn",
+        "OPENDART:cmpDvDecsn",
+        "OPENDART:cmpDvmgDecsn",
+        "OPENDART:bsnTrfDecsn",
+    ):
         within = score_disclosure_risk(
-            "900000", [_event("900000", "00999999", code, AS_OF - timedelta(days=90))], as_of=AS_OF, mapping=mapping
+            "900000",
+            [_event("900000", "00999999", code, AS_OF - timedelta(days=90))],
+            as_of=AS_OF,
+            mapping=mapping,
         )
         beyond = score_disclosure_risk(
-            "900000", [_event("900000", "00999999", code, AS_OF - timedelta(days=91))], as_of=AS_OF, mapping=mapping
+            "900000",
+            [_event("900000", "00999999", code, AS_OF - timedelta(days=91))],
+            as_of=AS_OF,
+            mapping=mapping,
         )
         assert within.score == 0.6
         assert beyond.score == 0.0
@@ -260,7 +284,10 @@ def test_multiple_events_use_max_score() -> None:
     )
 
     assert result.score == 0.6
-    assert [event.event_code for event in result.events] == ["OPENDART:piicDecsn", "OPENDART:lwstLg"]
+    assert [event.event_code for event in result.events] == [
+        "OPENDART:piicDecsn",
+        "OPENDART:lwstLg",
+    ]
 
 
 def test_audit_opinion_score_requires_structured_non_clean_opinion() -> None:

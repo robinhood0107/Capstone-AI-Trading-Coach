@@ -17,7 +17,6 @@ from app.data.krx.parsers import KrxDailyRow
 from app.data.krx.service_probe_cli import main
 from app.data.krx.settings import KrxOpenApiSettings
 
-
 _AS_OF = date(2026, 7, 14)
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -160,9 +159,10 @@ def test_online_and_service_flags_are_mandatory_before_client_creation(
         assert exc_info.value.code == 2
 
     assert state.created == 0
-    assert capsys.readouterr().err.count(
-        "source=krx operation=service_probe code=invalid_arguments"
-    ) == 4
+    assert (
+        capsys.readouterr().err.count("source=krx operation=service_probe code=invalid_arguments")
+        == 4
+    )
 
 
 def test_non_allowlisted_service_is_rejected_before_client_creation(

@@ -10,6 +10,8 @@ import com.capstone.decision.domain.risk.KillSwitchActorRole
 import com.capstone.decision.domain.risk.KillSwitchReasonClass
 import com.capstone.decision.infrastructure.brokerage.BrokerageIdempotencyHasher
 import com.capstone.decision.infrastructure.brokerage.RedisPaperIdempotencyClaimAdapter
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
 import com.capstone.decision.infrastructure.security.DemoAccount
 import com.capstone.decision.infrastructure.security.DemoRole
 import com.capstone.decision.infrastructure.security.JwtService
@@ -69,6 +71,7 @@ class BrokerageApiIntegrationTest(
     @Autowired private val appDataSource: DataSource,
     @Autowired private val brokerageIdempotencyHasher: BrokerageIdempotencyHasher,
     @Autowired private val jwtService: JwtService,
+    @Autowired private val actorCapabilityIssuer: TestActorCapabilityIssuer,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
     private val jdbcTemplate: JdbcTemplate by lazy {
@@ -80,6 +83,7 @@ class BrokerageApiIntegrationTest(
             ),
         )
     }
+    private val appJdbcTemplate: JdbcTemplate by lazy { JdbcTemplate(appDataSource) }
 
     @BeforeEach
     fun setUp() {
@@ -300,6 +304,24 @@ class BrokerageApiIntegrationTest(
                     "usr_demo_admin",
                 ),
             )
+            val demotedSessionHandle = "sid1_" + "d".repeat(64)
+            val demotedSessionExpiresAt = OffsetDateTime.now().plusHours(12)
+            assertEquals(
+                1,
+                jdbcTemplate.update(
+                    """
+                    insert into actor_auth_session(
+                      session_hash,actor_user_id,actor_role,actor_security_version,issued_at,expires_at
+                    ) values ('sha256:'||encode(digest(?,'sha256'),'hex'),?,?,?,?,?)
+                    """.trimIndent(),
+                    demotedSessionHandle,
+                    "usr_demo_admin",
+                    "USER",
+                    demotedSecurityVersion,
+                    OffsetDateTime.now(),
+                    demotedSessionExpiresAt,
+                ),
+            )
             val demotedToken =
                 jwtService
                     .issue(
@@ -308,6 +330,8 @@ class BrokerageApiIntegrationTest(
                             username = "demo-admin",
                             role = DemoRole.USER,
                             securityVersion = demotedSecurityVersion,
+                            sessionHandle = demotedSessionHandle,
+                            expiresAt = demotedSessionExpiresAt,
                         ),
                     ).token
 
@@ -1014,14 +1038,20 @@ class BrokerageApiIntegrationTest(
         assertEquals(2, json(balance).at("/data/positions/0/quantity").longValue())
 
         val rebuild =
-            jdbcTemplate.queryForMap(
+            appJdbcTemplate.queryForMap(
                 """
                 select operation_outcome, event_count, rebuilt_cash_krw,
                        stored_cash_krw, positions_match
-                from rebuild_paper_state(?, ?)
+                from rebuild_paper_state_authorized_v2(?, ?, ?)
                 """.trimIndent(),
+                capability(
+                    "usr_demo_user",
+                    "REBUILD_PAPER_STATE",
+                    "ACCOUNT",
+                    accountId,
+                ),
+                "usr_demo_user",
                 accountId,
-                TEST_BROKERAGE_DB_CAPABILITY_TOKEN,
             )
         assertEquals("MATCHED", rebuild["operation_outcome"])
         assertEquals(1L, rebuild["event_count"])
@@ -1396,19 +1426,21 @@ class BrokerageApiIntegrationTest(
         assertEquals("DECISION_EXPIRED", json(expired).at("/error/code").stringValue())
 
         val blockedDecision = createDecision(token, "14", orderIntent(), portfolioSource = "INTERNAL_PAPER")
-        killSwitchMutationPort.mutate(
-            KillSwitchMutationCommand(
-                actor =
-                    KillSwitchActor(
-                        userId = "usr_demo_user",
-                        role = KillSwitchActorRole.USER,
-                        securityVersion = 1,
-                        requestId = "req-paper-kill-switch",
-                    ),
-                requestedActive = true,
-                reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
-            ),
-        )
+        asTestActor(actorCapabilityIssuer) {
+            killSwitchMutationPort.mutate(
+                KillSwitchMutationCommand(
+                    actor =
+                        KillSwitchActor(
+                            userId = "usr_demo_user",
+                            role = KillSwitchActorRole.USER,
+                            securityVersion = 1,
+                            requestId = "req-paper-kill-switch",
+                        ),
+                    requestedActive = true,
+                    reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
+                ),
+            )
+        }
         val blocked =
             submitPaperOrder(
                 token,
@@ -1446,13 +1478,19 @@ class BrokerageApiIntegrationTest(
 
         val accountId = "acct_${"c".repeat(32)}"
         val rebuild =
-            jdbcTemplate.queryForMap(
+            appJdbcTemplate.queryForMap(
                 """
                 select operation_outcome, event_count, positions_match
-                from rebuild_paper_state(?, ?)
+                from rebuild_paper_state_authorized_v2(?, ?, ?)
                 """.trimIndent(),
+                capability(
+                    "usr_demo_user",
+                    "REBUILD_PAPER_STATE",
+                    "ACCOUNT",
+                    accountId,
+                ),
+                "usr_demo_user",
                 accountId,
-                TEST_BROKERAGE_DB_CAPABILITY_TOKEN,
             )
         assertEquals("MATCHED", rebuild["operation_outcome"])
         assertEquals(20L, rebuild["event_count"])
@@ -1765,19 +1803,21 @@ class BrokerageApiIntegrationTest(
         assertEquals("DECISION_EXPIRED", json(expired).at("/error/code").stringValue())
 
         val invalidatedDecisionId = createDecision(token, suffix = "04", order = orderIntent())
-        killSwitchMutationPort.mutate(
-            KillSwitchMutationCommand(
-                actor =
-                    KillSwitchActor(
-                        userId = "usr_demo_user",
-                        role = KillSwitchActorRole.USER,
-                        securityVersion = 1,
-                        requestId = "req-brokerage-kill-switch",
-                    ),
-                requestedActive = true,
-                reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
-            ),
-        )
+        asTestActor(actorCapabilityIssuer) {
+            killSwitchMutationPort.mutate(
+                KillSwitchMutationCommand(
+                    actor =
+                        KillSwitchActor(
+                            userId = "usr_demo_user",
+                            role = KillSwitchActorRole.USER,
+                            securityVersion = 1,
+                            requestId = "req-brokerage-kill-switch",
+                        ),
+                    requestedActive = true,
+                    reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
+                ),
+            )
+        }
         val blocked =
             submitMockOrder(
                 token,
@@ -1891,11 +1931,20 @@ class BrokerageApiIntegrationTest(
                 .prepareStatement(
                     """
                     select operation_outcome
-                    from create_mock_order(cast(? as jsonb), ?)
+                    from create_mock_order_authorized_v2(?, ?)
                     """.trimIndent(),
                 ).use { statement ->
-                    statement.setString(1, payload)
-                    statement.setString(2, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
+                    statement.setString(
+                        1,
+                        capability(
+                            "usr_demo_user",
+                            "CREATE_MOCK_ORDER",
+                            "ORDER",
+                            "ord_mock_00000000000000000000000000000009",
+                            payload,
+                        ),
+                    )
+                    statement.setString(2, payload)
                     statement.executeQuery().use { result ->
                         assertTrue(result.next())
                         assertEquals("DECISION_EXPIRED", result.getString(1))
@@ -1980,10 +2029,10 @@ class BrokerageApiIntegrationTest(
                     ).use { statement ->
                         statement.setString(1, objectMapper.writeValueAsString(malformedPayload))
                         statement.setString(2, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
-                        statement.executeQuery().use { result ->
-                            assertTrue(result.next())
-                            assertEquals("VALIDATION_ERROR", result.getString("operation_outcome"))
-                        }
+                        val denied =
+                            org.junit.jupiter.api
+                                .assertThrows<SQLException> { statement.executeQuery() }
+                        assertEquals("42501", denied.sqlState)
                     }
             }
         }
@@ -2008,11 +2057,20 @@ class BrokerageApiIntegrationTest(
                 .prepareStatement(
                     """
                     select operation_outcome, status
-                    from record_mock_order_provider_outcome(cast(? as jsonb), ?)
+                    from record_mock_order_provider_outcome_authorized_v2(?, ?)
                     """.trimIndent(),
                 ).use { statement ->
-                    statement.setString(1, acceptedPayload)
-                    statement.setString(2, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
+                    statement.setString(
+                        1,
+                        capability(
+                            "usr_demo_user",
+                            "RECORD_MOCK_PROVIDER_OUTCOME",
+                            "ORDER",
+                            orderId,
+                            acceptedPayload,
+                        ),
+                    )
+                    statement.setString(2, acceptedPayload)
                     statement.executeQuery().use { result ->
                         assertTrue(result.next())
                         assertEquals("APPLIED", result.getString("operation_outcome"))
@@ -2067,11 +2125,20 @@ class BrokerageApiIntegrationTest(
                 .prepareStatement(
                     """
                     select operation_outcome
-                    from record_mock_order_provider_outcome(cast(? as jsonb), ?)
+                    from record_mock_order_provider_outcome_authorized_v2(?, ?)
                     """.trimIndent(),
                 ).use { statement ->
-                    statement.setString(1, crossOwnerPayload)
-                    statement.setString(2, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
+                    statement.setString(
+                        1,
+                        capability(
+                            "usr_demo_admin",
+                            "RECORD_MOCK_PROVIDER_OUTCOME",
+                            "ORDER",
+                            orderId,
+                            crossOwnerPayload,
+                        ),
+                    )
+                    statement.setString(2, crossOwnerPayload)
                     statement.executeQuery().use { result ->
                         assertTrue(result.next())
                         assertEquals("ORDER_NOT_FOUND", result.getString("operation_outcome"))
@@ -2186,18 +2253,19 @@ class BrokerageApiIntegrationTest(
         }
 
         appDataSource.connection.use { connection ->
-            connection
-                .prepareStatement(
-                    "SELECT count(*) FROM read_mock_order_owner_projection(?, ?, ?)",
-                ).use { statement ->
-                    statement.setString(1, "usr_demo_admin")
-                    statement.setString(2, orderId)
-                    statement.setString(3, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
-                    statement.executeQuery().use { result ->
-                        assertTrue(result.next())
-                        assertEquals(0, result.getInt(1))
-                    }
+            val denied =
+                org.junit.jupiter.api.assertThrows<SQLException> {
+                    connection
+                        .prepareStatement(
+                            "SELECT count(*) FROM read_mock_order_owner_projection(?, ?, ?)",
+                        ).use { statement ->
+                            statement.setString(1, "usr_demo_admin")
+                            statement.setString(2, orderId)
+                            statement.setString(3, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
+                            statement.executeQuery()
+                        }
                 }
+            assertEquals("42501", denied.sqlState)
         }
     }
 
@@ -2288,7 +2356,7 @@ class BrokerageApiIntegrationTest(
                     "orderIntent" to order,
                 ),
             )
-        assertEquals(200, response.response.status)
+        assertEquals(200, response.response.status, response.response.contentAsString)
         assertEquals(
             "ALLOW",
             json(response).at("/data/riskDecision/decision").stringValue(),
@@ -2305,19 +2373,20 @@ class BrokerageApiIntegrationTest(
             "ownerProjection=${visibleDecisionOwnerProjectionCount(decisionId)}"
 
     private fun visibleOrderableDecisionCount(decisionId: String): Int =
-        appDataSource.connection.use { connection ->
-            connection
-                .prepareStatement("SELECT count(*) FROM read_mock_order_decision(?, ?, ?)")
-                .use { statement ->
-                    statement.setString(1, "usr_demo_user")
-                    statement.setString(2, decisionId)
-                    statement.setString(3, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
-                    statement.executeQuery().use { result ->
-                        check(result.next())
-                        result.getInt(1)
-                    }
-                }
-        }
+        jdbcTemplate.queryForObject(
+            """
+            SELECT count(*)
+            FROM decisions decision
+            JOIN decision_artifacts artifact
+              ON artifact.decision_id=decision.decision_id
+             AND artifact.evaluation_id=decision.evaluation_id
+            JOIN users actor ON actor.user_id=decision.user_id AND actor.status='ACTIVE'
+            WHERE decision.user_id=? AND decision.decision_id=?
+            """.trimIndent(),
+            Int::class.java,
+            "usr_demo_user",
+            decisionId,
+        ) ?: 0
 
     private fun visibleDecisionOwnerProjectionCount(decisionId: String): Int =
         appDataSource.connection.use { connection ->
@@ -2796,6 +2865,34 @@ class BrokerageApiIntegrationTest(
         vararg args: Any,
     ): Int = jdbcTemplate.queryForObject(sql, Int::class.java, *args) ?: 0
 
+    private fun capability(
+        actorUserId: String,
+        operation: String,
+        targetKind: String,
+        targetId: String,
+        payloadJson: String? = null,
+        admin: Boolean = false,
+    ): String =
+        actorCapabilityIssuer.issue(
+            actorCapabilityIssuer.actorRef(actorUserId),
+            if (payloadJson == null) {
+                ActorCapabilityBinding.target(
+                    operation,
+                    targetKind,
+                    targetId,
+                    if (admin) ActorCapabilityRolePolicy.ADMIN_ONLY else ActorCapabilityRolePolicy.OWNER,
+                )
+            } else {
+                ActorCapabilityBinding.request(
+                    operation,
+                    targetKind,
+                    targetId,
+                    if (admin) ActorCapabilityRolePolicy.ADMIN_ONLY else ActorCapabilityRolePolicy.OWNER,
+                    payloadJson,
+                )
+            },
+        )
+
     private fun hex(
         suffix: String,
         fill: String,
@@ -2822,7 +2919,7 @@ class BrokerageApiIntegrationTest(
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_s31")
                 .withUsername("decision")
                 .withPassword("decision")

@@ -4,10 +4,11 @@ import json
 import os
 import re
 import stat
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
-from typing import Mapping, cast
+from typing import cast
 
 from app.rag.authorized_retrieval import ALLOWED_RAG_TOPICS
 from app.rag.benchmark_receipt_io import (
@@ -29,9 +30,7 @@ _DOCUMENT_ID = re.compile(r"^doc_[a-z0-9][a-z0-9_-]{10,95}$")
 _SOURCE_ID = re.compile(r"^src_[a-z0-9][a-z0-9_-]{2,95}$")
 _SOURCE_REVISION_ID = re.compile(r"^srv_[a-z0-9][a-z0-9_-]{2,95}$")
 _LANGUAGE_TAG = re.compile(r"^[a-z]{2,3}(?:-[A-Z]{2})?$")
-_OWNER_EMBEDDING_PROFILES = frozenset(
-    ("bge_m3_local_1024_v1", "voyage_context_4_1024_v1")
-)
+_OWNER_EMBEDDING_PROFILES = frozenset(("bge_m3_local_1024_v1", "voyage_context_4_1024_v1"))
 _CONTROL_FIELDS = frozenset(
     {
         "approvedRoot",
@@ -255,9 +254,9 @@ def _encode_control(control: RagV2OwnerImportControl) -> bytes:
         "sourceRevisionId": control.source_revision_id,
         "ticketId": control.import_ticket_id,
     }
-    encoded = (json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n").encode(
-        "utf-8"
-    )
+    encoded = (
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+    ).encode("utf-8")
     if not 1 <= len(encoded) <= _MAX_CONTROL_BYTES:
         raise RagV2LocalImportControlError("LOCAL_IMPORT_CONTROL_INVALID")
     return encoded
@@ -293,9 +292,7 @@ def _decode_control(value: object) -> RagV2OwnerImportControl:
             language_tags=_validate_language_tags(language_tags),
             sanitized_display_name=_validate_sanitized_display_name(sanitized_display_name),
             retrieval_topics=_validate_retrieval_topics(retrieval_topics),
-            embedding_profile_id=_validate_embedding_profile_id(
-                value.get("embeddingProfileId")
-            ),
+            embedding_profile_id=_validate_embedding_profile_id(value.get("embeddingProfileId")),
             issued_at=_parse_instant(value.get("issuedAt")),
             expires_at=_parse_instant(value.get("expiresAt")),
         )
@@ -316,9 +313,9 @@ def _encode_delete_control(control: RagV2OwnerDeleteControl) -> bytes:
         "schemaVersion": 2,
         "ticketId": control.delete_ticket_id,
     }
-    encoded = (json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n").encode(
-        "utf-8"
-    )
+    encoded = (
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+    ).encode("utf-8")
     if not 1 <= len(encoded) <= _MAX_CONTROL_BYTES:
         raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_INVALID")
     return encoded
@@ -327,7 +324,10 @@ def _encode_delete_control(control: RagV2OwnerDeleteControl) -> bytes:
 def _decode_delete_control(value: object) -> RagV2OwnerDeleteControl:
     if not isinstance(value, Mapping) or set(value) != _DELETE_CONTROL_FIELDS:
         raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_INVALID")
-    if value.get("contractId") != "rag-v2-owner-local-delete-control-v2" or value.get("schemaVersion") != 2:
+    if (
+        value.get("contractId") != "rag-v2-owner-local-delete-control-v2"
+        or value.get("schemaVersion") != 2
+    ):
         raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_INVALID")
     try:
         control = RagV2OwnerDeleteControl(
@@ -357,12 +357,12 @@ def _validate_control(control: RagV2OwnerImportControl) -> None:
         or _validate_language_tags(list(control.language_tags)) != control.language_tags
         or _validate_sanitized_display_name(control.sanitized_display_name)
         != control.sanitized_display_name
-        or _validate_retrieval_topics(list(control.retrieval_topics))
-        != control.retrieval_topics
+        or _validate_retrieval_topics(list(control.retrieval_topics)) != control.retrieval_topics
         or control.embedding_profile_id not in _OWNER_EMBEDDING_PROFILES
         or control.issued_at.tzinfo is None
         or control.expires_at.tzinfo is None
-        or control.expires_at.astimezone(UTC) - control.issued_at.astimezone(UTC) != timedelta(minutes=5)
+        or control.expires_at.astimezone(UTC) - control.issued_at.astimezone(UTC)
+        != timedelta(minutes=5)
     ):
         raise RagV2LocalImportControlError("LOCAL_IMPORT_CONTROL_INVALID")
 
@@ -374,7 +374,8 @@ def _validate_delete_control(control: RagV2OwnerDeleteControl) -> None:
         or _DELETE_TICKET_ID.fullmatch(control.delete_ticket_id) is None
         or control.issued_at.tzinfo is None
         or control.expires_at.tzinfo is None
-        or control.expires_at.astimezone(UTC) - control.issued_at.astimezone(UTC) != timedelta(minutes=5)
+        or control.expires_at.astimezone(UTC) - control.issued_at.astimezone(UTC)
+        != timedelta(minutes=5)
     ):
         raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_INVALID")
 
@@ -427,7 +428,7 @@ def _validate_language_tags(value: list[object]) -> tuple[str, ...]:
     if (
         not 1 <= len(value) <= 8
         or any(not isinstance(item, str) or _LANGUAGE_TAG.fullmatch(item) is None for item in value)
-        or len(set(cast(str, item) for item in value)) != len(value)
+        or len({cast(str, item) for item in value}) != len(value)
     ):
         raise ValueError("language tags")
     return tuple(cast(str, item) for item in value)
@@ -450,7 +451,7 @@ def _validate_retrieval_topics(value: list[object]) -> tuple[str, ...]:
     if (
         not 1 <= len(value) <= len(ALLOWED_RAG_TOPICS)
         or any(not isinstance(item, str) or item not in ALLOWED_RAG_TOPICS for item in value)
-        or len(set(cast(str, item) for item in value)) != len(value)
+        or len({cast(str, item) for item in value}) != len(value)
     ):
         raise ValueError("retrieval topics")
     return tuple(sorted(cast(str, item) for item in value))

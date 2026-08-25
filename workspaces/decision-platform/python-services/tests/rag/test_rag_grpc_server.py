@@ -4,7 +4,6 @@ import pytest
 
 from app.rag.rag_grpc_server import RagGrpcServerSettings
 
-
 _SECRET = "rag-grpc-shared-secret-for-s4-6-tests-0001"
 _PYTHON_SECRET = "python-grpc-shared-secret-for-s2-3-tests-0001"
 _JWT_SECRET = "jwt-signing-secret-for-s0-3-tests-00000001"

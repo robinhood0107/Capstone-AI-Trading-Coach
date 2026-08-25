@@ -16,7 +16,6 @@ from app.rag.pre_s5_voyage_tokenizer_acquisition import (
     acquire_pre_s5_voyage_tokenizer,
 )
 
-
 _HEAD = "a" * 40
 _TREE = "b" * 40
 _CI = "c" * 64
@@ -102,13 +101,9 @@ def test_acquisition_consumes_packet_and_leaves_no_partial_artifact_on_invalid_b
         posix_tmp_path
         / "packet-claims"
         / "voyage-tokenizer"
-        / hashlib.sha256(
-            b"voyage-tokenizer-nonce\0ps5_tokenizer_fixture_nonce_0001"
-        ).hexdigest()
+        / hashlib.sha256(b"voyage-tokenizer-nonce\0ps5_tokenizer_fixture_nonce_0001").hexdigest()
     ).is_file()
-    assert not (
-        posix_tmp_path / "artifacts" / "voyage-context-4" / "tokenizer.json"
-    ).exists()
+    assert not (posix_tmp_path / "artifacts" / "voyage-context-4" / "tokenizer.json").exists()
 
     _write_packet(posix_tmp_path, operator="second-operator")
     with pytest.raises(
@@ -123,7 +118,9 @@ def test_acquisition_consumes_packet_and_leaves_no_partial_artifact_on_invalid_b
         )
 
 
-def test_acquisition_refuses_reuse_or_existing_destination_before_fetch(posix_tmp_path: Path) -> None:
+def test_acquisition_refuses_reuse_or_existing_destination_before_fetch(
+    posix_tmp_path: Path,
+) -> None:
     _write_packet(posix_tmp_path)
     fetcher = _FixtureFetcher(_tokenizer_bytes())
     now = datetime(2026, 8, 12, 0, 1, tzinfo=UTC)
@@ -162,9 +159,7 @@ def test_acquisition_rechecks_fetcher_byte_cap_before_parsing(posix_tmp_path: Pa
             now=datetime(2026, 8, 12, 0, 1, tzinfo=UTC),
         )
 
-    assert not (
-        posix_tmp_path / "artifacts" / "voyage-context-4" / "tokenizer.json"
-    ).exists()
+    assert not (posix_tmp_path / "artifacts" / "voyage-context-4" / "tokenizer.json").exists()
 
 
 @dataclass
@@ -186,9 +181,7 @@ class _FixtureFetcher:
     def fetch(self, *, url: str, byte_cap: int) -> bytes:
         self.calls.append((url, byte_cap))
         if len(self.payload) > byte_cap:
-            raise PreS5VoyageTokenizerAcquisitionError(
-                "PRE_S5_VOYAGE_TOKENIZER_DOWNLOAD_SIZE"
-            )
+            raise PreS5VoyageTokenizerAcquisitionError("PRE_S5_VOYAGE_TOKENIZER_DOWNLOAD_SIZE")
         return self.payload
 
 
@@ -221,8 +214,7 @@ def _write_packet(local_root: Path, *, operator: str = "local-operator") -> str:
         "costCapMicrousd": 0,
         "date": "NONE",
         "endpoint": (
-            "/voyageai/voyage-context-4/raw/"
-            "8ca946072a18e398cd61f2ad0243b56d0350b1db/tokenizer.json"
+            "/voyageai/voyage-context-4/raw/8ca946072a18e398cd61f2ad0243b56d0350b1db/tokenizer.json"
         ),
         "expiresAt": (issued_at + timedelta(minutes=5)).isoformat().replace("+00:00", "Z"),
         "headCommit": _HEAD,

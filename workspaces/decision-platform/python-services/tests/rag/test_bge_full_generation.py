@@ -32,12 +32,8 @@ from app.rag.source_card_corpus import (
     load_frozen_source_card_corpus,
 )
 
-_BATCH_REPORT_PATH = (
-    REPO_ROOT / "capstone-rag/reports/s4-2b-batch-memory-benchmark.v1.json"
-)
-_FINAL_REPORT_PATH = (
-    REPO_ROOT / "capstone-rag/reports/s4-2b-full-generation-benchmark.v1.json"
-)
+_BATCH_REPORT_PATH = REPO_ROOT / "capstone-rag/reports/s4-2b-batch-memory-benchmark.v1.json"
+_FINAL_REPORT_PATH = REPO_ROOT / "capstone-rag/reports/s4-2b-full-generation-benchmark.v1.json"
 
 
 class _WhitespaceTokenizer:
@@ -448,9 +444,7 @@ def _artifact_receipt() -> BgeVerifiedPacket:
         revision="5617a9f61b028005a4858fdac845db406aefb181",
         file_count=10,
         total_bytes=2_289_781_803,
-        file_manifest_sha256=(
-            "a0ae6372b2d735b593d806d24c1155cb48dd7188adebe7d6b7619a1622fb71aa"
-        ),
+        file_manifest_sha256=("a0ae6372b2d735b593d806d24c1155cb48dd7188adebe7d6b7619a1622fb71aa"),
     )
 
 

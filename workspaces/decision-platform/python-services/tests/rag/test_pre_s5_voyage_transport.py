@@ -14,11 +14,11 @@ from app.rag.pre_s5_provider_control import (
 )
 from app.rag.pre_s5_voyage_transport import (
     PreS5VoyageBundleComponent,
+    PreS5VoyageContext4Transport,
     PreS5VoyageFullBundle,
     PreS5VoyageHttpRequest,
     PreS5VoyageHttpResponse,
     PreS5VoyageTransportError,
-    PreS5VoyageContext4Transport,
     UrllibPreS5VoyageHttpSender,
     build_pre_s5_voyage_full_bundle,
 )
@@ -27,7 +27,6 @@ from app.rag.rag_v2_external_exact30_voyage_runner import (
     VoyagePreChunkedDocumentGroup,
 )
 from app.rag.rag_v2_voyage_batching import VoyagePreparedComponent, build_public_voyage_batch_plan
-
 
 NOW = datetime(2026, 8, 3, 1, tzinfo=UTC)
 
@@ -105,7 +104,9 @@ def test_voyage_context4_transport_consumes_only_exact_manifest_bound_document_b
         api_key="test-key",
         lease=_FixtureLease(),
         token_counter=_FixtureTokenCounter(),
-        sender=_FixtureSender(response=_response_for_groups(batch.groups, total_tokens=batch.token_count)),
+        sender=_FixtureSender(
+            response=_response_for_groups(batch.groups, total_tokens=batch.token_count)
+        ),
         clock=lambda: NOW,
     )
     with pytest.raises(PreS5VoyageTransportError, match="PRE_S5_VOYAGE_DOCUMENT_BATCH_INVALID"):
@@ -240,7 +241,9 @@ def test_voyage_context4_transport_exposes_only_safe_http_status_class_after_rej
     assert "429" not in json.dumps(transport.content_free_summary(), sort_keys=True)
 
 
-def test_voyage_context4_transport_rejects_expired_subset_or_manifest_drift_before_any_call() -> None:
+def test_voyage_context4_transport_rejects_expired_subset_or_manifest_drift_before_any_call() -> (
+    None
+):
     bundle = _bundle()
     sender = _FixtureSender(response=_response_for(bundle))
     expired = PreS5VoyageContext4Transport(
@@ -334,7 +337,9 @@ def test_voyage_context4_transport_uses_official_token_count_not_utf8_byte_count
                     canonical_text_sha256=_sha256("x"),
                     # BGE chunk count is part of the signed bundle manifest, but only the official
                     # Voyage tokenizer can authorize its outbound input token cap.
-                    token_count=600 if component.component_scope == "EXACT30" and group_index == 0 else 1,
+                    token_count=600
+                    if component.component_scope == "EXACT30" and group_index == 0
+                    else 1,
                 )
                 for chunk in group.chunks
             )
@@ -351,7 +356,9 @@ def test_voyage_context4_transport_uses_official_token_count_not_utf8_byte_count
         clock=lambda: NOW,
     )
 
-    with pytest.raises(PreS5VoyageTransportError, match="PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_REQUIRED"):
+    with pytest.raises(
+        PreS5VoyageTransportError, match="PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_REQUIRED"
+    ):
         transport.embed_full_bundle(bundle=token_heavy)
 
     assert sender.calls == 0
@@ -363,26 +370,30 @@ def test_voyage_context4_transport_rejects_more_than_documented_contextual_chunk
     first_group = components[0].groups[0]
     # The public profile has 142 base chunks. Add just enough valid chunks to exceed Voyage's
     # documented 16,000 contextual-chunk cap without creating another document group.
-    overflow_chunks = tuple(
-        _extra_chunk(index)
-        for index in range(16_000 - 142 + 1)
-    )
+    overflow_chunks = tuple(_extra_chunk(index) for index in range(16_000 - 142 + 1))
     components[0] = replace(
         components[0],
-        groups=(replace(first_group, chunks=first_group.chunks + overflow_chunks), *components[0].groups[1:]),
+        groups=(
+            replace(first_group, chunks=first_group.chunks + overflow_chunks),
+            *components[0].groups[1:],
+        ),
     )
 
     with pytest.raises(PreS5VoyageTransportError, match="PRE_S5_VOYAGE_FULL_BUNDLE_INVALID"):
         build_pre_s5_voyage_full_bundle(components=tuple(components))
 
 
-def test_voyage_context4_transport_rejects_cross_group_or_nonunit_response_without_followup_call() -> None:
+def test_voyage_context4_transport_rejects_cross_group_or_nonunit_response_without_followup_call() -> (
+    None
+):
     bundle = _bundle()
     malformed = _response_for(bundle)
     body = json.loads(malformed.body)
     body["data"][1]["data"][0]["text"] = "wrong group text"
     sender = _FixtureSender(
-        response=PreS5VoyageHttpResponse(status=200, headers={}, body=json.dumps(body).encode("utf-8"))
+        response=PreS5VoyageHttpResponse(
+            status=200, headers={}, body=json.dumps(body).encode("utf-8")
+        )
     )
     lease = _FixtureLease()
     transport = PreS5VoyageContext4Transport(
@@ -449,7 +460,9 @@ def test_voyage_context4_transport_rejects_nonunit_vector_after_exactly_one_atte
     assert transport.external_physical_calls == 1
 
 
-def test_voyage_context4_transport_lease_blocks_two_transport_instances_from_reusing_packet() -> None:
+def test_voyage_context4_transport_lease_blocks_two_transport_instances_from_reusing_packet() -> (
+    None
+):
     bundle = _bundle()
     lease = _FixtureLease()
     first_sender = _FixtureSender(response=_response_for(bundle))
@@ -502,7 +515,9 @@ def test_voyage_context4_transport_rechecks_expiry_immediately_before_claiming_l
 def test_voyage_context4_transport_discards_malformed_raw_body_without_exception_cause() -> None:
     bundle = _bundle()
     sender = _FixtureSender(
-        response=PreS5VoyageHttpResponse(status=200, headers={}, body=b"\xffSECRET_RAW_PROVIDER_BODY")
+        response=PreS5VoyageHttpResponse(
+            status=200, headers={}, body=b"\xffSECRET_RAW_PROVIDER_BODY"
+        )
     )
     transport = PreS5VoyageContext4Transport(
         activation=_activation(bundle),
@@ -536,7 +551,9 @@ def test_voyage_context4_transport_rejects_wrong_official_tokenizer_before_claim
     sender = _FixtureSender(response=_response_for(bundle))
     lease = _FixtureLease()
 
-    with pytest.raises(PreS5VoyageTransportError, match="PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_REQUIRED"):
+    with pytest.raises(
+        PreS5VoyageTransportError, match="PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_REQUIRED"
+    ):
         PreS5VoyageContext4Transport(
             activation=replace(_activation(bundle), tokenizer_sha256="f" * 64),
             api_key="test-key",
@@ -553,7 +570,9 @@ def test_voyage_context4_transport_rejects_wrong_official_tokenizer_before_claim
 class _FixtureSender:
     """network 없이 fixed response/error 한 번만 내는 transport seam이다."""
 
-    def __init__(self, *, response: PreS5VoyageHttpResponse | None = None, error: Exception | None = None) -> None:
+    def __init__(
+        self, *, response: PreS5VoyageHttpResponse | None = None, error: Exception | None = None
+    ) -> None:
         self._response = response
         self._error = error
         self.calls = 0

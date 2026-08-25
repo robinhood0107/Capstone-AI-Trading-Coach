@@ -1,8 +1,8 @@
-from datetime import UTC, date, datetime
 import errno
 import hashlib
 import json
 import os
+from datetime import UTC, date, datetime
 from pathlib import Path
 from threading import Barrier, Lock, Thread
 
@@ -121,14 +121,7 @@ def test_partial_write_failure_preserves_last_good_and_does_not_publish_final(
     with pytest.raises(QualityBundleStorageError, match="publish failed"):
         publish_quality_bundle(posix_tmp_path, report)
 
-    final_path = (
-        posix_tmp_path
-        / "quality"
-        / "2026"
-        / "07"
-        / "21"
-        / str(report.report_id)
-    )
+    final_path = posix_tmp_path / "quality" / "2026" / "07" / "21" / str(report.report_id)
     assert not final_path.exists()
     assert not (posix_tmp_path / "quality" / "latest-manifest.json").exists()
 

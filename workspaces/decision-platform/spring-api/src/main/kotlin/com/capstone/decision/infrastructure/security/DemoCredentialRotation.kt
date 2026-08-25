@@ -51,6 +51,7 @@ object DemoCredentialRotation {
             val lockedCredentials = lockDemoCredentials(connection)
             val target = requireTargetAndPeerInvariant(lockedCredentials, config)
             val newSecurityVersion = updateCredential(connection, config, target)
+            revokeRefreshFamilies(connection, config.identity.userId)
             insertAudit(connection, config, newSecurityVersion)
             connection.commit()
         } catch (exception: Exception) {
@@ -199,6 +200,24 @@ object DemoCredentialRotation {
             newTag.fill(0)
             newMac.fill(0)
         }
+    }
+
+    private fun revokeRefreshFamilies(
+        connection: Connection,
+        ownerUserId: String,
+    ) {
+        connection
+            .prepareStatement(
+                """
+                update s4_9_mcp_oauth_refresh_tokens
+                set revoked_at = coalesce(revoked_at, transaction_timestamp())
+                where owner_user_id = ? and revoked_at is null
+                """.trimIndent(),
+            ).use { statement ->
+                statement.queryTimeout = STATEMENT_TIMEOUT_SECONDS
+                statement.setString(1, ownerUserId)
+                statement.executeUpdate()
+            }
     }
 
     private fun insertAudit(

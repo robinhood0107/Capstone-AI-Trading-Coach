@@ -128,5 +128,5 @@ class RagContractCatalogTest {
         MessageDigest
             .getInstance("SHA-256")
             .digest(bytes)
-            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+            .joinToString("") { byte -> "%02x".format(java.util.Locale.ROOT, byte.toInt() and 0xff) }
 }

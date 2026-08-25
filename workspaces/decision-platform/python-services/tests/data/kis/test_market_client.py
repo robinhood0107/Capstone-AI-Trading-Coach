@@ -43,14 +43,35 @@ def test_daily_backfill_moves_end_date_to_oldest_seen_minus_one(tmp_path: Path) 
     page1 = {
         "rt_cd": "0",
         "output2": [
-            {"stck_bsop_date": "20260708", "stck_oprc": "1", "stck_hgpr": "1", "stck_lwpr": "1", "stck_clpr": "1", "acml_vol": "1"},
-            {"stck_bsop_date": "20260707", "stck_oprc": "1", "stck_hgpr": "1", "stck_lwpr": "1", "stck_clpr": "1", "acml_vol": "1"},
+            {
+                "stck_bsop_date": "20260708",
+                "stck_oprc": "1",
+                "stck_hgpr": "1",
+                "stck_lwpr": "1",
+                "stck_clpr": "1",
+                "acml_vol": "1",
+            },
+            {
+                "stck_bsop_date": "20260707",
+                "stck_oprc": "1",
+                "stck_hgpr": "1",
+                "stck_lwpr": "1",
+                "stck_clpr": "1",
+                "acml_vol": "1",
+            },
         ],
     }
     page2 = {
         "rt_cd": "0",
         "output2": [
-            {"stck_bsop_date": "20260706", "stck_oprc": "1", "stck_hgpr": "1", "stck_lwpr": "1", "stck_clpr": "1", "acml_vol": "1"}
+            {
+                "stck_bsop_date": "20260706",
+                "stck_oprc": "1",
+                "stck_hgpr": "1",
+                "stck_lwpr": "1",
+                "stck_clpr": "1",
+                "acml_vol": "1",
+            }
         ],
     }
     fake_http = _FakeHttp([page1, page2])

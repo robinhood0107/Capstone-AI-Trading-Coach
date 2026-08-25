@@ -6,7 +6,11 @@ import pytest
 
 from app.data.calendar.errors import PrivacyProjectionError
 from app.data.calendar.models import NormalizedCalendarEvent
-from app.data.calendar.normalizer import EventCandidate, build_event_revision, event_candidate_from_normalized
+from app.data.calendar.normalizer import (
+    EventCandidate,
+    build_event_revision,
+    event_candidate_from_normalized,
+)
 
 
 def test_normalized_adapter_event_maps_to_repository_candidate_without_semantic_loss() -> None:

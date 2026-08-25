@@ -36,7 +36,7 @@ class RagPreS5VoyageBatchMigrationContractTest {
             java.security.MessageDigest
                 .getInstance("SHA-256")
                 .digest(Files.readAllBytes(baseMigrationPath))
-                .joinToString("") { byte -> "%02x".format(byte) }
+                .joinToString("") { byte -> "%02x".format(java.util.Locale.ROOT, byte) }
         assertThat(digest).isEqualTo("23b439b3bffdaf9fb33afba4aa099902efc7bcfa6b31fdabbe503a490b31a83e")
     }
 
@@ -46,7 +46,7 @@ class RagPreS5VoyageBatchMigrationContractTest {
             java.security.MessageDigest
                 .getInstance("SHA-256")
                 .digest(Files.readAllBytes(batchMigrationPath))
-                .joinToString("") { byte -> "%02x".format(byte) }
+                .joinToString("") { byte -> "%02x".format(java.util.Locale.ROOT, byte) }
         assertThat(digest).isEqualTo("259a86d1fdbc4af8e14407cc3eaeed2f7d1971cba0a26b2438d0b6ce60fb29d0")
     }
 

@@ -239,7 +239,10 @@ def _load_exact(
     expected_source_revision_sha256: str | None = None,
 ) -> PublicVoyageCheckpoint:
     decoded = _decode_envelope(_read_secure_file(path))
-    if decoded.get("schemaVersion") != _SCHEMA_VERSION or decoded.get("identity") != expected_identity:
+    if (
+        decoded.get("schemaVersion") != _SCHEMA_VERSION
+        or decoded.get("identity") != expected_identity
+    ):
         raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_IDENTITY")
     payload = decoded.get("payload")
     if not isinstance(payload, dict) or decoded.get("payloadSha256") != _canonical_hash(payload):
@@ -417,7 +420,9 @@ def _validate_prepared(
     metadata: object,
     parser_version: str,
 ) -> None:
-    if not isinstance(prepared, RagV2PreparedPublicDocument) or not isinstance(metadata, PublicVoyageSourceMetadata):
+    if not isinstance(prepared, RagV2PreparedPublicDocument) or not isinstance(
+        metadata, PublicVoyageSourceMetadata
+    ):
         raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_PAYLOAD")
     document = prepared.document
     evidence = prepared.document_ir.get("parserEvidence")
@@ -444,7 +449,8 @@ def _validate_prepared(
             chunk.document_id != document.document_id
             or type(chunk.token_count) is not int
             or not 1 <= chunk.token_count <= 600
-            or hashlib.sha256(chunk.canonical_text.encode("utf-8")).hexdigest() != chunk.canonical_text_sha256
+            or hashlib.sha256(chunk.canonical_text.encode("utf-8")).hexdigest()
+            != chunk.canonical_text_sha256
             or embedding_input.chunk_revision_id != chunk.chunk_id
             or embedding_input.text != chunk.canonical_text
             or embedding_input.embedding_profile_id != "voyage_context_4_1024_v1"
@@ -516,7 +522,12 @@ def _atomic_write(*, target: Path, encoded: bytes) -> None:
 
 
 def _secure_directory(path: Path) -> None:
-    if not isinstance(path, Path) or not path.is_absolute() or ".." in path.parts or os.name == "nt":
+    if (
+        not isinstance(path, Path)
+        or not path.is_absolute()
+        or ".." in path.parts
+        or os.name == "nt"
+    ):
         raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_BOUNDARY")
     try:
         metadata = path.lstat()
@@ -556,7 +567,11 @@ def _read_secure_file(path: Path) -> bytes:
         raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_BOUNDARY") from error
     try:
         metadata = os.fstat(descriptor)
-        if metadata.st_size != expected_size or metadata.st_nlink != 1 or stat.S_IMODE(metadata.st_mode) != 0o600:
+        if (
+            metadata.st_size != expected_size
+            or metadata.st_nlink != 1
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+        ):
             raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_BOUNDARY")
         chunks = bytearray()
         while len(chunks) <= _MAX_CHECKPOINT_BYTES:

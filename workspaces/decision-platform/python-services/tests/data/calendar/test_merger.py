@@ -6,8 +6,12 @@ import pytest
 
 from app.data.calendar.errors import PrivacyProjectionError
 from app.data.calendar.merger import merge_trading_session
-from app.data.calendar.models import KASIReason, KISHolidayObservation, PriorCanonicalSession, XKRXSession
-
+from app.data.calendar.models import (
+    KASIReason,
+    KISHolidayObservation,
+    PriorCanonicalSession,
+    XKRXSession,
+)
 
 NOW = datetime(2026, 7, 22, 1, 0, tzinfo=UTC)
 

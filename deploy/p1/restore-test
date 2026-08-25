@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+STATE_DIR=${P1_STATE_DIR:-$SCRIPT_DIR/.state}
+RUNTIME_ENV=$STATE_DIR/runtime.env
+BACKUP_DIR=$STATE_DIR/backups
+RELEASE_GUARD=$SCRIPT_DIR/release_guard.py
+PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-offline-demo}
+[[ $PROJECT_NAME =~ ^[a-z0-9][a-z0-9_-]{2,62}$ ]] || { echo 'P1_ERROR=invalid_project_name' >&2; exit 1; }
+python3 "$RELEASE_GUARD" state-check "$STATE_DIR" || {
+  echo 'P1_ERROR=state_boundary' >&2
+  exit 1
+}
+[[ -f $RUNTIME_ENV && ! -L $RUNTIME_ENV && $(stat -c '%a' "$RUNTIME_ENV") == 600 ]] || {
+  echo 'P1_ERROR=not_initialized' >&2
+  exit 1
+}
+if [[ -n ${P1_BACKUP_FILE:-} ]]; then
+  backup_name=$(basename -- "$P1_BACKUP_FILE")
+else
+  backup_name=$(python3 "$RELEASE_GUARD" state-latest-backup "$STATE_DIR")
+fi
+[[ $backup_name =~ ^capstone-p1-[0-9]{8}T[0-9]{6}Z\.dump$ ]] || {
+  echo 'P1_ERROR=backup_name' >&2
+  exit 1
+}
+staging=$(mktemp -d)
+backup=$staging/$backup_name
+checksum=$backup.sha256
+python3 "$RELEASE_GUARD" state-export "$STATE_DIR" "backups/$backup_name" "$backup" 0600
+python3 "$RELEASE_GUARD" state-export "$STATE_DIR" "backups/$backup_name.sha256" "$checksum" 0600
+expected=$(awk 'NR == 1 && NF == 2 { print $1 } NR > 1 { exit 1 }' "$checksum")
+[[ $expected =~ ^[0-9a-f]{64}$ ]] || { echo 'P1_ERROR=backup_checksum_format' >&2; exit 1; }
+actual=$(sha256sum "$backup" | awk '{print $1}')
+[[ $actual == "$expected" ]] || { echo 'P1_ERROR=backup_checksum_mismatch' >&2; exit 1; }
+database=p1_restore_$(openssl rand -hex 6)
+restore_project=$(printf '%.40s' "$PROJECT_NAME")-restore-$(openssl rand -hex 6)
+compose=(docker compose --project-name "$restore_project" --env-file "$RUNTIME_ENV" -f "$SCRIPT_DIR/compose.db.yml")
+[[ ! -f $SCRIPT_DIR/release.env ]] || compose+=(-f "$SCRIPT_DIR/compose.offline.db.yml")
+cleanup() { "${compose[@]}" stop postgres >/dev/null 2>&1 || true; rm -rf -- "$staging"; }
+trap cleanup EXIT
+"${compose[@]}" up -d --wait postgres
+"${compose[@]}" exec -T postgres createdb --username postgres "$database"
+"${compose[@]}" exec -T postgres pg_restore --username postgres --dbname "$database" < "$backup"
+version=$("${compose[@]}" exec -T postgres psql --username postgres --dbname "$database" --tuples-only --no-align \
+  --command "select version from flyway_schema_history where success order by installed_rank desc limit 1")
+[[ $version == 87 ]] || { echo 'P1_ERROR=restore_version' >&2; exit 1; }
+owners=$("${compose[@]}" exec -T postgres psql --username postgres --dbname "$database" --tuples-only --no-align \
+  --command "select pg_get_userbyid(relowner) from pg_class where oid='public.users'::regclass
+             union all select pg_get_userbyid(proowner) from pg_proc where oid='public.persist_decision_bundle_authorized(text,jsonb)'::regprocedure")
+[[ $owners == $'flyway\nflyway' ]] || { echo 'P1_ERROR=restore_owner' >&2; exit 1; }
+trust_root=$("${compose[@]}" exec -T postgres psql --username postgres --dbname "$database" --tuples-only --no-align \
+  --command "select count(*) filter (where status='ACTIVE' and security_version > 0),
+                    count(*) filter (where role='ADMIN' and status='ACTIVE')
+             from users where user_id in ('usr_demo_user','usr_demo_admin')")
+[[ $trust_root == '2|1' ]] || { echo 'P1_ERROR=restore_identity_trust_root' >&2; exit 1; }
+authority=$("${compose[@]}" exec -T postgres psql --username postgres --dbname "$database" --tuples-only --no-align \
+  --command "select count(*) from p1_offline_demo_authority
+             where authority_id='P1_OFFLINE_DEMO' and active
+               and credential_bundle_digest ~ '^[0-9a-f]{64}$'")
+[[ $authority == 1 ]] || { echo 'P1_ERROR=restore_demo_authority' >&2; exit 1; }
+printf 'P1_RESTORE_TEST=PASS PROJECT=%s VOLUME_PRESERVED=TRUE\n' "$restore_project"

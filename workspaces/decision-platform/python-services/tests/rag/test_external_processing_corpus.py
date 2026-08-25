@@ -32,7 +32,6 @@ from app.rag.source_card_corpus import (
     S4_7B_SOURCE_CARD_ROOT,
 )
 
-
 REPO_ROOT = Path(__file__).resolve().parents[5]
 GENERATOR = REPO_ROOT / "capstone-rag/generate_s4_7c_external_corpus.py"
 GENERATION_REPORT = REPO_ROOT / "capstone-rag/reports/s4-7c-external-generation.v1.json"
@@ -71,8 +70,8 @@ class _RecordingWriter:
         aggregate_row_hash: str,
         generation_vector_hash: str,
     ) -> BgeGenerationDatabaseReceipt:
-        generation_id = str(getattr(plan, "generation_id"))
-        materialization_run_id = str(getattr(plan, "materialization_run_id"))
+        generation_id = str(plan.generation_id)
+        materialization_run_id = str(plan.materialization_run_id)
         return BgeGenerationDatabaseReceipt(
             generation_id=generation_id,
             materialization_run_id=materialization_run_id,

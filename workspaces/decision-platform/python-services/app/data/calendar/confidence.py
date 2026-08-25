@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 _BASE_BY_TIER = {1: 9000, 2: 7000, 3: 5000, 4: 3000}
 
 

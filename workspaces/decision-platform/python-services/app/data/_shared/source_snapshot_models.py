@@ -77,7 +77,7 @@ class SourceSnapshotManifest(_SnapshotModel):
         return value
 
     @model_validator(mode="after")
-    def _validate_source_contract(self) -> "SourceSnapshotManifest":
+    def _validate_source_contract(self) -> SourceSnapshotManifest:
         match = _SNAPSHOT_PATH_PATTERN.fullmatch(self.snapshot_path)
         if match is None:
             raise ValueError("snapshotPath must be a canonical source snapshot path")

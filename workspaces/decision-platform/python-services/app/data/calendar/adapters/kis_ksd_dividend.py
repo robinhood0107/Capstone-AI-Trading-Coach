@@ -42,7 +42,10 @@ def collect_ksd_dividends(
                 seen.add(key)
                 events.append(event)
         if not has_more:
-            result = sorted(events, key=lambda event: (event.event_date, event.event_type, event.source_event_key))
+            result = sorted(
+                events,
+                key=lambda event: (event.event_date, event.event_type, event.source_event_key),
+            )
             if publish is not None:
                 publish(result)
             return result
@@ -77,7 +80,9 @@ def _parse_page(
     return events, fk, nk, has_more
 
 
-def _parse_row(row: dict[object, object], *, requested_symbol: str) -> list[NormalizedCalendarEvent]:
+def _parse_row(
+    row: dict[object, object], *, requested_symbol: str
+) -> list[NormalizedCalendarEvent]:
     try:
         symbol = _required_text(row, "sht_cd")
         raw_record_date = _required_text(row, "record_date")

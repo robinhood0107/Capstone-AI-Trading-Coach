@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
+import hashlib
+import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
-from functools import lru_cache
-import hashlib
+from functools import cache
 from importlib.metadata import version
-import re
-from typing import Any, Sequence, cast
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import exchange_calendars as xcals
-from exchange_calendars.exchange_calendar_xkrx import XKRXExchangeCalendar
 import pandas as pd
+from exchange_calendars.exchange_calendar_xkrx import XKRXExchangeCalendar
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
-
 
 RAW_SESSION_COUNT = 1_072
 WARMUP_SESSIONS = 59
@@ -95,7 +95,7 @@ def _require_pinned_calendar_version() -> None:
         raise LightGbmContractError("exchange-calendars version drifted from S5 policy")
 
 
-@lru_cache(maxsize=None)
+@cache
 def calendar_for_corrections(corrections: tuple[date, ...]) -> Any:
     """correction 세대 하나에 대응하는 결정적 calendar를 만든다.
 
@@ -202,10 +202,7 @@ def derive_monthly_universe_schedule_for(
         raise LightGbmContractError("S5 dataset cutoff must be timezone aware")
     year, month = (int(value) for value in effective_month.split("-"))
     first_day = date(year, month, 1)
-    if month == 12:
-        next_month = date(year + 1, 1, 1)
-    else:
-        next_month = date(year, month + 1, 1)
+    next_month = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
     last_day = date.fromordinal(next_month.toordinal() - 1)
 
     sessions = calendar.sessions_in_range(pd.Timestamp(first_day), pd.Timestamp(last_day))
@@ -213,9 +210,7 @@ def derive_monthly_universe_schedule_for(
         raise DatasetUnavailable("DATASET_UNAVAILABLE: effective month has no XKRX session")
     first = sessions[0]
     selection = calendar.previous_session(first)
-    trailing_first = calendar.session_offset(
-        selection, -(MONTHLY_TRAILING_SESSIONS - 1)
-    )
+    trailing_first = calendar.session_offset(selection, -(MONTHLY_TRAILING_SESSIONS - 1))
     trailing_index = calendar.sessions_in_range(trailing_first, selection)
     trailing = tuple(session.date() for session in trailing_index)
     evidence_cutoff = datetime.combine(first.date(), time(8, 10), tzinfo=KST)

@@ -9,9 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from app.rag.safe_io import RagSafeIoError, list_approved_regular_files
-from app.rag.safe_io import read_approved_regular_file
-from app.rag.safe_io import write_approved_generated_file, write_approved_new_file
+from app.rag.safe_io import (
+    RagSafeIoError,
+    list_approved_regular_files,
+    read_approved_regular_file,
+    write_approved_generated_file,
+    write_approved_new_file,
+)
 
 
 def test_read_approved_regular_file_uses_relative_bounded_regular_files(

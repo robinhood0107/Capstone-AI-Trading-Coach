@@ -6,17 +6,29 @@ import argparse
 import json
 import sys
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 
+from app.data._shared.canonical_json import canonical_json_sha256
 from app.rag import oa112_bootstrap
 from app.rag.oa112_active_registry import Oa112ActiveRegistryError, load_oa112_active_registry
 from app.rag.oa112_bootstrap import Oa112BootstrapError
 from app.rag.oa112_downloader import (
     Oa112DownloadError,
+    _packet_digest,
     load_oa112_download_packet,
     load_oa112_execution_binding,
 )
 from app.rag.oa_release_manifest import REPO_ROOT
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file, write_approved_new_file
+from app.verification.execution_approval import (
+    ExecutionApprovalError,
+    load_and_verify_execution_approval,
+    scope_digest,
+)
+from app.verification.provider_claim import (
+    ProviderApprovalClaimError,
+    claim_signed_provider_approval,
+)
 
 _LOCAL_ROOT = REPO_ROOT / "capstone-rag/runtime/local-corpus"
 _HISTORICAL_CURATION = "oa112-historical-arxiv-curation.v1.json"
@@ -25,6 +37,7 @@ _CANDIDATE_REGISTRY = "oa112-bootstrap-candidate-registry.v1.json"
 _ACTIVE_REGISTRY = "oa112-active-registry.v1.json"
 _DOWNLOAD_PACKET = "oa112-bootstrap-download-packet.v1.json"
 _EXECUTION_EVIDENCE = "oa112-execution-evidence.v1.json"
+_P1_APPROVAL = "p1-approval-packet.v2.json"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -46,7 +59,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "activate":
             return _activate()
         return _status()
-    except (Oa112BootstrapError, Oa112DownloadError, Oa112ActiveRegistryError, RagSafeIoError) as error:
+    except (ExecutionApprovalError, ProviderApprovalClaimError):
+        _emit({"code": "P1_EXECUTION_APPROVAL_REJECTED", "state": "FAILED"})
+        return 2
+    except (
+        Oa112BootstrapError,
+        Oa112DownloadError,
+        Oa112ActiveRegistryError,
+        RagSafeIoError,
+    ) as error:
         code = error.code if isinstance(error, Oa112DownloadError) else str(error)
         _emit({"code": code, "state": "FAILED"})
         return 2
@@ -65,7 +86,9 @@ def _prepare_candidates() -> int:
         target.lstat()
     except FileNotFoundError:
         content = (
-            json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+                "utf-8"
+            )
             + b"\n"
         )
         write_approved_new_file(
@@ -110,6 +133,23 @@ def _download() -> int:
         relative_path=_EXECUTION_EVIDENCE,
         repository_root=REPO_ROOT,
     )
+    approval = load_and_verify_execution_approval(
+        (_LOCAL_ROOT / _P1_APPROVAL).absolute(),
+        provider_family=packet.provider,
+        exact_operations=(packet.operation,),
+        payload_sha256=_packet_digest(packet),
+        repository_digest=canonical_json_sha256(
+            {"headSha": binding.head_sha, "treeSha256": binding.tree_sha256}
+        ),
+        evidence_digest=canonical_json_sha256(
+            {"ciDigest": binding.ci_digest, "securityDigest": binding.security_digest}
+        ),
+        credential_scope_digest=scope_digest("OA112_OFFICIAL_HTTPS"),
+        physical_call_cap=packet.physical_call_cap,
+        cost_cap_microusd=packet.cost_cap_microusd,
+        now=datetime.now(UTC),
+    )
+    claim_signed_provider_approval(approval)
     receipt = oa112_bootstrap.download_oa112_bootstrap_quarantine(
         registry=registry,
         packet=packet,

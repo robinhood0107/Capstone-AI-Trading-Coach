@@ -10,11 +10,13 @@ import psycopg
 import pytest
 import yaml
 
+from app.rag import register_sources_cli
 from app.rag.register_sources_cli import (
     main as register_sources_main,
+)
+from app.rag.register_sources_cli import (
     register_source_registry,
 )
-from app.rag import register_sources_cli
 from app.rag.source_registry import (
     RAG_SOURCE_OWNER,
     RagSourceRegistryError,
@@ -90,7 +92,9 @@ def test_rag_source_seed_rejects_unsafe_url_shapes(tmp_path: Path) -> None:
         payload["sources"][0]["locator"]["allowedOrigin"] = "https://developers.naver.com"
         payload["sources"][0]["locator"]["allowedPath"] = "/notice/article/32973"
         path = tmp_path / f"{label}.yaml"
-        path.write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        path.write_text(
+            yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8"
+        )
         with pytest.raises(RagSourceRegistryError):
             load_source_registry(path)
 
@@ -170,7 +174,9 @@ def test_rag_source_seed_rejects_allowlist_or_identity_drift(tmp_path: Path) -> 
 
     for index, payload in enumerate(cases):
         path = tmp_path / f"invalid-{index}.yaml"
-        path.write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        path.write_text(
+            yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8"
+        )
         with pytest.raises(RagSourceRegistryError):
             load_source_registry(path)
 
@@ -182,7 +188,9 @@ def test_dns_resolution_guard_rejects_private_link_local_and_loopback() -> None:
             validate_resolved_addresses("example.com", [address])
 
 
-def test_register_sources_cli_accepts_manifest_only_and_emits_summary(capsys: pytest.CaptureFixture[str]) -> None:
+def test_register_sources_cli_accepts_manifest_only_and_emits_summary(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     exit_code = register_sources_main(["--dry-run", "--json"])
 
     assert exit_code == 0
@@ -303,9 +311,7 @@ def test_register_sources_rejects_every_final_embedding_table_privilege(
 
     assert privilege in {"SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"}
     with psycopg.connect(postgres_cluster["admin_dsn"], autocommit=True) as connection:
-        connection.execute(
-            f"grant {privilege} on rag_chunk_embeddings to decision_rag_writer"
-        )
+        connection.execute(f"grant {privilege} on rag_chunk_embeddings to decision_rag_writer")
     try:
         with pytest.raises(ValueError, match="forbidden table"):
             register_source_registry(
@@ -469,6 +475,7 @@ def test_register_sources_rejects_same_id_drift_and_requires_new_sequence_id(
                 where source_id = 'src_kis_marketdata_daily_001'
                 """
             )
+
 
 def test_rag_writer_appends_same_locator_revision_and_check_but_rejects_locator_move(
     postgres_cluster: dict[str, str],

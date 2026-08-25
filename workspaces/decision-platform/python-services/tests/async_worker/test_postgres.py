@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import hashlib
 import json
+from dataclasses import replace
 
 import psycopg
 import pytest
@@ -13,7 +13,9 @@ from app.async_worker.postgres import PostgresAsyncWorkRepository, is_decision_w
 
 def test_worker_dsn_requires_the_exact_login_role() -> None:
     assert is_decision_worker_dsn("postgresql://decision_worker:secret@127.0.0.1:5432/decision")
-    assert not is_decision_worker_dsn("postgresql://decision_worker_backup:secret@127.0.0.1:5432/decision")
+    assert not is_decision_worker_dsn(
+        "postgresql://decision_worker_backup:secret@127.0.0.1:5432/decision"
+    )
     with pytest.raises(ValueError, match="purpose-scoped DB"):
         PostgresAsyncWorkRepository(
             "postgresql://decision_worker_backup:secret@127.0.0.1:5432/decision",
@@ -33,19 +35,51 @@ def test_worker_commit_is_atomic_idempotent_and_least_privileged(
         "contentHash": "sha256:" + "a" * 64,
     }
     payload_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    partition_key = "hmac-sha256:" + "b" * 64
+    binding_values = (
+        event_id,
+        "artifact.ingest-requested.v1",
+        partition_key,
+        job_id,
+        "ARTIFACT_INGEST",
+        "usr_demo_user",
+        payload_bytes.decode(),
+    )
+    canonical_binding = "".join(f"{len(value.encode())}:{value}\n" for value in binding_values)
+    payload_hash = "sha256:" + hashlib.sha256(canonical_binding.encode()).hexdigest()
+    capability_token = "cap2_" + "a" * 64 + "." + "b" * 86
     with psycopg.connect(isolated_postgres_cluster["identity_dsn"], autocommit=True) as identity:
         capability = identity.execute(
-            "SELECT issue_actor_request_capability(%s)", ("usr_demo_user",)
+            """
+            SELECT register_actor_request_capability_v2(
+              %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+              statement_timestamp(),statement_timestamp() + interval '15 seconds',%s
+            )
+            """,
+            (
+                capability_token,
+                "usr_demo_user",
+                "USER",
+                1,
+                "CREATE_ASYNC_REQUEST",
+                "ASYNC_JOB",
+                job_id,
+                payload_hash,
+                "req_" + "c" * 32,
+                "txn_" + "d" * 32,
+                "e" * 32,
+                "ed25519:" + "b" * 86,
+            ),
         ).fetchone()
-        assert capability is not None and isinstance(capability[0], str)
+        assert capability == (True,)
     with psycopg.connect(isolated_postgres_cluster["app_dsn"], autocommit=True) as app:
         assert app.execute(
-            "SELECT create_async_request_authorized(%s,%s,%s,%s,%s,%s,%s,%s::jsonb)",
+            "SELECT create_async_request_authorized(%s,%s,%s,%s,%s,%s,%s,%s)",
             (
-                capability[0],
+                capability_token,
                 event_id,
                 "artifact.ingest-requested.v1",
-                "hmac-sha256:" + "b" * 64,
+                partition_key,
                 job_id,
                 "ARTIFACT_INGEST",
                 "usr_demo_user",
@@ -64,9 +98,7 @@ def test_worker_commit_is_atomic_idempotent_and_least_privileged(
             (event_id, claimed_event[1], payload_hash),
         ).fetchone() == (True,)
 
-    with psycopg.connect(
-        isolated_postgres_cluster["worker_dsn"], autocommit=True
-    ) as worker:
+    with psycopg.connect(isolated_postgres_cluster["worker_dsn"], autocommit=True) as worker:
         claimed_job = worker.execute(
             "SELECT claim_token FROM claim_async_job_by_event(%s,%s,%s,%s,%s,%s)",
             (
@@ -93,17 +125,13 @@ def test_worker_commit_is_atomic_idempotent_and_least_privileged(
         transport="DB",
         partition_key=claimed_event[3],
     )
-    repository = PostgresAsyncWorkRepository(
-        isolated_postgres_cluster["worker_dsn"], b"p" * 64
-    )
+    repository = PostgresAsyncWorkRepository(isolated_postgres_cluster["worker_dsn"], b"p" * 64)
     first = AsyncWorkProcessor(repository).process(work)
     assert first.outcome == "COMPLETED"
     assert AsyncWorkProcessor(repository).process(work).outcome == "DUPLICATE"
 
     changed_payload = {**payload, "replayOf": "evt_replay_fixture_00000001"}
-    changed_bytes = json.dumps(
-        changed_payload, sort_keys=True, separators=(",", ":")
-    ).encode()
+    changed_bytes = json.dumps(changed_payload, sort_keys=True, separators=(",", ":")).encode()
     conflict = AsyncWorkProcessor(repository).process(
         replace(
             work,
@@ -111,8 +139,8 @@ def test_worker_commit_is_atomic_idempotent_and_least_privileged(
             payload_hash="sha256:" + hashlib.sha256(changed_bytes).hexdigest(),
         )
     )
-    assert conflict.outcome == "NEEDS_REVIEW"
-    assert conflict.failure_code == "PAYLOAD_HASH_CONFLICT"
+    assert conflict.outcome == "FAILED"
+    assert conflict.failure_code == "POISON_RECEIPT_UNAVAILABLE"
 
     with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as admin:
         assert admin.execute(

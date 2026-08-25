@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from app.data.krx.catalog import (
     ENABLED_UNIVERSE_ENDPOINTS,
-    KRX_SERVICE_PLAN,
     KOSDAQ_DAILY,
     KOSPI_DAILY,
+    KRX_SERVICE_PLAN,
     KrxEndpoint,
 )
-
 
 _EXPECTED_SERVICE_PLAN = (
     ("지수", "krx_dd_trd", "LATER"),

@@ -2,12 +2,15 @@ package com.capstone.decision.infrastructure.risk
 
 import com.capstone.decision.application.risk.port.ActivePrincipleSnapshot
 import com.capstone.decision.application.risk.port.PrincipleSnapshotPort
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.domain.principle.PrincipleId
 import com.capstone.decision.domain.principle.PrincipleMode
 import com.capstone.decision.domain.principle.PrincipleStatus
 import com.capstone.decision.domain.principle.PrincipleVersionId
 import com.capstone.decision.infrastructure.principle.PrincipleRuleJsonCodec
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
@@ -31,7 +34,16 @@ class JdbcPrincipleSnapshotAdapter(
                 )
                 """.trimIndent(),
                 mapOf(
-                    "capability" to actorCapabilityIssuer.issue(actorUserId),
+                    "capability" to
+                        actorCapabilityIssuer.issue(
+                            AuthenticatedActorRef.current(actorUserId),
+                            ActorCapabilityBinding.target(
+                                "READ_ACTIVE_PRINCIPLE",
+                                "PRINCIPLE",
+                                principleId.value,
+                                ActorCapabilityRolePolicy.OWNER,
+                            ),
+                        ),
                     "principleId" to principleId.value,
                     "actorUserId" to actorUserId,
                 ),

@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime
 import hashlib
-from io import BytesIO
 import math
 import os
-from pathlib import Path
 import re
 import stat
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
+from datetime import UTC, date, datetime
+from io import BytesIO
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pyarrow as pa
@@ -50,7 +51,6 @@ from app.lightgbm.temporal import next_xkrx_evidence_clock
 from app.lightgbm.universe import MonthlyUniverse
 from app.lightgbm.walk_forward import UntouchedTestLoader, build_walk_forward_plan
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file, write_approved_new_file
-
 
 RELEASE_FILES = (
     "model.txt",
@@ -286,9 +286,7 @@ def qualify_and_write_production_release(
                     "calibratedLogLoss": _rounded(fold_run.evaluation.calibrated.log_loss),
                     "rawBrier": _rounded(fold_run.evaluation.raw.brier),
                     "rawLogLoss": _rounded(fold_run.evaluation.raw.log_loss),
-                    "macro": {
-                        key: _rounded(value) for key, value in sorted(macro_metrics.items())
-                    },
+                    "macro": {key: _rounded(value) for key, value in sorted(macro_metrics.items())},
                 }
             )
         evaluations = tuple(item.evaluation for item in updated_folds)
@@ -335,12 +333,8 @@ def qualify_and_write_production_release(
                             "fold": "FINAL",
                             "basePass": final_run.evaluation.passed,
                             "calibratedEce": _rounded(final_run.evaluation.calibrated.ece),
-                            "calibratedBrier": _rounded(
-                                final_run.evaluation.calibrated.brier
-                            ),
-                            "calibratedLogLoss": _rounded(
-                                final_run.evaluation.calibrated.log_loss
-                            ),
+                            "calibratedBrier": _rounded(final_run.evaluation.calibrated.brier),
+                            "calibratedLogLoss": _rounded(final_run.evaluation.calibrated.log_loss),
                             "rawBrier": _rounded(final_run.evaluation.raw.brier),
                             "rawLogLoss": _rounded(final_run.evaluation.raw.log_loss),
                         }
@@ -527,16 +521,22 @@ def write_production_signal_batch(
         if row["sessionDate"] == session_date and str(row["symbol"]) in symbols
     }
     if set(feature_by_symbol) != set(symbols):
-        raise DatasetUnavailable("DATASET_UNAVAILABLE: current 31-row feature evidence is incomplete")
+        raise DatasetUnavailable(
+            "DATASET_UNAVAILABLE: current 31-row feature evidence is incomplete"
+        )
     matrix = np.asarray(
         [
-            list(zero_fill_features({name: feature_by_symbol[symbol][name] for name in CORE_FEATURE_COLUMNS}).values())
+            list(
+                zero_fill_features(
+                    {name: feature_by_symbol[symbol][name] for name in CORE_FEATURE_COLUMNS}
+                ).values()
+            )
             for symbol in symbols
         ],
         dtype=np.float32,
     )
-    from app.lightgbm.training import calibrated_probabilities, raw_margins
     from app.lightgbm.metrics import tie_aware_argmax
+    from app.lightgbm.training import calibrated_probabilities, raw_margins
 
     _, probabilities = calibrated_probabilities(release.model, release.calibrator, matrix)  # type: ignore[arg-type]
     margins = raw_margins(release.model, matrix)  # type: ignore[arg-type]
@@ -606,11 +606,25 @@ def validate_production_model_release(
         raise LightGbmContractError("release manifest trust anchor mismatch")
     manifest = _parse_canonical_object(manifest_bytes)
     expected_fields = {
-        "releaseVersion", "modelReleaseId", "modelVersion", "modelReportId",
-        "featureManifestSha256", "sourceBundleSetSha256", "sourcePolicySetSha256",
-        "trainingDatasetSha256", "codeHead", "codeTree", "uvLockSha256", "calendarName",
-        "calendarVersion", "temporalQuality", "fixture", "provenanceClass", "status",
-        "files", "semanticSha256",
+        "releaseVersion",
+        "modelReleaseId",
+        "modelVersion",
+        "modelReportId",
+        "featureManifestSha256",
+        "sourceBundleSetSha256",
+        "sourcePolicySetSha256",
+        "trainingDatasetSha256",
+        "codeHead",
+        "codeTree",
+        "uvLockSha256",
+        "calendarName",
+        "calendarVersion",
+        "temporalQuality",
+        "fixture",
+        "provenanceClass",
+        "status",
+        "files",
+        "semanticSha256",
     }
     if set(manifest) != expected_fields:
         raise LightGbmContractError("release manifest field set is not closed")
@@ -625,7 +639,10 @@ def validate_production_model_release(
     ):
         raise LightGbmContractError("release manifest production authority is invalid")
     files_field = manifest["files"]
-    if not isinstance(files_field, dict) or set(files_field) != {*RELEASE_FILES, QUALIFICATION_RECEIPT}:
+    if not isinstance(files_field, dict) or set(files_field) != {
+        *RELEASE_FILES,
+        QUALIFICATION_RECEIPT,
+    }:
         raise LightGbmContractError("release file set is not exact")
     files: dict[str, bytes] = {}
     for name in (*RELEASE_FILES, QUALIFICATION_RECEIPT):
@@ -636,15 +653,26 @@ def validate_production_model_release(
         if name.endswith(".json"):
             _parse_canonical_object(content)
         files[name] = content
-    preimage = {key: value for key, value in manifest.items() if key not in {"modelReleaseId", "semanticSha256"}}
+    preimage = {
+        key: value
+        for key, value in manifest.items()
+        if key not in {"modelReleaseId", "semanticSha256"}
+    }
     semantic = hashlib.sha256(
         b"s5-model-release-v1\x00" + canonical_json_bytes(preimage)
     ).hexdigest()
-    if manifest["semanticSha256"] != semantic or manifest["modelReleaseId"] != f"lgr-{semantic[:12]}":
+    if (
+        manifest["semanticSha256"] != semantic
+        or manifest["modelReleaseId"] != f"lgr-{semantic[:12]}"
+    ):
         raise LightGbmContractError("release content-derived identity mismatch")
     for field in (
-        "featureManifestSha256", "sourceBundleSetSha256", "sourcePolicySetSha256",
-        "trainingDatasetSha256", "uvLockSha256", "semanticSha256",
+        "featureManifestSha256",
+        "sourceBundleSetSha256",
+        "sourcePolicySetSha256",
+        "trainingDatasetSha256",
+        "uvLockSha256",
+        "semanticSha256",
     ):
         _require_sha(str(manifest[field]), field)
     for field in ("codeHead", "codeTree"):
@@ -653,9 +681,7 @@ def validate_production_model_release(
     return ValidatedProductionRelease(manifest, expected_manifest_sha256, files)
 
 
-def validate_qualification_bindings(
-    *, code_head: str, code_tree: str, uv_lock_sha256: str
-) -> None:
+def validate_qualification_bindings(*, code_head: str, code_tree: str, uv_lock_sha256: str) -> None:
     """provider handoff 전에 static code/dependency trust anchors의 형식을 닫는다."""
 
     _require_git_sha(code_head, "code HEAD")
@@ -705,15 +731,15 @@ def load_qualified_production_release(
         best_iteration=best_iteration,
         num_threads=4,
     )
-    calibrator = calibrator_from_mapping(_parse_canonical_object(validated.files["calibrator.json"]))
+    calibrator = calibrator_from_mapping(
+        _parse_canonical_object(validated.files["calibrator.json"])
+    )
     return QualifiedProductionRelease(
         model_release_id=str(manifest["modelReleaseId"]),
         model_version=str(manifest["modelVersion"]),
         model_report_id=str(manifest["modelReportId"]),
         release_manifest_sha256=validated.manifest_sha256,
-        release_manifest_bytes=_read_private(
-            release_root, RELEASE_MANIFEST, SMALL_JSON_MAX_BYTES
-        ),
+        release_manifest_bytes=_read_private(release_root, RELEASE_MANIFEST, SMALL_JSON_MAX_BYTES),
         feature_bundle=bundle,
         model=model,
         calibrator=calibrator,
@@ -732,9 +758,21 @@ def validate_production_signal_batch(
         raise LightGbmContractError("batch manifest trust anchor mismatch")
     manifest = _parse_canonical_object(manifest_bytes)
     expected = {
-        "batchVersion", "batchPurpose", "signalBatchId", "modelReleaseId", "universeReleaseId",
-        "membershipSha256", "sessionDate", "asOf", "timeframe", "rowCount",
-        "membersSha256", "parquetFile", "parquetSha256", "fixture", "provenanceClass",
+        "batchVersion",
+        "batchPurpose",
+        "signalBatchId",
+        "modelReleaseId",
+        "universeReleaseId",
+        "membershipSha256",
+        "sessionDate",
+        "asOf",
+        "timeframe",
+        "rowCount",
+        "membersSha256",
+        "parquetFile",
+        "parquetSha256",
+        "fixture",
+        "provenanceClass",
         "semanticSha256",
     }
     if set(manifest) != expected:
@@ -767,20 +805,28 @@ def validate_production_signal_batch(
     if any(row["asOf"] != as_of_text for row in rows):
         raise LightGbmContractError("batch rows do not bind the manifest")
     membership = [str(row["symbol"]) for row in rows]
-    if manifest["membersSha256"] != hashlib.sha256(
-        canonical_json_bytes(list(rows))
-    ).hexdigest():
+    if manifest["membersSha256"] != hashlib.sha256(canonical_json_bytes(list(rows))).hexdigest():
         raise LightGbmContractError("batch member projection digest mismatch")
     membership_sha = hashlib.sha256(
         b"s5-inference-universe-v1\x00" + canonical_json_bytes(membership)
     ).hexdigest()
-    if manifest["membershipSha256"] != membership_sha or manifest["universeReleaseId"] != f"sur-{membership_sha[:12]}":
+    if (
+        manifest["membershipSha256"] != membership_sha
+        or manifest["universeReleaseId"] != f"sur-{membership_sha[:12]}"
+    ):
         raise LightGbmContractError("batch membership identity mismatch")
-    preimage = {key: value for key, value in manifest.items() if key not in {"signalBatchId", "semanticSha256"}}
+    preimage = {
+        key: value
+        for key, value in manifest.items()
+        if key not in {"signalBatchId", "semanticSha256"}
+    }
     semantic = hashlib.sha256(
         b"s5-signal-batch-v1\x00" + canonical_json_bytes(preimage)
     ).hexdigest()
-    if manifest["semanticSha256"] != semantic or manifest["signalBatchId"] != f"sgb-{semantic[:12]}":
+    if (
+        manifest["semanticSha256"] != semantic
+        or manifest["signalBatchId"] != f"sgb-{semantic[:12]}"
+    ):
         raise LightGbmContractError("batch content-derived identity mismatch")
     return ValidatedSignalBatch(manifest, expected_manifest_sha256, rows)
 
@@ -838,8 +884,14 @@ def _fold_arrays(rows: _TrainingRows, split: object) -> Any:
     calibration = _rows_for_sessions(rows, split.calibration_sessions)  # type: ignore[attr-defined]
     evaluation = _rows_for_sessions(rows, split.evaluation_sessions)  # type: ignore[attr-defined]
     return FoldArrays(
-        fit.features, fit.labels, early.features, early.labels,
-        calibration.features, calibration.labels, evaluation.features, evaluation.labels,
+        fit.features,
+        fit.labels,
+        early.features,
+        early.labels,
+        calibration.features,
+        calibration.labels,
+        evaluation.features,
+        evaluation.labels,
     )
 
 
@@ -850,10 +902,13 @@ def _final_arrays(rows: _TrainingRows, split: object) -> Any:
     early = _rows_for_sessions(rows, split.early_sessions)  # type: ignore[attr-defined]
     calibration = _rows_for_sessions(rows, split.calibration_sessions)  # type: ignore[attr-defined]
     return FinalFitArrays(
-        fit.features, fit.labels, early.features, early.labels,
-        calibration.features, calibration.labels,
+        fit.features,
+        fit.labels,
+        early.features,
+        early.labels,
+        calibration.features,
+        calibration.labels,
     )
-
 
 
 QUALIFICATION_DIAGNOSTIC_VERSION = "s5-qualification-diagnostic-v1"
@@ -889,9 +944,7 @@ def _record_qualification_diagnostic(
             for key, value in fold.items():
                 if key == "macro" and isinstance(value, Mapping):
                     for macro_key, macro_value in value.items():
-                        measured[f"macro{macro_key[:1].upper()}{macro_key[1:]}"] = (
-                            macro_value
-                        )
+                        measured[f"macro{macro_key[:1].upper()}{macro_key[1:]}"] = macro_value
                     continue
                 measured[key] = value
             record_report(
@@ -957,11 +1010,7 @@ def _has_corporate_action(row: ProductionPriceEvidence) -> bool:
     모든 행이 N이므로 corporate action 판정에 쓰면 아무 것도 걸러내지 못하거나 전부 걸러낸다.
     """
 
-    return (
-        row.flng_cls_code not in {"", "00"}
-        or row.prtt_rate != 0
-        or bool(row.revl_issu_reas)
-    )
+    return row.flng_cls_code not in {"", "00"} or row.prtt_rate != 0 or bool(row.revl_issu_reas)
 
 
 def _intersect_rows(
@@ -1102,9 +1151,7 @@ def _parse_canonical_object(content: bytes) -> dict[str, object]:
     return value
 
 
-def _validate_release_semantics(
-    manifest: Mapping[str, object], files: Mapping[str, bytes]
-) -> None:
+def _validate_release_semantics(manifest: Mapping[str, object], files: Mapping[str, bytes]) -> None:
     try:
         model_text = files["model.txt"].decode("utf-8")
     except UnicodeDecodeError as error:
@@ -1129,15 +1176,28 @@ def _validate_release_semantics(
     report_without_id = dict(report)
     model_report_id = report_without_id.pop("modelReportId", None)
     report_semantic = hashlib.sha256(canonical_json_bytes(report_without_id)).hexdigest()
-    if model_report_id != f"mrp-{report_semantic[:12]}" or manifest["modelReportId"] != model_report_id:
+    if (
+        model_report_id != f"mrp-{report_semantic[:12]}"
+        or manifest["modelReportId"] != model_report_id
+    ):
         raise LightGbmContractError("production modelReportId does not bind report semantics")
     qualification = _parse_canonical_object(files[QUALIFICATION_RECEIPT])
     expected_qualification = {
-        "qualificationVersion", "featureManifestSha256", "trainingDatasetSha256",
-        "finalTestAccessCount", "selectedGridIndex", "modelSha256", "calibratorSha256",
-        "reportSha256", "gainImportanceSha256", "contributionReportSha256",
+        "qualificationVersion",
+        "featureManifestSha256",
+        "trainingDatasetSha256",
+        "finalTestAccessCount",
+        "selectedGridIndex",
+        "modelSha256",
+        "calibratorSha256",
+        "reportSha256",
+        "gainImportanceSha256",
+        "contributionReportSha256",
     }
-    if set(qualification) != expected_qualification or qualification["qualificationVersion"] != "s5-production-qualification-receipt-v1":
+    if (
+        set(qualification) != expected_qualification
+        or qualification["qualificationVersion"] != "s5-production-qualification-receipt-v1"
+    ):
         raise LightGbmContractError("production qualification receipt is invalid")
     bindings = {
         "featureManifestSha256": manifest["featureManifestSha256"],
@@ -1222,9 +1282,7 @@ def _validate_qualification_report(report: Mapping[str, object], model_text: str
                 raise LightGbmContractError("production sensitivity fold order is invalid")
             row_count = _positive_int(fold["rowCount"], "sensitivity rowCount")
             macro_count = _positive_int(fold["macroRowCount"], "sensitivity macroRowCount")
-            event_count = _positive_int(
-                fold["eventFreeRowCount"], "sensitivity eventFreeRowCount"
-            )
+            event_count = _positive_int(fold["eventFreeRowCount"], "sensitivity eventFreeRowCount")
             if macro_count > row_count or macro_count < math.ceil(row_count * 0.98):
                 raise LightGbmContractError("production macro sensitivity coverage is invalid")
             if event_count > row_count:
@@ -1271,9 +1329,7 @@ def _validate_qualification_report(report: Mapping[str, object], model_text: str
                 "primary evaluation fold",
             )
             raw_metrics = _validate_metrics(fold["raw"], "primary raw metrics")
-            calibrated_metrics = _validate_metrics(
-                fold["calibrated"], "primary calibrated metrics"
-            )
+            calibrated_metrics = _validate_metrics(fold["calibrated"], "primary calibrated metrics")
             expected_pass = (
                 calibrated_metrics["ece"] <= 0.05
                 and calibrated_metrics["brier"] <= raw_metrics["brier"] + 0.005
@@ -1298,9 +1354,7 @@ def _validate_qualification_report(report: Mapping[str, object], model_text: str
     selected_primary_folds = selected_primary["folds"]
     assert isinstance(selected_primary_folds, list)
     if any(
-        fold.get("passed") is not True
-        for fold in selected_primary_folds
-        if isinstance(fold, dict)
+        fold.get("passed") is not True for fold in selected_primary_folds if isinstance(fold, dict)
     ):
         raise LightGbmContractError("production selected candidate primary folds did not pass")
     if not selection_keys or min(selection_keys)[3] != grid_index:
@@ -1329,12 +1383,10 @@ def _validate_qualification_report(report: Mapping[str, object], model_text: str
 
 
 def _validate_gain_report(value: Mapping[str, object]) -> None:
-    report = _mapping_with_keys(
-        value, {"reportVersion", "featureNames", "gain"}, "gain importance"
-    )
-    if report["reportVersion"] != "s5-gain-importance-v1" or report[
-        "featureNames"
-    ] != list(CORE_FEATURE_COLUMNS):
+    report = _mapping_with_keys(value, {"reportVersion", "featureNames", "gain"}, "gain importance")
+    if report["reportVersion"] != "s5-gain-importance-v1" or report["featureNames"] != list(
+        CORE_FEATURE_COLUMNS
+    ):
         raise LightGbmContractError("production gain importance contract is invalid")
     gain = _mapping_with_keys(report["gain"], set(CORE_FEATURE_COLUMNS), "gain map")
     if any(_finite_number(gain[name], f"gain {name}") < 0 for name in CORE_FEATURE_COLUMNS):
@@ -1375,9 +1427,11 @@ def _validate_contribution_report(value: Mapping[str, object]) -> None:
                 "contribution class",
             )
             contributions = item["contributions"]
-            if item["classIndex"] != class_index or not isinstance(contributions, list) or len(
-                contributions
-            ) != len(CORE_FEATURE_COLUMNS):
+            if (
+                item["classIndex"] != class_index
+                or not isinstance(contributions, list)
+                or len(contributions) != len(CORE_FEATURE_COLUMNS)
+            ):
                 raise LightGbmContractError("production contribution class contract is invalid")
             bias = _finite_number(item["bias"], "contribution bias")
             margin = _finite_number(item["rawMargin"], "contribution raw margin")
@@ -1420,7 +1474,9 @@ def _validate_cost_report(value: object) -> None:
         include_probabilities=False,
         name="cost report",
     )
-    _validate_baseline_metrics(report["alwaysHold"], include_probabilities=False, name="always HOLD")
+    _validate_baseline_metrics(
+        report["alwaysHold"], include_probabilities=False, name="always HOLD"
+    )
     _validate_baseline_metrics(
         report["trainOnlyPrior"], include_probabilities=True, name="train-only prior"
     )
@@ -1449,11 +1505,15 @@ def _validate_baseline_metrics(value: object, *, include_probabilities: bool, na
     for field in ("logLoss", "brier", "ece", "macroF1"):
         _finite_number(report[field], f"{name} {field}")
     matrix = report["confusionMatrix"]
-    if not isinstance(matrix, list) or len(matrix) != 3 or any(
-        not isinstance(row, list)
-        or len(row) != 3
-        or any(not isinstance(item, int) or isinstance(item, bool) or item < 0 for item in row)
-        for row in matrix
+    if (
+        not isinstance(matrix, list)
+        or len(matrix) != 3
+        or any(
+            not isinstance(row, list)
+            or len(row) != 3
+            or any(not isinstance(item, int) or isinstance(item, bool) or item < 0 for item in row)
+            for row in matrix
+        )
     ):
         raise LightGbmContractError(f"{name} confusion matrix is invalid")
     if include_probabilities:
@@ -1573,9 +1633,7 @@ def _write_qualification_seal(
     )
 
 
-def _read_qualification_seal(
-    *, parent: Path, qualification_key: str
-) -> Mapping[str, bytes] | None:
+def _read_qualification_seal(*, parent: Path, qualification_key: str) -> Mapping[str, bytes] | None:
     path = parent / f"qualification-{qualification_key}.bin"
     try:
         metadata = path.lstat()

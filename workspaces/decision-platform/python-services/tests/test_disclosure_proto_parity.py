@@ -21,8 +21,10 @@ def test_python_descriptor_matches_tracked_proto_descriptor_and_hash() -> None:
     root = _repo_root()
     descriptor_path = root / "contracts/proto/disclosure_observation.descriptor.pb"
     expected_hash = (
-        root / "contracts/proto/disclosure_observation.descriptor.sha256"
-    ).read_text(encoding="ascii").strip()
+        (root / "contracts/proto/disclosure_observation.descriptor.sha256")
+        .read_text(encoding="ascii")
+        .strip()
+    )
     descriptor_bytes = descriptor_path.read_bytes()
     descriptor_set = descriptor_pb2.FileDescriptorSet.FromString(descriptor_bytes)
 

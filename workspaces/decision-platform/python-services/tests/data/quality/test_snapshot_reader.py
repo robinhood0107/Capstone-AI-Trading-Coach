@@ -1,7 +1,7 @@
-from datetime import UTC, date, datetime
 import hashlib
 import json
 import os
+from datetime import UTC, date, datetime
 from pathlib import Path
 from threading import Event, Thread
 
@@ -16,7 +16,6 @@ from app.data.quality.kis_daily import (
     load_quality_snapshot,
 )
 from tests.data.quality.helpers import prepare_snapshot
-
 
 EVALUATED_AT = datetime(2026, 7, 21, 7, tzinfo=UTC)
 
@@ -103,16 +102,16 @@ def test_reader_rejects_non_regular_or_linked_manifest(
 
 def test_reader_enforces_lower_only_file_row_and_byte_caps(posix_tmp_path: Path) -> None:
     identifiers = prepare_snapshot(posix_tmp_path)
-    common = dict(
-        root=posix_tmp_path,
-        universe_identifier=identifiers.universe,
-        dataset_identifier=identifiers.dataset,
-        collection_identifier=identifiers.collection,
-        window_start=date(2026, 7, 21),
-        window_end=date(2026, 7, 21),
-        evaluated_at=EVALUATED_AT,
-        software_revision="7131f695293472ea16ee05322ed9b05f7b69d129",
-    )
+    common = {
+        "root": posix_tmp_path,
+        "universe_identifier": identifiers.universe,
+        "dataset_identifier": identifiers.dataset,
+        "collection_identifier": identifiers.collection,
+        "window_start": date(2026, 7, 21),
+        "window_end": date(2026, 7, 21),
+        "evaluated_at": EVALUATED_AT,
+        "software_revision": "7131f695293472ea16ee05322ed9b05f7b69d129",
+    }
 
     with pytest.raises(KISQualityInputError, match="byte limit"):
         load_quality_snapshot(**common, limits=QualityReadLimits(max_file_bytes=64))

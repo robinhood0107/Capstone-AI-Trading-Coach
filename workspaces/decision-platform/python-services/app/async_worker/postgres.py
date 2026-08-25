@@ -30,7 +30,14 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
                 with connection.cursor() as cursor:
                     cursor.execute(
                         "SELECT claim_token FROM claim_async_job_by_event(%s,%s,%s,%s,%s,%s)",
-                        (worker_name, work.event_id, work.event_type, work.job_id, work.payload_hash, work.partition_key),
+                        (
+                            worker_name,
+                            work.event_id,
+                            work.event_type,
+                            work.job_id,
+                            work.payload_hash,
+                            work.partition_key,
+                        ),
                     )
                     row = cursor.fetchone()
                     return None if row is None else str(row[0])
@@ -174,7 +181,11 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
                     quarantined = row is not None and bool(row[0])
             if quarantined:
                 return True
-            if work.transport != "KAFKA" or work.source_partition is None or work.source_offset is None:
+            if (
+                work.transport != "KAFKA"
+                or work.source_partition is None
+                or work.source_offset is None
+            ):
                 return False
             return self.record_poison(
                 event_id=work.event_id,
@@ -206,7 +217,9 @@ class PostgresAsyncWorkRepository(AsyncWorkRepository):
         return connection
 
     def _partition_key(self, job_id: str) -> str:
-        digest = hmac.new(self._partition_hmac_key, f"s7:completion:{job_id}".encode(), hashlib.sha256)
+        digest = hmac.new(
+            self._partition_hmac_key, f"s7:completion:{job_id}".encode(), hashlib.sha256
+        )
         return "hmac-sha256:" + digest.hexdigest()
 
     def _poison_fields(self, work: AsyncWork, code: str) -> tuple[str, str]:

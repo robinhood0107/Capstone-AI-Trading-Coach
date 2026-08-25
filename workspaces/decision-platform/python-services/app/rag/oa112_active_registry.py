@@ -7,10 +7,10 @@ import os
 import re
 import stat
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Mapping
 from urllib.parse import urlsplit
 
 from app.rag.authorized_retrieval import ALLOWED_RAG_TOPICS
@@ -243,18 +243,14 @@ def _validate_registry(payload: Mapping[str, object]) -> Oa112ActiveRegistry:
     ):
         raise Oa112ActiveRegistryError("OA112_REGISTRY_INVALID")
 
-    active_entries = tuple(
-        _parse_entry(value, active=True)
-        for value in active_raw
-    )
-    reserve_entries = tuple(
-        _parse_entry(value, active=False)
-        for value in reserve_raw
-    )
+    active_entries = tuple(_parse_entry(value, active=True) for value in active_raw)
+    reserve_entries = tuple(_parse_entry(value, active=False) for value in reserve_raw)
     _validate_active_distribution(active_entries)
     _validate_unique_identities(active_entries, reserve_entries)
     if tuple(entry.source_id for entry in reserve_entries) != tuple(
-        sorted((entry.source_id for entry in reserve_entries), key=lambda value: value.encode("utf-8"))
+        sorted(
+            (entry.source_id for entry in reserve_entries), key=lambda value: value.encode("utf-8")
+        )
     ):
         raise Oa112ActiveRegistryError("OA112_REGISTRY_ORDER_INVALID")
     return Oa112ActiveRegistry(
@@ -356,11 +352,7 @@ def _parse_source_card(value: object, *, active: bool) -> dict[str, object]:
 
 
 def _validate_active_distribution(entries: tuple[Oa112RegistryEntry, ...]) -> None:
-    expected_tracks = tuple(
-        track_id
-        for track_id in OA_TRACK_IDS
-        for _ in range(8)
-    )
+    expected_tracks = tuple(track_id for track_id in OA_TRACK_IDS for _ in range(8))
     if tuple(entry.track_id for entry in entries) != expected_tracks:
         raise Oa112ActiveRegistryError("OA112_REGISTRY_TRACK_DISTRIBUTION")
     for track_id in OA_TRACK_IDS:
@@ -390,7 +382,7 @@ def _validate_unique_identities(
 
 
 def _document_id(*, source_id: str, source_revision_id: str) -> str:
-    identity = hashlib.sha256(f"oa112\0{source_id}\0{source_revision_id}".encode("utf-8")).hexdigest()
+    identity = hashlib.sha256(f"oa112\0{source_id}\0{source_revision_id}".encode()).hexdigest()
     return f"doc_oa_{identity[:32]}"
 
 
@@ -424,7 +416,10 @@ def _retrieval_topics(value: object) -> tuple[str, ...]:
 def _validate_public_https_url(value: str) -> None:
     if (
         not value
-        or any(character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F for character in value)
+        or any(
+            character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F
+            for character in value
+        )
         or "\\" in value
     ):
         raise Oa112ActiveRegistryError("OA112_REGISTRY_INVALID")

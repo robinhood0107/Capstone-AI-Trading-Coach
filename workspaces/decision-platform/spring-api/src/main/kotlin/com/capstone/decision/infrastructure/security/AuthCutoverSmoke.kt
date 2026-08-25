@@ -330,9 +330,11 @@ object AuthCutoverSmoke {
             } catch (exception: FileAlreadyExistsException) {
                 throw AuthCutoverException("evidence_exists", exception)
             }
+        } catch (exception: AuthCutoverException) {
+            runCatching { Files.deleteIfExists(temporary) }
+            throw exception
         } catch (exception: Exception) {
             runCatching { Files.deleteIfExists(temporary) }
-            if (exception is AuthCutoverException) throw exception
             throw AuthCutoverException("evidence_write", exception)
         }
     }

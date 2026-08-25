@@ -90,7 +90,11 @@ def test_subprocess_backend_maps_strict_json_to_document_ocr_blocks(
         {"blocks": []},
         {"blocks": [{"blockType": "UNKNOWN", "confidence": 1, "text": "x"}]},
         {"blocks": [{"blockType": "PARAGRAPH", "confidence": 2, "text": "x"}]},
-        {"blocks": [{"blockType": "PARAGRAPH", "confidence": 1, "text": "x", "path": "C:/private"}]},
+        {
+            "blocks": [
+                {"blockType": "PARAGRAPH", "confidence": 1, "text": "x", "path": "C:/private"}
+            ]
+        },
     ],
 )
 def test_subprocess_backend_rejects_empty_unknown_unbounded_or_path_bearing_output(

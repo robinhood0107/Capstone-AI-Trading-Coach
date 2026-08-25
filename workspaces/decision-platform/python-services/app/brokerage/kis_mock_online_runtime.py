@@ -13,12 +13,12 @@ from app.brokerage.kis_mock_online_client import (
     BALANCE_PATH,
     BUYABLE_PATH,
     EXECUTIONS_PATH,
-    KISMockBrokerageHttpClient,
-    KISMockFailureReason,
     MOCK_BALANCE_TR_ID,
     MOCK_BUYABLE_TR_ID,
     MOCK_EXECUTIONS_ARCHIVE_TR_ID,
     MOCK_EXECUTIONS_RECENT_TR_ID,
+    KISMockBrokerageHttpClient,
+    KISMockFailureReason,
 )
 from app.brokerage.mock_order_reference_store import MockProviderOrderReference
 from app.generated import brokerage_pb2
@@ -251,11 +251,7 @@ class KISMockExecutionReader:
             recent=recent,
         )
         rows = _execution_source_probe_rows(payload)
-        matches = [
-            row
-            for row in rows
-            if _execution_order_no(row) == reference.provider_order_no
-        ]
+        matches = [row for row in rows if _execution_order_no(row) == reference.provider_order_no]
         if len(matches) > 1:
             raise ValueError("KIS mock execution order match is not unique")
         if not matches:
@@ -290,9 +286,7 @@ class KISMockExecutionReader:
             )
             rows = _execution_source_probe_rows(payload)
             matches = [
-                row
-                for row in rows
-                if _execution_order_no(row) == reference.provider_order_no
+                row for row in rows if _execution_order_no(row) == reference.provider_order_no
             ]
             if len(matches) > 1:
                 raise ValueError("KIS mock execution order match is not unique")
@@ -370,11 +364,7 @@ class KISMockExecutionReader:
     ) -> dict[str, Any]:
         if start > end or (end - start).days > 31:
             raise ValueError("KIS mock execution window is invalid")
-        tr_id = (
-            MOCK_EXECUTIONS_RECENT_TR_ID
-            if recent
-            else MOCK_EXECUTIONS_ARCHIVE_TR_ID
-        )
+        tr_id = MOCK_EXECUTIONS_RECENT_TR_ID if recent else MOCK_EXECUTIONS_ARCHIVE_TR_ID
         payload = self._client.request(
             "GET",
             EXECUTIONS_PATH,
@@ -464,11 +454,7 @@ def _execution_snapshot_from_rows(
     rows: list[dict[str, Any]],
     reference: MockProviderOrderReference,
 ) -> MockExecutionSnapshot:
-    matches = [
-        row
-        for row in rows
-        if _execution_order_no(row) == reference.provider_order_no
-    ]
+    matches = [row for row in rows if _execution_order_no(row) == reference.provider_order_no]
     if len(matches) != 1:
         raise ValueError("KIS mock execution order match is not unique")
     row = matches[0]
@@ -495,10 +481,14 @@ def _execution_snapshot_from_rows(
         or _TIME.fullmatch(order_time) is None
     ):
         raise ValueError("KIS mock execution timestamp is invalid")
-    observed_at = datetime.strptime(
-        f"{order_date}{order_time}",
-        "%Y%m%d%H%M%S",
-    ).replace(tzinfo=__import__("zoneinfo").ZoneInfo("Asia/Seoul")).astimezone(UTC)
+    observed_at = (
+        datetime.strptime(
+            f"{order_date}{order_time}",
+            "%Y%m%d%H%M%S",
+        )
+        .replace(tzinfo=__import__("zoneinfo").ZoneInfo("Asia/Seoul"))
+        .astimezone(UTC)
+    )
     cancelled_quantity = _nonnegative(
         row.get("cnc_cfrm_qty"),
         "cancelled quantity",

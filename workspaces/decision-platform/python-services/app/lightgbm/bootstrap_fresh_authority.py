@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -55,9 +55,7 @@ def publish_fresh_bootstrap_authority(
         selected = None
     if selected is not None:
         if selected.packet.sha256 != packet.sha256:
-            raise LightGbmContractError(
-                "fresh bootstrap authority already selected another packet"
-            )
+            raise LightGbmContractError("fresh bootstrap authority already selected another packet")
         return selected
 
     entries = os.listdir(approved_root)
@@ -67,9 +65,7 @@ def publish_fresh_bootstrap_authority(
     other_packets = sorted(
         name
         for name in entries
-        if name.startswith("bootstrap-")
-        and name.endswith(".json")
-        and name != packet_filename
+        if name.startswith("bootstrap-") and name.endswith(".json") and name != packet_filename
     )
     if other_packets:
         raise LightGbmContractError("fresh bootstrap root contains another packet")
@@ -175,9 +171,7 @@ def validate_fresh_bootstrap_execution_authority(
     _require_fresh_packet(packet)
     selected = read_fresh_bootstrap_authority(approved_root=approved_root)
     if selected.packet.sha256 != packet.sha256 or selected.packet.content != packet.content:
-        raise LightGbmContractError(
-            "fresh bootstrap packet does not match selected authority"
-        )
+        raise LightGbmContractError("fresh bootstrap packet does not match selected authority")
     return selected
 
 

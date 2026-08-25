@@ -12,7 +12,7 @@ from app.financial_engineering.manual_batch import BatchPublication, ManualFinan
 
 class _WorstCaseFixtureReader:
     def current_symbols(self) -> tuple[str, ...]:
-        return tuple(f"{index:06d}" for index in range(1, 31)) + ("132030",)
+        return (*tuple(f"{index:06d}" for index in range(1, 31)), "132030")
 
     def read_closes(self, symbol: str, *, limit: int = 253) -> tuple[CloseObservation, ...]:
         return tuple(
@@ -56,7 +56,10 @@ def main() -> int:
         "wallTimeSeconds": round(elapsed, 6),
         "peakResidentBytes": int(peak_kib * 1024),
         "maxSnapshotBytes": max(
-            (len(json.dumps(item.snapshot, separators=(",", ":")).encode()) for item in publisher.publications),
+            (
+                len(json.dumps(item.snapshot, separators=(",", ":")).encode())
+                for item in publisher.publications
+            ),
             default=0,
         ),
         "maxReportBytes": max(

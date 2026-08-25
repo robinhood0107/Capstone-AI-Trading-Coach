@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping
 import threading
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,7 +34,6 @@ from app.rag.rag_v2_external_exact30_voyage_runner import (
     VoyagePreChunkedDocumentGroup,
     validate_voyage_document_vectors,
 )
-from app.rag.rag_v2_voyage_types import PublicVoyageSourceMetadata
 from app.rag.rag_v2_oa112_bge_runner import (
     oa112_public_document_request,
     validate_oa112_active_entries,
@@ -44,6 +43,7 @@ from app.rag.rag_v2_voyage_checkpoint import (
     load_optional_public_voyage_checkpoint,
     write_public_voyage_checkpoint,
 )
+from app.rag.rag_v2_voyage_types import PublicVoyageSourceMetadata
 
 _VOYAGE_PROFILE_ID = "voyage_context_4_1024_v1"
 _COMPONENT_SCOPE: Literal["OA112"] = "OA112"
@@ -141,7 +141,9 @@ def prepare_oa112_public_voyage_component(
     any later source can be handed to a provider transport; this function performs neither embedding nor staging.
     """
 
-    entries = tuple(sorted(registry.active_entries, key=lambda entry: entry.source_id.encode("utf-8")))
+    entries = tuple(
+        sorted(registry.active_entries, key=lambda entry: entry.source_id.encode("utf-8"))
+    )
     validate_oa112_active_entries(entries)
     if not local_cache_root.is_absolute() or not _is_sha256(registry.registry_digest):
         raise RagV2Oa112VoyageRunnerError("OA112_VOYAGE_PREPARATION_CONTEXT")
@@ -220,12 +222,18 @@ def prepare_oa112_public_voyage_component(
     if worker_count == 1:
         selected = tuple(prepare_entry(entry) for entry in entries)
     else:
-        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="oa112-voyage-ir") as executor:
+        with ThreadPoolExecutor(
+            max_workers=worker_count, thread_name_prefix="oa112-voyage-ir"
+        ) as executor:
             selected = tuple(executor.map(prepare_entry, entries))
     if (
         len(selected) != 112
         or tuple(item.group.source_id for item in selected)
-        != tuple(sorted((item.group.source_id for item in selected), key=lambda value: value.encode("utf-8")))
+        != tuple(
+            sorted(
+                (item.group.source_id for item in selected), key=lambda value: value.encode("utf-8")
+            )
+        )
         or len({item.group.source_revision_id for item in selected}) != 112
     ):
         raise RagV2Oa112VoyageRunnerError("OA112_VOYAGE_PREPARATION_CONTEXT")
@@ -302,7 +310,9 @@ def materialize_prepared_oa112_public_voyage_component(
             )
         )
         cursor += count
-    if cursor != len(validated_vectors):  # pragma: no cover - expected row invariant above closes this path.
+    if cursor != len(
+        validated_vectors
+    ):  # pragma: no cover - expected row invariant above closes this path.
         raise RagV2Oa112VoyageRunnerError("OA112_VOYAGE_COMPONENT_EMBEDDING")
     context = build_oa112_public_voyage_component_context(
         records=tuple(records),
@@ -373,9 +383,12 @@ def build_oa112_public_voyage_component_context(
         }
     )
     component_generation_id = f"rgr_{generation_hash[:32]}"
-    materialization_run_id = "rgr_run_" + hashlib.sha256(
-        f"rag-v2-oa112-voyage-run|{component_generation_id}|{manifest_hash}".encode("utf-8")
-    ).hexdigest()[:32]
+    materialization_run_id = (
+        "rgr_run_"
+        + hashlib.sha256(
+            f"rag-v2-oa112-voyage-run|{component_generation_id}|{manifest_hash}".encode()
+        ).hexdigest()[:32]
+    )
     return RagV2Oa112VoyageComponentContext(
         component_scope="OA112",
         component_generation_id=component_generation_id,
@@ -448,7 +461,8 @@ def oa112_voyage_source_member_digest(record: RagV2VoyageMaterializedPublicDocum
             "accessEvidenceSha256": metadata.access_evidence_sha256,
             "canonicalTextSha256": hashlib.sha256(
                 "\n\n".join(
-                    chunk.canonical_text for chunk in sorted(document.chunks, key=lambda value: value.sequence)
+                    chunk.canonical_text
+                    for chunk in sorted(document.chunks, key=lambda value: value.sequence)
                 ).encode("utf-8")
             ).hexdigest(),
             "chunks": chunks,
@@ -524,8 +538,12 @@ def _required_context_hash(value: RagEmbeddingInput) -> str:
 
 
 def _copy_document_ir(value: dict[str, object]) -> dict[str, object]:
-    copied = json.loads(json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
-    if not isinstance(copied, dict):  # pragma: no cover - dataclass/static source card contracts keep a dict.
+    copied = json.loads(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    )
+    if not isinstance(
+        copied, dict
+    ):  # pragma: no cover - dataclass/static source card contracts keep a dict.
         raise RagV2Oa112VoyageRunnerError("OA112_VOYAGE_COMPONENT_CONTEXT")
     return copied
 

@@ -334,7 +334,6 @@ class MetricSnapshotAssembler(
                 minimum = BigDecimal.ZERO,
             )
 
-        val instrument = (instrumentCell as? MetricCell.Available)?.value
         metrics[MetricKey.ETF_ETN_RISK_SCORE] = instrumentRiskMetric(instrumentCell)
         val disclosure = (disclosureCell as? MetricCell.Available)?.value
         metrics[MetricKey.DISCLOSURE_RISK_SCORE] = disclosureMetric(disclosureCell)

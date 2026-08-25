@@ -32,9 +32,9 @@ class PrincipleContractMigrationIntegrationTest(
     @Autowired private val principleRuleJsonCodec: PrincipleRuleJsonCodec,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean V1 through V85 migration preserves the exact Principle schema and seed`() {
+    fun `clean V1 through V87 migration preserves the exact Principle schema and seed`() {
         assertEquals(
-            (1..85).map(Int::toString),
+            (1..87).map(Int::toString),
             jdbcTemplate.query(
                 "select version from flyway_schema_history where success order by installed_rank",
             ) { result, _ -> result.getString(1) },
@@ -293,7 +293,7 @@ class PrincipleContractMigrationIntegrationTest(
         assertFalse(tablePrivilege("principle_versions", "INSERT"))
         assertFalse(tablePrivilege("principle_versions", "UPDATE"))
         assertFalse(tablePrivilege("principle_versions", "DELETE"))
-        assertTrue(tablePrivilege("audit_logs", "INSERT"))
+        assertFalse(tablePrivilege("audit_logs", "INSERT"))
         assertFalse(tablePrivilege("audit_logs", "SELECT"))
         assertFalse(tablePrivilege("audit_logs", "UPDATE"))
         assertFalse(tablePrivilege("audit_logs", "DELETE"))
@@ -301,14 +301,13 @@ class PrincipleContractMigrationIntegrationTest(
         assertFalse(schemaPrivilege("public", "CREATE"))
         listOf(
             "insert_principle_authorized(text,text,text,text,text,text,text,integer,timestamp with time zone,timestamp with time zone)",
-            "insert_principle_version_authorized(text,text,text,text,integer,text,text,text,text,jsonb,text[],timestamp with time zone)",
-            "insert_principle_audit_authorized(text,text,text,text,text,integer,text[],timestamp with time zone)",
+            "insert_principle_version_authorized_v2(text,text,text,text,integer,text,text,text,text,text,text,timestamp with time zone)",
+            "insert_principle_audit_authorized_v2(text,text,text,text,text,integer,text,timestamp with time zone)",
             "read_owned_principle_authorized(text,text,text)",
             "list_owned_principles_authorized(text,text,integer,text,timestamp with time zone,text)",
             "update_owned_principle_authorized(text,text,text,integer,text,text,text,timestamp with time zone)",
             "list_owned_principle_versions_authorized(text,text,text,integer,text,integer)",
             "read_active_owned_principle_snapshot_authorized(text,text,text)",
-            "lock_active_owned_principle_authorized(text,text,text,integer,text,text)",
         ).forEach { function ->
             assertTrue(functionPrivilege(function), "decision_app must execute $function")
         }
@@ -563,7 +562,7 @@ class PrincipleContractMigrationIntegrationTest(
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision")
                 .withUsername("decision")
                 .withPassword("decision")

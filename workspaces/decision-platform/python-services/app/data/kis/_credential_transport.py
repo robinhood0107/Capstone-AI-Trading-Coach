@@ -16,13 +16,13 @@ import redis
 from pydantic import Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.data.kis.rate_limiter import RateLimiter
 from app.data.kis.accounting import (
     CollectionRunRecorder,
     FailureCode,
     KISCallBudgetExceeded,
     PhysicalChannel,
 )
+from app.data.kis.rate_limiter import RateLimiter
 from app.data.kis.settings import KISMode, KISSettings
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
@@ -470,18 +470,24 @@ def _read_limited(response: httpx.Response, limit: int) -> bytes:
     return b"".join(chunks)
 
 
-def _drop_authentication_fields(content: bytes, *, candidates: set[str], max_json_depth: int) -> bytes:
+def _drop_authentication_fields(
+    content: bytes, *, candidates: set[str], max_json_depth: int
+) -> bytes:
     try:
         payload = json.loads(content)
     except (UnicodeDecodeError, json.JSONDecodeError):
         return content
     except RecursionError:
         raise KISResponseTooLargeError("KIS response structure exceeded the safety limit") from None
-    sanitized = _sanitize_json_value(payload, candidates=candidates, depth=0, max_depth=max_json_depth)
+    sanitized = _sanitize_json_value(
+        payload, candidates=candidates, depth=0, max_depth=max_json_depth
+    )
     return json.dumps(sanitized, ensure_ascii=False, separators=(",", ":")).encode()
 
 
-def _sanitize_json_value(value: object, *, candidates: set[str], depth: int, max_depth: int) -> object:
+def _sanitize_json_value(
+    value: object, *, candidates: set[str], depth: int, max_depth: int
+) -> object:
     if depth > max_depth:
         raise KISResponseTooLargeError("KIS response structure exceeded the safety limit")
     if isinstance(value, dict):
@@ -500,13 +506,17 @@ def _sanitize_json_value(value: object, *, candidates: set[str], depth: int, max
             _sanitize_json_value(child, candidates=candidates, depth=depth + 1, max_depth=max_depth)
             for child in value
         ]
-    if isinstance(value, str):
-        if _contains_authentication_marker(value) or any(candidate in value for candidate in candidates):
-            return "[redacted]"
+    if isinstance(value, str) and (
+        _contains_authentication_marker(value)
+        or any(candidate in value for candidate in candidates)
+    ):
+        return "[redacted]"
     return value
 
 
-def _sanitize_token_payload(value: dict[object, object], candidates: tuple[str, ...]) -> dict[str, object]:
+def _sanitize_token_payload(
+    value: dict[object, object], candidates: tuple[str, ...]
+) -> dict[str, object]:
     """OAuth 응답은 token/만료 필드만 허용해 provider debug·echo가 상위 client로 전파되지 않게 한다."""
     encoded_candidates = _encoded_candidates(candidates)
     token = value.get("access_token")
@@ -551,12 +561,18 @@ def _encoded_candidates(candidates: tuple[str, ...]) -> set[str]:
 
 def _is_authentication_field(name: str) -> bool:
     normalized = _normalized(name)
-    return any(marker in normalized for marker in ("appkey", "appsecret", "token", "authorization", "credential"))
+    return any(
+        marker in normalized
+        for marker in ("appkey", "appsecret", "token", "authorization", "credential")
+    )
 
 
 def _contains_authentication_marker(value: str) -> bool:
     lowered = value.lower()
-    return any(marker in lowered for marker in ("appkey", "appsecret", "token", "authorization", "credential"))
+    return any(
+        marker in lowered
+        for marker in ("appkey", "appsecret", "token", "authorization", "credential")
+    )
 
 
 def _normalized(value: str) -> str:

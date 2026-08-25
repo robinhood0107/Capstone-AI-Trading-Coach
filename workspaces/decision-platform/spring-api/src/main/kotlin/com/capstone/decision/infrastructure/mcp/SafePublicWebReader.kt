@@ -1,7 +1,5 @@
 package com.capstone.decision.infrastructure.mcp
 
-import org.apache.pdfbox.Loader
-import org.apache.pdfbox.text.PDFTextStripper
 import org.jsoup.Jsoup
 import org.springframework.stereotype.Component
 import java.io.ByteArrayInputStream
@@ -9,6 +7,9 @@ import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.URI
+import java.time.Duration
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 data class BoundedWebDocument(
     val canonicalUrl: String,
@@ -29,12 +30,13 @@ class SafePublicWebReader(
     private val transport: PublicHttpsTransport = PinnedPublicHttpsTransport(),
 ) : PublicWebReaderPort {
     override fun read(rawUrl: String): BoundedWebDocument {
+        val deadlineNanos = Math.addExact(System.nanoTime(), READ_DEADLINE.toNanos())
         var uri = validateUri(rawUrl)
         repeat(MAX_REDIRECTS + 1) { redirectCount ->
-            val addresses = resolvePublic(uri.host)
+            val addresses = resolvePublic(uri.host, deadlineNanos)
             val response =
                 try {
-                    transport.get(uri, addresses.first(), MAX_BODY_BYTES)
+                    transport.get(uri, addresses.first(), MAX_BODY_BYTES, deadlineNanos)
                 } catch (error: S49WebReadRejectedException) {
                     throw error
                 } catch (_: Exception) {
@@ -43,7 +45,7 @@ class SafePublicWebReader(
             val body = response.body
             try {
                 ensure(body.size in 1..MAX_BODY_BYTES, "S4_9_WEB_READ_BODY_SIZE_REJECTED")
-                ensure(resolvePublic(uri.host).toSet() == addresses.toSet(), "S4_9_WEB_READ_DNS_DRIFT_REJECTED")
+                ensure(resolvePublic(uri.host, deadlineNanos).toSet() == addresses.toSet(), "S4_9_WEB_READ_DNS_DRIFT_REJECTED")
                 if (response.statusCode in 300..399) {
                     ensure(redirectCount < MAX_REDIRECTS, "S4_9_WEB_READ_REDIRECT_REJECTED")
                     val location =
@@ -60,7 +62,7 @@ class SafePublicWebReader(
                         .substringBefore(';')
                         .trim()
                         .lowercase()
-                val normalized = normalize(contentType, body, uri)
+                val normalized = normalize(contentType, body, uri, deadlineNanos)
                 return BoundedWebDocument(
                     uri.toASCIIString(),
                     normalized.title,
@@ -90,20 +92,34 @@ class SafePublicWebReader(
         }
     }
 
-    private fun resolvePublic(host: String): List<InetAddress> =
-        try {
-            resolver.resolvePublic(host)
+    private fun resolvePublic(
+        host: String,
+        deadlineNanos: Long,
+    ): List<InetAddress> {
+        val remaining = deadlineNanos - System.nanoTime()
+        ensure(remaining > 0, "S4_9_WEB_READ_DEADLINE_REJECTED")
+        val future = DNS_EXECUTOR.submit<List<InetAddress>> { resolver.resolvePublic(host) }
+        return try {
+            future.get(remaining, TimeUnit.NANOSECONDS)
         } catch (error: S49WebReadRejectedException) {
             throw error
         } catch (_: Exception) {
+            future.cancel(true)
             reject("S4_9_WEB_READ_DNS_REJECTED")
         }
+    }
+
+    private fun ensureDeadline(deadlineNanos: Long) {
+        ensure(System.nanoTime() < deadlineNanos, "S4_9_WEB_READ_DEADLINE_REJECTED")
+    }
 
     private fun normalize(
         contentType: String,
         body: ByteArray,
         uri: URI,
+        deadlineNanos: Long,
     ): NormalizedWebDocument {
+        ensureDeadline(deadlineNanos)
         var discoveredUrls = emptyList<String>()
         val raw =
             when (contentType) {
@@ -130,15 +146,9 @@ class SafePublicWebReader(
                     document.title().take(MAX_TITLE_CHARS) to document.body().text()
                 }
                 "text/plain" -> uri.host to body.toString(Charsets.UTF_8)
-                "application/pdf" -> {
-                    Loader.loadPDF(body).use { document ->
-                        require(document.numberOfPages in 1..MAX_PDF_PAGES)
-                        val stripper = PDFTextStripper().apply { endPage = MAX_PDF_PAGES }
-                        (document.documentInformation.title ?: uri.host).take(MAX_TITLE_CHARS) to stripper.getText(document)
-                    }
-                }
                 else -> reject("S4_9_WEB_READ_MIME_REJECTED")
             }
+        ensureDeadline(deadlineNanos)
         val text =
             raw.second
                 .replace(WHITESPACE, " ")
@@ -176,11 +186,15 @@ class SafePublicWebReader(
                     "(system|developer)\\s*(message|prompt)|프롬프트.{0,32}(무시|덮어|지시)|이전.{0,24}지시.{0,24}무시",
                 RegexOption.IGNORE_CASE,
             )
+        val READ_DEADLINE: Duration = Duration.ofSeconds(10)
+        val DNS_EXECUTOR: java.util.concurrent.ExecutorService =
+            Executors.newFixedThreadPool(2) { runnable ->
+                Thread(runnable, "s49-public-dns").apply { isDaemon = true }
+            }
         const val MAX_REDIRECTS = 3
         const val MAX_BODY_BYTES = 2_000_000
         const val MAX_TEXT_CHARS = 60_000
         const val MAX_TITLE_CHARS = 256
-        const val MAX_PDF_PAGES = 20
         const val MAX_DISCOVERED_LINKS = 20
     }
 }

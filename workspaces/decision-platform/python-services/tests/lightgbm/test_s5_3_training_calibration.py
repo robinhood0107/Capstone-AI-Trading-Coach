@@ -175,7 +175,9 @@ def test_exact_grid_orchestrator_runs_twelve_folds_and_final_test_once(
         return probabilities, probabilities
 
     monkeypatch.setattr(training_module, "fit_lightgbm_reproducible", fake_fit)
-    monkeypatch.setattr(training_module, "raw_margins", lambda model, features: np.zeros((len(features), 3)))
+    monkeypatch.setattr(
+        training_module, "raw_margins", lambda model, features: np.zeros((len(features), 3))
+    )
     monkeypatch.setattr(training_module, "fit_ovr_platt", lambda margins, labels: _Calibrator())
     monkeypatch.setattr(training_module, "calibrated_probabilities", fake_probabilities)
 
@@ -239,7 +241,5 @@ def test_cost_report_compares_full_always_hold_and_train_prior_baselines() -> No
     )
     for baseline in (report["alwaysHold"], report["trainOnlyPrior"]):
         assert isinstance(baseline, dict)
-        assert set(("logLoss", "brier", "ece", "macroF1", "confusionMatrix")) <= set(
-            baseline
-        )
+        assert {"logLoss", "brier", "ece", "macroF1", "confusionMatrix"} <= set(baseline)
         assert set(baseline["costSensitivityBps"]) == {"25", "30", "35"}

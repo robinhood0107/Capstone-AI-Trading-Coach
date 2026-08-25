@@ -12,9 +12,9 @@ client를 import하지 않으며 provider 계층에 역의존하지 않는다. �
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Mapping
 
 from app.lightgbm.errors import DatasetUnavailable
 

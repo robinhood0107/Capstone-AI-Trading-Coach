@@ -3,15 +3,25 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import stat
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Mapping, cast
+from pathlib import Path
+from typing import cast
 
+from app.data._shared.bounded_json import (
+    BoundedJsonError,
+    BoundedJsonLimits,
+    parse_bounded_json_bytes,
+)
 from app.data._shared.canonical_json import canonical_json_bytes
-from app.data._shared.bounded_json import BoundedJsonError, BoundedJsonLimits, parse_bounded_json_bytes
 from app.verification.models import VerificationReport
-from app.verification.packet import P1VerificationPacket, packet_from_dict
+from app.verification.packet import (
+    P1SignedApprovalPacket,
+    P1VerificationPacket,
+    packet_from_dict,
+    signed_packet_from_dict,
+)
 
 
 class VerificationArtifactError(RuntimeError):
@@ -47,7 +57,7 @@ def ensure_owner_private_directory(path: Path) -> Path:
     return resolved
 
 
-def publish_packet(root: Path, packet: P1VerificationPacket) -> Path:
+def publish_packet(root: Path, packet: P1VerificationPacket | P1SignedApprovalPacket) -> Path:
     return _publish_immutable(
         root,
         f"packet-{packet.packet_sha256}.json",
@@ -66,7 +76,7 @@ def publish_report(root: Path, report: VerificationReport) -> Path:
 
 def claim_packet_execution(
     root: Path,
-    packet: P1VerificationPacket,
+    packet: P1SignedApprovalPacket,
     *,
     claimed_at: datetime,
 ) -> Path:
@@ -77,7 +87,7 @@ def claim_packet_execution(
     content = canonical_json_bytes(
         {
             "claimedAt": claimed_at.astimezone(UTC).isoformat().replace("+00:00", "Z"),
-            "contractId": "p1-verification-execution-claim.v1",
+            "contractId": "p1-verification-execution-claim.v2",
             "headSha": packet.head_sha,
             "packetSha256": packet.packet_sha256,
             "profile": "PROVIDER_READ_SMOKE",
@@ -98,9 +108,7 @@ def claim_packet_execution(
                 dir_fd=directory_fd,
             )
         except FileExistsError:
-            raise VerificationArtifactError(
-                "P1 verification packet was already claimed"
-            ) from None
+            raise VerificationArtifactError("P1 verification packet was already claimed") from None
         with os.fdopen(file_fd, "wb", closefd=True) as output:
             output.write(content)
             output.flush()
@@ -111,9 +119,13 @@ def claim_packet_execution(
     return directory / filename
 
 
-def read_packet(path: Path) -> P1VerificationPacket:
+def read_packet(path: Path) -> P1VerificationPacket | P1SignedApprovalPacket:
     value = _read_canonical(path)
-    packet = packet_from_dict(value)
+    packet = (
+        signed_packet_from_dict(value)
+        if value.get("contractId") == "p1-approval-packet.v2"
+        else packet_from_dict(value)
+    )
     if path.name.startswith("packet-") and path.name != f"packet-{packet.packet_sha256}.json":
         raise VerificationArtifactError("P1 verification packet filename hash mismatch")
     return packet

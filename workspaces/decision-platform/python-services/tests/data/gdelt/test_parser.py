@@ -9,7 +9,6 @@ import pytest
 from app.data.gdelt.errors import GdeltAggregateError
 from app.data.gdelt.parser import parse_aggregate_modes
 
-
 FIXTURE_ROOT = Path(__file__).with_name("fixtures")
 WINDOW_START = datetime(2026, 7, 30, tzinfo=UTC)
 WINDOW_END = datetime(2026, 7, 31, tzinfo=UTC)

@@ -191,13 +191,15 @@ class OpenDARTHttpClient:
         """장기 batch 실행 후 httpx connection pool을 명시적으로 닫는다."""
         self._http.close()
 
-    def __enter__(self) -> "OpenDARTHttpClient":
+    def __enter__(self) -> OpenDARTHttpClient:
         return self
 
     def __exit__(self, *_: object) -> None:
         self.close()
 
-    def _get_with_retry(self, path: str, params: dict[str, str], *, expect_json: bool) -> dict[str, Any] | bytes:
+    def _get_with_retry(
+        self, path: str, params: dict[str, str], *, expect_json: bool
+    ) -> dict[str, Any] | bytes:
         retrying = Retrying(
             stop=stop_after_attempt(self._retry_attempts),
             wait=self._retry_wait,
@@ -209,7 +211,9 @@ class OpenDARTHttpClient:
                 return self._send_once(path, params, expect_json=expect_json)
         raise RuntimeError("unreachable retry state")
 
-    def _send_once(self, path: str, params: dict[str, str], *, expect_json: bool) -> dict[str, Any] | bytes:
+    def _send_once(
+        self, path: str, params: dict[str, str], *, expect_json: bool
+    ) -> dict[str, Any] | bytes:
         url = self._url(path)
         safe_params = self._validated_params(params)
         if self._offline_fixture_transport_required:
@@ -238,7 +242,9 @@ class OpenDARTHttpClient:
         try:
             data: object = response.json()
         except ValueError:
-            raise OpenDARTHttpError(response.status_code, "OpenDART response was not valid JSON") from None
+            raise OpenDARTHttpError(
+                response.status_code, "OpenDART response was not valid JSON"
+            ) from None
         if not isinstance(data, dict):
             raise OpenDARTHttpError(response.status_code, "OpenDART response was not a JSON object")
         return cast(dict[str, Any], data)

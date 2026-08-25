@@ -40,11 +40,15 @@ from contracts.run_openapi_gate import (
 class StrictContractJsonTest(unittest.TestCase):
     def test_duplicate_keys_and_non_finite_constants_are_rejected(self) -> None:
         with self.assertRaises(ContractValidationError):
-            load_json_bytes_strict(b'{"ruleId":"one","ruleId":"two"}', source="duplicate")
+            load_json_bytes_strict(
+                b'{"ruleId":"one","ruleId":"two"}', source="duplicate"
+            )
         for token in (b"NaN", b"Infinity", b"-Infinity"):
             with self.subTest(token=token):
                 with self.assertRaises(ContractValidationError):
-                    load_json_bytes_strict(b'{"threshold":' + token + b"}", source="constant")
+                    load_json_bytes_strict(
+                        b'{"threshold":' + token + b"}", source="constant"
+                    )
 
     def test_decimal_spellings_have_one_canonical_byte_representation(self) -> None:
         variants = (
@@ -80,52 +84,52 @@ class PrincipleCatalogGenerationTest(unittest.TestCase):
         self.assertEqual(
             frozenset(
                 {
-                "contracts/schemas/s2-1-principle-catalog.schema.json",
-                "contracts/schemas/principle-rule.schema.json",
-                "contracts/schemas/principle.schema.json",
-                "contracts/schemas/principle-preset-list.schema.json",
-                "contracts/schemas/principle-create-request.schema.json",
-                "contracts/schemas/principle-update-request.schema.json",
-                "contracts/schemas/principle-list-response.schema.json",
-                "contracts/schemas/principle-history-response.schema.json",
-                "contracts/schemas/principle-error.schema.json",
-                "contracts/examples/principle.valid.json",
-                "contracts/examples/principle-presets.valid.json",
-                "contracts/examples/principle-create.valid.json",
-                "contracts/examples/principle-create-custom-rules.valid.json",
-                "contracts/examples/principle-update.valid.json",
-                "contracts/examples/principle-update-no-op.valid.json",
-                "contracts/examples/principle-list.valid.json",
-                "contracts/examples/principle-list-next-page.valid.json",
-                "contracts/examples/principle-list-empty.valid.json",
-                "contracts/examples/principle-history.valid.json",
-                "contracts/examples/principle-history-next-page.valid.json",
-                "contracts/examples/principle-history-empty.valid.json",
-                "contracts/examples/principle-error-validation.valid.json",
-                "contracts/examples/principle-error-cursor.valid.json",
-                "contracts/examples/principle-error-unauthorized.valid.json",
-                "contracts/examples/principle-error-forbidden.valid.json",
-                "contracts/examples/principle-error-not-found.valid.json",
-                "contracts/examples/principle-error-conflict.valid.json",
-                "contracts/examples/principle-error-version-exhausted.valid.json",
-                "contracts/examples/principle-error-payload-too-large.valid.json",
-                "contracts/examples/invalid/principle.invalid.json",
-                "contracts/examples/invalid/principle.duplicate-rule.invalid.json",
-                "contracts/examples/invalid/principle.invalid-tuple.invalid.json",
-                "contracts/examples/invalid/principle.threshold-range.invalid.json",
-                "contracts/examples/invalid/principle.threshold-scale.invalid.json",
-                "contracts/examples/invalid/principle.threshold-null.invalid.json",
-                "contracts/examples/invalid/principle.threshold-string.invalid.json",
-                "contracts/examples/invalid/principle.unknown-property.invalid.json",
-                "contracts/examples/invalid/principle.enabled-allow.invalid.json",
-                "contracts/examples/invalid/principle.disabled-block.invalid.json",
-                "contracts/examples/invalid/principle.evidence-missing.invalid.json",
-                "contracts/examples/invalid/principle.evidence-optional-hard.invalid.json",
-                "contracts/examples/invalid/principle.too-many-rules.invalid.json",
-                "contracts/examples/invalid/principle-update.empty-rules.invalid.json",
-                "contracts/examples/invalid/principle-update.invalid-status.invalid.json",
-                "contracts/examples/invalid/principle-update.missing-field.invalid.json",
-                "contracts/examples/invalid/principle-create.missing-title.invalid.json",
+                    "contracts/schemas/s2-1-principle-catalog.schema.json",
+                    "contracts/schemas/principle-rule.schema.json",
+                    "contracts/schemas/principle.schema.json",
+                    "contracts/schemas/principle-preset-list.schema.json",
+                    "contracts/schemas/principle-create-request.schema.json",
+                    "contracts/schemas/principle-update-request.schema.json",
+                    "contracts/schemas/principle-list-response.schema.json",
+                    "contracts/schemas/principle-history-response.schema.json",
+                    "contracts/schemas/principle-error.schema.json",
+                    "contracts/examples/principle.valid.json",
+                    "contracts/examples/principle-presets.valid.json",
+                    "contracts/examples/principle-create.valid.json",
+                    "contracts/examples/principle-create-custom-rules.valid.json",
+                    "contracts/examples/principle-update.valid.json",
+                    "contracts/examples/principle-update-no-op.valid.json",
+                    "contracts/examples/principle-list.valid.json",
+                    "contracts/examples/principle-list-next-page.valid.json",
+                    "contracts/examples/principle-list-empty.valid.json",
+                    "contracts/examples/principle-history.valid.json",
+                    "contracts/examples/principle-history-next-page.valid.json",
+                    "contracts/examples/principle-history-empty.valid.json",
+                    "contracts/examples/principle-error-validation.valid.json",
+                    "contracts/examples/principle-error-cursor.valid.json",
+                    "contracts/examples/principle-error-unauthorized.valid.json",
+                    "contracts/examples/principle-error-forbidden.valid.json",
+                    "contracts/examples/principle-error-not-found.valid.json",
+                    "contracts/examples/principle-error-conflict.valid.json",
+                    "contracts/examples/principle-error-version-exhausted.valid.json",
+                    "contracts/examples/principle-error-payload-too-large.valid.json",
+                    "contracts/examples/invalid/principle.invalid.json",
+                    "contracts/examples/invalid/principle.duplicate-rule.invalid.json",
+                    "contracts/examples/invalid/principle.invalid-tuple.invalid.json",
+                    "contracts/examples/invalid/principle.threshold-range.invalid.json",
+                    "contracts/examples/invalid/principle.threshold-scale.invalid.json",
+                    "contracts/examples/invalid/principle.threshold-null.invalid.json",
+                    "contracts/examples/invalid/principle.threshold-string.invalid.json",
+                    "contracts/examples/invalid/principle.unknown-property.invalid.json",
+                    "contracts/examples/invalid/principle.enabled-allow.invalid.json",
+                    "contracts/examples/invalid/principle.disabled-block.invalid.json",
+                    "contracts/examples/invalid/principle.evidence-missing.invalid.json",
+                    "contracts/examples/invalid/principle.evidence-optional-hard.invalid.json",
+                    "contracts/examples/invalid/principle.too-many-rules.invalid.json",
+                    "contracts/examples/invalid/principle-update.empty-rules.invalid.json",
+                    "contracts/examples/invalid/principle-update.invalid-status.invalid.json",
+                    "contracts/examples/invalid/principle-update.missing-field.invalid.json",
+                    "contracts/examples/invalid/principle-create.missing-title.invalid.json",
                 },
             ),
             OUTPUTS,
@@ -133,7 +137,9 @@ class PrincipleCatalogGenerationTest(unittest.TestCase):
         self.assertEqual(OUTPUTS, frozenset(first))
         self.assertTrue(all(payload.endswith(b"\n") for payload in first.values()))
 
-    def test_catalog_semantics_reject_tuple_duplicate_scale_and_matrix_drift(self) -> None:
+    def test_catalog_semantics_reject_tuple_duplicate_scale_and_matrix_drift(
+        self,
+    ) -> None:
         mutations = []
 
         invalid_tuple = copy.deepcopy(self.catalog)
@@ -141,7 +147,9 @@ class PrincipleCatalogGenerationTest(unittest.TestCase):
         mutations.append(invalid_tuple)
 
         duplicate_rule = copy.deepcopy(self.catalog)
-        duplicate_rule["ruleDefinitions"][1]["ruleId"] = duplicate_rule["ruleDefinitions"][0]["ruleId"]
+        duplicate_rule["ruleDefinitions"][1]["ruleId"] = duplicate_rule[
+            "ruleDefinitions"
+        ][0]["ruleId"]
         mutations.append(duplicate_rule)
 
         invalid_scale = copy.deepcopy(self.catalog)
@@ -157,11 +165,15 @@ class PrincipleCatalogGenerationTest(unittest.TestCase):
         mutations.append(reordered_matrix)
 
         hard_optional = copy.deepcopy(self.catalog)
-        hard_optional["presets"][0]["defaultRules"][0]["evidenceRequirement"] = "OPTIONAL"
+        hard_optional["presets"][0]["defaultRules"][0]["evidenceRequirement"] = (
+            "OPTIONAL"
+        )
         mutations.append(hard_optional)
 
         for mutation in mutations:
-            with self.subTest(mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()):
+            with self.subTest(
+                mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()
+            ):
                 with self.assertRaises(ContractValidationError):
                     validate_catalog_semantics(mutation)
 
@@ -218,8 +230,11 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "POSTGRES_SIGNAL_SCHEDULER_PASSWORD",
             "POSTGRES_SIGNAL_ADMIN_PASSWORD",
             "POSTGRES_WORKER_PASSWORD",
+            "POSTGRES_OUTBOX_PUBLISHER_PASSWORD",
+            "POSTGRES_POISON_RECORDER_PASSWORD",
             "POSTGRES_REPLAY_PASSWORD",
             "POSTGRES_IDENTITY_PASSWORD",
+            "POSTGRES_AUTH_PASSWORD",
             "POSTGRES_REPLAY_AUTHORIZER_PASSWORD",
             "POSTGRES_DEMO_PASSWORD",
             "KAFKA_UI_PASSWORD",
@@ -233,8 +248,11 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "PYTHON_GRPC_SHARED_SECRET",
             "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY",
             "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY",
-            "BROKERAGE_DB_CAPABILITY_TOKEN",
             "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256",
+            "ACTOR_CAPABILITY_TRANSPORT",
+            "ACTOR_CAPABILITY_AUTHORITY_URL",
+            "ACTOR_CAPABILITY_SHARED_SECRET",
+            "ACTOR_CAPABILITY_PUBLIC_KEY",
             "RAG_HISTORY_SECRET_DIRECTORY",
             "RAG_HISTORY_CURRENT_KEK_VERSION",
             "RAG_IDEMPOTENCY_SCOPE_HMAC_KEY",
@@ -245,10 +263,6 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
         ):
             self.assertIn(name, parsed)
         self.assertEqual(
-            hashlib.sha256(parsed["BROKERAGE_DB_CAPABILITY_TOKEN"].encode("utf-8")).hexdigest(),
-            parsed["BROKERAGE_DB_CAPABILITY_TOKEN_SHA256"],
-        )
-        self.assertEqual(
             parsed["DECISION_GRPC_SHARED_SECRET"],
             parsed["PYTHON_GRPC_SHARED_SECRET"],
         )
@@ -256,7 +270,9 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             parsed["RAG_GRPC_SHARED_SECRET"],
             parsed["DECISION_GRPC_SHARED_SECRET"],
         )
-        self.assertTrue(parsed["DEMO_USER_CREDENTIAL_BUNDLE"].startswith("s21-v1:usr_demo_user:"))
+        self.assertTrue(
+            parsed["DEMO_USER_CREDENTIAL_BUNDLE"].startswith("s21-v1:usr_demo_user:")
+        )
         self.assertNotIn("KIS_MODE", parsed)
 
     def test_unsafe_or_ambiguous_environment_inputs_are_rejected(self) -> None:
@@ -273,7 +289,9 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
                 "JWT_AUDIENCE='s21-openapi-client'",
                 "JWT_AUDIENCE='unsafe'quote'",
             ),
-            "port-mismatch": valid.replace("POSTGRES_PORT='55432'", "POSTGRES_PORT='55433'"),
+            "port-mismatch": valid.replace(
+                "POSTGRES_PORT='55432'", "POSTGRES_PORT='55433'"
+            ),
             "rag-grpc-reused-as-decision": valid.replace(
                 f"RAG_GRPC_SHARED_SECRET='{'5' * 43}'",
                 f"RAG_GRPC_SHARED_SECRET='{'S' * 43}'",
@@ -281,14 +299,6 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "rag-grpc-reused-as-jwt": valid.replace(
                 f"RAG_GRPC_SHARED_SECRET='{'5' * 43}'",
                 f"RAG_GRPC_SHARED_SECRET='{'F' * 43}'",
-            ),
-            "rag-grpc-reused-as-brokerage-capability": valid.replace(
-                f"RAG_GRPC_SHARED_SECRET='{'5' * 43}'",
-                f"RAG_GRPC_SHARED_SECRET='{'U' * 43}'",
-            ),
-            "capability-digest-mismatch": valid.replace(
-                f"BROKERAGE_DB_CAPABILITY_TOKEN_SHA256='{hashlib.sha256(('U' * 43).encode()).hexdigest()}'",
-                f"BROKERAGE_DB_CAPABILITY_TOKEN_SHA256='{'0' * 64}'",
             ),
             "crlf": valid.replace("\n", "\r\n"),
         }
@@ -321,7 +331,11 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
         }
         with patch.dict(
             os.environ,
-            {"PATH": "/usr/bin", "WSLENV": "UNSAFE_INHERITED_NAME", "UNSAFE_INHERITED_NAME": "x"},
+            {
+                "PATH": "/usr/bin",
+                "WSLENV": "UNSAFE_INHERITED_NAME",
+                "UNSAFE_INHERITED_NAME": "x",
+            },
             clear=True,
         ):
             environment = _explicit_process_environment(values)
@@ -362,8 +376,11 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "POSTGRES_SIGNAL_SCHEDULER_PASSWORD": "8" * 43,
             "POSTGRES_SIGNAL_ADMIN_PASSWORD": "9" * 43,
             "POSTGRES_WORKER_PASSWORD": "w" * 43,
+            "POSTGRES_OUTBOX_PUBLISHER_PASSWORD": "o" * 43,
+            "POSTGRES_POISON_RECORDER_PASSWORD": "p" * 43,
             "POSTGRES_REPLAY_PASSWORD": "r" * 43,
             "POSTGRES_IDENTITY_PASSWORD": "i" * 43,
+            "POSTGRES_AUTH_PASSWORD": "a" * 43,
             "POSTGRES_REPLAY_AUTHORIZER_PASSWORD": "z" * 43,
             "POSTGRES_DEMO_PASSWORD": "m" * 43,
             "KAFKA_UI_USERNAME": "admin",
@@ -386,8 +403,13 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "PRINCIPLE_CURSOR_HMAC_KEY": "H" * 43,
             "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY": "Q" * 43,
             "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY": "T" * 43,
-            "BROKERAGE_DB_CAPABILITY_TOKEN": "U" * 43,
-            "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256": hashlib.sha256(("U" * 43).encode()).hexdigest(),
+            "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256": hashlib.sha256(
+                ("U" * 43).encode()
+            ).hexdigest(),
+            "ACTOR_CAPABILITY_TRANSPORT": "http",
+            "ACTOR_CAPABILITY_AUTHORITY_URL": "http://127.0.0.1:18081/internal/actor-capabilities/issue",
+            "ACTOR_CAPABILITY_SHARED_SECRET": "U" * 43,
+            "ACTOR_CAPABILITY_PUBLIC_KEY": "B" * 59,
             "RAG_HISTORY_SECRET_DIRECTORY": "/tmp/capstone-openapi-rag-secrets",
             "RAG_HISTORY_CURRENT_KEK_VERSION": "kek-v1",
             "RAG_IDEMPOTENCY_SCOPE_HMAC_KEY": "Z" * 43,
@@ -436,7 +458,9 @@ class OpenApiGateCleanupTest(unittest.TestCase):
                 raise OpenApiGateError("simulated compose health failure")
 
         with (
-            patch("contracts.run_openapi_gate.parse_openapi_environment", return_value={}),
+            patch(
+                "contracts.run_openapi_gate.parse_openapi_environment", return_value={}
+            ),
             patch("contracts.run_openapi_gate._require_fixture_port_available"),
             patch(
                 "contracts.run_openapi_gate._run",
@@ -460,7 +484,10 @@ class OpenApiGateCleanupTest(unittest.TestCase):
             generated = Path(directory) / "openapi.json"
             generated.write_text("{}\n", encoding="utf-8")
             with (
-                patch("contracts.run_openapi_gate.parse_openapi_environment", return_value={}),
+                patch(
+                    "contracts.run_openapi_gate.parse_openapi_environment",
+                    return_value={},
+                ),
                 patch("contracts.run_openapi_gate._require_fixture_port_available"),
                 patch("contracts.run_openapi_gate.GENERATED_OPENAPI", generated),
                 patch(
@@ -481,7 +508,9 @@ class OpenApiGateCleanupTest(unittest.TestCase):
 class ContractsCiWorkflowTest(unittest.TestCase):
     def test_openapi_fixture_task_uses_checked_in_gradle_wrapper(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
-        workflow = (repo_root / ".github/workflows/contracts-ci.yml").read_text(encoding="utf-8")
+        workflow = (repo_root / ".github/workflows/contracts-ci.yml").read_text(
+            encoding="utf-8"
+        )
         expected_command = (
             "run: workspaces/decision-platform/spring-api/gradlew "
             "-p workspaces/decision-platform/spring-api prepareOpenApiFixtureEnv"
@@ -538,6 +567,43 @@ class OpenApiNormalizerTest(unittest.TestCase):
         )
 
         self.assertEqual(canonical_json_bytes(self.expected), normalized)
+
+    def test_generated_loopback_port_is_normalized_without_changing_contract_bytes(
+        self,
+    ) -> None:
+        generated = copy.deepcopy(self.generated)
+        generated["servers"] = [
+            {"description": "Generated server url", "url": "http://127.0.0.1:18082"}
+        ]
+        expected = copy.deepcopy(self.expected)
+        expected["servers"] = [
+            {"description": "Generated server url", "url": "http://127.0.0.1:18080"}
+        ]
+
+        normalized = check_normalized_openapi(
+            canonical_json_bytes(generated),
+            canonical_json_bytes(expected),
+            self.catalog_bytes,
+            amendment=True,
+        )
+
+        self.assertEqual(canonical_json_bytes(expected), normalized)
+
+    def test_generated_non_loopback_server_is_rejected(self) -> None:
+        generated = copy.deepcopy(self.generated)
+        generated["servers"] = [
+            {"description": "Generated server url", "url": "https://example.invalid"}
+        ]
+
+        with self.assertRaisesRegex(
+            OpenApiNormalizationError,
+            "approved unprivileged loopback endpoint",
+        ):
+            normalize_generated_openapi(
+                canonical_json_bytes(generated),
+                self.catalog_bytes,
+                amendment=True,
+            )
 
     def test_generated_document_must_pass_the_oas_31_schema(self) -> None:
         invalid_oas = copy.deepcopy(self.generated)
@@ -608,13 +674,13 @@ class OpenApiNormalizerTest(unittest.TestCase):
         del missing_component["components"]["schemas"]["S23Decision"]
         mutations.append(missing_component)
         extra_component = copy.deepcopy(implementation)
-        extra_component["components"]["schemas"]["S23Unapproved"] = {
-            "type": "object"
-        }
+        extra_component["components"]["schemas"]["S23Unapproved"] = {"type": "object"}
         mutations.append(extra_component)
 
         for mutation in mutations:
-            with self.subTest(mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()):
+            with self.subTest(
+                mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()
+            ):
                 with self.assertRaises(OpenApiNormalizationError):
                     normalize_generated_openapi(
                         canonical_json_bytes(mutation),
@@ -637,7 +703,7 @@ class OpenApiNormalizerTest(unittest.TestCase):
                         "schema": {"type": "string"},
                     }
                 ],
-                "get": {"responses": {"200": {"description": "Owned Decision"}}}
+                "get": {"responses": {"200": {"description": "Owned Decision"}}},
             },
             "/api/v1/decisions/{decisionId}/audit": {
                 "parameters": [
@@ -648,7 +714,7 @@ class OpenApiNormalizerTest(unittest.TestCase):
                         "schema": {"type": "string"},
                     }
                 ],
-                "get": {"responses": {"200": {"description": "Sanitized audit"}}}
+                "get": {"responses": {"200": {"description": "Sanitized audit"}}},
             },
         }
 
@@ -699,16 +765,16 @@ class OpenApiNormalizerTest(unittest.TestCase):
         del missing_component["components"]["schemas"]["S32PaperOrder"]
         mutations.append(missing_component)
         extra_component = copy.deepcopy(implementation)
-        extra_component["components"]["schemas"]["S32Unapproved"] = {
-            "type": "object"
-        }
+        extra_component["components"]["schemas"]["S32Unapproved"] = {"type": "object"}
         mutations.append(extra_component)
         wrong_digest = copy.deepcopy(implementation)
         wrong_digest["x-s3-2-contract-sha256"] = "0" * 64
         mutations.append(wrong_digest)
 
         for mutation in mutations:
-            with self.subTest(mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()):
+            with self.subTest(
+                mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()
+            ):
                 with self.assertRaises(OpenApiNormalizationError):
                     normalize_generated_openapi(
                         canonical_json_bytes(mutation),
@@ -819,11 +885,13 @@ class OpenApiNormalizerTest(unittest.TestCase):
         executions = copy.deepcopy(implementation)
         executions["paths"]["/api/v1/brokerage/orders/{orderId}/executions"] = {
             "parameters": copy.deepcopy(
-                implementation["paths"][
-                    "/api/v1/brokerage/orders/{orderId}/reconcile"
-                ]["parameters"]
+                implementation["paths"]["/api/v1/brokerage/orders/{orderId}/reconcile"][
+                    "parameters"
+                ]
             ),
-            "post": {"responses": {"200": {"description": "Unapproved execution claim"}}}
+            "post": {
+                "responses": {"200": {"description": "Unapproved execution claim"}}
+            },
         }
         mutations.append(executions)
         wrong_method = copy.deepcopy(implementation)
@@ -896,11 +964,15 @@ class OpenApiNormalizerTest(unittest.TestCase):
     def test_dialect_paths_components_and_digest_mutations_fail_closed(self) -> None:
         mutations = []
         wrong_dialect = copy.deepcopy(self.generated)
-        wrong_dialect["jsonSchemaDialect"] = "https://json-schema.org/draft/2020-12/schema"
+        wrong_dialect["jsonSchemaDialect"] = (
+            "https://json-schema.org/draft/2020-12/schema"
+        )
         mutations.append(wrong_dialect)
 
         premature_path = copy.deepcopy(self.generated)
-        premature_path["paths"]["/api/v1/principles"] = {"get": {"responses": {"200": {}}}}
+        premature_path["paths"]["/api/v1/principles"] = {
+            "get": {"responses": {"200": {}}}
+        }
         mutations.append(premature_path)
 
         drifted_component = copy.deepcopy(self.generated)
@@ -916,7 +988,9 @@ class OpenApiNormalizerTest(unittest.TestCase):
         mutations.append(invalid_oas)
 
         for mutation in mutations:
-            with self.subTest(mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()):
+            with self.subTest(
+                mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()
+            ):
                 with self.assertRaises(OpenApiNormalizationError):
                     check_normalized_openapi(
                         canonical_json_bytes(mutation),

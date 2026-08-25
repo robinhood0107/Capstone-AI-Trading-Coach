@@ -78,7 +78,9 @@ def test_owner_bge_materialization_parses_once_and_returns_no_path_or_raw_in_rec
     assert '"rawContent":' not in encoded
 
 
-def test_owner_bge_materialization_rejects_non_bge_profile_before_file_parse(tmp_path: Path) -> None:
+def test_owner_bge_materialization_rejects_non_bge_profile_before_file_parse(
+    tmp_path: Path,
+) -> None:
     parser = _FixtureParser(_document_ir())
     request = _request(tmp_path)
     request = replace(request, embedding_profile_id="voyage_context_4_1024_v1")
@@ -108,7 +110,9 @@ def test_owner_bge_materialization_rejects_invalid_embedding_shape(tmp_path: Pat
         )
 
 
-def test_owner_voyage_preparation_parses_once_and_stops_before_embedding_transport(tmp_path: Path) -> None:
+def test_owner_voyage_preparation_parses_once_and_stops_before_embedding_transport(
+    tmp_path: Path,
+) -> None:
     parser = _FixtureParser(_document_ir(external_llm_eligible=True))
     request = replace(
         _request(tmp_path),
@@ -128,7 +132,9 @@ def test_owner_voyage_preparation_parses_once_and_stops_before_embedding_transpo
     assert prepared.embedding_inputs[0].embedding_profile_id == "voyage_context_4_1024_v1"
 
 
-def test_owner_voyage_preparation_rejects_secret_or_prompt_injection_before_transport(tmp_path: Path) -> None:
+def test_owner_voyage_preparation_rejects_secret_or_prompt_injection_before_transport(
+    tmp_path: Path,
+) -> None:
     unsafe_ir = _document_ir(external_llm_eligible=False)
     unsafe_ir["safetyClassification"] = {
         "externalLlmEligible": False,

@@ -13,17 +13,18 @@ from app.brokerage.kis_mock_portfolio_writer import (
     append_kis_mock_portfolio_fixture,
     load_kis_mock_portfolio_fixture,
 )
-from app.decision_source_cli import attest_source_writer_dsn
-from app.data.kis.market_quote_observation_writer import (
-    append_market_quote_fixture,
-    load_market_quote_fixture,
-)
 from app.data.decision.deterministic_observation_writer import (
     append_deterministic_metric_fixture,
     load_deterministic_metric_fixture,
 )
+from app.data.kis.market_quote_observation_writer import (
+    append_market_quote_fixture,
+    load_market_quote_fixture,
+)
+from app.decision_source_cli import attest_source_writer_dsn
 from app.offline_fixture_io import read_bounded_fixture
 from tests.conftest import PostgresTestCluster
+from tests.support.actor_rls_scope import open_actor_rls_scope
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "decision"
 QUOTE_FIXTURE = FIXTURE_DIR / "market_quote.v1.json"
@@ -104,7 +105,15 @@ def test_kis_mock_fixture_is_concurrently_idempotent_and_owner_scoped(
 
     assert sorted(results) == [0, 1]
     with psycopg.connect(postgres_cluster["app_dsn"]) as connection:
-        connection.execute("SELECT set_config('app.actor_user_id', 'usr_demo_user', false)")
+        open_actor_rls_scope(
+            identity_dsn=postgres_cluster["identity_dsn"],
+            connection=connection,
+            actor_user_id="usr_demo_user",
+            actor_role="USER",
+            operation="READ_PORTFOLIO_SOURCE",
+            target_kind="OWNER",
+            target_id="usr_demo_user",
+        )
         row = connection.execute(
             """
             SELECT cash_krw, portfolio_equity_krw, margin_requirement_krw,
@@ -156,7 +165,15 @@ def test_deterministic_fixture_appends_complete_zero_and_previous_session_metric
     assert sorted(results) == [0, 2]
     assert replay == 0
     with psycopg.connect(postgres_cluster["app_dsn"]) as connection:
-        connection.execute("SELECT set_config('app.actor_user_id', 'usr_demo_user', false)")
+        open_actor_rls_scope(
+            identity_dsn=postgres_cluster["identity_dsn"],
+            connection=connection,
+            actor_user_id="usr_demo_user",
+            actor_role="USER",
+            operation="READ_RISK_SOURCE",
+            target_kind="OWNER",
+            target_id="usr_demo_user",
+        )
         risk = connection.execute(
             """
             SELECT daily_loss_rate, max_drawdown, annualized_volatility, completeness
@@ -257,10 +274,9 @@ def test_source_writer_dsn_attestation_requires_exact_role_and_target(
 
 def test_source_writers_have_no_provider_live_order_or_fallback_dependency() -> None:
     from app.brokerage import kis_mock_portfolio_writer
-    from app.data.kis import instrument_catalog_writer
-    from app.data.kis import market_quote_observation_writer
-    from app.data.opendart import corporation_registry_writer
     from app.data.decision import deterministic_observation_writer
+    from app.data.kis import instrument_catalog_writer, market_quote_observation_writer
+    from app.data.opendart import corporation_registry_writer
 
     source = "\n".join(
         inspect.getsource(module)

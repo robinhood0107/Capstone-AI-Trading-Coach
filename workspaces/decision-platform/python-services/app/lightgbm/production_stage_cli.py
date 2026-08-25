@@ -55,10 +55,7 @@ def main() -> int:
                 print("S5_PRODUCTION_STAGE=ROLLBACK_AUTHORITY_UNAVAILABLE")
                 return 2
             batch_root = (
-                root
-                / "daily"
-                / f"rollback-{rollback_state_sha}-{release_sha[:12]}"
-                / "batch"
+                root / "daily" / f"rollback-{rollback_state_sha}-{release_sha[:12]}" / "batch"
             )
         batch = validate_production_signal_batch(
             approved_root=batch_root,
@@ -84,7 +81,8 @@ def main() -> int:
                     cast(Connection, admin),
                     model_release_id=str(release.manifest["modelReleaseId"]),
                     signal_batch_id=str(batch.manifest["signalBatchId"]),
-                    expected_model_release_id=os.environ.get("S5_EXPECTED_MODEL_RELEASE_ID") or None,
+                    expected_model_release_id=os.environ.get("S5_EXPECTED_MODEL_RELEASE_ID")
+                    or None,
                     expected_signal_batch_id=os.environ.get("S5_EXPECTED_SIGNAL_BATCH_ID") or None,
                     release_manifest_sha256=release.manifest_sha256,
                     batch_manifest_sha256=batch.manifest_sha256,

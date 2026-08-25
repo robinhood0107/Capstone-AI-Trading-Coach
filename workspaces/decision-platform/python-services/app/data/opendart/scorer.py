@@ -8,7 +8,11 @@ from app.data.opendart.models import (
     DisclosureRiskScoreResult,
     DisclosureRiskWarning,
 )
-from app.data.opendart.risk_mapping import DisclosureRiskMapping, RiskMappingEntry, load_default_risk_mapping
+from app.data.opendart.risk_mapping import (
+    DisclosureRiskMapping,
+    RiskMappingEntry,
+    load_default_risk_mapping,
+)
 
 logger = logging.getLogger(__name__)
 MAX_EVENTS_PER_SCORE = 10_000
@@ -49,7 +53,11 @@ def score_disclosure_risk(
     default_window_from = earliest_window_from + timedelta(days=max_window_days - window_days)
     # 결과 envelope의 window_from은 실제로 고려될 수 있는 가장 오래된 날짜(=최대 유효기간)로 두어 소비자가 오해하지 않게 한다.
     max_effective_days = max(
-        [entry.effective_window_days or window_days for entry in risk_mapping.active_by_code.values()] + [window_days]
+        [
+            entry.effective_window_days or window_days
+            for entry in risk_mapping.active_by_code.values()
+        ]
+        + [window_days]
     )
     contributing: list[tuple[float, DisclosureRiskEvent]] = []
     warnings: list[DisclosureRiskWarning] = []
@@ -72,14 +80,18 @@ def score_disclosure_risk(
         entry = risk_mapping.active_by_code.get(event.event_code)
         if entry is None:
             if event.occurred_on >= default_window_from:
-                warning = _unknown_warning(event, blocked=event.event_code in risk_mapping.blocked_by_code)
+                warning = _unknown_warning(
+                    event, blocked=event.event_code in risk_mapping.blocked_by_code
+                )
                 warnings.append(warning)
                 _log_warning(warning, event)
             continue
         effective_from = as_of - timedelta(days=entry.effective_window_days or window_days)
         if event.occurred_on < effective_from:
             continue
-        if entry.condition_field and not _normalize(event.attributes.get(entry.condition_field, "")):
+        if entry.condition_field and not _normalize(
+            event.attributes.get(entry.condition_field, "")
+        ):
             warning = _missing_condition_warning(event)
             warnings.append(warning)
             _log_warning(warning, event)
@@ -88,7 +100,9 @@ def score_disclosure_risk(
         if score > 0:
             contributing.append((score, event))
 
-    contributing.sort(key=lambda item: (-item[0], item[1].occurred_on, item[1].event_code, item[1].receipt_no))
+    contributing.sort(
+        key=lambda item: (-item[0], item[1].occurred_on, item[1].event_code, item[1].receipt_no)
+    )
     return DisclosureRiskScoreResult(
         symbol=symbol,
         as_of=as_of,

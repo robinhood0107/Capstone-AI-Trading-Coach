@@ -19,13 +19,13 @@ import os
 from datetime import date
 from pathlib import Path
 
+from app.data._shared.redis_quota import QuotaUnavailableError
 from app.data.ecos.http_client import ECOSHttpClient
 from app.data.ecos.series_registry import CANDIDATE_SERIES
 from app.data.ecos.settings import ECOSS5ProductionSettings
 from app.data.kis.http_client import KISHttpClient
 from app.data.kis.settings import KISSettings
 from app.data.krx.client import KrxOpenApiClient, attest_quota_backend_credentials
-from app.data._shared.redis_quota import QuotaUnavailableError
 from app.data.krx.settings import KrxS5ProductionSettings
 from app.lightgbm.bootstrap_calendar_recovery import validate_recovery_execution_authority
 from app.lightgbm.bootstrap_executor import (
@@ -74,8 +74,6 @@ REQUALIFICATION_SESSION_THRESHOLD = 21
 EXIT_PROGRESS = 0
 EXIT_NO_PROGRESS = 1
 EXIT_NEEDS_HUMAN = 2
-
-
 
 
 def main() -> int:

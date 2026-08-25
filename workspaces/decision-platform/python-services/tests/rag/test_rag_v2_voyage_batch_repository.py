@@ -10,12 +10,12 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from app.rag.pre_s5_provider_control import PreS5VoyageDocumentBatchActivation
+from app.rag.pre_s5_voyage_transport import PreS5VoyageDocumentBatchResult
 from app.rag.pre_s5_voyage_usage_repository import (
+    PreS5VoyageUsageRepositoryError,
     PsycopgPreS5VoyageDocumentBatchUsageLease,
     PsycopgPreS5VoyageUsageRepository,
-    PreS5VoyageUsageRepositoryError,
 )
-from app.rag.pre_s5_voyage_transport import PreS5VoyageDocumentBatchResult
 from app.rag.rag_v2_external_exact30_voyage_runner import (
     VoyagePreChunkedChunk,
     VoyagePreChunkedDocumentGroup,
@@ -63,7 +63,9 @@ def test_batch_stage_payload_contains_only_identity_and_normalized_vectors() -> 
 
     with pytest.raises(RagV2VoyageBatchRepositoryError, match="VOYAGE_BATCH_STAGE_ARGUMENT"):
         build_voyage_batch_stage_payload(
-            activation=replace(_activation(plan.plan_sha256, batch), batch_manifest_sha256="f" * 64),
+            activation=replace(
+                _activation(plan.plan_sha256, batch), batch_manifest_sha256="f" * 64
+            ),
             plan=plan,
             batch=batch,
             result=_result(batch, vectors),
@@ -104,7 +106,9 @@ def test_batch_repository_initial_resume_is_empty_then_reuses_committed_vectors(
     assert receipt.completed_batch_count == 1
     assert resumed.complete is True
     assert resumed.pending_batches == ()
-    assert resumed.ordered_vectors(groups=tuple(segment.group for segment in batch.segments)).shape == (
+    assert resumed.ordered_vectors(
+        groups=tuple(segment.group for segment in batch.segments)
+    ).shape == (
         142,
         1024,
     )
@@ -168,7 +172,9 @@ def test_atomic_stage_failure_rolls_back_usage_outcome_and_vectors(
         batch=batch,
     )
     lease.claim_attempt(now=datetime.now(UTC))
-    with pytest.raises(PreS5VoyageUsageRepositoryError, match="PRE_S5_VOYAGE_ATOMIC_STAGE_REQUIRED"):
+    with pytest.raises(
+        PreS5VoyageUsageRepositoryError, match="PRE_S5_VOYAGE_ATOMIC_STAGE_REQUIRED"
+    ):
         lease.commit(
             expected_input_tokens=batch.token_count,
             total_tokens=batch.token_count,
@@ -183,7 +189,9 @@ def test_atomic_stage_failure_rolls_back_usage_outcome_and_vectors(
     )
     payload["vectors"][0]["vector"] = [0.0] * 1024  # type: ignore[index]
 
-    with psycopg.connect(isolated_postgres_cluster["rag_writer_dsn"], autocommit=True) as connection:
+    with psycopg.connect(
+        isolated_postgres_cluster["rag_writer_dsn"], autocommit=True
+    ) as connection:
         with pytest.raises(psycopg.Error):
             connection.execute(
                 "SELECT * FROM public.commit_and_stage_rag_v2_immutable_voyage_document_batch(%s::jsonb)",

@@ -2,26 +2,25 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import StrEnum
 import math
 import re
 import unicodedata
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Mapping, Sequence
+from enum import StrEnum
 
 import numpy as np
 
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
-from app.lightgbm.pit_calendar import RAW_SESSION_COUNT
 from app.lightgbm.metrics import (
     multiclass_brier,
     natural_log_loss,
     tie_aware_argmax,
     top_label_ece,
 )
-
+from app.lightgbm.pit_calendar import RAW_SESSION_COUNT
 
 # 승인된 packet window가 덮는 월 수다. 상한이 이 차원에서 나오도록 이름을 붙인다.
 APPROVED_MONTHLY_SCHEDULE_COUNT = 51
@@ -32,16 +31,11 @@ SUPERSEDED_HORIZON_UNION_SIZES: tuple[int, ...] = (180,)
 APPROVED_KIS_TOKEN_MAX = 1
 APPROVED_ECOS_MAX_GET = 24
 # 일별 4개 service × raw session + 월별 3개 service × 월 수. 유도식이 상한의 유일한 정의다.
-APPROVED_KRX_MAX_GET = (
-    RAW_SESSION_COUNT * 4 + APPROVED_MONTHLY_SCHEDULE_COUNT * 3
-)
+APPROVED_KRX_MAX_GET = RAW_SESSION_COUNT * 4 + APPROVED_MONTHLY_SCHEDULE_COUNT * 3
 # union 종목마다 raw session을 100행 page로 덮는 수다. 리터럴로 두면 union 변경과 어긋난다.
 APPROVED_KIS_MAX_GET = APPROVED_HORIZON_UNION_SIZE * math.ceil(RAW_SESSION_COUNT / 100)
 APPROVED_TOTAL_MAX_PHYSICAL_CALLS = (
-    APPROVED_KRX_MAX_GET
-    + APPROVED_KIS_MAX_GET
-    + APPROVED_KIS_TOKEN_MAX
-    + APPROVED_ECOS_MAX_GET
+    APPROVED_KRX_MAX_GET + APPROVED_KIS_MAX_GET + APPROVED_KIS_TOKEN_MAX + APPROVED_ECOS_MAX_GET
 )
 MAX_KRX_SUPERSEDED_ALLOWANCE = 8
 # KIS 소비도 같은 증거 결속 규칙을 따르지만 예산이 다르므로 provider별로 셋을 나눈다.
@@ -104,18 +98,15 @@ class BootstrapBudget:
         if (
             self.krx_superseded_allowance > MAX_KRX_SUPERSEDED_ALLOWANCE
             or self.kis_superseded_allowance > MAX_KIS_SUPERSEDED_ALLOWANCE
-            or self.kis_token_superseded_allowance
-            > MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE
+            or self.kis_token_superseded_allowance > MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE
         ):
             raise LightGbmContractError("S5.6 superseded allowance exceeds approved bound")
         if (
             self.krx_get > APPROVED_KRX_MAX_GET + self.krx_superseded_allowance
             or self.kis_get > APPROVED_KIS_MAX_GET + self.kis_superseded_allowance
-            or self.kis_token
-            > APPROVED_KIS_TOKEN_MAX + self.kis_token_superseded_allowance
+            or self.kis_token > APPROVED_KIS_TOKEN_MAX + self.kis_token_superseded_allowance
             or self.ecos_get > APPROVED_ECOS_MAX_GET
-            or self.total
-            > APPROVED_TOTAL_MAX_PHYSICAL_CALLS + self.superseded_allowance_total
+            or self.total > APPROVED_TOTAL_MAX_PHYSICAL_CALLS + self.superseded_allowance_total
             or self.retry != 0
             or self.cost != 0
         ):
@@ -261,9 +252,10 @@ def corporate_action_sensitivity_pass(
 ) -> bool:
     """Event-free KIS/KRX return divergence의 exact 0.0005/0.1% gate."""
 
-    return _difference_rate(kis_close_returns, krx_close_returns) <= 0.001 and _difference_rate(
-        kis_label_returns, krx_label_returns
-    ) <= 0.001
+    return (
+        _difference_rate(kis_close_returns, krx_close_returns) <= 0.001
+        and _difference_rate(kis_label_returns, krx_label_returns) <= 0.001
+    )
 
 
 def macro_timing_sensitivity_metrics(

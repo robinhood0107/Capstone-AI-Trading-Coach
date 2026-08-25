@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import UTC, date, datetime, time, timedelta, timezone
 import hashlib
 import json
+from dataclasses import replace
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -51,7 +51,6 @@ from app.lightgbm.universe import (
     select_monthly_universe,
     validate_horizon_union,
 )
-
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -159,17 +158,17 @@ def test_monthly_schedule_derives_holiday_year_boundary_and_kst_cutoff() -> None
 
 
 def test_monthly_schedule_rejects_invalid_or_future_inputs() -> None:
-    with pytest.raises(LightGbmContractError, match="YYYY-MM"):
+    with pytest.raises(LightGbmContractError, match=r"YYYY-MM"):
         derive_monthly_universe_schedule(
             "2026-7",
             dataset_cutoff=datetime(2026, 8, 15, 8, 10, tzinfo=KST),
         )
-    with pytest.raises(LightGbmContractError, match="timezone aware"):
+    with pytest.raises(LightGbmContractError, match=r"timezone aware"):
         derive_monthly_universe_schedule(
             "2026-07",
             dataset_cutoff=datetime(2026, 8, 15, 8, 10),
         )
-    with pytest.raises(DatasetUnavailable, match="dataset cutoff"):
+    with pytest.raises(DatasetUnavailable, match=r"dataset cutoff"):
         derive_monthly_universe_schedule(
             "2026-07",
             dataset_cutoff=datetime(2026, 7, 1, 8, 9, tzinfo=KST),
@@ -193,14 +192,14 @@ def test_month_end_top30_tie_order_fixed_etf_and_no_etn() -> None:
         schedule,
         selection_session=schedule.trailing_sessions[-2],
     )
-    with pytest.raises(LightGbmContractError, match="derived"):
+    with pytest.raises(LightGbmContractError, match=r"derived"):
         select_monthly_universe(rows, schedule=forged_selection)
 
     forged_trailing = replace(
         schedule,
         trailing_sessions=(date(2026, 6, 7), *schedule.trailing_sessions[1:]),
     )
-    with pytest.raises(LightGbmContractError, match="derived"):
+    with pytest.raises(LightGbmContractError, match=r"derived"):
         select_monthly_universe(rows, schedule=forged_trailing)
 
 
@@ -209,7 +208,7 @@ def test_monthly_universe_does_not_replace_and_union_over_bound_fails() -> None:
         MonthlyUniverse(date(2026, 1, 30), "2026-02", (f"id-{index}",), (f"{index:06d}",))
         for index in range(APPROVED_HORIZON_UNION_SIZE + 1)
     ]
-    with pytest.raises(LightGbmContractError, match="approved instrument bound"):
+    with pytest.raises(LightGbmContractError, match=r"approved instrument bound"):
         validate_horizon_union(universes)
 
 
@@ -362,7 +361,7 @@ def test_universe_ignores_future_revision_and_requires_exact_thirty() -> None:
     assert universe.symbols[0] == "000001"
 
     reduced = [row for row in rows if row.symbol not in {"000030", "000031", "000032"}]
-    with pytest.raises(DatasetUnavailable, match="top-30"):
+    with pytest.raises(DatasetUnavailable, match=r"top-30"):
         select_monthly_universe(
             reduced,
             schedule=schedule,
@@ -380,7 +379,7 @@ def test_forbidden_columns_fail_before_projection() -> None:
         "risk_score",
         "hmm_state",
     ):
-        with pytest.raises(LightGbmContractError, match="forbidden"):
+        with pytest.raises(LightGbmContractError, match=r"forbidden"):
             reject_forbidden_columns(["symbol", column])
 
 
@@ -449,7 +448,7 @@ def test_feature_bundle_round_trip_and_logical_hashes(tmp_path: Path) -> None:
         pa.array([None, *table.column(2).to_pylist()[1:]], type=pa.float32()),
     )
     assert logical_dataset_hash(nullable) != logical_dataset_hash(table)
-    with pytest.raises(LightGbmContractError, match="class bytes"):
+    with pytest.raises(LightGbmContractError, match=r"class bytes"):
         logical_training_dataset_hash(table, [0] * (table.num_rows - 1))
 
 
@@ -460,7 +459,7 @@ def test_feature_bundle_rejects_manifest_trust_and_shape_mutations(tmp_path: Pat
     root = tmp_path / "bundle"
     manifest, _ = _write_feature_bundle(root, table)
 
-    with pytest.raises(LightGbmContractError, match="trust anchor"):
+    with pytest.raises(LightGbmContractError, match=r"trust anchor"):
         read_feature_bundle(
             approved_root=root.resolve(),
             expected_manifest_sha256="0" * 64,
@@ -530,7 +529,7 @@ def test_feature_bundle_rejects_parquet_schema_and_manifest_mismatch(tmp_path: P
     bad_manifest["parquetSha256"] = hashlib.sha256(bad_path.read_bytes()).hexdigest()
     bad_manifest_bytes = canonical_json_bytes(bad_manifest)
     (bad_root / "manifest.json").write_bytes(bad_manifest_bytes)
-    with pytest.raises(LightGbmContractError, match="forbidden"):
+    with pytest.raises(LightGbmContractError, match=r"forbidden"):
         read_feature_bundle(
             approved_root=bad_root.resolve(),
             expected_manifest_sha256=hashlib.sha256(bad_manifest_bytes).hexdigest(),
@@ -544,14 +543,12 @@ def test_feature_bundle_rejects_parquet_schema_and_manifest_mismatch(tmp_path: P
     for index, (field, value) in enumerate(mismatches):
         case_root = tmp_path / f"mismatch-{index}"
         case_root.mkdir()
-        (case_root / "features.parquet").write_bytes(
-            (valid_root / "features.parquet").read_bytes()
-        )
+        (case_root / "features.parquet").write_bytes((valid_root / "features.parquet").read_bytes())
         document = _read_manifest(manifest)
         document[field] = value
         case_manifest = canonical_json_bytes(document)
         (case_root / "manifest.json").write_bytes(case_manifest)
-        with pytest.raises(LightGbmContractError, match="count|decoded Parquet"):
+        with pytest.raises(LightGbmContractError, match=r"count|decoded Parquet"):
             read_feature_bundle(
                 approved_root=case_root.resolve(),
                 expected_manifest_sha256=hashlib.sha256(case_manifest).hexdigest(),
@@ -572,7 +569,7 @@ def test_feature_bundle_symlink_bounds_and_source_absence_fail_closed(
     manifest_link_root.mkdir()
     (manifest_link_root / "target.json").write_bytes(manifest)
     (manifest_link_root / "manifest.json").symlink_to(manifest_link_root / "target.json")
-    with pytest.raises(LightGbmContractError, match="manifest path"):
+    with pytest.raises(LightGbmContractError, match=r"manifest path"):
         read_feature_bundle(
             approved_root=manifest_link_root.resolve(),
             expected_manifest_sha256=hashlib.sha256(manifest).hexdigest(),
@@ -581,11 +578,9 @@ def test_feature_bundle_symlink_bounds_and_source_absence_fail_closed(
     parquet_link_root = tmp_path / "parquet-link"
     parquet_link_root.mkdir()
     (parquet_link_root / "target.parquet").write_bytes(parquet)
-    (parquet_link_root / "features.parquet").symlink_to(
-        parquet_link_root / "target.parquet"
-    )
+    (parquet_link_root / "features.parquet").symlink_to(parquet_link_root / "target.parquet")
     (parquet_link_root / "manifest.json").write_bytes(manifest)
-    with pytest.raises(LightGbmContractError, match="path"):
+    with pytest.raises(LightGbmContractError, match=r"path"):
         read_feature_bundle(
             approved_root=parquet_link_root.resolve(),
             expected_manifest_sha256=hashlib.sha256(manifest).hexdigest(),
@@ -598,28 +593,28 @@ def test_feature_bundle_symlink_bounds_and_source_absence_fail_closed(
     hash_document["parquetSha256"] = "0" * 64
     hash_manifest = canonical_json_bytes(hash_document)
     (hash_root / "manifest.json").write_bytes(hash_manifest)
-    with pytest.raises(LightGbmContractError, match="does not match manifest"):
+    with pytest.raises(LightGbmContractError, match=r"does not match manifest"):
         read_feature_bundle(
             approved_root=hash_root.resolve(),
             expected_manifest_sha256=hashlib.sha256(hash_manifest).hexdigest(),
         )
 
     monkeypatch.setattr("app.lightgbm.feature_artifact.MAX_MANIFEST_BYTES", len(manifest) - 1)
-    with pytest.raises(LightGbmContractError, match="manifest path"):
+    with pytest.raises(LightGbmContractError, match=r"manifest path"):
         read_feature_bundle(
             approved_root=regular_root.resolve(),
             expected_manifest_sha256=hashlib.sha256(manifest).hexdigest(),
         )
     monkeypatch.setattr("app.lightgbm.feature_artifact.MAX_MANIFEST_BYTES", 1024 * 1024)
     monkeypatch.setattr("app.lightgbm.feature_artifact.MAX_PHYSICAL_BYTES", len(parquet) - 1)
-    with pytest.raises(LightGbmContractError, match="artifact path"):
+    with pytest.raises(LightGbmContractError, match=r"artifact path"):
         read_feature_bundle(
             approved_root=regular_root.resolve(),
             expected_manifest_sha256=hashlib.sha256(manifest).hexdigest(),
         )
     monkeypatch.setattr("app.lightgbm.feature_artifact.MAX_PHYSICAL_BYTES", 256 * 1024 * 1024)
     monkeypatch.setattr("app.lightgbm.feature_artifact.MAX_DECODED_BYTES", 1)
-    with pytest.raises(LightGbmContractError, match="decoded size"):
+    with pytest.raises(LightGbmContractError, match=r"decoded size"):
         read_feature_bundle(
             approved_root=regular_root.resolve(),
             expected_manifest_sha256=hashlib.sha256(manifest).hexdigest(),
@@ -631,12 +626,12 @@ def test_feature_bundle_symlink_bounds_and_source_absence_fail_closed(
     zero["rowCount"] = 0
     zero_manifest = canonical_json_bytes(zero)
     (zero_root / "manifest.json").write_bytes(zero_manifest)
-    with pytest.raises(DatasetUnavailable, match="DATASET_UNAVAILABLE"):
+    with pytest.raises(DatasetUnavailable, match=r"DATASET_UNAVAILABLE"):
         read_feature_bundle(
             approved_root=zero_root.resolve(),
             expected_manifest_sha256=hashlib.sha256(zero_manifest).hexdigest(),
         )
-    with pytest.raises(DatasetUnavailable, match="DATASET_UNAVAILABLE"):
+    with pytest.raises(DatasetUnavailable, match=r"DATASET_UNAVAILABLE"):
         require_source_rows(0)
 
 

@@ -4,9 +4,13 @@ import com.capstone.decision.application.market.ForeignNewsLaneState
 import com.capstone.decision.application.market.ForeignNewsSentiment
 import com.capstone.decision.application.market.ForeignNewsSentimentReadPort
 import com.capstone.decision.application.market.ForeignNewsSentimentUnavailableException
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
+import org.springframework.transaction.annotation.Transactional
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 import java.time.Instant
@@ -15,17 +19,28 @@ import java.time.Instant
 class JdbcForeignNewsSentimentRepository(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val objectMapper: ObjectMapper,
+    private val actorRlsScope: ActorRlsScope,
 ) : ForeignNewsSentimentReadPort {
     /**
      * RLS actor를 authenticated owner로 고정한 뒤 V49 SECURITY DEFINER reader만 호출한다.
      * DB payload에 raw/provider field가 하나라도 있으면 API로 내보내지 않고 unavailable로 fail-closed한다.
      */
+    @Transactional
     override fun findLatest(
         ownerUserId: String,
         symbol: String,
     ): ForeignNewsSentiment? {
         val jdbc = jdbc()
-        setActor(jdbc, ownerUserId)
+        actorRlsScope.open(
+            jdbc,
+            ownerUserId,
+            ActorCapabilityBinding.target(
+                "READ_FOREIGN_NEWS",
+                "SYMBOL",
+                symbol,
+                ActorCapabilityRolePolicy.OWNER,
+            ),
+        )
         val payload =
             jdbc
                 .query(
@@ -103,17 +118,6 @@ class JdbcForeignNewsSentimentRepository(
     private fun JsonNode.requiredText(field: String): String {
         val value = path(field).takeIf(JsonNode::isString)?.stringValue()
         return value ?: throw ForeignNewsSentimentUnavailableException()
-    }
-
-    private fun setActor(
-        jdbc: NamedParameterJdbcTemplate,
-        ownerUserId: String,
-    ) {
-        jdbc.queryForObject(
-            "SELECT set_config('app.actor_user_id', :ownerUserId, true)",
-            mapOf("ownerUserId" to ownerUserId),
-            String::class.java,
-        )
     }
 
     private fun jdbc(): NamedParameterJdbcTemplate {

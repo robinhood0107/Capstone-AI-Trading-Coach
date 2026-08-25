@@ -3,6 +3,7 @@ package com.capstone.decision.infrastructure.mcp
 import com.capstone.decision.application.rag.RagHistoryCryptoPort
 import com.capstone.decision.application.rag.RagV2RetrievalScope
 import com.capstone.decision.application.rag.RagV2VertexEvidence
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -41,6 +42,7 @@ class McpAnswerValidationReceiptRegistryTest {
                 jdbc,
                 NoOpTransactionManager(),
                 mockk<RagHistoryCryptoPort>(),
+                mockk<ActorRlsScope>(relaxed = true),
                 Clock.fixed(Instant.parse("2026-08-14T00:00:00Z"), ZoneOffset.UTC),
             )
         val caller = McpCaller("usr_demo_user", "mcp_demo_client")

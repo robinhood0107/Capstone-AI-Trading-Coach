@@ -31,3 +31,11 @@ a92dee4db04f4c916622b526fe00832bd76163e0:contracts/catalogs/s5-0-signal-v2-contr
 
 # S4.9 CI의 Compose substitution용 validation-dummy 값이며 실제 SearXNG secret이 아니다.
 a07a5539659487e15f5d14dedc0c1661dd48b1a0:.github/workflows/repo-hygiene.yml:generic-api-key:73
+
+# Public BGE tokenizer integrity digest from the approved Hugging Face model artifact.
+c7c1ddd2cd7374fe822bdf1ac9ad55a4a1799bd4:workspaces/decision-platform/python-services/app/rag/bge_full_generation.py:generic-api-key:37
+c7c1ddd2cd7374fe822bdf1ac9ad55a4a1799bd4:workspaces/decision-platform/python-services/app/rag/source_card_corpus.py:generic-api-key:28
+
+# B86 byte-stable copies of the public KIS discovery source-card integrity digests.
+d48e60f514cd09a76570934350c68044ff304258:workspaces/decision-platform/spring-api/src/main/resources/db/baseline/B86__p1_offline_demo_baseline.sql:generic-api-key:36642
+d48e60f514cd09a76570934350c68044ff304258:workspaces/decision-platform/spring-api/src/main/resources/db/baseline/B86__p1_offline_demo_baseline.sql:generic-api-key:36675

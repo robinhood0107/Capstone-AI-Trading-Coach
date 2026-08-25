@@ -14,7 +14,9 @@ from app.rag.rag_v2_authorized_retrieval_adapter import (
 
 
 class _Cursor:
-    def __init__(self, *, one: tuple[object, ...] | None = None, rows: list[dict[str, object]] | None = None) -> None:
+    def __init__(
+        self, *, one: tuple[object, ...] | None = None, rows: list[dict[str, object]] | None = None
+    ) -> None:
         self._one = one
         self._rows = rows or []
 
@@ -58,7 +60,9 @@ class _Connection:
         return _Cursor()
 
 
-def test_adapter_reads_only_query_role_definer_functions_and_maps_tagged_citations(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_adapter_reads_only_query_role_definer_functions_and_maps_tagged_citations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     connection = _Connection()
     monkeypatch.setattr(
         "app.rag.rag_v2_authorized_retrieval_adapter.psycopg.connect",
@@ -90,7 +94,10 @@ def test_adapter_reads_only_query_role_definer_functions_and_maps_tagged_citatio
     assert dense.items[0].document_id == "doc_owner_document_0001"
     assert dense.items[0].sanitized_display_name == "Owner fixture"
     assert dense.items[0].canonical_https_url is None
-    assert all("rag_v2_immutable_source_revisions" not in statement for statement, _ in connection.statements)
+    assert all(
+        "rag_v2_immutable_source_revisions" not in statement
+        for statement, _ in connection.statements
+    )
     dense_calls = [
         parameters
         for statement, parameters in connection.statements
@@ -125,10 +132,10 @@ def test_adapter_resolves_the_opaque_scope_without_putting_owner_id_in_the_pytho
         if "read_rag_v2_retrieval_scope_by_claim" in statement
     ]
     assert scope.owner_user_id == "usr_demo_owner"
-    assert opaque_calls == [
-        ("rvs_" + "a" * 32, "req_v2_retrieval_000000000001")
-    ]
-    assert all("rag_v2_retrieval_scope_claims" not in statement for statement, _ in connection.statements)
+    assert opaque_calls == [("rvs_" + "a" * 32, "req_v2_retrieval_000000000001")]
+    assert all(
+        "rag_v2_retrieval_scope_claims" not in statement for statement, _ in connection.statements
+    )
 
 
 def test_adapter_allows_the_bounded_five_second_cold_dense_search_budget(
@@ -151,7 +158,9 @@ def test_adapter_allows_the_bounded_five_second_cold_dense_search_budget(
     assert ("SET LOCAL statement_timeout = '5s'", None) in connection.statements
 
 
-def test_adapter_rejects_an_oversized_or_scope_drifting_row(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_adapter_rejects_an_oversized_or_scope_drifting_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     connection = _Connection()
     monkeypatch.setattr(
         "app.rag.rag_v2_authorized_retrieval_adapter.psycopg.connect",
@@ -213,7 +222,8 @@ def _candidate_row(*, rank: int, source_scope: str) -> dict[str, object]:
             else "voyage_context_4_1024_v1"
         ),
         "external_processing_eligible": public,
-        "generation_id": "rgr_" + ({"EXACT30": "1", "OA112": "2", "OWNER_PRIVATE": "3"}[source_scope] * 32),
+        "generation_id": "rgr_"
+        + ({"EXACT30": "1", "OA112": "2", "OWNER_PRIVATE": "3"}[source_scope] * 32),
         "heading_path": ["Evidence"],
         "locator": {"section": "Evidence"},
         "candidate_owner_user_id": None if public else "usr_demo_owner",
@@ -224,6 +234,8 @@ def _candidate_row(*, rank: int, source_scope: str) -> dict[str, object]:
         "source_id": "src_v2_fixture_001",
         "source_revision_id": "srv_v2_fixture_001",
         "source_scope": source_scope,
-        "citation_title": "OA fixture" if source_scope == "OA112" else ("Exact fixture" if public else None),
+        "citation_title": "OA fixture"
+        if source_scope == "OA112"
+        else ("Exact fixture" if public else None),
         "retrieval_topics": ["FINANCIAL_ENGINEERING"],
     }

@@ -16,15 +16,14 @@ from app.data.kis.universe import (
     write_universe_markdown_report,
 )
 from app.data.krx._credential_transport import KrxCredentialError
-from app.data.krx.client import KrxHttpError, KrxOpenApiClient
 from app.data.krx.catalog import KRX_OPEN_API_FIRST_AVAILABLE_DATE
+from app.data.krx.client import KrxHttpError, KrxOpenApiClient
 from app.data.krx.errors import KrxParseError, KrxValidationDiagnostic
 from app.data.krx.settings import KrxOpenApiSettings
 from app.data.krx.universe import (
     refresh_universe_from_krx_openapi,
     resolve_latest_available_date,
 )
-
 
 _EXACT_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[6]

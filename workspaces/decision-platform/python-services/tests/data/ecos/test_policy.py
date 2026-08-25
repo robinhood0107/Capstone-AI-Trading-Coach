@@ -49,7 +49,7 @@ def test_statistic_search_rejects_query_placeholder_and_extra_item_segments(suff
         arguments=("722Y001", "D", "20250714", "20260714", "0101000"),
     )
 
-    with pytest.raises(ValueError, match="path"):
+    with pytest.raises(ValueError, match=r"path"):
         validate_keyless_service_path(f"{canonical}{suffix}")
 
 
@@ -70,7 +70,7 @@ def test_metadata_service_paths_keep_their_existing_no_trailing_slash_shape() ->
     ["KeyStatisticList", "StatisticMeta", "StatisticWord", "../StatisticSearch"],
 )
 def test_out_of_scope_or_unsafe_services_are_rejected(service: str) -> None:
-    with pytest.raises(ValueError, match="service|path"):
+    with pytest.raises(ValueError, match=r"service|path"):
         build_keyless_service_path(
             service=service,
             start_index=1,
@@ -81,7 +81,7 @@ def test_out_of_scope_or_unsafe_services_are_rejected(service: str) -> None:
 
 @pytest.mark.parametrize("segment", ["..", "%2fetc", "a/b", "//attacker.invalid"])
 def test_path_segments_cannot_escape_the_fixed_origin(segment: str) -> None:
-    with pytest.raises(ValueError, match="segment|path"):
+    with pytest.raises(ValueError, match=r"segment|path"):
         build_keyless_service_path(
             service="StatisticTableList",
             start_index=1,

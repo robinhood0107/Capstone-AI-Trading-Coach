@@ -140,13 +140,7 @@ def test_real_business_rpc_roundtrip_is_loopback_single_call_without_reflection(
         with pytest.raises(grpc.RpcError) as reflection_error:
             list(
                 reflection_stub.ServerReflectionInfo(
-                    iter(
-                        [
-                            reflection_pb2.ServerReflectionRequest(
-                                list_services=""
-                            )
-                        ]
-                    ),
+                    iter([reflection_pb2.ServerReflectionRequest(list_services="")]),
                     timeout=0.5,
                 )
             )
@@ -413,8 +407,7 @@ def test_ninth_concurrent_rpc_is_bounded_before_a_ninth_repository_call() -> Non
     try:
         stub = disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(channel)
         calls = [
-            executor.submit(_get_disclosure_events, stub, _request(), timeout=1.5)
-            for _ in range(9)
+            executor.submit(_get_disclosure_events, stub, _request(), timeout=1.5) for _ in range(9)
         ]
         deadline = time.monotonic() + 1
         while repository.calls < 8 and time.monotonic() < deadline:
@@ -424,14 +417,11 @@ def test_ninth_concurrent_rpc_is_bounded_before_a_ninth_repository_call() -> Non
         ninth_errors: list[BaseException] = []
         while not ninth_errors and time.monotonic() < error_deadline:
             ninth_errors = [
-                error
-                for call in calls
-                if call.done() and (error := call.exception()) is not None
+                error for call in calls if call.done() and (error := call.exception()) is not None
             ]
             time.sleep(0.01)
         assert any(
-            isinstance(error, grpc.RpcError)
-            and error.code() == grpc.StatusCode.RESOURCE_EXHAUSTED
+            isinstance(error, grpc.RpcError) and error.code() == grpc.StatusCode.RESOURCE_EXHAUSTED
             for error in ninth_errors
         )
         repository.release.set()

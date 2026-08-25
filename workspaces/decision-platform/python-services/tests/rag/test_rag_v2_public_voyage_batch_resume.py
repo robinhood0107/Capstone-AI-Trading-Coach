@@ -7,10 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.rag import rag_v2_public_voyage_evaluator as voyage_evaluator
 from app.rag.oa_release_manifest import OA_TRACK_IDS
 from app.rag.pre_s5_provider_control import PreS5ProviderBinding
 from app.rag.rag_v2_public_bge_evaluator import PublicBgeEvaluationQuery
-from app.rag import rag_v2_public_voyage_evaluator as voyage_evaluator
 from app.rag.rag_v2_public_voyage_evaluator import (
     PacketGatedPublicVoyageEvaluationBatchEmbedder,
 )
@@ -35,7 +35,7 @@ class _ResumeOnlyRepository:
         if component_scope != "EXACT30":
             return None
         vector = (1.0,) + (0.0,) * 1023
-        return {query_sha256: vector for query_sha256 in expected_query_sha256s}
+        return dict.fromkeys(expected_query_sha256s, vector)
 
     def reserve(self, **kwargs: object) -> object:
         del kwargs
@@ -96,7 +96,9 @@ class _SuccessfulEvaluationTransport:
         )
 
 
-def test_completed_exact30_evaluation_batch_resumes_without_packet_or_provider(tmp_path: Path) -> None:
+def test_completed_exact30_evaluation_batch_resumes_without_packet_or_provider(
+    tmp_path: Path,
+) -> None:
     repository = _ResumeOnlyRepository()
     exact30 = tuple(
         PublicBgeEvaluationQuery(

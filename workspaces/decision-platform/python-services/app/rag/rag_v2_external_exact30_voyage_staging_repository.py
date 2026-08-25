@@ -68,7 +68,9 @@ class PsycopgExternalExact30VoyageStagingRepository:
 
     def __init__(self, *, database_dsn: str) -> None:
         if not database_dsn or len(database_dsn) > 4_096:
-            raise ExternalExact30VoyageStagingRepositoryError("EXTERNAL_EXACT30_VOYAGE_STAGE_DATABASE_DSN")
+            raise ExternalExact30VoyageStagingRepositoryError(
+                "EXTERNAL_EXACT30_VOYAGE_STAGE_DATABASE_DSN"
+            )
         self._database_dsn = database_dsn
 
     def stage(
@@ -271,9 +273,7 @@ def _staging_receipt(
             and (row[4] != context.expected_source_count or row[5] != context.expected_chunk_count)
         )
     ):
-        raise ExternalExact30VoyageStagingRepositoryError(
-            "EXTERNAL_EXACT30_VOYAGE_STAGE_RECEIPT"
-        )
+        raise ExternalExact30VoyageStagingRepositoryError("EXTERNAL_EXACT30_VOYAGE_STAGE_RECEIPT")
     return ExternalExact30VoyageStagingReceipt(
         component_generation_id=row[0],
         materialization_run_id=row[1],
@@ -294,7 +294,15 @@ def _attest_writer_connection(connection: psycopg.Connection[Any]) -> None:
             "EXTERNAL_EXACT30_VOYAGE_STAGE_WRITER_ROLE"
         )
     for table in _WRITER_FORBIDDEN_TABLES:
-        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+        for privilege in (
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "TRUNCATE",
+            "REFERENCES",
+            "TRIGGER",
+        ):
             row = connection.execute(
                 "SELECT has_table_privilege(current_user, %s, %s)",
                 (f"public.{table}", privilege),

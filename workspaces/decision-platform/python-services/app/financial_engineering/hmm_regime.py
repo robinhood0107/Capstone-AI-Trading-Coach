@@ -112,10 +112,7 @@ def _logsumexp(values: FloatArray, axis: int | None = None) -> FloatArray:
     maximum = np.max(values, axis=axis, keepdims=True)
     summed = np.sum(np.exp(values - maximum), axis=axis, keepdims=True)
     result = maximum + np.log(summed)
-    if axis is not None:
-        result = np.squeeze(result, axis=axis)
-    else:
-        result = np.squeeze(result)
+    result = np.squeeze(result, axis=axis) if axis is not None else np.squeeze(result)
     return result
 
 
@@ -156,8 +153,7 @@ def _forward_posteriors(
                 else posteriors[index - 1]
             )
             log_prior = _logsumexp(
-                np.log(np.maximum(prior, np.finfo(np.float64).tiny))[:, None]
-                + log_transition,
+                np.log(np.maximum(prior, np.finfo(np.float64).tiny))[:, None] + log_transition,
                 axis=0,
             )
             unnormalized = log_prior + emission
@@ -181,7 +177,9 @@ def _validate_probability_vector(values: FloatArray) -> bool:
     )
 
 
-def _validate_candidate(model: GaussianHmmLike, observations: FloatArray) -> tuple[FloatArray, float]:
+def _validate_candidate(
+    model: GaussianHmmLike, observations: FloatArray
+) -> tuple[FloatArray, float]:
     if not model.monitor_.converged or not model.monitor_.history:
         raise ValueError("not_converged")
     likelihood = float(model.monitor_.history[-1])
@@ -195,7 +193,9 @@ def _validate_candidate(model: GaussianHmmLike, observations: FloatArray) -> tup
         raise ValueError("start_probability_invalid")
     if transition.shape != (2, 2) or not bool(np.all(np.isfinite(transition))):
         raise ValueError("transition_invalid")
-    if not bool(np.all(transition > 0.0)) or not bool(np.allclose(transition.sum(axis=1), 1.0, atol=1e-8)):
+    if not bool(np.all(transition > 0.0)) or not bool(
+        np.allclose(transition.sum(axis=1), 1.0, atol=1e-8)
+    ):
         raise ValueError("transition_invalid")
     if means.shape != (2, 2) or not bool(np.all(np.isfinite(means))):
         raise ValueError("means_invalid")
@@ -265,7 +265,9 @@ def _artifact_from_model(
         "trainLastPosterior": train_last_posterior.tolist(),
         "transitionProbability": np.asarray(model.transmat_, dtype=np.float64).tolist(),
     }
-    canonical = json.dumps(parameters, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    canonical = json.dumps(
+        parameters, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode()
     return HMMArtifact(
         selected_seed=seed,
         scaler_mean=tuple(float(v) for v in scaler_mean),  # type: ignore[arg-type]

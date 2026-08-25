@@ -11,12 +11,13 @@ import pytest
 from pydantic import SecretStr
 
 from app.data._shared.redis_quota import QuotaUnavailableError
-from app.data.ecos import _credential_transport, http_client as ecos_http_client
+from app.data.ecos import _credential_transport
+from app.data.ecos import http_client as ecos_http_client
 from app.data.ecos._credential_transport import (
     ECOSCredentialError,
-    _CredentialTransport,
     _canonical_client_headers,
     _canonical_request_headers,
+    _CredentialTransport,
 )
 from app.data.ecos.errors import ECOSApplicationError
 from app.data.ecos.http_client import ECOSHttpClient, ECOSHttpError, _build_tls_context
@@ -1036,6 +1037,31 @@ def test_second_attempt_drip_body_cannot_exceed_logical_deadline(
     }
     assert clock.value == 13.0
     assert exc_info.value.__cause__ is None
+
+
+def test_signed_approval_deadline_bounds_the_physical_response() -> None:
+    clock = _FakeClock()
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            stream=_DeadlineDripStream(clock, advance_seconds=4.0),
+        )
+
+    client = ECOSHttpClient._for_tests(
+        ECOSSettings(_env_file=None),
+        transport=httpx.MockTransport(handler),
+        quota=_RecordingQuota([]),
+        credential=SecretStr("synthetic-key"),
+        monotonic=clock,
+        approval_deadline_monotonic=3.0,
+    )
+    try:
+        with pytest.raises(ECOSHttpError, match="logical_deadline_exceeded"):
+            client.get_json(_path())
+    finally:
+        client.close()
 
 
 @pytest.mark.parametrize("operation", ["get_json", "table", "item"])

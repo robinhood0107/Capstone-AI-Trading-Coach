@@ -15,12 +15,12 @@ from app.data.kis.http_client import KISHttpClient
 from app.data.kis.settings import KISSettings
 from app.data.krx.client import KrxOpenApiClient
 from app.data.krx.settings import KrxS5ProductionSettings
+from app.lightgbm.bootstrap_journal import BootstrapJournal
 from app.lightgbm.bootstrap_live import (
     LiveEcosDailyProvider,
     LiveKisBootstrapProvider,
     LiveKrxBootstrapProvider,
 )
-from app.lightgbm.bootstrap_journal import BootstrapJournal
 from app.lightgbm.daily_refresh import (
     DAILY_PACKET_MAX_BYTES,
     build_daily_resume_packet,
@@ -62,9 +62,7 @@ def main() -> int:
     resume_sha = os.environ.get("S5_DAILY_RESUME_PACKET_SHA256", "")
     writer_dsn = os.environ.get("S5_SIGNAL_WRITER_DSN", "")
     scheduler_dsn = os.environ.get("S5_SIGNAL_SCHEDULER_DSN", "")
-    if not all(
-        (root_value, packet_sha, state_sha, expected_batch_id, writer_dsn, scheduler_dsn)
-    ):
+    if not all((root_value, packet_sha, state_sha, expected_batch_id, writer_dsn, scheduler_dsn)):
         print("S5_DAILY_REFRESH=AUTHORITY_UNAVAILABLE")
         return 2
     lock = -1

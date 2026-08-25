@@ -1,0 +1,416 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+case ${1:-} in
+  --sealed)
+    [[ $# == 2 ]] || { echo 'P1_RELEASE_VERIFY=UNEXPECTED_ARGUMENTS' >&2; exit 1; }
+    bundle=$2
+    ;;
+  --stage-to)
+    [[ $# == 3 ]] || { echo 'P1_RELEASE_VERIFY=UNEXPECTED_ARGUMENTS' >&2; exit 1; }
+    destination=$2
+    source=$3
+    [[ -d $source && ! -L $source ]] || { echo 'P1_RELEASE_VERIFY=INVALID_DIRECTORY' >&2; exit 1; }
+    source=$(cd -- "$source" && pwd -P)
+    python3 "$source/deploy/p1/release_guard.py" stage-bundle "$source" "$destination"
+    exec "$destination/deploy/p1/verify-release" --sealed "$destination"
+    ;;
+  *)
+    [[ $# -le 1 ]] || { echo 'P1_RELEASE_VERIFY=UNEXPECTED_ARGUMENTS' >&2; exit 1; }
+    source=${1:-$script_dir/../..}
+    [[ -d $source && ! -L $source ]] || { echo 'P1_RELEASE_VERIFY=INVALID_DIRECTORY' >&2; exit 1; }
+    source=$(cd -- "$source" && pwd -P)
+    stage_parent=$(mktemp -d)
+    cleanup_stage() { rm -rf -- "$stage_parent"; }
+    trap cleanup_stage EXIT
+    python3 "$source/deploy/p1/release_guard.py" stage-bundle "$source" "$stage_parent/bundle"
+    "$stage_parent/bundle/deploy/p1/verify-release" --sealed "$stage_parent/bundle"
+    exit $?
+    ;;
+esac
+[[ -d $bundle && ! -L $bundle ]] || { echo 'P1_RELEASE_VERIFY=INVALID_DIRECTORY' >&2; exit 1; }
+bundle=$(cd -- "$bundle" && pwd -P)
+for command in sha256sum docker python3 cosign gh; do
+    command -v "$command" >/dev/null || { echo "P1_RELEASE_VERIFY=MISSING_$command" >&2; exit 1; }
+done
+identity='https://github.com/robinhood0107/Capstone-AI-Trading-Coach/.github/workflows/p1-offline-demo-release.yml@refs/heads/main'
+[[ -f $bundle/bundle-root-signature.bundle.json && ! -L $bundle/bundle-root-signature.bundle.json ]] || {
+  echo 'P1_RELEASE_VERIFY=MISSING_BUNDLE_ROOT_SIGNATURE' >&2
+  exit 1
+}
+cosign verify-blob --offline --bundle "$bundle/bundle-root-signature.bundle.json" \
+  --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "$bundle/SHA256SUMS" >/dev/null
+python3 - "$bundle" <<'PY'
+from pathlib import Path
+import re
+import stat
+import sys
+
+root = Path(sys.argv[1])
+safe_path = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}")
+license_text = (root / "LICENSE").read_text(encoding="utf-8")
+if not license_text.startswith("                    GNU AFFERO GENERAL PUBLIC LICENSE\n"):
+    raise ValueError("bundle AGPL license header is missing")
+if "Version 3, 19 November 2007" not in license_text or "END OF TERMS AND CONDITIONS" not in license_text:
+    raise ValueError("bundle AGPL license text is incomplete")
+expected: set[str] = set()
+for line in (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
+    match = re.fullmatch(r"[0-9a-f]{64}  (.+)", line)
+    if match is None or safe_path.fullmatch(match.group(1)) is None or ".." in Path(match.group(1)).parts:
+        raise ValueError("invalid checksum inventory")
+    if match.group(1) in expected:
+        raise ValueError("duplicate checksum inventory")
+    expected.add(match.group(1))
+
+actual: set[str] = set()
+for path in root.rglob("*"):
+    metadata = path.lstat()
+    if stat.S_ISLNK(metadata.st_mode):
+        raise ValueError("bundle symlink is forbidden")
+    if stat.S_ISREG(metadata.st_mode):
+        actual.add(path.relative_to(root).as_posix())
+allowed_unsigned = {"SHA256SUMS", "bundle-root-signature.bundle.json"}
+if actual != expected | allowed_unsigned:
+    raise ValueError("bundle file inventory is not exact")
+PY
+(cd "$bundle" && sha256sum --check --strict SHA256SUMS)
+
+inventory=$(mktemp)
+compose_json=$(mktemp)
+archive_inventory=$(mktemp)
+archive_stage=$(mktemp -d)
+cleanup() { rm -f -- "$inventory" "$compose_json" "$archive_inventory" "$archive_stage/images.tar"; rmdir -- "$archive_stage" 2>/dev/null || true; }
+trap cleanup EXIT
+python3 - "$bundle" "$inventory" <<'PY'
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+
+root = Path(sys.argv[1])
+inventory_path = Path(sys.argv[2])
+manifest = json.loads((root / "release-manifest.json").read_text(encoding="utf-8"))
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
+
+required = {
+    "contractId", "releaseName", "releaseStage", "bundleMode", "releaseVersion",
+    "commitSha", "treeSha", "configSha256", "sourceArchiveSha256", "licenseSha256",
+    "platform", "applicationImageParitySha256", "images", "compose",
+    "imageArchiveEntries", "imagesArchiveSha256", "providerLiveAccountOrderCalls",
+    "crossMarketRuntime", "sbom", "provenance", "signatures",
+}
+require(isinstance(manifest, dict) and set(manifest) == required, "manifest fields")
+require(manifest["contractId"] == "p1-offline-demo-release-manifest.v1", "manifest contract")
+require(manifest["releaseName"] == "P1_OFFLINE_DEMO", "release name")
+require(manifest["releaseStage"] == "FINAL", "release stage")
+require(manifest["bundleMode"] in {"DB", "KAFKA"}, "bundle mode")
+require(bool(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", manifest["releaseVersion"])), "release version")
+require(bool(re.fullmatch(r"[0-9a-f]{40}", manifest["commitSha"])), "commit sha")
+require(bool(re.fullmatch(r"[0-9a-f]{40}", manifest["treeSha"])), "tree sha")
+for field in ("configSha256", "sourceArchiveSha256", "licenseSha256", "imagesArchiveSha256"):
+    require(bool(re.fullmatch(r"[0-9a-f]{64}", manifest[field])), field)
+require(manifest["platform"] == "linux/amd64", "platform")
+require(bool(re.fullmatch(r"[0-9a-f]{64}", manifest["applicationImageParitySha256"])), "image parity")
+require(
+    type(manifest["providerLiveAccountOrderCalls"]) is int
+    and manifest["providerLiveAccountOrderCalls"] == 0,
+    "provider call count",
+)
+require(manifest["crossMarketRuntime"] == "RETIRED_NOT_APPLICABLE", "cross-market authority")
+
+safe_path = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}")
+digest_pattern = re.compile(r"[0-9a-f]{64}")
+reference_pattern = re.compile(r"[A-Za-z0-9][A-Za-z0-9./_:-]{0,199}@sha256:[0-9a-f]{64}")
+
+def checked_file(relative: str, expected: str) -> None:
+    require(bool(safe_path.fullmatch(relative)) and ".." not in Path(relative).parts, "artifact path")
+    path = root / relative
+    metadata = path.lstat()
+    require(stat.S_ISREG(metadata.st_mode) and not path.is_symlink(), "artifact type")
+    require(path.resolve().is_relative_to(root), "artifact containment")
+    require(bool(digest_pattern.fullmatch(expected)), "artifact digest format")
+    require(hashlib.sha256(path.read_bytes()).hexdigest() == expected, "artifact digest")
+
+expected_components = {"runtime-netns", "postgres", "redis", "spring-api", "python-services"}
+if manifest["bundleMode"] == "KAFKA":
+    expected_components.add("kafka")
+images = manifest["images"]
+require(isinstance(images, list) and len(images) == len(expected_components), "image inventory")
+image_map: dict[str, str] = {}
+for image in images:
+    require(
+        isinstance(image, dict) and set(image) == {"component", "reference", "digest", "platform"},
+        "image fields",
+    )
+    component = image["component"]
+    reference = image["reference"]
+    require(component in expected_components and component not in image_map, "image component")
+    require(isinstance(reference, str) and bool(reference_pattern.fullmatch(reference)), "image reference")
+    require(image["digest"] == reference.rsplit("@", 1)[1], "image digest")
+    require(image["platform"] == "linux/amd64", "image platform")
+    image_map[component] = reference
+require(set(image_map) == expected_components, "image components")
+require(image_map["spring-api"].startswith("ghcr.io/robinhood0107/capstone-spring-api@"), "Spring image")
+require(
+    image_map["python-services"].startswith("ghcr.io/robinhood0107/capstone-python-services@"),
+    "Python image",
+)
+require(
+    image_map["postgres"].startswith("ghcr.io/robinhood0107/capstone-postgres-pgvector@"),
+    "PostgreSQL image",
+)
+if manifest["bundleMode"] == "KAFKA":
+    require(
+        image_map["kafka"].startswith("ghcr.io/robinhood0107/capstone-kafka@"),
+        "Kafka image",
+    )
+parity = hashlib.sha256(
+    f'{image_map["spring-api"]}\n{image_map["python-services"]}\n'.encode()
+).hexdigest()
+require(parity == manifest["applicationImageParitySha256"], "application image parity")
+
+expected_compose = {"deploy/p1/compose.db.yml", "deploy/p1/compose.offline.db.yml"}
+if manifest["bundleMode"] == "KAFKA":
+    expected_compose |= {"deploy/p1/compose.kafka.yml", "deploy/p1/compose.offline.kafka.yml"}
+compose = manifest["compose"]
+require(isinstance(compose, list) and {item.get("path") for item in compose} == expected_compose, "compose inventory")
+for item in compose:
+    require(isinstance(item, dict) and set(item) == {"path", "sha256"}, "compose entry")
+    checked_file(item["path"], item["sha256"])
+
+release_env_digest = hashlib.sha256((root / "deploy/p1/release.env").read_bytes()).hexdigest()
+config_lines = [f'{item["path"]}\t{item["sha256"]}' for item in compose]
+config_lines.append(f"deploy/p1/release.env\t{release_env_digest}")
+config_digest = hashlib.sha256(("\n".join(sorted(config_lines)) + "\n").encode()).hexdigest()
+require(config_digest == manifest["configSha256"], "config digest")
+checked_file("provenance/source.tar", manifest["sourceArchiveSha256"])
+require(hashlib.sha256((root / "LICENSE").read_bytes()).hexdigest() == manifest["licenseSha256"], "license digest")
+archive_entries = manifest["imageArchiveEntries"]
+require(isinstance(archive_entries, list) and 0 < len(archive_entries) <= 4096, "archive inventory")
+archive_digest = hashlib.sha256((root / "images.tar").read_bytes()).hexdigest()
+require(archive_digest == manifest["imagesArchiveSha256"], "image archive digest")
+
+sbom = manifest["sbom"]
+expected_sbom = {(component, fmt) for component in expected_components for fmt in {"SPDX", "CYCLONEDX"}}
+require(
+    isinstance(sbom, list) and {(item.get("component"), item.get("format")) for item in sbom} == expected_sbom,
+    "SBOM inventory",
+)
+for item in sbom:
+    require(isinstance(item, dict) and set(item) == {"component", "format", "path", "sha256"}, "SBOM entry")
+    checked_file(item["path"], item["sha256"])
+
+for key in ("provenance", "signatures"):
+    entries = manifest[key]
+    require(isinstance(entries, list), f"{key} inventory")
+    kinds: set[str] = set()
+    for item in entries:
+        require(isinstance(item, dict) and set(item) == {"kind", "path", "sha256"}, f"{key} entry")
+        require(bool(re.fullmatch(r"[A-Z][A-Z0-9_]{1,63}", item["kind"])), f"{key} kind")
+        require(item["kind"] not in kinds, f"{key} duplicate kind")
+        kinds.add(item["kind"])
+        checked_file(item["path"], item["sha256"])
+require(
+    {item["kind"] for item in manifest["provenance"]} >= {"SOURCE_PROVENANCE", "SOURCE_ARCHIVE"},
+    "source provenance",
+)
+require(
+    next(item["sha256"] for item in manifest["provenance"] if item["kind"] == "SOURCE_ARCHIVE")
+    == manifest["sourceArchiveSha256"],
+    "source archive provenance",
+)
+expected_signatures = {
+    "COSIGN_SPRING_MANIFEST", "COSIGN_PYTHON_MANIFEST", "COSIGN_POSTGRES_MANIFEST",
+    "GITHUB_SPRING", "GITHUB_PYTHON", "GITHUB_POSTGRES", "GITHUB_TRUST_ROOT"
+}
+if manifest["bundleMode"] == "KAFKA":
+    expected_signatures |= {"COSIGN_KAFKA_MANIFEST", "GITHUB_KAFKA"}
+require(
+    {item["kind"] for item in manifest["signatures"]} == expected_signatures,
+    "signature inventory",
+)
+provenance = {item["kind"]: root / item["path"] for item in manifest["provenance"]}
+source = json.loads(provenance["SOURCE_PROVENANCE"].read_text(encoding="utf-8"))
+require(
+    source == {
+        "applicationImageParitySha256": manifest["applicationImageParitySha256"],
+        "buildType": "P1_OFFLINE_DEMO",
+        "bundleMode": manifest["bundleMode"],
+        "commitSha": manifest["commitSha"],
+        "configSha256": manifest["configSha256"],
+        "licenseSha256": manifest["licenseSha256"],
+        "platform": "linux/amd64",
+        "providerLiveAccountOrderCalls": 0,
+        "releaseVersion": manifest["releaseVersion"],
+        "sourceArchiveSha256": manifest["sourceArchiveSha256"],
+        "treeSha": manifest["treeSha"],
+    },
+    "source provenance identity",
+)
+require(
+    hashlib.sha256(provenance["SPRING_OCI_MANIFEST"].read_bytes()).hexdigest()
+    == image_map["spring-api"].rsplit("@sha256:", 1)[1],
+    "Spring OCI manifest",
+)
+require(
+    hashlib.sha256(provenance["PYTHON_OCI_MANIFEST"].read_bytes()).hexdigest()
+    == image_map["python-services"].rsplit("@sha256:", 1)[1],
+    "Python OCI manifest",
+)
+require(
+    hashlib.sha256(provenance["POSTGRES_OCI_MANIFEST"].read_bytes()).hexdigest()
+    == image_map["postgres"].rsplit("@sha256:", 1)[1],
+    "PostgreSQL OCI manifest",
+)
+if manifest["bundleMode"] == "KAFKA":
+    require(
+        hashlib.sha256(provenance["KAFKA_OCI_MANIFEST"].read_bytes()).hexdigest()
+        == image_map["kafka"].rsplit("@sha256:", 1)[1],
+        "Kafka OCI manifest",
+    )
+
+release_lines = (root / "deploy/p1/release.env").read_text(encoding="utf-8").splitlines()
+expected_release_lines = [
+    f'P1_SPRING_IMAGE={image_map["spring-api"]}',
+    f'P1_PYTHON_IMAGE={image_map["python-services"]}',
+    f'P1_POSTGRES_IMAGE={image_map["postgres"]}',
+]
+if manifest["bundleMode"] == "KAFKA":
+    expected_release_lines.append(f'P1_KAFKA_IMAGE={image_map["kafka"]}')
+require(release_lines == expected_release_lines, "release image authority")
+with inventory_path.open("x", encoding="utf-8") as handle:
+    handle.write(f'STAGE\t{manifest["releaseStage"]}\n')
+    handle.write(f'MODE\t{manifest["bundleMode"]}\n')
+    handle.write(f'COMMIT\t{manifest["commitSha"]}\n')
+    handle.write(f'ARCHIVE_SHA\t{manifest["imagesArchiveSha256"]}\n')
+    for component in sorted(image_map):
+        handle.write(f'IMAGE\t{component}\t{image_map[component]}\n')
+PY
+
+mode=$(awk -F '\t' '$1 == "MODE" {print tolower($2)}' "$inventory")
+commit=$(awk -F '\t' '$1 == "COMMIT" {print $2}' "$inventory")
+spring_ref=$(awk -F '\t' '$1 == "IMAGE" && $2 == "spring-api" {print $3}' "$inventory")
+python_ref=$(awk -F '\t' '$1 == "IMAGE" && $2 == "python-services" {print $3}' "$inventory")
+postgres_ref=$(awk -F '\t' '$1 == "IMAGE" && $2 == "postgres" {print $3}' "$inventory")
+kafka_ref=$(awk -F '\t' '$1 == "IMAGE" && $2 == "kafka" {print $3}' "$inventory")
+archive_sha=$(awk -F '\t' '$1 == "ARCHIVE_SHA" {print $2}' "$inventory")
+python3 - "$bundle/release-manifest.json" "$archive_inventory" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+manifest, output = map(Path, sys.argv[1:])
+document = json.loads(manifest.read_text(encoding="utf-8"))
+output.write_text(json.dumps(document["imageArchiveEntries"], sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+PY
+python3 "$bundle/deploy/p1/release_guard.py" stage-archive "$bundle/images.tar" "$archive_sha" "$archive_stage/images.tar"
+python3 "$bundle/deploy/p1/release_guard.py" archive-compare "$archive_stage/images.tar" "$archive_inventory"
+
+cosign verify-blob --offline --bundle "$bundle/signatures/cosign-spring-manifest.bundle.json" \
+  --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "$bundle/provenance/spring-manifest.json" >/dev/null
+cosign verify-blob --offline --bundle "$bundle/signatures/cosign-python-manifest.bundle.json" \
+  --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "$bundle/provenance/python-manifest.json" >/dev/null
+cosign verify-blob --offline --bundle "$bundle/signatures/cosign-postgres-manifest.bundle.json" \
+  --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "$bundle/provenance/postgres-manifest.json" >/dev/null
+if [[ $mode == kafka ]]; then
+  cosign verify-blob --offline --bundle "$bundle/signatures/cosign-kafka-manifest.bundle.json" \
+    --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    "$bundle/provenance/kafka-manifest.json" >/dev/null
+fi
+gh attestation verify "$bundle/provenance/spring-manifest.json" -R robinhood0107/Capstone-AI-Trading-Coach \
+  --bundle "$bundle/signatures/github-spring.attestation.jsonl" \
+  --custom-trusted-root "$bundle/signatures/github-trusted-root.jsonl" \
+  --cert-identity "$identity" --source-digest "$commit" >/dev/null
+gh attestation verify "$bundle/provenance/python-manifest.json" -R robinhood0107/Capstone-AI-Trading-Coach \
+  --bundle "$bundle/signatures/github-python.attestation.jsonl" \
+  --custom-trusted-root "$bundle/signatures/github-trusted-root.jsonl" \
+  --cert-identity "$identity" --source-digest "$commit" >/dev/null
+gh attestation verify "$bundle/provenance/postgres-manifest.json" -R robinhood0107/Capstone-AI-Trading-Coach \
+  --bundle "$bundle/signatures/github-postgres.attestation.jsonl" \
+  --custom-trusted-root "$bundle/signatures/github-trusted-root.jsonl" \
+  --cert-identity "$identity" --source-digest "$commit" >/dev/null
+if [[ $mode == kafka ]]; then
+  gh attestation verify "$bundle/provenance/kafka-manifest.json" -R robinhood0107/Capstone-AI-Trading-Coach \
+    --bundle "$bundle/signatures/github-kafka.attestation.jsonl" \
+    --custom-trusted-root "$bundle/signatures/github-trusted-root.jsonl" \
+    --cert-identity "$identity" --source-digest "$commit" >/dev/null
+fi
+
+python3 "$bundle/deploy/p1/release_guard.py" archive-compare "$archive_stage/images.tar" "$archive_inventory"
+docker load --input "$archive_stage/images.tar" >/dev/null
+while IFS=$'\t' read -r kind component reference; do
+  [[ $kind == IMAGE ]] || continue
+  [[ $(docker image inspect "$reference" --format '{{.Os}}/{{.Architecture}}') == linux/amd64 ]] || {
+    echo "P1_RELEASE_VERIFY=IMAGE_PLATFORM_$component" >&2
+    exit 1
+  }
+done < "$inventory"
+[[ $(docker image inspect "$spring_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$commit" ]]
+[[ $(docker image inspect "$python_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$commit" ]]
+[[ $(docker image inspect "$postgres_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$commit" ]]
+[[ $(docker image inspect "$spring_ref" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}') == AGPL-3.0-only ]]
+[[ $(docker image inspect "$python_ref" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}') == AGPL-3.0-only ]]
+[[ $(docker image inspect "$postgres_ref" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}') == PostgreSQL ]]
+if [[ $mode == kafka ]]; then
+  [[ $(docker image inspect "$kafka_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$commit" ]]
+  [[ $(docker image inspect "$kafka_ref" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}') == Apache-2.0 ]]
+fi
+
+files=(-f "$bundle/deploy/p1/compose.db.yml")
+[[ $mode == kafka ]] && files+=(-f "$bundle/deploy/p1/compose.kafka.yml")
+files+=(-f "$bundle/deploy/p1/compose.offline.db.yml")
+[[ $mode == kafka ]] && files+=(-f "$bundle/deploy/p1/compose.offline.kafka.yml")
+P1_SECRETS_DIR="$bundle/non-secret-placeholder" P1_SECRET_GID=1000 P1_API_PORT=18080 docker compose \
+  --env-file "$bundle/deploy/p1/release.env" "${files[@]}" config --format json > "$compose_json"
+python3 - "$compose_json" "$mode" "$spring_ref" "$python_ref" "$postgres_ref" "$kafka_ref" <<'PY'
+import json
+import sys
+
+path, mode, spring_ref, python_ref, postgres_ref, kafka_ref = sys.argv[1:]
+document = json.load(open(path, encoding="utf-8"))
+services = document["services"]
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
+
+expected = {
+    "runtime-netns", "api-edge", "postgres", "redis", "role-bootstrap", "migrate", "identity-bootstrap",
+    "actor-capability-authority", "python-worker", "synthetic-async-smoke", "spring-api",
+}
+if mode == "kafka":
+    expected |= {"poison-recorder", "kafka-publisher", "kafka-volume-init", "kafka", "kafka-topic-init"}
+require(expected == set(services), "compose service inventory")
+for name in expected:
+    require(services[name].get("pull_policy") == "never", f"pull policy: {name}")
+require(services["spring-api"]["image"] == spring_ref, "Spring compose image")
+require(services["python-worker"]["image"] == python_ref, "Python compose image")
+require(services["api-edge"]["image"] == python_ref, "edge compose image")
+require(services["migrate"]["image"] == spring_ref, "migration compose image")
+require(services["role-bootstrap"]["image"] == spring_ref, "role bootstrap compose image")
+require(services["identity-bootstrap"]["image"] == spring_ref, "bootstrap compose image")
+require(services["actor-capability-authority"]["image"] == spring_ref, "actor authority compose image")
+require(services["synthetic-async-smoke"]["image"] == python_ref, "synthetic smoke compose image")
+require(services["postgres"]["image"] == postgres_ref, "PostgreSQL compose image")
+if mode == "kafka":
+    require(services["poison-recorder"]["image"] == python_ref, "poison recorder compose image")
+    require(services["kafka-publisher"]["image"] == python_ref, "Kafka publisher compose image")
+    require(services["kafka-topic-init"]["image"] == python_ref, "topic initializer compose image")
+    require(services["kafka"]["image"] == kafka_ref, "Kafka compose image")
+require(document["networks"]["p1-internal"]["internal"] is True, "internal network")
+require(services["runtime-netns"]["networks"] == {"p1-internal": None}, "application namespace network")
+require(set(services["api-edge"]["networks"]) == {"p1-internal", "p1-edge"}, "edge network boundary")
+PY
+
+printf 'P1_RELEASE_VERIFY=PASS MODE=%s\n' "${mode^^}"

@@ -502,7 +502,7 @@ internal class GrpcStrongLlmGenerationAdapter(
     private fun sha256(value: String): String {
         val bytes = value.toByteArray(StandardCharsets.UTF_8)
         return try {
-            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
         } finally {
             bytes.fill(0)
         }
@@ -516,7 +516,7 @@ internal class GrpcStrongLlmGenerationAdapter(
     private companion object {
         val AUTH_KEY: Metadata.Key<String> = Metadata.Key.of("x-decision-strong-llm-grpc-auth", Metadata.ASCII_STRING_MARSHALLER)
         val FAILURE_LEAF = Regex("^[A-Z0-9_]{3,96}$")
-        val LOGGER = LoggerFactory.getLogger(GrpcStrongLlmGenerationAdapter::class.java)
+        val LOGGER: org.slf4j.Logger = LoggerFactory.getLogger(GrpcStrongLlmGenerationAdapter::class.java)
     }
 }
 

@@ -13,8 +13,6 @@ class BrokerageIdempotencyHasherTest {
         BrokerageIdempotencyHasher(
             BrokerageProperties(
                 idempotencyScopeHmacKey = "b".repeat(64),
-                databaseCapabilityToken = "c".repeat(64),
-                databaseCapabilityTokenSha256 = "0".repeat(64),
             ),
         )
 

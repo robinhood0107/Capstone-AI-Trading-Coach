@@ -31,7 +31,7 @@ class BrokerageService(
         val identity = idempotencyHasher.identity(actor.userId, rawIdempotencyKey, command)
         try {
             persistencePort
-                .findIdempotencyResult(identity.scopeHash, identity.ownerScopeHash, now)
+                .findIdempotencyResult(actor.userId, identity.scopeHash, identity.ownerScopeHash, now)
                 ?.let { stored ->
                     if (stored.requestHash != identity.requestHash) {
                         throw BrokerageIdempotencyConflictException()

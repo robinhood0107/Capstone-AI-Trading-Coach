@@ -18,7 +18,9 @@ from app.data.kis.universe import (
 from app.data.kis.universe_refresh_cli import main
 
 
-@pytest.mark.parametrize("value", ["../../escaped", "005930/..", "ABCDEF", "1234567", "１２３４５６"])
+@pytest.mark.parametrize(
+    "value", ["../../escaped", "005930/..", "ABCDEF", "1234567", "１２３４５６"]
+)
 def test_parse_symbols_rejects_non_ascii_six_digit_codes(value: str) -> None:
     with pytest.raises(ValueError, match="six digits"):
         parse_symbols(value)
@@ -45,11 +47,11 @@ def test_refresh_universe_from_krx_export_ranks_by_market_cap_then_trading_value
         "\n".join(
             [
                 "종목코드,종목명,시장구분,시가총액,거래대금",
-                "000003,High Tie A,KOSPI,\"1,000\",\"90\"",
-                "000002,High Tie B,KOSPI,\"1,000\",\"100\"",
-                "000001,Highest,KOSPI,\"2,000\",\"1\"",
-                "000004,Missing Trading,KOSPI,\"900\",",
-                "ABCD,Invalid Code,KOSPI,\"9,999\",\"9,999\"",
+                '000003,High Tie A,KOSPI,"1,000","90"',
+                '000002,High Tie B,KOSPI,"1,000","100"',
+                '000001,Highest,KOSPI,"2,000","1"',
+                '000004,Missing Trading,KOSPI,"900",',
+                'ABCD,Invalid Code,KOSPI,"9,999","9,999"',
             ]
         ),
         encoding="utf-8",
@@ -70,7 +72,7 @@ def test_refresh_universe_reads_cp949_krx_export(tmp_path: Path) -> None:
         "\n".join(
             [
                 "종목코드,종목명,시장구분,시가총액,거래대금",
-                "005930,삼성전자,KOSPI,\"500,000\",\"900,000\"",
+                '005930,삼성전자,KOSPI,"500,000","900,000"',
             ]
         ).encode("cp949")
     )

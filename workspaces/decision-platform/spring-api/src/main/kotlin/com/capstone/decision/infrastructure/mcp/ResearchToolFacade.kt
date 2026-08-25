@@ -182,7 +182,7 @@ class ResearchToolFacade(
     private fun sha256(value: String): String {
         val bytes = value.toByteArray(StandardCharsets.UTF_8)
         return try {
-            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
         } finally {
             bytes.fill(0)
         }

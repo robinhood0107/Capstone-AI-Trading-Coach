@@ -98,7 +98,10 @@ class PublicBgeEvaluationEvidence:
         )
         if (
             _SHA256.fullmatch(self.evaluation_digest) is None
-            or any(type(value) is not float or not math.isfinite(value) or not 0 <= value <= 1 for value in ratios)
+            or any(
+                type(value) is not float or not math.isfinite(value) or not 0 <= value <= 1
+                for value in ratios
+            )
             or any(type(value) is not int or value < 0 for value in counts)
             or type(self.warm_p95_millis) is not float
             or not math.isfinite(self.warm_p95_millis)
@@ -272,7 +275,9 @@ def _component_payloads(
     _validate_context(context)
     if len(records) != context.expected_source_count:
         raise PublicBgeStagingRepositoryError("PUBLIC_BGE_STAGE_COMPONENT_MEMBERSHIP")
-    payloads = tuple(build_public_bge_staging_payload(record, context=context) for record in records)
+    payloads = tuple(
+        build_public_bge_staging_payload(record, context=context) for record in records
+    )
     source_ids: list[str] = []
     source_revision_ids: list[str] = []
     chunk_count = 0
@@ -369,7 +374,10 @@ def _staging_receipt(
         or not 0 < row[4] <= context.expected_source_count
         or not 0 < row[5] <= context.expected_chunk_count
         or row[5] < row[4]
-        or (row[2] == "STAGED" and (row[4] != context.expected_source_count or row[5] != context.expected_chunk_count))
+        or (
+            row[2] == "STAGED"
+            and (row[4] != context.expected_source_count or row[5] != context.expected_chunk_count)
+        )
     ):
         raise PublicBgeStagingRepositoryError("PUBLIC_BGE_STAGE_RECEIPT")
     return RagV2PublicBgeStagingReceipt(
@@ -420,7 +428,15 @@ def _attest_writer_connection(connection: psycopg.Connection[Any]) -> None:
     if connection.execute("SELECT current_user").fetchone() != (_WRITER_ROLE,):
         raise PublicBgeStagingRepositoryError("PUBLIC_BGE_STAGE_WRITER_ROLE")
     for table in _WRITER_FORBIDDEN_TABLES:
-        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+        for privilege in (
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "TRUNCATE",
+            "REFERENCES",
+            "TRIGGER",
+        ):
             row = connection.execute(
                 "SELECT has_table_privilege(current_user, %s, %s)",
                 (f"public.{table}", privilege),

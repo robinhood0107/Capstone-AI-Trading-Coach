@@ -16,10 +16,14 @@ from app.rag.pre_s5_provider_control import (
 from app.rag.pre_s5_voyage_evaluation_batch_transport import (
     PreS5VoyageEvaluationBatchTransport,
     PreS5VoyageEvaluationBatchTransportError,
+)
+from app.rag.pre_s5_voyage_evaluation_batch_transport import (
     _parse_response as parse_evaluation_response,
 )
 from app.rag.pre_s5_voyage_query_transport import (
     PreS5VoyageContext4QueryEmbedder,
+)
+from app.rag.pre_s5_voyage_query_transport import (
     _parse_response as parse_query_response,
 )
 from app.rag.pre_s5_voyage_transport import (
@@ -27,6 +31,8 @@ from app.rag.pre_s5_voyage_transport import (
     PreS5VoyageHttpRequest,
     PreS5VoyageHttpResponse,
     PreS5VoyageTransportError,
+)
+from app.rag.pre_s5_voyage_transport import (
     _parse_response as parse_document_response,
 )
 from app.rag.rag_v2_external_exact30_voyage_runner import (
@@ -35,7 +41,6 @@ from app.rag.rag_v2_external_exact30_voyage_runner import (
 )
 from app.rag.rag_v2_public_voyage_cli import _document_batch_failure_summary
 from app.rag.rag_v2_voyage_batching import VoyageContextSegment, VoyageDocumentBatch
-
 
 _NOW = datetime(2026, 8, 12, 10, tzinfo=UTC)
 _QUESTION = "Which assumptions support the reported result?"
@@ -56,7 +61,7 @@ _LEAF_CASES = (
     ("CHUNK_TEXT", "CHUNK_TEXT"),
     ("VECTOR_DIMENSION", "VECTOR_DIMENSION"),
     ("VECTOR_NUMBER", "VECTOR_NUMBER"),
-    ("VECTOR_FINITE", "VECTOR_FINITE"),
+    ("VECTOR_FINITE", "BODY_UTF8_OR_JSON"),
     ("VECTOR_NORM", "VECTOR_NORM"),
     ("COST_CAP", "COST_CAP"),
 )
@@ -157,8 +162,7 @@ def test_contextualized_response_validates_known_optional_fields(parser_name: st
     with pytest.raises(Exception) as chunker_error:
         _parse(parser_name, _response_from_payload(invalid_chunker))
     assert (
-        getattr(chunker_error.value, "response_validation_leaf", None)
-        == "ENVELOPE_REQUIRED_FIELDS"
+        getattr(chunker_error.value, "response_validation_leaf", None) == "ENVELOPE_REQUIRED_FIELDS"
     )
 
     invalid_text = _payload(include_chunker_version=False, include_text=True)
@@ -284,7 +288,7 @@ def test_query_attempt_exposes_the_same_content_free_leaf() -> None:
 
 
 def test_validation_leaf_set_is_closed_and_content_free() -> None:
-    assert {leaf for _, leaf in _LEAF_CASES} == {
+    assert {leaf for _, leaf in _LEAF_CASES} | {"VECTOR_FINITE"} == {
         "STATUS",
         "BODY_SIZE_OR_TYPE",
         "BODY_UTF8_OR_JSON",

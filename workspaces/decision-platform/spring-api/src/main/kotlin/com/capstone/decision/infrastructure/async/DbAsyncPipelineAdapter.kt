@@ -5,7 +5,10 @@ import com.capstone.decision.application.async.AsyncJobRequest
 import com.capstone.decision.application.async.AsyncJobRequestConflictException
 import com.capstone.decision.application.async.AsyncJobType
 import com.capstone.decision.application.async.AsyncPipelinePort
+import com.capstone.decision.application.security.AuthenticatedActorRef
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -36,19 +39,34 @@ class JdbcAsyncRequestWriter(
         val payloadJson = objectMapper.writeValueAsString(payload)
         require(payloadJson.toByteArray(StandardCharsets.UTF_8).size <= DB_PAYLOAD_BYTES)
         val eventType = EVENT_TYPES.getValue(command.type)
+        val partitionKey = opaquePartitionKey(command.requestedBy, command.type)
+        val binding =
+            ActorCapabilityBinding.request(
+                "CREATE_ASYNC_REQUEST",
+                "ASYNC_JOB",
+                jobId,
+                ActorCapabilityRolePolicy.OWNER,
+                eventId,
+                eventType,
+                partitionKey,
+                jobId,
+                command.type.name,
+                command.requestedBy,
+                payloadJson,
+            )
         val created =
             jdbc().queryForObject(
                 """
                 SELECT create_async_request_authorized(
                   :capability,:eventId,:eventType,:partitionKey,
-                  :jobId,:jobType,:requestedBy,CAST(:payload AS jsonb)
+                  :jobId,:jobType,:requestedBy,:payload
                 )
                 """.trimIndent(),
                 mapOf(
-                    "capability" to actorCapabilityIssuer.issue(command.requestedBy),
+                    "capability" to actorCapabilityIssuer.issue(AuthenticatedActorRef.current(command.requestedBy), binding),
                     "eventId" to eventId,
                     "eventType" to eventType,
-                    "partitionKey" to opaquePartitionKey(command.requestedBy, command.type),
+                    "partitionKey" to partitionKey,
                     "jobId" to jobId,
                     "jobType" to command.type.name,
                     "requestedBy" to command.requestedBy,

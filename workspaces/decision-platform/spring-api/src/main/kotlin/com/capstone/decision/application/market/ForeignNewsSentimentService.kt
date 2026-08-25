@@ -14,7 +14,7 @@ class ForeignNewsSentimentService(
      * owner-local persisted aggregate만 읽고, 아직 materialization되지 않은 lane은 honest ABSTAIN으로 표현한다.
      * 이 service는 provider transport, Decision/Signal/Risk/order integration을 만들지 않는다.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     fun read(
         ownerUserId: String,
         symbol: String,

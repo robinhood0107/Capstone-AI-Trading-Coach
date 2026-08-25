@@ -6,6 +6,7 @@ import json
 import math
 import re
 import stat
+import time
 import zipfile
 from dataclasses import dataclass
 from html.parser import HTMLParser
@@ -129,6 +130,7 @@ class ParserLimits:
     max_blocks: int = 50_000
     max_table_cells: int = 50_000
     max_text_characters: int = 10_000_000
+    max_wall_clock_seconds: int = 120
 
     def validate(self) -> None:
         if any(
@@ -143,6 +145,7 @@ class ParserLimits:
                 self.max_blocks,
                 self.max_table_cells,
                 self.max_text_characters,
+                self.max_wall_clock_seconds,
             )
         ):
             raise DocumentParseError("PARSER_LIMIT_INVALID")
@@ -182,6 +185,50 @@ class _BlockBudget:
         if self.consumed_blocks >= self.max_blocks:
             raise DocumentParseError("DOCUMENT_BLOCK_BOUND_EXCEEDED")
         self.consumed_blocks += 1
+
+
+@dataclass(slots=True)
+class _DocumentWorkBudget:
+    """Page, decoded pixel, raster byte, OCR invocation, and wall time share one document budget."""
+
+    limits: ParserLimits
+    started_at: float = 0.0
+    decoded_pixels: int = 0
+    raster_bytes: int = 0
+    ocr_invocations: int = 0
+    ocr_seconds: float = 0.0
+
+    def __post_init__(self) -> None:
+        self.started_at = time.monotonic()
+
+    def check_deadline(self) -> None:
+        if time.monotonic() - self.started_at > self.limits.max_wall_clock_seconds:
+            raise DocumentParseError("DOCUMENT_DEADLINE_EXCEEDED")
+
+    def reserve_raster(self, *, pixels: int, channels: int) -> None:
+        self.check_deadline()
+        if (
+            pixels < 1
+            or channels not in (3, 4)
+            or pixels > self.limits.max_image_pixels - self.decoded_pixels
+            or pixels > (self.limits.max_image_pixels * 4 - self.raster_bytes) // channels
+        ):
+            raise DocumentParseError("DOCUMENT_RASTER_BUDGET_EXCEEDED")
+        self.decoded_pixels += pixels
+        self.raster_bytes += pixels * channels
+
+    def begin_ocr(self) -> float:
+        self.check_deadline()
+        if self.ocr_invocations >= self.limits.max_pages:
+            raise DocumentParseError("DOCUMENT_OCR_BUDGET_EXCEEDED")
+        self.ocr_invocations += 1
+        return time.monotonic()
+
+    def finish_ocr(self, started_at: float) -> None:
+        self.ocr_seconds += time.monotonic() - started_at
+        if self.ocr_seconds > self.limits.max_wall_clock_seconds:
+            raise DocumentParseError("DOCUMENT_OCR_BUDGET_EXCEEDED")
+        self.check_deadline()
 
 
 @dataclass(frozen=True, slots=True)
@@ -298,6 +345,7 @@ class LocalDocumentParser:
         # 원본 parser가 block/table 객체를 만들기 전에 문서 전체 예산을 한 번만 공유한다.
         block_budget = _BlockBudget(max_blocks=self._limits.max_blocks)
         table_budget = _TableCellBudget(max_cells=self._limits.max_table_cells)
+        work_budget = _DocumentWorkBudget(self._limits)
         blocks: list[dict[str, Any]]
         ocr_used = False
         if mime_type == "application/pdf":
@@ -305,6 +353,7 @@ class LocalDocumentParser:
                 read_result.content,
                 block_budget=block_budget,
                 table_budget=table_budget,
+                work_budget=work_budget,
             )
         elif mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             assert archive is not None
@@ -313,7 +362,9 @@ class LocalDocumentParser:
                 block_budget=block_budget,
                 table_budget=table_budget,
             )
-        elif mime_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+        elif (
+            mime_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        ):
             assert archive is not None
             blocks = _parse_pptx(
                 read_result.content,
@@ -349,6 +400,7 @@ class LocalDocumentParser:
                 read_result.content,
                 block_budget=block_budget,
                 table_budget=table_budget,
+                work_budget=work_budget,
             )
             ocr_used = True
         else:  # pragma: no cover - closed MIME set is enforced above.
@@ -390,6 +442,7 @@ class LocalDocumentParser:
         *,
         block_budget: _BlockBudget,
         table_budget: _TableCellBudget,
+        work_budget: _DocumentWorkBudget,
     ) -> tuple[list[dict[str, Any]], bool]:
         document = _open_normalized_pdf(payload, self._limits)
         try:
@@ -420,6 +473,8 @@ class LocalDocumentParser:
                 if native_blocks:
                     output.extend(native_blocks)
                     continue
+                pixels = _pdf_raster_pixels(page, max_image_pixels=self._limits.max_image_pixels)
+                work_budget.reserve_raster(pixels=pixels, channels=3)
                 output.extend(
                     self._ocr_page(
                         _render_pdf_page(page, max_image_pixels=self._limits.max_image_pixels),
@@ -427,6 +482,7 @@ class LocalDocumentParser:
                         {"page": page_number},
                         block_budget=block_budget,
                         table_budget=table_budget,
+                        work_budget=work_budget,
                     )
                 )
                 ocr_used = True
@@ -440,6 +496,7 @@ class LocalDocumentParser:
         *,
         block_budget: _BlockBudget,
         table_budget: _TableCellBudget,
+        work_budget: _DocumentWorkBudget,
     ) -> list[dict[str, Any]]:
         try:
             image = Image.open(io.BytesIO(payload))
@@ -452,8 +509,10 @@ class LocalDocumentParser:
                 raise DocumentParseError("IMAGE_PAGE_BOUND_EXCEEDED")
             for page_number in range(1, frames + 1):
                 image.seek(page_number - 1)
-                if image.width * image.height > self._limits.max_image_pixels:
+                pixels = image.width * image.height
+                if pixels > self._limits.max_image_pixels:
                     raise DocumentParseError("IMAGE_PIXEL_BOUND_EXCEEDED")
+                work_budget.reserve_raster(pixels=pixels, channels=3)
                 converted = io.BytesIO()
                 image.convert("RGB").save(converted, format="PNG")
                 output.extend(
@@ -463,6 +522,7 @@ class LocalDocumentParser:
                         {"page": page_number},
                         block_budget=block_budget,
                         table_budget=table_budget,
+                        work_budget=work_budget,
                     )
                 )
         finally:
@@ -477,10 +537,12 @@ class LocalDocumentParser:
         *,
         block_budget: _BlockBudget,
         table_budget: _TableCellBudget,
+        work_budget: _DocumentWorkBudget,
     ) -> list[dict[str, Any]]:
         if self._ocr_backend is None:
             raise DocumentParseError("OCR_BACKEND_REQUIRED")
         _validate_ocr_identity(self._ocr_backend)
+        started_at = work_budget.begin_ocr()
         try:
             result = self._ocr_backend.parse_page(
                 png_bytes=png_bytes,
@@ -490,6 +552,8 @@ class LocalDocumentParser:
             raise
         except Exception as error:
             raise DocumentParseError("OCR_BACKEND_FAILED") from error
+        finally:
+            work_budget.finish_ocr(started_at)
         if not isinstance(result, OcrPageResult) or not result.blocks:
             raise DocumentParseError("OCR_EMPTY_RESULT")
         return [
@@ -557,7 +621,9 @@ def _detect_mime(relative_path: str, payload: bytes) -> str:
             valid = False
         else:
             lowered = text.lstrip().lower()
-            valid = mime != "text/html" or lowered.startswith(("<!doctype html", "<html", "<head", "<body"))
+            valid = mime != "text/html" or lowered.startswith(
+                ("<!doctype html", "<html", "<head", "<body")
+            )
     if not valid:
         raise DocumentParseError("DOCUMENT_MIME_MISMATCH")
     return mime
@@ -594,7 +660,10 @@ def _validate_openxml_archive(
             total += info.file_size
             if total > limits.max_decompressed_bytes:
                 raise DocumentParseError("ARCHIVE_DECOMPRESSED_BOUND_EXCEEDED")
-            if info.file_size and info.file_size / max(1, info.compress_size) > limits.max_compression_ratio:
+            if (
+                info.file_size
+                and info.file_size / max(1, info.compress_size) > limits.max_compression_ratio
+            ):
                 raise DocumentParseError("ARCHIVE_COMPRESSION_RATIO_EXCEEDED")
             if any(token in folded for token in _MACRO_NAMES):
                 raise DocumentParseError("OFFICE_MACRO_FORBIDDEN")
@@ -768,9 +837,10 @@ class _SafeHtmlParser(HTMLParser):
         if (
             folded in {"script", "iframe", "object", "embed", "base", "link"}
             or any(key.startswith("on") for key in attributes)
-            or (folded in {"img", "audio", "video", "source", "form"} and any(
-                key in attributes for key in ("src", "srcset", "action", "poster")
-            ))
+            or (
+                folded in {"img", "audio", "video", "source", "form"}
+                and any(key in attributes for key in ("src", "srcset", "action", "poster"))
+            )
         ):
             raise DocumentParseError("HTML_ACTIVE_RESOURCE_FORBIDDEN")
         if folded in {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "td", "th", "caption"}:
@@ -1100,7 +1170,9 @@ def _native_pdf_blocks(
 def _render_pdf_page(page: fitz.Page, *, max_image_pixels: int) -> bytes:
     try:
         _validate_pdf_raster_bounds(page, max_image_pixels=max_image_pixels)
-        pixmap = page.get_pixmap(matrix=fitz.Matrix(_PDF_OCR_RASTER_SCALE, _PDF_OCR_RASTER_SCALE), alpha=False)
+        pixmap = page.get_pixmap(
+            matrix=fitz.Matrix(_PDF_OCR_RASTER_SCALE, _PDF_OCR_RASTER_SCALE), alpha=False
+        )
         if pixmap.width * pixmap.height > max_image_pixels:
             raise DocumentParseError("IMAGE_PIXEL_BOUND_EXCEEDED")
         return cast(bytes, pixmap.tobytes("png"))
@@ -1112,6 +1184,10 @@ def _render_pdf_page(page: fitz.Page, *, max_image_pixels: int) -> bytes:
 
 def _validate_pdf_raster_bounds(page: fitz.Page, *, max_image_pixels: int) -> None:
     """PDF page geometry를 raster allocation 전에 검사해 OCR worker의 메모리 상한을 보존한다."""
+    _pdf_raster_pixels(page, max_image_pixels=max_image_pixels)
+
+
+def _pdf_raster_pixels(page: fitz.Page, *, max_image_pixels: int) -> int:
 
     try:
         width_points = float(page.rect.width)
@@ -1137,6 +1213,7 @@ def _validate_pdf_raster_bounds(page: fitz.Page, *, max_image_pixels: int) -> No
         or height_pixels > max_image_pixels // width_pixels
     ):
         raise DocumentParseError("IMAGE_PIXEL_BOUND_EXCEEDED")
+    return width_pixels * height_pixels
 
 
 def _parse_docx(
@@ -1209,8 +1286,7 @@ def _parse_pptx(
                     column_count=len(shape.table.columns),
                 )
                 rows = [
-                    [" ".join(cell.text.split()) for cell in row.cells]
-                    for row in shape.table.rows
+                    [" ".join(cell.text.split()) for cell in row.cells] for row in shape.table.rows
                 ]
                 output.append(
                     _table(
@@ -1288,7 +1364,9 @@ def _parse_xlsx(
                     )
                 )
             for formula in formulas:
-                output.append(_formula({"sheet": sheet.title}, formula, _normalize_formula(formula)))
+                output.append(
+                    _formula({"sheet": sheet.title}, formula, _normalize_formula(formula))
+                )
     finally:
         workbook.close()
     if not output:
@@ -1296,7 +1374,9 @@ def _parse_xlsx(
     return _renumber(output)
 
 
-def _paragraph(locator: dict[str, object], text: str, confidence: float | None = None) -> dict[str, Any]:
+def _paragraph(
+    locator: dict[str, object], text: str, confidence: float | None = None
+) -> dict[str, Any]:
     return {
         "blockType": "PARAGRAPH",
         "locator": locator,
@@ -1357,7 +1437,9 @@ def _table(
             row_count=len(rows),
             column_count=source_column_count,
         )
-    normalized_rows = [[value.strip() for value in row] for row in rows if any(value.strip() for value in row)]
+    normalized_rows = [
+        [value.strip() for value in row] for row in rows if any(value.strip() for value in row)
+    ]
     if not normalized_rows:
         raise DocumentParseError("TABLE_EMPTY")
     column_count = max(len(row) for row in normalized_rows)
@@ -1504,7 +1586,9 @@ def _validate_block_bounds(blocks: list[dict[str, Any]], limits: ParserLimits) -
             text_characters += len(cast(str, block["sourceText"]))
         if "normalizedFormula" in block:
             text_characters += len(cast(str, block["normalizedFormula"]))
-        text_characters += sum(len(cast(str, item)) for item in cast(list[object], block.get("items", [])))
+        text_characters += sum(
+            len(cast(str, item)) for item in cast(list[object], block.get("items", []))
+        )
         text_characters += sum(
             len(cast(str, cell["text"]))
             for cell in cast(list[dict[str, object]], block.get("cells", []))

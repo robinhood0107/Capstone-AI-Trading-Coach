@@ -1,0 +1,169 @@
+name: capstone-p1-offline-demo
+
+services:
+  python-worker:
+    command: ["python", "-m", "app.async_worker.kafka_consumer"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: 127.0.0.1:9092
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+    depends_on:
+      kafka-topic-init: {condition: service_completed_successfully}
+      poison-recorder: {condition: service_started}
+
+  poison-recorder:
+    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "poison-recorder"]
+    command: ["python", "-m", "app.async_worker.poison_recorder"]
+    environment:
+      POISON_RECORDER_BIND_ADDRESS: 127.0.0.1:18082
+      PROVIDER_LIVE_CALLS_ENABLED: "false"
+    group_add: ["${P1_SECRET_GID}"]
+    secrets: [poison_recorder_env]
+    depends_on:
+      identity-bootstrap: {condition: service_completed_successfully}
+    network_mode: service:runtime-netns
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    restart: on-failure:3
+
+  kafka-publisher:
+    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "kafka-publisher"]
+    command: ["python", "-m", "app.async_worker.kafka_publisher"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: 127.0.0.1:9092
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      PROVIDER_LIVE_CALLS_ENABLED: "false"
+    group_add: ["${P1_SECRET_GID}"]
+    secrets: [kafka_publisher_env]
+    depends_on:
+      kafka-topic-init: {condition: service_completed_successfully}
+    network_mode: service:runtime-netns
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    restart: on-failure:3
+
+  spring-api:
+    environment:
+      ASYNC_ADAPTER: kafka
+      ASYNC_POLLING_ENABLED: "false"
+      ASYNC_WORKER_ENABLED: "false"
+      SPRING_AUTOCONFIGURE_EXCLUDE: org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration
+    depends_on:
+      kafka-topic-init: {condition: service_completed_successfully}
+      kafka-publisher: {condition: service_started}
+      python-worker: {condition: service_started}
+
+  kafka-volume-init:
+    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    platform: linux/amd64
+    user: "0:0"
+    command:
+      - sh
+      - -ec
+      - >-
+        if [ "$(stat -c '%u:%g' /data)" != "1000:1000" ]; then
+          chown -R 1000:1000 /data;
+          chmod 0700 /data;
+        fi;
+        test "$(stat -c '%u:%g %a' /data)" = "1000:1000 700"
+    volumes:
+      - p1-kafka:/data
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 16
+    mem_limit: 32m
+    cpus: 0.1
+    restart: "no"
+
+  kafka:
+    image: ${P1_KAFKA_IMAGE:-capstone-kafka:p1-local}
+    platform: linux/amd64
+    network_mode: service:runtime-netns
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@127.0.0.1:9093
+      KAFKA_LISTENERS: INTERNAL://127.0.0.1:9092,CONTROLLER://127.0.0.1:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://127.0.0.1:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:SASL_PLAINTEXT,CONTROLLER:SASL_PLAINTEXT
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
+      KAFKA_SASL_MECHANISM_CONTROLLER_PROTOCOL: PLAIN
+      KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"
+      KAFKA_SUPER_USERS: User:p1_kafka_admin
+      KAFKA_OPTS: -Djava.security.auth.login.config=/run/secrets/kafka_broker_jaas
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - p1-kafka:/var/lib/kafka/data
+    group_add: ["${P1_SECRET_GID}"]
+    secrets: [kafka_broker_jaas]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.5
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /opt/kafka/config:size=16m,mode=0700,uid=1000,gid=1000
+      - /etc/kafka/secrets:size=4m,mode=0700,uid=1000,gid=1000
+      - /mnt/shared/config:size=4m,mode=0700,uid=1000,gid=1000
+      - /opt/kafka/logs:size=64m,mode=0700,uid=1000,gid=1000
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 9092"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+    restart: on-failure:3
+    depends_on:
+      kafka-volume-init: {condition: service_completed_successfully}
+
+  kafka-topic-init:
+    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    platform: linux/amd64
+    network_mode: service:runtime-netns
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "kafka-admin"]
+    command: ["python", "-m", "app.async_worker.kafka_topics"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVER: 127.0.0.1:9092
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+    group_add: ["${P1_SECRET_GID}"]
+    secrets: [kafka_admin_env]
+    depends_on:
+      kafka: {condition: service_healthy}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    restart: "no"
+
+volumes:
+  p1-kafka: {}

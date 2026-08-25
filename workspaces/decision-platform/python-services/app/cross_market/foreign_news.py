@@ -11,12 +11,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import Final, Mapping, Sequence
+from typing import Final
 
 from app.data._shared.canonical_json import canonical_json_bytes
-
 
 FOREIGN_NEWS_LANES: Final[tuple[str, ...]] = (
     "FINNHUB_PERSONAL_LOCAL",
@@ -107,7 +107,9 @@ _GDELT_V2_ATTRIBUTION: Final[dict[str, str]] = {
     "provider": "GDELT",
     "termsUrl": "https://www.gdeltproject.org/about.html",
 }
-_GDELT_SYNTHETIC_SUMMARY: Final[str] = "합성 GDELT aggregate의 뉴스 톤과 관심도이며 설명 근거로만 사용한다."
+_GDELT_SYNTHETIC_SUMMARY: Final[str] = (
+    "합성 GDELT aggregate의 뉴스 톤과 관심도이며 설명 근거로만 사용한다."
+)
 _GDELT_ARTIFACT_ID = re.compile(r"^news_sum_[a-z0-9][a-z0-9_-]+$")
 _GDELT_OBSERVATION_ID = re.compile(r"^[a-z0-9][a-z0-9._:-]+$")
 
@@ -166,8 +168,10 @@ class ForeignNewsTransientLaneAggregate:
             raise ForeignNewsSentimentError("FOREIGN_NEWS_LOCATOR_INVALID")
         if self.lane_id == "FINNHUB_PERSONAL_LOCAL" and self.official_release_locator is not None:
             raise ForeignNewsSentimentError("FOREIGN_NEWS_FINNHUB_LOCATOR_FORBIDDEN")
-        if self.lane_id in {"SEC_OFFICIAL", "FED_OFFICIAL"} and self.state == "AVAILABLE" and (
-            self.content_hash is None or self.official_release_locator is None
+        if (
+            self.lane_id in {"SEC_OFFICIAL", "FED_OFFICIAL"}
+            and self.state == "AVAILABLE"
+            and (self.content_hash is None or self.official_release_locator is None)
         ):
             raise ForeignNewsSentimentError("FOREIGN_NEWS_OFFICIAL_PROVENANCE_REQUIRED")
 
@@ -226,9 +230,7 @@ class ForeignNewsSentimentRecord:
         payload = self.to_storage_payload()
         payload_hash = _sha256(_canonical(payload))
         logical_identity_hash = _sha256(
-            f"foreign-news-sentiment/v1|{self.owner_user_id}|{self.symbol}|{_instant(self.as_of)}".encode(
-                "utf-8"
-            )
+            f"foreign-news-sentiment/v1|{self.owner_user_id}|{self.symbol}|{_instant(self.as_of)}".encode()
         )
         artifact_hash = _sha256(
             _canonical(
@@ -252,7 +254,7 @@ class ForeignNewsSentimentRecord:
         *,
         owner_user_id: str,
         payload: Mapping[str, object],
-    ) -> "ForeignNewsSentimentRecord":
+    ) -> ForeignNewsSentimentRecord:
         """DB reader가 malformed/raw payload를 API 직전 fail-closed하도록 재검증한다."""
 
         _reject_forbidden_payload(payload)
@@ -392,7 +394,7 @@ class ForeignNewsSelectionRun:
         selection_id: str,
         selection_generation: int,
         results: Sequence[ForeignNewsSelectionMetrics],
-    ) -> "ForeignNewsSelectionRun":
+    ) -> ForeignNewsSelectionRun:
         if _SELECTION_ID.fullmatch(selection_id) is None or selection_generation < 1:
             raise ForeignNewsModelSelectionError("FOREIGN_NEWS_SELECTION_ID_INVALID")
         ordered = tuple(results)
@@ -412,7 +414,9 @@ class ForeignNewsSelectionRun:
                 abstain_reason="NO_MODEL_MEETS_VALIDATION_GATE",
             )
         ranked = tuple(sorted(eligible, key=_selection_ranking_key))
-        if len(ranked) > 1 and _selection_ranking_key(ranked[0]) == _selection_ranking_key(ranked[1]):
+        if len(ranked) > 1 and _selection_ranking_key(ranked[0]) == _selection_ranking_key(
+            ranked[1]
+        ):
             return cls(
                 selection_id=selection_id,
                 selection_generation=selection_generation,
@@ -436,7 +440,7 @@ class ForeignNewsSelectionRun:
             abstain_reason=None,
         )
 
-    def record_selected_model_test(self, *, passed: bool) -> "ForeignNewsSelectionRun":
+    def record_selected_model_test(self, *, passed: bool) -> ForeignNewsSelectionRun:
         """validation winner만 단 한 번 test set으로 평가하고 차순위 재시도를 금지한다."""
 
         if self.test_evaluation_count != 0:
@@ -494,12 +498,14 @@ class ForeignNewsSentimentMaterializer:
         _validate_symbol(symbol)
         if as_of.tzinfo is None or as_of.utcoffset() is None:
             raise ForeignNewsSentimentError("FOREIGN_NEWS_AS_OF_INVALID")
-        states = {lane: "NOT_ACTIVATED" for lane in FOREIGN_NEWS_LANES}
+        states = dict.fromkeys(FOREIGN_NEWS_LANES, "NOT_ACTIVATED")
         for aggregate in aggregates:
             if aggregate.lane_id in states and states[aggregate.lane_id] != "NOT_ACTIVATED":
                 raise ForeignNewsSentimentError("FOREIGN_NEWS_LANE_DUPLICATE")
             states[aggregate.lane_id] = aggregate.state
-        lanes = tuple(ForeignNewsLaneState(lane_id=lane, state=states[lane]) for lane in FOREIGN_NEWS_LANES)
+        lanes = tuple(
+            ForeignNewsLaneState(lane_id=lane, state=states[lane]) for lane in FOREIGN_NEWS_LANES
+        )
         return ForeignNewsSentimentRecord(
             owner_user_id=owner_user_id,
             symbol=symbol,
@@ -549,7 +555,7 @@ def _validate_gdelt_summary(
     """기존 v2 aggregate의 allowlisted metadata만 검증하고 원문 성격 필드는 절대 복사하지 않는다."""
 
     keys = set(summary)
-    if keys - _GDELT_V2_ALLOWED_FIELDS or not _GDELT_V2_REQUIRED_BASE_FIELDS <= keys:
+    if keys - _GDELT_V2_ALLOWED_FIELDS or not keys >= _GDELT_V2_REQUIRED_BASE_FIELDS:
         raise ForeignNewsSentimentError("FOREIGN_NEWS_GDELT_BOUNDARY_INVALID")
     required = {
         "allowedUses": ["EXPLANATION_ONLY"],
@@ -601,7 +607,10 @@ def _validate_gdelt_source_observation_refs(value: object) -> None:
     if not isinstance(value, list) or not 1 <= len(value) <= 32:
         raise ForeignNewsSentimentError("FOREIGN_NEWS_GDELT_BOUNDARY_INVALID")
     for reference in value:
-        if not isinstance(reference, Mapping) or set(reference) != {"artifactHash", "observationId"}:
+        if not isinstance(reference, Mapping) or set(reference) != {
+            "artifactHash",
+            "observationId",
+        }:
             raise ForeignNewsSentimentError("FOREIGN_NEWS_GDELT_BOUNDARY_INVALID")
         artifact_hash = reference.get("artifactHash")
         observation_id = reference.get("observationId")
@@ -617,7 +626,7 @@ def _validate_gdelt_source_observation_refs(value: object) -> None:
 def _validate_gdelt_payload_by_status(summary: Mapping[str, object]) -> None:
     status = summary.get("status")
     if status == "AVAILABLE":
-        if not _GDELT_V2_AVAILABLE_FIELDS <= set(summary):
+        if not set(summary) >= _GDELT_V2_AVAILABLE_FIELDS:
             raise ForeignNewsSentimentError("FOREIGN_NEWS_GDELT_BOUNDARY_INVALID")
         article_count = summary.get("articleCount")
         if (
@@ -696,7 +705,9 @@ def _instant(value: datetime) -> str:
 
 
 def _canonical(value: object) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
 
 
 def _sha256(value: bytes) -> str:

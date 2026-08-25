@@ -82,7 +82,9 @@ def test_registry_rejects_invalid_or_unsafe_seed(
     elif mutation == "invalid_capability":
         source = source.replace("MARKET_SESSION", "UNKNOWN_CAPABILITY")
     elif mutation == "unsafe_enabled":
-        source = source.replace("    licenseClass: OFFICIAL_NO_FEE", "    licenseClass: UNSAFE_OR_EXCLUDE")
+        source = source.replace(
+            "    licenseClass: OFFICIAL_NO_FEE", "    licenseClass: UNSAFE_OR_EXCLUDE"
+        )
     elif mutation == "incomplete_retention":
         source = source.replace("      days: 30\n      owner: fixture-owner\n", "")
     elif mutation == "enabled_without_retention":
@@ -105,8 +107,7 @@ def _valid_seed() -> str:
         "schemaVersion: '1'\n"
         "registryVersion: s1.6-test\n"
         "generatedAt: '2026-07-22T00:00:00Z'\n"
-        "sources:\n"
-        + _source_block()
+        "sources:\n" + _source_block()
     )
 
 

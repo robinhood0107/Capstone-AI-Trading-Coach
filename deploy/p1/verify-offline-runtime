@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+bundle=${1:?bundle directory is required}
+mode=${2:?db or kafka is required}
+[[ -d $bundle && ! -L $bundle && ($mode == db || $mode == kafka) ]] || {
+  echo 'P1_OFFLINE_RUNTIME=INVALID_INPUT' >&2
+  exit 1
+}
+bundle=$(cd -- "$bundle" && pwd -P)
+for command in curl docker openssl python3; do
+  command -v "$command" >/dev/null || { echo "P1_OFFLINE_RUNTIME=MISSING_$command" >&2; exit 1; }
+done
+"$bundle/deploy/p1/verify-release" "$bundle" >/dev/null
+
+temporary=$(mktemp -d)
+state=$temporary/state
+project=capstone-p1-verify-$(openssl rand -hex 6)
+api_port=$(python3 - <<'PY'
+import socket
+
+with socket.socket() as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+)
+
+export P1_PROJECT_NAME=$project
+export P1_STATE_DIR=$state
+export P1_API_PORT=$api_port
+
+cleanup() {
+  if [[ -f $state/runtime.env && ! -L $state/runtime.env ]]; then
+    files=(-f "$bundle/deploy/p1/compose.db.yml")
+    [[ $mode == kafka ]] && files+=(-f "$bundle/deploy/p1/compose.kafka.yml")
+    files+=(-f "$bundle/deploy/p1/compose.offline.db.yml")
+    [[ $mode == kafka ]] && files+=(-f "$bundle/deploy/p1/compose.offline.kafka.yml")
+    docker compose --project-name "$project" --env-file "$state/runtime.env" "${files[@]}" \
+      down --remove-orphans >/dev/null 2>&1 || true
+  fi
+  rm -rf -- "$temporary"
+}
+trap cleanup EXIT
+
+controller=$bundle/deploy/p1/p1ctl
+"$controller" init >/dev/null
+"$controller" verify >/dev/null
+
+secret_fingerprint() {
+  python3 - "$state/secrets" <<'PY'
+import hashlib
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+digest = hashlib.sha256()
+for path in sorted(root.iterdir(), key=lambda item: item.name):
+    if not path.is_file() or path.is_symlink():
+        raise SystemExit("invalid secret inventory")
+    digest.update(path.name.encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(path.read_bytes())
+    digest.update(b"\0")
+print(digest.hexdigest())
+PY
+}
+
+initial_secret_fingerprint=$(secret_fingerprint)
+if [[ $mode == kafka ]]; then
+  for adapter in db kafka db; do
+    "$controller" up "$adapter" >/dev/null
+    "$controller" smoke >/dev/null
+    "$controller" stop >/dev/null
+  done
+else
+  "$controller" up db >/dev/null
+  "$controller" smoke >/dev/null
+  "$controller" stop >/dev/null
+fi
+
+"$controller" up "$mode" >/dev/null
+"$controller" smoke >/dev/null
+"$controller" stop >/dev/null
+"$controller" up "$mode" >/dev/null
+"$controller" smoke >/dev/null
+[[ $(secret_fingerprint) == "$initial_secret_fingerprint" ]] || {
+  echo 'P1_OFFLINE_RUNTIME=SECRET_DRIFT' >&2
+  exit 1
+}
+"$controller" backup >/dev/null
+"$controller" restore-test >/dev/null
+
+redacted=$temporary/redacted.log
+"$controller" logs --redacted > "$redacted"
+python3 - "$state/secrets" "$redacted" <<'PY'
+from pathlib import Path
+import sys
+
+secrets_root = Path(sys.argv[1])
+logs = Path(sys.argv[2]).read_text(encoding="utf-8", errors="replace")
+for path in secrets_root.iterdir():
+    if not path.is_file() or path.is_symlink():
+        raise SystemExit("invalid secret inventory")
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        candidate = line.split("=", 1)[-1]
+        if len(candidate) >= 8 and candidate in logs:
+            raise SystemExit("secret value remained in redacted logs")
+PY
+
+printf 'P1_OFFLINE_RUNTIME=PASS MODE=%s RESTART=PASS ADAPTER_SWITCH=PASS BACKUP_RESTORE=PASS VOLUMES_PRESERVED=TRUE\n' "${mode^^}"

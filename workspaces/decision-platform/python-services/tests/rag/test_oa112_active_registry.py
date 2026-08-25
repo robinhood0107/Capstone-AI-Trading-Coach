@@ -32,7 +32,7 @@ def test_active_registry_requires_exact_14_by_8_verified_rights_and_keeps_reserv
     assert registry.reserve_source_count == 1
     assert registry.active_source_ids[0] == "src_oa_00_00"
     assert registry.active_source_ids[-1] == "src_oa_13_07"
-    assert registry.track_counts == {track_id: 8 for track_id in OA_TRACK_IDS}
+    assert registry.track_counts == dict.fromkeys(OA_TRACK_IDS, 8)
     assert registry.reserve_source_ids == ("src_reserve_000",)
     assert registry.active_entries[0].document_id.startswith("doc_oa_")
     assert registry.active_entries[0].external_embedding_allowed is True

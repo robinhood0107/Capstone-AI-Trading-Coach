@@ -171,7 +171,9 @@ def _preflight_windows(path: Path, *, depth: int) -> int:
     if depth >= _MAX_CACHE_DEPTH:
         raise RagV2LocalCacheError("LOCAL_CACHE_UNSAFE")
     try:
-        children = sorted((Path(entry.path) for entry in os.scandir(path)), key=lambda item: item.name)
+        children = sorted(
+            (Path(entry.path) for entry in os.scandir(path)), key=lambda item: item.name
+        )
     except OSError as error:
         raise RagV2LocalCacheError("LOCAL_CACHE_UNSAFE") from error
     total = 1
@@ -199,7 +201,9 @@ def _delete_windows(path: Path, *, depth: int) -> int:
     if depth >= _MAX_CACHE_DEPTH:
         raise RagV2LocalCacheError("LOCAL_CACHE_UNSAFE")
     try:
-        children = sorted((Path(entry.path) for entry in os.scandir(path)), key=lambda item: item.name)
+        children = sorted(
+            (Path(entry.path) for entry in os.scandir(path)), key=lambda item: item.name
+        )
     except OSError as error:
         raise RagV2LocalCacheError("LOCAL_CACHE_UNSAFE") from error
     removed = 1
@@ -222,7 +226,9 @@ def _validate_directory_metadata(metadata: os.stat_result) -> None:
 
 
 def _validate_cache_metadata(metadata: os.stat_result) -> None:
-    if _is_link_or_reparse(metadata) or not (stat.S_ISREG(metadata.st_mode) or stat.S_ISDIR(metadata.st_mode)):
+    if _is_link_or_reparse(metadata) or not (
+        stat.S_ISREG(metadata.st_mode) or stat.S_ISDIR(metadata.st_mode)
+    ):
         raise RagV2LocalCacheError("LOCAL_CACHE_UNSAFE")
     if stat.S_ISREG(metadata.st_mode) and metadata.st_nlink != 1:
         raise RagV2LocalCacheError("LOCAL_CACHE_UNSAFE")

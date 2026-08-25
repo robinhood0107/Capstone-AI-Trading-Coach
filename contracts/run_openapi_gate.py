@@ -28,6 +28,7 @@ GENERATED_OPENAPI = (
 )
 TRACKED_OPENAPI = REPO_ROOT / "contracts" / "openapi" / "openapi.json"
 FIXTURE_PORT = 55_432
+FIXTURE_SERVER_PORT = 18_080
 
 _INHERITED_ENV_ALLOWLIST: Final[tuple[str, ...]] = (
     "PATH",
@@ -124,15 +125,25 @@ def _compose_command(project_name: str, *arguments: str) -> list[str]:
     ]
 
 
-def run_gate(env_file: Path, *, write: bool, fixture_port: int = FIXTURE_PORT) -> None:
+def run_gate(
+    env_file: Path,
+    *,
+    write: bool,
+    fixture_port: int = FIXTURE_PORT,
+    server_port: int = FIXTURE_SERVER_PORT,
+) -> None:
     if fixture_port not in range(1024, 65536):
         raise OpenApiGateError("Isolated PostgreSQL host port is invalid.")
+    if server_port not in range(1024, 65536) or server_port == fixture_port:
+        raise OpenApiGateError("Isolated OpenAPI server port is invalid.")
     values = dict(parse_openapi_environment(env_file))
     # 기존 compose를 중단하지 않고 충돌 없는 loopback port에서 같은 일회성 fixture를 띄운다.
     values["POSTGRES_HOST_PORT"] = str(fixture_port)
     values["POSTGRES_PORT"] = str(fixture_port)
+    values["OPENAPI_SERVER_PORT"] = str(server_port)
     environment = _explicit_process_environment(values)
     _require_fixture_port_available(fixture_port)
+    _require_fixture_port_available(server_port)
     project_name = f"s21-openapi-{os.getpid()}"
     primary_error: BaseException | None = None
     cleanup_required = False
@@ -156,7 +167,9 @@ def run_gate(env_file: Path, *, write: bool, fixture_port: int = FIXTURE_PORT) -
             environment=environment,
         )
         if not GENERATED_OPENAPI.is_file() or GENERATED_OPENAPI.stat().st_size == 0:
-            raise OpenApiGateError("Gradle did not create a non-empty OpenAPI JSON file.")
+            raise OpenApiGateError(
+                "Gradle did not create a non-empty OpenAPI JSON file."
+            )
         normalizer_action = "--write" if write else "--check"
         _run(
             [
@@ -206,12 +219,14 @@ def main() -> int:
         help="Write the normalized tracked OpenAPI instead of checking drift.",
     )
     parser.add_argument("--fixture-port", type=int, default=FIXTURE_PORT)
+    parser.add_argument("--server-port", type=int, default=FIXTURE_SERVER_PORT)
     arguments = parser.parse_args()
     try:
         run_gate(
             arguments.env_file,
             write=arguments.write,
             fixture_port=arguments.fixture_port,
+            server_port=arguments.server_port,
         )
     except (OpenApiEnvironmentError, OpenApiGateError, OSError) as error:
         print(f"OpenAPI gate failed: {error}", file=sys.stderr)

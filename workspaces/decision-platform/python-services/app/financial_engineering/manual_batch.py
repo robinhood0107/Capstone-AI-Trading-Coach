@@ -7,10 +7,11 @@ import shutil
 import time
 import tracemalloc
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable, Protocol, TypeVar
+from typing import Protocol, TypeVar
 
 import numpy as np
 
@@ -117,9 +118,7 @@ class ManualFinancialEngineeringBatch:
         except Exception as error:
             diagnostic_steps = error.steps if isinstance(error, BatchStepFailure) else ()
             error_code = (
-                error.error_code
-                if isinstance(error, BatchStepFailure)
-                else _error_code(error)
+                error.error_code if isinstance(error, BatchStepFailure) else _error_code(error)
             )
             return BatchResult(
                 status="NOT_AVAILABLE" if not publications else "FAILED",
@@ -131,7 +130,9 @@ class ManualFinancialEngineeringBatch:
 
     def _run_symbol(self, symbol: str) -> BatchPublication:
         steps: list[BatchStep] = []
-        observations = _measure(steps, "STORED_COLLECTION", lambda: self._reader.read_closes(symbol))
+        observations = _measure(
+            steps, "STORED_COLLECTION", lambda: self._reader.read_closes(symbol)
+        )
         if len(observations) < 60:
             _fail_step(steps, "FEATURE", "STORED_HISTORY_INSUFFICIENT")
         closes = _measure(
@@ -220,7 +221,9 @@ class ManualFinancialEngineeringBatch:
             "ouAvailability": mean_reversion.availability,
             "ouZScore": mean_reversion.z_score,
             "ouHalfLifeSessions": mean_reversion.half_life_sessions,
-            "adfPValueReferenceOnly": None if mean_reversion.adf is None else mean_reversion.adf.p_value,
+            "adfPValueReferenceOnly": None
+            if mean_reversion.adf is None
+            else mean_reversion.adf.p_value,
         }
 
 
@@ -241,7 +244,9 @@ def _measure(steps: list[BatchStep], name: str, function: Callable[[], T]) -> T:
         raise BatchStepFailure(error_code, tuple(steps)) from None
     tracemalloc.stop()
     elapsed = (time.perf_counter_ns() - started) // 1_000_000
-    steps.append(BatchStep(name, "COMPLETE", None, min(elapsed, 1_800_000), min(peak, 2_147_483_648)))
+    steps.append(
+        BatchStep(name, "COMPLETE", None, min(elapsed, 1_800_000), min(peak, 2_147_483_648))
+    )
     return value
 
 
@@ -265,7 +270,11 @@ def _snapshot(
     inference: dict[str, object],
     n_paths: int,
 ) -> dict[str, object]:
-    numeric = {key: value for key, value in inference.items() if isinstance(value, (int, float, bool)) or value is None}
+    numeric = {
+        key: value
+        for key, value in inference.items()
+        if isinstance(value, (int, float, bool)) or value is None
+    }
     numeric_bytes = canonical_json_bytes(numeric)
     config_hash = hashlib.sha256(canonical_json_bytes({**CONFIG, "gbmPaths": n_paths})).hexdigest()
     base: dict[str, object] = {
@@ -324,7 +333,10 @@ def _report(snapshot: dict[str, object], window_start: str, prior_steps: list[Ba
             f"- quality={snapshot['quality']}; availability={snapshot['availability']}",
             "",
             "## Runtime and memory",
-            *[f"- {step.name}: {step.wall_time_millis} ms, peak {step.peak_memory_bytes} bytes" for step in prior_steps],
+            *[
+                f"- {step.name}: {step.wall_time_millis} ms, peak {step.peak_memory_bytes} bytes"
+                for step in prior_steps
+            ],
             "",
         ]
     )
@@ -368,7 +380,14 @@ def _write_new(path: Path, payload: bytes) -> None:
 
 
 def _safe_symbol_path_component(symbol: str) -> str:
-    if not symbol or len(symbol) > 32 or not all(character.isascii() and (character.isalnum() or character in "./-") for character in symbol):
+    if (
+        not symbol
+        or len(symbol) > 32
+        or not all(
+            character.isascii() and (character.isalnum() or character in "./-")
+            for character in symbol
+        )
+    ):
         raise ValueError("SYMBOL_INVALID")
     return "".join(
         character if character.isalnum() or character == "-" else f"%{ord(character):02X}"

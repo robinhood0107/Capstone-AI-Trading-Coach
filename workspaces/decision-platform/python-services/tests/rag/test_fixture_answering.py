@@ -5,11 +5,11 @@ import json
 import pytest
 
 from app.rag.fixture_answering import (
+    PROMPT_VERSION,
     BoundedFixtureProviderClient,
     EvidenceChunk,
     FixtureProviderContractError,
     NetworkDisabledFixtureTransport,
-    PROMPT_VERSION,
     build_fixture_prompt,
     parse_structured_answer,
 )
@@ -115,9 +115,7 @@ def test_structured_answer_rejects_ungrounded_unknown_or_duplicate_shape(
 
 def test_structured_answer_rechecks_access_and_generation() -> None:
     payload = b'{"answer":"bounded claim [cit_1]","citations":["cit_1"]}'
-    internal = EvidenceChunk(
-        **{**evidence()[0].__dict__, "access_level": "INTERNAL"}
-    )
+    internal = EvidenceChunk(**{**evidence()[0].__dict__, "access_level": "INTERNAL"})
 
     with pytest.raises(FixtureProviderContractError):
         parse_structured_answer(
@@ -134,9 +132,7 @@ def test_structured_answer_rechecks_access_and_generation() -> None:
 
 
 def test_prompt_rejects_mixed_external_processing_scope_without_silent_drop() -> None:
-    restricted = EvidenceChunk(
-        **{**evidence()[0].__dict__, "external_processing_allowed": False}
-    )
+    restricted = EvidenceChunk(**{**evidence()[0].__dict__, "external_processing_allowed": False})
 
     with pytest.raises(FixtureProviderContractError):
         build_fixture_prompt(
@@ -155,9 +151,7 @@ def test_prompt_rejects_mixed_external_processing_scope_without_silent_drop() ->
     ],
 )
 def test_prompt_rejects_non_public_citation_hosts(canonical_url: str) -> None:
-    internal = EvidenceChunk(
-        **{**evidence()[0].__dict__, "canonical_url": canonical_url}
-    )
+    internal = EvidenceChunk(**{**evidence()[0].__dict__, "canonical_url": canonical_url})
 
     with pytest.raises(FixtureProviderContractError):
         build_fixture_prompt(
@@ -249,9 +243,7 @@ def test_fixture_provider_factory_fixes_transport_and_loads_credential_only_at_s
     assert len(transport.requests) == 1
     request = transport.requests[0]
     assert request.origin == "https://generativelanguage.googleapis.com"
-    assert request.path == (
-        "/v1beta/models/gemini-3.5-flash-lite:generateContent"
-    )
+    assert request.path == ("/v1beta/models/gemini-3.5-flash-lite:generateContent")
     assert request.trust_env is False
     assert request.follow_redirects is False
     assert request.tls_verify is True

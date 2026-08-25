@@ -24,15 +24,14 @@ from app.cross_market.foreign_news import ForeignNewsTransientLaneAggregate
 from app.rag.oa112_downloader import (
     Oa112DownloadError,
     _Oa112SourceDeadline,
-    _SocketOa112DnsResolver,
-    _StdlibOa112HttpsTransport,
     _open_private_root,
     _read_private_control_file,
     _resolve_public_addresses,
+    _SocketOa112DnsResolver,
+    _StdlibOa112HttpsTransport,
     _validate_peer,
     _write_new_private_file,
 )
-
 
 _CONTRACT_ID: Final[str] = "foreign-news-provider-probe-approval-v1"
 _RECEIPT_CONTRACT_ID: Final[str] = "foreign-news-provider-probe-receipt-v1"
@@ -84,7 +83,7 @@ class ForeignNewsProviderProbeTransport(Protocol):
         expires_at: datetime,
         timeout_seconds: float,
         maximum_response_bytes: int,
-    ) -> "ForeignNewsProviderProbeHttpResponse": ...
+    ) -> ForeignNewsProviderProbeHttpResponse: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,7 +133,9 @@ class _FixedRequestPlan:
             raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_DATE_OPERATION_INVALID")
         return self.target_template.format(symbol=symbol, date=date)
 
-    def parse_transient_texts(self, response: ForeignNewsProviderProbeHttpResponse) -> tuple[str, ...]:
+    def parse_transient_texts(
+        self, response: ForeignNewsProviderProbeHttpResponse
+    ) -> tuple[str, ...]:
         """provider body를 bounded local analyzer input으로만 축소하고 object metadata를 discard한다."""
 
         if response.content_type != self.expected_content_type:
@@ -198,10 +199,13 @@ class ForeignNewsProviderProbeExecutionBinding:
     tree_sha256: str
 
     def __post_init__(self) -> None:
-        if not all(
-            _SHA256.fullmatch(value) is not None
-            for value in (self.ci_digest, self.security_digest, self.tree_sha256)
-        ) or _HEAD_SHA.fullmatch(self.head_sha) is None:
+        if (
+            not all(
+                _SHA256.fullmatch(value) is not None
+                for value in (self.ci_digest, self.security_digest, self.tree_sha256)
+            )
+            or _HEAD_SHA.fullmatch(self.head_sha) is None
+        ):
             raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_EXECUTION_BINDING_INVALID")
 
 
@@ -245,16 +249,19 @@ class ForeignNewsProviderProbePacket:
             raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_CAP_INVALID")
         if self.tracked_raw_artifact_count != 0 or not 0 <= self.cost_cap_microusd <= 1_000_000:
             raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_ARTIFACT_OR_COST_INVALID")
-        if not all(
-            _SHA256.fullmatch(value) is not None
-            for value in (
-                self.ci_digest,
-                self.endpoint_set_digest,
-                self.request_plan_digest,
-                self.security_digest,
-                self.tree_sha256,
+        if (
+            not all(
+                _SHA256.fullmatch(value) is not None
+                for value in (
+                    self.ci_digest,
+                    self.endpoint_set_digest,
+                    self.request_plan_digest,
+                    self.security_digest,
+                    self.tree_sha256,
+                )
             )
-        ) or _HEAD_SHA.fullmatch(self.head_sha) is None:
+            or _HEAD_SHA.fullmatch(self.head_sha) is None
+        ):
             raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_PACKET_HASH_INVALID")
         if self.endpoint_set_digest != foreign_news_provider_endpoint_set_digest():
             raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_ENDPOINT_SET_DRIFT")
@@ -276,7 +283,9 @@ class ForeignNewsProviderProbePacket:
         if not now_utc < expires_at <= now_utc + timedelta(hours=1):
             raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_PACKET_EXPIRED")
 
-    def require_execution_binding(self, *, binding: ForeignNewsProviderProbeExecutionBinding) -> None:
+    def require_execution_binding(
+        self, *, binding: ForeignNewsProviderProbeExecutionBinding
+    ) -> None:
         """same current HEAD/tree proof가 아니면 socket보다 먼저 stop한다."""
 
         if (
@@ -319,7 +328,7 @@ class ForeignNewsProviderProbePacket:
         }
 
     @classmethod
-    def from_local_document(cls, document: Mapping[str, object]) -> "ForeignNewsProviderProbePacket":
+    def from_local_document(cls, document: Mapping[str, object]) -> ForeignNewsProviderProbePacket:
         """unknown field를 거부해 local JSON으로 execution semantics를 넓히지 못하게 한다."""
 
         expected = {
@@ -371,7 +380,9 @@ class ForeignNewsProviderProbePacket:
         except ForeignNewsProviderProbeError:
             raise
         except (TypeError, ValueError) as error:
-            raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_PACKET_SHAPE_INVALID") from error
+            raise ForeignNewsProviderProbeError(
+                "FOREIGN_NEWS_PROBE_PACKET_SHAPE_INVALID"
+            ) from error
 
     @classmethod
     def load_from_control_root(
@@ -380,7 +391,7 @@ class ForeignNewsProviderProbePacket:
         control_root: Path,
         relative_path: str,
         now: datetime,
-    ) -> "ForeignNewsProviderProbePacket":
+    ) -> ForeignNewsProviderProbePacket:
         """0700 root 안의 canonical 0600 regular leaf만 packet으로 consume한다."""
 
         if _LEAF.fullmatch(relative_path) is None:
@@ -447,9 +458,15 @@ class ForeignNewsProviderProbeReceipt:
                 or self.provider_status_class != "NOT_ATTEMPTED"
                 or self.projection_hash is not None
             ):
-                raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_RECEIPT_NOT_EXECUTED_INVALID")
+                raise ForeignNewsProviderProbeError(
+                    "FOREIGN_NEWS_PROBE_RECEIPT_NOT_EXECUTED_INVALID"
+                )
         elif self.outcome == "SUCCESS":
-            if self.lane_state != "AVAILABLE" or self.provider_status_class != "HTTP_2XX" or self.projection_hash is None:
+            if (
+                self.lane_state != "AVAILABLE"
+                or self.provider_status_class != "HTTP_2XX"
+                or self.projection_hash is None
+            ):
                 raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_RECEIPT_SUCCESS_INVALID")
             if self.logical_call_count != 1 or self.physical_call_count != 1:
                 raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_RECEIPT_SUCCESS_INVALID")
@@ -462,7 +479,11 @@ class ForeignNewsProviderProbeReceipt:
             raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_RECEIPT_FAILURE_INVALID")
         if not all(
             _SHA256.fullmatch(value) is not None
-            for value in (self.approval_id_hash, self.approval_packet_sha256, self.request_plan_digest)
+            for value in (
+                self.approval_id_hash,
+                self.approval_packet_sha256,
+                self.request_plan_digest,
+            )
         ) or (self.projection_hash is not None and _SHA256.fullmatch(self.projection_hash) is None):
             raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_RECEIPT_HASH_INVALID")
         if self.started_at.tzinfo is None or self.completed_at.tzinfo is None:
@@ -539,7 +560,11 @@ class ForeignNewsProviderProbeExecutor:
         packet.require_execution_binding(binding=binding)
         if analyzer is None or not callable(getattr(analyzer, "analyze", None)):
             raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_ANALYZER_UNAVAILABLE")
-        if _SAFE_USER_AGENT.fullmatch(user_agent) is None or "\r" in user_agent or "\n" in user_agent:
+        if (
+            _SAFE_USER_AGENT.fullmatch(user_agent) is None
+            or "\r" in user_agent
+            or "\n" in user_agent
+        ):
             raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_USER_AGENT_INVALID")
         plan = _PLANS[packet.operation]
         _validate_api_key(plan=plan, api_key=api_key)
@@ -563,7 +588,9 @@ class ForeignNewsProviderProbeExecutor:
                 claim_key=claim_key,
                 started_at=started_at,
                 physical_call_count=error.physical_call_count,
-                provider_status_class="TRANSPORT" if error.physical_call_count == 1 else "NOT_ATTEMPTED",
+                provider_status_class="TRANSPORT"
+                if error.physical_call_count == 1
+                else "NOT_ATTEMPTED",
             )
         except Exception:
             # 계약을 따르지 않는 custom transport는 전송 여부를 증명할 수 없으므로 one-shot capacity를 보수적으로 소비한다.
@@ -635,7 +662,9 @@ class ForeignNewsProviderProbeExecutor:
             completed_at=_completed_at(started_at, self._now_provider()),
             outcome="NOT_EXECUTED" if physical_call_count == 0 else "FAILED",
             physical_call_count=physical_call_count,
-            provider_status_class="NOT_ATTEMPTED" if physical_call_count == 0 else provider_status_class,
+            provider_status_class="NOT_ATTEMPTED"
+            if physical_call_count == 0
+            else provider_status_class,
             projection_hash=None,
         )
         self._write_receipt(claim_key=claim_key, receipt=receipt)
@@ -660,7 +689,9 @@ class ForeignNewsProviderProbeExecutor:
             "schemaVersion": 1,
         }
         try:
-            root_fd = _open_private_root(self._control_root, error_code="FOREIGN_NEWS_PROBE_CONTROL_UNSAFE")
+            root_fd = _open_private_root(
+                self._control_root, error_code="FOREIGN_NEWS_PROBE_CONTROL_UNSAFE"
+            )
         except Oa112DownloadError as error:
             raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_CONTROL_UNSAFE") from error
         try:
@@ -671,9 +702,13 @@ class ForeignNewsProviderProbeExecutor:
                     _canonical_bytes(document),
                 )
             except FileExistsError as error:
-                raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_PACKET_ALREADY_CONSUMED") from error
+                raise ForeignNewsProviderProbeError(
+                    "FOREIGN_NEWS_PROBE_PACKET_ALREADY_CONSUMED"
+                ) from error
             except (OSError, Oa112DownloadError) as error:
-                raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_CLAIM_UNAVAILABLE") from error
+                raise ForeignNewsProviderProbeError(
+                    "FOREIGN_NEWS_PROBE_CLAIM_UNAVAILABLE"
+                ) from error
         finally:
             os.close(root_fd)
 
@@ -681,7 +716,9 @@ class ForeignNewsProviderProbeExecutor:
         """request 후 receipt persist 실패도 exactly-one attempt marker와 함께 fail-closed한다."""
 
         try:
-            root_fd = _open_private_root(self._control_root, error_code="FOREIGN_NEWS_PROBE_CONTROL_UNSAFE")
+            root_fd = _open_private_root(
+                self._control_root, error_code="FOREIGN_NEWS_PROBE_CONTROL_UNSAFE"
+            )
         except Oa112DownloadError as error:
             raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_CONTROL_UNSAFE") from error
         try:
@@ -955,7 +992,10 @@ class _BoundedOfficialHtmlTextParser(HTMLParser):
             self._ignored_depth += 1
 
     def handle_endtag(self, tag: str) -> None:
-        if tag.casefold() in {"script", "style", "noscript", "template"} and self._ignored_depth > 0:
+        if (
+            tag.casefold() in {"script", "style", "noscript", "template"}
+            and self._ignored_depth > 0
+        ):
             self._ignored_depth -= 1
 
     def handle_data(self, data: str) -> None:
@@ -1031,7 +1071,9 @@ def _read_bounded_response_body(
     total = 0
     iterator = response.iter_raw(chunk_size=16 * 1024)
     while True:
-        response.set_read_timeout_seconds(timeout_seconds=min(timeout_seconds, deadline.remaining_seconds()))
+        response.set_read_timeout_seconds(
+            timeout_seconds=min(timeout_seconds, deadline.remaining_seconds())
+        )
         try:
             chunk = next(iterator)
         except StopIteration:
@@ -1110,7 +1152,7 @@ def _receipt(
 
 
 def _claim_key(packet: ForeignNewsProviderProbePacket) -> str:
-    return _sha256(f"{packet.approval_id}\0{packet.packet_sha256()}\0{packet.nonce}".encode("utf-8"))
+    return _sha256(f"{packet.approval_id}\0{packet.packet_sha256()}\0{packet.nonce}".encode())
 
 
 def _successful_parse_projection_hash(packet: ForeignNewsProviderProbePacket) -> str:
@@ -1142,7 +1184,9 @@ def _completed_at(started_at: datetime, candidate: datetime) -> datetime:
 
 
 def _canonical_bytes(value: object) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
 
 
 def _sha256(value: bytes) -> str:

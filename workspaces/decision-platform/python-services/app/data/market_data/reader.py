@@ -9,10 +9,10 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from app.data.market_data.archive import (
-    MarketDataArchive,
-    MarketDataArchiveError,
     OPERATIONAL_HISTORY_MAX,
     RESEARCH_HISTORY_MAX,
+    MarketDataArchive,
+    MarketDataArchiveError,
     read_artifact_table,
     read_market_data_archive,
 )
@@ -52,9 +52,7 @@ class QueryCursorLike(Protocol):
 
 
 class QueryConnectionLike(Protocol):
-    def execute(
-        self, query: str, params: tuple[object, ...] = ()
-    ) -> QueryCursorLike: ...
+    def execute(self, query: str, params: tuple[object, ...] = ()) -> QueryCursorLike: ...
 
     def read_index_closes(
         self, index_id: str, *, limit: int = RESEARCH_HISTORY_MAX

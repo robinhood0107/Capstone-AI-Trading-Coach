@@ -25,7 +25,6 @@ from app.rag.oa112_downloader import (
     _write_new_private_file,
 )
 
-
 _CONTRACT_ID: Final[str] = "s4-8-core6-probe-approval-v2"
 _RECEIPT_CONTRACT_ID: Final[str] = "s4-8-core6-probe-receipt-v2"
 _MAX_PACKET_BYTES: Final[int] = 16 * 1024
@@ -130,10 +129,13 @@ class Core6ProbeExecutionBinding:
     tree_sha256: str
 
     def __post_init__(self) -> None:
-        if not all(
-            _SHA256.fullmatch(value) is not None
-            for value in (self.ci_digest, self.security_digest, self.tree_sha256)
-        ) or _HEAD_SHA.fullmatch(self.head_sha) is None:
+        if (
+            not all(
+                _SHA256.fullmatch(value) is not None
+                for value in (self.ci_digest, self.security_digest, self.tree_sha256)
+            )
+            or _HEAD_SHA.fullmatch(self.head_sha) is None
+        ):
             raise Core6ProbeError("CORE6_PROBE_EXECUTION_BINDING_INVALID")
 
 
@@ -177,18 +179,23 @@ class Core6ProbePacket:
             raise Core6ProbeError("CORE6_PROBE_CAP_INVALID")
         if self.tracked_raw_artifact_count != 0 or not 0 <= self.cost_cap_microusd <= 1_000_000:
             raise Core6ProbeError("CORE6_PROBE_ARTIFACT_OR_COST_INVALID")
-        if not all(
-            _SHA256.fullmatch(value) is not None
-            for value in (
-                self.ci_digest,
-                self.endpoint_set_identity_hash,
-                self.request_plan_digest,
-                self.security_digest,
-                self.tree_sha256,
+        if (
+            not all(
+                _SHA256.fullmatch(value) is not None
+                for value in (
+                    self.ci_digest,
+                    self.endpoint_set_identity_hash,
+                    self.request_plan_digest,
+                    self.security_digest,
+                    self.tree_sha256,
+                )
             )
-        ) or _HEAD_SHA.fullmatch(self.head_sha) is None:
+            or _HEAD_SHA.fullmatch(self.head_sha) is None
+        ):
             raise Core6ProbeError("CORE6_PROBE_PACKET_HASH_INVALID")
-        if self.endpoint_set_identity_hash != core6_endpoint_set_identity_hash(self.provider_family):
+        if self.endpoint_set_identity_hash != core6_endpoint_set_identity_hash(
+            self.provider_family
+        ):
             raise Core6ProbeError("CORE6_PROBE_ENDPOINT_SET_DRIFT")
         plan.validate(resource_id=self.resource_id, date=self.date)
         if self.request_plan_digest != core6_request_plan_digest(
@@ -257,7 +264,7 @@ class Core6ProbePacket:
         }
 
     @classmethod
-    def from_local_document(cls, document: Mapping[str, object]) -> "Core6ProbePacket":
+    def from_local_document(cls, document: Mapping[str, object]) -> Core6ProbePacket:
         """Unknown packet field를 거부해 local control JSON이 새 execution semantics를 넣지 못하게 한다."""
 
         expected = {
@@ -318,7 +325,7 @@ class Core6ProbePacket:
         control_root: Path,
         relative_path: str,
         now: datetime,
-    ) -> "Core6ProbePacket":
+    ) -> Core6ProbePacket:
         """0700 root/0600 regular local file의 exact canonical packet만 읽는다."""
 
         if _LEAF.fullmatch(relative_path) is None:
@@ -412,13 +419,24 @@ class Core6ProbeReceipt:
 
     def __post_init__(self) -> None:
         plan = _PLANS.get(self.operation)
-        if plan is None or plan.provider_family != self.provider_family or plan.source_id != self.source_id:
+        if (
+            plan is None
+            or plan.provider_family != self.provider_family
+            or plan.source_id != self.source_id
+        ):
             raise Core6ProbeError("CORE6_PROBE_RECEIPT_OPERATION_INVALID")
         if self.outcome not in {"NOT_EXECUTED", "SUCCESS", "FAILED"}:
             raise Core6ProbeError("CORE6_PROBE_RECEIPT_OUTCOME_INVALID")
         if self.logical_call_count not in {0, 1} or self.physical_call_count not in {0, 1}:
             raise Core6ProbeError("CORE6_PROBE_RECEIPT_CAP_INVALID")
-        if self.provider_status_class not in {"NOT_ATTEMPTED", "HTTP_2XX", "HTTP_4XX", "HTTP_5XX", "TRANSPORT", "PROTOCOL"}:
+        if self.provider_status_class not in {
+            "NOT_ATTEMPTED",
+            "HTTP_2XX",
+            "HTTP_4XX",
+            "HTTP_5XX",
+            "TRANSPORT",
+            "PROTOCOL",
+        }:
             raise Core6ProbeError("CORE6_PROBE_RECEIPT_STATUS_INVALID")
         if self.outcome == "NOT_EXECUTED":
             if (
@@ -436,7 +454,11 @@ class Core6ProbeReceipt:
                 or self.projection_hash is None
             ):
                 raise Core6ProbeError("CORE6_PROBE_RECEIPT_SUCCESS_INVALID")
-        elif self.logical_call_count != 1 or self.physical_call_count != 1 or self.projection_hash is not None:
+        elif (
+            self.logical_call_count != 1
+            or self.physical_call_count != 1
+            or self.projection_hash is not None
+        ):
             raise Core6ProbeError("CORE6_PROBE_RECEIPT_FAILURE_INVALID")
         if not all(
             _SHA256.fullmatch(value) is not None
@@ -448,7 +470,9 @@ class Core6ProbeReceipt:
             )
         ) or (self.projection_hash is not None and _SHA256.fullmatch(self.projection_hash) is None):
             raise Core6ProbeError("CORE6_PROBE_RECEIPT_HASH_INVALID")
-        if self.endpoint_set_identity_hash != core6_endpoint_set_identity_hash(self.provider_family):
+        if self.endpoint_set_identity_hash != core6_endpoint_set_identity_hash(
+            self.provider_family
+        ):
             raise Core6ProbeError("CORE6_PROBE_RECEIPT_ENDPOINT_SET_DRIFT")
         if self.started_at.tzinfo is None or self.completed_at.tzinfo is None:
             raise Core6ProbeError("CORE6_PROBE_RECEIPT_TIME_INVALID")
@@ -486,7 +510,7 @@ class Core6ProbeReceipt:
         }
 
     @classmethod
-    def from_local_document(cls, document: Mapping[str, object]) -> "Core6ProbeReceipt":
+    def from_local_document(cls, document: Mapping[str, object]) -> Core6ProbeReceipt:
         """Closed local receipt shape만 parse해 runtime이 raw/provider field를 묵인하지 않게 한다."""
 
         expected = {
@@ -557,7 +581,7 @@ class Core6ProbeReceipt:
         *,
         control_root: Path,
         relative_path: str,
-    ) -> "Core6ProbeReceipt":
+    ) -> Core6ProbeReceipt:
         """Runtime은 local 0700 root 안의 canonical regular receipt만 read-only로 재사용한다."""
 
         if _LEAF.fullmatch(relative_path) is None:
@@ -614,7 +638,9 @@ class Core6ProbeExecutor:
             started_at = handoff_now.astimezone(UTC)
             result = Core6ProbeBackendResult(
                 outcome="NOT_EXECUTED" if error.physical_call_count == 0 else "FAILED",
-                provider_status_class="NOT_ATTEMPTED" if error.physical_call_count == 0 else "TRANSPORT",
+                provider_status_class="NOT_ATTEMPTED"
+                if error.physical_call_count == 0
+                else "TRANSPORT",
                 projection_hash=None,
                 physical_call_count=error.physical_call_count,
             )
@@ -647,7 +673,9 @@ class Core6ProbeExecutor:
             "schemaVersion": 2,
         }
         try:
-            root_fd = _open_private_root(self._control_root, error_code="CORE6_PROBE_CONTROL_UNSAFE")
+            root_fd = _open_private_root(
+                self._control_root, error_code="CORE6_PROBE_CONTROL_UNSAFE"
+            )
         except Oa112DownloadError as error:
             raise Core6ProbeError("CORE6_PROBE_CONTROL_UNSAFE") from error
         try:
@@ -668,7 +696,9 @@ class Core6ProbeExecutor:
         """Handoff 뒤 receipt 저장이 실패하면 outcome을 조용히 잃지 않고 fail-closed한다."""
 
         try:
-            root_fd = _open_private_root(self._control_root, error_code="CORE6_PROBE_CONTROL_UNSAFE")
+            root_fd = _open_private_root(
+                self._control_root, error_code="CORE6_PROBE_CONTROL_UNSAFE"
+            )
         except Oa112DownloadError as error:
             raise Core6ProbeError("CORE6_PROBE_CONTROL_UNSAFE") from error
         try:
@@ -692,7 +722,7 @@ def core6_endpoint_set_identity_hash(provider_family: str) -> str:
 
     if provider_family not in {plan.provider_family for plan in _PLANS.values()}:
         raise Core6ProbeError("CORE6_PROBE_PROVIDER_FAMILY_INVALID")
-    return _sha256(f"s4-8-core6:{provider_family}:opaque-endpoint-set-v1".encode("utf-8"))
+    return _sha256(f"s4-8-core6:{provider_family}:opaque-endpoint-set-v1".encode())
 
 
 def core6_request_plan_digest(*, operation: str, resource_id: str, date: str) -> str:
@@ -796,7 +826,7 @@ def _receipt(
 
 
 def _claim_key(packet: Core6ProbePacket) -> str:
-    return _sha256(f"{packet.approval_id}\0{packet.packet_sha256()}\0{packet.nonce}".encode("utf-8"))
+    return _sha256(f"{packet.approval_id}\0{packet.packet_sha256()}\0{packet.nonce}".encode())
 
 
 def core6_receipt_file_name(packet: Core6ProbePacket) -> str:
@@ -810,7 +840,9 @@ def _completed_at(now: datetime) -> datetime:
 
 
 def _canonical_bytes(value: object) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
 
 
 def _sha256(value: bytes) -> str:

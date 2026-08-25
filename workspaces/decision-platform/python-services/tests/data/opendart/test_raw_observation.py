@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from app.data.opendart.raw_observation import MAX_RAW_OBSERVATION_BYTES, request_fingerprint, write_raw_observation
+from app.data.opendart.raw_observation import (
+    MAX_RAW_OBSERVATION_BYTES,
+    request_fingerprint,
+    write_raw_observation,
+)
 
 
 def test_request_fingerprint_keeps_only_path_and_query_keys() -> None:

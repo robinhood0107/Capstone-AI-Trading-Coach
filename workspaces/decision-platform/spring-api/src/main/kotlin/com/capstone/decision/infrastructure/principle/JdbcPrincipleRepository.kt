@@ -6,6 +6,7 @@ import com.capstone.decision.application.principle.OwnerCursor
 import com.capstone.decision.application.principle.OwnerSort
 import com.capstone.decision.application.principle.PrincipleActor
 import com.capstone.decision.application.principle.PrincipleRepository
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.domain.principle.PrincipleCurrent
 import com.capstone.decision.domain.principle.PrincipleId
 import com.capstone.decision.domain.principle.PrincipleMode
@@ -15,7 +16,9 @@ import com.capstone.decision.domain.principle.PrincipleStatus
 import com.capstone.decision.domain.principle.PrincipleSummary
 import com.capstone.decision.domain.principle.PrincipleVersion
 import com.capstone.decision.domain.principle.PrincipleVersionId
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.RowMapper
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
@@ -70,7 +73,23 @@ class JdbcPrincipleRepository(
             """.trimIndent(),
             mapOf(
                 "principleId" to current.principleId.value,
-                "capability" to capability(current.userId),
+                "capability" to
+                    capability(
+                        current.userId,
+                        ActorCapabilityBinding.request(
+                            "INSERT_PRINCIPLE",
+                            "PRINCIPLE",
+                            current.principleId.value,
+                            ActorCapabilityRolePolicy.OWNER,
+                            current.userId,
+                            current.principleId.value,
+                            current.presetId.value,
+                            current.title,
+                            current.mode.name,
+                            current.status.name,
+                            current.version.toString(),
+                        ),
+                    ),
                 "userId" to current.userId,
                 "presetId" to current.presetId.value,
                 "title" to current.title,
@@ -90,15 +109,33 @@ class JdbcPrincipleRepository(
     ) {
         requireAuthorizedChange(
             """
-            SELECT insert_principle_version_authorized(
+            SELECT insert_principle_version_authorized_v2(
               :capability, :createdBy, :versionId, :principleId, :version, :presetId,
-              :title, :mode, :status, CAST(:rulesJson AS jsonb),
-              ARRAY(SELECT jsonb_array_elements_text(CAST(:changedFieldsJson AS jsonb))), :createdAt
+              :title, :mode, :status, :rulesJson, :changedFieldsJson, :createdAt
             )
             """.trimIndent(),
             mapOf(
                 "versionId" to versionId.value,
-                "capability" to capability(createdBy),
+                "capability" to
+                    capability(
+                        createdBy,
+                        ActorCapabilityBinding.request(
+                            "INSERT_PRINCIPLE_VERSION",
+                            "PRINCIPLE_VERSION",
+                            versionId.value,
+                            ActorCapabilityRolePolicy.OWNER,
+                            createdBy,
+                            versionId.value,
+                            version.principleId.value,
+                            version.version.toString(),
+                            version.presetId.value,
+                            version.title,
+                            version.mode.name,
+                            version.status.name,
+                            ruleJsonCodec.encode(version.rules),
+                            objectMapper.writeValueAsString(version.changedFields),
+                        ),
+                    ),
                 "principleId" to version.principleId.value,
                 "version" to version.version,
                 "presetId" to version.presetId.value,
@@ -123,13 +160,28 @@ class JdbcPrincipleRepository(
     ) {
         requireAuthorizedChange(
             """
-            SELECT insert_principle_audit_authorized(
+            SELECT insert_principle_audit_authorized_v2(
               :capability, :userId, :requestId, :action, :principleId, :newVersion,
-              ARRAY(SELECT jsonb_array_elements_text(CAST(:changedFieldsJson AS jsonb))), :createdAt
+              :changedFieldsJson, :createdAt
             )
             """.trimIndent(),
             mapOf(
-                "capability" to capability(actor.userId),
+                "capability" to
+                    capability(
+                        actor.userId,
+                        ActorCapabilityBinding.request(
+                            "INSERT_PRINCIPLE_AUDIT",
+                            "PRINCIPLE",
+                            principleId.value,
+                            ActorCapabilityRolePolicy.OWNER,
+                            actor.userId,
+                            actor.requestId,
+                            action,
+                            principleId.value,
+                            newVersion.toString(),
+                            objectMapper.writeValueAsString(changedFields),
+                        ),
+                    ),
                 "userId" to actor.userId,
                 "action" to action,
                 "principleId" to principleId.value,
@@ -152,7 +204,16 @@ class JdbcPrincipleRepository(
                 """.trimIndent(),
                 mapOf(
                     "principleId" to principleId.value,
-                    "capability" to capability(userId),
+                    "capability" to
+                        capability(
+                            userId,
+                            ActorCapabilityBinding.target(
+                                "READ_PRINCIPLE",
+                                "PRINCIPLE",
+                                principleId.value,
+                                ActorCapabilityRolePolicy.OWNER,
+                            ),
+                        ),
                     "userId" to userId,
                 ),
                 currentRowMapper,
@@ -166,8 +227,27 @@ class JdbcPrincipleRepository(
     ): List<PrincipleSummary> {
         val parameters =
             MapSqlParameterSource()
-                .addValue("capability", capability(userId))
-                .addValue("userId", userId)
+                .addValue(
+                    "capability",
+                    capability(
+                        userId,
+                        ActorCapabilityBinding.request(
+                            "LIST_PRINCIPLES",
+                            "PRINCIPLE_LIST",
+                            "principles",
+                            ActorCapabilityRolePolicy.OWNER,
+                            userId,
+                            size.toString(),
+                            sort.name,
+                            after
+                                ?.updatedAt
+                                ?.toInstant()
+                                ?.toEpochMilli()
+                                ?.toString(),
+                            after?.principleId,
+                        ),
+                    ),
+                ).addValue("userId", userId)
                 .addValue("limit", size)
                 .addValue("sort", sort.name)
                 .addValue("afterUpdatedAt", after?.updatedAt)
@@ -202,7 +282,22 @@ class JdbcPrincipleRepository(
                 """.trimIndent(),
                 mapOf(
                     "title" to title,
-                    "capability" to capability(userId),
+                    "capability" to
+                        capability(
+                            userId,
+                            ActorCapabilityBinding.request(
+                                "UPDATE_PRINCIPLE",
+                                "PRINCIPLE",
+                                principleId.value,
+                                ActorCapabilityRolePolicy.OWNER,
+                                userId,
+                                principleId.value,
+                                expectedVersion.toString(),
+                                title,
+                                mode.name,
+                                status.name,
+                            ),
+                        ),
                     "mode" to mode.name,
                     "status" to status.name,
                     "updatedAt" to updatedAt,
@@ -225,8 +320,23 @@ class JdbcPrincipleRepository(
     ): List<PrincipleVersion> {
         val parameters =
             MapSqlParameterSource()
-                .addValue("capability", capability(userId))
-                .addValue("userId", userId)
+                .addValue(
+                    "capability",
+                    capability(
+                        userId,
+                        ActorCapabilityBinding.request(
+                            "LIST_PRINCIPLE_VERSIONS",
+                            "PRINCIPLE",
+                            principleId.value,
+                            ActorCapabilityRolePolicy.OWNER,
+                            userId,
+                            principleId.value,
+                            size.toString(),
+                            sort.name,
+                            after?.version?.toString(),
+                        ),
+                    ),
+                ).addValue("userId", userId)
                 .addValue("principleId", principleId.value)
                 .addValue("limit", size)
                 .addValue("sort", sort.name)
@@ -246,7 +356,10 @@ class JdbcPrincipleRepository(
         jdbcProvider.getIfAvailable()
             ?: error("Principle JDBC access is unavailable without a configured DataSource.")
 
-    private fun capability(userId: String): String = actorCapabilityIssuer.issue(userId)
+    private fun capability(
+        userId: String,
+        binding: ActorCapabilityBinding,
+    ): String = actorCapabilityIssuer.issue(AuthenticatedActorRef.current(userId), binding)
 
     private fun requireAuthorizedChange(
         sql: String,

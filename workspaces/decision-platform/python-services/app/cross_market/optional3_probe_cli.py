@@ -21,11 +21,21 @@ from app.cross_market.optional3_probe import (
     StdlibOptional3ProbeTransport,
     optional3_credential_environment_variable,
 )
+from app.data._shared.canonical_json import canonical_json_sha256
 from app.rag.oa112_downloader import Oa112DownloadError, _read_private_control_file
-
+from app.verification.execution_approval import (
+    ExecutionApprovalError,
+    load_and_verify_execution_approval,
+    scope_digest,
+)
+from app.verification.provider_claim import (
+    ProviderApprovalClaimError,
+    claim_signed_provider_approval,
+)
 
 _CONTROL_ROOT_RELATIVE: Final[Path] = Path("capstone-rag/secrets/optional3-probes")
 _EVIDENCE_FILE: Final[str] = "optional3-probe-execution-evidence.v1.json"
+_APPROVAL_FILE: Final[str] = "p1-approval-packet.v2.json"
 _DEFAULT_PACKET_FILE: Final[str] = "optional3-probe-approval.v2.json"
 _LEAF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -60,8 +70,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         _emit("OPTIONAL3_PROBE_PACKET_UNAVAILABLE", provider_physical_calls=0)
         return 2
     try:
-        binding = _load_execution_binding(control_root=control_root, repository_root=_repository_root())
+        binding = _load_execution_binding(
+            control_root=control_root,
+            repository_root=_repository_root(),
+        )
         credential_name = optional3_credential_environment_variable(operation=packet.operation)
+        approval = load_and_verify_execution_approval(
+            (control_root / _APPROVAL_FILE).absolute(),
+            provider_family=packet.provider_family,
+            exact_operations=(packet.operation,),
+            payload_sha256=packet.packet_sha256(),
+            repository_digest=canonical_json_sha256(
+                {"headSha": binding.head_sha, "treeSha256": binding.tree_sha256}
+            ),
+            evidence_digest=canonical_json_sha256(
+                {"ciDigest": binding.ci_digest, "securityDigest": binding.security_digest}
+            ),
+            credential_scope_digest=scope_digest(credential_name),
+            physical_call_cap=packet.physical_call_cap,
+            cost_cap_microusd=packet.cost_cap_microusd,
+            now=now,
+        )
+        claim_signed_provider_approval(approval)
         api_key = os.environ.get(credential_name, "")
         receipt = Optional3ProbeExecutor(
             control_root=control_root,
@@ -72,6 +102,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             api_key=api_key,
             now=now,
         )
+    except (ExecutionApprovalError, ProviderApprovalClaimError):
+        _emit("P1_EXECUTION_APPROVAL_REJECTED", provider_physical_calls=0)
+        return 2
     except Optional3ProbeError as error:
         _emit(error.code, provider_physical_calls=error.physical_call_count)
         return 2
@@ -149,7 +182,14 @@ def _current_clean_git_identity(repository_root: Path) -> tuple[str, str]:
         raise Optional3ProbeError("OPTIONAL3_PROBE_REPOSITORY_INVALID")
     try:
         status = subprocess.run(
-            ["git", "-C", str(repository_root), "status", "--porcelain=v1", "--untracked-files=all"],
+            [
+                "git",
+                "-C",
+                str(repository_root),
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+            ],
             check=True,
             capture_output=True,
             text=True,
@@ -196,7 +236,9 @@ def _repository_root() -> Path:
 
 
 def _canonical_bytes(value: object) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
 
 
 def _emit(

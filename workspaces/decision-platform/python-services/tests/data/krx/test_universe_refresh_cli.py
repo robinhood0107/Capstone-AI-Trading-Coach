@@ -17,7 +17,6 @@ from app.data.krx.errors import KrxParseError, KrxValidationDiagnostic
 from app.data.krx.parsers import KrxDailyRow
 from app.data.krx.universe_refresh_cli import main
 
-
 _AS_OF = date(2026, 7, 14)
 
 
@@ -491,7 +490,7 @@ def test_latest_available_date_resolution_failure_is_sanitized_before_client_cre
 
 
 def test_first_official_service_date_is_inclusive() -> None:
-    assert universe_refresh_cli._validated_as_of(  # noqa: SLF001
+    assert universe_refresh_cli._validated_as_of(
         "2010-01-04",
         latest=_AS_OF,
     ) == date(2010, 1, 4)

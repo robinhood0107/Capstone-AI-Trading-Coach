@@ -10,7 +10,6 @@ from typing import Final, NoReturn, cast
 from app.data.krx.catalog import ENABLED_UNIVERSE_ENDPOINTS, KrxEndpoint, KrxMarket
 from app.data.krx.errors import KrxParseError, KrxValidationDiagnostic
 
-
 _OFFICIAL_DAILY_FIELDS: Final = frozenset(
     {
         "BAS_DD",

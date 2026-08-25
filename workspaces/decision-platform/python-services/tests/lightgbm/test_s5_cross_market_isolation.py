@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
-import hashlib
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -42,7 +42,6 @@ from app.lightgbm.training import (
     raw_margins,
 )
 from app.lightgbm.universe import MonthlyUniverse
-
 
 KST = ZoneInfo("Asia/Seoul")
 

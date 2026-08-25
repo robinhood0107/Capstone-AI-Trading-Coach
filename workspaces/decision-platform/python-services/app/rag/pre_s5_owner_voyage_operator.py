@@ -103,7 +103,9 @@ _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_-]{2,127}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _GIT_OBJECT = re.compile(r"^[0-9a-f]{40,64}$")
 _DOCUMENT_PACKET_DIRECTORY = "control/voyage-document-batch-packets"
-_PAYMENT_EVIDENCE = "capstone-rag/secrets/voyage-account-evidence/payment-method-on-file.attestation.v1.json"
+_PAYMENT_EVIDENCE = (
+    "capstone-rag/secrets/voyage-account-evidence/payment-method-on-file.attestation.v1.json"
+)
 _OPT_OUT_EVIDENCE = "capstone-rag/secrets/voyage-account-evidence/organization-admin-training-opt-out.attestation.v1.json"
 
 
@@ -199,7 +201,10 @@ def load_owner_voyage_batch_control(
     source_ids = {document.source_id for document in documents}
     revision_ids = {document.source_revision_id for document in documents}
     document_ids = {document.document_id for document in documents}
-    if any(len(values) != len(documents) for values in (ticket_ids, source_ids, revision_ids, document_ids)):
+    if any(
+        len(values) != len(documents)
+        for values in (ticket_ids, source_ids, revision_ids, document_ids)
+    ):
         raise OwnerVoyageOperatorError("OWNER_VOYAGE_BATCH_CONTROL_INVALID")
     return OwnerVoyageBatchControl(
         owner_user_id=owner_user_id,
@@ -252,7 +257,9 @@ def author_owner_voyage_manifest(
         or not 1 <= token_count <= 55_000
         or not isinstance(expires_at, datetime)
         or expires_at.tzinfo is None
-        or not datetime.now(UTC) < expires_at.astimezone(UTC) <= datetime.now(UTC) + timedelta(hours=2)
+        or not datetime.now(UTC)
+        < expires_at.astimezone(UTC)
+        <= datetime.now(UTC) + timedelta(hours=2)
     ):
         raise OwnerVoyageOperatorError("OWNER_VOYAGE_MANIFEST_INVALID")
     payload: dict[str, object] = {
@@ -351,12 +358,16 @@ def _materialize_plan(
     """각 control 문서를 정확히 한 번 parse해 one-request plan으로 결합한다."""
 
     tokenizer_sha256 = _required_sha256_environment("CAPSTONE_RAG_VOYAGE_TOKENIZER_SHA256")
-    voyage_root = _optional_environment_absolute_path("CAPSTONE_RAG_VOYAGE_TOKENIZER_ROOT") or local_root
+    voyage_root = (
+        _optional_environment_absolute_path("CAPSTONE_RAG_VOYAGE_TOKENIZER_ROOT") or local_root
+    )
     voyage_tokenizer = LocalPreS5VoyageContext4Tokenizer.from_local_root(
         local_root=voyage_root,
         expected_sha256=tokenizer_sha256,
     )
-    bge_root = _optional_environment_absolute_path("CAPSTONE_RAG_BGE_PACKET_ROOT") or DEFAULT_MODEL_ROOT
+    bge_root = (
+        _optional_environment_absolute_path("CAPSTONE_RAG_BGE_PACKET_ROOT") or DEFAULT_MODEL_ROOT
+    )
     canonical_tokenizer = BgeStaticTokenizer.from_file(bge_root / "onnx" / "tokenizer.json")
     parser = LocalDocumentParser(ocr_backend=_SyntheticOwnerOcrBackend())
     items = []
@@ -540,7 +551,9 @@ def _execute(
         approval_manifest_sha256=manifest_sha256,
         nonce_sha256=activation.nonce_sha256,
     )
-    voyage_root = _optional_environment_absolute_path("CAPSTONE_RAG_VOYAGE_TOKENIZER_ROOT") or local_root
+    voyage_root = (
+        _optional_environment_absolute_path("CAPSTONE_RAG_VOYAGE_TOKENIZER_ROOT") or local_root
+    )
     voyage_tokenizer = LocalPreS5VoyageContext4Tokenizer.from_local_root(
         local_root=voyage_root,
         expected_sha256=plan.tokenizer_sha256,
@@ -634,7 +647,9 @@ def _prepare_synthetic_batch(*, local_root: Path) -> None:
     try:
         with psycopg.connect(app_dsn, autocommit=False, connect_timeout=2) as connection:
             with connection.transaction():
-                connection.execute("SELECT set_config('app.actor_user_id', %s, true)", (owner_user_id,))
+                connection.execute(
+                    "SELECT set_config('app.actor_user_id', %s, true)", (owner_user_id,)
+                )
                 connection.execute(
                     """
                     SELECT public.record_rag_v2_immutable_consent_v2(
@@ -910,7 +925,11 @@ def _write_private_json(path: Path, content: bytes) -> None:
             offset += written
         os.fsync(descriptor)
         metadata = os.fstat(descriptor)
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1 or metadata.st_size != len(content):
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_nlink != 1
+            or metadata.st_size != len(content)
+        ):
             raise OwnerVoyageOperatorError("OWNER_VOYAGE_MANIFEST_BOUNDARY")
         os.close(descriptor)
         descriptor = -1
@@ -918,14 +937,13 @@ def _write_private_json(path: Path, content: bytes) -> None:
             existing = os.stat(path.name, dir_fd=parent_descriptor, follow_symlinks=False)
         except FileNotFoundError:
             existing = None
-        if existing is not None:
-            if (
-                not stat.S_ISREG(existing.st_mode)
-                or existing.st_uid != os.geteuid()
-                or existing.st_nlink != 1
-                or stat.S_IMODE(existing.st_mode) != 0o600
-            ):
-                raise OwnerVoyageOperatorError("OWNER_VOYAGE_MANIFEST_BOUNDARY")
+        if existing is not None and (
+            not stat.S_ISREG(existing.st_mode)
+            or existing.st_uid != os.geteuid()
+            or existing.st_nlink != 1
+            or stat.S_IMODE(existing.st_mode) != 0o600
+        ):
+            raise OwnerVoyageOperatorError("OWNER_VOYAGE_MANIFEST_BOUNDARY")
         os.replace(
             temporary_name,
             path.name,
@@ -987,9 +1005,17 @@ def _validate_private_directory_metadata(metadata: os.stat_result, *, code: str)
 
 
 def _safe_relative_path(value: str) -> bool:
-    if not value or value.startswith("/") or value.endswith("/") or "\\" in value or "\x00" in value:
+    if (
+        not value
+        or value.startswith("/")
+        or value.endswith("/")
+        or "\\" in value
+        or "\x00" in value
+    ):
         return False
-    return all(part not in {"", ".", ".."} and ":" not in part for part in PurePosixPath(value).parts)
+    return all(
+        part not in {"", ".", ".."} and ":" not in part for part in PurePosixPath(value).parts
+    )
 
 
 def _environment_absolute_path(name: str) -> Path:
@@ -1049,10 +1075,10 @@ def _hash_private_evidence(path: Path) -> str:
     finally:
         if descriptor >= 0:
             os.close(descriptor)
-    if (
-        len(content) != metadata.st_size
-        or (after.st_dev, after.st_ino, after.st_size)
-        != (metadata.st_dev, metadata.st_ino, metadata.st_size)
+    if len(content) != metadata.st_size or (after.st_dev, after.st_ino, after.st_size) != (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
     ):
         raise OwnerVoyageOperatorError("OWNER_VOYAGE_EVIDENCE_BOUNDARY")
     return hashlib.sha256(content).hexdigest()
@@ -1081,7 +1107,9 @@ def _reject_duplicate_keys(items: list[tuple[str, object]]) -> dict[str, object]
 
 
 def _canonical_json(value: Mapping[str, object]) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
 
 
 def _emit_failure(code: str) -> int:

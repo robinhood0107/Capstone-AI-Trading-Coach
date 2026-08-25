@@ -8,6 +8,7 @@ import com.capstone.decision.infrastructure.security.JwtService
 import com.capstone.decision.infrastructure.security.UserSecurityActorRecord
 import com.capstone.decision.infrastructure.security.UserSecurityRecord
 import com.capstone.decision.infrastructure.security.UserSecurityRepository
+import com.capstone.decision.infrastructure.security.UserSecuritySessionRecord
 import io.jsonwebtoken.JwtException
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.AfterEach
@@ -121,14 +122,16 @@ class DemoCredentialRotationIntegrationTest {
     @Test
     fun `rotation immediately rejects old password and token while accepting the new password`() {
         val repository = testRepository()
-        val accountService = DemoAccountService(repository, passwordEncoder)
+        val jwtProperties =
+            JwtProperties(
+                secret = "j" + "s".repeat(63),
+                issuer = "rotation-test-issuer",
+                audience = "rotation-test-audience",
+            )
+        val accountService = DemoAccountService(repository, passwordEncoder, jwtProperties)
         val jwtService =
             JwtService(
-                JwtProperties(
-                    secret = "j" + "s".repeat(63),
-                    issuer = "rotation-test-issuer",
-                    audience = "rotation-test-audience",
-                ),
+                jwtProperties,
                 repository,
             )
         val oldAccount = requireNotNull(accountService.authenticate("demo-user", SpringApiIntegrationTestBase.TEST_USER_PASSWORD))
@@ -332,6 +335,61 @@ class DemoCredentialRotationIntegrationTest {
                         securityVersion = user.securityVersion,
                     )
                 }
+
+            override fun createAuthenticatedSession(
+                username: String,
+                password: String,
+                ttlSeconds: Int,
+            ): UserSecuritySessionRecord? =
+                authConnection().use { connection ->
+                    connection
+                        .prepareStatement(
+                            """
+                            select session_handle,actor_user_id,username,actor_role,actor_security_version,expires_at
+                            from authenticate_demo_actor_session_v1(?,?,?)
+                            """.trimIndent(),
+                        ).use { statement ->
+                            statement.setString(1, username)
+                            statement.setString(2, password)
+                            statement.setInt(3, ttlSeconds)
+                            statement.executeQuery().use { result ->
+                                if (!result.next()) return@use null
+                                UserSecuritySessionRecord(
+                                    sessionHandle = result.getString("session_handle"),
+                                    userId = result.getString("actor_user_id"),
+                                    username = result.getString("username"),
+                                    role = DemoRole.valueOf(result.getString("actor_role")),
+                                    securityVersion = result.getLong("actor_security_version"),
+                                    expiresAt = result.getObject("expires_at", java.time.OffsetDateTime::class.java),
+                                )
+                            }
+                        }
+                }
+
+            override fun findBySessionHandle(sessionHandle: String): UserSecuritySessionRecord? =
+                authConnection().use { connection ->
+                    connection
+                        .prepareStatement(
+                            """
+                            select ? as session_handle,actor_user_id,username,actor_role,actor_security_version,expires_at
+                            from read_actor_auth_session_v1(?)
+                            """.trimIndent(),
+                        ).use { statement ->
+                            statement.setString(1, sessionHandle)
+                            statement.setString(2, sessionHandle)
+                            statement.executeQuery().use { result ->
+                                if (!result.next()) return@use null
+                                UserSecuritySessionRecord(
+                                    sessionHandle = result.getString("session_handle"),
+                                    userId = result.getString("actor_user_id"),
+                                    username = result.getString("username"),
+                                    role = DemoRole.valueOf(result.getString("actor_role")),
+                                    securityVersion = result.getLong("actor_security_version"),
+                                    expiresAt = result.getObject("expires_at", java.time.OffsetDateTime::class.java),
+                                )
+                            }
+                        }
+                }
         }
 
     private fun queryUser(userId: String): UserSecurityRecord = requireNotNull(queryUserBy("user_id", userId))
@@ -437,6 +495,8 @@ class DemoCredentialRotationIntegrationTest {
 
     private fun adminConnection() = DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password)
 
+    private fun authConnection() = DriverManager.getConnection(postgres.jdbcUrl, "decision_auth", "auth-test-secret-0001")
+
     companion object {
         private val MIGRATION_PASSWORD: String = "m" + "p".repeat(24)
         private val postgresImage =
@@ -448,7 +508,7 @@ class DemoCredentialRotationIntegrationTest {
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_rotation")
                 .withUsername("decision")
                 .withPassword("decision")

@@ -19,10 +19,10 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Mapping, Sequence
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.bootstrap_journal import BootstrapJournal
@@ -124,9 +124,7 @@ def append_daily_session(
     )
     if prior is not None:
         if prior != entry:
-            raise LightGbmContractError(
-                "appended session conflicts with the sealed index entry"
-            )
+            raise LightGbmContractError("appended session conflicts with the sealed index entry")
         return entry
     _append_index_line(append_root=append_root, entry=entry)
     return entry
@@ -225,9 +223,7 @@ def _append_index_line(*, append_root: Path, entry: AppendedSession) -> None:
         os.close(descriptor)
 
 
-def _publish_exact(
-    *, root: Path, relative_path: str, content: bytes, max_bytes: int
-) -> None:
+def _publish_exact(*, root: Path, relative_path: str, content: bytes, max_bytes: int) -> None:
     try:
         result = write_approved_new_file(
             approved_root=root,
@@ -260,6 +256,8 @@ def _ensure_private_directory(path: Path) -> None:
             raise LightGbmContractError("training append directory is not owner-private")
         return
     path.mkdir(mode=0o700, parents=True)
+
+
 def derive_training_window(
     *, packet_window: PitSessionWindow, appended: Sequence[date]
 ) -> PitSessionWindow:
@@ -297,6 +295,8 @@ def _warmup_span(window: PitSessionWindow) -> int:
     """packet window가 실제로 쓴 warm-up 폭을 그 window에서 되읽는다."""
 
     return window.raw_sessions.index(window.eligible_sessions[0])
+
+
 def append_from_daily_run(
     *,
     run_root: Path,

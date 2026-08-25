@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
-import math
-from typing import Mapping, Sequence
 
 import numpy as np
 
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.features import PriceEvidence, ProductionPriceEvidence
 from app.lightgbm.temporal import label_as_of, require_receipt_eligible
-
 
 # 세 class를 고르게 만드는 경계다. 초기 fit window의 |forward return| 1/3 분위가
 # 0.023577이며 그 값에서 유도한 정책 상수다. 전체 데이터셋 분위를 쓰면 미개봉 final

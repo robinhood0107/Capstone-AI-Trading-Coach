@@ -13,7 +13,9 @@ _GENERATOR_PATH = _REPO_ROOT / "contracts" / "generate_brokerage_proto.py"
 
 
 def _load_generator() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("generate_brokerage_proto_safety", _GENERATOR_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "generate_brokerage_proto_safety", _GENERATOR_PATH
+    )
     if spec is None or spec.loader is None:
         raise RuntimeError("brokerage proto generator module could not be loaded")
     module = importlib.util.module_from_spec(spec)

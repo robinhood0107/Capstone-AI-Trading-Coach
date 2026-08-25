@@ -14,8 +14,9 @@ import app.lightgbm.artifact_ingest as ingest_module
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.artifact_ingest import validate_signal_bundle
 from app.lightgbm.errors import LightGbmContractError
-from app.lightgbm.fake_artifacts import SIGNAL_ROW_SCHEMA, generate_fake_contract_bundle
 from app.lightgbm.fake_artifacts import (
+    SIGNAL_ROW_SCHEMA,
+    generate_fake_contract_bundle,
     signal_row_payload_sha256,
     signal_row_provenance_sha256,
 )

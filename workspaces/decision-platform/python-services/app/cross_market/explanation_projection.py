@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Final, Mapping, Sequence, cast
+from typing import Final, cast
 
 
 class ExplanationProjectionError(ValueError):
@@ -198,7 +199,9 @@ def _cause(value: Mapping[str, object], evaluated_at: datetime) -> CauseExplanat
         counterargument=value.get("counterargument") is True,
         retracted=value.get("retracted") is True,
         supersedes_evidence_id=supersedes,
-        contradiction_evidence_ids=tuple(sorted(contradictions, key=lambda item: item.encode("utf-8"))),
+        contradiction_evidence_ids=tuple(
+            sorted(contradictions, key=lambda item: item.encode("utf-8"))
+        ),
         sanitized_summary=summary,
     )
 
@@ -215,7 +218,11 @@ def _analyst(value: Mapping[str, object], evaluated_at: datetime) -> AnalystRevi
     broker_id = str(value.get("brokerId", ""))
     current = value.get("current")
     revision = value.get("revision")
-    if not broker_id.startswith("broker_") or not isinstance(current, Mapping) or not isinstance(revision, Mapping):
+    if (
+        not broker_id.startswith("broker_")
+        or not isinstance(current, Mapping)
+        or not isinstance(revision, Mapping)
+    ):
         raise ExplanationProjectionError("ANALYST_PROJECTION_INVALID")
     rating = str(current.get("rating", ""))
     if not rating or len(rating) > 32:
@@ -245,7 +252,11 @@ def _validate_gdelt_summary(value: Mapping[str, object]) -> None:
 
 
 def _hash(value: object) -> str:
-    if not isinstance(value, str) or len(value) != 64 or any(character not in _SHA256_CHARS for character in value):
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in _SHA256_CHARS for character in value)
+    ):
         raise ExplanationProjectionError("EVIDENCE_HASH_INVALID")
     return value
 

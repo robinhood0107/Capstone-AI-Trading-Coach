@@ -13,10 +13,10 @@ import os
 import re
 import stat
 import unicodedata
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Mapping, Sequence
 
 from app.rag.owner_file_io import OwnerFileIoError, read_owner_regular_file
 
@@ -32,9 +32,7 @@ _VOYAGE_QUERY_RUNTIME_FILENAME = "pre-s5-voyage-query-runtime.json"
 _VOYAGE_QUERY_RUNTIME_RELATIVE_PATH = f"{_CONTROL_DIRECTORY}/{_VOYAGE_QUERY_RUNTIME_FILENAME}"
 _SECRETS_DIRECTORY = "secrets"
 _VOYAGE_QUERY_WRITER_DSN_FILENAME = "rag-v2-voyage-query-writer-dsn"
-_VOYAGE_QUERY_WRITER_DSN_RELATIVE_PATH = (
-    f"{_SECRETS_DIRECTORY}/{_VOYAGE_QUERY_WRITER_DSN_FILENAME}"
-)
+_VOYAGE_QUERY_WRITER_DSN_RELATIVE_PATH = f"{_SECRETS_DIRECTORY}/{_VOYAGE_QUERY_WRITER_DSN_FILENAME}"
 _MAX_PACKET_BYTES = 32 * 1024
 _DOCUMENT_BATCH_MAX_BYTE_CAP = 16 * 1024 * 1024
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -42,7 +40,9 @@ _GIT_OBJECT = re.compile(r"^[0-9a-f]{40,64}$")
 _NONCE = re.compile(r"^ps5_[a-z0-9][a-z0-9_-]{7,123}$")
 _OPERATOR = re.compile(r"^[a-z0-9][a-z0-9._@-]{2,127}$")
 _SCOPE_CLAIM = re.compile(r"^rvs_[0-9a-f]{32}$")
-_EVALUATION_QUERY_ID = re.compile(r"^(?:q(?:0[1-9]|10)|oa112-q(?:0(?:0[1-9]|[1-9][0-9])|1(?:0[0-9]|1[0-2])))$")
+_EVALUATION_QUERY_ID = re.compile(
+    r"^(?:q(?:0[1-9]|10)|oa112-q(?:0(?:0[1-9]|[1-9][0-9])|1(?:0[0-9]|1[0-2])))$"
+)
 _DOCUMENT_BATCH_ID = re.compile(r"^ps5_voyage_doc_[0-9]{4}_[0-9a-f]{16}$")
 _EVALUATION_BATCH_COMPONENT = re.compile(r"^(?:EXACT30|OA112)$")
 _PACKET_FIELDS = frozenset(
@@ -591,7 +591,10 @@ def load_pre_s5_voyage_evaluation_query_activation(
     """
 
     _validate_query_binding_input(question=question, scope_claim_id=scope_claim_id)
-    if not isinstance(evaluation_query_id, str) or _EVALUATION_QUERY_ID.fullmatch(evaluation_query_id) is None:
+    if (
+        not isinstance(evaluation_query_id, str)
+        or _EVALUATION_QUERY_ID.fullmatch(evaluation_query_id) is None
+    ):
         raise PreS5ProviderActivationError("PRE_S5_PROVIDER_PACKET_INVALID")
     relative_path = (
         f"{_CONTROL_DIRECTORY}/{_VOYAGE_EVALUATION_QUERY_PACKET_DIRECTORY}/"
@@ -931,7 +934,11 @@ def _validate_voyage_document_batch_packet(
         or now < issued_at
         or now >= expires_at
     ):
-        code = "PRE_S5_PROVIDER_PACKET_EXPIRED" if now >= expires_at else "PRE_S5_PROVIDER_PACKET_INVALID"
+        code = (
+            "PRE_S5_PROVIDER_PACKET_EXPIRED"
+            if now >= expires_at
+            else "PRE_S5_PROVIDER_PACKET_INVALID"
+        )
         raise PreS5ProviderActivationError(code)
     expected_strings = {
         "date": "NONE",
@@ -985,7 +992,10 @@ def _validate_voyage_document_batch_packet(
     token_cap = _bounded_int(value.get("tokenCap"), minimum=expected_token_count, maximum=120_000)
     # 1024차원 float JSON은 수백 chunk만으로 4 MiB를 넘을 수 있다. document batch만
     # 16 MiB까지 허용하고 query/legacy packet의 기존 상한은 유지한다.
-    if type(minimum_byte_cap) is not int or not 1 <= minimum_byte_cap <= _DOCUMENT_BATCH_MAX_BYTE_CAP:
+    if (
+        type(minimum_byte_cap) is not int
+        or not 1 <= minimum_byte_cap <= _DOCUMENT_BATCH_MAX_BYTE_CAP
+    ):
         raise PreS5ProviderActivationError("PRE_S5_PROVIDER_PACKET_INVALID")
     byte_cap = _bounded_int(
         value.get("byteCap"),
@@ -993,12 +1003,16 @@ def _validate_voyage_document_batch_packet(
         maximum=_DOCUMENT_BATCH_MAX_BYTE_CAP,
     )
     cost_cap_microusd = _bounded_int(value.get("costCapMicrousd"), minimum=1, maximum=1_000_000_000)
-    input_microusd_per_token = _bounded_int(value.get("inputMicrousdPerToken"), minimum=1, maximum=1_000_000)
+    input_microusd_per_token = _bounded_int(
+        value.get("inputMicrousdPerToken"), minimum=1, maximum=1_000_000
+    )
     retry_count = _bounded_int(value.get("retryCount"), minimum=0, maximum=0)
     raw_artifact_count = _bounded_int(value.get("rawArtifactCount"), minimum=0, maximum=0)
     if token_cap * input_microusd_per_token > cost_cap_microusd:
         raise PreS5ProviderActivationError("PRE_S5_PROVIDER_PACKET_INVALID")
-    canonical_packet = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    canonical_packet = json.dumps(
+        value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
     return PreS5VoyageDocumentBatchActivation(
         packet_sha256=hashlib.sha256(canonical_packet).hexdigest(),
         nonce_sha256=hashlib.sha256(_text(value["nonce"]).encode("utf-8")).hexdigest(),
@@ -1233,9 +1247,7 @@ def _validate_voyage_evaluation_batch_packet(
     physical_call_cap = _bounded_int(value.get("physicalCallCap"), minimum=1, maximum=1)
     token_cap = _bounded_int(value.get("tokenCap"), minimum=expected_token_count, maximum=8_192)
     byte_cap = _bounded_int(value.get("byteCap"), minimum=1, maximum=4_194_304)
-    cost_cap_microusd = _bounded_int(
-        value.get("costCapMicrousd"), minimum=1, maximum=1_000_000_000
-    )
+    cost_cap_microusd = _bounded_int(value.get("costCapMicrousd"), minimum=1, maximum=1_000_000_000)
     input_microusd_per_token = _bounded_int(
         value.get("inputMicrousdPerToken"), minimum=1, maximum=1_000_000
     )
@@ -1353,7 +1365,10 @@ def _assert_document_batch_packet_boundary(
         expected_mode=0o700,
     )
     packet = _safe_file_metadata(
-        local_root / _CONTROL_DIRECTORY / _VOYAGE_DOCUMENT_BATCH_PACKET_DIRECTORY / f"{batch_id}.json",
+        local_root
+        / _CONTROL_DIRECTORY
+        / _VOYAGE_DOCUMENT_BATCH_PACKET_DIRECTORY
+        / f"{batch_id}.json",
         expected_mode=0o600,
     )
     return root, control, packet_directory, packet

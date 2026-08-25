@@ -17,6 +17,9 @@ import com.capstone.decision.application.rag.RagHistoryMetadata
 import com.capstone.decision.application.rag.RagIdempotencyIdentity
 import com.capstone.decision.application.rag.RagPurgeResult
 import com.capstone.decision.application.rag.RagStoredEncryptedHistory
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
@@ -30,6 +33,7 @@ import java.time.ZoneOffset
 class JdbcRagGuardHistoryRepository(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val objectMapper: ObjectMapper,
+    private val actorRlsScope: ActorRlsScope,
 ) : RagGuardHistoryPersistencePort {
     @Transactional
     override fun claim(
@@ -39,7 +43,7 @@ class JdbcRagGuardHistoryRepository(
     ): RagClaimDecision =
         guarded {
             val jdbc = jdbc()
-            setActor(jdbc, ownerUserId)
+            setActor(jdbc, ownerUserId, "CLAIM_RAG_ANSWER", "RAG_CLAIM", idempotency.scopeHmac)
             val result =
                 jdbc
                     .query(
@@ -77,7 +81,13 @@ class JdbcRagGuardHistoryRepository(
     override fun complete(completion: RagAnswerCompletion) {
         guarded {
             val jdbc = jdbc()
-            setActor(jdbc, completion.identity.ownerUserId)
+            setActor(
+                jdbc,
+                completion.identity.ownerUserId,
+                "COMPLETE_RAG_ANSWER",
+                "RAG_ANSWER",
+                completion.identity.answerId,
+            )
             val evaluation = completion.evaluation
             val encrypted = completion.encrypted
             jdbc.queryForObject(
@@ -163,14 +173,14 @@ class JdbcRagGuardHistoryRepository(
         )
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     override fun findHistory(
         ownerUserId: String,
         answerId: String,
     ): RagStoredEncryptedHistory? =
         guarded {
             val jdbc = jdbc()
-            setActor(jdbc, ownerUserId)
+            setActor(jdbc, ownerUserId, "READ_RAG_HISTORY", "RAG_ANSWER", answerId)
             jdbc
                 .query(
                     """
@@ -182,14 +192,14 @@ class JdbcRagGuardHistoryRepository(
                 .singleOrNull()
         }
 
-    @Transactional(readOnly = true)
+    @Transactional
     override fun findCitations(
         ownerUserId: String,
         answerId: String,
     ): List<RagCitation> =
         guarded {
             val jdbc = jdbc()
-            setActor(jdbc, ownerUserId)
+            setActor(jdbc, ownerUserId, "READ_RAG_CITATIONS", "RAG_ANSWER", answerId)
             jdbc.query(
                 """
                 SELECT *
@@ -210,7 +220,7 @@ class JdbcRagGuardHistoryRepository(
             }
         }
 
-    @Transactional(readOnly = true)
+    @Transactional
     override fun listHistory(
         ownerUserId: String,
         cursor: RagHistoryCursorPoint?,
@@ -218,7 +228,7 @@ class JdbcRagGuardHistoryRepository(
     ): List<RagHistoryMetadata> =
         guarded {
             val jdbc = jdbc()
-            setActor(jdbc, ownerUserId)
+            setActor(jdbc, ownerUserId, "LIST_RAG_HISTORY", "OWNER", ownerUserId)
             jdbc.query(
                 """
                 SELECT *
@@ -260,7 +270,7 @@ class JdbcRagGuardHistoryRepository(
     ) {
         guarded {
             val jdbc = jdbc()
-            setActor(jdbc, ownerUserId)
+            setActor(jdbc, ownerUserId, "DELETE_RAG_HISTORY", "RAG_ANSWER", answerId)
             jdbc.queryForObject(
                 "SELECT delete_owned_rag_history(:ownerUserId, :answerId)",
                 mapOf("ownerUserId" to ownerUserId, "answerId" to answerId),
@@ -278,7 +288,7 @@ class JdbcRagGuardHistoryRepository(
     ): Boolean =
         guarded {
             val jdbc = jdbc()
-            setActor(jdbc, ownerUserId)
+            setActor(jdbc, ownerUserId, "UPSERT_RAG_FEEDBACK", "RAG_ANSWER", answerId)
             requireNotNull(
                 jdbc.queryForObject(
                     """
@@ -307,7 +317,7 @@ class JdbcRagGuardHistoryRepository(
     ): RagConsentEvent =
         guarded {
             val jdbc = jdbc()
-            setActor(jdbc, ownerUserId)
+            setActor(jdbc, ownerUserId, "RECORD_RAG_CONSENT", "RAG_CONSENT", consentEventId)
             jdbc
                 .query(
                     """
@@ -336,11 +346,11 @@ class JdbcRagGuardHistoryRepository(
                 }.single()
         }
 
-    @Transactional(readOnly = true)
+    @Transactional
     override fun effectiveConsent(ownerUserId: String): RagEffectiveConsent =
         guarded {
             val jdbc = jdbc()
-            setActor(jdbc, ownerUserId)
+            setActor(jdbc, ownerUserId, "READ_RAG_CONSENT", "OWNER", ownerUserId)
             jdbc
                 .query(
                     "SELECT * FROM read_effective_rag_consent(:ownerUserId)",
@@ -381,7 +391,17 @@ class JdbcRagGuardHistoryRepository(
         guarded {
             require(function in TERMINAL_FUNCTIONS)
             val jdbc = jdbc()
-            setActor(jdbc, ownerUserId)
+            setActor(
+                jdbc,
+                ownerUserId,
+                if (function == "fail_rag_answer_before_provider") {
+                    "FAIL_RAG_BEFORE_PROVIDER"
+                } else {
+                    "MARK_RAG_UNKNOWN"
+                },
+                "RAG_CLAIM",
+                idempotency.scopeHmac,
+            )
             jdbc.queryForObject(
                 "SELECT $function(:ownerUserId, :scopeHmac, :requestFingerprint)",
                 mapOf(
@@ -415,11 +435,19 @@ class JdbcRagGuardHistoryRepository(
     private fun setActor(
         jdbc: NamedParameterJdbcTemplate,
         ownerUserId: String,
+        operation: String,
+        targetKind: String,
+        targetId: String,
     ) {
-        jdbc.queryForObject(
-            "SELECT set_config('app.actor_user_id', :ownerUserId, true)",
-            mapOf("ownerUserId" to ownerUserId),
-            String::class.java,
+        actorRlsScope.open(
+            jdbc,
+            ownerUserId,
+            ActorCapabilityBinding.target(
+                operation,
+                targetKind,
+                targetId,
+                ActorCapabilityRolePolicy.OWNER,
+            ),
         )
     }
 

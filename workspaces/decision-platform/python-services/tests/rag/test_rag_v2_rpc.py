@@ -23,7 +23,6 @@ from app.rag.rag_v2_rpc import (
     create_rag_v2_server,
 )
 
-
 SHARED_SECRET = "rag-v2-grpc-shared-secret-for-s4-7d-tests-0001"
 AUTH = (("x-decision-rag-v2-grpc-auth", SHARED_SECRET),)
 
@@ -125,7 +124,11 @@ def test_bge_v2_engine_returns_retrieval_only_public_and_owner_metadata_without_
 def test_bge_v2_engine_blocks_advice_before_scope_or_retrieval() -> None:
     scope = _scope(owner_generation=False)
     reader = _ScopeReader(scope)
-    retrieval = _Retrieval(_success(_candidate(1, scope, source_scope="EXACT30"), _candidate(2, scope, source_scope="OA112")))
+    retrieval = _Retrieval(
+        _success(
+            _candidate(1, scope, source_scope="EXACT30"), _candidate(2, scope, source_scope="OA112")
+        )
+    )
     engine = BgeRagV2RetrievalOnlyEngine(scope_reader=reader, retrieval=retrieval)
 
     result = engine.ask(_request(question="나는 지금 005930을 몇 주 매수해야 하나요?"))
@@ -160,7 +163,9 @@ def test_bge_v2_engine_maps_scope_or_retrieval_failure_without_fabricating_citat
     assert result.citation_coverage == 0.0
 
 
-def test_profile_selected_engine_uses_only_the_db_scope_voyage_retrieval_without_bge_fallback() -> None:
+def test_profile_selected_engine_uses_only_the_db_scope_voyage_retrieval_without_bge_fallback() -> (
+    None
+):
     voyage_scope = _scope(owner_generation=False, profile="voyage_context_4_1024_v1")
     bge_scope = _scope(owner_generation=False)
     bge = _Retrieval(_success(_candidate(1, bge_scope, source_scope="EXACT30")))
@@ -211,7 +216,9 @@ def test_public_voyage_owner_bge_scope_returns_owner_citation_as_retrieval_only(
 
 def test_profile_selected_engine_reports_unavailable_voyage_profile_without_bge_fallback() -> None:
     voyage_scope = _scope(owner_generation=False, profile="voyage_context_4_1024_v1")
-    bge = _Retrieval(_success(_candidate(1, _scope(owner_generation=False), source_scope="EXACT30")))
+    bge = _Retrieval(
+        _success(_candidate(1, _scope(owner_generation=False), source_scope="EXACT30"))
+    )
     engine = ProfileSelectedRagV2RetrievalOnlyEngine(
         scope_reader=_ScopeReader(voyage_scope),
         retrievals={"bge_m3_local_1024_v1": bge},
@@ -225,7 +232,9 @@ def test_profile_selected_engine_reports_unavailable_voyage_profile_without_bge_
     assert bge.calls == 0
 
 
-def test_profile_selected_engine_preserves_one_hard_gated_voyage_query_attempt_in_the_result() -> None:
+def test_profile_selected_engine_preserves_one_hard_gated_voyage_query_attempt_in_the_result() -> (
+    None
+):
     scope = _scope(owner_generation=False, profile="voyage_context_4_1024_v1")
     voyage = _ExecutionRetrieval(
         _success(
@@ -261,9 +270,7 @@ def test_v2_loopback_transport_serializes_only_safe_citations_and_disables_refle
     resources.server.start()
     channel = grpc.insecure_channel(f"127.0.0.1:{resources.bound_port}")
     try:
-        response = rag_v2_pb2_grpc.RagServiceStub(channel).Ask(
-            _request(), metadata=AUTH, timeout=2
-        )
+        response = rag_v2_pb2_grpc.RagServiceStub(channel).Ask(_request(), metadata=AUTH, timeout=2)
         assert response.status == rag_v2_pb2.RAG_RESPONSE_STATUS_RETRIEVAL_ONLY
         assert not response.HasField("answer")
         assert response.citation_coverage == 1.0

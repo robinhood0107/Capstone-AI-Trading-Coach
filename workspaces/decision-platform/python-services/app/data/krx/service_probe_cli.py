@@ -24,7 +24,6 @@ from app.data.krx.universe_refresh_cli import (
     _validated_as_of,
 )
 
-
 _PROBE_READ_TIMEOUT_SECONDS = 120.0
 _PROBE_LOGICAL_DEADLINE_SECONDS = 130.0
 _MAX_ELAPSED_MS = 999_999_999
@@ -163,9 +162,7 @@ def _summarize_rows(
     return _ProbeSummary(
         row_count=len(ordered),
         positive_candidate_count=sum(
-            is_kis_compatible_symbol(row.symbol)
-            and row.market_cap > 0
-            and row.trading_value > 0
+            is_kis_compatible_symbol(row.symbol) and row.market_cap > 0 and row.trading_value > 0
             for row in ordered
         ),
         source_sha256=canonical_json_sha256(canonical_rows),

@@ -12,13 +12,12 @@ import hashlib
 import json
 import re
 import stat
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Sequence
 
 from app.rag.benchmark_receipt_io import BenchmarkReceiptIoError, write_benchmark_receipt
 from app.rag.oa112_active_registry import Oa112ActiveRegistry
-
 
 _REPO_ROOT = Path(__file__).resolve().parents[5]
 _TRACKED_EXACT30_FIXTURE = _REPO_ROOT / "capstone-rag/eval/s4-2b-30-card-smoke.v1.json"
@@ -86,7 +85,9 @@ def prepare_public_voyage_evaluation_manifests(
             payload=_canonical_json(oa_payload),
         )
     except BenchmarkReceiptIoError as error:
-        raise PublicVoyageEvaluationManifestError("PUBLIC_VOYAGE_EVALUATION_MANIFEST_WRITE") from error
+        raise PublicVoyageEvaluationManifestError(
+            "PUBLIC_VOYAGE_EVALUATION_MANIFEST_WRITE"
+        ) from error
     return PublicVoyageEvaluationManifestPreparation(
         exact30_file_sha256=exact_write.payload_sha256,
         oa112_file_sha256=oa_write.payload_sha256,
@@ -103,7 +104,9 @@ def public_voyage_evaluation_input_root(local_root: Path) -> Path:
     return local_root / _INPUT_DIRECTORY
 
 
-def _exact30_projection(*, corpus_manifest_sha256: str, source_ids: frozenset[str]) -> dict[str, object]:
+def _exact30_projection(
+    *, corpus_manifest_sha256: str, source_ids: frozenset[str]
+) -> dict[str, object]:
     payload = _read_tracked_fixture()
     raw_queries = payload.get("queries")
     if (
@@ -183,7 +186,9 @@ def _read_tracked_fixture() -> dict[str, object]:
         raw = _TRACKED_EXACT30_FIXTURE.read_bytes()
         value = json.loads(raw.decode("utf-8", errors="strict"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise PublicVoyageEvaluationManifestError("PUBLIC_VOYAGE_EXACT30_FIXTURE_INVALID") from error
+        raise PublicVoyageEvaluationManifestError(
+            "PUBLIC_VOYAGE_EXACT30_FIXTURE_INVALID"
+        ) from error
     if (
         not stat.S_ISREG(metadata.st_mode)
         or stat.S_ISLNK(metadata.st_mode)
@@ -202,9 +207,14 @@ def _manifest_digest(payload: Mapping[str, object]) -> str:
         raise PublicVoyageEvaluationManifestError("PUBLIC_VOYAGE_OA112_FIXTURE_INVALID")
     detached["evaluationManifestDigest"] = None
     return hashlib.sha256(
-        json.dumps(detached, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        json.dumps(detached, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+            "utf-8"
+        )
     ).hexdigest()
 
 
 def _canonical_json(value: Mapping[str, object]) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8") + b"\n"
+    return (
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        + b"\n"
+    )

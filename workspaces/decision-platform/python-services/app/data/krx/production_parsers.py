@@ -9,54 +9,130 @@ from typing import Final, cast
 from app.data.krx.catalog import S5_PRODUCTION_ENDPOINTS
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 
-
 S5_PRODUCTION_PROJECTION_FIELDS: Final[dict[str, frozenset[str]]] = {
     "stk_bydd_trd": frozenset(
         {
-            "BAS_DD", "ISU_CD", "ISU_NM", "MKT_NM", "SECT_TP_NM", "TDD_CLSPRC",
-            "CMPPREVDD_PRC", "FLUC_RT", "TDD_OPNPRC", "TDD_HGPRC", "TDD_LWPRC",
-            "ACC_TRDVOL", "ACC_TRDVAL", "MKTCAP", "LIST_SHRS",
+            "BAS_DD",
+            "ISU_CD",
+            "ISU_NM",
+            "MKT_NM",
+            "SECT_TP_NM",
+            "TDD_CLSPRC",
+            "CMPPREVDD_PRC",
+            "FLUC_RT",
+            "TDD_OPNPRC",
+            "TDD_HGPRC",
+            "TDD_LWPRC",
+            "ACC_TRDVOL",
+            "ACC_TRDVAL",
+            "MKTCAP",
+            "LIST_SHRS",
         }
     ),
     "ksq_bydd_trd": frozenset(
         {
-            "BAS_DD", "ISU_CD", "ISU_NM", "MKT_NM", "SECT_TP_NM", "TDD_CLSPRC",
-            "CMPPREVDD_PRC", "FLUC_RT", "TDD_OPNPRC", "TDD_HGPRC", "TDD_LWPRC",
-            "ACC_TRDVOL", "ACC_TRDVAL", "MKTCAP", "LIST_SHRS",
+            "BAS_DD",
+            "ISU_CD",
+            "ISU_NM",
+            "MKT_NM",
+            "SECT_TP_NM",
+            "TDD_CLSPRC",
+            "CMPPREVDD_PRC",
+            "FLUC_RT",
+            "TDD_OPNPRC",
+            "TDD_HGPRC",
+            "TDD_LWPRC",
+            "ACC_TRDVOL",
+            "ACC_TRDVAL",
+            "MKTCAP",
+            "LIST_SHRS",
         }
     ),
     "kospi_dd_trd": frozenset(
         {
-            "BAS_DD", "IDX_CLSS", "IDX_NM", "CLSPRC_IDX", "CMPPREVDD_IDX", "FLUC_RT",
-            "OPNPRC_IDX", "HGPRC_IDX", "LWPRC_IDX", "ACC_TRDVOL", "ACC_TRDVAL", "MKTCAP",
+            "BAS_DD",
+            "IDX_CLSS",
+            "IDX_NM",
+            "CLSPRC_IDX",
+            "CMPPREVDD_IDX",
+            "FLUC_RT",
+            "OPNPRC_IDX",
+            "HGPRC_IDX",
+            "LWPRC_IDX",
+            "ACC_TRDVOL",
+            "ACC_TRDVAL",
+            "MKTCAP",
         }
     ),
     "kosdaq_dd_trd": frozenset(
         {
-            "BAS_DD", "IDX_CLSS", "IDX_NM", "CLSPRC_IDX", "CMPPREVDD_IDX", "FLUC_RT",
-            "OPNPRC_IDX", "HGPRC_IDX", "LWPRC_IDX", "ACC_TRDVOL", "ACC_TRDVAL", "MKTCAP",
+            "BAS_DD",
+            "IDX_CLSS",
+            "IDX_NM",
+            "CLSPRC_IDX",
+            "CMPPREVDD_IDX",
+            "FLUC_RT",
+            "OPNPRC_IDX",
+            "HGPRC_IDX",
+            "LWPRC_IDX",
+            "ACC_TRDVOL",
+            "ACC_TRDVAL",
+            "MKTCAP",
         }
     ),
     "stk_isu_base_info": frozenset(
         {
-            "ISU_CD", "ISU_SRT_CD", "ISU_NM", "ISU_ABBRV", "ISU_ENG_NM", "LIST_DD",
-            "MKT_TP_NM", "SECUGRP_NM", "SECT_TP_NM", "KIND_STKCERT_TP_NM", "PARVAL",
+            "ISU_CD",
+            "ISU_SRT_CD",
+            "ISU_NM",
+            "ISU_ABBRV",
+            "ISU_ENG_NM",
+            "LIST_DD",
+            "MKT_TP_NM",
+            "SECUGRP_NM",
+            "SECT_TP_NM",
+            "KIND_STKCERT_TP_NM",
+            "PARVAL",
             "LIST_SHRS",
         }
     ),
     "ksq_isu_base_info": frozenset(
         {
-            "ISU_CD", "ISU_SRT_CD", "ISU_NM", "ISU_ABBRV", "ISU_ENG_NM", "LIST_DD",
-            "MKT_TP_NM", "SECUGRP_NM", "SECT_TP_NM", "KIND_STKCERT_TP_NM", "PARVAL",
+            "ISU_CD",
+            "ISU_SRT_CD",
+            "ISU_NM",
+            "ISU_ABBRV",
+            "ISU_ENG_NM",
+            "LIST_DD",
+            "MKT_TP_NM",
+            "SECUGRP_NM",
+            "SECT_TP_NM",
+            "KIND_STKCERT_TP_NM",
+            "PARVAL",
             "LIST_SHRS",
         }
     ),
     "etf_bydd_trd": frozenset(
         {
-            "BAS_DD", "ISU_CD", "ISU_NM", "TDD_CLSPRC", "CMPPREVDD_PRC", "FLUC_RT", "NAV",
-            "TDD_OPNPRC", "TDD_HGPRC", "TDD_LWPRC", "ACC_TRDVOL", "ACC_TRDVAL", "MKTCAP",
-            "INVSTASST_NETASST_TOTAMT", "LIST_SHRS", "IDX_IND_NM", "OBJ_STKPRC_IDX",
-            "CMPPREVDD_IDX", "FLUC_RT_IDX",
+            "BAS_DD",
+            "ISU_CD",
+            "ISU_NM",
+            "TDD_CLSPRC",
+            "CMPPREVDD_PRC",
+            "FLUC_RT",
+            "NAV",
+            "TDD_OPNPRC",
+            "TDD_HGPRC",
+            "TDD_LWPRC",
+            "ACC_TRDVOL",
+            "ACC_TRDVAL",
+            "MKTCAP",
+            "INVSTASST_NETASST_TOTAMT",
+            "LIST_SHRS",
+            "IDX_IND_NM",
+            "OBJ_STKPRC_IDX",
+            "CMPPREVDD_IDX",
+            "FLUC_RT_IDX",
         }
     ),
 }
@@ -78,8 +154,14 @@ def parse_s5_production_response(
         raise DatasetUnavailable("DATASET_UNAVAILABLE: KRX S5 response rows are unavailable")
     result: list[dict[str, str]] = []
     expected_date = requested_date.strftime("%Y%m%d")
-    identity_field = "ISU_SRT_CD" if service.endswith("isu_base_info") else (
-        "IDX_NM" if service.endswith("dd_trd") and service.startswith(("kospi", "kosdaq")) else "ISU_CD"
+    identity_field = (
+        "ISU_SRT_CD"
+        if service.endswith("isu_base_info")
+        else (
+            "IDX_NM"
+            if service.endswith("dd_trd") and service.startswith(("kospi", "kosdaq"))
+            else "ISU_CD"
+        )
     )
     seen: set[str] = set()
     for raw in rows:

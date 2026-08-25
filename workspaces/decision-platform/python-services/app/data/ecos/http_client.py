@@ -20,8 +20,8 @@ from app.data.ecos._credential_transport import (
     _ECOS_DEADLINE_EXTENSION,
     _ECOS_SAFE_RESPONSE_EXTENSION,
     ECOSCredentialError,
-    _CredentialTransport,
     _canonical_client_headers,
+    _CredentialTransport,
 )
 from app.data.ecos.errors import ECOSApplicationError, ECOSDiagnostic, ECOSError
 from app.data.ecos.models import (
@@ -43,13 +43,13 @@ from app.data.ecos.policy import (
 )
 from app.data.ecos.quota import (
     ECOSQuota,
+    _build_redis_client,
     apply_ecos_application_cooldown,
     build_ecos_quota_reservation,
     build_s5_ecos_quota_reservation,
-    _build_redis_client,
 )
 from app.data.ecos.series_registry import ECOSSeries
-from app.data.ecos.settings import ECOSSettings, ECOSS5ProductionSettings
+from app.data.ecos.settings import ECOSS5ProductionSettings, ECOSSettings
 
 _ResultT = TypeVar("_ResultT")
 _TLS_ENVIRONMENT_OVERRIDES = ("SSL_CERT_FILE", "SSL_CERT_DIR", "SSLKEYLOGFILE")
@@ -82,7 +82,6 @@ def _build_tls_context() -> ssl.SSLContext:
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.check_hostname = True
     context.verify_mode = ssl.CERT_REQUIRED
-    setattr(context, "keylog_filename", None)
     return context
 
 
@@ -95,6 +94,7 @@ class ECOSHttpClient:
         *,
         transport: httpx.BaseTransport | None = None,
         quota: _Quota | None = None,
+        approval_deadline_monotonic: float | None = None,
     ) -> None:
         """운영 client는 caller transport/quota override를 거부하고 private wiring만 사용한다."""
         if transport is not None or quota is not None:
@@ -123,6 +123,7 @@ class ECOSHttpClient:
                 retry_sleeper=time.sleep,
                 redis_client=redis_client,
                 monotonic=time.monotonic,
+                approval_deadline_monotonic=approval_deadline_monotonic,
             )
         except Exception:
             if inner is not None:
@@ -140,7 +141,8 @@ class ECOSHttpClient:
         credential: SecretStr,
         retry_sleeper: Callable[[float], None] | None = None,
         monotonic: Callable[[], float] | None = None,
-    ) -> "ECOSHttpClient":
+        approval_deadline_monotonic: float | None = None,
+    ) -> ECOSHttpClient:
         """socket/env 없이 synthetic credential과 MockTransport만 쓰는 비공개 test factory다."""
         if not isinstance(transport, httpx.MockTransport):
             raise ValueError("ECOS test factory requires a private mock transport")
@@ -153,6 +155,7 @@ class ECOSHttpClient:
             retry_sleeper=retry_sleeper or (lambda _: None),
             redis_client=None,
             monotonic=monotonic or time.monotonic,
+            approval_deadline_monotonic=approval_deadline_monotonic,
         )
         return client
 
@@ -166,6 +169,7 @@ class ECOSHttpClient:
         retry_sleeper: Callable[[float], None],
         redis_client: object | None,
         monotonic: Callable[[], float],
+        approval_deadline_monotonic: float | None,
     ) -> None:
         credential_transport = _CredentialTransport(
             transport,
@@ -208,6 +212,9 @@ class ECOSHttpClient:
             settings.pool_timeout_seconds,
         )
         self._monotonic = monotonic
+        if approval_deadline_monotonic is not None and approval_deadline_monotonic <= monotonic():
+            raise ValueError("ECOS approval deadline has expired")
+        self._approval_deadline_monotonic = approval_deadline_monotonic
         self._redis_client = redis_client
         self._closed = False
 
@@ -301,7 +308,7 @@ class ECOSHttpClient:
             if callable(close):
                 close()
 
-    def __enter__(self) -> "ECOSHttpClient":
+    def __enter__(self) -> ECOSHttpClient:
         return self
 
     def __exit__(self, *_: object) -> None:
@@ -337,6 +344,10 @@ class ECOSHttpClient:
             raise ValueError("ECOS retry attempt count is out of bounds")
         started = self._monotonic()
         deadline = started + self._logical_deadline_seconds
+        if self._approval_deadline_monotonic is not None:
+            deadline = min(deadline, self._approval_deadline_monotonic)
+        if deadline <= started:
+            raise ECOSHttpError("logical_deadline_exceeded")
         attempt = 1
         while True:
             failure: Exception | None = None

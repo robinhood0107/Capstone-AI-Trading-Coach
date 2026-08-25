@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-import hashlib
-from typing import Protocol, Sequence
+from typing import Protocol
 
 import numpy as np
 
@@ -14,7 +15,6 @@ from app.lightgbm.drift import highest_precedence_reason
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.metrics import tie_aware_argmax
 from app.lightgbm.training import TrainedBooster
-
 
 MAX_CONTRIBUTION_ROWS = 500
 SIGNALS = ("SELL", "HOLD", "BUY")

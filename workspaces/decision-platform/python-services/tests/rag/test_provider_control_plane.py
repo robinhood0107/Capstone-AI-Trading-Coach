@@ -10,6 +10,7 @@ from app.rag.fixture_answering import EvidenceChunk
 from app.rag.provider_control_plane import (
     GEMINI_INTERACTIONS_PATH,
     GEMINI_MODEL,
+    S4_5_PROVIDER_REPORT_PATH,
     ApprovalPurpose,
     GeminiFixtureFailure,
     NetworkDisabledGeminiInteractionsTransport,
@@ -18,7 +19,6 @@ from app.rag.provider_control_plane import (
     OutboundDisabledVoyageExecutor,
     ProviderControlPlaneError,
     ProviderUsageLedger,
-    S4_5_PROVIDER_REPORT_PATH,
     UsageState,
     build_gemini_interaction_request,
     build_s4_5_provider_report,
@@ -30,7 +30,6 @@ from app.rag.provider_control_plane import (
     validate_voyage_approval_packet,
     validate_voyage_generation,
 )
-
 
 HASH_A = "a" * 64
 HASH_B = "b" * 64
@@ -187,12 +186,15 @@ def test_usage_ledger_is_reservation_first_and_unknown_billing_is_terminal() -> 
         plan_sha256=HASH_A,
     )
     assert reserved.state is UsageState.RESERVED
-    assert ledger.reserve(
-        request_id="s4-5-eval-001",
-        provider="VOYAGE",
-        purpose=ApprovalPurpose.EVALUATION_ONLY,
-        plan_sha256=HASH_A,
-    ) == reserved
+    assert (
+        ledger.reserve(
+            request_id="s4-5-eval-001",
+            provider="VOYAGE",
+            purpose=ApprovalPurpose.EVALUATION_ONLY,
+            plan_sha256=HASH_A,
+        )
+        == reserved
+    )
 
     unknown = ledger.mark_unknown_billing(request_id="s4-5-eval-001")
     assert unknown.state is UsageState.UNKNOWN_BILLING

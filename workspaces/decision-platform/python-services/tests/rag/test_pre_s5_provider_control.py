@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
-import hashlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -64,7 +64,7 @@ def test_voyage_evaluation_batch_packet_binds_ordered_component_manifest_and_one
             local_root=tmp_path,
             binding=_binding(),
             component_scope="EXACT30",
-            query_id_questions=queries[:-1] + (("q10", "changed question"),),
+            query_id_questions=(*queries[:-1], ("q10", "changed question")),
             scope_claim_id=scope_claim,
             expected_token_count=10,
             now=now,
@@ -97,9 +97,7 @@ def test_voyage_evaluation_batch_packet_allows_window_a_and_rejects_over_two_hou
     )
     assert activation.expires_at == now + timedelta(minutes=90)
 
-    packet["expiresAt"] = (now + timedelta(hours=2, seconds=1)).isoformat().replace(
-        "+00:00", "Z"
-    )
+    packet["expiresAt"] = (now + timedelta(hours=2, seconds=1)).isoformat().replace("+00:00", "Z")
     _write_packet(tmp_path, packet, filename="voyage-evaluation-batch-packets/exact30.json")
     with pytest.raises(PreS5ProviderActivationError, match="PRE_S5_PROVIDER_PACKET_INVALID"):
         load_pre_s5_voyage_evaluation_batch_activation(
@@ -192,9 +190,7 @@ def test_voyage_document_batch_packet_allows_window_a_and_rejects_over_two_hours
     )
     assert activation.expires_at == now + timedelta(minutes=90)
 
-    packet["expiresAt"] = (now + timedelta(hours=2, seconds=1)).isoformat().replace(
-        "+00:00", "Z"
-    )
+    packet["expiresAt"] = (now + timedelta(hours=2, seconds=1)).isoformat().replace("+00:00", "Z")
     _write_packet(tmp_path, packet, filename=f"voyage-document-batch-packets/{batch_id}.json")
     with pytest.raises(PreS5ProviderActivationError, match="PRE_S5_PROVIDER_PACKET_INVALID"):
         load_pre_s5_voyage_document_batch_activation(
@@ -323,7 +319,10 @@ def test_voyage_activation_packet_rejects_scope_expansion(
 
 
 def test_voyage_key_reader_uses_only_standard_environment_variable() -> None:
-    assert resolve_voyage_api_key({"VOYAGE_API_KEY": "test-key", "VOYAGE_TOKEN": "legacy-key"}) == "test-key"
+    assert (
+        resolve_voyage_api_key({"VOYAGE_API_KEY": "test-key", "VOYAGE_TOKEN": "legacy-key"})
+        == "test-key"
+    )
     with pytest.raises(PreS5ProviderActivationError, match="PRE_S5_VOYAGE_API_KEY_REQUIRED"):
         resolve_voyage_api_key({"VOYAGE_TOKEN": "legacy-key"})
 
@@ -367,7 +366,9 @@ def test_voyage_query_packet_is_bound_to_one_normalized_question_and_opaque_scop
         )
 
 
-def test_voyage_query_packet_rejects_scope_expansion_and_missing_exact_binding(tmp_path: Path) -> None:
+def test_voyage_query_packet_rejects_scope_expansion_and_missing_exact_binding(
+    tmp_path: Path,
+) -> None:
     _secure_root(tmp_path)
     now = datetime(2026, 8, 3, 1, tzinfo=UTC)
     question = "public corpus evidence"
@@ -492,7 +493,9 @@ def _packet(*, now: datetime) -> dict[str, object]:
         "costCapMicrousd": 200_000,
         "date": "NONE",
         "endpoint": "/v1/contextualizedembeddings",
-        "expiresAt": (now + timedelta(minutes=5)).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "expiresAt": (now + timedelta(minutes=5))
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z"),
         "headCommit": "a" * 40,
         "issuedAt": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
         "inputMicrousdPerToken": 1,
@@ -526,7 +529,9 @@ def _query_packet(*, now: datetime, question: str, scope_claim: str) -> dict[str
         "costCapMicrousd": 8_192,
         "date": "NONE",
         "endpoint": "/v1/contextualizedembeddings",
-        "expiresAt": (now + timedelta(minutes=5)).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "expiresAt": (now + timedelta(minutes=5))
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z"),
         "headCommit": "a" * 40,
         "inputMicrousdPerToken": 1,
         "issuedAt": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -568,7 +573,9 @@ def _document_batch_packet(*, now: datetime, batch_id: str) -> dict[str, object]
         "costCapMicrousd": 120_000,
         "date": "NONE",
         "endpoint": "/v1/contextualizedembeddings",
-        "expiresAt": (now + timedelta(minutes=5)).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "expiresAt": (now + timedelta(minutes=5))
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z"),
         "groupCount": 40,
         "headCommit": "a" * 40,
         "inputMicrousdPerToken": 1,
@@ -597,9 +604,7 @@ def _document_batch_packet(*, now: datetime, batch_id: str) -> dict[str, object]
     }
 
 
-def _evaluation_manifest_sha256(
-    component_scope: str, queries: tuple[tuple[str, str], ...]
-) -> str:
+def _evaluation_manifest_sha256(component_scope: str, queries: tuple[tuple[str, str], ...]) -> str:
     encoded = json.dumps(
         {
             "componentScope": component_scope,
@@ -628,9 +633,9 @@ def _evaluation_batch_packet(
         "costCapMicrousd": 100,
         "date": "NONE",
         "endpoint": "/v1/contextualizedembeddings",
-        "expiresAt": (now + timedelta(minutes=5)).isoformat(timespec="seconds").replace(
-            "+00:00", "Z"
-        ),
+        "expiresAt": (now + timedelta(minutes=5))
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z"),
         "headCommit": "a" * 40,
         "inputMicrousdPerToken": 1,
         "issuedAt": now.isoformat(timespec="seconds").replace("+00:00", "Z"),

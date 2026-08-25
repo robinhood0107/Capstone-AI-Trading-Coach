@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from typing import Any
 
-from app.async_worker.core import AsyncWork
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+    PublicFormat,
+)
 
+from app.async_worker.core import AsyncWork
 from app.async_worker.kafka_consumer import (
     KafkaAsyncMessageHandler,
     KafkaRetryStop,
@@ -14,11 +22,52 @@ from app.async_worker.kafka_consumer import (
     _is_single_loopback_endpoint,
     decode_message,
 )
+from app.async_worker.kafka_security import (
+    CONTRACT,
+    KafkaEnvelopeSigner,
+    KafkaEnvelopeVerifier,
+    deterministic_partition,
+)
+from app.async_worker.poison_recorder import PoisonReceipt, PoisonReceiptError
+
+TOPIC = "artifact.ingest-requested.v1"
+PARTITION_KEY = "hmac-sha256:" + "c" * 64
+POISON_KEY = b"poison-partition-key-fixture-0000000001"
+
+
+def _encoded(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def _keys() -> tuple[KafkaEnvelopeSigner, KafkaEnvelopeVerifier]:
+    private = Ed25519PrivateKey.generate()
+    return (
+        KafkaEnvelopeSigner.from_base64url(
+            _encoded(private.private_bytes(Encoding.DER, PrivateFormat.PKCS8, NoEncryption()))
+        ),
+        KafkaEnvelopeVerifier.from_base64url(
+            _encoded(
+                private.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+            )
+        ),
+    )
+
+
+SIGNER, VERIFIER = _keys()
 
 
 class FakeMessage:
-    def __init__(self, value: bytes, *, headers: list[tuple[str, bytes | None]] | None = None) -> None:
+    def __init__(
+        self,
+        value: bytes,
+        *,
+        partition: int | None = None,
+        headers: list[tuple[str, bytes | None]] | None = None,
+    ) -> None:
         self._value = value
+        self._partition = (
+            deterministic_partition(TOPIC, PARTITION_KEY) if partition is None else partition
+        )
         self._headers = headers or [
             ("event-type", b"artifact.ingest-requested.v1"),
             ("schema-version", b"1"),
@@ -26,16 +75,16 @@ class FakeMessage:
         ]
 
     def topic(self) -> str:
-        return "artifact.ingest-requested.v1"
+        return TOPIC
 
     def partition(self) -> int:
-        return 1
+        return self._partition
 
     def offset(self) -> int:
         return 7
 
     def key(self) -> bytes:
-        return ("hmac-sha256:" + "c" * 64).encode()
+        return PARTITION_KEY.encode()
 
     def value(self) -> bytes:
         return self._value
@@ -47,7 +96,6 @@ class FakeMessage:
 class FakeRepository:
     def __init__(self) -> None:
         self.commits: list[AsyncWork] = []
-        self.poisons: list[dict[str, Any]] = []
 
     def claim_job(self, work: AsyncWork, worker_name: str) -> str:
         assert work.job_id == "job_fixture_00000001"
@@ -67,9 +115,19 @@ class FakeRepository:
     def quarantine(self, work: AsyncWork, code: str, error_class: str) -> bool:
         raise AssertionError((work, code, error_class))
 
-    def record_poison(self, **values: Any) -> bool:
-        self.poisons.append(values)
-        return True
+
+class FakeRecorder:
+    def __init__(self, *, result: bool = True, raises: bool = False) -> None:
+        self.result = result
+        self.raises = raises
+        self.receipts: list[PoisonReceipt] = []
+
+    def record(self, receipt: PoisonReceipt) -> bool:
+        receipt.validate()
+        self.receipts.append(receipt)
+        if self.raises:
+            raise PoisonReceiptError
+        return self.result
 
 
 class FakeConsumer:
@@ -99,60 +157,108 @@ class RetryRepository(FakeRepository):
         return "FAILED"
 
 
-def envelope() -> bytes:
+def envelope(*, signer: KafkaEnvelopeSigner = SIGNER) -> bytes:
     references = {
         "artifactId": "artifact_fixture_00000001",
         "contentHash": "sha256:" + "a" * 64,
         "jobId": "job_fixture_00000001",
     }
     payload = json.dumps(references, ensure_ascii=False, separators=(",", ":")).encode()
+    payload_hash = "sha256:" + hashlib.sha256(payload).hexdigest()
+    partition = deterministic_partition(TOPIC, PARTITION_KEY)
+    signature = signer.sign(
+        topic=TOPIC,
+        key=PARTITION_KEY,
+        event_type=TOPIC,
+        payload_hash=payload_hash,
+        partition=partition,
+    )
     return json.dumps(
         {
             "eventId": "evt_fixture_00000001",
-            "eventType": "artifact.ingest-requested.v1",
+            "eventType": TOPIC,
             "schemaVersion": 1,
             "occurredAt": "2026-08-22T00:00:00Z",
-            "partitionKey": "hmac-sha256:" + "c" * 64,
-            "payloadHash": "sha256:" + hashlib.sha256(payload).hexdigest(),
+            "partitionKey": PARTITION_KEY,
+            "payloadHash": payload_hash,
             "references": references,
+            "transport": {
+                "contract": CONTRACT,
+                "topic": TOPIC,
+                "key": PARTITION_KEY,
+                "partition": partition,
+                "signature": signature,
+            },
         },
         ensure_ascii=False,
         separators=(",", ":"),
     ).encode()
 
 
+def handler(
+    repository: FakeRepository,
+    consumer: FakeConsumer,
+    recorder: FakeRecorder | None = None,
+    verifier: KafkaEnvelopeVerifier = VERIFIER,
+) -> KafkaAsyncMessageHandler:
+    return KafkaAsyncMessageHandler(
+        repository,  # type: ignore[arg-type]
+        consumer,  # type: ignore[arg-type]
+        verifier,
+        recorder or FakeRecorder(),
+        POISON_KEY,
+    )
+
+
 def test_decode_and_manual_commit_after_domain_commit() -> None:
     message = FakeMessage(envelope())
-    decoded = decode_message(message)
+    decoded = decode_message(message, VERIFIER)
     assert decoded.transport == "KAFKA"
     assert decoded.claim_token is None
 
     repository = FakeRepository()
     consumer = FakeConsumer()
-    assert KafkaAsyncMessageHandler(repository, consumer).handle(message) == "COMPLETED"  # type: ignore[arg-type]
+    assert handler(repository, consumer).handle(message) == "COMPLETED"
     assert len(repository.commits) == 1
     assert consumer.committed == [message]
 
 
 def test_poison_records_only_sanitized_identity_and_commits_offset() -> None:
     message = FakeMessage(b'{"token":"must-not-be-forwarded"}')
-    repository = FakeRepository()
+    recorder = FakeRecorder()
     consumer = FakeConsumer()
-    assert KafkaAsyncMessageHandler(repository, consumer).handle(message) == "NEEDS_REVIEW"  # type: ignore[arg-type]
+    assert handler(FakeRepository(), consumer, recorder).handle(message) == "NEEDS_REVIEW"
     assert consumer.committed == [message]
-    assert len(repository.poisons) == 1
-    poison = repository.poisons[0]
-    assert set(poison) == {
-        "event_id",
-        "event_type",
-        "payload_hash",
-        "source_topic",
-        "source_partition",
-        "source_offset",
-        "attempt",
-        "failure_code",
-    }
-    assert "must-not-be-forwarded" not in json.dumps(poison)
+    assert len(recorder.receipts) == 1
+    assert "must-not-be-forwarded" not in repr(recorder.receipts[0])
+
+
+def test_forged_signature_is_poison_before_db_claim() -> None:
+    wrong_signer, _ = _keys()
+    message = FakeMessage(envelope(signer=wrong_signer))
+    recorder = FakeRecorder()
+    consumer = FakeConsumer()
+    assert handler(FakeRepository(), consumer, recorder).handle(message) == "NEEDS_REVIEW"
+    assert recorder.receipts[0].failure_code == "INVALID_EVENT_SIGNATURE"
+    assert consumer.committed == [message]
+
+
+def test_actual_partition_mismatch_is_poison_before_db_claim() -> None:
+    signed = deterministic_partition(TOPIC, PARTITION_KEY)
+    message = FakeMessage(envelope(), partition=(signed + 1) % 3)
+    recorder = FakeRecorder()
+    consumer = FakeConsumer()
+    assert handler(FakeRepository(), consumer, recorder).handle(message) == "NEEDS_REVIEW"
+    assert recorder.receipts[0].failure_code == "INVALID_EVENT_SIGNATURE"
+    assert consumer.committed == [message]
+
+
+@pytest.mark.parametrize("recorder", (FakeRecorder(result=False), FakeRecorder(raises=True)))
+def test_recorder_failure_leaves_poison_offset_uncommitted(recorder: FakeRecorder) -> None:
+    message = FakeMessage(b"not-json")
+    consumer = FakeConsumer()
+    assert handler(FakeRepository(), consumer, recorder).handle(message) == "RETRY"
+    assert consumer.committed == []
 
 
 def test_excessive_json_depth_is_quarantined_before_job_claim() -> None:
@@ -174,11 +280,12 @@ def test_excessive_json_depth_is_quarantined_before_job_claim() -> None:
         ).encode()
     )
     repository = FakeRepository()
+    recorder = FakeRecorder()
     consumer = FakeConsumer()
 
-    assert KafkaAsyncMessageHandler(repository, consumer).handle(message) == "NEEDS_REVIEW"  # type: ignore[arg-type]
+    assert handler(repository, consumer, recorder).handle(message) == "NEEDS_REVIEW"
     assert repository.commits == []
-    assert len(repository.poisons) == 1
+    assert len(recorder.receipts) == 1
     assert consumer.committed == [message]
 
 
@@ -186,12 +293,8 @@ def test_crash_before_db_commit_leaves_offset_unacked_for_redelivery() -> None:
     message = FakeMessage(envelope())
     repository = CrashBeforeDbCommitRepository()
     consumer = FakeConsumer()
-    try:
-        KafkaAsyncMessageHandler(repository, consumer).handle(message)  # type: ignore[arg-type]
-    except RuntimeError as error:
-        assert str(error) == "injected crash before DB commit"
-    else:
-        raise AssertionError("crash injection did not escape the handler")
+    with pytest.raises(KafkaRetryStop, match="retryable Kafka processing failure"):
+        _handle_or_stop(handler(repository, consumer), message)
     assert consumer.committed == []
 
 
@@ -218,12 +321,8 @@ def test_loopback_bootstrap_accepts_one_literal_endpoint() -> None:
 def test_crash_after_db_commit_is_redelivered_and_idempotency_absorbs_duplicate() -> None:
     message = FakeMessage(envelope())
     repository = FakeRepository()
-    try:
-        KafkaAsyncMessageHandler(repository, CrashAfterDbCommitConsumer()).handle(message)  # type: ignore[arg-type]
-    except RuntimeError as error:
-        assert str(error) == "injected crash after DB commit before offset ack"
-    else:
-        raise AssertionError("ack crash injection did not escape the handler")
+    with pytest.raises(KafkaRetryStop, match="retryable Kafka processing failure"):
+        _handle_or_stop(handler(repository, CrashAfterDbCommitConsumer()), message)
     assert len(repository.commits) == 1
 
     class DuplicateRepository(FakeRepository):
@@ -233,14 +332,14 @@ def test_crash_after_db_commit_is_redelivered_and_idempotency_absorbs_duplicate(
 
     duplicate_repository = DuplicateRepository()
     recovered_consumer = FakeConsumer()
-    assert KafkaAsyncMessageHandler(duplicate_repository, recovered_consumer).handle(message) == "DUPLICATE"  # type: ignore[arg-type]
+    assert handler(duplicate_repository, recovered_consumer).handle(message) == "DUPLICATE"
     assert recovered_consumer.committed == [message]
 
 
 def test_retryable_record_stops_before_any_later_offset_can_be_committed() -> None:
     message = FakeMessage(envelope())
     consumer = FakeConsumer()
-    handler = KafkaAsyncMessageHandler(RetryRepository(), consumer)  # type: ignore[arg-type]
+    retry_handler = handler(RetryRepository(), consumer)
     with pytest.raises(KafkaRetryStop, match="must be redelivered"):
-        _handle_or_stop(handler, message)
+        _handle_or_stop(retry_handler, message)
     assert consumer.committed == []

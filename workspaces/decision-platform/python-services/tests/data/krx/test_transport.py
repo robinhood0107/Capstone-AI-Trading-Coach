@@ -13,14 +13,13 @@ from app.data._shared.redis_quota import QuotaUnavailableError, QuotaWaitError
 from app.data.krx import _credential_transport
 from app.data.krx._credential_transport import (
     KrxCredentialError,
-    _CredentialTransport,
     _canonical_client_headers,
     _canonical_request_headers,
+    _CredentialTransport,
 )
 from app.data.krx.catalog import KOSPI_DAILY
 from app.data.krx.client import _build_tls_context
 from app.data.krx.settings import KrxOpenApiSettings
-
 
 _AS_OF_QUERY = {"basDd": "20260715"}
 
@@ -331,7 +330,7 @@ def test_caller_auth_proxy_and_cookie_headers_are_rejected_before_credential_rea
     headers[header_name] = "caller-controlled"
     transport = _CredentialTransport(httpx.MockTransport(handler), quota=quota)
 
-    with pytest.raises(KrxCredentialError, match="caller_auth_header_not_allowed"):
+    with pytest.raises(KrxCredentialError, match=r"caller_auth_header_not_allowed"):
         transport.handle_request(_request(headers=headers))
 
     assert credential_reads == 0
@@ -361,7 +360,7 @@ def test_userinfo_plain_http_and_network_path_reference_are_rejected(url: str) -
     )
     request = httpx.Request("GET", url, headers=_canonical_request_headers())
 
-    with pytest.raises(KrxCredentialError, match="origin_not_allowed"):
+    with pytest.raises(KrxCredentialError, match=r"origin_not_allowed"):
         transport.handle_request(request)
 
     assert outbound == 0
@@ -415,7 +414,7 @@ def test_missing_credential_keeps_reserved_quota_without_physical_send(
     )
     transport = _CredentialTransport(httpx.MockTransport(handler), quota=quota)
 
-    with pytest.raises(KrxCredentialError, match="authentication_unavailable") as exc_info:
+    with pytest.raises(KrxCredentialError, match=r"authentication_unavailable") as exc_info:
         transport.handle_request(_request())
 
     assert len(quota.reservations) == 1
@@ -451,7 +450,7 @@ def test_quota_wait_beyond_deadline_does_not_sleep_read_credential_or_send(
     request = _request()
     request.extensions["s1.3.krx.logical_deadline"] = time.monotonic() + 0.01
 
-    with pytest.raises(KrxCredentialError, match="logical_deadline_exceeded") as exc_info:
+    with pytest.raises(KrxCredentialError, match=r"logical_deadline_exceeded") as exc_info:
         transport.handle_request(request)
 
     assert quota.reservations == 1
@@ -523,7 +522,7 @@ def test_oversized_stream_is_rejected_without_returning_partial_body(
         max_response_bytes=48,
     )
 
-    with pytest.raises(KrxCredentialError, match="response_too_large") as exc_info:
+    with pytest.raises(KrxCredentialError, match=r"response_too_large") as exc_info:
         transport.handle_request(_request())
 
     assert exc_info.value.__cause__ is None
@@ -594,7 +593,7 @@ def test_literal_and_unicode_escaped_credential_echo_are_rejected(
         quota=_RecordingQuota(),
     )
 
-    with pytest.raises(KrxCredentialError, match="response_unavailable") as exc_info:
+    with pytest.raises(KrxCredentialError, match=r"response_unavailable") as exc_info:
         transport.handle_request(_request())
 
     rendered = f"{exc_info.value!r} {exc_info.value}"
@@ -672,7 +671,7 @@ def test_provider_response_close_failure_is_sanitized(
         quota=_RecordingQuota(),
     )
 
-    with pytest.raises(KrxCredentialError, match="response_unavailable") as exc_info:
+    with pytest.raises(KrxCredentialError, match=r"response_unavailable") as exc_info:
         transport.handle_request(_request())
 
     rendered = f"{exc_info.value!r} {exc_info.value}"
@@ -694,7 +693,7 @@ def test_tls_context_rejects_ambient_ca_and_keylog_overrides(
     assert getattr(context, "keylog_filename", None) is None
 
     monkeypatch.setenv("SSL_CERT_FILE", "/tmp/caller-ca.pem")
-    with pytest.raises(ValueError, match="TLS|tls"):
+    with pytest.raises(ValueError, match=r"TLS|tls"):
         _build_tls_context()
 
 

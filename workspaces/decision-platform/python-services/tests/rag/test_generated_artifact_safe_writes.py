@@ -13,7 +13,6 @@ import pytest
 
 from app.rag.safe_io import RagSafeIoError
 
-
 REPO_ROOT = Path(__file__).resolve().parents[5]
 GENERATOR_PATHS = {
     "s4_5": REPO_ROOT / "capstone-rag/generate_s4_5_evaluation.py",
@@ -23,9 +22,7 @@ GENERATOR_PATHS = {
 
 
 def _json_bytes(value: object) -> bytes:
-    return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
-        "utf-8"
-    )
+    return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
 @dataclass(frozen=True)
@@ -113,7 +110,9 @@ def _configure_generator(
         }
         monkeypatch.setattr(module, "S4_7B_SOURCE_CARD_ROOT", card_root)
         monkeypatch.setattr(module, "S4_7B_CORPUS_MANIFEST_PATH", manifest)
-        monkeypatch.setattr(module, "render_cards", lambda: {"card.md": expected[card_root / "card.md"]})
+        monkeypatch.setattr(
+            module, "render_cards", lambda: {"card.md": expected[card_root / "card.md"]}
+        )
         monkeypatch.setattr(
             module,
             "build_source_card_corpus_manifest",
@@ -187,7 +186,9 @@ def test_generators_keep_regular_file_write_and_check_byte_parity(
 
 
 @pytest.mark.parametrize("generator_id", sorted(GENERATOR_PATHS))
-@pytest.mark.parametrize("unsafe_kind", ("root_symlink", "parent_symlink", "leaf_symlink", "directory", "hardlink"))
+@pytest.mark.parametrize(
+    "unsafe_kind", ("root_symlink", "parent_symlink", "leaf_symlink", "directory", "hardlink")
+)
 def test_generators_reject_unsafe_output_paths_without_mutating_outside_sentinel(
     generator_id: str,
     unsafe_kind: str,

@@ -4,11 +4,11 @@ import os
 import queue
 import re
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent import futures
 from dataclasses import asdict, dataclass
 from hmac import compare_digest
-from typing import Callable, cast
+from typing import cast
 
 import grpc
 from google.genai.errors import APIError
@@ -19,7 +19,6 @@ from app.generated import strong_llm_agent_pb2, strong_llm_agent_pb2_grpc
 from app.strong_llm.models import Evidence, RunRequest
 from app.strong_llm.runtime import BoundedStrongLlmGraph, StrongLlmProvider
 from app.strong_llm.vertex_provider import LangChainVertexProvider, VertexProviderSettings
-
 
 _AUTH_KEY = "x-decision-strong-llm-grpc-auth"
 _SAFE_SECRET = re.compile(r"^[A-Za-z0-9._~:-]{32,256}$")
@@ -32,7 +31,7 @@ class StrongLlmGrpcSettings:
     shared_secret: str
 
     @classmethod
-    def from_env(cls) -> "StrongLlmGrpcSettings":
+    def from_env(cls) -> StrongLlmGrpcSettings:
         bind = os.environ.get("STRONG_LLM_GRPC_BIND_ADDRESS", "127.0.0.1:50055").strip()
         secret = os.environ.get("STRONG_LLM_GRPC_SHARED_SECRET", "").strip()
         if not bind.startswith("127.0.0.1:") or _SAFE_SECRET.fullmatch(secret) is None:
@@ -73,7 +72,10 @@ class StrongLlmAgentServicer(strong_llm_agent_pb2_grpc.StrongLlmAgentServiceServ
 
         threading.Thread(target=read_requests, daemon=True).start()
         first = inbound.get(timeout=5)
-        if not isinstance(first, strong_llm_agent_pb2.HostEvent) or first.WhichOneof("payload") != "start_run":
+        if (
+            not isinstance(first, strong_llm_agent_pb2.HostEvent)
+            or first.WhichOneof("payload") != "start_run"
+        ):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "StartRun must be the first frame")
         request = _request(first)
         sequence = _Sequence(request.run_id)
@@ -91,7 +93,10 @@ class StrongLlmAgentServicer(strong_llm_agent_pb2_grpc.StrongLlmAgentServiceServ
                 )
             )
             response = _next_host(inbound, request.run_id)
-            if response.WhichOneof("payload") != "provider_call_permit" or response.provider_call_permit.planned_call_id != call_id:
+            if (
+                response.WhichOneof("payload") != "provider_call_permit"
+                or response.provider_call_permit.planned_call_id != call_id
+            ):
                 raise ValueError("STRONG_LLM_PROVIDER_PERMIT_INVALID")
             permitted_provider_calls[0] += 1
 
@@ -100,14 +105,31 @@ class StrongLlmAgentServicer(strong_llm_agent_pb2_grpc.StrongLlmAgentServiceServ
                 query = arguments.get("query")
                 if not isinstance(query, str):
                     raise ValueError("STRONG_LLM_SEARCH_ARGUMENT_INVALID")
-                outbound.put(sequence.event(call_id, web_search=strong_llm_agent_pb2.WebSearch(tool_call_id=call_id, query=query)))
+                outbound.put(
+                    sequence.event(
+                        call_id,
+                        web_search=strong_llm_agent_pb2.WebSearch(
+                            tool_call_id=call_id, query=query
+                        ),
+                    )
+                )
             else:
                 result_id = arguments.get("resultId")
                 if not isinstance(result_id, str):
                     raise ValueError("STRONG_LLM_READ_ARGUMENT_INVALID")
-                outbound.put(sequence.event(call_id, web_read=strong_llm_agent_pb2.WebRead(tool_call_id=call_id, result_id=result_id)))
+                outbound.put(
+                    sequence.event(
+                        call_id,
+                        web_read=strong_llm_agent_pb2.WebRead(
+                            tool_call_id=call_id, result_id=result_id
+                        ),
+                    )
+                )
             response = _next_host(inbound, request.run_id)
-            if response.WhichOneof("payload") != "tool_result" or response.tool_result.tool_call_id != call_id:
+            if (
+                response.WhichOneof("payload") != "tool_result"
+                or response.tool_result.tool_call_id != call_id
+            ):
                 raise ValueError("STRONG_LLM_TOOL_RESULT_INVALID")
             if response.tool_result.failed:
                 raise ValueError(response.tool_result.failure_leaf or "STRONG_LLM_TOOL_FAILED")
@@ -115,7 +137,9 @@ class StrongLlmAgentServicer(strong_llm_agent_pb2_grpc.StrongLlmAgentServiceServ
 
         def worker() -> None:
             try:
-                result = self._graph.run(request, self._provider_factory(request), permit, execute_tool)
+                result = self._graph.run(
+                    request, self._provider_factory(request), permit, execute_tool
+                )
                 outbound.put(
                     sequence.event(
                         "completed",
@@ -127,8 +151,14 @@ class StrongLlmAgentServicer(strong_llm_agent_pb2_grpc.StrongLlmAgentServiceServ
                             google_grounding_query_count=result.google_grounding_query_count,
                             search_backend=result.search_backend,
                             evidence_validation_mode=result.evidence_validation_mode,
-                            grounding_roots=[strong_llm_agent_pb2.GroundingRoot(**asdict(item)) for item in result.grounding_roots],
-                            grounding_supports=[strong_llm_agent_pb2.GroundingSupport(**asdict(item)) for item in result.grounding_supports],
+                            grounding_roots=[
+                                strong_llm_agent_pb2.GroundingRoot(**asdict(item))
+                                for item in result.grounding_roots
+                            ],
+                            grounding_supports=[
+                                strong_llm_agent_pb2.GroundingSupport(**asdict(item))
+                                for item in result.grounding_supports
+                            ],
                             web_search_queries=result.web_search_queries,
                         ),
                     )
@@ -191,7 +221,14 @@ def _request(event: strong_llm_agent_pb2.HostEvent) -> RunRequest:
 
 
 def _evidence(item: strong_llm_agent_pb2.EvidenceItem, owner: bool) -> Evidence:
-    return Evidence(item.ordinal, item.citation_id, item.chunk_revision_id, item.canonical_text, item.canonical_text_sha256, owner)
+    return Evidence(
+        item.ordinal,
+        item.citation_id,
+        item.chunk_revision_id,
+        item.canonical_text,
+        item.canonical_text_sha256,
+        owner,
+    )
 
 
 def _next_host(inbound: queue.Queue[object], run_id: str) -> strong_llm_agent_pb2.HostEvent:
@@ -222,20 +259,30 @@ def _failure_leaf(error: Exception) -> str:
 _END = object()
 
 
-def serve(settings: StrongLlmGrpcSettings | None = None, provider_factory: ProviderFactory | None = None) -> None:
+def serve(
+    settings: StrongLlmGrpcSettings | None = None, provider_factory: ProviderFactory | None = None
+) -> None:
     effective = settings or StrongLlmGrpcSettings.from_env()
     vertex_settings = VertexProviderSettings.from_env()
-    factory = provider_factory or (lambda request: LangChainVertexProvider(request, vertex_settings))
+    factory = provider_factory or (
+        lambda request: LangChainVertexProvider(request, vertex_settings)
+    )
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=8),
-        options=(("grpc.max_receive_message_length", 262_144), ("grpc.max_send_message_length", 262_144)),
+        options=(
+            ("grpc.max_receive_message_length", 262_144),
+            ("grpc.max_send_message_length", 262_144),
+        ),
     )
     strong_llm_agent_pb2_grpc.add_StrongLlmAgentServiceServicer_to_server(  # type: ignore[no-untyped-call]
         StrongLlmAgentServicer(effective.shared_secret, factory), server
     )
     health_service = health.HealthServicer()
     health_pb2_grpc.add_HealthServicer_to_server(health_service, server)
-    health_service.set("capstone.decision.internal.s49.StrongLlmAgentService", health_pb2.HealthCheckResponse.SERVING)
+    health_service.set(
+        "capstone.decision.internal.s49.StrongLlmAgentService",
+        health_pb2.HealthCheckResponse.SERVING,
+    )
     _require_bound_port(server.add_insecure_port(effective.bind_address))
     server.start()
     server.wait_for_termination()

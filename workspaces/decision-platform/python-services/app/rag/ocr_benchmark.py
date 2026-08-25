@@ -4,18 +4,16 @@ import math
 import re
 import unicodedata
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final, Iterable, Literal
+from typing import Final, Literal
 
 
 class BenchmarkError(ValueError):
     """OCR benchmark가 candidate, quality, device evidence 계약을 위반했음을 나타낸다."""
 
 
-_CANDIDATES: Final[frozenset[str]] = frozenset(
-    {"PADDLE_STRUCTURED", "PADDLE_VL", "UNLIMITED_GGUF"}
-)
+_CANDIDATES: Final[frozenset[str]] = frozenset({"PADDLE_STRUCTURED", "PADDLE_VL", "UNLIMITED_GGUF"})
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _FAILURE_CODE = re.compile(r"^OCR_[A-Z0-9_]{3,96}$")
 _GROUNDING_TOKEN = re.compile(
@@ -145,7 +143,11 @@ def compute_character_error_rate(reference: str, prediction: str) -> float:
 def compute_kendall_tau(reference: tuple[str, ...], prediction: tuple[str, ...]) -> float:
     """동일 unique block ID 집합의 reading-order Kendall tau-a를 계산한다."""
 
-    if len(reference) < 2 or len(set(reference)) != len(reference) or set(reference) != set(prediction):
+    if (
+        len(reference) < 2
+        or len(set(reference)) != len(reference)
+        or set(reference) != set(prediction)
+    ):
         raise BenchmarkError("OCR_READING_ORDER_INPUT_INVALID")
     positions = {value: index for index, value in enumerate(prediction)}
     concordant = 0

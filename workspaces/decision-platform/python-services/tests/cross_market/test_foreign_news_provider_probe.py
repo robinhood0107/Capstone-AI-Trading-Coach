@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 import app.cross_market.foreign_news_provider_probe as provider_probe_module
-
 from app.cross_market.foreign_news_provider_probe import (
     ForeignNewsProviderProbeError,
     ForeignNewsProviderProbeExecutionBinding,
@@ -18,7 +17,6 @@ from app.cross_market.foreign_news_provider_probe import (
     foreign_news_provider_endpoint_set_digest,
     foreign_news_provider_request_plan_digest,
 )
-
 
 _NOW = datetime(2026, 8, 10, 2, 3, 4, tzinfo=UTC)
 
@@ -143,7 +141,7 @@ class _Connection:
         self._response = _Response(body=body, content_type=content_type)
         self.captured: dict[str, object] = {}
 
-    def __enter__(self) -> "_Connection":
+    def __enter__(self) -> _Connection:
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -190,14 +188,18 @@ def test_packet_binds_fixed_provider_operation_and_nonsecret_request_plan() -> N
         date="2026-08-07",
     )
 
-    with pytest.raises(ForeignNewsProviderProbeError, match="FOREIGN_NEWS_PROBE_OPERATION_PROVIDER_INVALID"):
+    with pytest.raises(
+        ForeignNewsProviderProbeError, match="FOREIGN_NEWS_PROBE_OPERATION_PROVIDER_INVALID"
+    ):
         _packet(
             operation="FED_OFFICIAL_RELEASES",
             provider_family="FINNHUB_PERSONAL_LOCAL",
             date="NONE",
         )
 
-    with pytest.raises(ForeignNewsProviderProbeError, match="FOREIGN_NEWS_PROBE_REQUEST_PLAN_DIGEST_INVALID"):
+    with pytest.raises(
+        ForeignNewsProviderProbeError, match="FOREIGN_NEWS_PROBE_REQUEST_PLAN_DIGEST_INVALID"
+    ):
         ForeignNewsProviderProbePacket.from_local_document(
             {
                 **packet.to_local_document(),
@@ -228,7 +230,9 @@ def test_executor_rejects_evidence_drift_before_transport_or_packet_claim(tmp_pa
     )
     executor = ForeignNewsProviderProbeExecutor(control_root=control_root, transport=transport)
 
-    with pytest.raises(ForeignNewsProviderProbeError, match="FOREIGN_NEWS_PROBE_EXECUTION_BINDING_DRIFT"):
+    with pytest.raises(
+        ForeignNewsProviderProbeError, match="FOREIGN_NEWS_PROBE_EXECUTION_BINDING_DRIFT"
+    ):
         executor.execute(
             packet=_packet(),
             binding=_binding(head_sha="f" * 40),
@@ -256,7 +260,9 @@ def test_finnhub_company_news_is_transiently_analyzed_and_receipt_retains_no_raw
         ),
     )
     analyzer = _RecordingAnalyzer()
-    result = ForeignNewsProviderProbeExecutor(control_root=control_root, transport=transport).execute(
+    result = ForeignNewsProviderProbeExecutor(
+        control_root=control_root, transport=transport
+    ).execute(
         packet=_packet(),
         binding=_binding(),
         api_key=api_key,
@@ -313,7 +319,9 @@ def test_sec_and_fed_official_html_are_bounded_transient_parse_with_hash_only_pr
             ),
         )
         analyzer = _RecordingAnalyzer()
-        result = ForeignNewsProviderProbeExecutor(control_root=control_root, transport=transport).execute(
+        result = ForeignNewsProviderProbeExecutor(
+            control_root=control_root, transport=transport
+        ).execute(
             packet=_packet(
                 operation=operation,
                 provider_family=provider_family,
@@ -335,7 +343,9 @@ def test_sec_and_fed_official_html_are_bounded_transient_parse_with_hash_only_pr
         assert transport.calls[0]["apiKey"] is None
 
 
-def test_packet_is_consumed_after_first_failed_provider_call_and_never_reused(tmp_path: Path) -> None:
+def test_packet_is_consumed_after_first_failed_provider_call_and_never_reused(
+    tmp_path: Path,
+) -> None:
     control_root = _private_root(tmp_path)
     transport = _RecordingTransport(
         response=ForeignNewsProviderProbeHttpResponse(
@@ -361,7 +371,9 @@ def test_packet_is_consumed_after_first_failed_provider_call_and_never_reused(tm
     assert result.receipt.physical_call_count == 1
     assert result.aggregate.state == "ABSTAIN"
     assert len(transport.calls) == 1
-    with pytest.raises(ForeignNewsProviderProbeError, match="FOREIGN_NEWS_PROBE_PACKET_ALREADY_CONSUMED"):
+    with pytest.raises(
+        ForeignNewsProviderProbeError, match="FOREIGN_NEWS_PROBE_PACKET_ALREADY_CONSUMED"
+    ):
         executor.execute(
             packet=packet,
             binding=_binding(),
@@ -412,7 +424,9 @@ def test_pre_handoff_transport_failure_seals_an_exact_zero_call_receipt(tmp_path
     stored = result.receipt.to_local_document()
     assert stored["physicalCallCount"] == 0
     assert stored["providerStatusClass"] == "NOT_ATTEMPTED"
-    with pytest.raises(ForeignNewsProviderProbeError, match="FOREIGN_NEWS_PROBE_PACKET_ALREADY_CONSUMED"):
+    with pytest.raises(
+        ForeignNewsProviderProbeError, match="FOREIGN_NEWS_PROBE_PACKET_ALREADY_CONSUMED"
+    ):
         ForeignNewsProviderProbeExecutor(control_root=control_root, transport=transport).execute(
             packet=packet,
             binding=_binding(),
@@ -467,7 +481,9 @@ def test_pre_handoff_failure_receipt_write_error_preserves_zero_physical_calls(
     assert writes == 2
 
 
-def test_stdlib_transport_keeps_finnhub_key_in_memory_target_only_and_official_requests_keyless() -> None:
+def test_stdlib_transport_keeps_finnhub_key_in_memory_target_only_and_official_requests_keyless() -> (
+    None
+):
     finnhub_connection = _Connection(
         body=b'[{"headline":"profit improved","summary":"guidance raised"}]',
         content_type="application/json",
@@ -517,7 +533,9 @@ def test_stdlib_transport_keeps_finnhub_key_in_memory_target_only_and_official_r
     assert sec_connection.captured["target"] == "/newsroom/press-releases"
 
 
-def test_stdlib_transport_accepts_the_contract_korean_symbol_alphabet_for_finnhub_company_news() -> None:
+def test_stdlib_transport_accepts_the_contract_korean_symbol_alphabet_for_finnhub_company_news() -> (
+    None
+):
     """packet이 허용한 005930.KS가 transport validation에서 다시 거부되면 안 된다."""
 
     connection = _Connection(
@@ -556,7 +574,9 @@ def test_protocol_drift_or_missing_model_gate_never_opens_transport(tmp_path: Pa
     )
     executor = ForeignNewsProviderProbeExecutor(control_root=control_root, transport=transport)
 
-    with pytest.raises(ForeignNewsProviderProbeError, match="FOREIGN_NEWS_PROBE_ANALYZER_UNAVAILABLE"):
+    with pytest.raises(
+        ForeignNewsProviderProbeError, match="FOREIGN_NEWS_PROBE_ANALYZER_UNAVAILABLE"
+    ):
         executor.execute(
             packet=_packet(),
             binding=_binding(),

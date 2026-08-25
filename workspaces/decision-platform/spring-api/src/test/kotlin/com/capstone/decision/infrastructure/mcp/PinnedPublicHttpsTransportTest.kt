@@ -47,6 +47,39 @@ class PinnedPublicHttpsTransportTest {
         assertThatThrownBy { parse(response) }.isInstanceOf(IllegalArgumentException::class.java)
     }
 
+    @Test
+    fun `chunk size overflow is rejected before peer sized allocation`() {
+        val response =
+            "HTTP/1.1 200 OK\r\n" +
+                "transfer-encoding: chunked\r\n\r\n" +
+                "1\r\na\r\n" +
+                "7fffffff\r\n"
+
+        assertThatThrownBy { parse(response) }.isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `chunk trailers have aggregate count and byte bounds`() {
+        val trailers = (1..33).joinToString("") { "x-trailer-$it: value\r\n" }
+        val response =
+            "HTTP/1.1 200 OK\r\n" +
+                "transfer-encoding: chunked\r\n\r\n" +
+                "0\r\n" + trailers + "\r\n"
+
+        assertThatThrownBy { parse(response) }.isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `expired absolute deadline rejects before response parsing`() {
+        assertThatThrownBy {
+            PinnedPublicHttpsTransport().parseResponse(
+                BufferedInputStream(ByteArrayInputStream("HTTP/1.1 200 OK\r\n".toByteArray())),
+                2_000_000,
+                System.nanoTime() - 1,
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
+    }
+
     private fun parse(response: String): PublicHttpsResponse =
         PinnedPublicHttpsTransport().parseResponse(
             BufferedInputStream(ByteArrayInputStream(response.toByteArray(Charsets.US_ASCII))),

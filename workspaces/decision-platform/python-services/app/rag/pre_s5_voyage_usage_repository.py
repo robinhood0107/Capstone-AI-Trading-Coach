@@ -141,7 +141,9 @@ class PsycopgPreS5VoyageUsageRepository:
         _validate_batch_activation(activation=activation, plan=plan, batch=batch)
         usage_event_id = _batch_usage_event_id(activation)
         try:
-            with psycopg.connect(self._database_dsn, autocommit=False, connect_timeout=2) as connection:
+            with psycopg.connect(
+                self._database_dsn, autocommit=False, connect_timeout=2
+            ) as connection:
                 _attest_writer_connection(connection)
                 with connection.transaction():
                     _set_transaction_timeouts(connection)
@@ -169,7 +171,9 @@ class PsycopgPreS5VoyageUsageRepository:
         except PreS5VoyageUsageRepositoryError:
             raise
         except psycopg.Error:
-            raise PreS5VoyageUsageRepositoryError("PRE_S5_VOYAGE_LEASE_RESERVATION_REJECTED") from None
+            raise PreS5VoyageUsageRepositoryError(
+                "PRE_S5_VOYAGE_LEASE_RESERVATION_REJECTED"
+            ) from None
         if (
             row is None
             or len(row) != 2
@@ -207,7 +211,11 @@ class PsycopgPreS5VoyageUsageLease:
     def claim_attempt(self, *, now: datetime) -> None:
         """provider socket 직전에 DB attempt row를 exactly once append한다."""
 
-        if not isinstance(now, datetime) or now.tzinfo is None or now.astimezone(UTC) >= self._expires_at:
+        if (
+            not isinstance(now, datetime)
+            or now.tzinfo is None
+            or now.astimezone(UTC) >= self._expires_at
+        ):
             raise PreS5VoyageUsageRepositoryError("PRE_S5_VOYAGE_LEASE_CLAIM_REJECTED")
         self._execute_transition(
             sql="SELECT public.claim_rag_v2_immutable_voyage_usage_attempt(%s)",
@@ -317,12 +325,15 @@ class PsycopgPreS5VoyageDocumentBatchUsageLease(PsycopgPreS5VoyageUsageLease):
     def claim_attempt(self, *, now: datetime) -> None:
         """usage attempt와 plan/batch global attempt를 한 transaction에서 함께 선점한다."""
 
-        if not isinstance(now, datetime) or now.tzinfo is None or now.astimezone(UTC) >= self._expires_at:
+        if (
+            not isinstance(now, datetime)
+            or now.tzinfo is None
+            or now.astimezone(UTC) >= self._expires_at
+        ):
             raise PreS5VoyageUsageRepositoryError("PRE_S5_VOYAGE_LEASE_CLAIM_REJECTED")
         self._execute_transition(
             sql=(
-                "SELECT public.claim_rag_v2_immutable_voyage_document_batch_attempt("
-                "%s, %s, %s, %s)"
+                "SELECT public.claim_rag_v2_immutable_voyage_document_batch_attempt(%s, %s, %s, %s)"
             ),
             parameters=(
                 self._usage_event_id,
@@ -365,7 +376,9 @@ def _validate_activation_and_bundle(
 ) -> None:
     """repository는 transport 외 direct caller도 packet/full membership/cost relation으로 close한다."""
 
-    if not isinstance(activation, PreS5VoyageActivation) or not isinstance(bundle, PreS5VoyageFullBundle):
+    if not isinstance(activation, PreS5VoyageActivation) or not isinstance(
+        bundle, PreS5VoyageFullBundle
+    ):
         raise PreS5VoyageUsageRepositoryError("PRE_S5_VOYAGE_LEASE_ARGUMENT")
     try:
         rebuilt = build_pre_s5_voyage_full_bundle(components=bundle.components)
@@ -408,7 +421,7 @@ def _usage_event_id(activation: PreS5VoyageActivation) -> str:
         (
             "pre-s5-voyage-usage-v1\0"
             f"{activation.packet_sha256}\0{activation.nonce_sha256}\0{activation.bundle_manifest_sha256}"
-        ).encode("utf-8")
+        ).encode()
     ).hexdigest()
     return f"rgr_vou_{digest[:32]}"
 
@@ -421,7 +434,7 @@ def _batch_usage_event_id(activation: PreS5VoyageDocumentBatchActivation) -> str
             "pre-s5-voyage-document-batch-usage-v1\0"
             f"{activation.packet_sha256}\0{activation.nonce_sha256}\0"
             f"{activation.batch_plan_sha256}\0{activation.batch_manifest_sha256}"
-        ).encode("utf-8")
+        ).encode()
     ).hexdigest()
     return f"rgr_vou_{digest[:32]}"
 
@@ -466,8 +479,7 @@ def _validate_batch_activation(
         or not 1 <= activation.cost_cap_microusd <= 1_000_000_000
         or type(activation.input_microusd_per_token) is not int
         or not 1 <= activation.input_microusd_per_token <= 1_000_000
-        or activation.token_cap * activation.input_microusd_per_token
-        > activation.cost_cap_microusd
+        or activation.token_cap * activation.input_microusd_per_token > activation.cost_cap_microusd
         or activation.retry_count != 0
         or activation.raw_artifact_count != 0
     ):
@@ -488,7 +500,15 @@ def _attest_writer_connection(connection: psycopg.Connection[Any]) -> None:
     if connection.execute("SELECT current_user").fetchone() != (_WRITER_ROLE,):
         raise PreS5VoyageUsageRepositoryError("PRE_S5_VOYAGE_LEASE_WRITER_ROLE")
     for table in _WRITER_FORBIDDEN_TABLES:
-        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+        for privilege in (
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "TRUNCATE",
+            "REFERENCES",
+            "TRIGGER",
+        ):
             row = connection.execute(
                 "SELECT has_table_privilege(current_user, %s, %s)",
                 (f"public.{table}", privilege),

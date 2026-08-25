@@ -176,7 +176,9 @@ def test_final_gate_writer_rejects_symlinked_control_directory(tmp_path: Path) -
     assert not (outside / "kis-mock-quote-manifest.v1.json").exists()
 
 
-def test_release_ledger_rejects_self_asserted_markers_without_bound_receipts(tmp_path: Path) -> None:
+def test_release_ledger_rejects_self_asserted_markers_without_bound_receipts(
+    tmp_path: Path,
+) -> None:
     ledger = {
         "binding": _release_binding(),
         "markers": _release_markers(),

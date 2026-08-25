@@ -5,7 +5,6 @@ from pydantic import ValidationError
 
 from app.data.krx.settings import KrxOpenApiSettings
 
-
 _OFFICIAL_ORIGIN = "https://data-dbg.krx.co.kr"
 
 

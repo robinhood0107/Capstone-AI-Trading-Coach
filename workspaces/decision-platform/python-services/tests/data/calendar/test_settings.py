@@ -6,7 +6,6 @@ from pydantic import ValidationError
 from app.data.calendar.settings import OpenDARTQuotaConfig, OpenDARTQuotaSettings
 from app.data.opendart.settings import OpenDARTSettings
 
-
 REQUIRED_ENV = {
     "OPENDART_DAILY_CALL_LIMIT": "20000",
     "OPENDART_DAILY_CALL_BUDGET": "17500",

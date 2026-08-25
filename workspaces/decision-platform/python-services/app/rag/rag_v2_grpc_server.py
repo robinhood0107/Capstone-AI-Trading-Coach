@@ -42,7 +42,6 @@ from app.rag.rag_v2_rpc import (
     create_rag_v2_server,
 )
 
-
 _SAFE_SECRET = re.compile(r"^[A-Za-z0-9._~:-]{32,256}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _FORBIDDEN_SHARED_SECRET_ENV_NAMES = (
@@ -82,8 +81,7 @@ class RagV2GrpcServerSettings:
         if type(self.bge_enabled) is not bool:
             raise ValueError("RAG v2 BGE profile setting is invalid")
         if self.bge_enabled and (
-            not isinstance(self.bge_packet_root, Path)
-            or not self.bge_packet_root.is_absolute()
+            not isinstance(self.bge_packet_root, Path) or not self.bge_packet_root.is_absolute()
         ):
             raise ValueError("CAPSTONE_RAG_BGE_PACKET_ROOT is invalid")
         if self.voyage_query_runtime is not None:
@@ -103,7 +101,7 @@ class RagV2GrpcServerSettings:
             raise ValueError("S4.9 runtime Voyage tokenizer requires explicit enablement")
 
     @classmethod
-    def from_env(cls) -> "RagV2GrpcServerSettings":
+    def from_env(cls) -> RagV2GrpcServerSettings:
         """reflection/secret reuse를 거부하고 local path는 provider URL로 해석하지 않는다."""
 
         reflection = os.environ.get("RAG_V2_GRPC_ENABLE_REFLECTION", "false").strip().lower()
@@ -131,19 +129,23 @@ class RagV2GrpcServerSettings:
         except PreS5ProviderActivationError as error:
             raise ValueError("RAG v2 Voyage query runtime control is invalid") from error
         bge_packet_root_text = os.environ.get("CAPSTONE_RAG_BGE_PACKET_ROOT", "").strip()
-        runtime_voyage_text = os.environ.get("S4_9_RUNTIME_VOYAGE_QUERY_ENABLED", "false").strip().lower()
+        runtime_voyage_text = (
+            os.environ.get("S4_9_RUNTIME_VOYAGE_QUERY_ENABLED", "false").strip().lower()
+        )
         if runtime_voyage_text not in {"true", "false"}:
             raise ValueError("S4_9_RUNTIME_VOYAGE_QUERY_ENABLED must be true or false")
         runtime_voyage_enabled = runtime_voyage_text == "true"
-        runtime_tokenizer_sha256 = os.environ.get("S4_9_VOYAGE_TOKENIZER_SHA256", "").strip() or None
+        runtime_tokenizer_sha256 = (
+            os.environ.get("S4_9_VOYAGE_TOKENIZER_SHA256", "").strip() or None
+        )
         return cls(
-            bind_address=os.environ.get(
-                "RAG_V2_GRPC_BIND_ADDRESS", "127.0.0.1:50054"
-            ).strip(),
+            bind_address=os.environ.get("RAG_V2_GRPC_BIND_ADDRESS", "127.0.0.1:50054").strip(),
             shared_secret=secret,
             query_database_dsn=os.environ.get("RAG_V2_QUERY_DATABASE_DSN", "").strip(),
             bge_packet_root=Path(bge_packet_root_text) if bge_packet_root_text else None,
-            bge_enabled=(voyage_query_runtime.bge_enabled if voyage_query_runtime is not None else True),
+            bge_enabled=(
+                voyage_query_runtime.bge_enabled if voyage_query_runtime is not None else True
+            ),
             voyage_query_runtime=voyage_query_runtime,
             s4_9_runtime_voyage_enabled=runtime_voyage_enabled,
             s4_9_voyage_tokenizer_sha256=runtime_tokenizer_sha256,
@@ -203,9 +205,7 @@ def build_rag_v2_engine(
     if runtime is not None:
         try:
             voyage_key = resolve_voyage_api_key(environment)
-            writer_dsn = load_pre_s5_voyage_query_writer_database_dsn(
-                local_root=runtime.local_root
-            )
+            writer_dsn = load_pre_s5_voyage_query_writer_database_dsn(local_root=runtime.local_root)
         except PreS5ProviderActivationError as error:
             raise ValueError("RAG v2 Voyage query credentials are unavailable") from error
         usage_repository = PsycopgPreS5VoyageQueryUsageRepository(

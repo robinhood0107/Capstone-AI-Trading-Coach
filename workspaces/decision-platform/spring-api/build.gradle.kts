@@ -9,14 +9,21 @@ buildscript {
 }
 
 plugins {
-    kotlin("jvm") version "2.4.0"
-    kotlin("plugin.spring") version "2.4.0" // @Service 등 all-open
-    kotlin("plugin.jpa") version "2.4.0" // 엔티티 no-arg 생성자
+    kotlin("jvm") version "2.4.10"
+    kotlin("plugin.spring") version "2.4.10" // @Service 등 all-open
+    kotlin("plugin.jpa") version "2.4.10" // 엔티티 no-arg 생성자
     id("org.springframework.boot") version "4.1.0"
     id("org.springdoc.openapi-gradle-plugin") version "1.9.0"
     id("io.spring.dependency-management") version "1.1.7"
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0" // 13.1.0+ Gradle 9, 14.0.1+ Gradle 9.1/Java 25 대응
+    id("dev.detekt") version "2.0.0-alpha.6"
     id("com.google.protobuf") version "0.10.0"
+}
+
+detekt {
+    config.setFrom(files("config/detekt/p1-detekt.yml"))
+    buildUponDefaultConfig = false
+    parallel = true
 }
 
 group = "com.capstone"
@@ -36,6 +43,10 @@ java {
 
 repositories {
     mavenCentral()
+}
+
+dependencyLocking {
+    lockAllConfigurations()
 }
 
 dependencyManagement {
@@ -63,13 +74,13 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
     implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")
     implementation("org.jsoup:jsoup:1.21.2")
-    implementation("org.apache.pdfbox:pdfbox:3.0.6")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-aspectj")
     implementation("org.springframework.boot:spring-boot-starter-kafka")
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.flywaydb:flyway-database-postgresql")
-    runtimeOnly("org.postgresql:postgresql")
+    runtimeOnly("org.postgresql:postgresql:42.7.12")
+    runtimeOnly("commons-logging:commons-logging:1.3.6")
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-gson:0.12.6")
@@ -137,6 +148,7 @@ tasks.withType<Test> {
     // 전체 검증 중 OOM이 난다. 실행 격리나 assertion을 줄이지 않고 CI에서도 재현 가능한 상한만 명시한다.
     maxHeapSize = "1g"
     environment("POSTGRES_IDENTITY_PASSWORD", "identity-test-secret-0001")
+    environment("POSTGRES_AUTH_PASSWORD", "auth-test-secret-0001")
     useJUnitPlatform()
 }
 
@@ -505,13 +517,19 @@ val verifyS4RagContractResources by tasks.registering {
     }
 }
 
+val openApiServerPort = providers.environmentVariable("OPENAPI_SERVER_PORT").orElse("18080").get()
+val openApiServerPortNumber = openApiServerPort.toIntOrNull()
+check(openApiServerPortNumber != null && openApiServerPortNumber in 1024..65535) {
+    "OPENAPI_SERVER_PORT must be an unprivileged TCP port."
+}
+
 openApi {
-    apiDocsUrl.set("http://127.0.0.1:18080/v3/api-docs")
+    apiDocsUrl.set("http://127.0.0.1:$openApiServerPort/v3/api-docs")
     outputDir.set(layout.buildDirectory)
     outputFileName.set("openapi.json")
     waitTimeInSeconds.set(90)
     customBootRun {
-        args.set(listOf("--spring.profiles.active=openapi", "--server.port=18080"))
+        args.set(listOf("--spring.profiles.active=openapi", "--server.port=$openApiServerPort"))
     }
 }
 
@@ -546,6 +564,16 @@ tasks.register<JavaExec>("prepareOpenApiFixtureEnv") {
     doNotTrackState("OpenAPI fixture credentials are intentionally regenerated.")
 }
 
+tasks.register<JavaExec>("generateP1Baseline") {
+    group = "verification"
+    description = "pristine PostgreSQL 16 V1..V86 state에서 deterministic P1 baseline을 생성한다."
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("com.capstone.decision.P1BaselineGenerator")
+    args(rootProject.projectDir.parentFile.parentFile.parentFile.absolutePath)
+    doNotTrackState("P1 baseline generation starts a pristine PostgreSQL reference database.")
+}
+
 val cleanAuthCutoverEvidence by tasks.registering(Delete::class) {
     group = "operations"
     description = "로컬 auth cutover 사전 증거 파일만 삭제한다."
@@ -558,6 +586,15 @@ tasks.register<JavaExec>("rotateDemoCredential") {
     dependsOn(tasks.named("classes"))
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.capstone.decision.infrastructure.security.DemoCredentialRotation")
+    outputs.upToDateWhen { false }
+}
+
+tasks.register<JavaExec>("bootstrapDemoIdentities") {
+    group = "operations"
+    description = "P1 baseline DB에 attested USER/ADMIN identity를 one-shot transaction으로 설치한다."
+    dependsOn(tasks.named("classes"))
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.capstone.decision.infrastructure.security.DemoIdentityBootstrap")
     outputs.upToDateWhen { false }
 }
 

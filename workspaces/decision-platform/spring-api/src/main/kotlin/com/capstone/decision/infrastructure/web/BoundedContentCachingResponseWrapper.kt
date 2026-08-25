@@ -12,9 +12,10 @@ import java.nio.charset.Charset
 // 멱등 replay 응답을 downstream에 전달하기 전에 보관하되, 큰 응답이 heap을 무제한 점유하지 못하게 한다.
 class BoundedContentCachingResponseWrapper(
     response: HttpServletResponse,
-    private val maxBytes: Int,
+    maxBytes: Int,
 ) : HttpServletResponseWrapper(response) {
-    private val buffer = ByteArrayOutputStream(minOf(maxBytes, DEFAULT_INITIAL_CAPACITY))
+    private val byteLimit = maxBytes
+    private val buffer = ByteArrayOutputStream(minOf(byteLimit, DEFAULT_INITIAL_CAPACITY))
     private var outputStreamRequested = false
     private var writerRequested = false
     private var cachedWriter: PrintWriter? = null
@@ -25,7 +26,7 @@ class BoundedContentCachingResponseWrapper(
     private val cachingOutputStream =
         object : ServletOutputStream() {
             override fun write(value: Int) {
-                if (buffer.size() < maxBytes) {
+                if (buffer.size() < byteLimit) {
                     buffer.write(value)
                 } else {
                     overflowed = true
@@ -37,7 +38,7 @@ class BoundedContentCachingResponseWrapper(
                 offset: Int,
                 length: Int,
             ) {
-                val remaining = maxBytes - buffer.size()
+                val remaining = byteLimit - buffer.size()
                 if (length > remaining) {
                     overflowed = true
                 }

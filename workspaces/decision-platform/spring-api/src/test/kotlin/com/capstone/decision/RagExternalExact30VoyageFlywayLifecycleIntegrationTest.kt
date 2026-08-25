@@ -81,7 +81,7 @@ class RagExternalExact30VoyageFlywayLifecycleIntegrationTest {
 
     private companion object {
         const val FLYWAY_PASSWORD = "flyway-test"
-        val postgresImage =
+        val postgresImage: org.testcontainers.utility.DockerImageName =
             DockerImageName
                 .parse(
                     "pgvector/pgvector:pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb",
@@ -90,7 +90,7 @@ class RagExternalExact30VoyageFlywayLifecycleIntegrationTest {
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_v37_lifecycle")
                 .withUsername("decision")
                 .withPassword("decision")

@@ -8,7 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from app.rag.document_ir_materializer import RagV2CanonicalDocumentChunk, RagV2DocumentMaterialization
+from app.rag.document_ir_materializer import (
+    RagV2CanonicalDocumentChunk,
+    RagV2DocumentMaterialization,
+)
 from app.rag.ingest_pipeline import RagEmbeddingInput
 from app.rag.rag_v2_bge_materializer import RagV2PreparedPublicDocument
 from app.rag.rag_v2_external_exact30_voyage_runner import PublicVoyageSourceMetadata
@@ -35,7 +38,9 @@ def test_optional_checkpoint_rejects_broken_derived_directory_symlink(tmp_path: 
         )
 
 
-def test_optional_checkpoint_returns_none_when_other_scope_created_derived_root(tmp_path: Path) -> None:
+def test_optional_checkpoint_returns_none_when_other_scope_created_derived_root(
+    tmp_path: Path,
+) -> None:
     root = _private_root(tmp_path)
     derived = root / "derived-ir"
     derived.mkdir(mode=0o700)
@@ -241,7 +246,9 @@ def test_checkpoint_scan_is_not_blocked_by_private_atomic_write_temp_leaf(tmp_pa
     assert oct(temp_root.stat().st_mode & 0o777) == "0o700"
 
 
-def test_optional_checkpoint_uses_direct_key_without_scanning_unrelated_leaf(tmp_path: Path) -> None:
+def test_optional_checkpoint_uses_direct_key_without_scanning_unrelated_leaf(
+    tmp_path: Path,
+) -> None:
     root = _private_root(tmp_path)
     written = write_public_voyage_checkpoint(
         local_corpus_root=root,

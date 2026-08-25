@@ -67,7 +67,7 @@ class PostgresStoredDisclosureRepository:
         )
 
     @classmethod
-    def from_env(cls) -> "PostgresStoredDisclosureRepository":
+    def from_env(cls) -> PostgresStoredDisclosureRepository:
         """runtime secret store가 주입한 DSN만 받고 테스트/production 값을 코드에 만들지 않는다."""
         return cls(os.environ.get("DECISION_DISCLOSURE_READER_DATABASE_DSN", ""))
 
@@ -75,7 +75,7 @@ class PostgresStoredDisclosureRepository:
         """bounded pool worker와 physical connection을 gRPC server lifecycle에 맞춰 닫는다."""
         self._pool.close()
 
-    def __enter__(self) -> "PostgresStoredDisclosureRepository":
+    def __enter__(self) -> PostgresStoredDisclosureRepository:
         return self
 
     def __exit__(self, *_: object) -> None:
@@ -109,9 +109,7 @@ class PostgresStoredDisclosureRepository:
             try:
                 with connection.transaction():
                     cancellation.raise_if_cancelled()
-                    connection.execute(
-                        "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
-                    )
+                    connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
                     connection.execute(
                         "SELECT set_config('statement_timeout', %s, true)",
                         (f"{_QUERY_TIMEOUT_MS}ms",),
@@ -230,9 +228,7 @@ class PostgresStoredDisclosureRepository:
 
         events = _events_from_rows(event_rows, mapping.version)
         completed_operations = {
-            str(row["operation"])
-            for row in cursor_rows
-            if bool(row["completed"])
+            str(row["operation"]) for row in cursor_rows if bool(row["completed"])
         }
         complete = bool(resolved_corp_code) and completed_operations == set(required_operations)
         observed_at = max(
@@ -242,11 +238,7 @@ class PostgresStoredDisclosureRepository:
             ),
             default=datetime.fromtimestamp(0, tz=UTC),
         )
-        cursor_ref = (
-            _cursor_source_ref(cursor_rows)
-            if complete
-            else ()
-        )
+        cursor_ref = _cursor_source_ref(cursor_rows) if complete else ()
         return StoredDisclosureBatch(
             symbol=symbol,
             corp_code=resolved_corp_code or "",
@@ -272,11 +264,7 @@ def _events_from_rows(
         first = group[0]
         attributes_value = first["attributes_json"]
         attributes = (
-            {
-                str(key): str(value)
-                for key, value in attributes_value.items()
-                if value is not None
-            }
+            {str(key): str(value) for key, value in attributes_value.items() if value is not None}
             if isinstance(attributes_value, dict)
             else {}
         )
@@ -289,9 +277,7 @@ def _events_from_rows(
                 occurred_on=_date(first["occurred_on"]),
                 observed_at=_datetime(first["observed_at"]),
                 mapping_version=mapping_version,
-                source_refs=tuple(
-                    sorted({str(row["source_ref"]) for row in group})
-                ),
+                source_refs=tuple(sorted({str(row["source_ref"]) for row in group})),
                 attributes=attributes,
             )
         )
@@ -342,7 +328,9 @@ def _attest_reader_dsn(database_dsn: str) -> None:
     with psycopg.connect(database_dsn, autocommit=True, connect_timeout=1) as connection:
         current_user = str(_required_scalar(connection.execute("select current_user").fetchone()))
         if current_user != _EXPECTED_READER_ROLE:
-            raise ValueError("stored disclosure repository requires decision_disclosure_reader role")
+            raise ValueError(
+                "stored disclosure repository requires decision_disclosure_reader role"
+            )
         for table in _REQUIRED_SELECT_TABLES:
             if not _has_table_privilege(connection, table, "SELECT"):
                 raise ValueError("stored disclosure reader lacks required projection SELECT")

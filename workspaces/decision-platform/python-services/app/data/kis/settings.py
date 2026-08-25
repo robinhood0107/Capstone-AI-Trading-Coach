@@ -32,7 +32,7 @@ class KISSettings(BaseSettings):
     kis_retry_attempts: int = Field(default=3, ge=1, le=5)
 
     @model_validator(mode="after")
-    def _validate_provider_rate_contract(self) -> "KISSettings":
+    def _validate_provider_rate_contract(self) -> KISSettings:
         hard_limit = KIS_REST_HARD_LIMIT_PER_SECOND[self.kis_mode]
         configured_rate = float(self.kis_rate_limit_per_second or hard_limit)
         if configured_rate > hard_limit:

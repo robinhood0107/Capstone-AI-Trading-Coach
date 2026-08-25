@@ -1,0 +1,39 @@
+package com.capstone.decision.infrastructure.security
+
+import com.capstone.decision.application.security.AuthenticatedActorRef
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.stereotype.Component
+
+fun interface ActorIdentityHandleIssuer {
+    fun issue(
+        actor: AuthenticatedActorRef,
+        binding: ActorCapabilityBinding,
+    ): String
+}
+
+@Component
+@ConditionalOnProperty(prefix = "app.identity", name = ["enabled"], havingValue = "true", matchIfMissing = true)
+class DatabaseActorIdentityHandleIssuer(
+    authDatabase: AuthDatabase,
+) : ActorIdentityHandleIssuer {
+    private val jdbc = JdbcTemplate(authDatabase.dataSource)
+
+    override fun issue(
+        actor: AuthenticatedActorRef,
+        binding: ActorCapabilityBinding,
+    ): String =
+        jdbc.queryForObject(
+            """
+            SELECT register_actor_identity_handle_v1(?,?,?,?,?,?,?)
+            """.trimIndent(),
+            String::class.java,
+            actor.sessionHandle,
+            binding.operation,
+            binding.targetKind,
+            binding.targetId,
+            binding.payloadHash,
+            binding.rolePolicy.name,
+            15,
+        ) ?: throw ActorCapabilityDeniedException("Actor identity handle registration failed.")
+}

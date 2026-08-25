@@ -9,12 +9,9 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 from urllib.parse import urlsplit
 
-
 PROMPT_VERSION: Final[str] = "s4-4-fixture-answer-prompt-v1"
 _FIXED_ORIGIN: Final[str] = "https://generativelanguage.googleapis.com"
-_FIXED_PATH: Final[str] = (
-    "/v1beta/models/gemini-3.5-flash-lite:generateContent"
-)
+_FIXED_PATH: Final[str] = "/v1beta/models/gemini-3.5-flash-lite:generateContent"
 _MAX_RESPONSE_BYTES: Final[int] = 65_536
 _MAX_REQUEST_BYTES: Final[int] = 65_536
 _MAX_ANSWER_BYTES: Final[int] = 8_192
@@ -24,13 +21,11 @@ _OPAQUE_ID = re.compile(r"^[A-Za-z0-9._:-]{1,160}$")
 _SOURCE_ID = re.compile(r"^src_project_[a-z0-9][a-z0-9_]*_[0-9]{3}$")
 _CHUNK_ID = re.compile(r"^rag_chk_[0-9a-f]{32}$")
 _FORBIDDEN_OUTPUT = re.compile(
-    (
-        r"(?i)(gemini|openai|voyage|bge[_-]?m3|rrf\W*score|token\W*cost"
-        r"|/home/|wsl\.localhost|file:"
-        r"|\bbearer\W+[a-z0-9._~-]{8,}"
-        r"|\bsk-[a-z0-9_-]{16,}\b"
-        r"|(?:api\W*key|client\W*secret|password)\s*[:=]\s*\S+)"
-    )
+    r"(?i)(gemini|openai|voyage|bge[_-]?m3|rrf\W*score|token\W*cost"
+    r"|/home/|wsl\.localhost|file:"
+    r"|\bbearer\W+[a-z0-9._~-]{8,}"
+    r"|\bsk-[a-z0-9_-]{16,}\b"
+    r"|(?:api\W*key|client\W*secret|password)\s*[:=]\s*\S+)"
 )
 _FORBIDDEN_PAYLOAD_KEYS: Final[frozenset[str]] = frozenset(
     {
@@ -215,7 +210,9 @@ def parse_structured_answer(
     if (
         not isinstance(citations, list)
         or not 1 <= len(citations) <= 5
-        or any(not isinstance(value, str) or not _CITATION_ID.fullmatch(value) for value in citations)
+        or any(
+            not isinstance(value, str) or not _CITATION_ID.fullmatch(value) for value in citations
+        )
         or len(set(citations)) != len(citations)
     ):
         raise FixtureProviderContractError("fixture_citations_invalid")
@@ -310,10 +307,7 @@ class BoundedFixtureProviderClient:
         headers: Mapping[str, str] | None = None,
         max_output_tokens: int | None = None,
     ) -> bytes:
-        if any(
-            value is not None
-            for value in (origin, path, model, headers, max_output_tokens)
-        ):
+        if any(value is not None for value in (origin, path, model, headers, max_output_tokens)):
             raise FixtureProviderContractError("fixture_transport_override_forbidden")
         _validate_tree(payload, depth=0, reject_provider_surface=True)
         if set(payload) != {"prompt"} or not isinstance(payload.get("prompt"), str):

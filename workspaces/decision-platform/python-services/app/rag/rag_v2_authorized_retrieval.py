@@ -3,9 +3,10 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Mapping, Protocol, Sequence
+from typing import Protocol
 from urllib.parse import urlsplit
 
 from app.rag.authorized_retrieval import (
@@ -77,6 +78,7 @@ class RagV2QueryEmbeddingError(ValueError):
         super().__init__(failure_code.value)
         self.failure_code = failure_code
         self.voyage_physical_calls = voyage_physical_calls
+        self.response_validation_leaf: str | None = None
 
 
 @dataclass(frozen=True)
@@ -273,7 +275,9 @@ class RagV2RrfFusion:
                     continue
                 seen.add(candidate.chunk_id)
                 candidates.setdefault(candidate.chunk_id, candidate)
-                scores[candidate.chunk_id] = scores.get(candidate.chunk_id, 0.0) + 1.0 / (RRF_K + rank)
+                scores[candidate.chunk_id] = scores.get(candidate.chunk_id, 0.0) + 1.0 / (
+                    RRF_K + rank
+                )
                 ranks.setdefault(candidate.chunk_id, {})[channel.channel] = rank
         fused = tuple(
             RagV2FusedCandidate(
@@ -487,12 +491,8 @@ class RagV2AuthorizedHybridRetrieval:
             or self._owner_query_embedder is None
             or self._owner_query_embedder.embedding_profile_id != owner_profile
         ):
-            raise RagV2QueryEmbeddingError(
-                RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE
-            )
-        return _validated_query_vector(
-            self._owner_query_embedder.embed_query(question)
-        )
+            raise RagV2QueryEmbeddingError(RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE)
+        return _validated_query_vector(self._owner_query_embedder.embed_query(question))
 
 
 def _channels_are_complete(channels: tuple[RagV2ChannelResult, ...]) -> bool:
@@ -596,15 +596,13 @@ def _candidate_identity_is_valid(candidate: RagV2RetrievalCandidate) -> bool:
 
 
 def _candidate_content_is_valid(candidate: RagV2RetrievalCandidate) -> bool:
-    if (
+    return not (
         not isinstance(candidate.canonical_content, str)
-        or not 1 <= len(candidate.canonical_content.encode("utf-8")) <= 1_048_576
+        or not 1 <= len(candidate.canonical_content.encode("utf-8")) <= 1048576
         or _SHA256.fullmatch(candidate.canonical_content_sha256) is None
         or hashlib.sha256(candidate.canonical_content.encode("utf-8")).hexdigest()
         != candidate.canonical_content_sha256
-    ):
-        return False
-    return True
+    )
 
 
 def _candidate_citation_shape_is_valid(candidate: RagV2RetrievalCandidate) -> bool:

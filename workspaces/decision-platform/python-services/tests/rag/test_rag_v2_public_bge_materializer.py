@@ -116,7 +116,9 @@ def test_public_bge_materialization_batches_more_than_runtime_limit(tmp_path: Pa
     assert len(result.document.chunks) == len(result.embeddings) == 65
 
 
-def test_public_bge_materialization_rejects_raw_or_mime_drift_before_embedding(tmp_path: Path) -> None:
+def test_public_bge_materialization_rejects_raw_or_mime_drift_before_embedding(
+    tmp_path: Path,
+) -> None:
     raw_drift = dict(_document_ir())
     raw_drift["rawContentSha256"] = "d" * 64
     parser = _FixtureParser(raw_drift)
@@ -145,7 +147,9 @@ def test_public_bge_materialization_rejects_raw_or_mime_drift_before_embedding(t
         )
 
 
-def test_public_bge_materialization_rejects_non_bge_profile_before_file_parse(tmp_path: Path) -> None:
+def test_public_bge_materialization_rejects_non_bge_profile_before_file_parse(
+    tmp_path: Path,
+) -> None:
     parser = _FixtureParser(_document_ir())
 
     with pytest.raises(RagV2BgeMaterializationError, match="BGE_PROFILE_REQUIRED"):
@@ -192,7 +196,10 @@ def test_public_voyage_preparation_redacts_pii_and_rebuilds_chunk_identity(tmp_p
     assert prepared.document.external_processing_eligible is True
     assert len(prepared.document.chunks) == 1
     assert prepared.document.chunks[0].chunk_id != unsanitized.document.chunks[0].chunk_id
-    assert prepared.document.chunks[0].canonical_text_sha256 != unsanitized.document.chunks[0].canonical_text_sha256
+    assert (
+        prepared.document.chunks[0].canonical_text_sha256
+        != unsanitized.document.chunks[0].canonical_text_sha256
+    )
     assert prepared.document.chunks[0].locator == {"section": "document"}
     assert "author@example.com" not in prepared.document.chunks[0].canonical_text
     assert "[PUBLIC_EMAIL_REDACTED]" in prepared.document.chunks[0].canonical_text
@@ -235,7 +242,9 @@ def test_public_voyage_pii_growth_is_rechunked_back_under_profile_neutral_600_ca
     assert len(prepared.document.chunks) == 2
     assert max(chunk.token_count for chunk in prepared.document.chunks) == 600
     assert all(1 <= chunk.token_count <= 600 for chunk in prepared.document.chunks)
-    assert all("author@example.com" not in chunk.canonical_text for chunk in prepared.document.chunks)
+    assert all(
+        "author@example.com" not in chunk.canonical_text for chunk in prepared.document.chunks
+    )
     assert "[PUBLIC_EMAIL_REDACTED]" in prepared.document.chunks[0].canonical_text
     assert tuple(item.chunk_revision_id for item in prepared.embedding_inputs) == tuple(
         chunk.chunk_id for chunk in prepared.document.chunks
@@ -283,7 +292,9 @@ def test_public_voyage_rechunk_preserves_atomic_table_rule(tmp_path: Path) -> No
     assert "author@example.com" not in prepared.document.chunks[0].canonical_text
 
 
-def test_public_voyage_preparation_never_sanitizes_prompt_injection_into_eligibility(tmp_path: Path) -> None:
+def test_public_voyage_preparation_never_sanitizes_prompt_injection_into_eligibility(
+    tmp_path: Path,
+) -> None:
     document_ir = _document_ir()
     document_ir["blocks"] = [
         {

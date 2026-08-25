@@ -409,23 +409,35 @@ def build_oa112_bootstrap_candidate_registry_from_curation(
         ):
             raise Oa112BootstrapError("OA112_BOOTSTRAP_CURATION_INVALID")
         replacements = raw_track.get("replacementCandidates")
-        if not isinstance(replacements, list) or len(replacements) != 8 - len(historical_by_track[track_id]):
+        if not isinstance(replacements, list) or len(replacements) != 8 - len(
+            historical_by_track[track_id]
+        ):
             raise Oa112BootstrapError("OA112_BOOTSTRAP_CURATION_INVALID")
-        selected = sorted(historical_by_track[track_id], key=lambda item: _required_text(item, "sourceId", maximum=128).encode("utf-8"))
+        selected = sorted(
+            historical_by_track[track_id],
+            key=lambda item: _required_text(item, "sourceId", maximum=128).encode("utf-8"),
+        )
         for raw in replacements:
             if not isinstance(raw, Mapping):
                 raise Oa112BootstrapError("OA112_BOOTSTRAP_CURATION_INVALID")
             _require_exact_keys(raw, _CURATION_REPLACEMENT_ENTRY_FIELDS)
             _validate_curation_source(raw, historical=False)
-            if raw.get("trackId") != track_id or raw.get("state") != "CANDIDATE_CC_BY_4_RAW_HASH_PENDING":
+            if (
+                raw.get("trackId") != track_id
+                or raw.get("state") != "CANDIDATE_CC_BY_4_RAW_HASH_PENDING"
+            ):
                 raise Oa112BootstrapError("OA112_BOOTSTRAP_CURATION_INVALID")
             selected.append(raw)
         if len(selected) != 8:
             raise Oa112BootstrapError("OA112_BOOTSTRAP_CURATION_INVALID")
-        for raw in sorted(selected, key=lambda item: _required_text(item, "sourceId", maximum=128).encode("utf-8")):
+        for raw in sorted(
+            selected, key=lambda item: _required_text(item, "sourceId", maximum=128).encode("utf-8")
+        ):
             candidate = _candidate_payload_from_curation(
                 raw=raw,
-                checked_at=historical_checked_at if raw in historical_by_track[track_id] else replacement_checked_at,
+                checked_at=historical_checked_at
+                if raw in historical_by_track[track_id]
+                else replacement_checked_at,
                 historical=raw in historical_by_track[track_id],
             )
             source_id = _required_text(candidate, "sourceId", maximum=128)
@@ -497,7 +509,9 @@ def download_oa112_bootstrap_quarantine(
     binding을 가진 packet을 atomically consume하며, first failure 뒤 남은 source request를 만들지 않는다.
     """
 
-    selected = registry.active_entries if isinstance(registry, Oa112BootstrapCandidateRegistry) else ()
+    selected = (
+        registry.active_entries if isinstance(registry, Oa112BootstrapCandidateRegistry) else ()
+    )
     check_now = now or datetime.now(UTC)
     if (
         len(selected) != 112
@@ -620,7 +634,9 @@ def download_oa112_bootstrap_quarantine(
             failure = Oa112BootstrapDownloadReceipt(
                 attempt_count=attempt_count,
                 physical_call_count=physical_call_count,
-                quarantined_source_count=sum(item.state == "QUARANTINED" for item in receipts.values()),
+                quarantined_source_count=sum(
+                    item.state == "QUARANTINED" for item in receipts.values()
+                ),
                 reused_source_count=sum(item.state == "REUSED" for item in receipts.values()),
                 sources=tuple(receipts.values()),
             )
@@ -672,7 +688,9 @@ def activate_oa112_bootstrap_quarantine(
         or not _is_private_root(registry_root)
     ):
         raise Oa112BootstrapError("OA112_BOOTSTRAP_ACTIVATION_INPUT_INVALID")
-    root_fd = downloader._open_private_root(local_cache_root, error_code="OA112_BOOTSTRAP_CACHE_UNSAFE")
+    root_fd = downloader._open_private_root(
+        local_cache_root, error_code="OA112_BOOTSTRAP_CACHE_UNSAFE"
+    )
     quarantine_fd = -1
     raw_fd = -1
     try:
@@ -738,10 +756,15 @@ def _parse_candidate(value: object) -> Oa112BootstrapCandidate:
     source_id = _required_text(value, "sourceId", maximum=128)
     source_revision_id = _required_text(value, "sourceRevisionId", maximum=128)
     track_id = _required_track_id(value)
-    if _SOURCE_ID.fullmatch(source_id) is None or _SOURCE_REVISION_ID.fullmatch(source_revision_id) is None:
+    if (
+        _SOURCE_ID.fullmatch(source_id) is None
+        or _SOURCE_REVISION_ID.fullmatch(source_revision_id) is None
+    ):
         raise Oa112BootstrapError("OA112_BOOTSTRAP_REGISTRY_INVALID")
     language_tags = _text_array(value.get("languageTags"), maximum=8, pattern=_LANGUAGE_TAG)
-    retrieval_topics = _text_array(value.get("retrievalTopics"), maximum=len(ALLOWED_RAG_TOPICS), pattern=None)
+    retrieval_topics = _text_array(
+        value.get("retrievalTopics"), maximum=len(ALLOWED_RAG_TOPICS), pattern=None
+    )
     if not set(retrieval_topics) <= ALLOWED_RAG_TOPICS:
         raise Oa112BootstrapError("OA112_BOOTSTRAP_REGISTRY_INVALID")
     title = _required_text(value, "title", maximum=500)
@@ -826,13 +849,18 @@ def _validate_candidate_identities(entries: tuple[Oa112BootstrapCandidate, ...])
 
 
 def _validate_curation_source(value: Mapping[str, object], *, historical: bool) -> None:
-    expected = _CURATION_HISTORICAL_ENTRY_FIELDS if historical else _CURATION_REPLACEMENT_ENTRY_FIELDS
+    expected = (
+        _CURATION_HISTORICAL_ENTRY_FIELDS if historical else _CURATION_REPLACEMENT_ENTRY_FIELDS
+    )
     _require_exact_keys(value, expected)
     if _required_track_id(value) not in OA_TRACK_IDS:
         raise Oa112BootstrapError("OA112_BOOTSTRAP_CURATION_INVALID")
     source_id = _required_text(value, "sourceId", maximum=128)
     revision_id = _required_text(value, "sourceRevisionId", maximum=128)
-    if _SOURCE_ID.fullmatch(source_id) is None or _SOURCE_REVISION_ID.fullmatch(revision_id) is None:
+    if (
+        _SOURCE_ID.fullmatch(source_id) is None
+        or _SOURCE_REVISION_ID.fullmatch(revision_id) is None
+    ):
         raise Oa112BootstrapError("OA112_BOOTSTRAP_CURATION_INVALID")
     _required_text(value, "arxivIdentifier", maximum=128)
     _required_text(value, "title", maximum=500)
@@ -855,7 +883,10 @@ def _validate_ineligible_historical_curation_source(value: Mapping[str, object])
     _required_track_id(value)
     source_id = _required_text(value, "sourceId", maximum=128)
     revision_id = _required_text(value, "sourceRevisionId", maximum=128)
-    if _SOURCE_ID.fullmatch(source_id) is None or _SOURCE_REVISION_ID.fullmatch(revision_id) is None:
+    if (
+        _SOURCE_ID.fullmatch(source_id) is None
+        or _SOURCE_REVISION_ID.fullmatch(revision_id) is None
+    ):
         raise Oa112BootstrapError("OA112_BOOTSTRAP_CURATION_INVALID")
     _required_text(value, "reason", maximum=256)
     _required_text(value, "arxivIdentifier", maximum=128)
@@ -898,7 +929,9 @@ def _candidate_payload_from_curation(
             ),
             "verificationState": "VERIFIED",
         },
-        "authors": list(sorted(_curation_authors(raw.get("authors")), key=lambda item: item.encode("utf-8"))),
+        "authors": sorted(
+            _curation_authors(raw.get("authors")), key=lambda item: item.encode("utf-8")
+        ),
         "canonicalUrl": canonical_url,
         "canonicalUrlSha256": hashlib.sha256(canonical_url.encode("utf-8")).hexdigest(),
         "identifier": {"scheme": "ARXIV", "value": arxiv_identifier},
@@ -1195,7 +1228,9 @@ def _validate_bootstrap_response(
     if mime_type != entry.mime_type:
         raise Oa112DownloadError("OA112_DOWNLOAD_MIME")
     declared_bytes = downloader._content_length(headers)
-    if declared_bytes is not None and (declared_bytes <= 0 or declared_bytes > maximum_source_bytes):
+    if declared_bytes is not None and (
+        declared_bytes <= 0 or declared_bytes > maximum_source_bytes
+    ):
         raise Oa112DownloadError("OA112_DOWNLOAD_BYTE_BOUND")
     return downloader._ResponsePlan(declared_bytes=declared_bytes, total_bytes=declared_bytes)
 
@@ -1239,7 +1274,9 @@ def _write_bootstrap_run_receipt(
             control_root,
             error_code="OA112_BOOTSTRAP_RECEIPT_UNAVAILABLE",
         )
-        receipts_fd = downloader._open_or_create_private_directory(root_fd, "oa112-bootstrap-receipts")
+        receipts_fd = downloader._open_or_create_private_directory(
+            root_fd, "oa112-bootstrap-receipts"
+        )
         downloader._write_new_private_file(receipts_fd, f"{packet_digest}.json", content)
         os.fsync(receipts_fd)
     except (OSError, Oa112DownloadError) as error:
@@ -1625,14 +1662,18 @@ def _parse_canonical_json(content: bytes) -> dict[str, object]:
 
 def _canonical_json_bytes(payload: Mapping[str, object]) -> bytes:
     return (
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+            "utf-8"
+        )
         + b"\n"
     )
 
 
 def _canonical_hash(payload: object) -> str:
     return hashlib.sha256(
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+            "utf-8"
+        )
     ).hexdigest()
 
 
@@ -1764,7 +1805,12 @@ def _validate_public_https_url(value: str) -> None:
 
 
 def _is_leaf(relative_path: str) -> bool:
-    if not relative_path or relative_path.startswith("/") or "\\" in relative_path or "\x00" in relative_path:
+    if (
+        not relative_path
+        or relative_path.startswith("/")
+        or "\\" in relative_path
+        or "\x00" in relative_path
+    ):
         return False
     parts = PurePosixPath(relative_path).parts
     return len(parts) == 1 and parts[0] not in {"", ".", ".."}

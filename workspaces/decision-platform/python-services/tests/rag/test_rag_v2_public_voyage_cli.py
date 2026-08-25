@@ -377,7 +377,9 @@ def test_public_voyage_cli_runs_the_packet_gated_10_plus_112_evaluation_only_aft
         return pair, evaluation
 
     monkeypatch.setenv("CAPSTONE_RAG_WRITER_DATABASE_DSN", "postgresql://rag-writer")
-    monkeypatch.setattr(rag_v2_public_voyage_cli, "_stage_and_evaluate_public_base", stage_and_evaluate)
+    monkeypatch.setattr(
+        rag_v2_public_voyage_cli, "_stage_and_evaluate_public_base", stage_and_evaluate
+    )
 
     assert rag_v2_public_voyage_cli.main(("materialize-stage-evaluate-public-base",)) == 0
     assert received == {"writer_dsn": "postgresql://rag-writer"}
@@ -426,7 +428,9 @@ def test_public_voyage_cli_evaluates_and_activates_only_the_staged_pair(
         "_load_evaluation_pair",
         lambda *, local_root, pair: evidence,
     )
-    monkeypatch.setattr(rag_v2_public_voyage_cli, "PsycopgRagV2PublicVoyageStagingRepository", _WriterRepository)
+    monkeypatch.setattr(
+        rag_v2_public_voyage_cli, "PsycopgRagV2PublicVoyageStagingRepository", _WriterRepository
+    )
 
     assert rag_v2_public_voyage_cli.main(("evaluate-public-base",)) == 0
     assert calls == [(exact_context, evidence.exact30), (oa_context, evidence.oa112)]
@@ -459,7 +463,9 @@ def test_public_voyage_cli_evaluates_and_activates_only_the_staged_pair(
             )
 
     monkeypatch.setenv("CAPSTONE_RAG_ADMIN_DATABASE_DSN", "postgresql://rag-admin")
-    monkeypatch.setattr(rag_v2_public_voyage_cli, "PublicVoyageActivationRequest", lambda **values: values)
+    monkeypatch.setattr(
+        rag_v2_public_voyage_cli, "PublicVoyageActivationRequest", lambda **values: values
+    )
     monkeypatch.setattr(
         rag_v2_public_voyage_cli,
         "PsycopgRagV2PublicVoyageActivationRepository",
@@ -494,7 +500,9 @@ def test_public_voyage_pair_receipts_bind_context_member_hashes_and_exact_query_
     assert loaded.exact30.member_digests == pair.exact30.member_digests
     assert loaded.oa112.member_digests == pair.oa112.member_digests
 
-    with pytest.raises(rag_v2_public_voyage_cli.PublicVoyageCliError, match="PUBLIC_VOYAGE_EVALUATION_RECEIPT"):
+    with pytest.raises(
+        rag_v2_public_voyage_cli.PublicVoyageCliError, match="PUBLIC_VOYAGE_EVALUATION_RECEIPT"
+    ):
         rag_v2_public_voyage_cli.write_public_voyage_pair_evaluation_receipt(
             local_root=local_root,
             pair=pair,

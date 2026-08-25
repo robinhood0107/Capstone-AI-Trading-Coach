@@ -10,6 +10,7 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
+import java.security.KeyPairGenerator
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -30,6 +31,13 @@ object OpenApiFixtureEnvironmentWriter {
         val decisionGrpcSharedSecret = randomToken(random, 32)
         val ragGrpcSharedSecret = randomToken(random, 32)
         val brokerageMigrationPlaceholder = sha256(randomToken(random, 32))
+        val actorCapabilityPublicKey =
+            encode(
+                KeyPairGenerator
+                    .getInstance("Ed25519")
+                    .generateKeyPair()
+                    .public.encoded,
+            )
         val ragSecretDirectory = prepareRagSecretDirectory(output.parent, random)
         val userPassword = randomToken(random, 18).toCharArray()
         val adminPassword = randomToken(random, 18).toCharArray()
@@ -86,6 +94,11 @@ object OpenApiFixtureEnvironmentWriter {
                     "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY" to randomToken(random, 32),
                     "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY" to randomToken(random, 32),
                     "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256" to brokerageMigrationPlaceholder,
+                    "ACTOR_CAPABILITY_TRANSPORT" to "http",
+                    "ACTOR_CAPABILITY_AUTHORITY_URL" to
+                        "http://127.0.0.1:18081/internal/actor-capabilities/issue",
+                    "ACTOR_CAPABILITY_SHARED_SECRET" to randomToken(random, 32),
+                    "ACTOR_CAPABILITY_PUBLIC_KEY" to actorCapabilityPublicKey,
                     "RAG_HISTORY_SECRET_DIRECTORY" to ragSecretDirectory.toString(),
                     "RAG_HISTORY_CURRENT_KEK_VERSION" to "kek-v1",
                     "RAG_IDEMPOTENCY_SCOPE_HMAC_KEY" to randomToken(random, 32),

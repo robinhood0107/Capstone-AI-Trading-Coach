@@ -63,8 +63,11 @@ REQUIRED_NAMES: Final[tuple[str, ...]] = (
     "PRINCIPLE_CURSOR_HMAC_KEY",
     "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY",
     "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY",
-    "BROKERAGE_DB_CAPABILITY_TOKEN",
     "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256",
+    "ACTOR_CAPABILITY_TRANSPORT",
+    "ACTOR_CAPABILITY_AUTHORITY_URL",
+    "ACTOR_CAPABILITY_SHARED_SECRET",
+    "ACTOR_CAPABILITY_PUBLIC_KEY",
     "RAG_HISTORY_SECRET_DIRECTORY",
     "RAG_HISTORY_CURRENT_KEK_VERSION",
     "RAG_IDEMPOTENCY_SCOPE_HMAC_KEY",
@@ -173,6 +176,8 @@ def _require_fixed_values(values: dict[str, str]) -> None:
         "POSTGRES_HOST": "127.0.0.1",
         "POSTGRES_HOST_PORT": "55432",
         "POSTGRES_PORT": "55432",
+        "ACTOR_CAPABILITY_TRANSPORT": "http",
+        "ACTOR_CAPABILITY_AUTHORITY_URL": "http://127.0.0.1:18081/internal/actor-capabilities/issue",
     }
     for name, exact_value in expected.items():
         if values[name] != exact_value:
@@ -229,7 +234,7 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
         "PRINCIPLE_CURSOR_HMAC_KEY",
         "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY",
         "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY",
-        "BROKERAGE_DB_CAPABILITY_TOKEN",
+        "ACTOR_CAPABILITY_SHARED_SECRET",
         "RAG_IDEMPOTENCY_SCOPE_HMAC_KEY",
         "RAG_REQUEST_FINGERPRINT_HMAC_KEY",
         "RAG_PROVIDER_USAGE_HMAC_KEY",
@@ -246,13 +251,8 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
         raise OpenApiEnvironmentError(
             "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256 must use lowercase SHA-256 hex."
         )
-    expected_capability_digest = hashlib.sha256(
-        values["BROKERAGE_DB_CAPABILITY_TOKEN"].encode("utf-8")
-    ).hexdigest()
-    if not hmac.compare_digest(capability_digest, expected_capability_digest):
-        raise OpenApiEnvironmentError(
-            "Brokerage database capability token and digest must match."
-        )
+    if _BASE64URL_SECRET.fullmatch(values["ACTOR_CAPABILITY_PUBLIC_KEY"]) is None:
+        raise OpenApiEnvironmentError("ACTOR_CAPABILITY_PUBLIC_KEY must use bounded Base64url.")
 
     # Decision과 Python disclosure server는 같은 wire secret을 쓰지만, RAG service는
     # 다른 privileged credential과 겹치지 않는 별도 purpose secret을 사용한다.

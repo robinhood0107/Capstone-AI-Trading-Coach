@@ -1,8 +1,10 @@
 package com.capstone.decision.infrastructure.security
 
+import com.capstone.decision.application.security.AuthenticatedActorRef
+
 interface ActorCapabilityIssuer {
     fun issue(
-        actorUserId: String,
+        actor: AuthenticatedActorRef,
         binding: ActorCapabilityBinding,
     ): String
 }

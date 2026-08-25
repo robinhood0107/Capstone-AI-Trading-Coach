@@ -1,5 +1,7 @@
 package com.capstone.decision
 
+import com.capstone.decision.application.security.AppPrincipal
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.infrastructure.risk.ActorScopedReadQuery
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityClaims
@@ -18,6 +20,8 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Primary
 import org.springframework.core.env.Environment
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.context.SecurityContextHolder
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.time.Clock
@@ -102,13 +106,39 @@ class TestActorCapabilityIssuer(
         dataSource?.let { DatabaseActorCapabilityAuthority(it, keys.private, keys.public, clock) }
 
     override fun issue(
-        actorUserId: String,
+        actor: AuthenticatedActorRef,
         binding: ActorCapabilityBinding,
     ): String =
         authority?.issue(
-            requireNotNull(identityHandleIssuer).issue(actorUserId, binding),
+            requireNotNull(identityHandleIssuer).issue(actor, binding),
             binding,
-        ) ?: offlineToken(actorUserId, binding)
+        ) ?: offlineToken(actor.expectedUserId, binding)
+
+    fun actorRef(actorUserId: String): AuthenticatedActorRef {
+        val password = if (actorUserId == "usr_demo_admin") TEST_ADMIN_PASSWORD else TEST_USER_PASSWORD
+        return requireNotNull(authDataSource)
+            .connection
+            .use { connection ->
+                connection
+                    .prepareStatement(
+                        """
+                        select session_handle,actor_user_id,actor_security_version
+                        from authenticate_demo_actor_session_v1(?,?,43200)
+                        """.trimIndent(),
+                    ).use { statement ->
+                        statement.setString(1, if (actorUserId == "usr_demo_admin") "demo-admin" else "demo-user")
+                        statement.setString(2, password)
+                        statement.executeQuery().use { result ->
+                            check(result.next())
+                            AuthenticatedActorRef(
+                                result.getString("session_handle"),
+                                result.getString("actor_user_id"),
+                                result.getLong("actor_security_version"),
+                            )
+                        }
+                    }
+            }
+    }
 
     override fun close() {
         dataSource?.close()
@@ -146,5 +176,43 @@ class TestActorCapabilityIssuer(
     private companion object {
         const val IDENTITY_PASSWORD = "identity-test-secret-0001"
         const val AUTH_PASSWORD = "auth-test-secret-0001"
+        val TEST_USER_PASSWORD = SpringApiIntegrationTestBase.TEST_USER_PASSWORD
+        val TEST_ADMIN_PASSWORD = SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD
+    }
+}
+
+internal fun <T> asTestActor(
+    issuer: TestActorCapabilityIssuer,
+    actorUserId: String = "usr_demo_user",
+    block: () -> T,
+): T {
+    val actorRef = issuer.actorRef(actorUserId)
+    return asTestActor(
+        actorRef = actorRef,
+        username = if (actorUserId == "usr_demo_admin") "demo-admin" else "demo-user",
+        role = if (actorUserId == "usr_demo_admin") "ADMIN" else "USER",
+        block = block,
+    )
+}
+
+internal fun <T> asTestActor(
+    actorRef: AuthenticatedActorRef,
+    username: String,
+    role: String,
+    block: () -> T,
+): T {
+    val previous = SecurityContextHolder.getContext()
+    val context = SecurityContextHolder.createEmptyContext()
+    context.authentication =
+        UsernamePasswordAuthenticationToken(
+            AppPrincipal(actorRef.expectedUserId, username, role, actorRef.securityVersion, actorRef),
+            null,
+            emptyList(),
+        )
+    SecurityContextHolder.setContext(context)
+    return try {
+        block()
+    } finally {
+        SecurityContextHolder.setContext(previous)
     }
 }

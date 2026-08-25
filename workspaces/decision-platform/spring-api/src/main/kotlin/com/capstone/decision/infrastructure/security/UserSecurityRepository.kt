@@ -8,6 +8,14 @@ import org.springframework.stereotype.Repository
 interface UserSecurityRepository {
     fun findDemoCredentials(): List<UserSecurityRecord>
 
+    fun createAuthenticatedSession(
+        username: String,
+        password: String,
+        ttlSeconds: Int,
+    ): UserSecuritySessionRecord?
+
+    fun findBySessionHandle(sessionHandle: String): UserSecuritySessionRecord?
+
     fun findByUserId(userId: String): UserSecurityActorRecord?
 }
 
@@ -25,6 +33,36 @@ class JdbcUserSecurityRepository(
             """.trimIndent(),
             USER_SECURITY_ROW_MAPPER,
         )
+
+    override fun createAuthenticatedSession(
+        username: String,
+        password: String,
+        ttlSeconds: Int,
+    ): UserSecuritySessionRecord? =
+        jdbcTemplate()
+            .query(
+                """
+                select session_handle, actor_user_id, username, actor_role, actor_security_version, expires_at
+                from authenticate_demo_actor_session_v1(?,?,?)
+                """.trimIndent(),
+                USER_SECURITY_SESSION_ROW_MAPPER,
+                username,
+                password,
+                ttlSeconds,
+            ).singleOrNull()
+
+    override fun findBySessionHandle(sessionHandle: String): UserSecuritySessionRecord? =
+        jdbcTemplate()
+            .query(
+                """
+                select ? as session_handle,
+                       actor_user_id, username, actor_role, actor_security_version, expires_at
+                from read_actor_auth_session_v1(?)
+                """.trimIndent(),
+                USER_SECURITY_SESSION_ROW_MAPPER,
+                sessionHandle,
+                sessionHandle,
+            ).singleOrNull()
 
     override fun findByUserId(userId: String): UserSecurityActorRecord? =
         jdbcTemplate()
@@ -55,6 +93,17 @@ class JdbcUserSecurityRepository(
                     securityVersion = result.getLong("security_version"),
                 )
             }
+        private val USER_SECURITY_SESSION_ROW_MAPPER =
+            org.springframework.jdbc.core.RowMapper { result, _ ->
+                UserSecuritySessionRecord(
+                    sessionHandle = result.getString("session_handle"),
+                    userId = result.getString("actor_user_id"),
+                    username = result.getString("username"),
+                    role = DemoRole.valueOf(result.getString("actor_role")),
+                    securityVersion = result.getLong("actor_security_version"),
+                    expiresAt = result.getObject("expires_at", java.time.OffsetDateTime::class.java),
+                )
+            }
         private val USER_SECURITY_ACTOR_ROW_MAPPER =
             org.springframework.jdbc.core.RowMapper { result, _ ->
                 UserSecurityActorRecord(
@@ -78,7 +127,16 @@ data class UserSecurityRecord(
     val securityVersion: Long,
 )
 
-// 매 요청 JWT 재검증은 password hash를 읽지 않는 최소 actor projection만 사용한다.
+// 로그인과 매 요청 JWT 재검증은 raw session handle의 hash-bound DB row만 신뢰한다.
+data class UserSecuritySessionRecord(
+    val sessionHandle: String,
+    val userId: String,
+    val username: String,
+    val role: DemoRole,
+    val securityVersion: Long,
+    val expiresAt: java.time.OffsetDateTime,
+)
+
 data class UserSecurityActorRecord(
     val userId: String,
     val username: String,

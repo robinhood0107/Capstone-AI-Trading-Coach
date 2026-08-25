@@ -55,7 +55,7 @@ class PaperBrokerageService(
             val now = clock.instant()
             val identity = idempotencyHasher.paperIdentity(actor.userId, rawIdempotencyKey, command)
             persistencePort
-                .findIdempotencyResult(identity.scopeHash, identity.ownerScopeHash, now)
+                .findIdempotencyResult(actor.userId, identity.scopeHash, identity.ownerScopeHash, now)
                 ?.let { stored ->
                     if (stored.requestHash != identity.requestHash) {
                         throw BrokerageIdempotencyConflictException()

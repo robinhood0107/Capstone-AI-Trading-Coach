@@ -597,6 +597,471 @@ ALTER FUNCTION public.consume_current_actor_capability_v2(text,text,text,text,te
 REVOKE ALL ON FUNCTION public.consume_current_actor_capability_v2(text,text,text,text,text,text)
 FROM PUBLIC,decision_app;
 
+-- Legacy brokerage bodies keep their historical business invariants, but the reusable bearer is retired.
+-- Each V87 wrapper consumes one exact actor capability and creates an unobservable one-call bridge token.
+CREATE TABLE public.brokerage_internal_scope (
+  scope_hash text PRIMARY KEY,
+  backend_pid integer NOT NULL,
+  transaction_id bigint NOT NULL,
+  actor_user_id text NOT NULL,
+  operation text NOT NULL,
+  target_id text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT statement_timestamp(),
+  consumed_at timestamptz,
+  CHECK (scope_hash ~ '^sha256:[0-9a-f]{64}$')
+);
+ALTER TABLE public.brokerage_internal_scope OWNER TO flyway;
+REVOKE ALL ON TABLE public.brokerage_internal_scope
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity,decision_auth;
+GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.brokerage_internal_scope TO flyway;
+
+CREATE FUNCTION public.open_brokerage_internal_scope_v1(
+  p_capability text,p_actor_user_id text,p_operation text,p_target_kind text,
+  p_target_id text,p_payload_hash text
+)
+RETURNS text
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $open_brokerage_internal_scope_v1$
+DECLARE raw_scope text;
+BEGIN
+  IF session_user<>'decision_app'
+     OR NOT public.consume_current_actor_capability_v2(
+       p_capability,p_actor_user_id,p_operation,p_target_kind,p_target_id,p_payload_hash
+     ) THEN
+    RAISE EXCEPTION 'brokerage actor capability denied' USING ERRCODE='42501';
+  END IF;
+  DELETE FROM public.brokerage_internal_scope scope
+  WHERE scope.consumed_at IS NOT NULL
+     OR scope.created_at<statement_timestamp()-interval '30 seconds';
+  raw_scope:='brs1_'||encode(public.gen_random_bytes(32),'hex');
+  INSERT INTO public.brokerage_internal_scope(
+    scope_hash,backend_pid,transaction_id,actor_user_id,operation,target_id
+  ) VALUES (
+    'sha256:'||encode(public.digest(raw_scope,'sha256'),'hex'),
+    pg_backend_pid(),txid_current(),p_actor_user_id,p_operation,p_target_id
+  );
+  RETURN raw_scope;
+END
+$open_brokerage_internal_scope_v1$;
+ALTER FUNCTION public.open_brokerage_internal_scope_v1(text,text,text,text,text,text) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.open_brokerage_internal_scope_v1(text,text,text,text,text,text)
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity,decision_auth;
+
+CREATE OR REPLACE FUNCTION public.assert_brokerage_database_capability(requested_token text)
+RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $assert_brokerage_database_capability_v87$
+DECLARE changed integer;
+BEGIN
+  IF session_user<>'decision_app' OR requested_token!~'^brs1_[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'brokerage database capability denied' USING ERRCODE='42501';
+  END IF;
+  UPDATE public.brokerage_internal_scope scope
+  SET consumed_at=statement_timestamp()
+  WHERE scope.scope_hash='sha256:'||encode(public.digest(requested_token,'sha256'),'hex')
+    AND scope.backend_pid=pg_backend_pid()
+    AND scope.transaction_id=txid_current()
+    AND scope.consumed_at IS NULL
+    AND scope.created_at>=statement_timestamp()-interval '30 seconds';
+  GET DIAGNOSTICS changed=ROW_COUNT;
+  IF changed<>1 THEN
+    RAISE EXCEPTION 'brokerage database capability denied' USING ERRCODE='42501';
+  END IF;
+END
+$assert_brokerage_database_capability_v87$;
+ALTER FUNCTION public.assert_brokerage_database_capability(text) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.assert_brokerage_database_capability(text)
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity,decision_auth;
+DELETE FROM public.brokerage_db_capability_keys;
+
+CREATE FUNCTION public.read_mock_order_decision_authorized_v2(
+  p_capability text,p_actor_user_id text,p_decision_id text
+)
+RETURNS TABLE(
+  decision_id text,evaluation_id text,portfolio_source text,outcome text,mode text,
+  can_submit_order boolean,enforcement_action text,valid_until timestamptz,
+  snapshot_artifact_canonical_json text,portfolio_owner_scope_hash text,
+  invalidated boolean,invalidation_reason_class text,consumed_by_order_id text
+)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $read_mock_order_decision_authorized_v2$
+DECLARE scope_token text;
+BEGIN
+  scope_token:=public.open_brokerage_internal_scope_v1(
+    p_capability,p_actor_user_id,'READ_MOCK_ORDER_DECISION','DECISION',p_decision_id,
+    'sha256:'||encode(public.digest(p_decision_id,'sha256'),'hex')
+  );
+  RETURN QUERY SELECT * FROM public.read_mock_order_decision(p_actor_user_id,p_decision_id,scope_token);
+END
+$read_mock_order_decision_authorized_v2$;
+
+CREATE FUNCTION public.find_mock_order_idempotency_result_authorized_v2(
+  p_capability text,p_actor_user_id text,p_scope_hash text,p_owner_scope_hash text,p_now text
+)
+RETURNS TABLE(request_hash text,result_canonical_json text,expires_at timestamptz)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $find_mock_order_idempotency_result_authorized_v2$
+DECLARE scope_token text;
+BEGIN
+  scope_token:=public.open_brokerage_internal_scope_v1(
+    p_capability,p_actor_user_id,'READ_MOCK_IDEMPOTENCY','BROKERAGE_IDEMPOTENCY',p_scope_hash,
+    public.actor_capability_payload_hash(p_scope_hash,p_owner_scope_hash,p_now)
+  );
+  RETURN QUERY SELECT * FROM public.find_mock_order_idempotency_result(
+    p_scope_hash,p_owner_scope_hash,p_now::timestamptz,scope_token
+  );
+END
+$find_mock_order_idempotency_result_authorized_v2$;
+
+CREATE FUNCTION public.read_mock_order_owner_projection_authorized_v2(
+  p_capability text,p_actor_user_id text,p_order_id text
+)
+RETURNS TABLE(
+  order_id text,account_id text,brokerage_mode text,status text,
+  submitted_at timestamptz,decision_id text
+)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $read_mock_order_owner_projection_authorized_v2$
+DECLARE scope_token text;
+BEGIN
+  scope_token:=public.open_brokerage_internal_scope_v1(
+    p_capability,p_actor_user_id,'READ_MOCK_ORDER','ORDER',p_order_id,
+    'sha256:'||encode(public.digest(p_order_id,'sha256'),'hex')
+  );
+  RETURN QUERY SELECT * FROM public.read_mock_order_owner_projection(p_actor_user_id,p_order_id,scope_token);
+END
+$read_mock_order_owner_projection_authorized_v2$;
+
+CREATE FUNCTION public.read_mock_balance_projection_authorized_v2(
+  p_capability text,p_actor_user_id text,p_account_id text,p_account_prefix text
+)
+RETURNS TABLE(
+  account_scope_hash text,cash_krw bigint,portfolio_equity_krw bigint,
+  margin_requirement_krw bigint,completeness text,position_count integer,
+  positions_json jsonb,observed_at timestamptz,source_version text
+)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $read_mock_balance_projection_authorized_v2$
+BEGIN
+  IF p_account_prefix!~'^[0-9a-f]{32}$' OR p_account_id<>'acct_'||p_account_prefix
+     OR NOT public.consume_current_actor_capability_v2(
+       p_capability,p_actor_user_id,'READ_MOCK_BALANCE','ACCOUNT',p_account_id,
+       'sha256:'||encode(public.digest(p_account_id,'sha256'),'hex')
+     ) THEN
+    RAISE EXCEPTION 'mock balance actor capability denied' USING ERRCODE='42501';
+  END IF;
+  PERFORM set_config('app.actor_user_id',p_actor_user_id,true);
+  RETURN QUERY
+  SELECT balance.account_scope_hash,balance.cash_krw,balance.portfolio_equity_krw,
+         balance.margin_requirement_krw,balance.completeness,balance.position_count,
+         balance.positions_json,balance.observed_at,balance.source_version
+  FROM public.latest_portfolio_balance_observations balance
+  WHERE balance.source='KIS_MOCK' AND balance.account_scope_hash LIKE p_account_prefix||'%'
+  ORDER BY balance.account_scope_hash
+  LIMIT 2;
+END
+$read_mock_balance_projection_authorized_v2$;
+
+CREATE FUNCTION public.create_mock_order_authorized_v2(p_capability text,p_payload_text text)
+RETURNS TABLE(operation_outcome text,projection_canonical_json text)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $create_mock_order_authorized_v2$
+DECLARE payload jsonb:=p_payload_text::jsonb;
+DECLARE scope_token text;
+BEGIN
+  scope_token:=public.open_brokerage_internal_scope_v1(
+    p_capability,payload->>'actorUserId','CREATE_MOCK_ORDER','ORDER',payload->>'orderId',
+    public.actor_capability_payload_hash(p_payload_text)
+  );
+  RETURN QUERY SELECT * FROM public.create_mock_order(payload,scope_token);
+END
+$create_mock_order_authorized_v2$;
+
+CREATE FUNCTION public.request_mock_order_cancel_authorized_v2(p_capability text,p_payload_text text)
+RETURNS TABLE(
+  operation_outcome text,order_id text,account_id text,brokerage_mode text,status text,
+  submitted_at timestamptz,decision_id text
+)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $request_mock_order_cancel_authorized_v2$
+DECLARE payload jsonb:=p_payload_text::jsonb;
+DECLARE scope_token text;
+BEGIN
+  scope_token:=public.open_brokerage_internal_scope_v1(
+    p_capability,payload->>'actorUserId','CANCEL_MOCK_ORDER','ORDER',payload->>'orderId',
+    public.actor_capability_payload_hash(p_payload_text)
+  );
+  RETURN QUERY SELECT * FROM public.request_mock_order_cancel(payload,scope_token);
+END
+$request_mock_order_cancel_authorized_v2$;
+
+CREATE FUNCTION public.record_mock_order_provider_outcome_authorized_v2(
+  p_capability text,p_payload_text text
+)
+RETURNS TABLE(
+  operation_outcome text,order_id text,account_id text,brokerage_mode text,status text,
+  submitted_at timestamptz,decision_id text
+)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $record_mock_order_provider_outcome_authorized_v2$
+DECLARE payload jsonb:=p_payload_text::jsonb;
+DECLARE scope_token text;
+BEGIN
+  scope_token:=public.open_brokerage_internal_scope_v1(
+    p_capability,payload->>'actorUserId','RECORD_MOCK_PROVIDER_OUTCOME','ORDER',payload->>'orderId',
+    public.actor_capability_payload_hash(p_payload_text)
+  );
+  RETURN QUERY SELECT * FROM public.record_mock_order_provider_outcome(payload,scope_token);
+END
+$record_mock_order_provider_outcome_authorized_v2$;
+
+CREATE FUNCTION public.read_paper_order_context_authorized_v2(
+  p_capability text,p_actor_user_id text,p_decision_id text
+)
+RETURNS TABLE(
+  decision_id text,evaluation_id text,portfolio_source text,outcome text,mode text,
+  can_submit_order boolean,enforcement_action text,valid_until timestamptz,
+  snapshot_artifact_canonical_json text,portfolio_owner_scope_hash text,
+  invalidated boolean,consumed_by_order_id text,account_id text,account_status text,
+  quote_observation_id text,quote_price_krw bigint,quote_previous_close_krw bigint,
+  quote_completeness text,quote_observed_at timestamptz
+)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $read_paper_order_context_authorized_v2$
+DECLARE scope_token text;
+BEGIN
+  scope_token:=public.open_brokerage_internal_scope_v1(
+    p_capability,p_actor_user_id,'READ_PAPER_ORDER_CONTEXT','DECISION',p_decision_id,
+    'sha256:'||encode(public.digest(p_decision_id,'sha256'),'hex')
+  );
+  RETURN QUERY SELECT * FROM public.read_paper_order_context(p_actor_user_id,p_decision_id,scope_token);
+END
+$read_paper_order_context_authorized_v2$;
+
+CREATE FUNCTION public.find_paper_order_idempotency_result_authorized_v2(
+  p_capability text,p_actor_user_id text,p_scope_hash text,p_owner_scope_hash text,p_now text
+)
+RETURNS TABLE(request_hash text,result_canonical_json text,expires_at timestamptz)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $find_paper_order_idempotency_result_authorized_v2$
+DECLARE scope_token text;
+BEGIN
+  scope_token:=public.open_brokerage_internal_scope_v1(
+    p_capability,p_actor_user_id,'READ_PAPER_IDEMPOTENCY','BROKERAGE_IDEMPOTENCY',p_scope_hash,
+    public.actor_capability_payload_hash(p_scope_hash,p_owner_scope_hash,p_now)
+  );
+  RETURN QUERY SELECT * FROM public.find_paper_order_idempotency_result(
+    p_scope_hash,p_owner_scope_hash,p_now::timestamptz,scope_token
+  );
+END
+$find_paper_order_idempotency_result_authorized_v2$;
+
+CREATE FUNCTION public.read_paper_balance_projection_authorized_v2(
+  p_capability text,p_actor_user_id text,p_account_id text
+)
+RETURNS TABLE(
+  account_id text,cash_krw bigint,total_equity_krw bigint,positions_json jsonb,as_of timestamptz
+)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $read_paper_balance_projection_authorized_v2$
+DECLARE scope_token text;
+BEGIN
+  scope_token:=public.open_brokerage_internal_scope_v1(
+    p_capability,p_actor_user_id,'READ_PAPER_BALANCE','ACCOUNT',p_account_id,
+    'sha256:'||encode(public.digest(p_account_id,'sha256'),'hex')
+  );
+  RETURN QUERY SELECT * FROM public.read_paper_balance_projection(p_actor_user_id,p_account_id,scope_token);
+END
+$read_paper_balance_projection_authorized_v2$;
+
+CREATE FUNCTION public.create_paper_order_authorized_v2(p_capability text,p_payload_text text)
+RETURNS TABLE(operation_outcome text,projection_canonical_json text)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $create_paper_order_authorized_v2$
+DECLARE payload jsonb:=p_payload_text::jsonb;
+DECLARE scope_token text;
+BEGIN
+  scope_token:=public.open_brokerage_internal_scope_v1(
+    p_capability,payload->>'actorUserId','CREATE_PAPER_ORDER','ORDER',payload->>'orderId',
+    public.actor_capability_payload_hash(p_payload_text)
+  );
+  RETURN QUERY SELECT * FROM public.create_paper_order(payload,scope_token);
+END
+$create_paper_order_authorized_v2$;
+
+CREATE FUNCTION public.rebuild_paper_state_authorized_v2(
+  p_capability text,p_actor_user_id text,p_account_id text
+)
+RETURNS TABLE(
+  operation_outcome text,event_count bigint,rebuilt_cash_krw bigint,
+  stored_cash_krw bigint,positions_match boolean
+)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $rebuild_paper_state_authorized_v2$
+DECLARE scope_token text;
+BEGIN
+  scope_token:=public.open_brokerage_internal_scope_v1(
+    p_capability,p_actor_user_id,'REBUILD_PAPER_STATE','ACCOUNT',p_account_id,
+    'sha256:'||encode(public.digest(p_account_id,'sha256'),'hex')
+  );
+  IF NOT EXISTS (
+    SELECT 1 FROM public.paper_accounts account
+    WHERE account.account_id=p_account_id AND account.user_id=p_actor_user_id
+  ) THEN
+    RAISE EXCEPTION 'paper rebuild owner denied' USING ERRCODE='42501';
+  END IF;
+  RETURN QUERY SELECT * FROM public.rebuild_paper_state(p_account_id,scope_token);
+END
+$rebuild_paper_state_authorized_v2$;
+
+CREATE FUNCTION public.acquire_order_fill_reconciliation_lock_authorized_v2(
+  p_capability text,p_payload_text text
+)
+RETURNS text
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $acquire_order_fill_reconciliation_lock_authorized_v2$
+DECLARE payload jsonb:=p_payload_text::jsonb;
+DECLARE scope_token text;
+BEGIN
+  scope_token:=public.open_brokerage_internal_scope_v1(
+    p_capability,payload->>'actorUserId','LOCK_ORDER_FILL','ORDER',payload->>'orderId',
+    public.actor_capability_payload_hash(p_payload_text)
+  );
+  RETURN public.acquire_order_fill_reconciliation_lock(payload,scope_token);
+END
+$acquire_order_fill_reconciliation_lock_authorized_v2$;
+
+CREATE FUNCTION public.read_order_reconciliation_state_authorized_v2(
+  p_capability text,p_payload_text text
+)
+RETURNS TABLE(operation_outcome text,state_json text)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $read_order_reconciliation_state_authorized_v2$
+DECLARE payload jsonb:=p_payload_text::jsonb;
+DECLARE scope_token text;
+BEGIN
+  scope_token:=public.open_brokerage_internal_scope_v1(
+    p_capability,payload->>'actorUserId','READ_ORDER_FILL_STATE','ORDER',payload->>'orderId',
+    public.actor_capability_payload_hash(p_payload_text)
+  );
+  RETURN QUERY SELECT * FROM public.read_order_reconciliation_state(payload,scope_token);
+END
+$read_order_reconciliation_state_authorized_v2$;
+
+CREATE FUNCTION public.apply_stored_order_fills_authorized_v2(p_capability text,p_payload_text text)
+RETURNS TABLE(
+  operation_outcome text,order_id text,brokerage_mode text,status text,
+  filled_quantity bigint,leaves_quantity bigint,unfilled_terminated_quantity bigint,
+  average_fill_price_krw bigint,reconciliation_status text,reconciled_at timestamptz,
+  applied_event_count integer,has_more boolean
+)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $apply_stored_order_fills_authorized_v2$
+DECLARE payload jsonb:=p_payload_text::jsonb;
+DECLARE scope_token text;
+BEGIN
+  scope_token:=public.open_brokerage_internal_scope_v1(
+    p_capability,payload->>'actorUserId','APPLY_ORDER_FILLS','ORDER',payload->>'orderId',
+    public.actor_capability_payload_hash(p_payload_text)
+  );
+  RETURN QUERY SELECT * FROM public.apply_stored_order_fills(payload,scope_token);
+END
+$apply_stored_order_fills_authorized_v2$;
+
+CREATE FUNCTION public.read_owned_order_fills_authorized_v2(p_capability text,p_payload_text text)
+RETURNS TABLE(operation_outcome text,page_json text)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $read_owned_order_fills_authorized_v2$
+DECLARE payload jsonb:=p_payload_text::jsonb;
+DECLARE scope_token text;
+BEGIN
+  scope_token:=public.open_brokerage_internal_scope_v1(
+    p_capability,payload->>'actorUserId','READ_ORDER_FILLS','ACCOUNT',payload->>'accountId',
+    public.actor_capability_payload_hash(p_payload_text)
+  );
+  RETURN QUERY SELECT * FROM public.read_owned_order_fills(payload,scope_token);
+END
+$read_owned_order_fills_authorized_v2$;
+
+DO $p1_brokerage_actor_capability_privileges$
+DECLARE signature regprocedure;
+BEGIN
+  FOREACH signature IN ARRAY ARRAY[
+    'public.read_mock_order_decision(text,text,text)'::regprocedure,
+    'public.find_mock_order_idempotency_result(text,text,timestamptz,text)'::regprocedure,
+    'public.read_mock_order_owner_projection(text,text,text)'::regprocedure,
+    'public.create_mock_order(jsonb,text)'::regprocedure,
+    'public.request_mock_order_cancel(jsonb,text)'::regprocedure,
+    'public.record_mock_order_provider_outcome(jsonb,text)'::regprocedure,
+    'public.read_paper_order_context(text,text,text)'::regprocedure,
+    'public.find_paper_order_idempotency_result(text,text,timestamptz,text)'::regprocedure,
+    'public.read_paper_balance_projection(text,text,text)'::regprocedure,
+    'public.create_paper_order(jsonb,text)'::regprocedure,
+    'public.rebuild_paper_state(text,text)'::regprocedure,
+    'public.acquire_order_fill_reconciliation_lock(jsonb,text)'::regprocedure,
+    'public.read_order_reconciliation_state(jsonb,text)'::regprocedure,
+    'public.apply_stored_order_fills(jsonb,text)'::regprocedure,
+    'public.read_owned_order_fills(jsonb,text)'::regprocedure
+  ] LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,decision_app,decision_worker,decision_replay',signature);
+  END LOOP;
+END
+$p1_brokerage_actor_capability_privileges$;
+
+ALTER FUNCTION public.read_mock_order_decision_authorized_v2(text,text,text) OWNER TO flyway;
+ALTER FUNCTION public.find_mock_order_idempotency_result_authorized_v2(text,text,text,text,text) OWNER TO flyway;
+ALTER FUNCTION public.read_mock_order_owner_projection_authorized_v2(text,text,text) OWNER TO flyway;
+ALTER FUNCTION public.read_mock_balance_projection_authorized_v2(text,text,text,text) OWNER TO flyway;
+ALTER FUNCTION public.create_mock_order_authorized_v2(text,text) OWNER TO flyway;
+ALTER FUNCTION public.request_mock_order_cancel_authorized_v2(text,text) OWNER TO flyway;
+ALTER FUNCTION public.record_mock_order_provider_outcome_authorized_v2(text,text) OWNER TO flyway;
+ALTER FUNCTION public.read_paper_order_context_authorized_v2(text,text,text) OWNER TO flyway;
+ALTER FUNCTION public.find_paper_order_idempotency_result_authorized_v2(text,text,text,text,text) OWNER TO flyway;
+ALTER FUNCTION public.read_paper_balance_projection_authorized_v2(text,text,text) OWNER TO flyway;
+ALTER FUNCTION public.create_paper_order_authorized_v2(text,text) OWNER TO flyway;
+ALTER FUNCTION public.rebuild_paper_state_authorized_v2(text,text,text) OWNER TO flyway;
+ALTER FUNCTION public.acquire_order_fill_reconciliation_lock_authorized_v2(text,text) OWNER TO flyway;
+ALTER FUNCTION public.read_order_reconciliation_state_authorized_v2(text,text) OWNER TO flyway;
+ALTER FUNCTION public.apply_stored_order_fills_authorized_v2(text,text) OWNER TO flyway;
+ALTER FUNCTION public.read_owned_order_fills_authorized_v2(text,text) OWNER TO flyway;
+
+REVOKE ALL ON FUNCTION
+  public.read_mock_order_decision_authorized_v2(text,text,text),
+  public.find_mock_order_idempotency_result_authorized_v2(text,text,text,text,text),
+  public.read_mock_order_owner_projection_authorized_v2(text,text,text),
+  public.read_mock_balance_projection_authorized_v2(text,text,text,text),
+  public.create_mock_order_authorized_v2(text,text),
+  public.request_mock_order_cancel_authorized_v2(text,text),
+  public.record_mock_order_provider_outcome_authorized_v2(text,text),
+  public.read_paper_order_context_authorized_v2(text,text,text),
+  public.find_paper_order_idempotency_result_authorized_v2(text,text,text,text,text),
+  public.read_paper_balance_projection_authorized_v2(text,text,text),
+  public.create_paper_order_authorized_v2(text,text),
+  public.rebuild_paper_state_authorized_v2(text,text,text),
+  public.acquire_order_fill_reconciliation_lock_authorized_v2(text,text),
+  public.read_order_reconciliation_state_authorized_v2(text,text),
+  public.apply_stored_order_fills_authorized_v2(text,text),
+  public.read_owned_order_fills_authorized_v2(text,text)
+FROM PUBLIC,decision_worker,decision_replay,decision_identity,decision_auth;
+GRANT EXECUTE ON FUNCTION
+  public.read_mock_order_decision_authorized_v2(text,text,text),
+  public.find_mock_order_idempotency_result_authorized_v2(text,text,text,text,text),
+  public.read_mock_order_owner_projection_authorized_v2(text,text,text),
+  public.read_mock_balance_projection_authorized_v2(text,text,text,text),
+  public.create_mock_order_authorized_v2(text,text),
+  public.request_mock_order_cancel_authorized_v2(text,text),
+  public.record_mock_order_provider_outcome_authorized_v2(text,text),
+  public.read_paper_order_context_authorized_v2(text,text,text),
+  public.find_paper_order_idempotency_result_authorized_v2(text,text,text,text,text),
+  public.read_paper_balance_projection_authorized_v2(text,text,text),
+  public.create_paper_order_authorized_v2(text,text),
+  public.rebuild_paper_state_authorized_v2(text,text,text),
+  public.acquire_order_fill_reconciliation_lock_authorized_v2(text,text),
+  public.read_order_reconciliation_state_authorized_v2(text,text),
+  public.apply_stored_order_fills_authorized_v2(text,text),
+  public.read_owned_order_fills_authorized_v2(text,text)
+TO decision_app;
+
 CREATE OR REPLACE FUNCTION public.insert_principle_authorized(
   p_capability text,p_actor_user_id text,p_principle_id text,p_preset_id text,p_title text,
   p_mode text,p_status text,p_version integer,p_created_at timestamptz,p_updated_at timestamptz

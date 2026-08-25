@@ -5,8 +5,8 @@ import com.capstone.decision.infrastructure.security.ActorCapabilityClaims
 import com.capstone.decision.infrastructure.security.ActorCapabilityDeniedException
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import com.capstone.decision.infrastructure.security.ActorCapabilityPacketCodec
-import com.capstone.decision.infrastructure.security.DatabaseActorCapabilityAuthority
 import com.capstone.decision.infrastructure.security.AuthDatabase
+import com.capstone.decision.infrastructure.security.DatabaseActorCapabilityAuthority
 import com.capstone.decision.infrastructure.security.DatabaseActorIdentityHandleIssuer
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource

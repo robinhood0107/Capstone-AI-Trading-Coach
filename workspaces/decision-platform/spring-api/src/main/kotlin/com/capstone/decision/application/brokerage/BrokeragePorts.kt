@@ -82,6 +82,7 @@ interface BrokerageGatewayPort {
 
 interface BrokerageOrderPersistencePort {
     fun findIdempotencyResult(
+        actorUserId: String,
         scopeHash: String,
         ownerScopeHash: String,
         now: java.time.Instant,

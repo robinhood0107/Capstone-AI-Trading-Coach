@@ -176,7 +176,7 @@ class BrokerageOnlineServiceTest {
         every { gatewayProvider.getIfAvailable() } returns gateway
         every { hasher.identity(ACTOR.userId, any(), any()) } returns
             BrokerageIdempotencyIdentity("a".repeat(64), "b".repeat(64), "c".repeat(64))
-        every { persistence.findIdempotencyResult(any(), any(), NOW) } returns null
+        every { persistence.findIdempotencyResult(ACTOR.userId, any(), any(), NOW) } returns null
         every { persistence.findOrderableDecisionAccountId(ACTOR.userId, DECISION_ID) } returns ACCOUNT_ID
         every { projectionFactory.createSubmitted(any(), ACCOUNT_ID, NOW) } returns projection("SUBMITTED")
         every { projectionFactory.canonicalJson(any()) } returns

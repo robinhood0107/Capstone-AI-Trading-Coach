@@ -76,6 +76,10 @@ class LoginAttemptLimiter(
         finish(failed = true)
     }
 
+    fun releaseReservation() {
+        finish(failed = false)
+    }
+
     private fun finish(failed: Boolean) {
         synchronized(lock) {
             val reservation = localReservation.get() ?: return

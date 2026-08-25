@@ -8,6 +8,7 @@ services:
   role-bootstrap: {pull_policy: never}
   migrate: {pull_policy: never}
   identity-bootstrap: {pull_policy: never}
+  actor-capability-authority: {pull_policy: never}
   python-worker: {pull_policy: never}
   synthetic-async-smoke: {pull_policy: never}
   spring-api: {pull_policy: never}

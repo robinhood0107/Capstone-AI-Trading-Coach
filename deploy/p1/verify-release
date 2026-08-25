@@ -387,10 +387,10 @@ def require(condition: bool, message: str) -> None:
 
 expected = {
     "runtime-netns", "api-edge", "postgres", "redis", "role-bootstrap", "migrate", "identity-bootstrap",
-    "python-worker", "spring-api",
+    "actor-capability-authority", "python-worker", "synthetic-async-smoke", "spring-api",
 }
 if mode == "kafka":
-    expected |= {"kafka-volume-init", "kafka", "kafka-topic-init"}
+    expected |= {"poison-recorder", "kafka-publisher", "kafka-volume-init", "kafka", "kafka-topic-init"}
 require(expected == set(services), "compose service inventory")
 for name in expected:
     require(services[name].get("pull_policy") == "never", f"pull policy: {name}")
@@ -400,8 +400,12 @@ require(services["api-edge"]["image"] == python_ref, "edge compose image")
 require(services["migrate"]["image"] == spring_ref, "migration compose image")
 require(services["role-bootstrap"]["image"] == spring_ref, "role bootstrap compose image")
 require(services["identity-bootstrap"]["image"] == spring_ref, "bootstrap compose image")
+require(services["actor-capability-authority"]["image"] == spring_ref, "actor authority compose image")
+require(services["synthetic-async-smoke"]["image"] == python_ref, "synthetic smoke compose image")
 require(services["postgres"]["image"] == postgres_ref, "PostgreSQL compose image")
 if mode == "kafka":
+    require(services["poison-recorder"]["image"] == python_ref, "poison recorder compose image")
+    require(services["kafka-publisher"]["image"] == python_ref, "Kafka publisher compose image")
     require(services["kafka-topic-init"]["image"] == python_ref, "topic initializer compose image")
     require(services["kafka"]["image"] == kafka_ref, "Kafka compose image")
 require(document["networks"]["p1-internal"]["internal"] is True, "internal network")

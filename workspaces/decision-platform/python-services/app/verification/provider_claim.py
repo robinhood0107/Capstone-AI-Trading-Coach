@@ -53,13 +53,14 @@ def claim_signed_provider_approval(
         parsed = conninfo_to_dict(dsn)
     except psycopg.Error as error:
         raise ProviderApprovalClaimError("P1_PROVIDER_CLAIM_DSN_INVALID") from error
-    if parsed.get("user") != "decision_replay" or parsed.get("dbname") != "decision":
+    database_name = parsed.get("dbname")
+    if parsed.get("user") != "decision_replay" or not database_name:
         raise ProviderApprovalClaimError("P1_PROVIDER_CLAIM_DSN_INVALID")
     operations_digest = _sha256("\n".join(packet.allowed_operations).encode("ascii"))
     with psycopg.connect(dsn, autocommit=False, connect_timeout=2) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select current_user,session_user,current_database()")
-            if cursor.fetchone() != ("decision_replay", "decision_replay", "decision"):
+            if cursor.fetchone() != ("decision_replay", "decision_replay", database_name):
                 raise ProviderApprovalClaimError("P1_PROVIDER_CLAIM_ROLE_INVALID")
             cursor.execute(
                 "select consume_p1_provider_approval(%s,%s,%s,%s,%s,%s)",

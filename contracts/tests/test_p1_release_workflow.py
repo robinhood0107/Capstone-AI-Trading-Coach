@@ -84,6 +84,19 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
             'require(expected == set(services), "compose service inventory")',
             VERIFY_RELEASE.read_text(encoding="utf-8"),
         )
+        verifier = VERIFY_RELEASE.read_text(encoding="utf-8")
+        offline_db = (REPOSITORY_ROOT / "deploy" / "p1" / "compose.offline.db.yml").read_text(
+            encoding="utf-8"
+        )
+        offline_kafka = (
+            REPOSITORY_ROOT / "deploy" / "p1" / "compose.offline.kafka.yml"
+        ).read_text(encoding="utf-8")
+        for service in ("actor-capability-authority", "synthetic-async-smoke"):
+            self.assertIn(f'"{service}"', verifier)
+            self.assertIn(f"  {service}: {{pull_policy: never}}", offline_db)
+        for service in ("poison-recorder", "kafka-publisher"):
+            self.assertIn(f'"{service}"', verifier)
+            self.assertIn(f"  {service}: {{pull_policy: never}}", offline_kafka)
         for command in ('up "$mode"', "smoke", "backup", "restore-test"):
             self.assertIn(command, runtime)
         self.assertLess(runtime.index("verify-release"), runtime.index("p1ctl"))

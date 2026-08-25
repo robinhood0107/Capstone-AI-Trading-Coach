@@ -1,6 +1,8 @@
 name: capstone-p1-offline-demo
 
 services:
+  poison-recorder: {pull_policy: never}
+  kafka-publisher: {pull_policy: never}
   kafka-volume-init: {pull_policy: never}
   kafka: {pull_policy: never}
   kafka-topic-init: {pull_policy: never}

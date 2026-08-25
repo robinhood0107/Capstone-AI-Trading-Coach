@@ -10,8 +10,9 @@ from app.verification import provider_claim
 
 
 class _Cursor:
-    def __init__(self, claim_result: bool) -> None:
+    def __init__(self, claim_result: bool, database_name: str = "decision") -> None:
         self.claim_result = claim_result
+        self.database_name = database_name
         self.query_count = 0
         self.arguments: tuple[object, ...] | None = None
 
@@ -28,13 +29,13 @@ class _Cursor:
 
     def fetchone(self) -> tuple[object, ...]:
         if self.query_count == 1:
-            return ("decision_replay", "decision_replay", "decision")
+            return ("decision_replay", "decision_replay", self.database_name)
         return (self.claim_result,)
 
 
 class _Connection:
-    def __init__(self, claim_result: bool) -> None:
-        self.cursor_value = _Cursor(claim_result)
+    def __init__(self, claim_result: bool, database_name: str = "decision") -> None:
+        self.cursor_value = _Cursor(claim_result, database_name)
         self.committed = False
 
     def __enter__(self) -> _Connection:
@@ -96,3 +97,23 @@ def test_postgres_claim_rejects_replay(monkeypatch: pytest.MonkeyPatch) -> None:
             _approval(),
             dsn_file=Path("/run/secrets/p1-provider-claim-dsn"),
         )
+
+
+def test_postgres_claim_binds_the_dsn_database_without_a_caller_selected_constant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = _Connection(True, "capstone_p1")
+    monkeypatch.setattr(provider_claim, "_read_owner_private_file", lambda _: b"fixture")
+    monkeypatch.setattr(
+        provider_claim,
+        "conninfo_to_dict",
+        lambda _: {"user": "decision_replay", "dbname": "capstone_p1"},
+    )
+    monkeypatch.setattr(provider_claim.psycopg, "connect", lambda *args, **kwargs: connection)
+
+    provider_claim.claim_signed_provider_approval(
+        _approval(),
+        dsn_file=Path("/run/secrets/p1-provider-claim-dsn"),
+    )
+
+    assert connection.committed is True

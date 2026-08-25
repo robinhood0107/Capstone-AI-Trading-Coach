@@ -1,7 +1,10 @@
 package com.capstone.decision.infrastructure.mcp
 
 import com.capstone.decision.api.common.ApiResponseWriter
+import com.capstone.decision.application.security.AppPrincipal
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.infrastructure.security.ActorRlsScope
+import com.capstone.decision.infrastructure.security.DemoAccountService
 import com.capstone.decision.infrastructure.security.LoginAttemptLimiter
 import com.capstone.decision.infrastructure.security.UserSecurityRepository
 import com.capstone.decision.infrastructure.web.HttpRequestProperties
@@ -18,9 +21,11 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.core.annotation.Order
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration
 import org.springframework.security.config.http.SessionCreationPolicy
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.core.userdetails.User
 import org.springframework.security.core.userdetails.UserDetailsService
 import org.springframework.security.oauth2.core.AuthorizationGrantType
@@ -116,6 +121,7 @@ class McpOAuthSecurityConfig {
     fun mcpLoginSecurityFilterChain(
         http: HttpSecurity,
         limiter: LoginAttemptLimiter,
+        demoAccounts: DemoAccountService,
         requestProperties: HttpRequestProperties,
         responseWriter: ApiResponseWriter,
     ): SecurityFilterChain {
@@ -127,8 +133,45 @@ class McpOAuthSecurityConfig {
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED) }
             .formLogin { form ->
                 form.successHandler { request, response, authentication ->
+                    val account =
+                        try {
+                            demoAccounts.authenticate(
+                                request.getParameter("username").orEmpty(),
+                                request.getParameter("password").orEmpty(),
+                            )
+                        } catch (exception: RuntimeException) {
+                            limiter.releaseReservation()
+                            throw exception
+                        }
+                    if (account == null) {
+                        limiter.recordFailure(request.remoteAddr, authentication.name)
+                        return@successHandler failure.onAuthenticationFailure(
+                            request,
+                            response,
+                            org.springframework.security.authentication
+                                .BadCredentialsException("Invalid credentials"),
+                        )
+                    }
+                    val actorAuthentication =
+                        UsernamePasswordAuthenticationToken(
+                            AppPrincipal(
+                                userId = account.userId,
+                                username = account.username,
+                                role = account.role.name,
+                                securityVersion = account.securityVersion,
+                                actorRef =
+                                    AuthenticatedActorRef(
+                                        sessionHandle = account.sessionHandle,
+                                        expectedUserId = account.userId,
+                                        securityVersion = account.securityVersion,
+                                    ),
+                            ),
+                            null,
+                            authentication.authorities,
+                        ).also { it.details = authentication.details }
+                    SecurityContextHolder.getContext().authentication = actorAuthentication
                     limiter.recordSuccess(request.remoteAddr, authentication.name)
-                    success.onAuthenticationSuccess(request, response, authentication)
+                    success.onAuthenticationSuccess(request, response, actorAuthentication)
                 }
                 form.failureHandler { request, response, error ->
                     limiter.recordFailure(request.remoteAddr, request.getParameter("username").orEmpty())
@@ -293,7 +336,15 @@ class McpOAuthSecurityConfig {
             context.jwsHeader.algorithm(SignatureAlgorithm.ES256)
             if (context.tokenType == OAuth2TokenType.ACCESS_TOKEN) {
                 val principal = requireNotNull(context.getPrincipal<org.springframework.security.core.Authentication>())
+                val actor =
+                    principal.principal as? AppPrincipal
+                        ?: throw IllegalStateException("MCP actor session is unavailable")
                 val row = users.findDemoCredentials().single { it.username == principal.name && it.status == "ACTIVE" }
+                require(
+                    actor.userId == row.userId &&
+                        actor.securityVersion == row.securityVersion &&
+                        actor.actorRef.expectedUserId == row.userId,
+                )
                 val securityVersion =
                     if (context.authorizationGrantType == AuthorizationGrantType.REFRESH_TOKEN) {
                         val claim = refreshClaims.requireCurrent()
@@ -310,6 +361,7 @@ class McpOAuthSecurityConfig {
                 context.claims.audience(listOf(properties.resourceUri))
                 context.claims.claim("securityVersion", securityVersion)
                 context.claims.claim("client_id", context.registeredClient.clientId)
+                context.claims.claim("sid", actor.actorRef.sessionHandle)
             }
         }
 
@@ -336,11 +388,16 @@ class McpOAuthSecurityConfig {
         users: UserSecurityRepository,
     ): OAuth2TokenValidatorResult {
         val row = jwt.subject?.let(users::findByUserId)
+        val session = jwt.getClaimAsString("sid")?.let(users::findBySessionHandle)
         val securityVersion =
             jwt.getClaimAsString("securityVersion")?.toLongOrNull()
                 ?: (jwt.claims["securityVersion"] as? Number)?.toLong()
         return if (jwt.audience?.contains(properties.resourceUri) == true &&
             row != null &&
+            session != null &&
+            session.userId == row.userId &&
+            session.role == row.role &&
+            session.securityVersion == row.securityVersion &&
             row.status == "ACTIVE" &&
             row.securityVersion == securityVersion &&
             row.securityVersion > 0

@@ -70,6 +70,10 @@ class CapstoneMcpTools(
 ) {
     private val validator = RagV2VertexResponseValidator()
 
+    init {
+        contexts.bindCloseListener(researchTools::closeSession)
+    }
+
     @McpTool(
         name = "capstone_rag_search",
         description = "Search the consented Capstone public and owner RAG corpus and create an owner-bound research context.",
@@ -113,9 +117,14 @@ class CapstoneMcpTools(
                 result.citations,
                 result.evidence,
             )
-        researchTools.openSession(context.id)
-        researchTools.registerUserRoots(context.id, question)
-        return McpRagSearchResponse(receipt, context.expiresAt, contexts.evidenceSnapshot(context).map(::evidenceItem))
+        try {
+            researchTools.openSession(context.id)
+            researchTools.registerUserRoots(context.id, question)
+            return McpRagSearchResponse(receipt, context.expiresAt, contexts.evidenceSnapshot(context).map(::evidenceItem))
+        } catch (error: Exception) {
+            contexts.close(context.id)
+            throw error
+        }
     }
 
     @McpTool(
@@ -217,6 +226,7 @@ class CapstoneMcpTools(
         val contextId = validationReceipts.contextId(caller, validationReceipt, draft)
         requireCurrentContext(contexts.requireById(contextId, caller.ownerUserId, caller.oauthClientId), caller)
         val answerId = validationReceipts.consume(caller, validationReceipt, draft)
+        contexts.close(contextId)
         return McpAnswerSaveResponse(true, answerId)
     }
 
@@ -275,10 +285,12 @@ class CapstoneMcpTools(
     private fun evidenceItem(value: RagV2VertexEvidence) = McpEvidenceItem(value.citationId, value.canonicalText, value.canonicalTextSha256)
 
     private fun sha256(value: String): String =
-        MessageDigest.getInstance("SHA-256").digest(value.toByteArray(StandardCharsets.UTF_8)).joinToString("") { "%02x".format(it) }
+        MessageDigest.getInstance("SHA-256").digest(value.toByteArray(StandardCharsets.UTF_8)).joinToString("") {
+            "%02x".format(java.util.Locale.ROOT, it)
+        }
 
     private companion object {
-        val logger = LoggerFactory.getLogger(CapstoneMcpTools::class.java)
+        val logger: org.slf4j.Logger = LoggerFactory.getLogger(CapstoneMcpTools::class.java)
         val OWNER_ID = Regex("^usr_[a-z0-9][a-z0-9_-]{2,95}$")
         val MCP_CLIENT_ID = Regex("^mcp_[a-z0-9][a-z0-9._-]{2,95}$")
         val CIMD_CLIENT_ID = Regex("^https://[A-Za-z0-9.-]+/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{1,190}$")

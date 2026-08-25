@@ -115,7 +115,9 @@ def assert_sanitized_payload(payload: object) -> None:
             raise PrivacyProjectionError("sanitized payload exceeded structural bounds")
         if isinstance(value, dict):
             for key, child in value.items():
-                normalized = "".join(character for character in str(key).lower() if character.isalnum())
+                normalized = "".join(
+                    character for character in str(key).lower() if character.isalnum()
+                )
                 if normalized in _FORBIDDEN_KEYS:
                     raise PrivacyProjectionError("sanitized payload contains a forbidden field")
                 stack.append((child, depth + 1))

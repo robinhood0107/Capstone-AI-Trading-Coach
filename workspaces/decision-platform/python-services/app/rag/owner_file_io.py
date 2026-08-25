@@ -139,7 +139,10 @@ def _read_windows_regular_file(
         ):
             raise OwnerFileIoError("OWNER_FILE_UNSAFE")
         leaf_final = _windows_final_path(kernel32, file_handle)
-        if os.path.commonpath((root_final.casefold(), leaf_final.casefold())) != root_final.casefold():
+        if (
+            os.path.commonpath((root_final.casefold(), leaf_final.casefold()))
+            != root_final.casefold()
+        ):
             raise OwnerFileIoError("OWNER_FILE_UNSAFE")
         payload = _windows_read_all(kernel32, file_handle, _windows_file_size(before), max_bytes)
         after = _windows_file_info(kernel32, file_handle)

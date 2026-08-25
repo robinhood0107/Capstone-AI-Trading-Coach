@@ -43,7 +43,7 @@ object CanonicalJson {
         MessageDigest
             .getInstance("SHA-256")
             .digest(value)
-            .joinToString("") { "%02x".format(it) }
+            .joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
 
     private fun quote(value: String): String =
         buildString(value.length + 2) {
@@ -59,7 +59,7 @@ object CanonicalJson {
                     '\t' -> append("\\t")
                     else ->
                         if (character.code < 0x20) {
-                            append("\\u%04x".format(character.code))
+                            append("\\u%04x".format(java.util.Locale.ROOT, character.code))
                         } else {
                             append(character)
                         }

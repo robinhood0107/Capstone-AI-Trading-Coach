@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import math
 import os
+import re
 import ssl
 import time
-import math
-import hashlib
-import re
 from collections.abc import Callable, Mapping
 from datetime import date
 from pathlib import Path
@@ -27,19 +27,18 @@ from app.data.krx._credential_transport import (
     _LOGICAL_DEADLINE_EXTENSION,
     _SAFE_RESPONSE_METADATA_EXTENSION,
     KrxCredentialError,
+    _canonical_client_headers,
     _CredentialTransport,
     _QuotaReservation,
-    _canonical_client_headers,
     _suppress_dependency_http_logs,
 )
 from app.data.krx.catalog import (
     ENABLED_UNIVERSE_ENDPOINTS,
     ENABLED_UNIVERSE_ENDPOINTS_BY_SERVICE,
     KRX_OPEN_API_FIRST_AVAILABLE_DATE,
-    KrxEndpoint,
     S5_PRODUCTION_ENDPOINTS,
+    KrxEndpoint,
 )
-from app.data.krx.production_parsers import parse_s5_production_response
 from app.data.krx.errors import (
     KrxError,
     KrxParseError,
@@ -47,10 +46,10 @@ from app.data.krx.errors import (
     KrxValidationDiagnostic,
 )
 from app.data.krx.parsers import KrxDailyRow, parse_daily_response
+from app.data.krx.production_parsers import parse_s5_production_response
 from app.data.krx.quota import quota_key, quota_policy, s5_quota_policy
 from app.data.krx.settings import KrxOpenApiSettings, KrxS5ProductionSettings
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
-
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
 _REDIS_TIMEOUT_SECONDS = 2.0
@@ -103,8 +102,6 @@ def _build_tls_context() -> ssl.SSLContext:
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.check_hostname = True
     context.verify_mode = ssl.CERT_REQUIRED
-    if hasattr(context, "keylog_filename"):
-        setattr(context, "keylog_filename", None)
     return context
 
 
@@ -150,9 +147,10 @@ def attest_quota_backend_credentials() -> None:
 def claim_provider_verification_authorization(packet_sha256: str, approval_id: str) -> None:
     """Consume one packet in the deployment-global Redis control plane before provider setup."""
 
-    if re.fullmatch(r"[0-9a-f]{64}", packet_sha256) is None or re.fullmatch(
-        r"[A-Z0-9][A-Z0-9._-]{2,63}", approval_id
-    ) is None:
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", packet_sha256) is None
+        or re.fullmatch(r"[A-Z0-9][A-Z0-9._-]{2,63}", approval_id) is None
+    ):
         raise QuotaUnavailableError("provider verification claim identity is invalid")
     digest = hashlib.sha256(f"p1-provider-read|{packet_sha256}|{approval_id}".encode()).hexdigest()
     client = _build_redis_client()
@@ -325,7 +323,9 @@ class KrxOpenApiClient:
         _validate_as_of(as_of)
         deadline = time.monotonic() + self._settings.logical_deadline_seconds
         if deadline_monotonic is not None:
-            if isinstance(deadline_monotonic, bool) or not isinstance(deadline_monotonic, (int, float)):
+            if isinstance(deadline_monotonic, bool) or not isinstance(
+                deadline_monotonic, (int, float)
+            ):
                 raise ValueError("KRX deadline must be a finite monotonic timestamp")
             bounded_deadline = float(deadline_monotonic)
             if not math.isfinite(bounded_deadline):

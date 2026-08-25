@@ -123,7 +123,9 @@ class OpenDARTQuotaRepository:
                 (reason, usage_date),
             ).rowcount
             if updated != 1:
-                raise QuotaReservationDenied("cannot mark quota exhausted without a charged reservation")
+                raise QuotaReservationDenied(
+                    "cannot mark quota exhausted without a charged reservation"
+                )
 
     def get_usage(self, usage_date: date) -> QuotaUsage:
         """운영 수치만 반환하고 credential, request URL 또는 provider body는 읽지 않는다."""
@@ -605,9 +607,14 @@ def _validate_page_commit(commit: CalendarPageCommit) -> None:
         raise ValueError("calendar cursor source must match its observation")
     if commit.source_health.source_id != commit.observation.source_id:
         raise ValueError("calendar source health must match its observation")
-    if any(link.observation_id != commit.observation.observation_id for link in commit.source_links):
+    if any(
+        link.observation_id != commit.observation.observation_id for link in commit.source_links
+    ):
         raise ValueError("calendar source links must reference the page observation")
-    if commit.source_health.failure_count < 0 or commit.source_health.stale_after.total_seconds() <= 0:
+    if (
+        commit.source_health.failure_count < 0
+        or commit.source_health.stale_after.total_seconds() <= 0
+    ):
         raise ValueError("calendar source health bounds are invalid")
 
 
@@ -638,7 +645,11 @@ def _validate_session(session: CanonicalTradingSession) -> None:
         }
     )
     if session.is_open:
-        if session.open_at is None or session.close_at is None or session.close_at <= session.open_at:
+        if (
+            session.open_at is None
+            or session.close_at is None
+            or session.close_at <= session.open_at
+        ):
             raise ValueError("open trading session requires ordered open and close timestamps")
     elif session.open_at is not None or session.close_at is not None:
         raise ValueError("closed trading session cannot retain open or close timestamps")

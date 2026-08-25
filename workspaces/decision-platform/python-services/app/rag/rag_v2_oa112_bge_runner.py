@@ -183,7 +183,11 @@ def oa112_public_source_metadata(entry: Oa112RegistryEntry) -> PublicBgeSourceMe
 def _copy_source_card(source_card: dict[str, object]) -> dict[str, object]:
     """registry object mutation이 vector materialization 뒤 rights projection을 바꾸지 못하게 복제한다."""
 
-    copied = json.loads(json.dumps(source_card, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
-    if not isinstance(copied, dict):  # pragma: no cover - registry dataclass contract keeps it a dict.
+    copied = json.loads(
+        json.dumps(source_card, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    )
+    if not isinstance(
+        copied, dict
+    ):  # pragma: no cover - registry dataclass contract keeps it a dict.
         raise RagV2Oa112BgeRunnerError("OA112_SOURCE_CARD_METADATA")
     return copied

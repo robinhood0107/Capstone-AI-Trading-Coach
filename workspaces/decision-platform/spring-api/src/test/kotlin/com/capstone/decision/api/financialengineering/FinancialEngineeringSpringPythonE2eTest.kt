@@ -235,6 +235,11 @@ class FinancialEngineeringSpringPythonE2eTest(
                     username = identity.username,
                     role = identity.role,
                     securityVersion = 1,
+                    sessionHandle = "sid1_" + "b".repeat(64),
+                    expiresAt =
+                        java.time.OffsetDateTime
+                            .now()
+                            .plusHours(12),
                 ),
             ).token
     }

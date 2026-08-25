@@ -18,6 +18,8 @@ import app.rag.rag_v2_public_voyage_staging as public_voyage_staging
 from app.rag.external_processing_corpus import load_external_processing_corpus
 from app.rag.oa112_active_registry import Oa112ActiveRegistry, Oa112RegistryEntry
 from app.rag.oa_release_manifest import OA_TRACK_IDS
+from app.rag.pre_s5_provider_control import PreS5VoyageQueryActivation
+from app.rag.pre_s5_voyage_query_usage_repository import PsycopgPreS5VoyageQueryUsageRepository
 from app.rag.rag_v2_oa112_bge_runner import (
     RagV2Oa112BgeRunnerError,
     materialize_oa112_public_bge_component,
@@ -26,25 +28,23 @@ from app.rag.rag_v2_oa112_voyage_runner import (
     materialize_prepared_oa112_public_voyage_component,
     prepare_oa112_public_voyage_component,
 )
-from app.rag.rag_v2_voyage_full_bundle import (
-    materialize_public_base_voyage_full_bundle,
-    prepare_public_base_voyage_full_bundle,
+from app.rag.rag_v2_public_voyage_activation_repository import (
+    PsycopgRagV2PublicVoyageActivationRepository,
+    PublicVoyageActivationRequest,
 )
 from app.rag.rag_v2_public_voyage_staging import (
     RagV2PublicVoyageStagingError,
     build_public_voyage_staging_payload,
 )
-from app.rag.rag_v2_public_voyage_activation_repository import (
-    PublicVoyageActivationRequest,
-    PsycopgRagV2PublicVoyageActivationRepository,
-)
 from app.rag.rag_v2_public_voyage_staging_repository import (
+    PsycopgRagV2PublicVoyageStagingRepository,
     PublicVoyageEvaluationEvidence,
     PublicVoyageStagingRepositoryError,
-    PsycopgRagV2PublicVoyageStagingRepository,
 )
-from app.rag.pre_s5_provider_control import PreS5VoyageQueryActivation
-from app.rag.pre_s5_voyage_query_usage_repository import PsycopgPreS5VoyageQueryUsageRepository
+from app.rag.rag_v2_voyage_full_bundle import (
+    materialize_public_base_voyage_full_bundle,
+    prepare_public_base_voyage_full_bundle,
+)
 
 
 class _FixtureTokenizer:
@@ -80,7 +80,7 @@ class _FixtureFullBundleEmbedder:
         self.group_counts: list[int] = []
 
     def embed_full_bundle(self, *, bundle: object) -> np.ndarray:
-        components = getattr(bundle, "components")
+        components = bundle.components
         assert len(components) == 3
         self.calls += 1
         groups = tuple(group for component in components for group in component.groups)
@@ -132,7 +132,9 @@ class _FixtureApprovedParser:
             "languageTags": ["en"],
             "mimeType": entry.mime_type,
             "normalizedContentSha256": hashlib.sha256(
-                json.dumps(blocks, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+                json.dumps(
+                    blocks, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+                ).encode()
             ).hexdigest(),
             "parserEvidence": {
                 "ocr": {"backend": "NOT_USED", "backendVersion": None, "modelSha256": None},
@@ -266,11 +268,13 @@ def test_oa112_voyage_runner_prepares_full_registry_before_assigning_one_full_bu
     assert len(preparation.groups) == 112
     assert len(parser.calls) == 112
     assert tuple(group.source_id for group in preparation.groups) == tuple(
-        sorted((entry.source_id for entry in registry.active_entries), key=lambda value: value.encode("utf-8"))
+        sorted(
+            (entry.source_id for entry in registry.active_entries),
+            key=lambda value: value.encode("utf-8"),
+        )
     )
     assert all(
-        group.context_set_hash
-        and all(chunk.token_count >= 1 for chunk in group.chunks)
+        group.context_set_hash and all(chunk.token_count >= 1 for chunk in group.chunks)
         for group in preparation.groups
     )
     vector_count = sum(len(group.chunks) for group in preparation.groups)
@@ -455,7 +459,9 @@ def test_public_voyage_writer_stages_and_evaluates_both_public_components(
     assert exact_receipts[-1].chunk_count == materialization.exact30.context.expected_chunk_count
     assert oa_receipts[-1].chunk_count == materialization.oa112.context.expected_chunk_count
 
-    with pytest.raises(PublicVoyageStagingRepositoryError, match="PUBLIC_VOYAGE_EVALUATION_REJECTED"):
+    with pytest.raises(
+        PublicVoyageStagingRepositoryError, match="PUBLIC_VOYAGE_EVALUATION_REJECTED"
+    ):
         repository.evaluate(
             context=materialization.exact30.context,
             evidence=_voyage_evaluation_evidence("exact30-wrong-count", physical_call_count=0),
@@ -547,7 +553,9 @@ def test_public_voyage_writer_stages_and_evaluates_both_public_components(
             2,
         )
 
-    with psycopg.connect(isolated_postgres_cluster["rag_writer_dsn"], autocommit=True) as connection:
+    with psycopg.connect(
+        isolated_postgres_cluster["rag_writer_dsn"], autocommit=True
+    ) as connection:
         for table in (
             "rag_v2_immutable_public_voyage_component_evaluations",
             "rag_v2_immutable_public_voyage_component_manifests",
@@ -584,7 +592,9 @@ def _registry() -> Oa112ActiveRegistry:
                     canonical_url=canonical_url,
                     raw_content_sha256=raw_hash,
                     mime_type="text/plain",
-                    license_evidence_sha256=hashlib.sha256(f"license-{ordinal}".encode()).hexdigest(),
+                    license_evidence_sha256=hashlib.sha256(
+                        f"license-{ordinal}".encode()
+                    ).hexdigest(),
                     access_evidence_sha256=hashlib.sha256(f"access-{ordinal}".encode()).hexdigest(),
                     machine_fetch_allowed=True,
                     local_processing_allowed=True,
@@ -636,11 +646,15 @@ def _seed_voyage_evaluation_query_usage(
     repository = PsycopgPreS5VoyageQueryUsageRepository(database_dsn=cluster["rag_writer_dsn"])
     for ordinal in range(count):
         activation = PreS5VoyageQueryActivation(
-            packet_sha256=hashlib.sha256(f"packet-{component_scope}-{ordinal}".encode()).hexdigest(),
+            packet_sha256=hashlib.sha256(
+                f"packet-{component_scope}-{ordinal}".encode()
+            ).hexdigest(),
             nonce_sha256=hashlib.sha256(f"nonce-{component_scope}-{ordinal}".encode()).hexdigest(),
             query_sha256=hashlib.sha256(f"query-{component_scope}-{ordinal}".encode()).hexdigest(),
             scope_claim_sha256=scope_claim_sha256,
-            rate_evidence_sha256=hashlib.sha256(f"rate-{component_scope}-{ordinal}".encode()).hexdigest(),
+            rate_evidence_sha256=hashlib.sha256(
+                f"rate-{component_scope}-{ordinal}".encode()
+            ).hexdigest(),
             tokenizer_sha256=hashlib.sha256(
                 f"tokenizer-{component_scope}-{ordinal}".encode()
             ).hexdigest(),

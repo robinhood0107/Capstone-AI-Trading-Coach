@@ -100,7 +100,7 @@ class UniverseManifestSymbol:
         }
 
     @classmethod
-    def from_json(cls, payload: dict[str, Any]) -> "UniverseManifestSymbol":
+    def from_json(cls, payload: dict[str, Any]) -> UniverseManifestSymbol:
         return cls(
             rank=int(payload["rank"]),
             symbol=_normalize_symbol(str(payload["symbol"])),
@@ -148,7 +148,7 @@ class UniverseManifest:
         }
 
     @classmethod
-    def from_json(cls, payload: dict[str, Any]) -> "UniverseManifest":
+    def from_json(cls, payload: dict[str, Any]) -> UniverseManifest:
         symbols = payload.get("symbols")
         if not isinstance(symbols, list):
             raise UniverseExportError("universe manifest symbols must be a list")

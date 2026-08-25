@@ -211,7 +211,10 @@ class PsycopgOwnerVoyageRepository:
             set(values) != expected
             or not isinstance(ticket_ids, tuple)
             or not ticket_ids
-            or any(not isinstance(value, str) or _TICKET_ID.fullmatch(value) is None for value in ticket_ids)
+            or any(
+                not isinstance(value, str) or _TICKET_ID.fullmatch(value) is None
+                for value in ticket_ids
+            )
             or len(set(ticket_ids)) != len(ticket_ids)
         ):
             raise OwnerVoyageImportError("OWNER_VOYAGE_ATTEMPT_INVALID")
@@ -357,12 +360,8 @@ class OwnerVoyageAttemptLease:
         approval_manifest_sha256: str,
         nonce_sha256: str,
     ) -> None:
-        if (
-            not isinstance(plan, OwnerVoyageImportPlan)
-            or not all(
-                _sha256(value)
-                for value in (packet_sha256, approval_manifest_sha256, nonce_sha256)
-            )
+        if not isinstance(plan, OwnerVoyageImportPlan) or not all(
+            _sha256(value) for value in (packet_sha256, approval_manifest_sha256, nonce_sha256)
         ):
             raise OwnerVoyageImportError("OWNER_VOYAGE_LEASE_INVALID")
         self._repository = repository
@@ -565,7 +564,9 @@ class RagV2OwnerVoyageImportExecutor:
             marker = getattr(self._repository, "mark_unknown_billing", None)
             if callable(summary_reader) and callable(marker):
                 summary = summary_reader()
-                leaf = summary.get("responseValidationLeaf") if isinstance(summary, Mapping) else None
+                leaf = (
+                    summary.get("responseValidationLeaf") if isinstance(summary, Mapping) else None
+                )
                 if isinstance(leaf, str):
                     marker(response_validation_leaf=leaf)
             raise
@@ -629,7 +630,11 @@ class RagV2OwnerVoyageImportExecutor:
         document_count = document_count_value
         chunk_count = chunk_count_value
         state = state_value
-        if document_count != len(plan.items) or chunk_count != plan.batch.chunk_count or state != "STAGED":
+        if (
+            document_count != len(plan.items)
+            or chunk_count != plan.batch.chunk_count
+            or state != "STAGED"
+        ):
             raise OwnerVoyageImportError("OWNER_VOYAGE_COMPLETION_INVALID")
         return OwnerVoyageImportReceipt(
             component_generation_id=component_generation_id,

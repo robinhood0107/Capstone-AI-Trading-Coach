@@ -7,7 +7,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.data.krx.catalog import KRX_OPEN_API_ORIGIN
 
-
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
 
 

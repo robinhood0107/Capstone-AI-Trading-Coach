@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 from dataclasses import replace
-from typing import Sequence
 
 import pytest
 
@@ -14,11 +14,10 @@ from app.rag.rag_v2_authorized_retrieval import (
     RagV2AuthorizedHybridRetrieval,
     RagV2BundleScope,
     RagV2ChannelResult,
-    RagV2RrfFusion,
     RagV2RetrievalCandidate,
     RagV2RetrievalFailureCode,
+    RagV2RrfFusion,
 )
-
 
 PROFILE = "bge_m3_local_1024_v1"
 VOYAGE_PROFILE = "voyage_context_4_1024_v1"
@@ -312,7 +311,9 @@ def test_v2_retrieval_rejects_when_all_channels_have_no_evidence() -> None:
     assert outcome.evidence == ()
 
 
-def test_v2_retrieval_only_permits_external_generation_when_every_top_five_source_allows_it() -> None:
+def test_v2_retrieval_only_permits_external_generation_when_every_top_five_source_allows_it() -> (
+    None
+):
     scope = _scope(owner_generation=False)
     first = _candidate(1, scope, source_scope="EXACT30", external_processing_eligible=True)
     second = _candidate(2, scope, source_scope="OA112", external_processing_eligible=True)
@@ -331,7 +332,9 @@ def test_v2_retrieval_only_permits_external_generation_when_every_top_five_sourc
     assert outcome.external_generation_permitted is True
 
 
-def test_v2_retrieval_uses_separate_public_voyage_and_owner_bge_vectors_without_cross_space_scores() -> None:
+def test_v2_retrieval_uses_separate_public_voyage_and_owner_bge_vectors_without_cross_space_scores() -> (
+    None
+):
     scope = _scope(
         owner_generation=True,
         public_profile=VOYAGE_PROFILE,
@@ -373,7 +376,9 @@ def test_v2_retrieval_uses_separate_public_voyage_and_owner_bge_vectors_without_
     assert dense.calls[0]["owner_query_vector"] == (0.0, 1.0) + (0.0,) * 1022
 
 
-def test_v2_retrieval_keeps_public_internal_document_identity_out_of_the_citation_projection() -> None:
+def test_v2_retrieval_keeps_public_internal_document_identity_out_of_the_citation_projection() -> (
+    None
+):
     scope = _scope(owner_generation=False)
     exact = replace(
         _candidate(1, scope, source_scope="EXACT30"),

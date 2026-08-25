@@ -12,7 +12,6 @@ from app.rag.source_card_v2_contract import (
     validate_source_card_v2_payload,
 )
 
-
 REPO_ROOT = Path(__file__).resolve().parents[5]
 EXAMPLES_ROOT = REPO_ROOT / "contracts/examples"
 
@@ -42,9 +41,7 @@ def test_python_validator_accepts_all_v2_authority_variants(relative_path: str) 
 
 
 def test_python_validator_rejects_every_generated_negative_fixture() -> None:
-    invalid_paths = sorted(
-        (EXAMPLES_ROOT / "invalid").glob("rag-source-card-v2.*.invalid.json")
-    )
+    invalid_paths = sorted((EXAMPLES_ROOT / "invalid").glob("rag-source-card-v2.*.invalid.json"))
     assert len(invalid_paths) >= 24
 
     for invalid_path in invalid_paths:
@@ -55,9 +52,7 @@ def test_python_validator_rejects_every_generated_negative_fixture() -> None:
 
 def test_python_front_matter_parser_rejects_duplicate_yaml_keys() -> None:
     duplicate_fixture = (
-        EXAMPLES_ROOT
-        / "invalid"
-        / "rag-source-card-v2.duplicate-key.invalid.yaml"
+        EXAMPLES_ROOT / "invalid" / "rag-source-card-v2.duplicate-key.invalid.yaml"
     ).read_bytes()
 
     with pytest.raises(RagSourceCardV2ContractError, match="duplicate"):

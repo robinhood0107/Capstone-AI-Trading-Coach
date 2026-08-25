@@ -1,12 +1,16 @@
 import json
 from datetime import date
-from importlib.resources import files
-
 from decimal import Decimal
+from importlib.resources import files
 
 import pytest
 
-from app.data.kis.parsers import KISResponseError, parse_current_price, parse_daily_bars, parse_holidays
+from app.data.kis.parsers import (
+    KISResponseError,
+    parse_current_price,
+    parse_daily_bars,
+    parse_holidays,
+)
 
 FIXTURE_PACKAGE = "app.data.kis.fixtures"
 
@@ -250,7 +254,12 @@ def test_provider_message_is_never_preserved_in_parser_exception() -> None:
 
 def test_committed_kis_fixture_count_reaches_s1_1b_target() -> None:
     # offline mode is a runtime fallback, so count the package the CLI actually loads.
-    assert len([item for item in files(FIXTURE_PACKAGE).iterdir() if item.name.endswith(".json")]) >= 20
+    assert (
+        len([item for item in files(FIXTURE_PACKAGE).iterdir() if item.name.endswith(".json")])
+        >= 20
+    )
+
+
 def test_production_daily_bars_accept_signed_adjustment_rate() -> None:
     """조정 비율의 부호는 조정 방향이며 음수도 실제 데이터다.
 

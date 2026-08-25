@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
@@ -31,6 +32,7 @@ import tools.jackson.databind.ObjectMapper
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 
 // S2.1 wire, owner, CAS, history를 실제 JWT와 PostgreSQL transaction 경계에서 검증한다.
 @Testcontainers
@@ -42,17 +44,22 @@ import java.util.concurrent.TimeUnit
 class PrincipleApiIntegrationTest(
     @Autowired private val webApplicationContext: WebApplicationContext,
     @Autowired private val objectMapper: ObjectMapper,
-    @Autowired private val jdbcTemplate: JdbcTemplate,
+    @Autowired private val applicationDataSource: DataSource,
     @Autowired private val principleRuleJsonCodec: PrincipleRuleJsonCodec,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
+    private val appJdbc by lazy { JdbcTemplate(applicationDataSource) }
+    private val ownerJdbc by lazy {
+        JdbcTemplate(DriverManagerDataSource(postgres.jdbcUrl, postgres.username, postgres.password))
+    }
 
     @BeforeEach
     fun setUp() {
+        check(appJdbc.queryForObject("select current_user", String::class.java) == "decision_app")
         removeAuditFailureTrigger()
-        jdbcTemplate.update("delete from audit_logs where target_type = 'PRINCIPLE'")
-        jdbcTemplate.update("delete from principle_versions")
-        jdbcTemplate.update("delete from principles")
+        ownerJdbc.update("delete from audit_logs where target_type = 'PRINCIPLE'")
+        ownerJdbc.update("delete from principle_versions")
+        ownerJdbc.update("delete from principles")
         mockMvc =
             MockMvcBuilders
                 .webAppContextSetup(webApplicationContext)
@@ -97,7 +104,7 @@ class PrincipleApiIntegrationTest(
 
         val responseItems = json(response).at("/data/items")
         val databaseRules =
-            jdbcTemplate.queryForList(
+            ownerJdbc.queryForList(
                 "select rules_json::text from principle_presets order by display_order",
                 String::class.java,
             )
@@ -168,7 +175,7 @@ class PrincipleApiIntegrationTest(
         assertEquals(
             body.at("/data/rules"),
             objectMapper.readTree(
-                jdbcTemplate.queryForObject(
+                ownerJdbc.queryForObject(
                     "select rules_json::text from principle_versions where principle_id = ? and version = 1",
                     String::class.java,
                     principleId,
@@ -342,7 +349,7 @@ class PrincipleApiIntegrationTest(
         assertEquals(missingHistory.response.contentAsString, crossOwnerHistory.response.contentAsString)
         assertEquals(
             "관리자 원칙",
-            jdbcTemplate.queryForObject(
+            ownerJdbc.queryForObject(
                 "select title from principles where principle_id = ?",
                 String::class.java,
                 adminOwned,
@@ -395,7 +402,7 @@ class PrincipleApiIntegrationTest(
         }
         assertEquals(
             mapOf("title" to "rollback baseline", "current_version" to 1, "status" to "ACTIVE"),
-            jdbcTemplate.queryForMap(
+            ownerJdbc.queryForMap(
                 "select title, current_version, status from principles where principle_id = ?",
                 principleId,
             ),
@@ -445,7 +452,7 @@ class PrincipleApiIntegrationTest(
         assertEquals(2, count("select count(*) from principle_versions where principle_id = ?", principleId))
         assertEquals(
             "PRINCIPLE_ARCHIVED",
-            jdbcTemplate.queryForObject(
+            ownerJdbc.queryForObject(
                 "select action from audit_logs where target_id = ? order by created_at desc limit 1",
                 String::class.java,
                 principleId,
@@ -762,7 +769,7 @@ class PrincipleApiIntegrationTest(
         val created = create(token, "req-terminal-create", createBody("balanced", "terminal base"))
         val body = json(created).at("/data")
         val principleId = body.path("principleId").stringValue()
-        jdbcTemplate.update(
+        ownerJdbc.update(
             """
             insert into principle_versions (
               principle_version_id, principle_id, version, preset_id, title, mode, status,
@@ -777,7 +784,7 @@ class PrincipleApiIntegrationTest(
             objectMapper.writeValueAsString(body.path("rules")),
             principleId,
         )
-        jdbcTemplate.update(
+        ownerJdbc.update(
             "update principles set current_version = ? where principle_id = ?",
             Int.MAX_VALUE,
             principleId,
@@ -885,10 +892,10 @@ class PrincipleApiIntegrationTest(
     private fun count(
         sql: String,
         vararg arguments: Any,
-    ): Int = requireNotNull(jdbcTemplate.queryForObject(sql, Int::class.java, *arguments))
+    ): Int = requireNotNull(ownerJdbc.queryForObject(sql, Int::class.java, *arguments))
 
     private fun installAuditFailureTrigger() {
-        jdbcTemplate.execute(
+        ownerJdbc.execute(
             """
             create or replace function s21_test_fail_principle_audit()
             returns trigger language plpgsql as ${'$'}${'$'}
@@ -901,7 +908,7 @@ class PrincipleApiIntegrationTest(
             ${'$'}${'$'}
             """.trimIndent(),
         )
-        jdbcTemplate.execute(
+        ownerJdbc.execute(
             """
             create trigger s21_test_fail_principle_audit
             before insert on audit_logs
@@ -911,8 +918,8 @@ class PrincipleApiIntegrationTest(
     }
 
     private fun removeAuditFailureTrigger() {
-        jdbcTemplate.execute("drop trigger if exists s21_test_fail_principle_audit on audit_logs")
-        jdbcTemplate.execute("drop function if exists s21_test_fail_principle_audit()")
+        ownerJdbc.execute("drop trigger if exists s21_test_fail_principle_audit on audit_logs")
+        ownerJdbc.execute("drop function if exists s21_test_fail_principle_audit()")
     }
 
     private fun rule(
@@ -947,7 +954,7 @@ class PrincipleApiIntegrationTest(
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(postgresImage)
+            stablePostgresContainer(postgresImage)
                 .withDatabaseName("decision_principle")
                 .withUsername("decision")
                 .withPassword("decision")
@@ -957,10 +964,10 @@ class PrincipleApiIntegrationTest(
         @JvmStatic
         fun postgresProperties(registry: DynamicPropertyRegistry) {
             registry.add("spring.datasource.url", postgres::getJdbcUrl)
-            registry.add("spring.datasource.username", postgres::getUsername)
-            registry.add("spring.datasource.password", postgres::getPassword)
-            registry.add("spring.flyway.user", postgres::getUsername)
-            registry.add("spring.flyway.password", postgres::getPassword)
+            registry.add("spring.datasource.username") { "decision_app" }
+            registry.add("spring.datasource.password") { "app-test" }
+            registry.add("spring.flyway.user") { "flyway" }
+            registry.add("spring.flyway.password") { "flyway-test" }
         }
     }
 }

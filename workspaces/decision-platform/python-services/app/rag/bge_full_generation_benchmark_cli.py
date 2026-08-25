@@ -9,8 +9,9 @@ import resource
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 import onnxruntime as ort  # type: ignore[import-untyped]
 import tokenizers
@@ -244,25 +245,16 @@ def batch_receipt_from_report(report: dict[str, Any]) -> BgeBatchBenchmarkReceip
     benchmark_sha = report.get("benchmarkSha256")
     without_hash = dict(report)
     without_hash.pop("benchmarkSha256", None)
-    if (
-        not isinstance(benchmark_sha, str)
-        or benchmark_sha != _canonical_json_hash(without_hash)
-    ):
+    if not isinstance(benchmark_sha, str) or benchmark_sha != _canonical_json_hash(without_hash):
         raise BgeFullGenerationError("BATCH_REPORT_HASH")
     return BgeBatchBenchmarkReceipt(
         selected_batch_size=int(report["selectedBatchSize"]),
         candidates=_CANDIDATES,
         peak_rss_bytes=tuple(
-            (int(item["batchSize"]), int(item["peakRssBytes"]))
-            for item in results
+            (int(item["batchSize"]), int(item["peakRssBytes"])) for item in results
         ),
-        elapsed_ms=tuple(
-            (int(item["batchSize"]), float(item["elapsedMs"]))
-            for item in results
-        ),
-        environment_fingerprint_sha256=str(
-            report["environmentFingerprintSha256"]
-        ),
+        elapsed_ms=tuple((int(item["batchSize"]), float(item["elapsedMs"])) for item in results),
+        environment_fingerprint_sha256=str(report["environmentFingerprintSha256"]),
         benchmark_sha256=benchmark_sha,
     )
 
@@ -291,8 +283,7 @@ def _total_memory_bytes() -> int:
 
 def _canonical_json_hash(value: object) -> str:
     serialized = (
-        json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-        + "\n"
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
     ).encode("utf-8")
     return hashlib.sha256(serialized).hexdigest()
 

@@ -36,7 +36,9 @@ class _FixtureVoyageEmbedder:
         return vectors
 
 
-def test_external_exact30_voyage_runner_materializes_all_external_cards_in_one_ordered_group_call() -> None:
+def test_external_exact30_voyage_runner_materializes_all_external_cards_in_one_ordered_group_call() -> (
+    None
+):
     corpus = load_external_processing_corpus()
     embedder = _FixtureVoyageEmbedder()
 
@@ -59,7 +61,11 @@ def test_external_exact30_voyage_runner_materializes_all_external_cards_in_one_o
     assert all(
         group.context_set_hash
         and all(chunk.canonical_text == card.canonical_body.strip() for chunk in group.chunks)
-        for group, card in zip(groups, sorted(corpus.cards, key=lambda value: value.source_id.encode("utf-8")), strict=True)
+        for group, card in zip(
+            groups,
+            sorted(corpus.cards, key=lambda value: value.source_id.encode("utf-8")),
+            strict=True,
+        )
     )
     assert all(
         record.document.external_processing_eligible
@@ -84,7 +90,9 @@ def test_external_exact30_voyage_runner_rejects_non_unit_or_partial_provider_out
             *,
             groups: tuple[VoyagePreChunkedDocumentGroup, ...],
         ) -> np.ndarray:
-            return np.zeros((sum(len(group.chunks) for group in groups) - 1, 1024), dtype=np.float32)
+            return np.zeros(
+                (sum(len(group.chunks) for group in groups) - 1, 1024), dtype=np.float32
+            )
 
     with pytest.raises(RagV2ExternalExact30VoyageRunnerError, match="VOYAGE_COMPONENT_EMBEDDING"):
         materialize_external_exact30_public_voyage_component(

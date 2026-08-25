@@ -25,9 +25,9 @@ spring:
     properties:
       hibernate.default_batch_fetch_size: 100
   flyway:
-    locations: classpath:db/migration
+    locations: classpath:db/migration,classpath:db/baseline
     user: flyway
-    password: ${POSTGRES_MIGRATION_PASSWORD}
+    password: ${POSTGRES_MIGRATION_PASSWORD:__MISSING_MIGRATION_PASSWORD__}
     placeholders:
       brokerageDbCapabilityTokenSha256: ${BROKERAGE_DB_CAPABILITY_TOKEN_SHA256}
   data:
@@ -202,8 +202,6 @@ app:
   brokerage:
     idempotency-scope-hmac-key: ${BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY}
     # DB에는 digest만 migration으로 저장하고 raw capability는 prepared bind로만 전달한다.
-    database-capability-token: ${BROKERAGE_DB_CAPABILITY_TOKEN}
-    database-capability-token-sha256: ${BROKERAGE_DB_CAPABILITY_TOKEN_SHA256}
     idempotency-ttl-hours: 24
     paper:
       slippage-bps: 5
@@ -243,10 +241,15 @@ app:
       deployment-mode: ${KAFKA_DEPLOYMENT_MODE:local}
       security-protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
       publish-timeout: PT5S
-  identity:
-    jdbc-url: ${ACTOR_IDENTITY_JDBC_URL:${spring.datasource.url}}
-    username: decision_identity
-    password: ${POSTGRES_IDENTITY_PASSWORD}
+  actor-capability:
+    transport: ${ACTOR_CAPABILITY_TRANSPORT:http}
+    authority-url: ${ACTOR_CAPABILITY_AUTHORITY_URL:http://127.0.0.1:18081/internal/actor-capabilities/issue}
+    shared-secret: ${ACTOR_CAPABILITY_SHARED_SECRET:}
+    public-key: ${ACTOR_CAPABILITY_PUBLIC_KEY:}
+  auth:
+    jdbc-url: ${AUTH_DATABASE_DSN:${spring.datasource.url}}
+    username: decision_auth
+    password: ${POSTGRES_AUTH_PASSWORD}
 
 management:
   endpoints:

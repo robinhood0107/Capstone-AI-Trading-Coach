@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
-from typing import Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.metrics import CalibrationMetrics
-
 
 REASON_PRECEDENCE = (
     "ARTIFACT_DRIFT",

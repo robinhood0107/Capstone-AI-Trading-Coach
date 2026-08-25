@@ -19,7 +19,6 @@ from app.data.gdelt.policy import QueryDefinition
 from app.data.gdelt.storage import publish_observation
 from app.data.gdelt.transport import FixtureResponse, FixtureTransport
 
-
 FIXTURE_ROOT = Path(__file__).with_name("fixtures")
 
 

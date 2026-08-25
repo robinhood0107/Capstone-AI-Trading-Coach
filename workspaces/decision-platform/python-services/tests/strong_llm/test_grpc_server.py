@@ -10,8 +10,8 @@ from google.genai.errors import ClientError
 from pydantic import ValidationError
 
 from app.generated import strong_llm_agent_pb2
-from app.strong_llm.models import StrongLlmAnswer
 from app.strong_llm.grpc_server import StrongLlmAgentServicer, _failure_leaf, _require_bound_port
+from app.strong_llm.models import StrongLlmAnswer
 from tests.strong_llm.test_runtime import FakeProvider
 
 
@@ -59,7 +59,9 @@ def test_grpc_stream_opens_provider_only_after_matching_host_permit() -> None:
             ),
         )
     )
-    events = StrongLlmAgentServicer("s" * 64, lambda _request: provider).Generate(iter(frames), _Context())  # type: ignore[arg-type]
+    events = StrongLlmAgentServicer("s" * 64, lambda _request: provider).Generate(
+        iter(frames), _Context()
+    )  # type: ignore[arg-type]
 
     planned = next(events)
     assert planned.WhichOneof("payload") == "provider_call_planned"
@@ -106,7 +108,13 @@ def test_provider_failure_leaf_keeps_only_http_code_and_status() -> None:
 def test_schema_failure_leaf_keeps_only_type_and_field_path() -> None:
     with pytest.raises(ValidationError) as captured:
         StrongLlmAnswer.model_validate(
-            {"basis": "EVIDENCE", "answer": "answer", "sentences": [], "warnings": [], "secret": "never-log"}
+            {
+                "basis": "EVIDENCE",
+                "answer": "answer",
+                "sentences": [],
+                "warnings": [],
+                "secret": "never-log",
+            }
         )
 
     leaf = _failure_leaf(captured.value)

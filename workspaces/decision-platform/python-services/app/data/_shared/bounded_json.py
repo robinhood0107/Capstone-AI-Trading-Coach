@@ -86,7 +86,7 @@ def parse_bounded_json_bytes(
                 max_keys=limits.max_object_keys,
             ),
         )
-        _validate_value(payload, limits=limits, depth=0)
+        _validate_value(payload, limits=limits, depth=0, remaining_nodes=[limits.max_bytes])
     except BoundedJsonError:
         raise
     except (UnicodeError, json.JSONDecodeError, ValueError, OverflowError):
@@ -259,7 +259,19 @@ def _parse_object_pairs(
     return result
 
 
-def _validate_value(value: object, *, limits: BoundedJsonLimits, depth: int) -> None:
+def _validate_value(
+    value: object,
+    *,
+    limits: BoundedJsonLimits,
+    depth: int,
+    remaining_nodes: list[int],
+) -> None:
+    remaining_nodes[0] -= 1
+    if remaining_nodes[0] < 0:
+        raise BoundedJsonError(
+            "bounded JSON value exceeded the node limit",
+            code="json_limits_exceeded",
+        )
     if depth > limits.max_depth:
         raise BoundedJsonError(
             "bounded JSON value exceeded the depth limit",
@@ -279,7 +291,7 @@ def _validate_value(value: object, *, limits: BoundedJsonLimits, depth: int) -> 
                     code="json_limits_exceeded",
                 )
             _validate_text(key, limits)
-            _validate_value(child, limits=limits, depth=depth + 1)
+            _validate_value(child, limits=limits, depth=depth + 1, remaining_nodes=remaining_nodes)
         return
     if isinstance(value, list):
         items = cast(list[object], value)
@@ -289,7 +301,7 @@ def _validate_value(value: object, *, limits: BoundedJsonLimits, depth: int) -> 
                 code="json_limits_exceeded",
             )
         for child in items:
-            _validate_value(child, limits=limits, depth=depth + 1)
+            _validate_value(child, limits=limits, depth=depth + 1, remaining_nodes=remaining_nodes)
         return
     if isinstance(value, str):
         _validate_text(value, limits)

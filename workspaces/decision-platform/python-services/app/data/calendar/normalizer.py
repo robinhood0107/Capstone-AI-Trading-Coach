@@ -10,7 +10,6 @@ from typing import Any
 from app.data.calendar.models import NormalizedCalendarEvent
 from app.data.calendar.privacy import assert_sanitized_payload
 
-
 CALENDAR_EVENT_TYPES = frozenset(
     {
         "EARNINGS_EXPECTED",

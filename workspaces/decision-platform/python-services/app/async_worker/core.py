@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import hmac
 import re
+from dataclasses import dataclass
 from typing import Any, Protocol
 
-from app.data._shared.bounded_json import BoundedJsonError, BoundedJsonLimits, parse_bounded_json_bytes
-
+from app.data._shared.bounded_json import (
+    BoundedJsonError,
+    BoundedJsonLimits,
+    parse_bounded_json_bytes,
+)
 
 _EVENT_TYPES = {
     "rag.index-requested.v1": "RAG_INDEX",
@@ -88,9 +91,18 @@ class AsyncWorkRepository(Protocol):
     def quarantine(self, work: AsyncWork, code: str, error_class: str) -> bool: ...
 
 
+class AsyncPoisonRecorder(Protocol):
+    def quarantine(self, work: AsyncWork, code: str, error_class: str) -> bool: ...
+
+
 class AsyncWorkProcessor:
-    def __init__(self, repository: AsyncWorkRepository) -> None:
+    def __init__(
+        self,
+        repository: AsyncWorkRepository,
+        poison_recorder: AsyncPoisonRecorder | None = None,
+    ) -> None:
         self._repository = repository
+        self._poison_recorder = poison_recorder or repository
 
     def process(self, work: AsyncWork) -> AsyncWorkResult:
         try:
@@ -106,11 +118,13 @@ class AsyncWorkProcessor:
             raise AsyncRetryableError
         except (AsyncContractError, AsyncPayloadHashConflict) as error:
             conflict = isinstance(error, AsyncPayloadHashConflict)
-            self._repository.quarantine(
+            recorded = self._poison_recorder.quarantine(
                 work,
                 "PAYLOAD_HASH_CONFLICT" if conflict else "INVALID_EVENT_PAYLOAD",
                 "CONTRACT_VIOLATION",
             )
+            if not recorded:
+                return AsyncWorkResult("FAILED", failure_code="POISON_RECEIPT_UNAVAILABLE")
             return AsyncWorkResult(
                 "NEEDS_REVIEW",
                 failure_code="PAYLOAD_HASH_CONFLICT" if conflict else "INVALID_EVENT_PAYLOAD",
@@ -132,16 +146,22 @@ def validate_work(work: AsyncWork) -> dict[str, str]:
         or work.transport not in {"DB", "KAFKA"}
         or work.attempt not in {1, 2, 3}
         or (work.source_topic is not None and work.source_topic != work.event_type)
-        or (work.transport == "KAFKA" and (
-            work.source_partition is None
-            or work.source_partition not in range(0, 1024)
-            or work.source_offset is None
-            or work.source_offset < 0
-        ))
+        or (
+            work.transport == "KAFKA"
+            and (
+                work.source_partition is None
+                or work.source_partition not in range(1024)
+                or work.source_offset is None
+                or work.source_offset < 0
+            )
+        )
         or work.partition_key is None
         or _PARTITION_KEY.fullmatch(work.partition_key) is None
         or len(work.payload_json) > 32_768
-        or (work.transport == "DB" and (work.claim_token is None or not _TOKEN.fullmatch(work.claim_token)))
+        or (
+            work.transport == "DB"
+            and (work.claim_token is None or not _TOKEN.fullmatch(work.claim_token))
+        )
         or (work.claim_token is not None and not _TOKEN.fullmatch(work.claim_token))
     ):
         raise AsyncContractError
@@ -168,7 +188,9 @@ def validate_work(work: AsyncWork) -> dict[str, str]:
         raise AsyncContractError
     if not required.issubset(payload):
         raise AsyncContractError
-    if any(not isinstance(key, str) or not isinstance(value, str) for key, value in payload.items()):
+    if any(
+        not isinstance(key, str) or not isinstance(value, str) for key, value in payload.items()
+    ):
         raise AsyncContractError
     return payload
 
@@ -208,5 +230,7 @@ def _validate_json(value: Any, *, depth: int, counts: dict[str, int]) -> None:
 
 
 def _result_ref(work: AsyncWork) -> str:
-    digest = hashlib.sha256(f"{work.event_id}|{work.job_id}|{work.payload_hash}".encode()).hexdigest()
+    digest = hashlib.sha256(
+        f"{work.event_id}|{work.job_id}|{work.payload_hash}".encode()
+    ).hexdigest()
     return f"async_result_{digest[:32]}"

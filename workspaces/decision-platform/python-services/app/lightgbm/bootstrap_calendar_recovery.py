@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
+import stat
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime
-import hashlib
 from io import BytesIO
-import os
 from pathlib import Path
-import stat
-from typing import Mapping, Sequence, cast
+from typing import cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -25,14 +26,14 @@ from app.lightgbm.bootstrap_executor import provider_query_sha256
 from app.lightgbm.bootstrap_journal import (
     JOURNAL_FILENAME,
     MAX_JOURNAL_BYTES,
+    SUPERSEDED_CONSUMED,
     BootstrapJournal,
     JournalAttempt,
-    SUPERSEDED_CONSUMED,
     build_recovery_journal_bytes,
 )
 from app.lightgbm.bootstrap_packet import (
-    _author_bootstrap_packet,
     BootstrapPacket,
+    _author_bootstrap_packet,
     author_bootstrap_packet,
     author_recovery_bootstrap_packet,
     validate_bootstrap_packet,
@@ -46,24 +47,23 @@ from app.lightgbm.pit_calendar import (
     calendar_for_corrections,
     corrections_for_sha256,
 )
+from app.lightgbm.private_root import (
+    acquire_run_lock,
+    release_run_lock,
+    require_private_root,
+)
 from app.lightgbm.production_policy import (
     MAX_KIS_SUPERSEDED_ALLOWANCE,
     MAX_KIS_TOKEN_SUPERSEDED_ALLOWANCE,
     MAX_KRX_SUPERSEDED_ALLOWANCE,
 )
 from app.lightgbm.source_bundle import expected_projection_fields
-from app.lightgbm.private_root import (
-    acquire_run_lock,
-    release_run_lock,
-    require_private_root,
-)
 from app.lightgbm.temporal import next_session_evidence_clock
 from app.rag.safe_io import (
     RagSafeIoError,
     read_approved_regular_file,
     write_approved_new_file,
 )
-
 
 RECOVERY_VERSION = "s5-bootstrap-calendar-recovery-v1"
 RECOVERY_BINDING_VERSION = "s5-bootstrap-calendar-recovery-binding-v1"
@@ -227,16 +227,10 @@ def assess_bootstrap_calendar_recovery(
         # KRX 논리 집합은 packet에서 유도되지만 KIS query는 KRX 데이터에서 파생된 union과
         # paging cursor에 달려 있어 정적으로 열거할 수 없다. 그래서 KRX는 교정 집합과
         # 대조하고, KIS는 성공 chunk 신원만 그대로 이관한다.
-        attempts = tuple(
-            attempt for attempt in journal.attempts if attempt.provider == "KRX"
-        )
-        kis_attempts = tuple(
-            attempt for attempt in journal.attempts if attempt.provider == "KIS"
-        )
+        attempts = tuple(attempt for attempt in journal.attempts if attempt.provider == "KRX")
+        kis_attempts = tuple(attempt for attempt in journal.attempts if attempt.provider == "KIS")
         if not attempts or len(attempts) + len(kis_attempts) != len(journal.attempts):
-            raise LightGbmContractError(
-                "recovery requires a KRX-led KRX/KIS attempt prefix"
-            )
+            raise LightGbmContractError("recovery requires a KRX-led KRX/KIS attempt prefix")
         kis_adopted = tuple(
             attempt
             for attempt in kis_attempts
@@ -282,23 +276,15 @@ def assess_bootstrap_calendar_recovery(
             or failed_query.session_date not in S5_ADHOC_CLOSED_SESSIONS
             or failed_query.sha256 in corrected_by_hash
         ):
-            raise LightGbmContractError(
-                "failed KRX query is not an approved calendar correction"
-            )
+            raise LightGbmContractError("failed KRX query is not an approved calendar correction")
 
         succeeded = {
-            attempt.query_sha256: attempt
-            for attempt in attempts
-            if attempt.state == "SUCCEEDED"
+            attempt.query_sha256: attempt for attempt in attempts if attempt.state == "SUCCEEDED"
         }
-        if len(succeeded) != sum(
-            attempt.state == "SUCCEEDED" for attempt in attempts
-        ):
+        if len(succeeded) != sum(attempt.state == "SUCCEEDED" for attempt in attempts):
             raise LightGbmContractError("successful KRX query identity is duplicated")
         reusable_attempts = tuple(
-            succeeded[query.sha256]
-            for query in corrected_queries
-            if query.sha256 in succeeded
+            succeeded[query.sha256] for query in corrected_queries if query.sha256 in succeeded
         )
         reusable_hashes = {attempt.query_sha256 for attempt in reusable_attempts}
         temporal_rebindings = 0
@@ -355,14 +341,10 @@ def assess_bootstrap_calendar_recovery(
                 superseded=kis_superseded,
                 kis_allowance=kis_allowance,
                 kis_token_allowance=kis_token_allowance,
-                approved_kis_max_get=(
-                    corrected_base.budget.kis_get + kis_allowance
-                ),
+                approved_kis_max_get=(corrected_base.budget.kis_get + kis_allowance),
             ),
         )
-        recovery_binding_sha256 = hashlib.sha256(
-            canonical_json_bytes(binding_payload)
-        ).hexdigest()
+        recovery_binding_sha256 = hashlib.sha256(canonical_json_bytes(binding_payload)).hexdigest()
         corrected = author_recovery_bootstrap_packet(
             cutoff=prior.window.cutoff,
             recovery_binding_sha256=recovery_binding_sha256,
@@ -379,14 +361,10 @@ def assess_bootstrap_calendar_recovery(
             "correctedPacketSha256": corrected.sha256,
             "calendarPolicyVersion": S5_CALENDAR_POLICY_VERSION,
             "calendarCorrectionSetSha256": S5_CALENDAR_CORRECTION_SET_SHA256,
-            "correctionSessions": [
-                day.isoformat() for day in S5_ADHOC_CLOSED_SESSIONS
-            ],
+            "correctionSessions": [day.isoformat() for day in S5_ADHOC_CLOSED_SESSIONS],
             "failedQuerySha256": failed_query.sha256 if failed_query else "",
             "failedOperationId": failed_query.service if failed_query else "",
-            "failedSessionDate": (
-                failed_query.session_date.isoformat() if failed_query else ""
-            ),
+            "failedSessionDate": (failed_query.session_date.isoformat() if failed_query else ""),
             "supersededQueries": [dict(item) for item in superseded_queries],
             "consumedKrxPhysicalCalls": consumed_krx,
             "reusableSuccessfulChunks": len(reusable_attempts),
@@ -465,8 +443,7 @@ def validate_recovery_receipt(
         raise LightGbmContractError("calendar recovery block JSON is invalid") from error
     if (
         not isinstance(value, dict)
-        or set(value)
-        not in ({_RECOVERY_FIELDS, _RECOVERY_FIELDS | _KIS_RECOVERY_FIELDS})
+        or set(value) not in ({_RECOVERY_FIELDS, _RECOVERY_FIELDS | _KIS_RECOVERY_FIELDS})
         or canonical_json_bytes(value) != content
     ):
         raise LightGbmContractError("calendar recovery block is not closed canonical JSON")
@@ -510,8 +487,7 @@ def validate_recovery_receipt(
         or corrected_packet.lineage_mode != "CALENDAR_RECOVERY"
         or corrected_packet.recovery_binding_sha256 is None
         or corrected_packet.calendar_policy_version != S5_CALENDAR_POLICY_VERSION
-        or corrected_packet.calendar_correction_set_sha256
-        != S5_CALENDAR_CORRECTION_SET_SHA256
+        or corrected_packet.calendar_correction_set_sha256 != S5_CALENDAR_CORRECTION_SET_SHA256
         or corrected_packet.budget.krx_get
         != expected_query_count + corrected_packet.budget.krx_superseded_allowance
     ):
@@ -520,34 +496,25 @@ def validate_recovery_receipt(
         payload["recoveryVersion"] != RECOVERY_VERSION
         or payload["status"] not in {"CAPACITY_EXHAUSTED", "READY_TO_SUPERSEDE"}
         or payload["correctedPacketSha256"] != corrected_packet.sha256
-        or payload["recoveryBindingSha256"]
-        != corrected_packet.recovery_binding_sha256
+        or payload["recoveryBindingSha256"] != corrected_packet.recovery_binding_sha256
         or payload["calendarPolicyVersion"] != S5_CALENDAR_POLICY_VERSION
-        or payload["calendarCorrectionSetSha256"]
-        != S5_CALENDAR_CORRECTION_SET_SHA256
+        or payload["calendarCorrectionSetSha256"] != S5_CALENDAR_CORRECTION_SET_SHA256
         or corrections != [day.isoformat() for day in S5_ADHOC_CLOSED_SESSIONS]
         or payload["approvedKrxMaxGet"] != corrected_packet.budget.krx_get
-        or payload["reusableSuccessfulChunks"]
-        + payload["supersededConsumedCalls"]
+        or payload["reusableSuccessfulChunks"] + payload["supersededConsumedCalls"]
         != payload["consumedKrxPhysicalCalls"]
-        or payload["reusableSuccessfulChunks"]
-        + payload["missingRequiredKrxQueries"]
+        or payload["reusableSuccessfulChunks"] + payload["missingRequiredKrxQueries"]
         != expected_query_count
         or payload["projectedKrxPhysicalCalls"]
-        != payload["consumedKrxPhysicalCalls"]
-        + payload["missingRequiredKrxQueries"]
-        or payload["temporalReceiptsToRebind"]
-        > payload["reusableSuccessfulChunks"]
+        != payload["consumedKrxPhysicalCalls"] + payload["missingRequiredKrxQueries"]
+        or payload["temporalReceiptsToRebind"] > payload["reusableSuccessfulChunks"]
         or payload["providerCallsDuringRecovery"] != 0
-        or payload["krxSupersededAllowance"]
-        != corrected_packet.budget.krx_superseded_allowance
-        or payload["krxSupersededAllowance"]
-        not in (0, payload["supersededConsumedCalls"])
+        or payload["krxSupersededAllowance"] != corrected_packet.budget.krx_superseded_allowance
+        or payload["krxSupersededAllowance"] not in (0, payload["supersededConsumedCalls"])
     ):
         raise LightGbmContractError("calendar recovery block authority is invalid")
     if kis_declared and (
-        payload["kisSupersededAllowance"]
-        != corrected_packet.budget.kis_superseded_allowance
+        payload["kisSupersededAllowance"] != corrected_packet.budget.kis_superseded_allowance
         or payload["kisTokenSupersededAllowance"]
         != corrected_packet.budget.kis_token_superseded_allowance
         or payload["approvedKisMaxGet"] != corrected_packet.budget.kis_get
@@ -584,12 +551,8 @@ def validate_recovery_receipt(
         try:
             date.fromisoformat(str(item["sessionDate"]))
         except ValueError:
-            raise LightGbmContractError(
-                "calendar recovery superseded session is invalid"
-            ) from None
-    if superseded_queries != sorted(
-        superseded_queries, key=lambda item: str(item["querySha256"])
-    ):
+            raise LightGbmContractError("calendar recovery superseded session is invalid") from None
+    if superseded_queries != sorted(superseded_queries, key=lambda item: str(item["querySha256"])):
         raise LightGbmContractError("calendar recovery superseded query order is invalid")
     failed_digest = str(payload["failedQuerySha256"])
     failed_operation = str(payload["failedOperationId"])
@@ -616,9 +579,7 @@ def validate_recovery_receipt(
         try:
             failed_session = date.fromisoformat(failed_date)
         except ValueError:
-            raise LightGbmContractError(
-                "calendar recovery failed session is invalid"
-            ) from None
+            raise LightGbmContractError("calendar recovery failed session is invalid") from None
         if (
             failed_session.isoformat() != failed_date
             or failed_session not in S5_ADHOC_CLOSED_SESSIONS
@@ -637,18 +598,14 @@ def validate_recovery_receipt(
         projected_krx_physical_calls=int(payload["projectedKrxPhysicalCalls"]),
         approved_krx_max_get=int(payload["approvedKrxMaxGet"]),
         krx_superseded_allowance=int(payload["krxSupersededAllowance"]),
-        superseded_queries=tuple(
-            cast(Mapping[str, str], item) for item in superseded_queries
-        ),
+        superseded_queries=tuple(cast(Mapping[str, str], item) for item in superseded_queries),
         kis=(
             {field: payload[field] for field in sorted(_KIS_RECOVERY_FIELDS)}
             if kis_declared
             else {}
         ),
     )
-    recomputed_binding = hashlib.sha256(
-        canonical_json_bytes(binding_payload)
-    ).hexdigest()
+    recomputed_binding = hashlib.sha256(canonical_json_bytes(binding_payload)).hexdigest()
     if recomputed_binding != corrected_packet.recovery_binding_sha256:
         raise LightGbmContractError("calendar recovery binding preimage is invalid")
     return payload
@@ -674,9 +631,7 @@ def materialize_recovery_adoption(
         )
         if progress.content_sha256 != recovery.prior_progress_sha256:
             raise LightGbmContractError("prior bootstrap progress changed after assessment")
-        journal = BootstrapJournal(
-            prior_source_root, policy_corrections=recovery.prior_corrections
-        )
+        journal = BootstrapJournal(prior_source_root, policy_corrections=recovery.prior_corrections)
         if journal.attempts != (
             *recovery.reusable_attempts,
             *recovery.kis_adopted_attempts,
@@ -684,9 +639,7 @@ def materialize_recovery_adoption(
             *recovery.kis_superseded_attempts,
         ):
             # Assessment keeps reusable queries in corrected order, so compare identities as sets below.
-            assessed = {
-                (item.ordinal, item.query_sha256, item.state) for item in journal.attempts
-            }
+            assessed = {(item.ordinal, item.query_sha256, item.state) for item in journal.attempts}
             expected = {
                 (item.ordinal, item.query_sha256, item.state)
                 for item in (
@@ -697,9 +650,7 @@ def materialize_recovery_adoption(
                 )
             }
             if assessed != expected:
-                raise LightGbmContractError(
-                    "prior bootstrap attempts changed after assessment"
-                )
+                raise LightGbmContractError("prior bootstrap attempts changed after assessment")
 
         run_root = approved_root / f"run-{recovery.corrected_packet.sha256}"
         source_root = run_root / "source"
@@ -710,18 +661,14 @@ def materialize_recovery_adoption(
         try:
             adopted: list[JournalAttempt] = []
             expected_chunk_files: set[str] = set()
-            corrected_by_hash = _unique_by_hash(
-                _expected_krx_queries(recovery.corrected_packet)
-            )
+            corrected_by_hash = _unique_by_hash(_expected_krx_queries(recovery.corrected_packet))
             for ordinal, old_attempt in enumerate(
                 recovery.reusable_attempts,
                 start=1,
             ):
                 query = corrected_by_hash.get(old_attempt.query_sha256)
                 if query is None:
-                    raise LightGbmContractError(
-                        "reusable KRX query is outside corrected packet"
-                    )
+                    raise LightGbmContractError("reusable KRX query is outside corrected packet")
                 _validate_reusable_chunk(
                     source_root=prior_source_root,
                     attempt=old_attempt,
@@ -737,9 +684,7 @@ def materialize_recovery_adoption(
                 )
                 if source_file.content_sha256 != old_chunk.content_sha256:
                     raise LightGbmContractError("reusable KRX chunk changed during adoption")
-                new_clock = next_session_evidence_clock(
-                    old_chunk.temporal.observation_date
-                )
+                new_clock = next_session_evidence_clock(old_chunk.temporal.observation_date)
                 new_chunk = replace(
                     old_chunk,
                     temporal=replace(
@@ -765,9 +710,7 @@ def materialize_recovery_adoption(
                     )
                 )
             for old_attempt in recovery.kis_adopted_attempts:
-                _validate_reusable_kis_chunk(
-                    source_root=prior_source_root, attempt=old_attempt
-                )
+                _validate_reusable_kis_chunk(source_root=prior_source_root, attempt=old_attempt)
                 old_chunk = old_attempt.chunk
                 if old_chunk is None:
                     raise LightGbmContractError("reusable KIS chunk receipt is missing")
@@ -831,9 +774,7 @@ def materialize_recovery_adoption(
                 "priorPacketSha256": recovery.prior_packet_sha256,
                 "priorProgressSha256": recovery.prior_progress_sha256,
                 "adoptedProgressSha256": hashlib.sha256(journal_content).hexdigest(),
-                "adoptedSuccessfulChunks": (
-                    len(adopted) - len(recovery.kis_adopted_attempts)
-                ),
+                "adoptedSuccessfulChunks": (len(adopted) - len(recovery.kis_adopted_attempts)),
                 "supersededConsumedCalls": len(recovery.superseded_attempts),
                 "consumedKrxPhysicalCalls": (
                     len(adopted)
@@ -843,18 +784,13 @@ def materialize_recovery_adoption(
                 "providerCallsDuringAdoption": 0,
                 **(
                     {
-                        "adoptedKisSuccessfulChunks": len(
-                            recovery.kis_adopted_attempts
-                        ),
-                        "supersededKisConsumedCalls": len(
-                            recovery.kis_superseded_attempts
-                        ),
+                        "adoptedKisSuccessfulChunks": len(recovery.kis_adopted_attempts),
+                        "supersededKisConsumedCalls": len(recovery.kis_superseded_attempts),
                         "consumedPhysicalCalls": len(adopted)
                         + len(recovery.superseded_attempts)
                         + len(recovery.kis_superseded_attempts),
                     }
-                    if recovery.kis_adopted_attempts
-                    or recovery.kis_superseded_attempts
+                    if recovery.kis_adopted_attempts or recovery.kis_superseded_attempts
                     else {}
                 ),
             }
@@ -876,23 +812,16 @@ def materialize_recovery_adoption(
         release_run_lock(prior_lock)
 
 
-def validate_recovery_execution_authority(
-    *, approved_root: Path, packet: BootstrapPacket
-) -> str:
+def validate_recovery_execution_authority(*, approved_root: Path, packet: BootstrapPacket) -> str:
     """Recovery packet이면 receipt·adoption journal이 모두 결속돼야 client 생성을 허용한다."""
 
     if packet.lineage_mode == "FRESH":
         return "FRESH"
-    if (
-        packet.lineage_mode != "CALENDAR_RECOVERY"
-        or packet.recovery_binding_sha256 is None
-    ):
+    if packet.lineage_mode != "CALENDAR_RECOVERY" or packet.recovery_binding_sha256 is None:
         raise LightGbmContractError("bootstrap recovery lineage is unavailable")
     receipt_file = read_approved_regular_file(
         approved_root=approved_root,
-        relative_path=(
-            f"calendar-recovery-binding-{packet.recovery_binding_sha256}.json"
-        ),
+        relative_path=(f"calendar-recovery-binding-{packet.recovery_binding_sha256}.json"),
         max_bytes=64 * 1024,
     )
     source_root = approved_root / f"run-{packet.sha256}" / "source"
@@ -931,24 +860,16 @@ def validate_recovery_execution_authority(
     prefix_attempts = journal.attempts[:consumed_total]
     if any(item.provider not in {"KRX", "KIS"} for item in prefix_attempts):
         raise LightGbmContractError("adopted bootstrap provider is not approved")
-    adopted_attempts = tuple(
-        item for item in prefix_attempts if item.provider == "KRX"
-    )
+    adopted_attempts = tuple(item for item in prefix_attempts if item.provider == "KRX")
     kis_attempts = tuple(item for item in prefix_attempts if item.provider == "KIS")
     kis_adopted = tuple(
-        item
-        for item in kis_attempts
-        if item.state == "SUCCEEDED" and item.chunk is not None
+        item for item in kis_attempts if item.state == "SUCCEEDED" and item.chunk is not None
     )
     kis_superseded = tuple(
-        item
-        for item in kis_attempts
-        if not (item.state == "SUCCEEDED" and item.chunk is not None)
+        item for item in kis_attempts if not (item.state == "SUCCEEDED" and item.chunk is not None)
     )
     adopted = tuple(item for item in adopted_attempts if item.state == "SUCCEEDED")
-    superseded = tuple(
-        item for item in adopted_attempts if item.state == SUPERSEDED_CONSUMED
-    )
+    superseded = tuple(item for item in adopted_attempts if item.state == SUPERSEDED_CONSUMED)
     expected_by_hash = _unique_by_hash(_expected_krx_queries(packet))
     expected_hashes = set(expected_by_hash)
     adopted_hashes = {item.query_sha256 for item in adopted}
@@ -964,9 +885,7 @@ def validate_recovery_execution_authority(
     }
     kis_identities = {
         (str(item["querySha256"]), str(item["operationId"]))
-        for item in cast(
-            list[Mapping[str, str]], receipt.get("supersededKisQueries", [])
-        )
+        for item in cast(list[Mapping[str, str]], receipt.get("supersededKisQueries", []))
     }
     if (
         len(kis_adopted) != receipt.get("adoptedKisSuccessfulChunks", 0)
@@ -974,12 +893,10 @@ def validate_recovery_execution_authority(
         or len(kis_adopted) != lineage.get("adoptedKisSuccessfulChunks", 0)
         or len(kis_superseded) != lineage.get("supersededKisConsumedCalls", 0)
         or any(
-            (item.query_sha256, item.operation_id) not in kis_identities
-            for item in kis_superseded
+            (item.query_sha256, item.operation_id) not in kis_identities for item in kis_superseded
         )
         or len({item.query_sha256 for item in kis_adopted}) != len(kis_adopted)
-        or packet.budget.kis_superseded_allowance
-        + packet.budget.kis_token_superseded_allowance
+        or packet.budget.kis_superseded_allowance + packet.budget.kis_token_superseded_allowance
         != len(kis_superseded)
     ):
         raise LightGbmContractError("adopted KIS journal accounting is invalid")
@@ -990,8 +907,7 @@ def validate_recovery_execution_authority(
         or len(adopted) != lineage["adoptedSuccessfulChunks"]
         or len(superseded) != lineage["supersededConsumedCalls"]
         or adopted_hashes.difference(expected_hashes)
-        or len(expected_hashes.difference(adopted_hashes))
-        != receipt["missingRequiredKrxQueries"]
+        or len(expected_hashes.difference(adopted_hashes)) != receipt["missingRequiredKrxQueries"]
         or any(
             (item.query_sha256, item.operation_id) not in superseded_identities
             for item in superseded
@@ -1090,14 +1006,11 @@ def validate_recovery_lineage(
         != payload["consumedKrxPhysicalCalls"]
         + payload["adoptedKisSuccessfulChunks"]
         + payload["supersededKisConsumedCalls"]
-        or payload["adoptedKisSuccessfulChunks"]
-        + payload["supersededKisConsumedCalls"]
-        < 1
+        or payload["adoptedKisSuccessfulChunks"] + payload["supersededKisConsumedCalls"] < 1
     ):
         raise LightGbmContractError("calendar recovery KIS lineage count is invalid")
     if not kis_declared and (
-        packet.budget.kis_superseded_allowance
-        or packet.budget.kis_token_superseded_allowance
+        packet.budget.kis_superseded_allowance or packet.budget.kis_token_superseded_allowance
     ):
         raise LightGbmContractError("calendar recovery KIS lineage is undeclared")
     return payload
@@ -1115,9 +1028,7 @@ def _expected_krx_queries(packet: BootstrapPacket) -> tuple[KrxQuery, ...]:
 
 
 def _krx_query(service: str, session: date) -> KrxQuery:
-    digest = provider_query_sha256(
-        {"service": service, "basDd": session.strftime("%Y%m%d")}
-    )
+    digest = provider_query_sha256({"service": service, "basDd": session.strftime("%Y%m%d")})
     return KrxQuery(service, session, digest)
 
 
@@ -1162,10 +1073,7 @@ def _validate_reusable_chunk(
         )
     except RagSafeIoError as error:
         raise LightGbmContractError("reusable KRX chunk file is invalid") from error
-    if (
-        len(payload.content) != chunk.byte_count
-        or payload.content_sha256 != chunk.content_sha256
-    ):
+    if len(payload.content) != chunk.byte_count or payload.content_sha256 != chunk.content_sha256:
         raise LightGbmContractError("reusable KRX chunk digest is invalid")
     try:
         parquet = pq.ParquetFile(  # type: ignore[no-untyped-call]
@@ -1182,16 +1090,9 @@ def _validate_reusable_chunk(
             or tuple(parquet.schema_arrow.names) != expected_fields
             or parquet.schema_arrow.metadata
         ):
-            raise LightGbmContractError(
-                "reusable KRX Parquet footer or schema is invalid"
-            )
-        if any(
-            field.type != pa.string() or field.nullable
-            for field in parquet.schema_arrow
-        ):
-            raise LightGbmContractError(
-                "reusable KRX Parquet fields must be non-null strings"
-            )
+            raise LightGbmContractError("reusable KRX Parquet footer or schema is invalid")
+        if any(field.type != pa.string() or field.nullable for field in parquet.schema_arrow):
+            raise LightGbmContractError("reusable KRX Parquet fields must be non-null strings")
         rows = 0
         expected_provider_date = query.session_date.strftime("%Y%m%d")
         for batch in parquet.iter_batches(batch_size=8_192, use_threads=False):  # type: ignore[no-untyped-call]
@@ -1199,19 +1100,13 @@ def _validate_reusable_chunk(
             if "BAS_DD" in expected_fields:
                 date_values = batch.column(expected_fields.index("BAS_DD")).to_pylist()
                 if any(value != expected_provider_date for value in date_values):
-                    raise LightGbmContractError(
-                        "reusable KRX Parquet row date mismatches query"
-                    )
+                    raise LightGbmContractError("reusable KRX Parquet row date mismatches query")
         if rows != chunk.row_count:
-            raise LightGbmContractError(
-                "reusable KRX Parquet actual row count is invalid"
-            )
+            raise LightGbmContractError("reusable KRX Parquet actual row count is invalid")
     except LightGbmContractError:
         raise
     except Exception as error:
-        raise LightGbmContractError(
-            "reusable KRX chunk is not valid bounded Parquet"
-        ) from error
+        raise LightGbmContractError("reusable KRX chunk is not valid bounded Parquet") from error
 
 
 def _generation_query_identities(
@@ -1313,10 +1208,7 @@ def _kis_binding_block(
         "supersededKisQueries": [
             {"querySha256": digest, "operationId": operation}
             for digest, operation in sorted(
-                {
-                    (attempt.query_sha256, attempt.operation_id)
-                    for attempt in superseded
-                }
+                {(attempt.query_sha256, attempt.operation_id) for attempt in superseded}
             )
         ],
         "kisSupersededAllowance": kis_allowance,
@@ -1347,9 +1239,7 @@ def _validate_superseded_kis_queries(value: object, *, max_count: int) -> None:
         raise LightGbmContractError("recovery superseded KIS query order is invalid")
 
 
-def _validate_reusable_kis_chunk(
-    *, source_root: Path, attempt: JournalAttempt
-) -> None:
+def _validate_reusable_kis_chunk(*, source_root: Path, attempt: JournalAttempt) -> None:
     """KIS chunk는 논리 query가 KRX 데이터에서 파생되므로 receipt 자기정합성만 검증한다.
 
     Query 신원은 chunk receipt와 journal intent에 이미 결속돼 있어 다른 응답으로 바꿀 수 없고,
@@ -1381,10 +1271,7 @@ def _validate_reusable_kis_chunk(
         )
     except RagSafeIoError as error:
         raise LightGbmContractError("reusable KIS chunk file is invalid") from error
-    if (
-        len(payload.content) != chunk.byte_count
-        or payload.content_sha256 != chunk.content_sha256
-    ):
+    if len(payload.content) != chunk.byte_count or payload.content_sha256 != chunk.content_sha256:
         raise LightGbmContractError("reusable KIS chunk digest is invalid")
     try:
         parquet = pq.ParquetFile(  # type: ignore[no-untyped-call]
@@ -1402,10 +1289,7 @@ def _validate_reusable_kis_chunk(
             or parquet.schema_arrow.metadata
         ):
             raise LightGbmContractError("reusable KIS Parquet footer or schema is invalid")
-        if any(
-            field.type != pa.string() or field.nullable
-            for field in parquet.schema_arrow
-        ):
+        if any(field.type != pa.string() or field.nullable for field in parquet.schema_arrow):
             raise LightGbmContractError("reusable KIS Parquet fields must be non-null strings")
         rows = 0
         for batch in parquet.iter_batches(batch_size=8_192, use_threads=False):  # type: ignore[no-untyped-call]
@@ -1415,9 +1299,7 @@ def _validate_reusable_kis_chunk(
     except LightGbmContractError:
         raise
     except Exception as error:
-        raise LightGbmContractError(
-            "reusable KIS chunk is not valid bounded Parquet"
-        ) from error
+        raise LightGbmContractError("reusable KIS chunk is not valid bounded Parquet") from error
 
 
 def _ensure_private_directory(path: Path) -> None:

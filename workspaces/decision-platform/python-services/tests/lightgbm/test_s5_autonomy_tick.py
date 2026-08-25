@@ -42,7 +42,9 @@ def test_materializing_tick_advances_to_qualifying(
     root = _run_root(tmp_path)
     monkeypatch.setattr(tick_cli, "_collect", lambda **_: None)
     code = tick_cli._run_phase(
-        run_root=root, packet=None, state=initial_run_state()  # type: ignore[arg-type]
+        run_root=root,
+        packet=None,
+        state=initial_run_state(),  # type: ignore[arg-type]
     )
     assert code == tick_cli.EXIT_PROGRESS
     assert read_run_state(run_root=root).phase is RunPhase.QUALIFYING
@@ -64,9 +66,7 @@ def test_qualifying_tick_reaches_serving_even_when_the_gate_fails(
         phase=RunPhase.QUALIFYING,
         outcome="BUNDLE_SEALED",
     )
-    monkeypatch.setattr(
-        tick_cli, "_qualify", lambda **_: "QUALIFICATION_CALIBRATION_FAILED"
-    )
+    monkeypatch.setattr(tick_cli, "_qualify", lambda **_: "QUALIFICATION_CALIBRATION_FAILED")
     code = tick_cli._run_phase(run_root=root, packet=None, state=state)  # type: ignore[arg-type]
     assert code == tick_cli.EXIT_PROGRESS
     updated = read_run_state(run_root=root)
@@ -113,7 +113,9 @@ def test_retryable_and_evidence_gap_stay_in_phase(
 
     monkeypatch.setattr(tick_cli, "_collect", _raise)
     code = tick_cli._run_phase(
-        run_root=root, packet=None, state=initial_run_state()  # type: ignore[arg-type]
+        run_root=root,
+        packet=None,
+        state=initial_run_state(),  # type: ignore[arg-type]
     )
     assert code == tick_cli.EXIT_NO_PROGRESS
     updated = read_run_state(run_root=root)
@@ -141,7 +143,9 @@ def test_budget_and_contract_failures_stop_for_a_human(
 
     monkeypatch.setattr(tick_cli, "_collect", _raise)
     code = tick_cli._run_phase(
-        run_root=root, packet=None, state=initial_run_state()  # type: ignore[arg-type]
+        run_root=root,
+        packet=None,
+        state=initial_run_state(),  # type: ignore[arg-type]
     )
     assert code == tick_cli.EXIT_NEEDS_HUMAN
     assert read_run_state(run_root=root).needs_human
@@ -151,10 +155,13 @@ def test_exit_codes_are_distinct(tmp_path: Path) -> None:
     """스케줄러가 진척·무진척·사람 필요를 구분해야 watchdog이 조용할 수 있다."""
 
     del tmp_path
-    assert len(
-        {
-            tick_cli.EXIT_PROGRESS,
-            tick_cli.EXIT_NO_PROGRESS,
-            tick_cli.EXIT_NEEDS_HUMAN,
-        }
-    ) == 3
+    assert (
+        len(
+            {
+                tick_cli.EXIT_PROGRESS,
+                tick_cli.EXIT_NO_PROGRESS,
+                tick_cli.EXIT_NEEDS_HUMAN,
+            }
+        )
+        == 3
+    )

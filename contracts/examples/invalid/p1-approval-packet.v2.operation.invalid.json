@@ -1,0 +1,26 @@
+{
+  "allowedOperations": [
+    "ECOS_KRW_USD_DAILY",
+    "ECOS_POLICY_RATE_DAILY",
+    "KIS_DAILY_BAR",
+    "KIS_CURRENT_PRICE",
+    "KRX_KOSDAQ_DAILY",
+    "KRX_KOSPI_DAILY"
+  ],
+  "approvalId": "P1.V2-20260823-READ-SMOKE",
+  "contractId": "p1-approval-packet.v2",
+  "expiresAt": "2026-08-23T09:05:00Z",
+  "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "issuerKeyId": "P1.DEMO.2026",
+  "nonce": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "physicalCallCap": 7,
+  "reasonCode": "P1_READ_SMOKE",
+  "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "target": {
+    "ecosFrom": "2026-07-25",
+    "ecosTo": "2026-08-23",
+    "sessionDate": "2026-08-23",
+    "symbol": "005930"
+  },
+  "treeSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+}

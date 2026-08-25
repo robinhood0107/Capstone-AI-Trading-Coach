@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 import pytest
 
@@ -264,8 +264,8 @@ def test_fixture_source_check_rejects_invalid_peer_status_length_and_body_shapes
         ("application/json", b'{"status":"ok"}'),
         ("application/pdf", b"%PDF-1.7 fixture"),
         ("text/html", b"<html><body>fixture</body></html>"),
-        ("text/markdown", "# fixture\n".encode()),
-        ("text/plain", "fixture text\n".encode()),
+        ("text/markdown", b"# fixture\n"),
+        ("text/plain", b"fixture text\n"),
     ],
 )
 def test_fixture_source_check_accepts_every_allowlisted_mime(

@@ -232,6 +232,4 @@ def test_training_window_refuses_dimension_drift() -> None:
         eligible_sessions=(date(2026, 8, 11),),
     )
     with pytest.raises(ValueError):
-        derive_training_window(
-            packet_window=inconsistent, appended=(date(2026, 8, 14),)
-        )
+        derive_training_window(packet_window=inconsistent, appended=(date(2026, 8, 14),))

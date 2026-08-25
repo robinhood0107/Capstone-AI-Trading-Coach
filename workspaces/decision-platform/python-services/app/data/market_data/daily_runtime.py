@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import re
+import stat
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time
-import hashlib
 from importlib.metadata import version
-import json
-import os
 from pathlib import Path
-import re
-import stat
 from typing import Any, Protocol, cast
 from zoneinfo import ZoneInfo
 
 import exchange_calendars as xcals
-from app.data._shared.canonical_json import canonical_json_bytes, canonical_json_sha256
 import pandas as pd
 
+from app.data._shared.canonical_json import canonical_json_bytes, canonical_json_sha256
 
 _KST = ZoneInfo("Asia/Seoul")
 _PINNED_CALENDAR_VERSION = "4.13.2"
@@ -152,7 +152,7 @@ class DailyShardSink(Protocol):
 
     def preflight(self, packet: DailyReplayPacket) -> None: ...
 
-    def adopt(self, accepted: "AcceptedDailyShard") -> str: ...
+    def adopt(self, accepted: AcceptedDailyShard) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,7 +222,9 @@ def operation_ids(packet: DailyReplayPacket) -> tuple[str, ...]:
     normal = normal_operation_ids(packet.membership)
     if not packet.month_boundary:
         return normal
-    operations = normal[:5] + tuple(f"KRX_MONTHLY_{index:02d}" for index in range(1, 4)) + normal[5:]
+    operations = (
+        normal[:5] + tuple(f"KRX_MONTHLY_{index:02d}" for index in range(1, 4)) + normal[5:]
+    )
     if len(operations) != 41:
         raise DailyMarketDataError("month-boundary operation derivation drifted")
     return operations
@@ -404,7 +406,9 @@ def _clock_status(packet: DailyReplayPacket) -> str | None:
         return "NO_NEW_SESSION"
     if packet.as_of != evidence_clock_for_session(packet.session_date):
         raise DailyMarketDataError("packet asOf must equal the next-session evidence clock")
-    previous = calendar.date_to_session(pd.Timestamp(packet.previous_session_date), direction="none")
+    previous = calendar.date_to_session(
+        pd.Timestamp(packet.previous_session_date), direction="none"
+    )
     expected = calendar.next_session(previous).date()
     if packet.session_date != expected:
         return "NO_NEW_SESSION"
@@ -452,7 +456,9 @@ def _build_accepted(
     packet: DailyReplayPacket, records: Sequence[ReplayRecord]
 ) -> AcceptedDailyShard:
     by_operation = {record.operation_id: record for record in records}
-    bars = [_bar(by_operation[f"KIS_DAILY_{symbol}"], symbol, packet) for symbol in packet.membership]
+    bars = [
+        _bar(by_operation[f"KIS_DAILY_{symbol}"], symbol, packet) for symbol in packet.membership
+    ]
     indices = [_index(records, index_id, packet) for index_id in ("KOSPI", "KOSDAQ")]
     macro = [_macro(by_operation[f"ECOS_DAILY_{series}"], series) for series in _MACRO_SERIES]
     universe_rows = _universe_rows(records, packet)
@@ -520,8 +526,7 @@ def _index(
     matches = [
         record
         for record in records
-        if record.payload.get("kind") == "INDEX"
-        and record.payload.get("indexId") == index_id
+        if record.payload.get("kind") == "INDEX" and record.payload.get("indexId") == index_id
     ]
     if len(matches) != 1:
         raise DailyMarketDataError(f"exactly one {index_id} index is required")
@@ -671,10 +676,16 @@ def _stage_record(run: Path, record: ReplayRecord) -> None:
     filename = hashlib.sha256(record.operation_id.encode("utf-8")).hexdigest() + ".json"
     _write_no_replace(run / "staging", filename, canonical_json_bytes(record.to_dict()))
     event = canonical_json_bytes(
-        {"contentSha256": record.content_sha256, "operationId": record.operation_id, "outcome": "SUCCEEDED"}
+        {
+            "contentSha256": record.content_sha256,
+            "operationId": record.operation_id,
+            "outcome": "SUCCEEDED",
+        }
     )
     journal = run / "progress.jsonl"
-    fd = os.open(journal, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    fd = os.open(
+        journal, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600
+    )
     try:
         with os.fdopen(fd, "ab", closefd=True) as output:
             output.write(event)
@@ -734,7 +745,9 @@ def _write_no_replace(directory: Path, filename: str, content: bytes) -> None:
     except FileExistsError:
         existing = _read_regular_file(directory, filename)
         if existing != content:
-            raise DailyMarketDataError("immutable file already exists with different bytes") from None
+            raise DailyMarketDataError(
+                "immutable file already exists with different bytes"
+            ) from None
     finally:
         os.close(directory_fd)
 
@@ -756,7 +769,9 @@ def _read_regular_file(directory: Path, filename: str) -> bytes:
         with os.fdopen(file_fd, "rb", closefd=True) as source:
             content = source.read(2_000_001)
     except FileNotFoundError as error:
-        raise ReplayEvidenceUnavailable(f"sealed replay operation is missing: {filename}") from error
+        raise ReplayEvidenceUnavailable(
+            f"sealed replay operation is missing: {filename}"
+        ) from error
     finally:
         os.close(directory_fd)
     if len(content) > 2_000_000:

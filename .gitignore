@@ -117,3 +117,6 @@ artifacts/decision-platform/*
 .DS_Store
 Thumbs.db
 .gstack/
+
+# P1 Trivy generated cache may contain root-owned fanal entries after container scans.
+/.state/p1-trivy-cache/

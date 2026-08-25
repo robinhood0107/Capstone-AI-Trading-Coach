@@ -435,7 +435,9 @@ def load_window_b_manifest(path: Path) -> WindowBManifest:
     raw = _read_private_json(path, max_bytes=64 * 1024)
     digest = hashlib.sha256(raw).hexdigest()
     try:
-        value = json.loads(raw.decode("utf-8", errors="strict"), object_pairs_hook=_reject_duplicate_keys)
+        value = json.loads(
+            raw.decode("utf-8", errors="strict"), object_pairs_hook=_reject_duplicate_keys
+        )
     except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
         raise FinalGateError("PRE_S5_WINDOW_B_MANIFEST_INVALID") from error
     if not isinstance(value, dict) or set(value) != _WINDOW_B_FIELDS:
@@ -564,7 +566,12 @@ def _execute_kis_quote(
     """approved quote packet에서 tokenP 최대 1회와 read-only current-price 1회만 실행한다."""
 
     manifest = load_kis_quote_manifest(local_root / "control/kis-mock-quote-manifest.v1.json")
-    if (manifest.head_commit, manifest.tree_object, manifest.ci_digest, manifest.security_digest) != binding:
+    if (
+        manifest.head_commit,
+        manifest.tree_object,
+        manifest.ci_digest,
+        manifest.security_digest,
+    ) != binding:
         raise FinalGateError("PRE_S5_KIS_QUOTE_MANIFEST_BINDING")
     settings = KISSettings(kis_retry_attempts=1)
     if settings.mode != "mock" or settings.offline:
@@ -688,7 +695,10 @@ def verify_release_ledger(
         "voyageQueryPacketSha256",
     }:
         raise FinalGateError("PRE_S5_RELEASE_LEDGER_INVALID")
-    if any(not isinstance(value, str) or _SHA256.fullmatch(value) is None for value in window_b.values()):
+    if any(
+        not isinstance(value, str) or _SHA256.fullmatch(value) is None
+        for value in window_b.values()
+    ):
         raise FinalGateError("PRE_S5_RELEASE_LEDGER_INVALID")
     receipts = ledger.get("receipts")
     if not isinstance(receipts, dict) or set(receipts) != set(_RELEASE_RECEIPT_NAMES):
@@ -708,8 +718,7 @@ def verify_release_ledger(
     )
     markers = ledger.get("markers")
     kis_after_hours = (
-        verified_receipts["kisMockV3"].get("verificationMode")
-        == "AFTER_HOURS_DETERMINISTIC_MOCK"
+        verified_receipts["kisMockV3"].get("verificationMode") == "AFTER_HOURS_DETERMINISTIC_MOCK"
     )
     required = {
         "BGE_PUBLIC_EMBEDDING_INFERENCE_CALLS": 0,
@@ -817,13 +826,13 @@ def _release_receipt_facts_are_valid(name: str, facts: Mapping[str, object]) -> 
         )
     if name == "kisMockV3":
         if set(facts) != {
-                "brokeragePhysicalCalls",
-                "completedSteps",
-                "liveOrderCalls",
-                "openOrderCount",
-                "retryCount",
-                "tokenPhysicalCalls",
-                "verificationMode",
+            "brokeragePhysicalCalls",
+            "completedSteps",
+            "liveOrderCalls",
+            "openOrderCount",
+            "retryCount",
+            "tokenPhysicalCalls",
+            "verificationMode",
         }:
             return False
         verification_mode = facts.get("verificationMode")
@@ -1147,7 +1156,11 @@ def _write_private_json(path: Path, content: bytes) -> None:
             offset += written
         os.fsync(descriptor)
         metadata = os.fstat(descriptor)
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1 or metadata.st_size != len(content):
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_nlink != 1
+            or metadata.st_size != len(content)
+        ):
             raise FinalGateError("PRE_S5_FINAL_GATE_BOUNDARY")
         os.close(descriptor)
         descriptor = -1
@@ -1155,14 +1168,13 @@ def _write_private_json(path: Path, content: bytes) -> None:
             existing = os.stat(path.name, dir_fd=parent_descriptor, follow_symlinks=False)
         except FileNotFoundError:
             existing = None
-        if existing is not None:
-            if (
-                not stat.S_ISREG(existing.st_mode)
-                or existing.st_uid != os.geteuid()
-                or existing.st_nlink != 1
-                or stat.S_IMODE(existing.st_mode) != 0o600
-            ):
-                raise FinalGateError("PRE_S5_FINAL_GATE_BOUNDARY")
+        if existing is not None and (
+            not stat.S_ISREG(existing.st_mode)
+            or existing.st_uid != os.geteuid()
+            or existing.st_nlink != 1
+            or stat.S_IMODE(existing.st_mode) != 0o600
+        ):
+            raise FinalGateError("PRE_S5_FINAL_GATE_BOUNDARY")
         os.replace(
             temporary_name,
             path.name,
@@ -1242,7 +1254,11 @@ def _read_private_json(path: Path, *, max_bytes: int) -> bytes:
         raise
     except OSError as error:
         raise FinalGateError("PRE_S5_FINAL_GATE_BOUNDARY") from error
-    if len(raw) != metadata.st_size or len(raw) > max_bytes or (after.st_dev, after.st_ino) != (metadata.st_dev, metadata.st_ino):
+    if (
+        len(raw) != metadata.st_size
+        or len(raw) > max_bytes
+        or (after.st_dev, after.st_ino) != (metadata.st_dev, metadata.st_ino)
+    ):
         raise FinalGateError("PRE_S5_FINAL_GATE_BOUNDARY")
     return raw
 
@@ -1258,7 +1274,9 @@ def _reject_duplicate_keys(items: list[tuple[str, object]]) -> dict[str, object]
 
 def _decode_json(raw: bytes, *, code: str) -> object:
     try:
-        return json.loads(raw.decode("utf-8", errors="strict"), object_pairs_hook=_reject_duplicate_keys)
+        return json.loads(
+            raw.decode("utf-8", errors="strict"), object_pairs_hook=_reject_duplicate_keys
+        )
     except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
         raise FinalGateError(code) from error
 
@@ -1307,7 +1325,9 @@ def _required_hash_environment(name: str) -> str:
 
 
 def _canonical_json(value: Mapping[str, object]) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
 
 
 def _format_instant(value: datetime) -> str:

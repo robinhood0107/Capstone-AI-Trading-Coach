@@ -3,17 +3,17 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Iterator, Mapping, Sequence
 
 import pytest
 
 from app.rag.oa112_active_registry import load_oa112_active_registry
 from app.rag.oa112_bootstrap import (
-    Oa112BootstrapError,
     Oa112BootstrapCandidateRegistry,
+    Oa112BootstrapError,
     activate_oa112_bootstrap_quarantine,
     canonical_oa112_bootstrap_candidate_registry_digest,
     download_oa112_bootstrap_quarantine,
@@ -36,7 +36,7 @@ def test_bootstrap_download_quarantines_observed_raw_and_records_content_free_re
     cache_root, control_root = _roots(tmp_path)
     registry = _registry()
     candidate = registry.active_entries[0]
-    body = f"{candidate.source_id}\n".encode("utf-8")
+    body = f"{candidate.source_id}\n".encode()
     _write_quarantine(cache_root=cache_root, registry=registry, skip_source_id=candidate.source_id)
     transport = _FixtureTransport([_Response(200, _headers("text/plain", body), body)])
 
@@ -107,7 +107,12 @@ def test_bootstrap_download_recovers_complete_quarantine_with_a_zero_call_succes
         transport=transport,
     )
 
-    assert receipt.attempt_count == receipt.physical_call_count == receipt.quarantined_source_count == 0
+    assert (
+        receipt.attempt_count
+        == receipt.physical_call_count
+        == receipt.quarantined_source_count
+        == 0
+    )
     assert receipt.reused_source_count == 112
     assert transport.requests == []
     active = activate_oa112_bootstrap_quarantine(
@@ -129,7 +134,7 @@ def test_bootstrap_activation_requires_all_112_quarantine_files_before_publishin
     os.chmod(quarantine, 0o700)
     for candidate in registry.active_entries:
         path = quarantine / oa112_bootstrap_quarantine_filename(candidate)
-        path.write_bytes(f"{candidate.source_id}\n".encode("utf-8"))
+        path.write_bytes(f"{candidate.source_id}\n".encode())
         os.chmod(path, 0o600)
     _write_complete_receipt(control_root=control_root, registry=registry)
 
@@ -141,7 +146,7 @@ def test_bootstrap_activation_requires_all_112_quarantine_files_before_publishin
     )
 
     assert active.active_source_count == 112
-    assert active.track_counts == {track_id: 8 for track_id in OA_TRACK_IDS}
+    assert active.track_counts == dict.fromkeys(OA_TRACK_IDS, 8)
     assert len(tuple((cache_root / "oa-raw").iterdir())) == 112
     assert tuple(quarantine.iterdir()) == ()
     loaded = load_oa112_active_registry(
@@ -162,7 +167,7 @@ def test_bootstrap_activation_keeps_registry_unpublished_when_a_quarantine_sourc
     os.chmod(quarantine, 0o700)
     for candidate in registry.active_entries[:-1]:
         path = quarantine / oa112_bootstrap_quarantine_filename(candidate)
-        path.write_bytes(f"{candidate.source_id}\n".encode("utf-8"))
+        path.write_bytes(f"{candidate.source_id}\n".encode())
         os.chmod(path, 0o600)
     _write_complete_receipt(control_root=control_root, registry=registry)
 
@@ -404,18 +409,20 @@ def _write_quarantine(
         if candidate.source_id == skip_source_id:
             continue
         path = quarantine / oa112_bootstrap_quarantine_filename(candidate)
-        path.write_bytes(f"{candidate.source_id}\n".encode("utf-8"))
+        path.write_bytes(f"{candidate.source_id}\n".encode())
         os.chmod(path, 0o600)
     return quarantine
 
 
-def _write_complete_receipt(*, control_root: Path, registry: Oa112BootstrapCandidateRegistry) -> None:
+def _write_complete_receipt(
+    *, control_root: Path, registry: Oa112BootstrapCandidateRegistry
+) -> None:
     receipts = control_root / "oa112-bootstrap-receipts"
     receipts.mkdir(mode=0o700)
     os.chmod(receipts, 0o700)
     source_receipts = []
     for candidate in registry.active_entries:
-        body = f"{candidate.source_id}\n".encode("utf-8")
+        body = f"{candidate.source_id}\n".encode()
         source_receipts.append(
             {
                 "bytesRead": len(body),
@@ -506,10 +513,10 @@ class _Response:
 class _FixtureConnection:
     peer_ip = "8.8.8.8"
 
-    def __init__(self, transport: "_FixtureTransport") -> None:
+    def __init__(self, transport: _FixtureTransport) -> None:
         self._transport = transport
 
-    def __enter__(self) -> "_FixtureConnection":
+    def __enter__(self) -> _FixtureConnection:
         return self
 
     def __exit__(self, *_args: object) -> None:

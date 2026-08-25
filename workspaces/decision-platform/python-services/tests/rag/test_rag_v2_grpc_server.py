@@ -26,7 +26,6 @@ from app.rag.rag_v2_authorized_retrieval import (
 from app.rag.rag_v2_grpc_server import RagV2GrpcServerSettings, build_rag_v2_engine
 from app.rag.rag_v2_rpc import RagV2RpcStatus, create_rag_v2_server
 
-
 _SECRET = "rag-v2-grpc-shared-secret-for-s4-7d-settings-0001"
 
 
@@ -36,10 +35,7 @@ def test_v2_grpc_operator_entrypoint_is_registered() -> None:
     project_root = Path(__file__).resolve().parents[2]
     pyproject = tomllib.loads((project_root / "pyproject.toml").read_text(encoding="utf-8"))
 
-    assert (
-        pyproject["project"]["scripts"]["rag-v2-grpc"]
-        == "app.rag.rag_v2_grpc_server:serve"
-    )
+    assert pyproject["project"]["scripts"]["rag-v2-grpc"] == "app.rag.rag_v2_grpc_server:serve"
 
 
 def test_v2_server_settings_require_dedicated_loopback_query_dsn_and_absolute_bge_packet(
@@ -386,7 +382,9 @@ class _Reservations:
         self.activations: list[object] = []
         self.runtime_requests: list[tuple[str, str, str]] = []
 
-    def reserve(self, *, activation: object, evaluation_component_scope: str | None = None) -> _Lease:
+    def reserve(
+        self, *, activation: object, evaluation_component_scope: str | None = None
+    ) -> _Lease:
         del evaluation_component_scope
         self.activations.append(activation)
         return self._lease
@@ -435,7 +433,9 @@ class _Sender:
             body=json.dumps(
                 {
                     "chunker_version": "1.0.0",
-                    "data": [{"data": [{"embedding": vector, "index": 0, "text": question}], "index": 0}],
+                    "data": [
+                        {"data": [{"embedding": vector, "index": 0, "text": question}], "index": 0}
+                    ],
                     "model": "voyage-context-4",
                     "usage": {"total_tokens": 7},
                 },
@@ -482,10 +482,14 @@ def _voyage_scope() -> RagV2BundleScope:
     )
 
 
-def _candidate(index: int, scope: RagV2BundleScope, *, source_scope: str) -> RagV2RetrievalCandidate:
+def _candidate(
+    index: int, scope: RagV2BundleScope, *, source_scope: str
+) -> RagV2RetrievalCandidate:
     content = f"Canonical public content {index}."
     digest = hashlib.sha256(content.encode()).hexdigest()
-    generation_id = scope.exact30_generation_id if source_scope == "EXACT30" else scope.oa112_generation_id
+    generation_id = (
+        scope.exact30_generation_id if source_scope == "EXACT30" else scope.oa112_generation_id
+    )
     return RagV2RetrievalCandidate(
         canonical_content=content,
         canonical_content_sha256=digest,

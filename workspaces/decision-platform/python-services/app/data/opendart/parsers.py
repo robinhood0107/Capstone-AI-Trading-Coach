@@ -64,7 +64,9 @@ def parse_corp_code_zip(payload: bytes) -> list[CorpCode]:
                 raise OpenDARTResponseError("OpenDART corp code XML exceeded the safety limit")
             ratio = xml_entry.file_size / max(1, xml_entry.compress_size)
             if ratio > MAX_ZIP_COMPRESSION_RATIO:
-                raise OpenDARTResponseError("OpenDART corp code ZIP exceeded the compression ratio limit")
+                raise OpenDARTResponseError(
+                    "OpenDART corp code ZIP exceeded the compression ratio limit"
+                )
             xml_payload = archive.read(xml_entry)
     except (BadZipFile, OSError):
         raise OpenDARTResponseError("OpenDART corp code ZIP was invalid") from None
@@ -137,7 +139,9 @@ def parse_disclosure_list(response: dict[str, Any]) -> list[DisclosureListItem]:
     ]
 
 
-def parse_financial_statement_rows(response: dict[str, Any], corp_code: str) -> list[FinancialStatementRow]:
+def parse_financial_statement_rows(
+    response: dict[str, Any], corp_code: str
+) -> list[FinancialStatementRow]:
     """단일회사 주요계정 응답의 금액 문자열을 계산 가능한 정수 필드로 정규화한다."""
     rows = _list_rows(response)
     return [
@@ -159,7 +163,9 @@ def parse_financial_statement_rows(response: dict[str, Any], corp_code: str) -> 
     ]
 
 
-def parse_financial_indicator_rows(response: dict[str, Any], corp_code: str) -> list[FinancialIndicatorRow]:
+def parse_financial_indicator_rows(
+    response: dict[str, Any], corp_code: str
+) -> list[FinancialIndicatorRow]:
     """단일회사 주요 재무지표 응답을 계산 가능한 float 지표 row로 정규화한다.
 
     `idx_val`은 백분율/음수 문자열이 섞이므로 계산용 float로만 변환하고, 파싱 실패 값은 None으로 남겨 downstream이 결측을 구분하게 한다.
@@ -344,7 +350,11 @@ def _event_attributes(row: dict[str, Any]) -> dict[str, str]:
         "report_nm",
     }
     # report_nm은 metadata일 뿐 점수화 근거가 아니다. event attribute에서도 제외해 회귀를 어렵게 만든다.
-    return {key: _text(value) for key, value in row.items() if key not in excluded and value not in (None, "")}
+    return {
+        key: _text(value)
+        for key, value in row.items()
+        if key not in excluded and value not in (None, "")
+    }
 
 
 def _xml_text(row: Element, tag: str) -> str:

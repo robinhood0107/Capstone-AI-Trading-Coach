@@ -5,9 +5,13 @@ import com.capstone.decision.application.rag.RagV2RetrievedCitation
 import com.capstone.decision.application.rag.RagV2VertexEvidence
 import com.capstone.decision.application.rag.RagV2VertexEvidencePort
 import com.capstone.decision.application.rag.RagV2VertexEvidenceUnavailableException
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
 import tools.jackson.databind.ObjectMapper
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -20,7 +24,9 @@ import java.security.MessageDigest
 class JdbcRagV2VertexEvidenceRepository(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val objectMapper: ObjectMapper,
+    private val actorRlsScope: ActorRlsScope,
 ) : RagV2VertexEvidencePort {
+    @Transactional
     override fun resolve(
         ownerUserId: String,
         requestId: String,
@@ -44,7 +50,20 @@ class JdbcRagV2VertexEvidenceRepository(
                     },
                 )
             val jdbc = jdbc()
-            setActor(jdbc, ownerUserId)
+            actorRlsScope.open(
+                jdbc,
+                ownerUserId,
+                ActorCapabilityBinding.request(
+                    "READ_VERTEX_EVIDENCE",
+                    "RAG_SCOPE",
+                    scope.scopeClaimId,
+                    ActorCapabilityRolePolicy.OWNER,
+                    ownerUserId,
+                    requestId,
+                    scope.scopeClaimId,
+                    receipt,
+                ),
+            )
             val evidence =
                 jdbc.query(
                     """
@@ -53,7 +72,7 @@ class JdbcRagV2VertexEvidenceRepository(
                       :ownerUserId,
                       :requestId,
                       :scopeClaimId,
-                      CAST(:citations AS jsonb)
+                      :citations
                     )
                     """.trimIndent(),
                     mapOf(
@@ -94,21 +113,10 @@ class JdbcRagV2VertexEvidenceRepository(
 
     private fun jdbc(): NamedParameterJdbcTemplate = jdbcProvider.getIfAvailable() ?: throw RagV2VertexEvidenceUnavailableException()
 
-    private fun setActor(
-        jdbc: NamedParameterJdbcTemplate,
-        ownerUserId: String,
-    ) {
-        jdbc.queryForObject(
-            "SELECT set_config('app.actor_user_id', :ownerUserId, true)",
-            mapOf("ownerUserId" to ownerUserId),
-            String::class.java,
-        )
-    }
-
     private fun sha256(value: String): String {
         val bytes = value.toByteArray(StandardCharsets.UTF_8)
         return try {
-            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
         } finally {
             bytes.fill(0)
         }

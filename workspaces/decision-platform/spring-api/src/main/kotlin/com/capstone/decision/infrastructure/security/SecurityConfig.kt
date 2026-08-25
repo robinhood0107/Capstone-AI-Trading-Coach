@@ -119,8 +119,6 @@ class SecurityConfig {
                 "Principle cursor" to principleProperties.cursorHmacKey.toByteArray(StandardCharsets.UTF_8),
                 "Decision scope" to decisionProperties.idempotencyScopeHmacKey.toByteArray(StandardCharsets.UTF_8),
                 "Brokerage scope" to brokerageProperties.idempotencyScopeHmacKey.toByteArray(StandardCharsets.UTF_8),
-                "Brokerage database capability" to
-                    brokerageProperties.databaseCapabilityToken.toByteArray(StandardCharsets.UTF_8),
                 "demo credential separation" to
                     DemoCredentialBundlePolicy.decodeSeparationKey(demoCredentialProperties.separationKey),
                 "RAG idempotency scope" to
@@ -150,8 +148,8 @@ class SecurityConfig {
         }
         return try {
             val entries = secrets.entries.toList()
-            entries.indices.forEach { leftIndex ->
-                ((leftIndex + 1) until entries.size).forEach { rightIndex ->
+            for (leftIndex in entries.indices) {
+                for (rightIndex in (leftIndex + 1) until entries.size) {
                     require(
                         !MessageDigest.isEqual(
                             entries[leftIndex].value,
@@ -205,7 +203,6 @@ class SecurityConfig {
                 principleProperties.cursorHmacKey,
                 decisionProperties.idempotencyScopeHmacKey,
                 brokerageProperties.idempotencyScopeHmacKey,
-                brokerageProperties.databaseCapabilityToken,
                 ragProperties.idempotencyScopeHmacKey,
                 ragProperties.requestFingerprintHmacKey,
                 ragProperties.providerUsageHmacKey,

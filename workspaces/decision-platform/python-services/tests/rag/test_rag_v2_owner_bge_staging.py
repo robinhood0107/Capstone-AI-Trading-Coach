@@ -18,6 +18,7 @@ from app.rag.rag_v2_owner_bge_staging import (
     PsycopgRagV2OwnerBgeStagingRepository,
     build_owner_bge_staging_payload,
 )
+from tests.support.actor_rls_scope import open_actor_rls_scope
 
 
 class _WhitespaceTokenizer:
@@ -77,7 +78,12 @@ def test_ticket_bound_writer_stages_owner_bge_generation_with_no_raw_table_grant
 ) -> None:
     cluster = isolated_postgres_cluster
     ticket_id = "rti_11111111111111111111111111111111"
-    _issue_ticket(cluster["app_dsn"], owner_user_id="usr_demo_user", ticket_id=ticket_id)
+    _issue_ticket(
+        cluster["app_dsn"],
+        cluster["identity_dsn"],
+        owner_user_id="usr_demo_user",
+        ticket_id=ticket_id,
+    )
 
     repository = PsycopgRagV2OwnerBgeStagingRepository(
         database_dsn=cluster["rag_writer_dsn"],
@@ -184,7 +190,12 @@ def test_writer_rejects_other_owner_before_materializing(
 ) -> None:
     cluster = isolated_postgres_cluster
     ticket_id = "rti_22222222222222222222222222222222"
-    _issue_ticket(cluster["app_dsn"], owner_user_id="usr_demo_user", ticket_id=ticket_id)
+    _issue_ticket(
+        cluster["app_dsn"],
+        cluster["identity_dsn"],
+        owner_user_id="usr_demo_user",
+        ticket_id=ticket_id,
+    )
 
     repository = PsycopgRagV2OwnerBgeStagingRepository(
         database_dsn=cluster["rag_writer_dsn"],
@@ -203,12 +214,23 @@ def test_writer_rejects_other_owner_before_materializing(
         ).fetchone() == (0,)
 
 
-def _issue_ticket(database_dsn: str, *, owner_user_id: str, ticket_id: str) -> None:
+def _issue_ticket(
+    database_dsn: str,
+    identity_dsn: str,
+    *,
+    owner_user_id: str,
+    ticket_id: str,
+) -> None:
     with psycopg.connect(database_dsn, autocommit=False) as connection:
         with connection.transaction():
-            connection.execute(
-                "SELECT set_config('app.actor_user_id', %s, true)",
-                (owner_user_id,),
+            open_actor_rls_scope(
+                identity_dsn=identity_dsn,
+                connection=connection,
+                actor_user_id=owner_user_id,
+                actor_role="USER",
+                operation="ISSUE_RAG_V2_IMPORT",
+                target_kind="RAG_TICKET",
+                target_id=ticket_id,
             )
             connection.execute(
                 """

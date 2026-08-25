@@ -123,7 +123,7 @@ class SecretFileRagHistoryKekProviderTest {
         key: ByteArray,
     ): Path {
         val path = directory.resolve("rag-history-$version.key")
-        Files.writeString(path, key.joinToString("") { "%02x".format(it.toInt() and 0xff) })
+        Files.writeString(path, key.joinToString("") { "%02x".format(java.util.Locale.ROOT, it.toInt() and 0xff) })
         Files.setPosixFilePermissions(path, FILE_PERMISSIONS)
         return path
     }

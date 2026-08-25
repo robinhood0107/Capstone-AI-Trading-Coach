@@ -24,7 +24,11 @@ from urllib.parse import urlsplit
 from app.rag.benchmark_receipt_io import BenchmarkReceiptIoError, write_benchmark_receipt
 from app.rag.bge_acquisition import DEFAULT_MODEL_ROOT
 from app.rag.bge_runtime import BgeRuntimeError, BgeStaticTokenizer
-from app.rag.oa112_active_registry import Oa112ActiveRegistry, Oa112ActiveRegistryError, load_oa112_active_registry
+from app.rag.oa112_active_registry import (
+    Oa112ActiveRegistry,
+    Oa112ActiveRegistryError,
+    load_oa112_active_registry,
+)
 from app.rag.oa112_downloader import Oa112DownloadError, load_oa112_execution_binding
 from app.rag.owner_file_io import OwnerFileIoError, read_owner_regular_file
 from app.rag.pre_s5_provider_control import (
@@ -33,18 +37,18 @@ from app.rag.pre_s5_provider_control import (
     load_pre_s5_voyage_document_batch_activation,
     resolve_voyage_api_key,
 )
-from app.rag.pre_s5_voyage_transport import (
-    PreS5VoyageContext4Transport,
-    PreS5VoyageTransportError,
-    UrllibPreS5VoyageHttpSender,
+from app.rag.pre_s5_voyage_query_usage_repository import (
+    PreS5VoyageQueryUsageRepositoryError,
+    PsycopgPreS5VoyageQueryUsageRepository,
 )
 from app.rag.pre_s5_voyage_tokenizer import (
     LocalPreS5VoyageContext4Tokenizer,
     PreS5VoyageTokenizerError,
 )
-from app.rag.pre_s5_voyage_query_usage_repository import (
-    PreS5VoyageQueryUsageRepositoryError,
-    PsycopgPreS5VoyageQueryUsageRepository,
+from app.rag.pre_s5_voyage_transport import (
+    PreS5VoyageContext4Transport,
+    PreS5VoyageTransportError,
+    UrllibPreS5VoyageHttpSender,
 )
 from app.rag.pre_s5_voyage_usage_repository import (
     PreS5VoyageUsageRepositoryError,
@@ -53,14 +57,13 @@ from app.rag.pre_s5_voyage_usage_repository import (
 from app.rag.rag_v2_external_exact30_voyage_runner import RagV2PublicVoyageComponentContext
 from app.rag.rag_v2_oa112_voyage_runner import RagV2Oa112VoyageComponentContext
 from app.rag.rag_v2_public_voyage_activation_repository import (
+    PsycopgRagV2PublicVoyageActivationRepository,
     PublicVoyageActivationError,
     PublicVoyageActivationRequest,
-    PsycopgRagV2PublicVoyageActivationRepository,
 )
-from app.rag.rag_v2_public_voyage_staging_repository import (
-    PublicVoyageEvaluationEvidence,
-    PublicVoyageStagingRepositoryError,
-    PsycopgRagV2PublicVoyageStagingRepository,
+from app.rag.rag_v2_public_voyage_evaluation_manifest import (
+    PublicVoyageEvaluationManifestError,
+    prepare_public_voyage_evaluation_manifests,
 )
 from app.rag.rag_v2_public_voyage_evaluator import (
     PacketGatedPublicVoyageEvaluationBatchEmbedder,
@@ -68,9 +71,10 @@ from app.rag.rag_v2_public_voyage_evaluator import (
     evaluate_public_voyage_pair,
     load_public_voyage_evaluation_inputs,
 )
-from app.rag.rag_v2_public_voyage_evaluation_manifest import (
-    PublicVoyageEvaluationManifestError,
-    prepare_public_voyage_evaluation_manifests,
+from app.rag.rag_v2_public_voyage_staging_repository import (
+    PsycopgRagV2PublicVoyageStagingRepository,
+    PublicVoyageEvaluationEvidence,
+    PublicVoyageStagingRepositoryError,
 )
 from app.rag.rag_v2_voyage_batch_repository import (
     PsycopgRagV2VoyageBatchRepository,
@@ -357,13 +361,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _failure("PUBLIC_VOYAGE_ACTIVATION_DATABASE_DSN")
         try:
             pair = _load_staged_pair(local_root=_local_root())
-            activation = PsycopgRagV2PublicVoyageActivationRepository(database_dsn=admin_dsn).activate(
+            activation = PsycopgRagV2PublicVoyageActivationRepository(
+                database_dsn=admin_dsn
+            ).activate(
                 request=PublicVoyageActivationRequest(exact30=pair.exact30, oa112=pair.oa112)
             )
         except PublicVoyageCliError as error:
             return _failure(error.code)
         except PublicVoyageActivationError as error:
-            if str(error) in {"PUBLIC_VOYAGE_ACTIVATION_NOT_READY", "PUBLIC_VOYAGE_ACTIVATION_CONFLICT"}:
+            if str(error) in {
+                "PUBLIC_VOYAGE_ACTIVATION_NOT_READY",
+                "PUBLIC_VOYAGE_ACTIVATION_CONFLICT",
+            }:
                 return _failure(str(error))
             return _failure("PUBLIC_VOYAGE_ACTIVATION_UNAVAILABLE")
         _emit(
@@ -767,7 +776,9 @@ def _load_staged_pair(*, local_root: Path) -> PublicVoyageStagedPair:
     )
 
 
-def _load_evaluation_pair(*, local_root: Path, pair: PublicVoyageStagedPair) -> PublicVoyageEvaluationPair:
+def _load_evaluation_pair(
+    *, local_root: Path, pair: PublicVoyageStagedPair
+) -> PublicVoyageEvaluationPair:
     """Require local evaluation evidence to bind exactly to the staged pair before writer evaluation."""
 
     payload = _read_local_json(
@@ -918,8 +929,7 @@ def _require_fresh_database_namespace(database_dsn: str) -> None:
     except ValueError:
         raise PublicVoyageCliError("PUBLIC_VOYAGE_FRESH_NAMESPACE_REQUIRED") from None
     if (
-        os.environ.get("CAPSTONE_PRE_S5_COMPOSE_PROJECT", "").strip()
-        != "capstone-pre-s5-fresh"
+        os.environ.get("CAPSTONE_PRE_S5_COMPOSE_PROJECT", "").strip() != "capstone-pre-s5-fresh"
         or os.environ.get("POSTGRES_HOST_PORT", "").strip() != "55432"
         or os.environ.get("REDIS_HOST_PORT", "").strip() != "56379"
         or parsed.scheme not in {"postgres", "postgresql"}
@@ -1024,7 +1034,9 @@ def _parse_exact30_context(value: object) -> RagV2PublicVoyageComponentContext:
             _required_text(value.get("embeddingProfileId")),
         ),
         member_digests=_required_hash_tuple(value.get("memberDigests"), count=30),
-        source_card_corpus_manifest_sha256=_required_hash(value.get("sourceCardCorpusManifestSha256")),
+        source_card_corpus_manifest_sha256=_required_hash(
+            value.get("sourceCardCorpusManifestSha256")
+        ),
     )
     if (
         context.component_scope != "EXACT30"
@@ -1100,7 +1112,9 @@ def _read_local_json(*, local_root: Path, relative_path: str, code: str) -> dict
             relative_path=relative_path,
             max_bytes=64 * 1024,
         ).content
-        parsed = json.loads(raw.decode("utf-8", errors="strict"), object_pairs_hook=_reject_duplicate_keys)
+        parsed = json.loads(
+            raw.decode("utf-8", errors="strict"), object_pairs_hook=_reject_duplicate_keys
+        )
     except (OwnerFileIoError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
         raise PublicVoyageCliError(code) from None
     if not isinstance(parsed, dict):
@@ -1111,7 +1125,10 @@ def _read_local_json(*, local_root: Path, relative_path: str, code: str) -> dict
 def _canonical_json(value: Mapping[str, object]) -> bytes:
     """Write receipt bytes canonically so digest/identity comparisons never depend on local formatting."""
 
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8") + b"\n"
+    return (
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        + b"\n"
+    )
 
 
 def _required_text(value: object) -> str:

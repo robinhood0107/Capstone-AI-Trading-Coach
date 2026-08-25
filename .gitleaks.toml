@@ -1,9 +1,6 @@
 title = "Capstone AI Trading Coach Gitleaks configuration"
 
-[extend]
-useDefault = true
-
-[allowlist]
+[[allowlists]]
 description = "Approved public SHA-256 artifacts and superseded Core 6 fixture-only digest values"
 regexes = [
   '''^6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790$''',
@@ -15,5 +12,32 @@ regexes = [
   '''^31139997140feb5fb61c0924950da502f0f6c1a347e3cc8e764f0d8d25d1bdfb$''',
   '''^610b231832ed334bf541e4581066f3a0644a5c2750cc62c1d37e2564c4034b26$''',
   '''^697855056eac950ae6ff755be604015aa20b627ab75369d657921ab72f802ce7$''',
-  '''^9aef7a439b432717704b6097a29d39e7007ff73b0809392643a30a7ed4e04f3d$''',
+  '''^9aef7a439b432717704b6097a29d39e7007ff73b0809392643a30a7ed4e04f3d$'''
 ]
+
+[[allowlists]]
+description = "B86 copies of public V36 and V37 KIS discovery source-card digests"
+regexes = [
+  '''^4281e92a878cdf08ab9cd3d52cfd4a564fef3509e85f689f03922464380d98cc$''',
+  '''^3137be113762703bbf5632ee8bdc317c182391ed04476a12a5b7b93d481db952$'''
+]
+
+[[allowlists]]
+description = "Exact non-secret CORS header, public SHA-256, and PEM marker literals"
+regexes = [
+  '^X-Rag-V2-Vertex-Scope-Claim$',
+  '^5b6cf53650253e7338e1a8121e8e067d6a95f8d436e0663f1fdbf593e00be582$',
+  '^-----BEGIN[ ]PRIVATE[ ]KEY-----$'
+]
+
+[[allowlists]]
+description = "Historical runtime-generated PEM marker in exact Vertex validation sources"
+condition = "AND"
+targetRules = ["private-key"]
+commits = ["c70e02201c5d195708b371b5cef636d505fd9b6d"]
+paths = ["^workspaces/decision-platform/spring-api/src/(test|main)/kotlin/com/capstone/decision/infrastructure/vertex/PreS5VertexCredentialProvider(Test)?[.]kt$"]
+regexTarget = "match"
+regexes = ["-----BEGIN[ ]PRIVATE[ ]KEY-----"]
+
+[extend]
+useDefault = true

@@ -7,8 +7,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.rag.bge_acquisition import DEFAULT_MODEL_ROOT
 from app.rag.authorized_retrieval_adapters import LocalBgeQueryEmbedder
+from app.rag.bge_acquisition import DEFAULT_MODEL_ROOT
 from app.rag.bge_runtime import BgeRuntimeError, BgeStaticTokenizer, load_bge_onnx_embedder
 from app.rag.oa112_active_registry import (
     Oa112ActiveRegistry,
@@ -19,8 +19,8 @@ from app.rag.oa112_downloader import (
     Oa112DownloadError,
     Oa112DownloadReceipt,
     download_oa112_local_cache,
-    load_oa112_execution_binding,
     load_oa112_download_packet,
+    load_oa112_execution_binding,
 )
 from app.rag.rag_v2_exact30_bge_runner import (
     Exact30PublicBgeMaterialization,
@@ -32,15 +32,10 @@ from app.rag.rag_v2_oa112_bge_runner import (
     RagV2Oa112BgeRunnerError,
     materialize_oa112_public_bge_component,
 )
-from app.rag.rag_v2_public_bge_staging_repository import (
-    PublicBgeStagingRepositoryError,
-    PsycopgRagV2PublicBgeStagingRepository,
-    RagV2PublicBgeStagingReceipt,
-)
 from app.rag.rag_v2_public_bge_activation_repository import (
+    PsycopgRagV2PublicBgeActivationRepository,
     PublicBgeActivationError,
     PublicBgeActivationRequest,
-    PsycopgRagV2PublicBgeActivationRepository,
 )
 from app.rag.rag_v2_public_bge_evaluator import (
     PublicBgePairEvaluationError,
@@ -50,6 +45,11 @@ from app.rag.rag_v2_public_bge_evaluator import (
     load_oa112_evaluation_queries,
     load_public_bge_pair_evaluation_evidence,
     write_public_bge_pair_evaluation_receipt,
+)
+from app.rag.rag_v2_public_bge_staging_repository import (
+    PsycopgRagV2PublicBgeStagingRepository,
+    PublicBgeStagingRepositoryError,
+    RagV2PublicBgeStagingReceipt,
 )
 
 _TERMINALLY_SUPERSEDED_BGE_COMMANDS = frozenset(
@@ -218,7 +218,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _failure("PUBLIC_BGE_EVALUATION_UNAVAILABLE")
         _emit(
             {
-                "code": "PUBLIC_BGE_PAIR_EVALUATION_REUSED" if reused else "PUBLIC_BGE_PAIR_EVALUATED",
+                "code": "PUBLIC_BGE_PAIR_EVALUATION_REUSED"
+                if reused
+                else "PUBLIC_BGE_PAIR_EVALUATED",
                 "embeddingProfileId": receipt["embeddingProfileId"],
                 "exact30GenerationId": receipt["exact30GenerationId"],
                 "oa112GenerationId": receipt["oa112GenerationId"],

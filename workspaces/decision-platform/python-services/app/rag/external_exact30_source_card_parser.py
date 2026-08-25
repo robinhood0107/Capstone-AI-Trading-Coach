@@ -45,10 +45,8 @@ class ExternalExact30SourceCardDocumentParser:
             or len({card.source_id for card in cards}) != 30
             or any(
                 card.front_matter.get("externalProcessingAllowed") is not True
-                or card.front_matter.get("externalProcessingGate")
-                != "LICENSE_AND_CONSENT_VERIFIED"
-                or card.front_matter.get("contentClass")
-                != "PROJECT_AUTHORED_SANITIZED_CARD"
+                or card.front_matter.get("externalProcessingGate") != "LICENSE_AND_CONSENT_VERIFIED"
+                or card.front_matter.get("contentClass") != "PROJECT_AUTHORED_SANITIZED_CARD"
                 for card in cards
             )
         ):
@@ -93,7 +91,9 @@ class ExternalExact30SourceCardDocumentParser:
                 language_tags=language_tags,
             )
         except DocumentParseError as error:
-            raise ExternalExact30SourceCardParserError("EXTERNAL_EXACT30_CARD_SAFE_PARSE") from error
+            raise ExternalExact30SourceCardParserError(
+                "EXTERNAL_EXACT30_CARD_SAFE_PARSE"
+            ) from error
         _validate_safe_parse(parsed, card=card, source_revision_id=source_revision_id)
 
         blocks: list[dict[str, object]] = [
@@ -143,9 +143,8 @@ def external_exact30_source_revision_id(card: FrozenSourceCard) -> str:
 
     digest = hashlib.sha256(
         (
-            f"{S4_7C_PROFILE_ID}\0{card.source_id}\0{card.card_sha256}"
-            f"\0{card.content_sha256}"
-        ).encode("utf-8")
+            f"{S4_7C_PROFILE_ID}\0{card.source_id}\0{card.card_sha256}\0{card.content_sha256}"
+        ).encode()
     ).hexdigest()
     return f"srv_exact30_external_{digest[:32]}"
 
@@ -154,9 +153,7 @@ def external_exact30_document_id(card: FrozenSourceCard) -> str:
     """external-safe source revision과 분리된 stable document identity를 반환한다."""
 
     digest = hashlib.sha256(
-        f"{S4_7C_PROFILE_ID}\0{card.source_id}\0{external_exact30_source_revision_id(card)}".encode(
-            "utf-8"
-        )
+        f"{S4_7C_PROFILE_ID}\0{card.source_id}\0{external_exact30_source_revision_id(card)}".encode()
     ).hexdigest()
     return f"doc_exact30_external_{digest[:32]}"
 

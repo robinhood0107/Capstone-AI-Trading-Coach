@@ -106,13 +106,12 @@ def test_app_role_reads_only_sanitized_stored_disclosure_projection(
                   's1.6-disclosure-state-v1', 1, true, %s
                 )
                 """,
-                [
-                    (operation, window_from, window_to, observed_at)
-                    for operation in operations
-                ],
+                [(operation, window_from, window_to, observed_at) for operation in operations],
             )
 
-    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(
+        postgres_cluster["disclosure_reader_dsn"]
+    ) as repository:
         batch = repository.load(
             symbol="005930",
             corp_code=None,
@@ -203,7 +202,9 @@ def test_disclosure_window_includes_exact_day_365_and_excludes_day_366(
                 ],
             )
 
-    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(
+        postgres_cluster["disclosure_reader_dsn"]
+    ) as repository:
         batch = repository.load(
             symbol="035720",
             corp_code="00258801",
@@ -220,19 +221,19 @@ def test_repository_statement_timeout_cancels_a_locked_projection_query(
 ) -> None:
     blocker = psycopg.connect(postgres_cluster["admin_dsn"])
     try:
-        blocker.execute(
-            "LOCK TABLE corporation_registry_observations IN ACCESS EXCLUSIVE MODE"
-        )
-        with PostgresStoredDisclosureRepository(
-            postgres_cluster["disclosure_reader_dsn"]
-        ) as repository:
-            with pytest.raises(psycopg.errors.QueryCanceled) as raised:
-                repository.load(
-                    symbol="005930",
-                    corp_code=None,
-                    window_from=date(2025, 7, 24),
-                    window_to=date(2026, 7, 24),
-                )
+        blocker.execute("LOCK TABLE corporation_registry_observations IN ACCESS EXCLUSIVE MODE")
+        with (
+            PostgresStoredDisclosureRepository(
+                postgres_cluster["disclosure_reader_dsn"]
+            ) as repository,
+            pytest.raises(psycopg.errors.QueryCanceled) as raised,
+        ):
+            repository.load(
+                symbol="005930",
+                corp_code=None,
+                window_from=date(2025, 7, 24),
+                window_to=date(2026, 7, 24),
+            )
         assert raised.value.sqlstate == "57014"
     finally:
         blocker.rollback()
@@ -249,7 +250,9 @@ def test_repository_rejects_broad_application_role_dsn(
 def test_empty_stored_observation_is_incomplete_not_a_fake_zero(
     postgres_cluster: PostgresTestCluster,
 ) -> None:
-    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(
+        postgres_cluster["disclosure_reader_dsn"]
+    ) as repository:
         batch = repository.load(
             symbol="000660",
             corp_code="00164779",
@@ -265,7 +268,9 @@ def test_empty_stored_observation_is_incomplete_not_a_fake_zero(
 def test_empty_or_ambiguous_corporation_registry_is_incomplete(
     postgres_cluster: PostgresTestCluster,
 ) -> None:
-    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(
+        postgres_cluster["disclosure_reader_dsn"]
+    ) as repository:
         missing = repository.load(
             symbol="000660",
             corp_code=None,
@@ -313,7 +318,9 @@ def test_empty_or_ambiguous_corporation_registry_is_incomplete(
                 ],
             )
 
-    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(
+        postgres_cluster["disclosure_reader_dsn"]
+    ) as repository:
         ambiguous = repository.load(
             symbol="000660",
             corp_code=None,
@@ -358,7 +365,9 @@ def test_empty_or_ambiguous_corporation_registry_is_incomplete(
                 ],
             )
 
-    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(
+        postgres_cluster["disclosure_reader_dsn"]
+    ) as repository:
         inactive = repository.load(
             symbol="035420",
             corp_code=None,
@@ -452,7 +461,9 @@ def test_more_than_one_hundred_distinct_events_fails_before_source_row_truncatio
                 ],
             )
 
-    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(
+        postgres_cluster["disclosure_reader_dsn"]
+    ) as repository:
         with pytest.raises(StoredDisclosureOversizedError, match="event bound"):
             repository.load(
                 symbol="068270",
@@ -559,13 +570,12 @@ def test_one_hundred_events_with_two_source_rows_each_are_returned_without_trunc
                   's1.6-disclosure-state-v1', 1, true, %s
                 )
                 """,
-                [
-                    (operation, window_from, window_to, observed_at)
-                    for operation in operations
-                ],
+                [(operation, window_from, window_to, observed_at) for operation in operations],
             )
 
-    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(
+        postgres_cluster["disclosure_reader_dsn"]
+    ) as repository:
         batch = repository.load(
             symbol="051910",
             corp_code="00164788",
@@ -653,7 +663,9 @@ def test_duplicate_source_rows_are_deduplicated_in_stable_order(
                 ],
             )
 
-    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(
+        postgres_cluster["disclosure_reader_dsn"]
+    ) as repository:
         batch = repository.load(
             symbol="006400",
             corp_code="00164797",
@@ -738,7 +750,9 @@ def test_source_row_overflow_fails_instead_of_returning_a_partial_event(
                 ],
             )
 
-    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(
+        postgres_cluster["disclosure_reader_dsn"]
+    ) as repository:
         with pytest.raises(StoredDisclosureIncompleteError, match="source reference row bound"):
             repository.load(
                 symbol="000270",

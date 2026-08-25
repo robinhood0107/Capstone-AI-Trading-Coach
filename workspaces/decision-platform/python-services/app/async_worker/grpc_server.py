@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import os
+import re
 from concurrent import futures
 from dataclasses import dataclass
 from hmac import compare_digest
-import os
-import re
 from typing import Never
 
 import grpc
@@ -13,7 +13,6 @@ from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 from app.async_worker.core import AsyncWork, AsyncWorkProcessor
 from app.async_worker.postgres import PostgresAsyncWorkRepository, is_decision_worker_dsn
 from app.generated import async_worker_pb2, async_worker_pb2_grpc
-
 
 _AUTH_KEY = "x-async-worker-auth"
 _SECRET = re.compile(r"^[A-Za-z0-9._~:-]{32,128}$")
@@ -30,16 +29,14 @@ class AsyncWorkerSettings:
     partition_hmac_key: bytes
 
     @classmethod
-    def from_env(cls) -> "AsyncWorkerSettings":
+    def from_env(cls) -> AsyncWorkerSettings:
         settings = cls(
             bind_address=os.environ.get(
                 "ASYNC_WORKER_GRPC_BIND_ADDRESS", "127.0.0.1:50056"
             ).strip(),
             shared_secret=os.environ.get("ASYNC_WORKER_GRPC_SHARED_SECRET", "").strip(),
             database_dsn=os.environ.get("ASYNC_WORKER_DATABASE_DSN", "").strip(),
-            partition_hmac_key=os.environ.get(
-                "ASYNC_PARTITION_HMAC_KEY", ""
-            ).encode(),
+            partition_hmac_key=os.environ.get("ASYNC_PARTITION_HMAC_KEY", "").encode(),
         )
         settings.validate()
         return settings
@@ -104,9 +101,7 @@ class AsyncWorkerServicer(async_worker_pb2_grpc.AsyncWorkerServiceServicer):
 
 def create_server(settings: AsyncWorkerSettings) -> grpc.Server:
     settings.validate()
-    repository = PostgresAsyncWorkRepository(
-        settings.database_dsn, settings.partition_hmac_key
-    )
+    repository = PostgresAsyncWorkRepository(settings.database_dsn, settings.partition_hmac_key)
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=_MAX_CONCURRENCY),
         options=(

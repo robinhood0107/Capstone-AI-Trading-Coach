@@ -230,9 +230,7 @@ def _now() -> str:
     return datetime.now(tz=UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
-def _abort(
-    context: grpc.ServicerContext, code: grpc.StatusCode, detail: str
-) -> NoReturn:
+def _abort(context: grpc.ServicerContext, code: grpc.StatusCode, detail: str) -> NoReturn:
     context.abort(code, detail)
     raise BrokerageRpcProtocolError(detail)
 

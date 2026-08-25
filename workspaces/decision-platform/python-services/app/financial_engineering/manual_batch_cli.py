@@ -6,18 +6,27 @@ import os
 from pathlib import Path
 
 from app.data.market_data.reader import ParquetMarketDataOperationalReader
-from app.financial_engineering.manual_batch import ManualFinancialEngineeringBatch, write_publications
+from app.financial_engineering.manual_batch import (
+    ManualFinancialEngineeringBatch,
+    write_publications,
+)
 from app.financial_engineering.repository import PostgresFinancialEngineeringPublisher
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the provider-free S6.5 manual sequential batch.")
+    parser = argparse.ArgumentParser(
+        description="Run the provider-free S6.5 manual sequential batch."
+    )
     parser.add_argument("--archive-root", required=True, type=Path)
     parser.add_argument("--output-root", required=True, type=Path)
     args = parser.parse_args()
     database_dsn = os.environ.get("FINANCIAL_ENGINEERING_DATABASE_DSN", "").strip()
     if not database_dsn:
-        print(json.dumps({"status": "NOT_AVAILABLE", "errorCode": "DATABASE_DSN_MISSING", "providerCalls": 0}))
+        print(
+            json.dumps(
+                {"status": "NOT_AVAILABLE", "errorCode": "DATABASE_DSN_MISSING", "providerCalls": 0}
+            )
+        )
         return 1
     result = ManualFinancialEngineeringBatch(
         ParquetMarketDataOperationalReader(args.archive_root),

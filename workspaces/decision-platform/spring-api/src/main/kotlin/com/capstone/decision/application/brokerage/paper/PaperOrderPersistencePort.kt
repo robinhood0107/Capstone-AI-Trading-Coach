@@ -15,6 +15,7 @@ interface PaperIdempotencyIdentityPort {
 
 interface PaperOrderPersistencePort {
     fun findIdempotencyResult(
+        actorUserId: String,
         scopeHash: String,
         ownerScopeHash: String,
         now: Instant,

@@ -5,11 +5,12 @@ import hashlib
 import json
 import re
 import unicodedata
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import yaml
 from yaml.nodes import MappingNode
@@ -27,12 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[5]
 RAG_SOURCE_CARD_SCHEMA_PATH = REPO_ROOT / "contracts/schemas/rag-source-card-v1.schema.json"
 # 원문 카드는 Git 작업트리 밖의 사용자 로컬 데이터 경계에서만 읽는다.
 OFFICIAL_SOURCE_CARD_ROOT = (
-    Path.home()
-    / ".local"
-    / "share"
-    / "capstone-ai-trading-coach"
-    / "rag-source-cards"
-    / "official"
+    Path.home() / ".local" / "share" / "capstone-ai-trading-coach" / "rag-source-cards" / "official"
 )
 MAX_SOURCE_CARD_BYTES = 32_768
 SOURCE_CARD_HEADINGS = (
@@ -45,18 +41,16 @@ SOURCE_CARD_HEADINGS = (
     "근거 위치",
 )
 _INSTRUCTION_LIKE_PATTERN = re.compile(
-    (
-        r"(?i)(ignore\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior)\s+instructions"
-        r"|system\s+prompt"
-        r"|(?:reveal|print|exfiltrate)\b.{0,40}\b(?:secret|token|credential)s?\b"
-        r"|(?:execute|run)\b.{0,30}\b(?:shell|command|code)\b"
-        r"|(?:call|invoke)\b.{0,30}\b(?:tool|mcp|plugin)\b"
-        r"|(?:place|submit|cancel)\b.{0,30}\border\b"
-        r"|(?:이전|기존)\s*지시.{0,12}무시"
-        r"|시스템\s*프롬프트"
-        r"|비밀.{0,20}(?:출력|노출)"
-        r"|도구.{0,20}(?:호출|실행))"
-    )
+    r"(?i)(ignore\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior)\s+instructions"
+    r"|system\s+prompt"
+    r"|(?:reveal|print|exfiltrate)\b.{0,40}\b(?:secret|token|credential)s?\b"
+    r"|(?:execute|run)\b.{0,30}\b(?:shell|command|code)\b"
+    r"|(?:call|invoke)\b.{0,30}\b(?:tool|mcp|plugin)\b"
+    r"|(?:place|submit|cancel)\b.{0,30}\border\b"
+    r"|(?:이전|기존)\s*지시.{0,12}무시"
+    r"|시스템\s*프롬프트"
+    r"|비밀.{0,20}(?:출력|노출)"
+    r"|도구.{0,20}(?:호출|실행))"
 )
 _RAW_HTML_PATTERN = re.compile(r"<(?:[A-Za-z!/][^>\n]*)>")
 _AUTHORITY_INSTITUTIONS = {
@@ -248,7 +242,9 @@ def _split_and_load_markdown(text: str) -> tuple[dict[str, Any], str]:
     try:
         tokens = yaml.scan(yaml_text)
         if any(isinstance(token, (AnchorToken, AliasToken, TagToken)) for token in tokens):
-            raise RagSourceCardError("RAG source card YAML tags, anchors, and aliases are forbidden.")
+            raise RagSourceCardError(
+                "RAG source card YAML tags, anchors, and aliases are forbidden."
+            )
         loaded = yaml.load(yaml_text, Loader=_StrictSafeLoader)
     except RagSourceCardError:
         raise
@@ -322,7 +318,12 @@ def _validate_contract_value(value: Any, schema: Mapping[str, Any], *, path: str
             raise RagSourceCardError(f"{path} items must be unique.")
     elif expected_type == "integer" and type(value) is not int:
         raise RagSourceCardError(f"{path} must be an integer.")
-    elif expected_type is not None and expected_type not in {"object", "string", "array", "integer"}:
+    elif expected_type is not None and expected_type not in {
+        "object",
+        "string",
+        "array",
+        "integer",
+    }:
         raise RagSourceCardError("RAG source card contract uses an unsupported schema type.")
 
     if "const" in schema:
@@ -475,8 +476,7 @@ def _validate_corpus_text(text: str) -> None:
         not text
         or unicodedata.normalize("NFC", text) != text
         or any(
-            (ord(character) < 0x20 and character not in {"\n", "\t"})
-            or ord(character) == 0x7F
+            (ord(character) < 0x20 and character not in {"\n", "\t"}) or ord(character) == 0x7F
             for character in text
         )
         or _INSTRUCTION_LIKE_PATTERN.search(text)
@@ -526,9 +526,7 @@ def _require_utc_datetime(value: Any, *, field: str) -> datetime:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description=(
-            "Validate local-only RAG source cards without network or provider calls."
-        ),
+        description=("Validate local-only RAG source cards without network or provider calls."),
     )
     parser.add_argument("--json", action="store_true")
     parser.add_argument("relative_paths", nargs="+")

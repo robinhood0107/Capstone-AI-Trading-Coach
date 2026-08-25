@@ -3,15 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Mapping
+from typing import Any, Final
 from urllib.parse import urlsplit
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-OA_RELEASE_MANIFEST_PATH = (
-    REPO_ROOT / "capstone-rag/manifests/s4-7d-oa140-release.v1.json"
-)
+OA_RELEASE_MANIFEST_PATH = REPO_ROOT / "capstone-rag/manifests/s4-7d-oa140-release.v1.json"
 MAX_OA_MANIFEST_BYTES: Final[int] = 2_000_000
 HASH_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^src_[a-z0-9][a-z0-9_-]{2,95}$")
@@ -170,11 +169,7 @@ def validate_oa_release_manifest(
             raise OaReleaseManifestError(f"OA release track count drifted for {track_id}")
         if not 8 <= len(entries) <= 10:
             raise OaReleaseManifestError(f"OA release track {track_id} requires 8..10 sources")
-        roles = {
-            role
-            for source in entries
-            for role in source["curriculumRoles"]
-        }
+        roles = {role for source in entries for role in source["curriculumRoles"]}
         if not REQUIRED_CURRICULUM_ROLES.issubset(roles):
             raise OaReleaseManifestError(f"OA release track {track_id} lacks required roles")
     expected_digest = canonical_release_digest(payload)
@@ -228,7 +223,7 @@ def _draft_projection(payload: Mapping[str, Any]) -> OaReleaseManifest:
         manifest_id=manifest_id,
         release_digest="",
         source_count=0,
-        track_counts={track_id: 0 for track_id in OA_TRACK_IDS},
+        track_counts=dict.fromkeys(OA_TRACK_IDS, 0),
         public_corpus_version=f"exact30-v1+{manifest_id}",
     )
 
@@ -290,10 +285,8 @@ def _validate_public_https_url(value: str) -> None:
         or parsed.username is not None
         or parsed.password is not None
         or hostname in _BLOCKED_HOSTS
-        or hostname.endswith(".local")
-        or hostname.endswith(".localhost")
-        or hostname.startswith("10.")
-        or hostname.startswith("192.168.")
+        or hostname.endswith((".local", ".localhost"))
+        or hostname.startswith(("10.", "192.168."))
         or _is_private_172(hostname)
     ):
         raise OaReleaseManifestError("OA release source URL must be public HTTPS")

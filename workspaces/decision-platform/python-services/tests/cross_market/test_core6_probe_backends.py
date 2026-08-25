@@ -17,10 +17,10 @@ from app.cross_market.core6_probe_backends import (
     Core6KrxDailyBackend,
     Core6SecEdgarBackend,
     SecEdgarProbeHttpResponse,
+    StdlibSecEdgarProbeTransport,
     _ProductionKisProbeSession,
     _ProductionKrxProbeSession,
     _sec_target,
-    StdlibSecEdgarProbeTransport,
     build_core6_backend,
 )
 from app.data.kis.parsers import CurrentPrice
@@ -151,7 +151,9 @@ def test_production_krx_session_caps_transport_deadline_at_packet_expiry(monkeyp
         def close(self) -> None:
             return None
 
-    monkeypatch.setattr("app.cross_market.core6_probe_backends.KrxOpenApiSettings", lambda **kwargs: object())
+    monkeypatch.setattr(
+        "app.cross_market.core6_probe_backends.KrxOpenApiSettings", lambda **kwargs: object()
+    )
     monkeypatch.setattr("app.cross_market.core6_probe_backends.KrxOpenApiClient", _FakeKrxClient)
     session = _ProductionKrxProbeSession()
     expires_at = datetime.now(UTC) + timedelta(seconds=30)
@@ -213,7 +215,9 @@ def test_sec_backend_rejects_missing_operator_contact_before_transport() -> None
     backend = Core6SecEdgarBackend(transport=transport, user_agent_reader=lambda: "missing-contact")
 
     with pytest.raises(Core6ProbeError, match="CORE6_PROBE_SEC_USER_AGENT_REQUIRED"):
-        backend.preflight(packet=_packet("SEC_EDGAR_SUBMISSIONS", resource_id="CIK0000320193", date="NONE"))
+        backend.preflight(
+            packet=_packet("SEC_EDGAR_SUBMISSIONS", resource_id="CIK0000320193", date="NONE")
+        )
 
     assert transport.calls == []
 
@@ -237,14 +241,20 @@ def test_sec_backend_seals_unknown_transport_exception_as_physical_attempt() -> 
 
 
 def test_sec_fixed_target_validates_packet_operation_and_cik_before_transport() -> None:
-    assert _sec_target(
-        operation="SEC_EDGAR_SUBMISSIONS",
-        resource_id="CIK0000320193",
-    ) == "/submissions/CIK0000320193.json"
-    assert _sec_target(
-        operation="SEC_EDGAR_COMPANYFACTS",
-        resource_id="CIK0000320193",
-    ) == "/api/xbrl/companyfacts/CIK0000320193.json"
+    assert (
+        _sec_target(
+            operation="SEC_EDGAR_SUBMISSIONS",
+            resource_id="CIK0000320193",
+        )
+        == "/submissions/CIK0000320193.json"
+    )
+    assert (
+        _sec_target(
+            operation="SEC_EDGAR_COMPANYFACTS",
+            resource_id="CIK0000320193",
+        )
+        == "/api/xbrl/companyfacts/CIK0000320193.json"
+    )
 
     with pytest.raises(Core6ProbeError, match="CORE6_PROBE_RESOURCE_INVALID"):
         _sec_target(operation="SEC_EDGAR_SUBMISSIONS", resource_id="CIK320193")

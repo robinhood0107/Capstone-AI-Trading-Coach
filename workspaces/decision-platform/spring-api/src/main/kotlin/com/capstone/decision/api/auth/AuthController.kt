@@ -68,10 +68,19 @@ class AuthController(
         }
         // 실패한 로그인도 공통 envelope의 UNAUTHORIZED로 흘려 프론트 분기 규칙을 고정한다.
         val account =
-            demoAccountService.authenticate(
-                username = request.username,
-                password = request.password,
-            ) ?: throw ApiException(ErrorCode.UNAUTHORIZED, "Invalid username or password.")
+            try {
+                demoAccountService.authenticate(
+                    username = request.username,
+                    password = request.password,
+                )
+            } catch (exception: RuntimeException) {
+                loginAttemptLimiter.releaseReservation()
+                throw exception
+            }
+        if (account == null) {
+            loginAttemptLimiter.recordFailure(servletRequest.remoteAddr, request.username)
+            throw ApiException(ErrorCode.UNAUTHORIZED, "Invalid username or password.")
+        }
         loginAttemptLimiter.recordSuccess(servletRequest.remoteAddr, request.username)
         val issuedToken = jwtService.issue(account)
         return ApiResponseFactory.success(

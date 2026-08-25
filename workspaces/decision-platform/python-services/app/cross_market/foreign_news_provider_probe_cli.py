@@ -14,29 +14,42 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
+from app.cross_market.foreign_news import (
+    ForeignNewsSentimentError,
+    ForeignNewsSentimentMaterializer,
+)
 from app.cross_market.foreign_news_evaluation_cli import (
     ForeignNewsEvaluationCliError,
     load_verified_selected_local_candidate,
 )
 from app.cross_market.foreign_news_evaluator import ForeignNewsLocalCandidate, ForeignNewsPrediction
-from app.cross_market.foreign_news import ForeignNewsSentimentError, ForeignNewsSentimentMaterializer
 from app.cross_market.foreign_news_provider_probe import (
     ForeignNewsProviderProbeError,
     ForeignNewsProviderProbeExecutionBinding,
     ForeignNewsProviderProbeExecutor,
     ForeignNewsProviderProbePacket,
-    foreign_news_provider_credential_environment_variable,
     StdlibForeignNewsProviderProbeTransport,
+    foreign_news_provider_credential_environment_variable,
 )
 from app.cross_market.foreign_news_repository import (
     ForeignNewsWriterAuthorityError,
     PostgresForeignNewsSentimentRepository,
 )
+from app.data._shared.canonical_json import canonical_json_sha256
 from app.rag.oa112_downloader import Oa112DownloadError, _read_private_control_file
-
+from app.verification.execution_approval import (
+    ExecutionApprovalError,
+    load_and_verify_execution_approval,
+    scope_digest,
+)
+from app.verification.provider_claim import (
+    ProviderApprovalClaimError,
+    claim_signed_provider_approval,
+)
 
 _CONTROL_ROOT_RELATIVE: Final[Path] = Path("capstone-rag/secrets/foreign-news-probes")
 _EVIDENCE_FILE: Final[str] = "foreign-news-provider-probe-execution-evidence.v1.json"
+_APPROVAL_FILE: Final[str] = "p1-approval-packet.v2.json"
 _DEFAULT_PACKET_FILE: Final[str] = "foreign-news-provider-probe-approval.v1.json"
 _OWNER_SCOPE_FILE: Final[str] = "foreign-news-provider-owner-scope.v1.json"
 _WRITER_DSN_ENV: Final[str] = "DECISION_MARKET_WRITER_DATABASE_DSN"
@@ -121,12 +134,38 @@ def main(argv: Sequence[str] | None = None) -> int:
         owner_scope = _load_owner_scope(control_root=control_root, packet=packet)
         database_dsn = os.environ.get(_WRITER_DSN_ENV, "").strip()
         if not database_dsn:
-            raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_WRITER_DATABASE_DSN_UNAVAILABLE")
+            raise ForeignNewsProviderProbeError(
+                "FOREIGN_NEWS_PROBE_WRITER_DATABASE_DSN_UNAVAILABLE"
+            )
         repository = PostgresForeignNewsSentimentRepository(database_dsn)
         # DB 권한 실패는 packet consume/provider socket보다 먼저 멈춰 single-use call을 낭비하지 않는다.
         repository.preflight()
-        binding = _load_execution_binding(control_root=control_root, repository_root=_repository_root())
-        credential_name = foreign_news_provider_credential_environment_variable(operation=packet.operation)
+        binding = _load_execution_binding(
+            control_root=control_root,
+            repository_root=_repository_root(),
+        )
+        credential_name = foreign_news_provider_credential_environment_variable(
+            operation=packet.operation
+        )
+        approval = load_and_verify_execution_approval(
+            (control_root / _APPROVAL_FILE).absolute(),
+            provider_family=packet.provider_family,
+            exact_operations=(packet.operation,),
+            payload_sha256=packet.packet_sha256(),
+            repository_digest=canonical_json_sha256(
+                {"headSha": binding.head_sha, "treeSha256": binding.tree_sha256}
+            ),
+            evidence_digest=canonical_json_sha256(
+                {"ciDigest": binding.ci_digest, "securityDigest": binding.security_digest}
+            ),
+            owner_scope_digest=scope_digest(f"{owner_scope.owner_user_id}\0{owner_scope.symbol}"),
+            account_scope_digest=scope_digest("decision_market_writer"),
+            credential_scope_digest=scope_digest(credential_name or "PUBLIC_OFFICIAL"),
+            physical_call_cap=packet.physical_call_cap,
+            cost_cap_microusd=packet.cost_cap_microusd,
+            now=now,
+        )
+        claim_signed_provider_approval(approval)
         api_key = os.environ.get(credential_name, "") if credential_name is not None else None
         result = ForeignNewsProviderProbeExecutor(
             control_root=control_root,
@@ -139,6 +178,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             now=now,
             user_agent=os.environ.get("FOREIGN_NEWS_PROVIDER_USER_AGENT", ""),
         )
+    except (ExecutionApprovalError, ProviderApprovalClaimError):
+        _emit("P1_EXECUTION_APPROVAL_REJECTED", provider_physical_calls=0)
+        return 2
     except (ForeignNewsProviderProbeError, ForeignNewsWriterAuthorityError, ValueError) as error:
         code = (
             error.code
@@ -148,9 +190,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _emit(
             code,
             provider_physical_calls=(
-                error.physical_call_count
-                if isinstance(error, ForeignNewsProviderProbeError)
-                else 0
+                error.physical_call_count if isinstance(error, ForeignNewsProviderProbeError) else 0
             ),
         )
         return 2
@@ -246,7 +286,9 @@ def _load_execution_binding(
             error_code="FOREIGN_NEWS_PROBE_EXECUTION_EVIDENCE_UNSAFE",
         )
     except Oa112DownloadError as error:
-        raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_EXECUTION_EVIDENCE_UNAVAILABLE") from error
+        raise ForeignNewsProviderProbeError(
+            "FOREIGN_NEWS_PROBE_EXECUTION_EVIDENCE_UNAVAILABLE"
+        ) from error
     document = _parse_canonical_evidence(content)
     binding = ForeignNewsProviderProbeExecutionBinding(
         ci_digest=_required_hash(document, "ciDigest"),
@@ -264,7 +306,9 @@ def _parse_canonical_evidence(content: bytes) -> Mapping[str, object]:
     try:
         document = json.loads(content.decode("utf-8", errors="strict"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_EXECUTION_EVIDENCE_INVALID") from error
+        raise ForeignNewsProviderProbeError(
+            "FOREIGN_NEWS_PROBE_EXECUTION_EVIDENCE_INVALID"
+        ) from error
     if (
         not content
         or len(content) > 8 * 1024
@@ -283,7 +327,14 @@ def _current_clean_git_identity(repository_root: Path) -> tuple[str, str]:
         raise ForeignNewsProviderProbeError("FOREIGN_NEWS_PROBE_REPOSITORY_INVALID")
     try:
         status = subprocess.run(
-            ["git", "-C", str(repository_root), "status", "--porcelain=v1", "--untracked-files=all"],
+            [
+                "git",
+                "-C",
+                str(repository_root),
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+            ],
             check=True,
             capture_output=True,
             text=True,
@@ -330,7 +381,9 @@ def _repository_root() -> Path:
 
 
 def _canonical_bytes(value: object) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
 
 
 def _emit(

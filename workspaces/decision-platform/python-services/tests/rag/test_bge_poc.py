@@ -62,9 +62,13 @@ def test_five_card_plan_is_deterministic_one_card_one_chunk_and_db_compatible() 
     assert re.fullmatch(r"rag_gen_[0-9a-f]{32}", first.generation_id)
     assert re.fullmatch(r"rag_mat_[0-9a-f]{32}", first.materialization_run_id)
     assert len(first.items) == 5
-    assert all(re.fullmatch(r"src_rev_[0-9a-f]{32}", item.source_revision_id) for item in first.items)
+    assert all(
+        re.fullmatch(r"src_rev_[0-9a-f]{32}", item.source_revision_id) for item in first.items
+    )
     assert all(re.fullmatch(r"rag_ing_[0-9a-f]{32}", item.ingest_run_id) for item in first.items)
-    assert all(re.fullmatch(r"rag_chk_[0-9a-f]{32}", item.chunk.chunk_revision_id) for item in first.items)
+    assert all(
+        re.fullmatch(r"rag_chk_[0-9a-f]{32}", item.chunk.chunk_revision_id) for item in first.items
+    )
     assert all(item.chunk.sequence == 1 for item in first.items)
     assert all(item.embedding_input.text == item.chunk.text for item in first.items)
     assert all(item.embedding_input.context_set_hash is None for item in first.items)
@@ -72,7 +76,9 @@ def test_five_card_plan_is_deterministic_one_card_one_chunk_and_db_compatible() 
     assert first.artifact_manifest_sha256 == artifact.file_manifest_sha256
 
 
-def test_poc_execution_stages_normalized_vectors_and_requires_eval_passed_without_pointer_change() -> None:
+def test_poc_execution_stages_normalized_vectors_and_requires_eval_passed_without_pointer_change() -> (
+    None
+):
     plan = prepare_bge_poc(
         cards=_approved_cards(),
         tokenizer=_FixtureTokenizer(),
@@ -98,7 +104,9 @@ def test_poc_execution_stages_normalized_vectors_and_requires_eval_passed_withou
     expected_hash = hashlib.sha256(
         "".join(
             row.staging_row_hash
-            for row in sorted(repository.rows, key=lambda row: row.chunk_revision_id.encode("utf-8"))
+            for row in sorted(
+                repository.rows, key=lambda row: row.chunk_revision_id.encode("utf-8")
+            )
         ).encode("ascii")
     ).hexdigest()
     assert repository.staging_hash == expected_hash

@@ -57,8 +57,16 @@ def test_public_plan_splits_large_source_contiguously_and_packs_under_headroom()
     assert all(batch.token_count <= 60_000 for batch in plan.batches)
     assert all(batch.group_count <= 1_000 for batch in plan.batches)
     assert all(batch.chunk_count <= 16_000 for batch in plan.batches)
-    split = [segment for batch in plan.batches for segment in batch.segments if segment.source_id == "src_oa_000"]
-    assert [(segment.segment_ordinal, segment.segment_count) for segment in split] == [(1, 2), (2, 2)]
+    split = [
+        segment
+        for batch in plan.batches
+        for segment in batch.segments
+        if segment.source_id == "src_oa_000"
+    ]
+    assert [(segment.segment_ordinal, segment.segment_count) for segment in split] == [
+        (1, 2),
+        (2, 2),
+    ]
     assert [chunk.chunk_id for segment in split for chunk in segment.group.chunks] == [
         chunk.chunk_id for chunk in oa112[0].chunks
     ]
@@ -172,8 +180,12 @@ def test_public_plan_rejects_nonempty_owner_or_wrong_public_membership() -> None
         build_public_voyage_batch_plan(components=tuple(wrong), token_counter=_TokenCounter())
 
 
-def test_public_plan_rejects_one_chunk_larger_than_context_window_without_calling_provider() -> None:
-    exact30 = tuple(_group("exact", index, (32_001,) if index == 0 else (1,)) for index in range(30))
+def test_public_plan_rejects_one_chunk_larger_than_context_window_without_calling_provider() -> (
+    None
+):
+    exact30 = tuple(
+        _group("exact", index, (32_001,) if index == 0 else (1,)) for index in range(30)
+    )
     oa112 = tuple(_group("oa", index, (1,)) for index in range(112))
 
     with pytest.raises(RagV2VoyageBatchingError, match="VOYAGE_BATCH_CHUNK_TOKEN_CAP"):
@@ -183,9 +195,11 @@ def test_public_plan_rejects_one_chunk_larger_than_context_window_without_callin
         )
 
 
-def test_public_plan_rejects_checkpoint_token_count_over_profile_neutral_cap_before_recount() -> None:
+def test_public_plan_rejects_checkpoint_token_count_over_profile_neutral_cap_before_recount() -> (
+    None
+):
     exact30 = tuple(_group("exact", index, (1,)) for index in range(30))
-    oa112 = list(_group("oa", index, (1,)) for index in range(112))
+    oa112 = [_group("oa", index, (1,)) for index in range(112)]
     chunks = list(oa112[0].chunks)
     chunks[0] = replace(chunks[0], token_count=601)
     oa112[0] = replace(oa112[0], chunks=tuple(chunks))
@@ -213,7 +227,9 @@ def test_public_plan_hash_changes_when_member_identity_changes() -> None:
     changed = list(components)
     changed[1] = replace(changed[1], groups=tuple(changed_groups))
 
-    drifted = build_public_voyage_batch_plan(components=tuple(changed), token_counter=_TokenCounter())
+    drifted = build_public_voyage_batch_plan(
+        components=tuple(changed), token_counter=_TokenCounter()
+    )
 
     assert drifted.plan_sha256 != baseline.plan_sha256
 
@@ -263,7 +279,10 @@ def test_vector_accumulator_skips_completed_batches_and_restores_canonical_order
     ordered = accumulator.ordered_vectors(groups=exact30 + oa112)
     assert ordered.shape == (144, 1024)
     with pytest.raises(RagV2VoyageBatchingError, match="VOYAGE_BATCH_RESUME_STATE"):
-        accumulator.record_success(batch=plan.batches[0], vectors=np.zeros((plan.batches[0].chunk_count, 1024), dtype=np.float32))
+        accumulator.record_success(
+            batch=plan.batches[0],
+            vectors=np.zeros((plan.batches[0].chunk_count, 1024), dtype=np.float32),
+        )
 
 
 def _components(
@@ -274,7 +293,9 @@ def _components(
     return (
         VoyagePreparedComponent(component_scope="EXACT30", owner_scope_sha256=None, groups=exact30),
         VoyagePreparedComponent(component_scope="OA112", owner_scope_sha256=None, groups=oa112),
-        VoyagePreparedComponent(component_scope="OWNER_PRIVATE", owner_scope_sha256=None, groups=()),
+        VoyagePreparedComponent(
+            component_scope="OWNER_PRIVATE", owner_scope_sha256=None, groups=()
+        ),
     )
 
 

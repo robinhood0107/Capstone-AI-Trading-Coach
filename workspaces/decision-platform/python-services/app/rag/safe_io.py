@@ -255,12 +255,8 @@ def _open_root(root: Path) -> int:
                 next_fd = os.open(component, _DIRECTORY_FLAGS, dir_fd=current_fd)
             except OSError as error:
                 if error.errno in {errno.ELOOP, errno.ENOTDIR, errno.ENOENT}:
-                    raise RagSafeIoError(
-                        "RAG approved root is not a safe directory."
-                    ) from None
-                raise RagSafeIoError(
-                    "RAG approved root could not be opened safely."
-                ) from None
+                    raise RagSafeIoError("RAG approved root is not a safe directory.") from None
+                raise RagSafeIoError("RAG approved root could not be opened safely.") from None
             os.close(current_fd)
             current_fd = next_fd
         _require_owned_nonwritable_directory(current_fd)
@@ -540,9 +536,7 @@ def _require_replaceable_generated_leaf(directory_fd: int, filename: str) -> Non
             raise RagSafeIoError("RAG generated write target must be a regular file.")
         _require_current_owner(metadata)
         if metadata.st_mode & _SHARED_WRITE_BITS:
-            raise RagSafeIoError(
-                "RAG generated write target must not be group/other writable."
-            )
+            raise RagSafeIoError("RAG generated write target must not be group/other writable.")
         if metadata.st_nlink != 1:
             raise RagSafeIoError("RAG generated write target must not be a hard link.")
     finally:

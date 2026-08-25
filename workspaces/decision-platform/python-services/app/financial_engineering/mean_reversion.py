@@ -91,8 +91,7 @@ def diagnose_mean_reversion(closes: object) -> MeanReversionReport:
             adf_raw = adfuller(window, regression="c", autolag="AIC")
         critical = cast(dict[str, float], adf_raw[4])
         if not all(
-            math.isfinite(float(value))
-            for value in (adf_raw[0], adf_raw[1], *critical.values())
+            math.isfinite(float(value)) for value in (adf_raw[0], adf_raw[1], *critical.values())
         ):
             raise ValueError("adf_non_finite")
         adf = ADFReference(

@@ -60,7 +60,9 @@ def build_external_exact30_voyage_staging_payload(
         or _canonical_hash(document_ir) != record.source_revision_sha256
     ):
         raise ExternalExact30VoyageStagingError("EXTERNAL_EXACT30_VOYAGE_SOURCE_IDENTITY")
-    _validate_metadata(metadata, document_external_processing_eligible=document.external_processing_eligible)
+    _validate_metadata(
+        metadata, document_external_processing_eligible=document.external_processing_eligible
+    )
 
     chunks = tuple(sorted(document.chunks, key=lambda value: value.sequence))
     embeddings_by_chunk = {embedding.chunk_id: embedding for embedding in record.embeddings}
@@ -150,7 +152,9 @@ def build_external_exact30_voyage_staging_payload(
         "source": source,
     }
     _assert_path_free(payload)
-    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
     if len(encoded) > 16 * 1024 * 1024:
         raise ExternalExact30VoyageStagingError("EXTERNAL_EXACT30_VOYAGE_SOURCE_PAYLOAD_BOUND")
     return payload
@@ -183,10 +187,15 @@ def _validate_metadata(
         not isinstance(metadata.citation_title, str)
         or not 1 <= len(metadata.citation_title) <= 500
         or not metadata.citation_title.strip()
-        or any(ord(character) < 32 or ord(character) == 127 for character in metadata.citation_title)
+        or any(
+            ord(character) < 32 or ord(character) == 127 for character in metadata.citation_title
+        )
         or not isinstance(metadata.canonical_https_url, str)
         or not metadata.canonical_https_url.startswith("https://")
-        or any(character.isspace() or character in "\\\r\n" for character in metadata.canonical_https_url)
+        or any(
+            character.isspace() or character in "\\\r\n"
+            for character in metadata.canonical_https_url
+        )
         or not isinstance(metadata.retrieval_topics, tuple)
         or not 1 <= len(metadata.retrieval_topics) <= len(ALLOWED_RAG_TOPICS)
         or len(set(metadata.retrieval_topics)) != len(metadata.retrieval_topics)
@@ -221,7 +230,9 @@ def _parser_version(document_ir: Mapping[str, object]) -> str:
 
 
 def _copy_document_ir(document_ir: Mapping[str, object]) -> dict[str, object]:
-    copied = json.loads(json.dumps(document_ir, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+    copied = json.loads(
+        json.dumps(document_ir, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    )
     if not isinstance(copied, dict):  # pragma: no cover - runner already closes the IR shape.
         raise ExternalExact30VoyageStagingError("EXTERNAL_EXACT30_VOYAGE_SOURCE_IDENTITY")
     return copied

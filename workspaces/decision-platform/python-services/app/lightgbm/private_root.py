@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import fcntl
 import os
-from pathlib import Path
 import stat
+from pathlib import Path
 
 from app.lightgbm.errors import LightGbmContractError
 
@@ -78,9 +78,7 @@ def _acquire_private_lock(*, root: Path, filename: str, active_error: str) -> in
         raise
 
 
-def require_private_regular_file(
-    path: Path, *, expected_device: int, expected_inode: int
-) -> None:
+def require_private_regular_file(path: Path, *, expected_device: int, expected_inode: int) -> None:
     """bounded reader가 읽은 동일 inode가 owner-only 0600 regular file인지 재확인한다."""
 
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)

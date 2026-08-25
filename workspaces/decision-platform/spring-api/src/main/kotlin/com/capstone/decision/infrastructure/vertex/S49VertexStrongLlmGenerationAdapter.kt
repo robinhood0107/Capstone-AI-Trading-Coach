@@ -466,7 +466,7 @@ internal class S49VertexStrongLlmGenerationAdapter(
     private fun sha256(value: String): String {
         val bytes = value.toByteArray(StandardCharsets.UTF_8)
         return try {
-            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
         } finally {
             bytes.fill(0)
         }
@@ -486,7 +486,7 @@ internal class S49VertexStrongLlmGenerationAdapter(
     )
 
     private companion object {
-        val LOGGER = LoggerFactory.getLogger(S49VertexStrongLlmGenerationAdapter::class.java)
+        val LOGGER: org.slf4j.Logger = LoggerFactory.getLogger(S49VertexStrongLlmGenerationAdapter::class.java)
         val OWNER_ID = Regex("^usr_[a-z0-9][a-z0-9_-]{2,95}$")
         val REQUEST_ID = Regex("^req_[A-Za-z0-9_-]{12,96}$")
         val CITATION_ID = Regex("^cit_[1-5]$")

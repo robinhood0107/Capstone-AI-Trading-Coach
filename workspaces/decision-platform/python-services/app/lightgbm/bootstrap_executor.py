@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import math
+import os
+import stat
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-import hashlib
-import json
 from io import BytesIO
-import math
-import os
 from pathlib import Path
-import stat
 from typing import Protocol, TypeVar
 
 import pyarrow as pa
@@ -34,11 +34,6 @@ from app.lightgbm.diagnostics import (
     record_diagnostic,
     record_report,
 )
-from app.lightgbm.outcomes import (
-    BootstrapEvidenceGap,
-    CollectionUnit,
-    OutcomeClass,
-)
 from app.lightgbm.errors import (
     CalendarDivergenceSuspected,
     DatasetUnavailable,
@@ -56,25 +51,30 @@ from app.lightgbm.feature_artifact import (
     read_production_feature_bundle,
     write_feature_parquet,
 )
-from app.lightgbm.pit_calendar import (
-    PitSessionWindow,
-    S5_CALENDAR_CORRECTION_SET_SHA256,
-    S5_CALENDAR_POLICY_VERSION,
-    previous_xkrx_session,
-)
 from app.lightgbm.features import (
     IndexEvidence,
     MacroObservation,
     ProductionPriceEvidence,
     build_production_core_feature_rows,
 )
+from app.lightgbm.outcomes import (
+    BootstrapEvidenceGap,
+    CollectionUnit,
+    OutcomeClass,
+)
+from app.lightgbm.pit_calendar import (
+    S5_CALENDAR_CORRECTION_SET_SHA256,
+    S5_CALENDAR_POLICY_VERSION,
+    PitSessionWindow,
+    previous_xkrx_session,
+)
+from app.lightgbm.private_root import require_private_regular_file
 from app.lightgbm.production_policy import (
     KIS_OPERATION,
     SecurityClassification,
     classify_krx_security,
     require_standard_stock_identity,
 )
-from app.lightgbm.private_root import require_private_regular_file
 from app.lightgbm.source_bundle import (
     MAX_MANIFEST_BYTES,
     SOURCE_CHUNK_BYTE_CAPS,
@@ -104,7 +104,6 @@ from app.rag.safe_io import (
     read_approved_regular_file,
     write_approved_new_file,
 )
-
 
 # 종목 거래 증거를 담는 두 일별 service다. 월별 base-info는 상장 목록이라 권위가 아니다.
 _DAILY_UNIVERSE_SERVICES = ("stk_bydd_trd", "ksq_bydd_trd")
@@ -149,9 +148,7 @@ class KisBootstrapProvider(Protocol):
 
     def require_cached_token_only(self) -> None: ...
 
-    def fetch_page(
-        self, *, symbol: str, start: date, end: date
-    ) -> tuple[DailyBar, ...]: ...
+    def fetch_page(self, *, symbol: str, start: date, end: date) -> tuple[DailyBar, ...]: ...
 
 
 class EcosBootstrapProvider(Protocol):
@@ -407,8 +404,7 @@ def materialize_production_feature_bundle(
         decoded_bytes=table.nbytes,
     )
     source_set_hash = hashlib.sha256(
-        b"s5-source-bundle-set-v1\x00"
-        + acquisition.source_bundle.manifest_sha256.encode("ascii")
+        b"s5-source-bundle-set-v1\x00" + acquisition.source_bundle.manifest_sha256.encode("ascii")
     ).hexdigest()
     pit_input_hash = _production_pit_input_sha256(acquisition)
     base = FeatureBundleProvenance(
@@ -514,7 +510,9 @@ def build_current_inference_feature_table(
     evidence_day = next_xkrx_evidence_clock(latest).date()
     effective_month = f"{evidence_day.year:04d}-{evidence_day.month:02d}"
     candidates = [
-        universe for universe in acquisition.universes if universe.effective_month == effective_month
+        universe
+        for universe in acquisition.universes
+        if universe.effective_month == effective_month
     ]
     if len(candidates) != 1 or len(candidates[0].symbols) != 31:
         raise DatasetUnavailable("DATASET_UNAVAILABLE: current inference universe is not exact 31")
@@ -664,9 +662,7 @@ def _publish_divergence_candidates(
         )
         if existing.content == payload:
             return
-        raise LightGbmContractError(
-            "calendar divergence block conflicts with prior sealed bytes"
-        )
+        raise LightGbmContractError("calendar divergence block conflicts with prior sealed bytes")
     # 게이트 토큰은 파일 존재가 차단을 뜻하므로 삭제 가능한 별도 파일로 남긴다. 원장에는
     # 읽는 곳을 하나로 만들기 위해 같은 사건을 미러링만 한다.
     record_report(
@@ -773,9 +769,7 @@ def _fetch_kis_symbol(
             unit=CollectionUnit(
                 provider="KIS",
                 operation_id=KIS_OPERATION,
-                query_sha256=provider_query_sha256(
-                    {"operation": KIS_OPERATION, "symbol": symbol}
-                ),
+                query_sha256=provider_query_sha256({"operation": KIS_OPERATION, "symbol": symbol}),
                 label=symbol,
             ),
             measured={"expectedSessions": 0},
@@ -905,9 +899,7 @@ def _fetch_kis_symbol(
             unit=CollectionUnit(
                 provider="KIS",
                 operation_id=KIS_OPERATION,
-                query_sha256=provider_query_sha256(
-                    {"operation": KIS_OPERATION, "symbol": symbol}
-                ),
+                query_sha256=provider_query_sha256({"operation": KIS_OPERATION, "symbol": symbol}),
                 label=symbol,
             ),
             measured={
@@ -945,9 +937,7 @@ def _fetch_ecos_series(
     receipts: list[SourceChunkReceipt] = []
     chunk_start = start
     while chunk_start <= raw_end:
-        chunk_end = min(
-            chunk_start + timedelta(days=_ECOS_CHUNK_DAYS - 1), raw_end
-        )
+        chunk_end = min(chunk_start + timedelta(days=_ECOS_CHUNK_DAYS - 1), raw_end)
         query = {
             "operation": f"{series.stat_code}/{series.item_code1}/{series.cycle}",
             "start": chunk_start.isoformat(),
@@ -983,9 +973,7 @@ def _fetch_ecos_series(
                     temporal=_temporal_receipt(
                         source="ECOS",
                         operation=operation,
-                        observation_date=datetime.strptime(
-                            observations[-1].time, "%Y%m%d"
-                        ).date(),
+                        observation_date=datetime.strptime(observations[-1].time, "%Y%m%d").date(),
                         retrieved_at=_clock_utc(clock),
                         request_sha256=query_hash,
                         snapshot_sha256=digest,
@@ -1050,8 +1038,8 @@ def _derive_universes(
     for schedule in packet.schedules:
         base_rows: dict[str, tuple[dict[str, str], str, str]] = {}
         for service, market in (
-                ("stk_isu_base_info", "KOSPI"),
-                ("ksq_isu_base_info", "KOSDAQ"),
+            ("stk_isu_base_info", "KOSPI"),
+            ("ksq_isu_base_info", "KOSDAQ"),
         ):
             for row in _load_string_rows(
                 source_root, chunks[(service, schedule.selection_session)]
@@ -1207,9 +1195,7 @@ def _build_index_evidence(
     return tuple(output)
 
 
-def _require_bounded_exclusion(
-    *, source_root: Path, phase: str, excluded: int, total: int
-) -> None:
+def _require_bounded_exclusion(*, source_root: Path, phase: str, excluded: int, total: int) -> None:
     """제외가 상한을 넘으면 멈춘다. 증거 있는 제외라도 대규모면 조용한 축소다."""
 
     record_coverage_report(
@@ -1220,9 +1206,7 @@ def _require_bounded_exclusion(
     if total <= 0:
         raise LightGbmContractError("bootstrap unit total is invalid")
     if excluded > total * MAX_EXCLUDED_SYMBOL_RATIO:
-        raise LightGbmContractError(
-            "bootstrap excluded unit ratio exceeds the approved bound"
-        )
+        raise LightGbmContractError("bootstrap excluded unit ratio exceeds the approved bound")
 
 
 def _derive_traded_sessions(
@@ -1241,9 +1225,7 @@ def _derive_traded_sessions(
     raw = tuple(packet.window.raw_sessions)
     # 고정 ETF는 일별 stock projection에 없고 월별 etf_bydd_trd에만 나타난다. 계약이 고정한
     # 종목이므로 전 구간 커버리지 요구를 그대로 유지하고 상장폐지 완화 대상에서 제외한다.
-    output: dict[str, list[date]] = {
-        symbol: [] for symbol in symbols if symbol != FIXED_ETF_SYMBOL
-    }
+    output: dict[str, list[date]] = {symbol: [] for symbol in symbols if symbol != FIXED_ETF_SYMBOL}
     for day in raw:
         present: set[str] = set()
         for service in _DAILY_UNIVERSE_SERVICES:
@@ -1261,9 +1243,7 @@ def _derive_traded_sessions(
     position = {day: index for index, day in enumerate(raw)}
     for days in output.values():
         if position[days[-1]] - position[days[0]] + 1 != len(days):
-            raise DatasetUnavailable(
-                "DATASET_UNAVAILABLE: KRX trading evidence is not contiguous"
-            )
+            raise DatasetUnavailable("DATASET_UNAVAILABLE: KRX trading evidence is not contiguous")
     expectations = {symbol: tuple(days) for symbol, days in output.items()}
     if FIXED_ETF_SYMBOL in symbols:
         expectations[FIXED_ETF_SYMBOL] = raw
@@ -1349,9 +1329,7 @@ def _journaled_call(
 ) -> tuple[_CallT, SourceChunkReceipt | None]:
     """Intent를 먼저 fsync하고 terminal+chunk가 봉인될 때만 query를 completed로 만든다."""
 
-    ordinal = journal.begin(
-        provider=provider, operation_id=operation, query_sha256=query_hash
-    )
+    ordinal = journal.begin(provider=provider, operation_id=operation, query_sha256=query_hash)
     try:
         result = ledger.physical_call(
             provider=provider,
@@ -1388,17 +1366,11 @@ def _require_reused_chunk(
     operation: str,
     query_key: str,
 ) -> None:
-    if (
-        chunk.source_id != source
-        or chunk.operation_id != operation
-        or chunk.query_key != query_key
-    ):
+    if chunk.source_id != source or chunk.operation_id != operation or chunk.query_key != query_key:
         raise LightGbmContractError("bootstrap progress chunk binding mismatch")
 
 
-def _load_string_rows(
-    source_root: Path, chunk: SourceChunkReceipt
-) -> tuple[dict[str, str], ...]:
+def _load_string_rows(source_root: Path, chunk: SourceChunkReceipt) -> tuple[dict[str, str], ...]:
     table = _load_projection_table(source_root, chunk)
     rows = table.to_pylist()
     if any(
@@ -1434,14 +1406,11 @@ def _load_kis_rows(source_root: Path, chunk: SourceChunkReceipt) -> tuple[DailyB
         raise LightGbmContractError("bootstrap reused KIS projection is invalid") from None
 
 
-def _load_ecos_rows(
-    source_root: Path, chunk: SourceChunkReceipt
-) -> tuple[ECOSObservation, ...]:
+def _load_ecos_rows(source_root: Path, chunk: SourceChunkReceipt) -> tuple[ECOSObservation, ...]:
     rows = _load_string_rows(source_root, chunk)
     try:
         return tuple(
-            ECOSObservation(time=row["observationDate"], value=row["value"])
-            for row in rows
+            ECOSObservation(time=row["observationDate"], value=row["value"]) for row in rows
         )
     except (KeyError, ValueError):
         raise LightGbmContractError("bootstrap reused ECOS projection is invalid") from None
@@ -1532,9 +1501,7 @@ def _kis_rows_parquet(rows: Sequence[DailyBar]) -> bytes:
 
 
 def _ecos_rows_parquet(rows: Sequence[ECOSObservation]) -> bytes:
-    return _string_rows_parquet(
-        [{"observationDate": row.time, "value": row.value} for row in rows]
-    )
+    return _string_rows_parquet([{"observationDate": row.time, "value": row.value} for row in rows])
 
 
 def _table_parquet(table: pa.Table) -> bytes:
@@ -1553,9 +1520,7 @@ def _table_parquet(table: pa.Table) -> bytes:
     return sink.getvalue()
 
 
-def _prepare_private_bundle_root(
-    root: Path, *, chunks: bool = True, resume: bool = False
-) -> None:
+def _prepare_private_bundle_root(root: Path, *, chunks: bool = True, resume: bool = False) -> None:
     if not root.is_absolute():
         raise LightGbmContractError("production bundle root must be absolute")
     _require_no_symlink_components(root.parent)
@@ -1685,9 +1650,7 @@ def _production_pit_input_sha256(acquisition: BootstrapAcquisition) -> str:
         "indexRows": len(acquisition.indices),
         "macroRows": len(acquisition.macro),
     }
-    return hashlib.sha256(
-        b"s5-pit-input-v2\x00" + canonical_json_bytes(payload)
-    ).hexdigest()
+    return hashlib.sha256(b"s5-pit-input-v2\x00" + canonical_json_bytes(payload)).hexdigest()
 
 
 def provider_query_sha256(value: Mapping[str, object]) -> str:

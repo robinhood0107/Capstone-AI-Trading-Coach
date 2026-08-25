@@ -132,7 +132,9 @@ def _scrub_response(
 
     content_type = response.headers.get("content-type", "").lower()
     if "json" in content_type:
-        content = _drop_authentication_fields(content, candidates=candidates, max_json_depth=max_json_depth)
+        content = _drop_authentication_fields(
+            content, candidates=candidates, max_json_depth=max_json_depth
+        )
 
     headers: list[tuple[str, str]] = []
     for name, value in response.headers.multi_items():
@@ -181,18 +183,26 @@ def _read_limited(response: httpx.Response, limit: int) -> bytes:
     return b"".join(chunks)
 
 
-def _drop_authentication_fields(content: bytes, *, candidates: set[str], max_json_depth: int) -> bytes:
+def _drop_authentication_fields(
+    content: bytes, *, candidates: set[str], max_json_depth: int
+) -> bytes:
     try:
         payload = json.loads(content)
     except (UnicodeDecodeError, json.JSONDecodeError):
         return content
     except RecursionError:
-        raise OpenDARTResponseTooLargeError("OpenDART response structure exceeded the safety limit") from None
-    sanitized = _sanitize_json_value(payload, candidates=candidates, depth=0, max_depth=max_json_depth)
+        raise OpenDARTResponseTooLargeError(
+            "OpenDART response structure exceeded the safety limit"
+        ) from None
+    sanitized = _sanitize_json_value(
+        payload, candidates=candidates, depth=0, max_depth=max_json_depth
+    )
     return json.dumps(sanitized, ensure_ascii=False, separators=(",", ":")).encode()
 
 
-def _sanitize_json_value(value: object, *, candidates: set[str], depth: int, max_depth: int) -> object:
+def _sanitize_json_value(
+    value: object, *, candidates: set[str], depth: int, max_depth: int
+) -> object:
     if depth > max_depth:
         raise OpenDARTResponseTooLargeError("OpenDART response structure exceeded the safety limit")
     if isinstance(value, dict):
@@ -211,9 +221,11 @@ def _sanitize_json_value(value: object, *, candidates: set[str], depth: int, max
             _sanitize_json_value(child, candidates=candidates, depth=depth + 1, max_depth=max_depth)
             for child in value
         ]
-    if isinstance(value, str):
-        if _contains_authentication_marker(value) or any(candidate and candidate in value for candidate in candidates):
-            return "[redacted]"
+    if isinstance(value, str) and (
+        _contains_authentication_marker(value)
+        or any(candidate and candidate in value for candidate in candidates)
+    ):
+        return "[redacted]"
     return value
 
 

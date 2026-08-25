@@ -51,14 +51,9 @@ def test_approved_provider_caps_are_derived_from_approved_dimensions() -> None:
     """union 크기가 바뀌면 KIS 상한이 따라 움직여야 한다. 리터럴은 그러지 못했다."""
 
     assert APPROVED_KRX_MAX_GET == RAW_SESSION_COUNT * 4 + APPROVED_MONTHLY_SCHEDULE_COUNT * 3
-    assert APPROVED_KIS_MAX_GET == APPROVED_HORIZON_UNION_SIZE * math.ceil(
-        RAW_SESSION_COUNT / 100
-    )
+    assert APPROVED_HORIZON_UNION_SIZE * math.ceil(RAW_SESSION_COUNT / 100) == APPROVED_KIS_MAX_GET
     assert APPROVED_TOTAL_MAX_PHYSICAL_CALLS == (
-        APPROVED_KRX_MAX_GET
-        + APPROVED_KIS_MAX_GET
-        + APPROVED_KIS_TOKEN_MAX
-        + APPROVED_ECOS_MAX_GET
+        APPROVED_KRX_MAX_GET + APPROVED_KIS_MAX_GET + APPROVED_KIS_TOKEN_MAX + APPROVED_ECOS_MAX_GET
     )
     # 유도식이 현재 승인값과 같아야 한다. 달라지면 승인 범위를 벗어난 변경이다.
     assert (APPROVED_KRX_MAX_GET, APPROVED_KIS_MAX_GET) == (4_441, 2_970)
@@ -81,7 +76,5 @@ def test_ecos_chunk_length_cannot_exceed_the_request_row_cap() -> None:
 def test_daily_total_is_the_sum_of_provider_bounds() -> None:
     """따로 적으면 하나를 바꿀 때 다른 하나가 남는다."""
 
-    assert DAILY_TOTAL_MAX == (
-        DAILY_KRX_MAX + DAILY_KIS_MAX + DAILY_KIS_TOKEN_MAX + DAILY_ECOS_MAX
-    )
+    assert DAILY_TOTAL_MAX == (DAILY_KRX_MAX + DAILY_KIS_MAX + DAILY_KIS_TOKEN_MAX + DAILY_ECOS_MAX)
     assert DAILY_TOTAL_MAX == 41

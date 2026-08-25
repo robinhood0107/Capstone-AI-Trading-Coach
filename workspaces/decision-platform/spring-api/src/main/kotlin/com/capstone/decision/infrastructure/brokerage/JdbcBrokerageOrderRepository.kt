@@ -19,10 +19,13 @@ import com.capstone.decision.application.brokerage.OrderableDecision
 import com.capstone.decision.application.brokerage.StoredBrokerageIdempotencyResult
 import com.capstone.decision.application.brokerage.StoredMockBalance
 import com.capstone.decision.application.risk.KillSwitchBlockedException
+import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.domain.brokerage.TickSizePolicy
 import com.capstone.decision.domain.brokerage.TickValidation
 import com.capstone.decision.domain.risk.OrderIntentSnapshot
-import com.capstone.decision.infrastructure.risk.ActorScopedReadQuery
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
@@ -31,7 +34,6 @@ import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 import java.time.Instant
 import java.time.OffsetDateTime
-import java.time.ZoneOffset
 import java.util.UUID
 
 /**
@@ -41,31 +43,47 @@ import java.util.UUID
 @Repository
 class JdbcBrokerageOrderRepository(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
-    private val actorScopedReadQuery: ActorScopedReadQuery,
     private val objectMapper: ObjectMapper,
-    private val properties: BrokerageProperties,
+    private val actorCapabilityIssuer: ActorCapabilityIssuer,
 ) : BrokerageOrderPersistencePort {
     override fun findIdempotencyResult(
+        actorUserId: String,
         scopeHash: String,
         ownerScopeHash: String,
         now: Instant,
-    ): StoredBrokerageIdempotencyResult? =
-        jdbc()
+    ): StoredBrokerageIdempotencyResult? {
+        val nowText = now.toString()
+        val capability =
+            actorCapabilityIssuer.issue(
+                AuthenticatedActorRef.current(actorUserId),
+                ActorCapabilityBinding.request(
+                    "READ_MOCK_IDEMPOTENCY",
+                    "BROKERAGE_IDEMPOTENCY",
+                    scopeHash,
+                    ActorCapabilityRolePolicy.OWNER,
+                    scopeHash,
+                    ownerScopeHash,
+                    nowText,
+                ),
+            )
+        return jdbc()
             .query(
                 """
                 SELECT request_hash, result_canonical_json, expires_at
-                FROM find_mock_order_idempotency_result(
+                FROM find_mock_order_idempotency_result_authorized_v2(
+                  :capability,
+                  :actorUserId,
                   :scopeHash,
                   :ownerScopeHash,
-                  :now,
-                  :capabilityToken
+                  :nowText
                 )
                 """.trimIndent(),
                 mapOf(
+                    "capability" to capability,
+                    "actorUserId" to actorUserId,
                     "scopeHash" to scopeHash,
                     "ownerScopeHash" to ownerScopeHash,
-                    "now" to now.utc(),
-                    "capabilityToken" to properties.databaseCapabilityToken,
+                    "nowText" to nowText,
                 ),
             ) { result, _ ->
                 StoredBrokerageIdempotencyResult(
@@ -74,6 +92,7 @@ class JdbcBrokerageOrderRepository(
                     expiresAt = result.getObject("expires_at", OffsetDateTime::class.java).toInstant(),
                 )
             }.singleOrNull()
+    }
 
     @Transactional
     override fun persist(request: BrokerageOrderWriteRequest) {
@@ -85,19 +104,21 @@ class JdbcBrokerageOrderRepository(
                 decisionId = request.command.decisionId,
             ) ?: throw BrokerageDecisionNotFoundException()
         validateDecision(request, decision)
+        val payloadJson = createOrderPayload(request, decision)
+        val capability = capability(request.actor.userId, "CREATE_MOCK_ORDER", "ORDER", request.orderId, payloadJson)
         val result =
             jdbc
                 .query(
                     """
                     SELECT operation_outcome, projection_canonical_json
-                    FROM create_mock_order(
-                      CAST(:payloadJson AS jsonb),
-                      :capabilityToken
+                    FROM create_mock_order_authorized_v2(
+                      :capability,
+                      :payloadJson
                     )
                     """.trimIndent(),
                     mapOf(
-                        "payloadJson" to createOrderPayload(request, decision),
-                        "capabilityToken" to properties.databaseCapabilityToken,
+                        "payloadJson" to payloadJson,
+                        "capability" to capability,
                     ),
                 ) { row, _ ->
                     CreateOrderFunctionResult(
@@ -131,20 +152,23 @@ class JdbcBrokerageOrderRepository(
 
     @Transactional
     override fun recordProviderOutcome(request: BrokerageProviderOutcomeRequest): OrderDetailProjection {
+        val payloadJson = providerOutcomePayload(request)
+        val capability =
+            capability(request.actor.userId, "RECORD_MOCK_PROVIDER_OUTCOME", "ORDER", request.orderId, payloadJson)
         val result =
             jdbc()
                 .query(
                     """
                     SELECT operation_outcome, order_id, account_id, brokerage_mode,
                            status, submitted_at, decision_id
-                    FROM record_mock_order_provider_outcome(
-                      CAST(:payloadJson AS jsonb),
-                      :capabilityToken
+                    FROM record_mock_order_provider_outcome_authorized_v2(
+                      :capability,
+                      :payloadJson
                     )
                     """.trimIndent(),
                     mapOf(
-                        "payloadJson" to providerOutcomePayload(request),
-                        "capabilityToken" to properties.databaseCapabilityToken,
+                        "payloadJson" to payloadJson,
+                        "capability" to capability,
                     ),
                 ) { row, _ ->
                     ProviderOutcomeFunctionResult(
@@ -197,20 +221,22 @@ class JdbcBrokerageOrderRepository(
         orderId: String,
         cancelledAt: Instant,
     ): OrderDetailProjection {
+        val payloadJson = cancelOrderPayload(actor, orderId, cancelledAt)
+        val capability = capability(actor.userId, "CANCEL_MOCK_ORDER", "ORDER", orderId, payloadJson)
         val result =
             jdbc()
                 .query(
                     """
                     SELECT operation_outcome, order_id, account_id, brokerage_mode,
                            status, submitted_at, decision_id
-                    FROM request_mock_order_cancel(
-                      CAST(:payloadJson AS jsonb),
-                      :capabilityToken
+                    FROM request_mock_order_cancel_authorized_v2(
+                      :capability,
+                      :payloadJson
                     )
                     """.trimIndent(),
                     mapOf(
-                        "payloadJson" to cancelOrderPayload(actor, orderId, cancelledAt),
-                        "capabilityToken" to properties.databaseCapabilityToken,
+                        "payloadJson" to payloadJson,
+                        "capability" to capability,
                     ),
                 ) { row, _ ->
                     CancelOrderFunctionResult(
@@ -247,28 +273,30 @@ class JdbcBrokerageOrderRepository(
         accountId: String,
     ): StoredMockBalance? {
         val prefix = accountId.removePrefix("acct_")
+        val capability = targetCapability(actorUserId, "READ_MOCK_BALANCE", "ACCOUNT", accountId)
         val rows =
-            actorScopedReadQuery.query(
-                actorUserId = actorUserId,
-                sql =
-                    """
-                    SELECT account_scope_hash,
-                           cash_krw,
-                           portfolio_equity_krw,
-                           margin_requirement_krw,
-                           completeness,
-                           position_count,
-                           positions_json::text AS positions_json,
-                           observed_at,
-                           source_version
-                    FROM latest_portfolio_balance_observations
-                    WHERE source = 'KIS_MOCK'
-                      AND account_scope_hash LIKE ?
-                    ORDER BY account_scope_hash
-                    LIMIT 2
-                    """.trimIndent(),
-                binder = { statement -> statement.setString(1, "$prefix%") },
-            ) { result ->
+            jdbc().query(
+                """
+                SELECT account_scope_hash,
+                       cash_krw,
+                       portfolio_equity_krw,
+                       margin_requirement_krw,
+                       completeness,
+                       position_count,
+                       positions_json::text AS positions_json,
+                       observed_at,
+                       source_version
+                FROM read_mock_balance_projection_authorized_v2(
+                  :capability, :actorUserId, :accountId, :accountPrefix
+                )
+                """.trimIndent(),
+                mapOf(
+                    "capability" to capability,
+                    "actorUserId" to actorUserId,
+                    "accountId" to accountId,
+                    "accountPrefix" to prefix,
+                ),
+            ) { result, _ ->
                 val scopeHash = result.getString("account_scope_hash")
                 StoredMockBalance(
                     accountId = accountId(scopeHash),
@@ -370,16 +398,17 @@ class JdbcBrokerageOrderRepository(
                        can_submit_order, enforcement_action, valid_until,
                        snapshot_artifact_canonical_json, portfolio_owner_scope_hash,
                        invalidated, invalidation_reason_class, consumed_by_order_id
-                FROM read_mock_order_decision(
+                FROM read_mock_order_decision_authorized_v2(
+                  :capability,
                   :actorUserId,
-                  :decisionId,
-                  :capabilityToken
+                  :decisionId
                 )
                 """.trimIndent(),
                 mapOf(
+                    "capability" to
+                        targetCapability(actorUserId, "READ_MOCK_ORDER_DECISION", "DECISION", decisionId),
                     "actorUserId" to actorUserId,
                     "decisionId" to decisionId,
-                    "capabilityToken" to properties.databaseCapabilityToken,
                 ),
             ) { result, _ ->
                 OrderableDecision(
@@ -408,16 +437,16 @@ class JdbcBrokerageOrderRepository(
             .query(
                 """
                 SELECT order_id, account_id, brokerage_mode, status, submitted_at, decision_id
-                FROM read_mock_order_owner_projection(
+                FROM read_mock_order_owner_projection_authorized_v2(
+                  :capability,
                   :actorUserId,
-                  :orderId,
-                  :capabilityToken
+                  :orderId
                 )
                 """.trimIndent(),
                 mapOf(
+                    "capability" to targetCapability(actorUserId, "READ_MOCK_ORDER", "ORDER", orderId),
                     "actorUserId" to actorUserId,
                     "orderId" to orderId,
-                    "capabilityToken" to properties.databaseCapabilityToken,
                 ),
             ) { result, _ ->
                 OrderDetailProjection(
@@ -549,13 +578,45 @@ class JdbcBrokerageOrderRepository(
         return "acct_${ownerScopeHash.take(32)}"
     }
 
+    private fun targetCapability(
+        actorUserId: String,
+        operation: String,
+        targetKind: String,
+        targetId: String,
+    ): String =
+        actorCapabilityIssuer.issue(
+            AuthenticatedActorRef.current(actorUserId),
+            ActorCapabilityBinding.target(
+                operation,
+                targetKind,
+                targetId,
+                ActorCapabilityRolePolicy.OWNER,
+            ),
+        )
+
+    private fun capability(
+        actorUserId: String,
+        operation: String,
+        targetKind: String,
+        targetId: String,
+        payloadJson: String,
+    ): String =
+        actorCapabilityIssuer.issue(
+            AuthenticatedActorRef.current(actorUserId),
+            ActorCapabilityBinding.request(
+                operation,
+                targetKind,
+                targetId,
+                ActorCapabilityRolePolicy.OWNER,
+                payloadJson,
+            ),
+        )
+
     private fun jdbc(): NamedParameterJdbcTemplate =
         jdbcProvider.getIfAvailable()
             ?: error("Brokerage JDBC access is unavailable without a configured DataSource.")
 
     private fun id(prefix: String): String = "${prefix}_${UUID.randomUUID().toString().replace("-", "")}"
-
-    private fun Instant.utc(): OffsetDateTime = OffsetDateTime.ofInstant(this, ZoneOffset.UTC)
 
     private data class CreateOrderFunctionResult(
         val outcome: String,

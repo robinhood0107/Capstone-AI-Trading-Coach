@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from app.lightgbm import tick_cli
+from app.lightgbm.pit_calendar import corrected_calendar
 from app.lightgbm.run_state import (
     RUN_STATE_HISTORY_FILENAME,
     RunPhase,
@@ -23,7 +24,6 @@ from app.lightgbm.run_state import (
     initial_run_state,
     read_run_state,
 )
-from app.lightgbm.pit_calendar import corrected_calendar
 from app.lightgbm.source_bundle import SourceChunkReceipt
 from app.lightgbm.temporal import (
     AvailabilityBasis,
@@ -218,9 +218,7 @@ def test_gate_failure_returns_to_serving_without_touching_activation(
         phase=RunPhase.QUALIFYING,
         outcome="BUNDLE_SEALED",
     )
-    monkeypatch.setattr(
-        tick_cli, "_qualify", lambda **_: "QUALIFICATION_CALIBRATION_FAILED"
-    )
+    monkeypatch.setattr(tick_cli, "_qualify", lambda **_: "QUALIFICATION_CALIBRATION_FAILED")
     code = tick_cli._run_phase(run_root=run_root, packet=None, state=state)  # type: ignore[arg-type]
     assert code == tick_cli.EXIT_PROGRESS
     updated = read_run_state(run_root=run_root)

@@ -39,6 +39,6 @@ class StreamMetricAggregator(
     }
 
     private companion object {
-        val logger = LoggerFactory.getLogger(StreamMetricAggregator::class.java)
+        val logger: org.slf4j.Logger = LoggerFactory.getLogger(StreamMetricAggregator::class.java)
     }
 }

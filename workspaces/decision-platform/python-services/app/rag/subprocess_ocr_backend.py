@@ -19,7 +19,6 @@ from app.rag.local_document_parser import (
     OcrPageResult,
 )
 
-
 _BACKENDS: Final = {"PADDLE_STRUCTURED", "PADDLE_VL", "UNLIMITED_GGUF"}
 _BLOCK_TYPES: Final = {"HEADING", "PARAGRAPH", "LIST", "TABLE", "FORMULA", "CAPTION"}
 _MAX_TABLE_CELLS: Final = 50_000
@@ -66,11 +65,7 @@ class SubprocessOcrBackend:
     def parse_page(self, *, png_bytes: bytes, page_number: int) -> OcrPageResult:
         """PNG 한 page를 network-disabled child로 파싱하며 원본 경로는 전달하지 않는다."""
 
-        if (
-            page_number < 1
-            or len(png_bytes) < 8
-            or not png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
-        ):
+        if page_number < 1 or len(png_bytes) < 8 or not png_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
             raise DocumentParseError("OCR_INPUT_INVALID")
         configuration = self._configuration
         try:

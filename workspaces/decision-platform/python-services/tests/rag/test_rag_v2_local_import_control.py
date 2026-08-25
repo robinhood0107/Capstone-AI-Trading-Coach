@@ -77,7 +77,9 @@ def test_local_import_control_closed_shape_rejects_direct_database_or_path_alias
         )
 
 
-def test_local_import_control_requires_one_explicit_supported_library_profile(tmp_path: Path) -> None:
+def test_local_import_control_requires_one_explicit_supported_library_profile(
+    tmp_path: Path,
+) -> None:
     _secure_root(tmp_path)
     control = _control(tmp_path)
 

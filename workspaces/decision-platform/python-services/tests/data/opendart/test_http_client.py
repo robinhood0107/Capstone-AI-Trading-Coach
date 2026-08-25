@@ -163,7 +163,9 @@ def test_transport_scrubs_response_extensions_before_returning(
         )
     )
     transport = _credential_transport._CredentialTransport(inner, enabled=True)
-    response = transport.handle_request(httpx.Request("GET", "https://opendart.fss.or.kr/api/company.json"))
+    response = transport.handle_request(
+        httpx.Request("GET", "https://opendart.fss.or.kr/api/company.json")
+    )
 
     assert response.extensions == {"http_version": b"HTTP/1.1"}
     assert marker not in repr(response.extensions)

@@ -2,7 +2,7 @@
 
 워크스페이스 간 산출물 교환 폴더. **계약(`contracts/`)을 만족하는 결과물만** 저장하고 원본 코드나 대용량 원시 데이터는 저장하지 않는다.
 
-```text
+```
 return-engine/{runId}/
 decision-platform/{runId}/
 ```

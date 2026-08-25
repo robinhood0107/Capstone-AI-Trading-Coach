@@ -5,8 +5,11 @@ import os
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+
+from app.rag import rag_v2_local_import_control as local_import_control
 
 from app.rag.rag_v2_local_import_control import (
     RagV2LocalDeleteControlError,
@@ -38,6 +41,53 @@ def test_local_import_control_round_trip_is_private_and_argv_free(tmp_path: Path
     assert "Owner fixture" not in json.dumps(loaded.content_free_summary())
     assert "rti_" not in json.dumps(loaded.content_free_summary())
     assert "usr_" not in json.dumps(loaded.content_free_summary())
+
+
+def test_local_import_control_allows_access_time_change_during_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _secure_root(tmp_path)
+    control = _control(tmp_path)
+    write_pending_owner_import_control(local_root=tmp_path, control=control)
+    original_boundary = local_import_control._assert_control_record_boundary
+    boundary_calls = 0
+
+    def boundary_with_read_atime_change(local_root: Path, *, filename: str) -> object:
+        nonlocal boundary_calls
+        metadata = original_boundary(local_root, filename=filename)
+        boundary_calls += 1
+        if boundary_calls != 2:
+            return metadata
+        values = {
+            field: getattr(metadata, field)
+            for field in (
+                "st_dev",
+                "st_ino",
+                "st_uid",
+                "st_gid",
+                "st_mode",
+                "st_nlink",
+                "st_size",
+                "st_mtime_ns",
+                "st_ctime_ns",
+            )
+        }
+        values["st_atime_ns"] = metadata.st_atime_ns + 1
+        return SimpleNamespace(**values)
+
+    monkeypatch.setattr(
+        local_import_control,
+        "_assert_control_record_boundary",
+        boundary_with_read_atime_change,
+    )
+
+    loaded = load_pending_owner_import_control(
+        local_root=tmp_path,
+        now=datetime(2026, 8, 3, 0, 1, tzinfo=UTC),
+    )
+
+    assert loaded == control
 
 
 def test_local_import_control_rejects_expiry_and_shared_record_mode(tmp_path: Path) -> None:

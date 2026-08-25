@@ -1,10 +1,12 @@
 package com.capstone.decision
 
 import com.capstone.decision.application.dashboard.DashboardViewService
+import com.capstone.decision.application.market.ForeignNewsSentimentReadPort
 import com.capstone.decision.application.rag.RagHistoryCryptoPort
 import com.capstone.decision.application.rag.RagHistoryIdentity
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -46,6 +48,7 @@ class RagV2ApiIntegrationTest(
     @Autowired private val objectMapper: ObjectMapper,
     @Autowired private val cryptoPort: RagHistoryCryptoPort,
     @Autowired private val dashboardViewService: DashboardViewService,
+    @Autowired private val foreignNewsSentimentReadPort: ForeignNewsSentimentReadPort,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
     private val ownerJdbc: JdbcTemplate by lazy {
@@ -117,6 +120,8 @@ class RagV2ApiIntegrationTest(
     fun `foreign news route is authenticated owner scoped and exposes only sanitized lane states`() {
         val userToken = login("demo-user", userPassword(), "req_foreign_news_user_login")
         val adminToken = login("demo-admin", adminPassword(), "req_foreign_news_admin_login")
+
+        assertNull(foreignNewsSentimentReadPort.findLatest("usr_demo_user", "005930"))
 
         mockMvc
             .get("/api/v2/market-evidence/005930/foreign-news-sentiment") {

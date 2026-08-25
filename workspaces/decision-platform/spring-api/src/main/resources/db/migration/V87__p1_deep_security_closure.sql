@@ -272,9 +272,31 @@ BEGIN
         AND actor.status='ACTIVE'
         AND actor.role=capability.actor_role
         AND actor.security_version=capability.actor_security_version
-    );
+  );
   GET DIAGNOSTICS changed=ROW_COUNT;
-  RETURN changed=1;
+  IF changed<>1 THEN RETURN false; END IF;
+  DELETE FROM public.actor_rls_scope_v1 scope
+  WHERE scope.expires_at<=statement_timestamp()
+     OR (scope.backend_pid=pg_backend_pid() AND scope.transaction_id<>txid_current());
+  INSERT INTO public.actor_rls_scope_v1(
+    backend_pid,transaction_id,actor_user_id,operation,target_kind,target_id,expires_at
+  ) VALUES (
+    pg_backend_pid(),txid_current(),p_actor_user_id,p_operation,p_target_kind,p_target_id,
+    statement_timestamp()+interval '30 seconds'
+  )
+  ON CONFLICT (backend_pid,transaction_id) DO UPDATE
+  SET actor_user_id=EXCLUDED.actor_user_id,
+      operation=EXCLUDED.operation,
+      target_kind=EXCLUDED.target_kind,
+      target_id=EXCLUDED.target_id,
+      opened_at=statement_timestamp(),
+      expires_at=EXCLUDED.expires_at
+  WHERE public.actor_rls_scope_v1.actor_user_id=EXCLUDED.actor_user_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'actor RLS transaction actor mismatch' USING ERRCODE='42501';
+  END IF;
+  PERFORM set_config('app.actor_user_id',p_actor_user_id,true);
+  RETURN true;
 END
 $consume_actor_request_capability_v2$;
 
@@ -596,6 +618,158 @@ $consume_current_actor_capability_v2$;
 ALTER FUNCTION public.consume_current_actor_capability_v2(text,text,text,text,text,text) OWNER TO flyway;
 REVOKE ALL ON FUNCTION public.consume_current_actor_capability_v2(text,text,text,text,text,text)
 FROM PUBLIC,decision_app;
+
+-- app.actor_user_id remains transaction-local RLS plumbing, never identity authority.
+-- A caller-selected custom GUC has no effect unless an exact, one-time actor capability was
+-- consumed on the same PostgreSQL backend and transaction.
+CREATE TABLE public.actor_rls_scope_v1 (
+  backend_pid integer NOT NULL,
+  transaction_id bigint NOT NULL,
+  actor_user_id text NOT NULL,
+  operation text NOT NULL,
+  target_kind text NOT NULL,
+  target_id text NOT NULL,
+  opened_at timestamptz NOT NULL DEFAULT statement_timestamp(),
+  expires_at timestamptz NOT NULL,
+  PRIMARY KEY (backend_pid,transaction_id),
+  CHECK (operation ~ '^[A-Z][A-Z0-9_]{2,63}$'),
+  CHECK (target_kind ~ '^[A-Z][A-Z0-9_]{2,31}$'),
+  CHECK (char_length(target_id) BETWEEN 1 AND 160),
+  CHECK (expires_at>opened_at AND expires_at<=opened_at+interval '30 seconds')
+);
+ALTER TABLE public.actor_rls_scope_v1 OWNER TO flyway;
+REVOKE ALL ON TABLE public.actor_rls_scope_v1
+FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_identity,decision_auth;
+GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE public.actor_rls_scope_v1 TO flyway;
+
+CREATE FUNCTION public.open_actor_rls_scope_v1(
+  p_capability text,p_actor_user_id text,p_operation text,p_target_kind text,
+  p_target_id text,p_payload_hash text
+)
+RETURNS boolean
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=pg_catalog
+AS $open_actor_rls_scope_v1$
+BEGIN
+  IF session_user<>'decision_app'
+     OR NOT public.consume_current_actor_capability_v2(
+       p_capability,p_actor_user_id,p_operation,p_target_kind,p_target_id,p_payload_hash
+     ) THEN
+    RAISE EXCEPTION 'actor RLS capability denied' USING ERRCODE='42501';
+  END IF;
+  RETURN true;
+END
+$open_actor_rls_scope_v1$;
+ALTER FUNCTION public.open_actor_rls_scope_v1(text,text,text,text,text,text) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.open_actor_rls_scope_v1(text,text,text,text,text,text)
+FROM PUBLIC,decision_worker,decision_replay,decision_identity,decision_auth;
+GRANT EXECUTE ON FUNCTION public.open_actor_rls_scope_v1(text,text,text,text,text,text)
+TO decision_app;
+
+CREATE FUNCTION public.actor_rls_scope_is_open_v1()
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog
+AS $actor_rls_scope_is_open_v1$
+  SELECT CASE
+    WHEN session_user<>'decision_app' THEN true
+    ELSE EXISTS (
+      SELECT 1 FROM public.actor_rls_scope_v1 scope
+      WHERE scope.backend_pid=pg_backend_pid()
+        AND scope.transaction_id=txid_current()
+        AND scope.actor_user_id=nullif(current_setting('app.actor_user_id',true),'')
+        AND scope.expires_at>statement_timestamp()
+    )
+  END
+$actor_rls_scope_is_open_v1$;
+ALTER FUNCTION public.actor_rls_scope_is_open_v1() OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.actor_rls_scope_is_open_v1() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.actor_rls_scope_is_open_v1() TO decision_app;
+
+-- Legacy SECURITY DEFINER functions compare an unqualified current_setting() result with their
+-- owner argument. Rebind only those functions to this non-creatable guard schema so a direct
+-- decision_app call observes no actor unless the capability-backed transaction scope is open.
+-- public CREATE is already restricted to flyway by the role bootstrap and prior migrations.
+CREATE FUNCTION public.current_setting(p_name text,p_missing_ok boolean)
+RETURNS text
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog
+AS $guarded_current_setting$
+  SELECT CASE
+    WHEN p_name<>'app.actor_user_id' OR session_user<>'decision_app'
+      THEN pg_catalog.current_setting(p_name,p_missing_ok)
+    WHEN EXISTS (
+      SELECT 1 FROM public.actor_rls_scope_v1 scope
+      WHERE scope.backend_pid=pg_backend_pid()
+        AND scope.transaction_id=txid_current()
+        AND scope.actor_user_id=nullif(pg_catalog.current_setting('app.actor_user_id',true),'')
+        AND scope.expires_at>statement_timestamp()
+      ) THEN pg_catalog.current_setting('app.actor_user_id',true)
+    ELSE NULL
+  END
+$guarded_current_setting$;
+ALTER FUNCTION public.current_setting(text,boolean) OWNER TO flyway;
+REVOKE ALL ON FUNCTION public.current_setting(text,boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.current_setting(text,boolean) TO PUBLIC;
+
+DO $p1_v87_guard_legacy_actor_functions$
+DECLARE item record;
+BEGIN
+  FOR item IN
+    SELECT namespace.nspname,procedure.proname,
+      pg_get_function_identity_arguments(procedure.oid) AS identity_arguments
+    FROM pg_proc procedure
+    JOIN pg_namespace namespace ON namespace.oid=procedure.pronamespace
+    WHERE namespace.nspname='public'
+      AND procedure.prokind='f'
+      AND pg_get_functiondef(procedure.oid) LIKE '%current_setting(''app.actor_user_id''%'
+    ORDER BY procedure.oid
+  LOOP
+    EXECUTE format(
+      'ALTER FUNCTION %I.%I(%s) SET search_path=public,pg_catalog,pg_temp',
+      item.nspname,item.proname,item.identity_arguments
+    );
+  END LOOP;
+END
+$p1_v87_guard_legacy_actor_functions$;
+
+-- Preserve the effective V87 policy expressions from either B86 or V1..V86, while making
+-- every policy that trusts app.actor_user_id also require the server-created transaction scope.
+DO $p1_v87_actor_rls_policies$
+DECLARE
+  item record;
+  policy_roles text;
+  create_sql text;
+BEGIN
+  FOR item IN
+    SELECT schemaname,tablename,policyname,permissive,roles,cmd,qual,with_check
+    FROM pg_policies
+    WHERE schemaname='public'
+      AND (coalesce(qual,'') LIKE '%app.actor_user_id%'
+        OR coalesce(with_check,'') LIKE '%app.actor_user_id%')
+    ORDER BY tablename,policyname
+  LOOP
+    SELECT string_agg(
+      CASE WHEN role_name='public' THEN 'PUBLIC' ELSE quote_ident(role_name) END,
+      ',' ORDER BY ordinal
+    ) INTO policy_roles
+    FROM unnest(item.roles) WITH ORDINALITY AS role_item(role_name,ordinal);
+    EXECUTE format('DROP POLICY %I ON %I.%I',item.policyname,item.schemaname,item.tablename);
+    create_sql:=format(
+      'CREATE POLICY %I ON %I.%I AS %s FOR %s TO %s',
+      item.policyname,item.schemaname,item.tablename,item.permissive,item.cmd,policy_roles
+    );
+    IF item.qual IS NOT NULL THEN
+      create_sql:=create_sql||format(
+        ' USING ((%s) AND public.actor_rls_scope_is_open_v1())',item.qual
+      );
+    END IF;
+    IF item.with_check IS NOT NULL THEN
+      create_sql:=create_sql||format(
+        ' WITH CHECK ((%s) AND public.actor_rls_scope_is_open_v1())',item.with_check
+      );
+    END IF;
+    EXECUTE create_sql;
+  END LOOP;
+END
+$p1_v87_actor_rls_policies$;
 
 -- Legacy brokerage bodies keep their historical business invariants, but the reusable bearer is retired.
 -- Each V87 wrapper consumes one exact actor capability and creates an unobservable one-call bridge token.

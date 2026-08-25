@@ -3,6 +3,9 @@ package com.capstone.decision.infrastructure.vertex
 import com.capstone.decision.application.rag.RagAskCommand
 import com.capstone.decision.application.rag.RagV2VertexGenerationCommand
 import com.capstone.decision.application.rag.RagV2VertexQuestionFingerprintPort
+import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
+import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -44,6 +47,7 @@ internal class JdbcPreS5VertexUsageLedger(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     transactionManager: PlatformTransactionManager,
     private val questionFingerprintPort: RagV2VertexQuestionFingerprintPort,
+    private val actorRlsScope: ActorRlsScope,
 ) {
     private val requiresNew =
         TransactionTemplate(transactionManager).apply {
@@ -76,7 +80,7 @@ internal class JdbcPreS5VertexUsageLedger(
         require(questionFingerprint == activation.questionFingerprintHmac)
         return inNewTransaction {
             val jdbc = jdbc()
-            setActor(jdbc, command.ownerUserId)
+            setActor(jdbc, command.ownerUserId, "RESERVE_VERTEX_USAGE", usageEventId)
             val reservation =
                 jdbc
                     .query(
@@ -143,7 +147,7 @@ internal class JdbcPreS5VertexUsageLedger(
     ) {
         inNewTransaction {
             val jdbc = jdbc()
-            setActor(jdbc, lease.ownerUserId)
+            setActor(jdbc, lease.ownerUserId, "COMMIT_VERTEX_USAGE", lease.usageEventId)
             jdbc.queryForObject(
                 """
                 SELECT commit_rag_v2_immutable_vertex_usage(
@@ -166,7 +170,7 @@ internal class JdbcPreS5VertexUsageLedger(
     fun markUnknownBilling(lease: PreS5VertexUsageLease) {
         inNewTransaction {
             val jdbc = jdbc()
-            setActor(jdbc, lease.ownerUserId)
+            setActor(jdbc, lease.ownerUserId, "MARK_VERTEX_BILLING_UNKNOWN", lease.usageEventId)
             jdbc.queryForObject(
                 "SELECT mark_rag_v2_immutable_vertex_usage_unknown_billing(:usageEventId, :ownerUserId)",
                 mapOf("usageEventId" to lease.usageEventId, "ownerUserId" to lease.ownerUserId),
@@ -232,11 +236,18 @@ internal class JdbcPreS5VertexUsageLedger(
     private fun setActor(
         jdbc: NamedParameterJdbcTemplate,
         ownerUserId: String,
+        operation: String,
+        usageEventId: String,
     ) {
-        jdbc.queryForObject(
-            "SELECT set_config('app.actor_user_id', :ownerUserId, true)",
-            mapOf("ownerUserId" to ownerUserId),
-            String::class.java,
+        actorRlsScope.open(
+            jdbc,
+            ownerUserId,
+            ActorCapabilityBinding.target(
+                operation,
+                "VERTEX_USAGE",
+                usageEventId,
+                ActorCapabilityRolePolicy.OWNER,
+            ),
         )
     }
 
@@ -246,7 +257,12 @@ internal class JdbcPreS5VertexUsageLedger(
     ) {
         inNewTransaction {
             val jdbc = jdbc()
-            setActor(jdbc, lease.ownerUserId)
+            setActor(
+                jdbc,
+                lease.ownerUserId,
+                if (sql.contains("token_attempt")) "CLAIM_VERTEX_TOKEN" else "CLAIM_VERTEX_GENERATION",
+                lease.usageEventId,
+            )
             jdbc.queryForObject(
                 sql,
                 mapOf("usageEventId" to lease.usageEventId, "ownerUserId" to lease.ownerUserId),

@@ -120,7 +120,7 @@ def test_postgres_three_channels_share_only_active_opaque_scope(
             connection=connection,
             actor_user_id=owner_user_id,
             actor_role="USER",
-            operation="CLAIM_RAG_RETRIEVAL",
+            operation="ISSUE_RAG_RETRIEVAL_SCOPE",
             target_kind="RAG_SESSION",
             target_id=session_id,
         )

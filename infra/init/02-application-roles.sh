@@ -1128,7 +1128,6 @@ BEGIN
             record_rag_consent_event(text, text, text, text),
             read_effective_rag_consent(text),
             claim_rag_answer(text, text, text, integer),
-            mark_rag_provider_attempt(text, text, text, text, text, text, jsonb),
             complete_rag_answer(
                 text, text, text, text, text, text,
                 double precision, boolean, text[],
@@ -1144,6 +1143,9 @@ BEGIN
             upsert_owned_rag_answer_feedback(text, text, boolean),
             purge_expired_rag_history(integer)
         TO decision_app;
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            mark_rag_provider_attempt(text, text, text, text, text, text, jsonb)
+        FROM decision_app;
     END IF;
     IF to_regprocedure('public.read_active_rag_chunks(text,integer)') IS NOT NULL THEN
         GRANT EXECUTE ON FUNCTION
@@ -1182,7 +1184,7 @@ BEGIN
     IF to_regprocedure(
         'public.create_rag_retrieval_scope_claim(text,text,text[])'
     ) IS NOT NULL THEN
-        -- 인증된 app만 active pointer에 묶인 짧은 owner/session claim을 발급한다.
+        -- V87 keeps the S4.3 projection only through its exact session-bound wrapper.
         GRANT EXECUTE ON FUNCTION
             create_rag_retrieval_scope_claim(text, text, text[])
         TO decision_app;
@@ -1212,7 +1214,15 @@ BEGIN
             )
         TO decision_rag_admin;
     END IF;
-    IF to_regprocedure('public.issue_rag_rpc_scope(text,text,jsonb)') IS NOT NULL THEN
+    IF to_regprocedure('public.issue_rag_rpc_scope(text,text,text)') IS NOT NULL THEN
+        -- V87 wrappers retain serialized JSON bytes until exact capability-payload verification.
+        GRANT EXECUTE ON FUNCTION
+            issue_rag_rpc_scope(text, text, text),
+            recheck_rag_rpc_citations(
+                text, text, text, text, bigint, text, text, text
+            )
+        TO decision_app;
+    ELSIF to_regprocedure('public.issue_rag_rpc_scope(text,text,jsonb)') IS NOT NULL THEN
         -- V22의 Spring→Python RPC 경계는 app actor scope와 citation 재검증 함수만 노출한다.
         GRANT EXECUTE ON FUNCTION
             issue_rag_rpc_scope(text, text, jsonb),
@@ -1236,7 +1246,7 @@ BEGIN
     IF to_regprocedure(
         'public.issue_rag_v2_immutable_import_ticket(text,text,text,text)'
     ) IS NOT NULL THEN
-        -- V25의 owner capability는 raw table grant 없이 app→writer→admin 세 role로 나눈다.
+        -- V87 keeps these names only as exact argument-bound wrappers; renamed implementations stay revoked.
         GRANT EXECUTE ON FUNCTION
             record_rag_v2_immutable_consent(text, text, text, text),
             issue_rag_v2_immutable_import_ticket(text, text, text, text)
@@ -1337,20 +1347,29 @@ BEGIN
         TO decision_rag_writer;
     END IF;
     IF to_regprocedure(
-        'public.read_rag_v2_vertex_generation_evidence(text,text,text,jsonb)'
-    ) IS NOT NULL
-       AND to_regprocedure(
-           'public.persist_rag_v2_immutable_vertex_history(text,text,text,text,text,text,double precision,text[],text,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,timestamp with time zone,jsonb)'
-       ) IS NOT NULL THEN
-        -- V39의 앱은 sanitized evidence와 암호화 history definer pair만 다시 받는다.
+        'public.read_rag_v2_vertex_generation_evidence(text,text,text,text)'
+    ) IS NOT NULL THEN
         GRANT EXECUTE ON FUNCTION
-            read_rag_v2_vertex_generation_evidence(text, text, text, jsonb),
+            read_rag_v2_vertex_generation_evidence(text, text, text, text)
+        TO decision_app;
+    ELSIF to_regprocedure(
+        'public.read_rag_v2_vertex_generation_evidence(text,text,text,jsonb)'
+    ) IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            read_rag_v2_vertex_generation_evidence(text, text, text, jsonb)
+        TO decision_app;
+    END IF;
+    IF to_regprocedure(
+        'public.persist_rag_v2_immutable_vertex_history(text,text,text,text,text,text,double precision,text[],text,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,timestamp with time zone,jsonb)'
+    ) IS NOT NULL THEN
+        -- Superseded history projection has no current Spring call site.
+        REVOKE ALL PRIVILEGES ON FUNCTION
             persist_rag_v2_immutable_vertex_history(
                 text, text, text, text, text, text, double precision, text[], text,
                 bytea, bytea, bytea, bytea, bytea, bytea, bytea, bytea, bytea,
                 timestamptz, jsonb
             )
-        TO decision_app;
+        FROM decision_app;
     END IF;
     IF to_regprocedure(
         'public.reserve_rag_v2_immutable_vertex_usage(text,text,text,text,text,text,text,text,text,text,text,timestamp with time zone,integer,integer,integer,bigint,bigint,bigint,integer,integer,text,jsonb)'
@@ -1584,7 +1603,7 @@ BEGIN
        AND to_regprocedure(
            'public.persist_rag_v2_immutable_retrieval_history(text,text,text,text,text,text,double precision,text[],text,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,timestamp with time zone,jsonb)'
        ) IS NOT NULL THEN
-        -- 앱은 claim 발급과 content-free encrypted history definer capability만 재획득한다.
+        -- V87 compatibility names remain callable only through exact argument-bound wrappers.
         GRANT EXECUTE ON FUNCTION
             issue_rag_v2_retrieval_scope(text, text, text[]),
             canonicalize_rag_v2_immutable_retrieval_citations(text, text, text, jsonb),
@@ -1598,7 +1617,7 @@ BEGIN
     IF to_regprocedure(
         'public.read_rag_v2_vertex_prepared_scope(text,text,text,text[])'
     ) IS NOT NULL THEN
-        -- V48은 app이 raw scope table 없이 packet-bound two-minute claim만 resume하게 한다.
+        -- V87 preserves this compatibility name as an exact argument-bound wrapper.
         GRANT EXECUTE ON FUNCTION
             read_rag_v2_vertex_prepared_scope(text, text, text, text[])
         TO decision_app;
@@ -1704,7 +1723,7 @@ BEGIN
             ),
             consume_s4_9_mcp_oauth_code_hash(text),
             rotate_s4_9_mcp_refresh_token_hash(
-                text, text, text, bigint, text, text[], timestamptz
+                text, text, text, text[], timestamptz
             ),
             revoke_s4_9_mcp_refresh_token_family(text),
             issue_s4_9_answer_validation_receipt(
@@ -1753,11 +1772,11 @@ BEGIN
         GRANT EXECUTE ON FUNCTION
             reserve_s4_9_google_grounding_budget(text, text, text, text, date, integer, integer),
             settle_s4_9_google_grounding_budget(text, text, text, integer),
-            record_s4_9_grounding_provenance(text, text, jsonb, jsonb),
+            record_s4_9_grounding_provenance(text, text, text, text),
             record_s4_9_read_provenance(
                 text, text, text, text, text, text, text, text, text, text
             ),
-            record_s4_9_search_attempt(text, text, text, text, text, integer),
+            record_s4_9_search_attempt(text, text, text, integer, text, text, integer),
             canonicalize_s4_9_strong_llm_citations_v2(text, text, text, text, jsonb),
             persist_s4_9_strong_llm_history_v2(
                 text, text, text, text, text, text, text, double precision, text[], text,

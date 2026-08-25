@@ -133,26 +133,67 @@ class InfrastructureSecurityIntegrationTest {
             assertFalse(hasTablePrivilege(connection, "decision_app", "opendart_quota_usage", "SELECT"))
 
             listOf(
-                "issue_rag_rpc_scope(text,text,jsonb)",
-                "recheck_rag_rpc_citations(text,text,text,text,bigint,text,text,jsonb)",
+                "issue_rag_rpc_scope(text,text,text)",
+                "recheck_rag_rpc_citations(text,text,text,text,bigint,text,text,text)",
                 "read_rag_v2_corpus_status(text)",
+                "record_rag_v2_immutable_consent(text,text,text,text)",
                 "read_rag_v2_history_metadata(text,timestamp with time zone,text,integer)",
                 "read_rag_v2_history_detail(text,text)",
                 "delete_owned_rag_v2_history(text,text)",
-                "record_rag_v2_immutable_consent(text,text,text,text)",
                 "record_rag_v2_immutable_consent_v2(text,text,text,text,text,text,text)",
                 "read_rag_v2_immutable_effective_consent(text)",
                 "issue_rag_v2_immutable_import_ticket(text,text,text,text)",
                 "issue_rag_v2_immutable_import_ticket_v2(text,text,text,text,text)",
                 "issue_rag_v2_immutable_owner_delete_ticket(text,text,text)",
+                "issue_rag_v2_retrieval_scope(text,text,text[])",
                 "issue_rag_v2_retrieval_scope_v2(text,text,text[])",
                 "issue_rag_v2_retrieval_scope_v3(text,text,text[])",
+                "read_rag_v2_vertex_prepared_scope(text,text,text,text[])",
                 "read_rag_v2_vertex_prepared_scope_v2(text,text,text,text[])",
+                "canonicalize_rag_v2_immutable_retrieval_citations(text,text,text,jsonb)",
                 "authorize_s4_9_runtime_voyage_query(text,text,text)",
+                "read_rag_v2_vertex_generation_evidence(text,text,text,text)",
+                "claim_rag_v2_immutable_vertex_token_attempt(text,text)",
+                "claim_rag_v2_immutable_vertex_generate_content_attempt(text,text)",
+                "commit_rag_v2_immutable_vertex_usage(text,text,integer,integer,integer)",
+                "mark_rag_v2_immutable_vertex_usage_unknown_billing(text,text)",
+                "create_rag_retrieval_scope_claim(text,text,text[])",
+                "sync_s4_9_mcp_oauth_client(text,text,text,text[],text[],text)",
+                "upsert_s4_9_mcp_oauth_code_hash(text,text,text,bigint,text,text,text[],text,timestamp with time zone)",
+                "consume_s4_9_mcp_oauth_code_hash(text)",
+                "rotate_s4_9_mcp_refresh_token_hash(text,text,text,text[],timestamp with time zone)",
+                "consume_s4_9_mcp_refresh_token(text)",
+                "revoke_s4_9_mcp_refresh_token_family(text)",
             ).forEach { function ->
                 assertTrue(
                     hasFunctionPrivilege(connection, "decision_app", function),
                     "bootstrap removed the RAG owner-scoped function grant for $function",
+                )
+            }
+            listOf(
+                "issue_rag_rpc_scope_legacy_v87(text,text,jsonb)",
+                "recheck_rag_rpc_citations_legacy_v87(text,text,text,text,bigint,text,text,jsonb)",
+                "read_rag_v2_vertex_generation_evidence_legacy_v87(text,text,text,jsonb)",
+                "record_rag_v2_immutable_consent_legacy_v87(text,text,text,text)",
+                "issue_rag_v2_immutable_import_ticket_legacy_v87(text,text,text,text)",
+                "issue_rag_v2_retrieval_scope_legacy_v87(text,text,text[])",
+                "read_rag_v2_vertex_prepared_scope_legacy_v87(text,text,text,text[])",
+                "claim_rag_v2_immutable_vertex_token_attempt_legacy_v87(text,text)",
+                "claim_rag_v2_immutable_vertex_generate_content_attempt_legacy_v87(text,text)",
+                "commit_rag_v2_immutable_vertex_usage_legacy_v87(text,text,integer,integer,integer)",
+                "mark_rag_v2_immutable_vertex_usage_unknown_billing_legacy_v87(text,text)",
+                "create_rag_retrieval_scope_claim_legacy_v87(text,text,text[])",
+                "record_s4_9_strong_llm_usage_legacy_v87(text,text,text,text,text,text,text,integer,integer,integer,integer,integer,text)",
+                "sync_s4_9_mcp_oauth_client_legacy_v87(text,text,text,text[],text[],text)",
+                "upsert_s4_9_mcp_oauth_code_hash_legacy_v87(text,text,text,bigint,text,text,text[],text,timestamp with time zone)",
+                "consume_s4_9_mcp_oauth_code_hash_legacy_v87(text)",
+                "rotate_s4_9_mcp_refresh_token_hash_legacy_v87(text,text,text,bigint,text,text[],timestamp with time zone)",
+                "consume_s4_9_mcp_refresh_token_legacy_v87(text)",
+                "revoke_s4_9_mcp_refresh_token_family_legacy_v87(text)",
+            ).forEach { function ->
+                assertFalse(
+                    hasFunctionPrivilege(connection, "decision_app", function),
+                    "decision_app retained direct legacy RAG execution for $function",
                 )
             }
             assertFalse(

@@ -1,6 +1,7 @@
 package com.capstone.decision.infrastructure.mcp
 
 data class McpRefreshClaim(
+    val tokenHash: String,
     val clientId: String,
     val ownerUserId: String,
     val securityVersion: Long,

@@ -18,11 +18,12 @@ object TestActorRlsScope {
         actorRole: String = "USER",
         identityUsername: String = "decision_identity",
         identityPassword: String = "identity-test-secret-0001",
+        payloadValues: List<String?>? = null,
     ) {
         check(!connection.autoCommit) { "Actor RLS scope must be transaction-local." }
         val signature = (compactUuid() + compactUuid() + compactUuid()).take(86)
         val capability = "cap2_${compactUuid()}${compactUuid()}.$signature"
-        val payloadHash = sha256(targetId)
+        val payloadHash = payloadValues?.let(::payloadHash) ?: sha256(targetId)
 
         DriverManager.getConnection(jdbcUrl, identityUsername, identityPassword).use { identity ->
             identity
@@ -67,6 +68,13 @@ object TestActorRlsScope {
             HexFormat
                 .of()
                 .formatHex(MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8)))
+
+    private fun payloadHash(values: List<String?>): String =
+        sha256(
+            values.joinToString(separator = "") { value ->
+                if (value == null) "-:\n" else "${value.toByteArray(Charsets.UTF_8).size}:$value\n"
+            },
+        )
 
     private fun compactUuid(): String = UUID.randomUUID().toString().replace("-", "")
 }

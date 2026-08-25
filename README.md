@@ -1,5 +1,13 @@
 # Capstone AI Trading Coach
 
+<!-- P1_FULL_APP_V2_AUTHORITY_BEGIN -->
+> **1.0.0 current authority (2026-08-26):** Core는 `main=232f54ce…`에 병합됐지만 full-app v2는
+> 통합 중이며 GitHub `1.0.0` Release는 아직 없다. 현재 계약은
+> `contracts/catalogs/p1-full-app-release-contract.v2.json`이고 기존 offline v1은 역사적 회귀다.
+> Team B real artifact, Seed, owner E2E, CPU/Intel, provider read, security·supply-chain, Compose E2E가
+> 모두 PASS하기 전에는 tag와 Release를 만들지 않는다.
+<!-- P1_FULL_APP_V2_AUTHORITY_END -->
+
 투자 원칙을 먼저 고정하고, 저장된 시장·포트폴리오 근거로 위험을 설명하는 교육용 트레이딩 코치다.
 현재 구현은 Decision Platform이 중심이며 실제 주문이나 수익 보장을 목표로 하지 않는다.
 

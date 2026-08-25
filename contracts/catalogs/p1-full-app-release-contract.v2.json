@@ -1,0 +1,49 @@
+{
+  "capabilityStates": {
+    "cuda": [
+      "PASS",
+      "PENDING_USER_HARDWARE_VERIFICATION"
+    ],
+    "dashboardUi": [
+      "READY",
+      "PARTIAL_TEAM_A_ACTION_REQUIRED"
+    ],
+    "searxng": [
+      "READY",
+      "KNOWN_DEGRADED_NONBLOCKING"
+    ]
+  },
+  "contractId": "p1-full-app-release-contract.v2",
+  "hardGates": [
+    "P1_CORE",
+    "PUBLIC_RAG_SEED",
+    "OWNER_RAG_BACKEND",
+    "BGE_OCR_CPU_INTEL",
+    "PROVIDER_LIVE_READ",
+    "TEAM_B_REAL_ARTIFACT",
+    "SECURITY_RELEASE",
+    "SUPPLY_CHAIN_RELEASE",
+    "COMPOSE_E2E"
+  ],
+  "historicalContract": {
+    "contractId": "p1-offline-demo-release-manifest.v1",
+    "schemaPath": "deploy/p1/release-manifest.schema.json",
+    "status": "PRESERVED_HISTORICAL_REGRESSION"
+  },
+  "lightgbm": "RESEARCH_ONLY_NOT_APPLICABLE",
+  "liveOrder": "FUTURE_NOT_IMPLEMENTED",
+  "providerGate": {
+    "accountCallCap": 0,
+    "balanceCallCap": 0,
+    "ecosPhysicalCallCap": 2,
+    "googleGroundedVertexPhysicalCallCap": 1,
+    "kisDataPhysicalCallCap": 2,
+    "kisTokenPhysicalCallCap": 1,
+    "liveOrderCallCap": 0,
+    "retransmissionAllowed": false,
+    "voyageQueryPhysicalCallCap": 1
+  },
+  "releaseAuthorityWorkflow": ".github/workflows/p1-full-app-release.yml",
+  "releaseVersion": "1.0.0",
+  "terminalReadyState": "READY_WITH_GAPS"
+}

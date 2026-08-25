@@ -228,20 +228,23 @@ class S48aCrossMarketContractTest(unittest.TestCase):
             vector["excludedFields"],
         )
 
-    def test_existing_payload_and_catalog_v1_bytes_are_frozen(self) -> None:
+    def test_existing_payload_bytes_are_frozen_and_post_core_intake_is_untracked(self) -> None:
         for relative_path, expected_hash in FROZEN_EXISTING_PAYLOAD_HASHES.items():
             actual_hash = hashlib.sha256(
                 (ROOT / relative_path).read_bytes()
             ).hexdigest()
             self.assertEqual(expected_hash, actual_hash, relative_path)
 
+        tracked = subprocess.run(
+            ["git", "ls-files", "--", "workspaces/return-engine", "workspaces/experience-dashboard"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+        self.assertFalse([path for path in tracked if "/dev/" in path])
         for workspace in ("return-engine", "experience-dashboard"):
-            files = sorted(
-                path.relative_to(ROOT / "workspaces" / workspace).as_posix()
-                for path in (ROOT / "workspaces" / workspace).rglob("*")
-                if path.is_file() and not path.is_symlink()
-            )
-            self.assertEqual(["README.md"], files)
+            self.assertTrue((ROOT / "workspaces" / workspace / "README.md").is_file())
 
 
 if __name__ == "__main__":

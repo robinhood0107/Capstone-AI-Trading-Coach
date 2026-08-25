@@ -1,5 +1,12 @@
 # 문서 색인과 현재 상태
 
+<!-- P1_FULL_APP_V2_AUTHORITY_BEGIN -->
+> **1.0.0 current authority (2026-08-26):** full-app release v2는 `IMPLEMENTATION_IN_PROGRESS`이며
+> GitHub `1.0.0` Release는 없다. 현재 hard/non-blocking gate와 증거 규칙은
+> [P1 full-app v2 권위와 게이트](decision-platform/P1_1_0_0_FULL_APP_V2_권위_및_게이트.md)가 소유한다.
+> 아래 과거 P1/placeholder marker는 해당 시점의 기록이며 v2 완료 증거가 아니다.
+<!-- P1_FULL_APP_V2_AUTHORITY_END -->
+
 이 파일은 공개 문서의 단일 상태 권위다. 기능의 상세 계약은
 [최종 프로젝트 명세서](최종_프로젝트_명세서.md), 공개 REST/gRPC 계약은
 [API 명세서](API_명세서.md), 기계 판독 계약은 [contracts](../contracts/README.md)를 따른다.

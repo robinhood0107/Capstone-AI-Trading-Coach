@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -25,6 +26,8 @@ FULL_APP_DOCUMENTS = (
     "docs/decision-platform/P1_1_0_0_FULL_APP_V2_권위_및_게이트.md",
     "docs/decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md",
     "docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md",
+    "docs/decision-platform/P1_API_USAGE_MATRIX.md",
+    "docs/decision-platform/P1_TEAM_A_B_수신_후_통합_체크리스트.md",
     "docs/decision-platform/P1_OWNER_선행_완료_체크리스트.md",
     "docs/decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md",
     "docs/decision-platform/P1_운영_후속_경계.md",
@@ -67,7 +70,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             self.assertEqual([], markdown_link_errors(ROOT, relative), relative)
         self.assertEqual([], verify_public_truth_freeze(ROOT))
 
-    def test_workspace_index_never_contains_intake_cache_raw_csv_or_pickle(self) -> None:
+    def test_workspace_index_only_allows_exact_received_preview_binary_inputs(self) -> None:
         completed = subprocess.run(
             [
                 "git",
@@ -88,6 +91,12 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             [relative for relative in relatives if post_core_v2_workspace_path_is_forbidden(relative)]
         )
         for relative in (
+            "workspaces/return-engine/artifacts/005930.KS.json",
+            "workspaces/return-engine/data/model/005930.KS_lstm.pth",
+            "workspaces/return-engine/data/stock/005930.KS.csv",
+        ):
+            self.assertFalse(post_core_v2_workspace_path_is_forbidden(relative), relative)
+        for relative in (
             "workspaces/return-engine/artifacts/model.safetensors",
             "workspaces/return-engine/raw/provider.jsonl",
             "workspaces/return-engine/output/result.parquet",
@@ -96,6 +105,32 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             "workspaces/return-engine/src/untrusted.pkl",
         ):
             self.assertTrue(post_core_v2_workspace_path_is_forbidden(relative), relative)
+
+    def test_api_usage_matrix_classifies_all_openapi_operations_once(self) -> None:
+        openapi = json.loads((ROOT / "contracts/openapi/openapi.json").read_text(encoding="utf-8"))
+        methods = {"get", "post", "put", "delete", "patch", "head", "options"}
+        expected = {
+            (method.upper(), path)
+            for path, path_item in openapi["paths"].items()
+            for method in path_item
+            if method in methods
+        }
+        matrix = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX.md").read_text(encoding="utf-8")
+        rows = re.findall(
+            r"^\|\s*\d+\s*\|\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s*\|\s*`([^`]+)`\s*\|\s*`(A_CURRENT|A_REQUIRED|ADMIN_REFERENCE|FRAMEWORK_ERROR)`\s*\|",
+            matrix,
+            flags=re.MULTILINE,
+        )
+        self.assertEqual(48, len(rows))
+        self.assertEqual(48, len({(method, path) for method, path, _ in rows}))
+        self.assertEqual(expected, {(method, path) for method, path, _ in rows})
+        counts = {classification: 0 for classification in ("A_CURRENT", "A_REQUIRED", "ADMIN_REFERENCE", "FRAMEWORK_ERROR")}
+        for _, _, classification in rows:
+            counts[classification] += 1
+        self.assertEqual(
+            {"A_CURRENT": 15, "A_REQUIRED": 20, "ADMIN_REFERENCE": 6, "FRAMEWORK_ERROR": 7},
+            counts,
+        )
 
     def test_legacy_v1_authority_files_remain_present(self) -> None:
         self.assertTrue((ROOT / "deploy/p1/release-manifest.schema.json").is_file())
@@ -114,9 +149,10 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         controller = (ROOT / "deploy/p1/full-appctl").read_text(encoding="utf-8")
         windows = (ROOT / "capstone.ps1").read_text(encoding="utf-8")
         compose = (ROOT / "deploy/p1/compose.yml").read_text(encoding="utf-8")
-        for command in ("install", "start", "stop", "status", "doctor", "backup", "restore", "verify"):
+        for command in ("install", "start", "preview", "stop", "status", "doctor", "backup", "restore", "verify"):
             self.assertIn(command, controller)
-            self.assertIn(command, windows)
+            if command != "preview":
+                self.assertIn(command, windows)
         self.assertIn("full-appctl", linux)
         self.assertIn("FULL_INSTALL_BLOCKED_REQUIRED_ARTIFACTS", controller)
         self.assertIn("verify_p1_full_app_assets.py", controller)
@@ -140,6 +176,14 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertIn("p1-model-fetch", compose)
         self.assertNotIn("lm-kit", compose)
 
+    def test_rag_history_key_is_text_safe_with_raw_state_compatibility(self) -> None:
+        p1ctl = (ROOT / "deploy/p1/p1ctl").read_text(encoding="utf-8")
+        entrypoint = (ROOT / "deploy/p1/docker/secret-entrypoint.sh").read_text(encoding="utf-8")
+        self.assertIn("openssl rand -hex 32", p1ctl)
+        self.assertIn("rag_kek_size == 32", p1ctl)
+        self.assertIn('rag_key_size" -eq 32', entrypoint)
+        self.assertIn("od -An -v -tx1", entrypoint)
+
     def test_full_app_compose_has_health_gated_startup_order(self) -> None:
         compose = (ROOT / "deploy/p1/compose.yml").read_text(encoding="utf-8")
         for service in (
@@ -161,6 +205,9 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             block = match.group(1)
             self.assertIn("healthcheck:", block, service)
         self.assertIn("spring-api: {condition: service_healthy}", compose)
+        self.assertIn("api-edge: {condition: service_healthy}", compose)
+        self.assertIn("return-engine-preview-run: {condition: service_completed_successfully}", compose)
+        self.assertIn("return-engine-preview-verify: {condition: service_completed_successfully}", compose)
         self.assertIn("actor-capability-authority: {condition: service_healthy}", compose)
         self.assertIn("python-worker: {condition: service_healthy}", compose)
         self.assertIn("bge-m3: {condition: service_healthy}", compose)

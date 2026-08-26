@@ -11,6 +11,9 @@ SEED_MANIFEST=$SCRIPT_DIR/seed/public-rag/public-rag-seed.v1.manifest.json
 FULL_COMPOSE=$SCRIPT_DIR/compose.yml
 FULL_PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-full-app}
 DEGRADED_PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-offline-demo}
+PREVIEW_PROJECT_NAME=${P1_PREVIEW_PROJECT_NAME:-capstone-p1-preview}
+PREVIEW_STATE_DIR=${P1_PREVIEW_STATE_DIR:-$SCRIPT_DIR/.state-preview}
+COMPOSE_PROJECT_NAME=$FULL_PROJECT_NAME
 DOCKER_BIN=/usr/bin/docker
 [[ -x $DOCKER_BIN ]] || DOCKER_BIN=$(command -v docker 2>/dev/null || true)
 RETURN_MANIFEST=$REPO_ROOT/workspaces/return-engine/artifacts/p1-return-engine-manifest.v1.json
@@ -22,10 +25,11 @@ require_command() { command -v "$1" >/dev/null 2>&1 || die "MISSING_COMMAND_$1";
 
 usage() {
   cat <<'EOF'
-Usage: ./capstone <install|start|stop|status|doctor|backup|restore|verify> [--degraded]
+Usage: ./capstone <install|start|preview|stop|status|doctor|backup|restore|verify> [--degraded]
 
 The default lane is the full P1 application and fails closed while a required artifact is absent.
-Only install, start, doctor, and verify accept --degraded. Degraded mode runs the preserved
+Only install, start, doctor, and verify accept --degraded. `preview` builds and starts the
+received Team A/B preview plus the full backend, but grants no release authority. Degraded mode runs the preserved
 provider-free Core lane and never implies a full-app release gate PASS.
 EOF
 }
@@ -49,7 +53,7 @@ is_regular() {
 
 full_compose() {
   [[ -n $DOCKER_BIN ]] || die MISSING_COMMAND_docker
-  local args=("$DOCKER_BIN" compose --project-name "$FULL_PROJECT_NAME")
+  local args=("$DOCKER_BIN" compose --project-name "$COMPOSE_PROJECT_NAME")
   if state_initialized; then
     args+=(--env-file "$STATE_DIR/runtime.env")
   else
@@ -78,6 +82,15 @@ install_model_runtimes() {
   full_compose pull bge-m3 paddleocr-vl
   record_stage MODEL_RUNTIME_IMAGES_PULLED
   printf 'CAPSTONE_MODEL_RUNTIME_IMAGES=PULLED_OFFICIAL\n'
+}
+
+build_preview_core_images() {
+  "$DOCKER_BIN" build -f "$SCRIPT_DIR/docker/spring-api.Dockerfile" \
+    -t capstone-spring-api:p1-local "$REPO_ROOT"
+  "$DOCKER_BIN" build -f "$SCRIPT_DIR/docker/python-services.Dockerfile" \
+    -t capstone-python-services:p1-local "$REPO_ROOT"
+  "$DOCKER_BIN" build -f "$SCRIPT_DIR/docker/postgres-pgvector.Dockerfile" \
+    -t capstone-postgres-pgvector:p1-local "$REPO_ROOT"
 }
 
 full_preflight() {
@@ -177,6 +190,31 @@ start_full() {
   printf 'CAPSTONE_START=FULL_SEED_AND_CORE_RUNNING\n'
 }
 
+start_preview() {
+  # Existing historical state/volumes may have a different secret schema. Preview gets a
+  # reproducible isolated state and project while continuing to use this one compose file.
+  STATE_DIR=$PREVIEW_STATE_DIR
+  STAGE_FILE=$STATE_DIR/full-app-stage
+  COMPOSE_PROJECT_NAME=$PREVIEW_PROJECT_NAME
+  model_runtime_preflight || die PREVIEW_MODEL_RUNTIME_PREFLIGHT
+  build_preview_core_images
+  is_regular "$SEED_MANIFEST" || die PUBLIC_RAG_SEED_MANIFEST_MISSING
+  "$SCRIPT_DIR/verify-public-rag-seed" "$SEED_MANIFEST" >/dev/null || die PUBLIC_RAG_SEED_INTEGRITY_FAILED
+  if ! state_initialized; then
+    P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$PREVIEW_PROJECT_NAME "$P1CTL" init
+  fi
+  P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$PREVIEW_PROJECT_NAME "$P1CTL" verify >/dev/null
+  full_compose --profile preview config --quiet
+  full_compose --profile preview build experience-dashboard return-engine-preview-run
+  full_compose --profile preview up -d --force-recreate --wait experience-dashboard team-b-received-artifact
+  record_stage PREVIEW_RUNNING_NOT_RELEASE
+  printf 'CAPSTONE_PREVIEW=RUNNING\n'
+  printf 'CAPSTONE_DASHBOARD_URL=http://127.0.0.1:%s\n' "${P1_DASHBOARD_PORT:-3000}"
+  printf 'CAPSTONE_TEAM_B_PREVIEW_URL=http://127.0.0.1:%s/artifact\n' "${P1_TEAM_B_PREVIEW_PORT:-18090}"
+  printf 'TEAM_B_REAL_ARTIFACT_MISSING=TRUE\n'
+  printf 'CAPSTONE_RELEASE_AUTHORITY=NONE\n'
+}
+
 show_status() {
   if [[ -f $STAGE_FILE && ! -L $STAGE_FILE ]]; then
     printf 'CAPSTONE_INSTALL_STAGE=%s\n' "$(<"$STAGE_FILE")"
@@ -187,14 +225,14 @@ show_status() {
     P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME="$(selected_project_name)" "$P1CTL" status
   fi
   if [[ -n $DOCKER_BIN ]] && "$DOCKER_BIN" compose version >/dev/null 2>&1; then
-    full_compose ps
+    full_compose --profile preview ps
   fi
 }
 
 stop_full() {
   state_initialized || die NOT_INSTALLED
   P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME="$(selected_project_name)" "$P1CTL" stop
-  full_compose stop
+  full_compose --profile preview stop
   record_stage FULL_STOPPED_VOLUMES_PRESERVED
   printf 'CAPSTONE_MODEL_CACHE_VOLUMES_PRESERVED=TRUE\n'
 }
@@ -212,6 +250,7 @@ fi
 case $command in
   install) [[ $mode == degraded ]] && install_degraded || install_full ;;
   start) [[ $mode == degraded ]] && start_degraded || start_full ;;
+  preview) [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED; start_preview ;;
   stop) [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED; stop_full ;;
   status) [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED; show_status ;;
   doctor) [[ $mode == degraded ]] && degraded_doctor || full_preflight ;;

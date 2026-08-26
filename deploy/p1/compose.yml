@@ -77,7 +77,10 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
     secrets: [postgres_env]
     volumes:
-      - p1-postgres:/var/lib/postgresql/data
+      # Keep the historical P1 volume recoverable. The current full-app schema
+      # starts from a separately named volume so an older Flyway baseline can
+      # never be silently reused by the preview path.
+      - p1-postgres-current:/var/lib/postgresql/data
       - ../../infra/init/01-extensions.sql:/docker-entrypoint-initdb.d/01-extensions.sql:ro
       - ../../infra/init/02-application-roles.sh:/docker-entrypoint-initdb.d/02-application-roles.sh:ro
       - ./docker/secret-entrypoint.sh:/opt/p1/secret-entrypoint:ro
@@ -118,7 +121,11 @@ services:
     tmpfs:
       - /tmp:size=16m,mode=1777,uid=999,gid=999
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli ping 2>&1 | grep -Eq 'PONG|NOAUTH'"]
+      test:
+        - CMD-SHELL
+        - >-
+          . /run/secrets/redis_env &&
+          [ "$$(REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli --no-auth-warning ping)" = PONG ]
       interval: 3s
       timeout: 3s
       retries: 30
@@ -192,6 +199,7 @@ services:
     secrets: [seed_import_env]
     volumes:
       - ./seed/public-rag:/opt/capstone/public-rag-seed:ro
+      - ./docker/secret-entrypoint.sh:/usr/local/bin/p1-secret-entrypoint:ro
     depends_on:
       migrate: {condition: service_completed_successfully}
     networks: [p1-internal]
@@ -213,6 +221,28 @@ services:
     secrets: [bootstrap_env]
     depends_on:
       seed-import: {condition: service_completed_successfully}
+    <<: *app-security
+    restart: "no"
+    networks: [p1-internal]
+
+  dashboard-preview-seed:
+    profiles: [preview]
+    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "demo"]
+    command:
+      - python
+      - -m
+      - app.s8_demo.preview_dashboard_seed
+      - --config
+      - /opt/capstone/shared-docs/backtest_config.yaml
+    environment:
+      PROVIDER_LIVE_CALLS_ENABLED: "false"
+      KIS_OFFLINE: "1"
+    secrets: [demo_env]
+    volumes:
+      - ../../shared-docs/backtest_config.yaml:/opt/capstone/shared-docs/backtest_config.yaml:ro
+    depends_on:
+      identity-bootstrap: {condition: service_completed_successfully}
     <<: *app-security
     restart: "no"
     networks: [p1-internal]
@@ -258,6 +288,7 @@ services:
       KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "false"
     secrets: [python_env]
     depends_on:
+      dashboard-preview-seed: {condition: service_completed_successfully, required: false}
       identity-bootstrap: {condition: service_completed_successfully}
       runtime-netns: {condition: service_healthy}
     network_mode: service:runtime-netns
@@ -466,6 +497,122 @@ services:
     restart: on-failure:3
     networks: [p1-internal]
 
+  return-engine-preview-run:
+    profiles: [preview]
+    image: capstone-return-engine-received-preview:p1-local
+    build:
+      context: ../../workspaces/return-engine
+      dockerfile: Dockerfile
+    command: ["python", "-m", "preview_cli", "run"]
+    user: "65532:65532"
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 3g
+    cpus: 2.0
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    volumes:
+      - p1-return-preview:/output
+    restart: "no"
+
+  return-engine-preview-verify:
+    profiles: [preview]
+    image: capstone-return-engine-received-preview:p1-local
+    command: ["python", "-m", "preview_cli", "verify", "--input", "/output/005930.KS.json"]
+    user: "65532:65532"
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 512m
+    cpus: 0.5
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    volumes:
+      - p1-return-preview:/output:ro
+    depends_on:
+      return-engine-preview-run: {condition: service_completed_successfully}
+    restart: "no"
+
+  team-b-received-artifact:
+    profiles: [preview]
+    image: capstone-return-engine-received-preview:p1-local
+    command: ["python", "-m", "preview_server", "--artifact", "/output/005930.KS.json"]
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.25
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    ports:
+      - "127.0.0.1:${P1_TEAM_B_PREVIEW_PORT:-18090}:8090"
+    volumes:
+      - p1-return-preview:/output:ro
+    depends_on:
+      return-engine-preview-verify: {condition: service_completed_successfully}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json,urllib.request;
+          response=urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=2);
+          body=json.load(response);
+          assert response.status == 200 and body == {'status':'UP','artifact':'LEGACY_RECEIVED_PREVIEW'}
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 3s
+    restart: on-failure:3
+    networks: [p1-edge]
+
+  experience-dashboard:
+    profiles: [preview]
+    image: capstone-experience-dashboard:p1-local
+    build:
+      context: ../../workspaces/experience-dashboard
+      dockerfile: Dockerfile
+      args: {}
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_MODE: live
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    ports:
+      - "127.0.0.1:${P1_DASHBOARD_PORT:-3000}:3000"
+    depends_on:
+      api-edge: {condition: service_healthy}
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000/healthz')
+          .then(async response => { const body=await response.json(); if (!response.ok || body.status !== 'UP') process.exit(1); })
+          .catch(() => process.exit(1))
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    restart: on-failure:3
+    networks: [p1-edge]
+
 secrets:
   postgres_env: {file: "${P1_SECRETS_DIR}/postgres.env"}
   redis_env: {file: "${P1_SECRETS_DIR}/redis.env"}
@@ -484,10 +631,11 @@ secrets:
   seed_import_env: {file: "${P1_SECRETS_DIR}/seed-import.env"}
 
 volumes:
-  p1-postgres: {}
+  p1-postgres-current: {}
   p1-redis: {}
   p1-bge-model-cache: {}
   p1-paddleocr-model-cache: {}
+  p1-return-preview: {}
 
 networks:
   p1-internal:

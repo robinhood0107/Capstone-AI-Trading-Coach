@@ -96,7 +96,16 @@ if [ "$profile" = spring ]; then
     exit 1
   fi
   install -d -m 700 /tmp/rag-history
-  install -m 600 /run/secrets/rag_history_kek /tmp/rag-history/rag-history-kek-v1.key
+  rag_key_size=$(wc -c < /run/secrets/rag_history_kek)
+  if [ "$rag_key_size" -eq 32 ]; then
+    # Older p1ctl states stored the same 32 key bytes as raw binary. Convert
+    # only the container-local copy to the provider's lowercase hex envelope.
+    od -An -v -tx1 /run/secrets/rag_history_kek \
+      | tr -d ' \n' > /tmp/rag-history/rag-history-kek-v1.key
+    chmod 600 /tmp/rag-history/rag-history-kek-v1.key
+  else
+    install -m 600 /run/secrets/rag_history_kek /tmp/rag-history/rag-history-kek-v1.key
+  fi
   export RAG_HISTORY_SECRET_DIRECTORY=/tmp/rag-history
   export RAG_HISTORY_CURRENT_KEK_VERSION=kek-v1
 fi

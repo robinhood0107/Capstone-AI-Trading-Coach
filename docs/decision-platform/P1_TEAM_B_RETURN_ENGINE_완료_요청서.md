@@ -1,105 +1,79 @@
 # P1 Team B Return Engine 완료 요청서
 
-## 팀원 B에게 한 문장으로 부탁할 내용
+## 아주 쉽게 말하면
 
-> 최신 `main`을 받은 뒤 `workspaces/return-engine/` 안에서 provider를 직접 호출하지 않는 one-shot
-> Return Engine을 완성하고, 같은 입력으로 같은 실물 artifact를 다시 만들 수 있는 source·lockfile·
-> Dockerfile·테스트·재현 manifest를 한 PR로 올려 주세요.
+> 현재 CSV·PTH·소스·JSON은 하나도 버리지 않고 preview로 보존했습니다. 이제 provider를 직접 부르지
+> 않는 결정적 one-shot 엔진으로 정리하고, 명세의 exact artifact 10개와 manifest를 만들어 주세요.
+> Spring REST API를 억지로 호출할 필요는 없습니다.
 
-## 언제 전달하는 문서인가
+작업 위치는 `workspaces/return-engine/`입니다. 현재 수신 PTH는 SHA-256 확인 후
+`weights_only=True`로만 읽으며, 결과에는 `LEGACY_RECEIVED_PREVIEW`, `realTeamB=false`가 붙습니다.
+이 preview는 실물 Team B artifact가 아닙니다.
 
-이 요청서는 [우리 쪽 선행 체크리스트](P1_OWNER_선행_완료_체크리스트.md)가 `OWNER_HANDOFF_READY=TRUE`가
-된 뒤 전달한다. 현재 포함된 수신본은 dependency lock, Dockerfile, 테스트와 신뢰 가능한 model provenance가
-없어 `TEAM_B_REAL_ARTIFACT=BLOCKED`다.
+## 입력 계약
 
-## Team B가 시작하는 방법
+- 계약된 KIS 가격 snapshot/artifact
+- ECOS macro snapshot
+- 별도 승인됐을 때만 `news_sentiment_summary.v2`
+- `yfinance`, KIS, ECOS 등 provider 직접 호출 0
+- 실계좌·잔고·실주문·credential 0
 
-```bash
-git switch main
-git pull --ff-only origin main
-git switch -c feature/p1-team-b-return-engine
-```
+## 구현할 계산
 
-작업 위치는 `workspaces/return-engine/`이다. `yfinance`, KIS, ECOS 등 외부 provider를 Return Engine에서
-직접 호출하지 않는다. 입력은 Decision Platform이 제공하는 sanitized snapshot만 사용한다.
+- Python 3.12와 PyTorch 2.13.0 CPU, `uv.lock`을 유지합니다.
+- feature 순서, scaler, window, split, seed, source/config hash를 manifest에 기록합니다.
+- 다음 예측일은 pinned XKRX calendar의 다음 session을 사용합니다.
+- `forecastClose / currentClose - 1`을 예상 수익률로 사용합니다.
+- `BASELINE`, `GUIDE`, `STRICT` 세 전략을 실행합니다.
+- 수수료, 세금, slippage를 전략별 backtest에 실제 반영하고 값과 단위를 기록합니다.
+- 같은 입력으로 one-shot을 두 번 실행했을 때 byte-stable하거나 승인된 deterministic tolerance 안에서
+  같아야 합니다.
 
-## 해 달라고 할 일
+## exact artifact 10개
 
-1. Python/Torch exact dependency lock과 linux/amd64 Dockerfile을 추가한다.
-2. 입력 snapshot, feature 순서, scaler, window, split, seed, config와 training code hash를 manifest에
-   기록한다. 오늘 날짜나 실행 PC 경로에 따라 결과가 달라지면 안 된다.
-3. 다음 예측일은 repository의 XKRX calendar 권위에서 구한다.
-4. 예상 수익률은 정확히 `forecastClose / currentClose - 1`로 계산한다.
-5. `BASELINE`, `GUIDE`, `STRICT` 세 전략을 모두 실행하고 각 전략의 거래비용, 세금, slippage를 기록한다.
-6. 아래 exact basename 10개를 생성한다.
-   - `model.safetensors`
-   - `scaler.json`
-   - `config.json`
-   - `lstm_signals.parquet`
-   - `rule_baseline_signals.parquet`
-   - `backtest_result.json`
-   - `trade_log.parquet`
-   - `equity_log.parquet`
-   - `golden_output.json`
-   - `model_report.md`
-7. 최상위 manifest는 `p1-return-engine-artifact-manifest.v1` 계약과 `REAL_TEAM_B` evidence mode를
-   사용하고, 위 10개 파일의 크기와 SHA-256을 모두 묶는다.
-8. unit, schema/contract, golden, integration, backtest, one-shot Docker E2E를 통과시킨다.
+1. `model.safetensors`
+2. `scaler.json`
+3. `config.json`
+4. `lstm_signals.parquet`
+5. `rule_baseline_signals.parquet`
+6. `backtest_result.json`
+7. `trade_log.parquet`
+8. `equity_log.parquet`
+9. `golden_output.json`
+10. `model_report.md`
 
-기존 provenance 없는 pickle `.pth`, raw CSV, cache 또는 synthetic output을 REAL artifact로 바꾸지 않는다.
-실계좌, 주문, 잔고 또는 credential은 입력과 출력 모두 0개다.
+최상위 manifest는 `p1-return-engine-artifact-manifest.v1`, evidence mode는 `REAL_TEAM_B`이고 위 10개
+파일의 basename, size, SHA-256을 전부 묶어야 합니다. 현재 수신 PTH·CSV·legacy JSON과 `__pycache__`는
+원본 receipt로 그대로 남겨도 되지만 REAL artifact의 provenance 근거로 둔갑시키면 안 됩니다.
 
-## PR에 반드시 들어갈 것
+## API 책임
 
-- `workspaces/return-engine/`의 production source와 tests
-- exact dependency lockfile과 Dockerfile
-- sanitized 입력 snapshot의 생성 계약 또는 content hash
-- model/scaler/feature/split/config의 재현 정보
-- 한 명령으로 artifact 10개와 manifest를 만드는 one-shot command
-- golden output과 실제 테스트 결과
-- SBOM 생성 명령과 raw/provider/credential 0건 확인
+Team B가 직접 호출해야 할 Spring REST API는 명세상 0개입니다. 파일 계약으로 출력한 뒤 owner가 아래를
+검증합니다.
 
-로컬 `artifacts/`, `output/`, `raw/`, cache와 `.pyc`는 Git에서 ignore되므로 그 폴더만 복사해 보내면
-`git pull` 재현이 되지 않는다. PR에는 artifact를 다시 만드는 source와 입력 계약이 반드시 있어야 한다.
-최종 배포에서는 검증된 artifact와 Return Engine을 digest-pinned OCI image에 넣고 Compose가 받는다.
+- `GET /api/v2/signals/{symbol}`
+- `GET /api/v1/dashboard/model-evaluations/{runId}`
+- `GET /api/v1/dashboard/backtests/{runId}`
+- `GET /api/v1/artifacts/ingest-status`
 
-## Team B가 완료 여부를 확인하는 명령
-
-README에 실제 명령을 한 줄씩 적고, 새 checkout에서 다음 흐름이 성공하게 한다.
+## 완료 명령
 
 ```bash
 uv sync --frozen
 uv run --frozen pytest
 docker build --platform linux/amd64 -t capstone-return-engine:p1-local .
-docker run --rm capstone-return-engine:p1-local --help
+docker run --rm --network none capstone-return-engine:p1-local
 ```
 
-그다음 one-shot 명령으로 artifact를 두 번 만들고, 입력을 바꾸지 않았을 때 byte-stable하거나 manifest에
-적은 deterministic tolerance 안에서 같은지 확인한다.
+동일 입력으로 Docker one-shot을 두 번 실행하고 manifest·산출물을 비교합니다. owner는 trade/equity
+log에서 수익률·Sharpe·MDD를 독립 재계산하고 `contracts/verify_p1_full_app_assets.py`로 manifest를
+다시 검증합니다.
 
-## 우리가 PR과 실물 bundle을 받은 뒤 확인할 것
-
-1. 원본 receipt와 source commit을 확인하고 secret, symlink, cache, raw provider data를 검사한다.
-2. Team B 명령으로 clean build·테스트·artifact 생성을 다시 수행한다.
-3. 아래 검증기를 실행한다.
-
-```bash
-python3 contracts/verify_p1_full_app_assets.py \
-  --return-manifest '<검증용 bundle>/p1-return-engine-manifest.v1.json' \
-  --repository-root .
-```
-
-4. trade/equity log에서 수익률·Sharpe·MDD를 독립 재계산한다.
-5. 검증된 image digest와 content-free artifact manifest hash를 full Compose/release manifest에 결속한다.
-6. 새 checkout에서 `./capstone doctor`, `./capstone install`, `./capstone start`를 다시 검증한다.
-
-Team B가 보내 준 summary만 있거나 10개 실물 중 하나라도 없으면 `TEAM_B_REAL_ARTIFACT=BLOCKED`를 유지한다.
-
-## Team B에게 그대로 보내는 짧은 메시지
+## 그대로 보내는 짧은 메시지
 
 ```text
-최신 main을 pull한 뒤 workspaces/return-engine/만 작업해 주세요.
-provider를 직접 부르지 않는 one-shot Return Engine source, lockfile, production Dockerfile, 테스트와
-재현 manifest를 한 PR로 주세요. yfinance, raw provider data, .pth pickle, cache, credential은 보내지 마세요.
-자세한 exact 파일과 완료 기준은 docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md에 있습니다.
+최신 main을 받고 workspaces/return-engine/에서 작업해 주세요.
+현재 받은 CSV/PTH/소스/JSON은 모두 preview receipt로 보존되어 있습니다. 삭제하지 말고, provider 호출
+없이 exact artifact 10개와 p1-return-engine-artifact-manifest.v1을 만드는 결정적 Docker one-shot으로
+완성해 주세요. Spring REST API를 새로 호출할 필요는 없습니다.
 ```

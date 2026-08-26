@@ -120,7 +120,7 @@ def main() -> None:
                 ("grpc.enable_retries", 0),
             ),
         )
-        brokerage_pb2_grpc.add_BrokerageServiceServicer_to_server(
+        brokerage_pb2_grpc.add_BrokerageServiceServicer_to_server(  # type: ignore[no-untyped-call]
             BrokerageServicer(
                 gateway,
                 settings.shared_secret,

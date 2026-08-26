@@ -11,6 +11,7 @@ case "$profile" in
   role-bootstrap) secret_files=/run/secrets/role_bootstrap_env ;;
   migration) secret_files=/run/secrets/migration_env ;;
   seed-import) secret_files=/run/secrets/seed_import_env ;;
+  artifact-import) secret_files=/run/secrets/artifact_import_env ;;
   bootstrap) secret_files=/run/secrets/bootstrap_env ;;
   python) secret_files=/run/secrets/python_env ;;
   kafka-publisher) secret_files=/run/secrets/kafka_publisher_env ;;
@@ -45,6 +46,7 @@ allowed_key() {
     authority:POSTGRES_IDENTITY_PASSWORD|authority:ACTOR_CAPABILITY_SHARED_SECRET|authority:ACTOR_CAPABILITY_PRIVATE_KEY|authority:ACTOR_CAPABILITY_PUBLIC_KEY|authority:ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD) return 0 ;;
     migration:POSTGRES_MIGRATION_PASSWORD|migration:BROKERAGE_DB_CAPABILITY_TOKEN_SHA256|migration:DEMO_CREDENTIAL_SEPARATION_KEY|migration:DEMO_USER_CREDENTIAL_BUNDLE|migration:DEMO_ADMIN_CREDENTIAL_BUNDLE) return 0 ;;
     seed-import:P1_SEED_DATABASE_DSN) return 0 ;;
+    artifact-import:P1_ARTIFACT_IMPORT_DATABASE_DSN) return 0 ;;
     bootstrap:POSTGRES_MIGRATION_PASSWORD|bootstrap:DEMO_CREDENTIAL_SEPARATION_KEY|bootstrap:DEMO_USER_CREDENTIAL_BUNDLE|bootstrap:DEMO_ADMIN_CREDENTIAL_BUNDLE) return 0 ;;
     python:ASYNC_WORKER_DATABASE_DSN|python:ASYNC_PARTITION_HMAC_KEY|python:ASYNC_WORKER_GRPC_SHARED_SECRET|python:KAFKA_SASL_USERNAME|python:KAFKA_SASL_PASSWORD|python:KAFKA_ENVELOPE_PUBLIC_KEY|python:POISON_RECORDER_URL|python:POISON_RECORDER_SHARED_SECRET) return 0 ;;
     kafka-publisher:OUTBOX_PUBLISHER_DATABASE_DSN|kafka-publisher:KAFKA_SASL_USERNAME|kafka-publisher:KAFKA_SASL_PASSWORD|kafka-publisher:KAFKA_ENVELOPE_PRIVATE_KEY) return 0 ;;
@@ -67,6 +69,7 @@ required_keys() {
     authority) printf '%s\n' 'POSTGRES_IDENTITY_PASSWORD ACTOR_CAPABILITY_SHARED_SECRET ACTOR_CAPABILITY_PRIVATE_KEY ACTOR_CAPABILITY_PUBLIC_KEY ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD' ;;
     migration) printf '%s\n' 'POSTGRES_MIGRATION_PASSWORD BROKERAGE_DB_CAPABILITY_TOKEN_SHA256 DEMO_CREDENTIAL_SEPARATION_KEY DEMO_USER_CREDENTIAL_BUNDLE DEMO_ADMIN_CREDENTIAL_BUNDLE' ;;
     seed-import) printf '%s\n' 'P1_SEED_DATABASE_DSN' ;;
+    artifact-import) printf '%s\n' 'P1_ARTIFACT_IMPORT_DATABASE_DSN' ;;
     bootstrap) printf '%s\n' 'POSTGRES_MIGRATION_PASSWORD DEMO_CREDENTIAL_SEPARATION_KEY DEMO_USER_CREDENTIAL_BUNDLE DEMO_ADMIN_CREDENTIAL_BUNDLE' ;;
     python) printf '%s\n' 'ASYNC_WORKER_DATABASE_DSN ASYNC_PARTITION_HMAC_KEY ASYNC_WORKER_GRPC_SHARED_SECRET KAFKA_SASL_USERNAME KAFKA_SASL_PASSWORD KAFKA_ENVELOPE_PUBLIC_KEY POISON_RECORDER_URL POISON_RECORDER_SHARED_SECRET' ;;
     kafka-publisher) printf '%s\n' 'OUTBOX_PUBLISHER_DATABASE_DSN KAFKA_SASL_USERNAME KAFKA_SASL_PASSWORD KAFKA_ENVELOPE_PRIVATE_KEY' ;;
@@ -143,7 +146,7 @@ if [ "$profile" = postgres ]; then
   exec "$@"
 fi
 
-if [ "$profile" = certification ]; then
+if [ "$profile" = certification ] || [ "$profile" = artifact-import ]; then
   [ "$(id -u)" = "${P1_OPERATOR_UID:?missing operator uid}" ] || {
     echo "p1 secret loading failed: invalid_operator_uid" >&2
     exit 1

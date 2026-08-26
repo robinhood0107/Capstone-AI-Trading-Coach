@@ -75,10 +75,10 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `clean database applies V1 through V87 migrations and creates required objects`() {
+    fun `clean database applies V1 through V88 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
         // V7 is a Java migration and must appear alongside the SQL migrations.
-        assertEquals((1..87).map(Int::toString), versions)
+        assertEquals((1..88).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -202,6 +202,8 @@ class FlywayMigrationIntegrationTest(
                 "active_signal_model_release",
                 "active_signal_batch",
                 "signal_batch_publications",
+                "p1_return_artifact_bundle",
+                "p1_return_signal_projection",
             )
         requiredTables.forEach { tableName ->
             assertTrue(tableExists(tableName), "expected table $tableName to exist")
@@ -217,6 +219,164 @@ class FlywayMigrationIntegrationTest(
             indexDefinitionLike("rag_chunk_embeddings", "%ivfflat%"),
             "ivfflat must wait until real embeddings are loaded",
         )
+    }
+
+    @Test
+    fun `V88 imports exact synthetic Return bundle atomically and keeps production pointer closed`() {
+        val mapper = JsonMapper.builder().build()
+        val bundleSha = "a".repeat(64)
+        val artifactId = "artifact_p1_${bundleSha.take(24)}"
+        val runId = "run_v88_fixture_0001"
+        val asOf = "2026-08-18T00:00:00Z"
+        val freshUntil = "2026-08-19T00:00:00Z"
+        val modelProjection =
+            mapper.writeValueAsString(
+                mapOf(
+                    "data" to
+                        mapOf(
+                            "asOf" to asOf,
+                            "evidenceMode" to "SYNTHETIC_DEMO",
+                            "freshUntil" to freshUntil,
+                            "performanceClaimAllowed" to false,
+                            "view" to mapOf("runId" to runId),
+                            "viewState" to "READY",
+                        ),
+                    "error" to null,
+                    "requestId" to "req_v88_fixture_0001",
+                    "success" to true,
+                    "warnings" to emptyList<Map<String, String>>(),
+                ),
+            )
+        val backtestProjection =
+            mapper.writeValueAsString(
+                mapOf(
+                    "data" to
+                        mapOf(
+                            "asOf" to asOf,
+                            "evidenceMode" to "SYNTHETIC_DEMO",
+                            "freshUntil" to freshUntil,
+                            "performanceClaimAllowed" to false,
+                            "view" to mapOf("fixtureClass" to "SYNTHETIC_FAKE_E2E", "runId" to runId),
+                            "viewState" to "READY",
+                        ),
+                    "error" to null,
+                    "requestId" to "req_v88_fixture_0001",
+                    "success" to true,
+                    "warnings" to emptyList<Map<String, String>>(),
+                ),
+            )
+        val symbols = (1..30).map { it.toString().padStart(6, '0') } + "132030"
+        val signals =
+            symbols.flatMap { symbol ->
+                listOf("LSTM", "RULE_BASELINE").map { producer ->
+                    mapOf(
+                        "asOf" to asOf,
+                        "confidence" to 0.5,
+                        "modelReportId" to "mrp_v88_fixture_0001",
+                        "modelVersion" to "v88-fixture",
+                        "payloadSha256" to "b".repeat(64),
+                        "predictedReturn" to 0.0,
+                        "producer" to producer,
+                        "sessionDate" to "2026-08-14",
+                        "signal" to "HOLD",
+                        "symbol" to symbol,
+                    )
+                }
+            }
+        val packet =
+            mapper.writeValueAsString(
+                mapOf(
+                    "artifactId" to artifactId,
+                    "asOf" to asOf,
+                    "backtestProjectionSha256" to sha256Hex(backtestProjection),
+                    "backtestProjectionText" to backtestProjection,
+                    "bundleSha256" to bundleSha,
+                    "contractId" to "p1-return-artifact-import.v1",
+                    "evidenceMode" to "SYNTHETIC_GOLDEN",
+                    "fixtureClass" to "SYNTHETIC_FAKE_E2E",
+                    "freshUntil" to freshUntil,
+                    "inputPackSha256" to "c".repeat(64),
+                    "manifestFileName" to "p1-return-engine-manifest.v2.json",
+                    "manifestSha256" to bundleSha,
+                    "mockRuntimeEligible" to true,
+                    "modelProjectionSha256" to sha256Hex(modelProjection),
+                    "modelProjectionText" to modelProjection,
+                    "modelQuality" to "NOT_EVALUATED_SYNTHETIC",
+                    "realTeamB" to false,
+                    "runId" to runId,
+                    "sessionDate" to "2026-08-14",
+                    "signals" to signals,
+                    "sourceWorkspace" to "return-engine",
+                ),
+            )
+        val packetSha = sha256Hex(packet)
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_worker", "worker-test-secret-0001").use { worker ->
+            worker.prepareStatement("SELECT outcome,artifact_id,run_id FROM import_p1_return_bundle_v1(?,?)").use { statement ->
+                statement.setString(1, packet)
+                statement.setString(2, packetSha)
+                statement.executeQuery().use { result ->
+                    assertTrue(result.next())
+                    assertEquals("IMPORTED", result.getString("outcome"))
+                    assertEquals(artifactId, result.getString("artifact_id"))
+                    assertEquals(runId, result.getString("run_id"))
+                }
+                statement.executeQuery().use { result ->
+                    assertTrue(result.next())
+                    assertEquals("REPLAYED", result.getString("outcome"))
+                }
+            }
+        }
+        assertEquals(
+            1,
+            jdbcTemplate.queryForObject(
+                "select count(*) from p1_return_artifact_bundle where bundle_sha256=?",
+                Int::class.java,
+                bundleSha,
+            ),
+        )
+        assertEquals(
+            62,
+            jdbcTemplate.queryForObject(
+                "select count(*) from p1_return_signal_projection where bundle_sha256=?",
+                Int::class.java,
+                bundleSha,
+            ),
+        )
+        assertEquals(
+            2,
+            jdbcTemplate.queryForObject(
+                "select count(*) from dashboard_artifact_views where artifact_id=?",
+                Int::class.java,
+                artifactId,
+            ),
+        )
+        assertEquals(
+            1,
+            jdbcTemplate.queryForObject(
+                "select count(*) from artifact_ingest_projection where artifact_id=?",
+                Int::class.java,
+                artifactId,
+            ),
+        )
+        assertEquals(
+            0,
+            jdbcTemplate.queryForObject(
+                "select count(*) from current_p1_return_signal_pointer where bundle_sha256=?",
+                Int::class.java,
+                bundleSha,
+            ),
+        )
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { app ->
+            app.prepareStatement("SELECT count(*) FROM read_p1_return_signal_v2(?,?)").use { statement ->
+                statement.setString(1, "132030")
+                statement.setBoolean(2, false)
+                statement.executeQuery().use { result -> assertTrue(result.next() && result.getInt(1) == 0) }
+                statement.setBoolean(2, true)
+                statement.executeQuery().use { result -> assertTrue(result.next() && result.getInt(1) == 2) }
+            }
+        }
+        assertFalse(hasTablePrivilege("decision_worker", "p1_return_artifact_bundle", "INSERT"))
+        assertFalse(hasTablePrivilege("decision_app", "p1_return_signal_projection", "SELECT"))
     }
 
     @Test
@@ -281,7 +441,7 @@ class FlywayMigrationIntegrationTest(
                     ).use { result ->
                         val versions = mutableListOf<String>()
                         while (result.next()) versions += result.getString(1)
-                        assertEquals((1..87).map(Int::toString), versions)
+                        assertEquals((1..88).map(Int::toString), versions)
                     }
                 val privileges =
                     mapOf(
@@ -4401,7 +4561,7 @@ class FlywayMigrationIntegrationTest(
             registry.add("spring.flyway.password", postgres::getPassword)
             // The primary integration database exercises current adapters against the current schema.
             // Historical migration boundaries remain covered by their explicitly targeted databases.
-            registry.add("spring.flyway.target") { "87" }
+            registry.add("spring.flyway.target") { "88" }
             registry.add("app.decision.grpc.shared-secret") { SpringApiIntegrationTestBase.TEST_GRPC_SHARED_SECRET }
             registry.add("app.rag.grpc.shared-secret") {
                 SpringApiIntegrationTestBase.TEST_RAG_GRPC_SHARED_SECRET

@@ -261,6 +261,7 @@ services:
       RAG_WEB_ENABLED: "false"
       S4_9_STRONG_LLM_ENABLED: "false"
       S4_9_MCP_ENABLED: "false"
+      APP_P1_RETURN_ARTIFACT_SYNTHETIC_TEST_PROFILE: "${P1_ARTIFACT_SYNTHETIC_TEST_PROFILE:-false}"
       BROKERAGE_GRPC_ENABLED: "${P1_KIS_MOCK_ONLINE_ENABLED:-false}"
       BROKERAGE_GRPC_TARGET: 127.0.0.1:50052
       PYTHON_BROKERAGE_GRPC_BIND_ADDRESS: 127.0.0.1:50052
@@ -301,6 +302,42 @@ services:
     secrets: [demo_env]
     networks: [p1-data]
     <<: *app-security
+    restart: "no"
+
+  artifact-importer:
+    profiles: [owner]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    pull_policy: missing
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "artifact-import"]
+    command:
+      - python
+      - -m
+      - app.p1_owner.importer
+      - --bundle-root
+      - /owner/${P1_ARTIFACT_BUNDLE_NAME:-disabled}
+      - --manifest-sha256
+      - ${P1_ARTIFACT_MANIFEST_SHA256:-disabled}
+      - --archive-parent
+      - /archive
+    environment:
+      P1_OPERATOR_UID: "${P1_OPERATOR_UID}"
+    user: "${P1_OPERATOR_UID}:${P1_SECRET_GID}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 1g
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    secrets: [artifact_import_env]
+    volumes:
+      - ${P1_ARTIFACT_BUNDLE_PARENT:-/nonexistent}:/owner:ro
+      - ${P1_ARTIFACT_ARCHIVE_DIR:-/nonexistent}:/archive
+      - ./docker/secret-entrypoint.sh:/usr/local/bin/p1-secret-entrypoint:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [p1-data]
     restart: "no"
 
   kis-mock-certification-runner:
@@ -542,6 +579,7 @@ secrets:
   demo_env: {file: "${P1_SECRETS_DIR}/demo.env"}
   rag_history_kek: {file: "${P1_SECRETS_DIR}/rag-history-kek-v1.key"}
   seed_import_env: {file: "${P1_SECRETS_DIR}/seed-import.env"}
+  artifact_import_env: {file: "${P1_SECRETS_DIR}/artifact-import.env"}
   actor_tls_ca: {file: "${P1_SECRETS_DIR}/actor-tls-ca.crt"}
   actor_server_p12: {file: "${P1_SECRETS_DIR}/actor-server.p12"}
   actor_client_p12: {file: "${P1_SECRETS_DIR}/actor-client.p12"}

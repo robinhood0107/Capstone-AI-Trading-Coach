@@ -4,6 +4,14 @@
 
 투자 원칙(Principle) → 평가(Decision/RiskEngine) → 모의 주문(Brokerage) → RAG 설명까지를 담당하는 워크스페이스. Kotlin(Spring) API 서버와 Python(gRPC/FastAPI) 서비스 두 축으로 구성된다.
 
+## P1 Owner input pack과 synthetic golden
+
+`p1-owner-assets`는 verified `market-data-seed.v1` archive를 exact-31 input pack으로 변환하고,
+wire-compatible synthetic exact-10 Team B bundle을 만든다. provider/account/order call은 0이고 output은
+Git 밖 owner-private root에만 둔다. 실행과 truth marker는
+[`P1_OWNER_INPUT_PACK_GOLDEN_운영_가이드`](../../docs/decision-platform/P1_OWNER_INPUT_PACK_GOLDEN_운영_가이드.md)를
+따른다.
+
 ## 구조
 
 ```text

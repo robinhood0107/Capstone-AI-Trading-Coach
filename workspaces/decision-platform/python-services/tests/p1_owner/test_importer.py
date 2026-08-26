@@ -159,7 +159,8 @@ def test_capstone_artifact_command_is_outside_certification_heredoc_and_uses_one
     assert "artifact-importer:" in compose
     assert 'entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "artifact-import"]' in compose
     assert 'P1_OPERATOR_UID: "${P1_OPERATOR_UID}"' in compose
-    assert "${P1_ARTIFACT_BUNDLE_DIR:-/nonexistent}:/bundle:ro" in compose
+    assert "/owner/${P1_ARTIFACT_BUNDLE_NAME:-disabled}" in compose
+    assert "${P1_ARTIFACT_BUNDLE_PARENT:-/nonexistent}:/owner:ro" in compose
     assert "${P1_ARTIFACT_ARCHIVE_DIR:-/nonexistent}:/archive" in compose
 
     entrypoint = (repository / "deploy/p1/docker/secret-entrypoint.sh").read_text(encoding="utf-8")

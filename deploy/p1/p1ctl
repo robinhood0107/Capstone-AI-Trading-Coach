@@ -16,11 +16,44 @@ RELEASE_MANIFEST=$SCRIPT_DIR/../../release-manifest.json
 RELEASE_GUARD=$SCRIPT_DIR/release_guard.py
 RELEASE_SOURCE_ROOT=$SCRIPT_DIR/../..
 SEALED_RELEASE_PARENT=''
+DOCKER_BIN=/usr/bin/docker
+[[ -x $DOCKER_BIN ]] || DOCKER_BIN=$(command -v docker 2>/dev/null || true)
+
+docker() {
+  [[ -n $DOCKER_BIN ]] || die missing_docker
+  "$DOCKER_BIN" "$@"
+}
 
 die() { printf 'P1_ERROR=%s\n' "$1" >&2; exit 1; }
 require_command() { command -v "$1" >/dev/null 2>&1 || die "missing_$1"; }
 random_secret() { openssl rand -hex 32; }
 base64url_key() { openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'; }
+generate_actor_tls() {
+  local server_password=$1 client_password=$2
+  (
+    local tls_tmp
+    tls_tmp=$(mktemp -d)
+    trap 'rm -rf -- "$tls_tmp"' EXIT
+    openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -sha256 \
+      -subj '/CN=Capstone P1 Actor CA' -keyout "$tls_tmp/ca.key" -out "$tls_tmp/ca.crt" >/dev/null 2>&1
+    openssl req -new -newkey rsa:2048 -nodes -sha256 -subj '/CN=actor-authority' \
+      -addext 'subjectAltName=DNS:actor-authority' -addext 'extendedKeyUsage=serverAuth' \
+      -keyout "$tls_tmp/server.key" -out "$tls_tmp/server.csr" >/dev/null 2>&1
+    openssl x509 -req -days 825 -sha256 -copy_extensions copy -in "$tls_tmp/server.csr" \
+      -CA "$tls_tmp/ca.crt" -CAkey "$tls_tmp/ca.key" -CAcreateserial -out "$tls_tmp/server.crt" >/dev/null 2>&1
+    openssl req -new -newkey rsa:2048 -nodes -sha256 -subj '/CN=decision-platform' \
+      -addext 'extendedKeyUsage=clientAuth' -keyout "$tls_tmp/client.key" -out "$tls_tmp/client.csr" >/dev/null 2>&1
+    openssl x509 -req -days 825 -sha256 -copy_extensions copy -in "$tls_tmp/client.csr" \
+      -CA "$tls_tmp/ca.crt" -CAkey "$tls_tmp/ca.key" -CAcreateserial -out "$tls_tmp/client.crt" >/dev/null 2>&1
+    openssl pkcs12 -export -name actor-authority -inkey "$tls_tmp/server.key" -in "$tls_tmp/server.crt" \
+      -certfile "$tls_tmp/ca.crt" -passout "pass:$server_password" -out "$tls_tmp/server.p12" >/dev/null 2>&1
+    openssl pkcs12 -export -name decision-platform -inkey "$tls_tmp/client.key" -in "$tls_tmp/client.crt" \
+      -certfile "$tls_tmp/ca.crt" -passout "pass:$client_password" -out "$tls_tmp/client.p12" >/dev/null 2>&1
+    state_write_file "$SECRETS_DIR/actor-tls-ca.crt" 0640 < "$tls_tmp/ca.crt"
+    state_write_file "$SECRETS_DIR/actor-server.p12" 0640 < "$tls_tmp/server.p12"
+    state_write_file "$SECRETS_DIR/actor-client.p12" 0640 < "$tls_tmp/client.p12"
+  )
+}
 state_relative() {
   [[ $1 == "$STATE_DIR/"* ]] || die state_path
   printf '%s\n' "${1#"$STATE_DIR/"}"
@@ -34,6 +67,12 @@ write_line() {
 }
 docker_bind_source() {
   local source=$1 endpoint
+  # Docker Desktop exposes a native WSL socket even when the selected Windows
+  # context reports npipe. Compose through /usr/bin/docker requires the Linux path.
+  if [[ -S /var/run/docker.sock ]]; then
+    printf '%s\n' "$source"
+    return
+  fi
   endpoint=$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)
   if [[ $endpoint == npipe://* ]]; then
     require_command wslpath
@@ -114,19 +153,22 @@ require_state() {
 }
 
 verify_runtime_env() {
-  local expected_secrets seen='|' key value count=0 api_port='' secret_gid=''
+  local expected_secrets expected_mock_runtime seen='|' key value count=0 api_port='' secret_gid='' operator_uid=''
   expected_secrets=$(docker_bind_source "$SECRETS_DIR")
+  expected_mock_runtime=$(docker_bind_source "$STATE_DIR/mock")
   while IFS='=' read -r key value || [[ -n $key$value ]]; do
     [[ $seen != *"|$key|"* ]] || die runtime_env_duplicate
     case $key in
       P1_SECRETS_DIR) [[ $value == "$expected_secrets" ]] || die runtime_env_secrets_path ;;
       P1_SECRET_GID) secret_gid=$value ;;
+      P1_OPERATOR_UID) operator_uid=$value ;;
+      P1_KIS_MOCK_RUNTIME_DIR) [[ $value == "$expected_mock_runtime" ]] || die runtime_env_mock_path ;;
       P1_API_PORT) api_port=$value ;;
       P1_SPRING_IMAGE)
-        [[ $value == capstone-spring-api:p1-local || $value =~ ^ghcr\.io/robinhood0107/capstone-spring-api@sha256:[0-9a-f]{64}$ ]] || die runtime_env_image
+        [[ $value == capstone-spring-api:p1-local || $value == capstone-decision-platform:p1-local || $value =~ ^ghcr\.io/robinhood0107/capstone-(spring-api|decision-platform)@sha256:[0-9a-f]{64}$ ]] || die runtime_env_image
         ;;
       P1_PYTHON_IMAGE)
-        [[ $value == capstone-python-services:p1-local || $value =~ ^ghcr\.io/robinhood0107/capstone-python-services@sha256:[0-9a-f]{64}$ ]] || die runtime_env_image
+        [[ $value == capstone-python-services:p1-local || $value == capstone-decision-platform:p1-local || $value =~ ^ghcr\.io/robinhood0107/capstone-(python-services|decision-platform)@sha256:[0-9a-f]{64}$ ]] || die runtime_env_image
         ;;
       P1_POSTGRES_IMAGE)
         [[ $value == capstone-postgres-pgvector:p1-local || $value =~ ^ghcr\.io/robinhood0107/capstone-postgres-pgvector@sha256:[0-9a-f]{64}$ ]] || die runtime_env_image
@@ -139,15 +181,28 @@ verify_runtime_env() {
     seen="$seen$key|"
     count=$((count + 1))
   done < "$RUNTIME_ENV"
-  [[ $count == 7 ]] || die runtime_env_inventory
+  [[ $count == 9 ]] || die runtime_env_inventory
   [[ $secret_gid == "$(id -g)" ]] || die runtime_env_secret_gid
+  [[ $operator_uid == "$(id -u)" ]] || die runtime_env_operator_uid
   [[ $api_port =~ ^[0-9]{4,5}$ && $api_port -ge 1024 && $api_port -le 65535 ]] || die runtime_env_api_port
 }
 
 author_bundle() {
   local image=$1 user_id=$2 password_file=$3 output=$4
-  local secrets_mount
+  local secrets_mount attempt bind_ready=0
   secrets_mount=$(docker_bind_source "$SECRETS_DIR")
+  # Docker Desktop may observe a newly created WSL directory a moment after Linux does.
+  # Validate only the bind mount before invoking the credential author; never print secrets.
+  for attempt in {1..10}; do
+    if docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+      --mount "type=bind,src=$secrets_mount,dst=/secrets" \
+      --entrypoint java "$image" -version >/dev/null 2>&1; then
+      bind_ready=1
+      break
+    fi
+    sleep 1
+  done
+  [[ $bind_ready == 1 ]] || die secrets_bind_unavailable
   docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
     --user "$(id -u):$(id -g)" --tmpfs /tmp:rw,noexec,nosuid,size=16m \
     --mount "type=bind,src=$secrets_mount,dst=/secrets" \
@@ -170,12 +225,29 @@ accept_release() {
   python3 "$RELEASE_GUARD" release-accept "$STATE_DIR" "$RELEASE_MANIFEST" || die release_rollback_or_collision
 }
 
+prepare_initial_state() {
+  if [[ ! -e $STATE_DIR ]]; then
+    python3 "$RELEASE_GUARD" state-init "$STATE_DIR" || die state_init
+    return
+  fi
+  python3 "$RELEASE_GUARD" state-check "$STATE_DIR" || die state_init_resume_boundary
+  [[ ! -e $RUNTIME_ENV ]] || die already_initialized
+  local inventory
+  inventory=$(find "$STATE_DIR" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
+  [[ $inventory == secrets || $inventory == $'full-app-stage\nsecrets' ]] || die state_init_resume_inventory
+  [[ -z $(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -print -quit) ]] || die state_init_resume_secrets
+  if [[ -e $STATE_DIR/full-app-stage ]]; then
+    [[ -f $STATE_DIR/full-app-stage && ! -L $STATE_DIR/full-app-stage && $(stat -c '%a' "$STATE_DIR/full-app-stage") == 600 ]] \
+      || die state_init_resume_marker
+  fi
+}
+
 init_state() {
   require_command docker
   require_command openssl
   require_command python3
   verify_release_boundary
-  python3 "$RELEASE_GUARD" state-init "$STATE_DIR" || die state_init
+  prepare_initial_state
   local spring_image=${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
   docker image inspect "$spring_image" >/dev/null 2>&1 || die spring_image_missing
 
@@ -187,7 +259,9 @@ init_state() {
   printf '%s' "$user_password" | state_write_file "$SECRETS_DIR/demo-user.password" 0640
   printf '%s' "$admin_password" | state_write_file "$SECRETS_DIR/demo-admin.password" 0640
   printf '%s' "$separation_key" | state_write_file "$SECRETS_DIR/demo-credential-separation.key" 0640
-  openssl rand 32 | state_write_file "$SECRETS_DIR/rag-history-kek-v1.key" 0640
+  # SecretFileRagHistoryKekProvider accepts an ASCII hex/base64 envelope, not
+  # raw binary. Keep 32 random key bytes and serialize them as exact hex.
+  openssl rand -hex 32 | tr -d '\n' | state_write_file "$SECRETS_DIR/rag-history-kek-v1.key" 0640
   author_bundle "$spring_image" usr_demo_user "$SECRETS_DIR/demo-user.password" "$SECRETS_DIR/demo-user.bundle"
   author_bundle "$spring_image" usr_demo_admin "$SECRETS_DIR/demo-admin.password" "$SECRETS_DIR/demo-admin.bundle"
   local authored_bundle
@@ -204,10 +278,11 @@ init_state() {
     OUTBOX_PUBLISHER POISON_RECORDER IDENTITY AUTH REPLAY_AUTHORIZER DEMO; do
     db[$role]=$(random_secret)
   done
-  local postgres_password redis_password grpc_secret partition_key
+  local postgres_password redis_password grpc_secret brokerage_grpc_secret partition_key
   postgres_password=$(random_secret)
   redis_password=$(random_secret)
   grpc_secret=$(random_secret)
+  brokerage_grpc_secret=$(random_secret)
   partition_key=$(random_secret)
   local kafka_admin_password kafka_publisher_password kafka_worker_password poison_recorder_secret
   kafka_admin_password=$(random_secret)
@@ -225,6 +300,10 @@ init_state() {
   actor_public_der_b64=$(printf '%s' "$actor_private_der_b64" | base64 -d | openssl pkey -inform DER -pubout -outform DER | base64 -w0)
   actor_private_key=$(printf '%s' "$actor_private_der_b64" | tr '+/' '-_' | tr -d '=')
   actor_public_key=$(printf '%s' "$actor_public_der_b64" | tr '+/' '-_' | tr -d '=')
+  local actor_server_tls_password actor_client_tls_password
+  actor_server_tls_password=$(random_secret)
+  actor_client_tls_password=$(random_secret)
+  generate_actor_tls "$actor_server_tls_password" "$actor_client_tls_password"
 
   printf '' | state_write_file "$SECRETS_DIR/postgres.env" 0640
   write_line POSTGRES_PASSWORD "$postgres_password" "$SECRETS_DIR/postgres.env"
@@ -247,6 +326,8 @@ init_state() {
   write_line DEMO_ADMIN_CREDENTIAL_BUNDLE "$admin_bundle" "$SECRETS_DIR/migration.env"
   write_line POSTGRES_MIGRATION_PASSWORD "${db[MIGRATION]}" "$SECRETS_DIR/migration.env"
   write_line BROKERAGE_DB_CAPABILITY_TOKEN_SHA256 "$broker_digest" "$SECRETS_DIR/migration.env"
+  printf '' | state_write_file "$SECRETS_DIR/seed-import.env" 0640
+  write_line P1_SEED_DATABASE_DSN "postgresql://flyway:${db[MIGRATION]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/seed-import.env"
   printf '' | state_write_file "$SECRETS_DIR/bootstrap.env" 0640
   write_line POSTGRES_MIGRATION_PASSWORD "${db[MIGRATION]}" "$SECRETS_DIR/bootstrap.env"
   write_line DEMO_CREDENTIAL_SEPARATION_KEY "$separation_key" "$SECRETS_DIR/bootstrap.env"
@@ -259,11 +340,13 @@ init_state() {
   write_line POSTGRES_AUTH_PASSWORD "${db[AUTH]}" "$SECRETS_DIR/spring.env"
   write_line ACTOR_CAPABILITY_SHARED_SECRET "$actor_capability_secret" "$SECRETS_DIR/spring.env"
   write_line ACTOR_CAPABILITY_PUBLIC_KEY "$actor_public_key" "$SECRETS_DIR/spring.env"
+  write_line ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD "$actor_client_tls_password" "$SECRETS_DIR/spring.env"
   printf '' | state_write_file "$SECRETS_DIR/actor-capability-authority.env" 0640
   write_line POSTGRES_IDENTITY_PASSWORD "${db[IDENTITY]}" "$SECRETS_DIR/actor-capability-authority.env"
   write_line ACTOR_CAPABILITY_SHARED_SECRET "$actor_capability_secret" "$SECRETS_DIR/actor-capability-authority.env"
   write_line ACTOR_CAPABILITY_PRIVATE_KEY "$actor_private_key" "$SECRETS_DIR/actor-capability-authority.env"
   write_line ACTOR_CAPABILITY_PUBLIC_KEY "$actor_public_key" "$SECRETS_DIR/actor-capability-authority.env"
+  write_line ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD "$actor_server_tls_password" "$SECRETS_DIR/actor-capability-authority.env"
   write_line REDIS_PASSWORD "$redis_password" "$SECRETS_DIR/spring.env"
   write_line JWT_ISSUER capstone-p1-offline-demo "$SECRETS_DIR/spring.env"
   write_line JWT_AUDIENCE capstone-p1-offline-demo-users "$SECRETS_DIR/spring.env"
@@ -272,6 +355,7 @@ init_state() {
   write_line DEMO_ADMIN_CREDENTIAL_BUNDLE "$admin_bundle" "$SECRETS_DIR/spring.env"
   write_line ASYNC_PARTITION_HMAC_KEY "$partition_key" "$SECRETS_DIR/spring.env"
   write_line ASYNC_WORKER_GRPC_SHARED_SECRET "$grpc_secret" "$SECRETS_DIR/spring.env"
+  write_line BROKERAGE_GRPC_SHARED_SECRET "$brokerage_grpc_secret" "$SECRETS_DIR/spring.env"
   local key
   for key in JWT_SECRET LOGIN_SCOPE_HMAC_KEY PRINCIPLE_CURSOR_HMAC_KEY DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY \
     DECISION_GRPC_SHARED_SECRET BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY RAG_IDEMPOTENCY_SCOPE_HMAC_KEY RAG_REQUEST_FINGERPRINT_HMAC_KEY \
@@ -288,6 +372,27 @@ init_state() {
   write_line KAFKA_ENVELOPE_PUBLIC_KEY "$kafka_public_key" "$SECRETS_DIR/python.env"
   write_line POISON_RECORDER_URL http://127.0.0.1:18082/internal/kafka/poison-receipts "$SECRETS_DIR/python.env"
   write_line POISON_RECORDER_SHARED_SECRET "$poison_recorder_secret" "$SECRETS_DIR/python.env"
+  printf '' | state_write_file "$SECRETS_DIR/kis-mock.env" 0640
+  write_line KIS_MOCK_CONFIGURED false "$SECRETS_DIR/kis-mock.env"
+  write_line KIS_MOCK_APP_KEY DISABLED00 "$SECRETS_DIR/kis-mock.env"
+  write_line KIS_MOCK_APP_SECRET DISABLED00 "$SECRETS_DIR/kis-mock.env"
+  write_line KIS_MOCK_ACCOUNT_NO 00000000-00 "$SECRETS_DIR/kis-mock.env"
+  write_line KIS_MOCK_BOUND_ACCOUNT_ID "acct_00000000000000000000000000000000" "$SECRETS_DIR/kis-mock.env"
+  write_line KIS_MOCK_ORDER_REFERENCE_KEY "$(base64url_key)" "$SECRETS_DIR/kis-mock.env"
+  write_line KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP 1 "$SECRETS_DIR/kis-mock.env"
+  write_line KIS_BROKERAGE_PHYSICAL_CAP 32 "$SECRETS_DIR/kis-mock.env"
+  local approval_key_tmp approval_public_digest
+  approval_key_tmp=$(mktemp -d)
+  openssl genpkey -algorithm ED25519 -out "$approval_key_tmp/private.pem" >/dev/null 2>&1
+  openssl pkey -in "$approval_key_tmp/private.pem" -pubout -out "$approval_key_tmp/public.pem" >/dev/null 2>&1
+  state_write_file "$SECRETS_DIR/kis-mock-approval-private.pem" 0640 < "$approval_key_tmp/private.pem"
+  state_write_file "$SECRETS_DIR/kis-mock-approval-public.pem" 0640 < "$approval_key_tmp/public.pem"
+  approval_public_digest=$(sha256sum "$approval_key_tmp/public.pem" | awk '{print $1}')
+  printf '{"contractId":"p1-approval-trust-root.v1","issuerKeyId":"CAPSTONE.KISMOCK.V1","publicKeyPath":"/run/secrets/kis_mock_approval_public","publicKeySha256":"%s"}' "$approval_public_digest" \
+    | state_write_file "$SECRETS_DIR/kis-mock-approval-trust-policy.json" 0640
+  rm -rf -- "$approval_key_tmp"
+  printf 'postgresql://decision_replay:%s@postgres:5432/capstone_p1?sslmode=disable' "${db[REPLAY]}" \
+    | state_write_file "$SECRETS_DIR/p1-provider-claim.dsn" 0640
   printf '' | state_write_file "$SECRETS_DIR/kafka-publisher.env" 0640
   write_line OUTBOX_PUBLISHER_DATABASE_DSN "postgresql://decision_outbox_publisher:${db[OUTBOX_PUBLISHER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/kafka-publisher.env"
   write_line KAFKA_SASL_USERNAME p1_outbox_publisher "$SECRETS_DIR/kafka-publisher.env"
@@ -313,9 +418,14 @@ init_state() {
   write_line ASYNC_PARTITION_HMAC_KEY "$partition_key" "$SECRETS_DIR/demo.env"
   local compose_secrets_dir
   compose_secrets_dir=$(docker_bind_source "$SECRETS_DIR")
+  install -d -m 0700 "$STATE_DIR/mock"
+  local compose_mock_runtime_dir
+  compose_mock_runtime_dir=$(docker_bind_source "$STATE_DIR/mock")
   printf '%s\n' \
     "P1_SECRETS_DIR=$compose_secrets_dir" \
     "P1_SECRET_GID=$(id -g)" \
+    "P1_OPERATOR_UID=$(id -u)" \
+    "P1_KIS_MOCK_RUNTIME_DIR=$compose_mock_runtime_dir" \
     "P1_API_PORT=${P1_API_PORT:-18080}" \
     "P1_SPRING_IMAGE=$spring_image" \
     "P1_PYTHON_IMAGE=${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}" \
@@ -331,15 +441,26 @@ init_state() {
 verify_state() {
   require_state
   verify_runtime_env
-  local expected=(actor-capability-authority.env bootstrap.env demo-admin.bundle demo-admin.password demo-credential-separation.key demo.env demo-user.bundle \
+  local expected=(actor-capability-authority.env actor-client.p12 actor-server.p12 actor-tls-ca.crt bootstrap.env demo-admin.bundle demo-admin.password demo-credential-separation.key demo.env demo-user.bundle \
     demo-user.password kafka-admin.env kafka-broker-jaas.conf kafka-publisher.env migration.env poison-recorder.env \
-    postgres.env python.env rag-history-kek-v1.key redis.env role-bootstrap.env spring.env)
+    kis-mock.env kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn postgres.env python.env rag-history-kek-v1.key redis.env role-bootstrap.env seed-import.env spring.env)
   local actual
   actual=$(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
   [[ $actual == "$(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)" ]] || die secret_inventory
   while IFS= read -r file; do
     [[ ! -L $file && -f $file && $(stat -c '%a' "$file") == 640 ]] || die secret_boundary
   done < <(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -print)
+  local rag_kek_file=$SECRETS_DIR/rag-history-kek-v1.key rag_kek_size
+  rag_kek_size=$(stat -c '%s' "$rag_kek_file")
+  if [[ $rag_kek_size == 32 ]]; then
+    # Compatibility with the previous raw 32-byte state format. The container
+    # entrypoint hex-encodes these same bytes without rotating the key.
+    :
+  elif [[ $rag_kek_size == 64 ]]; then
+    LC_ALL=C grep -Eq '^[0-9a-f]{64}$' "$rag_kek_file" || die rag_history_kek_format
+  else
+    die rag_history_kek_format
+  fi
   compose db config --quiet
   compose kafka config --quiet
   local image arch

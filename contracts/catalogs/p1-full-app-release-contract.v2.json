@@ -1,0 +1,93 @@
+{
+  "capabilityStates": {
+    "cuda": [
+      "PASS",
+      "PENDING_USER_HARDWARE_VERIFICATION"
+    ],
+    "dashboardUi": [
+      "READY",
+      "PARTIAL_TEAM_A_ACTION_REQUIRED"
+    ],
+    "searxng": [
+      "READY",
+      "KNOWN_DEGRADED_NONBLOCKING"
+    ]
+  },
+  "contractId": "p1-full-app-release-contract.v2",
+  "hardGates": [
+    "P1_CORE",
+    "PUBLIC_RAG_SEED",
+    "OWNER_RAG_BACKEND",
+    "BGE_OCR_CPU_INTEL",
+    "PROVIDER_LIVE_READ",
+    "TEAM_B_REAL_ARTIFACT",
+    "SECURITY_RELEASE",
+    "SUPPLY_CHAIN_RELEASE",
+    "COMPOSE_E2E"
+  ],
+  "historicalContract": {
+    "contractId": "p1-offline-demo-release-manifest.v1",
+    "schemaPath": "deploy/p1/release-manifest.schema.json",
+    "status": "PRESERVED_HISTORICAL_REGRESSION"
+  },
+  "lightgbm": "RESEARCH_ONLY_NOT_APPLICABLE",
+  "liveOrder": "KIS_LIVE_DISABLED_KIS_MOCK_MANUAL_ONLY",
+  "providerGate": {
+    "accountCallCap": 0,
+    "balanceCallCap": 0,
+    "ecosPhysicalCallCap": 2,
+    "googleGroundedVertexPhysicalCallCap": 1,
+    "kisDataPhysicalCallCap": 2,
+    "kisTokenPhysicalCallCap": 1,
+    "liveOrderCallCap": 0,
+    "retransmissionAllowed": false,
+    "voyageQueryPhysicalCallCap": 1
+  },
+  "returnEngineArtifactSchema": "contracts/schemas/p1-return-engine-artifact-manifest.v1.schema.json",
+  "requiredImageComponents": [
+    "actor-authority",
+    "decision-platform",
+    "experience-dashboard",
+    "postgres-pgvector",
+    "redis",
+    "bge-m3-tei",
+    "paddleocr-vl-llama"
+  ],
+  "optionalImageComponents": [],
+  "modelAssets": {
+    "bge-m3": {
+      "deliveryMode": "OFFICIAL_CONTAINER_RUNTIME_DOWNLOAD",
+      "expectedDimension": 1024,
+      "imageComponent": "bge-m3-tei",
+      "imageReference": "ghcr.io/huggingface/text-embeddings-inference:cpu-1.9@sha256:c26a226262ad4ff3330fb30b76653c1bb65da2fcf413b92284545a010e0a8a48",
+      "licenseSpdxId": "MIT",
+      "repository": "BAAI/bge-m3",
+      "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+      "runtime": "HUGGINGFACE_TEXT_EMBEDDINGS_INFERENCE_CPU_1_9"
+    },
+    "paddleocr-vl-1.6": {
+      "deliveryMode": "OFFICIAL_CONTAINER_RUNTIME_DOWNLOAD",
+      "imageComponent": "paddleocr-vl-llama",
+      "imageReference": "ghcr.io/ggml-org/llama.cpp:server-b10524@sha256:d88f41f7675f8b30d7213a917f72a48f05d0549af4d1be7e712ebb130a235415",
+      "licenseSpdxId": "Apache-2.0",
+      "modelFile": {
+        "path": "PaddleOCR-VL-1.6-GGUF.gguf",
+        "sha256": "f3ae46ec885050acf4b3d31944431e1fd90d50664fb09126af4a3c050ba14ee8",
+        "sizeBytes": 935769056
+      },
+      "mmprojFile": {
+        "path": "PaddleOCR-VL-1.6-GGUF-mmproj.gguf",
+        "sha256": "204d757d7610d9b3faab10d506d69e5b244e32bf765e2bab2d0167e65e0a058a",
+        "sizeBytes": 881770560
+      },
+      "qualityCandidate": "PADDLE_VL",
+      "qualityEvidenceSha256": "f43abfc2eaab0d6f958b8eac3369fc3f2f00c4d95569ae977e527bef3fc39f1a",
+      "repository": "PaddlePaddle/PaddleOCR-VL-1.6-GGUF",
+      "revision": "511b09642bb324401f15f97cc23bc67e8f0a291d",
+      "runtime": "LLAMA_CPP_SERVER_B10524"
+    }
+  },
+  "releaseAuthorityWorkflow": ".github/workflows/p1-full-app-release.yml",
+  "releaseVersion": "1.0.0",
+  "terminalReadyState": "READY_WITH_GAPS"
+}

@@ -1,5 +1,12 @@
 # API 명세서
 
+<!-- P1_FULL_APP_V2_AUTHORITY_BEGIN -->
+> **1.0.0 current authority (2026-08-26):** full-app v2 API는 구현·검증 중이며 아직 release되지 않았다.
+> 공개 endpoint는 OpenAPI SSOT와 별도 contract-change가 병합된 경우에만 구현된 것으로 본다. 기존
+> placeholder 계획, LightGBM production 경로와 `NOT_MATERIALIZED` 상태는 현재 v2 권위로 명시되지
+> 않았다면 `HISTORICAL_SUPERSEDED`다. live order authority는 0이다.
+<!-- P1_FULL_APP_V2_AUTHORITY_END -->
+
 작성일: 2026-06-23  
 프로젝트명: 뉴스감성·LSTM 기반 투자 원칙 검증형 AI 자동매매 봇  
 서비스명: 투자 원칙 기반 AI 트레이딩 코치  

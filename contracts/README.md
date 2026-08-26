@@ -2,6 +2,32 @@
 
 워크스페이스 간 유일한 진실 소스. 여기가 고정되기 전까지 각자 폴더 구현을 시작하지 않는다.
 
+## P1 Owner-First Phase A contract lock
+
+`catalogs/p1-owner-phase-a-contract-lock.v1.json`은 Team A/B 요청 전에 Owner가 완성할 입력·artifact·
+뉴스 veto·자동운용·Journal 경계를 고정한다. generated artifact는
+`generate_p1_owner_phase_a_contracts.py`만 수정하며, root OpenAPI는 runtime 구현 전까지 48개를
+유지한다. 새 Automation/Journal 8개 operation은
+`openapi/p1-automation-journal.v1.openapi.json`의 additive contract로 먼저 잠그고 runtime PR에서
+root OpenAPI exact-56으로 승격한다.
+
+- Team B 입력은 exact-31, XKRX 4.13.2 correction generation, 최소 3년 일봉, exact 9-feature,
+  fixed LSTM ABI, train-only scaler, seed 0, single-thread CPU deterministic 실행을 사용한다.
+- Team B 결과는 exact 10개 파일과 manifest v2다. golden은 같은 wire shape를 사용하되
+  `SYNTHETIC_GOLDEN / realTeamB=false / performanceClaimAllowed=false / orderAuthority=NONE`이다.
+- Team B news/GDELT/Vertex/Spring/account/order 호출과 feature는 0이다.
+- Vertex는 final 신규 BUY 후보 하나만 검사하고 `VETO_BUY | NO_VETO | ABSTAIN`을 반환한다.
+  `VETO_BUY`와 `ABSTAIN`은 신규 BUY를 멈추며 2순위 후보를 찾지 않는다.
+- LightGBM은 `RESEARCH_ONLY`이고 production Signal/RiskDecision/order authority는 0이다.
+- full-app v3는 16개 hard gate를 모두 PASS한 경우에만 FINAL을 허용한다. v1/v2 bytes와 LICENSE는
+  역사 회귀로 보존한다.
+
+```bash
+uv run --frozen python contracts/generate_p1_owner_phase_a_contracts.py --check
+uv run --frozen python -m unittest contracts.tests.test_p1_owner_phase_a_contracts -v
+uv run --frozen python contracts/validate.py
+```
+
 ## S5.7A model-neutral Market Data contract
 
 `catalogs/s5-7a-market-data-lock.v1.json`은 LightGBM publication과 분리된 내부 Python data plane의

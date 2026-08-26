@@ -1,10 +1,10 @@
 # Capstone AI Trading Coach
 
-<!-- P1_FULL_APP_V2_AUTHORITY_BEGIN -->
-> **현재 상태 (2026-08-26):** 통합 브랜치의 앱은 Docker에서 실행되지만 아직 GitHub `1.0.0`
-> 최종 배포본은 아닙니다. Team A 화면 완성, Team B 실제 결과, KIS 모의투자 검증, 병합 후 재현 확인이
-> 남아 있습니다. 현재 배포 계약은 `contracts/catalogs/p1-full-app-release-contract.v2.json`입니다.
-<!-- P1_FULL_APP_V2_AUTHORITY_END -->
+<!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
+> **현재 상태 (2026-08-27):** Owner-First v3 계약은 잠겼지만 아직 GitHub `1.0.0` 최종 배포본은
+> 아닙니다. Owner runtime, Team A exact-33, Team B 실제 결과, physical activation과 3-session soak가
+> 남아 있습니다. 현재 배포 계약은 `contracts/catalogs/p1-full-app-release-contract.v3.json`입니다.
+<!-- P1_FULL_APP_V3_AUTHORITY_END -->
 
 투자 원칙, 모델 예측, 백테스트, 위험 판정과 근거 자료를 한 화면에서 확인하고 한국투자증권
 모의투자로 주문 흐름을 검증하는 교육용 트레이딩 코치입니다.

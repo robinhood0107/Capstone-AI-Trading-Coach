@@ -33,23 +33,27 @@ fresh V87 PostgreSQL import는 `IMPORTED_FULL_READY`, 같은 Seed 재실행은
 
 ## 새 PC에서 실행하는 최종 흐름
 
-아래 명령은 full-app branch가 `main`에 병합되고 Team A/B 수신본과 아홉 hard gate가 모두 준비된 뒤의
-최종 사용자 흐름이다.
+아래 세 명령이 새 PC의 기본 사용자 흐름이다. Team B real artifact와 FINAL release gate가 남아 있어도
+수신본 preview까지 포함한 provider-free 앱은 기동된다.
 
 ```bash
 git switch main
 git pull --ff-only origin main
-./deploy/p1/verify-public-rag-seed \
-  deploy/p1/seed/public-rag/public-rag-seed.v1.manifest.json
-./capstone doctor
-./capstone install
-./capstone start
-./capstone status
+./capstone up
 ```
 
-Windows PowerShell에서는 `./capstone.ps1`에 같은 command를 전달한다. 최초 설치는 Docker image와 exact
-model revision을 내려받아 named volume에 cache하고, DB는 `migrate -> seed-import ->
-identity-bootstrap` 순서로 만든다. 두 번째 실행은 같은 Seed를 덮어쓰지 않고 no-op으로 처리한다.
+Windows PowerShell에서는 `./capstone.ps1 up`을 사용한다. 기본은 정확히 5개 컨테이너이고
+`./capstone up --models`는 공식 BGE-M3와 llama.cpp PaddleOCR-VL을 더한 정확히 7개다. 최초 설치는
+Docker image를 만들고 DB를 `role-bootstrap -> migrate -> seed-import -> identity-bootstrap` 순서로
+만든다. Team B preview와 모든 bootstrap은 `docker compose run --rm`으로 실행되어 종료 컨테이너를
+남기지 않는다. 두 번째 실행은 같은 Seed를 덮어쓰지 않고 no-op으로 처리한다.
+
+```bash
+./capstone status
+./capstone smoke
+./capstone logs
+./capstone down     # volume 보존
+```
 
 ## 지금 당장 가능한 확인
 
@@ -59,9 +63,9 @@ identity-bootstrap` 순서로 만든다. 두 번째 실행은 같은 Seed를 덮
 ./capstone doctor
 ```
 
-현재 기대 결과는 Seed integrity `PASS` 뒤 full doctor가
-`TEAM_B_REAL_ARTIFACT_MISSING`과 `DASHBOARD_UI_PARTIAL_TEAM_A_ACTION_REQUIRED`를 보고하는 것이다.
-이 blocker를 지우기 위해 가짜 파일을 만들거나 `--degraded`를 full 완료로 사용하지 않는다.
+현재 기대 결과는 doctor PASS다. `./capstone up` 뒤 Dashboard `/healthz`는
+`teamBPreview=LEGACY_RECEIVED_PREVIEW`를 반환한다. `TEAM_B_REAL_ARTIFACT_MISSING`은 preview 실패가 아니라
+Team B exact artifact 10개 수신 전이라는 릴리스 분류다.
 
 ## 원격 재현의 필수 조건
 
@@ -70,7 +74,7 @@ identity-bootstrap` 순서로 만든다. 두 번째 실행은 같은 Seed를 덮
 1. 현재 full-app branch를 원격에 push하고 검토한다.
 2. PR을 `main`에 병합하고 post-merge CI를 확인한다.
 3. Team A/B production source와 lockfile/Dockerfile을 병합한다.
-4. application image를 public registry에 digest-pinned로 발행한다.
-5. clean Linux/WSL과 Windows Docker Desktop에서 위 명령을 다시 실행한다.
+4. clean Linux/WSL과 Windows Docker Desktop에서 위 명령을 다시 실행한다.
+5. FINAL 배포 시 application image를 public registry에 digest-pinned로 발행한다.
 
 이 조건 전에는 `GIT_PULL_FULL_REPRODUCIBLE=FALSE`다.

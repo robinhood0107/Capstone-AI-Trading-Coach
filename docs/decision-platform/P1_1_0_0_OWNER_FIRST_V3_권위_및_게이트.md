@@ -36,6 +36,11 @@ Team B는 뉴스/GDELT/Vertex/Spring/account/order를 호출하거나 feature로
 final 신규 BUY 후보 하나에만 `VETO_BUY | NO_VETO | ABSTAIN`을 반환하고 SELL에는 호출하지 않는다.
 LightGBM은 연구·재현 전용이며 production Signal/RiskDecision/order authority가 없다.
 
+Vertex fixture-first runtime의 closed input, host grounding support 검증, prompt injection 차단,
+canonical hash와 typed fail-close 규칙은
+[P1 Vertex 신규 BUY 뉴스 veto runtime](P1_VERTEX_NEWS_VETO_RUNTIME.md)을 따른다. 현재 fixture
+physical call은 0이고 실제 Vertex activation은 별도 exact approval 전까지 `NOT_RUN`이다.
+
 ## v3 hard gate
 
 다음 16개가 모두 `PASS`일 때만 `FINAL` manifest, `1.0.0` tag와 GitHub Release를 만들 수 있다.

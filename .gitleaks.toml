@@ -39,5 +39,14 @@ paths = ["^workspaces/decision-platform/spring-api/src/(test|main)/kotlin/com/ca
 regexTarget = "match"
 regexes = ["-----BEGIN[ ]PRIVATE[ ]KEY-----"]
 
+[[allowlists]]
+description = "Historical P1 collector documentation phrase misclassified as a generic API key"
+condition = "AND"
+targetRules = ["generic-api-key"]
+commits = ["0c5b64823a9a30c733817a861d34bb980234fac2"]
+paths = ["^docs/decision-platform/P1_DATA_ONLY_DAILY_COLLECTOR_운영_가이드[.]md$"]
+regexTarget = "secret"
+regexes = ["^Signal/Risk/order$"]
+
 [extend]
 useDefault = true

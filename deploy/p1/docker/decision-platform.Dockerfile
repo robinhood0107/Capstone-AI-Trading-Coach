@@ -24,6 +24,7 @@ COPY workspaces/decision-platform/python-services/pyproject.toml workspaces/deci
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-install-project
 COPY workspaces/decision-platform/python-services/app app
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
+USER 65532:65532
 
 # hadolint ignore=DL3029
 FROM --platform=linux/amd64 cgr.dev/chainguard/wolfi-base:latest@sha256:a31344ab2cb8618db84f535eec56f76f6178b142cb92cb2e48676cc2dcebea72

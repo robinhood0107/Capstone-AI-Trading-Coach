@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/root/.gradle \
 FROM --platform=linux/amd64 ghcr.io/astral-sh/uv:0.8.13@sha256:4de5495181a281bc744845b9579acf7b221d6791f99bcc211b9ec13f417c2853 AS uv
 # hadolint ignore=DL3029
 FROM --platform=linux/amd64 cgr.dev/chainguard/python:latest-dev@sha256:4bf7e945777010672b8ccd5d2ae2c41c91ad6d3478878347c731ae536d506bef AS python-build
-USER root
+USER 0:0
 COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv
 WORKDIR /source/workspaces/decision-platform/python-services

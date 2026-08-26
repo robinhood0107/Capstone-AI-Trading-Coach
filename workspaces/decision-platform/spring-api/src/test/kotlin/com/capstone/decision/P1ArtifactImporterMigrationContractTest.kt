@@ -10,6 +10,12 @@ class P1ArtifactImporterMigrationContractTest {
             .of("src/main/resources/db/migration/V88__p1_return_artifact_import.sql")
             .toFile()
             .readText()
+    private val roleBootstrap =
+        Path
+            .of("../../../infra/init/02-application-roles.sh")
+            .normalize()
+            .toFile()
+            .readText()
 
     @Test
     fun `V88 imports one exact bundle through function-only worker authority`() {
@@ -40,5 +46,19 @@ class P1ArtifactImporterMigrationContractTest {
             "GRANT EXECUTE ON FUNCTION public.read_p1_return_signal_v2(text,boolean) TO decision_app",
         )
         assertThat(migration).doesNotContain("GRANT SELECT ON TABLE public.p1_return_signal_projection TO decision_app")
+    }
+
+    @Test
+    fun `role bootstrap replay restores only the two V88 function grants`() {
+        assertThat(roleBootstrap).contains(
+            "import_p1_return_bundle_v1(text,text)",
+            "TO decision_worker",
+            "read_p1_return_signal_v2(text,boolean)",
+            "TO decision_app",
+        )
+        assertThat(roleBootstrap).doesNotContain(
+            "GRANT INSERT ON TABLE p1_return_artifact_bundle TO decision_worker",
+            "GRANT SELECT ON TABLE p1_return_signal_projection TO decision_app",
+        )
     }
 }

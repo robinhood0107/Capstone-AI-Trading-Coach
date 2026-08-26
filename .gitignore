@@ -81,6 +81,16 @@ dist/
 # --- full-app v2 upstream intake는 local-only, 검토된 production source만 추적 ---
 workspaces/return-engine/dev/
 workspaces/experience-dashboard/dev/
+workspaces/return-engine/artifacts/
+workspaces/return-engine/cache/
+workspaces/return-engine/output/
+workspaces/return-engine/raw/
+workspaces/return-engine/tmp/
+workspaces/experience-dashboard/artifacts/
+workspaces/experience-dashboard/cache/
+workspaces/experience-dashboard/output/
+workspaces/experience-dashboard/raw/
+workspaces/experience-dashboard/tmp/
 
 # --- artifacts: 계약된 결과물만, 로컬 실행 산출물은 커밋 금지 ---
 artifacts/return-engine/*

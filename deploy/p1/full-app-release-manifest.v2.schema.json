@@ -27,17 +27,33 @@
     "platform": {"const": "linux/amd64"},
     "images": {
       "type": "array",
-      "minItems": 8,
-      "maxItems": 16,
+      "minItems": 9,
+      "maxItems": 10,
       "uniqueItems": true,
-      "items": {"$ref": "#/$defs/image"}
+      "items": {"$ref": "#/$defs/image"},
+      "allOf": [
+        {"contains": {"properties": {"component": {"const": "gateway"}}, "required": ["component"]}},
+        {"contains": {"properties": {"component": {"const": "experience-dashboard"}}, "required": ["component"]}},
+        {"contains": {"properties": {"component": {"const": "spring-api"}}, "required": ["component"]}},
+        {"contains": {"properties": {"component": {"const": "python-services"}}, "required": ["component"]}},
+        {"contains": {"properties": {"component": {"const": "strong-llm"}}, "required": ["component"]}},
+        {"contains": {"properties": {"component": {"const": "return-engine"}}, "required": ["component"]}},
+        {"contains": {"properties": {"component": {"const": "searxng"}}, "required": ["component"]}},
+        {"contains": {"properties": {"component": {"const": "postgres-pgvector"}}, "required": ["component"]}},
+        {"contains": {"properties": {"component": {"const": "redis"}}, "required": ["component"]}}
+      ]
     },
     "publicRagSeed": {"$ref": "#/$defs/publicRagSeed"},
     "modelAssets": {
       "type": "array",
       "minItems": 2,
       "maxItems": 2,
-      "items": {"$ref": "#/$defs/modelAsset"}
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/modelAsset"},
+      "allOf": [
+        {"contains": {"properties": {"component": {"const": "bge-m3"}}, "required": ["component"]}},
+        {"contains": {"properties": {"component": {"const": "paddleocr-vl-1.6"}}, "required": ["component"]}}
+      ]
     },
     "hardGates": {"$ref": "#/$defs/hardGates"},
     "capabilities": {"$ref": "#/$defs/capabilities"},
@@ -61,14 +77,22 @@
               "SUPPLY_CHAIN_RELEASE": {"const": "PASS"},
               "COMPOSE_E2E": {"const": "PASS"}
             }
+          },
+          "providerLiveReceipt": {
+            "properties": {
+              "voyageQueryCalls": {"const": 1},
+              "googleGroundedVertexCalls": {"const": 1},
+              "kisDataCalls": {"const": 2},
+              "ecosCalls": {"const": 2}
+            }
           }
         }
       }
     }
   ],
   "$defs": {
-    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "gitSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "sha256": {"type": "string", "pattern": "^(?!0{64}$)[0-9a-f]{64}$"},
+    "gitSha": {"type": "string", "pattern": "^(?!0{40}$)[0-9a-f]{40}$"},
     "safePath": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,239}$"},
     "gateState": {"enum": ["PASS", "FAIL", "BLOCKED", "NOT_RUN"]},
     "image": {
@@ -76,9 +100,9 @@
       "additionalProperties": false,
       "required": ["component", "reference", "digest", "platform"],
       "properties": {
-        "component": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$"},
-        "reference": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9./_:-]{0,199}@sha256:[0-9a-f]{64}$"},
-        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "component": {"enum": ["gateway", "experience-dashboard", "spring-api", "python-services", "strong-llm", "return-engine", "searxng", "postgres-pgvector", "redis", "kafka"]},
+        "reference": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9./_:-]{0,199}@sha256:(?!0{64}$)[0-9a-f]{64}$"},
+        "digest": {"type": "string", "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$"},
         "platform": {"const": "linux/amd64"}
       }
     },
@@ -123,7 +147,21 @@
           "type": "array",
           "minItems": 2,
           "maxItems": 2,
-          "items": {"$ref": "#/$defs/fileDigest"}
+          "prefixItems": [
+            {
+              "allOf": [
+                {"$ref": "#/$defs/fileDigest"},
+                {"properties": {"path": {"const": "deploy/p1/seed/public-rag/public-rag-seed.v1.jsonl.gz.part-0001"}}}
+              ]
+            },
+            {
+              "allOf": [
+                {"$ref": "#/$defs/fileDigest"},
+                {"properties": {"path": {"const": "deploy/p1/seed/public-rag/public-rag-seed.v1.jsonl.gz.part-0002"}}}
+              ]
+            }
+          ],
+          "items": false
         }
       }
     },
@@ -136,7 +174,17 @@
         "revision": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$"},
         "manifestSha256": {"$ref": "#/$defs/sha256"},
         "licenseEvidenceSha256": {"$ref": "#/$defs/sha256"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"component": {"const": "bge-m3"}}, "required": ["component"]},
+          "then": {"properties": {"revision": {"const": "5617a9f61b028005a4858fdac845db406aefb181"}}}
+        },
+        {
+          "if": {"properties": {"component": {"const": "paddleocr-vl-1.6"}}, "required": ["component"]},
+          "then": {"properties": {"revision": {"const": "66317acc4c9fc17bd154591ce650735cd2855f3e"}}}
+        }
+      ]
     },
     "hardGates": {
       "type": "object",

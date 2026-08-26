@@ -263,10 +263,24 @@ POST_CORE_V2_REQUIRED_HARD_GATES: Final[frozenset[str]] = frozenset(
     }
 )
 POST_CORE_V2_FORBIDDEN_WORKSPACE_PARTS: Final[frozenset[str]] = frozenset(
-    {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "dev", "node_modules", ".next"}
+    {
+        "__pycache__",
+        ".cache",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".next",
+        "artifacts",
+        "cache",
+        "dev",
+        "node_modules",
+        "output",
+        "raw",
+        "tmp",
+    }
 )
 POST_CORE_V2_FORBIDDEN_WORKSPACE_SUFFIXES: Final[frozenset[str]] = frozenset(
-    {".pyc", ".pyo", ".pth", ".csv"}
+    {".ckpt", ".csv", ".pickle", ".pkl", ".pyc", ".pyo", ".pth"}
 )
 SOLO_OWNERSHIP_FORBIDDEN_MARKERS: Final[tuple[str, ...]] = (
     "EXTERNAL_OWNER_HANDOFF",

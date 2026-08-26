@@ -52,6 +52,7 @@ jobs:
       - name: Validate full-app v2 contract and documentation gates
         run: >-
           uv run --frozen python -m unittest
+          contracts.tests.test_p1_full_app_asset_verifier
           contracts.tests.test_p1_full_app_release_contract_v2
           contracts.tests.test_p1_full_app_documentation -v
 

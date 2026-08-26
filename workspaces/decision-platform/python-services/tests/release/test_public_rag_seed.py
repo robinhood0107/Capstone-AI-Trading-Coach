@@ -104,6 +104,29 @@ def test_seed_verifier_rejects_symlinked_manifest(tmp_path: Path) -> None:
         verify_seed_parts(manifest_path=link)
 
 
+def test_part_reader_hashes_the_exact_consumed_bytes_and_rejects_symlinks(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "part-0001"
+    second = tmp_path / "part-0002"
+    first.write_bytes(b"first-part")
+    second.write_bytes(b"second-part")
+    payload = first.read_bytes() + second.read_bytes()
+    reader = _PartReader((first, second))
+
+    with io.BufferedReader(reader, buffer_size=4) as buffered:
+        assert buffered.read() == payload
+
+    assert reader.archive_size == len(payload)
+    assert reader.archive_sha256 == hashlib.sha256(payload).hexdigest()
+
+    link = tmp_path / "part-link"
+    link.symlink_to(first)
+    linked_reader = _PartReader((link,))
+    with pytest.raises(PublicRagSeedError, match="PUBLIC_RAG_SEED_PART_OPEN"):
+        io.BufferedReader(linked_reader).read()
+
+
 def test_export_queries_are_public_pointer_reachable_only() -> None:
     by_name = {spec.name: spec.select_sql for spec in TABLE_SPECS}
 

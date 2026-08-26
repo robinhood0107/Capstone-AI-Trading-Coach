@@ -1,25 +1,41 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from contracts.validate_p1_full_app_release import semantic_errors
+
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = ROOT / "deploy/p1/full-app-release-manifest.v2.schema.json"
 CATALOG_PATH = ROOT / "contracts/catalogs/p1-full-app-release-contract.v2.json"
-ZERO_SHA = "0" * 64
-ZERO_GIT_SHA = "0" * 40
+SHA_A = "a" * 64
+SHA_B = "b" * 64
+GIT_SHA = "c" * 40
+REQUIRED_IMAGES = (
+    "gateway",
+    "experience-dashboard",
+    "spring-api",
+    "python-services",
+    "strong-llm",
+    "return-engine",
+    "searxng",
+    "postgres-pgvector",
+    "redis",
+)
 
 
 def _manifest(stage: str = "CANDIDATE") -> dict[str, object]:
     image = {
         "component": "spring-api",
-        "reference": f"ghcr.io/example/spring-api@sha256:{ZERO_SHA}",
-        "digest": f"sha256:{ZERO_SHA}",
+        "reference": f"ghcr.io/example/spring-api@sha256:{SHA_A}",
+        "digest": f"sha256:{SHA_A}",
         "platform": "linux/amd64",
     }
     gates = {
@@ -37,37 +53,45 @@ def _manifest(stage: str = "CANDIDATE") -> dict[str, object]:
         "contractId": "p1-full-app-release-manifest.v2",
         "releaseVersion": "1.0.0",
         "releaseStage": stage,
-        "commitSha": ZERO_GIT_SHA,
-        "treeSha": ZERO_GIT_SHA,
+        "commitSha": GIT_SHA,
+        "treeSha": GIT_SHA,
         "platform": "linux/amd64",
-        "images": [dict(image, component=f"component-{index}") for index in range(8)],
+        "images": [dict(image, component=component) for component in REQUIRED_IMAGES],
         "publicRagSeed": {
             "schemaVersion": "p1-public-rag-seed.v1",
             "sourceSchemaVersion": "73",
             "targetSchemaVersion": "87",
             "manifestPath": "deploy/p1/seed/public-rag/public-rag-seed.v1.manifest.json",
-            "manifestSha256": ZERO_SHA,
-            "archiveSha256": ZERO_SHA,
+            "manifestSha256": SHA_A,
+            "archiveSha256": SHA_B,
             "sources": 142,
             "chunks": 7871,
             "dimensions": 1024,
             "parts": [
-                {"path": "seed/part-0001", "size": 1024, "sha256": ZERO_SHA},
-                {"path": "seed/part-0002", "size": 1024, "sha256": ZERO_SHA},
+                {
+                    "path": "deploy/p1/seed/public-rag/public-rag-seed.v1.jsonl.gz.part-0001",
+                    "size": 1024,
+                    "sha256": SHA_A,
+                },
+                {
+                    "path": "deploy/p1/seed/public-rag/public-rag-seed.v1.jsonl.gz.part-0002",
+                    "size": 1024,
+                    "sha256": SHA_B,
+                },
             ],
         },
         "modelAssets": [
             {
                 "component": "bge-m3",
-                "revision": "pinned-revision",
-                "manifestSha256": ZERO_SHA,
-                "licenseEvidenceSha256": ZERO_SHA,
+                "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+                "manifestSha256": SHA_A,
+                "licenseEvidenceSha256": SHA_B,
             },
             {
                 "component": "paddleocr-vl-1.6",
-                "revision": "pinned-revision",
-                "manifestSha256": ZERO_SHA,
-                "licenseEvidenceSha256": ZERO_SHA,
+                "revision": "66317acc4c9fc17bd154591ce650735cd2855f3e",
+                "manifestSha256": SHA_A,
+                "licenseEvidenceSha256": SHA_B,
             },
         ],
         "hardGates": gates,
@@ -79,7 +103,7 @@ def _manifest(stage: str = "CANDIDATE") -> dict[str, object]:
             "LIVE_ORDER": "FUTURE_NOT_IMPLEMENTED",
         },
         "providerLiveReceipt": {
-            "receiptSha256": ZERO_SHA,
+            "receiptSha256": SHA_A,
             "voyageQueryCalls": 1,
             "googleGroundedVertexCalls": 1,
             "kisTokenCalls": 1,
@@ -91,10 +115,10 @@ def _manifest(stage: str = "CANDIDATE") -> dict[str, object]:
             "retries": 0,
         },
         "supplyChain": {
-            "sbomSha256": ZERO_SHA,
-            "provenanceSha256": ZERO_SHA,
-            "signatureBundleSha256": ZERO_SHA,
-            "sourceArchiveSha256": ZERO_SHA,
+            "sbomSha256": SHA_A,
+            "provenanceSha256": SHA_A,
+            "signatureBundleSha256": SHA_A,
+            "sourceArchiveSha256": SHA_A,
             "licenseSha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0",
         },
     }
@@ -112,6 +136,21 @@ class P1FullAppReleaseContractV2Test(unittest.TestCase):
         self.assertEqual("p1-full-app-release-contract.v2", self.catalog["contractId"])
         self.assertEqual("1.0.0", self.catalog["releaseVersion"])
         self.assertEqual(".github/workflows/p1-full-app-release.yml", self.catalog["releaseAuthorityWorkflow"])
+        self.assertEqual(list(REQUIRED_IMAGES), self.catalog["requiredImageComponents"])
+        self.assertEqual(["kafka"], self.catalog["optionalImageComponents"])
+        self.assertEqual(
+            "contracts/schemas/p1-return-engine-artifact-manifest.v1.schema.json",
+            self.catalog["returnEngineArtifactSchema"],
+        )
+        self.assertEqual(
+            "5617a9f61b028005a4858fdac845db406aefb181",
+            self.catalog["modelAssets"]["bge-m3"]["revision"],
+        )
+        self.assertEqual("MATERIALIZED", self.catalog["modelAssets"]["bge-m3"]["inventoryStatus"])
+        self.assertEqual(
+            "NOT_MATERIALIZED",
+            self.catalog["modelAssets"]["paddleocr-vl-1.6"]["inventoryStatus"],
+        )
         self.assertEqual(
             {
                 "P1_CORE",
@@ -147,12 +186,61 @@ class P1FullAppReleaseContractV2Test(unittest.TestCase):
             payload["providerLiveReceipt"][field] = value
             self.assertNotEqual([], list(self.validator.iter_errors(payload)), field)
 
+    def test_final_requires_the_exact_live_read_receipt_counts(self) -> None:
+        for field in ("voyageQueryCalls", "googleGroundedVertexCalls", "kisDataCalls", "ecosCalls"):
+            payload = copy.deepcopy(_manifest("FINAL"))
+            payload["providerLiveReceipt"][field] = 0
+            self.assertNotEqual([], list(self.validator.iter_errors(payload)), field)
+
+    def test_schema_rejects_missing_or_duplicate_release_assets(self) -> None:
+        missing_image = copy.deepcopy(_manifest())
+        missing_image["images"].pop()
+        self.assertNotEqual([], list(self.validator.iter_errors(missing_image)))
+
+        duplicate_model = copy.deepcopy(_manifest())
+        duplicate_model["modelAssets"][1] = copy.deepcopy(duplicate_model["modelAssets"][0])
+        self.assertNotEqual([], list(self.validator.iter_errors(duplicate_model)))
+
+        wrong_revision = copy.deepcopy(_manifest())
+        wrong_revision["modelAssets"][0]["revision"] = "unpinned"
+        self.assertNotEqual([], list(self.validator.iter_errors(wrong_revision)))
+
+        zero_digest = copy.deepcopy(_manifest())
+        zero_digest["images"][0]["digest"] = f"sha256:{'0' * 64}"
+        self.assertNotEqual([], list(self.validator.iter_errors(zero_digest)))
+
+    def test_semantic_validation_binds_image_seed_license_and_git_identity(self) -> None:
+        payload = copy.deepcopy(_manifest())
+        payload["commitSha"] = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True, text=True
+        ).stdout.strip()
+        payload["treeSha"] = subprocess.run(
+            ["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, check=True, capture_output=True, text=True
+        ).stdout.strip()
+        seed_manifest_path = ROOT / payload["publicRagSeed"]["manifestPath"]
+        seed_manifest = json.loads(seed_manifest_path.read_text(encoding="utf-8"))
+        payload["publicRagSeed"]["manifestSha256"] = hashlib.sha256(seed_manifest_path.read_bytes()).hexdigest()
+        payload["publicRagSeed"]["archiveSha256"] = seed_manifest["archiveSha256"]
+        for release_part, manifest_part in zip(
+            payload["publicRagSeed"]["parts"], seed_manifest["parts"], strict=True
+        ):
+            release_part["size"] = manifest_part["sizeBytes"]
+            release_part["sha256"] = manifest_part["sha256"]
+
+        self.assertEqual([], semantic_errors(payload, ROOT))
+
+        payload["images"][0]["reference"] = payload["images"][0]["reference"].replace(SHA_A, SHA_B)
+        self.assertIn(
+            "IMAGE_REFERENCE_DIGEST_MISMATCH:gateway",
+            semantic_errors(payload, ROOT),
+        )
+
     def test_seed_and_license_invariants_are_closed(self) -> None:
         for path, value in (
             (("publicRagSeed", "sources"), 141),
             (("publicRagSeed", "chunks"), 7870),
             (("publicRagSeed", "dimensions"), 4096),
-            (("supplyChain", "licenseSha256"), ZERO_SHA),
+            (("supplyChain", "licenseSha256"), "0" * 64),
         ):
             payload = copy.deepcopy(_manifest())
             payload[path[0]][path[1]] = value

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone.local/contracts/p1-return-engine-artifact-manifest.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractId", "evidenceMode", "producer", "forecast", "strategies", "artifacts"],
+  "properties": {
+    "contractId": {"const": "p1-return-engine-artifact-manifest.v1"},
+    "evidenceMode": {"const": "REAL_TEAM_B"},
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commitSha256",
+        "dependencyLockSha256",
+        "dockerfileSha256",
+        "sourceSnapshotSha256",
+        "trainingCodeSha256",
+        "featureOrderSha256",
+        "splitSha256",
+        "configSha256",
+        "goldenOutputSha256",
+        "seed",
+        "windowSessions"
+      ],
+      "properties": {
+        "commitSha256": {"$ref": "#/$defs/sha256"},
+        "dependencyLockSha256": {"$ref": "#/$defs/sha256"},
+        "dockerfileSha256": {"$ref": "#/$defs/sha256"},
+        "sourceSnapshotSha256": {"$ref": "#/$defs/sha256"},
+        "trainingCodeSha256": {"$ref": "#/$defs/sha256"},
+        "featureOrderSha256": {"$ref": "#/$defs/sha256"},
+        "splitSha256": {"$ref": "#/$defs/sha256"},
+        "configSha256": {"$ref": "#/$defs/sha256"},
+        "goldenOutputSha256": {"$ref": "#/$defs/sha256"},
+        "seed": {"type": "integer"},
+        "windowSessions": {"type": "integer", "minimum": 2}
+      }
+    },
+    "forecast": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nextXkrxSession", "currentClose", "forecastClose", "expectedReturn"],
+      "properties": {
+        "nextXkrxSession": {"type": "string", "format": "date"},
+        "currentClose": {"type": "number", "exclusiveMinimum": 0},
+        "forecastClose": {"type": "number", "minimum": 0},
+        "expectedReturn": {"type": "number"}
+      }
+    },
+    "strategies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["BASELINE", "GUIDE", "STRICT"],
+      "properties": {
+        "BASELINE": {"$ref": "#/$defs/strategy"},
+        "GUIDE": {"$ref": "#/$defs/strategy"},
+        "STRICT": {"$ref": "#/$defs/strategy"}
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/artifact"}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^(?!0{64}$)[0-9a-f]{64}$"},
+    "strategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transactionCostBps", "taxBps", "slippageBps"],
+      "properties": {
+        "transactionCostBps": {"type": "number", "minimum": 0},
+        "taxBps": {"type": "number", "minimum": 0},
+        "slippageBps": {"type": "number", "minimum": 0}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sizeBytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,239}$"},
+        "sizeBytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

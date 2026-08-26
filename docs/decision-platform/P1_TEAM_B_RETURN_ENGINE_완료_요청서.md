@@ -14,6 +14,17 @@ adapter, feature/scaler/model 재현 manifest가 없고 기존 코드는 `yfinan
 - XKRX 권위에서 다음 session 예측일을 파생하고 return을 `forecast / currentClose - 1`로 계산
 - Baseline, Guide, Strict 세 전략과 비용·세금·slippage를 명시
 - LSTM/rule signal, model report, backtest result, trade log, equity log와 상위 manifest를 exact schema로 생성
+- 상위 manifest는 `p1-return-engine-artifact-manifest.v1`/`REAL_TEAM_B`이고 다음 exact basename을 모두
+  SHA-256과 크기로 결속: `model.safetensors`, `scaler.json`, `config.json`, `lstm_signals.parquet`,
+  `rule_baseline_signals.parquet`, `backtest_result.json`, `trade_log.parquet`, `equity_log.parquet`,
+  `golden_output.json`, `model_report.md`
+- JSON Schema SSOT는 `contracts/schemas/p1-return-engine-artifact-manifest.v1.schema.json`이며 schema와
+  `contracts/verify_p1_full_app_assets.py`의 파일 실물·수익률 semantic 검증을 모두 통과해야 함
+- producer receipt는 dependency lock, Dockerfile, sanitized source snapshot, training code, feature order,
+  split, config, golden output SHA-256과 seed/window를 포함하며 forecast receipt는 다음 XKRX session과
+  `forecastClose / currentClose - 1`을 함께 결속
+- 전략은 `BASELINE`, `GUIDE`, `STRICT` exact set이며 각 전략의 transaction cost·tax·slippage bps를
+  음수가 아닌 유한 수로 결속
 - pickle 입력은 신뢰 root/provenance가 없으면 거부하고 가능하면 data-only model format 사용
 - unit, schema/contract, golden, integration, one-shot Compose E2E PASS
 - 입력 snapshot을 바꾸지 않은 재실행은 byte-stable 또는 명시된 deterministic tolerance 안에서 일치

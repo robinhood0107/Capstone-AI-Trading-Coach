@@ -291,6 +291,16 @@ class _PartReader(io.RawIOBase):
         self._paths = tuple(paths)
         self._index = 0
         self._current: BinaryIO | None = None
+        self._archive_hash = hashlib.sha256()
+        self._archive_size = 0
+
+    @property
+    def archive_sha256(self) -> str:
+        return self._archive_hash.hexdigest()
+
+    @property
+    def archive_size(self) -> int:
+        return self._archive_size
 
     def readable(self) -> bool:
         return True
@@ -301,11 +311,26 @@ class _PartReader(io.RawIOBase):
             if self._current is None:
                 if self._index >= len(self._paths):
                     return 0
-                self._current = self._paths[self._index].open("rb")
+                path = self._paths[self._index]
+                try:
+                    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+                except OSError as error:
+                    raise PublicRagSeedError("PUBLIC_RAG_SEED_PART_OPEN") from error
+                metadata = os.fstat(descriptor)
+                if (
+                    not stat.S_ISREG(metadata.st_mode)
+                    or metadata.st_size < 1
+                    or metadata.st_size > MAX_PART_BYTES
+                ):
+                    os.close(descriptor)
+                    raise PublicRagSeedError("PUBLIC_RAG_SEED_PART_BOUNDARY")
+                self._current = os.fdopen(descriptor, "rb")
                 self._index += 1
             data = self._current.read(len(view))
             if data:
                 view[: len(data)] = data
+                self._archive_hash.update(data)
+                self._archive_size += len(data)
                 return len(data)
             self._current.close()
             self._current = None
@@ -345,6 +370,9 @@ def export_public_seed(
                     columns=columns,
                     max_part_bytes=max_part_bytes,
                 )
+    except PublicRagSeedError:
+        _remove_generated_files(output_dir)
+        raise
     except (OSError, psycopg.Error) as error:
         _remove_generated_files(output_dir)
         raise PublicRagSeedError("PUBLIC_RAG_SEED_EXPORT_FAILED") from error
@@ -485,47 +513,58 @@ def _restore_archive(
     manifest: Mapping[str, Any],
     part_paths: Sequence[Path],
 ) -> None:
-    buffered = io.BufferedReader(_PartReader(part_paths), buffer_size=1024 * 1024)
+    part_reader = _PartReader(part_paths)
+    buffered = io.BufferedReader(part_reader, buffer_size=1024 * 1024)
     content_hash = hashlib.sha256()
     observed_counts = {spec.name: 0 for spec in TABLE_SPECS}
     current_table_index = 0
     batches: dict[str, list[Mapping[str, Any]]] = {spec.name: [] for spec in TABLE_SPECS}
-    with gzip.GzipFile(fileobj=buffered, mode="rb") as archive:
-        first_line = archive.readline()
-        header = _decode_record(first_line)
-        _validate_header(header, manifest)
-        content_hash.update(first_line)
-        footer: Mapping[str, Any] | None = None
-        for line in archive:
-            record = _decode_record(line)
-            record_type = record.get("recordType")
-            if record_type == "footer":
-                footer = record
-                break
-            if record_type != "row":
-                raise PublicRagSeedError("PUBLIC_RAG_SEED_RECORD_TYPE")
-            table_name = record.get("table")
-            if not isinstance(table_name, str) or table_name not in _SPEC_BY_NAME:
-                raise PublicRagSeedError("PUBLIC_RAG_SEED_TABLE")
-            expected_index = list(_SPEC_BY_NAME).index(table_name)
-            if expected_index < current_table_index or expected_index > current_table_index + 1:
-                raise PublicRagSeedError("PUBLIC_RAG_SEED_TABLE_ORDER")
-            if expected_index == current_table_index + 1:
-                previous = list(_SPEC_BY_NAME)[current_table_index]
-                _flush_batch(connection, previous, batches[previous], manifest)
-                batches[previous].clear()
-                current_table_index = expected_index
-            value = record.get("value")
-            if not isinstance(value, Mapping):
-                raise PublicRagSeedError("PUBLIC_RAG_SEED_ROW")
-            batches[table_name].append(value)
-            observed_counts[table_name] += 1
-            content_hash.update(line)
-            if len(batches[table_name]) >= 128:
-                _flush_batch(connection, table_name, batches[table_name], manifest)
-                batches[table_name].clear()
-        if footer is None or archive.read(1) != b"":
-            raise PublicRagSeedError("PUBLIC_RAG_SEED_FOOTER")
+    try:
+        with gzip.GzipFile(fileobj=buffered, mode="rb") as archive:
+            first_line = archive.readline()
+            header = _decode_record(first_line)
+            _validate_header(header, manifest)
+            content_hash.update(first_line)
+            footer: Mapping[str, Any] | None = None
+            for line in archive:
+                record = _decode_record(line)
+                record_type = record.get("recordType")
+                if record_type == "footer":
+                    footer = record
+                    break
+                if record_type != "row":
+                    raise PublicRagSeedError("PUBLIC_RAG_SEED_RECORD_TYPE")
+                table_name = record.get("table")
+                if not isinstance(table_name, str) or table_name not in _SPEC_BY_NAME:
+                    raise PublicRagSeedError("PUBLIC_RAG_SEED_TABLE")
+                expected_index = list(_SPEC_BY_NAME).index(table_name)
+                if expected_index < current_table_index or expected_index > current_table_index + 1:
+                    raise PublicRagSeedError("PUBLIC_RAG_SEED_TABLE_ORDER")
+                if expected_index == current_table_index + 1:
+                    previous = list(_SPEC_BY_NAME)[current_table_index]
+                    _flush_batch(connection, previous, batches[previous], manifest)
+                    batches[previous].clear()
+                    current_table_index = expected_index
+                value = record.get("value")
+                if not isinstance(value, Mapping):
+                    raise PublicRagSeedError("PUBLIC_RAG_SEED_ROW")
+                batches[table_name].append(value)
+                observed_counts[table_name] += 1
+                content_hash.update(line)
+                if len(batches[table_name]) >= 128:
+                    _flush_batch(connection, table_name, batches[table_name], manifest)
+                    batches[table_name].clear()
+            if footer is None or archive.read(1) != b"":
+                raise PublicRagSeedError("PUBLIC_RAG_SEED_FOOTER")
+        while buffered.read(1024 * 1024):
+            pass
+    finally:
+        buffered.close()
+    if (
+        part_reader.archive_size != manifest.get("archiveSizeBytes")
+        or part_reader.archive_sha256 != manifest.get("archiveSha256")
+    ):
+        raise PublicRagSeedError("PUBLIC_RAG_SEED_CONSUMED_ARCHIVE_HASH")
     for spec in TABLE_SPECS:
         _flush_batch(connection, spec.name, batches[spec.name], manifest)
     expected_counts = manifest.get("tableCounts")
@@ -963,8 +1002,10 @@ def _write_manifest(path: Path, manifest: Mapping[str, object]) -> None:
     )
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
     try:
-        os.write(descriptor, encoded)
-        os.fsync(descriptor)
+        with os.fdopen(descriptor, "wb", closefd=False) as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
     finally:
         os.close(descriptor)
 

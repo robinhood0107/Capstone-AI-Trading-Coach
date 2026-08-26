@@ -36,6 +36,96 @@ FULL_APP_DOCUMENTS = (
     "workspaces/experience-dashboard/README.md",
 )
 
+TEAM_A_CURRENT_OPERATIONS = frozenset(
+    {
+        ("POST", "/api/v1/auth/login"),
+        ("GET", "/api/v1/dashboard/backtests/{runId}"),
+        ("GET", "/api/v1/dashboard/model-evaluations/{runId}"),
+        ("GET", "/api/v1/dashboard/rag-sources/{answerId}"),
+        ("GET", "/api/v1/dashboard/risk-results/{decisionId}"),
+        ("GET", "/api/v1/decisions/{decisionId}"),
+        ("GET", "/api/v1/principle-presets"),
+        ("GET", "/api/v1/principles"),
+        ("GET", "/api/v1/principles/{principleId}"),
+        ("PUT", "/api/v1/principles/{principleId}"),
+        ("POST", "/api/v1/rag/ask"),
+        ("GET", "/api/v1/rag/sources"),
+        ("GET", "/api/v1/risk/portfolio"),
+        ("GET", "/api/v1/system/health"),
+        ("GET", "/api/v2/signals/{symbol}"),
+    }
+)
+TEAM_A_REQUIRED_OPERATIONS = frozenset(
+    {
+        ("GET", "/api/v1/brokerage/mock/accounts/{accountId}/balances"),
+        ("GET", "/api/v1/brokerage/mock/accounts/{accountId}/buyable"),
+        ("GET", "/api/v1/brokerage/mock/accounts/{accountId}/fills"),
+        ("POST", "/api/v1/brokerage/mock/orders"),
+        ("GET", "/api/v1/brokerage/orders/{orderId}"),
+        ("POST", "/api/v1/brokerage/orders/{orderId}/cancel"),
+        ("POST", "/api/v1/consents"),
+        ("POST", "/api/v1/rag/answers/{answerId}/feedback"),
+        ("POST", "/api/v1/principles"),
+        ("POST", "/api/v1/decisions/evaluate-order"),
+        ("GET", "/api/v1/risk/kill-switch"),
+        ("POST", "/api/v1/risk/kill-switch"),
+    }
+)
+OPTIONAL_PRODUCT_OPERATIONS = frozenset(
+    {
+        ("GET", "/api/v1/brokerage/paper/accounts/{accountId}/balances"),
+        ("GET", "/api/v1/brokerage/paper/accounts/{accountId}/buyable"),
+        ("GET", "/api/v1/brokerage/paper/accounts/{accountId}/fills"),
+        ("POST", "/api/v1/brokerage/paper/orders"),
+        ("GET", "/api/v1/rag/history"),
+        ("GET", "/api/v1/rag/history/{answerId}"),
+        ("DELETE", "/api/v1/rag/history/{answerId}"),
+        ("GET", "/api/v1/principles/{principleId}/versions"),
+    }
+)
+OPERATOR_ONLY_OPERATIONS = frozenset(
+    {
+        ("GET", "/api/v1/artifacts/ingest-status"),
+        ("GET", "/api/v1/async-jobs"),
+        ("GET", "/api/v1/async-jobs/{jobId}"),
+        ("POST", "/api/v1/brokerage/orders/{orderId}/reconcile"),
+        ("GET", "/api/v1/decisions/{decisionId}/audit"),
+        ("GET", "/api/v1/stream-metrics"),
+    }
+)
+NON_PRODUCT_OPERATIONS = frozenset(
+    (method, "/error")
+    for method in ("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS")
+)
+EXPECTED_API_CLASSIFICATIONS = {
+    "현재 화면": TEAM_A_CURRENT_OPERATIONS,
+    "Team A 필수": TEAM_A_REQUIRED_OPERATIONS,
+    "선택 기능": OPTIONAL_PRODUCT_OPERATIONS,
+    "운영자 전용": OPERATOR_ONLY_OPERATIONS,
+    "제품 기능 아님": NON_PRODUCT_OPERATIONS,
+}
+
+TEAM_B_ARTIFACTS = (
+    "model.safetensors",
+    "scaler.json",
+    "config.json",
+    "lstm_signals.parquet",
+    "rule_baseline_signals.parquet",
+    "backtest_result.json",
+    "trade_log.parquet",
+    "equity_log.parquet",
+    "golden_output.json",
+    "model_report.md",
+)
+TEAM_B_VERIFICATION_OPERATIONS = frozenset(
+    {
+        ("GET", "/api/v2/signals/{symbol}"),
+        ("GET", "/api/v1/dashboard/model-evaluations/{runId}"),
+        ("GET", "/api/v1/dashboard/backtests/{runId}"),
+        ("GET", "/api/v1/artifacts/ingest-status"),
+    }
+)
+
 
 class P1FullAppDocumentationTest(unittest.TestCase):
     def test_exact_post_core_catalog_activates_v2_boundary(self) -> None:
@@ -109,28 +199,95 @@ class P1FullAppDocumentationTest(unittest.TestCase):
     def test_api_usage_matrix_classifies_all_openapi_operations_once(self) -> None:
         openapi = json.loads((ROOT / "contracts/openapi/openapi.json").read_text(encoding="utf-8"))
         methods = {"get", "post", "put", "delete", "patch", "head", "options"}
-        expected = {
-            (method.upper(), path)
+        operations = [
+            (method.upper(), path, path_item[method].get("operationId"))
             for path, path_item in openapi["paths"].items()
             for method in path_item
             if method in methods
-        }
-        matrix = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX.md").read_text(encoding="utf-8")
+        ]
+        self.assertEqual(48, len(operations))
+        operation_ids = [operation_id for _, _, operation_id in operations]
+        self.assertTrue(
+            all(isinstance(operation_id, str) and operation_id for operation_id in operation_ids)
+        )
+        self.assertEqual(48, len(set(operation_ids)))
+        expected = {(method, path) for method, path, _ in operations}
+
+        matrix = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX.md").read_text(
+            encoding="utf-8"
+        )
         rows = re.findall(
-            r"^\|\s*\d+\s*\|\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s*\|\s*`([^`]+)`\s*\|\s*`(A_CURRENT|A_REQUIRED|ADMIN_REFERENCE|FRAMEWORK_ERROR)`\s*\|",
+            r"^\|\s*(\d+)\s*\|\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s*"
+            r"\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|",
             matrix,
             flags=re.MULTILINE,
         )
         self.assertEqual(48, len(rows))
-        self.assertEqual(48, len({(method, path) for method, path, _ in rows}))
-        self.assertEqual(expected, {(method, path) for method, path, _ in rows})
-        counts = {classification: 0 for classification in ("A_CURRENT", "A_REQUIRED", "ADMIN_REFERENCE", "FRAMEWORK_ERROR")}
-        for _, _, classification in rows:
-            counts[classification] += 1
+        self.assertEqual(list(range(1, 49)), sorted(int(number) for number, _, _, _ in rows))
+        self.assertEqual(48, len({(method, path) for _, method, path, _ in rows}))
+        self.assertEqual(expected, {(method, path) for _, method, path, _ in rows})
+
+        observed_by_classification = {
+            classification: frozenset(
+                (method, path)
+                for _, method, path, observed_classification in rows
+                if observed_classification == classification
+            )
+            for classification in EXPECTED_API_CLASSIFICATIONS
+        }
         self.assertEqual(
-            {"A_CURRENT": 15, "A_REQUIRED": 20, "ADMIN_REFERENCE": 6, "FRAMEWORK_ERROR": 7},
-            counts,
+            set(EXPECTED_API_CLASSIFICATIONS),
+            {classification for _, _, _, classification in rows},
         )
+        self.assertEqual(EXPECTED_API_CLASSIFICATIONS, observed_by_classification)
+
+    def test_team_a_request_lists_all_current_and_required_operations(self) -> None:
+        request = (ROOT / "docs/decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md").read_text(
+            encoding="utf-8"
+        )
+        documented = frozenset(
+            re.findall(
+                r"`(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+(/api/[^`]+)`",
+                request,
+            )
+        )
+        expected = TEAM_A_CURRENT_OPERATIONS | TEAM_A_REQUIRED_OPERATIONS
+        self.assertEqual(27, len(expected))
+        self.assertEqual(set(), expected.difference(documented))
+
+    def test_team_b_request_lists_exact_artifacts_and_owner_verification_apis(self) -> None:
+        request = (ROOT / "docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md").read_text(
+            encoding="utf-8"
+        )
+        artifact_section = re.search(
+            r"(?ms)^## 결과 폴더와 파일 10개\s*$\n(.*?)(?=^##\s)",
+            request,
+        )
+        self.assertIsNotNone(artifact_section)
+        artifacts = tuple(
+            re.findall(r"(?m)^\d+\.\s+`([^`]+)`\s*$", artifact_section.group(1))
+        )
+        self.assertEqual(TEAM_B_ARTIFACTS, artifacts)
+
+        api_section = re.search(
+            r"(?ms)^## 통합 담당자가 나중에 할 일\s*$\n(.*?)(?=^##\s)",
+            request,
+        )
+        self.assertIsNotNone(api_section)
+        verification_operations = frozenset(
+            re.findall(
+                r"`(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+(/api/[^`]+)`",
+                api_section.group(1),
+            )
+        )
+        self.assertEqual(TEAM_B_VERIFICATION_OPERATIONS, verification_operations)
+
+    def test_team_handoff_checklist_has_no_stale_preview_or_api_edge_flow(self) -> None:
+        checklist = (
+            ROOT / "docs/decision-platform/P1_TEAM_A_B_수신_후_통합_체크리스트.md"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("./capstone preview", checklist)
+        self.assertNotIn("api-edge", checklist)
 
     def test_legacy_v1_authority_files_remain_present(self) -> None:
         self.assertTrue((ROOT / "deploy/p1/release-manifest.schema.json").is_file())
@@ -156,6 +313,12 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertIn("CAPSTONE_PERSISTENT_CONTAINERS", controller)
         self.assertIn("KIS_MOCK_NOT_CERTIFIED", controller)
         self.assertIn("mock_certified", controller)
+        self.assertIn("mock_certification_guard.py", controller)
+        self.assertIn("--repository-root", controller)
+        guard = (ROOT / "deploy/p1/mock_certification_guard.py").read_text(encoding="utf-8")
+        self.assertIn("KIS_MOCK_CERTIFICATION_DIRTY_WORKTREE", guard)
+        self.assertIn("KIS_MOCK_CERTIFICATION_SOURCE_DRIFT", guard)
+        self.assertIn('"inputSha256"', guard)
         self.assertIn("P1_KIS_MOCK_ONLINE_ENABLED", controller)
         self.assertIn('COMPOSE_FILE=$SCRIPT_DIR/compose.yml', controller)
         self.assertIn("DOCKER_BIN=/usr/bin/docker", controller)

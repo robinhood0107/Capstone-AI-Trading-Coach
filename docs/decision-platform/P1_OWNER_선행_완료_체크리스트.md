@@ -1,54 +1,58 @@
-# P1 우리 쪽 선행 완료 체크리스트
+# 팀에 요청하기 전 통합 담당자 확인표
 
 ## 현재 결론
 
-```text
-OWNER_HANDOFF_READY=FALSE
-GIT_PULL_FULL_REPRODUCIBLE=FALSE
-PUBLIC_RAG_SEED_GIT_REPRODUCIBLE=TRUE
-P1_FINAL=NOT_READY
-```
+아직 “내가 할 수 있는 일을 모두 끝낸 뒤 팀에 요청하는 상태”는 아닙니다.
 
-공개 Seed DB, 공식 모델 Compose와 fail-closed 설치기는 준비됐지만 “내가 할 수 있는 일 전부 완료” 상태는
-아니다. 사용자가 정한 순서대로라면 아래 우리 쪽 hard gate를 먼저 끝내고 Team A/B 요청서를 전달한다.
+- Team A 요청 내용은 코드와 OpenAPI 기준으로 정리됐습니다.
+- Team B 요청 내용은 정리됐지만, 실제 입력 bundle과 해시 규칙을 Owner가 더 고정해야 합니다.
+- 통합 실행 흐름은 아직 열린 PR에 있고 main에 병합되지 않았습니다.
+- KIS 모의투자 수동 인증은 실행하지 않았습니다.
+- 자동 주문 scheduler는 없으며 지금 추가하면 안 됩니다.
 
-## 완료한 우리 쪽 항목
+## 이미 끝낸 것
 
-- full-app v2 계약, Seed manifest/schema와 Team B artifact schema
-- 공개 Seed 2개 Git 조각의 파일·크기·SHA-256 검증
-- fresh V87 PostgreSQL import `IMPORTED_FULL_READY`와 재실행 `NOOP_MATCHING_ACTIVE_SEED`
-- 공식 TEI `BAAI/bge-m3` exact revision container 기동과 실제 1024차원 embedding 확인
-- 공식 `llama.cpp` + PaddlePaddle GGUF/mmproj exact hash 기동과 health 확인
-- Linux/WSL·PowerShell 공통 `install/start/stop/status/doctor/backup/restore/verify` 진입점
-- Team B 실물 artifact가 없을 때 full 설치를 중단하는 fail-closed preflight
+- 단일 `deploy/p1/compose.yml`과 기본 5개/모델 포함 7개 컨테이너 구조
+- Spring과 Python worker를 하나의 통합 백엔드 컨테이너로 실행
+- 공개 Seed DB의 migration·재현 흐름
+- Team A production image, lockfile, `/healthz`, same-origin `/api` 기반 구조
+- Team B 받은 CSV/PTH를 네트워크 없이 실행하는 미리보기
+- 공식 BAAI BGE-M3 컨테이너와 공식 llama.cpp PaddleOCR-VL 컨테이너
+- Linux/WSL `./capstone`과 Windows PowerShell `.\capstone.ps1`
+- OpenAPI 48개 전수 분류와 Team A/Team B 요청서
 
-## 우리가 더 끝내야 하는 항목
+## Team A에게 보내기 전에
 
-| 순서 | 우리 쪽 잔여 작업 | 완료 기준 |
-|---:|---|---|
-| 1 | owner 문서 업로드/OCR/profile 변경/delete E2E | browser부터 DB까지 실제 파일로 PASS |
-| 2 | Paddle OCR 실제 품질과 CPU·Intel lane | born-digital/scan fixture, CPU/Intel hard gate PASS |
-| 3 | 계정 bootstrap·강제 비밀번호 변경·격리 | owner/admin, foreign owner 404, reset/session revoke PASS |
-| 4 | 시장데이터·Google/SearXNG 제품 경계 | 저장값 read, 승인형 refresh, provider 미설정 degrade PASS |
-| 5 | G7 원자 backup/restore | 실패 rollback, session revoke, secret/Seed 제외 PASS |
-| 6 | gateway와 전체 application Compose/image | digest-pinned clean pull과 same-origin 기동 PASS |
-| 7 | 전체 Python/Kotlin과 contract 회귀 | clean frozen full suite PASS |
-| 8 | 일반 보안·dependency/image scan과 공급망 | secret scan, SBOM, provenance, signature PASS |
-| 9 | Linux/WSL·Windows clean Compose E2E | pull→install→Seed→restart→backup/restore PASS |
-| 10 | 원격 반영 | push, PR merge, `origin/main`, post-merge CI 확인 |
+- [ ] 통합 PR을 main에 병합하고 main 자동검사 통과 확인
+- [ ] 새 폴더에서 `git pull` 후 `./capstone up` 재현
+- [ ] Team A 요청서 링크가 main에서 열리는지 확인
+- [ ] Team A는 15개 기존 연결 검증 + 12개 필수 추가, 총 27개만 요구한다고 확인
+- [ ] 선택 기능 8개와 운영자 API 6개를 억지로 요구하지 않는다고 확인
+- [ ] 자동매매 예약 API는 없으며 임의 생성하지 말라고 안내
 
-provider live read 재검증은 별도 사용자 승인 범위가 필요한 hard gate다. 실계좌·잔고·주문 호출은 계속
-0이며 LightGBM production과 live order는 이 체크리스트의 구현 대상이 아니다.
+## Team B에게 보내기 전에
 
-## 상대방에게 요청할 외부 항목
+- [ ] KIS 가격 입력 파일명, schema, 기간, 종목과 각 SHA-256을 manifest로 고정
+- [ ] ECOS 입력 파일과 manifest를 고정
+- [ ] 뉴스 감성을 사용할지 결정하고, 사용할 때만 승인된 계약 제공
+- [ ] 세 비용 시나리오의 수수료, 세금, slippage 값을 고정
+- [ ] 결과 manifest의 producer SHA-256 필드별 계산 대상을 고정
+- [ ] 동일 실행 두 번은 11개 파일 SHA-256 완전 일치가 기준이라고 확인
+- [ ] Team B 결과를 Spring/Dashboard로 바꾸는 adapter는 Owner 후속 작업이라고 안내
 
-- Team A: [Dashboard 완료 요청서](P1_TEAM_A_DASHBOARD_완료_요청서.md)
-- Team B: [Return Engine 완료 요청서](P1_TEAM_B_RETURN_ENGINE_완료_요청서.md)
+위 Team B 항목을 고정하기 전에는 Team B가 임의 입력·비용·해시를 만들게 해서는 안 됩니다.
 
-두 요청서는 이미 쉬운 말과 copy-paste 메시지로 준비하되, 사용자의 순서 요구에 따라 이 문서가
-`OWNER_HANDOFF_READY=TRUE`로 갱신되기 전에는 “우리 쪽 완료”라고 전제해 보내지 않는다.
+## 두 팀 결과를 받은 뒤 Owner가 할 일
 
-## 최종 재현 문서
+1. 각 PR, commit, lockfile과 결과 해시 검증
+2. Team B 결과 10개와 manifest 독립 검증
+3. Team B 결과를 Signal, 모델 평가, 백테스트 API에 적재하는 adapter 구현
+4. Team A 27개 API의 실제 Spring Playwright 검증
+5. 단일 Compose 전체 E2E와 새 PC 재현
+6. XKRX 거래시간에 삼성전자 1주 매수·즉시취소 수동 인증 한 번
+7. PR 병합 후 main CI와 fresh clone 확인
 
-DB volume을 공유하지 않고 같은 공개 상태를 만드는 방법은
-[P1 `git pull` 동일환경 재현 가이드](P1_GIT_PULL_동일환경_재현_가이드.md)를 따른다.
+자동 모의투자 scheduler는 위 작업과 Team B 실제 신호 검증이 모두 끝난 뒤 별도 계약으로 구현합니다.
+24시간 서비스는 유지하지만 주문은 XKRX session 안에서만 허용하고, KIS 실계좌 주문은 계속 0입니다.
+
+상세 순서는 [두 팀 결과를 받은 뒤 통합 확인표](P1_TEAM_A_B_수신_후_통합_체크리스트.md)를 따릅니다.

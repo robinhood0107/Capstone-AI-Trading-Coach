@@ -1,20 +1,24 @@
-# P1 Team A Dashboard 완료 요청서
+# Team A 대시보드 완료 요청
 
-## 아주 쉽게 말하면
+## 이번에 해주실 일
 
-> 새 API를 마음대로 만들라는 요청이 아닙니다. `contracts/openapi/openapi.json`에 이미 있는 API 중
-> Dashboard 사용자 흐름에 필요한 20개를 실제 화면에서 사용하고, Docker Compose의 실제 Spring과
-> 연결됐다는 Playwright 증거를 보내 주세요.
+> 새 API를 임의로 만들지 말고, OpenAPI에 이미 있으며 최종 명세가 Team A 화면에 배정한 API만
+> 사용해 주세요. 현재 화면 코드에 연결된 15개를 정확히 검증하고, 빠진 12개를 화면에 연결해
+> 총 27개를 실제 로컬 Spring API로 확인하면 됩니다.
 
-작업 위치는 `workspaces/experience-dashboard/`입니다. 현재 수신본 preview의 lockfile, production
-Dockerfile, `/healthz`, same-origin `/api` 경계는 owner가 먼저 넣었습니다. Team A는 최신 `main`을
-받고 이 경계를 유지하면서 기능 화면과 테스트를 완성합니다.
+작업 위치는 `workspaces/experience-dashboard/`입니다. 통합 PR이 main에 병합됐다는 안내를 받은 뒤
+최신 main에서 작업해 주세요. 통합 담당자가 먼저 넣은 `package-lock.json`, production Dockerfile,
+`/healthz`, 브라우저의 same-origin `/api` 구조를 유지합니다.
 
-## 현재 연결 후보 15개
+여기서 “실제 API 연결”은 프론트의 가짜 응답이 아니라 Docker Compose 안의 로컬 Spring을 호출한다는
+뜻입니다. KIS 실계좌를 뜻하지 않습니다. Team A는 KIS 자격증명을 입력하거나 모의주문 인증 명령을
+실행하지 않습니다.
 
-소스 wrapper가 있고 화면 흐름에서 사용하는 API입니다. 현재 owner preview는 이 중 9개를 실제 Spring
-`200`으로 검증했습니다. 나머지 6개도 유효한 식별자를 사용한 live 테스트가 필요하며, mock 성공은
-live 성공 증거가 아닙니다.
+## 먼저 검증할 현재 15개
+
+아래 API는 현재 소스에 호출 지점이 있습니다. 하지만 체크인된 Playwright는 로그인 하나만 경로를
+정확히 확인하고, 나머지는 응답 개수와 5xx 부재만 검사합니다. 4xx도 통과할 수 있으므로 15개 전부의
+method, path, 성공 상태를 다시 증명해야 합니다.
 
 - `POST /api/v1/auth/login`
 - `GET /api/v1/dashboard/model-evaluations/{runId}`
@@ -32,48 +36,82 @@ live 성공 증거가 아닙니다.
 - `GET /api/v1/system/health`
 - `GET /api/v2/signals/{symbol}`
 
-이 15개는 `NEXT_PUBLIC_API_MODE=live` production image와 단일 Compose에서 실제 Spring 요청을
-Playwright trace 또는 request assertion으로 증명해야 합니다.
+상세 조회는 가짜 ID로 404를 만드는 방식이 아니라, 테스트가 생성하거나 Seed에서 읽은 유효한
+`principleId`, `decisionId`, `runId`, `answerId`를 다음 요청에 이어 사용해 주세요. RAG 질문은 화면에서
+실제로 제출해야 합니다.
 
-현재 live 검증이 남은 6개는 dashboard risk/RAG ViewModel, Decision 상세, Principle 상세/수정,
-Signal v2입니다. 존재하지 않는 가짜 ID로 404를 만들지 말고, 테스트가 만든 유효한 ID를 이어서
-조회·수정해야 합니다.
+## 추가로 화면에 연결할 12개
 
-## 명세에 있으므로 추가로 사용할 20개
+### KIS 모의투자 주문 검토와 결과
 
-### KIS Mock/Paper 사용자 흐름 10개
+- `GET /api/v1/brokerage/mock/accounts/{accountId}/balances`
+- `GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`
+- `GET /api/v1/brokerage/mock/accounts/{accountId}/fills`
+- `POST /api/v1/brokerage/mock/orders`
+- `GET /api/v1/brokerage/orders/{orderId}`
+- `POST /api/v1/brokerage/orders/{orderId}/cancel`
 
-- Mock: balance, buyable, fills, order submit 4개
-- 공통 order 조회와 취소 2개
-- Paper: balance, buyable, fills, order submit 4개
+화면 순서는 종목 신호 확인 → 주문 전 위험 판정 → 주문 차단 장치 확인 → 사용자의 명시적 제출 →
+주문 상태/체결/취소 확인으로 구성합니다. 기본 Team A 테스트에서는 외부 KIS를 호출하지 않고 저장된
+모의 데이터와 ledger 흐름을 검증합니다. 실제 KIS 모의계좌 연결은 통합 담당자만 별도로 검증합니다.
 
-실계좌·실주문이 아닙니다. 화면에는 Mock/Paper 상태를 분명하게 표시합니다.
+### 동의, RAG 평가와 원칙 생성
 
-### RAG 사용자 흐름 5개
+- `POST /api/v1/consents`
+- `POST /api/v1/rag/answers/{answerId}/feedback`
+- `POST /api/v1/principles`
 
-- 동의 기록 `POST /api/v1/consents`
-- 답변 평가 `POST /api/v1/rag/answers/{answerId}/feedback`
-- 이력 목록·상세·삭제 3개
+### 주문 전 판정과 주문 차단 장치
 
-### Principle, 주문 사전판정, Kill Switch 5개
+- `POST /api/v1/decisions/evaluate-order`
+- `GET /api/v1/risk/kill-switch`
+- `POST /api/v1/risk/kill-switch`
 
-- Principle 최초 생성과 버전 이력 2개
-- `POST /api/v1/decisions/evaluate-order` 1개
-- Kill Switch 조회와 변경 2개
+`killSwitch()`와 `evaluateOrder()` 호출 함수는 현재 소스에 있지만 화면에서 사용되지 않습니다.
+`POST kill-switch` 호출 함수와 화면 흐름도 추가해야 합니다. 일반 사용자는 주문 차단 장치를 켤 수 있지만,
+해제는 관리자 권한이 필요하므로 권한별 성공·실패를 각각 테스트합니다.
 
-정확한 method/path/분류는 [API 전수표](P1_API_USAGE_MATRIX.md)가 단일 확인표입니다.
+## 이번에 억지로 붙이지 않을 8개
 
-## Team A에게 요구하지 않는 것
+아래 API는 존재하지만 최종 명세가 Team A 필수 화면으로 지정하지 않았습니다. Owner가 별도로 요청하지
+않는 한 구현하지 않아도 됩니다.
 
-- artifact ingest status, async job, stream metric, brokerage reconcile, Decision audit는 운영·대사·참조
-  API이므로 사용자 화면에 억지로 붙이지 않습니다.
-- OpenAPI에 없는 온보딩·학습일지·시장데이터·사용자관리·백업·RAG 문서관리 endpoint를 임의로
-  만들지 않습니다. 필요한 경우 `OWNER_API_MISSING`으로 owner에게 알려 줍니다.
-- DB, 공개 Seed, provider client를 Dashboard에 넣지 않습니다.
+- `GET /api/v1/brokerage/paper/accounts/{accountId}/balances`
+- `GET /api/v1/brokerage/paper/accounts/{accountId}/buyable`
+- `GET /api/v1/brokerage/paper/accounts/{accountId}/fills`
+- `POST /api/v1/brokerage/paper/orders`
+- `GET /api/v1/rag/history`
+- `GET /api/v1/rag/history/{answerId}`
+- `DELETE /api/v1/rag/history/{answerId}`
+- `GET /api/v1/principles/{principleId}/versions`
 
-## 완료 조건
+결과 파일 적재 상태, 내부 작업, 처리 지표, 주문 대사, 판단 감사 6개 API와 Spring `/error` 7개도
+일반 사용자 화면에 붙이지 않습니다. 전체 48개 분류는 [OpenAPI 사용 현황](P1_API_USAGE_MATRIX.md)에서
+확인할 수 있습니다.
+
+## 화면 문구와 최종 목적
+
+- 현재 홈의 “자동주문 작동 중” 표현은 실제 동작과 다릅니다. “모의주문 가능 상태” 또는
+  “주문 차단 장치 꺼짐”처럼 현재 사실을 보여 주세요.
+- 프로그램을 켜 두면 자동 주문된다는 설명이나 토글을 만들지 마세요. 자동매매 예약 API는 현재
+  OpenAPI에 없습니다.
+- KIS 모의투자, 내부 가상거래, 백테스트를 화면에서 서로 다른 모드로 분명하게 표시합니다.
+- Risk 결과는 허용/경고/보류/차단과 이유를 사용자가 이해할 수 있는 말로 설명합니다.
+- Team B 미리보기와 Team B 실제 결과를 같은 것으로 표시하지 않습니다.
+
+온보딩, 학습일지, 시장데이터, 사용자관리, 백업, RAG 문서관리, 자동매매 예약처럼 OpenAPI에 없는
+기능이 필요하면 구현하지 말고 PR 설명에 다음처럼 한 줄을 남겨 주세요.
+
+```text
+OWNER_API_MISSING: 주문 예약 화면 / 거래일·시간·활성 상태를 저장하고 조회할 API 필요
+```
+
+## 완료 확인
+
+Node.js 22 기준으로 다음을 모두 통과시켜 주세요.
 
 ```bash
+cd workspaces/experience-dashboard
 npm ci
 npm run typecheck
 npm run lint
@@ -82,17 +120,35 @@ npm run build
 docker build --platform linux/amd64 -t capstone-experience-dashboard:p1-local .
 ```
 
-Playwright는 로그인 → 홈 → 원칙 → 주문 검토 → 모델 평가 → 백테스트 → RAG 순서로 실행하고,
-mock transport가 아니라 same-origin `/api/...` 요청이 실제 Spring까지 도달했는지 확인합니다.
-`.next`, `node_modules`, 개인 `.env`, credential, cache는 PR에 넣지 않습니다. Next.js 보안 패치는
-lockfile과 함께 갱신합니다.
+통합 앱을 `./capstone up`으로 켠 뒤 저장소 루트에서 실제 Spring 연결 E2E를 실행합니다.
+
+```bash
+cd workspaces/experience-dashboard
+P1_USER_PASSWORD_FILE=../../deploy/p1/.state-app/secrets/demo-user.password \
+  npm run test:e2e:live
+```
+
+Playwright 결과는 `skip 0`이어야 합니다. 총 27개 API 각각에 대해 예상 method/path와 성공 상태를
+검사하고, 4xx와 5xx를 모두 실패로 처리합니다. 비밀번호, JWT, 계좌번호와 응답 원문은 trace나
+리포트에 남기지 않습니다.
+
+## 보내 주실 것
+
+1. PR 주소와 최신 commit SHA
+2. `package-lock.json` SHA-256
+3. 위 명령들의 성공 결과
+4. 27개 API의 method/path/성공 상태 표
+5. Playwright `skip 0` HTML report 또는 민감값을 제거한 증거
+6. `OWNER_API_MISSING` 목록
+
+`.next`, `node_modules`, 개인 `.env`, credential과 cache는 PR에 넣지 않습니다.
 
 ## 그대로 보내는 짧은 메시지
 
 ```text
-최신 main을 받고 workspaces/experience-dashboard/에서 작업해 주세요.
-새 endpoint를 만들라는 뜻이 아니라 OpenAPI에 이미 있는 Dashboard용 API 20개를 화면에서 실제로
-사용해 달라는 요청입니다. 기존 15개도 mock이 아닌 live Compose 요청을 Playwright로 증명해 주세요.
-자세한 목록은 docs/decision-platform/P1_API_USAGE_MATRIX.md와
-P1_TEAM_A_DASHBOARD_완료_요청서.md에 있습니다.
+통합 PR이 main에 병합됐다는 안내를 받은 뒤 최신 main을 받아 주세요.
+workspaces/experience-dashboard에서 현재 연결된 API 15개를 정확히 검증하고, 최종 명세가 Team A에
+배정한 12개를 화면에 추가해 총 27개를 로컬 Spring과 연결해 주세요. API는 새로 만들지 말고,
+OpenAPI에 없는 기능은 OWNER_API_MISSING으로 적어 주세요. 프로그램을 켜 둔다고 자동 주문되는 것처럼
+표현하지 말고, 완료 조건과 제출물은 이 요청서를 그대로 따라 주세요.
 ```

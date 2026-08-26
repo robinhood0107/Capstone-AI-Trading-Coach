@@ -272,7 +272,7 @@ services:
       PROVIDER_LIVE_CALLS_ENABLED: "false"
       KIS_OFFLINE: "${P1_KIS_OFFLINE:-1}"
       KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "${P1_KIS_MOCK_ONLINE_ENABLED:-false}"
-    secrets: [spring_env, python_env, kis_mock_env, rag_history_kek, actor_client_p12, actor_tls_ca]
+    secrets: [spring_env, python_env, kis_mock_env, return_inference_env, rag_history_kek, actor_client_p12, actor_tls_ca]
     ports:
       - "127.0.0.1:${P1_API_PORT:-18080}:8080"
     depends_on:
@@ -582,6 +582,7 @@ secrets:
   rag_history_kek: {file: "${P1_SECRETS_DIR}/rag-history-kek-v1.key"}
   seed_import_env: {file: "${P1_SECRETS_DIR}/seed-import.env"}
   artifact_import_env: {file: "${P1_SECRETS_DIR}/artifact-import.env"}
+  return_inference_env: {file: "${P1_SECRETS_DIR}/return-inference.env"}
   actor_tls_ca: {file: "${P1_SECRETS_DIR}/actor-tls-ca.crt"}
   actor_server_p12: {file: "${P1_SECRETS_DIR}/actor-server.p12"}
   actor_client_p12: {file: "${P1_SECRETS_DIR}/actor-client.p12"}

@@ -1048,6 +1048,20 @@ BEGIN
 END
 $revoke_custom_function_privileges$;
 
+DO $p1_return_artifact_privileges$
+BEGIN
+    IF to_regprocedure('public.import_p1_return_bundle_v1(text,text)') IS NOT NULL
+       AND to_regprocedure('public.read_p1_return_signal_v2(text,boolean)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            import_p1_return_bundle_v1(text,text)
+        TO decision_worker;
+        GRANT EXECUTE ON FUNCTION
+            read_p1_return_signal_v2(text,boolean)
+        TO decision_app;
+    END IF;
+END
+$p1_return_artifact_privileges$;
+
 DO $decision_runtime_function_privileges$
 BEGIN
     IF to_regprocedure('public.read_decision_owner_projection()') IS NOT NULL THEN

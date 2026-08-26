@@ -94,6 +94,10 @@ upgrade_state() {
     printf 'BROKERAGE_GRPC_SHARED_SECRET=%s\n' "$(openssl rand -hex 32)" \
       | append_state secrets/spring.env 0640
   fi
+  if ! grep -q '^RETURN_INFERENCE_GRPC_SHARED_SECRET=' "$SECRETS_DIR/spring.env"; then
+    printf 'RETURN_INFERENCE_GRPC_SHARED_SECRET=%s\n' "$(openssl rand -hex 32)" \
+      | append_state secrets/spring.env 0640
+  fi
   if [[ ! -e $SECRETS_DIR/kis-mock.env ]]; then
     printf '%s\n' \
       'KIS_MOCK_CONFIGURED=false' \

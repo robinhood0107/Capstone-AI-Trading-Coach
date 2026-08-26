@@ -5,37 +5,39 @@ import com.capstone.decision.application.signal.SignalStorageUnavailableExceptio
 import com.capstone.decision.application.signal.SignalV2ProductionReadPort
 import com.capstone.decision.application.signal.StoredSignalComponent
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
+import java.sql.ResultSet
 import java.time.LocalDate
 
 @Repository
 class JdbcSignalV2Repository(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
+    @Value("\${app.p1.return-artifact.synthetic-test-profile:false}")
+    private val syntheticTestProfile: Boolean,
 ) : SignalV2ProductionReadPort {
     /** production pointer와 fixture=false를 DB 함수가 강제한 bounded projection만 읽는다. */
     override fun find(symbol: String): SignalReadSnapshot {
         val jdbc = jdbcProvider.getIfAvailable() ?: throw SignalStorageUnavailableException()
         return try {
+            val imported =
+                jdbc.query(
+                    "SELECT * FROM read_p1_return_signal_v2(:symbol,:allowSynthetic)",
+                    mapOf("symbol" to symbol, "allowSynthetic" to syntheticTestProfile),
+                ) { result, _ ->
+                    component(result) to result.getObject("latest_completed_session", LocalDate::class.java)
+                }
+            if (imported.isNotEmpty()) {
+                val clocks = imported.map { it.second }.toSet()
+                if (clocks.size != 1) throw SignalStorageUnavailableException()
+                return SignalReadSnapshot(imported.map { it.first }, clocks.single())
+            }
             val rows =
                 jdbc.query(
                     "SELECT * FROM read_production_signal_v2(:symbol)",
                     mapOf("symbol" to symbol),
-                ) { result, _ ->
-                    StoredSignalComponent(
-                        producer = result.getString("producer"),
-                        sourceWorkspace = result.getString("source_workspace"),
-                        sessionDate = result.getObject("session_date", LocalDate::class.java),
-                        asOf = result.getTimestamp("as_of")?.toInstant(),
-                        status = result.getString("status"),
-                        reason = result.getString("reason"),
-                        signal = result.getString("signal"),
-                        confidence = result.getBigDecimal("confidence")?.toDouble(),
-                        predictedReturn = result.getBigDecimal("predicted_return")?.toDouble(),
-                        modelVersion = result.getString("model_version"),
-                        modelReportId = result.getString("model_report_id"),
-                    )
-                }
+                ) { result, _ -> component(result) }
             val latest =
                 if (rows.isEmpty()) {
                     null
@@ -54,4 +56,19 @@ class JdbcSignalV2Repository(
             throw SignalStorageUnavailableException()
         }
     }
+
+    private fun component(result: ResultSet) =
+        StoredSignalComponent(
+            producer = result.getString("producer"),
+            sourceWorkspace = result.getString("source_workspace"),
+            sessionDate = result.getObject("session_date", LocalDate::class.java),
+            asOf = result.getTimestamp("as_of")?.toInstant(),
+            status = result.getString("status"),
+            reason = result.getString("reason"),
+            signal = result.getString("signal"),
+            confidence = result.getBigDecimal("confidence")?.toDouble(),
+            predictedReturn = result.getBigDecimal("predicted_return")?.toDouble(),
+            modelVersion = result.getString("model_version"),
+            modelReportId = result.getString("model_report_id"),
+        )
 }

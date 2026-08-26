@@ -221,7 +221,9 @@ def test_compose_supervisor_health_and_secret_boundary_include_return_inference(
     assert 'RETURN_INFERENCE_ALLOW_SYNTHETIC: "false"' in compose
     assert "RETURN_INFERENCE_GRPC_SHARED_SECRET" in p1ctl
     assert "RETURN_INFERENCE_GRPC_SHARED_SECRET" in full_app
-    assert "spring:RETURN_INFERENCE_GRPC_SHARED_SECRET" in entrypoint
+    assert "decision-platform:RETURN_INFERENCE_GRPC_SHARED_SECRET" in entrypoint
+    assert "return_inference_env" in compose
+    assert "return-inference.env" in p1ctl
 
 
 def _free_port() -> int:

@@ -60,13 +60,11 @@ def test_importer_validates_exact_ten_bundle_and_builds_bounded_projection_packe
             "LSTM",
             "RULE_BASELINE",
         }
-        assert result.import_packet["modelProjection"]["data"]["performanceClaimAllowed"] is False
-        assert (
-            result.import_packet["backtestProjection"]["data"]["performanceClaimAllowed"] is False
-        )
-        assert result.import_packet["backtestProjection"]["data"]["view"]["fixtureClass"] == (
-            "SYNTHETIC_FAKE_E2E"
-        )
+        model_projection = json.loads(result.import_packet["modelProjectionText"])
+        backtest_projection = json.loads(result.import_packet["backtestProjectionText"])
+        assert model_projection["data"]["performanceClaimAllowed"] is False
+        assert backtest_projection["data"]["performanceClaimAllowed"] is False
+        assert backtest_projection["data"]["view"]["fixtureClass"] == ("SYNTHETIC_FAKE_E2E")
 
 
 def test_importer_rejects_extra_file_and_hard_link_before_content_parsing() -> None:
@@ -143,3 +141,22 @@ def test_importer_module_has_no_provider_account_or_order_transport() -> None:
         "socket",
     ):
         assert forbidden not in text
+
+
+def test_capstone_artifact_command_is_outside_certification_heredoc_and_uses_one_shot_profile() -> (
+    None
+):
+    repository = Path(__file__).parents[5]
+    control = (repository / "deploy/p1/full-appctl").read_text(encoding="utf-8")
+    certification = control.index("mock_certify()")
+    certification_heredoc_end = control.index("\nPY\n", certification)
+    artifact_function = control.index("\nartifact_import()")
+    assert artifact_function > certification_heredoc_end
+    assert "artifact import <bundle-directory> --manifest-sha256 <sha256>" in control
+    assert "compose --profile owner run --rm --no-deps artifact-importer" in control
+
+    compose = (repository / "deploy/p1/compose.yml").read_text(encoding="utf-8")
+    assert "artifact-importer:" in compose
+    assert 'entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "artifact-import"]' in compose
+    assert "${P1_ARTIFACT_BUNDLE_DIR:-/nonexistent}:/bundle:ro" in compose
+    assert "${P1_ARTIFACT_ARCHIVE_DIR:-/nonexistent}:/archive" in compose

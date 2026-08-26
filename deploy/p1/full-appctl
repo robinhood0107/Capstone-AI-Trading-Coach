@@ -25,6 +25,7 @@ Usage:
   ./capstone up [--models] [--mock]
   ./capstone status|logs|smoke|down|doctor
   ./capstone mock <configure|doctor|certify> [--symbol 005930] [--quantity 1]
+  ./capstone artifact import <bundle-directory> --manifest-sha256 <sha256>
 
 Default `up` starts five persistent containers. `--models` adds the official
 BGE-M3 and llama.cpp PaddleOCR-VL runtimes for a total of seven. Brokerage is
@@ -105,6 +106,15 @@ upgrade_state() {
       'KIS_BROKERAGE_PHYSICAL_CAP=32' \
       | write_state secrets/kis-mock.env 0640
   fi
+  if [[ ! -e $SECRETS_DIR/artifact-import.env ]]; then
+    local worker_password
+    worker_password=$(sed -n 's/^POSTGRES_WORKER_PASSWORD=//p' "$SECRETS_DIR/spring.env")
+    [[ $worker_password =~ ^[0-9a-f]{64}$ ]] || die ARTIFACT_IMPORT_WORKER_SECRET_MISSING
+    printf 'P1_ARTIFACT_IMPORT_DATABASE_DSN=postgresql://decision_worker:%s@postgres:5432/capstone_p1?sslmode=disable\n' "$worker_password" \
+      | write_state secrets/artifact-import.env 0640
+    unset worker_password
+  fi
+  install -d -m 0700 "$STATE_DIR/artifacts"
   install -d -m 0700 "$STATE_DIR/mock"
   if ! grep -q '^P1_OPERATOR_UID=' "$RUNTIME_ENV"; then
     printf 'P1_OPERATOR_UID=%s\n' "$(id -u)" | append_state runtime.env 0600
@@ -392,11 +402,13 @@ required={
   "Repo hygiene",
   "P1 full-app security gates",
 }
+
 checks={
   item.get("name"): item.get("conclusion")
   for item in raw.get("statusCheckRollup", [])
   if isinstance(item, dict) and isinstance(item.get("name"), str)
 }
+
 if (
   raw.get("state") != "OPEN"
   or raw.get("isDraft") is not False
@@ -434,6 +446,20 @@ PY
   printf 'KIS_MOCK_CERTIFICATION=PASS\nKIS_LIVE_BROKERAGE=DISABLED\n'
 }
 
+artifact_import() {
+  local bundle=${1:-} manifest_sha=${2:-}
+  [[ $# == 2 ]] || die ARTIFACT_IMPORT_ARGUMENTS
+  [[ $bundle == /* && -d $bundle && ! -L $bundle ]] || die ARTIFACT_IMPORT_BUNDLE_ROOT
+  [[ $manifest_sha =~ ^[0-9a-f]{64}$ ]] || die ARTIFACT_IMPORT_MANIFEST_SHA256
+  state_ready || die RUN_CAPSTONE_UP_FIRST
+  upgrade_state
+  compose ps --status running --services | grep -qx postgres || die ARTIFACT_IMPORT_POSTGRES_NOT_RUNNING
+  export P1_ARTIFACT_BUNDLE_DIR=$bundle
+  export P1_ARTIFACT_ARCHIVE_DIR=$STATE_DIR/artifacts
+  export P1_ARTIFACT_MANIFEST_SHA256=$manifest_sha
+  compose --profile owner run --rm --no-deps artifact-importer
+}
+
 command=${1:-}
 [[ -n $command ]] || { usage >&2; exit 1; }
 shift
@@ -451,6 +477,19 @@ case $command in
       doctor) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_doctor || die KIS_MOCK_NOT_READY ;;
       certify) mock_certify "$@" ;;
       *) die UNKNOWN_MOCK_COMMAND ;;
+    esac
+    ;;
+  artifact)
+    subcommand=${1:-}; [[ -n $subcommand ]] || die ARTIFACT_COMMAND_REQUIRED; shift
+    case $subcommand in
+      import)
+        bundle=${1:-}; shift || true
+        [[ ${1:-} == --manifest-sha256 ]] || die ARTIFACT_IMPORT_MANIFEST_ARGUMENT_REQUIRED
+        shift
+        [[ $# == 1 ]] || die ARTIFACT_IMPORT_ARGUMENTS
+        artifact_import "$bundle" "${1:-}"
+        ;;
+      *) die UNKNOWN_ARTIFACT_COMMAND ;;
     esac
     ;;
   preview|start) up_app "$@" ;;

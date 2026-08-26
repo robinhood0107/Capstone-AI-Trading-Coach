@@ -799,10 +799,12 @@ def _build_import_packet(
     )
     _schema("contracts/schemas/dashboard-model-evaluation.v1.schema.json", model_projection)
     _schema("contracts/schemas/dashboard-backtest.v1.schema.json", backtest_projection)
+    model_projection_text = canonical_json_bytes(model_projection).decode("utf-8")
+    backtest_projection_text = canonical_json_bytes(backtest_projection).decode("utf-8")
     packet = {
         "artifactId": artifact_id,
-        "backtestProjection": backtest_projection,
-        "backtestProjectionSha256": _digest(canonical_json_bytes(backtest_projection)),
+        "backtestProjectionSha256": _digest(backtest_projection_text.encode("utf-8")),
+        "backtestProjectionText": backtest_projection_text,
         "bundleSha256": manifest_sha256,
         "contractId": "p1-return-artifact-import.v1",
         "evidenceMode": cast(str, manifest["evidenceMode"]),
@@ -812,8 +814,8 @@ def _build_import_packet(
         "manifestFileName": GOLDEN_MANIFEST,
         "manifestSha256": manifest_sha256,
         "mockRuntimeEligible": cast(bool, manifest["mockRuntimeEligible"]),
-        "modelProjection": model_projection,
-        "modelProjectionSha256": _digest(canonical_json_bytes(model_projection)),
+        "modelProjectionSha256": _digest(model_projection_text.encode("utf-8")),
+        "modelProjectionText": model_projection_text,
         "modelQuality": cast(str, manifest["modelQuality"]),
         "realTeamB": cast(bool, manifest["realTeamB"]),
         "runId": run_id,

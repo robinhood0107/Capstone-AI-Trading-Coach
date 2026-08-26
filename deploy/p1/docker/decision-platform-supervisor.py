@@ -46,13 +46,21 @@ def main() -> int:
         ],
         close_fds=True,
     )
+    inference = subprocess.Popen(
+        ["python", "-m", "app.p1_owner.inference_grpc_server"],
+        close_fds=True,
+    )
     brokerage: subprocess.Popen[bytes] | None = None
     if os.environ.get("KIS_MOCK_BROKERAGE_ONLINE_ENABLED", "false").lower() == "true":
         brokerage = subprocess.Popen(
             ["python", "-m", "app.brokerage.brokerage_grpc_server"],
             close_fds=True,
         )
-    processes = (worker, spring) if brokerage is None else (worker, spring, brokerage)
+    processes = (
+        (worker, inference, spring)
+        if brokerage is None
+        else (worker, inference, spring, brokerage)
+    )
     stopping = False
 
     def stop(_signal: int, _frame: object) -> None:

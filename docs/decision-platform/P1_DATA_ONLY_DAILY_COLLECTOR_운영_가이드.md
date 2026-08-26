@@ -53,5 +53,6 @@ cd workspaces/decision-platform/python-services
 .venv/bin/pytest -q tests/p1_owner/test_data_only_collector.py tests/data/market_data
 ```
 
-fixture 검증은 network deny 경계에서 실행한다. KRX, KIS token/daily, ECOS, GDELT, account, balance,
-order physical call은 모두 0이며 live adapter, credential, public API, Signal/Risk/order 연결은 없다.
+fixture 검증은 network deny 경계에서 실행한다. KRX, KIS token/daily, ECOS, GDELT physical call은
+모두 0이다. 계좌·잔고·주문도 호출하지 않으며 live adapter와 자격증명 처리를 포함하지 않는다.
+Public endpoint, Signal, RiskDecision, order 연결도 없다.

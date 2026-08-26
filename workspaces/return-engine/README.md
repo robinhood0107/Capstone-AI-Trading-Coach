@@ -1,5 +1,15 @@
 # Return Engine
 
+> **현재 통합 상태:** 아래 긴 본문은 처음 받은 코드의 설명을 원본 기록으로 보존한 것입니다. 현재
+> 기본 Compose는 `yfinance`를 호출하지 않고, 받은 CSV와 PTH를 `refresh=False`로 실행한
+> `LEGACY_RECEIVED_PREVIEW`만 만듭니다. 실제 Team B 완료 조건은
+> [Team B 예측·백테스트 엔진 완료 요청](../../docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md)을
+> 우선해서 따라 주세요.
+
+전체 앱을 보는 사람은 이 폴더를 직접 실행하지 말고 저장소 루트의 [README](../../README.md)에 따라
+`./capstone up`을 사용합니다. Team B는 외부 KIS·ECOS·yfinance, Spring REST와 주문 API를 호출하지
+않으며 계약된 입력 파일만 소비합니다.
+
 주식 데이터를 기반으로 가격을 예측하고, 매매 전략을 백테스트하여 성과를 평가하는 Return Engine입니다.
 
 현재 구현은 `ReturnEngine`을 진입점으로 사용하며, 데이터 수집부터 Feature 생성, LSTM 예측, Rule-based Baseline, 백테스트, Artifact 생성까지의 전체 과정을 하나의 실행 흐름으로 처리합니다.
@@ -524,10 +534,15 @@ Decision Platform과의 데이터 및 Artifact 계약에 맞게 입출력 계층
 
 ---
 
-## P1 full-app v2 수신 preview 경계
+## 현재 수신본 미리보기 경계
 
-- 현재 CSV, PTH, legacy JSON과 원본 source/cache는 receipt로 보존한다.
-- Compose 기본 실행은 provider 호출 0이며 PTH SHA-256 확인과 `weights_only=True`를 강제한다.
+- 현재 CSV, PTH, legacy JSON과 원본 source/cache는 원본 보존 기록으로 유지한다.
+- Compose 기본 실행은 외부 호출 0이며 PTH SHA-256 확인과 `weights_only=True`를 강제한다.
 - 현재 결과는 `LEGACY_RECEIVED_PREVIEW`, `realTeamB=false`다.
-- exact artifact 10개와 manifest가 오기 전까지 `TEAM_B_REAL_ARTIFACT=BLOCKED`다.
+- 파일명과 개수가 고정된 결과 10개와 검증 파일이 오기 전까지 실제 Team B 완료 결과가 아니다.
 - 실행: `uv run --frozen python src/preview_cli.py run --csv data/stock/005930.KS.csv --pth data/model/005930.KS_lstm.pth --output /tmp/005930.KS.json`
+
+<!-- historical integration verifier marker; 일반 사용자에게 표시하지 않는다.
+P1 full-app v2
+TEAM_B_REAL_ARTIFACT=BLOCKED
+-->

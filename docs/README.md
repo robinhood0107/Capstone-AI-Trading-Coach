@@ -94,10 +94,10 @@ PostgreSQL one-shot claim을 별도로 통과한다. 이 구조는 공개 HTTP/O
 
 ### 실행과 운영
 
-- [P1 우리 쪽 선행 완료 체크리스트](decision-platform/P1_OWNER_선행_완료_체크리스트.md)
-- [P1 `git pull` 동일환경 재현 가이드](decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md)
-- [P1 Team A Dashboard 완료 요청서](decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md)
-- [P1 Team B Return Engine 완료 요청서](decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md)
+- [통합 담당자 선행 완료 체크리스트](decision-platform/P1_OWNER_선행_완료_체크리스트.md)
+- [새 PC에서 같은 환경 실행하기](decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md)
+- [Team A 대시보드 완료 요청](decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md)
+- [Team B 예측·백테스트 엔진 완료 요청](decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md)
 - [S7-S8/P1 구현·운영 핸드오프](decision-platform/S7_S8_P1_구현_및_운영_핸드오프.md)
 - [P1 Offline Demo 배포·검증](decision-platform/P1_OFFLINE_DEMO_배포_및_검증.md)
 - [S8 offline demo 시나리오](decision-platform/S8_오프라인_시연_시나리오.md)

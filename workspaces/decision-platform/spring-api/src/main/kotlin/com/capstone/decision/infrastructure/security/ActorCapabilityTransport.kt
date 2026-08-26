@@ -3,6 +3,8 @@ package com.capstone.decision.infrastructure.security
 import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import com.sun.net.httpserver.HttpsConfigurator
+import com.sun.net.httpserver.HttpsServer
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -17,9 +19,16 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
+import java.security.KeyStore
 import java.security.MessageDigest
+import java.security.cert.CertificateFactory
 import java.time.Duration
 import java.util.concurrent.Executors
+import javax.net.ssl.KeyManagerFactory
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManagerFactory
 
 object ActorCapabilityWire {
     const val CONTENT_TYPE = "application/vnd.capstone.actor-capability.v1+text"
@@ -62,14 +71,23 @@ data class ActorCapabilityClientProperties(
     val authorityUrl: String = "",
     val sharedSecret: String = "",
     val publicKey: String = "",
+    val tlsKeyStorePath: String = "",
+    val tlsKeyStorePassword: String = "",
+    val tlsCaCertificatePath: String = "",
 ) {
     fun validatedUri(): URI {
         require(sharedSecret.length in 32..256 && sharedSecret.none { it == '\r' || it == '\n' })
         ActorCapabilityKeyCodec.publicKey(publicKey)
         val uri = URI.create(authorityUrl)
+        val loopbackHttp = uri.scheme == "http" && uri.host == "127.0.0.1"
+        val containerMtls =
+            uri.scheme == "https" &&
+                uri.host == "actor-authority" &&
+                tlsKeyStorePath == "/run/secrets/actor_client_p12" &&
+                tlsCaCertificatePath == "/run/secrets/actor_tls_ca" &&
+                tlsKeyStorePassword.length in 32..256
         require(
-            uri.scheme == "http" &&
-                uri.host == "127.0.0.1" &&
+            (loopbackHttp || containerMtls) &&
                 uri.port in 1..65535 &&
                 uri.path == ActorCapabilityWire.ISSUE_PATH &&
                 uri.rawQuery == null &&
@@ -94,12 +112,7 @@ class ActorCapabilityClientConfiguration {
 class HttpActorCapabilityIssuer(
     properties: ActorCapabilityClientProperties,
     private val identityHandleIssuer: ActorIdentityHandleIssuer,
-    private val client: HttpClient =
-        HttpClient
-            .newBuilder()
-            .connectTimeout(Duration.ofSeconds(1))
-            .followRedirects(HttpClient.Redirect.NEVER)
-            .build(),
+    private val client: HttpClient = actorCapabilityHttpClient(properties),
 ) : ActorCapabilityIssuer {
     private val uri = properties.validatedUri()
     private val sharedSecret = properties.sharedSecret
@@ -132,6 +145,8 @@ object ActorCapabilityAuthorityMain {
     @JvmStatic
     fun main(args: Array<String>) {
         require(args.isEmpty())
+        val host = requiredEnv("ACTOR_CAPABILITY_AUTHORITY_HOST")
+        require(host in setOf("127.0.0.1", "0.0.0.0"))
         val port = requiredEnv("ACTOR_CAPABILITY_AUTHORITY_PORT").toInt().also { require(it in 1..65535) }
         val sharedSecret = requiredEnv("ACTOR_CAPABILITY_SHARED_SECRET")
         require(sharedSecret.length in 32..256 && sharedSecret.none { it == '\r' || it == '\n' })
@@ -153,7 +168,12 @@ object ActorCapabilityAuthorityMain {
                 },
             )
         val authority = DatabaseActorCapabilityAuthority(dataSource, privateKey, publicKey)
-        val server = HttpServer.create(InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 16)
+        val server =
+            if (host == "127.0.0.1") {
+                HttpServer.create(InetSocketAddress(InetAddress.getByName(host), port), 16)
+            } else {
+                createMtlsServer(host, port)
+            }
         val executor = Executors.newFixedThreadPool(4)
         server.executor = executor
         server.createContext(ActorCapabilityWire.ISSUE_PATH) { exchange ->
@@ -219,4 +239,68 @@ object ActorCapabilityAuthorityMain {
         requireNotNull(System.getenv(name)?.takeIf { it.isNotBlank() }) {
             "$name is required."
         }
+
+    private fun createMtlsServer(
+        host: String,
+        port: Int,
+    ): HttpsServer {
+        val context =
+            actorCapabilitySslContext(
+                keyStorePath = requiredEnv("ACTOR_CAPABILITY_TLS_KEY_STORE_PATH"),
+                keyStorePassword = requiredEnv("ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD"),
+                caCertificatePath = requiredEnv("ACTOR_CAPABILITY_TLS_CA_CERTIFICATE_PATH"),
+            )
+        return HttpsServer.create(InetSocketAddress(InetAddress.getByName(host), port), 16).apply {
+            httpsConfigurator =
+                object : HttpsConfigurator(context) {
+                    override fun configure(parameters: com.sun.net.httpserver.HttpsParameters) {
+                        parameters.setSSLParameters(context.defaultSSLParameters.apply { needClientAuth = true })
+                    }
+                }
+        }
+    }
+}
+
+private fun actorCapabilityHttpClient(properties: ActorCapabilityClientProperties): HttpClient {
+    val builder =
+        HttpClient
+            .newBuilder()
+            .connectTimeout(Duration.ofSeconds(1))
+            .followRedirects(HttpClient.Redirect.NEVER)
+    if (properties.validatedUri().scheme == "https") {
+        builder.sslContext(
+            actorCapabilitySslContext(
+                properties.tlsKeyStorePath,
+                properties.tlsKeyStorePassword,
+                properties.tlsCaCertificatePath,
+            ),
+        )
+    }
+    return builder.build()
+}
+
+private fun actorCapabilitySslContext(
+    keyStorePath: String,
+    keyStorePassword: String,
+    caCertificatePath: String,
+): SSLContext {
+    require(keyStorePath.startsWith("/run/secrets/") && caCertificatePath.startsWith("/run/secrets/"))
+    val password = keyStorePassword.toCharArray()
+    val keyStore = KeyStore.getInstance("PKCS12")
+    Files.newInputStream(Path.of(keyStorePath)).use { keyStore.load(it, password) }
+    val keyManagers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
+    keyManagers.init(keyStore, password)
+    password.fill('\u0000')
+
+    val certificate =
+        Files.newInputStream(Path.of(caCertificatePath)).use {
+            CertificateFactory.getInstance("X.509").generateCertificate(it)
+        }
+    val trustStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null, null) }
+    trustStore.setCertificateEntry("capstone-actor-ca", certificate)
+    val trustManagers = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+    trustManagers.init(trustStore)
+    return SSLContext.getInstance("TLSv1.3").apply {
+        init(keyManagers.keyManagers, trustManagers.trustManagers, null)
+    }
 }

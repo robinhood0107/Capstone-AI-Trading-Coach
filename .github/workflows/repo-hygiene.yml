@@ -117,8 +117,14 @@ jobs:
           if git check-ignore -q .env.example; then
             exit 1
           fi
-          git check-ignore -q workspaces/return-engine/example.py
-          git check-ignore -q workspaces/experience-dashboard/app/page.tsx
+          git check-ignore -q workspaces/return-engine/cache/example.py
+          git check-ignore -q workspaces/experience-dashboard/cache/page.tsx
+          if git check-ignore -q workspaces/return-engine/src/return_engine.py; then
+            exit 1
+          fi
+          if git check-ignore -q workspaces/experience-dashboard/src/app/page.tsx; then
+            exit 1
+          fi
           git check-ignore -q artifacts/decision-platform/run-001/result.json
 
       - name: Secret scan

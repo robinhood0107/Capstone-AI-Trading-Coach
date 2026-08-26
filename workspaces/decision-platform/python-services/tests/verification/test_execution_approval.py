@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -63,6 +64,7 @@ def test_common_approval_binds_exact_scope_and_verifies_public_key(
         cost_cap_microusd=0,
         now=now,
     )
+    assert approval.to_dict()["contractId"] == "p1-approval-packet.v2"
     packet_path = tmp_path / "p1-approval-packet.v2.json"
     packet_path.write_bytes(canonical_json_bytes(approval.to_dict()))
     packet_path.chmod(0o600)
@@ -130,3 +132,57 @@ def test_common_approval_rejects_scope_drift_and_signature_tamper(
     packet_path.write_bytes(canonical_json_bytes(tampered))
     with pytest.raises(ExecutionApprovalError, match="SIGNATURE_INVALID"):
         load_and_verify_execution_approval(**{**common, "payload_sha256": "d" * 64})
+
+
+def test_common_approval_verifies_real_protected_trust_policy_without_monkeypatch(
+    tmp_path: Path,
+) -> None:
+    private, public, public_digest = _keys(tmp_path)
+    now = datetime(2030, 1, 2, 3, tzinfo=UTC)
+    approval = author_execution_approval(
+        approval_id="P1.KIS-MOCK-EXECUTION-01",
+        issuer_key_id="P1.TEST",
+        private_key_path=private,
+        provider_family="KIS_MOCK",
+        exact_operations=("KIS_MOCK_PRE_BALANCE",),
+        payload_sha256="a" * 64,
+        repository_digest="b" * 64,
+        evidence_digest="c" * 64,
+        owner_scope_digest=ZERO_SCOPE_SHA256,
+        account_scope_digest=scope_digest("acct_" + "1" * 32),
+        credential_scope_digest=scope_digest("KIS_MOCK"),
+        physical_call_cap=1,
+        cost_cap_microusd=0,
+        now=now,
+    )
+    assert approval.to_dict()["contractId"] == "p1-kis-mock-execution-approval.v1"
+    packet_path = tmp_path / "p1-kis-mock-execution-approval.v1.json"
+    packet_path.write_bytes(canonical_json_bytes(approval.to_dict()))
+    packet_path.chmod(0o600)
+    policy = tmp_path / "approval-trust-root.json"
+    policy.write_text(
+        "{"
+        f'"contractId":"p1-approval-trust-root.v1","issuerKeyId":"P1.TEST",'
+        f'"publicKeyPath":"{public}","publicKeySha256":"{public_digest}"'
+        "}",
+        encoding="utf-8",
+    )
+    policy.chmod(0o600)
+
+    verified = load_and_verify_execution_approval(
+        packet_path.absolute(),
+        provider_family="KIS_MOCK",
+        exact_operations=("KIS_MOCK_PRE_BALANCE",),
+        payload_sha256="a" * 64,
+        repository_digest="b" * 64,
+        evidence_digest="c" * 64,
+        account_scope_digest=scope_digest("acct_" + "1" * 32),
+        credential_scope_digest=scope_digest("KIS_MOCK"),
+        physical_call_cap=1,
+        cost_cap_microusd=0,
+        now=now + timedelta(minutes=1),
+        trust_policy_path=policy,
+        trust_policy_owner_uid=os.getuid(),
+    )
+
+    assert verified == approval

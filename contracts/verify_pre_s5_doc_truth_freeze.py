@@ -42,9 +42,16 @@ ACTIVE_PUBLIC_PATHS = frozenset(
         "docs/S4_9_MCP_Strong_LLM_운영_가이드.md",
         "docs/API_명세서.md",
         "docs/최종_프로젝트_명세서.md",
+        "docs/decision-platform/P1_1_0_0_FULL_APP_V2_권위_및_게이트.md",
+        "docs/decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md",
+        "docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md",
+        "docs/decision-platform/P1_운영_후속_경계.md",
+        "docs/decision-platform/P1_최종_테스트_증거_판정표.md",
         "contracts/README.md",
         "capstone-rag/README.md",
         "workspaces/decision-platform/README.md",
+        "workspaces/return-engine/README.md",
+        "workspaces/experience-dashboard/README.md",
     }
 )
 ACTIVE_PRIVATE_FILENAMES = frozenset(
@@ -154,6 +161,20 @@ REQUIRED_PUBLIC_MARKERS = {
         "S4_8A=CONTRACT_LOCKED",
         "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
     ),
+    "docs/decision-platform/P1_1_0_0_FULL_APP_V2_권위_및_게이트.md": (
+        "TEAM_B_REAL_ARTIFACT=BLOCKED",
+        "SECURITY_RELEASE=INCOMPLETE",
+        "P1_FINAL=NOT_READY",
+        "P1_1_0_0_RELEASED=FALSE",
+    ),
+    "workspaces/return-engine/README.md": (
+        "P1 full-app v2",
+        "TEAM_B_REAL_ARTIFACT=BLOCKED",
+    ),
+    "workspaces/experience-dashboard/README.md": (
+        "P1 full-app v2",
+        "DASHBOARD_UI=PARTIAL_TEAM_A_ACTION_REQUIRED",
+    ),
     "docs/RAG_외부_AI_처리_및_개인문서_동의.md": (
         "EXTERNAL_AI_RAG_V2",
         "Voyage AI",
@@ -225,6 +246,63 @@ EXPECTED_TEAMMATE_WORKSPACE_PATHS: Final[frozenset[str]] = frozenset(
     {
         "workspaces/return-engine/README.md",
         "workspaces/experience-dashboard/README.md",
+    }
+)
+POST_CORE_V2_CATALOG: Final[str] = "contracts/catalogs/p1-full-app-release-contract.v2.json"
+POST_CORE_V2_REQUIRED_HARD_GATES: Final[frozenset[str]] = frozenset(
+    {
+        "P1_CORE",
+        "PUBLIC_RAG_SEED",
+        "OWNER_RAG_BACKEND",
+        "BGE_OCR_CPU_INTEL",
+        "PROVIDER_LIVE_READ",
+        "TEAM_B_REAL_ARTIFACT",
+        "SECURITY_RELEASE",
+        "SUPPLY_CHAIN_RELEASE",
+        "COMPOSE_E2E",
+    }
+)
+POST_CORE_V2_FORBIDDEN_WORKSPACE_PARTS: Final[frozenset[str]] = frozenset(
+    {
+        "__pycache__",
+        ".cache",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".next",
+        "artifacts",
+        "cache",
+        "dev",
+        "node_modules",
+        "output",
+        "raw",
+        "tmp",
+    }
+)
+POST_CORE_V2_FORBIDDEN_WORKSPACE_SUFFIXES: Final[frozenset[str]] = frozenset(
+    {".ckpt", ".csv", ".pickle", ".pkl", ".pyc", ".pyo", ".pth"}
+)
+POST_CORE_V2_RECEIVED_PREVIEW_ALLOWLIST: Final[frozenset[str]] = frozenset(
+    {
+        "workspaces/return-engine/artifacts/005930.KS.json",
+        "workspaces/return-engine/data/model/005930.KS_lstm.pth",
+        "workspaces/return-engine/data/stock/005930.KS.csv",
+        "workspaces/return-engine/src/__pycache__/backtest_engine.cpython-314.pyc",
+        "workspaces/return-engine/src/__pycache__/data_preprocess.cpython-314.pyc",
+        "workspaces/return-engine/src/__pycache__/lstm.cpython-314.pyc",
+        "workspaces/return-engine/src/__pycache__/rule_baseline.cpython-314.pyc",
+        "workspaces/return-engine/src/artifact/__pycache__/generator.cpython-314.pyc",
+        "workspaces/return-engine/src/backtest_core/__pycache__/backtest_engine.cpython-314.pyc",
+        "workspaces/return-engine/src/backtest_core/__pycache__/signal_generator.cpython-314.pyc",
+        "workspaces/return-engine/src/dataloader/__pycache__/dataloader.cpython-314.pyc",
+        "workspaces/return-engine/src/dataloader/__pycache__/datapileline.cpython-312.pyc",
+        "workspaces/return-engine/src/dataloader/__pycache__/datapileline.cpython-314.pyc",
+        "workspaces/return-engine/src/dataloader/__pycache__/preprocessor.cpython-312.pyc",
+        "workspaces/return-engine/src/dataloader/__pycache__/preprocessor.cpython-314.pyc",
+        "workspaces/return-engine/src/dataloader/__pycache__/stockdataloader.cpython-314.pyc",
+        "workspaces/return-engine/src/models/__pycache__/lstm.cpython-312.pyc",
+        "workspaces/return-engine/src/models/__pycache__/lstm.cpython-314.pyc",
+        "workspaces/return-engine/src/models/__pycache__/rule_baseline.cpython-314.pyc",
     }
 )
 SOLO_OWNERSHIP_FORBIDDEN_MARKERS: Final[tuple[str, ...]] = (
@@ -603,6 +681,43 @@ def _safe_text(root: Path, relative: str) -> tuple[str | None, str | None]:
         return None, f"{relative}: solo ownership document is not valid UTF-8"
 
 
+def post_core_v2_authorized(root: Path) -> bool:
+    """정확한 full-app v2 catalog가 있을 때만 README-only 경계를 post-Core 규칙으로 전환한다."""
+
+    path = safe_regular_file(root, POST_CORE_V2_CATALOG)
+    if path is None:
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    return (
+        payload.get("contractId") == "p1-full-app-release-contract.v2"
+        and payload.get("releaseVersion") == "1.0.0"
+        and payload.get("releaseAuthorityWorkflow") == ".github/workflows/p1-full-app-release.yml"
+        and payload.get("terminalReadyState") == "READY_WITH_GAPS"
+        and payload.get("historicalContract")
+        == {
+            "contractId": "p1-offline-demo-release-manifest.v1",
+            "schemaPath": "deploy/p1/release-manifest.schema.json",
+            "status": "PRESERVED_HISTORICAL_REGRESSION",
+        }
+        and frozenset(payload.get("hardGates", ())) == POST_CORE_V2_REQUIRED_HARD_GATES
+    )
+
+
+def post_core_v2_workspace_path_is_forbidden(relative: str) -> bool:
+    """검토된 source만 허용하고 intake/cache/raw/pickle이 Git에 들어오는 것을 차단한다."""
+
+    if relative in POST_CORE_V2_RECEIVED_PREVIEW_ALLOWLIST:
+        return False
+    path = Path(relative)
+    return bool(
+        POST_CORE_V2_FORBIDDEN_WORKSPACE_PARTS.intersection(path.parts)
+        or path.suffix.lower() in POST_CORE_V2_FORBIDDEN_WORKSPACE_SUFFIXES
+    )
+
+
 def solo_ownership_role_catalog_errors(root: Path) -> list[str]:
     """docs ledger의 machine-delimited role catalog가 새 협업 범위를 만들지 않는지 검사한다."""
 
@@ -645,7 +760,7 @@ def solo_ownership_assignment_errors(relative: str, text: str) -> list[str]:
 
 
 def tracked_teammate_workspace_errors(root: Path) -> list[str]:
-    """placeholder workspace는 README 두 개만 추적하고 local working-tree drift도 허용하지 않는다."""
+    """v1은 README-only, exact v2는 검토 source만 허용하고 unsafe intake/output은 계속 차단한다."""
 
     errors: list[str] = []
     workspace_roots = ["workspaces/return-engine", "workspaces/experience-dashboard"]
@@ -654,7 +769,13 @@ def tracked_teammate_workspace_errors(root: Path) -> list[str]:
         return ["teammate workspace inventory could not be read"]
     assert listing is not None
     tracked_paths = frozenset(path for path in listing.split("\0") if path)
-    if tracked_paths != EXPECTED_TEAMMATE_WORKSPACE_PATHS:
+    post_core_v2 = post_core_v2_authorized(root)
+    if post_core_v2:
+        if not EXPECTED_TEAMMATE_WORKSPACE_PATHS.issubset(tracked_paths):
+            errors.append("post-Core workspace is missing a required README")
+        if any(post_core_v2_workspace_path_is_forbidden(path) for path in tracked_paths):
+            errors.append("post-Core workspace tracks intake, cache, raw data, or pickle")
+    elif tracked_paths != EXPECTED_TEAMMATE_WORKSPACE_PATHS:
         errors.append("teammate workspace has unexpected tracked paths")
     for relative in EXPECTED_TEAMMATE_WORKSPACE_PATHS:
         if safe_regular_file(root, relative) is None:
@@ -673,7 +794,12 @@ def tracked_teammate_workspace_errors(root: Path) -> list[str]:
     if status_error:
         errors.append("teammate workspace working-tree state could not be read")
     elif status and status.strip():
-        errors.append("teammate workspace has working-tree drift")
+        status_lines = tuple(line for line in status.splitlines() if line)
+        allowed_v2_ignored = all(
+            line.startswith("!! workspaces/") and "/dev/" in line for line in status_lines
+        )
+        if not (post_core_v2 and allowed_v2_ignored):
+            errors.append("teammate workspace has working-tree drift")
     return errors
 
 
@@ -721,7 +847,7 @@ def added_markdown_lines_since_base(root: Path, base: str) -> tuple[list[tuple[s
 
 
 def teammate_workspace_diff_errors(root: Path, base: str) -> list[str]:
-    """base 이후 teammate workspace의 README를 포함한 모든 tracked diff를 차단한다."""
+    """v1 diff는 전부 막고 exact v2는 unsafe intake/output 경로만 계속 차단한다."""
 
     if not _base_commit_is_available(root, base):
         return ["solo ownership base cannot be resolved"]
@@ -740,6 +866,11 @@ def teammate_workspace_diff_errors(root: Path, base: str) -> list[str]:
     if error:
         return ["teammate workspace diff could not be read"]
     if output and output.strip():
+        changed_paths = tuple(line for line in output.splitlines() if line)
+        if post_core_v2_authorized(root):
+            if any(post_core_v2_workspace_path_is_forbidden(path) for path in changed_paths):
+                return ["post-Core workspace diff contains intake, cache, raw data, or pickle"]
+            return []
         return ["teammate workspace changed since base"]
     return []
 
@@ -818,6 +949,11 @@ def immutable_history_diff_errors(root: Path, base: str) -> list[str]:
 def new_teammate_dependency_errors(root: Path, base: str) -> list[str]:
     """새 role/task 의존성만 diff로 차단하고 historical roadmap 본문은 바꾸지 않는다."""
 
+    # full-app v2는 사용자 승인 계획이 Team A/B 수신본 통합과 완료 요청서를 명시적으로 소유한다.
+    # exact catalog가 없으면 기존 Pre-S5 단독 소유 차단을 그대로 적용한다.
+    if post_core_v2_authorized(root):
+        return []
+
     additions, errors = added_markdown_lines_since_base(root, base)
     if errors:
         return errors
@@ -850,7 +986,8 @@ def verify_solo_ownership_lock(root: Path, base: str | None = None) -> list[str]
         for marker in SOLO_OWNERSHIP_MARKERS:
             if marker not in text:
                 errors.append(f"{relative}: missing solo ownership marker {marker}")
-        errors.extend(solo_ownership_assignment_errors(relative, text))
+        if not post_core_v2_authorized(root):
+            errors.extend(solo_ownership_assignment_errors(relative, text))
         for marker in SOLO_OWNERSHIP_FORBIDDEN_MARKERS:
             if marker in text:
                 errors.append(f"{relative}: forbidden stale solo ownership marker {marker}")
@@ -883,11 +1020,19 @@ def verify_public_truth_freeze(root: Path) -> list[str]:
         actual_digest = hashlib.sha256(path.read_bytes()).hexdigest() if path else None
         if actual_digest != expected_digest:
             errors.append(f"{relative}: frozen digest mismatch")
-    for relative, expected_digest in IMMUTABLE_WORKSPACE_SHA256.items():
-        path = safe_regular_file(root, relative)
-        actual_digest = hashlib.sha256(path.read_bytes()).hexdigest() if path else None
-        if actual_digest != expected_digest:
-            errors.append(f"{relative}: out-of-scope workspace changed")
+    if post_core_v2_authorized(root):
+        for relative in IMMUTABLE_WORKSPACE_SHA256:
+            path = safe_regular_file(root, relative)
+            if path is None:
+                errors.append(f"{relative}: post-Core workspace README is missing or unsafe")
+            elif "P1 full-app v2" not in path.read_text(encoding="utf-8"):
+                errors.append(f"{relative}: post-Core workspace authority marker is missing")
+    else:
+        for relative, expected_digest in IMMUTABLE_WORKSPACE_SHA256.items():
+            path = safe_regular_file(root, relative)
+            actual_digest = hashlib.sha256(path.read_bytes()).hexdigest() if path else None
+            if actual_digest != expected_digest:
+                errors.append(f"{relative}: out-of-scope workspace changed")
     if tree_digest(root, "capstone-rag/source-cards") != EXACT30_SOURCE_TREE_SHA256:
         errors.append("capstone-rag/source-cards: exact-30 tree digest mismatch")
     local_reference_error = tracked_local_reference_error(root)

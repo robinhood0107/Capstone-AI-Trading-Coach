@@ -199,11 +199,11 @@ jobs:
               | LC_ALL=C sort
           )
           test "${S5_6_RUNTIME_PATHS[*]}" = \
-            "workspaces/decision-platform/python-services/pyproject.toml"
+            "workspaces/decision-platform/python-services/pyproject.toml workspaces/decision-platform/python-services/uv.lock"
           test "$(sha256sum workspaces/decision-platform/python-services/pyproject.toml | cut -d' ' -f1)" = \
-            "175c61dffdd5d1f842f7bdd847f2801f5d3a6340c9a692f68c98e731f421d3a8"
+            "12eac55b4211ef9d1a6ef8c7edb83e8c013428940941bc7975223e7d33bf64bc"
           test "$(sha256sum workspaces/decision-platform/python-services/uv.lock | cut -d' ' -f1)" = \
-            "783ab5d3e5bf9ec1f972c5412b216c75fda92b17aaa57d3317bd8ea4a7677b2a"
+            "6705b70649f8d60c296744333fc10ec444e1eeb675474a9ff14ff276f3856f56"
 
           # 로컬 자료 경로에 결합된 obsolete host-only 검사는 한 번만 exact hash 전이로 제거한다.
           S1_4R_ISOLATION_TEST=workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py

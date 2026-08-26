@@ -176,6 +176,19 @@ class CommonApiContractIntegrationTest(
     }
 
     @Test
+    fun `cors allows documented numeric loopback dashboard origin`() {
+        mockMvc
+            .options("/api/v1/system/health") {
+                header("Origin", "http://127.0.0.1:3000")
+                header("Access-Control-Request-Method", "GET")
+                header("Access-Control-Request-Headers", "Authorization,Content-Type,X-Request-Id")
+            }.andExpect {
+                status { isOk() }
+                header { string("Access-Control-Allow-Origin", "http://127.0.0.1:3000") }
+            }
+    }
+
+    @Test
     fun `invalid client request id is replaced by a bounded server id`() {
         val token = login("demo-user", userPassword())
         val supplied = "invalid request id with spaces"

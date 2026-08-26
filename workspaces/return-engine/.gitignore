@@ -1,0 +1,8 @@
+*.csv
+*.json
+*.pyc
+__pycache__/
+
+# 현재 Team B 수신본은 preview 재현 입력/출력으로 원본 그대로 보존한다.
+!data/stock/005930.KS.csv
+!artifacts/005930.KS.json

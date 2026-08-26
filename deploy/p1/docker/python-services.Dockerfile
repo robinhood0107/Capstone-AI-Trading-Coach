@@ -15,7 +15,7 @@ COPY workspaces/decision-platform/python-services/pyproject.toml workspaces/deci
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-install-project
 COPY workspaces/decision-platform/python-services/app app
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev && \
-    /opt/venv/bin/python -c "import confluent_kafka,cryptography,grpc,lightgbm,numpy,onnxruntime,PIL,pyarrow; assert cryptography.__version__ == '50.0.0'; assert PIL.__version__ == '12.3.0'"
+    /opt/venv/bin/python -c "import confluent_kafka,cryptography,grpc,lightgbm,numpy,onnxruntime,PIL,pyarrow; assert cryptography.__version__ == '46.0.7'; assert PIL.__version__ == '12.1.1'"
 
 # CI deliberately produces one amd64 artifact; the constant platform prevents host-dependent inputs.
 # hadolint ignore=DL3029

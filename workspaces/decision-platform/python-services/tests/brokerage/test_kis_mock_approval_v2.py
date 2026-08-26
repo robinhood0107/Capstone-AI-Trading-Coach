@@ -180,8 +180,17 @@ def test_v3_full_packet_is_exactly_seven_reconciliation_steps_and_seven_calls(
     probe._consume_exact_approval_once(packet, datetime(2030, 1, 2, 3, 10, tzinfo=UTC))
 
     assert captured["payload_sha256"] == packet.packet_sha256
-    assert captured["exact_operations"] == packet.steps
-    assert captured["physical_call_cap"] == 8
+    assert captured["exact_operations"] == (
+        "KIS_MOCK_PRICE_READ",
+        "KIS_MOCK_PRE_BALANCE",
+        "KIS_MOCK_BUYABLE",
+        "KIS_MOCK_SUBMIT_LIMIT_BUY",
+        "KIS_MOCK_CANCEL_FULL",
+        "KIS_MOCK_EXECUTION_READ",
+        "KIS_MOCK_POST_BALANCE",
+        "KIS_MOCK_OPEN_ORDER_RECONCILIATION",
+    )
+    assert captured["physical_call_cap"] == 9
     assert captured["claim"] is approval
 
 

@@ -31,7 +31,7 @@
     "status": "PRESERVED_HISTORICAL_REGRESSION"
   },
   "lightgbm": "RESEARCH_ONLY_NOT_APPLICABLE",
-  "liveOrder": "FUTURE_NOT_IMPLEMENTED",
+  "liveOrder": "KIS_LIVE_DISABLED_KIS_MOCK_MANUAL_ONLY",
   "providerGate": {
     "accountCallCap": 0,
     "balanceCallCap": 0,
@@ -45,21 +45,15 @@
   },
   "returnEngineArtifactSchema": "contracts/schemas/p1-return-engine-artifact-manifest.v1.schema.json",
   "requiredImageComponents": [
-    "gateway",
+    "actor-authority",
+    "decision-platform",
     "experience-dashboard",
-    "spring-api",
-    "python-services",
-    "strong-llm",
-    "return-engine",
-    "searxng",
     "postgres-pgvector",
     "redis",
     "bge-m3-tei",
     "paddleocr-vl-llama"
   ],
-  "optionalImageComponents": [
-    "kafka"
-  ],
+  "optionalImageComponents": [],
   "modelAssets": {
     "bge-m3": {
       "deliveryMode": "OFFICIAL_CONTAINER_RUNTIME_DOWNLOAD",

@@ -365,10 +365,10 @@ class SecurityConfig {
 
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {
-        // dashboard 로컬 개발 origin만 열어 S0.3 smoke와 최소 보안 경계를 함께 만족한다.
+        // README의 loopback 접속 주소만 열어 same-origin rewrite와 로컬 smoke를 함께 만족한다.
         val configuration =
             CorsConfiguration().apply {
-                allowedOrigins = listOf("http://localhost:3000")
+                allowedOrigins = listOf("http://localhost:3000", "http://127.0.0.1:3000")
                 allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE")
                 allowedHeaders =
                     listOf(

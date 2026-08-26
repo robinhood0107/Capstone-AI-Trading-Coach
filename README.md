@@ -363,6 +363,8 @@ Linux/WSL은 repository root의 `./capstone`, Windows PowerShell은 `capstone.ps
 단계를 0600 local state에 기록하고 fail-closed한다. BGE-M3는 공식 Hugging Face TEI CPU
 이미지에서 `BAAI/bge-m3` exact revision을, PaddleOCR-VL은 공식 `llama.cpp` server 이미지에서
 PaddlePaddle의 공식 GGUF/mmproj를 받아 named volume에 cache한다. 모델 서비스 host port는 0개다.
+현재 full-app의 Compose 권위는 `deploy/p1/compose.yml` 한 파일이며 healthcheck와 완료 조건으로
+DB → migration → Seed → identity → 내부 서비스 → API edge 순서를 강제한다.
 현재 누락 artifact를 우회해 full
 release로 판정하는 옵션은 없다.
 

@@ -8,10 +8,11 @@ P1CTL=$SCRIPT_DIR/p1ctl
 STATE_DIR=${P1_STATE_DIR:-$SCRIPT_DIR/.state}
 STAGE_FILE=$STATE_DIR/full-app-stage
 SEED_MANIFEST=$SCRIPT_DIR/seed/public-rag/public-rag-seed.v1.manifest.json
-FULL_SEED_COMPOSE=$SCRIPT_DIR/compose.full.seed.yml
-FULL_MODEL_COMPOSE=$SCRIPT_DIR/compose.full.models.yml
+FULL_COMPOSE=$SCRIPT_DIR/compose.yml
 FULL_PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-full-app}
 DEGRADED_PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-offline-demo}
+DOCKER_BIN=/usr/bin/docker
+[[ -x $DOCKER_BIN ]] || DOCKER_BIN=$(command -v docker 2>/dev/null || true)
 RETURN_MANIFEST=$REPO_ROOT/workspaces/return-engine/artifacts/p1-return-engine-manifest.v1.json
 DASHBOARD_LOCK=$REPO_ROOT/workspaces/experience-dashboard/package-lock.json
 DASHBOARD_DOCKERFILE=$REPO_ROOT/workspaces/experience-dashboard/Dockerfile
@@ -46,13 +47,26 @@ is_regular() {
   [[ -f $1 && ! -L $1 ]]
 }
 
+full_compose() {
+  [[ -n $DOCKER_BIN ]] || die MISSING_COMMAND_docker
+  local args=("$DOCKER_BIN" compose --project-name "$FULL_PROJECT_NAME")
+  if state_initialized; then
+    args+=(--env-file "$STATE_DIR/runtime.env")
+  else
+    export P1_SECRET_GID=${P1_SECRET_GID:-$(id -g)}
+    export P1_SECRETS_DIR=${P1_SECRETS_DIR:-$STATE_DIR/secrets}
+  fi
+  args+=(-f "$FULL_COMPOSE")
+  "${args[@]}" "$@"
+}
+
 model_runtime_preflight() {
   local missing=0
-  if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+  if [[ -z $DOCKER_BIN ]] || ! "$DOCKER_BIN" compose version >/dev/null 2>&1; then
     printf 'CAPSTONE_FULL_BLOCKER=DOCKER_COMPOSE_UNAVAILABLE\n' >&2
     return 1
   fi
-  if ! is_regular "$FULL_MODEL_COMPOSE" || ! docker compose -f "$FULL_MODEL_COMPOSE" config --quiet; then
+  if ! is_regular "$FULL_COMPOSE" || ! full_compose config --quiet; then
     printf 'CAPSTONE_FULL_BLOCKER=MODEL_RUNTIME_COMPOSE_INVALID\n' >&2
     missing=1
   fi
@@ -61,7 +75,7 @@ model_runtime_preflight() {
 
 install_model_runtimes() {
   model_runtime_preflight || die MODEL_RUNTIME_PREFLIGHT
-  docker compose --project-name "$FULL_PROJECT_NAME" -f "$FULL_MODEL_COMPOSE" pull bge-m3 paddleocr-vl
+  full_compose pull bge-m3 paddleocr-vl
   record_stage MODEL_RUNTIME_IMAGES_PULLED
   printf 'CAPSTONE_MODEL_RUNTIME_IMAGES=PULLED_OFFICIAL\n'
 }
@@ -141,10 +155,7 @@ install_full() {
     P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$FULL_PROJECT_NAME "$P1CTL" init
   fi
   P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$FULL_PROJECT_NAME "$P1CTL" verify >/dev/null
-  local runtime_env=$STATE_DIR/runtime.env
-  docker compose --project-name "$FULL_PROJECT_NAME" \
-    --env-file "$runtime_env" -f "$SCRIPT_DIR/compose.db.yml" -f "$FULL_SEED_COMPOSE" \
-    -f "$FULL_MODEL_COMPOSE" config --quiet
+  full_compose config --quiet
   record_stage FULL_INSTALLED_NOT_STARTED
   printf 'CAPSTONE_INSTALL=FULL_ASSETS_VERIFIED\n'
 }
@@ -161,11 +172,7 @@ start_full() {
   full_preflight || die FULL_START_BLOCKED_REQUIRED_ARTIFACTS
   state_initialized || die NOT_INSTALLED
   P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$FULL_PROJECT_NAME "$P1CTL" verify >/dev/null
-  local runtime_env=$STATE_DIR/runtime.env
-  docker compose --project-name "$FULL_PROJECT_NAME" \
-    --env-file "$runtime_env" -f "$SCRIPT_DIR/compose.db.yml" -f "$FULL_SEED_COMPOSE" \
-    -f "$FULL_MODEL_COMPOSE" \
-    up -d --force-recreate
+  full_compose up -d --force-recreate --wait
   record_stage FULL_SEED_AND_CORE_RUNNING
   printf 'CAPSTONE_START=FULL_SEED_AND_CORE_RUNNING\n'
 }
@@ -179,15 +186,15 @@ show_status() {
   if state_initialized; then
     P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME="$(selected_project_name)" "$P1CTL" status
   fi
-  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    docker compose --project-name "$FULL_PROJECT_NAME" -f "$FULL_MODEL_COMPOSE" ps
+  if [[ -n $DOCKER_BIN ]] && "$DOCKER_BIN" compose version >/dev/null 2>&1; then
+    full_compose ps
   fi
 }
 
 stop_full() {
   state_initialized || die NOT_INSTALLED
   P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME="$(selected_project_name)" "$P1CTL" stop
-  docker compose --project-name "$FULL_PROJECT_NAME" -f "$FULL_MODEL_COMPOSE" stop
+  full_compose stop
   record_stage FULL_STOPPED_VOLUMES_PRESERVED
   printf 'CAPSTONE_MODEL_CACHE_VOLUMES_PRESERVED=TRUE\n'
 }

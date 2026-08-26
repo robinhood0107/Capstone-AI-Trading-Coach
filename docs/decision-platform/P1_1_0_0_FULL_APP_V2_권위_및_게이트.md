@@ -50,6 +50,12 @@ PaddleOCR-VL은 공식 `llama.cpp` server 이미지와 PaddlePaddle의 공식 1.
 다운로드를 위해 호스트 포트가 없는 전용 outbound bridge만 추가한다. 현재 상태에서 종료는 의도된
 `BLOCKED_REQUIRED_ARTIFACTS`이며 full-app 실행 성공이 아니다.
 
+현재 full-app Compose의 단일 권위는 `deploy/p1/compose.yml`이다. Core, migration, Seed, identity,
+Spring/Python, BGE와 Paddle의 기동 순서는 `service_healthy`와
+`service_completed_successfully` 조건으로 연결한다. 과거 Core-only offline bundle의
+`compose.db.yml`, `compose.kafka.yml`, `compose.offline.*.yml`은 v1 회귀용 historical asset이며 현재
+full-app를 조립하는 overlay가 아니다.
+
 기존 provider-free Core는 명시적 `--degraded`에서만 실행하며 매 실행이
 `CAPSTONE_RELEASE_AUTHORITY=NONE`을 출력한다. 새 Compose overlay의 실제 의존성은
 `migrate -> seed-import -> identity-bootstrap`이고 BGE/OCR 공식 모델 overlay를 함께 합성한다. Seed

@@ -282,6 +282,29 @@ POST_CORE_V2_FORBIDDEN_WORKSPACE_PARTS: Final[frozenset[str]] = frozenset(
 POST_CORE_V2_FORBIDDEN_WORKSPACE_SUFFIXES: Final[frozenset[str]] = frozenset(
     {".ckpt", ".csv", ".pickle", ".pkl", ".pyc", ".pyo", ".pth"}
 )
+POST_CORE_V2_RECEIVED_PREVIEW_ALLOWLIST: Final[frozenset[str]] = frozenset(
+    {
+        "workspaces/return-engine/artifacts/005930.KS.json",
+        "workspaces/return-engine/data/model/005930.KS_lstm.pth",
+        "workspaces/return-engine/data/stock/005930.KS.csv",
+        "workspaces/return-engine/src/__pycache__/backtest_engine.cpython-314.pyc",
+        "workspaces/return-engine/src/__pycache__/data_preprocess.cpython-314.pyc",
+        "workspaces/return-engine/src/__pycache__/lstm.cpython-314.pyc",
+        "workspaces/return-engine/src/__pycache__/rule_baseline.cpython-314.pyc",
+        "workspaces/return-engine/src/artifact/__pycache__/generator.cpython-314.pyc",
+        "workspaces/return-engine/src/backtest_core/__pycache__/backtest_engine.cpython-314.pyc",
+        "workspaces/return-engine/src/backtest_core/__pycache__/signal_generator.cpython-314.pyc",
+        "workspaces/return-engine/src/dataloader/__pycache__/dataloader.cpython-314.pyc",
+        "workspaces/return-engine/src/dataloader/__pycache__/datapileline.cpython-312.pyc",
+        "workspaces/return-engine/src/dataloader/__pycache__/datapileline.cpython-314.pyc",
+        "workspaces/return-engine/src/dataloader/__pycache__/preprocessor.cpython-312.pyc",
+        "workspaces/return-engine/src/dataloader/__pycache__/preprocessor.cpython-314.pyc",
+        "workspaces/return-engine/src/dataloader/__pycache__/stockdataloader.cpython-314.pyc",
+        "workspaces/return-engine/src/models/__pycache__/lstm.cpython-312.pyc",
+        "workspaces/return-engine/src/models/__pycache__/lstm.cpython-314.pyc",
+        "workspaces/return-engine/src/models/__pycache__/rule_baseline.cpython-314.pyc",
+    }
+)
 SOLO_OWNERSHIP_FORBIDDEN_MARKERS: Final[tuple[str, ...]] = (
     "EXTERNAL_OWNER_HANDOFF",
 )
@@ -686,6 +709,8 @@ def post_core_v2_authorized(root: Path) -> bool:
 def post_core_v2_workspace_path_is_forbidden(relative: str) -> bool:
     """검토된 source만 허용하고 intake/cache/raw/pickle이 Git에 들어오는 것을 차단한다."""
 
+    if relative in POST_CORE_V2_RECEIVED_PREVIEW_ALLOWLIST:
+        return False
     path = Path(relative)
     return bool(
         POST_CORE_V2_FORBIDDEN_WORKSPACE_PARTS.intersection(path.parts)

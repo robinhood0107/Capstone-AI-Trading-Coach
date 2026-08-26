@@ -1,0 +1,13 @@
+.next
+node_modules
+out
+coverage
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+Dockerfile*
+README.md
+SETUP.md
+OVERVIEW.md
+VSCODE.md

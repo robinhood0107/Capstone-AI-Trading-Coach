@@ -15,6 +15,7 @@ from app.release.public_rag_seed import (
     PublicRagSeedError,
     _PartReader,
     _SplitHashWriter,
+    _require_empty_target,
     verify_seed_parts,
 )
 
@@ -142,3 +143,34 @@ def test_export_queries_are_public_pointer_reachable_only() -> None:
         assert "owner_user_id IS NULL" in query
     assert not any("users" in spec.select_sql for spec in TABLE_SPECS)
     assert not any("usage_reservations" in spec.select_sql for spec in TABLE_SPECS)
+
+
+def test_empty_squashed_baseline_gets_only_the_not_materialized_pointer() -> None:
+    class Result:
+        def __init__(self, row: tuple[int, ...]):
+            self._row = row
+
+        def fetchone(self) -> tuple[int, ...]:
+            return self._row
+
+    class Connection:
+        def __init__(self) -> None:
+            self.statements: list[str] = []
+            self.pointer_checked = False
+
+        def execute(self, statement: object) -> Result:
+            rendered = str(statement)
+            self.statements.append(rendered)
+            if "FROM public.rag_v2_immutable_public_bundle_pointers" in rendered:
+                self.pointer_checked = True
+                return Result((0, 0))
+            return Result((0,))
+
+    connection = Connection()
+    _require_empty_target(connection)  # type: ignore[arg-type]
+
+    assert connection.pointer_checked
+    inserts = [statement for statement in connection.statements if "INSERT INTO" in statement]
+    assert len(inserts) == 1
+    assert "rag_v2_immutable_public_bundle_pointers" in inserts[0]
+    assert "NOT_MATERIALIZED" in inserts[0]

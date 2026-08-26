@@ -1,0 +1,68 @@
+{
+  "$id": "contracts/schemas/automation-control.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "brokerageMode": {
+      "enum": [
+        "KIS_MOCK",
+        "INTERNAL_PAPER"
+      ]
+    },
+    "certificationStatus": {
+      "enum": [
+        "NOT_REQUIRED_INTERNAL_PAPER",
+        "REQUIRED",
+        "VALID",
+        "EXPIRED",
+        "INVALID"
+      ]
+    },
+    "contractId": {
+      "const": "automation-control.v1"
+    },
+    "controlState": {
+      "enum": [
+        "DISARMED",
+        "ARMED",
+        "HALTED"
+      ]
+    },
+    "killSwitchActive": {
+      "type": "boolean"
+    },
+    "principleId": {
+      "pattern": "^prc_[A-Za-z0-9_-]{8,96}$",
+      "type": "string"
+    },
+    "projectionState": {
+      "enum": [
+        "DISARMED",
+        "ARMED",
+        "RUNNING",
+        "HALTED"
+      ]
+    },
+    "strategyId": {
+      "pattern": "^strategy_[A-Za-z0-9_-]{8,96}$",
+      "type": "string"
+    },
+    "version": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "contractId",
+    "controlState",
+    "projectionState",
+    "version",
+    "brokerageMode",
+    "principleId",
+    "strategyId",
+    "killSwitchActive",
+    "certificationStatus"
+  ],
+  "title": "automation-control.v1",
+  "type": "object"
+}

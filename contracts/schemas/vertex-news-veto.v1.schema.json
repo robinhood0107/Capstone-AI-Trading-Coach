@@ -1,0 +1,185 @@
+{
+  "$id": "contracts/schemas/vertex-news-veto.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "eventTypes": {
+          "items": {
+            "enum": [
+              "REGULATORY_ACTION",
+              "TRADING_SUSPENSION",
+              "FRAUD_OR_ACCOUNTING",
+              "BANKRUPTCY_OR_RESTRUCTURING",
+              "MAJOR_LITIGATION",
+              "MATERIAL_GUIDANCE_CUT",
+              "MAJOR_OPERATIONAL_INCIDENT",
+              "OTHER_MATERIAL_NEGATIVE"
+            ]
+          },
+          "maxItems": 8,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "evidence": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "boundedQuote": {
+                "maxLength": 240,
+                "minLength": 1,
+                "type": "string"
+              },
+              "exactGroundingSupport": {
+                "const": true
+              },
+              "sourceEventDate": {
+                "format": "date",
+                "type": "string"
+              },
+              "sourceId": {
+                "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                "type": "string"
+              },
+              "sourceType": {
+                "enum": [
+                  "OFFICIAL_PRIMARY",
+                  "REGISTERED_INDEPENDENT"
+                ]
+              }
+            },
+            "required": [
+              "sourceId",
+              "sourceType",
+              "sourceEventDate",
+              "boundedQuote",
+              "exactGroundingSupport"
+            ],
+            "type": "object"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array"
+        },
+        "freshnessWindowSatisfied": {
+          "const": true
+        },
+        "googleGroundingQueryCount": {
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "inputSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "modelId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "mutuallyConsistent": {
+          "const": true
+        },
+        "orderAuthority": {
+          "const": "NONE"
+        },
+        "outputSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "promptVersion": {
+          "pattern": "^[A-Za-z0-9._-]{1,64}$",
+          "type": "string"
+        },
+        "providerCallCount": {
+          "const": 1
+        },
+        "status": {
+          "const": "AVAILABLE"
+        },
+        "tone": {
+          "enum": [
+            "NEGATIVE",
+            "NEUTRAL",
+            "POSITIVE"
+          ]
+        },
+        "verdict": {
+          "enum": [
+            "VETO_BUY",
+            "NO_VETO"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "verdict",
+        "tone",
+        "eventTypes",
+        "evidence",
+        "freshnessWindowSatisfied",
+        "mutuallyConsistent",
+        "inputSha256",
+        "outputSha256",
+        "modelId",
+        "promptVersion",
+        "providerCallCount",
+        "googleGroundingQueryCount",
+        "orderAuthority"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "inputSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "modelId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "orderAuthority": {
+          "const": "NONE"
+        },
+        "promptVersion": {
+          "pattern": "^[A-Za-z0-9._-]{1,64}$",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "NO_GROUNDING",
+            "INSUFFICIENT_SOURCES",
+            "UNKNOWN_EVENT_DATE",
+            "STALE_EVIDENCE",
+            "CONFLICTING_SOURCES",
+            "PROMPT_INJECTION",
+            "UNKNOWN_FIELD",
+            "SCHEMA_ERROR",
+            "PROVIDER_TIMEOUT",
+            "BUDGET_EXHAUSTED",
+            "MODEL_PACKET_DRIFT",
+            "PROVIDER_COUNT_MISMATCH"
+          ]
+        },
+        "status": {
+          "const": "ABSTAIN"
+        }
+      },
+      "required": [
+        "status",
+        "reason",
+        "inputSha256",
+        "modelId",
+        "promptVersion",
+        "orderAuthority"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "vertex-news-veto.v1"
+}

@@ -1,0 +1,18 @@
+{
+  "contractId": "p1-return-model-report.v2",
+  "fileName": "model_report.md",
+  "semantic": {
+    "encoding": "UTF-8",
+    "orderAuthority": "NONE",
+    "performanceClaimAllowed": false,
+    "requiredSections": [
+      "Data",
+      "Model ABI",
+      "Split",
+      "Reproducibility",
+      "Model quality",
+      "Limitations"
+    ]
+  },
+  "unexpected": true
+}

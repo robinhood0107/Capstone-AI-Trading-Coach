@@ -94,9 +94,14 @@ upgrade_state() {
     printf 'BROKERAGE_GRPC_SHARED_SECRET=%s\n' "$(openssl rand -hex 32)" \
       | append_state secrets/spring.env 0640
   fi
-  if ! grep -q '^RETURN_INFERENCE_GRPC_SHARED_SECRET=' "$SECRETS_DIR/spring.env"; then
-    printf 'RETURN_INFERENCE_GRPC_SHARED_SECRET=%s\n' "$(openssl rand -hex 32)" \
-      | append_state secrets/spring.env 0640
+  if [[ ! -e $SECRETS_DIR/return-inference.env ]]; then
+    local return_inference_secret
+    return_inference_secret=$(sed -n 's/^RETURN_INFERENCE_GRPC_SHARED_SECRET=//p' "$SECRETS_DIR/spring.env")
+    [[ $return_inference_secret =~ ^[0-9a-f]{64}$ ]] \
+      || return_inference_secret=$(openssl rand -hex 32)
+    printf 'RETURN_INFERENCE_GRPC_SHARED_SECRET=%s\n' "$return_inference_secret" \
+      | write_state secrets/return-inference.env 0640
+    unset return_inference_secret
   fi
   if [[ ! -e $SECRETS_DIR/kis-mock.env ]]; then
     printf '%s\n' \

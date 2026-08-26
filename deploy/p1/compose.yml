@@ -314,7 +314,7 @@ services:
       - -m
       - app.p1_owner.importer
       - --bundle-root
-      - /bundle
+      - /owner/${P1_ARTIFACT_BUNDLE_NAME:-disabled}
       - --manifest-sha256
       - ${P1_ARTIFACT_MANIFEST_SHA256:-disabled}
       - --archive-parent
@@ -332,7 +332,7 @@ services:
       - /tmp:size=64m,mode=1777
     secrets: [artifact_import_env]
     volumes:
-      - ${P1_ARTIFACT_BUNDLE_DIR:-/nonexistent}:/bundle:ro
+      - ${P1_ARTIFACT_BUNDLE_PARENT:-/nonexistent}:/owner:ro
       - ${P1_ARTIFACT_ARCHIVE_DIR:-/nonexistent}:/archive
       - ./docker/secret-entrypoint.sh:/usr/local/bin/p1-secret-entrypoint:ro
     depends_on:

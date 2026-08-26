@@ -447,14 +447,18 @@ PY
 }
 
 artifact_import() {
-  local bundle=${1:-} manifest_sha=${2:-}
+  local bundle=${1:-} manifest_sha=${2:-} bundle_parent bundle_name
   [[ $# == 2 ]] || die ARTIFACT_IMPORT_ARGUMENTS
-  [[ $bundle == /* && -d $bundle && ! -L $bundle ]] || die ARTIFACT_IMPORT_BUNDLE_ROOT
+  [[ $bundle == /* && $bundle != */ && -d $bundle && ! -L $bundle ]] || die ARTIFACT_IMPORT_BUNDLE_ROOT
   [[ $manifest_sha =~ ^[0-9a-f]{64}$ ]] || die ARTIFACT_IMPORT_MANIFEST_SHA256
   state_ready || die RUN_CAPSTONE_UP_FIRST
   upgrade_state
   compose ps --status running --services | grep -qx postgres || die ARTIFACT_IMPORT_POSTGRES_NOT_RUNNING
-  export P1_ARTIFACT_BUNDLE_DIR=$bundle
+  bundle_parent=${bundle%/*}; [[ -n $bundle_parent ]] || bundle_parent=/
+  bundle_name=${bundle##*/}
+  [[ $bundle_name != . && $bundle_name != .. ]] || die ARTIFACT_IMPORT_BUNDLE_ROOT
+  export P1_ARTIFACT_BUNDLE_PARENT=$bundle_parent
+  export P1_ARTIFACT_BUNDLE_NAME=$bundle_name
   export P1_ARTIFACT_ARCHIVE_DIR=$STATE_DIR/artifacts
   export P1_ARTIFACT_MANIFEST_SHA256=$manifest_sha
   compose --profile owner run --rm --no-deps artifact-importer

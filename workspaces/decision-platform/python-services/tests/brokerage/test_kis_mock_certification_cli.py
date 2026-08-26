@@ -134,7 +134,15 @@ def test_two_token_issuances_are_rejected() -> None:
 
 @pytest.mark.parametrize(
     ("price", "tick"),
-    [(1_999, 1), (2_000, 5), (5_000, 10), (20_000, 50), (50_000, 100), (200_000, 500), (500_000, 1_000)],
+    [
+        (1_999, 1),
+        (2_000, 5),
+        (5_000, 10),
+        (20_000, 50),
+        (50_000, 100),
+        (200_000, 500),
+        (500_000, 1_000),
+    ],
 )
 def test_krx_tick_boundaries(price: int, tick: int) -> None:
     assert certification._krx_tick(price) == tick

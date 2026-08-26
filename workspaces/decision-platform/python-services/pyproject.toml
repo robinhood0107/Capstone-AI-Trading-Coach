@@ -98,8 +98,6 @@ market-data-seed-stage = "app.data.market_data.stage_cli:main"
 market-data-daily-replay = "app.data.market_data.daily_cli:main"
 market-data-retention = "app.data.market_data.retention_cli:main"
 p1-verify = "app.verification.cli:main"
-p1-execution-approval-author = "app.verification.execution_approval_cli:main"
-p1-public-rag-seed = "app.release.public_rag_seed_cli:main"
 
 [build-system]
 requires = ["hatchling"]

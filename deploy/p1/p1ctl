@@ -356,7 +356,8 @@ init_state() {
   write_line ASYNC_PARTITION_HMAC_KEY "$partition_key" "$SECRETS_DIR/spring.env"
   write_line ASYNC_WORKER_GRPC_SHARED_SECRET "$grpc_secret" "$SECRETS_DIR/spring.env"
   write_line BROKERAGE_GRPC_SHARED_SECRET "$brokerage_grpc_secret" "$SECRETS_DIR/spring.env"
-  write_line RETURN_INFERENCE_GRPC_SHARED_SECRET "$(random_secret)" "$SECRETS_DIR/spring.env"
+  printf '' | state_write_file "$SECRETS_DIR/return-inference.env" 0640
+  write_line RETURN_INFERENCE_GRPC_SHARED_SECRET "$(random_secret)" "$SECRETS_DIR/return-inference.env"
   local key
   for key in JWT_SECRET LOGIN_SCOPE_HMAC_KEY PRINCIPLE_CURSOR_HMAC_KEY DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY \
     DECISION_GRPC_SHARED_SECRET BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY RAG_IDEMPOTENCY_SCOPE_HMAC_KEY RAG_REQUEST_FINGERPRINT_HMAC_KEY \
@@ -446,7 +447,7 @@ verify_state() {
   verify_runtime_env
   local expected=(actor-capability-authority.env actor-client.p12 actor-server.p12 actor-tls-ca.crt artifact-import.env bootstrap.env demo-admin.bundle demo-admin.password demo-credential-separation.key demo.env demo-user.bundle \
     demo-user.password kafka-admin.env kafka-broker-jaas.conf kafka-publisher.env migration.env poison-recorder.env \
-    kis-mock.env kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn postgres.env python.env rag-history-kek-v1.key redis.env role-bootstrap.env seed-import.env spring.env)
+    kis-mock.env kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn postgres.env python.env rag-history-kek-v1.key redis.env return-inference.env role-bootstrap.env seed-import.env spring.env)
   local actual
   actual=$(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
   [[ $actual == "$(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)" ]] || die secret_inventory

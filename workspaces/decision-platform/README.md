@@ -21,6 +21,15 @@ production pointer는 all-ABSTAIN이다. 자세한 경계는
 [`P1_ARTIFACT_IMPORTER_PROJECTION_운영_가이드`](../../docs/decision-platform/P1_ARTIFACT_IMPORTER_PROJECTION_운영_가이드.md)를
 따른다.
 
+## P1 Return inference runtime
+
+`app.p1_owner.inference`와 loopback gRPC server는 verified v2 model/scaler/config만 fixed ABI로 실행한다.
+exact-31 batch, auth/deadline/size/concurrency를 강제하며 model pointer 부재는 값을 꾸미지 않고
+`FAILED_PRECONDITION`으로 닫는다. Spring·async worker와 같은 supervisor/health에 포함되며 provider,
+DB DML, order authority는 0이다. 자세한 경계는
+[`P1_RETURN_INFERENCE_RUNTIME_운영_가이드`](../../docs/decision-platform/P1_RETURN_INFERENCE_RUNTIME_운영_가이드.md)를
+따른다.
+
 ## 구조
 
 ```text

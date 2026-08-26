@@ -16,13 +16,19 @@ SBOM, provenance, signatures, source archive, and the unchanged repository licen
 
 Schema validation is necessary but not sufficient. `contracts/validate_p1_full_app_release.py` also binds
 each image reference to its separately declared digest, the Seed manifest and both tracked parts to their
-actual repository bytes, the current Git commit/tree, and the unchanged LICENSE. Local model manifests and
-the Team B top-level manifest are recursively verified by `contracts/verify_p1_full_app_assets.py`; an empty
-or existence-only marker cannot satisfy the installer preflight.
+actual repository bytes, the current Git commit/tree, and the unchanged LICENSE. It also binds each model to
+the exact official runtime image component. The Team B top-level manifest is recursively verified by
+`contracts/verify_p1_full_app_assets.py`; an empty or existence-only marker cannot satisfy the installer
+preflight.
 
-The tracked BGE-M3 inventory is exact and materialized. PaddleOCR-VL quality evidence and revision are locked,
-but its distributable install inventory is currently `NOT_MATERIALIZED`; full preflight therefore remains
-fail-closed until a reviewed inventory digest, exact file count, and exact byte count are added by contract change.
+BGE-M3 now uses the official Hugging Face Text Embeddings Inference CPU container with the exact
+`BAAI/bge-m3` revision. PaddleOCR-VL uses the official `llama.cpp` server container and PaddlePaddle's official
+`PaddleOCR-VL-1.6-GGUF` repository; both GGUF and multimodal projector size/SHA-256 values are pinned. The
+Compose overlay stores downloaded weights in named volumes, exposes no host model port, and never uses a
+community BGE conversion. The model services stay on the private service network and also receive a dedicated
+outbound-only bridge for the exact-revision first download; that bridge publishes no port. Runtime health,
+1024-dimensional BGE output, OCR quality, and CPU/Intel performance remain hard-gate evidence and are not
+implied by static Compose validation.
 
 ## Release rule
 

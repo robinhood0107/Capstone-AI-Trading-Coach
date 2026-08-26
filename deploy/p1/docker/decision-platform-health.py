@@ -10,6 +10,7 @@ import grpc
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
 from app.generated import async_worker_pb2
+from app.p1_owner.inference_grpc_server import SERVICE_NAME as RETURN_INFERENCE_SERVICE
 
 
 def main() -> None:
@@ -30,6 +31,16 @@ def main() -> None:
             raise RuntimeError("Python worker is not healthy")
     finally:
         channel.close()
+    inference = grpc.insecure_channel("127.0.0.1:50057")
+    try:
+        result = health_pb2_grpc.HealthStub(inference).Check(
+            health_pb2.HealthCheckRequest(service=RETURN_INFERENCE_SERVICE),
+            timeout=2,
+        )
+        if result.status != health_pb2.HealthCheckResponse.SERVING:
+            raise RuntimeError("Return inference is not healthy")
+    finally:
+        inference.close()
     if os.environ.get("KIS_MOCK_BROKERAGE_ONLINE_ENABLED", "false").lower() == "true":
         brokerage = grpc.insecure_channel("127.0.0.1:50052")
         try:

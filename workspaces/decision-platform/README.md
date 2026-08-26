@@ -6,7 +6,7 @@
 
 ## P1 Owner input pack과 synthetic golden
 
-`p1-owner-assets`는 verified `market-data-seed.v1` archive를 exact-31 input pack으로 변환하고,
+`python -m app.p1_owner.assets`는 verified `market-data-seed.v1` archive를 exact-31 input pack으로 변환하고,
 wire-compatible synthetic exact-10 Team B bundle을 만든다. provider/account/order call은 0이고 output은
 Git 밖 owner-private root에만 둔다. 실행과 truth marker는
 [`P1_OWNER_INPUT_PACK_GOLDEN_운영_가이드`](../../docs/decision-platform/P1_OWNER_INPUT_PACK_GOLDEN_운영_가이드.md)를

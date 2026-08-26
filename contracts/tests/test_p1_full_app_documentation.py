@@ -131,11 +131,11 @@ class P1FullAppDocumentationTest(unittest.TestCase):
     def test_exact_post_core_catalog_activates_v2_boundary(self) -> None:
         self.assertTrue(post_core_v2_authorized(ROOT))
 
-    def test_current_authority_block_occurs_once_in_each_ssot(self) -> None:
+    def test_current_v3_authority_block_occurs_once_in_each_ssot(self) -> None:
         for relative in AUTHORITY_DOCUMENTS:
             text = (ROOT / relative).read_text(encoding="utf-8")
-            self.assertEqual(1, text.count("<!-- P1_FULL_APP_V2_AUTHORITY_BEGIN -->"), relative)
-            self.assertEqual(1, text.count("<!-- P1_FULL_APP_V2_AUTHORITY_END -->"), relative)
+            self.assertEqual(1, text.count("<!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->"), relative)
+            self.assertEqual(1, text.count("<!-- P1_FULL_APP_V3_AUTHORITY_END -->"), relative)
 
     def test_tracked_markdown_is_regular_utf8_and_read_to_eof(self) -> None:
         completed = subprocess.run(

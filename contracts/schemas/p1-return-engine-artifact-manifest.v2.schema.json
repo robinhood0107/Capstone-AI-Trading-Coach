@@ -1,0 +1,183 @@
+{
+  "$id": "contracts/schemas/p1-return-engine-artifact-manifest.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifacts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "enum": [
+              "model.safetensors",
+              "scaler.json",
+              "config.json",
+              "lstm_signals.parquet",
+              "rule_baseline_signals.parquet",
+              "backtest_result.json",
+              "trade_log.parquet",
+              "equity_log.parquet",
+              "golden_output.json",
+              "model_report.md"
+            ]
+          },
+          "semanticSchema": {
+            "enum": [
+              "contracts/schemas/p1-return-model-safetensors.v2.schema.json",
+              "contracts/schemas/p1-return-scaler.v2.schema.json",
+              "contracts/schemas/p1-return-config.v2.schema.json",
+              "contracts/schemas/p1-return-lstm-signals.v2.schema.json",
+              "contracts/schemas/p1-return-rule-baseline-signals.v2.schema.json",
+              "contracts/schemas/p1-return-backtest-result.v2.schema.json",
+              "contracts/schemas/p1-return-trade-log.v2.schema.json",
+              "contracts/schemas/p1-return-equity-log.v2.schema.json",
+              "contracts/schemas/p1-return-golden-output.v2.schema.json",
+              "contracts/schemas/p1-return-model-report.v2.schema.json"
+            ]
+          },
+          "sha256": {
+            "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "sizeBytes": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "semanticSchema",
+          "sizeBytes",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "maxItems": 10,
+      "minItems": 10,
+      "type": "array"
+    },
+    "contractId": {
+      "const": "p1-return-engine-artifact-manifest.v2"
+    },
+    "evidenceMode": {
+      "enum": [
+        "REAL_TEAM_B",
+        "SYNTHETIC_GOLDEN"
+      ]
+    },
+    "furtherTuningRequired": {
+      "const": false
+    },
+    "inputPackSha256": {
+      "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "mockRuntimeEligible": {
+      "type": "boolean"
+    },
+    "modelQuality": {
+      "enum": [
+        "PASS",
+        "BELOW_BASELINE",
+        "NOT_EVALUATED_SYNTHETIC"
+      ]
+    },
+    "orderAuthority": {
+      "const": "NONE"
+    },
+    "performanceClaimAllowed": {
+      "const": false
+    },
+    "producer": {
+      "additionalProperties": false,
+      "properties": {
+        "accountCalls": {
+          "const": 0
+        },
+        "commitSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "configSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "dependencyLockSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "dockerfileSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "featureOrderSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "goldenOutputSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "networkCalls": {
+          "const": 0
+        },
+        "orderCalls": {
+          "const": 0
+        },
+        "seed": {
+          "const": 0
+        },
+        "splitSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "springCalls": {
+          "const": 0
+        },
+        "trainingCodeSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "commitSha256",
+        "dependencyLockSha256",
+        "dockerfileSha256",
+        "trainingCodeSha256",
+        "featureOrderSha256",
+        "splitSha256",
+        "configSha256",
+        "goldenOutputSha256",
+        "seed",
+        "networkCalls",
+        "springCalls",
+        "accountCalls",
+        "orderCalls"
+      ],
+      "type": "object"
+    },
+    "realTeamB": {
+      "type": "boolean"
+    },
+    "runId": {
+      "pattern": "^run_[A-Za-z0-9_-]{8,96}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractId",
+    "runId",
+    "evidenceMode",
+    "realTeamB",
+    "performanceClaimAllowed",
+    "orderAuthority",
+    "modelQuality",
+    "mockRuntimeEligible",
+    "furtherTuningRequired",
+    "inputPackSha256",
+    "producer",
+    "artifacts"
+  ],
+  "title": "p1-return-engine-artifact-manifest.v2",
+  "type": "object"
+}

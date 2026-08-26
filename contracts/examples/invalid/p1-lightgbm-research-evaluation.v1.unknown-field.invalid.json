@@ -1,0 +1,17 @@
+{
+  "batchPublicationCount": 0,
+  "contractId": "p1-lightgbm-research-evaluation.v1",
+  "evidenceMode": "HISTORICAL_REPRODUCTION",
+  "finalTestAccessCount": 0,
+  "limitations": [
+    "Production activation is disabled."
+  ],
+  "mode": "RESEARCH_ONLY",
+  "orderAuthority": "NONE",
+  "productionSignalAuthority": "NONE",
+  "providerCalls": 0,
+  "releaseCount": 0,
+  "riskDecisionAuthority": "NONE",
+  "status": "ABSTAIN",
+  "unexpected": true
+}

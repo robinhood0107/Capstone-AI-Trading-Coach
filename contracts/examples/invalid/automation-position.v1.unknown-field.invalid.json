@@ -1,0 +1,15 @@
+{
+  "accountId": "acct_12345678",
+  "botOwned": true,
+  "closedAt": null,
+  "contractId": "automation-position.v1",
+  "createdAt": "2026-08-26T09:15:00+09:00",
+  "entrySession": "2026-08-26",
+  "expirySession": "2026-09-02",
+  "positionId": "auto_pos_12345678",
+  "quantity": 1,
+  "shortAllowed": false,
+  "status": "OPEN",
+  "symbol": "005930",
+  "unexpected": true
+}

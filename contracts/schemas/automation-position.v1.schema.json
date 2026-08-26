@@ -1,0 +1,78 @@
+{
+  "$id": "contracts/schemas/automation-position.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accountId": {
+      "pattern": "^acct_[A-Za-z0-9_-]{8,96}$",
+      "type": "string"
+    },
+    "botOwned": {
+      "const": true
+    },
+    "closedAt": {
+      "oneOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "contractId": {
+      "const": "automation-position.v1"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "entrySession": {
+      "format": "date",
+      "type": "string"
+    },
+    "expirySession": {
+      "format": "date",
+      "type": "string"
+    },
+    "positionId": {
+      "pattern": "^auto_pos_[A-Za-z0-9_-]{8,96}$",
+      "type": "string"
+    },
+    "quantity": {
+      "const": 1
+    },
+    "shortAllowed": {
+      "const": false
+    },
+    "status": {
+      "enum": [
+        "OPEN",
+        "EXIT_PENDING",
+        "CLOSED",
+        "HALTED_MISMATCH"
+      ]
+    },
+    "symbol": {
+      "pattern": "^[0-9]{6}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractId",
+    "positionId",
+    "accountId",
+    "symbol",
+    "quantity",
+    "entrySession",
+    "expirySession",
+    "status",
+    "botOwned",
+    "shortAllowed",
+    "createdAt",
+    "closedAt"
+  ],
+  "title": "automation-position.v1",
+  "type": "object"
+}

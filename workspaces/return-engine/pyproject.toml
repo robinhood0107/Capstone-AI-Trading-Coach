@@ -1,3 +1,6 @@
+[dependency-groups]
+dev = ["pytest>=9,<10"]
+
 [project]
 name = "capstone-return-engine-received-preview"
 version = "0.1.0"
@@ -11,11 +14,12 @@ dependencies = [
   "pandas>=2.3,<3",
   "scikit-learn>=1.7,<2",
   "torch==2.13.0",
-  "yfinance>=0.2.65,<0.3",
+  "yfinance>=0.2.65,<0.3"
 ]
 
-[dependency-groups]
-dev = ["pytest>=9,<10"]
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -23,8 +27,4 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.uv.sources]
-torch = { index = "pytorch-cpu" }
-
-[tool.pytest.ini_options]
-pythonpath = ["src"]
-testpaths = ["tests"]
+torch = {index = "pytorch-cpu"}

@@ -941,7 +941,11 @@ def _validate_repository_schema(relative: str, payload: object) -> None:
 
 
 def _repository_root() -> Path:
-    return Path(__file__).resolve().parents[5]
+    module = Path(__file__).resolve()
+    for candidate in module.parents:
+        if (candidate / "contracts").is_dir():
+            return candidate
+    raise P1OwnerAssetError("repository contract root is unavailable")
 
 
 def _repository_json(relative: str) -> dict[str, Any]:

@@ -16,6 +16,19 @@
 구현 세션용 로컬 보조 자료는 사용자가 명시하거나 작업상 필요할 때만 참고한다. 사용자 학습용
 로컬 자료는 구현 입력이 아니며, 관련 주제가 나왔을 때 읽어볼 자료로만 제안한다.
 
+## P1 full-app v2 현재 권위
+
+`contracts/catalogs/p1-full-app-release-contract.v2.json`은 GitHub `1.0.0` full-app release의 현재
+계약이다. 기존 `p1-offline-demo-release-manifest.v1`과 workflow는 역사적 회귀로 byte-stable하게
+보존한다. Team A/B 수신본은 ignored `dev/upstream-intake/<manifest-sha256>`에서 원본 해시를 보존한
+뒤 검토된 production source만 해당 workspace로 승격한다. cache, raw intake, untrusted pickle,
+provider 원본과 local output은 승격하지 않는다.
+
+`FINAL` release는 v2의 아홉 hard gate가 모두 `PASS`일 때만 가능하다. Dashboard UI, CUDA와 SearXNG는
+계약에 열거된 비차단 상태를 공개할 수 있지만 Team B real artifact, public Seed, owner backend E2E,
+CPU/Intel, provider read, security, supply-chain 또는 Compose E2E를 대체하지 않는다. LightGBM은 계속
+연구 전용이고 live order는 구현하지 않는다.
+
 ## 현재 단계
 
 **현재 단계: STAGE 2 — 기능 구현 (S1~S8).** 단계가 바뀌면 이 절과 PR 템플릿을 함께 갱신한다(단계 전환 자체가 하나의 PR).
@@ -321,9 +334,9 @@ Decision, Signal, RiskDecision, order, decision hash에 영향을 주지 않는�
 ## 워크스페이스 경계
 
 - `workspaces/decision-platform/`: 박종진(`robinhood0107`) 담당. 이 개인 레포에서 실제 구현할 수 있는 영역이다.
-- `workspaces/return-engine/`: 팀원 B 담당. 현재는 placeholder이며, 이 레포에서는 `README.md` 외 구현 파일을 만들지 않는다.
-- `workspaces/experience-dashboard/`: 팀원 A 담당. 현재는 placeholder이며, 이 레포에서는 `README.md` 외 구현 파일을 만들지 않는다.
-- 위 두 placeholder의 기존 role label은 `HISTORICAL_SUPERSEDED`이며 현재 실행 task, artifact, entry dependency를 만들지 않는다.
+- `workspaces/return-engine/`: Team B 수신본의 검토된 one-shot consumer와 재현 가능한 artifact 코드만 승격한다. provider client, cache, raw CSV와 출처 없는 pickle은 금지한다.
+- `workspaces/experience-dashboard/`: Team A 수신본의 검토된 same-origin production source, lockfile, 테스트와 Docker 경계만 승격한다. mock/dev output은 production image에서 제외한다.
+- 두 workspace의 README-only placeholder 규칙은 `HISTORICAL_SUPERSEDED`다. ignored `dev/upstream-intake/`는 원본 보존용이며 Git 추적·production build context·release archive에 포함하지 않는다.
 - `contracts/`: workspace 간 계약의 단일 진실 소스다. 변경 시 `contracts/changes/`에 이유와 영향 범위를 남긴다.
 - `artifacts/`: 계약을 만족하는 산출물 교환 폴더다. 원본 코드, 대용량 원시 데이터, 로컬 실행 산출물은 커밋하지 않는다.
 

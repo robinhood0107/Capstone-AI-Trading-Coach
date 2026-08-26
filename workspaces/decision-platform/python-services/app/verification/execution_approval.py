@@ -25,7 +25,8 @@ from cryptography.exceptions import InvalidSignature
 from app.data._shared.canonical_json import canonical_json_bytes, canonical_json_sha256
 from app.verification.packet import _load_private_key, _load_public_key, _read_public_key
 
-_CONTRACT_ID: Final = "p1-approval-packet.v2"
+_GENERIC_CONTRACT_ID: Final = "p1-approval-packet.v2"
+_KIS_MOCK_CONTRACT_ID: Final = "p1-kis-mock-execution-approval.v1"
 _MAX_PACKET_BYTES: Final = 32 * 1024
 _APPROVAL_ID = re.compile(r"^[A-Z0-9][A-Z0-9._-]{7,95}$")
 _KEY_ID = re.compile(r"^[A-Z0-9][A-Z0-9._-]{2,63}$")
@@ -70,7 +71,7 @@ class P1ExecutionApproval:
         return {
             "accountScopeDigest": self.account_scope_digest,
             "approvalId": self.approval_id,
-            "contractId": _CONTRACT_ID,
+            "contractId": _contract_id(self.provider_family),
             "costCapMicrousd": self.cost_cap_microusd,
             "credentialScopeDigest": self.credential_scope_digest,
             "evidenceDigest": self.evidence_digest,
@@ -185,6 +186,8 @@ def load_and_verify_execution_approval(
     owner_scope_digest: str = ZERO_SCOPE_SHA256,
     account_scope_digest: str = ZERO_SCOPE_SHA256,
     credential_scope_digest: str = ZERO_SCOPE_SHA256,
+    trust_policy_path: Path | None = None,
+    trust_policy_owner_uid: int = 0,
 ) -> P1ExecutionApproval:
     """Verify the exact scope using the root-owned public-key trust policy."""
     approval = execution_approval_from_dict(_read_packet(approval_path))
@@ -216,7 +219,13 @@ def load_and_verify_execution_approval(
         raise ExecutionApprovalError("P1_EXECUTION_APPROVAL_SCOPE_MISMATCH")
     from app.verification.cli import _approval_trust_anchor
 
-    key_path, issuer, key_digest = _approval_trust_anchor()
+    if trust_policy_path is None:
+        key_path, issuer, key_digest = _approval_trust_anchor()
+    else:
+        key_path, issuer, key_digest = _approval_trust_anchor(
+            trust_policy_path,
+            expected_owner_uid=trust_policy_owner_uid,
+        )
     approval.validate(now=now)
     if approval.issuer_key_id != issuer:
         raise ExecutionApprovalError("P1_EXECUTION_APPROVAL_ISSUER_UNTRUSTED")
@@ -255,7 +264,8 @@ def execution_approval_from_dict(value: Mapping[str, object]) -> P1ExecutionAppr
     strings = expected - {"costCapMicrousd", "exactOperations", "physicalCallCap"}
     if (
         set(value) != expected
-        or value.get("contractId") != _CONTRACT_ID
+        or not isinstance(value.get("providerFamily"), str)
+        or value.get("contractId") != _contract_id(cast(str, value.get("providerFamily")))
         or not isinstance(operations, list)
         or not all(isinstance(item, str) for item in operations)
         or any(not isinstance(value.get(item), str) for item in strings)
@@ -289,6 +299,14 @@ def execution_approval_from_dict(value: Mapping[str, object]) -> P1ExecutionAppr
 
 def scope_digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _contract_id(provider_family: str) -> str:
+    """KIS 모의투자만 새 계약으로 분리하고 기존 provider packet bytes를 보존한다."""
+
+    if provider_family == "KIS_MOCK":
+        return _KIS_MOCK_CONTRACT_ID
+    return _GENERIC_CONTRACT_ID
 
 
 def _read_packet(path: Path) -> Mapping[str, object]:

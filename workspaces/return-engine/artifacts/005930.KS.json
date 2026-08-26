@@ -1,0 +1,67 @@
+{
+    "stock_code": "005930.KS",
+    "date": "2026-08-22",
+    "prediction": {
+        "prediction": 139406.015625,
+        "prediction_change": 0.0011578798294067383
+    },
+    "recent_prediction": [
+        {
+            "date": "2026-08-14",
+            "actual": 274500.0,
+            "prediction": 138929.015625,
+            "actual_change": 0.02425373134328357,
+            "prediction_change": 0.005400538444519043
+        },
+        {
+            "date": "2026-08-18",
+            "actual": 268500.0,
+            "prediction": 139060.359375,
+            "actual_change": -0.021857923497267784,
+            "prediction_change": 0.0009454488754272461
+        },
+        {
+            "date": "2026-08-19",
+            "actual": 247500.0,
+            "prediction": 139250.296875,
+            "actual_change": -0.07821229050279332,
+            "prediction_change": 0.0013659000396728516
+        },
+        {
+            "date": "2026-08-20",
+            "actual": 271000.0,
+            "prediction": 138403.953125,
+            "actual_change": 0.0949494949494949,
+            "prediction_change": -0.006077885627746582
+        },
+        {
+            "date": "2026-08-21",
+            "actual": 281500.0,
+            "prediction": 139244.78125,
+            "actual_change": 0.03874538745387457,
+            "prediction_change": 0.006075143814086914
+        }
+    ],
+    "backtest": {
+        "baseline_model": {
+            "profit": 0.3962,
+            "mmd": -0.29351604470108306,
+            "calmar": 1.349841029656455,
+            "sharpe": 1.3352895413599886,
+            "win rate": 0.3333333333333333,
+            "max peak": 17404500.0,
+            "final asset": 13962000.0,
+            "trade count": 7
+        },
+        "lstm_model": {
+            "profit": 1.34716,
+            "mmd": -0.2088771014004659,
+            "calmar": 6.4495341565334225,
+            "sharpe": 2.8267022603779743,
+            "win rate": 1.0,
+            "max peak": 24954600.0,
+            "final asset": 23471600.0,
+            "trade count": 18
+        }
+    }
+}

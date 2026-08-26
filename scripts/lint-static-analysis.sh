@@ -66,7 +66,10 @@ mapfile -d '' markdown_files < <(
     ':(exclude)deploy/p1/THIRD_PARTY_NOTICES.md' \
     ':(exclude)docs/중간보고서_작성용_초기설계.md' \
     ':(exclude)workspaces/return-engine/README.md' \
-    ':(exclude)workspaces/experience-dashboard/README.md'
+    ':(exclude)workspaces/experience-dashboard/README.md' \
+    ':(exclude)workspaces/experience-dashboard/OVERVIEW.md' \
+    ':(exclude)workspaces/experience-dashboard/SETUP.md' \
+    ':(exclude)workspaces/experience-dashboard/VSCODE.md'
 )
 ((${#markdown_files[@]} > 0))
 uv --project "$python_project" run pymarkdown \

@@ -1,5 +1,12 @@
 # 문서 색인과 현재 상태
 
+<!-- P1_FULL_APP_V2_AUTHORITY_BEGIN -->
+> **1.0.0 current authority (2026-08-26):** full-app release v2는 `IMPLEMENTATION_IN_PROGRESS`이며
+> GitHub `1.0.0` Release는 없다. 현재 hard/non-blocking gate와 증거 규칙은
+> [P1 full-app v2 권위와 게이트](decision-platform/P1_1_0_0_FULL_APP_V2_권위_및_게이트.md)가 소유한다.
+> 아래 과거 P1/placeholder marker는 해당 시점의 기록이며 v2 완료 증거가 아니다.
+<!-- P1_FULL_APP_V2_AUTHORITY_END -->
+
 이 파일은 공개 문서의 단일 상태 권위다. 기능의 상세 계약은
 [최종 프로젝트 명세서](최종_프로젝트_명세서.md), 공개 REST/gRPC 계약은
 [API 명세서](API_명세서.md), 기계 판독 계약은 [contracts](../contracts/README.md)를 따른다.
@@ -87,6 +94,10 @@ PostgreSQL one-shot claim을 별도로 통과한다. 이 구조는 공개 HTTP/O
 
 ### 실행과 운영
 
+- [통합 담당자 선행 완료 체크리스트](decision-platform/P1_OWNER_선행_완료_체크리스트.md)
+- [새 PC에서 같은 환경 실행하기](decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md)
+- [Team A 대시보드 완료 요청](decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md)
+- [Team B 예측·백테스트 엔진 완료 요청](decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md)
 - [S7-S8/P1 구현·운영 핸드오프](decision-platform/S7_S8_P1_구현_및_운영_핸드오프.md)
 - [P1 Offline Demo 배포·검증](decision-platform/P1_OFFLINE_DEMO_배포_및_검증.md)
 - [S8 offline demo 시나리오](decision-platform/S8_오프라인_시연_시나리오.md)
@@ -104,7 +115,7 @@ PostgreSQL one-shot claim을 별도로 통과한다. 이 구조는 공개 HTTP/O
 Core `1.0.0` 공개 뒤에도 다음 순서가 끝날 때까지 P1 전체 상태는 `EXTERNAL_BLOCKED`다.
 
 ```text
-Return Engine 6종 artifact
+Return Engine exact 10종 artifact와 상위 manifest
   -> Team A Dashboard integration
   -> fresh KIS_MOCK v3 exact approval/reconciliation
   -> docs-only closure PR

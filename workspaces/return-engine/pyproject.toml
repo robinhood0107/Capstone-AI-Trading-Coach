@@ -1,0 +1,30 @@
+[dependency-groups]
+dev = ["pytest>=9,<10"]
+
+[project]
+name = "capstone-return-engine-received-preview"
+version = "0.1.0"
+description = "Offline-only preview of the received Team B legacy artifact"
+requires-python = "==3.12.*"
+dependencies = [
+  "exchange-calendars==4.13.2",
+  "joblib>=1.5,<2",
+  "matplotlib>=3.10,<4",
+  "numpy>=2.3,<3",
+  "pandas>=2.3,<3",
+  "scikit-learn>=1.7,<2",
+  "torch==2.13.0",
+  "yfinance>=0.2.65,<0.3"
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = {index = "pytorch-cpu"}

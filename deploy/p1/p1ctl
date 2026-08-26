@@ -16,6 +16,13 @@ RELEASE_MANIFEST=$SCRIPT_DIR/../../release-manifest.json
 RELEASE_GUARD=$SCRIPT_DIR/release_guard.py
 RELEASE_SOURCE_ROOT=$SCRIPT_DIR/../..
 SEALED_RELEASE_PARENT=''
+DOCKER_BIN=/usr/bin/docker
+[[ -x $DOCKER_BIN ]] || DOCKER_BIN=$(command -v docker 2>/dev/null || true)
+
+docker() {
+  [[ -n $DOCKER_BIN ]] || die missing_docker
+  "$DOCKER_BIN" "$@"
+}
 
 die() { printf 'P1_ERROR=%s\n' "$1" >&2; exit 1; }
 require_command() { command -v "$1" >/dev/null 2>&1 || die "missing_$1"; }
@@ -34,6 +41,12 @@ write_line() {
 }
 docker_bind_source() {
   local source=$1 endpoint
+  # Docker Desktop exposes a native WSL socket even when the selected Windows
+  # context reports npipe. Compose through /usr/bin/docker requires the Linux path.
+  if [[ -S /var/run/docker.sock ]]; then
+    printf '%s\n' "$source"
+    return
+  fi
   endpoint=$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)
   if [[ $endpoint == npipe://* ]]; then
     require_command wslpath
@@ -146,8 +159,20 @@ verify_runtime_env() {
 
 author_bundle() {
   local image=$1 user_id=$2 password_file=$3 output=$4
-  local secrets_mount
+  local secrets_mount attempt bind_ready=0
   secrets_mount=$(docker_bind_source "$SECRETS_DIR")
+  # Docker Desktop may observe a newly created WSL directory a moment after Linux does.
+  # Validate only the bind mount before invoking the credential author; never print secrets.
+  for attempt in {1..10}; do
+    if docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+      --mount "type=bind,src=$secrets_mount,dst=/secrets" \
+      --entrypoint java "$image" -version >/dev/null 2>&1; then
+      bind_ready=1
+      break
+    fi
+    sleep 1
+  done
+  [[ $bind_ready == 1 ]] || die secrets_bind_unavailable
   docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
     --user "$(id -u):$(id -g)" --tmpfs /tmp:rw,noexec,nosuid,size=16m \
     --mount "type=bind,src=$secrets_mount,dst=/secrets" \
@@ -204,7 +229,9 @@ init_state() {
   printf '%s' "$user_password" | state_write_file "$SECRETS_DIR/demo-user.password" 0640
   printf '%s' "$admin_password" | state_write_file "$SECRETS_DIR/demo-admin.password" 0640
   printf '%s' "$separation_key" | state_write_file "$SECRETS_DIR/demo-credential-separation.key" 0640
-  openssl rand 32 | state_write_file "$SECRETS_DIR/rag-history-kek-v1.key" 0640
+  # SecretFileRagHistoryKekProvider accepts an ASCII hex/base64 envelope, not
+  # raw binary. Keep 32 random key bytes and serialize them as exact hex.
+  openssl rand -hex 32 | tr -d '\n' | state_write_file "$SECRETS_DIR/rag-history-kek-v1.key" 0640
   author_bundle "$spring_image" usr_demo_user "$SECRETS_DIR/demo-user.password" "$SECRETS_DIR/demo-user.bundle"
   author_bundle "$spring_image" usr_demo_admin "$SECRETS_DIR/demo-admin.password" "$SECRETS_DIR/demo-admin.bundle"
   local authored_bundle
@@ -359,6 +386,17 @@ verify_state() {
   while IFS= read -r file; do
     [[ ! -L $file && -f $file && $(stat -c '%a' "$file") == 640 ]] || die secret_boundary
   done < <(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -print)
+  local rag_kek_file=$SECRETS_DIR/rag-history-kek-v1.key rag_kek_size
+  rag_kek_size=$(stat -c '%s' "$rag_kek_file")
+  if [[ $rag_kek_size == 32 ]]; then
+    # Compatibility with the previous raw 32-byte state format. The container
+    # entrypoint hex-encodes these same bytes without rotating the key.
+    :
+  elif [[ $rag_kek_size == 64 ]]; then
+    LC_ALL=C grep -Eq '^[0-9a-f]{64}$' "$rag_kek_file" || die rag_history_kek_format
+  else
+    die rag_history_kek_format
+  fi
   compose db config --quiet
   compose kafka config --quiet
   local image arch

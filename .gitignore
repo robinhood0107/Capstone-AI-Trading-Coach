@@ -128,3 +128,6 @@ Thumbs.db
 
 # P1 Trivy generated cache may contain root-owned fanal entries after container scans.
 /.state/p1-trivy-cache/
+
+# P1 Compose credentials and runtime state are always local-only.
+/deploy/p1/.state*/

@@ -698,13 +698,29 @@ def _require_empty_target(connection: psycopg.Connection[Any]) -> None:
         if spec.name == "rag_v2_immutable_public_bundle_pointers":
             row = connection.execute(
                 """
-                SELECT count(*)
+                SELECT
+                  count(*),
+                  count(*) FILTER (
+                    WHERE state_id = 'default' AND state = 'NOT_MATERIALIZED'
+                      AND exact30_generation_id IS NULL AND oa112_generation_id IS NULL
+                  )
                 FROM public.rag_v2_immutable_public_bundle_pointers
-                WHERE state_id = 'default' AND state = 'NOT_MATERIALIZED'
-                  AND exact30_generation_id IS NULL AND oa112_generation_id IS NULL
                 """
             ).fetchone()
-            if row != (1,):
+            if row == (0, 0):
+                # The squashed B86 baseline intentionally contains schema plus
+                # allowlisted static rows, but not the V25 singleton bootstrap
+                # row. Recreate that empty state inside this already locked,
+                # RLS-disabled import transaction before the archive updates it.
+                connection.execute(
+                    """
+                    INSERT INTO public.rag_v2_immutable_public_bundle_pointers (
+                      state_id, state, exact30_generation_id, oa112_generation_id,
+                      embedding_profile_id, pointer_version
+                    ) VALUES ('default', 'NOT_MATERIALIZED', NULL, NULL, NULL, 1)
+                    """
+                )
+            elif row != (1, 1):
                 raise PublicRagSeedError(
                     "PUBLIC_RAG_SEED_TARGET_NOT_EMPTY_" + spec.name
                 )

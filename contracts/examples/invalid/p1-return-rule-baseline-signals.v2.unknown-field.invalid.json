@@ -1,0 +1,51 @@
+{
+  "contractId": "p1-return-rule-baseline-signals.v2",
+  "fileName": "rule_baseline_signals.parquet",
+  "semantic": {
+    "finite": true,
+    "rowCount": 31,
+    "rowSchema": {
+      "confidence": 0.5,
+      "currentClose": 100,
+      "expectedReturn": 0,
+      "forecastClose": 100,
+      "sessionDate": "2026-08-26",
+      "signal": "HOLD",
+      "symbol": "000001"
+    },
+    "symbols": [
+      "000001",
+      "000002",
+      "000003",
+      "000004",
+      "000005",
+      "000006",
+      "000007",
+      "000008",
+      "000009",
+      "000010",
+      "000011",
+      "000012",
+      "000013",
+      "000014",
+      "000015",
+      "000016",
+      "000017",
+      "000018",
+      "000019",
+      "000020",
+      "000021",
+      "000022",
+      "000023",
+      "000024",
+      "000025",
+      "000026",
+      "000027",
+      "000028",
+      "000029",
+      "000030",
+      "132030"
+    ]
+  },
+  "unexpected": true
+}

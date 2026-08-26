@@ -1,0 +1,352 @@
+{
+  "$id": "deploy/p1/full-app-release-manifest.v3.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "stage": {
+            "const": "FINAL"
+          }
+        },
+        "required": [
+          "stage"
+        ]
+      },
+      "then": {
+        "properties": {
+          "hardGates": {
+            "properties": {
+              "AUTOMATION_CLOSED_LOOP": {
+                "const": "PASS"
+              },
+              "BGE_OCR_CPU_INTEL": {
+                "const": "PASS"
+              },
+              "COMPOSE_E2E": {
+                "const": "PASS"
+              },
+              "JOURNAL": {
+                "const": "PASS"
+              },
+              "LIGHTGBM_RESEARCH_DISCLOSURE": {
+                "const": "PASS"
+              },
+              "MARKET_DATA_DAILY": {
+                "const": "PASS"
+              },
+              "OCI_REPRODUCIBILITY": {
+                "const": "PASS"
+              },
+              "OWNER_RAG_BACKEND": {
+                "const": "PASS"
+              },
+              "P1_CORE": {
+                "const": "PASS"
+              },
+              "PUBLIC_RAG_SEED": {
+                "const": "PASS"
+              },
+              "SECURITY_RELEASE": {
+                "const": "PASS"
+              },
+              "SUPPLY_CHAIN_RELEASE": {
+                "const": "PASS"
+              },
+              "TEAM_A_REAL_UI_33": {
+                "const": "PASS"
+              },
+              "TEAM_B_REAL_ARTIFACT_V2": {
+                "const": "PASS"
+              },
+              "THREE_XKRX_SESSION_SOAK": {
+                "const": "PASS"
+              },
+              "VERTEX_NEWS_VETO": {
+                "const": "PASS"
+              }
+            }
+          },
+          "released": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": {
+            "const": "CANDIDATE"
+          }
+        },
+        "required": [
+          "stage"
+        ]
+      },
+      "then": {
+        "properties": {
+          "released": {
+            "const": false
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "commitSha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "p1-full-app-release-manifest.v3"
+    },
+    "gdeltCalls": {
+      "const": 0
+    },
+    "hardGates": {
+      "additionalProperties": false,
+      "properties": {
+        "AUTOMATION_CLOSED_LOOP": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "BGE_OCR_CPU_INTEL": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "COMPOSE_E2E": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "JOURNAL": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "LIGHTGBM_RESEARCH_DISCLOSURE": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "MARKET_DATA_DAILY": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "OCI_REPRODUCIBILITY": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "OWNER_RAG_BACKEND": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "P1_CORE": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "PUBLIC_RAG_SEED": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "SECURITY_RELEASE": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "SUPPLY_CHAIN_RELEASE": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "TEAM_A_REAL_UI_33": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "TEAM_B_REAL_ARTIFACT_V2": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "THREE_XKRX_SESSION_SOAK": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "VERTEX_NEWS_VETO": {
+          "enum": [
+            "PASS",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        }
+      },
+      "required": [
+        "P1_CORE",
+        "PUBLIC_RAG_SEED",
+        "OWNER_RAG_BACKEND",
+        "BGE_OCR_CPU_INTEL",
+        "MARKET_DATA_DAILY",
+        "TEAM_B_REAL_ARTIFACT_V2",
+        "TEAM_A_REAL_UI_33",
+        "VERTEX_NEWS_VETO",
+        "JOURNAL",
+        "AUTOMATION_CLOSED_LOOP",
+        "LIGHTGBM_RESEARCH_DISCLOSURE",
+        "SECURITY_RELEASE",
+        "SUPPLY_CHAIN_RELEASE",
+        "OCI_REPRODUCIBILITY",
+        "COMPOSE_E2E",
+        "THREE_XKRX_SESSION_SOAK"
+      ],
+      "type": "object"
+    },
+    "kisLiveOrderCalls": {
+      "const": 0
+    },
+    "lightgbm": {
+      "const": "RESEARCH_ONLY_NO_SIGNAL_OR_ORDER_AUTHORITY"
+    },
+    "providerReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "cancelCalls": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ecosCalls": {
+          "maximum": 2,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kisBrokerageCalls": {
+          "maximum": 7,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kisDailyCalls": {
+          "maximum": 31,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kisQuoteCalls": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kisTokenCalls": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "orderSubmitCalls": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "retries": {
+          "const": 0
+        },
+        "vertexGroundedCalls": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "vertexGroundedCalls",
+        "kisTokenCalls",
+        "kisDailyCalls",
+        "ecosCalls",
+        "kisQuoteCalls",
+        "kisBrokerageCalls",
+        "orderSubmitCalls",
+        "cancelCalls",
+        "retries"
+      ],
+      "type": "object"
+    },
+    "releaseVersion": {
+      "const": "1.0.0"
+    },
+    "released": {
+      "type": "boolean"
+    },
+    "stage": {
+      "enum": [
+        "CANDIDATE",
+        "FINAL"
+      ]
+    },
+    "teamAImageDigest": {
+      "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "teamBManifestSha256": {
+      "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "treeSha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractId",
+    "stage",
+    "releaseVersion",
+    "commitSha",
+    "treeSha",
+    "hardGates",
+    "teamBManifestSha256",
+    "teamAImageDigest",
+    "providerReceipt",
+    "lightgbm",
+    "kisLiveOrderCalls",
+    "gdeltCalls",
+    "released"
+  ],
+  "title": "p1-full-app-release-manifest.v3",
+  "type": "object"
+}

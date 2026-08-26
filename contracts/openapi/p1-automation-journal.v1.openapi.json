@@ -1,0 +1,558 @@
+{
+  "components": {
+    "schemas": {
+      "AutomationControl": {
+        "$id": "contracts/schemas/automation-control.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "brokerageMode": {
+            "enum": [
+              "KIS_MOCK",
+              "INTERNAL_PAPER"
+            ]
+          },
+          "certificationStatus": {
+            "enum": [
+              "NOT_REQUIRED_INTERNAL_PAPER",
+              "REQUIRED",
+              "VALID",
+              "EXPIRED",
+              "INVALID"
+            ]
+          },
+          "contractId": {
+            "const": "automation-control.v1"
+          },
+          "controlState": {
+            "enum": [
+              "DISARMED",
+              "ARMED",
+              "HALTED"
+            ]
+          },
+          "killSwitchActive": {
+            "type": "boolean"
+          },
+          "principleId": {
+            "pattern": "^prc_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "projectionState": {
+            "enum": [
+              "DISARMED",
+              "ARMED",
+              "RUNNING",
+              "HALTED"
+            ]
+          },
+          "strategyId": {
+            "pattern": "^strategy_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "contractId",
+          "controlState",
+          "projectionState",
+          "version",
+          "brokerageMode",
+          "principleId",
+          "strategyId",
+          "killSwitchActive",
+          "certificationStatus"
+        ],
+        "title": "automation-control.v1",
+        "type": "object"
+      },
+      "AutomationRun": {
+        "$id": "contracts/schemas/automation-run.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "brokerageMode": {
+            "enum": [
+              "KIS_MOCK",
+              "INTERNAL_PAPER"
+            ]
+          },
+          "contractId": {
+            "const": "automation-run.v1"
+          },
+          "physicalSubmitCount": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "providerCalls": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "runId": {
+            "pattern": "^auto_run_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "selectedSide": {
+            "oneOf": [
+              {
+                "enum": [
+                  "BUY",
+                  "SELL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selectedSymbol": {
+            "oneOf": [
+              {
+                "pattern": "^[0-9]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "SCHEDULED",
+              "PRECHECK",
+              "RECONCILING_PREVIOUS",
+              "EXIT_SELECTED",
+              "BUY_CANDIDATE_SELECTED",
+              "NEWS_CHECKING",
+              "NEWS_VETOED",
+              "RISK_CHECKING",
+              "ORDER_SUBMITTING",
+              "ORDER_SUBMITTED",
+              "PENDING_RECONCILIATION",
+              "CANCELLED_UNFILLED",
+              "COMPLETED",
+              "SKIPPED_NO_ACTION",
+              "SKIPPED_DATA_UNAVAILABLE",
+              "SKIPPED_LATE_START",
+              "HALTED"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "vertexCallCount": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "contractId",
+          "runId",
+          "sessionDate",
+          "state",
+          "brokerageMode",
+          "selectedSymbol",
+          "selectedSide",
+          "physicalSubmitCount",
+          "vertexCallCount",
+          "providerCalls",
+          "startedAt",
+          "updatedAt"
+        ],
+        "title": "automation-run.v1",
+        "type": "object"
+      },
+      "Journal": {
+        "$id": "contracts/schemas/journal.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "type": "string"
+          },
+          "contractId": {
+            "const": "journal.v1"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deletedAt": {
+            "oneOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "journalId": {
+            "pattern": "^jnl_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "links": {
+            "additionalProperties": false,
+            "properties": {
+              "automationRunId": {
+                "oneOf": [
+                  {
+                    "pattern": "^auto_run_[A-Za-z0-9_-]{8,96}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "backtestRunId": {
+                "oneOf": [
+                  {
+                    "pattern": "^run_[A-Za-z0-9_-]{8,96}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "decisionId": {
+                "oneOf": [
+                  {
+                    "pattern": "^dec_[A-Za-z0-9_-]{8,96}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "orderId": {
+                "oneOf": [
+                  {
+                    "pattern": "^ord_[A-Za-z0-9_-]{8,96}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "ragAnswerId": {
+                "oneOf": [
+                  {
+                    "pattern": "^rag_[A-Za-z0-9_-]{8,96}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "ownerScope": {
+            "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "contractId",
+          "journalId",
+          "ownerScope",
+          "title",
+          "content",
+          "tags",
+          "links",
+          "version",
+          "createdAt",
+          "updatedAt",
+          "deletedAt"
+        ],
+        "title": "journal.v1",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "P1 Automation and Journal additive contract",
+    "version": "1.0.0"
+  },
+  "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
+  "openapi": "3.1.1",
+  "paths": {
+    "/api/v1/automation/arm": {
+      "post": {
+        "operationId": "armAutomation",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/automation/disarm": {
+      "post": {
+        "operationId": "disarmAutomation",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/automation/runs": {
+      "get": {
+        "operationId": "listAutomationRuns",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/automation/status": {
+      "get": {
+        "operationId": "getAutomationStatus",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/journals": {
+      "get": {
+        "operationId": "listJournals",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "createJournal",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/journals/{journalId}": {
+      "delete": {
+        "operationId": "deleteJournal",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "journalId",
+          "required": true,
+          "schema": {
+            "pattern": "^jnl_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "operationId": "updateJournal",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  }
+}

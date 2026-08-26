@@ -1,0 +1,22 @@
+{
+  "content": "신호와 위험 근거를 검토했다.",
+  "contractId": "journal.v1",
+  "createdAt": "2026-08-26T10:00:00+09:00",
+  "deletedAt": null,
+  "journalId": "jnl_12345678",
+  "links": {
+    "automationRunId": null,
+    "backtestRunId": null,
+    "decisionId": null,
+    "orderId": null,
+    "ragAnswerId": null
+  },
+  "ownerScope": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tags": [
+    "RiskEngine"
+  ],
+  "title": "원칙 검토",
+  "unexpected": true,
+  "updatedAt": "2026-08-26T10:00:00+09:00",
+  "version": 1
+}

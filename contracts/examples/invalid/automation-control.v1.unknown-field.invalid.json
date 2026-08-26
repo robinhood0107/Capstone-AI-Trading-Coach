@@ -1,0 +1,12 @@
+{
+  "brokerageMode": "KIS_MOCK",
+  "certificationStatus": "REQUIRED",
+  "contractId": "automation-control.v1",
+  "controlState": "DISARMED",
+  "killSwitchActive": false,
+  "principleId": "prc_12345678",
+  "projectionState": "DISARMED",
+  "strategyId": "strategy_12345678",
+  "unexpected": true,
+  "version": 1
+}

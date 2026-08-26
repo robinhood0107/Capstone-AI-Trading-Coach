@@ -1,0 +1,40 @@
+{
+  "contractId": "p1-full-app-release-contract.v3",
+  "gdeltCalls": 0,
+  "hardGates": [
+    "P1_CORE",
+    "PUBLIC_RAG_SEED",
+    "OWNER_RAG_BACKEND",
+    "BGE_OCR_CPU_INTEL",
+    "MARKET_DATA_DAILY",
+    "TEAM_B_REAL_ARTIFACT_V2",
+    "TEAM_A_REAL_UI_33",
+    "VERTEX_NEWS_VETO",
+    "JOURNAL",
+    "AUTOMATION_CLOSED_LOOP",
+    "LIGHTGBM_RESEARCH_DISCLOSURE",
+    "SECURITY_RELEASE",
+    "SUPPLY_CHAIN_RELEASE",
+    "OCI_REPRODUCIBILITY",
+    "COMPOSE_E2E",
+    "THREE_XKRX_SESSION_SOAK"
+  ],
+  "historicalContracts": [
+    {
+      "contractId": "p1-offline-demo-release-manifest.v1",
+      "status": "PRESERVED_HISTORICAL_REGRESSION"
+    },
+    {
+      "contractId": "p1-full-app-release-contract.v2",
+      "status": "PRESERVED_SUPERSEDED_FULL_APP_V2"
+    }
+  ],
+  "kisLiveOrderCalls": 0,
+  "lightgbm": "RESEARCH_ONLY_NO_SIGNAL_OR_ORDER_AUTHORITY",
+  "manifestSchema": "deploy/p1/full-app-release-manifest.v3.schema.json",
+  "openApiOperationCount": 56,
+  "releaseAuthority": "NONE_UNTIL_ALL_HARD_GATES_PASS",
+  "releaseVersion": "1.0.0",
+  "returnEngineArtifactSchema": "contracts/schemas/p1-return-engine-artifact-manifest.v2.schema.json",
+  "teamARequiredOperationCount": 33
+}

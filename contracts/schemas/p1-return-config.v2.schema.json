@@ -1,0 +1,72 @@
+{
+  "$id": "contracts/schemas/p1-return-config.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractId": {
+      "const": "p1-return-config.v2"
+    },
+    "fileName": {
+      "const": "config.json"
+    },
+    "semantic": {
+      "additionalProperties": false,
+      "properties": {
+        "deterministicAlgorithms": {
+          "const": true
+        },
+        "dropout": {
+          "const": 0.2
+        },
+        "hiddenSize": {
+          "const": 128
+        },
+        "layerCount": {
+          "const": 3
+        },
+        "learningRate": {
+          "const": 0.0005
+        },
+        "loss": {
+          "const": "SmoothL1"
+        },
+        "optimizer": {
+          "const": "Adam"
+        },
+        "outputSize": {
+          "const": 1
+        },
+        "seed": {
+          "const": 0
+        },
+        "threadCount": {
+          "const": 1
+        },
+        "windowSize": {
+          "const": 20
+        }
+      },
+      "required": [
+        "windowSize",
+        "hiddenSize",
+        "layerCount",
+        "dropout",
+        "outputSize",
+        "loss",
+        "optimizer",
+        "learningRate",
+        "seed",
+        "threadCount",
+        "deterministicAlgorithms"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "contractId",
+    "fileName",
+    "semantic"
+  ],
+  "title": "p1-return-config.v2",
+  "type": "object"
+}

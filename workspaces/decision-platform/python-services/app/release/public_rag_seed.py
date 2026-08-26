@@ -18,6 +18,9 @@ from psycopg.rows import dict_row
 FORMAT_VERSION = 1
 SOURCE_FLYWAY_SCHEMA_VERSION = "73"
 TARGET_FLYWAY_SCHEMA_VERSION = "87"
+# The sealed public Seed remains byte-bound to V87. Later additive migrations may
+# explicitly declare compatibility without rewriting that historical manifest.
+FORWARD_COMPATIBLE_TARGET_SCHEMA_VERSIONS = frozenset({"88"})
 EMBEDDING_DIMENSION = 1024
 EXPECTED_SOURCE_COUNT = 142
 EXPECTED_CHUNK_COUNT = 7_871
@@ -396,7 +399,11 @@ def import_public_seed(*, database_dsn: str, manifest_path: Path) -> str:
             with connection.transaction():
                 connection.execute("SET LOCAL statement_timeout = '10min'")
                 connection.execute("SELECT pg_advisory_xact_lock(70710931058731)")
-                _require_schema_version(connection, expected=TARGET_FLYWAY_SCHEMA_VERSION)
+                _require_schema_version(
+                    connection,
+                    expected=TARGET_FLYWAY_SCHEMA_VERSION,
+                    compatible=FORWARD_COMPATIBLE_TARGET_SCHEMA_VERSIONS,
+                )
                 _set_force_row_level_security(connection, enabled=False)
                 _verify_target_columns(connection, manifest)
                 if _is_matching_active_seed(connection, manifest):
@@ -814,7 +821,12 @@ def _pointer_identity(pointer: Mapping[str, Any]) -> dict[str, object]:
     }
 
 
-def _require_schema_version(connection: psycopg.Connection[Any], *, expected: str) -> None:
+def _require_schema_version(
+    connection: psycopg.Connection[Any],
+    *,
+    expected: str,
+    compatible: frozenset[str] = frozenset(),
+) -> None:
     row = connection.execute(
         """
         SELECT version
@@ -824,7 +836,7 @@ def _require_schema_version(connection: psycopg.Connection[Any], *, expected: st
         LIMIT 1
         """
     ).fetchone()
-    if row != (expected,):
+    if row != (expected,) and (not row or row[0] not in compatible):
         raise PublicRagSeedError("PUBLIC_RAG_SEED_SCHEMA_VERSION")
 
 

@@ -1,0 +1,51 @@
+{
+  "$id": "contracts/schemas/p1-return-equity-log.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractId": {
+      "const": "p1-return-equity-log.v2"
+    },
+    "fileName": {
+      "const": "equity_log.parquet"
+    },
+    "semantic": {
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "const": [
+            "scenario",
+            "sessionDate",
+            "equityKrw",
+            "drawdown"
+          ]
+        },
+        "finite": {
+          "const": true
+        },
+        "initialCapitalKrw": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "rowCount": {
+          "minimum": 3,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "columns",
+        "rowCount",
+        "initialCapitalKrw",
+        "finite"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "contractId",
+    "fileName",
+    "semantic"
+  ],
+  "title": "p1-return-equity-log.v2",
+  "type": "object"
+}

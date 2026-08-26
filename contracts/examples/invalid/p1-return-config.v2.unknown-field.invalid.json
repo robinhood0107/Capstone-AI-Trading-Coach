@@ -1,0 +1,18 @@
+{
+  "contractId": "p1-return-config.v2",
+  "fileName": "config.json",
+  "semantic": {
+    "deterministicAlgorithms": true,
+    "dropout": 0.2,
+    "hiddenSize": 128,
+    "layerCount": 3,
+    "learningRate": 0.0005,
+    "loss": "SmoothL1",
+    "optimizer": "Adam",
+    "outputSize": 1,
+    "seed": 0,
+    "threadCount": 1,
+    "windowSize": 20
+  },
+  "unexpected": true
+}

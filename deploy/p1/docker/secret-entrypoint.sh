@@ -146,7 +146,7 @@ if [ "$profile" = postgres ]; then
   exec "$@"
 fi
 
-if [ "$profile" = certification ]; then
+if [ "$profile" = certification ] || [ "$profile" = artifact-import ]; then
   [ "$(id -u)" = "${P1_OPERATOR_UID:?missing operator uid}" ] || {
     echo "p1 secret loading failed: invalid_operator_uid" >&2
     exit 1

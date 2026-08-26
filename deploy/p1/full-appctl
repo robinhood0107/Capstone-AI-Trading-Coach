@@ -48,9 +48,12 @@ is_regular() {
 
 full_preflight() {
   local missing=0
-  require_command docker
   require_command python3
-  docker compose version >/dev/null 2>&1 || die DOCKER_COMPOSE_UNAVAILABLE
+  local assets_present=1
+  if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+    printf 'CAPSTONE_FULL_BLOCKER=DOCKER_COMPOSE_UNAVAILABLE\n' >&2
+    missing=1
+  fi
   if ! is_regular "$SEED_MANIFEST"; then
     printf 'CAPSTONE_FULL_BLOCKER=PUBLIC_RAG_SEED_MANIFEST_MISSING\n' >&2
     missing=1
@@ -61,13 +64,21 @@ full_preflight() {
   if ! is_regular "$MODEL_ROOT/bge-m3/model-asset-manifest.v1.json"; then
     printf 'CAPSTONE_FULL_BLOCKER=BGE_M3_MODEL_ASSET_MISSING\n' >&2
     missing=1
+    assets_present=0
   fi
   if ! is_regular "$MODEL_ROOT/paddleocr-vl-1.6/model-asset-manifest.v1.json"; then
     printf 'CAPSTONE_FULL_BLOCKER=PADDLEOCR_VL_MODEL_ASSET_MISSING\n' >&2
     missing=1
+    assets_present=0
   fi
   if ! is_regular "$RETURN_MANIFEST"; then
     printf 'CAPSTONE_FULL_BLOCKER=TEAM_B_REAL_ARTIFACT_MISSING\n' >&2
+    missing=1
+    assets_present=0
+  fi
+  if ((assets_present)) && ! python3 "$REPO_ROOT/contracts/verify_p1_full_app_assets.py" \
+    --model-root "$MODEL_ROOT" --return-manifest "$RETURN_MANIFEST" --repository-root "$REPO_ROOT"; then
+    printf 'CAPSTONE_FULL_BLOCKER=MODEL_OR_TEAM_B_ASSET_INTEGRITY_FAILED\n' >&2
     missing=1
   fi
   if ! is_regular "$DASHBOARD_LOCK" || ! is_regular "$DASHBOARD_DOCKERFILE"; then
@@ -78,7 +89,7 @@ full_preflight() {
     return 1
   fi
   printf 'CAPSTONE_PUBLIC_RAG_SEED_STATIC=PASS\n'
-  printf 'CAPSTONE_FULL_PREFLIGHT=PASS\n'
+  printf 'CAPSTONE_FULL_PREFLIGHT=STATIC_ASSET_INTEGRITY_PASS\n'
 }
 
 degraded_doctor() {

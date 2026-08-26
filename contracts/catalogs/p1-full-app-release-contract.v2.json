@@ -43,6 +43,40 @@
     "retransmissionAllowed": false,
     "voyageQueryPhysicalCallCap": 1
   },
+  "returnEngineArtifactSchema": "contracts/schemas/p1-return-engine-artifact-manifest.v1.schema.json",
+  "requiredImageComponents": [
+    "gateway",
+    "experience-dashboard",
+    "spring-api",
+    "python-services",
+    "strong-llm",
+    "return-engine",
+    "searxng",
+    "postgres-pgvector",
+    "redis"
+  ],
+  "optionalImageComponents": [
+    "kafka"
+  ],
+  "modelAssets": {
+    "bge-m3": {
+      "fileCount": 10,
+      "inventorySha256": "246c70a8ad711fee0950aaaf3170ff7db7a4950c6e12f046116fa00af3b0260c",
+      "inventoryStatus": "MATERIALIZED",
+      "licenseSpdxId": "MIT",
+      "repository": "BAAI/bge-m3",
+      "revision": "5617a9f61b028005a4858fdac845db406aefb181",
+      "totalBytes": 2289781803
+    },
+    "paddleocr-vl-1.6": {
+      "inventoryStatus": "NOT_MATERIALIZED",
+      "licenseSpdxId": "Apache-2.0",
+      "qualityCandidate": "PADDLE_VL",
+      "qualityEvidenceSha256": "f43abfc2eaab0d6f958b8eac3369fc3f2f00c4d95569ae977e527bef3fc39f1a",
+      "repository": "PaddlePaddle/PaddleOCR-VL-1.6",
+      "revision": "66317acc4c9fc17bd154591ce650735cd2855f3e"
+    }
+  },
   "releaseAuthorityWorkflow": ".github/workflows/p1-full-app-release.yml",
   "releaseVersion": "1.0.0",
   "terminalReadyState": "READY_WITH_GAPS"

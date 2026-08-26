@@ -84,6 +84,15 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertFalse(
             [relative for relative in relatives if post_core_v2_workspace_path_is_forbidden(relative)]
         )
+        for relative in (
+            "workspaces/return-engine/artifacts/model.safetensors",
+            "workspaces/return-engine/raw/provider.jsonl",
+            "workspaces/return-engine/output/result.parquet",
+            "workspaces/experience-dashboard/cache/runtime.json",
+            "workspaces/experience-dashboard/dev/upstream-intake/source.tsx",
+            "workspaces/return-engine/src/untrusted.pkl",
+        ):
+            self.assertTrue(post_core_v2_workspace_path_is_forbidden(relative), relative)
 
     def test_legacy_v1_authority_files_remain_present(self) -> None:
         self.assertTrue((ROOT / "deploy/p1/release-manifest.schema.json").is_file())
@@ -107,6 +116,8 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             self.assertIn(command, windows)
         self.assertIn("full-appctl", linux)
         self.assertIn("FULL_INSTALL_BLOCKED_REQUIRED_ARTIFACTS", controller)
+        self.assertIn("verify_p1_full_app_assets.py", controller)
+        self.assertIn("STATIC_ASSET_INTEGRITY_PASS", controller)
         self.assertIn("CAPSTONE_RELEASE_AUTHORITY=NONE", controller)
         self.assertIn("selected_project_name", controller)
         self.assertIn("state_init_resume_inventory", (ROOT / "deploy/p1/p1ctl").read_text(encoding="utf-8"))

@@ -1,0 +1,497 @@
+name: capstone-p1-full-app
+
+x-app-security: &app-security
+  platform: linux/amd64
+  group_add: ["${P1_SECRET_GID}"]
+  mem_limit: 2g
+  cpus: 2.0
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 256
+  restart: on-failure:3
+  tmpfs:
+    - /tmp:size=128m,mode=1777
+
+services:
+  runtime-netns:
+    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    platform: linux/amd64
+    command: ["sleep", "2147483647"]
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    mem_limit: 64m
+    cpus: 0.25
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 5s
+      timeout: 2s
+      retries: 12
+    restart: on-failure:3
+    networks: [p1-internal]
+
+  api-edge:
+    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    platform: linux/amd64
+    entrypoint: ["python", "-m", "app.s8_demo.tcp_proxy"]
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.25
+    restart: on-failure:3
+    ports:
+      - "127.0.0.1:${P1_API_PORT:-18080}:8080"
+    depends_on:
+      spring-api: {condition: service_healthy}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          response=urllib.request.urlopen('http://127.0.0.1:8080/actuator/health', timeout=2);
+          assert response.status == 200
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    networks: [p1-internal, p1-edge]
+
+  postgres:
+    image: ${P1_POSTGRES_IMAGE:-capstone-postgres-pgvector:p1-local}
+    platform: linux/amd64
+    user: "70:70"
+    group_add: ["${P1_SECRET_GID}"]
+    entrypoint: ["/opt/p1/secret-entrypoint", "postgres", "docker-entrypoint.sh"]
+    command: ["postgres", "-c", "listen_addresses=*", "-c", "log_statement=none"]
+    environment:
+      POSTGRES_DB: capstone_p1
+      POSTGRES_USER: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    secrets: [postgres_env]
+    volumes:
+      - p1-postgres:/var/lib/postgresql/data
+      - ../../infra/init/01-extensions.sql:/docker-entrypoint-initdb.d/01-extensions.sql:ro
+      - ../../infra/init/02-application-roles.sh:/docker-entrypoint-initdb.d/02-application-roles.sh:ro
+      - ./docker/secret-entrypoint.sh:/opt/p1/secret-entrypoint:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.5
+    shm_size: 128m
+    tmpfs:
+      - /tmp:size=64m,mode=1777,uid=70,gid=70
+      - /var/run/postgresql:size=16m,mode=0770,uid=70,gid=70
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d capstone_p1"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: on-failure:3
+    networks: [p1-internal]
+
+  redis:
+    image: redis:7.2-alpine@sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8
+    platform: linux/amd64
+    user: "999:1000"
+    group_add: ["${P1_SECRET_GID}"]
+    entrypoint: ["/opt/p1/secret-entrypoint", "redis"]
+    secrets: [redis_env]
+    volumes:
+      - p1-redis:/data
+      - ./docker/secret-entrypoint.sh:/opt/p1/secret-entrypoint:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.5
+    tmpfs:
+      - /tmp:size=16m,mode=1777,uid=999,gid=999
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping 2>&1 | grep -Eq 'PONG|NOAUTH'"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: on-failure:3
+    networks: [p1-internal]
+
+  role-bootstrap:
+    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "role-bootstrap"]
+    command:
+      - java
+      - -Dloader.main=com.capstone.decision.infrastructure.security.P1DatabaseRoleBootstrap
+      - -cp
+      - /app/app.jar
+      - org.springframework.boot.loader.launch.PropertiesLauncher
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: capstone_p1
+      P1_OFFLINE_DEMO: "true"
+    secrets: [role_bootstrap_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    <<: *app-security
+    restart: "no"
+    networks: [p1-internal]
+
+  migrate:
+    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "migration"]
+    command:
+      - java
+      - -Dloader.main=com.capstone.decision.infrastructure.security.P1FlywayMigrate
+      - -cp
+      - /app/app.jar
+      - org.springframework.boot.loader.launch.PropertiesLauncher
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: capstone_p1
+      P1_OFFLINE_DEMO: "true"
+    secrets: [migration_env]
+    depends_on:
+      role-bootstrap: {condition: service_completed_successfully}
+    <<: *app-security
+    restart: "no"
+    networks: [p1-internal]
+
+  seed-import:
+    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "seed-import"]
+    command:
+      - python
+      - -m
+      - app.release.public_rag_seed_cli
+      - import
+      - --manifest
+      - /opt/capstone/public-rag-seed/public-rag-seed.v1.manifest.json
+    user: "65532:65532"
+    group_add: ["${P1_SECRET_GID}"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 1g
+    cpus: 1.0
+    restart: "no"
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    secrets: [seed_import_env]
+    volumes:
+      - ./seed/public-rag:/opt/capstone/public-rag-seed:ro
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    networks: [p1-internal]
+
+  identity-bootstrap:
+    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "bootstrap"]
+    command:
+      - java
+      - -Dloader.main=com.capstone.decision.infrastructure.security.DemoIdentityBootstrap
+      - -cp
+      - /app/app.jar
+      - org.springframework.boot.loader.launch.PropertiesLauncher
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: capstone_p1
+      P1_OFFLINE_DEMO: "true"
+    secrets: [bootstrap_env]
+    depends_on:
+      seed-import: {condition: service_completed_successfully}
+    <<: *app-security
+    restart: "no"
+    networks: [p1-internal]
+
+  actor-capability-authority:
+    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "authority"]
+    command:
+      - java
+      - -Dloader.main=com.capstone.decision.infrastructure.security.ActorCapabilityAuthorityMain
+      - -cp
+      - /app/app.jar
+      - org.springframework.boot.loader.launch.PropertiesLauncher
+    environment:
+      ACTOR_CAPABILITY_AUTHORITY_PORT: "18081"
+      ACTOR_IDENTITY_JDBC_URL: jdbc:postgresql://postgres:5432/capstone_p1
+    secrets: [actor_capability_authority_env]
+    depends_on:
+      identity-bootstrap: {condition: service_completed_successfully}
+      runtime-netns: {condition: service_healthy}
+    network_mode: service:runtime-netns
+    <<: *app-security
+    restart: on-failure:3
+    healthcheck:
+      test:
+        - CMD
+        - java
+        - -Dloader.main=com.capstone.decision.infrastructure.security.P1TcpHealthCheck
+        - -cp
+        - /app/app.jar
+        - org.springframework.boot.loader.launch.PropertiesLauncher
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  python-worker:
+    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    environment:
+      ASYNC_WORKER_GRPC_BIND_ADDRESS: 127.0.0.1:50056
+      PROVIDER_LIVE_CALLS_ENABLED: "false"
+      KIS_OFFLINE: "1"
+      KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "false"
+    secrets: [python_env]
+    depends_on:
+      identity-bootstrap: {condition: service_completed_successfully}
+      runtime-netns: {condition: service_healthy}
+    network_mode: service:runtime-netns
+    <<: *app-security
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import grpc;
+          from grpc_health.v1 import health_pb2, health_pb2_grpc;
+          from app.generated import async_worker_pb2;
+          channel=grpc.insecure_channel('127.0.0.1:50056');
+          service=async_worker_pb2.DESCRIPTOR.services_by_name['AsyncWorkerService'].full_name;
+          response=health_pb2_grpc.HealthStub(channel).Check(health_pb2.HealthCheckRequest(service=service), timeout=2);
+          assert response.status == health_pb2.HealthCheckResponse.SERVING
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  synthetic-async-smoke:
+    profiles: [smoke]
+    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    pull_policy: missing
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "demo"]
+    command: ["python", "-m", "app.s8_demo.container_async_smoke"]
+    environment:
+      P1_SMOKE_MODE: DB
+      PROVIDER_LIVE_CALLS_ENABLED: "false"
+      KIS_OFFLINE: "1"
+    secrets: [demo_env]
+    network_mode: service:runtime-netns
+    <<: *app-security
+    restart: "no"
+
+  spring-api:
+    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      SERVER_PORT: "8080"
+      SPRING_FLYWAY_ENABLED: "false"
+      ACTOR_CAPABILITY_TRANSPORT: http
+      ACTOR_CAPABILITY_AUTHORITY_URL: http://127.0.0.1:18081/internal/actor-capabilities/issue
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: capstone_p1
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      ASYNC_ADAPTER: db
+      ASYNC_POLLING_ENABLED: "true"
+      ASYNC_WORKER_ENABLED: "true"
+      ASYNC_WORKER_GRPC_TARGET: 127.0.0.1:50056
+      RAG_ANSWERER: FIXTURE_ONLY
+      RAG_GRPC_ENABLED: "false"
+      RAG_V2_GRPC_ENABLED: "false"
+      RAG_V2_VERTEX_ENABLED: "false"
+      RAG_WEB_ENABLED: "false"
+      S4_9_STRONG_LLM_ENABLED: "false"
+      S4_9_MCP_ENABLED: "false"
+      BROKERAGE_GRPC_ENABLED: "false"
+      FINANCIAL_ENGINEERING_GRPC_ENABLED: "false"
+      KIS_MODE: mock
+      KIS_OFFLINE: "1"
+      KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "false"
+      PROVIDER_LIVE_CALLS_ENABLED: "false"
+    secrets: [spring_env, rag_history_kek]
+    depends_on:
+      identity-bootstrap: {condition: service_completed_successfully}
+      actor-capability-authority: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      python-worker: {condition: service_healthy}
+      bge-m3: {condition: service_healthy}
+      paddleocr-vl: {condition: service_healthy}
+    network_mode: service:runtime-netns
+    <<: *app-security
+    healthcheck:
+      test:
+        - CMD
+        - java
+        - -Dloader.main=com.capstone.decision.infrastructure.security.P1HttpHealthCheck
+        - -cp
+        - /app/app.jar
+        - org.springframework.boot.loader.launch.PropertiesLauncher
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+
+  bge-m3:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9@sha256:c26a226262ad4ff3330fb30b76653c1bb65da2fcf413b92284545a010e0a8a48
+    platform: linux/amd64
+    pull_policy: missing
+    command:
+      - --model-id
+      - BAAI/bge-m3
+      - --revision
+      - 5617a9f61b028005a4858fdac845db406aefb181
+      - --port
+      - "80"
+      - --max-client-batch-size
+      - "64"
+      - --max-batch-tokens
+      - "8192"
+    volumes:
+      - p1-bge-model-cache:/data
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 10g
+    cpus: 4.0
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    restart: on-failure:3
+    networks: [p1-internal, p1-model-fetch]
+
+  paddleocr-vl-model-fetch:
+    image: ghcr.io/ggml-org/llama.cpp:server-b10524@sha256:d88f41f7675f8b30d7213a917f72a48f05d0549af4d1be7e712ebb130a235415
+    platform: linux/amd64
+    pull_policy: missing
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        fetch() {
+          url=$$1
+          destination=$$2
+          expected=$$3
+          if [ -f "$$destination" ]; then
+            printf '%s  %s\n' "$$expected" "$$destination" | sha256sum -c -
+            return
+          fi
+          partial=$${destination}.part
+          curl --fail --location --retry 0 --continue-at - --output "$$partial" "$$url"
+          printf '%s  %s\n' "$$expected" "$$partial" | sha256sum -c -
+          mv "$$partial" "$$destination"
+        }
+        fetch \
+          'https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.6-GGUF/resolve/511b09642bb324401f15f97cc23bc67e8f0a291d/PaddleOCR-VL-1.6-GGUF.gguf?download=true' \
+          /models/PaddleOCR-VL-1.6-GGUF.gguf \
+          f3ae46ec885050acf4b3d31944431e1fd90d50664fb09126af4a3c050ba14ee8
+        fetch \
+          'https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.6-GGUF/resolve/511b09642bb324401f15f97cc23bc67e8f0a291d/PaddleOCR-VL-1.6-GGUF-mmproj.gguf?download=true' \
+          /models/PaddleOCR-VL-1.6-GGUF-mmproj.gguf \
+          204d757d7610d9b3faab10d506d69e5b244e32bf765e2bab2d0167e65e0a058a
+    volumes:
+      - p1-paddleocr-model-cache:/models
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    restart: "no"
+    networks: [p1-model-fetch]
+
+  paddleocr-vl:
+    image: ghcr.io/ggml-org/llama.cpp:server-b10524@sha256:d88f41f7675f8b30d7213a917f72a48f05d0549af4d1be7e712ebb130a235415
+    platform: linux/amd64
+    pull_policy: missing
+    environment:
+      LLAMA_CACHE: /models
+    command:
+      - --model
+      - /models/PaddleOCR-VL-1.6-GGUF.gguf
+      - --mmproj
+      - /models/PaddleOCR-VL-1.6-GGUF-mmproj.gguf
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --ctx-size
+      - "8192"
+      - --parallel
+      - "1"
+      - --metrics
+      - --temp
+      - "0"
+    depends_on:
+      paddleocr-vl-model-fetch: {condition: service_completed_successfully}
+    volumes:
+      - p1-paddleocr-model-cache:/models
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 6g
+    cpus: 4.0
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    restart: on-failure:3
+    networks: [p1-internal]
+
+secrets:
+  postgres_env: {file: "${P1_SECRETS_DIR}/postgres.env"}
+  redis_env: {file: "${P1_SECRETS_DIR}/redis.env"}
+  role_bootstrap_env: {file: "${P1_SECRETS_DIR}/role-bootstrap.env"}
+  migration_env: {file: "${P1_SECRETS_DIR}/migration.env"}
+  bootstrap_env: {file: "${P1_SECRETS_DIR}/bootstrap.env"}
+  actor_capability_authority_env: {file: "${P1_SECRETS_DIR}/actor-capability-authority.env"}
+  spring_env: {file: "${P1_SECRETS_DIR}/spring.env"}
+  python_env: {file: "${P1_SECRETS_DIR}/python.env"}
+  kafka_publisher_env: {file: "${P1_SECRETS_DIR}/kafka-publisher.env"}
+  poison_recorder_env: {file: "${P1_SECRETS_DIR}/poison-recorder.env"}
+  kafka_admin_env: {file: "${P1_SECRETS_DIR}/kafka-admin.env"}
+  kafka_broker_jaas: {file: "${P1_SECRETS_DIR}/kafka-broker-jaas.conf"}
+  demo_env: {file: "${P1_SECRETS_DIR}/demo.env"}
+  rag_history_kek: {file: "${P1_SECRETS_DIR}/rag-history-kek-v1.key"}
+  seed_import_env: {file: "${P1_SECRETS_DIR}/seed-import.env"}
+
+volumes:
+  p1-postgres: {}
+  p1-redis: {}
+  p1-bge-model-cache: {}
+  p1-paddleocr-model-cache: {}
+
+networks:
+  p1-internal:
+    internal: true
+  p1-edge: {}
+  # No host port is published. This bridge only fills exact-revision model caches.
+  p1-model-fetch: {}

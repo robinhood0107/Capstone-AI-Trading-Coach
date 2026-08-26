@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -112,8 +113,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         linux = (ROOT / "capstone").read_text(encoding="utf-8")
         controller = (ROOT / "deploy/p1/full-appctl").read_text(encoding="utf-8")
         windows = (ROOT / "capstone.ps1").read_text(encoding="utf-8")
-        overlay = (ROOT / "deploy/p1/compose.full.seed.yml").read_text(encoding="utf-8")
-        model_overlay = (ROOT / "deploy/p1/compose.full.models.yml").read_text(encoding="utf-8")
+        compose = (ROOT / "deploy/p1/compose.yml").read_text(encoding="utf-8")
         for command in ("install", "start", "stop", "status", "doctor", "backup", "restore", "verify"):
             self.assertIn(command, controller)
             self.assertIn(command, windows)
@@ -126,16 +126,45 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertIn("selected_project_name", controller)
         self.assertIn("state_init_resume_inventory", (ROOT / "deploy/p1/p1ctl").read_text(encoding="utf-8"))
         self.assertIn("BLOCKED_G7_ATOMIC_RESTORE_NOT_IMPLEMENTED", controller)
-        self.assertIn("migrate: {condition: service_completed_successfully}", overlay)
-        self.assertIn("seed-import: {condition: service_completed_successfully}", overlay)
-        self.assertNotIn('PROVIDER_LIVE_CALLS_ENABLED: "true"', overlay)
-        self.assertIn("BAAI/bge-m3", model_overlay)
-        self.assertIn("PaddlePaddle/PaddleOCR-VL-1.6-GGUF", model_overlay)
-        self.assertIn("paddleocr-vl-model-fetch", model_overlay)
-        self.assertIn("sha256sum -c -", model_overlay)
-        self.assertIn("p1-model-fetch", model_overlay)
-        self.assertNotIn("lm-kit", model_overlay)
-        self.assertNotIn("ports:", model_overlay)
+        self.assertIn('FULL_COMPOSE=$SCRIPT_DIR/compose.yml', controller)
+        self.assertIn("DOCKER_BIN=/usr/bin/docker", controller)
+        self.assertNotIn("FULL_SEED_COMPOSE", controller)
+        self.assertNotIn("FULL_MODEL_COMPOSE", controller)
+        self.assertIn("migrate: {condition: service_completed_successfully}", compose)
+        self.assertIn("seed-import: {condition: service_completed_successfully}", compose)
+        self.assertNotIn('PROVIDER_LIVE_CALLS_ENABLED: "true"', compose)
+        self.assertIn("BAAI/bge-m3", compose)
+        self.assertIn("PaddlePaddle/PaddleOCR-VL-1.6-GGUF", compose)
+        self.assertIn("paddleocr-vl-model-fetch", compose)
+        self.assertIn("sha256sum -c -", compose)
+        self.assertIn("p1-model-fetch", compose)
+        self.assertNotIn("lm-kit", compose)
+
+    def test_full_app_compose_has_health_gated_startup_order(self) -> None:
+        compose = (ROOT / "deploy/p1/compose.yml").read_text(encoding="utf-8")
+        for service in (
+            "runtime-netns",
+            "api-edge",
+            "postgres",
+            "redis",
+            "actor-capability-authority",
+            "python-worker",
+            "spring-api",
+            "bge-m3",
+            "paddleocr-vl",
+        ):
+            match = re.search(
+                rf"(?ms)^  {re.escape(service)}:\n(.*?)(?=^  [A-Za-z0-9-]+:\n|\Z)",
+                compose,
+            )
+            self.assertIsNotNone(match, service)
+            block = match.group(1)
+            self.assertIn("healthcheck:", block, service)
+        self.assertIn("spring-api: {condition: service_healthy}", compose)
+        self.assertIn("actor-capability-authority: {condition: service_healthy}", compose)
+        self.assertIn("python-worker: {condition: service_healthy}", compose)
+        self.assertIn("bge-m3: {condition: service_healthy}", compose)
+        self.assertIn("paddleocr-vl: {condition: service_healthy}", compose)
 
 
 if __name__ == "__main__":

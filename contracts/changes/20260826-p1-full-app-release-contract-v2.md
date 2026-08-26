@@ -30,6 +30,12 @@ outbound-only bridge for the exact-revision first download; that bridge publishe
 1024-dimensional BGE output, OCR quality, and CPU/Intel performance remain hard-gate evidence and are not
 implied by static Compose validation.
 
+The current full-app runtime is composed only from `deploy/p1/compose.yml`. It health-gates PostgreSQL, Redis,
+the shared application namespace, actor authority, async worker, Spring API edge, BGE-M3, and PaddleOCR-VL;
+one-shot role bootstrap, migration, Seed import, identity bootstrap, and model fetch use successful-completion
+dependencies. The fragmented Core-only Compose files remain historical v1 release inputs and are not layered
+into the current full-app runtime.
+
 ## Release rule
 
 `FINAL` is schema-valid only when every hard gate is `PASS`. Dashboard UI, CUDA hardware verification, and

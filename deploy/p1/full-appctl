@@ -12,6 +12,7 @@ COMPOSE_FILE=$SCRIPT_DIR/compose.yml
 PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1}
 P1CTL=$SCRIPT_DIR/p1ctl
 RELEASE_GUARD=$SCRIPT_DIR/release_guard.py
+MOCK_CERTIFICATION_GUARD=$SCRIPT_DIR/mock_certification_guard.py
 DOCKER_BIN=/usr/bin/docker
 [[ -x $DOCKER_BIN ]] || DOCKER_BIN=$(command -v docker 2>/dev/null || true)
 
@@ -338,17 +339,10 @@ PY
 
 mock_certified() {
   mock_doctor >/dev/null || return 1
+  local request=$STATE_DIR/mock/certification-request.json
   local receipt=$STATE_DIR/mock/certification.json
-  [[ -f $receipt && ! -L $receipt && $(stat -c '%a' "$receipt") == 600 ]] || return 1
-  if ! python3 - "$receipt" 2>/dev/null <<'PY'
-import json, pathlib, re, sys
-value=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-assert set(value) == {"commitSha","inputSha256","physicalCalls","status","timestamp"}
-assert value["status"] == "PASS"
-assert re.fullmatch(r"[0-9a-f]{40}", value["commitSha"])
-assert value["physicalCalls"] in ({"brokerage":7,"quote":1,"token":0},{"brokerage":7,"quote":1,"token":1})
-PY
-  then
+  if ! python3 "$MOCK_CERTIFICATION_GUARD" \
+    --repository-root "$REPO_ROOT" --request "$request" --receipt "$receipt"; then
     return 1
   fi
   printf 'KIS_MOCK_DOCTOR=PASS\nKIS_LIVE_BROKERAGE=DISABLED\n'

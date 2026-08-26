@@ -45,6 +45,7 @@ WORKDIR /app
 COPY --from=spring-build --chown=65532:65532 /source/workspaces/decision-platform/spring-api/build/libs/decision-platform-api-0.0.1-SNAPSHOT.jar /app/app.jar
 COPY --from=python-build --chown=65532:65532 /opt/venv /opt/venv
 COPY --from=python-build --chown=65532:65532 /source/workspaces/decision-platform/python-services/app /app/app
+COPY --chown=65532:65532 contracts /app/contracts
 COPY --chown=65532:65532 deploy/p1/docker/decision-platform-supervisor.py /app/decision-platform-supervisor.py
 COPY --chown=65532:65532 deploy/p1/docker/decision-platform-health.py /app/decision-platform-health.py
 COPY --chown=65532:65532 deploy/p1/docker/secret-entrypoint.sh /usr/local/bin/p1-secret-entrypoint

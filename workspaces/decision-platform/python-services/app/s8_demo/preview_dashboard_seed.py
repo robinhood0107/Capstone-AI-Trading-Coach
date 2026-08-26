@@ -11,9 +11,7 @@ import psycopg
 from app.s8_demo.synthetic_bundle import build_synthetic_bundle
 
 _EXPECTED_ARTIFACT_ID = "artifact_s8_0ed32aac66088e495ae853bb"
-_EXPECTED_CONTENT_HASH = (
-    "sha256:0ed32aac66088e495ae853bbac98a35b2c4a22420138bdd58dcdbbb0d9d8ad02"
-)
+_EXPECTED_CONTENT_HASH = "sha256:0ed32aac66088e495ae853bbac98a35b2c4a22420138bdd58dcdbbb0d9d8ad02"
 _REQUEST_RUN_ID = "8f6ebc67733ab5b8f7c8dd2ce41ec264"
 
 
@@ -21,16 +19,16 @@ def seed_preview(*, database_dsn: str, partition_secret: bytes, config_path: Pat
     if len(partition_secret) < 32:
         raise ValueError("preview_partition_secret_too_short")
     bundle = build_synthetic_bundle(config_path)
-    if (
-        bundle.artifact_id != _EXPECTED_ARTIFACT_ID
-        or bundle.content_hash != _EXPECTED_CONTENT_HASH
-    ):
+    if bundle.artifact_id != _EXPECTED_ARTIFACT_ID or bundle.content_hash != _EXPECTED_CONTENT_HASH:
         raise ValueError("preview_bundle_contract_drift")
-    partition_key = "hmac-sha256:" + hmac.new(
-        partition_secret,
-        b"s7:ARTIFACT_INGEST:usr_demo_user",
-        hashlib.sha256,
-    ).hexdigest()
+    partition_key = (
+        "hmac-sha256:"
+        + hmac.new(
+            partition_secret,
+            b"s7:ARTIFACT_INGEST:usr_demo_user",
+            hashlib.sha256,
+        ).hexdigest()
+    )
     with psycopg.connect(database_dsn, autocommit=False, connect_timeout=3) as connection:
         with connection.transaction():
             with connection.cursor() as cursor:

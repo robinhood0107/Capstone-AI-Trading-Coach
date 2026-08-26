@@ -181,7 +181,9 @@ def certify(
     quote_counts = {"marketData": 0, "tokenP": 0}
     brokerage_counts = {"brokerage": 0, "tokenP": 0}
     try:
-        lower_limit, quote_counts = _read_lower_limit(cast(str, request["symbol"]), approval.expires_at)
+        lower_limit, quote_counts = _read_lower_limit(
+            cast(str, request["symbol"]), approval.expires_at
+        )
         packet = _runtime_packet(request, approval, account_id, lower_limit)
         brokerage_counts = _run_brokerage(packet, approval.expires_at)
         physical_calls = _combined_counts(quote_counts, brokerage_counts)
@@ -283,7 +285,10 @@ def _runtime_packet(
     lower_limit: int,
 ) -> KISMockApprovalPacketV3:
     now = datetime.now(UTC)
-    checks = [{"name": name, "conclusion": "SUCCESS"} for name in cast(list[str], request["requiredChecks"])]
+    checks = [
+        {"name": name, "conclusion": "SUCCESS"}
+        for name in cast(list[str], request["requiredChecks"])
+    ]
     digest = cast(str, request["securityEvidenceDigest"])
     document: dict[str, object] = {
         "schemaVersion": 3,

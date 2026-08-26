@@ -360,8 +360,7 @@ def export_public_seed(
                 _require_schema_version(connection, expected=SOURCE_FLYWAY_SCHEMA_VERSION)
                 pointer = _read_active_pointer(connection)
                 columns = {
-                    spec.name: _non_generated_columns(connection, spec.name)
-                    for spec in TABLE_SPECS
+                    spec.name: _non_generated_columns(connection, spec.name) for spec in TABLE_SPECS
                 }
                 manifest = _write_archive(
                     connection=connection,
@@ -458,9 +457,11 @@ def _write_archive(
             generated = _generated_columns(connection, spec.name)
             generated_expression = ""
             if generated:
-                generated_expression = " - ARRAY[" + ",".join(
-                    "'" + value.replace("'", "''") + "'" for value in generated
-                ) + "]::text[]"
+                generated_expression = (
+                    " - ARRAY["
+                    + ",".join("'" + value.replace("'", "''") + "'" for value in generated)
+                    + "]::text[]"
+                )
             statement = (
                 "SELECT jsonb_build_object("
                 "'recordType', 'row', 'table', %s::text, "
@@ -560,10 +561,9 @@ def _restore_archive(
             pass
     finally:
         buffered.close()
-    if (
-        part_reader.archive_size != manifest.get("archiveSizeBytes")
-        or part_reader.archive_sha256 != manifest.get("archiveSha256")
-    ):
+    if part_reader.archive_size != manifest.get(
+        "archiveSizeBytes"
+    ) or part_reader.archive_sha256 != manifest.get("archiveSha256"):
         raise PublicRagSeedError("PUBLIC_RAG_SEED_CONSUMED_ARCHIVE_HASH")
     for spec in TABLE_SPECS:
         _flush_batch(connection, spec.name, batches[spec.name], manifest)
@@ -588,7 +588,9 @@ def _flush_batch(
     if not isinstance(columns_by_table, Mapping):
         raise PublicRagSeedError("PUBLIC_RAG_SEED_COLUMNS")
     raw_columns = columns_by_table.get(table_name)
-    if not isinstance(raw_columns, list) or not all(isinstance(value, str) for value in raw_columns):
+    if not isinstance(raw_columns, list) or not all(
+        isinstance(value, str) for value in raw_columns
+    ):
         raise PublicRagSeedError("PUBLIC_RAG_SEED_COLUMNS")
     columns = tuple(raw_columns)
     payload = json.dumps(
@@ -721,9 +723,7 @@ def _require_empty_target(connection: psycopg.Connection[Any]) -> None:
                     """
                 )
             elif row != (1, 1):
-                raise PublicRagSeedError(
-                    "PUBLIC_RAG_SEED_TARGET_NOT_EMPTY_" + spec.name
-                )
+                raise PublicRagSeedError("PUBLIC_RAG_SEED_TARGET_NOT_EMPTY_" + spec.name)
             continue
         row = connection.execute(
             sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier("public", spec.name))
@@ -732,9 +732,7 @@ def _require_empty_target(connection: psycopg.Connection[Any]) -> None:
             raise PublicRagSeedError("PUBLIC_RAG_SEED_TARGET_NOT_EMPTY_" + spec.name)
 
 
-def _set_force_row_level_security(
-    connection: psycopg.Connection[Any], *, enabled: bool
-) -> None:
+def _set_force_row_level_security(connection: psycopg.Connection[Any], *, enabled: bool) -> None:
     """install transaction 안에서만 owner가 RLS를 우회하고 commit 전에 FORCE를 복구한다."""
 
     mode = sql.SQL("FORCE") if enabled else sql.SQL("NO FORCE")
@@ -816,9 +814,7 @@ def _pointer_identity(pointer: Mapping[str, Any]) -> dict[str, object]:
     }
 
 
-def _require_schema_version(
-    connection: psycopg.Connection[Any], *, expected: str
-) -> None:
+def _require_schema_version(connection: psycopg.Connection[Any], *, expected: str) -> None:
     row = connection.execute(
         """
         SELECT version
@@ -832,9 +828,7 @@ def _require_schema_version(
         raise PublicRagSeedError("PUBLIC_RAG_SEED_SCHEMA_VERSION")
 
 
-def _non_generated_columns(
-    connection: psycopg.Connection[Any], table_name: str
-) -> tuple[str, ...]:
+def _non_generated_columns(connection: psycopg.Connection[Any], table_name: str) -> tuple[str, ...]:
     rows = connection.execute(
         """
         SELECT attribute.attname
@@ -853,9 +847,7 @@ def _non_generated_columns(
     return columns
 
 
-def _generated_columns(
-    connection: psycopg.Connection[Any], table_name: str
-) -> tuple[str, ...]:
+def _generated_columns(connection: psycopg.Connection[Any], table_name: str) -> tuple[str, ...]:
     rows = connection.execute(
         """
         SELECT attribute.attname
@@ -920,9 +912,7 @@ def _load_manifest(path: Path) -> Mapping[str, Any]:
     return payload
 
 
-def _verified_part_paths(
-    *, manifest_path: Path, manifest: Mapping[str, Any]
-) -> tuple[Path, ...]:
+def _verified_part_paths(*, manifest_path: Path, manifest: Mapping[str, Any]) -> tuple[Path, ...]:
     raw_parts = manifest.get("parts")
     if not isinstance(raw_parts, list) or not raw_parts:
         raise PublicRagSeedError("PUBLIC_RAG_SEED_PARTS")
@@ -958,9 +948,8 @@ def _verified_part_paths(
             raise PublicRagSeedError("PUBLIC_RAG_SEED_PART_HASH")
         archive_size += observed_size
         paths.append(path)
-    if (
-        archive_size != manifest.get("archiveSizeBytes")
-        or archive_hash.hexdigest() != manifest.get("archiveSha256")
+    if archive_size != manifest.get("archiveSizeBytes") or archive_hash.hexdigest() != manifest.get(
+        "archiveSha256"
     ):
         raise PublicRagSeedError("PUBLIC_RAG_SEED_ARCHIVE_HASH")
     return tuple(paths)
@@ -1002,8 +991,9 @@ def _write_json_line(
     content_hash: Any | None,
 ) -> None:
     encoded = (
-        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        .encode("utf-8")
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
         + b"\n"
     )
     archive.write(encoded)
@@ -1013,8 +1003,7 @@ def _write_json_line(
 
 def _write_manifest(path: Path, manifest: Mapping[str, object]) -> None:
     encoded = (
-        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
-        + b"\n"
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8") + b"\n"
     )
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
     try:
@@ -1042,9 +1031,7 @@ def _remove_generated_files(path: Path) -> None:
     if not path.exists() or path.is_symlink():
         return
     for child in path.iterdir():
-        if child.is_file() and (
-            child.name == MANIFEST_NAME or child.name.startswith(PART_PREFIX)
-        ):
+        if child.is_file() and (child.name == MANIFEST_NAME or child.name.startswith(PART_PREFIX)):
             child.unlink()
 
 

@@ -24,6 +24,8 @@ FULL_APP_DOCUMENTS = (
     "docs/decision-platform/P1_1_0_0_FULL_APP_V2_권위_및_게이트.md",
     "docs/decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md",
     "docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md",
+    "docs/decision-platform/P1_OWNER_선행_완료_체크리스트.md",
+    "docs/decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md",
     "docs/decision-platform/P1_운영_후속_경계.md",
     "docs/decision-platform/P1_최종_테스트_증거_판정표.md",
     "workspaces/return-engine/README.md",

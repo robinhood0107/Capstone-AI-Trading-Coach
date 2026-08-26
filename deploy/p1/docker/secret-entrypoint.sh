@@ -6,7 +6,8 @@ shift
 
 case "$profile" in
   spring) secret_files=/run/secrets/spring_env ;;
-  decision-platform|certification) secret_files="/run/secrets/spring_env /run/secrets/python_env /run/secrets/kis_mock_env" ;;
+  decision-platform) secret_files="/run/secrets/spring_env /run/secrets/python_env /run/secrets/kis_mock_env /run/secrets/return_inference_env" ;;
+  certification) secret_files="/run/secrets/spring_env /run/secrets/python_env /run/secrets/kis_mock_env" ;;
   authority) secret_files=/run/secrets/actor_capability_authority_env ;;
   role-bootstrap) secret_files=/run/secrets/role_bootstrap_env ;;
   migration) secret_files=/run/secrets/migration_env ;;
@@ -43,6 +44,7 @@ allowed_key() {
     role-bootstrap:POSTGRES_ADMIN_USER|role-bootstrap:POSTGRES_PASSWORD|role-bootstrap:POSTGRES_AUTH_PASSWORD|role-bootstrap:POSTGRES_OUTBOX_PUBLISHER_PASSWORD|role-bootstrap:POSTGRES_POISON_RECORDER_PASSWORD) return 0 ;;
     spring:POSTGRES_APP_PASSWORD|spring:POSTGRES_WORKER_PASSWORD|spring:POSTGRES_AUTH_PASSWORD|spring:ACTOR_CAPABILITY_SHARED_SECRET|spring:ACTOR_CAPABILITY_PUBLIC_KEY|spring:REDIS_PASSWORD|spring:JWT_SECRET|spring:JWT_ISSUER|spring:JWT_AUDIENCE|spring:LOGIN_SCOPE_HMAC_KEY|spring:PRINCIPLE_CURSOR_HMAC_KEY|spring:DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY|spring:DECISION_GRPC_SHARED_SECRET|spring:BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY|spring:RAG_IDEMPOTENCY_SCOPE_HMAC_KEY|spring:RAG_REQUEST_FINGERPRINT_HMAC_KEY|spring:RAG_PROVIDER_USAGE_HMAC_KEY|spring:RAG_RATE_LIMIT_HMAC_KEY|spring:RAG_HISTORY_CURSOR_HMAC_KEY|spring:DEMO_CREDENTIAL_SEPARATION_KEY|spring:DEMO_USER_CREDENTIAL_BUNDLE|spring:DEMO_ADMIN_CREDENTIAL_BUNDLE|spring:ASYNC_CURSOR_HMAC_KEY|spring:ASYNC_PARTITION_HMAC_KEY|spring:ASYNC_WORKER_GRPC_SHARED_SECRET) return 0 ;;
     decision-platform:POSTGRES_APP_PASSWORD|decision-platform:POSTGRES_WORKER_PASSWORD|decision-platform:POSTGRES_AUTH_PASSWORD|decision-platform:ACTOR_CAPABILITY_SHARED_SECRET|decision-platform:ACTOR_CAPABILITY_PUBLIC_KEY|decision-platform:ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD|decision-platform:REDIS_PASSWORD|decision-platform:JWT_SECRET|decision-platform:JWT_ISSUER|decision-platform:JWT_AUDIENCE|decision-platform:LOGIN_SCOPE_HMAC_KEY|decision-platform:PRINCIPLE_CURSOR_HMAC_KEY|decision-platform:DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY|decision-platform:DECISION_GRPC_SHARED_SECRET|decision-platform:BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY|decision-platform:BROKERAGE_GRPC_SHARED_SECRET|decision-platform:RAG_IDEMPOTENCY_SCOPE_HMAC_KEY|decision-platform:RAG_REQUEST_FINGERPRINT_HMAC_KEY|decision-platform:RAG_PROVIDER_USAGE_HMAC_KEY|decision-platform:RAG_RATE_LIMIT_HMAC_KEY|decision-platform:RAG_HISTORY_CURSOR_HMAC_KEY|decision-platform:DEMO_CREDENTIAL_SEPARATION_KEY|decision-platform:DEMO_USER_CREDENTIAL_BUNDLE|decision-platform:DEMO_ADMIN_CREDENTIAL_BUNDLE|decision-platform:ASYNC_CURSOR_HMAC_KEY|decision-platform:ASYNC_PARTITION_HMAC_KEY|decision-platform:ASYNC_WORKER_GRPC_SHARED_SECRET|decision-platform:ASYNC_WORKER_DATABASE_DSN|decision-platform:KAFKA_SASL_USERNAME|decision-platform:KAFKA_SASL_PASSWORD|decision-platform:KAFKA_ENVELOPE_PUBLIC_KEY|decision-platform:POISON_RECORDER_URL|decision-platform:POISON_RECORDER_SHARED_SECRET|decision-platform:KIS_MOCK_CONFIGURED|decision-platform:KIS_MOCK_APP_KEY|decision-platform:KIS_MOCK_APP_SECRET|decision-platform:KIS_MOCK_ACCOUNT_NO|decision-platform:KIS_MOCK_BOUND_ACCOUNT_ID|decision-platform:KIS_MOCK_ORDER_REFERENCE_KEY|decision-platform:KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP|decision-platform:KIS_BROKERAGE_PHYSICAL_CAP) return 0 ;;
+    decision-platform:RETURN_INFERENCE_GRPC_SHARED_SECRET) return 0 ;;
     authority:POSTGRES_IDENTITY_PASSWORD|authority:ACTOR_CAPABILITY_SHARED_SECRET|authority:ACTOR_CAPABILITY_PRIVATE_KEY|authority:ACTOR_CAPABILITY_PUBLIC_KEY|authority:ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD) return 0 ;;
     migration:POSTGRES_MIGRATION_PASSWORD|migration:BROKERAGE_DB_CAPABILITY_TOKEN_SHA256|migration:DEMO_CREDENTIAL_SEPARATION_KEY|migration:DEMO_USER_CREDENTIAL_BUNDLE|migration:DEMO_ADMIN_CREDENTIAL_BUNDLE) return 0 ;;
     seed-import:P1_SEED_DATABASE_DSN) return 0 ;;
@@ -109,6 +111,13 @@ for key in $(required_keys); do
     *) echo "p1 secret loading failed: missing_key" >&2; exit 1 ;;
   esac
 done
+
+if [ "$profile" = decision-platform ]; then
+  case "$seen" in
+    *'|RETURN_INFERENCE_GRPC_SHARED_SECRET|'*) ;;
+    *) echo "p1 secret loading failed: missing_return_inference_secret" >&2; exit 1 ;;
+  esac
+fi
 
 if [ "$profile" = decision-platform ] || [ "$profile" = certification ]; then
   case "${KIS_MOCK_BROKERAGE_ONLINE_ENABLED:-false}:$KIS_MOCK_CONFIGURED" in

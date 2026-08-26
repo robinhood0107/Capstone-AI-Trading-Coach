@@ -4,8 +4,9 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   async rewrites() {
-    const apiEdge = process.env.API_EDGE_INTERNAL_URL ?? 'http://api-edge:8080';
-    return [{ source: '/api/:path*', destination: `${apiEdge}/api/:path*` }];
+    const decisionPlatform =
+      process.env.DECISION_PLATFORM_INTERNAL_URL ?? 'http://decision-platform:8080';
+    return [{ source: '/api/:path*', destination: `${decisionPlatform}/api/:path*` }];
   },
   async headers() {
     // S8 보안 gate: 외부 REST 경계의 기본 security header.

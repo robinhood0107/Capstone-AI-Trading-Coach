@@ -9,6 +9,7 @@ from pathlib import Path
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
 _OPERATOR_ENV_FILE = _REPOSITORY_ROOT / ".env"
+_OPERATOR_ENV_FILE_VARIABLE = "KIS_MOCK_APPROVAL_ENV_FILE"
 _MAX_ENV_BYTES = 64 * 1024
 _ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _OPERATOR_VARIABLES = frozenset(
@@ -47,13 +48,15 @@ def load_kis_mock_approval_environment(*names: str) -> dict[str, str]:
 def _read_private_operator_environment() -> dict[str, str]:
     """leaf symlink·hardlink·mode drift를 descriptor에서 닫고 bounded UTF-8만 파싱한다."""
 
-    if not _OPERATOR_ENV_FILE.is_absolute() or not hasattr(os, "O_NOFOLLOW"):
+    configured = os.environ.get(_OPERATOR_ENV_FILE_VARIABLE, "").strip()
+    operator_env_file = Path(configured) if configured else _OPERATOR_ENV_FILE
+    if not operator_env_file.is_absolute() or not hasattr(os, "O_NOFOLLOW"):
         raise KISMockApprovalEnvironmentRejected("operator approval environment is unavailable")
-    parent_descriptor = _open_no_follow_parent(_OPERATOR_ENV_FILE.parent)
+    parent_descriptor = _open_no_follow_parent(operator_env_file.parent)
     flags = os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC | os.O_NOFOLLOW
     descriptor: int | None = None
     try:
-        name = _OPERATOR_ENV_FILE.name
+        name = operator_env_file.name
         if name in {"", ".", ".."} or "/" in name:
             raise KISMockApprovalEnvironmentRejected("operator approval environment is unavailable")
         descriptor = os.open(name, flags, dir_fd=parent_descriptor)

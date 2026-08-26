@@ -14,10 +14,10 @@ test('live browser calls stay on the same origin', async () => {
   assert.doesNotMatch(client, /127\.0\.0\.1:8080/);
 });
 
-test('Next forwards only the /api namespace to api-edge', async () => {
+test('Next forwards only the /api namespace to decision-platform', async () => {
   const config = await readFile(configUrl, 'utf8');
   assert.match(config, /source: '\/api\/:path\*'/);
-  assert.match(config, /http:\/\/api-edge:8080/);
+  assert.match(config, /http:\/\/decision-platform:8080/);
 });
 
 test('protected health is requested only after live authentication', async () => {

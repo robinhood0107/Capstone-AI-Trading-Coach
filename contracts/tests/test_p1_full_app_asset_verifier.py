@@ -104,7 +104,7 @@ class P1FullAppAssetVerifierTest(unittest.TestCase):
         self.assertEqual(881770560, paddle["mmprojFile"]["sizeBytes"])
 
     def test_official_model_compose_has_no_host_port_or_community_bge(self) -> None:
-        compose = (ROOT / "deploy/p1/compose.full.models.yml").read_text(encoding="utf-8")
+        compose = (ROOT / "deploy/p1/compose.yml").read_text(encoding="utf-8")
         self.assertIn("ghcr.io/huggingface/text-embeddings-inference:cpu-1.9@sha256:", compose)
         self.assertIn("BAAI/bge-m3", compose)
         self.assertIn("ghcr.io/ggml-org/llama.cpp:server-b10524@sha256:", compose)
@@ -115,7 +115,10 @@ class P1FullAppAssetVerifierTest(unittest.TestCase):
         self.assertIn("sha256sum -c -", compose)
         self.assertIn("p1-model-fetch", compose)
         self.assertNotIn("lm-kit", compose)
-        self.assertNotIn("ports:", compose)
+        bge = compose.split("  bge-m3:\n", 1)[1].split("\n  paddleocr-vl-model-fetch:", 1)[0]
+        paddle = compose.split("  paddleocr-vl:\n", 1)[1].split("\nsecrets:", 1)[0]
+        self.assertNotIn("ports:", bge)
+        self.assertNotIn("ports:", paddle)
 
     def test_real_return_artifact_passes_and_tamper_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

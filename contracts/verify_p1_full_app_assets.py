@@ -101,24 +101,6 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _inventory_sha256(files: object, size_key: str) -> str | None:
-    if not isinstance(files, Sequence) or isinstance(files, (str, bytes)):
-        return None
-    normalized: list[dict[str, object]] = []
-    for item in files:
-        if not isinstance(item, Mapping):
-            return None
-        path = item.get("path")
-        size = item.get(size_key)
-        sha256 = item.get("sha256")
-        if not isinstance(path, str) or not isinstance(size, int) or isinstance(size, bool) or not isinstance(sha256, str):
-            return None
-        normalized.append({"path": path, "bytes": size, "sha256": sha256})
-    normalized.sort(key=lambda item: str(item["path"]))
-    encoded = (json.dumps(normalized, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n").encode()
-    return hashlib.sha256(encoded).hexdigest()
-
-
 def _validate_file_inventory(
     root: Path,
     files: object,
@@ -159,58 +141,6 @@ def _validate_file_inventory(
             continue
         total_bytes += expected_size
     return observed, total_bytes
-
-
-def validate_model_asset(component: str, model_root: Path, contract: Mapping[str, Any]) -> list[str]:
-    errors: list[str] = []
-    if contract.get("inventoryStatus") != "MATERIALIZED":
-        return [f"MODEL:{component}:INVENTORY_NOT_MATERIALIZED"]
-    root = model_root / component
-    if not _safe_directory(model_root) or not _safe_directory(root):
-        return [f"MODEL:{component}:ROOT_BOUNDARY"]
-    manifest = _load_json(root / "model-asset-manifest.v1.json", f"MODEL_MANIFEST:{component}", errors)
-    if manifest is None:
-        return errors
-    prefix = f"MODEL:{component}"
-    if manifest.get("schemaVersion") != "model-artifact-manifest/v1":
-        errors.append(f"{prefix}:SCHEMA")
-    for field in ("repository", "revision"):
-        if manifest.get(field) != contract.get(field):
-            errors.append(f"{prefix}:{field.upper()}")
-    license_record = manifest.get("license")
-    locator = license_record.get("locator") if isinstance(license_record, Mapping) else None
-    if (
-        not isinstance(license_record, Mapping)
-        or license_record.get("spdxId") != contract.get("licenseSpdxId")
-        or not isinstance(locator, str)
-        or not locator.startswith("https://")
-        or str(contract.get("revision")) not in locator
-    ):
-        errors.append(f"{prefix}:LICENSE")
-    observed, total_bytes = _validate_file_inventory(
-        root,
-        manifest.get("files"),
-        size_key="bytes",
-        code_prefix=prefix,
-        errors=errors,
-    )
-    if contract.get("fileCount") != len(observed) or manifest.get("fileCount") != len(observed):
-        errors.append(f"{prefix}:FILE_COUNT")
-    if contract.get("totalBytes") != total_bytes or manifest.get("totalBytes") != total_bytes:
-        errors.append(f"{prefix}:TOTAL_BYTES")
-    if _inventory_sha256(manifest.get("files"), "bytes") != contract.get("inventorySha256"):
-        errors.append(f"{prefix}:INVENTORY_HASH")
-    if component == "bge-m3":
-        graph = manifest.get("graphContract")
-        if not isinstance(graph, Mapping) or graph.get("outputDimension") != 1024:
-            errors.append(f"{prefix}:OUTPUT_DIMENSION")
-    if component == "paddleocr-vl-1.6":
-        if (
-            manifest.get("qualityCandidate") != contract.get("qualityCandidate")
-            or manifest.get("qualityEvidenceSha256") != contract.get("qualityEvidenceSha256")
-        ):
-            errors.append(f"{prefix}:QUALITY_EVIDENCE")
-    return errors
 
 
 def validate_return_manifest(path: Path) -> list[str]:
@@ -296,7 +226,7 @@ def validate_return_manifest(path: Path) -> list[str]:
     return errors
 
 
-def verify_assets(model_root: Path, return_manifest: Path, repository_root: Path = ROOT) -> list[str]:
+def verify_assets(return_manifest: Path, repository_root: Path = ROOT) -> list[str]:
     errors: list[str] = []
     catalog = _load_json(
         repository_root / "contracts/catalogs/p1-full-app-release-contract.v2.json",
@@ -308,24 +238,30 @@ def verify_assets(model_root: Path, return_manifest: Path, repository_root: Path
     model_contracts = catalog.get("modelAssets")
     if not isinstance(model_contracts, Mapping):
         return ["RELEASE_CATALOG_MODELS"]
-    for component in ("bge-m3", "paddleocr-vl-1.6"):
+    for component, runtime in (
+        ("bge-m3", "HUGGINGFACE_TEXT_EMBEDDINGS_INFERENCE_CPU_1_9"),
+        ("paddleocr-vl-1.6", "LLAMA_CPP_SERVER_B10524"),
+    ):
         contract = model_contracts.get(component)
-        if not isinstance(contract, Mapping):
-            errors.append(f"RELEASE_CATALOG_MODEL:{component}")
-            continue
-        errors.extend(validate_model_asset(component, model_root, contract))
+        if (
+            not isinstance(contract, Mapping)
+            or contract.get("deliveryMode") != "OFFICIAL_CONTAINER_RUNTIME_DOWNLOAD"
+            or contract.get("runtime") != runtime
+            or "@sha256:" not in str(contract.get("imageReference", ""))
+        ):
+            errors.append(f"RELEASE_CATALOG_MODEL_RUNTIME:{component}")
     errors.extend(validate_return_manifest(return_manifest))
     return errors
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify P1 full-app local model and Team B artifact assets.")
-    parser.add_argument("--model-root", required=True, type=Path)
+    parser = argparse.ArgumentParser(
+        description="Verify the P1 official model-runtime catalog and Team B artifact assets."
+    )
     parser.add_argument("--return-manifest", required=True, type=Path)
     parser.add_argument("--repository-root", default=ROOT, type=Path)
     arguments = parser.parse_args()
     errors = verify_assets(
-        arguments.model_root.absolute(),
         arguments.return_manifest.absolute(),
         arguments.repository_root.absolute(),
     )

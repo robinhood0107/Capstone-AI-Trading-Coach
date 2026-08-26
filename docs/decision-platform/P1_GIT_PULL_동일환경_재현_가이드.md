@@ -1,0 +1,76 @@
+# P1 `git pull` 동일환경 재현 가이드
+
+## 결론
+
+공개 DB는 Docker volume을 Git에 올리지 않는다. 대신 migration과 공개 전용 Seed를 Git에 넣고 새
+PostgreSQL에서 다시 만든다. 이 방식은 계정, 비밀번호, 질문 기록, 개인 문서, provider ledger와 secret을
+배포하지 않으면서 모든 설치에서 같은 공개 RAG 상태를 만든다.
+
+현재 Seed는 다음 세 Git 파일로 고정돼 있다.
+
+```text
+deploy/p1/seed/public-rag/public-rag-seed.v1.manifest.json
+deploy/p1/seed/public-rag/public-rag-seed.v1.jsonl.gz.part-0001
+deploy/p1/seed/public-rag/public-rag-seed.v1.jsonl.gz.part-0002
+```
+
+기대 상태는 `sources=142`, `chunks=7871`, `embeddingDimension=1024`, public pointer `FULL_READY`다.
+fresh V87 PostgreSQL import는 `IMPORTED_FULL_READY`, 같은 Seed 재실행은
+`NOOP_MATCHING_ACTIVE_SEED`로 검증했다.
+
+## Git에 들어가는 것과 들어가지 않는 것
+
+| Git/Compose로 재현하는 것 | Git에 넣지 않는 것 |
+|---|---|
+| Flyway migration과 공개 Seed | 실행 중인 PostgreSQL/Redis volume |
+| Compose와 설치 명령 | 사용자 계정과 비밀번호 |
+| BGE/Paddle exact revision·hash | 개인 문서와 질문 기록 |
+| application source와 dependency lock | API key, token, 계좌 정보 |
+| 검증된 OCI image digest | model download cache와 로컬 output |
+
+따라서 “같은 상태”는 같은 공개 Seed·schema·image·model을 뜻한다. 두 사람의 개인 계정, secret과 로컬
+운영 기록까지 복제한다는 뜻이 아니다.
+
+## 새 PC에서 실행하는 최종 흐름
+
+아래 명령은 full-app branch가 `main`에 병합되고 Team A/B 수신본과 아홉 hard gate가 모두 준비된 뒤의
+최종 사용자 흐름이다.
+
+```bash
+git switch main
+git pull --ff-only origin main
+./deploy/p1/verify-public-rag-seed \
+  deploy/p1/seed/public-rag/public-rag-seed.v1.manifest.json
+./capstone doctor
+./capstone install
+./capstone start
+./capstone status
+```
+
+Windows PowerShell에서는 `./capstone.ps1`에 같은 command를 전달한다. 최초 설치는 Docker image와 exact
+model revision을 내려받아 named volume에 cache하고, DB는 `migrate -> seed-import ->
+identity-bootstrap` 순서로 만든다. 두 번째 실행은 같은 Seed를 덮어쓰지 않고 no-op으로 처리한다.
+
+## 지금 당장 가능한 확인
+
+```bash
+./deploy/p1/verify-public-rag-seed \
+  deploy/p1/seed/public-rag/public-rag-seed.v1.manifest.json
+./capstone doctor
+```
+
+현재 기대 결과는 Seed integrity `PASS` 뒤 full doctor가
+`TEAM_B_REAL_ARTIFACT_MISSING`과 `DASHBOARD_UI_PARTIAL_TEAM_A_ACTION_REQUIRED`를 보고하는 것이다.
+이 blocker를 지우기 위해 가짜 파일을 만들거나 `--degraded`를 full 완료로 사용하지 않는다.
+
+## 원격 재현의 필수 조건
+
+로컬 commit만 있으면 상대방은 `git pull`로 받을 수 없다. 다음이 모두 끝나야 한다.
+
+1. 현재 full-app branch를 원격에 push하고 검토한다.
+2. PR을 `main`에 병합하고 post-merge CI를 확인한다.
+3. Team A/B production source와 lockfile/Dockerfile을 병합한다.
+4. application image를 public registry에 digest-pinned로 발행한다.
+5. clean Linux/WSL과 Windows Docker Desktop에서 위 명령을 다시 실행한다.
+
+이 조건 전에는 `GIT_PULL_FULL_REPRODUCIBLE=FALSE`다.

@@ -319,6 +319,8 @@ services:
       - ${P1_ARTIFACT_MANIFEST_SHA256:-disabled}
       - --archive-parent
       - /archive
+    environment:
+      P1_OPERATOR_UID: "${P1_OPERATOR_UID}"
     user: "${P1_OPERATOR_UID}:${P1_SECRET_GID}"
     read_only: true
     cap_drop: [ALL]

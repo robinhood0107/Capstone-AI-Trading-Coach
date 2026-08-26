@@ -85,6 +85,7 @@ def _git_output(root: Path, *arguments: str) -> str | None:
 def semantic_errors(payload: Mapping[str, Any], root: Path = ROOT) -> list[str]:
     errors: list[str] = []
     catalog = _load_regular_json(root / CATALOG_PATH.relative_to(ROOT))
+    images_by_component: dict[object, Mapping[str, Any]] = {}
 
     images = payload.get("images")
     if isinstance(images, Sequence) and not isinstance(images, (str, bytes)):
@@ -94,6 +95,9 @@ def semantic_errors(payload: Mapping[str, Any], root: Path = ROOT) -> list[str]:
         required = set(catalog["requiredImageComponents"])
         optional = set(catalog["optionalImageComponents"])
         observed = set(components)
+        images_by_component = {
+            item.get("component"): item for item in images if isinstance(item, Mapping)
+        }
         if not required.issubset(observed) or observed - required - optional:
             errors.append("IMAGE_COMPONENT_SET")
         for item in images:
@@ -118,6 +122,13 @@ def semantic_errors(payload: Mapping[str, Any], root: Path = ROOT) -> list[str]:
             expected = expected_models.get(item.get("component"))
             if expected is not None and item.get("revision") != expected["revision"]:
                 errors.append(f"MODEL_REVISION_MISMATCH:{item.get('component')}")
+            if expected is not None:
+                runtime_image = images_by_component.get(expected.get("imageComponent"))
+                if (
+                    not isinstance(runtime_image, Mapping)
+                    or runtime_image.get("reference") != expected.get("imageReference")
+                ):
+                    errors.append(f"MODEL_RUNTIME_IMAGE_MISMATCH:{item.get('component')}")
 
     seed = payload.get("publicRagSeed")
     if isinstance(seed, Mapping):

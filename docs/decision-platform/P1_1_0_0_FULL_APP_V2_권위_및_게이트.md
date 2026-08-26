@@ -42,14 +42,19 @@ owner RAG, 모델 설치, provider live gate 또는 전체 `PUBLIC_RAG_SEED=PASS
 ## G2 installer와 Compose Seed dependency
 
 repository root의 `./capstone`과 `capstone.ps1`은 동일한 여덟 운영 명령을 제공한다. full 기본 lane은
-공개 Seed 조각을 host에서 다시 hash 검증하고 BGE-M3, PaddleOCR-VL, Team B real artifact가 없으면
-0600 local stage marker를 남긴 뒤 종료한다. 현재 상태에서 이 종료는 의도된
+공개 Seed 조각을 host에서 다시 hash 검증하고 Team B real artifact가 없으면 0600 local stage marker를
+남긴 뒤 종료한다. BGE-M3는 공식 Hugging Face TEI CPU 이미지와 `BAAI/bge-m3` exact revision을,
+PaddleOCR-VL은 공식 `llama.cpp` server 이미지와 PaddlePaddle의 공식 1.6 GGUF/mmproj를 사용한다.
+두 이미지와 모델 revision/SHA-256은 계약에 고정하고 named volume cache로 최초 다운로드를 재사용한다.
+모델 서비스는 private service network에 연결하고 host port는 열지 않는다. 최초 exact-revision
+다운로드를 위해 호스트 포트가 없는 전용 outbound bridge만 추가한다. 현재 상태에서 종료는 의도된
 `BLOCKED_REQUIRED_ARTIFACTS`이며 full-app 실행 성공이 아니다.
 
 기존 provider-free Core는 명시적 `--degraded`에서만 실행하며 매 실행이
 `CAPSTONE_RELEASE_AUTHORITY=NONE`을 출력한다. 새 Compose overlay의 실제 의존성은
-`migrate -> seed-import -> identity-bootstrap`이고 Seed importer는 전용 Docker secret의 migration
-DSN과 read-only Seed mount만 받는다. G7 atomic restore가 없으므로 공개 `restore` 명령은
+`migrate -> seed-import -> identity-bootstrap`이고 BGE/OCR 공식 모델 overlay를 함께 합성한다. Seed
+importer는 전용 Docker secret의 migration DSN과 read-only Seed mount만 받는다. G7 atomic restore가
+없으므로 공개 `restore` 명령은
 `BLOCKED_G7_ATOMIC_RESTORE_NOT_IMPLEMENTED`로 닫혀 있다. 따라서 이 단위는 설치기/Seed wiring의
 merge candidate일 뿐 `COMPOSE_E2E=PASS`가 아니다.
 

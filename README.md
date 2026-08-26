@@ -359,8 +359,11 @@ secret file은 0640으로 생성한다. 서비스마다 필요한 파일만 moun
 
 Linux/WSL은 repository root의 `./capstone`, Windows PowerShell은 `capstone.ps1`을 사용한다. 두
 진입점은 `install`, `start`, `stop`, `status`, `doctor`, `backup`, `restore`, `verify`를 같은 의미로
-전달한다. 기본 lane은 full-app이며 공개 Seed 조각, BGE-M3, PaddleOCR-VL 또는 Team B real artifact가
-없으면 중단 단계를 0600 local state에 기록하고 fail-closed한다. 현재 누락 artifact를 우회해 full
+전달한다. 기본 lane은 full-app이며 공개 Seed 조각 또는 Team B real artifact가 없으면 중단
+단계를 0600 local state에 기록하고 fail-closed한다. BGE-M3는 공식 Hugging Face TEI CPU
+이미지에서 `BAAI/bge-m3` exact revision을, PaddleOCR-VL은 공식 `llama.cpp` server 이미지에서
+PaddlePaddle의 공식 GGUF/mmproj를 받아 named volume에 cache한다. 모델 서비스 host port는 0개다.
+현재 누락 artifact를 우회해 full
 release로 판정하는 옵션은 없다.
 
 ```bash

@@ -28,6 +28,8 @@ REQUIRED_IMAGES = (
     "searxng",
     "postgres-pgvector",
     "redis",
+    "bge-m3-tei",
+    "paddleocr-vl-llama",
 )
 
 
@@ -49,6 +51,16 @@ def _manifest(stage: str = "CANDIDATE") -> dict[str, object]:
         "SUPPLY_CHAIN_RELEASE": "PASS",
         "COMPOSE_E2E": "PASS",
     }
+    images = [dict(image, component=component) for component in REQUIRED_IMAGES]
+    runtime_references = {
+        "bge-m3-tei": "ghcr.io/huggingface/text-embeddings-inference:cpu-1.9@sha256:c26a226262ad4ff3330fb30b76653c1bb65da2fcf413b92284545a010e0a8a48",
+        "paddleocr-vl-llama": "ghcr.io/ggml-org/llama.cpp:server-b10524@sha256:d88f41f7675f8b30d7213a917f72a48f05d0549af4d1be7e712ebb130a235415",
+    }
+    for runtime_image in images:
+        reference = runtime_references.get(runtime_image["component"])
+        if reference is not None:
+            runtime_image["reference"] = reference
+            runtime_image["digest"] = reference.rsplit("@", 1)[1]
     return {
         "contractId": "p1-full-app-release-manifest.v2",
         "releaseVersion": "1.0.0",
@@ -56,7 +68,7 @@ def _manifest(stage: str = "CANDIDATE") -> dict[str, object]:
         "commitSha": GIT_SHA,
         "treeSha": GIT_SHA,
         "platform": "linux/amd64",
-        "images": [dict(image, component=component) for component in REQUIRED_IMAGES],
+        "images": images,
         "publicRagSeed": {
             "schemaVersion": "p1-public-rag-seed.v1",
             "sourceSchemaVersion": "73",
@@ -89,7 +101,7 @@ def _manifest(stage: str = "CANDIDATE") -> dict[str, object]:
             },
             {
                 "component": "paddleocr-vl-1.6",
-                "revision": "66317acc4c9fc17bd154591ce650735cd2855f3e",
+                "revision": "511b09642bb324401f15f97cc23bc67e8f0a291d",
                 "manifestSha256": SHA_A,
                 "licenseEvidenceSha256": SHA_B,
             },
@@ -146,10 +158,13 @@ class P1FullAppReleaseContractV2Test(unittest.TestCase):
             "5617a9f61b028005a4858fdac845db406aefb181",
             self.catalog["modelAssets"]["bge-m3"]["revision"],
         )
-        self.assertEqual("MATERIALIZED", self.catalog["modelAssets"]["bge-m3"]["inventoryStatus"])
         self.assertEqual(
-            "NOT_MATERIALIZED",
-            self.catalog["modelAssets"]["paddleocr-vl-1.6"]["inventoryStatus"],
+            "HUGGINGFACE_TEXT_EMBEDDINGS_INFERENCE_CPU_1_9",
+            self.catalog["modelAssets"]["bge-m3"]["runtime"],
+        )
+        self.assertEqual(
+            "LLAMA_CPP_SERVER_B10524",
+            self.catalog["modelAssets"]["paddleocr-vl-1.6"]["runtime"],
         )
         self.assertEqual(
             {

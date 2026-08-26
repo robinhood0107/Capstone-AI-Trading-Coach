@@ -9,7 +9,7 @@ STATE_DIR=${P1_STATE_DIR:-$SCRIPT_DIR/.state}
 STAGE_FILE=$STATE_DIR/full-app-stage
 SEED_MANIFEST=$SCRIPT_DIR/seed/public-rag/public-rag-seed.v1.manifest.json
 FULL_SEED_COMPOSE=$SCRIPT_DIR/compose.full.seed.yml
-MODEL_ROOT=${CAPSTONE_MODEL_ROOT:-$STATE_DIR/models}
+FULL_MODEL_COMPOSE=$SCRIPT_DIR/compose.full.models.yml
 FULL_PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-full-app}
 DEGRADED_PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-offline-demo}
 RETURN_MANIFEST=$REPO_ROOT/workspaces/return-engine/artifacts/p1-return-engine-manifest.v1.json
@@ -46,12 +46,31 @@ is_regular() {
   [[ -f $1 && ! -L $1 ]]
 }
 
+model_runtime_preflight() {
+  local missing=0
+  if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+    printf 'CAPSTONE_FULL_BLOCKER=DOCKER_COMPOSE_UNAVAILABLE\n' >&2
+    return 1
+  fi
+  if ! is_regular "$FULL_MODEL_COMPOSE" || ! docker compose -f "$FULL_MODEL_COMPOSE" config --quiet; then
+    printf 'CAPSTONE_FULL_BLOCKER=MODEL_RUNTIME_COMPOSE_INVALID\n' >&2
+    missing=1
+  fi
+  ((missing == 0))
+}
+
+install_model_runtimes() {
+  model_runtime_preflight || die MODEL_RUNTIME_PREFLIGHT
+  docker compose --project-name "$FULL_PROJECT_NAME" -f "$FULL_MODEL_COMPOSE" pull bge-m3 paddleocr-vl
+  record_stage MODEL_RUNTIME_IMAGES_PULLED
+  printf 'CAPSTONE_MODEL_RUNTIME_IMAGES=PULLED_OFFICIAL\n'
+}
+
 full_preflight() {
   local missing=0
   require_command python3
-  local assets_present=1
-  if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
-    printf 'CAPSTONE_FULL_BLOCKER=DOCKER_COMPOSE_UNAVAILABLE\n' >&2
+  local return_present=1
+  if ! model_runtime_preflight; then
     missing=1
   fi
   if ! is_regular "$SEED_MANIFEST"; then
@@ -61,24 +80,14 @@ full_preflight() {
     printf 'CAPSTONE_FULL_BLOCKER=PUBLIC_RAG_SEED_INTEGRITY_FAILED\n' >&2
     missing=1
   fi
-  if ! is_regular "$MODEL_ROOT/bge-m3/model-asset-manifest.v1.json"; then
-    printf 'CAPSTONE_FULL_BLOCKER=BGE_M3_MODEL_ASSET_MISSING\n' >&2
-    missing=1
-    assets_present=0
-  fi
-  if ! is_regular "$MODEL_ROOT/paddleocr-vl-1.6/model-asset-manifest.v1.json"; then
-    printf 'CAPSTONE_FULL_BLOCKER=PADDLEOCR_VL_MODEL_ASSET_MISSING\n' >&2
-    missing=1
-    assets_present=0
-  fi
   if ! is_regular "$RETURN_MANIFEST"; then
     printf 'CAPSTONE_FULL_BLOCKER=TEAM_B_REAL_ARTIFACT_MISSING\n' >&2
     missing=1
-    assets_present=0
+    return_present=0
   fi
-  if ((assets_present)) && ! python3 "$REPO_ROOT/contracts/verify_p1_full_app_assets.py" \
-    --model-root "$MODEL_ROOT" --return-manifest "$RETURN_MANIFEST" --repository-root "$REPO_ROOT"; then
-    printf 'CAPSTONE_FULL_BLOCKER=MODEL_OR_TEAM_B_ASSET_INTEGRITY_FAILED\n' >&2
+  if ((return_present)) && ! python3 "$REPO_ROOT/contracts/verify_p1_full_app_assets.py" \
+    --return-manifest "$RETURN_MANIFEST" --repository-root "$REPO_ROOT"; then
+    printf 'CAPSTONE_FULL_BLOCKER=TEAM_B_ASSET_INTEGRITY_FAILED\n' >&2
     missing=1
   fi
   if ! is_regular "$DASHBOARD_LOCK" || ! is_regular "$DASHBOARD_DOCKERFILE"; then
@@ -89,6 +98,7 @@ full_preflight() {
     return 1
   fi
   printf 'CAPSTONE_PUBLIC_RAG_SEED_STATIC=PASS\n'
+  printf 'CAPSTONE_MODEL_RUNTIMES=OFFICIAL_COMPOSE_PINNED\n'
   printf 'CAPSTONE_FULL_PREFLIGHT=STATIC_ASSET_INTEGRITY_PASS\n'
 }
 
@@ -125,6 +135,7 @@ install_degraded() {
 }
 
 install_full() {
+  install_model_runtimes
   full_preflight || die FULL_INSTALL_BLOCKED_REQUIRED_ARTIFACTS
   if ! state_initialized; then
     P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$FULL_PROJECT_NAME "$P1CTL" init
@@ -132,7 +143,8 @@ install_full() {
   P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$FULL_PROJECT_NAME "$P1CTL" verify >/dev/null
   local runtime_env=$STATE_DIR/runtime.env
   docker compose --project-name "$FULL_PROJECT_NAME" \
-    --env-file "$runtime_env" -f "$SCRIPT_DIR/compose.db.yml" -f "$FULL_SEED_COMPOSE" config --quiet
+    --env-file "$runtime_env" -f "$SCRIPT_DIR/compose.db.yml" -f "$FULL_SEED_COMPOSE" \
+    -f "$FULL_MODEL_COMPOSE" config --quiet
   record_stage FULL_INSTALLED_NOT_STARTED
   printf 'CAPSTONE_INSTALL=FULL_ASSETS_VERIFIED\n'
 }
@@ -152,6 +164,7 @@ start_full() {
   local runtime_env=$STATE_DIR/runtime.env
   docker compose --project-name "$FULL_PROJECT_NAME" \
     --env-file "$runtime_env" -f "$SCRIPT_DIR/compose.db.yml" -f "$FULL_SEED_COMPOSE" \
+    -f "$FULL_MODEL_COMPOSE" \
     up -d --force-recreate
   record_stage FULL_SEED_AND_CORE_RUNNING
   printf 'CAPSTONE_START=FULL_SEED_AND_CORE_RUNNING\n'
@@ -166,6 +179,17 @@ show_status() {
   if state_initialized; then
     P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME="$(selected_project_name)" "$P1CTL" status
   fi
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    docker compose --project-name "$FULL_PROJECT_NAME" -f "$FULL_MODEL_COMPOSE" ps
+  fi
+}
+
+stop_full() {
+  state_initialized || die NOT_INSTALLED
+  P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME="$(selected_project_name)" "$P1CTL" stop
+  docker compose --project-name "$FULL_PROJECT_NAME" -f "$FULL_MODEL_COMPOSE" stop
+  record_stage FULL_STOPPED_VOLUMES_PRESERVED
+  printf 'CAPSTONE_MODEL_CACHE_VOLUMES_PRESERVED=TRUE\n'
 }
 
 mode=full
@@ -181,7 +205,7 @@ fi
 case $command in
   install) [[ $mode == degraded ]] && install_degraded || install_full ;;
   start) [[ $mode == degraded ]] && start_degraded || start_full ;;
-  stop) [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED; P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME="$(selected_project_name)" "$P1CTL" stop ;;
+  stop) [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED; stop_full ;;
   status) [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED; show_status ;;
   doctor) [[ $mode == degraded ]] && degraded_doctor || full_preflight ;;
   backup) [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED; P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME="$(selected_project_name)" "$P1CTL" backup ;;

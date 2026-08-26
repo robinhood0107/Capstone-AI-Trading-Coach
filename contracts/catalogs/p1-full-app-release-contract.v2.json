@@ -53,28 +53,44 @@
     "return-engine",
     "searxng",
     "postgres-pgvector",
-    "redis"
+    "redis",
+    "bge-m3-tei",
+    "paddleocr-vl-llama"
   ],
   "optionalImageComponents": [
     "kafka"
   ],
   "modelAssets": {
     "bge-m3": {
-      "fileCount": 10,
-      "inventorySha256": "246c70a8ad711fee0950aaaf3170ff7db7a4950c6e12f046116fa00af3b0260c",
-      "inventoryStatus": "MATERIALIZED",
+      "deliveryMode": "OFFICIAL_CONTAINER_RUNTIME_DOWNLOAD",
+      "expectedDimension": 1024,
+      "imageComponent": "bge-m3-tei",
+      "imageReference": "ghcr.io/huggingface/text-embeddings-inference:cpu-1.9@sha256:c26a226262ad4ff3330fb30b76653c1bb65da2fcf413b92284545a010e0a8a48",
       "licenseSpdxId": "MIT",
       "repository": "BAAI/bge-m3",
       "revision": "5617a9f61b028005a4858fdac845db406aefb181",
-      "totalBytes": 2289781803
+      "runtime": "HUGGINGFACE_TEXT_EMBEDDINGS_INFERENCE_CPU_1_9"
     },
     "paddleocr-vl-1.6": {
-      "inventoryStatus": "NOT_MATERIALIZED",
+      "deliveryMode": "OFFICIAL_CONTAINER_RUNTIME_DOWNLOAD",
+      "imageComponent": "paddleocr-vl-llama",
+      "imageReference": "ghcr.io/ggml-org/llama.cpp:server-b10524@sha256:d88f41f7675f8b30d7213a917f72a48f05d0549af4d1be7e712ebb130a235415",
       "licenseSpdxId": "Apache-2.0",
+      "modelFile": {
+        "path": "PaddleOCR-VL-1.6-GGUF.gguf",
+        "sha256": "f3ae46ec885050acf4b3d31944431e1fd90d50664fb09126af4a3c050ba14ee8",
+        "sizeBytes": 935769056
+      },
+      "mmprojFile": {
+        "path": "PaddleOCR-VL-1.6-GGUF-mmproj.gguf",
+        "sha256": "204d757d7610d9b3faab10d506d69e5b244e32bf765e2bab2d0167e65e0a058a",
+        "sizeBytes": 881770560
+      },
       "qualityCandidate": "PADDLE_VL",
       "qualityEvidenceSha256": "f43abfc2eaab0d6f958b8eac3369fc3f2f00c4d95569ae977e527bef3fc39f1a",
-      "repository": "PaddlePaddle/PaddleOCR-VL-1.6",
-      "revision": "66317acc4c9fc17bd154591ce650735cd2855f3e"
+      "repository": "PaddlePaddle/PaddleOCR-VL-1.6-GGUF",
+      "revision": "511b09642bb324401f15f97cc23bc67e8f0a291d",
+      "runtime": "LLAMA_CPP_SERVER_B10524"
     }
   },
   "releaseAuthorityWorkflow": ".github/workflows/p1-full-app-release.yml",

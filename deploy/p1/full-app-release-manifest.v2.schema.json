@@ -27,8 +27,8 @@
     "platform": {"const": "linux/amd64"},
     "images": {
       "type": "array",
-      "minItems": 9,
-      "maxItems": 10,
+      "minItems": 11,
+      "maxItems": 12,
       "uniqueItems": true,
       "items": {"$ref": "#/$defs/image"},
       "allOf": [
@@ -40,7 +40,9 @@
         {"contains": {"properties": {"component": {"const": "return-engine"}}, "required": ["component"]}},
         {"contains": {"properties": {"component": {"const": "searxng"}}, "required": ["component"]}},
         {"contains": {"properties": {"component": {"const": "postgres-pgvector"}}, "required": ["component"]}},
-        {"contains": {"properties": {"component": {"const": "redis"}}, "required": ["component"]}}
+        {"contains": {"properties": {"component": {"const": "redis"}}, "required": ["component"]}},
+        {"contains": {"properties": {"component": {"const": "bge-m3-tei"}}, "required": ["component"]}},
+        {"contains": {"properties": {"component": {"const": "paddleocr-vl-llama"}}, "required": ["component"]}}
       ]
     },
     "publicRagSeed": {"$ref": "#/$defs/publicRagSeed"},
@@ -100,7 +102,7 @@
       "additionalProperties": false,
       "required": ["component", "reference", "digest", "platform"],
       "properties": {
-        "component": {"enum": ["gateway", "experience-dashboard", "spring-api", "python-services", "strong-llm", "return-engine", "searxng", "postgres-pgvector", "redis", "kafka"]},
+        "component": {"enum": ["gateway", "experience-dashboard", "spring-api", "python-services", "strong-llm", "return-engine", "searxng", "postgres-pgvector", "redis", "bge-m3-tei", "paddleocr-vl-llama", "kafka"]},
         "reference": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9./_:-]{0,199}@sha256:(?!0{64}$)[0-9a-f]{64}$"},
         "digest": {"type": "string", "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$"},
         "platform": {"const": "linux/amd64"}
@@ -182,7 +184,7 @@
         },
         {
           "if": {"properties": {"component": {"const": "paddleocr-vl-1.6"}}, "required": ["component"]},
-          "then": {"properties": {"revision": {"const": "66317acc4c9fc17bd154591ce650735cd2855f3e"}}}
+          "then": {"properties": {"revision": {"const": "511b09642bb324401f15f97cc23bc67e8f0a291d"}}}
         }
       ]
     },

@@ -8,27 +8,11 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-from contracts.verify_p1_full_app_assets import RETURN_ARTIFACTS, _inventory_sha256, verify_assets
+from contracts.verify_p1_full_app_assets import RETURN_ARTIFACTS, verify_assets
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SHA = "a" * 64
-MODEL_CONTRACTS = {
-    "bge-m3": {
-        "repository": "BAAI/bge-m3",
-        "revision": "5617a9f61b028005a4858fdac845db406aefb181",
-        "licenseSpdxId": "MIT",
-        "fileCount": 10,
-    },
-    "paddleocr-vl-1.6": {
-        "repository": "PaddlePaddle/PaddleOCR-VL-1.6",
-        "revision": "66317acc4c9fc17bd154591ce650735cd2855f3e",
-        "licenseSpdxId": "Apache-2.0",
-        "fileCount": 5,
-        "qualityCandidate": "PADDLE_VL",
-        "qualityEvidenceSha256": "f43abfc2eaab0d6f958b8eac3369fc3f2f00c4d95569ae977e527bef3fc39f1a",
-    },
-}
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -36,75 +20,20 @@ def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _file_record(root: Path, relative: str, payload: bytes, size_key: str) -> dict[str, object]:
+def _file_record(root: Path, relative: str, payload: bytes) -> dict[str, object]:
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(payload)
     return {
         "path": relative,
-        size_key: len(payload),
+        "sizeBytes": len(payload),
         "sha256": hashlib.sha256(payload).hexdigest(),
     }
 
 
-def _write_model(model_root: Path, component: str) -> None:
-    contract = MODEL_CONTRACTS[component]
-    root = model_root / component
-    files = [
-        _file_record(root, f"files/asset-{index:02d}.bin", f"{component}-{index}".encode(), "bytes")
-        for index in range(contract["fileCount"])
-    ]
-    manifest: dict[str, object] = {
-        "schemaVersion": "model-artifact-manifest/v1",
-        "repository": contract["repository"],
-        "revision": contract["revision"],
-        "license": {
-            "spdxId": contract["licenseSpdxId"],
-            "locator": f"https://example.invalid/{component}/{contract['revision']}",
-        },
-        "fileCount": len(files),
-        "totalBytes": sum(item["bytes"] for item in files),
-        "files": files,
-    }
-    if component == "bge-m3":
-        manifest["graphContract"] = {"outputDimension": 1024}
-    else:
-        manifest["qualityCandidate"] = contract["qualityCandidate"]
-        manifest["qualityEvidenceSha256"] = contract["qualityEvidenceSha256"]
-    _write_json(root / "model-asset-manifest.v1.json", manifest)
-
-
-def _write_test_catalog(root: Path, model_root: Path) -> Path:
-    contracts: dict[str, object] = {}
-    for component, base in MODEL_CONTRACTS.items():
-        manifest_path = model_root / component / "model-asset-manifest.v1.json"
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            files = manifest["files"]
-            inventory_sha256 = _inventory_sha256(files, "bytes")
-            file_count = len(files)
-            total_bytes = sum(item["bytes"] for item in files)
-        except (OSError, KeyError, TypeError):
-            inventory_sha256 = SHA
-            file_count = 1
-            total_bytes = 1
-        contract = dict(base)
-        contract.update(
-            {
-                "inventoryStatus": "MATERIALIZED",
-                "inventorySha256": inventory_sha256,
-                "fileCount": file_count,
-                "totalBytes": total_bytes,
-            }
-        )
-        contracts[component] = contract
-    _write_json(root / "contracts/catalogs/p1-full-app-release-contract.v2.json", {"modelAssets": contracts})
-    return root
-
-
 def _write_return_manifest(root: Path) -> Path:
     artifacts = [
-        _file_record(root, f"files/{name}", f"return-{name}".encode(), "sizeBytes")
+        _file_record(root, f"files/{name}", f"return-{name}".encode())
         for name in sorted(RETURN_ARTIFACTS)
     ]
     manifest = {
@@ -154,107 +83,56 @@ class P1FullAppAssetVerifierTest(unittest.TestCase):
             path = _write_return_manifest(Path(temporary))
             payload = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual([], list(validator.iter_errors(payload)))
-
             payload["producer"]["dependencyLockSha256"] = "0" * 64
             self.assertNotEqual([], list(validator.iter_errors(payload)))
 
-    def test_tracked_bge_inventory_digest_matches_current_catalog(self) -> None:
+    def test_catalog_pins_official_container_runtimes_and_model_revisions(self) -> None:
         catalog = json.loads(
             (ROOT / "contracts/catalogs/p1-full-app-release-contract.v2.json").read_text(encoding="utf-8")
         )
-        manifest = json.loads(
-            (
-                ROOT
-                / "huggingface_model/manifests/bge-m3-onnx-5617a9f61b028005a4858fdac845db406aefb181.v1.json"
-            ).read_text(encoding="utf-8")
-        )
-        contract = catalog["modelAssets"]["bge-m3"]
-        self.assertEqual(contract["inventorySha256"], _inventory_sha256(manifest["files"], "bytes"))
-        self.assertEqual(contract["fileCount"], manifest["fileCount"])
-        self.assertEqual(contract["totalBytes"], manifest["totalBytes"])
+        bge = catalog["modelAssets"]["bge-m3"]
+        self.assertEqual("BAAI/bge-m3", bge["repository"])
+        self.assertEqual("5617a9f61b028005a4858fdac845db406aefb181", bge["revision"])
+        self.assertEqual("HUGGINGFACE_TEXT_EMBEDDINGS_INFERENCE_CPU_1_9", bge["runtime"])
+        self.assertRegex(bge["imageReference"], r"^ghcr\.io/huggingface/.+@sha256:[0-9a-f]{64}$")
 
-    def test_exact_model_and_real_team_b_asset_inventory_passes(self) -> None:
+        paddle = catalog["modelAssets"]["paddleocr-vl-1.6"]
+        self.assertEqual("PaddlePaddle/PaddleOCR-VL-1.6-GGUF", paddle["repository"])
+        self.assertEqual("511b09642bb324401f15f97cc23bc67e8f0a291d", paddle["revision"])
+        self.assertEqual("LLAMA_CPP_SERVER_B10524", paddle["runtime"])
+        self.assertEqual(935769056, paddle["modelFile"]["sizeBytes"])
+        self.assertEqual(881770560, paddle["mmprojFile"]["sizeBytes"])
+
+    def test_official_model_compose_has_no_host_port_or_community_bge(self) -> None:
+        compose = (ROOT / "deploy/p1/compose.full.models.yml").read_text(encoding="utf-8")
+        self.assertIn("ghcr.io/huggingface/text-embeddings-inference:cpu-1.9@sha256:", compose)
+        self.assertIn("BAAI/bge-m3", compose)
+        self.assertIn("ghcr.io/ggml-org/llama.cpp:server-b10524@sha256:", compose)
+        self.assertIn("PaddlePaddle/PaddleOCR-VL-1.6-GGUF", compose)
+        self.assertIn("LLAMA_ARG_MODEL_URL", compose)
+        self.assertIn("LLAMA_ARG_MMPROJ_URL", compose)
+        self.assertIn("p1-model-fetch", compose)
+        self.assertNotIn("lm-kit", compose)
+        self.assertNotIn("ports:", compose)
+
+    def test_real_return_artifact_passes_and_tamper_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            model_root = root / "models"
-            _write_model(model_root, "bge-m3")
-            _write_model(model_root, "paddleocr-vl-1.6")
-            return_manifest = _write_return_manifest(root / "return")
-            contract_root = _write_test_catalog(root / "contract", model_root)
+            manifest = _write_return_manifest(root)
+            self.assertEqual([], verify_assets(manifest, ROOT))
 
-            self.assertEqual([], verify_assets(model_root, return_manifest, contract_root))
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+            payload["forecast"]["expectedReturn"] = 0.2
+            _write_json(manifest, payload)
+            self.assertIn("RETURN:FORECAST:FORMULA", verify_assets(manifest, ROOT))
 
-    def test_empty_json_markers_cannot_pass_preflight(self) -> None:
+    def test_empty_return_marker_never_passes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            model_root = root / "models"
-            for component in MODEL_CONTRACTS:
-                _write_json(model_root / component / "model-asset-manifest.v1.json", {})
-            return_manifest = root / "return/p1-return-engine-manifest.v1.json"
-            _write_json(return_manifest, {})
-            contract_root = _write_test_catalog(root / "contract", model_root)
-
-            errors = verify_assets(model_root, return_manifest, contract_root)
-            self.assertIn("MODEL:bge-m3:SCHEMA", errors)
-            self.assertIn("MODEL:paddleocr-vl-1.6:QUALITY_EVIDENCE", errors)
+            path = Path(temporary) / "p1-return-engine-manifest.v1.json"
+            _write_json(path, {})
+            errors = verify_assets(path, ROOT)
             self.assertIn("RETURN:EVIDENCE_MODE", errors)
             self.assertIn("RETURN:ARTIFACT_SET", errors)
-
-    def test_hash_swap_symlink_and_wrong_return_formula_fail_closed(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            model_root = root / "models"
-            _write_model(model_root, "bge-m3")
-            _write_model(model_root, "paddleocr-vl-1.6")
-            return_manifest = _write_return_manifest(root / "return")
-            contract_root = _write_test_catalog(root / "contract", model_root)
-
-            bge_asset = model_root / "bge-m3/files/asset-00.bin"
-            bge_asset.write_bytes(b"changed")
-            return_payload = json.loads(return_manifest.read_text(encoding="utf-8"))
-            return_payload["forecast"]["expectedReturn"] = 0.2
-            _write_json(return_manifest, return_payload)
-            errors = verify_assets(model_root, return_manifest, contract_root)
-            self.assertTrue(any(error.startswith("MODEL:bge-m3_FILE_INTEGRITY") for error in errors))
-            self.assertIn("RETURN:FORECAST:FORMULA", errors)
-
-            paddle_asset = model_root / "paddleocr-vl-1.6/files/asset-00.bin"
-            target = root / "outside.bin"
-            target.write_bytes(paddle_asset.read_bytes())
-            paddle_asset.unlink()
-            paddle_asset.symlink_to(target)
-            errors = verify_assets(model_root, return_manifest, contract_root)
-            self.assertTrue(any(error.startswith("MODEL:paddleocr-vl-1.6_FILE_BOUNDARY") for error in errors))
-
-    def test_symlinked_model_component_root_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            model_root = root / "models"
-            outside = root / "outside"
-            _write_model(outside, "bge-m3")
-            model_root.mkdir()
-            (model_root / "bge-m3").symlink_to(outside / "bge-m3", target_is_directory=True)
-            _write_model(model_root, "paddleocr-vl-1.6")
-            return_manifest = _write_return_manifest(root / "return")
-            contract_root = _write_test_catalog(root / "contract", model_root)
-
-            self.assertIn(
-                "MODEL:bge-m3:ROOT_BOUNDARY",
-                verify_assets(model_root, return_manifest, contract_root),
-            )
-
-    def test_current_catalog_keeps_paddle_inventory_fail_closed(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            model_root = root / "models"
-            _write_model(model_root, "bge-m3")
-            _write_model(model_root, "paddleocr-vl-1.6")
-            return_manifest = _write_return_manifest(root / "return")
-
-            self.assertIn(
-                "MODEL:paddleocr-vl-1.6:INVENTORY_NOT_MATERIALIZED",
-                verify_assets(model_root, return_manifest, ROOT),
-            )
 
 
 if __name__ == "__main__":

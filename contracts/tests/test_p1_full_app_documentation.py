@@ -52,7 +52,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertGreater(len(relatives), 100)
         for relative in relatives:
             path = ROOT / relative
-            metadata = path.lstat()
+            path.lstat()
             self.assertFalse(path.is_symlink(), relative)
             self.assertTrue(os.path.isfile(path), relative)
             payload = path.read_bytes()
@@ -111,12 +111,14 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         controller = (ROOT / "deploy/p1/full-appctl").read_text(encoding="utf-8")
         windows = (ROOT / "capstone.ps1").read_text(encoding="utf-8")
         overlay = (ROOT / "deploy/p1/compose.full.seed.yml").read_text(encoding="utf-8")
+        model_overlay = (ROOT / "deploy/p1/compose.full.models.yml").read_text(encoding="utf-8")
         for command in ("install", "start", "stop", "status", "doctor", "backup", "restore", "verify"):
             self.assertIn(command, controller)
             self.assertIn(command, windows)
         self.assertIn("full-appctl", linux)
         self.assertIn("FULL_INSTALL_BLOCKED_REQUIRED_ARTIFACTS", controller)
         self.assertIn("verify_p1_full_app_assets.py", controller)
+        self.assertIn("install_model_runtimes", controller)
         self.assertIn("STATIC_ASSET_INTEGRITY_PASS", controller)
         self.assertIn("CAPSTONE_RELEASE_AUTHORITY=NONE", controller)
         self.assertIn("selected_project_name", controller)
@@ -125,6 +127,12 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertIn("migrate: {condition: service_completed_successfully}", overlay)
         self.assertIn("seed-import: {condition: service_completed_successfully}", overlay)
         self.assertNotIn('PROVIDER_LIVE_CALLS_ENABLED: "true"', overlay)
+        self.assertIn("BAAI/bge-m3", model_overlay)
+        self.assertIn("PaddlePaddle/PaddleOCR-VL-1.6-GGUF", model_overlay)
+        self.assertIn("LLAMA_ARG_MODEL_URL", model_overlay)
+        self.assertIn("p1-model-fetch", model_overlay)
+        self.assertNotIn("lm-kit", model_overlay)
+        self.assertNotIn("ports:", model_overlay)
 
 
 if __name__ == "__main__":

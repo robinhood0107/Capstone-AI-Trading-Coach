@@ -97,6 +97,16 @@ _V3_CANONICAL_STEPS = (
     "postBalance",
     "openOrderReconciliation",
 )
+_V3_SIGNED_OPERATIONS = (
+    "KIS_MOCK_PRICE_READ",
+    "KIS_MOCK_PRE_BALANCE",
+    "KIS_MOCK_BUYABLE",
+    "KIS_MOCK_SUBMIT_LIMIT_BUY",
+    "KIS_MOCK_CANCEL_FULL",
+    "KIS_MOCK_EXECUTION_READ",
+    "KIS_MOCK_POST_BALANCE",
+    "KIS_MOCK_OPEN_ORDER_RECONCILIATION",
+)
 _BALANCE_DIAGNOSTIC_STEPS = ("balance",)
 _APPROVAL_CONSUMED_KEY_PREFIX = "kis:mock:approval-consumed:v1:"
 _PROVIDER_CODE = re.compile(r"^[A-Z0-9][A-Z0-9_-]{0,31}$")
@@ -943,7 +953,8 @@ def _consume_exact_approval_once(packet: ApprovalPacket, now: datetime) -> None:
         approval = load_and_verify_execution_approval(
             _P1_APPROVAL_PATH,
             provider_family="KIS_MOCK",
-            exact_operations=packet.steps,
+            # 내부 단계명은 historical packet bytes에 남기고 외부 실행권한은 닫힌 대문자 token으로 서명한다.
+            exact_operations=_V3_SIGNED_OPERATIONS,
             payload_sha256=packet.packet_sha256,
             repository_digest=canonical_json_sha256(
                 {
@@ -958,7 +969,9 @@ def _consume_exact_approval_once(packet: ApprovalPacket, now: datetime) -> None:
             owner_scope_digest=ZERO_SCOPE_SHA256,
             account_scope_digest=scope_digest(packet.order.account_id),
             credential_scope_digest=scope_digest("KIS_MOCK"),
-            physical_call_cap=(packet.physical_caps.token_p + packet.physical_caps.brokerage),
+            # certification authority includes exactly one read-only quote in
+            # addition to the token and seven brokerage reservations.
+            physical_call_cap=(1 + packet.physical_caps.token_p + packet.physical_caps.brokerage),
             cost_cap_microusd=0,
             now=now,
         )

@@ -1,12 +1,8 @@
 $ErrorActionPreference = "Stop"
 
-$allowed = @("install", "start", "stop", "status", "doctor", "backup", "restore", "verify", "help", "-h", "--help")
+$allowed = @("up", "down", "status", "logs", "smoke", "doctor", "mock", "help", "-h", "--help")
 if ($args.Count -lt 1 -or -not $allowed.Contains([string]$args[0])) {
-    [Console]::Error.WriteLine("Usage: .\capstone.ps1 <install|start|stop|status|doctor|backup|restore|verify> [--degraded]")
-    exit 1
-}
-if ($args.Count -gt 2 -or ($args.Count -eq 2 -and [string]$args[1] -ne "--degraded")) {
-    [Console]::Error.WriteLine("CAPSTONE_ERROR=UNEXPECTED_ARGUMENTS")
+    [Console]::Error.WriteLine("Usage: .\capstone.ps1 <up|down|status|logs|smoke|doctor|mock> [options]")
     exit 1
 }
 

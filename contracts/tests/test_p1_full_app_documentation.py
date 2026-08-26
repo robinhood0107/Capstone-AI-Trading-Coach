@@ -144,31 +144,26 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertNotIn("gh release create", workflow)
         self.assertNotIn("contents: write", workflow)
 
-    def test_cross_platform_full_app_entrypoints_are_fail_closed(self) -> None:
+    def test_cross_platform_full_app_entrypoints_expose_the_single_compose_flow(self) -> None:
         linux = (ROOT / "capstone").read_text(encoding="utf-8")
         controller = (ROOT / "deploy/p1/full-appctl").read_text(encoding="utf-8")
         windows = (ROOT / "capstone.ps1").read_text(encoding="utf-8")
         compose = (ROOT / "deploy/p1/compose.yml").read_text(encoding="utf-8")
-        for command in ("install", "start", "preview", "stop", "status", "doctor", "backup", "restore", "verify"):
+        for command in ("up", "down", "status", "logs", "smoke", "doctor", "mock"):
             self.assertIn(command, controller)
-            if command != "preview":
-                self.assertIn(command, windows)
+            self.assertIn(command, windows)
         self.assertIn("full-appctl", linux)
-        self.assertIn("FULL_INSTALL_BLOCKED_REQUIRED_ARTIFACTS", controller)
-        self.assertIn("verify_p1_full_app_assets.py", controller)
-        self.assertIn("install_model_runtimes", controller)
-        self.assertIn("STATIC_ASSET_INTEGRITY_PASS", controller)
-        self.assertIn("CAPSTONE_RELEASE_AUTHORITY=NONE", controller)
-        self.assertIn("selected_project_name", controller)
-        self.assertIn("state_init_resume_inventory", (ROOT / "deploy/p1/p1ctl").read_text(encoding="utf-8"))
-        self.assertIn("BLOCKED_G7_ATOMIC_RESTORE_NOT_IMPLEMENTED", controller)
-        self.assertIn('FULL_COMPOSE=$SCRIPT_DIR/compose.yml', controller)
+        self.assertIn("CAPSTONE_PERSISTENT_CONTAINERS", controller)
+        self.assertIn("KIS_MOCK_NOT_CERTIFIED", controller)
+        self.assertIn("mock_certified", controller)
+        self.assertIn("P1_KIS_MOCK_ONLINE_ENABLED", controller)
+        self.assertIn('COMPOSE_FILE=$SCRIPT_DIR/compose.yml', controller)
         self.assertIn("DOCKER_BIN=/usr/bin/docker", controller)
-        self.assertNotIn("FULL_SEED_COMPOSE", controller)
-        self.assertNotIn("FULL_MODEL_COMPOSE", controller)
+        self.assertNotIn("compose.offline", controller)
         self.assertIn("migrate: {condition: service_completed_successfully}", compose)
         self.assertIn("seed-import: {condition: service_completed_successfully}", compose)
         self.assertNotIn('PROVIDER_LIVE_CALLS_ENABLED: "true"', compose)
+        self.assertNotIn("openapi.koreainvestment.com:9443", compose)
         self.assertIn("BAAI/bge-m3", compose)
         self.assertIn("PaddlePaddle/PaddleOCR-VL-1.6-GGUF", compose)
         self.assertIn("paddleocr-vl-model-fetch", compose)
@@ -187,13 +182,11 @@ class P1FullAppDocumentationTest(unittest.TestCase):
     def test_full_app_compose_has_health_gated_startup_order(self) -> None:
         compose = (ROOT / "deploy/p1/compose.yml").read_text(encoding="utf-8")
         for service in (
-            "runtime-netns",
-            "api-edge",
             "postgres",
             "redis",
-            "actor-capability-authority",
-            "python-worker",
-            "spring-api",
+            "actor-authority",
+            "decision-platform",
+            "experience-dashboard",
             "bge-m3",
             "paddleocr-vl",
         ):
@@ -204,14 +197,10 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             self.assertIsNotNone(match, service)
             block = match.group(1)
             self.assertIn("healthcheck:", block, service)
-        self.assertIn("spring-api: {condition: service_healthy}", compose)
-        self.assertIn("api-edge: {condition: service_healthy}", compose)
-        self.assertIn("return-engine-preview-run: {condition: service_completed_successfully}", compose)
-        self.assertIn("return-engine-preview-verify: {condition: service_completed_successfully}", compose)
-        self.assertIn("actor-capability-authority: {condition: service_healthy}", compose)
-        self.assertIn("python-worker: {condition: service_healthy}", compose)
-        self.assertIn("bge-m3: {condition: service_healthy}", compose)
-        self.assertIn("paddleocr-vl: {condition: service_healthy}", compose)
+        self.assertIn("actor-authority: {condition: service_healthy}", compose)
+        self.assertIn("decision-platform: {condition: service_healthy}", compose)
+        self.assertIn("return-engine-preview-prepare", compose)
+        self.assertIn("compose run --rm", (ROOT / "README.md").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

@@ -176,7 +176,9 @@ object DemoIdentityBootstrap {
                 insert into p1_offline_demo_authority (
                     authority_id,active,credential_bundle_digest
                 ) values ('P1_OFFLINE_DEMO', true, ?)
-                on conflict (authority_id) do nothing
+                on conflict (authority_id) do update
+                set active = excluded.active,
+                    credential_bundle_digest = excluded.credential_bundle_digest
                 """.trimIndent(),
             ).use { statement ->
                 statement.queryTimeout = STATEMENT_TIMEOUT_SECONDS
@@ -223,7 +225,7 @@ object DemoIdentityBootstrap {
                 username == bundle.identity.username &&
                     role == bundle.identity.role.name &&
                     status == "ACTIVE" &&
-                    securityVersion == 1L &&
+                    securityVersion >= 1L &&
                     DemoCredentialBundlePolicy
                         .verifyStored(
                             identity = bundle.identity,

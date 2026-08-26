@@ -7,6 +7,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "README.md"
+ENV_REFERENCE = ROOT / "docs" / "decision-platform" / "P1_ENV_REFERENCE.md"
 P1CTL = ROOT / "deploy" / "p1" / "p1ctl"
 ENTRYPOINT = ROOT / "deploy" / "p1" / "docker" / "secret-entrypoint.sh"
 P1_COMPOSE = ROOT / "deploy" / "p1" / "compose.db.yml"
@@ -38,7 +39,7 @@ S8_GENERATOR = (
 
 
 def _readme_keys(name: str) -> set[str]:
-    text = README.read_text(encoding="utf-8")
+    text = ENV_REFERENCE.read_text(encoding="utf-8")
     match = re.search(
         rf"<!-- P1_{name}_KEYS_BEGIN -->\s*```text\n(.*?)\n```\s*"
         rf"<!-- P1_{name}_KEYS_END -->",
@@ -156,10 +157,7 @@ class P1EnvironmentDocumentationTest(unittest.TestCase):
             self.assertNotIn(forbidden, compose)
 
     def test_ghcr_docs_cover_all_three_digest_pinned_packages(self) -> None:
-        documents = (
-            README.read_text(encoding="utf-8"),
-            (ROOT / "docs" / "decision-platform" / "P1_OFFLINE_DEMO_배포_및_검증.md").read_text(encoding="utf-8"),
-        )
+        documents = ((ROOT / "docs" / "decision-platform" / "P1_OFFLINE_DEMO_배포_및_검증.md").read_text(encoding="utf-8"),)
         packages = (
             "capstone-spring-api",
             "capstone-python-services",

@@ -116,7 +116,9 @@ class P1FullAppAssetVerifierTest(unittest.TestCase):
         self.assertIn("p1-model-fetch", compose)
         self.assertNotIn("lm-kit", compose)
         bge = compose.split("  bge-m3:\n", 1)[1].split("\n  paddleocr-vl-model-fetch:", 1)[0]
-        paddle = compose.split("  paddleocr-vl:\n", 1)[1].split("\nsecrets:", 1)[0]
+        paddle = compose.split("  paddleocr-vl:\n", 1)[1].split(
+            "\n  return-engine-preview-prepare:", 1
+        )[0]
         self.assertNotIn("ports:", bge)
         self.assertNotIn("ports:", paddle)
 

@@ -1,16 +1,24 @@
-"""Retired standalone brokerage server configuration.
-
-P1 brokerage execution is intentionally one-shot through
-``kis_mock_approval_probe``.  No reusable gRPC server entry point exists.
-"""
+"""certification 이후 같은 기능 컨테이너에서만 여는 KIS Mock gRPC server."""
 
 from __future__ import annotations
 
 import os
 import re
+from concurrent import futures
 from dataclasses import dataclass
 
+import grpc
+from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 from pydantic import SecretStr
+
+from app.brokerage.brokerage_rpc import BrokerageServicer
+from app.brokerage.kis_mock_online_client import KISBrokerageCallBudget, KISMockBrokerageHttpClient
+from app.brokerage.kis_mock_online_runtime import KISMockOnlineBalanceReader
+from app.brokerage.kis_mock_order_gateway import KISMockOrderGateway
+from app.brokerage.mock_order_reference_store import EncryptedRedisOrderReferenceStore
+from app.data.kis._credential_transport import _build_redis_client
+from app.data.kis.settings import KISSettings
+from app.generated import brokerage_pb2_grpc
 
 _SAFE_SECRET = re.compile(r"^[A-Za-z0-9._~:-]{32,256}$")
 _ACCOUNT_ID = re.compile(r"^acct_[0-9a-f]{32}$")
@@ -80,3 +88,63 @@ def _is_loopback(address: str) -> bool:
     else:
         return False
     return port.isdigit() and 1 <= int(port) <= 65_535
+
+
+def main() -> None:
+    """수동 `--mock` 모드에서만 retry 없는 mock brokerage RPC를 제공한다."""
+
+    settings = BrokerageGrpcServerSettings.from_env()
+    redis_client = _build_redis_client()
+    client: KISMockBrokerageHttpClient | None = None
+    server: grpc.Server | None = None
+    try:
+        reference_store = EncryptedRedisOrderReferenceStore(
+            redis_client,
+            encryption_key=settings.reference_key,
+            ttl_seconds=settings.reference_ttl_seconds,
+        )
+        budget = KISBrokerageCallBudget(
+            token_p_cap=settings.token_p_physical_cap,
+            brokerage_cap=settings.brokerage_physical_cap,
+        )
+        client = KISMockBrokerageHttpClient(
+            settings=KISSettings(kis_mode="mock", kis_offline=False, kis_retry_attempts=1),
+            budget=budget,
+        )
+        gateway = KISMockOrderGateway(client, mode="mock", reference_store=reference_store)
+        server = grpc.server(
+            futures.ThreadPoolExecutor(max_workers=4),
+            options=(
+                ("grpc.max_receive_message_length", 262_144),
+                ("grpc.max_send_message_length", 1_048_576),
+                ("grpc.enable_retries", 0),
+            ),
+        )
+        brokerage_pb2_grpc.add_BrokerageServiceServicer_to_server(
+            BrokerageServicer(
+                gateway,
+                settings.shared_secret,
+                bound_account_id=settings.bound_account_id,
+                balance_reader=KISMockOnlineBalanceReader(client),
+            ),
+            server,
+        )
+        health_service = health.HealthServicer()
+        health_pb2_grpc.add_HealthServicer_to_server(health_service, server)
+        health_service.set("", health_pb2.HealthCheckResponse.SERVING)
+        if server.add_insecure_port(settings.bind_address) != int(
+            settings.bind_address.rsplit(":", 1)[1]
+        ):
+            raise RuntimeError("KIS Mock brokerage gRPC bind failed")
+        server.start()
+        server.wait_for_termination()
+    finally:
+        if server is not None:
+            server.stop(grace=5).wait()
+        if client is not None:
+            client.close()
+        redis_client.close()
+
+
+if __name__ == "__main__":
+    main()

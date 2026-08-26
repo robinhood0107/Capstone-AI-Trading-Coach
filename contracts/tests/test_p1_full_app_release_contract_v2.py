@@ -19,13 +19,9 @@ SHA_A = "a" * 64
 SHA_B = "b" * 64
 GIT_SHA = "c" * 40
 REQUIRED_IMAGES = (
-    "gateway",
+    "actor-authority",
+    "decision-platform",
     "experience-dashboard",
-    "spring-api",
-    "python-services",
-    "strong-llm",
-    "return-engine",
-    "searxng",
     "postgres-pgvector",
     "redis",
     "bge-m3-tei",
@@ -35,8 +31,8 @@ REQUIRED_IMAGES = (
 
 def _manifest(stage: str = "CANDIDATE") -> dict[str, object]:
     image = {
-        "component": "spring-api",
-        "reference": f"ghcr.io/example/spring-api@sha256:{SHA_A}",
+        "component": "decision-platform",
+        "reference": f"ghcr.io/example/decision-platform@sha256:{SHA_A}",
         "digest": f"sha256:{SHA_A}",
         "platform": "linux/amd64",
     }
@@ -112,7 +108,7 @@ def _manifest(stage: str = "CANDIDATE") -> dict[str, object]:
             "CUDA": "PENDING_USER_HARDWARE_VERIFICATION",
             "SEARXNG": "KNOWN_DEGRADED_NONBLOCKING",
             "LIGHTGBM": "RESEARCH_ONLY_NOT_APPLICABLE",
-            "LIVE_ORDER": "FUTURE_NOT_IMPLEMENTED",
+            "LIVE_ORDER": "KIS_LIVE_DISABLED_KIS_MOCK_MANUAL_ONLY",
         },
         "providerLiveReceipt": {
             "receiptSha256": SHA_A,
@@ -149,7 +145,7 @@ class P1FullAppReleaseContractV2Test(unittest.TestCase):
         self.assertEqual("1.0.0", self.catalog["releaseVersion"])
         self.assertEqual(".github/workflows/p1-full-app-release.yml", self.catalog["releaseAuthorityWorkflow"])
         self.assertEqual(list(REQUIRED_IMAGES), self.catalog["requiredImageComponents"])
-        self.assertEqual(["kafka"], self.catalog["optionalImageComponents"])
+        self.assertEqual([], self.catalog["optionalImageComponents"])
         self.assertEqual(
             "contracts/schemas/p1-return-engine-artifact-manifest.v1.schema.json",
             self.catalog["returnEngineArtifactSchema"],
@@ -246,7 +242,7 @@ class P1FullAppReleaseContractV2Test(unittest.TestCase):
 
         payload["images"][0]["reference"] = payload["images"][0]["reference"].replace(SHA_A, SHA_B)
         self.assertIn(
-            "IMAGE_REFERENCE_DIGEST_MISMATCH:gateway",
+            "IMAGE_REFERENCE_DIGEST_MISMATCH:actor-authority",
             semantic_errors(payload, ROOT),
         )
 

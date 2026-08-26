@@ -1,0 +1,49 @@
+{
+  "$id": "contracts/schemas/p1-kis-mock-execution-approval.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accountScopeDigest": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "approvalId": {"pattern": "^[A-Z0-9][A-Z0-9._-]{7,95}$", "type": "string"},
+    "contractId": {"const": "p1-kis-mock-execution-approval.v1"},
+    "costCapMicrousd": {"const": 0},
+    "credentialScopeDigest": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "evidenceDigest": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "exactOperations": {
+      "items": {"pattern": "^[A-Z][A-Z0-9._-]{1,95}$", "type": "string"},
+      "maxItems": 16,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "expiresAt": {"format": "date-time", "type": "string"},
+    "issuerKeyId": {"pattern": "^[A-Z0-9][A-Z0-9._-]{2,63}$", "type": "string"},
+    "nonce": {"pattern": "^[0-9a-f]{32}$", "type": "string"},
+    "ownerScopeDigest": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "payloadSha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "physicalCallCap": {"maximum": 112, "minimum": 1, "type": "integer"},
+    "providerFamily": {"pattern": "^[A-Z][A-Z0-9._-]{1,95}$", "type": "string"},
+    "repositoryDigest": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "signature": {"pattern": "^[A-Za-z0-9_-]{86}$", "type": "string"}
+  },
+  "required": [
+    "accountScopeDigest",
+    "approvalId",
+    "contractId",
+    "costCapMicrousd",
+    "credentialScopeDigest",
+    "evidenceDigest",
+    "exactOperations",
+    "expiresAt",
+    "issuerKeyId",
+    "nonce",
+    "ownerScopeDigest",
+    "payloadSha256",
+    "physicalCallCap",
+    "providerFamily",
+    "repositoryDigest",
+    "signature"
+  ],
+  "title": "p1-kis-mock-execution-approval.v1",
+  "type": "object"
+}

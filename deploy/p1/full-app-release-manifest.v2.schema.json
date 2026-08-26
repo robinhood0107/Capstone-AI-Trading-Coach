@@ -27,18 +27,14 @@
     "platform": {"const": "linux/amd64"},
     "images": {
       "type": "array",
-      "minItems": 11,
-      "maxItems": 12,
+      "minItems": 7,
+      "maxItems": 7,
       "uniqueItems": true,
       "items": {"$ref": "#/$defs/image"},
       "allOf": [
-        {"contains": {"properties": {"component": {"const": "gateway"}}, "required": ["component"]}},
+        {"contains": {"properties": {"component": {"const": "actor-authority"}}, "required": ["component"]}},
+        {"contains": {"properties": {"component": {"const": "decision-platform"}}, "required": ["component"]}},
         {"contains": {"properties": {"component": {"const": "experience-dashboard"}}, "required": ["component"]}},
-        {"contains": {"properties": {"component": {"const": "spring-api"}}, "required": ["component"]}},
-        {"contains": {"properties": {"component": {"const": "python-services"}}, "required": ["component"]}},
-        {"contains": {"properties": {"component": {"const": "strong-llm"}}, "required": ["component"]}},
-        {"contains": {"properties": {"component": {"const": "return-engine"}}, "required": ["component"]}},
-        {"contains": {"properties": {"component": {"const": "searxng"}}, "required": ["component"]}},
         {"contains": {"properties": {"component": {"const": "postgres-pgvector"}}, "required": ["component"]}},
         {"contains": {"properties": {"component": {"const": "redis"}}, "required": ["component"]}},
         {"contains": {"properties": {"component": {"const": "bge-m3-tei"}}, "required": ["component"]}},
@@ -102,7 +98,7 @@
       "additionalProperties": false,
       "required": ["component", "reference", "digest", "platform"],
       "properties": {
-        "component": {"enum": ["gateway", "experience-dashboard", "spring-api", "python-services", "strong-llm", "return-engine", "searxng", "postgres-pgvector", "redis", "bge-m3-tei", "paddleocr-vl-llama", "kafka"]},
+        "component": {"enum": ["actor-authority", "decision-platform", "experience-dashboard", "postgres-pgvector", "redis", "bge-m3-tei", "paddleocr-vl-llama"]},
         "reference": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9./_:-]{0,199}@sha256:(?!0{64}$)[0-9a-f]{64}$"},
         "digest": {"type": "string", "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$"},
         "platform": {"const": "linux/amd64"}
@@ -223,7 +219,7 @@
         "CUDA": {"enum": ["PASS", "PENDING_USER_HARDWARE_VERIFICATION"]},
         "SEARXNG": {"enum": ["READY", "KNOWN_DEGRADED_NONBLOCKING"]},
         "LIGHTGBM": {"const": "RESEARCH_ONLY_NOT_APPLICABLE"},
-        "LIVE_ORDER": {"const": "FUTURE_NOT_IMPLEMENTED"}
+        "LIVE_ORDER": {"const": "KIS_LIVE_DISABLED_KIS_MOCK_MANUAL_ONLY"}
       }
     },
     "providerLiveReceipt": {

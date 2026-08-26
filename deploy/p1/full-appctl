@@ -4,273 +4,463 @@ umask 077
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 REPO_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd -P)
+STATE_DIR=${P1_STATE_DIR:-$SCRIPT_DIR/.state-app}
+SECRETS_DIR=$STATE_DIR/secrets
+RUNTIME_ENV=$STATE_DIR/runtime.env
+ACTIVE_MODE=$STATE_DIR/active-mode.env
+COMPOSE_FILE=$SCRIPT_DIR/compose.yml
+PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1}
 P1CTL=$SCRIPT_DIR/p1ctl
-STATE_DIR=${P1_STATE_DIR:-$SCRIPT_DIR/.state}
-STAGE_FILE=$STATE_DIR/full-app-stage
-SEED_MANIFEST=$SCRIPT_DIR/seed/public-rag/public-rag-seed.v1.manifest.json
-FULL_COMPOSE=$SCRIPT_DIR/compose.yml
-FULL_PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-full-app}
-DEGRADED_PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-offline-demo}
-PREVIEW_PROJECT_NAME=${P1_PREVIEW_PROJECT_NAME:-capstone-p1-preview}
-PREVIEW_STATE_DIR=${P1_PREVIEW_STATE_DIR:-$SCRIPT_DIR/.state-preview}
-COMPOSE_PROJECT_NAME=$FULL_PROJECT_NAME
+RELEASE_GUARD=$SCRIPT_DIR/release_guard.py
 DOCKER_BIN=/usr/bin/docker
 [[ -x $DOCKER_BIN ]] || DOCKER_BIN=$(command -v docker 2>/dev/null || true)
-RETURN_MANIFEST=$REPO_ROOT/workspaces/return-engine/artifacts/p1-return-engine-manifest.v1.json
-DASHBOARD_LOCK=$REPO_ROOT/workspaces/experience-dashboard/package-lock.json
-DASHBOARD_DOCKERFILE=$REPO_ROOT/workspaces/experience-dashboard/Dockerfile
 
 die() { printf 'CAPSTONE_ERROR=%s\n' "$1" >&2; exit 1; }
 require_command() { command -v "$1" >/dev/null 2>&1 || die "MISSING_COMMAND_$1"; }
 
 usage() {
   cat <<'EOF'
-Usage: ./capstone <install|start|preview|stop|status|doctor|backup|restore|verify> [--degraded]
+Usage:
+  ./capstone up [--models] [--mock]
+  ./capstone status|logs|smoke|down|doctor
+  ./capstone mock <configure|doctor|certify> [--symbol 005930] [--quantity 1]
 
-The default lane is the full P1 application and fails closed while a required artifact is absent.
-Only install, start, doctor, and verify accept --degraded. `preview` builds and starts the
-received Team A/B preview plus the full backend, but grants no release authority. Degraded mode runs the preserved
-provider-free Core lane and never implies a full-app release gate PASS.
+Default `up` starts five persistent containers. `--models` adds the official
+BGE-M3 and llama.cpp PaddleOCR-VL runtimes for a total of seven. Brokerage is
+provider-free unless the owner explicitly selects `--mock` after certification.
 EOF
 }
 
-ensure_state_boundary() {
-  require_command python3
-  if [[ ! -e $STATE_DIR ]]; then
-    python3 "$SCRIPT_DIR/release_guard.py" state-init "$STATE_DIR" || die STATE_INIT
-  fi
-  python3 "$SCRIPT_DIR/release_guard.py" state-check "$STATE_DIR" || die STATE_BOUNDARY
-}
-
-record_stage() {
-  ensure_state_boundary
-  printf '%s\n' "$1" | python3 "$SCRIPT_DIR/release_guard.py" state-write "$STATE_DIR" full-app-stage 0600
-}
-
-is_regular() {
-  [[ -f $1 && ! -L $1 ]]
-}
-
-full_compose() {
+compose() {
   [[ -n $DOCKER_BIN ]] || die MISSING_COMMAND_docker
-  local args=("$DOCKER_BIN" compose --project-name "$COMPOSE_PROJECT_NAME")
-  if state_initialized; then
-    args+=(--env-file "$STATE_DIR/runtime.env")
+  export P1_OPERATOR_UID=${P1_OPERATOR_UID:-$(id -u)}
+  export P1_KIS_MOCK_RUNTIME_DIR=${P1_KIS_MOCK_RUNTIME_DIR:-$STATE_DIR/mock}
+  local args=("$DOCKER_BIN" compose --project-name "$PROJECT_NAME")
+  if [[ -f $RUNTIME_ENV && ! -L $RUNTIME_ENV ]]; then
+    args+=(--env-file "$RUNTIME_ENV")
   else
     export P1_SECRET_GID=${P1_SECRET_GID:-$(id -g)}
-    export P1_SECRETS_DIR=${P1_SECRETS_DIR:-$STATE_DIR/secrets}
+    export P1_SECRETS_DIR=${P1_SECRETS_DIR:-$SECRETS_DIR}
+    export P1_SPRING_IMAGE=${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
+    export P1_PYTHON_IMAGE=${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
   fi
-  args+=(-f "$FULL_COMPOSE")
+  args+=(-f "$COMPOSE_FILE")
   "${args[@]}" "$@"
 }
 
-model_runtime_preflight() {
-  local missing=0
-  if [[ -z $DOCKER_BIN ]] || ! "$DOCKER_BIN" compose version >/dev/null 2>&1; then
-    printf 'CAPSTONE_FULL_BLOCKER=DOCKER_COMPOSE_UNAVAILABLE\n' >&2
-    return 1
-  fi
-  if ! is_regular "$FULL_COMPOSE" || ! full_compose config --quiet; then
-    printf 'CAPSTONE_FULL_BLOCKER=MODEL_RUNTIME_COMPOSE_INVALID\n' >&2
-    missing=1
-  fi
-  ((missing == 0))
+write_state() {
+  local relative=$1 mode=$2
+  python3 "$RELEASE_GUARD" state-write "$STATE_DIR" "$relative" "$mode"
 }
 
-install_model_runtimes() {
-  model_runtime_preflight || die MODEL_RUNTIME_PREFLIGHT
-  full_compose pull bge-m3 paddleocr-vl
-  record_stage MODEL_RUNTIME_IMAGES_PULLED
-  printf 'CAPSTONE_MODEL_RUNTIME_IMAGES=PULLED_OFFICIAL\n'
+append_state() {
+  local relative=$1 mode=$2
+  python3 "$RELEASE_GUARD" state-append "$STATE_DIR" "$relative" "$mode"
 }
 
-build_preview_core_images() {
-  "$DOCKER_BIN" build -f "$SCRIPT_DIR/docker/spring-api.Dockerfile" \
-    -t capstone-spring-api:p1-local "$REPO_ROOT"
-  "$DOCKER_BIN" build -f "$SCRIPT_DIR/docker/python-services.Dockerfile" \
-    -t capstone-python-services:p1-local "$REPO_ROOT"
+state_ready() {
+  [[ -f $RUNTIME_ENV && ! -L $RUNTIME_ENV && -d $SECRETS_DIR && ! -L $SECRETS_DIR ]]
+}
+
+build_core_images() {
+  "$DOCKER_BIN" build -f "$SCRIPT_DIR/docker/decision-platform.Dockerfile" \
+    -t capstone-decision-platform:p1-local "$REPO_ROOT"
   "$DOCKER_BIN" build -f "$SCRIPT_DIR/docker/postgres-pgvector.Dockerfile" \
     -t capstone-postgres-pgvector:p1-local "$REPO_ROOT"
 }
 
-full_preflight() {
-  local missing=0
-  require_command python3
-  local return_present=1
-  if ! model_runtime_preflight; then
-    missing=1
-  fi
-  if ! is_regular "$SEED_MANIFEST"; then
-    printf 'CAPSTONE_FULL_BLOCKER=PUBLIC_RAG_SEED_MANIFEST_MISSING\n' >&2
-    missing=1
-  elif ! "$SCRIPT_DIR/verify-public-rag-seed" "$SEED_MANIFEST" >/dev/null; then
-    printf 'CAPSTONE_FULL_BLOCKER=PUBLIC_RAG_SEED_INTEGRITY_FAILED\n' >&2
-    missing=1
-  fi
-  if ! is_regular "$RETURN_MANIFEST"; then
-    printf 'CAPSTONE_FULL_BLOCKER=TEAM_B_REAL_ARTIFACT_MISSING\n' >&2
-    missing=1
-    return_present=0
-  fi
-  if ((return_present)) && ! python3 "$REPO_ROOT/contracts/verify_p1_full_app_assets.py" \
-    --return-manifest "$RETURN_MANIFEST" --repository-root "$REPO_ROOT"; then
-    printf 'CAPSTONE_FULL_BLOCKER=TEAM_B_ASSET_INTEGRITY_FAILED\n' >&2
-    missing=1
-  fi
-  if ! is_regular "$DASHBOARD_LOCK" || ! is_regular "$DASHBOARD_DOCKERFILE"; then
-    printf 'CAPSTONE_FULL_CAPABILITY=DASHBOARD_UI_PARTIAL_TEAM_A_ACTION_REQUIRED\n' >&2
-  fi
-  if ((missing)); then
-    record_stage BLOCKED_REQUIRED_ARTIFACTS
-    return 1
-  fi
-  printf 'CAPSTONE_PUBLIC_RAG_SEED_STATIC=PASS\n'
-  printf 'CAPSTONE_MODEL_RUNTIMES=OFFICIAL_COMPOSE_PINNED\n'
-  printf 'CAPSTONE_FULL_PREFLIGHT=STATIC_ASSET_INTEGRITY_PASS\n'
+build_team_images() {
+  compose --profile preview build experience-dashboard return-engine-preview-prepare
 }
 
-degraded_doctor() {
+initialize_state() {
+  if ! state_ready; then
+    P1_STATE_DIR=$STATE_DIR \
+      P1_PROJECT_NAME=$PROJECT_NAME \
+      P1_SPRING_IMAGE=capstone-decision-platform:p1-local \
+      P1_PYTHON_IMAGE=capstone-decision-platform:p1-local \
+      "$P1CTL" init
+  fi
+  upgrade_state
+  P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$PROJECT_NAME "$P1CTL" verify >/dev/null
+}
+
+upgrade_state() {
+  # 5/7 container layout 이전에 생성된 state를 지우거나 key를 회전하지 않는다.
+  # 새 brokerage channel에 필요한 서로 독립적인 값만 atomic하게 보강한다.
+  if ! grep -q '^BROKERAGE_GRPC_SHARED_SECRET=' "$SECRETS_DIR/spring.env"; then
+    printf 'BROKERAGE_GRPC_SHARED_SECRET=%s\n' "$(openssl rand -hex 32)" \
+      | append_state secrets/spring.env 0640
+  fi
+  if [[ ! -e $SECRETS_DIR/kis-mock.env ]]; then
+    printf '%s\n' \
+      'KIS_MOCK_CONFIGURED=false' \
+      'KIS_MOCK_APP_KEY=DISABLED00' \
+      'KIS_MOCK_APP_SECRET=DISABLED00' \
+      'KIS_MOCK_ACCOUNT_NO=00000000-00' \
+      'KIS_MOCK_BOUND_ACCOUNT_ID=acct_00000000000000000000000000000000' \
+      "KIS_MOCK_ORDER_REFERENCE_KEY=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')" \
+      'KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP=1' \
+      'KIS_BROKERAGE_PHYSICAL_CAP=32' \
+      | write_state secrets/kis-mock.env 0640
+  fi
+  install -d -m 0700 "$STATE_DIR/mock"
+  if ! grep -q '^P1_OPERATOR_UID=' "$RUNTIME_ENV"; then
+    printf 'P1_OPERATOR_UID=%s\n' "$(id -u)" | append_state runtime.env 0600
+  fi
+  if ! grep -q '^P1_KIS_MOCK_RUNTIME_DIR=' "$RUNTIME_ENV"; then
+    printf 'P1_KIS_MOCK_RUNTIME_DIR=%s\n' "$STATE_DIR/mock" | append_state runtime.env 0600
+  fi
+  local approval_files=0 approval_file
+  for approval_file in kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn; do
+    [[ ! -e $SECRETS_DIR/$approval_file ]] || approval_files=$((approval_files + 1))
+  done
+  [[ $approval_files == 0 || $approval_files == 4 ]] || die KIS_MOCK_APPROVAL_STATE_PARTIAL
+  if [[ $approval_files == 0 ]]; then
+    local approval_tmp public_digest replay_password
+    approval_tmp=$(mktemp -d)
+    openssl genpkey -algorithm ED25519 -out "$approval_tmp/private.pem" >/dev/null 2>&1
+    openssl pkey -in "$approval_tmp/private.pem" -pubout -out "$approval_tmp/public.pem" >/dev/null 2>&1
+    write_state secrets/kis-mock-approval-private.pem 0640 < "$approval_tmp/private.pem"
+    write_state secrets/kis-mock-approval-public.pem 0640 < "$approval_tmp/public.pem"
+    public_digest=$(sha256sum "$approval_tmp/public.pem" | awk '{print $1}')
+    printf '{"contractId":"p1-approval-trust-root.v1","issuerKeyId":"CAPSTONE.KISMOCK.V1","publicKeyPath":"/run/secrets/kis_mock_approval_public","publicKeySha256":"%s"}' "$public_digest" \
+      | write_state secrets/kis-mock-approval-trust-policy.json 0640
+    replay_password=$(sed -n 's/^POSTGRES_REPLAY_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+    [[ -n $replay_password ]] || die KIS_MOCK_APPROVAL_REPLAY_SECRET_MISSING
+    printf 'postgresql://decision_replay:%s@postgres:5432/capstone_p1?sslmode=disable' "$replay_password" \
+      | write_state secrets/p1-provider-claim.dsn 0640
+    unset replay_password
+    rm -rf -- "$approval_tmp"
+  fi
+}
+
+run_initializers() {
+  compose up -d --wait postgres redis
+  compose run --rm --no-deps role-bootstrap
+  compose run --rm --no-deps migrate
+  compose run --rm --no-deps seed-import
+  compose run --rm --no-deps identity-bootstrap
+  compose --profile preview run --rm --no-deps dashboard-preview-seed
+  compose --profile preview run --rm --no-deps return-engine-preview-prepare
+}
+
+save_active_mode() {
+  local models=$1 mock=$2
+  printf 'MODELS=%s\nMOCK=%s\n' "$models" "$mock" | write_state active-mode.env 0600
+}
+
+load_active_mode() {
+  MODELS=0
+  MOCK=0
+  if [[ -f $ACTIVE_MODE && ! -L $ACTIVE_MODE ]]; then
+    while IFS='=' read -r key value; do
+      [[ $value == 0 || $value == 1 ]] || die ACTIVE_MODE_INVALID
+      case $key in
+        MODELS) MODELS=$value ;;
+        MOCK) MOCK=$value ;;
+        *) die ACTIVE_MODE_INVALID ;;
+      esac
+    done < "$ACTIVE_MODE"
+  fi
+}
+
+remove_old_preview_containers() {
+  "$DOCKER_BIN" compose --project-name capstone-p1-preview -f "$COMPOSE_FILE" \
+    --profile preview --profile models down --remove-orphans >/dev/null 2>&1 || true
+}
+
+stop_old_preview_containers() {
+  local ids=()
+  mapfile -t ids < <("$DOCKER_BIN" ps --quiet --filter label=com.docker.compose.project=capstone-p1-preview)
+  if ((${#ids[@]})); then
+    "$DOCKER_BIN" stop "${ids[@]}" >/dev/null
+  fi
+}
+
+up_app() {
+  local models=0 mock=0
+  while (($#)); do
+    case $1 in
+      --models) models=1 ;;
+      --mock) mock=1 ;;
+      *) die UNEXPECTED_ARGUMENT ;;
+    esac
+    shift
+  done
+  if ((mock)); then
+    mock_certified || die KIS_MOCK_NOT_CERTIFIED
+  fi
+  export P1_KIS_MOCK_ONLINE_ENABLED=$([[ $mock == 1 ]] && printf true || printf false)
+  export P1_KIS_OFFLINE=$([[ $mock == 1 ]] && printf 0 || printf 1)
+  require_command openssl
+  require_command python3
+  [[ -n $DOCKER_BIN ]] || die MISSING_COMMAND_docker
+  "$DOCKER_BIN" compose version >/dev/null 2>&1 || die DOCKER_COMPOSE_UNAVAILABLE
+  build_core_images
+  initialize_state
+  build_team_images
+  compose --profile preview --profile models config --quiet
+  run_initializers
+  if ((models)); then
+    compose --profile models pull bge-m3 paddleocr-vl
+    compose --profile models run --rm --no-deps paddleocr-vl-model-fetch
+    compose --profile models up -d --wait bge-m3 paddleocr-vl
+  else
+    # 모드 전환 시 모델 volume은 보존하되 정지 컨테이너도 남기지 않는다.
+    compose --profile models stop bge-m3 paddleocr-vl >/dev/null 2>&1 || true
+    compose --profile models rm --force bge-m3 paddleocr-vl >/dev/null 2>&1 || true
+  fi
+  # 기존 preview와 host port가 같아 cut-over 직전에만 중지한다. volume은 건드리지 않는다.
+  stop_old_preview_containers
+  compose up -d --wait actor-authority decision-platform experience-dashboard
+  save_active_mode "$models" "$mock"
+  local expected=5
+  ((models)) && expected=7
+  local running
+  running=$(compose ps --status running --services | wc -l | tr -d ' ')
+  [[ $running == "$expected" ]] || die "CONTAINER_COUNT_EXPECTED_${expected}_OBSERVED_${running}"
+  remove_old_preview_containers
+  printf 'CAPSTONE_UP=PASS\nCAPSTONE_PERSISTENT_CONTAINERS=%s\n' "$running"
+  printf 'CAPSTONE_DASHBOARD_URL=http://127.0.0.1:%s\n' "${P1_DASHBOARD_PORT:-3000}"
+  printf 'CAPSTONE_API_URL=http://127.0.0.1:%s\n' "${P1_API_PORT:-18080}"
+  if ((mock)); then
+    printf 'KIS_BROKERAGE_MODE=KIS_MOCK\n'
+  else
+    printf 'KIS_BROKERAGE_MODE=PROVIDER_FREE\n'
+  fi
+}
+
+doctor() {
   require_command docker
   require_command openssl
   require_command python3
-  docker compose version >/dev/null 2>&1 || die DOCKER_COMPOSE_UNAVAILABLE
-  printf 'CAPSTONE_DEGRADED_DOCTOR=PASS\n'
-  printf 'CAPSTONE_RELEASE_AUTHORITY=NONE\n'
+  "$DOCKER_BIN" compose version >/dev/null 2>&1 || die DOCKER_COMPOSE_UNAVAILABLE
+  compose --profile preview --profile models config --quiet
+  printf 'CAPSTONE_DOCTOR=PASS\n'
 }
 
-state_initialized() {
-  [[ -f $STATE_DIR/runtime.env && ! -L $STATE_DIR/runtime.env ]]
+status() {
+  state_ready || die NOT_INITIALIZED
+  load_active_mode
+  compose --profile models ps
+  printf 'CAPSTONE_ACTIVE_MODELS=%s\nCAPSTONE_ACTIVE_MOCK=%s\n' "$MODELS" "$MOCK"
 }
 
-selected_project_name() {
-  if [[ -f $STAGE_FILE && ! -L $STAGE_FILE ]] && grep -q '^DEGRADED_' "$STAGE_FILE"; then
-    printf '%s\n' "$DEGRADED_PROJECT_NAME"
-  else
-    printf '%s\n' "$FULL_PROJECT_NAME"
+logs() {
+  state_ready || die NOT_INITIALIZED
+  compose --profile models logs --no-color --tail 500 | sed -E \
+    -e 's/(Bearer )[A-Za-z0-9._~-]+/\1[REDACTED]/g' \
+    -e 's#(postgresql://[^:/[:space:]]+:)[^@/[:space:]]+@#\1[REDACTED]@#Ig' \
+    -e 's/(password|secret|token|account|credential|bundle|hmac|jwt|private[_-]?key|kek|dsn)([=:][^ ,}]*)/\1=[REDACTED]/Ig'
+}
+
+smoke() {
+  state_ready || die NOT_INITIALIZED
+  require_command python3
+  local base="http://127.0.0.1:$(sed -n 's/^P1_API_PORT=//p' "$RUNTIME_ENV")"
+  P1_BASE_URL=$base P1_USER_PASSWORD_FILE=$SECRETS_DIR/demo-user.password python3 - <<'PY'
+import json, os, urllib.request
+with urllib.request.urlopen(os.environ["P1_BASE_URL"] + "/actuator/health", timeout=5) as response:
+    if response.status != 200 or json.load(response).get("status") != "UP":
+        raise SystemExit("CAPSTONE_ERROR=API_HEALTH")
+password = open(os.environ["P1_USER_PASSWORD_FILE"], encoding="utf-8").read()
+request = urllib.request.Request(
+    os.environ["P1_BASE_URL"] + "/api/v1/auth/login",
+    data=json.dumps({"username": "demo-user", "password": password}).encode(),
+    headers={"Content-Type": "application/json"},
+)
+with urllib.request.urlopen(request, timeout=5) as response:
+    body = json.load(response)
+if response.status != 200 or body.get("data", {}).get("user", {}).get("userId") != "usr_demo_user":
+    raise SystemExit("CAPSTONE_ERROR=LOGIN_SMOKE")
+PY
+  compose --profile smoke run --rm --no-deps -e P1_SMOKE_MODE=DB synthetic-async-smoke
+  printf 'CAPSTONE_SMOKE=PASS\nPROVIDER_CALLS=0\n'
+}
+
+down() {
+  state_ready || die NOT_INITIALIZED
+  compose --profile preview --profile models down --remove-orphans
+  printf 'CAPSTONE_DOWN=PASS\nCAPSTONE_VOLUMES_PRESERVED=TRUE\n'
+}
+
+mock_configure() {
+  state_ready || die RUN_CAPSTONE_UP_FIRST
+  install -d -m 0700 "$STATE_DIR/mock"
+  local app_key app_secret account_no
+  read -r -s -p 'KIS 모의투자 App Key: ' app_key; printf '\n'
+  read -r -s -p 'KIS 모의투자 App Secret: ' app_secret; printf '\n'
+  read -r -s -p 'KIS 모의투자 계좌번호(하이픈 제외): ' account_no; printf '\n'
+  [[ $app_key =~ ^[^[:space:]]{8,256}$ && $app_secret =~ ^[^[:space:]]{8,512}$ && $account_no =~ ^[0-9]{10}$ ]] \
+    || die KIS_MOCK_CREDENTIAL_FORMAT
+  account_no="${account_no:0:8}-${account_no:8:2}"
+  local bound_account reference_key
+  bound_account="acct_$(openssl rand -hex 16)"
+  reference_key=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')
+  printf 'KIS_MOCK_CONFIGURED=true\nKIS_MOCK_APP_KEY=%s\nKIS_MOCK_APP_SECRET=%s\nKIS_MOCK_ACCOUNT_NO=%s\nKIS_MOCK_BOUND_ACCOUNT_ID=%s\nKIS_MOCK_ORDER_REFERENCE_KEY=%s\nKIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP=1\nKIS_BROKERAGE_PHYSICAL_CAP=32\n' \
+    "$app_key" "$app_secret" "$account_no" "$bound_account" "$reference_key" \
+    | write_state secrets/kis-mock.env 0640
+  unset app_key app_secret account_no reference_key
+  printf 'KIS_MOCK_CONFIGURE=PASS\nKIS_MOCK_BOUND_ACCOUNT_ID=%s\n' "$bound_account"
+}
+
+mock_doctor() {
+  state_ready || return 1
+  local file=$SECRETS_DIR/kis-mock.env
+  [[ -f $file && ! -L $file && $(stat -c '%a' "$file") == 640 ]] || return 1
+  if ! python3 - "$file" 2>/dev/null <<'PY'
+import pathlib, re, sys
+values={}
+for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+    if not line or line.startswith("#") or "=" not in line:
+        continue
+    key, value=line.split("=", 1)
+    if key in values:
+        raise SystemExit(1)
+    values[key]=value
+required={"KIS_MOCK_CONFIGURED","KIS_MOCK_APP_KEY","KIS_MOCK_APP_SECRET","KIS_MOCK_ACCOUNT_NO","KIS_MOCK_BOUND_ACCOUNT_ID","KIS_MOCK_ORDER_REFERENCE_KEY","KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP","KIS_BROKERAGE_PHYSICAL_CAP"}
+assert set(values) == required
+assert values["KIS_MOCK_CONFIGURED"] == "true"
+assert 8 <= len(values["KIS_MOCK_APP_KEY"]) <= 256
+assert 8 <= len(values["KIS_MOCK_APP_SECRET"]) <= 512
+assert re.fullmatch(r"[0-9]{8}-[0-9]{2}", values["KIS_MOCK_ACCOUNT_NO"])
+assert re.fullmatch(r"acct_[0-9a-f]{32}", values["KIS_MOCK_BOUND_ACCOUNT_ID"])
+assert re.fullmatch(r"[A-Za-z0-9_-]{43}", values["KIS_MOCK_ORDER_REFERENCE_KEY"])
+assert values["KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP"] == "1"
+assert values["KIS_BROKERAGE_PHYSICAL_CAP"] == "32"
+PY
+  then
+    return 1
   fi
+  printf 'KIS_MOCK_CONFIGURATION_DOCTOR=PASS\nKIS_LIVE_BROKERAGE=DISABLED\n'
 }
 
-install_degraded() {
-  if ! state_initialized; then
-    P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$DEGRADED_PROJECT_NAME "$P1CTL" init
-  else
-    P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$DEGRADED_PROJECT_NAME "$P1CTL" verify >/dev/null
+mock_certified() {
+  mock_doctor >/dev/null || return 1
+  local receipt=$STATE_DIR/mock/certification.json
+  [[ -f $receipt && ! -L $receipt && $(stat -c '%a' "$receipt") == 600 ]] || return 1
+  if ! python3 - "$receipt" 2>/dev/null <<'PY'
+import json, pathlib, re, sys
+value=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert set(value) == {"commitSha","inputSha256","physicalCalls","status","timestamp"}
+assert value["status"] == "PASS"
+assert re.fullmatch(r"[0-9a-f]{40}", value["commitSha"])
+assert value["physicalCalls"] in ({"brokerage":7,"quote":1,"token":0},{"brokerage":7,"quote":1,"token":1})
+PY
+  then
+    return 1
   fi
-  record_stage DEGRADED_INSTALLED
-  printf 'CAPSTONE_INSTALL=DEGRADED_CORE_ONLY\n'
-  printf 'CAPSTONE_RELEASE_AUTHORITY=NONE\n'
+  printf 'KIS_MOCK_DOCTOR=PASS\nKIS_LIVE_BROKERAGE=DISABLED\n'
 }
 
-install_full() {
-  install_model_runtimes
-  full_preflight || die FULL_INSTALL_BLOCKED_REQUIRED_ARTIFACTS
-  if ! state_initialized; then
-    P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$FULL_PROJECT_NAME "$P1CTL" init
-  fi
-  P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$FULL_PROJECT_NAME "$P1CTL" verify >/dev/null
-  full_compose config --quiet
-  record_stage FULL_INSTALLED_NOT_STARTED
-  printf 'CAPSTONE_INSTALL=FULL_ASSETS_VERIFIED\n'
+mock_certify() {
+  local symbol= quantity=
+  while (($#)); do
+    case $1 in
+      --symbol) symbol=${2:-}; shift ;;
+      --quantity) quantity=${2:-}; shift ;;
+      *) die UNEXPECTED_ARGUMENT ;;
+    esac
+    shift
+  done
+  [[ $symbol == 005930 && $quantity == 1 ]] || die KIS_MOCK_CERTIFICATION_SCOPE
+  state_ready || die NOT_INITIALIZED
+  # XKRX 휴장일과 09:10~15:00 수동 실행창을 credential/transport 생성보다 먼저 닫는다.
+  compose run --rm --no-deps --entrypoint python decision-platform \
+    -m app.brokerage.kis_mock_certification_gate || return $?
+  mock_doctor >/dev/null || die KIS_MOCK_NOT_CONFIGURED
+  require_command gh
+  [[ -z $(git -C "$REPO_ROOT" status --porcelain=v1 --untracked-files=all) ]] \
+    || die KIS_MOCK_CERTIFICATION_DIRTY_WORKTREE
+  local branch head remote_head pr_json
+  branch=$(git -C "$REPO_ROOT" symbolic-ref --quiet --short HEAD) \
+    || die KIS_MOCK_CERTIFICATION_DETACHED_HEAD
+  [[ $branch =~ ^(feature|fix|docs|infra|experiment)/[A-Za-z0-9._/-]+$ ]] \
+    || die KIS_MOCK_CERTIFICATION_BRANCH
+  head=$(git -C "$REPO_ROOT" rev-parse HEAD)
+  remote_head=$(git -C "$REPO_ROOT" rev-parse "refs/remotes/origin/$branch") \
+    || die KIS_MOCK_CERTIFICATION_REMOTE_HEAD
+  [[ $head == "$remote_head" ]] || die KIS_MOCK_CERTIFICATION_UNPUSHED_HEAD
+  pr_json=$(gh pr view --json number,state,isDraft,headRefName,baseRefName,headRefOid,statusCheckRollup) \
+    || die KIS_MOCK_CERTIFICATION_PR_UNAVAILABLE
+  rm -f -- "$STATE_DIR/mock/certification-request.json" \
+    "$STATE_DIR/mock/execution-approval.json" "$STATE_DIR/mock/certification.json"
+  P1_PR_JSON=$pr_json P1_BRANCH=$branch P1_HEAD=$head python3 - <<'PY' \
+    | write_state mock/certification-request.json 0600
+import hashlib, json, os
+raw=json.loads(os.environ["P1_PR_JSON"])
+required={
+  "Contract schema validation",
+  "Spring OpenAPI drift",
+  "Kotlin ktlint and build",
+  "Python quality gates",
+  "Repo hygiene",
+  "P1 full-app security gates",
+}
+checks={
+  item.get("name"): item.get("conclusion")
+  for item in raw.get("statusCheckRollup", [])
+  if isinstance(item, dict) and isinstance(item.get("name"), str)
+}
+if (
+  raw.get("state") != "OPEN"
+  or raw.get("isDraft") is not False
+  or raw.get("headRefName") != os.environ["P1_BRANCH"]
+  or raw.get("baseRefName") != "main"
+  or raw.get("headRefOid") != os.environ["P1_HEAD"]
+  or any(checks.get(name) != "SUCCESS" for name in required)
+):
+  raise SystemExit("CAPSTONE_ERROR=KIS_MOCK_CERTIFICATION_PR_NOT_GREEN")
+security_evidence={
+  "deepScan":"NOT_RUN_USER_SCOPED_OUT",
+  "headSha":os.environ["P1_HEAD"],
+  "requiredChecks":sorted(required),
+  "status":"PASS",
+}
+security_digest=hashlib.sha256(
+  json.dumps(security_evidence, sort_keys=True, separators=(",", ":")).encode()
+).hexdigest()
+request={
+  "branch":os.environ["P1_BRANCH"],
+  "commitSha":os.environ["P1_HEAD"],
+  "pullRequest":raw["number"],
+  "quantity":1,
+  "requiredChecks":sorted(required),
+  "securityEvidenceDigest":security_digest,
+  "symbol":"005930",
+}
+print(json.dumps(request, sort_keys=True, separators=(",", ":")), end="")
+PY
+  compose up -d --wait postgres redis
+  compose --profile owner run --rm --no-deps kis-mock-certification-runner \
+    python -m app.brokerage.kis_mock_certification_cli author
+  compose --profile owner run --rm --no-deps kis-mock-certification-runner
+  mock_certified >/dev/null || die KIS_MOCK_CERTIFICATION_RECEIPT_INVALID
+  printf 'KIS_MOCK_CERTIFICATION=PASS\nKIS_LIVE_BROKERAGE=DISABLED\n'
 }
 
-start_degraded() {
-  state_initialized || die NOT_INSTALLED
-  P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$DEGRADED_PROJECT_NAME "$P1CTL" up db
-  record_stage DEGRADED_RUNNING
-  printf 'CAPSTONE_START=DEGRADED_CORE_ONLY\n'
-  printf 'CAPSTONE_RELEASE_AUTHORITY=NONE\n'
-}
-
-start_full() {
-  full_preflight || die FULL_START_BLOCKED_REQUIRED_ARTIFACTS
-  state_initialized || die NOT_INSTALLED
-  P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$FULL_PROJECT_NAME "$P1CTL" verify >/dev/null
-  full_compose up -d --force-recreate --wait
-  record_stage FULL_SEED_AND_CORE_RUNNING
-  printf 'CAPSTONE_START=FULL_SEED_AND_CORE_RUNNING\n'
-}
-
-start_preview() {
-  # Existing historical state/volumes may have a different secret schema. Preview gets a
-  # reproducible isolated state and project while continuing to use this one compose file.
-  STATE_DIR=$PREVIEW_STATE_DIR
-  STAGE_FILE=$STATE_DIR/full-app-stage
-  COMPOSE_PROJECT_NAME=$PREVIEW_PROJECT_NAME
-  model_runtime_preflight || die PREVIEW_MODEL_RUNTIME_PREFLIGHT
-  build_preview_core_images
-  is_regular "$SEED_MANIFEST" || die PUBLIC_RAG_SEED_MANIFEST_MISSING
-  "$SCRIPT_DIR/verify-public-rag-seed" "$SEED_MANIFEST" >/dev/null || die PUBLIC_RAG_SEED_INTEGRITY_FAILED
-  if ! state_initialized; then
-    P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$PREVIEW_PROJECT_NAME "$P1CTL" init
-  fi
-  P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$PREVIEW_PROJECT_NAME "$P1CTL" verify >/dev/null
-  full_compose --profile preview config --quiet
-  full_compose --profile preview build experience-dashboard return-engine-preview-run
-  full_compose --profile preview up -d --force-recreate --wait experience-dashboard team-b-received-artifact
-  record_stage PREVIEW_RUNNING_NOT_RELEASE
-  printf 'CAPSTONE_PREVIEW=RUNNING\n'
-  printf 'CAPSTONE_DASHBOARD_URL=http://127.0.0.1:%s\n' "${P1_DASHBOARD_PORT:-3000}"
-  printf 'CAPSTONE_TEAM_B_PREVIEW_URL=http://127.0.0.1:%s/artifact\n' "${P1_TEAM_B_PREVIEW_PORT:-18090}"
-  printf 'TEAM_B_REAL_ARTIFACT_MISSING=TRUE\n'
-  printf 'CAPSTONE_RELEASE_AUTHORITY=NONE\n'
-}
-
-show_status() {
-  if [[ -f $STAGE_FILE && ! -L $STAGE_FILE ]]; then
-    printf 'CAPSTONE_INSTALL_STAGE=%s\n' "$(<"$STAGE_FILE")"
-  else
-    printf 'CAPSTONE_INSTALL_STAGE=NOT_INSTALLED\n'
-  fi
-  if state_initialized; then
-    P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME="$(selected_project_name)" "$P1CTL" status
-  fi
-  if [[ -n $DOCKER_BIN ]] && "$DOCKER_BIN" compose version >/dev/null 2>&1; then
-    full_compose --profile preview ps
-  fi
-}
-
-stop_full() {
-  state_initialized || die NOT_INSTALLED
-  P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME="$(selected_project_name)" "$P1CTL" stop
-  full_compose --profile preview stop
-  record_stage FULL_STOPPED_VOLUMES_PRESERVED
-  printf 'CAPSTONE_MODEL_CACHE_VOLUMES_PRESERVED=TRUE\n'
-}
-
-mode=full
 command=${1:-}
 [[ -n $command ]] || { usage >&2; exit 1; }
 shift
-if [[ ${1:-} == --degraded ]]; then
-  mode=degraded
-  shift
-fi
-[[ $# == 0 ]] || die UNEXPECTED_ARGUMENTS
-
 case $command in
-  install) [[ $mode == degraded ]] && install_degraded || install_full ;;
-  start) [[ $mode == degraded ]] && start_degraded || start_full ;;
-  preview) [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED; start_preview ;;
-  stop) [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED; stop_full ;;
-  status) [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED; show_status ;;
-  doctor) [[ $mode == degraded ]] && degraded_doctor || full_preflight ;;
-  backup) [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED; P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME="$(selected_project_name)" "$P1CTL" backup ;;
-  restore)
-    [[ $mode == full ]] || die DEGRADED_NOT_ACCEPTED
-    printf 'CAPSTONE_RESTORE=BLOCKED_G7_ATOMIC_RESTORE_NOT_IMPLEMENTED\n' >&2
-    exit 1
+  up) up_app "$@" ;;
+  doctor) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; doctor ;;
+  status) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; status ;;
+  logs) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; logs ;;
+  smoke) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; smoke ;;
+  down) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; down ;;
+  mock)
+    subcommand=${1:-}; [[ -n $subcommand ]] || die MOCK_COMMAND_REQUIRED; shift
+    case $subcommand in
+      configure) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_configure ;;
+      doctor) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_doctor || die KIS_MOCK_NOT_READY ;;
+      certify) mock_certify "$@" ;;
+      *) die UNKNOWN_MOCK_COMMAND ;;
+    esac
     ;;
-  verify)
-    if [[ $mode == degraded ]]; then
-      degraded_doctor
-      state_initialized || die NOT_INSTALLED
-      P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$DEGRADED_PROJECT_NAME "$P1CTL" verify
-    else
-      full_preflight
-      state_initialized || die NOT_INSTALLED
-      P1_STATE_DIR=$STATE_DIR P1_PROJECT_NAME=$FULL_PROJECT_NAME "$P1CTL" verify
-    fi
-    ;;
+  preview|start) up_app "$@" ;;
+  stop) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; down ;;
   -h|--help|help) usage ;;
   *) usage >&2; die UNKNOWN_COMMAND ;;
 esac

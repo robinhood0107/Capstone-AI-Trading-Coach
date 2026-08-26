@@ -246,6 +246,9 @@ app:
     authority-url: ${ACTOR_CAPABILITY_AUTHORITY_URL:http://127.0.0.1:18081/internal/actor-capabilities/issue}
     shared-secret: ${ACTOR_CAPABILITY_SHARED_SECRET:}
     public-key: ${ACTOR_CAPABILITY_PUBLIC_KEY:}
+    tls-key-store-path: ${ACTOR_CAPABILITY_TLS_KEY_STORE_PATH:}
+    tls-key-store-password: ${ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD:}
+    tls-ca-certificate-path: ${ACTOR_CAPABILITY_TLS_CA_CERTIFICATE_PATH:}
   auth:
     jdbc-url: ${AUTH_DATABASE_DSN:${spring.datasource.url}}
     username: decision_auth

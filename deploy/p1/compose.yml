@@ -14,56 +14,6 @@ x-app-security: &app-security
     - /tmp:size=128m,mode=1777
 
 services:
-  runtime-netns:
-    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
-    platform: linux/amd64
-    command: ["sleep", "2147483647"]
-    user: "65534:65534"
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    pids_limit: 32
-    mem_limit: 64m
-    cpus: 0.25
-    healthcheck:
-      test: ["CMD-SHELL", "kill -0 1"]
-      interval: 5s
-      timeout: 2s
-      retries: 12
-    restart: on-failure:3
-    networks: [p1-internal]
-
-  api-edge:
-    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
-    platform: linux/amd64
-    entrypoint: ["python", "-m", "app.s8_demo.tcp_proxy"]
-    user: "65532:65532"
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    pids_limit: 64
-    mem_limit: 128m
-    cpus: 0.25
-    restart: on-failure:3
-    ports:
-      - "127.0.0.1:${P1_API_PORT:-18080}:8080"
-    depends_on:
-      spring-api: {condition: service_healthy}
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - >-
-          import urllib.request;
-          response=urllib.request.urlopen('http://127.0.0.1:8080/actuator/health', timeout=2);
-          assert response.status == 200
-      interval: 5s
-      timeout: 3s
-      retries: 12
-      start_period: 5s
-    networks: [p1-internal, p1-edge]
-
   postgres:
     image: ${P1_POSTGRES_IMAGE:-capstone-postgres-pgvector:p1-local}
     platform: linux/amd64
@@ -100,7 +50,7 @@ services:
       timeout: 3s
       retries: 30
     restart: on-failure:3
-    networks: [p1-internal]
+    networks: [p1-data]
 
   redis:
     image: redis:7.2-alpine@sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8
@@ -130,10 +80,10 @@ services:
       timeout: 3s
       retries: 30
     restart: on-failure:3
-    networks: [p1-internal]
+    networks: [p1-data]
 
   role-bootstrap:
-    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "role-bootstrap"]
     command:
       - java
@@ -151,10 +101,10 @@ services:
       postgres: {condition: service_healthy}
     <<: *app-security
     restart: "no"
-    networks: [p1-internal]
+    networks: [p1-data]
 
   migrate:
-    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "migration"]
     command:
       - java
@@ -172,10 +122,10 @@ services:
       role-bootstrap: {condition: service_completed_successfully}
     <<: *app-security
     restart: "no"
-    networks: [p1-internal]
+    networks: [p1-data]
 
   seed-import:
-    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
     platform: linux/amd64
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "seed-import"]
     command:
@@ -202,10 +152,10 @@ services:
       - ./docker/secret-entrypoint.sh:/usr/local/bin/p1-secret-entrypoint:ro
     depends_on:
       migrate: {condition: service_completed_successfully}
-    networks: [p1-internal]
+    networks: [p1-data]
 
   identity-bootstrap:
-    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "bootstrap"]
     command:
       - java
@@ -223,11 +173,11 @@ services:
       seed-import: {condition: service_completed_successfully}
     <<: *app-security
     restart: "no"
-    networks: [p1-internal]
+    networks: [p1-data]
 
   dashboard-preview-seed:
     profiles: [preview]
-    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "demo"]
     command:
       - python
@@ -245,10 +195,10 @@ services:
       identity-bootstrap: {condition: service_completed_successfully}
     <<: *app-security
     restart: "no"
-    networks: [p1-internal]
+    networks: [p1-data]
 
-  actor-capability-authority:
-    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+  actor-authority:
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "authority"]
     command:
       - java
@@ -257,13 +207,14 @@ services:
       - /app/app.jar
       - org.springframework.boot.loader.launch.PropertiesLauncher
     environment:
+      ACTOR_CAPABILITY_AUTHORITY_HOST: 0.0.0.0
       ACTOR_CAPABILITY_AUTHORITY_PORT: "18081"
       ACTOR_IDENTITY_JDBC_URL: jdbc:postgresql://postgres:5432/capstone_p1
-    secrets: [actor_capability_authority_env]
+      ACTOR_CAPABILITY_TLS_KEY_STORE_PATH: /run/secrets/actor_server_p12
+      ACTOR_CAPABILITY_TLS_CA_CERTIFICATE_PATH: /run/secrets/actor_tls_ca
+    secrets: [actor_capability_authority_env, actor_server_p12, actor_tls_ca]
     depends_on:
-      identity-bootstrap: {condition: service_completed_successfully}
-      runtime-netns: {condition: service_healthy}
-    network_mode: service:runtime-netns
+      postgres: {condition: service_healthy}
     <<: *app-security
     restart: on-failure:3
     healthcheck:
@@ -278,62 +229,21 @@ services:
       timeout: 3s
       retries: 20
       start_period: 5s
+    networks: [p1-data]
 
-  python-worker:
-    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
-    environment:
-      ASYNC_WORKER_GRPC_BIND_ADDRESS: 127.0.0.1:50056
-      PROVIDER_LIVE_CALLS_ENABLED: "false"
-      KIS_OFFLINE: "1"
-      KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "false"
-    secrets: [python_env]
-    depends_on:
-      dashboard-preview-seed: {condition: service_completed_successfully, required: false}
-      identity-bootstrap: {condition: service_completed_successfully}
-      runtime-netns: {condition: service_healthy}
-    network_mode: service:runtime-netns
-    <<: *app-security
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - >-
-          import grpc;
-          from grpc_health.v1 import health_pb2, health_pb2_grpc;
-          from app.generated import async_worker_pb2;
-          channel=grpc.insecure_channel('127.0.0.1:50056');
-          service=async_worker_pb2.DESCRIPTOR.services_by_name['AsyncWorkerService'].full_name;
-          response=health_pb2_grpc.HealthStub(channel).Check(health_pb2.HealthCheckRequest(service=service), timeout=2);
-          assert response.status == health_pb2.HealthCheckResponse.SERVING
-      interval: 5s
-      timeout: 3s
-      retries: 20
-      start_period: 5s
-
-  synthetic-async-smoke:
-    profiles: [smoke]
-    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
-    pull_policy: missing
-    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "demo"]
-    command: ["python", "-m", "app.s8_demo.container_async_smoke"]
-    environment:
-      P1_SMOKE_MODE: DB
-      PROVIDER_LIVE_CALLS_ENABLED: "false"
-      KIS_OFFLINE: "1"
-    secrets: [demo_env]
-    network_mode: service:runtime-netns
-    <<: *app-security
-    restart: "no"
-
-  spring-api:
-    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+  decision-platform:
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
+    build:
+      context: ../..
+      dockerfile: deploy/p1/docker/decision-platform.Dockerfile
     environment:
       SERVER_ADDRESS: 0.0.0.0
       SERVER_PORT: "8080"
       SPRING_FLYWAY_ENABLED: "false"
       ACTOR_CAPABILITY_TRANSPORT: http
-      ACTOR_CAPABILITY_AUTHORITY_URL: http://127.0.0.1:18081/internal/actor-capabilities/issue
+      ACTOR_CAPABILITY_AUTHORITY_URL: https://actor-authority:18081/internal/actor-capabilities/issue
+      ACTOR_CAPABILITY_TLS_KEY_STORE_PATH: /run/secrets/actor_client_p12
+      ACTOR_CAPABILITY_TLS_CA_CERTIFICATE_PATH: /run/secrets/actor_tls_ca
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: capstone_p1
@@ -342,6 +252,7 @@ services:
       ASYNC_ADAPTER: db
       ASYNC_POLLING_ENABLED: "true"
       ASYNC_WORKER_ENABLED: "true"
+      ASYNC_WORKER_GRPC_BIND_ADDRESS: 127.0.0.1:50056
       ASYNC_WORKER_GRPC_TARGET: 127.0.0.1:50056
       RAG_ANSWERER: FIXTURE_ONLY
       RAG_GRPC_ENABLED: "false"
@@ -350,36 +261,90 @@ services:
       RAG_WEB_ENABLED: "false"
       S4_9_STRONG_LLM_ENABLED: "false"
       S4_9_MCP_ENABLED: "false"
-      BROKERAGE_GRPC_ENABLED: "false"
+      BROKERAGE_GRPC_ENABLED: "${P1_KIS_MOCK_ONLINE_ENABLED:-false}"
+      BROKERAGE_GRPC_TARGET: 127.0.0.1:50052
+      PYTHON_BROKERAGE_GRPC_BIND_ADDRESS: 127.0.0.1:50052
       FINANCIAL_ENGINEERING_GRPC_ENABLED: "false"
       KIS_MODE: mock
-      KIS_OFFLINE: "1"
-      KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "false"
       PROVIDER_LIVE_CALLS_ENABLED: "false"
-    secrets: [spring_env, rag_history_kek]
+      KIS_OFFLINE: "${P1_KIS_OFFLINE:-1}"
+      KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "${P1_KIS_MOCK_ONLINE_ENABLED:-false}"
+    secrets: [spring_env, python_env, kis_mock_env, rag_history_kek, actor_client_p12, actor_tls_ca]
+    ports:
+      - "127.0.0.1:${P1_API_PORT:-18080}:8080"
     depends_on:
-      identity-bootstrap: {condition: service_completed_successfully}
-      actor-capability-authority: {condition: service_healthy}
+      actor-authority: {condition: service_healthy}
+      postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
-      python-worker: {condition: service_healthy}
-      bge-m3: {condition: service_healthy}
-      paddleocr-vl: {condition: service_healthy}
-    network_mode: service:runtime-netns
     <<: *app-security
     healthcheck:
       test:
         - CMD
-        - java
-        - -Dloader.main=com.capstone.decision.infrastructure.security.P1HttpHealthCheck
-        - -cp
-        - /app/app.jar
-        - org.springframework.boot.loader.launch.PropertiesLauncher
+        - python
+        - /app/decision-platform-health.py
       interval: 5s
       timeout: 3s
       retries: 30
       start_period: 20s
+    networks: [p1-data, p1-app, p1-model]
+
+  synthetic-async-smoke:
+    profiles: [smoke]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    pull_policy: missing
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "demo"]
+    command: ["python", "-m", "app.s8_demo.container_async_smoke"]
+    environment:
+      P1_SMOKE_MODE: DB
+      PROVIDER_LIVE_CALLS_ENABLED: "false"
+      KIS_OFFLINE: "1"
+    secrets: [demo_env]
+    networks: [p1-data]
+    <<: *app-security
+    restart: "no"
+
+  kis-mock-certification-runner:
+    profiles: [owner]
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "certification"]
+    command: ["python", "-m", "app.brokerage.kis_mock_certification_cli", "run"]
+    environment:
+      P1_OPERATOR_UID: "${P1_OPERATOR_UID}"
+      KIS_MODE: mock
+      KIS_OFFLINE: "0"
+      KIS_RETRY_ATTEMPTS: "1"
+      KIS_REQUEST_INTERVAL_MILLISECONDS: "1000"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      KIS_MOCK_APPROVAL_ENV_FILE: /run/secrets/kis_mock_env
+    secrets:
+      - spring_env
+      - python_env
+      - kis_mock_env
+      - kis_mock_approval_private
+      - kis_mock_approval_public
+      - kis_mock_approval_trust_policy
+      - p1_provider_claim_dsn
+    volumes:
+      - ${P1_KIS_MOCK_RUNTIME_DIR}:/certification
+    user: "${P1_OPERATOR_UID}:${P1_SECRET_GID}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: "no"
+    networks: [p1-data]
 
   bge-m3:
+    profiles: [models]
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9@sha256:c26a226262ad4ff3330fb30b76653c1bb65da2fcf413b92284545a010e0a8a48
     platform: linux/amd64
     pull_policy: missing
@@ -411,9 +376,10 @@ services:
       retries: 60
       start_period: 30s
     restart: on-failure:3
-    networks: [p1-internal, p1-model-fetch]
+    networks: [p1-model, p1-model-fetch]
 
   paddleocr-vl-model-fetch:
+    profiles: [models]
     image: ghcr.io/ggml-org/llama.cpp:server-b10524@sha256:d88f41f7675f8b30d7213a917f72a48f05d0549af4d1be7e712ebb130a235415
     platform: linux/amd64
     pull_policy: missing
@@ -455,6 +421,7 @@ services:
     networks: [p1-model-fetch]
 
   paddleocr-vl:
+    profiles: [models]
     image: ghcr.io/ggml-org/llama.cpp:server-b10524@sha256:d88f41f7675f8b30d7213a917f72a48f05d0549af4d1be7e712ebb130a235415
     platform: linux/amd64
     pull_policy: missing
@@ -476,8 +443,6 @@ services:
       - --metrics
       - --temp
       - "0"
-    depends_on:
-      paddleocr-vl-model-fetch: {condition: service_completed_successfully}
     volumes:
       - p1-paddleocr-model-cache:/models
     read_only: true
@@ -495,15 +460,15 @@ services:
       retries: 60
       start_period: 30s
     restart: on-failure:3
-    networks: [p1-internal]
+    networks: [p1-model]
 
-  return-engine-preview-run:
+  return-engine-preview-prepare:
     profiles: [preview]
     image: capstone-return-engine-received-preview:p1-local
     build:
       context: ../../workspaces/return-engine
       dockerfile: Dockerfile
-    command: ["python", "-m", "preview_cli", "run"]
+    command: ["python", "-m", "preview_cli", "prepare"]
     user: "65532:65532"
     network_mode: none
     read_only: true
@@ -518,64 +483,7 @@ services:
       - p1-return-preview:/output
     restart: "no"
 
-  return-engine-preview-verify:
-    profiles: [preview]
-    image: capstone-return-engine-received-preview:p1-local
-    command: ["python", "-m", "preview_cli", "verify", "--input", "/output/005930.KS.json"]
-    user: "65532:65532"
-    network_mode: none
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    pids_limit: 64
-    mem_limit: 512m
-    cpus: 0.5
-    tmpfs:
-      - /tmp:size=32m,mode=1777
-    volumes:
-      - p1-return-preview:/output:ro
-    depends_on:
-      return-engine-preview-run: {condition: service_completed_successfully}
-    restart: "no"
-
-  team-b-received-artifact:
-    profiles: [preview]
-    image: capstone-return-engine-received-preview:p1-local
-    command: ["python", "-m", "preview_server", "--artifact", "/output/005930.KS.json"]
-    user: "65532:65532"
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    pids_limit: 64
-    mem_limit: 256m
-    cpus: 0.25
-    tmpfs:
-      - /tmp:size=32m,mode=1777
-    ports:
-      - "127.0.0.1:${P1_TEAM_B_PREVIEW_PORT:-18090}:8090"
-    volumes:
-      - p1-return-preview:/output:ro
-    depends_on:
-      return-engine-preview-verify: {condition: service_completed_successfully}
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - >-
-          import json,urllib.request;
-          response=urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=2);
-          body=json.load(response);
-          assert response.status == 200 and body == {'status':'UP','artifact':'LEGACY_RECEIVED_PREVIEW'}
-      interval: 5s
-      timeout: 3s
-      retries: 12
-      start_period: 3s
-    restart: on-failure:3
-    networks: [p1-edge]
-
   experience-dashboard:
-    profiles: [preview]
     image: capstone-experience-dashboard:p1-local
     build:
       context: ../../workspaces/experience-dashboard
@@ -584,6 +492,8 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_MODE: live
+      DECISION_PLATFORM_INTERNAL_URL: http://decision-platform:8080
+      TEAM_B_PREVIEW_ARTIFACT: /artifacts/team-b/005930.KS.json
     user: "1000:1000"
     read_only: true
     cap_drop: [ALL]
@@ -595,8 +505,10 @@ services:
       - /tmp:size=64m,mode=1777
     ports:
       - "127.0.0.1:${P1_DASHBOARD_PORT:-3000}:3000"
+    volumes:
+      - p1-return-preview:/artifacts/team-b:ro
     depends_on:
-      api-edge: {condition: service_healthy}
+      decision-platform: {condition: service_healthy}
     healthcheck:
       test:
         - CMD
@@ -611,7 +523,7 @@ services:
       retries: 12
       start_period: 10s
     restart: on-failure:3
-    networks: [p1-edge]
+    networks: [p1-app]
 
 secrets:
   postgres_env: {file: "${P1_SECRETS_DIR}/postgres.env"}
@@ -622,6 +534,7 @@ secrets:
   actor_capability_authority_env: {file: "${P1_SECRETS_DIR}/actor-capability-authority.env"}
   spring_env: {file: "${P1_SECRETS_DIR}/spring.env"}
   python_env: {file: "${P1_SECRETS_DIR}/python.env"}
+  kis_mock_env: {file: "${P1_SECRETS_DIR}/kis-mock.env"}
   kafka_publisher_env: {file: "${P1_SECRETS_DIR}/kafka-publisher.env"}
   poison_recorder_env: {file: "${P1_SECRETS_DIR}/poison-recorder.env"}
   kafka_admin_env: {file: "${P1_SECRETS_DIR}/kafka-admin.env"}
@@ -629,6 +542,13 @@ secrets:
   demo_env: {file: "${P1_SECRETS_DIR}/demo.env"}
   rag_history_kek: {file: "${P1_SECRETS_DIR}/rag-history-kek-v1.key"}
   seed_import_env: {file: "${P1_SECRETS_DIR}/seed-import.env"}
+  actor_tls_ca: {file: "${P1_SECRETS_DIR}/actor-tls-ca.crt"}
+  actor_server_p12: {file: "${P1_SECRETS_DIR}/actor-server.p12"}
+  actor_client_p12: {file: "${P1_SECRETS_DIR}/actor-client.p12"}
+  kis_mock_approval_private: {file: "${P1_SECRETS_DIR}/kis-mock-approval-private.pem"}
+  kis_mock_approval_public: {file: "${P1_SECRETS_DIR}/kis-mock-approval-public.pem"}
+  kis_mock_approval_trust_policy: {file: "${P1_SECRETS_DIR}/kis-mock-approval-trust-policy.json"}
+  p1_provider_claim_dsn: {file: "${P1_SECRETS_DIR}/p1-provider-claim.dsn"}
 
 volumes:
   p1-postgres-current: {}
@@ -638,8 +558,10 @@ volumes:
   p1-return-preview: {}
 
 networks:
-  p1-internal:
+  p1-data:
     internal: true
-  p1-edge: {}
+  p1-app: {}
+  p1-model:
+    internal: true
   # No host port is published. This bridge only fills exact-revision model caches.
   p1-model-fetch: {}

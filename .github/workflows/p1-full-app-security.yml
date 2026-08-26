@@ -1,0 +1,91 @@
+name: P1 full-app security
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p1-full-app-security.yml"
+      - "deploy/p1/**"
+      - "workspaces/decision-platform/**"
+      - "workspaces/experience-dashboard/**"
+      - "workspaces/return-engine/**"
+      - "contracts/**"
+      - "README.md"
+      - "capstone"
+      - "capstone.ps1"
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  security-gates:
+    name: P1 full-app security gates
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Secret scan
+        shell: bash
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          set -Eeuo pipefail
+          tool_root="${RUNNER_TEMP}/gitleaks-${GITLEAKS_VERSION}"
+          mkdir -p "$tool_root"
+          curl --fail --location --retry 3 \
+            --output "$tool_root/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar --extract --gzip --file "$tool_root/gitleaks.tar.gz" --directory "$tool_root" gitleaks
+          "$tool_root/gitleaks" detect --source . --config .gitleaks.toml --redact --exit-code 1 --no-banner
+
+      - name: Build production images
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker build -f deploy/p1/docker/decision-platform.Dockerfile -t capstone-decision-platform:security .
+          docker build -f workspaces/experience-dashboard/Dockerfile -t capstone-experience-dashboard:security workspaces/experience-dashboard
+          docker build -f workspaces/return-engine/Dockerfile -t capstone-return-engine:security workspaces/return-engine
+
+      - name: Filesystem dependency scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Decision Platform image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: capstone-decision-platform:security
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Dashboard image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: capstone-experience-dashboard:security
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Return Engine image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: capstone-return-engine:security
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Record scoped security marker
+        run: echo 'CODEX_SECURITY_DEEP_SCAN=NOT_RUN_USER_SCOPED_OUT'

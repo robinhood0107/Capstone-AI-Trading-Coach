@@ -1,0 +1,80 @@
+{
+  "$id": "contracts/schemas/p1-return-backtest-result.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractId": {
+      "const": "p1-return-backtest-result.v2"
+    },
+    "fileName": {
+      "const": "backtest_result.json"
+    },
+    "semantic": {
+      "additionalProperties": false,
+      "properties": {
+        "finite": {
+          "const": true
+        },
+        "independentlyRecomputed": {
+          "const": true
+        },
+        "scenarios": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "costModelId": {
+                "const": "CONSERVATIVE_FIXED_35BPS_V1"
+              },
+              "mdd": {
+                "maximum": 0,
+                "type": "number"
+              },
+              "netReturn": {
+                "type": "number"
+              },
+              "scenario": {
+                "enum": [
+                  "BASELINE",
+                  "GUIDE",
+                  "STRICT"
+                ]
+              },
+              "sharpe": {
+                "type": "number"
+              },
+              "tradeCount": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "scenario",
+              "netReturn",
+              "mdd",
+              "sharpe",
+              "tradeCount",
+              "costModelId"
+            ],
+            "type": "object"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        }
+      },
+      "required": [
+        "scenarios",
+        "independentlyRecomputed",
+        "finite"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "contractId",
+    "fileName",
+    "semantic"
+  ],
+  "title": "p1-return-backtest-result.v2",
+  "type": "object"
+}

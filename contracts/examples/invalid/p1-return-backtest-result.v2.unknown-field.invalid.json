@@ -1,0 +1,35 @@
+{
+  "contractId": "p1-return-backtest-result.v2",
+  "fileName": "backtest_result.json",
+  "semantic": {
+    "finite": true,
+    "independentlyRecomputed": true,
+    "scenarios": [
+      {
+        "costModelId": "CONSERVATIVE_FIXED_35BPS_V1",
+        "mdd": 0,
+        "netReturn": 0,
+        "scenario": "BASELINE",
+        "sharpe": 0,
+        "tradeCount": 0
+      },
+      {
+        "costModelId": "CONSERVATIVE_FIXED_35BPS_V1",
+        "mdd": 0,
+        "netReturn": 0,
+        "scenario": "GUIDE",
+        "sharpe": 0,
+        "tradeCount": 0
+      },
+      {
+        "costModelId": "CONSERVATIVE_FIXED_35BPS_V1",
+        "mdd": 0,
+        "netReturn": 0,
+        "scenario": "STRICT",
+        "sharpe": 0,
+        "tradeCount": 0
+      }
+    ]
+  },
+  "unexpected": true
+}

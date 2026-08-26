@@ -1,0 +1,29 @@
+{
+  "contractId": "p1-scenario-replay-policy.v1",
+  "orderAuthority": "NONE",
+  "providerCalls": 0,
+  "scenarios": [
+    {
+      "costModelId": "CONSERVATIVE_FIXED_35BPS_V1",
+      "ownerRiskEvaluator": "s2-2-system-rule-catalog/v1",
+      "roundTripCostBps": 35,
+      "scenario": "BASELINE",
+      "signalPolicy": "MODEL_ONLY"
+    },
+    {
+      "costModelId": "CONSERVATIVE_FIXED_35BPS_V1",
+      "ownerRiskEvaluator": "s2-2-system-rule-catalog/v1",
+      "roundTripCostBps": 35,
+      "scenario": "GUIDE",
+      "signalPolicy": "OWNER_GUIDE_REPLAY"
+    },
+    {
+      "costModelId": "CONSERVATIVE_FIXED_35BPS_V1",
+      "ownerRiskEvaluator": "s2-2-system-rule-catalog/v1",
+      "roundTripCostBps": 35,
+      "scenario": "STRICT",
+      "signalPolicy": "OWNER_STRICT_REPLAY"
+    }
+  ],
+  "teamBRiskEngineImplementation": false
+}

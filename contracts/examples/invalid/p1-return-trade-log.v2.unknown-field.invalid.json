@@ -1,0 +1,23 @@
+{
+  "contractId": "p1-return-trade-log.v2",
+  "fileName": "trade_log.parquet",
+  "semantic": {
+    "columns": [
+      "scenario",
+      "symbol",
+      "entrySession",
+      "exitSession",
+      "side",
+      "quantity",
+      "entryPrice",
+      "exitPrice",
+      "grossReturn",
+      "costBps",
+      "netReturn"
+    ],
+    "finite": true,
+    "longOnly": true,
+    "rowCount": 0
+  },
+  "unexpected": true
+}

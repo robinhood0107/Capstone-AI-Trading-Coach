@@ -16,18 +16,17 @@
 구현 세션용 로컬 보조 자료는 사용자가 명시하거나 작업상 필요할 때만 참고한다. 사용자 학습용
 로컬 자료는 구현 입력이 아니며, 관련 주제가 나왔을 때 읽어볼 자료로만 제안한다.
 
-## P1 full-app v2 현재 권위
+## P1 Owner-First full-app v3 현재 권위
 
-`contracts/catalogs/p1-full-app-release-contract.v2.json`은 GitHub `1.0.0` full-app release의 현재
-계약이다. 기존 `p1-offline-demo-release-manifest.v1`과 workflow는 역사적 회귀로 byte-stable하게
+`contracts/catalogs/p1-full-app-release-contract.v3.json`은 GitHub `1.0.0` full-app release의 현재
+계약이다. 기존 `p1-offline-demo-release-manifest.v1`과 full-app v2는 역사적 회귀로 byte-stable하게
 보존한다. Team A/B 수신본은 ignored `dev/upstream-intake/<manifest-sha256>`에서 원본 해시를 보존한
 뒤 검토된 production source만 해당 workspace로 승격한다. cache, raw intake, untrusted pickle,
 provider 원본과 local output은 승격하지 않는다.
 
-`FINAL` release는 v2의 아홉 hard gate가 모두 `PASS`일 때만 가능하다. Dashboard UI, CUDA와 SearXNG는
-계약에 열거된 비차단 상태를 공개할 수 있지만 Team B real artifact, public Seed, owner backend E2E,
-CPU/Intel, provider read, security, supply-chain 또는 Compose E2E를 대체하지 않는다. LightGBM은 계속
-연구 전용이고 live order는 구현하지 않는다.
+`FINAL` release는 v3의 16개 hard gate가 모두 `PASS`일 때만 가능하다. contract-only 단계의 root
+OpenAPI는 48개를 유지하고 Automation/Journal runtime PR에서 exact 56으로 전환한다. Team A 완료
+기준은 exact-33이다. LightGBM은 계속 연구 전용이고 KIS Live order와 GDELT outbound는 0이다.
 
 ## 현재 단계
 

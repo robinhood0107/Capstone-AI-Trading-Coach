@@ -1,0 +1,27 @@
+{
+  "eventTypes": [
+    "REGULATORY_ACTION"
+  ],
+  "evidence": [
+    {
+      "boundedQuote": "공식 발표가 규제 조치를 확인했다.",
+      "exactGroundingSupport": true,
+      "sourceEventDate": "2026-08-26",
+      "sourceId": "official-primary-1",
+      "sourceType": "OFFICIAL_PRIMARY"
+    }
+  ],
+  "freshnessWindowSatisfied": true,
+  "googleGroundingQueryCount": 1,
+  "inputSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "modelId": "gemini-3.5-flash",
+  "mutuallyConsistent": true,
+  "orderAuthority": "NONE",
+  "outputSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "promptVersion": "vertex-news-veto-v1",
+  "providerCallCount": 1,
+  "status": "AVAILABLE",
+  "tone": "NEGATIVE",
+  "unexpected": true,
+  "verdict": "VETO_BUY"
+}

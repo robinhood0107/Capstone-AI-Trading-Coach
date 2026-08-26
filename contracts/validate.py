@@ -86,6 +86,10 @@ from contracts.generate_s7_s8_contracts import (  # noqa: E402
     SCHEMA_IDS as S7_S8_SCHEMA_IDS,
     validate_semantics as validate_s7_s8_semantics,
 )
+from contracts.generate_p1_owner_phase_a_contracts import (  # noqa: E402
+    SCHEMA_IDS as P1_OWNER_PHASE_A_SCHEMA_IDS,
+    validate_semantics as validate_p1_owner_phase_a_semantics,
+)
 
 SCHEMA_DIR = REPO_ROOT / "contracts" / "schemas"
 EXAMPLES_DIR = REPO_ROOT / "contracts" / "examples"
@@ -124,6 +128,7 @@ VERSIONED_EXAMPLE_SCHEMAS = {
     **{schema_id: schema_id for schema_id in S6_SCHEMA_IDS},
     **{schema_id: schema_id for schema_id in S6_RETIREMENT_SCHEMA_IDS},
     **{schema_id: schema_id for schema_id in S7_S8_SCHEMA_IDS},
+    **{schema_id: schema_id for schema_id in P1_OWNER_PHASE_A_SCHEMA_IDS},
     "s2-2-hash-vector.v3": "s2-2-hash-vector.v3",
 }
 
@@ -203,6 +208,11 @@ def validate_example_semantics(
         if not isinstance(example, dict):
             raise ContractValidationError("S7/S8 example must be an object.")
         validate_s7_s8_semantics(schema_name, example)
+        return
+    if schema_name in P1_OWNER_PHASE_A_SCHEMA_IDS:
+        if not isinstance(example, dict):
+            raise ContractValidationError("P1 Owner Phase A example must be an object.")
+        validate_p1_owner_phase_a_semantics(schema_name, example)
         return
     if schema_name == "risk_decision":
         validate_risk_decision_semantics(example, s2_2_catalog)

@@ -1,11 +1,11 @@
 # 문서 색인과 현재 상태
 
-<!-- P1_FULL_APP_V2_AUTHORITY_BEGIN -->
-> **1.0.0 current authority (2026-08-26):** full-app release v2는 `IMPLEMENTATION_IN_PROGRESS`이며
+<!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
+> **1.0.0 current authority (2026-08-27):** Owner-First full-app release v3는 `CONTRACT_LOCKED_IMPLEMENTATION_IN_PROGRESS`이며
 > GitHub `1.0.0` Release는 없다. 현재 hard/non-blocking gate와 증거 규칙은
-> [P1 full-app v2 권위와 게이트](decision-platform/P1_1_0_0_FULL_APP_V2_권위_및_게이트.md)가 소유한다.
-> 아래 과거 P1/placeholder marker는 해당 시점의 기록이며 v2 완료 증거가 아니다.
-<!-- P1_FULL_APP_V2_AUTHORITY_END -->
+> [P1 Owner-First full-app v3 권위와 게이트](decision-platform/P1_1_0_0_OWNER_FIRST_V3_권위_및_게이트.md)가 소유한다.
+> 아래 과거 P1/placeholder marker는 해당 시점의 기록이며 v3 완료 증거가 아니다.
+<!-- P1_FULL_APP_V3_AUTHORITY_END -->
 
 이 파일은 공개 문서의 단일 상태 권위다. 기능의 상세 계약은
 [최종 프로젝트 명세서](최종_프로젝트_명세서.md), 공개 REST/gRPC 계약은
@@ -94,6 +94,7 @@ PostgreSQL one-shot claim을 별도로 통과한다. 이 구조는 공개 HTTP/O
 
 ### 실행과 운영
 
+- [P1 Owner-First full-app v3 권위와 게이트](decision-platform/P1_1_0_0_OWNER_FIRST_V3_권위_및_게이트.md)
 - [통합 담당자 선행 완료 체크리스트](decision-platform/P1_OWNER_선행_완료_체크리스트.md)
 - [새 PC에서 같은 환경 실행하기](decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md)
 - [Team A 대시보드 완료 요청](decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md)

@@ -1,0 +1,16 @@
+{
+  "contractId": "p1-return-equity-log.v2",
+  "fileName": "equity_log.parquet",
+  "semantic": {
+    "columns": [
+      "scenario",
+      "sessionDate",
+      "equityKrw",
+      "drawdown"
+    ],
+    "finite": true,
+    "initialCapitalKrw": 10000000,
+    "rowCount": 3
+  },
+  "unexpected": true
+}

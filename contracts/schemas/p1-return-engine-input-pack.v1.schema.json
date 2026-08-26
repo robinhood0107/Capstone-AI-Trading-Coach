@@ -1,0 +1,429 @@
+{
+  "$id": "contracts/schemas/p1-return-engine-input-pack.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "calendar": {
+      "additionalProperties": false,
+      "properties": {
+        "calendarVersion": {
+          "const": "exchange-calendars-4.13.2"
+        },
+        "correctionGenerationSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "mic": {
+          "const": "XKRX"
+        },
+        "sessionsSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "timezone": {
+          "const": "Asia/Seoul"
+        }
+      },
+      "required": [
+        "mic",
+        "timezone",
+        "calendarVersion",
+        "correctionGenerationSha256",
+        "sessionsSha256"
+      ],
+      "type": "object"
+    },
+    "canonicalManifestSha256": {
+      "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "p1-return-engine-input-pack.v1"
+    },
+    "costModel": {
+      "additionalProperties": false,
+      "properties": {
+        "actualKisFeeClaim": {
+          "const": false
+        },
+        "appliesIdenticallyToScenarios": {
+          "const": true
+        },
+        "costModelId": {
+          "const": "CONSERVATIVE_FIXED_35BPS_V1"
+        },
+        "roundTripCostBps": {
+          "const": 35
+        }
+      },
+      "required": [
+        "costModelId",
+        "roundTripCostBps",
+        "appliesIdenticallyToScenarios",
+        "actualKisFeeClaim"
+      ],
+      "type": "object"
+    },
+    "coverage": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "firstSession": {
+            "format": "date",
+            "type": "string"
+          },
+          "lastSession": {
+            "format": "date",
+            "type": "string"
+          },
+          "missingMiddleSessions": {
+            "const": 0
+          },
+          "status": {
+            "enum": [
+              "COMPLETE",
+              "EDGE_TRUNCATED"
+            ]
+          },
+          "symbol": {
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "firstSession",
+          "lastSession",
+          "status",
+          "missingMiddleSessions"
+        ],
+        "type": "object"
+      },
+      "maxItems": 31,
+      "minItems": 31,
+      "type": "array"
+    },
+    "dataPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "accountOrderDataIncluded": {
+          "const": false
+        },
+        "corporateActionExclusionsSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "gdeltInputs": {
+          "const": 0
+        },
+        "globalSplitSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "intradayFeatures": {
+          "const": 0
+        },
+        "minimumDailyYears": {
+          "minimum": 3,
+          "type": "number"
+        },
+        "newsFeatures": {
+          "const": 0
+        },
+        "priceBasis": {
+          "const": "RAW_CLOSE"
+        },
+        "providerCredentialsIncluded": {
+          "const": false
+        }
+      },
+      "required": [
+        "priceBasis",
+        "minimumDailyYears",
+        "corporateActionExclusionsSha256",
+        "globalSplitSha256",
+        "newsFeatures",
+        "gdeltInputs",
+        "intradayFeatures",
+        "providerCredentialsIncluded",
+        "accountOrderDataIncluded"
+      ],
+      "type": "object"
+    },
+    "featureOrder": {
+      "items": false,
+      "maxItems": 9,
+      "minItems": 9,
+      "prefixItems": [
+        {
+          "const": "open"
+        },
+        {
+          "const": "high"
+        },
+        {
+          "const": "low"
+        },
+        {
+          "const": "raw_close"
+        },
+        {
+          "const": "volume"
+        },
+        {
+          "const": "return_1d"
+        },
+        {
+          "const": "ma5"
+        },
+        {
+          "const": "ma20"
+        },
+        {
+          "const": "rsi14"
+        }
+      ],
+      "type": "array"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "contentType": {
+            "enum": [
+              "PARQUET",
+              "JSON",
+              "JSONL",
+              "YAML"
+            ]
+          },
+          "path": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,239}$",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "sizeBytes": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "sizeBytes",
+          "sha256",
+          "contentType"
+        ],
+        "type": "object"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "macroSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "availableAtBound": {
+          "const": true
+        },
+        "contractId": {
+          "const": "ecos_macro_snapshot"
+        },
+        "manifestSha256": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "seriesCount": {
+          "maximum": 2,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "contractId",
+        "seriesCount",
+        "availableAtBound",
+        "manifestSha256"
+      ],
+      "type": "object"
+    },
+    "modelConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "cpuDeterministic": {
+          "const": true
+        },
+        "dropout": {
+          "const": 0.2
+        },
+        "finalTestReviewCount": {
+          "const": 0
+        },
+        "hiddenSize": {
+          "const": 128
+        },
+        "hyperparameterSearchCount": {
+          "const": 0
+        },
+        "layerCount": {
+          "const": 3
+        },
+        "learningRate": {
+          "const": 0.0005
+        },
+        "loss": {
+          "const": "SmoothL1"
+        },
+        "optimizer": {
+          "const": "Adam"
+        },
+        "outputSize": {
+          "const": 1
+        },
+        "perSymbolIndependent": {
+          "const": true
+        },
+        "seed": {
+          "const": 0
+        },
+        "threadCount": {
+          "const": 1
+        },
+        "windowSize": {
+          "const": 20
+        }
+      },
+      "required": [
+        "perSymbolIndependent",
+        "windowSize",
+        "hiddenSize",
+        "layerCount",
+        "dropout",
+        "outputSize",
+        "loss",
+        "optimizer",
+        "learningRate",
+        "seed",
+        "cpuDeterministic",
+        "threadCount",
+        "hyperparameterSearchCount",
+        "finalTestReviewCount"
+      ],
+      "type": "object"
+    },
+    "ownerRiskEvaluator": {
+      "additionalProperties": false,
+      "properties": {
+        "contractId": {
+          "const": "s2-2-system-rule-catalog/v1"
+        },
+        "orderAuthority": {
+          "const": "NONE"
+        },
+        "providerCalls": {
+          "const": 0
+        }
+      },
+      "required": [
+        "contractId",
+        "providerCalls",
+        "orderAuthority"
+      ],
+      "type": "object"
+    },
+    "period": {
+      "additionalProperties": false,
+      "properties": {
+        "firstSession": {
+          "format": "date",
+          "type": "string"
+        },
+        "lastSession": {
+          "format": "date",
+          "type": "string"
+        },
+        "minimumYears": {
+          "minimum": 3,
+          "type": "number"
+        },
+        "testStart": {
+          "format": "date",
+          "type": "string"
+        },
+        "trainEnd": {
+          "format": "date",
+          "type": "string"
+        },
+        "validationEnd": {
+          "format": "date",
+          "type": "string"
+        }
+      },
+      "required": [
+        "firstSession",
+        "lastSession",
+        "minimumYears",
+        "trainEnd",
+        "validationEnd",
+        "testStart"
+      ],
+      "type": "object"
+    },
+    "universe": {
+      "additionalProperties": false,
+      "properties": {
+        "domesticStockCount": {
+          "const": 30
+        },
+        "goldEtfSymbol": {
+          "const": "132030"
+        },
+        "symbols": {
+          "contains": {
+            "const": "132030"
+          },
+          "items": {
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          },
+          "maxContains": 1,
+          "maxItems": 31,
+          "minContains": 1,
+          "minItems": 31,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "universeId": {
+          "const": "P1_EXACT_31_V1"
+        }
+      },
+      "required": [
+        "universeId",
+        "symbols",
+        "domesticStockCount",
+        "goldEtfSymbol"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "contractId",
+    "universe",
+    "calendar",
+    "period",
+    "coverage",
+    "dataPolicy",
+    "macroSnapshot",
+    "featureOrder",
+    "modelConfig",
+    "costModel",
+    "ownerRiskEvaluator",
+    "files",
+    "canonicalManifestSha256"
+  ],
+  "title": "p1-return-engine-input-pack.v1",
+  "type": "object"
+}

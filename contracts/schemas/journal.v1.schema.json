@@ -1,0 +1,138 @@
+{
+  "$id": "contracts/schemas/journal.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "content": {
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    },
+    "contractId": {
+      "const": "journal.v1"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "deletedAt": {
+      "oneOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "journalId": {
+      "pattern": "^jnl_[A-Za-z0-9_-]{8,96}$",
+      "type": "string"
+    },
+    "links": {
+      "additionalProperties": false,
+      "properties": {
+        "automationRunId": {
+          "oneOf": [
+            {
+              "pattern": "^auto_run_[A-Za-z0-9_-]{8,96}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "backtestRunId": {
+          "oneOf": [
+            {
+              "pattern": "^run_[A-Za-z0-9_-]{8,96}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decisionId": {
+          "oneOf": [
+            {
+              "pattern": "^dec_[A-Za-z0-9_-]{8,96}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "orderId": {
+          "oneOf": [
+            {
+              "pattern": "^ord_[A-Za-z0-9_-]{8,96}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ragAnswerId": {
+          "oneOf": [
+            {
+              "pattern": "^rag_[A-Za-z0-9_-]{8,96}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "ownerScope": {
+      "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "tags": {
+      "items": {
+        "maxLength": 32,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 20,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "title": {
+      "maxLength": 120,
+      "minLength": 1,
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "version": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "contractId",
+    "journalId",
+    "ownerScope",
+    "title",
+    "content",
+    "tags",
+    "links",
+    "version",
+    "createdAt",
+    "updatedAt",
+    "deletedAt"
+  ],
+  "title": "journal.v1",
+  "type": "object"
+}

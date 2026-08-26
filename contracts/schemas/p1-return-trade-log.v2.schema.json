@@ -1,0 +1,57 @@
+{
+  "$id": "contracts/schemas/p1-return-trade-log.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractId": {
+      "const": "p1-return-trade-log.v2"
+    },
+    "fileName": {
+      "const": "trade_log.parquet"
+    },
+    "semantic": {
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "const": [
+            "scenario",
+            "symbol",
+            "entrySession",
+            "exitSession",
+            "side",
+            "quantity",
+            "entryPrice",
+            "exitPrice",
+            "grossReturn",
+            "costBps",
+            "netReturn"
+          ]
+        },
+        "finite": {
+          "const": true
+        },
+        "longOnly": {
+          "const": true
+        },
+        "rowCount": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "columns",
+        "rowCount",
+        "longOnly",
+        "finite"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "contractId",
+    "fileName",
+    "semantic"
+  ],
+  "title": "p1-return-trade-log.v2",
+  "type": "object"
+}

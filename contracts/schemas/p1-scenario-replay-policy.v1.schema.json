@@ -1,0 +1,69 @@
+{
+  "$id": "contracts/schemas/p1-scenario-replay-policy.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractId": {
+      "const": "p1-scenario-replay-policy.v1"
+    },
+    "orderAuthority": {
+      "const": "NONE"
+    },
+    "providerCalls": {
+      "const": 0
+    },
+    "scenarios": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "costModelId": {
+            "const": "CONSERVATIVE_FIXED_35BPS_V1"
+          },
+          "ownerRiskEvaluator": {
+            "const": "s2-2-system-rule-catalog/v1"
+          },
+          "roundTripCostBps": {
+            "const": 35
+          },
+          "scenario": {
+            "enum": [
+              "BASELINE",
+              "GUIDE",
+              "STRICT"
+            ]
+          },
+          "signalPolicy": {
+            "enum": [
+              "MODEL_ONLY",
+              "OWNER_GUIDE_REPLAY",
+              "OWNER_STRICT_REPLAY"
+            ]
+          }
+        },
+        "required": [
+          "scenario",
+          "signalPolicy",
+          "ownerRiskEvaluator",
+          "costModelId",
+          "roundTripCostBps"
+        ],
+        "type": "object"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "teamBRiskEngineImplementation": {
+      "const": false
+    }
+  },
+  "required": [
+    "contractId",
+    "scenarios",
+    "teamBRiskEngineImplementation",
+    "providerCalls",
+    "orderAuthority"
+  ],
+  "title": "p1-scenario-replay-policy.v1",
+  "type": "object"
+}

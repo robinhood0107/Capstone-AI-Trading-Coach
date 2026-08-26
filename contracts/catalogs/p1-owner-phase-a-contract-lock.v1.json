@@ -1,0 +1,64 @@
+{
+  "additiveOpenApi": "contracts/openapi/p1-automation-journal.v1.openapi.json",
+  "automationSchemas": [
+    "contracts/schemas/automation-control.v1.schema.json",
+    "contracts/schemas/automation-run.v1.schema.json",
+    "contracts/schemas/automation-position.v1.schema.json",
+    "contracts/schemas/automation-event.v1.schema.json"
+  ],
+  "contractId": "p1-owner-phase-a-contract-lock.v1",
+  "journalSchema": "contracts/schemas/journal.v1.schema.json",
+  "lightgbmResearchSchema": "contracts/schemas/p1-lightgbm-research-evaluation.v1.schema.json",
+  "providerPhysicalCallsDuringContractLock": 0,
+  "returnEngine": {
+    "artifactManifestSchema": "contracts/schemas/p1-return-engine-artifact-manifest.v2.schema.json",
+    "artifactNames": [
+      "model.safetensors",
+      "scaler.json",
+      "config.json",
+      "lstm_signals.parquet",
+      "rule_baseline_signals.parquet",
+      "backtest_result.json",
+      "trade_log.parquet",
+      "equity_log.parquet",
+      "golden_output.json",
+      "model_report.md"
+    ],
+    "artifactSemanticSchemas": [
+      "contracts/schemas/p1-return-model-safetensors.v2.schema.json",
+      "contracts/schemas/p1-return-scaler.v2.schema.json",
+      "contracts/schemas/p1-return-config.v2.schema.json",
+      "contracts/schemas/p1-return-lstm-signals.v2.schema.json",
+      "contracts/schemas/p1-return-rule-baseline-signals.v2.schema.json",
+      "contracts/schemas/p1-return-backtest-result.v2.schema.json",
+      "contracts/schemas/p1-return-trade-log.v2.schema.json",
+      "contracts/schemas/p1-return-equity-log.v2.schema.json",
+      "contracts/schemas/p1-return-golden-output.v2.schema.json",
+      "contracts/schemas/p1-return-model-report.v2.schema.json"
+    ],
+    "featureOrder": [
+      "open",
+      "high",
+      "low",
+      "raw_close",
+      "volume",
+      "return_1d",
+      "ma5",
+      "ma20",
+      "rsi14"
+    ],
+    "gdeltCalls": 0,
+    "inputPackSchema": "contracts/schemas/p1-return-engine-input-pack.v1.schema.json",
+    "newsFeatures": 0,
+    "vertexCalls": 0
+  },
+  "rootOpenApiOperationCountAfterRuntime": 56,
+  "rootOpenApiOperationCountBeforeRuntime": 48,
+  "vertexNewsVeto": {
+    "newBuyCandidateCount": 1,
+    "orderAuthority": "NONE",
+    "schema": "contracts/schemas/vertex-news-veto.v1.schema.json",
+    "secondCandidateFallback": false,
+    "sellCalls": 0
+  }
+}

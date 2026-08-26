@@ -1,0 +1,74 @@
+{
+  "$id": "contracts/schemas/p1-lightgbm-research-evaluation.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "batchPublicationCount": {
+      "const": 0
+    },
+    "contractId": {
+      "const": "p1-lightgbm-research-evaluation.v1"
+    },
+    "evidenceMode": {
+      "enum": [
+        "HISTORICAL_REPRODUCTION",
+        "OFFLINE_RESEARCH"
+      ]
+    },
+    "finalTestAccessCount": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "limitations": {
+      "items": {
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 20,
+      "minItems": 1,
+      "type": "array"
+    },
+    "mode": {
+      "const": "RESEARCH_ONLY"
+    },
+    "orderAuthority": {
+      "const": "NONE"
+    },
+    "productionSignalAuthority": {
+      "const": "NONE"
+    },
+    "providerCalls": {
+      "const": 0
+    },
+    "releaseCount": {
+      "const": 0
+    },
+    "riskDecisionAuthority": {
+      "const": "NONE"
+    },
+    "status": {
+      "enum": [
+        "REPRODUCED",
+        "BELOW_GATE",
+        "ABSTAIN"
+      ]
+    }
+  },
+  "required": [
+    "contractId",
+    "mode",
+    "evidenceMode",
+    "productionSignalAuthority",
+    "riskDecisionAuthority",
+    "orderAuthority",
+    "providerCalls",
+    "finalTestAccessCount",
+    "releaseCount",
+    "batchPublicationCount",
+    "status",
+    "limitations"
+  ],
+  "title": "p1-lightgbm-research-evaluation.v1",
+  "type": "object"
+}

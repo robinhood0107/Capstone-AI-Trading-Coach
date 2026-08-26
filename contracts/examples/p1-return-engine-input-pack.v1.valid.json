@@ -1,0 +1,339 @@
+{
+  "calendar": {
+    "calendarVersion": "exchange-calendars-4.13.2",
+    "correctionGenerationSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "mic": "XKRX",
+    "sessionsSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "timezone": "Asia/Seoul"
+  },
+  "canonicalManifestSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contractId": "p1-return-engine-input-pack.v1",
+  "costModel": {
+    "actualKisFeeClaim": false,
+    "appliesIdenticallyToScenarios": true,
+    "costModelId": "CONSERVATIVE_FIXED_35BPS_V1",
+    "roundTripCostBps": 35
+  },
+  "coverage": [
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000001"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000002"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000003"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000004"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000005"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000006"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000007"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000008"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000009"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000010"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000011"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000012"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000013"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000014"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000015"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000016"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000017"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000018"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000019"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000020"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000021"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000022"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000023"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000024"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000025"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000026"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000027"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000028"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000029"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "000030"
+    },
+    {
+      "firstSession": "2023-01-02",
+      "lastSession": "2026-08-26",
+      "missingMiddleSessions": 0,
+      "status": "COMPLETE",
+      "symbol": "132030"
+    }
+  ],
+  "dataPolicy": {
+    "accountOrderDataIncluded": false,
+    "corporateActionExclusionsSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "gdeltInputs": 0,
+    "globalSplitSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "intradayFeatures": 0,
+    "minimumDailyYears": 3,
+    "newsFeatures": 0,
+    "priceBasis": "RAW_CLOSE",
+    "providerCredentialsIncluded": false
+  },
+  "featureOrder": [
+    "open",
+    "high",
+    "low",
+    "raw_close",
+    "volume",
+    "return_1d",
+    "ma5",
+    "ma20",
+    "rsi14"
+  ],
+  "files": [
+    {
+      "contentType": "PARQUET",
+      "path": "data/ohlcv.parquet",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sizeBytes": 1024
+    }
+  ],
+  "macroSnapshot": {
+    "availableAtBound": true,
+    "contractId": "ecos_macro_snapshot",
+    "manifestSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "seriesCount": 2
+  },
+  "modelConfig": {
+    "cpuDeterministic": true,
+    "dropout": 0.2,
+    "finalTestReviewCount": 0,
+    "hiddenSize": 128,
+    "hyperparameterSearchCount": 0,
+    "layerCount": 3,
+    "learningRate": 0.0005,
+    "loss": "SmoothL1",
+    "optimizer": "Adam",
+    "outputSize": 1,
+    "perSymbolIndependent": true,
+    "seed": 0,
+    "threadCount": 1,
+    "windowSize": 20
+  },
+  "ownerRiskEvaluator": {
+    "contractId": "s2-2-system-rule-catalog/v1",
+    "orderAuthority": "NONE",
+    "providerCalls": 0
+  },
+  "period": {
+    "firstSession": "2023-01-02",
+    "lastSession": "2026-08-26",
+    "minimumYears": 3,
+    "testStart": "2026-01-02",
+    "trainEnd": "2025-06-30",
+    "validationEnd": "2025-12-30"
+  },
+  "universe": {
+    "domesticStockCount": 30,
+    "goldEtfSymbol": "132030",
+    "symbols": [
+      "000001",
+      "000002",
+      "000003",
+      "000004",
+      "000005",
+      "000006",
+      "000007",
+      "000008",
+      "000009",
+      "000010",
+      "000011",
+      "000012",
+      "000013",
+      "000014",
+      "000015",
+      "000016",
+      "000017",
+      "000018",
+      "000019",
+      "000020",
+      "000021",
+      "000022",
+      "000023",
+      "000024",
+      "000025",
+      "000026",
+      "000027",
+      "000028",
+      "000029",
+      "000030",
+      "132030"
+    ],
+    "universeId": "P1_EXACT_31_V1"
+  }
+}

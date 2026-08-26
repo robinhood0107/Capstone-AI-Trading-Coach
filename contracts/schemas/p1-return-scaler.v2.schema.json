@@ -1,0 +1,88 @@
+{
+  "$id": "contracts/schemas/p1-return-scaler.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractId": {
+      "const": "p1-return-scaler.v2"
+    },
+    "fileName": {
+      "const": "scaler.json"
+    },
+    "semantic": {
+      "additionalProperties": false,
+      "properties": {
+        "featureOrder": {
+          "items": false,
+          "maxItems": 9,
+          "minItems": 9,
+          "prefixItems": [
+            {
+              "const": "open"
+            },
+            {
+              "const": "high"
+            },
+            {
+              "const": "low"
+            },
+            {
+              "const": "raw_close"
+            },
+            {
+              "const": "volume"
+            },
+            {
+              "const": "return_1d"
+            },
+            {
+              "const": "ma5"
+            },
+            {
+              "const": "ma20"
+            },
+            {
+              "const": "rsi14"
+            }
+          ],
+          "type": "array"
+        },
+        "finite": {
+          "const": true
+        },
+        "fitScope": {
+          "const": "TRAIN_ONLY"
+        },
+        "symbols": {
+          "contains": {
+            "const": "132030"
+          },
+          "items": {
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          },
+          "maxContains": 1,
+          "maxItems": 31,
+          "minContains": 1,
+          "minItems": 31,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "symbols",
+        "featureOrder",
+        "fitScope",
+        "finite"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "contractId",
+    "fileName",
+    "semantic"
+  ],
+  "title": "p1-return-scaler.v2",
+  "type": "object"
+}

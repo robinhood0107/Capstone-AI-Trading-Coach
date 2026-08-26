@@ -1,0 +1,14 @@
+{
+  "brokerageMode": "KIS_MOCK",
+  "contractId": "automation-run.v1",
+  "physicalSubmitCount": 0,
+  "providerCalls": 0,
+  "runId": "auto_run_12345678",
+  "selectedSide": null,
+  "selectedSymbol": null,
+  "sessionDate": "2026-08-26",
+  "startedAt": "2026-08-26T08:10:00+09:00",
+  "state": "SCHEDULED",
+  "updatedAt": "2026-08-26T08:10:00+09:00",
+  "vertexCallCount": 0
+}

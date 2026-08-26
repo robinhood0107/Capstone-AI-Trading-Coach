@@ -1,0 +1,51 @@
+{
+  "$id": "contracts/schemas/p1-return-model-report.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractId": {
+      "const": "p1-return-model-report.v2"
+    },
+    "fileName": {
+      "const": "model_report.md"
+    },
+    "semantic": {
+      "additionalProperties": false,
+      "properties": {
+        "encoding": {
+          "const": "UTF-8"
+        },
+        "orderAuthority": {
+          "const": "NONE"
+        },
+        "performanceClaimAllowed": {
+          "const": false
+        },
+        "requiredSections": {
+          "const": [
+            "Data",
+            "Model ABI",
+            "Split",
+            "Reproducibility",
+            "Model quality",
+            "Limitations"
+          ]
+        }
+      },
+      "required": [
+        "encoding",
+        "requiredSections",
+        "performanceClaimAllowed",
+        "orderAuthority"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "contractId",
+    "fileName",
+    "semantic"
+  ],
+  "title": "p1-return-model-report.v2",
+  "type": "object"
+}

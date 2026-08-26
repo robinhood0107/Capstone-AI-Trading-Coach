@@ -1,0 +1,13 @@
+{
+  "contractId": "automation-event.v1",
+  "eventId": "auto_evt_12345678",
+  "eventType": "RUN_TRANSITIONED",
+  "occurredAt": "2026-08-26T08:10:00+09:00",
+  "orderSubmits": 0,
+  "payloadHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "providerCalls": 0,
+  "runId": "auto_run_12345678",
+  "sanitized": true,
+  "sequence": 1,
+  "unexpected": true
+}

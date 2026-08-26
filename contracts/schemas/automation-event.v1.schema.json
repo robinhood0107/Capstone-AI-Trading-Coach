@@ -1,0 +1,74 @@
+{
+  "$id": "contracts/schemas/automation-event.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractId": {
+      "const": "automation-event.v1"
+    },
+    "eventId": {
+      "pattern": "^auto_evt_[A-Za-z0-9_-]{8,96}$",
+      "type": "string"
+    },
+    "eventType": {
+      "enum": [
+        "CONTROL_CHANGED",
+        "RUN_TRANSITIONED",
+        "BASELINE_CAPTURED",
+        "ACCOUNT_RECONCILED",
+        "EXIT_SELECTED",
+        "BUY_SELECTED",
+        "NEWS_RESULT_RECORDED",
+        "RISK_RESULT_RECORDED",
+        "ORDER_RESERVED",
+        "ORDER_OUTCOME_RECORDED",
+        "CANCEL_RECORDED",
+        "DRIFT_DETECTED",
+        "RUN_HALTED"
+      ]
+    },
+    "occurredAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "orderSubmits": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "payloadHash": {
+      "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "providerCalls": {
+      "maximum": 16,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "runId": {
+      "pattern": "^auto_run_[A-Za-z0-9_-]{8,96}$",
+      "type": "string"
+    },
+    "sanitized": {
+      "const": true
+    },
+    "sequence": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "contractId",
+    "eventId",
+    "runId",
+    "sequence",
+    "eventType",
+    "occurredAt",
+    "payloadHash",
+    "providerCalls",
+    "orderSubmits",
+    "sanitized"
+  ],
+  "title": "automation-event.v1",
+  "type": "object"
+}

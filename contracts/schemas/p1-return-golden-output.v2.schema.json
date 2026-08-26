@@ -1,0 +1,61 @@
+{
+  "$id": "contracts/schemas/p1-return-golden-output.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractId": {
+      "const": "p1-return-golden-output.v2"
+    },
+    "fileName": {
+      "const": "golden_output.json"
+    },
+    "semantic": {
+      "additionalProperties": false,
+      "properties": {
+        "costModelId": {
+          "const": "CONSERVATIVE_FIXED_35BPS_V1"
+        },
+        "finite": {
+          "const": true
+        },
+        "forecastFormula": {
+          "const": "forecastClose/currentClose-1"
+        },
+        "goldenHash": {
+          "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "symbols": {
+          "contains": {
+            "const": "132030"
+          },
+          "items": {
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          },
+          "maxContains": 1,
+          "maxItems": 31,
+          "minContains": 1,
+          "minItems": 31,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "symbols",
+        "forecastFormula",
+        "costModelId",
+        "goldenHash",
+        "finite"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "contractId",
+    "fileName",
+    "semantic"
+  ],
+  "title": "p1-return-golden-output.v2",
+  "type": "object"
+}

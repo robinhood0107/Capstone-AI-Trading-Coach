@@ -45,7 +45,9 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
                 validator = Draft202012Validator(
                     self.schemas[schema_id], format_checker=FormatChecker()
                 )
-                self.assertEqual([], list(validator.iter_errors(self.fixtures[schema_id])))
+                self.assertEqual(
+                    [], list(validator.iter_errors(self.fixtures[schema_id]))
+                )
                 invalid = copy.deepcopy(self.fixtures[schema_id])
                 invalid["unexpected"] = True
                 self.assertNotEqual([], list(validator.iter_errors(invalid)))
@@ -68,7 +70,9 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
 
     def test_manifest_binds_exact_ten_ordered_files_and_synthetic_truth(self) -> None:
         payload = self.fixtures["p1-return-engine-artifact-manifest.v2"]
-        self.assertEqual(list(ARTIFACT_NAMES), [item["path"] for item in payload["artifacts"]])
+        self.assertEqual(
+            list(ARTIFACT_NAMES), [item["path"] for item in payload["artifacts"]]
+        )
         self.assertEqual(
             [SCHEMA_PATHS[item] for item in ARTIFACT_SCHEMA_IDS],
             [item["semanticSchema"] for item in payload["artifacts"]],
@@ -88,7 +92,14 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
         validator = Draft202012Validator(schema, format_checker=FormatChecker())
         available = self.fixtures["vertex-news-veto.v1"]
         self.assertEqual([], list(validator.iter_errors(available)))
-        for forbidden in ("side", "quantity", "price", "orderType", "userId", "accountId"):
+        for forbidden in (
+            "side",
+            "quantity",
+            "price",
+            "orderType",
+            "userId",
+            "accountId",
+        ):
             invalid = copy.deepcopy(available)
             invalid[forbidden] = "forbidden"
             self.assertNotEqual([], list(validator.iter_errors(invalid)), forbidden)
@@ -121,9 +132,9 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
 
     def test_additive_openapi_locks_eight_routes_without_mutating_root(self) -> None:
         additive = json.loads(
-            (ROOT / "contracts/openapi/p1-automation-journal.v1.openapi.json").read_text(
-                encoding="utf-8"
-            )
+            (
+                ROOT / "contracts/openapi/p1-automation-journal.v1.openapi.json"
+            ).read_text(encoding="utf-8")
         )
         methods = {
             (method.upper(), path)
@@ -144,7 +155,9 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
             },
             methods,
         )
-        root = json.loads((ROOT / "contracts/openapi/openapi.json").read_text(encoding="utf-8"))
+        root = json.loads(
+            (ROOT / "contracts/openapi/openapi.json").read_text(encoding="utf-8")
+        )
         root_count = sum(
             1
             for path_item in root["paths"].values()
@@ -153,11 +166,13 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
         )
         self.assertEqual(48, root_count)
 
-    def test_release_v3_requires_exact_sixteen_gates_and_keeps_live_closed(self) -> None:
+    def test_release_v3_requires_exact_sixteen_gates_and_keeps_live_closed(
+        self,
+    ) -> None:
         catalog = json.loads(
-            (ROOT / "contracts/catalogs/p1-full-app-release-contract.v3.json").read_text(
-                encoding="utf-8"
-            )
+            (
+                ROOT / "contracts/catalogs/p1-full-app-release-contract.v3.json"
+            ).read_text(encoding="utf-8")
         )
         self.assertEqual(list(RELEASE_V3_HARD_GATES), catalog["hardGates"])
         self.assertEqual(16, len(catalog["hardGates"]))
@@ -202,7 +217,9 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
         final["hardGates"]["THREE_XKRX_SESSION_SOAK"] = "BLOCKED"
         self.assertNotEqual([], list(validator.iter_errors(final)))
 
-    def test_historical_contracts_license_and_news_summary_are_byte_stable(self) -> None:
+    def test_historical_contracts_license_and_news_summary_are_byte_stable(
+        self,
+    ) -> None:
         for relative, expected in FROZEN_SHA256.items():
             with self.subTest(relative=relative):
                 self.assertEqual(
@@ -210,7 +227,9 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
                     hashlib.sha256((ROOT / relative).read_bytes()).hexdigest(),
                 )
         self.assertFalse(
-            (ROOT / "contracts/schemas/return-engine-news-feature.v1.schema.json").exists()
+            (
+                ROOT / "contracts/schemas/return-engine-news-feature.v1.schema.json"
+            ).exists()
         )
 
 

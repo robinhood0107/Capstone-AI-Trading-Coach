@@ -163,5 +163,10 @@ def test_capstone_artifact_command_is_outside_certification_heredoc_and_uses_one
     assert "${P1_ARTIFACT_BUNDLE_PARENT:-/nonexistent}:/owner:ro" in compose
     assert "${P1_ARTIFACT_ARCHIVE_DIR:-/nonexistent}:/archive" in compose
 
+    dockerfile = (repository / "deploy/p1/docker/decision-platform.Dockerfile").read_text(
+        encoding="utf-8"
+    )
+    assert "COPY --chown=65532:65532 contracts /app/contracts" in dockerfile
+
     entrypoint = (repository / "deploy/p1/docker/secret-entrypoint.sh").read_text(encoding="utf-8")
     assert 'profile" = certification ] || [ "$profile" = artifact-import' in entrypoint

@@ -10,13 +10,13 @@ Team B가 provider나 Spring을 호출하지 않고 one-shot 학습·예측·백
 
 ```bash
 uv run --project workspaces/decision-platform/python-services --frozen \
-  p1-owner-assets input-pack \
+  python -m app.p1_owner.assets input-pack \
   --archive-root <verified-market-data-archive-root> \
   --archive-manifest-sha256 <exact-sha256> \
   --output-root <owner-private-input-pack-root>
 
 uv run --project workspaces/decision-platform/python-services --frozen \
-  p1-owner-assets golden \
+  python -m app.p1_owner.assets golden \
   --input-pack-manifest <owner-private-input-pack-root>/manifest.json \
   --output-root <owner-private-golden-root>
 ```
@@ -28,10 +28,12 @@ manifest가 마지막에 게시된다. 다른 manifest로 같은 root를 재사�
 
 ```bash
 uv run --project workspaces/decision-platform/python-services --frozen \
-  p1-owner-assets verify-input-pack --root <owner-private-input-pack-root>
+  python -m app.p1_owner.assets verify-input-pack \
+  --root <owner-private-input-pack-root>
 
 uv run --project workspaces/decision-platform/python-services --frozen \
-  p1-owner-assets verify-golden --root <owner-private-golden-root>
+  python -m app.p1_owner.assets verify-golden \
+  --root <owner-private-golden-root>
 ```
 
 동일한 생성 명령의 두 번째 실행은 같은 manifest SHA와 `noOp=true`를 반환해야 한다. golden은 실제

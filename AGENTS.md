@@ -25,8 +25,10 @@
 provider 원본과 local output은 승격하지 않는다.
 
 `FINAL` release는 v3의 16개 hard gate가 모두 `PASS`일 때만 가능하다. contract-only 단계의 root
-OpenAPI는 48개를 유지하고 Automation/Journal runtime PR에서 exact 56으로 전환한다. Team A 완료
-기준은 exact-33이다. LightGBM은 계속 연구 전용이고 KIS Live order와 GDELT outbound는 0이다.
+OpenAPI는 48개를 유지하고 Automation/Journal runtime PR에서 exact 56으로 전환했다. V91/1.1.0은
+기존 exact-56/33 bytes를 보존한 채 예산·가변수량·손절익절 v2 다섯 operation을 더해 root exact-61,
+Team A exact-38을 현재 기준으로 둔다. `BLOCKED_INCOMPLETE_RISK_BALANCE` 동안 v2 arm은 409이고
+자동매매 활성화는 0이다. LightGBM은 계속 연구 전용이고 KIS Live order와 GDELT outbound는 0이다.
 
 ## 현재 단계
 

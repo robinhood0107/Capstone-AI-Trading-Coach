@@ -23,6 +23,13 @@
 
 성과가 baseline 미만이면 수치를 꾸미거나 추가 튜닝하지 말고 `modelQuality=BELOW_BASELINE`을 그대로 공개합니다. schema·semantic·exact-31/exact-10·two-run identity·independent recomputation·leakage 0가 PASS하면 Owner가 KIS Mock 후보 여부를 별도 판정합니다. 실계좌·수익·성과 우월 주장 권한은 없습니다.
 
+### 1.1.0 Automation 경계
+
+V91의 예산, 가변수량, 손절·익절은 전부 Owner Decision Platform 책임이며 Team B 추가 산출물이
+아닙니다. Team B는 기존 exact-31 Rule+LSTM 신호와 exact-10 artifact만 제공합니다. 자금, 수량,
+LIMIT 가격, 손절·익절, 포지션 만기, RiskDecision, account/order/hash를 계산하거나 새 필드로 추가하지
+마세요. Team B 신호는 후보 순위와 BUY/HOLD/SELL 근거만 가지며 주문 권한은 계속 0입니다.
+
 ## 3. 실행 명령
 
 ```bash
@@ -53,3 +60,4 @@ docker run --rm --network none \
 - raw provider data, input pack, cache, 대용량 output을 Git에 추가
 - 기존 preview 삭제, production PTH/pickle/joblib 출력, 성과 미화
 - fixed ABI·35bps·split·leakage·exact count gate 완화
+- 예산·수량·손절·익절·주문가격·포지션 관리 필드나 Spring API 추가

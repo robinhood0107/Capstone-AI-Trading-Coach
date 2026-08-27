@@ -1,0 +1,189 @@
+{
+  "$id": "contracts/schemas/automation-status.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accountId": {
+      "oneOf": [
+        {
+          "pattern": "^acct_[A-Za-z0-9_-]{8,96}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "blockers": {
+      "items": {
+        "enum": [
+          "ACCOUNT_NOT_CONFIGURED",
+          "POLICY_NOT_CONFIGURED",
+          "POLICY_VERSION_DRIFT",
+          "PRINCIPLE_NOT_CONFIGURED",
+          "REAL_TEAM_B_POINTER_INACTIVE",
+          "RELEASE_BINDING_UNCLEAN",
+          "CERTIFICATION_INVALID",
+          "KILL_SWITCH_ACTIVE",
+          "UNRESOLVED_RECONCILIATION",
+          "CONTROL_HALTED",
+          "BLOCKED_INCOMPLETE_RISK_BALANCE"
+        ]
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "brokerageMode": {
+      "const": "KIS_MOCK"
+    },
+    "canArm": {
+      "type": "boolean"
+    },
+    "certificationStatus": {
+      "enum": [
+        "NOT_REQUIRED_INTERNAL_PAPER",
+        "REQUIRED",
+        "VALID",
+        "EXPIRED",
+        "INVALID"
+      ]
+    },
+    "contractId": {
+      "const": "automation-status.v2"
+    },
+    "controlState": {
+      "enum": [
+        "DISARMED",
+        "ARMED",
+        "HALTED"
+      ]
+    },
+    "controlVersion": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "killSwitchActive": {
+      "type": "boolean"
+    },
+    "openPositionCount": {
+      "maximum": 5,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "policy": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "buyCutoffTimeKst": {
+              "const": "09:40"
+            },
+            "cancelTimeKst": {
+              "const": "15:20"
+            },
+            "capitalLimitKrw": {
+              "maximum": 10000000000,
+              "minimum": 10000,
+              "multipleOf": 10000,
+              "type": "integer"
+            },
+            "contractId": {
+              "const": "automation-policy.v1"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "evaluationTimeKst": {
+              "const": "09:30"
+            },
+            "maxNewOrdersPerSession": {
+              "const": 1
+            },
+            "maxOpenPositions": {
+              "const": 5
+            },
+            "policyId": {
+              "pattern": "^auto_pol_[0-9a-f]{32}$",
+              "type": "string"
+            },
+            "presetId": {
+              "enum": [
+                "conservative",
+                "balanced",
+                "aggressive",
+                "custom"
+              ]
+            },
+            "stopLossBps": {
+              "maximum": 1500,
+              "minimum": 100,
+              "type": "integer"
+            },
+            "takeProfitBps": {
+              "maximum": 3000,
+              "minimum": 200,
+              "type": "integer"
+            },
+            "updatedAt": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "version": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "contractId",
+            "policyId",
+            "version",
+            "presetId",
+            "capitalLimitKrw",
+            "stopLossBps",
+            "takeProfitBps",
+            "maxOpenPositions",
+            "maxNewOrdersPerSession",
+            "evaluationTimeKst",
+            "buyCutoffTimeKst",
+            "cancelTimeKst",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "projectionState": {
+      "enum": [
+        "DISARMED",
+        "ARMED",
+        "RUNNING",
+        "HALTED"
+      ]
+    },
+    "unresolvedReconciliation": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "contractId",
+    "controlState",
+    "projectionState",
+    "controlVersion",
+    "brokerageMode",
+    "accountId",
+    "policy",
+    "killSwitchActive",
+    "certificationStatus",
+    "openPositionCount",
+    "unresolvedReconciliation",
+    "canArm",
+    "blockers"
+  ],
+  "title": "automation-status.v2",
+  "type": "object"
+}

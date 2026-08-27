@@ -248,6 +248,144 @@ export interface EvaluateOrderRequest {
   };
 }
 
+/* ------------------------------------------------------------ Automation */
+
+export type AutomationPresetId = 'conservative' | 'balanced' | 'aggressive' | 'custom';
+
+export type AutomationBlocker =
+  | 'ACCOUNT_NOT_CONFIGURED'
+  | 'POLICY_NOT_CONFIGURED'
+  | 'POLICY_VERSION_DRIFT'
+  | 'PRINCIPLE_NOT_CONFIGURED'
+  | 'REAL_TEAM_B_POINTER_INACTIVE'
+  | 'RELEASE_BINDING_UNCLEAN'
+  | 'CERTIFICATION_INVALID'
+  | 'KILL_SWITCH_ACTIVE'
+  | 'UNRESOLVED_RECONCILIATION'
+  | 'CONTROL_HALTED'
+  | 'BLOCKED_INCOMPLETE_RISK_BALANCE';
+
+export type AutomationControlState = 'DISARMED' | 'ARMED' | 'HALTED';
+export type AutomationProjectionState = AutomationControlState | 'RUNNING';
+export type AutomationBrokerageMode = 'KIS_MOCK' | 'INTERNAL_PAPER';
+export type AutomationExitReason =
+  | 'STOP_LOSS'
+  | 'MAX_HOLDING_SESSIONS'
+  | 'MODEL_SELL'
+  | 'TAKE_PROFIT';
+
+export interface AutomationPolicyV2 {
+  contractId: 'automation-policy.v1';
+  policyId: string;
+  version: number;
+  presetId: AutomationPresetId;
+  capitalLimitKrw: number;
+  stopLossBps: number;
+  takeProfitBps: number;
+  maxOpenPositions: 5;
+  maxNewOrdersPerSession: 1;
+  evaluationTimeKst: '09:30';
+  buyCutoffTimeKst: '09:40';
+  cancelTimeKst: '15:20';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AutomationStatusV2 {
+  contractId: 'automation-status.v2';
+  controlState: AutomationControlState;
+  projectionState: AutomationProjectionState;
+  controlVersion: number;
+  brokerageMode: 'KIS_MOCK';
+  accountId: string | null;
+  policy: AutomationPolicyV2 | null;
+  killSwitchActive: boolean;
+  certificationStatus: 'NOT_REQUIRED_INTERNAL_PAPER' | 'REQUIRED' | 'VALID' | 'EXPIRED' | 'INVALID';
+  openPositionCount: number;
+  unresolvedReconciliation: boolean;
+  canArm: boolean;
+  blockers: AutomationBlocker[];
+}
+
+export interface PutAutomationPolicyV2Request {
+  expectedVersion: number;
+  capitalLimitKrw: number;
+  stopLossBps: number;
+  takeProfitBps: number;
+}
+
+export interface ArmAutomationV2Request {
+  accountId: string;
+  policyId: string;
+  expectedPolicyVersion: number;
+  expectedControlVersion: number;
+}
+
+export interface AutomationRunV2 {
+  contractId: 'automation-run.v2';
+  runId: string;
+  sessionDate: string;
+  state: string;
+  brokerageMode: AutomationBrokerageMode;
+  policyId: string | null;
+  policyVersion: number | null;
+  selectedSymbol: string | null;
+  selectedSide: 'BUY' | 'SELL' | null;
+  orderQuantity: number | null;
+  filledQuantity: number | null;
+  leavesQuantity: number | null;
+  limitPriceKrw: number | null;
+  estimatedAmountKrw: number | null;
+  exitReason: AutomationExitReason | null;
+  physicalSubmitCount: number;
+  providerCalls: number;
+  startedAt: string;
+  updatedAt: string;
+}
+
+export interface AutomationRunPageV2 {
+  items: AutomationRunV2[];
+  nextCursor: string | null;
+}
+
+export interface AutomationPositionV2 {
+  contractId: 'automation-position.v2';
+  positionId: string;
+  accountId: string;
+  symbol: string;
+  quantity: number;
+  entryAverageFillPriceKrw: number;
+  entrySession: string;
+  expirySession: string;
+  policyId: string;
+  policyVersion: number;
+  stopLossBps: number;
+  takeProfitBps: number;
+  status: 'OPEN' | 'EXIT_PENDING' | 'CLOSED' | 'HALTED_MISMATCH';
+  exitReason: AutomationExitReason | null;
+  botOwned: true;
+  shortAllowed: false;
+  createdAt: string;
+  closedAt: string | null;
+}
+
+export interface AutomationPositionPageV2 {
+  items: AutomationPositionV2[];
+  nextCursor: string | null;
+}
+
+export interface AutomationControlV1 {
+  contractId: 'automation-control.v1';
+  controlState: AutomationControlState;
+  projectionState: AutomationProjectionState;
+  version: number;
+  brokerageMode: AutomationBrokerageMode;
+  principleId: string;
+  strategyId: string;
+  killSwitchActive: boolean;
+  certificationStatus: AutomationStatusV2['certificationStatus'];
+}
+
 /* ---------------------------------------------------------------- Signal */
 
 export type SignalProducer = 'RULE_BASELINE' | 'LSTM' | 'LIGHTGBM' | 'HMM';

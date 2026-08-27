@@ -2,8 +2,9 @@
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
 > **현재 상태 (2026-08-27):** Owner-First v3 계약은 잠겼지만 아직 GitHub `1.0.0` 최종 배포본은
-> 아닙니다. Owner Phase A는 `OWNER_HANDOFF_READY=TRUE`이고 exact-56와 Team A backend exact-33이
-> 준비됐지만 Team A 실제 UI, Team B 실제 결과, physical activation과 3-session soak가 남아 있습니다. 현재 배포 계약은
+> 아닙니다. V91/1.1.0의 root exact-61과 Team A backend exact-38, 예산·손절익절 UI는 구현 중이지만
+> `BLOCKED_INCOMPLETE_RISK_BALANCE` 때문에 자동운용은 활성화할 수 없습니다. Team A 최종 UI, Team B 실제 결과,
+> physical activation과 3-session soak도 남아 있습니다. 현재 배포 계약은
 > `contracts/catalogs/p1-full-app-release-contract.v3.json`입니다.
 <!-- P1_FULL_APP_V3_AUTHORITY_END -->
 
@@ -20,9 +21,9 @@
 - `./capstone up --mock`: KIS 모의투자 요청을 받을 수 있게 만들지만, 이것만으로 주문하지 않습니다.
 - `./capstone mock certify ...`: 이 명령만 삼성전자 1주 모의 매수와 즉시 전량취소를 실제로 수행합니다.
 
-완성 목표에는 자동 모의투자가 포함되지만, 24시간 내내 주문하는 방식은 아닙니다. 한국거래소 거래일과
-거래시간에만 움직이는 별도 주문 스케줄러가 필요하며, Team B 실제 모델 결과와 Team A 주문 화면이
-완성된 뒤 안전장치를 갖춰 구현해야 합니다. 자세한 판정은 [자동매매와 운영 경계](docs/decision-platform/P1_운영_후속_경계.md)에 있습니다.
+자동 모의운용은 한국거래소 세션에만 평가하도록 구현돼 있으며 기본 `DISARMED`입니다. 현재는 qualified
+`COMPLETE` online risk-balance 근거가 없어 Start가 차단되고 실제 주문을 만들지 않습니다. 자세한 판정은
+[자동매매와 운영 경계](docs/decision-platform/P1_운영_후속_경계.md)에 있습니다.
 
 ## 처음 실행
 
@@ -124,7 +125,7 @@ BGE-M3 컨테이너와 공식 llama.cpp 기반 PaddleOCR-VL 컨테이너를 더�
 - [Team A Dashboard 완료 요청서](docs/decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md)
 - [Team B Return Engine 완료 요청서](docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md)
 - [두 팀 결과를 받은 뒤 Owner 체크리스트](docs/decision-platform/P1_TEAM_A_B_수신_후_통합_체크리스트.md)
-- [OpenAPI 56개 사용 현황](docs/decision-platform/P1_API_USAGE_MATRIX.md)
+- [OpenAPI 61개 사용 현황](docs/decision-platform/P1_API_USAGE_MATRIX.md)
 
 Team A와 Team B는 `mock configure`나 `mock certify`를 실행하지 않습니다. 외부 서비스, 계좌와 주문
 검증은 Owner가 별도로 수행합니다.

@@ -1,0 +1,203 @@
+{
+  "$id": "contracts/schemas/automation-run.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "brokerageMode": {
+      "enum": [
+        "KIS_MOCK",
+        "INTERNAL_PAPER"
+      ]
+    },
+    "contractId": {
+      "const": "automation-run.v2"
+    },
+    "estimatedAmountKrw": {
+      "oneOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "exitReason": {
+      "oneOf": [
+        {
+          "enum": [
+            "STOP_LOSS",
+            "MAX_HOLDING_SESSIONS",
+            "MODEL_SELL",
+            "TAKE_PROFIT"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "filledQuantity": {
+      "oneOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "leavesQuantity": {
+      "oneOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "limitPriceKrw": {
+      "oneOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "orderQuantity": {
+      "oneOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "physicalSubmitCount": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "policyId": {
+      "oneOf": [
+        {
+          "pattern": "^auto_pol_[0-9a-f]{32}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "policyVersion": {
+      "oneOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "providerCalls": {
+      "maximum": 16,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "runId": {
+      "pattern": "^auto_run_[A-Za-z0-9_-]{8,96}$",
+      "type": "string"
+    },
+    "selectedSide": {
+      "oneOf": [
+        {
+          "enum": [
+            "BUY",
+            "SELL"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "selectedSymbol": {
+      "oneOf": [
+        {
+          "pattern": "^[0-9]{6}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionDate": {
+      "format": "date",
+      "type": "string"
+    },
+    "startedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "SCHEDULED",
+        "PRECHECK",
+        "RECONCILING_PREVIOUS",
+        "EXIT_SELECTED",
+        "BUY_CANDIDATE_SELECTED",
+        "NEWS_CHECKING",
+        "NEWS_VETOED",
+        "RISK_CHECKING",
+        "ORDER_SIZING",
+        "ORDER_SUBMITTING",
+        "ORDER_SUBMITTED",
+        "PENDING_RECONCILIATION",
+        "CANCELLED_UNFILLED",
+        "COMPLETED",
+        "SKIPPED_NO_ACTION",
+        "SKIPPED_DATA_UNAVAILABLE",
+        "SKIPPED_LATE_START",
+        "HALTED"
+      ]
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractId",
+    "runId",
+    "sessionDate",
+    "state",
+    "brokerageMode",
+    "policyId",
+    "policyVersion",
+    "selectedSymbol",
+    "selectedSide",
+    "orderQuantity",
+    "filledQuantity",
+    "leavesQuantity",
+    "limitPriceKrw",
+    "estimatedAmountKrw",
+    "exitReason",
+    "physicalSubmitCount",
+    "providerCalls",
+    "startedAt",
+    "updatedAt"
+  ],
+  "title": "automation-run.v2",
+  "type": "object"
+}

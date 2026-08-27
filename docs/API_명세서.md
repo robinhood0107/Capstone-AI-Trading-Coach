@@ -1,9 +1,11 @@
 # API 명세서
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
-> **1.0.0 current authority (2026-08-27):** Owner-First full-app v3 API는 아직 release되지 않았다.
+> **1.1.0 current authority (2026-08-27):** Owner-First full-app v3 API는 아직 release되지 않았다.
 > contract-only 단계가 고정한 Automation/Journal 8개는 PR #171로 병합됐고 root OpenAPI는 기존 exact-48
-> projection을 보존한 exact 56개다. Owner Team A backend 기준 exact-33 live Spring도 PR #172로 병합됐다.
+> projection을 보존한 exact 56개였다. V91은 그 bytes를 보존하고 Automation v2 다섯 operation을
+> 추가해 root exact-61, Team A versioned exact-38로 전환한다. 현재 v2 arm은
+> `BLOCKED_INCOMPLETE_RISK_BALANCE` 409이며 자동운용 활성화 authority는 0이다.
 > 공개 endpoint는 OpenAPI SSOT와 별도 contract-change가 병합된 경우에만 구현된 것으로 본다. 기존
 > placeholder 계획, LightGBM production 경로와 `NOT_MATERIALIZED` 상태는 현재 v3 권위로 명시되지
 > 않았다면 `HISTORICAL_SUPERSEDED`다. live order authority는 0이다.
@@ -2813,6 +2815,34 @@ control, complete account baseline, inactive Kill Switch와 unexplained drift 0�
 검증한다. client boolean은 없다. `INTERNAL_PAPER`는 요청자가 명시한 경우만 허용하며 KIS 장애 fallback이
 아니다. disarm은 `expectedVersion` CAS로 신규 주문만 중지하고 pending reconciliation, position, event,
 Journal과 volume을 삭제하지 않는다.
+
+### 11.1A Automation v2 — 예산·가변수량·손절익절
+
+기존 v1 네 operation과 schema bytes는 변경하지 않는다. 1.1.0은 다음 다섯 operation만 추가한다.
+
+```text
+GET  /api/v2/automation/status
+PUT  /api/v2/automation/policy
+POST /api/v2/automation/arm
+GET  /api/v2/automation/runs
+GET  /api/v2/automation/positions
+```
+
+policy PUT body는 `capitalLimitKrw`, `stopLossBps`, `takeProfitBps`, `expectedVersion` 정확히 네 필드다.
+최대 금액은 1만원~100억원의 1만원 단위, 손절은 100~1,500bps, 익절은 200~3,000bps이며 익절이
+손절보다 커야 한다. exact pair `300/500`, `500/1000`, `800/1500`은 각각
+`conservative|balanced|aggressive`, 나머지는 `custom`으로 서버가 파생한다.
+
+v2 arm body는 `accountId`, `policyId`, `expectedPolicyVersion`, `expectedControlVersion` 정확히 네
+필드다. Principle과 REAL_TEAM_B strategy는 서버가 snapshot하며 client가 고르지 않는다. 현재
+qualified `COMPLETE` online risk-balance가 없으므로 status는 `canArm=false`와
+`BLOCKED_INCOMPLETE_RISK_BALANCE`를 반환하고 arm은 409다. 이는 성공처럼 포장할 오류가 아니라
+provider-free acceptance의 expected fail-closed 결과다.
+
+positions는 `OPEN|EXIT_PENDING` active bot-owned row만 최대 5개 반환하며 quantity는 1 이상인 현재
+잔여수량이다. runs는 정책 version, 주문/체결/잔여수량, LIMIT 가격·예상금액, exit reason을 제공한다.
+실제 주문수량은 자금 슬롯·총 잔여한도·Principle 한도·KIS 무미수 매수가능금액/수량의 최솟값이며
+AI/LSTM은 수량 권한이 없다.
 
 ### 11.2 Journal
 

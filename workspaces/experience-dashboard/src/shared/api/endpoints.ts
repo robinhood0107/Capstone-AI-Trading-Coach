@@ -1,6 +1,12 @@
 import { apiFetch, newIdempotencyKey } from './client';
 import type { ApiResult } from './envelope';
 import type {
+  ArmAutomationV2Request,
+  AutomationControlV1,
+  AutomationPolicyV2,
+  AutomationPositionPageV2,
+  AutomationRunPageV2,
+  AutomationStatusV2,
   DashboardBacktestView,
   DashboardEnvelope,
   DashboardModelEvaluationView,
@@ -15,6 +21,7 @@ import type {
   PrincipleOwnerListData,
   PrinciplePresetListData,
   PrincipleUpdateRequest,
+  PutAutomationPolicyV2Request,
   RagAnswerProjection,
   RagAskRequest,
   RagSourceListResponse,
@@ -49,6 +56,44 @@ export const api = {
 
   killSwitch(): Promise<ApiResult<KillSwitchState>> {
     return apiFetch<KillSwitchState>('/api/v1/risk/kill-switch');
+  },
+
+  automationStatusV2(): Promise<ApiResult<AutomationStatusV2>> {
+    return apiFetch<AutomationStatusV2>('/api/v2/automation/status');
+  },
+
+  putAutomationPolicyV2(
+    request: PutAutomationPolicyV2Request,
+  ): Promise<ApiResult<AutomationPolicyV2>> {
+    return apiFetch<AutomationPolicyV2>('/api/v2/automation/policy', {
+      method: 'PUT',
+      body: request,
+      idempotencyKey: newIdempotencyKey('automation-policy'),
+    });
+  },
+
+  armAutomationV2(request: ArmAutomationV2Request): Promise<ApiResult<AutomationStatusV2>> {
+    return apiFetch<AutomationStatusV2>('/api/v2/automation/arm', {
+      method: 'POST',
+      body: request,
+      idempotencyKey: newIdempotencyKey('automation-arm-v2'),
+    });
+  },
+
+  disarmAutomation(expectedVersion: number): Promise<ApiResult<AutomationControlV1>> {
+    return apiFetch<AutomationControlV1>('/api/v1/automation/disarm', {
+      method: 'POST',
+      body: { expectedVersion },
+      idempotencyKey: newIdempotencyKey('automation-disarm'),
+    });
+  },
+
+  automationRunsV2(size = 20): Promise<ApiResult<AutomationRunPageV2>> {
+    return apiFetch<AutomationRunPageV2>(`/api/v2/automation/runs?size=${size}`);
+  },
+
+  automationPositionsV2(): Promise<ApiResult<AutomationPositionPageV2>> {
+    return apiFetch<AutomationPositionPageV2>('/api/v2/automation/positions');
   },
 
   /* -------------------------------------------------------------- 원칙 */

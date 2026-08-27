@@ -1,4 +1,5 @@
 import type { ApiEnvelope } from '@/shared/api/envelope';
+import type { AutomationPresetId } from '@/shared/api/wire';
 import * as fixtures from './fixtures';
 
 /**
@@ -55,6 +56,95 @@ export async function mockTransport<T>(
   }
 
   if (target === '/api/v1/system/health') return ok(fixtures.health, requestId) as ApiEnvelope<T>;
+
+  if (target === '/api/v2/automation/status' && method === 'GET') {
+    return ok(fixtures.automationStatus, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v2/automation/policy' && method === 'PUT') {
+    const request = body as
+      | {
+          expectedVersion?: number;
+          capitalLimitKrw?: number;
+          stopLossBps?: number;
+          takeProfitBps?: number;
+        }
+      | undefined;
+    const { capitalLimitKrw, stopLossBps, takeProfitBps } = request ?? {};
+    if (request?.expectedVersion !== fixtures.automationPolicy.version) {
+      return fail('CONFLICT', '자동운용 정책 버전이 맞지 않습니다.', requestId);
+    }
+    if (
+      typeof capitalLimitKrw !== 'number' ||
+      capitalLimitKrw < 10_000 ||
+      capitalLimitKrw > 10_000_000_000 ||
+      capitalLimitKrw % 10_000 !== 0 ||
+      typeof stopLossBps !== 'number' ||
+      stopLossBps < 100 ||
+      stopLossBps > 1500 ||
+      typeof takeProfitBps !== 'number' ||
+      takeProfitBps < 200 ||
+      takeProfitBps > 3000 ||
+      takeProfitBps <= stopLossBps
+    ) {
+      return fail('VALIDATION_ERROR', '자동운용 정책 값이 허용 범위를 벗어났습니다.', requestId);
+    }
+    const presetId: AutomationPresetId =
+      stopLossBps === 300 && takeProfitBps === 500
+        ? 'conservative'
+        : stopLossBps === 500 && takeProfitBps === 1000
+          ? 'balanced'
+          : stopLossBps === 800 && takeProfitBps === 1500
+            ? 'aggressive'
+            : 'custom';
+    const policy = {
+      ...fixtures.automationPolicy,
+      version: fixtures.automationPolicy.version + 1,
+      presetId,
+      capitalLimitKrw,
+      stopLossBps,
+      takeProfitBps,
+      updatedAt: new Date().toISOString(),
+    };
+    fixtures.replaceAutomationPolicy(policy);
+    return ok(policy, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v2/automation/arm' && method === 'POST') {
+    return fail(
+      'CONFLICT',
+      'BLOCKED_INCOMPLETE_RISK_BALANCE: 완전한 온라인 위험 잔고 근거가 없어 시작할 수 없습니다.',
+      requestId,
+    );
+  }
+
+  if (target === '/api/v2/automation/runs' && method === 'GET') {
+    return ok(fixtures.automationRuns, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v2/automation/positions' && method === 'GET') {
+    return ok(fixtures.automationPositions, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v1/automation/disarm' && method === 'POST') {
+    fixtures.automationStatus.controlState = 'DISARMED';
+    fixtures.automationStatus.projectionState = 'DISARMED';
+    fixtures.automationStatus.controlVersion += 1;
+    return ok(
+      {
+        contractId: 'automation-control.v1' as const,
+        controlState: 'DISARMED' as const,
+        projectionState: 'DISARMED' as const,
+        version: fixtures.automationStatus.controlVersion,
+        brokerageMode: fixtures.automationStatus.brokerageMode,
+        principleId: 'prc_00000000',
+        strategyId: 'strategy_00000000',
+        killSwitchActive: fixtures.automationStatus.killSwitchActive,
+        certificationStatus: fixtures.automationStatus.certificationStatus,
+      },
+      requestId,
+    ) as ApiEnvelope<T>;
+  }
 
   if (target === '/api/v1/risk/portfolio') {
     return ok(fixtures.riskPortfolio, requestId, [

@@ -3,8 +3,8 @@
 ## 이번에 해주실 일
 
 > 새 API를 임의로 만들지 말고, OpenAPI에 이미 있으며 최종 명세가 Team A 화면에 배정한 API만
-> 사용해 주세요. 현재 화면 코드에 연결된 15개를 정확히 검증하고, 빠진 12개를 화면에 연결해
-> 총 27개를 실제 로컬 Spring API로 확인하면 됩니다.
+> 사용해 주세요. 현재 화면 코드에 연결된 15개를 정확히 검증하고, 빠진 18개를 화면에 연결해
+> 총 33개를 실제 로컬 Spring API로 확인하면 됩니다.
 
 작업 위치는 `workspaces/experience-dashboard/`입니다. 통합 PR이 main에 병합됐다는 안내를 받은 뒤
 최신 main에서 작업해 주세요. 통합 담당자가 먼저 넣은 `package-lock.json`, production Dockerfile,
@@ -40,7 +40,7 @@ method, path, 성공 상태를 다시 증명해야 합니다.
 `principleId`, `decisionId`, `runId`, `answerId`를 다음 요청에 이어 사용해 주세요. RAG 질문은 화면에서
 실제로 제출해야 합니다.
 
-## 추가로 화면에 연결할 12개
+## 추가로 화면에 연결할 18개
 
 ### KIS 모의투자 주문 검토와 결과
 
@@ -71,7 +71,21 @@ method, path, 성공 상태를 다시 증명해야 합니다.
 `POST kill-switch` 호출 함수와 화면 흐름도 추가해야 합니다. 일반 사용자는 주문 차단 장치를 켤 수 있지만,
 해제는 관리자 권한이 필요하므로 권한별 성공·실패를 각각 테스트합니다.
 
-## 이번에 억지로 붙이지 않을 8개
+### 자동운용 상태와 학습일지
+
+- `GET /api/v1/automation/status`
+- `POST /api/v1/automation/arm`
+- `POST /api/v1/automation/disarm`
+- `GET /api/v1/automation/runs`
+- `POST /api/v1/journals`
+- `GET /api/v1/journals`
+
+Automation은 기본 `DISARMED`이며 KIS Mock과 explicit INTERNAL_PAPER를 분리해 표시합니다. arm이
+차단되면 certification, REAL_TEAM_B, release binding, Kill Switch 같은 서버 block reason을 그대로
+보여 주고 client boolean으로 우회하지 않습니다. disarm 뒤에도 outstanding reconciliation은 계속
+표시합니다. Journal은 실제 response의 동적 `journalId`를 사용해 생성·목록을 검증합니다.
+
+## 이번에 억지로 붙이지 않을 10개
 
 아래 API는 존재하지만 최종 명세가 Team A 필수 화면으로 지정하지 않았습니다. Owner가 별도로 요청하지
 않는 한 구현하지 않아도 됩니다.
@@ -84,6 +98,8 @@ method, path, 성공 상태를 다시 증명해야 합니다.
 - `GET /api/v1/rag/history/{answerId}`
 - `DELETE /api/v1/rag/history/{answerId}`
 - `GET /api/v1/principles/{principleId}/versions`
+- `PATCH /api/v1/journals/{journalId}`
+- `DELETE /api/v1/journals/{journalId}`
 
 결과 파일 적재 상태, 내부 작업, 처리 지표, 주문 대사, 판단 감사 6개 API와 Spring `/error` 7개도
 일반 사용자 화면에 붙이지 않습니다. 전체 48개 분류는 [OpenAPI 사용 현황](P1_API_USAGE_MATRIX.md)에서
@@ -93,8 +109,8 @@ method, path, 성공 상태를 다시 증명해야 합니다.
 
 - 현재 홈의 “자동주문 작동 중” 표현은 실제 동작과 다릅니다. “모의주문 가능 상태” 또는
   “주문 차단 장치 꺼짐”처럼 현재 사실을 보여 주세요.
-- 프로그램을 켜 두면 자동 주문된다는 설명이나 토글을 만들지 마세요. 자동매매 예약 API는 현재
-  OpenAPI에 없습니다.
+- 프로그램을 켜 두는 것과 명시적으로 arm된 자동운용을 같은 것으로 표현하지 마세요. 시작 시 기본은
+  `DISARMED`이고 arm 실패를 INTERNAL_PAPER 자동 fallback으로 바꾸지 않습니다.
 - KIS 모의투자, 내부 가상거래, 백테스트를 화면에서 서로 다른 모드로 분명하게 표시합니다.
 - Risk 결과는 허용/경고/보류/차단과 이유를 사용자가 이해할 수 있는 말로 설명합니다.
 - Team B 미리보기와 Team B 실제 결과를 같은 것으로 표시하지 않습니다.
@@ -128,7 +144,7 @@ P1_USER_PASSWORD_FILE=../../deploy/p1/.state-app/secrets/demo-user.password \
   npm run test:e2e:live
 ```
 
-Playwright 결과는 `skip 0`이어야 합니다. 총 27개 API 각각에 대해 예상 method/path와 성공 상태를
+Playwright 결과는 `skip 0`이어야 합니다. 총 33개 API 각각에 대해 예상 method/path와 성공 상태를
 검사하고, 4xx와 5xx를 모두 실패로 처리합니다. 비밀번호, JWT, 계좌번호와 응답 원문은 trace나
 리포트에 남기지 않습니다.
 
@@ -137,7 +153,7 @@ Playwright 결과는 `skip 0`이어야 합니다. 총 27개 API 각각에 대해
 1. PR 주소와 최신 commit SHA
 2. `package-lock.json` SHA-256
 3. 위 명령들의 성공 결과
-4. 27개 API의 method/path/성공 상태 표
+4. 33개 API의 method/path/성공 상태 표
 5. Playwright `skip 0` HTML report 또는 민감값을 제거한 증거
 6. `OWNER_API_MISSING` 목록
 
@@ -148,7 +164,7 @@ Playwright 결과는 `skip 0`이어야 합니다. 총 27개 API 각각에 대해
 ```text
 통합 PR이 main에 병합됐다는 안내를 받은 뒤 최신 main을 받아 주세요.
 workspaces/experience-dashboard에서 현재 연결된 API 15개를 정확히 검증하고, 최종 명세가 Team A에
-배정한 12개를 화면에 추가해 총 27개를 로컬 Spring과 연결해 주세요. API는 새로 만들지 말고,
-OpenAPI에 없는 기능은 OWNER_API_MISSING으로 적어 주세요. 프로그램을 켜 둔다고 자동 주문되는 것처럼
-표현하지 말고, 완료 조건과 제출물은 이 요청서를 그대로 따라 주세요.
+배정한 18개를 화면에 추가해 총 33개를 로컬 Spring과 연결해 주세요. API는 새로 만들지 말고,
+OpenAPI에 없는 기능은 OWNER_API_MISSING으로 적어 주세요. 기본 DISARMED와 명시적 arm을 구분하고,
+KIS 장애를 INTERNAL_PAPER 자동 fallback으로 표현하지 말고, 완료 조건과 제출물은 이 요청서를 그대로 따라 주세요.
 ```

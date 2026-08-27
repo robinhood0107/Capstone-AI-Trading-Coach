@@ -1,15 +1,15 @@
-# OpenAPI 48개 사용 현황
+# OpenAPI 56개 사용 현황
 
 ## 한눈에 보는 결론
 
-기준 파일은 `contracts/openapi/openapi.json`입니다. 현재 HTTP 작업은 정확히 48개이고, 아래 표에서
+기준 파일은 `contracts/openapi/openapi.json`입니다. 현재 HTTP 작업은 정확히 56개이고, 아래 표에서
 각 작업을 한 번씩만 분류했습니다.
 
 | 구분 | 개수 | 뜻 |
 |---|---:|---|
 | 현재 화면 | 15 | Team A 코드에 호출 지점이 있음. 실제 Spring 성공 검증은 아직 전부 증명되지 않음 |
-| Team A 필수 | 12 | 최종 명세의 Team A 화면에 필요하므로 추가 구현·검증해야 함 |
-| 선택 기능 | 8 | API는 있지만 최종 명세가 Team A 필수 화면으로 배정하지 않음 |
+| Team A 필수 | 18 | 기존 12개와 Automation 4개, Journal 생성·목록 2개를 실제 Spring으로 검증해야 함 |
+| 선택 기능 | 10 | API는 있지만 최종 명세가 Team A 필수 화면으로 배정하지 않음 |
 | 운영자 전용 | 6 | 적재·작업·대사·감사용. 일반 사용자 화면에 억지로 붙이지 않음 |
 | 제품 기능 아님 | 7 | Spring 공통 오류 처리 경로 |
 
@@ -20,7 +20,7 @@ Team B가 직접 호출할 Spring REST API는 **0개**입니다. Team B는 파�
 
 현재 Playwright는 로그인 성공, 주요 화면 이동, API 응답이 두 개 이상이라는 사실과 5xx가 없다는
 사실만 확인합니다. 4xx도 통과할 수 있고 RAG 질문 버튼도 누르지 않으므로 “9개 API가 실제 Spring
-200으로 검증됐다”고 말할 수 없습니다. Team A는 아래 `현재 화면` 15개와 `Team A 필수` 12개를
+200으로 검증됐다”고 말할 수 없습니다. Team A는 아래 `현재 화면` 15개와 `Team A 필수` 18개를
 method, path, 성공 상태별로 각각 검증해야 합니다.
 
 ## 전체 목록
@@ -62,19 +62,27 @@ method, path, 성공 상태별로 각각 검증해야 합니다.
 | 33 | POST | `/api/v1/decisions/evaluate-order` | `Team A 필수` | 주문 전 위험 판정 |
 | 34 | GET | `/api/v1/risk/kill-switch` | `Team A 필수` | 주문 차단 장치 상태 조회 |
 | 35 | POST | `/api/v1/risk/kill-switch` | `Team A 필수` | 주문 차단 장치 변경 |
-| 36 | GET | `/api/v1/artifacts/ingest-status` | `운영자 전용` | 결과 파일 적재 상태 |
-| 37 | GET | `/api/v1/async-jobs` | `운영자 전용` | 내부 작업 목록 |
-| 38 | GET | `/api/v1/async-jobs/{jobId}` | `운영자 전용` | 내부 작업 상세 |
-| 39 | POST | `/api/v1/brokerage/orders/{orderId}/reconcile` | `운영자 전용` | 주문 대사 |
-| 40 | GET | `/api/v1/decisions/{decisionId}/audit` | `운영자 전용` | 주문 판단 감사 |
-| 41 | GET | `/api/v1/stream-metrics` | `운영자 전용` | 내부 처리 지표 |
-| 42 | GET | `/error` | `제품 기능 아님` | Spring 오류 처리 |
-| 43 | POST | `/error` | `제품 기능 아님` | Spring 오류 처리 |
-| 44 | PUT | `/error` | `제품 기능 아님` | Spring 오류 처리 |
-| 45 | DELETE | `/error` | `제품 기능 아님` | Spring 오류 처리 |
-| 46 | PATCH | `/error` | `제품 기능 아님` | Spring 오류 처리 |
-| 47 | HEAD | `/error` | `제품 기능 아님` | Spring 오류 처리 |
-| 48 | OPTIONS | `/error` | `제품 기능 아님` | Spring 오류 처리 |
+| 36 | GET | `/api/v1/automation/status` | `Team A 필수` | 자동운용 상태·certification·Kill Switch |
+| 37 | POST | `/api/v1/automation/arm` | `Team A 필수` | 명시적 brokerage mode 자동운용 활성화 |
+| 38 | POST | `/api/v1/automation/disarm` | `Team A 필수` | 신규 주문 중지, outstanding 대사 보존 |
+| 39 | GET | `/api/v1/automation/runs` | `Team A 필수` | owner-scoped 최근 자동운용 실행 |
+| 40 | POST | `/api/v1/journals` | `Team A 필수` | owner 학습일지 생성 |
+| 41 | GET | `/api/v1/journals` | `Team A 필수` | owner 학습일지 목록 |
+| 42 | PATCH | `/api/v1/journals/{journalId}` | `선택 기능` | CAS 기반 학습일지 전체 교체 |
+| 43 | DELETE | `/api/v1/journals/{journalId}` | `선택 기능` | CAS 기반 학습일지 soft delete |
+| 44 | GET | `/api/v1/artifacts/ingest-status` | `운영자 전용` | 결과 파일 적재 상태 |
+| 45 | GET | `/api/v1/async-jobs` | `운영자 전용` | 내부 작업 목록 |
+| 46 | GET | `/api/v1/async-jobs/{jobId}` | `운영자 전용` | 내부 작업 상세 |
+| 47 | POST | `/api/v1/brokerage/orders/{orderId}/reconcile` | `운영자 전용` | 주문 대사 |
+| 48 | GET | `/api/v1/decisions/{decisionId}/audit` | `운영자 전용` | 주문 판단 감사 |
+| 49 | GET | `/api/v1/stream-metrics` | `운영자 전용` | 내부 처리 지표 |
+| 50 | GET | `/error` | `제품 기능 아님` | Spring 오류 처리 |
+| 51 | POST | `/error` | `제품 기능 아님` | Spring 오류 처리 |
+| 52 | PUT | `/error` | `제품 기능 아님` | Spring 오류 처리 |
+| 53 | DELETE | `/error` | `제품 기능 아님` | Spring 오류 처리 |
+| 54 | PATCH | `/error` | `제품 기능 아님` | Spring 오류 처리 |
+| 55 | HEAD | `/error` | `제품 기능 아님` | Spring 오류 처리 |
+| 56 | OPTIONS | `/error` | `제품 기능 아님` | Spring 오류 처리 |
 
 ## Team B 파일 계약과 현재 빈 부분
 
@@ -94,6 +102,6 @@ method, path, 성공 상태별로 각각 검증해야 합니다.
 
 ## OpenAPI에 아직 없는 기능
 
-온보딩, 학습일지, 시장데이터, 사용자관리, 백업, RAG 문서관리와 자동매매 예약 설정 API는 현재
-OpenAPI 48개에 없습니다. Team A/B가 임의로 endpoint를 만들지 않습니다. 필요한 화면과 동작을
+온보딩, 시장데이터, 사용자관리, 백업과 RAG 문서관리 API는 현재
+OpenAPI 56개에 없습니다. Team A/B가 임의로 endpoint를 만들지 않습니다. 필요한 화면과 동작을
 PR 설명에 `OWNER_API_MISSING: 화면 이름 / 필요한 기능` 형식으로 적으면 Owner가 계약을 먼저 추가합니다.

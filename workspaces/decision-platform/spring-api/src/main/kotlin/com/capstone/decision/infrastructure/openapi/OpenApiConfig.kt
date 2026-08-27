@@ -443,6 +443,26 @@ class OpenApiConfig {
         }
 
     @Bean
+    fun p1AutomationJournalContractSchemas(): OpenApiCustomizer =
+        // contract-only 단계에서 잠근 세 response DTO를 annotation 추론 대신 exact schema bytes로 교체한다.
+        OpenApiCustomizer { openApi ->
+            openApi.components.addSchemas(
+                P1_AUTOMATION_CONTROL_COMPONENT,
+                contractSchema(P1_AUTOMATION_CONTROL_RESOURCE, P1_AUTOMATION_CONTROL_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                P1_AUTOMATION_RUN_COMPONENT,
+                contractSchema(P1_AUTOMATION_RUN_RESOURCE, P1_AUTOMATION_RUN_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                P1_JOURNAL_COMPONENT,
+                contractSchema(P1_JOURNAL_RESOURCE, P1_JOURNAL_COMPONENT),
+            )
+            openApi.components.addSchemas(P1_AUTOMATION_ERROR_COMPONENT, p1OwnerErrorEnvelope())
+            openApi.components.addSchemas(P1_JOURNAL_ERROR_COMPONENT, p1OwnerErrorEnvelope())
+        }
+
+    @Bean
     fun signalV2RuntimeSchemas(): OpenApiCustomizer =
         OpenApiCustomizer { openApi ->
             openApi.components.addSchemas(
@@ -743,6 +763,39 @@ class OpenApiConfig {
             required = emptyList(),
         )._const(emptyMap<String, Any>())
 
+    private fun p1OwnerErrorEnvelope(): Schema<*> =
+        objectSchema(
+            properties =
+                linkedMapOf(
+                    "success" to BooleanSchema()._const(false),
+                    "requestId" to StringSchema().minLength(1).maxLength(128),
+                    "data" to Schema<Any>().types(linkedSetOf("null")),
+                    "warnings" to ArraySchema().items(schemaRef("ApiWarning")),
+                    "error" to
+                        objectSchema(
+                            properties =
+                                linkedMapOf(
+                                    "code" to
+                                        StringSchema()._enum(
+                                            listOf(
+                                                "VALIDATION_ERROR",
+                                                "UNAUTHORIZED",
+                                                "FORBIDDEN",
+                                                "NOT_FOUND",
+                                                "CONFLICT",
+                                                "IDEMPOTENCY_CONFLICT",
+                                                "INTERNAL_ERROR",
+                                            ),
+                                        ),
+                                    "message" to StringSchema().minLength(1).maxLength(256),
+                                    "details" to ObjectSchema().additionalProperties(true),
+                                ),
+                            required = listOf("code", "message", "details"),
+                        ),
+                ),
+            required = listOf("success", "requestId", "data", "warnings", "error"),
+        )
+
     private fun boundedVersionSchema(): IntegerSchema =
         IntegerSchema().also {
             it.minimum = BigDecimal.ONE
@@ -896,6 +949,14 @@ class OpenApiConfig {
         private const val S24_KILL_SWITCH_ENVELOPE_COMPONENT = "S24KillSwitchSuccessResponse"
         private const val S24_PORTFOLIO_RISK_ENVELOPE_COMPONENT = "S24PortfolioRiskSuccessResponse"
         private const val S24_RISK_ERROR_COMPONENT = "S24RiskErrorResponse"
+        private const val P1_AUTOMATION_CONTROL_RESOURCE = "contracts/automation-control.v1.schema.json"
+        private const val P1_AUTOMATION_RUN_RESOURCE = "contracts/automation-run.v1.schema.json"
+        private const val P1_JOURNAL_RESOURCE = "contracts/journal.v1.schema.json"
+        private const val P1_AUTOMATION_CONTROL_COMPONENT = "AutomationControl"
+        private const val P1_AUTOMATION_RUN_COMPONENT = "AutomationRun"
+        private const val P1_JOURNAL_COMPONENT = "Journal"
+        private const val P1_AUTOMATION_ERROR_COMPONENT = "P1AutomationErrorResponse"
+        private const val P1_JOURNAL_ERROR_COMPONENT = "P1JournalErrorResponse"
         private const val SIGNAL_V2_RUNTIME_COMPONENT = "SignalV2RuntimeResponse"
         private const val SIGNAL_V2_RUNTIME_RESOURCE = "contracts/signal-v2-runtime-v1.schema.json"
         private const val SIGNAL_V2_RUNTIME_ENVELOPE_COMPONENT = "SignalV2RuntimeSuccessResponse"

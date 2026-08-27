@@ -2223,6 +2223,56 @@ BEGIN
 END
 $p1_v87_runtime_privileges$;
 
+DO $p1_v89_automation_journal_privileges$
+BEGIN
+    IF to_regprocedure(
+        'public.p1_arm_automation_v1(text,text,text,text,text,integer,text,text)'
+    ) IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON TABLE
+            public.journals,
+            public.automation_control,
+            public.automation_activation_gate,
+            public.automation_runs,
+            public.automation_positions,
+            public.automation_events,
+            public.automation_control_idempotency,
+            public.journal_idempotency
+        FROM PUBLIC, decision_app, decision_worker, decision_replay;
+        GRANT SELECT, INSERT, UPDATE ON TABLE
+            public.journals,
+            public.automation_control,
+            public.automation_runs,
+            public.automation_positions,
+            public.automation_control_idempotency,
+            public.journal_idempotency
+        TO decision_app;
+        GRANT SELECT, INSERT ON TABLE public.automation_events TO decision_app;
+        GRANT SELECT ON TABLE public.automation_activation_gate TO decision_app;
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_journal_tags_valid(text[]),
+            public.p1_journal_links_owned(text,text,text,text,text,text),
+            public.p1_automation_account_digest_v1(text,text,text),
+            public.p1_automation_principle_active_v1(text,text),
+            public.p1_real_team_b_pointer_active_v1(),
+            public.p1_automation_kill_switch_active_v1(text),
+            public.p1_arm_automation_v1(text,text,text,text,text,integer,text,text),
+            public.p1_disarm_automation_v1(text,integer,text,text)
+        FROM PUBLIC, decision_app, decision_worker, decision_replay;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_journal_tags_valid(text[]),
+            public.p1_journal_links_owned(text,text,text,text,text,text),
+            public.p1_automation_account_digest_v1(text,text,text),
+            public.p1_automation_principle_active_v1(text,text),
+            public.p1_real_team_b_pointer_active_v1(),
+            public.p1_automation_kill_switch_active_v1(text),
+            public.p1_arm_automation_v1(text,text,text,text,text,integer,text,text),
+            public.p1_disarm_automation_v1(text,integer,text,text)
+        TO decision_app;
+        REVOKE CREATE ON SCHEMA public FROM decision_app, decision_worker, decision_replay;
+    END IF;
+END
+$p1_v89_automation_journal_privileges$;
+
 DO $block$
 BEGIN
     IF to_regclass('public.flyway_schema_history') IS NOT NULL THEN

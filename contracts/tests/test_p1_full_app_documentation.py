@@ -69,6 +69,12 @@ TEAM_A_REQUIRED_OPERATIONS = frozenset(
         ("POST", "/api/v1/decisions/evaluate-order"),
         ("GET", "/api/v1/risk/kill-switch"),
         ("POST", "/api/v1/risk/kill-switch"),
+        ("GET", "/api/v1/automation/status"),
+        ("POST", "/api/v1/automation/arm"),
+        ("POST", "/api/v1/automation/disarm"),
+        ("GET", "/api/v1/automation/runs"),
+        ("POST", "/api/v1/journals"),
+        ("GET", "/api/v1/journals"),
     }
 )
 OPTIONAL_PRODUCT_OPERATIONS = frozenset(
@@ -81,6 +87,8 @@ OPTIONAL_PRODUCT_OPERATIONS = frozenset(
         ("GET", "/api/v1/rag/history/{answerId}"),
         ("DELETE", "/api/v1/rag/history/{answerId}"),
         ("GET", "/api/v1/principles/{principleId}/versions"),
+        ("PATCH", "/api/v1/journals/{journalId}"),
+        ("DELETE", "/api/v1/journals/{journalId}"),
     }
 )
 OPERATOR_ONLY_OPERATIONS = frozenset(
@@ -205,12 +213,12 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             for method in path_item
             if method in methods
         ]
-        self.assertEqual(48, len(operations))
+        self.assertEqual(56, len(operations))
         operation_ids = [operation_id for _, _, operation_id in operations]
         self.assertTrue(
             all(isinstance(operation_id, str) and operation_id for operation_id in operation_ids)
         )
-        self.assertEqual(48, len(set(operation_ids)))
+        self.assertEqual(56, len(set(operation_ids)))
         expected = {(method, path) for method, path, _ in operations}
 
         matrix = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX.md").read_text(
@@ -222,9 +230,9 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             matrix,
             flags=re.MULTILINE,
         )
-        self.assertEqual(48, len(rows))
-        self.assertEqual(list(range(1, 49)), sorted(int(number) for number, _, _, _ in rows))
-        self.assertEqual(48, len({(method, path) for _, method, path, _ in rows}))
+        self.assertEqual(56, len(rows))
+        self.assertEqual(list(range(1, 57)), sorted(int(number) for number, _, _, _ in rows))
+        self.assertEqual(56, len({(method, path) for _, method, path, _ in rows}))
         self.assertEqual(expected, {(method, path) for _, method, path, _ in rows})
 
         observed_by_classification = {
@@ -252,7 +260,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             )
         )
         expected = TEAM_A_CURRENT_OPERATIONS | TEAM_A_REQUIRED_OPERATIONS
-        self.assertEqual(27, len(expected))
+        self.assertEqual(33, len(expected))
         self.assertEqual(set(), expected.difference(documented))
 
     def test_team_b_request_lists_exact_artifacts_and_owner_verification_apis(self) -> None:

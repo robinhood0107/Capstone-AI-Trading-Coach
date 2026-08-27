@@ -373,7 +373,7 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
             self._commit(root, "verified S5 OpenAPI transition")
 
             with mock.patch(
-                "contracts.verify_s5_signal_runtime_transition.verify_openapi_transition"
+                "contracts.verify_p1_automation_journal_openapi_transition.verify_transition"
             ):
                 errors = verify_solo_ownership_lock(root, base)
 
@@ -539,10 +539,12 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
         )
 
     def test_s4_9_operations_guide_is_current_public_authority(self) -> None:
-        self.assertEqual(
-            "ACTIVE_PUBLIC_SSOT",
-            classify_markdown("docs/S4_9_MCP_Strong_LLM_운영_가이드.md"),
-        )
+        for relative in (
+            "docs/S4_9_MCP_Strong_LLM_운영_가이드.md",
+            "docs/decision-platform/P1_1_0_0_OWNER_FIRST_V3_권위_및_게이트.md",
+            "docs/decision-platform/P1_API_USAGE_MATRIX.md",
+        ):
+            self.assertEqual("ACTIVE_PUBLIC_SSOT", classify_markdown(relative))
 
     def test_public_truth_freeze_rejects_required_and_linked_symlinks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

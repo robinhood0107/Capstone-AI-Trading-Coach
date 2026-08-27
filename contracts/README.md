@@ -6,10 +6,11 @@
 
 `catalogs/p1-owner-phase-a-contract-lock.v1.json`은 Team A/B 요청 전에 Owner가 완성할 입력·artifact·
 뉴스 veto·자동운용·Journal 경계를 고정한다. generated artifact는
-`generate_p1_owner_phase_a_contracts.py`만 수정하며, root OpenAPI는 runtime 구현 전까지 48개를
-유지한다. 새 Automation/Journal 8개 operation은
-`openapi/p1-automation-journal.v1.openapi.json`의 additive contract로 먼저 잠그고 runtime PR에서
-root OpenAPI exact-56으로 승격한다.
+`generate_p1_owner_phase_a_contracts.py`만 contract-only artifact를 수정한다. contract-only 시점의
+root OpenAPI exact-48은 preserved projection으로 유지되고, 새 Automation/Journal 8개 operation은
+`openapi/p1-automation-journal.v1.openapi.json`에서 잠근 뒤 runtime PR의 root OpenAPI exact-56으로
+승격됐다. `verify_p1_automation_journal_openapi_transition.py`는 새 8개 path/method/operationId와
+18개 additive component만 제거했을 때 exact-48 canonical SHA가 복원되는지 검증한다.
 
 - Team B 입력은 exact-31, XKRX 4.13.2 correction generation, 최소 3년 일봉, exact 9-feature,
   fixed LSTM ABI, train-only scaler, seed 0, single-thread CPU deterministic 실행을 사용한다.
@@ -25,6 +26,7 @@ root OpenAPI exact-56으로 승격한다.
 ```bash
 uv run --frozen python contracts/generate_p1_owner_phase_a_contracts.py --check
 uv run --frozen python -m unittest contracts.tests.test_p1_owner_phase_a_contracts -v
+uv run --frozen python contracts/verify_p1_automation_journal_openapi_transition.py
 uv run --frozen python contracts/validate.py
 ```
 

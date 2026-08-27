@@ -1,0 +1,83 @@
+{
+  "$id": "contracts/schemas/automation-policy.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "buyCutoffTimeKst": {
+      "const": "09:40"
+    },
+    "cancelTimeKst": {
+      "const": "15:20"
+    },
+    "capitalLimitKrw": {
+      "maximum": 10000000000,
+      "minimum": 10000,
+      "multipleOf": 10000,
+      "type": "integer"
+    },
+    "contractId": {
+      "const": "automation-policy.v1"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "evaluationTimeKst": {
+      "const": "09:30"
+    },
+    "maxNewOrdersPerSession": {
+      "const": 1
+    },
+    "maxOpenPositions": {
+      "const": 5
+    },
+    "policyId": {
+      "pattern": "^auto_pol_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "presetId": {
+      "enum": [
+        "conservative",
+        "balanced",
+        "aggressive",
+        "custom"
+      ]
+    },
+    "stopLossBps": {
+      "maximum": 1500,
+      "minimum": 100,
+      "type": "integer"
+    },
+    "takeProfitBps": {
+      "maximum": 3000,
+      "minimum": 200,
+      "type": "integer"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "version": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "contractId",
+    "policyId",
+    "version",
+    "presetId",
+    "capitalLimitKrw",
+    "stopLossBps",
+    "takeProfitBps",
+    "maxOpenPositions",
+    "maxNewOrdersPerSession",
+    "evaluationTimeKst",
+    "buyCutoffTimeKst",
+    "cancelTimeKst",
+    "createdAt",
+    "updatedAt"
+  ],
+  "title": "automation-policy.v1",
+  "type": "object"
+}

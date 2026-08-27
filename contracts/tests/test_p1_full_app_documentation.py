@@ -75,6 +75,11 @@ TEAM_A_REQUIRED_OPERATIONS = frozenset(
         ("GET", "/api/v1/automation/runs"),
         ("POST", "/api/v1/journals"),
         ("GET", "/api/v1/journals"),
+        ("GET", "/api/v2/automation/status"),
+        ("PUT", "/api/v2/automation/policy"),
+        ("POST", "/api/v2/automation/arm"),
+        ("GET", "/api/v2/automation/runs"),
+        ("GET", "/api/v2/automation/positions"),
     }
 )
 OPTIONAL_PRODUCT_OPERATIONS = frozenset(
@@ -233,7 +238,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             for method in path_item
             if method in methods
         ]
-        self.assertEqual(56, len(operations))
+        self.assertEqual(61, len(operations))
         operation_ids = [operation_id for _, _, operation_id in operations]
         self.assertTrue(
             all(
@@ -241,7 +246,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
                 for operation_id in operation_ids
             )
         )
-        self.assertEqual(56, len(set(operation_ids)))
+        self.assertEqual(61, len(set(operation_ids)))
         expected = {(method, path) for method, path, _ in operations}
 
         matrix = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX.md").read_text(
@@ -253,11 +258,11 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             matrix,
             flags=re.MULTILINE,
         )
-        self.assertEqual(56, len(rows))
+        self.assertEqual(61, len(rows))
         self.assertEqual(
-            list(range(1, 57)), sorted(int(number) for number, _, _, _ in rows)
+            list(range(1, 62)), sorted(int(number) for number, _, _, _ in rows)
         )
-        self.assertEqual(56, len({(method, path) for _, method, path, _ in rows}))
+        self.assertEqual(61, len({(method, path) for _, method, path, _ in rows}))
         self.assertEqual(expected, {(method, path) for _, method, path, _ in rows})
 
         observed_by_classification = {
@@ -285,8 +290,8 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             )
         )
         self.assertEqual(frozenset(), documented)
-        self.assertIn("p1-team-a-acceptance.v1.json", request)
-        self.assertIn("p1-team-a-client.v1.ts", request)
+        self.assertIn("p1-team-a-acceptance.v2.json", request)
+        self.assertIn("p1-team-a-client.v2.ts", request)
         self.assertIn("기존 Dashboard 구조와 작업 결과를 보존해 주세요.", request)
         self.assertEqual(
             [

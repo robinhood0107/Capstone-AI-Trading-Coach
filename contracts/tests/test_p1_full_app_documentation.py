@@ -262,6 +262,8 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         expected = TEAM_A_CURRENT_OPERATIONS | TEAM_A_REQUIRED_OPERATIONS
         self.assertEqual(33, len(expected))
         self.assertEqual(set(), expected.difference(documented))
+        self.assertIn("수동 33행 표를 다시\n작성할 필요는 없습니다", request)
+        self.assertIn("production image build와 digest", request)
 
     def test_team_b_request_lists_exact_artifacts_and_owner_verification_apis(self) -> None:
         request = (ROOT / "docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md").read_text(
@@ -289,6 +291,12 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             )
         )
         self.assertEqual(TEAM_B_VERIFICATION_OPERATIONS, verification_operations)
+        self.assertEqual(1, request.count("OWNER_INPUT_MISSING"))
+        self.assertIn("`OWNER_INPUT_MISSING`은 해소됐습니다", request)
+        self.assertNotIn("p1-return-engine-manifest.v1.json", request)
+        self.assertIn("p1-return-engine-manifest.v2.json", request)
+        self.assertIn("./capstone artifact validate", request)
+        self.assertIn("OCI/SBOM/provenance/signature는 Owner가 맡습니다", request)
 
     def test_team_handoff_checklist_has_no_stale_preview_or_api_edge_flow(self) -> None:
         checklist = (
@@ -314,7 +322,17 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         controller = (ROOT / "deploy/p1/full-appctl").read_text(encoding="utf-8")
         windows = (ROOT / "capstone.ps1").read_text(encoding="utf-8")
         compose = (ROOT / "deploy/p1/compose.yml").read_text(encoding="utf-8")
-        for command in ("up", "down", "status", "logs", "smoke", "doctor", "mock"):
+        for command in (
+            "up",
+            "down",
+            "status",
+            "logs",
+            "smoke",
+            "doctor",
+            "mock",
+            "artifact",
+            "team-a",
+        ):
             self.assertIn(command, controller)
             self.assertIn(command, windows)
         self.assertIn("full-appctl", linux)
@@ -328,6 +346,9 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertIn("KIS_MOCK_CERTIFICATION_SOURCE_DRIFT", guard)
         self.assertIn('"inputSha256"', guard)
         self.assertIn("P1_KIS_MOCK_ONLINE_ENABLED", controller)
+        self.assertIn("artifact_validate", controller)
+        self.assertIn("--network none", controller)
+        self.assertIn("--validate-only", controller)
         self.assertIn('COMPOSE_FILE=$SCRIPT_DIR/compose.yml', controller)
         self.assertIn("DOCKER_BIN=/usr/bin/docker", controller)
         self.assertNotIn("compose.offline", controller)

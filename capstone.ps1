@@ -1,8 +1,8 @@
 $ErrorActionPreference = "Stop"
 
-$allowed = @("up", "down", "status", "logs", "smoke", "doctor", "mock", "help", "-h", "--help")
+$allowed = @("up", "down", "status", "logs", "smoke", "doctor", "mock", "artifact", "team-a", "help", "-h", "--help")
 if ($args.Count -lt 1 -or -not $allowed.Contains([string]$args[0])) {
-    [Console]::Error.WriteLine("Usage: .\capstone.ps1 <up|down|status|logs|smoke|doctor|mock> [options]")
+    [Console]::Error.WriteLine("Usage: .\capstone.ps1 <up|down|status|logs|smoke|doctor|mock|artifact|team-a> [options]")
     exit 1
 }
 

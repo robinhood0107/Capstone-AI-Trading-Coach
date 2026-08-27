@@ -117,6 +117,7 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
     def test_automation_and_journal_contracts_are_owner_safe_and_bounded(self) -> None:
         control = self.fixtures["automation-control.v1"]
         invalid = copy.deepcopy(control)
+        invalid["controlState"] = "HALTED"
         invalid["projectionState"] = "RUNNING"
         with self.assertRaises(ContractValidationError):
             validate_semantics("automation-control.v1", invalid)
@@ -130,7 +131,7 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
         self.assertEqual(8192, journal["properties"]["content"]["maxLength"])
         self.assertFalse(journal["additionalProperties"])
 
-    def test_additive_openapi_locks_eight_routes_without_mutating_root(self) -> None:
+    def test_additive_openapi_locks_eight_routes_and_runtime_root_is_exact_56(self) -> None:
         additive = json.loads(
             (
                 ROOT / "contracts/openapi/p1-automation-journal.v1.openapi.json"
@@ -164,7 +165,7 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
             for method in path_item
             if method != "parameters"
         )
-        self.assertEqual(48, root_count)
+        self.assertEqual(56, root_count)
 
     def test_release_v3_requires_exact_sixteen_gates_and_keeps_live_closed(
         self,

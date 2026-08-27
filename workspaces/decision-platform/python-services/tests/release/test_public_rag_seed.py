@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from app.release.public_rag_seed import (
+    FORWARD_COMPATIBLE_TARGET_SCHEMA_VERSIONS,
     MAX_PART_BYTES,
     PART_PREFIX,
     TABLE_SPECS,
@@ -22,6 +23,10 @@ from app.release.public_rag_seed import (
 REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
 SEED_ROOT = REPOSITORY_ROOT / "deploy" / "p1" / "seed" / "public-rag"
 MANIFEST = SEED_ROOT / "public-rag-seed.v1.manifest.json"
+
+
+def test_sealed_v87_seed_allows_only_additive_v88_v89_targets() -> None:
+    assert FORWARD_COMPATIBLE_TARGET_SCHEMA_VERSIONS == frozenset({"88", "89"})
 
 
 def test_committed_public_seed_parts_are_hash_bound_and_bounded() -> None:

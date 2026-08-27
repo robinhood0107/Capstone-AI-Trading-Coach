@@ -249,9 +249,8 @@ class JdbcAutomationRepository(
             val principleId =
                 jdbc.queryForObject(
                     """
-                    SELECT principle_id FROM principles
-                    WHERE user_id=:ownerUserId AND status='ACTIVE'
-                    ORDER BY updated_at DESC,principle_id DESC LIMIT 1
+                    SELECT active_principle_id
+                    FROM p1_automation_status_facts_v2(:ownerUserId,NULL::text)
                     """.trimIndent(),
                     mapOf("ownerUserId" to ownerUserId),
                     String::class.java,
@@ -475,13 +474,8 @@ class JdbcAutomationRepository(
                                'SKIPPED_NO_ACTION','SKIPPED_DATA_UNAVAILABLE','SKIPPED_LATE_START','HALTED'
                              )
                            ) active_run,
-                           EXISTS (
-                             SELECT 1 FROM orders item
-                             WHERE item.user_id=:ownerUserId AND item.account_id=control.account_id
-                               AND (item.status IN (
-                                 'SUBMITTED','PENDING_RECONCILIATION','ACCEPTED','PARTIALLY_FILLED','CANCEL_REQUESTED'
-                               ) OR item.reconciliation_status='MISMATCH')
-                           ) unresolved,
+                           facts.unresolved_reconciliation unresolved,
+                           facts.principle_configured principle_configured,
                            (SELECT count(*) FROM automation_positions position
                             WHERE position.user_id=:ownerUserId AND position.status IN ('OPEN','EXIT_PENDING')) open_count,
                            EXISTS (
@@ -496,13 +490,13 @@ class JdbcAutomationRepository(
                              SELECT 1 FROM automation_activation_gate gate
                              WHERE gate.user_id=:ownerUserId AND gate.real_team_b_pointer_active
                            ) real_team_b_pointer_active,
-                           EXISTS (
-                             SELECT 1 FROM principles principle
-                             WHERE principle.user_id=:ownerUserId AND principle.status='ACTIVE'
-                           ) principle_configured,
                            control.policy_id policy_binding_id,
                            control.policy_version policy_binding_version
-                    FROM automation_control control WHERE control.user_id=:ownerUserId
+                    FROM automation_control control
+                    CROSS JOIN LATERAL p1_automation_status_facts_v2(
+                      :ownerUserId,control.account_id
+                    ) facts
+                    WHERE control.user_id=:ownerUserId
                     """.trimIndent(),
                     mapOf("ownerUserId" to ownerUserId),
                 ) { row, _ ->

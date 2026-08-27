@@ -414,6 +414,36 @@ BEGIN
 END
 $p1_automation_risk_balance_projection_v2$;
 
+-- decision_app은 principles와 orders에 SELECT 권한이 없다. v2 status가 두 테이블을 직접 읽지 않고
+-- owner scope 안에서 boolean 사실만 받도록 SECURITY DEFINER projection을 둔다.
+CREATE FUNCTION public.p1_automation_status_facts_v2(p_user_id text,p_account_id text)
+RETURNS TABLE(
+  principle_configured boolean,unresolved_reconciliation boolean,active_principle_id text
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog
+AS $p1_automation_status_facts_v2$
+BEGIN
+  IF session_user<>'decision_app'
+     OR pg_catalog.current_setting('app.actor_user_id',true)<>p_user_id
+     OR NOT public.actor_rls_scope_is_open_v1()
+     OR (p_account_id IS NOT NULL AND p_account_id!~'^acct_[0-9a-f]{32}$') THEN
+    RAISE EXCEPTION 'automation status facts scope denied' USING ERRCODE='42501';
+  END IF;
+  SELECT principle.principle_id INTO active_principle_id FROM public.principles principle
+  WHERE principle.user_id=p_user_id AND principle.status='ACTIVE'
+  ORDER BY principle.updated_at DESC,principle.principle_id DESC LIMIT 1;
+  principle_configured:=active_principle_id IS NOT NULL;
+  unresolved_reconciliation:=p_account_id IS NOT NULL AND EXISTS (
+    SELECT 1 FROM public.orders item
+    WHERE item.user_id=p_user_id AND item.account_id=p_account_id
+      AND (item.status IN (
+        'SUBMITTED','PENDING_RECONCILIATION','ACCEPTED','PARTIALLY_FILLED','CANCEL_REQUESTED'
+      ) OR item.reconciliation_status='MISMATCH')
+  );
+  RETURN NEXT;
+END
+$p1_automation_status_facts_v2$;
+
 CREATE FUNCTION public.p1_arm_automation_v2(
   p_user_id text,p_account_id text,p_policy_id text,p_expected_policy_version integer,
   p_expected_control_version integer,p_scope_hash text,p_request_hash text
@@ -1082,6 +1112,7 @@ ALTER FUNCTION public.p1_automation_policy_profile_v1(integer,integer) OWNER TO 
 ALTER FUNCTION public.p1_automation_structural_projection_valid_v2(jsonb) OWNER TO flyway;
 ALTER FUNCTION public.p1_put_automation_policy_v1(text,text,bigint,integer,integer,integer,text,text) OWNER TO flyway;
 ALTER FUNCTION public.p1_automation_risk_balance_projection_v2(text,text) OWNER TO flyway;
+ALTER FUNCTION public.p1_automation_status_facts_v2(text,text) OWNER TO flyway;
 ALTER FUNCTION public.p1_arm_automation_v2(text,text,text,integer,integer,text,text) OWNER TO flyway;
 ALTER FUNCTION public.p1_reserve_automation_order_v2(text,text,integer,text,text,text,bigint,bigint,bigint,text,text,text,text) OWNER TO flyway;
 ALTER FUNCTION public.p1_bind_automation_decision_v2(text,text,integer,text,text,text,text) OWNER TO flyway;
@@ -1096,7 +1127,17 @@ REVOKE ALL ON TABLE public.automation_policy_versions,public.automation_policy_i
   public.automation_account_lineage FROM PUBLIC,decision_worker,decision_replay,decision_replay_authorizer,
   decision_automation_runtime;
 GRANT SELECT ON TABLE public.automation_policy_versions,public.automation_account_lineage TO decision_app;
+-- automation-run.v2는 orderQuantity/filledQuantity/leavesQuantity를 필수로 공개하므로 owner가 자기
+-- reservation을 읽어야 한다. 쓰기는 계속 runtime 전용이고 RLS가 owner row로만 한정한다.
+CREATE POLICY automation_order_reservations_owner_read_v91
+ON public.automation_order_reservations FOR SELECT TO PUBLIC
+USING (
+  session_user='decision_app' AND user_id=pg_catalog.current_setting('app.actor_user_id',true)
+  AND public.actor_rls_scope_is_open_v1()
+);
+GRANT SELECT ON TABLE public.automation_order_reservations TO decision_app;
 REVOKE ALL ON FUNCTION public.p1_automation_policy_profile_v1(integer,integer),
+  public.p1_automation_status_facts_v2(text,text),
   public.p1_automation_structural_projection_valid_v2(jsonb),
   public.p1_put_automation_policy_v1(text,text,bigint,integer,integer,integer,text,text),
   public.p1_automation_risk_balance_projection_v2(text,text),
@@ -1113,7 +1154,8 @@ REVOKE ALL ON FUNCTION public.p1_automation_policy_profile_v1(integer,integer),
 GRANT EXECUTE ON FUNCTION
   public.p1_put_automation_policy_v1(text,text,bigint,integer,integer,integer,text,text),
   public.p1_arm_automation_v2(text,text,text,integer,integer,text,text),
-  public.p1_automation_risk_balance_projection_v2(text,text)
+  public.p1_automation_risk_balance_projection_v2(text,text),
+  public.p1_automation_status_facts_v2(text,text)
   TO decision_app;
 -- automation_control_v2_binding_check가 이 검증 함수를 호출하므로, SECURITY INVOKER인 V89
 -- arm/disarm이 decision_app으로 automation_control을 쓸 때 EXECUTE 권한이 반드시 필요하다.

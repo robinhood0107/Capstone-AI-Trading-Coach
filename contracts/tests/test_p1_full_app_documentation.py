@@ -142,8 +142,12 @@ class P1FullAppDocumentationTest(unittest.TestCase):
     def test_current_v3_authority_block_occurs_once_in_each_ssot(self) -> None:
         for relative in AUTHORITY_DOCUMENTS:
             text = (ROOT / relative).read_text(encoding="utf-8")
-            self.assertEqual(1, text.count("<!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->"), relative)
-            self.assertEqual(1, text.count("<!-- P1_FULL_APP_V3_AUTHORITY_END -->"), relative)
+            self.assertEqual(
+                1, text.count("<!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->"), relative
+            )
+            self.assertEqual(
+                1, text.count("<!-- P1_FULL_APP_V3_AUTHORITY_END -->"), relative
+            )
 
     def test_tracked_markdown_is_regular_utf8_and_read_to_eof(self) -> None:
         completed = subprocess.run(
@@ -152,7 +156,9 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             check=True,
             capture_output=True,
         )
-        relatives = tuple(item.decode("utf-8") for item in completed.stdout.split(b"\0") if item)
+        relatives = tuple(
+            item.decode("utf-8") for item in completed.stdout.split(b"\0") if item
+        )
         self.assertGreater(len(relatives), 100)
         for relative in relatives:
             path = ROOT / relative
@@ -168,7 +174,9 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             self.assertEqual([], markdown_link_errors(ROOT, relative), relative)
         self.assertEqual([], verify_public_truth_freeze(ROOT))
 
-    def test_workspace_index_only_allows_exact_received_preview_binary_inputs(self) -> None:
+    def test_workspace_index_only_allows_exact_received_preview_binary_inputs(
+        self,
+    ) -> None:
         completed = subprocess.run(
             [
                 "git",
@@ -184,16 +192,24 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             check=True,
             capture_output=True,
         )
-        relatives = tuple(item.decode("utf-8") for item in completed.stdout.split(b"\0") if item)
+        relatives = tuple(
+            item.decode("utf-8") for item in completed.stdout.split(b"\0") if item
+        )
         self.assertFalse(
-            [relative for relative in relatives if post_core_v2_workspace_path_is_forbidden(relative)]
+            [
+                relative
+                for relative in relatives
+                if post_core_v2_workspace_path_is_forbidden(relative)
+            ]
         )
         for relative in (
             "workspaces/return-engine/artifacts/005930.KS.json",
             "workspaces/return-engine/data/model/005930.KS_lstm.pth",
             "workspaces/return-engine/data/stock/005930.KS.csv",
         ):
-            self.assertFalse(post_core_v2_workspace_path_is_forbidden(relative), relative)
+            self.assertFalse(
+                post_core_v2_workspace_path_is_forbidden(relative), relative
+            )
         for relative in (
             "workspaces/return-engine/artifacts/model.safetensors",
             "workspaces/return-engine/raw/provider.jsonl",
@@ -202,10 +218,14 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             "workspaces/experience-dashboard/dev/upstream-intake/source.tsx",
             "workspaces/return-engine/src/untrusted.pkl",
         ):
-            self.assertTrue(post_core_v2_workspace_path_is_forbidden(relative), relative)
+            self.assertTrue(
+                post_core_v2_workspace_path_is_forbidden(relative), relative
+            )
 
     def test_api_usage_matrix_classifies_all_openapi_operations_once(self) -> None:
-        openapi = json.loads((ROOT / "contracts/openapi/openapi.json").read_text(encoding="utf-8"))
+        openapi = json.loads(
+            (ROOT / "contracts/openapi/openapi.json").read_text(encoding="utf-8")
+        )
         methods = {"get", "post", "put", "delete", "patch", "head", "options"}
         operations = [
             (method.upper(), path, path_item[method].get("operationId"))
@@ -216,7 +236,10 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertEqual(56, len(operations))
         operation_ids = [operation_id for _, _, operation_id in operations]
         self.assertTrue(
-            all(isinstance(operation_id, str) and operation_id for operation_id in operation_ids)
+            all(
+                isinstance(operation_id, str) and operation_id
+                for operation_id in operation_ids
+            )
         )
         self.assertEqual(56, len(set(operation_ids)))
         expected = {(method, path) for method, path, _ in operations}
@@ -231,7 +254,9 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             flags=re.MULTILINE,
         )
         self.assertEqual(56, len(rows))
-        self.assertEqual(list(range(1, 57)), sorted(int(number) for number, _, _, _ in rows))
+        self.assertEqual(
+            list(range(1, 57)), sorted(int(number) for number, _, _, _ in rows)
+        )
         self.assertEqual(56, len({(method, path) for _, method, path, _ in rows}))
         self.assertEqual(expected, {(method, path) for _, method, path, _ in rows})
 
@@ -250,9 +275,9 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertEqual(EXPECTED_API_CLASSIFICATIONS, observed_by_classification)
 
     def test_team_a_request_lists_all_current_and_required_operations(self) -> None:
-        request = (ROOT / "docs/decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md").read_text(
-            encoding="utf-8"
-        )
+        request = (
+            ROOT / "docs/decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md"
+        ).read_text(encoding="utf-8")
         documented = frozenset(
             re.findall(
                 r"`(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+(/api/[^`]+)`",
@@ -265,10 +290,12 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertIn("수동 33행 표를 다시\n작성할 필요는 없습니다", request)
         self.assertIn("production image build와 digest", request)
 
-    def test_team_b_request_lists_exact_artifacts_and_owner_verification_apis(self) -> None:
-        request = (ROOT / "docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md").read_text(
-            encoding="utf-8"
-        )
+    def test_team_b_request_lists_exact_artifacts_and_owner_verification_apis(
+        self,
+    ) -> None:
+        request = (
+            ROOT / "docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md"
+        ).read_text(encoding="utf-8")
         artifact_section = re.search(
             r"(?ms)^## 결과 폴더와 파일 10개\s*$\n(.*?)(?=^##\s)",
             request,
@@ -307,17 +334,27 @@ class P1FullAppDocumentationTest(unittest.TestCase):
 
     def test_legacy_v1_authority_files_remain_present(self) -> None:
         self.assertTrue((ROOT / "deploy/p1/release-manifest.schema.json").is_file())
-        self.assertTrue((ROOT / ".github/workflows/p1-offline-demo-release.yml").is_file())
-        self.assertTrue((ROOT / "contracts/changes/20260823-p1-security-container-release.md").is_file())
+        self.assertTrue(
+            (ROOT / ".github/workflows/p1-offline-demo-release.yml").is_file()
+        )
+        self.assertTrue(
+            (
+                ROOT / "contracts/changes/20260823-p1-security-container-release.md"
+            ).is_file()
+        )
 
     def test_full_app_workflow_is_fail_closed_until_release_jobs_exist(self) -> None:
-        workflow = (ROOT / ".github/workflows/p1-full-app-release.yml").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/p1-full-app-release.yml").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("permissions:\n  contents: read", workflow)
         self.assertIn("P1_FULL_APP_RELEASE=BLOCKED_IMPLEMENTATION_INCOMPLETE", workflow)
         self.assertNotIn("gh release create", workflow)
         self.assertNotIn("contents: write", workflow)
 
-    def test_cross_platform_full_app_entrypoints_expose_the_single_compose_flow(self) -> None:
+    def test_cross_platform_full_app_entrypoints_expose_the_single_compose_flow(
+        self,
+    ) -> None:
         linux = (ROOT / "capstone").read_text(encoding="utf-8")
         controller = (ROOT / "deploy/p1/full-appctl").read_text(encoding="utf-8")
         windows = (ROOT / "capstone.ps1").read_text(encoding="utf-8")
@@ -341,7 +378,9 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertIn("mock_certified", controller)
         self.assertIn("mock_certification_guard.py", controller)
         self.assertIn("--repository-root", controller)
-        guard = (ROOT / "deploy/p1/mock_certification_guard.py").read_text(encoding="utf-8")
+        guard = (ROOT / "deploy/p1/mock_certification_guard.py").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("KIS_MOCK_CERTIFICATION_DIRTY_WORKTREE", guard)
         self.assertIn("KIS_MOCK_CERTIFICATION_SOURCE_DRIFT", guard)
         self.assertIn('"inputSha256"', guard)
@@ -349,11 +388,13 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertIn("artifact_validate", controller)
         self.assertIn("--network none", controller)
         self.assertIn("--validate-only", controller)
-        self.assertIn('COMPOSE_FILE=$SCRIPT_DIR/compose.yml', controller)
+        self.assertIn("COMPOSE_FILE=$SCRIPT_DIR/compose.yml", controller)
         self.assertIn("DOCKER_BIN=/usr/bin/docker", controller)
         self.assertNotIn("compose.offline", controller)
         self.assertIn("migrate: {condition: service_completed_successfully}", compose)
-        self.assertIn("seed-import: {condition: service_completed_successfully}", compose)
+        self.assertIn(
+            "seed-import: {condition: service_completed_successfully}", compose
+        )
         self.assertNotIn('PROVIDER_LIVE_CALLS_ENABLED: "true"', compose)
         self.assertNotIn("openapi.koreainvestment.com:9443", compose)
         self.assertIn("BAAI/bge-m3", compose)
@@ -365,7 +406,9 @@ class P1FullAppDocumentationTest(unittest.TestCase):
 
     def test_rag_history_key_is_text_safe_with_raw_state_compatibility(self) -> None:
         p1ctl = (ROOT / "deploy/p1/p1ctl").read_text(encoding="utf-8")
-        entrypoint = (ROOT / "deploy/p1/docker/secret-entrypoint.sh").read_text(encoding="utf-8")
+        entrypoint = (ROOT / "deploy/p1/docker/secret-entrypoint.sh").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("openssl rand -hex 32", p1ctl)
         self.assertIn("rag_kek_size == 32", p1ctl)
         self.assertIn('rag_key_size" -eq 32', entrypoint)
@@ -392,7 +435,9 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertIn("actor-authority: {condition: service_healthy}", compose)
         self.assertIn("decision-platform: {condition: service_healthy}", compose)
         self.assertIn("return-engine-preview-prepare", compose)
-        self.assertIn("compose run --rm", (ROOT / "README.md").read_text(encoding="utf-8"))
+        self.assertIn(
+            "compose run --rm", (ROOT / "README.md").read_text(encoding="utf-8")
+        )
 
 
 if __name__ == "__main__":

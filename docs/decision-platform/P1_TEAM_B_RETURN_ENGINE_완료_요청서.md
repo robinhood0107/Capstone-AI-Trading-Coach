@@ -1,74 +1,47 @@
 # Team B 예측·백테스트 엔진 완료 요청
 
-## 이번에 해주실 일
+## 결론부터
 
-> 받은 소스, CSV, PTH와 JSON은 삭제하지 않고 미리보기 원본으로 보존했습니다. 이제 외부 인터넷 없이
-> 한 번 실행하면 학습, 예측, 백테스트와 결과 저장까지 끝나는 Docker 작업을 만들고, 파일명과 개수가
-> 고정된 결과 파일 10개와 검증 파일 하나를 만들어 주세요. Spring REST API와 주문 API는 호출하지
-> 않습니다.
+`OWNER_INPUT_MISSING`은 해소됐습니다. Owner가 exact-31 입력 pack, 고정 ABI·비용·split, semantic schema,
+synthetic golden, 실제 결과 validator/importer, Spring projection과 inference runtime을 이미 준비했습니다.
+Team B는 provider, Spring, Dashboard, 계좌, 주문, Vertex/GDELT를 구현하지 않습니다.
 
-작업 위치는 `workspaces/return-engine/`입니다. 통합 PR이 main에 병합됐다는 안내를 받은 뒤 최신
-main에서 작업해 주세요.
+남은 역할은 `workspaces/return-engine/` 안에서 Owner 입력만 읽는 실제 price-only LSTM 실행 경로와
+exact-10 결과를 만드는 것입니다. 기존 CSV/PTH preview와 지금까지 작성한 소스는 삭제하거나 전면
+재작성하지 말고 `LEGACY_RECEIVED_PREVIEW`로 보존한 채 새 real 실행 경로를 분리해 주세요.
 
-## 현재 코드와 완료 결과를 구분합니다
+## Owner가 이미 끝낸 것
 
-현재 Docker 실행은 받은 `005930.KS.csv`와 `005930.KS_lstm.pth`를 사용한 미리보기입니다. PTH의
-SHA-256을 먼저 확인하고 `weights_only=True`로 읽으며 네트워크를 사용하지 않습니다. 결과에는
-`LEGACY_RECEIVED_PREVIEW`, `realTeamB=false`가 붙습니다.
+- `p1-return-engine-input-pack.v1` exact-31 sealed input과 manifest SHA-256
+- feature order `open, high, low, raw_close, volume, return_1d, ma5, ma20, rsi14`
+- window 20, hidden 128, 3-layer LSTM, seed 0, CPU thread 1의 fixed ABI
+- train/validation/test global split, XKRX calendar, fixed round-trip 35bps
+- exact-10 semantic schema와 `p1-return-engine-artifact-manifest.v2`
+- synthetic golden과 byte-determinism oracle
+- hostile-input-safe local validator/importer, Signal·model evaluation·backtest projection
+- loopback bounded production inference process
 
-이 미리보기는 Team B 실제 완료 결과가 아닙니다. 현재 파일은 모두 남겨도 되지만 새 결과의 입력이나
-학습 근거로 사용했다면 manifest에 정확히 기록해야 하며, 그렇지 않으면 실제 완료 결과로 표시하지
-마세요.
+Owner는 작업 시작 시 input pack의 읽기 전용 경로와 manifest SHA-256을 별도 전달합니다. Team B가 KIS,
+ECOS, yfinance 또는 뉴스로 입력을 보충할 필요가 없습니다. macro snapshot은 pack의 provenance일 뿐 LSTM
+feature가 아니며 뉴스 feature와 GDELT input은 정확히 0입니다.
 
-## 시작 전에 통합 담당자가 제공해야 할 것
+## Team B가 실제로 구현할 것
 
-현재 저장소에는 아래 항목이 아직 하나의 실행 가능한 입력 계약으로 묶여 있지 않습니다. 통합 담당자가
-이 항목을 제공하기 전에는 임의 값을 만들지 말고 `OWNER_INPUT_MISSING`으로 알려 주세요.
+1. input manifest와 모든 파일의 size/SHA-256을 먼저 검증
+2. 종목별 train-only scaler와 하나의 global time split 사용
+3. exact-31 각각에 같은 fixed price-only 3-layer LSTM과 rule baseline 실행
+4. leakage 0, final-test 재열람 0, hyperparameter search 0 유지
+5. `BASELINE`, `GUIDE`, `STRICT` replay에 Owner fixed 35bps를 동일 적용
+6. next XKRX session 예측과 `forecastClose / currentClose - 1` 재계산
+7. exact-10을 임시 directory에서 모두 검증한 뒤 manifest를 마지막에 게시
+8. 동일 input/commit/lock/image 두 실행의 manifest+10개 파일 byte identity 증명
 
-1. KIS 가격 자료의 파일명, schema, 기간, 종목, 해시가 적힌 입력 manifest
-2. ECOS 거시 자료와 `contracts/schemas/ecos_macro_snapshot.schema.json`에 맞는 manifest
-3. 뉴스 감성을 쓰는 경우에만 승인된 `news_sentiment_summary.v2` 입력
-4. 각 시나리오의 수수료, 세금, slippage 값과 근거
-5. 결과 manifest의 producer SHA-256 각 필드가 어떤 bytes를 해시하는지 적은 규칙
-
-현재 결과 schema는 입력 전체를 `sourceSnapshotSha256` 하나로만 묶어 KIS·ECOS·조건부 뉴스를 각각
-검증하지 못합니다. 별도 입력 manifest 또는 contract 변경이 먼저 필요합니다. Team B가 provider를
-직접 호출해 이 빈 부분을 메우면 안 됩니다.
-
-## 입력과 외부 호출 규칙
-
-- 입력: 통합 담당자가 전달한 KIS 가격 snapshot/artifact
-- 입력: 통합 담당자가 전달한 ECOS macro snapshot
-- 선택 입력: 별도 승인된 `news_sentiment_summary.v2`
-- `yfinance`, KIS, ECOS 등 외부 서비스 직접 호출: 0회
-- 계좌, 잔고, 주문, credential 접근: 0회
-- Spring REST API 호출: 0회
-
-기존 `yfinance` 코드와 받은 원본 파일은 보존해도 되지만, 최종 Docker 실행 경로에서는 네트워크가
-차단된 상태로 동작해야 합니다.
-
-## 한 번 실행할 때 수행할 단계
-
-1. 입력 manifest와 모든 입력 파일의 크기·SHA-256 확인
-2. feature 순서와 결측 처리 고정
-3. 고정 seed로 LSTM 학습 또는 승인된 모델 변환
-4. 다음 XKRX 거래일 예측과 규칙 baseline 생성
-5. 비용을 반영한 backtest 실행
-6. 거래 로그, 자산 곡선, 모델 보고서 생성
-7. 결과 파일 10개를 임시 폴더에서 모두 검증
-8. 검증 파일을 마지막에 쓰고 결과 폴더로 한 번에 게시
-
-Python 3.12, PyTorch 2.13.0 CPU와 `uv.lock`을 유지합니다. 다음 예측일은 고정된 XKRX calendar의
-다음 session을 사용하고, 예상 수익률은 `forecastClose / currentClose - 1`로 계산합니다.
-
-`BASELINE`, `GUIDE`, `STRICT`는 백테스트 비용 시나리오 이름입니다. Team B가 투자 원칙이나
-RiskEngine을 새로 구현하는 뜻이 아닙니다. 통합 담당자가 제공한 시나리오 설정을 그대로 적용하고,
-설정이 없으면 계산하지 않습니다. 공통 지표 정의는 `shared-docs/backtest_config.yaml`과
-`shared-docs/metrics_definitions.md`를 따릅니다.
+실제 성능이 계약 기준을 통과하면 `modelQuality=PASS`, `mockRuntimeEligible=true`를 사용합니다. 통과하지
+못하면 숫자를 꾸미거나 추가 튜닝하지 말고 `modelQuality=BELOW_BASELINE`,
+`mockRuntimeEligible=false`로 제출합니다. 어느 경우든
+`furtherTuningRequired=false`, `orderAuthority=NONE`, `performanceClaimAllowed=false`입니다.
 
 ## 결과 폴더와 파일 10개
-
-결과는 `artifacts/return-engine/<runId>/` 아래에 둡니다.
 
 1. `model.safetensors`
 2. `scaler.json`
@@ -81,89 +54,82 @@ RiskEngine을 새로 구현하는 뜻이 아닙니다. 통합 담당자가 제�
 9. `golden_output.json`
 10. `model_report.md`
 
-같은 폴더에 `p1-return-engine-manifest.v1.json`을 둡니다. 이번 완료 판정에는 구형 generic schema가
-아니라 아래 파일만 사용합니다.
+같은 directory의 manifest 이름은 `p1-return-engine-manifest.v2.json`, contract ID는
+`p1-return-engine-artifact-manifest.v2`입니다. pickle, joblib 또는 PTH를 production artifact로 새로
+내보내지 않습니다. 기존 PTH preview는 historical input으로만 남깁니다.
 
-```text
-contracts/schemas/p1-return-engine-artifact-manifest.v1.schema.json
-```
+## 실행과 Owner validator
 
-manifest에는 다음을 모두 넣습니다.
-
-- `contractId=p1-return-engine-artifact-manifest.v1`
-- `evidenceMode=REAL_TEAM_B`
-- 10개 결과의 상대경로, 파일 크기, SHA-256
-- 다음 XKRX session, 현재 종가, 예측 종가, 예상 수익률
-- 세 시나리오의 수수료, 세금, slippage bps
-- `seed`, `windowSessions`
-- `commitSha256`, `dependencyLockSha256`, `dockerfileSha256`
-- `sourceSnapshotSha256`, `trainingCodeSha256`, `featureOrderSha256`
-- `splitSha256`, `configSha256`, `goldenOutputSha256`
-
-각 SHA-256은 통합 담당자가 정한 canonical bytes를 사용합니다. 단순히 임의 문자열을 해시해 채우면
-안 됩니다.
-
-## 재현성 기준
-
-동일한 입력, commit, lockfile과 Docker image로 두 번 실행했을 때 manifest와 결과 파일 10개의
-SHA-256이 전부 같아야 합니다. 현재 계약에는 허용오차가 정의되어 있지 않으므로 “비슷하다”는 판정은
-사용하지 않습니다. byte 일치가 불가능한 항목이 있으면 Team B가 임의 허용오차를 정하지 말고
-contract 변경 제안으로 분리해 주세요.
-
-## 실행·검증 예시
-
-최종 CLI는 입력과 출력 위치를 명시적으로 받도록 구현해 주세요. 아래는 요구되는 사용 형태입니다.
+Team B가 제공할 CLI는 입력과 출력을 명시적으로 받는 one-shot이어야 합니다.
 
 ```bash
 cd workspaces/return-engine
 uv sync --frozen
-uv run --frozen pytest
+uv run --frozen pytest -q
 docker build --platform linux/amd64 -t capstone-return-engine:p1-local .
 
-mkdir -p ../../artifacts/return-engine/run-1 ../../artifacts/return-engine/run-2
 docker run --rm --network none \
   --mount type=bind,src=<owner-input-dir>,dst=/input,readonly \
-  --mount type=bind,src="$PWD/../../artifacts/return-engine/run-1",dst=/output \
+  --mount type=bind,src=<run-1-output>,dst=/output \
   capstone-return-engine:p1-local run --input /input/manifest.json --output /output
+
 docker run --rm --network none \
   --mount type=bind,src=<owner-input-dir>,dst=/input,readonly \
-  --mount type=bind,src="$PWD/../../artifacts/return-engine/run-2",dst=/output \
+  --mount type=bind,src=<run-2-output>,dst=/output \
   capstone-return-engine:p1-local run --input /input/manifest.json --output /output
 ```
 
-저장소 루트에서 두 결과의 SHA-256을 비교하고 검증기를 실행합니다.
+Owner validator는 별도 DB, provider, account 또는 order 호출 없이 network-none container에서 실행됩니다.
 
 ```bash
-python3 contracts/verify_p1_full_app_assets.py \
-  --return-manifest artifacts/return-engine/run-1/p1-return-engine-manifest.v1.json
+./capstone artifact validate <run-1-output> --manifest-sha256 <manifest-sha256>
+./capstone artifact validate <run-2-output> --manifest-sha256 <manifest-sha256>
 ```
+
+Team B는 validator나 Spring adapter를 수정하지 않습니다. 실패하면 정확한 artifact/manifest를 고쳐 다시
+실행하면 됩니다.
 
 ## 통합 담당자가 나중에 할 일
 
-Team B가 직접 API에 넣지 않습니다. 통합 담당자가 결과 변환·적재 코드를 별도로 완성한 뒤 다음 API에서
-실제 결과를 확인합니다. 이 변환·적재 경로는 현재 아직 구현되지 않았습니다.
+Team B가 직접 API에 넣거나 backend adapter를 작성하지 않습니다. Owner가 받은 bytes를 검증·archive·import한
+뒤 아래 기존 API를 같은 `runId`와 source hash로 확인합니다.
 
 - `GET /api/v2/signals/{symbol}`
 - `GET /api/v1/dashboard/model-evaluations/{runId}`
 - `GET /api/v1/dashboard/backtests/{runId}`
 - `GET /api/v1/artifacts/ingest-status`
 
+restricted GHCR packaging, SBOM, provenance, signature와 OCI digest 검증도 Owner supply-chain lane에서
+담당합니다. Team B가 이미 재현 가능한 OCI를 만들었다면 digest를 함께 보내도 되지만, Team B core 완료를
+위해 signing/registry 도구를 새로 구현할 필요는 없습니다.
+
+## 완료 확인
+
+- exact-31과 exact-10, manifest v2 schema/semantic PASS
+- two-run manifest+10 files byte identity
+- independent metric, split, scaler, 35bps 재계산 PASS
+- `--network none` CPU Docker PASS
+- provider/Spring/account/order/GDELT/Vertex call 0
+- production pickle/joblib/PTH 0
+- input manifest SHA와 source/lock/Dockerfile/output hash binding PASS
+
 ## 보내 주실 것
 
-1. PR 주소와 최신 commit SHA
+1. PR URL과 commit SHA
 2. `uv.lock`과 Dockerfile SHA-256
-3. 사용한 입력 manifest 경로와 SHA-256
-4. 결과 manifest 경로와 SHA-256
-5. 두 번 실행한 결과 11개 파일의 SHA-256 비교표
-6. unit/golden test와 network-disabled Docker 실행 결과
-7. `OWNER_INPUT_MISSING` 또는 필요한 contract 변경 목록
+3. 사용한 input manifest SHA-256
+4. 결과 manifest SHA-256과 exact-10 hash 표
+5. 두 실행 byte 비교와 unit/golden/independent metric 결과
+
+OCI/SBOM/provenance/signature는 Owner가 맡습니다. input 자체, raw provider data, local cache와 대용량 실행
+output은 Git에 올리지 않습니다.
 
 ## 그대로 보내는 짧은 메시지
 
 ```text
-통합 PR이 main에 병합됐다는 안내를 받은 뒤 최신 main을 받아 주세요.
-workspaces/return-engine에서 외부 서비스나 Spring API를 호출하지 않는 Docker 작업을 완성해 주세요.
-한 번 실행하면 입력 검증, 학습, 예측, 백테스트와 고정된 결과 파일 10개 생성까지 끝나야 합니다.
-현재 받은 CSV/PTH/소스/JSON은 삭제하지 않습니다. 입력 계약이나 비용값이 없으면 임의로 만들지 말고
-OWNER_INPUT_MISSING으로 알려 주세요. 완료 조건과 제출물은 이 요청서를 그대로 따라 주세요.
+최신 main에서 workspaces/return-engine만 수정해 주세요. Owner가 exact-31 input, fixed ABI·35bps·split,
+exact-10/manifest v2 schema, golden, validator/importer와 API projection을 모두 준비했으므로 provider,
+Spring, OCI 서명 도구를 만들 필요가 없습니다. 기존 preview는 보존하고 새 price-only LSTM one-shot을
+network-none에서 두 번 실행해 exact-10 byte identity와 metric 재계산을 증명한 뒤 PR·lock·manifest/hash
+결과만 보내 주세요.
 ```

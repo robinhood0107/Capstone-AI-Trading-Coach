@@ -25,7 +25,7 @@ Usage:
   ./capstone up [--models] [--mock]
   ./capstone status|logs|smoke|down|doctor
   ./capstone mock <configure|doctor|certify> [--symbol 005930] [--quantity 1]
-  ./capstone artifact import <bundle-directory> --manifest-sha256 <sha256>
+  ./capstone artifact <validate|import> <bundle-directory> --manifest-sha256 <sha256>
   ./capstone team-a acceptance
 
 Default `up` starts five persistent containers. `--models` adds the official
@@ -528,6 +528,36 @@ artifact_import() {
   compose --profile owner run --rm --no-deps artifact-importer
 }
 
+artifact_validate() {
+  local bundle=${1:-} manifest_sha=${2:-} bundle_parent bundle_name result
+  [[ $# == 2 ]] || die ARTIFACT_VALIDATE_ARGUMENTS
+  [[ $bundle == /* && $bundle != */ && -d $bundle && ! -L $bundle ]] \
+    || die ARTIFACT_VALIDATE_BUNDLE_ROOT
+  [[ $manifest_sha =~ ^[0-9a-f]{64}$ ]] || die ARTIFACT_VALIDATE_MANIFEST_SHA256
+  bundle_parent=${bundle%/*}; [[ -n $bundle_parent ]] || bundle_parent=/
+  bundle_name=${bundle##*/}
+  [[ $bundle_parent != / && $bundle_parent != *','* && $bundle_parent != *$'\n'* ]] \
+    || die ARTIFACT_VALIDATE_BUNDLE_PARENT
+  [[ $bundle_name != . && $bundle_name != .. ]] || die ARTIFACT_VALIDATE_BUNDLE_ROOT
+  [[ -n $DOCKER_BIN ]] || die MISSING_COMMAND_docker
+  "$DOCKER_BIN" image inspect capstone-decision-platform:p1-local >/dev/null 2>&1 \
+    || die RUN_CAPSTONE_UP_FIRST
+  result=$("$DOCKER_BIN" run --rm --pull never --network none --read-only \
+    --cap-drop ALL --security-opt no-new-privileges:true \
+    --pids-limit 64 --memory 1g --cpus 1.0 \
+    --tmpfs /tmp:size=64m,mode=1777 \
+    --user "$(id -u):$(id -g)" \
+    --env PROVIDER_LIVE_CALLS_ENABLED=false --env KIS_OFFLINE=1 \
+    --mount "type=bind,src=$bundle_parent,dst=/owner,readonly" \
+    --entrypoint python capstone-decision-platform:p1-local \
+    -m app.p1_owner.importer \
+    --bundle-root "/owner/$bundle_name" \
+    --manifest-sha256 "$manifest_sha" \
+    --archive-parent /tmp/archive \
+    --validate-only) || die TEAM_B_ARTIFACT_VALIDATION_FAILED
+  printf '%s\nTEAM_B_LOCAL_VALIDATION=PASS\nPROVIDER_CALLS=0\n' "$result"
+}
+
 command=${1:-}
 [[ -n $command ]] || { usage >&2; exit 1; }
 shift
@@ -550,12 +580,16 @@ case $command in
   artifact)
     subcommand=${1:-}; [[ -n $subcommand ]] || die ARTIFACT_COMMAND_REQUIRED; shift
     case $subcommand in
-      import)
+      validate|import)
         bundle=${1:-}; shift || true
-        [[ ${1:-} == --manifest-sha256 ]] || die ARTIFACT_IMPORT_MANIFEST_ARGUMENT_REQUIRED
+        [[ ${1:-} == --manifest-sha256 ]] || die ARTIFACT_MANIFEST_ARGUMENT_REQUIRED
         shift
-        [[ $# == 1 ]] || die ARTIFACT_IMPORT_ARGUMENTS
-        artifact_import "$bundle" "${1:-}"
+        [[ $# == 1 ]] || die ARTIFACT_ARGUMENTS
+        if [[ $subcommand == validate ]]; then
+          artifact_validate "$bundle" "${1:-}"
+        else
+          artifact_import "$bundle" "${1:-}"
+        fi
         ;;
       *) die UNKNOWN_ARTIFACT_COMMAND ;;
     esac

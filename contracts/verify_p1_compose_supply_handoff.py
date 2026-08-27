@@ -307,6 +307,18 @@ def verify_compose() -> None:
     ):
         if required not in oci_verifier:
             raise ContractError(f"Team B OCI verifier boundary is missing: {required}")
+    for required in (
+        "artifact_validate()",
+        "--pull never",
+        "--network none",
+        "--read-only",
+        "--validate-only",
+        "TEAM_B_LOCAL_VALIDATION=PASS",
+    ):
+        if required not in control:
+            raise ContractError(
+                f"Team B local validator boundary is missing: {required}"
+            )
 
 
 def verify_handoff_docs() -> None:
@@ -545,6 +557,9 @@ def main(argv: list[str] | None = None) -> int:
     print("OWNER_COMPOSE_5_7_PREP=PASS")
     print("OWNER_SUPPLY_CHAIN_PREP=PASS")
     print("OWNER_HANDOFF_DOCS=PASS")
+    print("OWNER_POST_TEAM_CODE_REQUIRED=0")
+    print("TEAM_A_REQUEST_READY=TRUE")
+    print("TEAM_B_REQUEST_READY=TRUE")
     print("TEAM_B_REAL_ARTIFACT=PENDING_EXTERNAL_TEAM")
     return 0
 

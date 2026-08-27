@@ -10,15 +10,23 @@ TARGET_ROOT_OPENAPI_OPERATIONS=56
 TEAM_A_REQUIRED_OPERATIONS=33
 OWNER_TEAM_A_BACKEND_PREREQUISITES=MERGED_PR_172
 OWNER_POST_TEAM_A_BACKEND_CODE_REQUIRED=0
-OWNER_COMPOSE_5_7=PREPARED_MERGE_CANDIDATE
-OWNER_SUPPLY_CHAIN_PREP=PASS_MERGE_CANDIDATE
-OWNER_HANDOFF_DOCS=PASS_MERGE_CANDIDATE
+OWNER_COMPOSE_5_7=MERGED_PR_173_PASS
+OWNER_SUPPLY_CHAIN_PREP=MERGED_PR_173_PASS
+OWNER_HANDOFF_DOCS=MERGED_PR_173_PASS
+OWNER_SECURITY_ORDINARY=PASS
+OWNER_FRESH_CLONE=PASS_MAIN_0EEB8825
+OWNER_HANDOFF_READY=TRUE
+TEAM_A_REQUEST_READY=TRUE
+TEAM_B_REQUEST_READY=TRUE
 TEAM_B_REAL_ARTIFACT=PENDING_EXTERNAL_TEAM
 TEAM_A_REAL_UI=PENDING_EXTERNAL_TEAM
 LIGHTGBM=RESEARCH_ONLY_NO_SIGNAL_OR_ORDER_AUTHORITY
 KIS_LIVE_ORDER=IMMUTABLE_DISABLED
 GDELT_OUTBOUND_CALLS=0
-P1_FINAL=NOT_READY
+VERTEX_LIVE=NOT_RUN
+KIS_MOCK_CERTIFICATION=NOT_RUN
+RECURRING_AUTOMATION=DISABLED
+P1_FINAL=NOT_READY_EXTERNAL_TEAM_ARTIFACTS
 P1_1_0_0_RELEASED=FALSE
 ```
 
@@ -28,7 +36,7 @@ P1_1_0_0_RELEASED=FALSE
 
 ## Owner-First 계약
 
-Team A/B에게 요청하기 전에 Owner는 다음을 완성한다.
+Team A/B에게 요청하기 전 Owner 항목은 완료됐다.
 
 - exact-31 input pack과 fixed price-only LSTM ABI
 - exact 10개 결과 파일과 manifest v2의 hostile-input-safe importer
@@ -77,11 +85,21 @@ UI 자체는 여전히 `PENDING_EXTERNAL_TEAM`이다.
 ## Compose, supply-chain, handoff 현재 상태
 
 단일 Compose는 기본 5개와 models profile 2개, 내부 Return inference, one-shot `run --rm`, loopback bind,
-Docker socket 0, provider-free 기본값을 고정한다. Team B intake는 restricted GHCR immutable digest,
+Docker socket 0, provider-free 기본값을 고정한다. Team B local bundle은 `./capstone artifact validate`의
+network-none validator로 먼저 검사한다. remote intake는 restricted GHCR immutable digest,
 동일 workflow identity의 OCI signature와 keyless signed-blob receipt Sigstore bundle, SLSA provenance,
 SPDX/CycloneDX SBOM과 exact-10 hash binding을 요구한다. 실제 digest가 없으므로 준비 상태만 PASS이고
 `TEAM_B_REAL_ARTIFACT=PENDING_EXTERNAL_TEAM`이다.
 
-Team A, Team B, Owner와 시작 문서는 `docs/handoff/`에 있으며 각 문서는 정확히 일곱 절만 사용한다.
-5/7 live Compose, restart recovery와 fresh-main clone evidence는 이 merge candidate가 main에 병합된 뒤
-exact merge SHA에서 확인한다.
+PR #173의 `docs/handoff/` 네 문서는 병합 시점의 봉인된 Phase A handoff snapshot으로 보존한다. 현재 Team
+작업 범위는 `P1_TEAM_A_DASHBOARD_완료_요청서.md`와 `P1_TEAM_B_RETURN_ENGINE_완료_요청서.md`가 소유하며,
+충돌 시 두 active 요청서가 우선한다. 실제 OCI/SBOM/provenance/signature 실행 workflow는 사용자 지시에
+따라 후속 Owner supply-chain 단계로 남기고 Team A/B core 작업에는 배정하지 않는다.
+
+PR #173 merge SHA `0eeb8825a309602fdf91a0454660c8b072b902cc`에서 required/post-merge CI 6개가
+모두 성공했다. 같은 SHA의 별도 clone에서 `doctor`, provider-free `up`, `smoke`, `status`가 PASS했고
+5개 persistent container healthy, one-shot residual 0, provider call 0, down 뒤 named volume 보존을
+확인했다. models 7개와 restart recovery는 PR #173 pre-merge live evidence에서 PASS했다.
+
+`OWNER_HANDOFF_READY=TRUE`는 Owner Phase A와 Team 요청 준비가 끝났다는 뜻이다. 실제 Team A UI,
+Team B artifact, Vertex live, KIS Mock certification/activation, 3-session soak와 Release 완료를 뜻하지 않는다.

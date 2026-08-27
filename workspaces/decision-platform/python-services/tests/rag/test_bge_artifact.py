@@ -40,6 +40,7 @@ _B86_PUBLIC_SOURCE_CARD_SHA256 = frozenset(
     }
 )
 _UNAPPROVED_SECRET_LIKE_SHA256 = "f" * 64
+_COLLECTOR_DOC_FALSE_POSITIVE_COMMIT = "0c5b64823a9a30c733817a861d34bb980234fac2"
 
 
 def test_runtime_sbom_binds_the_current_production_lockfile() -> None:
@@ -63,7 +64,7 @@ def test_public_digest_allowlist_keeps_only_the_exact_approved_values() -> None:
     b86_expected_regexes = {f"^{digest}$" for digest in _B86_PUBLIC_SOURCE_CARD_SHA256}
 
     assert config["extend"]["useDefault"] is True
-    assert len(allowlists) == 4
+    assert len(allowlists) == 5
     digest_allowlists = allowlists[:2]
     assert all(set(allowlist) == {"description", "regexes"} for allowlist in digest_allowlists)
     assert all("regexTarget" not in allowlist for allowlist in digest_allowlists)
@@ -79,6 +80,16 @@ def test_public_digest_allowlist_keeps_only_the_exact_approved_values() -> None:
         for allowlist in digest_allowlists
         for pattern in allowlist["regexes"]
     )
+    collector_doc_allowlist = allowlists[4]
+    assert collector_doc_allowlist == {
+        "description": "Historical P1 collector documentation phrase misclassified as a generic API key",
+        "condition": "AND",
+        "targetRules": ["generic-api-key"],
+        "commits": [_COLLECTOR_DOC_FALSE_POSITIVE_COMMIT],
+        "paths": ["^docs/decision-platform/P1_DATA_ONLY_DAILY_COLLECTOR_운영_가이드[.]md$"],
+        "regexTarget": "secret",
+        "regexes": ["^Signal/Risk/order$"],
+    }
 
 
 def test_b86_public_digest_allowlist_is_copied_from_historical_source_cards() -> None:

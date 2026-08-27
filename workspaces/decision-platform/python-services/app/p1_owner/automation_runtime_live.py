@@ -130,7 +130,11 @@ class SpringAutomationBridgeClient:
             parsed = response.json()
         except json.JSONDecodeError as error:
             raise AutomationRuntimeError("AUTOMATION_BRIDGE_RESPONSE_INVALID") from error
-        if not isinstance(parsed, dict) or parsed.get("status") != "OK" or not isinstance(parsed.get("data"), dict):
+        if (
+            not isinstance(parsed, dict)
+            or parsed.get("status") != "OK"
+            or not isinstance(parsed.get("data"), dict)
+        ):
             raise AutomationRuntimeError("AUTOMATION_BRIDGE_RESPONSE_INVALID")
         return cast(dict[str, Any], parsed["data"])
 
@@ -286,7 +290,8 @@ class LiveAutomationPort:
         )
         self.provider_order_ref_hash = (
             str(reservation.get("providerOrderRefHash"))
-            if isinstance(reservation, dict) and isinstance(reservation.get("providerOrderRefHash"), str)
+            if isinstance(reservation, dict)
+            and isinstance(reservation.get("providerOrderRefHash"), str)
             else None
         )
         self.physical_calls = int(state.get("providerCallCount", 0))
@@ -336,7 +341,9 @@ class LiveAutomationPort:
             baseline = state.get("baselineAccountProjection")
             if not isinstance(baseline, dict):
                 raise AutomationRuntimeError("AUTOMATION_BASELINE_PROJECTION_MISSING")
-            runtime_state["accountDigestMatches"] = _balance_projection(balance) == _balance_projection(baseline)
+            runtime_state["accountDigestMatches"] = _balance_projection(
+                balance
+            ) == _balance_projection(baseline)
             runtime_state["accountComplete"] = True
             self.physical_calls += 1
             buyable = self._bridge.command(
@@ -524,7 +531,9 @@ def _order_intent_from_reservation(
 
 def _vertex_request(session_date: date, symbol: str, previous_close: int) -> bytes:
     calendar = __import__("exchange_calendars").get_calendar("XKRX")
-    current = calendar.date_to_session(__import__("pandas").Timestamp(session_date), direction="none")
+    current = calendar.date_to_session(
+        __import__("pandas").Timestamp(session_date), direction="none"
+    )
     previous = calendar.previous_session(current).date()
     return canonical_json_bytes(
         {

@@ -2347,6 +2347,68 @@ BEGIN
 END
 $p1_v90_automation_runtime_privileges$;
 
+DO $p1_v91_variable_automation_privileges$
+BEGIN
+    IF to_regprocedure(
+        'public.p1_arm_automation_v2(text,text,text,integer,integer,text,text)'
+    ) IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON TABLE
+            public.automation_policy_versions,
+            public.automation_policy_idempotency,
+            public.automation_account_lineage
+        FROM PUBLIC, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        GRANT SELECT ON TABLE
+            public.automation_policy_versions,
+            public.automation_account_lineage
+        TO decision_app;
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_automation_policy_profile_v1(integer,integer),
+            public.p1_automation_structural_projection_valid_v2(jsonb),
+            public.p1_put_automation_policy_v1(text,text,bigint,integer,integer,integer,text,text),
+            public.p1_automation_risk_balance_projection_v2(text,text),
+            public.p1_arm_automation_v2(text,text,text,integer,integer,text,text),
+            public.p1_reserve_automation_order_v2(
+                text,text,integer,text,text,text,bigint,bigint,bigint,text,text,text,text
+            ),
+            public.p1_bind_automation_decision_v2(text,text,integer,text,text,text,text),
+            public.p1_automation_transition_valid_v2(text,text),
+            public.p1_read_automation_runtime_state_v2(text,text),
+            public.p1_advance_automation_checkpoint_v2(
+                text,text,text,integer,text,text,text,text,integer,integer,integer,text,bigint,bigint,
+                text,text,text,text,integer,date,bigint,bigint,bigint,bigint,text,text,text,text,text,
+                text,text
+            )
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_put_automation_policy_v1(text,text,bigint,integer,integer,integer,text,text),
+            public.p1_arm_automation_v2(text,text,text,integer,integer,text,text),
+            public.p1_automation_risk_balance_projection_v2(text,text)
+        TO decision_app;
+        -- automation_control_v2_binding_check가 호출하는 검증 함수라 SECURITY INVOKER인
+        -- V89 arm/disarm의 decision_app 쓰기에 EXECUTE가 필수다.
+        GRANT EXECUTE ON FUNCTION
+            public.p1_automation_structural_projection_valid_v2(jsonb)
+        TO decision_app;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_automation_risk_balance_projection_v2(text,text),
+            public.p1_reserve_automation_order_v2(
+                text,text,integer,text,text,text,bigint,bigint,bigint,text,text,text,text
+            ),
+            public.p1_bind_automation_decision_v2(text,text,integer,text,text,text,text),
+            public.p1_read_automation_runtime_state_v2(text,text),
+            public.p1_advance_automation_checkpoint_v2(
+                text,text,text,integer,text,text,text,text,integer,integer,integer,text,bigint,bigint,
+                text,text,text,text,integer,date,bigint,bigint,bigint,bigint,text,text,text,text,text,
+                text,text
+            )
+        TO decision_automation_runtime;
+        REVOKE CREATE ON SCHEMA public FROM decision_automation_runtime;
+    END IF;
+END
+$p1_v91_variable_automation_privileges$;
+
 DO $block$
 BEGIN
     IF to_regclass('public.flyway_schema_history') IS NOT NULL THEN

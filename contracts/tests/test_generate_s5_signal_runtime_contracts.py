@@ -160,7 +160,9 @@ class S5SignalRuntimeContractTest(unittest.TestCase):
             path.write_bytes(canonical_json_bytes(additive))
             with self.assertRaisesRegex(
                 ContractValidationError,
-                "additive OpenAPI fragment drifted|exact Automation/Journal addition",
+                "additive OpenAPI fragment drifted"
+                "|exact Automation/Journal addition"
+                "|approved exact-five V91 addition",
             ):
                 verify_openapi_transition(path)
 

@@ -30,6 +30,20 @@ uv run --frozen python contracts/verify_p1_automation_journal_openapi_transition
 uv run --frozen python contracts/validate.py
 ```
 
+## P1 1.1.0 Automation V91 exact-61 transition
+
+`catalogs/p1-automation-policy.v1.json`은 최대 5개 포지션, 세션당 신규 주문 1개, 보수 3/5·균형
+5/10·공격 8/15 preset과 세 개 사용자 입력을 고정한다. v2 status/policy/arm/runs/positions 다섯
+operation만 additive하게 추가해 root exact-61을 만들며, 제거하면 SHA
+`8a94b6cae3bafbc4d353bde7bae88aa568c3fe691e08b97f8cdb52996612a8a0`의 exact-56이 복원돼야 한다.
+현재 provider-free acceptance의 arm은 `BLOCKED_INCOMPLETE_RISK_BALANCE` 409가 정상 결과다.
+
+```bash
+uv run --frozen python contracts/generate_p1_v91_automation_contracts.py --check
+uv run --frozen python contracts/verify_p1_v91_automation_openapi_transition.py
+uv run --frozen python -m unittest contracts.tests.test_p1_v91_automation_contracts -v
+```
+
 ## P1 Team A exact-33 acceptance
 
 `catalogs/p1-team-a-acceptance.v1.json`은 root exact-56 중 Team A current 15 + required 18의
@@ -43,6 +57,11 @@ uv run --frozen python contracts/generate_p1_team_a_acceptance.py --check
 uv run --frozen python -m unittest contracts.tests.test_p1_team_a_acceptance -v
 ./capstone team-a acceptance
 ```
+
+`p1-team-a-acceptance.v1`과 generated v1 client는 역사 회귀로 그대로 보존한다. 현재 1.1.0
+acceptance는 `p1-team-a-acceptance.v2`와 generated v2 client가 기존 33개에 V91 다섯 operation을
+더한 exact-38을 소유한다. v2 arm은 provider-free 환경에서 409 blocker를 검증하고, v1 arm/disarm은
+기존 200 상태 복구를 계속 증명한다.
 
 ## P1 Compose, Team B OCI, and handoff preparation
 

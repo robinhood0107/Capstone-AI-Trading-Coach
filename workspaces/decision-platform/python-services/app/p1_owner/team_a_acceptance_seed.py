@@ -22,9 +22,21 @@ _AUTOMATION_RUN_ID = "auto_run_team_a_news_veto_0001"
 _RESET_STATEMENTS = (
     "DELETE FROM journal_idempotency WHERE user_id=%s",
     "DELETE FROM journals WHERE user_id=%s",
+    "DELETE FROM automation_processed_ticks WHERE run_id IN (SELECT run_id FROM automation_runs WHERE user_id=%s)",
+    "DELETE FROM automation_runtime_events WHERE user_id=%s",
+    "DELETE FROM automation_order_reservations WHERE user_id=%s",
+    "DELETE FROM automation_runtime_checkpoint WHERE user_id=%s",
+    "DELETE FROM automation_runtime_claim WHERE user_id=%s",
+    "DELETE FROM automation_runtime_schedule WHERE user_id=%s",
+    "DELETE FROM automation_account_lineage WHERE user_id=%s",
+    "DELETE FROM automation_events WHERE user_id=%s",
+    "DELETE FROM automation_positions WHERE user_id=%s",
+    "DELETE FROM automation_runs WHERE user_id=%s",
     "DELETE FROM automation_control_idempotency WHERE user_id=%s",
     "DELETE FROM automation_activation_gate WHERE user_id=%s",
     "DELETE FROM automation_control WHERE user_id=%s",
+    "DELETE FROM automation_policy_idempotency WHERE user_id=%s",
+    "DELETE FROM automation_policy_versions WHERE user_id=%s",
     "DELETE FROM order_fill_application_receipts WHERE order_id IN (SELECT order_id FROM orders WHERE user_id=%s)",
     "DELETE FROM order_fill_observations WHERE order_id IN (SELECT order_id FROM orders WHERE user_id=%s)",
     "DELETE FROM paper_order_events WHERE order_id IN (SELECT order_id FROM orders WHERE user_id=%s)",
@@ -195,7 +207,7 @@ def _seed(cursor: psycopg.Cursor[object]) -> None:
           run_id,user_id,session_date,state,brokerage_mode,selected_symbol,selected_side,
           physical_submit_count,vertex_call_count,provider_calls,started_at,updated_at
         ) VALUES (%s,%s,'2026-08-18','NEWS_VETOED','INTERNAL_PAPER','005930','BUY',0,0,0,
-          '2026-08-18T09:20:00+09:00','2026-08-18T09:21:00+09:00')
+          '2026-08-18T09:30:00+09:00','2026-08-18T09:31:00+09:00')
         ON CONFLICT (run_id) DO NOTHING
         """,
         (_AUTOMATION_RUN_ID, _USER_ID),

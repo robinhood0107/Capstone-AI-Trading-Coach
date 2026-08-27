@@ -10,20 +10,27 @@ import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 
 from app.p1_owner.automation import (
+    AccountLineageSnapshot,
     AutomationEngine,
     AutomationInputs,
+    AutomationPolicySnapshot,
     AutomationStore,
     BotPosition,
+    ExactOrderIntent,
     FixtureAutomationTransport,
     OrderReservation,
     Quote,
+    ReconcileSnapshot,
     SignalCandidate,
+    _estimated_net_return_bps,
+    _variable_buy_quantity,
 )
 
 _KST = ZoneInfo("Asia/Seoul")
 _SESSION = date(2026, 8, 26)
-_NOW = datetime(2026, 8, 26, 9, 0, tzinfo=_KST)
+_NOW = datetime(2026, 8, 26, 9, 30, tzinfo=_KST)
 _RUN_ID = "auto_run_fixture_0001"
+_POLICY_ID = "auto_pol_" + "f" * 32
 
 
 def _store() -> AutomationStore:
@@ -57,8 +64,19 @@ def _transport(
     quote: Quote | None = None,
 ) -> FixtureAutomationTransport:
     selected_quote = quote or _quote()
+    quotes = {
+        symbol: Quote(
+            symbol,
+            selected_quote.price_krw,
+            selected_quote.lower_limit_krw,
+            selected_quote.upper_limit_krw,
+            selected_quote.fresh,
+            selected_quote.is_etf_etn,
+        )
+        for symbol in {"005930", "000001", "000002", "000003", selected_quote.symbol}
+    }
     return FixtureAutomationTransport(
-        quotes={selected_quote.symbol: selected_quote},
+        quotes=quotes,
         news_verdict=cast(Any, news),
         submit_outcome=cast(Any, submit),
         reconcile_outcomes=cast(Any, reconcile or ["FILLED"]),
@@ -147,15 +165,19 @@ def test_buy_full_fill_is_restart_safe_exact_one_and_contract_valid() -> None:
         "PRECHECK",
         "BUY_CANDIDATE_SELECTED",
         "NEWS_CHECKING",
+        "ORDER_SIZING",
         "RISK_CHECKING",
-        "ORDER_SUBMITTING",
         "ORDER_SUBMITTING",
         "ORDER_SUBMITTED",
         "COMPLETED",
     ]
     run = store.runs[_RUN_ID]
     assert run.selected_symbol == "005930"
-    assert run.reservation == OrderReservation("005930", "BUY", 1, 75_100)
+    assert run.reservation is not None
+    assert (run.reservation.symbol, run.reservation.side) == ("005930", "BUY")
+    assert (run.reservation.quantity, run.reservation.limit_price_krw) == (1, 75_100)
+    assert run.reservation.intent is not None
+    assert run.reservation.intent.estimated_amount == 75_100
     assert (transport.vertex_calls, transport.quote_calls, transport.submit_calls) == (1, 1, 1)
     assert transport.reconcile_calls == 1
     assert transport.cancel_calls == transport.physical_calls == 0
@@ -167,8 +189,8 @@ def test_buy_full_fill_is_restart_safe_exact_one_and_contract_valid() -> None:
     assert store.events[0]["eventType"] == "BASELINE_CAPTURED"
     assert [event["sequence"] for event in store.events] == list(range(1, len(store.events) + 1))
 
-    assert list(_validator("automation-run.v1").iter_errors(run.projection())) == []
-    assert list(_validator("automation-position.v1").iter_errors(position.projection())) == []
+    assert list(_validator("automation-run.v2").iter_errors(run.projection())) == []
+    assert list(_validator("automation-position.v2").iter_errors(position.projection())) == []
     assert all(
         list(_validator("automation-event.v1").iter_errors(event)) == [] for event in store.events
     )
@@ -188,7 +210,8 @@ def test_vertex_veto_and_abstain_stop_buy_without_second_candidate(verdict: str)
     assert states[-1] == "NEWS_VETOED"
     assert store.runs[_RUN_ID].selected_symbol == "000001"
     assert transport.vertex_calls == 1
-    assert transport.quote_calls == transport.submit_calls == 0
+    assert transport.quote_calls == 1
+    assert transport.submit_calls == 0
     assert store.positions == []
     assert transport.physical_calls == 0
 
@@ -228,7 +251,7 @@ def test_buy_then_fifth_xkrx_session_sell_closes_the_same_one_share_lot() -> Non
     assert position.entry_session == _SESSION
     assert position.expiry_session == date(2026, 9, 2)
 
-    exit_now = datetime(2026, 9, 2, 9, 0, tzinfo=_KST)
+    exit_now = datetime(2026, 9, 2, 9, 30, tzinfo=_KST)
     exit_run = "auto_run_fixture_0002"
     _create(store, run_id=exit_run, now=exit_now)
     sell_transport = _transport()
@@ -360,8 +383,8 @@ def test_duplicate_tick_is_exact_noop_and_session_submit_cap_halts_second_run() 
 @pytest.mark.parametrize(
     ("now", "overrides", "expected"),
     [
-        (datetime(2026, 8, 17, 9, 0, tzinfo=_KST), {}, "SKIPPED_NO_ACTION"),
-        (datetime(2026, 8, 26, 9, 21, tzinfo=_KST), {}, "SKIPPED_LATE_START"),
+        (datetime(2026, 8, 17, 9, 30, tzinfo=_KST), {}, "SKIPPED_NO_ACTION"),
+        (datetime(2026, 8, 26, 9, 41, tzinfo=_KST), {}, "SKIPPED_LATE_START"),
         (_NOW, {"daily_shard_fresh_complete": False}, "SKIPPED_DATA_UNAVAILABLE"),
         (_NOW, {"account_digest_matches": False}, "HALTED"),
         (_NOW, {"kill_switch_active": True}, "HALTED"),
@@ -435,7 +458,8 @@ def test_stale_quote_balance_gap_and_risk_deny_make_zero_submits() -> None:
     risk_states = _drive(risk_store, risk_transport, _inputs(risk_allow=False))
     assert risk_states[-1] == "SKIPPED_NO_ACTION"
     assert risk_store.positions[0].status == "OPEN"
-    assert risk_transport.quote_calls == risk_transport.submit_calls == 0
+    assert risk_transport.quote_calls == 1
+    assert risk_transport.submit_calls == 0
 
 
 def test_pending_previous_reconciliation_precedes_exit_and_buy_selection() -> None:
@@ -458,13 +482,386 @@ def test_disarm_still_allows_outstanding_reconciliation() -> None:
     run.state = "PENDING_RECONCILIATION"
     run.selected_symbol = "005930"
     run.selected_side = "BUY"
-    run.reservation = OrderReservation("005930", "BUY", 1, 75_100)
+    intent = ExactOrderIntent("005930", "BUY", "LIMIT", 1, 75_100, 75_100, "1d", store.strategy_id)
+    run.reservation = OrderReservation("005930", "BUY", 1, 75_100, intent=intent)
+    run.policy_snapshot = _inputs().policy
     transport = _transport(reconcile=["FILLED"])
     result = _tick(store, transport, _inputs(_buy()), 1)
     assert result["state"] == "COMPLETED"
     assert len(store.positions) == 1
     assert transport.reconcile_calls == 1
     assert transport.physical_calls == 0
+
+
+def test_policy_presets_and_custom_thresholds_are_exact() -> None:
+    expected = {
+        "CONSERVATIVE": (300, 500),
+        "BALANCED": (500, 1_000),
+        "AGGRESSIVE": (800, 1_500),
+    }
+    for preset, thresholds in expected.items():
+        policy = AutomationPolicySnapshot.from_preset(
+            policy_id=_POLICY_ID,
+            version=1,
+            capital_limit_krw=10_000_000,
+            preset=cast(Any, preset),
+        )
+        assert (policy.stop_loss_bps, policy.take_profit_bps) == thresholds
+
+    custom = AutomationPolicySnapshot(
+        _POLICY_ID,
+        2,
+        20_000_000,
+        650,
+        1_200,
+        "CUSTOM",
+    )
+    assert (custom.stop_loss_bps, custom.take_profit_bps) == (650, 1_200)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        ({}, 2),
+        ({"open_position_market_value_krw": 900_000}, 1),
+        ({"principle_max_single_order_krw": 150_000}, 1),
+        ({"principle_asset_remaining_krw": 150_000}, 1),
+        ({"buyable_amount_krw": 150_000}, 1),
+        ({"buyable_quantity": 1}, 1),
+    ],
+)
+def test_variable_buy_quantity_uses_the_minimum_exact_budget(
+    overrides: dict[str, int], expected: int
+) -> None:
+    policy = AutomationPolicySnapshot.from_preset(
+        policy_id=_POLICY_ID,
+        version=1,
+        capital_limit_krw=1_000_000,
+        preset="BALANCED",
+    )
+    values: dict[str, object] = {
+        "session_date": _SESSION,
+        "policy": policy,
+        "buyable_quantity": 99,
+        "buyable_amount_krw": 10_000_000,
+    }
+    values.update(overrides)
+    assert _variable_buy_quantity(AutomationInputs(**cast(Any, values)), 75_100) == expected
+
+
+def test_variable_quantity_exact_intent_and_five_position_cap() -> None:
+    policy = AutomationPolicySnapshot.from_preset(
+        policy_id=_POLICY_ID,
+        version=1,
+        capital_limit_krw=2_000_000,
+        preset="BALANCED",
+    )
+    store = _store()
+    _create(store)
+    transport = _transport()
+    inputs = _inputs(
+        _buy(),
+        policy=policy,
+        buyable_quantity=3,
+        buyable_amount_krw=1_000_000,
+        principle_max_single_order_krw=1_000_000,
+        principle_asset_remaining_krw=1_000_000,
+    )
+    assert _drive(store, transport, inputs)[-1] == "COMPLETED"
+    reservation = cast(OrderReservation, store.runs[_RUN_ID].reservation)
+    assert reservation.quantity == 3
+    assert reservation.intent is not None
+    assert reservation.intent.estimated_amount == 3 * reservation.limit_price_krw
+    assert store.positions[0].quantity == 3
+
+    capped = _store()
+    capped.positions.extend(
+        BotPosition(
+            f"auto_pos_cap_{index:04d}",
+            capped.account_id,
+            f"{index:06d}",
+            date(2026, 8, 20),
+            date(2026, 9, 20),
+            _NOW,
+        )
+        for index in range(1, 6)
+    )
+    _create(capped)
+    capped_transport = _transport()
+    assert _drive(capped, capped_transport, _inputs(_buy("000006"), policy=policy))[-1] == (
+        "SKIPPED_NO_ACTION"
+    )
+    assert capped_transport.vertex_calls == capped_transport.submit_calls == 0
+
+
+def test_internal_paper_fixture_runs_full_variable_quantity_loop() -> None:
+    policy = AutomationPolicySnapshot.from_preset(
+        policy_id=_POLICY_ID,
+        version=1,
+        capital_limit_krw=1_000_000,
+        preset="CONSERVATIVE",
+    )
+    store = AutomationStore(
+        account_id="acct_fixture_0001",
+        brokerage_mode="INTERNAL_PAPER",
+        principle_id="prc_fixture_0001",
+        strategy_id="strategy_fixture_0001",
+        baseline_account_digest="a" * 64,
+        certification_status="NOT_REQUIRED_INTERNAL_PAPER",
+    )
+    _create(store)
+    transport = _transport()
+    inputs = _inputs(
+        _buy(),
+        policy=policy,
+        buyable_quantity=10,
+        buyable_amount_krw=1_000_000,
+    )
+
+    assert _drive(store, transport, inputs)[-1] == "COMPLETED"
+    assert store.positions[0].quantity == 2
+    assert transport.physical_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("entry", "sell", "expected"),
+    [
+        (100_000, 97_350, -300),
+        (100_000, 95_350, -500),
+        (100_000, 92_350, -800),
+        (100_000, 105_350, 500),
+        (100_000, 110_350, 1_000),
+        (100_000, 115_350, 1_500),
+    ],
+)
+def test_exit_trigger_uses_exact_integer_35bp_cost(entry: int, sell: int, expected: int) -> None:
+    assert _estimated_net_return_bps(entry, sell) == expected
+
+
+def test_stop_loss_precedes_expiry_model_sell_and_take_profit() -> None:
+    store = _store()
+    store.positions.extend(
+        [
+            BotPosition(
+                "auto_pos_stop_0001",
+                store.account_id,
+                "000001",
+                date(2026, 8, 24),
+                date(2026, 9, 10),
+                _NOW,
+                quantity=2,
+                entry_average_fill_price_krw=100_000,
+                stop_loss_bps=300,
+                take_profit_bps=500,
+            ),
+            BotPosition(
+                "auto_pos_expiry_0002",
+                store.account_id,
+                "000002",
+                date(2026, 8, 20),
+                _SESSION,
+                _NOW,
+            ),
+            BotPosition(
+                "auto_pos_model_0003",
+                store.account_id,
+                "000003",
+                date(2026, 8, 22),
+                date(2026, 9, 10),
+                _NOW,
+            ),
+            BotPosition(
+                "auto_pos_profit_0004",
+                store.account_id,
+                "000004",
+                date(2026, 8, 23),
+                date(2026, 9, 10),
+                _NOW,
+                entry_average_fill_price_krw=100_000,
+                stop_loss_bps=300,
+                take_profit_bps=500,
+            ),
+        ]
+    )
+    _create(store)
+    transport = FixtureAutomationTransport(
+        quotes={
+            "000001": Quote("000001", 97_450, 70_000, 130_000),
+            "000004": Quote("000004", 105_450, 70_000, 130_000),
+        }
+    )
+    inputs = _inputs(_sell("000003"))
+    assert _tick(store, transport, inputs, 1)["state"] == "PRECHECK"
+    selected = _tick(store, transport, inputs, 2)
+    assert (selected["state"], selected["selectedSymbol"]) == ("EXIT_SELECTED", "000001")
+    assert store.runs[_RUN_ID].exit_reason == "STOP_LOSS"
+
+
+def test_partial_buy_and_sell_cancel_apply_only_confirmed_quantity() -> None:
+    policy = AutomationPolicySnapshot.from_preset(
+        policy_id=_POLICY_ID,
+        version=1,
+        capital_limit_krw=2_000_000,
+        preset="BALANCED",
+    )
+    buy_store = _store()
+    _create(buy_store)
+    buy_snapshot = ReconcileSnapshot(True, 1, 2, 75_050)
+    buy_transport = _transport(submit="UNFILLED")
+    buy_transport.reconcile_snapshots = [buy_snapshot, buy_snapshot]
+    buy_inputs = _inputs(_buy(), policy=policy, buyable_quantity=3, buyable_amount_krw=1_000_000)
+    for index in range(1, 9):
+        _tick(buy_store, buy_transport, buy_inputs, index)
+    result = _tick(
+        buy_store,
+        buy_transport,
+        buy_inputs,
+        9,
+        now=datetime(2026, 8, 26, 15, 20, tzinfo=_KST),
+    )
+    assert result["state"] == "COMPLETED"
+    assert (
+        buy_store.positions[0].quantity,
+        buy_store.positions[0].entry_average_fill_price_krw,
+    ) == (
+        1,
+        75_050,
+    )
+
+    sell_store = _store()
+    sell_store.positions.append(
+        BotPosition(
+            "auto_pos_partial_sell_0001",
+            sell_store.account_id,
+            "005930",
+            date(2026, 8, 20),
+            _SESSION,
+            _NOW,
+            quantity=4,
+            entry_average_fill_price_krw=70_000,
+        )
+    )
+    _create(sell_store)
+    sell_snapshot = ReconcileSnapshot(True, 2, 2, 74_900)
+    sell_transport = _transport(submit="UNFILLED")
+    sell_transport.reconcile_snapshots = [sell_snapshot, sell_snapshot]
+    sell_inputs = _inputs(policy=policy)
+    for index in range(1, 8):
+        _tick(sell_store, sell_transport, sell_inputs, index)
+    sell_result = _tick(
+        sell_store,
+        sell_transport,
+        sell_inputs,
+        8,
+        now=datetime(2026, 8, 26, 15, 20, tzinfo=_KST),
+    )
+    assert sell_result["state"] == "COMPLETED"
+    assert sell_store.positions[0].quantity == 2
+    assert sell_store.positions[0].status == "OPEN"
+
+
+def test_account_lineage_excludes_valuation_and_allows_only_bounded_bot_fill() -> None:
+    expected = AccountLineageSnapshot("acct_fixture_0001", 1_000_000, (("005930", 2),))
+    same = AccountLineageSnapshot.from_projection(
+        {
+            "accountId": "acct_fixture_0001",
+            "cashKrw": 1_000_000,
+            "portfolioEquityKrw": 99_000_000,
+            "positions": [{"marketValueKrw": 1, "quantity": 2, "symbol": "005930"}],
+        }
+    )
+    assert expected.exact_match(same)
+    buy_fill = AccountLineageSnapshot("acct_fixture_0001", 899_965, (("000660", 1), ("005930", 2)))
+    assert expected.permits_fill(
+        buy_fill,
+        symbol="000660",
+        side="BUY",
+        filled_quantity=1,
+        average_fill_price_krw=100_000,
+    )
+    unrelated = AccountLineageSnapshot(
+        "acct_fixture_0001", 899_965, (("000660", 1), ("005380", 1), ("005930", 2))
+    )
+    assert not expected.permits_fill(
+        unrelated,
+        symbol="000660",
+        side="BUY",
+        filled_quantity=1,
+        average_fill_price_krw=100_000,
+    )
+
+
+def test_provider_cap_is_checked_before_quote_and_pending_noop_is_durable() -> None:
+    class CapExhaustedTransport:
+        physical_calls = 16
+        physical_submit_calls = 0
+        quote_calls = 0
+        vertex_calls = 0
+        submit_calls = 0
+        reconcile_calls = 0
+        cancel_calls = 0
+
+        def quote(self, symbol: str) -> Quote:
+            self.quote_calls += 1
+            return _quote(symbol)
+
+        def vertex(self, symbol: str) -> str:
+            del symbol
+            self.vertex_calls += 1
+            return "NO_VETO"
+
+        def submit(self, reservation: OrderReservation) -> str:
+            del reservation
+            self.submit_calls += 1
+            return "UNFILLED"
+
+        def reconcile(self, reservation: OrderReservation | None) -> str:
+            del reservation
+            self.reconcile_calls += 1
+            return "UNRESOLVED"
+
+        def cancel(self, reservation: OrderReservation) -> bool:
+            del reservation
+            self.cancel_calls += 1
+            return False
+
+    store = _store()
+    _create(store)
+    transport = CapExhaustedTransport()
+    inputs = _inputs(_buy())
+    for index in range(1, 5):
+        result = AutomationEngine(store).tick(
+            run_id=_RUN_ID,
+            tick_id=f"cap_tick_{index}",
+            now=_NOW + timedelta(seconds=index),
+            inputs=inputs,
+            transport=cast(Any, transport),
+        )
+        if result["state"] == "HALTED":
+            break
+    assert result["state"] == "HALTED"
+    assert transport.quote_calls == 0
+
+    pending_store = _store()
+    _create(pending_store)
+    pending_run = pending_store.runs[_RUN_ID]
+    pending_run.state = "PENDING_RECONCILIATION"
+    pending_run.selected_symbol = "005930"
+    pending_run.selected_side = "BUY"
+    intent = ExactOrderIntent(
+        "005930", "BUY", "LIMIT", 1, 75_100, 75_100, "1d", pending_store.strategy_id
+    )
+    pending_run.reservation = OrderReservation("005930", "BUY", 1, 75_100, intent=intent)
+    pending_run.policy_snapshot = _inputs().policy
+    pending_transport = _transport(reconcile=["UNRESOLVED", "UNRESOLVED"])
+    before = len(pending_store.events)
+    assert _tick(pending_store, pending_transport, _inputs(), 1)["state"] == (
+        "PENDING_RECONCILIATION"
+    )
+    assert _tick(pending_store, pending_transport, _inputs(), 2)["state"] == (
+        "PENDING_RECONCILIATION"
+    )
+    assert len(pending_store.events) == before + 2
 
 
 def test_module_has_no_live_provider_network_or_database_transport() -> None:

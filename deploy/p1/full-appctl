@@ -542,11 +542,12 @@ artifact_validate() {
   [[ -n $DOCKER_BIN ]] || die MISSING_COMMAND_docker
   "$DOCKER_BIN" image inspect capstone-decision-platform:p1-local >/dev/null 2>&1 \
     || die RUN_CAPSTONE_UP_FIRST
-  result=$("$DOCKER_BIN" run --rm --network none --read-only \
+  result=$("$DOCKER_BIN" run --rm --pull never --network none --read-only \
     --cap-drop ALL --security-opt no-new-privileges:true \
     --pids-limit 64 --memory 1g --cpus 1.0 \
     --tmpfs /tmp:size=64m,mode=1777 \
     --user "$(id -u):$(id -g)" \
+    --env PROVIDER_LIVE_CALLS_ENABLED=false --env KIS_OFFLINE=1 \
     --mount "type=bind,src=$bundle_parent,dst=/owner,readonly" \
     --entrypoint python capstone-decision-platform:p1-local \
     -m app.p1_owner.importer \

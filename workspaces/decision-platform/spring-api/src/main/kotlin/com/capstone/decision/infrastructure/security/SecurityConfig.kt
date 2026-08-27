@@ -347,6 +347,7 @@ class SecurityConfig {
                 authorize
                     // 로그인과 개발 문서 endpoint는 토큰 발급 전에도 접근되어야 한다.
                     .requestMatchers(
+                        "/internal/automation-runtime/**",
                         "/.well-known/oauth-protected-resource",
                         "/.well-known/oauth-protected-resource/mcp",
                         "/swagger-ui/**",

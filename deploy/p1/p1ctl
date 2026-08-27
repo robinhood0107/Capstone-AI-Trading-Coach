@@ -275,7 +275,7 @@ init_state() {
   local role
   for role in APP MIGRATION COLLECTOR DISCLOSURE_READER MARKET_WRITER PORTFOLIO_WRITER RISK_WRITER \
     FILL_WRITER RAG_WRITER RAG_ADMIN RAG_QUERY SIGNAL_WRITER SIGNAL_SCHEDULER SIGNAL_ADMIN WORKER REPLAY \
-    OUTBOX_PUBLISHER POISON_RECORDER IDENTITY AUTH REPLAY_AUTHORIZER DEMO; do
+    AUTOMATION_RUNTIME OUTBOX_PUBLISHER POISON_RECORDER IDENTITY AUTH REPLAY_AUTHORIZER DEMO; do
     db[$role]=$(random_secret)
   done
   local postgres_password redis_password grpc_secret brokerage_grpc_secret partition_key
@@ -313,6 +313,7 @@ init_state() {
   write_line POSTGRES_ADMIN_USER postgres "$SECRETS_DIR/role-bootstrap.env"
   write_line POSTGRES_PASSWORD "$postgres_password" "$SECRETS_DIR/role-bootstrap.env"
   write_line POSTGRES_AUTH_PASSWORD "${db[AUTH]}" "$SECRETS_DIR/role-bootstrap.env"
+  write_line POSTGRES_AUTOMATION_RUNTIME_PASSWORD "${db[AUTOMATION_RUNTIME]}" "$SECRETS_DIR/role-bootstrap.env"
   write_line POSTGRES_OUTBOX_PUBLISHER_PASSWORD "${db[OUTBOX_PUBLISHER]}" "$SECRETS_DIR/role-bootstrap.env"
   write_line POSTGRES_POISON_RECORDER_PASSWORD "${db[POISON_RECORDER]}" "$SECRETS_DIR/role-bootstrap.env"
   printf 'REDIS_PASSWORD=%s\n' "$redis_password" | state_write_file "$SECRETS_DIR/redis.env" 0640
@@ -374,6 +375,12 @@ init_state() {
   write_line KAFKA_ENVELOPE_PUBLIC_KEY "$kafka_public_key" "$SECRETS_DIR/python.env"
   write_line POISON_RECORDER_URL http://127.0.0.1:18082/internal/kafka/poison-receipts "$SECRETS_DIR/python.env"
   write_line POISON_RECORDER_SHARED_SECRET "$poison_recorder_secret" "$SECRETS_DIR/python.env"
+  printf '' | state_write_file "$SECRETS_DIR/automation-runtime.env" 0640
+  write_line P1_AUTOMATION_DATABASE_DSN "postgresql://decision_automation_runtime:${db[AUTOMATION_RUNTIME]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/automation-runtime.env"
+  write_line AUTOMATION_RUNTIME_SHARED_SECRET "$(random_secret)" "$SECRETS_DIR/automation-runtime.env"
+  write_line P1_AUTOMATION_OWNER_USER_ID usr_demo_user "$SECRETS_DIR/automation-runtime.env"
+  printf '' | state_write_file "$SECRETS_DIR/automation-gate-author.env" 0640
+  write_line P1_AUTOMATION_GATE_AUTHOR_DSN "postgresql://decision_replay_authorizer:${db[REPLAY_AUTHORIZER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/automation-gate-author.env"
   printf '' | state_write_file "$SECRETS_DIR/artifact-import.env" 0640
   write_line P1_ARTIFACT_IMPORT_DATABASE_DSN "postgresql://decision_worker:${db[WORKER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/artifact-import.env"
   printf '' | state_write_file "$SECRETS_DIR/team-a-acceptance.env" 0640
@@ -447,7 +454,7 @@ init_state() {
 verify_state() {
   require_state
   verify_runtime_env
-  local expected=(actor-capability-authority.env actor-client.p12 actor-server.p12 actor-tls-ca.crt artifact-import.env bootstrap.env demo-admin.bundle demo-admin.password demo-credential-separation.key demo.env demo-user.bundle \
+  local expected=(actor-capability-authority.env actor-client.p12 actor-server.p12 actor-tls-ca.crt artifact-import.env automation-gate-author.env automation-runtime.env bootstrap.env demo-admin.bundle demo-admin.password demo-credential-separation.key demo.env demo-user.bundle \
     demo-user.password kafka-admin.env kafka-broker-jaas.conf kafka-publisher.env migration.env poison-recorder.env \
     kis-mock.env kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn postgres.env python.env rag-history-kek-v1.key redis.env return-inference.env role-bootstrap.env seed-import.env spring.env)
   expected+=(team-a-acceptance.env)

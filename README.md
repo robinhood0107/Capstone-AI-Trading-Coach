@@ -2,8 +2,9 @@
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
 > **현재 상태 (2026-08-27):** Owner-First v3 계약은 잠겼지만 아직 GitHub `1.0.0` 최종 배포본은
-> 아닙니다. Owner runtime, Team A exact-33, Team B 실제 결과, physical activation과 3-session soak가
-> 남아 있습니다. 현재 배포 계약은 `contracts/catalogs/p1-full-app-release-contract.v3.json`입니다.
+> 아닙니다. Owner exact-56와 Team A backend exact-33은 준비됐지만 Team A 실제 UI, Team B 실제 결과,
+> physical activation과 3-session soak가 남아 있습니다. 현재 배포 계약은
+> `contracts/catalogs/p1-full-app-release-contract.v3.json`입니다.
 <!-- P1_FULL_APP_V3_AUTHORITY_END -->
 
 투자 원칙, 모델 예측, 백테스트, 위험 판정과 근거 자료를 한 화면에서 확인하고 한국투자증권

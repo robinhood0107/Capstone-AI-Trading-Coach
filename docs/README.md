@@ -95,6 +95,10 @@ PostgreSQL one-shot claim을 별도로 통과한다. 이 구조는 공개 HTTP/O
 ### 실행과 운영
 
 - [P1 Owner-First full-app v3 권위와 게이트](decision-platform/P1_1_0_0_OWNER_FIRST_V3_권위_및_게이트.md)
+- [1.0.0 handoff 시작](handoff/START_HERE.md)
+- [Team A handoff](handoff/team-a/README.md)
+- [Team B handoff](handoff/team-b/README.md)
+- [Owner integration handoff](handoff/owner/README.md)
 - [P1 Owner input pack·synthetic golden 운영](decision-platform/P1_OWNER_INPUT_PACK_GOLDEN_운영_가이드.md)
 - [P1 artifact importer·projection 운영](decision-platform/P1_ARTIFACT_IMPORTER_PROJECTION_운영_가이드.md)
 - [P1 Return inference runtime 운영](decision-platform/P1_RETURN_INFERENCE_RUNTIME_운영_가이드.md)

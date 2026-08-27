@@ -2,8 +2,8 @@
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
 > **현재 상태 (2026-08-27):** Owner-First v3 계약은 잠겼지만 아직 GitHub `1.0.0` 최종 배포본은
-> 아닙니다. Owner exact-56와 Team A backend exact-33은 준비됐지만 Team A 실제 UI, Team B 실제 결과,
-> physical activation과 3-session soak가 남아 있습니다. 현재 배포 계약은
+> 아닙니다. Owner Phase A는 `OWNER_HANDOFF_READY=TRUE`이고 exact-56와 Team A backend exact-33이
+> 준비됐지만 Team A 실제 UI, Team B 실제 결과, physical activation과 3-session soak가 남아 있습니다. 현재 배포 계약은
 > `contracts/catalogs/p1-full-app-release-contract.v3.json`입니다.
 <!-- P1_FULL_APP_V3_AUTHORITY_END -->
 
@@ -124,7 +124,7 @@ BGE-M3 컨테이너와 공식 llama.cpp 기반 PaddleOCR-VL 컨테이너를 더�
 - [Team A Dashboard 완료 요청서](docs/decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md)
 - [Team B Return Engine 완료 요청서](docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md)
 - [두 팀 결과를 받은 뒤 Owner 체크리스트](docs/decision-platform/P1_TEAM_A_B_수신_후_통합_체크리스트.md)
-- [OpenAPI 48개 사용 현황](docs/decision-platform/P1_API_USAGE_MATRIX.md)
+- [OpenAPI 56개 사용 현황](docs/decision-platform/P1_API_USAGE_MATRIX.md)
 
 Team A와 Team B는 `mock configure`나 `mock certify`를 실행하지 않습니다. 외부 서비스, 계좌와 주문
 검증은 Owner가 별도로 수행합니다.

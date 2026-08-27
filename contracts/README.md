@@ -44,6 +44,22 @@ uv run --frozen python -m unittest contracts.tests.test_p1_team_a_acceptance -v
 ./capstone team-a acceptance
 ```
 
+## P1 Compose, Team B OCI, and handoff preparation
+
+`catalogs/p1-team-b-oci-supply-chain.v1.json`은 restricted private GHCR repository, immutable digest,
+Cosign identity, SLSA provenance, SPDX/CycloneDX SBOM, exact-10 output과 input/source/output hash binding을
+고정한다. `verify_p1_compose_supply_handoff.py`는 기본 5·model 7 Compose topology, one-shot `run --rm`,
+loopback/no-socket 경계와 handoff 네 문서의 exact seven-section shape를 함께 검증한다.
+
+실제 receipt가 도착하면 `deploy/p1/verify-team-b-oci`가 동일 workflow identity로 서명된 receipt
+Sigstore bundle과 OCI signature를 먼저 검증한 뒤 ORAS digest pull과 bundle hash를 확인한다. 실제
+digest가 없는 현재는 준비 상태만 PASS이고 remote registry/signature call은 0이다.
+
+```bash
+uv run --frozen python contracts/verify_p1_compose_supply_handoff.py
+uv run --frozen python -m unittest contracts.tests.test_p1_compose_supply_handoff -v
+```
+
 ## S5.7A model-neutral Market Data contract
 
 `catalogs/s5-7a-market-data-lock.v1.json`은 LightGBM publication과 분리된 내부 Python data plane의

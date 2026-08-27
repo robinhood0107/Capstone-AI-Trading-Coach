@@ -40,6 +40,7 @@ import javax.sql.DataSource
 @SpringBootTest(
     properties = [
         "spring.autoconfigure.exclude=org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration",
+        "AUTOMATION_RUNTIME_SHARED_SECRET=automation-runtime-bridge-test-secret-0001",
     ],
 )
 class P1AutomationJournalApiIntegrationTest(
@@ -146,6 +147,37 @@ class P1AutomationJournalApiIntegrationTest(
                 assertThrows<DataAccessException> {
                     jdbc.queryForObject("select count(*) from automation_runs", Int::class.java)
                 }
+            }
+    }
+
+    @Test
+    fun `internal automation bridge is loopback secret bound and hides unknown owners`() {
+        val body =
+            objectMapper.writeValueAsString(
+                mapOf(
+                    "operation" to "BALANCE",
+                    "userId" to "usr_demo_user",
+                    "idempotencyKey" to null,
+                    "payload" to mapOf("accountId" to KIS_ACCOUNT_ID),
+                ),
+            )
+        mockMvc
+            .post("/internal/automation-runtime/command") {
+                contentType = MediaType.APPLICATION_JSON
+                content = body
+            }.andExpect {
+                status { isNotFound() }
+                jsonPath("$.status") { value("NOT_FOUND") }
+            }
+
+        mockMvc
+            .post("/internal/automation-runtime/command") {
+                contentType = MediaType.APPLICATION_JSON
+                header("X-Automation-Runtime-Auth", "automation-runtime-bridge-test-secret-0001")
+                content = body.replace("usr_demo_user", "usr_missing_runtime_0001")
+            }.andExpect {
+                status { isNotFound() }
+                jsonPath("$.status") { value("NOT_FOUND") }
             }
     }
 

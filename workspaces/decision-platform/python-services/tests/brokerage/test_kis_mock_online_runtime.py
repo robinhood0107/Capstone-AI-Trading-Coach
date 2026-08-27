@@ -136,8 +136,11 @@ def test_online_buyable_parser_returns_only_sanitized_projection() -> None:
             "rt_cd": "0",
             "output": {
                 "ord_psbl_cash": "1,000,000",
-                "max_buy_qty": "14",
-                "max_buy_amt": "980,000",
+                "nrcvb_buy_qty": "14",
+                "nrcvb_buy_amt": "980,000",
+                # 최대매수 필드는 미수를 포함할 수 있으므로 projection 근거로 쓰지 않는다.
+                "max_buy_qty": "99",
+                "max_buy_amt": "9,900,000",
             },
         }
     )

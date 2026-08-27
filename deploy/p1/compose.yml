@@ -275,7 +275,8 @@ services:
       PROVIDER_LIVE_CALLS_ENABLED: "false"
       KIS_OFFLINE: "${P1_KIS_OFFLINE:-1}"
       KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "${P1_KIS_MOCK_ONLINE_ENABLED:-false}"
-    secrets: [spring_env, python_env, kis_mock_env, return_inference_env, rag_history_kek, actor_client_p12, actor_tls_ca]
+      P1_AUTOMATION_RUNTIME_ENABLED: "${P1_AUTOMATION_RUNTIME_ENABLED:-false}"
+    secrets: [spring_env, python_env, kis_mock_env, return_inference_env, automation_runtime_env, rag_history_kek, actor_client_p12, actor_tls_ca]
     ports:
       - "127.0.0.1:${P1_API_PORT:-18080}:8080"
     depends_on:
@@ -382,6 +383,41 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
+    restart: "no"
+    networks: [p1-data]
+
+  automation-runtime-cli:
+    profiles: [owner]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "automation-cli"]
+    command: ["python", "-m", "app.p1_owner.mock_automation_cli", "readiness"]
+    environment:
+      P1_LOCAL_CERTIFICATION_VALID: "${P1_LOCAL_CERTIFICATION_VALID:-false}"
+      KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "false"
+    secrets: [automation_runtime_env, kis_mock_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    <<: *app-security
+    restart: "no"
+    networks: [p1-data]
+
+  automation-gate-author:
+    profiles: [owner]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "automation-gate-author"]
+    command: ["python", "-m", "app.p1_owner.automation_gate_author"]
+    environment:
+      P1_AUTOMATION_OWNER_USER_ID: "${P1_AUTOMATION_OWNER_USER_ID:-usr_demo_user}"
+      P1_CERTIFICATION_RECEIPT_SHA256: "${P1_CERTIFICATION_RECEIPT_SHA256:-disabled}"
+      P1_CERTIFICATION_SESSION_DATE: "${P1_CERTIFICATION_SESSION_DATE:-1970-01-01}"
+      P1_RELEASE_BINDING_SHA256: "${P1_RELEASE_BINDING_SHA256:-disabled}"
+      P1_SOURCE_BINDING_SHA256: "${P1_SOURCE_BINDING_SHA256:-disabled}"
+    secrets: [automation_gate_author_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    <<: *app-security
     restart: "no"
     networks: [p1-data]
 
@@ -603,6 +639,8 @@ secrets:
   artifact_import_env: {file: "${P1_SECRETS_DIR}/artifact-import.env"}
   team_a_acceptance_env: {file: "${P1_SECRETS_DIR}/team-a-acceptance.env"}
   return_inference_env: {file: "${P1_SECRETS_DIR}/return-inference.env"}
+  automation_runtime_env: {file: "${P1_SECRETS_DIR}/automation-runtime.env"}
+  automation_gate_author_env: {file: "${P1_SECRETS_DIR}/automation-gate-author.env"}
   actor_tls_ca: {file: "${P1_SECRETS_DIR}/actor-tls-ca.crt"}
   actor_server_p12: {file: "${P1_SECRETS_DIR}/actor-server.p12"}
   actor_client_p12: {file: "${P1_SECRETS_DIR}/actor-client.p12"}

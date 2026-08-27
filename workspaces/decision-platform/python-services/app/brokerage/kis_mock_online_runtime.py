@@ -198,8 +198,9 @@ class KISMockOnlineBalanceReader:
             account_id=account_id,
             symbol=symbol,
             estimated_price_krw=estimated_price_krw,
-            buyable_quantity=_nonnegative(output.get("max_buy_qty"), "buyable quantity"),
-            buyable_amount_krw=_nonnegative(output.get("max_buy_amt"), "buyable amount"),
+            # max_buy_*는 미수 가능 한도를 포함할 수 있으므로 무미수 원칙의 근거가 아니다.
+            buyable_quantity=_nonnegative(output.get("nrcvb_buy_qty"), "buyable quantity"),
+            buyable_amount_krw=_nonnegative(output.get("nrcvb_buy_amt"), "buyable amount"),
             cash_krw=_nonnegative(output.get("ord_psbl_cash"), "buyable cash"),
             observed_at=_now_text(),
             source_version="kis-mock-buyable-v1",

@@ -18,10 +18,10 @@ Team B가 직접 호출할 Spring REST API는 **0개**입니다. Team B는 파�
 
 ## 현재 테스트 증거의 정확한 수준
 
-현재 Playwright는 로그인 성공, 주요 화면 이동, API 응답이 두 개 이상이라는 사실과 5xx가 없다는
-사실만 확인합니다. 4xx도 통과할 수 있고 RAG 질문 버튼도 누르지 않으므로 “9개 API가 실제 Spring
-200으로 검증됐다”고 말할 수 없습니다. Team A는 아래 `현재 화면` 15개와 `Team A 필수` 18개를
-method, path, 성공 상태별로 각각 검증해야 합니다.
+Owner backend acceptance는 `p1-team-a-acceptance.v1`과 generated client로 아래 `현재 화면` 15개와
+`Team A 필수` 18개를 same-origin 실제 Spring에서 모두 성공 검증하며 4xx/5xx, skip, fake response를
+허용하지 않습니다. 다만 기존 Team A production UI Playwright는 로그인과 화면 이동 수준이므로 실제
+UI 완료 증거는 아닙니다. Team A는 같은 exact-33 matrix를 사용자 화면 동작으로 다시 통과시켜야 합니다.
 
 ## 전체 목록
 
@@ -83,6 +83,10 @@ method, path, 성공 상태별로 각각 검증해야 합니다.
 | 54 | PATCH | `/error` | `제품 기능 아님` | Spring 오류 처리 |
 | 55 | HEAD | `/error` | `제품 기능 아님` | Spring 오류 처리 |
 | 56 | OPTIONS | `/error` | `제품 기능 아님` | Spring 오류 처리 |
+
+historical exact-48 root에서 `getMockBuyable`의 strict `symbol`/`price` query parameter annotation이
+누락돼 있다. 기존 OpenAPI 의미를 넓히지 않고 exact-33 catalog의 bounded client adapter에만 두 필드를
+기록하며 runtime parser의 required/unknown-field 경계를 그대로 따른다.
 
 ## Team B 파일 계약과 현재 빈 부분
 

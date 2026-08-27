@@ -10,6 +10,17 @@
 최신 main에서 작업해 주세요. 통합 담당자가 먼저 넣은 `package-lock.json`, production Dockerfile,
 `/healthz`, 브라우저의 same-origin `/api` 구조를 유지합니다.
 
+Owner가 제공한 backend acceptance 환경은 이미 exact-33을 실제 Spring으로 통과합니다. 기준 catalog는
+`contracts/catalogs/p1-team-a-acceptance.v1.json`, badge 계약은
+`contracts/catalogs/p1-ui-evidence-badges.v1.json`, generated client는
+`src/shared/api/generated/p1-team-a-client.v1.ts`입니다. 다음 명령은 production UI 완료 검사가 아니라
+Team A가 받을 backend/fixture prerequisite 재현 명령입니다.
+
+```bash
+./capstone up
+./capstone team-a acceptance
+```
+
 여기서 “실제 API 연결”은 프론트의 가짜 응답이 아니라 Docker Compose 안의 로컬 Spring을 호출한다는
 뜻입니다. KIS 실계좌를 뜻하지 않습니다. Team A는 KIS 자격증명을 입력하거나 모의주문 인증 명령을
 실행하지 않습니다.
@@ -101,8 +112,11 @@ Automation은 기본 `DISARMED`이며 KIS Mock과 explicit INTERNAL_PAPER를 분
 - `PATCH /api/v1/journals/{journalId}`
 - `DELETE /api/v1/journals/{journalId}`
 
+`getMockBuyable`의 strict query는 `symbol`, `price`입니다. historical exact-48 root에 이 두 query parameter가
+누락돼 있으므로 generated client의 catalog-bound adapter가 이를 보강하며 임의 query를 추가하지 않습니다.
+
 결과 파일 적재 상태, 내부 작업, 처리 지표, 주문 대사, 판단 감사 6개 API와 Spring `/error` 7개도
-일반 사용자 화면에 붙이지 않습니다. 전체 48개 분류는 [OpenAPI 사용 현황](P1_API_USAGE_MATRIX.md)에서
+일반 사용자 화면에 붙이지 않습니다. 전체 56개 분류는 [OpenAPI 사용 현황](P1_API_USAGE_MATRIX.md)에서
 확인할 수 있습니다.
 
 ## 화면 문구와 최종 목적
@@ -136,17 +150,15 @@ npm run build
 docker build --platform linux/amd64 -t capstone-experience-dashboard:p1-local .
 ```
 
-통합 앱을 `./capstone up`으로 켠 뒤 저장소 루트에서 실제 Spring 연결 E2E를 실행합니다.
+통합 앱을 `./capstone up`으로 켠 뒤 저장소 루트에서 Owner backend acceptance를 먼저 재현합니다.
 
 ```bash
-cd workspaces/experience-dashboard
-P1_USER_PASSWORD_FILE=../../deploy/p1/.state-app/secrets/demo-user.password \
-  npm run test:e2e:live
+./capstone team-a acceptance
 ```
 
-Playwright 결과는 `skip 0`이어야 합니다. 총 33개 API 각각에 대해 예상 method/path와 성공 상태를
-검사하고, 4xx와 5xx를 모두 실패로 처리합니다. 비밀번호, JWT, 계좌번호와 응답 원문은 trace나
-리포트에 남기지 않습니다.
+Owner runner는 exact-33, `skip 0`, 4xx/5xx 실패, 비밀번호/JWT/응답 원문 비노출을 이미 검증합니다.
+Team A는 이 generated client와 catalog를 실제 production 화면 동작에 연결하고 같은 matrix를 UI
+Playwright에서 다시 통과시켜야 합니다.
 
 ## 보내 주실 것
 

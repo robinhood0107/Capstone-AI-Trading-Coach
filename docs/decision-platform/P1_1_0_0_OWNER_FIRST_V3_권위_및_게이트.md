@@ -3,11 +3,13 @@
 ## 현재 판정
 
 ```text
-P1_OWNER_PHASE_A_CONTRACTS=LOCKED_MERGE_CANDIDATE
-OWNER_AUTOMATION_JOURNAL_API=IMPLEMENTED_MERGE_CANDIDATE
-ROOT_OPENAPI_OPERATIONS=56_IMPLEMENTED_MERGE_CANDIDATE
+P1_OWNER_PHASE_A_CONTRACTS=LOCKED
+OWNER_AUTOMATION_JOURNAL_API=MERGED_PR_171
+ROOT_OPENAPI_OPERATIONS=56_MERGED
 TARGET_ROOT_OPENAPI_OPERATIONS=56
 TEAM_A_REQUIRED_OPERATIONS=33
+OWNER_TEAM_A_BACKEND_PREREQUISITES=PASS_MERGE_CANDIDATE
+OWNER_POST_TEAM_A_BACKEND_CODE_REQUIRED=0
 TEAM_B_REAL_ARTIFACT=PENDING_EXTERNAL_TEAM
 TEAM_A_REAL_UI=PENDING_EXTERNAL_TEAM
 LIGHTGBM=RESEARCH_ONLY_NO_SIGNAL_OR_ORDER_AUTHORITY
@@ -60,3 +62,11 @@ LightGBM은 연구·재현 전용이며 production Signal/RiskDecision/order aut
 
 contract-only PASS는 runtime, external Team artifact, physical activation, soak 또는 release 증거가 아니다.
 실제 provider/account/order 실행은 별도 exact approval과 credential 입력 뒤에만 가능하다.
+
+## Team A backend acceptance 현재 상태
+
+`p1-team-a-acceptance.v1` catalog, generated typed client, deterministic offline Seed/reset, same-origin
+Playwright runner와 비밀값 비노출 reporter가 준비됐다. `./capstone team-a acceptance`는 실제 Spring
+exact-33 성공, `PLAYWRIGHT_SKIP=0`, `FRONTEND_FAKE_PRODUCTION_RESPONSE=0`, provider call 0을 검증하고
+Kill Switch와 automation state를 복구한다. 이는 Owner backend prerequisite PASS이며 Team A production
+UI 자체는 여전히 `PENDING_EXTERNAL_TEAM`이다.

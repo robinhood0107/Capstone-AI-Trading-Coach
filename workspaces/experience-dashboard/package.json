@@ -12,7 +12,8 @@
     "test": "npm run test:unit && npm run test:contract",
     "test:unit": "node --import tsx --test tests/unit/*.test.ts",
     "test:contract": "node --test tests/contract/*.test.mjs",
-    "test:e2e:live": "playwright test"
+    "test:e2e:live": "playwright test",
+    "test:e2e:owner-acceptance": "playwright test --config=playwright.team-a.config.ts"
   },
   "dependencies": {
     "next": "15.5.24",

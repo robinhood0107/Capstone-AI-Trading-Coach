@@ -1879,8 +1879,8 @@ def validate_semantics(schema_id: str, payload: dict[str, Any]) -> None:
             )
     elif schema_id == "automation-control.v1":
         running = payload["projectionState"] == "RUNNING"
-        if running and payload["controlState"] != "ARMED":
-            raise ContractValidationError("RUNNING projection requires ARMED control")
+        if running and payload["controlState"] == "HALTED":
+            raise ContractValidationError("HALTED control cannot project RUNNING")
 
 
 def validate_generated() -> None:

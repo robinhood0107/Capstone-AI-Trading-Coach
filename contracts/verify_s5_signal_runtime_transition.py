@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import sys
 from pathlib import Path
 from typing import Any, Final, Mapping
+
+_SCRIPT_ROOT = Path(__file__).resolve().parents[1]
+if str(_SCRIPT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_ROOT))
 
 from contracts.generate_principle_contracts import (
     ContractValidationError,
@@ -206,6 +211,30 @@ def verify_openapi_transition(
     document = _object(
         load_json_bytes_strict(raw, source=str(path)), "OpenAPI document"
     )
+    if any(
+        name in _object(document.get("paths"), "OpenAPI paths")
+        for name in (
+            "/api/v1/automation/status",
+            "/api/v1/automation/arm",
+            "/api/v1/automation/disarm",
+            "/api/v1/automation/runs",
+            "/api/v1/journals",
+            "/api/v1/journals/{journalId}",
+        )
+    ):
+        # 상위 P1 verifier가 exact-8 추가와 exact-48 복원을 먼저 증명한다.
+        from contracts.verify_p1_automation_journal_openapi_transition import (
+            ADDITIVE_PATH,
+            project_pre_p1_openapi,
+        )
+
+        additive = _object(
+            load_json_bytes_strict(
+                ADDITIVE_PATH.read_bytes(), source=str(ADDITIVE_PATH)
+            ),
+            "P1 additive OpenAPI",
+        )
+        document = project_pre_p1_openapi(document, additive)
     additive_catalog = load_s7_s8_transition_catalog(s7_s8_catalog_path)
     _remove_s7_s8_additive_openapi(document, additive_catalog)
     projected = project_preserved_openapi(document, catalog)

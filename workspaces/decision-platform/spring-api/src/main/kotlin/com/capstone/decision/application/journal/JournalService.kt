@@ -79,10 +79,10 @@ class JournalService(
     }
 
     private fun CreateJournalCommand.expectedFields(): List<String?> =
-        listOf(title, content, tags.joinToString("\u0000"), *links.fields().toTypedArray())
+        listOf(title, content, tags.joinToString("\u0000")) + links.fields()
 
     private fun ReplaceJournalCommand.expectedFields(): List<String?> =
-        listOf(expectedVersion.toString(), title, content, tags.joinToString("\u0000"), *links.fields().toTypedArray())
+        listOf(expectedVersion.toString(), title, content, tags.joinToString("\u0000")) + links.fields()
 
     private fun JournalLinks.fields(): List<String?> = listOf(decisionId, backtestRunId, ragAnswerId, orderId, automationRunId)
 
@@ -91,7 +91,7 @@ class JournalService(
         ownerUserId: String,
         journalId: String?,
         fields: List<String?>,
-    ): String = OwnerWriteHashes.request(operation, ownerUserId, journalId, *fields.toTypedArray())
+    ): String = OwnerWriteHashes.request(operation, listOf(ownerUserId, journalId) + fields)
 
     private fun encodeCursor(
         ownerUserId: String,

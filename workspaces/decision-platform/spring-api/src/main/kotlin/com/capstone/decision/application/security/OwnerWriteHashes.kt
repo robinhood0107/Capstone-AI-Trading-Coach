@@ -11,16 +11,21 @@ object OwnerWriteHashes {
     fun scope(
         ownerUserId: String,
         rawKey: String,
-    ): String = digest(canonical("OWNER_WRITE_SCOPE_V1", ownerUserId, rawKey))
+    ): String = digest(canonical(listOf("OWNER_WRITE_SCOPE_V1", ownerUserId, rawKey)))
 
     fun request(
         operation: String,
         vararg values: String?,
-    ): String = digest(canonical("OWNER_WRITE_REQUEST_V1", operation, *values))
+    ): String = request(operation, values.asList())
+
+    fun request(
+        operation: String,
+        values: Iterable<String?>,
+    ): String = digest(canonical(listOf("OWNER_WRITE_REQUEST_V1", operation) + values))
 
     fun ownerScope(ownerUserId: String): String = digest(ownerUserId).removePrefix("sha256:")
 
-    private fun canonical(vararg values: String?): String =
+    private fun canonical(values: Iterable<String?>): String =
         values.joinToString(separator = "") { value ->
             if (value == null) {
                 "-:\n"

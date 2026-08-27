@@ -158,7 +158,10 @@ class S5SignalRuntimeContractTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "openapi.json"
             path.write_bytes(canonical_json_bytes(additive))
-            with self.assertRaisesRegex(ContractValidationError, "additive OpenAPI fragment drifted"):
+            with self.assertRaisesRegex(
+                ContractValidationError,
+                "additive OpenAPI fragment drifted|exact Automation/Journal addition",
+            ):
                 verify_openapi_transition(path)
 
 

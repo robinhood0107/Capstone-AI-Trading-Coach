@@ -184,6 +184,16 @@ tasks.named<ProcessResources>("processResources") {
     from(layout.projectDirectory.file("../../../contracts/schemas/s2-4-risk-portfolio.schema.json")) {
         into("contracts")
     }
+    // P1 Automation/Journal response wire는 contract-only 단계의 canonical schema를 그대로 사용한다.
+    listOf(
+        "automation-control.v1.schema.json",
+        "automation-run.v1.schema.json",
+        "journal.v1.schema.json",
+    ).forEach { fileName ->
+        from(layout.projectDirectory.file("../../../contracts/schemas/$fileName")) {
+            into("contracts")
+        }
+    }
     // S5.5 Signal v2 runtime OpenAPI도 annotation 추론 대신 승인된 closed union schema bytes를 사용한다.
     from(layout.projectDirectory.file("../../../contracts/schemas/signal-v2-runtime-v1.schema.json")) {
         into("contracts")
@@ -346,6 +356,33 @@ val verifyS24ContractResources by tasks.registering {
                     .asFile
             check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
                 "S2.4 contract resource $fileName must be an exact canonical byte copy."
+            }
+        }
+    }
+}
+
+val verifyP1AutomationJournalContractResources by tasks.registering {
+    group = "verification"
+    description = "P1 Automation/Journal OpenAPI response schema의 exact byte equality를 검증한다."
+    dependsOn(tasks.named("processResources"))
+
+    doLast {
+        listOf(
+            "automation-control.v1.schema.json",
+            "automation-run.v1.schema.json",
+            "journal.v1.schema.json",
+        ).forEach { fileName ->
+            val source =
+                layout.projectDirectory
+                    .file("../../../contracts/schemas/$fileName")
+                    .asFile
+            val copied =
+                layout.buildDirectory
+                    .file("resources/main/contracts/$fileName")
+                    .get()
+                    .asFile
+            check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
+                "P1 Automation/Journal contract resource $fileName must be an exact canonical byte copy."
             }
         }
     }
@@ -653,6 +690,7 @@ tasks.named("check") {
     dependsOn(verifyS22CatalogResource)
     dependsOn(verifyS23ContractResources)
     dependsOn(verifyS24ContractResources)
+    dependsOn(verifyP1AutomationJournalContractResources)
     dependsOn(verifyS31ContractResources)
     dependsOn(verifyS32ContractResources)
     dependsOn(verifyS33ContractResources)

@@ -75,10 +75,10 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `clean database applies V1 through V88 migrations and creates required objects`() {
+    fun `clean database applies V1 through V89 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
         // V7 is a Java migration and must appear alongside the SQL migrations.
-        assertEquals((1..88).map(Int::toString), versions)
+        assertEquals((1..89).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -204,6 +204,14 @@ class FlywayMigrationIntegrationTest(
                 "signal_batch_publications",
                 "p1_return_artifact_bundle",
                 "p1_return_signal_projection",
+                "automation_control",
+                "automation_activation_gate",
+                "automation_runs",
+                "automation_positions",
+                "automation_events",
+                "automation_control_idempotency",
+                "journals",
+                "journal_idempotency",
             )
         requiredTables.forEach { tableName ->
             assertTrue(tableExists(tableName), "expected table $tableName to exist")
@@ -441,7 +449,7 @@ class FlywayMigrationIntegrationTest(
                     ).use { result ->
                         val versions = mutableListOf<String>()
                         while (result.next()) versions += result.getString(1)
-                        assertEquals((1..88).map(Int::toString), versions)
+                        assertEquals((1..89).map(Int::toString), versions)
                     }
                 val privileges =
                     mapOf(
@@ -4561,7 +4569,7 @@ class FlywayMigrationIntegrationTest(
             registry.add("spring.flyway.password", postgres::getPassword)
             // The primary integration database exercises current adapters against the current schema.
             // Historical migration boundaries remain covered by their explicitly targeted databases.
-            registry.add("spring.flyway.target") { "88" }
+            registry.add("spring.flyway.target") { "89" }
             registry.add("app.decision.grpc.shared-secret") { SpringApiIntegrationTestBase.TEST_GRPC_SHARED_SECRET }
             registry.add("app.rag.grpc.shared-secret") {
                 SpringApiIntegrationTestBase.TEST_RAG_GRPC_SHARED_SECRET

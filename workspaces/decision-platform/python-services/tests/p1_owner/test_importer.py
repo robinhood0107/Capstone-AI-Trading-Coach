@@ -152,10 +152,7 @@ def test_capstone_artifact_command_is_outside_certification_heredoc_and_uses_one
     certification_heredoc_end = control.index("\nPY\n", certification)
     artifact_function = control.index("\nartifact_import()")
     assert artifact_function > certification_heredoc_end
-    assert (
-        "artifact <validate|import> <bundle-directory> --manifest-sha256 <sha256>"
-        in control
-    )
+    assert "artifact <validate|import> <bundle-directory> --manifest-sha256 <sha256>" in control
     assert "compose --profile owner run --rm --no-deps artifact-importer" in control
     validator_function = control.index("\nartifact_validate()")
     assert validator_function > artifact_function

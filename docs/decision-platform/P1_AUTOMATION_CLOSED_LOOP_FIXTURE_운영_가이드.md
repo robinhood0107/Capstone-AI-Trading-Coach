@@ -67,6 +67,4 @@ cd workspaces/decision-platform/python-services
 ```
 
 이 fixture PASS는 KIS Mock certification, credential, live provider·계좌·주문 실행 또는 Release readiness가
-아니다. V91 exact-61에서도 qualified `COMPLETE` online risk-balance가 없으면
-`BLOCKED_INCOMPLETE_RISK_BALANCE`로 v2 arm 409를 반환한다. 실제 activation은 Team 결과, full Compose,
-해당 blocker 해소와 별도 exact approval 뒤에만 가능하다.
+아니다. 실제 activation은 Team 결과, exact-56 API, full Compose와 별도 exact approval 뒤에만 가능하다.

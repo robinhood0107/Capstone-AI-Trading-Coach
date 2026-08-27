@@ -50,6 +50,15 @@ def _state(state: str = "SCHEDULED", version: int = 1) -> dict[str, Any]:
         "manualPositionSymbols": [],
         "noOpenOrder": True,
         "positions": [],
+        "policy": {
+            "capitalLimitKrw": 10_000_000,
+            "maxOpenPositions": 5,
+            "policyId": "auto_pol_" + "f" * 32,
+            "preset": "BALANCED",
+            "stopLossBps": 500,
+            "takeProfitBps": 1_000,
+            "version": 1,
+        },
         "principleId": "prc_automation_runtime_0001",
         "principleActiveCurrent": True,
         "providerCallCount": 0,
@@ -57,7 +66,7 @@ def _state(state: str = "SCHEDULED", version: int = 1) -> dict[str, Any]:
         "releaseActive": True,
         "reservation": None,
         "runId": "auto_run_" + "a" * 32,
-        "runStartedAt": "2026-08-28T09:10:00+09:00",
+        "runStartedAt": "2026-08-28T09:30:00+09:00",
         "selectedSide": None,
         "selectedSymbol": None,
         "sessionDate": "2026-08-28",
@@ -123,13 +132,13 @@ def test_persistent_runner_reloads_state_and_cas_persists_each_boundary() -> Non
     first = PersistentAutomationRunner(cast(Any, repository)).run_tick(
         claim=_claim(),
         tick_id="boundary-001",
-        now=datetime(2026, 8, 28, 9, 10, tzinfo=_KST),
+        now=datetime(2026, 8, 28, 9, 30, tzinfo=_KST),
         port=port,
     )
     second = PersistentAutomationRunner(cast(Any, repository)).run_tick(
         claim=_claim(),
         tick_id="boundary-002",
-        now=datetime(2026, 8, 28, 9, 10, 1, tzinfo=_KST),
+        now=datetime(2026, 8, 28, 9, 30, 1, tzinfo=_KST),
         port=port,
     )
 
@@ -159,7 +168,7 @@ def test_xkrx_boundary_skips_substitute_holiday_and_uses_exact_times() -> None:
 
     after_close = datetime(2026, 8, 14, 15, 21, tzinfo=_KST)
     assert planner.current_or_next_session(after_close) == date(2026, 8, 18)
-    assert planner.next_wakeup(after_close) == datetime(2026, 8, 18, 9, 10, tzinfo=_KST)
+    assert planner.next_wakeup(after_close) == datetime(2026, 8, 18, 9, 30, tzinfo=_KST)
     pending = datetime(2026, 8, 18, 10, 0, tzinfo=_KST)
     assert planner.next_wakeup(pending, "PENDING_RECONCILIATION") == datetime(
         2026, 8, 18, 15, 20, tzinfo=_KST

@@ -16,7 +16,7 @@ from app.p1_owner.automation_runtime import (
 )
 
 _KST = ZoneInfo("Asia/Seoul")
-_OPEN_BOUNDARY = time(9, 10)
+_OPEN_BOUNDARY = time(9, 30)
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:

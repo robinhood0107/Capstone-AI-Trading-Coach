@@ -223,6 +223,48 @@ def test_execution_reader_enforces_quantity_invariant_and_hashes_raw_reference()
     ]
 
 
+def test_execution_optional_reader_returns_partial_snapshot_with_one_provider_page() -> None:
+    raw_order_no = "synthetic-provider-order"
+    client = FakeClient(
+        {
+            "rt_cd": "0",
+            "ctx_area_fk100": "",
+            "ctx_area_nk100": "",
+            "output1": [
+                {
+                    "odno": raw_order_no,
+                    "pdno": "005930",
+                    "tot_ccld_qty": "2",
+                    "rmn_qty": "3",
+                    "avg_prvs": "70,100",
+                    "cnc_cfrm_qty": "0",
+                    "rjct_qty": "0",
+                    "cncl_yn": "N",
+                    "ord_dt": "20260727",
+                    "ord_tmd": "090001",
+                }
+            ],
+        }
+    )
+    reader = KISMockExecutionReader(client)  # type: ignore[arg-type]
+    snapshot = reader.read_optional(
+        reference=MockProviderOrderReference(
+            provider_order_no=raw_order_no,
+            provider_org_no="synthetic-provider-org",
+            order_division="00",
+            quantity=5,
+        ),
+        start=date(2026, 7, 27),
+        end=date(2026, 7, 27),
+        recent=True,
+    )
+
+    assert snapshot is not None
+    assert (snapshot.cumulative_quantity, snapshot.leaves_quantity) == (2, 3)
+    assert snapshot.average_fill_price_krw == 70_100
+    assert len(client.calls) == 1
+
+
 def test_execution_reader_uses_reference_exchange_division() -> None:
     raw_order_no = "synthetic-provider-order"
     client = FakeClient(

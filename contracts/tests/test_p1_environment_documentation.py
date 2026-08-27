@@ -36,6 +36,7 @@ S8_GENERATOR = (
     / "decision"
     / "OpenApiFixtureEnvironmentWriter.kt"
 )
+RUNTIME_ONLY_ENV_KEYS = {"POSTGRES_AUTOMATION_RUNTIME_PASSWORD"}
 
 
 def _readme_keys(name: str) -> set[str]:
@@ -101,7 +102,10 @@ class P1EnvironmentDocumentationTest(unittest.TestCase):
             documented = _readme_keys(f"{documented_name}_ENV")
             required = _required_profile_keys(entrypoint, profile)
             allowed = set(re.findall(rf"(?<![A-Za-z0-9-]){re.escape(profile)}:([A-Z][A-Z0-9_]*)", entrypoint))
-            self.assertEqual(documented, required, profile)
+            if profile in {"postgres", "role-bootstrap"}:
+                self.assertEqual(documented | RUNTIME_ONLY_ENV_KEYS, required, profile)
+            else:
+                self.assertEqual(documented, required, profile)
             self.assertEqual(allowed, required, profile)
 
     def test_env_example_covers_source_required_union(self) -> None:

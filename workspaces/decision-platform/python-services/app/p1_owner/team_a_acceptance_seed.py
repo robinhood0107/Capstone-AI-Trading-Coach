@@ -29,9 +29,9 @@ _RESET_STATEMENTS = (
     "DELETE FROM automation_runtime_claim WHERE user_id=%s",
     "DELETE FROM automation_runtime_schedule WHERE user_id=%s",
     "DELETE FROM automation_account_lineage WHERE user_id=%s",
-    "DELETE FROM automation_events WHERE user_id=%s",
     "DELETE FROM automation_positions WHERE user_id=%s",
-    "DELETE FROM automation_runs WHERE user_id=%s",
+    # automation_events는 append-only이므로 지울 수 없고, 그 FK 때문에 automation_runs도 삭제할 수
+    # 없다. run row는 아래 seed의 ON CONFLICT DO UPDATE로 멱등하게 되돌린다.
     "DELETE FROM automation_control_idempotency WHERE user_id=%s",
     "DELETE FROM automation_activation_gate WHERE user_id=%s",
     "DELETE FROM automation_control WHERE user_id=%s",
@@ -208,7 +208,12 @@ def _seed(cursor: psycopg.Cursor[object]) -> None:
           physical_submit_count,vertex_call_count,provider_calls,started_at,updated_at
         ) VALUES (%s,%s,'2026-08-18','NEWS_VETOED','INTERNAL_PAPER','005930','BUY',0,0,0,
           '2026-08-18T09:30:00+09:00','2026-08-18T09:31:00+09:00')
-        ON CONFLICT (run_id) DO NOTHING
+        ON CONFLICT (run_id) DO UPDATE SET
+          session_date=excluded.session_date,state=excluded.state,
+          brokerage_mode=excluded.brokerage_mode,selected_symbol=excluded.selected_symbol,
+          selected_side=excluded.selected_side,physical_submit_count=excluded.physical_submit_count,
+          vertex_call_count=excluded.vertex_call_count,provider_calls=excluded.provider_calls,
+          started_at=excluded.started_at,updated_at=excluded.updated_at
         """,
         (_AUTOMATION_RUN_ID, _USER_ID),
     )

@@ -2362,8 +2362,11 @@ BEGIN
             public.automation_policy_versions,
             public.automation_account_lineage
         TO decision_app;
+        -- automation-run.v2가 수량을 필수 공개하므로 owner read만 열고 쓰기는 runtime 전용으로 둔다.
+        GRANT SELECT ON TABLE public.automation_order_reservations TO decision_app;
         REVOKE ALL PRIVILEGES ON FUNCTION
             public.p1_automation_policy_profile_v1(integer,integer),
+            public.p1_automation_status_facts_v2(text,text),
             public.p1_automation_structural_projection_valid_v2(jsonb),
             public.p1_put_automation_policy_v1(text,text,bigint,integer,integer,integer,text,text),
             public.p1_automation_risk_balance_projection_v2(text,text),
@@ -2384,7 +2387,8 @@ BEGIN
         GRANT EXECUTE ON FUNCTION
             public.p1_put_automation_policy_v1(text,text,bigint,integer,integer,integer,text,text),
             public.p1_arm_automation_v2(text,text,text,integer,integer,text,text),
-            public.p1_automation_risk_balance_projection_v2(text,text)
+            public.p1_automation_risk_balance_projection_v2(text,text),
+            public.p1_automation_status_facts_v2(text,text)
         TO decision_app;
         -- automation_control_v2_binding_check가 호출하는 검증 함수라 SECURITY INVOKER인
         -- V89 arm/disarm의 decision_app 쓰기에 EXECUTE가 필수다.

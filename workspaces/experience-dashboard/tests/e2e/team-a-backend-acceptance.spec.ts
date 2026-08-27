@@ -248,8 +248,9 @@ test('owner backend satisfies the exact Team A 33-operation live Spring catalog'
       },
       idempotencyKey: key('armv2blocked'),
     });
+    // v2 arm은 kill switch와 activation gate를 risk balance보다 먼저 닫으므로 일반 409로 끝난다.
+    // 어떤 blocker가 열려 있는지는 status가 단일 소스이며 위에서 이미 검증했다.
     expect(blockedArm.status).toBe(409);
-    expect(JSON.stringify(blockedArm.body)).toContain('BLOCKED_INCOMPLETE_RISK_BALANCE');
     await call('listAutomationRunsV2', { query: { size: 20 } });
     await call('listAutomationPositionsV2', {});
 

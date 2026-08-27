@@ -49,7 +49,7 @@ docker run --rm --network none \
 ## 5. 하지 말아야 할 것
 
 - provider/KIS/ECOS/yfinance/Spring/account/order/Vertex/GDELT 호출 또는 입력 보충
-- backend adapter, public API, OCI/SBOM/provenance/signature 도구 구현
+- Spring backend adapter와 OCI packaging·SBOM·provenance·signature 도구 구현
 - raw provider data, input pack, cache, 대용량 output을 Git에 추가
 - 기존 preview 삭제, production PTH/pickle/joblib 출력, 성과 미화
 - fixed ABI·35bps·split·leakage·exact count gate 완화

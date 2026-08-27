@@ -376,6 +376,8 @@ init_state() {
   write_line POISON_RECORDER_SHARED_SECRET "$poison_recorder_secret" "$SECRETS_DIR/python.env"
   printf '' | state_write_file "$SECRETS_DIR/artifact-import.env" 0640
   write_line P1_ARTIFACT_IMPORT_DATABASE_DSN "postgresql://decision_worker:${db[WORKER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/artifact-import.env"
+  printf '' | state_write_file "$SECRETS_DIR/team-a-acceptance.env" 0640
+  write_line P1_TEAM_A_ACCEPTANCE_DATABASE_DSN "postgresql://postgres:$postgres_password@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/team-a-acceptance.env"
   printf '' | state_write_file "$SECRETS_DIR/kis-mock.env" 0640
   write_line KIS_MOCK_CONFIGURED false "$SECRETS_DIR/kis-mock.env"
   write_line KIS_MOCK_APP_KEY DISABLED00 "$SECRETS_DIR/kis-mock.env"
@@ -448,6 +450,7 @@ verify_state() {
   local expected=(actor-capability-authority.env actor-client.p12 actor-server.p12 actor-tls-ca.crt artifact-import.env bootstrap.env demo-admin.bundle demo-admin.password demo-credential-separation.key demo.env demo-user.bundle \
     demo-user.password kafka-admin.env kafka-broker-jaas.conf kafka-publisher.env migration.env poison-recorder.env \
     kis-mock.env kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn postgres.env python.env rag-history-kek-v1.key redis.env return-inference.env role-bootstrap.env seed-import.env spring.env)
+  expected+=(team-a-acceptance.env)
   local actual
   actual=$(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
   [[ $actual == "$(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)" ]] || die secret_inventory

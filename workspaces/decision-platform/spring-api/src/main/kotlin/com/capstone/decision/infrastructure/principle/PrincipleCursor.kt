@@ -8,6 +8,7 @@ import com.capstone.decision.application.principle.OwnerSort
 import com.capstone.decision.application.principle.PrincipleContract
 import com.capstone.decision.application.principle.PrincipleCursorPort
 import com.capstone.decision.domain.principle.PrincipleId
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -38,7 +39,18 @@ data class PrincipleProperties(
 @Configuration(proxyBeanMethods = false)
 class PrincipleConfiguration {
     @Bean
-    fun principleClock(): Clock = Clock.systemUTC()
+    fun principleClock(
+        @Value("\${P1_TEAM_A_ACCEPTANCE_ENABLED:false}") acceptanceEnabled: Boolean,
+        @Value("\${P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK:}") acceptanceFixedInstant: String,
+        @Value("\${P1_OFFLINE_DEMO:false}") offlineDemo: Boolean,
+    ): Clock {
+        if (!acceptanceEnabled) {
+            require(acceptanceFixedInstant.isBlank())
+            return Clock.systemUTC()
+        }
+        require(offlineDemo)
+        return Clock.fixed(Instant.parse(acceptanceFixedInstant), ZoneOffset.UTC)
+    }
 }
 
 // 서명 검증 뒤에도 canonical JSON과 route/subject/resource/sort/size/time binding을 모두 다시 검증한다.

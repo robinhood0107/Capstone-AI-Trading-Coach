@@ -454,8 +454,12 @@ class AutomationRuntimeService:
             claim_hash = _claim_hash(self._shared_secret, session_date)
             claim = self._repository.claim(session_date, claim_hash)
             if claim is None:
-                next_wakeup = datetime.combine(self._planner.next_session(session_date), _OPEN_BOUNDARY, _KST)
-                if self._stop.wait(max(0.0, (next_wakeup - datetime.now(UTC).astimezone(_KST)).total_seconds())):
+                next_wakeup = datetime.combine(
+                    self._planner.next_session(session_date), _OPEN_BOUNDARY, _KST
+                )
+                if self._stop.wait(
+                    max(0.0, (next_wakeup - datetime.now(UTC).astimezone(_KST)).total_seconds())
+                ):
                     return
                 continue
             self._drive_claim(claim)
@@ -495,7 +499,10 @@ class AutomationRuntimeService:
                             # stop/disarm 또는 gate drift는 다음 session을 만들지 않는 정상 fail-close다.
                             pass
                     return
-                if next_state in {"ORDER_SUBMITTED", "PENDING_RECONCILIATION"} and wakeup.time() < _CANCEL_BOUNDARY:
+                if (
+                    next_state in {"ORDER_SUBMITTED", "PENDING_RECONCILIATION"}
+                    and wakeup.time() < _CANCEL_BOUNDARY
+                ):
                     continue
         finally:
             port.close()

@@ -47,11 +47,19 @@ class FakeRunner:
             return subprocess.CompletedProcess(command, code, "", "unavailable" if code else "")
         if command[-2:] == ["mock", "readiness"]:
             code = 0 if self.readiness_pass else 1
-            output = "MOCK_READINESS=PASS\nPROVIDER_CALLS=0\n" if code == 0 else "MOCK_READINESS=FAIL\nPROVIDER_CALLS=0\n"
+            output = (
+                "MOCK_READINESS=PASS\nPROVIDER_CALLS=0\n"
+                if code == 0
+                else "MOCK_READINESS=FAIL\nPROVIDER_CALLS=0\n"
+            )
             return subprocess.CompletedProcess(command, code, output, "")
         if command[-2:] == ["mock", "start"]:
             code = 0 if self.start_pass else 1
-            output = "MOCK_START=PASS\nPROVIDER_CALLS=0\n" if code == 0 else "CAPSTONE_ERROR=NOT_IMPLEMENTED\n"
+            output = (
+                "MOCK_START=PASS\nPROVIDER_CALLS=0\n"
+                if code == 0
+                else "CAPSTONE_ERROR=NOT_IMPLEMENTED\n"
+            )
             return subprocess.CompletedProcess(command, code, output, "")
         raise AssertionError(command)
 
@@ -88,7 +96,9 @@ def test_execute_creates_one_transient_systemd_unit_and_duplicate_is_noop(
     assert scheduler.schedule(plan, root=tmp_path, runner=runner) is True
     assert scheduler.schedule(plan, root=tmp_path, runner=runner) is False
 
-    systemd_runs = [call for call in runner.calls if call[0] == "systemd-run" and "--collect" in call]
+    systemd_runs = [
+        call for call in runner.calls if call[0] == "systemd-run" and "--collect" in call
+    ]
     assert len(systemd_runs) == 1
     command = systemd_runs[0]
     assert "--user" in command
@@ -186,7 +196,9 @@ def _receipt(tmp_path: Path) -> Path:
         "onCalendar": "2026-08-28T08:55:00+09:00",
         "providerCalls": 0,
         "repositoryHead": _HEAD,
-        "scriptSha256": __import__("hashlib").sha256(Path(scheduler.__file__).read_bytes()).hexdigest(),
+        "scriptSha256": __import__("hashlib")
+        .sha256(Path(scheduler.__file__).read_bytes())
+        .hexdigest(),
         "sessionDate": "2026-08-28",
         "unitName": "capstone-p1-mock-20260828",
     }

@@ -73,6 +73,7 @@ jobs:
           POSTGRES_SIGNAL_SCHEDULER_PASSWORD: validation-dummy-signal-scheduler
           POSTGRES_SIGNAL_ADMIN_PASSWORD: validation-dummy-signal-admin
           POSTGRES_WORKER_PASSWORD: validation-dummy-worker
+          POSTGRES_AUTOMATION_RUNTIME_PASSWORD: validation-dummy-automation-runtime
           POSTGRES_OUTBOX_PUBLISHER_PASSWORD: validation-dummy-outbox-publisher
           POSTGRES_POISON_RECORDER_PASSWORD: validation-dummy-poison-recorder
           POSTGRES_REPLAY_PASSWORD: validation-dummy-replay

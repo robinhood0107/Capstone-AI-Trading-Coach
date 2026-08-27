@@ -292,18 +292,27 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertEqual(frozenset(), documented)
         self.assertIn("p1-team-a-acceptance.v2.json", request)
         self.assertIn("p1-team-a-client.v2.ts", request)
-        self.assertIn("기존 Dashboard 구조와 작업 결과를 보존해 주세요.", request)
+        self.assertIn("기존 source, component, route, test와 `package-lock.json`", request)
         self.assertEqual(
             [
-                "1. 기존 작업 중 보존할 것",
-                "2. 추가할 사용자 흐름과 디자인",
-                "3. 실행 명령",
-                "4. 제출물 네 가지",
-                "5. 하지 말아야 할 것",
+                "건드리지 않으셔도 되는 것",
+                "채워 주셔야 하는 흐름",
+                "화면 톤",
+                "Automation 화면만 조금 자세히",
+                "확인은 이렇게",
+                "다 되면 알려 주세요",
+                "이건 피해 주세요",
             ],
             re.findall(r"(?m)^## (.+)$", request),
         )
-        for phrase in ("Figma 또는 v0", "WCAG AA", "tabular alignment", "glassmorphism"):
+        for phrase in (
+            "Figma나 v0",
+            "WCAG AA",
+            "tabular alignment",
+            "glassmorphism",
+            "BLOCKED_INCOMPLETE_RISK_BALANCE",
+            "automation-policy.spec.ts",
+        ):
             self.assertIn(phrase, request)
 
     def test_team_b_request_lists_exact_artifacts_and_owner_verification_apis(
@@ -315,21 +324,22 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertTrue(all(f"`{artifact}`" in request for artifact in TEAM_B_ARTIFACTS))
         self.assertEqual(
             [
-                "1. 기존 작업 중 보존할 것",
-                "2. 추가할 production 기능",
-                "3. 실행 명령",
-                "4. 완료 기준과 제출물",
-                "5. 하지 말아야 할 것",
+                "그대로 두시는 것",
+                "새로 붙여 주셔야 하는 것",
+                "1.1.0 Automation과의 경계",
+                "확인은 이렇게",
+                "다 되면 알려 주세요",
+                "이건 피해 주세요",
             ],
             re.findall(r"(?m)^## (.+)$", request),
         )
-        self.assertIn("지금까지 만든 LSTM, rule baseline", request)
+        self.assertIn("LSTM, rule baseline, 데이터 처리, 백테스트 코드와 preview", request)
         self.assertIn("dev/owner-handoff/<inputManifestSha256>/handoff.json", request)
-        self.assertIn("mode `0600` regular file", request)
+        self.assertIn("mode `0600` 일반 파일", request)
         self.assertNotIn("p1-return-engine-manifest.v1.json", request)
         self.assertIn("p1-return-engine-manifest.v2.json", request)
         self.assertIn("./capstone artifact validate", request)
-        self.assertIn("provider/KIS/ECOS/yfinance/Spring/account/order/Vertex/GDELT", request)
+        self.assertIn("provider·KIS·ECOS·yfinance·Spring·account·order·Vertex·GDELT", request)
 
     def test_team_handoff_checklist_has_no_stale_preview_or_api_edge_flow(self) -> None:
         checklist = (

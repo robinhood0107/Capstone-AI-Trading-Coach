@@ -78,8 +78,7 @@ class JournalService(
         )
     }
 
-    private fun CreateJournalCommand.expectedFields(): List<String?> =
-        listOf(title, content, tags.joinToString("\u0000")) + links.fields()
+    private fun CreateJournalCommand.expectedFields(): List<String?> = listOf(title, content, tags.joinToString("\u0000")) + links.fields()
 
     private fun ReplaceJournalCommand.expectedFields(): List<String?> =
         listOf(expectedVersion.toString(), title, content, tags.joinToString("\u0000")) + links.fields()

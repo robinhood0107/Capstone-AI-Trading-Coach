@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -72,6 +73,59 @@ class P1ComposeSupplyHandoffTest(unittest.TestCase):
         self.assertIn("PROVIDER_LIVE_CALLS_ENABLED=false", block)
         self.assertIn("KIS_OFFLINE=1", block)
         self.assertIn("PROVIDER_CALLS=0", block)
+
+    def test_local_team_b_validator_rejects_unsafe_input_before_docker(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        controller = root / "deploy/p1/full-appctl"
+
+        def invoke(bundle: str, digest: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                [
+                    str(controller),
+                    "artifact",
+                    "validate",
+                    bundle,
+                    "--manifest-sha256",
+                    digest,
+                ],
+                cwd=root,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+        relative = invoke("relative/bundle", "a" * 64)
+        self.assertEqual(1, relative.returncode)
+        self.assertIn("CAPSTONE_ERROR=ARTIFACT_VALIDATE_BUNDLE_ROOT", relative.stderr)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_root = Path(temporary)
+            target = temporary_root / "target"
+            target.mkdir()
+            link = temporary_root / "link"
+            link.symlink_to(target, target_is_directory=True)
+            symlinked = invoke(str(link), "a" * 64)
+            self.assertEqual(1, symlinked.returncode)
+            self.assertIn(
+                "CAPSTONE_ERROR=ARTIFACT_VALIDATE_BUNDLE_ROOT", symlinked.stderr
+            )
+
+            invalid_hash = invoke(str(target), "not-a-sha")
+            self.assertEqual(1, invalid_hash.returncode)
+            self.assertIn(
+                "CAPSTONE_ERROR=ARTIFACT_VALIDATE_MANIFEST_SHA256",
+                invalid_hash.stderr,
+            )
+
+            comma_parent = temporary_root / "unsafe,parent" / "bundle"
+            comma_parent.mkdir(parents=True)
+            invalid_parent = invoke(str(comma_parent), "a" * 64)
+            self.assertEqual(1, invalid_parent.returncode)
+            self.assertIn(
+                "CAPSTONE_ERROR=ARTIFACT_VALIDATE_BUNDLE_PARENT",
+                invalid_parent.stderr,
+            )
 
     def test_receipt_requires_restricted_digest_exact10_and_all_attestations(
         self,

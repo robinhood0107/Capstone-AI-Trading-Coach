@@ -59,6 +59,17 @@ class P1ComposeSupplyHandoffTest(unittest.TestCase):
             )
         )
 
+    def test_local_team_b_validator_is_network_none_and_validate_only(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        controller = (root / "deploy/p1/full-appctl").read_text(encoding="utf-8")
+        block = controller.split("artifact_validate() {", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn("--network none", block)
+        self.assertIn("--read-only", block)
+        self.assertIn("--cap-drop ALL", block)
+        self.assertIn("--security-opt no-new-privileges:true", block)
+        self.assertIn("--validate-only", block)
+        self.assertIn("PROVIDER_CALLS=0", block)
+
     def test_receipt_requires_restricted_digest_exact10_and_all_attestations(
         self,
     ) -> None:

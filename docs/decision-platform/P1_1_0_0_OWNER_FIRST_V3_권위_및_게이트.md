@@ -91,7 +91,11 @@ network-none validator로 먼저 검사한다. remote intake는 restricted GHCR 
 SPDX/CycloneDX SBOM과 exact-10 hash binding을 요구한다. 실제 digest가 없으므로 준비 상태만 PASS이고
 `TEAM_B_REAL_ARTIFACT=PENDING_EXTERNAL_TEAM`이다.
 
-Team A, Team B, Owner와 시작 문서는 `docs/handoff/`에 있으며 각 문서는 정확히 일곱 절만 사용한다.
+PR #173의 `docs/handoff/` 네 문서는 병합 시점의 봉인된 Phase A handoff snapshot으로 보존한다. 현재 Team
+작업 범위는 `P1_TEAM_A_DASHBOARD_완료_요청서.md`와 `P1_TEAM_B_RETURN_ENGINE_완료_요청서.md`가 소유하며,
+충돌 시 두 active 요청서가 우선한다. 실제 OCI/SBOM/provenance/signature 실행 workflow는 사용자 지시에
+따라 후속 Owner supply-chain 단계로 남기고 Team A/B core 작업에는 배정하지 않는다.
+
 PR #173 merge SHA `0eeb8825a309602fdf91a0454660c8b072b902cc`에서 required/post-merge CI 6개가
 모두 성공했다. 같은 SHA의 별도 clone에서 `doctor`, provider-free `up`, `smoke`, `status`가 PASS했고
 5개 persistent container healthy, one-shot residual 0, provider call 0, down 뒤 named volume 보존을

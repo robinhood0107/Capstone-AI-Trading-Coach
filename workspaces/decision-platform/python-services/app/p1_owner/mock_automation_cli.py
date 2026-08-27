@@ -73,7 +73,8 @@ def _print_readiness(
 ) -> None:
     markers = {
         "ACCOUNT_BASELINE_CAPTURED": result.markers["account_baseline_matches"],
-        "CERTIFICATION_VALID": result.markers["certification_valid"] and _local_certification_valid(),
+        "CERTIFICATION_VALID": result.markers["certification_valid"]
+        and _local_certification_valid(),
         "CLEAN_RELEASE_SOURCE_BINDING": result.markers["release_source_bound"],
         "CREDENTIAL_CONFIGURED": _credential_configured(),
         "CURRENT_CONTROL_CONFIGURED": result.markers["control_configured"],

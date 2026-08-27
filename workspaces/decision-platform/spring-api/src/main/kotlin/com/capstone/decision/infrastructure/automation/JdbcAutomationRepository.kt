@@ -1,16 +1,23 @@
 package com.capstone.decision.infrastructure.automation
 
 import com.capstone.decision.application.automation.ArmAutomationCommand
+import com.capstone.decision.application.automation.ArmAutomationV2Command
 import com.capstone.decision.application.automation.AutomationAccessDeniedException
+import com.capstone.decision.application.automation.AutomationBlockedException
 import com.capstone.decision.application.automation.AutomationConflictException
 import com.capstone.decision.application.automation.AutomationControlProjection
 import com.capstone.decision.application.automation.AutomationIdempotencyConflictException
 import com.capstone.decision.application.automation.AutomationNotFoundException
+import com.capstone.decision.application.automation.AutomationPolicyV2Projection
+import com.capstone.decision.application.automation.AutomationPositionV2Projection
 import com.capstone.decision.application.automation.AutomationRepository
 import com.capstone.decision.application.automation.AutomationRunCursor
 import com.capstone.decision.application.automation.AutomationRunProjection
+import com.capstone.decision.application.automation.AutomationRunV2Projection
+import com.capstone.decision.application.automation.AutomationStatusV2Projection
 import com.capstone.decision.application.automation.AutomationStorageException
 import com.capstone.decision.application.automation.DisarmAutomationCommand
+import com.capstone.decision.application.automation.PutAutomationPolicyV2Command
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityDeniedException
 import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
@@ -22,6 +29,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 import tools.jackson.databind.ObjectMapper
+import java.sql.ResultSet
 import java.sql.SQLException
 import java.time.LocalDate
 import java.time.OffsetDateTime
@@ -208,10 +216,226 @@ class JdbcAutomationRepository(
         }
     }
 
+    @Transactional
+    override fun statusV2(ownerUserId: String): AutomationStatusV2Projection {
+        try {
+            val jdbc = jdbc()
+            actorRlsScope.open(
+                jdbc,
+                ownerUserId,
+                ActorCapabilityBinding.target(
+                    "READ_AUTOMATION_STATUS",
+                    "AUTOMATION",
+                    ownerUserId,
+                    ActorCapabilityRolePolicy.OWNER,
+                ),
+            )
+            return readStatusV2(jdbc, ownerUserId)
+        } catch (error: ActorCapabilityDeniedException) {
+            throw AutomationAccessDeniedException(error)
+        } catch (error: DataAccessException) {
+            throw translate(error)
+        }
+    }
+
+    @Transactional
+    override fun putPolicyV2(
+        ownerUserId: String,
+        command: PutAutomationPolicyV2Command,
+        scopeHash: String,
+        requestHash: String,
+    ): AutomationPolicyV2Projection =
+        mutate(ownerUserId, "PUT_AUTOMATION_POLICY", requestHash, "AUTOMATION_POLICY") { jdbc ->
+            val principleId =
+                jdbc.queryForObject(
+                    """
+                    SELECT principle_id FROM principles
+                    WHERE user_id=:ownerUserId AND status='ACTIVE'
+                    ORDER BY updated_at DESC,principle_id DESC LIMIT 1
+                    """.trimIndent(),
+                    mapOf("ownerUserId" to ownerUserId),
+                    String::class.java,
+                ) ?: throw AutomationNotFoundException()
+            val json =
+                jdbc.queryForObject(
+                    """
+                    SELECT result_json FROM p1_put_automation_policy_v1(
+                      :ownerUserId,:principleId,:capitalLimitKrw,:stopLossBps,:takeProfitBps,
+                      :expectedVersion,:scopeHash,:requestHash
+                    )
+                    """.trimIndent(),
+                    mapOf(
+                        "ownerUserId" to ownerUserId,
+                        "principleId" to principleId,
+                        "capitalLimitKrw" to command.capitalLimitKrw,
+                        "stopLossBps" to command.stopLossBps,
+                        "takeProfitBps" to command.takeProfitBps,
+                        "expectedVersion" to command.expectedVersion,
+                        "scopeHash" to scopeHash,
+                        "requestHash" to requestHash,
+                    ),
+                    String::class.java,
+                ) ?: throw AutomationStorageException(IllegalStateException("Policy function returned no result."))
+            decodePolicy(json)
+        }
+
+    @Transactional
+    override fun armV2(
+        ownerUserId: String,
+        command: ArmAutomationV2Command,
+        scopeHash: String,
+        requestHash: String,
+    ): AutomationStatusV2Projection =
+        mutate(ownerUserId, "ARM_AUTOMATION", requestHash) { jdbc ->
+            jdbc.queryForObject(
+                """
+                SELECT result_json FROM p1_arm_automation_v2(
+                  :ownerUserId,:accountId,:policyId,:expectedPolicyVersion,
+                  :expectedControlVersion,:scopeHash,:requestHash
+                )
+                """.trimIndent(),
+                mapOf(
+                    "ownerUserId" to ownerUserId,
+                    "accountId" to command.accountId,
+                    "policyId" to command.policyId,
+                    "expectedPolicyVersion" to command.expectedPolicyVersion,
+                    "expectedControlVersion" to command.expectedControlVersion,
+                    "scopeHash" to scopeHash,
+                    "requestHash" to requestHash,
+                ),
+                String::class.java,
+            ) ?: throw AutomationStorageException(IllegalStateException("V2 arm function returned no result."))
+            readStatusV2(jdbc, ownerUserId)
+        }
+
+    @Transactional
+    override fun listRunsV2(
+        ownerUserId: String,
+        limit: Int,
+        after: AutomationRunCursor?,
+    ): List<AutomationRunV2Projection> {
+        try {
+            val jdbc = jdbc()
+            actorRlsScope.open(
+                jdbc,
+                ownerUserId,
+                ActorCapabilityBinding.request(
+                    "LIST_AUTOMATION_RUNS",
+                    "AUTOMATION_RUN_LIST",
+                    ownerUserId,
+                    ActorCapabilityRolePolicy.OWNER,
+                    ownerUserId,
+                    limit.toString(),
+                    after?.updatedAt?.toString(),
+                    after?.runId,
+                ),
+            )
+            return jdbc.query(
+                """
+                SELECT run.run_id,run.session_date,run.state,run.brokerage_mode,
+                       run.selected_symbol,run.selected_side,run.policy_id,run.policy_version,
+                       reservation.quantity,reservation.filled_quantity,reservation.leaves_quantity,
+                       reservation.limit_price_krw,reservation.estimated_amount_krw,reservation.exit_reason,
+                       run.physical_submit_count,run.provider_calls,run.started_at,run.updated_at
+                FROM automation_runs run
+                LEFT JOIN automation_order_reservations reservation ON reservation.run_id=run.run_id
+                WHERE run.user_id=:ownerUserId
+                  AND (CAST(:afterUpdatedAt AS timestamptz) IS NULL OR
+                    (run.updated_at,run.run_id)<(:afterUpdatedAt,:afterRunId))
+                ORDER BY run.updated_at DESC,run.run_id DESC LIMIT :limit
+                """.trimIndent(),
+                MapSqlParameterSource()
+                    .addValue("ownerUserId", ownerUserId)
+                    .addValue("limit", limit)
+                    .addValue("afterUpdatedAt", after?.updatedAt)
+                    .addValue("afterRunId", after?.runId),
+            ) { row, _ ->
+                AutomationRunV2Projection(
+                    runId = row.getString("run_id"),
+                    sessionDate = row.getObject("session_date", LocalDate::class.java),
+                    state = row.getString("state"),
+                    brokerageMode = row.getString("brokerage_mode"),
+                    selectedSymbol = row.getString("selected_symbol"),
+                    selectedSide = row.getString("selected_side"),
+                    policyId = row.getString("policy_id"),
+                    policyVersion = row.intOrNull("policy_version"),
+                    orderQuantity = row.longOrNull("quantity"),
+                    filledQuantity = row.longOrNull("filled_quantity"),
+                    leavesQuantity = row.longOrNull("leaves_quantity"),
+                    limitPriceKrw = row.longOrNull("limit_price_krw"),
+                    estimatedAmountKrw = row.longOrNull("estimated_amount_krw"),
+                    exitReason = row.getString("exit_reason"),
+                    physicalSubmitCount = row.getInt("physical_submit_count"),
+                    providerCalls = row.getInt("provider_calls"),
+                    startedAt = row.getObject("started_at", OffsetDateTime::class.java),
+                    updatedAt = row.getObject("updated_at", OffsetDateTime::class.java),
+                )
+            }
+        } catch (error: ActorCapabilityDeniedException) {
+            throw AutomationAccessDeniedException(error)
+        } catch (error: DataAccessException) {
+            throw translate(error)
+        }
+    }
+
+    @Transactional
+    override fun listPositionsV2(ownerUserId: String): List<AutomationPositionV2Projection> {
+        try {
+            val jdbc = jdbc()
+            actorRlsScope.open(
+                jdbc,
+                ownerUserId,
+                ActorCapabilityBinding.target(
+                    "LIST_AUTOMATION_POSITIONS",
+                    "AUTOMATION_POSITION_LIST",
+                    ownerUserId,
+                    ActorCapabilityRolePolicy.OWNER,
+                ),
+            )
+            return jdbc.query(
+                """
+                SELECT position_id,account_id,symbol,quantity,entry_average_fill_price_krw,
+                       entry_session,expiry_session,policy_id,policy_version,stop_loss_bps,
+                       take_profit_bps,status,exit_reason,bot_owned,short_allowed,created_at,closed_at
+                FROM automation_positions
+                WHERE user_id=:ownerUserId AND policy_id IS NOT NULL
+                  AND status IN ('OPEN','EXIT_PENDING')
+                ORDER BY entry_session,symbol,position_id LIMIT 5
+                """.trimIndent(),
+                mapOf("ownerUserId" to ownerUserId),
+            ) { row, _ ->
+                AutomationPositionV2Projection(
+                    positionId = row.getString("position_id"),
+                    accountId = row.getString("account_id"),
+                    symbol = row.getString("symbol"),
+                    quantity = row.getLong("quantity"),
+                    entryAverageFillPriceKrw = row.getLong("entry_average_fill_price_krw"),
+                    entrySession = row.getObject("entry_session", LocalDate::class.java),
+                    expirySession = row.getObject("expiry_session", LocalDate::class.java),
+                    policyId = row.getString("policy_id"),
+                    policyVersion = row.getInt("policy_version"),
+                    stopLossBps = row.getInt("stop_loss_bps"),
+                    takeProfitBps = row.getInt("take_profit_bps"),
+                    status = row.getString("status"),
+                    exitReason = row.getString("exit_reason"),
+                    botOwned = row.getBoolean("bot_owned"),
+                    shortAllowed = row.getBoolean("short_allowed"),
+                    createdAt = row.getObject("created_at", OffsetDateTime::class.java),
+                    closedAt = row.getObject("closed_at", OffsetDateTime::class.java),
+                )
+            }
+        } catch (error: ActorCapabilityDeniedException) {
+            throw AutomationAccessDeniedException(error)
+        } catch (error: DataAccessException) {
+            throw translate(error)
+        }
+    }
+
     private fun <T> mutate(
         ownerUserId: String,
         operation: String,
         requestHash: String,
+        targetKind: String = "AUTOMATION",
         block: (NamedParameterJdbcTemplate) -> T,
     ): T =
         try {
@@ -221,7 +445,7 @@ class JdbcAutomationRepository(
                 ownerUserId,
                 ActorCapabilityBinding(
                     operation = operation,
-                    targetKind = "AUTOMATION",
+                    targetKind = targetKind,
                     targetId = ownerUserId,
                     payloadHash = requestHash,
                     rolePolicy = ActorCapabilityRolePolicy.OWNER,
@@ -233,6 +457,172 @@ class JdbcAutomationRepository(
         } catch (error: DataAccessException) {
             throw translate(error)
         }
+
+    private fun readStatusV2(
+        jdbc: NamedParameterJdbcTemplate,
+        ownerUserId: String,
+    ): AutomationStatusV2Projection {
+        val policy = readCurrentPolicyV2(jdbc, ownerUserId)
+        val control =
+            jdbc
+                .query(
+                    """
+                    SELECT control_state,version,account_id,certification_status,
+                           EXISTS (
+                             SELECT 1 FROM automation_runs run
+                             WHERE run.user_id=:ownerUserId AND run.state NOT IN (
+                               'NEWS_VETOED','CANCELLED_UNFILLED','COMPLETED',
+                               'SKIPPED_NO_ACTION','SKIPPED_DATA_UNAVAILABLE','SKIPPED_LATE_START','HALTED'
+                             )
+                           ) active_run,
+                           EXISTS (
+                             SELECT 1 FROM orders item
+                             WHERE item.user_id=:ownerUserId AND item.account_id=control.account_id
+                               AND (item.status IN (
+                                 'SUBMITTED','PENDING_RECONCILIATION','ACCEPTED','PARTIALLY_FILLED','CANCEL_REQUESTED'
+                               ) OR item.reconciliation_status='MISMATCH')
+                           ) unresolved,
+                           (SELECT count(*) FROM automation_positions position
+                            WHERE position.user_id=:ownerUserId AND position.status IN ('OPEN','EXIT_PENDING')) open_count,
+                           EXISTS (
+                             SELECT 1 FROM automation_activation_gate gate
+                             WHERE gate.user_id=:ownerUserId AND gate.certification_status='VALID'
+                           ) certification_ready,
+                           EXISTS (
+                             SELECT 1 FROM automation_activation_gate gate
+                             WHERE gate.user_id=:ownerUserId AND gate.clean_release_binding
+                           ) release_binding_clean,
+                           EXISTS (
+                             SELECT 1 FROM automation_activation_gate gate
+                             WHERE gate.user_id=:ownerUserId AND gate.real_team_b_pointer_active
+                           ) real_team_b_pointer_active,
+                           EXISTS (
+                             SELECT 1 FROM principles principle
+                             WHERE principle.user_id=:ownerUserId AND principle.status='ACTIVE'
+                           ) principle_configured,
+                           control.policy_id policy_binding_id,
+                           control.policy_version policy_binding_version
+                    FROM automation_control control WHERE control.user_id=:ownerUserId
+                    """.trimIndent(),
+                    mapOf("ownerUserId" to ownerUserId),
+                ) { row, _ ->
+                    StatusRow(
+                        controlState = row.getString("control_state"),
+                        version = row.getInt("version"),
+                        accountId = row.getString("account_id"),
+                        certificationStatus = row.getString("certification_status"),
+                        activeRun = row.getBoolean("active_run"),
+                        unresolved = row.getBoolean("unresolved"),
+                        openCount = row.getInt("open_count"),
+                        certificationReady = row.getBoolean("certification_ready"),
+                        releaseBindingClean = row.getBoolean("release_binding_clean"),
+                        realTeamBPointerActive = row.getBoolean("real_team_b_pointer_active"),
+                        principleConfigured = row.getBoolean("principle_configured"),
+                        policyBindingId = row.getString("policy_binding_id"),
+                        policyBindingVersion = row.getInt("policy_binding_version").takeUnless { row.wasNull() },
+                    )
+                }.singleOrNull()
+        val killSwitchActive =
+            jdbc.queryForObject(
+                "SELECT COALESCE((SELECT active FROM public.read_kill_switch_gate()),true)",
+                emptyMap<String, Any>(),
+                Boolean::class.java,
+            ) ?: true
+        val accountId = control?.accountId
+        val riskBalanceReady =
+            if (accountId == null) {
+                false
+            } else {
+                jdbc.queryForObject(
+                    "SELECT p1_automation_risk_balance_projection_v2(:ownerUserId,:accountId) IS NOT NULL",
+                    mapOf("ownerUserId" to ownerUserId, "accountId" to accountId),
+                    Boolean::class.java,
+                ) ?: false
+            }
+        val blockers =
+            buildList {
+                if (accountId == null) add("ACCOUNT_NOT_CONFIGURED")
+                if (policy == null) add("POLICY_NOT_CONFIGURED")
+                val boundPolicyId = control?.policyBindingId
+                if (boundPolicyId != null &&
+                    (
+                        boundPolicyId != policy?.policyId ||
+                            control.policyBindingVersion != policy.version
+                    )
+                ) {
+                    add("POLICY_VERSION_DRIFT")
+                }
+                if (control != null && !control.principleConfigured) add("PRINCIPLE_NOT_CONFIGURED")
+                if (control != null && !control.realTeamBPointerActive) add("REAL_TEAM_B_POINTER_INACTIVE")
+                if (control != null && !control.releaseBindingClean) add("RELEASE_BINDING_UNCLEAN")
+                if (control != null && !control.certificationReady) add("CERTIFICATION_INVALID")
+                if (killSwitchActive) add("KILL_SWITCH_ACTIVE")
+                if (control?.unresolved == true) add("UNRESOLVED_RECONCILIATION")
+                if (control?.controlState == "HALTED") add("CONTROL_HALTED")
+                if (!riskBalanceReady) add("BLOCKED_INCOMPLETE_RISK_BALANCE")
+            }
+        val state = control?.controlState ?: "DISARMED"
+        return AutomationStatusV2Projection(
+            controlState = state,
+            projectionState =
+                when {
+                    state == "HALTED" -> "HALTED"
+                    control?.activeRun == true -> "RUNNING"
+                    else -> state
+                },
+            controlVersion = control?.version ?: 1,
+            brokerageMode = "KIS_MOCK",
+            accountId = accountId,
+            policy = policy,
+            killSwitchActive = killSwitchActive,
+            certificationStatus = control?.certificationStatus ?: "REQUIRED",
+            openPositionCount = control?.openCount ?: 0,
+            unresolvedReconciliation = control?.unresolved ?: false,
+            canArm = state == "DISARMED" && blockers.isEmpty(),
+            blockers = blockers,
+        )
+    }
+
+    private fun readCurrentPolicyV2(
+        jdbc: NamedParameterJdbcTemplate,
+        ownerUserId: String,
+    ): AutomationPolicyV2Projection? =
+        jdbc
+            .query(
+                """
+                SELECT policy_id,version,risk_profile,capital_limit_krw,stop_loss_bps,take_profit_bps,created_at
+                FROM automation_policy_versions WHERE user_id=:ownerUserId
+                ORDER BY version DESC LIMIT 1
+                """.trimIndent(),
+                mapOf("ownerUserId" to ownerUserId),
+            ) { row, _ ->
+                val createdAt = row.getObject("created_at", OffsetDateTime::class.java)
+                AutomationPolicyV2Projection(
+                    policyId = row.getString("policy_id"),
+                    version = row.getInt("version"),
+                    presetId = row.getString("risk_profile").lowercase(),
+                    capitalLimitKrw = row.getLong("capital_limit_krw"),
+                    stopLossBps = row.getInt("stop_loss_bps"),
+                    takeProfitBps = row.getInt("take_profit_bps"),
+                    createdAt = createdAt,
+                    updatedAt = createdAt,
+                )
+            }.singleOrNull()
+
+    private fun decodePolicy(json: String): AutomationPolicyV2Projection {
+        val node = objectMapper.readTree(json)
+        val timestamp = OffsetDateTime.parse(node.path("updatedAt").stringValue())
+        return AutomationPolicyV2Projection(
+            policyId = node.path("policyId").stringValue(),
+            version = node.path("version").intValue(),
+            presetId = node.path("riskProfile").stringValue().lowercase(),
+            capitalLimitKrw = node.path("capitalLimitKrw").longValue(),
+            stopLossBps = node.path("stopLossBps").intValue(),
+            takeProfitBps = node.path("takeProfitBps").intValue(),
+            createdAt = timestamp,
+            updatedAt = timestamp,
+        )
+    }
 
     private fun decodeControl(json: String): AutomationControlProjection =
         objectMapper.readValue(json, AutomationControlProjection::class.java)
@@ -258,12 +648,33 @@ class JdbcAutomationRepository(
 
     private fun translate(error: DataAccessException): RuntimeException =
         when (error.sqlState()) {
+            "P1B01" -> AutomationBlockedException("BLOCKED_INCOMPLETE_RISK_BALANCE", error)
             "23505" -> AutomationIdempotencyConflictException()
             "40001" -> AutomationConflictException(error)
             "P0002" -> AutomationNotFoundException()
             "42501" -> AutomationAccessDeniedException(error)
             else -> AutomationStorageException(error)
         }
+
+    private fun ResultSet.longOrNull(column: String): Long? = getObject(column, Long::class.javaObjectType)
+
+    private fun ResultSet.intOrNull(column: String): Int? = getObject(column, Int::class.javaObjectType)
+
+    private data class StatusRow(
+        val controlState: String,
+        val version: Int,
+        val accountId: String,
+        val certificationStatus: String,
+        val activeRun: Boolean,
+        val unresolved: Boolean,
+        val openCount: Int,
+        val certificationReady: Boolean,
+        val releaseBindingClean: Boolean,
+        val realTeamBPointerActive: Boolean,
+        val principleConfigured: Boolean,
+        val policyBindingId: String?,
+        val policyBindingVersion: Int?,
+    )
 
     private fun Throwable.sqlState(): String? {
         var current: Throwable? = this

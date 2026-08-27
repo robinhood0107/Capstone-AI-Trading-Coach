@@ -12,8 +12,9 @@ exact-33 catalog, generated typed client, same-origin `/api`, deterministic offl
 
 ## 3. 수정할 것
 
-`workspaces/experience-dashboard/` 안에서만 실제 production component를 완성합니다. 자동운용 status/arm/
-disarm/runs, Journal 생성·목록, 주문·Kill Switch·동의·feedback, 증거 badge를 화면 동작에 연결합니다.
+`workspaces/experience-dashboard/` 안에서 기존 화면을 유지하며 로그인·근거, 모의주문, automation,
+RAG·Journal, truth badge의 다섯 사용자 흐름만 production component로 완성합니다. API별 별도 화면이나
+backend fixture를 다시 만들지 않습니다.
 
 ## 4. 실행 명령
 
@@ -30,14 +31,15 @@ npm run build
 
 ## 5. 완료 테스트
 
-실제 same-origin Spring exact-33의 method/path/success status를 모두 확인하고 Playwright skip 0, 4xx/5xx
+Owner 명령의 same-origin Spring exact-33 PASS를 전제로 실제 UI 다섯 흐름, Playwright skip 0, 숨긴 4xx/5xx
 0, frontend fake production response 0을 증명합니다. synthetic/REAL_TEAM_B와 KIS_MOCK/INTERNAL_PAPER를
 다르게 표시하고 LightGBM에는 `RESEARCH_ONLY` badge를 표시합니다.
 
 ## 6. 제출할 파일·commit·OCI digest
 
-PR URL, commit SHA, `package-lock.json` SHA-256, production image digest, exact-33 success matrix,
-typecheck/lint/unit/contract/build/Playwright 결과와 secret scan 결과를 제출합니다.
+PR URL, commit SHA, `package-lock.json` SHA-256, 다섯 UI 흐름 설명과
+typecheck/lint/unit/contract/build/Playwright 결과를 제출합니다. image digest와 exact-33 matrix는 Owner가
+다시 생성합니다.
 
 ## 7. 하지 말아야 할 것
 

@@ -1,8 +1,8 @@
 # 문서 색인과 현재 상태
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
-> **1.0.0 current authority (2026-08-27):** Owner-First full-app release v3는 `CONTRACT_LOCKED_IMPLEMENTATION_IN_PROGRESS`이며
-> GitHub `1.0.0` Release는 없다. 현재 hard/non-blocking gate와 증거 규칙은
+> **1.0.0 current authority (2026-08-27):** Owner-First Phase A는 `OWNER_HANDOFF_READY=TRUE`지만
+> Team A/B actual 결과와 physical/soak gate가 남아 GitHub `1.0.0` Release는 없다. 현재 hard/non-blocking gate와 증거 규칙은
 > [P1 Owner-First full-app v3 권위와 게이트](decision-platform/P1_1_0_0_OWNER_FIRST_V3_권위_및_게이트.md)가 소유한다.
 > 아래 과거 P1/placeholder marker는 해당 시점의 기록이며 v3 완료 증거가 아니다.
 <!-- P1_FULL_APP_V3_AUTHORITY_END -->

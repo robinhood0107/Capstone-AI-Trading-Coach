@@ -1,182 +1,140 @@
 # Team A 대시보드 완료 요청
 
-## 이번에 해주실 일
+## 결론부터
 
-> 새 API를 임의로 만들지 말고, OpenAPI에 이미 있으며 최종 명세가 Team A 화면에 배정한 API만
-> 사용해 주세요. 현재 화면 코드에 연결된 15개를 정확히 검증하고, 빠진 18개를 화면에 연결해
-> 총 33개를 실제 로컬 Spring API로 확인하면 됩니다.
+Team A가 backend, OpenAPI, DB, Seed 또는 33개 API 검증기를 새로 만들 필요는 없습니다. Owner가 이미
+exact-33 catalog, generated client, deterministic Seed/reset, 로그인 fixture와 실제 Spring acceptance를
+완성했고 `./capstone team-a acceptance`가 33개를 모두 통과합니다.
 
-작업 위치는 `workspaces/experience-dashboard/`입니다. 통합 PR이 main에 병합됐다는 안내를 받은 뒤
-최신 main에서 작업해 주세요. 통합 담당자가 먼저 넣은 `package-lock.json`, production Dockerfile,
-`/healthz`, 브라우저의 same-origin `/api` 구조를 유지합니다.
+Team A의 남은 역할은 기존 `workspaces/experience-dashboard/` 소스를 존중해 production 화면을 완성하는
+것뿐입니다. 기존 페이지를 갈아엎거나 API별로 새 화면 33개를 만들지 말고, 아래 사용자 흐름에 필요한
+component만 연결해 주세요.
 
-Owner가 제공한 backend acceptance 환경은 이미 exact-33을 실제 Spring으로 통과합니다. 기준 catalog는
-`contracts/catalogs/p1-team-a-acceptance.v1.json`, badge 계약은
-`contracts/catalogs/p1-ui-evidence-badges.v1.json`, generated client는
-`src/shared/api/generated/p1-team-a-client.v1.ts`입니다. 다음 명령은 production UI 완료 검사가 아니라
-Team A가 받을 backend/fixture prerequisite 재현 명령입니다.
+## Owner가 이미 끝낸 것
+
+- root OpenAPI exact-56과 Team A exact-33 subset
+- `contracts/catalogs/p1-team-a-acceptance.v1.json`
+- `contracts/catalogs/p1-ui-evidence-badges.v1.json`
+- `src/shared/api/generated/p1-team-a-client.v1.ts`
+- same-origin `/api` rewrite와 CORS exact origin
+- principle, Decision, RAG, Team B, account, order, automation, Journal deterministic fixture
+- 동적 ID 연결, JWT/password 비노출 reporter, finally 상태 복구
+- 실제 Spring exact-33, Playwright skip 0, frontend fake response 0 검증 명령
+
+따라서 Owner 파일을 복사하거나 별도 mock server를 만들지 않습니다. backend acceptance가 실패하면 Team A가
+우회하지 말고 Owner에게 실패 출력만 전달하면 됩니다.
+
+## Team A가 실제로 완성할 다섯 흐름
+
+1. 로그인 후 현재 홈·원칙·Signal·위험·근거를 이해할 수 있는 흐름
+2. 모의 주문의 검토, Kill Switch, 명시적 제출, 상태·취소·체결 확인 흐름
+3. automation status, arm/disarm, 최근 run을 확인하는 흐름
+4. RAG 동의·질문·feedback과 Journal 생성·목록 흐름
+5. `SYNTHETIC_GOLDEN`/`REAL_TEAM_B`, `KIS_MOCK`/`INTERNAL_PAPER`, LightGBM
+   `RESEARCH_ONLY`를 혼동하지 않는 badge와 설명
+
+기존 화면과 component를 재사용합니다. 각 API를 별도 페이지로 만들 필요가 없고, 한 흐름에서 얻은
+`principleId`, `decisionId`, `orderId`, `answerId`, `runId`, `journalId`를 다음 단계에 이어 쓰면 됩니다.
+4xx/5xx는 성공처럼 삼키지 말고 사용자가 복구할 수 있는 오류로 표시합니다.
+
+## exact-33 연결 목록
+
+이 목록은 Team A가 API를 다시 구현하라는 뜻이 아니라 generated client 밖의 임의 transport를 만들지 않도록
+고정한 목록입니다. Owner runner가 method/path/status 전체를 자동 집계하므로 Team A가 수동 33행 표를 다시
+작성할 필요는 없습니다.
+
+### 로그인·원칙·위험·Signal
+
+- `POST /api/v1/auth/login`
+- `GET /api/v1/system/health`
+- `GET /api/v1/principle-presets`
+- `POST /api/v1/principles`
+- `GET /api/v1/principles`
+- `GET /api/v1/principles/{principleId}`
+- `PUT /api/v1/principles/{principleId}`
+- `GET /api/v1/risk/portfolio`
+- `GET /api/v1/risk/kill-switch`
+- `POST /api/v1/risk/kill-switch`
+- `GET /api/v2/signals/{symbol}`
+
+### RAG·Dashboard evidence
+
+- `GET /api/v1/rag/sources`
+- `POST /api/v1/consents`
+- `POST /api/v1/rag/ask`
+- `POST /api/v1/rag/answers/{answerId}/feedback`
+- `GET /api/v1/dashboard/rag-sources/{answerId}`
+- `GET /api/v1/dashboard/model-evaluations/{runId}`
+- `GET /api/v1/dashboard/backtests/{runId}`
+
+### Decision·모의 주문
+
+- `POST /api/v1/decisions/evaluate-order`
+- `GET /api/v1/decisions/{decisionId}`
+- `GET /api/v1/dashboard/risk-results/{decisionId}`
+- `GET /api/v1/brokerage/mock/accounts/{accountId}/balances`
+- `GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`
+- `POST /api/v1/brokerage/mock/orders`
+- `GET /api/v1/brokerage/orders/{orderId}`
+- `POST /api/v1/brokerage/orders/{orderId}/cancel`
+- `GET /api/v1/brokerage/mock/accounts/{accountId}/fills`
+
+### Automation·Journal
+
+- `GET /api/v1/automation/status`
+- `POST /api/v1/automation/arm`
+- `GET /api/v1/automation/runs`
+- `POST /api/v1/automation/disarm`
+- `POST /api/v1/journals`
+- `GET /api/v1/journals`
+
+`getMockBuyable` query는 `symbol`, `price`만 사용합니다. KIS Mock arm이 certification, 실제 Team B pointer,
+release binding 또는 Kill Switch 때문에 차단되면 서버 결과를 그대로 표시하고 client boolean이나
+`INTERNAL_PAPER` 자동 fallback으로 우회하지 않습니다.
+
+## 이번 작업에서 하지 않을 것
+
+- backend, OpenAPI, migration, Compose, Seed, model/provider 코드 변경
+- 새 API, mock server, fake production response 추가
+- KIS credential 입력, certification, 실제 provider/account/order 호출
+- optional history/Journal patch-delete/operator API를 필수 화면에 억지로 추가
+- 기존 Team A 소스의 전면 재작성 또는 디자인 시스템 교체
+
+실제 누락 API가 발견된 경우에만 `OWNER_API_MISSING: <한 줄>`을 PR에 남기고 임의 endpoint를 만들지 않습니다.
+
+## 완료 확인
 
 ```bash
 ./capstone up
 ./capstone team-a acceptance
-```
-
-여기서 “실제 API 연결”은 프론트의 가짜 응답이 아니라 Docker Compose 안의 로컬 Spring을 호출한다는
-뜻입니다. KIS 실계좌를 뜻하지 않습니다. Team A는 KIS 자격증명을 입력하거나 모의주문 인증 명령을
-실행하지 않습니다.
-
-## 먼저 검증할 현재 15개
-
-아래 API는 현재 소스에 호출 지점이 있습니다. 하지만 체크인된 Playwright는 로그인 하나만 경로를
-정확히 확인하고, 나머지는 응답 개수와 5xx 부재만 검사합니다. 4xx도 통과할 수 있으므로 15개 전부의
-method, path, 성공 상태를 다시 증명해야 합니다.
-
-- `POST /api/v1/auth/login`
-- `GET /api/v1/dashboard/model-evaluations/{runId}`
-- `GET /api/v1/dashboard/backtests/{runId}`
-- `GET /api/v1/dashboard/risk-results/{decisionId}`
-- `GET /api/v1/dashboard/rag-sources/{answerId}`
-- `GET /api/v1/decisions/{decisionId}`
-- `GET /api/v1/principle-presets`
-- `GET /api/v1/principles`
-- `GET /api/v1/principles/{principleId}`
-- `PUT /api/v1/principles/{principleId}`
-- `POST /api/v1/rag/ask`
-- `GET /api/v1/rag/sources`
-- `GET /api/v1/risk/portfolio`
-- `GET /api/v1/system/health`
-- `GET /api/v2/signals/{symbol}`
-
-상세 조회는 가짜 ID로 404를 만드는 방식이 아니라, 테스트가 생성하거나 Seed에서 읽은 유효한
-`principleId`, `decisionId`, `runId`, `answerId`를 다음 요청에 이어 사용해 주세요. RAG 질문은 화면에서
-실제로 제출해야 합니다.
-
-## 추가로 화면에 연결할 18개
-
-### KIS 모의투자 주문 검토와 결과
-
-- `GET /api/v1/brokerage/mock/accounts/{accountId}/balances`
-- `GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`
-- `GET /api/v1/brokerage/mock/accounts/{accountId}/fills`
-- `POST /api/v1/brokerage/mock/orders`
-- `GET /api/v1/brokerage/orders/{orderId}`
-- `POST /api/v1/brokerage/orders/{orderId}/cancel`
-
-화면 순서는 종목 신호 확인 → 주문 전 위험 판정 → 주문 차단 장치 확인 → 사용자의 명시적 제출 →
-주문 상태/체결/취소 확인으로 구성합니다. 기본 Team A 테스트에서는 외부 KIS를 호출하지 않고 저장된
-모의 데이터와 ledger 흐름을 검증합니다. 실제 KIS 모의계좌 연결은 통합 담당자만 별도로 검증합니다.
-
-### 동의, RAG 평가와 원칙 생성
-
-- `POST /api/v1/consents`
-- `POST /api/v1/rag/answers/{answerId}/feedback`
-- `POST /api/v1/principles`
-
-### 주문 전 판정과 주문 차단 장치
-
-- `POST /api/v1/decisions/evaluate-order`
-- `GET /api/v1/risk/kill-switch`
-- `POST /api/v1/risk/kill-switch`
-
-`killSwitch()`와 `evaluateOrder()` 호출 함수는 현재 소스에 있지만 화면에서 사용되지 않습니다.
-`POST kill-switch` 호출 함수와 화면 흐름도 추가해야 합니다. 일반 사용자는 주문 차단 장치를 켤 수 있지만,
-해제는 관리자 권한이 필요하므로 권한별 성공·실패를 각각 테스트합니다.
-
-### 자동운용 상태와 학습일지
-
-- `GET /api/v1/automation/status`
-- `POST /api/v1/automation/arm`
-- `POST /api/v1/automation/disarm`
-- `GET /api/v1/automation/runs`
-- `POST /api/v1/journals`
-- `GET /api/v1/journals`
-
-Automation은 기본 `DISARMED`이며 KIS Mock과 explicit INTERNAL_PAPER를 분리해 표시합니다. arm이
-차단되면 certification, REAL_TEAM_B, release binding, Kill Switch 같은 서버 block reason을 그대로
-보여 주고 client boolean으로 우회하지 않습니다. disarm 뒤에도 outstanding reconciliation은 계속
-표시합니다. Journal은 실제 response의 동적 `journalId`를 사용해 생성·목록을 검증합니다.
-
-## 이번에 억지로 붙이지 않을 10개
-
-아래 API는 존재하지만 최종 명세가 Team A 필수 화면으로 지정하지 않았습니다. Owner가 별도로 요청하지
-않는 한 구현하지 않아도 됩니다.
-
-- `GET /api/v1/brokerage/paper/accounts/{accountId}/balances`
-- `GET /api/v1/brokerage/paper/accounts/{accountId}/buyable`
-- `GET /api/v1/brokerage/paper/accounts/{accountId}/fills`
-- `POST /api/v1/brokerage/paper/orders`
-- `GET /api/v1/rag/history`
-- `GET /api/v1/rag/history/{answerId}`
-- `DELETE /api/v1/rag/history/{answerId}`
-- `GET /api/v1/principles/{principleId}/versions`
-- `PATCH /api/v1/journals/{journalId}`
-- `DELETE /api/v1/journals/{journalId}`
-
-`getMockBuyable`의 strict query는 `symbol`, `price`입니다. historical exact-48 root에 이 두 query parameter가
-누락돼 있으므로 generated client의 catalog-bound adapter가 이를 보강하며 임의 query를 추가하지 않습니다.
-
-결과 파일 적재 상태, 내부 작업, 처리 지표, 주문 대사, 판단 감사 6개 API와 Spring `/error` 7개도
-일반 사용자 화면에 붙이지 않습니다. 전체 56개 분류는 [OpenAPI 사용 현황](P1_API_USAGE_MATRIX.md)에서
-확인할 수 있습니다.
-
-## 화면 문구와 최종 목적
-
-- 현재 홈의 “자동주문 작동 중” 표현은 실제 동작과 다릅니다. “모의주문 가능 상태” 또는
-  “주문 차단 장치 꺼짐”처럼 현재 사실을 보여 주세요.
-- 프로그램을 켜 두는 것과 명시적으로 arm된 자동운용을 같은 것으로 표현하지 마세요. 시작 시 기본은
-  `DISARMED`이고 arm 실패를 INTERNAL_PAPER 자동 fallback으로 바꾸지 않습니다.
-- KIS 모의투자, 내부 가상거래, 백테스트를 화면에서 서로 다른 모드로 분명하게 표시합니다.
-- Risk 결과는 허용/경고/보류/차단과 이유를 사용자가 이해할 수 있는 말로 설명합니다.
-- Team B 미리보기와 Team B 실제 결과를 같은 것으로 표시하지 않습니다.
-
-온보딩, 학습일지, 시장데이터, 사용자관리, 백업, RAG 문서관리, 자동매매 예약처럼 OpenAPI에 없는
-기능이 필요하면 구현하지 말고 PR 설명에 다음처럼 한 줄을 남겨 주세요.
-
-```text
-OWNER_API_MISSING: 주문 예약 화면 / 거래일·시간·활성 상태를 저장하고 조회할 API 필요
-```
-
-## 완료 확인
-
-Node.js 22 기준으로 다음을 모두 통과시켜 주세요.
-
-```bash
 cd workspaces/experience-dashboard
 npm ci
 npm run typecheck
 npm run lint
 npm test
 npm run build
-docker build --platform linux/amd64 -t capstone-experience-dashboard:p1-local .
+npm run test:e2e:live
 ```
 
-통합 앱을 `./capstone up`으로 켠 뒤 저장소 루트에서 Owner backend acceptance를 먼저 재현합니다.
-
-```bash
-./capstone team-a acceptance
-```
-
-Owner runner는 exact-33, `skip 0`, 4xx/5xx 실패, 비밀번호/JWT/응답 원문 비노출을 이미 검증합니다.
-Team A는 이 generated client와 catalog를 실제 production 화면 동작에 연결하고 같은 matrix를 UI
-Playwright에서 다시 통과시켜야 합니다.
+Owner의 exact-33 명령은 backend 전제 확인입니다. Team A의 `test:e2e:live`는 위 다섯 실제 화면 흐름,
+오류 표시, badge와 state 복구를 검증하면 됩니다. 테스트 skip은 0이어야 합니다.
 
 ## 보내 주실 것
 
-1. PR 주소와 최신 commit SHA
+1. PR URL과 commit SHA
 2. `package-lock.json` SHA-256
-3. 위 명령들의 성공 결과
-4. 33개 API의 method/path/성공 상태 표
-5. Playwright `skip 0` HTML report 또는 민감값을 제거한 증거
-6. `OWNER_API_MISSING` 목록
+3. typecheck/lint/unit/contract/build/UI Playwright 결과
+4. 변경한 사용자 흐름 다섯 개의 짧은 설명과 `OWNER_API_MISSING`이 있으면 그 목록
 
-`.next`, `node_modules`, 개인 `.env`, credential과 cache는 PR에 넣지 않습니다.
+production image build와 digest, exact-33 재실행, Compose·security 검증은 Owner가 담당합니다. `.next`,
+`node_modules`, 개인 `.env`, credential과 test cache는 제출하지 않습니다.
 
 ## 그대로 보내는 짧은 메시지
 
 ```text
-통합 PR이 main에 병합됐다는 안내를 받은 뒤 최신 main을 받아 주세요.
-workspaces/experience-dashboard에서 현재 연결된 API 15개를 정확히 검증하고, 최종 명세가 Team A에
-배정한 18개를 화면에 추가해 총 33개를 로컬 Spring과 연결해 주세요. API는 새로 만들지 말고,
-OpenAPI에 없는 기능은 OWNER_API_MISSING으로 적어 주세요. 기본 DISARMED와 명시적 arm을 구분하고,
-KIS 장애를 INTERNAL_PAPER 자동 fallback으로 표현하지 말고, 완료 조건과 제출물은 이 요청서를 그대로 따라 주세요.
+최신 main에서 workspaces/experience-dashboard만 수정해 주세요. backend exact-33, generated client,
+Seed/reset과 검증기는 Owner가 이미 준비했으므로 다시 만들거나 33행 표를 수동 작성할 필요가 없습니다.
+기존 화면을 유지하면서 로그인·근거, 모의주문, automation, RAG·Journal, truth badge의 다섯 사용자 흐름만
+production UI로 완성하고 typecheck/lint/test/build/UI Playwright 결과와 PR·lock SHA를 보내 주세요.
+provider credential이나 실제 주문은 실행하지 않습니다.
 ```

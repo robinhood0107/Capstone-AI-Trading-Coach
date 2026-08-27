@@ -2,8 +2,8 @@
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
 > **1.0.0 current authority (2026-08-27):** Owner-First full-app v3 API는 아직 release되지 않았다.
-> contract-only 단계가 고정한 Automation/Journal 8개를 runtime merge candidate가 구현해 root OpenAPI는
-> 기존 exact-48 projection을 보존한 exact 56개다. Team A 완료 기준은 exact-33 live Spring 검증이다.
+> contract-only 단계가 고정한 Automation/Journal 8개는 PR #171로 병합됐고 root OpenAPI는 기존 exact-48
+> projection을 보존한 exact 56개다. Owner Team A backend 기준 exact-33 live Spring도 PR #172로 병합됐다.
 > 공개 endpoint는 OpenAPI SSOT와 별도 contract-change가 병합된 경우에만 구현된 것으로 본다. 기존
 > placeholder 계획, LightGBM production 경로와 `NOT_MATERIALIZED` 상태는 현재 v3 권위로 명시되지
 > 않았다면 `HISTORICAL_SUPERSEDED`다. live order authority는 0이다.

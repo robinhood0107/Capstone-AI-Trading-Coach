@@ -8,7 +8,8 @@
 ## 2. Owner가 이미 준비한 것
 
 Owner는 exact-56 Spring API, Team A exact-33 acceptance, Team B exact-31 입력과 exact-10 결과 계약,
-provider-free 기본 Compose, synthetic golden과 실제 결과의 구분을 준비했습니다.
+validator/importer/runtime, provider-free Compose와 supply-chain을 준비했습니다. Team은 backend나 통합 도구를
+다시 만들지 않습니다.
 
 ## 3. 수정할 것
 
@@ -29,13 +30,13 @@ git pull --ff-only origin main
 
 ## 5. 완료 테스트
 
-Team A는 live Spring exact-33과 Playwright skip 0을, Team B는 exact-10·두 번 실행 결정성·독립 metric을
-각자 증명합니다. Owner는 결과 수신 뒤 코드 보강 없이 계약 검증과 통합만 수행합니다.
+Team A는 실제 UI 다섯 흐름과 Playwright skip 0을, Team B는 exact-10·두 번 실행 결정성·독립 metric을
+증명합니다. exact-33 backend 재검증과 image/OCI supply-chain은 Owner가 수행합니다.
 
 ## 6. 제출할 파일·commit·OCI digest
 
-각 팀은 PR URL, commit SHA, dependency lock SHA-256, 테스트 결과를 제출합니다. Team A는 production image
-digest, Team B는 restricted GHCR immutable OCI digest와 artifact manifest SHA-256도 제출합니다.
+각 팀은 PR URL, commit SHA, dependency lock SHA-256과 핵심 테스트 결과만 제출합니다. Team A는 UI 흐름,
+Team B는 input/output manifest와 exact-10 hash를 덧붙입니다. image/OCI digest는 Owner가 재현합니다.
 
 ## 7. 하지 말아야 할 것
 

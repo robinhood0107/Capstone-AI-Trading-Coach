@@ -38,13 +38,30 @@ KIS_LIVE_BROKERAGE_CALLS=0
 bootstrap, migration, Seed, identity, Dashboard seed, Team B prepare, 모델 fetch는
 `docker compose run --rm`으로 실행했다. 따라서 완료 뒤 project에 exited container가 남지 않는다.
 
+## 2026-08-27 main 병합·fresh clone 추가 증거
+
+```text
+PR_173_MERGE_SHA=0eeb8825a309602fdf91a0454660c8b072b902cc
+POST_MERGE_REQUIRED_WORKFLOWS=6_SUCCESS
+FRESH_CLONE_DOCTOR=PASS
+FRESH_CLONE_DEFAULT_UP=5_HEALTHY
+FRESH_CLONE_SMOKE=PASS
+FRESH_CLONE_ONE_SHOT_RESIDUAL=0
+FRESH_CLONE_PROVIDER_CALLS=0
+FRESH_CLONE_DOWN_VOLUMES_PRESERVED=TRUE
+```
+
+fresh clone은 기존 project와 다른 Compose project, state directory, API/Dashboard port를 사용했다. 이미
+존재하던 같은 이름의 diagnostic volume은 삭제하지 않았고, 새 unique project로 재실행해 empty DB에서
+B86+V87+V88+V89 migration과 Seed import를 확인했다.
+
 ## 아직 이 증거가 의미하지 않는 것
 
 - Team B real artifact 완료가 아니다.
 - Team A의 현재 연결 API live Playwright는 완료됐지만, 요청서의 미사용 명세 API 추가 연결 완료는 아니다.
 - Intel 실기기 OCR 품질 gate 완료가 아니다.
 - KIS 모의투자 physical certification 완료가 아니다. 확인 시각에는 거래시간이 끝났으며 호출은 0이다.
-- GitHub PR, post-merge CI와 clean `git pull` 재현 완료가 아니다.
+- Team A/B 실제 결과 병합, physical activation 또는 Release 완료가 아니다.
 
 ```text
 TEAM_B_REAL_ARTIFACT_MISSING

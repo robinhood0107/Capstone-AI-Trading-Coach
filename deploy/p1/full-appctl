@@ -322,7 +322,7 @@ team_a_acceptance() {
   export P1_TEAM_A_ACCEPTANCE_ENABLED=true
   export P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK=$fixed_clock
   local result=0 restore_result=0 runtime_restore_result=0
-  if ! compose up -d --force-recreate --wait decision-platform; then
+  if ! compose up -d --force-recreate --no-deps --wait decision-platform; then
     result=1
   fi
   if [[ $result == 0 ]] && ! compose --profile preview run --rm --no-deps dashboard-preview-seed; then
@@ -344,7 +344,7 @@ team_a_acceptance() {
     [[ $restore_result != 0 ]] || restore_result=1
   fi
   unset P1_TEAM_A_ACCEPTANCE_ENABLED P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK fixed_clock
-  if ! compose up -d --force-recreate --wait decision-platform; then
+  if ! compose up -d --force-recreate --no-deps --wait decision-platform; then
     runtime_restore_result=1
   fi
   [[ $result == 0 && $restore_result == 0 && $runtime_restore_result == 0 ]] || die TEAM_A_ACCEPTANCE_FAILED

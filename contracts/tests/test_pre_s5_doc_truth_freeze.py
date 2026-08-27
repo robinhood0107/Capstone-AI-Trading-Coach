@@ -373,7 +373,7 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
             self._commit(root, "verified S5 OpenAPI transition")
 
             with mock.patch(
-                "contracts.verify_s5_signal_runtime_transition.verify_openapi_transition"
+                "contracts.verify_p1_automation_journal_openapi_transition.verify_transition"
             ):
                 errors = verify_solo_ownership_lock(root, base)
 

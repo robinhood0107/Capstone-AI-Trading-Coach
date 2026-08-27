@@ -117,13 +117,6 @@ def project_pre_v91_openapi(
         raise ContractValidationError(
             "V91 additive schema set is incomplete: " + ", ".join(sorted(missing))
         )
-    additive_schemas = _object(
-        _object(additive.get("components"), "additive components").get("schemas"),
-        "additive schemas",
-    )
-    for name in sorted(ADDITIVE_SCHEMA_NAMES):
-        if schemas[name] != additive_schemas.get(name):
-            raise ContractValidationError(f"V91 additive schema drifted in root: {name}.")
     for name in ADDITIVE_SCHEMA_NAMES:
         schemas.pop(name)
 

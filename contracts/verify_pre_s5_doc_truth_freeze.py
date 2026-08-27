@@ -909,13 +909,12 @@ def immutable_history_diff_errors(root: Path, base: str) -> list[str]:
         else ()
     )
     if "contracts/openapi/openapi.json" in changed_immutable_paths:
-        transition_catalog = root / "contracts/catalogs/s5-signal-runtime-transition.v1.json"
         openapi = root / "contracts/openapi/openapi.json"
         try:
-            # S5 transition verifier가 historical projection 보존을 증명할 때만 frozen raw byte 변경을 허용한다.
-            from contracts.verify_s5_signal_runtime_transition import verify_openapi_transition
+            # S5/S7을 포함한 exact-48 projection과 P1 exact-8 추가를 모두 증명해야 변경을 허용한다.
+            from contracts.verify_p1_automation_journal_openapi_transition import verify_transition
 
-            verify_openapi_transition(openapi, transition_catalog)
+            verify_transition(openapi)
         except (ContractValidationError, OSError):
             pass
         else:
@@ -1007,16 +1006,14 @@ def verify_public_truth_freeze(root: Path) -> list[str]:
     for relative, expected_digest in V1_FROZEN_SHA256.items():
         path = safe_regular_file(root, relative)
         if relative == "contracts/openapi/openapi.json" and path is not None:
-            transition_catalog = root / "contracts/catalogs/s5-signal-runtime-transition.v1.json"
-            if transition_catalog.is_file() and not transition_catalog.is_symlink():
-                try:
-                    # historical OpenAPI 자체가 아니라 승인된 S5 추가분을 제거한 projection을 동결한다.
-                    from contracts.verify_s5_signal_runtime_transition import verify_openapi_transition
+            try:
+                # exact-56에서도 P1 8개를 제거한 exact-48 projection이 byte-stable해야 한다.
+                from contracts.verify_p1_automation_journal_openapi_transition import verify_transition
 
-                    verify_openapi_transition(path, transition_catalog)
-                except (ContractValidationError, OSError) as error:
-                    errors.append(f"{relative}: {error}")
-                continue
+                verify_transition(path)
+            except (ContractValidationError, OSError) as error:
+                errors.append(f"{relative}: {error}")
+            continue
         actual_digest = hashlib.sha256(path.read_bytes()).hexdigest() if path else None
         if actual_digest != expected_digest:
             errors.append(f"{relative}: frozen digest mismatch")

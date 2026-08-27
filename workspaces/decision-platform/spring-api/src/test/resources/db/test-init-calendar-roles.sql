@@ -8,6 +8,8 @@ CREATE ROLE decision_app
   LOGIN PASSWORD 'app-test' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_worker
   LOGIN PASSWORD 'worker-test-secret-0001' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_automation_runtime
+  LOGIN PASSWORD 'automation-runtime-test-0001' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_outbox_publisher
   LOGIN PASSWORD 'outbox-publisher-test-0001' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_poison_recorder
@@ -82,6 +84,11 @@ ALTER ROLE decision_worker SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_worker SET statement_timeout = '60s';
 ALTER ROLE decision_worker SET lock_timeout = '500ms';
 ALTER ROLE decision_worker SET idle_in_transaction_session_timeout = '60s';
+ALTER ROLE decision_automation_runtime SET log_parameter_max_length = 0;
+ALTER ROLE decision_automation_runtime SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_automation_runtime SET statement_timeout = '5s';
+ALTER ROLE decision_automation_runtime SET lock_timeout = '500ms';
+ALTER ROLE decision_automation_runtime SET idle_in_transaction_session_timeout = '5s';
 ALTER ROLE decision_outbox_publisher SET log_parameter_max_length = 0;
 ALTER ROLE decision_outbox_publisher SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_outbox_publisher SET statement_timeout = '30s';
@@ -123,6 +130,7 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO
     decision_app,
     decision_worker,
+    decision_automation_runtime,
     decision_outbox_publisher,
     decision_poison_recorder,
     decision_replay,

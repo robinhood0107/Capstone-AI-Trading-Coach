@@ -128,6 +128,8 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'app-test';
                 CREATE ROLE decision_worker LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'worker-test-secret-0001';
+                CREATE ROLE decision_automation_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'automation-runtime-test-0001';
                 CREATE ROLE decision_outbox_publisher LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'outbox-publisher-test-0001';
                 CREATE ROLE decision_poison_recorder LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
@@ -178,6 +180,9 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                 ALTER ROLE decision_worker SET statement_timeout = '60s';
                 ALTER ROLE decision_worker SET lock_timeout = '500ms';
                 ALTER ROLE decision_worker SET idle_in_transaction_session_timeout = '60s';
+                ALTER ROLE decision_automation_runtime SET statement_timeout = '5s';
+                ALTER ROLE decision_automation_runtime SET lock_timeout = '500ms';
+                ALTER ROLE decision_automation_runtime SET idle_in_transaction_session_timeout = '5s';
                 ALTER ROLE decision_rag_writer SET statement_timeout = '2s';
                 ALTER ROLE decision_rag_writer SET lock_timeout = '500ms';
                 ALTER ROLE decision_rag_writer SET idle_in_transaction_session_timeout = '5s';
@@ -199,6 +204,7 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                 GRANT CONNECT ON DATABASE decision TO
                     decision_app,
                     decision_worker,
+                    decision_automation_runtime,
                     decision_replay,
                     decision_identity,
                     decision_auth,
@@ -223,6 +229,7 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                 GRANT USAGE ON SCHEMA public TO
                     decision_app,
                     decision_worker,
+                    decision_automation_runtime,
                     decision_replay,
                     decision_identity,
                     decision_auth,

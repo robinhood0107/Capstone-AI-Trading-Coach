@@ -51,15 +51,25 @@ def main() -> int:
         close_fds=True,
     )
     brokerage: subprocess.Popen[bytes] | None = None
-    if os.environ.get("KIS_MOCK_BROKERAGE_ONLINE_ENABLED", "false").lower() == "true":
+    brokerage_enabled = os.environ.get("KIS_MOCK_BROKERAGE_ONLINE_ENABLED", "false").lower() == "true"
+    automation_enabled = os.environ.get("P1_AUTOMATION_RUNTIME_ENABLED", "false").lower() == "true"
+    if automation_enabled and not brokerage_enabled:
+        raise RuntimeError("automation runtime requires explicit KIS_MOCK online mode")
+    if brokerage_enabled:
         brokerage = subprocess.Popen(
             ["python", "-m", "app.brokerage.brokerage_grpc_server"],
             close_fds=True,
         )
-    processes = (
-        (worker, inference, spring)
-        if brokerage is None
-        else (worker, inference, spring, brokerage)
+    automation: subprocess.Popen[bytes] | None = None
+    if automation_enabled:
+        automation = subprocess.Popen(
+            ["python", "-m", "app.p1_owner.automation_runtime"],
+            close_fds=True,
+        )
+    processes = tuple(
+        process
+        for process in (worker, inference, spring, brokerage, automation)
+        if process is not None
     )
     stopping = False
 

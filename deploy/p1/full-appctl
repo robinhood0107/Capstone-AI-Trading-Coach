@@ -24,7 +24,7 @@ usage() {
 Usage:
   ./capstone up [--models] [--mock]
   ./capstone status|logs|smoke|down|doctor
-  ./capstone mock <configure|doctor|certify> [--symbol 005930] [--quantity 1]
+  ./capstone mock <configure|doctor|certify|readiness|start|stop> [--symbol 005930] [--quantity 1]
   ./capstone artifact <validate|import> <bundle-directory> --manifest-sha256 <sha256>
   ./capstone team-a acceptance
 
@@ -132,6 +132,35 @@ upgrade_state() {
       | write_state secrets/team-a-acceptance.env 0640
     unset postgres_password
   fi
+  local automation_runtime_password
+  automation_runtime_password=$(sed -n 's/^POSTGRES_AUTOMATION_RUNTIME_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+  if [[ ! $automation_runtime_password =~ ^[0-9a-f]{64}$ ]]; then
+    automation_runtime_password=$(openssl rand -hex 32)
+    printf 'POSTGRES_AUTOMATION_RUNTIME_PASSWORD=%s\n' "$automation_runtime_password" \
+      | append_state secrets/postgres.env 0640
+  fi
+  if ! grep -q '^POSTGRES_AUTOMATION_RUNTIME_PASSWORD=' "$SECRETS_DIR/role-bootstrap.env"; then
+    printf 'POSTGRES_AUTOMATION_RUNTIME_PASSWORD=%s\n' "$automation_runtime_password" \
+      | append_state secrets/role-bootstrap.env 0640
+  fi
+  if [[ ! -e $SECRETS_DIR/automation-runtime.env ]]; then
+    printf 'P1_AUTOMATION_DATABASE_DSN=postgresql://decision_automation_runtime:%s@postgres:5432/capstone_p1?sslmode=disable\nAUTOMATION_RUNTIME_SHARED_SECRET=%s\nP1_AUTOMATION_OWNER_USER_ID=usr_demo_user\n' \
+      "$automation_runtime_password" "$(openssl rand -hex 32)" \
+      | write_state secrets/automation-runtime.env 0640
+  fi
+  if ! grep -q '^P1_AUTOMATION_OWNER_USER_ID=' "$SECRETS_DIR/automation-runtime.env"; then
+    printf 'P1_AUTOMATION_OWNER_USER_ID=usr_demo_user\n' \
+      | append_state secrets/automation-runtime.env 0640
+  fi
+  if [[ ! -e $SECRETS_DIR/automation-gate-author.env ]]; then
+    local replay_authorizer_password
+    replay_authorizer_password=$(sed -n 's/^POSTGRES_REPLAY_AUTHORIZER_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+    [[ $replay_authorizer_password =~ ^[0-9a-f]{64}$ ]] || die AUTOMATION_GATE_AUTHOR_SECRET_MISSING
+    printf 'P1_AUTOMATION_GATE_AUTHOR_DSN=postgresql://decision_replay_authorizer:%s@postgres:5432/capstone_p1?sslmode=disable\n' \
+      "$replay_authorizer_password" | write_state secrets/automation-gate-author.env 0640
+    unset replay_authorizer_password
+  fi
+  unset automation_runtime_password
   install -d -m 0700 "$STATE_DIR/artifacts"
   install -d -m 0700 "$STATE_DIR/mock"
   if ! grep -q '^P1_OPERATOR_UID=' "$RUNTIME_ENV"; then
@@ -175,19 +204,22 @@ run_initializers() {
 }
 
 save_active_mode() {
-  local models=$1 mock=$2
-  printf 'MODELS=%s\nMOCK=%s\n' "$models" "$mock" | write_state active-mode.env 0600
+  local models=$1 mock=$2 automation=$3
+  printf 'MODELS=%s\nMOCK=%s\nAUTOMATION=%s\n' "$models" "$mock" "$automation" \
+    | write_state active-mode.env 0600
 }
 
 load_active_mode() {
   MODELS=0
   MOCK=0
+  AUTOMATION=0
   if [[ -f $ACTIVE_MODE && ! -L $ACTIVE_MODE ]]; then
     while IFS='=' read -r key value; do
       [[ $value == 0 || $value == 1 ]] || die ACTIVE_MODE_INVALID
       case $key in
         MODELS) MODELS=$value ;;
         MOCK) MOCK=$value ;;
+        AUTOMATION) AUTOMATION=$value ;;
         *) die ACTIVE_MODE_INVALID ;;
       esac
     done < "$ACTIVE_MODE"
@@ -222,6 +254,7 @@ up_app() {
   fi
   export P1_KIS_MOCK_ONLINE_ENABLED=$([[ $mock == 1 ]] && printf true || printf false)
   export P1_KIS_OFFLINE=$([[ $mock == 1 ]] && printf 0 || printf 1)
+  export P1_AUTOMATION_RUNTIME_ENABLED=false
   require_command openssl
   require_command python3
   [[ -n $DOCKER_BIN ]] || die MISSING_COMMAND_docker
@@ -243,7 +276,7 @@ up_app() {
   # 기존 preview와 host port가 같아 cut-over 직전에만 중지한다. volume은 건드리지 않는다.
   stop_old_preview_containers
   compose up -d --wait actor-authority decision-platform experience-dashboard
-  save_active_mode "$models" "$mock"
+  save_active_mode "$models" "$mock" 0
   local expected=5
   ((models)) && expected=7
   local running
@@ -273,7 +306,8 @@ status() {
   state_ready || die NOT_INITIALIZED
   load_active_mode
   compose --profile models ps
-  printf 'CAPSTONE_ACTIVE_MODELS=%s\nCAPSTONE_ACTIVE_MOCK=%s\n' "$MODELS" "$MOCK"
+  printf 'CAPSTONE_ACTIVE_MODELS=%s\nCAPSTONE_ACTIVE_MOCK=%s\nCAPSTONE_ACTIVE_AUTOMATION=%s\n' \
+    "$MODELS" "$MOCK" "$AUTOMATION"
 }
 
 logs() {
@@ -507,7 +541,83 @@ PY
     python -m app.brokerage.kis_mock_certification_cli author
   compose --profile owner run --rm --no-deps kis-mock-certification-runner
   mock_certified >/dev/null || die KIS_MOCK_CERTIFICATION_RECEIPT_INVALID
+  author_automation_gate >/dev/null 2>&1 || true
   printf 'KIS_MOCK_CERTIFICATION=PASS\nKIS_LIVE_BROKERAGE=DISABLED\n'
+}
+
+author_automation_gate() {
+  local receipt=$STATE_DIR/mock/certification.json
+  local certification_sha certification_session head tree
+  mock_certified >/dev/null || return 1
+  certification_sha=$(sha256sum "$receipt" | awk '{print $1}')
+  certification_session=$(python3 - "$receipt" <<'PY'
+import json, pathlib, sys
+from datetime import datetime
+from zoneinfo import ZoneInfo
+value=json.loads(pathlib.Path(sys.argv[1]).read_bytes())
+timestamp=datetime.fromisoformat(value["timestamp"].removesuffix("Z")+"+00:00")
+print(timestamp.astimezone(ZoneInfo("Asia/Seoul")).date().isoformat())
+PY
+)
+  head=$(git -C "$REPO_ROOT" rev-parse HEAD)
+  tree=$(git -C "$REPO_ROOT" rev-parse 'HEAD^{tree}')
+  export P1_CERTIFICATION_RECEIPT_SHA256=$certification_sha
+  export P1_CERTIFICATION_SESSION_DATE=$certification_session
+  P1_RELEASE_BINDING_SHA256=$(printf 'p1-release-binding/v1\0%s' "$head" | sha256sum | awk '{print $1}')
+  P1_SOURCE_BINDING_SHA256=$(printf 'p1-source-binding/v1\0%s' "$tree" | sha256sum | awk '{print $1}')
+  export P1_RELEASE_BINDING_SHA256 P1_SOURCE_BINDING_SHA256
+  compose --profile owner run --rm --no-deps automation-gate-author
+  unset certification_sha certification_session head tree P1_CERTIFICATION_RECEIPT_SHA256 \
+    P1_CERTIFICATION_SESSION_DATE P1_RELEASE_BINDING_SHA256 P1_SOURCE_BINDING_SHA256
+}
+
+mock_readiness() {
+  state_ready || die NOT_INITIALIZED
+  upgrade_state
+  compose ps --status running --services | grep -qx postgres || die MOCK_READINESS_POSTGRES_NOT_RUNNING
+  local certification_valid=false
+  if mock_certified >/dev/null 2>&1; then
+    certification_valid=true
+  fi
+  export P1_LOCAL_CERTIFICATION_VALID=$certification_valid
+  compose --profile owner run --rm --no-deps automation-runtime-cli \
+    python -m app.p1_owner.mock_automation_cli readiness
+}
+
+mock_start() {
+  state_ready || die NOT_INITIALIZED
+  upgrade_state
+  mock_certified >/dev/null || die KIS_MOCK_NOT_CERTIFIED
+  author_automation_gate || die AUTOMATION_ACTIVATION_GATE_NOT_READY
+  load_active_mode
+  compose ps --status running --services | grep -qx postgres || die MOCK_START_POSTGRES_NOT_RUNNING
+  compose ps --status running --services | grep -qx actor-authority || die MOCK_START_AUTHORITY_NOT_RUNNING
+  export P1_LOCAL_CERTIFICATION_VALID=true
+  export P1_KIS_MOCK_ONLINE_ENABLED=true
+  export P1_KIS_OFFLINE=0
+  export P1_AUTOMATION_RUNTIME_ENABLED=true
+  compose --profile owner run --rm --no-deps automation-runtime-cli \
+    python -m app.p1_owner.mock_automation_cli start
+  if ! compose up -d --force-recreate --no-deps --wait decision-platform; then
+    # DB arm 뒤 process 시작 실패는 즉시 신규 주문만 disarm한다. reconciliation row/volume은 보존한다.
+    compose --profile owner run --rm --no-deps automation-runtime-cli \
+      python -m app.p1_owner.mock_automation_cli stop >/dev/null 2>&1 || true
+    die MOCK_START_RUNTIME_FAILED_DISARM_ATTEMPTED
+  fi
+  save_active_mode "$MODELS" 1 1
+  printf 'KIS_MOCK_RUNTIME=ENABLED\nKIS_LIVE_BROKERAGE=DISABLED\n'
+}
+
+mock_stop() {
+  state_ready || die NOT_INITIALIZED
+  upgrade_state
+  load_active_mode
+  export P1_LOCAL_CERTIFICATION_VALID=false
+  compose --profile owner run --rm --no-deps automation-runtime-cli \
+    python -m app.p1_owner.mock_automation_cli stop
+  # process는 outstanding reconciliation을 위해 유지하고 control만 DISARMED로 바꾼다.
+  save_active_mode "$MODELS" "$MOCK" "$AUTOMATION"
+  printf 'KIS_MOCK_NEW_ORDERS=DISARMED\nOUTSTANDING_RECONCILIATION=PRESERVED\n'
 }
 
 artifact_import() {
@@ -526,6 +636,7 @@ artifact_import() {
   export P1_ARTIFACT_ARCHIVE_DIR=$STATE_DIR/artifacts
   export P1_ARTIFACT_MANIFEST_SHA256=$manifest_sha
   compose --profile owner run --rm --no-deps artifact-importer
+  author_automation_gate >/dev/null 2>&1 || true
 }
 
 artifact_validate() {
@@ -574,6 +685,9 @@ case $command in
       configure) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_configure ;;
       doctor) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_doctor || die KIS_MOCK_NOT_READY ;;
       certify) mock_certify "$@" ;;
+      readiness) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_readiness ;;
+      start) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_start ;;
+      stop) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_stop ;;
       *) die UNKNOWN_MOCK_COMMAND ;;
     esac
     ;;

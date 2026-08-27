@@ -263,6 +263,9 @@ services:
       RAG_WEB_ENABLED: "false"
       S4_9_STRONG_LLM_ENABLED: "false"
       S4_9_MCP_ENABLED: "false"
+      P1_OFFLINE_DEMO: "true"
+      P1_TEAM_A_ACCEPTANCE_ENABLED: "${P1_TEAM_A_ACCEPTANCE_ENABLED:-false}"
+      P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK: "${P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK:-}"
       APP_P1_RETURN_ARTIFACT_SYNTHETIC_TEST_PROFILE: "${P1_ARTIFACT_SYNTHETIC_TEST_PROFILE:-false}"
       BROKERAGE_GRPC_ENABLED: "${P1_KIS_MOCK_ONLINE_ENABLED:-false}"
       BROKERAGE_GRPC_TARGET: 127.0.0.1:50052
@@ -379,6 +382,22 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
+    restart: "no"
+    networks: [p1-data]
+
+  team-a-acceptance-seed:
+    profiles: [acceptance]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "team-a-acceptance"]
+    command: ["python", "-m", "app.p1_owner.team_a_acceptance_seed", "seed"]
+    environment:
+      P1_OFFLINE_DEMO: "true"
+      P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK: "${P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK:-}"
+    secrets: [team_a_acceptance_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    <<: *app-security
     restart: "no"
     networks: [p1-data]
 
@@ -582,6 +601,7 @@ secrets:
   rag_history_kek: {file: "${P1_SECRETS_DIR}/rag-history-kek-v1.key"}
   seed_import_env: {file: "${P1_SECRETS_DIR}/seed-import.env"}
   artifact_import_env: {file: "${P1_SECRETS_DIR}/artifact-import.env"}
+  team_a_acceptance_env: {file: "${P1_SECRETS_DIR}/team-a-acceptance.env"}
   return_inference_env: {file: "${P1_SECRETS_DIR}/return-inference.env"}
   actor_tls_ca: {file: "${P1_SECRETS_DIR}/actor-tls-ca.crt"}
   actor_server_p12: {file: "${P1_SECRETS_DIR}/actor-server.p12"}

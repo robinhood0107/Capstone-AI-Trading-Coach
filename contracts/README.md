@@ -30,6 +30,20 @@ uv run --frozen python contracts/verify_p1_automation_journal_openapi_transition
 uv run --frozen python contracts/validate.py
 ```
 
+## P1 Team A exact-33 acceptance
+
+`catalogs/p1-team-a-acceptance.v1.json`은 root exact-56 중 Team A current 15 + required 18의
+method/path/operationId와 성공 status를 고정한다. `generate_p1_team_a_acceptance.py`가 catalog,
+`p1-ui-evidence-badges.v1.json`, same-origin typed TypeScript client를 함께 생성한다. 실제 로컬 Spring
+acceptance는 `./capstone team-a acceptance` 한 명령이며 provider call 0, skip 0, fake production
+response 0과 Kill Switch/automation 복구를 강제한다. 이 PASS는 Team A 실제 UI 완료가 아니다.
+
+```bash
+uv run --frozen python contracts/generate_p1_team_a_acceptance.py --check
+uv run --frozen python -m unittest contracts.tests.test_p1_team_a_acceptance -v
+./capstone team-a acceptance
+```
+
 ## S5.7A model-neutral Market Data contract
 
 `catalogs/s5-7a-market-data-lock.v1.json`은 LightGBM publication과 분리된 내부 Python data plane의

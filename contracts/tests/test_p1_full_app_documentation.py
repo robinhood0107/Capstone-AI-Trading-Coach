@@ -274,7 +274,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         )
         self.assertEqual(EXPECTED_API_CLASSIFICATIONS, observed_by_classification)
 
-    def test_team_a_request_lists_all_current_and_required_operations(self) -> None:
+    def test_team_a_request_uses_catalog_reference_and_exact_five_sections(self) -> None:
         request = (
             ROOT / "docs/decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md"
         ).read_text(encoding="utf-8")
@@ -284,11 +284,22 @@ class P1FullAppDocumentationTest(unittest.TestCase):
                 request,
             )
         )
-        expected = TEAM_A_CURRENT_OPERATIONS | TEAM_A_REQUIRED_OPERATIONS
-        self.assertEqual(33, len(expected))
-        self.assertEqual(set(), expected.difference(documented))
-        self.assertIn("수동 33행 표를 다시\n작성할 필요는 없습니다", request)
-        self.assertIn("production image build와 digest", request)
+        self.assertEqual(frozenset(), documented)
+        self.assertIn("p1-team-a-acceptance.v1.json", request)
+        self.assertIn("p1-team-a-client.v1.ts", request)
+        self.assertIn("기존 Dashboard 구조와 작업 결과를 보존해 주세요.", request)
+        self.assertEqual(
+            [
+                "1. 기존 작업 중 보존할 것",
+                "2. 추가할 사용자 흐름과 디자인",
+                "3. 실행 명령",
+                "4. 제출물 네 가지",
+                "5. 하지 말아야 할 것",
+            ],
+            re.findall(r"(?m)^## (.+)$", request),
+        )
+        for phrase in ("Figma 또는 v0", "WCAG AA", "tabular alignment", "glassmorphism"):
+            self.assertIn(phrase, request)
 
     def test_team_b_request_lists_exact_artifacts_and_owner_verification_apis(
         self,
@@ -296,34 +307,24 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         request = (
             ROOT / "docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md"
         ).read_text(encoding="utf-8")
-        artifact_section = re.search(
-            r"(?ms)^## 결과 폴더와 파일 10개\s*$\n(.*?)(?=^##\s)",
-            request,
+        self.assertTrue(all(f"`{artifact}`" in request for artifact in TEAM_B_ARTIFACTS))
+        self.assertEqual(
+            [
+                "1. 기존 작업 중 보존할 것",
+                "2. 추가할 production 기능",
+                "3. 실행 명령",
+                "4. 완료 기준과 제출물",
+                "5. 하지 말아야 할 것",
+            ],
+            re.findall(r"(?m)^## (.+)$", request),
         )
-        self.assertIsNotNone(artifact_section)
-        artifacts = tuple(
-            re.findall(r"(?m)^\d+\.\s+`([^`]+)`\s*$", artifact_section.group(1))
-        )
-        self.assertEqual(TEAM_B_ARTIFACTS, artifacts)
-
-        api_section = re.search(
-            r"(?ms)^## 통합 담당자가 나중에 할 일\s*$\n(.*?)(?=^##\s)",
-            request,
-        )
-        self.assertIsNotNone(api_section)
-        verification_operations = frozenset(
-            re.findall(
-                r"`(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+(/api/[^`]+)`",
-                api_section.group(1),
-            )
-        )
-        self.assertEqual(TEAM_B_VERIFICATION_OPERATIONS, verification_operations)
-        self.assertEqual(1, request.count("OWNER_INPUT_MISSING"))
-        self.assertIn("`OWNER_INPUT_MISSING`은 해소됐습니다", request)
+        self.assertIn("지금까지 만든 LSTM, rule baseline", request)
+        self.assertIn("dev/owner-handoff/<inputManifestSha256>/handoff.json", request)
+        self.assertIn("mode `0600` regular file", request)
         self.assertNotIn("p1-return-engine-manifest.v1.json", request)
         self.assertIn("p1-return-engine-manifest.v2.json", request)
         self.assertIn("./capstone artifact validate", request)
-        self.assertIn("OCI/SBOM/provenance/signature는 Owner가 맡습니다", request)
+        self.assertIn("provider/KIS/ECOS/yfinance/Spring/account/order/Vertex/GDELT", request)
 
     def test_team_handoff_checklist_has_no_stale_preview_or_api_edge_flow(self) -> None:
         checklist = (
@@ -331,6 +332,26 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertNotIn("./capstone preview", checklist)
         self.assertNotIn("api-edge", checklist)
+
+    def test_current_operations_document_separates_runtime_code_from_activation(self) -> None:
+        operations = (
+            ROOT / "docs/decision-platform/P1_운영_후속_경계.md"
+        ).read_text(encoding="utf-8")
+        change = (
+            ROOT / "contracts/changes/20260827-p1-kis-mock-automation-runtime-v90.md"
+        ).read_text(encoding="utf-8")
+
+        for marker in (
+            "AUTOMATION_PERSISTENT_RUNTIME=IMPLEMENTED_INACTIVE",
+            "NEXT_SESSION_SCHEDULER=IMPLEMENTED_TRANSIENT_SYSTEMD",
+            "VERTEX_BUY_VETO_PRODUCTION_TRANSPORT=ABSTAIN_NOT_CONFIGURED",
+            "RECURRING_AUTOMATION=DISABLED",
+            "KIS_MOCK_CERTIFICATION=NOT_RUN",
+        ):
+            self.assertIn(marker, operations)
+        self.assertIn("nrcvb_buy_qty", change)
+        self.assertIn("root OpenAPI exact-56", change)
+        self.assertIn("physical calls are zero", change)
 
     def test_legacy_v1_authority_files_remain_present(self) -> None:
         self.assertTrue((ROOT / "deploy/p1/release-manifest.schema.json").is_file())

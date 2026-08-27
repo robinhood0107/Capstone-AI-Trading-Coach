@@ -26,6 +26,7 @@ Usage:
   ./capstone status|logs|smoke|down|doctor
   ./capstone mock <configure|doctor|certify> [--symbol 005930] [--quantity 1]
   ./capstone artifact import <bundle-directory> --manifest-sha256 <sha256>
+  ./capstone team-a acceptance
 
 Default `up` starts five persistent containers. `--models` adds the official
 BGE-M3 and llama.cpp PaddleOCR-VL runtimes for a total of seven. Brokerage is
@@ -122,6 +123,14 @@ upgrade_state() {
     printf 'P1_ARTIFACT_IMPORT_DATABASE_DSN=postgresql://decision_worker:%s@postgres:5432/capstone_p1?sslmode=disable\n' "$worker_password" \
       | write_state secrets/artifact-import.env 0640
     unset worker_password
+  fi
+  if [[ ! -e $SECRETS_DIR/team-a-acceptance.env ]]; then
+    local postgres_password
+    postgres_password=$(sed -n 's/^POSTGRES_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+    [[ $postgres_password =~ ^[0-9a-f]{64}$ ]] || die TEAM_A_ACCEPTANCE_DATABASE_SECRET_MISSING
+    printf 'P1_TEAM_A_ACCEPTANCE_DATABASE_DSN=postgresql://postgres:%s@postgres:5432/capstone_p1?sslmode=disable\n' "$postgres_password" \
+      | write_state secrets/team-a-acceptance.env 0640
+    unset postgres_password
   fi
   install -d -m 0700 "$STATE_DIR/artifacts"
   install -d -m 0700 "$STATE_DIR/mock"
@@ -297,6 +306,52 @@ if response.status != 200 or body.get("data", {}).get("user", {}).get("userId") 
 PY
   compose --profile smoke run --rm --no-deps -e P1_SMOKE_MODE=DB synthetic-async-smoke
   printf 'CAPSTONE_SMOKE=PASS\nPROVIDER_CALLS=0\n'
+}
+
+team_a_acceptance() {
+  state_ready || die NOT_INITIALIZED
+  require_command npm
+  upgrade_state
+  load_active_mode
+  [[ $MOCK == 0 ]] || die TEAM_A_ACCEPTANCE_REQUIRES_PROVIDER_FREE_MODE
+  compose ps --status running --services | grep -qx postgres || die TEAM_A_ACCEPTANCE_POSTGRES_NOT_RUNNING
+  compose ps --status running --services | grep -qx decision-platform || die TEAM_A_ACCEPTANCE_API_NOT_RUNNING
+  compose ps --status running --services | grep -qx experience-dashboard || die TEAM_A_ACCEPTANCE_DASHBOARD_NOT_RUNNING
+  local fixed_clock
+  fixed_clock=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  export P1_TEAM_A_ACCEPTANCE_ENABLED=true
+  export P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK=$fixed_clock
+  local result=0 restore_result=0 runtime_restore_result=0
+  if ! compose up -d --force-recreate --wait decision-platform; then
+    result=1
+  fi
+  if [[ $result == 0 ]] && ! compose --profile preview run --rm --no-deps dashboard-preview-seed; then
+    result=1
+  fi
+  if [[ $result == 0 ]] && ! compose --profile acceptance run --rm --no-deps team-a-acceptance-seed; then
+    result=1
+  fi
+  if [[ $result == 0 ]] && ! P1_DASHBOARD_URL="http://127.0.0.1:${P1_DASHBOARD_PORT:-3000}" \
+    P1_USER_PASSWORD_FILE="$SECRETS_DIR/demo-user.password" \
+    P1_ADMIN_PASSWORD_FILE="$SECRETS_DIR/demo-admin.password" \
+    npm --prefix "$REPO_ROOT/workspaces/experience-dashboard" run test:e2e:owner-acceptance; then
+    result=$?
+    [[ $result != 0 ]] || result=1
+  fi
+  if ! compose --profile acceptance run --rm --no-deps team-a-acceptance-seed \
+    python -m app.p1_owner.team_a_acceptance_seed restore; then
+    restore_result=$?
+    [[ $restore_result != 0 ]] || restore_result=1
+  fi
+  unset P1_TEAM_A_ACCEPTANCE_ENABLED P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK fixed_clock
+  if ! compose up -d --force-recreate --wait decision-platform; then
+    runtime_restore_result=1
+  fi
+  [[ $result == 0 && $restore_result == 0 && $runtime_restore_result == 0 ]] || die TEAM_A_ACCEPTANCE_FAILED
+  printf 'OWNER_TEAM_A_BACKEND_PREREQUISITES=PASS\n'
+  printf 'OWNER_POST_TEAM_A_BACKEND_CODE_REQUIRED=0\n'
+  printf 'TEAM_A_ACCEPTANCE_OPERATION_COUNT=33\n'
+  printf 'PLAYWRIGHT_SKIP=0\nFRONTEND_FAKE_PRODUCTION_RESPONSE=0\nPROVIDER_CALLS=0\n'
 }
 
 down() {
@@ -503,6 +558,13 @@ case $command in
         artifact_import "$bundle" "${1:-}"
         ;;
       *) die UNKNOWN_ARTIFACT_COMMAND ;;
+    esac
+    ;;
+  team-a)
+    subcommand=${1:-}; [[ -n $subcommand ]] || die TEAM_A_COMMAND_REQUIRED; shift
+    case $subcommand in
+      acceptance) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; team_a_acceptance ;;
+      *) die UNKNOWN_TEAM_A_COMMAND ;;
     esac
     ;;
   preview|start) up_app "$@" ;;

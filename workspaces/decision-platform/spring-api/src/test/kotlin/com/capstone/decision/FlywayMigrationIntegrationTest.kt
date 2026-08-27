@@ -75,10 +75,10 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `clean database applies V1 through V89 migrations and creates required objects`() {
+    fun `clean database applies V1 through V90 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
         // V7 is a Java migration and must appear alongside the SQL migrations.
-        assertEquals((1..89).map(Int::toString), versions)
+        assertEquals((1..90).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -227,6 +227,203 @@ class FlywayMigrationIntegrationTest(
             indexDefinitionLike("rag_chunk_embeddings", "%ivfflat%"),
             "ivfflat must wait until real embeddings are loaded",
         )
+    }
+
+    @Test
+    fun `V90 automation runtime role is function only restart safe and CAS fenced`() {
+        val owner = "usr_automation_runtime_0001"
+        val session = "2026-08-28"
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                statement.executeUpdate("delete from automation_runtime_events where user_id='$owner'")
+                statement.executeUpdate(
+                    "delete from automation_processed_ticks where run_id in " +
+                        "(select run_id from automation_runs where user_id='$owner')",
+                )
+                statement.executeUpdate("delete from automation_order_reservations where user_id='$owner'")
+                statement.executeUpdate("delete from automation_runtime_checkpoint where user_id='$owner'")
+                statement.executeUpdate("delete from automation_runtime_claim where user_id='$owner'")
+                statement.executeUpdate("delete from automation_runtime_schedule where user_id='$owner'")
+                statement.executeUpdate("delete from automation_runs where user_id='$owner'")
+                statement.executeUpdate("delete from automation_control where user_id='$owner'")
+                statement.executeUpdate("delete from users where user_id='$owner'")
+                statement.executeUpdate(
+                    "insert into users(user_id,username,password_hash,role,status,security_version) values " +
+                        "('$owner','automation_runtime_0001'," +
+                        "'\$2b\$12\$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','USER','ACTIVE',1)",
+                )
+                statement.executeUpdate(
+                    "insert into automation_control(" +
+                        "user_id,control_state,version,brokerage_mode,account_id,principle_id,strategy_id," +
+                        "baseline_account_digest,certification_status,kill_switch_active) values (" +
+                        "'$owner','ARMED',1,'KIS_MOCK','acct_${"a".repeat(32)}'," +
+                        "'prc_automation_runtime_0001','strategy_automation_runtime_0001'," +
+                        "repeat('b',64),'VALID',false)",
+                )
+                statement.executeUpdate(
+                    "insert into automation_runtime_schedule(" +
+                        "schedule_id,user_id,session_date,control_version,schedule_state,run_at) values (" +
+                        "'auto_sched_${"c".repeat(32)}','$owner','$session',1,'ARMED'," +
+                        "timestamptz '2026-08-28 08:55:00+09')",
+                )
+            }
+        }
+
+        DriverManager
+            .getConnection(
+                postgres.jdbcUrl,
+                "decision_automation_runtime",
+                "automation-runtime-test-0001",
+            ).use { runtime ->
+                runtime.createStatement().use { statement ->
+                    assertEquals(
+                        "42501",
+                        assertThrows<SQLException> {
+                            statement.executeQuery("select count(*) from automation_runtime_schedule")
+                        }.sqlState,
+                    )
+                    val runId =
+                        statement
+                            .executeQuery(
+                                "select run_id from p1_claim_automation_session_v1(" +
+                                    "date '$session','sha256:${"d".repeat(64)}')",
+                            ).use { rows ->
+                                assertTrue(rows.next())
+                                rows.getString(1)
+                            }
+                    assertTrue(runId.matches(Regex("^auto_run_[0-9a-f]{32}$")))
+
+                    val advance =
+                        "select checkpoint_version,replayed from p1_advance_automation_checkpoint_v1(" +
+                            "'$runId','sha256:${"d".repeat(64)}','sha256:${"e".repeat(64)}',1," +
+                            "'PRECHECK',null::text,null::text,null::text,0,0,0,null::text,null::bigint,null::date," +
+                            "null::text,null::text,'sha256:${"f".repeat(64)}','RUN_TRANSITIONED'," +
+                            "'${"1".repeat(64)}')"
+                    statement.executeQuery(advance).use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals(2, rows.getInt(1))
+                        assertFalse(rows.getBoolean(2))
+                    }
+                    statement.executeQuery(advance).use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals(2, rows.getInt(1))
+                        assertTrue(rows.getBoolean(2))
+                    }
+                    assertEquals(
+                        "23505",
+                        assertThrows<SQLException> {
+                            statement.executeQuery(advance.replace("sha256:${"f".repeat(64)}", "sha256:${"0".repeat(64)}"))
+                        }.sqlState,
+                    )
+                    assertEquals(
+                        "40001",
+                        assertThrows<SQLException> {
+                            statement.executeQuery(
+                                advance
+                                    .replace("sha256:${"e".repeat(64)}", "sha256:${"2".repeat(64)}")
+                                    .replace("sha256:${"f".repeat(64)}", "sha256:${"3".repeat(64)}"),
+                            )
+                        }.sqlState,
+                    )
+                    assertEquals(
+                        "22023",
+                        assertThrows<SQLException> {
+                            statement.executeQuery(
+                                advance
+                                    .replace("sha256:${"e".repeat(64)}", "sha256:${"4".repeat(64)}")
+                                    .replace(",0,0,0,null::text", ",0,0,2,null::text"),
+                            )
+                        }.sqlState,
+                    )
+
+                    statement
+                        .executeQuery(
+                            "select control_version,replayed from p1_stop_automation_runtime_v1('$owner',1)",
+                        ).use { rows ->
+                            assertTrue(rows.next())
+                            assertEquals(2, rows.getInt(1))
+                            assertFalse(rows.getBoolean(2))
+                        }
+                    assertEquals(
+                        "40001",
+                        assertThrows<SQLException> {
+                            statement.executeQuery(
+                                advance
+                                    .replace("sha256:${"e".repeat(64)}", "sha256:${"5".repeat(64)}")
+                                    .replace("sha256:${"f".repeat(64)}", "sha256:${"6".repeat(64)}")
+                                    .replace(",1,'PRECHECK'", ",2,'BUY_CANDIDATE_SELECTED'"),
+                            )
+                        }.sqlState,
+                    )
+                }
+            }
+
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                assertEquals(
+                    "CLAIMED",
+                    statement
+                        .executeQuery(
+                            "select schedule_state from automation_runtime_schedule where user_id='$owner'",
+                        ).use { rows ->
+                            assertTrue(rows.next())
+                            rows.getString(1)
+                        },
+                )
+                statement.executeUpdate(
+                    "update automation_runtime_checkpoint set state='PENDING_RECONCILIATION'," +
+                        "checkpoint_version=10 where user_id='$owner'",
+                )
+                statement.executeUpdate(
+                    "update automation_runs set state='PENDING_RECONCILIATION' where user_id='$owner'",
+                )
+            }
+        }
+        DriverManager
+            .getConnection(
+                postgres.jdbcUrl,
+                "decision_automation_runtime",
+                "automation-runtime-test-0001",
+            ).use { runtime ->
+                runtime.createStatement().use { statement ->
+                    val runId =
+                        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+                            admin.createStatement().use { adminStatement ->
+                                adminStatement.executeQuery("select run_id from automation_runs where user_id='$owner'").use { rows ->
+                                    assertTrue(rows.next())
+                                    rows.getString(1)
+                                }
+                            }
+                        }
+                    statement
+                        .executeQuery(
+                            "select checkpoint_version,replayed from p1_advance_automation_checkpoint_v1(" +
+                                "'$runId','sha256:${"d".repeat(64)}','sha256:${"7".repeat(64)}',10," +
+                                "'COMPLETED',null::text,null::text,null::text,0,0,0,null::text,null::bigint,null::date," +
+                                "null::text,null::text,'sha256:${"8".repeat(64)}','ACCOUNT_RECONCILED'," +
+                                "'${"9".repeat(64)}')",
+                        ).use { rows ->
+                            assertTrue(rows.next())
+                            assertEquals(11, rows.getInt(1))
+                        }
+                }
+            }
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                assertEquals(
+                    "RELEASED:COMPLETED",
+                    statement
+                        .executeQuery(
+                            "select claim.claim_state||':'||schedule.schedule_state " +
+                                "from automation_runtime_claim claim join automation_runtime_schedule schedule " +
+                                "using(user_id,session_date) where claim.user_id='$owner'",
+                        ).use { rows ->
+                            assertTrue(rows.next())
+                            rows.getString(1)
+                        },
+                )
+            }
+        }
     }
 
     @Test
@@ -449,7 +646,7 @@ class FlywayMigrationIntegrationTest(
                     ).use { result ->
                         val versions = mutableListOf<String>()
                         while (result.next()) versions += result.getString(1)
-                        assertEquals((1..89).map(Int::toString), versions)
+                        assertEquals((1..90).map(Int::toString), versions)
                     }
                 val privileges =
                     mapOf(
@@ -4569,7 +4766,7 @@ class FlywayMigrationIntegrationTest(
             registry.add("spring.flyway.password", postgres::getPassword)
             // The primary integration database exercises current adapters against the current schema.
             // Historical migration boundaries remain covered by their explicitly targeted databases.
-            registry.add("spring.flyway.target") { "89" }
+            registry.add("spring.flyway.target") { "90" }
             registry.add("app.decision.grpc.shared-secret") { SpringApiIntegrationTestBase.TEST_GRPC_SHARED_SECRET }
             registry.add("app.rag.grpc.shared-secret") {
                 SpringApiIntegrationTestBase.TEST_RAG_GRPC_SHARED_SECRET

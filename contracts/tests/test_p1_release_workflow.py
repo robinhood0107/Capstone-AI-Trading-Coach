@@ -12,9 +12,27 @@ ASSEMBLER = REPOSITORY_ROOT / "deploy" / "p1" / "assemble-offline-bundle"
 BACKUP = REPOSITORY_ROOT / "deploy" / "p1" / "backup"
 RESTORE = REPOSITORY_ROOT / "deploy" / "p1" / "restore-test"
 POSTGRES_DOCKERFILE = REPOSITORY_ROOT / "deploy" / "p1" / "docker" / "postgres-pgvector.Dockerfile"
+FULL_APPCTL = REPOSITORY_ROOT / "deploy" / "p1" / "full-appctl"
+P1_COMPOSE = REPOSITORY_ROOT / "deploy" / "p1" / "compose.yml"
+DECISION_SUPERVISOR = REPOSITORY_ROOT / "deploy" / "p1" / "docker" / "decision-platform-supervisor.py"
 
 
 class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
+    def test_mock_automation_cli_and_supervisor_are_explicitly_gated(self) -> None:
+        control = FULL_APPCTL.read_text(encoding="utf-8")
+        compose = P1_COMPOSE.read_text(encoding="utf-8")
+        supervisor = DECISION_SUPERVISOR.read_text(encoding="utf-8")
+
+        for function in ("mock_readiness()", "mock_start()", "mock_stop()"):
+            self.assertIn(function, control)
+        self.assertIn("python -m app.p1_owner.mock_automation_cli readiness", control)
+        self.assertIn("python -m app.p1_owner.mock_automation_cli start", control)
+        self.assertIn("python -m app.p1_owner.mock_automation_cli stop", control)
+        self.assertIn('P1_AUTOMATION_RUNTIME_ENABLED: "${P1_AUTOMATION_RUNTIME_ENABLED:-false}"', compose)
+        self.assertIn('automation_enabled and not brokerage_enabled', supervisor)
+        self.assertIn('["python", "-m", "app.p1_owner.automation_runtime"]', supervisor)
+        self.assertNotIn("cron", supervisor)
+
     def test_dispatch_input_is_never_interpolated_into_shell_source(self) -> None:
         lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
         input_expression = "${{ inputs.releaseVersion }}"

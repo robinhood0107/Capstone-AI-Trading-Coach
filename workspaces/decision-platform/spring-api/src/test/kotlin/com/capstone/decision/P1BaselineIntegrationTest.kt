@@ -45,8 +45,10 @@ class P1BaselineIntegrationTest {
             locations = arrayOf("classpath:db/migration"),
         ).migrate()
         assertTrue(roleExists("decision_auth"))
+        assertTrue(roleExists("decision_automation_runtime"))
         P1DatabaseRoleBootstrap.bootstrap(p1RoleEnvironment(UPGRADE_DB))
         assertTrue(roleExists("decision_auth"))
+        assertTrue(roleCanConnect("decision_automation_runtime", UPGRADE_DB))
         assertTrue(roleExists("decision_outbox_publisher"))
         assertTrue(roleExists("decision_poison_recorder"))
         P1FlywayMigrate.migrate(p1MigrationEnvironment(UPGRADE_DB))
@@ -54,11 +56,14 @@ class P1BaselineIntegrationTest {
     }
 
     @Test
-    fun `fresh database applies B86 through V89 while existing database applies V1 through V89`() {
-        assertEquals(listOf("86" to "SQL_BASELINE", "87" to "SQL", "88" to "SQL", "89" to "SQL"), history(BASELINE_DB))
-        assertEquals(89, history(HISTORICAL_DB).size)
-        assertEquals("89" to "SQL", history(HISTORICAL_DB).last())
-        assertEquals("89" to "SQL", history(UPGRADE_DB).last())
+    fun `fresh database applies B86 through V90 while existing database applies V1 through V90`() {
+        assertEquals(
+            listOf("86" to "SQL_BASELINE", "87" to "SQL", "88" to "SQL", "89" to "SQL", "90" to "SQL"),
+            history(BASELINE_DB),
+        )
+        assertEquals(90, history(HISTORICAL_DB).size)
+        assertEquals("90" to "SQL", history(HISTORICAL_DB).last())
+        assertEquals("90" to "SQL", history(UPGRADE_DB).last())
         assertTrue(history(UPGRADE_DB).none { it.second == "SQL_BASELINE" })
     }
 
@@ -91,7 +96,7 @@ class P1BaselineIntegrationTest {
         listOf(HISTORICAL_DB, BASELINE_DB).forEach { database ->
             assertEquals(0L, count(database, "actor_request_capability"))
             assertEquals(
-                "89",
+                "90",
                 scalar(database, "select version from flyway_schema_history where success order by installed_rank desc limit 1"),
             )
         }
@@ -293,6 +298,7 @@ class P1BaselineIntegrationTest {
             "POSTGRES_ADMIN_USER" to postgres.username,
             "POSTGRES_PASSWORD" to "baseline-admin-test",
             "POSTGRES_AUTH_PASSWORD" to "a".repeat(64),
+            "POSTGRES_AUTOMATION_RUNTIME_PASSWORD" to "d".repeat(64),
             "POSTGRES_OUTBOX_PUBLISHER_PASSWORD" to "b".repeat(64),
             "POSTGRES_POISON_RECORDER_PASSWORD" to "c".repeat(64),
         )
@@ -301,6 +307,21 @@ class P1BaselineIntegrationTest {
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
             connection.prepareStatement("select exists(select 1 from pg_roles where rolname=?)").use { statement ->
                 statement.setString(1, role)
+                statement.executeQuery().use { rows ->
+                    check(rows.next())
+                    rows.getBoolean(1)
+                }
+            }
+        }
+
+    private fun roleCanConnect(
+        role: String,
+        database: String,
+    ): Boolean =
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            connection.prepareStatement("select has_database_privilege(?, ?, 'CONNECT')").use { statement ->
+                statement.setString(1, role)
+                statement.setString(2, database)
                 statement.executeQuery().use { rows ->
                     check(rows.next())
                     rows.getBoolean(1)

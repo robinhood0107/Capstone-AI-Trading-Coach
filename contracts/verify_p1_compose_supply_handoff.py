@@ -309,13 +309,16 @@ def verify_compose() -> None:
             raise ContractError(f"Team B OCI verifier boundary is missing: {required}")
     for required in (
         "artifact_validate()",
+        "--pull never",
         "--network none",
         "--read-only",
         "--validate-only",
         "TEAM_B_LOCAL_VALIDATION=PASS",
     ):
         if required not in control:
-            raise ContractError(f"Team B local validator boundary is missing: {required}")
+            raise ContractError(
+                f"Team B local validator boundary is missing: {required}"
+            )
 
 
 def verify_handoff_docs() -> None:

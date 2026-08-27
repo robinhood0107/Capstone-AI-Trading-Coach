@@ -157,9 +157,12 @@ def test_capstone_artifact_command_is_outside_certification_heredoc_and_uses_one
     validator_function = control.index("\nartifact_validate()")
     assert validator_function > artifact_function
     validator = control[validator_function : control.index("\n}\n", validator_function)]
+    assert "--pull never" in validator
     assert "--network none" in validator
     assert "--read-only" in validator
     assert "--validate-only" in validator
+    assert "PROVIDER_LIVE_CALLS_ENABLED=false" in validator
+    assert "KIS_OFFLINE=1" in validator
     assert "PROVIDER_CALLS=0" in validator
 
     compose = (repository / "deploy/p1/compose.yml").read_text(encoding="utf-8")

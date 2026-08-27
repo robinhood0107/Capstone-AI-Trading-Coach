@@ -8,8 +8,11 @@ OWNER_AUTOMATION_JOURNAL_API=MERGED_PR_171
 ROOT_OPENAPI_OPERATIONS=56_MERGED
 TARGET_ROOT_OPENAPI_OPERATIONS=56
 TEAM_A_REQUIRED_OPERATIONS=33
-OWNER_TEAM_A_BACKEND_PREREQUISITES=PASS_MERGE_CANDIDATE
+OWNER_TEAM_A_BACKEND_PREREQUISITES=MERGED_PR_172
 OWNER_POST_TEAM_A_BACKEND_CODE_REQUIRED=0
+OWNER_COMPOSE_5_7=PREPARED_MERGE_CANDIDATE
+OWNER_SUPPLY_CHAIN_PREP=PASS_MERGE_CANDIDATE
+OWNER_HANDOFF_DOCS=PASS_MERGE_CANDIDATE
 TEAM_B_REAL_ARTIFACT=PENDING_EXTERNAL_TEAM
 TEAM_A_REAL_UI=PENDING_EXTERNAL_TEAM
 LIGHTGBM=RESEARCH_ONLY_NO_SIGNAL_OR_ORDER_AUTHORITY
@@ -70,3 +73,15 @@ Playwright runner와 비밀값 비노출 reporter가 준비됐다. `./capstone t
 exact-33 성공, `PLAYWRIGHT_SKIP=0`, `FRONTEND_FAKE_PRODUCTION_RESPONSE=0`, provider call 0을 검증하고
 Kill Switch와 automation state를 복구한다. 이는 Owner backend prerequisite PASS이며 Team A production
 UI 자체는 여전히 `PENDING_EXTERNAL_TEAM`이다.
+
+## Compose, supply-chain, handoff 현재 상태
+
+단일 Compose는 기본 5개와 models profile 2개, 내부 Return inference, one-shot `run --rm`, loopback bind,
+Docker socket 0, provider-free 기본값을 고정한다. Team B intake는 restricted GHCR immutable digest,
+동일 workflow identity의 OCI signature와 keyless signed-blob receipt Sigstore bundle, SLSA provenance,
+SPDX/CycloneDX SBOM과 exact-10 hash binding을 요구한다. 실제 digest가 없으므로 준비 상태만 PASS이고
+`TEAM_B_REAL_ARTIFACT=PENDING_EXTERNAL_TEAM`이다.
+
+Team A, Team B, Owner와 시작 문서는 `docs/handoff/`에 있으며 각 문서는 정확히 일곱 절만 사용한다.
+5/7 live Compose, restart recovery와 fresh-main clone evidence는 이 merge candidate가 main에 병합된 뒤
+exact merge SHA에서 확인한다.

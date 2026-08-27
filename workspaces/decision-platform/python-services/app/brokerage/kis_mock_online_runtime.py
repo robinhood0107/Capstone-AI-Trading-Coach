@@ -231,6 +231,30 @@ class KISMockExecutionReader:
         rows = _strict_execution_rows(payload, require_nonempty=True)
         return _execution_snapshot_from_rows(rows, reference)
 
+    def read_optional(
+        self,
+        *,
+        reference: MockProviderOrderReference,
+        start: date,
+        end: date,
+        recent: bool,
+    ) -> MockExecutionSnapshot | None:
+        """Read at most one exact snapshot with one provider page and no probe/read duplication."""
+
+        payload = self._request_execution_page(
+            reference=reference,
+            start=start,
+            end=end,
+            recent=recent,
+        )
+        rows = _execution_source_probe_rows(payload)
+        matches = [row for row in rows if _execution_order_no(row) == reference.provider_order_no]
+        if len(matches) > 1:
+            raise ValueError("KIS mock execution order match is not unique")
+        if not matches:
+            return None
+        return _execution_snapshot_from_rows(matches, reference)
+
     def probe_execution_source(
         self,
         *,

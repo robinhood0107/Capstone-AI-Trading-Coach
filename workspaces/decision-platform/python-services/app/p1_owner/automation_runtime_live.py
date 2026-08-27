@@ -24,13 +24,17 @@ from app.data.kis._credential_transport import _build_redis_client
 from app.data.kis.http_client import CURRENT_PRICE_PATH, KISHttpClient
 from app.data.kis.settings import KISSettings
 from app.p1_owner.automation import (
+    AccountLineageSnapshot,
+    AutomationError,
     AutomationInputs,
     AutomationRun,
     NewsVerdict,
     OrderReservation,
     Quote,
+    ReconcileSnapshot,
     ReconcileOutcome,
     SubmitOutcome,
+    _limit_price,
 )
 from app.p1_owner.automation_runtime import (
     AutomationRuntimeError,
@@ -75,7 +79,9 @@ class QuoteSourcePort(Protocol):
 class ExecutionSourcePort(Protocol):
     def balance(self, account_id: str) -> dict[str, object]: ...
 
-    def read(self, order_id: str, account_id: str, session_date: date) -> ReconcileOutcome: ...
+    def read(
+        self, order_id: str, account_id: str, session_date: date
+    ) -> ReconcileOutcome | ReconcileSnapshot: ...
 
     def require_closed(self, order_id: str, account_id: str, session_date: date) -> bool: ...
 
@@ -199,36 +205,36 @@ class KisAutomationExecutionSource:
             "accountId": source.account_id,
             "cashKrw": source.cash_krw,
             "portfolioEquityKrw": source.portfolio_equity_krw,
+            # KIS cash balance lacks trusted margin/catalog enrichment required by RiskEngine.
+            "riskComplete": False,
             "positions": [
                 {"marketValueKrw": market_value, "quantity": quantity, "symbol": symbol}
                 for symbol, quantity, market_value in source.positions
             ],
         }
 
-    def read(self, order_id: str, account_id: str, session_date: date) -> ReconcileOutcome:
+    def read(self, order_id: str, account_id: str, session_date: date) -> ReconcileSnapshot:
         reference = self._reference(order_id, account_id)
-        source = self._reader.probe_execution_source(
-            reference=reference,
-            start=session_date,
-            end=session_date,
-            recent=True,
-        )
-        if not source.matched:
-            return "UNRESOLVED"
         try:
-            snapshot = self._reader.read(
+            snapshot = self._reader.read_optional(
                 reference=reference,
                 start=session_date,
                 end=session_date,
                 recent=True,
             )
         except ValueError:
-            return "UNRESOLVED"
-        if snapshot.cumulative_quantity == reference.quantity and snapshot.leaves_quantity == 0:
-            return "FILLED"
-        if snapshot.cumulative_quantity == 0 and snapshot.leaves_quantity == reference.quantity:
-            return "UNFILLED"
-        return "UNRESOLVED"
+            snapshot = None
+        if snapshot is None:
+            return ReconcileSnapshot(False, 0, reference.quantity, None)
+        return ReconcileSnapshot(
+            resolved=True,
+            cumulative_quantity=snapshot.cumulative_quantity,
+            leaves_quantity=snapshot.leaves_quantity,
+            average_fill_price_krw=snapshot.average_fill_price_krw,
+            cancelled=snapshot.cancelled,
+            rejected=snapshot.rejected,
+            provider_exec_ref_hash=snapshot.provider_exec_ref_hash,
+        )
 
     def require_closed(self, order_id: str, account_id: str, session_date: date) -> bool:
         reference = self._reference(order_id, account_id)
@@ -278,7 +284,7 @@ class LiveAutomationPort:
         self._quote_source = quote_source
         self._execution_source = execution_source
         self._vertex_transport = vertex_transport
-        self._cached_quote: Quote | None = None
+        self._cached_quotes: dict[str, Quote] = {}
         self.decision_id = (
             str(state.get("decisionId")) if isinstance(state.get("decisionId"), str) else None
         )
@@ -311,16 +317,21 @@ class LiveAutomationPort:
     ) -> AutomationInputs:
         risk_allow = True
         buyable_quantity = 1
+        buyable_amount_krw = 9_223_372_036_854_775_807
+        account_complete: bool | None = None
+        account_digest_matches: bool | None = None
         runtime_state = dict(state)
         if run.state == "RISK_CHECKING":
-            quote = self._quote(run.selected_symbol)
+            reservation = run.reservation
+            if reservation is None or reservation.intent is None:
+                raise AutomationRuntimeError("AUTOMATION_EXACT_INTENT_MISSING")
             decision = self._bridge.command(
                 "EVALUATE",
                 self._claim.user_id,
                 {
                     "principleId": self._claim.principle_id,
                     "portfolioSource": "KIS_MOCK",
-                    "orderIntent": _order_intent(run, quote.price_krw, self._claim.strategy_id),
+                    "orderIntent": reservation.intent.projection(),
                 },
                 idempotency_key=_idempotency(self._claim.run_id, "decision"),
             )
@@ -332,41 +343,56 @@ class LiveAutomationPort:
                 raise AutomationRuntimeError("AUTOMATION_DECISION_INVALID")
             self.decision_id = decision_id
             risk_allow = risk.get("decision") == "ALLOW" and risk.get("canSubmitOrder") is True
-        if run.state == "ORDER_SUBMITTING" and run.reservation is None:
+        if run.state == "ORDER_SIZING":
             symbol = _required(run.selected_symbol)
-            quote = self._quote(symbol)
+            quote = run.selected_quote or self._quote(symbol)
+            exact_limit_price = _limit_price(quote, _required_side(run.selected_side))
+            self._require_capacity(1)
             balance = self._execution_source.balance(self._claim.account_id)
+            self.physical_calls += 1
             if balance.get("accountId") != self._claim.account_id:
                 raise AutomationRuntimeError("AUTOMATION_BALANCE_IDENTITY_MISMATCH")
-            baseline = state.get("baselineAccountProjection")
-            if not isinstance(baseline, dict):
-                raise AutomationRuntimeError("AUTOMATION_BASELINE_PROJECTION_MISSING")
-            runtime_state["accountDigestMatches"] = _balance_projection(
-                balance
-            ) == _balance_projection(baseline)
-            runtime_state["accountComplete"] = True
-            self.physical_calls += 1
-            buyable = self._bridge.command(
-                "BUYABLE",
-                self._claim.user_id,
-                {
-                    "accountId": self._claim.account_id,
-                    "estimatedPrice": quote.price_krw,
-                    "symbol": symbol,
-                },
+            expected = state.get(
+                "expectedAccountProjection", state.get("baselineAccountProjection")
             )
-            self.physical_calls += 1
-            if (
-                buyable.get("accountId") != self._claim.account_id
-                or buyable.get("symbol") != symbol
-                or buyable.get("estimatedPrice") != quote.price_krw
-            ):
-                raise AutomationRuntimeError("AUTOMATION_BUYABLE_IDENTITY_MISMATCH")
-            buyable_quantity = int(buyable.get("buyableQuantity", 0))
+            if not isinstance(expected, dict):
+                raise AutomationRuntimeError("AUTOMATION_BASELINE_PROJECTION_MISSING")
+            account_complete = balance.get("riskComplete") is True
+            try:
+                expected_lineage = AccountLineageSnapshot.from_projection(expected)
+                observed_lineage = AccountLineageSnapshot.from_projection(balance)
+            except (AutomationError, TypeError, ValueError) as error:
+                raise AutomationRuntimeError("AUTOMATION_ACCOUNT_LINEAGE_INVALID") from error
+            account_digest_matches = expected_lineage.exact_match(observed_lineage)
+            runtime_state["accountDigestMatches"] = account_digest_matches
+            runtime_state["accountComplete"] = account_complete
+            if account_complete and run.selected_side == "BUY":
+                self._require_capacity(1)
+                buyable = self._bridge.command(
+                    "BUYABLE",
+                    self._claim.user_id,
+                    {
+                        "accountId": self._claim.account_id,
+                        "estimatedPrice": exact_limit_price,
+                        "symbol": symbol,
+                    },
+                )
+                self.physical_calls += 1
+                if (
+                    buyable.get("accountId") != self._claim.account_id
+                    or buyable.get("symbol") != symbol
+                    or buyable.get("estimatedPrice") != exact_limit_price
+                ):
+                    raise AutomationRuntimeError("AUTOMATION_BUYABLE_IDENTITY_MISMATCH")
+                buyable_quantity = int(buyable.get("buyableQuantity", 0))
+                buyable_amount_krw = int(buyable.get("buyableAmountKrw", 0))
         return inputs_from_state(
             runtime_state,
             risk_allow=risk_allow,
             buyable_quantity=buyable_quantity,
+            buyable_amount_krw=buyable_amount_krw,
+            account_complete=account_complete,
+            account_digest_matches=account_digest_matches,
         )
 
     def quote(self, symbol: str) -> Quote:
@@ -374,29 +400,34 @@ class LiveAutomationPort:
 
     def vertex(self, symbol: str) -> NewsVerdict:
         self.vertex_calls += 1
+        self._require_capacity(1)
         request = _vertex_request(self._claim.session_date, symbol, self._quote(symbol).price_krw)
+        before_calls = getattr(self._vertex_transport, "physical_calls", 0)
         result = json.loads(evaluate_vertex_buy_veto(request, transport=self._vertex_transport))
-        transport_calls = getattr(self._vertex_transport, "physical_calls", 0)
-        if isinstance(transport_calls, int) and transport_calls >= 0:
-            self.physical_calls += transport_calls
+        after_calls = getattr(self._vertex_transport, "physical_calls", 0)
+        if (
+            isinstance(before_calls, int)
+            and isinstance(after_calls, int)
+            and after_calls >= before_calls
+        ):
+            self.physical_calls += after_calls - before_calls
         if result.get("status") != "AVAILABLE":
             return "ABSTAIN"
         verdict = result.get("verdict")
         return cast(NewsVerdict, verdict if verdict in {"VETO_BUY", "NO_VETO"} else "ABSTAIN")
 
     def submit(self, reservation: OrderReservation) -> SubmitOutcome:
-        if self.decision_id is None:
+        if self.decision_id is None or reservation.intent is None:
             raise AutomationRuntimeError("AUTOMATION_DECISION_MISSING")
         self.submit_calls += 1
+        self._require_capacity(1)
         try:
             submitted = self._bridge.command(
                 "SUBMIT",
                 self._claim.user_id,
                 {
                     "decisionId": self.decision_id,
-                    "orderIntent": _order_intent_from_reservation(
-                        reservation, self._claim.strategy_id
-                    ),
+                    "orderIntent": reservation.intent.projection(),
                     "userAcknowledgement": {"warningsAccepted": False},
                 },
                 idempotency_key=_idempotency(self._claim.run_id, "submit"),
@@ -413,11 +444,14 @@ class LiveAutomationPort:
         self.physical_calls += 1
         return "AMBIGUOUS" if submitted.get("status") == "PENDING_RECONCILIATION" else "UNFILLED"
 
-    def reconcile(self, reservation: OrderReservation | None) -> ReconcileOutcome:
+    def reconcile(
+        self, reservation: OrderReservation | None
+    ) -> ReconcileOutcome | ReconcileSnapshot:
         del reservation
         self.reconcile_calls += 1
         if self.order_id is None:
             return "UNRESOLVED"
+        self._require_capacity(1)
         self.physical_calls += 1
         return self._execution_source.read(
             self.order_id,
@@ -430,13 +464,15 @@ class LiveAutomationPort:
         self.cancel_calls += 1
         if self.order_id is None:
             return False
+        if self.physical_calls > 14:
+            return False
         cancelled = self._bridge.command(
             "CANCEL",
             self._claim.user_id,
             {"orderId": self.order_id},
         )
         self.physical_calls += 1
-        if cancelled.get("status") != "CANCELLED":
+        if cancelled.get("orderId") != self.order_id or cancelled.get("status") != "CANCELLED":
             return False
         self.physical_calls += 1
         return self._execution_source.require_closed(
@@ -452,13 +488,21 @@ class LiveAutomationPort:
 
     def _quote(self, symbol: str | None) -> Quote:
         selected = _required(symbol)
-        if self._cached_quote is None:
-            self._cached_quote = self._quote_source.quote(selected)
+        if selected not in self._cached_quotes:
+            if len(self._cached_quotes) >= 6:
+                raise AutomationRuntimeError("AUTOMATION_QUOTE_CAP_EXHAUSTED")
+            self._require_capacity(1)
+            self._cached_quotes[selected] = self._quote_source.quote(selected)
             self.quote_calls += 1
             self.physical_calls += 1
-        if self._cached_quote.symbol != selected:
-            raise AutomationRuntimeError("AUTOMATION_SECOND_QUOTE_FORBIDDEN")
-        return self._cached_quote
+        quote = self._cached_quotes[selected]
+        if quote.symbol != selected:
+            raise AutomationRuntimeError("AUTOMATION_QUOTE_IDENTITY_MISMATCH")
+        return quote
+
+    def _require_capacity(self, calls: int) -> None:
+        if calls < 1 or self.physical_calls > 16 - calls:
+            raise AutomationRuntimeError("AUTOMATION_PROVIDER_CALL_CAP_EXHAUSTED")
 
 
 class LiveAutomationPortFactory:
@@ -474,19 +518,6 @@ class LiveAutomationPortFactory:
             KisAutomationExecutionSource(),
             FailClosedVertexVetoTransport(),
         )
-
-
-def _order_intent(run: AutomationRun, price: int, strategy_id: str) -> dict[str, object]:
-    return {
-        "estimatedAmount": price,
-        "estimatedPrice": price,
-        "orderType": "LIMIT",
-        "quantity": 1,
-        "side": _required(run.selected_side),
-        "strategyId": strategy_id,
-        "symbol": _required(run.selected_symbol),
-        "timeframe": "1d",
-    }
 
 
 def _balance_projection(balance: dict[str, Any]) -> dict[str, object]:
@@ -517,16 +548,9 @@ def _order_intent_from_reservation(
     reservation: OrderReservation,
     strategy_id: str,
 ) -> dict[str, object]:
-    return {
-        "estimatedAmount": reservation.limit_price_krw,
-        "estimatedPrice": reservation.limit_price_krw,
-        "orderType": "LIMIT",
-        "quantity": 1,
-        "side": reservation.side,
-        "strategyId": strategy_id,
-        "symbol": reservation.symbol,
-        "timeframe": "1d",
-    }
+    if reservation.intent is None or reservation.intent.strategy_id != strategy_id:
+        raise AutomationRuntimeError("AUTOMATION_EXACT_INTENT_MISSING")
+    return reservation.intent.projection()
 
 
 def _vertex_request(session_date: date, symbol: str, previous_close: int) -> bytes:
@@ -576,5 +600,11 @@ def _positive_int(value: object) -> int:
 
 def _required(value: str | None) -> str:
     if not value:
+        raise AutomationRuntimeError("AUTOMATION_SELECTION_MISSING")
+    return value
+
+
+def _required_side(value: str | None) -> Any:
+    if value not in {"BUY", "SELL"}:
         raise AutomationRuntimeError("AUTOMATION_SELECTION_MISSING")
     return value

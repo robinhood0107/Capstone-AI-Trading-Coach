@@ -24,16 +24,21 @@ from psycopg.rows import dict_row
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.p1_owner.automation import (
     AutomationEngine,
+    AutomationError,
     AutomationInputs,
+    AutomationPolicySnapshot,
     AutomationRun,
     AutomationStore,
     BotPosition,
+    ExactOrderIntent,
     OrderReservation,
+    Quote,
     SignalCandidate,
 )
 
 _KST = ZoneInfo("Asia/Seoul")
-_OPEN_BOUNDARY = time(9, 10)
+_OPEN_BOUNDARY = time(9, 30)
+_SUBMIT_DEADLINE = time(9, 40)
 _CANCEL_BOUNDARY = time(15, 20)
 _HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
 _USER_ID = re.compile(r"^usr_[A-Za-z0-9_-]{8,96}$")
@@ -90,8 +95,20 @@ class AdvanceCommand:
     provider_call_count: int
     logical_submit_count: int
     reservation_id: str | None
+    quantity: int | None
     limit_price_krw: int | None
+    exact_intent_json: str | None
+    exact_intent_sha256: str | None
+    quote_snapshot_json: str | None
+    policy_id: str | None
+    policy_version: int | None
     position_expiry_session: date | None
+    filled_quantity: int
+    leaves_quantity: int
+    unfilled_terminated_quantity: int
+    average_fill_price_krw: int | None
+    exit_reason: str | None
+    expected_account_digest: str | None
     order_id: str | None
     provider_order_ref_hash: str | None
     result_hash: str
@@ -261,7 +278,7 @@ class PostgresAutomationRuntimeRepository:
     def read_state(self, claim: RuntimeClaim) -> dict[str, Any]:
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(
-                "select p1_read_automation_runtime_state_v1(%s,%s)",
+                "select p1_read_automation_runtime_state_v2(%s,%s)",
                 (claim.run_id, claim.claim_token_hash),
             )
             row = cursor.fetchone()
@@ -281,10 +298,12 @@ class PostgresAutomationRuntimeRepository:
         _require_hash(command.result_hash)
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(
-                "select checkpoint_version,replayed from p1_advance_automation_checkpoint_v1("
+                "select checkpoint_version,replayed from p1_advance_automation_checkpoint_v2("
                 "%s::text,%s::text,%s::text,%s::integer,%s::text,%s::text,%s::text,"
-                "%s::text,%s::integer,%s::integer,%s::integer,%s::text,%s::bigint,%s::date,"
-                "%s::text,%s::text,%s::text,%s::text,%s::text)",
+                "%s::text,%s::integer,%s::integer,%s::integer,%s::text,%s::bigint,%s::bigint,"
+                "%s::text,%s::text,%s::text,%s::text,%s::integer,%s::date,%s::bigint,"
+                "%s::bigint,%s::bigint,%s::bigint,%s::text,%s::text,%s::text,%s::text,%s::text,"
+                "%s::text,%s::text)",
                 (
                     command.run_id,
                     command.claim_token_hash,
@@ -298,8 +317,20 @@ class PostgresAutomationRuntimeRepository:
                     command.provider_call_count,
                     command.logical_submit_count,
                     command.reservation_id,
+                    command.quantity,
                     command.limit_price_krw,
+                    command.exact_intent_json,
+                    command.exact_intent_sha256,
+                    command.quote_snapshot_json,
+                    command.policy_id,
+                    command.policy_version,
                     command.position_expiry_session,
+                    command.filled_quantity,
+                    command.leaves_quantity,
+                    command.unfilled_terminated_quantity,
+                    command.average_fill_price_krw,
+                    command.exit_reason,
+                    command.expected_account_digest,
                     command.order_id,
                     command.provider_order_ref_hash,
                     command.result_hash,
@@ -357,6 +388,9 @@ class PersistentAutomationRunner:
             raise AutomationRuntimeError("AUTOMATION_TICK_WITHOUT_DURABLE_EVENT")
         reservation = run.reservation
         expiry = _new_position_expiry(store, run)
+        intent = reservation.intent if reservation is not None else None
+        quote = run.selected_quote
+        policy = run.policy_snapshot
         result_hash = _sha(canonical_json_bytes(result))
         command = AdvanceCommand(
             run_id=claim.run_id,
@@ -371,8 +405,33 @@ class PersistentAutomationRunner:
             provider_call_count=run.provider_call_count,
             logical_submit_count=run.logical_submit_count,
             reservation_id=_reservation_id(claim.run_id, reservation) if reservation else None,
+            quantity=reservation.quantity if reservation else None,
             limit_price_krw=reservation.limit_price_krw if reservation else None,
+            exact_intent_json=(intent.canonical_bytes.decode() if intent is not None else None),
+            exact_intent_sha256=intent.sha256 if intent is not None else None,
+            quote_snapshot_json=(
+                canonical_json_bytes(
+                    {
+                        "fresh": quote.fresh,
+                        "isEtfEtn": quote.is_etf_etn,
+                        "lowerLimitKrw": quote.lower_limit_krw,
+                        "priceKrw": quote.price_krw,
+                        "symbol": quote.symbol,
+                        "upperLimitKrw": quote.upper_limit_krw,
+                    }
+                ).decode()
+                if quote is not None
+                else None
+            ),
+            policy_id=policy.policy_id if policy else None,
+            policy_version=policy.version if policy else None,
             position_expiry_session=expiry,
+            filled_quantity=run.filled_quantity,
+            leaves_quantity=run.leaves_quantity,
+            unfilled_terminated_quantity=run.unfilled_terminated_quantity,
+            average_fill_price_krw=run.average_fill_price_krw,
+            exit_reason=run.exit_reason,
+            expected_account_digest=_optional_text(state.get("expectedAccountDigest")),
             order_id=port.order_id,
             provider_order_ref_hash=port.provider_order_ref_hash,
             result_hash=result_hash,
@@ -524,6 +583,8 @@ def _store_from_state(
         certification_status="VALID",
         baseline_event_recorded=True,
     )
+    policy = _policy_from_state(state)
+    quote = _quote_from_state(state.get("quoteSnapshot"))
     run = AutomationRun(
         run_id=claim.run_id,
         session_date=session_date,
@@ -537,14 +598,29 @@ def _store_from_state(
         logical_submit_count=int(state["logicalSubmitCount"]),
         physical_submit_count=int(state["logicalSubmitCount"]),
         provider_call_count=int(state["providerCallCount"]),
+        exit_reason=cast(Any, _optional_text(state.get("exitReason"))),
+        selected_quote=quote,
+        filled_quantity=int(state.get("filledQuantity", 0)),
+        leaves_quantity=int(state.get("leavesQuantity", 0)),
+        unfilled_terminated_quantity=int(state.get("unfilledTerminatedQuantity", 0)),
+        average_fill_price_krw=(
+            int(state["averageFillPriceKrw"])
+            if state.get("averageFillPriceKrw") is not None
+            else None
+        ),
+        provider_exec_ref_hash=_optional_text(state.get("providerExecRefHash")),
+        policy_snapshot=policy,
     )
     reservation = state.get("reservation")
     if isinstance(reservation, dict):
+        intent_value = reservation.get("exactIntent")
+        intent = _intent_from_state(intent_value) if isinstance(intent_value, dict) else None
         run.reservation = OrderReservation(
             symbol=str(reservation["symbol"]),
             side=cast(Any, str(reservation["side"])),
             quantity=int(reservation["quantity"]),
             limit_price_krw=int(reservation["limitPriceKrw"]),
+            intent=intent,
         )
     store.runs[run.run_id] = run
     if run.logical_submit_count:
@@ -565,6 +641,22 @@ def _store_from_state(
                 created_at=_timestamp(item["createdAt"]),
                 status=str(item["status"]),
                 closed_at=_timestamp(item["closedAt"]) if item.get("closedAt") else None,
+                quantity=int(item.get("quantity", 1)),
+                entry_average_fill_price_krw=(
+                    int(item["entryAverageFillPriceKrw"])
+                    if item.get("entryAverageFillPriceKrw") is not None
+                    else None
+                ),
+                entry_notional_krw=(
+                    int(item["entryNotionalKrw"])
+                    if item.get("entryNotionalKrw") is not None
+                    else None
+                ),
+                policy_id=str(item.get("policyId", policy.policy_id)),
+                policy_version=int(item.get("policyVersion", policy.version)),
+                stop_loss_bps=int(item.get("stopLossBps", policy.stop_loss_bps)),
+                take_profit_bps=int(item.get("takeProfitBps", policy.take_profit_bps)),
+                exit_reason=cast(Any, _optional_text(item.get("exitReason"))),
             )
         )
     return store, run
@@ -575,6 +667,9 @@ def inputs_from_state(
     *,
     risk_allow: bool,
     buyable_quantity: int,
+    buyable_amount_krw: int = 9_223_372_036_854_775_807,
+    account_complete: bool | None = None,
+    account_digest_matches: bool | None = None,
 ) -> AutomationInputs:
     """V90 sanitized state와 Spring 실시간 gate를 engine input으로 엄격 변환한다."""
 
@@ -602,14 +697,82 @@ def inputs_from_state(
         principle_active_current=bool(state["principleActiveCurrent"]),
         risk_allow=risk_allow,
         kill_switch_active=bool(state["killSwitchActive"]),
-        account_complete=bool(state["accountComplete"]),
-        account_digest_matches=bool(state["accountDigestMatches"]),
+        account_complete=(
+            bool(state["accountComplete"]) if account_complete is None else account_complete
+        ),
+        account_digest_matches=(
+            bool(state["accountDigestMatches"])
+            if account_digest_matches is None
+            else account_digest_matches
+        ),
         buyable_quantity=buyable_quantity,
+        buyable_amount_krw=buyable_amount_krw,
+        open_position_market_value_krw=int(state.get("openPositionMarketValueKrw", 0)),
+        pending_buy_notional_krw=int(state.get("pendingBuyNotionalKrw", 0)),
+        principle_max_single_order_krw=int(
+            state.get("principleMaxSingleOrderKrw", 9_223_372_036_854_775_807)
+        ),
+        principle_asset_remaining_krw=int(
+            state.get("principleAssetRemainingKrw", 9_223_372_036_854_775_807)
+        ),
+        policy=_policy_from_state(state),
         no_open_order=bool(state["noOpenOrder"]),
         unfinished_previous_order=bool(state["unfinishedPreviousOrder"]),
         manual_position_symbols=frozenset(cast(list[str], manual)),
         signals=signals,
     )
+
+
+def _policy_from_state(state: dict[str, Any]) -> AutomationPolicySnapshot:
+    value = state.get("policy")
+    if not isinstance(value, dict):
+        raise AutomationRuntimeError("AUTOMATION_POLICY_INVALID")
+    try:
+        return AutomationPolicySnapshot(
+            policy_id=str(value["policyId"]),
+            version=int(value["version"]),
+            capital_limit_krw=int(value["capitalLimitKrw"]),
+            stop_loss_bps=int(value["stopLossBps"]),
+            take_profit_bps=int(value["takeProfitBps"]),
+            preset=cast(Any, str(value["preset"])),
+            max_open_positions=int(value.get("maxOpenPositions", 5)),
+        )
+    except (KeyError, TypeError, ValueError, AutomationError) as error:
+        raise AutomationRuntimeError("AUTOMATION_POLICY_INVALID") from error
+
+
+def _intent_from_state(value: dict[str, Any]) -> ExactOrderIntent:
+    try:
+        return ExactOrderIntent(
+            symbol=str(value["symbol"]),
+            side=cast(Any, str(value["side"])),
+            order_type=cast(Any, str(value["orderType"])),
+            quantity=int(value["quantity"]),
+            estimated_price=int(value["estimatedPrice"]),
+            estimated_amount=int(value["estimatedAmount"]),
+            timeframe=cast(Any, str(value["timeframe"])),
+            strategy_id=str(value["strategyId"]),
+        )
+    except (KeyError, TypeError, ValueError, AutomationError) as error:
+        raise AutomationRuntimeError("AUTOMATION_EXACT_INTENT_INVALID") from error
+
+
+def _quote_from_state(value: object) -> Quote | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise AutomationRuntimeError("AUTOMATION_QUOTE_SNAPSHOT_INVALID")
+    try:
+        return Quote(
+            symbol=str(value["symbol"]),
+            price_krw=int(value["priceKrw"]),
+            lower_limit_krw=int(value["lowerLimitKrw"]),
+            upper_limit_krw=int(value["upperLimitKrw"]),
+            fresh=bool(value["fresh"]),
+            is_etf_etn=bool(value["isEtfEtn"]),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise AutomationRuntimeError("AUTOMATION_QUOTE_SNAPSHOT_INVALID") from error
 
 
 def _new_position_expiry(store: AutomationStore, run: AutomationRun) -> date | None:

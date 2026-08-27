@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import httpx
 
-from app.p1_owner.automation import AutomationRun, OrderReservation, Quote, ReconcileOutcome
+from app.p1_owner.automation import (
+    AutomationRun,
+    ExactOrderIntent,
+    OrderReservation,
+    Quote,
+    ReconcileOutcome,
+)
 from app.p1_owner.automation_runtime import RuntimeClaim
 from app.p1_owner.automation_runtime_live import (
     FailClosedVertexVetoTransport,
@@ -48,8 +54,9 @@ class FakeBridge:
         if operation == "BUYABLE":
             return {
                 "accountId": "acct_" + "2" * 32,
-                "buyableQuantity": 1,
-                "estimatedPrice": 75_000,
+                "buyableAmountKrw": 751_000,
+                "buyableQuantity": 10,
+                "estimatedPrice": 75_100,
                 "symbol": "005930",
             }
         if operation == "SUBMIT":
@@ -85,6 +92,7 @@ class FakeExecutionSource:
             "cashKrw": 1_000_000,
             "portfolioEquityKrw": 1_000_000,
             "positions": [],
+            "riskComplete": True,
         }
 
     def read(self, order_id: str, account_id: str, session_date: date) -> ReconcileOutcome:
@@ -140,13 +148,22 @@ def _state() -> dict[str, Any]:
         "manualPositionSymbols": [],
         "noOpenOrder": True,
         "positions": [],
+        "policy": {
+            "capitalLimitKrw": 10_000_000,
+            "maxOpenPositions": 5,
+            "policyId": "auto_pol_" + "f" * 32,
+            "preset": "BALANCED",
+            "stopLossBps": 500,
+            "takeProfitBps": 1_000,
+            "version": 1,
+        },
         "principleActiveCurrent": True,
         "principleId": "prc_" + "5" * 32,
         "providerCallCount": 0,
         "releaseActive": True,
         "reservation": None,
         "runId": "auto_run_" + "4" * 32,
-        "runStartedAt": "2026-08-28T09:10:00+09:00",
+        "runStartedAt": "2026-08-28T09:30:00+09:00",
         "selectedSide": "BUY",
         "selectedSymbol": "005930",
         "sessionDate": "2026-08-28",
@@ -167,9 +184,9 @@ def test_live_port_reuses_one_quote_spring_risk_brokerage_and_execution_reader()
         run_id=str(state["runId"]),
         session_date=date(2026, 8, 28),
         brokerage_mode="KIS_MOCK",
-        started_at=datetime(2026, 8, 28, 9, 10, tzinfo=_KST),
-        updated_at=datetime(2026, 8, 28, 9, 10, tzinfo=_KST),
-        state="RISK_CHECKING",
+        started_at=datetime(2026, 8, 28, 9, 30, tzinfo=_KST),
+        updated_at=datetime(2026, 8, 28, 9, 30, tzinfo=_KST),
+        state="ORDER_SIZING",
         selected_symbol="005930",
         selected_side="BUY",
     )
@@ -182,24 +199,65 @@ def test_live_port_reuses_one_quote_spring_risk_brokerage_and_execution_reader()
         FailClosedVertexVetoTransport(),
     )
 
+    order_inputs = port.inputs(state=state, run=run, now=run.started_at)
+    assert (order_inputs.buyable_quantity, order_inputs.buyable_amount_krw) == (10, 751_000)
+    intent = ExactOrderIntent(
+        "005930", "BUY", "LIMIT", 2, 75_100, 150_200, "1d", _claim().strategy_id
+    )
+    reservation = OrderReservation("005930", "BUY", 2, 75_100, intent=intent)
+    run.reservation = reservation
+    run.state = "RISK_CHECKING"
     risk_inputs = port.inputs(state=state, run=run, now=run.started_at)
     assert risk_inputs.risk_allow is True
     assert port.decision_id == "dec_" + "1" * 32
-
-    run.state = "ORDER_SUBMITTING"
-    order_inputs = port.inputs(state=state, run=run, now=run.started_at)
-    assert order_inputs.buyable_quantity == 1
-    reservation = OrderReservation("005930", "BUY", 1, 75_100)
     assert port.submit(reservation) == "UNFILLED"
     assert port.reconcile(reservation) == "FILLED"
     assert quote_source.calls == 1
     assert [operation for operation, _ in bridge.calls] == [
-        "EVALUATE",
         "BUYABLE",
+        "EVALUATE",
         "SUBMIT",
     ]
+    evaluate_intent = cast(dict[str, object], bridge.calls[1][1]["orderIntent"])
+    submit_intent = cast(dict[str, object], bridge.calls[2][1]["orderIntent"])
+    assert evaluate_intent == submit_intent == intent.projection()
     assert port.physical_calls == 5
     assert port.physical_submit_calls == 1
+
+
+def test_kis_runtime_sizing_fails_closed_when_risk_balance_is_incomplete() -> None:
+    class IncompleteExecution(FakeExecutionSource):
+        def balance(self, account_id: str) -> dict[str, object]:
+            value = super().balance(account_id)
+            value["riskComplete"] = False
+            return value
+
+    bridge = FakeBridge()
+    state = _state()
+    run = AutomationRun(
+        run_id=str(state["runId"]),
+        session_date=date(2026, 8, 28),
+        brokerage_mode="KIS_MOCK",
+        started_at=datetime(2026, 8, 28, 9, 30, tzinfo=_KST),
+        updated_at=datetime(2026, 8, 28, 9, 30, tzinfo=_KST),
+        state="ORDER_SIZING",
+        selected_symbol="005930",
+        selected_side="BUY",
+    )
+    port = LiveAutomationPort(
+        _claim(),
+        state,
+        bridge,
+        FakeQuoteSource(),
+        IncompleteExecution(),
+        FailClosedVertexVetoTransport(),
+    )
+
+    inputs = port.inputs(state=state, run=run, now=run.started_at)
+
+    assert inputs.account_complete is False
+    assert bridge.calls == []
+    assert port.physical_calls == 2  # one current-price quote and one complete-page balance read
 
 
 def test_unconfigured_vertex_transport_abstains_before_provider_call() -> None:

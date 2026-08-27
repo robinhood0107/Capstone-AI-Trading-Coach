@@ -43,6 +43,8 @@ ACTIVE_PUBLIC_PATHS = frozenset(
         "docs/API_명세서.md",
         "docs/최종_프로젝트_명세서.md",
         "docs/decision-platform/P1_1_0_0_FULL_APP_V2_권위_및_게이트.md",
+        "docs/decision-platform/P1_1_0_0_OWNER_FIRST_V3_권위_및_게이트.md",
+        "docs/decision-platform/P1_API_USAGE_MATRIX.md",
         "docs/decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md",
         "docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md",
         "docs/decision-platform/P1_운영_후속_경계.md",

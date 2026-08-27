@@ -37,7 +37,8 @@ feature가 아니며 뉴스 feature와 GDELT input은 정확히 0입니다.
 8. 동일 input/commit/lock/image 두 실행의 manifest+10개 파일 byte identity 증명
 
 실제 성능이 계약 기준을 통과하면 `modelQuality=PASS`, `mockRuntimeEligible=true`를 사용합니다. 통과하지
-못하면 숫자를 꾸미거나 추가 튜닝하지 말고 `BELOW_BASELINE`과 비활성 상태로 제출합니다. 어느 경우든
+못하면 숫자를 꾸미거나 추가 튜닝하지 말고 `modelQuality=BELOW_BASELINE`,
+`mockRuntimeEligible=false`로 제출합니다. 어느 경우든
 `furtherTuningRequired=false`, `orderAuthority=NONE`, `performanceClaimAllowed=false`입니다.
 
 ## 결과 폴더와 파일 10개

@@ -120,6 +120,80 @@
         },
         "type": "object"
       },
+      "ApiResponseAutomationControl": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationControl"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAutomationRunPage": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationRunPage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponseDecisionAuditProjection": {
         "properties": {
           "data": {
@@ -163,6 +237,80 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/DecisionProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseJournal": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Journal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseJournalPage": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/JournalPage"
               },
               {
                 "type": "null"
@@ -986,6 +1134,43 @@
         },
         "type": "object"
       },
+      "ArmAutomationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "pattern": "^acct_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "brokerageMode": {
+            "enum": [
+              "KIS_MOCK",
+              "INTERNAL_PAPER"
+            ],
+            "type": "string"
+          },
+          "expectedVersion": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "principleId": {
+            "pattern": "^prc_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "strategyId": {
+            "pattern": "^strategy_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "brokerageMode",
+          "expectedVersion",
+          "principleId",
+          "strategyId"
+        ],
+        "type": "object"
+      },
       "ArtifactIngestStatusDto": {
         "properties": {
           "artifactId": {
@@ -1119,6 +1304,238 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "AutomationControl": {
+        "$id": "contracts/schemas/automation-control.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "brokerageMode": {
+            "enum": [
+              "KIS_MOCK",
+              "INTERNAL_PAPER"
+            ]
+          },
+          "certificationStatus": {
+            "enum": [
+              "NOT_REQUIRED_INTERNAL_PAPER",
+              "REQUIRED",
+              "VALID",
+              "EXPIRED",
+              "INVALID"
+            ]
+          },
+          "contractId": {
+            "const": "automation-control.v1"
+          },
+          "controlState": {
+            "enum": [
+              "DISARMED",
+              "ARMED",
+              "HALTED"
+            ]
+          },
+          "killSwitchActive": {
+            "type": "boolean"
+          },
+          "principleId": {
+            "pattern": "^prc_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "projectionState": {
+            "enum": [
+              "DISARMED",
+              "ARMED",
+              "RUNNING",
+              "HALTED"
+            ]
+          },
+          "strategyId": {
+            "pattern": "^strategy_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "brokerageMode",
+          "certificationStatus",
+          "contractId",
+          "controlState",
+          "killSwitchActive",
+          "principleId",
+          "projectionState",
+          "strategyId",
+          "version"
+        ],
+        "title": "automation-control.v1",
+        "type": "object"
+      },
+      "AutomationRun": {
+        "$id": "contracts/schemas/automation-run.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "brokerageMode": {
+            "enum": [
+              "KIS_MOCK",
+              "INTERNAL_PAPER"
+            ]
+          },
+          "contractId": {
+            "const": "automation-run.v1"
+          },
+          "physicalSubmitCount": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "providerCalls": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "runId": {
+            "pattern": "^auto_run_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "selectedSide": {
+            "oneOf": [
+              {
+                "enum": [
+                  "BUY",
+                  "SELL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selectedSymbol": {
+            "oneOf": [
+              {
+                "pattern": "^[0-9]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "SCHEDULED",
+              "PRECHECK",
+              "RECONCILING_PREVIOUS",
+              "EXIT_SELECTED",
+              "BUY_CANDIDATE_SELECTED",
+              "NEWS_CHECKING",
+              "NEWS_VETOED",
+              "RISK_CHECKING",
+              "ORDER_SUBMITTING",
+              "ORDER_SUBMITTED",
+              "PENDING_RECONCILIATION",
+              "CANCELLED_UNFILLED",
+              "COMPLETED",
+              "SKIPPED_NO_ACTION",
+              "SKIPPED_DATA_UNAVAILABLE",
+              "SKIPPED_LATE_START",
+              "HALTED"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "vertexCallCount": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "brokerageMode",
+          "contractId",
+          "physicalSubmitCount",
+          "providerCalls",
+          "runId",
+          "selectedSide",
+          "selectedSymbol",
+          "sessionDate",
+          "startedAt",
+          "state",
+          "updatedAt",
+          "vertexCallCount"
+        ],
+        "title": "automation-run.v1",
+        "type": "object"
+      },
+      "AutomationRunPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationRun"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "maxLength": 512,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "CreateJournalRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "type": "string"
+          },
+          "links": {
+            "$ref": "#/components/schemas/JournalWriteLinks"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "links",
+          "tags",
+          "title"
+        ],
         "type": "object"
       },
       "DataFreshnessResponse": {
@@ -1340,6 +1757,276 @@
           },
           "source": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DeleteJournalRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expectedVersion"
+        ],
+        "type": "object"
+      },
+      "DisarmAutomationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expectedVersion"
+        ],
+        "type": "object"
+      },
+      "Journal": {
+        "$id": "contracts/schemas/journal.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "type": "string"
+          },
+          "contractId": {
+            "const": "journal.v1"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deletedAt": {
+            "oneOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "journalId": {
+            "pattern": "^jnl_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "links": {
+            "additionalProperties": false,
+            "properties": {
+              "automationRunId": {
+                "oneOf": [
+                  {
+                    "pattern": "^auto_run_[A-Za-z0-9_-]{8,96}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "backtestRunId": {
+                "oneOf": [
+                  {
+                    "pattern": "^run_[A-Za-z0-9_-]{8,96}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "decisionId": {
+                "oneOf": [
+                  {
+                    "pattern": "^dec_[A-Za-z0-9_-]{8,96}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "orderId": {
+                "oneOf": [
+                  {
+                    "pattern": "^ord_[A-Za-z0-9_-]{8,96}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "ragAnswerId": {
+                "oneOf": [
+                  {
+                    "pattern": "^rag_[A-Za-z0-9_-]{8,96}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "ownerScope": {
+            "pattern": "^(?!0{64}$)[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "content",
+          "contractId",
+          "createdAt",
+          "deletedAt",
+          "journalId",
+          "links",
+          "ownerScope",
+          "tags",
+          "title",
+          "updatedAt",
+          "version"
+        ],
+        "title": "journal.v1",
+        "type": "object"
+      },
+      "JournalLinks": {
+        "additionalProperties": false,
+        "properties": {
+          "automationRunId": {
+            "pattern": "^auto_run_[A-Za-z0-9_-]{8,96}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "backtestRunId": {
+            "pattern": "^run_[A-Za-z0-9_-]{8,96}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decisionId": {
+            "pattern": "^dec_[A-Za-z0-9_-]{8,96}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orderId": {
+            "pattern": "^ord_[A-Za-z0-9_-]{8,96}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ragAnswerId": {
+            "pattern": "^rag_[A-Za-z0-9_-]{8,96}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "JournalPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Journal"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "maxLength": 512,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "JournalWriteLinks": {
+        "additionalProperties": false,
+        "properties": {
+          "automationRunId": {
+            "pattern": "^auto_run_[A-Za-z0-9_-]{8,96}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "backtestRunId": {
+            "pattern": "^run_[A-Za-z0-9_-]{8,96}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decisionId": {
+            "pattern": "^dec_[A-Za-z0-9_-]{8,96}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orderId": {
+            "pattern": "^ord_[A-Za-z0-9_-]{8,96}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ragAnswerId": {
+            "pattern": "^rag_[A-Za-z0-9_-]{8,96}$",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -1725,6 +2412,132 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "P1AutomationErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "enum": [
+                  "VALIDATION_ERROR",
+                  "UNAUTHORIZED",
+                  "FORBIDDEN",
+                  "NOT_FOUND",
+                  "CONFLICT",
+                  "IDEMPOTENCY_CONFLICT",
+                  "INTERNAL_ERROR"
+                ],
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "message": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "P1JournalErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "enum": [
+                  "VALIDATION_ERROR",
+                  "UNAUTHORIZED",
+                  "FORBIDDEN",
+                  "NOT_FOUND",
+                  "CONFLICT",
+                  "IDEMPOTENCY_CONFLICT",
+                  "INTERNAL_ERROR"
+                ],
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "message": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
         "type": "object"
       },
       "PaperBalancePositionProjection": {
@@ -3818,6 +4631,45 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "ReplaceJournalRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expectedVersion": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "links": {
+            "$ref": "#/components/schemas/JournalWriteLinks"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "expectedVersion",
+          "links",
+          "tags",
+          "title"
+        ],
         "type": "object"
       },
       "RiskDecisionProjection": {
@@ -9088,6 +9940,315 @@
         ]
       }
     },
+    "/api/v1/automation/arm": {
+      "post": {
+        "operationId": "armAutomation",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArmAutomationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationControl"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or cross-owner"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Version, gate, or idempotency conflict"
+          }
+        },
+        "summary": "Arm owner automation / 자동운용 활성화",
+        "tags": [
+          "automation-controller"
+        ]
+      }
+    },
+    "/api/v1/automation/disarm": {
+      "post": {
+        "operationId": "disarmAutomation",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisarmAutomationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationControl"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or cross-owner"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Version, gate, or idempotency conflict"
+          }
+        },
+        "summary": "Disarm owner automation / 자동운용 비활성화",
+        "tags": [
+          "automation-controller"
+        ]
+      }
+    },
+    "/api/v1/automation/runs": {
+      "get": {
+        "operationId": "listAutomationRuns",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "size",
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationRunPage"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or cross-owner"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Version, gate, or idempotency conflict"
+          }
+        },
+        "summary": "List owner automation runs / 자동운용 실행 목록",
+        "tags": [
+          "automation-controller"
+        ]
+      }
+    },
+    "/api/v1/automation/status": {
+      "get": {
+        "operationId": "getAutomationStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationControl"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or cross-owner"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationErrorResponse"
+                }
+              }
+            },
+            "description": "Version, gate, or idempotency conflict"
+          }
+        },
+        "summary": "Owner automation status / 자동운용 상태",
+        "tags": [
+          "automation-controller"
+        ]
+      }
+    },
     "/api/v1/brokerage/mock/accounts/{accountId}/balances": {
       "get": {
         "operationId": "getMockBalance",
@@ -10392,6 +11553,350 @@
         "summary": "JWT owner에게 reference-only sanitized Decision audit을 반환한다.",
         "tags": [
           "decision-controller"
+        ]
+      }
+    },
+    "/api/v1/journals": {
+      "get": {
+        "operationId": "listJournals",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "size",
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseJournalPage"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Missing, deleted, foreign owner, or foreign link"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Version or idempotency conflict"
+          }
+        },
+        "summary": "List owner Journals / 학습일지 목록",
+        "tags": [
+          "journal-controller"
+        ]
+      },
+      "post": {
+        "operationId": "createJournal",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJournalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseJournal"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Missing, deleted, foreign owner, or foreign link"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Version or idempotency conflict"
+          }
+        },
+        "summary": "Create owner Journal / 학습일지 생성",
+        "tags": [
+          "journal-controller"
+        ]
+      }
+    },
+    "/api/v1/journals/{journalId}": {
+      "delete": {
+        "operationId": "deleteJournal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "journalId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteJournalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseJournal"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Missing, deleted, foreign owner, or foreign link"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Version or idempotency conflict"
+          }
+        },
+        "summary": "Soft-delete owner Journal / 학습일지 삭제",
+        "tags": [
+          "journal-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "updateJournal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "journalId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceJournalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseJournal"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Missing, deleted, foreign owner, or foreign link"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1JournalErrorResponse"
+                }
+              }
+            },
+            "description": "Version or idempotency conflict"
+          }
+        },
+        "summary": "Replace owner Journal / 학습일지 전체 교체",
+        "tags": [
+          "journal-controller"
         ]
       }
     },

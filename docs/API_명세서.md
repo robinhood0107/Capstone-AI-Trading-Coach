@@ -1,9 +1,9 @@
 # API 명세서
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
-> **1.0.0 current authority (2026-08-27):** Owner-First full-app v3 API는 contract-locked이며 아직 release되지 않았다.
-> contract-only 단계는 기존 root OpenAPI 48개를 유지하고 Automation/Journal 8개를 additive 계약으로
-> 고정한다. runtime 구현 PR에서 root OpenAPI를 exact 56개로 전환하고 Team A exact-33을 검증한다.
+> **1.0.0 current authority (2026-08-27):** Owner-First full-app v3 API는 아직 release되지 않았다.
+> contract-only 단계가 고정한 Automation/Journal 8개를 runtime merge candidate가 구현해 root OpenAPI는
+> 기존 exact-48 projection을 보존한 exact 56개다. Team A 완료 기준은 exact-33 live Spring 검증이다.
 > 공개 endpoint는 OpenAPI SSOT와 별도 contract-change가 병합된 경우에만 구현된 것으로 본다. 기존
 > placeholder 계획, LightGBM production 경로와 `NOT_MATERIALIZED` 상태는 현재 v3 권위로 명시되지
 > 않았다면 `HISTORICAL_SUPERSEDED`다. live order authority는 0이다.
@@ -2777,37 +2777,69 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 
 ---
 
-## 11. Journal API
+## 11. Automation·Journal API
 
-### 11.1 학습일지 생성
+> P1 Owner-First v3 runtime 전환(2026-08-27): 아래 8개 operation은
+> `contracts/openapi/p1-automation-journal.v1.openapi.json`에서 잠근 method/path/operationId와 같다.
+> root OpenAPI는 기존 48개 의미를 보존한 채 exact 56개로 전환한다. `/error`는 제품 operation이 아니다.
 
-`POST /api/v1/journals`
+### 11.1 Automation
 
-요청:
+```text
+GET  /api/v1/automation/status
+POST /api/v1/automation/arm
+POST /api/v1/automation/disarm
+GET  /api/v1/automation/runs
+```
+
+모든 route는 인증된 `AppPrincipal`의 subject만 owner로 사용한다. status는 control row가 없으면
+`DISARMED`, version `1`의 안전한 projection을 반환하고 GET으로 row를 만들지 않는다. active run이
+있으면 `projectionState=RUNNING`이다. runs는 `size=1..100`, opaque cursor, `updatedAt DESC, runId DESC`다.
+
+arm body의 exact field는 다음 다섯 개다.
 
 ```json
 {
-  "title": "삼성전자 매수 후보 검토",
-  "relatedDecisionId": "dec_001",
-  "relatedBacktestId": "bt_001",
-  "content": {
-    "whatHappened": "LSTM은 매수였지만 LightGBM은 보류였고, HMM은 고변동 국면을 표시했다.",
-    "whatLearned": "단일 모델 신호보다 리스크 지표를 함께 봐야 한다.",
-    "nextAction": "Strict 모드에서는 신규 매수를 보류한다."
-  },
-  "tags": ["HMM", "RiskEngine", "KIS Mock"]
+  "brokerageMode": "KIS_MOCK",
+  "accountId": "acct_opaque",
+  "principleId": "prc_opaque",
+  "strategyId": "strategy_opaque",
+  "expectedVersion": 1
 }
 ```
 
-### 11.2 학습일지 목록
+`KIS_MOCK`은 서버가 valid certification, clean release binding, active REAL_TEAM_B pointer, non-HALTED
+control, complete account baseline, inactive Kill Switch와 unexplained drift 0을 같은 transaction에서
+검증한다. client boolean은 없다. `INTERNAL_PAPER`는 요청자가 명시한 경우만 허용하며 KIS 장애 fallback이
+아니다. disarm은 `expectedVersion` CAS로 신규 주문만 중지하고 pending reconciliation, position, event,
+Journal과 volume을 삭제하지 않는다.
 
-`GET /api/v1/journals?from=2026-06-01&to=2026-06-30`
+### 11.2 Journal
 
-### 11.3 학습일지 수정/삭제
+```text
+POST   /api/v1/journals
+GET    /api/v1/journals
+PATCH  /api/v1/journals/{journalId}
+DELETE /api/v1/journals/{journalId}
+```
 
-`PATCH /api/v1/journals/{journalId}` — title, content, tags 부분 수정. `expectedVersion` 없이 최종 수정 우선.
+create body는 `title`, string `content`, unique `tags`, closed `links` 전체를 받는다. links는
+`decisionId`, `backtestRunId`, `ragAnswerId`, `orderId`, `automationRunId`만 허용하며 모두 optional이다.
+서버는 owner scope를 SHA-256으로 유도하고 linked resource가 없거나 다른 owner이면 같은 404를 반환한다.
 
-`DELETE /api/v1/journals/{journalId}` — soft delete(`deletedAt` 기록). 사용자 테스트 중 회고 수정이 빈번하므로 v1에 포함한다.
+PATCH는 `expectedVersion`, `title`, `content`, `tags`, `links` 전체 replacement다. stale version은 409,
+soft-deleted row는 404다. DELETE body는 `expectedVersion` 하나이며 `deletedAt`을 기록하고 physical delete를
+하지 않는다. list는 `deletedAt IS NULL`만 `updatedAt DESC, journalId DESC` 순서의 bounded cursor page로
+반환하며 별도 detail GET은 없다.
+
+### 11.3 공통 write·JSON 경계
+
+Automation arm/disarm과 Journal create/patch/delete는 `X-Idempotency-Key` exact 16..128 ASCII를 요구한다.
+원문 key는 저장·로그하지 않고 purpose-separated scope hash와 canonical request hash만 저장한다. 같은
+key/same request는 봉인한 기존 결과를 replay하고 같은 key/different request는 409
+`IDEMPOTENCY_CONFLICT`다. request body는 bounded strict parser가 duplicate key, unknown field,
+oversize/deep JSON, type coercion과 non-NFC/non-canonical text를 거부한다. 모든 DB 접근은 consumed
+ActorCapability v2와 같은 transaction의 FORCE RLS scope를 요구하며 cross-owner ID는 404로 축약한다.
 
 ---
 

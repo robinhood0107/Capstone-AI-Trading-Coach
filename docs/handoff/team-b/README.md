@@ -13,8 +13,7 @@ restricted GHCR digest/SBOM/provenance/signature intake 계약이 준비돼 있�
 ## 3. 수정할 것
 
 `workspaces/return-engine/` 안에서만 train-only scaler, global time split, leakage test, fixed 35bps 비교,
-Baseline/Guide/Strict replay, one-shot train과 one-shot daily inference를 완성합니다. 기존 preview 소스와
-PTH는 보존하고 실제 경로를 분리합니다.
+Baseline/Guide/Strict replay, one-shot train과 one-shot daily inference를 완성합니다.
 
 ## 4. 실행 명령
 
@@ -27,10 +26,6 @@ uv run python -m return_engine --help
 
 Owner가 전달한 input pack 경로와 manifest SHA-256을 실제 실행 인자로 사용하며 다른 입력을 섞지 않습니다.
 
-```bash
-./capstone artifact validate <output-directory> --manifest-sha256 <manifest-sha256>
-```
-
 ## 5. 완료 테스트
 
 exact-31, exact-10, 두 번 실행 byte determinism, semantic schema, 독립 metric 재계산, input-pack binding,
@@ -38,8 +33,9 @@ provider/Spring/account/order call 0과 `mockRuntimeEligible=true`, `furtherTuni
 
 ## 6. 제출할 파일·commit·OCI digest
 
-PR URL, commit SHA, lock/Dockerfile SHA-256, input/output manifest, exact-10 file hash와 두 실행 비교 결과를
-제출합니다. restricted OCI packaging, SBOM, provenance, signature와 digest 검증은 Owner가 수행합니다.
+PR URL, commit SHA, lock/Dockerfile SHA-256, input/output manifest, exact-10 file hash, 두 실행 비교,
+restricted `ghcr.io/robinhood0107/capstone-team-b-return-artifact@sha256:...` digest와 SBOM/provenance,
+동일 workflow identity로 keyless 서명한 receipt JSON 및 `receipt.sigstore.json` bundle을 제출합니다.
 
 ## 7. 하지 말아야 할 것
 

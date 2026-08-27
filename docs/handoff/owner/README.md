@@ -8,13 +8,12 @@ Owner 준비물과 Team A/B 수신물을 변경 없이 검증·통합하고, 외
 ## 2. Owner가 이미 준비한 것
 
 exact-56 API, exact-33 Dashboard acceptance, Team B input/golden/importer/runtime, 기본 5·모델 7 Compose,
-ordinary security, local network-none Team B validator와 supply-chain intake를 소유합니다.
+ordinary security와 supply-chain intake 계약을 소유합니다.
 
 ## 3. 수정할 것
 
-Team 결과 수신 뒤 새 adapter를 작성하지 않습니다. Team A source로 production image를 만들고 exact-33/UI를
-재검증하며, Team B source와 exact-10으로 restricted OCI·SBOM·provenance·signature를 재현합니다. 계약 실패는
-Owner 우회 코드가 아니라 해당 Team PR 수정 요청으로 돌려보냅니다.
+Team 결과 수신 뒤 새 adapter를 작성하지 않습니다. 각 PR의 workspace 경계, lock, digest, 실제 결과 badge,
+계약 matrix와 테스트를 검증하고 실패는 해당 Team PR에 돌려보냅니다.
 
 ## 4. 실행 명령
 
@@ -22,7 +21,6 @@ Owner 우회 코드가 아니라 해당 Team PR 수정 요청으로 돌려보냅
 ./capstone doctor
 ./capstone up
 ./capstone team-a acceptance
-./capstone artifact validate <bundle-directory> --manifest-sha256 <manifest-sha256>
 ./capstone smoke
 ./capstone status
 uv run --frozen python contracts/verify_p1_compose_supply_handoff.py

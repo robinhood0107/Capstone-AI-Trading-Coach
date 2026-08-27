@@ -32,7 +32,8 @@ object P1DatabaseRoleBootstrap {
         val authPassword = required(environment, "POSTGRES_AUTH_PASSWORD")
         val outboxPublisherPassword = required(environment, "POSTGRES_OUTBOX_PUBLISHER_PASSWORD")
         val poisonRecorderPassword = required(environment, "POSTGRES_POISON_RECORDER_PASSWORD")
-        listOf(authPassword, outboxPublisherPassword, poisonRecorderPassword).forEach { password ->
+        val automationRuntimePassword = required(environment, "POSTGRES_AUTOMATION_RUNTIME_PASSWORD")
+        listOf(authPassword, outboxPublisherPassword, poisonRecorderPassword, automationRuntimePassword).forEach { password ->
             require(Regex("^[0-9a-f]{64}$").matches(password))
         }
         val jdbcUrl =
@@ -57,6 +58,12 @@ object P1DatabaseRoleBootstrap {
                     .prepareStatement("select set_config('p1.poison_recorder_password', ?, true)")
                     .use { statement ->
                         statement.setString(1, poisonRecorderPassword)
+                        statement.executeQuery().use { rows -> check(rows.next()) }
+                    }
+                connection
+                    .prepareStatement("select set_config('p1.automation_runtime_password', ?, true)")
+                    .use { statement ->
+                        statement.setString(1, automationRuntimePassword)
                         statement.executeQuery().use { rows -> check(rows.next()) }
                     }
                 connection.createStatement().use { statement ->
@@ -88,6 +95,40 @@ object P1DatabaseRoleBootstrap {
                           GRANT USAGE ON SCHEMA public TO decision_auth;
                         END
                         ${'$'}p1_auth_role${'$'};
+                        """.trimIndent(),
+                    )
+                    statement.execute(
+                        """
+                        DO ${'$'}p1_automation_runtime_role${'$'}
+                        DECLARE
+                          role_password text := current_setting('p1.automation_runtime_password', true);
+                        BEGIN
+                          IF role_password !~ '^[0-9a-f]{64}${'$'}' THEN
+                            RAISE EXCEPTION 'P1 automation runtime role password boundary failed';
+                          END IF;
+                          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_automation_runtime') THEN
+                            EXECUTE format(
+                              'CREATE ROLE decision_automation_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+                              role_password
+                            );
+                          ELSE
+                            EXECUTE format(
+                              'ALTER ROLE decision_automation_runtime WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+                              role_password
+                            );
+                          END IF;
+                          ALTER ROLE decision_automation_runtime SET log_parameter_max_length = 0;
+                          ALTER ROLE decision_automation_runtime SET log_parameter_max_length_on_error = 0;
+                          ALTER ROLE decision_automation_runtime SET statement_timeout = '5s';
+                          ALTER ROLE decision_automation_runtime SET lock_timeout = '500ms';
+                          ALTER ROLE decision_automation_runtime SET idle_in_transaction_session_timeout = '5s';
+                          EXECUTE format(
+                            'GRANT CONNECT ON DATABASE %I TO decision_automation_runtime',
+                            current_database()
+                          );
+                          GRANT USAGE ON SCHEMA public TO decision_automation_runtime;
+                        END
+                        ${'$'}p1_automation_runtime_role${'$'};
                         """.trimIndent(),
                     )
                     statement.execute(

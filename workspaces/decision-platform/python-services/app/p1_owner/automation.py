@@ -147,13 +147,15 @@ class AutomationRun:
     reservation: OrderReservation | None = None
     submit_outcome: SubmitOutcome | None = None
     logical_submit_count: int = 0
+    physical_submit_count: int = 0
+    provider_call_count: int = 0
 
     def projection(self) -> dict[str, object]:
         return {
             "brokerageMode": self.brokerage_mode,
             "contractId": "automation-run.v1",
-            "physicalSubmitCount": 0,
-            "providerCalls": 0,
+            "physicalSubmitCount": self.physical_submit_count,
+            "providerCalls": self.provider_call_count,
             "runId": self.run_id,
             "selectedSide": self.selected_side,
             "selectedSymbol": self.selected_symbol,
@@ -167,6 +169,7 @@ class AutomationRun:
 
 class AutomationFixtureTransportPort(Protocol):
     physical_calls: int
+    physical_submit_calls: int
     quote_calls: int
     vertex_calls: int
     submit_calls: int
@@ -194,6 +197,7 @@ class FixtureAutomationTransport:
     reconcile_outcomes: list[ReconcileOutcome] = field(default_factory=lambda: ["FILLED"])
     cancel_succeeds: bool = True
     physical_calls: int = 0
+    physical_submit_calls: int = 0
     quote_calls: int = 0
     vertex_calls: int = 0
     submit_calls: int = 0
@@ -332,7 +336,15 @@ class AutomationEngine:
             return self.store.processed_ticks[key]
         run = self.store.runs[run_id]
         self._advance(run, now, inputs, transport)
-        if transport.physical_calls != 0:
+        if transport.physical_calls < run.provider_call_count:
+            raise AutomationError("transport provider count moved backwards")
+        if transport.physical_submit_calls < run.physical_submit_count:
+            raise AutomationError("transport submit count moved backwards")
+        run.provider_call_count = transport.physical_calls
+        run.physical_submit_count = transport.physical_submit_calls
+        if run.provider_call_count > 16 or run.physical_submit_count > 1:
+            raise AutomationError("automation physical call cap was exceeded")
+        if isinstance(transport, FixtureAutomationTransport) and transport.physical_calls != 0:
             raise AutomationError("fixture transport performed a physical call")
         result = run.projection()
         self.store.processed_ticks[key] = result

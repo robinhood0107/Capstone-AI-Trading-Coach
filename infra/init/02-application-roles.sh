@@ -18,6 +18,7 @@ set -Eeuo pipefail
 : "${POSTGRES_SIGNAL_SCHEDULER_PASSWORD:?POSTGRES_SIGNAL_SCHEDULER_PASSWORD is required}"
 : "${POSTGRES_SIGNAL_ADMIN_PASSWORD:?POSTGRES_SIGNAL_ADMIN_PASSWORD is required}"
 : "${POSTGRES_WORKER_PASSWORD:?POSTGRES_WORKER_PASSWORD is required}"
+: "${POSTGRES_AUTOMATION_RUNTIME_PASSWORD:?POSTGRES_AUTOMATION_RUNTIME_PASSWORD is required}"
 : "${POSTGRES_OUTBOX_PUBLISHER_PASSWORD:?POSTGRES_OUTBOX_PUBLISHER_PASSWORD is required}"
 : "${POSTGRES_POISON_RECORDER_PASSWORD:?POSTGRES_POISON_RECORDER_PASSWORD is required}"
 : "${POSTGRES_REPLAY_PASSWORD:?POSTGRES_REPLAY_PASSWORD is required}"
@@ -45,6 +46,7 @@ psql -v ON_ERROR_STOP=1 --no-password --username "$POSTGRES_USER" --dbname "$POS
 \getenv signal_scheduler_password POSTGRES_SIGNAL_SCHEDULER_PASSWORD
 \getenv signal_admin_password POSTGRES_SIGNAL_ADMIN_PASSWORD
 \getenv worker_password POSTGRES_WORKER_PASSWORD
+\getenv automation_runtime_password POSTGRES_AUTOMATION_RUNTIME_PASSWORD
 \getenv outbox_publisher_password POSTGRES_OUTBOX_PUBLISHER_PASSWORD
 \getenv poison_recorder_password POSTGRES_POISON_RECORDER_PASSWORD
 \getenv replay_password POSTGRES_REPLAY_PASSWORD
@@ -117,6 +119,23 @@ ALTER ROLE decision_worker SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_worker SET statement_timeout = '60s';
 ALTER ROLE decision_worker SET lock_timeout = '500ms';
 ALTER ROLE decision_worker SET idle_in_transaction_session_timeout = '60s';
+
+SELECT format(
+    'CREATE ROLE decision_automation_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'automation_runtime_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_automation_runtime')
+\gexec
+SELECT format(
+    'ALTER ROLE decision_automation_runtime WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'automation_runtime_password'
+)
+\gexec
+ALTER ROLE decision_automation_runtime SET log_parameter_max_length = 0;
+ALTER ROLE decision_automation_runtime SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_automation_runtime SET statement_timeout = '5s';
+ALTER ROLE decision_automation_runtime SET lock_timeout = '500ms';
+ALTER ROLE decision_automation_runtime SET idle_in_transaction_session_timeout = '5s';
 
 SELECT format(
     'CREATE ROLE decision_outbox_publisher LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
@@ -462,6 +481,7 @@ REVOKE ALL ON DATABASE :"database_name" FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"database_name" TO
     decision_app,
     decision_worker,
+    decision_automation_runtime,
     decision_outbox_publisher,
     decision_poison_recorder,
     decision_replay,
@@ -489,6 +509,7 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO
     decision_app,
     decision_worker,
+    decision_automation_runtime,
     decision_outbox_publisher,
     decision_poison_recorder,
     decision_replay,
@@ -519,6 +540,7 @@ GRANT CREATE ON SCHEMA public TO flyway;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_app;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_worker;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_automation_runtime;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_outbox_publisher;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_poison_recorder;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_replay;
@@ -527,6 +549,7 @@ REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_auth;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_replay_authorizer;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_demo;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_worker;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_automation_runtime;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_outbox_publisher;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_poison_recorder;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_replay;
@@ -1041,7 +1064,8 @@ BEGIN
             'decision_market_writer, decision_portfolio_writer, decision_risk_writer, ' ||
             'decision_fill_writer, decision_rag_writer, decision_rag_admin, decision_rag_query, ' ||
             'decision_signal_writer, decision_signal_scheduler, decision_signal_admin, ' ||
-            'decision_worker, decision_replay, decision_demo',
+            'decision_worker, decision_automation_runtime, decision_replay, ' ||
+            'decision_replay_authorizer, decision_demo',
             routine.signature
         );
     END LOOP;
@@ -2273,12 +2297,63 @@ BEGIN
 END
 $p1_v89_automation_journal_privileges$;
 
+DO $p1_v90_automation_runtime_privileges$
+BEGIN
+    IF to_regprocedure('public.p1_automation_runtime_readiness_v1(text,date)') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON TABLE
+            public.automation_runtime_schedule,
+            public.automation_runtime_claim,
+            public.automation_runtime_checkpoint,
+            public.automation_processed_ticks,
+            public.automation_order_reservations,
+            public.automation_runtime_events
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_automation_transition_valid_v1(text,text),
+            public.p1_automation_runtime_account_digest_v1(text,text),
+            public.p1_read_automation_runtime_state_v1(text,text),
+            public.p1_author_automation_activation_gate_v2(text,text,date,date,text,text,text),
+            public.p1_current_team_b_integrity_receipt_v1(),
+            public.p1_automation_runtime_readiness_v1(text,date),
+            public.p1_start_automation_runtime_v1(text,date,integer),
+            public.p1_stop_automation_runtime_v1(text,integer),
+            public.p1_roll_automation_schedule_v1(text,date,date,integer),
+            public.p1_claim_automation_session_v1(date,text),
+            public.p1_advance_automation_checkpoint_v1(
+                text,text,text,integer,text,text,text,text,integer,integer,integer,text,bigint,
+                date,text,text,text,text,text
+            )
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_author_automation_activation_gate_v2(text,text,date,date,text,text,text),
+            public.p1_current_team_b_integrity_receipt_v1()
+        TO decision_replay_authorizer;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_automation_runtime_readiness_v1(text,date),
+            public.p1_read_automation_runtime_state_v1(text,text),
+            public.p1_start_automation_runtime_v1(text,date,integer),
+            public.p1_stop_automation_runtime_v1(text,integer),
+            public.p1_roll_automation_schedule_v1(text,date,date,integer),
+            public.p1_claim_automation_session_v1(date,text),
+            public.p1_advance_automation_checkpoint_v1(
+                text,text,text,integer,text,text,text,text,integer,integer,integer,text,bigint,
+                date,text,text,text,text,text
+            )
+        TO decision_automation_runtime;
+        REVOKE CREATE ON SCHEMA public FROM decision_automation_runtime;
+    END IF;
+END
+$p1_v90_automation_runtime_privileges$;
+
 DO $block$
 BEGIN
     IF to_regclass('public.flyway_schema_history') IS NOT NULL THEN
         -- 기존 volume에 role bootstrap을 재적용해도 runtime이 migration 이력을 변조하지 못한다.
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_app;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_worker;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_automation_runtime;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_outbox_publisher;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_poison_recorder;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_replay;

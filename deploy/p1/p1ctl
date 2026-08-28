@@ -461,8 +461,15 @@ verify_state() {
   local actual
   actual=$(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
   [[ $actual == "$(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)" ]] || die secret_inventory
+  local secret_mode
   while IFS= read -r file; do
-    [[ ! -L $file && -f $file && $(stat -c '%a' "$file") == 640 ]] || die secret_boundary
+    # Ed25519 서명 개인키는 packet reader가 owner-only 0600만 허용한다. 나머지 secret은
+    # 컨테이너 그룹이 읽어야 하므로 640을 유지한다.
+    case "${file##*/}" in
+      kis-mock-approval-private.pem) secret_mode=600 ;;
+      *) secret_mode=640 ;;
+    esac
+    [[ ! -L $file && -f $file && $(stat -c '%a' "$file") == "$secret_mode" ]] || die secret_boundary
   done < <(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -print)
   local rag_kek_file=$SECRETS_DIR/rag-history-kek-v1.key rag_kek_size
   rag_kek_size=$(stat -c '%s' "$rag_kek_file")

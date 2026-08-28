@@ -22,8 +22,10 @@ from app.p1_owner.automation import (
     Quote,
     ReconcileSnapshot,
     SignalCandidate,
+    _limit_price,
     _estimated_net_return_bps,
     _variable_buy_quantity,
+    _tick_size,
 )
 
 _KST = ZoneInfo("Asia/Seoul")
@@ -686,8 +688,8 @@ def test_stop_loss_precedes_expiry_model_sell_and_take_profit() -> None:
     _create(store)
     transport = FixtureAutomationTransport(
         quotes={
-            "000001": Quote("000001", 97_450, 70_000, 130_000),
-            "000004": Quote("000004", 105_450, 70_000, 130_000),
+            "000001": Quote("000001", 97_100, 70_000, 130_000),
+            "000004": Quote("000004", 105_500, 70_000, 130_000),
         }
     )
     inputs = _inputs(_sell("000003"))
@@ -879,3 +881,28 @@ def test_module_has_no_live_provider_network_or_database_transport() -> None:
         assert forbidden not in source
     assert "physical_calls: int = 0" in source
     assert "quantity: int\n    limit_price_krw" in source
+
+
+@pytest.mark.parametrize(
+    ("price", "upper", "lower", "side", "expected"),
+    [
+        # 정상 밴드에서는 한 틱만 움직인다.
+        (258_000, 335_000, 181_000, "BUY", 258_500),
+        (1_679_000, 2_182_000, 1_176_000, "BUY", 1_680_000),
+        (258_000, 335_000, 181_000, "SELL", 257_500),
+        # 상한가가 격자 밖이면 매수는 내림으로 스냅한다.
+        # 상한가로 clamp된 값이 다음 밴드 격자에 맞으면 그대로 쓴다.
+        (199_900, 200_050, 140_000, "BUY", 200_000),
+        # 하한가가 격자 밖이면 매도는 올림으로 스냅해 주문 가능 범위 안에 남는다.
+        (49_950, 64_900, 49_930, "SELL", 49_950),
+    ],
+)
+def test_limit_price_never_leaves_the_krx_tick_grid(
+    price: int, upper: int, lower: int, side: str, expected: int
+) -> None:
+    quote = Quote("005930", price, lower, upper)
+    result = _limit_price(quote, cast(Any, side))
+
+    assert result == expected
+    assert result % _tick_size(result, False) == 0
+    assert lower <= result <= upper

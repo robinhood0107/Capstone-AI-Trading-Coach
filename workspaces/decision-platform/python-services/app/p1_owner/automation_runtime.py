@@ -116,6 +116,18 @@ class AdvanceCommand:
     event_payload_hash: str
 
 
+@dataclass(frozen=True, slots=True)
+class AccountLineageAdvance:
+    """자기 체결로 설명되는 계좌 이동. 기대 투영을 여기까지 전진시킨다."""
+
+    reason: str
+    projection: dict[str, object]
+    digest: str
+    order_id: str
+    filled_quantity: int
+    average_fill_price_krw: int
+
+
 class AutomationRuntimePort(Protocol):
     """Spring/KIS/Vertex adapter가 engine transport와 tick별 입력을 함께 제공한다."""
 
@@ -148,6 +160,15 @@ class AutomationRuntimePort(Protocol):
 
     def cancel(self, reservation: OrderReservation) -> bool: ...
 
+    def account_lineage_advance(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        filled_quantity: int,
+        average_fill_price_krw: int,
+    ) -> AccountLineageAdvance | None: ...
+
     def close(self) -> None: ...
 
 
@@ -170,6 +191,26 @@ class PostgresAutomationRuntimeRepository:
         ):
             raise AutomationRuntimeError("AUTOMATION_RUNTIME_DSN_ROLE_INVALID")
         self._database_dsn = database_dsn
+
+    def advance_account_lineage(self, claim: RuntimeClaim, lineage: AccountLineageAdvance) -> int:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select p1_advance_automation_account_lineage_v3(%s,%s,%s,%s::jsonb,%s,%s,%s,%s)",
+                (
+                    claim.run_id,
+                    claim.claim_token_hash,
+                    lineage.reason,
+                    canonical_json_bytes(lineage.projection).decode(),
+                    lineage.digest,
+                    lineage.order_id,
+                    lineage.filled_quantity,
+                    lineage.average_fill_price_krw,
+                ),
+            )
+            row = cursor.fetchone()
+            if row is None or not isinstance(row[0], int):
+                raise AutomationRuntimeError("AUTOMATION_ACCOUNT_LINEAGE_ADVANCE_FAILED")
+            return row[0]
 
     def preflight(self) -> None:
         with self._connect() as connection, connection.cursor() as cursor:
@@ -439,6 +480,22 @@ class PersistentAutomationRunner:
             event_payload_hash=str(event["payloadHash"]),
         )
         self._repository.advance(command)
+        # 체결이 확정되면 기대 계좌 투영을 함께 전진시킨다. 그러지 않으면 다음 tick이
+        # 자기 체결을 외부 드리프트로 보고 ACCOUNT_DRIFT로 HALT하고, HALT는 stop으로 풀리지 않는다.
+        if (
+            run.state == "COMPLETED"
+            and run.filled_quantity > 0
+            and run.selected_side is not None
+            and run.selected_symbol is not None
+        ):
+            lineage = port.account_lineage_advance(
+                symbol=run.selected_symbol,
+                side=run.selected_side,
+                filled_quantity=run.filled_quantity,
+                average_fill_price_krw=_required_price(run.average_fill_price_krw),
+            )
+            if lineage is not None:
+                self._repository.advance_account_lineage(claim, lineage)
         return result
 
 
@@ -850,3 +907,9 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _required_price(value: int | None) -> int:
+    if value is None or value <= 0:
+        raise AutomationRuntimeError("AUTOMATION_FILL_PRICE_MISSING")
+    return value

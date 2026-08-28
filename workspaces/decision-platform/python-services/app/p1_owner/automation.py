@@ -1371,7 +1371,19 @@ def _limit_price(quote: Quote, side: Side) -> int:
         raise AutomationError("quote prices are invalid")
     tick = _tick_size(quote.price_krw, quote.is_etf_etn)
     price = quote.price_krw + tick if side == "BUY" else quote.price_krw - tick
-    return min(quote.upper_limit_krw, price) if side == "BUY" else max(quote.lower_limit_krw, price)
+    price = (
+        min(quote.upper_limit_krw, price) if side == "BUY" else max(quote.lower_limit_krw, price)
+    )
+    # 상·하한가로 clamp하면 그 값이 속한 호가 밴드의 격자에서 벗어날 수 있고, KIS는 그런 주문을
+    # 40030000 호가단위 오류로 거절한다. 매수는 내림, 매도는 올림으로 스냅해 주문 가능 범위
+    # 안쪽에 남긴다.
+    grid = _tick_size(price, quote.is_etf_etn)
+    remainder = price % grid
+    if remainder:
+        price = price - remainder if side == "BUY" else price + (grid - remainder)
+    if price <= 0 or price % _tick_size(price, quote.is_etf_etn):
+        raise AutomationError("automation limit price is off the KRX tick grid")
+    return price
 
 
 def _tick_size(price: int, is_etf_etn: bool) -> int:

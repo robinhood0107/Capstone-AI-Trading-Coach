@@ -2441,3 +2441,29 @@ END
 $block$;
 COMMIT;
 SQL
+
+DO $p1_v94_automation_continuity_privileges$
+BEGIN
+    IF to_regprocedure(
+        'public.p1_advance_automation_account_lineage_v3(text,text,text,jsonb,text,text,bigint,bigint)'
+    ) IS NOT NULL THEN
+        -- readiness 판정 helper는 flyway 소유 SECURITY DEFINER 안에서만 불린다. 어떤 앱 role도
+        -- 직접 호출할 이유가 없다.
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_automation_open_work_clear_v3(text,text)
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_advance_automation_account_lineage_v3(
+                text,text,text,jsonb,text,text,bigint,bigint
+            )
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_advance_automation_account_lineage_v3(
+                text,text,text,jsonb,text,text,bigint,bigint
+            )
+        TO decision_automation_runtime;
+    END IF;
+END
+$p1_v94_automation_continuity_privileges$;

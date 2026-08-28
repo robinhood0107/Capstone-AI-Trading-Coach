@@ -37,6 +37,7 @@ from app.p1_owner.automation import (
     _limit_price,
 )
 from app.p1_owner.automation_runtime import (
+    AccountLineageAdvance,
     AutomationRuntimeError,
     RuntimeClaim,
     inputs_from_state,
@@ -307,6 +308,10 @@ class LiveAutomationPort:
         self.submit_calls = int(state.get("logicalSubmitCount", 0))
         self.reconcile_calls = 0
         self.cancel_calls = 0
+        expected = state.get("expectedAccountProjection", state.get("baselineAccountProjection"))
+        self._expected_projection: dict[str, Any] | None = (
+            dict(expected) if isinstance(expected, dict) else None
+        )
 
     def inputs(
         self,
@@ -457,6 +462,48 @@ class LiveAutomationPort:
             self.order_id,
             self._claim.account_id,
             self._claim.session_date,
+        )
+
+    def account_lineage_advance(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        filled_quantity: int,
+        average_fill_price_krw: int,
+    ) -> AccountLineageAdvance | None:
+        """확정된 자기 체결이면 전진할 계좌 투영을 만든다. 설명되지 않으면 None이다."""
+
+        expected_projection = self._expected_projection
+        if expected_projection is None or self.order_id is None:
+            return None
+        self._require_capacity(1)
+        balance = self._execution_source.balance(self._claim.account_id)
+        self.physical_calls += 1
+        try:
+            expected = AccountLineageSnapshot.from_projection(expected_projection)
+            observed = AccountLineageSnapshot.from_projection(balance)
+        except (AutomationError, TypeError, ValueError):
+            return None
+        if not expected.permits_fill(
+            observed,
+            symbol=symbol,
+            side=cast(Any, side),
+            filled_quantity=filled_quantity,
+            average_fill_price_krw=average_fill_price_krw,
+        ):
+            # 델타가 자기 체결로 설명되지 않으면 전진시키지 않는다. 다음 tick이 드리프트로
+            # 잡아 HALT하는 편이 잘못된 기대를 굳히는 것보다 안전하다.
+            return None
+        projection = observed.projection()
+        projection["schemaVersion"] = "2"
+        return AccountLineageAdvance(
+            reason="BUY_FILL" if side == "BUY" else "SELL_FILL",
+            projection=projection,
+            digest=observed.digest,
+            order_id=self.order_id,
+            filled_quantity=filled_quantity,
+            average_fill_price_krw=average_fill_price_krw,
         )
 
     def cancel(self, reservation: OrderReservation) -> bool:

@@ -52,6 +52,7 @@ from app.brokerage.kis_mock_online_client import (
 from app.data.kis.http_client import CURRENT_PRICE_PATH, KISHttpClient
 from app.data.kis.settings import KISSettings
 from app.p1_owner.automation import (
+    _nth_next_session,
     AutomationEngine,
     AutomationInputs,
     AutomationPolicySnapshot,
@@ -76,6 +77,11 @@ _FILL_POLL_SECONDS: Final = 2.5
 _BROKERAGE_CAP: Final = 60
 _TOKEN_CAP: Final = 1
 _EVALUATION_TIME: Final = clock_time(9, 30)
+# 청산 사유별 경로를 실거래로 나누어 찍기 위한 시나리오 선택.
+#   MAX_HOLDING_SESSIONS  만기 도달로 청산(기본)
+#   MODEL_SELL            보유 종목에 SELL 신호가 들어와 만기 전에 청산
+# STOP_LOSS/TAKE_PROFIT은 실제 등락에 의존하므로 여기서 강제하지 않는다.
+_SCENARIO: Final = os.environ.get("P1_KIS_MOCK_REHEARSAL_SCENARIO", "MAX_HOLDING_SESSIONS")
 
 
 class RehearsalFailed(RuntimeError):
@@ -441,8 +447,25 @@ def main() -> int:
                 }
             )
 
-            # 만기 세션으로 시계를 옮겨 같은 lot을 실제 매도로 닫는다.
-            sell_session = position.expiry_session
+            # 같은 lot을 실제 매도로 닫는다. 시나리오에 따라 청산 사유가 달라진다.
+            if _SCENARIO == "MODEL_SELL":
+                # 만기 이전 세션으로 옮기고 같은 종목에 SELL 신호를 준다. 시세를 만지지 않고
+                # 신호만으로 MODEL_SELL 분기를 태운다.
+                sell_session = _nth_next_session(position.entry_session, 1)
+                sell_signals = (
+                    SignalCandidate(
+                        symbol=_SYMBOL,
+                        lstm_signal="SELL",
+                        baseline_signal="SELL",
+                        expected_return=-0.03,
+                        confidence=0.8,
+                    ),
+                )
+            elif _SCENARIO == "MAX_HOLDING_SESSIONS":
+                sell_session = position.expiry_session
+                sell_signals = ()
+            else:
+                raise RehearsalFailed(f"지원하지 않는 시나리오다: {_SCENARIO}")
             sell_inputs = AutomationInputs(
                 session_date=sell_session,
                 policy=policy,
@@ -450,7 +473,7 @@ def main() -> int:
                 buyable_amount_krw=0,
                 open_position_market_value_krw=position.quantity
                 * (position.entry_average_fill_price_krw or 0),
-                signals=(),
+                signals=sell_signals,
             )
             sell_projection = _drive(
                 store,
@@ -514,6 +537,7 @@ def main() -> int:
         json.dumps(
             {
                 "status": "SUCCESS",
+                "scenario": _SCENARIO,
                 "symbol": _SYMBOL,
                 "engineSteps": steps,
                 "transportSteps": transport.steps,

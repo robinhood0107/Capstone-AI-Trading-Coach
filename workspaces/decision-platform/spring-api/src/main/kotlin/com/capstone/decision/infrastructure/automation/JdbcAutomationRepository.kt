@@ -393,13 +393,26 @@ class JdbcAutomationRepository(
             )
             return jdbc.query(
                 """
-                SELECT position_id,account_id,symbol,quantity,entry_average_fill_price_krw,
-                       entry_session,expiry_session,policy_id,policy_version,stop_loss_bps,
-                       take_profit_bps,status,exit_reason,bot_owned,short_allowed,created_at,closed_at
-                FROM automation_positions
-                WHERE user_id=:ownerUserId AND policy_id IS NOT NULL
-                  AND status IN ('OPEN','EXIT_PENDING')
-                ORDER BY entry_session,symbol,position_id LIMIT 5
+                (
+                  SELECT position_id,account_id,symbol,quantity,entry_average_fill_price_krw,
+                         entry_session,expiry_session,policy_id,policy_version,stop_loss_bps,
+                         take_profit_bps,status,exit_reason,exit_average_fill_price_krw,
+                         realized_pnl_krw,bot_owned,short_allowed,created_at,closed_at
+                  FROM automation_positions
+                  WHERE user_id=:ownerUserId AND policy_id IS NOT NULL
+                    AND status IN ('OPEN','EXIT_PENDING')
+                  ORDER BY entry_session,symbol,position_id LIMIT 5
+                )
+                UNION ALL
+                (
+                  SELECT position_id,account_id,symbol,quantity,entry_average_fill_price_krw,
+                         entry_session,expiry_session,policy_id,policy_version,stop_loss_bps,
+                         take_profit_bps,status,exit_reason,exit_average_fill_price_krw,
+                         realized_pnl_krw,bot_owned,short_allowed,created_at,closed_at
+                  FROM automation_positions
+                  WHERE user_id=:ownerUserId AND policy_id IS NOT NULL AND status='CLOSED'
+                  ORDER BY closed_at DESC,position_id LIMIT 5
+                )
                 """.trimIndent(),
                 mapOf("ownerUserId" to ownerUserId),
             ) { row, _ ->
@@ -417,6 +430,11 @@ class JdbcAutomationRepository(
                     takeProfitBps = row.getInt("take_profit_bps"),
                     status = row.getString("status"),
                     exitReason = row.getString("exit_reason"),
+                    exitAverageFillPriceKrw =
+                        row.getObject("exit_average_fill_price_krw", java.lang.Long::class.java)
+                            ?.toLong(),
+                    realizedPnlKrw =
+                        row.getObject("realized_pnl_krw", java.lang.Long::class.java)?.toLong(),
                     botOwned = row.getBoolean("bot_owned"),
                     shortAllowed = row.getBoolean("short_allowed"),
                     createdAt = row.getObject("created_at", OffsetDateTime::class.java),

@@ -75,7 +75,7 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `clean database applies V1 through V91 migrations and creates required objects`() {
+    fun `clean database applies V1 through V94 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
         // V7 is a Java migration and must appear alongside the SQL migrations.
         assertEquals((1..94).map(Int::toString), versions)
@@ -4769,7 +4769,7 @@ class FlywayMigrationIntegrationTest(
             registry.add("spring.flyway.password", postgres::getPassword)
             // The primary integration database exercises current adapters against the current schema.
             // Historical migration boundaries remain covered by their explicitly targeted databases.
-            registry.add("spring.flyway.target") { "91" }
+            registry.add("spring.flyway.target") { "94" }
             registry.add("app.decision.grpc.shared-secret") { SpringApiIntegrationTestBase.TEST_GRPC_SHARED_SECRET }
             registry.add("app.rag.grpc.shared-secret") {
                 SpringApiIntegrationTestBase.TEST_RAG_GRPC_SHARED_SECRET

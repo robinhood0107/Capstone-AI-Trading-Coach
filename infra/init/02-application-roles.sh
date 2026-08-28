@@ -2436,6 +2436,16 @@ BEGIN
             )
         TO decision_automation_runtime;
     END IF;
+    IF to_regprocedure('public.p1_automation_realized_performance_v2(text)') IS NOT NULL THEN
+        -- V92 실현 성과 집계는 owner scope 안에서만 읽힌다. bootstrap을 다시 돌려도 유지한다.
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_automation_realized_performance_v2(text)
+        FROM PUBLIC, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_automation_realized_performance_v2(text)
+        TO decision_app;
+    END IF;
 END
 $p1_v94_automation_continuity_privileges$;
 

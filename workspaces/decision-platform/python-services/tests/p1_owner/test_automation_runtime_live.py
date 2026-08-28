@@ -389,3 +389,83 @@ def test_lineage_advance_needs_a_bound_order_id() -> None:
         )
         is None
     )
+
+
+def test_the_three_gates_that_used_to_close_every_order_are_open() -> None:
+    """오늘 연 세 곳이 실제로 열려 production 경로가 주문 산정까지 간다.
+
+    이전에는 (1) 뉴스 거부권이 항상 ABSTAIN이라 매수가 NEWS_CHECKING에서 끝났고,
+    (2) riskComplete가 False로 고정돼 매수·매도 양쪽이 ORDER_SIZING에서 끝났으며,
+    (3) 원칙 한도가 MAX_BIGINT로 들어와 수량이 사용자 원칙을 넘었다.
+    """
+    state = _state()
+    # V95가 실제 값을 내보낸다. 원칙은 1회 최대주문 30만원, 보유 평가액은 20만원이다.
+    state["principleMaxSingleOrderKrw"] = 300_000
+    state["principleAssetRemainingKrw"] = 500_000
+    # 보유 평가액은 durable state가 아니라 live 잔고가 진실이다. 아래 잔고가 그걸 준다.
+    run = AutomationRun(
+        run_id=str(state["runId"]),
+        session_date=date(2026, 8, 28),
+        brokerage_mode="KIS_MOCK",
+        started_at=datetime(2026, 8, 28, 9, 30, tzinfo=_KST),
+        updated_at=datetime(2026, 8, 28, 9, 30, tzinfo=_KST),
+        state="ORDER_SIZING",
+        selected_symbol="005930",
+        selected_side="BUY",
+    )
+    port = LiveAutomationPort(
+        _claim(),
+        state,
+        FakeBridge(),
+        FakeQuoteSource(),
+        FilledExecutionSource(
+            cash_krw=1_000_000,
+            positions=[{"marketValueKrw": 200_000, "quantity": 2, "symbol": "005930"}],
+        ),
+        FailClosedVertexVetoTransport(),
+    )
+
+    inputs = port.inputs(state=state, run=run, now=run.started_at)
+
+    # (2) 증거금 0과 카탈로그 전수 분류가 확인되므로 주문 산정이 열린다.
+    assert inputs.account_complete is True
+    # (3) 원칙 한도가 그대로 사이저에 도달한다.
+    assert inputs.principle_max_single_order_krw == 300_000
+    assert inputs.principle_asset_remaining_krw == 500_000
+    assert inputs.open_position_market_value_krw == 200_000
+    # (1) provider가 없으니 ABSTAIN을 차단으로 보지 않는다.
+    assert inputs.news_veto_provider_bound is False
+    assert port.vertex("005930") == "ABSTAIN"
+
+
+def test_a_bound_provider_makes_abstain_block_again() -> None:
+    state = _state()
+    run = AutomationRun(
+        run_id=str(state["runId"]),
+        session_date=date(2026, 8, 28),
+        brokerage_mode="KIS_MOCK",
+        started_at=datetime(2026, 8, 28, 9, 30, tzinfo=_KST),
+        updated_at=datetime(2026, 8, 28, 9, 30, tzinfo=_KST),
+        state="ORDER_SIZING",
+        selected_symbol="005930",
+        selected_side="BUY",
+    )
+
+    class BoundTransport:
+        physical_calls = 0
+
+        def invoke(self, *, system_prompt: str, request_bytes: bytes) -> object:
+            raise AssertionError("이 테스트는 배선 여부만 본다")
+
+    port = LiveAutomationPort(
+        _claim(),
+        state,
+        FakeBridge(),
+        FakeQuoteSource(),
+        FakeExecutionSource(),
+        cast(Any, BoundTransport()),
+    )
+
+    inputs = port.inputs(state=state, run=run, now=run.started_at)
+
+    assert inputs.news_veto_provider_bound is True

@@ -1705,6 +1705,13 @@
             "format": "date",
             "type": "string"
           },
+          "exitAverageFillPriceKrw": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "exitReason": {
             "type": [
               "string",
@@ -1728,6 +1735,13 @@
           "quantity": {
             "format": "int64",
             "type": "integer"
+          },
+          "realizedPnlKrw": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "shortAllowed": {
             "type": "boolean"

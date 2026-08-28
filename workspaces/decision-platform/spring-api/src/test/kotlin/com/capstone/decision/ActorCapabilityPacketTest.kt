@@ -28,8 +28,8 @@ class ActorCapabilityPacketTest {
     fun `forged payload signature and public key fail closed`() {
         val token = ActorCapabilityPacketCodec.sign(claims(), keyPair.private)
         val separator = token.indexOf('.')
-        val forgedPayload = token.substring(0, 12) + "A" + token.substring(13)
-        val forgedSignature = token.substring(0, separator + 1) + "A" + token.substring(separator + 2)
+        val forgedPayload = forgeCharacter(token, 12)
+        val forgedSignature = forgeCharacter(token, separator + 1)
         val otherKey = KeyPairGenerator.getInstance("Ed25519").generateKeyPair().public
 
         assertThrows(IllegalArgumentException::class.java) {
@@ -88,6 +88,18 @@ class ActorCapabilityPacketTest {
                 clock,
             )
         }
+    }
+
+    /**
+     * 고정 문자로 덮어쓰면 원본이 이미 그 문자일 때 위조본이 원본과 같아져 검증이 통과한다.
+     * nonce가 매 실행마다 달라지므로 반드시 원본과 다른 문자를 고른다.
+     */
+    private fun forgeCharacter(
+        token: String,
+        index: Int,
+    ): String {
+        val replacement = if (token[index] == 'A') 'B' else 'A'
+        return token.substring(0, index) + replacement + token.substring(index + 1)
     }
 
     private fun claims(

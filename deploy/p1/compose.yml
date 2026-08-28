@@ -368,7 +368,11 @@ services:
       - kis_mock_approval_private
       - kis_mock_approval_public
       - kis_mock_approval_trust_policy
-      - p1_provider_claim_dsn
+      # provider claim reader는 /run/secrets/p1-provider-claim-dsn 경로만 읽는다. 기본
+      # 마운트 이름은 언더바라 어긋난다. mode는 non-swarm compose에서 무시되므로
+      # group/other 비트 제거는 state 파일 자체를 0600으로 만들어 해결한다.
+      - source: p1_provider_claim_dsn
+        target: p1-provider-claim-dsn
     volumes:
       - ${P1_KIS_MOCK_RUNTIME_DIR}:/certification
     user: "${P1_OPERATOR_UID}:${P1_SECRET_GID}"

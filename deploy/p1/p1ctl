@@ -466,7 +466,7 @@ verify_state() {
     # Ed25519 서명 개인키는 packet reader가 owner-only 0600만 허용한다. 나머지 secret은
     # 컨테이너 그룹이 읽어야 하므로 640을 유지한다.
     case "${file##*/}" in
-      kis-mock-approval-private.pem) secret_mode=600 ;;
+      kis-mock-approval-private.pem | p1-provider-claim.dsn) secret_mode=600 ;;
       *) secret_mode=640 ;;
     esac
     [[ ! -L $file && -f $file && $(stat -c '%a' "$file") == "$secret_mode" ]] || die secret_boundary

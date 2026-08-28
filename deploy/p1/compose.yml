@@ -384,7 +384,9 @@ services:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
     restart: "no"
-    networks: [p1-data]
+    # p1-data는 internal이라 egress가 없다. 인증 runner는 실제 KIS 모의 origin으로 나가야 하므로
+    # redis 접근용 p1-data와 함께 egress가 있는 p1-app에도 붙는다.
+    networks: [p1-data, p1-app]
 
   automation-runtime-cli:
     profiles: [owner]

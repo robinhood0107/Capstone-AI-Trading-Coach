@@ -71,7 +71,12 @@ allowed_key() {
 
 required_keys() {
   key_profile=$profile
-  [ "$key_profile" != certification ] || key_profile=decision-platform
+  case "$key_profile" in
+    # certification runner는 spring_env, python_env, kis_mock_env만 마운트한다. 전체
+    # decision-platform 필수 집합을 요구하면 automation_runtime_env 키에서 항상 실패한다.
+    certification) printf '%s\n' 'REDIS_PASSWORD KIS_MOCK_CONFIGURED KIS_MOCK_APP_KEY KIS_MOCK_APP_SECRET KIS_MOCK_ACCOUNT_NO KIS_MOCK_BOUND_ACCOUNT_ID KIS_MOCK_ORDER_REFERENCE_KEY KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP KIS_BROKERAGE_PHYSICAL_CAP'
+      return ;;
+  esac
   case "$key_profile" in
     postgres) printf '%s\n' 'POSTGRES_PASSWORD POSTGRES_APP_PASSWORD POSTGRES_MIGRATION_PASSWORD POSTGRES_COLLECTOR_PASSWORD POSTGRES_DISCLOSURE_READER_PASSWORD POSTGRES_MARKET_WRITER_PASSWORD POSTGRES_PORTFOLIO_WRITER_PASSWORD POSTGRES_RISK_WRITER_PASSWORD POSTGRES_FILL_WRITER_PASSWORD POSTGRES_RAG_WRITER_PASSWORD POSTGRES_RAG_ADMIN_PASSWORD POSTGRES_RAG_QUERY_PASSWORD POSTGRES_SIGNAL_WRITER_PASSWORD POSTGRES_SIGNAL_SCHEDULER_PASSWORD POSTGRES_SIGNAL_ADMIN_PASSWORD POSTGRES_WORKER_PASSWORD POSTGRES_AUTOMATION_RUNTIME_PASSWORD POSTGRES_OUTBOX_PUBLISHER_PASSWORD POSTGRES_POISON_RECORDER_PASSWORD POSTGRES_REPLAY_PASSWORD POSTGRES_IDENTITY_PASSWORD POSTGRES_AUTH_PASSWORD POSTGRES_REPLAY_AUTHORIZER_PASSWORD POSTGRES_DEMO_PASSWORD' ;;
     role-bootstrap) printf '%s\n' 'POSTGRES_ADMIN_USER POSTGRES_PASSWORD POSTGRES_AUTH_PASSWORD POSTGRES_AUTOMATION_RUNTIME_PASSWORD POSTGRES_OUTBOX_PUBLISHER_PASSWORD POSTGRES_POISON_RECORDER_PASSWORD' ;;
@@ -97,8 +102,12 @@ required_keys() {
 
 seen='|'
 for secret_file in $secret_files; do
-while IFS='=' read -r key value || [ -n "$key$value" ]; do
-  if [ -z "$key" ] || ! allowed_key "$key"; then
+while read -r line || [ -n "$line" ]; do
+  # IFS='=' 분해는 base64 padding으로 끝나는 값의 마지막 '='를 버린다. 첫 '=' 기준으로만
+  # 나눠 값 원문을 그대로 보존한다.
+  key=${line%%=*}
+  value=${line#*=}
+  if [ -z "$key" ] || [ "$key" = "$line" ] || ! allowed_key "$key"; then
     echo "p1 secret loading failed: unexpected_key" >&2
     exit 1
   fi

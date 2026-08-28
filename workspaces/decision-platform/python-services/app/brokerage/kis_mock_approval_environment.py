@@ -7,7 +7,9 @@ import re
 import stat
 from pathlib import Path
 
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
+from app.data._shared.repository_root import repository_root
+
+_REPOSITORY_ROOT = repository_root(__file__, 5)
 _OPERATOR_ENV_FILE = _REPOSITORY_ROOT / ".env"
 _OPERATOR_ENV_FILE_VARIABLE = "KIS_MOCK_APPROVAL_ENV_FILE"
 _MAX_ENV_BYTES = 64 * 1024

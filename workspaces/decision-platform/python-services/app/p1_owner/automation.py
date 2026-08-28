@@ -382,6 +382,9 @@ class AutomationInputs:
     policy: AutomationPolicySnapshot = field(default_factory=_default_policy)
     no_open_order: bool = True
     unfinished_previous_order: bool = False
+    # 뉴스 거부권 provider가 붙어 있는지. 붙어 있으면 ABSTAIN도 매수를 막고, 없으면 통과시킨다.
+    # 부정 이벤트 차단은 원칙의 disclosure_risk_guard가 RiskEngine에서 결정론적으로 수행한다.
+    news_veto_provider_bound: bool = False
     manual_position_symbols: frozenset[str] = frozenset()
     signals: tuple[SignalCandidate, ...] = ()
 
@@ -785,7 +788,12 @@ class AutomationEngine:
                 return
             verdict = transport.vertex(_required(run.selected_symbol))
             run.vertex_call_count += 1
-            if verdict in {"VETO_BUY", "ABSTAIN"}:
+            # provider가 붙어 있으면 판단 불가(ABSTAIN)도 차단으로 본다. 붙어 있지 않으면 ABSTAIN은
+            # "물어볼 곳이 없었다"는 뜻이므로 이것만으로 매수를 막지 않는다. VETO_BUY는 언제나 차단이다.
+            vetoed = verdict == "VETO_BUY" or (
+                verdict == "ABSTAIN" and inputs.news_veto_provider_bound
+            )
+            if vetoed:
                 self._transition(run, "NEWS_VETOED", "NEWS_RESULT_RECORDED", now)
             else:
                 self._transition(run, "ORDER_SIZING", "NEWS_RESULT_RECORDED", now)

@@ -125,7 +125,11 @@ class AutomationV2Controller(
         val page = service.listPositionsV2(principal.userId)
         return ApiResponseFactory.success(
             RequestIds.currentOrCreate(request),
-            AutomationPositionPageV2Response(page.items.map { it.toResponse() }, page.nextCursor),
+            AutomationPositionPageV2Response(
+                page.realizedSummary.toResponse(),
+                page.items.map { it.toResponse() },
+                page.nextCursor,
+            ),
         )
     }
 }

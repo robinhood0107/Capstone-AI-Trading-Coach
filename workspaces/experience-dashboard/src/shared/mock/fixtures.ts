@@ -225,6 +225,15 @@ export const automationRuns: AutomationRunPageV2 = {
 };
 
 export const automationPositions: AutomationPositionPageV2 = {
+  realizedSummary: {
+    closedPositionCount: 0,
+    realizedPnlKrw: 0,
+    realizedGrossKrw: 0,
+    winningPositionCount: 0,
+    losingPositionCount: 0,
+    evidenceMode: 'KIS_MOCK',
+    performanceClaimAllowed: false,
+  },
   items: [],
   nextCursor: null,
 };

@@ -208,12 +208,14 @@ class KisAutomationExecutionSource:
         source = self._balance_reader.probe_balance_source(account_id)
         if not source.positions_complete:
             raise AutomationRuntimeError("AUTOMATION_BALANCE_PAGINATION_REQUIRED")
+        # riskComplete는 여기서 정하지 않는다. 보유 종목 분류가 전부 확인됐는지는 durable state의
+        # 카탈로그를 봐야 알 수 있으므로 호출자(inputs)가 판정한다.
         return {
             "accountId": source.account_id,
             "cashKrw": source.cash_krw,
+            "marginRequirementKrw": source.margin_requirement_krw,
             "portfolioEquityKrw": source.portfolio_equity_krw,
-            # KIS cash balance lacks trusted margin/catalog enrichment required by RiskEngine.
-            "riskComplete": False,
+            "positionsComplete": source.positions_complete,
             "positions": [
                 {"marketValueKrw": market_value, "quantity": quantity, "symbol": symbol}
                 for symbol, quantity, market_value in source.positions
@@ -334,6 +336,9 @@ class LiveAutomationPort:
         account_complete: bool | None = None
         account_digest_matches: bool | None = None
         runtime_state = dict(state)
+        runtime_state["newsVetoProviderBound"] = not isinstance(
+            self._vertex_transport, FailClosedVertexVetoTransport
+        )
         if run.state == "RISK_CHECKING":
             reservation = run.reservation
             if reservation is None or reservation.intent is None:
@@ -370,7 +375,10 @@ class LiveAutomationPort:
             )
             if not isinstance(expected, dict):
                 raise AutomationRuntimeError("AUTOMATION_BASELINE_PROJECTION_MISSING")
-            account_complete = balance.get("riskComplete") is True
+            account_complete = _risk_complete(balance, state)
+            # 원칙 한도는 durable state가, 곱할 평가액은 live 잔고가 준다. 둘 다 있어야
+            # 사이저가 사용자 원칙 안쪽에서 수량을 만든다.
+            runtime_state["openPositionMarketValueKrw"] = _open_position_value(balance)
             try:
                 expected_lineage = AccountLineageSnapshot.from_projection(expected)
                 observed_lineage = AccountLineageSnapshot.from_projection(balance)
@@ -688,3 +696,42 @@ def _vertex_veto_transport() -> VertexVetoTransport:
     if settings is None:
         return FailClosedVertexVetoTransport()
     return VertexAiVetoTransport(settings=settings)
+
+
+def _open_position_value(balance: dict[str, Any]) -> int:
+    """보유 포지션 평가액 합. live 잔고가 유일하게 신뢰할 수 있는 출처다."""
+
+    positions = balance.get("positions")
+    if not isinstance(positions, list):
+        return 0
+    total = 0
+    for item in positions:
+        if isinstance(item, dict):
+            value = item.get("marketValueKrw")
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                total += value
+    return total
+
+
+def _risk_complete(balance: dict[str, Any], state: dict[str, Any]) -> bool:
+    """RiskEngine이 요구하는 사실이 전부 확인됐을 때만 참이다.
+
+    증거금은 모의 현금계좌라 0이 사실이고, 종목 분류는 카탈로그가 보유 종목을 전부 덮을 때만
+    확인된 것으로 본다. 하나라도 모르면 거짓이고, 그러면 주문 산정이 열리지 않는다.
+    """
+
+    if balance.get("positionsComplete") is not True:
+        return False
+    if balance.get("marginRequirementKrw") != 0:
+        return False
+    catalog = state.get("instrumentCatalogSymbols")
+    if not isinstance(catalog, list):
+        return False
+    classified = {str(symbol) for symbol in catalog}
+    positions = balance.get("positions")
+    if not isinstance(positions, list):
+        return False
+    for item in positions:
+        if not isinstance(item, dict) or str(item.get("symbol", "")) not in classified:
+            return False
+    return True

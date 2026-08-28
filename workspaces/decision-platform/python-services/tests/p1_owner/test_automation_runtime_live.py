@@ -90,9 +90,10 @@ class FakeExecutionSource:
         return {
             "accountId": account_id,
             "cashKrw": 1_000_000,
+            "marginRequirementKrw": 0,
             "portfolioEquityKrw": 1_000_000,
             "positions": [],
-            "riskComplete": True,
+            "positionsComplete": True,
         }
 
     def read(self, order_id: str, account_id: str, session_date: date) -> ReconcileOutcome:
@@ -138,6 +139,7 @@ def _state() -> dict[str, Any]:
             "positions": [],
         },
         "brokerageMode": "KIS_MOCK",
+        "instrumentCatalogSymbols": ["000660", "005930"],
         "checkpointVersion": 4,
         "controlState": "ARMED",
         "controlVersion": 2,
@@ -228,8 +230,9 @@ def test_live_port_reuses_one_quote_spring_risk_brokerage_and_execution_reader()
 def test_kis_runtime_sizing_fails_closed_when_risk_balance_is_incomplete() -> None:
     class IncompleteExecution(FakeExecutionSource):
         def balance(self, account_id: str) -> dict[str, object]:
+            # 카탈로그가 모르는 종목을 보유하면 분류가 확인되지 않은 것이므로 risk-complete가 아니다.
             value = super().balance(account_id)
-            value["riskComplete"] = False
+            value["positions"] = [{"marketValueKrw": 100_000, "quantity": 1, "symbol": "999999"}]
             return value
 
     bridge = FakeBridge()
@@ -315,9 +318,10 @@ class FilledExecutionSource(FakeExecutionSource):
         return {
             "accountId": account_id,
             "cashKrw": self._cash_krw,
+            "marginRequirementKrw": 0,
             "portfolioEquityKrw": 1_000_000,
             "positions": self._positions,
-            "riskComplete": True,
+            "positionsComplete": True,
         }
 
 

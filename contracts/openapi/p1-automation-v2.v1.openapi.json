@@ -279,11 +279,15 @@
                 "type": "null"
               }
             ]
+          },
+          "realizedSummary": {
+            "$ref": "#/components/schemas/AutomationRealizedSummaryV2"
           }
         },
         "required": [
           "items",
-          "nextCursor"
+          "nextCursor",
+          "realizedSummary"
         ],
         "type": "object"
       },
@@ -430,6 +434,45 @@
           "closedAt"
         ],
         "title": "automation-position.v2",
+        "type": "object"
+      },
+      "AutomationRealizedSummaryV2": {
+        "additionalProperties": false,
+        "properties": {
+          "closedPositionCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "evidenceMode": {
+            "const": "KIS_MOCK"
+          },
+          "losingPositionCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "performanceClaimAllowed": {
+            "const": false
+          },
+          "realizedGrossKrw": {
+            "type": "integer"
+          },
+          "realizedPnlKrw": {
+            "type": "integer"
+          },
+          "winningPositionCount": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "closedPositionCount",
+          "realizedPnlKrw",
+          "realizedGrossKrw",
+          "winningPositionCount",
+          "losingPositionCount",
+          "evidenceMode",
+          "performanceClaimAllowed"
+        ],
         "type": "object"
       },
       "AutomationRunPageV2": {

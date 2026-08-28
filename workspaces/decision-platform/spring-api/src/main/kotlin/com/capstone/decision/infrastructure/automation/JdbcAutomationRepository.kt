@@ -10,6 +10,7 @@ import com.capstone.decision.application.automation.AutomationIdempotencyConflic
 import com.capstone.decision.application.automation.AutomationNotFoundException
 import com.capstone.decision.application.automation.AutomationPolicyV2Projection
 import com.capstone.decision.application.automation.AutomationPositionV2Projection
+import com.capstone.decision.application.automation.AutomationRealizedPerformanceV2Projection
 import com.capstone.decision.application.automation.AutomationRepository
 import com.capstone.decision.application.automation.AutomationRunCursor
 import com.capstone.decision.application.automation.AutomationRunProjection
@@ -378,6 +379,41 @@ class JdbcAutomationRepository(
     }
 
     @Transactional
+    override fun readRealizedPerformanceV2(
+        ownerUserId: String,
+    ): AutomationRealizedPerformanceV2Projection {
+        try {
+            val jdbc = jdbc()
+            actorRlsScope.open(
+                jdbc,
+                ownerUserId,
+                ActorCapabilityBinding.target(
+                    "LIST_AUTOMATION_POSITIONS",
+                    "AUTOMATION_POSITION_LIST",
+                    ownerUserId,
+                    ActorCapabilityRolePolicy.OWNER,
+                ),
+            )
+            // V92가 만들어 둔 owner-scope 집계다. 청산된 lot만 세고 왕복 비용이 이미 반영돼 있다.
+            return jdbc.query(
+                "SELECT * FROM p1_automation_realized_performance_v2(:ownerUserId)",
+                mapOf("ownerUserId" to ownerUserId),
+            ) { row, _ ->
+                AutomationRealizedPerformanceV2Projection(
+                    closedPositionCount = row.getLong("closed_position_count"),
+                    realizedPnlKrw = row.getLong("realized_pnl_krw"),
+                    realizedGrossKrw = row.getLong("realized_gross_krw"),
+                    winningPositionCount = row.getLong("winning_position_count"),
+                    losingPositionCount = row.getLong("losing_position_count"),
+                )
+            }.single()
+        } catch (error: ActorCapabilityDeniedException) {
+            throw AutomationAccessDeniedException(error)
+        } catch (error: DataAccessException) {
+            throw translate(error)
+        }
+    }
+
     override fun listPositionsV2(ownerUserId: String): List<AutomationPositionV2Projection> {
         try {
             val jdbc = jdbc()

@@ -68,12 +68,13 @@ class P1BaselineIntegrationTest {
                 "92" to "SQL",
                 "93" to "SQL",
                 "94" to "SQL",
+                "95" to "SQL",
             ),
             history(BASELINE_DB),
         )
-        assertEquals(94, history(HISTORICAL_DB).size)
-        assertEquals("94" to "SQL", history(HISTORICAL_DB).last())
-        assertEquals("94" to "SQL", history(UPGRADE_DB).last())
+        assertEquals(95, history(HISTORICAL_DB).size)
+        assertEquals("95" to "SQL", history(HISTORICAL_DB).last())
+        assertEquals("95" to "SQL", history(UPGRADE_DB).last())
         assertTrue(history(UPGRADE_DB).none { it.second == "SQL_BASELINE" })
     }
 
@@ -106,7 +107,7 @@ class P1BaselineIntegrationTest {
         listOf(HISTORICAL_DB, BASELINE_DB).forEach { database ->
             assertEquals(0L, count(database, "actor_request_capability"))
             assertEquals(
-                "94",
+                "95",
                 scalar(database, "select version from flyway_schema_history where success order by installed_rank desc limit 1"),
             )
         }

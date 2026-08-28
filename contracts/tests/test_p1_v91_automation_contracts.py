@@ -133,6 +133,8 @@ class P1V91AutomationContractTest(unittest.TestCase):
                 "takeProfitBps": 1000,
                 "status": "OPEN",
                 "exitReason": None,
+                "exitAverageFillPriceKrw": None,
+                "realizedPnlKrw": None,
                 "botOwned": True,
                 "shortAllowed": False,
                 "createdAt": "2026-08-27T09:31:00+09:00",

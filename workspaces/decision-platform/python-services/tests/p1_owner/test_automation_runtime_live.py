@@ -301,3 +301,87 @@ def test_spring_bridge_client_is_fixed_loopback_secret_bound_and_retry_zero() ->
     )
     payload = json.loads(observed[0].content)
     assert payload["operation"] == "BALANCE"
+
+
+class FilledExecutionSource(FakeExecutionSource):
+    """매수 체결 뒤의 잔고를 돌려준다. 현금이 줄고 그 종목이 생긴다."""
+
+    def __init__(self, *, cash_krw: int, positions: list[dict[str, object]]) -> None:
+        super().__init__()
+        self._cash_krw = cash_krw
+        self._positions = positions
+
+    def balance(self, account_id: str) -> dict[str, object]:
+        return {
+            "accountId": account_id,
+            "cashKrw": self._cash_krw,
+            "portfolioEquityKrw": 1_000_000,
+            "positions": self._positions,
+            "riskComplete": True,
+        }
+
+
+def _lineage_port(execution: FakeExecutionSource) -> LiveAutomationPort:
+    state = _state()
+    state["reservation"] = {"orderId": "ord_mock_" + "3" * 32}
+    return LiveAutomationPort(
+        _claim(),
+        state,
+        FakeBridge(),
+        FakeQuoteSource(),
+        execution,
+        FailClosedVertexVetoTransport(),
+    )
+
+
+def test_confirmed_buy_fill_advances_the_expected_account_projection() -> None:
+    # 75,000 한 주를 샀으니 현금은 그만큼(수수료 여유 포함) 줄고 포지션이 하나 생긴다.
+    execution = FilledExecutionSource(
+        cash_krw=1_000_000 - 75_030,
+        positions=[{"quantity": 1, "symbol": "005930"}],
+    )
+    advance = _lineage_port(execution).account_lineage_advance(
+        symbol="005930", side="BUY", filled_quantity=1, average_fill_price_krw=75_000
+    )
+
+    assert advance is not None
+    assert advance.reason == "BUY_FILL"
+    assert advance.order_id == "ord_mock_" + "3" * 32
+    assert advance.projection["schemaVersion"] == "2"
+    assert advance.projection["positions"] == [{"quantity": 1, "symbol": "005930"}]
+    assert len(advance.digest) == 64
+
+
+def test_account_movement_the_bot_cannot_explain_never_advances_the_expectation() -> None:
+    # 외부에서 다른 종목이 들어왔다면 자기 체결로 설명되지 않는다. 전진시키지 않고
+    # 다음 tick이 드리프트로 HALT하게 둔다.
+    execution = FilledExecutionSource(
+        cash_krw=1_000_000 - 75_030,
+        positions=[{"quantity": 1, "symbol": "005930"}, {"quantity": 9, "symbol": "000660"}],
+    )
+    assert (
+        _lineage_port(execution).account_lineage_advance(
+            symbol="005930", side="BUY", filled_quantity=1, average_fill_price_krw=75_000
+        )
+        is None
+    )
+
+
+def test_lineage_advance_needs_a_bound_order_id() -> None:
+    execution = FilledExecutionSource(
+        cash_krw=1_000_000 - 75_030, positions=[{"quantity": 1, "symbol": "005930"}]
+    )
+    port = LiveAutomationPort(
+        _claim(),
+        _state(),
+        FakeBridge(),
+        FakeQuoteSource(),
+        execution,
+        FailClosedVertexVetoTransport(),
+    )
+    assert (
+        port.account_lineage_advance(
+            symbol="005930", side="BUY", filled_quantity=1, average_fill_price_krw=75_000
+        )
+        is None
+    )

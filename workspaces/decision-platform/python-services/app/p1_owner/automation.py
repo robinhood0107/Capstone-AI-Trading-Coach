@@ -55,6 +55,53 @@ _TERMINAL_STATES = frozenset(
         "HALTED",
     }
 )
+# 엔진이 낼 수 있는 전이 전체. DB whitelist(p1_automation_transition_valid_v2)와 한 글자라도
+# 어긋나면 checkpoint가 CAS 충돌로 죽으므로 이 표를 단일 진실로 두고 양쪽을 대조한다.
+# HALTED는 SESSION_DRIFT/ACCOUNT_DRIFT/KILL_SWITCH 가드가 모든 active 상태에서 낼 수 있다.
+_SELECTION_TARGETS = frozenset(
+    {"EXIT_SELECTED", "BUY_CANDIDATE_SELECTED", "SKIPPED_NO_ACTION", "SKIPPED_DATA_UNAVAILABLE"}
+)
+_LEGAL_TRANSITIONS: frozenset[tuple[str, str]] = frozenset(
+    {(state, "HALTED") for state in _ACTIVE_STATES}
+    | {
+        ("SCHEDULED", "SCHEDULED"),
+        ("SCHEDULED", "PRECHECK"),
+        ("SCHEDULED", "SKIPPED_NO_ACTION"),
+        ("SCHEDULED", "SKIPPED_LATE_START"),
+        ("SCHEDULED", "SKIPPED_DATA_UNAVAILABLE"),
+        ("PRECHECK", "RECONCILING_PREVIOUS"),
+        ("RECONCILING_PREVIOUS", "PENDING_RECONCILIATION"),
+        ("EXIT_SELECTED", "ORDER_SIZING"),
+        ("BUY_CANDIDATE_SELECTED", "NEWS_CHECKING"),
+        ("NEWS_CHECKING", "NEWS_VETOED"),
+        ("NEWS_CHECKING", "ORDER_SIZING"),
+        ("NEWS_CHECKING", "SKIPPED_DATA_UNAVAILABLE"),
+        ("ORDER_SIZING", "RISK_CHECKING"),
+        ("ORDER_SIZING", "SKIPPED_NO_ACTION"),
+        ("ORDER_SIZING", "SKIPPED_DATA_UNAVAILABLE"),
+        ("ORDER_SIZING", "SKIPPED_LATE_START"),
+        ("RISK_CHECKING", "ORDER_SUBMITTING"),
+        ("RISK_CHECKING", "SKIPPED_NO_ACTION"),
+        ("ORDER_SUBMITTING", "ORDER_SUBMITTING"),
+        ("ORDER_SUBMITTING", "ORDER_SUBMITTED"),
+        ("ORDER_SUBMITTING", "PENDING_RECONCILIATION"),
+        ("ORDER_SUBMITTING", "SKIPPED_DATA_UNAVAILABLE"),
+        ("ORDER_SUBMITTING", "SKIPPED_LATE_START"),
+        ("ORDER_SUBMITTED", "PENDING_RECONCILIATION"),
+        ("ORDER_SUBMITTED", "COMPLETED"),
+        ("ORDER_SUBMITTED", "CANCELLED_UNFILLED"),
+        ("PENDING_RECONCILIATION", "PENDING_RECONCILIATION"),
+        ("PENDING_RECONCILIATION", "COMPLETED"),
+        ("PENDING_RECONCILIATION", "CANCELLED_UNFILLED"),
+    }
+    # PRECHECK와 RECONCILING_PREVIOUS는 _select로 넘어가고, PENDING_RECONCILIATION은
+    # 예약 없는 대사가 풀리면 같은 선택 경로로 되돌아간다.
+    | {
+        (state, target)
+        for state in ("PRECHECK", "RECONCILING_PREVIOUS", "PENDING_RECONCILIATION")
+        for target in _SELECTION_TARGETS
+    }
+)
 _KST_OPEN_TIME = time(9, 30)
 _KST_CLOSE_ORDER_TIME = time(9, 40)
 _CANCEL_TIME = time(15, 20)
@@ -966,6 +1013,10 @@ class AutomationEngine:
             timeframe="1d",
             strategy_id=self.store.strategy_id,
         )
+        # ORDER_SIZING -> RISK_CHECKING은 예약 이벤트를 따로 쓰느라 _transition을 우회한다.
+        # 같은 표로 검사되도록 여기서도 확인한다.
+        if (run.state, "RISK_CHECKING") not in _LEGAL_TRANSITIONS:
+            raise AutomationError("automation transition is not legal")
         run.reservation = OrderReservation(quote.symbol, side, quantity, limit_price, True, intent)
         run.policy_snapshot = policy
         run.leaves_quantity = quantity
@@ -1219,6 +1270,8 @@ class AutomationEngine:
         event_type: str,
         now: datetime,
     ) -> None:
+        if (run.state, state) not in _LEGAL_TRANSITIONS:
+            raise AutomationError("automation transition is not legal")
         run.state = state
         run.updated_at = now
         self.store.append_event(

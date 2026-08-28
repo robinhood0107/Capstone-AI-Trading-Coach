@@ -9,6 +9,7 @@ import com.capstone.decision.application.automation.AutomationControlProjection
 import com.capstone.decision.application.automation.AutomationIdempotencyConflictException
 import com.capstone.decision.application.automation.AutomationNotFoundException
 import com.capstone.decision.application.automation.AutomationPolicyV2Projection
+import com.capstone.decision.application.automation.AutomationPositionV2Page
 import com.capstone.decision.application.automation.AutomationPositionV2Projection
 import com.capstone.decision.application.automation.AutomationRealizedPerformanceV2Projection
 import com.capstone.decision.application.automation.AutomationRepository
@@ -379,9 +380,7 @@ class JdbcAutomationRepository(
     }
 
     @Transactional
-    override fun readRealizedPerformanceV2(
-        ownerUserId: String,
-    ): AutomationRealizedPerformanceV2Projection {
+    override fun readPositionPageV2(ownerUserId: String): AutomationPositionV2Page {
         try {
             val jdbc = jdbc()
             actorRlsScope.open(
@@ -394,90 +393,73 @@ class JdbcAutomationRepository(
                     ActorCapabilityRolePolicy.OWNER,
                 ),
             )
-            // V92가 만들어 둔 owner-scope 집계다. 청산된 lot만 세고 왕복 비용이 이미 반영돼 있다.
-            return jdbc.query(
-                "SELECT * FROM p1_automation_realized_performance_v2(:ownerUserId)",
-                mapOf("ownerUserId" to ownerUserId),
-            ) { row, _ ->
-                AutomationRealizedPerformanceV2Projection(
-                    closedPositionCount = row.getLong("closed_position_count"),
-                    realizedPnlKrw = row.getLong("realized_pnl_krw"),
-                    realizedGrossKrw = row.getLong("realized_gross_krw"),
-                    winningPositionCount = row.getLong("winning_position_count"),
-                    losingPositionCount = row.getLong("losing_position_count"),
-                )
-            }.single()
-        } catch (error: ActorCapabilityDeniedException) {
-            throw AutomationAccessDeniedException(error)
-        } catch (error: DataAccessException) {
-            throw translate(error)
-        }
-    }
-
-    override fun listPositionsV2(ownerUserId: String): List<AutomationPositionV2Projection> {
-        try {
-            val jdbc = jdbc()
-            actorRlsScope.open(
-                jdbc,
-                ownerUserId,
-                ActorCapabilityBinding.target(
-                    "LIST_AUTOMATION_POSITIONS",
-                    "AUTOMATION_POSITION_LIST",
-                    ownerUserId,
-                    ActorCapabilityRolePolicy.OWNER,
-                ),
-            )
-            return jdbc.query(
-                """
-                (
-                  SELECT position_id,account_id,symbol,quantity,entry_average_fill_price_krw,
-                         entry_session,expiry_session,policy_id,policy_version,stop_loss_bps,
-                         take_profit_bps,status,exit_reason,exit_average_fill_price_krw,
-                         realized_pnl_krw,bot_owned,short_allowed,created_at,closed_at
-                  FROM automation_positions
-                  WHERE user_id=:ownerUserId AND policy_id IS NOT NULL
-                    AND status IN ('OPEN','EXIT_PENDING')
-                  ORDER BY entry_session,symbol,position_id LIMIT 5
-                )
-                UNION ALL
-                (
-                  SELECT position_id,account_id,symbol,quantity,entry_average_fill_price_krw,
-                         entry_session,expiry_session,policy_id,policy_version,stop_loss_bps,
-                         take_profit_bps,status,exit_reason,exit_average_fill_price_krw,
-                         realized_pnl_krw,bot_owned,short_allowed,created_at,closed_at
-                  FROM automation_positions
-                  WHERE user_id=:ownerUserId AND policy_id IS NOT NULL AND status='CLOSED'
-                  ORDER BY closed_at DESC,position_id LIMIT 5
-                )
-                """.trimIndent(),
-                mapOf("ownerUserId" to ownerUserId),
-            ) { row, _ ->
-                AutomationPositionV2Projection(
-                    positionId = row.getString("position_id"),
-                    accountId = row.getString("account_id"),
-                    symbol = row.getString("symbol"),
-                    quantity = row.getLong("quantity"),
-                    entryAverageFillPriceKrw = row.getLong("entry_average_fill_price_krw"),
-                    entrySession = row.getObject("entry_session", LocalDate::class.java),
-                    expirySession = row.getObject("expiry_session", LocalDate::class.java),
-                    policyId = row.getString("policy_id"),
-                    policyVersion = row.getInt("policy_version"),
-                    stopLossBps = row.getInt("stop_loss_bps"),
-                    takeProfitBps = row.getInt("take_profit_bps"),
-                    status = row.getString("status"),
-                    exitReason = row.getString("exit_reason"),
-                    exitAverageFillPriceKrw =
-                        row
-                            .getObject("exit_average_fill_price_krw", java.lang.Long::class.java)
-                            ?.toLong(),
-                    realizedPnlKrw =
-                        row.getObject("realized_pnl_krw", java.lang.Long::class.java)?.toLong(),
-                    botOwned = row.getBoolean("bot_owned"),
-                    shortAllowed = row.getBoolean("short_allowed"),
-                    createdAt = row.getObject("created_at", OffsetDateTime::class.java),
-                    closedAt = row.getObject("closed_at", OffsetDateTime::class.java),
-                )
-            }
+            // actor capability scope는 요청당 한 번만 연다. 두 번 열면 두 번째 질의가 403이 된다.
+            val summary =
+                jdbc.query(
+                    "SELECT * FROM p1_automation_realized_performance_v2(:ownerUserId)",
+                    mapOf("ownerUserId" to ownerUserId),
+                ) { row, _ ->
+                    AutomationRealizedPerformanceV2Projection(
+                        closedPositionCount = row.getLong("closed_position_count"),
+                        realizedPnlKrw = row.getLong("realized_pnl_krw"),
+                        realizedGrossKrw = row.getLong("realized_gross_krw"),
+                        winningPositionCount = row.getLong("winning_position_count"),
+                        losingPositionCount = row.getLong("losing_position_count"),
+                    )
+                }
+            val items =
+                jdbc.query(
+                    """
+                    (
+                      SELECT position_id,account_id,symbol,quantity,entry_average_fill_price_krw,
+                             entry_session,expiry_session,policy_id,policy_version,stop_loss_bps,
+                             take_profit_bps,status,exit_reason,exit_average_fill_price_krw,
+                             realized_pnl_krw,bot_owned,short_allowed,created_at,closed_at
+                      FROM automation_positions
+                      WHERE user_id=:ownerUserId AND policy_id IS NOT NULL
+                        AND status IN ('OPEN','EXIT_PENDING')
+                      ORDER BY entry_session,symbol,position_id LIMIT 5
+                    )
+                    UNION ALL
+                    (
+                      SELECT position_id,account_id,symbol,quantity,entry_average_fill_price_krw,
+                             entry_session,expiry_session,policy_id,policy_version,stop_loss_bps,
+                             take_profit_bps,status,exit_reason,exit_average_fill_price_krw,
+                             realized_pnl_krw,bot_owned,short_allowed,created_at,closed_at
+                      FROM automation_positions
+                      WHERE user_id=:ownerUserId AND policy_id IS NOT NULL AND status='CLOSED'
+                      ORDER BY closed_at DESC,position_id LIMIT 5
+                    )
+                    """.trimIndent(),
+                    mapOf("ownerUserId" to ownerUserId),
+                ) { row, _ ->
+                    AutomationPositionV2Projection(
+                        positionId = row.getString("position_id"),
+                        accountId = row.getString("account_id"),
+                        symbol = row.getString("symbol"),
+                        quantity = row.getLong("quantity"),
+                        entryAverageFillPriceKrw = row.getLong("entry_average_fill_price_krw"),
+                        entrySession = row.getObject("entry_session", LocalDate::class.java),
+                        expirySession = row.getObject("expiry_session", LocalDate::class.java),
+                        policyId = row.getString("policy_id"),
+                        policyVersion = row.getInt("policy_version"),
+                        stopLossBps = row.getInt("stop_loss_bps"),
+                        takeProfitBps = row.getInt("take_profit_bps"),
+                        status = row.getString("status"),
+                        exitReason = row.getString("exit_reason"),
+                        exitAverageFillPriceKrw =
+                            row
+                                .getObject("exit_average_fill_price_krw", java.lang.Long::class.java)
+                                ?.toLong(),
+                        realizedPnlKrw =
+                            row.getObject("realized_pnl_krw", java.lang.Long::class.java)?.toLong(),
+                        botOwned = row.getBoolean("bot_owned"),
+                        shortAllowed = row.getBoolean("short_allowed"),
+                        createdAt = row.getObject("created_at", OffsetDateTime::class.java),
+                        closedAt = row.getObject("closed_at", OffsetDateTime::class.java),
+                    )
+                }
+            return AutomationPositionV2Page(summary.single(), items, null)
         } catch (error: ActorCapabilityDeniedException) {
             throw AutomationAccessDeniedException(error)
         } catch (error: DataAccessException) {

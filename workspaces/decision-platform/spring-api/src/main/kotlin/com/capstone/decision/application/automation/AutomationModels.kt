@@ -197,9 +197,7 @@ interface AutomationRepository {
         after: AutomationRunCursor?,
     ): List<AutomationRunV2Projection>
 
-    fun listPositionsV2(ownerUserId: String): List<AutomationPositionV2Projection>
-
-    fun readRealizedPerformanceV2(ownerUserId: String): AutomationRealizedPerformanceV2Projection
+    fun readPositionPageV2(ownerUserId: String): AutomationPositionV2Page
 }
 
 class AutomationConflictException(

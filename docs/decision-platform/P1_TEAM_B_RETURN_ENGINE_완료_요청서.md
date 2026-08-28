@@ -47,7 +47,7 @@ Team B는 지금처럼 exact-31 Rule+LSTM 신호와 exact-10 artifact만 주시�
 | 두 실행 byte identity, network-none Docker | 재현성 확인이라 Team B 몫입니다 |
 | metric·split·scaler·비용 독립 재계산 | 본인 결과 검증이라 Team B 몫입니다 |
 | 일별 inference 재실행 | Team B 몫입니다. 위에 새로 적었습니다 |
-| 예산·수량·손절·익절·주문가격·포지션 | Decision Platform 몫입니다. 손대지 마세요 |
+| 예산·수량·손절·익절·주문가격·포지션 | Decision Platform 몫입니다. 신경 쓰지 않으셔도 됩니다 |
 | Spring adapter, Dashboard, OCI signing·SBOM | Decision Platform 몫입니다 |
 | 실계좌·모의계좌 호출, credential | Owner 몫입니다 |
 

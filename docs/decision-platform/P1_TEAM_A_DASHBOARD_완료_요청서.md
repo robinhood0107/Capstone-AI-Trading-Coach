@@ -62,7 +62,7 @@ AI로 뽑은 시안은 대체로 같은 얼굴을 하고 있습니다. 보라색
 - **Stripe Dashboard** (dashboard.stripe.com) — 금융 숫자 표시의 기준. tabular numerals, 통화·단위 표기, 상태 색 규칙을 그대로 배울 만합니다.
 - **Mercury** (mercury.com) — 뱅킹 톤. 차분한 팔레트에서 잔고와 거래 내역을 어떻게 읽히게 하는지 보시면 좋습니다.
 - **Vercel Dashboard** (vercel.com/dashboard) — 위계와 빈 상태. 데이터가 없을 때 화면이 무너지지 않게 만드는 방식이 참고됩니다.
-- **TradingView** (tradingview.com) — 도메인 밀도. 정보가 많아도 조잡해지지 않게 묶는 방법이요. 다만 차트 장식은 우리 화면에 그대로 가져오지 말아 주세요.
+- **TradingView** (tradingview.com) — 도메인 밀도. 정보가 많아도 조잡해지지 않게 묶는 방식을 보시면 좋습니다. 다만 차트 장식은 우리 화면에 그대로 가져오지 말아 주세요.
 
 그대로 베끼시라는 뜻은 아니고, 밀도와 정렬 감각을 이쪽에 맞춰 주시면 됩니다.
 

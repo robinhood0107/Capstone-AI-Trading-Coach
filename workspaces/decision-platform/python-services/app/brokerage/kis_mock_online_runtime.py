@@ -64,6 +64,9 @@ class KISMockBalanceSourceProbe:
     portfolio_equity_krw: int
     positions: tuple[tuple[str, int, int], ...]
     positions_complete: bool
+    # KIS 모의투자는 현금계좌만 개설되고 신용·대주 한도가 없다. 증거금 0은 payload 추정이 아니라
+    # 계좌 유형에서 나오는 사실이라 기본값으로 둔다.
+    margin_requirement_krw: int = 0
 
     def reconciliation_digest(self) -> str:
         """완전한 sanitized balance projection만 pre/post 비교용 digest로 만든다."""

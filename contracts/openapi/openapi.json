@@ -1670,6 +1670,9 @@
               "string",
               "null"
             ]
+          },
+          "realizedSummary": {
+            "$ref": "#/components/schemas/AutomationRealizedSummaryV2"
           }
         },
         "type": "object"
@@ -1758,6 +1761,38 @@
           },
           "takeProfitBps": {
             "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AutomationRealizedSummaryV2": {
+        "additionalProperties": false,
+        "properties": {
+          "closedPositionCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "evidenceMode": {
+            "type": "string"
+          },
+          "losingPositionCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "performanceClaimAllowed": {
+            "type": "boolean"
+          },
+          "realizedGrossKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "realizedPnlKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "winningPositionCount": {
+            "format": "int64",
             "type": "integer"
           }
         },

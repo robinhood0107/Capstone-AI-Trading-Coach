@@ -371,7 +371,18 @@ export interface AutomationPositionV2 {
   closedAt: string | null;
 }
 
+export interface AutomationRealizedSummaryV2 {
+  closedPositionCount: number;
+  realizedPnlKrw: number;
+  realizedGrossKrw: number;
+  winningPositionCount: number;
+  losingPositionCount: number;
+  evidenceMode: 'KIS_MOCK';
+  performanceClaimAllowed: false;
+}
+
 export interface AutomationPositionPageV2 {
+  realizedSummary: AutomationRealizedSummaryV2;
   items: AutomationPositionV2[];
   nextCursor: string | null;
 }

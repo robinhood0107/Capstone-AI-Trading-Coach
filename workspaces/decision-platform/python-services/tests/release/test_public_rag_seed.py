@@ -27,7 +27,7 @@ MANIFEST = SEED_ROOT / "public-rag-seed.v1.manifest.json"
 
 def test_sealed_v87_seed_allows_only_additive_v88_v89_targets() -> None:
     assert FORWARD_COMPATIBLE_TARGET_SCHEMA_VERSIONS == frozenset(
-        {"88", "89", "90", "91", "92", "93", "94"}
+        {"88", "89", "90", "91", "92", "93", "94", "95"}
     )
 
 

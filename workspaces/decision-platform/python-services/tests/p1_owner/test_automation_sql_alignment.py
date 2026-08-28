@@ -58,3 +58,34 @@ def test_sql_realized_pnl_uses_the_same_integer_35bp_round_trip_cost() -> None:
     formula = body[start : body.index("END IF;", start)]
     assert "*35+19999" in formula.replace(" ", "").replace("\n", "")
     assert "/20000" in formula
+
+
+_V95 = _MIGRATIONS / "V95__p1_principle_binding_order_sizing.sql"
+
+
+def test_order_sizing_inputs_are_no_longer_hardcoded_constants() -> None:
+    # V91은 min() 다섯 항 중 셋을 상수로 열어 두어 사용자 원칙이 주문 크기에 닿지 못했다.
+    body = _V95.read_text(encoding="utf-8")
+
+    assert "'openPositionMarketValueKrw',open_position_value" in body
+    assert "'principleMaxSingleOrderKrw',max_single_order" in body
+    assert "'principleAssetRemainingKrw',asset_remaining" in body
+    assert "'openPositionMarketValueKrw',0" not in body
+    assert "'principleMaxSingleOrderKrw',9223372036854775807" not in body
+
+
+def test_principle_limits_come_from_enabled_rules_only() -> None:
+    body = _V95.read_text(encoding="utf-8")
+
+    # 꺼진 규칙은 제한이 아니다. 규칙이 없으면 MAX_BIGINT로 남아 다른 항이 결정한다.
+    assert "rule->>'ruleId'='max_single_order_amount' AND (rule->>'enabled')::boolean" in body
+    assert "rule->>'ruleId'='max_position_per_asset' AND (rule->>'enabled')::boolean" in body
+    assert "COALESCE(min((rule->>'threshold')::bigint),9223372036854775807)" in body
+
+
+def test_state_exposes_the_classified_symbol_set_for_risk_completeness() -> None:
+    body = _V95.read_text(encoding="utf-8")
+
+    assert "'instrumentCatalogSymbols',catalog_symbols" in body
+    assert "FROM public.latest_instrument_catalog_observations catalog" in body
+    assert "WHERE catalog.completeness='COMPLETE'" in body

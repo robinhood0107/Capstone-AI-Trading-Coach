@@ -3,6 +3,7 @@ package com.capstone.decision.api.automation
 import com.capstone.decision.application.automation.AutomationControlProjection
 import com.capstone.decision.application.automation.AutomationPolicyV2Projection
 import com.capstone.decision.application.automation.AutomationPositionV2Projection
+import com.capstone.decision.application.automation.AutomationRealizedPerformanceV2Projection
 import com.capstone.decision.application.automation.AutomationRunProjection
 import com.capstone.decision.application.automation.AutomationRunV2Projection
 import com.capstone.decision.application.automation.AutomationStatusV2Projection
@@ -210,8 +211,21 @@ data class AutomationPositionV2Response(
     val closedAt: OffsetDateTime?,
 )
 
+@Schema(name = "AutomationRealizedSummaryV2", additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+data class AutomationRealizedSummaryV2Response(
+    val closedPositionCount: Long,
+    val realizedPnlKrw: Long,
+    val realizedGrossKrw: Long,
+    val winningPositionCount: Long,
+    val losingPositionCount: Long,
+    // 모의계좌에서 나온 소수 표본이다. 수익을 주장하지 않으며 연율화나 Sharpe도 만들지 않는다.
+    val evidenceMode: String = "KIS_MOCK",
+    val performanceClaimAllowed: Boolean = false,
+)
+
 @Schema(name = "AutomationPositionPageV2", additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 data class AutomationPositionPageV2Response(
+    val realizedSummary: AutomationRealizedSummaryV2Response,
     val items: List<AutomationPositionV2Response>,
     val nextCursor: String?,
 )
@@ -318,6 +332,15 @@ fun AutomationRunV2Projection.toResponse(): AutomationRunV2Response =
         providerCalls = providerCalls,
         startedAt = startedAt,
         updatedAt = updatedAt,
+    )
+
+fun AutomationRealizedPerformanceV2Projection.toResponse(): AutomationRealizedSummaryV2Response =
+    AutomationRealizedSummaryV2Response(
+        closedPositionCount = closedPositionCount,
+        realizedPnlKrw = realizedPnlKrw,
+        realizedGrossKrw = realizedGrossKrw,
+        winningPositionCount = winningPositionCount,
+        losingPositionCount = losingPositionCount,
     )
 
 fun AutomationPositionV2Projection.toResponse(): AutomationPositionV2Response =

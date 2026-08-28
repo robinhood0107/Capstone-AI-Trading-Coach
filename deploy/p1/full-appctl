@@ -189,7 +189,7 @@ upgrade_state() {
     replay_password=$(sed -n 's/^POSTGRES_REPLAY_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
     [[ -n $replay_password ]] || die KIS_MOCK_APPROVAL_REPLAY_SECRET_MISSING
     printf 'postgresql://decision_replay:%s@postgres:5432/capstone_p1?sslmode=disable' "$replay_password" \
-      | write_state secrets/p1-provider-claim.dsn 0640
+      | write_state secrets/p1-provider-claim.dsn 0600
     unset replay_password
     rm -rf -- "$approval_tmp"
   fi

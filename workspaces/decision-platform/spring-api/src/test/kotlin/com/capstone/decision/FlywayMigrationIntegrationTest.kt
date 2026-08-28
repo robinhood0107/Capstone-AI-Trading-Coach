@@ -78,7 +78,7 @@ class FlywayMigrationIntegrationTest(
     fun `clean database applies V1 through V91 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
         // V7 is a Java migration and must appear alongside the SQL migrations.
-        assertEquals((1..91).map(Int::toString), versions)
+        assertEquals((1..92).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -649,7 +649,7 @@ class FlywayMigrationIntegrationTest(
                     ).use { result ->
                         val versions = mutableListOf<String>()
                         while (result.next()) versions += result.getString(1)
-                        assertEquals((1..91).map(Int::toString), versions)
+                        assertEquals((1..92).map(Int::toString), versions)
                     }
                 val privileges =
                     mapOf(

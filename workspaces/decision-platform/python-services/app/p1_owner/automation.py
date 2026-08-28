@@ -357,6 +357,9 @@ class BotPosition:
     stop_loss_bps: int = 500
     take_profit_bps: int = 1_000
     exit_reason: ExitReason | None = None
+    exit_average_fill_price_krw: int | None = None
+    exit_filled_quantity: int = 0
+    realized_pnl_krw: int | None = None
 
     def __post_init__(self) -> None:
         if self.quantity < 0 or (self.status != "CLOSED" and self.quantity == 0):
@@ -379,7 +382,9 @@ class BotPosition:
             "createdAt": _iso(self.created_at),
             "entrySession": self.entry_session.isoformat(),
             "entryAverageFillPriceKrw": self.entry_average_fill_price_krw,
+            "exitAverageFillPriceKrw": self.exit_average_fill_price_krw,
             "exitReason": self.exit_reason,
+            "realizedPnlKrw": self.realized_pnl_krw,
             "expirySession": self.expiry_session.isoformat(),
             "policyId": self.policy_id,
             "policyVersion": self.policy_version,
@@ -1151,11 +1156,24 @@ class AutomationEngine:
             position = matches[0]
             if filled_quantity > position.quantity:
                 raise AutomationError("SELL fill exceeds bot-owned position")
+            entry_price = position.entry_average_fill_price_krw
             position.quantity -= filled_quantity
-            if position.entry_average_fill_price_krw is not None:
-                position.entry_notional_krw = (
-                    position.quantity * position.entry_average_fill_price_krw
-                )
+            if entry_price is not None:
+                position.entry_notional_krw = position.quantity * entry_price
+            # 부분 청산이 이어져도 실현손익이 수량 가중 평균으로 누적되게 한다.
+            previous_exit_quantity = position.exit_filled_quantity
+            previous_exit_price = position.exit_average_fill_price_krw or 0
+            position.exit_filled_quantity = previous_exit_quantity + filled_quantity
+            position.exit_average_fill_price_krw = (
+                previous_exit_quantity * previous_exit_price
+                + filled_quantity * average_fill_price_krw
+            ) // position.exit_filled_quantity
+            if entry_price is not None:
+                # 왕복 비용은 진입·청산 약정금액 합에 정수 35bp로 올림 적용한다.
+                gross = (average_fill_price_krw - entry_price) * filled_quantity
+                turnover = (average_fill_price_krw + entry_price) * filled_quantity
+                cost = (turnover * _ROUND_TRIP_COST_BPS + 19_999) // 20_000
+                position.realized_pnl_krw = (position.realized_pnl_krw or 0) + gross - cost
             position.exit_reason = run.exit_reason
             if position.quantity == 0:
                 position.status = "CLOSED"

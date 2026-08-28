@@ -29,6 +29,30 @@ legacy CSV와 PTH는 preview 전용 `LEGACY_RECEIVED_PREVIEW`로 남겨 두시�
 
 Team B는 지금처럼 exact-31 Rule+LSTM 신호와 exact-10 artifact만 주시면 됩니다. 자금, 수량, LIMIT 가격, 손절·익절, 포지션 만기, RiskDecision, account·order·hash는 계산하지도 말고 새 필드로 추가하지도 말아 주세요. 신호는 후보 순위와 BUY·HOLD·SELL 근거까지만 담고, 주문 권한은 계속 없는 상태로 둡니다.
 
+## 매일 한 번 돌려 주셔야 합니다
+
+한 가지 제가 앞서 명확히 안 적은 게 있어서 덧붙입니다. 자동운용은 신호 번들의 `sessionDate`가 **그날 거래일과 같을 때만** 그 신호를 씁니다. 날짜가 다르면 신호가 0개로 읽히고 그날은 아무 것도 하지 않습니다.
+
+그래서 처음 한 번 학습 산출물을 주시는 것과 별개로, accepted daily shard가 나온 뒤 그날치 inference를 돌려 exact-31 신호를 다시 만들어 주셔야 합니다. 위에 적은 daily inference CLI가 그 용도입니다. 학습은 매일 다시 하실 필요 없고, 고정된 `model.safetensors`와 `scaler.json`으로 추론만 돌리시면 됩니다.
+
+매일 나오는 번들은 exact-31 신호와 manifest면 충분합니다. 백테스트 쪽 파일들은 학습 산출물에 한 번만 들어가면 됩니다.
+
+## 역할 대비 부담 점검
+
+요청서를 다시 훑으면서 Team B 몫이 아닌 게 섞여 있는지 확인했습니다. 결과만 적으면 이렇습니다.
+
+| 항목 | 판정 |
+|---|---|
+| exact-31 신호, exact-10 artifact, manifest v2 | Team B 몫이 맞습니다 |
+| 두 실행 byte identity, network-none Docker | 재현성 확인이라 Team B 몫입니다 |
+| metric·split·scaler·비용 독립 재계산 | 본인 결과 검증이라 Team B 몫입니다 |
+| 일별 inference 재실행 | Team B 몫입니다. 위에 새로 적었습니다 |
+| 예산·수량·손절·익절·주문가격·포지션 | Decision Platform 몫입니다. 손대지 마세요 |
+| Spring adapter, Dashboard, OCI signing·SBOM | Decision Platform 몫입니다 |
+| 실계좌·모의계좌 호출, credential | Owner 몫입니다 |
+
+넘어와 있는 항목은 없다고 봤습니다. 혹시 읽으시다가 "이건 우리 일이 아닌 것 같은데" 싶은 게 있으면 그냥 말씀해 주세요. 빼겠습니다.
+
 ## 확인은 이렇게
 
 ```bash

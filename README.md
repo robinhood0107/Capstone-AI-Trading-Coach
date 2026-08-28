@@ -1,42 +1,70 @@
 # Capstone AI Trading Coach
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
-> **현재 상태 (2026-08-27):** Owner-First v3 계약은 잠겼지만 아직 GitHub `1.0.0` 최종 배포본은
-> 아닙니다. V91/1.1.0의 root exact-61과 Team A backend exact-38, 예산·손절익절 UI는 구현 중이지만
-> `BLOCKED_INCOMPLETE_RISK_BALANCE` 때문에 자동운용은 활성화할 수 없습니다. Team A 최종 UI, Team B 실제 결과,
-> physical activation과 3-session soak도 남아 있습니다. 현재 배포 계약은
+> **현재 상태 (2026-08-28):** Owner-First v3 계약은 잠겼고 1.1.0의 root exact-61, Team A backend
+> exact-38, 예산·가변수량·손절익절 자동운용 런타임(V91~V94)까지 구현됐습니다. 아직 GitHub `1.0.0`
+> 최종 배포본은 아닙니다. 자동운용은 `BLOCKED_INCOMPLETE_RISK_BALANCE`로 활성화가 막혀 있고 Team A
+> 최종 UI, Team B 실제 결과, physical activation과 3-session soak이 남아 있습니다. 현재 배포 계약은
 > `contracts/catalogs/p1-full-app-release-contract.v3.json`입니다.
 <!-- P1_FULL_APP_V3_AUTHORITY_END -->
 
-투자 원칙, 모델 예측, 백테스트, 위험 판정과 근거 자료를 한 화면에서 확인하고 한국투자증권
-모의투자로 주문 흐름을 검증하는 교육용 트레이딩 코치입니다.
+투자 원칙, 모델 예측, 백테스트, 위험 판정과 근거 자료를 한 화면에서 보고 한국투자증권 **모의투자**
+계좌로 주문 흐름을 검증하는 교육용 트레이딩 코치입니다. 실계좌 주문·정정·취소 경로는 코드에
+존재하지 않습니다.
 
-## 먼저 알아둘 한 가지
+## 전체 흐름
 
-**프로그램을 켜 둔다고 자동으로 주문하지 않습니다.** 지금 들어 있는 예약 작업은 내부 작업 큐 처리,
-상태 지표 집계, 오래된 RAG 이력 정리뿐입니다. 주문을 만드는 예약 작업은 없습니다.
+```mermaid
+flowchart TB
+  subgraph IN["입력"]
+    MD["시장 데이터<br/>일별 manifest"]
+    TB["Team B 산출물<br/>LSTM + 규칙 baseline, 31종목"]
+    PR["사용자 투자 원칙"]
+  end
 
-- `./capstone up`: 외부 서비스와 증권계좌를 호출하지 않습니다.
-- `./capstone up --models`: 위와 같고 로컬 AI 모델 두 개만 더 실행합니다.
-- `./capstone up --mock`: KIS 모의투자 요청을 받을 수 있게 만들지만, 이것만으로 주문하지 않습니다.
-- `./capstone mock certify ...`: 이 명령만 삼성전자 1주 모의 매수와 즉시 전량취소를 실제로 수행합니다.
+  SEL["종목 선택<br/>두 모델이 함께 BUY인 것만"]
+  NEWS["뉴스 거부권<br/>Vertex + 근거 검증"]
+  SIZE["수량 산정<br/>예산 · 슬롯 · 매수가능금액"]
+  RISK["RiskEngine<br/>원칙 규칙 + 포트폴리오 지표"]
+  SUB["주문 제출<br/>KIS 모의계좌, 지정가 1건"]
+  REC["체결 대사"]
+  POS["포지션<br/>손절 · 익절 · 보유만기"]
+  PNL["실현손익<br/>왕복비용 35bp 반영"]
 
-자동 모의운용은 한국거래소 세션에만 평가하도록 구현돼 있으며 기본 `DISARMED`입니다. 현재는 qualified
-`COMPLETE` online risk-balance 근거가 없어 Start가 차단되고 실제 주문을 만들지 않습니다. 자세한 판정은
-[자동매매와 운영 경계](docs/decision-platform/P1_운영_후속_경계.md)에 있습니다.
+  MD --> SEL
+  TB --> SEL
+  SEL --> NEWS --> SIZE --> RISK --> SUB --> REC --> POS --> PNL
+  PR --> RISK
+  POS -- "청산 사유 발생" --> SIZE
+  PNL --> DASH["Dashboard"]
 
-## 처음 실행
+  G1{{"게이트 1<br/>Team B 실제 산출물"}} -.-> TB
+  G2{{"게이트 2<br/>online risk-balance"}} -.-> SIZE
+  G3{{"게이트 3<br/>Vertex provider"}} -.-> NEWS
+```
 
-Owner가 “통합 브랜치가 main에 병합됐다”고 안내한 뒤 아래 명령을 실행합니다. 아직 병합 안내를 받지
-않았다면 `main`에는 이 실행 파일이 없을 수 있으므로 기다립니다.
+세션 하루는 09:30에 평가하고 09:40까지만 새 주문을 내며 15:20에 미체결을 취소합니다. 한 세션에
+논리 주문 1건, 동시 보유 5종목이 상한입니다. 모든 tick은 DB checkpoint에 CAS로 기록되므로 중간에
+꺼졌다 켜져도 같은 자리에서 이어집니다.
 
-준비물:
+## 지금 켜져 있는 것과 꺼져 있는 것
 
-- Git
-- Docker Engine 또는 Docker Desktop
-- Docker Compose v2
-- WSL/Linux의 Python 3와 OpenSSL
-- Windows 사용자는 WSL도 설치
+| 기능 | 상태 | 비고 |
+|---|---|---|
+| Dashboard, 원칙, 위험 판정, 저널 | 동작 | 외부 호출 없음 |
+| RAG 검색·근거 표시 | 동작 | 로컬 BGE-M3 임베딩, 고정 응답기 |
+| RAG 생성형 답변(Vertex·Voyage·웹검색) | 꺼짐 | provider 미설정 |
+| Team B 신호 | 미리보기 | 실제 산출물 수신 전 |
+| KIS 모의계좌 시세·잔고·주문 | 동작 | `mock` 명령으로만 |
+| 자동운용 실행 | 차단 | 위 게이트 3개 |
+
+**프로그램을 켜 둔다고 주문하지 않습니다.** 예약 작업은 내부 큐 처리, 상태 집계, 오래된 RAG 이력
+정리뿐입니다. 실제 주문을 내는 명령은 `./capstone mock certify` 하나입니다.
+
+## 5분 실행
+
+준비물: Git, Docker Engine 또는 Docker Desktop, Docker Compose v2, WSL/Linux의 Python 3와 OpenSSL.
+Windows는 WSL도 필요합니다.
 
 ```bash
 git switch main
@@ -45,15 +73,10 @@ git pull --ff-only origin main
 ./capstone up
 ```
 
-Windows PowerShell에서는 저장소 폴더에서 다음처럼 실행해도 됩니다.
+Windows PowerShell에서는 `.\capstone.ps1 doctor`, `.\capstone.ps1 up`으로 실행합니다.
 
-```powershell
-.\capstone.ps1 doctor
-.\capstone.ps1 up
-```
-
-첫 실행은 이미지를 만들고 공개 Seed DB를 준비하므로 시간이 걸릴 수 있습니다.
-`CAPSTONE_UP=PASS`가 보이면 완료입니다.
+`CAPSTONE_UP=PASS`가 보이면 완료입니다. 첫 실행은 이미지를 만들고 공개 Seed DB를 준비하므로
+시간이 걸립니다.
 
 ```text
 Dashboard        http://127.0.0.1:3000
@@ -62,10 +85,8 @@ API Health       http://127.0.0.1:18080/actuator/health
 Swagger UI       http://127.0.0.1:18080/swagger-ui.html
 ```
 
-Dashboard는 `http://localhost:3000`으로 접속해도 됩니다. 두 주소를 모두 허용합니다.
-
-로그인 아이디는 `demo-user`입니다. 임시 비밀번호는 첫 실행 때 로컬에 생성되며 다음 파일에서만
-확인합니다. 이 파일은 Git에 올라가지 않습니다.
+로그인 아이디는 `demo-user`이고 임시 비밀번호는 첫 실행 때 로컬에 생기는 아래 파일에서만 봅니다.
+이 파일은 Git에 올라가지 않습니다.
 
 ```text
 deploy/p1/.state-app/secrets/demo-user.password
@@ -87,16 +108,10 @@ BGE-M3 컨테이너와 공식 llama.cpp 기반 PaddleOCR-VL 컨테이너를 더�
 `docker compose run --rm`으로 실행하므로 끝난 컨테이너를 남기지 않습니다. 모든 서비스 정의는
 `deploy/p1/compose.yml` 하나가 기준입니다.
 
-## Team B 결과가 보이는 이유
-
-현재 화면의 Team B 결과는 받은 CSV와 PTH를 외부 네트워크 없이 실행한 미리보기입니다. 실제 Team B
-완료 산출물이 아닙니다. 화면의 `TEAM_B_REAL_ARTIFACT_MISSING`은 사이트 오류가 아니라 “Team B가
-고정된 결과 파일 10개를 아직 전달하지 않았다”는 뜻입니다.
-
 ## Owner만 하는 KIS 모의투자 검증
 
-여기서 계좌와 주문은 모두 **KIS 모의투자 계좌**를 뜻합니다. 실계좌 주문·정정·취소는 코드와 설정에서
-막혀 있습니다. 처음 한 번은 반드시 기본 앱을 먼저 실행합니다.
+여기서 계좌와 주문은 모두 **KIS 모의투자 계좌**를 뜻합니다. 처음 한 번은 반드시 기본 앱을 먼저
+실행합니다.
 
 ```bash
 ./capstone up
@@ -116,9 +131,15 @@ BGE-M3 컨테이너와 공식 llama.cpp 기반 PaddleOCR-VL 컨테이너를 더�
 않습니다. 취소 실패나 부분체결이 나오면 자동으로 매도하거나 다시 주문하지 말고 KIS 모의투자 화면에서
 직접 확인해야 합니다.
 
-`up --mock`은 인증 요청 해시, 인증 당시 Git tree와 현재 Git tree, 현재 작업 폴더의 clean 상태를
-다시 검사합니다. PR commit과 main 병합 commit의 번호가 달라도 파일 tree가 완전히 같으면 허용하고,
-파일이 하나라도 바뀌면 거부합니다. 이 인증을 통과해도 자동 주문 스케줄러가 생기지는 않습니다.
+`up --mock`은 인증 요청 해시, 인증 당시 Git tree와 현재 Git tree, 작업 폴더의 clean 상태를 다시
+검사합니다. PR commit과 main 병합 commit의 번호가 달라도 파일 tree가 같으면 허용하고, 파일이
+하나라도 바뀌면 거부합니다. 이 인증을 통과해도 자동 주문 스케줄러가 생기지는 않습니다.
+
+## Team B 결과가 미리보기인 이유
+
+현재 화면의 Team B 결과는 받은 CSV와 PTH를 외부 네트워크 없이 실행한 미리보기입니다. 화면의
+`TEAM_B_REAL_ARTIFACT_MISSING`은 오류가 아니라 "Team B가 고정된 결과 파일 10개를 아직 전달하지
+않았다"는 뜻입니다.
 
 ## 팀원에게 보낼 문서
 
@@ -126,24 +147,25 @@ BGE-M3 컨테이너와 공식 llama.cpp 기반 PaddleOCR-VL 컨테이너를 더�
 - [Team B Return Engine 완료 요청서](docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md)
 - [두 팀 결과를 받은 뒤 Owner 체크리스트](docs/decision-platform/P1_TEAM_A_B_수신_후_통합_체크리스트.md)
 - [OpenAPI 61개 사용 현황](docs/decision-platform/P1_API_USAGE_MATRIX.md)
+- [자동매매와 운영 경계](docs/decision-platform/P1_운영_후속_경계.md)
 
-Team A와 Team B는 `mock configure`나 `mock certify`를 실행하지 않습니다. 외부 서비스, 계좌와 주문
-검증은 Owner가 별도로 수행합니다.
+Team A와 Team B는 `mock configure`나 `mock certify`를 실행하지 않습니다.
 
 ## 문제가 생기면
 
 | 증상 | 확인할 것 |
 |---|---|
+| 코드를 고쳤는데 반영이 안 됨 | `./capstone up`을 다시 실행해 이미지를 재빌드 |
 | `./capstone` 파일이 없음 | 통합 PR의 main 병합 안내를 받았는지 확인 |
 | Docker 연결 오류 | Docker를 켠 뒤 `./capstone doctor` |
 | 포트 3000 또는 18080 충돌 | 해당 포트를 쓰는 기존 프로그램 종료 |
 | Dashboard가 준비되지 않음 | `./capstone status`, `./capstone logs` |
-| 모델 첫 실행이 오래 걸림 | 고정된 모델을 처음 다운로드하고 검사하는 중인지 확인 |
-| Team B 실제 결과 경고 | 미리보기는 정상이며 Team B 결과 수신 전까지 경고 유지 |
-| KIS 모의투자 명령 거부 | 기본 앱 실행, 자격증명, 거래일·시간, PR·CI 상태 확인 |
+| 모델 첫 실행이 오래 걸림 | 고정된 모델을 처음 내려받고 검사하는 중 |
+| Team B 실제 결과 경고 | 미리보기는 정상이며 결과 수신 전까지 경고 유지 |
+| KIS 모의투자 명령 거부 | 기본 앱 실행, 자격증명, 거래일·시간, 작업 폴더 clean, PR·CI 상태 확인 |
 
 자세한 복구 절차는 [동일 환경 재현 가이드](docs/decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md),
-환경값 목록은 [환경 변수 참고 문서](docs/decision-platform/P1_ENV_REFERENCE.md)를 확인합니다.
+환경값 목록은 [환경 변수 참고 문서](docs/decision-platform/P1_ENV_REFERENCE.md)에 있습니다.
 
 ## 최종 배포 전에 남은 일
 

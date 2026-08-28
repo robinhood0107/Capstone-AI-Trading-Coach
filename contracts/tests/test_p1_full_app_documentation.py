@@ -298,6 +298,9 @@ class P1FullAppDocumentationTest(unittest.TestCase):
                 "건드리지 않으셔도 되는 것",
                 "채워 주셔야 하는 흐름",
                 "화면 톤",
+                "화면 개수와 배치",
+                "참고하실 만한 화면",
+                "API는 이만큼만",
                 "Automation 화면만 조금 자세히",
                 "확인은 이렇게",
                 "다 되면 알려 주세요",
@@ -310,6 +313,9 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             "WCAG AA",
             "tabular alignment",
             "glassmorphism",
+            "linear.app",
+            "dashboard.stripe.com",
+            "38개 catalog 밖 호출 0",
             "BLOCKED_INCOMPLETE_RISK_BALANCE",
             "automation-policy.spec.ts",
         ):
@@ -327,6 +333,8 @@ class P1FullAppDocumentationTest(unittest.TestCase):
                 "그대로 두시는 것",
                 "새로 붙여 주셔야 하는 것",
                 "1.1.0 Automation과의 경계",
+                "매일 한 번 돌려 주셔야 합니다",
+                "역할 대비 부담 점검",
                 "확인은 이렇게",
                 "다 되면 알려 주세요",
                 "이건 피해 주세요",
@@ -339,6 +347,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertNotIn("p1-return-engine-manifest.v1.json", request)
         self.assertIn("p1-return-engine-manifest.v2.json", request)
         self.assertIn("./capstone artifact validate", request)
+        self.assertIn("`sessionDate`가 **그날 거래일과 같을 때만**", request)
         self.assertIn("provider·KIS·ECOS·yfinance·Spring·account·order·Vertex·GDELT", request)
 
     def test_team_handoff_checklist_has_no_stale_preview_or_api_edge_flow(self) -> None:

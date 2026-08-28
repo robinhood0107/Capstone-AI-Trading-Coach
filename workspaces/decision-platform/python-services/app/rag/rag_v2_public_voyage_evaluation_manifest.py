@@ -16,10 +16,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.data._shared.repository_root import repository_root
+
 from app.rag.benchmark_receipt_io import BenchmarkReceiptIoError, write_benchmark_receipt
 from app.rag.oa112_active_registry import Oa112ActiveRegistry
 
-_REPO_ROOT = Path(__file__).resolve().parents[5]
+_REPO_ROOT = repository_root(__file__, 5)
 _TRACKED_EXACT30_FIXTURE = _REPO_ROOT / "capstone-rag/eval/s4-2b-30-card-smoke.v1.json"
 _INPUT_DIRECTORY = "evaluation-inputs"
 _EXACT30_FILENAME = "exact30-evaluation-manifest.v1.json"

@@ -7,7 +7,8 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from pathlib import Path
+
+from app.data._shared.repository_root import repository_root
 from threading import Lock
 from typing import Protocol
 from urllib.parse import quote, quote_plus
@@ -25,7 +26,7 @@ from app.data.krx.catalog import (
 )
 from app.data.krx.errors import KrxSafeResponseMetadata
 
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
+_REPOSITORY_ROOT = repository_root(__file__, 6)
 _AUTH_HEADER = "AUTH_KEY"
 _MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 _MAX_CREDENTIAL_HEADER_BYTES = 512

@@ -12,7 +12,8 @@
     }
   ],
   "freshnessWindowSatisfied": true,
-  "googleGroundingQueryCount": 1,
+  "groundingMode": "REGISTERED_CORPUS",
+  "groundingQueryCount": 1,
   "inputSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "modelId": "gemini-3.5-flash",
   "mutuallyConsistent": true,

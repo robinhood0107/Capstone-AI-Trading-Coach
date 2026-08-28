@@ -431,7 +431,8 @@ class JdbcAutomationRepository(
                     status = row.getString("status"),
                     exitReason = row.getString("exit_reason"),
                     exitAverageFillPriceKrw =
-                        row.getObject("exit_average_fill_price_krw", java.lang.Long::class.java)
+                        row
+                            .getObject("exit_average_fill_price_krw", java.lang.Long::class.java)
                             ?.toLong(),
                     realizedPnlKrw =
                         row.getObject("realized_pnl_krw", java.lang.Long::class.java)?.toLong(),

@@ -38,6 +38,7 @@ ADDITIVE_SCHEMA_NAMES: Final = frozenset(
         "ArmAutomationV2Request",
         "AutomationRunPageV2",
         "AutomationPositionPageV2",
+        "AutomationRealizedSummaryV2",
         "ApiResponseAutomationStatusV2",
         "ApiResponseAutomationPolicyV2",
         "ApiResponseAutomationRunPageV2",

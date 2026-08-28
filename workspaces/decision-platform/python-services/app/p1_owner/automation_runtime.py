@@ -22,6 +22,7 @@ from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 
 from app.data._shared.canonical_json import canonical_json_bytes
+from app.p1_owner.automation_journal import AutomationJournal, notice_from_event
 from app.p1_owner.automation import (
     AutomationEngine,
     AutomationError,
@@ -401,8 +402,13 @@ class PostgresAutomationRuntimeRepository:
 class PersistentAutomationRunner:
     """각 tick을 DB CAS 하나로 봉인하고 process restart마다 state를 다시 읽는다."""
 
-    def __init__(self, repository: PostgresAutomationRuntimeRepository) -> None:
+    def __init__(
+        self,
+        repository: PostgresAutomationRuntimeRepository,
+        journal: AutomationJournal | None = None,
+    ) -> None:
         self._repository = repository
+        self._journal = journal or AutomationJournal.from_environment()
 
     def run_tick(
         self,
@@ -480,6 +486,15 @@ class PersistentAutomationRunner:
             event_payload_hash=str(event["payloadHash"]),
         )
         self._repository.advance(command)
+        # durable하게 남은 뒤에만 알린다. 저널이 실패해도 tick은 계속된다.
+        self._journal.notify(
+            notice_from_event(
+                event,
+                run_id=claim.run_id,
+                session_date=claim.session_date.isoformat(),
+                state=run.state,
+            )
+        )
         # 체결이 확정되면 기대 계좌 투영을 함께 전진시킨다. 그러지 않으면 다음 tick이
         # 자기 체결을 외부 드리프트로 보고 ACCOUNT_DRIFT로 HALT하고, HALT는 stop으로 풀리지 않는다.
         if (
@@ -775,6 +790,7 @@ def inputs_from_state(
         policy=_policy_from_state(state),
         no_open_order=bool(state["noOpenOrder"]),
         unfinished_previous_order=bool(state["unfinishedPreviousOrder"]),
+        news_veto_provider_bound=state.get("newsVetoProviderBound") is True,
         manual_position_symbols=frozenset(cast(list[str], manual)),
         signals=signals,
     )

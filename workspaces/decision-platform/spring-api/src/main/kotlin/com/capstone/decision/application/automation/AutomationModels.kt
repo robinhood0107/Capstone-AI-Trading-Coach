@@ -112,7 +112,16 @@ data class AutomationPositionV2Projection(
     val closedAt: OffsetDateTime?,
 )
 
+data class AutomationRealizedPerformanceV2Projection(
+    val closedPositionCount: Long,
+    val realizedPnlKrw: Long,
+    val realizedGrossKrw: Long,
+    val winningPositionCount: Long,
+    val losingPositionCount: Long,
+)
+
 data class AutomationPositionV2Page(
+    val realizedSummary: AutomationRealizedPerformanceV2Projection,
     val items: List<AutomationPositionV2Projection>,
     val nextCursor: String?,
 )
@@ -189,6 +198,8 @@ interface AutomationRepository {
     ): List<AutomationRunV2Projection>
 
     fun listPositionsV2(ownerUserId: String): List<AutomationPositionV2Projection>
+
+    fun readRealizedPerformanceV2(ownerUserId: String): AutomationRealizedPerformanceV2Projection
 }
 
 class AutomationConflictException(

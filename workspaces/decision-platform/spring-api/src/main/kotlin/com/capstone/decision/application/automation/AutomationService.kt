@@ -131,12 +131,7 @@ class AutomationService(
         )
     }
 
-    fun listPositionsV2(ownerUserId: String): AutomationPositionV2Page =
-        AutomationPositionV2Page(
-            repository.readRealizedPerformanceV2(ownerUserId),
-            repository.listPositionsV2(ownerUserId),
-            null,
-        )
+    fun listPositionsV2(ownerUserId: String): AutomationPositionV2Page = repository.readPositionPageV2(ownerUserId)
 
     private fun encodeCursor(
         ownerUserId: String,

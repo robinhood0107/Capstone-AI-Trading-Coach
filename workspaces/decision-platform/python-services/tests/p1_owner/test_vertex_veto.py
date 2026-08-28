@@ -70,7 +70,8 @@ def _available(
         if evidence is None
         else evidence,
         "freshnessWindowSatisfied": True,
-        "googleGroundingQueryCount": 1,
+        "groundingMode": "REGISTERED_CORPUS",
+        "groundingQueryCount": 1,
         "inputSha256": "__INPUT_SHA256__",
         "modelId": MODEL_ID,
         "mutuallyConsistent": True,
@@ -112,7 +113,7 @@ def _transport(
         response=response,
         grounding_sources=source_facts,
         provider_call_count=provider_count,
-        google_grounding_query_count=query_count,
+        grounding_query_count=query_count,
     )
 
 

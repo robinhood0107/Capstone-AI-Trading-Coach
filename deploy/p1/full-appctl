@@ -179,7 +179,9 @@ upgrade_state() {
     approval_tmp=$(mktemp -d)
     openssl genpkey -algorithm ED25519 -out "$approval_tmp/private.pem" >/dev/null 2>&1
     openssl pkey -in "$approval_tmp/private.pem" -pubout -out "$approval_tmp/public.pem" >/dev/null 2>&1
-    write_state secrets/kis-mock-approval-private.pem 0640 < "$approval_tmp/private.pem"
+    # 서명용 개인키는 owner-only 0600만 허용된다. compose secret은 원본 mode를 그대로
+    # 마운트하므로 0640으로 만들면 packet reader가 bounded owner-only 검사에서 거부한다.
+    write_state secrets/kis-mock-approval-private.pem 0600 < "$approval_tmp/private.pem"
     write_state secrets/kis-mock-approval-public.pem 0640 < "$approval_tmp/public.pem"
     public_digest=$(sha256sum "$approval_tmp/public.pem" | awk '{print $1}')
     printf '{"contractId":"p1-approval-trust-root.v1","issuerKeyId":"CAPSTONE.KISMOCK.V1","publicKeyPath":"/run/secrets/kis_mock_approval_public","publicKeySha256":"%s"}' "$public_digest" \

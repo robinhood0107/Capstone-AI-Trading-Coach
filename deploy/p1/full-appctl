@@ -534,7 +534,9 @@ request={
   "securityEvidenceDigest":security_digest,
   "symbol":"005930",
 }
-print(json.dumps(request, sort_keys=True, separators=(",", ":")), end="")
+# certification CLI는 canonical_json_bytes와 byte 단위로 비교한다. canonical form은 끝에
+# 개행을 포함하므로 여기서도 개행을 남긴다.
+print(json.dumps(request, sort_keys=True, separators=(",", ":")))
 PY
   compose up -d --wait postgres redis
   compose --profile owner run --rm --no-deps kis-mock-certification-runner \

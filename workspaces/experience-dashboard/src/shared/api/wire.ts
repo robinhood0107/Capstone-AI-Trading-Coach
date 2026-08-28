@@ -363,6 +363,8 @@ export interface AutomationPositionV2 {
   takeProfitBps: number;
   status: 'OPEN' | 'EXIT_PENDING' | 'CLOSED' | 'HALTED_MISMATCH';
   exitReason: AutomationExitReason | null;
+  exitAverageFillPriceKrw: number | null;
+  realizedPnlKrw: number | null;
   botOwned: true;
   shortAllowed: false;
   createdAt: string;

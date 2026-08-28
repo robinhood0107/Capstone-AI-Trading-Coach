@@ -104,6 +104,8 @@ data class AutomationPositionV2Projection(
     val takeProfitBps: Int,
     val status: String,
     val exitReason: String?,
+    val exitAverageFillPriceKrw: Long?,
+    val realizedPnlKrw: Long?,
     val botOwned: Boolean,
     val shortAllowed: Boolean,
     val createdAt: OffsetDateTime,

@@ -424,14 +424,39 @@ def build_additive_openapi(schemas: dict[str, dict[str, Any]]) -> dict[str, Any]
             "nextCursor": _nullable({"type": "string", "maxLength": 512}),
         },
     )
+    # 실현 성과는 새 operation을 만들지 않고 positions 응답에 요약으로 얹는다. 수익을 주장하지
+    # 않으므로 performanceClaimAllowed는 항상 false이고 연율화·Sharpe는 넣지 않는다.
+    realized_summary = _closed(
+        [
+            "closedPositionCount",
+            "realizedPnlKrw",
+            "realizedGrossKrw",
+            "winningPositionCount",
+            "losingPositionCount",
+            "evidenceMode",
+            "performanceClaimAllowed",
+        ],
+        {
+            "closedPositionCount": {"type": "integer", "minimum": 0},
+            "realizedPnlKrw": {"type": "integer"},
+            "realizedGrossKrw": {"type": "integer"},
+            "winningPositionCount": {"type": "integer", "minimum": 0},
+            "losingPositionCount": {"type": "integer", "minimum": 0},
+            "evidenceMode": {"const": "KIS_MOCK"},
+            "performanceClaimAllowed": {"const": False},
+        },
+    )
     position_page = _closed(
-        ["items", "nextCursor"],
+        ["items", "nextCursor", "realizedSummary"],
         {
             "items": {
                 "type": "array",
                 "items": {"$ref": "#/components/schemas/AutomationPositionV2"},
             },
             "nextCursor": _nullable({"type": "string", "maxLength": 512}),
+            "realizedSummary": {
+                "$ref": "#/components/schemas/AutomationRealizedSummaryV2"
+            },
         },
     )
     components = {
@@ -443,6 +468,7 @@ def build_additive_openapi(schemas: dict[str, dict[str, Any]]) -> dict[str, Any]
         "ArmAutomationV2Request": arm_request,
         "AutomationRunPageV2": run_page,
         "AutomationPositionPageV2": position_page,
+        "AutomationRealizedSummaryV2": realized_summary,
         "ApiResponseAutomationStatusV2": _envelope(
             {"$ref": "#/components/schemas/AutomationStatusV2"}
         ),

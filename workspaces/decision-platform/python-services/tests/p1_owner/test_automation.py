@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -202,12 +203,14 @@ def test_buy_full_fill_is_restart_safe_exact_one_and_contract_valid() -> None:
 
 
 @pytest.mark.parametrize("verdict", ["VETO_BUY", "ABSTAIN"])
-def test_vertex_veto_and_abstain_stop_buy_without_second_candidate(verdict: str) -> None:
+def test_veto_stops_the_buy_and_never_falls_back_to_a_second_candidate(verdict: str) -> None:
+    # provider가 붙어 있으면 판단 불가도 차단으로 본다.
     store = _store()
     _create(store)
     transport = _transport(news=verdict)
     candidates = (_buy("000002", 0.04), _buy("000001", 0.05))
-    states = _drive(store, transport, _inputs(*candidates))
+    inputs = replace(_inputs(*candidates), news_veto_provider_bound=True)
+    states = _drive(store, transport, inputs)
 
     assert states[-1] == "NEWS_VETOED"
     assert store.runs[_RUN_ID].selected_symbol == "000001"
@@ -216,6 +219,29 @@ def test_vertex_veto_and_abstain_stop_buy_without_second_candidate(verdict: str)
     assert transport.submit_calls == 0
     assert store.positions == []
     assert transport.physical_calls == 0
+
+
+def test_abstain_without_a_bound_provider_does_not_block_the_buy() -> None:
+    # provider가 없을 때의 ABSTAIN은 "물어볼 곳이 없었다"는 뜻이다. 이것만으로 매수를 막으면
+    # 자동운용이 영원히 열리지 않는다. 부정 이벤트 차단은 원칙의 공시가드가 RiskEngine에서 맡는다.
+    store = _store()
+    _create(store)
+    transport = _transport(news="ABSTAIN")
+    states = _drive(store, transport, _inputs(_buy("000001", 0.05)))
+
+    assert "NEWS_VETOED" not in states
+    assert states[-1] == "COMPLETED"
+    assert transport.vertex_calls == 1
+
+
+def test_veto_buy_still_blocks_even_without_a_bound_provider() -> None:
+    store = _store()
+    _create(store)
+    transport = _transport(news="VETO_BUY")
+    states = _drive(store, transport, _inputs(_buy("000001", 0.05)))
+
+    assert states[-1] == "NEWS_VETOED"
+    assert transport.submit_calls == 0
 
 
 def test_model_sell_and_expiry_sell_never_call_vertex_and_only_bot_lot_closes() -> None:

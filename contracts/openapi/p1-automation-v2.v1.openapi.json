@@ -325,6 +325,17 @@
             "format": "date",
             "type": "string"
           },
+          "exitAverageFillPriceKrw": {
+            "oneOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "exitReason": {
             "oneOf": [
               {
@@ -359,6 +370,16 @@
           "quantity": {
             "minimum": 1,
             "type": "integer"
+          },
+          "realizedPnlKrw": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "shortAllowed": {
             "const": false
@@ -401,6 +422,8 @@
           "takeProfitBps",
           "status",
           "exitReason",
+          "exitAverageFillPriceKrw",
+          "realizedPnlKrw",
           "botOwned",
           "shortAllowed",
           "createdAt",

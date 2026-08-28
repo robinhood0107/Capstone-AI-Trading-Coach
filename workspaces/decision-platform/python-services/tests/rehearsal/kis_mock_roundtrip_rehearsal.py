@@ -54,7 +54,7 @@ from app.data.kis.http_client import CURRENT_PRICE_PATH, KISHttpClient
 from app.data.kis.settings import KISSettings
 
 _KST: Final = ZoneInfo("Asia/Seoul")
-_SYMBOL: Final = "005930"
+_SYMBOL: Final = os.environ.get("P1_KIS_MOCK_REHEARSAL_SYMBOL", "005930")
 _QUANTITY: Final = 1
 _LIMIT_ORDER_DIVISION: Final = "00"
 _OPT_IN: Final = "P1_KIS_MOCK_ROUNDTRIP_REHEARSAL"

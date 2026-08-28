@@ -65,7 +65,7 @@ from app.p1_owner.automation import (
 )
 
 _KST: Final = ZoneInfo("Asia/Seoul")
-_SYMBOL: Final = "005930"
+_SYMBOL: Final = os.environ.get("P1_KIS_MOCK_REHEARSAL_SYMBOL", "005930")
 _OPT_IN: Final = "P1_KIS_MOCK_CLOSED_LOOP_REHEARSAL"
 _ACCOUNT_ID: Final = "acct_" + "c" * 32
 _STRATEGY_ID: Final = "strategy_rehearsal_real_kis"
@@ -467,10 +467,20 @@ def main() -> int:
                 )
             if any(item.status == "OPEN" for item in store.positions):
                 raise RehearsalFailed("매도 뒤에도 OPEN 포지션이 남아 있다")
+            closed = [item for item in store.positions if item.status == "CLOSED"]
+            if len(closed) != 1:
+                raise RehearsalFailed("CLOSED 포지션이 정확히 하나가 아니다")
+            closed_position = closed[0]
+            if closed_position.realized_pnl_krw is None:
+                raise RehearsalFailed("청산했는데 실현손익이 기록되지 않았다")
             steps.append(
                 {
                     "step": "positionClosed",
                     "exitReason": sell_projection.get("exitReason"),
+                    "entryAverageFillPriceKrw": closed_position.entry_average_fill_price_krw,
+                    "exitAverageFillPriceKrw": closed_position.exit_average_fill_price_krw,
+                    "exitFilledQuantity": closed_position.exit_filled_quantity,
+                    "realizedPnlKrw": closed_position.realized_pnl_krw,
                     "closedPositions": len(store.positions),
                 }
             )

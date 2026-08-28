@@ -515,7 +515,7 @@ def _execution_snapshot_from_rows(
         .astimezone(UTC)
     )
     cancelled_quantity = _nonnegative(
-        row.get("cnc_cfrm_qty"),
+        row.get("cncl_cfrm_qty"),
         "cancelled quantity",
     )
     rejected_quantity = _nonnegative(row.get("rjct_qty"), "rejected quantity")

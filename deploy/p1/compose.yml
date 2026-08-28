@@ -360,7 +360,9 @@ services:
       KIS_REQUEST_INTERVAL_MILLISECONDS: "1000"
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      KIS_MOCK_APPROVAL_ENV_FILE: /run/secrets/kis_mock_env
+      # compose secret은 원본 mode를 그대로 마운트하므로 group-readable인 kis_mock_env로는
+      # owner-only latch 조건을 만족할 수 없다. certify가 0600으로 써 두는 latch만 읽는다.
+      KIS_MOCK_APPROVAL_ENV_FILE: /certification/approval-latch.env
     secrets:
       - spring_env
       - python_env

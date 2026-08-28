@@ -27,7 +27,8 @@ docker() {
 die() { printf 'P1_ERROR=%s\n' "$1" >&2; exit 1; }
 require_command() { command -v "$1" >/dev/null 2>&1 || die "missing_$1"; }
 random_secret() { openssl rand -hex 32; }
-base64url_key() { openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'; }
+# Fernet은 padding을 포함한 44자 urlsafe base64만 받는다. padding을 지우면 안 된다.
+base64url_key() { openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n'; }
 generate_actor_tls() {
   local server_password=$1 client_password=$2
   (

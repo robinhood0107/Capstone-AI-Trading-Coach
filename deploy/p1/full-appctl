@@ -111,11 +111,20 @@ upgrade_state() {
       'KIS_MOCK_APP_SECRET=DISABLED00' \
       'KIS_MOCK_ACCOUNT_NO=00000000-00' \
       'KIS_MOCK_BOUND_ACCOUNT_ID=acct_00000000000000000000000000000000' \
-      "KIS_MOCK_ORDER_REFERENCE_KEY=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')" \
+      "KIS_MOCK_ORDER_REFERENCE_KEY=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')" \
       'KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP=1' \
       'KIS_BROKERAGE_PHYSICAL_CAP=32' \
       | write_state secrets/kis-mock.env 0640
   fi
+  local reference_key
+  reference_key=$(sed -n 's/^KIS_MOCK_ORDER_REFERENCE_KEY=//p' "$SECRETS_DIR/kis-mock.env")
+  if [[ ! $reference_key =~ ^[A-Za-z0-9_-]{43}=$ ]]; then
+    # 과거 생성물은 base64 padding을 지워 44자 Fernet key 조건을 만족하지 못한다. credential은
+    # 건드리지 않고 이 key만 재발급한다. 아직 참조 중인 주문이 없을 때만 안전하다.
+    sed "s|^KIS_MOCK_ORDER_REFERENCE_KEY=.*|KIS_MOCK_ORDER_REFERENCE_KEY=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')|" \
+      "$SECRETS_DIR/kis-mock.env" | write_state secrets/kis-mock.env 0640
+  fi
+  unset reference_key
   if [[ ! -e $SECRETS_DIR/artifact-import.env ]]; then
     local worker_password
     worker_password=$(sed -n 's/^POSTGRES_WORKER_PASSWORD=//p' "$SECRETS_DIR/spring.env")
@@ -408,7 +417,7 @@ mock_configure() {
   account_no="${account_no:0:8}-${account_no:8:2}"
   local bound_account reference_key
   bound_account="acct_$(openssl rand -hex 16)"
-  reference_key=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')
+  reference_key=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')
   printf 'KIS_MOCK_CONFIGURED=true\nKIS_MOCK_APP_KEY=%s\nKIS_MOCK_APP_SECRET=%s\nKIS_MOCK_ACCOUNT_NO=%s\nKIS_MOCK_BOUND_ACCOUNT_ID=%s\nKIS_MOCK_ORDER_REFERENCE_KEY=%s\nKIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP=1\nKIS_BROKERAGE_PHYSICAL_CAP=32\n' \
     "$app_key" "$app_secret" "$account_no" "$bound_account" "$reference_key" \
     | write_state secrets/kis-mock.env 0640
@@ -437,7 +446,7 @@ assert 8 <= len(values["KIS_MOCK_APP_KEY"]) <= 256
 assert 8 <= len(values["KIS_MOCK_APP_SECRET"]) <= 512
 assert re.fullmatch(r"[0-9]{8}-[0-9]{2}", values["KIS_MOCK_ACCOUNT_NO"])
 assert re.fullmatch(r"acct_[0-9a-f]{32}", values["KIS_MOCK_BOUND_ACCOUNT_ID"])
-assert re.fullmatch(r"[A-Za-z0-9_-]{43}", values["KIS_MOCK_ORDER_REFERENCE_KEY"])
+assert re.fullmatch(r"[A-Za-z0-9_-]{43}=", values["KIS_MOCK_ORDER_REFERENCE_KEY"])
 assert values["KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP"] == "1"
 assert values["KIS_BROKERAGE_PHYSICAL_CAP"] == "32"
 PY
@@ -490,6 +499,10 @@ mock_certify() {
     || die KIS_MOCK_CERTIFICATION_PR_UNAVAILABLE
   rm -f -- "$STATE_DIR/mock/certification-request.json" \
     "$STATE_DIR/mock/execution-approval.json" "$STATE_DIR/mock/certification.json"
+  # approval latch reader는 owner-only 파일만 받는데 kis-mock.env는 decision-platform과
+  # 공유하느라 group-readable이어야 한다. API credential은 빼고 latch 두 값만 별도 파일로 준다.
+  grep -E '^(KIS_MOCK_BOUND_ACCOUNT_ID|KIS_MOCK_ORDER_REFERENCE_KEY)=' "$SECRETS_DIR/kis-mock.env" \
+    | write_state mock/approval-latch.env 0600
   P1_PR_JSON=$pr_json P1_BRANCH=$branch P1_HEAD=$head python3 - <<'PY' \
     | write_state mock/certification-request.json 0600
 import hashlib, json, os

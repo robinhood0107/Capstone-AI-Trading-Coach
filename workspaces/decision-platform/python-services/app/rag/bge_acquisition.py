@@ -15,6 +15,8 @@ import stat
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
+
+from app.data._shared.repository_root import repository_root
 from typing import Protocol
 from urllib.parse import SplitResult, parse_qs, quote, unquote, urlsplit, urlunsplit
 
@@ -49,7 +51,7 @@ _REQUEST_HEADERS = {
     "Connection": "close",
     "User-Agent": "capstone-bge-artifact-acquirer/1",
 }
-_REPO_ROOT = Path(__file__).resolve().parents[5]
+_REPO_ROOT = repository_root(__file__, 5)
 _MODEL_PARENT = _REPO_ROOT / "huggingface_model" / "BAAI" / "bge-m3"
 DEFAULT_MODEL_ROOT = _MODEL_PARENT / APPROVED_BGE_ARTIFACT_SPEC.revision
 DEFAULT_MODEL_MANIFEST = _MODEL_PARENT / (f".{APPROVED_BGE_ARTIFACT_SPEC.revision}.approved.json")

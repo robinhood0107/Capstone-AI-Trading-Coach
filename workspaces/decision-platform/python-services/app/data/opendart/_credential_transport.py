@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from pathlib import Path
+
+from app.data._shared.repository_root import repository_root
 from urllib.parse import quote, quote_plus
 
 import httpx
@@ -12,7 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.data.opendart.settings import OPENDART_ORIGIN
 
 _AUTHENTICATION_PARAMETER = "crtfc_key"
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
+_REPOSITORY_ROOT = repository_root(__file__, 6)
 _ROOT_ENV_FILE = _REPOSITORY_ROOT / ".env"
 _MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 _MAX_JSON_DEPTH = 64

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.data._shared.repository_root import repository_root
+
 from pydantic import Field, PositiveFloat
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 OPENDART_ORIGIN = "https://opendart.fss.or.kr"
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
+_REPOSITORY_ROOT = repository_root(__file__, 6)
 
 
 class OpenDARTSettings(BaseSettings):

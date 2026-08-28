@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
+
+from app.data._shared.repository_root import repository_root
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.data.krx.catalog import KRX_OPEN_API_ORIGIN
 
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
+_REPOSITORY_ROOT = repository_root(__file__, 6)
 
 
 class KrxOpenApiSettings(BaseSettings):

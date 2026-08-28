@@ -17,6 +17,8 @@ import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+
+from app.data._shared.repository_root import repository_root
 from typing import Literal
 
 from app.rag.authorized_retrieval import (
@@ -48,7 +50,7 @@ from app.rag.rag_v2_public_bge_staging_repository import (
 )
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
 
-_REPO_ROOT = Path(__file__).resolve().parents[5]
+_REPO_ROOT = repository_root(__file__, 5)
 _DEFAULT_EXACT30_FIXTURE = _REPO_ROOT / "capstone-rag/eval/s4-2b-30-card-smoke.v1.json"
 _OA112_EVALUATION_RELATIVE_PATH = "oa112-evaluation-manifest.v1.json"
 _RECEIPT_DIRECTORY = "evaluation"

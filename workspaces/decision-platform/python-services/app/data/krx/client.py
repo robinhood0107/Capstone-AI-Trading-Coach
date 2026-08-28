@@ -8,7 +8,8 @@ import ssl
 import time
 from collections.abc import Callable, Mapping
 from datetime import date
-from pathlib import Path
+
+from app.data._shared.repository_root import repository_root
 from typing import Any, Self, cast
 
 import httpx
@@ -51,7 +52,7 @@ from app.data.krx.quota import quota_key, quota_policy, s5_quota_policy
 from app.data.krx.settings import KrxOpenApiSettings, KrxS5ProductionSettings
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
+_REPOSITORY_ROOT = repository_root(__file__, 6)
 _REDIS_TIMEOUT_SECONDS = 2.0
 _TLS_ENVIRONMENT_OVERRIDES = ("SSL_CERT_FILE", "SSL_CERT_DIR", "SSLKEYLOGFILE")
 

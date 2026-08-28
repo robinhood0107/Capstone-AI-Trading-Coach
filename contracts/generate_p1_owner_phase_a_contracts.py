@@ -764,7 +764,8 @@ def _vertex_schema() -> dict[str, Any]:
             "modelId",
             "promptVersion",
             "providerCallCount",
-            "googleGroundingQueryCount",
+            "groundingMode",
+            "groundingQueryCount",
             "orderAuthority",
         ],
         {
@@ -798,10 +799,12 @@ def _vertex_schema() -> dict[str, Any]:
             "mutuallyConsistent": {"const": True},
             "outputSha256": _sha256(),
             "providerCallCount": {"const": 1},
-            "googleGroundingQueryCount": {
+            # grounding은 등록 코퍼스에서만 온다. host가 인용문과 발행일을 아는 유일한 경로다.
+            "groundingMode": {"const": "REGISTERED_CORPUS"},
+            "groundingQueryCount": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 1,
+                "maximum": 8,
             },
             **common,
         },
@@ -1444,7 +1447,8 @@ def _fixtures() -> dict[str, dict[str, Any]]:
         "modelId": "gemini-3.5-flash",
         "promptVersion": "vertex-news-veto-v1",
         "providerCallCount": 1,
-        "googleGroundingQueryCount": 1,
+        "groundingMode": "REGISTERED_CORPUS",
+        "groundingQueryCount": 1,
         "orderAuthority": "NONE",
     }
     fixtures["automation-control.v1"] = {

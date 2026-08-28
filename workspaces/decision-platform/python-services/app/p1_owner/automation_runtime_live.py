@@ -36,6 +36,12 @@ from app.p1_owner.automation import (
     SubmitOutcome,
     _limit_price,
 )
+from app.p1_owner.vertex_corpus_evidence import (
+    CorpusDocumentSource,
+    EmptyCorpusDocumentSource,
+    build_public_evidence,
+)
+from app.p1_owner.vertex_transport import VertexAiVetoTransport, VertexTransportSettings
 from app.p1_owner.automation_runtime import (
     AccountLineageAdvance,
     AutomationRuntimeError,
@@ -279,8 +285,10 @@ class LiveAutomationPort:
         quote_source: QuoteSourcePort,
         execution_source: ExecutionSourcePort,
         vertex_transport: VertexVetoTransport,
+        corpus_source: CorpusDocumentSource | None = None,
     ) -> None:
         self._claim = claim
+        self._corpus_source: CorpusDocumentSource = corpus_source or EmptyCorpusDocumentSource()
         self._bridge = bridge
         self._quote_source = quote_source
         self._execution_source = execution_source
@@ -406,7 +414,12 @@ class LiveAutomationPort:
     def vertex(self, symbol: str) -> NewsVerdict:
         self.vertex_calls += 1
         self._require_capacity(1)
-        request = _vertex_request(self._claim.session_date, symbol, self._quote(symbol).price_krw)
+        request = _vertex_request(
+            self._claim.session_date,
+            symbol,
+            self._quote(symbol).price_krw,
+            self._corpus_source,
+        )
         before_calls = getattr(self._vertex_transport, "physical_calls", 0)
         result = json.loads(evaluate_vertex_buy_veto(request, transport=self._vertex_transport))
         after_calls = getattr(self._vertex_transport, "physical_calls", 0)
@@ -563,7 +576,7 @@ class LiveAutomationPortFactory:
             SpringAutomationBridgeClient(shared_secret),
             KisAutomationQuoteSource(),
             KisAutomationExecutionSource(),
-            FailClosedVertexVetoTransport(),
+            _vertex_veto_transport(),
         )
 
 
@@ -600,7 +613,12 @@ def _order_intent_from_reservation(
     return reservation.intent.projection()
 
 
-def _vertex_request(session_date: date, symbol: str, previous_close: int) -> bytes:
+def _vertex_request(
+    session_date: date,
+    symbol: str,
+    previous_close: int,
+    corpus_source: CorpusDocumentSource,
+) -> bytes:
     calendar = __import__("exchange_calendars").get_calendar("XKRX")
     current = calendar.date_to_session(
         __import__("pandas").Timestamp(session_date), direction="none"
@@ -619,7 +637,10 @@ def _vertex_request(session_date: date, symbol: str, previous_close: int) -> byt
             "contractId": REQUEST_CONTRACT_ID,
             "modelId": MODEL_ID,
             "promptVersion": PROMPT_VERSION,
-            "publicEvidence": [],
+            # grounding은 등록 코퍼스에서만 온다. 비면 검증기가 NO_GROUNDING으로 ABSTAIN한다.
+            "publicEvidence": build_public_evidence(
+                corpus_source, symbol=symbol, session_date=session_date
+            ),
             "publicTimestamp": datetime.combine(
                 session_date,
                 datetime.min.time().replace(hour=9, minute=5),
@@ -655,3 +676,15 @@ def _required_side(value: str | None) -> Any:
     if value not in {"BUY", "SELL"}:
         raise AutomationRuntimeError("AUTOMATION_SELECTION_MISSING")
     return value
+
+
+def _vertex_veto_transport() -> VertexVetoTransport:
+    """설정이 있으면 실 Vertex를, 없으면 기존 fail-closed transport를 쓴다.
+
+    미설정이 곧 ABSTAIN이고 ABSTAIN은 매수를 막으므로, 설정이 없는 쪽이 항상 더 안전하다.
+    """
+
+    settings = VertexTransportSettings.from_environment()
+    if settings is None:
+        return FailClosedVertexVetoTransport()
+    return VertexAiVetoTransport(settings=settings)

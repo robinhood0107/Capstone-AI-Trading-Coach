@@ -20,7 +20,7 @@ SOURCE_FLYWAY_SCHEMA_VERSION = "73"
 TARGET_FLYWAY_SCHEMA_VERSION = "87"
 # The sealed public Seed remains byte-bound to V87. Later additive migrations may
 # explicitly declare compatibility without rewriting that historical manifest.
-FORWARD_COMPATIBLE_TARGET_SCHEMA_VERSIONS = frozenset({"88", "89", "90", "91", "92"})
+FORWARD_COMPATIBLE_TARGET_SCHEMA_VERSIONS = frozenset({"88", "89", "90", "91", "92", "93"})
 EMBEDDING_DIMENSION = 1024
 EXPECTED_SOURCE_COUNT = 142
 EXPECTED_CHUNK_COUNT = 7_871

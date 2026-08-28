@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import json
+
 from datetime import date, datetime
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from app.p1_owner.automation import AutomationInputs, FixtureAutomationTransport, Quote
+from app.p1_owner.automation import (
+    AutomationInputs,
+    FixtureAutomationTransport,
+    OrderReservation,
+    Quote,
+)
 from app.p1_owner.automation_runtime import (
+    AccountLineageAdvance,
     AdvanceCommand,
     AutomationRuntimeError,
     PersistentAutomationRunner,
@@ -186,3 +194,88 @@ def test_xkrx_boundary_skips_substitute_holiday_and_uses_exact_times() -> None:
 def test_repository_rejects_non_runtime_or_non_internal_dsn(dsn: str) -> None:
     with pytest.raises(AutomationRuntimeError):
         PostgresAutomationRuntimeRepository(dsn)
+
+
+class LineageRecordingRepository(FakeRepository):
+    def __init__(self, state: dict[str, Any]) -> None:
+        super().__init__(state)
+        self.lineage: list[AccountLineageAdvance] = []
+
+    def advance_account_lineage(self, claim: RuntimeClaim, lineage: AccountLineageAdvance) -> int:
+        assert claim.run_id == self.state["runId"]
+        self.lineage.append(lineage)
+        return len(self.lineage)
+
+    def advance(self, command: AdvanceCommand) -> tuple[int, bool]:
+        result = super().advance(command)
+        # 실제 checkpoint는 예약을 durable하게 남긴다. 그래야 다음 tick이 같은 예약으로
+        # 제출·대사를 이어갈 수 있다.
+        if command.reservation_id is not None and command.exact_intent_json is not None:
+            self.state["reservation"] = {
+                "exactIntent": json.loads(command.exact_intent_json),
+                "limitPriceKrw": command.limit_price_krw,
+                "orderId": "ord_mock_" + "e" * 32,
+                "quantity": command.quantity,
+                "side": command.selected_side,
+                "symbol": command.selected_symbol,
+            }
+        self.state["filledQuantity"] = command.filled_quantity
+        self.state["leavesQuantity"] = command.leaves_quantity
+        self.state["averageFillPriceKrw"] = command.average_fill_price_krw
+        return result
+
+
+class LineageRuntimePort(FakeRuntimePort):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.order_id = "ord_mock_" + "e" * 32
+        self.lineage_requests: list[tuple[str, str, int, int]] = []
+
+    def submit(self, reservation: OrderReservation) -> Any:
+        # 실제 port는 물리 제출을 세므로 tick 뒤 단언이 같은 값을 본다.
+        self.physical_submit_calls += 1
+        return super().submit(reservation)
+
+    def account_lineage_advance(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        filled_quantity: int,
+        average_fill_price_krw: int,
+    ) -> AccountLineageAdvance | None:
+        self.lineage_requests.append((symbol, side, filled_quantity, average_fill_price_krw))
+        return AccountLineageAdvance(
+            reason="BUY_FILL" if side == "BUY" else "SELL_FILL",
+            projection={
+                "accountId": "acct_" + "b" * 32,
+                "cashKrw": 100,
+                "positions": [{"quantity": filled_quantity, "symbol": symbol}],
+                "schemaVersion": "2",
+            },
+            digest="a" * 64,
+            order_id=str(self.order_id),
+            filled_quantity=filled_quantity,
+            average_fill_price_krw=average_fill_price_krw,
+        )
+
+
+def test_a_confirmed_fill_advances_the_account_lineage_in_the_same_tick() -> None:
+    # 체결 tick에서 기대 계좌 투영을 함께 밀지 않으면 다음 세션이 자기 체결을 외부
+    # 드리프트로 보고 HALT하고, HALT는 stop으로 풀리지 않는다.
+    repository = LineageRecordingRepository(_state())
+    port = LineageRuntimePort(quotes={"005930": Quote("005930", 75_000, 52_500, 97_500)})
+    runner = PersistentAutomationRunner(cast(Any, repository))
+    now = datetime(2026, 8, 28, 9, 30, tzinfo=_KST)
+    projection: dict[str, object] = {}
+    for index in range(1, 20):
+        projection = runner.run_tick(
+            claim=_claim(), tick_id=f"boundary-{index:03d}", now=now, port=port
+        )
+        if projection["state"] in {"COMPLETED", "HALTED", "SKIPPED_NO_ACTION"}:
+            break
+
+    assert projection["state"] == "COMPLETED"
+    assert len(repository.lineage) == 1
+    assert repository.lineage[0].reason == "BUY_FILL"
+    assert port.lineage_requests == [("005930", "BUY", 1, 75_100)]

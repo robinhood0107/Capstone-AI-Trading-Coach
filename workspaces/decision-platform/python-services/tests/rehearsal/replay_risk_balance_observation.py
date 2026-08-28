@@ -97,9 +97,7 @@ def build_statements(path: Path) -> list[str]:
     )
     identity_hash = hashlib.sha256(identity.encode("utf-8")).hexdigest()
     observation_id = f"pbo_{identity_hash}"
-    source_ref = hashlib.sha256(
-        f"s3-kis-mock-portfolio:{identity_hash}".encode()
-    ).hexdigest()
+    source_ref = hashlib.sha256(f"s3-kis-mock-portfolio:{identity_hash}".encode()).hexdigest()
 
     statements = [
         "INSERT INTO portfolio_balance_observations ("

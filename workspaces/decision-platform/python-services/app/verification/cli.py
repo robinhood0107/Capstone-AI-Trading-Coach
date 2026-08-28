@@ -13,6 +13,8 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+from app.data._shared.repository_root import repository_root
+
 from app.verification.artifacts import publish_packet, publish_report, read_packet, read_report
 from app.verification.packet import (
     P1SignedApprovalPacket,
@@ -21,7 +23,7 @@ from app.verification.packet import (
 )
 from app.verification.runner import run_s0_s5_current
 
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
+_REPOSITORY_ROOT = repository_root(__file__, 5)
 _APPROVAL_TRUST_POLICY = Path("/etc/capstone-p1/approval-trust-root.json")
 
 

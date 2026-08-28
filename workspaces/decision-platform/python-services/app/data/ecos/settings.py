@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.data._shared.repository_root import repository_root
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.data.ecos.policy import ECOS_ORIGIN
 
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
-_PYTHON_SERVICE_ROOT = Path(__file__).resolve().parents[3]
+_REPOSITORY_ROOT = repository_root(__file__, 6)
+_PYTHON_SERVICE_ROOT = repository_root(__file__, 3)
 
 
 class ECOSSettings(BaseSettings):

@@ -380,6 +380,10 @@ init_state() {
   write_line P1_AUTOMATION_DATABASE_DSN "postgresql://decision_automation_runtime:${db[AUTOMATION_RUNTIME]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/automation-runtime.env"
   write_line AUTOMATION_RUNTIME_SHARED_SECRET "$(random_secret)" "$SECRETS_DIR/automation-runtime.env"
   write_line P1_AUTOMATION_OWNER_USER_ID usr_demo_user "$SECRETS_DIR/automation-runtime.env"
+  # runtime bridge가 Spring을 부를 때 소유자 세션이 필요하다. actor capability는 인증된
+  # 세션에서만 발급되므로 shared secret만으로는 brokerage/decision 명령이 열리지 않는다.
+  write_line P1_AUTOMATION_OWNER_USERNAME demo-user "$SECRETS_DIR/automation-runtime.env"
+  write_line P1_AUTOMATION_OWNER_PASSWORD "$user_password" "$SECRETS_DIR/automation-runtime.env"
   printf '' | state_write_file "$SECRETS_DIR/automation-gate-author.env" 0640
   write_line P1_AUTOMATION_GATE_AUTHOR_DSN "postgresql://decision_replay_authorizer:${db[REPLAY_AUTHORIZER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/automation-gate-author.env"
   printf '' | state_write_file "$SECRETS_DIR/artifact-import.env" 0640

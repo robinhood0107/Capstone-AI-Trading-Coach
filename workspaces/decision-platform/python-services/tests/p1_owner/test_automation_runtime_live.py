@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+
+import pytest
 from datetime import date, datetime
 from typing import Any, cast
 from zoneinfo import ZoneInfo
@@ -14,7 +16,7 @@ from app.p1_owner.automation import (
     Quote,
     ReconcileOutcome,
 )
-from app.p1_owner.automation_runtime import RuntimeClaim
+from app.p1_owner.automation_runtime import AutomationRuntimeError, RuntimeClaim
 from app.p1_owner.automation_runtime_live import (
     FailClosedVertexVetoTransport,
     LiveAutomationPort,
@@ -283,11 +285,15 @@ def test_spring_bridge_client_is_fixed_loopback_secret_bound_and_retry_zero() ->
 
     def handler(request: httpx.Request) -> httpx.Response:
         observed.append(request)
+        if request.url.path == "/api/v1/auth/login":
+            return httpx.Response(200, json={"data": {"accessToken": "owner-access-token"}})
         return httpx.Response(200, json={"status": "OK", "data": {"accountId": "acct_test"}})
 
     client = SpringAutomationBridgeClient(
         "automation-runtime-bridge-test-secret-0001",
         transport=httpx.MockTransport(handler),
+        owner_username="demo-user",
+        owner_password="owner-password-0001",
     )
     result = client.command(
         "BALANCE",
@@ -297,13 +303,74 @@ def test_spring_bridge_client_is_fixed_loopback_secret_bound_and_retry_zero() ->
     client.close()
 
     assert result == {"accountId": "acct_test"}
-    assert len(observed) == 1
-    assert observed[0].url == httpx.URL("http://127.0.0.1:8080/internal/automation-runtime/command")
-    assert observed[0].headers["x-automation-runtime-auth"] == (
+    # 소유자 세션을 먼저 열고 그 토큰으로 명령을 보낸다. shared secret만으로는 bridge 뒤의
+    # actor capability가 발급되지 않는다.
+    assert len(observed) == 2
+    assert observed[0].url == httpx.URL("http://127.0.0.1:8080/api/v1/auth/login")
+    assert observed[1].url == httpx.URL("http://127.0.0.1:8080/internal/automation-runtime/command")
+    assert observed[1].headers["x-automation-runtime-auth"] == (
         "automation-runtime-bridge-test-secret-0001"
     )
-    payload = json.loads(observed[0].content)
+    assert observed[1].headers["authorization"] == "Bearer owner-access-token"
+    payload = json.loads(observed[1].content)
     assert payload["operation"] == "BALANCE"
+
+
+def test_spring_bridge_client_refuses_to_command_without_an_owner_session() -> None:
+    """자격이 없으면 명령을 아예 시작하지 않는다. bridge를 인증 없이 두드리지 않는다."""
+
+    observed: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed.append(request)
+        return httpx.Response(200, json={"status": "OK", "data": {}})
+
+    client = SpringAutomationBridgeClient(
+        "automation-runtime-bridge-test-secret-0001",
+        transport=httpx.MockTransport(handler),
+        owner_username="",
+        owner_password="",
+    )
+    with pytest.raises(AutomationRuntimeError, match="AUTOMATION_BRIDGE_OWNER_CREDENTIAL_MISSING"):
+        client.command("BALANCE", "usr_automation_runtime_0001", {"accountId": "acct_test"})
+    client.close()
+
+    assert observed == []
+
+
+def test_spring_bridge_client_reopens_the_owner_session_once_on_expiry() -> None:
+    """만료된 세션은 한 번만 다시 연다. 같은 idempotency key로 재시도하므로 중복 주문이 없다."""
+
+    observed: list[httpx.Request] = []
+    commands = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal commands
+        observed.append(request)
+        if request.url.path == "/api/v1/auth/login":
+            return httpx.Response(200, json={"data": {"accessToken": f"token-{len(observed)}"}})
+        commands += 1
+        if commands == 1:
+            return httpx.Response(401, json={"error": {"code": "UNAUTHORIZED"}})
+        return httpx.Response(200, json={"status": "OK", "data": {"accountId": "acct_test"}})
+
+    client = SpringAutomationBridgeClient(
+        "automation-runtime-bridge-test-secret-0001",
+        transport=httpx.MockTransport(handler),
+        owner_username="demo-user",
+        owner_password="owner-password-0001",
+    )
+    result = client.command("BALANCE", "usr_automation_runtime_0001", {"accountId": "acct_test"})
+    client.close()
+
+    assert result == {"accountId": "acct_test"}
+    # login, command(401), login, command(200) 정확히 넷이다. 그 이상 재시도하지 않는다.
+    assert [request.url.path for request in observed] == [
+        "/api/v1/auth/login",
+        "/internal/automation-runtime/command",
+        "/api/v1/auth/login",
+        "/internal/automation-runtime/command",
+    ]
 
 
 class FilledExecutionSource(FakeExecutionSource):

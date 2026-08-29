@@ -588,6 +588,25 @@ function requestId(): string {{
 def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
     openapi = object_value(json.loads(openapi_bytes), "OpenAPI")
     try:
+        operations(openapi, 68)
+    except ContractError:
+        pass
+    else:
+        # 체인의 맨 앞 단계다. RAG v2 공개 표면을 먼저 걷어 역사적 exact-61로 내린다.
+        from contracts.verify_p1_rag_v2_openapi_transition import (
+            ADDITIVE_PATH as RAG_V2_ADDITIVE_PATH,
+            project_pre_rag_v2_openapi,
+        )
+
+        rag_v2_additive = object_value(
+            json.loads(RAG_V2_ADDITIVE_PATH.read_bytes()), "RAG v2 additive OpenAPI"
+        )
+        try:
+            openapi = project_pre_rag_v2_openapi(openapi, rag_v2_additive)
+        except ContractValidationError as error:
+            raise ContractError(str(error)) from error
+        openapi_bytes = canonical_json_bytes(openapi)
+    try:
         operations(openapi, 61)
     except ContractError:
         operations(openapi, 56)

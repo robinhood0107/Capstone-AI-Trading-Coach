@@ -1,13 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
 import { Numeric } from '@/shared/ui/Numeric';
 import { useResource, toErrorState } from '@/shared/lib/useResource';
 import { formatKstDate, formatRatio } from '@/shared/lib/format';
 import type { ViewState } from '@/shared/lib/viewState';
-import { askRag, loadRegistry, type RagAnswerView, type SourceItem } from './viewModel';
+import {
+  EXTERNAL_DISCLOSURE,
+  EXTERNAL_POLICY,
+  EXTERNAL_PROCESSORS,
+  askRag,
+  loadConsentGranted,
+  loadRegistry,
+  recordConsent,
+  type RagAnswerView,
+  type SourceItem,
+} from './viewModel';
 
 const EXAMPLES = [
   '금 ETF의 롤오버 위험은 무엇인가요?',
@@ -24,10 +34,9 @@ const STATUS_TONE: Record<string, string> = {
   GENERATION_UNAVAILABLE: 'border-hold',
 };
 
-const CLASSIFICATION_LABEL: Record<string, string> = {
-  OFFICIAL: '공식 자료',
-  SCHOLARLY: '학술 자료',
-  INTERNAL_PAPER: '프로젝트 작성 자료',
+const CITATION_KIND_LABEL: Record<string, string> = {
+  PUBLIC_WEB: '공개 문헌',
+  LOCAL_DOCUMENT: '내 문서',
 };
 
 export function RagGuideView() {
@@ -35,7 +44,31 @@ export function RagGuideView() {
   const [answerMode, setAnswerMode] = useState<'CONCISE' | 'DETAILED'>('CONCISE');
   const [answerState, setAnswerState] = useState<ViewState<RagAnswerView> | null>(null);
   const [pending, setPending] = useState(false);
+  const [consentGranted, setConsentGranted] = useState<boolean | null>(null);
+  const [consentPending, setConsentPending] = useState(false);
   const registry = useResource(loadRegistry, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadConsentGranted().then((granted) => {
+      if (!cancelled) setConsentGranted(granted);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function changeConsent(action: 'GRANT' | 'REVOKE') {
+    if (consentPending) return;
+    setConsentPending(true);
+    try {
+      await recordConsent(action);
+      setConsentGranted(action === 'GRANT');
+      if (action === 'REVOKE') setAnswerState(null);
+    } finally {
+      setConsentPending(false);
+    }
+  }
 
   async function submit(text: string) {
     const trimmed = text.trim();
@@ -54,7 +87,40 @@ export function RagGuideView() {
   return (
     <div className="space-y-6">
       <Panel
-        contract="POST /api/v1/rag/ask"
+        contract="POST /api/v2/rag/consents"
+        title="외부 처리 동의"
+        hint="동의하기 전에는 질문이 외부로 나가지 않습니다."
+        actions={
+          <span className="font-mono text-eyebrow uppercase text-faint">
+            {consentGranted === null ? 'CHECKING' : consentGranted ? 'GRANTED' : 'REQUIRED'}
+          </span>
+        }
+      >
+        <p className="text-[13px] leading-6 text-muted">{EXTERNAL_DISCLOSURE}</p>
+        <p className="mt-2 text-[13px] leading-6 text-muted">{EXTERNAL_POLICY}</p>
+        <p className="mt-2 font-mono text-[11px] text-faint">처리자: {EXTERNAL_PROCESSORS}</p>
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={() => void changeConsent('GRANT')}
+            disabled={consentPending || consentGranted === true}
+            className="border border-navy bg-navy px-3 py-1.5 text-[13px] text-white disabled:border-line disabled:bg-line disabled:text-faint"
+          >
+            동의
+          </button>
+          <button
+            type="button"
+            onClick={() => void changeConsent('REVOKE')}
+            disabled={consentPending || consentGranted !== true}
+            className="border border-line px-3 py-1.5 text-[13px] text-muted hover:border-navy hover:text-navy disabled:text-faint"
+          >
+            철회
+          </button>
+        </div>
+      </Panel>
+
+      <Panel
+        contract="POST /api/v2/rag/ask"
         title="금융 개념 물어보기"
         hint="개념과 위험을 설명합니다. 무엇을 사고 팔지는 답하지 않습니다."
       >
@@ -94,7 +160,7 @@ export function RagGuideView() {
             <button
               type="button"
               onClick={() => void submit(question)}
-              disabled={pending || question.trim().length === 0}
+              disabled={pending || consentGranted !== true || question.trim().length === 0}
               className="border border-navy bg-navy px-4 py-1.5 text-[13px] font-medium text-white disabled:border-line disabled:bg-line disabled:text-faint"
             >
               {pending ? '찾는 중' : '물어보기'}
@@ -122,7 +188,7 @@ export function RagGuideView() {
         <AsyncBoundary state={answerState}>
           {(view) => (
             <Panel
-              contract="dashboard-rag-sources.v1"
+              contract="rag-v2-answer.v1"
               title={view.statusHeadline}
               hint={view.statusDetail}
               actions={
@@ -238,7 +304,7 @@ function SourceRow({ source }: { source: SourceItem }) {
       <div className="flex flex-wrap items-baseline gap-2">
         <p className="text-[13px] font-medium leading-5 text-ink">{source.title}</p>
         <span className="border border-line px-1.5 py-0.5 font-mono text-[10px] uppercase text-faint">
-          {CLASSIFICATION_LABEL[source.classification] ?? source.classification}
+          {CITATION_KIND_LABEL[source.citationKind] ?? source.citationKind}
         </span>
       </div>
       <p className="mt-1 text-[13px] leading-6 text-muted">{source.summary}</p>

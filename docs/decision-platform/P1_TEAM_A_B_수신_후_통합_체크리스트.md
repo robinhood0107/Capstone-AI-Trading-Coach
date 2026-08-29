@@ -54,11 +54,15 @@ git pull --ff-only origin main
 - [ ] 다음 XKRX session과 예상 수익률 공식을 독립 계산
 - [ ] Team B가 Spring REST, KIS, ECOS, yfinance와 주문 API를 호출하지 않았음
 
-현재 Team B 결과를 Spring/Dashboard 데이터로 바꾸는 production adapter는 없습니다. 통합 담당자가
-다음 작업을 구현하고 테스트해야 합니다.
+Team B 결과를 Spring/Dashboard 데이터로 바꾸는 production adapter는 **이미 있습니다.** V88의
+`import_p1_return_bundle_v1`이 그 어댑터이고, V90/V91 런타임이 그 신호를 자동운용으로 잇습니다.
+아래 네 항목은 구현 대기가 아니라 실물 번들을 받았을 때 **확인할 목록**입니다. 확인 방법은
+`workspaces/decision-platform/python-services/tests/e2e/full_pipeline_e2e.py`가 계약 형태의
+번들로 같은 경로를 한 번 관통시킨 것과 같습니다.
 
-- [ ] Team B manifest와 10개 파일을 검증한 뒤에만 atomic ingest
+- [ ] Team B manifest와 10개 파일을 검증한 뒤에만 atomic ingest (`validate_artifact_bundle`)
 - [ ] Team B 신호를 Signal v2 형식으로 변환하되 주문 권한은 부여하지 않음
+      (`p1_return_signal_projection` → `read_p1_return_signal_v2`)
 - [ ] 모델 평가와 백테스트 ViewModel을 실제 runId로 생성
 - [ ] 아래 네 API에서 같은 run과 source hash가 보임
 

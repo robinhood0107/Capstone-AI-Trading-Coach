@@ -28,8 +28,17 @@ test('protected health is requested only after live authentication', async () =>
   assert.match(statusBar, /mock \|\| authenticated/);
 });
 
-test('fixture RAG without citations does not request a missing dashboard projection', async () => {
+test('RAG v2 answers carry their own citations without a second projection hop', async () => {
   const viewModel = await readFile(ragViewModelUrl, 'utf8');
-  assert.match(viewModel, /answer\.citations\.length === 0/);
-  assert.match(viewModel, /else \{[\s\S]*api\.dashboardRagSources\(answer\.answerId\)/);
+  // v2는 인용을 응답에 직접 담는다. 두 번째 홉을 부르면 answerId가 null인 경우에
+  // 없는 투영을 요청하게 된다.
+  assert.doesNotMatch(viewModel, /api\.dashboardRagSources/);
+  assert.match(viewModel, /api\.ragV2Ask/);
+  assert.match(viewModel, /items\.length === 0/);
+});
+
+test('RAG v2 asks only after an explicit external consent', async () => {
+  const viewModel = await readFile(ragViewModelUrl, 'utf8');
+  assert.match(viewModel, /api\.ragV2RecordConsent/);
+  assert.match(viewModel, /EXTERNAL_AI_RAG_V2/);
 });

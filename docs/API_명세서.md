@@ -4,7 +4,9 @@
 > **1.1.0 current authority (2026-08-27):** Owner-First full-app v3 API는 아직 release되지 않았다.
 > contract-only 단계가 고정한 Automation/Journal 8개는 PR #171로 병합됐고 root OpenAPI는 기존 exact-48
 > projection을 보존한 exact 56개였다. V91은 그 bytes를 보존하고 Automation v2 다섯 operation을
-> 추가해 root exact-61, Team A versioned exact-38로 전환한다. 현재 v2 arm은
+> 추가해 root exact-61, Team A versioned exact-38로 전환한다. 그 뒤 RAG v2 공개
+> 표면 일곱 개가 더해져 현재 root는 exact-68이고 Team A acceptance는 exact-38 그대로다.
+> 현재 v2 arm은
 > `BLOCKED_INCOMPLETE_RISK_BALANCE` 409이며 자동운용 활성화 authority는 0이다.
 > 공개 endpoint는 OpenAPI SSOT와 별도 contract-change가 병합된 경우에만 구현된 것으로 본다. 기존
 > placeholder 계획, LightGBM production 경로와 `NOT_MATERIALIZED` 상태는 현재 v3 권위로 명시되지

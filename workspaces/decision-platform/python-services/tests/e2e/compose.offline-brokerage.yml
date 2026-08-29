@@ -1,0 +1,21 @@
+# 관통 테스트 전용 compose override. 배포 구성이 아니다.
+#
+# 하는 일은 하나뿐이다. Spring의 brokerage gRPC 어댑터를 켜서 `127.0.0.1:50052`에 붙게 한다.
+# 그 포트에는 테스트가 세운 오프라인 서버(`tests/e2e/offline_brokerage.py`)가 응답한다.
+#
+# `KIS_MOCK_BROKERAGE_ONLINE_ENABLED`는 건드리지 않는다. 그 값이 true여야 supervisor가 실제 KIS
+# 모의투자를 호출하는 production brokerage 서버를 띄우는데, 이 테스트는 provider 물리 호출을
+# 0으로 유지한다. 기본 compose는 두 값을 같은 변수(`P1_KIS_MOCK_ONLINE_ENABLED`)로 묶어 두므로
+# 여기서 하나만 떼어 놓는다.
+#
+# 사용:
+#   docker compose -f deploy/p1/compose.yml \
+#     -f workspaces/decision-platform/python-services/tests/e2e/compose.offline-brokerage.yml \
+#     up -d decision-platform
+
+services:
+  decision-platform:
+    environment:
+      BROKERAGE_GRPC_ENABLED: "true"
+      KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "false"
+      P1_AUTOMATION_RUNTIME_ENABLED: "false"

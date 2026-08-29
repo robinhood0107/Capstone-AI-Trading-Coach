@@ -24,6 +24,9 @@ from contracts.generate_principle_contracts import (
     ContractValidationError,
     canonical_json_bytes,
 )
+from contracts.verify_p1_rag_v2_openapi_transition import (
+    project_pre_rag_v2_openapi,
+)
 from contracts.verify_p1_v91_automation_openapi_transition import (
     ADDITIVE_SCHEMA_NAMES,
     HISTORICAL_ROOT_56_SHA256,
@@ -167,6 +170,14 @@ class P1V91AutomationContractTest(unittest.TestCase):
     def test_exact_five_projection_restores_byte_stable_exact_56(self) -> None:
         root = json.loads((ROOT / "contracts/openapi/openapi.json").read_text(encoding="utf-8"))
         additive = json.loads(ADDITIVE_OPENAPI_PATH.read_text(encoding="utf-8"))
+        # RAG v2 공개 표면이 앞단에 더해졌다. 그 단계를 먼저 걷어 역사적 exact-61을 복원한다.
+        rag_v2_additive = json.loads(
+            (ROOT / "contracts/openapi/p1-rag-v2-public.v1.openapi.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(68, len(operations(root)))
+        root = project_pre_rag_v2_openapi(root, rag_v2_additive)
         self.assertEqual(61, len(operations(root)))
         projected = project_pre_v91_openapi(root, additive)
         self.assertEqual(56, len(operations(projected)))

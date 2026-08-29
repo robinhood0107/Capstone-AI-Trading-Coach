@@ -1,4 +1,4 @@
-import type { ApiEnvelope } from '@/shared/api/envelope';
+import { ApiFailure, type ApiEnvelope } from '@/shared/api/envelope';
 import type { AutomationPresetId } from '@/shared/api/wire';
 import * as fixtures from './fixtures';
 
@@ -26,6 +26,102 @@ function ok<T>(data: T, requestId: string, warnings: ApiEnvelope<T>['warnings'] 
 
 function fail<T>(code: string, message: string, requestId: string): ApiEnvelope<T> {
   return { success: false, requestId, data: null, warnings: [], error: { code, message } };
+}
+
+/**
+ * v2 RAG는 공통 봉투 없이 DTO를 그대로 돌려준다. mock도 같은 모양이어야 live 전환에서
+ * 화면이 깨지지 않는다. 실제 인용은 서버에만 있으므로 여기서는 v1 fixture를 v2 모양으로
+ * 옮겨 담는다. 값이 fixture라는 사실은 화면이 별도로 표시한다.
+ */
+let mockConsentGranted = false;
+
+export async function mockBareTransport<T>(
+  path: string,
+  method: string,
+  body: unknown,
+  requestId: string,
+): Promise<T> {
+  await new Promise((resolve) => setTimeout(resolve, LATENCY_MS));
+  const target = path.split('?')[0] ?? path;
+
+  if (target === '/api/v2/rag/corpus-status') {
+    return {
+      state: 'FULL_READY',
+      publicCorpusVersion: 'immutable-v2-mock',
+      privateOverlayState: 'ABSENT',
+      progressPercent: 100,
+      failureCode: null,
+    } as T;
+  }
+
+  if (target === '/api/v2/rag/consent') {
+    if (!mockConsentGranted) {
+      throw new ApiFailure(
+        { code: 'EXTERNAL_AI_CONSENT_REQUIRED', message: '외부 처리 동의가 필요합니다.' },
+        requestId,
+      );
+    }
+    return {
+      contractId: 's4-rag-v2-effective-consent-v1',
+      schemaVersion: 1,
+      consentEventId: 'rce_mock',
+      effective: true,
+      policyDigest: '0'.repeat(64),
+      processorSetDigest: '0'.repeat(64),
+      state: 'GRANTED',
+    } as T;
+  }
+
+  if (target === '/api/v2/rag/consents' && method === 'POST') {
+    const action =
+      typeof body === 'object' && body !== null
+        ? String((body as { action?: unknown }).action ?? '')
+        : '';
+    mockConsentGranted = action === 'GRANT';
+    return undefined as T;
+  }
+
+  if (target === '/api/v2/rag/ask' && method === 'POST') {
+    if (!mockConsentGranted) {
+      throw new ApiFailure(
+        { code: 'EXTERNAL_AI_CONSENT_REQUIRED', message: '외부 처리 동의가 필요합니다.' },
+        requestId,
+      );
+    }
+    const question =
+      typeof body === 'object' && body !== null
+        ? String((body as { question?: unknown }).question ?? '')
+        : '';
+    if (question.trim().length === 0) {
+      throw new ApiFailure({ code: 'RAG_VALIDATION_FAILED', message: '질문을 입력하세요.' }, requestId);
+    }
+    const answer = fixtures.ragAnswerFor(question);
+    return {
+      requestId,
+      answerId: answer.citations.length > 0 ? answer.answerId : null,
+      generationStatus: answer.citations.length > 0 ? 'RETRIEVAL_ONLY' : answer.generationStatus,
+      answer: null,
+      citationCoverage: answer.citations.length > 0 ? 1 : 0,
+      retrievalFailure: answer.citations.length === 0 && !answer.generationStatus.startsWith('BLOCKED'),
+      guardrailFlags: answer.guardrailFlags,
+      citations: answer.citations.map((citation, index) => ({
+        citationId: `cit_${index + 1}`,
+        citationKind: 'PUBLIC_WEB' as const,
+        sourceId: citation.sourceId,
+        title: citation.title,
+        canonicalUrl: citation.canonicalUrl,
+        locator: { section: citation.sectionTitle },
+        chunkRevisionId: `rag_v2_chk_mock_${index + 1}`,
+        sourceRevisionId: `srv_mock_${index + 1}`,
+        generationId: 'rgr_mock',
+      })),
+    } as T;
+  }
+
+  throw new ApiFailure(
+    { code: 'NOT_FOUND', message: `mock 경로가 정의되지 않았습니다: ${target}` },
+    requestId,
+  );
 }
 
 export async function mockTransport<T>(

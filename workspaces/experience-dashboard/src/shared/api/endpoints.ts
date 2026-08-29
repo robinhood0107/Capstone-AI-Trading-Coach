@@ -1,4 +1,4 @@
-import { apiFetch, newIdempotencyKey } from './client';
+import { apiFetch, apiFetchBare, newIdempotencyKey } from './client';
 import type { ApiResult } from './envelope';
 import type {
   ArmAutomationV2Request,
@@ -25,6 +25,10 @@ import type {
   RagAnswerProjection,
   RagAskRequest,
   RagSourceListResponse,
+  RagV2Answer,
+  RagV2CorpusStatus,
+  RagV2EffectiveConsent,
+  RagV2ExternalConsentRequest,
   SignalV2Runtime,
   SystemHealthResponse,
 } from './wire';
@@ -150,6 +154,23 @@ export const api = {
       body: request,
       idempotencyKey: newIdempotencyKey('rag-ask'),
     });
+  },
+
+  /* ----------------------------------------------------------- RAG v2 */
+  ragV2CorpusStatus(): Promise<RagV2CorpusStatus> {
+    return apiFetchBare<RagV2CorpusStatus>('/api/v2/rag/corpus-status');
+  },
+
+  ragV2Consent(): Promise<RagV2EffectiveConsent> {
+    return apiFetchBare<RagV2EffectiveConsent>('/api/v2/rag/consent');
+  },
+
+  ragV2RecordConsent(request: RagV2ExternalConsentRequest): Promise<void> {
+    return apiFetchBare<void>('/api/v2/rag/consents', { method: 'POST', body: request });
+  },
+
+  ragV2Ask(request: RagAskRequest): Promise<RagV2Answer> {
+    return apiFetchBare<RagV2Answer>('/api/v2/rag/ask', { method: 'POST', body: request });
   },
 
   /* -------------------------------------------- Dashboard ViewModel 4종 */

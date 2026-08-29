@@ -53,6 +53,10 @@ TEAM_A_CURRENT_OPERATIONS = frozenset(
         ("GET", "/api/v1/risk/portfolio"),
         ("GET", "/api/v1/system/health"),
         ("GET", "/api/v2/signals/{symbol}"),
+        ("GET", "/api/v2/rag/corpus-status"),
+        ("GET", "/api/v2/rag/consent"),
+        ("POST", "/api/v2/rag/consents"),
+        ("POST", "/api/v2/rag/ask"),
     }
 )
 TEAM_A_REQUIRED_OPERATIONS = frozenset(
@@ -94,6 +98,9 @@ OPTIONAL_PRODUCT_OPERATIONS = frozenset(
         ("GET", "/api/v1/principles/{principleId}/versions"),
         ("PATCH", "/api/v1/journals/{journalId}"),
         ("DELETE", "/api/v1/journals/{journalId}"),
+        ("GET", "/api/v2/rag/history"),
+        ("GET", "/api/v2/rag/history/{answerId}"),
+        ("DELETE", "/api/v2/rag/history/{answerId}"),
     }
 )
 OPERATOR_ONLY_OPERATIONS = frozenset(
@@ -238,7 +245,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             for method in path_item
             if method in methods
         ]
-        self.assertEqual(61, len(operations))
+        self.assertEqual(68, len(operations))
         operation_ids = [operation_id for _, _, operation_id in operations]
         self.assertTrue(
             all(
@@ -246,7 +253,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
                 for operation_id in operation_ids
             )
         )
-        self.assertEqual(61, len(set(operation_ids)))
+        self.assertEqual(68, len(set(operation_ids)))
         expected = {(method, path) for method, path, _ in operations}
 
         matrix = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX.md").read_text(
@@ -258,11 +265,11 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             matrix,
             flags=re.MULTILINE,
         )
-        self.assertEqual(61, len(rows))
+        self.assertEqual(68, len(rows))
         self.assertEqual(
-            list(range(1, 62)), sorted(int(number) for number, _, _, _ in rows)
+            list(range(1, 69)), sorted(int(number) for number, _, _, _ in rows)
         )
-        self.assertEqual(61, len({(method, path) for _, method, path, _ in rows}))
+        self.assertEqual(68, len({(method, path) for _, method, path, _ in rows}))
         self.assertEqual(expected, {(method, path) for _, method, path, _ in rows})
 
         observed_by_classification = {

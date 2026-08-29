@@ -404,8 +404,24 @@ def _schema_errors(payload: dict[str, Any]) -> list[str]:
 
 
 @lru_cache(maxsize=1)
+def _contract_root() -> Path:
+    """계약 루트를 위로 훑어 찾는다. 레포 체크아웃과 컨테이너 이미지의 깊이가 다르다.
+
+    레포에서는 이 모듈이 `workspaces/decision-platform/python-services/app/p1_owner/` 아래라
+    루트가 다섯 단계 위지만, 배포 이미지에서는 `/app/app/p1_owner/`라 두 단계 위다. 깊이를
+    상수로 두면 이미지에서 `IndexError`가 나고, 그 예외가 news 거부권 경로를 그대로 뚫고 나가
+    자동운용 run이 죽는다. `app/p1_owner/assets.py`가 쓰는 방식과 같게 맞춘다.
+    """
+
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "contracts").is_dir():
+            return candidate
+    raise RuntimeError("Vertex veto contract root is unavailable")
+
+
+@lru_cache(maxsize=1)
 def _schema() -> dict[str, Any]:
-    repository = Path(__file__).resolve().parents[5]
+    repository = _contract_root()
     value = json.loads(
         (repository / "contracts/schemas/vertex-news-veto.v1.schema.json").read_text(
             encoding="utf-8"

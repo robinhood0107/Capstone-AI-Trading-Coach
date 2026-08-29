@@ -250,7 +250,12 @@ class JdbcDailyOrderCountAdapter(
         if (
             row.completeness != COMPLETE ||
             row.orderCount == null ||
-            row.coveredThrough.isBefore(request.evaluationAsOf)
+            // 저장된 관측은 판단보다 반드시 조금 앞선다. `coveredThrough >= evaluationAsOf`를 그대로
+            // 요구하면 만족할 방법이 없다 — writer가 `coveredThrough <= observedAt`을, readiness가
+            // `observedAt <= evaluationAsOf`를 요구하므로 셋이 동시에 성립하려면 세 시각이 정확히
+            // 같아야 하고, 그건 고정 시계에서만 가능하다. 실제 시계에서는 이 규칙이 켜져 있는 한
+            // 모든 주문이 HOLD로 닫혔다. 다른 지표와 같은 방식으로 유효 창 안의 지연만 허용한다.
+            row.coveredThrough.isBefore(request.evaluationAsOf.minus(ORDER_COUNT_COVERAGE_LAG))
         ) {
             return MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE)
         }
@@ -281,6 +286,11 @@ private data class StoredInstrumentRow(
 )
 
 private val ORDER_COUNT_DECISION_VALIDITY: Duration = Duration.ofMinutes(10)
+
+// 일일 주문 수 관측이 판단 시각보다 뒤처져도 되는 한계. 이 창을 넘긴 관측은 계속 INCOMPLETE다.
+// 이 배포에서 주문을 내는 주체는 자동운용뿐이고 세션당 논리주문이 1건으로 묶여 있으므로, 이
+// 창 안에서 놓칠 수 있는 주문 수는 유계다. 판단의 재사용 창과 같은 값을 쓴다.
+private val ORDER_COUNT_COVERAGE_LAG: Duration = ORDER_COUNT_DECISION_VALIDITY
 
 private data class StoredRiskRow(
     val dailyLossRate: BigDecimal?,

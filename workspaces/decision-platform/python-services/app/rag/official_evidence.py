@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+from app.rag.repository_root import repository_root
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
 from app.rag.source_card import (
     OFFICIAL_SOURCE_CARD_ROOT,
@@ -24,7 +25,7 @@ from app.rag.source_registry import (
     validate_canonical_https_url,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
+REPO_ROOT = repository_root()
 OFFICIAL_EVIDENCE_MANIFEST_PATH = (
     REPO_ROOT / "capstone-rag/manifests/s4-7a-official-evidence.v1.json"
 )

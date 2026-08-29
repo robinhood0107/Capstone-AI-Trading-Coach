@@ -17,6 +17,7 @@ import com.capstone.decision.application.rag.RagValidationException
 import com.capstone.decision.application.security.AppPrincipal
 import io.swagger.v3.oas.annotations.Hidden
 import jakarta.servlet.http.HttpServletRequest
+import org.slf4j.LoggerFactory
 import org.springframework.dao.DataAccessException
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -198,6 +199,8 @@ data class RagV2ErrorResponse(
 
 @RestControllerAdvice(assignableTypes = [RagV2Controller::class])
 class RagV2ExceptionHandler {
+    private val logger = LoggerFactory.getLogger(javaClass)
+
     @ExceptionHandler(RagValidationException::class)
     fun handleValidation(
         exception: RagValidationException,
@@ -242,13 +245,25 @@ class RagV2ExceptionHandler {
         )
 
     @ExceptionHandler(DataAccessException::class, RuntimeException::class)
-    fun handleUnavailable(request: HttpServletRequest): ResponseEntity<RagV2ErrorResponse> =
-        error(
+    fun handleUnavailable(
+        exception: RuntimeException,
+        request: HttpServletRequest,
+    ): ResponseEntity<RagV2ErrorResponse> {
+        // 질문 본문, provider 응답, owner 문서, 예외 메시지는 남기지 않는다. 다만 어느 구간이
+        // 닫혔는지는 클래스 이름으로 남긴다. 이것이 없으면 모든 실패가 구분 없는 503 하나로
+        // 보여 fail-closed의 원인을 밖에서 알 방법이 없다.
+        logger.warn(
+            "rag v2 failed closed: {} caused by {}",
+            exception.javaClass.simpleName,
+            generateSequence(exception.cause) { it.cause }.lastOrNull()?.javaClass?.simpleName ?: "-",
+        )
+        return error(
             request = request,
             status = HttpStatus.SERVICE_UNAVAILABLE,
             code = "RAG_UNAVAILABLE",
             message = "RAG v2 runtime is unavailable.",
         )
+    }
 
     private fun error(
         request: HttpServletRequest,

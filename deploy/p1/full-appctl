@@ -161,6 +161,20 @@ upgrade_state() {
     printf 'P1_AUTOMATION_OWNER_USER_ID=usr_demo_user\n' \
       | append_state secrets/automation-runtime.env 0640
   fi
+  if [[ ! -e $SECRETS_DIR/rag-v2.env ]]; then
+    # RAG v2 질의 경로는 두 역할을 나눠 쓴다. Spring이 decision_app으로 인가하고 Python writer가
+    # decision_rag_writer로 사용량을 예약한다. 그래서 여기 DSN은 rag writer 역할이어야 한다.
+    # VOYAGE_API_KEY는 생성하지 않는다. KIS credential과 같은 취급으로 운영자가 직접 넣는다.
+    local rag_writer_password rag_query_password
+    rag_writer_password=$(sed -n 's/^POSTGRES_RAG_WRITER_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+    rag_query_password=$(sed -n 's/^POSTGRES_RAG_QUERY_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+    [[ $rag_writer_password =~ ^[0-9a-f]{64}$ ]] || die RAG_V2_QUERY_WRITER_SECRET_MISSING
+    [[ $rag_query_password =~ ^[0-9a-f]{64}$ ]] || die RAG_V2_QUERY_READER_SECRET_MISSING
+    printf 'RAG_V2_QUERY_DATABASE_DSN=postgresql://decision_rag_query:%s@postgres:5432/capstone_p1?sslmode=disable\nRAG_V2_VOYAGE_QUERY_WRITER_DSN=postgresql://decision_rag_writer:%s@postgres:5432/capstone_p1?sslmode=disable\nRAG_V2_GRPC_SHARED_SECRET=%s\n' \
+      "$rag_query_password" "$rag_writer_password" "$(openssl rand -hex 32)" \
+      | write_state secrets/rag-v2.env 0640
+    unset rag_writer_password rag_query_password
+  fi
   if [[ ! -e $SECRETS_DIR/automation-gate-author.env ]]; then
     local replay_authorizer_password
     replay_authorizer_password=$(sed -n 's/^POSTGRES_REPLAY_AUTHORIZER_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
@@ -177,6 +191,12 @@ upgrade_state() {
   fi
   if ! grep -q '^P1_KIS_MOCK_RUNTIME_DIR=' "$RUNTIME_ENV"; then
     printf 'P1_KIS_MOCK_RUNTIME_DIR=%s\n' "$STATE_DIR/mock" | append_state runtime.env 0600
+  fi
+  # RAG v2 로컬 루트는 비어 있어도 된다. 마운트만 항상 성립하게 두고, 실제 leaf가 없으면
+  # RAG v2를 켰을 때 entrypoint가 닫는다. 운영자가 다른 경로를 쓰려면 이 값을 바꾼다.
+  install -d -m 0700 "$STATE_DIR/rag-v2-root"
+  if ! grep -q '^P1_RAG_RUNTIME_DIR=' "$RUNTIME_ENV"; then
+    printf 'P1_RAG_RUNTIME_DIR=%s\n' "$STATE_DIR/rag-v2-root" | append_state runtime.env 0600
   fi
   local approval_files=0 approval_file
   for approval_file in kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn; do

@@ -5,8 +5,9 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from app.rag.repository_root import repository_root
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
+REPO_ROOT = repository_root()
 CATALOG_PATH = REPO_ROOT / "contracts/catalogs/s4-rag-contract.v1.json"
 CATALOG_SHA256_MANIFEST_PATH = REPO_ROOT / "contracts/catalogs/s4-rag-contract.v1.sha256.json"
 PROFILE_IDS = ("bge_m3_local_1024_v1", "voyage_context_4_1024_v1")

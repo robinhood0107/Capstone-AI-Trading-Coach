@@ -1,6 +1,7 @@
 package com.capstone.decision.application.rag
 
 import com.capstone.decision.application.security.ActorRlsScopePort
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Service
@@ -56,6 +57,8 @@ class RagV2RuntimeService(
     private val transactionManagerProvider: ObjectProvider<PlatformTransactionManager>,
     private val actorRlsScope: ActorRlsScopePort,
 ) {
+    private val logger = LoggerFactory.getLogger(javaClass)
+
     /**
      * owner-private overlay 상태는 DB actor setting과 definer function으로만 읽는다.
      * 원본 파일명, 경로, hash receipt는 status API에 절대 노출하지 않는다.
@@ -913,7 +916,10 @@ class RagV2RuntimeService(
                     require(citation.generationId in setOf(scope.exact30GenerationId, scope.oa112GenerationId, scope.ownerGenerationId))
                 }
             }
-            RagGenerationStatus.RETRIEVAL_FAILURE ->
+            RagGenerationStatus.RETRIEVAL_FAILURE -> {
+                // 실패 코드는 provider cause를 담지 않는 typed allowlist다. 이것을 남기지 않으면
+                // 모든 검색 실패가 구분 없는 하나로 보여 어느 게이트가 닫혔는지 알 수 없다.
+                logger.warn("rag v2 retrieval failed closed: {}", evaluation.failureCode)
                 require(
                     evaluation.answer == null &&
                         evaluation.citations.isEmpty() &&
@@ -921,6 +927,7 @@ class RagV2RuntimeService(
                         evaluation.retrievalFailure &&
                         FAILURE_CODE.matches(evaluation.failureCode),
                 )
+            }
             RagGenerationStatus.BLOCKED_SENSITIVE,
             RagGenerationStatus.BLOCKED_ADVICE,
             RagGenerationStatus.GENERATION_UNAVAILABLE,

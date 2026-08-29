@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 from collections.abc import Mapping
+from typing import Any
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
@@ -158,6 +159,16 @@ def _seed(cursor: psycopg.Cursor[object]) -> None:
           'team-a-acceptance-v1','{"symbol":"005930"}'::jsonb,repeat('3',64),repeat('4',64))
         """
     )
+    # acceptance fixture 밖의 ACTIVE 계좌 컨텍스트를 잠시 내린다. 둘 이상이면 RiskEngine이
+    # CONFLICT로 전 지표를 닫아 evaluateOrder가 주문 불가가 된다. restore가 되돌린다.
+    cursor.execute(
+        """
+        UPDATE portfolio_balance_observations SET context_status='INACTIVE'
+        WHERE owner_user_id=%s AND source='KIS_MOCK' AND context_status='ACTIVE'
+          AND source_version<>'team-a-acceptance-v1'
+        """,
+        (_USER_ID,),
+    )
     cursor.execute(
         """
         INSERT INTO portfolio_balance_observations(
@@ -303,6 +314,36 @@ def _restore(cursor: psycopg.Cursor[object]) -> None:
     )
 
 
+def _reactivate_owner_contexts(cursor: Any) -> None:
+    """acceptance 컨텍스트를 내리고 seed가 내렸던 소유자 컨텍스트를 되돌린다.
+
+    fixture 행 자체는 다음 seed의 reset이 지우므로 남겨 둔다. 다만 ACTIVE로 남기면 소유자에게
+    ACTIVE 컨텍스트가 둘이 되어 RiskEngine이 CONFLICT로 닫는다. 그래서 상태만 내린다.
+    """
+
+    cursor.execute(
+        """
+        UPDATE portfolio_balance_observations SET context_status='INACTIVE'
+        WHERE owner_user_id=%s AND source_version='team-a-acceptance-v1'
+          AND context_status='ACTIVE'
+        """,
+        (_USER_ID,),
+    )
+    cursor.execute(
+        """
+        UPDATE portfolio_balance_observations SET context_status='ACTIVE'
+        WHERE observation_id IN (
+          SELECT DISTINCT ON (account_scope_hash) observation_id
+          FROM portfolio_balance_observations
+          WHERE owner_user_id=%s AND source='KIS_MOCK' AND context_status='INACTIVE'
+            AND source_version<>'team-a-acceptance-v1'
+          ORDER BY account_scope_hash, observed_at DESC, received_at DESC, observation_id
+        )
+        """,
+        (_USER_ID,),
+    )
+
+
 def execute(command: str, environment: Mapping[str, str]) -> None:
     dsn = _dsn(environment)
     with psycopg.connect(dsn, autocommit=False, connect_timeout=3) as connection:
@@ -330,6 +371,7 @@ def execute(command: str, environment: Mapping[str, str]) -> None:
                     _seed(cursor)
                 elif command == "restore":
                     _restore(cursor)
+                    _reactivate_owner_contexts(cursor)
                 else:
                     raise ValueError("unknown_command")
 

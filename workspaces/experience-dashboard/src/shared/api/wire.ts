@@ -500,6 +500,65 @@ export interface RagAnswerProjection {
   guardrailFlags: string[];
 }
 
+/* --------------------------------------------------------- RAG v2 공개 계약 */
+
+/**
+ * v2 표면은 공통 `ApiEnvelope`를 쓰지 않고 DTO를 그대로 돌려준다.
+ * 오류도 `{ code, message, requestId }` 본문이다. `apiFetchBare`가 그 차이를 흡수한다.
+ */
+export interface RagV2CorpusStatus {
+  state: string;
+  publicCorpusVersion: string;
+  privateOverlayState: string;
+  progressPercent: number;
+  failureCode: string | null;
+}
+
+export interface RagV2EffectiveConsent {
+  contractId: string;
+  schemaVersion: number;
+  consentEventId: string;
+  effective: boolean;
+  policyDigest: string;
+  processorSetDigest: string;
+  state: string;
+}
+
+export interface RagV2ExternalConsentRequest {
+  contractId: 's4-rag-v2-external-consent-v1';
+  schemaVersion: 1;
+  consentType: 'EXTERNAL_AI_RAG_V2';
+  action: 'GRANT' | 'REVOKE';
+  disclosureDigest: string;
+  policyDigest: string;
+  processorSetDigest: string;
+}
+
+export type RagV2CitationKind = 'PUBLIC_WEB' | 'LOCAL_DOCUMENT';
+
+export interface RagV2Citation {
+  citationId: string;
+  citationKind: RagV2CitationKind;
+  sourceId: string;
+  title: string;
+  canonicalUrl: string | null;
+  locator: { page?: number; section?: string } | null;
+  chunkRevisionId: string;
+  sourceRevisionId: string;
+  generationId: string;
+}
+
+export interface RagV2Answer {
+  requestId: string;
+  answerId: string | null;
+  generationStatus: RagGenerationStatus;
+  answer: string | null;
+  citationCoverage: number;
+  citations: RagV2Citation[];
+  retrievalFailure: boolean;
+  guardrailFlags: string[];
+}
+
 export interface RagSourceResponse {
   sourceId: string;
   title: string;

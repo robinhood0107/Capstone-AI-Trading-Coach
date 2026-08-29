@@ -1,0 +1,362 @@
+{
+  "components": {
+    "schemas": {
+      "RagV2Answer": {
+        "properties": {
+          "answer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "answerId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "citationCoverage": {
+            "format": "double",
+            "type": "number"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/JsonNode"
+            },
+            "type": "array"
+          },
+          "generationStatus": {
+            "enum": [
+              "ANSWERED",
+              "RETRIEVAL_ONLY",
+              "RETRIEVAL_FAILURE",
+              "BLOCKED_SENSITIVE",
+              "BLOCKED_ADVICE",
+              "GENERATION_UNAVAILABLE"
+            ],
+            "type": "string"
+          },
+          "guardrailFlags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "retrievalFailure": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "RagV2CorpusStatus": {
+        "properties": {
+          "failureCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "privateOverlayState": {
+            "type": "string"
+          },
+          "progressPercent": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "publicCorpusVersion": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RagV2EffectiveConsent": {
+        "properties": {
+          "consentEventId": {
+            "type": "string"
+          },
+          "contractId": {
+            "type": "string"
+          },
+          "effective": {
+            "type": "boolean"
+          },
+          "policyDigest": {
+            "type": "string"
+          },
+          "processorSetDigest": {
+            "type": "string"
+          },
+          "schemaVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RagV2HistoryDetail": {
+        "properties": {
+          "answer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "answerId": {
+            "type": "string"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/JsonNode"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "generationStatus": {
+            "enum": [
+              "ANSWERED",
+              "RETRIEVAL_ONLY",
+              "RETRIEVAL_FAILURE",
+              "BLOCKED_SENSITIVE",
+              "BLOCKED_ADVICE",
+              "GENERATION_UNAVAILABLE"
+            ],
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RagV2HistoryMetadata": {
+        "properties": {
+          "answerId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "generationStatus": {
+            "enum": [
+              "ANSWERED",
+              "RETRIEVAL_ONLY",
+              "RETRIEVAL_FAILURE",
+              "BLOCKED_SENSITIVE",
+              "BLOCKED_ADVICE",
+              "GENERATION_UNAVAILABLE"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RagV2HistoryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RagV2HistoryMetadata"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Capstone P1 RAG v2 public additive surface",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.1",
+  "paths": {
+    "/api/v2/rag/ask": {
+      "post": {
+        "operationId": "ragV2Ask",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2Answer"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "rag-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/rag/consent": {
+      "get": {
+        "operationId": "ragV2EffectiveConsent",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2EffectiveConsent"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "rag-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/rag/consents": {
+      "post": {
+        "operationId": "ragV2RecordExternalConsent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "rag-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/rag/corpus-status": {
+      "get": {
+        "operationId": "ragV2CorpusStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2CorpusStatus"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "rag-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/rag/history": {
+      "get": {
+        "operationId": "ragV2ListHistory",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2HistoryPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "rag-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/rag/history/{answerId}": {
+      "delete": {
+        "operationId": "ragV2DeleteHistory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "answerId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "rag-v-2-controller"
+        ]
+      },
+      "get": {
+        "operationId": "ragV2GetHistory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "answerId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2HistoryDetail"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "rag-v-2-controller"
+        ]
+      }
+    }
+  }
+}

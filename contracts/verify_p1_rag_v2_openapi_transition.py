@@ -1,12 +1,17 @@
-"""Verify the exact additive root OpenAPI transition from 56 to 61 operations."""
+"""Verify the exact additive root OpenAPI transition from 61 to 68 operations.
+
+RAG v2의 공개 표면 일곱 개가 더해질 때, 그 일곱 개와 그것이 데려온 스키마만 빼면 역사적
+exact-61 바이트가 그대로 복원되는지 본다. 동결의 정체는 바이트 고정이 아니라 projection
+복원 가능성이므로, 이 단계를 68 → 61 → 56 → 48 체인의 맨 앞에 끼운다.
+"""
 
 from __future__ import annotations
 
 import argparse
 import copy
 import hashlib
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any, Final, Mapping
 
 _SCRIPT_ROOT = Path(__file__).resolve().parents[1]
@@ -21,29 +26,21 @@ from contracts.generate_principle_contracts import (  # noqa: E402
 
 ROOT: Final = _SCRIPT_ROOT
 OPENAPI_PATH: Final = ROOT / "contracts/openapi/openapi.json"
-ADDITIVE_PATH: Final = ROOT / "contracts/openapi/p1-automation-v2.v1.openapi.json"
-HISTORICAL_ROOT_56_SHA256: Final = (
-    "8a94b6cae3bafbc4d353bde7bae88aa568c3fe691e08b97f8cdb52996612a8a0"
+ADDITIVE_PATH: Final = ROOT / "contracts/openapi/p1-rag-v2-public.v1.openapi.json"
+HISTORICAL_ROOT_61_SHA256: Final = (
+    "e4c14ca47c3f2b3891c8b898562ef851bbcdaae85fd0b99df4504c2ec459d674"
 )
 HTTP_METHODS: Final = frozenset(
     {"delete", "get", "head", "options", "patch", "post", "put", "trace"}
 )
 ADDITIVE_SCHEMA_NAMES: Final = frozenset(
     {
-        "AutomationPolicyV2",
-        "AutomationStatusV2",
-        "AutomationRunV2",
-        "AutomationPositionV2",
-        "PutAutomationPolicyV2Request",
-        "ArmAutomationV2Request",
-        "AutomationRunPageV2",
-        "AutomationPositionPageV2",
-        "AutomationRealizedSummaryV2",
-        "ApiResponseAutomationStatusV2",
-        "ApiResponseAutomationPolicyV2",
-        "ApiResponseAutomationRunPageV2",
-        "ApiResponseAutomationPositionPageV2",
-        "P1AutomationV2ErrorResponse",
+        "RagV2Answer",
+        "RagV2CorpusStatus",
+        "RagV2EffectiveConsent",
+        "RagV2HistoryDetail",
+        "RagV2HistoryMetadata",
+        "RagV2HistoryPage",
     }
 )
 
@@ -81,32 +78,24 @@ def operations(document: Mapping[str, Any]) -> dict[tuple[str, str], str]:
     return result
 
 
-def project_pre_v91_openapi(
+def project_pre_rag_v2_openapi(
     current: Mapping[str, Any],
     additive: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Remove the approved V91 surface and restore the byte-stable exact-56 root."""
+    """승인된 RAG v2 공개 표면을 제거하고 바이트 안정한 exact-61 root를 복원한다."""
 
     current_operations = operations(current)
-    if len(current_operations) == 68:
-        # 체인의 맨 앞 단계다. RAG v2 공개 표면을 먼저 걷어 역사적 exact-61로 내린다.
-        from contracts.verify_p1_rag_v2_openapi_transition import (
-            ADDITIVE_PATH as RAG_V2_ADDITIVE_PATH,
-            project_pre_rag_v2_openapi,
-        )
-
-        _, rag_v2_additive = _load(RAG_V2_ADDITIVE_PATH, "RAG v2 additive OpenAPI")
-        current = project_pre_rag_v2_openapi(current, rag_v2_additive)
-        current_operations = operations(current)
     additive_operations = operations(additive)
-    if len(current_operations) != 61 or len(set(current_operations.values())) != 61:
-        raise ContractValidationError("current root OpenAPI must contain exact 61 unique operations.")
-    if len(additive_operations) != 5 or len(set(additive_operations.values())) != 5:
-        raise ContractValidationError("V91 additive OpenAPI must contain exact five operations.")
+    if len(current_operations) != 68 or len(set(current_operations.values())) != 68:
+        raise ContractValidationError(
+            "current root OpenAPI must contain exact 68 unique operations."
+        )
+    if len(additive_operations) != 7 or len(set(additive_operations.values())) != 7:
+        raise ContractValidationError("RAG v2 additive OpenAPI must contain exact seven operations.")
     for identity, operation_id in additive_operations.items():
         if current_operations.get(identity) != operation_id:
             raise ContractValidationError(
-                f"V91 additive operation drifted: {identity[1].upper()} {identity[0]}."
+                f"RAG v2 additive operation drifted: {identity[1].upper()} {identity[0]}."
             )
 
     projected = copy.deepcopy(current)
@@ -116,8 +105,8 @@ def project_pre_v91_openapi(
         path_item.pop(method)
         if not any(key in HTTP_METHODS for key in path_item):
             projected_paths.pop(path_name)
-    if len(operations(projected)) != 56:
-        raise ContractValidationError("V91 projection must restore exact 56 operations.")
+    if len(operations(projected)) != 61:
+        raise ContractValidationError("RAG v2 projection must restore exact 61 operations.")
 
     schemas = _object(
         _object(projected.get("components"), "projected components").get("schemas"),
@@ -126,15 +115,15 @@ def project_pre_v91_openapi(
     missing = ADDITIVE_SCHEMA_NAMES - set(schemas)
     if missing:
         raise ContractValidationError(
-            "V91 additive schema set is incomplete: " + ", ".join(sorted(missing))
+            "RAG v2 additive schema set is incomplete: " + ", ".join(sorted(missing))
         )
     for name in ADDITIVE_SCHEMA_NAMES:
         schemas.pop(name)
 
     actual = hashlib.sha256(canonical_json_bytes(projected)).hexdigest()
-    if actual != HISTORICAL_ROOT_56_SHA256:
+    if actual != HISTORICAL_ROOT_61_SHA256:
         raise ContractValidationError(
-            "current root OpenAPI changed outside the approved exact-five V91 addition."
+            "current root OpenAPI changed outside the approved exact-seven RAG v2 addition."
         )
     return projected
 
@@ -144,23 +133,23 @@ def verify_transition(
     additive_path: Path = ADDITIVE_PATH,
 ) -> None:
     raw, current = _load(path, "current root OpenAPI")
-    if hashlib.sha256(raw).hexdigest() == HISTORICAL_ROOT_56_SHA256:
+    if hashlib.sha256(raw).hexdigest() == HISTORICAL_ROOT_61_SHA256:
         return
-    _, additive = _load(additive_path, "V91 additive OpenAPI")
-    project_pre_v91_openapi(current, additive)
+    _, additive = _load(additive_path, "RAG v2 additive OpenAPI")
+    project_pre_rag_v2_openapi(current, additive)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify the exact V91 OpenAPI transition.")
+    parser = argparse.ArgumentParser(description="Verify the exact RAG v2 OpenAPI transition.")
     parser.add_argument("--openapi", type=Path, default=OPENAPI_PATH)
     parser.add_argument("--additive", type=Path, default=ADDITIVE_PATH)
     arguments = parser.parse_args()
     try:
         verify_transition(arguments.openapi, arguments.additive)
     except (ContractValidationError, OSError) as error:
-        print(f"P1 V91 OpenAPI transition failed: {error}")
+        print(f"P1 RAG v2 OpenAPI transition failed: {error}")
         return 1
-    print("P1_V91_AUTOMATION_OPENAPI_TRANSITION=PASS")
+    print("P1_RAG_V2_OPENAPI_TRANSITION=PASS")
     return 0
 
 

@@ -16,6 +16,7 @@ import com.capstone.decision.application.rag.RagV2VertexPreparation
 import com.capstone.decision.application.rag.RagValidationException
 import com.capstone.decision.application.security.AppPrincipal
 import io.swagger.v3.oas.annotations.Hidden
+import io.swagger.v3.oas.annotations.Operation
 import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataAccessException
@@ -33,13 +34,17 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.bind.annotation.RestControllerAdvice
 
+/**
+ * v2 RAG 표면 가운데 대시보드가 쓰는 일곱 operation만 public OpenAPI에 노출한다.
+ * owner 문서 import/delete ticket과 Vertex 준비는 아직 배포 가능한 기능이 아니므로 계속 숨긴다.
+ */
 @RestController
-@Hidden
 @RequestMapping("/api/v2/rag", produces = [MediaType.APPLICATION_JSON_VALUE])
 class RagV2Controller(
     private val parser: RagRequestParser,
     private val service: RagV2RuntimeService,
 ) {
+    @Operation(operationId = "ragV2CorpusStatus")
     @GetMapping("/corpus-status")
     fun corpusStatus(
         @AuthenticationPrincipal principal: AppPrincipal,
@@ -52,6 +57,7 @@ class RagV2Controller(
     /**
      * external processor consent의 effective 상태는 authenticated owner 자신의 immutable event만 해석한다.
      */
+    @Operation(operationId = "ragV2EffectiveConsent")
     @GetMapping("/consent")
     fun effectiveConsent(
         @AuthenticationPrincipal principal: AppPrincipal,
@@ -64,6 +70,7 @@ class RagV2Controller(
     /**
      * consent event identity는 body가 아니라 서버가 만들며, raw provider 또는 owner document를 받지 않는다.
      */
+    @Operation(operationId = "ragV2RecordExternalConsent")
     @PostMapping("/consents", consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun recordExternalConsent(
         @AuthenticationPrincipal principal: AppPrincipal,
@@ -79,6 +86,7 @@ class RagV2Controller(
      * 단회 ticket은 owner-local parse capability로만 반환하며 DB에는 SHA-256 hash만 남긴다.
      */
     @PostMapping("/import-tickets", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    @Hidden
     fun issueImportTicket(
         @AuthenticationPrincipal principal: AppPrincipal,
         @RequestBody(required = false) body: String?,
@@ -96,6 +104,7 @@ class RagV2Controller(
      * raw path, delete reason, admin credential 또는 caller-supplied owner ID는 HTTP surface에 없다.
      */
     @PostMapping("/delete-tickets", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    @Hidden
     fun issueDeleteTicket(
         @AuthenticationPrincipal principal: AppPrincipal,
         @RequestBody(required = false) body: String?,
@@ -112,6 +121,7 @@ class RagV2Controller(
      * resume할 수 있다.
      */
     @PostMapping("/vertex-preparations", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    @Hidden
     fun prepareVertexGeneration(
         @AuthenticationPrincipal principal: AppPrincipal,
         @RequestBody(required = false) body: String?,
@@ -127,6 +137,7 @@ class RagV2Controller(
         return ResponseEntity.status(HttpStatus.CREATED).body(preparation)
     }
 
+    @Operation(operationId = "ragV2Ask")
     @PostMapping("/ask", consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun ask(
         @AuthenticationPrincipal principal: AppPrincipal,
@@ -150,6 +161,7 @@ class RagV2Controller(
         )
     }
 
+    @Operation(operationId = "ragV2ListHistory")
     @GetMapping("/history")
     fun listHistory(
         @AuthenticationPrincipal principal: AppPrincipal,
@@ -163,6 +175,7 @@ class RagV2Controller(
         )
     }
 
+    @Operation(operationId = "ragV2GetHistory")
     @GetMapping("/history/{answerId}")
     fun getHistory(
         @AuthenticationPrincipal principal: AppPrincipal,
@@ -176,6 +189,7 @@ class RagV2Controller(
         )
     }
 
+    @Operation(operationId = "ragV2DeleteHistory")
     @DeleteMapping("/history/{answerId}")
     fun deleteHistory(
         @AuthenticationPrincipal principal: AppPrincipal,

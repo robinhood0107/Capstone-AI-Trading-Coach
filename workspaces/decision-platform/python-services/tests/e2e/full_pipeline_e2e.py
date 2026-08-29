@@ -314,6 +314,9 @@ _SNAPSHOT_TABLES: Final[tuple[tuple[str, str], ...]] = (
     ("automation_runs", "run_id"),
     ("orders", "order_id"),
     ("decisions", "decision_id"),
+    # 판단 멱등 결과를 남기면 다음 실행이 이미 지운 판단을 재생해 온다. 그러면 체크포인트가
+    # "exact Decision intent mismatch"로 닫히는데, 원인이 제품이 아니라 정리 누락이다.
+    ("decision_idempotency_results", "idempotency_result_id"),
     ("automation_positions", "position_id"),
     ("automation_account_lineage", "lineage_id"),
     ("automation_runtime_events", "event_id"),
@@ -369,6 +372,8 @@ def cleanup(before: dict[str, list[str]], recorder: Recorder) -> None:
         "delete from public.automation_activation_gate where true;",
         # 주문과 판단
         f"delete from public.orders where order_id not in ({_quoted(before['orders'])});",
+        "delete from public.decision_idempotency_results where idempotency_result_id not in "
+        f"({_quoted(before['decision_idempotency_results'])});",
         f"delete from public.decisions where decision_id not in ({_quoted(before['decisions'])});",
         # Team B 흔적. REAL_TEAM_B 표식을 남기지 않는 것이 이 절의 목적이다.
         "delete from public.artifact_ingest_projection where artifact_id not in "

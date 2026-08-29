@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Any, Protocol, cast
 from zoneinfo import ZoneInfo
@@ -96,23 +97,80 @@ class ExecutionSourcePort(Protocol):
 
 
 class SpringAutomationBridgeClient:
-    """numeric loopback와 per-install secret에 고정된 retry-0 internal Spring client다."""
+    """numeric loopback와 per-install secret에 고정된 retry-0 internal Spring client다.
+
+    shared secret은 이 다리가 loopback runtime의 것임을 증명할 뿐, 소유자를 증명하지 않는다.
+    bridge 뒤의 brokerage·decision 서비스는 `AuthenticatedActorRef.current()`로 actor capability를
+    발급하므로 인증된 소유자 세션이 없으면 모든 명령이 닫힌다. 그래서 다른 클라이언트와 똑같이
+    소유자로 로그인해 access token을 붙인다. capability 사슬을 우회하지 않는다.
+
+    token은 만료되므로 401을 만나면 한 번만 다시 로그인하고 재시도한다. 그 이상은 재시도하지
+    않는다 — 주문 경로의 retry-0 경계를 지켜야 한다.
+    """
 
     def __init__(
         self,
         shared_secret: str,
         *,
         transport: httpx.BaseTransport | None = None,
+        owner_username: str | None = None,
+        owner_password: str | None = None,
     ) -> None:
         if _SECRET.fullmatch(shared_secret) is None:
             raise AutomationRuntimeError("AUTOMATION_BRIDGE_SECRET_INVALID")
         self._secret = shared_secret
+        self._owner_username = (
+            owner_username
+            if owner_username is not None
+            else os.environ.get("P1_AUTOMATION_OWNER_USERNAME", "").strip()
+        )
+        self._owner_password = (
+            owner_password
+            if owner_password is not None
+            else os.environ.get("P1_AUTOMATION_OWNER_PASSWORD", "").strip()
+        )
+        self._access_token: str | None = None
         self._client = httpx.Client(
             base_url="http://127.0.0.1:8080",
             transport=transport or httpx.HTTPTransport(retries=0),
             timeout=2.0,
             follow_redirects=False,
             trust_env=False,
+        )
+
+    def _login(self) -> str:
+        """소유자 세션을 한 번 연다. 자격이 없으면 명령을 시작하지 않는다."""
+
+        if not self._owner_username or not self._owner_password:
+            raise AutomationRuntimeError("AUTOMATION_BRIDGE_OWNER_CREDENTIAL_MISSING")
+        response = self._client.post(
+            "/api/v1/auth/login",
+            content=canonical_json_bytes(
+                {"password": self._owner_password, "username": self._owner_username}
+            ),
+            headers={"Content-Type": "application/json"},
+        )
+        if response.status_code != 200 or len(response.content) > 64 * 1024:
+            raise AutomationRuntimeError("AUTOMATION_BRIDGE_OWNER_LOGIN_FAILED")
+        try:
+            parsed = response.json()
+        except json.JSONDecodeError as error:
+            raise AutomationRuntimeError("AUTOMATION_BRIDGE_OWNER_LOGIN_FAILED") from error
+        token = (parsed.get("data") or {}).get("accessToken") if isinstance(parsed, dict) else None
+        if not isinstance(token, str) or not token:
+            raise AutomationRuntimeError("AUTOMATION_BRIDGE_OWNER_LOGIN_FAILED")
+        self._access_token = token
+        return token
+
+    def _post_command(self, body: Mapping[str, object], token: str) -> httpx.Response:
+        return self._client.post(
+            "/internal/automation-runtime/command",
+            content=canonical_json_bytes(body),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "X-Automation-Runtime-Auth": self._secret,
+            },
         )
 
     def command(
@@ -129,14 +187,12 @@ class SpringAutomationBridgeClient:
             "payload": payload,
             "userId": user_id,
         }
-        response = self._client.post(
-            "/internal/automation-runtime/command",
-            content=canonical_json_bytes(body),
-            headers={
-                "Content-Type": "application/json",
-                "X-Automation-Runtime-Auth": self._secret,
-            },
-        )
+        token = self._access_token or self._login()
+        response = self._post_command(body, token)
+        if response.status_code == 401:
+            # 만료된 세션은 한 번만 다시 연다. 같은 idempotency key로 다시 보내므로 중복 주문이
+            # 생기지 않는다.
+            response = self._post_command(body, self._login())
         if response.status_code != 200 or len(response.content) > 64 * 1024:
             raise AutomationRuntimeError("AUTOMATION_BRIDGE_FAILED")
         try:

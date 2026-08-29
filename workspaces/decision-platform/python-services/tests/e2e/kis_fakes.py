@@ -132,15 +132,18 @@ class LedgerQuoteSource:
 
 
 class LedgerExecutionSource:
-    """브로커가 실제로 기록한 주문을 읽어 그대로 전량 체결시킨다.
+    """런타임이 실제로 예약한 주문을 그대로 전량 체결시킨다.
 
-    주문의 종목·방향·수량·가격을 테스트가 미리 정하지 않고 `public.orders`에서 읽는다. 파이프라인이
-    실제로 낸 주문과 체결이 어긋날 수 없게 하기 위해서다. 읽기 전용 조회 한 번뿐이다.
+    주문의 종목·방향·수량·가격을 테스트가 미리 정하지 않고 런타임 상태의 예약에서 읽는다.
+    파이프라인이 실제로 낸 주문과 체결이 어긋날 수 없게 하기 위해서다.
+
+    `public.orders`를 직접 읽지 않는다. 그 표는 `decision_app`의 것이고 automation runtime role은
+    권한이 없다. 예약은 런타임이 자기 상태로 이미 읽고 있으므로 그 값을 넘겨받는다.
     """
 
-    def __init__(self, ledger: AccountLedger, *, connect: Callable[[], Any]) -> None:
+    def __init__(self, ledger: AccountLedger, *, reservation: Callable[[], Any]) -> None:
         self._ledger = ledger
-        self._connect = connect
+        self._reservation = reservation
         self._seen: dict[str, SubmittedOrder] = {}
         self.balance_calls = 0
         self.read_calls = 0
@@ -153,17 +156,16 @@ class LedgerExecutionSource:
         cached = self._seen.get(order_id)
         if cached is not None:
             return cached
-        with self._connect() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                "select symbol, side, quantity, submitted_price_krw from public.orders"
-                " where order_id = %s",
-                (order_id,),
-            )
-            row = cursor.fetchone()
-        if row is None:
+        reserved = self._reservation()
+        if not isinstance(reserved, dict) or reserved.get("orderId") != order_id:
             return None
-        symbol, side, quantity, price = row
-        order = SubmittedOrder(order_id, str(symbol), str(side), int(quantity), int(price))
+        order = SubmittedOrder(
+            order_id,
+            str(reserved["symbol"]),
+            str(reserved["side"]),
+            int(reserved["quantity"]),
+            int(reserved["limitPriceKrw"]),
+        )
         self._seen[order_id] = order
         return order
 

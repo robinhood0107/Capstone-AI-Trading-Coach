@@ -24,7 +24,6 @@ import sys
 from datetime import date, datetime, time
 from typing import Any, Final
 
-import psycopg
 
 from app.p1_owner.automation_runtime import (
     PersistentAutomationRunner,
@@ -70,6 +69,35 @@ INITIAL_CASH_KRW: Final = 100_000_000
 
 class DriverError(RuntimeError):
     """드라이버가 계약을 만족하지 못했다."""
+
+
+class RecordingBridgeClient(SpringAutomationBridgeClient):
+    """bridge 응답의 상태 코드만 기록한다. 요청·응답 본문은 남기지 않는다.
+
+    `command()`는 실패를 `AUTOMATION_BRIDGE_FAILED` 하나로 접기 때문에 어느 명령이 어떤 상태로
+    닫혔는지 알 수 없다. 판정표에 그 한 줄을 남기려고 상태 코드만 붙잡는다.
+    """
+
+    def __init__(self, shared_secret: str) -> None:
+        super().__init__(shared_secret)
+        self.statuses: list[str] = []
+        self._operation = "?"
+
+    def command(
+        self,
+        operation: str,
+        user_id: str,
+        payload: dict[str, object],
+        *,
+        idempotency_key: str | None = None,
+    ) -> Any:
+        self._operation = operation
+        return super().command(operation, user_id, payload, idempotency_key=idempotency_key)
+
+    def _post_command(self, body: Any, token: str) -> Any:
+        response = super()._post_command(body, token)
+        self.statuses.append(f"{self._operation}={response.status_code}")
+        return response
 
 
 def _require_opt_in() -> None:
@@ -159,13 +187,16 @@ def _drive(args: argparse.Namespace) -> int:
     )
     quote_source = LedgerQuoteSource(FIXTURE_PRICES)
     execution_source = LedgerExecutionSource(
-        ledger, connect=lambda: psycopg.connect(dsn, connect_timeout=5)
+        ledger,
+        # 예약은 런타임 상태에 이미 있다. `orders`를 직접 읽으면 runtime role 권한에 막힌다.
+        reservation=lambda: repository.read_state(claim).get("reservation"),
     )
     state = repository.read_state(claim)
+    bridge = RecordingBridgeClient(secret)
     port = LiveAutomationPort(
         claim,
         state,
-        SpringAutomationBridgeClient(secret),
+        bridge,
         quote_source,
         execution_source,
         FailClosedVertexVetoTransport(),
@@ -193,6 +224,23 @@ def _drive(args: argparse.Namespace) -> int:
             if str(result["state"]) in _TERMINAL:
                 break
         else:
+            # 어디서 맴돌았는지가 원인이므로 전이 이력을 먼저 남기고 실패시킨다.
+            _emit(
+                {
+                    "phase": "drive",
+                    "sessionDate": args.session,
+                    "claimed": True,
+                    "runId": claim.run_id,
+                    "finalState": transitions[-1],
+                    "transitions": transitions,
+                    "orderId": port.order_id,
+                    "decisionId": port.decision_id,
+                    "physicalCalls": port.physical_calls,
+                    "submitCalls": port.submit_calls,
+                    "bridgeStatuses": bridge.statuses,
+                    "error": "the run did not reach a terminal state within the tick budget",
+                }
+            )
             raise DriverError("the run did not reach a terminal state within the tick budget")
     finally:
         port.close()
@@ -222,6 +270,7 @@ def _drive(args: argparse.Namespace) -> int:
             "physicalCalls": port.physical_calls,
             "submitCalls": port.submit_calls,
             "quoteCalls": quote_source.calls,
+            "bridgeStatuses": bridge.statuses,
             "ledgerCashKrw": ledger.cash_krw,
             "ledgerPositions": dict(sorted(ledger.positions.items())),
             "filledOrders": [

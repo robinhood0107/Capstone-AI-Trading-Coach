@@ -33,7 +33,7 @@ import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
@@ -54,6 +54,8 @@ _SEED_SOURCE: Final = "P1_E2E_FIXTURE"
 # 드라이버의 `container_driver.INITIAL_CASH_KRW`와 같은 값이어야 bridge의 매수가능 판정과
 # 원장이 같은 계좌를 말한다.
 INITIAL_CASH_KRW: Final = 100_000_000
+# 드라이버의 FIXTURE_PRICES와 같은 값이어야 위험 판정과 주문 산정이 같은 시세를 본다.
+_FIXTURE_PRICES: Final[dict[str, int]] = {"005930": 70_000, "000660": 180_000}
 
 
 class PipelineError(RuntimeError):
@@ -98,8 +100,9 @@ def _run(command: list[str], *, stdin: str | None = None, env: dict[str, str] | 
         env=merged,
     )
     if result.returncode != 0:
+        # 인자에 값이 실릴 수 있으므로 실패 메시지에는 명령 이름만 남긴다.
         raise PipelineError(
-            f"command failed ({result.returncode}): {' '.join(command[:4])}…\n"
+            f"command failed ({result.returncode}): {Path(command[0]).name} {command[1] if len(command) > 1 else ''}…\n"
             f"{result.stdout.strip()[-4000:]}\n{result.stderr.strip()[-4000:]}"
         )
     return result.stdout
@@ -268,14 +271,18 @@ class Api:
         self._base = base_url.rstrip("/")
         self._token: str | None = None
 
-    def login(self) -> None:
-        password = (_STATE / "secrets/demo-user.password").read_text(encoding="utf-8").strip()
+    @property
+    def base_url(self) -> str:
+        return self._base
+
+    def login(self, username: str = "demo-user") -> None:
+        password = (_STATE / f"secrets/{username}.password").read_text(encoding="utf-8").strip()
         status, payload = self.request(
-            "POST", "/api/v1/auth/login", {"username": "demo-user", "password": password}
+            "POST", "/api/v1/auth/login", {"username": username, "password": password}
         )
         token = (payload.get("data") or {}).get("accessToken")
         if status != 200 or not isinstance(token, str) or not token:
-            raise PipelineError(f"demo login failed: HTTP {status}")
+            raise PipelineError(f"{username} login failed: HTTP {status}")
         self._token = token
 
     def request(
@@ -326,6 +333,11 @@ _SNAPSHOT_TABLES: Final[tuple[tuple[str, str], ...]] = (
     ("automation_policy_versions", "policy_id || '|' || version"),
     ("trading_sessions", "session_date::text"),
     ("market_data_manifests", "manifest_sha256"),
+    # 수집 writer가 남기는 관측도 테스트가 만든 것만 되돌린다.
+    ("market_quote_observations", "observation_id"),
+    ("deterministic_risk_observations", "observation_id"),
+    ("daily_order_count_observations", "observation_id"),
+    ("portfolio_balance_observations", "observation_id"),
     ("dashboard_artifact_views", "artifact_id"),
     ("artifact_ingest_projection", "artifact_id"),
 )
@@ -388,6 +400,16 @@ def cleanup(before: dict[str, list[str]], recorder: Recorder) -> None:
         f"delete from public.trading_sessions where chosen_source_id = '{_SEED_SOURCE}';",
         "delete from public.market_data_manifests where manifest_sha256 not in "
         f"({_quoted(before['market_data_manifests'])});",
+        "delete from public.portfolio_position_observations where balance_observation_id not in "
+        f"({_quoted(before['portfolio_balance_observations'])});",
+        "delete from public.portfolio_balance_observations where observation_id not in "
+        f"({_quoted(before['portfolio_balance_observations'])});",
+        "delete from public.market_quote_observations where observation_id not in "
+        f"({_quoted(before['market_quote_observations'])});",
+        "delete from public.deterministic_risk_observations where observation_id not in "
+        f"({_quoted(before['deterministic_risk_observations'])});",
+        "delete from public.daily_order_count_observations where observation_id not in "
+        f"({_quoted(before['daily_order_count_observations'])});",
         # 정책 버전은 append-only다. 테스트가 만든 버전만 지운다.
         "delete from public.automation_policy_versions where policy_id || '|' || version not in "
         f"({_quoted(before['automation_policy_versions'])});",
@@ -483,6 +505,211 @@ def seed_market_data(sessions: list[date]) -> str:
         )
         previous = daily_sha
     return seed_sha
+
+
+def quiesce_rival_portfolio_contexts() -> list[str]:
+    """자동운용 계좌 하나만 ACTIVE로 남긴다. 되돌릴 수 있게 대상 id를 돌려준다.
+
+    `JdbcPortfolioContextAdapter`는 KIS_MOCK ACTIVE 잔고 관측이 둘 이상이면 어느 계좌인지 고르지
+    않고 `CONFLICT`로 닫는다. 그러면 RiskEngine의 지표가 하나도 조립되지 않아 모든 판단이 HOLD가
+    된다 — 개별 원천이 비어서가 아니다.
+
+    이 DB에는 Team A acceptance seed가 남긴 다른 scope의 관측이 함께 ACTIVE라 그 상태다. 지우지
+    않고 `INACTIVE`로 내렸다가 정리에서 되돌린다.
+    """
+
+    scope_prefix = _ACCOUNT[5:]
+    rivals = [
+        line
+        for line in _psql(
+            "select observation_id from public.portfolio_balance_observations"
+            f" where owner_user_id = '{_OWNER}' and source = 'KIS_MOCK'"
+            " and context_status = 'ACTIVE'"
+            f" and account_scope_hash not like '{scope_prefix}%';"
+        ).splitlines()
+        if line
+    ]
+    if rivals:
+        _psql(
+            "update public.portfolio_balance_observations set context_status = 'INACTIVE'"
+            f" where observation_id in ({_quoted(rivals)});"
+        )
+    return rivals
+
+
+def restore_portfolio_contexts(observation_ids: list[str]) -> None:
+    if not observation_ids:
+        return
+    _psql(
+        "update public.portfolio_balance_observations set context_status = 'ACTIVE'"
+        f" where observation_id in ({_quoted(observation_ids)});"
+    )
+
+
+def _secret_value(file_name: str, key: str) -> str:
+    """로컬 secret 파일에서 값을 읽는다. 값은 프로세스 밖으로 나가지 않는다."""
+
+    for line in (_STATE / "secrets" / file_name).read_text(encoding="utf-8").splitlines():
+        name, _, value = line.partition("=")
+        if name == key:
+            return value.strip()
+    raise PipelineError(f"{key} is unavailable in {file_name}")
+
+
+def seed_risk_metrics(
+    *, cash_krw: int = INITIAL_CASH_KRW, positions: dict[str, int] | None = None
+) -> str:
+    """RiskEngine 지표를 production 오프라인 수집 writer로 적재한다.
+
+    체결 뒤에는 다시 호출한다. 잔고 관측은 KIS를 다시 폴링해야 갱신되는 축이고, 자동운용
+    런타임은 그 표를 쓰지 않는다. 갱신하지 않으면 매도 세션의 `asset_weight`가 보유수량을
+    찾지 못해 `BROKERAGE_UNAVAILABLE`로 닫힌다.
+
+    직접 INSERT 하지 않는다. `app.decision_source_cli`의 writer가 fixture를 검증하고 정해진 표에만
+    append하며, 그 DSN이 쓸 수 있는 표까지 스스로 확인한다. 즉 이 단계가 태우는 것은 수집 계층의
+    오프라인 경로 그대로이고, 테스트가 만드는 것은 그 입력 fixture뿐이다.
+
+    시각을 지금으로 두는 이유는 판단이 실제 시각에 이뤄지기 때문이다. 관측이 오래되면
+    `SOURCE_STALE`로 닫혀 HOLD가 된다. 값 자체는 fixture이며 실측이라고 주장하지 않는다.
+    """
+
+    now = datetime.now(UTC)
+    observed = (now - timedelta(seconds=30)).isoformat().replace("+00:00", "Z")
+    received = (now - timedelta(seconds=29)).isoformat().replace("+00:00", "Z")
+    trading_date = (now + timedelta(hours=9)).date().isoformat()
+    quote = {
+        "observedAt": observed,
+        "quotes": [
+            {
+                "askKrw": price,
+                "bidKrw": price - 100,
+                "completeness": "COMPLETE",
+                "previousCloseKrw": price - 100,
+                "priceKrw": price,
+                "symbol": symbol,
+            }
+            for symbol, price in sorted(_FIXTURE_PRICES.items())
+        ],
+        "receivedAt": received,
+        "schemaVersion": "market-quote-observation.v1",
+        "sourceVersion": "p1-e2e-pipeline-quote-fixture",
+    }
+    metrics = {
+        "dailyOrderCount": {
+            "completeness": "COMPLETE",
+            # 계약이 `coveredThrough <= observedAt`을 요구한다.
+            "coveredThrough": observed,
+            "observedAt": observed,
+            "orderCount": 0,
+            "receivedAt": received,
+            "tradingDate": trading_date,
+        },
+        "ownerScopeHash": "a" * 32 + "0" * 32,
+        "ownerUserId": _OWNER,
+        "portfolioSource": "KIS_MOCK",
+        "risk": {
+            "annualizedVolatility": "0.1800",
+            "completeness": "COMPLETE",
+            "dailyLossRate": "-0.0020",
+            "maxDrawdown": "-0.0150",
+            "observedAt": observed,
+            "receivedAt": received,
+        },
+        "schemaVersion": "decision-deterministic-observation.v1",
+        "sourceVersion": "p1-e2e-pipeline-metric-fixture",
+    }
+
+    # 잔고도 지금 시각으로 다시 관측한다. 재생본(2026-08-28)은 그대로 두지만 하루가 지나
+    # `BALANCE_STALE`이라 위험 판정이 닫힌다. 같은 계좌 scope로 최신 관측을 하나 더 넣으면
+    # `latest_portfolio_balance_observations`가 DISTINCT ON으로 최신만 고르므로 컨텍스트는 여전히
+    # 하나다. `sourceVersion`은 arm 게이트가 요구하는 값을 그대로 쓴다.
+    held = dict(sorted((positions or {}).items()))
+    observed_positions: list[dict[str, Any]] = [
+        {
+            "isGoldEtfEtn": False,
+            "marketValueKrw": quantity * _FIXTURE_PRICES[symbol],
+            "quantity": quantity,
+            "symbol": symbol,
+        }
+        for symbol, quantity in held.items()
+    ]
+    market_value_total = sum(
+        quantity * _FIXTURE_PRICES[symbol] for symbol, quantity in held.items()
+    )
+    balance = {
+        "cashKrw": cash_krw,
+        "completeness": "COMPLETE",
+        "marginRequirementKrw": 0,
+        "observedAt": observed,
+        "ownerScopeHash": _ACCOUNT[5:] + "0" * 32,
+        "ownerUserId": _OWNER,
+        "portfolioEquityKrw": cash_krw + market_value_total,
+        "positions": observed_positions,
+        "receivedAt": received,
+        "schemaVersion": "2",
+        "sourceVersion": "kis-mock-online-complete-v2",
+    }
+
+    outcomes: list[str] = []
+    for entry, payload, key_file, key_name, role, dsn_name, script in (
+        (
+            "market_quote",
+            quote,
+            "postgres.env",
+            "POSTGRES_MARKET_WRITER_PASSWORD",
+            "decision_market_writer",
+            "DECISION_MARKET_WRITER_DATABASE_DSN",
+            "app.decision_source_cli:market_quote_main",
+        ),
+        (
+            "kis_mock_portfolio",
+            balance,
+            "postgres.env",
+            "POSTGRES_PORTFOLIO_WRITER_PASSWORD",
+            "decision_portfolio_writer",
+            "DECISION_PORTFOLIO_WRITER_DATABASE_DSN",
+            "app.decision_source_cli:kis_mock_portfolio_main",
+        ),
+        (
+            "deterministic_metrics",
+            metrics,
+            "postgres.env",
+            "POSTGRES_RISK_WRITER_PASSWORD",
+            "decision_risk_writer",
+            "DECISION_RISK_WRITER_DATABASE_DSN",
+            "app.decision_source_cli:deterministic_metrics_main",
+        ),
+    ):
+        remote = f"/tmp/e2e-{entry}.json"
+        _run(
+            [_DOCKER, "exec", "-i", _PLATFORM, "sh", "-c", f"cat > {remote}"],
+            stdin=json.dumps(payload, ensure_ascii=False, sort_keys=True),
+        )
+        module, _, function = script.partition(":")
+        dsn = (
+            f"postgresql://{role}:{_secret_value(key_file, key_name)}"
+            "@postgres:5432/capstone_p1?sslmode=disable"
+        )
+        # DSN을 argv나 `-e`로 넘기지 않는다. 그러면 `ps`와 `docker inspect`, 그리고 실패 메시지에
+        # 비밀번호가 남는다. stdin으로 한 줄만 흘려 넣고 컨테이너 안에서 환경변수로 세운다.
+        outcomes.append(
+            _run(
+                [
+                    _DOCKER,
+                    "exec",
+                    "-i",
+                    _PLATFORM,
+                    "sh",
+                    "-c",
+                    f'IFS= read -r dsn; export {dsn_name}="$dsn"; '
+                    "export DECISION_SOURCE_WRITER_OFFLINE_TARGET=offline; "
+                    f"exec python -W ignore -c \"import sys;sys.argv=['{entry}','{remote}'];"
+                    f'import {module} as m;m.{function}()"',
+                ],
+                stdin=dsn + "\n",
+            ).strip()
+        )
+    return " ".join(outcomes)
 
 
 def xkrx_sessions(count: int) -> list[date]:
@@ -601,11 +828,14 @@ def assert_pipeline(
     positions = _psql(
         "select symbol || '|' || status || '|entry' || coalesce(entry_average_fill_price_krw::text,'-')"
         " || '|exit' || coalesce(exit_average_fill_price_krw::text,'-')"
-        " || '|pnl' || coalesce(realized_pnl_krw::text,'-') || '|' || coalesce(exit_reason,'-')"
+        # 실현손익은 음수일 수 있다. 빈 값의 표식을 '-'로 두면 음수 부호와 구분되지 않는다.
+        " || '|pnl=' || coalesce(realized_pnl_krw::text,'none') || '|' || coalesce(exit_reason,'-')"
         " from public.automation_positions where user_id = '" + _OWNER + "'"
-        " order by opened_session_date desc limit 3;"
+        " order by entry_session desc, created_at desc limit 3;"
     )
-    closed = [line for line in positions.splitlines() if "|CLOSED|" in line and "|pnl-" not in line]
+    closed = [
+        line for line in positions.splitlines() if "|CLOSED|" in line and "|pnl=none|" not in line
+    ]
     recorder.add(
         "포지션 개설·청산과 실현손익",
         "PASS" if closed else "FAIL",
@@ -637,7 +867,11 @@ def assert_pipeline(
     )
 
     signal_code, signal_body = api.request("GET", "/api/v2/signals/005930")
-    ingest_code, ingest_body = api.request("GET", "/api/v1/artifacts/ingest-status")
+    # 적재 상태는 설계상 ADMIN 전용이다(SecurityConfig와 `@PreAuthorize` 양쪽에서 고정). 소유자
+    # 토큰으로 부르면 403이 정상이므로 관리자 세션을 따로 열어 확인한다.
+    admin = Api(api.base_url)
+    admin.login("demo-admin")
+    ingest_code, ingest_body = admin.request("GET", "/api/v1/artifacts/ingest-status")
     recorder.add(
         "상류 노출 (신호·적재 상태)",
         "PASS" if signal_code == 200 and ingest_code == 200 else "FAIL",
@@ -669,6 +903,7 @@ def main(argv: list[str]) -> int:
     )
 
     platform_switched = False
+    quiesced: list[str] = []
     try:
         # Spring의 brokerage 어댑터를 켠다. 그 포트에는 테스트가 세운 오프라인 서버가 응답하고,
         # 실제 KIS를 부르는 production brokerage 서버는 계속 꺼져 있다.
@@ -719,6 +954,21 @@ def main(argv: list[str]) -> int:
             "시장데이터 매니페스트 씨딩",
             "PASS",
             f"SEED 1 + DAILY {len(sessions)} (체인 가드 순서 준수)",
+        )
+
+        metrics = seed_risk_metrics()
+        recorder.add(
+            "위험 지표 수집 (오프라인 writer)",
+            "PASS",
+            f"{metrics} — 시세와 결정론 지표를 production writer로 적재",
+        )
+
+        quiesced = quiesce_rival_portfolio_contexts()
+        recorder.add(
+            "포트폴리오 컨텍스트 단일화",
+            "PASS",
+            f"다른 scope의 ACTIVE 관측 {len(quiesced)}건을 INACTIVE로 내림 "
+            "(둘 이상이면 RiskEngine이 CONFLICT로 전 지표를 닫는다). 정리에서 되돌린다",
         )
 
         imported = _driver(
@@ -839,6 +1089,22 @@ def main(argv: list[str]) -> int:
             f"cash={first.get('ledgerCashKrw')} pos={first.get('ledgerPositions')}",
         )
 
+        # 체결 뒤 잔고를 다시 관측한다. 실제 배포에서는 수집기가 KIS를 다시 폴링하는 지점이고,
+        # 여기서는 같은 오프라인 writer에 체결 후 원장을 넣는다.
+        refreshed = seed_risk_metrics(
+            cash_krw=int(first.get("ledgerCashKrw") or INITIAL_CASH_KRW),
+            positions={
+                str(symbol): int(quantity)
+                for symbol, quantity in (first.get("ledgerPositions") or {}).items()
+            },
+        )
+        recorder.add(
+            "체결 후 잔고 재관측",
+            "PASS",
+            f"{refreshed} — 매수 체결분을 반영한 관측이 없으면 매도 판단이 "
+            "BROKERAGE_UNAVAILABLE로 닫힌다",
+        )
+
         imported_sell = _driver(
             "import-bundle",
             "--session",
@@ -880,6 +1146,7 @@ def main(argv: list[str]) -> int:
     except PipelineError as error:
         recorder.add("관통 중단", "FAIL", str(error))
     finally:
+        restore_portfolio_contexts(quiesced)
         _stop_offline_brokerage()
         if platform_switched and not args.keep:
             # brokerage 어댑터를 끈 기본 구성으로 되돌린다. 테스트가 스택 설정을 남기지 않는다.

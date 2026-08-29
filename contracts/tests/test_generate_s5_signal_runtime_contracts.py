@@ -162,7 +162,8 @@ class S5SignalRuntimeContractTest(unittest.TestCase):
                 ContractValidationError,
                 "additive OpenAPI fragment drifted"
                 "|exact Automation/Journal addition"
-                "|approved exact-five V91 addition",
+                "|approved exact-five V91 addition"
+                "|approved exact-seven RAG v2 addition",
             ):
                 verify_openapi_transition(path)
 

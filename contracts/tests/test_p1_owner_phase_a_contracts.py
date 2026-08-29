@@ -167,6 +167,22 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
             for method in path_item
             if method != "parameters"
         }
+        self.assertEqual(68, len(root_operations))
+        # RAG v2 공개 표면 일곱 개는 이 검사의 대상이 아니다. 먼저 덜어 내고 exact-61을 본다.
+        rag_v2_additive = json.loads(
+            (ROOT / "contracts/openapi/p1-rag-v2-public.v1.openapi.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        rag_v2_operations = {
+            (path, method)
+            for path, path_item in rag_v2_additive["paths"].items()
+            for method in path_item
+            if method != "parameters"
+        }
+        self.assertEqual(7, len(rag_v2_operations))
+        self.assertTrue(rag_v2_operations <= root_operations)
+        root_operations -= rag_v2_operations
         self.assertEqual(61, len(root_operations))
 
         v2_additive = json.loads(

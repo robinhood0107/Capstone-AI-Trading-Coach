@@ -8,7 +8,7 @@
 
 작업 범위는 `workspaces/experience-dashboard/` 안쪽뿐입니다. 기존 source, component, route, test와 `package-lock.json`은 그대로 재사용해 주세요. 전면 재작성은 필요 없습니다.
 
-백엔드는 제가 exact-61 operation까지 올려 뒀고, same-origin `/api` acceptance는 38개로 고정했습니다. Seed와 reset, typed client도 준비돼 있으니 복사하거나 우회하지 말고 그대로 쓰시면 됩니다.
+백엔드는 제가 exact-68 operation까지 올려 뒀고, same-origin `/api` acceptance는 38개로 고정했습니다. Seed와 reset, typed client도 준비돼 있으니 복사하거나 우회하지 말고 그대로 쓰시면 됩니다.
 
 API 목록은 문서에 다시 적지 않았습니다. 아래 두 곳만 보시면 됩니다.
 
@@ -68,7 +68,7 @@ AI로 뽑은 시안은 대체로 같은 얼굴을 하고 있습니다. 보라색
 
 ## API는 이만큼만
 
-화면에서 쓸 operation은 [p1-team-a-acceptance.v2 catalog](../../contracts/catalogs/p1-team-a-acceptance.v2.json)의 38개로 고정입니다. 여기 없는 operation은 백엔드에 있어도 호출하지 말아 주세요. root에 61개가 있지만 나머지는 Owner 운영용이라 화면에서 부르면 권한에서 막히거나 의미 없는 응답이 옵니다.
+화면에서 쓸 operation은 [p1-team-a-acceptance.v2 catalog](../../contracts/catalogs/p1-team-a-acceptance.v2.json)의 38개로 고정입니다. 여기 없는 operation은 백엔드에 있어도 호출하지 말아 주세요. root에 68개가 있지만 나머지는 Owner 운영용이거나 RAG 화면 전용이라 화면에서 부르면 권한에서 막히거나 의미 없는 응답이 옵니다.
 
 화면 하나가 쓰는 operation 수도 최소로 가 주시면 좋겠습니다. 같은 데이터를 두 화면에서 각각 부르지 말고 route 진입 시 한 번만 부른 뒤 공유하시고, 목록과 상세를 같이 부르는 대신 목록에서 넘어갈 때 상세를 부르는 쪽이 낫습니다. 폴링은 넣지 말아 주세요. status가 바뀌는 시점은 사용자가 버튼을 눌렀을 때뿐입니다.
 

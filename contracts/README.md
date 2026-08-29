@@ -32,6 +32,10 @@ uv run --frozen python contracts/validate.py
 
 ## P1 1.1.0 Automation V91 exact-61 transition
 
+> 현재 root는 RAG v2 공개 표면 일곱 개가 더해져 exact-68이다. 검증 체인은
+> 68 → 61 → 56 → 48 순서로 되돌리며, 아래 exact-61 서술은 그 체인의 중간 단계다.
+> 앞 단계는 `contracts/verify_p1_rag_v2_openapi_transition.py`가 담당한다.
+
 `catalogs/p1-automation-policy.v1.json`은 최대 5개 포지션, 세션당 신규 주문 1개, 보수 3/5·균형
 5/10·공격 8/15 preset과 세 개 사용자 입력을 고정한다. v2 status/policy/arm/runs/positions 다섯
 operation만 additive하게 추가해 root exact-61을 만들며, 제거하면 SHA

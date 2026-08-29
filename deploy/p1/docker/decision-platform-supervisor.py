@@ -66,9 +66,17 @@ def main() -> int:
             ["python", "-m", "app.p1_owner.automation_runtime"],
             close_fds=True,
         )
+    # RAG v2 실검색 프로세스. 켜져 있는데 로컬 루트나 credential이 없으면 스스로 기동에서
+    # 닫히고, 그 실패가 컨테이너 실패로 올라온다. 조용히 fixture로 되돌아가지 않는다.
+    rag_v2: subprocess.Popen[bytes] | None = None
+    if os.environ.get("RAG_V2_GRPC_ENABLED", "false").lower() == "true":
+        rag_v2 = subprocess.Popen(
+            ["python", "-m", "app.rag.rag_v2_grpc_server"],
+            close_fds=True,
+        )
     processes = tuple(
         process
-        for process in (worker, inference, spring, brokerage, automation)
+        for process in (worker, inference, spring, brokerage, automation, rag_v2)
         if process is not None
     )
     stopping = False

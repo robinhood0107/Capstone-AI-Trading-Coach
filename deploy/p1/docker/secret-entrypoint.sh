@@ -6,7 +6,7 @@ shift
 
 case "$profile" in
   spring) secret_files=/run/secrets/spring_env ;;
-  decision-platform) secret_files="/run/secrets/spring_env /run/secrets/python_env /run/secrets/kis_mock_env /run/secrets/return_inference_env /run/secrets/automation_runtime_env" ;;
+  decision-platform) secret_files="/run/secrets/spring_env /run/secrets/python_env /run/secrets/kis_mock_env /run/secrets/return_inference_env /run/secrets/automation_runtime_env /run/secrets/rag_v2_env" ;;
   automation-runtime) secret_files=/run/secrets/automation_runtime_env ;;
   automation-cli) secret_files="/run/secrets/automation_runtime_env /run/secrets/kis_mock_env" ;;
   automation-gate-author) secret_files=/run/secrets/automation_gate_author_env ;;
@@ -49,6 +49,7 @@ allowed_key() {
     spring:POSTGRES_APP_PASSWORD|spring:POSTGRES_WORKER_PASSWORD|spring:POSTGRES_AUTH_PASSWORD|spring:ACTOR_CAPABILITY_SHARED_SECRET|spring:ACTOR_CAPABILITY_PUBLIC_KEY|spring:REDIS_PASSWORD|spring:JWT_SECRET|spring:JWT_ISSUER|spring:JWT_AUDIENCE|spring:LOGIN_SCOPE_HMAC_KEY|spring:PRINCIPLE_CURSOR_HMAC_KEY|spring:DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY|spring:DECISION_GRPC_SHARED_SECRET|spring:BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY|spring:RAG_IDEMPOTENCY_SCOPE_HMAC_KEY|spring:RAG_REQUEST_FINGERPRINT_HMAC_KEY|spring:RAG_PROVIDER_USAGE_HMAC_KEY|spring:RAG_RATE_LIMIT_HMAC_KEY|spring:RAG_HISTORY_CURSOR_HMAC_KEY|spring:DEMO_CREDENTIAL_SEPARATION_KEY|spring:DEMO_USER_CREDENTIAL_BUNDLE|spring:DEMO_ADMIN_CREDENTIAL_BUNDLE|spring:ASYNC_CURSOR_HMAC_KEY|spring:ASYNC_PARTITION_HMAC_KEY|spring:ASYNC_WORKER_GRPC_SHARED_SECRET) return 0 ;;
     decision-platform:POSTGRES_APP_PASSWORD|decision-platform:POSTGRES_WORKER_PASSWORD|decision-platform:POSTGRES_AUTH_PASSWORD|decision-platform:ACTOR_CAPABILITY_SHARED_SECRET|decision-platform:ACTOR_CAPABILITY_PUBLIC_KEY|decision-platform:ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD|decision-platform:REDIS_PASSWORD|decision-platform:JWT_SECRET|decision-platform:JWT_ISSUER|decision-platform:JWT_AUDIENCE|decision-platform:LOGIN_SCOPE_HMAC_KEY|decision-platform:PRINCIPLE_CURSOR_HMAC_KEY|decision-platform:DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY|decision-platform:DECISION_GRPC_SHARED_SECRET|decision-platform:BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY|decision-platform:BROKERAGE_GRPC_SHARED_SECRET|decision-platform:RAG_IDEMPOTENCY_SCOPE_HMAC_KEY|decision-platform:RAG_REQUEST_FINGERPRINT_HMAC_KEY|decision-platform:RAG_PROVIDER_USAGE_HMAC_KEY|decision-platform:RAG_RATE_LIMIT_HMAC_KEY|decision-platform:RAG_HISTORY_CURSOR_HMAC_KEY|decision-platform:DEMO_CREDENTIAL_SEPARATION_KEY|decision-platform:DEMO_USER_CREDENTIAL_BUNDLE|decision-platform:DEMO_ADMIN_CREDENTIAL_BUNDLE|decision-platform:ASYNC_CURSOR_HMAC_KEY|decision-platform:ASYNC_PARTITION_HMAC_KEY|decision-platform:ASYNC_WORKER_GRPC_SHARED_SECRET|decision-platform:ASYNC_WORKER_DATABASE_DSN|decision-platform:KAFKA_SASL_USERNAME|decision-platform:KAFKA_SASL_PASSWORD|decision-platform:KAFKA_ENVELOPE_PUBLIC_KEY|decision-platform:POISON_RECORDER_URL|decision-platform:POISON_RECORDER_SHARED_SECRET|decision-platform:KIS_MOCK_CONFIGURED|decision-platform:KIS_MOCK_APP_KEY|decision-platform:KIS_MOCK_APP_SECRET|decision-platform:KIS_MOCK_ACCOUNT_NO|decision-platform:KIS_MOCK_BOUND_ACCOUNT_ID|decision-platform:KIS_MOCK_ORDER_REFERENCE_KEY|decision-platform:KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP|decision-platform:KIS_BROKERAGE_PHYSICAL_CAP) return 0 ;;
     decision-platform:RETURN_INFERENCE_GRPC_SHARED_SECRET) return 0 ;;
+    decision-platform:RAG_V2_QUERY_DATABASE_DSN|decision-platform:RAG_V2_VOYAGE_QUERY_WRITER_DSN|decision-platform:RAG_V2_GRPC_SHARED_SECRET|decision-platform:VOYAGE_API_KEY) return 0 ;;
     decision-platform:P1_AUTOMATION_DATABASE_DSN|decision-platform:AUTOMATION_RUNTIME_SHARED_SECRET|decision-platform:P1_AUTOMATION_OWNER_USER_ID|decision-platform:P1_AUTOMATION_OWNER_USERNAME|decision-platform:P1_AUTOMATION_OWNER_PASSWORD) return 0 ;;
     automation-runtime:P1_AUTOMATION_DATABASE_DSN|automation-runtime:AUTOMATION_RUNTIME_SHARED_SECRET|automation-runtime:P1_AUTOMATION_OWNER_USER_ID|automation-runtime:P1_AUTOMATION_OWNER_USERNAME|automation-runtime:P1_AUTOMATION_OWNER_PASSWORD) return 0 ;;
     automation-cli:P1_AUTOMATION_DATABASE_DSN|automation-cli:AUTOMATION_RUNTIME_SHARED_SECRET|automation-cli:P1_AUTOMATION_OWNER_USER_ID|automation-cli:P1_AUTOMATION_OWNER_USERNAME|automation-cli:P1_AUTOMATION_OWNER_PASSWORD|automation-cli:KIS_MOCK_CONFIGURED|automation-cli:KIS_MOCK_APP_KEY|automation-cli:KIS_MOCK_APP_SECRET|automation-cli:KIS_MOCK_ACCOUNT_NO|automation-cli:KIS_MOCK_BOUND_ACCOUNT_ID|automation-cli:KIS_MOCK_ORDER_REFERENCE_KEY|automation-cli:KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP|automation-cli:KIS_BROKERAGE_PHYSICAL_CAP) return 0 ;;
@@ -167,6 +168,39 @@ if [ "$profile" = spring ] || [ "$profile" = decision-platform ]; then
   fi
   export RAG_HISTORY_SECRET_DIRECTORY=/tmp/rag-history
   export RAG_HISTORY_CURRENT_KEK_VERSION=kek-v1
+fi
+
+if [ "$profile" = decision-platform ] && [ "${RAG_V2_GRPC_ENABLED:-false}" = true ]; then
+  # RAG v2 질의 경로의 local root를 컨테이너 안 tmpfs에 만든다. loader가 0700 디렉터리와 0600
+  # 파일을, 그리고 그 소유자가 실행 uid와 같기를 요구하는데, host bind mount는 host uid를 그대로
+  # 들고 온다. rag-history가 이미 쓰는 방식대로 읽기전용 원본에서 복사만 한다.
+  src=${P1_RAG_RUNTIME_DIR_MOUNT:-/run/rag-runtime}
+  if [ ! -d "$src" ] || [ -L "$src" ]; then
+    echo "p1 secret loading failed: rag_v2_runtime_root_missing" >&2
+    exit 1
+  fi
+  for leaf in control/pre-s5-voyage-query-runtime.json \
+              artifacts/voyage-context-4/tokenizer.json; do
+    if [ ! -f "$src/$leaf" ] || [ -L "$src/$leaf" ]; then
+      echo "p1 secret loading failed: rag_v2_runtime_leaf_missing" >&2
+      exit 1
+    fi
+  done
+  install -d -m 700 /tmp/rag-v2-root /tmp/rag-v2-root/control /tmp/rag-v2-root/secrets \
+    /tmp/rag-v2-root/artifacts /tmp/rag-v2-root/artifacts/voyage-context-4
+  install -m 600 "$src/control/pre-s5-voyage-query-runtime.json" \
+    /tmp/rag-v2-root/control/pre-s5-voyage-query-runtime.json
+  # writer DSN은 bind mount로 들여오지 않는다. compose secret으로 이미 들어와 있는 값을
+  # 로컬 루트가 요구하는 0600 leaf로 옮겨 적을 뿐이다. 비밀이 host 쪽에서 넓게 읽히지 않는다.
+  if [ -z "${RAG_V2_VOYAGE_QUERY_WRITER_DSN:-}" ]; then
+    echo "p1 secret loading failed: rag_v2_query_writer_dsn_missing" >&2
+    exit 1
+  fi
+  printf '%s' "$RAG_V2_VOYAGE_QUERY_WRITER_DSN" > /tmp/rag-v2-root/secrets/rag-v2-voyage-query-writer-dsn
+  chmod 600 /tmp/rag-v2-root/secrets/rag-v2-voyage-query-writer-dsn
+  install -m 600 "$src/artifacts/voyage-context-4/tokenizer.json" \
+    /tmp/rag-v2-root/artifacts/voyage-context-4/tokenizer.json
+  export CAPSTONE_RAG_LOCAL_ROOT=/tmp/rag-v2-root
 fi
 
 if [ "$profile" = redis ]; then

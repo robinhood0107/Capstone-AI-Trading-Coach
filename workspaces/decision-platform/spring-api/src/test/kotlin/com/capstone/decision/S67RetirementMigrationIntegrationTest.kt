@@ -39,7 +39,7 @@ class S67RetirementMigrationIntegrationTest {
                 statement.executeQuery("select version from flyway_schema_history order by installed_rank").use { result ->
                     val versions = mutableListOf<String>()
                     while (result.next()) versions += result.getString(1)
-                    assertEquals((1..100).map(Int::toString), versions)
+                    assertEquals((1..102).map(Int::toString), versions)
                 }
                 statement.executeQuery("select count(*), min(artifact_hash) from cross_market_risk_snapshots_v2").use { result ->
                     assertTrue(result.next())

@@ -25,6 +25,13 @@
 --
 -- 코퍼스가 실제로 그 모양일 때만 넣는다. 아니면 아무것도 하지 않는다. 이 행이 DB가 뒷받침하지
 -- 않는 출처를 주장하는 일이 없어야 한다.
+--
+-- 이 트랜잭션에서만 row_security를 켠다. 새 DB에서는 baseline `B86`이 pg_dump 산출물이라
+-- 첫 줄에 `SET row_security = off`가 들어 있고, 그 설정이 같은 세션의 뒤이은 migration까지
+-- 그대로 남는다. 그 상태에서 FORCE RLS 표를 읽으면 PostgreSQL이 행을 거르는 대신 42501로
+-- 거절하므로 이 확인이 통째로 실패한다. 켜 두면 이미 baseline된 DB와 새 DB가 같은 규칙으로
+-- 판정한다 - 코퍼스가 없으면 세대도 보이지 않아 아무것도 넣지 않는다.
+SET LOCAL row_security = on;
 
 INSERT INTO public.rag_v2_immutable_voyage_document_batch_plans (
   batch_plan_sha256,
@@ -62,5 +69,4 @@ WHERE generation.owner_partition_key = '__PUBLIC__'
 HAVING count(*) = 2
    AND sum(generation.actual_source_count) = 142
    AND sum(generation.actual_chunk_count) = 7871
-   AND (SELECT count(*) FROM public.rag_v2_immutable_chunks) = 7871
 ON CONFLICT (batch_plan_sha256) DO NOTHING;

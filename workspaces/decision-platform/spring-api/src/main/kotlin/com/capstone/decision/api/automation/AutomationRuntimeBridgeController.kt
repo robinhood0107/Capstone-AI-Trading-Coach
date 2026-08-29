@@ -104,7 +104,13 @@ class AutomationRuntimeBridgeController(
             }
         } catch (error: Exception) {
             // provider body, account value, exception text와 stack trace를 internal response에 반사하지 않는다.
-            logger.warn("automation runtime bridge failed closed: {}", error.javaClass.simpleName)
+            // 다만 근본 원인의 **클래스 이름**은 남긴다. 바깥 예외만으로는 어느 구간이 닫혔는지
+            // 알 수 없어 fail-closed를 진단할 수 없었다. 메시지와 값은 계속 남기지 않는다.
+            logger.warn(
+                "automation runtime bridge failed closed: {} caused by {}",
+                error.javaClass.simpleName,
+                generateSequence(error.cause) { it.cause }.lastOrNull()?.javaClass?.simpleName ?: "-",
+            )
             ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(mapOf("status" to "FAILED"))
         }
     }

@@ -94,7 +94,11 @@ class StrongLlmCredentialCrypto(
         }
     }
 
-    private data class Sealed(val nonce: ByteArray, val ciphertext: ByteArray, val tag: ByteArray)
+    private data class Sealed(
+        val nonce: ByteArray,
+        val ciphertext: ByteArray,
+        val tag: ByteArray,
+    )
 
     private fun encrypt(
         key: ByteArray,
@@ -131,8 +135,7 @@ class StrongLlmCredentialCrypto(
         slot: String,
         kekVersion: String,
         field: String,
-    ): ByteArray =
-        "strong-llm-credential-v1|$ownerUserId|$slot|$kekVersion|$field".toByteArray(StandardCharsets.UTF_8)
+    ): ByteArray = "strong-llm-credential-v1|$ownerUserId|$slot|$kekVersion|$field".toByteArray(StandardCharsets.UTF_8)
 
     private fun validate(
         ownerUserId: String,

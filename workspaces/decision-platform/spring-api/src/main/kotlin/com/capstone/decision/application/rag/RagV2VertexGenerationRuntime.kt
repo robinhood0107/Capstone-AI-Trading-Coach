@@ -529,6 +529,7 @@ class RagV2VertexResponseValidator {
                 RegexOption.IGNORE_CASE,
             )
         const val MAX_EVIDENCE = 5
+
         // 출력 예산을 32,768 토큰으로 올린 것은 답을 길게 하려는 것이 아니라 답이 잘리지
         // 않게 하려는 것이다. 잘린 JSON은 계약 위반으로 통째로 버려졌고, 그 예산의 대부분은
         // 본문이 아니라 인용 span과 thinking이 먹는다. 그래서 응답 상한만 그만큼 넓히고
@@ -540,6 +541,7 @@ class RagV2VertexResponseValidator {
         const val MAX_EVIDENCE_QUOTE_BYTES = 2_048
         const val MAX_NUMERIC_TOKEN_BYTES = 64
         const val MAX_CITATION_ID_BYTES = 8
+
         // provider-neutral 상한이다. Vertex 요청 스키마는 이보다 낮은 값을 보내지만(그 위는
         // 400으로 거절된다) 다른 provider는 이 상한까지 낼 수 있고, 검증은 여기서 한다.
         const val MAX_SENTENCES = 96

@@ -173,8 +173,7 @@ class StrongLlmSettingsService(
         operation: String,
     ) = actorRlsScope.open(jdbc, ownerUserId, operation, "OWNER", ownerUserId)
 
-    private fun jdbc(): NamedParameterJdbcTemplate =
-        jdbcProvider.getIfAvailable() ?: throw StrongLlmSettingsUnavailableException()
+    private fun jdbc(): NamedParameterJdbcTemplate = jdbcProvider.getIfAvailable() ?: throw StrongLlmSettingsUnavailableException()
 
     private companion object {
         const val DEFAULT_PROVIDER = "vertex"

@@ -1,0 +1,46 @@
+{
+  "contractId": "p1-automation-v1-e2e.v1",
+  "steps": [
+    {
+      "detail": "v1 status HTTP 200 state=DISARMED v2 status HTTP 200 blocker=['REAL_TEAM_B_POINTER_INACTIVE', 'RELEASE_BINDING_UNCLEAN'] v1 runs HTTP 200 1건",
+      "name": "v1 status·runs와 v2 status",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 404 NOT_FOUND 상태 DISARMED→DISARMED (열리면 그 자체가 회귀다)",
+      "name": "지어낸 결속으로는 arm이 열리지 않는다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 409 CONFLICT 버전 4→4",
+      "name": "낡은 버전은 거절된다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 200 None 상한=10000000 손절=500 익절=1000",
+      "name": "v2 정책 저장",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "blocker=['REAL_TEAM_B_POINTER_INACTIVE', 'RELEASE_BINDING_UNCLEAN', 'CERTIFICATION_INVALID'] arm HTTP 409 CONFLICT (blocker가 있으면 닫혀야 한다)",
+      "name": "v2 arm은 blocker를 넘지 못한다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "닫힘=True leaf=AUTOMATION_VERTEX_TRANSPORT_NOT_CONFIGURED 물리 호출=0 (코퍼스가 없으므로 근거가 비고, provider를 부르기 전에 닫는 것이 맞다)",
+      "name": "뉴스 거부권 fail-closed",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "상태 DISARMED (시작과 같다)",
+      "name": "자동운용 통제 복구",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "잔여 bundles=0 runs=0 orders=0 principles=0 journal=0 calendar=0",
+      "name": "정리",
+      "verdict": "PASS"
+    }
+  ],
+  "verdict": "PASS"
+}

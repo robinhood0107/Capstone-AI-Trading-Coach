@@ -127,6 +127,12 @@ RAG 질문 operation을 지금처럼 부르시면 배포 설정에 따라 다음
 - `generationStatus: "RETRIEVAL_ONLY"` 또는 `"GENERATION_UNAVAILABLE"` — 생성이 꺼져 있거나 하루
   한도에 닿은 경우입니다. 검색 결과와 인용만 옵니다.
 
+미리 알려 드릴 것이 하나 더 있습니다. **RAG는 배포 설정으로 꺼져 있는 것이 기본입니다.**
+`./capstone up`만 하면 corpus status가 응답하지 않고 질문은 `GENERATION_UNAVAILABLE`로 돌아옵니다.
+화면이 비어 보여도 그건 화면 버그가 아닙니다. 켜는 방법은 `docs/test/P1_RAG_V2.md`의 "배포 스위치"
+절에 적어 두었습니다. 검색만 켠 상태와 생성까지 켠 상태에서 응답이 어떻게 다른지도 그 표에 있습니다.
+세 상태 모두에서 화면이 무너지지 않게 해 주시면 됩니다.
+
 여기서 **한도 UI를 부탁드립니다.** RAG v2 corpus status 응답에 세 필드가 추가됐습니다.
 
 ```json

@@ -63,3 +63,35 @@ P1_RAG_V2_ENABLED=true P1_RAG_V2_VERTEX_ENABLED=true P1_RAG_V2_VERTEX_AUTO_ACTIV
 - 실제 Team A UI가 아니다. 대시보드는 현재 tree의 화면이며 최종본이 아니다.
 - 실계좌 거래가 아니다. KIS Live 호출은 영구 금지이고 이 기록 어디에도 그 경로가 없다.
 - 시장이 열린 시간의 실체결이 아니다. 그 항목은 `P1_장시간_의존_항목.md`가 따로 다룬다.
+
+## 배포 스위치 — 켜지 않으면 화면이 빈다
+
+**이것이 가장 중요한 운영 사실이다.** `compose.yml`의 기본값은 RAG v2 전체가 꺼져 있고
+`./capstone up`도 그것을 켜지 않는다. 그 상태에서 대시보드의 금융 가이드 화면은 이렇게 된다.
+
+| 설정 | corpus-status | `/api/v2/rag/ask` | 화면 |
+|---|---|---|---|
+| 기본값 (아무것도 안 켬) | `FULL_READY`, 한도 3필드 전부 `null` | `GENERATION_UNAVAILABLE`, 인용 0 | **답도 인용도 없다** |
+| `P1_RAG_V2_ENABLED=true` | `FULL_READY`, 한도 `null` | `RETRIEVAL_ONLY`, 인용 5건 | 검색 결과와 인용 |
+| 위 + Vertex + 자동 저술 | `FULL_READY` + 한도 3필드 값 | **`ANSWERED`**, 인용 1건 이상 | 생성된 답변과 인용 |
+
+세 줄 다 이번에 같은 스택에서 직접 관측했다. 첫 줄이 함정이다 — corpus는 `FULL_READY`라고
+답하는데 질문에는 아무것도 오지 않는다. 코퍼스가 준비된 것과 질의 경로가 열린 것은 다른 문제다.
+
+세 번째 줄이 되려면 다음이 모두 있어야 한다.
+
+1. `P1_RAG_V2_ENABLED=true`
+2. `P1_RAG_V2_VERTEX_ENABLED=true`, `P1_RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED=true`
+3. 코드 바인딩 넷 — `P1_RAG_V2_VERTEX_HEAD_COMMIT`, `_TREE_DIGEST`, `_CI_DIGEST`, `_SECURITY_DIGEST`
+4. RAG 런타임 루트의 `control/pre-s5-vertex-auto-activation-policy.json`
+   (비용 상한, 하루 호출 상한, projectId, evidence 해시 넷)
+5. compose secret `vertex_service_account`
+
+`P1_ENV_REFERENCE.md`는 동결 문서라 이 목록을 그곳에 적을 수 없다. 여기가 단일 기록이다.
+
+## 코퍼스는 영어다
+
+같은 스택에서 한국어 질문 "분산투자가 위험을 줄이는 이유는?"은
+`RAG_INSUFFICIENT_EVIDENCE`로 닫혔다. 코퍼스 142개 출처가 영어 논문(arXiv 등)이기 때문이다.
+영어 질문 "What does the Sharpe ratio measure in portfolio risk analysis?"는 인용 2건과 함께
+답이 나왔다. 한국어 답변이 필요하면 한국어 코퍼스를 넣는 것이 선행 조건이다.

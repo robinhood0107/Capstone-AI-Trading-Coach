@@ -218,6 +218,8 @@ internal class VertexGemini35FlashGenerationAdapter(
             in the generated sentence must occur in one submitted exact quote and be repeated once, in order, in
             numericSpans. The answer must equal sentence texts joined with one newline.
 
+            Choosing the basis follows one rule: if any sentence has an empty citationIds, the basis must be
+            EVIDENCE_WITH_REASONING. Choose EVIDENCE only when every sentence carries a citation.
             Use EVIDENCE_WITH_REASONING when you want sentences that connect, compare, or qualify the evidence
             alongside the grounded ones. Its grounded sentences follow the EVIDENCE rules exactly. Its reasoning
             sentences leave citationIds, evidenceSpans, and numericSpans empty, must not claim what is true now,
@@ -284,7 +286,11 @@ internal class VertexGemini35FlashGenerationAdapter(
                     "sentences" to
                         linkedMapOf(
                             "type" to "ARRAY",
-                            "maxItems" to 96,
+                            // 이 값을 24보다 크게 두면 Vertex가 요청 전체를 400으로 거절한다.
+                            // 64와 96 둘 다 같은 스택에서 그렇게 관측했다. 바깥 배열에도 상한이
+                            // 있는 셈이라, 안쪽 배열과 같은 방식으로 provider에게는 통과하는
+                            // 값만 보내고 실제 상한은 응답 검증기가 강제한다.
+                            "maxItems" to 24,
                             "items" to
                                 linkedMapOf(
                                     "type" to "OBJECT",

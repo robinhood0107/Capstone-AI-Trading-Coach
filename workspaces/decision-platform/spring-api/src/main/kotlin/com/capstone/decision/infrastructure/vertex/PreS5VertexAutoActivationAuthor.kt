@@ -3,6 +3,7 @@ package com.capstone.decision.infrastructure.vertex
 import com.capstone.decision.application.rag.RagV2GenerationBudget
 import com.capstone.decision.application.rag.RagV2VertexActivationAuthorPort
 import com.capstone.decision.application.rag.RagV2VertexPreparation
+import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -245,7 +246,7 @@ internal class PreS5VertexAutoActivationAuthor(
     )
 
     private companion object {
-        val LOGGER = LoggerFactory.getLogger(PreS5VertexAutoActivationAuthor::class.java)
+        val LOGGER: Logger = LoggerFactory.getLogger(PreS5VertexAutoActivationAuthor::class.java)
         const val CONTROL_DIRECTORY = "control"
         const val PACKET_FILE = "pre-s5-vertex-activation.json"
         const val POLICY_CONTRACT_ID = "pre-s5-vertex-auto-activation-policy/v1"

@@ -175,6 +175,12 @@ upgrade_state() {
       | write_state secrets/rag-v2.env 0640
     unset rag_writer_password rag_query_password
   fi
+  # 이미 만들어진 상태에도 Strong LLM 공유 비밀을 덧붙인다. 없던 배포가 그대로 켜지면
+  # 부팅에서 닫히고, 그 실패 원인이 "파일 하나가 빠졌다"가 되어 읽기 어려워진다.
+  if ! grep -q '^STRONG_LLM_GRPC_SHARED_SECRET=' "$SECRETS_DIR/rag-v2.env"; then
+    printf 'STRONG_LLM_GRPC_SHARED_SECRET=%s\n' "$(openssl rand -hex 32)" \
+      | append_state secrets/rag-v2.env 0640
+  fi
   if [[ ! -e $SECRETS_DIR/automation-gate-author.env ]]; then
     local replay_authorizer_password
     replay_authorizer_password=$(sed -n 's/^POSTGRES_REPLAY_AUTHORIZER_PASSWORD=//p' "$SECRETS_DIR/postgres.env")

@@ -74,9 +74,17 @@ def main() -> int:
             ["python", "-m", "app.rag.rag_v2_grpc_server"],
             close_fds=True,
         )
+    # Strong LLM 판단 프로세스. 이것이 없으면 Kotlin host의 gRPC 어댑터가 부를 상대가 없다.
+    # 켜져 있는데 provider 설정이나 shared secret이 없으면 스스로 기동에서 닫힌다.
+    strong_llm: subprocess.Popen[bytes] | None = None
+    if os.environ.get("S4_9_STRONG_LLM_ENABLED", "false").lower() == "true":
+        strong_llm = subprocess.Popen(
+            ["python", "-m", "app.strong_llm.grpc_server"],
+            close_fds=True,
+        )
     processes = tuple(
         process
-        for process in (worker, inference, spring, brokerage, automation, rag_v2)
+        for process in (worker, inference, spring, brokerage, automation, rag_v2, strong_llm)
         if process is not None
     )
     stopping = False

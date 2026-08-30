@@ -56,7 +56,7 @@ class P1BaselineIntegrationTest {
     }
 
     @Test
-    fun `fresh database applies B86 through V105 while existing database applies V1 through V105`() {
+    fun `fresh database applies B86 through V106 while existing database applies V1 through V106`() {
         assertEquals(
             listOf(
                 "86" to "SQL_BASELINE",
@@ -79,12 +79,13 @@ class P1BaselineIntegrationTest {
                 "103" to "SQL",
                 "104" to "SQL",
                 "105" to "SQL",
+                "106" to "SQL",
             ),
             history(BASELINE_DB),
         )
-        assertEquals(105, history(HISTORICAL_DB).size)
-        assertEquals("105" to "SQL", history(HISTORICAL_DB).last())
-        assertEquals("105" to "SQL", history(UPGRADE_DB).last())
+        assertEquals(106, history(HISTORICAL_DB).size)
+        assertEquals("106" to "SQL", history(HISTORICAL_DB).last())
+        assertEquals("106" to "SQL", history(UPGRADE_DB).last())
         assertTrue(history(UPGRADE_DB).none { it.second == "SQL_BASELINE" })
     }
 
@@ -118,6 +119,7 @@ class P1BaselineIntegrationTest {
             assertEquals(0L, count(database, "actor_request_capability"))
             assertEquals(
                 "105",
+                "106",
                 scalar(database, "select version from flyway_schema_history where success order by installed_rank desc limit 1"),
             )
         }

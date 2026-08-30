@@ -22,7 +22,9 @@ from contracts.generate_principle_contracts import (  # noqa: E402
 )
 
 CATALOG_PATH: Final = ROOT / "contracts/catalogs/p1-automation-policy.v1.json"
-ADDITIVE_OPENAPI_PATH: Final = ROOT / "contracts/openapi/p1-automation-v2.v1.openapi.json"
+ADDITIVE_OPENAPI_PATH: Final = (
+    ROOT / "contracts/openapi/p1-automation-v2.v1.openapi.json"
+)
 SCHEMA_IDS: Final[tuple[str, ...]] = (
     "automation-policy.v1",
     "automation-status.v2",
@@ -56,6 +58,8 @@ RUN_STATES: Final = (
     "PRECHECK",
     "RECONCILING_PREVIOUS",
     "EXIT_SELECTED",
+    # 후보 선정 앞에서 Strong LLM이 순위와 차단을 말한다. 무엇을 얼마나 살지는 엔진이 정한다.
+    "AI_JUDGING",
     "BUY_CANDIDATE_SELECTED",
     "NEWS_CHECKING",
     "NEWS_VETOED",
@@ -135,9 +139,7 @@ def _policy_body() -> dict[str, Any]:
             "contractId": {"const": "automation-policy.v1"},
             "policyId": _policy_identifier(),
             "version": {"type": "integer", "minimum": 1},
-            "presetId": {
-                "enum": ["conservative", "balanced", "aggressive", "custom"]
-            },
+            "presetId": {"enum": ["conservative", "balanced", "aggressive", "custom"]},
             "capitalLimitKrw": {
                 "type": "integer",
                 "minimum": 10_000,
@@ -190,9 +192,7 @@ def _status_schema() -> dict[str, Any]:
             {
                 "contractId": {"const": "automation-status.v2"},
                 "controlState": {"enum": ["DISARMED", "ARMED", "HALTED"]},
-                "projectionState": {
-                    "enum": ["DISARMED", "ARMED", "RUNNING", "HALTED"]
-                },
+                "projectionState": {"enum": ["DISARMED", "ARMED", "RUNNING", "HALTED"]},
                 "controlVersion": {"type": "integer", "minimum": 1},
                 "brokerageMode": {"const": "KIS_MOCK"},
                 "accountId": _nullable(_identifier("acct")),
@@ -316,7 +316,9 @@ def _position_schema() -> dict[str, Any]:
                 "policyVersion": {"type": "integer", "minimum": 1},
                 "stopLossBps": {"type": "integer", "minimum": 100, "maximum": 1500},
                 "takeProfitBps": {"type": "integer", "minimum": 200, "maximum": 3000},
-                "status": {"enum": ["OPEN", "EXIT_PENDING", "CLOSED", "HALTED_MISMATCH"]},
+                "status": {
+                    "enum": ["OPEN", "EXIT_PENDING", "CLOSED", "HALTED_MISMATCH"]
+                },
                 "exitReason": _nullable({"enum": list(EXIT_REASONS)}),
                 "exitAverageFillPriceKrw": _nullable(_money()),
                 "realizedPnlKrw": _nullable({"type": "integer"}),
@@ -400,9 +402,13 @@ def build_additive_openapi(schemas: dict[str, dict[str, Any]]) -> dict[str, Any]
         ["expectedVersion", "capitalLimitKrw", "stopLossBps", "takeProfitBps"],
         {
             "expectedVersion": {"type": "integer", "minimum": 0},
-            "capitalLimitKrw": schemas["automation-policy.v1"]["properties"]["capitalLimitKrw"],
+            "capitalLimitKrw": schemas["automation-policy.v1"]["properties"][
+                "capitalLimitKrw"
+            ],
             "stopLossBps": schemas["automation-policy.v1"]["properties"]["stopLossBps"],
-            "takeProfitBps": schemas["automation-policy.v1"]["properties"]["takeProfitBps"],
+            "takeProfitBps": schemas["automation-policy.v1"]["properties"][
+                "takeProfitBps"
+            ],
         },
     )
     arm_request = _closed(
@@ -504,7 +510,10 @@ def build_additive_openapi(schemas: dict[str, dict[str, Any]]) -> dict[str, Any]
     }
     return {
         "openapi": "3.1.0",
-        "info": {"title": "P1 Automation Policy v2 additive contract", "version": "1.1.0"},
+        "info": {
+            "title": "P1 Automation Policy v2 additive contract",
+            "version": "1.1.0",
+        },
         "paths": {
             "/api/v2/automation/status": {
                 "get": {
@@ -520,7 +529,9 @@ def build_additive_openapi(schemas: dict[str, dict[str, Any]]) -> dict[str, Any]
                         "required": True,
                         "content": {
                             "application/json": {
-                                "schema": {"$ref": "#/components/schemas/PutAutomationPolicyV2Request"}
+                                "schema": {
+                                    "$ref": "#/components/schemas/PutAutomationPolicyV2Request"
+                                }
                             }
                         },
                     },
@@ -535,7 +546,9 @@ def build_additive_openapi(schemas: dict[str, dict[str, Any]]) -> dict[str, Any]
                         "required": True,
                         "content": {
                             "application/json": {
-                                "schema": {"$ref": "#/components/schemas/ArmAutomationV2Request"}
+                                "schema": {
+                                    "$ref": "#/components/schemas/ArmAutomationV2Request"
+                                }
                             }
                         },
                     },
@@ -589,7 +602,9 @@ def load_catalog() -> dict[str, Any]:
         raise ContractValidationError("P1 automation blocker inventory drifted.")
     operations = value.get("operations")
     if not isinstance(operations, list) or len(operations) != 5:
-        raise ContractValidationError("P1 automation policy must publish exact five operations.")
+        raise ContractValidationError(
+            "P1 automation policy must publish exact five operations."
+        )
     return value
 
 
@@ -597,9 +612,10 @@ def validate_policy_semantics(value: dict[str, Any]) -> None:
     if value["takeProfitBps"] <= value["stopLossBps"]:
         raise ContractValidationError("takeProfitBps must exceed stopLossBps.")
     preset = value["presetId"]
-    if preset in PRESETS and (
-        value["stopLossBps"], value["takeProfitBps"]
-    ) != PRESETS[preset]:
+    if (
+        preset in PRESETS
+        and (value["stopLossBps"], value["takeProfitBps"]) != PRESETS[preset]
+    ):
         raise ContractValidationError("named preset values drifted; use custom.")
 
 
@@ -610,7 +626,10 @@ def build_outputs() -> dict[Path, bytes]:
         Draft202012Validator.check_schema(schema)
     additive = build_additive_openapi(schemas)
     return {
-        **{SCHEMA_PATHS[name]: canonical_json(schema) for name, schema in schemas.items()},
+        **{
+            SCHEMA_PATHS[name]: canonical_json(schema)
+            for name, schema in schemas.items()
+        },
         ADDITIVE_OPENAPI_PATH: canonical_json(additive),
     }
 

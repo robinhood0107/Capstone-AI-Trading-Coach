@@ -30,12 +30,21 @@ import os
 import subprocess
 import time
 import sys
-import urllib.error
-import urllib.request
-from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
+
+from .harness import (
+    Api,
+    HarnessError as PipelineError,
+    Recorder,
+    cleanup,
+    psql as _psql,
+    quoted as _quoted,
+    run as _run,
+    snapshot,
+    wait_healthy as _wait_healthy,
+)
 
 _OPT_IN: Final = "P1_FULL_PIPELINE_E2E"
 _REPOSITORY: Final = Path(__file__).resolve().parents[5]
@@ -56,78 +65,6 @@ _SEED_SOURCE: Final = "P1_E2E_FIXTURE"
 INITIAL_CASH_KRW: Final = 100_000_000
 # 드라이버의 FIXTURE_PRICES와 같은 값이어야 위험 판정과 주문 산정이 같은 시세를 본다.
 _FIXTURE_PRICES: Final[dict[str, int]] = {"005930": 70_000, "000660": 180_000}
-
-
-class PipelineError(RuntimeError):
-    """관통 테스트를 중단시킨 사유. 개별 단언 실패와 구분한다."""
-
-
-@dataclass
-class Step:
-    name: str
-    verdict: str
-    detail: str
-
-    def projection(self) -> dict[str, str]:
-        return {"detail": self.detail, "name": self.name, "verdict": self.verdict}
-
-
-@dataclass
-class Recorder:
-    steps: list[Step] = field(default_factory=list)
-
-    def add(self, name: str, verdict: str, detail: str) -> None:
-        if verdict not in {"PASS", "FAIL", "INFO"}:
-            raise PipelineError(f"unknown verdict: {verdict}")
-        self.steps.append(Step(name, verdict, detail[:6000]))
-        marker = {"PASS": "PASS", "FAIL": "FAIL", "INFO": "····"}[verdict]
-        print(f"[{marker}] {name}: {detail[:6000]}", flush=True)
-
-    def failed(self) -> bool:
-        return any(step.verdict == "FAIL" for step in self.steps)
-
-
-def _run(command: list[str], *, stdin: str | None = None, env: dict[str, str] | None = None) -> str:
-    merged = dict(os.environ)
-    merged.update(env or {})
-    result = subprocess.run(
-        command,
-        input=stdin,
-        capture_output=True,
-        text=True,
-        timeout=_TIMEOUT,
-        check=False,
-        env=merged,
-    )
-    if result.returncode != 0:
-        # 인자에 값이 실릴 수 있으므로 실패 메시지에는 명령 이름만 남긴다.
-        raise PipelineError(
-            f"command failed ({result.returncode}): {Path(command[0]).name} {command[1] if len(command) > 1 else ''}…\n"
-            f"{result.stdout.strip()[-4000:]}\n{result.stderr.strip()[-4000:]}"
-        )
-    return result.stdout
-
-
-def _psql(sql: str) -> str:
-    """superuser 읽기·쓰기. RLS FORCE 때문에 runtime role로 읽으면 0행이 나와 거짓 통과한다."""
-
-    return _run(
-        [
-            _DOCKER,
-            "exec",
-            "-i",
-            _POSTGRES,
-            "psql",
-            "-U",
-            "postgres",
-            "-d",
-            "capstone_p1",
-            "-v",
-            "ON_ERROR_STOP=1",
-            "-tAq",
-        ],
-        stdin=sql,
-    ).strip()
 
 
 def _compose(*args: str, offline_brokerage: bool = False) -> str:
@@ -154,16 +91,6 @@ def _compose(*args: str, offline_brokerage: bool = False) -> str:
             "P1_KIS_MOCK_RUNTIME_DIR": str(_STATE / "mock"),
         },
     )
-
-
-def _wait_healthy(seconds: int = 120) -> None:
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        state = _run([_DOCKER, "inspect", "-f", "{{.State.Health.Status}}", _PLATFORM]).strip()
-        if state == "healthy":
-            return
-        time.sleep(3)
-    raise PipelineError("decision-platform did not become healthy")
 
 
 def _start_offline_brokerage(*, account_id: str, cash_krw: int) -> None:
@@ -264,185 +191,8 @@ def _publish_driver() -> None:
     )
 
 
-class Api:
-    """읽기와 명시한 상태 변경만 한다. 인증은 로컬 secret 파일에서 읽는다."""
-
-    def __init__(self, base_url: str) -> None:
-        self._base = base_url.rstrip("/")
-        self._token: str | None = None
-
-    @property
-    def base_url(self) -> str:
-        return self._base
-
-    def login(self, username: str = "demo-user") -> None:
-        password = (_STATE / f"secrets/{username}.password").read_text(encoding="utf-8").strip()
-        status, payload = self.request(
-            "POST", "/api/v1/auth/login", {"username": username, "password": password}
-        )
-        token = (payload.get("data") or {}).get("accessToken")
-        if status != 200 or not isinstance(token, str) or not token:
-            raise PipelineError(f"{username} login failed: HTTP {status}")
-        self._token = token
-
-    def request(
-        self,
-        method: str,
-        path: str,
-        body: dict[str, Any] | None = None,
-        *,
-        idempotency_key: str | None = None,
-    ) -> tuple[int, dict[str, Any]]:
-        data = json.dumps(body).encode() if body is not None else None
-        request = urllib.request.Request(f"{self._base}{path}", method=method, data=data)
-        request.add_header("Content-Type", "application/json")
-        if self._token is not None:
-            request.add_header("Authorization", f"Bearer {self._token}")
-        if idempotency_key is not None:
-            request.add_header("X-Idempotency-Key", idempotency_key)
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                return response.status, json.loads(response.read() or b"{}")
-        except urllib.error.HTTPError as error:
-            try:
-                return error.code, json.loads(error.read() or b"{}")
-            except json.JSONDecodeError:
-                return error.code, {}
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
-            raise PipelineError(f"api unreachable: {error}") from error
-
-
 # --------------------------------------------------------------------------------------
 # 스냅샷과 정리
-# --------------------------------------------------------------------------------------
-
-_SNAPSHOT_TABLES: Final[tuple[tuple[str, str], ...]] = (
-    ("p1_return_artifact_bundle", "bundle_sha256"),
-    ("automation_runs", "run_id"),
-    ("orders", "order_id"),
-    ("decisions", "decision_id"),
-    # 판단 멱등 결과를 남기면 다음 실행이 이미 지운 판단을 재생해 온다. 그러면 체크포인트가
-    # "exact Decision intent mismatch"로 닫히는데, 원인이 제품이 아니라 정리 누락이다.
-    ("decision_idempotency_results", "idempotency_result_id"),
-    ("automation_positions", "position_id"),
-    ("automation_account_lineage", "lineage_id"),
-    ("automation_runtime_events", "event_id"),
-    ("automation_events", "event_id"),
-    ("automation_processed_ticks", "tick_identity_hash"),
-    ("automation_policy_idempotency", "scope_hash"),
-    ("automation_policy_versions", "policy_id || '|' || version"),
-    ("trading_sessions", "session_date::text"),
-    ("market_data_manifests", "manifest_sha256"),
-    # 수집 writer가 남기는 관측도 테스트가 만든 것만 되돌린다.
-    ("market_quote_observations", "observation_id"),
-    ("deterministic_risk_observations", "observation_id"),
-    ("daily_order_count_observations", "observation_id"),
-    ("portfolio_balance_observations", "observation_id"),
-    ("dashboard_artifact_views", "artifact_id"),
-    ("artifact_ingest_projection", "artifact_id"),
-)
-
-
-def snapshot() -> dict[str, list[str]]:
-    taken: dict[str, list[str]] = {}
-    for table, key in _SNAPSHOT_TABLES:
-        rows = _psql(f"select {key} from public.{table};")
-        taken[table] = [line for line in rows.splitlines() if line]
-    return taken
-
-
-def _quoted(values: list[str]) -> str:
-    return ", ".join("'" + value.replace("'", "''") + "'" for value in values) or "''"
-
-
-def cleanup(before: dict[str, list[str]], recorder: Recorder) -> None:
-    """테스트가 만든 것만 지운다. 기존 실거래 흔적은 건드리지 않는다."""
-
-    statements = [
-        "begin;",
-        # append-only 트리거는 정상 운영 보호장치다. 정리 단계에서만 superuser 권한으로 잠시 끈다.
-        # 테스트가 만든 행만 지우고 트랜잭션이 끝나면 원래대로 돌아온다.
-        "set local session_replication_role = replica;",
-        # automation 하위부터 지운다. FK 안전 순서다.
-        f"delete from public.automation_runtime_events where event_id not in ({_quoted(before['automation_runtime_events'])});",
-        f"delete from public.automation_events where event_id not in ({_quoted(before['automation_events'])});",
-        "delete from public.automation_processed_ticks where tick_identity_hash not in "
-        f"({_quoted(before['automation_processed_ticks'])});",
-        "delete from public.automation_policy_idempotency where scope_hash not in "
-        f"({_quoted(before['automation_policy_idempotency'])});",
-        f"delete from public.automation_account_lineage where lineage_id not in ({_quoted(before['automation_account_lineage'])});",
-        f"delete from public.automation_positions where position_id not in ({_quoted(before['automation_positions'])});",
-        "delete from public.automation_order_reservations where run_id not in "
-        f"({_quoted(before['automation_runs'])});",
-        "delete from public.automation_runtime_checkpoint where run_id not in "
-        f"({_quoted(before['automation_runs'])});",
-        "delete from public.automation_runtime_claim where run_id not in "
-        f"({_quoted(before['automation_runs'])});",
-        f"delete from public.automation_runs where run_id not in ({_quoted(before['automation_runs'])});",
-        "delete from public.automation_runtime_schedule where true;",
-        "delete from public.automation_control_idempotency where true;",
-        "delete from public.automation_activation_gate where true;",
-        # 주문과 판단
-        f"delete from public.orders where order_id not in ({_quoted(before['orders'])});",
-        "delete from public.decision_idempotency_results where idempotency_result_id not in "
-        f"({_quoted(before['decision_idempotency_results'])});",
-        f"delete from public.decisions where decision_id not in ({_quoted(before['decisions'])});",
-        # Team B 흔적. REAL_TEAM_B 표식을 남기지 않는 것이 이 절의 목적이다.
-        "delete from public.artifact_ingest_projection where artifact_id not in "
-        f"({_quoted(before['artifact_ingest_projection'])});",
-        "delete from public.dashboard_artifact_views where artifact_id not in "
-        f"({_quoted(before['dashboard_artifact_views'])});",
-        "delete from public.p1_return_signal_projection where bundle_sha256 not in "
-        f"({_quoted(before['p1_return_artifact_bundle'])});",
-        "delete from public.p1_return_artifact_bundle where bundle_sha256 not in "
-        f"({_quoted(before['p1_return_artifact_bundle'])});",
-        # 달력과 시장데이터 fixture
-        f"delete from public.trading_sessions where chosen_source_id = '{_SEED_SOURCE}';",
-        "delete from public.market_data_manifests where manifest_sha256 not in "
-        f"({_quoted(before['market_data_manifests'])});",
-        "delete from public.portfolio_position_observations where balance_observation_id not in "
-        f"({_quoted(before['portfolio_balance_observations'])});",
-        "delete from public.portfolio_balance_observations where observation_id not in "
-        f"({_quoted(before['portfolio_balance_observations'])});",
-        "delete from public.market_quote_observations where observation_id not in "
-        f"({_quoted(before['market_quote_observations'])});",
-        "delete from public.deterministic_risk_observations where observation_id not in "
-        f"({_quoted(before['deterministic_risk_observations'])});",
-        "delete from public.daily_order_count_observations where observation_id not in "
-        f"({_quoted(before['daily_order_count_observations'])});",
-        # 정책 버전은 append-only다. 테스트가 만든 버전만 지운다.
-        "delete from public.automation_policy_versions where policy_id || '|' || version not in "
-        f"({_quoted(before['automation_policy_versions'])});",
-        # 계좌 통제를 arm 이전 상태로 되돌린다.
-        "update public.automation_control set control_state='DISARMED', brokerage_mode='INTERNAL_PAPER',"
-        " certification_status='NOT_REQUIRED_INTERNAL_PAPER', policy_id=null, policy_version=null,"
-        " principle_version_id=null, principle_version=null, team_b_integrity_receipt_sha256_v2=null,"
-        " initial_account_digest_v2=null, expected_account_digest_v2=null,"
-        " expected_account_projection_v2=null where user_id='" + _OWNER + "';",
-        "commit;",
-    ]
-    try:
-        _psql("\n".join(statements))
-    except PipelineError as error:
-        recorder.add("정리", "FAIL", f"테스트가 만든 행을 되돌리지 못했다: {error}")
-        return
-
-    residue = _psql(
-        "select 'bundles=' || count(*) from public.p1_return_artifact_bundle"
-        f" where bundle_sha256 not in ({_quoted(before['p1_return_artifact_bundle'])});"
-        " select 'runs=' || count(*) from public.automation_runs"
-        f" where run_id not in ({_quoted(before['automation_runs'])});"
-        " select 'orders=' || count(*) from public.orders"
-        f" where order_id not in ({_quoted(before['orders'])});"
-        " select 'gate=' || count(*) from public.automation_activation_gate;"
-        f" select 'calendar=' || count(*) from public.trading_sessions where chosen_source_id = '{_SEED_SOURCE}';"
-    ).replace("\n", " ")
-    clean = all(part.endswith("=0") for part in residue.split())
-    recorder.add("정리", "PASS" if clean else "FAIL", f"잔여 {residue}")
-
-
-# --------------------------------------------------------------------------------------
-# 씨딩
 # --------------------------------------------------------------------------------------
 
 

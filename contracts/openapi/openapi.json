@@ -5355,6 +5355,27 @@
               "null"
             ]
           },
+          "generationDailyCap": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "generationRemaining": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "generationUsedToday": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "privateOverlayState": {
             "type": "string"
           },

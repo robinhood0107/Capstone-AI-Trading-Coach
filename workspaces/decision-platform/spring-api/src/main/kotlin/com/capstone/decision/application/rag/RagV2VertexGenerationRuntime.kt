@@ -64,6 +64,31 @@ data class RagV2VertexPreparation(
     val rawEvidenceStored: Boolean = false,
 )
 
+/**
+ * 배포 정책으로 활성화 패킷을 스스로 저술하는 경로. 운영자가 호출마다 손으로 승인하던 자리를
+ * 배포 시점 승인으로 내린다. 승인의 내용(모델·비용 상한·evidence 해시·코드 바인딩)은 그대로
+ * 지켜지고, 사라지는 것은 호출마다의 사람 개입뿐이다. 그래서 하루 상한이 함께 필요하다.
+ *
+ * 구현이 없으면(=자동 저술을 끄면) 예전처럼 운영자 패킷이 있을 때만 생성이 열린다.
+ */
+interface RagV2VertexActivationAuthorPort {
+    /** 하루 상한을 넘었으면 false. 그 경우 저술하지 않는다. */
+    fun author(
+        ownerUserId: String,
+        preparation: RagV2VertexPreparation,
+    ): Boolean
+
+    /** 화면이 남은 횟수를 말할 수 있도록 오늘 쓴 양과 상한을 돌려준다. */
+    fun budget(ownerUserId: String): RagV2GenerationBudget
+}
+
+/** API 응답에는 평평하게 실린다. 이 타입은 포트 사이에서만 쓴다. */
+data class RagV2GenerationBudget(
+    val dailyCap: Int,
+    val usedToday: Int,
+    val remaining: Int,
+)
+
 interface RagV2VertexQuestionFingerprintPort {
     fun fingerprint(
         ownerUserId: String,

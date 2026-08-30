@@ -173,6 +173,8 @@ app:
       ci-digest: ${RAG_V2_VERTEX_CI_DIGEST:}
       security-digest: ${RAG_V2_VERTEX_SECURITY_DIGEST:}
       request-timeout-millis: ${RAG_V2_VERTEX_REQUEST_TIMEOUT_MILLIS:30000}
+      auto-activation-enabled: ${RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED:false}
+      auto-activation-policy-file: ${RAG_V2_VERTEX_AUTO_ACTIVATION_POLICY_FILE:}
     web:
       enabled: ${RAG_WEB_ENABLED:false}
       searxng-base-url: ${RAG_WEB_SEARXNG_BASE_URL:http://127.0.0.1:58080}

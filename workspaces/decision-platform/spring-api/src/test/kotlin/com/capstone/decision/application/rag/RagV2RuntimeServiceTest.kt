@@ -764,6 +764,9 @@ class RagV2RuntimeServiceTest {
             objectMapper = JsonMapper.builder().build(),
             transactionManagerProvider = transactionManagerProvider,
             actorRlsScope = mockk<ActorRlsScopePort>(relaxed = true),
+            // 설정 bean이 없는 배포와 같은 상태다. 그때 corpus status의 설정 필드는 전부 null이고
+            // 화면은 배포 기본값이 쓰이고 있다고 읽는다.
+            strongLlmSettingsProvider = mockk { every { getIfAvailable() } returns null },
         )
     }
 

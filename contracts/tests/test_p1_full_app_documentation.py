@@ -80,6 +80,7 @@ TEAM_A_REQUIRED_OPERATIONS = frozenset(
         ("POST", "/api/v1/journals"),
         ("GET", "/api/v1/journals"),
         ("GET", "/api/v2/automation/status"),
+        ("PUT", "/api/v2/strong-llm/settings"),
         ("PUT", "/api/v2/automation/policy"),
         ("POST", "/api/v2/automation/arm"),
         ("GET", "/api/v2/automation/runs"),
@@ -245,7 +246,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             for method in path_item
             if method in methods
         ]
-        self.assertEqual(68, len(operations))
+        self.assertEqual(69, len(operations))
         operation_ids = [operation_id for _, _, operation_id in operations]
         self.assertTrue(
             all(
@@ -253,7 +254,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
                 for operation_id in operation_ids
             )
         )
-        self.assertEqual(68, len(set(operation_ids)))
+        self.assertEqual(69, len(set(operation_ids)))
         expected = {(method, path) for method, path, _ in operations}
 
         matrix = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX.md").read_text(
@@ -265,11 +266,11 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             matrix,
             flags=re.MULTILINE,
         )
-        self.assertEqual(68, len(rows))
+        self.assertEqual(69, len(rows))
         self.assertEqual(
-            list(range(1, 69)), sorted(int(number) for number, _, _, _ in rows)
+            list(range(1, 70)), sorted(int(number) for number, _, _, _ in rows)
         )
-        self.assertEqual(68, len({(method, path) for _, method, path, _ in rows}))
+        self.assertEqual(69, len({(method, path) for _, method, path, _ in rows}))
         self.assertEqual(expected, {(method, path) for _, method, path, _ in rows})
 
         observed_by_classification = {

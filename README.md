@@ -1,10 +1,12 @@
 # Capstone AI Trading Coach
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
-> **현재 상태 (2026-08-28):** Owner-First v3 계약은 잠겼고 1.1.0의 root exact-61, Team A backend
-> exact-38, 예산·가변수량·손절익절 자동운용 런타임(V91~V94)까지 구현됐습니다. 아직 GitHub `1.0.0`
-> 최종 배포본은 아닙니다. 자동운용은 `BLOCKED_INCOMPLETE_RISK_BALANCE`로 활성화가 막혀 있고 Team A
-> 최종 UI, Team B 실제 결과, physical activation과 3-session soak이 남아 있습니다. 현재 배포 계약은
+> **현재 상태 (2026-08-31):** Owner-First v3 계약이 잠겨 있고 root OpenAPI는 exact-69,
+> Team A backend는 exact-38입니다. 예산·가변수량·손절익절 자동운용과 그 앞에 선 AI 판단
+> (`STRONG_LLM_JUDGEMENT_AUTHORITY=CANDIDATE_RANK_VETO_SIZE_ONLY`)까지 구현됐고 마이그레이션은
+> V108까지입니다. 아직 GitHub `1.0.0` 최종 배포본은 아닙니다. 자동운용 활성화는
+> `BLOCKED_INCOMPLETE_RISK_BALANCE`로 막혀 있고 Team A 최종 UI, Team B 실제 산출물,
+> KIS 모의 인증과 3세션 soak이 남아 있습니다. 실계좌 주문 권한은 0입니다. 현재 배포 계약은
 > `contracts/catalogs/p1-full-app-release-contract.v3.json`입니다.
 <!-- P1_FULL_APP_V3_AUTHORITY_END -->
 
@@ -23,6 +25,7 @@ flowchart TB
   end
 
   SEL["종목 선택<br/>두 모델이 함께 BUY인 것만"]
+  AIJ["AI 판단<br/>순위 · 거부 · 수량 축소"]
   NEWS["뉴스 거부권<br/>Vertex + 근거 검증"]
   SIZE["수량 산정<br/>예산 · 슬롯 · 매수가능금액"]
   RISK["RiskEngine<br/>원칙 규칙 + 포트폴리오 지표"]
@@ -33,7 +36,7 @@ flowchart TB
 
   MD --> SEL
   TB --> SEL
-  SEL --> NEWS --> SIZE --> RISK --> SUB --> REC --> POS --> PNL
+  SEL --> AIJ --> NEWS --> SIZE --> RISK --> SUB --> REC --> POS --> PNL
   PR --> RISK
   POS -- "청산 사유 발생" --> SIZE
   PNL --> DASH["Dashboard"]
@@ -41,6 +44,7 @@ flowchart TB
   G1{{"게이트 1<br/>Team B 실제 산출물"}} -.-> TB
   G2{{"게이트 2<br/>online risk-balance"}} -.-> SIZE
   G3{{"게이트 3<br/>Vertex provider"}} -.-> NEWS
+  G4{{"provider 미설정 시<br/>AI 미참여로 계속"}} -.-> AIJ
 ```
 
 세션 하루는 09:30에 평가하고 09:40까지만 새 주문을 내며 15:20에 미체결을 취소합니다. 한 세션에
@@ -52,11 +56,17 @@ flowchart TB
 | 기능 | 상태 | 비고 |
 |---|---|---|
 | Dashboard, 원칙, 위험 판정, 저널 | 동작 | 외부 호출 없음 |
-| RAG 검색·근거 표시 | 동작 | 로컬 BGE-M3 임베딩, 고정 응답기 |
-| RAG 생성형 답변(Vertex·Voyage·웹검색) | 꺼짐 | provider 미설정 |
+| RAG 검색·근거 표시 | 동작 | 로컬 BGE-M3 임베딩 |
+| RAG 생성형 답변(Vertex·Voyage) | 서비스계정이 있으면 동작 | 없으면 검색만 켜고 뜬다 |
+| AI 판단(순위·거부·수량 축소) | 동작 | provider가 없거나 답하지 못하면 "AI 미참여"를 남기고 규칙대로 간다 |
+| Strong LLM 설정 화면 | 동작 | provider·모델·언어·하루 횟수. 키는 마지막 네 글자만 보인다 |
 | Team B 신호 | 미리보기 | 실제 산출물 수신 전 |
 | KIS 모의계좌 시세·잔고·주문 | 동작 | `mock` 명령으로만 |
 | 자동운용 실행 | 차단 | 위 게이트 3개 |
+
+AI가 할 수 있는 것은 후보의 **순위를 바꾸고, 매수를 막고, 수량을 줄이는** 셋뿐입니다. 후보 집합
+밖의 종목을 넣거나, 수량을 늘리거나, 정책 상한을 넘거나, 주문을 직접 만들 수는 없습니다. 배분은
+언제나 코드가 정수 산술로 계산하므로 같은 입력에는 같은 수량이 나옵니다.
 
 **프로그램을 켜 둔다고 주문하지 않습니다.** 예약 작업은 내부 큐 처리, 상태 집계, 오래된 RAG 이력
 정리뿐입니다. 실제 주문을 내는 명령은 `./capstone mock certify` 하나입니다.

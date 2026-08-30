@@ -118,7 +118,6 @@ class P1BaselineIntegrationTest {
         listOf(HISTORICAL_DB, BASELINE_DB).forEach { database ->
             assertEquals(0L, count(database, "actor_request_capability"))
             assertEquals(
-                "105",
                 "106",
                 scalar(database, "select version from flyway_schema_history where success order by installed_rank desc limit 1"),
             )

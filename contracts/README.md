@@ -908,20 +908,10 @@ provider/runtime/storage 권한은 S1.3G에서 퇴역했다. S1.3은 public REST
 Return Engine은 이후 합의된 `contracts/`·`artifacts/` handoff 경계에서 manifest를 검증해 소비한다.
 다른 workspace의 구현 파일이나 Decision Platform의 임의 로컬 경로를 직접 읽는 방식은 계약이 아니다.
 
-> 현재 상태(2026-08-01): Naver collector·credential/CLI·snapshot schema/example/test와
-> shared manifest/retention의 Naver branch를 제거했다. 승인된 local leaf는 exact
-> application-visible 삭제를 완료했고 영수증은 ignored local 영역에만 있다. 아래 Naver
-> 이름·수치·hash는 당시 감사 기록일 뿐 현재 파일이나 실행 명령을 가리키지 않는다.
-
-> 구현 상태(2026-07-16): Naver lower-only batch·strict smoke, JSON Schema, offline 회귀와
-> 승인된 online smoke를 완료하고 PR #16 merge commit
-> `6f439155d9f5ec626fc185f29f2e0bd64ca54780`으로 `main`에 병합했다. Approval A1/A2/A3는
-> 실패 evidence로 분리한다. A4
-> `approval-a4-692635240394-20260715T055519Z`는 physical `4`·Redis `+4`로 성공했고,
-> `semantic-3bb3810728cf` 승인 뒤 registry를 활성화했다. B1
-> `approval-b1-23618d21265d-20260715T072151Z`는 ECOS physical `2`·Redis `+2`와 Naver
-> physical `1`·Redis `+1`로 성공했다. B1 evidence SHA-256은
-> `ecb62e114352439994fa799096a916757ba7fba081f08f1d1b78ec35397d85fb`다.
+Naver collector·credential/CLI·snapshot schema/example/test와
+shared manifest/retention의 Naver branch를 제거했다. 승인된 local leaf는 exact
+application-visible 삭제를 완료했고 영수증은 ignored local 영역에만 있다. 아래 Naver
+이름·수치·hash는 당시 감사 기록일 뿐 현재 파일이나 실행 명령을 가리키지 않는다.
 
 | 계약 | Producer | Consumer | 보존 |
 |---|---|---|---:|

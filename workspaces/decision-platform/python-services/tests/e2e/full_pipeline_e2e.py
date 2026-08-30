@@ -89,8 +89,40 @@ def _compose(*args: str, offline_brokerage: bool = False) -> str:
         env={
             "P1_OPERATOR_UID": str(os.getuid()),
             "P1_KIS_MOCK_RUNTIME_DIR": str(_STATE / "mock"),
+            **_observed_rag_environment(),
         },
     )
+
+
+# compose는 RAG 플래그를 자기 환경에서 치환한다. 여기서 넘겨 주지 않으면 파일의 기본값인
+# 꺼짐으로 컨테이너가 다시 선다. 그러면 이 러너가 스택 설정을 바꿔 놓고 끝나고, 뒤이어 도는
+# RAG 검사가 "로컬 루트가 없다"로 죽는다. 원인은 제품이 아니라 복원 누락이다.
+#
+# 어떤 값이어야 하는지는 우리가 정하지 않는다. 지금 도는 컨테이너에게 물어 그대로 되돌린다.
+_RAG_ENVIRONMENT_KEYS: Final = (
+    ("RAG_V2_GRPC_ENABLED", "P1_RAG_V2_ENABLED"),
+    ("RAG_V2_VERTEX_ENABLED", "P1_RAG_V2_VERTEX_ENABLED"),
+    ("RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED", "P1_RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED"),
+    ("RAG_V2_VERTEX_HEAD_COMMIT", "P1_RAG_V2_VERTEX_HEAD_COMMIT"),
+    ("RAG_V2_VERTEX_TREE_DIGEST", "P1_RAG_V2_VERTEX_TREE_DIGEST"),
+    ("RAG_V2_VERTEX_CI_DIGEST", "P1_RAG_V2_VERTEX_CI_DIGEST"),
+    ("RAG_V2_VERTEX_SECURITY_DIGEST", "P1_RAG_V2_VERTEX_SECURITY_DIGEST"),
+)
+_rag_environment: dict[str, str] | None = None
+
+
+def _observed_rag_environment() -> dict[str, str]:
+    global _rag_environment
+    if _rag_environment is None:
+        _rag_environment = {}
+        for container_name, compose_name in _RAG_ENVIRONMENT_KEYS:
+            try:
+                value = _run([_DOCKER, "exec", _PLATFORM, "printenv", container_name]).strip()
+            except PipelineError:
+                continue
+            if value:
+                _rag_environment[compose_name] = value
+    return dict(_rag_environment)
 
 
 def _start_offline_brokerage(*, account_id: str, cash_krw: int) -> None:

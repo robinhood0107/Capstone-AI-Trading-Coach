@@ -175,7 +175,8 @@ def check_settings_surface(recorder: Recorder, api: Api) -> None:
 
     status, body = api.request("GET", "/api/v2/rag/corpus-status")
     fields = {key for key in body if key.startswith("strongLlm")}
-    secret = "sk-e2e-probe-ABCDwxyz"
+    # 키처럼 생긴 리터럴은 비밀 검사기를 늘 부른다. 서버 형식만 만족하는 값을 여기서 만든다.
+    probe_key = f"probe-{uuid.uuid4().hex}"
     written, _ = api.request(
         "PUT",
         "/api/v2/strong-llm/settings",
@@ -188,7 +189,7 @@ def check_settings_surface(recorder: Recorder, api: Api) -> None:
             "fallbackBaseUrl": None,
             "answerLanguage": "ko",
             "dailyGenerateCallCap": 30,
-            "apiKey": secret,
+            "apiKey": probe_key,
         },
         headers={"X-Request-Id": f"req_{uuid.uuid4().hex}"},
     )
@@ -196,7 +197,7 @@ def check_settings_surface(recorder: Recorder, api: Api) -> None:
     last4 = after.get("strongLlmKeyLast4")
     # 저장된 암호문 어디에도 평문이 없어야 한다. 마지막 네 글자만 밖으로 나온다.
     plaintext = psql(
-        "select coalesce(sum(position('sk-e2e-probe' in encode(key_ciphertext,'escape'))), 0)"
+        f"select coalesce(sum(position('{probe_key}' in encode(key_ciphertext,'escape'))), 0)"
         " from strong_llm_owner_credentials;"
     ).strip()
     api.request(
@@ -220,7 +221,7 @@ def check_settings_surface(recorder: Recorder, api: Api) -> None:
         "PASS"
         if status == 200
         and written == 204
-        and last4 == "wxyz"
+        and last4 == probe_key[-4:]
         and plaintext == "0"
         and len(fields) == 10
         else "FAIL",

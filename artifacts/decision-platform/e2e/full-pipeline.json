@@ -1,0 +1,148 @@
+{
+  "contractId": "p1-full-pipeline-e2e.v1",
+  "generatedAt": "2026-08-30T00:46:43.617292Z",
+  "kisCalls": 0,
+  "steps": [
+    {
+      "detail": "artifact_ingest_projection=1 automation_account_lineage=0 automation_activation_gate=0 automation_control_idempotency=0 automation_events=1 automation_policy_idempotency=1 automation_policy_versions=1 automation_positions=1 automation_processed_ticks=0 automation_runs=1 automation_runtime_events=0 automation_runtime_schedule=0 daily_order_count_observations=11 dashboard_artifact_views=2 decision_idempotency_results=3 decisions=3 deterministic_risk_observations=11 journal_idempotency=2 journals=2 market_data_manifests=0 market_quote_observations=23 orders=1 p1_return_artifact_bundle=0 portfolio_balance_observations=3 principle_versions=4 principles=3 rag_consent_events=26 trading_sessions=2",
+      "name": "시작 스냅샷",
+      "verdict": "INFO"
+    },
+    {
+      "detail": "Spring gRPC 어댑터 ON, KIS transport만 대체. provider 물리 호출 0",
+      "name": "오프라인 brokerage",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "BUYABLE 왕복 성공",
+      "name": "bridge → Brokerage 다리",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "인증 2026-08-28 → 매수 2026-08-31 → 매도 2026-09-01",
+      "name": "대상 세션",
+      "verdict": "INFO"
+    },
+    {
+      "detail": "4개 세션 (pinned 4.13.2 실제 날짜)",
+      "name": "XKRX 달력 씨딩",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "SEED 1 + DAILY 3 (체인 가드 순서 준수)",
+      "name": "시장데이터 매니페스트 씨딩",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "{\"inserted\":2,\"source\":\"market_quote\"} {\"inserted\":1,\"source\":\"kis_mock_portfolio\"} {\"inserted\":2,\"source\":\"deterministic_metrics\"} — 시세와 결정론 지표를 production writer로 적재",
+      "name": "위험 지표 수집 (오프라인 writer)",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "다른 scope의 ACTIVE 관측 0건을 INACTIVE로 내림 (둘 이상이면 RiskEngine이 CONFLICT로 전 지표를 닫는다). 정리에서 되돌린다",
+      "name": "포트폴리오 컨텍스트 단일화",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "IMPORTED run=run_p1_e2e_b1ef68a530abe8cee6f9b4a5 bundle=b1ef68a530abe8ce",
+      "name": "Team B 번들 적재 (매수 세션)",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "31/1 (31개 종목이 한 번들에서 나와야 arm이 열린다)",
+      "name": "REAL_TEAM_B 포인터",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "AUTOMATION_ACTIVATION_GATE=PASS AUTOMATION_ACTIVATION_GATE_VERSION=1 STRATEGY_ELIGIBLE_FROM_SESSION=2026-08-31 PROVIDER_CALLS=0",
+      "name": "activation gate 저술",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 200 controlVersion=4 policyVersion=None blockers=[]",
+      "name": "arm 이전 상태",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 200 {\"contractId\": \"automation-policy.v1\", \"policyId\": \"auto_pol_44dd7254dc1e9f96d9a5be80e99033be\", \"version\": 2, \"presetId\": \"balanced\", \"capitalLimitKrw\": 5000000, \"stopLossBps\": 500, \"takeProfitBps\": 1000, \"maxOpenPositions\": 5, \"maxNewOrdersPerSession\": 1, \"ev",
+      "name": "정책 설정",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 200 {\"contractId\": \"automation-status.v2\", \"controlState\": \"ARMED\", \"projectionState\": \"ARMED\", \"controlVersion\": 5, \"brokerageMode\": \"KIS_MOCK\", \"accountId\": \"acct_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"policy\": {\"contractId\": \"automation-policy.v1\", \"policyId\": \"auto_pol_44dd7254dc1e9f96d9a5be80e99033be\"",
+      "name": "arm",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "COMPLETED 전이=SCHEDULED→PRECHECK→BUY_CANDIDATE_SELECTED→NEWS_CHECKING→ORDER_SIZING→RISK_CHECKING→ORDER_SUBMITTING→ORDER_SUBMITTED→COMPLETED order=ord_mock_7b4f444277244a58a97b8ca50dc766b4 decision=dec_b00fec38932e4e4a86d5dcaadf999757 cash=99718618 pos={'005930': 4}",
+      "name": "세션 1 구동 (매수)",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "{\"inserted\":2,\"source\":\"market_quote\"} {\"inserted\":1,\"source\":\"kis_mock_portfolio\"} {\"inserted\":2,\"source\":\"deterministic_metrics\"} — 매수 체결분을 반영한 관측이 없으면 매도 판단이 BROKERAGE_UNAVAILABLE로 닫힌다",
+      "name": "체결 후 잔고 재관측",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "IMPORTED bundle=8d87906b5bf4e4a3",
+      "name": "Team B 번들 적재 (매도 세션)",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "COMPLETED 전이=SCHEDULED→PRECHECK→EXIT_SELECTED→ORDER_SIZING→RISK_CHECKING→ORDER_SUBMITTING→ORDER_SUBMITTED→COMPLETED order=ord_mock_20e3fa60fc3b4c298872a04e829ea420 cash=99997239 pos={}",
+      "name": "세션 2 구동 (매도)",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "auto_run_df5cd1d374e1182403a7930f317921b1|COMPLETED|005930|BUY ; auto_run_34925c4eec8b091c21c0686913d4ba9d|COMPLETED|005930|SELL (SKIPPED_* 도 터미널이므로 COMPLETED만 인정)",
+      "name": "run 종료 상태",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "auto_run_34925c4eec8b091c21c0686913d4ba9d|ord_mock_20e3fa60fc3b4c298872a04e829ea420|q4|f4|l0|u0|MATCHED ; auto_run_df5cd1d374e1182403a7930f317921b1|ord_mock_7b4f444277244a58a97b8ca50dc766b4|q4|f4|l0|u0|MATCHED",
+      "name": "예약 수량 보존과 대사",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "ord_mock_20e3fa60fc3b4c298872a04e829ea420|005930|SELL|4|69900|ACCEPTED|KIS_MOCK ; ord_mock_7b4f444277244a58a97b8ca50dc766b4|005930|BUY|4|70100|ACCEPTED|KIS_MOCK",
+      "name": "bridge → Brokerage 실제 주문",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "auto_run_34925c4eec8b091c21c0686913d4ba9d|dec_a5ab6a8a4c2a472e9c37a412d0665ab2|dec_a5ab6a8a4c2a472e9c37a412d0665ab2 ; auto_run_df5cd1d374e1182403a7930f317921b1|dec_b00fec38932e4e4a86d5dcaadf999757|dec_b00fec38932e4e4a86d5dcaadf999757 (decision_id가 null이면 위험 판정 구간을 건너뛴 것)",
+      "name": "RiskEngine 판단 결속",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "005930|CLOSED|entry70100|exit69900|pnl=-1780|MODEL_SELL ; 005930|CLOSED|entry-|exit-|pnl=none|-",
+      "name": "포지션 개설·청산과 실현손익",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "ARM_BASELINE → BUY_FILL → SELL_FILL",
+      "name": "기대계좌 lineage 전진",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "status=200 runs=200 positions=200 realizedSummary={\"closedPositionCount\": 1, \"realizedPnlKrw\": -1780, \"realizedGrossKrw\": -800, \"winningPositionCount\": 0, \"losingPositionCount\": 1, \"evidenceMode\": \"KIS_MOCK\", \"performanceClaimAllowed\": false}",
+      "name": "HTTP v2 노출",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "signals=200 ingest-status=200 {\"items\": [{\"artifactId\": \"artifact_p1_8d87906b5bf4e4a3c1a7890a\", \"fileName\": \"p1-return-engine-manifest.v2.json\", \"producer\": \"return-engine\", \"runId\": \"run_p1_e2e_8d87906b5bf4e4a3c1a7890a\", \"fileHas",
+      "name": "상류 노출 (신호·적재 상태)",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "brokerage gRPC 어댑터 OFF로 되돌림",
+      "name": "스택 구성 복원",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "잔여 bundles=0 runs=0 orders=0 principles=0 journal=0 calendar=0",
+      "name": "정리",
+      "verdict": "PASS"
+    }
+  ],
+  "verdict": "PASS"
+}

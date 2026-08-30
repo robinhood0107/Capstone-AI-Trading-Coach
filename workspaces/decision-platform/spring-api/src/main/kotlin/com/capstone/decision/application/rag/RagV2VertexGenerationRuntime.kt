@@ -98,6 +98,17 @@ interface RagV2VertexQuestionFingerprintPort {
 
 enum class StrongLlmAnswerBasis {
     EVIDENCE,
+
+    /**
+     * 근거 문장과 추론 문장이 한 답에 함께 있다.
+     *
+     * EVIDENCE는 모든 문장에 정확 인용을 요구해서 모델이 근거를 잇거나 비교하거나 한계를
+     * 말하는 문장을 아예 쓸 수 없었다. 그래서 답이 인용의 나열이 되고, Strong LLM을 쓰는
+     * 이유가 사라진다. 이 basis는 그 문장을 허용하되 검증 가능한 성질은 지킨다 - 추론 문장은
+     * 인용을 갖지 않고, 시점을 주장하지 않으며, 답 안의 근거 문장이 이미 인용으로 증명한
+     * 숫자만 다시 쓸 수 있다. 즉 새 사실은 여전히 근거에서만 나온다.
+     */
+    EVIDENCE_WITH_REASONING,
     MODEL_KNOWLEDGE,
     INSUFFICIENT_EVIDENCE,
 }
@@ -173,7 +184,7 @@ class RagV2VertexResponseValidator {
                             .builder()
                             .maxNestingDepth(8)
                             .maxDocumentLength(MAX_RESPONSE_BYTES.toLong())
-                            .maxTokenCount(2_048)
+                            .maxTokenCount(32_768)
                             .maxNumberLength(32)
                             .maxStringLength(MAX_RESPONSE_BYTES)
                             .maxNameLength(64)
@@ -220,6 +231,21 @@ class RagV2VertexResponseValidator {
                         require(answer == sentences.joinToString("\n") { it.text })
                         require(sentences.all { it.citationIds.isNotEmpty() && it.evidenceSpanCount > 0 })
                     }
+                    StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING -> {
+                        require(answer != null && sentences.isNotEmpty())
+                        require(answer == sentences.joinToString("\n") { it.text })
+                        val grounded = sentences.filter { it.citationIds.isNotEmpty() }
+                        // 근거 문장이 하나도 없으면 그것은 추론이 아니라 MODEL_KNOWLEDGE다.
+                        require(grounded.isNotEmpty())
+                        require(grounded.all { it.evidenceSpanCount > 0 })
+                        val proven = grounded.flatMap { it.numericTokens }.toSet()
+                        sentences.filter { it.citationIds.isEmpty() }.forEach { sentence ->
+                            // 인용 없는 문장이 시점을 주장하면 우리는 그것을 확인할 방법이 없다.
+                            require(!CURRENT_FACT.containsMatchIn(sentence.text))
+                            // 숫자는 이 답의 근거 문장이 이미 인용으로 증명한 것만 다시 쓸 수 있다.
+                            require(sentence.numericTokens.all { it in proven })
+                        }
+                    }
                     StrongLlmAnswerBasis.MODEL_KNOWLEDGE -> {
                         require(answer != null && sentences.isNotEmpty())
                         require(warnings.isEmpty())
@@ -246,7 +272,9 @@ class RagV2VertexResponseValidator {
             val warningStatus =
                 if (warnings.isEmpty()) StrongLlmValidationStatus.VALID else StrongLlmValidationStatus.VALID_WITH_WARNINGS
             val coverage =
-                if (basis == StrongLlmAnswerBasis.EVIDENCE) {
+                if (basis == StrongLlmAnswerBasis.EVIDENCE ||
+                    basis == StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING
+                ) {
                     sentences.count { it.evidenceSpanCount > 0 }.toDouble() / sentences.size
                 } else {
                     0.0
@@ -326,12 +354,22 @@ class RagV2VertexResponseValidator {
                     }
                 }.toList()
         boundary("STRONG_LLM_VALIDATION_NUMERIC_BINDING") {
-            require(suppliedNumericTokens == expectedNumericTokens)
-            if (basis != StrongLlmAnswerBasis.EVIDENCE) {
+            // 추론 문장은 numericSpan을 내지 않는다. 그 문장의 숫자는 답 전체 계약에서
+            // 근거 문장이 증명한 집합과 대조한다.
+            val reasoning =
+                basis == StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING && citationIds.isEmpty()
+            if (!reasoning) {
+                require(suppliedNumericTokens == expectedNumericTokens)
+            } else {
+                require(suppliedNumericTokens.isEmpty() && validatedSpanTexts.isEmpty())
+            }
+            if (basis == StrongLlmAnswerBasis.MODEL_KNOWLEDGE ||
+                basis == StrongLlmAnswerBasis.INSUFFICIENT_EVIDENCE
+            ) {
                 require(citationIds.isEmpty() && validatedSpanTexts.isEmpty() && suppliedNumericTokens.isEmpty())
             }
         }
-        return ValidatedSentence(text, citationIds, validatedSpanTexts.size)
+        return ValidatedSentence(text, citationIds, validatedSpanTexts.size, expectedNumericTokens)
     }
 
     private inline fun <T> boundary(
@@ -438,6 +476,7 @@ class RagV2VertexResponseValidator {
         val text: String,
         val citationIds: List<String>,
         val evidenceSpanCount: Int,
+        val numericTokens: List<String>,
     )
 
     private data class ValidatedEvidenceSpan(
@@ -480,13 +519,18 @@ class RagV2VertexResponseValidator {
                 RegexOption.IGNORE_CASE,
             )
         const val MAX_EVIDENCE = 5
-        const val MAX_RESPONSE_BYTES = 32_768
+        // 출력 예산을 32,768 토큰으로 올린 것은 답을 길게 하려는 것이 아니라 답이 잘리지
+        // 않게 하려는 것이다. 잘린 JSON은 계약 위반으로 통째로 버려졌고, 그 예산의 대부분은
+        // 본문이 아니라 인용 span과 thinking이 먹는다. 그래서 응답 상한만 그만큼 넓히고
+        // 답 본문 상한은 그대로 둔다. 이 8,192는 여섯 개 마이그레이션의 저장 제약이 함께
+        // 들고 있는 값이라, 여기서만 올리면 긴 답이 저장 단계에서 거부된다.
+        const val MAX_RESPONSE_BYTES = 262_144
         const val MAX_ANSWER_BYTES = 8_192
         const val MAX_SENTENCE_BYTES = 2_048
         const val MAX_EVIDENCE_QUOTE_BYTES = 2_048
         const val MAX_NUMERIC_TOKEN_BYTES = 64
         const val MAX_CITATION_ID_BYTES = 8
-        const val MAX_SENTENCES = 24
+        const val MAX_SENTENCES = 96
         const val MAX_EVIDENCE_SPANS = 12
         const val MAX_NUMERIC_SPANS = 64
         const val MAX_WARNINGS = 5

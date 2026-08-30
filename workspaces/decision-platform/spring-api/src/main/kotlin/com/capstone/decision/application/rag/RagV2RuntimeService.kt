@@ -586,6 +586,11 @@ class RagV2RuntimeService(
                         if (generation.answerBasis == StrongLlmAnswerBasis.MODEL_KNOWLEDGE) {
                             add("MODEL_KNOWLEDGE_ONLY")
                         }
+                        // 화면이 근거 문장과 추론 문장을 구분해 보여줄 수 있어야 한다.
+                        // guardrailFlags는 이미 문자열 배열이라 계약을 넓히지 않는다.
+                        if (generation.answerBasis == StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING) {
+                            add("REASONING_SENTENCES_PRESENT")
+                        }
                         addAll(generation.warnings)
                     },
             )
@@ -977,12 +982,23 @@ class RagV2RuntimeService(
             RagGenerationStatus.ANSWERED -> {
                 val answer = requireNotNull(generation.answer)
                 require(answer.toByteArray(Charsets.UTF_8).size in 1..8192)
-                require(generation.answerBasis in setOf(StrongLlmAnswerBasis.EVIDENCE, StrongLlmAnswerBasis.MODEL_KNOWLEDGE))
-                if (generation.answerBasis == StrongLlmAnswerBasis.EVIDENCE) {
+                require(
+                    generation.answerBasis in
+                        setOf(
+                            StrongLlmAnswerBasis.EVIDENCE,
+                            StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING,
+                            StrongLlmAnswerBasis.MODEL_KNOWLEDGE,
+                        ),
+                )
+                // 추론 문장이 섞이면 모든 문장이 인용을 갖지는 않는다. 인용 비율 하한을 낮추되
+                // 인용이 하나도 없는 답은 여전히 이 basis로 나올 수 없다.
+                val groundedCoverageFloor =
+                    if (generation.answerBasis == StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING) 0.2 else 0.8
+                if (generation.answerBasis != StrongLlmAnswerBasis.MODEL_KNOWLEDGE) {
                     require(
                         (evidence.isNotEmpty() || generation.webCitations.isNotEmpty()) &&
                             generation.citationIds.isNotEmpty() &&
-                            generation.citationCoverage in 0.8..1.0,
+                            generation.citationCoverage in groundedCoverageFloor..1.0,
                     )
                 } else {
                     require(generation.citationIds.isEmpty() && generation.citationCoverage == 0.0)

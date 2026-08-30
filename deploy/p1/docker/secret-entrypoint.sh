@@ -50,6 +50,7 @@ allowed_key() {
     decision-platform:POSTGRES_APP_PASSWORD|decision-platform:POSTGRES_WORKER_PASSWORD|decision-platform:POSTGRES_AUTH_PASSWORD|decision-platform:ACTOR_CAPABILITY_SHARED_SECRET|decision-platform:ACTOR_CAPABILITY_PUBLIC_KEY|decision-platform:ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD|decision-platform:REDIS_PASSWORD|decision-platform:JWT_SECRET|decision-platform:JWT_ISSUER|decision-platform:JWT_AUDIENCE|decision-platform:LOGIN_SCOPE_HMAC_KEY|decision-platform:PRINCIPLE_CURSOR_HMAC_KEY|decision-platform:DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY|decision-platform:DECISION_GRPC_SHARED_SECRET|decision-platform:BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY|decision-platform:BROKERAGE_GRPC_SHARED_SECRET|decision-platform:RAG_IDEMPOTENCY_SCOPE_HMAC_KEY|decision-platform:RAG_REQUEST_FINGERPRINT_HMAC_KEY|decision-platform:RAG_PROVIDER_USAGE_HMAC_KEY|decision-platform:RAG_RATE_LIMIT_HMAC_KEY|decision-platform:RAG_HISTORY_CURSOR_HMAC_KEY|decision-platform:DEMO_CREDENTIAL_SEPARATION_KEY|decision-platform:DEMO_USER_CREDENTIAL_BUNDLE|decision-platform:DEMO_ADMIN_CREDENTIAL_BUNDLE|decision-platform:ASYNC_CURSOR_HMAC_KEY|decision-platform:ASYNC_PARTITION_HMAC_KEY|decision-platform:ASYNC_WORKER_GRPC_SHARED_SECRET|decision-platform:ASYNC_WORKER_DATABASE_DSN|decision-platform:KAFKA_SASL_USERNAME|decision-platform:KAFKA_SASL_PASSWORD|decision-platform:KAFKA_ENVELOPE_PUBLIC_KEY|decision-platform:POISON_RECORDER_URL|decision-platform:POISON_RECORDER_SHARED_SECRET|decision-platform:KIS_MOCK_CONFIGURED|decision-platform:KIS_MOCK_APP_KEY|decision-platform:KIS_MOCK_APP_SECRET|decision-platform:KIS_MOCK_ACCOUNT_NO|decision-platform:KIS_MOCK_BOUND_ACCOUNT_ID|decision-platform:KIS_MOCK_ORDER_REFERENCE_KEY|decision-platform:KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP|decision-platform:KIS_BROKERAGE_PHYSICAL_CAP) return 0 ;;
     decision-platform:RETURN_INFERENCE_GRPC_SHARED_SECRET) return 0 ;;
     decision-platform:RAG_V2_QUERY_DATABASE_DSN|decision-platform:RAG_V2_VOYAGE_QUERY_WRITER_DSN|decision-platform:RAG_V2_GRPC_SHARED_SECRET|decision-platform:VOYAGE_API_KEY) return 0 ;;
+    decision-platform:STRONG_LLM_GRPC_SHARED_SECRET|decision-platform:STRONG_LLM_API_KEY|decision-platform:STRONG_LLM_FALLBACK_API_KEY) return 0 ;;
     decision-platform:P1_AUTOMATION_DATABASE_DSN|decision-platform:AUTOMATION_RUNTIME_SHARED_SECRET|decision-platform:P1_AUTOMATION_OWNER_USER_ID|decision-platform:P1_AUTOMATION_OWNER_USERNAME|decision-platform:P1_AUTOMATION_OWNER_PASSWORD) return 0 ;;
     automation-runtime:P1_AUTOMATION_DATABASE_DSN|automation-runtime:AUTOMATION_RUNTIME_SHARED_SECRET|automation-runtime:P1_AUTOMATION_OWNER_USER_ID|automation-runtime:P1_AUTOMATION_OWNER_USERNAME|automation-runtime:P1_AUTOMATION_OWNER_PASSWORD) return 0 ;;
     automation-cli:P1_AUTOMATION_DATABASE_DSN|automation-cli:AUTOMATION_RUNTIME_SHARED_SECRET|automation-cli:P1_AUTOMATION_OWNER_USER_ID|automation-cli:P1_AUTOMATION_OWNER_USERNAME|automation-cli:P1_AUTOMATION_OWNER_PASSWORD|automation-cli:KIS_MOCK_CONFIGURED|automation-cli:KIS_MOCK_APP_KEY|automation-cli:KIS_MOCK_APP_SECRET|automation-cli:KIS_MOCK_ACCOUNT_NO|automation-cli:KIS_MOCK_BOUND_ACCOUNT_ID|automation-cli:KIS_MOCK_ORDER_REFERENCE_KEY|automation-cli:KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP|automation-cli:KIS_BROKERAGE_PHYSICAL_CAP) return 0 ;;
@@ -219,6 +220,28 @@ if [ "$profile" = decision-platform ] && [ "${RAG_V2_GRPC_ENABLED:-false}" = tru
 /tmp/rag-v2-root/control/pre-s5-vertex-auto-activation-policy.json
   fi
   export CAPSTONE_RAG_LOCAL_ROOT=/tmp/rag-v2-root
+fi
+
+if [ "$profile" = decision-platform ] && [ "${S4_9_STRONG_LLM_ENABLED:-false}" = true ]; then
+  # Kotlin host와 Python agent는 이 공유 비밀로만 서로를 확인한다. 없으면 인증 없는 loopback
+  # 서비스가 되므로 부팅에서 닫는다. 조용히 열린 채로 뜨지 않는다.
+  if [ -z "${STRONG_LLM_GRPC_SHARED_SECRET:-}" ]; then
+    echo "p1 secret loading failed: strong_llm_shared_secret_missing" >&2
+    exit 1
+  fi
+  # Vertex를 1차나 2차로 쓰면 서비스계정이 있어야 한다. 그 소유자 전용 사본은 위 RAG v2
+  # 블록이 만들므로, RAG v2를 끈 채 Vertex만 켜면 여기서 닫힌다. 켜 두고 매 요청 실패하는
+  # 배포보다 안 뜨는 편이 낫다.
+  case "vertex" in
+    "${STRONG_LLM_PROVIDER:-vertex}"|"${STRONG_LLM_FALLBACK_PROVIDER:-}")
+      vertex_key=/tmp/rag-v2-root/secrets/pre-s5-vertex-service-account.json
+      if [ ! -f "$vertex_key" ] || [ -L "$vertex_key" ]; then
+        echo "p1 secret loading failed: strong_llm_vertex_service_account_missing" >&2
+        exit 1
+      fi
+      export STRONG_LLM_VERTEX_SERVICE_ACCOUNT_JSON=$vertex_key
+      ;;
+  esac
 fi
 
 if [ "$profile" = redis ]; then

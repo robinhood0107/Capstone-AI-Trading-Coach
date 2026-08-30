@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16strong_llm_agent.proto\x12\x1e\x63\x61pstone.decision.internal.s49\"\x9d\x01\n\x0c\x45videnceItem\x12\x0f\n\x07ordinal\x18\x01 \x01(\x05\x12\x13\n\x0b\x63itation_id\x18\x02 \x01(\t\x12\x19\n\x11\x63hunk_revision_id\x18\x03 \x01(\t\x12\x16\n\x0e\x63\x61nonical_text\x18\x04 \x01(\t\x12\x1d\n\x15\x63\x61nonical_text_sha256\x18\x05 \x01(\t\x12\x15\n\rowner_private\x18\x06 \x01(\x08\"\xd9\x02\n\x08StartRun\x12\x10\n\x08model_id\x18\x01 \x01(\t\x12\x10\n\x08question\x18\x02 \x01(\t\x12\x13\n\x0b\x61nswer_mode\x18\x03 \x01(\t\x12\x17\n\x0frelated_symbols\x18\x04 \x03(\t\x12\x0e\n\x06topics\x18\x05 \x03(\t\x12\x45\n\x0fpublic_evidence\x18\x06 \x03(\x0b\x32,.capstone.decision.internal.s49.EvidenceItem\x12\x44\n\x0eowner_evidence\x18\x07 \x03(\x0b\x32,.capstone.decision.internal.s49.EvidenceItem\x12\x1d\n\x15google_search_enabled\x18\x08 \x01(\x08\x12\x17\n\x0fmax_tool_rounds\x18\t \x01(\x05\x12\x14\n\x0c\x63urrent_time\x18\n \x01(\t\x12\x10\n\x08timezone\x18\x0b \x01(\t\"-\n\x12ProviderCallPermit\x12\x17\n\x0fplanned_call_id\x18\x01 \x01(\t\"p\n\nToolResult\x12\x14\n\x0ctool_call_id\x18\x01 \x01(\t\x12\x11\n\ttool_name\x18\x02 \x01(\t\x12\x13\n\x0bresult_json\x18\x03 \x01(\t\x12\x0e\n\x06\x66\x61iled\x18\x04 \x01(\x08\x12\x14\n\x0c\x66\x61ilure_leaf\x18\x05 \x01(\t\"\x1b\n\tCancelRun\x12\x0e\n\x06reason\x18\x01 \x01(\t\"\xe0\x02\n\tHostEvent\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x10\n\x08sequence\x18\x02 \x01(\x04\x12\x0f\n\x07\x63\x61ll_id\x18\x03 \x01(\t\x12=\n\tstart_run\x18\n \x01(\x0b\x32(.capstone.decision.internal.s49.StartRunH\x00\x12R\n\x14provider_call_permit\x18\x0b \x01(\x0b\x32\x32.capstone.decision.internal.s49.ProviderCallPermitH\x00\x12\x41\n\x0btool_result\x18\x0c \x01(\x0b\x32*.capstone.decision.internal.s49.ToolResultH\x00\x12?\n\ncancel_run\x18\r \x01(\x0b\x32).capstone.decision.internal.s49.CancelRunH\x00\x42\t\n\x07payload\"]\n\x13ProviderCallPlanned\x12\x17\n\x0fplanned_call_id\x18\x01 \x01(\t\x12\r\n\x05phase\x18\x02 \x01(\t\x12\x1e\n\x16google_search_attached\x18\x03 \x01(\x08\"x\n\rGroundingRoot\x12\x11\n\tresult_id\x18\x01 \x01(\t\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0b\n\x03uri\x18\x03 \x01(\t\x12\x0e\n\x06\x64omain\x18\x04 \x01(\t\x12\x13\n\x0b\x63hunk_index\x18\x05 \x01(\x05\x12\x13\n\x0b\x63itation_id\x18\x06 \x01(\t\"_\n\x10GroundingSupport\x12\x13\n\x0bstart_index\x18\x01 \x01(\x05\x12\x11\n\tend_index\x18\x02 \x01(\x05\x12\x0c\n\x04text\x18\x03 \x01(\t\x12\x15\n\rchunk_indices\x18\x04 \x03(\x05\"\xb6\x01\n\x16RegisterGroundingRoots\x12\x1a\n\x12web_search_queries\x18\x01 \x03(\t\x12<\n\x05roots\x18\x02 \x03(\x0b\x32-.capstone.decision.internal.s49.GroundingRoot\x12\x42\n\x08supports\x18\x03 \x03(\x0b\x32\x30.capstone.decision.internal.s49.GroundingSupport\"0\n\tWebSearch\x12\x14\n\x0ctool_call_id\x18\x01 \x01(\t\x12\r\n\x05query\x18\x02 \x01(\t\"2\n\x07WebRead\x12\x14\n\x0ctool_call_id\x18\x01 \x01(\t\x12\x11\n\tresult_id\x18\x02 \x01(\t\"\x8e\x03\n\tCompleted\x12\x13\n\x0b\x61nswer_json\x18\x01 \x01(\t\x12\x1a\n\x12prompt_token_count\x18\x02 \x01(\x05\x12\x1a\n\x12output_token_count\x18\x03 \x01(\x05\x12\"\n\x1avertex_generate_call_count\x18\x04 \x01(\x05\x12$\n\x1cgoogle_grounding_query_count\x18\x05 \x01(\x05\x12\x16\n\x0esearch_backend\x18\x06 \x01(\t\x12 \n\x18\x65vidence_validation_mode\x18\x07 \x01(\t\x12\x46\n\x0fgrounding_roots\x18\x08 \x03(\x0b\x32-.capstone.decision.internal.s49.GroundingRoot\x12L\n\x12grounding_supports\x18\t \x03(\x0b\x32\x30.capstone.decision.internal.s49.GroundingSupport\x12\x1a\n\x12web_search_queries\x18\n \x03(\t\"\x84\x01\n\x06\x46\x61iled\x12\x14\n\x0c\x66\x61ilure_leaf\x18\x01 \x01(\t\x12\x1a\n\x12provider_attempted\x18\x02 \x01(\x08\x12\"\n\x1avertex_generate_call_count\x18\x03 \x01(\x05\x12$\n\x1cgoogle_grounding_query_count\x18\x04 \x01(\x05\"\xf4\x03\n\nAgentEvent\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x10\n\x08sequence\x18\x02 \x01(\x04\x12\x0f\n\x07\x63\x61ll_id\x18\x03 \x01(\t\x12T\n\x15provider_call_planned\x18\n \x01(\x0b\x32\x33.capstone.decision.internal.s49.ProviderCallPlannedH\x00\x12Z\n\x18register_grounding_roots\x18\x0b \x01(\x0b\x32\x36.capstone.decision.internal.s49.RegisterGroundingRootsH\x00\x12?\n\nweb_search\x18\x0c \x01(\x0b\x32).capstone.decision.internal.s49.WebSearchH\x00\x12;\n\x08web_read\x18\r \x01(\x0b\x32\'.capstone.decision.internal.s49.WebReadH\x00\x12>\n\tcompleted\x18\x0e \x01(\x0b\x32).capstone.decision.internal.s49.CompletedH\x00\x12\x38\n\x06\x66\x61iled\x18\x0f \x01(\x0b\x32&.capstone.decision.internal.s49.FailedH\x00\x42\t\n\x07payload2~\n\x15StrongLlmAgentService\x12\x65\n\x08Generate\x12).capstone.decision.internal.s49.HostEvent\x1a*.capstone.decision.internal.s49.AgentEvent(\x01\x30\x01\x42G\n+com.capstone.decision.contract.internal.s49B\x16StrongLlmAgentContractP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16strong_llm_agent.proto\x12\x1e\x63\x61pstone.decision.internal.s49\"\x9d\x01\n\x0c\x45videnceItem\x12\x0f\n\x07ordinal\x18\x01 \x01(\x05\x12\x13\n\x0b\x63itation_id\x18\x02 \x01(\t\x12\x19\n\x11\x63hunk_revision_id\x18\x03 \x01(\t\x12\x16\n\x0e\x63\x61nonical_text\x18\x04 \x01(\t\x12\x1d\n\x15\x63\x61nonical_text_sha256\x18\x05 \x01(\t\x12\x15\n\rowner_private\x18\x06 \x01(\x08\"\x85\x01\n\x12JudgementCandidate\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x17\n\x0f\x65xpected_return\x18\x02 \x01(\x01\x12\x18\n\x10model_confidence\x18\x03 \x01(\x01\x12\x13\n\x0blstm_signal\x18\x04 \x01(\t\x12\x17\n\x0f\x62\x61seline_signal\x18\x05 \x01(\t\"\xc1\x03\n\x08StartRun\x12\x10\n\x08model_id\x18\x01 \x01(\t\x12\x10\n\x08question\x18\x02 \x01(\t\x12\x13\n\x0b\x61nswer_mode\x18\x03 \x01(\t\x12\x17\n\x0frelated_symbols\x18\x04 \x03(\t\x12\x0e\n\x06topics\x18\x05 \x03(\t\x12\x45\n\x0fpublic_evidence\x18\x06 \x03(\x0b\x32,.capstone.decision.internal.s49.EvidenceItem\x12\x44\n\x0eowner_evidence\x18\x07 \x03(\x0b\x32,.capstone.decision.internal.s49.EvidenceItem\x12\x1d\n\x15google_search_enabled\x18\x08 \x01(\x08\x12\x17\n\x0fmax_tool_rounds\x18\t \x01(\x05\x12\x14\n\x0c\x63urrent_time\x18\n \x01(\t\x12\x10\n\x08timezone\x18\x0b \x01(\t\x12\x10\n\x08language\x18\x0c \x01(\t\x12\x0c\n\x04mode\x18\r \x01(\t\x12\x46\n\ncandidates\x18\x0e \x03(\x0b\x32\x32.capstone.decision.internal.s49.JudgementCandidate\"-\n\x12ProviderCallPermit\x12\x17\n\x0fplanned_call_id\x18\x01 \x01(\t\"p\n\nToolResult\x12\x14\n\x0ctool_call_id\x18\x01 \x01(\t\x12\x11\n\ttool_name\x18\x02 \x01(\t\x12\x13\n\x0bresult_json\x18\x03 \x01(\t\x12\x0e\n\x06\x66\x61iled\x18\x04 \x01(\x08\x12\x14\n\x0c\x66\x61ilure_leaf\x18\x05 \x01(\t\"\x1b\n\tCancelRun\x12\x0e\n\x06reason\x18\x01 \x01(\t\"\xe0\x02\n\tHostEvent\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x10\n\x08sequence\x18\x02 \x01(\x04\x12\x0f\n\x07\x63\x61ll_id\x18\x03 \x01(\t\x12=\n\tstart_run\x18\n \x01(\x0b\x32(.capstone.decision.internal.s49.StartRunH\x00\x12R\n\x14provider_call_permit\x18\x0b \x01(\x0b\x32\x32.capstone.decision.internal.s49.ProviderCallPermitH\x00\x12\x41\n\x0btool_result\x18\x0c \x01(\x0b\x32*.capstone.decision.internal.s49.ToolResultH\x00\x12?\n\ncancel_run\x18\r \x01(\x0b\x32).capstone.decision.internal.s49.CancelRunH\x00\x42\t\n\x07payload\"]\n\x13ProviderCallPlanned\x12\x17\n\x0fplanned_call_id\x18\x01 \x01(\t\x12\r\n\x05phase\x18\x02 \x01(\t\x12\x1e\n\x16google_search_attached\x18\x03 \x01(\x08\"x\n\rGroundingRoot\x12\x11\n\tresult_id\x18\x01 \x01(\t\x12\r\n\x05title\x18\x02 \x01(\t\x12\x0b\n\x03uri\x18\x03 \x01(\t\x12\x0e\n\x06\x64omain\x18\x04 \x01(\t\x12\x13\n\x0b\x63hunk_index\x18\x05 \x01(\x05\x12\x13\n\x0b\x63itation_id\x18\x06 \x01(\t\"_\n\x10GroundingSupport\x12\x13\n\x0bstart_index\x18\x01 \x01(\x05\x12\x11\n\tend_index\x18\x02 \x01(\x05\x12\x0c\n\x04text\x18\x03 \x01(\t\x12\x15\n\rchunk_indices\x18\x04 \x03(\x05\"\xb6\x01\n\x16RegisterGroundingRoots\x12\x1a\n\x12web_search_queries\x18\x01 \x03(\t\x12<\n\x05roots\x18\x02 \x03(\x0b\x32-.capstone.decision.internal.s49.GroundingRoot\x12\x42\n\x08supports\x18\x03 \x03(\x0b\x32\x30.capstone.decision.internal.s49.GroundingSupport\"0\n\tWebSearch\x12\x14\n\x0ctool_call_id\x18\x01 \x01(\t\x12\r\n\x05query\x18\x02 \x01(\t\"2\n\x07WebRead\x12\x14\n\x0ctool_call_id\x18\x01 \x01(\t\x12\x11\n\tresult_id\x18\x02 \x01(\t\"\xa3\x03\n\tCompleted\x12\x13\n\x0b\x61nswer_json\x18\x01 \x01(\t\x12\x1a\n\x12prompt_token_count\x18\x02 \x01(\x05\x12\x1a\n\x12output_token_count\x18\x03 \x01(\x05\x12\"\n\x1avertex_generate_call_count\x18\x04 \x01(\x05\x12$\n\x1cgoogle_grounding_query_count\x18\x05 \x01(\x05\x12\x16\n\x0esearch_backend\x18\x06 \x01(\t\x12 \n\x18\x65vidence_validation_mode\x18\x07 \x01(\t\x12\x46\n\x0fgrounding_roots\x18\x08 \x03(\x0b\x32-.capstone.decision.internal.s49.GroundingRoot\x12L\n\x12grounding_supports\x18\t \x03(\x0b\x32\x30.capstone.decision.internal.s49.GroundingSupport\x12\x1a\n\x12web_search_queries\x18\n \x03(\t\x12\x13\n\x0bprovider_id\x18\x0b \x01(\t\"\x84\x01\n\x06\x46\x61iled\x12\x14\n\x0c\x66\x61ilure_leaf\x18\x01 \x01(\t\x12\x1a\n\x12provider_attempted\x18\x02 \x01(\x08\x12\"\n\x1avertex_generate_call_count\x18\x03 \x01(\x05\x12$\n\x1cgoogle_grounding_query_count\x18\x04 \x01(\x05\"\xf4\x03\n\nAgentEvent\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x10\n\x08sequence\x18\x02 \x01(\x04\x12\x0f\n\x07\x63\x61ll_id\x18\x03 \x01(\t\x12T\n\x15provider_call_planned\x18\n \x01(\x0b\x32\x33.capstone.decision.internal.s49.ProviderCallPlannedH\x00\x12Z\n\x18register_grounding_roots\x18\x0b \x01(\x0b\x32\x36.capstone.decision.internal.s49.RegisterGroundingRootsH\x00\x12?\n\nweb_search\x18\x0c \x01(\x0b\x32).capstone.decision.internal.s49.WebSearchH\x00\x12;\n\x08web_read\x18\r \x01(\x0b\x32\'.capstone.decision.internal.s49.WebReadH\x00\x12>\n\tcompleted\x18\x0e \x01(\x0b\x32).capstone.decision.internal.s49.CompletedH\x00\x12\x38\n\x06\x66\x61iled\x18\x0f \x01(\x0b\x32&.capstone.decision.internal.s49.FailedH\x00\x42\t\n\x07payload2~\n\x15StrongLlmAgentService\x12\x65\n\x08Generate\x12).capstone.decision.internal.s49.HostEvent\x1a*.capstone.decision.internal.s49.AgentEvent(\x01\x30\x01\x42G\n+com.capstone.decision.contract.internal.s49B\x16StrongLlmAgentContractP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -34,34 +34,36 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._serialized_options = b'\n+com.capstone.decision.contract.internal.s49B\026StrongLlmAgentContractP\001'
   _globals['_EVIDENCEITEM']._serialized_start=59
   _globals['_EVIDENCEITEM']._serialized_end=216
-  _globals['_STARTRUN']._serialized_start=219
-  _globals['_STARTRUN']._serialized_end=564
-  _globals['_PROVIDERCALLPERMIT']._serialized_start=566
-  _globals['_PROVIDERCALLPERMIT']._serialized_end=611
-  _globals['_TOOLRESULT']._serialized_start=613
-  _globals['_TOOLRESULT']._serialized_end=725
-  _globals['_CANCELRUN']._serialized_start=727
-  _globals['_CANCELRUN']._serialized_end=754
-  _globals['_HOSTEVENT']._serialized_start=757
-  _globals['_HOSTEVENT']._serialized_end=1109
-  _globals['_PROVIDERCALLPLANNED']._serialized_start=1111
-  _globals['_PROVIDERCALLPLANNED']._serialized_end=1204
-  _globals['_GROUNDINGROOT']._serialized_start=1206
-  _globals['_GROUNDINGROOT']._serialized_end=1326
-  _globals['_GROUNDINGSUPPORT']._serialized_start=1328
-  _globals['_GROUNDINGSUPPORT']._serialized_end=1423
-  _globals['_REGISTERGROUNDINGROOTS']._serialized_start=1426
-  _globals['_REGISTERGROUNDINGROOTS']._serialized_end=1608
-  _globals['_WEBSEARCH']._serialized_start=1610
-  _globals['_WEBSEARCH']._serialized_end=1658
-  _globals['_WEBREAD']._serialized_start=1660
-  _globals['_WEBREAD']._serialized_end=1710
-  _globals['_COMPLETED']._serialized_start=1713
-  _globals['_COMPLETED']._serialized_end=2111
-  _globals['_FAILED']._serialized_start=2114
-  _globals['_FAILED']._serialized_end=2246
-  _globals['_AGENTEVENT']._serialized_start=2249
-  _globals['_AGENTEVENT']._serialized_end=2749
-  _globals['_STRONGLLMAGENTSERVICE']._serialized_start=2751
-  _globals['_STRONGLLMAGENTSERVICE']._serialized_end=2877
+  _globals['_JUDGEMENTCANDIDATE']._serialized_start=219
+  _globals['_JUDGEMENTCANDIDATE']._serialized_end=352
+  _globals['_STARTRUN']._serialized_start=355
+  _globals['_STARTRUN']._serialized_end=804
+  _globals['_PROVIDERCALLPERMIT']._serialized_start=806
+  _globals['_PROVIDERCALLPERMIT']._serialized_end=851
+  _globals['_TOOLRESULT']._serialized_start=853
+  _globals['_TOOLRESULT']._serialized_end=965
+  _globals['_CANCELRUN']._serialized_start=967
+  _globals['_CANCELRUN']._serialized_end=994
+  _globals['_HOSTEVENT']._serialized_start=997
+  _globals['_HOSTEVENT']._serialized_end=1349
+  _globals['_PROVIDERCALLPLANNED']._serialized_start=1351
+  _globals['_PROVIDERCALLPLANNED']._serialized_end=1444
+  _globals['_GROUNDINGROOT']._serialized_start=1446
+  _globals['_GROUNDINGROOT']._serialized_end=1566
+  _globals['_GROUNDINGSUPPORT']._serialized_start=1568
+  _globals['_GROUNDINGSUPPORT']._serialized_end=1663
+  _globals['_REGISTERGROUNDINGROOTS']._serialized_start=1666
+  _globals['_REGISTERGROUNDINGROOTS']._serialized_end=1848
+  _globals['_WEBSEARCH']._serialized_start=1850
+  _globals['_WEBSEARCH']._serialized_end=1898
+  _globals['_WEBREAD']._serialized_start=1900
+  _globals['_WEBREAD']._serialized_end=1950
+  _globals['_COMPLETED']._serialized_start=1953
+  _globals['_COMPLETED']._serialized_end=2372
+  _globals['_FAILED']._serialized_start=2375
+  _globals['_FAILED']._serialized_end=2507
+  _globals['_AGENTEVENT']._serialized_start=2510
+  _globals['_AGENTEVENT']._serialized_end=3010
+  _globals['_STRONGLLMAGENTSERVICE']._serialized_start=3012
+  _globals['_STRONGLLMAGENTSERVICE']._serialized_end=3138
 # @@protoc_insertion_point(module_scope)

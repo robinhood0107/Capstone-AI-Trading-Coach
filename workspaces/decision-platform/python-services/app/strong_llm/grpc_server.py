@@ -16,9 +16,10 @@ from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 from pydantic import ValidationError
 
 from app.generated import strong_llm_agent_pb2, strong_llm_agent_pb2_grpc
-from app.strong_llm.models import Evidence, RunRequest
+from app.strong_llm.models import Evidence, JudgementCandidate, RunRequest
+from app.strong_llm.provider import ProviderChainSettings, build_provider_chain
 from app.strong_llm.runtime import BoundedStrongLlmGraph, StrongLlmProvider
-from app.strong_llm.vertex_provider import LangChainVertexProvider, VertexProviderSettings
+from app.strong_llm.vertex_provider import VertexProviderSettings
 
 _AUTH_KEY = "x-decision-strong-llm-grpc-auth"
 _SAFE_SECRET = re.compile(r"^[A-Za-z0-9._~:-]{32,256}$")
@@ -39,7 +40,9 @@ class StrongLlmGrpcSettings:
         return cls(bind, secret)
 
 
-ProviderFactory = Callable[[RunRequest], StrongLlmProvider]
+# run 하나에 1차와 선택적 2차를 함께 세운다. 둘을 따로 만들면 permit마다 다시 세우게 되고,
+# 그 사이에 credential 읽기가 실패하면 같은 run이 다른 provider로 이어질 수 있다.
+ProviderFactory = Callable[[RunRequest], tuple[StrongLlmProvider, StrongLlmProvider | None]]
 
 
 class StrongLlmAgentServicer(strong_llm_agent_pb2_grpc.StrongLlmAgentServiceServicer):
@@ -137,8 +140,9 @@ class StrongLlmAgentServicer(strong_llm_agent_pb2_grpc.StrongLlmAgentServiceServ
 
         def worker() -> None:
             try:
+                primary, secondary = self._provider_factory(request)
                 result = self._graph.run(
-                    request, self._provider_factory(request), permit, execute_tool
+                    request, primary, permit, execute_tool, fallback_provider=secondary
                 )
                 outbound.put(
                     sequence.event(
@@ -151,6 +155,7 @@ class StrongLlmAgentServicer(strong_llm_agent_pb2_grpc.StrongLlmAgentServiceServ
                             google_grounding_query_count=result.google_grounding_query_count,
                             search_backend=result.search_backend,
                             evidence_validation_mode=result.evidence_validation_mode,
+                            provider_id=result.provider_id,
                             grounding_roots=[
                                 strong_llm_agent_pb2.GroundingRoot(**asdict(item))
                                 for item in result.grounding_roots
@@ -217,6 +222,20 @@ def _request(event: strong_llm_agent_pb2.HostEvent) -> RunRequest:
         max_tool_rounds=start.max_tool_rounds,
         current_time=start.current_time,
         timezone=start.timezone,
+        # host가 값을 보내지 않은 예전 프레임도 받는다. 그때의 뜻은 기존 동작과 같아야 한다.
+        language=start.language or "ko",
+        mode=start.mode or "EXPLAIN",
+        candidates=tuple(_candidate(item) for item in start.candidates),
+    )
+
+
+def _candidate(item: strong_llm_agent_pb2.JudgementCandidate) -> JudgementCandidate:
+    return JudgementCandidate(
+        item.symbol,
+        item.expected_return,
+        item.model_confidence,
+        item.lstm_signal,
+        item.baseline_signal,
     )
 
 
@@ -263,9 +282,15 @@ def serve(
     settings: StrongLlmGrpcSettings | None = None, provider_factory: ProviderFactory | None = None
 ) -> None:
     effective = settings or StrongLlmGrpcSettings.from_env()
-    vertex_settings = VertexProviderSettings.from_env()
+    chain_settings = ProviderChainSettings.from_env()
+    # Vertex를 쓸 배포라면 서비스계정을 기동에서 읽는다. run 때 처음 읽으면 credential이 없는
+    # 배포가 멀쩡히 뜬 뒤 모든 판단 요청에서 실패한다.
+    declared = {chain_settings.primary.provider}
+    if chain_settings.secondary is not None:
+        declared.add(chain_settings.secondary.provider)
+    vertex = VertexProviderSettings.from_env() if "vertex" in declared else None
     factory = provider_factory or (
-        lambda request: LangChainVertexProvider(request, vertex_settings)
+        lambda request: build_provider_chain(request, chain_settings, vertex)
     )
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=8),
@@ -292,3 +317,7 @@ def _require_bound_port(bound_port: int) -> None:
     # gRPC는 성공 시 실제 bound port를 반환하며 0만 bind 실패를 뜻한다.
     if bound_port == 0:
         raise RuntimeError("Strong LLM gRPC loopback bind failed")
+
+
+if __name__ == "__main__":
+    serve()

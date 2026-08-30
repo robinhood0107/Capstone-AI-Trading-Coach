@@ -22,6 +22,7 @@ import type {
   PrinciplePresetListData,
   PrincipleUpdateRequest,
   PutAutomationPolicyV2Request,
+  PutStrongLlmSettingsRequest,
   RagAnswerProjection,
   RagAskRequest,
   RagSourceListResponse,
@@ -171,6 +172,15 @@ export const api = {
 
   ragV2Ask(request: RagAskRequest): Promise<RagV2Answer> {
     return apiFetchBare<RagV2Answer>('/api/v2/rag/ask', { method: 'POST', body: request });
+  },
+
+  /* ------------------------------------------------------ Strong LLM 설정 */
+  /**
+   * 응답 본문이 없다. 키를 담을 수 있는 응답을 아예 만들지 않는 것이 키를 응답에서 지우는
+   * 것보다 확실하다. 저장된 값은 corpus-status가 돌려준다.
+   */
+  putStrongLlmSettings(request: PutStrongLlmSettingsRequest): Promise<void> {
+    return apiFetchBare<void>('/api/v2/strong-llm/settings', { method: 'PUT', body: request });
   },
 
   /* -------------------------------------------- Dashboard ViewModel 4종 */

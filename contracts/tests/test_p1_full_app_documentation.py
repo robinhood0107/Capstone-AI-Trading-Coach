@@ -309,6 +309,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
                 "화면 개수와 배치",
                 "참고하실 만한 화면",
                 "API는 이만큼만",
+                "설정 화면 — 제가 붙여 둔 것을 다시 디자인해 주세요",
                 "Automation 화면만 조금 자세히",
                 "확인은 이렇게",
                 "다 되면 알려 주세요",

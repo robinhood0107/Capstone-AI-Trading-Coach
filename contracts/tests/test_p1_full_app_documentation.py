@@ -303,6 +303,9 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertIn("기존 source, component, route, test와 `package-lock.json`", request)
         self.assertEqual(
             [
+                # 이번 요청의 성격을 앞에서 못박는 절이다. 뒤에 있으면 읽는 쪽에서 지금 화면을
+                # 고쳐 쓰는 것을 기본값으로 읽는다.
+                "먼저 말씀드릴 것 — 이번 요청은 **화면 전체를 다시 디자인해 달라는 요청**입니다",
                 "건드리지 않으셔도 되는 것",
                 "채워 주셔야 하는 흐름",
                 "화면 톤",
@@ -342,6 +345,9 @@ class P1FullAppDocumentationTest(unittest.TestCase):
                 "그대로 두시는 것",
                 "새로 붙여 주셔야 하는 것",
                 "1.1.0 Automation과의 경계",
+                # 바뀐 것이 없다는 사실도 적어야 정보다. AI 판단이 들어왔지만 Team B 계약은
+                # 그대로라는 것을 이 절이 말한다.
+                "이 요청서는 이전과 **똑같습니다**",
                 "매일 한 번 돌려 주셔야 합니다",
                 "역할 대비 부담 점검",
                 "확인은 이렇게",

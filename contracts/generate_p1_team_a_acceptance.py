@@ -588,11 +588,30 @@ function requestId(): string {{
 def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
     openapi = object_value(json.loads(openapi_bytes), "OpenAPI")
     try:
+        operations(openapi, 69)
+    except ContractError:
+        pass
+    else:
+        # 체인의 맨 앞 단계다. Strong LLM 설정 표면 하나를 먼저 걷어 exact-68로 내린다.
+        from contracts.verify_p1_strong_llm_settings_openapi_transition import (
+            ADDITIVE_PATH as STRONG_LLM_ADDITIVE_PATH,
+            strip_strong_llm_settings,
+        )
+
+        strong_llm_additive = object_value(
+            json.loads(STRONG_LLM_ADDITIVE_PATH.read_bytes()), "Strong LLM additive OpenAPI"
+        )
+        try:
+            openapi = strip_strong_llm_settings(openapi, strong_llm_additive)
+        except ContractValidationError as error:
+            raise ContractError(str(error)) from error
+        openapi_bytes = canonical_json_bytes(openapi)
+    try:
         operations(openapi, 68)
     except ContractError:
         pass
     else:
-        # 체인의 맨 앞 단계다. RAG v2 공개 표면을 먼저 걷어 역사적 exact-61로 내린다.
+        # RAG v2 공개 표면을 걷어 역사적 exact-61로 내린다.
         from contracts.verify_p1_rag_v2_openapi_transition import (
             ADDITIVE_PATH as RAG_V2_ADDITIVE_PATH,
             project_pre_rag_v2_openapi,

@@ -57,7 +57,8 @@ EXPECTED_OPERATIONS_V2: Final = (
 def build_catalog(
     openapi: dict[str, Any], openapi_bytes: bytes, badge_bytes: bytes
 ) -> dict[str, Any]:
-    root_operations = operations(openapi, 68)
+    # 새 표면이 하나 늘었다. 이 목록은 현재 root 전체를 대상으로 본다.
+    root_operations = operations(openapi, 69)
     entries: list[dict[str, Any]] = []
     for sequence, (category, method, path, operation_id, statuses) in enumerate(
         EXPECTED_OPERATIONS_V2, 1
@@ -112,7 +113,7 @@ def build_catalog(
             "operationCount": 33,
         },
         "rootOpenApi": {
-            "operationCount": 68,
+            "operationCount": 69,
             "path": OPENAPI_PATH.relative_to(ROOT).as_posix(),
             "sha256": sha256(openapi_bytes),
         },
@@ -124,14 +125,14 @@ def build_catalog(
 
 def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
     openapi = object_value(json.loads(openapi_bytes), "OpenAPI")
-    operations(openapi, 68)
+    operations(openapi, 69)
     badge_bytes = BADGE_PATH.read_bytes()
     return {
         CATALOG_PATH: canonical_json(build_catalog(openapi, openapi_bytes, badge_bytes)),
         CLIENT_PATH: generate_client(
             openapi,
             expected_operations=EXPECTED_OPERATIONS_V2,
-            expected_root_count=68,
+            expected_root_count=69,
             generated_by="contracts/generate_p1_team_a_acceptance_v2.py",
         ),
     }

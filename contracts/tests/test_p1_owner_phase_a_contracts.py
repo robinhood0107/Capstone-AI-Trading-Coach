@@ -167,6 +167,22 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
             for method in path_item
             if method != "parameters"
         }
+        self.assertEqual(69, len(root_operations))
+        # Strong LLM 설정 표면 하나도 이 검사의 대상이 아니다. 가장 새 층부터 덜어 낸다.
+        strong_llm_additive = json.loads(
+            (ROOT / "contracts/openapi/p1-strong-llm-settings.v1.openapi.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        strong_llm_operations = {
+            (path, method)
+            for path, path_item in strong_llm_additive["paths"].items()
+            for method in path_item
+            if method != "parameters"
+        }
+        self.assertEqual(1, len(strong_llm_operations))
+        self.assertTrue(strong_llm_operations <= root_operations)
+        root_operations -= strong_llm_operations
         self.assertEqual(68, len(root_operations))
         # RAG v2 공개 표면 일곱 개는 이 검사의 대상이 아니다. 먼저 덜어 내고 exact-61을 본다.
         rag_v2_additive = json.loads(

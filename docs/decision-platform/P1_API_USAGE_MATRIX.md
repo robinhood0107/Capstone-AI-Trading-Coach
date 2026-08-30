@@ -95,6 +95,7 @@ Team A는 같은 exact-38 matrix와 blocker가 보이는 실제 사용자 화면
 | 66 | PATCH | `/error` | `제품 기능 아님` | Spring 오류 처리 |
 | 67 | HEAD | `/error` | `제품 기능 아님` | Spring 오류 처리 |
 | 68 | OPTIONS | `/error` | `제품 기능 아님` | Spring 오류 처리 |
+| 69 | PUT | `/api/v2/strong-llm/settings` | `Team A 필수` | Strong LLM provider·2차 provider·답변 언어·하루 호출 상한과 API 키를 화면에서 저장한다. 키는 쓰기 전용이고 응답 본문이 없다. 현재 값과 키 마지막 네 글자는 `GET /api/v2/rag/corpus-status`가 함께 돌려준다 |
 
 historical exact-48 root에서 `getMockBuyable`의 strict `symbol`/`price` query parameter annotation이
 누락돼 있다. 기존 OpenAPI 의미를 넓히지 않고 preserved exact-33/v2 exact-38 catalog의 bounded client adapter에만 두 필드를

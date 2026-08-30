@@ -1767,7 +1767,22 @@ consent는 `GRANT | REVOKE`, disclosure/policy digest만 받고 owner와 시각�
 raw evidence는 저장하거나 반환하지 않는다. operator는 이 receipt와 독립 external evidence를 이용해
 local-only approval packet을 만들고, 뒤의 `/ask`에는 같은 request ID·parsed command와
 `X-Rag-V2-Vertex-Scope-Claim`을 함께 써야 한다. scope 또는 body가 다르거나 만료되면 gRPC/provider socket
-전에 fail-closed한다. enabled target인데 이 header가 없으면 `/ask`는 `GENERATION_UNAVAILABLE`로 종료한다.
+전에 fail-closed한다.
+
+enabled target인데 이 header가 없을 때의 동작은 **자동 활성화 설정에 달려 있다.**
+
+- `app.rag-v2.vertex.auto-activation-enabled=false`(기본값)이면 `/ask`는 `GENERATION_UNAVAILABLE`로
+  종료한다. 활성화 패킷은 운영자만 저술하므로, 두 단계를 밟지 않은 질의에는 생성이 없다.
+- `true`이면 서버가 같은 준비를 **대신 한다.** `/vertex-preparations`와 완전히 같은 경로로 5분 scope를
+  발급하고, 배포 정책 파일(`control/pre-s5-vertex-auto-activation-policy.json`, 0600)이 정한 모델·비용
+  상한·evidence 해시·코드 바인딩으로 활성화 패킷을 저술한 뒤 그 패킷으로 한 번 생성한다. 패킷을 읽고
+  검증하는 자리는 그대로 하나이며, 계약 ID·5분 만료·단일 사용 nonce·물리 호출 상한·비용 상한 산술은
+  운영자가 저술할 때와 똑같이 강제된다. 바뀌는 것은 승인의 위치뿐이다 — 호출마다의 사람 승인이
+  배포 시점의 정책 승인으로 내려간다.
+
+자동 활성화에서 사람이 곧 호출 한도이던 자리를 대신하려고 **소유자별 하루 생성 상한**을 정책에서
+읽는다. 상한에 닿으면 생성만 닫히고(`GENERATION_UNAVAILABLE`) 검색 경로는 그대로 산다. 남은 횟수는
+`GET /api/v2/rag/corpus-status`가 알려 준다.
 이 control plane은 provider 호출을 만들지 않으며 `EXTERNAL_AI_RAG_V2` 동의만으로 provider outbound가
 활성화되지 않는다.
 
@@ -1809,9 +1824,16 @@ private overlay state, 0~100 progress, active embedding profile, target generato
 code만 반환한다. 파일명·로컬 경로·내부 접근 정보·무결성 검증값은 노출하지 않는다. 현재 OA112
 metadata validation은 `CORE_READY`의 전제일 뿐 `FULL_READY` 증거가 아니다.
 
+자동 활성화가 켜져 있으면 생성형 답변의 오늘 상한과 남은 횟수를 함께 반환한다. 꺼져 있으면 세 필드는
+모두 `null`이고, 그 배포에서 화면은 검색 전용으로 동작한다. 세 값은 개수일 뿐이라 질문·근거·비용
+내역을 담지 않는다.
+
 ```json
 {
   "failureCode": null,
+  "generationDailyCap": 50,
+  "generationRemaining": 47,
+  "generationUsedToday": 3,
   "privateOverlayState": "BUILDING",
   "progressPercent": 42,
   "publicCorpusVersion": "exact30-v1+oa112-logical-pre-s5",

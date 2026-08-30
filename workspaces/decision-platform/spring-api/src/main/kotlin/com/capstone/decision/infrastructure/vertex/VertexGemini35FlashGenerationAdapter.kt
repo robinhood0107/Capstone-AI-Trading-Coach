@@ -148,6 +148,15 @@ internal class VertexGemini35FlashGenerationAdapter(
                 runCatching { usageLedger.markUnknownBilling(lease) }
             }
             return unavailable()
+        } catch (error: RagV2VertexResponseValidationException) {
+            // 응답 검증 실패는 어느 경계가 닫혔는지가 곧 원인이다. 그 경계 이름은 content-free
+            // 상수이므로 남긴다. 모델이 만든 문장, 인용, 근거는 계속 남기지 않는다.
+            LOGGER.warn("pre_s5_vertex_generation_failed leaf={}", failureLeaf.name)
+            LOGGER.warn("pre_s5_vertex_response_validation boundary={}", error.message)
+            if (lease != null && !outcomeRecorded) {
+                runCatching { usageLedger.markUnknownBilling(lease) }
+            }
+            return unavailable()
         } catch (error: Exception) {
             val contentFreeLeaf =
                 when (error) {
@@ -156,11 +165,6 @@ internal class VertexGemini35FlashGenerationAdapter(
                     else -> failureLeaf
                 }
             LOGGER.warn("pre_s5_vertex_generation_failed leaf={}", contentFreeLeaf.name)
-            // 응답 검증 실패는 어느 경계가 닫혔는지가 곧 원인이다. 그 경계 이름은 content-free
-            // 상수이므로 남긴다. 모델이 만든 문장, 인용, 근거는 계속 남기지 않는다.
-            if (error is RagV2VertexResponseValidationException) {
-                LOGGER.warn("pre_s5_vertex_response_validation boundary={}", error.message)
-            }
             if (lease != null && !outcomeRecorded) {
                 runCatching { usageLedger.markUnknownBilling(lease) }
             }

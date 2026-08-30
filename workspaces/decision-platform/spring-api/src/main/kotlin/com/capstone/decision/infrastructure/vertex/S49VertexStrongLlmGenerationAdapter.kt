@@ -353,6 +353,8 @@ internal class S49VertexStrongLlmGenerationAdapter(
         Return only one JSON object with basis, answer, sentences, and warnings. EVIDENCE requires every sentence to
         cite one or more current citationIds and include an exact non-empty quote from each supporting canonical text.
         List every numeric token in sentence order in numericSpans, backed by a submitted quote.
+        If any sentence has an empty citationIds the basis must be EVIDENCE_WITH_REASONING; choose EVIDENCE only
+        when every sentence carries a citation.
         EVIDENCE_WITH_REASONING lets grounded sentences sit beside sentences that connect, compare, or qualify them.
         Its grounded sentences follow the EVIDENCE rules exactly; its reasoning sentences leave citationIds,
         evidenceSpans, and numericSpans empty, must not claim what is true now, and may reuse only numbers a grounded

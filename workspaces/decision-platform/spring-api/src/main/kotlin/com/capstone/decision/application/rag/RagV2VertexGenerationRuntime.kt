@@ -232,18 +232,28 @@ class RagV2VertexResponseValidator {
                         require(sentences.all { it.citationIds.isNotEmpty() && it.evidenceSpanCount > 0 })
                     }
                     StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING -> {
-                        require(answer != null && sentences.isNotEmpty())
-                        require(answer == sentences.joinToString("\n") { it.text })
+                        // 어느 규칙이 닫았는지가 곧 원인이다. 한 이름으로 묶으면 추론 문장을
+                        // 허용한 뒤 답이 사라졌을 때 무엇을 고쳐야 할지 알 수 없다.
+                        boundary("STRONG_LLM_VALIDATION_REASONING_ANSWER") {
+                            require(answer != null && sentences.isNotEmpty())
+                            require(answer == sentences.joinToString("\n") { it.text })
+                        }
                         val grounded = sentences.filter { it.citationIds.isNotEmpty() }
-                        // 근거 문장이 하나도 없으면 그것은 추론이 아니라 MODEL_KNOWLEDGE다.
-                        require(grounded.isNotEmpty())
-                        require(grounded.all { it.evidenceSpanCount > 0 })
+                        boundary("STRONG_LLM_VALIDATION_REASONING_UNGROUNDED") {
+                            // 근거 문장이 하나도 없으면 그것은 추론이 아니라 MODEL_KNOWLEDGE다.
+                            require(grounded.isNotEmpty())
+                            require(grounded.all { it.evidenceSpanCount > 0 })
+                        }
                         val proven = grounded.flatMap { it.numericTokens }.toSet()
                         sentences.filter { it.citationIds.isEmpty() }.forEach { sentence ->
-                            // 인용 없는 문장이 시점을 주장하면 우리는 그것을 확인할 방법이 없다.
-                            require(!CURRENT_FACT.containsMatchIn(sentence.text))
-                            // 숫자는 이 답의 근거 문장이 이미 인용으로 증명한 것만 다시 쓸 수 있다.
-                            require(sentence.numericTokens.all { it in proven })
+                            boundary("STRONG_LLM_VALIDATION_REASONING_CURRENT_FACT") {
+                                // 인용 없는 문장이 시점을 주장하면 확인할 방법이 없다.
+                                require(!CURRENT_FACT.containsMatchIn(sentence.text))
+                            }
+                            boundary("STRONG_LLM_VALIDATION_REASONING_NUMBER") {
+                                // 숫자는 이 답의 근거 문장이 인용으로 증명한 것만 다시 쓸 수 있다.
+                                require(sentence.numericTokens.all { it in proven })
+                            }
                         }
                     }
                     StrongLlmAnswerBasis.MODEL_KNOWLEDGE -> {
@@ -530,6 +540,8 @@ class RagV2VertexResponseValidator {
         const val MAX_EVIDENCE_QUOTE_BYTES = 2_048
         const val MAX_NUMERIC_TOKEN_BYTES = 64
         const val MAX_CITATION_ID_BYTES = 8
+        // provider-neutral 상한이다. Vertex 요청 스키마는 이보다 낮은 값을 보내지만(그 위는
+        // 400으로 거절된다) 다른 provider는 이 상한까지 낼 수 있고, 검증은 여기서 한다.
         const val MAX_SENTENCES = 96
         const val MAX_EVIDENCE_SPANS = 12
         const val MAX_NUMERIC_SPANS = 64

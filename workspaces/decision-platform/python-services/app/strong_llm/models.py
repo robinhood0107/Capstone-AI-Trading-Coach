@@ -34,9 +34,16 @@ class StrongLlmAnswer(BaseModel):
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    basis: Literal["EVIDENCE", "MODEL_KNOWLEDGE", "INSUFFICIENT_EVIDENCE"]
+    basis: Literal[
+        "EVIDENCE",
+        # 근거 문장과 추론 문장이 한 답에 함께 있다. 추론 문장은 인용을 갖지 않고, 시점을
+        # 주장하지 않으며, 근거 문장이 이미 증명한 숫자만 다시 쓸 수 있다.
+        "EVIDENCE_WITH_REASONING",
+        "MODEL_KNOWLEDGE",
+        "INSUFFICIENT_EVIDENCE",
+    ]
     answer: str | None = Field(default=None, max_length=8192)
-    sentences: list[AnswerSentence] = Field(max_length=24)
+    sentences: list[AnswerSentence] = Field(max_length=96)
     warnings: list[
         Literal[
             "SINGLE_SOURCE",

@@ -352,7 +352,12 @@ internal class S49VertexStrongLlmGenerationAdapter(
 
         Return only one JSON object with basis, answer, sentences, and warnings. EVIDENCE requires every sentence to
         cite one or more current citationIds and include an exact non-empty quote from each supporting canonical text.
-        List every numeric token in sentence order in numericSpans, backed by a submitted quote. MODEL_KNOWLEDGE is
+        List every numeric token in sentence order in numericSpans, backed by a submitted quote.
+        EVIDENCE_WITH_REASONING lets grounded sentences sit beside sentences that connect, compare, or qualify them.
+        Its grounded sentences follow the EVIDENCE rules exactly; its reasoning sentences leave citationIds,
+        evidenceSpans, and numericSpans empty, must not claim what is true now, and may reuse only numbers a grounded
+        sentence in the same answer already proved. Do not choose it when no sentence is grounded. Prefer an
+        explanation a reader understands over a list of citations. MODEL_KNOWLEDGE is
         only for timeless education and must contain no numbers, dates, current/company/ticker facts, citations, or
         evidence spans. Otherwise return INSUFFICIENT_EVIDENCE with null answer and empty sentences. The answer must
         equal sentence texts joined by one newline. Allowed warnings: SINGLE_SOURCE, STALE_SOURCE,
@@ -404,12 +409,22 @@ internal class S49VertexStrongLlmGenerationAdapter(
             "type" to "OBJECT",
             "properties" to
                 mapOf(
-                    "basis" to mapOf("type" to "STRING", "enum" to listOf("EVIDENCE", "MODEL_KNOWLEDGE", "INSUFFICIENT_EVIDENCE")),
+                    "basis" to
+                        mapOf(
+                            "type" to "STRING",
+                            "enum" to
+                                listOf(
+                                    "EVIDENCE",
+                                    "EVIDENCE_WITH_REASONING",
+                                    "MODEL_KNOWLEDGE",
+                                    "INSUFFICIENT_EVIDENCE",
+                                ),
+                        ),
                     "answer" to mapOf("type" to "STRING", "nullable" to true),
                     "sentences" to
                         mapOf(
                             "type" to "ARRAY",
-                            "maxItems" to 24,
+                            "maxItems" to 96,
                             "items" to
                                 mapOf(
                                     "type" to "OBJECT",

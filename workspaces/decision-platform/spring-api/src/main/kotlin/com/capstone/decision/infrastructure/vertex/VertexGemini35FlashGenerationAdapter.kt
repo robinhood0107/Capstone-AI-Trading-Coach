@@ -218,6 +218,12 @@ internal class VertexGemini35FlashGenerationAdapter(
             in the generated sentence must occur in one submitted exact quote and be repeated once, in order, in
             numericSpans. The answer must equal sentence texts joined with one newline.
 
+            Use EVIDENCE_WITH_REASONING when you want sentences that connect, compare, or qualify the evidence
+            alongside the grounded ones. Its grounded sentences follow the EVIDENCE rules exactly. Its reasoning
+            sentences leave citationIds, evidenceSpans, and numericSpans empty, must not claim what is true now,
+            and may reuse only numbers that a grounded sentence in the same answer already proved. Do not choose
+            it when no sentence is grounded. Prefer an explanation a reader understands over a list of citations.
+
             MODEL_KNOWLEDGE is allowed only for timeless general education: no numbers, dates, current/company/ticker
             facts, citations, or evidence spans. Use INSUFFICIENT_EVIDENCE with null answer and no sentences when a
             current, numeric, company, ticker, or personalized factual question lacks evidence. warnings may only be
@@ -266,13 +272,19 @@ internal class VertexGemini35FlashGenerationAdapter(
                     "basis" to
                         linkedMapOf(
                             "type" to "STRING",
-                            "enum" to listOf("EVIDENCE", "MODEL_KNOWLEDGE", "INSUFFICIENT_EVIDENCE"),
+                            "enum" to
+                                listOf(
+                                    "EVIDENCE",
+                                    "EVIDENCE_WITH_REASONING",
+                                    "MODEL_KNOWLEDGE",
+                                    "INSUFFICIENT_EVIDENCE",
+                                ),
                         ),
                     "answer" to linkedMapOf("type" to "STRING", "nullable" to true),
                     "sentences" to
                         linkedMapOf(
                             "type" to "ARRAY",
-                            "maxItems" to 24,
+                            "maxItems" to 96,
                             "items" to
                                 linkedMapOf(
                                     "type" to "OBJECT",

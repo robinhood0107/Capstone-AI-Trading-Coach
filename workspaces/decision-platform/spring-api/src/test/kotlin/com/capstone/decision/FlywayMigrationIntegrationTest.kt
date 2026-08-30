@@ -75,10 +75,10 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `clean database applies V1 through V106 migrations and creates required objects`() {
+    fun `clean database applies V1 through V107 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
         // V7 is a Java migration and must appear alongside the SQL migrations.
-        assertEquals((1..106).map(Int::toString), versions)
+        assertEquals((1..107).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -649,7 +649,7 @@ class FlywayMigrationIntegrationTest(
                     ).use { result ->
                         val versions = mutableListOf<String>()
                         while (result.next()) versions += result.getString(1)
-                        assertEquals((1..106).map(Int::toString), versions)
+                        assertEquals((1..107).map(Int::toString), versions)
                     }
                 val privileges =
                     mapOf(
@@ -4769,7 +4769,7 @@ class FlywayMigrationIntegrationTest(
             registry.add("spring.flyway.password", postgres::getPassword)
             // The primary integration database exercises current adapters against the current schema.
             // Historical migration boundaries remain covered by their explicitly targeted databases.
-            registry.add("spring.flyway.target") { "106" }
+            registry.add("spring.flyway.target") { "107" }
             registry.add("app.decision.grpc.shared-secret") { SpringApiIntegrationTestBase.TEST_GRPC_SHARED_SECRET }
             registry.add("app.rag.grpc.shared-secret") {
                 SpringApiIntegrationTestBase.TEST_RAG_GRPC_SHARED_SECRET

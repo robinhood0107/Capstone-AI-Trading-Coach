@@ -99,6 +99,18 @@ artifacts/return-engine/*
 artifacts/decision-platform/*
 !artifacts/decision-platform/.gitkeep
 !artifacts/decision-platform/README.md
+# 테스트 판정 증거는 문서와 짝을 이뤄야 의미가 있으므로 세 하위 폴더의 JSON과 provenance
+# 마크다운만 추적한다. `run-001/result.json` 같은 임시 실행 산출물은 계속 무시된다.
+!artifacts/decision-platform/e2e/
+artifacts/decision-platform/e2e/*
+!artifacts/decision-platform/e2e/*.json
+!artifacts/decision-platform/verification/
+artifacts/decision-platform/verification/*
+!artifacts/decision-platform/verification/*.json
+!artifacts/decision-platform/live-rehearsal/
+artifacts/decision-platform/live-rehearsal/*
+!artifacts/decision-platform/live-rehearsal/*.json
+!artifacts/decision-platform/live-rehearsal/*.md
 
 # --- RAG repository-local approved roots ---
 # 정책·manifest·직접 작성한 card/평가 보고서만 추적한다. 원 evidence, secret, runtime

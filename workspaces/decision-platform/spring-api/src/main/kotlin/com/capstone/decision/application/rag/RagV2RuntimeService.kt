@@ -53,6 +53,7 @@ class RagV2RuntimeService(
     private val vertexEvidencePort: RagV2VertexEvidencePort,
     private val vertexGenerationPort: RagV2VertexGenerationPort,
     private val vertexQuestionFingerprintPort: RagV2VertexQuestionFingerprintPort,
+    private val vertexActivationAuthorProvider: ObjectProvider<RagV2VertexActivationAuthorPort>,
     private val objectMapper: ObjectMapper,
     private val transactionManagerProvider: ObjectProvider<PlatformTransactionManager>,
     private val actorRlsScope: ActorRlsScopePort,
@@ -66,6 +67,7 @@ class RagV2RuntimeService(
     @Transactional
     fun corpusStatus(ownerUserId: String): RagV2CorpusStatus {
         val jdbc = jdbc()
+        val budget = vertexActivationAuthorProvider.getIfAvailable()?.budget(ownerUserId)
         setActor(ownerUserId, "READ_RAG_V2_CORPUS", "OWNER", ownerUserId)
         return jdbc
             .query(
@@ -81,6 +83,10 @@ class RagV2RuntimeService(
                     privateOverlayState = result.getString("private_overlay_state"),
                     progressPercent = result.getInt("progress_percent"),
                     failureCode = result.getString("failure_code"),
+                    // 자동 저술이 꺼져 있으면 예산 자체가 없다. 그때는 null이고 화면은 검색 전용이다.
+                    generationDailyCap = budget?.dailyCap,
+                    generationUsedToday = budget?.usedToday,
+                    generationRemaining = budget?.remaining,
                 )
             }.single()
     }
@@ -286,9 +292,21 @@ class RagV2RuntimeService(
         vertexScopeClaimId: String? = null,
     ): RagV2Answer {
         val vertexEnabled = vertexGenerationPort.isActivationEnabled()
-        if (vertexEnabled && vertexScopeClaimId == null) {
-            // packet에 맞는 stable scope가 없으면 gRPC/provider socket까지 진행하지 않는다.
-            return vertexUnavailableAnswer(requestId)
+        var scopeClaimId = vertexScopeClaimId
+        if (vertexEnabled && scopeClaimId == null) {
+            // 자동 저술이 꺼져 있으면 예전 그대로다. packet에 맞는 stable scope가 없으면
+            // gRPC/provider socket까지 진행하지 않는다.
+            val author =
+                vertexActivationAuthorProvider.getIfAvailable()
+                    ?: return vertexUnavailableAnswer(requestId)
+            // 켜져 있으면 client가 두 단계를 밟지 않아도 서버가 같은 준비를 대신 한다. 준비의
+            // 내용과 검증은 `/vertex-preparations`와 완전히 같은 경로다.
+            val preparation = inDatabaseTransaction { prepareVertexGeneration(ownerUserId, requestId, command) }
+            if (!author.author(ownerUserId, preparation)) {
+                // 하루 상한에 닿았다. 생성만 닫고 검색은 그대로 태운다.
+                return vertexUnavailableAnswer(requestId)
+            }
+            scopeClaimId = preparation.scopeClaimId
         }
         val preparation =
             inDatabaseTransaction {
@@ -297,14 +315,15 @@ class RagV2RuntimeService(
                 if (status.state != "FULL_READY") {
                     throw RagV2CorpusNotReadyException()
                 }
-                if (!vertexEnabled && vertexScopeClaimId != null) {
+                if (!vertexEnabled && scopeClaimId != null) {
                     throw RagV2VertexPreparationUnavailableException()
                 }
+                val claimId = scopeClaimId
                 val scope =
-                    if (vertexScopeClaimId == null) {
+                    if (claimId == null) {
                         issueRetrievalScope(ownerUserId, requestId, command.topics)
                     } else {
-                        readVertexPreparedScope(ownerUserId, requestId, vertexScopeClaimId, command.topics).scope
+                        readVertexPreparedScope(ownerUserId, requestId, claimId, command.topics).scope
                     }
                 // provider 호출 전 DB actor/scope/consent read를 한 짧은 transaction에서 닫는다.
                 val externalQueryConsentGranted =

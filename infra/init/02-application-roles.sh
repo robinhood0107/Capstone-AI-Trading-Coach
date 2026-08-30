@@ -1436,6 +1436,12 @@ BEGIN
             commit_rag_v2_immutable_vertex_usage(text, text, integer, integer, integer),
             mark_rag_v2_immutable_vertex_usage_unknown_billing(text, text)
         TO decision_app;
+        IF to_regprocedure('public.count_rag_v2_immutable_vertex_usage_today(text)') IS NOT NULL THEN
+            -- V104. 자동 저술이 켜지면 사람이 곧 호출 한도이던 자리를 소유자별 하루 상한이
+            -- 대신한다. 그 개수를 세는 definer 함수 하나만 재부여한다. 예약 표 자체에는
+            -- 어떤 런타임 역할도 직접 권한을 갖지 않는다.
+            GRANT EXECUTE ON FUNCTION count_rag_v2_immutable_vertex_usage_today(text) TO decision_app;
+        END IF;
     ELSIF to_regprocedure(
         'public.reserve_rag_v2_immutable_vertex_usage(text,text,text,text,text,text,text,text,text,text,text,timestamp with time zone,integer,integer,integer,bigint,bigint,bigint,integer,integer,jsonb)'
     ) IS NOT NULL

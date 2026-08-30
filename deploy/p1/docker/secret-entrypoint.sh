@@ -200,6 +200,24 @@ if [ "$profile" = decision-platform ] && [ "${RAG_V2_GRPC_ENABLED:-false}" = tru
   chmod 600 /tmp/rag-v2-root/secrets/rag-v2-voyage-query-writer-dsn
   install -m 600 "$src/artifacts/voyage-context-4/tokenizer.json" \
     /tmp/rag-v2-root/artifacts/voyage-context-4/tokenizer.json
+  # Vertex 생성형 답변은 같은 로컬 루트의 secrets/에서 서비스 계정을 읽는다. 이것도 compose
+  # secret으로 들어와 있으므로 소유자 전용 사본만 만든다. 없으면 Vertex만 닫히고 검색은 산다.
+  if [ -f /run/secrets/vertex_service_account ] && [ ! -L /run/secrets/vertex_service_account ]; then
+    install -m 600 /run/secrets/vertex_service_account \
+      /tmp/rag-v2-root/secrets/pre-s5-vertex-service-account.json
+  fi
+  # 자동 활성화를 켰다면 그 정책 파일도 소유자 전용 사본으로 옮긴다. 켜 두고 정책이 없으면
+  # 부팅에서 닫는다. 비용 상한 없이 provider를 자동으로 부르게 두는 것보다 안 뜨는 편이 낫다.
+  if [ "${RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED:-false}" = true ]; then
+    policy=$src/control/pre-s5-vertex-auto-activation-policy.json
+    if [ ! -f "$policy" ] || [ -L "$policy" ]; then
+      echo "p1 secret loading failed: rag_v2_vertex_auto_activation_policy_missing" >&2
+      exit 1
+    fi
+    install -m 600 "$policy" /tmp/rag-v2-root/control/pre-s5-vertex-auto-activation-policy.json
+    export RAG_V2_VERTEX_AUTO_ACTIVATION_POLICY_FILE=\
+/tmp/rag-v2-root/control/pre-s5-vertex-auto-activation-policy.json
+  fi
   export CAPSTONE_RAG_LOCAL_ROOT=/tmp/rag-v2-root
 fi
 

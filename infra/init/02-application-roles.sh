@@ -2255,6 +2255,39 @@ $p1_v87_runtime_privileges$;
 
 -- V106 이전 스냅샷에는 이 테이블이 없다. V89 블록에 얹으면 그런 DB의 bootstrap이 통째로
 -- 실패하므로 테이블 존재를 직접 확인하는 자기 블록으로 둔다.
+-- V108 이전 스냅샷에는 이 표면이 없다. 테이블 존재를 직접 확인하는 자기 블록으로 둔다.
+DO $p1_v108_strong_llm_settings_privileges$
+BEGIN
+    IF to_regclass('public.strong_llm_owner_settings') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON TABLE
+            public.strong_llm_owner_settings,
+            public.strong_llm_owner_credentials
+        FROM PUBLIC, decision_app, decision_worker, decision_replay;
+        -- 설정 행은 소유자 세션이 RLS 안에서 직접 읽고 쓴다.
+        GRANT SELECT, INSERT, UPDATE ON TABLE public.strong_llm_owner_settings TO decision_app;
+        -- 키 행에는 어떤 테이블 권한도 주지 않는다. 그 길은 definer 함수뿐이다.
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.put_strong_llm_owner_settings_v1(text,text,text,text,text,text,text,text,integer),
+            public.put_strong_llm_owner_credential_v1(
+                text,text,text,bytea,bytea,bytea,bytea,bytea,bytea,text
+            ),
+            public.delete_strong_llm_owner_credential_v1(text,text),
+            public.read_strong_llm_owner_key_last4_v1(text),
+            public.read_strong_llm_owner_credential_v1(text,text)
+        FROM PUBLIC, decision_app, decision_worker, decision_replay;
+        GRANT EXECUTE ON FUNCTION
+            public.put_strong_llm_owner_settings_v1(text,text,text,text,text,text,text,text,integer),
+            public.put_strong_llm_owner_credential_v1(
+                text,text,text,bytea,bytea,bytea,bytea,bytea,bytea,text
+            ),
+            public.delete_strong_llm_owner_credential_v1(text,text),
+            public.read_strong_llm_owner_key_last4_v1(text),
+            public.read_strong_llm_owner_credential_v1(text,text)
+        TO decision_app;
+    END IF;
+END
+$p1_v108_strong_llm_settings_privileges$;
+
 DO $p1_v106_automation_ai_judgement_privileges$
 BEGIN
     IF to_regclass('public.automation_ai_judgements') IS NOT NULL THEN

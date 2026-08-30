@@ -85,6 +85,17 @@ def project_pre_rag_v2_openapi(
     """승인된 RAG v2 공개 표면을 제거하고 바이트 안정한 exact-61 root를 복원한다."""
 
     current_operations = operations(current)
+    if len(current_operations) == 69:
+        # Strong LLM 설정 표면이 뒤에 더해졌다. 그 층을 먼저 걷어 exact-68을 복원한다.
+        # 함수 안에서 import하는 이유는 그쪽이 이 모듈을 다시 부르기 때문이다.
+        from contracts.verify_p1_strong_llm_settings_openapi_transition import (
+            ADDITIVE_PATH as STRONG_LLM_ADDITIVE_PATH,
+            strip_strong_llm_settings,
+        )
+
+        _, strong_llm_additive = _load(STRONG_LLM_ADDITIVE_PATH, "Strong LLM additive OpenAPI")
+        current = strip_strong_llm_settings(current, strong_llm_additive)
+        current_operations = operations(current)
     additive_operations = operations(additive)
     if len(current_operations) != 68 or len(set(current_operations.values())) != 68:
         raise ContractValidationError(

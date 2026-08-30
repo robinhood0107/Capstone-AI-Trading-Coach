@@ -5388,6 +5388,67 @@
           },
           "state": {
             "type": "string"
+          },
+          "strongLlmAnswerLanguage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmBaseUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmDailyGenerateCallCap": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "strongLlmFallbackBaseUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmFallbackKeyLast4": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmFallbackModelId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmFallbackProvider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmKeyLast4": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmModelId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmProvider": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -14468,6 +14529,28 @@
         "summary": "검증된 production Signal components를 조회하며 evidence 부재는 all-ABSTAIN으로 반환한다.",
         "tags": [
           "Signal v2"
+        ]
+      }
+    },
+    "/api/v2/strong-llm/settings": {
+      "put": {
+        "operationId": "putStrongLlmSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "strong-llm-settings-controller"
         ]
       }
     },

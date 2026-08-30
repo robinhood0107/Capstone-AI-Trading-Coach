@@ -1,6 +1,7 @@
 package com.capstone.decision.application.rag
 
 import com.capstone.decision.application.security.ActorRlsScopePort
+import com.capstone.decision.application.strongllm.StrongLlmSettingsService
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -57,6 +58,7 @@ class RagV2RuntimeService(
     private val objectMapper: ObjectMapper,
     private val transactionManagerProvider: ObjectProvider<PlatformTransactionManager>,
     private val actorRlsScope: ActorRlsScopePort,
+    private val strongLlmSettingsProvider: ObjectProvider<StrongLlmSettingsService>,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -68,6 +70,9 @@ class RagV2RuntimeService(
     fun corpusStatus(ownerUserId: String): RagV2CorpusStatus {
         val jdbc = jdbc()
         val budget = vertexActivationAuthorProvider.getIfAvailable()?.budget(ownerUserId)
+        // 설정 읽기는 자기 actor scope를 연다. corpus scope를 연 뒤에 열면 두 번째가 403이 되므로
+        // 순서를 지킨다.
+        val settings = strongLlmSettingsProvider.getIfAvailable()?.read(ownerUserId)
         setActor(ownerUserId, "READ_RAG_V2_CORPUS", "OWNER", ownerUserId)
         return jdbc
             .query(
@@ -87,6 +92,16 @@ class RagV2RuntimeService(
                     generationDailyCap = budget?.dailyCap,
                     generationUsedToday = budget?.usedToday,
                     generationRemaining = budget?.remaining,
+                    strongLlmProvider = settings?.provider,
+                    strongLlmFallbackProvider = settings?.fallbackProvider,
+                    strongLlmModelId = settings?.modelId,
+                    strongLlmFallbackModelId = settings?.fallbackModelId,
+                    strongLlmBaseUrl = settings?.baseUrl,
+                    strongLlmFallbackBaseUrl = settings?.fallbackBaseUrl,
+                    strongLlmAnswerLanguage = settings?.answerLanguage,
+                    strongLlmDailyGenerateCallCap = settings?.dailyGenerateCallCap,
+                    strongLlmKeyLast4 = settings?.primaryKeyLast4,
+                    strongLlmFallbackKeyLast4 = settings?.fallbackKeyLast4,
                 )
             }.single()
     }

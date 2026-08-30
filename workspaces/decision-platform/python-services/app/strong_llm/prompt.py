@@ -53,9 +53,10 @@ _STEPS_EXPLAIN = """\
 # 처리 순서
 1. 질문이 무엇을 묻는지 정한다.
 2. 주어진 근거 중 그 질문에 답이 되는 것만 고른다.
-3. 근거로 답할 수 있으면 EVIDENCE, 시대와 무관한 일반 교육이면 MODEL_KNOWLEDGE,
-   둘 다 아니면 INSUFFICIENT_EVIDENCE를 고른다.
-4. 고른 근거만으로 문장을 쓴다. 근거에 없는 사실을 덧붙이지 않는다."""
+3. 근거로 답할 수 있으면 EVIDENCE 또는 EVIDENCE_WITH_REASONING, 시대와 무관한 일반
+   교육이면 MODEL_KNOWLEDGE, 둘 다 아니면 INSUFFICIENT_EVIDENCE를 고른다.
+4. 고른 근거만으로 문장을 쓴다. 근거에 없는 사실을 덧붙이지 않는다. 근거를 잇거나 비교하거나
+   한계를 말하는 문장은 추론 문장으로 따로 쓴다."""
 
 _STEPS_JUDGE = """\
 # 처리 순서
@@ -68,13 +69,22 @@ _STEPS_JUDGE = """\
 
 _OUTPUT_EXPLAIN = """\
 # 출력 계약
-선언된 JSON 스키마 하나만 반환한다. Markdown이나 추가 필드를 넣지 않는다.
+선언된 JSON 스키마 하나만 반환한다. Markdown이나 추가 필드를 넣지 않는다. answer는 문장들을
+개행 하나로 이은 것과 정확히 같아야 한다.
 - EVIDENCE: 모든 문장이 citationId를 하나 이상 갖고 evidenceSpans에 인용한 근거의 정확한
   부분 문자열을 담는다. 문장 안의 모든 숫자 토큰은 제출한 인용 안에 있어야 하고 numericSpans에
-  같은 순서로 한 번씩 반복한다. answer는 문장들을 개행 하나로 이은 것과 정확히 같아야 한다.
+  같은 순서로 한 번씩 반복한다.
+- EVIDENCE_WITH_REASONING: 근거 문장과 추론 문장을 함께 쓸 때 고른다. 근거 문장은 위 EVIDENCE
+  규칙 그대로다. 추론 문장은 근거를 잇거나 비교하거나 한계를 말하는 문장이며 citationIds와
+  evidenceSpans와 numericSpans를 모두 비운다. 추론 문장에는 "현재·최근·오늘" 같은 시점 주장을
+  쓰지 않고, 이 답의 근거 문장이 이미 인용으로 증명한 숫자만 다시 쓸 수 있다. 근거 문장이
+  하나도 없으면 이 basis를 고르지 않는다.
 - MODEL_KNOWLEDGE: 시대와 무관한 일반 교육에만 쓴다. 숫자, 날짜, 현재·회사·티커 사실,
   citation, evidence span을 담지 않는다.
-- INSUFFICIENT_EVIDENCE: answer는 null이고 sentences는 비운다."""
+- INSUFFICIENT_EVIDENCE: answer는 null이고 sentences는 비운다.
+
+근거로 답할 수 있으면서 그 근거를 잇거나 해석하는 문장이 필요하면 EVIDENCE 대신
+EVIDENCE_WITH_REASONING을 고른다. 인용의 나열보다 이해되는 설명이 낫다."""
 
 _OUTPUT_JUDGE = """\
 # 출력 계약

@@ -2253,6 +2253,19 @@ BEGIN
 END
 $p1_v87_runtime_privileges$;
 
+-- V106 이전 스냅샷에는 이 테이블이 없다. V89 블록에 얹으면 그런 DB의 bootstrap이 통째로
+-- 실패하므로 테이블 존재를 직접 확인하는 자기 블록으로 둔다.
+DO $p1_v106_automation_ai_judgement_privileges$
+BEGIN
+    IF to_regclass('public.automation_ai_judgements') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON TABLE public.automation_ai_judgements
+        FROM PUBLIC, decision_app, decision_worker, decision_replay;
+        -- 판단 기록은 소유자 화면이 읽는다. 쓰기는 자동운용 role의 definer 함수만 한다.
+        GRANT SELECT ON TABLE public.automation_ai_judgements TO decision_app;
+    END IF;
+END
+$p1_v106_automation_ai_judgement_privileges$;
+
 DO $p1_v89_automation_journal_privileges$
 BEGIN
     IF to_regprocedure(

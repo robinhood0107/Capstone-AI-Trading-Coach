@@ -110,6 +110,27 @@ class ApiProbe:
             raise VerificationRunnerError(f"api unreachable: {error}") from error
 
 
+def _platform_env(*names: str) -> dict[str, str]:
+    """실행 중인 컨테이너의 런타임 설정을 읽는다.
+
+    이 러너는 호스트에서 돈다. `os.environ`을 보면 호스트의 값이지 배포의 값이 아니다. 판정을
+    관측에서 뽑으려면 실제로 켜져 있는 프로세스에게 물어야 한다.
+    """
+
+    script = "for name in " + " ".join(names) + '; do printf "%s\\n" "$(printenv "$name")"; done'
+    result = subprocess.run(
+        ["/usr/bin/docker", "exec", "capstone-p1-decision-platform-1", "sh", "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if result.returncode != 0:
+        return dict.fromkeys(names, "")
+    values = result.stdout.splitlines()
+    return dict(zip(names, values + [""] * len(names), strict=False))
+
+
 def _psql(query: str) -> str:
     """실행 중인 스택의 postgres에 읽기 질의만 보낸다."""
 
@@ -285,21 +306,50 @@ def _check_rag(recorder: Recorder, api: ApiProbe) -> None:
     status, payload = api.get("/api/v1/rag/sources")
     recorder.add(area, "소스 조회 surface", "PASS" if status == 200 else "FAIL", f"HTTP {status}")
     history = _psql("select count(*) from rag_answer_history")
-    recorder.add(area, "암호화 답변 이력", "PASS", f"rows={history}")
-    grpc_enabled = os.environ.get("RAG_V2_GRPC_ENABLED", "false")
+    recorder.add(
+        area,
+        "암호화 답변 이력",
+        "PASS" if history.strip().isdigit() else "FAIL",
+        f"rows={history or '(조회 실패)'}",
+    )
+    # 이 두 줄은 예전에 판정이 코드에 박혀 있던 자리다. 배포 설정이 바뀌어도 보고서는 계속
+    # BLOCKED라고 말했다. 지금은 실행 중인 컨테이너에게 물어 그 답을 그대로 판정으로 쓴다.
+    runtime = _platform_env(
+        "RAG_V2_GRPC_ENABLED",
+        "S4_9_RUNTIME_VOYAGE_QUERY_ENABLED",
+        "RAG_V2_VERTEX_ENABLED",
+        "RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED",
+    )
+    retrieval_on = (
+        runtime["RAG_V2_GRPC_ENABLED"] == "true"
+        and runtime["S4_9_RUNTIME_VOYAGE_QUERY_ENABLED"] == "true"
+    )
+    batch_plan = _psql(
+        "select count(*) from rag_v2_immutable_voyage_document_batch_plans where state = 'COMPLETE'"
+    )
     recorder.add(
         area,
         "v2 검색 경로 (Voyage 질의)",
-        "BLOCKED",
-        "RAG_V2_GRPC_ENABLED=false. 질의 활성화 패킷이 만료(2026-08-14)돼 재발급 필요",
+        "PASS" if retrieval_on and batch_plan.strip() not in ("", "0") else "BLOCKED",
+        f"RAG_V2_GRPC_ENABLED={runtime['RAG_V2_GRPC_ENABLED'] or '<unset>'} "
+        f"질의 런타임={runtime['S4_9_RUNTIME_VOYAGE_QUERY_ENABLED'] or '<unset>'} "
+        f"COMPLETE 배치 계획={batch_plan or '(조회 실패)'}",
+    )
+    vertex_on = runtime["RAG_V2_VERTEX_ENABLED"] == "true"
+    auto_on = runtime["RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED"] == "true"
+    answered = _psql(
+        "select count(*) from rag_v2_immutable_vertex_usage_reservations"
+        " where created_at >= now() - interval '30 days'"
     )
     recorder.add(
         area,
         "생성형 답변 (Vertex)",
-        "BLOCKED",
-        "활성화 패킷 만료 + 죽은 커밋 바인딩. tree 고정 후 재발급 필요",
+        "PASS" if vertex_on and answered.strip() not in ("", "0") else "BLOCKED",
+        f"RAG_V2_VERTEX_ENABLED={runtime['RAG_V2_VERTEX_ENABLED'] or '<unset>'} "
+        f"자동저술={runtime['RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED'] or '<unset>'} "
+        f"최근 30일 생성 예약={answered or '(조회 실패)'} "
+        f"(꺼져 있으면 BLOCKED가 맞다. 자동저술={auto_on})",
     )
-    del grpc_enabled
 
 
 def _check_team_b(recorder: Recorder) -> None:
@@ -311,11 +361,20 @@ def _check_team_b(recorder: Recorder) -> None:
         "BLOCKED" if bundles == "0" else "PASS",
         f"bundles={bundles} — 외부 팀 대기",
     )
+    # 물질화된 번들이 있으면 validator는 확인 대상이다. 없을 때만 NOT_APPLICABLE이 맞다.
+    materialized = sorted(
+        (_REPOSITORY / "deploy/p1/.state-app/artifacts").glob("*/p1-return-engine-manifest.v2.json")
+    )
     recorder.add(
         area,
         "validator (hermetic)",
-        "NOT_APPLICABLE",
-        "./capstone artifact validate 는 동작하나 검증할 번들이 없음",
+        "PASS" if materialized else "NOT_APPLICABLE",
+        f"물질화된 번들={len(materialized)}개 "
+        + (
+            "tests/e2e/team_intake_e2e.py가 production 적재기로 이 번들을 통과시킨다"
+            if materialized
+            else "검증할 번들이 없다"
+        ),
     )
 
 

@@ -20,6 +20,10 @@ data class RagV2VertexProperties(
     var treeDigest: String = "",
     var ciDigest: String = "",
     var securityDigest: String = "",
+    /** 배포 정책으로 활성화 패킷을 스스로 저술한다. 끄면 운영자 패킷만 쓴다. */
+    var autoActivationEnabled: Boolean = false,
+    /** 비용 상한과 evidence 해시가 들어 있는 로컬 0600 정책 파일. 자동 저술일 때만 읽는다. */
+    var autoActivationPolicyFile: String = "",
     @field:Min(1_000)
     @field:Max(30_000)
     var requestTimeoutMillis: Long = 30_000,
@@ -38,6 +42,12 @@ data class RagV2VertexProperties(
         require(SHA256.matches(ciDigest)) { "Vertex activation CI binding is invalid." }
         require(SHA256.matches(securityDigest)) { "Vertex activation security binding is invalid." }
         require(requestTimeoutMillis in 1_000..30_000)
+        if (autoActivationEnabled) {
+            val policy = Path.of(autoActivationPolicyFile)
+            require(policy.isAbsolute && policy.normalize() == policy) {
+                "Vertex auto-activation policy file must be an absolute normalized local path."
+            }
+        }
     }
 
     companion object {

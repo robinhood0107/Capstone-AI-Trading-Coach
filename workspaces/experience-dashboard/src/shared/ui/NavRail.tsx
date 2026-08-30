@@ -12,6 +12,7 @@ const ITEMS = [
   { href: '/backtest', label: '백테스트 리포트', note: 'Backtest' },
   { href: '/rag', label: '금융 가이드', note: 'RAG' },
   { href: '/report', label: '보고서 캡처', note: 'Report' },
+  { href: '/settings', label: '설정', note: 'Strong LLM' },
 ];
 
 export function NavRail() {

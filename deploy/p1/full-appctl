@@ -276,6 +276,65 @@ stop_old_preview_containers() {
   fi
 }
 
+# RAG는 재료가 있는 기계에서 저절로 켜진다.
+#
+# 예전에는 기본값이 꺼짐이라 `./capstone up`만 하면 corpus는 FULL_READY라고 답하면서도 질문에는
+# 답도 인용도 오지 않았다. 그것이 이 화면의 첫인상이었다.
+#
+# 그렇다고 compose 기본값을 켜짐으로 바꿀 수는 없다. entrypoint는 켜져 있는데 로컬 루트나
+# 키가 없으면 부팅을 닫는다. 그러면 코퍼스를 아직 받지 않은 기계에서 스택 전체가 뜨지 않는다.
+# "조용히 fixture로 되돌아가지 않는다"는 그 성질은 명시적으로 켠 요청에 대한 것이라 그대로 둔다.
+#
+# 그래서 기본값을 여기서 정한다. 이 기계에 재료가 실제로 있으면 켜고, 없으면 끈 채로 뜨며
+# 무엇이 없어서 꺼졌는지 말한다. 운영자가 환경변수로 직접 켠 경우에는 손대지 않는다 - 그때는
+# 재료가 없으면 부팅이 닫히는 편이 맞다.
+# 활성화 패킷에 박히는 코드 바인딩 넷을 지금 트리에서 만든다.
+#
+# 이 값들의 뜻은 "이 패킷을 저술한 코드 상태가 무엇이었나"다. 운영자가 손으로 붙여 넣게 하면
+# 배포마다 한 번 더 손이 가고, 무엇보다 그 값이 실제로 도는 코드와 어긋나도 아무도 모른다.
+# 실제 상태에서 뽑으면 그 어긋남이 생기지 않는다. 이미 정해 둔 값이 있으면 손대지 않는다.
+bind_vertex_code_state() {
+  command -v git >/dev/null 2>&1 || return 1
+  local head tree
+  head=$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null) || return 1
+  tree=$(git -C "$REPO_ROOT" rev-parse 'HEAD^{tree}' 2>/dev/null) || return 1
+  export P1_RAG_V2_VERTEX_HEAD_COMMIT=${P1_RAG_V2_VERTEX_HEAD_COMMIT:-$head}
+  export P1_RAG_V2_VERTEX_TREE_DIGEST=${P1_RAG_V2_VERTEX_TREE_DIGEST:-$(printf '%s' "$tree" | sha256sum | cut -d' ' -f1)}
+  export P1_RAG_V2_VERTEX_CI_DIGEST=${P1_RAG_V2_VERTEX_CI_DIGEST:-$(sha256sum "$REPO_ROOT/.github/workflows/contracts-ci.yml" | cut -d' ' -f1)}
+  export P1_RAG_V2_VERTEX_SECURITY_DIGEST=${P1_RAG_V2_VERTEX_SECURITY_DIGEST:-$(sha256sum "$SCRIPT_DIR/docker/secret-entrypoint.sh" | cut -d' ' -f1)}
+}
+
+enable_rag_by_default() {
+  # 이 경로는 compose가 읽는 runtime.env에 있다. 그 파일을 통째로 불러오면 여기의 판단이
+  # 배포 전체의 환경에 섞이므로 필요한 한 줄만 읽는다.
+  local root=${P1_RAG_RUNTIME_DIR:-}
+  [[ -n $root ]] || root=$(sed -n 's/^P1_RAG_RUNTIME_DIR=//p' "$RUNTIME_ENV" 2>/dev/null || true)
+  local missing=()
+  [[ -n ${P1_RAG_V2_ENABLED:-} ]] && return 0
+  [[ -n $root && -d $root ]] || missing+=(runtime-root)
+  [[ -f $root/control/pre-s5-voyage-query-runtime.json ]] || missing+=(voyage-query-runtime)
+  [[ -f $root/artifacts/voyage-context-4/tokenizer.json ]] || missing+=(tokenizer)
+  grep -q '^VOYAGE_API_KEY=.' "$SECRETS_DIR/rag-v2.env" 2>/dev/null || missing+=(voyage-key)
+  if ((${#missing[@]})); then
+    export P1_RAG_V2_ENABLED=false
+    printf 'CAPSTONE_RAG_DEFAULT=OFF_MISSING_%s\n' "$(IFS=,; printf '%s' "${missing[*]}")"
+    return 0
+  fi
+  export P1_RAG_V2_ENABLED=true
+  # 생성까지 켜려면 서비스계정과 자동 저술 정책이 더 있어야 한다. 둘 중 하나라도 없으면
+  # 검색은 켜고 생성만 닫는다. 그때 화면은 인용은 보여 주고 답만 비어 있다.
+  if [[ -z ${P1_RAG_V2_VERTEX_ENABLED:-} ]] &&
+     [[ -f $SECRETS_DIR/pre-s5-vertex-service-account.json ]] &&
+     [[ -f $root/control/pre-s5-vertex-auto-activation-policy.json ]] &&
+     bind_vertex_code_state; then
+    export P1_RAG_V2_VERTEX_ENABLED=true
+    export P1_RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED=${P1_RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED:-true}
+    printf 'CAPSTONE_RAG_DEFAULT=ON_WITH_GENERATION\n'
+  else
+    printf 'CAPSTONE_RAG_DEFAULT=ON_RETRIEVAL_ONLY\n'
+  fi
+}
+
 up_app() {
   local models=0 mock=0
   while (($#)); do
@@ -292,6 +351,7 @@ up_app() {
   export P1_KIS_MOCK_ONLINE_ENABLED=$([[ $mock == 1 ]] && printf true || printf false)
   export P1_KIS_OFFLINE=$([[ $mock == 1 ]] && printf 0 || printf 1)
   export P1_AUTOMATION_RUNTIME_ENABLED=false
+  enable_rag_by_default
   require_command openssl
   require_command python3
   [[ -n $DOCKER_BIN ]] || die MISSING_COMMAND_docker

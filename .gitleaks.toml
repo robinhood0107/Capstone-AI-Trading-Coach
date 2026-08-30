@@ -69,11 +69,11 @@ condition = "AND"
 targetRules = ["generic-api-key"]
 commits = [
   "ce86ce052c2760b9616c5867daf50397dec72817",
-  "955734f7617706a9b6dd62eff99b2ae0ad4f74c8",
+  "955734f7617706a9b6dd62eff99b2ae0ad4f74c8"
 ]
 paths = [
   "^workspaces/decision-platform/python-services/tests/e2e/settings_probe[.]py$",
-  "^workspaces/decision-platform/python-services/tests/e2e/ai_judgement_e2e[.]py$",
+  "^workspaces/decision-platform/python-services/tests/e2e/ai_judgement_e2e[.]py$"
 ]
 regexTarget = "secret"
 regexes = ["^sk-(probe-0123456789ABCDefgh|e2e-probe-ABCDwxyz)$"]

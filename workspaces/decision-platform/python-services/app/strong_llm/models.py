@@ -49,6 +49,43 @@ class StrongLlmAnswer(BaseModel):
     ] = Field(max_length=6)
 
 
+class CandidateVerdict(BaseModel):
+    """후보 하나에 대한 모델의 판단이다. 수량이나 주문은 여기에 없다.
+
+    모델은 점수와 차단 여부, 그 사유만 낸다. 그 숫자로 순위를 바꿀지 얼마나 살지는
+    `app/p1_owner/automation.py`가 결정론적으로 계산한다. 모델이 배분을 직접 내면 같은
+    입력에 같은 결과라는 성질을 잃고 정책 상한을 검증으로만 막아야 한다.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    symbol: str = Field(pattern=r"^[0-9A-Z._:-]{1,20}$")
+    score: float = Field(ge=0.0, le=1.0)
+    veto: bool
+    reason: str = Field(min_length=1, max_length=512)
+
+
+class StrongLlmJudgement(BaseModel):
+    """JUDGE 모드의 structured output. 주어진 후보 집합에 대해서만 답한다."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    candidates: list[CandidateVerdict] = Field(max_length=32)
+    confidence: float = Field(ge=0.0, le=1.0)
+    summary: str = Field(min_length=1, max_length=2048)
+
+
+@dataclass(frozen=True, slots=True)
+class JudgementCandidate:
+    """모델에게 보여줄 후보 하나. 계좌·잔고·보유량은 들어가지 않는다."""
+
+    symbol: str
+    expected_return: float
+    model_confidence: float
+    lstm_signal: str
+    baseline_signal: str
+
+
 @dataclass(frozen=True, slots=True)
 class Evidence:
     ordinal: int
@@ -73,6 +110,13 @@ class RunRequest:
     max_tool_rounds: int
     current_time: str
     timezone: str
+    # 프롬프트가 "Answer in the user's language"라고 말하면서 정작 그 값을 넘기지 않았다.
+    # 모델이 질문 언어로 추측할 뿐이었고, 그래서 다국어 지원을 약속할 수 없었다.
+    language: str = "ko"
+    # EXPLAIN은 근거로 설명하고, JUDGE는 후보를 평가한다. 같은 템플릿이 이 값으로 갈린다.
+    mode: str = "EXPLAIN"
+    # JUDGE에서만 채운다. 후보 집합의 소유자는 Return Engine이고 모델은 이 안에서만 답한다.
+    candidates: tuple[JudgementCandidate, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

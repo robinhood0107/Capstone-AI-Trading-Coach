@@ -23,6 +23,7 @@ from psycopg.rows import dict_row
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.p1_owner.automation_journal import AutomationJournal, notice_from_event
+from app.strong_llm.prompt import PROMPT_CONTRACT_ID
 from app.p1_owner.automation import (
     AutomationEngine,
     AutomationError,
@@ -129,6 +130,29 @@ class AccountLineageAdvance:
     average_fill_price_krw: int
 
 
+@dataclass(frozen=True, slots=True)
+class AiJudgementRecord:
+    """AI가 무엇을 바꿨는지 남길 한 줄. 확신도는 basis point 정수로만 오간다.
+
+    부동소수로 저장하면 같은 판단이 저장 왕복에서 달라지고, 그러면 "이 수량이 왜 이렇게
+    나왔나"를 재현할 수 없다.
+    """
+
+    checkpoint_version: int
+    participation: str
+    provider_id: str
+    prompt_version: str
+    confidence_bps: int | None
+    baseline_symbol: str | None
+    selected_symbol: str | None
+    vetoed_symbol_count: int
+    judge_call_count: int
+    candidate_count: int
+    quantity_before: int | None
+    quantity_after: int | None
+    verdicts_json: str
+
+
 class AutomationRuntimePort(Protocol):
     """Spring/KIS/Vertex adapter가 engine transport와 tick별 입력을 함께 제공한다."""
 
@@ -136,6 +160,7 @@ class AutomationRuntimePort(Protocol):
     physical_submit_calls: int
     quote_calls: int
     vertex_calls: int
+    judge_calls: int
     submit_calls: int
     reconcile_calls: int
     cancel_calls: int
@@ -154,6 +179,11 @@ class AutomationRuntimePort(Protocol):
     def quote(self, symbol: str) -> Any: ...
 
     def vertex(self, symbol: str) -> Any: ...
+
+    def judge(self, candidates: tuple[Any, ...]) -> Any: ...
+
+    # 판단을 실제로 받았을 때만 채워진다. 못 받았으면 None이고 기록은 미참여로 남는다.
+    last_judgement_json: str | None
 
     def submit(self, reservation: OrderReservation) -> Any: ...
 
@@ -332,7 +362,59 @@ class PostgresAutomationRuntimeRepository:
             raise AutomationRuntimeError("AUTOMATION_STATE_INVALID") from error
         if not isinstance(value, dict) or value.get("runId") != claim.run_id:
             raise AutomationRuntimeError("AUTOMATION_STATE_IDENTITY_MISMATCH")
+        value["aiJudgement"] = self.read_ai_judgement(claim)
         return cast(dict[str, Any], value)
+
+    def read_ai_judgement(self, claim: RuntimeClaim) -> dict[str, Any] | None:
+        """이 run이 이미 받은 판단. 없으면 None이고 그때 자동매매는 규칙만으로 돈다."""
+
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select p1_read_automation_ai_judgement_v1(%s,%s)",
+                (claim.run_id, claim.claim_token_hash),
+            )
+            row = cursor.fetchone()
+        if row is None or not isinstance(row[0], str):
+            return None
+        try:
+            value = json.loads(row[0])
+        except json.JSONDecodeError as error:
+            raise AutomationRuntimeError("AUTOMATION_AI_JUDGEMENT_INVALID") from error
+        return cast(dict[str, Any], value) if isinstance(value, dict) else None
+
+    def record_ai_judgement(self, claim: RuntimeClaim, record: AiJudgementRecord) -> None:
+        """판단 기록은 checkpoint CAS와 같은 트랜잭션에 넣지 않는다.
+
+        checkpoint 함수는 31개 인자를 받는 매매 전이 경로다. 기록이 늘 때마다 그 경로를 다시
+        쓰면 판단 기록 스키마가 주문 전이의 원자성을 흔든다. (run_id,checkpoint_version)
+        upsert라 재생돼도 같은 행 하나로 수렴하고, 기록이 실패해도 매매는 계속된다.
+        """
+
+        _require_hash(claim.claim_token_hash)
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select p1_record_automation_ai_judgement_v1("
+                "%s::text,%s::text,%s::integer,%s::text,%s::text,%s::text,%s::integer,"
+                "%s::text,%s::text,%s::integer,%s::integer,%s::integer,%s::integer,"
+                "%s::integer,%s::text)",
+                (
+                    claim.run_id,
+                    claim.claim_token_hash,
+                    record.checkpoint_version,
+                    record.participation,
+                    record.provider_id,
+                    record.prompt_version,
+                    record.confidence_bps,
+                    record.baseline_symbol,
+                    record.selected_symbol,
+                    record.vetoed_symbol_count,
+                    record.judge_call_count,
+                    record.candidate_count,
+                    record.quantity_before,
+                    record.quantity_after,
+                    record.verdicts_json,
+                ),
+            )
 
     def advance(self, command: AdvanceCommand) -> tuple[int, bool]:
         _require_hash(command.claim_token_hash)
@@ -485,7 +567,14 @@ class PersistentAutomationRunner:
             event_type=str(event["eventType"]),
             event_payload_hash=str(event["payloadHash"]),
         )
-        self._repository.advance(command)
+        previous_state = str(state.get("state", ""))
+        checkpoint_version, _ = self._repository.advance(command)
+        if previous_state == "AI_JUDGING":
+            # 판단이 실제로 일어난 tick에서만 기록한다. 이 기록이 없으면 "AI의 판단이
+            # 반영된다"는 말을 사후에 확인할 수 없고, 그러면 권한 승격이 검증 불가능해진다.
+            self._repository.record_ai_judgement(
+                claim, _ai_judgement_record(checkpoint_version, run, port)
+            )
         # durable하게 남은 뒤에만 알린다. 저널이 실패해도 tick은 계속된다.
         self._journal.notify(
             notice_from_event(
@@ -512,6 +601,40 @@ class PersistentAutomationRunner:
             if lineage is not None:
                 self._repository.advance_account_lineage(claim, lineage)
         return result
+
+
+def _ai_confidence(value: object) -> float | None:
+    """저장된 basis point를 다시 0~1로 편다. 경계 밖 값은 없는 것으로 본다."""
+
+    if not isinstance(value, dict):
+        return None
+    raw = value.get("confidenceBps")
+    if not isinstance(raw, int) or not 0 <= raw <= 10_000:
+        return None
+    return raw / 10_000
+
+
+def _ai_judgement_record(
+    checkpoint_version: int,
+    run: AutomationRun,
+    port: AutomationRuntimePort,
+) -> AiJudgementRecord:
+    verdicts = port.last_judgement_json
+    return AiJudgementRecord(
+        checkpoint_version=checkpoint_version,
+        participation=run.ai_participation,
+        provider_id=str(os.environ.get("STRONG_LLM_PROVIDER", "")).strip()[:32],
+        prompt_version=PROMPT_CONTRACT_ID,
+        confidence_bps=(None if run.ai_confidence is None else round(run.ai_confidence * 10_000)),
+        baseline_symbol=run.ai_baseline_symbol,
+        selected_symbol=run.selected_symbol,
+        vetoed_symbol_count=len(run.ai_vetoed_symbols),
+        judge_call_count=run.ai_judge_call_count,
+        candidate_count=run.ai_candidate_count,
+        quantity_before=run.ai_quantity_before,
+        quantity_after=run.ai_quantity_after,
+        verdicts_json=verdicts if isinstance(verdicts, str) and verdicts else "{}",
+    )
 
 
 class XkrxBoundaryPlanner:
@@ -791,6 +914,8 @@ def inputs_from_state(
         no_open_order=bool(state["noOpenOrder"]),
         unfinished_previous_order=bool(state["unfinishedPreviousOrder"]),
         news_veto_provider_bound=state.get("newsVetoProviderBound") is True,
+        ai_judgement_provider_bound=state.get("aiJudgementProviderBound") is True,
+        ai_confidence=_ai_confidence(state.get("aiJudgement")),
         manual_position_symbols=frozenset(cast(list[str], manual)),
         signals=signals,
     )

@@ -11,6 +11,8 @@
   1. 네 기능의 런타임 플래그가 실제로 `false`다 — SearXNG 웹검색, S4.9 Strong LLM, S4.9 MCP,
      금융공학 gRPC.
   2. 그 넷이 root API 표면에 없다. 꺼진 기능이 endpoint만 남아 있으면 언젠가 열린다.
+     예외는 `/api/v2/strong-llm/settings` 하나다. 이름은 닮았지만 꺼진 기능이 아니라 어떤
+     모델을 쓸지 고르는 설정이고, 그 선택은 언제나 열려 있어야 한다.
   3. LightGBM은 은퇴다. V74가 세 역할에서 stage/activate/publish 권한을 회수했고 지금도 0이다.
   4. 자동운용 브로커리지는 모의다. 실계좌 주문 경로가 배포에 열려 있지 않다.
   5. Vertex 뉴스 거부권 전송이 provider 호출 전에 닫힌다.
@@ -49,6 +51,14 @@ _FLAGS: Final = (
     ("S4_9_MCP_ENABLED", "S4.9 MCP"),
     ("FINANCIAL_ENGINEERING_GRPC_ENABLED", "금융공학 gRPC"),
 )
+# 이름에 `strong-llm`이 들어가지만 꺼진 기능이 아닌 표면이다.
+#
+# S4.9 agent 자체는 여전히 꺼져 있고 그 endpoint도 없다. 이것은 **어떤 모델을 쓸지 고르는**
+# 설정 쓰기이고, 언제나 열려 있어야 한다 - provider를 바꾸는 길이 배포 환경변수뿐이면 그
+# 선택이 사용자의 것이 아니라 운영자의 것이 된다. 그래서 여기서만 예외로 둔다. 목록으로 두는
+# 이유는 접두사로 열어 두면 나중에 진짜 agent endpoint가 같은 접두사로 들어와도 통과하기
+# 때문이다.
+_ALWAYS_PRESENT_PATHS: Final = frozenset({"/api/v2/strong-llm/settings"})
 # 은퇴한 LightGBM 경로. V74가 회수한 권한이 다시 생기면 그 자체가 회귀다.
 _RETIRED_GRANTS: Final = (
     ("decision_signal_writer", "stage_signal_model_release"),
@@ -89,6 +99,7 @@ def check_surface_is_absent(recorder: Recorder) -> None:
             token in path
             for token in ("/mcp", "/strong-llm", "/financial-engineering", "/web-search")
         )
+        and path not in _ALWAYS_PRESENT_PATHS
     ]
     recorder.add(
         "꺼진 기능은 표면에 없다",

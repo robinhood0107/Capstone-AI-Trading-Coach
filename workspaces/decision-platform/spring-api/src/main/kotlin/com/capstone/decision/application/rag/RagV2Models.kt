@@ -9,6 +9,18 @@ data class RagV2CorpusStatus(
     val privateOverlayState: String,
     val progressPercent: Int,
     val failureCode: String?,
+    /**
+     * 생성형 답변의 오늘 상한과 남은 횟수. 자동 저술이 꺼져 있으면 셋 다 `null`이고, 그때 화면은
+     * 검색 전용으로 동작한다. 화면이 "오늘 몇 번 더 물어볼 수 있는가"를 스스로 알 수 있어야
+     * 상한에 닿았을 때 답이 비어 보이는 대신 이유를 말할 수 있다.
+     *
+     * 중첩 객체가 아니라 평평한 세 필드인 이유는 root OpenAPI의 승인된 전이 사슬 때문이다. 새
+     * component schema를 만들면 exact-61 투영에 남아 사슬이 깨진다. `RagV2CorpusStatus`는 그
+     * 투영에서 통째로 제거되는 스키마라 필드를 늘리는 것은 사슬을 건드리지 않는다.
+     */
+    val generationDailyCap: Int? = null,
+    val generationUsedToday: Int? = null,
+    val generationRemaining: Int? = null,
 )
 
 data class RagV2Answer(

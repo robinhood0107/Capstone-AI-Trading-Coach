@@ -40,7 +40,7 @@ class RagV2VertexGenerationMigrationContractTest {
         assertThat(claimRecheckVersion).isEqualTo(hardeningVersion + 2)
         assertThat(apiKeyOnlyVersion).isEqualTo(52)
         assertThat(serviceAccountVersion).isEqualTo(57)
-        assertThat(migrations.maxOf(::migrationVersion)).isEqualTo(102)
+        assertThat(migrations.maxOf(::migrationVersion)).isEqualTo(105)
     }
 
     @Test

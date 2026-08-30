@@ -35,6 +35,7 @@ _ACTIVE_STATES = frozenset(
         "PRECHECK",
         "RECONCILING_PREVIOUS",
         "EXIT_SELECTED",
+        "AI_JUDGING",
         "BUY_CANDIDATE_SELECTED",
         "NEWS_CHECKING",
         "ORDER_SIZING",
@@ -58,8 +59,16 @@ _TERMINAL_STATES = frozenset(
 # 엔진이 낼 수 있는 전이 전체. DB whitelist(p1_automation_transition_valid_v2)와 한 글자라도
 # 어긋나면 checkpoint가 CAS 충돌로 죽으므로 이 표를 단일 진실로 두고 양쪽을 대조한다.
 # HALTED는 SESSION_DRIFT/ACCOUNT_DRIFT/KILL_SWITCH 가드가 모든 active 상태에서 낼 수 있다.
+# 매수 후보가 있으면 선택은 AI_JUDGING으로 넘어간다. BUY_CANDIDATE_SELECTED로 직행하는 전이는
+# 그대로 둔다 - 이 변경 전에 그 상태로 checkpoint된 run이 재개될 수 있어야 한다.
 _SELECTION_TARGETS = frozenset(
-    {"EXIT_SELECTED", "BUY_CANDIDATE_SELECTED", "SKIPPED_NO_ACTION", "SKIPPED_DATA_UNAVAILABLE"}
+    {
+        "EXIT_SELECTED",
+        "AI_JUDGING",
+        "BUY_CANDIDATE_SELECTED",
+        "SKIPPED_NO_ACTION",
+        "SKIPPED_DATA_UNAVAILABLE",
+    }
 )
 _LEGAL_TRANSITIONS: frozenset[tuple[str, str]] = frozenset(
     {(state, "HALTED") for state in _ACTIVE_STATES}
@@ -72,6 +81,8 @@ _LEGAL_TRANSITIONS: frozenset[tuple[str, str]] = frozenset(
         ("PRECHECK", "RECONCILING_PREVIOUS"),
         ("RECONCILING_PREVIOUS", "PENDING_RECONCILIATION"),
         ("EXIT_SELECTED", "ORDER_SIZING"),
+        ("AI_JUDGING", "BUY_CANDIDATE_SELECTED"),
+        ("AI_JUDGING", "SKIPPED_NO_ACTION"),
         ("BUY_CANDIDATE_SELECTED", "NEWS_CHECKING"),
         ("NEWS_CHECKING", "NEWS_VETOED"),
         ("NEWS_CHECKING", "ORDER_SIZING"),
@@ -354,6 +365,38 @@ class SignalCandidate:
 
 
 @dataclass(frozen=True, slots=True)
+class AiCandidateVerdict:
+    """후보 하나에 대한 모델의 판단. 수량도 주문도 여기에 없다."""
+
+    symbol: str
+    score: float
+    veto: bool
+    reason: str
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.score <= 1.0 or not math.isfinite(self.score):
+            raise AutomationError("automation ai score is invalid")
+        if not self.reason:
+            raise AutomationError("automation ai reason is empty")
+
+
+@dataclass(frozen=True, slots=True)
+class AiJudgement:
+    """한 번의 판단 전체. 이 값으로 순위·차단·수량이 결정론적으로 계산된다."""
+
+    verdicts: tuple[AiCandidateVerdict, ...]
+    confidence: float
+    summary: str
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.confidence <= 1.0 or not math.isfinite(self.confidence):
+            raise AutomationError("automation ai confidence is invalid")
+        symbols = [item.symbol for item in self.verdicts]
+        if len(symbols) != len(set(symbols)):
+            raise AutomationError("automation ai verdict symbols are duplicated")
+
+
+@dataclass(frozen=True, slots=True)
 class Quote:
     symbol: str
     price_krw: int
@@ -385,6 +428,12 @@ class AutomationInputs:
     # 뉴스 거부권 provider가 붙어 있는지. 붙어 있으면 ABSTAIN도 매수를 막고, 없으면 통과시킨다.
     # 부정 이벤트 차단은 원칙의 disclosure_risk_guard가 RiskEngine에서 결정론적으로 수행한다.
     news_veto_provider_bound: bool = False
+    # Strong LLM이 붙어 있는지. 붙어 있지 않거나 답하지 못하면 판단에 AI_NOT_PARTICIPATED를
+    # 남기고 기존 규칙만으로 진행한다. AI가 없다고 자동매매가 멈추지는 않는다.
+    ai_judgement_provider_bound: bool = False
+    # 이 run에서 이미 받은 판단의 확신도. AI_JUDGING과 ORDER_SIZING은 서로 다른 tick이라
+    # run 객체로는 건너오지 못한다. 저장된 판단을 상태가 다시 실어 온다.
+    ai_confidence: float | None = None
     manual_position_symbols: frozenset[str] = frozenset()
     signals: tuple[SignalCandidate, ...] = ()
 
@@ -493,6 +542,15 @@ class AutomationRun:
     provider_exec_ref_hash: str | None = None
     policy_snapshot: AutomationPolicySnapshot | None = None
     unfilled_terminated_quantity: int = 0
+    # AI 판단의 흔적. 무엇이 바뀌었는지 사후에 말할 수 없으면 이 승격은 검증 불가능해진다.
+    ai_participation: str = "NOT_PARTICIPATED"
+    ai_confidence: float | None = None
+    ai_judge_call_count: int = 0
+    ai_baseline_symbol: str | None = None
+    ai_candidate_count: int = 0
+    ai_vetoed_symbols: tuple[str, ...] = ()
+    ai_quantity_before: int | None = None
+    ai_quantity_after: int | None = None
 
     def projection(self) -> dict[str, object]:
         reservation = self.reservation
@@ -529,6 +587,7 @@ class AutomationFixtureTransportPort(Protocol):
     physical_submit_calls: int
     quote_calls: int
     vertex_calls: int
+    judge_calls: int
     submit_calls: int
     reconcile_calls: int
     cancel_calls: int
@@ -536,6 +595,9 @@ class AutomationFixtureTransportPort(Protocol):
     def quote(self, symbol: str) -> Quote: ...
 
     def vertex(self, symbol: str) -> NewsVerdict: ...
+
+    def judge(self, candidates: tuple[SignalCandidate, ...]) -> AiJudgement | None:
+        """Strong LLM 판단. None은 물어볼 곳이 없었거나 답을 못 받았다는 뜻이다."""
 
     def submit(self, reservation: OrderReservation) -> SubmitOutcome: ...
 
@@ -552,6 +614,7 @@ class FixtureAutomationTransport:
 
     quotes: dict[str, Quote]
     news_verdict: NewsVerdict = "NO_VETO"
+    ai_judgement: AiJudgement | None = None
     submit_outcome: SubmitOutcome = "FILLED"
     reconcile_outcomes: list[ReconcileOutcome] = field(default_factory=lambda: ["FILLED"])
     reconcile_snapshots: list[ReconcileSnapshot] = field(default_factory=list)
@@ -560,6 +623,7 @@ class FixtureAutomationTransport:
     physical_submit_calls: int = 0
     quote_calls: int = 0
     vertex_calls: int = 0
+    judge_calls: int = 0
     submit_calls: int = 0
     reconcile_calls: int = 0
     cancel_calls: int = 0
@@ -575,6 +639,11 @@ class FixtureAutomationTransport:
         del symbol
         self.vertex_calls += 1
         return self.news_verdict
+
+    def judge(self, candidates: tuple[SignalCandidate, ...]) -> AiJudgement | None:
+        del candidates
+        self.judge_calls += 1
+        return self.ai_judgement
 
     def submit(self, reservation: OrderReservation) -> SubmitOutcome:
         del reservation
@@ -776,6 +845,8 @@ class AutomationEngine:
                 self._select(run, now, inputs, transport)
         elif run.state == "EXIT_SELECTED":
             self._transition(run, "ORDER_SIZING", "RUN_TRANSITIONED", now)
+        elif run.state == "AI_JUDGING":
+            self._judge(run, now, inputs, transport)
         elif run.state == "BUY_CANDIDATE_SELECTED":
             self._transition(run, "NEWS_CHECKING", "RUN_TRANSITIONED", now)
         elif run.state == "NEWS_CHECKING":
@@ -936,28 +1007,85 @@ class AutomationEngine:
         if len(positions) >= inputs.policy.max_open_positions:
             self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
             return
-        held = {position.symbol for position in positions} | set(inputs.manual_position_symbols)
-        buys = sorted(
-            (
-                candidate
-                for candidate in inputs.signals
-                if candidate.lstm_signal == candidate.baseline_signal == "BUY"
-                and candidate.symbol not in held
-                and math.isfinite(candidate.expected_return)
-                and math.isfinite(candidate.confidence)
-            ),
-            key=lambda candidate: (
-                -candidate.expected_return,
-                -candidate.confidence,
-                candidate.symbol,
-            ),
-        )
+        buys = self._buy_candidates(inputs)
         if not buys:
             self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
             return
-        run.selected_symbol = buys[0].symbol
+        # 후보 집합의 소유자는 Return Engine이다. AI는 이 목록 안에서만 답하고 종목을 더하지 못한다.
+        self._transition(run, "AI_JUDGING", "RUN_TRANSITIONED", now)
+
+    def _buy_candidates(self, inputs: AutomationInputs) -> tuple[SignalCandidate, ...]:
+        """2-of-2 합의를 통과한 매수 후보. 같은 입력에 같은 순서가 나온다.
+
+        AI_JUDGING에서 이것을 다시 계산한다. checkpoint에 목록을 실어 나르면 저장 계약이
+        늘어나고, 그 목록과 지금 입력이 어긋났을 때 어느 쪽이 옳은지 말할 수 없게 된다.
+        """
+
+        held = {
+            position.symbol for position in self.store.positions if position.status == "OPEN"
+        } | set(inputs.manual_position_symbols)
+        return tuple(
+            sorted(
+                (
+                    candidate
+                    for candidate in inputs.signals
+                    if candidate.lstm_signal == candidate.baseline_signal == "BUY"
+                    and candidate.symbol not in held
+                    and math.isfinite(candidate.expected_return)
+                    and math.isfinite(candidate.confidence)
+                ),
+                key=lambda candidate: (
+                    -candidate.expected_return,
+                    -candidate.confidence,
+                    candidate.symbol,
+                ),
+            )
+        )
+
+    def _judge(
+        self,
+        run: AutomationRun,
+        now: datetime,
+        inputs: AutomationInputs,
+        transport: AutomationFixtureTransportPort,
+    ) -> None:
+        buys = self._buy_candidates(inputs)
+        if not buys:
+            # 판단을 기다리는 사이 입력이 바뀌어 후보가 사라졌다. 옛 후보를 사지 않는다.
+            self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
+            return
+        # 규칙만으로 고른 1등을 먼저 적는다. 이것과 실제 선택이 다르면 재순위가 일어난 run이다.
+        run.ai_baseline_symbol = buys[0].symbol
+        run.ai_candidate_count = len(buys)
+        judgement = self._ai_judgement(run, inputs, transport)
+        ranked = _apply_judgement(buys, judgement)
+        run.ai_vetoed_symbols = tuple(
+            candidate.symbol for candidate in buys if candidate not in ranked
+        )
+        if not ranked:
+            # 모든 후보가 차단됐다. 차단은 매수를 막을 뿐 다른 종목을 만들지 않는다.
+            self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
+            return
+        run.selected_symbol = ranked[0].symbol
         run.selected_side = "BUY"
         self._transition(run, "BUY_CANDIDATE_SELECTED", "BUY_SELECTED", now)
+
+    def _ai_judgement(
+        self,
+        run: AutomationRun,
+        inputs: AutomationInputs,
+        transport: AutomationFixtureTransportPort,
+    ) -> AiJudgement | None:
+        if not inputs.ai_judgement_provider_bound:
+            return None
+        judgement = transport.judge(self._buy_candidates(inputs))
+        run.ai_judge_call_count += 1
+        if judgement is None:
+            # 1차도 2차도 답하지 못했다. 기존 규칙만으로 계속한다.
+            return None
+        run.ai_participation = "APPLIED"
+        run.ai_confidence = judgement.confidence
+        return judgement
 
     def _size_order(
         self,
@@ -1007,6 +1135,10 @@ class AutomationEngine:
             )
         else:
             quantity = _variable_buy_quantity(inputs, limit_price)
+            # 확신도는 수량을 줄이기만 한다. 상한은 정책이 이미 정했고 AI가 그것을 넘지 못한다.
+            run.ai_quantity_before = quantity
+            quantity = _ai_reduced_quantity(quantity, inputs.ai_confidence)
+            run.ai_quantity_after = quantity
             policy = inputs.policy
             if quantity < 1:
                 self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
@@ -1304,6 +1436,61 @@ def _projection_integer(value: object) -> int:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     raise AutomationError("automation account lineage number is invalid")
+
+
+# 확신도가 0이어도 절반까지만 줄인다. 후보가 2-of-2 합의와 정책 상한을 이미 통과했는데
+# 모델의 확신이 낮다는 이유만으로 0으로 만들면 그것은 축소가 아니라 거부권이고, 거부권은
+# veto가 따로 표현한다.
+_AI_SIZE_FLOOR_BPS = 5_000
+
+
+def _apply_judgement(
+    candidates: tuple[SignalCandidate, ...], judgement: AiJudgement | None
+) -> tuple[SignalCandidate, ...]:
+    """차단을 걷어내고 점수로 다시 세운다. 후보를 더하지 않는다.
+
+    모델은 점수와 차단만 낸다. 무엇을 사고 얼마나 살지는 이 함수와 `_ai_reduced_quantity`가
+    정수 산술로 계산한다. 같은 판단에 같은 결과가 나오고 그 계산은 감사 가능하다.
+    """
+
+    if judgement is None:
+        return candidates
+    verdicts = {item.symbol: item for item in judgement.verdicts}
+    surviving = [
+        candidate
+        for candidate in candidates
+        if not (verdict := verdicts.get(candidate.symbol)) or not verdict.veto
+    ]
+    return tuple(
+        sorted(
+            surviving,
+            key=lambda candidate: (
+                # 점수가 없는 후보는 중립 0.5에서 시작한다. 답을 못 받은 것이 곧 나쁜 후보라는
+                # 뜻은 아니므로 맨 뒤로 밀지 않는다.
+                -_score_bps(verdicts[candidate.symbol].score)
+                if candidate.symbol in verdicts
+                else -5_000,
+                -candidate.expected_return,
+                -candidate.confidence,
+                candidate.symbol,
+            ),
+        )
+    )
+
+
+def _score_bps(score: float) -> int:
+    """점수를 정수 basis point로 고정한다. 순서가 부동소수 비교에 걸리지 않게 한다."""
+
+    return round(score * 10_000)
+
+
+def _ai_reduced_quantity(quantity: int, confidence: float | None) -> int:
+    """확신도로 수량을 줄인다. 절대 늘리지 않는다."""
+
+    if confidence is None or quantity < 1:
+        return quantity
+    scale = _AI_SIZE_FLOOR_BPS + round(confidence * (10_000 - _AI_SIZE_FLOOR_BPS))
+    return max(1, min(quantity, quantity * scale // 10_000))
 
 
 def _variable_buy_quantity(inputs: AutomationInputs, limit_price_krw: int) -> int:

@@ -18,6 +18,7 @@ from app.p1_owner.automation import (
 from app.p1_owner.automation_runtime import (
     AccountLineageAdvance,
     AdvanceCommand,
+    AiJudgementRecord,
     AutomationRuntimeError,
     PersistentAutomationRunner,
     PostgresAutomationRuntimeRepository,
@@ -99,6 +100,11 @@ class FakeRepository:
     def __init__(self, state: dict[str, Any]) -> None:
         self.state = state
         self.commands: list[AdvanceCommand] = []
+        self.ai_judgements: list[AiJudgementRecord] = []
+
+    def record_ai_judgement(self, claim: RuntimeClaim, record: AiJudgementRecord) -> None:
+        assert claim.run_id == self.state["runId"]
+        self.ai_judgements.append(record)
 
     def read_state(self, claim: RuntimeClaim) -> dict[str, Any]:
         assert claim.run_id == self.state["runId"]
@@ -120,6 +126,7 @@ class FakeRuntimePort(FixtureAutomationTransport):
     order_id: str | None = None
     provider_order_ref_hash: str | None = None
     decision_id: str | None = None
+    last_judgement_json: str | None = None
 
     def inputs(
         self,
@@ -152,7 +159,8 @@ def test_persistent_runner_reloads_state_and_cas_persists_each_boundary() -> Non
     )
 
     assert first["state"] == "PRECHECK"
-    assert second["state"] == "BUY_CANDIDATE_SELECTED"
+    # 후보 선정 앞에 AI_JUDGING이 선다. 그 경계도 CAS로 저장돼야 재시작이 안전하다.
+    assert second["state"] == "AI_JUDGING"
     assert [item.expected_version for item in repository.commands] == [1, 2]
     assert all(item.tick_identity_hash.startswith("sha256:") for item in repository.commands)
     assert all(item.result_hash.startswith("sha256:") for item in repository.commands)
@@ -404,3 +412,24 @@ def test_partial_fill_then_cancel_applies_only_the_confirmed_quantity() -> None:
     assert projection["filledQuantity"] == 1
     # 취소로 끝난 잔량은 체결로 세지 않는다.
     assert projection["leavesQuantity"] == 0
+
+
+def test_the_ai_judgement_is_recorded_on_the_tick_that_leaves_that_state() -> None:
+    repository = FakeRepository(_state())
+    port = FakeRuntimePort(quotes={"005930": Quote("005930", 75_000, 52_500, 97_500)})
+    for index in range(1, 4):
+        PersistentAutomationRunner(cast(Any, repository)).run_tick(
+            claim=_claim(),
+            tick_id=f"judge-{index:03d}",
+            now=datetime(2026, 8, 28, 9, 30, index, tzinfo=_KST),
+            port=port,
+        )
+
+    assert len(repository.ai_judgements) == 1
+    record = repository.ai_judgements[0]
+    # provider가 붙지 않은 배포에서도 기록은 남는다. "묻지 않았다"도 사실이기 때문이다.
+    assert record.participation == "NOT_PARTICIPATED"
+    assert record.baseline_symbol == "005930"
+    assert record.selected_symbol == "005930"
+    assert record.candidate_count == 1
+    assert record.confidence_bps is None

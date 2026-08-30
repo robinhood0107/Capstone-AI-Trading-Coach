@@ -63,10 +63,13 @@ class P1V91AutomationContractTest(unittest.TestCase):
 
     def test_catalog_locks_presets_limits_and_exact_five_operations(self) -> None:
         catalog = load_catalog()
-        self.assertEqual(PRESETS, {
-            item["presetId"]: (item["stopLossBps"], item["takeProfitBps"])
-            for item in catalog["presets"]
-        })
+        self.assertEqual(
+            PRESETS,
+            {
+                item["presetId"]: (item["stopLossBps"], item["takeProfitBps"])
+                for item in catalog["presets"]
+            },
+        )
         self.assertEqual(list(BLOCKERS), catalog["blockers"])
         self.assertEqual(5, catalog["execution"]["maxOpenPositions"])
         self.assertEqual(1, catalog["execution"]["maxNewOrdersPerSession"])
@@ -79,10 +82,15 @@ class P1V91AutomationContractTest(unittest.TestCase):
                 ("GET", "/api/v2/automation/runs", "listAutomationRunsV2"),
                 ("GET", "/api/v2/automation/positions", "listAutomationPositionsV2"),
             },
-            {(item["method"], item["path"], item["operationId"]) for item in catalog["operations"]},
+            {
+                (item["method"], item["path"], item["operationId"])
+                for item in catalog["operations"]
+            },
         )
 
-    def test_closed_schemas_accept_exact_fixtures_and_reject_unknown_fields(self) -> None:
+    def test_closed_schemas_accept_exact_fixtures_and_reject_unknown_fields(
+        self,
+    ) -> None:
         fixtures = {
             "automation-policy.v1": self.policy,
             "automation-status.v2": {
@@ -168,7 +176,9 @@ class P1V91AutomationContractTest(unittest.TestCase):
         validate_policy_semantics(invalid)
 
     def test_exact_five_projection_restores_byte_stable_exact_56(self) -> None:
-        root = json.loads((ROOT / "contracts/openapi/openapi.json").read_text(encoding="utf-8"))
+        root = json.loads(
+            (ROOT / "contracts/openapi/openapi.json").read_text(encoding="utf-8")
+        )
         additive = json.loads(ADDITIVE_OPENAPI_PATH.read_text(encoding="utf-8"))
         # RAG v2 공개 표면이 앞단에 더해졌다. 그 단계를 먼저 걷어 역사적 exact-61을 복원한다.
         rag_v2_additive = json.loads(
@@ -200,7 +210,9 @@ class P1V91AutomationContractTest(unittest.TestCase):
         }
         for relative, digest in expected.items():
             with self.subTest(relative=relative):
-                self.assertEqual(digest, hashlib.sha256((ROOT / relative).read_bytes()).hexdigest())
+                self.assertEqual(
+                    digest, hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
+                )
 
     def test_spring_status_emits_only_contract_blocker_codes(self) -> None:
         repository = (

@@ -660,6 +660,7 @@
               "PRECHECK",
               "RECONCILING_PREVIOUS",
               "EXIT_SELECTED",
+              "AI_JUDGING",
               "BUY_CANDIDATE_SELECTED",
               "NEWS_CHECKING",
               "NEWS_VETOED",

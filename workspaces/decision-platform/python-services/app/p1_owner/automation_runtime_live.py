@@ -24,18 +24,27 @@ from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.kis._credential_transport import _build_redis_client
 from app.data.kis.http_client import CURRENT_PRICE_PATH, KISHttpClient
 from app.data.kis.settings import KISSettings
+from app.generated import strong_llm_agent_pb2
 from app.p1_owner.automation import (
     AccountLineageSnapshot,
+    AiCandidateVerdict,
+    AiJudgement,
     AutomationError,
     AutomationInputs,
     AutomationRun,
     NewsVerdict,
+    SignalCandidate,
     OrderReservation,
     Quote,
     ReconcileSnapshot,
     ReconcileOutcome,
     SubmitOutcome,
     _limit_price,
+)
+from app.strong_llm.judge_client import (
+    JudgeClientSettings,
+    StrongLlmJudgeClient,
+    StrongLlmJudgeUnavailableError,
 )
 from app.p1_owner.vertex_corpus_evidence import (
     CorpusDocumentSource,
@@ -344,6 +353,7 @@ class LiveAutomationPort:
         execution_source: ExecutionSourcePort,
         vertex_transport: VertexVetoTransport,
         corpus_source: CorpusDocumentSource | None = None,
+        judge_client: StrongLlmJudgeClient | None = None,
     ) -> None:
         self._claim = claim
         self._corpus_source: CorpusDocumentSource = corpus_source or EmptyCorpusDocumentSource()
@@ -351,6 +361,11 @@ class LiveAutomationPort:
         self._quote_source = quote_source
         self._execution_source = execution_source
         self._vertex_transport = vertex_transport
+        # 설정이 온전할 때만 붙는다. 없으면 판단 없이 규칙만으로 돈다.
+        settings = JudgeClientSettings.from_env()
+        self._judge_client = judge_client or (
+            StrongLlmJudgeClient(settings) if settings is not None else None
+        )
         self._cached_quotes: dict[str, Quote] = {}
         self.decision_id = (
             str(state.get("decisionId")) if isinstance(state.get("decisionId"), str) else None
@@ -371,6 +386,8 @@ class LiveAutomationPort:
         self.physical_submit_calls = int(state.get("logicalSubmitCount", 0))
         self.quote_calls = 0
         self.vertex_calls = int(state.get("vertexCallCount", 0))
+        self.judge_calls = 0
+        self.last_judgement_json: str | None = None
         self.submit_calls = int(state.get("logicalSubmitCount", 0))
         self.reconcile_calls = 0
         self.cancel_calls = 0
@@ -392,6 +409,7 @@ class LiveAutomationPort:
         account_complete: bool | None = None
         account_digest_matches: bool | None = None
         runtime_state = dict(state)
+        runtime_state["aiJudgementProviderBound"] = self._judge_client is not None
         runtime_state["newsVetoProviderBound"] = not isinstance(
             self._vertex_transport, FailClosedVertexVetoTransport
         )
@@ -497,6 +515,51 @@ class LiveAutomationPort:
             return "ABSTAIN"
         verdict = result.get("verdict")
         return cast(NewsVerdict, verdict if verdict in {"VETO_BUY", "NO_VETO"} else "ABSTAIN")
+
+    def judge(self, candidates: tuple[SignalCandidate, ...]) -> AiJudgement | None:
+        """Strong LLM에게 후보 집합을 보이고 점수와 차단을 받는다.
+
+        실패는 예외가 아니라 None이다. 판단을 못 받았다고 그날의 자동매매가 멈추면, AI를
+        붙이는 일이 곧 가용성을 낮추는 일이 된다. 그건 이 승격이 노린 것이 아니다.
+        """
+
+        client = self._judge_client
+        if client is None or not candidates:
+            return None
+        self.judge_calls += 1
+        try:
+            judgement = client.judge(
+                run_id=_judge_run_id(self._claim.run_id),
+                model_id=os.environ.get("VERTEX_MODEL_ID", "gemini-3.5-flash"),
+                question=_JUDGE_QUESTION,
+                language=os.environ.get("STRONG_LLM_ANSWER_LANGUAGE", "ko"),
+                candidates=tuple(
+                    strong_llm_agent_pb2.JudgementCandidate(
+                        symbol=item.symbol,
+                        expected_return=item.expected_return,
+                        model_confidence=item.confidence,
+                        lstm_signal=item.lstm_signal,
+                        baseline_signal=item.baseline_signal,
+                    )
+                    for item in candidates
+                ),
+            )
+        except StrongLlmJudgeUnavailableError:
+            return None
+        allowed = {item.symbol for item in candidates}
+        try:
+            verdicts = tuple(
+                AiCandidateVerdict(item.symbol, item.score, item.veto, item.reason)
+                for item in judgement.candidates
+                # 후보 집합 밖의 종목은 여기서 사라진다. 순위에도 주문에도 닿지 않는다.
+                if item.symbol in allowed
+            )
+            applied = AiJudgement(verdicts, judgement.confidence, judgement.summary)
+        except AutomationError:
+            # 계약을 통과한 JSON이어도 값이 우리 경계 밖이면 쓰지 않는다.
+            return None
+        self.last_judgement_json = judgement.model_dump_json()
+        return applied
 
     def submit(self, reservation: OrderReservation) -> SubmitOutcome:
         if self.decision_id is None or reservation.intent is None:
@@ -642,6 +705,20 @@ class LiveAutomationPortFactory:
             KisAutomationExecutionSource(),
             _vertex_veto_transport(),
         )
+
+
+# 판단 요청의 질문은 고정이다. 사용자 문장이 여기로 들어오면 그것이 매매 판단을 바꾸는
+# 통로가 되고, 그러면 프롬프트 인젝션이 곧 주문 조작이 된다.
+_JUDGE_QUESTION = (
+    "아래 후보 각각이 오늘 매수하기에 적절한지 판단하라. 후보를 새로 만들지 말고 "
+    "주어진 집합 안에서만 답하라."
+)
+
+
+def _judge_run_id(run_id: str) -> str:
+    """자동운용 run 하나에 S4.9 run id 하나를 짝지어 사후에 이어 볼 수 있게 한다."""
+
+    return "s49_run_" + run_id.removeprefix("auto_run_")[:32].rjust(32, "0")
 
 
 def _balance_projection(balance: dict[str, Any]) -> dict[str, object]:

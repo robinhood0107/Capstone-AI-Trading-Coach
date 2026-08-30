@@ -1,0 +1,51 @@
+{
+  "contractId": "p1-brokerage-e2e.v1",
+  "steps": [
+    {
+      "detail": "판단 ID 없음 HTTP 400 VALIDATION_ERROR / 지어낸 판단 ID HTTP 404 NOT_FOUND",
+      "name": "판단 없는 주문은 닫힌다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "위험판정=HOLD HTTP 422 orderId=없음 재시도 HTTP 422 같은 주문=True code=RISK_BLOCKED (ALLOW면 접수, 아니면 RISK_BLOCKED)",
+      "name": "paper 주문 접수와 멱등",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "INTERNAL_PAPER 계좌 관측이 없어 조회할 대상이 없다. 지어내지 않는다",
+      "name": "paper 잔고·매수가능·체결 조회",
+      "verdict": "INFO"
+    },
+    {
+      "detail": "위험판정=ALLOW HTTP 200 orderId=있음 재시도 HTTP 200 같은 주문=True code=None (ALLOW면 접수, 아니면 RISK_BLOCKED)",
+      "name": "mock 주문 접수와 멱등",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "잔고 HTTP 200 매수가능 HTTP 200 체결 HTTP 200 잔고키=['accountId', 'brokerageMode', 'cashKrw', 'marginRequirementKrw'] 매수가능키=['accountId', 'brokerageMode', 'buyableAmountKrw', 'buyableQuantity'] 체결 0건",
+      "name": "mock 잔고·매수가능·체결 조회",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 200 상태=SUBMITTED",
+      "name": "mock 주문 단건 조회",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "취소 HTTP 200  소유자대사 HTTP 403 관리자대사 HTTP 200  (체결된 주문의 취소 거절은 정상이다. 5xx만 회귀다)",
+      "name": "취소와 대사",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "두 원장의 계좌 관측이 모두 있어야 성립한다. paper=없음 mock=있음",
+      "name": "두 원장 분리",
+      "verdict": "INFO"
+    },
+    {
+      "detail": "잔여 bundles=0 runs=0 orders=0 principles=0 journal=0 calendar=0",
+      "name": "정리",
+      "verdict": "PASS"
+    }
+  ],
+  "verdict": "PASS"
+}

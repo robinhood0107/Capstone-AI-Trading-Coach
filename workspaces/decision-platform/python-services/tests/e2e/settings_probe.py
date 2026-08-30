@@ -11,7 +11,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 
 from harness import Api  # noqa: E402
 
-SECRET = "sk-probe-0123456789ABCDefgh"
+
+def _probe_key() -> str:
+    """서버 형식만 만족하는 일회용 값. 파일에 키 모양의 상수를 남기지 않는다."""
+
+    return f"probe-{uuid.uuid4().hex}"
 
 
 def status(api: Api) -> dict[str, object]:
@@ -31,6 +35,7 @@ def put(api: Api, body: dict[str, object]) -> tuple[int, dict[str, object]]:
 def main() -> int:
     api = Api()
     api.login()
+    probe_key = _probe_key()
     observed: dict[str, object] = {"before": status(api)}
 
     settings: dict[str, object] = {
@@ -42,7 +47,7 @@ def main() -> int:
         "fallbackBaseUrl": None,
         "answerLanguage": "ko",
         "dailyGenerateCallCap": 25,
-        "apiKey": SECRET,
+        "apiKey": probe_key,
     }
     code, body = put(api, settings)
     observed["putStatus"] = code

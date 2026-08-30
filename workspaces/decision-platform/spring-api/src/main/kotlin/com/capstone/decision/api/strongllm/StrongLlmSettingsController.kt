@@ -77,7 +77,13 @@ internal class StrongLlmSettingsRequestParser {
                 throw IllegalArgumentException("STRONG_LLM_SETTINGS_BODY_INVALID")
             }
         require(root != null && root.isObject)
-        require(root.properties().map { it.key }.toSet().all { it in FIELDS })
+        require(
+            root
+                .properties()
+                .map { it.key }
+                .toSet()
+                .all { it in FIELDS },
+        )
         val provider = enumField(root, "provider", PROVIDERS)
         val fallbackProvider = optionalEnumField(root, "fallbackProvider", PROVIDERS)
         val baseUrl = optionalPattern(root, "baseUrl", BASE_URL)
@@ -169,6 +175,7 @@ internal class StrongLlmSettingsRequestParser {
         val LANGUAGES = setOf("ko", "en")
         val MODEL_ID = Regex("^[a-z][a-z0-9._-]{2,127}$")
         val BASE_URL = Regex("^https://[A-Za-z0-9._~:/?#@!\$&()*+,;=%-]{3,256}\$")
+
         // provider 키는 대체로 ASCII 영숫자와 몇 개의 구분자다. 공백과 제어문자를 받지 않아
         // 실수로 붙여 넣은 줄바꿈이 그대로 저장되지 않게 한다.
         val KEY = Regex("^[A-Za-z0-9._:/+=-]{8,4096}$")

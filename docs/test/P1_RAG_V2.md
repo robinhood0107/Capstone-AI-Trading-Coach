@@ -89,9 +89,38 @@ P1_RAG_V2_ENABLED=true P1_RAG_V2_VERTEX_ENABLED=true P1_RAG_V2_VERTEX_AUTO_ACTIV
 
 `P1_ENV_REFERENCE.md`는 동결 문서라 이 목록을 그곳에 적을 수 없다. 여기가 단일 기록이다.
 
-## 코퍼스는 영어다
+## 한국어는 닫혀 있지 않다 — 갈리는 곳은 언어가 아니라 주제다
 
-같은 스택에서 한국어 질문 "분산투자가 위험을 줄이는 이유는?"은
-`RAG_INSUFFICIENT_EVIDENCE`로 닫혔다. 코퍼스 142개 출처가 영어 논문(arXiv 등)이기 때문이다.
-영어 질문 "What does the Sharpe ratio measure in portfolio risk analysis?"는 인용 2건과 함께
-답이 나왔다. 한국어 답변이 필요하면 한국어 코퍼스를 넣는 것이 선행 조건이다.
+이전 기록은 한국어 "분산투자"와 영어 "Sharpe ratio"를 비교하고 "코퍼스가 영어라 한국어는
+닫힌다"고 적었다. **그 비교는 두 질문의 주제가 달라서 언어 때문인지 그 주제의 근거가 없어서인지
+구분하지 못한다.** 같은 내용을 두 언어로 물어 다시 쟀다.
+
+`tests/e2e/korean_probe.py` · 같은 스택, 자동 저술을 켠 상태, 실제 provider 호출
+
+| 질문 쌍 | 영어 | 한국어 |
+|---|---|---|
+| Sharpe ratio가 무엇을 측정하는가 | `ANSWERED`, 인용 2 | **`ANSWERED`, 인용 1, 답변도 한국어** |
+| 분산투자가 위험을 줄이는 이유 | `RETRIEVAL_ONLY` (검색은 되고 모델이 근거 부족으로 판단) | 검색 자체가 `RAG_INSUFFICIENT_EVIDENCE` |
+| 최대낙폭이 무엇을 측정하는가 | `RETRIEVAL_ONLY` | 검색 자체가 `RAG_INSUFFICIENT_EVIDENCE` |
+
+한국어 Sharpe 질문은 세 번의 실행에서 모두 답이 나왔고 답변 언어도 한국어였다. 즉
+`voyage-context-4`의 한국어 질의는 영어 코퍼스에서 실제로 검색되고, 생성기도 한국어로 답한다.
+**"한국어는 안 된다"는 서술은 사실이 아니다.**
+
+갈리는 곳은 근거가 얇은 주제다. 분산투자와 최대낙폭에서는 영어가 검색까지는 가는데 한국어는
+검색에서 먼저 닫힌다. 다국어 임베딩이 얇은 주제에서 더 약한 것이지 한국어가 막힌 것이 아니다.
+그래서 검색 질의를 영어로 바꾸는 단계는 넣지 않는다 — 강한 주제에서는 필요 없고, 얇은 주제에서는
+영어로 바꿔도 `RETRIEVAL_ONLY`에서 끝난다. 필요한 것은 질의 번역이 아니라 그 주제의 근거다.
+
+## 생성 경로에서 실제로 관측한 두 경계
+
+같은 측정에서 두 가지가 드러났고 둘 다 고쳤다.
+
+**Vertex는 바깥 배열의 `maxItems`도 값에 따라 거절한다.** `sentences.maxItems`를 24에서 64나
+96으로 올리면 요청 전체가 400 `INVALID_ARGUMENT`로 돌아온다. 24는 통과한다. 안쪽 배열과 같은
+방식으로 provider에게는 통과하는 값만 보내고 실제 상한은 응답 검증기가 강제한다.
+
+**선택지를 늘리면 고르는 규칙도 함께 줘야 한다.** `EVIDENCE_WITH_REASONING`을 추가한 직후 영어
+Sharpe 답변이 `STRONG_LLM_VALIDATION_BASIS_CONTRACT`로 버려졌다. 모델이 인용 없는 문장을 쓰면서
+basis는 `EVIDENCE`로 남겼기 때문이다. 프롬프트에 "문장 중 하나라도 인용이 비면 basis는 반드시
+`EVIDENCE_WITH_REASONING`"이라는 규칙을 넣자 사라졌다.

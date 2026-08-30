@@ -59,7 +59,7 @@ def test_grpc_stream_opens_provider_only_after_matching_host_permit() -> None:
             ),
         )
     )
-    events = StrongLlmAgentServicer("s" * 64, lambda _request: provider).Generate(
+    events = StrongLlmAgentServicer("s" * 64, lambda _request: (provider, None)).Generate(
         iter(frames), _Context()
     )  # type: ignore[arg-type]
 

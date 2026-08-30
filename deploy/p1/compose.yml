@@ -281,7 +281,16 @@ services:
       # 소유자 전용 사본으로 옮기고 경로를 내보낸다. 켜 두고 정책이 없으면 부팅에서 닫힌다.
       RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED: "${P1_RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED:-false}"
       RAG_WEB_ENABLED: "false"
-      S4_9_STRONG_LLM_ENABLED: "false"
+      # Strong LLM 판단. 켜면 supervisor가 loopback gRPC 프로세스를 함께 띄우고,
+      # rag-v2.env의 STRONG_LLM_GRPC_SHARED_SECRET이 없으면 부팅에서 닫힌다.
+      S4_9_STRONG_LLM_ENABLED: "${P1_STRONG_LLM_ENABLED:-false}"
+      STRONG_LLM_GRPC_BIND_ADDRESS: 127.0.0.1:50055
+      STRONG_LLM_GRPC_TARGET: 127.0.0.1:50055
+      # 1차 provider와 그것이 실패했을 때의 2차. 2차가 비면 1차만 쓴다.
+      STRONG_LLM_PROVIDER: "${P1_STRONG_LLM_PROVIDER:-vertex}"
+      STRONG_LLM_MODEL_ID: "${P1_STRONG_LLM_MODEL_ID:-}"
+      STRONG_LLM_FALLBACK_PROVIDER: "${P1_STRONG_LLM_FALLBACK_PROVIDER:-}"
+      STRONG_LLM_FALLBACK_MODEL_ID: "${P1_STRONG_LLM_FALLBACK_MODEL_ID:-}"
       S4_9_MCP_ENABLED: "false"
       P1_OFFLINE_DEMO: "true"
       P1_TEAM_A_ACCEPTANCE_ENABLED: "${P1_TEAM_A_ACCEPTANCE_ENABLED:-false}"

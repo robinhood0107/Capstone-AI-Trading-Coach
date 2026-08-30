@@ -146,6 +146,24 @@ class RunResult:
     google_grounding_query_count: int
     search_backend: str
     evidence_validation_mode: str
+    # 실제로 답한 provider. 1차가 실패해 2차가 답한 run을 사후에 구분할 수 있어야
+    # "AI가 참여했는가"와 "무엇이 참여했는가"를 함께 말할 수 있다.
+    provider_id: str = ""
     grounding_roots: tuple[GroundingRoot, ...] = ()
     grounding_supports: tuple[GroundingSupport, ...] = ()
     web_search_queries: tuple[str, ...] = ()
+
+
+# 같은 템플릿이 `mode`로 갈리듯 출력 계약도 `mode`로 갈린다. 검증하는 쪽이 EXPLAIN을 하드코딩하면
+# JUDGE 응답이 스키마 위반으로 죽으므로, 모드에서 모델을 얻는 자리를 하나만 둔다.
+_ANSWER_MODEL: dict[str, type[BaseModel]] = {
+    "EXPLAIN": StrongLlmAnswer,
+    "JUDGE": StrongLlmJudgement,
+}
+
+
+def answer_model(mode: str) -> type[BaseModel]:
+    model = _ANSWER_MODEL.get(mode)
+    if model is None:
+        raise ValueError("STRONG_LLM_MODE_UNSUPPORTED")
+    return model

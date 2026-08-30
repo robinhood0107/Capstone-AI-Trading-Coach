@@ -72,6 +72,9 @@ class VertexProviderSettings:
 class LangChainVertexProvider:
     """LangChain은 provider message와 native schema를 관리하며 permit·budget은 host가 강제한다."""
 
+    provider_id = "vertex"
+    supports_google_search = True
+
     def __init__(self, request: RunRequest, settings: VertexProviderSettings) -> None:
         credentials = service_account.Credentials.from_service_account_file(  # type: ignore[no-untyped-call]
             str(settings.service_account_path), scopes=[_VERTEX_SCOPE]

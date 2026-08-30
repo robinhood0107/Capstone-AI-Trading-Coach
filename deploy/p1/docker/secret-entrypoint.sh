@@ -232,16 +232,15 @@ if [ "$profile" = decision-platform ] && [ "${S4_9_STRONG_LLM_ENABLED:-false}" =
   # Vertex를 1차나 2차로 쓰면 서비스계정이 있어야 한다. 그 소유자 전용 사본은 위 RAG v2
   # 블록이 만들므로, RAG v2를 끈 채 Vertex만 켜면 여기서 닫힌다. 켜 두고 매 요청 실패하는
   # 배포보다 안 뜨는 편이 낫다.
-  case "vertex" in
-    "${STRONG_LLM_PROVIDER:-vertex}"|"${STRONG_LLM_FALLBACK_PROVIDER:-}")
-      vertex_key=/tmp/rag-v2-root/secrets/pre-s5-vertex-service-account.json
-      if [ ! -f "$vertex_key" ] || [ -L "$vertex_key" ]; then
-        echo "p1 secret loading failed: strong_llm_vertex_service_account_missing" >&2
-        exit 1
-      fi
-      export STRONG_LLM_VERTEX_SERVICE_ACCOUNT_JSON=$vertex_key
-      ;;
-  esac
+  if [ "${STRONG_LLM_PROVIDER:-vertex}" = vertex ] ||
+    [ "${STRONG_LLM_FALLBACK_PROVIDER:-}" = vertex ]; then
+    vertex_key=/tmp/rag-v2-root/secrets/pre-s5-vertex-service-account.json
+    if [ ! -f "$vertex_key" ] || [ -L "$vertex_key" ]; then
+      echo "p1 secret loading failed: strong_llm_vertex_service_account_missing" >&2
+      exit 1
+    fi
+    export STRONG_LLM_VERTEX_SERVICE_ACCOUNT_JSON=$vertex_key
+  fi
 fi
 
 if [ "$profile" = redis ]; then

@@ -7,7 +7,7 @@
       "verdict": "PASS"
     },
     {
-      "detail": "operation 경로 55개 중 해당 없음=True []",
+      "detail": "operation 경로 56개 중 해당 없음=True []",
       "name": "꺼진 기능은 표면에 없다",
       "verdict": "PASS"
     },

@@ -1,0 +1,36 @@
+{
+  "contractId": "p1-ai-judgement-e2e.v1",
+  "steps": [
+    {
+      "detail": "state CHECK=2/2 전이 함수=1/1 (하나라도 빠지면 후보 선정 앞에서 자동매매가 죽는다)",
+      "name": "AI_JUDGING 상태가 배포에 실재한다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "엔진만=[] DB만=[] (좁으면 tick이 CAS 충돌로 죽고 넓으면 잘못된 전이가 durable하게 남는다)",
+      "name": "엔진 전이 표와 DB 전이 함수가 같다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "빠진 열=[] confidence 타입=integer (규칙만으로 고른 1등과 실제 선택, 축소 전후가 함께 있어야 AI가 무엇을 바꿨는지 말할 수 있다)",
+      "name": "판단 기록이 무엇을 남기는가",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "표 권한=[] 함수 EXECUTE=2/2 (표 권한이 하나라도 생기면 회귀다)",
+      "name": "판단 기록 쓰기는 definer 함수뿐이다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "제약=1/1 (코드가 실수해도 늘어난 수량은 저장되지 않는다)",
+      "name": "수량은 줄기만 한다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "status=200 저장=204 노출=wxyz 평문발견=0 설정필드=10/10 (저장 응답에는 본문이 없고 읽기에는 마지막 네 글자만 실린다)",
+      "name": "설정은 저장되고 키는 마지막 네 글자만 나온다",
+      "verdict": "PASS"
+    }
+  ],
+  "verdict": "PASS"
+}

@@ -463,6 +463,8 @@
 
 ## 부록 A. Market Calendar/Event Aggregator 후보 태그 (스크립트 관리)
 
+> 변경 반영(2026-07-08): Market Calendar/Event 후보 태그 부록을 추가함(본문 카탈로그 수치는 변경 없음).
+
 API 명세서 12A(계획)의 수집 후보를 URL 기준으로 태그한다. 본문 수치/분류에는 영향이 없으며, 선정 기준은 `scripts/generate_kis_api_catalog.py`의 `CALENDAR_EVENT_CANDIDATES` 상수로만 관리한다. 아래 항목은 전부 모의투자 미지원이므로 최종_프로젝트_명세서 12.5의 live read-only 경계에서만 호출할 수 있다.
 
 | 순번 | API 명 | URL | 이벤트 매핑 | 비고 |

@@ -88,8 +88,9 @@ def project_pre_v91_openapi(
     """Remove the approved V91 surface and restore the byte-stable exact-56 root."""
 
     current_operations = operations(current)
-    if len(current_operations) == 68:
-        # 체인의 맨 앞 단계다. RAG v2 공개 표면을 먼저 걷어 역사적 exact-61로 내린다.
+    if len(current_operations) in {68, 69}:
+        # 체인의 앞 단계다. 더 새로운 표면부터 차례로 걷어 역사적 exact-61로 내린다.
+        # RAG v2 투영이 Strong LLM 층을 먼저 벗기므로 여기서는 그 하나만 부르면 된다.
         from contracts.verify_p1_rag_v2_openapi_transition import (
             ADDITIVE_PATH as RAG_V2_ADDITIVE_PATH,
             project_pre_rag_v2_openapi,

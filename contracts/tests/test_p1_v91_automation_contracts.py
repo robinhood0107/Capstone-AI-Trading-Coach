@@ -27,6 +27,10 @@ from contracts.generate_principle_contracts import (
 from contracts.verify_p1_rag_v2_openapi_transition import (
     project_pre_rag_v2_openapi,
 )
+from contracts.verify_p1_strong_llm_settings_openapi_transition import (
+    ADDITIVE_PATH as STRONG_LLM_ADDITIVE_PATH,
+    strip_strong_llm_settings,
+)
 from contracts.verify_p1_v91_automation_openapi_transition import (
     ADDITIVE_SCHEMA_NAMES,
     HISTORICAL_ROOT_56_SHA256,
@@ -186,6 +190,10 @@ class P1V91AutomationContractTest(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+        # Strong LLM 설정 표면이 맨 앞에 더해졌다. 그 층을 먼저 걷어 exact-68로 내린다.
+        strong_llm_additive = json.loads(STRONG_LLM_ADDITIVE_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(69, len(operations(root)))
+        root = strip_strong_llm_settings(root, strong_llm_additive)
         self.assertEqual(68, len(operations(root)))
         root = project_pre_rag_v2_openapi(root, rag_v2_additive)
         self.assertEqual(61, len(operations(root)))

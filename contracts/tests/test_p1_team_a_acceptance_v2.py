@@ -20,10 +20,10 @@ class P1TeamAAcceptanceV2ContractTest(unittest.TestCase):
         self.assertEqual(expected[CATALOG_PATH], CATALOG_PATH.read_bytes())
         self.assertEqual(expected[CLIENT_PATH], CLIENT_PATH.read_bytes())
 
-    def test_catalog_is_exact_38_subset_of_exact_68(self) -> None:
+    def test_catalog_is_exact_38_subset_of_exact_69(self) -> None:
         catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
         self.assertEqual(38, catalog["acceptanceOperationCount"])
-        self.assertEqual(68, catalog["rootOpenApi"]["operationCount"])
+        self.assertEqual(69, catalog["rootOpenApi"]["operationCount"])
         self.assertEqual(33, catalog["preservedV1"]["operationCount"])
         self.assertEqual(
             15,

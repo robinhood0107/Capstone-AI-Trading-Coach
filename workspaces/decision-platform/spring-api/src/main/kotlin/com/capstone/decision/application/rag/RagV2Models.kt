@@ -21,6 +21,23 @@ data class RagV2CorpusStatus(
     val generationDailyCap: Int? = null,
     val generationUsedToday: Int? = null,
     val generationRemaining: Int? = null,
+    /**
+     * 소유자가 고른 Strong LLM 설정. 쓰기는 `PUT /api/v2/strong-llm/settings`가 하고 읽기는
+     * 여기에 실린다. 읽기 endpoint를 따로 두면 root OpenAPI에 operation이 하나 더 늘고, 그
+     * 사슬은 승인된 전이로만 움직인다.
+     *
+     * 키는 마지막 네 글자만 나온다. 그것이 "키가 들어 있다"를 말하는 데 필요한 전부다.
+     */
+    val strongLlmProvider: String? = null,
+    val strongLlmFallbackProvider: String? = null,
+    val strongLlmModelId: String? = null,
+    val strongLlmFallbackModelId: String? = null,
+    val strongLlmBaseUrl: String? = null,
+    val strongLlmFallbackBaseUrl: String? = null,
+    val strongLlmAnswerLanguage: String? = null,
+    val strongLlmDailyGenerateCallCap: Int? = null,
+    val strongLlmKeyLast4: String? = null,
+    val strongLlmFallbackKeyLast4: String? = null,
 )
 
 data class RagV2Answer(

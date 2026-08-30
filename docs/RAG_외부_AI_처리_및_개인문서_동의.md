@@ -18,6 +18,12 @@ RAG는 검색된 근거를 사용해 금융 개념, 가정, 한계와 citation�
 Signal feature, RiskDecision, 주문 의도, 주문 수량, 주문 hash를 바꿀 권한이 없다.
 `RAG_DECISION_SIGNAL_ORDER_AUTHORITY=0`은 이 경계를 고정한다.
 
+이것과 구분해야 할 것이 하나 있다. **Strong LLM 판단은 RAG와 다른 경로이며 매매 결정에 관여한다.**
+그 범위는 `STRONG_LLM_JUDGEMENT_AUTHORITY=CANDIDATE_RANK_VETO_SIZE_ONLY`로 고정되어 매수 후보의
+순위, 매수 차단, 정책 상한 안에서의 수량 축소 셋뿐이다. 후보를 새로 만들거나 수량을 늘리거나
+주문을 직접 낼 수는 없다. 자세한 근거는 `docs/adr/ADR-039-strong-llm-judgement-authority.md`에 있다.
+두 경로 모두 외부 processor 전송에는 이 문서가 정한 동의가 똑같이 필요하다.
+
 지원 대상은 contract로 고정된 logical OA112 자료와 사용자가 적법하게 보유한 개인 문서다. 앱은
 파일별 저작권 판단을 대신하지 않는다. 사용자는 문서를 처리하고 필요한 경우 외부 processor로
 전송할 권한을 보유한다고 확인해야 한다. DRM·paywall·login 우회, 무단 crawling, credential·secret,

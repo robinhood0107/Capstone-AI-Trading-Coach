@@ -16,12 +16,31 @@ _MIGRATIONS = (
     / "workspaces/decision-platform/spring-api/src/main/resources/db/migration"
 )
 _V93 = _MIGRATIONS / "V93__p1_automation_pipeline_continuity.sql"
+_TRANSITION_TAG = "$p1_automation_transition_valid_v2$"
+
+
+def _latest_transition_migration() -> tuple[int, str]:
+    """전이 표를 마지막으로 다시 쓴 마이그레이션. 버전이 큰 정의가 런타임의 진실이다.
+
+    한 파일을 이름으로 붙들면 다음에 표를 옮겨 쓸 때 이 대조가 조용히 옛 정의를 본다.
+    그러면 엔진과 DB가 어긋나도 초록불이 뜬다.
+    """
+
+    candidates: list[tuple[int, str]] = []
+    for path in _MIGRATIONS.glob("V*__*.sql"):
+        body = path.read_text(encoding="utf-8")
+        if "CREATE OR REPLACE FUNCTION public.p1_automation_transition_valid_v2" not in body:
+            continue
+        version = int(re.match(r"V(\d+)__", path.name).group(1))  # type: ignore[union-attr]
+        candidates.append((version, body))
+    assert candidates, "transition whitelist migration is missing"
+    return max(candidates, key=lambda item: item[0])
 
 
 def _whitelist_pairs() -> frozenset[tuple[str, str]]:
-    body = _V93.read_text(encoding="utf-8")
-    start = body.index("$p1_automation_transition_valid_v2$")
-    end = body.index("$p1_automation_transition_valid_v2$;", start)
+    _, body = _latest_transition_migration()
+    start = body.index(_TRANSITION_TAG)
+    end = body.index(f"{_TRANSITION_TAG};", start)
     return frozenset(
         (current, following)
         for current, following in re.findall(r"\('([A-Z_]+)','([A-Z_]+)'\)", body[start:end])

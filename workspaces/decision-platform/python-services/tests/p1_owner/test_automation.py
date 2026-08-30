@@ -166,6 +166,7 @@ def test_buy_full_fill_is_restart_safe_exact_one_and_contract_valid() -> None:
 
     assert states == [
         "PRECHECK",
+        "AI_JUDGING",
         "BUY_CANDIDATE_SELECTED",
         "NEWS_CHECKING",
         "ORDER_SIZING",
@@ -349,14 +350,15 @@ def test_unfilled_cancel_and_cancel_failure_are_terminal_without_resubmit() -> N
             cancel_succeeds=cancel_succeeds,
         )
         inputs = _inputs(_buy())
-        for index in range(1, 9):
+        # AI_JUDGING이 하나 늘어 같은 지점에 닿는 데 tick이 하나 더 든다.
+        for index in range(1, 10):
             _tick(store, transport, inputs, index)
         assert store.runs[_RUN_ID].state == "PENDING_RECONCILIATION"
         result = _tick(
             store,
             transport,
             inputs,
-            9,
+            10,
             now=datetime(2026, 8, 26, 15, 20, tzinfo=_KST),
         )
         assert result["state"] == expected
@@ -395,7 +397,7 @@ def test_duplicate_tick_is_exact_noop_and_session_submit_cap_halts_second_run() 
     _create(store, run_id=second_id, now=_NOW + timedelta(minutes=1))
     second_transport = _transport(quote=_quote("000002"))
     second_inputs = _inputs(_buy("000002"))
-    for index in range(1, 8):
+    for index in range(1, 9):
         result = _tick(
             store,
             second_transport,
@@ -857,7 +859,7 @@ def test_provider_cap_is_checked_before_quote_and_pending_noop_is_durable() -> N
     _create(store)
     transport = CapExhaustedTransport()
     inputs = _inputs(_buy())
-    for index in range(1, 5):
+    for index in range(1, 6):
         result = AutomationEngine(store).tick(
             run_id=_RUN_ID,
             tick_id=f"cap_tick_{index}",

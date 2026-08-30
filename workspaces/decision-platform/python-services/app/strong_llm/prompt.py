@@ -83,8 +83,10 @@ _OUTPUT_EXPLAIN = """\
   citation, evidence span을 담지 않는다.
 - INSUFFICIENT_EVIDENCE: answer는 null이고 sentences는 비운다.
 
-근거로 답할 수 있으면서 그 근거를 잇거나 해석하는 문장이 필요하면 EVIDENCE 대신
-EVIDENCE_WITH_REASONING을 고른다. 인용의 나열보다 이해되는 설명이 낫다."""
+basis를 고르는 규칙은 하나다. 문장 중 하나라도 citationIds가 비어 있으면 basis는 반드시
+EVIDENCE_WITH_REASONING이다. EVIDENCE는 **모든** 문장이 인용을 가질 때만 고른다. 근거를 잇거나
+해석하는 문장이 필요하면 그 문장을 쓰고 basis를 EVIDENCE_WITH_REASONING으로 둔다 - 인용의
+나열보다 이해되는 설명이 낫다."""
 
 _OUTPUT_JUDGE = """\
 # 출력 계약

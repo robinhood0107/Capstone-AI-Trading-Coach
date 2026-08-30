@@ -1,0 +1,101 @@
+{
+  "contractId": "p1-api-surface-e2e.v1",
+  "steps": [
+    {
+      "detail": "HTTP 200 keys=['data', 'error', 'requestId', 'success', 'warnings']",
+      "name": "시스템 상태",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "소유자=[403, 403, 403] 관리자=[200, 200, 200] (소유자에게 닫히고 관리자에게 열려야 한다)",
+      "name": "ADMIN 관측 3종",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 404 (없는 식별자는 404로 닫혀야 한다)",
+      "name": "없는 비동기 작업 조회",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 200 프리셋 3종",
+      "name": "원칙 프리셋 목록",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 201 principleId=있음",
+      "name": "원칙 생성",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "단건 HTTP 200 목록 HTTP 200 목록에 포함=True",
+      "name": "원칙 단건·목록 조회",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 200 버전 1→2 버전목록 HTTP 200 2건",
+      "name": "원칙 수정과 버전 적재",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "생성 HTTP 200 목록 HTTP 200 목록에 포함=True",
+      "name": "일지 생성과 목록",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "수정 HTTP 200 삭제 HTTP 200 목록에서 사라짐=True",
+      "name": "일지 수정과 삭제",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 200",
+      "name": "v1 동의 기록",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "초기=False 켠뒤=True 소유자해제=403 관리자해제=200 복구=False (복구값이 초기값과 달라지면 회귀다)",
+      "name": "kill switch 읽기·켜기·되돌리기",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 200 keys=['annualizedVolatility20d', 'asOf', 'cvar95', 'dailyPnlRate', 'dataFreshness', 'hmmRegime']",
+      "name": "포트폴리오 위험 조회",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 200 (번들이 없으면 404가 맞다. 5xx면 회귀다) code=None",
+      "name": "신호 조회",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 200 verdict=None decisionId=있음 code=None",
+      "name": "주문 판단 생성",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "단건 HTTP 200 감사 HTTP 200",
+      "name": "판단 단건과 감사 조회",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 404 (다른 소유자의 판단도 같은 404로 닫혀야 한다)",
+      "name": "없는 판단 조회",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "백테스트=404 모델 평가=404 RAG 출처=404 위험 결과=200 (없는 식별자는 404, 만든 판단은 200 또는 404)",
+      "name": "대시보드 ViewModel 4종",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "출처 HTTP 200 0건 이력 HTTP 200 14건",
+      "name": "v1 RAG 출처·이력",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "잔여 bundles=0 runs=0 orders=0 principles=0 journal=0 calendar=0",
+      "name": "정리",
+      "verdict": "PASS"
+    }
+  ],
+  "verdict": "PASS"
+}

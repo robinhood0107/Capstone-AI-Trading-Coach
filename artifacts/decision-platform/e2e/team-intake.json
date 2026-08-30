@@ -1,0 +1,31 @@
+{
+  "contractId": "p1-team-intake-e2e.v1",
+  "steps": [
+    {
+      "detail": "매니페스트=True 산출물=10개 (정확히 10개여야 한다) ['backtest_result.json', 'config.json', 'equity_log.parquet', 'golden_output.json']",
+      "name": "번들 목록",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "적재 열림=False 번들 0→0 command failed (1): docker compose…",
+      "name": "틀린 매니페스트 해시는 닫힌다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "번들 0→1 마지막 출력={\"archiveNoOp\":false,\"artifactId\":\"artifact_p1_4f00835bfaba524fed50e0b4\",\"bundleSha256\":\"4f00835bfaba524fed50e0b41218d7a4d0af52fb6b66a9383053a88bf465107d\",\"data",
+      "name": "production 적재기 실행",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "매니페스트 해시 일치=True 신호 투영=62행 evidence_mode=SYNTHETIC_GOLDEN real_team_b=false model_quality=NOT_EVALUATED_SYNTHETIC (evidence_mode가 합성이라고 말하는 것이 맞다. 실제 산출물은 아직 없다)",
+      "name": "무결성 영수증과 신호 투영",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "잔여 bundles=0 runs=0 orders=0 principles=0 journal=0 calendar=0",
+      "name": "정리",
+      "verdict": "PASS"
+    }
+  ],
+  "verdict": "PASS"
+}

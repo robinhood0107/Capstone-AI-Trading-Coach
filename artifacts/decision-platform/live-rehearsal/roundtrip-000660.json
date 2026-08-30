@@ -1,0 +1,53 @@
+{
+  "status": "SUCCESS",
+  "symbol": "000660",
+  "quantity": 1,
+  "completedSteps": [
+    {
+      "step": "price",
+      "currentPriceKrw": 1683000,
+      "tickKrw": 1000
+    },
+    {
+      "step": "preBalance",
+      "cashKrw": 100000000,
+      "symbolQuantity": 0
+    },
+    {
+      "step": "buyable",
+      "limitPriceKrw": 1684000,
+      "buyableAmountKrw": 99491821,
+      "buyableQuantity": 59
+    },
+    {
+      "step": "submitBuy",
+      "limitPriceKrw": 1684000,
+      "orderNo": "0000033404",
+      "branchNo": "00950"
+    },
+    {
+      "step": "buyFill",
+      "cumulativeQuantity": 1,
+      "leavesQuantity": 0,
+      "averageFillPriceKrw": 1682000
+    },
+    {
+      "step": "submitSell",
+      "limitPriceKrw": 1682000,
+      "orderNo": "0000033409",
+      "branchNo": "00950"
+    },
+    {
+      "step": "sellFill",
+      "cumulativeQuantity": 1,
+      "leavesQuantity": 0,
+      "averageFillPriceKrw": 1683000
+    },
+    {
+      "step": "postBalance",
+      "cashKrw": 100000000,
+      "symbolQuantity": 0
+    }
+  ],
+  "sessionKst": "2026-08-28T13:48:23.551876+09:00"
+}

@@ -1,0 +1,51 @@
+{
+  "contractId": "p1-rag-v2-boundaries.v1",
+  "steps": [
+    {
+      "detail": "직접 표 권한=[] 함수 EXECUTE=12 (표 권한이 하나라도 생기면 회귀다. 검색은 definer 함수로만 산다)",
+      "name": "검색 역할 권한",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "COMPLETE|c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539|7871 (없으면 모든 질의 예약이 55000으로 닫힌다)",
+      "name": "Voyage 문서 배치 계획",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "uid=65532 항목=8 디렉터리700=True 파일600=True 소유일치=True",
+      "name": "로컬 루트 경계",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539 (배치 계획이 요구하는 해시와 같아야 예약이 열린다)",
+      "name": "공식 tokenizer 해시",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "['false', '127.0.0.1:50054', '127.0.0.1:50054', 'true'] (reflection off, loopback 고정, 질의 런타임 on)",
+      "name": "전송 설정",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "RAG_V2_VERTEX_ENABLED=false model=gemini-3.5-flash (이 값이 아래 실검색의 기대 상태를 정한다)",
+      "name": "생성 활성화 관측",
+      "verdict": "INFO"
+    },
+    {
+      "detail": "HTTP 409 code=EXTERNAL_AI_CONSENT_REQUIRED guardrail=[] 예약 20→20 (생성 비활성 상태: consent 자리에서 typed 409로 닫힌다)",
+      "name": "동의 없는 질의는 물리 호출 0",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 200 RETRIEVAL_ONLY 인용 5건 예약 20→21 guardrail=[] (생성 비활성 상태: 검색 전용 답변에 인용이 실린다)",
+      "name": "실검색 1회",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "--with-vertex-generation 없이는 돌리지 않는다. provider 물리 호출을 쓰는 단계다",
+      "name": "생성형 답변 1회",
+      "verdict": "INFO"
+    }
+  ],
+  "verdict": "PASS"
+}

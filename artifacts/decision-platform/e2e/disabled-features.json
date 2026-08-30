@@ -1,0 +1,31 @@
+{
+  "contractId": "p1-disabled-features-e2e.v1",
+  "steps": [
+    {
+      "detail": "SearXNG 웹검색=false, S4.9 Strong LLM=false, S4.9 MCP=false, 금융공학 gRPC=false",
+      "name": "네 기능의 런타임 플래그",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "operation 경로 55개 중 해당 없음=True []",
+      "name": "꺼진 기능은 표면에 없다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "회수됐어야 할 권한 중 남아 있는 것=[] (V74가 회수했다. 다시 생기면 은퇴가 풀린 것이다)",
+      "name": "LightGBM 은퇴 유지",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "status HTTP 200 응답 모드=KIS_MOCK DB 모드=INTERNAL_PAPER (실계좌 모드가 나타나면 그 자체가 금지 위반이다)",
+      "name": "브로커리지는 모의다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "닫힘=True 물리 호출=0",
+      "name": "뉴스 거부권 전송 fail-closed",
+      "verdict": "PASS"
+    }
+  ],
+  "verdict": "PASS"
+}

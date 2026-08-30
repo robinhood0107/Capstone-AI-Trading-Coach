@@ -38,7 +38,7 @@ class ProviderSpec:
     api_key: str = ""
     base_url: str = ""
     timeout_seconds: float = 50.0
-    max_output_tokens: int = 4096
+    max_output_tokens: int = 32_768
 
     def __post_init__(self) -> None:
         if self.provider not in SUPPORTED_PROVIDERS:

@@ -68,7 +68,7 @@ class VertexGemini35FlashGenerationAdapterTest {
         assertThat(payload["generationConfig"]["responseMimeType"].stringValue()).isEqualTo("application/json")
         val responseSchema = payload["generationConfig"]["responseSchema"]
         assertThat(responseSchema["properties"]["answer"].get("enum")).isNull()
-        assertThat(responseSchema["properties"]["sentences"]["maxItems"].intValue()).isEqualTo(24)
+        assertThat(responseSchema["properties"]["sentences"]["maxItems"].intValue()).isEqualTo(96)
         val sentenceSchema = responseSchema["properties"]["sentences"]["items"]["properties"]
         assertThat(sentenceSchema["text"].get("enum")).isNull()
         assertThat(sentenceSchema["citationIds"]["items"].get("enum")).isNull()

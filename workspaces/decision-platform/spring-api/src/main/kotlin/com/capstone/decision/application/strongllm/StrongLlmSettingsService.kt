@@ -105,7 +105,7 @@ class StrongLlmSettingsService(
     ) {
         val jdbc = jdbc()
         openScope(jdbc, ownerUserId, "PUT_STRONG_LLM_SETTINGS")
-        jdbc.update(
+        jdbc.query(
             """
             SELECT put_strong_llm_owner_settings_v1(
               :ownerUserId, :provider, :fallbackProvider, :modelId, :fallbackModelId,
@@ -123,7 +123,7 @@ class StrongLlmSettingsService(
                 "answerLanguage" to command.answerLanguage,
                 "dailyGenerateCallCap" to command.dailyGenerateCallCap,
             ),
-        )
+        ) { _, _ -> }
         applyKey(jdbc, ownerUserId, "PRIMARY", command.apiKey)
         applyKey(jdbc, ownerUserId, "FALLBACK", command.fallbackApiKey)
     }
@@ -138,14 +138,14 @@ class StrongLlmSettingsService(
             return
         }
         if (apiKey.isEmpty()) {
-            jdbc.update(
+            jdbc.query(
                 "SELECT delete_strong_llm_owner_credential_v1(:ownerUserId, :slot)",
                 mapOf("ownerUserId" to ownerUserId, "slot" to slot),
-            )
+            ) { _, _ -> }
             return
         }
         val sealed = crypto.seal(ownerUserId, slot, apiKey)
-        jdbc.update(
+        jdbc.query(
             """
             SELECT put_strong_llm_owner_credential_v1(
               :ownerUserId, :slot, :kekVersion, :wrapNonce, :wrappedDek, :wrapTag,
@@ -164,7 +164,7 @@ class StrongLlmSettingsService(
                 "keyTag" to sealed.keyTag,
                 "keyLast4" to sealed.keyLast4,
             ),
-        )
+        ) { _, _ -> }
     }
 
     private fun openScope(

@@ -691,7 +691,7 @@ S2.1은 공용 preset, 사용자별 원칙 생성·복구·수정·보관, immut
 `s2-1-principle-contract/v1`이다. standalone schema와 fixture는 catalog에서 기계 생성하며
 사람이 독립적으로 수정하지 않는다.
 
-아래 6개 runtime endpoint와 실제 springdoc path,
+**구현 경계.** 아래 6개 runtime endpoint와 실제 springdoc path,
 owner-scoped SQL CAS, immutable snapshot/audit, HMAC cursor를 구현했다. S2.2 계약
 amendment로 `PrincipleRule.evidenceRequirement`를 명시하고 legacy immutable snapshot의
 결정적 read-time inference도 추가했다. `STRICT` 저장과 rule 필드 노출은 구현 완료지만
@@ -969,7 +969,7 @@ deterministic formatting만 normalizer가 바꿀 수 있으며 paths/components/
 주문 의도와 immutable Principle version, portfolio context, 모델·리스크 evidence를 결합하는
 최종 HTTP API다.
 
-S2.2는
+**구현 경계.** S2.2는
 `contracts/catalogs/s2-2-system-rule-catalog.v1.json`,
 `contracts/schemas/risk_decision.schema.json`과 순수 evaluator/snapshot policy를 offline
 fixture와 fake port로 검증했다. S2.3은 owner-scoped runtime orchestration, V9
@@ -1464,19 +1464,19 @@ canonical domain이다.
 
 RAG는 v1 핵심 구현이다. 단, RAG 답변은 매수/매도 지시가 아니라 근거 기반 설명으로 제한한다. 런타임 RAG corpus는 공식자료, 공시/API 문서, 프로젝트 산출물, 금융공학 source card로 제한한다. 뉴스 원문과 기사 metadata는 RAG corpus에 포함하지 않고, Decision Platform이 만든 검증된 `news_sentiment_summary.v2`만 설명 근거 후보로 연결한다.
 
-아래 ask·feedback·history·consent 계약은
+**S4.4 — ask·feedback·history·consent.** 아래 계약은
 `FIXTURE_ONLY` answerer, owner-scoped PostgreSQL functions, Redis rate limit,
 purpose-separated HMAC과 AES-256-GCM envelope encryption으로 구현한다. 이 단계의
 Gemini·OpenAI·Voyage physical call은 0이고 허용 질문도 `RETRIEVAL_ONLY`로 닫는다.
 실제 Python retrieval/generation E2E는 S4.6, Gemini live는 별도 승인형 S4.4G 범위다.
 
-공개·합성 exact 60 fixture가 production RRF·local
+**S4.5 — 평가 fixture.** 공개·합성 exact 60 fixture가 production RRF·local
 guardrail·citation parser를 재사용해 모든 metric gate를 통과했다. Voyage S4.2C와 Gemini
 S4.4G는 내부 approval packet schema, usage state, mock transport와 fail-closed validator만
 구현한다. public ask/answer/history/OpenAPI field 변경은 0이며 fresh provider 승인과 paid
 ZDR evidence가 없으므로 provider physical call, generation materialization과 activation은 0이다.
 
-`capstone.decision.v1.RagService.Ask` unary proto와
+**S4.6 — Python retrieval RPC.** `capstone.decision.v1.RagService.Ask` unary proto와
 canonical descriptor를 Python/JVM이 공유한다. Spring은 owner consent 확인 뒤
 rate limit·idempotency claim을 수행하고, 신규 claim에서만 짧은 수명의 opaque
 retrieval scope를 발급해 numeric loopback Python RPC를 한 번 호출한다. Python은
@@ -2235,7 +2235,7 @@ artifact 다운로드 URL은 공개 링크가 아니며 다른 API와 동일한 
 
 KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재동의 조건을 충족할 때만 확장한다. S1.1의 KIS 작업은 Brokerage API가 아니라 MarketDataService 내부 구현이며, 주문·정정·취소·잔고 변경을 만들지 않는다. KIS 전체 API 목록과 모의 지원 경계는 자동 생성 부록 `KIS_API_카탈로그.md`를 참조한다.
 
-S3.1은 `POST /api/v1/brokerage/mock/orders`,
+**S3.1 — KIS 모의주문.** `POST /api/v1/brokerage/mock/orders`,
 `GET /api/v1/brokerage/orders/{orderId}`, `POST /api/v1/brokerage/orders/{orderId}/cancel`,
 `GET /api/v1/brokerage/mock/accounts/{accountId}/balances`,
 `GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`을 runtime으로 구현한다. 주문 제출은
@@ -2251,7 +2251,7 @@ transport로 수행했고 provider/live account/broker/order physical call은 0�
 verified KRX tick-table context가 없는 LIMIT 주문은 `BROKERAGE_UNAVAILABLE`로
 fail-closed한다. 닫힌 KIS_MOCK online 확장은 아래 S3-online 상태를 따른다.
 
-S3.2는 별도
+**S3.2 — 내부 paper 원장.** 별도
 `POST /api/v1/brokerage/paper/orders`와 paper balance/buyable route를 추가하고 기존 공통
 order 조회·취소를 `INTERNAL_PAPER`로 확장한다. paper path는 KIS Mock gRPC port를 참조하지
 않으며 stored quote와 append-only `paper_order_events`만 사용한다. provider 장애 fallback,
@@ -2259,8 +2259,7 @@ live/order/fill 조회, partial fill은 0건이다. canonical SSOT는
 `contracts/catalogs/s3-2-internal-paper-contract.v1.json`과
 `contracts/changes/20260727-s3-2-internal-paper-ledger-contract.md`다.
 
-S3.3은
-`POST /api/v1/brokerage/orders/{orderId}/reconcile`,
+**S3.3 — 체결과 대사.** `POST /api/v1/brokerage/orders/{orderId}/reconcile`,
 `GET /api/v1/brokerage/mock/accounts/{accountId}/fills`,
 `GET /api/v1/brokerage/paper/accounts/{accountId}/fills`를 구현한다. KIS_MOCK 체결은
 `decision_fill_writer`가 저장한 sanitized COMPLETE 관측만 ADMIN reconcile이 최대 200개씩
@@ -2275,7 +2274,7 @@ OpenAPI는 fill 조회의 필수 `from`/`to` date query와 optional 최대 1024�
 reconcile의 필수 16~128자 ASCII `X-Idempotency-Key`, additional-properties가 닫힌
 empty-object request body를 runtime parser와 동일하게 노출한다.
 
-S3-online은 기본 OFF인 loopback Brokerage gRPC와 official
+**S3-online — 승인형 KIS_MOCK transport.** 기본 OFF인 loopback Brokerage gRPC와 official
 KIS_MOCK fixed-origin transport를 연결한다. 주문 `VTTC0011U | VTTC0012U`, 전량 취소
 `VTTC0013U`, 잔고 `VTTC8434R`, 매수가능 `VTTC8908R`, 최근/과거 체결
 `VTTC0081R | VTSC9215R`의 exact mock path/TR만 허용한다. Spring은 provider handoff 전에
@@ -2792,7 +2791,7 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 
 ## 11. Automation·Journal API
 
-아래 8개 operation은
+**표면 경계.** 아래 8개 operation은
 `contracts/openapi/p1-automation-journal.v1.openapi.json`에서 잠근 method/path/operationId와 같다.
 이 여덟은 root OpenAPI가 exact-56이던 시점에 들어왔고 그 뒤 Automation v2 다섯, RAG v2 공개 일곱,
 Strong LLM 설정 하나가 더해져 root는 현재 exact-69다. 각 전환은 앞 단계의 bytes를 보존한다.
@@ -2890,7 +2889,7 @@ ActorCapability v2와 같은 transaction의 FORCE RLS scope를 요구하며 cros
 
 금융공학 계산 기능은 투자 권유나 주문 실행을 위한 기능이 아니다. 이 API는 RAG 금융수학 카드, 주문검토 리스크 설명, 백테스트 리포트, 학습 화면에 필요한 계산 결과만 제공한다.
 
-request의 `contractId + valuationAt`을 기준으로 서버가
+**계약조건은 서버가 정한다.** request의 `contractId + valuationAt`을 기준으로 서버가
 effective-dated `option_contract_terms.v1`을 조회하고 `tau=(lastTradingAt-valuationAt)/31536000`
 (`ACT/365F`)를 계산한다. client가 `optionType`, `strikePrice`, `timeToMaturityYears`,
 `finalSettlementDate`, 보유·전략평가 기간을 계약조건이나 만기로 지정할 수 없다. valuation은
@@ -3065,13 +3064,13 @@ solver identity 검증이며 독립 fair-value 또는 실제 성과 증거가 �
 
 ## 12A. Market Calendar API (계획 — 미구현)
 
-이 장 전체는 현재 문서화된 `계획 계약`이다. `S1.2+`는 수집 계획을 묶는 상위 umbrella 표현이며, 다중 소스 aggregator의 확정 구현 세션은 S1.6이다. REST/gRPC 구현과 Dashboard 가용성은 S1.6 완료만으로 자동 성립하지 않으며, S1.6 이후 별도의 명시적 contract-change 세션에서 schema/proto/OpenAPI와 소비 화면을 함께 승인한 뒤에만 제공한다.
+**이 장의 지위.** 이 장 전체는 현재 문서화된 `계획 계약`이다. `S1.2+`는 수집 계획을 묶는 상위 umbrella 표현이며, 다중 소스 aggregator의 확정 구현 세션은 S1.6이다. REST/gRPC 구현과 Dashboard 가용성은 S1.6 완료만으로 자동 성립하지 않으며, S1.6 이후 별도의 명시적 contract-change 세션에서 schema/proto/OpenAPI와 소비 화면을 함께 승인한 뒤에만 제공한다.
 
-12A.5 이후는 S1.6 production 구현 전에 고정한 내부
+**선행 계약 동결.** 12A.5 이후는 S1.6 production 구현 전에 고정한 내부
 storage/collector 계약이다. 이 변경은 endpoint, proto, OpenAPI, JSON Schema 또는
 `contracts/`를 활성화·변경하지 않는다.
 
-S1.6 후속 변경은 strict registry, offline adapter/merger,
+**내부 구현 범위.** S1.6 후속 변경은 strict registry, offline adapter/merger,
 Flyway V6 canonical·audit 저장, quota/retry/privacy/state와 최소권한 collector를 구현한다.
 provider call과 online schedule은 0이며 이 장의 REST endpoint, 계획 RPC, OpenAPI/proto와
 Dashboard는 여전히 미구현이다. 외부 소비자는 별도 contract-change 전까지 연동하지 않는다.
@@ -3436,7 +3435,7 @@ service MarketDataService {
 }
 ```
 
-위 `GetNewsSummary`와 `GetMacroSnapshot`은 미래 interface sketch이며 현재 proto/controller가
+**아직 호출할 수 없다.** 위 `GetNewsSummary`와 `GetMacroSnapshot`은 미래 interface sketch이며 현재 proto/controller가
 없어 **호출 불가**다. S1.3은 아래 내부 file artifact만 생산한다. `GetNewsSummary`는 Naver
 provider 응답이 아니라 Decision Platform이 생성할 v2 감성 요약 계약을 뜻하며, 두 RPC를 공개하려면
 별도의 `contracts/changes/`와 인증·인가 구현이 필요하다.
@@ -3536,7 +3535,7 @@ S1.1의 KIS MarketDataService 구현 경계는 다음과 같다.
 | per-run call caps | online `kis-backfill`은 `--current-price-logical-cap`, `--daily-bars-logical-cap`, `--holiday-logical-cap`, `--market-data-physical-cap`, `--token-p-physical-cap`을 exact approval packet 값으로 모두 명시한다. 생략·부분 지정·음수는 client 생성 전에 거부하고, logical 시작과 market/token physical send 직전의 원자 recorder가 cap 도달 시 `KISCallBudgetExceeded`로 중단한다. retry도 별도 physical attempt로 같은 cap을 소비한다 |
 | local calendar | S1.1은 비거래일 KIS 호출 회피용으로 로컬 `exchange_calendars` XKRX 판정만 사용한다. 다중 소스 캘린더의 내부 offline 집계는 S1.6/12A.5~12A.7 범위이고, 아래 RPC와 REST 12A.2는 별도 계획 계약이다 |
 
-S1.6 내부 offline aggregator는 구현됐지만 `GetTradingSessions`/
+**구현과 공개는 다르다.** S1.6 내부 offline aggregator는 구현됐지만 `GetTradingSessions`/
 `GetCalendarEvents` RPC와 REST 12A.2는 미구현 계획이다. 별도의 명시적 contract-change
 세션에서 proto/OpenAPI와 소비자를 함께 승인하며 그 전에는 Dashboard가 이 계약을 소비하지 않는다.
 

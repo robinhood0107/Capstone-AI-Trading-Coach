@@ -36,6 +36,7 @@ EOF
 
 compose() {
   [[ -n $DOCKER_BIN ]] || die MISSING_COMMAND_docker
+  enable_rag_by_default
   export P1_OPERATOR_UID=${P1_OPERATOR_UID:-$(id -u)}
   export P1_KIS_MOCK_RUNTIME_DIR=${P1_KIS_MOCK_RUNTIME_DIR:-$STATE_DIR/mock}
   local args=("$DOCKER_BIN" compose --project-name "$PROJECT_NAME")
@@ -305,6 +306,8 @@ bind_vertex_code_state() {
 }
 
 enable_rag_by_default() {
+  [[ -z ${P1_RAG_DEFAULT_DECIDED:-} ]] || return 0
+  export P1_RAG_DEFAULT_DECIDED=1
   # 이 경로는 compose가 읽는 runtime.env에 있다. 그 파일을 통째로 불러오면 여기의 판단이
   # 배포 전체의 환경에 섞이므로 필요한 한 줄만 읽는다.
   local root=${P1_RAG_RUNTIME_DIR:-}
@@ -351,7 +354,6 @@ up_app() {
   export P1_KIS_MOCK_ONLINE_ENABLED=$([[ $mock == 1 ]] && printf true || printf false)
   export P1_KIS_OFFLINE=$([[ $mock == 1 ]] && printf 0 || printf 1)
   export P1_AUTOMATION_RUNTIME_ENABLED=false
-  enable_rag_by_default
   require_command openssl
   require_command python3
   [[ -n $DOCKER_BIN ]] || die MISSING_COMMAND_docker

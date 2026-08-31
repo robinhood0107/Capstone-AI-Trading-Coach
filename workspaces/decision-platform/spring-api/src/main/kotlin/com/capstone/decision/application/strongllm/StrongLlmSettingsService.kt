@@ -19,6 +19,8 @@ data class StrongLlmOwnerSettings(
     /** 키가 들어 있는지를 말하는 데 필요한 전부다. */
     val primaryKeyLast4: String?,
     val fallbackKeyLast4: String?,
+    val aiJudgementEnabled: Boolean = false,
+    val thinkingLevel: String = "low",
 )
 
 /**
@@ -38,6 +40,8 @@ data class PutStrongLlmSettingsCommand(
     val dailyGenerateCallCap: Int,
     val apiKey: String?,
     val fallbackApiKey: String?,
+    val aiJudgementEnabled: Boolean? = null,
+    val thinkingLevel: String? = null,
 )
 
 class StrongLlmSettingsUnavailableException : RuntimeException("STRONG_LLM_SETTINGS_UNAVAILABLE")
@@ -63,7 +67,8 @@ class StrongLlmSettingsService(
             .query(
                 """
                 SELECT provider, fallback_provider, model_id, fallback_model_id,
-                       base_url, fallback_base_url, answer_language, daily_generate_call_cap
+                       base_url, fallback_base_url, answer_language, daily_generate_call_cap,
+                       ai_judgement_enabled,thinking_level
                 FROM strong_llm_owner_settings
                 WHERE owner_user_id = :ownerUserId
                 """.trimIndent(),
@@ -80,6 +85,8 @@ class StrongLlmSettingsService(
                     dailyGenerateCallCap = row.getInt("daily_generate_call_cap"),
                     primaryKeyLast4 = last4["PRIMARY"],
                     fallbackKeyLast4 = last4["FALLBACK"],
+                    aiJudgementEnabled = row.getBoolean("ai_judgement_enabled"),
+                    thinkingLevel = row.getString("thinking_level"),
                 )
             }.singleOrNull()
             // 아직 고른 적이 없으면 배포 기본값을 그대로 보여준다. 화면이 빈 칸을 보고
@@ -95,6 +102,8 @@ class StrongLlmSettingsService(
                 dailyGenerateCallCap = DEFAULT_DAILY_CAP,
                 primaryKeyLast4 = last4["PRIMARY"],
                 fallbackKeyLast4 = last4["FALLBACK"],
+                aiJudgementEnabled = false,
+                thinkingLevel = "low",
             )
     }
 
@@ -107,9 +116,10 @@ class StrongLlmSettingsService(
         openScope(jdbc, ownerUserId, "PUT_STRONG_LLM_SETTINGS")
         jdbc.query(
             """
-            SELECT put_strong_llm_owner_settings_v1(
+            SELECT put_strong_llm_owner_settings_v2(
               :ownerUserId, :provider, :fallbackProvider, :modelId, :fallbackModelId,
-              :baseUrl, :fallbackBaseUrl, :answerLanguage, :dailyGenerateCallCap
+              :baseUrl, :fallbackBaseUrl, :answerLanguage, :dailyGenerateCallCap,
+              :aiJudgementEnabled,:thinkingLevel
             )
             """.trimIndent(),
             mapOf(
@@ -122,6 +132,8 @@ class StrongLlmSettingsService(
                 "fallbackBaseUrl" to command.fallbackBaseUrl,
                 "answerLanguage" to command.answerLanguage,
                 "dailyGenerateCallCap" to command.dailyGenerateCallCap,
+                "aiJudgementEnabled" to command.aiJudgementEnabled,
+                "thinkingLevel" to command.thinkingLevel,
             ),
         ) { _, _ -> }
         applyKey(jdbc, ownerUserId, "PRIMARY", command.apiKey)

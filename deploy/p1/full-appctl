@@ -28,6 +28,7 @@ Usage:
   ./capstone artifact <validate|import> <bundle-directory> --manifest-sha256 <sha256>
   ./capstone market-data inventory
   ./capstone market-data bootstrap <plan|validate|stage> ...
+  ./capstone test after-hours-replay --manifest-sha256 <sha256>
   ./capstone team-a acceptance
 
 Default `up` starts five persistent containers. `--models` adds the official
@@ -167,6 +168,14 @@ upgrade_state() {
     printf 'MARKET_DATA_WRITER_DSN=postgresql://decision_market_writer:%s@postgres:5432/capstone_p1?sslmode=disable\n' \
       "$market_writer_password" | write_state secrets/market-data.env 0640
     unset market_writer_password
+  fi
+  if [[ ! -e $SECRETS_DIR/after-hours-replay.env ]]; then
+    local replay_reader_password
+    replay_reader_password=$(sed -n 's/^POSTGRES_REPLAY_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+    [[ $replay_reader_password =~ ^[0-9a-f]{64}$ ]] || die AFTER_HOURS_REPLAY_SECRET_MISSING
+    printf 'P1_AFTER_HOURS_REPLAY_DATABASE_DSN=postgresql://decision_replay:%s@postgres:5432/capstone_p1?sslmode=disable\nP1_AFTER_HOURS_REPLAY_ISOLATED=true\n' \
+      "$replay_reader_password" | write_state secrets/after-hours-replay.env 0640
+    unset replay_reader_password
   fi
   if ! grep -q '^P1_AUTOMATION_OWNER_USER_ID=' "$SECRETS_DIR/automation-runtime.env"; then
     printf 'P1_AUTOMATION_OWNER_USER_ID=usr_demo_user\n' \
@@ -496,7 +505,7 @@ team_a_acceptance() {
   # 검증이 쓰는 catalog 에서 읽는다. 상수로 두면 catalog 가 늘어날 때 영수증만 옛 수를
   # 찍고, 그 수가 곧 사람이 증거로 인용하는 값이 된다.
   local acceptance_catalog acceptance_count
-  acceptance_catalog="$REPO_ROOT/contracts/catalogs/p1-team-a-acceptance.v2.json"
+  acceptance_catalog="$REPO_ROOT/contracts/catalogs/p1-team-a-acceptance.v3.json"
   acceptance_count=$(python3 -c 'import json,sys
 print(json.load(open(sys.argv[1]))["acceptanceOperationCount"])' "$acceptance_catalog")
   printf 'TEAM_A_ACCEPTANCE_OPERATION_COUNT=%s\n' "$acceptance_count"
@@ -809,6 +818,22 @@ market_data_bootstrap_archive() {
       --archive-root "/owner-input/$name" --expected-manifest-sha256 "$expected"
 }
 
+after_hours_replay() {
+  local manifest_sha=${1:-}
+  [[ $manifest_sha =~ ^[0-9a-f]{64}$ ]] || die AFTER_HOURS_REPLAY_MANIFEST_SHA256
+  [[ $PROJECT_NAME == capstone-p1-after-hours-replay ]] || die AFTER_HOURS_REPLAY_PROJECT_ISOLATION
+  state_ready || die NOT_INITIALIZED
+  upgrade_state
+  compose ps --status running --services | grep -qx postgres || die AFTER_HOURS_REPLAY_POSTGRES_NOT_RUNNING
+  export P1_AFTER_HOURS_OUTPUT_ROOT=$STATE_DIR/artifacts/after-hours-replay
+  export P1_AFTER_HOURS_OBSERVED_ANCHOR_ROOT=$REPO_ROOT/artifacts/decision-platform/live-rehearsal
+  export P1_AFTER_HOURS_OBSERVED_ANCHOR_MANIFEST=$REPO_ROOT/contracts/catalogs/p1-after-hours-observed-anchors.v1.json
+  install -d -m 0700 "$P1_AFTER_HOURS_OUTPUT_ROOT"
+  compose --profile owner run --rm --no-deps after-hours-replay \
+    python -m app.p1_owner.after_hours_replay_cli \
+      --manifest-sha256 "$manifest_sha" --output-root /replay-output
+}
+
 command=${1:-}
 [[ -n $command ]] || { usage >&2; exit 1; }
 shift
@@ -880,6 +905,17 @@ case $command in
     case $subcommand in
       acceptance) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; team_a_acceptance ;;
       *) die UNKNOWN_TEAM_A_COMMAND ;;
+    esac
+    ;;
+  test)
+    subcommand=${1:-}; [[ -n $subcommand ]] || die TEST_COMMAND_REQUIRED; shift
+    case $subcommand in
+      after-hours-replay)
+        [[ ${1:-} == --manifest-sha256 ]] || die AFTER_HOURS_REPLAY_MANIFEST_ARGUMENT_REQUIRED
+        shift; [[ $# == 1 ]] || die AFTER_HOURS_REPLAY_ARGUMENTS
+        after_hours_replay "${1:-}"
+        ;;
+      *) die UNKNOWN_TEST_COMMAND ;;
     esac
     ;;
   preview|start) up_app "$@" ;;

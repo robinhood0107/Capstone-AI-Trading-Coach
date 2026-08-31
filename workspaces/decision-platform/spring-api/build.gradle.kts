@@ -153,6 +153,12 @@ tasks.withType<Test> {
 }
 
 tasks.named<ProcessResources>("processResources") {
+    from(layout.projectDirectory.file("../../../contracts/catalogs/p1-vertex-news-sources.v1.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/openapi/p1-automation-v3.v1.openapi.json")) {
+        into("contracts")
+    }
     // runtime/OpenAPI가 사람이 복사한 두 번째 matrix가 아니라 canonical catalog bytes를 그대로 읽는다.
     from(layout.projectDirectory.file("../../../contracts/catalogs/s2-1-principle-contract.v1.json")) {
         into("contracts")

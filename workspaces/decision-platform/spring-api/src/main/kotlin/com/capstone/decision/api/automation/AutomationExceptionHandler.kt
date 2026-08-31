@@ -15,7 +15,9 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 
-@RestControllerAdvice(assignableTypes = [AutomationController::class, AutomationV2Controller::class])
+@RestControllerAdvice(
+    assignableTypes = [AutomationController::class, AutomationV2Controller::class, AutomationV3Controller::class],
+)
 class AutomationExceptionHandler {
     @ExceptionHandler(AutomationIdempotencyConflictException::class)
     fun idempotency(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> = error(request, ErrorCode.IDEMPOTENCY_CONFLICT)

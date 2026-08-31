@@ -8,7 +8,7 @@ import {
   type TeamAOperationId,
   type TeamARequests,
   type TeamAResult,
-} from '../../src/shared/api/generated/p1-team-a-client.v2';
+} from '../../src/shared/api/generated/p1-team-a-client.v3';
 
 const USER_ID = 'usr_demo_user';
 const PAPER_ACCOUNT_ID = 'acct_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -38,7 +38,7 @@ class AcceptanceTracker {
     const expected = Object.keys(teamAOperations).sort();
     const actual = [...this.observed.keys()].sort();
     expect(actual).toEqual(expected);
-    expect(actual).toHaveLength(38);
+    expect(actual).toHaveLength(45);
   }
 }
 
@@ -62,7 +62,7 @@ function key(purpose: string): string {
   return `teama.${purpose}.${crypto.randomUUID().replaceAll('-', '')}`;
 }
 
-test('owner backend satisfies the exact Team A 33-operation live Spring catalog', async () => {
+test('owner backend satisfies the exact Team A 45-operation live Spring catalog', async () => {
   const dashboardUrl = process.env.P1_DASHBOARD_URL ?? 'http://127.0.0.1:3000';
   const userPassword = secret(process.env.P1_USER_PASSWORD_FILE, 'user password');
   const adminPassword = secret(process.env.P1_ADMIN_PASSWORD_FILE, 'admin password');
@@ -254,10 +254,64 @@ test('owner backend satisfies the exact Team A 33-operation live Spring catalog'
     await call('listAutomationRunsV2', { query: { size: 20 } });
     await call('listAutomationPositionsV2', {});
 
+    const strongSettings = await fetch(`${dashboardUrl}/api/v2/strong-llm/settings`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${userToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        provider: 'vertex',
+        fallbackProvider: null,
+        modelId: 'gemini-3.5-flash',
+        fallbackModelId: null,
+        baseUrl: null,
+        fallbackBaseUrl: null,
+        answerLanguage: 'ko',
+        dailyGenerateCallCap: 50,
+        aiJudgementEnabled: false,
+        thinkingLevel: 'low',
+      }),
+    });
+    tracker.record('putStrongLlmSettings', strongSettings.status);
+    expect(strongSettings.status).toBe(200);
+
+    const statusV3 = await call('getAutomationStatusV3', {});
+    const automationV3 = data<Components['AutomationStatusV3']>(statusV3.body, 'getAutomationStatusV3');
+    expect(automationV3.marketHistoryStatus).toBe('EMPTY');
+    const policyV3Result = await call('putAutomationPolicyV3', {
+      body: {
+        capitalLimitKrw: 1_000_000,
+        stopLossBps: 500,
+        takeProfitBps: 1000,
+        maxHoldingSessions: 60,
+        atrPeriod: 22,
+        atrMultiplierMilli: 3000,
+        modelSellEnabled: true,
+        expectedVersion: policyV2.version,
+      },
+      idempotencyKey: key('policyv3'),
+    });
+    const policyV3 = data<Components['AutomationPolicyV3']>(policyV3Result.body, 'putAutomationPolicyV3');
+    expect(policyV3.presetId).toBe('balanced');
+    const blockedArmV3 = await call('armAutomationV3', {
+      body: {
+        accountId: KIS_ACCOUNT_ID,
+        policyId: policyV3.policyId,
+        expectedPolicyVersion: policyV3.version,
+        expectedControlVersion: automationV3.controlVersion,
+      },
+      idempotencyKey: key('armv3blocked'),
+    });
+    expect(blockedArmV3.status).toBe(409);
+    await call('listAutomationRunsV3', { query: { size: 20 } });
+    await call('getAutomationRunV3', { path: { runId: AUTOMATION_RUN_ID } });
+    await call('listAutomationPositionsV3', {});
+
     await call('createJournal', {
       body: {
         title: 'Team A acceptance journal',
-        content: '실제 Spring API 33개 수용성 검증 기록입니다.',
+        content: '실제 Spring API 45개 수용성 검증 기록입니다.',
         tags: ['acceptance', 'risk'],
         links: {
           decisionId: decision.decisionId,

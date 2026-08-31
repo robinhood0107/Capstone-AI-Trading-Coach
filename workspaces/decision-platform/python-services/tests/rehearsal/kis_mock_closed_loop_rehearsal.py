@@ -142,13 +142,18 @@ class RealKisAutomationTransport:
     judge_calls = 0
     last_judgement: dict[str, object] | None = None
 
-    def judge(self, candidates: tuple[SignalCandidate, ...]) -> AiJudgement | None:
+    def judge(
+        self,
+        candidates: tuple[SignalCandidate, ...],
+        candidate_set_sha256: str,
+    ) -> AiJudgement | None:
         """Strong LLM에게 후보를 보이고 점수를 받는다.
 
         설정이 없으면 None이다. 엔진은 그때 AI_NOT_PARTICIPATED로 적고 규칙만으로 계속한다.
         판단을 못 받았다고 리허설을 실패로 만들지 않는다. 그것이 운영 계약이다.
         """
 
+        del candidate_set_sha256
         settings = JudgeClientSettings.from_env()
         if settings is None or not candidates:
             return None

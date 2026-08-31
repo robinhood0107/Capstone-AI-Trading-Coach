@@ -4,8 +4,10 @@ import com.capstone.decision.api.common.ApiException
 import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.application.automation.ArmAutomationCommand
 import com.capstone.decision.application.automation.ArmAutomationV2Command
+import com.capstone.decision.application.automation.ArmAutomationV3Command
 import com.capstone.decision.application.automation.DisarmAutomationCommand
 import com.capstone.decision.application.automation.PutAutomationPolicyV2Command
+import com.capstone.decision.application.automation.PutAutomationPolicyV3Command
 import com.capstone.decision.application.security.IdempotencyKeyPolicy
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.stereotype.Component
@@ -78,6 +80,42 @@ class AutomationRequestParser {
     fun parseArmV2(body: String): ArmAutomationV2Command {
         val root = parseObject(body, ARM_V2_FIELDS)
         return ArmAutomationV2Command(
+            accountId = requiredPattern(root, "accountId", ACCOUNT_ID),
+            policyId = requiredPattern(root, "policyId", POLICY_ID),
+            expectedPolicyVersion = requiredVersion(root, "expectedPolicyVersion"),
+            expectedControlVersion = requiredVersion(root, "expectedControlVersion"),
+        )
+    }
+
+    fun parsePutPolicyV3(body: String): PutAutomationPolicyV3Command {
+        val root = parseObject(body, POLICY_V3_FIELDS)
+        val capital = requiredLong(root, "capitalLimitKrw")
+        val stopLoss = requiredInt(root, "stopLossBps")
+        val takeProfit = requiredInt(root, "takeProfitBps")
+        val holding = requiredInt(root, "maxHoldingSessions")
+        val atrPeriod = requiredInt(root, "atrPeriod")
+        val atrMultiplier = requiredInt(root, "atrMultiplierMilli")
+        if (capital !in 10_000L..10_000_000_000L || capital % 10_000L != 0L) invalid("/capitalLimitKrw")
+        if (stopLoss !in 100..1_500) invalid("/stopLossBps")
+        if (takeProfit !in 200..3_000 || takeProfit <= stopLoss) invalid("/takeProfitBps")
+        if (holding !in 0..1_260) invalid("/maxHoldingSessions")
+        if (atrPeriod !in 5..100) invalid("/atrPeriod")
+        if (atrMultiplier !in 1_000..10_000 || atrMultiplier % 100 != 0) invalid("/atrMultiplierMilli")
+        return PutAutomationPolicyV3Command(
+            capitalLimitKrw = capital,
+            stopLossBps = stopLoss,
+            takeProfitBps = takeProfit,
+            maxHoldingSessions = holding,
+            atrPeriod = atrPeriod,
+            atrMultiplierMilli = atrMultiplier,
+            modelSellEnabled = requiredBoolean(root, "modelSellEnabled"),
+            expectedVersion = requiredNonnegativeVersion(root, "expectedVersion"),
+        )
+    }
+
+    fun parseArmV3(body: String): ArmAutomationV3Command {
+        val root = parseObject(body, ARM_V2_FIELDS)
+        return ArmAutomationV3Command(
             accountId = requiredPattern(root, "accountId", ACCOUNT_ID),
             policyId = requiredPattern(root, "policyId", POLICY_ID),
             expectedPolicyVersion = requiredVersion(root, "expectedPolicyVersion"),
@@ -181,6 +219,15 @@ class AutomationRequestParser {
         return value.longValue()
     }
 
+    private fun requiredBoolean(
+        root: JsonNode,
+        field: String,
+    ): Boolean {
+        val value = root.get(field)
+        if (value == null || !value.isBoolean) invalid("/$field")
+        return value.booleanValue()
+    }
+
     private fun rejectUnknownOrRepeatedQuery(
         request: HttpServletRequest,
         allowed: Set<String>,
@@ -206,6 +253,17 @@ class AutomationRequestParser {
         val ARM_FIELDS = setOf("brokerageMode", "accountId", "principleId", "strategyId", "expectedVersion")
         val DISARM_FIELDS = setOf("expectedVersion")
         val POLICY_V2_FIELDS = setOf("capitalLimitKrw", "stopLossBps", "takeProfitBps", "expectedVersion")
+        val POLICY_V3_FIELDS =
+            setOf(
+                "capitalLimitKrw",
+                "stopLossBps",
+                "takeProfitBps",
+                "maxHoldingSessions",
+                "atrPeriod",
+                "atrMultiplierMilli",
+                "modelSellEnabled",
+                "expectedVersion",
+            )
         val ARM_V2_FIELDS = setOf("accountId", "policyId", "expectedPolicyVersion", "expectedControlVersion")
         val RUN_QUERY_FIELDS = setOf("size", "cursor")
         val BROKERAGE_MODES = setOf("KIS_MOCK", "INTERNAL_PAPER")

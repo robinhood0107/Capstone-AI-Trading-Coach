@@ -7,7 +7,7 @@ import type {
   TestResult,
 } from '@playwright/test/reporter';
 
-import { teamAOperations } from '../../src/shared/api/generated/p1-team-a-client.v2';
+import { teamAOperations } from '../../src/shared/api/generated/p1-team-a-client.v3';
 
 // 검증이 비교하는 것과 같은 자리에서 읽는다. 상수로 들고 있으면 catalog 가 늘어날 때
 // 영수증만 옛 수를 찍고, 그 수가 곧 사람이 증거로 인용하는 값이 된다.

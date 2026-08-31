@@ -2,6 +2,7 @@ package com.capstone.decision.api.automation
 
 import com.capstone.decision.api.brokerage.BrokerageRequestParser
 import com.capstone.decision.api.decision.DecisionRequestParser
+import com.capstone.decision.application.automation.AutomationEvidenceService
 import com.capstone.decision.application.brokerage.BrokerageService
 import com.capstone.decision.application.brokerage.MockBalanceProjection
 import com.capstone.decision.application.decision.DecisionService
@@ -20,6 +21,7 @@ class AutomationRuntimeBridgeControllerTest {
     private val decisionService = mockk<DecisionService>()
     private val brokerageService = mockk<BrokerageService>()
     private val users = mockk<UserSecurityRepository>()
+    private val evidenceService = mockk<AutomationEvidenceService>()
     private val request = mockk<HttpServletRequest>()
     private val controller =
         AutomationRuntimeBridgeController(
@@ -27,6 +29,7 @@ class AutomationRuntimeBridgeControllerTest {
             DecisionRequestParser(),
             brokerageService,
             BrokerageRequestParser(),
+            evidenceService,
             users,
             SECRET,
         )

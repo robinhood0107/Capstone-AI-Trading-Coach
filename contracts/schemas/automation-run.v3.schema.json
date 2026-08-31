@@ -1,0 +1,254 @@
+{
+  "$id": "contracts/schemas/automation-run.v3.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "aiSettingsSha256": {
+      "oneOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "brokerageMode": {
+      "enum": [
+        "KIS_MOCK",
+        "INTERNAL_PAPER"
+      ]
+    },
+    "contractId": {
+      "const": "automation-run.v3"
+    },
+    "estimatedAmountKrw": {
+      "oneOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "evidenceCount": {
+      "maximum": 155,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "evidenceSetSha256": {
+      "oneOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "exitReason": {
+      "oneOf": [
+        {
+          "enum": [
+            "STOP_LOSS",
+            "ATR_TRAILING",
+            "MODEL_SELL",
+            "TAKE_PROFIT",
+            "MAX_HOLDING_SESSIONS"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "filledQuantity": {
+      "oneOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "groundingQueryCount": {
+      "maximum": 32,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "judgeCallCount": {
+      "maximum": 2,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "leavesQuantity": {
+      "oneOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "limitPriceKrw": {
+      "oneOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "orderQuantity": {
+      "oneOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "physicalSubmitCount": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "policyId": {
+      "oneOf": [
+        {
+          "pattern": "^auto_pol_[0-9a-f]{32}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "policyVersion": {
+      "oneOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "providerCalls": {
+      "maximum": 64,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "runId": {
+      "pattern": "^auto_run_[A-Za-z0-9_-]{8,96}$",
+      "type": "string"
+    },
+    "screeningProviderCallCount": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "selectedSide": {
+      "oneOf": [
+        {
+          "enum": [
+            "BUY",
+            "SELL"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "selectedSymbol": {
+      "oneOf": [
+        {
+          "pattern": "^[0-9]{6}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionDate": {
+      "format": "date",
+      "type": "string"
+    },
+    "startedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "SCHEDULED",
+        "PRECHECK",
+        "RECONCILING_PREVIOUS",
+        "EXIT_SELECTED",
+        "NEWS_SCREENING",
+        "AI_JUDGING",
+        "BUY_CANDIDATE_SELECTED",
+        "NEWS_CHECKING",
+        "NEWS_VETOED",
+        "ORDER_SIZING",
+        "RISK_CHECKING",
+        "ORDER_SUBMITTING",
+        "ORDER_SUBMITTED",
+        "PENDING_RECONCILIATION",
+        "CANCELLED_UNFILLED",
+        "COMPLETED",
+        "SKIPPED_NO_ACTION",
+        "SKIPPED_DATA_UNAVAILABLE",
+        "SKIPPED_LATE_START",
+        "HALTED"
+      ]
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractId",
+    "runId",
+    "sessionDate",
+    "state",
+    "brokerageMode",
+    "policyId",
+    "policyVersion",
+    "selectedSymbol",
+    "selectedSide",
+    "orderQuantity",
+    "filledQuantity",
+    "leavesQuantity",
+    "limitPriceKrw",
+    "estimatedAmountKrw",
+    "exitReason",
+    "physicalSubmitCount",
+    "providerCalls",
+    "screeningProviderCallCount",
+    "groundingQueryCount",
+    "judgeCallCount",
+    "evidenceCount",
+    "evidenceSetSha256",
+    "aiSettingsSha256",
+    "startedAt",
+    "updatedAt"
+  ],
+  "title": "automation-run.v3",
+  "type": "object"
+}

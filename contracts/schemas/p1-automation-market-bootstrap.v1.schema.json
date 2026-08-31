@@ -1,0 +1,171 @@
+{
+  "$id": "contracts/schemas/p1-automation-market-bootstrap.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accountCalls": {
+      "const": 0
+    },
+    "adjustmentMode": {
+      "const": "ADJUSTED"
+    },
+    "bars": {
+      "additionalProperties": false,
+      "properties": {
+        "relativePath": {
+          "not": {
+            "pattern": "(^|/)\\.\\.(/|$)"
+          },
+          "pattern": "^bars/[a-z0-9._/-]+\\.parquet$",
+          "type": "string"
+        },
+        "rowCount": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relativePath",
+        "sha256",
+        "rowCount"
+      ],
+      "type": "object"
+    },
+    "complete": {
+      "const": true
+    },
+    "contractId": {
+      "const": "p1-automation-market-bootstrap.v1"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "firstSessionDate": {
+      "format": "date",
+      "type": "string"
+    },
+    "lastSessionDate": {
+      "format": "date",
+      "type": "string"
+    },
+    "manifestSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "membership": {
+      "contains": {
+        "const": "132030"
+      },
+      "items": {
+        "pattern": "^[0-9]{6}$",
+        "type": "string"
+      },
+      "maxItems": 31,
+      "minItems": 31,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "membershipMonth": {
+      "pattern": "^[0-9]{4}-[0-9]{2}$",
+      "type": "string"
+    },
+    "orderCalls": {
+      "const": 0
+    },
+    "performanceClaimAllowed": {
+      "const": false
+    },
+    "providerCaps": {
+      "additionalProperties": false,
+      "properties": {
+        "kisDaily": {
+          "maximum": 403,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kisToken": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "krxMembership": {
+          "maximum": 5,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "retry": {
+          "const": 0
+        }
+      },
+      "required": [
+        "kisDaily",
+        "kisToken",
+        "krxMembership",
+        "retry"
+      ],
+      "type": "object"
+    },
+    "providerPhysicalCalls": {
+      "additionalProperties": false,
+      "properties": {
+        "kisDaily": {
+          "maximum": 403,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kisToken": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "krxMembership": {
+          "maximum": 5,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kisDaily",
+        "kisToken",
+        "krxMembership"
+      ],
+      "type": "object"
+    },
+    "rawProviderResponseStored": {
+      "const": false
+    },
+    "requestedSessionCount": {
+      "const": 1260
+    },
+    "sourcePathPersisted": {
+      "const": false
+    }
+  },
+  "required": [
+    "contractId",
+    "complete",
+    "createdAt",
+    "membershipMonth",
+    "membership",
+    "requestedSessionCount",
+    "firstSessionDate",
+    "lastSessionDate",
+    "adjustmentMode",
+    "bars",
+    "providerCaps",
+    "providerPhysicalCalls",
+    "rawProviderResponseStored",
+    "sourcePathPersisted",
+    "performanceClaimAllowed",
+    "accountCalls",
+    "orderCalls",
+    "manifestSha256"
+  ],
+  "title": "p1-automation-market-bootstrap.v1",
+  "type": "object"
+}

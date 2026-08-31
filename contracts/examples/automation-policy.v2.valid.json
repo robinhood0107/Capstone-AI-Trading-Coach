@@ -1,0 +1,20 @@
+{
+  "atrMultiplierMilli": 3000,
+  "atrPeriod": 22,
+  "buyCutoffTimeKst": "09:40",
+  "cancelTimeKst": "15:20",
+  "capitalLimitKrw": 10000000,
+  "contractId": "automation-policy.v2",
+  "createdAt": "2026-08-31T18:00:00+09:00",
+  "evaluationTimeKst": "09:30",
+  "maxHoldingSessions": 60,
+  "maxNewOrdersPerSession": 1,
+  "maxOpenPositions": 5,
+  "modelSellEnabled": true,
+  "policyId": "auto_pol_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "presetId": "balanced",
+  "stopLossBps": 500,
+  "takeProfitBps": 1000,
+  "updatedAt": "2026-08-31T18:00:00+09:00",
+  "version": 1
+}

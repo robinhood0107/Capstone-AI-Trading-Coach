@@ -1,0 +1,38 @@
+{
+  "accountCalls": 0,
+  "adjustmentMode": "ADJUSTED",
+  "bars": {
+    "relativePath": "bars/automation-bars-v1.parquet",
+    "rowCount": 38000,
+    "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  "complete": true,
+  "contractId": "p1-automation-market-bootstrap.v1",
+  "createdAt": "2026-08-31T18:00:00+09:00",
+  "firstSessionDate": "2021-07-01",
+  "lastSessionDate": "2026-08-31",
+  "manifestSha256": "7777777777777777777777777777777777777777777777777777777777777777",
+  "membership": [
+    "000001", "000002", "000003", "000004", "000005", "000006", "000007", "000008",
+    "000009", "000010", "000011", "000012", "000013", "000014", "000015", "000016",
+    "000017", "000018", "000019", "000020", "000021", "000022", "000023", "000024",
+    "000025", "000026", "000027", "000028", "000029", "000030", "132030"
+  ],
+  "membershipMonth": "2026-08",
+  "orderCalls": 0,
+  "performanceClaimAllowed": false,
+  "providerCaps": {
+    "kisDaily": 403,
+    "kisToken": 1,
+    "krxMembership": 5,
+    "retry": 0
+  },
+  "providerPhysicalCalls": {
+    "kisDaily": 400,
+    "kisToken": 1,
+    "krxMembership": 1
+  },
+  "rawProviderResponseStored": false,
+  "requestedSessionCount": 1260,
+  "sourcePathPersisted": false
+}

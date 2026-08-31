@@ -220,13 +220,13 @@ def check_settings_surface(recorder: Recorder, api: Api) -> None:
         "설정은 저장되고 키는 마지막 네 글자만 나온다",
         "PASS"
         if status == 200
-        and written == 204
+        and written == 200
         and last4 == probe_key[-4:]
         and plaintext == "0"
         and len(fields) == 10
         else "FAIL",
         f"status={status} 저장={written} 노출={last4} 평문발견={plaintext} 설정필드={len(fields)}/10"
-        " (저장 응답에는 본문이 없고 읽기에는 마지막 네 글자만 실린다)",
+        " (저장 응답은 HTTP 200 empty body이고 읽기에는 마지막 네 글자만 실린다)",
     )
 
 

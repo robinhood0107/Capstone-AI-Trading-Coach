@@ -4,11 +4,11 @@ from datetime import date
 from pathlib import Path
 import shutil
 
-import exchange_calendars as xcals
 import pandas as pd
 import pytest
 
 from app.data._shared.canonical_json import canonical_json_bytes
+from app.data.calendar.xkrx_policy import corrected_calendar
 from app.p1_owner.after_hours_replay import (
     AfterHoursReplayError,
     ReplayBar,
@@ -22,7 +22,7 @@ _ANCHOR_MANIFEST = _ROOT / "contracts/catalogs/p1-after-hours-observed-anchors.v
 
 
 def _rows(symbol_count: int = 31) -> tuple[ReplayBar, ...]:
-    calendar = xcals.get_calendar("XKRX")
+    calendar = corrected_calendar()
     end = calendar.date_to_session(pd.Timestamp("2026-08-26"), direction="none")
     sessions = tuple(item.date() for item in calendar.sessions_window(end, -23))
     return tuple(

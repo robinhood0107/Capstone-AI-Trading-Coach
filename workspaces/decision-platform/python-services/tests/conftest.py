@@ -43,6 +43,7 @@ class PostgresTestCluster(TypedDict):
     disclosure_reader_dsn: str
     app_dsn: str
     market_writer_dsn: str
+    automation_runtime_dsn: str
     portfolio_writer_dsn: str
     risk_writer_dsn: str
     rag_writer_dsn: str
@@ -98,6 +99,7 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
         market_writer_dsn = (
             f"postgresql://decision_market_writer:market-writer-test@{host}:{port}/decision"
         )
+        automation_runtime_dsn = f"postgresql://decision_automation_runtime:automation-runtime-test-0001@{host}:{port}/decision"
         portfolio_writer_dsn = (
             f"postgresql://decision_portfolio_writer:portfolio-writer-test@{host}:{port}/decision"
         )
@@ -301,6 +303,7 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
             "disclosure_reader_dsn": disclosure_reader_dsn,
             "app_dsn": app_dsn,
             "market_writer_dsn": market_writer_dsn,
+            "automation_runtime_dsn": automation_runtime_dsn,
             "portfolio_writer_dsn": portfolio_writer_dsn,
             "risk_writer_dsn": risk_writer_dsn,
             "rag_writer_dsn": rag_writer_dsn,

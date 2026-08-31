@@ -16,6 +16,13 @@
 과거 시점의 SHA, 실행 영수증, 연구 결과와 `contracts/changes/**` 기록은 재현 자료이며 현재 상태를
 덮어쓰지 않는다.
 
+`docs/handoff/**`도 같다. 그 문서들은 `1.0.0` owner handoff 시점의 기록이라 동결돼 있고, 안에
+적힌 `exact-56 Spring API`와 `exact-33 acceptance`는 **그 시점의 수**다. 지금 값은 root
+OpenAPI `exact-69`, Team A acceptance `exact-38`이며 `./capstone team-a acceptance`가 그
+38개를 실제로 검증한다. 외부 팀이 무엇을 구현해야 하는지는 handoff 문서가 아니라
+[Team A 요청서](decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md)와
+[Team B 요청서](decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md)가 정한다.
+
 ## 상태 용어
 
 | 상태 | 한글 의미 |

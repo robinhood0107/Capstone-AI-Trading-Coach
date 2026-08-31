@@ -117,6 +117,11 @@ jobs:
       - name: Check generated P1 Owner Phase A contracts
         run: uv run --frozen python contracts/generate_p1_owner_phase_a_contracts.py --check
 
+      - name: Check generated P1 Automation V3 contract lock
+        run: |
+          uv run --frozen python contracts/generate_p1_v3_automation_contracts.py --check
+          uv run --frozen python contracts/verify_p1_v3_automation_openapi_transition.py
+
       - name: Run contract tooling tests
         run: uv run --frozen python -m unittest discover -s contracts/tests -v
 

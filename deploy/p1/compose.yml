@@ -464,6 +464,22 @@ services:
     restart: "no"
     networks: [p1-data]
 
+  market-data-cli:
+    profiles: [owner]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "market-data"]
+    command: ["python", "-m", "app.data.market_data.automation_bootstrap_cli", "inventory"]
+    environment:
+      P1_AUTOMATION_MARKET_BOOTSTRAP_ENABLED: "false"
+      P1_DATA_ONLY_COLLECTOR_ENABLED: "false"
+    secrets: [market_data_env, automation_runtime_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    <<: *app-security
+    restart: "no"
+    networks: [p1-data]
+
   team-a-acceptance-seed:
     profiles: [acceptance]
     image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
@@ -684,6 +700,7 @@ secrets:
   return_inference_env: {file: "${P1_SECRETS_DIR}/return-inference.env"}
   automation_runtime_env: {file: "${P1_SECRETS_DIR}/automation-runtime.env"}
   automation_gate_author_env: {file: "${P1_SECRETS_DIR}/automation-gate-author.env"}
+  market_data_env: {file: "${P1_SECRETS_DIR}/market-data.env"}
   rag_v2_env: {file: "${P1_SECRETS_DIR}/rag-v2.env"}
   vertex_service_account: {file: "${P1_SECRETS_DIR}/pre-s5-vertex-service-account.json"}
   actor_tls_ca: {file: "${P1_SECRETS_DIR}/actor-tls-ca.crt"}

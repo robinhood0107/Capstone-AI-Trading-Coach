@@ -1,6 +1,6 @@
 {
   "contractId": "p1-full-pipeline-e2e.v1",
-  "generatedAt": "2026-08-31T05:27:00.712745Z",
+  "generatedAt": "2026-08-31T06:09:25.549644Z",
   "kisCalls": 0,
   "steps": [
     {
@@ -59,7 +59,7 @@
       "verdict": "PASS"
     },
     {
-      "detail": "HTTP 200 controlVersion=3 policyVersion=None blockers=[]",
+      "detail": "HTTP 200 controlVersion=5 policyVersion=None blockers=[]",
       "name": "arm 이전 상태",
       "verdict": "PASS"
     },
@@ -69,12 +69,12 @@
       "verdict": "PASS"
     },
     {
-      "detail": "HTTP 200 {\"contractId\": \"automation-status.v2\", \"controlState\": \"ARMED\", \"projectionState\": \"ARMED\", \"controlVersion\": 4, \"brokerageMode\": \"KIS_MOCK\", \"accountId\": \"acct_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"policy\": {\"contractId\": \"automation-policy.v1\", \"policyId\": \"auto_pol_44dd7254dc1e9f96d9a5be80e99033be\"",
+      "detail": "HTTP 200 {\"contractId\": \"automation-status.v2\", \"controlState\": \"ARMED\", \"projectionState\": \"ARMED\", \"controlVersion\": 6, \"brokerageMode\": \"KIS_MOCK\", \"accountId\": \"acct_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"policy\": {\"contractId\": \"automation-policy.v1\", \"policyId\": \"auto_pol_44dd7254dc1e9f96d9a5be80e99033be\"",
       "name": "arm",
       "verdict": "PASS"
     },
     {
-      "detail": "COMPLETED 전이=SCHEDULED→PRECHECK→AI_JUDGING→BUY_CANDIDATE_SELECTED→NEWS_CHECKING→ORDER_SIZING→RISK_CHECKING→ORDER_SUBMITTING→ORDER_SUBMITTED→COMPLETED order=ord_mock_984e84aae4434bd1b775e6f51dcb3924 decision=dec_b3812ddd2f864bb3af97bb2d21492edf cash=99507582 pos={'005930': 7}",
+      "detail": "COMPLETED 전이=SCHEDULED→PRECHECK→AI_JUDGING→BUY_CANDIDATE_SELECTED→NEWS_CHECKING→ORDER_SIZING→RISK_CHECKING→ORDER_SUBMITTING→ORDER_SUBMITTED→COMPLETED order=ord_mock_e55e66353b424ce18ca6ad51f1162e65 decision=dec_851d9521236f49a999614d7728b6c42e cash=99507582 pos={'005930': 7}",
       "name": "세션 1 구동 (매수)",
       "verdict": "PASS"
     },
@@ -89,7 +89,7 @@
       "verdict": "PASS"
     },
     {
-      "detail": "COMPLETED 전이=SCHEDULED→PRECHECK→EXIT_SELECTED→ORDER_SIZING→RISK_CHECKING→ORDER_SUBMITTING→ORDER_SUBMITTED→COMPLETED order=ord_mock_1cbc198bcf4b4d3fb92b15a22a23d285 cash=99995169 pos={}",
+      "detail": "COMPLETED 전이=SCHEDULED→PRECHECK→EXIT_SELECTED→ORDER_SIZING→RISK_CHECKING→ORDER_SUBMITTING→ORDER_SUBMITTED→COMPLETED order=ord_mock_f24c031bdce5479e84331cade462e478 cash=99995169 pos={}",
       "name": "세션 2 구동 (매도)",
       "verdict": "PASS"
     },
@@ -99,17 +99,17 @@
       "verdict": "PASS"
     },
     {
-      "detail": "auto_run_25de751cc0d2b50f3611b0716f58b304|ord_mock_1cbc198bcf4b4d3fb92b15a22a23d285|q7|f7|l0|u0|MATCHED ; auto_run_34925c4eec8b091c21c0686913d4ba9d|ord_mock_984e84aae4434bd1b775e6f51dcb3924|q7|f7|l0|u0|MATCHED",
+      "detail": "auto_run_25de751cc0d2b50f3611b0716f58b304|ord_mock_f24c031bdce5479e84331cade462e478|q7|f7|l0|u0|MATCHED ; auto_run_34925c4eec8b091c21c0686913d4ba9d|ord_mock_e55e66353b424ce18ca6ad51f1162e65|q7|f7|l0|u0|MATCHED",
       "name": "예약 수량 보존과 대사",
       "verdict": "PASS"
     },
     {
-      "detail": "ord_mock_1cbc198bcf4b4d3fb92b15a22a23d285|005930|SELL|7|69900|ACCEPTED|KIS_MOCK ; ord_mock_984e84aae4434bd1b775e6f51dcb3924|005930|BUY|7|70100|ACCEPTED|KIS_MOCK",
+      "detail": "ord_mock_e55e66353b424ce18ca6ad51f1162e65|005930|BUY|7|70100|ACCEPTED|KIS_MOCK ; ord_mock_f24c031bdce5479e84331cade462e478|005930|SELL|7|69900|ACCEPTED|KIS_MOCK",
       "name": "bridge → Brokerage 실제 주문",
       "verdict": "PASS"
     },
     {
-      "detail": "auto_run_25de751cc0d2b50f3611b0716f58b304|dec_1fd1a45c77fb495184a52581d44e44b9|dec_1fd1a45c77fb495184a52581d44e44b9 ; auto_run_34925c4eec8b091c21c0686913d4ba9d|dec_b3812ddd2f864bb3af97bb2d21492edf|dec_b3812ddd2f864bb3af97bb2d21492edf (decision_id가 null이면 위험 판정 구간을 건너뛴 것)",
+      "detail": "auto_run_25de751cc0d2b50f3611b0716f58b304|dec_bb2d9b5f604e44f79180652a1908e643|dec_bb2d9b5f604e44f79180652a1908e643 ; auto_run_34925c4eec8b091c21c0686913d4ba9d|dec_851d9521236f49a999614d7728b6c42e|dec_851d9521236f49a999614d7728b6c42e (decision_id가 null이면 위험 판정 구간을 건너뛴 것)",
       "name": "RiskEngine 판단 결속",
       "verdict": "PASS"
     },

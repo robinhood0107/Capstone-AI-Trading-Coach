@@ -127,7 +127,53 @@ def stage_fixture_daily_collection(
 ) -> DailyCollectionResult:
     """Stage the exact required fixture set at or after 16:10 on one XKRX session."""
 
+    return _stage_daily_collection(
+        packet=packet,
+        observed_at=observed_at,
+        collection_root=collection_root,
+        transport=transport,
+        settings=settings,
+        provider_authority="FIXTURE_ONLY",
+        require_zero_physical_calls=True,
+    )
+
+
+def stage_live_daily_collection(
+    *,
+    packet: DailyReplayPacket,
+    observed_at: datetime,
+    collection_root: Path,
+    transport: FixtureCollectionTransportPort,
+    settings: DailyCollectorSettings,
+) -> DailyCollectionResult:
+    """Stage one explicitly enabled live read-only set; promotion remains provider-free."""
+
+    return _stage_daily_collection(
+        packet=packet,
+        observed_at=observed_at,
+        collection_root=collection_root,
+        transport=transport,
+        settings=settings,
+        provider_authority="LIVE_READ_ONLY",
+        require_zero_physical_calls=False,
+    )
+
+
+def _stage_daily_collection(
+    *,
+    packet: DailyReplayPacket,
+    observed_at: datetime,
+    collection_root: Path,
+    transport: FixtureCollectionTransportPort,
+    settings: DailyCollectorSettings,
+    provider_authority: str,
+    require_zero_physical_calls: bool,
+) -> DailyCollectionResult:
+    """Shared manifest-last coordinator with an explicit fixture/live authority bit."""
+
     settings.validate()
+    if provider_authority not in {"FIXTURE_ONLY", "LIVE_READ_ONLY"}:
+        raise P1DailyCollectorError("data-only collector provider authority is invalid")
     operations = operation_ids(packet)
     if not settings.enabled:
         inactive_sha = canonical_json_sha256(
@@ -140,7 +186,7 @@ def stage_fixture_daily_collection(
             {"packetSha256": packet.packet_sha256, "status": schedule_status}
         )
         return DailyCollectionResult(schedule_status, inactive_sha, None, 0)
-    plan = _plan(packet, settings, operations)
+    plan = _plan(packet, settings, operations, provider_authority=provider_authority)
     plan_sha = canonical_json_sha256(plan)
     root = _private_directory(collection_root)
     session_root = _private_directory(root / packet.session_date.isoformat(), create=True)
@@ -152,7 +198,12 @@ def stage_fixture_daily_collection(
     existing_manifest = _read_optional(session_root, "complete-manifest.json")
     if existing_manifest is not None:
         manifest = _object(existing_manifest, "collection manifest")
-        if not _complete_manifest_valid(manifest, plan_sha, len(operations)):
+        if not _complete_manifest_valid(
+            manifest,
+            plan_sha,
+            len(operations),
+            provider_authority=provider_authority,
+        ):
             return DailyCollectionResult("HALTED", plan_sha, None, 0)
         return DailyCollectionResult(
             "NO_OP",
@@ -184,6 +235,7 @@ def stage_fixture_daily_collection(
             except (
                 DailyMarketDataError,
                 FixtureCollectionFailure,
+                P1DailyCollectorError,
                 ReplayEvidenceUnavailable,
                 ValueError,
             ):
@@ -191,13 +243,14 @@ def stage_fixture_daily_collection(
                     session_root,
                     {"operationId": operation_id, "outcome": "EVIDENCE_GAP"},
                 )
-                if transport.physical_calls != 0:
+                if require_zero_physical_calls and transport.physical_calls != 0:
                     raise P1DailyCollectorError("fixture transport made a physical call")
                 return DailyCollectionResult(
                     "EVIDENCE_GAP",
                     plan_sha,
                     None,
                     transport.logical_calls - calls_before,
+                    transport.physical_calls,
                 )
         try:
             _validate_fixture_record(packet, operation_id, record)
@@ -207,9 +260,10 @@ def stage_fixture_daily_collection(
                 plan_sha,
                 None,
                 transport.logical_calls - calls_before,
+                transport.physical_calls,
             )
         receipts.append(record.receipt())
-    if transport.physical_calls != 0:
+    if require_zero_physical_calls and transport.physical_calls != 0:
         raise P1DailyCollectorError("fixture transport made a physical call")
     if canonical_json_sha256(receipts) != packet.expected_receipt_set_sha256:
         _append_event(
@@ -221,17 +275,22 @@ def stage_fixture_daily_collection(
             plan_sha,
             None,
             transport.logical_calls - calls_before,
+            transport.physical_calls,
         )
     manifest_without_sha: dict[str, object] = {
         "complete": True,
         "contractId": "p1-data-only-collection-manifest.v1",
         "evidenceClock": evidence_clock_for_session(packet.session_date).isoformat(),
-        "fixturePhysicalCalls": 0,
         "operationCount": len(operations),
         "planSha256": plan_sha,
         "receipts": receipts,
         "sessionDate": packet.session_date.isoformat(),
     }
+    if provider_authority == "FIXTURE_ONLY":
+        manifest_without_sha["fixturePhysicalCalls"] = 0
+    else:
+        manifest_without_sha["providerAuthority"] = provider_authority
+        manifest_without_sha["providerPhysicalCalls"] = transport.physical_calls
     manifest_sha = canonical_json_sha256(manifest_without_sha)
     manifest = {**manifest_without_sha, "manifestSha256": manifest_sha}
     manifest_bytes = canonical_json_bytes(manifest)
@@ -241,6 +300,7 @@ def stage_fixture_daily_collection(
         plan_sha,
         manifest_sha,
         transport.logical_calls - calls_before,
+        transport.physical_calls,
     )
 
 
@@ -254,13 +314,24 @@ def promote_staged_daily_collection(
     """Promote only a complete staged set through preserved S5.7C validation/storage."""
 
     session_root = _private_directory(collection_root / packet.session_date.isoformat())
-    plan = _plan(packet, DailyCollectorSettings(enabled=True), operation_ids(packet))
     manifest = _object(
         _read_required(session_root, "complete-manifest.json"), "collection manifest"
     )
+    provider_authority = cast(str, manifest.get("providerAuthority", "FIXTURE_ONLY"))
+    plan = _plan(
+        packet,
+        DailyCollectorSettings(enabled=True),
+        operation_ids(packet),
+        provider_authority=provider_authority,
+    )
     plan_sha = canonical_json_sha256(plan)
     operation_count = len(operation_ids(packet))
-    if not _complete_manifest_valid(manifest, plan_sha, operation_count):
+    if not _complete_manifest_valid(
+        manifest,
+        plan_sha,
+        operation_count,
+        provider_authority=provider_authority,
+    ):
         raise P1DailyCollectorError("complete collection manifest binding drifted")
     records_root = _private_directory(session_root / "records")
     result = run_offline_daily(
@@ -278,6 +349,8 @@ def _plan(
     packet: DailyReplayPacket,
     settings: DailyCollectorSettings,
     operations: tuple[str, ...],
+    *,
+    provider_authority: str = "FIXTURE_ONLY",
 ) -> dict[str, object]:
     counts = {
         "ECOS": sum(item.startswith("ECOS_DAILY_") for item in operations),
@@ -286,11 +359,10 @@ def _plan(
     }
     if counts != {"ECOS": 2, "KIS_DAILY": 31, "KRX_DAILY": 5}:
         raise P1DailyCollectorError("normal collection operation derivation drifted")
-    return {
+    plan: dict[str, object] = {
         "contractId": "p1-data-only-collection-plan.v1",
         "defaultEnabled": False,
         "evidenceClock": evidence_clock_for_session(packet.session_date).isoformat(),
-        "fixturePhysicalCalls": 0,
         "membership": list(packet.membership),
         "operationCaps": {
             "ECOS": settings.ecos_physical_max,
@@ -302,10 +374,15 @@ def _plan(
         },
         "operations": list(operations),
         "packetSha256": packet.packet_sha256,
-        "providerAuthority": "FIXTURE_ONLY",
+        "providerAuthority": provider_authority,
         "scheduleKst": "16:10",
         "sessionDate": packet.session_date.isoformat(),
     }
+    if provider_authority == "FIXTURE_ONLY":
+        plan["fixturePhysicalCalls"] = 0
+    else:
+        plan["providerPhysicalCallMax"] = len(operations)
+    return plan
 
 
 def _schedule_status(packet: DailyReplayPacket, observed_at: datetime) -> str | None:
@@ -480,13 +557,24 @@ def _object(content: bytes, label: str) -> dict[str, object]:
 
 
 def _complete_manifest_valid(
-    manifest: dict[str, object], plan_sha: str, operation_count: int
+    manifest: dict[str, object],
+    plan_sha: str,
+    operation_count: int,
+    *,
+    provider_authority: str,
 ) -> bool:
     without_sha = {key: value for key, value in manifest.items() if key != "manifestSha256"}
+    physical_valid = (
+        manifest.get("fixturePhysicalCalls") == 0
+        if provider_authority == "FIXTURE_ONLY"
+        else isinstance(manifest.get("providerPhysicalCalls"), int)
+        and 0 <= cast(int, manifest["providerPhysicalCalls"]) <= operation_count
+    )
     return (
         manifest.get("complete") is True
         and manifest.get("planSha256") == plan_sha
-        and manifest.get("fixturePhysicalCalls") == 0
+        and manifest.get("providerAuthority", "FIXTURE_ONLY") == provider_authority
+        and physical_valid
         and manifest.get("operationCount") == operation_count
         and manifest.get("manifestSha256") == canonical_json_sha256(without_sha)
     )

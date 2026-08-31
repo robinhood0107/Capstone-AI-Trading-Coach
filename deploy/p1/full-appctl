@@ -26,6 +26,8 @@ Usage:
   ./capstone status|logs|smoke|down|doctor
   ./capstone mock <configure|doctor|certify|readiness|gate-author|start|stop> [--symbol 005930] [--quantity 1]
   ./capstone artifact <validate|import> <bundle-directory> --manifest-sha256 <sha256>
+  ./capstone market-data inventory
+  ./capstone market-data bootstrap <plan|validate|stage> ...
   ./capstone team-a acceptance
 
 Default `up` starts five persistent containers. `--models` adds the official
@@ -157,6 +159,14 @@ upgrade_state() {
     printf 'P1_AUTOMATION_DATABASE_DSN=postgresql://decision_automation_runtime:%s@postgres:5432/capstone_p1?sslmode=disable\nAUTOMATION_RUNTIME_SHARED_SECRET=%s\nP1_AUTOMATION_OWNER_USER_ID=usr_demo_user\n' \
       "$automation_runtime_password" "$(openssl rand -hex 32)" \
       | write_state secrets/automation-runtime.env 0640
+  fi
+  if [[ ! -e $SECRETS_DIR/market-data.env ]]; then
+    local market_writer_password
+    market_writer_password=$(sed -n 's/^POSTGRES_MARKET_WRITER_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+    [[ $market_writer_password =~ ^[0-9a-f]{64}$ ]] || die MARKET_DATA_WRITER_SECRET_MISSING
+    printf 'MARKET_DATA_WRITER_DSN=postgresql://decision_market_writer:%s@postgres:5432/capstone_p1?sslmode=disable\n' \
+      "$market_writer_password" | write_state secrets/market-data.env 0640
+    unset market_writer_password
   fi
   if ! grep -q '^P1_AUTOMATION_OWNER_USER_ID=' "$SECRETS_DIR/automation-runtime.env"; then
     printf 'P1_AUTOMATION_OWNER_USER_ID=usr_demo_user\n' \
@@ -762,6 +772,43 @@ artifact_validate() {
   printf '%s\nTEAM_B_LOCAL_VALIDATION=PASS\nPROVIDER_CALLS=0\n' "$result"
 }
 
+market_data_inventory() {
+  state_ready || die NOT_INITIALIZED
+  upgrade_state
+  compose ps --status running --services | grep -qx postgres || die MARKET_DATA_POSTGRES_NOT_RUNNING
+  compose --profile owner run --rm --no-deps market-data-cli \
+    python -m app.data.market_data.automation_bootstrap_cli inventory
+}
+
+market_data_bootstrap_plan() {
+  local manifest=${1:-} end_session=${2:-} parent name
+  [[ $# == 2 ]] || die MARKET_DATA_PLAN_ARGUMENTS
+  [[ $manifest == /* && -f $manifest && ! -L $manifest ]] || die MARKET_DATA_UNIVERSE_MANIFEST
+  [[ $end_session =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die MARKET_DATA_END_SESSION
+  parent=${manifest%/*}; [[ -n $parent ]] || parent=/
+  name=${manifest##*/}
+  compose --profile owner run --rm --no-deps -v "$parent:/owner-input:ro" market-data-cli \
+    python -m app.data.market_data.automation_bootstrap_cli plan \
+      --universe-manifest "/owner-input/$name" --end-session "$end_session"
+}
+
+market_data_bootstrap_archive() {
+  local action=$1 archive=${2:-} expected=${3:-} parent name
+  [[ $# == 3 ]] || die MARKET_DATA_ARCHIVE_ARGUMENTS
+  [[ $archive == /* && -d $archive && ! -L $archive ]] || die MARKET_DATA_ARCHIVE_ROOT
+  [[ $expected =~ ^[0-9a-f]{64}$ ]] || die MARKET_DATA_MANIFEST_SHA256
+  parent=${archive%/*}; [[ -n $parent ]] || parent=/
+  name=${archive##*/}
+  if [[ $action == stage ]]; then
+    state_ready || die NOT_INITIALIZED
+    upgrade_state
+    compose ps --status running --services | grep -qx postgres || die MARKET_DATA_POSTGRES_NOT_RUNNING
+  fi
+  compose --profile owner run --rm --no-deps -v "$parent:/owner-input:ro" market-data-cli \
+    python -m app.data.market_data.automation_bootstrap_cli "$action" \
+      --archive-root "/owner-input/$name" --expected-manifest-sha256 "$expected"
+}
+
 command=${1:-}
 [[ -n $command ]] || { usage >&2; exit 1; }
 shift
@@ -800,6 +847,32 @@ case $command in
         fi
         ;;
       *) die UNKNOWN_ARTIFACT_COMMAND ;;
+    esac
+    ;;
+  market-data)
+    subcommand=${1:-}; [[ -n $subcommand ]] || die MARKET_DATA_COMMAND_REQUIRED; shift
+    case $subcommand in
+      inventory) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; market_data_inventory ;;
+      bootstrap)
+        action=${1:-}; [[ -n $action ]] || die MARKET_DATA_BOOTSTRAP_ACTION_REQUIRED; shift
+        case $action in
+          plan)
+            [[ ${1:-} == --universe-manifest ]] || die MARKET_DATA_UNIVERSE_ARGUMENT_REQUIRED
+            shift; manifest=${1:-}; shift || true
+            [[ ${1:-} == --end-session ]] || die MARKET_DATA_END_ARGUMENT_REQUIRED
+            shift; [[ $# == 1 ]] || die MARKET_DATA_PLAN_ARGUMENTS
+            market_data_bootstrap_plan "$manifest" "${1:-}"
+            ;;
+          validate|stage)
+            archive=${1:-}; shift || true
+            [[ ${1:-} == --manifest-sha256 ]] || die MARKET_DATA_MANIFEST_ARGUMENT_REQUIRED
+            shift; [[ $# == 1 ]] || die MARKET_DATA_ARCHIVE_ARGUMENTS
+            market_data_bootstrap_archive "$action" "$archive" "${1:-}"
+            ;;
+          *) die UNKNOWN_MARKET_DATA_BOOTSTRAP_ACTION ;;
+        esac
+        ;;
+      *) die UNKNOWN_MARKET_DATA_COMMAND ;;
     esac
     ;;
   team-a)

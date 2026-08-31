@@ -113,23 +113,28 @@ class MockCertificationGuardTest(unittest.TestCase):
         self.assertNotEqual(self.certified_commit, _git(self.repository, "rev-parse", "HEAD"))
         self._verify()
 
-    def test_dirty_worktree_is_rejected(self) -> None:
-        (self.repository / "tracked.txt").write_text("dirty\n", encoding="utf-8")
-        with self.assertRaisesRegex(
-            GUARD.MockCertificationGuardError,
-            "KIS_MOCK_CERTIFICATION_DIRTY_WORKTREE",
-        ):
-            self._verify()
+    def test_dirty_worktree_no_longer_blocks(self) -> None:
+        """worktree가 더러워도 영수증은 유효하다.
 
-    def test_committed_source_drift_is_rejected(self) -> None:
+        e2e 러너들이 git에 추적되는 판정표 JSON을 갱신하므로, clean worktree를 요구하면
+        인증을 받은 직후 e2e를 한 번만 돌려도 그 인증이 무효가 됐다. 영수증이 말하는 것은
+        "그 시각 KIS 모의 원장에서 왕복이 일어났다"이고 그 사실은 worktree 상태와 무관하다.
+        """
+
+        (self.repository / "tracked.txt").write_text("dirty\n", encoding="utf-8")
+        self._verify()
+
+    def test_committed_source_drift_no_longer_blocks(self) -> None:
+        """인증 뒤 커밋이 더 쌓여도 영수증은 유효하다.
+
+        영수증에 남는 commitSha는 "어느 코드에서 왕복을 받았는지"를 가리키는 꼬리표로
+        계속 남는다. 그 커밋이 최신 HEAD여야 한다는 요구만 뺐다.
+        """
+
         (self.repository / "tracked.txt").write_text("changed\n", encoding="utf-8")
         _git(self.repository, "add", "tracked.txt")
         _git(self.repository, "commit", "-m", "source drift")
-        with self.assertRaisesRegex(
-            GUARD.MockCertificationGuardError,
-            "KIS_MOCK_CERTIFICATION_SOURCE_DRIFT",
-        ):
-            self._verify()
+        self._verify()
 
     def test_forged_request_or_receipt_link_is_rejected(self) -> None:
         self.receipt["inputSha256"] = "b" * 64

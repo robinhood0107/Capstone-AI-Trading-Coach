@@ -64,7 +64,7 @@ class CandidateVerdict(BaseModel):
     입력에 같은 결과라는 성질을 잃고 정책 상한을 검증으로만 막아야 한다.
     """
 
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="ignore")
 
     symbol: str = Field(pattern=r"^[0-9A-Z._:-]{1,20}$")
     score: float = Field(ge=0.0, le=1.0)
@@ -75,7 +75,7 @@ class CandidateVerdict(BaseModel):
 class StrongLlmJudgement(BaseModel):
     """JUDGE 모드의 structured output. 주어진 후보 집합에 대해서만 답한다."""
 
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="ignore")
 
     candidates: list[CandidateVerdict] = Field(max_length=32)
     confidence: float = Field(ge=0.0, le=1.0)

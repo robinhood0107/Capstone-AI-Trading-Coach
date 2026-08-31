@@ -382,8 +382,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         execute(args.command, os.environ)
-    except (KeyError, OSError, ValueError, psycopg.Error):
-        print("P1_TEAM_A_ACCEPTANCE_SEED=FAIL")
+    except (KeyError, OSError, ValueError, psycopg.Error) as error:
+        reason = error.args[0] if error.args and isinstance(error.args[0], str) else ""
+        reason = "".join(ch for ch in reason if ch.isalnum() or ch == "_")[:64]
+        print(f"P1_TEAM_A_ACCEPTANCE_SEED=FAIL:{type(error).__name__}:{reason}")
         return 1
     print(f"P1_TEAM_A_ACCEPTANCE_{args.command.upper()}=PASS")
     print("P1_TEAM_A_ACCEPTANCE_PROVIDER_CALLS=0")

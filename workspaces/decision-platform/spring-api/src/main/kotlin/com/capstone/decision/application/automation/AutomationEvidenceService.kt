@@ -3,6 +3,7 @@ package com.capstone.decision.application.automation
 import com.capstone.decision.application.security.ActorRlsScopePort
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.context.annotation.Primary
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
@@ -55,6 +56,8 @@ data class RawAutomationEvidence(
     val storedUriSha256: String? = null,
     val storedQuoteSha256: String? = null,
     val storedAgeWarning: Boolean? = null,
+    /** Google redirect URI와 별개로 provider metadata가 관측한 원 출처 domain. */
+    val sourceDomain: String? = null,
 )
 
 data class RawAutomationScreening(
@@ -104,8 +107,9 @@ interface AutomationEvidenceProvider {
 }
 
 @Component
+@Primary
 @ConditionalOnProperty(
-    name = ["P1_AUTOMATION_EVIDENCE_FIXTURE_ENABLED"],
+    name = ["app.p1.automation.evidence-fixture-enabled"],
     havingValue = "true",
     matchIfMissing = false,
 )
@@ -175,6 +179,20 @@ class FixtureAutomationEvidenceProvider : AutomationEvidenceProvider {
 }
 
 class AutomationEvidenceUnavailableException : RuntimeException("AUTOMATION_EVIDENCE_PROVIDER_UNAVAILABLE")
+
+internal fun automationEvidenceSourceRegistry(objectMapper: ObjectMapper): Map<String, Pair<String, String>> {
+    val resource =
+        AutomationEvidenceService::class.java.classLoader
+            .getResourceAsStream("contracts/p1-vertex-news-sources.v1.json")
+            ?: throw IllegalStateException("automation news source registry missing")
+    resource.use { stream ->
+        val root = objectMapper.readTree(stream)
+        return root.path("sources").associate { item ->
+            item.path("domain").stringValue().lowercase() to
+                (item.path("sourceId").stringValue() to item.path("sourceType").stringValue())
+        }
+    }
+}
 
 @Service
 class AutomationEvidenceService(
@@ -647,7 +665,17 @@ class AutomationEvidenceService(
         if (!raw.supportObserved || raw.sourceEventDate?.isAfter(sessionDate) == true) return null
         val uri = runCatching { URI(raw.uri) }.getOrNull() ?: return null
         if (uri.scheme != "https" || uri.userInfo != null || uri.fragment != null) return null
-        val registration = sourceRegistry[uri.host?.lowercase()] ?: return null
+        val uriHost = uri.host?.lowercase() ?: return null
+        val observedDomain = raw.sourceDomain?.lowercase() ?: uriHost
+        if (
+            raw.sourceDomain != null &&
+            uriHost != "vertexaisearch.cloud.google.com" &&
+            uriHost != observedDomain &&
+            !uriHost.endsWith(".$observedDomain")
+        ) {
+            return null
+        }
+        val registration = sourceRegistry[observedDomain] ?: return null
         if (registration.first != raw.sourceId || registration.second != raw.sourceType) return null
         if (!CITATION.matches(raw.citationId) || raw.boundedQuote.length !in 1..240) return null
         val quoteSha = sha256(raw.boundedQuote.toByteArray(StandardCharsets.UTF_8))
@@ -920,18 +948,7 @@ class AutomationEvidenceService(
         )
     }
 
-    private fun loadSourceRegistry(): Map<String, Pair<String, String>> {
-        val resource =
-            javaClass.classLoader.getResourceAsStream("contracts/p1-vertex-news-sources.v1.json")
-                ?: throw IllegalStateException("automation news source registry missing")
-        resource.use { stream ->
-            val root = objectMapper.readTree(stream)
-            return root.path("sources").associate { item ->
-                item.path("domain").stringValue() to
-                    (item.path("sourceId").stringValue() to item.path("sourceType").stringValue())
-            }
-        }
-    }
+    private fun loadSourceRegistry(): Map<String, Pair<String, String>> = automationEvidenceSourceRegistry(objectMapper)
 
     private fun openScope(
         jdbc: NamedParameterJdbcTemplate,

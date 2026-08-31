@@ -32,7 +32,7 @@ def test_owner_text_is_absent_from_google_discovery_prompt() -> None:
     assert owner_secret in final.user
 
 
-def test_google_prompt_requires_search_for_explicit_current_web_request_and_forbids_invented_ids() -> (
+def test_google_prompt_requires_search_for_explicit_current_web_request_and_forbids_invented_sources() -> (
     None
 ):
     request = RunRequest(
@@ -53,7 +53,7 @@ def test_google_prompt_requires_search_for_explicit_current_web_request_and_forb
     prompt = require_google_grounding(render_prompt(request, ()))
 
     assert prompt.system.startswith("MANDATORY SEARCH POLICY")
-    assert "use Google Search before drafting the JSON" in prompt.system
+    assert "use Google Search before drafting the response" in prompt.system
     assert "Do not answer such a request from memory" in prompt.system
-    assert "Never invent citationIds" in prompt.system
+    assert "Never invent citations or URLs" in prompt.system
     assert "INSUFFICIENT_EVIDENCE" in prompt.system

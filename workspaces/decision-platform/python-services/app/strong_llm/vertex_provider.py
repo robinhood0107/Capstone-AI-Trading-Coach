@@ -51,6 +51,14 @@ class VertexProviderSettings:
         self.timeout_seconds = timeout_seconds
         self.thinking_level = thinking_level
 
+    def for_thinking_level(self, thinking_level: str) -> VertexProviderSettings:
+        return VertexProviderSettings(
+            service_account_path=self.service_account_path,
+            location=self.location,
+            timeout_seconds=self.timeout_seconds,
+            thinking_level=thinking_level,
+        )
+
     @classmethod
     def from_env(cls) -> VertexProviderSettings:
         if os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"):
@@ -104,11 +112,13 @@ class LangChainVertexProvider:
             "response_schema": _vertex_response_schema(request.mode),
         }
         self._structured = base_model.bind(**structured)
-        # Google Search와 native JSON schema의 단일 호출 결합은 LangChain 공식 bind 계약을 따른다.
-        self._google = base_model.bind(
+        # Gemini 3.5 Flash는 두 기능을 각각 지원하지만 실제 Vertex 응답에서 Google Search와
+        # response_schema를 한 호출에 묶으면 query만 남고 groundingChunks/Supports가 비는 경우가
+        # 있다. discovery는 공식 Google Search 형태의 plain-text call로 근거를 확보하고, host가
+        # 관측한 support만 별도의 tool-free structured final에 넘긴다.
+        self._google_discovery = base_model.bind(
             tools=[{"google_search": {}}],
             temperature=0.0,
-            **structured,
         )
         self._tool_model = base_model
         self._structured_options = structured
@@ -118,8 +128,8 @@ class LangChainVertexProvider:
 
     def invoke_google(self, request: RunRequest, *, include_owner: bool) -> ProviderResult:
         if include_owner:
-            if not request.owner_evidence or self._discovery is None:
-                raise ValueError("STRONG_LLM_OWNER_FINAL_STATE_INVALID")
+            if self._discovery is None:
+                raise ValueError("STRONG_LLM_GROUNDED_FINAL_STATE_INVALID")
             prompt = render_prompt(request, request.public_evidence + request.owner_evidence)
             _assign_grounding_citation_ids(
                 self._discovery["grounding_roots"],
@@ -139,29 +149,30 @@ class LangChainVertexProvider:
             allowed_ids = {
                 item.citation_id for item in request.public_evidence + request.owner_evidence
             } | {str(item["citation_id"]) for item in self._discovery["grounding_roots"]}
-            result = _provider_result(message, allowed_local_ids=allowed_ids)
-            result["answer_json"] = _normalize_grounded_answer(
-                result["answer_json"],
-                self._discovery["grounding_roots"],
-                self._discovery["grounding_supports"],
+            result = _provider_result(
+                message,
+                allowed_local_ids=allowed_ids,
+                mode=request.mode,
             )
+            if request.mode != "JUDGE":
+                result["answer_json"] = _normalize_grounded_answer(
+                    result["answer_json"],
+                    self._discovery["grounding_roots"],
+                    self._discovery["grounding_supports"],
+                )
             return result
 
-        prompt = (
-            render_discovery_prompt(request)
-            if request.owner_evidence
-            else render_prompt(request, request.public_evidence)
-        )
+        prompt = render_discovery_prompt(request)
         prompt = require_google_grounding(prompt)
-        message = self._google.invoke(
+        message = self._google_discovery.invoke(
             [SystemMessage(content=prompt.system), HumanMessage(content=prompt.user)]
         )
-        result = _provider_result(
-            message,
-            allowed_local_ids={item.citation_id for item in request.public_evidence},
+        result = _grounding_discovery_result(message, request=request)
+        _assign_grounding_citation_ids(
+            result["grounding_roots"],
+            {item.citation_id for item in request.public_evidence},
         )
-        if request.owner_evidence:
-            self._discovery = result
+        self._discovery = result
         return result
 
     def invoke_fallback(
@@ -229,6 +240,14 @@ def _vertex_response_schema(mode: str = "EXPLAIN") -> dict[str, object]:
     """
 
     if mode == "JUDGE":
+        judge_evidence_span: dict[str, object] = {
+            "type": "object",
+            "properties": {
+                "citationId": {"type": "string"},
+                "quote": {"type": "string"},
+            },
+            "required": ["citationId", "quote"],
+        }
         return {
             "type": "object",
             "properties": {
@@ -241,8 +260,12 @@ def _vertex_response_schema(mode: str = "EXPLAIN") -> dict[str, object]:
                             "score": {"type": "number"},
                             "veto": {"type": "boolean"},
                             "reason": {"type": "string"},
+                            "evidenceSpans": {
+                                "type": "array",
+                                "items": judge_evidence_span,
+                            },
                         },
-                        "required": ["symbol", "score", "veto", "reason"],
+                        "required": ["symbol", "score", "veto", "reason", "evidenceSpans"],
                     },
                 },
                 "confidence": {"type": "number"},
@@ -332,53 +355,7 @@ def _provider_result(
             "grounding_supports": [],
         }
     text = _canonical_answer_json(_message_text(message))
-    grounding = message.response_metadata.get("grounding_metadata") or {}
-    if not isinstance(grounding, dict):
-        grounding = {}
-    roots = []
-    for index, chunk in enumerate(grounding.get("grounding_chunks") or []):
-        if not isinstance(chunk, dict) or not isinstance(chunk.get("web"), dict):
-            continue
-        web = chunk["web"]
-        uri = str(web.get("uri", ""))
-        title = str(web.get("title", ""))
-        domain = str(web.get("domain", ""))
-        if not uri.startswith("https://") or not title:
-            continue
-        roots.append(
-            {
-                "result_id": f"google_{index + 1}",
-                "title": title[:500],
-                "uri": uri[:2048],
-                "domain": domain[:253],
-                "chunk_index": index,
-                "citation_id": "",
-            }
-        )
-    supports = []
-    for support in grounding.get("grounding_supports") or []:
-        if not isinstance(support, dict) or not isinstance(support.get("segment"), dict):
-            continue
-        segment = support["segment"]
-        support_text = str(segment.get("text", ""))
-        indices = support.get("grounding_chunk_indices") or []
-        if (
-            support_text
-            and isinstance(indices, list)
-            and all(isinstance(value, int) for value in indices)
-        ):
-            supports.append(
-                {
-                    "start_index": _metadata_index(segment.get("start_index")),
-                    "end_index": _metadata_index(segment.get("end_index")),
-                    "text": support_text[:2048],
-                    "chunk_indices": tuple(indices),
-                }
-            )
-    content_roots, content_supports, content_queries = _content_block_grounding(message)
-    if (not roots or not supports) and content_roots and content_supports:
-        roots = content_roots
-        supports = content_supports
+    roots, supports, queries = _grounding_projection(message)
     usage: dict[str, Any] = dict(message.usage_metadata or {})
     normalized = (
         text
@@ -395,23 +372,116 @@ def _provider_result(
         "answer_json": normalized,
         "prompt_tokens": int(usage.get("input_tokens", 0)),
         "output_tokens": int(usage.get("output_tokens", 0)),
-        "google_queries": list(
-            dict.fromkeys(
-                [str(value) for value in grounding.get("web_search_queries") or []]
-                + content_queries
-            )
-        ),
-        "google_query_count": len(
-            list(
-                dict.fromkeys(
-                    [str(value) for value in grounding.get("web_search_queries") or []]
-                    + content_queries
-                )
-            )
-        ),
+        "google_queries": queries,
+        "google_query_count": len(queries),
         "grounding_roots": roots,
         "grounding_supports": supports,
     }
+
+
+def _grounding_discovery_result(message: AIMessage, *, request: RunRequest) -> ProviderResult:
+    """검색 turn의 본문은 권한이 없고 provider-observed metadata만 다음 turn으로 전달한다."""
+
+    roots, supports, queries = _grounding_projection(message)
+    if request.mode == "JUDGE":
+        placeholder: dict[str, object] = {
+            "candidates": [
+                {
+                    "symbol": candidate.symbol,
+                    "score": 0.5,
+                    "veto": False,
+                    "reason": "검증된 공개 근거가 없습니다.",
+                    "evidenceSpans": [],
+                }
+                for candidate in request.candidates
+            ],
+            "confidence": 0.0,
+            "summary": "검증된 공개 근거가 없습니다.",
+        }
+    else:
+        placeholder = {
+            "basis": "INSUFFICIENT_EVIDENCE",
+            "answer": None,
+            "sentences": [],
+            "warnings": [],
+        }
+    usage: dict[str, Any] = dict(message.usage_metadata or {})
+    return {
+        "message": message,
+        "answer_json": json.dumps(placeholder, ensure_ascii=False, separators=(",", ":")),
+        "prompt_tokens": int(usage.get("input_tokens", 0)),
+        "output_tokens": int(usage.get("output_tokens", 0)),
+        "google_queries": queries,
+        "google_query_count": len(queries),
+        "grounding_roots": roots,
+        "grounding_supports": supports,
+    }
+
+
+def _grounding_projection(
+    message: AIMessage,
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[str]]:
+    grounding = message.response_metadata.get("grounding_metadata") or {}
+    if not isinstance(grounding, dict):
+        grounding = {}
+    raw_chunks = grounding.get("grounding_chunks") or grounding.get("groundingChunks") or []
+    roots: list[dict[str, object]] = []
+    for index, chunk in enumerate(raw_chunks):
+        if not isinstance(chunk, dict) or not isinstance(chunk.get("web"), dict):
+            continue
+        web = chunk["web"]
+        uri = str(web.get("uri", ""))
+        title = str(web.get("title", ""))
+        parsed = urlparse(uri)
+        domain = str(web.get("domain", "")) or str(parsed.hostname or "")
+        if parsed.scheme != "https" or not parsed.hostname or not title:
+            continue
+        roots.append(
+            {
+                "result_id": f"google_{index + 1}",
+                "title": title[:500],
+                "uri": uri[:2048],
+                "domain": domain[:253],
+                "chunk_index": index,
+                "citation_id": "",
+            }
+        )
+    raw_supports = grounding.get("grounding_supports") or grounding.get("groundingSupports") or []
+    supports: list[dict[str, object]] = []
+    for support in raw_supports:
+        if not isinstance(support, dict) or not isinstance(support.get("segment"), dict):
+            continue
+        segment = support["segment"]
+        support_text = str(segment.get("text", ""))
+        indices = (
+            support.get("grounding_chunk_indices") or support.get("groundingChunkIndices") or []
+        )
+        if (
+            support_text
+            and isinstance(indices, list)
+            and all(isinstance(value, int) for value in indices)
+        ):
+            supports.append(
+                {
+                    "start_index": _metadata_index(
+                        segment.get("start_index", segment.get("startIndex"))
+                    ),
+                    "end_index": _metadata_index(segment.get("end_index", segment.get("endIndex"))),
+                    "text": support_text[:2048],
+                    "chunk_indices": tuple(indices),
+                }
+            )
+    content_roots, content_supports, content_queries = _content_block_grounding(message)
+    if (not roots or not supports) and content_roots and content_supports:
+        roots = content_roots
+        supports = content_supports
+    raw_queries = grounding.get("web_search_queries") or grounding.get("webSearchQueries") or []
+    queries = list(
+        dict.fromkeys(
+            [str(value) for value in raw_queries if isinstance(value, str)] + content_queries
+        )
+    )
+    return roots, supports, queries
 
 
 def _metadata_index(value: object) -> int:
@@ -469,15 +539,23 @@ def _content_block_grounding(
             index = root_index_by_url[url]
             supports.append(
                 {
-                    "start_index": _metadata_index(annotation.get("start_index")),
-                    "end_index": _metadata_index(annotation.get("end_index")),
+                    "start_index": _metadata_index(
+                        annotation.get("start_index", annotation.get("startIndex"))
+                    ),
+                    "end_index": _metadata_index(
+                        annotation.get("end_index", annotation.get("endIndex"))
+                    ),
                     "text": cited_text[:2048],
                     "chunk_indices": (index,),
                 }
             )
             extras = annotation.get("extras")
             metadata = extras.get("google_ai_metadata") if isinstance(extras, dict) else None
-            raw_queries = metadata.get("web_search_queries") if isinstance(metadata, dict) else None
+            raw_queries = (
+                metadata.get("web_search_queries") or metadata.get("webSearchQueries")
+                if isinstance(metadata, dict)
+                else None
+            )
             if isinstance(raw_queries, list):
                 queries.extend(str(value) for value in raw_queries if isinstance(value, str))
     return roots, supports, list(dict.fromkeys(queries))

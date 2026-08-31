@@ -107,6 +107,11 @@ _RAG_ENVIRONMENT_KEYS: Final = (
     ("RAG_V2_VERTEX_TREE_DIGEST", "P1_RAG_V2_VERTEX_TREE_DIGEST"),
     ("RAG_V2_VERTEX_CI_DIGEST", "P1_RAG_V2_VERTEX_CI_DIGEST"),
     ("RAG_V2_VERTEX_SECURITY_DIGEST", "P1_RAG_V2_VERTEX_SECURITY_DIGEST"),
+    ("S4_9_STRONG_LLM_ENABLED", "P1_STRONG_LLM_ENABLED"),
+    ("RAG_WEB_GOOGLE_BILLING_ACCOUNT_FINGERPRINT", "P1_GOOGLE_BILLING_ACCOUNT_FINGERPRINT"),
+    ("BROKERAGE_GRPC_ENABLED", "P1_KIS_MOCK_ONLINE_ENABLED"),
+    ("KIS_OFFLINE", "P1_KIS_OFFLINE"),
+    ("P1_AUTOMATION_RUNTIME_ENABLED", "P1_AUTOMATION_RUNTIME_ENABLED"),
 )
 _rag_environment: dict[str, str] | None = None
 
@@ -931,11 +936,11 @@ def main(argv: list[str]) -> int:
         restore_portfolio_contexts(quiesced)
         _stop_offline_brokerage()
         if platform_switched and not args.keep:
-            # brokerage 어댑터를 끈 기본 구성으로 되돌린다. 테스트가 스택 설정을 남기지 않는다.
+            # 테스트 시작 때 관측한 brokerage/Strong LLM/RAG 구성으로 정확히 되돌린다.
             try:
                 _compose("up", "-d", "--no-deps", "decision-platform")
                 _wait_healthy()
-                recorder.add("스택 구성 복원", "PASS", "brokerage gRPC 어댑터 OFF로 되돌림")
+                recorder.add("스택 구성 복원", "PASS", "테스트 시작 시 런타임 플래그로 되돌림")
             except PipelineError as error:
                 recorder.add("스택 구성 복원", "FAIL", str(error))
         if args.keep:

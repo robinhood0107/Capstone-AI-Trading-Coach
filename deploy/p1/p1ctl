@@ -407,6 +407,11 @@ init_state() {
   write_line KIS_MOCK_ORDER_REFERENCE_KEY "$(base64url_key)" "$SECRETS_DIR/kis-mock.env"
   write_line KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP 1 "$SECRETS_DIR/kis-mock.env"
   write_line KIS_BROKERAGE_PHYSICAL_CAP 32 "$SECRETS_DIR/kis-mock.env"
+  printf '' | state_write_file "$SECRETS_DIR/market-data-provider.env" 0640
+  write_line KIS_MOCK_CONFIGURED false "$SECRETS_DIR/market-data-provider.env"
+  write_line KIS_MOCK_APP_KEY DISABLED00 "$SECRETS_DIR/market-data-provider.env"
+  write_line KIS_MOCK_APP_SECRET DISABLED00 "$SECRETS_DIR/market-data-provider.env"
+  write_line REDIS_PASSWORD "$redis_password" "$SECRETS_DIR/market-data-provider.env"
   local approval_key_tmp approval_public_digest
   approval_key_tmp=$(mktemp -d)
   openssl genpkey -algorithm ED25519 -out "$approval_key_tmp/private.pem" >/dev/null 2>&1
@@ -477,7 +482,7 @@ init_state() {
 verify_state() {
   require_state
   verify_runtime_env
-  local expected=(actor-capability-authority.env actor-client.p12 actor-server.p12 actor-tls-ca.crt after-hours-replay.env artifact-import.env automation-gate-author.env automation-runtime.env market-data.env bootstrap.env demo-admin.bundle demo-admin.password demo-credential-separation.key demo.env demo-user.bundle \
+  local expected=(actor-capability-authority.env actor-client.p12 actor-server.p12 actor-tls-ca.crt after-hours-replay.env artifact-import.env automation-gate-author.env automation-runtime.env market-data.env market-data-provider.env bootstrap.env demo-admin.bundle demo-admin.password demo-credential-separation.key demo.env demo-user.bundle \
     demo-user.password kafka-admin.env kafka-broker-jaas.conf kafka-publisher.env migration.env poison-recorder.env rag-v2.env \
     kis-mock.env kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn postgres.env python.env rag-history-kek-v1.key redis.env return-inference.env role-bootstrap.env seed-import.env spring.env)
   expected+=(team-a-acceptance.env)

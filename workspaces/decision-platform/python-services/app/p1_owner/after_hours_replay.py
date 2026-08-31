@@ -14,12 +14,12 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence, cast
 from zoneinfo import ZoneInfo
 
-import exchange_calendars as xcals
 import pandas as pd
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
 
 from app.data._shared.canonical_json import canonical_json_bytes
+from app.data.calendar.xkrx_policy import corrected_calendar
 from app.p1_owner.automation import (
     AutomationEngine,
     AutomationError,
@@ -117,7 +117,7 @@ def build_replay_report(
 ) -> dict[str, object]:
     if not rows:
         raise AfterHoursReplayError("HISTORICAL_REPLAY_BLOCKED_INPUT_MISSING")
-    calendar = xcals.get_calendar("XKRX")
+    calendar = corrected_calendar()
     accepted, rejection_reasons = _classify_rows(rows, today=today, calendar=calendar)
     by_symbol: dict[str, list[ReplayBar]] = defaultdict(list)
     for row in accepted:
@@ -477,7 +477,7 @@ def _synthetic_matrix(anchor: ReplayBar) -> dict[str, bool]:
         atr_multiplier_milli=3_000,
         previous_trailing_stop_krw=None,
     )
-    calendar = xcals.get_calendar("XKRX")
+    calendar = corrected_calendar()
     conflict = ReplayBar(
         anchor.symbol,
         anchor.session_date,
@@ -534,7 +534,7 @@ def _synthetic_matrix(anchor: ReplayBar) -> dict[str, bool]:
 def _synthetic_history(
     anchor: ReplayBar,
 ) -> tuple[date, tuple[CompletedDailyBar, ...], tuple[date, ...], int]:
-    calendar = xcals.get_calendar("XKRX")
+    calendar = corrected_calendar()
     anchor_session = calendar.date_to_session(pd.Timestamp(anchor.session_date), direction="none")
     evaluation = cast(date, calendar.next_session(anchor_session).date())
     sessions = tuple(item.date() for item in calendar.sessions_window(anchor_session, -23))
@@ -795,7 +795,7 @@ def _synthetic_exit_reason(
 ) -> str | None:
     evaluation, history, expected, base = _synthetic_history(anchor)
     store, run = _synthetic_store(evaluation, state="PRECHECK")
-    calendar = xcals.get_calendar("XKRX")
+    calendar = corrected_calendar()
     future_expiry = cast(date, calendar.next_session(pd.Timestamp(evaluation)).date())
     entry_session = history[-2].session_date
     store.positions.append(
@@ -873,7 +873,7 @@ def _synthetic_pre_entry_high_ignored(anchor: ReplayBar) -> bool:
             history[-2].session_date,
             cast(
                 date,
-                xcals.get_calendar("XKRX").next_session(pd.Timestamp(evaluation)).date(),
+                corrected_calendar().next_session(pd.Timestamp(evaluation)).date(),
             ),
             run.started_at,
             entry_average_fill_price_krw=base,

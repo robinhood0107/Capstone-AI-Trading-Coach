@@ -70,6 +70,7 @@ class CandidateVerdict(BaseModel):
     score: float = Field(ge=0.0, le=1.0)
     veto: bool
     reason: str = Field(min_length=1, max_length=512)
+    evidenceSpans: list[EvidenceSpan] = Field(max_length=5)
 
 
 class StrongLlmJudgement(BaseModel):
@@ -124,6 +125,10 @@ class RunRequest:
     mode: str = "EXPLAIN"
     # JUDGE에서만 채운다. 후보 집합의 소유자는 Return Engine이고 모델은 이 안에서만 답한다.
     candidates: tuple[JudgementCandidate, ...] = ()
+    # arm 시점에 봉인한 사용자 설정을 provider call까지 그대로 전달한다.
+    thinking_level: str = "low"
+    # NEWS_SCREEN은 Google support 원장만 필요하다. 구조화 최종판단은 별도 JUDGE phase가 소유한다.
+    grounding_discovery_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)

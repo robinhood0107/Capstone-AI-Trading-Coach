@@ -226,6 +226,8 @@ def _request(event: strong_llm_agent_pb2.HostEvent) -> RunRequest:
         language=start.language or "ko",
         mode=start.mode or "EXPLAIN",
         candidates=tuple(_candidate(item) for item in start.candidates),
+        thinking_level=start.thinking_level or "low",
+        grounding_discovery_only=start.grounding_discovery_only,
     )
 
 
@@ -289,9 +291,16 @@ def serve(
     if chain_settings.secondary is not None:
         declared.add(chain_settings.secondary.provider)
     vertex = VertexProviderSettings.from_env() if "vertex" in declared else None
-    factory = provider_factory or (
-        lambda request: build_provider_chain(request, chain_settings, vertex)
-    )
+
+    def default_factory(
+        request: RunRequest,
+    ) -> tuple[StrongLlmProvider, StrongLlmProvider | None]:
+        effective_vertex = (
+            vertex.for_thinking_level(request.thinking_level) if vertex is not None else None
+        )
+        return build_provider_chain(request, chain_settings, effective_vertex)
+
+    factory = provider_factory or default_factory
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=8),
         options=(

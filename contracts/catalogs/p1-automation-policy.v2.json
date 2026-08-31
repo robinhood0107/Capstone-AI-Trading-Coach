@@ -1,0 +1,129 @@
+{
+  "apiVersion": "1.2.0",
+  "blockers": [
+    "ACCOUNT_NOT_CONFIGURED",
+    "POLICY_NOT_CONFIGURED",
+    "POLICY_VERSION_DRIFT",
+    "POLICY_V3_REQUIRED",
+    "PRINCIPLE_NOT_CONFIGURED",
+    "REAL_TEAM_B_POINTER_INACTIVE",
+    "RELEASE_BINDING_UNCLEAN",
+    "CERTIFICATION_INVALID",
+    "KILL_SWITCH_ACTIVE",
+    "UNRESOLVED_RECONCILIATION",
+    "CONTROL_HALTED",
+    "BLOCKED_INCOMPLETE_RISK_BALANCE",
+    "LEGACY_POSITION_PRESENT",
+    "MARKET_HISTORY_EMPTY",
+    "MARKET_HISTORY_INSUFFICIENT",
+    "MARKET_DATA_CATCHUP_REQUIRED",
+    "AI_PROVIDER_NOT_READY"
+  ],
+  "contractId": "p1-automation-policy.v2",
+  "evidencePolicy": {
+    "candidateUniverseMax": 31,
+    "freshnessRequired": false,
+    "groundedProviderCallsPerRunMax": 1,
+    "groundingQueriesPerRunMax": 32,
+    "judgeProviderCallsPerRunMax": 2,
+    "orderAuthority": "NONE",
+    "unregisteredDomainIsEvidence": false,
+    "zeroEvidenceScore": 0.5,
+    "zeroEvidenceVeto": false
+  },
+  "execution": {
+    "buyCutoffTimeKst": "09:40",
+    "cancelTimeKst": "15:20",
+    "evaluationTimeKst": "09:30",
+    "maxNewOrdersPerSession": 1,
+    "maxOpenPositions": 5
+  },
+  "exitPriority": [
+    "UNRESOLVED_RECONCILIATION",
+    "STOP_LOSS",
+    "ATR_TRAILING",
+    "MODEL_SELL",
+    "TAKE_PROFIT",
+    "MAX_HOLDING_SESSIONS",
+    "NEW_BUY"
+  ],
+  "marketBootstrap": {
+    "accountCalls": 0,
+    "currentUniverseSize": 31,
+    "fixedMember": "132030",
+    "kisDailyPhysicalMax": 403,
+    "kisTokenPhysicalMax": 1,
+    "krxMembershipPhysicalMax": 5,
+    "orderCalls": 0,
+    "researchSessionMax": 1260,
+    "retryMax": 0
+  },
+  "operations": [
+    {
+      "method": "GET",
+      "operationId": "getAutomationStatusV3",
+      "path": "/api/v3/automation/status"
+    },
+    {
+      "method": "PUT",
+      "operationId": "putAutomationPolicyV3",
+      "path": "/api/v3/automation/policy"
+    },
+    {
+      "method": "POST",
+      "operationId": "armAutomationV3",
+      "path": "/api/v3/automation/arm"
+    },
+    {
+      "method": "GET",
+      "operationId": "listAutomationRunsV3",
+      "path": "/api/v3/automation/runs"
+    },
+    {
+      "method": "GET",
+      "operationId": "getAutomationRunV3",
+      "path": "/api/v3/automation/runs/{runId}"
+    },
+    {
+      "method": "GET",
+      "operationId": "listAutomationPositionsV3",
+      "path": "/api/v3/automation/positions"
+    }
+  ],
+  "presets": [
+    {
+      "atrMultiplierMilli": 2500,
+      "atrPeriod": 22,
+      "maxHoldingSessions": 20,
+      "modelSellEnabled": true,
+      "presetId": "conservative",
+      "stopLossBps": 300,
+      "takeProfitBps": 500
+    },
+    {
+      "atrMultiplierMilli": 3000,
+      "atrPeriod": 22,
+      "maxHoldingSessions": 60,
+      "modelSellEnabled": true,
+      "presetId": "balanced",
+      "stopLossBps": 500,
+      "takeProfitBps": 1000
+    },
+    {
+      "atrMultiplierMilli": 3500,
+      "atrPeriod": 22,
+      "maxHoldingSessions": 0,
+      "modelSellEnabled": true,
+      "presetId": "aggressive",
+      "stopLossBps": 800,
+      "takeProfitBps": 1500
+    }
+  ],
+  "safety": {
+    "automaticInternalPaperFallback": false,
+    "defaultAiJudgementEnabled": false,
+    "defaultControlState": "DISARMED",
+    "gdeltOutboundCalls": 0,
+    "kisLiveOrderCalls": 0
+  }
+}

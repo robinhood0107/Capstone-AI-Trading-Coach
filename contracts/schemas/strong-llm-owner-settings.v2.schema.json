@@ -1,0 +1,27 @@
+{
+  "$id": "contracts/schemas/strong-llm-owner-settings.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "aiJudgementEnabled": {
+      "type": "boolean"
+    },
+    "contractId": {
+      "const": "strong-llm-owner-settings.v2"
+    },
+    "thinkingLevel": {
+      "enum": [
+        "minimal",
+        "low",
+        "medium"
+      ]
+    }
+  },
+  "required": [
+    "contractId",
+    "aiJudgementEnabled",
+    "thinkingLevel"
+  ],
+  "title": "strong-llm-owner-settings.v2",
+  "type": "object"
+}

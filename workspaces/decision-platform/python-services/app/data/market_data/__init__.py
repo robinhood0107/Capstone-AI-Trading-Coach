@@ -6,6 +6,22 @@ from app.data.market_data.archive import (
     MarketDataArtifact,
     read_market_data_archive,
 )
+from app.data.market_data.automation_bootstrap import (
+    AutomationBootstrapArchive,
+    AutomationBootstrapError,
+    AutomationBootstrapPlan,
+    AutomationBootstrapStageResult,
+    AutomationMarketBar,
+    AutomationMarketInventory,
+    BootstrapMember,
+    BootstrapWindow,
+    KisAutomationBootstrapSource,
+    PostgresAutomationMarketReader,
+    build_bootstrap_plan,
+    collect_automation_bootstrap,
+    read_automation_bootstrap_archive,
+    stage_automation_bootstrap,
+)
 from app.data.market_data.daily_runtime import (
     AcceptedDailyShard,
     DailyMarketDataError,
@@ -37,6 +53,16 @@ from app.data.market_data.repository import (
 )
 
 __all__ = [
+    "AutomationBootstrapArchive",
+    "AutomationBootstrapError",
+    "AutomationBootstrapPlan",
+    "AutomationBootstrapStageResult",
+    "AutomationMarketBar",
+    "AutomationMarketInventory",
+    "BootstrapMember",
+    "BootstrapWindow",
+    "KisAutomationBootstrapSource",
+    "PostgresAutomationMarketReader",
     "AcceptedDailyShard",
     "CloseObservation",
     "DailyAdoptionResult",
@@ -64,4 +90,8 @@ __all__ = [
     "run_offline_daily",
     "stage_daily_shard",
     "stage_seed_archive",
+    "build_bootstrap_plan",
+    "collect_automation_bootstrap",
+    "read_automation_bootstrap_archive",
+    "stage_automation_bootstrap",
 ]

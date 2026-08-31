@@ -21,7 +21,9 @@ from app.p1_owner.data_only_collector import (
     P1DailyCollectorError,
     promote_staged_daily_collection,
     stage_fixture_daily_collection,
+    stage_live_daily_collection,
 )
+from app.p1_owner.data_only_collector_live import LiveDailyCollectionTransport
 from app.verification.network_guard import deny_outbound_network
 from tests.data.market_data.test_daily_runtime import _packet_and_records
 
@@ -57,6 +59,15 @@ def _transport(records: list[ReplayRecord]) -> FixtureDailyCollectionTransport:
     return FixtureDailyCollectionTransport({record.operation_id: record for record in records})
 
 
+class _LivePayloads:
+    def __init__(self, records: list[ReplayRecord]) -> None:
+        self.payloads = {record.operation_id: record.payload for record in records}
+
+    def read(self, operation_id: str, packet: object) -> dict[str, object]:
+        del packet
+        return dict(self.payloads[operation_id])
+
+
 def test_collector_is_default_off_and_before_schedule_makes_zero_calls(tmp_path: Path) -> None:
     packet, records = _packet_and_records()
     disabled = _transport(records)
@@ -70,6 +81,17 @@ def test_collector_is_default_off_and_before_schedule_makes_zero_calls(tmp_path:
     assert disabled_result.physical_calls == 0
     assert disabled.logical_calls == disabled.physical_calls == 0
     assert not (tmp_path / "not-created").exists()
+
+    live = LiveDailyCollectionTransport(
+        packet=packet,
+        source=_LivePayloads(records),
+        retrieved_at=packet.as_of,
+        enabled=False,
+    )
+    with pytest.raises(P1DailyCollectorError, match="disabled"):
+        live.collect("KRX_DAILY_01")
+    assert live.logical_calls == 1
+    assert live.physical_calls == 0
 
     early = _transport(records)
     early_result = stage_fixture_daily_collection(
@@ -151,6 +173,45 @@ def test_exact38_fixture_collection_promotes_exact31_only_at_evidence_clock(
     assert len(cast(list[object], accepted.payload["bars"])) == 31
     assert len(sink.accepted) == 1
     assert (tmp_path / "promotion" / packet.packet_sha256 / "daily-shard.json").is_file()
+
+
+def test_exact38_live_read_only_collection_is_bounded_and_promotes_offline(
+    tmp_path: Path,
+) -> None:
+    packet, records = _packet_and_records()
+    collection_root = _collection_root(tmp_path)
+    live = LiveDailyCollectionTransport(
+        packet=packet,
+        source=_LivePayloads(records),
+        retrieved_at=packet.as_of,
+        enabled=True,
+    )
+
+    staged = stage_live_daily_collection(
+        packet=packet,
+        observed_at=_scheduled_at(packet.session_date),
+        collection_root=collection_root,
+        transport=live,
+        settings=DailyCollectorSettings(enabled=True),
+    )
+
+    assert staged.status == "STAGED_COMPLETE"
+    assert staged.logical_calls == staged.physical_calls == 38
+    session_root = collection_root / packet.session_date.isoformat()
+    manifest = json.loads((session_root / "complete-manifest.json").read_bytes())
+    assert manifest["providerAuthority"] == "LIVE_READ_ONLY"
+    assert manifest["providerPhysicalCalls"] == 38
+    assert "fixturePhysicalCalls" not in manifest
+
+    sink = _Sink(packet.previous_accepted_manifest_sha256)
+    promoted = promote_staged_daily_collection(
+        packet=packet,
+        collection_root=collection_root,
+        run_root=tmp_path / "live-promotion",
+        sink=sink,
+    )
+    assert promoted.status == "ACCEPTED"
+    assert promoted.provider_physical_calls == 0
 
 
 def test_first_failure_stops_and_resume_never_recalls_successes(tmp_path: Path) -> None:
@@ -326,5 +387,18 @@ def test_module_has_no_live_provider_account_order_or_gdelt_transport() -> None:
         "accountId",
     ):
         assert forbidden not in source
-    assert 'providerAuthority": "FIXTURE_ONLY' in source
+    assert 'provider_authority: str = "FIXTURE_ONLY"' in source
     assert 'defaultEnabled": False' in source
+
+    live_source = (
+        Path(__file__).parents[2] / "app/p1_owner/data_only_collector_live.py"
+    ).read_text(encoding="utf-8")
+    for forbidden in (
+        "app.brokerage",
+        "app.data.gdelt",
+        "accountId",
+        "httpx",
+        "requests",
+        "socket",
+    ):
+        assert forbidden not in live_source

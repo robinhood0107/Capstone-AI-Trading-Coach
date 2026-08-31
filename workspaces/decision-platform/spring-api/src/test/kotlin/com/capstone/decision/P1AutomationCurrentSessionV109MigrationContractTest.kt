@@ -25,7 +25,7 @@ class P1AutomationCurrentSessionV109MigrationContractTest {
     }
 
     @Test
-    fun `V109 is the numeric next migration and V91 remains byte stable`() {
+    fun `V109 remains before V110 and V91 remains byte stable`() {
         val versions =
             Files.list(migrationDirectory).use { paths ->
                 paths
@@ -39,7 +39,9 @@ class P1AutomationCurrentSessionV109MigrationContractTest {
                     }.toList()
             }
 
-        assertThat(versions.max()).isEqualTo(109)
+        assertThat(versions.max()).isEqualTo(110)
+        assertThat(migrationDirectory.resolve("V110__p1_automation_market_data.sql"))
+            .isRegularFile()
         assertThat(migrationDirectory.resolve("V91__p1_variable_quantity_policy_runtime.sql"))
             .isRegularFile()
     }

@@ -1,6 +1,7 @@
 package com.capstone.decision.application.automation
 
 import com.capstone.decision.application.security.OwnerWriteHashes
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets
 import java.time.OffsetDateTime
@@ -10,10 +11,13 @@ import java.util.Base64
 @Service
 class AutomationService(
     private val repository: AutomationRepository,
+    private val evidenceProvider: ObjectProvider<AutomationEvidenceProvider>,
 ) {
     fun status(ownerUserId: String): AutomationControlProjection = repository.status(ownerUserId)
 
     fun statusV2(ownerUserId: String): AutomationStatusV2Projection = repository.statusV2(ownerUserId)
+
+    fun statusV3(ownerUserId: String): AutomationStatusV3Projection = providerAware(repository.statusV3(ownerUserId))
 
     fun putPolicyV2(
         ownerUserId: String,
@@ -54,6 +58,58 @@ class AutomationService(
                     command.expectedControlVersion.toString(),
                 ),
         )
+
+    fun putPolicyV3(
+        ownerUserId: String,
+        rawIdempotencyKey: String,
+        command: PutAutomationPolicyV3Command,
+    ): AutomationPolicyV3Projection =
+        repository.putPolicyV3(
+            ownerUserId = ownerUserId,
+            command = command,
+            scopeHash = OwnerWriteHashes.scope(ownerUserId, rawIdempotencyKey),
+            requestHash =
+                OwnerWriteHashes.request(
+                    "PUT_AUTOMATION_POLICY_V3",
+                    ownerUserId,
+                    command.capitalLimitKrw.toString(),
+                    command.stopLossBps.toString(),
+                    command.takeProfitBps.toString(),
+                    command.maxHoldingSessions.toString(),
+                    command.atrPeriod.toString(),
+                    command.atrMultiplierMilli.toString(),
+                    command.modelSellEnabled.toString(),
+                    command.expectedVersion.toString(),
+                ),
+        )
+
+    fun armV3(
+        ownerUserId: String,
+        rawIdempotencyKey: String,
+        command: ArmAutomationV3Command,
+    ): AutomationStatusV3Projection {
+        val current = providerAware(repository.statusV3(ownerUserId))
+        if (current.aiJudgementEnabled && evidenceProvider.getIfAvailable() == null) {
+            throw AutomationBlockedException("AI_PROVIDER_NOT_READY")
+        }
+        return providerAware(
+            repository.armV3(
+                ownerUserId = ownerUserId,
+                command = command,
+                scopeHash = OwnerWriteHashes.scope(ownerUserId, rawIdempotencyKey),
+                requestHash =
+                    OwnerWriteHashes.request(
+                        "ARM_AUTOMATION_V3",
+                        ownerUserId,
+                        command.accountId,
+                        command.policyId,
+                        command.expectedPolicyVersion.toString(),
+                        command.expectedControlVersion.toString(),
+                    ),
+                providerCapabilityReady = evidenceProvider.getIfAvailable() != null,
+            ),
+        )
+    }
 
     fun arm(
         ownerUserId: String,
@@ -132,6 +188,43 @@ class AutomationService(
     }
 
     fun listPositionsV2(ownerUserId: String): AutomationPositionV2Page = repository.readPositionPageV2(ownerUserId)
+
+    fun listRunsV3(
+        ownerUserId: String,
+        size: Int,
+        cursor: String?,
+    ): AutomationRunV3Page {
+        val after = cursor?.let { decodeCursor(ownerUserId, it) }
+        val fetched = repository.listRunsV3(ownerUserId, size + 1, after)
+        val items = fetched.take(size)
+        return AutomationRunV3Page(
+            items = items,
+            nextCursor =
+                if (fetched.size > size) {
+                    items.last().let { encodeCursor(ownerUserId, it.updatedAt, it.runId) }
+                } else {
+                    null
+                },
+        )
+    }
+
+    fun readRunV3(
+        ownerUserId: String,
+        runId: String,
+    ): AutomationRunDetailV3Projection {
+        if (!RUN_ID.matches(runId)) throw AutomationNotFoundException()
+        return repository.readRunV3(ownerUserId, runId)
+    }
+
+    fun listPositionsV3(ownerUserId: String): List<AutomationPositionV3Projection> = repository.readPositionsV3(ownerUserId)
+
+    private fun providerAware(status: AutomationStatusV3Projection): AutomationStatusV3Projection {
+        if (!status.aiJudgementEnabled || evidenceProvider.getIfAvailable() != null) return status
+        return status.copy(
+            canArm = false,
+            blockers = (status.blockers + "AI_PROVIDER_NOT_READY").distinct(),
+        )
+    }
 
     private fun encodeCursor(
         ownerUserId: String,

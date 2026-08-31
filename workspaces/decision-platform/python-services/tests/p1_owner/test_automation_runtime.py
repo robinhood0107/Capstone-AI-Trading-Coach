@@ -7,6 +7,8 @@ from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import pytest
+import exchange_calendars as xcals
+import pandas as pd
 
 from app.p1_owner.automation import (
     AutomationInputs,
@@ -24,6 +26,7 @@ from app.p1_owner.automation_runtime import (
     PostgresAutomationRuntimeRepository,
     RuntimeClaim,
     XkrxBoundaryPlanner,
+    _required_atr_periods,
     inputs_from_state,
 )
 
@@ -96,6 +99,38 @@ def _state(state: str = "SCHEDULED", version: int = 1) -> dict[str, Any]:
     }
 
 
+def _v3_state(state: str = "SCHEDULED", version: int = 1) -> dict[str, Any]:
+    value = _state(state, version)
+    value["policy"].update(
+        {
+            "atrMultiplierMilli": 3_000,
+            "atrPeriod": 22,
+            "maxHoldingSessions": 60,
+            "modelSellEnabled": True,
+        }
+    )
+    value["aiJudgementEnabled"] = True
+    value["aiJudgementProviderBound"] = True
+    value["aiSettingsSha256"] = "e" * 64
+    value["thinkingLevel"] = "low"
+    calendar = xcals.get_calendar("XKRX")
+    previous = calendar.previous_session(pd.Timestamp(value["sessionDate"]))
+    sessions = tuple(item.date() for item in calendar.sessions_window(previous, -23))
+    value["atrHistories"] = {
+        "005930": [
+            {
+                "sessionDate": session.isoformat(),
+                "openPriceKrw": 70_000,
+                "highPriceKrw": 71_000,
+                "lowPriceKrw": 69_000,
+                "closePriceKrw": 70_000,
+            }
+            for session in sessions
+        ]
+    }
+    return value
+
+
 class FakeRepository:
     def __init__(self, state: dict[str, Any]) -> None:
         self.state = state
@@ -120,6 +155,17 @@ class FakeRepository:
         self.state["providerCallCount"] = command.provider_call_count
         self.state["logicalSubmitCount"] = command.logical_submit_count
         return command.expected_version + 1, False
+
+    def advance_with_ai_judgement(
+        self,
+        command: AdvanceCommand,
+        claim: RuntimeClaim,
+        record: AiJudgementRecord,
+    ) -> tuple[int, bool]:
+        assert claim.run_id == self.state["runId"] == command.run_id
+        result = self.advance(command)
+        self.ai_judgements.append(record)
+        return result
 
 
 class FakeRuntimePort(FixtureAutomationTransport):
@@ -178,6 +224,19 @@ def test_inputs_from_state_preserve_rule_lstm_and_fail_closed_flags() -> None:
     assert inputs.account_digest_matches is False
     assert inputs.risk_allow is False
     assert inputs.buyable_quantity == 0
+
+
+def test_atr_reader_uses_the_largest_immutable_position_snapshot_period() -> None:
+    state = _state()
+    state["positions"] = [
+        {"symbol": "005930", "atrPeriod": 100},
+        {"symbol": "000660", "atrPeriod": 22},
+    ]
+
+    assert _required_atr_periods(state, policy_period=5) == {
+        "000660": 22,
+        "005930": 100,
+    }
 
 
 def test_xkrx_boundary_skips_substitute_holiday_and_uses_exact_times() -> None:
@@ -433,3 +492,49 @@ def test_the_ai_judgement_is_recorded_on_the_tick_that_leaves_that_state() -> No
     assert record.selected_symbol == "005930"
     assert record.candidate_count == 1
     assert record.confidence_bps is None
+
+
+def test_zero_evidence_v3_boundary_atomically_records_not_participated() -> None:
+    repository = FakeRepository(_v3_state())
+    port = FakeRuntimePort(quotes={"005930": Quote("005930", 75_000, 52_500, 97_500)})
+    for index in range(1, 4):
+        PersistentAutomationRunner(cast(Any, repository)).run_tick(
+            claim=_claim(),
+            tick_id=f"v3-zero-{index:03d}",
+            now=datetime(2026, 8, 28, 9, 30, index, tzinfo=_KST),
+            port=port,
+        )
+
+    assert repository.state["state"] == "BUY_CANDIDATE_SELECTED"
+    assert len(repository.ai_judgements) == 1
+    record = repository.ai_judgements[0]
+    assert record.participation == "NOT_PARTICIPATED"
+    assert record.judge_call_count == 0
+    assert record.prompt_version == "vertex-news-screen-v2"
+
+
+def test_ai_audit_failure_cannot_advance_the_checkpoint() -> None:
+    class FailingAtomicRepository(FakeRepository):
+        def advance_with_ai_judgement(
+            self,
+            command: AdvanceCommand,
+            claim: RuntimeClaim,
+            record: AiJudgementRecord,
+        ) -> tuple[int, bool]:
+            del command, claim, record
+            raise AutomationRuntimeError("AI_AUDIT_WRITE_FAILED")
+
+    repository = FailingAtomicRepository(_v3_state("NEWS_SCREENING", 3))
+    port = FakeRuntimePort(quotes={"005930": Quote("005930", 75_000, 52_500, 97_500)})
+
+    with pytest.raises(AutomationRuntimeError, match="AI_AUDIT_WRITE_FAILED"):
+        PersistentAutomationRunner(cast(Any, repository)).run_tick(
+            claim=_claim(),
+            tick_id="v3-audit-failure",
+            now=datetime(2026, 8, 28, 9, 30, tzinfo=_KST),
+            port=port,
+        )
+
+    assert repository.state["state"] == "NEWS_SCREENING"
+    assert repository.commands == []
+    assert repository.ai_judgements == []

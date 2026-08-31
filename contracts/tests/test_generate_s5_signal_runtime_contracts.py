@@ -163,7 +163,8 @@ class S5SignalRuntimeContractTest(unittest.TestCase):
                 "additive OpenAPI fragment drifted"
                 "|exact Automation/Journal addition"
                 "|approved exact-five V91 addition"
-                "|approved exact-seven RAG v2 addition",
+                "|approved exact-seven RAG v2 addition"
+                "|V3 projection changed",
             ):
                 verify_openapi_transition(path)
 

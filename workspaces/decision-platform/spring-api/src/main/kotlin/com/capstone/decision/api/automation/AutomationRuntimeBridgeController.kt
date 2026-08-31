@@ -2,6 +2,7 @@ package com.capstone.decision.api.automation
 
 import com.capstone.decision.api.brokerage.BrokerageRequestParser
 import com.capstone.decision.api.decision.DecisionRequestParser
+import com.capstone.decision.application.automation.AutomationEvidenceService
 import com.capstone.decision.application.brokerage.BrokerageActor
 import com.capstone.decision.application.brokerage.BrokerageService
 import com.capstone.decision.application.decision.DecisionActor
@@ -40,6 +41,7 @@ class AutomationRuntimeBridgeController(
     private val decisionParser: DecisionRequestParser,
     private val brokerageService: BrokerageService,
     private val brokerageParser: BrokerageRequestParser,
+    private val automationEvidenceService: AutomationEvidenceService,
     private val users: UserSecurityRepository,
     @Value("\${AUTOMATION_RUNTIME_SHARED_SECRET:}") private val configuredSecret: String,
 ) {
@@ -82,6 +84,8 @@ class AutomationRuntimeBridgeController(
                                 symbol = command.symbol(),
                                 estimatedPrice = command.positiveLong("estimatedPrice"),
                             )
+                        "NEWS_SCREEN" -> automationEvidenceService.screen(command.userId, command.payload)
+                        "JUDGE" -> automationEvidenceService.judge(command.userId, command.payload)
                         "SUBMIT" ->
                             brokerageService.submitMockOrder(
                                 actor = BrokerageActor(command.userId, actor.role.name, actor.securityVersion, requestId),
@@ -164,9 +168,9 @@ private class AutomationRuntimeBridgeParser {
                     .streamReadConstraints(
                         StreamReadConstraints
                             .builder()
-                            .maxNestingDepth(8)
-                            .maxDocumentLength(65_536)
-                            .maxTokenCount(160)
+                            .maxNestingDepth(10)
+                            .maxDocumentLength(262_144)
+                            .maxTokenCount(2_048)
                             .maxNumberLength(32)
                             .maxStringLength(16_384)
                             .maxNameLength(64)
@@ -210,7 +214,17 @@ private class AutomationRuntimeBridgeParser {
 
     private companion object {
         val ROOT_FIELDS = setOf("operation", "userId", "idempotencyKey", "payload")
-        val OPERATIONS = setOf("EVALUATE", "BALANCE", "BUYABLE", "SUBMIT", "ORDER", "CANCEL")
+        val OPERATIONS =
+            setOf(
+                "EVALUATE",
+                "BALANCE",
+                "BUYABLE",
+                "NEWS_SCREEN",
+                "JUDGE",
+                "SUBMIT",
+                "ORDER",
+                "CANCEL",
+            )
         val USER_ID = Regex("^usr_[A-Za-z0-9_-]{8,96}$")
         val IDEMPOTENCY = Regex("^[A-Za-z0-9._:-]{16,128}$")
     }

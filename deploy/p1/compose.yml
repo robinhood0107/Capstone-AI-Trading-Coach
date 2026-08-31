@@ -308,6 +308,7 @@ services:
       KIS_OFFLINE: "${P1_KIS_OFFLINE:-1}"
       KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "${P1_KIS_MOCK_ONLINE_ENABLED:-false}"
       P1_AUTOMATION_RUNTIME_ENABLED: "${P1_AUTOMATION_RUNTIME_ENABLED:-false}"
+      P1_AUTOMATION_EVIDENCE_FIXTURE_ENABLED: "false"
     secrets: [spring_env, python_env, kis_mock_env, return_inference_env, automation_runtime_env, rag_v2_env, vertex_service_account, rag_history_kek, actor_client_p12, actor_tls_ca]
     volumes:
       # 읽기 전용이다. entrypoint가 컨테이너 tmpfs로 복사해 소유권과 mode를 맞춘다.
@@ -474,6 +475,23 @@ services:
       P1_AUTOMATION_MARKET_BOOTSTRAP_ENABLED: "false"
       P1_DATA_ONLY_COLLECTOR_ENABLED: "false"
     secrets: [market_data_env, automation_runtime_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    <<: *app-security
+    restart: "no"
+    networks: [p1-data]
+
+  after-hours-replay:
+    profiles: [owner]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "after-hours-replay"]
+    command: ["python", "-m", "app.p1_owner.after_hours_replay_cli", "--help"]
+    secrets: [after_hours_replay_env]
+    volumes:
+      - ${P1_AFTER_HOURS_OUTPUT_ROOT:-/nonexistent}:/replay-output
+      - ${P1_AFTER_HOURS_OBSERVED_ANCHOR_ROOT:-/nonexistent}:/observed-anchors:ro
+      - ${P1_AFTER_HOURS_OBSERVED_ANCHOR_MANIFEST:-/nonexistent}:/observed-anchor-manifest.json:ro
     depends_on:
       postgres: {condition: service_healthy}
     <<: *app-security
@@ -701,6 +719,7 @@ secrets:
   automation_runtime_env: {file: "${P1_SECRETS_DIR}/automation-runtime.env"}
   automation_gate_author_env: {file: "${P1_SECRETS_DIR}/automation-gate-author.env"}
   market_data_env: {file: "${P1_SECRETS_DIR}/market-data.env"}
+  after_hours_replay_env: {file: "${P1_SECRETS_DIR}/after-hours-replay.env"}
   rag_v2_env: {file: "${P1_SECRETS_DIR}/rag-v2.env"}
   vertex_service_account: {file: "${P1_SECRETS_DIR}/pre-s5-vertex-service-account.json"}
   actor_tls_ca: {file: "${P1_SECRETS_DIR}/actor-tls-ca.crt"}

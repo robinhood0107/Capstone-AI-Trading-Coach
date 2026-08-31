@@ -18,6 +18,7 @@ from contracts.generate_principle_contracts import (  # noqa: E402
     canonical_json_bytes,
     load_json_bytes_strict,
 )
+from contracts.generated_artifact_io import write_generated_path  # noqa: E402
 
 OPENAPI_PATH: Final = ROOT / "contracts/openapi/openapi.json"
 ADDITIVE_PATH: Final = ROOT / "contracts/openapi/p1-automation-v3.v1.openapi.json"
@@ -56,6 +57,21 @@ def operations(document: Mapping[str, Any]) -> dict[tuple[str, str], str]:
             identifiers.add(operation_id)
             result[(path, method)] = operation_id
     return result
+
+
+def _semantic_schema(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            key: (
+                sorted(item)
+                if key == "required" and isinstance(item, list)
+                else _semantic_schema(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_semantic_schema(item) for item in value]
+    return value
 
 
 def merge_v3_openapi(
@@ -116,15 +132,18 @@ def project_pre_v3_openapi(
     schemas = _object(
         _object(projected.get("components"), "components").get("schemas"), "schemas"
     )
-    for name in _object(
+    additive_schemas = _object(
         _object(additive.get("components"), "additive components").get("schemas"),
         "additive schemas",
-    ):
+    )
+    for name, expected_schema in additive_schemas.items():
         if name not in schemas:
             raise ContractValidationError(
                 "V3 additive schema is missing before projection."
             )
-        schemas.pop(name)
+        actual_schema = schemas.pop(name)
+        if _semantic_schema(actual_schema) != _semantic_schema(expected_schema):
+            raise ContractValidationError(f"V3 additive schema drifted: {name}.")
     if len(operations(projected)) != 69:
         raise ContractValidationError("V3 projection must restore exact 69 operations.")
     if (
@@ -164,9 +183,19 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--openapi", type=Path, default=OPENAPI_PATH)
     parser.add_argument("--additive", type=Path, default=ADDITIVE_PATH)
+    parser.add_argument("--write", action="store_true")
     arguments = parser.parse_args()
     try:
-        verify_transition(arguments.openapi, arguments.additive)
+        if arguments.write:
+            current = _load(arguments.openapi)
+            additive = _load(arguments.additive)
+            if len(operations(current)) != 69:
+                raise ContractValidationError("--write requires pre-V3 exact-69 root.")
+            merged = merge_v3_openapi(current, additive)
+            project_pre_v3_openapi(merged, additive)
+            write_generated_path(ROOT, arguments.openapi, canonical_json_bytes(merged))
+        else:
+            verify_transition(arguments.openapi, arguments.additive)
     except (ContractValidationError, OSError) as error:
         print(f"P1_V3_AUTOMATION_OPENAPI_TRANSITION=FAIL: {error}")
         return 1

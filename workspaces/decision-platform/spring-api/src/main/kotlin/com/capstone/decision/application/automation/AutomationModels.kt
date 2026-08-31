@@ -126,6 +126,143 @@ data class AutomationPositionV2Page(
     val nextCursor: String?,
 )
 
+data class AutomationPolicyV3Projection(
+    val policyId: String,
+    val version: Int,
+    val presetId: String,
+    val capitalLimitKrw: Long,
+    val stopLossBps: Int,
+    val takeProfitBps: Int,
+    val maxHoldingSessions: Int,
+    val atrPeriod: Int,
+    val atrMultiplierMilli: Int,
+    val modelSellEnabled: Boolean,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+data class AutomationStatusV3Projection(
+    val controlState: String,
+    val projectionState: String,
+    val controlVersion: Int,
+    val accountId: String?,
+    val policy: AutomationPolicyV3Projection?,
+    val aiJudgementEnabled: Boolean,
+    val thinkingLevel: String,
+    val marketHistoryStatus: String,
+    val killSwitchActive: Boolean,
+    val certificationStatus: String,
+    val openPositionCount: Int,
+    val legacyOpenPositionCount: Int,
+    val unresolvedReconciliation: Boolean,
+    val canArm: Boolean,
+    val blockers: List<String>,
+)
+
+data class AutomationRunV3Projection(
+    val runId: String,
+    val sessionDate: LocalDate,
+    val state: String,
+    val brokerageMode: String,
+    val selectedSymbol: String?,
+    val selectedSide: String?,
+    val policyId: String?,
+    val policyVersion: Int?,
+    val orderQuantity: Long?,
+    val filledQuantity: Long?,
+    val leavesQuantity: Long?,
+    val limitPriceKrw: Long?,
+    val estimatedAmountKrw: Long?,
+    val exitReason: String?,
+    val physicalSubmitCount: Int,
+    val providerCalls: Int,
+    val screeningProviderCallCount: Int,
+    val groundingQueryCount: Int,
+    val judgeCallCount: Int,
+    val evidenceCount: Int,
+    val evidenceSetSha256: String?,
+    val aiSettingsSha256: String?,
+    val startedAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+data class AutomationRunV3Page(
+    val items: List<AutomationRunV3Projection>,
+    val nextCursor: String?,
+)
+
+data class AutomationRunDetailV3Projection(
+    val run: AutomationRunV3Projection,
+    val candidateScreenings: List<AutomationCandidateScreeningV3Projection>,
+)
+
+data class AutomationCandidateScreeningV3Projection(
+    val symbol: String,
+    val status: String,
+    val verdict: String,
+    val score: java.math.BigDecimal,
+    val reason: String,
+    val evidence: List<AutomationCandidateEvidenceV3Projection>,
+)
+
+data class AutomationCandidateEvidenceV3Projection(
+    val symbol: String,
+    val citationId: String,
+    val sourceId: String,
+    val sourceType: String,
+    val sourceEventDate: LocalDate?,
+    val ageWarning: Boolean,
+    val uriSha256: String,
+    val boundedQuote: String,
+    val quoteSha256: String,
+    val verified: Boolean,
+)
+
+data class AutomationPositionV3Projection(
+    val positionId: String,
+    val accountId: String,
+    val symbol: String,
+    val quantity: Long,
+    val entryAverageFillPriceKrw: Long,
+    val entrySession: LocalDate,
+    val expirySession: LocalDate?,
+    val policyId: String,
+    val policyVersion: Int,
+    val stopLossBps: Int,
+    val takeProfitBps: Int,
+    val maxHoldingSessions: Int,
+    val atrPeriod: Int,
+    val atrMultiplierMilli: Int,
+    val modelSellEnabled: Boolean,
+    val peakPriceKrw: Long,
+    val atrAsOfSession: LocalDate?,
+    val trailingStopKrw: Long?,
+    val status: String,
+    val exitReason: String?,
+    val botOwned: Boolean,
+    val shortAllowed: Boolean,
+    val createdAt: OffsetDateTime,
+    val closedAt: OffsetDateTime?,
+)
+
+data class PutAutomationPolicyV3Command(
+    val capitalLimitKrw: Long,
+    val stopLossBps: Int,
+    val takeProfitBps: Int,
+    val maxHoldingSessions: Int,
+    val atrPeriod: Int,
+    val atrMultiplierMilli: Int,
+    val modelSellEnabled: Boolean,
+    val expectedVersion: Int,
+)
+
+data class ArmAutomationV3Command(
+    val accountId: String,
+    val policyId: String,
+    val expectedPolicyVersion: Int,
+    val expectedControlVersion: Int,
+)
+
 data class PutAutomationPolicyV2Command(
     val capitalLimitKrw: Long,
     val stopLossBps: Int,
@@ -198,6 +335,36 @@ interface AutomationRepository {
     ): List<AutomationRunV2Projection>
 
     fun readPositionPageV2(ownerUserId: String): AutomationPositionV2Page
+
+    fun statusV3(ownerUserId: String): AutomationStatusV3Projection
+
+    fun putPolicyV3(
+        ownerUserId: String,
+        command: PutAutomationPolicyV3Command,
+        scopeHash: String,
+        requestHash: String,
+    ): AutomationPolicyV3Projection
+
+    fun armV3(
+        ownerUserId: String,
+        command: ArmAutomationV3Command,
+        scopeHash: String,
+        requestHash: String,
+        providerCapabilityReady: Boolean,
+    ): AutomationStatusV3Projection
+
+    fun listRunsV3(
+        ownerUserId: String,
+        limit: Int,
+        after: AutomationRunCursor?,
+    ): List<AutomationRunV3Projection>
+
+    fun readRunV3(
+        ownerUserId: String,
+        runId: String,
+    ): AutomationRunDetailV3Projection
+
+    fun readPositionsV3(ownerUserId: String): List<AutomationPositionV3Projection>
 }
 
 class AutomationConflictException(

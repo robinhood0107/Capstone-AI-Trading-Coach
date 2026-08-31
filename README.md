@@ -1,16 +1,13 @@
 # Capstone AI Trading Coach
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
-> **현재 상태 (2026-08-31):** Owner-First v3 계약이 잠겨 있고 root OpenAPI는 exact-69,
-> Team A backend는 exact-38입니다. 예산·가변수량·손절익절 자동운용과 그 앞에 선 AI 판단
-> (`STRONG_LLM_JUDGEMENT_AUTHORITY=CANDIDATE_RANK_VETO_SIZE_ONLY`)까지 구현됐고 마이그레이션은
-> V109까지입니다. 이날 XKRX 세션에서 KIS 모의 인증을 다시 받았고, 실체결 왕복과 청산 사유
-> 네 가지(만기·모델매도·손절·익절), 연속 세 세션 구동, 그리고 실제 Vertex 판단이 후보 1등을
-> 바꾼 run까지 관측했습니다. e2e 러너 12종과 전 게이트가 통과합니다. 아직 GitHub `1.0.0`
-> 최종 배포본은 아닙니다. **남은 것은 Team A 최종 UI와 Team B 실제 산출물 둘뿐이고**, 그 둘이
-> 오면 자동운용 활성화 게이트가 가정이 아니라 사실로 열립니다. 실계좌 주문 권한은 0입니다.
-> 현재 배포 계약은 `contracts/catalogs/p1-full-app-release-contract.v3.json`이며 이날 관측은
-> `docs/test/P1_장중_실물_검증_2026-08-31.md`에 있습니다.
+> **현재 상태 (2026-08-31):** Automation V3 구현 기준 root OpenAPI는 exact-75,
+> Team A handoff는 exact-45, migration은 V113입니다. 사용자 보유 만기·Wilder ATR trailing
+> stop·MODEL_SELL 설정과, 전체 후보를 먼저 검증하는 evidence-first AI 원장, 격리 장외 전수
+> replay가 추가됐습니다. 이 구현 자체는 live grounding, KIS read-only bootstrap, 장중 KIS Mock,
+> 실제 3-session soak를 PASS로 만들지 않습니다. 기존 8월 31일 관측 영수증은 legacy 기능의
+> 역사적 증거로 보존하며 V3 현재 실행 증거로 재사용하지 않습니다. 실계좌 주문 권한은 0이고
+> `P1_FINAL=NOT_READY`입니다.
 <!-- P1_FULL_APP_V3_AUTHORITY_END -->
 
 투자 원칙, 모델 예측, 백테스트, 위험 판정과 근거 자료를 한 화면에서 보고 한국투자증권 **모의투자**
@@ -27,9 +24,10 @@ flowchart TB
     PR["사용자 투자 원칙"]
   end
 
-  SEL["종목 선택<br/>두 모델이 함께 BUY인 것만"]
-  AIJ["AI 판단<br/>순위 · 거부 · 수량 축소"]
-  NEWS["뉴스 거부권<br/>Vertex + 근거 검증"]
+  SEL["BUY 후보 집합 봉인<br/>두 모델이 함께 BUY인 것만"]
+  ELIG["결정론적 결격 검사<br/>정지 · 관리 · 정리매매"]
+  NEWS["후보 전수 뉴스 screening<br/>저장 근거 + Google grounding"]
+  AIJ["AI 판단<br/>검증 근거가 있을 때만 순위 · 거부 · 수량 축소"]
   SIZE["수량 산정<br/>예산 · 슬롯 · 매수가능금액"]
   RISK["RiskEngine<br/>원칙 규칙 + 포트폴리오 지표"]
   SUB["주문 제출<br/>KIS 모의계좌, 지정가 1건"]
@@ -39,7 +37,7 @@ flowchart TB
 
   MD --> SEL
   TB --> SEL
-  SEL --> AIJ --> NEWS --> SIZE --> RISK --> SUB --> REC --> POS --> PNL
+  SEL --> ELIG --> NEWS --> AIJ --> SIZE --> RISK --> SUB --> REC --> POS --> PNL
   PR --> RISK
   POS -- "청산 사유 발생" --> SIZE
   PNL --> DASH["Dashboard"]
@@ -47,7 +45,7 @@ flowchart TB
   G1{{"게이트 1<br/>Team B 실제 산출물"}} -.-> TB
   G2{{"게이트 2<br/>online risk-balance"}} -.-> SIZE
   G3{{"게이트 3<br/>Vertex provider"}} -.-> NEWS
-  G4{{"provider 미설정 시<br/>AI 미참여로 계속"}} -.-> AIJ
+  G4{{"AI OFF<br/>screen/judge 0회"}} -.-> SIZE
 ```
 
 세션 하루는 09:30에 평가하고 09:40까지만 새 주문을 내며 15:20에 미체결을 취소합니다. 한 세션에
@@ -61,7 +59,7 @@ flowchart TB
 | Dashboard, 원칙, 위험 판정, 저널 | 동작 | 외부 호출 없음 |
 | RAG 검색·근거 표시 | 동작 | 로컬 BGE-M3 임베딩 |
 | RAG 생성형 답변(Vertex·Voyage) | 서비스계정이 있으면 동작 | 없으면 검색만 켜고 뜬다 |
-| AI 판단(순위·거부·수량 축소) | 동작 | provider가 없거나 답하지 못하면 "AI 미참여"를 남기고 규칙대로 간다 |
+| AI 판단(근거 screening·순위·거부·수량 축소) | 구현, 기본 OFF | AI OFF는 provider 0회 규칙 경로. AI ON은 provider/credential/budget이 없으면 arm 또는 신규매수를 차단 |
 | Strong LLM 설정 화면 | 동작 | provider·모델·언어·하루 횟수. 키는 마지막 네 글자만 보인다 |
 | Team B 신호 | 미리보기 | 실제 산출물 수신 전 |
 | KIS 모의계좌 시세·잔고·주문 | 동작 | `mock` 명령으로만 |
@@ -225,19 +223,16 @@ Team A와 Team B는 `mock configure`나 `mock certify`를 실행하지 않습니
 
 ## 최종 배포 전에 남은 일
 
-**남은 것은 1과 2뿐입니다.** 나머지는 2026-08-31 XKRX 세션에서 닫혔습니다.
+1. Team A가 exact-45 화면 계약을 실제 Spring과 연결하고 근거 상세 UI를 증명합니다.
+2. Team B가 기존 exact-10 계약의 실제 모델·백테스트 산출물을 전달합니다.
+3. 별도 승인을 받아 exact-31 KIS Live read-only bootstrap과 historical replay를 수행합니다.
+4. 별도 승인을 받아 Google grounding probe와 실제 장중 KIS Mock 주문·대사를 수행합니다.
+5. 실제 날짜가 지난 뒤 연속 3 XKRX session soak를 별도 PASS로 닫습니다.
+6. 전체 CI, fresh clone, restore, 공급망 검증과 post-merge main CI 뒤에만 최종 배포를 승인합니다.
 
-1. Team A가 명세에 배정된 화면 API를 실제 Spring과 연결하고 성공 응답을 각각 증명합니다.
-2. Team B가 계약된 입력으로 실제 모델·백테스트 결과 10개를 만들어 전달합니다.
-3. Owner가 Team B 결과를 적재하고 자동운용 게이트를 실제 산출물로 다시 저술합니다.
-   경로는 이미 검증돼 있습니다 — [최종 요청서 4절](docs/handoff/P1_최종_요청서_2026-08-31.md)에
-   명령 그대로 있습니다.
-4. 두 산출물이 모두 들어온 뒤 거래시간에 자동운용을 arm 하고 한 세션 이상 무사고를 확인합니다.
-5. PR 병합, main CI, 새 폴더에서 `git pull` 재현을 확인한 뒤에만 최종 배포를 승인합니다.
-
-이미 닫힌 것: KIS 모의 인증, 실체결 왕복, 청산 사유 네 가지, 연속 세 세션 구동, 실제 Vertex
-판단이 후보 1등을 바꾼 run, Team A acceptance(operation 38), e2e 13종, 수집기 표면
-(KRX·ECOS 실호출), 전 게이트.
+장외 replay 명령과 게이트 구분은
+[P1 장외 전수 replay](docs/decision-platform/P1_AFTER_HOURS_FULL_REPLAY.md), V3 판단/청산 규칙은
+[Automation V3 설계](docs/decision-platform/P1_AUTOMATION_V3_AI_EVIDENCE_EXIT_POLICY.md)를 따릅니다.
 
 ```text
 CODEX_SECURITY_DEEP_SCAN=NOT_RUN_USER_SCOPED_OUT

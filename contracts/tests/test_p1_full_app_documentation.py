@@ -27,6 +27,7 @@ FULL_APP_DOCUMENTS = (
     "docs/decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md",
     "docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md",
     "docs/decision-platform/P1_API_USAGE_MATRIX.md",
+    "docs/decision-platform/P1_API_USAGE_MATRIX_V3_ADDENDUM.md",
     "docs/decision-platform/P1_TEAM_A_B_수신_후_통합_체크리스트.md",
     "docs/decision-platform/P1_OWNER_선행_완료_체크리스트.md",
     "docs/decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md",
@@ -85,6 +86,12 @@ TEAM_A_REQUIRED_OPERATIONS = frozenset(
         ("POST", "/api/v2/automation/arm"),
         ("GET", "/api/v2/automation/runs"),
         ("GET", "/api/v2/automation/positions"),
+        ("GET", "/api/v3/automation/status"),
+        ("PUT", "/api/v3/automation/policy"),
+        ("POST", "/api/v3/automation/arm"),
+        ("GET", "/api/v3/automation/runs"),
+        ("GET", "/api/v3/automation/runs/{runId}"),
+        ("GET", "/api/v3/automation/positions"),
     }
 )
 OPTIONAL_PRODUCT_OPERATIONS = frozenset(
@@ -246,7 +253,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             for method in path_item
             if method in methods
         ]
-        self.assertEqual(69, len(operations))
+        self.assertEqual(75, len(operations))
         operation_ids = [operation_id for _, _, operation_id in operations]
         self.assertTrue(
             all(
@@ -254,23 +261,35 @@ class P1FullAppDocumentationTest(unittest.TestCase):
                 for operation_id in operation_ids
             )
         )
-        self.assertEqual(69, len(set(operation_ids)))
+        self.assertEqual(75, len(set(operation_ids)))
         expected = {(method, path) for method, path, _ in operations}
 
         matrix = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX.md").read_text(
             encoding="utf-8"
         )
-        rows = re.findall(
+        base_rows = re.findall(
             r"^\|\s*(\d+)\s*\|\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s*"
             r"\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|",
             matrix,
             flags=re.MULTILINE,
         )
-        self.assertEqual(69, len(rows))
-        self.assertEqual(
-            list(range(1, 70)), sorted(int(number) for number, _, _, _ in rows)
+        addendum = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX_V3_ADDENDUM.md").read_text(
+            encoding="utf-8"
         )
-        self.assertEqual(69, len({(method, path) for _, method, path, _ in rows}))
+        additive_rows = re.findall(
+            r"^\|\s*(\d+)\s*\|\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s*"
+            r"\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|",
+            addendum,
+            flags=re.MULTILINE,
+        )
+        self.assertEqual(69, len(base_rows))
+        self.assertEqual(6, len(additive_rows))
+        rows = [*base_rows, *additive_rows]
+        self.assertEqual(75, len(rows))
+        self.assertEqual(
+            list(range(1, 76)), sorted(int(number) for number, _, _, _ in rows)
+        )
+        self.assertEqual(75, len({(method, path) for _, method, path, _ in rows}))
         self.assertEqual(expected, {(method, path) for _, method, path, _ in rows})
 
         observed_by_classification = {

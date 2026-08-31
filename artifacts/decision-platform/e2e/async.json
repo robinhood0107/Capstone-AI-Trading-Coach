@@ -2,7 +2,7 @@
   "contractId": "p1-async-e2e.v1",
   "steps": [
     {
-      "detail": "작업 12→13 상태분포=[COMPLETED=13] 마지막 출력=P1_CONTAINER_ASYNC_E2E=PASS JOB=job_p1_container_db_425cadee9884c71006e35f9c2036dcc0",
+      "detail": "작업 16→17 상태분포=[COMPLETED=17] 마지막 출력=P1_CONTAINER_ASYNC_E2E=PASS JOB=job_p1_container_db_8b86e91ee97f1ce652e9be5505a3dc35",
       "name": "DB 비동기 레인",
       "verdict": "PASS"
     },

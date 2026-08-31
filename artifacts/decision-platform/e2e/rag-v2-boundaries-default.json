@@ -27,23 +27,28 @@
       "verdict": "PASS"
     },
     {
-      "detail": "RAG_V2_VERTEX_ENABLED=false model=gemini-3.5-flash (이 값이 아래 실검색의 기대 상태를 정한다)",
+      "detail": "RAG_V2_VERTEX_ENABLED=true 자동저술=true model=gemini-3.5-flash (이 값들이 아래 질의의 기대 상태를 정한다)",
       "name": "생성 활성화 관측",
       "verdict": "INFO"
     },
     {
-      "detail": "HTTP 409 code=EXTERNAL_AI_CONSENT_REQUIRED guardrail=[] 예약 20→20 (생성 비활성 상태: consent 자리에서 typed 409로 닫힌다)",
+      "detail": "HTTP 409 code=EXTERNAL_AI_CONSENT_REQUIRED guardrail=[] 예약 83→83 (자동 저술 상태: 준비 단계의 consent 확인에서 typed 409로 닫힌다)",
       "name": "동의 없는 질의는 물리 호출 0",
       "verdict": "PASS"
     },
     {
-      "detail": "HTTP 200 RETRIEVAL_ONLY 인용 5건 예약 20→21 guardrail=[] (생성 비활성 상태: 검색 전용 답변에 인용이 실린다)",
+      "detail": "HTTP 200 GENERATION_UNAVAILABLE 인용 0건 예약 83→84 guardrail=['GENERATION_UNAVAILABLE'] (생성 활성화 상태: 검색은 돌고 생성만 닫힌다. 답변은 인용을 싣지 않는다)",
       "name": "실검색 1회",
       "verdict": "PASS"
     },
     {
       "detail": "--with-vertex-generation 없이는 돌리지 않는다. provider 물리 호출을 쓰는 단계다",
       "name": "생성형 답변 1회",
+      "verdict": "INFO"
+    },
+    {
+      "detail": "--with-vertex-generation 없이는 돌리지 않는다. provider 물리 호출을 쓰는 단계다",
+      "name": "대시보드 경로 생성",
       "verdict": "INFO"
     }
   ],

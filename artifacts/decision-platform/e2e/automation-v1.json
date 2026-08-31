@@ -12,7 +12,7 @@
       "verdict": "PASS"
     },
     {
-      "detail": "HTTP 409 CONFLICT 버전 4→4",
+      "detail": "HTTP 409 CONFLICT 버전 7→7",
       "name": "낡은 버전은 거절된다",
       "verdict": "PASS"
     },

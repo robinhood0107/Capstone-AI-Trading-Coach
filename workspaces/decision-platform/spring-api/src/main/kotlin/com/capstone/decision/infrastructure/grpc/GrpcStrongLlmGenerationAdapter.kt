@@ -31,6 +31,7 @@ import io.grpc.stub.MetadataUtils
 import io.grpc.stub.StreamObserver
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import tools.jackson.databind.json.JsonMapper
@@ -54,7 +55,7 @@ internal class GrpcStrongLlmGenerationAdapter(
     private val usageLedger: S49StrongLlmUsageV2Port,
     private val completion: S49StrongLlmCompletionPort,
     private val groundingProvenance: S49GroundingProvenancePort,
-    private val researchTools: ResearchToolFacade,
+    private val researchToolsProvider: ObjectProvider<ResearchToolFacade>,
     private val clock: Clock = Clock.systemUTC(),
 ) : RagV2VertexGenerationPort {
     private val validator = RagV2VertexResponseValidator()
@@ -82,9 +83,15 @@ internal class GrpcStrongLlmGenerationAdapter(
     override fun isActivationEnabled(): Boolean = true
 
     override fun generate(command: RagV2VertexGenerationCommand): RagV2VertexGenerationResult {
+        if (command.evidence.any { it.ownerPrivate }) {
+            require(command.consent.effective)
+            require(command.consent.policyDigest == strongLlmProperties.ownerConsentPolicySha256)
+            require(command.consent.processorSetDigest == strongLlmProperties.ownerConsentProcessorSetSha256)
+        }
         val runId = "s49_run_${sha256(command.requestId).take(32)}"
-        researchTools.openSession(runId)
-        researchTools.registerUserRoots(runId, command.question)
+        val researchTools = researchToolsProvider.getIfAvailable()
+        researchTools?.openSession(runId)
+        researchTools?.registerUserRoots(runId, command.question)
         val googlePermit = googleBudget.reserve(command.ownerUserId, command.requestId)
         val inbound = LinkedBlockingQueue<AgentEvent>()
         val terminalError = AtomicReference<Throwable?>()
@@ -139,10 +146,11 @@ internal class GrpcStrongLlmGenerationAdapter(
                         )
                     }
                     AgentEvent.PayloadCase.WEB_SEARCH -> {
+                        val tools = researchTools ?: throw S49SearchUnavailableException("S4_9_SEARCH_DISABLED")
                         val searchCalls = hostBudget.permitSearch()
                         val results =
                             try {
-                                researchTools.search(runId, event.webSearch.query)
+                                tools.search(runId, event.webSearch.query)
                             } catch (error: S49SearchUnavailableException) {
                                 groundingProvenance.recordSearch(
                                     command.ownerUserId,
@@ -177,8 +185,9 @@ internal class GrpcStrongLlmGenerationAdapter(
                         )
                     }
                     AgentEvent.PayloadCase.WEB_READ -> {
+                        val tools = researchTools ?: throw S49SearchUnavailableException("S4_9_READ_DISABLED")
                         val readCalls = hostBudget.permitRead()
-                        val result = researchTools.read(runId, event.webRead.resultId, null)
+                        val result = tools.read(runId, event.webRead.resultId, null)
                         // 공개 계약의 citation 최대 5개를 유지하려고 웹 근거가 낮은 rank의 local slot부터 대체한다.
                         // 아래 validationEvidence 결합이 같은 ID의 local 원문을 제거하므로 exact quote는 웹 원문 하나에만 결속된다.
                         val citationId = "cit_${6 - readCalls}".takeIf { readCalls <= 5 }
@@ -242,7 +251,8 @@ internal class GrpcStrongLlmGenerationAdapter(
                             ),
                         )
                     }
-                    AgentEvent.PayloadCase.REGISTER_GROUNDING_ROOTS -> registerGrounding(runId, event.registerGroundingRoots.rootsList)
+                    AgentEvent.PayloadCase.REGISTER_GROUNDING_ROOTS ->
+                        registerGrounding(runId, event.registerGroundingRoots.rootsList, researchTools)
                     AgentEvent.PayloadCase.COMPLETED -> completed = event.completed
                     AgentEvent.PayloadCase.FAILED -> throw IllegalStateException(event.failed.failureLeaf)
                     else -> throw IllegalStateException("STRONG_LLM_GRPC_EVENT_INVALID")
@@ -251,7 +261,7 @@ internal class GrpcStrongLlmGenerationAdapter(
             requestObserver.onCompleted()
             val result = requireNotNull(completed)
             hostBudget.verifyCompleted(result.vertexGenerateCallCount, result.searchBackend)
-            registerGrounding(runId, result.groundingRootsList)
+            registerGrounding(runId, result.groundingRootsList, researchTools)
             if (result.groundingRootsCount > 0) {
                 groundingProvenance.record(
                     command.ownerUserId,
@@ -368,7 +378,7 @@ internal class GrpcStrongLlmGenerationAdapter(
                 failureCode = "GENERATION_UNAVAILABLE",
             )
         } finally {
-            researchTools.closeSession(runId)
+            researchTools?.closeSession(runId)
         }
     }
 
@@ -393,6 +403,9 @@ internal class GrpcStrongLlmGenerationAdapter(
                 .setMaxToolRounds(3)
                 .setCurrentTime(DateTimeFormatter.ISO_INSTANT.format(clock.instant()))
                 .setTimezone(ZoneId.systemDefault().id)
+                .setLanguage("ko")
+                .setMode("EXPLAIN")
+                .setThinkingLevel("low")
                 .build()
         return HostEvent
             .newBuilder()
@@ -451,9 +464,10 @@ internal class GrpcStrongLlmGenerationAdapter(
     private fun registerGrounding(
         runId: String,
         roots: List<com.capstone.decision.contract.internal.s49.GroundingRoot>,
+        researchTools: ResearchToolFacade?,
     ) {
         roots.take(5).forEach { root ->
-            researchTools.registerGoogleGrounding(runId, root.resultId, root.title, root.uri, root.domain)
+            researchTools?.registerGoogleGrounding(runId, root.resultId, root.title, root.uri, root.domain)
         }
     }
 
@@ -542,7 +556,7 @@ internal class StrongLlmHostBudget {
                 ensure(route == null && providerCalls == 0, "STRONG_LLM_HOST_PROVIDER_PHASE_INVALID")
                 route = Route.GOOGLE
             }
-            "OWNER_FINAL" -> {
+            "GROUNDED_FINAL", "OWNER_FINAL" -> {
                 ensure(route == Route.GOOGLE && providerCalls == 1, "STRONG_LLM_HOST_PROVIDER_PHASE_INVALID")
                 finalPlanned = true
             }

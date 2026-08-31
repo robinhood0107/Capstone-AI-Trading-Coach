@@ -18,7 +18,6 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-import exchange_calendars as xcals
 import pandas as pd
 import psycopg
 import pyarrow as pa
@@ -27,6 +26,7 @@ from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 
 from app.data._shared.canonical_json import canonical_json_bytes, canonical_json_sha256
+from app.data.calendar.xkrx_policy import corrected_calendar
 from app.data.kis.http_client import KISHttpClient
 from app.data.kis.market_client import KISMarketClient
 from app.data.kis.parsers import DailyBar
@@ -153,13 +153,16 @@ def build_bootstrap_plan(
     universe: UniverseManifest,
     *,
     end_session: date,
+    session_count: int = SESSION_COUNT,
 ) -> AutomationBootstrapPlan:
-    """Build exact-31, exact-1,260, fixed-100-session request windows with no I/O."""
+    """Build exact-31 and up-to-1,260 fixed-100-session request windows with no I/O."""
 
     if version("exchange-calendars") != "4.13.2":
         raise AutomationBootstrapError("automation bootstrap XKRX version drifted")
     if universe.limit != 30 or len(universe.symbols) != 30:
         raise AutomationBootstrapError("automation bootstrap requires exact 30 ranked KRX members")
+    if isinstance(session_count, bool) or not 23 <= session_count <= SESSION_COUNT:
+        raise AutomationBootstrapError("automation bootstrap session count is invalid")
     ranks = [item.rank for item in universe.symbols]
     symbols = [item.symbol for item in universe.symbols]
     if ranks != list(range(1, 31)) or len(set(symbols)) != 30:
@@ -174,16 +177,16 @@ def build_bootstrap_plan(
     if len(universe.source_sha256) != 64:
         raise AutomationBootstrapError("automation bootstrap universe receipt is invalid")
 
-    calendar = xcals.get_calendar("XKRX")
+    calendar = corrected_calendar()
     try:
         end = calendar.date_to_session(pd.Timestamp(end_session), direction="none")
-        raw_sessions = calendar.sessions_window(end, -SESSION_COUNT)
+        raw_sessions = calendar.sessions_window(end, -session_count)
     except Exception as error:
         raise AutomationBootstrapError(
             "automation bootstrap session window is unavailable"
         ) from error
     sessions = tuple(item.date() for item in raw_sessions)
-    if len(sessions) != SESSION_COUNT or sessions[-1] != end_session:
+    if len(sessions) != session_count or sessions[-1] != end_session:
         raise AutomationBootstrapError("automation bootstrap session window drifted")
 
     members = tuple(
@@ -198,12 +201,13 @@ def build_bootstrap_plan(
             sessions[offset : offset + WINDOW_SIZE],
         )
         for member in members
-        for ordinal, offset in enumerate(range(0, SESSION_COUNT, WINDOW_SIZE), start=1)
+        for ordinal, offset in enumerate(range(0, session_count, WINDOW_SIZE), start=1)
     )
-    if len(windows) != KIS_DAILY_PHYSICAL_MAX:
+    expected_kis_calls = UNIVERSE_SIZE * ((session_count + WINDOW_SIZE - 1) // WINDOW_SIZE)
+    if len(windows) != expected_kis_calls or expected_kis_calls > KIS_DAILY_PHYSICAL_MAX:
         raise AutomationBootstrapError("automation bootstrap KIS window cap drifted")
     provider_caps = {
-        "kisDaily": KIS_DAILY_PHYSICAL_MAX,
+        "kisDaily": expected_kis_calls,
         "kisToken": KIS_TOKEN_PHYSICAL_MAX,
         "krxMembership": KRX_MEMBERSHIP_PHYSICAL_MAX,
         "retry": 0,
@@ -214,7 +218,7 @@ def build_bootstrap_plan(
         "membership": [member.symbol for member in members],
         "membershipMonth": end_session.strftime("%Y-%m"),
         "providerCaps": provider_caps,
-        "requestedSessionCount": SESSION_COUNT,
+        "requestedSessionCount": session_count,
         "sourceSha256": universe.source_sha256,
         "windows": [
             {
@@ -327,7 +331,7 @@ def collect_automation_bootstrap(
             "krxMembership": krx_membership_physical_calls,
         },
         "rawProviderResponseStored": False,
-        "requestedSessionCount": SESSION_COUNT,
+        "requestedSessionCount": len(plan.sessions),
         "sourcePathPersisted": False,
     }
     manifest_sha = canonical_json_sha256(manifest_without_sha)
@@ -600,7 +604,12 @@ class KisAutomationBootstrapSource:
     def from_environment(cls) -> KisAutomationBootstrapSource:
         if os.environ.get("P1_AUTOMATION_MARKET_BOOTSTRAP_ENABLED", "false").lower() != "true":
             raise AutomationBootstrapError("automation live market bootstrap is disabled")
-        settings = KISSettings(kis_mode="live", kis_offline=False, kis_retry_attempts=1)
+        mode = os.environ.get("P1_AUTOMATION_MARKET_BOOTSTRAP_KIS_MODE", "live").lower()
+        if mode not in {"mock", "live"}:
+            raise AutomationBootstrapError("automation market bootstrap KIS mode is invalid")
+        if mode == "mock" and os.environ.get("KIS_MOCK_CONFIGURED", "false").lower() != "true":
+            raise AutomationBootstrapError("automation mock market bootstrap is not configured")
+        settings = KISSettings(kis_mode=cast(Any, mode), kis_offline=False, kis_retry_attempts=1)
         http = KISHttpClient(settings)
         return cls(KISMarketClient(settings, http, page_size=100))
 

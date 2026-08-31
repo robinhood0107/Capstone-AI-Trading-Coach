@@ -27,7 +27,8 @@ Usage:
   ./capstone mock <configure|doctor|certify|readiness|gate-author|start|stop> [--symbol 005930] [--quantity 1]
   ./capstone artifact <validate|import> <bundle-directory> --manifest-sha256 <sha256>
   ./capstone market-data inventory
-  ./capstone market-data bootstrap <plan|validate|stage> ...
+  ./capstone market-data universe refresh --as-of YYYY-MM-DD --output-root /absolute/new-root
+  ./capstone market-data bootstrap <plan|run|validate|stage> ...
   ./capstone test after-hours-replay --manifest-sha256 <sha256>
   ./capstone team-a acceptance
 
@@ -40,6 +41,7 @@ EOF
 compose() {
   [[ -n $DOCKER_BIN ]] || die MISSING_COMMAND_docker
   enable_rag_by_default
+  enable_strong_llm_by_default
   export P1_OPERATOR_UID=${P1_OPERATOR_UID:-$(id -u)}
   export P1_KIS_MOCK_RUNTIME_DIR=${P1_KIS_MOCK_RUNTIME_DIR:-$STATE_DIR/mock}
   local args=("$DOCKER_BIN" compose --project-name "$PROJECT_NAME")
@@ -169,6 +171,15 @@ upgrade_state() {
       "$market_writer_password" | write_state secrets/market-data.env 0640
     unset market_writer_password
   fi
+  # 시장데이터 collector에는 API key/secret과 Redis token cache만 전달한다. 계좌번호·주문 key를
+  # 포함한 kis-mock.env 전체를 마운트하지 않는다.
+  {
+    grep -E '^(KIS_MOCK_CONFIGURED|KIS_MOCK_APP_KEY|KIS_MOCK_APP_SECRET)=' "$SECRETS_DIR/kis-mock.env"
+    grep -E '^REDIS_PASSWORD=' "$SECRETS_DIR/redis.env"
+    if [[ -f $REPO_ROOT/.env && ! -L $REPO_ROOT/.env ]]; then
+      grep -E '^(KIS_LIVE_APP_KEY|KIS_LIVE_APP_SECRET|KRX_OPENAPI_AUTH_KEY)=' "$REPO_ROOT/.env" || true
+    fi
+  } | write_state secrets/market-data-provider.env 0640
   if [[ ! -e $SECRETS_DIR/after-hours-replay.env ]]; then
     local replay_reader_password
     replay_reader_password=$(sed -n 's/^POSTGRES_REPLAY_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
@@ -354,6 +365,21 @@ enable_rag_by_default() {
     printf 'CAPSTONE_RAG_DEFAULT=ON_WITH_GENERATION\n'
   else
     printf 'CAPSTONE_RAG_DEFAULT=ON_RETRIEVAL_ONLY\n'
+  fi
+}
+
+enable_strong_llm_by_default() {
+  [[ -n ${P1_STRONG_LLM_ENABLED:-} ]] && return 0
+  if [[ -f $SECRETS_DIR/pre-s5-vertex-service-account.json &&
+        ! -L $SECRETS_DIR/pre-s5-vertex-service-account.json ]] &&
+     grep -q '^STRONG_LLM_GRPC_SHARED_SECRET=.' "$SECRETS_DIR/rag-v2.env" 2>/dev/null; then
+    export P1_STRONG_LLM_ENABLED=true
+    if [[ -z ${P1_GOOGLE_BILLING_ACCOUNT_FINGERPRINT:-} ]]; then
+      P1_GOOGLE_BILLING_ACCOUNT_FINGERPRINT=$(sha256sum "$SECRETS_DIR/pre-s5-vertex-service-account.json" | cut -d' ' -f1)
+      export P1_GOOGLE_BILLING_ACCOUNT_FINGERPRINT
+    fi
+  else
+    export P1_STRONG_LLM_ENABLED=false
   fi
 }
 
@@ -789,16 +815,82 @@ market_data_inventory() {
     python -m app.data.market_data.automation_bootstrap_cli inventory
 }
 
+market_data_universe_refresh() {
+  local as_of=${1:-} output_root=${2:-}
+  [[ $# == 2 ]] || die MARKET_DATA_UNIVERSE_REFRESH_ARGUMENTS
+  [[ $as_of =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die MARKET_DATA_END_SESSION
+  [[ $output_root == /* && ! -e $output_root ]] || die MARKET_DATA_OUTPUT_ROOT
+  local output_parent=${output_root%/*}; [[ -n $output_parent ]] || output_parent=/
+  [[ $output_parent != / && -d $output_parent && ! -L $output_parent ]] || die MARKET_DATA_OUTPUT_PARENT
+  state_ready || die NOT_INITIALIZED
+  upgrade_state
+  install -d -m 0700 "$output_root"
+  compose --profile owner run --rm --no-deps \
+    --user "$(id -u):$(id -g)" -e "P1_OPERATOR_UID=$(id -u)" \
+    -v "$output_root:/app/data/universe-refresh" \
+    market-data-cli python -m app.data.krx.universe_refresh_cli \
+      --online --as-of "$as_of" \
+      --data-dir /app/data/universe-refresh \
+      --report-path /app/data/universe-refresh/universe_refresh.md
+}
+
 market_data_bootstrap_plan() {
-  local manifest=${1:-} end_session=${2:-} parent name
-  [[ $# == 2 ]] || die MARKET_DATA_PLAN_ARGUMENTS
+  local manifest=${1:-} end_session=${2:-} session_count=${3:-1260} parent name
+  [[ $# == 3 ]] || die MARKET_DATA_PLAN_ARGUMENTS
   [[ $manifest == /* && -f $manifest && ! -L $manifest ]] || die MARKET_DATA_UNIVERSE_MANIFEST
   [[ $end_session =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die MARKET_DATA_END_SESSION
+  [[ $session_count =~ ^[0-9]+$ ]] || die MARKET_DATA_SESSION_COUNT
   parent=${manifest%/*}; [[ -n $parent ]] || parent=/
   name=${manifest##*/}
-  compose --profile owner run --rm --no-deps -v "$parent:/owner-input:ro" market-data-cli \
+  compose --profile owner run --rm --no-deps \
+    --user "$(id -u):$(id -g)" -e "P1_OPERATOR_UID=$(id -u)" \
+    -v "$parent:/owner-input:ro" market-data-cli \
     python -m app.data.market_data.automation_bootstrap_cli plan \
-      --universe-manifest "/owner-input/$name" --end-session "$end_session"
+      --universe-manifest "/owner-input/$name" --end-session "$end_session" \
+      --session-count "$session_count"
+}
+
+market_data_bootstrap_run() {
+  local packet=${1:-} manifest=${2:-} end_session=${3:-} session_count=${4:-1260} output_root=${5:-}
+  local packet_parent packet_name manifest_parent manifest_name output_parent output_name kis_mode
+  [[ $# == 5 ]] || die MARKET_DATA_RUN_ARGUMENTS
+  [[ $packet == /* && -f $packet && ! -L $packet ]] || die MARKET_DATA_APPROVAL_PACKET
+  [[ $manifest == /* && -f $manifest && ! -L $manifest ]] || die MARKET_DATA_UNIVERSE_MANIFEST
+  [[ $end_session =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die MARKET_DATA_END_SESSION
+  [[ $session_count =~ ^[0-9]+$ ]] || die MARKET_DATA_SESSION_COUNT
+  [[ $output_root == /* && ! -e $output_root ]] || die MARKET_DATA_OUTPUT_ROOT
+  output_parent=${output_root%/*}; [[ -n $output_parent ]] || output_parent=/
+  output_name=${output_root##*/}
+  [[ $output_parent != / && -d $output_parent && ! -L $output_parent ]] || die MARKET_DATA_OUTPUT_PARENT
+  [[ $output_name != . && $output_name != .. && -n $output_name ]] || die MARKET_DATA_OUTPUT_NAME
+  packet_parent=${packet%/*}; [[ -n $packet_parent ]] || packet_parent=/
+  packet_name=${packet##*/}
+  manifest_parent=${manifest%/*}; [[ -n $manifest_parent ]] || manifest_parent=/
+  manifest_name=${manifest##*/}
+  kis_mode=$(python3 - "$packet" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+value = json.loads(Path(sys.argv[1]).read_bytes()).get("kisMode")
+if value not in {"mock", "live"}:
+    raise SystemExit(1)
+print(value)
+PY
+  ) || die MARKET_DATA_PACKET_MODE
+  compose --profile owner run --rm --no-deps \
+    --user "$(id -u):$(id -g)" -e "P1_OPERATOR_UID=$(id -u)" \
+    -e P1_AUTOMATION_MARKET_BOOTSTRAP_ENABLED=true \
+    -e "P1_AUTOMATION_MARKET_BOOTSTRAP_KIS_MODE=$kis_mode" \
+    -v "$packet_parent:/approval:ro" \
+    -v "$manifest_parent:/owner-input:ro" \
+    -v "$output_parent:/owner-output" \
+    market-data-cli python -m app.data.market_data.automation_bootstrap_cli run \
+      --approval-packet "/approval/$packet_name" \
+      --universe-manifest "/owner-input/$manifest_name" \
+      --end-session "$end_session" \
+      --session-count "$session_count" \
+      --output-root "/owner-output/$output_name"
 }
 
 market_data_bootstrap_archive() {
@@ -813,7 +905,9 @@ market_data_bootstrap_archive() {
     upgrade_state
     compose ps --status running --services | grep -qx postgres || die MARKET_DATA_POSTGRES_NOT_RUNNING
   fi
-  compose --profile owner run --rm --no-deps -v "$parent:/owner-input:ro" market-data-cli \
+  compose --profile owner run --rm --no-deps \
+    --user "$(id -u):$(id -g)" -e "P1_OPERATOR_UID=$(id -u)" \
+    -v "$parent:/owner-input:ro" market-data-cli \
     python -m app.data.market_data.automation_bootstrap_cli "$action" \
       --archive-root "/owner-input/$name" --expected-manifest-sha256 "$expected"
 }
@@ -821,7 +915,10 @@ market_data_bootstrap_archive() {
 after_hours_replay() {
   local manifest_sha=${1:-}
   [[ $manifest_sha =~ ^[0-9a-f]{64}$ ]] || die AFTER_HOURS_REPLAY_MANIFEST_SHA256
-  [[ $PROJECT_NAME == capstone-p1-after-hours-replay ]] || die AFTER_HOURS_REPLAY_PROJECT_ISOLATION
+  if [[ $PROJECT_NAME != capstone-p1-after-hours-replay ]]; then
+    [[ $PROJECT_NAME == capstone-p1 && ${P1_AFTER_HOURS_REPLAY_READONLY_CURRENT:-false} == true ]] \
+      || die AFTER_HOURS_REPLAY_PROJECT_ISOLATION
+  fi
   state_ready || die NOT_INITIALIZED
   upgrade_state
   compose ps --status running --services | grep -qx postgres || die AFTER_HOURS_REPLAY_POSTGRES_NOT_RUNNING
@@ -829,9 +926,18 @@ after_hours_replay() {
   export P1_AFTER_HOURS_OBSERVED_ANCHOR_ROOT=$REPO_ROOT/artifacts/decision-platform/live-rehearsal
   export P1_AFTER_HOURS_OBSERVED_ANCHOR_MANIFEST=$REPO_ROOT/contracts/catalogs/p1-after-hours-observed-anchors.v1.json
   install -d -m 0700 "$P1_AFTER_HOURS_OUTPUT_ROOT"
-  compose --profile owner run --rm --no-deps after-hours-replay \
-    python -m app.p1_owner.after_hours_replay_cli \
-      --manifest-sha256 "$manifest_sha" --output-root /replay-output
+  compose --profile owner run --rm --no-deps \
+    --user "$(id -u):$(id -g)" -e "P1_OPERATOR_UID=$(id -u)" \
+    -e P1_AFTER_HOURS_HISTORICAL_REPLAY_E2E=1 \
+    -e PYTHONPATH=/app:/app/workspaces/decision-platform/python-services \
+    -v "$REPO_ROOT/workspaces/decision-platform/python-services/tests:/app/workspaces/decision-platform/python-services/tests:ro" \
+    after-hours-replay \
+    python -m tests.e2e.after_hours_historical_replay_e2e \
+      --manifest-sha256 "$manifest_sha" \
+      --out /replay-output/after-hours-historical-replay-e2e.json \
+      --replay-output-root /replay-output \
+      --observed-anchor-root /observed-anchors \
+      --observed-anchor-manifest /observed-anchor-manifest.json
 }
 
 command=${1:-}
@@ -878,6 +984,14 @@ case $command in
     subcommand=${1:-}; [[ -n $subcommand ]] || die MARKET_DATA_COMMAND_REQUIRED; shift
     case $subcommand in
       inventory) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; market_data_inventory ;;
+      universe)
+        action=${1:-}; [[ $action == refresh ]] || die MARKET_DATA_UNIVERSE_ACTION_REQUIRED; shift
+        [[ ${1:-} == --as-of ]] || die MARKET_DATA_END_ARGUMENT_REQUIRED
+        shift; as_of=${1:-}; shift || true
+        [[ ${1:-} == --output-root ]] || die MARKET_DATA_OUTPUT_ARGUMENT_REQUIRED
+        shift; [[ $# == 1 ]] || die MARKET_DATA_UNIVERSE_REFRESH_ARGUMENTS
+        market_data_universe_refresh "$as_of" "${1:-}"
+        ;;
       bootstrap)
         action=${1:-}; [[ -n $action ]] || die MARKET_DATA_BOOTSTRAP_ACTION_REQUIRED; shift
         case $action in
@@ -885,8 +999,28 @@ case $command in
             [[ ${1:-} == --universe-manifest ]] || die MARKET_DATA_UNIVERSE_ARGUMENT_REQUIRED
             shift; manifest=${1:-}; shift || true
             [[ ${1:-} == --end-session ]] || die MARKET_DATA_END_ARGUMENT_REQUIRED
-            shift; [[ $# == 1 ]] || die MARKET_DATA_PLAN_ARGUMENTS
-            market_data_bootstrap_plan "$manifest" "${1:-}"
+            shift; end_session=${1:-}; shift || true
+            session_count=1260
+            if [[ ${1:-} == --session-count ]]; then
+              shift; session_count=${1:-}; shift || true
+            fi
+            [[ $# == 0 ]] || die MARKET_DATA_PLAN_ARGUMENTS
+            market_data_bootstrap_plan "$manifest" "$end_session" "$session_count"
+            ;;
+          run)
+            [[ ${1:-} == --packet ]] || die MARKET_DATA_PACKET_ARGUMENT_REQUIRED
+            shift; packet=${1:-}; shift || true
+            [[ ${1:-} == --universe-manifest ]] || die MARKET_DATA_UNIVERSE_ARGUMENT_REQUIRED
+            shift; manifest=${1:-}; shift || true
+            [[ ${1:-} == --end-session ]] || die MARKET_DATA_END_ARGUMENT_REQUIRED
+            shift; end_session=${1:-}; shift || true
+            session_count=1260
+            if [[ ${1:-} == --session-count ]]; then
+              shift; session_count=${1:-}; shift || true
+            fi
+            [[ ${1:-} == --output-root ]] || die MARKET_DATA_OUTPUT_ARGUMENT_REQUIRED
+            shift; [[ $# == 1 ]] || die MARKET_DATA_RUN_ARGUMENTS
+            market_data_bootstrap_run "$packet" "$manifest" "$end_session" "$session_count" "${1:-}"
             ;;
           validate|stage)
             archive=${1:-}; shift || true

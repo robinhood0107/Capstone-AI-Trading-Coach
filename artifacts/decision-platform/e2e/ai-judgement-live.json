@@ -1,0 +1,36 @@
+{
+  "contractId": "p1-ai-judgement-live-e2e.v1",
+  "steps": [
+    {
+      "detail": "closed-loop-ai-rerank-20260831.json session=2026-08-31T12:48:47.608670+09:00 물리 호출=6",
+      "name": "관측 대상 기록",
+      "verdict": "INFO"
+    },
+    {
+      "detail": "규칙 1등=005930 실제 선택=000660 (둘이 같으면 AI가 붙어 있어도 순위를 바꾸지 않은 run이다)",
+      "name": "AI가 1등을 바꿨다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "judge 호출=1 점수를 받은 후보=2 확신도=0.7 (호출이 0이면 provider가 붙지 않아 AI_NOT_PARTICIPATED로 돈 것이다)",
+      "name": "실제 provider가 판단을 돌려줬다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "후보=['000660', '005930'] 선택=000660 실제 매수=000660 (후보 밖 종목이 매수되면 AI가 집합을 넓힌 것이다)",
+      "name": "선택은 후보 집합 안에서만 일어났다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "매수 주문번호=0000028797 매도 주문번호=0000028801 (번호가 없으면 주문이 원장에 닿지 않은 것이다)",
+      "name": "실제 주문번호가 양쪽에 있다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "status=SUCCESS 청산사유=MAX_HOLDING_SESSIONS 실현손익=-5674 예수금 100000000→100000000 수량 0→0",
+      "name": "폐루프가 닫히고 계좌가 원복됐다",
+      "verdict": "PASS"
+    }
+  ],
+  "verdict": "PASS"
+}

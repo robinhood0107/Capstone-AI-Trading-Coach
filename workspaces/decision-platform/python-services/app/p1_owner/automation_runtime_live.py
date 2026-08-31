@@ -24,7 +24,6 @@ from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.kis._credential_transport import _build_redis_client
 from app.data.kis.http_client import CURRENT_PRICE_PATH, KISHttpClient
 from app.data.kis.settings import KISSettings
-from app.generated import strong_llm_agent_pb2
 from app.p1_owner.automation import (
     AccountLineageSnapshot,
     AiCandidateVerdict,
@@ -32,7 +31,10 @@ from app.p1_owner.automation import (
     AutomationError,
     AutomationInputs,
     AutomationRun,
+    CandidateScreening,
+    EvidenceSpan,
     NewsVerdict,
+    NewsScreeningBatch,
     SignalCandidate,
     OrderReservation,
     Quote,
@@ -40,11 +42,6 @@ from app.p1_owner.automation import (
     ReconcileOutcome,
     SubmitOutcome,
     _limit_price,
-)
-from app.strong_llm.judge_client import (
-    JudgeClientSettings,
-    StrongLlmJudgeClient,
-    StrongLlmJudgeUnavailableError,
 )
 from app.p1_owner.vertex_corpus_evidence import (
     CorpusDocumentSource,
@@ -72,6 +69,7 @@ _KST = ZoneInfo("Asia/Seoul")
 _SECRET = re.compile(r"^[A-Za-z0-9._~:-]{32,256}$")
 _ORDER_ID = re.compile(r"^ord_mock_[0-9a-f]{32}$")
 _DECISION_ID = re.compile(r"^dec_[0-9a-f]{32}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class SpringAutomationBridgePort(Protocol):
@@ -245,7 +243,17 @@ class KisAutomationQuoteSource:
             raise AutomationRuntimeError("AUTOMATION_QUOTE_INVALID") from error
         if not lower <= price <= upper:
             raise AutomationRuntimeError("AUTOMATION_QUOTE_INVALID")
-        return Quote(symbol, price, lower, upper, fresh=True, is_etf_etn=False)
+        return Quote(
+            symbol,
+            price,
+            lower,
+            upper,
+            fresh=True,
+            is_etf_etn=False,
+            temp_stop_yn=str(output.get("temp_stop_yn", "")),
+            management_issue_code=str(output.get("mang_issu_cls_code", "")),
+            liquidation_trading_yn=str(output.get("sltr_yn", "")),
+        )
 
     def close(self) -> None:
         self._client.close()
@@ -353,7 +361,6 @@ class LiveAutomationPort:
         execution_source: ExecutionSourcePort,
         vertex_transport: VertexVetoTransport,
         corpus_source: CorpusDocumentSource | None = None,
-        judge_client: StrongLlmJudgeClient | None = None,
     ) -> None:
         self._claim = claim
         self._corpus_source: CorpusDocumentSource = corpus_source or EmptyCorpusDocumentSource()
@@ -361,12 +368,18 @@ class LiveAutomationPort:
         self._quote_source = quote_source
         self._execution_source = execution_source
         self._vertex_transport = vertex_transport
-        # 설정이 온전할 때만 붙는다. 없으면 판단 없이 규칙만으로 돈다.
-        settings = JudgeClientSettings.from_env()
-        self._judge_client = judge_client or (
-            StrongLlmJudgeClient(settings) if settings is not None else None
-        )
         self._cached_quotes: dict[str, Quote] = {}
+        raw_screenings = state.get("screenings")
+        if isinstance(raw_screenings, list):
+            for item in raw_screenings:
+                if isinstance(item, dict) and isinstance(item.get("symbol"), str):
+                    self._cached_quotes[str(item["symbol"])] = Quote(
+                        str(item["symbol"]),
+                        int(item["priceKrw"]),
+                        int(item["lowerLimitKrw"]),
+                        int(item["upperLimitKrw"]),
+                        is_etf_etn=bool(item["isEtfEtn"]),
+                    )
         self.decision_id = (
             str(state.get("decisionId")) if isinstance(state.get("decisionId"), str) else None
         )
@@ -409,7 +422,7 @@ class LiveAutomationPort:
         account_complete: bool | None = None
         account_digest_matches: bool | None = None
         runtime_state = dict(state)
-        runtime_state["aiJudgementProviderBound"] = self._judge_client is not None
+        runtime_state["aiJudgementProviderBound"] = state.get("aiProviderReady") is True
         runtime_state["newsVetoProviderBound"] = not isinstance(
             self._vertex_transport, FailClosedVertexVetoTransport
         )
@@ -516,49 +529,101 @@ class LiveAutomationPort:
         verdict = result.get("verdict")
         return cast(NewsVerdict, verdict if verdict in {"VETO_BUY", "NO_VETO"} else "ABSTAIN")
 
-    def judge(self, candidates: tuple[SignalCandidate, ...]) -> AiJudgement | None:
-        """Strong LLM에게 후보 집합을 보이고 점수와 차단을 받는다.
+    def screen(
+        self,
+        candidates: tuple[SignalCandidate, ...],
+        quotes: Mapping[str, Quote],
+        candidate_set_sha256: str,
+    ) -> NewsScreeningBatch:
+        # Reserve the worst-case single grounded call before the bridge can
+        # open any provider socket.  The returned count only consumes the
+        # reservation; it never authorizes an over-cap call retroactively.
+        self._require_capacity(1)
+        response = self._bridge.command(
+            "NEWS_SCREEN",
+            self._claim.user_id,
+            _evidence_candidates_payload(
+                self._claim,
+                candidates,
+                quotes,
+                candidate_set_sha256,
+            ),
+        )
+        provider_calls = int(response.get("providerCallCount", -1))
+        grounding_queries = int(response.get("groundingQueryCount", -1))
+        if provider_calls not in range(0, 2) or grounding_queries not in range(0, 33):
+            raise AutomationRuntimeError("AUTOMATION_SCREENING_USAGE_INVALID")
+        raw = response.get("screenings")
+        if not isinstance(raw, list):
+            raise AutomationRuntimeError("AUTOMATION_SCREENING_INVALID")
+        screenings = tuple(_candidate_screening(item) for item in raw if isinstance(item, dict))
+        if len(screenings) != len(raw):
+            raise AutomationRuntimeError("AUTOMATION_SCREENING_INVALID")
+        self.physical_calls += provider_calls
+        return NewsScreeningBatch(
+            screenings,
+            provider_call_count=provider_calls,
+            grounding_query_count=grounding_queries,
+            failed=response.get("failed") is True,
+        )
 
-        실패는 예외가 아니라 None이다. 판단을 못 받았다고 그날의 자동매매가 멈추면, AI를
-        붙이는 일이 곧 가용성을 낮추는 일이 된다. 그건 이 승격이 노린 것이 아니다.
-        """
-
-        client = self._judge_client
-        if client is None or not candidates:
+    def judge(
+        self,
+        candidates: tuple[SignalCandidate, ...],
+        candidate_set_sha256: str,
+    ) -> AiJudgement | None:
+        if not candidates:
             return None
         self.judge_calls += 1
+        # JUDGE may use a primary and one bounded fallback call.  Refuse before
+        # contacting Spring unless both calls fit in the run cap.
+        self._require_capacity(2)
         try:
-            judgement = client.judge(
-                run_id=_judge_run_id(self._claim.run_id),
-                model_id=os.environ.get("VERTEX_MODEL_ID", "gemini-3.5-flash"),
-                question=_JUDGE_QUESTION,
-                language=os.environ.get("STRONG_LLM_ANSWER_LANGUAGE", "ko"),
-                candidates=tuple(
-                    strong_llm_agent_pb2.JudgementCandidate(
-                        symbol=item.symbol,
-                        expected_return=item.expected_return,
-                        model_confidence=item.confidence,
-                        lstm_signal=item.lstm_signal,
-                        baseline_signal=item.baseline_signal,
-                    )
-                    for item in candidates
+            response = self._bridge.command(
+                "JUDGE",
+                self._claim.user_id,
+                _evidence_candidates_payload(
+                    self._claim,
+                    candidates,
+                    self._cached_quotes,
+                    candidate_set_sha256,
                 ),
             )
-        except StrongLlmJudgeUnavailableError:
-            return None
-        allowed = {item.symbol for item in candidates}
-        try:
+            raw_candidates = response.get("candidates")
+            if not isinstance(raw_candidates, list):
+                return None
             verdicts = tuple(
-                AiCandidateVerdict(item.symbol, item.score, item.veto, item.reason)
-                for item in judgement.candidates
-                # 후보 집합 밖의 종목은 여기서 사라진다. 순위에도 주문에도 닿지 않는다.
-                if item.symbol in allowed
+                AiCandidateVerdict(
+                    symbol=str(item["symbol"]),
+                    score=int(item["scoreBps"]) / 10_000,
+                    veto=item.get("veto") is True,
+                    reason=str(item["reason"]),
+                    evidence_spans=tuple(
+                        (str(span["citationId"]), str(span["quote"]))
+                        for span in item.get("evidenceSpans", [])
+                        if isinstance(span, dict)
+                    ),
+                )
+                for item in raw_candidates
+                if isinstance(item, dict)
             )
-            applied = AiJudgement(verdicts, judgement.confidence, judgement.summary)
-        except AutomationError:
-            # 계약을 통과한 JSON이어도 값이 우리 경계 밖이면 쓰지 않는다.
+            provider_calls = int(response.get("providerCallCount", 0))
+            if provider_calls not in range(0, 3):
+                raise AutomationRuntimeError("AUTOMATION_JUDGEMENT_USAGE_INVALID")
+            self.physical_calls += provider_calls
+            applied = AiJudgement(
+                verdicts,
+                int(response["confidenceBps"]) / 10_000,
+                str(response["summary"]),
+            )
+        except (AutomationError, AutomationRuntimeError, KeyError, TypeError, ValueError):
             return None
-        self.last_judgement_json = judgement.model_dump_json()
+        self.last_judgement_json = json.dumps(
+            response,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         return applied
 
     def submit(self, reservation: OrderReservation) -> SubmitOutcome:
@@ -676,7 +741,7 @@ class LiveAutomationPort:
     def _quote(self, symbol: str | None) -> Quote:
         selected = _required(symbol)
         if selected not in self._cached_quotes:
-            if len(self._cached_quotes) >= 6:
+            if len(self._cached_quotes) >= 31:
                 raise AutomationRuntimeError("AUTOMATION_QUOTE_CAP_EXHAUSTED")
             self._require_capacity(1)
             self._cached_quotes[selected] = self._quote_source.quote(selected)
@@ -688,7 +753,7 @@ class LiveAutomationPort:
         return quote
 
     def _require_capacity(self, calls: int) -> None:
-        if calls < 1 or self.physical_calls > 16 - calls:
+        if calls < 1 or self.physical_calls > 64 - calls:
             raise AutomationRuntimeError("AUTOMATION_PROVIDER_CALL_CAP_EXHAUSTED")
 
 
@@ -709,16 +774,68 @@ class LiveAutomationPortFactory:
 
 # 판단 요청의 질문은 고정이다. 사용자 문장이 여기로 들어오면 그것이 매매 판단을 바꾸는
 # 통로가 되고, 그러면 프롬프트 인젝션이 곧 주문 조작이 된다.
-_JUDGE_QUESTION = (
-    "아래 후보 각각이 오늘 매수하기에 적절한지 판단하라. 후보를 새로 만들지 말고 "
-    "주어진 집합 안에서만 답하라."
-)
+def _evidence_candidates_payload(
+    claim: RuntimeClaim,
+    candidates: tuple[SignalCandidate, ...],
+    quotes: Mapping[str, Quote],
+    candidate_set_sha256: str,
+) -> dict[str, object]:
+    if _SHA256.fullmatch(candidate_set_sha256) is None:
+        raise AutomationRuntimeError("AUTOMATION_CANDIDATE_SET_HASH_INVALID")
+    return {
+        "candidateSetSha256": candidate_set_sha256,
+        "candidates": [
+            {
+                "expectedReturn": format(item.expected_return, ".17g"),
+                "isEtfEtn": quotes[item.symbol].is_etf_etn,
+                "lowerLimitKrw": quotes[item.symbol].lower_limit_krw,
+                "modelConfidence": format(item.confidence, ".17g"),
+                "priceKrw": quotes[item.symbol].price_krw,
+                "symbol": item.symbol,
+                "upperLimitKrw": quotes[item.symbol].upper_limit_krw,
+            }
+            for item in candidates
+            if item.symbol in quotes
+        ],
+        "runId": claim.run_id,
+        "sessionDate": claim.session_date.isoformat(),
+    }
 
 
-def _judge_run_id(run_id: str) -> str:
-    """자동운용 run 하나에 S4.9 run id 하나를 짝지어 사후에 이어 볼 수 있게 한다."""
-
-    return "s49_run_" + run_id.removeprefix("auto_run_")[:32].rjust(32, "0")
+def _candidate_screening(value: dict[str, Any]) -> CandidateScreening:
+    raw_evidence = value.get("evidence")
+    if not isinstance(raw_evidence, list):
+        raise AutomationRuntimeError("AUTOMATION_SCREENING_INVALID")
+    evidence = tuple(
+        EvidenceSpan(
+            symbol=str(item["symbol"]),
+            citation_id=str(item["citationId"]),
+            source_id=str(item["sourceId"]),
+            source_type=cast(Any, str(item["sourceType"])),
+            source_event_date=(
+                date.fromisoformat(str(item["sourceEventDate"]))
+                if item.get("sourceEventDate")
+                else None
+            ),
+            age_warning=item.get("ageWarning") is True,
+            uri_sha256=str(item["uriSha256"]),
+            bounded_quote=str(item["boundedQuote"]),
+            quote_sha256=str(item["quoteSha256"]),
+            verified=item.get("verified") is True,
+        )
+        for item in raw_evidence
+        if isinstance(item, dict)
+    )
+    if len(evidence) != len(raw_evidence):
+        raise AutomationRuntimeError("AUTOMATION_SCREENING_INVALID")
+    return CandidateScreening(
+        symbol=str(value["symbol"]),
+        status=cast(Any, str(value["status"])),
+        verdict=cast(Any, str(value["verdict"])),
+        score_bps=int(value["scoreBps"]),
+        reason=str(value["reason"]),
+        evidence=evidence,
+    )
 
 
 def _balance_projection(balance: dict[str, Any]) -> dict[str, object]:

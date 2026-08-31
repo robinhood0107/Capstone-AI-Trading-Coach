@@ -25,6 +25,11 @@ from contracts.generate_p1_team_a_acceptance import (  # noqa: E402
     operations,
     sha256,
 )
+from contracts.verify_p1_v3_automation_openapi_transition import (  # noqa: E402
+    operations as v3_root_operations,
+    project_pre_v3_openapi,
+)
+from contracts.generate_principle_contracts import canonical_json_bytes  # noqa: E402
 
 CATALOG_PATH: Final = ROOT / "contracts/catalogs/p1-team-a-acceptance.v2.json"
 CLIENT_PATH: Final = (
@@ -125,6 +130,15 @@ def build_catalog(
 
 def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
     openapi = object_value(json.loads(openapi_bytes), "OpenAPI")
+    if len(v3_root_operations(openapi)) == 75:
+        additive = object_value(
+            json.loads(
+                (ROOT / "contracts/openapi/p1-automation-v3.v1.openapi.json").read_bytes()
+            ),
+            "Automation V3 additive OpenAPI",
+        )
+        openapi = project_pre_v3_openapi(openapi, additive)
+        openapi_bytes = canonical_json_bytes(openapi)
     operations(openapi, 69)
     badge_bytes = BADGE_PATH.read_bytes()
     return {

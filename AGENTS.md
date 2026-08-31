@@ -30,6 +30,12 @@ OpenAPI는 48개를 유지하고 Automation/Journal runtime PR에서 exact 56으
 Team A exact-38을 현재 기준으로 둔다. `BLOCKED_INCOMPLETE_RISK_BALANCE` 동안 v2 arm은 409이고
 자동매매 활성화는 0이다. LightGBM은 계속 연구 전용이고 KIS Live order와 GDELT outbound는 0이다.
 
+2026-08-31 Automation V3는 기존 V1/V2 bytes를 보존하면서 근거 우선 screening, 사용자 ATR/보유
+정책, 장외 replay 여섯 operation을 추가한다. 현재 root OpenAPI는 exact-75, Team A acceptance v3는
+exact-45다. V110~V113 runtime은 구현됐지만 실제 KIS read-only bootstrap, Google grounding,
+장중 KIS Mock, 연속 3 XKRX session soak는 별도 hard gate다. 따라서 데이터가 비어 있거나 외부 gate가
+닫힌 환경에서 V3 arm과 `P1_FINAL`을 주장하지 않는다.
+
 ## 현재 단계
 
 **현재 단계: STAGE 2 — 기능 구현 (S1~S8).** 단계가 바뀌면 이 절과 PR 템플릿을 함께 갱신한다(단계 전환 자체가 하나의 PR).
@@ -181,14 +187,15 @@ Team A exact-38을 현재 기준으로 둔다. `BLOCKED_INCOMPLETE_RISK_BALANCE`
   LightGBM component는 DB row 유무와 관계없이
   `ABSTAIN/MISSING_EVIDENCE`다. KRX/KIS/ECOS data-only daily collector와 Market/Data projection은
   모델 publication에서 분리한 별도 contract-change 전까지 활성화하지 않는다.
-- **S5.7A data-only 계약은 잠겼지만 runtime authority는 아직 0이다.**
+- **S5.7A data-only 계약과 V75/V110 저장·bounded reader runtime은 구현됐지만 live authority는 기본 0이다.**
   `market-data-seed.v1`, `market-data-daily-shard.v1`, `market-data-health.v1`과
   `s5-7a-market-data-lock.v1`만 current authority다. seed adoption은 기존 7,218 source chunk를
   읽기 전용으로 검증하되 raw copy·hardlink·source path 영속화를 금지하고 provider 호출은 0이다.
   daily shard는 한 XKRX session, 월중 고정 exact-31, KOSPI/KOSDAQ, ECOS 최대 2 series만 담고
   complete manifest를 마지막에 게시한다. 내부 운영 reader는 253 close, offline 연구 reader는
   1,260 XKRX session으로 제한하며 Spring Decision/Risk, public API, Dashboard, scheduler 권한은 없다.
-  저장·reader·runtime·provider authority는 각각 S5.7B/C의 별도 구현과 검증 전에는 미구현이다.
+  fixture/live-readonly adapter와 finite tick은 기본 OFF이며 실제 bootstrap·daily provider 호출은
+  별도 승인 전 0이다. 이 데이터 경로는 Signal publication, RiskDecision, 계좌, 주문 권한을 갖지 않는다.
 - 2026-08-20 S5 qualification continuation은 초기 fit-only 근거로 라벨 경계를 `0.025`로 옮긴 뒤
   승인된 5회 조정(grid 정규화, block 재배분, fit-only label 두 값, macro split-gain 0)을 실측했다.
   마지막 시도는 macro disagreement를 모든 grid/fold에서 `0.0000`으로 만들었지만 fold-3 OVR Platt가

@@ -75,10 +75,10 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `clean database applies V1 through V110 migrations and creates required objects`() {
+    fun `clean database applies V1 through V113 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
         // V7 is a Java migration and must appear alongside the SQL migrations.
-        assertEquals((1..110).map(Int::toString), versions)
+        assertEquals((1..113).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -212,6 +212,10 @@ class FlywayMigrationIntegrationTest(
                 "automation_runs",
                 "automation_positions",
                 "automation_events",
+                "automation_v3_usage",
+                "automation_candidate_screenings",
+                "automation_candidate_evidence",
+                "automation_ai_provider_operations",
                 "automation_control_idempotency",
                 "journals",
                 "journal_idempotency",
@@ -230,6 +234,42 @@ class FlywayMigrationIntegrationTest(
             indexDefinitionLike("rag_chunk_embeddings", "%ivfflat%"),
             "ivfflat must wait until real embeddings are loaded",
         )
+    }
+
+    @Test
+    fun `V112 replay role is function only and cannot bypass manifest isolation`() {
+        DriverManager
+            .getConnection(postgres.jdbcUrl, "decision_replay", "replay-test-secret-0001")
+            .use { connection ->
+                connection.createStatement().use { statement ->
+                    assertEquals(
+                        "42501",
+                        assertThrows<SQLException> {
+                            statement.executeQuery("select count(*) from market_data_bars")
+                        }.sqlState,
+                    )
+                    assertEquals(
+                        "42501",
+                        assertThrows<SQLException> {
+                            statement.executeQuery(
+                                "select * from p1_read_after_hours_replay_bars_v1('${"a".repeat(64)}')",
+                            )
+                        }.sqlState,
+                    )
+                    statement
+                        .executeQuery(
+                            "select set_config('app.after_hours_replay_isolated','1',false)",
+                        ).close()
+                    assertEquals(
+                        "42501",
+                        assertThrows<SQLException> {
+                            statement.executeQuery(
+                                "select * from p1_read_after_hours_replay_bars_v1('${"a".repeat(64)}')",
+                            )
+                        }.sqlState,
+                    )
+                }
+            }
     }
 
     @Test
@@ -649,7 +689,7 @@ class FlywayMigrationIntegrationTest(
                     ).use { result ->
                         val versions = mutableListOf<String>()
                         while (result.next()) versions += result.getString(1)
-                        assertEquals((1..110).map(Int::toString), versions)
+                        assertEquals((1..113).map(Int::toString), versions)
                     }
                 val privileges =
                     mapOf(
@@ -4769,7 +4809,7 @@ class FlywayMigrationIntegrationTest(
             registry.add("spring.flyway.password", postgres::getPassword)
             // The primary integration database exercises current adapters against the current schema.
             // Historical migration boundaries remain covered by their explicitly targeted databases.
-            registry.add("spring.flyway.target") { "110" }
+            registry.add("spring.flyway.target") { "113" }
             registry.add("app.decision.grpc.shared-secret") { SpringApiIntegrationTestBase.TEST_GRPC_SHARED_SECRET }
             registry.add("app.rag.grpc.shared-secret") {
                 SpringApiIntegrationTestBase.TEST_RAG_GRPC_SHARED_SECRET

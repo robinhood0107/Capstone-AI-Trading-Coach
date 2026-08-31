@@ -5,7 +5,6 @@ import com.capstone.decision.application.strongllm.PutStrongLlmSettingsCommand
 import com.capstone.decision.application.strongllm.StrongLlmSettingsService
 import io.swagger.v3.oas.annotations.Operation
 import jakarta.servlet.http.HttpServletRequest
-import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
@@ -44,7 +43,7 @@ class StrongLlmSettingsController(
     ): ResponseEntity<Void> {
         require(request.queryString == null)
         service.put(principal.userId, parser.parse(body.orEmpty()))
-        return ResponseEntity.status(HttpStatus.NO_CONTENT).build()
+        return ResponseEntity.ok().build()
     }
 }
 
@@ -103,7 +102,19 @@ internal class StrongLlmSettingsRequestParser {
             dailyGenerateCallCap = cap.asInt(),
             apiKey = optionalKey(root, "apiKey"),
             fallbackApiKey = optionalKey(root, "fallbackApiKey"),
+            aiJudgementEnabled = optionalBoolean(root, "aiJudgementEnabled"),
+            thinkingLevel = optionalEnumField(root, "thinkingLevel", THINKING_LEVELS),
         )
+    }
+
+    private fun optionalBoolean(
+        root: JsonNode,
+        name: String,
+    ): Boolean? {
+        val node = root.get(name) ?: return null
+        if (node.isNull) return null
+        require(node.isBoolean)
+        return node.booleanValue()
     }
 
     private fun enumField(
@@ -170,9 +181,12 @@ internal class StrongLlmSettingsRequestParser {
                 "dailyGenerateCallCap",
                 "apiKey",
                 "fallbackApiKey",
+                "aiJudgementEnabled",
+                "thinkingLevel",
             )
         val PROVIDERS = setOf("vertex", "openai", "anthropic", "google_genai", "custom")
         val LANGUAGES = setOf("ko", "en")
+        val THINKING_LEVELS = setOf("minimal", "low", "medium")
         val MODEL_ID = Regex("^[a-z][a-z0-9._-]{2,127}$")
         val BASE_URL = Regex("^https://[A-Za-z0-9._~:/?#@!\$&()*+,;=%-]{3,256}\$")
 

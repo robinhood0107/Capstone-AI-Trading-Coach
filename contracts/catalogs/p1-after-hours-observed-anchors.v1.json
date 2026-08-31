@@ -1,0 +1,46 @@
+{
+  "contractId": "p1-after-hours-observed-anchors.v1",
+  "receiptCount": 8,
+  "receipts": [
+    {
+      "category": "KIS_MOCK_ROUNDTRIP",
+      "path": "roundtrip-000660.json",
+      "sha256": "8ab3e23ae762838b1b978c2035d8974502633ae8f96fa35059c26ec721320fa1"
+    },
+    {
+      "category": "EXIT_STOP_LOSS",
+      "path": "closed-loop-005930-stop-loss-20260831.json",
+      "sha256": "2b37d9428677b1db38597f12417a660bc919446db843c496908e863a8694a964"
+    },
+    {
+      "category": "EXIT_TAKE_PROFIT",
+      "path": "closed-loop-005930-take-profit-20260831.json",
+      "sha256": "d675697aa614d53e05b6283a7019d1eb222735ff936d56e2fbb470b3ecad12ec"
+    },
+    {
+      "category": "EXIT_MODEL_SELL",
+      "path": "closed-loop-005930-model-sell-20260831.json",
+      "sha256": "278ab8a07c97a32e40fa2ecfb5e81f7a68615ae6cf0b3c277df6bbab898637ba"
+    },
+    {
+      "category": "EXIT_MAX_HOLDING",
+      "path": "closed-loop-005930-max-holding-20260831.json",
+      "sha256": "2560ade778e737e8ad47053ae4199130d42d75e642b581ea1dc052f652100b60"
+    },
+    {
+      "category": "AI_RERANK_BASELINE",
+      "path": "closed-loop-ai-rerank-20260831.json",
+      "sha256": "cfd3ad06f369dc10c00637cb1675d08233ded1f3b53bf09d929b5efad36f433b"
+    },
+    {
+      "category": "AI_RERANK_CHANGED",
+      "path": "closed-loop-ai-rerank-changed-20260831.json",
+      "sha256": "1947078a14ef4ff0b5825ffdd118899bcd4b80801ca2f37a79fba8da551ab262"
+    },
+    {
+      "category": "AI_RERANK_UNCHANGED",
+      "path": "closed-loop-ai-rerank-unchanged-20260831.json",
+      "sha256": "cfd3ad06f369dc10c00637cb1675d08233ded1f3b53bf09d929b5efad36f433b"
+    }
+  ]
+}

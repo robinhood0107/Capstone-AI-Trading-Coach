@@ -43,7 +43,7 @@ class P1AutomationMarketDataV110MigrationContractTest {
                             .toInt()
                     }.toList()
             }
-        assertThat(versions.max()).isEqualTo(110)
+        assertThat(versions.max()).isEqualTo(113)
         assertThat(migrationDirectory.resolve("V75__s5_7b_market_data_archive.sql")).isRegularFile()
     }
 }

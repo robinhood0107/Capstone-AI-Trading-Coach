@@ -1,0 +1,23 @@
+{
+  "candidateSetSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "candidates": [
+    {
+      "evidence": [],
+      "reason": "근거 없이 차단을 주장했습니다.",
+      "score": 0.71,
+      "status": "AVAILABLE",
+      "symbol": "005930",
+      "verdict": "VETO_BUY"
+    }
+  ],
+  "contractId": "vertex-news-screen.v2",
+  "failureReason": null,
+  "groundingQueryCount": 1,
+  "inputSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+  "modelId": "gemini-3.5-flash",
+  "orderAuthority": "NONE",
+  "outputSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+  "promptVersion": "vertex-news-screen-v2",
+  "providerCallCount": 1,
+  "status": "AVAILABLE"
+}

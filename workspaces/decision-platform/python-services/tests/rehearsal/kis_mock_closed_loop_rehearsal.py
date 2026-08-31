@@ -51,8 +51,11 @@ from app.brokerage.kis_mock_online_client import (
 )
 from app.data.kis.http_client import CURRENT_PRICE_PATH, KISHttpClient
 from app.data.kis.settings import KISSettings
+from app.generated import strong_llm_agent_pb2
 from app.p1_owner.automation import (
     _nth_next_session,
+    AiCandidateVerdict,
+    AiJudgement,
     AutomationEngine,
     AutomationInputs,
     AutomationPolicySnapshot,
@@ -63,6 +66,11 @@ from app.p1_owner.automation import (
     ReconcileSnapshot,
     SignalCandidate,
     SubmitOutcome,
+)
+from app.strong_llm.judge_client import (
+    JudgeClientSettings,
+    StrongLlmJudgeClient,
+    StrongLlmJudgeUnavailableError,
 )
 
 _KST: Final = ZoneInfo("Asia/Seoul")
@@ -80,8 +88,14 @@ _EVALUATION_TIME: Final = clock_time(9, 30)
 # 청산 사유별 경로를 실거래로 나누어 찍기 위한 시나리오 선택.
 #   MAX_HOLDING_SESSIONS  만기 도달로 청산(기본)
 #   MODEL_SELL            보유 종목에 SELL 신호가 들어와 만기 전에 청산
+#   AI_RERANK             후보를 둘 주고 Strong LLM 판단이 1등을 바꾸는지 본다
 # STOP_LOSS/TAKE_PROFIT은 실제 등락에 의존하므로 여기서 강제하지 않는다.
 _SCENARIO: Final = os.environ.get("P1_KIS_MOCK_REHEARSAL_SCENARIO", "MAX_HOLDING_SESSIONS")
+# AI_RERANK에서 규칙상 2등이 되는 종목. 규칙은 기대수익만 보고 AI는 확신도까지 본다.
+_RIVAL_SYMBOL: Final = os.environ.get("P1_KIS_MOCK_REHEARSAL_RIVAL_SYMBOL", "000660")
+_JUDGE_QUESTION: Final = (
+    "주어진 후보 각각에 0과 1 사이 점수를 매기고 매수를 막아야 하면 veto를 표시하라."
+)
 
 
 class RehearsalFailed(RuntimeError):
@@ -115,6 +129,64 @@ def _require_success(payload: dict[str, Any], label: str) -> dict[str, Any]:
 
 class RealKisAutomationTransport:
     """엔진이 요구하는 transport port를 실제 KIS 모의 brokerage로 구현한다."""
+
+    judge_calls = 0
+    last_judgement: dict[str, object] | None = None
+
+    def judge(self, candidates: tuple[SignalCandidate, ...]) -> AiJudgement | None:
+        """Strong LLM에게 후보를 보이고 점수를 받는다.
+
+        설정이 없으면 None이다. 엔진은 그때 AI_NOT_PARTICIPATED로 적고 규칙만으로 계속한다.
+        판단을 못 받았다고 리허설을 실패로 만들지 않는다. 그것이 운영 계약이다.
+        """
+
+        settings = JudgeClientSettings.from_env()
+        if settings is None or not candidates:
+            return None
+        self.judge_calls += 1
+        try:
+            judgement = StrongLlmJudgeClient(settings).judge(
+                run_id="s49_run_" + "r" * 0 + f"{self.judge_calls:032d}",
+                model_id=os.environ.get("VERTEX_MODEL_ID", "gemini-3.5-flash"),
+                question=_JUDGE_QUESTION,
+                language="ko",
+                candidates=tuple(
+                    strong_llm_agent_pb2.JudgementCandidate(
+                        symbol=item.symbol,
+                        expected_return=item.expected_return,
+                        model_confidence=item.confidence,
+                        lstm_signal=item.lstm_signal,
+                        baseline_signal=item.baseline_signal,
+                    )
+                    for item in candidates
+                ),
+            )
+        except StrongLlmJudgeUnavailableError as error:
+            self.last_judgement = {"unavailable": str(error)}
+            return None
+        allowed = {item.symbol for item in candidates}
+        verdicts = tuple(
+            AiCandidateVerdict(item.symbol, item.score, item.veto, item.reason)
+            for item in judgement.candidates
+            if item.symbol in allowed
+        )
+        if not verdicts:
+            return None
+        self.last_judgement = {
+            "confidence": judgement.confidence,
+            "summary": judgement.summary,
+            "verdicts": [
+                {"symbol": v.symbol, "score": v.score, "veto": v.veto, "reason": v.reason}
+                for v in verdicts
+            ],
+        }
+        print(
+            "  AI 판단: "
+            + " ".join(f"{v.symbol}={v.score:.4f}{'(veto)' if v.veto else ''}" for v in verdicts)
+            + f" confidence={judgement.confidence:.4f}",
+            file=sys.stderr,
+        )
+        return AiJudgement(verdicts, judgement.confidence, judgement.summary)
 
     def __init__(self, market: KISHttpClient, client: KISMockBrokerageHttpClient) -> None:
         self._market = market
@@ -409,6 +481,7 @@ def main() -> int:
                 policy=policy,
                 buyable_quantity=1,
                 buyable_amount_krw=policy.capital_limit_krw,
+                ai_judgement_provider_bound=_SCENARIO == "AI_RERANK",
                 signals=(
                     SignalCandidate(
                         symbol=_SYMBOL,
@@ -416,6 +489,26 @@ def main() -> int:
                         baseline_signal="BUY",
                         expected_return=0.05,
                         confidence=0.9,
+                    ),
+                )
+                if _SCENARIO != "AI_RERANK"
+                else (
+                    # 둘 다 2-of-2 합의를 통과한다. 규칙 정렬은 기대수익이 먼저이므로
+                    # 규칙만이면 1등은 _SYMBOL이다.
+                    SignalCandidate(
+                        symbol=_SYMBOL,
+                        lstm_signal="BUY",
+                        baseline_signal="BUY",
+                        expected_return=0.0400,
+                        confidence=0.51,
+                    ),
+                    # 기대수익은 근소하게 낮지만 확신도가 훨씬 높다. AI가 순위를 바꾼다면 여기다.
+                    SignalCandidate(
+                        symbol=_RIVAL_SYMBOL,
+                        lstm_signal="BUY",
+                        baseline_signal="BUY",
+                        expected_return=0.0399,
+                        confidence=0.93,
                     ),
                 ),
             )
@@ -436,6 +529,21 @@ def main() -> int:
             if len(open_positions) != 1:
                 raise RehearsalFailed("매수 뒤 OPEN 포지션이 정확히 하나가 아니다")
             position = open_positions[0]
+            if _SCENARIO == "AI_RERANK":
+                rule_top = min(
+                    buy_inputs.signals,
+                    key=lambda item: (-item.expected_return, -item.confidence, item.symbol),
+                ).symbol
+                steps.append(
+                    {
+                        "step": "aiJudgement",
+                        "ruleTopSymbol": rule_top,
+                        "selectedSymbol": position.symbol,
+                        "aiChangedTop": rule_top != position.symbol,
+                        "judgeCalls": transport.judge_calls,
+                        "judgement": transport.last_judgement,
+                    }
+                )
             steps.append(
                 {
                     "step": "positionOpened",
@@ -461,7 +569,7 @@ def main() -> int:
                         confidence=0.8,
                     ),
                 )
-            elif _SCENARIO == "MAX_HOLDING_SESSIONS":
+            elif _SCENARIO in {"MAX_HOLDING_SESSIONS", "AI_RERANK"}:
                 sell_session = position.expiry_session
                 sell_signals = ()
             else:

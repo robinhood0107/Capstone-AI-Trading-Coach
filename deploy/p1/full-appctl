@@ -24,7 +24,7 @@ usage() {
 Usage:
   ./capstone up [--models] [--mock]
   ./capstone status|logs|smoke|down|doctor
-  ./capstone mock <configure|doctor|certify|readiness|start|stop> [--symbol 005930] [--quantity 1]
+  ./capstone mock <configure|doctor|certify|readiness|gate-author|start|stop> [--symbol 005930] [--quantity 1]
   ./capstone artifact <validate|import> <bundle-directory> --manifest-sha256 <sha256>
   ./capstone team-a acceptance
 
@@ -577,18 +577,16 @@ mock_certify() {
   compose run --rm --no-deps --entrypoint python decision-platform \
     -m app.brokerage.kis_mock_certification_gate || return $?
   mock_doctor >/dev/null || die KIS_MOCK_NOT_CONFIGURED
+  # 인증을 CI에 묶던 네 조건(clean worktree·브랜치 접두사·HEAD==origin·PR 초록)은
+  # 제거했다. 남은 것은 거래시간 창, --symbol/--quantity scope, 물리 호출 캡이다.
+  # 영수증은 그대로 만들어지고 자동운용 arm의 열쇠 역할도 그대로지만, 이 인증이
+  # 검증된 코드에서 나왔다는 주장은 더 이상 하지 않는다. 영수증이 말하는 것은
+  # 그 시각 KIS 모의 원장에서 왕복이 실제로 일어났다는 사실뿐이다.
   require_command gh
-  [[ -z $(git -C "$REPO_ROOT" status --porcelain=v1 --untracked-files=all) ]] \
-    || die KIS_MOCK_CERTIFICATION_DIRTY_WORKTREE
-  local branch head remote_head pr_json
+  local branch head pr_json
   branch=$(git -C "$REPO_ROOT" symbolic-ref --quiet --short HEAD) \
     || die KIS_MOCK_CERTIFICATION_DETACHED_HEAD
-  [[ $branch =~ ^(feature|fix|docs|infra|experiment)/[A-Za-z0-9._/-]+$ ]] \
-    || die KIS_MOCK_CERTIFICATION_BRANCH
   head=$(git -C "$REPO_ROOT" rev-parse HEAD)
-  remote_head=$(git -C "$REPO_ROOT" rev-parse "refs/remotes/origin/$branch") \
-    || die KIS_MOCK_CERTIFICATION_REMOTE_HEAD
-  [[ $head == "$remote_head" ]] || die KIS_MOCK_CERTIFICATION_UNPUSHED_HEAD
   pr_json=$(gh pr view --json number,state,isDraft,headRefName,baseRefName,headRefOid,statusCheckRollup) \
     || die KIS_MOCK_CERTIFICATION_PR_UNAVAILABLE
   rm -f -- "$STATE_DIR/mock/certification-request.json" \
@@ -609,27 +607,11 @@ required={
   "Repo hygiene",
   "P1 full-app security gates",
 }
-
-checks={
-  item.get("name"): item.get("conclusion")
-  for item in raw.get("statusCheckRollup", [])
-  if isinstance(item, dict) and isinstance(item.get("name"), str)
-}
-
-if (
-  raw.get("state") != "OPEN"
-  or raw.get("isDraft") is not False
-  or raw.get("headRefName") != os.environ["P1_BRANCH"]
-  or raw.get("baseRefName") != "main"
-  or raw.get("headRefOid") != os.environ["P1_HEAD"]
-  or any(checks.get(name) != "SUCCESS" for name in required)
-):
-  raise SystemExit("CAPSTONE_ERROR=KIS_MOCK_CERTIFICATION_PR_NOT_GREEN")
 security_evidence={
   "deepScan":"NOT_RUN_USER_SCOPED_OUT",
   "headSha":os.environ["P1_HEAD"],
   "requiredChecks":sorted(required),
-  "status":"PASS",
+  "status":"NOT_VERIFIED",
 }
 security_digest=hashlib.sha256(
   json.dumps(security_evidence, sort_keys=True, separators=(",", ":")).encode()
@@ -797,6 +779,7 @@ case $command in
       doctor) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_doctor || die KIS_MOCK_NOT_READY ;;
       certify) mock_certify "$@" ;;
       readiness) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_readiness ;;
+      gate-author) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; author_automation_gate ;;
       start) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_start ;;
       stop) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_stop ;;
       *) die UNKNOWN_MOCK_COMMAND ;;

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 import psycopg
 import pytest
 
+from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.kis.parsers import DailyBar
 from app.data.kis.universe import UniverseManifest, UniverseManifestSymbol
 from app.data.market_data.automation_bootstrap import (
@@ -18,6 +20,7 @@ from app.data.market_data.automation_bootstrap import (
     read_automation_bootstrap_archive,
     stage_automation_bootstrap,
 )
+from app.data.market_data.automation_bootstrap_cli import _approval_packet
 
 
 class _FixtureSource:
@@ -86,6 +89,21 @@ def test_plan_is_exact31_exact1260_and_uses_exact403_kis_windows() -> None:
     }
     assert all(1 <= len(window.sessions) <= 100 for window in plan.windows)
     assert sum(len(window.sessions) for window in plan.windows) == 31 * 1_260
+
+
+def test_quick_readiness_plan_keeps_exact31_and_derives_31_call_cap() -> None:
+    plan = build_bootstrap_plan(
+        _universe(),
+        end_session=date(2026, 9, 30),
+        session_count=100,
+    )
+
+    assert len(plan.members) == 31
+    assert len(plan.sessions) == 100
+    assert len(plan.windows) == 31
+    assert plan.provider_caps["kisDaily"] == 31
+    assert date(2026, 6, 3) not in plan.sessions
+    assert date(2026, 7, 17) not in plan.sessions
 
 
 @pytest.mark.parametrize(
@@ -228,3 +246,29 @@ def test_live_bootstrap_is_default_off_before_client_or_socket(
     monkeypatch.delenv("P1_AUTOMATION_MARKET_BOOTSTRAP_ENABLED", raising=False)
     with pytest.raises(AutomationBootstrapError, match="disabled"):
         KisAutomationBootstrapSource.from_environment()
+
+
+def test_execution_packet_binds_plan_caps_mode_and_owner_approval(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = build_bootstrap_plan(_universe(), end_session=date(2026, 9, 30))
+    packet = tmp_path / "approved-packet.json"
+    payload = {
+        "approvalId": "P1-MOCK-BOOTSTRAP-20260902",
+        "contractId": "p1-automation-market-bootstrap-execution.v1",
+        "kisMode": "mock",
+        "krxMembershipPhysicalCalls": 0,
+        "planSha256": plan.plan_sha256,
+        "providerCaps": plan.provider_caps,
+    }
+    packet.write_bytes(canonical_json_bytes(payload))
+    packet.chmod(0o600)
+    monkeypatch.setenv("P1_AUTOMATION_MARKET_BOOTSTRAP_KIS_MODE", "mock")
+
+    assert _approval_packet(packet, plan) == payload
+
+    packet.write_text(json.dumps({**payload, "planSha256": "f" * 64}), encoding="utf-8")
+    packet.chmod(0o600)
+    with pytest.raises(AutomationBootstrapError, match="canonical|binding"):
+        _approval_packet(packet, plan)

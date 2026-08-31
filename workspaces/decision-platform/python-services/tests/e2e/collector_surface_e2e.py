@@ -31,8 +31,10 @@ import argparse
 import os
 import subprocess
 import sys
-from datetime import date, timedelta
+from datetime import UTC, datetime
 from typing import Final, Sequence
+
+from app.data.krx.universe import resolve_latest_available_date
 
 from .harness import (
     DEPLOY,
@@ -97,12 +99,9 @@ def check_credentials(recorder: Recorder) -> bool:
 
 
 def _previous_trading_day() -> str:
-    """완료된 XKRX 거래일 하나. 오늘이 장중이면 오늘 데이터는 아직 없다."""
+    """KRX가 08:10 KST 경계에서 실제로 공개한 마지막 XKRX 거래일."""
 
-    day = date.today() - timedelta(days=1)
-    while day.weekday() >= 5:
-        day -= timedelta(days=1)
-    return day.isoformat()
+    return resolve_latest_available_date(datetime.now(UTC)).isoformat()
 
 
 def _run_module(module: str, *arguments: str, timeout: int = 180) -> tuple[int, str]:
@@ -266,6 +265,11 @@ def main(argv: Sequence[str]) -> int:
         action="store_true",
         help="KRX·ECOS 표면을 실제로 호출한다",
     )
+    parser.add_argument(
+        "--with-live-krx-only",
+        action="store_true",
+        help="이미 성공한 ECOS 호출을 반복하지 않고 KRX 표면만 실제 호출한다",
+    )
     args = parser.parse_args(argv[1:])
 
     recorder = Recorder()
@@ -273,13 +277,14 @@ def main(argv: Sequence[str]) -> int:
         load_dotenv(recorder)
         configured = check_credentials(recorder)
         live = args.with_live_collect and configured
-        if args.with_live_collect and not configured:
+        live_krx = (args.with_live_collect or args.with_live_krx_only) and configured
+        if (args.with_live_collect or args.with_live_krx_only) and not configured:
             recorder.add(
                 "실호출을 건너뛴 이유",
                 "INFO",
                 "자격증명이 갖춰지지 않아 외부 호출을 시도하지 않았다",
             )
-        check_krx(recorder, live)
+        check_krx(recorder, live_krx)
         check_ecos(recorder, live)
         check_opendart(recorder)
     except HarnessError as error:

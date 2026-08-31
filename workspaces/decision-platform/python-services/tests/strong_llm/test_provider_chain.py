@@ -47,6 +47,7 @@ def _judge_json() -> str:
                     "score": 0.7,
                     "veto": False,
                     "reason": "근거에 위험 신호 없음.",
+                    "evidenceSpans": [],
                 }
             ],
             "confidence": 0.6,
@@ -175,8 +176,9 @@ def test_second_provider_answers_and_its_attempt_is_permitted_separately() -> No
     assert events == [
         ("google_discovery", "GOOGLE_DISCOVERY", True),
         ("google_discovery_fallback1", "GOOGLE_DISCOVERY", True),
+        ("grounded_final", "GROUNDED_FINAL", False),
     ]
-    assert primary.calls == 1 and secondary.calls == 1
+    assert primary.calls == 1 and secondary.calls == 2
     assert getattr(result, "provider_id") == "vertex"
 
 
@@ -195,7 +197,10 @@ def test_a_run_without_a_second_provider_keeps_the_original_single_permit() -> N
 
     events, result = _run(primary, None, _request(google=True))
 
-    assert events == [("google_discovery", "GOOGLE_DISCOVERY", True)]
+    assert events == [
+        ("google_discovery", "GOOGLE_DISCOVERY", True),
+        ("grounded_final", "GROUNDED_FINAL", False),
+    ]
     assert getattr(result, "provider_id") == "vertex"
 
 

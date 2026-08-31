@@ -89,7 +89,16 @@ _EVALUATION_TIME: Final = clock_time(9, 30)
 #   MAX_HOLDING_SESSIONS  만기 도달로 청산(기본)
 #   MODEL_SELL            보유 종목에 SELL 신호가 들어와 만기 전에 청산
 #   AI_RERANK             후보를 둘 주고 Strong LLM 판단이 1등을 바꾸는지 본다
-# STOP_LOSS/TAKE_PROFIT은 실제 등락에 의존하므로 여기서 강제하지 않는다.
+#   STOP_LOSS             손절선을 넘긴 상태를 만들어 그 청산 경로를 태운다
+#   TAKE_PROFIT           익절선을 넘긴 상태를 만들어 그 청산 경로를 태운다
+#   THREE_SESSION_SOAK    연속 세 XKRX 세션에 걸쳐 tick을 돌린다. 가운데 두 세션은 신호가
+#                         없어 무행동으로 닫혀야 하고, 그 사이 포지션이 그대로 살아 있어야 한다
+#
+# STOP_LOSS/TAKE_PROFIT은 실제 등락을 기다릴 수 없다. 그래서 시세가 아니라 **진입가**를
+# 옮겨 손익률만 만든다. 시세 조회도 매도 주문도 전부 실제다. 시세를 조작하면 매도 지정가가
+# 함께 움직여(_limit_price는 quote에서 나온다) 익절은 시장가보다 높은 값으로 나가 체결되지
+# 않는다. 진입가를 옮기면 판정만 바뀌고 주문은 시장 근처에 남아 실제로 체결된다.
+# 그 대신 이 두 시나리오의 realizedPnl은 실제 손익이 아니다. 판정표가 그렇게 적는다.
 _SCENARIO: Final = os.environ.get("P1_KIS_MOCK_REHEARSAL_SCENARIO", "MAX_HOLDING_SESSIONS")
 # AI_RERANK에서 규칙상 2등이 되는 종목. 규칙은 기대수익만 보고 AI는 확신도까지 본다.
 _RIVAL_SYMBOL: Final = os.environ.get("P1_KIS_MOCK_REHEARSAL_RIVAL_SYMBOL", "000660")
@@ -569,9 +578,74 @@ def main() -> int:
                         confidence=0.8,
                     ),
                 )
+            elif _SCENARIO == "THREE_SESSION_SOAK":
+                # 매수 세션 다음 두 세션에서 신호 없이 tick만 돌린다. 자동운용이 아무 일도
+                # 없는 날에 무엇을 하는지, 그리고 그 사이 포지션이 살아 있는지를 본다.
+                for offset in (1, 2):
+                    mid_session = _nth_next_session(position.entry_session, offset)
+                    mid_projection = _drive(
+                        store,
+                        transport,
+                        run_id=f"auto_run_rehearsal_soak_mid{offset:02d}",
+                        session=mid_session,
+                        inputs=AutomationInputs(
+                            session_date=mid_session,
+                            policy=policy,
+                            buyable_quantity=0,
+                            buyable_amount_krw=0,
+                            signals=(),
+                        ),
+                        terminal={
+                            "COMPLETED",
+                            "SKIPPED_NO_ACTION",
+                            "CANCELLED_UNFILLED",
+                            "HALTED",
+                        },
+                        label=f"MID{offset}",
+                    )
+                    open_now = [item for item in store.positions if item.status == "OPEN"]
+                    steps.append(
+                        {
+                            "step": "soakSession",
+                            "sessionDate": mid_session.isoformat(),
+                            "state": mid_projection.get("state"),
+                            "openPositions": len(open_now),
+                        }
+                    )
+                    if len(open_now) != 1:
+                        raise RehearsalFailed(f"{mid_session} 세션 뒤 OPEN 포지션이 하나가 아니다")
+                sell_session = position.expiry_session
+                sell_signals = ()
             elif _SCENARIO in {"MAX_HOLDING_SESSIONS", "AI_RERANK"}:
                 sell_session = position.expiry_session
                 sell_signals = ()
+            elif _SCENARIO in {"STOP_LOSS", "TAKE_PROFIT"}:
+                # 만기 전 세션이라 MAX_HOLDING_SESSIONS 분기는 열리지 않는다. 신호도 주지
+                # 않으므로 MODEL_SELL도 아니다. 남는 것은 손절선과 익절선뿐이다.
+                sell_session = _nth_next_session(position.entry_session, 1)
+                sell_signals = ()
+                actual_entry = position.entry_average_fill_price_krw
+                if actual_entry is None:
+                    raise RehearsalFailed("진입 체결가가 없어 손익률을 만들 수 없다")
+                # 손절은 진입가를 올려 손실을, 익절은 내려 이익을 만든다. 기본 정책은
+                # stop 500bp / take 1000bp이고 15%면 두 선을 넉넉히 넘는다.
+                position.entry_average_fill_price_krw = (
+                    int(actual_entry * 115 // 100)
+                    if _SCENARIO == "STOP_LOSS"
+                    else max(1, int(actual_entry * 85 // 100))
+                )
+                steps.append(
+                    {
+                        "step": "syntheticEntryPrice",
+                        "scenario": _SCENARIO,
+                        "actualEntryPriceKrw": actual_entry,
+                        "syntheticEntryPriceKrw": position.entry_average_fill_price_krw,
+                        "note": (
+                            "실제 등락을 기다릴 수 없어 진입가만 옮겼다. 시세와 주문은 실제이고 "
+                            "이 run의 realizedPnl은 실제 손익이 아니다"
+                        ),
+                    }
+                )
             else:
                 raise RehearsalFailed(f"지원하지 않는 시나리오다: {_SCENARIO}")
             sell_inputs = AutomationInputs(

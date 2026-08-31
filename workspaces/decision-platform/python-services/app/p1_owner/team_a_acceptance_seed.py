@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Final
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
@@ -93,7 +93,31 @@ def _fixed_instant(environment: Mapping[str, str]) -> str:
     return parsed.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
+_APPEND_ONLY_RESET_TABLES: Final = (
+    "automation_processed_ticks",
+    "automation_runtime_events",
+    "automation_account_lineage",
+)
+
+
 def _reset(cursor: psycopg.Cursor[object]) -> None:
+    # execute() 가 postgres superuser 세션임을 이미 확인한 뒤에만 불린다.
+    for table in _APPEND_ONLY_RESET_TABLES:
+        cursor.execute(f"ALTER TABLE public.{table} DISABLE TRIGGER USER")
+    try:
+        _reset_statements(cursor)
+    finally:
+        # 되돌리기가 실패해 트랜잭션이 abort 상태면 이 ENABLE 도 실패한다. 그 실패가 원래
+        # 사유를 덮으면 무엇이 문제였는지 알 수 없다. DISABLE 자체가 트랜잭션과 함께
+        # 롤백되므로 여기서 조용히 넘어가도 트리거가 꺼진 채 남지 않는다.
+        for table in _APPEND_ONLY_RESET_TABLES:
+            try:
+                cursor.execute(f"ALTER TABLE public.{table} ENABLE TRIGGER USER")
+            except psycopg.Error:
+                break
+
+
+def _reset_statements(cursor: psycopg.Cursor[object]) -> None:
     for statement in _RESET_STATEMENTS:
         if "rag_v2_answer_history" in statement:
             cursor.execute(statement, (_RAG_ANSWER_ID, _USER_ID))

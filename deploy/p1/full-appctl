@@ -483,7 +483,13 @@ team_a_acceptance() {
   [[ $result == 0 && $restore_result == 0 && $runtime_restore_result == 0 ]] || die TEAM_A_ACCEPTANCE_FAILED
   printf 'OWNER_TEAM_A_BACKEND_PREREQUISITES=PASS\n'
   printf 'OWNER_POST_TEAM_A_BACKEND_CODE_REQUIRED=0\n'
-  printf 'TEAM_A_ACCEPTANCE_OPERATION_COUNT=33\n'
+  # 검증이 쓰는 catalog 에서 읽는다. 상수로 두면 catalog 가 늘어날 때 영수증만 옛 수를
+  # 찍고, 그 수가 곧 사람이 증거로 인용하는 값이 된다.
+  local acceptance_catalog acceptance_count
+  acceptance_catalog="$REPO_ROOT/contracts/catalogs/p1-team-a-acceptance.v2.json"
+  acceptance_count=$(python3 -c 'import json,sys
+print(json.load(open(sys.argv[1]))["acceptanceOperationCount"])' "$acceptance_catalog")
+  printf 'TEAM_A_ACCEPTANCE_OPERATION_COUNT=%s\n' "$acceptance_count"
   printf 'PLAYWRIGHT_SKIP=0\nFRONTEND_FAKE_PRODUCTION_RESPONSE=0\nPROVIDER_CALLS=0\n'
 }
 

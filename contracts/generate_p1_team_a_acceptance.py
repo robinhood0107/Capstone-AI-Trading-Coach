@@ -404,6 +404,8 @@ def success_schema(operation: Mapping[str, Any], statuses: tuple[int, ...]) -> o
     responses = object_value(operation.get("responses"), "responses")
     for status in statuses:
         response = object_value(responses.get(str(status)), f"response {status}")
+        if response.get("content") is None:
+            return {"type": "null"}
         content = object_value(response.get("content"), "response content")
         media = object_value(content.get("application/json"), "JSON response")
         return media.get("schema", {})
@@ -587,6 +589,24 @@ function requestId(): string {{
 
 def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
     openapi = object_value(json.loads(openapi_bytes), "OpenAPI")
+    try:
+        operations(openapi, 75)
+    except ContractError:
+        pass
+    else:
+        from contracts.verify_p1_v3_automation_openapi_transition import (
+            ADDITIVE_PATH as V3_ADDITIVE_PATH,
+            project_pre_v3_openapi,
+        )
+
+        v3_additive = object_value(
+            json.loads(V3_ADDITIVE_PATH.read_bytes()), "Automation V3 additive OpenAPI"
+        )
+        try:
+            openapi = project_pre_v3_openapi(openapi, v3_additive)
+        except ContractValidationError as error:
+            raise ContractError(str(error)) from error
+        openapi_bytes = canonical_json_bytes(openapi)
     try:
         operations(openapi, 69)
     except ContractError:

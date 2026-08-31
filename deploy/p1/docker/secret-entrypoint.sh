@@ -11,6 +11,7 @@ case "$profile" in
   automation-cli) secret_files="/run/secrets/automation_runtime_env /run/secrets/kis_mock_env" ;;
   automation-gate-author) secret_files=/run/secrets/automation_gate_author_env ;;
   market-data) secret_files="/run/secrets/market_data_env /run/secrets/automation_runtime_env" ;;
+  after-hours-replay) secret_files=/run/secrets/after_hours_replay_env ;;
   certification) secret_files="/run/secrets/spring_env /run/secrets/python_env /run/secrets/kis_mock_env" ;;
   authority) secret_files=/run/secrets/actor_capability_authority_env ;;
   role-bootstrap) secret_files=/run/secrets/role_bootstrap_env ;;
@@ -57,6 +58,7 @@ allowed_key() {
     automation-cli:P1_AUTOMATION_DATABASE_DSN|automation-cli:AUTOMATION_RUNTIME_SHARED_SECRET|automation-cli:P1_AUTOMATION_OWNER_USER_ID|automation-cli:P1_AUTOMATION_OWNER_USERNAME|automation-cli:P1_AUTOMATION_OWNER_PASSWORD|automation-cli:KIS_MOCK_CONFIGURED|automation-cli:KIS_MOCK_APP_KEY|automation-cli:KIS_MOCK_APP_SECRET|automation-cli:KIS_MOCK_ACCOUNT_NO|automation-cli:KIS_MOCK_BOUND_ACCOUNT_ID|automation-cli:KIS_MOCK_ORDER_REFERENCE_KEY|automation-cli:KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP|automation-cli:KIS_BROKERAGE_PHYSICAL_CAP) return 0 ;;
     automation-gate-author:P1_AUTOMATION_GATE_AUTHOR_DSN) return 0 ;;
     market-data:MARKET_DATA_WRITER_DSN|market-data:P1_AUTOMATION_DATABASE_DSN|market-data:AUTOMATION_RUNTIME_SHARED_SECRET|market-data:P1_AUTOMATION_OWNER_USER_ID|market-data:P1_AUTOMATION_OWNER_USERNAME|market-data:P1_AUTOMATION_OWNER_PASSWORD) return 0 ;;
+    after-hours-replay:P1_AFTER_HOURS_REPLAY_DATABASE_DSN|after-hours-replay:P1_AFTER_HOURS_REPLAY_ISOLATED) return 0 ;;
     authority:POSTGRES_IDENTITY_PASSWORD|authority:ACTOR_CAPABILITY_SHARED_SECRET|authority:ACTOR_CAPABILITY_PRIVATE_KEY|authority:ACTOR_CAPABILITY_PUBLIC_KEY|authority:ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD) return 0 ;;
     migration:POSTGRES_MIGRATION_PASSWORD|migration:BROKERAGE_DB_CAPABILITY_TOKEN_SHA256|migration:DEMO_CREDENTIAL_SEPARATION_KEY|migration:DEMO_USER_CREDENTIAL_BUNDLE|migration:DEMO_ADMIN_CREDENTIAL_BUNDLE) return 0 ;;
     seed-import:P1_SEED_DATABASE_DSN) return 0 ;;
@@ -90,6 +92,7 @@ required_keys() {
     automation-cli) printf '%s\n' 'P1_AUTOMATION_DATABASE_DSN AUTOMATION_RUNTIME_SHARED_SECRET P1_AUTOMATION_OWNER_USER_ID P1_AUTOMATION_OWNER_USERNAME P1_AUTOMATION_OWNER_PASSWORD KIS_MOCK_CONFIGURED KIS_MOCK_APP_KEY KIS_MOCK_APP_SECRET KIS_MOCK_ACCOUNT_NO KIS_MOCK_BOUND_ACCOUNT_ID KIS_MOCK_ORDER_REFERENCE_KEY KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP KIS_BROKERAGE_PHYSICAL_CAP' ;;
     automation-gate-author) printf '%s\n' 'P1_AUTOMATION_GATE_AUTHOR_DSN' ;;
     market-data) printf '%s\n' 'MARKET_DATA_WRITER_DSN P1_AUTOMATION_DATABASE_DSN AUTOMATION_RUNTIME_SHARED_SECRET P1_AUTOMATION_OWNER_USER_ID P1_AUTOMATION_OWNER_USERNAME P1_AUTOMATION_OWNER_PASSWORD' ;;
+    after-hours-replay) printf '%s\n' 'P1_AFTER_HOURS_REPLAY_DATABASE_DSN P1_AFTER_HOURS_REPLAY_ISOLATED' ;;
     authority) printf '%s\n' 'POSTGRES_IDENTITY_PASSWORD ACTOR_CAPABILITY_SHARED_SECRET ACTOR_CAPABILITY_PRIVATE_KEY ACTOR_CAPABILITY_PUBLIC_KEY ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD' ;;
     migration) printf '%s\n' 'POSTGRES_MIGRATION_PASSWORD BROKERAGE_DB_CAPABILITY_TOKEN_SHA256 DEMO_CREDENTIAL_SEPARATION_KEY DEMO_USER_CREDENTIAL_BUNDLE DEMO_ADMIN_CREDENTIAL_BUNDLE' ;;
     seed-import) printf '%s\n' 'P1_SEED_DATABASE_DSN' ;;

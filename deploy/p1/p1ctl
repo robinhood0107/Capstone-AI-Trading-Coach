@@ -389,6 +389,9 @@ init_state() {
   write_line P1_AUTOMATION_OWNER_PASSWORD "$user_password" "$SECRETS_DIR/automation-runtime.env"
   printf '' | state_write_file "$SECRETS_DIR/market-data.env" 0640
   write_line MARKET_DATA_WRITER_DSN "postgresql://decision_market_writer:${db[MARKET_WRITER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/market-data.env"
+  printf '' | state_write_file "$SECRETS_DIR/after-hours-replay.env" 0640
+  write_line P1_AFTER_HOURS_REPLAY_DATABASE_DSN "postgresql://decision_replay:${db[REPLAY]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/after-hours-replay.env"
+  write_line P1_AFTER_HOURS_REPLAY_ISOLATED true "$SECRETS_DIR/after-hours-replay.env"
   printf '' | state_write_file "$SECRETS_DIR/automation-gate-author.env" 0640
   write_line P1_AUTOMATION_GATE_AUTHOR_DSN "postgresql://decision_replay_authorizer:${db[REPLAY_AUTHORIZER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/automation-gate-author.env"
   printf '' | state_write_file "$SECRETS_DIR/artifact-import.env" 0640
@@ -474,7 +477,7 @@ init_state() {
 verify_state() {
   require_state
   verify_runtime_env
-  local expected=(actor-capability-authority.env actor-client.p12 actor-server.p12 actor-tls-ca.crt artifact-import.env automation-gate-author.env automation-runtime.env market-data.env bootstrap.env demo-admin.bundle demo-admin.password demo-credential-separation.key demo.env demo-user.bundle \
+  local expected=(actor-capability-authority.env actor-client.p12 actor-server.p12 actor-tls-ca.crt after-hours-replay.env artifact-import.env automation-gate-author.env automation-runtime.env market-data.env bootstrap.env demo-admin.bundle demo-admin.password demo-credential-separation.key demo.env demo-user.bundle \
     demo-user.password kafka-admin.env kafka-broker-jaas.conf kafka-publisher.env migration.env poison-recorder.env rag-v2.env \
     kis-mock.env kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn postgres.env python.env rag-history-kek-v1.key redis.env return-inference.env role-bootstrap.env seed-import.env spring.env)
   expected+=(team-a-acceptance.env)

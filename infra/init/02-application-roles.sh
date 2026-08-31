@@ -2408,7 +2408,7 @@ BEGIN
             public.automation_policy_versions,
             public.automation_policy_idempotency,
             public.automation_account_lineage
-        FROM PUBLIC, decision_worker, decision_replay,
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
             decision_replay_authorizer, decision_automation_runtime;
         GRANT SELECT ON TABLE
             public.automation_policy_versions,
@@ -2492,7 +2492,7 @@ BEGIN
         -- V92 실현 성과 집계는 owner scope 안에서만 읽힌다. bootstrap을 다시 돌려도 유지한다.
         REVOKE ALL PRIVILEGES ON FUNCTION
             public.p1_automation_realized_performance_v2(text)
-        FROM PUBLIC, decision_worker, decision_replay,
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
             decision_replay_authorizer, decision_automation_runtime;
         GRANT EXECUTE ON FUNCTION
             public.p1_automation_realized_performance_v2(text)
@@ -2500,6 +2500,102 @@ BEGIN
     END IF;
 END
 $p1_v94_automation_continuity_privileges$;
+
+DO $p1_v113_automation_v3_privileges$
+BEGIN
+    IF to_regprocedure('public.p1_arm_automation_v3(text,text,text,integer,integer,text,text,boolean)') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON TABLE
+            public.automation_v3_usage,
+            public.automation_candidate_screenings,
+            public.automation_candidate_evidence,
+            public.automation_ai_provider_operations
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        GRANT SELECT, INSERT, UPDATE ON TABLE
+            public.automation_v3_usage
+        TO decision_app;
+        GRANT SELECT, INSERT ON TABLE
+            public.automation_candidate_screenings,
+            public.automation_candidate_evidence
+        TO decision_app;
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_put_automation_policy_v2(
+                text,text,bigint,integer,integer,integer,integer,integer,boolean,integer,text,text
+            ),
+            public.p1_arm_automation_v3(text,text,text,integer,integer,text,text,boolean),
+            public.p1_read_automation_market_history_status_owner_v1(text),
+            public.put_strong_llm_owner_settings_v2(
+                text,text,text,text,text,text,text,text,integer,boolean,text
+            ),
+            public.p1_reserve_automation_ai_provider_v1(text,text,text,text,integer),
+            public.p1_complete_automation_ai_provider_v1(
+                text,text,text,text,integer,integer,text,text
+            ),
+            public.p1_fail_automation_ai_provider_v1(text,text,text,text)
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_put_automation_policy_v2(
+                text,text,bigint,integer,integer,integer,integer,integer,boolean,integer,text,text
+            ),
+            public.p1_arm_automation_v3(text,text,text,integer,integer,text,text,boolean),
+            public.p1_read_automation_market_history_status_owner_v1(text),
+            public.put_strong_llm_owner_settings_v2(
+                text,text,text,text,text,text,text,text,integer,boolean,text
+            ),
+            public.p1_reserve_automation_ai_provider_v1(text,text,text,text,integer),
+            public.p1_complete_automation_ai_provider_v1(
+                text,text,text,text,integer,integer,text,text
+            ),
+            public.p1_fail_automation_ai_provider_v1(text,text,text,text)
+        TO decision_app;
+
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_read_automation_atr_bars_v1(text,date,integer),
+            public.p1_read_automation_market_history_status_v1(),
+            public.p1_read_automation_runtime_state_v3(text,text),
+            public.p1_advance_automation_checkpoint_v3(
+                text,text,text,integer,text,text,text,text,integer,integer,integer,text,bigint,bigint,
+                text,text,text,text,integer,date,bigint,bigint,bigint,bigint,text,text,text,text,text,
+                text,text,text
+            ),
+            public.p1_read_automation_v3_metadata_v1(text,text),
+            public.p1_read_automation_ai_settings_snapshot_v1(text,text),
+            public.p1_record_automation_ai_judgement_v2(
+                text,text,integer,text,text,text,integer,text,text,integer,integer,integer,integer,
+                integer,text,text,text,integer,integer,integer
+            )
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_read_automation_atr_bars_v1(text,date,integer),
+            public.p1_read_automation_market_history_status_v1(),
+            public.p1_read_automation_runtime_state_v3(text,text),
+            public.p1_advance_automation_checkpoint_v3(
+                text,text,text,integer,text,text,text,text,integer,integer,integer,text,bigint,bigint,
+                text,text,text,text,integer,date,bigint,bigint,bigint,bigint,text,text,text,text,text,
+                text,text,text
+            ),
+            public.p1_read_automation_v3_metadata_v1(text,text),
+            public.p1_read_automation_ai_settings_snapshot_v1(text,text),
+            public.p1_record_automation_ai_judgement_v2(
+                text,text,integer,text,text,text,integer,text,text,integer,integer,integer,integer,
+                integer,text,text,text,integer,integer,integer
+            )
+        TO decision_automation_runtime;
+
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_read_after_hours_replay_bars_v1(text)
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_read_after_hours_replay_bars_v1(text)
+        TO decision_replay;
+        REVOKE CREATE ON SCHEMA public FROM
+            decision_app, decision_replay, decision_automation_runtime;
+    END IF;
+END
+$p1_v113_automation_v3_privileges$;
 
 
 DO $block$

@@ -37,6 +37,7 @@ from contracts.verify_p1_v91_automation_openapi_transition import (
     operations,
     project_pre_v91_openapi,
 )
+from contracts.verify_p1_v3_automation_openapi_transition import project_pre_v3_openapi
 
 
 class P1V91AutomationContractTest(unittest.TestCase):
@@ -192,6 +193,11 @@ class P1V91AutomationContractTest(unittest.TestCase):
         )
         # Strong LLM 설정 표면이 맨 앞에 더해졌다. 그 층을 먼저 걷어 exact-68로 내린다.
         strong_llm_additive = json.loads(STRONG_LLM_ADDITIVE_PATH.read_text(encoding="utf-8"))
+        v3_additive = json.loads(
+            (ROOT / "contracts/openapi/p1-automation-v3.v1.openapi.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(75, len(operations(root)))
+        root = project_pre_v3_openapi(root, v3_additive)
         self.assertEqual(69, len(operations(root)))
         root = strip_strong_llm_settings(root, strong_llm_additive)
         self.assertEqual(68, len(operations(root)))
@@ -227,7 +233,8 @@ class P1V91AutomationContractTest(unittest.TestCase):
             ROOT
             / "workspaces/decision-platform/spring-api/src/main/kotlin/com/capstone/decision/infrastructure/automation/JdbcAutomationRepository.kt"
         ).read_text(encoding="utf-8")
-        emitted = set(re.findall(r'add\("([A-Z][A-Z0-9_]+)"\)', repository))
+        v2_repository = repository.split("private fun readStatusV3", maxsplit=1)[0]
+        emitted = set(re.findall(r'add\("([A-Z][A-Z0-9_]+)"\)', v2_repository))
         self.assertTrue(emitted)
         self.assertEqual(set(), emitted.difference(BLOCKERS))
 

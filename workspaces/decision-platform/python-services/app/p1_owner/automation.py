@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import math
 from dataclasses import dataclass, field
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from importlib.metadata import version
 from typing import Any, Literal, Mapping, Protocol, cast
 
@@ -20,6 +20,12 @@ import exchange_calendars as xcals
 import pandas as pd
 
 from app.data._shared.canonical_json import canonical_json_bytes
+from app.p1_owner.automation_atr import (
+    AtrHistoryError,
+    CompletedDailyBar,
+    advance_trailing_stop,
+    wilder_atr,
+)
 
 Signal = Literal["BUY", "HOLD", "SELL"]
 Side = Literal["BUY", "SELL"]
@@ -27,7 +33,13 @@ NewsVerdict = Literal["VETO_BUY", "NO_VETO", "ABSTAIN"]
 SubmitOutcome = Literal["FILLED", "UNFILLED", "AMBIGUOUS"]
 ReconcileOutcome = Literal["FILLED", "UNFILLED", "UNRESOLVED"]
 PolicyPreset = Literal["CONSERVATIVE", "BALANCED", "AGGRESSIVE", "CUSTOM"]
-ExitReason = Literal["STOP_LOSS", "MAX_HOLDING_SESSIONS", "MODEL_SELL", "TAKE_PROFIT"]
+ExitReason = Literal[
+    "STOP_LOSS",
+    "ATR_TRAILING",
+    "MODEL_SELL",
+    "TAKE_PROFIT",
+    "MAX_HOLDING_SESSIONS",
+]
 
 _ACTIVE_STATES = frozenset(
     {
@@ -35,6 +47,7 @@ _ACTIVE_STATES = frozenset(
         "PRECHECK",
         "RECONCILING_PREVIOUS",
         "EXIT_SELECTED",
+        "NEWS_SCREENING",
         "AI_JUDGING",
         "BUY_CANDIDATE_SELECTED",
         "NEWS_CHECKING",
@@ -64,6 +77,7 @@ _TERMINAL_STATES = frozenset(
 _SELECTION_TARGETS = frozenset(
     {
         "EXIT_SELECTED",
+        "NEWS_SCREENING",
         "AI_JUDGING",
         "BUY_CANDIDATE_SELECTED",
         "SKIPPED_NO_ACTION",
@@ -81,9 +95,15 @@ _LEGAL_TRANSITIONS: frozenset[tuple[str, str]] = frozenset(
         ("PRECHECK", "RECONCILING_PREVIOUS"),
         ("RECONCILING_PREVIOUS", "PENDING_RECONCILIATION"),
         ("EXIT_SELECTED", "ORDER_SIZING"),
+        ("NEWS_SCREENING", "AI_JUDGING"),
+        ("NEWS_SCREENING", "BUY_CANDIDATE_SELECTED"),
+        ("NEWS_SCREENING", "SKIPPED_NO_ACTION"),
+        ("NEWS_SCREENING", "SKIPPED_DATA_UNAVAILABLE"),
         ("AI_JUDGING", "BUY_CANDIDATE_SELECTED"),
+        ("AI_JUDGING", "SKIPPED_DATA_UNAVAILABLE"),
         ("AI_JUDGING", "SKIPPED_NO_ACTION"),
         ("BUY_CANDIDATE_SELECTED", "NEWS_CHECKING"),
+        ("BUY_CANDIDATE_SELECTED", "ORDER_SIZING"),
         ("NEWS_CHECKING", "NEWS_VETOED"),
         ("NEWS_CHECKING", "ORDER_SIZING"),
         ("NEWS_CHECKING", "SKIPPED_DATA_UNAVAILABLE"),
@@ -117,13 +137,19 @@ _KST_OPEN_TIME = time(9, 30)
 _KST_CLOSE_ORDER_TIME = time(9, 40)
 _CANCEL_TIME = time(15, 20)
 _MAX_OPEN_POSITIONS = 5
-_MAX_PHYSICAL_CALLS = 16
+_LEGACY_MAX_PHYSICAL_CALLS = 16
+_V3_MAX_PHYSICAL_CALLS = 64
 _ROUND_TRIP_COST_BPS = 35
 _MAX_BIGINT = 9_223_372_036_854_775_807
 _POLICY_PRESETS: Mapping[str, tuple[int, int]] = {
     "CONSERVATIVE": (300, 500),
     "BALANCED": (500, 1_000),
     "AGGRESSIVE": (800, 1_500),
+}
+_POLICY_V3_PRESETS: Mapping[str, tuple[int, int, int, int, int, bool]] = {
+    "CONSERVATIVE": (300, 500, 20, 22, 2_500, True),
+    "BALANCED": (500, 1_000, 60, 22, 3_000, True),
+    "AGGRESSIVE": (800, 1_500, 0, 22, 3_500, True),
 }
 
 
@@ -142,6 +168,10 @@ class AutomationPolicySnapshot:
     take_profit_bps: int
     preset: PolicyPreset = "CUSTOM"
     max_open_positions: int = _MAX_OPEN_POSITIONS
+    max_holding_sessions: int | None = None
+    atr_period: int | None = None
+    atr_multiplier_milli: int | None = None
+    model_sell_enabled: bool = True
 
     def __post_init__(self) -> None:
         policy_suffix = self.policy_id.removeprefix("auto_pol_")
@@ -164,9 +194,40 @@ class AutomationPolicySnapshot:
             raise AutomationError("automation exit thresholds are invalid")
         if self.max_open_positions != _MAX_OPEN_POSITIONS:
             raise AutomationError("automation position cap is invalid")
-        expected = _POLICY_PRESETS.get(self.preset)
-        if expected is not None and expected != (self.stop_loss_bps, self.take_profit_bps):
-            raise AutomationError("automation preset thresholds drifted")
+        v3_values = (
+            self.max_holding_sessions,
+            self.atr_period,
+            self.atr_multiplier_milli,
+        )
+        if any(value is not None for value in v3_values):
+            if any(value is None for value in v3_values):
+                raise AutomationError("automation v3 policy snapshot is incomplete")
+            if not 0 <= cast(int, self.max_holding_sessions) <= 1_260:
+                raise AutomationError("automation holding sessions are invalid")
+            if not 5 <= cast(int, self.atr_period) <= 100:
+                raise AutomationError("automation ATR period is invalid")
+            multiplier = cast(int, self.atr_multiplier_milli)
+            if not 1_000 <= multiplier <= 10_000 or multiplier % 100:
+                raise AutomationError("automation ATR multiplier is invalid")
+            expected_v3 = _POLICY_V3_PRESETS.get(self.preset)
+            actual_v3 = (
+                self.stop_loss_bps,
+                self.take_profit_bps,
+                self.max_holding_sessions,
+                self.atr_period,
+                self.atr_multiplier_milli,
+                self.model_sell_enabled,
+            )
+            if expected_v3 is not None and expected_v3 != actual_v3:
+                raise AutomationError("automation v3 preset drifted")
+        else:
+            expected = _POLICY_PRESETS.get(self.preset)
+            if expected is not None and expected != (self.stop_loss_bps, self.take_profit_bps):
+                raise AutomationError("automation preset thresholds drifted")
+
+    @property
+    def is_v3(self) -> bool:
+        return self.max_holding_sessions is not None
 
     @classmethod
     def from_preset(
@@ -185,6 +246,29 @@ class AutomationPolicySnapshot:
             stop_loss_bps=stop_loss,
             take_profit_bps=take_profit,
             preset=preset,
+        )
+
+    @classmethod
+    def from_v3_preset(
+        cls,
+        *,
+        policy_id: str,
+        version: int,
+        capital_limit_krw: int,
+        preset: Literal["CONSERVATIVE", "BALANCED", "AGGRESSIVE"],
+    ) -> AutomationPolicySnapshot:
+        stop_loss, take_profit, holding, period, multiplier, model_sell = _POLICY_V3_PRESETS[preset]
+        return cls(
+            policy_id=policy_id,
+            version=version,
+            capital_limit_krw=capital_limit_krw,
+            stop_loss_bps=stop_loss,
+            take_profit_bps=take_profit,
+            preset=preset,
+            max_holding_sessions=holding,
+            atr_period=period,
+            atr_multiplier_milli=multiplier,
+            model_sell_enabled=model_sell,
         )
 
 
@@ -372,6 +456,7 @@ class AiCandidateVerdict:
     score: float
     veto: bool
     reason: str
+    evidence_spans: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.score <= 1.0 or not math.isfinite(self.score):
@@ -397,6 +482,55 @@ class AiJudgement:
 
 
 @dataclass(frozen=True, slots=True)
+class EvidenceSpan:
+    symbol: str
+    citation_id: str
+    source_id: str
+    source_type: Literal["OFFICIAL_PRIMARY", "REGISTERED_INDEPENDENT"]
+    source_event_date: date | None
+    age_warning: bool
+    uri_sha256: str
+    bounded_quote: str
+    quote_sha256: str
+    verified: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateScreening:
+    symbol: str
+    status: Literal["AVAILABLE", "ABSTAIN"]
+    verdict: Literal["VETO_BUY", "NO_VETO"]
+    score_bps: int
+    reason: str
+    evidence: tuple[EvidenceSpan, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.score_bps <= 10_000 or not self.reason:
+            raise AutomationError("automation screening verdict is invalid")
+        if any(item.symbol != self.symbol or not item.verified for item in self.evidence):
+            raise AutomationError("automation screening evidence is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class NewsScreeningBatch:
+    screenings: tuple[CandidateScreening, ...]
+    provider_call_count: int
+    grounding_query_count: int
+    failed: bool = False
+
+    def __post_init__(self) -> None:
+        symbols = tuple(item.symbol for item in self.screenings)
+        if len(symbols) != len(set(symbols)):
+            raise AutomationError("automation screening symbols are duplicated")
+        if self.provider_call_count not in range(0, 2):
+            raise AutomationError("automation screening provider count is invalid")
+        if self.grounding_query_count not in range(0, 33):
+            raise AutomationError("automation grounding query count is invalid")
+        if self.grounding_query_count and self.provider_call_count != 1:
+            raise AutomationError("automation grounding call accounting is invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class Quote:
     symbol: str
     price_krw: int
@@ -404,6 +538,17 @@ class Quote:
     upper_limit_krw: int
     fresh: bool = True
     is_etf_etn: bool = False
+    temp_stop_yn: str = "N"
+    management_issue_code: str = "00"
+    liquidation_trading_yn: str = "N"
+
+    @property
+    def hard_eligible(self) -> bool:
+        return (
+            self.temp_stop_yn == "N"
+            and self.management_issue_code == "00"
+            and self.liquidation_trading_yn == "N"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -431,11 +576,16 @@ class AutomationInputs:
     # Strong LLM이 붙어 있는지. 붙어 있지 않거나 답하지 못하면 판단에 AI_NOT_PARTICIPATED를
     # 남기고 기존 규칙만으로 진행한다. AI가 없다고 자동매매가 멈추지는 않는다.
     ai_judgement_provider_bound: bool = False
+    ai_judgement_enabled: bool = False
+    ai_thinking_level: Literal["minimal", "low", "medium"] = "low"
+    ai_settings_sha256: str | None = None
     # 이 run에서 이미 받은 판단의 확신도. AI_JUDGING과 ORDER_SIZING은 서로 다른 tick이라
     # run 객체로는 건너오지 못한다. 저장된 판단을 상태가 다시 실어 온다.
     ai_confidence: float | None = None
     manual_position_symbols: frozenset[str] = frozenset()
     signals: tuple[SignalCandidate, ...] = ()
+    atr_histories: Mapping[str, tuple[CompletedDailyBar, ...]] = field(default_factory=dict)
+    atr_expected_sessions: tuple[date, ...] = ()
 
 
 @dataclass(slots=True)
@@ -444,7 +594,7 @@ class BotPosition:
     account_id: str
     symbol: str
     entry_session: date
-    expiry_session: date
+    expiry_session: date | None
     created_at: datetime
     status: str = "OPEN"
     closed_at: datetime | None = None
@@ -459,6 +609,14 @@ class BotPosition:
     exit_average_fill_price_krw: int | None = None
     exit_filled_quantity: int = 0
     realized_pnl_krw: int | None = None
+    max_holding_sessions: int | None = None
+    atr_period: int | None = None
+    atr_multiplier_milli: int | None = None
+    model_sell_enabled: bool = True
+    peak_price_krw: int | None = None
+    atr_as_of_session: date | None = None
+    trailing_stop_krw: int | None = None
+    atr_status: Literal["AVAILABLE", "UNAVAILABLE", "LEGACY"] = "LEGACY"
 
     def __post_init__(self) -> None:
         if self.quantity < 0 or (self.status != "CLOSED" and self.quantity == 0):
@@ -471,6 +629,34 @@ class BotPosition:
                 raise AutomationError("automation position entry notional drifted")
             if self.entry_notional_krw is None:
                 self.entry_notional_krw = exact_notional
+        v3_values = (
+            self.max_holding_sessions,
+            self.atr_period,
+            self.atr_multiplier_milli,
+            self.peak_price_krw,
+        )
+        if any(value is not None for value in v3_values):
+            if any(value is None for value in v3_values):
+                raise AutomationError("automation v3 position snapshot is incomplete")
+            holding = cast(int, self.max_holding_sessions)
+            period = cast(int, self.atr_period)
+            multiplier = cast(int, self.atr_multiplier_milli)
+            if not 0 <= holding <= 1_260 or not 5 <= period <= 100:
+                raise AutomationError("automation v3 position policy is invalid")
+            if not 1_000 <= multiplier <= 10_000 or multiplier % 100:
+                raise AutomationError("automation v3 position ATR multiplier is invalid")
+            if cast(int, self.peak_price_krw) <= 0:
+                raise AutomationError("automation v3 position peak is invalid")
+            if (holding == 0) != (self.expiry_session is None):
+                raise AutomationError("automation v3 position expiry is invalid")
+            if self.atr_status == "AVAILABLE" and (
+                self.atr_as_of_session is None or self.trailing_stop_krw is None
+            ):
+                raise AutomationError("automation v3 position ATR state is incomplete")
+            if self.trailing_stop_krw is not None and self.trailing_stop_krw <= 0:
+                raise AutomationError("automation v3 trailing stop is invalid")
+        elif self.expiry_session is None:
+            raise AutomationError("legacy automation position expiry is missing")
 
     def projection(self) -> dict[str, object]:
         return {
@@ -484,7 +670,7 @@ class BotPosition:
             "exitAverageFillPriceKrw": self.exit_average_fill_price_krw,
             "exitReason": self.exit_reason,
             "realizedPnlKrw": self.realized_pnl_krw,
-            "expirySession": self.expiry_session.isoformat(),
+            "expirySession": self.expiry_session.isoformat() if self.expiry_session else None,
             "policyId": self.policy_id,
             "policyVersion": self.policy_version,
             "positionId": self.position_id,
@@ -494,6 +680,39 @@ class BotPosition:
             "stopLossBps": self.stop_loss_bps,
             "symbol": self.symbol,
             "takeProfitBps": self.take_profit_bps,
+        }
+
+    def v3_projection(self) -> dict[str, object]:
+        if self.max_holding_sessions is None or self.peak_price_krw is None:
+            raise AutomationError("legacy position has no v3 projection")
+        return {
+            "accountId": self.account_id,
+            "atrAsOfSession": (
+                self.atr_as_of_session.isoformat() if self.atr_as_of_session else None
+            ),
+            "atrMultiplierMilli": self.atr_multiplier_milli,
+            "atrPeriod": self.atr_period,
+            "botOwned": True,
+            "closedAt": _iso(self.closed_at) if self.closed_at is not None else None,
+            "contractId": "automation-position.v3",
+            "createdAt": _iso(self.created_at),
+            "entryAverageFillPriceKrw": self.entry_average_fill_price_krw,
+            "entrySession": self.entry_session.isoformat(),
+            "exitReason": self.exit_reason,
+            "expirySession": self.expiry_session.isoformat() if self.expiry_session else None,
+            "maxHoldingSessions": self.max_holding_sessions,
+            "modelSellEnabled": self.model_sell_enabled,
+            "peakPriceKrw": self.peak_price_krw,
+            "policyId": self.policy_id,
+            "policyVersion": self.policy_version,
+            "positionId": self.position_id,
+            "quantity": self.quantity,
+            "shortAllowed": False,
+            "status": self.status,
+            "stopLossBps": self.stop_loss_bps,
+            "symbol": self.symbol,
+            "takeProfitBps": self.take_profit_bps,
+            "trailingStopKrw": self.trailing_stop_krw,
         }
 
 
@@ -551,6 +770,14 @@ class AutomationRun:
     ai_vetoed_symbols: tuple[str, ...] = ()
     ai_quantity_before: int | None = None
     ai_quantity_after: int | None = None
+    candidate_screenings: tuple[CandidateScreening, ...] = ()
+    candidate_quotes: dict[str, Quote] = field(default_factory=dict)
+    screening_provider_call_count: int = 0
+    grounding_query_count: int = 0
+    evidence_count: int = 0
+    evidence_set_sha256: str | None = None
+    candidate_set_sha256: str | None = None
+    ai_settings_sha256: str | None = None
 
     def projection(self) -> dict[str, object]:
         reservation = self.reservation
@@ -594,9 +821,20 @@ class AutomationFixtureTransportPort(Protocol):
 
     def quote(self, symbol: str) -> Quote: ...
 
+    def screen(
+        self,
+        candidates: tuple[SignalCandidate, ...],
+        quotes: Mapping[str, Quote],
+        candidate_set_sha256: str,
+    ) -> NewsScreeningBatch: ...
+
     def vertex(self, symbol: str) -> NewsVerdict: ...
 
-    def judge(self, candidates: tuple[SignalCandidate, ...]) -> AiJudgement | None:
+    def judge(
+        self,
+        candidates: tuple[SignalCandidate, ...],
+        candidate_set_sha256: str,
+    ) -> AiJudgement | None:
         """Strong LLM 판단. None은 물어볼 곳이 없었거나 답을 못 받았다는 뜻이다."""
 
     def submit(self, reservation: OrderReservation) -> SubmitOutcome: ...
@@ -615,6 +853,7 @@ class FixtureAutomationTransport:
     quotes: dict[str, Quote]
     news_verdict: NewsVerdict = "NO_VETO"
     ai_judgement: AiJudgement | None = None
+    screening_batch: NewsScreeningBatch | None = None
     submit_outcome: SubmitOutcome = "FILLED"
     reconcile_outcomes: list[ReconcileOutcome] = field(default_factory=lambda: ["FILLED"])
     reconcile_snapshots: list[ReconcileSnapshot] = field(default_factory=list)
@@ -622,6 +861,7 @@ class FixtureAutomationTransport:
     physical_calls: int = 0
     physical_submit_calls: int = 0
     quote_calls: int = 0
+    screen_calls: int = 0
     vertex_calls: int = 0
     judge_calls: int = 0
     submit_calls: int = 0
@@ -640,8 +880,31 @@ class FixtureAutomationTransport:
         self.vertex_calls += 1
         return self.news_verdict
 
-    def judge(self, candidates: tuple[SignalCandidate, ...]) -> AiJudgement | None:
-        del candidates
+    def screen(
+        self,
+        candidates: tuple[SignalCandidate, ...],
+        quotes: Mapping[str, Quote],
+        candidate_set_sha256: str,
+    ) -> NewsScreeningBatch:
+        del quotes, candidate_set_sha256
+        self.screen_calls += 1
+        if self.screening_batch is not None:
+            return self.screening_batch
+        return NewsScreeningBatch(
+            tuple(
+                CandidateScreening(item.symbol, "AVAILABLE", "NO_VETO", 5_000, "NO_EVIDENCE")
+                for item in candidates
+            ),
+            provider_call_count=0,
+            grounding_query_count=0,
+        )
+
+    def judge(
+        self,
+        candidates: tuple[SignalCandidate, ...],
+        candidate_set_sha256: str,
+    ) -> AiJudgement | None:
+        del candidates, candidate_set_sha256
         self.judge_calls += 1
         return self.ai_judgement
 
@@ -798,7 +1061,7 @@ class AutomationEngine:
             raise AutomationError("transport submit count moved backwards")
         run.provider_call_count = transport.physical_calls
         run.physical_submit_count = transport.physical_submit_calls
-        if run.provider_call_count > _MAX_PHYSICAL_CALLS or run.physical_submit_count > 1:
+        if run.provider_call_count > _physical_call_cap(run) or run.physical_submit_count > 1:
             raise AutomationError("automation physical call cap was exceeded")
         if isinstance(transport, FixtureAutomationTransport) and transport.physical_calls != 0:
             raise AutomationError("fixture transport performed a physical call")
@@ -845,10 +1108,13 @@ class AutomationEngine:
                 self._select(run, now, inputs, transport)
         elif run.state == "EXIT_SELECTED":
             self._transition(run, "ORDER_SIZING", "RUN_TRANSITIONED", now)
+        elif run.state == "NEWS_SCREENING":
+            self._news_screen(run, now, inputs, transport)
         elif run.state == "AI_JUDGING":
             self._judge(run, now, inputs, transport)
         elif run.state == "BUY_CANDIDATE_SELECTED":
-            self._transition(run, "NEWS_CHECKING", "RUN_TRANSITIONED", now)
+            target = "ORDER_SIZING" if inputs.policy.is_v3 else "NEWS_CHECKING"
+            self._transition(run, target, "RUN_TRANSITIONED", now)
         elif run.state == "NEWS_CHECKING":
             if run.selected_quote is None:
                 quote = self._quote(run, now, transport, _required(run.selected_symbol))
@@ -954,19 +1220,66 @@ class AutomationEngine:
                 position.symbol,
             ),
         )
-        expiry_exits = sorted(
-            (position for position in positions if run.session_date >= position.expiry_session),
+        atr_exits: list[BotPosition] = []
+        for position in positions:
+            if (
+                position.atr_period is None
+                or position.atr_multiplier_milli is None
+                or position.peak_price_krw is None
+                or position.symbol not in quotes
+            ):
+                continue
+            history = inputs.atr_histories.get(position.symbol, ())
+            try:
+                atr = wilder_atr(
+                    history,
+                    period=position.atr_period,
+                    as_of_session=run.session_date,
+                    expected_sessions=(inputs.atr_expected_sessions or None),
+                )
+                # The peak belongs to this position, not to the symbol's pre-entry
+                # history.  Using the whole ATR window here can import an old high
+                # from before the fill and immediately manufacture a trailing exit.
+                completed_high = max(
+                    (
+                        bar.high_price_krw
+                        for bar in history
+                        if bar.session_date >= position.entry_session
+                    ),
+                    default=position.peak_price_krw,
+                )
+                trailing = advance_trailing_stop(
+                    previous_peak_price_krw=position.peak_price_krw,
+                    completed_high_price_krw=completed_high,
+                    current_quote_price_krw=quotes[position.symbol].price_krw,
+                    atr_value_krw=atr.value_krw,
+                    atr_multiplier_milli=position.atr_multiplier_milli,
+                    previous_trailing_stop_krw=position.trailing_stop_krw,
+                )
+                position.peak_price_krw = trailing.peak_price_krw
+                position.trailing_stop_krw = trailing.trailing_stop_krw
+                position.atr_as_of_session = atr.as_of_session
+                position.atr_status = "AVAILABLE"
+                if (
+                    run.session_date > position.entry_session
+                    and quotes[position.symbol].price_krw <= trailing.trailing_stop_krw
+                ):
+                    atr_exits.append(position)
+            except AtrHistoryError:
+                position.atr_status = "UNAVAILABLE"
+        atr_exits.sort(
             key=lambda position: (
-                -_session_distance(position.expiry_session, run.session_date),
+                cast(int, position.trailing_stop_krw),
                 position.entry_session,
                 position.symbol,
-            ),
+            )
         )
         model_exits = sorted(
             (
                 position
                 for position in positions
-                if (signal := signals.get(position.symbol)) is not None
+                if position.model_sell_enabled
+                and (signal := signals.get(position.symbol)) is not None
                 and signal.lstm_signal == signal.baseline_signal == "SELL"
             ),
             key=lambda position: (position.entry_session, position.symbol),
@@ -984,13 +1297,27 @@ class AutomationEngine:
                 position.symbol,
             ),
         )
+        expiry_exits = sorted(
+            (
+                position
+                for position in positions
+                if position.expiry_session is not None
+                and run.session_date >= position.expiry_session
+            ),
+            key=lambda position: (
+                -_session_distance(cast(date, position.expiry_session), run.session_date),
+                position.entry_session,
+                position.symbol,
+            ),
+        )
         selected: BotPosition | None = None
         reason: ExitReason | None = None
         for candidates, candidate_reason in (
             (stop_exits, "STOP_LOSS"),
-            (expiry_exits, "MAX_HOLDING_SESSIONS"),
+            (atr_exits, "ATR_TRAILING"),
             (model_exits, "MODEL_SELL"),
             (profit_exits, "TAKE_PROFIT"),
+            (expiry_exits, "MAX_HOLDING_SESSIONS"),
         ):
             if candidates:
                 selected = candidates[0]
@@ -1007,14 +1334,43 @@ class AutomationEngine:
         if len(positions) >= inputs.policy.max_open_positions:
             self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
             return
-        buys = self._buy_candidates(inputs)
+        raw_buys = self._buy_candidates(inputs, require_atr=False)
+        buys = self._buy_candidates(inputs, require_atr=inputs.policy.is_v3)
+        if raw_buys:
+            run.candidate_set_sha256 = _candidate_set_sha256(raw_buys)
         if not buys:
-            self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
+            state = "SKIPPED_DATA_UNAVAILABLE" if raw_buys else "SKIPPED_NO_ACTION"
+            self._transition(run, state, "RUN_TRANSITIONED", now)
             return
         # 후보 집합의 소유자는 Return Engine이다. AI는 이 목록 안에서만 답하고 종목을 더하지 못한다.
+        if inputs.policy.is_v3:
+            run.ai_settings_sha256 = inputs.ai_settings_sha256
+            if inputs.ai_judgement_enabled:
+                if not inputs.ai_judgement_provider_bound:
+                    self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
+                    return
+                self._transition(run, "NEWS_SCREENING", "RUN_TRANSITIONED", now)
+                return
+            for candidate in buys:
+                quote = self._candidate_quote(run, now, transport, candidate.symbol)
+                if run.state == "HALTED":
+                    return
+                if quote is not None and quote.hard_eligible:
+                    run.selected_symbol = candidate.symbol
+                    run.selected_side = "BUY"
+                    run.selected_quote = quote
+                    self._transition(run, "BUY_CANDIDATE_SELECTED", "BUY_SELECTED", now)
+                    return
+            self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
+            return
         self._transition(run, "AI_JUDGING", "RUN_TRANSITIONED", now)
 
-    def _buy_candidates(self, inputs: AutomationInputs) -> tuple[SignalCandidate, ...]:
+    def _buy_candidates(
+        self,
+        inputs: AutomationInputs,
+        *,
+        require_atr: bool = False,
+    ) -> tuple[SignalCandidate, ...]:
         """2-of-2 합의를 통과한 매수 후보. 같은 입력에 같은 순서가 나온다.
 
         AI_JUDGING에서 이것을 다시 계산한다. checkpoint에 목록을 실어 나르면 저장 계약이
@@ -1024,16 +1380,23 @@ class AutomationEngine:
         held = {
             position.symbol for position in self.store.positions if position.status == "OPEN"
         } | set(inputs.manual_position_symbols)
+        candidates = (
+            candidate
+            for candidate in inputs.signals
+            if candidate.lstm_signal == candidate.baseline_signal == "BUY"
+            and candidate.symbol not in held
+            and math.isfinite(candidate.expected_return)
+            and math.isfinite(candidate.confidence)
+        )
+        if require_atr:
+            candidates = (
+                candidate
+                for candidate in candidates
+                if self._candidate_has_atr_history(candidate.symbol, inputs)
+            )
         return tuple(
             sorted(
-                (
-                    candidate
-                    for candidate in inputs.signals
-                    if candidate.lstm_signal == candidate.baseline_signal == "BUY"
-                    and candidate.symbol not in held
-                    and math.isfinite(candidate.expected_return)
-                    and math.isfinite(candidate.confidence)
-                ),
+                candidates,
                 key=lambda candidate: (
                     -candidate.expected_return,
                     -candidate.confidence,
@@ -1042,6 +1405,22 @@ class AutomationEngine:
             )
         )
 
+    @staticmethod
+    def _candidate_has_atr_history(symbol: str, inputs: AutomationInputs) -> bool:
+        period = inputs.policy.atr_period
+        if period is None:
+            return True
+        try:
+            wilder_atr(
+                inputs.atr_histories.get(symbol, ()),
+                period=period,
+                as_of_session=inputs.session_date,
+                expected_sessions=(inputs.atr_expected_sessions or None),
+            )
+            return True
+        except AtrHistoryError:
+            return False
+
     def _judge(
         self,
         run: AutomationRun,
@@ -1049,7 +1428,24 @@ class AutomationEngine:
         inputs: AutomationInputs,
         transport: AutomationFixtureTransportPort,
     ) -> None:
-        buys = self._buy_candidates(inputs)
+        buys = self._buy_candidates(inputs, require_atr=inputs.policy.is_v3)
+        current_candidate_set_sha256 = _candidate_set_sha256(
+            self._buy_candidates(inputs, require_atr=False)
+        )
+        if inputs.policy.is_v3:
+            if (
+                run.candidate_set_sha256 is not None
+                and run.candidate_set_sha256 != current_candidate_set_sha256
+            ):
+                self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
+                return
+            allowed = {
+                item.symbol
+                for item in run.candidate_screenings
+                if item.status == "AVAILABLE" and item.verdict == "NO_VETO"
+            }
+            buys = tuple(item for item in buys if item.symbol in allowed)
+        run.candidate_set_sha256 = current_candidate_set_sha256
         if not buys:
             # 판단을 기다리는 사이 입력이 바뀌어 후보가 사라졌다. 옛 후보를 사지 않는다.
             self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
@@ -1057,7 +1453,17 @@ class AutomationEngine:
         # 규칙만으로 고른 1등을 먼저 적는다. 이것과 실제 선택이 다르면 재순위가 일어난 run이다.
         run.ai_baseline_symbol = buys[0].symbol
         run.ai_candidate_count = len(buys)
-        judgement = self._ai_judgement(run, inputs, transport)
+        judgement = self._ai_judgement(run, inputs, transport, buys)
+        if inputs.policy.is_v3 and judgement is None:
+            self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
+            return
+        if (
+            inputs.policy.is_v3
+            and judgement is not None
+            and {item.symbol for item in judgement.verdicts} != {item.symbol for item in buys}
+        ):
+            self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
+            return
         ranked = _apply_judgement(buys, judgement)
         run.ai_vetoed_symbols = tuple(
             candidate.symbol for candidate in buys if candidate not in ranked
@@ -1068,17 +1474,114 @@ class AutomationEngine:
             return
         run.selected_symbol = ranked[0].symbol
         run.selected_side = "BUY"
+        run.selected_quote = run.candidate_quotes.get(ranked[0].symbol)
+        if inputs.policy.is_v3 and run.selected_quote is None:
+            self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
+            return
         self._transition(run, "BUY_CANDIDATE_SELECTED", "BUY_SELECTED", now)
+
+    def _news_screen(
+        self,
+        run: AutomationRun,
+        now: datetime,
+        inputs: AutomationInputs,
+        transport: AutomationFixtureTransportPort,
+    ) -> None:
+        buys = self._buy_candidates(inputs, require_atr=True)
+        raw_buys = self._buy_candidates(inputs, require_atr=False)
+        run.candidate_set_sha256 = _candidate_set_sha256(raw_buys)
+        eligible: list[SignalCandidate] = []
+        quotes: dict[str, Quote] = {}
+        for candidate in buys:
+            quote = self._candidate_quote(run, now, transport, candidate.symbol)
+            if run.state == "HALTED":
+                return
+            if quote is not None and quote.hard_eligible:
+                eligible.append(candidate)
+                quotes[candidate.symbol] = quote
+        if not eligible:
+            self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
+            return
+        run.ai_baseline_symbol = eligible[0].symbol
+        run.ai_candidate_count = len(eligible)
+        try:
+            batch = transport.screen(
+                tuple(eligible),
+                quotes,
+                run.candidate_set_sha256,
+            )
+        except Exception:
+            self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
+            return
+        symbols = {item.symbol for item in eligible}
+        if batch.failed or {item.symbol for item in batch.screenings} != symbols:
+            self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
+            return
+        run.candidate_screenings = batch.screenings
+        run.candidate_quotes = quotes
+        run.screening_provider_call_count = batch.provider_call_count
+        run.grounding_query_count = batch.grounding_query_count
+        evidence = tuple(span for item in batch.screenings for span in item.evidence)
+        run.evidence_count = len(evidence)
+        run.evidence_set_sha256 = (
+            hashlib.sha256(
+                canonical_json_bytes(
+                    [
+                        {
+                            "citationId": item.citation_id,
+                            "quoteSha256": item.quote_sha256,
+                            "symbol": item.symbol,
+                            "uriSha256": item.uri_sha256,
+                        }
+                        for item in sorted(
+                            evidence, key=lambda value: (value.symbol, value.citation_id)
+                        )
+                    ]
+                )
+            ).hexdigest()
+            if evidence
+            else None
+        )
+        allowed = {
+            item.symbol
+            for item in batch.screenings
+            if item.status == "AVAILABLE" and item.verdict == "NO_VETO"
+        }
+        run.ai_vetoed_symbols = tuple(
+            item.symbol for item in eligible if item.symbol not in allowed
+        )
+        surviving = tuple(item for item in eligible if item.symbol in allowed)
+        if not surviving:
+            self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
+            return
+        surviving_evidence = tuple(
+            span for item in batch.screenings if item.symbol in allowed for span in item.evidence
+        )
+        # Evidence attached only to an already-vetoed/abstained candidate is not
+        # a licence to ask the judge about the remaining candidates.
+        if not surviving_evidence:
+            run.selected_symbol = surviving[0].symbol
+            run.selected_side = "BUY"
+            run.selected_quote = quotes[surviving[0].symbol]
+            self._transition(run, "BUY_CANDIDATE_SELECTED", "BUY_SELECTED", now)
+            return
+        self._transition(run, "AI_JUDGING", "RUN_TRANSITIONED", now)
 
     def _ai_judgement(
         self,
         run: AutomationRun,
         inputs: AutomationInputs,
         transport: AutomationFixtureTransportPort,
+        candidates: tuple[SignalCandidate, ...],
     ) -> AiJudgement | None:
         if not inputs.ai_judgement_provider_bound:
             return None
-        judgement = transport.judge(self._buy_candidates(inputs))
+        candidate_set_sha256 = run.candidate_set_sha256
+        if candidate_set_sha256 is None:
+            return None
+        # V3 passes only the post-screening survivors.  Recomputing the original
+        # BUY set here would re-introduce vetoed/injected candidates into JUDGE.
+        judgement = transport.judge(candidates, candidate_set_sha256)
         run.ai_judge_call_count += 1
         if judgement is None:
             # 1차도 2차도 답하지 못했다. 기존 규칙만으로 계속한다.
@@ -1125,13 +1628,18 @@ class AutomationEngine:
                 self._halt(run, now, "SELL_POSITION_DRIFT")
                 return
             quantity = matches[0].quantity
+            position = matches[0]
             policy = AutomationPolicySnapshot(
-                policy_id=matches[0].policy_id,
-                version=matches[0].policy_version,
+                policy_id=position.policy_id,
+                version=position.policy_version,
                 capital_limit_krw=inputs.policy.capital_limit_krw,
-                stop_loss_bps=matches[0].stop_loss_bps,
-                take_profit_bps=matches[0].take_profit_bps,
+                stop_loss_bps=position.stop_loss_bps,
+                take_profit_bps=position.take_profit_bps,
                 preset="CUSTOM",
+                max_holding_sessions=position.max_holding_sessions,
+                atr_period=position.atr_period,
+                atr_multiplier_milli=position.atr_multiplier_milli,
+                model_sell_enabled=position.model_sell_enabled,
             )
         else:
             quantity = _variable_buy_quantity(inputs, limit_price)
@@ -1319,13 +1827,23 @@ class AutomationEngine:
             policy = run.policy_snapshot
             if policy is None:
                 raise AutomationError("automation fill policy is unavailable")
+            holding_sessions = policy.max_holding_sessions
+            expiry_session = (
+                _nth_next_session(run.session_date, 5)
+                if holding_sessions is None
+                else (
+                    None
+                    if holding_sessions == 0
+                    else _nth_next_session(run.session_date, holding_sessions)
+                )
+            )
             self.store.positions.append(
                 BotPosition(
-                    position_id=f"auto_pos_{hashlib.sha256(seed).hexdigest()[:24]}",
+                    position_id=f"auto_pos_{hashlib.sha256(seed).hexdigest()[:32]}",
                     account_id=self.store.account_id,
                     symbol=symbol,
                     entry_session=run.session_date,
-                    expiry_session=_nth_next_session(run.session_date, 5),
+                    expiry_session=expiry_session,
                     created_at=now,
                     quantity=filled_quantity,
                     entry_average_fill_price_krw=average_fill_price_krw,
@@ -1334,6 +1852,12 @@ class AutomationEngine:
                     policy_version=policy.version,
                     stop_loss_bps=policy.stop_loss_bps,
                     take_profit_bps=policy.take_profit_bps,
+                    max_holding_sessions=policy.max_holding_sessions,
+                    atr_period=policy.atr_period,
+                    atr_multiplier_milli=policy.atr_multiplier_milli,
+                    model_sell_enabled=policy.model_sell_enabled,
+                    peak_price_krw=(average_fill_price_krw if policy.is_v3 else None),
+                    atr_status="UNAVAILABLE" if policy.is_v3 else "LEGACY",
                 )
             )
         else:
@@ -1392,13 +1916,30 @@ class AutomationEngine:
             return None
         return quote
 
+    def _candidate_quote(
+        self,
+        run: AutomationRun,
+        now: datetime,
+        transport: AutomationFixtureTransportPort,
+        symbol: str,
+    ) -> Quote | None:
+        if not self._ensure_capacity(run, now, transport):
+            return None
+        try:
+            quote = transport.quote(symbol)
+        except Exception:
+            return None
+        if quote.symbol != symbol or not quote.fresh:
+            return None
+        return quote
+
     def _ensure_capacity(
         self,
         run: AutomationRun,
         now: datetime,
         transport: AutomationFixtureTransportPort,
     ) -> bool:
-        if transport.physical_calls >= _MAX_PHYSICAL_CALLS:
+        if transport.physical_calls >= _physical_call_cap(run):
             self._halt(run, now, "PROVIDER_CALL_CAP_EXHAUSTED")
             return False
         return True
@@ -1482,6 +2023,34 @@ def _score_bps(score: float) -> int:
     """점수를 정수 basis point로 고정한다. 순서가 부동소수 비교에 걸리지 않게 한다."""
 
     return round(score * 10_000)
+
+
+def _candidate_set_sha256(candidates: tuple[SignalCandidate, ...]) -> str:
+    """Seal the complete Return Engine BUY consensus set before KIS eligibility."""
+
+    return hashlib.sha256(
+        canonical_json_bytes(
+            [
+                {
+                    "baselineSignal": item.baseline_signal,
+                    "expectedReturn": format(item.expected_return, ".17g"),
+                    "lstmSignal": item.lstm_signal,
+                    "modelConfidence": format(item.confidence, ".17g"),
+                    "symbol": item.symbol,
+                }
+                for item in sorted(candidates, key=lambda value: value.symbol)
+            ]
+        )
+    ).hexdigest()
+
+
+def _physical_call_cap(run: AutomationRun) -> int:
+    policy = run.policy_snapshot
+    return (
+        _V3_MAX_PHYSICAL_CALLS
+        if policy is not None and policy.is_v3
+        else _LEGACY_MAX_PHYSICAL_CALLS
+    )
 
 
 def _ai_reduced_quantity(quantity: int, confidence: float | None) -> int:
@@ -1600,12 +2169,18 @@ def _tick_size(price: int, is_etf_etn: bool) -> int:
 
 
 def _is_xkrx_session(session_date: date) -> bool:
-    _calendar()
-    return bool(xcals.get_calendar("XKRX").is_session(pd.Timestamp(session_date)))
+    calendar = _calendar(
+        start=session_date - timedelta(days=366),
+        end=session_date + timedelta(days=366),
+    )
+    return bool(calendar.is_session(pd.Timestamp(session_date)))
 
 
 def _nth_next_session(session_date: date, count: int) -> date:
-    calendar = _calendar()
+    calendar = _calendar(
+        start=session_date - timedelta(days=366),
+        end=session_date + timedelta(days=max(366, count * 3 + 366)),
+    )
     current = calendar.date_to_session(pd.Timestamp(session_date), direction="none")
     for _ in range(count):
         current = calendar.next_session(current)
@@ -1615,14 +2190,17 @@ def _nth_next_session(session_date: date, count: int) -> date:
 def _session_distance(start: date, end: date) -> int:
     if end < start:
         return 0
-    calendar = _calendar()
+    calendar = _calendar(
+        start=start - timedelta(days=366),
+        end=end + timedelta(days=366),
+    )
     return len(calendar.sessions_in_range(pd.Timestamp(start), pd.Timestamp(end))) - 1
 
 
-def _calendar() -> Any:
+def _calendar(*, start: date | None = None, end: date | None = None) -> Any:
     if version("exchange-calendars") != "4.13.2":
         raise AutomationError("XKRX calendar version drifted")
-    return xcals.get_calendar("XKRX")
+    return xcals.get_calendar("XKRX", start=start, end=end)
 
 
 def _required(value: str | None) -> str:

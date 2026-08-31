@@ -4,7 +4,7 @@
 > **현재 상태 (2026-08-31):** Owner-First v3 계약이 잠겨 있고 root OpenAPI는 exact-69,
 > Team A backend는 exact-38입니다. 예산·가변수량·손절익절 자동운용과 그 앞에 선 AI 판단
 > (`STRONG_LLM_JUDGEMENT_AUTHORITY=CANDIDATE_RANK_VETO_SIZE_ONLY`)까지 구현됐고 마이그레이션은
-> V108까지입니다. 아직 GitHub `1.0.0` 최종 배포본은 아닙니다. 자동운용 활성화는
+> V109까지입니다. 아직 GitHub `1.0.0` 최종 배포본은 아닙니다. 자동운용 활성화는
 > `BLOCKED_INCOMPLETE_RISK_BALANCE`로 막혀 있고 Team A 최종 UI, Team B 실제 산출물,
 > KIS 모의 인증과 3세션 soak이 남아 있습니다. 실계좌 주문 권한은 0입니다. 현재 배포 계약은
 > `contracts/catalogs/p1-full-app-release-contract.v3.json`입니다.

@@ -19,7 +19,7 @@ import java.util.UUID
 
 @ConfigurationProperties("app.rag-v2.web.vertex-google-search")
 data class S49GoogleGroundingProperties(
-    var enabled: Boolean = true,
+    var enabled: Boolean = false,
     var overageAllowed: Boolean = false,
     var monthlySoftCap: Int = 4_000,
     var reservePerPrompt: Int = 8,

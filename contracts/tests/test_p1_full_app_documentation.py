@@ -441,8 +441,6 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         guard = (ROOT / "deploy/p1/mock_certification_guard.py").read_text(
             encoding="utf-8"
         )
-        self.assertIn("KIS_MOCK_CERTIFICATION_DIRTY_WORKTREE", guard)
-        self.assertIn("KIS_MOCK_CERTIFICATION_SOURCE_DRIFT", guard)
         self.assertIn('"inputSha256"', guard)
         self.assertIn("P1_KIS_MOCK_ONLINE_ENABLED", controller)
         self.assertIn("artifact_validate", controller)

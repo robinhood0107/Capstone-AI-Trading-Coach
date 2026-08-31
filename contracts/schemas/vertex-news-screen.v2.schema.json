@@ -1,0 +1,195 @@
+{
+  "$id": "contracts/schemas/vertex-news-screen.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidateSetSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "candidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "ageWarning": {
+                  "type": "boolean"
+                },
+                "boundedQuote": {
+                  "maxLength": 240,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "citationId": {
+                  "pattern": "^cit_[A-Za-z0-9._:-]{1,96}$",
+                  "type": "string"
+                },
+                "quoteSha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "sourceEventDate": {
+                  "oneOf": [
+                    {
+                      "format": "date",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sourceId": {
+                  "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                  "type": "string"
+                },
+                "sourceType": {
+                  "enum": [
+                    "OFFICIAL_PRIMARY",
+                    "REGISTERED_INDEPENDENT"
+                  ]
+                },
+                "symbol": {
+                  "pattern": "^[0-9]{6}$",
+                  "type": "string"
+                },
+                "uriSha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "verified": {
+                  "const": true
+                }
+              },
+              "required": [
+                "symbol",
+                "citationId",
+                "sourceId",
+                "sourceType",
+                "sourceEventDate",
+                "ageWarning",
+                "uriSha256",
+                "boundedQuote",
+                "quoteSha256",
+                "verified"
+              ],
+              "type": "object"
+            },
+            "maxItems": 5,
+            "type": "array"
+          },
+          "reason": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "score": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "AVAILABLE",
+              "ABSTAIN"
+            ]
+          },
+          "symbol": {
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "VETO_BUY",
+              "NO_VETO"
+            ]
+          }
+        },
+        "required": [
+          "symbol",
+          "status",
+          "verdict",
+          "score",
+          "reason",
+          "evidence"
+        ],
+        "type": "object"
+      },
+      "maxItems": 31,
+      "type": "array"
+    },
+    "contractId": {
+      "const": "vertex-news-screen.v2"
+    },
+    "failureReason": {
+      "oneOf": [
+        {
+          "enum": [
+            "PROVIDER_UNAVAILABLE",
+            "BUDGET_EXHAUSTED",
+            "PROMPT_INJECTION",
+            "CONTRACT_VIOLATION"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "groundingQueryCount": {
+      "maximum": 32,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "inputSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "modelId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "orderAuthority": {
+      "const": "NONE"
+    },
+    "outputSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "promptVersion": {
+      "pattern": "^[A-Za-z0-9._-]{1,64}$",
+      "type": "string"
+    },
+    "providerCallCount": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "AVAILABLE",
+        "ABSTAIN"
+      ]
+    }
+  },
+  "required": [
+    "contractId",
+    "status",
+    "failureReason",
+    "candidateSetSha256",
+    "inputSha256",
+    "outputSha256",
+    "modelId",
+    "promptVersion",
+    "providerCallCount",
+    "groundingQueryCount",
+    "orderAuthority",
+    "candidates"
+  ],
+  "title": "vertex-news-screen.v2",
+  "type": "object"
+}

@@ -90,6 +90,11 @@ from contracts.generate_p1_owner_phase_a_contracts import (  # noqa: E402
     SCHEMA_IDS as P1_OWNER_PHASE_A_SCHEMA_IDS,
     validate_semantics as validate_p1_owner_phase_a_semantics,
 )
+from contracts.generate_p1_v3_automation_contracts import (  # noqa: E402
+    validate_bootstrap_semantics as validate_p1_v3_bootstrap_semantics,
+    validate_policy_semantics as validate_p1_v3_policy_semantics,
+    validate_screen_semantics as validate_p1_v3_screen_semantics,
+)
 
 SCHEMA_DIR = REPO_ROOT / "contracts" / "schemas"
 EXAMPLES_DIR = REPO_ROOT / "contracts" / "examples"
@@ -130,6 +135,9 @@ VERSIONED_EXAMPLE_SCHEMAS = {
     **{schema_id: schema_id for schema_id in S7_S8_SCHEMA_IDS},
     **{schema_id: schema_id for schema_id in P1_OWNER_PHASE_A_SCHEMA_IDS},
     "s2-2-hash-vector.v3": "s2-2-hash-vector.v3",
+    "automation-policy.v2": "automation-policy.v2",
+    "vertex-news-screen.v2": "vertex-news-screen.v2",
+    "p1-automation-market-bootstrap.v1": "p1-automation-market-bootstrap.v1",
 }
 
 S4_5_PROVIDER_PACKET_SCHEMAS = {
@@ -191,6 +199,27 @@ def validate_example_semantics(
     s2_3_catalog: object,
     s4_rag_catalog: object,
 ) -> None:
+    if schema_name == "automation-policy.v2":
+        if not isinstance(example, dict):
+            raise ContractValidationError(
+                "Automation V3 policy example must be an object."
+            )
+        validate_p1_v3_policy_semantics(example)
+        return
+    if schema_name == "vertex-news-screen.v2":
+        if not isinstance(example, dict):
+            raise ContractValidationError(
+                "Automation V3 screen example must be an object."
+            )
+        validate_p1_v3_screen_semantics(example)
+        return
+    if schema_name == "p1-automation-market-bootstrap.v1":
+        if not isinstance(example, dict):
+            raise ContractValidationError(
+                "Automation market bootstrap example must be an object."
+            )
+        validate_p1_v3_bootstrap_semantics(example)
+        return
     if schema_name in S4_5_PROVIDER_PACKET_SCHEMAS:
         # Packet의 zero-paid/store=false/purpose 불변식은 closed JSON Schema가 직접 고정한다.
         return
@@ -263,7 +292,9 @@ def validate_example_semantics(
         return
     if schema_name in S4_8_CORE6_SCHEMA_IDS:
         if not isinstance(example, dict):
-            raise ContractValidationError("S4.8 Core 6 contract example must be an object.")
+            raise ContractValidationError(
+                "S4.8 Core 6 contract example must be an object."
+            )
         validate_s4_8_core6_semantics(schema_name, example)
         return
     if schema_name in S4_7D_SCHEMA_IDS:

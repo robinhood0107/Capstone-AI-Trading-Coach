@@ -167,6 +167,19 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
             for method in path_item
             if method != "parameters"
         }
+        self.assertEqual(75, len(root_operations))
+        v3_additive = json.loads(
+            (ROOT / "contracts/openapi/p1-automation-v3.v1.openapi.json").read_text(encoding="utf-8")
+        )
+        v3_operations = {
+            (path, method)
+            for path, path_item in v3_additive["paths"].items()
+            for method in path_item
+            if method != "parameters"
+        }
+        self.assertEqual(6, len(v3_operations))
+        self.assertTrue(v3_operations <= root_operations)
+        root_operations -= v3_operations
         self.assertEqual(69, len(root_operations))
         # Strong LLM 설정 표면 하나도 이 검사의 대상이 아니다. 가장 새 층부터 덜어 낸다.
         strong_llm_additive = json.loads(

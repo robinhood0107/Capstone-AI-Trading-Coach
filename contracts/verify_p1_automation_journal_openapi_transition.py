@@ -114,6 +114,15 @@ def project_pre_p1_openapi(
     """exact P1 additive fragment를 제거하고 검증된 exact-48 projection을 반환한다."""
 
     current_operations = _operations(current)
+    if len(current_operations) == 75:
+        from contracts.verify_p1_v3_automation_openapi_transition import (
+            ADDITIVE_PATH as V3_ADDITIVE_PATH,
+            project_pre_v3_openapi,
+        )
+
+        _, v3_additive = _load(V3_ADDITIVE_PATH, "Automation V3 additive OpenAPI")
+        current = project_pre_v3_openapi(current, v3_additive)
+        current_operations = _operations(current)
     if len(current_operations) in {61, 68, 69}:
         from contracts.verify_p1_v91_automation_openapi_transition import (
             ADDITIVE_PATH as V91_ADDITIVE_PATH,

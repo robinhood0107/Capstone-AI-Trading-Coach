@@ -15,6 +15,7 @@ from app.p1_owner.automation import (
     OrderReservation,
     Quote,
     ReconcileOutcome,
+    SignalCandidate,
 )
 from app.p1_owner.automation_runtime import AutomationRuntimeError, RuntimeClaim
 from app.p1_owner.automation_runtime_live import (
@@ -278,6 +279,47 @@ def test_unconfigured_vertex_transport_abstains_before_provider_call() -> None:
     assert port.vertex("005930") == "ABSTAIN"
     assert port.vertex_calls == 1
     assert port.physical_calls == 1  # current-price quote only
+
+
+def test_invalid_ai_usage_counts_never_move_the_physical_ledger_backwards() -> None:
+    class InvalidUsageBridge(FakeBridge):
+        def command(
+            self,
+            operation: str,
+            user_id: str,
+            payload: dict[str, object],
+            *,
+            idempotency_key: str | None = None,
+        ) -> dict[str, Any]:
+            del user_id, payload, idempotency_key
+            if operation == "NEWS_SCREEN":
+                return {"providerCallCount": -1, "groundingQueryCount": 0, "screenings": []}
+            if operation == "JUDGE":
+                return {
+                    "providerCallCount": 3,
+                    "confidenceBps": 5_000,
+                    "summary": "invalid usage",
+                    "candidates": [],
+                }
+            raise AssertionError(operation)
+
+    port = LiveAutomationPort(
+        _claim(),
+        _state(),
+        InvalidUsageBridge(),
+        FakeQuoteSource(),
+        FakeExecutionSource(),
+        FailClosedVertexVetoTransport(),
+    )
+    candidate = SignalCandidate("005930", "BUY", "BUY", 0.03, 0.8)
+    quote = port.quote(candidate.symbol)
+    before = port.physical_calls
+
+    with pytest.raises(AutomationRuntimeError, match="SCREENING_USAGE_INVALID"):
+        port.screen((candidate,), {candidate.symbol: quote}, "a" * 64)
+    assert port.physical_calls == before
+    assert port.judge((candidate,), "a" * 64) is None
+    assert port.physical_calls == before
 
 
 def test_spring_bridge_client_is_fixed_loopback_secret_bound_and_retry_zero() -> None:

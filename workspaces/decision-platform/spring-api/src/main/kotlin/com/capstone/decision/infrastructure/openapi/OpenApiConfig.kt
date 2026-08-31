@@ -463,6 +463,15 @@ class OpenApiConfig {
         }
 
     @Bean
+    fun p1AutomationV3Overlay(): OpenApiCustomizer =
+        OpenApiCustomizer { openApi ->
+            val resource = ClassPathResource(P1_AUTOMATION_V3_OPENAPI_RESOURCE)
+            val overlay = resource.inputStream.use { Json31.mapper().readValue(it, OpenAPI::class.java) }
+            overlay.paths.forEach { (path, item) -> openApi.paths.addPathItem(path, item) }
+            overlay.components.schemas.forEach { (name, schema) -> openApi.components.addSchemas(name, schema) }
+        }
+
+    @Bean
     fun signalV2RuntimeSchemas(): OpenApiCustomizer =
         OpenApiCustomizer { openApi ->
             openApi.components.addSchemas(
@@ -957,6 +966,8 @@ class OpenApiConfig {
         private const val P1_JOURNAL_COMPONENT = "Journal"
         private const val P1_AUTOMATION_ERROR_COMPONENT = "P1AutomationErrorResponse"
         private const val P1_JOURNAL_ERROR_COMPONENT = "P1JournalErrorResponse"
+        private const val P1_AUTOMATION_V3_OPENAPI_RESOURCE =
+            "contracts/p1-automation-v3.v1.openapi.json"
         private const val SIGNAL_V2_RUNTIME_COMPONENT = "SignalV2RuntimeResponse"
         private const val SIGNAL_V2_RUNTIME_RESOURCE = "contracts/signal-v2-runtime-v1.schema.json"
         private const val SIGNAL_V2_RUNTIME_ENVELOPE_COMPONENT = "SignalV2RuntimeSuccessResponse"

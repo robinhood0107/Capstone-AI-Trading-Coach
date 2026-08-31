@@ -9,7 +9,8 @@ import os
 import re
 import signal
 import threading
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time
 from importlib.metadata import version
 from typing import Any, Protocol, cast
@@ -32,11 +33,15 @@ from app.p1_owner.automation import (
     AutomationRun,
     AutomationStore,
     BotPosition,
+    CandidateScreening,
+    EvidenceSpan,
     ExactOrderIntent,
     OrderReservation,
     Quote,
+    NewsScreeningBatch,
     SignalCandidate,
 )
+from app.p1_owner.automation_atr import AtrHistoryError, CompletedDailyBar
 
 _KST = ZoneInfo("Asia/Seoul")
 _OPEN_BOUNDARY = time(9, 30)
@@ -45,6 +50,9 @@ _CANCEL_BOUNDARY = time(15, 20)
 _HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
 _USER_ID = re.compile(r"^usr_[A-Za-z0-9_-]{8,96}$")
 _RUN_ID = re.compile(r"^auto_run_[0-9a-f]{32}$")
+_LEGACY_AI_SETTINGS_SHA256 = hashlib.sha256(
+    b'{"aiJudgementEnabled":false,"thinkingLevel":"low"}'
+).hexdigest()
 _TERMINAL_STATES = frozenset(
     {
         "NEWS_VETOED",
@@ -116,6 +124,7 @@ class AdvanceCommand:
     result_hash: str
     event_type: str
     event_payload_hash: str
+    position_state_json: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +160,11 @@ class AiJudgementRecord:
     quantity_before: int | None
     quantity_after: int | None
     verdicts_json: str
+    ai_settings_sha256: str
+    evidence_set_sha256: str | None
+    grounding_call_count: int
+    grounding_query_count: int
+    evidence_count: int
 
 
 class AutomationRuntimePort(Protocol):
@@ -178,9 +192,16 @@ class AutomationRuntimePort(Protocol):
 
     def quote(self, symbol: str) -> Any: ...
 
+    def screen(
+        self,
+        candidates: tuple[SignalCandidate, ...],
+        quotes: Mapping[str, Quote],
+        candidate_set_sha256: str,
+    ) -> NewsScreeningBatch: ...
+
     def vertex(self, symbol: str) -> Any: ...
 
-    def judge(self, candidates: tuple[Any, ...]) -> Any: ...
+    def judge(self, candidates: tuple[Any, ...], candidate_set_sha256: str) -> Any: ...
 
     # 판단을 실제로 받았을 때만 채워진다. 못 받았으면 None이고 기록은 미참여로 남는다.
     last_judgement_json: str | None
@@ -350,7 +371,7 @@ class PostgresAutomationRuntimeRepository:
     def read_state(self, claim: RuntimeClaim) -> dict[str, Any]:
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(
-                "select p1_read_automation_runtime_state_v2(%s,%s)",
+                "select p1_read_automation_runtime_state_v3(%s,%s)",
                 (claim.run_id, claim.claim_token_hash),
             )
             row = cursor.fetchone()
@@ -363,7 +384,81 @@ class PostgresAutomationRuntimeRepository:
         if not isinstance(value, dict) or value.get("runId") != claim.run_id:
             raise AutomationRuntimeError("AUTOMATION_STATE_IDENTITY_MISMATCH")
         value["aiJudgement"] = self.read_ai_judgement(claim)
+        metadata = self.read_v3_metadata(claim)
+        if metadata:
+            value.update(metadata)
+        value.update(self.read_ai_settings_snapshot(claim))
+        policy = value.get("policy")
+        if isinstance(policy, dict) and policy.get("atrPeriod") is not None:
+            value["atrHistories"] = self.read_atr_histories(
+                value,
+                as_of_session=claim.session_date,
+            )
         return cast(dict[str, Any], value)
+
+    def read_v3_metadata(self, claim: RuntimeClaim) -> dict[str, Any]:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select p1_read_automation_v3_metadata_v1(%s,%s)",
+                (claim.run_id, claim.claim_token_hash),
+            )
+            row = cursor.fetchone()
+        if row is None or not isinstance(row[0], str):
+            return {}
+        try:
+            value = json.loads(row[0])
+        except json.JSONDecodeError as error:
+            raise AutomationRuntimeError("AUTOMATION_V3_METADATA_INVALID") from error
+        return cast(dict[str, Any], value) if isinstance(value, dict) else {}
+
+    def read_ai_settings_snapshot(self, claim: RuntimeClaim) -> dict[str, Any]:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select p1_read_automation_ai_settings_snapshot_v1(%s,%s)",
+                (claim.run_id, claim.claim_token_hash),
+            )
+            row = cursor.fetchone()
+        if row is None or not isinstance(row[0], str):
+            raise AutomationRuntimeError("AUTOMATION_AI_SETTINGS_SNAPSHOT_UNAVAILABLE")
+        try:
+            value = json.loads(row[0])
+        except json.JSONDecodeError as error:
+            raise AutomationRuntimeError("AUTOMATION_AI_SETTINGS_SNAPSHOT_INVALID") from error
+        if not isinstance(value, dict):
+            raise AutomationRuntimeError("AUTOMATION_AI_SETTINGS_SNAPSHOT_INVALID")
+        return cast(dict[str, Any], value)
+
+    def read_atr_histories(
+        self,
+        state: dict[str, Any],
+        *,
+        as_of_session: date,
+    ) -> dict[str, list[dict[str, object]]]:
+        policy = state.get("policy")
+        if not isinstance(policy, dict) or policy.get("atrPeriod") is None:
+            raise AutomationRuntimeError("AUTOMATION_ATR_POLICY_INVALID")
+        policy_period = int(policy["atrPeriod"])
+        required_periods = _required_atr_periods(state, policy_period=policy_period)
+        histories: dict[str, list[dict[str, object]]] = {}
+        with self._connect(row_factory=dict_row) as connection, connection.cursor() as cursor:
+            for symbol, period in sorted(required_periods.items()):
+                if period not in range(5, 101):
+                    raise AutomationRuntimeError("AUTOMATION_ATR_POLICY_INVALID")
+                cursor.execute(
+                    "select * from p1_read_automation_atr_bars_v1(%s,%s,%s)",
+                    (symbol, as_of_session, min(101, period + 1)),
+                )
+                histories[symbol] = [
+                    {
+                        "closePriceKrw": int(row["close_price"]),
+                        "highPriceKrw": int(row["high_price"]),
+                        "lowPriceKrw": int(row["low_price"]),
+                        "openPriceKrw": int(row["open_price"]),
+                        "sessionDate": row["session_date"].isoformat(),
+                    }
+                    for row in cursor.fetchall()
+                ]
+        return histories
 
     def read_ai_judgement(self, claim: RuntimeClaim) -> dict[str, Any] | None:
         """이 run이 이미 받은 판단. 없으면 None이고 그때 자동매매는 규칙만으로 돈다."""
@@ -383,89 +478,123 @@ class PostgresAutomationRuntimeRepository:
         return cast(dict[str, Any], value) if isinstance(value, dict) else None
 
     def record_ai_judgement(self, claim: RuntimeClaim, record: AiJudgementRecord) -> None:
-        """판단 기록은 checkpoint CAS와 같은 트랜잭션에 넣지 않는다.
-
-        checkpoint 함수는 31개 인자를 받는 매매 전이 경로다. 기록이 늘 때마다 그 경로를 다시
-        쓰면 판단 기록 스키마가 주문 전이의 원자성을 흔든다. (run_id,checkpoint_version)
-        upsert라 재생돼도 같은 행 하나로 수렴하고, 기록이 실패해도 매매는 계속된다.
-        """
-
+        """Record a replay-safe judgement outside the runner's atomic path."""
         _require_hash(claim.claim_token_hash)
         with self._connect() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                "select p1_record_automation_ai_judgement_v1("
-                "%s::text,%s::text,%s::integer,%s::text,%s::text,%s::text,%s::integer,"
-                "%s::text,%s::text,%s::integer,%s::integer,%s::integer,%s::integer,"
-                "%s::integer,%s::text)",
-                (
-                    claim.run_id,
-                    claim.claim_token_hash,
-                    record.checkpoint_version,
-                    record.participation,
-                    record.provider_id,
-                    record.prompt_version,
-                    record.confidence_bps,
-                    record.baseline_symbol,
-                    record.selected_symbol,
-                    record.vetoed_symbol_count,
-                    record.judge_call_count,
-                    record.candidate_count,
-                    record.quantity_before,
-                    record.quantity_after,
-                    record.verdicts_json,
-                ),
-            )
+            self._record_ai_judgement(cursor, claim, record)
 
     def advance(self, command: AdvanceCommand) -> tuple[int, bool]:
         _require_hash(command.claim_token_hash)
         _require_hash(command.tick_identity_hash)
         _require_hash(command.result_hash)
         with self._connect() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                "select checkpoint_version,replayed from p1_advance_automation_checkpoint_v2("
-                "%s::text,%s::text,%s::text,%s::integer,%s::text,%s::text,%s::text,"
-                "%s::text,%s::integer,%s::integer,%s::integer,%s::text,%s::bigint,%s::bigint,"
-                "%s::text,%s::text,%s::text,%s::text,%s::integer,%s::date,%s::bigint,"
-                "%s::bigint,%s::bigint,%s::bigint,%s::text,%s::text,%s::text,%s::text,%s::text,"
-                "%s::text,%s::text)",
-                (
-                    command.run_id,
-                    command.claim_token_hash,
-                    command.tick_identity_hash,
-                    command.expected_version,
-                    command.next_state,
-                    command.selected_symbol,
-                    command.selected_side,
-                    command.decision_id,
-                    command.vertex_call_count,
-                    command.provider_call_count,
-                    command.logical_submit_count,
-                    command.reservation_id,
-                    command.quantity,
-                    command.limit_price_krw,
-                    command.exact_intent_json,
-                    command.exact_intent_sha256,
-                    command.quote_snapshot_json,
-                    command.policy_id,
-                    command.policy_version,
-                    command.position_expiry_session,
-                    command.filled_quantity,
-                    command.leaves_quantity,
-                    command.unfilled_terminated_quantity,
-                    command.average_fill_price_krw,
-                    command.exit_reason,
-                    command.expected_account_digest,
-                    command.order_id,
-                    command.provider_order_ref_hash,
-                    command.result_hash,
-                    command.event_type,
-                    command.event_payload_hash,
-                ),
+            return self._advance(cursor, command)
+
+    def advance_with_ai_judgement(
+        self,
+        command: AdvanceCommand,
+        claim: RuntimeClaim,
+        record: AiJudgementRecord,
+    ) -> tuple[int, bool]:
+        """Commit the AI boundary and its audit row in one DB transaction."""
+
+        if claim.run_id != command.run_id or claim.claim_token_hash != command.claim_token_hash:
+            raise AutomationRuntimeError("AUTOMATION_AI_JUDGEMENT_IDENTITY_MISMATCH")
+        _require_hash(command.claim_token_hash)
+        _require_hash(command.tick_identity_hash)
+        _require_hash(command.result_hash)
+        with self._connect() as connection, connection.cursor() as cursor:
+            checkpoint_version, replayed = self._advance(cursor, command)
+            self._record_ai_judgement(
+                cursor,
+                claim,
+                replace(record, checkpoint_version=checkpoint_version),
             )
-            row = cursor.fetchone()
-            if row is None:
-                raise AutomationRuntimeError("AUTOMATION_ADVANCE_UNAVAILABLE")
-            return int(row[0]), bool(row[1])
+            return checkpoint_version, replayed
+
+    @staticmethod
+    def _record_ai_judgement(
+        cursor: psycopg.Cursor[Any],
+        claim: RuntimeClaim,
+        record: AiJudgementRecord,
+    ) -> None:
+        cursor.execute(
+            "select p1_record_automation_ai_judgement_v2("
+            "%s::text,%s::text,%s::integer,%s::text,%s::text,%s::text,%s::integer,"
+            "%s::text,%s::text,%s::integer,%s::integer,%s::integer,%s::integer,"
+            "%s::integer,%s::text,%s::text,%s::text,%s::integer,%s::integer,%s::integer)",
+            (
+                claim.run_id,
+                claim.claim_token_hash,
+                record.checkpoint_version,
+                record.participation,
+                record.provider_id,
+                record.prompt_version,
+                record.confidence_bps,
+                record.baseline_symbol,
+                record.selected_symbol,
+                record.vetoed_symbol_count,
+                record.judge_call_count,
+                record.candidate_count,
+                record.quantity_before,
+                record.quantity_after,
+                record.verdicts_json,
+                record.ai_settings_sha256,
+                record.evidence_set_sha256,
+                record.grounding_call_count,
+                record.grounding_query_count,
+                record.evidence_count,
+            ),
+        )
+
+    @staticmethod
+    def _advance(cursor: psycopg.Cursor[Any], command: AdvanceCommand) -> tuple[int, bool]:
+        cursor.execute(
+            "select checkpoint_version,replayed from p1_advance_automation_checkpoint_v3("
+            "%s::text,%s::text,%s::text,%s::integer,%s::text,%s::text,%s::text,"
+            "%s::text,%s::integer,%s::integer,%s::integer,%s::text,%s::bigint,%s::bigint,"
+            "%s::text,%s::text,%s::text,%s::text,%s::integer,%s::date,%s::bigint,"
+            "%s::bigint,%s::bigint,%s::bigint,%s::text,%s::text,%s::text,%s::text,%s::text,"
+            "%s::text,%s::text,%s::text)",
+            (
+                command.run_id,
+                command.claim_token_hash,
+                command.tick_identity_hash,
+                command.expected_version,
+                command.next_state,
+                command.selected_symbol,
+                command.selected_side,
+                command.decision_id,
+                command.vertex_call_count,
+                command.provider_call_count,
+                command.logical_submit_count,
+                command.reservation_id,
+                command.quantity,
+                command.limit_price_krw,
+                command.exact_intent_json,
+                command.exact_intent_sha256,
+                command.quote_snapshot_json,
+                command.policy_id,
+                command.policy_version,
+                command.position_expiry_session,
+                command.filled_quantity,
+                command.leaves_quantity,
+                command.unfilled_terminated_quantity,
+                command.average_fill_price_krw,
+                command.exit_reason,
+                command.expected_account_digest,
+                command.order_id,
+                command.provider_order_ref_hash,
+                command.result_hash,
+                command.event_type,
+                command.event_payload_hash,
+                command.position_state_json,
+            ),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise AutomationRuntimeError("AUTOMATION_ADVANCE_UNAVAILABLE")
+        return int(row[0]), bool(row[1])
 
     def _connect(
         self,
@@ -521,6 +650,35 @@ class PersistentAutomationRunner:
         quote = run.selected_quote
         policy = run.policy_snapshot
         result_hash = _sha(canonical_json_bytes(result))
+        position_state_json = canonical_json_bytes(
+            [
+                {
+                    "atrAsOfSession": (
+                        position.atr_as_of_session.isoformat()
+                        if position.atr_as_of_session
+                        else None
+                    ),
+                    "atrStatus": position.atr_status,
+                    "exitReason": position.exit_reason,
+                    "expirySession": (
+                        position.expiry_session.isoformat() if position.expiry_session else None
+                    ),
+                    "maxHoldingSessions": position.max_holding_sessions,
+                    "modelSellEnabled": position.model_sell_enabled,
+                    "atrPeriod": position.atr_period,
+                    "atrMultiplierMilli": position.atr_multiplier_milli,
+                    "peakPriceKrw": position.peak_price_krw,
+                    "positionId": position.position_id,
+                    "trailingStopKrw": position.trailing_stop_krw,
+                }
+                for position in store.positions
+                if position.max_holding_sessions is not None
+                and (
+                    position.status != "CLOSED"
+                    or (run.state == "COMPLETED" and position.symbol == run.selected_symbol)
+                )
+            ]
+        ).decode()
         command = AdvanceCommand(
             run_id=claim.run_id,
             claim_token_hash=claim.claim_token_hash,
@@ -566,15 +724,23 @@ class PersistentAutomationRunner:
             result_hash=result_hash,
             event_type=str(event["eventType"]),
             event_payload_hash=str(event["payloadHash"]),
+            position_state_json=position_state_json,
         )
         previous_state = str(state.get("state", ""))
-        checkpoint_version, _ = self._repository.advance(command)
-        if previous_state == "AI_JUDGING":
-            # 판단이 실제로 일어난 tick에서만 기록한다. 이 기록이 없으면 "AI의 판단이
-            # 반영된다"는 말을 사후에 확인할 수 없고, 그러면 권한 승격이 검증 불가능해진다.
-            self._repository.record_ai_judgement(
-                claim, _ai_judgement_record(checkpoint_version, run, port)
+        records_ai_boundary = previous_state == "AI_JUDGING" or (
+            previous_state == "NEWS_SCREENING" and run.state != "AI_JUDGING"
+        )
+        if records_ai_boundary:
+            # A zero-evidence screen is also an auditable AI_NOT_PARTICIPATED
+            # outcome.  The checkpoint and record commit together so a crash
+            # cannot advance toward ORDER_SIZING without its explanation.
+            self._repository.advance_with_ai_judgement(
+                command,
+                claim,
+                _ai_judgement_record(command.expected_version + 1, run, port),
             )
+        else:
+            self._repository.advance(command)
         # durable하게 남은 뒤에만 알린다. 저널이 실패해도 tick은 계속된다.
         self._journal.notify(
             notice_from_event(
@@ -620,11 +786,14 @@ def _ai_judgement_record(
     port: AutomationRuntimePort,
 ) -> AiJudgementRecord:
     verdicts = port.last_judgement_json
+    v3 = run.policy_snapshot is not None and run.policy_snapshot.is_v3
     return AiJudgementRecord(
         checkpoint_version=checkpoint_version,
         participation=run.ai_participation,
-        provider_id=str(os.environ.get("STRONG_LLM_PROVIDER", "")).strip()[:32],
-        prompt_version=PROMPT_CONTRACT_ID,
+        # Spring owns provider selection and the arm-time settings hash.  An
+        # environment value in Python must not be allowed to rewrite history.
+        provider_id="spring_bridge" if v3 and run.ai_judge_call_count else "",
+        prompt_version="vertex-news-screen-v2" if v3 else PROMPT_CONTRACT_ID,
         confidence_bps=(None if run.ai_confidence is None else round(run.ai_confidence * 10_000)),
         baseline_symbol=run.ai_baseline_symbol,
         selected_symbol=run.selected_symbol,
@@ -634,6 +803,11 @@ def _ai_judgement_record(
         quantity_before=run.ai_quantity_before,
         quantity_after=run.ai_quantity_after,
         verdicts_json=verdicts if isinstance(verdicts, str) and verdicts else "{}",
+        ai_settings_sha256=run.ai_settings_sha256 or _LEGACY_AI_SETTINGS_SHA256,
+        evidence_set_sha256=run.evidence_set_sha256,
+        grounding_call_count=1 if run.screening_provider_call_count else 0,
+        grounding_query_count=run.grounding_query_count,
+        evidence_count=run.evidence_count,
     )
 
 
@@ -780,6 +954,7 @@ def _store_from_state(
     )
     policy = _policy_from_state(state)
     quote = _quote_from_state(state.get("quoteSnapshot"))
+    screenings, candidate_quotes = _screenings_from_state(state)
     run = AutomationRun(
         run_id=claim.run_id,
         session_date=session_date,
@@ -805,6 +980,14 @@ def _store_from_state(
         ),
         provider_exec_ref_hash=_optional_text(state.get("providerExecRefHash")),
         policy_snapshot=policy,
+        candidate_screenings=screenings,
+        candidate_quotes=candidate_quotes,
+        screening_provider_call_count=int(state.get("screeningProviderCallCount", 0)),
+        grounding_query_count=int(state.get("groundingQueryCount", 0)),
+        evidence_count=sum(len(item.evidence) for item in screenings),
+        evidence_set_sha256=_optional_text(state.get("evidenceSetSha256")),
+        candidate_set_sha256=_optional_text(state.get("candidateSetSha256")),
+        ai_settings_sha256=_optional_text(state.get("aiSettingsSha256")),
     )
     reservation = state.get("reservation")
     if isinstance(reservation, dict):
@@ -832,7 +1015,11 @@ def _store_from_state(
                 account_id=str(item["accountId"]),
                 symbol=str(item["symbol"]),
                 entry_session=date.fromisoformat(str(item["entrySession"])),
-                expiry_session=date.fromisoformat(str(item["expirySession"])),
+                expiry_session=(
+                    date.fromisoformat(str(item["expirySession"]))
+                    if item.get("expirySession")
+                    else None
+                ),
                 created_at=_timestamp(item["createdAt"]),
                 status=str(item["status"]),
                 closed_at=_timestamp(item["closedAt"]) if item.get("closedAt") else None,
@@ -852,6 +1039,32 @@ def _store_from_state(
                 stop_loss_bps=int(item.get("stopLossBps", policy.stop_loss_bps)),
                 take_profit_bps=int(item.get("takeProfitBps", policy.take_profit_bps)),
                 exit_reason=cast(Any, _optional_text(item.get("exitReason"))),
+                max_holding_sessions=(
+                    int(item["maxHoldingSessions"])
+                    if item.get("maxHoldingSessions") is not None
+                    else None
+                ),
+                atr_period=(int(item["atrPeriod"]) if item.get("atrPeriod") is not None else None),
+                atr_multiplier_milli=(
+                    int(item["atrMultiplierMilli"])
+                    if item.get("atrMultiplierMilli") is not None
+                    else None
+                ),
+                model_sell_enabled=bool(item.get("modelSellEnabled", True)),
+                peak_price_krw=(
+                    int(item["peakPriceKrw"]) if item.get("peakPriceKrw") is not None else None
+                ),
+                atr_as_of_session=(
+                    date.fromisoformat(str(item["atrAsOfSession"]))
+                    if item.get("atrAsOfSession")
+                    else None
+                ),
+                trailing_stop_krw=(
+                    int(item["trailingStopKrw"])
+                    if item.get("trailingStopKrw") is not None
+                    else None
+                ),
+                atr_status=cast(Any, str(item.get("atrStatus", "LEGACY"))),
             )
         )
     return store, run
@@ -885,8 +1098,11 @@ def inputs_from_state(
     manual = state.get("manualPositionSymbols")
     if not isinstance(manual, list) or not all(isinstance(item, str) for item in manual):
         raise AutomationRuntimeError("AUTOMATION_MANUAL_POSITIONS_INVALID")
+    atr_histories = _atr_histories_from_state(state)
+    session_date = date.fromisoformat(str(state["sessionDate"]))
+    expected_sessions = _expected_atr_sessions(session_date, 101) if atr_histories else ()
     return AutomationInputs(
-        session_date=date.fromisoformat(str(state["sessionDate"])),
+        session_date=session_date,
         release_active=bool(state["releaseActive"]),
         daily_shard_fresh_complete=bool(state["dailyShardFreshComplete"]),
         principle_active_current=bool(state["principleActiveCurrent"]),
@@ -915,9 +1131,14 @@ def inputs_from_state(
         unfinished_previous_order=bool(state["unfinishedPreviousOrder"]),
         news_veto_provider_bound=state.get("newsVetoProviderBound") is True,
         ai_judgement_provider_bound=state.get("aiJudgementProviderBound") is True,
+        ai_judgement_enabled=state.get("aiJudgementEnabled") is True,
+        ai_thinking_level=cast(Any, str(state.get("thinkingLevel", "low"))),
+        ai_settings_sha256=_optional_text(state.get("aiSettingsSha256")),
         ai_confidence=_ai_confidence(state.get("aiJudgement")),
         manual_position_symbols=frozenset(cast(list[str], manual)),
         signals=signals,
+        atr_histories=atr_histories,
+        atr_expected_sessions=expected_sessions,
     )
 
 
@@ -934,9 +1155,155 @@ def _policy_from_state(state: dict[str, Any]) -> AutomationPolicySnapshot:
             take_profit_bps=int(value["takeProfitBps"]),
             preset=cast(Any, str(value["preset"])),
             max_open_positions=int(value.get("maxOpenPositions", 5)),
+            max_holding_sessions=(
+                int(value["maxHoldingSessions"])
+                if value.get("maxHoldingSessions") is not None
+                else None
+            ),
+            atr_period=(int(value["atrPeriod"]) if value.get("atrPeriod") is not None else None),
+            atr_multiplier_milli=(
+                int(value["atrMultiplierMilli"])
+                if value.get("atrMultiplierMilli") is not None
+                else None
+            ),
+            model_sell_enabled=bool(value.get("modelSellEnabled", True)),
         )
     except (KeyError, TypeError, ValueError, AutomationError) as error:
         raise AutomationRuntimeError("AUTOMATION_POLICY_INVALID") from error
+
+
+def _atr_histories_from_state(
+    state: dict[str, Any],
+) -> dict[str, tuple[CompletedDailyBar, ...]]:
+    raw = state.get("atrHistories")
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise AutomationRuntimeError("AUTOMATION_ATR_HISTORY_INVALID")
+    histories: dict[str, tuple[CompletedDailyBar, ...]] = {}
+    try:
+        for symbol, rows in raw.items():
+            if not isinstance(symbol, str) or not re.fullmatch(r"[0-9]{6}", symbol):
+                raise AutomationRuntimeError("AUTOMATION_ATR_HISTORY_INVALID")
+            if not isinstance(rows, list):
+                raise AutomationRuntimeError("AUTOMATION_ATR_HISTORY_INVALID")
+            histories[symbol] = tuple(
+                CompletedDailyBar(
+                    session_date=date.fromisoformat(str(item["sessionDate"])),
+                    open_price_krw=int(item["openPriceKrw"]),
+                    high_price_krw=int(item["highPriceKrw"]),
+                    low_price_krw=int(item["lowPriceKrw"]),
+                    close_price_krw=int(item["closePriceKrw"]),
+                )
+                for item in rows
+                if isinstance(item, dict)
+            )
+            if len(histories[symbol]) != len(rows):
+                raise AutomationRuntimeError("AUTOMATION_ATR_HISTORY_INVALID")
+    except (KeyError, TypeError, ValueError, AtrHistoryError) as error:
+        raise AutomationRuntimeError("AUTOMATION_ATR_HISTORY_INVALID") from error
+    return histories
+
+
+def _required_atr_periods(
+    state: Mapping[str, Any],
+    *,
+    policy_period: int,
+) -> dict[str, int]:
+    """Use each open position's immutable ATR snapshot, not only today's policy."""
+
+    if policy_period not in range(5, 101):
+        raise AutomationRuntimeError("AUTOMATION_ATR_POLICY_INVALID")
+    required: dict[str, int] = {}
+    raw_signals = state.get("signals")
+    if isinstance(raw_signals, list):
+        for item in raw_signals:
+            if isinstance(item, dict) and re.fullmatch(r"[0-9]{6}", str(item.get("symbol"))):
+                required[str(item["symbol"])] = policy_period
+    raw_positions = state.get("positions")
+    if isinstance(raw_positions, list):
+        for item in raw_positions:
+            if (
+                not isinstance(item, dict)
+                or re.fullmatch(r"[0-9]{6}", str(item.get("symbol"))) is None
+            ):
+                continue
+            position_period = int(item.get("atrPeriod", policy_period))
+            if position_period not in range(5, 101):
+                raise AutomationRuntimeError("AUTOMATION_ATR_POLICY_INVALID")
+            symbol = str(item["symbol"])
+            required[symbol] = max(required.get(symbol, 0), position_period)
+    return required
+
+
+def _screenings_from_state(
+    state: dict[str, Any],
+) -> tuple[tuple[CandidateScreening, ...], dict[str, Quote]]:
+    raw = state.get("screenings")
+    if raw is None:
+        return (), {}
+    if not isinstance(raw, list):
+        raise AutomationRuntimeError("AUTOMATION_SCREENINGS_INVALID")
+    screenings: list[CandidateScreening] = []
+    quotes: dict[str, Quote] = {}
+    try:
+        for item in raw:
+            if not isinstance(item, dict) or not isinstance(item.get("evidence"), list):
+                raise AutomationRuntimeError("AUTOMATION_SCREENINGS_INVALID")
+            symbol = str(item["symbol"])
+            evidence = tuple(
+                EvidenceSpan(
+                    symbol=str(span["symbol"]),
+                    citation_id=str(span["citationId"]),
+                    source_id=str(span["sourceId"]),
+                    source_type=cast(Any, str(span["sourceType"])),
+                    source_event_date=(
+                        date.fromisoformat(str(span["sourceEventDate"]))
+                        if span.get("sourceEventDate")
+                        else None
+                    ),
+                    age_warning=bool(span["ageWarning"]),
+                    uri_sha256=str(span["uriSha256"]),
+                    bounded_quote=str(span["boundedQuote"]),
+                    quote_sha256=str(span["quoteSha256"]),
+                    verified=span.get("verified") is True,
+                )
+                for span in item["evidence"]
+                if isinstance(span, dict)
+            )
+            if len(evidence) != len(item["evidence"]):
+                raise AutomationRuntimeError("AUTOMATION_SCREENINGS_INVALID")
+            screenings.append(
+                CandidateScreening(
+                    symbol=symbol,
+                    status=cast(Any, str(item["status"])),
+                    verdict=cast(Any, str(item["verdict"])),
+                    score_bps=int(item["scoreBps"]),
+                    reason=str(item["reason"]),
+                    evidence=evidence,
+                )
+            )
+            quotes[symbol] = Quote(
+                symbol=symbol,
+                price_krw=int(item["priceKrw"]),
+                lower_limit_krw=int(item["lowerLimitKrw"]),
+                upper_limit_krw=int(item["upperLimitKrw"]),
+                is_etf_etn=bool(item["isEtfEtn"]),
+            )
+    except (KeyError, TypeError, ValueError, AutomationError) as error:
+        raise AutomationRuntimeError("AUTOMATION_SCREENINGS_INVALID") from error
+    return tuple(screenings), quotes
+
+
+def _expected_atr_sessions(as_of_session: date, limit: int) -> tuple[date, ...]:
+    calendar = xcals.get_calendar("XKRX")
+    stamp = pd.Timestamp(as_of_session)
+    anchor = (
+        calendar.previous_session(stamp)
+        if calendar.is_session(stamp)
+        else calendar.date_to_session(stamp, direction="previous")
+    )
+    return tuple(cast(date, item.date()) for item in calendar.sessions_window(anchor, -(limit - 1)))
 
 
 def _intent_from_state(value: dict[str, Any]) -> ExactOrderIntent:

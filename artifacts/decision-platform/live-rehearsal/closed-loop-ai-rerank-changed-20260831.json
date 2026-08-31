@@ -11,43 +11,43 @@
     {
       "step": "aiJudgement",
       "ruleTopSymbol": "005930",
-      "selectedSymbol": "005930",
-      "aiChangedTop": false,
+      "selectedSymbol": "000660",
+      "aiChangedTop": true,
       "judgeCalls": 1,
       "judgement": {
-        "confidence": 0.5,
-        "summary": "제공된 구체적 근거 데이터가 없어 후보 종목들에 대해 중립 점수를 부여하며 매수 제한(veto) 요인은 발견되지 않았습니다.",
+        "confidence": 0.7,
+        "summary": "제시된 후보 종목들에 대해 주어진 근거가 없으므로 모델 확신도와 기대수익률을 바탕으로 중립 이상의 평가를 내렸으며 매수를 금지할 특이사항은 없습니다.",
         "verdicts": [
           {
             "symbol": "005930",
-            "score": 0.5,
+            "score": 0.51,
             "veto": false,
-            "reason": "기본적인 매수 후보이나 구체적인 위험 신호나 판단 근거가 제공되지 않아 중립 점수를 부여합니다."
+            "reason": "기초적인 모델 확신도가 보통 수준이며 구체적인 위험 근거가 없어 중립으로 평가합니다."
           },
           {
             "symbol": "000660",
-            "score": 0.5,
+            "score": 0.71,
             "veto": false,
-            "reason": "기본적인 매수 후보이나 구체적인 위험 신호나 판단 근거가 제공되지 않아 중립 점수를 부여합니다."
+            "reason": "모델 확신도가 매우 높으며 매수를 제한할 만한 특별한 위험 근거가 발견되지 않아 긍정적으로 평가합니다."
           }
         ]
       }
     },
     {
       "step": "positionOpened",
-      "symbol": "005930",
+      "symbol": "000660",
       "quantity": 1,
-      "entryAverageFillPriceKrw": 256750,
+      "entryAverageFillPriceKrw": 1621000,
       "entrySession": "2026-08-31",
       "expirySession": "2026-09-07"
     },
     {
       "step": "positionClosed",
       "exitReason": "MAX_HOLDING_SESSIONS",
-      "entryAverageFillPriceKrw": 256750,
-      "exitAverageFillPriceKrw": 256500,
+      "entryAverageFillPriceKrw": 1621000,
+      "exitAverageFillPriceKrw": 1621000,
       "exitFilledQuantity": 1,
-      "realizedPnlKrw": -1149,
+      "realizedPnlKrw": -5674,
       "closedPositions": 1
     },
     {
@@ -59,52 +59,52 @@
   "transportSteps": [
     {
       "step": "quote",
-      "symbol": "005930",
-      "priceKrw": 256750,
-      "upperKrw": 334000,
-      "lowerKrw": 180000
+      "symbol": "000660",
+      "priceKrw": 1620000,
+      "upperKrw": 2148000,
+      "lowerKrw": 1158000
     },
     {
       "step": "vertex",
-      "symbol": "005930",
+      "symbol": "000660",
       "verdict": "NO_VETO",
       "providerCalls": 0
     },
     {
       "step": "submitBuy",
-      "symbol": "005930",
+      "symbol": "000660",
       "quantity": 1,
-      "limitPriceKrw": 257000,
-      "orderNo": "0000036811"
+      "limitPriceKrw": 1621000,
+      "orderNo": "0000028797"
     },
     {
       "step": "buyFill",
       "cumulativeQuantity": 1,
       "leavesQuantity": 0,
-      "averageFillPriceKrw": 256750
+      "averageFillPriceKrw": 1621000
     },
     {
       "step": "quote",
-      "symbol": "005930",
-      "priceKrw": 256750,
-      "upperKrw": 334000,
-      "lowerKrw": 180000
+      "symbol": "000660",
+      "priceKrw": 1621000,
+      "upperKrw": 2148000,
+      "lowerKrw": 1158000
     },
     {
       "step": "submitSell",
-      "symbol": "005930",
+      "symbol": "000660",
       "quantity": 1,
-      "limitPriceKrw": 256500,
-      "orderNo": "0000036821"
+      "limitPriceKrw": 1620000,
+      "orderNo": "0000028801"
     },
     {
       "step": "sellFill",
       "cumulativeQuantity": 1,
       "leavesQuantity": 0,
-      "averageFillPriceKrw": 256500
+      "averageFillPriceKrw": 1621000
     }
   ],
   "physicalCalls": 6,
   "vertexProviderCalls": 0,
-  "sessionKst": "2026-08-31T14:55:00.366680+09:00"
+  "sessionKst": "2026-08-31T12:48:47.608670+09:00"
 }

@@ -1,6 +1,6 @@
 {
   "status": "SUCCESS",
-  "scenario": "AI_RERANK",
+  "scenario": "THREE_SESSION_SOAK",
   "symbol": "005930",
   "engineSteps": [
     {
@@ -9,45 +9,32 @@
       "symbolQuantity": 0
     },
     {
-      "step": "aiJudgement",
-      "ruleTopSymbol": "005930",
-      "selectedSymbol": "005930",
-      "aiChangedTop": false,
-      "judgeCalls": 1,
-      "judgement": {
-        "confidence": 0.5,
-        "summary": "제공된 구체적 근거 데이터가 없어 후보 종목들에 대해 중립 점수를 부여하며 매수 제한(veto) 요인은 발견되지 않았습니다.",
-        "verdicts": [
-          {
-            "symbol": "005930",
-            "score": 0.5,
-            "veto": false,
-            "reason": "기본적인 매수 후보이나 구체적인 위험 신호나 판단 근거가 제공되지 않아 중립 점수를 부여합니다."
-          },
-          {
-            "symbol": "000660",
-            "score": 0.5,
-            "veto": false,
-            "reason": "기본적인 매수 후보이나 구체적인 위험 신호나 판단 근거가 제공되지 않아 중립 점수를 부여합니다."
-          }
-        ]
-      }
-    },
-    {
       "step": "positionOpened",
       "symbol": "005930",
       "quantity": 1,
-      "entryAverageFillPriceKrw": 256750,
+      "entryAverageFillPriceKrw": 257000,
       "entrySession": "2026-08-31",
       "expirySession": "2026-09-07"
     },
     {
+      "step": "soakSession",
+      "sessionDate": "2026-09-01",
+      "state": "SKIPPED_NO_ACTION",
+      "openPositions": 1
+    },
+    {
+      "step": "soakSession",
+      "sessionDate": "2026-09-02",
+      "state": "SKIPPED_NO_ACTION",
+      "openPositions": 1
+    },
+    {
       "step": "positionClosed",
       "exitReason": "MAX_HOLDING_SESSIONS",
-      "entryAverageFillPriceKrw": 256750,
+      "entryAverageFillPriceKrw": 257000,
       "exitAverageFillPriceKrw": 256500,
       "exitFilledQuantity": 1,
-      "realizedPnlKrw": -1149,
+      "realizedPnlKrw": -1399,
       "closedPositions": 1
     },
     {
@@ -75,13 +62,27 @@
       "symbol": "005930",
       "quantity": 1,
       "limitPriceKrw": 257000,
-      "orderNo": "0000036811"
+      "orderNo": "0000034231"
     },
     {
       "step": "buyFill",
       "cumulativeQuantity": 1,
       "leavesQuantity": 0,
-      "averageFillPriceKrw": 256750
+      "averageFillPriceKrw": 257000
+    },
+    {
+      "step": "quote",
+      "symbol": "005930",
+      "priceKrw": 256750,
+      "upperKrw": 334000,
+      "lowerKrw": 180000
+    },
+    {
+      "step": "quote",
+      "symbol": "005930",
+      "priceKrw": 256500,
+      "upperKrw": 334000,
+      "lowerKrw": 180000
     },
     {
       "step": "quote",
@@ -95,7 +96,7 @@
       "symbol": "005930",
       "quantity": 1,
       "limitPriceKrw": 256500,
-      "orderNo": "0000036821"
+      "orderNo": "0000034237"
     },
     {
       "step": "sellFill",
@@ -104,7 +105,7 @@
       "averageFillPriceKrw": 256500
     }
   ],
-  "physicalCalls": 6,
+  "physicalCalls": 8,
   "vertexProviderCalls": 0,
-  "sessionKst": "2026-08-31T14:55:00.366680+09:00"
+  "sessionKst": "2026-08-31T14:13:01.458009+09:00"
 }

@@ -4,10 +4,13 @@
 > **현재 상태 (2026-08-31):** Owner-First v3 계약이 잠겨 있고 root OpenAPI는 exact-69,
 > Team A backend는 exact-38입니다. 예산·가변수량·손절익절 자동운용과 그 앞에 선 AI 판단
 > (`STRONG_LLM_JUDGEMENT_AUTHORITY=CANDIDATE_RANK_VETO_SIZE_ONLY`)까지 구현됐고 마이그레이션은
-> V109까지입니다. 아직 GitHub `1.0.0` 최종 배포본은 아닙니다. 자동운용 활성화는
-> `BLOCKED_INCOMPLETE_RISK_BALANCE`로 막혀 있고 Team A 최종 UI, Team B 실제 산출물,
-> KIS 모의 인증과 3세션 soak이 남아 있습니다. 실계좌 주문 권한은 0입니다. 현재 배포 계약은
-> `contracts/catalogs/p1-full-app-release-contract.v3.json`입니다.
+> V109까지입니다. 이날 XKRX 세션에서 KIS 모의 인증을 다시 받았고, 실체결 왕복과 청산 사유
+> 네 가지(만기·모델매도·손절·익절), 연속 세 세션 구동, 그리고 실제 Vertex 판단이 후보 1등을
+> 바꾼 run까지 관측했습니다. e2e 러너 12종과 전 게이트가 통과합니다. 아직 GitHub `1.0.0`
+> 최종 배포본은 아닙니다. **남은 것은 Team A 최종 UI와 Team B 실제 산출물 둘뿐이고**, 그 둘이
+> 오면 자동운용 활성화 게이트가 가정이 아니라 사실로 열립니다. 실계좌 주문 권한은 0입니다.
+> 현재 배포 계약은 `contracts/catalogs/p1-full-app-release-contract.v3.json`이며 이날 관측은
+> `docs/test/P1_장중_실물_검증_2026-08-31.md`에 있습니다.
 <!-- P1_FULL_APP_V3_AUTHORITY_END -->
 
 투자 원칙, 모델 예측, 백테스트, 위험 판정과 근거 자료를 한 화면에서 보고 한국투자증권 **모의투자**
@@ -73,8 +76,34 @@ AI가 할 수 있는 것은 후보의 **순위를 바꾸고, 매수를 막고, �
 
 ## 5분 실행
 
-준비물: Git, Docker Engine 또는 Docker Desktop, Docker Compose v2, WSL/Linux의 Python 3와 OpenSSL.
-Windows는 WSL도 필요합니다.
+### 준비물
+
+| 무엇 | 왜 | 확인 |
+|---|---|---|
+| Git | 저장소 | `git --version` |
+| Docker Engine 또는 Docker Desktop | 전체 스택 | `docker version` |
+| Docker Compose v2 | `deploy/p1/compose.yml` | `docker compose version` |
+| Python 3 (WSL/Linux) | `./capstone` 내부 스크립트 | `python3 -V` |
+| OpenSSL | 첫 실행의 비밀값 생성 | `openssl version` |
+| WSL (Windows만) | Linux 경로에서 Docker를 부른다 | `wsl -l -v` |
+
+기본 앱을 켜는 데 **API 키는 하나도 필요 없습니다.** `.env`도 만들지 않아도 됩니다. 첫 실행이
+`deploy/p1/.state-app/` 아래에 필요한 비밀값을 직접 만듭니다.
+
+아래는 기본 앱을 넘어설 때만 필요합니다. 없으면 그 기능만 꺼진 채로 뜹니다.
+
+| 무엇 | 어디에 넣나 | 없으면 |
+|---|---|---|
+| KIS 모의투자 App Key · Secret · 계좌번호 | `./capstone mock configure`가 물어본다 | `mock` 명령 전체가 닫힌다 |
+| Vertex 서비스계정 JSON | `deploy/p1/.state-app/secrets/pre-s5-vertex-service-account.json` (0600) | RAG 생성형 답변과 AI 판단이 "미참여"로 간다 |
+| `STRONG_LLM_GRPC_SHARED_SECRET` | `deploy/p1/.state-app/secrets/rag-v2.env` | Strong LLM 판단 경로가 붙지 않는다 |
+| `VOYAGE_API_KEY` | 같은 파일 | RAG v2 검색이 로컬 임베딩만 쓴다 |
+
+값의 전체 목록과 형식은 [환경 변수 참고 문서](docs/decision-platform/P1_ENV_REFERENCE.md)와
+저장소 루트의 `.env.example`에 있습니다. `.env.example`을 복사해 `.env`를 만드는 것은 S1.6
+OpenDART·ECOS 같은 **수집기**를 직접 돌릴 때만 필요하고, 기본 앱과 대시보드에는 쓰이지 않습니다.
+
+### 실행
 
 ```bash
 git switch main
@@ -136,14 +165,19 @@ BGE-M3 컨테이너와 공식 llama.cpp 기반 PaddleOCR-VL 컨테이너를 더�
 ./capstone up --models --mock
 ```
 
-`mock doctor`는 자격증명 파일의 형식과 권한만 확인합니다. `mock certify`는 현재 코드, 원격 브랜치,
-열린 PR과 필수 CI를 확인한 뒤 현재가 1회와 모의계좌 작업 7회를 수행합니다. 주문·취소는 재시도하지
-않습니다. 취소 실패나 부분체결이 나오면 자동으로 매도하거나 다시 주문하지 말고 KIS 모의투자 화면에서
-직접 확인해야 합니다.
+`mock doctor`는 자격증명 파일의 형식과 권한만 확인합니다. `mock certify`는 XKRX 거래시간 창과
+`--symbol 005930 --quantity 1` 범위, 물리 호출 상한을 확인한 뒤 현재가 1회와 모의계좌 작업
+7회를 수행합니다. 주문·취소는 재시도하지 않습니다. 취소 실패나 부분체결이 나오면 자동으로
+매도하거나 다시 주문하지 말고 KIS 모의투자 화면에서 직접 확인해야 합니다.
 
-`up --mock`은 인증 요청 해시, 인증 당시 Git tree와 현재 Git tree, 작업 폴더의 clean 상태를 다시
-검사합니다. PR commit과 main 병합 commit의 번호가 달라도 파일 tree가 같으면 허용하고, 파일이
-하나라도 바뀌면 거부합니다. 이 인증을 통과해도 자동 주문 스케줄러가 생기지는 않습니다.
+**인증 영수증이 말하는 것과 말하지 않는 것.** 영수증(`deploy/p1/.state-app/mock/certification.json`)은
+"그 시각 거래시간에 KIS 모의 원장에서 왕복이 실제로 일어났다"를 말합니다. 물리 호출 수와 세션
+날짜, 그때의 `commitSha`가 남습니다. 반면 "그 코드가 CI를 통과했다"는 말하지 않습니다. 예전에는
+PR 초록과 clean worktree를 함께 확인했지만, e2e를 한 번 돌리면 git이 추적하는 판정표 JSON이
+갱신되어 방금 받은 인증이 그 자리에서 무효가 됐기 때문에 그 조건들을 뺐습니다. 자동운용 arm의
+열쇠 역할은 그대로여서, 영수증이 없으면 `CERTIFICATION_INVALID`로 닫힙니다.
+
+이 인증을 통과해도 자동 주문 스케줄러가 생기지는 않습니다.
 
 ## Team B 결과가 미리보기인 이유
 
@@ -152,6 +186,14 @@ BGE-M3 컨테이너와 공식 llama.cpp 기반 PaddleOCR-VL 컨테이너를 더�
 않았다"는 뜻입니다.
 
 ## 팀원에게 보낼 문서
+
+**먼저 이것 하나를 보냅니다.** 아래 개별 문서는 그 안에서 다시 가리킵니다.
+
+- **[P1 최종 요청서 (2026-08-31 확정)](docs/handoff/P1_최종_요청서_2026-08-31.md)** — 현재
+  완성 상황, Team A/B 각각의 범위와 제출물, Owner가 산출물을 받은 뒤 할 일, 그리고 맨 아래에
+  전체 테스트 방법이 있습니다.
+
+참고 문서:
 
 - [Team A Dashboard 완료 요청서](docs/decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md)
 - [Team B Return Engine 완료 요청서](docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md)
@@ -172,18 +214,30 @@ Team A와 Team B는 `mock configure`나 `mock certify`를 실행하지 않습니
 | Dashboard가 준비되지 않음 | `./capstone status`, `./capstone logs` |
 | 모델 첫 실행이 오래 걸림 | 고정된 모델을 처음 내려받고 검사하는 중 |
 | Team B 실제 결과 경고 | 미리보기는 정상이며 결과 수신 전까지 경고 유지 |
-| KIS 모의투자 명령 거부 | 기본 앱 실행, 자격증명, 거래일·시간, 작업 폴더 clean, PR·CI 상태 확인 |
+| KIS 모의투자 명령 거부 | 기본 앱 실행, 자격증명, 거래일·시간(09:10~15:00 KST), `--symbol 005930 --quantity 1` 확인 |
+| Kotlin 통합 테스트 6건이 죽음 | `PATH`에 `uv`가 있는지. 없으면 `S7 DB E2E requires the frozen uv Python runtime` |
+| OpenAPI 게이트가 포트 충돌 | 스택이 18080을 쓴다. `--server-port 18099 --fixture-port 55499` |
+| `docs/` 문서를 고쳤더니 CI가 깨짐 | pre-S5 freeze는 `docs/` 하위 기존 md의 수정을 막는다. 새 파일을 만든다 |
+| AI 판단이 계속 "미참여" | Vertex 서비스계정(0600)과 `STRONG_LLM_GRPC_SHARED_SECRET`이 있는지 |
 
 자세한 복구 절차는 [동일 환경 재현 가이드](docs/decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md),
 환경값 목록은 [환경 변수 참고 문서](docs/decision-platform/P1_ENV_REFERENCE.md)에 있습니다.
 
 ## 최종 배포 전에 남은 일
 
+**남은 것은 1과 2뿐입니다.** 나머지는 2026-08-31 XKRX 세션에서 닫혔습니다.
+
 1. Team A가 명세에 배정된 화면 API를 실제 Spring과 연결하고 성공 응답을 각각 증명합니다.
 2. Team B가 계약된 입력으로 실제 모델·백테스트 결과 10개를 만들어 전달합니다.
-3. Owner가 Team B 결과를 백엔드에 적재하는 변환 경로와 조회 API를 검증합니다.
-4. XKRX 거래시간에 KIS 모의투자 수동 인증을 한 번 수행합니다.
+3. Owner가 Team B 결과를 적재하고 자동운용 게이트를 실제 산출물로 다시 저술합니다.
+   경로는 이미 검증돼 있습니다 — [최종 요청서 4절](docs/handoff/P1_최종_요청서_2026-08-31.md)에
+   명령 그대로 있습니다.
+4. 두 산출물이 모두 들어온 뒤 거래시간에 자동운용을 arm 하고 한 세션 이상 무사고를 확인합니다.
 5. PR 병합, main CI, 새 폴더에서 `git pull` 재현을 확인한 뒤에만 최종 배포를 승인합니다.
+
+이미 닫힌 것: KIS 모의 인증, 실체결 왕복, 청산 사유 네 가지, 연속 세 세션 구동, 실제 Vertex
+판단이 후보 1등을 바꾼 run, Team A acceptance(operation 38), e2e 13종, 수집기 표면
+(KRX·ECOS 실호출), 전 게이트.
 
 ```text
 CODEX_SECURITY_DEEP_SCAN=NOT_RUN_USER_SCOPED_OUT

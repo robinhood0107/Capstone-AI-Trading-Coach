@@ -13,10 +13,8 @@ ECOS, OpenDART)는 그 밖에 있어서 어느 게이트도 덮지 않았다. �
   2. KRX OPEN API 승인 서비스 하나가 응답한다
   3. ECOS registry preflight가 통과한다
   4. OpenDART 설정이 자격증명을 읽어 클라이언트를 만들 수 있다
-  5. GDELT는 호출하지 않는다 - 연구 상태로 범위 밖이다
 
-**GDELT는 이 러너가 절대 부르지 않는다.** 소유자가 연구 상태로 분리해 두었고, 이 경계를
-바꾸려면 소유자에게 먼저 묻는다. 판정표에도 그렇게 적는다.
+GDELT는 이 러너의 범위가 아니다. 부르지도 않고 판정표에 적지도 않는다.
 
 외부 호출은 `--with-live-collect` 를 줬을 때만 일어난다. 플래그가 없으면 자격증명 형식까지만
 보고 나머지는 INFO로 남긴다. `rag_v2_boundaries.py`가 provider 호출을 플래그 뒤에 두는 것과
@@ -259,16 +257,6 @@ def check_opendart(recorder: Recorder) -> None:
     )
 
 
-def check_gdelt_excluded(recorder: Recorder) -> None:
-    recorder.add(
-        "GDELT는 부르지 않는다",
-        "INFO",
-        "GDELT는 연구 상태로 분리돼 있어 이 러너가 호출하지 않는다. "
-        "이 경계를 바꾸려면 소유자에게 먼저 묻는다. "
-        "`gdelt-aggregate-collect`는 이 판정표 어디에도 실행 기록을 남기지 않는다",
-    )
-
-
 def main(argv: Sequence[str]) -> int:
     require_opt_in(_OPT_IN)
     parser = argparse.ArgumentParser(description=__doc__)
@@ -276,7 +264,7 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument(
         "--with-live-collect",
         action="store_true",
-        help="KRX·ECOS 표면을 실제로 호출한다. GDELT는 이 플래그로도 호출하지 않는다",
+        help="KRX·ECOS 표면을 실제로 호출한다",
     )
     args = parser.parse_args(argv[1:])
 
@@ -294,7 +282,6 @@ def main(argv: Sequence[str]) -> int:
         check_krx(recorder, live)
         check_ecos(recorder, live)
         check_opendart(recorder)
-        check_gdelt_excluded(recorder)
     except HarnessError as error:
         recorder.add("확인 중단", "FAIL", str(error))
     except Exception as error:  # noqa: BLE001

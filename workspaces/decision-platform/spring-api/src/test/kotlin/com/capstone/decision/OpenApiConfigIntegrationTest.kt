@@ -612,7 +612,7 @@ class OpenApiConfigIntegrationTest(
     }
 
     @Test
-    fun `openapi keeps active RAG v2 routes out of the v1 generated document`() {
+    fun `openapi exposes exactly the seven public RAG v2 routes`() {
         val document =
             objectMapper.readTree(
                 mockMvc
@@ -624,20 +624,36 @@ class OpenApiConfigIntegrationTest(
                     .contentAsByteArray,
             )
 
-        assertFalse(
+        // 대시보드 RAG 화면이 쓰는 일곱 개만 공개한다.
+        val exposed =
             document
                 .at("/paths")
                 .propertyNames()
                 .asSequence()
-                .any { it.startsWith("/api/v2/rag/") },
+                .filter { it.startsWith("/api/v2/rag") }
+                .toSet()
+        assertEquals(
+            setOf(
+                "/api/v2/rag/ask",
+                "/api/v2/rag/consent",
+                "/api/v2/rag/consents",
+                "/api/v2/rag/corpus-status",
+                "/api/v2/rag/history",
+                "/api/v2/rag/history/{answerId}",
+            ),
+            exposed,
         )
-        assertFalse(
-            document
-                .at("/components/schemas")
-                .propertyNames()
-                .asSequence()
-                .any { it.startsWith("RagV2") },
+        // owner 문서 ticket과 Vertex 준비는 배포 가능한 기능이 아니므로 계속 숨긴다.
+        for (
+        hidden in
+        listOf(
+            "/api/v2/rag/import-tickets",
+            "/api/v2/rag/delete-tickets",
+            "/api/v2/rag/vertex-preparations",
         )
+        ) {
+            assertFalse(exposed.contains(hidden))
+        }
     }
 
     private fun findRepositoryRoot(): Path {

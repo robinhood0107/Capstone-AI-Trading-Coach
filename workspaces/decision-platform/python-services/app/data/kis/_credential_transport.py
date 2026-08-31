@@ -7,7 +7,8 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
+
+from app.data._shared.repository_root import repository_root
 from typing import Any, cast
 from urllib.parse import quote, quote_plus
 
@@ -25,7 +26,7 @@ from app.data.kis.accounting import (
 from app.data.kis.rate_limiter import RateLimiter
 from app.data.kis.settings import KISMode, KISSettings
 
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
+_REPOSITORY_ROOT = repository_root(__file__, 6)
 _ROOT_ENV_FILE = _REPOSITORY_ROOT / ".env"
 _INTERNAL_TR_ID_HEADER = "x-kis-internal-tr-id"
 _MAX_RESPONSE_BYTES = 10 * 1024 * 1024

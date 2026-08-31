@@ -160,6 +160,8 @@ class RagV2VertexResponseValidatorTest {
 
     @Test
     fun `validated answer cannot exceed the public service byte boundary`() {
+        // 출력 예산이 32,768 토큰으로 올라가도 답 본문의 경계는 그대로다. 예산은 잘림을
+        // 막으려고 넓힌 것이지 답을 길게 하려는 것이 아니다.
         val sentence = "근거문장".repeat(160)
         val longEvidence = listOf(evidence(1, "e", sentence))
         val sentences =
@@ -198,4 +200,161 @@ class RagV2VertexResponseValidatorTest {
         MessageDigest.getInstance("SHA-256").digest(value.toByteArray(StandardCharsets.UTF_8)).joinToString("") {
             "%02x".format(java.util.Locale.ROOT, it)
         }
+
+    @Test
+    fun `a reasoning sentence may sit beside a grounded one without carrying a citation`() {
+        // EVIDENCE는 모든 문장에 정확 인용을 요구해서 근거를 잇거나 한계를 말하는 문장을 아예
+        // 쓸 수 없었다. 그래서 답이 인용의 나열이 되고 Strong LLM을 쓰는 이유가 사라진다.
+        val result =
+            validator.validate(
+                """
+                {
+                  "basis":"EVIDENCE_WITH_REASONING",
+                  "answer":"공분산 항은 포트폴리오 위험을 구성합니다.\n따라서 상관관계가 낮은 자산을 섞을수록 이 항의 기여가 줄어드는 방향으로 움직입니다.",
+                  "sentences":[
+                    {
+                      "text":"공분산 항은 포트폴리오 위험을 구성합니다.",
+                      "citationIds":["cit_2"],
+                      "evidenceSpans":[
+                        {"citationId":"cit_2","quote":"The covariance terms determine how pairs of assets contribute to total portfolio risk."}
+                      ],
+                      "numericSpans":[]
+                    },
+                    {
+                      "text":"따라서 상관관계가 낮은 자산을 섞을수록 이 항의 기여가 줄어드는 방향으로 움직입니다.",
+                      "citationIds":[],
+                      "evidenceSpans":[],
+                      "numericSpans":[]
+                    }
+                  ],
+                  "warnings":[]
+                }
+                """.trimIndent(),
+                evidence,
+            )
+
+        assertThat(result.basis).isEqualTo(StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING)
+        assertThat(result.citationIds).containsExactly("cit_2")
+        // 두 문장 중 하나만 근거 문장이므로 화면은 그 비율을 그대로 보여줄 수 있다.
+        assertThat(result.citationCoverage).isEqualTo(0.5)
+    }
+
+    @Test
+    fun `a reasoning sentence may reuse a number the grounded sentences already proved`() {
+        val result =
+            validator.validate(
+                """
+                {
+                  "basis":"EVIDENCE_WITH_REASONING",
+                  "answer":"예시는 연 5%를 사용합니다.\n같은 5%를 다른 가정에 적용하면 결과가 달라질 수 있습니다.",
+                  "sentences":[
+                    {
+                      "text":"예시는 연 5%를 사용합니다.",
+                      "citationIds":["cit_3"],
+                      "evidenceSpans":[{"citationId":"cit_3","quote":"5% annual risk-free rate"}],
+                      "numericSpans":[{"value":"5%","citationIds":["cit_3"]}]
+                    },
+                    {
+                      "text":"같은 5%를 다른 가정에 적용하면 결과가 달라질 수 있습니다.",
+                      "citationIds":[],
+                      "evidenceSpans":[],
+                      "numericSpans":[]
+                    }
+                  ],
+                  "warnings":[]
+                }
+                """.trimIndent(),
+                evidence,
+            )
+
+        assertThat(result.basis).isEqualTo(StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING)
+    }
+
+    @Test
+    fun `a reasoning sentence cannot introduce a number no citation proved`() {
+        // 인용 없는 문장에 숫자를 허용하면 그것이 곧 조작된 수치가 답으로 들어오는 통로가 된다.
+        assertThatThrownBy {
+            validator.validate(
+                """
+                {
+                  "basis":"EVIDENCE_WITH_REASONING",
+                  "answer":"공분산 항은 포트폴리오 위험을 구성합니다.\n따라서 분산은 대략 42% 줄어듭니다.",
+                  "sentences":[
+                    {
+                      "text":"공분산 항은 포트폴리오 위험을 구성합니다.",
+                      "citationIds":["cit_2"],
+                      "evidenceSpans":[
+                        {"citationId":"cit_2","quote":"The covariance terms determine how pairs of assets contribute to total portfolio risk."}
+                      ],
+                      "numericSpans":[]
+                    },
+                    {
+                      "text":"따라서 분산은 대략 42% 줄어듭니다.",
+                      "citationIds":[],
+                      "evidenceSpans":[],
+                      "numericSpans":[]
+                    }
+                  ],
+                  "warnings":[]
+                }
+                """.trimIndent(),
+                evidence,
+            )
+        }.isInstanceOf(RagV2VertexResponseValidationException::class.java)
+    }
+
+    @Test
+    fun `a reasoning sentence cannot claim what is true right now`() {
+        // 시점 주장은 인용 없이 확인할 방법이 없다. 근거가 오래됐는지조차 말할 수 없다.
+        assertThatThrownBy {
+            validator.validate(
+                """
+                {
+                  "basis":"EVIDENCE_WITH_REASONING",
+                  "answer":"공분산 항은 포트폴리오 위험을 구성합니다.\n최근 시장에서도 같은 관계가 유지되고 있습니다.",
+                  "sentences":[
+                    {
+                      "text":"공분산 항은 포트폴리오 위험을 구성합니다.",
+                      "citationIds":["cit_2"],
+                      "evidenceSpans":[
+                        {"citationId":"cit_2","quote":"The covariance terms determine how pairs of assets contribute to total portfolio risk."}
+                      ],
+                      "numericSpans":[]
+                    },
+                    {
+                      "text":"최근 시장에서도 같은 관계가 유지되고 있습니다.",
+                      "citationIds":[],
+                      "evidenceSpans":[],
+                      "numericSpans":[]
+                    }
+                  ],
+                  "warnings":[]
+                }
+                """.trimIndent(),
+                evidence,
+            )
+        }.isInstanceOf(RagV2VertexResponseValidationException::class.java)
+    }
+
+    @Test
+    fun `an answer with no grounded sentence at all is not reasoning over evidence`() {
+        // 근거 문장이 하나도 없으면 그것은 추론이 아니라 MODEL_KNOWLEDGE이고, 그 basis에는
+        // 숫자와 시점 금지가 그대로 걸린다. 여기로 새는 길을 열지 않는다.
+        assertThatThrownBy {
+            validator.validate(
+                """{"basis":"EVIDENCE_WITH_REASONING","answer":"분산투자는 위험을 줄입니다.","sentences":[{"text":"분산투자는 위험을 줄입니다.","citationIds":[],"evidenceSpans":[],"numericSpans":[]}],"warnings":[]}""",
+                evidence,
+            )
+        }.isInstanceOf(RagV2VertexResponseValidationException::class.java)
+    }
+
+    @Test
+    fun `a grounded sentence keeps the exact quote requirement inside the new basis`() {
+        assertThatThrownBy {
+            validator.validate(
+                """{"basis":"EVIDENCE_WITH_REASONING","answer":"근거가 없습니다.\n그래서 결론을 미룹니다.","sentences":[{"text":"근거가 없습니다.","citationIds":["cit_1"],"evidenceSpans":[{"citationId":"cit_1","quote":"fabricated quote"}],"numericSpans":[]},{"text":"그래서 결론을 미룹니다.","citationIds":[],"evidenceSpans":[],"numericSpans":[]}],"warnings":[]}""",
+                evidence,
+            )
+        }.isInstanceOf(RagV2VertexResponseValidationException::class.java)
+    }
 }

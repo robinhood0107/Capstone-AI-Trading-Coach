@@ -1,0 +1,129 @@
+{
+  "apiVersion": "1.1.0",
+  "armRequestFields": [
+    "accountId",
+    "policyId",
+    "expectedPolicyVersion",
+    "expectedControlVersion"
+  ],
+  "blockers": [
+    "ACCOUNT_NOT_CONFIGURED",
+    "POLICY_NOT_CONFIGURED",
+    "POLICY_VERSION_DRIFT",
+    "PRINCIPLE_NOT_CONFIGURED",
+    "REAL_TEAM_B_POINTER_INACTIVE",
+    "RELEASE_BINDING_UNCLEAN",
+    "CERTIFICATION_INVALID",
+    "KILL_SWITCH_ACTIVE",
+    "UNRESOLVED_RECONCILIATION",
+    "CONTROL_HALTED",
+    "BLOCKED_INCOMPLETE_RISK_BALANCE"
+  ],
+  "contractId": "p1-automation-policy.v1",
+  "evidenceSources": [
+    {
+      "claim": "Tight stop-loss rules can underperform after transaction costs.",
+      "title": "Stop-loss strategies with serial correlation, regime switching, and transaction costs",
+      "url": "https://www.sciencedirect.com/science/article/pii/S1386418117300472"
+    },
+    {
+      "claim": "Daily-stock experiments include stop-loss candidates 3, 5, 8 and 10 percent and take-profit candidates 3, 5, 8, 10, 15 and 20 percent.",
+      "title": "Self-Management Portfolio System with Adaptive Association Mining",
+      "url": "https://www.mdpi.com/2227-7390/9/10/1093"
+    },
+    {
+      "claim": "Korean-market dynamic VI thresholds are 2 to 6 percent and the static VI threshold is 10 percent.",
+      "title": "Dynamic and Static Volatility Interruptions: Evidence from the Korean Stock Markets",
+      "url": "https://www.mdpi.com/1911-8074/15/3/105"
+    }
+  ],
+  "execution": {
+    "buyCutoffTimeKst": "09:40",
+    "cancelTimeKst": "15:20",
+    "evaluationTimeKst": "09:30",
+    "maxNewOrdersPerSession": 1,
+    "maxOpenPositions": 5
+  },
+  "exitPriority": [
+    "UNRESOLVED_RECONCILIATION",
+    "STOP_LOSS",
+    "MAX_HOLDING_SESSIONS",
+    "MODEL_SELL",
+    "TAKE_PROFIT",
+    "NEW_BUY"
+  ],
+  "limits": {
+    "capitalLimitKrw": {
+      "maximum": 10000000000,
+      "minimum": 10000,
+      "multipleOf": 10000
+    },
+    "stopLossBps": {
+      "maximum": 1500,
+      "minimum": 100
+    },
+    "takeProfitBps": {
+      "maximum": 3000,
+      "minimum": 200,
+      "mustExceed": "stopLossBps"
+    }
+  },
+  "operations": [
+    {
+      "method": "GET",
+      "operationId": "getAutomationStatusV2",
+      "path": "/api/v2/automation/status"
+    },
+    {
+      "method": "PUT",
+      "operationId": "putAutomationPolicyV2",
+      "path": "/api/v2/automation/policy"
+    },
+    {
+      "method": "POST",
+      "operationId": "armAutomationV2",
+      "path": "/api/v2/automation/arm"
+    },
+    {
+      "method": "GET",
+      "operationId": "listAutomationRunsV2",
+      "path": "/api/v2/automation/runs"
+    },
+    {
+      "method": "GET",
+      "operationId": "listAutomationPositionsV2",
+      "path": "/api/v2/automation/positions"
+    }
+  ],
+  "presets": [
+    {
+      "descriptionKo": "한국시장 3% dynamic VI와 좁은 실증 후보 범위를 참고한 기본값입니다.",
+      "labelKo": "보수",
+      "presetId": "conservative",
+      "stopLossBps": 300,
+      "takeProfitBps": 500
+    },
+    {
+      "descriptionKo": "일상 변동보다 넓은 손실 허용과 한국시장 10% static VI 경계를 참고했습니다.",
+      "labelKo": "균형",
+      "presetId": "balanced",
+      "stopLossBps": 500,
+      "takeProfitBps": 1000
+    },
+    {
+      "descriptionKo": "넓은 실증 후보 범위를 허용하며 손실 폭도 커질 수 있습니다.",
+      "labelKo": "공격",
+      "presetId": "aggressive",
+      "stopLossBps": 800,
+      "takeProfitBps": 1500
+    }
+  ],
+  "quantityFormula": "min(floor(min(capitalSlotRemainingKrw,principleSingleOrderRemainingKrw,principleAssetRemainingKrw,kisBuyableAmountKrw)/exactLimitPriceKrw),kisBuyableQuantity)",
+  "safety": {
+    "automaticInternalPaperFallback": false,
+    "defaultControlState": "DISARMED",
+    "kisLiveCalls": 0,
+    "lightgbmOrderAuthority": "NONE",
+    "shortAllowed": false
+  }
+}

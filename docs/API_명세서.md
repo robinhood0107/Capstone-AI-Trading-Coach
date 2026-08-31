@@ -1,12 +1,13 @@
 # API 명세서
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
-> **1.0.0 current authority (2026-08-27):** Owner-First full-app v3 API는 아직 release되지 않았다.
-> contract-only 단계가 고정한 Automation/Journal 8개는 PR #171로 병합됐고 root OpenAPI는 기존 exact-48
-> projection을 보존한 exact 56개다. Owner Team A backend 기준 exact-33 live Spring도 PR #172로 병합됐다.
-> 공개 endpoint는 OpenAPI SSOT와 별도 contract-change가 병합된 경우에만 구현된 것으로 본다. 기존
-> placeholder 계획, LightGBM production 경로와 `NOT_MATERIALIZED` 상태는 현재 v3 권위로 명시되지
-> 않았다면 `HISTORICAL_SUPERSEDED`다. live order authority는 0이다.
+> **현재 상태 (2026-08-31):** Owner-First full-app v3 API는 아직 release되지 않았다. root
+> OpenAPI는 exact-69이고 Team A versioned 표면은 exact-38이다. 69의 마지막 하나는 Strong LLM
+> 설정 쓰기(`PUT /api/v2/strong-llm/settings`)이며 API 키는 요청으로만 들어가고 어떤 응답 DTO에도
+> 실리지 않는다. v2 arm은 `BLOCKED_INCOMPLETE_RISK_BALANCE` 409이고 실계좌 주문 권한은 0이다.
+> 공개 endpoint는 OpenAPI SSOT와 별도 contract-change가 함께 병합된 경우에만 구현된 것으로 본다.
+> 이 문서에서 현재 권위에 연결되지 않은 placeholder, LightGBM production, `NOT_MATERIALIZED`
+> 서술은 `HISTORICAL_SUPERSEDED`다.
 <!-- P1_FULL_APP_V3_AUTHORITY_END -->
 
 작성일: 2026-06-23  
@@ -69,8 +70,14 @@ GDELT_HTTP_TRANSPORT=NOT_ACTIVATED
 GDELT_OUTBOUND_IMPLEMENTATION=0
 GDELT_OUTBOUND_CALLS=0
 GDELT_OFFLINE_REFERENCE_ONLY=1
+GDELT_PROVIDER_PHYSICAL_CALLS=0
+GDELT_ARTICLE_METADATA_STORAGE=0
+GDELT_DECISION_AUTHORITY=NONE
+GDELT_S5_FEATURE_ELIGIBLE=FALSE
+SECURITY_SCAN_TIMING=FINAL_CONSOLIDATED_CAMPAIGN
 NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED
 RAG_NEWS_ANALYST_DECISION_SIGNAL_ORDER_AUTHORITY=0
+STRONG_LLM_JUDGEMENT_AUTHORITY=CANDIDATE_RANK_VETO_SIZE_ONLY
 PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES
 ```
 
@@ -154,22 +161,6 @@ current-price receipt와 S4.8 9-lane terminal 분류도 완료됐으며 재호�
 Voyage query 1회와 Vertex service-account OAuth/generateContent 각 1회가 성공했고 latest Strong LLM
 usage는 `COMMITTED`다. 거래시간 외 KIS는 위 결정적 mock receipt로 대체하며 실제
 tokenP·brokerage·live-order 호출은 0이다.
-
-> 완료 기준점(2026-07-16): S1.3 내부 ECOS/Naver producer는 PR #16 merge commit
-> `6f439155d9f5ec626fc185f29f2e0bd64ca54780`, S1.3K KRX 내부 collector는 PR #17 merge
-> commit `814aab377251d76672566d39c3edb379d132248e`으로 `main`에 병합됐다. 두 트랙은 public
-> REST/gRPC가 아니라 아래에 명시한 내부 artifact/CLI 경계만 구현 완료 상태다.
-> 이 Naver 문단은 당시 완료 evidence이며 신규 실행 권한이 아니다.
->
-> S1.3G active 뉴스 API/contract authority(2026-07-31):
-> `NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED`, `GDELT_PROVIDER_PHYSICAL_CALLS=0`,
-> `GDELT_ARTICLE_METADATA_STORAGE=0`, `GDELT_DECISION_AUTHORITY=NONE`,
-> `GDELT_S5_FEATURE_ELIGIBLE=FALSE`다. 실제 provider outbound는 별도 승인이 필요하고,
-> 이번 통합 보안 검사는 `SECURITY_SCAN_TIMING=FINAL_CONSOLIDATED_CAMPAIGN`으로 모든
-> offline 구현과 일반 gate 완료 뒤 실행한다.
-> 2026-08-01 현재 strict two-mode parser, network-free fixture collector, no-zero `ABSTAIN`,
-> 0600 append-only publisher와 exact approval packet validator는 구현됐지만 HTTP transport는
-> `NOT_ACTIVATED`다.
 
 ---
 
@@ -700,11 +691,11 @@ S2.1은 공용 preset, 사용자별 원칙 생성·복구·수정·보관, immut
 `s2-1-principle-contract/v1`이다. standalone schema와 fixture는 catalog에서 기계 생성하며
 사람이 독립적으로 수정하지 않는다.
 
-> Implementation 상태(2026-07-24): 아래 6개 runtime endpoint와 실제 springdoc path,
-> owner-scoped SQL CAS, immutable snapshot/audit, HMAC cursor를 구현했다. S2.2 계약
-> amendment로 `PrincipleRule.evidenceRequirement`를 명시하고 legacy immutable snapshot의
-> 결정적 read-time inference도 추가했다. `STRICT` 저장과 rule 필드 노출은 구현 완료지만
-> RiskEngine의 runtime enforcement와 Decision endpoint 가용성을 뜻하지 않는다.
+**구현 경계.** 아래 6개 runtime endpoint와 실제 springdoc path,
+owner-scoped SQL CAS, immutable snapshot/audit, HMAC cursor를 구현했다. S2.2 계약
+amendment로 `PrincipleRule.evidenceRequirement`를 명시하고 legacy immutable snapshot의
+결정적 read-time inference도 추가했다. `STRICT` 저장과 rule 필드 노출은 구현 완료지만
+RiskEngine의 runtime enforcement와 Decision endpoint 가용성을 뜻하지 않는다.
 
 모든 endpoint는 Bearer 인증을 요구한다. actor/owner는 PR #37이 고정한 DB 검증 후
 `AppPrincipal.userId`(JWT `sub`)에서만 가져오며 request의 user ID를 신뢰하지 않는다.
@@ -978,15 +969,15 @@ deterministic formatting만 normalizer가 바꿀 수 있으며 paths/components/
 주문 의도와 immutable Principle version, portfolio context, 모델·리스크 evidence를 결합하는
 최종 HTTP API다.
 
-> 상태 경계(2026-07-24): S2.2는
-> `contracts/catalogs/s2-2-system-rule-catalog.v1.json`,
-> `contracts/schemas/risk_decision.schema.json`과 순수 evaluator/snapshot policy를 offline
-> fixture와 fake port로 검증했다. S2.3은 owner-scoped runtime orchestration, V9
-> decision/trace/artifact/audit/outbox/idempotency persistence와 이 장의 3개 endpoint를
-> tracked OpenAPI에 연결한다. S1.1/S3/S1.6/deterministic 모듈은 source producer를 소유하고
-> 이번 continuation에서 offline fixture 기반 structural readiness를 제공한다. S2.3은 저장된
-> sanitized observation과 INTERNAL_PAPER ledger를 읽는 adapter만 소유한다. provider HTTP,
-> live account, 주문 제출과 broker publish는 이 경로에서 수행하지 않는다.
+**구현 경계.** S2.2는
+`contracts/catalogs/s2-2-system-rule-catalog.v1.json`,
+`contracts/schemas/risk_decision.schema.json`과 순수 evaluator/snapshot policy를 offline
+fixture와 fake port로 검증했다. S2.3은 owner-scoped runtime orchestration, V9
+decision/trace/artifact/audit/outbox/idempotency persistence와 이 장의 3개 endpoint를
+tracked OpenAPI에 연결한다. S1.1/S3/S1.6/deterministic 모듈은 source producer를 소유하고
+이번 continuation에서 offline fixture 기반 structural readiness를 제공한다. S2.3은 저장된
+sanitized observation과 INTERNAL_PAPER ledger를 읽는 adapter만 소유한다. provider HTTP,
+live account, 주문 제출과 broker publish는 이 경로에서 수행하지 않는다.
 
 ### 5.1 S2.2 offline rule evaluation 계약
 
@@ -1473,31 +1464,31 @@ canonical domain이다.
 
 RAG는 v1 핵심 구현이다. 단, RAG 답변은 매수/매도 지시가 아니라 근거 기반 설명으로 제한한다. 런타임 RAG corpus는 공식자료, 공시/API 문서, 프로젝트 산출물, 금융공학 source card로 제한한다. 뉴스 원문과 기사 metadata는 RAG corpus에 포함하지 않고, Decision Platform이 만든 검증된 `news_sentiment_summary.v2`만 설명 근거 후보로 연결한다.
 
-> S4.4 구현 기준(2026-07-31): 아래 ask·feedback·history·consent 계약은
-> `FIXTURE_ONLY` answerer, owner-scoped PostgreSQL functions, Redis rate limit,
-> purpose-separated HMAC과 AES-256-GCM envelope encryption으로 구현한다. 이 단계의
-> Gemini·OpenAI·Voyage physical call은 0이고 허용 질문도 `RETRIEVAL_ONLY`로 닫는다.
-> 실제 Python retrieval/generation E2E는 S4.6, Gemini live는 별도 승인형 S4.4G 범위다.
->
-> S4.5 구현 기준(2026-08-01): 공개·합성 exact 60 fixture가 production RRF·local
-> guardrail·citation parser를 재사용해 모든 metric gate를 통과했다. Voyage S4.2C와 Gemini
-> S4.4G는 내부 approval packet schema, usage state, mock transport와 fail-closed validator만
-> 구현한다. public ask/answer/history/OpenAPI field 변경은 0이며 fresh provider 승인과 paid
-> ZDR evidence가 없으므로 provider physical call, generation materialization과 activation은 0이다.
->
-> S4.6 구현 기준(2026-08-01): `capstone.decision.v1.RagService.Ask` unary proto와
-> canonical descriptor를 Python/JVM이 공유한다. Spring은 owner consent 확인 뒤
-> rate limit·idempotency claim을 수행하고, 신규 claim에서만 짧은 수명의 opaque
-> retrieval scope를 발급해 numeric loopback Python RPC를 한 번 호출한다. Python은
-> local privacy/advice/injection guard, S4.5 fixture RRF·citation parser만 실행한다.
-> Spring은 request/generation/profile/policy, authorized top-5 subset, citation identity,
-> provider physical count 0을 다시 검증하고 DB owner/topic/active-generation recheck와
-> encrypted history atomic complete가 모두 성공한 뒤만 public response를 반환한다.
-> gRPC deadline은 15초, Spring read budget은 17초, request/response는 64KiB/256KiB,
-> retry 0, reflection false다. JWT·API key·owner ID·account/order·history ciphertext는 proto에 없다.
-> `RAG_GRPC_ENABLED=false`는 기존 S4.4 retrieval-only compatibility mode이며, true는
-> same-deployment Python process와 명시적 전용 `RAG_GRPC_SHARED_SECRET`이 준비된 경우에만
-> 사용한다. 이 secret은 모든 활성 auth·Decision/Python·brokerage credential과 달라야 하며 fallback은 없다.
+**S4.4 — ask·feedback·history·consent.** 아래 계약은
+`FIXTURE_ONLY` answerer, owner-scoped PostgreSQL functions, Redis rate limit,
+purpose-separated HMAC과 AES-256-GCM envelope encryption으로 구현한다. 이 단계의
+Gemini·OpenAI·Voyage physical call은 0이고 허용 질문도 `RETRIEVAL_ONLY`로 닫는다.
+실제 Python retrieval/generation E2E는 S4.6, Gemini live는 별도 승인형 S4.4G 범위다.
+
+**S4.5 — 평가 fixture.** 공개·합성 exact 60 fixture가 production RRF·local
+guardrail·citation parser를 재사용해 모든 metric gate를 통과했다. Voyage S4.2C와 Gemini
+S4.4G는 내부 approval packet schema, usage state, mock transport와 fail-closed validator만
+구현한다. public ask/answer/history/OpenAPI field 변경은 0이며 fresh provider 승인과 paid
+ZDR evidence가 없으므로 provider physical call, generation materialization과 activation은 0이다.
+
+**S4.6 — Python retrieval RPC.** `capstone.decision.v1.RagService.Ask` unary proto와
+canonical descriptor를 Python/JVM이 공유한다. Spring은 owner consent 확인 뒤
+rate limit·idempotency claim을 수행하고, 신규 claim에서만 짧은 수명의 opaque
+retrieval scope를 발급해 numeric loopback Python RPC를 한 번 호출한다. Python은
+local privacy/advice/injection guard, S4.5 fixture RRF·citation parser만 실행한다.
+Spring은 request/generation/profile/policy, authorized top-5 subset, citation identity,
+provider physical count 0을 다시 검증하고 DB owner/topic/active-generation recheck와
+encrypted history atomic complete가 모두 성공한 뒤만 public response를 반환한다.
+gRPC deadline은 15초, Spring read budget은 17초, request/response는 64KiB/256KiB,
+retry 0, reflection false다. JWT·API key·owner ID·account/order·history ciphertext는 proto에 없다.
+`RAG_GRPC_ENABLED=false`는 기존 S4.4 retrieval-only compatibility mode이며, true는
+same-deployment Python process와 명시적 전용 `RAG_GRPC_SHARED_SECRET`이 준비된 경우에만
+사용한다. 이 secret은 모든 활성 auth·Decision/Python·brokerage credential과 달라야 하며 fallback은 없다.
 
 ### 7.1 RAG 질문
 
@@ -1763,7 +1754,22 @@ consent는 `GRANT | REVOKE`, disclosure/policy digest만 받고 owner와 시각�
 raw evidence는 저장하거나 반환하지 않는다. operator는 이 receipt와 독립 external evidence를 이용해
 local-only approval packet을 만들고, 뒤의 `/ask`에는 같은 request ID·parsed command와
 `X-Rag-V2-Vertex-Scope-Claim`을 함께 써야 한다. scope 또는 body가 다르거나 만료되면 gRPC/provider socket
-전에 fail-closed한다. enabled target인데 이 header가 없으면 `/ask`는 `GENERATION_UNAVAILABLE`로 종료한다.
+전에 fail-closed한다.
+
+enabled target인데 이 header가 없을 때의 동작은 **자동 활성화 설정에 달려 있다.**
+
+- `app.rag-v2.vertex.auto-activation-enabled=false`(기본값)이면 `/ask`는 `GENERATION_UNAVAILABLE`로
+  종료한다. 활성화 패킷은 운영자만 저술하므로, 두 단계를 밟지 않은 질의에는 생성이 없다.
+- `true`이면 서버가 같은 준비를 **대신 한다.** `/vertex-preparations`와 완전히 같은 경로로 5분 scope를
+  발급하고, 배포 정책 파일(`control/pre-s5-vertex-auto-activation-policy.json`, 0600)이 정한 모델·비용
+  상한·evidence 해시·코드 바인딩으로 활성화 패킷을 저술한 뒤 그 패킷으로 한 번 생성한다. 패킷을 읽고
+  검증하는 자리는 그대로 하나이며, 계약 ID·5분 만료·단일 사용 nonce·물리 호출 상한·비용 상한 산술은
+  운영자가 저술할 때와 똑같이 강제된다. 바뀌는 것은 승인의 위치뿐이다 — 호출마다의 사람 승인이
+  배포 시점의 정책 승인으로 내려간다.
+
+자동 활성화에서 사람이 곧 호출 한도이던 자리를 대신하려고 **소유자별 하루 생성 상한**을 정책에서
+읽는다. 상한에 닿으면 생성만 닫히고(`GENERATION_UNAVAILABLE`) 검색 경로는 그대로 산다. 남은 횟수는
+`GET /api/v2/rag/corpus-status`가 알려 준다.
 이 control plane은 provider 호출을 만들지 않으며 `EXTERNAL_AI_RAG_V2` 동의만으로 provider outbound가
 활성화되지 않는다.
 
@@ -1805,9 +1811,16 @@ private overlay state, 0~100 progress, active embedding profile, target generato
 code만 반환한다. 파일명·로컬 경로·내부 접근 정보·무결성 검증값은 노출하지 않는다. 현재 OA112
 metadata validation은 `CORE_READY`의 전제일 뿐 `FULL_READY` 증거가 아니다.
 
+자동 활성화가 켜져 있으면 생성형 답변의 오늘 상한과 남은 횟수를 함께 반환한다. 꺼져 있으면 세 필드는
+모두 `null`이고, 그 배포에서 화면은 검색 전용으로 동작한다. 세 값은 개수일 뿐이라 질문·근거·비용
+내역을 담지 않는다.
+
 ```json
 {
   "failureCode": null,
+  "generationDailyCap": 50,
+  "generationRemaining": 47,
+  "generationUsedToday": 3,
   "privateOverlayState": "BUILDING",
   "progressPercent": 42,
   "publicCorpusVersion": "exact30-v1+oa112-logical-pre-s5",
@@ -2222,74 +2235,73 @@ artifact 다운로드 URL은 공개 링크가 아니며 다른 API와 동일한 
 
 KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재동의 조건을 충족할 때만 확장한다. S1.1의 KIS 작업은 Brokerage API가 아니라 MarketDataService 내부 구현이며, 주문·정정·취소·잔고 변경을 만들지 않는다. KIS 전체 API 목록과 모의 지원 경계는 자동 생성 부록 `KIS_API_카탈로그.md`를 참조한다.
 
-> Implementation 상태(2026-07-26): S3.1은 `POST /api/v1/brokerage/mock/orders`,
-> `GET /api/v1/brokerage/orders/{orderId}`, `POST /api/v1/brokerage/orders/{orderId}/cancel`,
-> `GET /api/v1/brokerage/mock/accounts/{accountId}/balances`,
-> `GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`을 runtime으로 구현한다. 주문 제출은
-> S2.3의 저장 Decision과 S2.4 Kill Switch를 DB write path에서 다시 검증하고 V11 mock order
-> ledger와 additive V12 capability 함수 경계에 sanitized projection만 저장한다. runtime DB
-> role에는 `orders`·`order_events` 직접 DML/조회 권한이 없으며, 주문 함수가 Kill Switch row
-> lock과 관측 generation 비교, Decision one-use, order/event/audit/outbox 원자 기록을 최종
-> 판정한다. 요청 body는 `decisionId`, exact 8-field
-> `orderIntent`, `userAcknowledgement.warningsAccepted`만 허용하며 body-supplied
-> account/provider/actor 필드는 `VALIDATION_ERROR`다. raw idempotency key, raw 계좌번호,
-> provider raw payload는 저장하지 않는다. S3.1 기준 adapter/gRPC 검증은 injected/fake
-> transport로 수행했고 provider/live account/broker/order physical call은 0건이었다.
-> verified KRX tick-table context가 없는 LIMIT 주문은 `BROKERAGE_UNAVAILABLE`로
-> fail-closed한다. 닫힌 KIS_MOCK online 확장은 아래 S3-online 상태를 따른다.
->
-> 구현 상태(2026-07-27): S3.2는 별도
-> `POST /api/v1/brokerage/paper/orders`와 paper balance/buyable route를 추가하고 기존 공통
-> order 조회·취소를 `INTERNAL_PAPER`로 확장한다. paper path는 KIS Mock gRPC port를 참조하지
-> 않으며 stored quote와 append-only `paper_order_events`만 사용한다. provider 장애 fallback,
-> live/order/fill 조회, partial fill은 0건이다. canonical SSOT는
-> `contracts/catalogs/s3-2-internal-paper-contract.v1.json`과
-> `contracts/changes/20260727-s3-2-internal-paper-ledger-contract.md`다.
->
-> 구현 상태(2026-07-27): S3.3은
-> `POST /api/v1/brokerage/orders/{orderId}/reconcile`,
-> `GET /api/v1/brokerage/mock/accounts/{accountId}/fills`,
-> `GET /api/v1/brokerage/paper/accounts/{accountId}/fills`를 구현한다. KIS_MOCK 체결은
-> `decision_fill_writer`가 저장한 sanitized COMPLETE 관측만 ADMIN reconcile이 최대 200개씩
-> 소비한다. 한 번 캡처한 `reconciledAt`까지 observed/received된 관측만 현재 batch와
-> `hasMore`에 포함하고, exact fill notional을 batch 사이에도 보존한다. INTERNAL_PAPER는
-> S3.2의 결정적 체결을 재사용한다. owner fill page는 최대 50개, KST 날짜 범위 최대 31일,
-> HMAC cursor를 사용한다. 체결 보고 public route, scheduler,
-> provider/live-account/live-order 호출은 일반 구현·테스트에서 0건이다. canonical SSOT는
-> `contracts/catalogs/s3-3-fill-contract.v1.json`과
-> `contracts/changes/20260727-s3-3-fill-events-reconciliation-contract.md`다.
-> OpenAPI는 fill 조회의 필수 `from`/`to` date query와 optional 최대 1024자 `cursor`,
-> reconcile의 필수 16~128자 ASCII `X-Idempotency-Key`, additional-properties가 닫힌
-> empty-object request body를 runtime parser와 동일하게 노출한다.
->
-> 구현 상태(2026-07-27): S3-online은 기본 OFF인 loopback Brokerage gRPC와 official
-> KIS_MOCK fixed-origin transport를 연결한다. 주문 `VTTC0011U | VTTC0012U`, 전량 취소
-> `VTTC0013U`, 잔고 `VTTC8434R`, 매수가능 `VTTC8908R`, 최근/과거 체결
-> `VTTC0081R | VTSC9215R`의 exact mock path/TR만 허용한다. Spring은 provider handoff 전에
-> DB reservation과 owner/Decision/Kill Switch/capability를 검증하고, V15는 접수 성공을
-> `ACCEPTED`로 원자 기록한다. 모호한 결과에는 `PENDING_RECONCILIATION` 기록을 시도하며
-> 이 보조 기록도 실패하면 최초 `SUBMITTED` reservation을 recovery anchor로 유지한다. online
-> balance/buyable도 stored owner/account anchor를 먼저 요구한다. 일반 구현·fixture·OpenAPI·
-> 테스트 provider call은 0이고, history-only `schemaVersion=1`은 PR #55 검증에만 남긴다.
-> 새 실행은 dynamic PR/head branch와 local/remote/CI/security HEAD, sealed scan
-> report/manifest/coverage/findings digest, nonce, Redis baseline을 같이 결속한
-> `schemaVersion=2` exact-approved `FULL` 5단계 KIS_MOCK probe만 cap `tokenP=1`/`brokerage=5`,
-> retry/artifact 0으로 실행할 수 있다. `FULL` packet은 `orderDivision`과 선택적
-> `exchangeDivision`을 결속하지만, KIS_MOCK 현금 신규주문은 KIS Developers 계약상 `KRX`만
-> provider handoff 전에 허용한다. `exchangeDivision=NXT`는 packet/online transport 검증에서
-> fail-closed 하며, 생략 시 `KRX`가 기본이고 같은 값이 주문 submit, encrypted cancel
-> reference, 전량취소, 최근 체결조회 source-shape probe에 적용된다. 반복 실패 원인을 기존 출력으로 식별할 수 없을 때는
-> 같은 5단계를 재실행하지 않고 별도 `BALANCE_DIAGNOSTIC` packet과 새 exact 승인으로 balance
-> endpoint만 cap `tokenP=1`/`brokerage=1`, retry/artifact 0으로 1회 검증한다. diagnostic은
-> 주문·취소·체결조회와 reference artifact를 만들지 않으며, 출력은 allowlisted
-> `reasonCode`, 선택적 HTTP status, `[A-Z0-9_-]{1,32}` provider code만 허용하고
-> body/header/URL/`msg1`/계좌/credential을 버린다. 성공 뒤 최종 `FULL` 실행에는 또 다른
-> 새 packet과 새 exact 승인이 필요하다. exact packet은 packet 검증 뒤 runtime 생성 전에
-> `approvalId`와 canonical
-> SHA-256에서 파생한 opaque Redis key를 `SET NX PX`로 claim하며 성공·첫 실패·runtime 생성
-> 실패 모두 재사용할 수 없다. KIS_MOCK response는 provider echo scrub/JSON parse 전에 1 MiB
-> cap을 적용한다. KIS_LIVE 실계좌 주문·정정·취소는 구현·allowlist·enable flag가 없어
-> 계속 OFF다.
+**S3.1 — KIS 모의주문.** `POST /api/v1/brokerage/mock/orders`,
+`GET /api/v1/brokerage/orders/{orderId}`, `POST /api/v1/brokerage/orders/{orderId}/cancel`,
+`GET /api/v1/brokerage/mock/accounts/{accountId}/balances`,
+`GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`을 runtime으로 구현한다. 주문 제출은
+S2.3의 저장 Decision과 S2.4 Kill Switch를 DB write path에서 다시 검증하고 V11 mock order
+ledger와 additive V12 capability 함수 경계에 sanitized projection만 저장한다. runtime DB
+role에는 `orders`·`order_events` 직접 DML/조회 권한이 없으며, 주문 함수가 Kill Switch row
+lock과 관측 generation 비교, Decision one-use, order/event/audit/outbox 원자 기록을 최종
+판정한다. 요청 body는 `decisionId`, exact 8-field
+`orderIntent`, `userAcknowledgement.warningsAccepted`만 허용하며 body-supplied
+account/provider/actor 필드는 `VALIDATION_ERROR`다. raw idempotency key, raw 계좌번호,
+provider raw payload는 저장하지 않는다. S3.1 기준 adapter/gRPC 검증은 injected/fake
+transport로 수행했고 provider/live account/broker/order physical call은 0건이었다.
+verified KRX tick-table context가 없는 LIMIT 주문은 `BROKERAGE_UNAVAILABLE`로
+fail-closed한다. 닫힌 KIS_MOCK online 확장은 아래 S3-online 상태를 따른다.
+
+**S3.2 — 내부 paper 원장.** 별도
+`POST /api/v1/brokerage/paper/orders`와 paper balance/buyable route를 추가하고 기존 공통
+order 조회·취소를 `INTERNAL_PAPER`로 확장한다. paper path는 KIS Mock gRPC port를 참조하지
+않으며 stored quote와 append-only `paper_order_events`만 사용한다. provider 장애 fallback,
+live/order/fill 조회, partial fill은 0건이다. canonical SSOT는
+`contracts/catalogs/s3-2-internal-paper-contract.v1.json`과
+`contracts/changes/20260727-s3-2-internal-paper-ledger-contract.md`다.
+
+**S3.3 — 체결과 대사.** `POST /api/v1/brokerage/orders/{orderId}/reconcile`,
+`GET /api/v1/brokerage/mock/accounts/{accountId}/fills`,
+`GET /api/v1/brokerage/paper/accounts/{accountId}/fills`를 구현한다. KIS_MOCK 체결은
+`decision_fill_writer`가 저장한 sanitized COMPLETE 관측만 ADMIN reconcile이 최대 200개씩
+소비한다. 한 번 캡처한 `reconciledAt`까지 observed/received된 관측만 현재 batch와
+`hasMore`에 포함하고, exact fill notional을 batch 사이에도 보존한다. INTERNAL_PAPER는
+S3.2의 결정적 체결을 재사용한다. owner fill page는 최대 50개, KST 날짜 범위 최대 31일,
+HMAC cursor를 사용한다. 체결 보고 public route, scheduler,
+provider/live-account/live-order 호출은 일반 구현·테스트에서 0건이다. canonical SSOT는
+`contracts/catalogs/s3-3-fill-contract.v1.json`과
+`contracts/changes/20260727-s3-3-fill-events-reconciliation-contract.md`다.
+OpenAPI는 fill 조회의 필수 `from`/`to` date query와 optional 최대 1024자 `cursor`,
+reconcile의 필수 16~128자 ASCII `X-Idempotency-Key`, additional-properties가 닫힌
+empty-object request body를 runtime parser와 동일하게 노출한다.
+
+**S3-online — 승인형 KIS_MOCK transport.** 기본 OFF인 loopback Brokerage gRPC와 official
+KIS_MOCK fixed-origin transport를 연결한다. 주문 `VTTC0011U | VTTC0012U`, 전량 취소
+`VTTC0013U`, 잔고 `VTTC8434R`, 매수가능 `VTTC8908R`, 최근/과거 체결
+`VTTC0081R | VTSC9215R`의 exact mock path/TR만 허용한다. Spring은 provider handoff 전에
+DB reservation과 owner/Decision/Kill Switch/capability를 검증하고, V15는 접수 성공을
+`ACCEPTED`로 원자 기록한다. 모호한 결과에는 `PENDING_RECONCILIATION` 기록을 시도하며
+이 보조 기록도 실패하면 최초 `SUBMITTED` reservation을 recovery anchor로 유지한다. online
+balance/buyable도 stored owner/account anchor를 먼저 요구한다. 일반 구현·fixture·OpenAPI·
+테스트 provider call은 0이고, history-only `schemaVersion=1`은 PR #55 검증에만 남긴다.
+새 실행은 dynamic PR/head branch와 local/remote/CI/security HEAD, sealed scan
+report/manifest/coverage/findings digest, nonce, Redis baseline을 같이 결속한
+`schemaVersion=2` exact-approved `FULL` 5단계 KIS_MOCK probe만 cap `tokenP=1`/`brokerage=5`,
+retry/artifact 0으로 실행할 수 있다. `FULL` packet은 `orderDivision`과 선택적
+`exchangeDivision`을 결속하지만, KIS_MOCK 현금 신규주문은 KIS Developers 계약상 `KRX`만
+provider handoff 전에 허용한다. `exchangeDivision=NXT`는 packet/online transport 검증에서
+fail-closed 하며, 생략 시 `KRX`가 기본이고 같은 값이 주문 submit, encrypted cancel
+reference, 전량취소, 최근 체결조회 source-shape probe에 적용된다. 반복 실패 원인을 기존 출력으로 식별할 수 없을 때는
+같은 5단계를 재실행하지 않고 별도 `BALANCE_DIAGNOSTIC` packet과 새 exact 승인으로 balance
+endpoint만 cap `tokenP=1`/`brokerage=1`, retry/artifact 0으로 1회 검증한다. diagnostic은
+주문·취소·체결조회와 reference artifact를 만들지 않으며, 출력은 allowlisted
+`reasonCode`, 선택적 HTTP status, `[A-Z0-9_-]{1,32}` provider code만 허용하고
+body/header/URL/`msg1`/계좌/credential을 버린다. 성공 뒤 최종 `FULL` 실행에는 또 다른
+새 packet과 새 exact 승인이 필요하다. exact packet은 packet 검증 뒤 runtime 생성 전에
+`approvalId`와 canonical
+SHA-256에서 파생한 opaque Redis key를 `SET NX PX`로 claim하며 성공·첫 실패·runtime 생성
+실패 모두 재사용할 수 없다. KIS_MOCK response는 provider echo scrub/JSON parse 전에 1 MiB
+cap을 적용한다. KIS_LIVE 실계좌 주문·정정·취소는 구현·allowlist·enable flag가 없어
+계속 OFF다.
 
 > Pre-S5 final gate는 `schemaVersion=3` exact-approved `FULL` packet만 사용한다. V3는
 > `preBalance -> buyable -> submitLimitBuy -> cancelFull -> executionRead -> postBalance -> openOrderReconciliation`
@@ -2779,9 +2791,11 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 
 ## 11. Automation·Journal API
 
-> P1 Owner-First v3 runtime 전환(2026-08-27): 아래 8개 operation은
-> `contracts/openapi/p1-automation-journal.v1.openapi.json`에서 잠근 method/path/operationId와 같다.
-> root OpenAPI는 기존 48개 의미를 보존한 채 exact 56개로 전환한다. `/error`는 제품 operation이 아니다.
+**표면 경계.** 아래 8개 operation은
+`contracts/openapi/p1-automation-journal.v1.openapi.json`에서 잠근 method/path/operationId와 같다.
+이 여덟은 root OpenAPI가 exact-56이던 시점에 들어왔고 그 뒤 Automation v2 다섯, RAG v2 공개 일곱,
+Strong LLM 설정 하나가 더해져 root는 현재 exact-69다. 각 전환은 앞 단계의 bytes를 보존한다.
+`/error`는 제품 operation이 아니다.
 
 ### 11.1 Automation
 
@@ -2813,6 +2827,34 @@ control, complete account baseline, inactive Kill Switch와 unexplained drift 0�
 검증한다. client boolean은 없다. `INTERNAL_PAPER`는 요청자가 명시한 경우만 허용하며 KIS 장애 fallback이
 아니다. disarm은 `expectedVersion` CAS로 신규 주문만 중지하고 pending reconciliation, position, event,
 Journal과 volume을 삭제하지 않는다.
+
+### 11.1A Automation v2 — 예산·가변수량·손절익절
+
+기존 v1 네 operation과 schema bytes는 변경하지 않는다. 1.1.0은 다음 다섯 operation만 추가한다.
+
+```text
+GET  /api/v2/automation/status
+PUT  /api/v2/automation/policy
+POST /api/v2/automation/arm
+GET  /api/v2/automation/runs
+GET  /api/v2/automation/positions
+```
+
+policy PUT body는 `capitalLimitKrw`, `stopLossBps`, `takeProfitBps`, `expectedVersion` 정확히 네 필드다.
+최대 금액은 1만원~100억원의 1만원 단위, 손절은 100~1,500bps, 익절은 200~3,000bps이며 익절이
+손절보다 커야 한다. exact pair `300/500`, `500/1000`, `800/1500`은 각각
+`conservative|balanced|aggressive`, 나머지는 `custom`으로 서버가 파생한다.
+
+v2 arm body는 `accountId`, `policyId`, `expectedPolicyVersion`, `expectedControlVersion` 정확히 네
+필드다. Principle과 REAL_TEAM_B strategy는 서버가 snapshot하며 client가 고르지 않는다. 현재
+qualified `COMPLETE` online risk-balance가 없으므로 status는 `canArm=false`와
+`BLOCKED_INCOMPLETE_RISK_BALANCE`를 반환하고 arm은 409다. 이는 성공처럼 포장할 오류가 아니라
+provider-free acceptance의 expected fail-closed 결과다.
+
+positions는 `OPEN|EXIT_PENDING` active bot-owned row만 최대 5개 반환하며 quantity는 1 이상인 현재
+잔여수량이다. runs는 정책 version, 주문/체결/잔여수량, LIMIT 가격·예상금액, exit reason을 제공한다.
+실제 주문수량은 자금 슬롯·총 잔여한도·Principle 한도·KIS 무미수 매수가능금액/수량의 최솟값이며
+AI/LSTM은 수량 권한이 없다.
 
 ### 11.2 Journal
 
@@ -2847,12 +2889,12 @@ ActorCapability v2와 같은 transaction의 FORCE RLS scope를 요구하며 cros
 
 금융공학 계산 기능은 투자 권유나 주문 실행을 위한 기능이 아니다. 이 API는 RAG 금융수학 카드, 주문검토 리스크 설명, 백테스트 리포트, 학습 화면에 필요한 계산 결과만 제공한다.
 
-> S6.4 공개 erratum(2026-08-21): request의 `contractId + valuationAt`을 기준으로 서버가
-> effective-dated `option_contract_terms.v1`을 조회하고 `tau=(lastTradingAt-valuationAt)/31536000`
-> (`ACT/365F`)를 계산한다. client가 `optionType`, `strikePrice`, `timeToMaturityYears`,
-> `finalSettlementDate`, 보유·전략평가 기간을 계약조건이나 만기로 지정할 수 없다. valuation은
-> `Q_DISCOUNTED_VALUE`, 예측 평균은 `P_PREDICTIVE_MEAN`으로 분리하며 아래 값은 교육·수치검증용이고
-> Signal, RiskDecision, 주문 또는 보수적 `conservativeRiskDelta` 권한이 없다.
+**계약조건은 서버가 정한다.** request의 `contractId + valuationAt`을 기준으로 서버가
+effective-dated `option_contract_terms.v1`을 조회하고 `tau=(lastTradingAt-valuationAt)/31536000`
+(`ACT/365F`)를 계산한다. client가 `optionType`, `strikePrice`, `timeToMaturityYears`,
+`finalSettlementDate`, 보유·전략평가 기간을 계약조건이나 만기로 지정할 수 없다. valuation은
+`Q_DISCOUNTED_VALUE`, 예측 평균은 `P_PREDICTIVE_MEAN`으로 분리하며 아래 값은 교육·수치검증용이고
+Signal, RiskDecision, 주문 또는 보수적 `conservativeRiskDelta` 권한이 없다.
 
 ### 12.1 Black-Scholes 가격 계산
 
@@ -3022,16 +3064,16 @@ solver identity 검증이며 독립 fair-value 또는 실제 성과 증거가 �
 
 ## 12A. Market Calendar API (계획 — 미구현)
 
-> 변경 반영(2026-07-10): 이 장 전체는 현재 문서화된 `계획 계약`이다. `S1.2+`는 수집 계획을 묶는 상위 umbrella 표현이며, 다중 소스 aggregator의 확정 구현 세션은 S1.6이다. REST/gRPC 구현과 Dashboard 가용성은 S1.6 완료만으로 자동 성립하지 않으며, S1.6 이후 별도의 명시적 contract-change 세션에서 schema/proto/OpenAPI와 소비 화면을 함께 승인한 뒤에만 제공한다.
->
-> 선행 계약 동결(2026-07-22): 12A.5 이후는 S1.6 production 구현 전에 고정한 내부
-> storage/collector 계약이다. 이 변경은 endpoint, proto, OpenAPI, JSON Schema 또는
-> `contracts/`를 활성화·변경하지 않는다.
->
-> 내부 구현 상태(2026-07-22): S1.6 후속 변경은 strict registry, offline adapter/merger,
-> Flyway V6 canonical·audit 저장, quota/retry/privacy/state와 최소권한 collector를 구현한다.
-> provider call과 online schedule은 0이며 이 장의 REST endpoint, 계획 RPC, OpenAPI/proto와
-> Dashboard는 여전히 미구현이다. 외부 소비자는 별도 contract-change 전까지 연동하지 않는다.
+**이 장의 지위.** 이 장 전체는 현재 문서화된 `계획 계약`이다. `S1.2+`는 수집 계획을 묶는 상위 umbrella 표현이며, 다중 소스 aggregator의 확정 구현 세션은 S1.6이다. REST/gRPC 구현과 Dashboard 가용성은 S1.6 완료만으로 자동 성립하지 않으며, S1.6 이후 별도의 명시적 contract-change 세션에서 schema/proto/OpenAPI와 소비 화면을 함께 승인한 뒤에만 제공한다.
+
+**선행 계약 동결.** 12A.5 이후는 S1.6 production 구현 전에 고정한 내부
+storage/collector 계약이다. 이 변경은 endpoint, proto, OpenAPI, JSON Schema 또는
+`contracts/`를 활성화·변경하지 않는다.
+
+**내부 구현 범위.** S1.6 후속 변경은 strict registry, offline adapter/merger,
+Flyway V6 canonical·audit 저장, quota/retry/privacy/state와 최소권한 collector를 구현한다.
+provider call과 online schedule은 0이며 이 장의 REST endpoint, 계획 RPC, OpenAPI/proto와
+Dashboard는 여전히 미구현이다. 외부 소비자는 별도 contract-change 전까지 연동하지 않는다.
 
 목적: 무료/공식 다중 소스를 집계해 감사 가능한(auditable) 시장 캘린더/이벤트 데이터를 제공한다. "완벽한 캘린더"는 단일 API를 항상 옳다고 가정하는 것이 아니라, (1) allowlisted sanitized observation과 canonical 결정을 분리하고, (2) 충돌을 투명하게 해소하며, (3) `confidence`/`sourceRefs`/`conflictFlag`를 응답에 그대로 노출하는 것을 뜻한다. provider raw body/header/request URL/raw hash는 저장하지 않는다. backfill 스케줄링, RiskEngine freshness/이벤트 리스크 판정, RAG source card, optional dashboard timeline이 이 API의 소비자다.
 
@@ -3393,21 +3435,10 @@ service MarketDataService {
 }
 ```
 
-> S1.3 가용성(2026-07-16): 위 `GetNewsSummary`와 `GetMacroSnapshot`은 미래 interface
-> sketch이며 현재 proto/controller가 없어 **호출 불가**다. S1.3은 아래 내부 file artifact만
-> 생산한다. `GetNewsSummary`는 Naver provider 응답이 아니라 Decision Platform이 생성할 v2 감성 요약
-> 계약을 뜻하며, 두 RPC를 공개하려면 별도의 `contracts/changes/`와 인증·인가 구현이 필요하다.
-> 아래 lower-only batch/retry, strict CLI와 JSON Schema를 구현하고 PR #16 merge commit
-> `6f439155d9f5ec626fc185f29f2e0bd64ca54780`으로 `main`에 병합했다. Approval A1·A2·A3는
-> 실패 evidence로 분리한다. A4 `approval-a4-692635240394-20260715T055519Z`는 실행 HEAD
-> `692635240394`에서 physical handoff `4`·Redis `+4`로 성공했고 canonical evidence SHA는
-> `3bb3810728cfb2c3b7ba8006b071295606e24bfc51e0f2b94e15d3840baaa625`다. 사용자는
-> `semantic-3bb3810728cf`로 exact name·unit의 의미를 승인했으며 관측 timestamp와 함께
-> registry를 활성화했다. activation 중 provider 호출은 `0`회다. 실제 KRX audit과 Naver 정책
-> `naver-policy-23618d21265d-20260715T064502Z` 승인 뒤 B1
-> `approval-b1-23618d21265d-20260715T072151Z`를 실행 HEAD `23618d21265d`에서 ECOS
-> physical `2`·Redis `+2`, Naver physical `1`·Redis `+1`로 성공했다. B1 evidence SHA는
-> `ecb62e114352439994fa799096a916757ba7fba081f08f1d1b78ec35397d85fb`다.
+**아직 호출할 수 없다.** 위 `GetNewsSummary`와 `GetMacroSnapshot`은 미래 interface sketch이며 현재 proto/controller가
+없어 **호출 불가**다. S1.3은 아래 내부 file artifact만 생산한다. `GetNewsSummary`는 Naver
+provider 응답이 아니라 Decision Platform이 생성할 v2 감성 요약 계약을 뜻하며, 두 RPC를 공개하려면
+별도의 `contracts/changes/`와 인증·인가 구현이 필요하다.
 
 > **HISTORICAL_SUPERSEDED:** 위 Naver 항목과 아래 Naver 표는 당시 성공 run의 감사 기록이며
 > 신규 실행 권한이 아니다. active provider/runtime/storage는 ADR-038과 S1.3G 계약에서
@@ -3504,11 +3535,9 @@ S1.1의 KIS MarketDataService 구현 경계는 다음과 같다.
 | per-run call caps | online `kis-backfill`은 `--current-price-logical-cap`, `--daily-bars-logical-cap`, `--holiday-logical-cap`, `--market-data-physical-cap`, `--token-p-physical-cap`을 exact approval packet 값으로 모두 명시한다. 생략·부분 지정·음수는 client 생성 전에 거부하고, logical 시작과 market/token physical send 직전의 원자 recorder가 cap 도달 시 `KISCallBudgetExceeded`로 중단한다. retry도 별도 physical attempt로 같은 cap을 소비한다 |
 | local calendar | S1.1은 비거래일 KIS 호출 회피용으로 로컬 `exchange_calendars` XKRX 판정만 사용한다. 다중 소스 캘린더의 내부 offline 집계는 S1.6/12A.5~12A.7 범위이고, 아래 RPC와 REST 12A.2는 별도 계획 계약이다 |
 
-> 상태 반영(2026-07-22): S1.6 내부 offline aggregator는 구현됐지만 `GetTradingSessions`/
-> `GetCalendarEvents` RPC와 REST 12A.2는 미구현 계획이다. 별도의 명시적 contract-change
-> 세션에서 proto/OpenAPI와 소비자를 함께 승인하며 그 전에는 Dashboard가 이 계약을 소비하지 않는다.
-
-> 변경 반영(2026-07-22): actual S1.5 gap-fill 승인의 logical/physical hard cap을 `kis-backfill` provider send 전 실행 계약으로 강제함.
+**구현과 공개는 다르다.** S1.6 내부 offline aggregator는 구현됐지만 `GetTradingSessions`/
+`GetCalendarEvents` RPC와 REST 12A.2는 미구현 계획이다. 별도의 명시적 contract-change
+세션에서 proto/OpenAPI와 소비자를 함께 승인하며 그 전에는 Dashboard가 이 계약을 소비하지 않는다.
 
 #### 13.5.C S1.5 KIS Data Quality Report 내부 CLI 계약
 

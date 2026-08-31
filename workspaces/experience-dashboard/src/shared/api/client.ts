@@ -1,6 +1,6 @@
 import { ApiFailure, isEnvelope, type ApiEnvelope, type ApiResult } from './envelope';
 import { session } from './session';
-import { mockTransport } from '@/shared/mock/transport';
+import { mockTransport, mockBareTransport } from '@/shared/mock/transport';
 
 export type ApiMode = 'mock' | 'live';
 
@@ -104,6 +104,75 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   }
 
   return unwrap(payload as ApiEnvelope<T>);
+}
+
+/**
+ * v2 RAG 표면은 공통 봉투 없이 DTO를 그대로 돌려주고, 오류도 `{ code, message, requestId }`
+ * 본문이다. 봉투를 기대하는 `apiFetch`로 부르면 정상 응답까지 VALIDATION_ERROR가 된다.
+ * 그래서 같은 헤더 규칙을 쓰되 봉투만 벗긴 경로를 따로 둔다. 204는 undefined를 돌려준다.
+ */
+export async function apiFetchBare<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const requestId = newRequestId();
+  const method = options.method ?? 'GET';
+
+  if (apiMode() === 'mock') {
+    return mockBareTransport<T>(path, method, options.body, requestId);
+  }
+
+  const headers: Record<string, string> = {
+    'X-Request-Id': requestId,
+    Accept: 'application/json',
+  };
+  const token = session.token();
+  if (!token) {
+    throw new ApiFailure({ code: 'UNAUTHORIZED', message: 'No session token.' }, requestId);
+  }
+  headers.Authorization = `Bearer ${token}`;
+  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl()}${path}`, {
+      method,
+      headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      cache: 'no-store',
+      credentials: 'omit',
+      signal: options.signal ?? null,
+    });
+  } catch {
+    throw new ApiFailure(
+      {
+        code: 'PYTHON_SERVICE_UNAVAILABLE',
+        message: '서버에 연결하지 못했습니다. API 주소와 서버 실행 상태를 확인하세요.',
+      },
+      requestId,
+    );
+  }
+
+  if (response.status === 204) return undefined as T;
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new ApiFailure(
+      { code: 'INTERNAL_ERROR', message: '서버 응답을 읽지 못했습니다.' },
+      requestId,
+    );
+  }
+
+  if (!response.ok) {
+    const error = payload as { code?: unknown; message?: unknown; requestId?: unknown };
+    throw new ApiFailure(
+      {
+        code: typeof error.code === 'string' ? error.code : 'INTERNAL_ERROR',
+        message: typeof error.message === 'string' ? error.message : '알 수 없는 오류입니다.',
+      },
+      typeof error.requestId === 'string' ? error.requestId : requestId,
+    );
+  }
+  return payload as T;
 }
 
 function unwrap<T>(envelope: ApiEnvelope<T>): ApiResult<T> {

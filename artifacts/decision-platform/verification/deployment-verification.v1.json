@@ -1,0 +1,216 @@
+{
+  "contractId": "p1-deployment-verification.v1",
+  "counts": {
+    "BLOCKED": 6,
+    "NOT_APPLICABLE": 7,
+    "PASS": 21
+  },
+  "findings": [
+    {
+      "area": "플랫폼",
+      "evidence": "HTTP 200, bearer issued",
+      "feature": "로그인",
+      "verdict": "PASS"
+    },
+    {
+      "area": "플랫폼",
+      "evidence": "HTTP 200",
+      "feature": "system health",
+      "verdict": "PASS"
+    },
+    {
+      "area": "플랫폼",
+      "evidence": "applied 10/95",
+      "feature": "Flyway 마이그레이션",
+      "verdict": "PASS"
+    },
+    {
+      "area": "투자 원칙",
+      "evidence": "HTTP 200, items=2",
+      "feature": "원칙 목록",
+      "verdict": "PASS"
+    },
+    {
+      "area": "투자 원칙",
+      "evidence": "HTTP 200, items=3",
+      "feature": "프리셋",
+      "verdict": "PASS"
+    },
+    {
+      "area": "투자 원칙",
+      "evidence": "conservative max_single_order_amount=300000 (V95가 사이저로 전달)",
+      "feature": "원칙 한도가 주문 크기를 구속",
+      "verdict": "PASS"
+    },
+    {
+      "area": "위험 판정",
+      "evidence": "HTTP 200",
+      "feature": "포트폴리오 지표",
+      "verdict": "PASS"
+    },
+    {
+      "area": "위험 판정",
+      "evidence": "HTTP 200, active=False",
+      "feature": "kill switch",
+      "verdict": "PASS"
+    },
+    {
+      "area": "위험 판정",
+      "evidence": "daily_loss_guard=true mdd_guard=true disclosure_risk_guard=false",
+      "feature": "손실·MDD·공시 가드",
+      "verdict": "PASS"
+    },
+    {
+      "area": "자동운용",
+      "evidence": "HTTP 200, canArm=False, blockers=['REAL_TEAM_B_POINTER_INACTIVE', 'RELEASE_BINDING_UNCLEAN', 'CERTIFICATION_INVALID']",
+      "feature": "status v2",
+      "verdict": "PASS"
+    },
+    {
+      "area": "자동운용",
+      "evidence": "기록된 실잔고 재생본으로 해소됨",
+      "feature": "risk-balance 게이트",
+      "verdict": "PASS"
+    },
+    {
+      "area": "자동운용",
+      "evidence": "Team B 실제 산출물 미수신 (외부)",
+      "feature": "arm 게이트: REAL_TEAM_B_POINTER_INACTIVE",
+      "verdict": "BLOCKED"
+    },
+    {
+      "area": "자동운용",
+      "evidence": "거래시간 09:10~15:00 재인증 필요",
+      "feature": "arm 게이트: CERTIFICATION_INVALID",
+      "verdict": "BLOCKED"
+    },
+    {
+      "area": "자동운용",
+      "evidence": "worktree가 깨끗하고 HEAD가 일치해야 함",
+      "feature": "arm 게이트: RELEASE_BINDING_UNCLEAN",
+      "verdict": "BLOCKED"
+    },
+    {
+      "area": "자동운용",
+      "evidence": "HTTP 200, runs=1",
+      "feature": "runs v2",
+      "verdict": "PASS"
+    },
+    {
+      "area": "자동운용",
+      "evidence": "HTTP 200, closed=0, pnl=0, performanceClaimAllowed=False",
+      "feature": "positions v2 + 실현 성과",
+      "verdict": "PASS"
+    },
+    {
+      "area": "자동운용",
+      "evidence": "이전에 거부되던 전이 3개 모두 허용=3/3",
+      "feature": "전이 whitelist ↔ 엔진",
+      "verdict": "PASS"
+    },
+    {
+      "area": "자동운용",
+      "evidence": "COMPLETED->PRECHECK allowed=f",
+      "feature": "불법 전이 거부",
+      "verdict": "PASS"
+    },
+    {
+      "area": "RAG",
+      "evidence": "7871/7871/142 — Voyage 프로파일 seed",
+      "feature": "코퍼스 적재 (청크/임베딩/소스)",
+      "verdict": "PASS"
+    },
+    {
+      "area": "RAG",
+      "evidence": "HTTP 200",
+      "feature": "소스 조회 surface",
+      "verdict": "PASS"
+    },
+    {
+      "area": "RAG",
+      "evidence": "rows=8",
+      "feature": "암호화 답변 이력",
+      "verdict": "PASS"
+    },
+    {
+      "area": "RAG",
+      "evidence": "RAG_V2_GRPC_ENABLED=false. 질의 활성화 패킷이 만료(2026-08-14)돼 재발급 필요",
+      "feature": "v2 검색 경로 (Voyage 질의)",
+      "verdict": "BLOCKED"
+    },
+    {
+      "area": "RAG",
+      "evidence": "활성화 패킷 만료 + 죽은 커밋 바인딩. tree 고정 후 재발급 필요",
+      "feature": "생성형 답변 (Vertex)",
+      "verdict": "BLOCKED"
+    },
+    {
+      "area": "대시보드 백엔드",
+      "evidence": "HTTP 200",
+      "feature": "저널",
+      "verdict": "PASS"
+    },
+    {
+      "area": "대시보드 백엔드",
+      "evidence": "HTTP 200",
+      "feature": "모델 평가",
+      "verdict": "PASS"
+    },
+    {
+      "area": "대시보드 백엔드",
+      "evidence": "HTTP 200",
+      "feature": "백테스트",
+      "verdict": "PASS"
+    },
+    {
+      "area": "Team B 파이프라인",
+      "evidence": "bundles=0 — 외부 팀 대기",
+      "feature": "실제 산출물 수신",
+      "verdict": "BLOCKED"
+    },
+    {
+      "area": "Team B 파이프라인",
+      "evidence": "./capstone artifact validate 는 동작하나 검증할 번들이 없음",
+      "feature": "validator (hermetic)",
+      "verdict": "NOT_APPLICABLE"
+    },
+    {
+      "area": "은퇴·금지 (배포 범위 밖)",
+      "evidence": "V74에서 research-only로 은퇴. composite는 항상 ABSTAIN",
+      "feature": "LightGBM 신호",
+      "verdict": "NOT_APPLICABLE"
+    },
+    {
+      "area": "은퇴·금지 (배포 범위 밖)",
+      "evidence": "런타임·스토리지 제거 완료",
+      "feature": "Naver 뉴스 provider",
+      "verdict": "NOT_APPLICABLE"
+    },
+    {
+      "area": "은퇴·금지 (배포 범위 밖)",
+      "evidence": "V79에서 은퇴",
+      "feature": "cross-market",
+      "verdict": "NOT_APPLICABLE"
+    },
+    {
+      "area": "은퇴·금지 (배포 범위 밖)",
+      "evidence": "승인 패킷 없이는 PROVIDER_DISABLED",
+      "feature": "GDELT 온라인",
+      "verdict": "NOT_APPLICABLE"
+    },
+    {
+      "area": "은퇴·금지 (배포 범위 밖)",
+      "evidence": "코드에 경로가 존재하지 않음",
+      "feature": "KIS 실계좌 주문",
+      "verdict": "NOT_APPLICABLE"
+    },
+    {
+      "area": "은퇴·금지 (배포 범위 밖)",
+      "evidence": "교육용 경계로 넣지 않음",
+      "feature": "강제청산·물타기·미체결 재가격",
+      "verdict": "NOT_APPLICABLE"
+    }
+  ],
+  "generatedAt": "2026-08-28T11:47:35.337440+00:00",
+  "providerCalls": 0
+}

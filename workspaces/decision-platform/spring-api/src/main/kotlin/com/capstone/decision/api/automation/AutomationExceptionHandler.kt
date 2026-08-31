@@ -5,6 +5,7 @@ import com.capstone.decision.api.common.ApiResponseFactory
 import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.api.common.RequestIds
 import com.capstone.decision.application.automation.AutomationAccessDeniedException
+import com.capstone.decision.application.automation.AutomationBlockedException
 import com.capstone.decision.application.automation.AutomationConflictException
 import com.capstone.decision.application.automation.AutomationIdempotencyConflictException
 import com.capstone.decision.application.automation.AutomationNotFoundException
@@ -14,13 +15,26 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 
-@RestControllerAdvice(assignableTypes = [AutomationController::class])
+@RestControllerAdvice(assignableTypes = [AutomationController::class, AutomationV2Controller::class])
 class AutomationExceptionHandler {
     @ExceptionHandler(AutomationIdempotencyConflictException::class)
     fun idempotency(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> = error(request, ErrorCode.IDEMPOTENCY_CONFLICT)
 
     @ExceptionHandler(AutomationConflictException::class)
     fun conflict(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> = error(request, ErrorCode.CONFLICT)
+
+    @ExceptionHandler(AutomationBlockedException::class)
+    fun blocked(
+        exception: AutomationBlockedException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ApiResponse<Nothing>> =
+        ResponseEntity.status(ErrorCode.CONFLICT.status).body(
+            ApiResponseFactory.error(
+                RequestIds.currentOrCreate(request),
+                ErrorCode.CONFLICT,
+                details = mapOf("blocker" to exception.reason),
+            ),
+        )
 
     @ExceptionHandler(AutomationNotFoundException::class)
     fun notFound(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> = error(request, ErrorCode.NOT_FOUND)

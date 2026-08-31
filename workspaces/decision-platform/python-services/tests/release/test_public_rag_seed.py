@@ -25,8 +25,35 @@ SEED_ROOT = REPOSITORY_ROOT / "deploy" / "p1" / "seed" / "public-rag"
 MANIFEST = SEED_ROOT / "public-rag-seed.v1.manifest.json"
 
 
-def test_sealed_v87_seed_allows_only_additive_v88_v89_targets() -> None:
-    assert FORWARD_COMPATIBLE_TARGET_SCHEMA_VERSIONS == frozenset({"88", "89", "90"})
+def test_sealed_v87_seed_allows_only_declared_additive_targets() -> None:
+    # 봉인된 Seed는 V87에 바이트로 묶여 있고, 그 뒤 additive migration만 명시적으로 호환을
+    # 선언한다. 목록이 저절로 넓어지지 않는지 확인한다.
+    assert FORWARD_COMPATIBLE_TARGET_SCHEMA_VERSIONS == frozenset(
+        {
+            "88",
+            "89",
+            "90",
+            "91",
+            "92",
+            "93",
+            "94",
+            "95",
+            "96",
+            "97",
+            "98",
+            "99",
+            "100",
+            "101",
+            "102",
+            "103",
+            "104",
+            "105",
+            "106",
+            "107",
+            "108",
+            "109",
+        }
+    )
 
 
 def test_committed_public_seed_parts_are_hash_bound_and_bounded() -> None:

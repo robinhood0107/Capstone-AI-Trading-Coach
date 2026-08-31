@@ -1,0 +1,133 @@
+{
+  "contractId": "p1-vertex-news-sources.v1",
+  "officialPrimaryCount": 11,
+  "registeredIndependentCount": 14,
+  "sources": [
+    {
+      "domain": "apnews.com",
+      "sourceId": "src_press_ap",
+      "sourceType": "REGISTERED_INDEPENDENT"
+    },
+    {
+      "domain": "biz.chosun.com",
+      "sourceId": "src_press_chosunbiz",
+      "sourceType": "REGISTERED_INDEPENDENT"
+    },
+    {
+      "domain": "bloomberg.com",
+      "sourceId": "src_press_bloomberg",
+      "sourceType": "REGISTERED_INDEPENDENT"
+    },
+    {
+      "domain": "bok.or.kr",
+      "sourceId": "src_official_bok",
+      "sourceType": "OFFICIAL_PRIMARY"
+    },
+    {
+      "domain": "dart.fss.or.kr",
+      "sourceId": "src_official_dart",
+      "sourceType": "OFFICIAL_PRIMARY"
+    },
+    {
+      "domain": "data.krx.co.kr",
+      "sourceId": "src_official_krx_data",
+      "sourceType": "OFFICIAL_PRIMARY"
+    },
+    {
+      "domain": "ecos.bok.or.kr",
+      "sourceId": "src_official_ecos",
+      "sourceType": "OFFICIAL_PRIMARY"
+    },
+    {
+      "domain": "edaily.co.kr",
+      "sourceId": "src_press_edaily",
+      "sourceType": "REGISTERED_INDEPENDENT"
+    },
+    {
+      "domain": "einfomax.co.kr",
+      "sourceId": "src_press_infomax",
+      "sourceType": "REGISTERED_INDEPENDENT"
+    },
+    {
+      "domain": "en.yna.co.kr",
+      "sourceId": "src_press_yonhap_en",
+      "sourceType": "REGISTERED_INDEPENDENT"
+    },
+    {
+      "domain": "fsc.go.kr",
+      "sourceId": "src_official_fsc",
+      "sourceType": "OFFICIAL_PRIMARY"
+    },
+    {
+      "domain": "fss.or.kr",
+      "sourceId": "src_official_fss",
+      "sourceType": "OFFICIAL_PRIMARY"
+    },
+    {
+      "domain": "ft.com",
+      "sourceId": "src_press_ft",
+      "sourceType": "REGISTERED_INDEPENDENT"
+    },
+    {
+      "domain": "hankyung.com",
+      "sourceId": "src_press_hankyung",
+      "sourceType": "REGISTERED_INDEPENDENT"
+    },
+    {
+      "domain": "kind.krx.co.kr",
+      "sourceId": "src_official_kind",
+      "sourceType": "OFFICIAL_PRIMARY"
+    },
+    {
+      "domain": "kostat.go.kr",
+      "sourceId": "src_official_kostat",
+      "sourceType": "OFFICIAL_PRIMARY"
+    },
+    {
+      "domain": "krx.co.kr",
+      "sourceId": "src_official_krx",
+      "sourceType": "OFFICIAL_PRIMARY"
+    },
+    {
+      "domain": "mk.co.kr",
+      "sourceId": "src_press_maeil",
+      "sourceType": "REGISTERED_INDEPENDENT"
+    },
+    {
+      "domain": "moef.go.kr",
+      "sourceId": "src_official_moef",
+      "sourceType": "OFFICIAL_PRIMARY"
+    },
+    {
+      "domain": "nikkei.com",
+      "sourceId": "src_press_nikkei",
+      "sourceType": "REGISTERED_INDEPENDENT"
+    },
+    {
+      "domain": "opendart.fss.or.kr",
+      "sourceId": "src_official_opendart",
+      "sourceType": "OFFICIAL_PRIMARY"
+    },
+    {
+      "domain": "reuters.com",
+      "sourceId": "src_press_reuters",
+      "sourceType": "REGISTERED_INDEPENDENT"
+    },
+    {
+      "domain": "sedaily.com",
+      "sourceId": "src_press_seoul_economic",
+      "sourceType": "REGISTERED_INDEPENDENT"
+    },
+    {
+      "domain": "wsj.com",
+      "sourceId": "src_press_wsj",
+      "sourceType": "REGISTERED_INDEPENDENT"
+    },
+    {
+      "domain": "yna.co.kr",
+      "sourceId": "src_press_yonhap",
+      "sourceType": "REGISTERED_INDEPENDENT"
+    }
+  ],
+  "unregisteredDomainsAreNotEvidence": true
+}

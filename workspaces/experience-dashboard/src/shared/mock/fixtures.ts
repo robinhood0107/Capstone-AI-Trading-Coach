@@ -5,6 +5,10 @@
  * 이 값들은 화면 검증용이며 실제 성과나 계좌 상태가 아니다.
  */
 import type {
+  AutomationPolicyV2,
+  AutomationPositionPageV2,
+  AutomationRunPageV2,
+  AutomationStatusV2,
   DashboardBacktestView,
   DashboardEnvelope,
   DashboardModelEvaluationView,
@@ -151,6 +155,87 @@ export const riskPortfolio: PortfolioRisk = {
   hmmRegimeProbability: null,
   killSwitchActive: false,
   dataFreshness: { priceFresh: true, signalFresh: null, ragFresh: null },
+};
+
+/* ------------------------------------------------------------ Automation */
+
+export let automationPolicy: AutomationPolicyV2 = {
+  contractId: 'automation-policy.v1',
+  policyId: 'auto_pol_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  version: 1,
+  presetId: 'balanced',
+  capitalLimitKrw: 1_000_000,
+  stopLossBps: 500,
+  takeProfitBps: 1000,
+  maxOpenPositions: 5,
+  maxNewOrdersPerSession: 1,
+  evaluationTimeKst: '09:30',
+  buyCutoffTimeKst: '09:40',
+  cancelTimeKst: '15:20',
+  createdAt: '2026-08-27T09:00:00+09:00',
+  updatedAt: '2026-08-27T09:00:00+09:00',
+};
+
+export const automationStatus: AutomationStatusV2 = {
+  contractId: 'automation-status.v2',
+  controlState: 'DISARMED',
+  projectionState: 'DISARMED',
+  controlVersion: 1,
+  brokerageMode: 'KIS_MOCK',
+  accountId: 'acct_cccccccccccccccccccccccccccccccc',
+  policy: automationPolicy,
+  killSwitchActive: false,
+  certificationStatus: 'REQUIRED',
+  openPositionCount: 0,
+  unresolvedReconciliation: false,
+  canArm: false,
+  blockers: ['BLOCKED_INCOMPLETE_RISK_BALANCE'],
+};
+
+export function replaceAutomationPolicy(policy: AutomationPolicyV2): void {
+  automationPolicy = policy;
+  automationStatus.policy = policy;
+}
+
+export const automationRuns: AutomationRunPageV2 = {
+  items: [
+    {
+      contractId: 'automation-run.v2',
+      runId: 'auto_run_preview_blocked_0001',
+      sessionDate: '2026-08-27',
+      state: 'SKIPPED_DATA_UNAVAILABLE',
+      brokerageMode: 'KIS_MOCK',
+      policyId: automationPolicy.policyId,
+      policyVersion: automationPolicy.version,
+      selectedSymbol: null,
+      selectedSide: null,
+      orderQuantity: null,
+      filledQuantity: null,
+      leavesQuantity: null,
+      limitPriceKrw: null,
+      estimatedAmountKrw: null,
+      exitReason: null,
+      physicalSubmitCount: 0,
+      providerCalls: 0,
+      startedAt: '2026-08-27T09:30:00+09:00',
+      updatedAt: '2026-08-27T09:30:01+09:00',
+    },
+  ],
+  nextCursor: null,
+};
+
+export const automationPositions: AutomationPositionPageV2 = {
+  realizedSummary: {
+    closedPositionCount: 0,
+    realizedPnlKrw: 0,
+    realizedGrossKrw: 0,
+    winningPositionCount: 0,
+    losingPositionCount: 0,
+    evidenceMode: 'KIS_MOCK',
+    performanceClaimAllowed: false,
+  },
+  items: [],
+  nextCursor: null,
 };
 
 /* -------------------------------------------------------------- Decision */

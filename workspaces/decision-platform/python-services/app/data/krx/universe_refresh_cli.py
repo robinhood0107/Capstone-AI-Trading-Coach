@@ -6,6 +6,8 @@ import stat
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
+
+from app.data._shared.repository_root import repository_root
 from typing import NoReturn
 
 from app.data.kis.calendar import is_xkrx_trading_day
@@ -26,8 +28,8 @@ from app.data.krx.universe import (
 )
 
 _EXACT_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
-_PYTHON_SERVICES_ROOT = Path(__file__).resolve().parents[3]
+_REPOSITORY_ROOT = repository_root(__file__, 6)
+_PYTHON_SERVICES_ROOT = repository_root(__file__, 3)
 _ALLOWED_OUTPUT_ROOTS = (
     _REPOSITORY_ROOT / "data",
     _PYTHON_SERVICES_ROOT / "data",

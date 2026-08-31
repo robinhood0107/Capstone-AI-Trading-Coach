@@ -65,8 +65,11 @@
         "freshnessWindowSatisfied": {
           "const": true
         },
-        "googleGroundingQueryCount": {
-          "maximum": 1,
+        "groundingMode": {
+          "const": "REGISTERED_CORPUS"
+        },
+        "groundingQueryCount": {
+          "maximum": 8,
           "minimum": 1,
           "type": "integer"
         },
@@ -126,7 +129,8 @@
         "modelId",
         "promptVersion",
         "providerCallCount",
-        "googleGroundingQueryCount",
+        "groundingMode",
+        "groundingQueryCount",
         "orderAuthority"
       ],
       "type": "object"

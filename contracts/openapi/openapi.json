@@ -157,12 +157,160 @@
         },
         "type": "object"
       },
+      "ApiResponseAutomationPolicyV2": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationPolicyV2"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAutomationPositionPageV2": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationPositionPageV2"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponseAutomationRunPage": {
         "properties": {
           "data": {
             "oneOf": [
               {
                 "$ref": "#/components/schemas/AutomationRunPage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAutomationRunPageV2": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationRunPageV2"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAutomationStatusV2": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationStatusV2"
               },
               {
                 "type": "null"
@@ -1171,6 +1319,36 @@
         ],
         "type": "object"
       },
+      "ArmAutomationV2Request": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "pattern": "^acct_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "expectedControlVersion": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "expectedPolicyVersion": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "policyId": {
+            "pattern": "^auto_pol_[0-9a-f]{32}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "expectedControlVersion",
+          "expectedPolicyVersion",
+          "policyId"
+        ],
+        "type": "object"
+      },
       "ArtifactIngestStatusDto": {
         "properties": {
           "artifactId": {
@@ -1374,6 +1552,252 @@
         "title": "automation-control.v1",
         "type": "object"
       },
+      "AutomationPolicyV2": {
+        "additionalProperties": false,
+        "properties": {
+          "buyCutoffTimeKst": {
+            "enum": [
+              "09:40"
+            ],
+            "type": "string"
+          },
+          "cancelTimeKst": {
+            "enum": [
+              "15:20"
+            ],
+            "type": "string"
+          },
+          "capitalLimitKrw": {
+            "format": "int64",
+            "maximum": 10000000000,
+            "minimum": 10000,
+            "type": "integer"
+          },
+          "contractId": {
+            "enum": [
+              "automation-policy.v1"
+            ],
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "evaluationTimeKst": {
+            "enum": [
+              "09:30"
+            ],
+            "type": "string"
+          },
+          "maxNewOrdersPerSession": {
+            "enum": [
+              "1"
+            ],
+            "format": "int32",
+            "type": "integer"
+          },
+          "maxOpenPositions": {
+            "enum": [
+              "5"
+            ],
+            "format": "int32",
+            "type": "integer"
+          },
+          "policyId": {
+            "pattern": "^auto_pol_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "presetId": {
+            "enum": [
+              "conservative",
+              "balanced",
+              "aggressive",
+              "custom"
+            ],
+            "type": "string"
+          },
+          "stopLossBps": {
+            "format": "int32",
+            "maximum": 1500,
+            "minimum": 100,
+            "type": "integer"
+          },
+          "takeProfitBps": {
+            "format": "int32",
+            "maximum": 3000,
+            "minimum": 200,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "buyCutoffTimeKst",
+          "cancelTimeKst",
+          "capitalLimitKrw",
+          "contractId",
+          "createdAt",
+          "evaluationTimeKst",
+          "maxNewOrdersPerSession",
+          "maxOpenPositions",
+          "policyId",
+          "presetId",
+          "stopLossBps",
+          "takeProfitBps",
+          "updatedAt",
+          "version"
+        ],
+        "type": "object"
+      },
+      "AutomationPositionPageV2": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationPositionV2"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "realizedSummary": {
+            "$ref": "#/components/schemas/AutomationRealizedSummaryV2"
+          }
+        },
+        "type": "object"
+      },
+      "AutomationPositionV2": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "botOwned": {
+            "type": "boolean"
+          },
+          "closedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contractId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "entryAverageFillPriceKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "entrySession": {
+            "format": "date",
+            "type": "string"
+          },
+          "exitAverageFillPriceKrw": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "exitReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expirySession": {
+            "format": "date",
+            "type": "string"
+          },
+          "policyId": {
+            "type": "string"
+          },
+          "policyVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "positionId": {
+            "type": "string"
+          },
+          "quantity": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "realizedPnlKrw": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "shortAllowed": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "stopLossBps": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "takeProfitBps": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AutomationRealizedSummaryV2": {
+        "additionalProperties": false,
+        "properties": {
+          "closedPositionCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "evidenceMode": {
+            "type": "string"
+          },
+          "losingPositionCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "performanceClaimAllowed": {
+            "type": "boolean"
+          },
+          "realizedGrossKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "realizedPnlKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "winningPositionCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "AutomationRun": {
         "$id": "contracts/schemas/automation-run.v1.schema.json",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1502,6 +1926,225 @@
         "required": [
           "items",
           "nextCursor"
+        ],
+        "type": "object"
+      },
+      "AutomationRunPageV2": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationRunV2"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "AutomationRunV2": {
+        "additionalProperties": false,
+        "properties": {
+          "brokerageMode": {
+            "type": "string"
+          },
+          "contractId": {
+            "type": "string"
+          },
+          "estimatedAmountKrw": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "exitReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "filledQuantity": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "leavesQuantity": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "limitPriceKrw": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "orderQuantity": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "physicalSubmitCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "policyId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "policyVersion": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "providerCalls": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "selectedSide": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selectedSymbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sessionDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AutomationStatusV2": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "pattern": "^acct_[A-Za-z0-9_-]{8,96}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blockers": {
+            "items": {
+              "maxLength": 96,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "brokerageMode": {
+            "enum": [
+              "KIS_MOCK"
+            ],
+            "type": "string"
+          },
+          "canArm": {
+            "type": "boolean"
+          },
+          "certificationStatus": {
+            "type": "string"
+          },
+          "contractId": {
+            "enum": [
+              "automation-status.v2"
+            ],
+            "type": "string"
+          },
+          "controlState": {
+            "enum": [
+              "DISARMED",
+              "ARMED",
+              "HALTED"
+            ],
+            "type": "string"
+          },
+          "controlVersion": {
+            "format": "int32",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "killSwitchActive": {
+            "type": "boolean"
+          },
+          "openPositionCount": {
+            "format": "int32",
+            "maximum": 5,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "policy": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationPolicyV2"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectionState": {
+            "enum": [
+              "DISARMED",
+              "ARMED",
+              "RUNNING",
+              "HALTED"
+            ],
+            "type": "string"
+          },
+          "unresolvedReconciliation": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accountId",
+          "blockers",
+          "brokerageMode",
+          "canArm",
+          "certificationStatus",
+          "contractId",
+          "controlState",
+          "controlVersion",
+          "killSwitchActive",
+          "openPositionCount",
+          "policy",
+          "projectionState",
+          "unresolvedReconciliation"
         ],
         "type": "object"
       },
@@ -2477,6 +3120,7 @@
         ],
         "type": "object"
       },
+      "P1AutomationV2ErrorResponse": {},
       "P1JournalErrorResponse": {
         "additionalProperties": false,
         "properties": {
@@ -4337,6 +4981,41 @@
         ],
         "type": "object"
       },
+      "PutAutomationPolicyV2Request": {
+        "additionalProperties": false,
+        "properties": {
+          "capitalLimitKrw": {
+            "format": "int64",
+            "maximum": 10000000000,
+            "minimum": 10000,
+            "type": "integer"
+          },
+          "expectedVersion": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "stopLossBps": {
+            "format": "int32",
+            "maximum": 1500,
+            "minimum": 100,
+            "type": "integer"
+          },
+          "takeProfitBps": {
+            "format": "int32",
+            "maximum": 3000,
+            "minimum": 200,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "capitalLimitKrw",
+          "expectedVersion",
+          "stopLossBps",
+          "takeProfitBps"
+        ],
+        "type": "object"
+      },
       "RagAnswerProjection": {
         "properties": {
           "answer": {
@@ -4616,6 +5295,275 @@
           "title",
           "topic"
         ],
+        "type": "object"
+      },
+      "RagV2Answer": {
+        "properties": {
+          "answer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "answerId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "citationCoverage": {
+            "format": "double",
+            "type": "number"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/JsonNode"
+            },
+            "type": "array"
+          },
+          "generationStatus": {
+            "enum": [
+              "ANSWERED",
+              "RETRIEVAL_ONLY",
+              "RETRIEVAL_FAILURE",
+              "BLOCKED_SENSITIVE",
+              "BLOCKED_ADVICE",
+              "GENERATION_UNAVAILABLE"
+            ],
+            "type": "string"
+          },
+          "guardrailFlags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "retrievalFailure": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "RagV2CorpusStatus": {
+        "properties": {
+          "failureCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "generationDailyCap": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "generationRemaining": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "generationUsedToday": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "privateOverlayState": {
+            "type": "string"
+          },
+          "progressPercent": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "publicCorpusVersion": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "strongLlmAnswerLanguage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmBaseUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmDailyGenerateCallCap": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "strongLlmFallbackBaseUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmFallbackKeyLast4": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmFallbackModelId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmFallbackProvider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmKeyLast4": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmModelId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "strongLlmProvider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "RagV2EffectiveConsent": {
+        "properties": {
+          "consentEventId": {
+            "type": "string"
+          },
+          "contractId": {
+            "type": "string"
+          },
+          "effective": {
+            "type": "boolean"
+          },
+          "policyDigest": {
+            "type": "string"
+          },
+          "processorSetDigest": {
+            "type": "string"
+          },
+          "schemaVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RagV2HistoryDetail": {
+        "properties": {
+          "answer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "answerId": {
+            "type": "string"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/JsonNode"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "generationStatus": {
+            "enum": [
+              "ANSWERED",
+              "RETRIEVAL_ONLY",
+              "RETRIEVAL_FAILURE",
+              "BLOCKED_SENSITIVE",
+              "BLOCKED_ADVICE",
+              "GENERATION_UNAVAILABLE"
+            ],
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RagV2HistoryMetadata": {
+        "properties": {
+          "answerId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "generationStatus": {
+            "enum": [
+              "ANSWERED",
+              "RETRIEVAL_ONLY",
+              "RETRIEVAL_FAILURE",
+              "BLOCKED_SENSITIVE",
+              "BLOCKED_ADVICE",
+              "GENERATION_UNAVAILABLE"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RagV2HistoryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RagV2HistoryMetadata"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "ReconciliationProjection": {
@@ -12991,6 +13939,538 @@
         ]
       }
     },
+    "/api/v2/automation/arm": {
+      "post": {
+        "operationId": "armAutomationV2",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArmAutomationV2Request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationStatusV2"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or cross-owner"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Version, readiness, or idempotency conflict"
+          }
+        },
+        "summary": "Arm variable KIS mock automation",
+        "tags": [
+          "automation-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/automation/policy": {
+      "put": {
+        "operationId": "putAutomationPolicyV2",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutAutomationPolicyV2Request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationPolicyV2"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or cross-owner"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Version, readiness, or idempotency conflict"
+          }
+        },
+        "summary": "Create or update variable automation policy",
+        "tags": [
+          "automation-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/automation/positions": {
+      "get": {
+        "operationId": "listAutomationPositionsV2",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationPositionPageV2"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or cross-owner"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Version, readiness, or idempotency conflict"
+          }
+        },
+        "summary": "List active bot-owned variable positions",
+        "tags": [
+          "automation-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/automation/runs": {
+      "get": {
+        "operationId": "listAutomationRunsV2",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "size",
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationRunPageV2"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or cross-owner"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Version, readiness, or idempotency conflict"
+          }
+        },
+        "summary": "List variable automation runs",
+        "tags": [
+          "automation-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/automation/status": {
+      "get": {
+        "operationId": "getAutomationStatusV2",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationStatusV2"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or cross-owner"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Version, readiness, or idempotency conflict"
+          }
+        },
+        "summary": "Variable automation status / 가변수량 자동운용 상태",
+        "tags": [
+          "automation-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/rag/ask": {
+      "post": {
+        "operationId": "ragV2Ask",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2Answer"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "rag-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/rag/consent": {
+      "get": {
+        "operationId": "ragV2EffectiveConsent",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2EffectiveConsent"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "rag-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/rag/consents": {
+      "post": {
+        "operationId": "ragV2RecordExternalConsent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "rag-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/rag/corpus-status": {
+      "get": {
+        "operationId": "ragV2CorpusStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2CorpusStatus"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "rag-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/rag/history": {
+      "get": {
+        "operationId": "ragV2ListHistory",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2HistoryPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "rag-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/rag/history/{answerId}": {
+      "delete": {
+        "operationId": "ragV2DeleteHistory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "answerId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "rag-v-2-controller"
+        ]
+      },
+      "get": {
+        "operationId": "ragV2GetHistory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "answerId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2HistoryDetail"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "rag-v-2-controller"
+        ]
+      }
+    },
     "/api/v2/signals/{symbol}": {
       "get": {
         "operationId": "read",
@@ -13049,6 +14529,28 @@
         "summary": "검증된 production Signal components를 조회하며 evidence 부재는 all-ABSTAIN으로 반환한다.",
         "tags": [
           "Signal v2"
+        ]
+      }
+    },
+    "/api/v2/strong-llm/settings": {
+      "put": {
+        "operationId": "putStrongLlmSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "strong-llm-settings-controller"
         ]
       }
     },

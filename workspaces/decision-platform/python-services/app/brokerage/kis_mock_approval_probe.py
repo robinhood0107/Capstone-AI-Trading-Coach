@@ -15,6 +15,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
+
+from app.data._shared.repository_root import repository_root
 from typing import Any, Literal, Protocol, cast
 
 from pydantic import (
@@ -70,7 +72,7 @@ from app.verification.provider_claim import (
     claim_signed_provider_approval,
 )
 
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
+_REPOSITORY_ROOT = repository_root(__file__, 5)
 _MAX_PACKET_BYTES = 64 * 1024
 _P1_APPROVAL_PATH = Path("/run/secrets/p1-kis-mock-approval-v2.json")
 _SHA256 = r"^[0-9a-f]{64}$"

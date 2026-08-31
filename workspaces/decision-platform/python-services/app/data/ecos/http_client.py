@@ -74,9 +74,39 @@ class ECOSHttpError(ECOSError):
         super().__init__(code, diagnostic=diagnostic)
 
 
+def _ambient_tls_override_present() -> bool:
+    """신뢰 경로를 바꾸는 ambient TLS 설정이 있는지 본다.
+
+    `SSL_CERT_FILE` 이 시스템 trust store 디렉터리 안의 실제 파일을 가리키는 것은 override가
+    아니다. 컨테이너 이미지가 배포판 표준 CA 번들 경로를 명시해 둔 것이고, 그 경로는
+    `ssl.get_default_verify_paths().openssl_capath` 아래에 있다. 이것까지 막으면 표준 이미지
+    안에서는 수집기가 아예 뜨지 못한다 - 실제로 그랬다.
+
+    그 밖의 값은 그대로 거부한다. `/tmp` 같은 곳의 가짜 번들, `SSL_CERT_DIR` 로 신뢰
+    디렉터리를 통째로 바꾸는 것, TLS 세션 키를 파일로 흘리는 `SSLKEYLOGFILE` 은 여전히
+    막힌다.
+    """
+
+    system_directory = ssl.get_default_verify_paths().openssl_capath or ""
+    for name in _TLS_ENVIRONMENT_OVERRIDES:
+        value = os.environ.get(name, "")
+        if not value:
+            continue
+        if name != "SSL_CERT_FILE" or not system_directory:
+            return True
+        try:
+            resolved = os.path.realpath(value)
+            root = os.path.realpath(system_directory)
+        except OSError:
+            return True
+        if not os.path.isfile(resolved) or not resolved.startswith(root + os.sep):
+            return True
+    return False
+
+
 def _build_tls_context() -> ssl.SSLContext:
     """시스템 trust store와 hostname 검증을 유지하며 TLS 1.2 이상만 허용한다."""
-    if any(os.environ.get(name, "") != "" for name in _TLS_ENVIRONMENT_OVERRIDES):
+    if _ambient_tls_override_present():
         raise ECOSHttpError("tls_environment_not_allowed")
     context = ssl.create_default_context()
     context.minimum_version = ssl.TLSVersion.TLSv1_2

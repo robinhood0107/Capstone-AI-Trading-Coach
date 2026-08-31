@@ -10,7 +10,7 @@ case "$profile" in
   automation-runtime) secret_files=/run/secrets/automation_runtime_env ;;
   automation-cli) secret_files="/run/secrets/automation_runtime_env /run/secrets/kis_mock_env" ;;
   automation-gate-author) secret_files=/run/secrets/automation_gate_author_env ;;
-  market-data) secret_files="/run/secrets/market_data_env /run/secrets/automation_runtime_env" ;;
+  market-data) secret_files="/run/secrets/market_data_env /run/secrets/market_data_provider_env /run/secrets/automation_runtime_env" ;;
   after-hours-replay) secret_files=/run/secrets/after_hours_replay_env ;;
   certification) secret_files="/run/secrets/spring_env /run/secrets/python_env /run/secrets/kis_mock_env" ;;
   authority) secret_files=/run/secrets/actor_capability_authority_env ;;
@@ -57,7 +57,7 @@ allowed_key() {
     automation-runtime:P1_AUTOMATION_DATABASE_DSN|automation-runtime:AUTOMATION_RUNTIME_SHARED_SECRET|automation-runtime:P1_AUTOMATION_OWNER_USER_ID|automation-runtime:P1_AUTOMATION_OWNER_USERNAME|automation-runtime:P1_AUTOMATION_OWNER_PASSWORD) return 0 ;;
     automation-cli:P1_AUTOMATION_DATABASE_DSN|automation-cli:AUTOMATION_RUNTIME_SHARED_SECRET|automation-cli:P1_AUTOMATION_OWNER_USER_ID|automation-cli:P1_AUTOMATION_OWNER_USERNAME|automation-cli:P1_AUTOMATION_OWNER_PASSWORD|automation-cli:KIS_MOCK_CONFIGURED|automation-cli:KIS_MOCK_APP_KEY|automation-cli:KIS_MOCK_APP_SECRET|automation-cli:KIS_MOCK_ACCOUNT_NO|automation-cli:KIS_MOCK_BOUND_ACCOUNT_ID|automation-cli:KIS_MOCK_ORDER_REFERENCE_KEY|automation-cli:KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP|automation-cli:KIS_BROKERAGE_PHYSICAL_CAP) return 0 ;;
     automation-gate-author:P1_AUTOMATION_GATE_AUTHOR_DSN) return 0 ;;
-    market-data:MARKET_DATA_WRITER_DSN|market-data:P1_AUTOMATION_DATABASE_DSN|market-data:AUTOMATION_RUNTIME_SHARED_SECRET|market-data:P1_AUTOMATION_OWNER_USER_ID|market-data:P1_AUTOMATION_OWNER_USERNAME|market-data:P1_AUTOMATION_OWNER_PASSWORD) return 0 ;;
+    market-data:MARKET_DATA_WRITER_DSN|market-data:P1_AUTOMATION_DATABASE_DSN|market-data:AUTOMATION_RUNTIME_SHARED_SECRET|market-data:P1_AUTOMATION_OWNER_USER_ID|market-data:P1_AUTOMATION_OWNER_USERNAME|market-data:P1_AUTOMATION_OWNER_PASSWORD|market-data:KIS_MOCK_CONFIGURED|market-data:KIS_MOCK_APP_KEY|market-data:KIS_MOCK_APP_SECRET|market-data:KIS_LIVE_APP_KEY|market-data:KIS_LIVE_APP_SECRET|market-data:KRX_OPENAPI_AUTH_KEY|market-data:REDIS_PASSWORD) return 0 ;;
     after-hours-replay:P1_AFTER_HOURS_REPLAY_DATABASE_DSN|after-hours-replay:P1_AFTER_HOURS_REPLAY_ISOLATED) return 0 ;;
     authority:POSTGRES_IDENTITY_PASSWORD|authority:ACTOR_CAPABILITY_SHARED_SECRET|authority:ACTOR_CAPABILITY_PRIVATE_KEY|authority:ACTOR_CAPABILITY_PUBLIC_KEY|authority:ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD) return 0 ;;
     migration:POSTGRES_MIGRATION_PASSWORD|migration:BROKERAGE_DB_CAPABILITY_TOKEN_SHA256|migration:DEMO_CREDENTIAL_SEPARATION_KEY|migration:DEMO_USER_CREDENTIAL_BUNDLE|migration:DEMO_ADMIN_CREDENTIAL_BUNDLE) return 0 ;;
@@ -91,7 +91,7 @@ required_keys() {
     automation-runtime) printf '%s\n' 'P1_AUTOMATION_DATABASE_DSN AUTOMATION_RUNTIME_SHARED_SECRET P1_AUTOMATION_OWNER_USER_ID P1_AUTOMATION_OWNER_USERNAME P1_AUTOMATION_OWNER_PASSWORD' ;;
     automation-cli) printf '%s\n' 'P1_AUTOMATION_DATABASE_DSN AUTOMATION_RUNTIME_SHARED_SECRET P1_AUTOMATION_OWNER_USER_ID P1_AUTOMATION_OWNER_USERNAME P1_AUTOMATION_OWNER_PASSWORD KIS_MOCK_CONFIGURED KIS_MOCK_APP_KEY KIS_MOCK_APP_SECRET KIS_MOCK_ACCOUNT_NO KIS_MOCK_BOUND_ACCOUNT_ID KIS_MOCK_ORDER_REFERENCE_KEY KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP KIS_BROKERAGE_PHYSICAL_CAP' ;;
     automation-gate-author) printf '%s\n' 'P1_AUTOMATION_GATE_AUTHOR_DSN' ;;
-    market-data) printf '%s\n' 'MARKET_DATA_WRITER_DSN P1_AUTOMATION_DATABASE_DSN AUTOMATION_RUNTIME_SHARED_SECRET P1_AUTOMATION_OWNER_USER_ID P1_AUTOMATION_OWNER_USERNAME P1_AUTOMATION_OWNER_PASSWORD' ;;
+    market-data) printf '%s\n' 'MARKET_DATA_WRITER_DSN P1_AUTOMATION_DATABASE_DSN AUTOMATION_RUNTIME_SHARED_SECRET P1_AUTOMATION_OWNER_USER_ID KIS_MOCK_CONFIGURED KIS_MOCK_APP_KEY KIS_MOCK_APP_SECRET REDIS_PASSWORD' ;;
     after-hours-replay) printf '%s\n' 'P1_AFTER_HOURS_REPLAY_DATABASE_DSN P1_AFTER_HOURS_REPLAY_ISOLATED' ;;
     authority) printf '%s\n' 'POSTGRES_IDENTITY_PASSWORD ACTOR_CAPABILITY_SHARED_SECRET ACTOR_CAPABILITY_PRIVATE_KEY ACTOR_CAPABILITY_PUBLIC_KEY ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD' ;;
     migration) printf '%s\n' 'POSTGRES_MIGRATION_PASSWORD BROKERAGE_DB_CAPABILITY_TOKEN_SHA256 DEMO_CREDENTIAL_SEPARATION_KEY DEMO_USER_CREDENTIAL_BUNDLE DEMO_ADMIN_CREDENTIAL_BUNDLE' ;;
@@ -235,16 +235,17 @@ if [ "$profile" = decision-platform ] && [ "${S4_9_STRONG_LLM_ENABLED:-false}" =
     echo "p1 secret loading failed: strong_llm_shared_secret_missing" >&2
     exit 1
   fi
-  # Vertex를 1차나 2차로 쓰면 서비스계정이 있어야 한다. 그 소유자 전용 사본은 위 RAG v2
-  # 블록이 만들므로, RAG v2를 끈 채 Vertex만 켜면 여기서 닫힌다. 켜 두고 매 요청 실패하는
-  # 배포보다 안 뜨는 편이 낫다.
+  # Strong LLM은 RAG 검색과 독립된 automation capability다. 전용 tmpfs 사본을 만들면 RAG v2가
+  # 꺼진 배포에서도 Vertex evidence provider가 뜨며, 서비스계정 원본은 계속 read-only secret이다.
   if [ "${STRONG_LLM_PROVIDER:-vertex}" = vertex ] ||
     [ "${STRONG_LLM_FALLBACK_PROVIDER:-}" = vertex ]; then
-    vertex_key=/tmp/rag-v2-root/secrets/pre-s5-vertex-service-account.json
-    if [ ! -f "$vertex_key" ] || [ -L "$vertex_key" ]; then
+    if [ ! -f /run/secrets/vertex_service_account ] || [ -L /run/secrets/vertex_service_account ]; then
       echo "p1 secret loading failed: strong_llm_vertex_service_account_missing" >&2
       exit 1
     fi
+    install -d -m 700 /tmp/strong-llm
+    vertex_key=/tmp/strong-llm/vertex-service-account.json
+    install -m 600 /run/secrets/vertex_service_account "$vertex_key"
     export STRONG_LLM_VERTEX_SERVICE_ACCOUNT_JSON=$vertex_key
   fi
 fi
@@ -258,6 +259,15 @@ if [ "$profile" = postgres ]; then
 fi
 
 if [ "$profile" = certification ] || [ "$profile" = artifact-import ]; then
+  [ "$(id -u)" = "${P1_OPERATOR_UID:?missing operator uid}" ] || {
+    echo "p1 secret loading failed: invalid_operator_uid" >&2
+    exit 1
+  }
+  exec "$@"
+fi
+
+if { [ "$profile" = market-data ] || [ "$profile" = after-hours-replay ]; } &&
+  [ "$(id -u)" != 65532 ]; then
   [ "$(id -u)" = "${P1_OPERATOR_UID:?missing operator uid}" ] || {
     echo "p1 secret loading failed: invalid_operator_uid" >&2
     exit 1

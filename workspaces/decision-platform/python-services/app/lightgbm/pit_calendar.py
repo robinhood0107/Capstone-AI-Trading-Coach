@@ -2,22 +2,41 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
-from functools import cache
-from importlib.metadata import version
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
-import exchange_calendars as xcals
 import pandas as pd
-from exchange_calendars.exchange_calendar_xkrx import XKRXExchangeCalendar
 
-from app.data._shared.canonical_json import canonical_json_bytes
+from app.data.calendar.xkrx_policy import (
+    PINNED_CALENDAR_VERSION,
+    XKRX_ADHOC_CLOSED_SESSIONS,
+    XKRX_CALENDAR_CORRECTION_SET_SHA256,
+    XKRX_CALENDAR_POLICY_VERSION,
+    XKRX_SUPERSEDED_CORRECTION_SETS,
+    XkrxCalendarPolicyError,
+    base_calendar,
+    calendar_for_corrections,
+    corrected_calendar,
+    correction_set_sha256,
+    corrections_for_sha256 as _corrections_for_sha256,
+)
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
+
+__all__ = [
+    "PINNED_CALENDAR_VERSION",
+    "S5_ADHOC_CLOSED_SESSIONS",
+    "S5_CALENDAR_CORRECTION_SET_SHA256",
+    "S5_CALENDAR_POLICY_VERSION",
+    "S5_SUPERSEDED_CORRECTION_SETS",
+    "base_calendar",
+    "calendar_for_corrections",
+    "corrected_calendar",
+    "correction_set_sha256",
+    "corrections_for_sha256",
+]
 
 RAW_SESSION_COUNT = 1_072
 WARMUP_SESSIONS = 59
@@ -28,33 +47,17 @@ ELIGIBLE_SESSION_COUNT = RAW_SESSION_COUNT - WARMUP_SESSIONS - LABEL_TAIL_SESSIO
 MONTHLY_TRAILING_SESSIONS = 20
 KST = ZoneInfo("Asia/Seoul")
 _EFFECTIVE_MONTH_PATTERN = re.compile(r"^[0-9]{4}-(0[1-9]|1[0-2])$")
-PINNED_CALENDAR_VERSION = "4.13.2"
-_PINNED_CALENDAR_VERSION = PINNED_CALENDAR_VERSION
-S5_CALENDAR_POLICY_VERSION = "xkrx-4.13.2-kis-corrections-v1"
+S5_CALENDAR_POLICY_VERSION = XKRX_CALENDAR_POLICY_VERSION
 
 # CTCA0903R가 XKRX base보다 우선한다는 기존 S1.6 authority를 S5에도 적용한다.
 # 고정 라이브러리에 없는 임시휴장만 contract-change로 추가하며 주말/법정휴일은 중복 기재하지 않는다.
-S5_ADHOC_CLOSED_SESSIONS = (date(2026, 6, 3), date(2026, 7, 17))
-
-
-def correction_set_sha256(corrections: Sequence[date]) -> str:
-    """correction 세대 하나를 식별하는 결정적 해시다."""
-
-    return hashlib.sha256(
-        b"s5-xkrx-calendar-corrections-v1\x00"
-        + canonical_json_bytes([day.isoformat() for day in corrections])
-    ).hexdigest()
-
-
-S5_CALENDAR_CORRECTION_SET_SHA256 = correction_set_sha256(S5_ADHOC_CLOSED_SESSIONS)
+S5_ADHOC_CLOSED_SESSIONS = XKRX_ADHOC_CLOSED_SESSIONS
+S5_CALENDAR_CORRECTION_SET_SHA256 = XKRX_CALENDAR_CORRECTION_SET_SHA256
 
 # 이미 소비한 packet/journal을 read-only로 검증할 때만 쓰는 이전 correction 세대다.
 # 새 correction이 확정되면 직전 현재 세대를 여기 append하며, 과거 세대는 삭제하지 않는다.
 # production 실행은 언제나 현재 세대만 사용한다.
-S5_SUPERSEDED_CORRECTION_SETS: tuple[tuple[date, ...], ...] = (
-    (),
-    (date(2026, 6, 3),),
-)
+S5_SUPERSEDED_CORRECTION_SETS = XKRX_SUPERSEDED_CORRECTION_SETS
 
 
 @dataclass(frozen=True)
@@ -78,63 +81,16 @@ class MonthlyUniverseSchedule:
     trailing_sessions: tuple[date, ...]
 
 
-class _S5XKRXCalendar(XKRXExchangeCalendar):  # type: ignore[misc]
-    """Pinned XKRX에 승인된 KIS 임시휴장 correction만 덧붙인 결정적 calendar다."""
-
-    _s5_corrections: tuple[date, ...] = ()
-
-    @property
-    def adhoc_holidays(self) -> list[pd.Timestamp]:
-        values = {*super().adhoc_holidays}
-        values.update(pd.Timestamp(day) for day in self._s5_corrections)
-        return sorted(values)
-
-
-def _require_pinned_calendar_version() -> None:
-    if version("exchange-calendars") != _PINNED_CALENDAR_VERSION:
-        raise LightGbmContractError("exchange-calendars version drifted from S5 policy")
-
-
-@cache
-def calendar_for_corrections(corrections: tuple[date, ...]) -> Any:
-    """correction 세대 하나에 대응하는 결정적 calendar를 만든다.
-
-    빈 세대는 수정 전 pinned base이며 historical packet v1 검증에만 쓴다.
-    """
-
-    _require_pinned_calendar_version()
-    if not corrections:
-        return xcals.get_calendar("XKRX")
-    generation = type(
-        "_S5XKRXCalendar",
-        (_S5XKRXCalendar,),
-        {"_s5_corrections": tuple(corrections)},
-    )
-    return generation()
-
-
-def base_calendar() -> Any:
-    """Historical packet v1 byte validation에만 쓰는 수정 전 pinned XKRX base다."""
-
-    return calendar_for_corrections(())
-
-
-def corrected_calendar() -> Any:
-    """S5 feature/label/daily clock 전체가 공유하는 authoritative corrected XKRX다."""
-
-    return calendar_for_corrections(S5_ADHOC_CLOSED_SESSIONS)
-
-
 def corrections_for_sha256(digest: str) -> tuple[date, ...]:
     """packet이 선언한 correction set 해시를 승인된 세대로만 되돌린다.
 
     현재 세대와 명시적으로 보존한 이전 세대만 인정하며, 그 밖의 해시는 거부한다.
     """
 
-    for corrections in (S5_ADHOC_CLOSED_SESSIONS, *S5_SUPERSEDED_CORRECTION_SETS):
-        if correction_set_sha256(corrections) == digest:
-            return tuple(corrections)
-    raise LightGbmContractError("calendar correction set generation is not approved")
+    try:
+        return _corrections_for_sha256(digest)
+    except XkrxCalendarPolicyError as error:
+        raise LightGbmContractError(str(error)) from None
 
 
 def latest_completed_session(cutoff: datetime) -> date:

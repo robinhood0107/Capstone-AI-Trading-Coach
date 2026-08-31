@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import stat
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,11 @@ def main(argv: list[str] | None = None) -> int:
     collect_parser.add_argument("--kis-token-physical-cap", type=int, required=True)
     collect_parser.add_argument("--krx-membership-physical-calls", type=int, required=True)
 
+    run_parser = subparsers.add_parser("run")
+    _plan_arguments(run_parser)
+    run_parser.add_argument("--output-root", type=Path, required=True)
+    run_parser.add_argument("--approval-packet", type=Path, required=True)
+
     validate_parser = subparsers.add_parser("validate")
     validate_parser.add_argument("--archive-root", type=Path, required=True)
     validate_parser.add_argument("--expected-manifest-sha256", required=True)
@@ -54,17 +60,24 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "plan":
             plan = _plan(args)
             _print(_plan_projection(plan))
-        elif args.command == "collect":
+        elif args.command in {"collect", "run"}:
             plan = _plan(args)
-            if (
-                args.kis_daily_physical_cap != plan.provider_caps["kisDaily"]
-                or args.kis_token_physical_cap != plan.provider_caps["kisToken"]
-                or not 0
-                <= args.krx_membership_physical_calls
-                <= plan.provider_caps["krxMembership"]
-            ):
-                raise AutomationBootstrapError("automation bootstrap CLI caps drifted")
-            _require_approval(plan.plan_sha256)
+            if args.command == "run":
+                approval = _approval_packet(args.approval_packet, plan)
+                token_calls = int(approval["providerCaps"]["kisToken"])
+                krx_calls = int(approval["krxMembershipPhysicalCalls"])
+            else:
+                if (
+                    args.kis_daily_physical_cap != plan.provider_caps["kisDaily"]
+                    or args.kis_token_physical_cap != plan.provider_caps["kisToken"]
+                    or not 0
+                    <= args.krx_membership_physical_calls
+                    <= plan.provider_caps["krxMembership"]
+                ):
+                    raise AutomationBootstrapError("automation bootstrap CLI caps drifted")
+                _require_environment_approval(plan.plan_sha256)
+                token_calls = args.kis_token_physical_cap
+                krx_calls = args.krx_membership_physical_calls
             source = KisAutomationBootstrapSource.from_environment()
             try:
                 collected = collect_automation_bootstrap(
@@ -72,8 +85,8 @@ def main(argv: list[str] | None = None) -> int:
                     source=source,
                     output_root=args.output_root,
                     created_at=datetime.now().astimezone(),
-                    token_physical_calls=args.kis_token_physical_cap,
-                    krx_membership_physical_calls=args.krx_membership_physical_calls,
+                    token_physical_calls=token_calls,
+                    krx_membership_physical_calls=krx_calls,
                 )
             finally:
                 source.close()
@@ -145,12 +158,14 @@ def main(argv: list[str] | None = None) -> int:
 def _plan_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--universe-manifest", type=Path, required=True)
     parser.add_argument("--end-session", type=date.fromisoformat, required=True)
+    parser.add_argument("--session-count", type=int, default=1_260)
 
 
 def _plan(args: argparse.Namespace) -> Any:
     return build_bootstrap_plan(
         load_universe_manifest(args.universe_manifest),
         end_session=args.end_session,
+        session_count=args.session_count,
     )
 
 
@@ -167,11 +182,51 @@ def _plan_projection(plan: Any) -> dict[str, object]:
     }
 
 
-def _require_approval(plan_sha256: str) -> None:
+def _require_environment_approval(plan_sha256: str) -> None:
     approved_sha = os.environ.get("P1_AUTOMATION_MARKET_BOOTSTRAP_PACKET_SHA256", "")
     approval_id = os.environ.get("P1_AUTOMATION_MARKET_BOOTSTRAP_APPROVAL_ID", "")
     if approved_sha != plan_sha256 or _APPROVAL_ID.fullmatch(approval_id) is None:
         raise AutomationBootstrapError("automation bootstrap approval binding is unavailable")
+
+
+def _approval_packet(path: Path, plan: Any) -> dict[str, Any]:
+    if not path.is_absolute():
+        raise AutomationBootstrapError("automation bootstrap packet path must be absolute")
+    metadata = path.lstat()
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_nlink != 1
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_size not in range(2, 16_385)
+    ):
+        raise AutomationBootstrapError("automation bootstrap packet boundary is invalid")
+    raw = path.read_bytes()
+    payload = json.loads(raw)
+    if not isinstance(payload, dict) or set(payload) != {
+        "approvalId",
+        "contractId",
+        "kisMode",
+        "krxMembershipPhysicalCalls",
+        "planSha256",
+        "providerCaps",
+    }:
+        raise AutomationBootstrapError("automation bootstrap packet contract is invalid")
+    if raw != canonical_json_bytes(payload):
+        raise AutomationBootstrapError("automation bootstrap packet must be canonical JSON")
+    if payload["contractId"] != "p1-automation-market-bootstrap-execution.v1":
+        raise AutomationBootstrapError("automation bootstrap packet contract is invalid")
+    if _APPROVAL_ID.fullmatch(str(payload["approvalId"])) is None:
+        raise AutomationBootstrapError("automation bootstrap packet approval is invalid")
+    if payload["planSha256"] != plan.plan_sha256 or payload["providerCaps"] != plan.provider_caps:
+        raise AutomationBootstrapError("automation bootstrap packet plan binding drifted")
+    if payload["kisMode"] not in {"mock", "live"}:
+        raise AutomationBootstrapError("automation bootstrap packet KIS mode is invalid")
+    if os.environ.get("P1_AUTOMATION_MARKET_BOOTSTRAP_KIS_MODE", "live") != payload["kisMode"]:
+        raise AutomationBootstrapError("automation bootstrap packet KIS mode drifted")
+    krx_calls = payload["krxMembershipPhysicalCalls"]
+    if not isinstance(krx_calls, int) or not 0 <= krx_calls <= plan.provider_caps["krxMembership"]:
+        raise AutomationBootstrapError("automation bootstrap packet KRX cap is invalid")
+    return payload
 
 
 def _print(value: object) -> None:

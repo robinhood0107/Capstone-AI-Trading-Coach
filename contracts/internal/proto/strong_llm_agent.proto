@@ -47,6 +47,10 @@ message StartRun {
   string mode = 13;
   // JUDGE에서만 채운다. 모델은 이 집합 안에서만 답하고 새 종목을 만들지 못한다.
   repeated JudgementCandidate candidates = 14;
+  // arm 시점에 봉인한 사용자 선택을 provider 생성까지 그대로 전달한다.
+  string thinking_level = 15;
+  // NEWS_SCREEN은 Google support만 수집하고 tool-free JUDGE는 별도 phase에서 수행한다.
+  bool grounding_discovery_only = 16;
 }
 
 message ProviderCallPermit {

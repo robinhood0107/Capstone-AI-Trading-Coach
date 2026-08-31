@@ -22,8 +22,8 @@ data class S49StrongLlmProperties(
         require(maxOutputTokens in 256..32_768)
         val root = Path.of(localRoot)
         require(root.isAbsolute && root.normalize() == root)
-        require(ownerConsentPolicySha256.matches(SHA256))
-        require(ownerConsentProcessorSetSha256.matches(SHA256))
+        require(ownerConsentPolicySha256.isEmpty() || ownerConsentPolicySha256.matches(SHA256))
+        require(ownerConsentProcessorSetSha256.isEmpty() || ownerConsentProcessorSetSha256.matches(SHA256))
     }
 
     private companion object {

@@ -1,0 +1,1744 @@
+{
+  "components": {
+    "schemas": {
+      "ApiResponseAutomationPolicyV3": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationPolicyV3"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAutomationPositionPageV3": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationPositionPageV3"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAutomationRunDetailV3": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationRunDetailV3"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAutomationRunPageV3": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationRunPageV3"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAutomationStatusV3": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationStatusV3"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ArmAutomationV3Request": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "pattern": "^acct_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "expectedControlVersion": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "expectedPolicyVersion": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "policyId": {
+            "pattern": "^auto_pol_[0-9a-f]{32}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "policyId",
+          "expectedPolicyVersion",
+          "expectedControlVersion"
+        ],
+        "type": "object"
+      },
+      "AutomationCandidateEvidenceV1": {
+        "$id": "contracts/schemas/automation-candidate-evidence.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "ageWarning": {
+            "type": "boolean"
+          },
+          "boundedQuote": {
+            "maxLength": 240,
+            "minLength": 1,
+            "type": "string"
+          },
+          "citationId": {
+            "pattern": "^cit_[A-Za-z0-9._:-]{1,96}$",
+            "type": "string"
+          },
+          "quoteSha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "sourceEventDate": {
+            "oneOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceId": {
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "type": "string"
+          },
+          "sourceType": {
+            "enum": [
+              "OFFICIAL_PRIMARY",
+              "REGISTERED_INDEPENDENT"
+            ]
+          },
+          "symbol": {
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          },
+          "uriSha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "verified": {
+            "const": true
+          }
+        },
+        "required": [
+          "symbol",
+          "citationId",
+          "sourceId",
+          "sourceType",
+          "sourceEventDate",
+          "ageWarning",
+          "uriSha256",
+          "boundedQuote",
+          "quoteSha256",
+          "verified"
+        ],
+        "title": "automation-candidate-evidence.v1",
+        "type": "object"
+      },
+      "AutomationPolicyV3": {
+        "$id": "contracts/schemas/automation-policy.v2.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "atrMultiplierMilli": {
+            "maximum": 10000,
+            "minimum": 1000,
+            "multipleOf": 100,
+            "type": "integer"
+          },
+          "atrPeriod": {
+            "maximum": 100,
+            "minimum": 5,
+            "type": "integer"
+          },
+          "buyCutoffTimeKst": {
+            "const": "09:40"
+          },
+          "cancelTimeKst": {
+            "const": "15:20"
+          },
+          "capitalLimitKrw": {
+            "maximum": 10000000000,
+            "minimum": 10000,
+            "multipleOf": 10000,
+            "type": "integer"
+          },
+          "contractId": {
+            "const": "automation-policy.v2"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "evaluationTimeKst": {
+            "const": "09:30"
+          },
+          "maxHoldingSessions": {
+            "maximum": 1260,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxNewOrdersPerSession": {
+            "const": 1
+          },
+          "maxOpenPositions": {
+            "const": 5
+          },
+          "modelSellEnabled": {
+            "type": "boolean"
+          },
+          "policyId": {
+            "pattern": "^auto_pol_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "presetId": {
+            "enum": [
+              "conservative",
+              "balanced",
+              "aggressive",
+              "custom"
+            ]
+          },
+          "stopLossBps": {
+            "maximum": 1500,
+            "minimum": 100,
+            "type": "integer"
+          },
+          "takeProfitBps": {
+            "maximum": 3000,
+            "minimum": 200,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "contractId",
+          "policyId",
+          "version",
+          "presetId",
+          "capitalLimitKrw",
+          "stopLossBps",
+          "takeProfitBps",
+          "maxHoldingSessions",
+          "atrPeriod",
+          "atrMultiplierMilli",
+          "modelSellEnabled",
+          "maxOpenPositions",
+          "maxNewOrdersPerSession",
+          "evaluationTimeKst",
+          "buyCutoffTimeKst",
+          "cancelTimeKst",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "automation-policy.v2",
+        "type": "object"
+      },
+      "AutomationPositionPageV3": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationPositionV3"
+            },
+            "maxItems": 5,
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "AutomationPositionV3": {
+        "$id": "contracts/schemas/automation-position.v3.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "pattern": "^acct_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "atrAsOfSession": {
+            "oneOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "atrMultiplierMilli": {
+            "maximum": 10000,
+            "minimum": 1000,
+            "multipleOf": 100,
+            "type": "integer"
+          },
+          "atrPeriod": {
+            "maximum": 100,
+            "minimum": 5,
+            "type": "integer"
+          },
+          "botOwned": {
+            "const": true
+          },
+          "closedAt": {
+            "oneOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contractId": {
+            "const": "automation-position.v3"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "entryAverageFillPriceKrw": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "entrySession": {
+            "format": "date",
+            "type": "string"
+          },
+          "exitReason": {
+            "oneOf": [
+              {
+                "enum": [
+                  "STOP_LOSS",
+                  "ATR_TRAILING",
+                  "MODEL_SELL",
+                  "TAKE_PROFIT",
+                  "MAX_HOLDING_SESSIONS"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expirySession": {
+            "oneOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxHoldingSessions": {
+            "maximum": 1260,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "modelSellEnabled": {
+            "type": "boolean"
+          },
+          "peakPriceKrw": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "policyId": {
+            "pattern": "^auto_pol_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "policyVersion": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "positionId": {
+            "pattern": "^auto_pos_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "quantity": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "shortAllowed": {
+            "const": false
+          },
+          "status": {
+            "enum": [
+              "OPEN",
+              "EXIT_PENDING",
+              "CLOSED",
+              "HALTED_MISMATCH"
+            ]
+          },
+          "stopLossBps": {
+            "maximum": 1500,
+            "minimum": 100,
+            "type": "integer"
+          },
+          "symbol": {
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          },
+          "takeProfitBps": {
+            "maximum": 3000,
+            "minimum": 200,
+            "type": "integer"
+          },
+          "trailingStopKrw": {
+            "oneOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "contractId",
+          "positionId",
+          "accountId",
+          "symbol",
+          "quantity",
+          "entryAverageFillPriceKrw",
+          "entrySession",
+          "expirySession",
+          "policyId",
+          "policyVersion",
+          "stopLossBps",
+          "takeProfitBps",
+          "maxHoldingSessions",
+          "atrPeriod",
+          "atrMultiplierMilli",
+          "modelSellEnabled",
+          "peakPriceKrw",
+          "atrAsOfSession",
+          "trailingStopKrw",
+          "status",
+          "exitReason",
+          "botOwned",
+          "shortAllowed",
+          "createdAt",
+          "closedAt"
+        ],
+        "title": "automation-position.v3",
+        "type": "object"
+      },
+      "AutomationRunDetailV3": {
+        "$id": "contracts/schemas/automation-run-detail.v3.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "candidateScreenings": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "evidence": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "ageWarning": {
+                        "type": "boolean"
+                      },
+                      "boundedQuote": {
+                        "maxLength": 240,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "citationId": {
+                        "pattern": "^cit_[A-Za-z0-9._:-]{1,96}$",
+                        "type": "string"
+                      },
+                      "quoteSha256": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "sourceEventDate": {
+                        "oneOf": [
+                          {
+                            "format": "date",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sourceId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "type": "string"
+                      },
+                      "sourceType": {
+                        "enum": [
+                          "OFFICIAL_PRIMARY",
+                          "REGISTERED_INDEPENDENT"
+                        ]
+                      },
+                      "symbol": {
+                        "pattern": "^[0-9]{6}$",
+                        "type": "string"
+                      },
+                      "uriSha256": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "verified": {
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "symbol",
+                      "citationId",
+                      "sourceId",
+                      "sourceType",
+                      "sourceEventDate",
+                      "ageWarning",
+                      "uriSha256",
+                      "boundedQuote",
+                      "quoteSha256",
+                      "verified"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 5,
+                  "type": "array"
+                },
+                "reason": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "score": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "status": {
+                  "enum": [
+                    "AVAILABLE",
+                    "ABSTAIN"
+                  ]
+                },
+                "symbol": {
+                  "pattern": "^[0-9]{6}$",
+                  "type": "string"
+                },
+                "verdict": {
+                  "enum": [
+                    "VETO_BUY",
+                    "NO_VETO"
+                  ]
+                }
+              },
+              "required": [
+                "symbol",
+                "status",
+                "verdict",
+                "score",
+                "reason",
+                "evidence"
+              ],
+              "type": "object"
+            },
+            "maxItems": 31,
+            "type": "array"
+          },
+          "contractId": {
+            "const": "automation-run-detail.v3"
+          },
+          "run": {
+            "additionalProperties": false,
+            "properties": {
+              "aiSettingsSha256": {
+                "oneOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "brokerageMode": {
+                "enum": [
+                  "KIS_MOCK",
+                  "INTERNAL_PAPER"
+                ]
+              },
+              "contractId": {
+                "const": "automation-run.v3"
+              },
+              "estimatedAmountKrw": {
+                "oneOf": [
+                  {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "evidenceCount": {
+                "maximum": 155,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "evidenceSetSha256": {
+                "oneOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "exitReason": {
+                "oneOf": [
+                  {
+                    "enum": [
+                      "STOP_LOSS",
+                      "ATR_TRAILING",
+                      "MODEL_SELL",
+                      "TAKE_PROFIT",
+                      "MAX_HOLDING_SESSIONS"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "filledQuantity": {
+                "oneOf": [
+                  {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "groundingQueryCount": {
+                "maximum": 32,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "judgeCallCount": {
+                "maximum": 2,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "leavesQuantity": {
+                "oneOf": [
+                  {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "limitPriceKrw": {
+                "oneOf": [
+                  {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "orderQuantity": {
+                "oneOf": [
+                  {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "physicalSubmitCount": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "policyId": {
+                "oneOf": [
+                  {
+                    "pattern": "^auto_pol_[0-9a-f]{32}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "policyVersion": {
+                "oneOf": [
+                  {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerCalls": {
+                "maximum": 64,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "runId": {
+                "pattern": "^auto_run_[A-Za-z0-9_-]{8,96}$",
+                "type": "string"
+              },
+              "screeningProviderCallCount": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "selectedSide": {
+                "oneOf": [
+                  {
+                    "enum": [
+                      "BUY",
+                      "SELL"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "selectedSymbol": {
+                "oneOf": [
+                  {
+                    "pattern": "^[0-9]{6}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sessionDate": {
+                "format": "date",
+                "type": "string"
+              },
+              "startedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "state": {
+                "enum": [
+                  "SCHEDULED",
+                  "PRECHECK",
+                  "RECONCILING_PREVIOUS",
+                  "EXIT_SELECTED",
+                  "NEWS_SCREENING",
+                  "AI_JUDGING",
+                  "BUY_CANDIDATE_SELECTED",
+                  "NEWS_CHECKING",
+                  "NEWS_VETOED",
+                  "ORDER_SIZING",
+                  "RISK_CHECKING",
+                  "ORDER_SUBMITTING",
+                  "ORDER_SUBMITTED",
+                  "PENDING_RECONCILIATION",
+                  "CANCELLED_UNFILLED",
+                  "COMPLETED",
+                  "SKIPPED_NO_ACTION",
+                  "SKIPPED_DATA_UNAVAILABLE",
+                  "SKIPPED_LATE_START",
+                  "HALTED"
+                ]
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "contractId",
+              "runId",
+              "sessionDate",
+              "state",
+              "brokerageMode",
+              "policyId",
+              "policyVersion",
+              "selectedSymbol",
+              "selectedSide",
+              "orderQuantity",
+              "filledQuantity",
+              "leavesQuantity",
+              "limitPriceKrw",
+              "estimatedAmountKrw",
+              "exitReason",
+              "physicalSubmitCount",
+              "providerCalls",
+              "screeningProviderCallCount",
+              "groundingQueryCount",
+              "judgeCallCount",
+              "evidenceCount",
+              "evidenceSetSha256",
+              "aiSettingsSha256",
+              "startedAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "contractId",
+          "run",
+          "candidateScreenings"
+        ],
+        "title": "automation-run-detail.v3",
+        "type": "object"
+      },
+      "AutomationRunPageV3": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationRunV3"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "oneOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "AutomationRunV3": {
+        "$id": "contracts/schemas/automation-run.v3.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "aiSettingsSha256": {
+            "oneOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "brokerageMode": {
+            "enum": [
+              "KIS_MOCK",
+              "INTERNAL_PAPER"
+            ]
+          },
+          "contractId": {
+            "const": "automation-run.v3"
+          },
+          "estimatedAmountKrw": {
+            "oneOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidenceCount": {
+            "maximum": 155,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "evidenceSetSha256": {
+            "oneOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exitReason": {
+            "oneOf": [
+              {
+                "enum": [
+                  "STOP_LOSS",
+                  "ATR_TRAILING",
+                  "MODEL_SELL",
+                  "TAKE_PROFIT",
+                  "MAX_HOLDING_SESSIONS"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "filledQuantity": {
+            "oneOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "groundingQueryCount": {
+            "maximum": 32,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "judgeCallCount": {
+            "maximum": 2,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "leavesQuantity": {
+            "oneOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limitPriceKrw": {
+            "oneOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orderQuantity": {
+            "oneOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "physicalSubmitCount": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "policyId": {
+            "oneOf": [
+              {
+                "pattern": "^auto_pol_[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policyVersion": {
+            "oneOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "providerCalls": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "runId": {
+            "pattern": "^auto_run_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "screeningProviderCallCount": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "selectedSide": {
+            "oneOf": [
+              {
+                "enum": [
+                  "BUY",
+                  "SELL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selectedSymbol": {
+            "oneOf": [
+              {
+                "pattern": "^[0-9]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "SCHEDULED",
+              "PRECHECK",
+              "RECONCILING_PREVIOUS",
+              "EXIT_SELECTED",
+              "NEWS_SCREENING",
+              "AI_JUDGING",
+              "BUY_CANDIDATE_SELECTED",
+              "NEWS_CHECKING",
+              "NEWS_VETOED",
+              "ORDER_SIZING",
+              "RISK_CHECKING",
+              "ORDER_SUBMITTING",
+              "ORDER_SUBMITTED",
+              "PENDING_RECONCILIATION",
+              "CANCELLED_UNFILLED",
+              "COMPLETED",
+              "SKIPPED_NO_ACTION",
+              "SKIPPED_DATA_UNAVAILABLE",
+              "SKIPPED_LATE_START",
+              "HALTED"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contractId",
+          "runId",
+          "sessionDate",
+          "state",
+          "brokerageMode",
+          "policyId",
+          "policyVersion",
+          "selectedSymbol",
+          "selectedSide",
+          "orderQuantity",
+          "filledQuantity",
+          "leavesQuantity",
+          "limitPriceKrw",
+          "estimatedAmountKrw",
+          "exitReason",
+          "physicalSubmitCount",
+          "providerCalls",
+          "screeningProviderCallCount",
+          "groundingQueryCount",
+          "judgeCallCount",
+          "evidenceCount",
+          "evidenceSetSha256",
+          "aiSettingsSha256",
+          "startedAt",
+          "updatedAt"
+        ],
+        "title": "automation-run.v3",
+        "type": "object"
+      },
+      "AutomationStatusV3": {
+        "$id": "contracts/schemas/automation-status.v3.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "oneOf": [
+              {
+                "pattern": "^acct_[A-Za-z0-9_-]{8,96}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "aiJudgementEnabled": {
+            "type": "boolean"
+          },
+          "blockers": {
+            "items": {
+              "enum": [
+                "ACCOUNT_NOT_CONFIGURED",
+                "POLICY_NOT_CONFIGURED",
+                "POLICY_VERSION_DRIFT",
+                "POLICY_V3_REQUIRED",
+                "PRINCIPLE_NOT_CONFIGURED",
+                "REAL_TEAM_B_POINTER_INACTIVE",
+                "RELEASE_BINDING_UNCLEAN",
+                "CERTIFICATION_INVALID",
+                "KILL_SWITCH_ACTIVE",
+                "UNRESOLVED_RECONCILIATION",
+                "CONTROL_HALTED",
+                "BLOCKED_INCOMPLETE_RISK_BALANCE",
+                "LEGACY_POSITION_PRESENT",
+                "MARKET_HISTORY_EMPTY",
+                "MARKET_HISTORY_INSUFFICIENT",
+                "MARKET_DATA_CATCHUP_REQUIRED",
+                "AI_PROVIDER_NOT_READY"
+              ]
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "brokerageMode": {
+            "const": "KIS_MOCK"
+          },
+          "canArm": {
+            "type": "boolean"
+          },
+          "certificationStatus": {
+            "enum": [
+              "REQUIRED",
+              "VALID",
+              "EXPIRED",
+              "INVALID"
+            ]
+          },
+          "contractId": {
+            "const": "automation-status.v3"
+          },
+          "controlState": {
+            "enum": [
+              "DISARMED",
+              "ARMED",
+              "HALTED"
+            ]
+          },
+          "controlVersion": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "killSwitchActive": {
+            "type": "boolean"
+          },
+          "legacyOpenPositionCount": {
+            "maximum": 5,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "marketHistoryStatus": {
+            "enum": [
+              "EMPTY",
+              "PARTIAL",
+              "READY",
+              "CATCHUP_REQUIRED"
+            ]
+          },
+          "openPositionCount": {
+            "maximum": 5,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "policy": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "atrMultiplierMilli": {
+                    "maximum": 10000,
+                    "minimum": 1000,
+                    "multipleOf": 100,
+                    "type": "integer"
+                  },
+                  "atrPeriod": {
+                    "maximum": 100,
+                    "minimum": 5,
+                    "type": "integer"
+                  },
+                  "buyCutoffTimeKst": {
+                    "const": "09:40"
+                  },
+                  "cancelTimeKst": {
+                    "const": "15:20"
+                  },
+                  "capitalLimitKrw": {
+                    "maximum": 10000000000,
+                    "minimum": 10000,
+                    "multipleOf": 10000,
+                    "type": "integer"
+                  },
+                  "contractId": {
+                    "const": "automation-policy.v2"
+                  },
+                  "createdAt": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "evaluationTimeKst": {
+                    "const": "09:30"
+                  },
+                  "maxHoldingSessions": {
+                    "maximum": 1260,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "maxNewOrdersPerSession": {
+                    "const": 1
+                  },
+                  "maxOpenPositions": {
+                    "const": 5
+                  },
+                  "modelSellEnabled": {
+                    "type": "boolean"
+                  },
+                  "policyId": {
+                    "pattern": "^auto_pol_[0-9a-f]{32}$",
+                    "type": "string"
+                  },
+                  "presetId": {
+                    "enum": [
+                      "conservative",
+                      "balanced",
+                      "aggressive",
+                      "custom"
+                    ]
+                  },
+                  "stopLossBps": {
+                    "maximum": 1500,
+                    "minimum": 100,
+                    "type": "integer"
+                  },
+                  "takeProfitBps": {
+                    "maximum": 3000,
+                    "minimum": 200,
+                    "type": "integer"
+                  },
+                  "updatedAt": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "contractId",
+                  "policyId",
+                  "version",
+                  "presetId",
+                  "capitalLimitKrw",
+                  "stopLossBps",
+                  "takeProfitBps",
+                  "maxHoldingSessions",
+                  "atrPeriod",
+                  "atrMultiplierMilli",
+                  "modelSellEnabled",
+                  "maxOpenPositions",
+                  "maxNewOrdersPerSession",
+                  "evaluationTimeKst",
+                  "buyCutoffTimeKst",
+                  "cancelTimeKst",
+                  "createdAt",
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectionState": {
+            "enum": [
+              "DISARMED",
+              "ARMED",
+              "RUNNING",
+              "HALTED"
+            ]
+          },
+          "thinkingLevel": {
+            "enum": [
+              "minimal",
+              "low",
+              "medium"
+            ]
+          },
+          "unresolvedReconciliation": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "contractId",
+          "controlState",
+          "projectionState",
+          "controlVersion",
+          "brokerageMode",
+          "accountId",
+          "policy",
+          "aiJudgementEnabled",
+          "thinkingLevel",
+          "marketHistoryStatus",
+          "killSwitchActive",
+          "certificationStatus",
+          "openPositionCount",
+          "legacyOpenPositionCount",
+          "unresolvedReconciliation",
+          "canArm",
+          "blockers"
+        ],
+        "title": "automation-status.v3",
+        "type": "object"
+      },
+      "PutAutomationPolicyV3Request": {
+        "additionalProperties": false,
+        "properties": {
+          "atrMultiplierMilli": {
+            "maximum": 10000,
+            "minimum": 1000,
+            "multipleOf": 100,
+            "type": "integer"
+          },
+          "atrPeriod": {
+            "maximum": 100,
+            "minimum": 5,
+            "type": "integer"
+          },
+          "capitalLimitKrw": {
+            "maximum": 10000000000,
+            "minimum": 10000,
+            "multipleOf": 10000,
+            "type": "integer"
+          },
+          "expectedVersion": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxHoldingSessions": {
+            "maximum": 1260,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "modelSellEnabled": {
+            "type": "boolean"
+          },
+          "stopLossBps": {
+            "maximum": 1500,
+            "minimum": 100,
+            "type": "integer"
+          },
+          "takeProfitBps": {
+            "maximum": 3000,
+            "minimum": 200,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "capitalLimitKrw",
+          "stopLossBps",
+          "takeProfitBps",
+          "maxHoldingSessions",
+          "atrPeriod",
+          "atrMultiplierMilli",
+          "modelSellEnabled",
+          "expectedVersion"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "P1 Automation V3 additive contract",
+    "version": "1.2.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v3/automation/arm": {
+      "post": {
+        "operationId": "armAutomationV3",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArmAutomationV3Request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationStatusV3"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "409": {
+            "description": "Automation V3 readiness blocker"
+          }
+        }
+      }
+    },
+    "/api/v3/automation/policy": {
+      "put": {
+        "operationId": "putAutomationPolicyV3",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutAutomationPolicyV3Request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationPolicyV3"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/v3/automation/positions": {
+      "get": {
+        "operationId": "listAutomationPositionsV3",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationPositionPageV3"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/v3/automation/runs": {
+      "get": {
+        "operationId": "listAutomationRunsV3",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationRunPageV3"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/v3/automation/runs/{runId}": {
+      "get": {
+        "operationId": "getAutomationRunV3",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "pattern": "^auto_run_[A-Za-z0-9_-]{8,96}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationRunDetailV3"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/v3/automation/status": {
+      "get": {
+        "operationId": "getAutomationStatusV3",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationStatusV3"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        }
+      }
+    }
+  }
+}

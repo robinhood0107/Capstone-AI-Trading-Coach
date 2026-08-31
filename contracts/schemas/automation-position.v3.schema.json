@@ -1,0 +1,182 @@
+{
+  "$id": "contracts/schemas/automation-position.v3.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accountId": {
+      "pattern": "^acct_[A-Za-z0-9_-]{8,96}$",
+      "type": "string"
+    },
+    "atrAsOfSession": {
+      "oneOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "atrMultiplierMilli": {
+      "maximum": 10000,
+      "minimum": 1000,
+      "multipleOf": 100,
+      "type": "integer"
+    },
+    "atrPeriod": {
+      "maximum": 100,
+      "minimum": 5,
+      "type": "integer"
+    },
+    "botOwned": {
+      "const": true
+    },
+    "closedAt": {
+      "oneOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "contractId": {
+      "const": "automation-position.v3"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "entryAverageFillPriceKrw": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "entrySession": {
+      "format": "date",
+      "type": "string"
+    },
+    "exitReason": {
+      "oneOf": [
+        {
+          "enum": [
+            "STOP_LOSS",
+            "ATR_TRAILING",
+            "MODEL_SELL",
+            "TAKE_PROFIT",
+            "MAX_HOLDING_SESSIONS"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "expirySession": {
+      "oneOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "maxHoldingSessions": {
+      "maximum": 1260,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "modelSellEnabled": {
+      "type": "boolean"
+    },
+    "peakPriceKrw": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "policyId": {
+      "pattern": "^auto_pol_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "policyVersion": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "positionId": {
+      "pattern": "^auto_pos_[A-Za-z0-9_-]{8,96}$",
+      "type": "string"
+    },
+    "quantity": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "shortAllowed": {
+      "const": false
+    },
+    "status": {
+      "enum": [
+        "OPEN",
+        "EXIT_PENDING",
+        "CLOSED",
+        "HALTED_MISMATCH"
+      ]
+    },
+    "stopLossBps": {
+      "maximum": 1500,
+      "minimum": 100,
+      "type": "integer"
+    },
+    "symbol": {
+      "pattern": "^[0-9]{6}$",
+      "type": "string"
+    },
+    "takeProfitBps": {
+      "maximum": 3000,
+      "minimum": 200,
+      "type": "integer"
+    },
+    "trailingStopKrw": {
+      "oneOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "contractId",
+    "positionId",
+    "accountId",
+    "symbol",
+    "quantity",
+    "entryAverageFillPriceKrw",
+    "entrySession",
+    "expirySession",
+    "policyId",
+    "policyVersion",
+    "stopLossBps",
+    "takeProfitBps",
+    "maxHoldingSessions",
+    "atrPeriod",
+    "atrMultiplierMilli",
+    "modelSellEnabled",
+    "peakPriceKrw",
+    "atrAsOfSession",
+    "trailingStopKrw",
+    "status",
+    "exitReason",
+    "botOwned",
+    "shortAllowed",
+    "createdAt",
+    "closedAt"
+  ],
+  "title": "automation-position.v3",
+  "type": "object"
+}

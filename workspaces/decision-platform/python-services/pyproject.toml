@@ -101,7 +101,6 @@ s5-research-market-data-export = "app.lightgbm.research_market_data_exporter:mai
 market-data-seed-stage = "app.data.market_data.stage_cli:main"
 market-data-daily-replay = "app.data.market_data.daily_cli:main"
 market-data-retention = "app.data.market_data.retention_cli:main"
-automation-market-data = "app.data.market_data.automation_bootstrap_cli:main"
 p1-verify = "app.verification.cli:main"
 
 [build-system]

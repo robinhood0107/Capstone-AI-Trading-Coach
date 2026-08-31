@@ -46,18 +46,15 @@ from .harness import (
 
 _OPT_IN: Final = "P1_DISABLED_FEATURES_E2E"
 _FLAGS: Final = (
-    ("RAG_WEB_ENABLED", "SearXNG 웹검색"),
-    ("S4_9_STRONG_LLM_ENABLED", "S4.9 Strong LLM"),
-    ("S4_9_MCP_ENABLED", "S4.9 MCP"),
-    ("FINANCIAL_ENGINEERING_GRPC_ENABLED", "금융공학 gRPC"),
+    ("RAG_WEB_ENABLED", "SearXNG 웹검색", "false"),
+    ("S4_9_STRONG_LLM_ENABLED", "S4.9 Strong LLM provider", "true"),
+    ("S4_9_MCP_ENABLED", "S4.9 MCP", "false"),
+    ("FINANCIAL_ENGINEERING_GRPC_ENABLED", "금융공학 gRPC", "false"),
 )
 # 이름에 `strong-llm`이 들어가지만 꺼진 기능이 아닌 표면이다.
 #
-# S4.9 agent 자체는 여전히 꺼져 있고 그 endpoint도 없다. 이것은 **어떤 모델을 쓸지 고르는**
-# 설정 쓰기이고, 언제나 열려 있어야 한다 - provider를 바꾸는 길이 배포 환경변수뿐이면 그
-# 선택이 사용자의 것이 아니라 운영자의 것이 된다. 그래서 여기서만 예외로 둔다. 목록으로 두는
-# 이유는 접두사로 열어 두면 나중에 진짜 agent endpoint가 같은 접두사로 들어와도 통과하기
-# 때문이다.
+# S4.9 provider process는 Automation V3 AI ON 준비를 위해 켜지만 공개 endpoint는 만들지 않는다.
+# 실제 판단 참여는 owner 설정의 aiJudgementEnabled가 결정한다. SearXNG와 MCP는 계속 꺼진다.
 _ALWAYS_PRESENT_PATHS: Final = frozenset({"/api/v2/strong-llm/settings"})
 # 은퇴한 LightGBM 경로. V74가 회수한 권한이 다시 생기면 그 자체가 회귀다.
 _RETIRED_GRANTS: Final = (
@@ -69,17 +66,17 @@ _RETIRED_GRANTS: Final = (
 
 
 def check_flags(recorder: Recorder) -> None:
-    names = [name for name, _ in _FLAGS]
+    names = [name for name, _, _ in _FLAGS]
     observed = platform(
         "for name in " + " ".join(names) + '; do printf "%s\\n" "$(printenv "$name")"; done'
     ).splitlines()
     values = dict(zip(names, observed + [""] * len(names), strict=False))
-    off = [label for name, label in _FLAGS if values.get(name) != "false"]
+    drift = [label for name, label, expected in _FLAGS if values.get(name) != expected]
     recorder.add(
         "네 기능의 런타임 플래그",
-        "PASS" if not off else "FAIL",
-        ", ".join(f"{label}={values.get(name) or '<unset>'}" for name, label in _FLAGS)
-        + (f" / 꺼져 있지 않은 것: {off}" if off else ""),
+        "PASS" if not drift else "FAIL",
+        ", ".join(f"{label}={values.get(name) or '<unset>'}" for name, label, _ in _FLAGS)
+        + (f" / 기대값과 다른 것: {drift}" if drift else ""),
     )
 
 

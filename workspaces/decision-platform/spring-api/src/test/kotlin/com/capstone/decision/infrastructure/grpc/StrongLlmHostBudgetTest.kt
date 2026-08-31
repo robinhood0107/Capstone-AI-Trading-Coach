@@ -6,15 +6,15 @@ import org.junit.jupiter.api.Test
 
 class StrongLlmHostBudgetTest {
     @Test
-    fun `Google discovery and owner final allow exactly two matching provider permits`() {
+    fun `Google discovery and grounded final allow exactly two matching provider permits`() {
         val budget = StrongLlmHostBudget()
 
         budget.permitProvider("GOOGLE_DISCOVERY")
-        budget.permitProvider("OWNER_FINAL")
+        budget.permitProvider("GROUNDED_FINAL")
         budget.verifyCompleted(2, "VERTEX_GOOGLE")
 
         assertThat(budget.providerCalls).isEqualTo(2)
-        assertThatThrownBy { budget.permitProvider("OWNER_FINAL") }
+        assertThatThrownBy { budget.permitProvider("GROUNDED_FINAL") }
             .hasMessage("STRONG_LLM_HOST_PROVIDER_AFTER_FINAL")
     }
 

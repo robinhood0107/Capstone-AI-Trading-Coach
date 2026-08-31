@@ -100,9 +100,12 @@ def test_google_path_requires_permit_before_provider_and_preserves_grounding() -
         lambda *_: pytest.fail("Google native path must not call host tools"),
     )
 
-    assert events == [("google_discovery", "GOOGLE_DISCOVERY", True)]
-    assert provider.invocations == [("google", False)]
-    assert result.vertex_generate_call_count == 1
+    assert events == [
+        ("google_discovery", "GOOGLE_DISCOVERY", True),
+        ("grounded_final", "GROUNDED_FINAL", False),
+    ]
+    assert provider.invocations == [("google", False), ("google", True)]
+    assert result.vertex_generate_call_count == 2
     assert result.google_grounding_query_count == 1
     assert result.search_backend == "VERTEX_GOOGLE"
 
@@ -117,9 +120,26 @@ def test_owner_google_path_has_discovery_then_tool_free_final() -> None:
         lambda *_: pytest.fail("Google native path must not call host tools"),
     )
 
-    assert permits == [("google_discovery", True), ("owner_final", False)]
+    assert permits == [("google_discovery", True), ("grounded_final", False)]
     assert provider.invocations == [("google", False), ("google", True)]
     assert result.vertex_generate_call_count == 2
+
+
+def test_news_screen_discovery_only_never_requests_structured_final() -> None:
+    provider = FakeProvider(google_queries=["005930 adverse disclosure"])
+    permits: list[tuple[str, str, bool]] = []
+    request = replace(_request(google=True), grounding_discovery_only=True)
+
+    result = BoundedStrongLlmGraph().run(
+        request,
+        provider,
+        lambda call_id, phase, attached: permits.append((call_id, phase, attached)),
+        lambda *_: pytest.fail("Google native path must not call host tools"),
+    )
+
+    assert permits == [("google_discovery", "GOOGLE_DISCOVERY", True)]
+    assert provider.invocations == [("google", False)]
+    assert result.vertex_generate_call_count == 1
 
 
 def test_searxng_fallback_is_bounded_and_returns_tool_result_to_same_message() -> None:
@@ -255,7 +275,7 @@ def test_vertex_timeout_is_bounded_inside_the_host_deadline(
             VertexProviderSettings.from_env()
 
 
-def test_google_search_and_native_schema_share_the_official_bind_contract(
+def test_google_search_discovery_is_separate_from_native_schema_final(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -297,8 +317,8 @@ def test_google_search_and_native_schema_share_the_official_bind_contract(
     assert "tools" not in bind_calls[0]
     assert bind_calls[1]["tools"] == [{"google_search": {}}]
     assert bind_calls[1]["temperature"] == 0.0
-    assert bind_calls[1]["response_mime_type"] == "application/json"
-    assert bind_calls[0]["response_schema"] == bind_calls[1]["response_schema"]
+    assert "response_mime_type" not in bind_calls[1]
+    assert "response_schema" not in bind_calls[1]
 
 
 def test_explicit_google_search_stays_on_official_langchain_vertex_binding(
@@ -348,12 +368,10 @@ def test_explicit_google_search_stays_on_official_langchain_vertex_binding(
         {
             "tools": [{"google_search": {}}],
             "temperature": 0.0,
-            "response_mime_type": "application/json",
-            "response_schema": _vertex_response_schema(),
         }
     ]
     assert result["google_query_count"] == 0
-    assert json.loads(result["answer_json"])["basis"] == "MODEL_KNOWLEDGE"
+    assert json.loads(result["answer_json"])["basis"] == "INSUFFICIENT_EVIDENCE"
 
 
 def test_unbound_provisional_google_citation_closes_as_insufficient_evidence() -> None:
@@ -650,6 +668,39 @@ def test_grounding_metadata_accepts_null_optional_segment_offsets() -> None:
 
     assert result["grounding_supports"] == [
         {"start_index": 0, "end_index": 0, "text": "분산투자", "chunk_indices": (0,)}
+    ]
+
+
+def test_grounding_metadata_accepts_google_camel_case_projection() -> None:
+    message = AIMessage(
+        content=_answer(),
+        response_metadata={
+            "grounding_metadata": {
+                "webSearchQueries": ["Investor.gov diversification"],
+                "groundingChunks": [
+                    {
+                        "web": {
+                            "uri": "https://www.investor.gov/diversification",
+                            "title": "Diversification",
+                        }
+                    }
+                ],
+                "groundingSupports": [
+                    {
+                        "segment": {"startIndex": 1, "endIndex": 12, "text": "분산투자"},
+                        "groundingChunkIndices": [0],
+                    }
+                ],
+            }
+        },
+    )
+
+    result = _provider_result(message)
+
+    assert result["google_queries"] == ["Investor.gov diversification"]
+    assert result["grounding_roots"][0]["domain"] == "www.investor.gov"
+    assert result["grounding_supports"] == [
+        {"start_index": 1, "end_index": 12, "text": "분산투자", "chunk_indices": (0,)}
     ]
 
 

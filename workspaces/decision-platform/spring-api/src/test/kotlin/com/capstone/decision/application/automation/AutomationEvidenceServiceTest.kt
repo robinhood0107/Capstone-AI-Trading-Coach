@@ -89,6 +89,27 @@ class AutomationEvidenceServiceTest {
     }
 
     @Test
+    fun `provider observed registered domain binds a Google grounding redirect`() {
+        val result =
+            service.sanitizeScreening(
+                screening(
+                    evidence =
+                        listOf(
+                            evidence(
+                                uri = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/opaque",
+                            ).copy(sourceDomain = "dart.fss.or.kr"),
+                        ),
+                    verdict = "VETO_BUY",
+                    scoreBps = 1_000,
+                ),
+                LocalDate.parse("2026-08-31"),
+            )
+
+        assertThat(result.evidence).hasSize(1)
+        assertThat(result.evidence.single().sourceId).isEqualTo("src_official_dart")
+    }
+
+    @Test
     fun `judge keeps exact spans and strips fabricated spans while neutralizing authority`() {
         val stored = evidence()
         val valid =

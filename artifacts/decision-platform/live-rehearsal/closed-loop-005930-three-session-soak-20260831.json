@@ -1,0 +1,111 @@
+{
+  "status": "SUCCESS",
+  "scenario": "THREE_SESSION_SOAK",
+  "symbol": "005930",
+  "engineSteps": [
+    {
+      "step": "preBalance",
+      "cashKrw": 100000000,
+      "symbolQuantity": 0
+    },
+    {
+      "step": "positionOpened",
+      "symbol": "005930",
+      "quantity": 1,
+      "entryAverageFillPriceKrw": 257000,
+      "entrySession": "2026-08-31",
+      "expirySession": "2026-09-07"
+    },
+    {
+      "step": "soakSession",
+      "sessionDate": "2026-09-01",
+      "state": "SKIPPED_NO_ACTION",
+      "openPositions": 1
+    },
+    {
+      "step": "soakSession",
+      "sessionDate": "2026-09-02",
+      "state": "SKIPPED_NO_ACTION",
+      "openPositions": 1
+    },
+    {
+      "step": "positionClosed",
+      "exitReason": "MAX_HOLDING_SESSIONS",
+      "entryAverageFillPriceKrw": 257000,
+      "exitAverageFillPriceKrw": 256500,
+      "exitFilledQuantity": 1,
+      "realizedPnlKrw": -1399,
+      "closedPositions": 1
+    },
+    {
+      "step": "postBalance",
+      "cashKrw": 100000000,
+      "symbolQuantity": 0
+    }
+  ],
+  "transportSteps": [
+    {
+      "step": "quote",
+      "symbol": "005930",
+      "priceKrw": 256750,
+      "upperKrw": 334000,
+      "lowerKrw": 180000
+    },
+    {
+      "step": "vertex",
+      "symbol": "005930",
+      "verdict": "NO_VETO",
+      "providerCalls": 0
+    },
+    {
+      "step": "submitBuy",
+      "symbol": "005930",
+      "quantity": 1,
+      "limitPriceKrw": 257000,
+      "orderNo": "0000034231"
+    },
+    {
+      "step": "buyFill",
+      "cumulativeQuantity": 1,
+      "leavesQuantity": 0,
+      "averageFillPriceKrw": 257000
+    },
+    {
+      "step": "quote",
+      "symbol": "005930",
+      "priceKrw": 256750,
+      "upperKrw": 334000,
+      "lowerKrw": 180000
+    },
+    {
+      "step": "quote",
+      "symbol": "005930",
+      "priceKrw": 256500,
+      "upperKrw": 334000,
+      "lowerKrw": 180000
+    },
+    {
+      "step": "quote",
+      "symbol": "005930",
+      "priceKrw": 256750,
+      "upperKrw": 334000,
+      "lowerKrw": 180000
+    },
+    {
+      "step": "submitSell",
+      "symbol": "005930",
+      "quantity": 1,
+      "limitPriceKrw": 256500,
+      "orderNo": "0000034237"
+    },
+    {
+      "step": "sellFill",
+      "cumulativeQuantity": 1,
+      "leavesQuantity": 0,
+      "averageFillPriceKrw": 256500
+    }
+  ],
+  "physicalCalls": 8,
+  "vertexProviderCalls": 0,
+  "sessionKst": "2026-08-31T14:13:01.458009+09:00"
+}

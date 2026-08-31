@@ -12,24 +12,19 @@
       "verdict": "PASS"
     },
     {
-      "detail": "as-of=2026-08-28 service=stk_bydd_trd exit=1 물리 시도 0 - 외부로 나가기 전에 별도 온라인 승인 게이트가 닫았다 :: source=krx operation=service_probe code=collection_failed service=stk_bydd_trd physical_attempts=0",
+      "detail": "as-of=2026-08-28 service=stk_bydd_trd exit=0 응답을 받았다 :: source=krx operation=service_probe code=complete service=stk_bydd_trd as_of=2026-08-28 row_count=944 positive_candidate_count=883 source_sha256=c307074820bae82afbc5faf84f2420fdcedecb82e8834c7e6fb1af3ab84e36bb elapsed_ms=3174 physical_attempts=1",
       "name": "KRX OPEN API 승인 서비스가 응답한다",
-      "verdict": "INFO"
+      "verdict": "PASS"
     },
     {
-      "detail": "exit=1 물리 시도 0 - 외부로 나가기 전에 별도 온라인 승인 게이트가 닫았다 :: {\"code\":\"preflight_failed\",\"operation\":\"registry_preflight\",\"physicalAttemptCount\":0,\"source\":\"ecos\",\"status\":\"failed\"}",
+      "detail": "exit=0 응답을 받았다 :: {\"activationRequired\":true,\"canActivate\":false,\"observedAt\":\"2026-08-31T06:03:32.512297Z\",\"operation\":\"ecos-registry-preflight\",\"physicalAttemptCount\":4,\"series\":[{\"cycle\":\"D\",\"itemCode\":\"0101000\",\"itemName\":\"한국은행 기준금리\",\"searchable\":true,\"seriesId\":\"policy-rate\",\"statCode\":\"722Y001\",\"tableName\":\"1.3.1. 한국은행 기준금리 및 여수신금리\",\"unit\":\"연%\"},{\"cycle\":\"D\",\"itemCode\":\"0000001\",\"itemName\":\"원/미국달러(매매기준율)\",\"searchable\":true,\"seriesId\":\"krw-usd-rate\",\"statCode\":\"731Y001\",\"tableName\":\"3.1.1.1. 주요국 통화의 대원화환율\",\"unit\":\"원\"}],\"source\":\"ecos\",\"status\":\"succeeded\"}",
       "name": "ECOS registry preflight가 통과한다",
-      "verdict": "INFO"
+      "verdict": "PASS"
     },
     {
       "detail": "exit=0  (일일 호출 예산을 쓰지 않으려고 공시 조회는 하지 않는다)",
       "name": "OpenDART 설정이 자격증명을 읽는다",
       "verdict": "PASS"
-    },
-    {
-      "detail": "GDELT는 연구 상태로 분리돼 있어 이 러너가 호출하지 않는다. 이 경계를 바꾸려면 소유자에게 먼저 묻는다. `gdelt-aggregate-collect`는 이 판정표 어디에도 실행 기록을 남기지 않는다",
-      "name": "GDELT는 부르지 않는다",
-      "verdict": "INFO"
     }
   ],
   "verdict": "PASS"

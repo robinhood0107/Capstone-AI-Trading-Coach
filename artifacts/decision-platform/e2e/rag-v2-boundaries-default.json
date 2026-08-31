@@ -32,12 +32,12 @@
       "verdict": "INFO"
     },
     {
-      "detail": "HTTP 409 code=EXTERNAL_AI_CONSENT_REQUIRED guardrail=[] 예약 85→85 (자동 저술 상태: 준비 단계의 consent 확인에서 typed 409로 닫힌다)",
+      "detail": "HTTP 409 code=EXTERNAL_AI_CONSENT_REQUIRED guardrail=[] 예약 86→86 (자동 저술 상태: 준비 단계의 consent 확인에서 typed 409로 닫힌다)",
       "name": "동의 없는 질의는 물리 호출 0",
       "verdict": "PASS"
     },
     {
-      "detail": "HTTP 200 GENERATION_UNAVAILABLE 인용 0건 예약 85→86 guardrail=['GENERATION_UNAVAILABLE'] (생성 활성화 상태: 검색은 돌고 생성만 닫힌다. 답변은 인용을 싣지 않는다)",
+      "detail": "HTTP 200 GENERATION_UNAVAILABLE 인용 0건 예약 86→87 guardrail=['GENERATION_UNAVAILABLE'] (생성 활성화 상태: 검색은 돌고 생성만 닫힌다. 답변은 인용을 싣지 않는다)",
       "name": "실검색 1회",
       "verdict": "PASS"
     },

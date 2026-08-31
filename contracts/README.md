@@ -30,6 +30,24 @@ uv run --frozen python contracts/verify_p1_automation_journal_openapi_transition
 uv run --frozen python contracts/validate.py
 ```
 
+## P1 1.1.0 Automation V91 exact-61 transition
+
+> 현재 root는 RAG v2 공개 표면 일곱 개가 더해져 exact-68이다. 검증 체인은
+> 68 → 61 → 56 → 48 순서로 되돌리며, 아래 exact-61 서술은 그 체인의 중간 단계다.
+> 앞 단계는 `contracts/verify_p1_rag_v2_openapi_transition.py`가 담당한다.
+
+`catalogs/p1-automation-policy.v1.json`은 최대 5개 포지션, 세션당 신규 주문 1개, 보수 3/5·균형
+5/10·공격 8/15 preset과 세 개 사용자 입력을 고정한다. v2 status/policy/arm/runs/positions 다섯
+operation만 additive하게 추가해 root exact-61을 만들며, 제거하면 SHA
+`8a94b6cae3bafbc4d353bde7bae88aa568c3fe691e08b97f8cdb52996612a8a0`의 exact-56이 복원돼야 한다.
+현재 provider-free acceptance의 arm은 `BLOCKED_INCOMPLETE_RISK_BALANCE` 409가 정상 결과다.
+
+```bash
+uv run --frozen python contracts/generate_p1_v91_automation_contracts.py --check
+uv run --frozen python contracts/verify_p1_v91_automation_openapi_transition.py
+uv run --frozen python -m unittest contracts.tests.test_p1_v91_automation_contracts -v
+```
+
 ## P1 Team A exact-33 acceptance
 
 `catalogs/p1-team-a-acceptance.v1.json`은 root exact-56 중 Team A current 15 + required 18의
@@ -43,6 +61,11 @@ uv run --frozen python contracts/generate_p1_team_a_acceptance.py --check
 uv run --frozen python -m unittest contracts.tests.test_p1_team_a_acceptance -v
 ./capstone team-a acceptance
 ```
+
+`p1-team-a-acceptance.v1`과 generated v1 client는 역사 회귀로 그대로 보존한다. 현재 1.1.0
+acceptance는 `p1-team-a-acceptance.v2`와 generated v2 client가 기존 33개에 V91 다섯 operation을
+더한 exact-38을 소유한다. v2 arm은 provider-free 환경에서 409 blocker를 검증하고, v1 arm/disarm은
+기존 200 상태 복구를 계속 증명한다.
 
 ## P1 Compose, Team B OCI, and handoff preparation
 
@@ -885,20 +908,10 @@ provider/runtime/storage 권한은 S1.3G에서 퇴역했다. S1.3은 public REST
 Return Engine은 이후 합의된 `contracts/`·`artifacts/` handoff 경계에서 manifest를 검증해 소비한다.
 다른 workspace의 구현 파일이나 Decision Platform의 임의 로컬 경로를 직접 읽는 방식은 계약이 아니다.
 
-> 현재 상태(2026-08-01): Naver collector·credential/CLI·snapshot schema/example/test와
-> shared manifest/retention의 Naver branch를 제거했다. 승인된 local leaf는 exact
-> application-visible 삭제를 완료했고 영수증은 ignored local 영역에만 있다. 아래 Naver
-> 이름·수치·hash는 당시 감사 기록일 뿐 현재 파일이나 실행 명령을 가리키지 않는다.
-
-> 구현 상태(2026-07-16): Naver lower-only batch·strict smoke, JSON Schema, offline 회귀와
-> 승인된 online smoke를 완료하고 PR #16 merge commit
-> `6f439155d9f5ec626fc185f29f2e0bd64ca54780`으로 `main`에 병합했다. Approval A1/A2/A3는
-> 실패 evidence로 분리한다. A4
-> `approval-a4-692635240394-20260715T055519Z`는 physical `4`·Redis `+4`로 성공했고,
-> `semantic-3bb3810728cf` 승인 뒤 registry를 활성화했다. B1
-> `approval-b1-23618d21265d-20260715T072151Z`는 ECOS physical `2`·Redis `+2`와 Naver
-> physical `1`·Redis `+1`로 성공했다. B1 evidence SHA-256은
-> `ecb62e114352439994fa799096a916757ba7fba081f08f1d1b78ec35397d85fb`다.
+Naver collector·credential/CLI·snapshot schema/example/test와
+shared manifest/retention의 Naver branch를 제거했다. 승인된 local leaf는 exact
+application-visible 삭제를 완료했고 영수증은 ignored local 영역에만 있다. 아래 Naver
+이름·수치·hash는 당시 감사 기록일 뿐 현재 파일이나 실행 명령을 가리키지 않는다.
 
 | 계약 | Producer | Consumer | 보존 |
 |---|---|---|---:|

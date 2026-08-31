@@ -64,6 +64,9 @@ class KISMockBalanceSourceProbe:
     portfolio_equity_krw: int
     positions: tuple[tuple[str, int, int], ...]
     positions_complete: bool
+    # KIS 모의투자는 현금계좌만 개설되고 신용·대주 한도가 없다. 증거금 0은 payload 추정이 아니라
+    # 계좌 유형에서 나오는 사실이라 기본값으로 둔다.
+    margin_requirement_krw: int = 0
 
     def reconciliation_digest(self) -> str:
         """완전한 sanitized balance projection만 pre/post 비교용 digest로 만든다."""
@@ -230,6 +233,30 @@ class KISMockExecutionReader:
         )
         rows = _strict_execution_rows(payload, require_nonempty=True)
         return _execution_snapshot_from_rows(rows, reference)
+
+    def read_optional(
+        self,
+        *,
+        reference: MockProviderOrderReference,
+        start: date,
+        end: date,
+        recent: bool,
+    ) -> MockExecutionSnapshot | None:
+        """Read at most one exact snapshot with one provider page and no probe/read duplication."""
+
+        payload = self._request_execution_page(
+            reference=reference,
+            start=start,
+            end=end,
+            recent=recent,
+        )
+        rows = _execution_source_probe_rows(payload)
+        matches = [row for row in rows if _execution_order_no(row) == reference.provider_order_no]
+        if len(matches) > 1:
+            raise ValueError("KIS mock execution order match is not unique")
+        if not matches:
+            return None
+        return _execution_snapshot_from_rows(matches, reference)
 
     def probe_execution_source(
         self,
@@ -491,7 +518,7 @@ def _execution_snapshot_from_rows(
         .astimezone(UTC)
     )
     cancelled_quantity = _nonnegative(
-        row.get("cnc_cfrm_qty"),
+        row.get("cncl_cfrm_qty"),
         "cancelled quantity",
     )
     rejected_quantity = _nonnegative(row.get("rjct_qty"), "rejected quantity")

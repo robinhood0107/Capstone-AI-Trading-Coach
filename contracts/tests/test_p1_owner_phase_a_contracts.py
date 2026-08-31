@@ -131,7 +131,9 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
         self.assertEqual(8192, journal["properties"]["content"]["maxLength"])
         self.assertFalse(journal["additionalProperties"])
 
-    def test_additive_openapi_locks_eight_routes_and_runtime_root_is_exact_56(self) -> None:
+    def test_additive_openapi_locks_eight_routes_and_v1_surface_stays_exact_56(
+        self,
+    ) -> None:
         additive = json.loads(
             (
                 ROOT / "contracts/openapi/p1-automation-journal.v1.openapi.json"
@@ -159,13 +161,64 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
         root = json.loads(
             (ROOT / "contracts/openapi/openapi.json").read_text(encoding="utf-8")
         )
-        root_count = sum(
-            1
-            for path_item in root["paths"].values()
+        root_operations = {
+            (path, method)
+            for path, path_item in root["paths"].items()
             for method in path_item
             if method != "parameters"
+        }
+        self.assertEqual(69, len(root_operations))
+        # Strong LLM 설정 표면 하나도 이 검사의 대상이 아니다. 가장 새 층부터 덜어 낸다.
+        strong_llm_additive = json.loads(
+            (ROOT / "contracts/openapi/p1-strong-llm-settings.v1.openapi.json").read_text(
+                encoding="utf-8"
+            )
         )
-        self.assertEqual(56, root_count)
+        strong_llm_operations = {
+            (path, method)
+            for path, path_item in strong_llm_additive["paths"].items()
+            for method in path_item
+            if method != "parameters"
+        }
+        self.assertEqual(1, len(strong_llm_operations))
+        self.assertTrue(strong_llm_operations <= root_operations)
+        root_operations -= strong_llm_operations
+        self.assertEqual(68, len(root_operations))
+        # RAG v2 공개 표면 일곱 개는 이 검사의 대상이 아니다. 먼저 덜어 내고 exact-61을 본다.
+        rag_v2_additive = json.loads(
+            (ROOT / "contracts/openapi/p1-rag-v2-public.v1.openapi.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        rag_v2_operations = {
+            (path, method)
+            for path, path_item in rag_v2_additive["paths"].items()
+            for method in path_item
+            if method != "parameters"
+        }
+        self.assertEqual(7, len(rag_v2_operations))
+        self.assertTrue(rag_v2_operations <= root_operations)
+        root_operations -= rag_v2_operations
+        self.assertEqual(61, len(root_operations))
+
+        v2_additive = json.loads(
+            (
+                ROOT / "contracts/openapi/p1-automation-v2.v1.openapi.json"
+            ).read_text(encoding="utf-8")
+        )
+        v2_operations = {
+            (path, method)
+            for path, path_item in v2_additive["paths"].items()
+            for method in path_item
+            if method != "parameters"
+        }
+        self.assertEqual(5, len(v2_operations))
+        self.assertTrue(v2_operations <= root_operations)
+        self.assertEqual(56, len(root_operations - v2_operations))
+        self.assertFalse(
+            {path for path, _ in root_operations - v2_operations}
+            & {path for path, _ in v2_operations}
+        )
 
     def test_release_v3_requires_exact_sixteen_gates_and_keeps_live_closed(
         self,

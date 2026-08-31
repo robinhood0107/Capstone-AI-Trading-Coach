@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "2",
+  "sourceVersion": "kis-mock-online-complete-v2",
+  "ownerUserId": "usr_demo_user",
+  "ownerScopeHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000000000000000000000000000000",
+  "observedAt": "2026-08-28T05:44:38Z",
+  "receivedAt": "2026-08-28T05:44:39Z",
+  "completeness": "COMPLETE",
+  "cashKrw": 100000000,
+  "portfolioEquityKrw": 100000000,
+  "marginRequirementKrw": 0,
+  "positions": []
+}

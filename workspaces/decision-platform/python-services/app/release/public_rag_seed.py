@@ -20,12 +20,46 @@ SOURCE_FLYWAY_SCHEMA_VERSION = "73"
 TARGET_FLYWAY_SCHEMA_VERSION = "87"
 # The sealed public Seed remains byte-bound to V87. Later additive migrations may
 # explicitly declare compatibility without rewriting that historical manifest.
-FORWARD_COMPATIBLE_TARGET_SCHEMA_VERSIONS = frozenset({"88", "89", "90"})
+FORWARD_COMPATIBLE_TARGET_SCHEMA_VERSIONS = frozenset(
+    {
+        "88",
+        "89",
+        "90",
+        "91",
+        "92",
+        "93",
+        "94",
+        "95",
+        "96",
+        "97",
+        "98",
+        "99",
+        "100",
+        "101",
+        "102",
+        "103",
+        "104",
+        "105",
+        "106",
+        "107",
+        "108",
+        "109",
+    }
+)
 EMBEDDING_DIMENSION = 1024
 EXPECTED_SOURCE_COUNT = 142
 EXPECTED_CHUNK_COUNT = 7_871
 MAX_PART_BYTES = 32 * 1024 * 1024
 PROFILE_ID = "voyage_context_4_1024_v1"
+# 공개 코퍼스를 만든 Voyage 문서 배치 계획의 출처다. V98이 넣는 값과 같아야 한다.
+VOYAGE_DOCUMENT_BATCH_PLAN_SHA256 = (
+    "a5ec40010296f0f2a8935bf283e54296972db85963f1db89c7f7d83e5fb5d66c"
+)
+VOYAGE_OFFICIAL_TOKENIZER_SHA256 = (
+    "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539"
+)
+EXPECTED_TOKEN_COUNT = 3_243_555
+EXPECTED_BATCH_COUNT = 63
 MANIFEST_NAME = "public-rag-seed.v1.manifest.json"
 PART_PREFIX = "public-rag-seed.v1.jsonl.gz.part-"
 
@@ -408,6 +442,7 @@ def import_public_seed(*, database_dsn: str, manifest_path: Path) -> str:
                 _verify_target_columns(connection, manifest)
                 if _is_matching_active_seed(connection, manifest):
                     _validate_database_invariants(connection, manifest)
+                    _ensure_voyage_document_batch_plan(connection)
                     _set_force_row_level_security(connection, enabled=True)
                     _require_force_row_level_security(connection)
                     return "NOOP_MATCHING_ACTIVE_SEED"
@@ -418,6 +453,7 @@ def import_public_seed(*, database_dsn: str, manifest_path: Path) -> str:
                     part_paths=part_paths,
                 )
                 _validate_database_invariants(connection, manifest)
+                _ensure_voyage_document_batch_plan(connection)
                 _set_force_row_level_security(connection, enabled=True)
                 _require_force_row_level_security(connection)
     except PublicRagSeedError:
@@ -641,6 +677,56 @@ def _flush_batch(
     cursor = connection.execute(statement, (payload,))
     if cursor.rowcount != len(rows):
         raise PublicRagSeedError(f"PUBLIC_RAG_SEED_RESTORE_{table_name}")
+
+
+def _ensure_voyage_document_batch_plan(connection: psycopg.Connection[Any]) -> None:
+    """코퍼스를 만든 Voyage 문서 배치의 출처 기록을 함께 남긴다.
+
+    이 행이 없으면 `reserve_s4_9_runtime_voyage_query_usage`가 활성 계획에서 공식 tokenizer
+    해시를 읽지 못해 모든 질의 예약이 55000으로 닫힌다. 코퍼스는 적재됐는데 질의 경로만
+    구조적으로 막히고, 호출자에게는 엉뚱한 이유로 보인다.
+
+    V98이 같은 행을 넣지만 그것만으로는 부족하다. 새 배포에서는 migration이 seed보다 먼저
+    돌아 코퍼스가 아직 없고, RAG 표는 전부 FORCE RLS라 migration 안에서 확인할 방법도 없다.
+    그래서 코퍼스를 실제로 들여놓는 이 자리에서 한 번 더 보장한다. 값은 V98과 같고 근거는
+    `batch-plans/public-voyage-batches.v1.json`이다. 이미 있으면 아무것도 하지 않는다.
+    """
+
+    connection.execute(
+        """
+        INSERT INTO public.rag_v2_immutable_voyage_document_batch_plans (
+          batch_plan_sha256, embedding_profile_id, official_tokenizer_sha256,
+          expected_source_count, expected_chunk_count, expected_token_count,
+          expected_batch_count, owner_scope_sha256, owner_private_ordered_group_count,
+          state, created_at, completed_at
+        )
+        SELECT
+          %s, %s, %s, %s, %s, %s, %s, NULL, 0, 'COMPLETE',
+          min(generation.created_at), max(generation.activated_at)
+        FROM public.rag_v2_immutable_component_generations AS generation
+        WHERE generation.owner_partition_key = '__PUBLIC__'
+          AND generation.embedding_profile_id = %s
+          AND generation.state = 'ACTIVE'
+          AND generation.evaluation_status = 'PASSED'
+          AND generation.activated_at IS NOT NULL
+        HAVING count(*) = 2
+           AND sum(generation.actual_source_count) = %s
+           AND sum(generation.actual_chunk_count) = %s
+        ON CONFLICT (batch_plan_sha256) DO NOTHING
+        """,
+        (
+            VOYAGE_DOCUMENT_BATCH_PLAN_SHA256,
+            PROFILE_ID,
+            VOYAGE_OFFICIAL_TOKENIZER_SHA256,
+            EXPECTED_SOURCE_COUNT,
+            EXPECTED_CHUNK_COUNT,
+            EXPECTED_TOKEN_COUNT,
+            EXPECTED_BATCH_COUNT,
+            PROFILE_ID,
+            EXPECTED_SOURCE_COUNT,
+            EXPECTED_CHUNK_COUNT,
+        ),
+    )
 
 
 def _validate_database_invariants(

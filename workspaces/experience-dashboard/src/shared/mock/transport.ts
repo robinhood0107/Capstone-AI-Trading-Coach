@@ -1,4 +1,5 @@
-import type { ApiEnvelope } from '@/shared/api/envelope';
+import { ApiFailure, type ApiEnvelope } from '@/shared/api/envelope';
+import type { AutomationPresetId } from '@/shared/api/wire';
 import * as fixtures from './fixtures';
 
 /**
@@ -25,6 +26,102 @@ function ok<T>(data: T, requestId: string, warnings: ApiEnvelope<T>['warnings'] 
 
 function fail<T>(code: string, message: string, requestId: string): ApiEnvelope<T> {
   return { success: false, requestId, data: null, warnings: [], error: { code, message } };
+}
+
+/**
+ * v2 RAG는 공통 봉투 없이 DTO를 그대로 돌려준다. mock도 같은 모양이어야 live 전환에서
+ * 화면이 깨지지 않는다. 실제 인용은 서버에만 있으므로 여기서는 v1 fixture를 v2 모양으로
+ * 옮겨 담는다. 값이 fixture라는 사실은 화면이 별도로 표시한다.
+ */
+let mockConsentGranted = false;
+
+export async function mockBareTransport<T>(
+  path: string,
+  method: string,
+  body: unknown,
+  requestId: string,
+): Promise<T> {
+  await new Promise((resolve) => setTimeout(resolve, LATENCY_MS));
+  const target = path.split('?')[0] ?? path;
+
+  if (target === '/api/v2/rag/corpus-status') {
+    return {
+      state: 'FULL_READY',
+      publicCorpusVersion: 'immutable-v2-mock',
+      privateOverlayState: 'ABSENT',
+      progressPercent: 100,
+      failureCode: null,
+    } as T;
+  }
+
+  if (target === '/api/v2/rag/consent') {
+    if (!mockConsentGranted) {
+      throw new ApiFailure(
+        { code: 'EXTERNAL_AI_CONSENT_REQUIRED', message: '외부 처리 동의가 필요합니다.' },
+        requestId,
+      );
+    }
+    return {
+      contractId: 's4-rag-v2-effective-consent-v1',
+      schemaVersion: 1,
+      consentEventId: 'rce_mock',
+      effective: true,
+      policyDigest: '0'.repeat(64),
+      processorSetDigest: '0'.repeat(64),
+      state: 'GRANTED',
+    } as T;
+  }
+
+  if (target === '/api/v2/rag/consents' && method === 'POST') {
+    const action =
+      typeof body === 'object' && body !== null
+        ? String((body as { action?: unknown }).action ?? '')
+        : '';
+    mockConsentGranted = action === 'GRANT';
+    return undefined as T;
+  }
+
+  if (target === '/api/v2/rag/ask' && method === 'POST') {
+    if (!mockConsentGranted) {
+      throw new ApiFailure(
+        { code: 'EXTERNAL_AI_CONSENT_REQUIRED', message: '외부 처리 동의가 필요합니다.' },
+        requestId,
+      );
+    }
+    const question =
+      typeof body === 'object' && body !== null
+        ? String((body as { question?: unknown }).question ?? '')
+        : '';
+    if (question.trim().length === 0) {
+      throw new ApiFailure({ code: 'RAG_VALIDATION_FAILED', message: '질문을 입력하세요.' }, requestId);
+    }
+    const answer = fixtures.ragAnswerFor(question);
+    return {
+      requestId,
+      answerId: answer.citations.length > 0 ? answer.answerId : null,
+      generationStatus: answer.citations.length > 0 ? 'RETRIEVAL_ONLY' : answer.generationStatus,
+      answer: null,
+      citationCoverage: answer.citations.length > 0 ? 1 : 0,
+      retrievalFailure: answer.citations.length === 0 && !answer.generationStatus.startsWith('BLOCKED'),
+      guardrailFlags: answer.guardrailFlags,
+      citations: answer.citations.map((citation, index) => ({
+        citationId: `cit_${index + 1}`,
+        citationKind: 'PUBLIC_WEB' as const,
+        sourceId: citation.sourceId,
+        title: citation.title,
+        canonicalUrl: citation.canonicalUrl,
+        locator: { section: citation.sectionTitle },
+        chunkRevisionId: `rag_v2_chk_mock_${index + 1}`,
+        sourceRevisionId: `srv_mock_${index + 1}`,
+        generationId: 'rgr_mock',
+      })),
+    } as T;
+  }
+
+  throw new ApiFailure(
+    { code: 'NOT_FOUND', message: `mock 경로가 정의되지 않았습니다: ${target}` },
+    requestId,
+  );
 }
 
 export async function mockTransport<T>(
@@ -55,6 +152,95 @@ export async function mockTransport<T>(
   }
 
   if (target === '/api/v1/system/health') return ok(fixtures.health, requestId) as ApiEnvelope<T>;
+
+  if (target === '/api/v2/automation/status' && method === 'GET') {
+    return ok(fixtures.automationStatus, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v2/automation/policy' && method === 'PUT') {
+    const request = body as
+      | {
+          expectedVersion?: number;
+          capitalLimitKrw?: number;
+          stopLossBps?: number;
+          takeProfitBps?: number;
+        }
+      | undefined;
+    const { capitalLimitKrw, stopLossBps, takeProfitBps } = request ?? {};
+    if (request?.expectedVersion !== fixtures.automationPolicy.version) {
+      return fail('CONFLICT', '자동운용 정책 버전이 맞지 않습니다.', requestId);
+    }
+    if (
+      typeof capitalLimitKrw !== 'number' ||
+      capitalLimitKrw < 10_000 ||
+      capitalLimitKrw > 10_000_000_000 ||
+      capitalLimitKrw % 10_000 !== 0 ||
+      typeof stopLossBps !== 'number' ||
+      stopLossBps < 100 ||
+      stopLossBps > 1500 ||
+      typeof takeProfitBps !== 'number' ||
+      takeProfitBps < 200 ||
+      takeProfitBps > 3000 ||
+      takeProfitBps <= stopLossBps
+    ) {
+      return fail('VALIDATION_ERROR', '자동운용 정책 값이 허용 범위를 벗어났습니다.', requestId);
+    }
+    const presetId: AutomationPresetId =
+      stopLossBps === 300 && takeProfitBps === 500
+        ? 'conservative'
+        : stopLossBps === 500 && takeProfitBps === 1000
+          ? 'balanced'
+          : stopLossBps === 800 && takeProfitBps === 1500
+            ? 'aggressive'
+            : 'custom';
+    const policy = {
+      ...fixtures.automationPolicy,
+      version: fixtures.automationPolicy.version + 1,
+      presetId,
+      capitalLimitKrw,
+      stopLossBps,
+      takeProfitBps,
+      updatedAt: new Date().toISOString(),
+    };
+    fixtures.replaceAutomationPolicy(policy);
+    return ok(policy, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v2/automation/arm' && method === 'POST') {
+    return fail(
+      'CONFLICT',
+      'BLOCKED_INCOMPLETE_RISK_BALANCE: 완전한 온라인 위험 잔고 근거가 없어 시작할 수 없습니다.',
+      requestId,
+    );
+  }
+
+  if (target === '/api/v2/automation/runs' && method === 'GET') {
+    return ok(fixtures.automationRuns, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v2/automation/positions' && method === 'GET') {
+    return ok(fixtures.automationPositions, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v1/automation/disarm' && method === 'POST') {
+    fixtures.automationStatus.controlState = 'DISARMED';
+    fixtures.automationStatus.projectionState = 'DISARMED';
+    fixtures.automationStatus.controlVersion += 1;
+    return ok(
+      {
+        contractId: 'automation-control.v1' as const,
+        controlState: 'DISARMED' as const,
+        projectionState: 'DISARMED' as const,
+        version: fixtures.automationStatus.controlVersion,
+        brokerageMode: fixtures.automationStatus.brokerageMode,
+        principleId: 'prc_00000000',
+        strategyId: 'strategy_00000000',
+        killSwitchActive: fixtures.automationStatus.killSwitchActive,
+        certificationStatus: fixtures.automationStatus.certificationStatus,
+      },
+      requestId,
+    ) as ApiEnvelope<T>;
+  }
 
   if (target === '/api/v1/risk/portfolio') {
     return ok(fixtures.riskPortfolio, requestId, [

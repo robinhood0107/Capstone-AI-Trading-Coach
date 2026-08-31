@@ -16,6 +16,7 @@ import yaml
 from yaml.nodes import MappingNode
 from yaml.tokens import AliasToken, AnchorToken, TagToken
 
+from app.rag.repository_root import repository_root
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
 from app.rag.source_registry import (
     RagSourceRegistry,
@@ -24,7 +25,7 @@ from app.rag.source_registry import (
     validate_canonical_https_url,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
+REPO_ROOT = repository_root()
 RAG_SOURCE_CARD_SCHEMA_PATH = REPO_ROOT / "contracts/schemas/rag-source-card-v1.schema.json"
 # 원문 카드는 Git 작업트리 밖의 사용자 로컬 데이터 경계에서만 읽는다.
 OFFICIAL_SOURCE_CARD_ROOT = (

@@ -737,6 +737,10 @@ def verify_release_ledger(
         "RAG_V2_ACTIVE_EMBEDDING_PROFILE": "voyage_context_4_1024_v1",
         "RAG_V2_CORPUS_STATE": "FULL_READY",
         "S48_ACCESSIBLE_LANES_TERMINALLY_CLASSIFIED": True,
+        # Strong LLM 판단은 RAG 설명과 다른 경로다. 권한이 0이 아니라 범위로 고정된다 —
+        # 후보 순위, 매수 차단, 정책 상한 안에서의 수량 축소 셋뿐이고 후보 생성·수량 증가·
+        # 상한 초과·주문 직접 생성은 여전히 불가능하다.
+        "STRONG_LLM_JUDGEMENT_AUTHORITY": "CANDIDATE_RANK_VETO_SIZE_ONLY",
         "TRACKED_RAW_EXTRACTED_EMBEDDINGS": 0,
         "VERTEX_SERVICE_ACCOUNT_OAUTH_GEMINI_3_5_FLASH_ONE_SHOT_VERIFIED": True,
         "VOYAGE_QUERY_USAGE": "COMMITTED",

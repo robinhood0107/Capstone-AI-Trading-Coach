@@ -248,6 +248,157 @@ export interface EvaluateOrderRequest {
   };
 }
 
+/* ------------------------------------------------------------ Automation */
+
+export type AutomationPresetId = 'conservative' | 'balanced' | 'aggressive' | 'custom';
+
+export type AutomationBlocker =
+  | 'ACCOUNT_NOT_CONFIGURED'
+  | 'POLICY_NOT_CONFIGURED'
+  | 'POLICY_VERSION_DRIFT'
+  | 'PRINCIPLE_NOT_CONFIGURED'
+  | 'REAL_TEAM_B_POINTER_INACTIVE'
+  | 'RELEASE_BINDING_UNCLEAN'
+  | 'CERTIFICATION_INVALID'
+  | 'KILL_SWITCH_ACTIVE'
+  | 'UNRESOLVED_RECONCILIATION'
+  | 'CONTROL_HALTED'
+  | 'BLOCKED_INCOMPLETE_RISK_BALANCE';
+
+export type AutomationControlState = 'DISARMED' | 'ARMED' | 'HALTED';
+export type AutomationProjectionState = AutomationControlState | 'RUNNING';
+export type AutomationBrokerageMode = 'KIS_MOCK' | 'INTERNAL_PAPER';
+export type AutomationExitReason =
+  | 'STOP_LOSS'
+  | 'MAX_HOLDING_SESSIONS'
+  | 'MODEL_SELL'
+  | 'TAKE_PROFIT';
+
+export interface AutomationPolicyV2 {
+  contractId: 'automation-policy.v1';
+  policyId: string;
+  version: number;
+  presetId: AutomationPresetId;
+  capitalLimitKrw: number;
+  stopLossBps: number;
+  takeProfitBps: number;
+  maxOpenPositions: 5;
+  maxNewOrdersPerSession: 1;
+  evaluationTimeKst: '09:30';
+  buyCutoffTimeKst: '09:40';
+  cancelTimeKst: '15:20';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AutomationStatusV2 {
+  contractId: 'automation-status.v2';
+  controlState: AutomationControlState;
+  projectionState: AutomationProjectionState;
+  controlVersion: number;
+  brokerageMode: 'KIS_MOCK';
+  accountId: string | null;
+  policy: AutomationPolicyV2 | null;
+  killSwitchActive: boolean;
+  certificationStatus: 'NOT_REQUIRED_INTERNAL_PAPER' | 'REQUIRED' | 'VALID' | 'EXPIRED' | 'INVALID';
+  openPositionCount: number;
+  unresolvedReconciliation: boolean;
+  canArm: boolean;
+  blockers: AutomationBlocker[];
+}
+
+export interface PutAutomationPolicyV2Request {
+  expectedVersion: number;
+  capitalLimitKrw: number;
+  stopLossBps: number;
+  takeProfitBps: number;
+}
+
+export interface ArmAutomationV2Request {
+  accountId: string;
+  policyId: string;
+  expectedPolicyVersion: number;
+  expectedControlVersion: number;
+}
+
+export interface AutomationRunV2 {
+  contractId: 'automation-run.v2';
+  runId: string;
+  sessionDate: string;
+  state: string;
+  brokerageMode: AutomationBrokerageMode;
+  policyId: string | null;
+  policyVersion: number | null;
+  selectedSymbol: string | null;
+  selectedSide: 'BUY' | 'SELL' | null;
+  orderQuantity: number | null;
+  filledQuantity: number | null;
+  leavesQuantity: number | null;
+  limitPriceKrw: number | null;
+  estimatedAmountKrw: number | null;
+  exitReason: AutomationExitReason | null;
+  physicalSubmitCount: number;
+  providerCalls: number;
+  startedAt: string;
+  updatedAt: string;
+}
+
+export interface AutomationRunPageV2 {
+  items: AutomationRunV2[];
+  nextCursor: string | null;
+}
+
+export interface AutomationPositionV2 {
+  contractId: 'automation-position.v2';
+  positionId: string;
+  accountId: string;
+  symbol: string;
+  quantity: number;
+  entryAverageFillPriceKrw: number;
+  entrySession: string;
+  expirySession: string;
+  policyId: string;
+  policyVersion: number;
+  stopLossBps: number;
+  takeProfitBps: number;
+  status: 'OPEN' | 'EXIT_PENDING' | 'CLOSED' | 'HALTED_MISMATCH';
+  exitReason: AutomationExitReason | null;
+  exitAverageFillPriceKrw: number | null;
+  realizedPnlKrw: number | null;
+  botOwned: true;
+  shortAllowed: false;
+  createdAt: string;
+  closedAt: string | null;
+}
+
+export interface AutomationRealizedSummaryV2 {
+  closedPositionCount: number;
+  realizedPnlKrw: number;
+  realizedGrossKrw: number;
+  winningPositionCount: number;
+  losingPositionCount: number;
+  evidenceMode: 'KIS_MOCK';
+  performanceClaimAllowed: false;
+}
+
+export interface AutomationPositionPageV2 {
+  realizedSummary: AutomationRealizedSummaryV2;
+  items: AutomationPositionV2[];
+  nextCursor: string | null;
+}
+
+export interface AutomationControlV1 {
+  contractId: 'automation-control.v1';
+  controlState: AutomationControlState;
+  projectionState: AutomationProjectionState;
+  version: number;
+  brokerageMode: AutomationBrokerageMode;
+  principleId: string;
+  strategyId: string;
+  killSwitchActive: boolean;
+  certificationStatus: AutomationStatusV2['certificationStatus'];
+}
+
 /* ---------------------------------------------------------------- Signal */
 
 export type SignalProducer = 'RULE_BASELINE' | 'LSTM' | 'LIGHTGBM' | 'HMM';
@@ -346,6 +497,102 @@ export interface RagAnswerProjection {
   citationCoverage: number;
   retrievalFailure: boolean;
   citations: RagPublicCitation[];
+  guardrailFlags: string[];
+}
+
+/* --------------------------------------------------------- RAG v2 공개 계약 */
+
+/**
+ * v2 표면은 공통 `ApiEnvelope`를 쓰지 않고 DTO를 그대로 돌려준다.
+ * 오류도 `{ code, message, requestId }` 본문이다. `apiFetchBare`가 그 차이를 흡수한다.
+ */
+export interface RagV2CorpusStatus {
+  state: string;
+  publicCorpusVersion: string;
+  privateOverlayState: string;
+  progressPercent: number;
+  failureCode: string | null;
+  /**
+   * 오늘 남은 생성 횟수. 자동 저술이 꺼져 있으면 셋 다 null이고 그때 화면은 검색 전용이다.
+   * 상한에 닿았을 때 답이 비어 보이는 대신 이유를 말할 수 있어야 한다.
+   */
+  generationDailyCap: number | null;
+  generationUsedToday: number | null;
+  generationRemaining: number | null;
+  /**
+   * 소유자가 고른 Strong LLM 설정. 쓰기는 PUT /api/v2/strong-llm/settings가 하고 읽기는
+   * 여기에 실린다. 키는 마지막 네 글자만 온다 - 그것이 "키가 들어 있다"를 말하는 데 필요한
+   * 전부다.
+   */
+  strongLlmProvider: string | null;
+  strongLlmFallbackProvider: string | null;
+  strongLlmModelId: string | null;
+  strongLlmFallbackModelId: string | null;
+  strongLlmBaseUrl: string | null;
+  strongLlmFallbackBaseUrl: string | null;
+  strongLlmAnswerLanguage: string | null;
+  strongLlmDailyGenerateCallCap: number | null;
+  strongLlmKeyLast4: string | null;
+  strongLlmFallbackKeyLast4: string | null;
+}
+
+/** 설정 쓰기 요청. apiKey는 쓰기 전용이며 어떤 응답에도 담기지 않는다. */
+export interface PutStrongLlmSettingsRequest {
+  provider: string;
+  fallbackProvider: string | null;
+  modelId: string | null;
+  fallbackModelId: string | null;
+  baseUrl: string | null;
+  fallbackBaseUrl: string | null;
+  answerLanguage: string;
+  dailyGenerateCallCap: number;
+  /** 생략하면 저장된 키를 그대로 둔다. 빈 문자열이면 지운다. */
+  apiKey?: string;
+  fallbackApiKey?: string;
+}
+
+export interface RagV2EffectiveConsent {
+  contractId: string;
+  schemaVersion: number;
+  consentEventId: string;
+  effective: boolean;
+  policyDigest: string;
+  processorSetDigest: string;
+  state: string;
+}
+
+export interface RagV2ExternalConsentRequest {
+  contractId: 's4-rag-v2-external-consent-v1';
+  schemaVersion: 1;
+  consentType: 'EXTERNAL_AI_RAG_V2';
+  action: 'GRANT' | 'REVOKE';
+  disclosureDigest: string;
+  policyDigest: string;
+  processorSetDigest: string;
+}
+
+export type RagV2CitationKind = 'PUBLIC_WEB' | 'LOCAL_DOCUMENT';
+
+export interface RagV2Citation {
+  citationId: string;
+  citationKind: RagV2CitationKind;
+  sourceId: string;
+  title: string;
+  canonicalUrl: string | null;
+  locator: { page?: number; section?: string } | null;
+  chunkRevisionId: string;
+  sourceRevisionId: string;
+  generationId: string;
+}
+
+export interface RagV2Answer {
+  requestId: string;
+  answerId: string | null;
+  generationStatus: RagGenerationStatus;
+  answer: string | null;
+  citationCoverage: number;
+  citations: RagV2Citation[];
+  retrievalFailure: boolean;
   guardrailFlags: string[];
 }
 

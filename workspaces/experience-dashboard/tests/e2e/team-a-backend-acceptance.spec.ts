@@ -8,7 +8,7 @@ import {
   type TeamAOperationId,
   type TeamARequests,
   type TeamAResult,
-} from '../../src/shared/api/generated/p1-team-a-client.v1';
+} from '../../src/shared/api/generated/p1-team-a-client.v2';
 
 const USER_ID = 'usr_demo_user';
 const PAPER_ACCOUNT_ID = 'acct_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -38,7 +38,7 @@ class AcceptanceTracker {
     const expected = Object.keys(teamAOperations).sort();
     const actual = [...this.observed.keys()].sort();
     expect(actual).toEqual(expected);
-    expect(actual).toHaveLength(33);
+    expect(actual).toHaveLength(38);
   }
 }
 
@@ -223,6 +223,36 @@ test('owner backend satisfies the exact Team A 33-operation live Spring catalog'
       idempotencyKey: key('disarm'),
     });
     automationVersion = data<Components['AutomationControl']>(disarmed.body, 'disarmAutomation').version;
+
+    const statusV2 = await call('getAutomationStatusV2', {});
+    const automationV2 = data<Components['AutomationStatusV2']>(statusV2.body, 'getAutomationStatusV2');
+    expect(automationV2.canArm).toBe(false);
+    expect(automationV2.blockers).toContain('BLOCKED_INCOMPLETE_RISK_BALANCE');
+    const policyResult = await call('putAutomationPolicyV2', {
+      body: {
+        capitalLimitKrw: 1_000_000,
+        stopLossBps: 500,
+        takeProfitBps: 1000,
+        expectedVersion: automationV2.policy?.version ?? 0,
+      },
+      idempotencyKey: key('policyv2'),
+    });
+    const policyV2 = data<Components['AutomationPolicyV2']>(policyResult.body, 'putAutomationPolicyV2');
+    expect(policyV2.presetId).toBe('balanced');
+    const blockedArm = await call('armAutomationV2', {
+      body: {
+        accountId: KIS_ACCOUNT_ID,
+        policyId: policyV2.policyId,
+        expectedPolicyVersion: policyV2.version,
+        expectedControlVersion: automationV2.controlVersion,
+      },
+      idempotencyKey: key('armv2blocked'),
+    });
+    // v2 arm은 kill switch와 activation gate를 risk balance보다 먼저 닫으므로 일반 409로 끝난다.
+    // 어떤 blocker가 열려 있는지는 status가 단일 소스이며 위에서 이미 검증했다.
+    expect(blockedArm.status).toBe(409);
+    await call('listAutomationRunsV2', { query: { size: 20 } });
+    await call('listAutomationPositionsV2', {});
 
     await call('createJournal', {
       body: {

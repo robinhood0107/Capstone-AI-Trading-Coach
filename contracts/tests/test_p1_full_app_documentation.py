@@ -53,6 +53,10 @@ TEAM_A_CURRENT_OPERATIONS = frozenset(
         ("GET", "/api/v1/risk/portfolio"),
         ("GET", "/api/v1/system/health"),
         ("GET", "/api/v2/signals/{symbol}"),
+        ("GET", "/api/v2/rag/corpus-status"),
+        ("GET", "/api/v2/rag/consent"),
+        ("POST", "/api/v2/rag/consents"),
+        ("POST", "/api/v2/rag/ask"),
     }
 )
 TEAM_A_REQUIRED_OPERATIONS = frozenset(
@@ -75,6 +79,12 @@ TEAM_A_REQUIRED_OPERATIONS = frozenset(
         ("GET", "/api/v1/automation/runs"),
         ("POST", "/api/v1/journals"),
         ("GET", "/api/v1/journals"),
+        ("GET", "/api/v2/automation/status"),
+        ("PUT", "/api/v2/strong-llm/settings"),
+        ("PUT", "/api/v2/automation/policy"),
+        ("POST", "/api/v2/automation/arm"),
+        ("GET", "/api/v2/automation/runs"),
+        ("GET", "/api/v2/automation/positions"),
     }
 )
 OPTIONAL_PRODUCT_OPERATIONS = frozenset(
@@ -89,6 +99,9 @@ OPTIONAL_PRODUCT_OPERATIONS = frozenset(
         ("GET", "/api/v1/principles/{principleId}/versions"),
         ("PATCH", "/api/v1/journals/{journalId}"),
         ("DELETE", "/api/v1/journals/{journalId}"),
+        ("GET", "/api/v2/rag/history"),
+        ("GET", "/api/v2/rag/history/{answerId}"),
+        ("DELETE", "/api/v2/rag/history/{answerId}"),
     }
 )
 OPERATOR_ONLY_OPERATIONS = frozenset(
@@ -233,7 +246,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             for method in path_item
             if method in methods
         ]
-        self.assertEqual(56, len(operations))
+        self.assertEqual(69, len(operations))
         operation_ids = [operation_id for _, _, operation_id in operations]
         self.assertTrue(
             all(
@@ -241,7 +254,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
                 for operation_id in operation_ids
             )
         )
-        self.assertEqual(56, len(set(operation_ids)))
+        self.assertEqual(69, len(set(operation_ids)))
         expected = {(method, path) for method, path, _ in operations}
 
         matrix = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX.md").read_text(
@@ -253,11 +266,11 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             matrix,
             flags=re.MULTILINE,
         )
-        self.assertEqual(56, len(rows))
+        self.assertEqual(69, len(rows))
         self.assertEqual(
-            list(range(1, 57)), sorted(int(number) for number, _, _, _ in rows)
+            list(range(1, 70)), sorted(int(number) for number, _, _, _ in rows)
         )
-        self.assertEqual(56, len({(method, path) for _, method, path, _ in rows}))
+        self.assertEqual(69, len({(method, path) for _, method, path, _ in rows}))
         self.assertEqual(expected, {(method, path) for _, method, path, _ in rows})
 
         observed_by_classification = {
@@ -285,20 +298,39 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             )
         )
         self.assertEqual(frozenset(), documented)
-        self.assertIn("p1-team-a-acceptance.v1.json", request)
-        self.assertIn("p1-team-a-client.v1.ts", request)
-        self.assertIn("기존 Dashboard 구조와 작업 결과를 보존해 주세요.", request)
+        self.assertIn("p1-team-a-acceptance.v2.json", request)
+        self.assertIn("p1-team-a-client.v2.ts", request)
+        self.assertIn("기존 source, component, route, test와 `package-lock.json`", request)
         self.assertEqual(
             [
-                "1. 기존 작업 중 보존할 것",
-                "2. 추가할 사용자 흐름과 디자인",
-                "3. 실행 명령",
-                "4. 제출물 네 가지",
-                "5. 하지 말아야 할 것",
+                # 이번 요청의 성격을 앞에서 못박는 절이다. 뒤에 있으면 읽는 쪽에서 지금 화면을
+                # 고쳐 쓰는 것을 기본값으로 읽는다.
+                "먼저 말씀드릴 것 — 이번 요청은 **화면 전체를 다시 디자인해 달라는 요청**입니다",
+                "건드리지 않으셔도 되는 것",
+                "채워 주셔야 하는 흐름",
+                "화면 톤",
+                "화면 개수와 배치",
+                "참고하실 만한 화면",
+                "API는 이만큼만",
+                "설정 화면 — 제가 붙여 둔 것을 다시 디자인해 주세요",
+                "Automation 화면만 조금 자세히",
+                "확인은 이렇게",
+                "다 되면 알려 주세요",
+                "이건 피해 주세요",
             ],
             re.findall(r"(?m)^## (.+)$", request),
         )
-        for phrase in ("Figma 또는 v0", "WCAG AA", "tabular alignment", "glassmorphism"):
+        for phrase in (
+            "Figma나 v0",
+            "WCAG AA",
+            "tabular alignment",
+            "glassmorphism",
+            "linear.app",
+            "dashboard.stripe.com",
+            "38개 catalog 밖 호출 0",
+            "BLOCKED_INCOMPLETE_RISK_BALANCE",
+            "automation-policy.spec.ts",
+        ):
             self.assertIn(phrase, request)
 
     def test_team_b_request_lists_exact_artifacts_and_owner_verification_apis(
@@ -310,21 +342,28 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertTrue(all(f"`{artifact}`" in request for artifact in TEAM_B_ARTIFACTS))
         self.assertEqual(
             [
-                "1. 기존 작업 중 보존할 것",
-                "2. 추가할 production 기능",
-                "3. 실행 명령",
-                "4. 완료 기준과 제출물",
-                "5. 하지 말아야 할 것",
+                "그대로 두시는 것",
+                "새로 붙여 주셔야 하는 것",
+                "1.1.0 Automation과의 경계",
+                # 바뀐 것이 없다는 사실도 적어야 정보다. AI 판단이 들어왔지만 Team B 계약은
+                # 그대로라는 것을 이 절이 말한다.
+                "이 요청서는 이전과 **똑같습니다**",
+                "매일 한 번 돌려 주셔야 합니다",
+                "역할 대비 부담 점검",
+                "확인은 이렇게",
+                "다 되면 알려 주세요",
+                "이건 피해 주세요",
             ],
             re.findall(r"(?m)^## (.+)$", request),
         )
-        self.assertIn("지금까지 만든 LSTM, rule baseline", request)
+        self.assertIn("LSTM, rule baseline, 데이터 처리, 백테스트 코드와 preview", request)
         self.assertIn("dev/owner-handoff/<inputManifestSha256>/handoff.json", request)
-        self.assertIn("mode `0600` regular file", request)
+        self.assertIn("mode `0600` 일반 파일", request)
         self.assertNotIn("p1-return-engine-manifest.v1.json", request)
         self.assertIn("p1-return-engine-manifest.v2.json", request)
         self.assertIn("./capstone artifact validate", request)
-        self.assertIn("provider/KIS/ECOS/yfinance/Spring/account/order/Vertex/GDELT", request)
+        self.assertIn("`sessionDate`가 **그날 거래일과 같을 때만**", request)
+        self.assertIn("provider·KIS·ECOS·yfinance·Spring·account·order·Vertex·GDELT", request)
 
     def test_team_handoff_checklist_has_no_stale_preview_or_api_edge_flow(self) -> None:
         checklist = (

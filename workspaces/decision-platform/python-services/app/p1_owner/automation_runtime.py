@@ -22,18 +22,25 @@ from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 
 from app.data._shared.canonical_json import canonical_json_bytes
+from app.p1_owner.automation_journal import AutomationJournal, notice_from_event
+from app.strong_llm.prompt import PROMPT_CONTRACT_ID
 from app.p1_owner.automation import (
     AutomationEngine,
+    AutomationError,
     AutomationInputs,
+    AutomationPolicySnapshot,
     AutomationRun,
     AutomationStore,
     BotPosition,
+    ExactOrderIntent,
     OrderReservation,
+    Quote,
     SignalCandidate,
 )
 
 _KST = ZoneInfo("Asia/Seoul")
-_OPEN_BOUNDARY = time(9, 10)
+_OPEN_BOUNDARY = time(9, 30)
+_SUBMIT_DEADLINE = time(9, 40)
 _CANCEL_BOUNDARY = time(15, 20)
 _HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
 _USER_ID = re.compile(r"^usr_[A-Za-z0-9_-]{8,96}$")
@@ -90,13 +97,60 @@ class AdvanceCommand:
     provider_call_count: int
     logical_submit_count: int
     reservation_id: str | None
+    quantity: int | None
     limit_price_krw: int | None
+    exact_intent_json: str | None
+    exact_intent_sha256: str | None
+    quote_snapshot_json: str | None
+    policy_id: str | None
+    policy_version: int | None
     position_expiry_session: date | None
+    filled_quantity: int
+    leaves_quantity: int
+    unfilled_terminated_quantity: int
+    average_fill_price_krw: int | None
+    exit_reason: str | None
+    expected_account_digest: str | None
     order_id: str | None
     provider_order_ref_hash: str | None
     result_hash: str
     event_type: str
     event_payload_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class AccountLineageAdvance:
+    """자기 체결로 설명되는 계좌 이동. 기대 투영을 여기까지 전진시킨다."""
+
+    reason: str
+    projection: dict[str, object]
+    digest: str
+    order_id: str
+    filled_quantity: int
+    average_fill_price_krw: int
+
+
+@dataclass(frozen=True, slots=True)
+class AiJudgementRecord:
+    """AI가 무엇을 바꿨는지 남길 한 줄. 확신도는 basis point 정수로만 오간다.
+
+    부동소수로 저장하면 같은 판단이 저장 왕복에서 달라지고, 그러면 "이 수량이 왜 이렇게
+    나왔나"를 재현할 수 없다.
+    """
+
+    checkpoint_version: int
+    participation: str
+    provider_id: str
+    prompt_version: str
+    confidence_bps: int | None
+    baseline_symbol: str | None
+    selected_symbol: str | None
+    vetoed_symbol_count: int
+    judge_call_count: int
+    candidate_count: int
+    quantity_before: int | None
+    quantity_after: int | None
+    verdicts_json: str
 
 
 class AutomationRuntimePort(Protocol):
@@ -106,6 +160,7 @@ class AutomationRuntimePort(Protocol):
     physical_submit_calls: int
     quote_calls: int
     vertex_calls: int
+    judge_calls: int
     submit_calls: int
     reconcile_calls: int
     cancel_calls: int
@@ -125,11 +180,25 @@ class AutomationRuntimePort(Protocol):
 
     def vertex(self, symbol: str) -> Any: ...
 
+    def judge(self, candidates: tuple[Any, ...]) -> Any: ...
+
+    # 판단을 실제로 받았을 때만 채워진다. 못 받았으면 None이고 기록은 미참여로 남는다.
+    last_judgement_json: str | None
+
     def submit(self, reservation: OrderReservation) -> Any: ...
 
     def reconcile(self, reservation: OrderReservation | None) -> Any: ...
 
     def cancel(self, reservation: OrderReservation) -> bool: ...
+
+    def account_lineage_advance(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        filled_quantity: int,
+        average_fill_price_krw: int,
+    ) -> AccountLineageAdvance | None: ...
 
     def close(self) -> None: ...
 
@@ -153,6 +222,26 @@ class PostgresAutomationRuntimeRepository:
         ):
             raise AutomationRuntimeError("AUTOMATION_RUNTIME_DSN_ROLE_INVALID")
         self._database_dsn = database_dsn
+
+    def advance_account_lineage(self, claim: RuntimeClaim, lineage: AccountLineageAdvance) -> int:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select p1_advance_automation_account_lineage_v3(%s,%s,%s,%s::jsonb,%s,%s,%s,%s)",
+                (
+                    claim.run_id,
+                    claim.claim_token_hash,
+                    lineage.reason,
+                    canonical_json_bytes(lineage.projection).decode(),
+                    lineage.digest,
+                    lineage.order_id,
+                    lineage.filled_quantity,
+                    lineage.average_fill_price_krw,
+                ),
+            )
+            row = cursor.fetchone()
+            if row is None or not isinstance(row[0], int):
+                raise AutomationRuntimeError("AUTOMATION_ACCOUNT_LINEAGE_ADVANCE_FAILED")
+            return row[0]
 
     def preflight(self) -> None:
         with self._connect() as connection, connection.cursor() as cursor:
@@ -261,7 +350,7 @@ class PostgresAutomationRuntimeRepository:
     def read_state(self, claim: RuntimeClaim) -> dict[str, Any]:
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(
-                "select p1_read_automation_runtime_state_v1(%s,%s)",
+                "select p1_read_automation_runtime_state_v2(%s,%s)",
                 (claim.run_id, claim.claim_token_hash),
             )
             row = cursor.fetchone()
@@ -273,7 +362,59 @@ class PostgresAutomationRuntimeRepository:
             raise AutomationRuntimeError("AUTOMATION_STATE_INVALID") from error
         if not isinstance(value, dict) or value.get("runId") != claim.run_id:
             raise AutomationRuntimeError("AUTOMATION_STATE_IDENTITY_MISMATCH")
+        value["aiJudgement"] = self.read_ai_judgement(claim)
         return cast(dict[str, Any], value)
+
+    def read_ai_judgement(self, claim: RuntimeClaim) -> dict[str, Any] | None:
+        """이 run이 이미 받은 판단. 없으면 None이고 그때 자동매매는 규칙만으로 돈다."""
+
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select p1_read_automation_ai_judgement_v1(%s,%s)",
+                (claim.run_id, claim.claim_token_hash),
+            )
+            row = cursor.fetchone()
+        if row is None or not isinstance(row[0], str):
+            return None
+        try:
+            value = json.loads(row[0])
+        except json.JSONDecodeError as error:
+            raise AutomationRuntimeError("AUTOMATION_AI_JUDGEMENT_INVALID") from error
+        return cast(dict[str, Any], value) if isinstance(value, dict) else None
+
+    def record_ai_judgement(self, claim: RuntimeClaim, record: AiJudgementRecord) -> None:
+        """판단 기록은 checkpoint CAS와 같은 트랜잭션에 넣지 않는다.
+
+        checkpoint 함수는 31개 인자를 받는 매매 전이 경로다. 기록이 늘 때마다 그 경로를 다시
+        쓰면 판단 기록 스키마가 주문 전이의 원자성을 흔든다. (run_id,checkpoint_version)
+        upsert라 재생돼도 같은 행 하나로 수렴하고, 기록이 실패해도 매매는 계속된다.
+        """
+
+        _require_hash(claim.claim_token_hash)
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select p1_record_automation_ai_judgement_v1("
+                "%s::text,%s::text,%s::integer,%s::text,%s::text,%s::text,%s::integer,"
+                "%s::text,%s::text,%s::integer,%s::integer,%s::integer,%s::integer,"
+                "%s::integer,%s::text)",
+                (
+                    claim.run_id,
+                    claim.claim_token_hash,
+                    record.checkpoint_version,
+                    record.participation,
+                    record.provider_id,
+                    record.prompt_version,
+                    record.confidence_bps,
+                    record.baseline_symbol,
+                    record.selected_symbol,
+                    record.vetoed_symbol_count,
+                    record.judge_call_count,
+                    record.candidate_count,
+                    record.quantity_before,
+                    record.quantity_after,
+                    record.verdicts_json,
+                ),
+            )
 
     def advance(self, command: AdvanceCommand) -> tuple[int, bool]:
         _require_hash(command.claim_token_hash)
@@ -281,10 +422,12 @@ class PostgresAutomationRuntimeRepository:
         _require_hash(command.result_hash)
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(
-                "select checkpoint_version,replayed from p1_advance_automation_checkpoint_v1("
+                "select checkpoint_version,replayed from p1_advance_automation_checkpoint_v2("
                 "%s::text,%s::text,%s::text,%s::integer,%s::text,%s::text,%s::text,"
-                "%s::text,%s::integer,%s::integer,%s::integer,%s::text,%s::bigint,%s::date,"
-                "%s::text,%s::text,%s::text,%s::text,%s::text)",
+                "%s::text,%s::integer,%s::integer,%s::integer,%s::text,%s::bigint,%s::bigint,"
+                "%s::text,%s::text,%s::text,%s::text,%s::integer,%s::date,%s::bigint,"
+                "%s::bigint,%s::bigint,%s::bigint,%s::text,%s::text,%s::text,%s::text,%s::text,"
+                "%s::text,%s::text)",
                 (
                     command.run_id,
                     command.claim_token_hash,
@@ -298,8 +441,20 @@ class PostgresAutomationRuntimeRepository:
                     command.provider_call_count,
                     command.logical_submit_count,
                     command.reservation_id,
+                    command.quantity,
                     command.limit_price_krw,
+                    command.exact_intent_json,
+                    command.exact_intent_sha256,
+                    command.quote_snapshot_json,
+                    command.policy_id,
+                    command.policy_version,
                     command.position_expiry_session,
+                    command.filled_quantity,
+                    command.leaves_quantity,
+                    command.unfilled_terminated_quantity,
+                    command.average_fill_price_krw,
+                    command.exit_reason,
+                    command.expected_account_digest,
                     command.order_id,
                     command.provider_order_ref_hash,
                     command.result_hash,
@@ -329,8 +484,13 @@ class PostgresAutomationRuntimeRepository:
 class PersistentAutomationRunner:
     """각 tick을 DB CAS 하나로 봉인하고 process restart마다 state를 다시 읽는다."""
 
-    def __init__(self, repository: PostgresAutomationRuntimeRepository) -> None:
+    def __init__(
+        self,
+        repository: PostgresAutomationRuntimeRepository,
+        journal: AutomationJournal | None = None,
+    ) -> None:
         self._repository = repository
+        self._journal = journal or AutomationJournal.from_environment()
 
     def run_tick(
         self,
@@ -357,6 +517,9 @@ class PersistentAutomationRunner:
             raise AutomationRuntimeError("AUTOMATION_TICK_WITHOUT_DURABLE_EVENT")
         reservation = run.reservation
         expiry = _new_position_expiry(store, run)
+        intent = reservation.intent if reservation is not None else None
+        quote = run.selected_quote
+        policy = run.policy_snapshot
         result_hash = _sha(canonical_json_bytes(result))
         command = AdvanceCommand(
             run_id=claim.run_id,
@@ -371,16 +534,107 @@ class PersistentAutomationRunner:
             provider_call_count=run.provider_call_count,
             logical_submit_count=run.logical_submit_count,
             reservation_id=_reservation_id(claim.run_id, reservation) if reservation else None,
+            quantity=reservation.quantity if reservation else None,
             limit_price_krw=reservation.limit_price_krw if reservation else None,
+            exact_intent_json=(intent.canonical_bytes.decode() if intent is not None else None),
+            exact_intent_sha256=intent.sha256 if intent is not None else None,
+            quote_snapshot_json=(
+                canonical_json_bytes(
+                    {
+                        "fresh": quote.fresh,
+                        "isEtfEtn": quote.is_etf_etn,
+                        "lowerLimitKrw": quote.lower_limit_krw,
+                        "priceKrw": quote.price_krw,
+                        "symbol": quote.symbol,
+                        "upperLimitKrw": quote.upper_limit_krw,
+                    }
+                ).decode()
+                if quote is not None
+                else None
+            ),
+            policy_id=policy.policy_id if policy else None,
+            policy_version=policy.version if policy else None,
             position_expiry_session=expiry,
+            filled_quantity=run.filled_quantity,
+            leaves_quantity=run.leaves_quantity,
+            unfilled_terminated_quantity=run.unfilled_terminated_quantity,
+            average_fill_price_krw=run.average_fill_price_krw,
+            exit_reason=run.exit_reason,
+            expected_account_digest=_optional_text(state.get("expectedAccountDigest")),
             order_id=port.order_id,
             provider_order_ref_hash=port.provider_order_ref_hash,
             result_hash=result_hash,
             event_type=str(event["eventType"]),
             event_payload_hash=str(event["payloadHash"]),
         )
-        self._repository.advance(command)
+        previous_state = str(state.get("state", ""))
+        checkpoint_version, _ = self._repository.advance(command)
+        if previous_state == "AI_JUDGING":
+            # 판단이 실제로 일어난 tick에서만 기록한다. 이 기록이 없으면 "AI의 판단이
+            # 반영된다"는 말을 사후에 확인할 수 없고, 그러면 권한 승격이 검증 불가능해진다.
+            self._repository.record_ai_judgement(
+                claim, _ai_judgement_record(checkpoint_version, run, port)
+            )
+        # durable하게 남은 뒤에만 알린다. 저널이 실패해도 tick은 계속된다.
+        self._journal.notify(
+            notice_from_event(
+                event,
+                run_id=claim.run_id,
+                session_date=claim.session_date.isoformat(),
+                state=run.state,
+            )
+        )
+        # 체결이 확정되면 기대 계좌 투영을 함께 전진시킨다. 그러지 않으면 다음 tick이
+        # 자기 체결을 외부 드리프트로 보고 ACCOUNT_DRIFT로 HALT하고, HALT는 stop으로 풀리지 않는다.
+        if (
+            run.state == "COMPLETED"
+            and run.filled_quantity > 0
+            and run.selected_side is not None
+            and run.selected_symbol is not None
+        ):
+            lineage = port.account_lineage_advance(
+                symbol=run.selected_symbol,
+                side=run.selected_side,
+                filled_quantity=run.filled_quantity,
+                average_fill_price_krw=_required_price(run.average_fill_price_krw),
+            )
+            if lineage is not None:
+                self._repository.advance_account_lineage(claim, lineage)
         return result
+
+
+def _ai_confidence(value: object) -> float | None:
+    """저장된 basis point를 다시 0~1로 편다. 경계 밖 값은 없는 것으로 본다."""
+
+    if not isinstance(value, dict):
+        return None
+    raw = value.get("confidenceBps")
+    if not isinstance(raw, int) or not 0 <= raw <= 10_000:
+        return None
+    return raw / 10_000
+
+
+def _ai_judgement_record(
+    checkpoint_version: int,
+    run: AutomationRun,
+    port: AutomationRuntimePort,
+) -> AiJudgementRecord:
+    verdicts = port.last_judgement_json
+    return AiJudgementRecord(
+        checkpoint_version=checkpoint_version,
+        participation=run.ai_participation,
+        provider_id=str(os.environ.get("STRONG_LLM_PROVIDER", "")).strip()[:32],
+        prompt_version=PROMPT_CONTRACT_ID,
+        confidence_bps=(None if run.ai_confidence is None else round(run.ai_confidence * 10_000)),
+        baseline_symbol=run.ai_baseline_symbol,
+        selected_symbol=run.selected_symbol,
+        vetoed_symbol_count=len(run.ai_vetoed_symbols),
+        judge_call_count=run.ai_judge_call_count,
+        candidate_count=run.ai_candidate_count,
+        quantity_before=run.ai_quantity_before,
+        quantity_after=run.ai_quantity_after,
+        verdicts_json=verdicts if isinstance(verdicts, str) and verdicts else "{}",
+    )
 
 
 class XkrxBoundaryPlanner:
@@ -524,6 +778,8 @@ def _store_from_state(
         certification_status="VALID",
         baseline_event_recorded=True,
     )
+    policy = _policy_from_state(state)
+    quote = _quote_from_state(state.get("quoteSnapshot"))
     run = AutomationRun(
         run_id=claim.run_id,
         session_date=session_date,
@@ -537,14 +793,29 @@ def _store_from_state(
         logical_submit_count=int(state["logicalSubmitCount"]),
         physical_submit_count=int(state["logicalSubmitCount"]),
         provider_call_count=int(state["providerCallCount"]),
+        exit_reason=cast(Any, _optional_text(state.get("exitReason"))),
+        selected_quote=quote,
+        filled_quantity=int(state.get("filledQuantity", 0)),
+        leaves_quantity=int(state.get("leavesQuantity", 0)),
+        unfilled_terminated_quantity=int(state.get("unfilledTerminatedQuantity", 0)),
+        average_fill_price_krw=(
+            int(state["averageFillPriceKrw"])
+            if state.get("averageFillPriceKrw") is not None
+            else None
+        ),
+        provider_exec_ref_hash=_optional_text(state.get("providerExecRefHash")),
+        policy_snapshot=policy,
     )
     reservation = state.get("reservation")
     if isinstance(reservation, dict):
+        intent_value = reservation.get("exactIntent")
+        intent = _intent_from_state(intent_value) if isinstance(intent_value, dict) else None
         run.reservation = OrderReservation(
             symbol=str(reservation["symbol"]),
             side=cast(Any, str(reservation["side"])),
             quantity=int(reservation["quantity"]),
             limit_price_krw=int(reservation["limitPriceKrw"]),
+            intent=intent,
         )
     store.runs[run.run_id] = run
     if run.logical_submit_count:
@@ -565,6 +836,22 @@ def _store_from_state(
                 created_at=_timestamp(item["createdAt"]),
                 status=str(item["status"]),
                 closed_at=_timestamp(item["closedAt"]) if item.get("closedAt") else None,
+                quantity=int(item.get("quantity", 1)),
+                entry_average_fill_price_krw=(
+                    int(item["entryAverageFillPriceKrw"])
+                    if item.get("entryAverageFillPriceKrw") is not None
+                    else None
+                ),
+                entry_notional_krw=(
+                    int(item["entryNotionalKrw"])
+                    if item.get("entryNotionalKrw") is not None
+                    else None
+                ),
+                policy_id=str(item.get("policyId", policy.policy_id)),
+                policy_version=int(item.get("policyVersion", policy.version)),
+                stop_loss_bps=int(item.get("stopLossBps", policy.stop_loss_bps)),
+                take_profit_bps=int(item.get("takeProfitBps", policy.take_profit_bps)),
+                exit_reason=cast(Any, _optional_text(item.get("exitReason"))),
             )
         )
     return store, run
@@ -575,6 +862,9 @@ def inputs_from_state(
     *,
     risk_allow: bool,
     buyable_quantity: int,
+    buyable_amount_krw: int = 9_223_372_036_854_775_807,
+    account_complete: bool | None = None,
+    account_digest_matches: bool | None = None,
 ) -> AutomationInputs:
     """V90 sanitized state와 Spring 실시간 gate를 engine input으로 엄격 변환한다."""
 
@@ -602,14 +892,85 @@ def inputs_from_state(
         principle_active_current=bool(state["principleActiveCurrent"]),
         risk_allow=risk_allow,
         kill_switch_active=bool(state["killSwitchActive"]),
-        account_complete=bool(state["accountComplete"]),
-        account_digest_matches=bool(state["accountDigestMatches"]),
+        account_complete=(
+            bool(state["accountComplete"]) if account_complete is None else account_complete
+        ),
+        account_digest_matches=(
+            bool(state["accountDigestMatches"])
+            if account_digest_matches is None
+            else account_digest_matches
+        ),
         buyable_quantity=buyable_quantity,
+        buyable_amount_krw=buyable_amount_krw,
+        open_position_market_value_krw=int(state.get("openPositionMarketValueKrw", 0)),
+        pending_buy_notional_krw=int(state.get("pendingBuyNotionalKrw", 0)),
+        principle_max_single_order_krw=int(
+            state.get("principleMaxSingleOrderKrw", 9_223_372_036_854_775_807)
+        ),
+        principle_asset_remaining_krw=int(
+            state.get("principleAssetRemainingKrw", 9_223_372_036_854_775_807)
+        ),
+        policy=_policy_from_state(state),
         no_open_order=bool(state["noOpenOrder"]),
         unfinished_previous_order=bool(state["unfinishedPreviousOrder"]),
+        news_veto_provider_bound=state.get("newsVetoProviderBound") is True,
+        ai_judgement_provider_bound=state.get("aiJudgementProviderBound") is True,
+        ai_confidence=_ai_confidence(state.get("aiJudgement")),
         manual_position_symbols=frozenset(cast(list[str], manual)),
         signals=signals,
     )
+
+
+def _policy_from_state(state: dict[str, Any]) -> AutomationPolicySnapshot:
+    value = state.get("policy")
+    if not isinstance(value, dict):
+        raise AutomationRuntimeError("AUTOMATION_POLICY_INVALID")
+    try:
+        return AutomationPolicySnapshot(
+            policy_id=str(value["policyId"]),
+            version=int(value["version"]),
+            capital_limit_krw=int(value["capitalLimitKrw"]),
+            stop_loss_bps=int(value["stopLossBps"]),
+            take_profit_bps=int(value["takeProfitBps"]),
+            preset=cast(Any, str(value["preset"])),
+            max_open_positions=int(value.get("maxOpenPositions", 5)),
+        )
+    except (KeyError, TypeError, ValueError, AutomationError) as error:
+        raise AutomationRuntimeError("AUTOMATION_POLICY_INVALID") from error
+
+
+def _intent_from_state(value: dict[str, Any]) -> ExactOrderIntent:
+    try:
+        return ExactOrderIntent(
+            symbol=str(value["symbol"]),
+            side=cast(Any, str(value["side"])),
+            order_type=cast(Any, str(value["orderType"])),
+            quantity=int(value["quantity"]),
+            estimated_price=int(value["estimatedPrice"]),
+            estimated_amount=int(value["estimatedAmount"]),
+            timeframe=cast(Any, str(value["timeframe"])),
+            strategy_id=str(value["strategyId"]),
+        )
+    except (KeyError, TypeError, ValueError, AutomationError) as error:
+        raise AutomationRuntimeError("AUTOMATION_EXACT_INTENT_INVALID") from error
+
+
+def _quote_from_state(value: object) -> Quote | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise AutomationRuntimeError("AUTOMATION_QUOTE_SNAPSHOT_INVALID")
+    try:
+        return Quote(
+            symbol=str(value["symbol"]),
+            price_krw=int(value["priceKrw"]),
+            lower_limit_krw=int(value["lowerLimitKrw"]),
+            upper_limit_krw=int(value["upperLimitKrw"]),
+            fresh=bool(value["fresh"]),
+            is_etf_etn=bool(value["isEtfEtn"]),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise AutomationRuntimeError("AUTOMATION_QUOTE_SNAPSHOT_INVALID") from error
 
 
 def _new_position_expiry(store: AutomationStore, run: AutomationRun) -> date | None:
@@ -687,3 +1048,9 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _required_price(value: int | None) -> int:
+    if value is None or value <= 0:
+        raise AutomationRuntimeError("AUTOMATION_FILL_PRICE_MISSING")
+    return value

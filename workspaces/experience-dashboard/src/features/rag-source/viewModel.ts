@@ -1,35 +1,53 @@
 /**
  * 금융 가이드 ViewModel.
  *
- *  1) POST /api/v1/rag/ask                            — 답변, 출처 연결률, 가드레일 (answerId 발급)
- *  2) GET  /api/v1/dashboard/rag-sources/{answerId}   — sanitized 출처 ViewModel (권위)
- *  3) GET  /api/v1/rag/sources                        — 전체 출처 registry
+ *  1) GET  /api/v2/rag/corpus-status   — 코퍼스 준비 상태
+ *  2) GET  /api/v2/rag/consent         — 외부 처리 동의 상태
+ *  3) POST /api/v2/rag/consents        — 동의 기록/철회
+ *  4) POST /api/v2/rag/ask             — 실제 검색 결과와 인용
+ *  5) GET  /api/v1/rag/sources         — 전체 출처 registry (링크 보강용)
+ *
+ * v1 ask는 60문항 고정 fixture라 DB를 읽지 않는다. v2는 같은 화면에 실제 인용을 준다.
+ * v2는 인용을 응답에 직접 담으므로 dashboard-rag-sources 두 번째 홉이 필요 없다.
  *
  * RAG는 설명 기능이다. 매수·매도 지시를 하지 않으며 주문 판단에 영향을 주지 않는다.
  */
 import { api } from '@/shared/api/endpoints';
 import { safeExternalUrl } from '@/shared/api/session';
 import type {
-  DashboardRagSourcesView,
-  RagAnswerProjection,
   RagGenerationStatus,
-  RagSourceClassification,
   RagSourceResponse,
+  RagV2Answer,
+  RagV2Citation,
+  RagV2CorpusStatus,
 } from '@/shared/api/wire';
 import { ready, type ViewState } from '@/shared/lib/viewState';
+
+/**
+ * 동의 화면이 보여 주는 문장 그대로의 해시를 기록한다. 문장을 고치면 해시가 달라지고,
+ * 사용자가 무엇에 동의했는지가 기록과 어긋나지 않는다.
+ */
+export const EXTERNAL_DISCLOSURE =
+  '질문은 외부 임베딩 제공자(Voyage AI)로 전송되어 검색 벡터로 변환됩니다. ' +
+  '보유 종목, 잔고, 주문 내역은 전송되지 않습니다.';
+export const EXTERNAL_POLICY =
+  '전송된 질문은 답변 생성 목적으로만 사용되며 사용량 원장에 요청 1건으로 기록됩니다. ' +
+  '동의는 언제든 철회할 수 있고 철회 후에는 외부 전송이 즉시 닫힙니다.';
+export const EXTERNAL_PROCESSORS = 'VOYAGE_AI';
 
 export interface SourceItem {
   sourceId: string;
   title: string;
-  classification: RagSourceClassification;
+  /** v2 인용은 공개 웹 문서와 소유자 로컬 문서를 구분한다. */
+  citationKind: RagV2Citation['citationKind'];
   summary: string;
-  /** registry에서 찾아낸 원문 링크. https가 아니면 null이다. */
+  /** 인용이 준 원문 링크. https가 아니면 null이다. */
   href: string | null;
   institution: string | null;
 }
 
 export interface RagAnswerView {
-  answerId: string;
+  answerId: string | null;
   generationStatus: RagGenerationStatus;
   statusHeadline: string;
   statusDetail: string;
@@ -41,6 +59,8 @@ export interface RagAnswerView {
   expandableSources: SourceItem[];
   sourcesUnavailableReason: string | null;
 }
+
+const TOP_SOURCE_COUNT = 3;
 
 const STATUS_COPY: Record<RagGenerationStatus, { headline: string; detail: string }> = {
   ANSWERED: {
@@ -70,20 +90,60 @@ const STATUS_COPY: Record<RagGenerationStatus, { headline: string; detail: strin
   },
 };
 
-function enrich(
-  items: DashboardRagSourcesView['topSources'],
+function locatorText(citation: RagV2Citation): string {
+  const locator = citation.locator;
+  if (locator?.page !== undefined) return `${locator.page}쪽`;
+  if (locator?.section) return locator.section;
+  return '';
+}
+
+function toSourceItems(
+  citations: RagV2Citation[],
   registry: Map<string, RagSourceResponse>,
 ): SourceItem[] {
-  return items.map((item) => {
-    const card = registry.get(item.sourceId);
+  return citations.map((citation) => {
+    const card = registry.get(citation.sourceId);
     return {
-      sourceId: item.sourceId,
-      title: item.title,
-      classification: item.classification,
-      summary: item.summary,
-      href: safeExternalUrl(card?.canonicalUrl),
+      sourceId: `${citation.citationId} · ${citation.sourceId}`,
+      title: citation.title,
+      citationKind: citation.citationKind,
+      summary: locatorText(citation),
+      href: safeExternalUrl(citation.canonicalUrl ?? card?.canonicalUrl),
       institution: card?.institution ?? null,
     };
+  });
+}
+
+/** 코퍼스 준비 상태. FULL_READY가 아니면 질문 자체를 열지 않는다. */
+export async function loadCorpusStatus(): Promise<ViewState<RagV2CorpusStatus>> {
+  return ready(await api.ragV2CorpusStatus());
+}
+
+/** 동의 상태. 미동의는 409로 오므로 예외가 아니라 false로 접는다. */
+export async function loadConsentGranted(): Promise<boolean> {
+  try {
+    const consent = await api.ragV2Consent();
+    return consent.effective;
+  } catch {
+    return false;
+  }
+}
+
+async function digest(text: string): Promise<string> {
+  const bytes = new TextEncoder().encode(text);
+  const hash = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function recordConsent(action: 'GRANT' | 'REVOKE'): Promise<void> {
+  await api.ragV2RecordConsent({
+    contractId: 's4-rag-v2-external-consent-v1',
+    schemaVersion: 1,
+    consentType: 'EXTERNAL_AI_RAG_V2',
+    action,
+    disclosureDigest: await digest(EXTERNAL_DISCLOSURE),
+    policyDigest: await digest(EXTERNAL_POLICY),
+    processorSetDigest: await digest(EXTERNAL_PROCESSORS),
   });
 }
 
@@ -91,38 +151,23 @@ export async function askRag(
   question: string,
   answerMode: 'CONCISE' | 'DETAILED',
 ): Promise<ViewState<RagAnswerView>> {
-  const answerResult = await api.ragAsk({ question, answerMode });
-  const answer: RagAnswerProjection = answerResult.data;
+  const answer: RagV2Answer = await api.ragV2Ask({
+    question,
+    answerMode,
+    // 서버는 1~6개의 허용 주제를 요구한다. 이 화면은 개념·위험 설명이 목적이다.
+    topics: ['FINANCIAL_ENGINEERING', 'RISK', 'METHODOLOGY', 'PRODUCT_RISK'],
+  });
 
-  // 출처 registry는 링크 보강용이다. 실패해도 답변 자체는 보여준다.
+  // 출처 registry는 기관명 보강용이다. 실패해도 인용 자체는 그대로 보여준다.
   const registry = new Map<string, RagSourceResponse>();
   try {
     const list = await api.ragSources();
     for (const card of list.data.items) registry.set(card.sourceId, card);
   } catch {
-    /* 링크 없이 진행한다 */
+    /* 기관명 없이 진행한다 */
   }
 
-  let topSources: SourceItem[] = [];
-  let expandableSources: SourceItem[] = [];
-  let sourcesUnavailableReason: string | null = null;
-
-  if (answer.citations.length === 0) {
-    sourcesUnavailableReason = '이 답변에 연결된 출처가 없습니다.';
-  } else {
-    try {
-      const sources = await api.dashboardRagSources(answer.answerId);
-      if (sources.data.view) {
-        topSources = enrich(sources.data.view.topSources, registry);
-        expandableSources = enrich(sources.data.view.expandableSources, registry);
-      } else {
-        sourcesUnavailableReason = '이 답변에 연결된 출처가 없습니다.';
-      }
-    } catch {
-      sourcesUnavailableReason = '출처 목록을 불러오지 못했습니다. 답변 내용만 표시합니다.';
-    }
-  }
-
+  const items = toSourceItems(answer.citations, registry);
   const copy = STATUS_COPY[answer.generationStatus];
   const answered = answer.generationStatus === 'ANSWERED';
 
@@ -136,9 +181,10 @@ export async function askRag(
     citationCoverage: answered ? answer.citationCoverage : null,
     retrievalFailure: answer.retrievalFailure,
     guardrailFlags: answer.guardrailFlags,
-    topSources,
-    expandableSources,
-    sourcesUnavailableReason,
+    topSources: items.slice(0, TOP_SOURCE_COUNT),
+    expandableSources: items.slice(TOP_SOURCE_COUNT),
+    sourcesUnavailableReason:
+      items.length === 0 ? '이 질문에 연결된 출처가 없습니다.' : null,
   });
 }
 

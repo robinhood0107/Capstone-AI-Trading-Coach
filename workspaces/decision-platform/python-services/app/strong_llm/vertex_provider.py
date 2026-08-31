@@ -72,6 +72,9 @@ class VertexProviderSettings:
 class LangChainVertexProvider:
     """LangChain은 provider message와 native schema를 관리하며 permit·budget은 host가 강제한다."""
 
+    provider_id = "vertex"
+    supports_google_search = True
+
     def __init__(self, request: RunRequest, settings: VertexProviderSettings) -> None:
         credentials = service_account.Credentials.from_service_account_file(  # type: ignore[no-untyped-call]
             str(settings.service_account_path), scopes=[_VERTEX_SCOPE]
@@ -88,7 +91,9 @@ class LangChainVertexProvider:
             "max_retries": 0,
             # Google grounding은 검색 왕복을 포함하므로 host 60초 deadline 안에서 최대 55초만 기다린다.
             "timeout": settings.timeout_seconds,
-            "max_output_tokens": 4096,
+            # 통제는 상한이 아니라 호출 횟수로 한다. 상한을 좁게 두면 긴 근거를 종합하는
+            # 답이 문장 중간에서 잘리고, 그 잘린 답은 계약 위반으로 통째로 버려진다.
+            "max_output_tokens": 32_768,
             # Gemini 3 reasoning token도 output cap을 사용하므로 RAG 종합은 low로 bounded한다.
             "thinking_level": settings.thinking_level,
             "temperature": None,
@@ -243,7 +248,12 @@ def _vertex_response_schema() -> dict[str, object]:
         "properties": {
             "basis": {
                 "type": "string",
-                "enum": ["EVIDENCE", "MODEL_KNOWLEDGE", "INSUFFICIENT_EVIDENCE"],
+                "enum": [
+                    "EVIDENCE",
+                    "EVIDENCE_WITH_REASONING",
+                    "MODEL_KNOWLEDGE",
+                    "INSUFFICIENT_EVIDENCE",
+                ],
             },
             "answer": {"type": "string", "nullable": True},
             "sentences": {"type": "array", "items": sentence},

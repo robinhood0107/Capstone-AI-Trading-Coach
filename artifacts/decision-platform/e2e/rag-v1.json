@@ -1,0 +1,36 @@
+{
+  "contractId": "p1-rag-v1-e2e.v1",
+  "steps": [
+    {
+      "detail": "HTTP 200 answerId=있음 상태=RETRIEVAL_ONLY 이력 17→18 code=None",
+      "name": "v1 질문과 이력 적재",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "목록 HTTP 200 포함=True 단건 HTTP 200 삭제 HTTP 204 삭제후 HTTP 404",
+      "name": "v1 이력 조회와 삭제",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 200 저장된 값=True code=None",
+      "name": "v1 답변 피드백",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 200 0건 (등록된 출처가 0건인 것과 열리지 않는 것은 다르다)",
+      "name": "v1 출처 목록",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "v1 HTTP 200 5건 v2 HTTP 200 0건 겹침=0건 (겹치면 두 이력이 한 표를 쓰고 있다는 뜻이다)",
+      "name": "v1과 v2 이력 분리",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "잔여 bundles=0 runs=0 orders=0 principles=0 journal=0 calendar=0",
+      "name": "정리",
+      "verdict": "PASS"
+    }
+  ],
+  "verdict": "PASS"
+}

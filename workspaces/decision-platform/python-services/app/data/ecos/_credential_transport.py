@@ -4,7 +4,8 @@ import json
 import math
 import time
 from collections.abc import Callable
-from pathlib import Path
+
+from app.data._shared.repository_root import repository_root
 from typing import Protocol
 from urllib.parse import quote, quote_plus
 from uuid import uuid4
@@ -19,7 +20,7 @@ from app.data.ecos.policy import (
     validate_keyless_service_path,
 )
 
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
+_REPOSITORY_ROOT = repository_root(__file__, 6)
 _ROOT_ENV_FILE = _REPOSITORY_ROOT / ".env"
 _DEFAULT_MAX_RESPONSE_BYTES = 1024 * 1024
 _MAX_DECODED_JSON_NODES = 100_000

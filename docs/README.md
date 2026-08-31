@@ -1,10 +1,13 @@
 # 문서 색인과 현재 상태
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
-> **1.0.0 current authority (2026-08-27):** Owner-First Phase A는 `OWNER_HANDOFF_READY=TRUE`지만
-> Team A/B actual 결과와 physical/soak gate가 남아 GitHub `1.0.0` Release는 없다. 현재 hard/non-blocking gate와 증거 규칙은
-> [P1 Owner-First full-app v3 권위와 게이트](decision-platform/P1_1_0_0_OWNER_FIRST_V3_권위_및_게이트.md)가 소유한다.
-> 아래 과거 P1/placeholder marker는 해당 시점의 기록이며 v3 완료 증거가 아니다.
+> **현재 상태 (2026-08-31):** Owner-First Phase A는 `OWNER_HANDOFF_READY=TRUE`지만 Team A/B
+> 실제 산출물과 physical/soak 게이트가 남아 GitHub `1.0.0` Release는 없다. 하드·비차단 게이트와
+> 증거 규칙은
+> [P1 Owner-First full-app v3 권위와 게이트](decision-platform/P1_1_0_0_OWNER_FIRST_V3_권위_및_게이트.md)가
+> 소유한다. Strong LLM 판단은 이 문서의 현재 상태 표가 정한 범위 안에서만 매수 결정에 닿고
+> (`STRONG_LLM_JUDGEMENT_AUTHORITY=CANDIDATE_RANK_VETO_SIZE_ONLY`), RAG 설명 경로의 권한은
+> 여전히 0이다(`RAG_DECISION_SIGNAL_ORDER_AUTHORITY=0`).
 <!-- P1_FULL_APP_V3_AUTHORITY_END -->
 
 이 파일은 공개 문서의 단일 상태 권위다. 기능의 상세 계약은
@@ -12,6 +15,13 @@
 [API 명세서](API_명세서.md), 기계 판독 계약은 [contracts](../contracts/README.md)를 따른다.
 과거 시점의 SHA, 실행 영수증, 연구 결과와 `contracts/changes/**` 기록은 재현 자료이며 현재 상태를
 덮어쓰지 않는다.
+
+`docs/handoff/**`도 같다. 그 문서들은 `1.0.0` owner handoff 시점의 기록이라 동결돼 있고, 안에
+적힌 `exact-56 Spring API`와 `exact-33 acceptance`는 **그 시점의 수**다. 지금 값은 root
+OpenAPI `exact-69`, Team A acceptance `exact-38`이며 `./capstone team-a acceptance`가 그
+38개를 실제로 검증한다. 외부 팀이 무엇을 구현해야 하는지는 handoff 문서가 아니라
+[Team A 요청서](decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md)와
+[Team B 요청서](decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md)가 정한다.
 
 ## 상태 용어
 
@@ -34,6 +44,8 @@
 | DB async | `VERIFIED_ACTIVE` | 기본 adapter. domain row와 outbox만 한 DB transaction에 기록 |
 | Kafka async | `VERIFIED_OPTIONAL` | 검증된 local opt-in 경로. production hard dependency가 아니며 자동 fallback 없음 |
 | S7/S8 offline demo | `VERIFIED_ACTIVE` | synthetic projection E2E이며 실제 Return Engine 성과로 승격하지 않음 |
+| Strong LLM 판단 | `VERIFIED_ACTIVE` | `STRONG_LLM_JUDGEMENT_AUTHORITY=CANDIDATE_RANK_VETO_SIZE_ONLY`. 후보 순위, 매수 차단, 정책 상한 안의 수량 축소 셋뿐이며 배분은 코드가 계산 |
+| Strong LLM provider 선택 | `VERIFIED_OPTIONAL` | 사용자가 화면에서 1차·2차를 고른다. 둘 다 답하지 못하면 `AI_NOT_PARTICIPATED`를 남기고 규칙대로 진행 |
 | Public RAG | `VERIFIED_ACTIVE` | `FULL_READY`, `voyage_context_4_1024_v1`, sources 142, chunks 7,871, document batches 63/63 |
 | Owner library | `VERIFIED_OPTIONAL` | 사용자가 Voyage 또는 local BGE를 명시적으로 선택. default, 자동 판단, fallback 없음 |
 | LightGBM | `RESEARCH_ONLY` | production Signal은 항상 `ABSTAIN/MISSING_EVIDENCE` |
@@ -48,9 +60,16 @@
 Public RAG의 위 상태는 보존된 완료 결과다. 기존 Voyage 실행이나 public BGE inference를 다시 호출하지
 않는다. Public BGE inference는 0이며 owner BGE만 사용자가 고른 local 실행이다.
 
-RAG, news, analyst, MCP, LLM은 설명과 근거만 만든다. Decision, Signal, RiskDecision, order,
-decision hash를 생성하거나 변경할 권한이 없다. Provider, live account, live order는 별도 승인 전까지
-호출하지 않는다.
+RAG, news, analyst, MCP는 설명과 근거만 만든다. Decision, Signal, RiskDecision, order,
+decision hash를 생성하거나 변경할 권한이 없다(`RAG_DECISION_SIGNAL_ORDER_AUTHORITY=0`).
+
+Strong LLM 판단은 그 넷과 다른 경로다. 위 표가 적은 범위 안에서만 매수 결정에 닿으며, 그 범위는
+후보 순위·매수 차단·정책 상한 안의 수량 축소 셋으로 닫혀 있다. 후보 생성, 수량 증가, 상한 초과,
+주문 직접 생성은 코드와 DB 제약이 함께 막는다. 근거는
+[ADR-039](adr/ADR-039-strong-llm-judgement-authority.md)와
+[AI 판단 경로 검증](test/P1_AI_판단.md)이다.
+
+live account와 live order는 별도 승인 전까지 호출하지 않는다.
 
 ## 단순한 E2E 신뢰 경계
 
@@ -167,6 +186,7 @@ GDELT_OUTBOUND_CALLS=0
 GDELT_OFFLINE_REFERENCE_ONLY=1
 NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED
 RAG_NEWS_ANALYST_DECISION_SIGNAL_ORDER_AUTHORITY=0
+STRONG_LLM_JUDGEMENT_AUTHORITY=CANDIDATE_RANK_VETO_SIZE_ONLY
 PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES
 HISTORICAL_TEAM_ROLE_CATALOG=TEAM_B:RETURN_ENGINE|LSTM|RULE_BASELINE|BACKTEST;TEAM_A:EXPERIENCE_DASHBOARD
 HISTORICAL_TEAM_ROLE_STATUS=HISTORICAL_SUPERSEDED

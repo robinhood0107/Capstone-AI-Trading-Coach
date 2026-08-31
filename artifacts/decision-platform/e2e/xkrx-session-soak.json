@@ -1,0 +1,36 @@
+{
+  "contractId": "p1-xkrx-session-soak-e2e.v1",
+  "steps": [
+    {
+      "detail": "관측 세션 수=1 관측 폐루프 수=3 릴리스 계약의 THREE_XKRX_SESSION_SOAK은 연속 세 거래일을 요구하며 그 증거는 사흘이 지나야 만들어진다. 여기서는 하루 안의 연속 구동만 본다",
+      "name": "이것은 3거래일 soak이 아니다",
+      "verdict": "INFO"
+    },
+    {
+      "detail": "세션=2026-08-31 기록=3개 요구=3개 closed-loop-005930-max-holding-20260831.json, closed-loop-005930-model-sell-20260831.json, closed-loop-ai-rerank-20260831.json",
+      "name": "같은 세션에서 폐루프를 세 번 이상 돌렸다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "실패=없음 (하나라도 중단되면 연속 구동이 아니다)",
+      "name": "전부 SUCCESS로 끝났다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "원복되지 않은 기록=없음 (잔여 포지션이 남으면 다음 관측이 그것을 물려받는다)",
+      "name": "매번 계좌가 원복됐다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "주문번호가 온전하지 않은 기록=없음",
+      "name": "매수와 매도가 실제 주문번호를 남겼다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "사유 분포={'MAX_HOLDING_SESSIONS': 2, 'MODEL_SELL': 1} (한 종류뿐이면 다른 청산 경로는 이 세션에서 관측되지 않은 것이다)",
+      "name": "청산 사유가 한 종류에 몰려 있지 않다",
+      "verdict": "PASS"
+    }
+  ],
+  "verdict": "PASS"
+}

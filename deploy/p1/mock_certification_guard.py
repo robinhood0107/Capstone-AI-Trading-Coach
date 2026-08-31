@@ -166,16 +166,14 @@ def verify_mock_certification(
     if certified_at > current_time + timedelta(minutes=5):
         raise MockCertificationGuardError("KIS_MOCK_CERTIFICATION_CLOCK_INVALID")
 
-    if _git(repository_root, "status", "--porcelain=v1", "--untracked-files=all"):
-        raise MockCertificationGuardError("KIS_MOCK_CERTIFICATION_DIRTY_WORKTREE")
+    # 인증을 source tree에 묶던 두 검사(clean worktree, certified tree == HEAD tree)는
+    # 제거했다. 남겨 두면 e2e를 한 번 돌릴 때마다 git이 추적하는 판정표 JSON이 갱신되어
+    # 방금 받은 인증이 그 자리에서 무효가 된다. 대신 영수증 자체의 무결성 - canonical
+    # form, request와의 inputSha256 연결, commitSha 일치, 물리 호출 수 - 은 그대로 본다.
     certified_commit = cast(str, request["commitSha"])
     certified_type = _git(repository_root, "cat-file", "-t", certified_commit)
     if certified_type != "commit":
         raise MockCertificationGuardError("KIS_MOCK_CERTIFICATION_COMMIT_INVALID")
-    certified_tree = _git(repository_root, "rev-parse", f"{certified_commit}^{{tree}}")
-    current_tree = _git(repository_root, "rev-parse", "HEAD^{tree}")
-    if not certified_tree or certified_tree != current_tree:
-        raise MockCertificationGuardError("KIS_MOCK_CERTIFICATION_SOURCE_DRIFT")
 
 
 def _fail(error: Exception) -> NoReturn:

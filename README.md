@@ -236,7 +236,8 @@ Team A와 Team B는 `mock configure`나 `mock certify`를 실행하지 않습니
 5. PR 병합, main CI, 새 폴더에서 `git pull` 재현을 확인한 뒤에만 최종 배포를 승인합니다.
 
 이미 닫힌 것: KIS 모의 인증, 실체결 왕복, 청산 사유 네 가지, 연속 세 세션 구동, 실제 Vertex
-판단이 후보 1등을 바꾼 run, Team A acceptance(operation 38), e2e 12종, 전 게이트.
+판단이 후보 1등을 바꾼 run, Team A acceptance(operation 38), e2e 13종, 수집기 표면
+(KRX·ECOS 실호출), 전 게이트.
 
 ```text
 CODEX_SECURITY_DEEP_SCAN=NOT_RUN_USER_SCOPED_OUT

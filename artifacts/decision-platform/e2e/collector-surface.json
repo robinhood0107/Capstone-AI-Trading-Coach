@@ -1,0 +1,36 @@
+{
+  "contractId": "p1-collector-surface-e2e.v1",
+  "steps": [
+    {
+      "detail": ".env에서 47개 키를 현재 프로세스에만 올렸다 (값은 기록하지 않는다)",
+      "name": "환경 파일을 읽었다",
+      "verdict": "INFO"
+    },
+    {
+      "detail": "확인한 키=['KRX_OPENAPI_AUTH_KEY', 'ECOS_API_KEY', 'OPENDART_API_KEY'] 비었거나 너무 짧은 키=없음 (값은 찍지 않는다)",
+      "name": "수집기 자격증명이 있다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "as-of=2026-08-28 service=stk_bydd_trd exit=1 물리 시도 0 - 외부로 나가기 전에 별도 온라인 승인 게이트가 닫았다 :: source=krx operation=service_probe code=collection_failed service=stk_bydd_trd physical_attempts=0",
+      "name": "KRX OPEN API 승인 서비스가 응답한다",
+      "verdict": "INFO"
+    },
+    {
+      "detail": "exit=1 물리 시도 0 - 외부로 나가기 전에 별도 온라인 승인 게이트가 닫았다 :: {\"code\":\"preflight_failed\",\"operation\":\"registry_preflight\",\"physicalAttemptCount\":0,\"source\":\"ecos\",\"status\":\"failed\"}",
+      "name": "ECOS registry preflight가 통과한다",
+      "verdict": "INFO"
+    },
+    {
+      "detail": "exit=0  (일일 호출 예산을 쓰지 않으려고 공시 조회는 하지 않는다)",
+      "name": "OpenDART 설정이 자격증명을 읽는다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "GDELT는 연구 상태로 분리돼 있어 이 러너가 호출하지 않는다. 이 경계를 바꾸려면 소유자에게 먼저 묻는다. `gdelt-aggregate-collect`는 이 판정표 어디에도 실행 기록을 남기지 않는다",
+      "name": "GDELT는 부르지 않는다",
+      "verdict": "INFO"
+    }
+  ],
+  "verdict": "PASS"
+}

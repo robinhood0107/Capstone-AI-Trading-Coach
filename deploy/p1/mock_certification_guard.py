@@ -38,13 +38,18 @@ class MockCertificationGuardError(RuntimeError):
 
 
 def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        allow_nan=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+    """서비스가 쓰는 canonical form과 동일해야 한다. 그 형식은 끝에 개행을 포함한다."""
+
+    return (
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        + b"\n"
+    )
 
 
 def _read_owner_json(path: Path) -> tuple[dict[str, object], bytes]:

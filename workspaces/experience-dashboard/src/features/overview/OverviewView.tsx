@@ -7,9 +7,10 @@ import { Panel } from '@/shared/ui/Panel';
 import { Numeric, Delta } from '@/shared/ui/Numeric';
 import { useResource } from '@/shared/lib/useResource';
 import { api } from '@/shared/api/endpoints';
-import { withFreshness } from '@/shared/lib/viewState';
+import { ready, withFreshness } from '@/shared/lib/viewState';
 import { formatKrw, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 import type { PortfolioRisk } from '@/shared/api/wire';
+import { AUTOMATION_STATE_LABELS } from '@/features/automation/policy';
 
 const SHORTCUTS = [
   { href: '/principles', label: '내 원칙 정하기', detail: '먼저 기준을 정해야 주문 검토가 동작합니다.' },
@@ -88,11 +89,7 @@ export function OverviewView() {
                 )}
               </Tile>
               <Tile label="자동주문">
-                <span
-                  className={`text-[15px] font-medium ${risk.killSwitchActive ? 'text-block' : 'text-allow'}`}
-                >
-                  {risk.killSwitchActive ? '정지됨' : '작동 중'}
-                </span>
+                <AutomationStatusTile />
               </Tile>
             </div>
           </Panel>
@@ -119,7 +116,39 @@ function Tile({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="bg-panel px-4 py-4">
       <p className="font-mono text-eyebrow uppercase text-faint">{label}</p>
-      <p className="mt-2">{children}</p>
+      <div className="mt-2">{children}</div>
     </div>
+  );
+}
+
+function AutomationStatusTile() {
+  const { state, reload } = useResource(async () => {
+    const { data } = await api.automationStatusV2();
+    return ready(data, data.policy?.updatedAt ?? null);
+  }, []);
+
+  return (
+    <AsyncBoundary state={state} onRetry={reload}>
+      {(status) => {
+        const tone =
+          status.projectionState === 'RUNNING'
+            ? 'text-allow'
+            : status.projectionState === 'HALTED'
+              ? 'text-block'
+              : status.projectionState === 'ARMED'
+                ? 'text-warn'
+                : 'text-muted';
+        return (
+          <div>
+            <Link href="/automation" className={`text-[15px] font-medium ${tone}`}>
+              {AUTOMATION_STATE_LABELS[status.projectionState]}
+            </Link>
+            {status.killSwitchActive ? (
+              <p className="mt-1 text-[11px] text-block">Kill Switch 작동 중</p>
+            ) : null}
+          </div>
+        );
+      }}
+    </AsyncBoundary>
   );
 }

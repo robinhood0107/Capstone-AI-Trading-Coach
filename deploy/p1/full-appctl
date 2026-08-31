@@ -36,6 +36,7 @@ EOF
 
 compose() {
   [[ -n $DOCKER_BIN ]] || die MISSING_COMMAND_docker
+  enable_rag_by_default
   export P1_OPERATOR_UID=${P1_OPERATOR_UID:-$(id -u)}
   export P1_KIS_MOCK_RUNTIME_DIR=${P1_KIS_MOCK_RUNTIME_DIR:-$STATE_DIR/mock}
   local args=("$DOCKER_BIN" compose --project-name "$PROJECT_NAME")
@@ -111,11 +112,20 @@ upgrade_state() {
       'KIS_MOCK_APP_SECRET=DISABLED00' \
       'KIS_MOCK_ACCOUNT_NO=00000000-00' \
       'KIS_MOCK_BOUND_ACCOUNT_ID=acct_00000000000000000000000000000000' \
-      "KIS_MOCK_ORDER_REFERENCE_KEY=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')" \
+      "KIS_MOCK_ORDER_REFERENCE_KEY=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')" \
       'KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP=1' \
       'KIS_BROKERAGE_PHYSICAL_CAP=32' \
       | write_state secrets/kis-mock.env 0640
   fi
+  local reference_key
+  reference_key=$(sed -n 's/^KIS_MOCK_ORDER_REFERENCE_KEY=//p' "$SECRETS_DIR/kis-mock.env")
+  if [[ ! $reference_key =~ ^[A-Za-z0-9_-]{43}=$ ]]; then
+    # 과거 생성물은 base64 padding을 지워 44자 Fernet key 조건을 만족하지 못한다. credential은
+    # 건드리지 않고 이 key만 재발급한다. 아직 참조 중인 주문이 없을 때만 안전하다.
+    sed "s|^KIS_MOCK_ORDER_REFERENCE_KEY=.*|KIS_MOCK_ORDER_REFERENCE_KEY=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')|" \
+      "$SECRETS_DIR/kis-mock.env" | write_state secrets/kis-mock.env 0640
+  fi
+  unset reference_key
   if [[ ! -e $SECRETS_DIR/artifact-import.env ]]; then
     local worker_password
     worker_password=$(sed -n 's/^POSTGRES_WORKER_PASSWORD=//p' "$SECRETS_DIR/spring.env")
@@ -152,6 +162,26 @@ upgrade_state() {
     printf 'P1_AUTOMATION_OWNER_USER_ID=usr_demo_user\n' \
       | append_state secrets/automation-runtime.env 0640
   fi
+  if [[ ! -e $SECRETS_DIR/rag-v2.env ]]; then
+    # RAG v2 질의 경로는 두 역할을 나눠 쓴다. Spring이 decision_app으로 인가하고 Python writer가
+    # decision_rag_writer로 사용량을 예약한다. 그래서 여기 DSN은 rag writer 역할이어야 한다.
+    # VOYAGE_API_KEY는 생성하지 않는다. KIS credential과 같은 취급으로 운영자가 직접 넣는다.
+    local rag_writer_password rag_query_password
+    rag_writer_password=$(sed -n 's/^POSTGRES_RAG_WRITER_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+    rag_query_password=$(sed -n 's/^POSTGRES_RAG_QUERY_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+    [[ $rag_writer_password =~ ^[0-9a-f]{64}$ ]] || die RAG_V2_QUERY_WRITER_SECRET_MISSING
+    [[ $rag_query_password =~ ^[0-9a-f]{64}$ ]] || die RAG_V2_QUERY_READER_SECRET_MISSING
+    printf 'RAG_V2_QUERY_DATABASE_DSN=postgresql://decision_rag_query:%s@postgres:5432/capstone_p1?sslmode=disable\nRAG_V2_VOYAGE_QUERY_WRITER_DSN=postgresql://decision_rag_writer:%s@postgres:5432/capstone_p1?sslmode=disable\nRAG_V2_GRPC_SHARED_SECRET=%s\n' \
+      "$rag_query_password" "$rag_writer_password" "$(openssl rand -hex 32)" \
+      | write_state secrets/rag-v2.env 0640
+    unset rag_writer_password rag_query_password
+  fi
+  # 이미 만들어진 상태에도 Strong LLM 공유 비밀을 덧붙인다. 없던 배포가 그대로 켜지면
+  # 부팅에서 닫히고, 그 실패 원인이 "파일 하나가 빠졌다"가 되어 읽기 어려워진다.
+  if ! grep -q '^STRONG_LLM_GRPC_SHARED_SECRET=' "$SECRETS_DIR/rag-v2.env"; then
+    printf 'STRONG_LLM_GRPC_SHARED_SECRET=%s\n' "$(openssl rand -hex 32)" \
+      | append_state secrets/rag-v2.env 0640
+  fi
   if [[ ! -e $SECRETS_DIR/automation-gate-author.env ]]; then
     local replay_authorizer_password
     replay_authorizer_password=$(sed -n 's/^POSTGRES_REPLAY_AUTHORIZER_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
@@ -169,6 +199,12 @@ upgrade_state() {
   if ! grep -q '^P1_KIS_MOCK_RUNTIME_DIR=' "$RUNTIME_ENV"; then
     printf 'P1_KIS_MOCK_RUNTIME_DIR=%s\n' "$STATE_DIR/mock" | append_state runtime.env 0600
   fi
+  # RAG v2 로컬 루트는 비어 있어도 된다. 마운트만 항상 성립하게 두고, 실제 leaf가 없으면
+  # RAG v2를 켰을 때 entrypoint가 닫는다. 운영자가 다른 경로를 쓰려면 이 값을 바꾼다.
+  install -d -m 0700 "$STATE_DIR/rag-v2-root"
+  if ! grep -q '^P1_RAG_RUNTIME_DIR=' "$RUNTIME_ENV"; then
+    printf 'P1_RAG_RUNTIME_DIR=%s\n' "$STATE_DIR/rag-v2-root" | append_state runtime.env 0600
+  fi
   local approval_files=0 approval_file
   for approval_file in kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn; do
     [[ ! -e $SECRETS_DIR/$approval_file ]] || approval_files=$((approval_files + 1))
@@ -179,7 +215,9 @@ upgrade_state() {
     approval_tmp=$(mktemp -d)
     openssl genpkey -algorithm ED25519 -out "$approval_tmp/private.pem" >/dev/null 2>&1
     openssl pkey -in "$approval_tmp/private.pem" -pubout -out "$approval_tmp/public.pem" >/dev/null 2>&1
-    write_state secrets/kis-mock-approval-private.pem 0640 < "$approval_tmp/private.pem"
+    # 서명용 개인키는 owner-only 0600만 허용된다. compose secret은 원본 mode를 그대로
+    # 마운트하므로 0640으로 만들면 packet reader가 bounded owner-only 검사에서 거부한다.
+    write_state secrets/kis-mock-approval-private.pem 0600 < "$approval_tmp/private.pem"
     write_state secrets/kis-mock-approval-public.pem 0640 < "$approval_tmp/public.pem"
     public_digest=$(sha256sum "$approval_tmp/public.pem" | awk '{print $1}')
     printf '{"contractId":"p1-approval-trust-root.v1","issuerKeyId":"CAPSTONE.KISMOCK.V1","publicKeyPath":"/run/secrets/kis_mock_approval_public","publicKeySha256":"%s"}' "$public_digest" \
@@ -187,7 +225,7 @@ upgrade_state() {
     replay_password=$(sed -n 's/^POSTGRES_REPLAY_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
     [[ -n $replay_password ]] || die KIS_MOCK_APPROVAL_REPLAY_SECRET_MISSING
     printf 'postgresql://decision_replay:%s@postgres:5432/capstone_p1?sslmode=disable' "$replay_password" \
-      | write_state secrets/p1-provider-claim.dsn 0640
+      | write_state secrets/p1-provider-claim.dsn 0600
     unset replay_password
     rm -rf -- "$approval_tmp"
   fi
@@ -236,6 +274,67 @@ stop_old_preview_containers() {
   mapfile -t ids < <("$DOCKER_BIN" ps --quiet --filter label=com.docker.compose.project=capstone-p1-preview)
   if ((${#ids[@]})); then
     "$DOCKER_BIN" stop "${ids[@]}" >/dev/null
+  fi
+}
+
+# RAG는 재료가 있는 기계에서 저절로 켜진다.
+#
+# 예전에는 기본값이 꺼짐이라 `./capstone up`만 하면 corpus는 FULL_READY라고 답하면서도 질문에는
+# 답도 인용도 오지 않았다. 그것이 이 화면의 첫인상이었다.
+#
+# 그렇다고 compose 기본값을 켜짐으로 바꿀 수는 없다. entrypoint는 켜져 있는데 로컬 루트나
+# 키가 없으면 부팅을 닫는다. 그러면 코퍼스를 아직 받지 않은 기계에서 스택 전체가 뜨지 않는다.
+# "조용히 fixture로 되돌아가지 않는다"는 그 성질은 명시적으로 켠 요청에 대한 것이라 그대로 둔다.
+#
+# 그래서 기본값을 여기서 정한다. 이 기계에 재료가 실제로 있으면 켜고, 없으면 끈 채로 뜨며
+# 무엇이 없어서 꺼졌는지 말한다. 운영자가 환경변수로 직접 켠 경우에는 손대지 않는다 - 그때는
+# 재료가 없으면 부팅이 닫히는 편이 맞다.
+# 활성화 패킷에 박히는 코드 바인딩 넷을 지금 트리에서 만든다.
+#
+# 이 값들의 뜻은 "이 패킷을 저술한 코드 상태가 무엇이었나"다. 운영자가 손으로 붙여 넣게 하면
+# 배포마다 한 번 더 손이 가고, 무엇보다 그 값이 실제로 도는 코드와 어긋나도 아무도 모른다.
+# 실제 상태에서 뽑으면 그 어긋남이 생기지 않는다. 이미 정해 둔 값이 있으면 손대지 않는다.
+bind_vertex_code_state() {
+  command -v git >/dev/null 2>&1 || return 1
+  local head tree
+  head=$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null) || return 1
+  tree=$(git -C "$REPO_ROOT" rev-parse 'HEAD^{tree}' 2>/dev/null) || return 1
+  export P1_RAG_V2_VERTEX_HEAD_COMMIT=${P1_RAG_V2_VERTEX_HEAD_COMMIT:-$head}
+  export P1_RAG_V2_VERTEX_TREE_DIGEST=${P1_RAG_V2_VERTEX_TREE_DIGEST:-$(printf '%s' "$tree" | sha256sum | cut -d' ' -f1)}
+  export P1_RAG_V2_VERTEX_CI_DIGEST=${P1_RAG_V2_VERTEX_CI_DIGEST:-$(sha256sum "$REPO_ROOT/.github/workflows/contracts-ci.yml" | cut -d' ' -f1)}
+  export P1_RAG_V2_VERTEX_SECURITY_DIGEST=${P1_RAG_V2_VERTEX_SECURITY_DIGEST:-$(sha256sum "$SCRIPT_DIR/docker/secret-entrypoint.sh" | cut -d' ' -f1)}
+}
+
+enable_rag_by_default() {
+  [[ -z ${P1_RAG_DEFAULT_DECIDED:-} ]] || return 0
+  export P1_RAG_DEFAULT_DECIDED=1
+  # 이 경로는 compose가 읽는 runtime.env에 있다. 그 파일을 통째로 불러오면 여기의 판단이
+  # 배포 전체의 환경에 섞이므로 필요한 한 줄만 읽는다.
+  local root=${P1_RAG_RUNTIME_DIR:-}
+  [[ -n $root ]] || root=$(sed -n 's/^P1_RAG_RUNTIME_DIR=//p' "$RUNTIME_ENV" 2>/dev/null || true)
+  local missing=()
+  [[ -n ${P1_RAG_V2_ENABLED:-} ]] && return 0
+  [[ -n $root && -d $root ]] || missing+=(runtime-root)
+  [[ -f $root/control/pre-s5-voyage-query-runtime.json ]] || missing+=(voyage-query-runtime)
+  [[ -f $root/artifacts/voyage-context-4/tokenizer.json ]] || missing+=(tokenizer)
+  grep -q '^VOYAGE_API_KEY=.' "$SECRETS_DIR/rag-v2.env" 2>/dev/null || missing+=(voyage-key)
+  if ((${#missing[@]})); then
+    export P1_RAG_V2_ENABLED=false
+    printf 'CAPSTONE_RAG_DEFAULT=OFF_MISSING_%s\n' "$(IFS=,; printf '%s' "${missing[*]}")"
+    return 0
+  fi
+  export P1_RAG_V2_ENABLED=true
+  # 생성까지 켜려면 서비스계정과 자동 저술 정책이 더 있어야 한다. 둘 중 하나라도 없으면
+  # 검색은 켜고 생성만 닫는다. 그때 화면은 인용은 보여 주고 답만 비어 있다.
+  if [[ -z ${P1_RAG_V2_VERTEX_ENABLED:-} ]] &&
+     [[ -f $SECRETS_DIR/pre-s5-vertex-service-account.json ]] &&
+     [[ -f $root/control/pre-s5-vertex-auto-activation-policy.json ]] &&
+     bind_vertex_code_state; then
+    export P1_RAG_V2_VERTEX_ENABLED=true
+    export P1_RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED=${P1_RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED:-true}
+    printf 'CAPSTONE_RAG_DEFAULT=ON_WITH_GENERATION\n'
+  else
+    printf 'CAPSTONE_RAG_DEFAULT=ON_RETRIEVAL_ONLY\n'
   fi
 }
 
@@ -384,7 +483,13 @@ team_a_acceptance() {
   [[ $result == 0 && $restore_result == 0 && $runtime_restore_result == 0 ]] || die TEAM_A_ACCEPTANCE_FAILED
   printf 'OWNER_TEAM_A_BACKEND_PREREQUISITES=PASS\n'
   printf 'OWNER_POST_TEAM_A_BACKEND_CODE_REQUIRED=0\n'
-  printf 'TEAM_A_ACCEPTANCE_OPERATION_COUNT=33\n'
+  # 검증이 쓰는 catalog 에서 읽는다. 상수로 두면 catalog 가 늘어날 때 영수증만 옛 수를
+  # 찍고, 그 수가 곧 사람이 증거로 인용하는 값이 된다.
+  local acceptance_catalog acceptance_count
+  acceptance_catalog="$REPO_ROOT/contracts/catalogs/p1-team-a-acceptance.v2.json"
+  acceptance_count=$(python3 -c 'import json,sys
+print(json.load(open(sys.argv[1]))["acceptanceOperationCount"])' "$acceptance_catalog")
+  printf 'TEAM_A_ACCEPTANCE_OPERATION_COUNT=%s\n' "$acceptance_count"
   printf 'PLAYWRIGHT_SKIP=0\nFRONTEND_FAKE_PRODUCTION_RESPONSE=0\nPROVIDER_CALLS=0\n'
 }
 
@@ -406,7 +511,7 @@ mock_configure() {
   account_no="${account_no:0:8}-${account_no:8:2}"
   local bound_account reference_key
   bound_account="acct_$(openssl rand -hex 16)"
-  reference_key=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')
+  reference_key=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')
   printf 'KIS_MOCK_CONFIGURED=true\nKIS_MOCK_APP_KEY=%s\nKIS_MOCK_APP_SECRET=%s\nKIS_MOCK_ACCOUNT_NO=%s\nKIS_MOCK_BOUND_ACCOUNT_ID=%s\nKIS_MOCK_ORDER_REFERENCE_KEY=%s\nKIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP=1\nKIS_BROKERAGE_PHYSICAL_CAP=32\n' \
     "$app_key" "$app_secret" "$account_no" "$bound_account" "$reference_key" \
     | write_state secrets/kis-mock.env 0640
@@ -435,7 +540,7 @@ assert 8 <= len(values["KIS_MOCK_APP_KEY"]) <= 256
 assert 8 <= len(values["KIS_MOCK_APP_SECRET"]) <= 512
 assert re.fullmatch(r"[0-9]{8}-[0-9]{2}", values["KIS_MOCK_ACCOUNT_NO"])
 assert re.fullmatch(r"acct_[0-9a-f]{32}", values["KIS_MOCK_BOUND_ACCOUNT_ID"])
-assert re.fullmatch(r"[A-Za-z0-9_-]{43}", values["KIS_MOCK_ORDER_REFERENCE_KEY"])
+assert re.fullmatch(r"[A-Za-z0-9_-]{43}=", values["KIS_MOCK_ORDER_REFERENCE_KEY"])
 assert values["KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP"] == "1"
 assert values["KIS_BROKERAGE_PHYSICAL_CAP"] == "32"
 PY
@@ -488,6 +593,10 @@ mock_certify() {
     || die KIS_MOCK_CERTIFICATION_PR_UNAVAILABLE
   rm -f -- "$STATE_DIR/mock/certification-request.json" \
     "$STATE_DIR/mock/execution-approval.json" "$STATE_DIR/mock/certification.json"
+  # approval latch reader는 owner-only 파일만 받는데 kis-mock.env는 decision-platform과
+  # 공유하느라 group-readable이어야 한다. API credential은 빼고 latch 두 값만 별도 파일로 준다.
+  grep -E '^(KIS_MOCK_BOUND_ACCOUNT_ID|KIS_MOCK_ORDER_REFERENCE_KEY)=' "$SECRETS_DIR/kis-mock.env" \
+    | write_state mock/approval-latch.env 0600
   P1_PR_JSON=$pr_json P1_BRANCH=$branch P1_HEAD=$head python3 - <<'PY' \
     | write_state mock/certification-request.json 0600
 import hashlib, json, os
@@ -534,7 +643,9 @@ request={
   "securityEvidenceDigest":security_digest,
   "symbol":"005930",
 }
-print(json.dumps(request, sort_keys=True, separators=(",", ":")), end="")
+# certification CLI는 canonical_json_bytes와 byte 단위로 비교한다. canonical form은 끝에
+# 개행을 포함하므로 여기서도 개행을 남긴다.
+print(json.dumps(request, sort_keys=True, separators=(",", ":")))
 PY
   compose up -d --wait postgres redis
   compose --profile owner run --rm --no-deps kis-mock-certification-runner \

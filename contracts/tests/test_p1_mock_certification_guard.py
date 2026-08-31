@@ -40,13 +40,18 @@ def _git(repository: Path, *arguments: str) -> str:
 
 
 def _canonical(value: object) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        allow_nan=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+    """서비스가 쓰는 canonical form과 같이 끝에 개행을 포함한다."""
+
+    return (
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        + b"\n"
+    )
 
 
 class MockCertificationGuardTest(unittest.TestCase):

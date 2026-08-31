@@ -57,5 +57,26 @@ paths = ["^docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서[.]md$
 regexTarget = "secret"
 regexes = ["^OCI/SBOM/provenance/signature$"]
 
+[[allowlists]]
+# 이 두 커밋의 e2e 러너가 설정 저장 경로를 확인하려고 키 모양의 상수를 들고 있었다. 가짜지만
+# 검사기는 그것을 알 수 없고, 아는 방법도 없어야 한다. 다음 커밋에서 값을 실행할 때 만들도록
+# 고쳤으므로 지금 tree에는 없다. 이미 밀어 둔 두 커밋만 이름으로 짚어 지나가게 한다.
+#
+# 커밋·경로·규칙 셋으로 묶는다. 셋 중 하나라도 넓히면 나중에 같은 파일에 진짜 키가 들어와도
+# 지나간다.
+description = "Historical e2e probe fixtures misclassified as generic API keys"
+condition = "AND"
+targetRules = ["generic-api-key"]
+commits = [
+  "ce86ce052c2760b9616c5867daf50397dec72817",
+  "955734f7617706a9b6dd62eff99b2ae0ad4f74c8"
+]
+paths = [
+  "^workspaces/decision-platform/python-services/tests/e2e/settings_probe[.]py$",
+  "^workspaces/decision-platform/python-services/tests/e2e/ai_judgement_e2e[.]py$"
+]
+regexTarget = "secret"
+regexes = ["^sk-(probe-0123456789ABCDefgh|e2e-probe-ABCDwxyz)$"]
+
 [extend]
 useDefault = true

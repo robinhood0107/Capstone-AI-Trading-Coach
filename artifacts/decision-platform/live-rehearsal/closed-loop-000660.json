@@ -1,0 +1,80 @@
+{
+  "status": "SUCCESS",
+  "symbol": "000660",
+  "engineSteps": [
+    {
+      "step": "preBalance",
+      "cashKrw": 100000000,
+      "symbolQuantity": 0
+    },
+    {
+      "step": "positionOpened",
+      "symbol": "000660",
+      "quantity": 1,
+      "entryAverageFillPriceKrw": 1685000,
+      "entrySession": "2026-08-28",
+      "expirySession": "2026-09-04"
+    },
+    {
+      "step": "positionClosed",
+      "exitReason": "MAX_HOLDING_SESSIONS",
+      "closedPositions": 1
+    },
+    {
+      "step": "postBalance",
+      "cashKrw": 100000000,
+      "symbolQuantity": 0
+    }
+  ],
+  "transportSteps": [
+    {
+      "step": "quote",
+      "symbol": "000660",
+      "priceKrw": 1685000,
+      "upperKrw": 2249000,
+      "lowerKrw": 1211000
+    },
+    {
+      "step": "vertex",
+      "symbol": "000660",
+      "verdict": "NO_VETO",
+      "providerCalls": 0
+    },
+    {
+      "step": "submitBuy",
+      "symbol": "000660",
+      "quantity": 1,
+      "limitPriceKrw": 1686000,
+      "orderNo": "0000033357"
+    },
+    {
+      "step": "buyFill",
+      "cumulativeQuantity": 1,
+      "leavesQuantity": 0,
+      "averageFillPriceKrw": 1685000
+    },
+    {
+      "step": "quote",
+      "symbol": "000660",
+      "priceKrw": 1686000,
+      "upperKrw": 2249000,
+      "lowerKrw": 1211000
+    },
+    {
+      "step": "submitSell",
+      "symbol": "000660",
+      "quantity": 1,
+      "limitPriceKrw": 1685000,
+      "orderNo": "0000033365"
+    },
+    {
+      "step": "sellFill",
+      "cumulativeQuantity": 1,
+      "leavesQuantity": 0,
+      "averageFillPriceKrw": 1685500
+    }
+  ],
+  "physicalCalls": 6,
+  "vertexProviderCalls": 0,
+  "sessionKst": "2026-08-28T13:47:32.352483+09:00"
+}

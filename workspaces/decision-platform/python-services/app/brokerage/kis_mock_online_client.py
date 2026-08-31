@@ -5,7 +5,8 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from enum import StrEnum
-from pathlib import Path
+
+from app.data._shared.repository_root import repository_root
 from threading import Lock
 from typing import Any, cast
 
@@ -135,7 +136,7 @@ _ACCOUNT_PATTERN = re.compile(r"^[0-9]{8}-[0-9]{2}$")
 _EXCHANGE_DIVISION = re.compile(r"^(?:KRX|NXT)$")
 _INTERNAL_TR_ID_HEADER = "x-kis-internal-tr-id"
 _MAX_RESPONSE_BYTES = 1024 * 1024
-_ROOT_ENV_FILE = Path(__file__).resolve().parents[5] / ".env"
+_ROOT_ENV_FILE = repository_root(__file__, 5) / ".env"
 _PROVIDER_CODE_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9_-]{0,31}$")
 
 

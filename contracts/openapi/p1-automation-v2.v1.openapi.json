@@ -1,0 +1,1147 @@
+{
+  "components": {
+    "schemas": {
+      "ApiResponseAutomationPolicyV2": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationPolicyV2"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAutomationPositionPageV2": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationPositionPageV2"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAutomationRunPageV2": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationRunPageV2"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAutomationStatusV2": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationStatusV2"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ArmAutomationV2Request": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "pattern": "^acct_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "expectedControlVersion": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "expectedPolicyVersion": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "policyId": {
+            "pattern": "^auto_pol_[0-9a-f]{32}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "policyId",
+          "expectedPolicyVersion",
+          "expectedControlVersion"
+        ],
+        "type": "object"
+      },
+      "AutomationPolicyV2": {
+        "$id": "contracts/schemas/automation-policy.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "buyCutoffTimeKst": {
+            "const": "09:40"
+          },
+          "cancelTimeKst": {
+            "const": "15:20"
+          },
+          "capitalLimitKrw": {
+            "maximum": 10000000000,
+            "minimum": 10000,
+            "multipleOf": 10000,
+            "type": "integer"
+          },
+          "contractId": {
+            "const": "automation-policy.v1"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "evaluationTimeKst": {
+            "const": "09:30"
+          },
+          "maxNewOrdersPerSession": {
+            "const": 1
+          },
+          "maxOpenPositions": {
+            "const": 5
+          },
+          "policyId": {
+            "pattern": "^auto_pol_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "presetId": {
+            "enum": [
+              "conservative",
+              "balanced",
+              "aggressive",
+              "custom"
+            ]
+          },
+          "stopLossBps": {
+            "maximum": 1500,
+            "minimum": 100,
+            "type": "integer"
+          },
+          "takeProfitBps": {
+            "maximum": 3000,
+            "minimum": 200,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "contractId",
+          "policyId",
+          "version",
+          "presetId",
+          "capitalLimitKrw",
+          "stopLossBps",
+          "takeProfitBps",
+          "maxOpenPositions",
+          "maxNewOrdersPerSession",
+          "evaluationTimeKst",
+          "buyCutoffTimeKst",
+          "cancelTimeKst",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "automation-policy.v1",
+        "type": "object"
+      },
+      "AutomationPositionPageV2": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationPositionV2"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "oneOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "realizedSummary": {
+            "$ref": "#/components/schemas/AutomationRealizedSummaryV2"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor",
+          "realizedSummary"
+        ],
+        "type": "object"
+      },
+      "AutomationPositionV2": {
+        "$id": "contracts/schemas/automation-position.v2.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "pattern": "^acct_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "botOwned": {
+            "const": true
+          },
+          "closedAt": {
+            "oneOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contractId": {
+            "const": "automation-position.v2"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "entryAverageFillPriceKrw": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "entrySession": {
+            "format": "date",
+            "type": "string"
+          },
+          "exitAverageFillPriceKrw": {
+            "oneOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exitReason": {
+            "oneOf": [
+              {
+                "enum": [
+                  "STOP_LOSS",
+                  "MAX_HOLDING_SESSIONS",
+                  "MODEL_SELL",
+                  "TAKE_PROFIT"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expirySession": {
+            "format": "date",
+            "type": "string"
+          },
+          "policyId": {
+            "pattern": "^auto_pol_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "policyVersion": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "positionId": {
+            "pattern": "^auto_pos_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "quantity": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "realizedPnlKrw": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shortAllowed": {
+            "const": false
+          },
+          "status": {
+            "enum": [
+              "OPEN",
+              "EXIT_PENDING",
+              "CLOSED",
+              "HALTED_MISMATCH"
+            ]
+          },
+          "stopLossBps": {
+            "maximum": 1500,
+            "minimum": 100,
+            "type": "integer"
+          },
+          "symbol": {
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          },
+          "takeProfitBps": {
+            "maximum": 3000,
+            "minimum": 200,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "contractId",
+          "positionId",
+          "accountId",
+          "symbol",
+          "quantity",
+          "entryAverageFillPriceKrw",
+          "entrySession",
+          "expirySession",
+          "policyId",
+          "policyVersion",
+          "stopLossBps",
+          "takeProfitBps",
+          "status",
+          "exitReason",
+          "exitAverageFillPriceKrw",
+          "realizedPnlKrw",
+          "botOwned",
+          "shortAllowed",
+          "createdAt",
+          "closedAt"
+        ],
+        "title": "automation-position.v2",
+        "type": "object"
+      },
+      "AutomationRealizedSummaryV2": {
+        "additionalProperties": false,
+        "properties": {
+          "closedPositionCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "evidenceMode": {
+            "const": "KIS_MOCK"
+          },
+          "losingPositionCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "performanceClaimAllowed": {
+            "const": false
+          },
+          "realizedGrossKrw": {
+            "type": "integer"
+          },
+          "realizedPnlKrw": {
+            "type": "integer"
+          },
+          "winningPositionCount": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "closedPositionCount",
+          "realizedPnlKrw",
+          "realizedGrossKrw",
+          "winningPositionCount",
+          "losingPositionCount",
+          "evidenceMode",
+          "performanceClaimAllowed"
+        ],
+        "type": "object"
+      },
+      "AutomationRunPageV2": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationRunV2"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "oneOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "AutomationRunV2": {
+        "$id": "contracts/schemas/automation-run.v2.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "brokerageMode": {
+            "enum": [
+              "KIS_MOCK",
+              "INTERNAL_PAPER"
+            ]
+          },
+          "contractId": {
+            "const": "automation-run.v2"
+          },
+          "estimatedAmountKrw": {
+            "oneOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exitReason": {
+            "oneOf": [
+              {
+                "enum": [
+                  "STOP_LOSS",
+                  "MAX_HOLDING_SESSIONS",
+                  "MODEL_SELL",
+                  "TAKE_PROFIT"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "filledQuantity": {
+            "oneOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "leavesQuantity": {
+            "oneOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limitPriceKrw": {
+            "oneOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orderQuantity": {
+            "oneOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "physicalSubmitCount": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "policyId": {
+            "oneOf": [
+              {
+                "pattern": "^auto_pol_[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policyVersion": {
+            "oneOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "providerCalls": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "runId": {
+            "pattern": "^auto_run_[A-Za-z0-9_-]{8,96}$",
+            "type": "string"
+          },
+          "selectedSide": {
+            "oneOf": [
+              {
+                "enum": [
+                  "BUY",
+                  "SELL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selectedSymbol": {
+            "oneOf": [
+              {
+                "pattern": "^[0-9]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "SCHEDULED",
+              "PRECHECK",
+              "RECONCILING_PREVIOUS",
+              "EXIT_SELECTED",
+              "AI_JUDGING",
+              "BUY_CANDIDATE_SELECTED",
+              "NEWS_CHECKING",
+              "NEWS_VETOED",
+              "RISK_CHECKING",
+              "ORDER_SIZING",
+              "ORDER_SUBMITTING",
+              "ORDER_SUBMITTED",
+              "PENDING_RECONCILIATION",
+              "CANCELLED_UNFILLED",
+              "COMPLETED",
+              "SKIPPED_NO_ACTION",
+              "SKIPPED_DATA_UNAVAILABLE",
+              "SKIPPED_LATE_START",
+              "HALTED"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contractId",
+          "runId",
+          "sessionDate",
+          "state",
+          "brokerageMode",
+          "policyId",
+          "policyVersion",
+          "selectedSymbol",
+          "selectedSide",
+          "orderQuantity",
+          "filledQuantity",
+          "leavesQuantity",
+          "limitPriceKrw",
+          "estimatedAmountKrw",
+          "exitReason",
+          "physicalSubmitCount",
+          "providerCalls",
+          "startedAt",
+          "updatedAt"
+        ],
+        "title": "automation-run.v2",
+        "type": "object"
+      },
+      "AutomationStatusV2": {
+        "$id": "contracts/schemas/automation-status.v2.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "oneOf": [
+              {
+                "pattern": "^acct_[A-Za-z0-9_-]{8,96}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "blockers": {
+            "items": {
+              "enum": [
+                "ACCOUNT_NOT_CONFIGURED",
+                "POLICY_NOT_CONFIGURED",
+                "POLICY_VERSION_DRIFT",
+                "PRINCIPLE_NOT_CONFIGURED",
+                "REAL_TEAM_B_POINTER_INACTIVE",
+                "RELEASE_BINDING_UNCLEAN",
+                "CERTIFICATION_INVALID",
+                "KILL_SWITCH_ACTIVE",
+                "UNRESOLVED_RECONCILIATION",
+                "CONTROL_HALTED",
+                "BLOCKED_INCOMPLETE_RISK_BALANCE"
+              ]
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "brokerageMode": {
+            "const": "KIS_MOCK"
+          },
+          "canArm": {
+            "type": "boolean"
+          },
+          "certificationStatus": {
+            "enum": [
+              "NOT_REQUIRED_INTERNAL_PAPER",
+              "REQUIRED",
+              "VALID",
+              "EXPIRED",
+              "INVALID"
+            ]
+          },
+          "contractId": {
+            "const": "automation-status.v2"
+          },
+          "controlState": {
+            "enum": [
+              "DISARMED",
+              "ARMED",
+              "HALTED"
+            ]
+          },
+          "controlVersion": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "killSwitchActive": {
+            "type": "boolean"
+          },
+          "openPositionCount": {
+            "maximum": 5,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "policy": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "buyCutoffTimeKst": {
+                    "const": "09:40"
+                  },
+                  "cancelTimeKst": {
+                    "const": "15:20"
+                  },
+                  "capitalLimitKrw": {
+                    "maximum": 10000000000,
+                    "minimum": 10000,
+                    "multipleOf": 10000,
+                    "type": "integer"
+                  },
+                  "contractId": {
+                    "const": "automation-policy.v1"
+                  },
+                  "createdAt": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "evaluationTimeKst": {
+                    "const": "09:30"
+                  },
+                  "maxNewOrdersPerSession": {
+                    "const": 1
+                  },
+                  "maxOpenPositions": {
+                    "const": 5
+                  },
+                  "policyId": {
+                    "pattern": "^auto_pol_[0-9a-f]{32}$",
+                    "type": "string"
+                  },
+                  "presetId": {
+                    "enum": [
+                      "conservative",
+                      "balanced",
+                      "aggressive",
+                      "custom"
+                    ]
+                  },
+                  "stopLossBps": {
+                    "maximum": 1500,
+                    "minimum": 100,
+                    "type": "integer"
+                  },
+                  "takeProfitBps": {
+                    "maximum": 3000,
+                    "minimum": 200,
+                    "type": "integer"
+                  },
+                  "updatedAt": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "contractId",
+                  "policyId",
+                  "version",
+                  "presetId",
+                  "capitalLimitKrw",
+                  "stopLossBps",
+                  "takeProfitBps",
+                  "maxOpenPositions",
+                  "maxNewOrdersPerSession",
+                  "evaluationTimeKst",
+                  "buyCutoffTimeKst",
+                  "cancelTimeKst",
+                  "createdAt",
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectionState": {
+            "enum": [
+              "DISARMED",
+              "ARMED",
+              "RUNNING",
+              "HALTED"
+            ]
+          },
+          "unresolvedReconciliation": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "contractId",
+          "controlState",
+          "projectionState",
+          "controlVersion",
+          "brokerageMode",
+          "accountId",
+          "policy",
+          "killSwitchActive",
+          "certificationStatus",
+          "openPositionCount",
+          "unresolvedReconciliation",
+          "canArm",
+          "blockers"
+        ],
+        "title": "automation-status.v2",
+        "type": "object"
+      },
+      "P1AutomationV2ErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "properties": {
+              "code": {
+                "const": "CONFLICT"
+              },
+              "details": {
+                "type": "object"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "const": false
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "success",
+          "requestId",
+          "data",
+          "warnings",
+          "error"
+        ],
+        "type": "object"
+      },
+      "PutAutomationPolicyV2Request": {
+        "additionalProperties": false,
+        "properties": {
+          "capitalLimitKrw": {
+            "maximum": 10000000000,
+            "minimum": 10000,
+            "multipleOf": 10000,
+            "type": "integer"
+          },
+          "expectedVersion": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "stopLossBps": {
+            "maximum": 1500,
+            "minimum": 100,
+            "type": "integer"
+          },
+          "takeProfitBps": {
+            "maximum": 3000,
+            "minimum": 200,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "capitalLimitKrw",
+          "stopLossBps",
+          "takeProfitBps"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "P1 Automation Policy v2 additive contract",
+    "version": "1.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v2/automation/arm": {
+      "post": {
+        "operationId": "armAutomationV2",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArmAutomationV2Request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationStatusV2"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/P1AutomationV2ErrorResponse"
+                }
+              }
+            },
+            "description": "Blocked by incomplete qualified risk balance"
+          }
+        }
+      }
+    },
+    "/api/v2/automation/policy": {
+      "put": {
+        "operationId": "putAutomationPolicyV2",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutAutomationPolicyV2Request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationPolicyV2"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/v2/automation/positions": {
+      "get": {
+        "operationId": "listAutomationPositionsV2",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationPositionPageV2"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/v2/automation/runs": {
+      "get": {
+        "operationId": "listAutomationRunsV2",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationRunPageV2"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/v2/automation/status": {
+      "get": {
+        "operationId": "getAutomationStatusV2",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationStatusV2"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        }
+      }
+    }
+  }
+}

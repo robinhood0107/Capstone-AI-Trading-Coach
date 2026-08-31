@@ -1436,6 +1436,12 @@ BEGIN
             commit_rag_v2_immutable_vertex_usage(text, text, integer, integer, integer),
             mark_rag_v2_immutable_vertex_usage_unknown_billing(text, text)
         TO decision_app;
+        IF to_regprocedure('public.count_rag_v2_immutable_vertex_usage_today(text)') IS NOT NULL THEN
+            -- V104. 자동 저술이 켜지면 사람이 곧 호출 한도이던 자리를 소유자별 하루 상한이
+            -- 대신한다. 그 개수를 세는 definer 함수 하나만 재부여한다. 예약 표 자체에는
+            -- 어떤 런타임 역할도 직접 권한을 갖지 않는다.
+            GRANT EXECUTE ON FUNCTION count_rag_v2_immutable_vertex_usage_today(text) TO decision_app;
+        END IF;
     ELSIF to_regprocedure(
         'public.reserve_rag_v2_immutable_vertex_usage(text,text,text,text,text,text,text,text,text,text,text,timestamp with time zone,integer,integer,integer,bigint,bigint,bigint,integer,integer,jsonb)'
     ) IS NOT NULL
@@ -2247,6 +2253,52 @@ BEGIN
 END
 $p1_v87_runtime_privileges$;
 
+-- V106 이전 스냅샷에는 이 테이블이 없다. V89 블록에 얹으면 그런 DB의 bootstrap이 통째로
+-- 실패하므로 테이블 존재를 직접 확인하는 자기 블록으로 둔다.
+-- V108 이전 스냅샷에는 이 표면이 없다. 테이블 존재를 직접 확인하는 자기 블록으로 둔다.
+DO $p1_v108_strong_llm_settings_privileges$
+BEGIN
+    IF to_regclass('public.strong_llm_owner_settings') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON TABLE
+            public.strong_llm_owner_settings,
+            public.strong_llm_owner_credentials
+        FROM PUBLIC, decision_app, decision_worker, decision_replay;
+        -- 설정 행은 소유자 세션이 RLS 안에서 직접 읽고 쓴다.
+        GRANT SELECT, INSERT, UPDATE ON TABLE public.strong_llm_owner_settings TO decision_app;
+        -- 키 행에는 어떤 테이블 권한도 주지 않는다. 그 길은 definer 함수뿐이다.
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.put_strong_llm_owner_settings_v1(text,text,text,text,text,text,text,text,integer),
+            public.put_strong_llm_owner_credential_v1(
+                text,text,text,bytea,bytea,bytea,bytea,bytea,bytea,text
+            ),
+            public.delete_strong_llm_owner_credential_v1(text,text),
+            public.read_strong_llm_owner_key_last4_v1(text),
+            public.read_strong_llm_owner_credential_v1(text,text)
+        FROM PUBLIC, decision_app, decision_worker, decision_replay;
+        GRANT EXECUTE ON FUNCTION
+            public.put_strong_llm_owner_settings_v1(text,text,text,text,text,text,text,text,integer),
+            public.put_strong_llm_owner_credential_v1(
+                text,text,text,bytea,bytea,bytea,bytea,bytea,bytea,text
+            ),
+            public.delete_strong_llm_owner_credential_v1(text,text),
+            public.read_strong_llm_owner_key_last4_v1(text),
+            public.read_strong_llm_owner_credential_v1(text,text)
+        TO decision_app;
+    END IF;
+END
+$p1_v108_strong_llm_settings_privileges$;
+
+DO $p1_v106_automation_ai_judgement_privileges$
+BEGIN
+    IF to_regclass('public.automation_ai_judgements') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON TABLE public.automation_ai_judgements
+        FROM PUBLIC, decision_app, decision_worker, decision_replay;
+        -- 판단 기록은 소유자 화면이 읽는다. 쓰기는 자동운용 role의 definer 함수만 한다.
+        GRANT SELECT ON TABLE public.automation_ai_judgements TO decision_app;
+    END IF;
+END
+$p1_v106_automation_ai_judgement_privileges$;
+
 DO $p1_v89_automation_journal_privileges$
 BEGIN
     IF to_regprocedure(
@@ -2346,6 +2398,109 @@ BEGIN
     END IF;
 END
 $p1_v90_automation_runtime_privileges$;
+
+DO $p1_v91_variable_automation_privileges$
+BEGIN
+    IF to_regprocedure(
+        'public.p1_arm_automation_v2(text,text,text,integer,integer,text,text)'
+    ) IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON TABLE
+            public.automation_policy_versions,
+            public.automation_policy_idempotency,
+            public.automation_account_lineage
+        FROM PUBLIC, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        GRANT SELECT ON TABLE
+            public.automation_policy_versions,
+            public.automation_account_lineage
+        TO decision_app;
+        -- automation-run.v2가 수량을 필수 공개하므로 owner read만 열고 쓰기는 runtime 전용으로 둔다.
+        GRANT SELECT ON TABLE public.automation_order_reservations TO decision_app;
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_automation_policy_profile_v1(integer,integer),
+            public.p1_automation_status_facts_v2(text,text),
+            public.p1_automation_structural_projection_valid_v2(jsonb),
+            public.p1_put_automation_policy_v1(text,text,bigint,integer,integer,integer,text,text),
+            public.p1_automation_risk_balance_projection_v2(text,text),
+            public.p1_arm_automation_v2(text,text,text,integer,integer,text,text),
+            public.p1_reserve_automation_order_v2(
+                text,text,integer,text,text,text,bigint,bigint,bigint,text,text,text,text
+            ),
+            public.p1_bind_automation_decision_v2(text,text,integer,text,text,text,text),
+            public.p1_automation_transition_valid_v2(text,text),
+            public.p1_read_automation_runtime_state_v2(text,text),
+            public.p1_advance_automation_checkpoint_v2(
+                text,text,text,integer,text,text,text,text,integer,integer,integer,text,bigint,bigint,
+                text,text,text,text,integer,date,bigint,bigint,bigint,bigint,text,text,text,text,text,
+                text,text
+            )
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_put_automation_policy_v1(text,text,bigint,integer,integer,integer,text,text),
+            public.p1_arm_automation_v2(text,text,text,integer,integer,text,text),
+            public.p1_automation_risk_balance_projection_v2(text,text),
+            public.p1_automation_status_facts_v2(text,text)
+        TO decision_app;
+        -- automation_control_v2_binding_check가 호출하는 검증 함수라 SECURITY INVOKER인
+        -- V89 arm/disarm의 decision_app 쓰기에 EXECUTE가 필수다.
+        GRANT EXECUTE ON FUNCTION
+            public.p1_automation_structural_projection_valid_v2(jsonb)
+        TO decision_app;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_automation_risk_balance_projection_v2(text,text),
+            public.p1_reserve_automation_order_v2(
+                text,text,integer,text,text,text,bigint,bigint,bigint,text,text,text,text
+            ),
+            public.p1_bind_automation_decision_v2(text,text,integer,text,text,text,text),
+            public.p1_read_automation_runtime_state_v2(text,text),
+            public.p1_advance_automation_checkpoint_v2(
+                text,text,text,integer,text,text,text,text,integer,integer,integer,text,bigint,bigint,
+                text,text,text,text,integer,date,bigint,bigint,bigint,bigint,text,text,text,text,text,
+                text,text
+            )
+        TO decision_automation_runtime;
+        REVOKE CREATE ON SCHEMA public FROM decision_automation_runtime;
+    END IF;
+END
+$p1_v91_variable_automation_privileges$;
+
+DO $p1_v94_automation_continuity_privileges$
+BEGIN
+    IF to_regprocedure(
+        'public.p1_advance_automation_account_lineage_v3(text,text,text,jsonb,text,text,bigint,bigint)'
+    ) IS NOT NULL THEN
+        -- readiness 판정 helper는 flyway 소유 SECURITY DEFINER 안에서만 불린다. 어떤 앱 role도
+        -- 직접 호출할 이유가 없다.
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_automation_open_work_clear_v3(text,text)
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_advance_automation_account_lineage_v3(
+                text,text,text,jsonb,text,text,bigint,bigint
+            )
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_advance_automation_account_lineage_v3(
+                text,text,text,jsonb,text,text,bigint,bigint
+            )
+        TO decision_automation_runtime;
+    END IF;
+    IF to_regprocedure('public.p1_automation_realized_performance_v2(text)') IS NOT NULL THEN
+        -- V92 실현 성과 집계는 owner scope 안에서만 읽힌다. bootstrap을 다시 돌려도 유지한다.
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_automation_realized_performance_v2(text)
+        FROM PUBLIC, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_automation_realized_performance_v2(text)
+        TO decision_app;
+    END IF;
+END
+$p1_v94_automation_continuity_privileges$;
+
 
 DO $block$
 BEGIN

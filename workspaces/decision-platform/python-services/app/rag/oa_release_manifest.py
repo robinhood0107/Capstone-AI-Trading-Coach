@@ -8,8 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 from urllib.parse import urlsplit
+from app.rag.repository_root import repository_root
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
+REPO_ROOT = repository_root()
 OA_RELEASE_MANIFEST_PATH = REPO_ROOT / "capstone-rag/manifests/s4-7d-oa140-release.v1.json"
 MAX_OA_MANIFEST_BYTES: Final[int] = 2_000_000
 HASH_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{64}$")

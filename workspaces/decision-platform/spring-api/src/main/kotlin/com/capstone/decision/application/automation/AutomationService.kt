@@ -13,6 +13,48 @@ class AutomationService(
 ) {
     fun status(ownerUserId: String): AutomationControlProjection = repository.status(ownerUserId)
 
+    fun statusV2(ownerUserId: String): AutomationStatusV2Projection = repository.statusV2(ownerUserId)
+
+    fun putPolicyV2(
+        ownerUserId: String,
+        rawIdempotencyKey: String,
+        command: PutAutomationPolicyV2Command,
+    ): AutomationPolicyV2Projection =
+        repository.putPolicyV2(
+            ownerUserId = ownerUserId,
+            command = command,
+            scopeHash = OwnerWriteHashes.scope(ownerUserId, rawIdempotencyKey),
+            requestHash =
+                OwnerWriteHashes.request(
+                    "PUT_AUTOMATION_POLICY",
+                    ownerUserId,
+                    command.capitalLimitKrw.toString(),
+                    command.stopLossBps.toString(),
+                    command.takeProfitBps.toString(),
+                    command.expectedVersion.toString(),
+                ),
+        )
+
+    fun armV2(
+        ownerUserId: String,
+        rawIdempotencyKey: String,
+        command: ArmAutomationV2Command,
+    ): AutomationStatusV2Projection =
+        repository.armV2(
+            ownerUserId = ownerUserId,
+            command = command,
+            scopeHash = OwnerWriteHashes.scope(ownerUserId, rawIdempotencyKey),
+            requestHash =
+                OwnerWriteHashes.request(
+                    "ARM_AUTOMATION",
+                    ownerUserId,
+                    command.accountId,
+                    command.policyId,
+                    command.expectedPolicyVersion.toString(),
+                    command.expectedControlVersion.toString(),
+                ),
+        )
+
     fun arm(
         ownerUserId: String,
         rawIdempotencyKey: String,
@@ -69,6 +111,27 @@ class AutomationService(
                 },
         )
     }
+
+    fun listRunsV2(
+        ownerUserId: String,
+        size: Int,
+        cursor: String?,
+    ): AutomationRunV2Page {
+        val after = cursor?.let { decodeCursor(ownerUserId, it) }
+        val fetched = repository.listRunsV2(ownerUserId, size + 1, after)
+        val items = fetched.take(size)
+        return AutomationRunV2Page(
+            items = items,
+            nextCursor =
+                if (fetched.size > size) {
+                    items.last().let { encodeCursor(ownerUserId, it.updatedAt, it.runId) }
+                } else {
+                    null
+                },
+        )
+    }
+
+    fun listPositionsV2(ownerUserId: String): AutomationPositionV2Page = repository.readPositionPageV2(ownerUserId)
 
     private fun encodeCursor(
         ownerUserId: String,

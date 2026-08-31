@@ -6,11 +6,13 @@ import { usePathname } from 'next/navigation';
 const ITEMS = [
   { href: '/', label: '현황', note: '오늘 상태' },
   { href: '/principles', label: '내 원칙', note: 'Principle' },
+  { href: '/automation', label: '자동운용', note: 'Budget · Exit' },
   { href: '/order-review', label: '주문 검토', note: 'Decision · Risk' },
   { href: '/model-evaluation', label: '모델 비교', note: 'Signal v2' },
   { href: '/backtest', label: '백테스트 리포트', note: 'Backtest' },
   { href: '/rag', label: '금융 가이드', note: 'RAG' },
   { href: '/report', label: '보고서 캡처', note: 'Report' },
+  { href: '/settings', label: '설정', note: 'Strong LLM' },
 ];
 
 export function NavRail() {

@@ -18,6 +18,8 @@ import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
+
+from app.data._shared.repository_root import repository_root
 from typing import Any, Final
 
 from app.cross_market.foreign_news import (
@@ -53,7 +55,7 @@ _CRITICAL = re.compile(
     r"(?:\b(?:no|not|never|neither|nor|without)\b|\b(?:declin|decreas|loss|miss|fall)\w*\b|\d+(?:[.,]\d+)?(?:%|\s*(?:bp|bps|million|billion|trillion))?)",
     re.IGNORECASE,
 )
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
+_REPOSITORY_ROOT = repository_root(__file__, 5)
 DEFAULT_FINBERT_EVALUATION_ROOT: Final[Path] = (
     _REPOSITORY_ROOT / "capstone-rag" / "runtime" / "finbert-eval"
 )

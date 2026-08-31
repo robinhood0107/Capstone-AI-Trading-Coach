@@ -1,6 +1,8 @@
 package com.capstone.decision.application.rag
 
 import com.capstone.decision.application.security.ActorRlsScopePort
+import com.capstone.decision.application.strongllm.StrongLlmSettingsService
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Service
@@ -52,10 +54,14 @@ class RagV2RuntimeService(
     private val vertexEvidencePort: RagV2VertexEvidencePort,
     private val vertexGenerationPort: RagV2VertexGenerationPort,
     private val vertexQuestionFingerprintPort: RagV2VertexQuestionFingerprintPort,
+    private val vertexActivationAuthorProvider: ObjectProvider<RagV2VertexActivationAuthorPort>,
     private val objectMapper: ObjectMapper,
     private val transactionManagerProvider: ObjectProvider<PlatformTransactionManager>,
     private val actorRlsScope: ActorRlsScopePort,
+    private val strongLlmSettingsProvider: ObjectProvider<StrongLlmSettingsService>,
 ) {
+    private val logger = LoggerFactory.getLogger(javaClass)
+
     /**
      * owner-private overlay 상태는 DB actor setting과 definer function으로만 읽는다.
      * 원본 파일명, 경로, hash receipt는 status API에 절대 노출하지 않는다.
@@ -63,6 +69,10 @@ class RagV2RuntimeService(
     @Transactional
     fun corpusStatus(ownerUserId: String): RagV2CorpusStatus {
         val jdbc = jdbc()
+        val budget = vertexActivationAuthorProvider.getIfAvailable()?.budget(ownerUserId)
+        // 설정 읽기는 자기 actor scope를 연다. corpus scope를 연 뒤에 열면 두 번째가 403이 되므로
+        // 순서를 지킨다.
+        val settings = strongLlmSettingsProvider.getIfAvailable()?.read(ownerUserId)
         setActor(ownerUserId, "READ_RAG_V2_CORPUS", "OWNER", ownerUserId)
         return jdbc
             .query(
@@ -78,6 +88,20 @@ class RagV2RuntimeService(
                     privateOverlayState = result.getString("private_overlay_state"),
                     progressPercent = result.getInt("progress_percent"),
                     failureCode = result.getString("failure_code"),
+                    // 자동 저술이 꺼져 있으면 예산 자체가 없다. 그때는 null이고 화면은 검색 전용이다.
+                    generationDailyCap = budget?.dailyCap,
+                    generationUsedToday = budget?.usedToday,
+                    generationRemaining = budget?.remaining,
+                    strongLlmProvider = settings?.provider,
+                    strongLlmFallbackProvider = settings?.fallbackProvider,
+                    strongLlmModelId = settings?.modelId,
+                    strongLlmFallbackModelId = settings?.fallbackModelId,
+                    strongLlmBaseUrl = settings?.baseUrl,
+                    strongLlmFallbackBaseUrl = settings?.fallbackBaseUrl,
+                    strongLlmAnswerLanguage = settings?.answerLanguage,
+                    strongLlmDailyGenerateCallCap = settings?.dailyGenerateCallCap,
+                    strongLlmKeyLast4 = settings?.primaryKeyLast4,
+                    strongLlmFallbackKeyLast4 = settings?.fallbackKeyLast4,
                 )
             }.single()
     }
@@ -283,9 +307,21 @@ class RagV2RuntimeService(
         vertexScopeClaimId: String? = null,
     ): RagV2Answer {
         val vertexEnabled = vertexGenerationPort.isActivationEnabled()
-        if (vertexEnabled && vertexScopeClaimId == null) {
-            // packet에 맞는 stable scope가 없으면 gRPC/provider socket까지 진행하지 않는다.
-            return vertexUnavailableAnswer(requestId)
+        var scopeClaimId = vertexScopeClaimId
+        if (vertexEnabled && scopeClaimId == null) {
+            // 자동 저술이 꺼져 있으면 예전 그대로다. packet에 맞는 stable scope가 없으면
+            // gRPC/provider socket까지 진행하지 않는다.
+            val author =
+                vertexActivationAuthorProvider.getIfAvailable()
+                    ?: return vertexUnavailableAnswer(requestId)
+            // 켜져 있으면 client가 두 단계를 밟지 않아도 서버가 같은 준비를 대신 한다. 준비의
+            // 내용과 검증은 `/vertex-preparations`와 완전히 같은 경로다.
+            val preparation = inDatabaseTransaction { prepareVertexGeneration(ownerUserId, requestId, command) }
+            if (!author.author(ownerUserId, preparation)) {
+                // 하루 상한에 닿았다. 생성만 닫고 검색은 그대로 태운다.
+                return vertexUnavailableAnswer(requestId)
+            }
+            scopeClaimId = preparation.scopeClaimId
         }
         val preparation =
             inDatabaseTransaction {
@@ -294,14 +330,15 @@ class RagV2RuntimeService(
                 if (status.state != "FULL_READY") {
                     throw RagV2CorpusNotReadyException()
                 }
-                if (!vertexEnabled && vertexScopeClaimId != null) {
+                if (!vertexEnabled && scopeClaimId != null) {
                     throw RagV2VertexPreparationUnavailableException()
                 }
+                val claimId = scopeClaimId
                 val scope =
-                    if (vertexScopeClaimId == null) {
+                    if (claimId == null) {
                         issueRetrievalScope(ownerUserId, requestId, command.topics)
                     } else {
-                        readVertexPreparedScope(ownerUserId, requestId, vertexScopeClaimId, command.topics).scope
+                        readVertexPreparedScope(ownerUserId, requestId, claimId, command.topics).scope
                     }
                 // provider 호출 전 DB actor/scope/consent read를 한 짧은 transaction에서 닫는다.
                 val externalQueryConsentGranted =
@@ -563,6 +600,11 @@ class RagV2RuntimeService(
                     buildList {
                         if (generation.answerBasis == StrongLlmAnswerBasis.MODEL_KNOWLEDGE) {
                             add("MODEL_KNOWLEDGE_ONLY")
+                        }
+                        // 화면이 근거 문장과 추론 문장을 구분해 보여줄 수 있어야 한다.
+                        // guardrailFlags는 이미 문자열 배열이라 계약을 넓히지 않는다.
+                        if (generation.answerBasis == StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING) {
+                            add("REASONING_SENTENCES_PRESENT")
                         }
                         addAll(generation.warnings)
                     },
@@ -913,7 +955,10 @@ class RagV2RuntimeService(
                     require(citation.generationId in setOf(scope.exact30GenerationId, scope.oa112GenerationId, scope.ownerGenerationId))
                 }
             }
-            RagGenerationStatus.RETRIEVAL_FAILURE ->
+            RagGenerationStatus.RETRIEVAL_FAILURE -> {
+                // 실패 코드는 provider cause를 담지 않는 typed allowlist다. 이것을 남기지 않으면
+                // 모든 검색 실패가 구분 없는 하나로 보여 어느 게이트가 닫혔는지 알 수 없다.
+                logger.warn("rag v2 retrieval failed closed: {}", evaluation.failureCode)
                 require(
                     evaluation.answer == null &&
                         evaluation.citations.isEmpty() &&
@@ -921,6 +966,7 @@ class RagV2RuntimeService(
                         evaluation.retrievalFailure &&
                         FAILURE_CODE.matches(evaluation.failureCode),
                 )
+            }
             RagGenerationStatus.BLOCKED_SENSITIVE,
             RagGenerationStatus.BLOCKED_ADVICE,
             RagGenerationStatus.GENERATION_UNAVAILABLE,
@@ -951,12 +997,23 @@ class RagV2RuntimeService(
             RagGenerationStatus.ANSWERED -> {
                 val answer = requireNotNull(generation.answer)
                 require(answer.toByteArray(Charsets.UTF_8).size in 1..8192)
-                require(generation.answerBasis in setOf(StrongLlmAnswerBasis.EVIDENCE, StrongLlmAnswerBasis.MODEL_KNOWLEDGE))
-                if (generation.answerBasis == StrongLlmAnswerBasis.EVIDENCE) {
+                require(
+                    generation.answerBasis in
+                        setOf(
+                            StrongLlmAnswerBasis.EVIDENCE,
+                            StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING,
+                            StrongLlmAnswerBasis.MODEL_KNOWLEDGE,
+                        ),
+                )
+                // 추론 문장이 섞이면 모든 문장이 인용을 갖지는 않는다. 인용 비율 하한을 낮추되
+                // 인용이 하나도 없는 답은 여전히 이 basis로 나올 수 없다.
+                val groundedCoverageFloor =
+                    if (generation.answerBasis == StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING) 0.2 else 0.8
+                if (generation.answerBasis != StrongLlmAnswerBasis.MODEL_KNOWLEDGE) {
                     require(
                         (evidence.isNotEmpty() || generation.webCitations.isNotEmpty()) &&
                             generation.citationIds.isNotEmpty() &&
-                            generation.citationCoverage in 0.8..1.0,
+                            generation.citationCoverage in groundedCoverageFloor..1.0,
                     )
                 } else {
                     require(generation.citationIds.isEmpty() && generation.citationCoverage == 0.0)

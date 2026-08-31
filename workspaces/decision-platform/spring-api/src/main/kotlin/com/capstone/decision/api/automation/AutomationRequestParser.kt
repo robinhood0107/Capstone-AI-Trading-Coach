@@ -3,7 +3,9 @@ package com.capstone.decision.api.automation
 import com.capstone.decision.api.common.ApiException
 import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.application.automation.ArmAutomationCommand
+import com.capstone.decision.application.automation.ArmAutomationV2Command
 import com.capstone.decision.application.automation.DisarmAutomationCommand
+import com.capstone.decision.application.automation.PutAutomationPolicyV2Command
 import com.capstone.decision.application.security.IdempotencyKeyPolicy
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.stereotype.Component
@@ -55,6 +57,32 @@ class AutomationRequestParser {
     fun parseDisarm(body: String): DisarmAutomationCommand {
         val root = parseObject(body, DISARM_FIELDS)
         return DisarmAutomationCommand(requiredVersion(root, "expectedVersion"))
+    }
+
+    fun parsePutPolicyV2(body: String): PutAutomationPolicyV2Command {
+        val root = parseObject(body, POLICY_V2_FIELDS)
+        val capital = requiredLong(root, "capitalLimitKrw")
+        val stopLoss = requiredInt(root, "stopLossBps")
+        val takeProfit = requiredInt(root, "takeProfitBps")
+        if (capital !in 10_000L..10_000_000_000L || capital % 10_000L != 0L) invalid("/capitalLimitKrw")
+        if (stopLoss !in 100..1_500) invalid("/stopLossBps")
+        if (takeProfit !in 200..3_000 || takeProfit <= stopLoss) invalid("/takeProfitBps")
+        return PutAutomationPolicyV2Command(
+            capitalLimitKrw = capital,
+            stopLossBps = stopLoss,
+            takeProfitBps = takeProfit,
+            expectedVersion = requiredNonnegativeVersion(root, "expectedVersion"),
+        )
+    }
+
+    fun parseArmV2(body: String): ArmAutomationV2Command {
+        val root = parseObject(body, ARM_V2_FIELDS)
+        return ArmAutomationV2Command(
+            accountId = requiredPattern(root, "accountId", ACCOUNT_ID),
+            policyId = requiredPattern(root, "policyId", POLICY_ID),
+            expectedPolicyVersion = requiredVersion(root, "expectedPolicyVersion"),
+            expectedControlVersion = requiredVersion(root, "expectedControlVersion"),
+        )
     }
 
     fun parseRunsQuery(request: HttpServletRequest): AutomationRunQuery {
@@ -126,6 +154,33 @@ class AutomationRequestParser {
         return value.intValue().takeIf { it >= 1 } ?: invalid("/$field")
     }
 
+    private fun requiredNonnegativeVersion(
+        root: JsonNode,
+        field: String,
+    ): Int {
+        val value = root.get(field)
+        if (value == null || !value.isIntegralNumber || !value.canConvertToInt()) invalid("/$field")
+        return value.intValue().takeIf { it >= 0 } ?: invalid("/$field")
+    }
+
+    private fun requiredInt(
+        root: JsonNode,
+        field: String,
+    ): Int {
+        val value = root.get(field)
+        if (value == null || !value.isIntegralNumber || !value.canConvertToInt()) invalid("/$field")
+        return value.intValue()
+    }
+
+    private fun requiredLong(
+        root: JsonNode,
+        field: String,
+    ): Long {
+        val value = root.get(field)
+        if (value == null || !value.isIntegralNumber || !value.canConvertToLong()) invalid("/$field")
+        return value.longValue()
+    }
+
     private fun rejectUnknownOrRepeatedQuery(
         request: HttpServletRequest,
         allowed: Set<String>,
@@ -150,11 +205,14 @@ class AutomationRequestParser {
         const val MAX_CURSOR_CHARS = 512
         val ARM_FIELDS = setOf("brokerageMode", "accountId", "principleId", "strategyId", "expectedVersion")
         val DISARM_FIELDS = setOf("expectedVersion")
+        val POLICY_V2_FIELDS = setOf("capitalLimitKrw", "stopLossBps", "takeProfitBps", "expectedVersion")
+        val ARM_V2_FIELDS = setOf("accountId", "policyId", "expectedPolicyVersion", "expectedControlVersion")
         val RUN_QUERY_FIELDS = setOf("size", "cursor")
         val BROKERAGE_MODES = setOf("KIS_MOCK", "INTERNAL_PAPER")
         val ACCOUNT_ID = Regex("^acct_[A-Za-z0-9_-]{8,96}$")
         val PRINCIPLE_ID = Regex("^prc_[A-Za-z0-9_-]{8,96}$")
         val STRATEGY_ID = Regex("^strategy_[A-Za-z0-9_-]{8,96}$")
+        val POLICY_ID = Regex("^auto_pol_[0-9a-f]{32}$")
         val BASE64_URL = Regex("^[A-Za-z0-9_-]+$")
     }
 }

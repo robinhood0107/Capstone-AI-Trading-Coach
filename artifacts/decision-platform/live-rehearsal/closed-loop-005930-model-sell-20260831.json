@@ -1,0 +1,85 @@
+{
+  "status": "SUCCESS",
+  "scenario": "MODEL_SELL",
+  "symbol": "005930",
+  "engineSteps": [
+    {
+      "step": "preBalance",
+      "cashKrw": 100000000,
+      "symbolQuantity": 0
+    },
+    {
+      "step": "positionOpened",
+      "symbol": "005930",
+      "quantity": 1,
+      "entryAverageFillPriceKrw": 251250,
+      "entrySession": "2026-08-31",
+      "expirySession": "2026-09-07"
+    },
+    {
+      "step": "positionClosed",
+      "exitReason": "MODEL_SELL",
+      "entryAverageFillPriceKrw": 251250,
+      "exitAverageFillPriceKrw": 251250,
+      "exitFilledQuantity": 1,
+      "realizedPnlKrw": -880,
+      "closedPositions": 1
+    },
+    {
+      "step": "postBalance",
+      "cashKrw": 100000000,
+      "symbolQuantity": 0
+    }
+  ],
+  "transportSteps": [
+    {
+      "step": "quote",
+      "symbol": "005930",
+      "priceKrw": 251250,
+      "upperKrw": 334000,
+      "lowerKrw": 180000
+    },
+    {
+      "step": "vertex",
+      "symbol": "005930",
+      "verdict": "NO_VETO",
+      "providerCalls": 0
+    },
+    {
+      "step": "submitBuy",
+      "symbol": "005930",
+      "quantity": 1,
+      "limitPriceKrw": 251500,
+      "orderNo": "0000019655"
+    },
+    {
+      "step": "buyFill",
+      "cumulativeQuantity": 1,
+      "leavesQuantity": 0,
+      "averageFillPriceKrw": 251250
+    },
+    {
+      "step": "quote",
+      "symbol": "005930",
+      "priceKrw": 251250,
+      "upperKrw": 334000,
+      "lowerKrw": 180000
+    },
+    {
+      "step": "submitSell",
+      "symbol": "005930",
+      "quantity": 1,
+      "limitPriceKrw": 251000,
+      "orderNo": "0000019658"
+    },
+    {
+      "step": "sellFill",
+      "cumulativeQuantity": 1,
+      "leavesQuantity": 0,
+      "averageFillPriceKrw": 251250
+    }
+  ],
+  "physicalCalls": 6,
+  "vertexProviderCalls": 0,
+  "sessionKst": "2026-08-31T10:42:42.385709+09:00"
+}

@@ -2,7 +2,7 @@
   "contractId": "p1-rag-v1-e2e.v1",
   "steps": [
     {
-      "detail": "HTTP 200 answerId=있음 상태=RETRIEVAL_ONLY 이력 17→18 code=None",
+      "detail": "HTTP 200 answerId=있음 상태=RETRIEVAL_ONLY 이력 19→20 code=None",
       "name": "v1 질문과 이력 적재",
       "verdict": "PASS"
     },

@@ -101,7 +101,7 @@ class LangChainVertexProvider:
         base_model = ChatGoogleGenerativeAI(**common)
         structured = {
             "response_mime_type": "application/json",
-            "response_schema": _vertex_response_schema(),
+            "response_schema": _vertex_response_schema(request.mode),
         }
         self._structured = base_model.bind(**structured)
         # Google Search와 native JSON schema의 단일 호출 결합은 LangChain 공식 bind 계약을 따른다.
@@ -198,6 +198,7 @@ class LangChainVertexProvider:
                 item.citation_id for item in request.public_evidence + request.owner_evidence
             }
             | host_tool_citation_ids,
+            mode=request.mode,
         )
 
     def tool_calls(self, message: AIMessage) -> list[dict[str, object]]:
@@ -219,8 +220,36 @@ class LangChainVertexProvider:
         return [*prefix, message, ToolMessage(content=result_json, tool_call_id=call_id)]
 
 
-def _vertex_response_schema() -> dict[str, object]:
-    """Vertex 지원 subset만 보내고 길이·pattern은 Pydantic과 Kotlin에서 재검증한다."""
+def _vertex_response_schema(mode: str = "EXPLAIN") -> dict[str, object]:
+    """Vertex 지원 subset만 보내고 길이·pattern은 Pydantic과 Kotlin에서 재검증한다.
+
+    JUDGE는 설명이 아니라 후보 점수를 낸다. 두 모드가 같은 schema를 쓰면 판단 turn에서도
+    모델이 `basis`/`sentences`를 채워 보내고, 그것을 `StrongLlmJudgement`로 읽으려다
+    매번 실패한다. prompt는 이미 `_OUTPUT_JUDGE`로 갈라져 있었고 여기만 갈라지지 않았다.
+    """
+
+    if mode == "JUDGE":
+        return {
+            "type": "object",
+            "properties": {
+                "candidates": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": {"type": "string"},
+                            "score": {"type": "number"},
+                            "veto": {"type": "boolean"},
+                            "reason": {"type": "string"},
+                        },
+                        "required": ["symbol", "score", "veto", "reason"],
+                    },
+                },
+                "confidence": {"type": "number"},
+                "summary": {"type": "string"},
+            },
+            "required": ["candidates", "confidence", "summary"],
+        }
 
     citation_ids: dict[str, object] = {"type": "array", "items": {"type": "string"}}
     evidence_span: dict[str, object] = {
@@ -280,6 +309,7 @@ def _provider_result(
     message: AIMessage,
     *,
     allowed_local_ids: set[str] | None = None,
+    mode: str = "EXPLAIN",
 ) -> ProviderResult:
     if message.tool_calls:
         tool_usage: dict[str, Any] = dict(message.usage_metadata or {})
@@ -350,11 +380,15 @@ def _provider_result(
         roots = content_roots
         supports = content_supports
     usage: dict[str, Any] = dict(message.usage_metadata or {})
-    normalized = _normalize_grounded_answer(
-        text,
-        roots,
-        supports,
-        allowed_local_ids=allowed_local_ids,
+    normalized = (
+        text
+        if mode == "JUDGE"
+        else _normalize_grounded_answer(
+            text,
+            roots,
+            supports,
+            allowed_local_ids=allowed_local_ids,
+        )
     )
     return {
         "message": message,

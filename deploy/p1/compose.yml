@@ -258,15 +258,47 @@ services:
       RETURN_INFERENCE_ALLOW_SYNTHETIC: "false"
       RAG_ANSWERER: FIXTURE_ONLY
       RAG_GRPC_ENABLED: "false"
-      RAG_V2_GRPC_ENABLED: "false"
-      RAG_V2_VERTEX_ENABLED: "false"
+      # RAG v2 실검색은 opt-in이다. 켜려면 운영자가 rag-v2.env에 VOYAGE_API_KEY를 넣고
+      # 로컬 루트에 control/secrets/tokenizer를 갖춰야 한다. 하나라도 없으면 기동에서 닫힌다.
+      RAG_V2_GRPC_ENABLED: "${P1_RAG_V2_ENABLED:-false}"
+      RAG_V2_GRPC_TARGET: 127.0.0.1:50054
+      RAG_V2_GRPC_BIND_ADDRESS: 127.0.0.1:50054
+      RAG_V2_GRPC_ENABLE_REFLECTION: "false"
+      S4_9_RUNTIME_VOYAGE_QUERY_ENABLED: "${P1_RAG_V2_ENABLED:-false}"
+      # 공식 Voyage context-4 tokenizer의 해시다. V98의 official_tokenizer_sha256과 같은 값이고,
+      # 로컬 루트의 tokenizer.json이 이 해시가 아니면 기동에서 닫힌다.
+      S4_9_VOYAGE_TOKENIZER_SHA256: "${P1_RAG_V2_TOKENIZER_SHA256:-c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539}"
+      P1_RAG_RUNTIME_DIR_MOUNT: /run/rag-runtime
+      # Vertex 생성형 답변. 요청마다 5분짜리 활성화 패킷이 있어야 열리므로 기본은 off다.
+      RAG_V2_VERTEX_ENABLED: "${P1_RAG_V2_VERTEX_ENABLED:-false}"
+      VERTEX_MODEL_ID: "${P1_VERTEX_MODEL_ID:-gemini-3.5-flash}"
+      RAG_V2_VERTEX_HEAD_COMMIT: "${P1_RAG_V2_VERTEX_HEAD_COMMIT:-}"
+      RAG_V2_VERTEX_TREE_DIGEST: "${P1_RAG_V2_VERTEX_TREE_DIGEST:-}"
+      RAG_V2_VERTEX_CI_DIGEST: "${P1_RAG_V2_VERTEX_CI_DIGEST:-}"
+      RAG_V2_VERTEX_SECURITY_DIGEST: "${P1_RAG_V2_VERTEX_SECURITY_DIGEST:-}"
+      # 자동 저술을 켜면 활성화 패킷을 사람이 아니라 배포 정책이 만든다. 정책 파일은 RAG
+      # 런타임 루트의 control/pre-s5-vertex-auto-activation-policy.json이며 entrypoint가
+      # 소유자 전용 사본으로 옮기고 경로를 내보낸다. 켜 두고 정책이 없으면 부팅에서 닫힌다.
+      RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED: "${P1_RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED:-false}"
       RAG_WEB_ENABLED: "false"
-      S4_9_STRONG_LLM_ENABLED: "false"
+      # Strong LLM 판단. 켜면 supervisor가 loopback gRPC 프로세스를 함께 띄우고,
+      # rag-v2.env의 STRONG_LLM_GRPC_SHARED_SECRET이 없으면 부팅에서 닫힌다.
+      S4_9_STRONG_LLM_ENABLED: "${P1_STRONG_LLM_ENABLED:-false}"
+      STRONG_LLM_GRPC_BIND_ADDRESS: 127.0.0.1:50055
+      STRONG_LLM_GRPC_TARGET: 127.0.0.1:50055
+      # 1차 provider와 그것이 실패했을 때의 2차. 2차가 비면 1차만 쓴다.
+      STRONG_LLM_PROVIDER: "${P1_STRONG_LLM_PROVIDER:-vertex}"
+      STRONG_LLM_MODEL_ID: "${P1_STRONG_LLM_MODEL_ID:-}"
+      STRONG_LLM_FALLBACK_PROVIDER: "${P1_STRONG_LLM_FALLBACK_PROVIDER:-}"
+      STRONG_LLM_FALLBACK_MODEL_ID: "${P1_STRONG_LLM_FALLBACK_MODEL_ID:-}"
       S4_9_MCP_ENABLED: "false"
       P1_OFFLINE_DEMO: "true"
       P1_TEAM_A_ACCEPTANCE_ENABLED: "${P1_TEAM_A_ACCEPTANCE_ENABLED:-false}"
       P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK: "${P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK:-}"
       APP_P1_RETURN_ARTIFACT_SYNTHETIC_TEST_PROFILE: "${P1_ARTIFACT_SYNTHETIC_TEST_PROFILE:-false}"
+      # 이 배포가 대조한 KRX 호가표를 명시한다. 값이 없으면 LIMIT 주문은 계속 닫힌다.
+      # `TickSizePolicy.tickSize`가 구현한 표가 2023-12 현금성 주식·ETP 개정표다.
+      BROKERAGE_TICK_TABLE_VERIFICATION: "${P1_BROKERAGE_TICK_TABLE_VERIFICATION:-KRX_CASH_EQUITY_202312_ETP_UPDATE}"
       BROKERAGE_GRPC_ENABLED: "${P1_KIS_MOCK_ONLINE_ENABLED:-false}"
       BROKERAGE_GRPC_TARGET: 127.0.0.1:50052
       PYTHON_BROKERAGE_GRPC_BIND_ADDRESS: 127.0.0.1:50052
@@ -276,7 +308,10 @@ services:
       KIS_OFFLINE: "${P1_KIS_OFFLINE:-1}"
       KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "${P1_KIS_MOCK_ONLINE_ENABLED:-false}"
       P1_AUTOMATION_RUNTIME_ENABLED: "${P1_AUTOMATION_RUNTIME_ENABLED:-false}"
-    secrets: [spring_env, python_env, kis_mock_env, return_inference_env, automation_runtime_env, rag_history_kek, actor_client_p12, actor_tls_ca]
+    secrets: [spring_env, python_env, kis_mock_env, return_inference_env, automation_runtime_env, rag_v2_env, vertex_service_account, rag_history_kek, actor_client_p12, actor_tls_ca]
+    volumes:
+      # 읽기 전용이다. entrypoint가 컨테이너 tmpfs로 복사해 소유권과 mode를 맞춘다.
+      - ${P1_RAG_RUNTIME_DIR}:/run/rag-runtime:ro
     ports:
       - "127.0.0.1:${P1_API_PORT:-18080}:8080"
     depends_on:
@@ -360,7 +395,9 @@ services:
       KIS_REQUEST_INTERVAL_MILLISECONDS: "1000"
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      KIS_MOCK_APPROVAL_ENV_FILE: /run/secrets/kis_mock_env
+      # compose secret은 원본 mode를 그대로 마운트하므로 group-readable인 kis_mock_env로는
+      # owner-only latch 조건을 만족할 수 없다. certify가 0600으로 써 두는 latch만 읽는다.
+      KIS_MOCK_APPROVAL_ENV_FILE: /certification/approval-latch.env
     secrets:
       - spring_env
       - python_env
@@ -368,7 +405,11 @@ services:
       - kis_mock_approval_private
       - kis_mock_approval_public
       - kis_mock_approval_trust_policy
-      - p1_provider_claim_dsn
+      # provider claim reader는 /run/secrets/p1-provider-claim-dsn 경로만 읽는다. 기본
+      # 마운트 이름은 언더바라 어긋난다. mode는 non-swarm compose에서 무시되므로
+      # group/other 비트 제거는 state 파일 자체를 0600으로 만들어 해결한다.
+      - source: p1_provider_claim_dsn
+        target: p1-provider-claim-dsn
     volumes:
       - ${P1_KIS_MOCK_RUNTIME_DIR}:/certification
     user: "${P1_OPERATOR_UID}:${P1_SECRET_GID}"
@@ -384,7 +425,9 @@ services:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
     restart: "no"
-    networks: [p1-data]
+    # p1-data는 internal이라 egress가 없다. 인증 runner는 실제 KIS 모의 origin으로 나가야 하므로
+    # redis 접근용 p1-data와 함께 egress가 있는 p1-app에도 붙는다.
+    networks: [p1-data, p1-app]
 
   automation-runtime-cli:
     profiles: [owner]
@@ -641,6 +684,8 @@ secrets:
   return_inference_env: {file: "${P1_SECRETS_DIR}/return-inference.env"}
   automation_runtime_env: {file: "${P1_SECRETS_DIR}/automation-runtime.env"}
   automation_gate_author_env: {file: "${P1_SECRETS_DIR}/automation-gate-author.env"}
+  rag_v2_env: {file: "${P1_SECRETS_DIR}/rag-v2.env"}
+  vertex_service_account: {file: "${P1_SECRETS_DIR}/pre-s5-vertex-service-account.json"}
   actor_tls_ca: {file: "${P1_SECRETS_DIR}/actor-tls-ca.crt"}
   actor_server_p12: {file: "${P1_SECRETS_DIR}/actor-server.p12"}
   actor_client_p12: {file: "${P1_SECRETS_DIR}/actor-client.p12"}

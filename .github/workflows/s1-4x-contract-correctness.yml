@@ -190,8 +190,17 @@ jobs:
           )
           test "${S4_9_CARRIER_PATHS[*]}" = \
             "workspaces/decision-platform/python-services/pyproject.toml workspaces/decision-platform/python-services/uv.lock"
-          # S5.7B/C도 dependency를 바꾸지 않고 provider-free seed/DB/replay CLI만 추가한다.
           # historical carrier 이후의 exact path와 content hash를 함께 고정해 수치 환경 drift를 막는다.
+          # 이 pin을 바꾸는 것이 곧 reference lock amendment이므로 무엇을 왜 더했는지 여기에 적는다.
+          #
+          #   1  12eac55b… / 6705b706…  S5.7B/C. dependency를 바꾸지 않고 seed·DB·replay CLI만 더했다.
+          #   2  아래 값                 Strong LLM provider 교체. langchain-openai==1.6.0 과
+          #                             langchain-anthropic==1.7.0 을 더하고, 보안 패치로
+          #                             cryptography 를 >=50,<51 로 pillow 를 12.3.0 으로 올렸다.
+          #
+          # 이 pin이 지키는 것은 수치 패리티이고 그것이 걸린 것은 numpy·scipy·jax 계열이다.
+          # amendment 2는 그 셋을 건드리지 않는다. 다음에 누가 수치 패키지를 옮기면 여기서 죽고,
+          # 그때도 지금처럼 이유를 적고 지나가야 한다.
           mapfile -t S5_6_RUNTIME_PATHS < <(
             git diff --name-only "$S4_9_RUNTIME_CARRIER" HEAD -- \
               workspaces/decision-platform/python-services/pyproject.toml \
@@ -201,9 +210,9 @@ jobs:
           test "${S5_6_RUNTIME_PATHS[*]}" = \
             "workspaces/decision-platform/python-services/pyproject.toml workspaces/decision-platform/python-services/uv.lock"
           test "$(sha256sum workspaces/decision-platform/python-services/pyproject.toml | cut -d' ' -f1)" = \
-            "12eac55b4211ef9d1a6ef8c7edb83e8c013428940941bc7975223e7d33bf64bc"
+            "3d1d4a4c620e11007bb083a977975ba5ee0380101c45f7652ab69b405ac6453f"
           test "$(sha256sum workspaces/decision-platform/python-services/uv.lock | cut -d' ' -f1)" = \
-            "6705b70649f8d60c296744333fc10ec444e1eeb675474a9ff14ff276f3856f56"
+            "7762ff5bcdf07d8b0e3e55ca75181d15c78ca3e3c0e379f0859f08af5da3163e"
 
           # 로컬 자료 경로에 결합된 obsolete host-only 검사는 한 번만 exact hash 전이로 제거한다.
           S1_4R_ISOLATION_TEST=workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py

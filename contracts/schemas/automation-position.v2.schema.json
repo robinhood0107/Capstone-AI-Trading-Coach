@@ -1,0 +1,145 @@
+{
+  "$id": "contracts/schemas/automation-position.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accountId": {
+      "pattern": "^acct_[A-Za-z0-9_-]{8,96}$",
+      "type": "string"
+    },
+    "botOwned": {
+      "const": true
+    },
+    "closedAt": {
+      "oneOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "contractId": {
+      "const": "automation-position.v2"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "entryAverageFillPriceKrw": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "entrySession": {
+      "format": "date",
+      "type": "string"
+    },
+    "exitAverageFillPriceKrw": {
+      "oneOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "exitReason": {
+      "oneOf": [
+        {
+          "enum": [
+            "STOP_LOSS",
+            "MAX_HOLDING_SESSIONS",
+            "MODEL_SELL",
+            "TAKE_PROFIT"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "expirySession": {
+      "format": "date",
+      "type": "string"
+    },
+    "policyId": {
+      "pattern": "^auto_pol_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "policyVersion": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "positionId": {
+      "pattern": "^auto_pos_[A-Za-z0-9_-]{8,96}$",
+      "type": "string"
+    },
+    "quantity": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "realizedPnlKrw": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "shortAllowed": {
+      "const": false
+    },
+    "status": {
+      "enum": [
+        "OPEN",
+        "EXIT_PENDING",
+        "CLOSED",
+        "HALTED_MISMATCH"
+      ]
+    },
+    "stopLossBps": {
+      "maximum": 1500,
+      "minimum": 100,
+      "type": "integer"
+    },
+    "symbol": {
+      "pattern": "^[0-9]{6}$",
+      "type": "string"
+    },
+    "takeProfitBps": {
+      "maximum": 3000,
+      "minimum": 200,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "contractId",
+    "positionId",
+    "accountId",
+    "symbol",
+    "quantity",
+    "entryAverageFillPriceKrw",
+    "entrySession",
+    "expirySession",
+    "policyId",
+    "policyVersion",
+    "stopLossBps",
+    "takeProfitBps",
+    "status",
+    "exitReason",
+    "exitAverageFillPriceKrw",
+    "realizedPnlKrw",
+    "botOwned",
+    "shortAllowed",
+    "createdAt",
+    "closedAt"
+  ],
+  "title": "automation-position.v2",
+  "type": "object"
+}

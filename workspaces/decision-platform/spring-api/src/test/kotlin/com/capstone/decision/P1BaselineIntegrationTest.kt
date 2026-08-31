@@ -56,14 +56,39 @@ class P1BaselineIntegrationTest {
     }
 
     @Test
-    fun `fresh database applies B86 through V90 while existing database applies V1 through V90`() {
+    fun `fresh database applies B86 through V109 while existing database applies V1 through V109`() {
         assertEquals(
-            listOf("86" to "SQL_BASELINE", "87" to "SQL", "88" to "SQL", "89" to "SQL", "90" to "SQL"),
+            listOf(
+                "86" to "SQL_BASELINE",
+                "87" to "SQL",
+                "88" to "SQL",
+                "89" to "SQL",
+                "90" to "SQL",
+                "91" to "SQL",
+                "92" to "SQL",
+                "93" to "SQL",
+                "94" to "SQL",
+                "95" to "SQL",
+                "96" to "SQL",
+                "97" to "SQL",
+                "98" to "SQL",
+                "99" to "SQL",
+                "100" to "SQL",
+                "101" to "SQL",
+                "102" to "SQL",
+                "103" to "SQL",
+                "104" to "SQL",
+                "105" to "SQL",
+                "106" to "SQL",
+                "107" to "SQL",
+                "108" to "SQL",
+                "109" to "SQL",
+            ),
             history(BASELINE_DB),
         )
-        assertEquals(90, history(HISTORICAL_DB).size)
-        assertEquals("90" to "SQL", history(HISTORICAL_DB).last())
-        assertEquals("90" to "SQL", history(UPGRADE_DB).last())
+        assertEquals(109, history(HISTORICAL_DB).size)
+        assertEquals("109" to "SQL", history(HISTORICAL_DB).last())
+        assertEquals("109" to "SQL", history(UPGRADE_DB).last())
         assertTrue(history(UPGRADE_DB).none { it.second == "SQL_BASELINE" })
     }
 
@@ -96,7 +121,7 @@ class P1BaselineIntegrationTest {
         listOf(HISTORICAL_DB, BASELINE_DB).forEach { database ->
             assertEquals(0L, count(database, "actor_request_capability"))
             assertEquals(
-                "90",
+                "109",
                 scalar(database, "select version from flyway_schema_history where success order by installed_rank desc limit 1"),
             )
         }

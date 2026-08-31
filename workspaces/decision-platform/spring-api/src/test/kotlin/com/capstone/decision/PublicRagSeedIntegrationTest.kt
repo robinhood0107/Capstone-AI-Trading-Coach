@@ -46,7 +46,7 @@ class PublicRagSeedIntegrationTest {
     }
 
     @Test
-    fun `public seed restores a fresh V90 target and is idempotent`() {
+    fun `public seed restores a fresh V91 target and is idempotent`() {
         val first = runImporter()
         assertEquals("IMPORTED_FULL_READY", first["status"])
         assertEquals(142, first["sourceCount"])
@@ -83,7 +83,7 @@ class PublicRagSeedIntegrationTest {
                         """.trimIndent(),
                     ).use { rows ->
                         assertTrue(rows.next())
-                        assertEquals("90", rows.getString(1))
+                        assertEquals("109", rows.getString(1))
                         assertEquals("ACTIVE", rows.getString(2))
                         assertEquals(142, rows.getInt(3))
                         assertEquals(7871, rows.getInt(4))

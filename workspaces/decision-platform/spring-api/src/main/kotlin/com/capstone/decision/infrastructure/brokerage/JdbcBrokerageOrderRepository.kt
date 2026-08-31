@@ -21,12 +21,15 @@ import com.capstone.decision.application.brokerage.StoredMockBalance
 import com.capstone.decision.application.risk.KillSwitchBlockedException
 import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.domain.brokerage.TickSizePolicy
+import com.capstone.decision.domain.brokerage.TickTableContext
+import com.capstone.decision.domain.brokerage.TickTableVerification
 import com.capstone.decision.domain.brokerage.TickValidation
 import com.capstone.decision.domain.risk.OrderIntentSnapshot
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
 import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
@@ -45,6 +48,7 @@ class JdbcBrokerageOrderRepository(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val objectMapper: ObjectMapper,
     private val actorCapabilityIssuer: ActorCapabilityIssuer,
+    @Value("\${BROKERAGE_TICK_TABLE_VERIFICATION:}") private val declaredTickTable: String,
 ) : BrokerageOrderPersistencePort {
     override fun findIdempotencyResult(
         actorUserId: String,
@@ -352,7 +356,7 @@ class JdbcBrokerageOrderRepository(
                 TickSizePolicy.validate(
                     orderType = request.command.orderIntent.orderType,
                     priceKrw = request.command.orderIntent.estimatedPrice,
-                    context = null,
+                    context = tickTableContext(request.command.orderIntent.symbol),
                 )
         ) {
             TickValidation.Valid -> Unit
@@ -363,6 +367,43 @@ class JdbcBrokerageOrderRepository(
                     listOf(BrokerageFieldViolation("/orderIntent/estimatedPrice", tick.reason)),
                 )
         }
+    }
+
+    /**
+     * 호가단위 검증 근거를 배포가 붙인 선언과 종목 계약목록 관측에서 만든다.
+     *
+     * 지금까지 이 자리에 `null`이 들어가 있어 `TickSizePolicy`가 언제나 `Unavailable`을 냈고,
+     * 그래서 LIMIT 주문이 조건 없이 거부됐다. 자동운용은 LIMIT만 내므로 플랫폼을 통한 주문이
+     * 구조적으로 불가능했다. `TickTableContext`는 테스트에서만 만들어지고 있었다.
+     *
+     * 그렇다고 검증을 추론으로 만들지는 않는다. 계약목록 관측은 ETF/ETN 구분을 말할 뿐 KRX
+     * 호가표를 대조했다는 사실을 말하지 않는다. 그래서 대조 사실은 배포가 명시적으로 붙인다 -
+     * `BROKERAGE_TICK_TABLE_VERIFICATION`이 정확히 그 표의 이름일 때만 인정한다. 값이 없으면
+     * 예전 그대로 닫힌다. 붙인 뒤에도 해당 종목의 계약목록 관측이 `COMPLETE`가 아니면 ETF/ETN
+     * 구분을 알 수 없으므로 역시 닫는다. `TickSizePolicy.tickSize`가 구현한 표가 그 개정 표다.
+     */
+    private fun tickTableContext(symbol: String): TickTableContext? {
+        if (declaredTickTable != TickTableVerification.KRX_CASH_EQUITY_202312_ETP_UPDATE.name) {
+            return null
+        }
+        return jdbc()
+            .query(
+                """
+                SELECT is_etf_etn
+                FROM latest_instrument_catalog_observations
+                WHERE symbol = :symbol
+                  AND completeness = 'COMPLETE'
+                LIMIT 1
+                """.trimIndent(),
+                mapOf("symbol" to symbol),
+            ) { result, _ -> result.getBoolean("is_etf_etn") }
+            .singleOrNull()
+            ?.let { isEtfEtn ->
+                TickTableContext(
+                    isEtfEtn = isEtfEtn,
+                    verification = TickTableVerification.KRX_CASH_EQUITY_202312_ETP_UPDATE,
+                )
+            }
     }
 
     private fun parsePinnedOrderIntent(snapshotArtifactCanonicalJson: String): OrderIntentSnapshot {

@@ -11,6 +11,8 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+
+from app.data._shared.repository_root import repository_root
 from typing import Any, Literal, NoReturn
 
 from pydantic import SecretStr
@@ -34,7 +36,7 @@ from app.brokerage.mock_order_reference_store import (
 )
 from app.data.kis._credential_transport import _build_redis_client, _provider_scope
 
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
+_REPOSITORY_ROOT = repository_root(__file__, 5)
 _MAX_PACKET_BYTES = 64 * 1024
 
 

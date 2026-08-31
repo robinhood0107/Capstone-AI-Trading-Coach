@@ -4,6 +4,7 @@ import com.capstone.decision.application.rag.RagGenerationStatus
 import com.capstone.decision.application.rag.RagV2VertexGenerationCommand
 import com.capstone.decision.application.rag.RagV2VertexGenerationPort
 import com.capstone.decision.application.rag.RagV2VertexGenerationResult
+import com.capstone.decision.application.rag.RagV2VertexResponseValidationException
 import com.capstone.decision.application.rag.RagV2VertexResponseValidator
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -100,6 +101,10 @@ internal class VertexGemini35FlashGenerationAdapter(
                 val providerResponse =
                     try {
                         if (response.statusCode !in 200..299) {
+                            // provider body는 계속 남기지 않는다. 다만 숫자 상태 코드는 남긴다.
+                            // 4xx 하나로 뭉뚱그리면 인증 거절인지 요청 거절인지 구분할 수 없어
+                            // fail-closed의 원인을 밖에서 좁힐 방법이 없었다.
+                            LOGGER.warn("pre_s5_vertex_generate_status status={}", response.statusCode)
                             throw PreS5VertexGenerationException(
                                 when (response.statusCode) {
                                     in 400..499 -> PreS5VertexGenerationFailureLeaf.GENERATE_HTTP_4XX
@@ -139,6 +144,15 @@ internal class VertexGemini35FlashGenerationAdapter(
         } catch (error: PreS5VertexOAuthException) {
             LOGGER.warn("pre_s5_vertex_oauth_failed leaf={}", error.failureLeaf.name)
             LOGGER.warn("pre_s5_vertex_generation_failed leaf={}", failureLeaf.name)
+            if (lease != null && !outcomeRecorded) {
+                runCatching { usageLedger.markUnknownBilling(lease) }
+            }
+            return unavailable()
+        } catch (error: RagV2VertexResponseValidationException) {
+            // 응답 검증 실패는 어느 경계가 닫혔는지가 곧 원인이다. 그 경계 이름은 content-free
+            // 상수이므로 남긴다. 모델이 만든 문장, 인용, 근거는 계속 남기지 않는다.
+            LOGGER.warn("pre_s5_vertex_generation_failed leaf={}", failureLeaf.name)
+            LOGGER.warn("pre_s5_vertex_response_validation boundary={}", error.message)
             if (lease != null && !outcomeRecorded) {
                 runCatching { usageLedger.markUnknownBilling(lease) }
             }
@@ -204,6 +218,14 @@ internal class VertexGemini35FlashGenerationAdapter(
             in the generated sentence must occur in one submitted exact quote and be repeated once, in order, in
             numericSpans. The answer must equal sentence texts joined with one newline.
 
+            Choosing the basis follows one rule: if any sentence has an empty citationIds, the basis must be
+            EVIDENCE_WITH_REASONING. Choose EVIDENCE only when every sentence carries a citation.
+            Use EVIDENCE_WITH_REASONING when you want sentences that connect, compare, or qualify the evidence
+            alongside the grounded ones. Its grounded sentences follow the EVIDENCE rules exactly. Its reasoning
+            sentences leave citationIds, evidenceSpans, and numericSpans empty, must not claim what is true now,
+            and may reuse only numbers that a grounded sentence in the same answer already proved. Do not choose
+            it when no sentence is grounded. Prefer an explanation a reader understands over a list of citations.
+
             MODEL_KNOWLEDGE is allowed only for timeless general education: no numbers, dates, current/company/ticker
             facts, citations, or evidence spans. Use INSUFFICIENT_EVIDENCE with null answer and no sentences when a
             current, numeric, company, ticker, or personalized factual question lacks evidence. warnings may only be
@@ -234,6 +256,11 @@ internal class VertexGemini35FlashGenerationAdapter(
                         "maxOutputTokens" to activation.outputTokenCap,
                         "responseMimeType" to "application/json",
                         "responseSchema" to responseSchema(),
+                        // gemini-3.5-flash는 thinking이 기본으로 켜져 있고, 그 토큰이
+                        // maxOutputTokens를 같이 먹는다. 패킷이 정한 출력 상한은 답변을 위한
+                        // 예산이므로, 생각에 먼저 쓰이면 JSON이 MAX_TOKENS로 잘려 검증이 늘 닫혔다.
+                        // 이 어댑터는 고정 스키마 추출 한 번이라 추론 예산이 필요 없다.
+                        "thinkingConfig" to linkedMapOf("thinkingBudget" to 0),
                     ),
             )
         return mapper.writeValueAsBytes(payload)
@@ -247,12 +274,22 @@ internal class VertexGemini35FlashGenerationAdapter(
                     "basis" to
                         linkedMapOf(
                             "type" to "STRING",
-                            "enum" to listOf("EVIDENCE", "MODEL_KNOWLEDGE", "INSUFFICIENT_EVIDENCE"),
+                            "enum" to
+                                listOf(
+                                    "EVIDENCE",
+                                    "EVIDENCE_WITH_REASONING",
+                                    "MODEL_KNOWLEDGE",
+                                    "INSUFFICIENT_EVIDENCE",
+                                ),
                         ),
                     "answer" to linkedMapOf("type" to "STRING", "nullable" to true),
                     "sentences" to
                         linkedMapOf(
                             "type" to "ARRAY",
+                            // 이 값을 24보다 크게 두면 Vertex가 요청 전체를 400으로 거절한다.
+                            // 64와 96 둘 다 같은 스택에서 그렇게 관측했다. 바깥 배열에도 상한이
+                            // 있는 셈이라, 안쪽 배열과 같은 방식으로 provider에게는 통과하는
+                            // 값만 보내고 실제 상한은 응답 검증기가 강제한다.
                             "maxItems" to 24,
                             "items" to
                                 linkedMapOf(
@@ -263,13 +300,19 @@ internal class VertexGemini35FlashGenerationAdapter(
                                             "citationIds" to
                                                 linkedMapOf(
                                                     "type" to "ARRAY",
-                                                    "maxItems" to 5,
                                                     "items" to linkedMapOf("type" to "STRING"),
                                                 ),
+                                            //  안쪽 배열에 maxItems를 걸면
+                                            // Vertex가 INVALID_ARGUMENT 400으로 요청 전체를
+                                            // 거절한다. 그래서 생성형 답변은 켜도 언제나 실패했다.
+                                            // 세 상한은 RagV2VertexGenerationRuntime이 응답 검증에서
+                                            // 그대로 강제한다 - citationIds는 MAX_EVIDENCE(5),
+                                            // evidenceSpans는 MAX_EVIDENCE_SPANS(12), numericSpans는
+                                            // MAX_NUMERIC_SPANS(64). 바깥 sentences/warnings의
+                                            // maxItems는 받아들여지므로 그대로 둔다. 경계는 약해지지 않는다.
                                             "evidenceSpans" to
                                                 linkedMapOf(
                                                     "type" to "ARRAY",
-                                                    "maxItems" to 12,
                                                     "items" to
                                                         linkedMapOf(
                                                             "type" to "OBJECT",
@@ -284,7 +327,6 @@ internal class VertexGemini35FlashGenerationAdapter(
                                             "numericSpans" to
                                                 linkedMapOf(
                                                     "type" to "ARRAY",
-                                                    "maxItems" to 64,
                                                     "items" to
                                                         linkedMapOf(
                                                             "type" to "OBJECT",
@@ -359,6 +401,13 @@ internal class VertexGemini35FlashGenerationAdapter(
             require(generatedTexts.size == 1)
             val generatedJson = generatedTexts.single()
             require(generatedJson.toByteArray(StandardCharsets.UTF_8).size in 1..16_384)
+            // finishReason은 고정 enum이고 토큰 수는 정수다. 둘 다 content-free이면서,
+            // "응답이 왔는데 JSON이 아니다"의 원인이 잘림인지 아닌지를 밖에서 가르는 유일한 값이다.
+            LOGGER.warn(
+                "pre_s5_vertex_generate_finish reason={} bytes={}",
+                candidate.get("finishReason")?.stringValue() ?: "",
+                generatedJson.toByteArray(StandardCharsets.UTF_8).size,
+            )
             failureLeaf = PreS5VertexGenerationFailureLeaf.PROVIDER_USAGE
             val usage = root.get("usageMetadata")
             require(usage != null && usage.isObject)

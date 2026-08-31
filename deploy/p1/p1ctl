@@ -27,7 +27,8 @@ docker() {
 die() { printf 'P1_ERROR=%s\n' "$1" >&2; exit 1; }
 require_command() { command -v "$1" >/dev/null 2>&1 || die "missing_$1"; }
 random_secret() { openssl rand -hex 32; }
-base64url_key() { openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'; }
+# Fernet은 padding을 포함한 44자 urlsafe base64만 받는다. padding을 지우면 안 된다.
+base64url_key() { openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n'; }
 generate_actor_tls() {
   local server_password=$1 client_password=$2
   (
@@ -163,6 +164,9 @@ verify_runtime_env() {
       P1_SECRET_GID) secret_gid=$value ;;
       P1_OPERATOR_UID) operator_uid=$value ;;
       P1_KIS_MOCK_RUNTIME_DIR) [[ $value == "$expected_mock_runtime" ]] || die runtime_env_mock_path ;;
+      # RAG v2 로컬 루트는 운영자가 다른 경로에 둘 수 있다. 위치는 고정하지 않고
+      # 절대경로이며 실제 디렉터리인지만 본다.
+      P1_RAG_RUNTIME_DIR) [[ $value == /* && $value != *..* && -d $value && ! -L $value ]] || die runtime_env_rag_path ;;
       P1_API_PORT) api_port=$value ;;
       P1_SPRING_IMAGE)
         [[ $value == capstone-spring-api:p1-local || $value == capstone-decision-platform:p1-local || $value =~ ^ghcr\.io/robinhood0107/capstone-(spring-api|decision-platform)@sha256:[0-9a-f]{64}$ ]] || die runtime_env_image
@@ -181,7 +185,7 @@ verify_runtime_env() {
     seen="$seen$key|"
     count=$((count + 1))
   done < "$RUNTIME_ENV"
-  [[ $count == 9 ]] || die runtime_env_inventory
+  [[ $count == 10 ]] || die runtime_env_inventory
   [[ $secret_gid == "$(id -g)" ]] || die runtime_env_secret_gid
   [[ $operator_uid == "$(id -u)" ]] || die runtime_env_operator_uid
   [[ $api_port =~ ^[0-9]{4,5}$ && $api_port -ge 1024 && $api_port -le 65535 ]] || die runtime_env_api_port
@@ -379,6 +383,10 @@ init_state() {
   write_line P1_AUTOMATION_DATABASE_DSN "postgresql://decision_automation_runtime:${db[AUTOMATION_RUNTIME]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/automation-runtime.env"
   write_line AUTOMATION_RUNTIME_SHARED_SECRET "$(random_secret)" "$SECRETS_DIR/automation-runtime.env"
   write_line P1_AUTOMATION_OWNER_USER_ID usr_demo_user "$SECRETS_DIR/automation-runtime.env"
+  # runtime bridge가 Spring을 부를 때 소유자 세션이 필요하다. actor capability는 인증된
+  # 세션에서만 발급되므로 shared secret만으로는 brokerage/decision 명령이 열리지 않는다.
+  write_line P1_AUTOMATION_OWNER_USERNAME demo-user "$SECRETS_DIR/automation-runtime.env"
+  write_line P1_AUTOMATION_OWNER_PASSWORD "$user_password" "$SECRETS_DIR/automation-runtime.env"
   printf '' | state_write_file "$SECRETS_DIR/automation-gate-author.env" 0640
   write_line P1_AUTOMATION_GATE_AUTHOR_DSN "postgresql://decision_replay_authorizer:${db[REPLAY_AUTHORIZER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/automation-gate-author.env"
   printf '' | state_write_file "$SECRETS_DIR/artifact-import.env" 0640
@@ -414,6 +422,12 @@ init_state() {
   printf '' | state_write_file "$SECRETS_DIR/poison-recorder.env" 0640
   write_line POISON_RECORDER_DATABASE_DSN "postgresql://decision_poison_recorder:${db[POISON_RECORDER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/poison-recorder.env"
   write_line POISON_RECORDER_SHARED_SECRET "$poison_recorder_secret" "$SECRETS_DIR/poison-recorder.env"
+  # RAG v2 질의 경로. Spring이 decision_app으로 인가하고 이 writer가 사용량을 예약한다.
+  # VOYAGE_API_KEY는 생성하지 않는다. 운영자가 직접 넣는다.
+  printf '' | state_write_file "$SECRETS_DIR/rag-v2.env" 0640
+  write_line RAG_V2_QUERY_DATABASE_DSN "postgresql://decision_rag_query:${db[RAG_QUERY]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/rag-v2.env"
+  write_line RAG_V2_VOYAGE_QUERY_WRITER_DSN "postgresql://decision_rag_writer:${db[RAG_WRITER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/rag-v2.env"
+  write_line RAG_V2_GRPC_SHARED_SECRET "$(random_secret)" "$SECRETS_DIR/rag-v2.env"
   printf '' | state_write_file "$SECRETS_DIR/kafka-admin.env" 0640
   write_line KAFKA_SASL_USERNAME p1_kafka_admin "$SECRETS_DIR/kafka-admin.env"
   write_line KAFKA_SASL_PASSWORD "$kafka_admin_password" "$SECRETS_DIR/kafka-admin.env"
@@ -434,11 +448,15 @@ init_state() {
   install -d -m 0700 "$STATE_DIR/mock"
   local compose_mock_runtime_dir
   compose_mock_runtime_dir=$(docker_bind_source "$STATE_DIR/mock")
+  install -d -m 0700 "$STATE_DIR/rag-v2-root"
+  local compose_rag_runtime_dir
+  compose_rag_runtime_dir=$(docker_bind_source "$STATE_DIR/rag-v2-root")
   printf '%s\n' \
     "P1_SECRETS_DIR=$compose_secrets_dir" \
     "P1_SECRET_GID=$(id -g)" \
     "P1_OPERATOR_UID=$(id -u)" \
     "P1_KIS_MOCK_RUNTIME_DIR=$compose_mock_runtime_dir" \
+    "P1_RAG_RUNTIME_DIR=$compose_rag_runtime_dir" \
     "P1_API_PORT=${P1_API_PORT:-18080}" \
     "P1_SPRING_IMAGE=$spring_image" \
     "P1_PYTHON_IMAGE=${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}" \
@@ -455,14 +473,26 @@ verify_state() {
   require_state
   verify_runtime_env
   local expected=(actor-capability-authority.env actor-client.p12 actor-server.p12 actor-tls-ca.crt artifact-import.env automation-gate-author.env automation-runtime.env bootstrap.env demo-admin.bundle demo-admin.password demo-credential-separation.key demo.env demo-user.bundle \
-    demo-user.password kafka-admin.env kafka-broker-jaas.conf kafka-publisher.env migration.env poison-recorder.env \
+    demo-user.password kafka-admin.env kafka-broker-jaas.conf kafka-publisher.env migration.env poison-recorder.env rag-v2.env \
     kis-mock.env kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn postgres.env python.env rag-history-kek-v1.key redis.env return-inference.env role-bootstrap.env seed-import.env spring.env)
   expected+=(team-a-acceptance.env)
+  # Vertex 서비스계정은 운영자가 직접 넣는 선택 secret이다. compose는 이 파일을 secret으로
+  # 마운트하므로 있으면 정상이고, 없으면 Vertex 생성만 닫힌다. 목록에 넣지 않으면 파일을
+  # 넣는 순간 `./capstone up`이 secret_inventory로 죽어 생성 경로를 켤 방법이 없어진다.
+  [[ ! -e $SECRETS_DIR/pre-s5-vertex-service-account.json ]] ||
+    expected+=(pre-s5-vertex-service-account.json)
   local actual
   actual=$(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
   [[ $actual == "$(printf '%s\n' "${expected[@]}" | LC_ALL=C sort)" ]] || die secret_inventory
+  local secret_mode
   while IFS= read -r file; do
-    [[ ! -L $file && -f $file && $(stat -c '%a' "$file") == 640 ]] || die secret_boundary
+    # Ed25519 서명 개인키는 packet reader가 owner-only 0600만 허용한다. 나머지 secret은
+    # 컨테이너 그룹이 읽어야 하므로 640을 유지한다.
+    case "${file##*/}" in
+      kis-mock-approval-private.pem | p1-provider-claim.dsn) secret_mode=600 ;;
+      *) secret_mode=640 ;;
+    esac
+    [[ ! -L $file && -f $file && $(stat -c '%a' "$file") == "$secret_mode" ]] || die secret_boundary
   done < <(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -print)
   local rag_kek_file=$SECRETS_DIR/rag-history-kek-v1.key rag_kek_size
   rag_kek_size=$(stat -c '%s' "$rag_kek_file")

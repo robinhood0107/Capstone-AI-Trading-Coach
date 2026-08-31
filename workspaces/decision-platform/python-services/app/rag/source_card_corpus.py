@@ -10,13 +10,14 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+from app.rag.repository_root import repository_root
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
 from app.rag.source_card_v2_contract import (
     RagSourceCardV2ContractError,
     parse_source_card_v2_front_matter,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
+REPO_ROOT = repository_root()
 S4_7B_SOURCE_CARD_ROOT = REPO_ROOT / "capstone-rag/source-cards/s4-7b"
 S4_7B_CORPUS_MANIFEST_PATH = (
     REPO_ROOT / "capstone-rag/manifests/s4-7b-project-source-cards-30.v1.json"

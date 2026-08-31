@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
+
+from app.data._shared.repository_root import repository_root
 from typing import Final, Protocol, cast
 
 import redis
@@ -20,7 +21,7 @@ ECOS_HARD_WINDOW: Final = QuotaWindow(limit=299, seconds=1_800)
 ECOS_QUOTA_KEY: Final = "s1.3:quota:ecos:ecos:primary"
 ECOS_QUOTA_POLICY_VERSION: Final = "s1.3-ecos-quota-v1"
 
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
+_REPOSITORY_ROOT = repository_root(__file__, 6)
 _ROOT_ENV_FILE = _REPOSITORY_ROOT / ".env"
 
 

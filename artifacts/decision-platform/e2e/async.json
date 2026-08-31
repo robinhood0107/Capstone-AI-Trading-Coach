@@ -1,0 +1,21 @@
+{
+  "contractId": "p1-async-e2e.v1",
+  "steps": [
+    {
+      "detail": "작업 16→17 상태분포=[COMPLETED=17] 마지막 출력=P1_CONTAINER_ASYNC_E2E=PASS JOB=job_p1_container_db_8b86e91ee97f1ce652e9be5505a3dc35",
+      "name": "DB 비동기 레인",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "HTTP 200 5건 첫 상태=COMPLETED (레인이 돌았는데 목록이 비면 관측이 끊긴 것이다)",
+      "name": "ADMIN 비동기 작업 관측",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "overlay 파일 존재=True (v1 회귀용 historical asset이다. 현재 스택에 broker 서비스가 없어 여기서 켜지 않는다. 코드 경로는 tests/async_worker/의 단위 테스트가 덮는다) db=연결됨",
+      "name": "Kafka 레인",
+      "verdict": "INFO"
+    }
+  ],
+  "verdict": "PASS"
+}

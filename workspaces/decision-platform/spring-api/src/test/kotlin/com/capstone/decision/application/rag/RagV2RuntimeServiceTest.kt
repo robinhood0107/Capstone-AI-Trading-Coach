@@ -759,9 +759,14 @@ class RagV2RuntimeServiceTest {
             vertexEvidencePort = vertexEvidence,
             vertexGenerationPort = vertexGeneration,
             vertexQuestionFingerprintPort = vertexQuestionFingerprint,
+            // 자동 저술 bean이 없는 배포와 같은 상태다. 이 테스트가 보는 것은 운영자 패킷 경로다.
+            vertexActivationAuthorProvider = mockk { every { getIfAvailable() } returns null },
             objectMapper = JsonMapper.builder().build(),
             transactionManagerProvider = transactionManagerProvider,
             actorRlsScope = mockk<ActorRlsScopePort>(relaxed = true),
+            // 설정 bean이 없는 배포와 같은 상태다. 그때 corpus status의 설정 필드는 전부 null이고
+            // 화면은 배포 기본값이 쓰이고 있다고 읽는다.
+            strongLlmSettingsProvider = mockk { every { getIfAvailable() } returns null },
         )
     }
 

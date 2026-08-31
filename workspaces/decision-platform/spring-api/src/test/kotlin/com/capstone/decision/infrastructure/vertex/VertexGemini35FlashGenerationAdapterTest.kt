@@ -56,7 +56,15 @@ class VertexGemini35FlashGenerationAdapterTest {
         assertThat(payload.properties().map { it.key })
             .containsExactly("contents", "generationConfig")
         assertThat(payload["generationConfig"].properties().map { it.key })
-            .containsExactly("candidateCount", "temperature", "maxOutputTokens", "responseMimeType", "responseSchema")
+            .containsExactly(
+                "candidateCount",
+                "temperature",
+                "maxOutputTokens",
+                "responseMimeType",
+                "responseSchema",
+                "thinkingConfig",
+            )
+        assertThat(payload["generationConfig"]["thinkingConfig"]["thinkingBudget"].intValue()).isEqualTo(0)
         assertThat(payload["generationConfig"]["responseMimeType"].stringValue()).isEqualTo("application/json")
         val responseSchema = payload["generationConfig"]["responseSchema"]
         assertThat(responseSchema["properties"]["answer"].get("enum")).isNull()
@@ -64,7 +72,11 @@ class VertexGemini35FlashGenerationAdapterTest {
         val sentenceSchema = responseSchema["properties"]["sentences"]["items"]["properties"]
         assertThat(sentenceSchema["text"].get("enum")).isNull()
         assertThat(sentenceSchema["citationIds"]["items"].get("enum")).isNull()
-        assertThat(sentenceSchema["numericSpans"]["maxItems"].intValue()).isEqualTo(64)
+        // 안쪽 배열의 maxItems는 Vertex가 요청 전체를 INVALID_ARGUMENT로 거절하므로 보내지 않는다.
+        // 상한은 RagV2VertexResponseValidator가 응답 검증에서 그대로 강제한다.
+        assertThat(sentenceSchema["citationIds"].get("maxItems")).isNull()
+        assertThat(sentenceSchema["evidenceSpans"].get("maxItems")).isNull()
+        assertThat(sentenceSchema["numericSpans"].get("maxItems")).isNull()
         val required = payload["generationConfig"]["responseSchema"]["required"]
         assertThat((0 until required.size()).map { required[it].stringValue() })
             .containsExactly("basis", "answer", "sentences", "warnings")

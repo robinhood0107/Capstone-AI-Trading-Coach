@@ -22,8 +22,22 @@ class EvidenceItem(_message.Message):
     owner_private: bool
     def __init__(self, ordinal: _Optional[int] = ..., citation_id: _Optional[str] = ..., chunk_revision_id: _Optional[str] = ..., canonical_text: _Optional[str] = ..., canonical_text_sha256: _Optional[str] = ..., owner_private: _Optional[bool] = ...) -> None: ...
 
+class JudgementCandidate(_message.Message):
+    __slots__ = ("symbol", "expected_return", "model_confidence", "lstm_signal", "baseline_signal")
+    SYMBOL_FIELD_NUMBER: _ClassVar[int]
+    EXPECTED_RETURN_FIELD_NUMBER: _ClassVar[int]
+    MODEL_CONFIDENCE_FIELD_NUMBER: _ClassVar[int]
+    LSTM_SIGNAL_FIELD_NUMBER: _ClassVar[int]
+    BASELINE_SIGNAL_FIELD_NUMBER: _ClassVar[int]
+    symbol: str
+    expected_return: float
+    model_confidence: float
+    lstm_signal: str
+    baseline_signal: str
+    def __init__(self, symbol: _Optional[str] = ..., expected_return: _Optional[float] = ..., model_confidence: _Optional[float] = ..., lstm_signal: _Optional[str] = ..., baseline_signal: _Optional[str] = ...) -> None: ...
+
 class StartRun(_message.Message):
-    __slots__ = ("model_id", "question", "answer_mode", "related_symbols", "topics", "public_evidence", "owner_evidence", "google_search_enabled", "max_tool_rounds", "current_time", "timezone")
+    __slots__ = ("model_id", "question", "answer_mode", "related_symbols", "topics", "public_evidence", "owner_evidence", "google_search_enabled", "max_tool_rounds", "current_time", "timezone", "language", "mode", "candidates")
     MODEL_ID_FIELD_NUMBER: _ClassVar[int]
     QUESTION_FIELD_NUMBER: _ClassVar[int]
     ANSWER_MODE_FIELD_NUMBER: _ClassVar[int]
@@ -35,6 +49,9 @@ class StartRun(_message.Message):
     MAX_TOOL_ROUNDS_FIELD_NUMBER: _ClassVar[int]
     CURRENT_TIME_FIELD_NUMBER: _ClassVar[int]
     TIMEZONE_FIELD_NUMBER: _ClassVar[int]
+    LANGUAGE_FIELD_NUMBER: _ClassVar[int]
+    MODE_FIELD_NUMBER: _ClassVar[int]
+    CANDIDATES_FIELD_NUMBER: _ClassVar[int]
     model_id: str
     question: str
     answer_mode: str
@@ -46,7 +63,10 @@ class StartRun(_message.Message):
     max_tool_rounds: int
     current_time: str
     timezone: str
-    def __init__(self, model_id: _Optional[str] = ..., question: _Optional[str] = ..., answer_mode: _Optional[str] = ..., related_symbols: _Optional[_Iterable[str]] = ..., topics: _Optional[_Iterable[str]] = ..., public_evidence: _Optional[_Iterable[_Union[EvidenceItem, _Mapping]]] = ..., owner_evidence: _Optional[_Iterable[_Union[EvidenceItem, _Mapping]]] = ..., google_search_enabled: _Optional[bool] = ..., max_tool_rounds: _Optional[int] = ..., current_time: _Optional[str] = ..., timezone: _Optional[str] = ...) -> None: ...
+    language: str
+    mode: str
+    candidates: _containers.RepeatedCompositeFieldContainer[JudgementCandidate]
+    def __init__(self, model_id: _Optional[str] = ..., question: _Optional[str] = ..., answer_mode: _Optional[str] = ..., related_symbols: _Optional[_Iterable[str]] = ..., topics: _Optional[_Iterable[str]] = ..., public_evidence: _Optional[_Iterable[_Union[EvidenceItem, _Mapping]]] = ..., owner_evidence: _Optional[_Iterable[_Union[EvidenceItem, _Mapping]]] = ..., google_search_enabled: _Optional[bool] = ..., max_tool_rounds: _Optional[int] = ..., current_time: _Optional[str] = ..., timezone: _Optional[str] = ..., language: _Optional[str] = ..., mode: _Optional[str] = ..., candidates: _Optional[_Iterable[_Union[JudgementCandidate, _Mapping]]] = ...) -> None: ...
 
 class ProviderCallPermit(_message.Message):
     __slots__ = ("planned_call_id",)
@@ -157,7 +177,7 @@ class WebRead(_message.Message):
     def __init__(self, tool_call_id: _Optional[str] = ..., result_id: _Optional[str] = ...) -> None: ...
 
 class Completed(_message.Message):
-    __slots__ = ("answer_json", "prompt_token_count", "output_token_count", "vertex_generate_call_count", "google_grounding_query_count", "search_backend", "evidence_validation_mode", "grounding_roots", "grounding_supports", "web_search_queries")
+    __slots__ = ("answer_json", "prompt_token_count", "output_token_count", "vertex_generate_call_count", "google_grounding_query_count", "search_backend", "evidence_validation_mode", "grounding_roots", "grounding_supports", "web_search_queries", "provider_id")
     ANSWER_JSON_FIELD_NUMBER: _ClassVar[int]
     PROMPT_TOKEN_COUNT_FIELD_NUMBER: _ClassVar[int]
     OUTPUT_TOKEN_COUNT_FIELD_NUMBER: _ClassVar[int]
@@ -168,6 +188,7 @@ class Completed(_message.Message):
     GROUNDING_ROOTS_FIELD_NUMBER: _ClassVar[int]
     GROUNDING_SUPPORTS_FIELD_NUMBER: _ClassVar[int]
     WEB_SEARCH_QUERIES_FIELD_NUMBER: _ClassVar[int]
+    PROVIDER_ID_FIELD_NUMBER: _ClassVar[int]
     answer_json: str
     prompt_token_count: int
     output_token_count: int
@@ -178,7 +199,8 @@ class Completed(_message.Message):
     grounding_roots: _containers.RepeatedCompositeFieldContainer[GroundingRoot]
     grounding_supports: _containers.RepeatedCompositeFieldContainer[GroundingSupport]
     web_search_queries: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, answer_json: _Optional[str] = ..., prompt_token_count: _Optional[int] = ..., output_token_count: _Optional[int] = ..., vertex_generate_call_count: _Optional[int] = ..., google_grounding_query_count: _Optional[int] = ..., search_backend: _Optional[str] = ..., evidence_validation_mode: _Optional[str] = ..., grounding_roots: _Optional[_Iterable[_Union[GroundingRoot, _Mapping]]] = ..., grounding_supports: _Optional[_Iterable[_Union[GroundingSupport, _Mapping]]] = ..., web_search_queries: _Optional[_Iterable[str]] = ...) -> None: ...
+    provider_id: str
+    def __init__(self, answer_json: _Optional[str] = ..., prompt_token_count: _Optional[int] = ..., output_token_count: _Optional[int] = ..., vertex_generate_call_count: _Optional[int] = ..., google_grounding_query_count: _Optional[int] = ..., search_backend: _Optional[str] = ..., evidence_validation_mode: _Optional[str] = ..., grounding_roots: _Optional[_Iterable[_Union[GroundingRoot, _Mapping]]] = ..., grounding_supports: _Optional[_Iterable[_Union[GroundingSupport, _Mapping]]] = ..., web_search_queries: _Optional[_Iterable[str]] = ..., provider_id: _Optional[str] = ...) -> None: ...
 
 class Failed(_message.Message):
     __slots__ = ("failure_leaf", "provider_attempted", "vertex_generate_call_count", "google_grounding_query_count")

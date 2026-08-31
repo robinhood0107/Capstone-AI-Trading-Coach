@@ -18,7 +18,8 @@ data class S49StrongLlmProperties(
         if (!enabled) return
         require(RagV2VertexProperties.MODEL_ID.matches(modelId))
         require(requestTimeoutMillis in 1_000..30_000)
-        require(maxOutputTokens in 256..8_192)
+        // 활성화 패킷의 출력 상한과 같은 폭을 쓴다. 통제는 상한이 아니라 호출 횟수로 한다.
+        require(maxOutputTokens in 256..32_768)
         val root = Path.of(localRoot)
         require(root.isAbsolute && root.normalize() == root)
         require(ownerConsentPolicySha256.matches(SHA256))

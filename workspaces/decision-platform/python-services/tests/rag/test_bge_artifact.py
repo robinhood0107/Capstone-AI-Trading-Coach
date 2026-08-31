@@ -65,7 +65,9 @@ def test_public_digest_allowlist_keeps_only_the_exact_approved_values() -> None:
     b86_expected_regexes = {f"^{digest}$" for digest in _B86_PUBLIC_SOURCE_CARD_SHA256}
 
     assert config["extend"]["useDefault"] is True
-    assert len(allowlists) == 6
+    # 여섯 개는 과거 오탐이고 일곱 번째는 이번에 밀어 둔 e2e 러너 상수다. 개수를 고정해 두는
+    # 이유는 허용 목록이 조용히 넓어지지 않게 하기 위해서다.
+    assert len(allowlists) == 7
     digest_allowlists = allowlists[:2]
     assert all(set(allowlist) == {"description", "regexes"} for allowlist in digest_allowlists)
     assert all("regexTarget" not in allowlist for allowlist in digest_allowlists)

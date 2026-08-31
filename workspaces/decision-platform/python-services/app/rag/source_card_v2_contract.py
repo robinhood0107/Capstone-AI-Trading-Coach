@@ -16,12 +16,13 @@ from jsonschema import Draft202012Validator, FormatChecker
 from yaml.nodes import MappingNode
 from yaml.tokens import AliasToken, AnchorToken, TagToken
 
+from app.rag.repository_root import repository_root
 from app.rag.source_registry import (
     RagSourceRegistryError,
     validate_canonical_https_url,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
+REPO_ROOT = repository_root()
 RAG_SOURCE_CARD_V2_SCHEMA_PATH = REPO_ROOT / "contracts/schemas/rag-source-card-v2.schema.json"
 MAX_SOURCE_CARD_V2_FRONT_MATTER_BYTES = 32_768
 _OFFICIAL_VARIANT = "OFFICIAL_UPSTREAM_CARD"

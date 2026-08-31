@@ -83,7 +83,7 @@ class PublicRagSeedIntegrationTest {
                         """.trimIndent(),
                     ).use { rows ->
                         assertTrue(rows.next())
-                        assertEquals("108", rows.getString(1))
+                        assertEquals("109", rows.getString(1))
                         assertEquals("ACTIVE", rows.getString(2))
                         assertEquals(142, rows.getInt(3))
                         assertEquals(7871, rows.getInt(4))

@@ -14,24 +14,9 @@ V110은 자동운용용 과거 OHLCV를 안전하게 계획·검증·적재하�
 ```bash
 ./capstone market-data inventory
 
-./capstone market-data universe refresh \
-  --as-of 2026-08-31 \
-  --output-root /절대경로/새-universe-root
-
 ./capstone market-data bootstrap plan \
   --universe-manifest /절대경로/universe-manifest.json \
   --end-session 2026-08-31
-
-./capstone market-data bootstrap run \
-  --packet /절대경로/approved-packet.json \
-  --universe-manifest /절대경로/universe-manifest.json \
-  --end-session 2026-08-31 \
-  --output-root /절대경로/새-archive-root
-
-# 장전 ATR readiness용 bounded quick horizon (exact-31 × 100 sessions, KIS cap 31)
-./capstone market-data bootstrap plan \
-  --universe-manifest /절대경로/universe-manifest.json \
-  --end-session 2026-08-31 --session-count 100
 
 ./capstone market-data bootstrap validate /절대경로/archive \
   --manifest-sha256 <manifest-file-sha256>
@@ -41,28 +26,22 @@ V110은 자동운용용 과거 OHLCV를 안전하게 계획·검증·적재하�
 ```
 
 - `inventory`, `plan`, `validate`, `stage` 자체는 provider 호출 0이다.
-- `universe refresh`는 KRX KOSPI·KOSDAQ 일별매매정보를 각 1회, 합계 2회 조회하고 retry는 0이다.
 - `stage`는 archive 전체를 검증한 뒤 writer DB를 열며 manifest·bars·universe를 한 transaction에
   적재한다.
-- 기본 horizon은 1,260세션이다. `--session-count 100` quick horizon은 ATR 최소 23행을 넘기는
-  장전 readiness용이며 full-1,260 완료로 보고하지 않는다. session count는 `23..1260`만 허용하고
-  KIS cap은 exact-31 window 수에서 유도한다.
 - 같은 manifest 재실행은 `NO_OP`이고 충돌 row/hash는 전체 rollback이다.
 - runtime reader는 `market_data_bars`를 직접 읽지 못한다.
 
 ## 실제 read-only bootstrap 경계
 
-Python의 `automation-market-data run`은 아래 값이 모두 맞을 때만 KIS read-only client를 만든다.
+Python의 `automation-market-data collect`는 아래 값이 모두 맞을 때만 live KIS client를 만든다.
 
 - `P1_AUTOMATION_MARKET_BOOTSTRAP_ENABLED=true`
-- mode `0600` canonical execution packet의 plan SHA·KIS mode·provider cap 일치
-- bounded approval ID
+- 승인된 plan SHA와 `P1_AUTOMATION_MARKET_BOOTSTRAP_PACKET_SHA256` 일치
+- bounded `P1_AUTOMATION_MARKET_BOOTSTRAP_APPROVAL_ID`
 - exact cap: KIS daily 403, token 1, KRX membership 최대 5, retry 0
 
-현재 mock-only 배포는 packet의 `kisMode=mock`과 기존 mock API key/secret만 사용한다. collector secret에는
-계좌번호·order reference가 들어가지 않고 시세조회 interface만 존재한다. live mode는 별도 read-only
-credential이 실제로 준비된 배포에서만 사용할 수 있다. `./capstone`은 승인 packet 없이 provider
-socket을 열지 않는다.
+이 경로는 KIS Live **시세조회만** 사용한다. 계좌·잔고·주문 interface가 없고 KIS Live 주문은 0이다.
+현재 `./capstone` 표면은 승인되지 않은 accidental call을 막기 위해 collect를 노출하지 않는다.
 
 ## 일일 수집
 

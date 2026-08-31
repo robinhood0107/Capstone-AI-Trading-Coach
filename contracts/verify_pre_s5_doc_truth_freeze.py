@@ -687,6 +687,39 @@ def _safe_text(root: Path, relative: str) -> tuple[str | None, str | None]:
         return None, f"{relative}: solo ownership document is not valid UTF-8"
 
 
+_BUILD_OUTPUT_DIRECTORIES: Final[tuple[str, ...]] = (
+    "/node_modules/",
+    "/.next/",
+    "/__pycache__/",
+    "/.venv/",
+    "/.pytest_cache/",
+    "/.ruff_cache/",
+    "/.mypy_cache/",
+    "/test-results/",
+    "/playwright-report/",
+)
+_BUILD_OUTPUT_FILES: Final[tuple[str, ...]] = (
+    "/tsconfig.tsbuildinfo",
+    "/next-env.d.ts",
+    "/.env.example",
+)
+
+
+def _is_ignored_build_output(line: str) -> bool:
+    """`git status --ignored` 한 줄이 빌드·의존성 산출물인지 본다.
+
+    ignored 로 표시된 줄만 대상이다. 추적되지 않고 ignore 되지도 않은 파일은 여기서
+    걸러지지 않고 그대로 drift 로 남는다. `.gitignore` 로 가린 구현 파일도 마찬가지다.
+    """
+
+    if not line.startswith("!! "):
+        return False
+    path = "/" + line[3:].strip()
+    if any(segment in path for segment in _BUILD_OUTPUT_DIRECTORIES):
+        return True
+    return path.endswith(_BUILD_OUTPUT_FILES)
+
+
 def post_core_v2_authorized(root: Path) -> bool:
     """정확한 full-app v2 catalog가 있을 때만 README-only 경계를 post-Core 규칙으로 전환한다."""
 
@@ -800,11 +833,16 @@ def tracked_teammate_workspace_errors(root: Path) -> list[str]:
     if status_error:
         errors.append("teammate workspace working-tree state could not be read")
     elif status and status.strip():
-        status_lines = tuple(line for line in status.splitlines() if line)
-        allowed_v2_ignored = all(
-            line.startswith("!! workspaces/") and "/dev/" in line for line in status_lines
+        # 빌드·의존성 산출물은 drift 로 세지 않는다. 이 검사가 잡으려는 것은 팀원이
+        # .gitignore 뒤에 숨긴 구현이고, node_modules 나 __pycache__ 는 워크스페이스를
+        # 한 번 빌드하거나 테스트하면 반드시 생긴다. 그것까지 세면 로컬에서 개발한
+        # 사람에게는 언제나 실패하는 검사가 되고, 실제로 그랬다.
+        remaining = tuple(
+            line
+            for line in status.splitlines()
+            if line and not _is_ignored_build_output(line)
         )
-        if not (post_core_v2 and allowed_v2_ignored):
+        if remaining:
             errors.append("teammate workspace has working-tree drift")
     return errors
 

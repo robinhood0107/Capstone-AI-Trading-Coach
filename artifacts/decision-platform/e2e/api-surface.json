@@ -87,7 +87,7 @@
       "verdict": "PASS"
     },
     {
-      "detail": "출처 HTTP 200 0건 이력 HTTP 200 19건",
+      "detail": "출처 HTTP 200 0건 이력 HTTP 200 20건",
       "name": "v1 RAG 출처·이력",
       "verdict": "PASS"
     },

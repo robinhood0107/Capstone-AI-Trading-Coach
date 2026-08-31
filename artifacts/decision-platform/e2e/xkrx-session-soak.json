@@ -2,12 +2,17 @@
   "contractId": "p1-xkrx-session-soak-e2e.v1",
   "steps": [
     {
-      "detail": "관측 세션 수=1 관측 폐루프 수=3 릴리스 계약의 THREE_XKRX_SESSION_SOAK은 연속 세 거래일을 요구하며 그 증거는 사흘이 지나야 만들어진다. 여기서는 하루 안의 연속 구동만 본다",
+      "detail": "관측 폐루프 수=8 릴리스 계약의 THREE_XKRX_SESSION_SOAK은 연속 세 거래일이 실제로 지나는 동안 자동운용이 도는 것을 요구한다. 여기서는 엔진에 연속 세 세션 날짜를 주어 하루 안에서 그것을 흉내 냈다. 주문은 실제이고 사흘은 지나지 않았다",
       "name": "이것은 3거래일 soak이 아니다",
       "verdict": "INFO"
     },
     {
-      "detail": "세션=2026-08-31 기록=3개 요구=3개 closed-loop-005930-max-holding-20260831.json, closed-loop-005930-model-sell-20260831.json, closed-loop-ai-rerank-20260831.json",
+      "detail": "매수 세션=2026-08-31 이후 세션=2026-09-01(SKIPPED_NO_ACTION), 2026-09-02(SKIPPED_NO_ACTION) 보유 유지=True (가운데 세션에서 포지션이 사라지면 만기 청산 경로를 못 본 것이다)",
+      "name": "연속 세 세션에 걸쳐 돌았다",
+      "verdict": "PASS"
+    },
+    {
+      "detail": "세션=2026-08-31 기록=8개 요구=3개 closed-loop-005930-max-holding-20260831.json, closed-loop-005930-model-sell-20260831.json, closed-loop-005930-stop-loss-20260831.json, closed-loop-005930-take-profit-20260831.json, closed-loop-005930-three-session-soak-20260831.json, closed-loop-ai-rerank-20260831.json, closed-loop-ai-rerank-changed-20260831.json, closed-loop-ai-rerank-unchanged-20260831.json",
       "name": "같은 세션에서 폐루프를 세 번 이상 돌렸다",
       "verdict": "PASS"
     },
@@ -27,8 +32,8 @@
       "verdict": "PASS"
     },
     {
-      "detail": "사유 분포={'MAX_HOLDING_SESSIONS': 2, 'MODEL_SELL': 1} (한 종류뿐이면 다른 청산 경로는 이 세션에서 관측되지 않은 것이다)",
-      "name": "청산 사유가 한 종류에 몰려 있지 않다",
+      "detail": "사유 분포={'MAX_HOLDING_SESSIONS': 5, 'MODEL_SELL': 1, 'STOP_LOSS': 1, 'TAKE_PROFIT': 1} 빠진 사유=없음",
+      "name": "네 가지 청산 사유가 모두 관측됐다",
       "verdict": "PASS"
     }
   ],

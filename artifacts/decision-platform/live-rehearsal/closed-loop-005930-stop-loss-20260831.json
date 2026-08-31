@@ -1,0 +1,92 @@
+{
+  "status": "SUCCESS",
+  "scenario": "STOP_LOSS",
+  "symbol": "005930",
+  "engineSteps": [
+    {
+      "step": "preBalance",
+      "cashKrw": 100000000,
+      "symbolQuantity": 0
+    },
+    {
+      "step": "positionOpened",
+      "symbol": "005930",
+      "quantity": 1,
+      "entryAverageFillPriceKrw": 256000,
+      "entrySession": "2026-08-31",
+      "expirySession": "2026-09-07"
+    },
+    {
+      "step": "syntheticEntryPrice",
+      "scenario": "STOP_LOSS",
+      "actualEntryPriceKrw": 256000,
+      "syntheticEntryPriceKrw": 294400,
+      "note": "실제 등락을 기다릴 수 없어 진입가만 옮겼다. 시세와 주문은 실제이고 이 run의 realizedPnl은 실제 손익이 아니다"
+    },
+    {
+      "step": "positionClosed",
+      "exitReason": "STOP_LOSS",
+      "entryAverageFillPriceKrw": 294400,
+      "exitAverageFillPriceKrw": 256250,
+      "exitFilledQuantity": 1,
+      "realizedPnlKrw": -39114,
+      "closedPositions": 1
+    },
+    {
+      "step": "postBalance",
+      "cashKrw": 100000000,
+      "symbolQuantity": 0
+    }
+  ],
+  "transportSteps": [
+    {
+      "step": "quote",
+      "symbol": "005930",
+      "priceKrw": 256250,
+      "upperKrw": 334000,
+      "lowerKrw": 180000
+    },
+    {
+      "step": "vertex",
+      "symbol": "005930",
+      "verdict": "NO_VETO",
+      "providerCalls": 0
+    },
+    {
+      "step": "submitBuy",
+      "symbol": "005930",
+      "quantity": 1,
+      "limitPriceKrw": 256500,
+      "orderNo": "0000034065"
+    },
+    {
+      "step": "buyFill",
+      "cumulativeQuantity": 1,
+      "leavesQuantity": 0,
+      "averageFillPriceKrw": 256000
+    },
+    {
+      "step": "quote",
+      "symbol": "005930",
+      "priceKrw": 256250,
+      "upperKrw": 334000,
+      "lowerKrw": 180000
+    },
+    {
+      "step": "submitSell",
+      "symbol": "005930",
+      "quantity": 1,
+      "limitPriceKrw": 256000,
+      "orderNo": "0000034086"
+    },
+    {
+      "step": "sellFill",
+      "cumulativeQuantity": 1,
+      "leavesQuantity": 0,
+      "averageFillPriceKrw": 256250
+    }
+  ],
+  "physicalCalls": 6,
+  "vertexProviderCalls": 0,
+  "sessionKst": "2026-08-31T14:10:57.720798+09:00"
+}

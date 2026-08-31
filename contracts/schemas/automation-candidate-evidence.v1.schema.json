@@ -1,0 +1,69 @@
+{
+  "$id": "contracts/schemas/automation-candidate-evidence.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "ageWarning": {
+      "type": "boolean"
+    },
+    "boundedQuote": {
+      "maxLength": 240,
+      "minLength": 1,
+      "type": "string"
+    },
+    "citationId": {
+      "pattern": "^cit_[A-Za-z0-9._:-]{1,96}$",
+      "type": "string"
+    },
+    "quoteSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "sourceEventDate": {
+      "oneOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sourceId": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+      "type": "string"
+    },
+    "sourceType": {
+      "enum": [
+        "OFFICIAL_PRIMARY",
+        "REGISTERED_INDEPENDENT"
+      ]
+    },
+    "symbol": {
+      "pattern": "^[0-9]{6}$",
+      "type": "string"
+    },
+    "uriSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "verified": {
+      "const": true
+    }
+  },
+  "required": [
+    "symbol",
+    "citationId",
+    "sourceId",
+    "sourceType",
+    "sourceEventDate",
+    "ageWarning",
+    "uriSha256",
+    "boundedQuote",
+    "quoteSha256",
+    "verified"
+  ],
+  "title": "automation-candidate-evidence.v1",
+  "type": "object"
+}

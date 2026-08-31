@@ -58,6 +58,9 @@ spring:
       security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
 
 app:
+  p1:
+    automation:
+      evidence-fixture-enabled: ${P1_AUTOMATION_EVIDENCE_FIXTURE_ENABLED:false}
   financial-engineering:
     grpc:
       enabled: ${FINANCIAL_ENGINEERING_GRPC_ENABLED:false}

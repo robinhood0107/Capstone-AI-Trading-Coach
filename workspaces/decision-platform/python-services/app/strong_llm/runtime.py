@@ -171,9 +171,14 @@ class BoundedStrongLlmGraph:
         )
         call_count += 1
         result = discovered
-        if request.owner_evidence:
-            state["permit"]("owner_final", "OWNER_FINAL", False)
+        has_grounding = bool(discovered["grounding_roots"] and discovered["grounding_supports"])
+        if not request.grounding_discovery_only and (
+            request.owner_evidence or request.public_evidence or has_grounding
+        ):
+            state["permit"]("grounded_final", "GROUNDED_FINAL", False)
             result = chain.current.invoke_google(request, include_owner=True)
+            result["prompt_tokens"] += discovered["prompt_tokens"]
+            result["output_tokens"] += discovered["output_tokens"]
             call_count += 1
         return {
             "result": _run_result(

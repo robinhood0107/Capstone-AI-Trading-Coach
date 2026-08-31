@@ -888,17 +888,18 @@ class JdbcAutomationRepository(
             jdbc
                 .query(
                     """
-                    SELECT ai_judgement_enabled,thinking_level,daily_generate_call_cap
+                    SELECT provider,ai_judgement_enabled,thinking_level,daily_generate_call_cap
                     FROM strong_llm_owner_settings WHERE owner_user_id=:ownerUserId
                     """.trimIndent(),
                     mapOf("ownerUserId" to ownerUserId),
                 ) { row, _ ->
-                    Triple(
-                        row.getBoolean("ai_judgement_enabled"),
-                        row.getString("thinking_level"),
-                        row.getInt("daily_generate_call_cap"),
+                    AutomationAiSettingsSnapshot(
+                        provider = row.getString("provider"),
+                        enabled = row.getBoolean("ai_judgement_enabled"),
+                        thinkingLevel = row.getString("thinking_level"),
+                        dailyGenerateCallCap = row.getInt("daily_generate_call_cap"),
                     )
-                }.singleOrNull() ?: Triple(false, "low", 50)
+                }.singleOrNull() ?: AutomationAiSettingsSnapshot("vertex", false, "low", 50)
         val primaryCredentialReady =
             jdbc
                 .query(
@@ -906,7 +907,8 @@ class JdbcAutomationRepository(
                     mapOf("ownerUserId" to ownerUserId),
                 ) { row, _ -> row.getString("slot") }
                 .contains("PRIMARY")
-        val aiProviderReady = !aiSettings.first || (primaryCredentialReady && aiSettings.third >= 3)
+        val credentialReady = aiSettings.provider == "vertex" || primaryCredentialReady
+        val aiProviderReady = !aiSettings.enabled || (credentialReady && aiSettings.dailyGenerateCallCap >= 3)
         val blockers =
             buildList {
                 addAll(base.blockers)
@@ -921,8 +923,8 @@ class JdbcAutomationRepository(
             controlVersion = base.controlVersion,
             accountId = base.accountId,
             policy = policy,
-            aiJudgementEnabled = aiSettings.first,
-            thinkingLevel = aiSettings.second,
+            aiJudgementEnabled = aiSettings.enabled,
+            thinkingLevel = aiSettings.thinkingLevel,
             marketHistoryStatus = marketHistoryStatus,
             killSwitchActive = base.killSwitchActive,
             certificationStatus = base.certificationStatus,
@@ -1154,6 +1156,13 @@ class JdbcAutomationRepository(
         val principleConfigured: Boolean,
         val policyBindingId: String?,
         val policyBindingVersion: Int?,
+    )
+
+    private data class AutomationAiSettingsSnapshot(
+        val provider: String,
+        val enabled: Boolean,
+        val thinkingLevel: String,
+        val dailyGenerateCallCap: Int,
     )
 
     private companion object {

@@ -1,0 +1,92 @@
+{
+  "status": "SUCCESS",
+  "scenario": "TAKE_PROFIT",
+  "symbol": "005930",
+  "engineSteps": [
+    {
+      "step": "preBalance",
+      "cashKrw": 100000000,
+      "symbolQuantity": 0
+    },
+    {
+      "step": "positionOpened",
+      "symbol": "005930",
+      "quantity": 1,
+      "entryAverageFillPriceKrw": 256250,
+      "entrySession": "2026-08-31",
+      "expirySession": "2026-09-07"
+    },
+    {
+      "step": "syntheticEntryPrice",
+      "scenario": "TAKE_PROFIT",
+      "actualEntryPriceKrw": 256250,
+      "syntheticEntryPriceKrw": 217812,
+      "note": "실제 등락을 기다릴 수 없어 진입가만 옮겼다. 시세와 주문은 실제이고 이 run의 realizedPnl은 실제 손익이 아니다"
+    },
+    {
+      "step": "positionClosed",
+      "exitReason": "TAKE_PROFIT",
+      "entryAverageFillPriceKrw": 217812,
+      "exitAverageFillPriceKrw": 256000,
+      "exitFilledQuantity": 1,
+      "realizedPnlKrw": 37358,
+      "closedPositions": 1
+    },
+    {
+      "step": "postBalance",
+      "cashKrw": 100000000,
+      "symbolQuantity": 0
+    }
+  ],
+  "transportSteps": [
+    {
+      "step": "quote",
+      "symbol": "005930",
+      "priceKrw": 256250,
+      "upperKrw": 334000,
+      "lowerKrw": 180000
+    },
+    {
+      "step": "vertex",
+      "symbol": "005930",
+      "verdict": "NO_VETO",
+      "providerCalls": 0
+    },
+    {
+      "step": "submitBuy",
+      "symbol": "005930",
+      "quantity": 1,
+      "limitPriceKrw": 256500,
+      "orderNo": "0000034132"
+    },
+    {
+      "step": "buyFill",
+      "cumulativeQuantity": 1,
+      "leavesQuantity": 0,
+      "averageFillPriceKrw": 256250
+    },
+    {
+      "step": "quote",
+      "symbol": "005930",
+      "priceKrw": 256000,
+      "upperKrw": 334000,
+      "lowerKrw": 180000
+    },
+    {
+      "step": "submitSell",
+      "symbol": "005930",
+      "quantity": 1,
+      "limitPriceKrw": 255500,
+      "orderNo": "0000034137"
+    },
+    {
+      "step": "sellFill",
+      "cumulativeQuantity": 1,
+      "leavesQuantity": 0,
+      "averageFillPriceKrw": 256000
+    }
+  ],
+  "physicalCalls": 6,
+  "vertexProviderCalls": 0,
+  "sessionKst": "2026-08-31T14:11:30.241445+09:00"
+}

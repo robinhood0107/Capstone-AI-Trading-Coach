@@ -1,10 +1,10 @@
 {
   "contractId": "p1-full-pipeline-e2e.v1",
-  "generatedAt": "2026-08-31T03:54:55.988229Z",
+  "generatedAt": "2026-08-31T06:09:25.549644Z",
   "kisCalls": 0,
   "steps": [
     {
-      "detail": "artifact_ingest_projection=3 automation_account_lineage=0 automation_activation_gate=1 automation_control_idempotency=2 automation_events=1 automation_policy_idempotency=1 automation_policy_versions=1 automation_positions=1 automation_processed_ticks=0 automation_runs=1 automation_runtime_events=2 automation_runtime_schedule=0 daily_order_count_observations=11 dashboard_artifact_views=6 decision_idempotency_results=1 decisions=1 deterministic_risk_observations=11 journal_idempotency=1 journals=1 market_data_manifests=0 market_quote_observations=23 orders=1 p1_return_artifact_bundle=1 portfolio_balance_observations=3 principle_versions=3 principles=2 rag_consent_events=36 trading_sessions=2",
+      "detail": "artifact_ingest_projection=1 automation_account_lineage=0 automation_activation_gate=0 automation_control_idempotency=2 automation_events=1 automation_policy_idempotency=1 automation_policy_versions=1 automation_positions=1 automation_processed_ticks=0 automation_runs=1 automation_runtime_events=0 automation_runtime_schedule=0 daily_order_count_observations=11 dashboard_artifact_views=2 decision_idempotency_results=1 decisions=1 deterministic_risk_observations=11 journal_idempotency=1 journals=1 market_data_manifests=0 market_quote_observations=23 orders=1 p1_return_artifact_bundle=0 portfolio_balance_observations=3 principle_versions=3 principles=2 rag_consent_events=38 trading_sessions=2",
       "name": "시작 스냅샷",
       "verdict": "INFO"
     },
@@ -54,12 +54,12 @@
       "verdict": "PASS"
     },
     {
-      "detail": "AUTOMATION_ACTIVATION_GATE=PASS AUTOMATION_ACTIVATION_GATE_VERSION=3 STRATEGY_ELIGIBLE_FROM_SESSION=2026-09-01 PROVIDER_CALLS=0",
+      "detail": "AUTOMATION_ACTIVATION_GATE=PASS AUTOMATION_ACTIVATION_GATE_VERSION=1 STRATEGY_ELIGIBLE_FROM_SESSION=2026-09-01 PROVIDER_CALLS=0",
       "name": "activation gate 저술",
       "verdict": "PASS"
     },
     {
-      "detail": "HTTP 200 controlVersion=3 policyVersion=None blockers=[]",
+      "detail": "HTTP 200 controlVersion=5 policyVersion=None blockers=[]",
       "name": "arm 이전 상태",
       "verdict": "PASS"
     },
@@ -69,12 +69,12 @@
       "verdict": "PASS"
     },
     {
-      "detail": "HTTP 200 {\"contractId\": \"automation-status.v2\", \"controlState\": \"ARMED\", \"projectionState\": \"ARMED\", \"controlVersion\": 4, \"brokerageMode\": \"KIS_MOCK\", \"accountId\": \"acct_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"policy\": {\"contractId\": \"automation-policy.v1\", \"policyId\": \"auto_pol_44dd7254dc1e9f96d9a5be80e99033be\"",
+      "detail": "HTTP 200 {\"contractId\": \"automation-status.v2\", \"controlState\": \"ARMED\", \"projectionState\": \"ARMED\", \"controlVersion\": 6, \"brokerageMode\": \"KIS_MOCK\", \"accountId\": \"acct_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"policy\": {\"contractId\": \"automation-policy.v1\", \"policyId\": \"auto_pol_44dd7254dc1e9f96d9a5be80e99033be\"",
       "name": "arm",
       "verdict": "PASS"
     },
     {
-      "detail": "COMPLETED 전이=SCHEDULED→PRECHECK→AI_JUDGING→BUY_CANDIDATE_SELECTED→NEWS_CHECKING→ORDER_SIZING→RISK_CHECKING→ORDER_SUBMITTING→ORDER_SUBMITTED→COMPLETED order=ord_mock_92e46d4056474b3db4d6e2d0694423f3 decision=dec_9e6f8eb7aa424319b39deb8e2e9f1b6f cash=99507582 pos={'005930': 7}",
+      "detail": "COMPLETED 전이=SCHEDULED→PRECHECK→AI_JUDGING→BUY_CANDIDATE_SELECTED→NEWS_CHECKING→ORDER_SIZING→RISK_CHECKING→ORDER_SUBMITTING→ORDER_SUBMITTED→COMPLETED order=ord_mock_e55e66353b424ce18ca6ad51f1162e65 decision=dec_851d9521236f49a999614d7728b6c42e cash=99507582 pos={'005930': 7}",
       "name": "세션 1 구동 (매수)",
       "verdict": "PASS"
     },
@@ -89,7 +89,7 @@
       "verdict": "PASS"
     },
     {
-      "detail": "COMPLETED 전이=SCHEDULED→PRECHECK→EXIT_SELECTED→ORDER_SIZING→RISK_CHECKING→ORDER_SUBMITTING→ORDER_SUBMITTED→COMPLETED order=ord_mock_f49ee2b90c964bc7b644fcbb9538062a cash=99995169 pos={}",
+      "detail": "COMPLETED 전이=SCHEDULED→PRECHECK→EXIT_SELECTED→ORDER_SIZING→RISK_CHECKING→ORDER_SUBMITTING→ORDER_SUBMITTED→COMPLETED order=ord_mock_f24c031bdce5479e84331cade462e478 cash=99995169 pos={}",
       "name": "세션 2 구동 (매도)",
       "verdict": "PASS"
     },
@@ -99,17 +99,17 @@
       "verdict": "PASS"
     },
     {
-      "detail": "auto_run_25de751cc0d2b50f3611b0716f58b304|ord_mock_f49ee2b90c964bc7b644fcbb9538062a|q7|f7|l0|u0|MATCHED ; auto_run_34925c4eec8b091c21c0686913d4ba9d|ord_mock_92e46d4056474b3db4d6e2d0694423f3|q7|f7|l0|u0|MATCHED",
+      "detail": "auto_run_25de751cc0d2b50f3611b0716f58b304|ord_mock_f24c031bdce5479e84331cade462e478|q7|f7|l0|u0|MATCHED ; auto_run_34925c4eec8b091c21c0686913d4ba9d|ord_mock_e55e66353b424ce18ca6ad51f1162e65|q7|f7|l0|u0|MATCHED",
       "name": "예약 수량 보존과 대사",
       "verdict": "PASS"
     },
     {
-      "detail": "ord_mock_92e46d4056474b3db4d6e2d0694423f3|005930|BUY|7|70100|ACCEPTED|KIS_MOCK ; ord_mock_f49ee2b90c964bc7b644fcbb9538062a|005930|SELL|7|69900|ACCEPTED|KIS_MOCK",
+      "detail": "ord_mock_e55e66353b424ce18ca6ad51f1162e65|005930|BUY|7|70100|ACCEPTED|KIS_MOCK ; ord_mock_f24c031bdce5479e84331cade462e478|005930|SELL|7|69900|ACCEPTED|KIS_MOCK",
       "name": "bridge → Brokerage 실제 주문",
       "verdict": "PASS"
     },
     {
-      "detail": "auto_run_25de751cc0d2b50f3611b0716f58b304|dec_5778bd43ec594ef19670e26dd5520d64|dec_5778bd43ec594ef19670e26dd5520d64 ; auto_run_34925c4eec8b091c21c0686913d4ba9d|dec_9e6f8eb7aa424319b39deb8e2e9f1b6f|dec_9e6f8eb7aa424319b39deb8e2e9f1b6f (decision_id가 null이면 위험 판정 구간을 건너뛴 것)",
+      "detail": "auto_run_25de751cc0d2b50f3611b0716f58b304|dec_bb2d9b5f604e44f79180652a1908e643|dec_bb2d9b5f604e44f79180652a1908e643 ; auto_run_34925c4eec8b091c21c0686913d4ba9d|dec_851d9521236f49a999614d7728b6c42e|dec_851d9521236f49a999614d7728b6c42e (decision_id가 null이면 위험 판정 구간을 건너뛴 것)",
       "name": "RiskEngine 판단 결속",
       "verdict": "PASS"
     },

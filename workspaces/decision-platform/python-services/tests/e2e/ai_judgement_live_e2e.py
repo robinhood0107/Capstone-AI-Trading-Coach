@@ -13,11 +13,16 @@
 남긴 폐루프 기록을 읽는다. 그 리허설은 자동운용 엔진을 그대로 구동하되 transport만 실제 KIS
 모의 brokerage와 실제 Strong LLM으로 바꾼 것이다.
 
-  1. 규칙이 고른 1등과 실제 선택이 다르다
+  1. AI가 1등을 바꾼 run이 기록에 있다
   2. 판단이 실제 provider에서 왔다 - judge 호출이 한 번 이상 있었고 후보별 점수가 돌아왔다
   3. 선택된 종목이 후보 집합 안에 있다
   4. 실제 주문번호가 매수와 매도 양쪽에 있다
   5. 폐루프가 끝났고 계좌가 원복됐다
+
+1번을 "가장 최근 run이 1등을 바꿨다"로 두면 안 된다. 모델은 같은 후보에 매번 같은 점수를
+주지 않는다. 두 후보가 비슷하면 동점을 주고, 그러면 규칙 순서가 그대로 남는다. **그것도
+정상 동작이다** - AI는 순위를 바꿀 수 있을 뿐 반드시 바꿔야 하는 것이 아니다. 그래서 1번은
+기록 전체에서 하나라도 바뀐 run이 있는지를 보고, 나머지는 가장 최근 run을 본다.
 
 무엇을 확인하지 않나. DB `automation_ai_judgements` 표에 남는 판단 기록은 자동운용 런타임이
 arm된 뒤에만 쓰인다. 이 리허설은 인메모리 store로 엔진을 구동하므로 그 표에는 남지 않는다.
@@ -48,24 +53,26 @@ _REHEARSAL_DIR: Final = REPOSITORY / "artifacts/decision-platform/live-rehearsal
 _PREFIX: Final = "closed-loop-ai-rerank-"
 
 
-def latest_record() -> dict[str, Any]:
-    """가장 최근 AI_RERANK 리허설 기록을 읽는다. 없으면 지어내지 않고 멈춘다."""
+def all_records() -> list[dict[str, Any]]:
+    """AI_RERANK 리허설 기록을 전부 읽는다. 없으면 지어내지 않고 멈춘다."""
 
-    candidates = sorted(_REHEARSAL_DIR.glob(f"{_PREFIX}*.json"))
-    if not candidates:
+    records: list[dict[str, Any]] = []
+    for path in sorted(_REHEARSAL_DIR.glob(f"{_PREFIX}*.json")):
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(value, dict):
+            continue
+        value["__path__"] = path.name
+        records.append(value)
+    if not records:
         raise HarnessError(
             f"{_REHEARSAL_DIR.name}에 {_PREFIX}*.json 기록이 없다. "
             "P1_KIS_MOCK_REHEARSAL_SCENARIO=AI_RERANK 리허설을 먼저 돌려야 한다"
         )
-    path = candidates[-1]
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise HarnessError(f"{path.name}을 읽지 못했다: {type(error).__name__}") from error
-    if not isinstance(value, dict):
-        raise HarnessError(f"{path.name}의 최상위가 object가 아니다")
-    value["__path__"] = path.name
-    return value
+    records.sort(key=lambda item: str(item.get("sessionKst", "")))
+    return records
 
 
 def _step(record: dict[str, Any], name: str) -> dict[str, Any] | None:
@@ -83,25 +90,27 @@ def _transport_steps(record: dict[str, Any], name: str) -> list[dict[str, Any]]:
     ]
 
 
-def check_rerank(recorder: Recorder, record: dict[str, Any]) -> None:
-    """규칙이 고른 1등과 실제 선택이 달라야 AI가 순위를 바꾼 run이다."""
+def check_rerank(recorder: Recorder, records: list[dict[str, Any]]) -> None:
+    """기록 전체에서 AI가 1등을 바꾼 run이 하나라도 있어야 한다.
 
-    judgement = _step(record, "aiJudgement")
-    if judgement is None:
-        recorder.add(
-            "AI가 1등을 바꿨다",
-            "FAIL",
-            "aiJudgement 단계가 기록에 없다 (AI_RERANK 시나리오가 아니었다)",
-        )
-        return
-    rule_top = judgement.get("ruleTopSymbol")
-    selected = judgement.get("selectedSymbol")
-    changed = bool(judgement.get("aiChangedTop"))
+    매 run 마다 바뀌기를 요구하지 않는다. 모델이 두 후보에 동점을 주면 규칙 순서가 그대로
+    남고, 그것도 정상이다. 여기서 증명하려는 것은 "AI가 순위를 바꿀 수 있다"이지
+    "AI가 늘 순위를 바꾼다"가 아니다.
+    """
+
+    changed = [
+        (item, step)
+        for item in records
+        if (step := _step(item, "aiJudgement")) is not None and step.get("aiChangedTop")
+    ]
+    summary = ", ".join(
+        f"{item.get('__path__')}[{step.get('ruleTopSymbol')}→{step.get('selectedSymbol')}]"
+        for item, step in ((item, _step(item, "aiJudgement") or {}) for item in records)
+    )
     recorder.add(
-        "AI가 1등을 바꿨다",
-        "PASS" if changed and rule_top != selected else "FAIL",
-        f"규칙 1등={rule_top} 실제 선택={selected} "
-        "(둘이 같으면 AI가 붙어 있어도 순위를 바꾸지 않은 run이다)",
+        "AI가 1등을 바꾼 run이 있다",
+        "PASS" if changed else "FAIL",
+        f"기록 {len(records)}개 중 순위를 바꾼 run {len(changed)}개 :: {summary}",
     )
 
 
@@ -188,14 +197,15 @@ def main(argv: Sequence[str]) -> int:
 
     recorder = Recorder()
     try:
-        record = latest_record()
+        records = all_records()
+        record = records[-1]
         recorder.add(
             "관측 대상 기록",
             "INFO",
-            f"{record['__path__']} session={record.get('sessionKst')} "
-            f"물리 호출={record.get('physicalCalls')}",
+            f"기록 {len(records)}개, 최근={record['__path__']} "
+            f"session={record.get('sessionKst')} 물리 호출={record.get('physicalCalls')}",
         )
-        check_rerank(recorder, record)
+        check_rerank(recorder, records)
         check_provider(recorder, record)
         check_selection_bounded(recorder, record)
         check_real_orders(recorder, record)

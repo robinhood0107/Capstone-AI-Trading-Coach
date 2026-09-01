@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from typing import Any
 
@@ -128,6 +129,17 @@ def test_online_balance_probe_parses_source_without_fabricating_risk_fields() ->
     assert source.positions == (("005930", 2, 140_000),)
     assert source.positions_complete is True
     assert "provider-free-text" not in repr(source)
+
+    market_value_only = replace(
+        source,
+        portfolio_equity_krw=source.portfolio_equity_krw + 10_000,
+        positions=(("005930", 2, 150_000),),
+    )
+    cash_changed = replace(source, cash_krw=source.cash_krw - 1)
+    quantity_changed = replace(source, positions=(("005930", 1, 70_000),))
+    assert market_value_only.reconciliation_digest() == source.reconciliation_digest()
+    assert cash_changed.reconciliation_digest() != source.reconciliation_digest()
+    assert quantity_changed.reconciliation_digest() != source.reconciliation_digest()
 
 
 def test_online_buyable_parser_returns_only_sanitized_projection() -> None:

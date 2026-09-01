@@ -433,7 +433,21 @@ def _grounding_projection(
         uri = str(web.get("uri", ""))
         title = str(web.get("title", ""))
         parsed = urlparse(uri)
-        domain = str(web.get("domain", "")) or str(parsed.hostname or "")
+        raw_domain = web.get("domain")
+        domain = raw_domain.strip().lower() if isinstance(raw_domain, str) else ""
+        # Gemini may return a Google redirect URI, a null domain, and the
+        # actual source hostname as the title.  `str(None)` used to become the
+        # truthy value "None", causing every registered source to be discarded
+        # by the host.  A title is used only when it is exactly hostname-shaped;
+        # arbitrary page titles never become an authority domain.
+        title_domain = title.strip().lower()
+        if not domain and re.fullmatch(
+            r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}",
+            title_domain,
+        ):
+            domain = title_domain
+        if not domain:
+            domain = str(parsed.hostname or "").lower()
         if parsed.scheme != "https" or not parsed.hostname or not title:
             continue
         roots.append(

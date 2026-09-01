@@ -180,25 +180,34 @@ class BrokerageService(
             val gateway = gatewayProvider.getIfAvailable()
             if (gateway != null) {
                 val online =
-                    gateway.getMockBalance(
-                        BrokerageGatewayBalanceRequest(
-                            requestId = actor.requestId,
-                            accountId = accountId,
-                        ),
+                    try {
+                        gateway.getMockBalance(
+                            BrokerageGatewayBalanceRequest(
+                                requestId = actor.requestId,
+                                accountId = accountId,
+                            ),
+                        )
+                    } catch (_: BrokerageUnavailableException) {
+                        // KIS Mock 원문만으로 gold ETP·margin risk field를 추정하지 않는다. 온라인
+                        // projection이 그 경계에서 닫히면 owner-scoped COMPLETE observation을 그대로
+                        // 반환한다. sourceVersion/observedAt이 fixture·stale 여부를 화면에 드러낸다.
+                        null
+                    }
+                if (online != null) {
+                    if (online.accountId != accountId) {
+                        throw BrokerageUnavailableException("KIS_MOCK balance response identity mismatched.")
+                    }
+                    return MockBalanceProjection(
+                        accountId = online.accountId,
+                        brokerageMode = "KIS_MOCK",
+                        cashKrw = online.cashKrw,
+                        portfolioEquityKrw = online.portfolioEquityKrw,
+                        marginRequirementKrw = online.marginRequirementKrw,
+                        positions = online.positions,
+                        observedAt = online.observedAt,
+                        sourceVersion = online.sourceVersion,
                     )
-                if (online.accountId != accountId) {
-                    throw BrokerageUnavailableException("KIS_MOCK balance response identity mismatched.")
                 }
-                return MockBalanceProjection(
-                    accountId = online.accountId,
-                    brokerageMode = "KIS_MOCK",
-                    cashKrw = online.cashKrw,
-                    portfolioEquityKrw = online.portfolioEquityKrw,
-                    marginRequirementKrw = online.marginRequirementKrw,
-                    positions = online.positions,
-                    observedAt = online.observedAt,
-                    sourceVersion = online.sourceVersion,
-                )
             }
             if (stored.completeness != "COMPLETE" || stored.positionCount != stored.positions.size) {
                 throw BrokerageUnavailableException("KIS_MOCK balance source is incomplete.")

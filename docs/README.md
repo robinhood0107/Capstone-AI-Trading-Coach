@@ -20,8 +20,8 @@
 적힌 `exact-56 Spring API`와 `exact-33 acceptance`는 **그 시점의 수**다. 지금 값은 root
 OpenAPI `exact-69`, Team A acceptance `exact-38`이며 `./capstone team-a acceptance`가 그
 38개를 실제로 검증한다. 외부 팀이 무엇을 구현해야 하는지는 handoff 문서가 아니라
-[Team A 요청서](decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md)와
-[Team B 요청서](decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md)가 정한다.
+[Team A 최종 요청서](handoff/P1_TEAM_A_최종_통합_요청서.md)와
+[Team B 최종 요청서](handoff/P1_TEAM_B_최종_통합_요청서.md)가 정한다.
 
 ## 상태 용어
 
@@ -123,8 +123,8 @@ PostgreSQL one-shot claim을 별도로 통과한다. 이 구조는 공개 HTTP/O
 - [P1 Return inference runtime 운영](decision-platform/P1_RETURN_INFERENCE_RUNTIME_운영_가이드.md)
 - [통합 담당자 선행 완료 체크리스트](decision-platform/P1_OWNER_선행_완료_체크리스트.md)
 - [새 PC에서 같은 환경 실행하기](decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md)
-- [Team A 대시보드 완료 요청](decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md)
-- [Team B 예측·백테스트 엔진 완료 요청](decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md)
+- [Team A 최종 통합 요청](handoff/P1_TEAM_A_최종_통합_요청서.md)
+- [Team B 최종 통합 요청](handoff/P1_TEAM_B_최종_통합_요청서.md)
 - [S7-S8/P1 구현·운영 핸드오프](decision-platform/S7_S8_P1_구현_및_운영_핸드오프.md)
 - [P1 Offline Demo 배포·검증](decision-platform/P1_OFFLINE_DEMO_배포_및_검증.md)
 - [S8 offline demo 시나리오](decision-platform/S8_오프라인_시연_시나리오.md)

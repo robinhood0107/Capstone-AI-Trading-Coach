@@ -31,8 +31,11 @@ import os
 import sys
 import time
 from datetime import UTC, date, datetime, time as clock_time
+from decimal import ROUND_CEILING, Decimal
 from typing import Any, Final
 from zoneinfo import ZoneInfo
+
+import pandas as pd
 
 from app.brokerage.kis_mock_certification_gate import (
     CertificationWindowClosed,
@@ -51,6 +54,7 @@ from app.brokerage.kis_mock_online_client import (
 )
 from app.data.kis.http_client import CURRENT_PRICE_PATH, KISHttpClient
 from app.data.kis.settings import KISSettings
+from app.data.calendar.xkrx_policy import corrected_calendar
 from app.generated import strong_llm_agent_pb2
 from app.p1_owner.automation import (
     _nth_next_session,
@@ -67,6 +71,7 @@ from app.p1_owner.automation import (
     SignalCandidate,
     SubmitOutcome,
 )
+from app.p1_owner.automation_atr import CompletedDailyBar, wilder_atr
 from app.strong_llm.judge_client import (
     JudgeClientSettings,
     StrongLlmJudgeClient,
@@ -76,6 +81,7 @@ from app.strong_llm.judge_client import (
 _KST: Final = ZoneInfo("Asia/Seoul")
 _SYMBOL: Final = os.environ.get("P1_KIS_MOCK_REHEARSAL_SYMBOL", "005930")
 _OPT_IN: Final = "P1_KIS_MOCK_CLOSED_LOOP_REHEARSAL"
+_SANITIZED_OUTPUT: Final = "P1_KIS_MOCK_REHEARSAL_SANITIZED_OUTPUT"
 _ACCOUNT_ID: Final = "acct_" + "c" * 32
 _STRATEGY_ID: Final = "strategy_rehearsal_real_kis"
 _PRINCIPLE_ID: Final = "prc_rehearsal_real_kis"
@@ -91,6 +97,8 @@ _EVALUATION_TIME: Final = clock_time(9, 30)
 #   AI_RERANK             후보를 둘 주고 Strong LLM 판단이 1등을 바꾸는지 본다
 #   STOP_LOSS             손절선을 넘긴 상태를 만들어 그 청산 경로를 태운다
 #   TAKE_PROFIT           익절선을 넘긴 상태를 만들어 그 청산 경로를 태운다
+#   ATR_TRAILING          합성 ATR/peak로 트레일링을 발화하고 실제 시세·매도로 닫는다
+#   MAX_HOLDING_UNLIMITED 무제한 정책으로 6세션 뒤에도 보유함을 확인한 뒤 MODEL_SELL로 원복한다
 #   THREE_SESSION_SOAK    연속 세 XKRX 세션에 걸쳐 tick을 돌린다. 가운데 두 세션은 신호가
 #                         없어 무행동으로 닫혀야 하고, 그 사이 포지션이 그대로 살아 있어야 한다
 #
@@ -111,6 +119,31 @@ class RehearsalFailed(RuntimeError):
     """리허설을 중단시킨 사유. 실패를 성공으로 축소하지 않는다."""
 
 
+def _sanitized_output(value: Any) -> Any:
+    """계좌 현금과 raw 주문번호를 사용자 출력에서 제거한다."""
+
+    if isinstance(value, list):
+        return [_sanitized_output(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    result: dict[str, Any] = {}
+    for key, item in value.items():
+        if key == "cashKrw":
+            continue
+        if key == "orderNo":
+            result["orderRefSha256"] = hashlib.sha256(
+                ("kis-mock-order-ref\0" + str(item)).encode()
+            ).hexdigest()
+            continue
+        result[key] = _sanitized_output(item)
+    return result
+
+
+def _print_report(report: dict[str, Any], *, stream: Any = None) -> None:
+    projected = _sanitized_output(report) if os.environ.get(_SANITIZED_OUTPUT) == "1" else report
+    print(json.dumps(projected, ensure_ascii=False, indent=2), file=stream)
+
+
 def _require_opt_in() -> None:
     if os.environ.get(_OPT_IN) != "1":
         raise RehearsalFailed(f"{_OPT_IN}=1 이 없으면 실주문 리허설을 실행하지 않는다")
@@ -126,6 +159,35 @@ def _nonnegative(value: Any, label: str) -> int:
     if number < 0:
         raise RehearsalFailed(f"{label} 응답이 음수다")
     return number
+
+
+def _synthetic_atr_history(
+    *, as_of_session: date, anchor_price_krw: int, period: int = 22
+) -> tuple[tuple[CompletedDailyBar, ...], tuple[date, ...]]:
+    """실제 가격 규모를 anchor로 쓰는 연속 완료봉을 만든다.
+
+    세션 축과 현재가는 실제지만 OHLC는 분기 발화용 합성값이다. 실제 손익이나 장중 변동성
+    근거로 사용하지 않고 리허설 JSON에도 그 경계를 명시한다.
+    """
+
+    calendar = corrected_calendar()
+    previous = calendar.previous_session(pd.Timestamp(as_of_session))
+    sessions = tuple(item.date() for item in calendar.sessions_window(previous, -(period + 1)))
+    if len(sessions) != period + 1:
+        raise RehearsalFailed("합성 ATR 세션 축이 불완전하다")
+    spread = max(100, anchor_price_krw // 100)
+    low = max(1, anchor_price_krw - spread)
+    bars = tuple(
+        CompletedDailyBar(
+            session,
+            anchor_price_krw,
+            anchor_price_krw + spread,
+            low,
+            anchor_price_krw,
+        )
+        for session in sessions
+    )
+    return bars, sessions
 
 
 def _require_success(payload: dict[str, Any], label: str) -> dict[str, Any]:
@@ -475,11 +537,22 @@ def main() -> int:
             if pre["symbolQuantity"] != 0:
                 raise RehearsalFailed("리허설은 보유수량 0에서 시작해야 한다")
 
-            policy = AutomationPolicySnapshot.from_preset(
-                policy_id="auto_pol_" + "a" * 32,
-                version=1,
-                capital_limit_krw=10_000_000,
-                preset="BALANCED",
+            v3_scenario = _SCENARIO in {"ATR_TRAILING", "MAX_HOLDING_UNLIMITED"}
+            preset = "AGGRESSIVE" if _SCENARIO == "MAX_HOLDING_UNLIMITED" else "BALANCED"
+            policy = (
+                AutomationPolicySnapshot.from_v3_preset(
+                    policy_id="auto_pol_" + "a" * 32,
+                    version=1,
+                    capital_limit_krw=10_000_000,
+                    preset=preset,
+                )
+                if v3_scenario
+                else AutomationPolicySnapshot.from_preset(
+                    policy_id="auto_pol_" + "a" * 32,
+                    version=1,
+                    capital_limit_krw=10_000_000,
+                    preset="BALANCED",
+                )
             )
             store = AutomationStore(
                 account_id=_ACCOUNT_ID,
@@ -490,11 +563,32 @@ def main() -> int:
             )
 
             buy_session = datetime.now(tz=_KST).date()
+            buy_atr_histories: dict[str, tuple[CompletedDailyBar, ...]] = {}
+            buy_atr_sessions: tuple[date, ...] = ()
+            if v3_scenario:
+                atr_anchor = transport.quote(_SYMBOL)
+                history, expected_sessions = _synthetic_atr_history(
+                    as_of_session=buy_session,
+                    anchor_price_krw=atr_anchor.price_krw,
+                    period=policy.atr_period or 22,
+                )
+                buy_atr_histories[_SYMBOL] = history
+                buy_atr_sessions = expected_sessions
+                steps.append(
+                    {
+                        "step": "syntheticAtrHistory",
+                        "asOfSession": buy_session.isoformat(),
+                        "barCount": len(history),
+                        "note": "실제 현재가 규모와 XKRX 세션 축을 사용한 합성 adjusted OHLC",
+                    }
+                )
             buy_inputs = AutomationInputs(
                 session_date=buy_session,
                 policy=policy,
                 buyable_quantity=1,
                 buyable_amount_krw=policy.capital_limit_krw,
+                atr_histories=buy_atr_histories,
+                atr_expected_sessions=buy_atr_sessions,
                 ai_judgement_provider_bound=_SCENARIO == "AI_RERANK",
                 signals=(
                     SignalCandidate(
@@ -565,11 +659,15 @@ def main() -> int:
                     "quantity": position.quantity,
                     "entryAverageFillPriceKrw": position.entry_average_fill_price_krw,
                     "entrySession": position.entry_session.isoformat(),
-                    "expirySession": position.expiry_session.isoformat(),
+                    "expirySession": (
+                        position.expiry_session.isoformat() if position.expiry_session else None
+                    ),
                 }
             )
 
             # 같은 lot을 실제 매도로 닫는다. 시나리오에 따라 청산 사유가 달라진다.
+            sell_atr_histories: dict[str, tuple[CompletedDailyBar, ...]] = {}
+            sell_atr_sessions: tuple[date, ...] = ()
             if _SCENARIO == "MODEL_SELL":
                 # 만기 이전 세션으로 옮기고 같은 종목에 SELL 신호를 준다. 시세를 만지지 않고
                 # 신호만으로 MODEL_SELL 분기를 태운다.
@@ -624,6 +722,99 @@ def main() -> int:
             elif _SCENARIO in {"MAX_HOLDING_SESSIONS", "AI_RERANK"}:
                 sell_session = position.expiry_session
                 sell_signals = ()
+            elif _SCENARIO == "ATR_TRAILING":
+                sell_session = _nth_next_session(position.entry_session, 1)
+                sell_signals = ()
+                trigger_quote = transport.quote(position.symbol)
+                history, expected_sessions = _synthetic_atr_history(
+                    as_of_session=sell_session,
+                    anchor_price_krw=trigger_quote.price_krw,
+                    period=position.atr_period or 22,
+                )
+                atr = wilder_atr(
+                    history,
+                    period=position.atr_period or 22,
+                    as_of_session=sell_session,
+                    expected_sessions=expected_sessions,
+                )
+                multiplier = position.atr_multiplier_milli or 3_000
+                distance = int(
+                    (atr.value_krw * Decimal(multiplier) / Decimal(1_000)).to_integral_value(
+                        rounding=ROUND_CEILING
+                    )
+                )
+                cushion = max(1_000, trigger_quote.price_krw // 20)
+                position.peak_price_krw = trigger_quote.price_krw + distance + cushion
+                position.trailing_stop_krw = 1
+                sell_atr_histories[position.symbol] = history
+                sell_atr_sessions = expected_sessions
+                steps.append(
+                    {
+                        "step": "syntheticAtrTrigger",
+                        "atrValueKrw": str(atr.value_krw),
+                        "quotePriceKrw": trigger_quote.price_krw,
+                        "syntheticPeakPriceKrw": position.peak_price_krw,
+                        "note": "ATR/peak만 합성, KIS 현재가·SELL·체결·대사는 실제 모의계좌",
+                    }
+                )
+            elif _SCENARIO == "MAX_HOLDING_UNLIMITED":
+                if position.expiry_session is not None or position.max_holding_sessions != 0:
+                    raise RehearsalFailed("무제한 정책 snapshot이 position에 보존되지 않았다")
+                hold_session = _nth_next_session(position.entry_session, 6)
+                hold_quote = transport.quote(position.symbol)
+                hold_history, hold_expected = _synthetic_atr_history(
+                    as_of_session=hold_session,
+                    anchor_price_krw=hold_quote.price_krw,
+                    period=position.atr_period or 22,
+                )
+                hold_projection = _drive(
+                    store,
+                    transport,
+                    run_id="auto_run_rehearsal_unlimited_hold_0001",
+                    session=hold_session,
+                    inputs=AutomationInputs(
+                        session_date=hold_session,
+                        policy=policy,
+                        buyable_quantity=0,
+                        buyable_amount_krw=0,
+                        atr_histories={position.symbol: hold_history},
+                        atr_expected_sessions=hold_expected,
+                        signals=(),
+                    ),
+                    terminal={"SKIPPED_NO_ACTION", "HALTED", "COMPLETED"},
+                    label="UNLIMITED_HOLD",
+                )
+                open_now = [item for item in store.positions if item.status == "OPEN"]
+                if hold_projection.get("state") != "SKIPPED_NO_ACTION" or len(open_now) != 1:
+                    raise RehearsalFailed("무제한 정책이 6세션 뒤 포지션을 유지하지 못했다")
+                steps.append(
+                    {
+                        "step": "unlimitedHolding",
+                        "sessionDate": hold_session.isoformat(),
+                        "sessionsAfterEntry": 6,
+                        "state": hold_projection.get("state"),
+                        "expirySession": position.expiry_session,
+                        "openPositions": len(open_now),
+                    }
+                )
+                sell_session = _nth_next_session(position.entry_session, 7)
+                sell_signals = (
+                    SignalCandidate(
+                        symbol=position.symbol,
+                        lstm_signal="SELL",
+                        baseline_signal="SELL",
+                        expected_return=-0.03,
+                        confidence=0.8,
+                    ),
+                )
+                close_quote = transport.quote(position.symbol)
+                close_history, close_expected = _synthetic_atr_history(
+                    as_of_session=sell_session,
+                    anchor_price_krw=close_quote.price_krw,
+                    period=position.atr_period or 22,
+                )
+                sell_atr_histories[position.symbol] = close_history
+                sell_atr_sessions = close_expected
             elif _SCENARIO in {"STOP_LOSS", "TAKE_PROFIT"}:
                 # 만기 전 세션이라 MAX_HOLDING_SESSIONS 분기는 열리지 않는다. 신호도 주지
                 # 않으므로 MODEL_SELL도 아니다. 남는 것은 손절선과 익절선뿐이다.
@@ -660,6 +851,8 @@ def main() -> int:
                 buyable_amount_krw=0,
                 open_position_market_value_krw=position.quantity
                 * (position.entry_average_fill_price_krw or 0),
+                atr_histories=sell_atr_histories,
+                atr_expected_sessions=sell_atr_sessions,
                 signals=sell_signals,
             )
             sell_projection = _drive(
@@ -674,6 +867,14 @@ def main() -> int:
             if sell_projection.get("state") != "COMPLETED":
                 raise RehearsalFailed(
                     f"매도 세션이 COMPLETED가 아니다: {sell_projection.get('state')}"
+                )
+            expected_new_exit = {
+                "ATR_TRAILING": "ATR_TRAILING",
+                "MAX_HOLDING_UNLIMITED": "MODEL_SELL",
+            }.get(_SCENARIO)
+            if expected_new_exit and sell_projection.get("exitReason") != expected_new_exit:
+                raise RehearsalFailed(
+                    f"{_SCENARIO} 청산 사유가 다르다: {sell_projection.get('exitReason')}"
                 )
             if any(item.status == "OPEN" for item in store.positions):
                 raise RehearsalFailed("매도 뒤에도 OPEN 포지션이 남아 있다")
@@ -706,35 +907,27 @@ def main() -> int:
             client.close()
             market.close()
     except (RehearsalFailed, CertificationWindowClosed) as error:
-        print(
-            json.dumps(
-                {
-                    "status": "FAILED",
-                    "reason": str(error),
-                    "engineSteps": steps,
-                    "sessionKst": datetime.now(tz=_KST).isoformat(),
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            file=sys.stderr,
-        )
-        return 1
-    print(
-        json.dumps(
+        _print_report(
             {
-                "status": "SUCCESS",
-                "scenario": _SCENARIO,
-                "symbol": _SYMBOL,
+                "status": "FAILED",
+                "reason": str(error),
                 "engineSteps": steps,
-                "transportSteps": transport.steps,
-                "physicalCalls": transport.physical_calls,
-                "vertexProviderCalls": 0,
                 "sessionKst": datetime.now(tz=_KST).isoformat(),
             },
-            ensure_ascii=False,
-            indent=2,
+            stream=sys.stderr,
         )
+        return 1
+    _print_report(
+        {
+            "status": "SUCCESS",
+            "scenario": _SCENARIO,
+            "symbol": _SYMBOL,
+            "engineSteps": steps,
+            "transportSteps": transport.steps,
+            "physicalCalls": transport.physical_calls,
+            "vertexProviderCalls": 0,
+            "sessionKst": datetime.now(tz=_KST).isoformat(),
+        }
     )
     return 0
 

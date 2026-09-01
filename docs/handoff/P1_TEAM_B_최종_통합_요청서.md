@@ -10,7 +10,21 @@
 뉴스, AI 판단, 자금·수량·손절·익절과 주문은 Owner가 처리합니다. Team B는 후보와
 BUY·HOLD·SELL 신호까지만 담당합니다.
 
-## 이번에 완성할 것
+## 현재 부족한 것 — 아래 4개가 이번 필수 작업의 전부입니다
+
+현재 저장소에는 005930 preview, 기존 LSTM·rule·backtest 코드가 있지만 결과는
+`LEGACY_RECEIVED_PREVIEW`, `realTeamB=false`입니다. 실제 자동운용에 넣을 production 산출물은 아직
+아닙니다. 반드시 채워야 하는 부분은 다음 네 가지입니다.
+
+1. **exact-31 production 학습:** Owner input manifest를 검증하고 전체 종목을 같은 시간 경계로 학습하는 실행 경로
+2. **검증 가능한 모델:** train-only scaler, leakage test, 35bps 비용, 고정 seed·thread와 성능 측정
+3. **실제 exact-10:** `model.safetensors`를 포함한 10개 파일과 `p1-return-engine-manifest.v2.json`
+4. **daily inference:** accepted daily shard를 읽어 그 거래일의 exact-31 LSTM·rule 신호를 만드는 명령과 manifest
+
+위 4개가 모두 있어야 `REAL_TEAM_B`로 전달할 수 있습니다. LSTM 성능 개선은 이 필수 작업을 완료한
+뒤의 선택 제안입니다.
+
+## 필수 구현 내용
 
 ### 1. 한 번 실행하는 학습
 

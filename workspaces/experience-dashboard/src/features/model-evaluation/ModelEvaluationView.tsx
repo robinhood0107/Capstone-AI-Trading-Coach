@@ -307,9 +307,6 @@ function SignalSlotRow({ slot }: { slot: SignalSlot }) {
               {SIGNAL_LABEL[slot.signal ?? 'HOLD']}
             </span>
           )}
-          <span className="tnum font-mono text-[13px] text-muted">
-            {formatDecimal(slot.confidence, 2)}
-          </span>
           <Numeric value={slot.predictedReturn} format={(v) => formatSignedRatio(v, 2)} />
         </div>
       )}

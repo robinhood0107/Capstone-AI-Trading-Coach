@@ -89,7 +89,6 @@ def _state(state: str = "SCHEDULED", version: int = 1) -> dict[str, Any]:
                 "lstmSignal": "BUY",
                 "baselineSignal": "BUY",
                 "expectedReturn": 0.03,
-                "confidence": 0.8,
             }
         ],
         "state": state,
@@ -491,7 +490,7 @@ def test_the_ai_judgement_is_recorded_on_the_tick_that_leaves_that_state() -> No
     assert record.baseline_symbol == "005930"
     assert record.selected_symbol == "005930"
     assert record.candidate_count == 1
-    assert record.confidence_bps is None
+    assert not hasattr(record, "confidence_bps")
 
 
 def test_zero_evidence_v3_boundary_atomically_records_not_participated() -> None:

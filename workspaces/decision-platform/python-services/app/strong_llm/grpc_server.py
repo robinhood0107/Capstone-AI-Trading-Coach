@@ -235,7 +235,6 @@ def _candidate(item: strong_llm_agent_pb2.JudgementCandidate) -> JudgementCandid
     return JudgementCandidate(
         item.symbol,
         item.expected_return,
-        item.model_confidence,
         item.lstm_signal,
         item.baseline_signal,
     )

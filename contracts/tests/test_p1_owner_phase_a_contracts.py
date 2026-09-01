@@ -10,6 +10,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 from contracts.generate_p1_owner_phase_a_contracts import (
     ARTIFACT_NAMES,
     ARTIFACT_SCHEMA_IDS,
+    CURRENT_ARTIFACT_SCHEMA_IDS,
     FEATURE_ORDER,
     FROZEN_SHA256,
     RELEASE_V3_HARD_GATES,
@@ -86,6 +87,14 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
         synthetic["modelQuality"] = "NOT_EVALUATED_SYNTHETIC"
         with self.assertRaises(ContractValidationError):
             validate_semantics("p1-return-engine-artifact-manifest.v2", synthetic)
+
+        current = self.fixtures["p1-return-engine-artifact-manifest.v3"]
+        self.assertEqual(
+            [SCHEMA_PATHS[item] for item in CURRENT_ARTIFACT_SCHEMA_IDS],
+            [item["semanticSchema"] for item in current["artifacts"]],
+        )
+        for schema_id in CURRENT_ARTIFACT_SCHEMA_IDS[3:5]:
+            self.assertNotIn("confidence", self.fixtures[schema_id]["semantic"]["rowSchema"])
 
     def test_vertex_veto_is_a_closed_union_without_order_fields(self) -> None:
         schema = self.schemas["vertex-news-veto.v1"]
@@ -167,6 +176,9 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
             for method in path_item
             if method != "parameters"
         }
+        self.assertEqual(76, len(root_operations))
+        self.assertIn(("/api/v3/signals/{symbol}", "get"), root_operations)
+        root_operations.remove(("/api/v3/signals/{symbol}", "get"))
         self.assertEqual(75, len(root_operations))
         v3_additive = json.loads(
             (ROOT / "contracts/openapi/p1-automation-v3.v1.openapi.json").read_text(encoding="utf-8")
@@ -243,8 +255,8 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
         )
         self.assertEqual(list(RELEASE_V3_HARD_GATES), catalog["hardGates"])
         self.assertEqual(16, len(catalog["hardGates"]))
-        self.assertEqual(33, catalog["teamARequiredOperationCount"])
-        self.assertEqual(56, catalog["openApiOperationCount"])
+        self.assertEqual(45, catalog["teamARequiredOperationCount"])
+        self.assertEqual(76, catalog["openApiOperationCount"])
         self.assertEqual(0, catalog["kisLiveOrderCalls"])
         self.assertEqual(0, catalog["gdeltCalls"])
 

@@ -7,7 +7,7 @@
       "const": 0
     },
     "adjustmentMode": {
-      "const": "ADJUSTED"
+      "const": "RAW_CLOSE"
     },
     "bars": {
       "additionalProperties": false,
@@ -84,7 +84,7 @@
       "additionalProperties": false,
       "properties": {
         "kisDaily": {
-          "maximum": 403,
+          "maximum": 496,
           "minimum": 0,
           "type": "integer"
         },
@@ -99,7 +99,7 @@
           "type": "integer"
         },
         "retry": {
-          "const": 0
+          "const": 1
         }
       },
       "required": [
@@ -114,7 +114,7 @@
       "additionalProperties": false,
       "properties": {
         "kisDaily": {
-          "maximum": 403,
+          "maximum": 496,
           "minimum": 0,
           "type": "integer"
         },
@@ -140,7 +140,7 @@
       "const": false
     },
     "requestedSessionCount": {
-      "const": 1260
+      "const": 756
     },
     "sourcePathPersisted": {
       "const": false

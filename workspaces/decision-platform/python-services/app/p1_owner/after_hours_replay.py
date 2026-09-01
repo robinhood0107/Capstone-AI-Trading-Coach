@@ -628,8 +628,8 @@ def _synthetic_inputs(
 
 
 def _synthetic_evidence_results(anchor: ReplayBar) -> dict[str, bool]:
-    first = SignalCandidate("000001", "BUY", "BUY", 0.05, 0.8)
-    second = SignalCandidate("000002", "BUY", "BUY", 0.04, 0.8)
+    first = SignalCandidate("000001", "BUY", "BUY", 0.05)
+    second = SignalCandidate("000002", "BUY", "BUY", 0.04)
     inputs, base = _synthetic_inputs(anchor, first, second, ai_enabled=True)
     evaluation = inputs.session_date
     quotes = {
@@ -737,8 +737,8 @@ def _synthetic_evidence_results(anchor: ReplayBar) -> dict[str, bool]:
 
 
 def _synthetic_hard_eligibility(anchor: ReplayBar) -> bool:
-    first = SignalCandidate("000001", "BUY", "BUY", 0.05, 0.8)
-    second = SignalCandidate("000002", "BUY", "BUY", 0.04, 0.8)
+    first = SignalCandidate("000001", "BUY", "BUY", 0.05)
+    second = SignalCandidate("000002", "BUY", "BUY", 0.04)
     inputs, base = _synthetic_inputs(anchor, first, second, ai_enabled=False)
     store, run = _synthetic_store(inputs.session_date)
     transport = FixtureAutomationTransport(
@@ -758,7 +758,7 @@ def _synthetic_hard_eligibility(anchor: ReplayBar) -> bool:
 
 
 def _synthetic_unlimited_fill(anchor: ReplayBar) -> bool:
-    candidate = SignalCandidate("000001", "BUY", "BUY", 0.05, 0.8)
+    candidate = SignalCandidate("000001", "BUY", "BUY", 0.05)
     inputs, base = _synthetic_inputs(anchor, candidate, ai_enabled=False)
     inputs = replace(
         inputs,
@@ -832,7 +832,7 @@ def _synthetic_exit_reason(
         if profit
         else base
     )
-    signals = (SignalCandidate("000001", "SELL", "SELL", -0.1, 0.8),) if model else ()
+    signals = (SignalCandidate("000001", "SELL", "SELL", -0.1),) if model else ()
     inputs = AutomationInputs(
         session_date=evaluation,
         policy=AutomationPolicySnapshot.from_v3_preset(

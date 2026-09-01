@@ -580,16 +580,16 @@ def _bootstrap_schema() -> dict[str, Any]:
     caps = _closed(
         ["kisDaily", "kisToken", "krxMembership", "retry"],
         {
-            "kisDaily": {"type": "integer", "minimum": 0, "maximum": 403},
+            "kisDaily": {"type": "integer", "minimum": 0, "maximum": 496},
             "kisToken": {"type": "integer", "minimum": 0, "maximum": 1},
             "krxMembership": {"type": "integer", "minimum": 0, "maximum": 5},
-            "retry": {"const": 0},
+            "retry": {"const": 1},
         },
     )
     actual = _closed(
         ["kisDaily", "kisToken", "krxMembership"],
         {
-            "kisDaily": {"type": "integer", "minimum": 0, "maximum": 403},
+            "kisDaily": {"type": "integer", "minimum": 0, "maximum": 496},
             "kisToken": {"type": "integer", "minimum": 0, "maximum": 1},
             "krxMembership": {"type": "integer", "minimum": 0, "maximum": 5},
         },
@@ -632,10 +632,10 @@ def _bootstrap_schema() -> dict[str, Any]:
                     "items": _symbol(),
                     "contains": {"const": "132030"},
                 },
-                "requestedSessionCount": {"const": 1_260},
+                "requestedSessionCount": {"const": 756},
                 "firstSessionDate": _date(),
                 "lastSessionDate": _date(),
-                "adjustmentMode": {"const": "ADJUSTED"},
+                "adjustmentMode": {"const": "RAW_CLOSE"},
                 "bars": _closed(
                     ["relativePath", "sha256", "rowCount"],
                     {
@@ -730,11 +730,11 @@ def _catalog() -> dict[str, Any]:
         "marketBootstrap": {
             "currentUniverseSize": 31,
             "fixedMember": "132030",
-            "researchSessionMax": 1_260,
-            "kisDailyPhysicalMax": 403,
+            "researchSessionMax": 756,
+            "kisDailyPhysicalMax": 496,
             "kisTokenPhysicalMax": 1,
             "krxMembershipPhysicalMax": 5,
-            "retryMax": 0,
+            "retryMax": 1,
             "accountCalls": 0,
             "orderCalls": 0,
         },
@@ -1079,12 +1079,12 @@ def validate_bootstrap_semantics(value: dict[str, Any]) -> None:
                 "automation bootstrap physical calls exceed the cap."
             )
     if (
-        caps.get("retry") != 0
+        caps.get("retry") != 1
         or value.get("accountCalls") != 0
         or value.get("orderCalls") != 0
     ):
         raise ContractValidationError(
-            "automation bootstrap must be retry/account/order free."
+            "automation bootstrap permits only one transient retry per failed operation."
         )
 
 

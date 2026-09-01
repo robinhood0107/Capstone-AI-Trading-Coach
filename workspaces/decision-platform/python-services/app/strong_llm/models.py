@@ -79,7 +79,6 @@ class StrongLlmJudgement(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     candidates: list[CandidateVerdict] = Field(max_length=32)
-    confidence: float = Field(ge=0.0, le=1.0)
     summary: str = Field(min_length=1, max_length=2048)
 
 
@@ -89,7 +88,6 @@ class JudgementCandidate:
 
     symbol: str
     expected_return: float
-    model_confidence: float
     lstm_signal: str
     baseline_signal: str
 

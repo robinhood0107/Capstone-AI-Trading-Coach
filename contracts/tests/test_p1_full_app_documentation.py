@@ -92,6 +92,7 @@ TEAM_A_REQUIRED_OPERATIONS = frozenset(
         ("GET", "/api/v3/automation/runs"),
         ("GET", "/api/v3/automation/runs/{runId}"),
         ("GET", "/api/v3/automation/positions"),
+        ("GET", "/api/v3/signals/{symbol}"),
     }
 )
 OPTIONAL_PRODUCT_OPERATIONS = frozenset(
@@ -253,7 +254,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             for method in path_item
             if method in methods
         ]
-        self.assertEqual(75, len(operations))
+        self.assertEqual(76, len(operations))
         operation_ids = [operation_id for _, _, operation_id in operations]
         self.assertTrue(
             all(
@@ -261,7 +262,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
                 for operation_id in operation_ids
             )
         )
-        self.assertEqual(75, len(set(operation_ids)))
+        self.assertEqual(76, len(set(operation_ids)))
         expected = {(method, path) for method, path, _ in operations}
 
         matrix = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX.md").read_text(
@@ -283,13 +284,13 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             flags=re.MULTILINE,
         )
         self.assertEqual(69, len(base_rows))
-        self.assertEqual(6, len(additive_rows))
+        self.assertEqual(7, len(additive_rows))
         rows = [*base_rows, *additive_rows]
-        self.assertEqual(75, len(rows))
+        self.assertEqual(76, len(rows))
         self.assertEqual(
-            list(range(1, 76)), sorted(int(number) for number, _, _, _ in rows)
+            list(range(1, 77)), sorted(int(number) for number, _, _, _ in rows)
         )
-        self.assertEqual(75, len({(method, path) for _, method, path, _ in rows}))
+        self.assertEqual(76, len({(method, path) for _, method, path, _ in rows}))
         self.assertEqual(expected, {(method, path) for _, method, path, _ in rows})
 
         observed_by_classification = {
@@ -346,7 +347,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             "glassmorphism",
             "linear.app",
             "dashboard.stripe.com",
-            "38개 catalog 밖 호출 0",
+            "45개 catalog 밖 호출 0",
             "BLOCKED_INCOMPLETE_RISK_BALANCE",
             "automation-policy.spec.ts",
         ):
@@ -355,34 +356,35 @@ class P1FullAppDocumentationTest(unittest.TestCase):
     def test_team_b_request_lists_exact_artifacts_and_owner_verification_apis(
         self,
     ) -> None:
-        request = (
+        active = (
             ROOT / "docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md"
         ).read_text(encoding="utf-8")
-        self.assertTrue(all(f"`{artifact}`" in request for artifact in TEAM_B_ARTIFACTS))
+        request = (
+            ROOT / "docs/handoff/P1_TEAM_B_최종_통합_요청서.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Team B exact-31 최소 구현 요청서", active)
+        self.assertIn("daily inference, DB, Compose", active)
+        self.assertTrue(all(artifact in request for artifact in TEAM_B_ARTIFACTS))
         self.assertEqual(
             [
-                "그대로 두시는 것",
-                "새로 붙여 주셔야 하는 것",
-                "1.1.0 Automation과의 경계",
-                # 바뀐 것이 없다는 사실도 적어야 정보다. AI 판단이 들어왔지만 Team B 계약은
-                # 그대로라는 것을 이 절이 말한다.
-                "이 요청서는 이전과 **똑같습니다**",
-                "매일 한 번 돌려 주셔야 합니다",
-                "역할 대비 부담 점검",
-                "확인은 이렇게",
-                "다 되면 알려 주세요",
-                "이건 피해 주세요",
+                "목표",
+                "시작 입력",
+                "필수 구현",
+                "제외 범위",
+                "최소 검증",
+                "제출물",
             ],
             re.findall(r"(?m)^## (.+)$", request),
         )
-        self.assertIn("LSTM, rule baseline, 데이터 처리, 백테스트 코드와 preview", request)
-        self.assertIn("dev/owner-handoff/<inputManifestSha256>/handoff.json", request)
-        self.assertIn("mode `0600` 일반 파일", request)
+        self.assertIn("기존 삼성전자 LSTM·rule baseline·전처리·백테스트", request)
+        self.assertIn("epochs=10", request)
+        self.assertIn("deploy/p1/seed/team-b/", request)
         self.assertNotIn("p1-return-engine-manifest.v1.json", request)
-        self.assertIn("p1-return-engine-manifest.v2.json", request)
-        self.assertIn("./capstone artifact validate", request)
-        self.assertIn("`sessionDate`가 **그날 거래일과 같을 때만**", request)
-        self.assertIn("provider·KIS·ECOS·yfinance·Spring·account·order·Vertex·GDELT", request)
+        self.assertIn("p1-return-engine-manifest.v3.json", request)
+        self.assertIn("p1-return-engine-input-pack.v1.zip", request)
+        self.assertIn("BLOCKED_PENDING_APPROVED_KIS_INPUT_PACK", request)
+        self.assertIn("KIS·KRX·ECOS·yfinance 수집", request)
+        self.assertIn("daily inference scheduler와 자동매매 runtime", request)
 
     def test_team_handoff_checklist_has_no_stale_preview_or_api_edge_flow(self) -> None:
         checklist = (

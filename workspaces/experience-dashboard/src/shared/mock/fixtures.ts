@@ -24,7 +24,7 @@ import type {
   PrincipleRuleId,
   RagAnswerProjection,
   RagSourceListResponse,
-  SignalV2Runtime,
+  SignalV3Runtime,
   SystemHealthResponse,
 } from '@/shared/api/wire';
 
@@ -466,7 +466,7 @@ export const decisions: Record<string, DecisionProjection> = {
 
 /* ---------------------------------------------------------------- Signal */
 
-export const signals: Record<string, SignalV2Runtime> = {
+export const signals: Record<string, SignalV3Runtime> = {
   '005930': {
     symbol: '005930',
     timeframe: '1d',
@@ -480,7 +480,6 @@ export const signals: Record<string, SignalV2Runtime> = {
         sourceWorkspace: 'return-engine',
         asOf: iso(720),
         signal: 'BUY',
-        confidence: 0.61,
         predictedReturn: 0.0082,
       },
       lstm: {
@@ -489,7 +488,6 @@ export const signals: Record<string, SignalV2Runtime> = {
         sourceWorkspace: 'return-engine',
         asOf: iso(720),
         signal: 'HOLD',
-        confidence: 0.44,
         predictedReturn: 0.0011,
       },
       lightgbm: {
@@ -511,7 +509,7 @@ export const signals: Record<string, SignalV2Runtime> = {
     symbol: '000660',
     timeframe: '1d',
     asOf: iso(700),
-    composite: { status: 'AVAILABLE', signal: 'HOLD', confidence: 0.52 },
+    composite: { status: 'AVAILABLE', signal: 'HOLD' },
     components: {
       ruleBaseline: {
         status: 'AVAILABLE',
@@ -519,7 +517,6 @@ export const signals: Record<string, SignalV2Runtime> = {
         sourceWorkspace: 'return-engine',
         asOf: iso(700),
         signal: 'SELL',
-        confidence: 0.55,
         predictedReturn: -0.0064,
       },
       lstm: {
@@ -528,7 +525,6 @@ export const signals: Record<string, SignalV2Runtime> = {
         sourceWorkspace: 'return-engine',
         asOf: iso(700),
         signal: 'HOLD',
-        confidence: 0.49,
         predictedReturn: -0.0007,
       },
       lightgbm: {
@@ -537,7 +533,6 @@ export const signals: Record<string, SignalV2Runtime> = {
         sourceWorkspace: 'decision-platform',
         asOf: iso(700),
         signal: 'HOLD',
-        confidence: 0.58,
         predictedReturn: 0.0004,
       },
       hmmRegime: {
@@ -546,7 +541,6 @@ export const signals: Record<string, SignalV2Runtime> = {
         sourceWorkspace: 'decision-platform',
         asOf: iso(700),
         state: 'HIGH_VOLATILITY',
-        confidence: 0.66,
       },
     },
     warnings: [],

@@ -40,5 +40,7 @@ The provider-free E2E sequence exposed two gaps before the next market session.
   branches across the request, signed runtime packet, and receipt guard;
   operation scope, call caps, canonical request,
   signed approval, and mock-account binding are unchanged.
+- Failed mock certification now reports only the typed failed step, reason code,
+  and already reserved physical-call counts. Raw KIS responses remain absent.
 
 Public V1/V2/V3 OpenAPI bytes and operation counts are unchanged.

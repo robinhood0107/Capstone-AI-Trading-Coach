@@ -543,6 +543,12 @@ class RagV2RuntimeService(
             )
         requireVertexGenerationBoundary(generation, evidence)
         if (generation.generationStatus != RagGenerationStatus.ANSWERED) {
+            // 생성 모델이 부족 응답을 내거나 strict quote/citation 검증에서 닫혀도, 이미 profile-selected
+            // retrieval과 DB canonicalization을 통과한 출처까지 버릴 이유는 없다. 생성 실패를 다른 모델로
+            // 우회하거나 문장을 꾸미지 않고, 검증된 retrieval receipt만 보존해 화면이 출처를 계속 보여준다.
+            if (evaluation.citations.isNotEmpty()) {
+                return persistRetrievalOnlyAnswer(ownerUserId, requestId, command, scope, evaluation)
+            }
             return terminalAnswer(
                 requestId = requestId,
                 generationStatus = generation.generationStatus,

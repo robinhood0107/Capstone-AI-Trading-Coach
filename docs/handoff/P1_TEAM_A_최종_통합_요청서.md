@@ -5,8 +5,9 @@
 
 ## 이번에 부탁드리는 한 가지
 
-현재 Dashboard 구조와 코드를 유지하면서, 사용자가 아래 흐름을 실제 API로 끝까지 사용할 수 있게
-연결해 주세요.
+현재 Dashboard의 API 연결과 검증된 기능 코드는 재사용하되, 9개 화면의 정보 구조와 시각 디자인은
+금융 서비스 수준으로 전면 재설계해 주세요. 동시에 사용자가 아래 흐름을 실제 API로 끝까지 사용할 수
+있게 연결해 주세요.
 
 ```text
 로그인
@@ -17,19 +18,51 @@
 → 필요한 결과를 학습일지에 저장
 ```
 
-화면 전체를 다시 디자인하거나 route를 새로 만들 필요는 없습니다. 현재 9개 route와 component를
-최대한 재사용해 주세요. 기능을 읽기 쉽게 정리하는 정도의 UI 보완이면 충분합니다.
+route URL을 늘릴 필요는 없습니다. 대신 현재 화면 배치와 component 모양은 보존 대상이 아닙니다.
+정확한 API 호출·상태 처리 코드는 살리고, 9개 화면 전체와 공통 디자인 시스템은 새로 설계해 주세요.
+
+## 디자인 작업 범위
+
+다음 9개 화면을 하나의 완성된 제품처럼 전부 다시 설계합니다.
+
+1. 현황
+2. 내 원칙
+3. 자동운용
+4. 주문 검토
+5. 모델 비교
+6. 백테스트 리포트
+7. 금융 가이드 RAG
+8. 보고서 캡처
+9. Strong LLM 설정
+
+먼저 현재 9개 화면의 정보 우선순위·중복·사용자 막힘을 짧게 점검하고, 아래 공통 체계를 만든 뒤
+화면을 구현해 주세요.
+
+- 색상: 배경·표면·본문·보조문자·border·ALLOW/WARN/HOLD/BLOCK·success/error 토큰
+- 글자: 제목·본문·label·숫자·코드의 크기, 굵기, 행간과 tabular numeral 규칙
+- 공간: 4/8px 계열 spacing, grid, 최대 폭, desktop/mobile breakpoint
+- 공통 component: navigation, page header, card, form, button, badge, alert, table, chart, drawer/modal
+- 공통 상태: loading, empty, error, stale, disabled, ABSTAIN, HALTED, partial fill, reconciliation
+- 데이터 표현: 통화·비율·시각·상태·출처·인용문의 정렬과 길이 제한
+
+Figma 또는 동등한 편집 가능한 설계 원본에 디자인 토큰, 핵심 component와 9개 화면의 desktop 시안을
+남겨 주세요. 핵심 사용자 흐름은 mobile 시안도 포함합니다. 생성형 UI 도구를 쓸 수는 있지만 한 번의
+prompt 결과를 그대로 제출하지 말고, 실제 데이터 길이·오류 상태·반응형 화면을 넣어 최소 두 차례
+검토한 최종안을 구현해야 합니다.
+
+새 route, 거대한 animation, 장식용 3D, 마케팅 페이지는 만들지 않습니다. 이번 전면 재설계는 화면 수를
+늘리는 일이 아니라 기존 9개 화면의 정보 위계·일관성·사용성을 완성하는 일입니다.
 
 ## 그대로 살려 주세요
 
 - 현재 Next.js Dashboard와 same-origin `/api` 연결
-- Overview, 원칙, 주문 검토, 자동운용, 모델 비교, 백테스트, RAG, 보고서, 설정 화면
-- 현재 navy·white·neutral gray 톤과 표·차트
-- generated client와 기존 테스트
+- 현재 9개 route URL과 검증된 API 호출·상태 전이
+- 올바르게 동작하는 form·table·chart 로직과 generated client
+- 기존 테스트
 - loading, empty, error, stale, ABSTAIN, HALTED 상태를 숨기지 않는 방식
 
-Figma나 v0로 전면 시안을 새로 만들 필요는 없습니다. 배치 판단이 필요한 부분만 간단한 와이어프레임
-또는 구현 화면 캡처로 설명해 주세요.
+현재 component를 그대로 쓸 의무는 없습니다. 새 디자인 시스템에 맞지 않는 component와 CSS는
+교체해도 되지만, 동작하는 API 계약을 시각 개선 때문에 다시 구현하거나 우회하지 마세요.
 
 ## 완성할 사용자 흐름
 
@@ -122,10 +155,13 @@ RAG 답변은 설명용이며 주문 판단을 바꾸지 않는다는 문구를 
 - desktop과 mobile에서 주요 버튼과 표를 사용할 수 있어야 함
 - keyboard navigation과 WCAG AA 수준의 대비
 - gradient, glassmorphism, neon, AI sparkle, 과한 애니메이션은 사용하지 않음
+- 카드만 반복하는 생성형 템플릿처럼 보이지 않도록 화면 목적에 맞는 표·단계·상세 패널을 사용
+- 실제 긴 한국어 문구, 0건, 오류, stale, 31개 후보, 다수 citation을 넣어 깨짐 확인
 - `REAL_TEAM_B`와 `SYNTHETIC_GOLDEN`, `KIS_MOCK`과 `INTERNAL_PAPER`, LightGBM의
   `RESEARCH_ONLY`를 명확히 구분
 
-새 디자인 시스템을 만들거나 모든 화면을 다시 배치할 필요는 없습니다.
+현재 navy·white 톤을 그대로 복제할 필요는 없지만, 신뢰감 있는 금융 서비스 톤과 절제된 색을
+유지해 주세요. 새 디자인 시스템은 9개 화면에서 실제 같은 component와 token으로 사용되어야 합니다.
 
 ## Team A가 하지 않는 일
 
@@ -159,6 +195,8 @@ npm run build
 - Team A acceptance exact-45 통과
 - Playwright skip 0
 - production fake response 0
+- 9개 화면 모두 새 디자인 시스템 적용
+- Figma 또는 동등한 설계 원본과 구현 화면이 일치
 - 주요 네 흐름을 동적 ID로 확인
 - blocker가 있으면 Start disabled
 - 명시적 사용자 동작 한 번에 write 한 번
@@ -170,7 +208,9 @@ npm run build
 - 변경 파일 목록
 - `package-lock.json` SHA-256
 - 위 테스트 결과
-- desktop·mobile 주요 흐름 캡처
+- 디자인 토큰·공통 component 목록과 편집 가능한 설계 원본 링크
+- 9개 화면 desktop 캡처와 핵심 흐름 mobile 캡처
+- 1차 시안에서 무엇을 고쳤는지 짧은 비교
 - 아직 남은 blocker
 
 production image 생성과 배포, 공급망 검증은 Owner가 진행합니다.

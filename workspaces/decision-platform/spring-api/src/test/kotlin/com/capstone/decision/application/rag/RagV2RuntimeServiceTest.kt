@@ -529,6 +529,118 @@ class RagV2RuntimeServiceTest {
     }
 
     @Test
+    fun `Strong LLM failure preserves validated retrieval citations instead of returning an empty unavailable answer`() {
+        val jdbc = mockk<NamedParameterJdbcTemplate>()
+        val provider = mockk<ObjectProvider<NamedParameterJdbcTemplate>>()
+        val crypto = mockk<RagHistoryCryptoPort>()
+        val evaluation = mockk<RagV2EvaluationPort>()
+        val vertexEvidence = mockk<RagV2VertexEvidencePort>()
+        val vertexGeneration = mockk<RagV2VertexGenerationPort>()
+        val scope = scope()
+        val command = command()
+        val createdAt = Instant.parse("2026-08-14T12:00:00Z")
+
+        every { provider.getIfAvailable() } returns jdbc
+        every { vertexGeneration.isActivationEnabled() } returns true
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_corpus_status") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2CorpusStatus>>(),
+            )
+        } returns listOf(RagV2CorpusStatus("FULL_READY", "immutable-v2-1", "ABSENT", 100, null))
+        every { jdbc.queryForObject(match { it.contains("set_config") }, any<Map<String, *>>(), String::class.java) } returns ""
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_vertex_prepared_scope") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2PreparedScope>>(),
+            )
+        } returns listOf(RagV2PreparedScope(scope, createdAt.plusSeconds(300)))
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_immutable_effective_consent") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RuntimeService.RagV2StoredEffectiveConsent>>(),
+            )
+        } returns
+            listOf(
+                RagV2RuntimeService.RagV2StoredEffectiveConsent(
+                    consentEventId = "rce_${"a".repeat(32)}",
+                    action = "GRANT",
+                    policyDigest = "a".repeat(64),
+                    processorSetDigest = "b".repeat(64),
+                ),
+            )
+        val retrieved = retrievalOnly(scope)
+        every { evaluation.evaluate(command, any()) } returns retrieved
+        every { vertexEvidence.resolve("usr_demo_user", REQUEST_ID, scope, retrieved.citations) } returns
+            listOf(
+                RagV2VertexEvidence(
+                    ordinal = 1,
+                    citationId = "cit_1",
+                    chunkRevisionId = "rag_v2_chk_${"a".repeat(32)}",
+                    canonicalText = "Sharpe와 maximum drawdown은 서로 다른 위험 단면을 나타낸다.",
+                    canonicalTextSha256 = "a".repeat(64),
+                ),
+            )
+        every { vertexGeneration.generate(any()) } returns
+            RagV2VertexGenerationResult(
+                generationStatus = RagGenerationStatus.GENERATION_UNAVAILABLE,
+                answer = null,
+                citationIds = emptyList(),
+                failureCode = "GENERATION_UNAVAILABLE",
+            )
+        every {
+            jdbc.queryForObject(
+                "SELECT transaction_timestamp()",
+                emptyMap<String, Any>(),
+                OffsetDateTime::class.java,
+            )
+        } returns OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC)
+        every { crypto.encrypt(any(), command.question, "") } returns encrypted()
+        every {
+            jdbc.queryForObject(
+                match { it.contains("persist_rag_v2_immutable_retrieval_history") },
+                any<Map<String, *>>(),
+                String::class.java,
+            )
+        } returns
+            """
+            [{
+              "citationKind":"PUBLIC_WEB",
+              "citationId":"cit_1",
+              "sourceId":"src_exact_001",
+              "title":"Canonical title",
+              "canonicalUrl":"https://example.org/canonical",
+              "locator":{"section":"Canonical section"}
+            }]
+            """.trimIndent()
+
+        val answer =
+            service(
+                provider,
+                crypto,
+                evaluation,
+                vertexEvidence = vertexEvidence,
+                vertexGeneration = vertexGeneration,
+            ).ask("usr_demo_user", REQUEST_ID, command, scope.scopeClaimId)
+
+        assertThat(answer.generationStatus).isEqualTo(RagGenerationStatus.RETRIEVAL_ONLY)
+        assertThat(answer.answer).isNull()
+        assertThat(answer.answerId).startsWith("rag_")
+        assertThat(
+            answer.citations
+                .single()
+                .path("citationId")
+                .stringValue(),
+        ).isEqualTo("cit_1")
+        assertThat(answer.guardrailFlags).isEmpty()
+        verify(exactly = 1) { vertexGeneration.generate(any()) }
+        verify(exactly = 1) { crypto.encrypt(any(), command.question, "") }
+    }
+
+    @Test
     fun `empty MCP context revalidates the exact DB scope without fabricating evidence`() {
         val jdbc = mockk<NamedParameterJdbcTemplate>()
         val provider = mockk<ObjectProvider<NamedParameterJdbcTemplate>>()

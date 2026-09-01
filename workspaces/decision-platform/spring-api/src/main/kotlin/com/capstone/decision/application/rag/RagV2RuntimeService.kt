@@ -1224,7 +1224,7 @@ class RagV2RuntimeService(
      * model이 실제 문장에 사용한 citation만 history/API로 내보낸다. retrieval top-5 전체를 사용 근거처럼
      * 확장하면 grounded answer의 citation coverage를 과장할 수 있으므로 generator가 검증한 순서를 보존한다.
      */
-    private fun selectedStrongLlmCitations(
+    internal fun selectedStrongLlmCitations(
         retrieved: List<RagV2RetrievedCitation>,
         webCitations: List<StrongLlmWebCitation>,
         citationIds: List<String>,
@@ -1259,7 +1259,10 @@ class RagV2RuntimeService(
             require(citationIds.isEmpty() && webCitations.isEmpty())
             return emptyList()
         }
-        require(basis == StrongLlmAnswerBasis.EVIDENCE)
+        require(
+            basis == StrongLlmAnswerBasis.EVIDENCE ||
+                basis == StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING,
+        )
         require(citationIds.isNotEmpty() && citationIds.distinct().size == citationIds.size)
         return citationIds.mapIndexed { index, citationId ->
             requireNotNull(byCitationId[citationId]).copy(citationId = "cit_${index + 1}")

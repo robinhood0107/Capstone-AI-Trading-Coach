@@ -881,10 +881,7 @@ class AutomationRuntimeService:
                     if self._stop.wait(
                         max(
                             0.0,
-                            (
-                                next_wakeup
-                                - datetime.now(UTC).astimezone(_KST)
-                            ).total_seconds(),
+                            (next_wakeup - datetime.now(UTC).astimezone(_KST)).total_seconds(),
                         )
                     ):
                         return

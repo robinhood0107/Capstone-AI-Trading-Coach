@@ -197,9 +197,12 @@ def write_input_pack_zip(root: Path, output_zip: Path) -> str:
         "xkrx_sessions.json",
     )
     try:
-        with output_zip.open("xb") as raw, zipfile.ZipFile(
-            raw, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
-        ) as archive:
+        with (
+            output_zip.open("xb") as raw,
+            zipfile.ZipFile(
+                raw, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
+            ) as archive,
+        ):
             for name in names:
                 content = _read_regular(root, name, MAX_ARCHIVE_ARTIFACT_BYTES)
                 info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
@@ -1055,9 +1058,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             }
             if args.zip_output is not None:
                 payload["zipPath"] = args.zip_output.name
-                payload["zipSha256"] = write_input_pack_zip(
-                    args.output_root, args.zip_output
-                )
+                payload["zipSha256"] = write_input_pack_zip(args.output_root, args.zip_output)
         elif args.command == "golden":
             result = build_golden_bundle(
                 input_pack_manifest=args.input_pack_manifest,

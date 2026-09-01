@@ -71,9 +71,7 @@ def _request(*, google: bool = False, mode: str = "EXPLAIN") -> RunRequest:
         current_time="2026-08-15T00:00:00Z",
         timezone="Asia/Seoul",
         mode=mode,
-        candidates=(
-            (JudgementCandidate("005930", 0.02, "BUY", "BUY"),) if mode == "JUDGE" else ()
-        ),
+        candidates=((JudgementCandidate("005930", 0.02, "BUY", "BUY"),) if mode == "JUDGE" else ()),
     )
 
 

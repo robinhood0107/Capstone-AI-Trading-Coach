@@ -10,6 +10,8 @@ class P1AutomationV3MigrationsContractTest {
     private val v111 = Files.readString(directory.resolve("V111__p1_automation_exit_policy_atr.sql"))
     private val v112 = Files.readString(directory.resolve("V112__p1_automation_evidence_first.sql"))
     private val v113 = Files.readString(directory.resolve("V113__p1_automation_ai_settings_snapshot.sql"))
+    private val v114 = Files.readString(directory.resolve("V114__p1_automation_v3_owner_read_scope.sql"))
+    private val v115 = Files.readString(directory.resolve("V115__p1_automation_v3_policy_upgrade_cas.sql"))
 
     @Test
     fun `V111 adds nullable legacy compatible user exit snapshots and bounded runtime functions`() {
@@ -73,7 +75,32 @@ class P1AutomationV3MigrationsContractTest {
     }
 
     @Test
-    fun `V111 through V113 are consecutive latest migrations`() {
+    fun `V114 keeps runtime checkpoint private while owner run reads stay available`() {
+        assertThat(v114).contains(
+            "CREATE FUNCTION public.p1_automation_ai_judgement_runtime_scope_v1",
+            "session_user<>'decision_automation_runtime' THEN false",
+            "DROP POLICY automation_ai_judgements_scope_v106",
+            "CREATE POLICY automation_ai_judgements_runtime_v114",
+            "TO decision_app,decision_automation_runtime",
+        )
+        assertThat(v114).doesNotContain(
+            "GRANT SELECT ON public.automation_runtime_checkpoint",
+            "GRANT SELECT ON TABLE public.automation_runtime_checkpoint",
+        )
+    }
+
+    @Test
+    fun `V115 creates first V3 policy after legacy history with external version zero`() {
+        assertThat(v115).contains(
+            "CREATE OR REPLACE FUNCTION public.p1_put_automation_policy_v2",
+            "current_v3_version IS NULL AND p_expected_version<>0",
+            "WHEN current_v3_version IS NULL THEN COALESCE(latest_historical_version,0)",
+            "effective_expected_version,p_scope_hash,p_request_hash",
+        )
+    }
+
+    @Test
+    fun `V111 through V115 are consecutive latest migrations`() {
         val versions =
             Files.list(directory).use { paths ->
                 paths
@@ -83,6 +110,6 @@ class P1AutomationV3MigrationsContractTest {
                     .sorted()
                     .toList()
             }
-        assertThat(versions.takeLast(3)).containsExactly(111, 112, 113)
+        assertThat(versions.takeLast(5)).containsExactly(111, 112, 113, 114, 115)
     }
 }

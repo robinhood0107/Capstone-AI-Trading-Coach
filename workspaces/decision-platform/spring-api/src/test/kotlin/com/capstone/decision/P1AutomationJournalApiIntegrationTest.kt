@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
 import org.springframework.test.web.servlet.setup.DefaultMockMvcBuilder
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
@@ -59,10 +60,12 @@ class P1AutomationJournalApiIntegrationTest(
         ownerJdbc.update("delete from journal_idempotency")
         ownerJdbc.update("delete from journals")
         ownerJdbc.update("delete from automation_control_idempotency")
+        ownerJdbc.update("delete from automation_policy_idempotency")
         ownerJdbc.update("delete from automation_positions")
         ownerJdbc.update("delete from automation_runs")
         ownerJdbc.update("delete from automation_control")
         ownerJdbc.update("delete from automation_activation_gate")
+        ownerJdbc.update("delete from automation_policy_versions")
         ownerJdbc.update("delete from paper_positions where account_id=?", ACCOUNT_ID)
         ownerJdbc.update("delete from paper_accounts where account_id=?", ACCOUNT_ID)
         ownerJdbc.update("delete from principle_versions where principle_id=?", PRINCIPLE_ID)
@@ -120,6 +123,83 @@ class P1AutomationJournalApiIntegrationTest(
             .andExpect {
                 status { isBadRequest() }
                 jsonPath("$.error.code") { value("VALIDATION_ERROR") }
+            }
+    }
+
+    @Test
+    fun `Automation V3 run and position reads stay owner accessible through evidence RLS`() {
+        val token = login("demo-user", userPassword())
+
+        mockMvc
+            .get("/api/v3/automation/status") { bearer(token) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.data.contractId") { value("automation-status.v3") }
+            }
+        mockMvc
+            .get("/api/v3/automation/runs") { bearer(token) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.data.items.length()") { value(0) }
+            }
+        mockMvc
+            .get("/api/v3/automation/positions") { bearer(token) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.data.items.length()") { value(0) }
+            }
+        mockMvc
+            .get("/api/v3/automation/runs/auto_run_${"f".repeat(32)}") { bearer(token) }
+            .andExpect {
+                status { isNotFound() }
+                jsonPath("$.error.code") { value("NOT_FOUND") }
+            }
+    }
+
+    @Test
+    fun `first V3 policy uses external version zero after immutable V2 history`() {
+        val token = login("demo-user", userPassword())
+        mockMvc
+            .put("/api/v2/automation/policy") {
+                bearer(token)
+                contentType = MediaType.APPLICATION_JSON
+                header("X-Idempotency-Key", "automation-v2-policy-before-v3")
+                content =
+                    objectMapper.writeValueAsString(
+                        mapOf(
+                            "capitalLimitKrw" to 10_000_000,
+                            "stopLossBps" to 500,
+                            "takeProfitBps" to 1_000,
+                            "expectedVersion" to 0,
+                        ),
+                    )
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.data.version") { value(1) }
+            }
+
+        mockMvc
+            .put("/api/v3/automation/policy") {
+                bearer(token)
+                contentType = MediaType.APPLICATION_JSON
+                header("X-Idempotency-Key", "automation-v3-policy-after-v2")
+                content = objectMapper.writeValueAsString(v3PolicyBody(expectedVersion = 0))
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.data.version") { value(2) }
+                jsonPath("$.data.maxHoldingSessions") { value(60) }
+                jsonPath("$.data.atrPeriod") { value(22) }
+            }
+
+        mockMvc
+            .put("/api/v3/automation/policy") {
+                bearer(token)
+                contentType = MediaType.APPLICATION_JSON
+                header("X-Idempotency-Key", "automation-v3-policy-stale-zero")
+                content = objectMapper.writeValueAsString(v3PolicyBody(expectedVersion = 0))
+            }.andExpect {
+                status { isConflict() }
+                jsonPath("$.error.code") { value("CONFLICT") }
             }
     }
 
@@ -598,6 +678,18 @@ class P1AutomationJournalApiIntegrationTest(
             "accountId" to ACCOUNT_ID,
             "principleId" to PRINCIPLE_ID,
             "strategyId" to STRATEGY_ID,
+            "expectedVersion" to expectedVersion,
+        )
+
+    private fun v3PolicyBody(expectedVersion: Int): Map<String, Any> =
+        mapOf(
+            "capitalLimitKrw" to 10_000_000,
+            "stopLossBps" to 500,
+            "takeProfitBps" to 1_000,
+            "maxHoldingSessions" to 60,
+            "atrPeriod" to 22,
+            "atrMultiplierMilli" to 3_000,
+            "modelSellEnabled" to true,
             "expectedVersion" to expectedVersion,
         )
 

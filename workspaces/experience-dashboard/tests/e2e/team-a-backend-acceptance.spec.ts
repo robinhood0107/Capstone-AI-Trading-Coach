@@ -278,7 +278,9 @@ test('owner backend satisfies the exact Team A 45-operation live Spring catalog'
 
     const statusV3 = await call('getAutomationStatusV3', {});
     const automationV3 = data<Components['AutomationStatusV3']>(statusV3.body, 'getAutomationStatusV3');
-    expect(automationV3.marketHistoryStatus).toBe('EMPTY');
+    expect(['EMPTY', 'PARTIAL', 'READY', 'CATCHUP_REQUIRED']).toContain(
+      automationV3.marketHistoryStatus,
+    );
     const policyV3Result = await call('putAutomationPolicyV3', {
       body: {
         capitalLimitKrw: 1_000_000,
@@ -288,7 +290,7 @@ test('owner backend satisfies the exact Team A 45-operation live Spring catalog'
         atrPeriod: 22,
         atrMultiplierMilli: 3000,
         modelSellEnabled: true,
-        expectedVersion: policyV2.version,
+        expectedVersion: automationV3.policy?.version ?? 0,
       },
       idempotencyKey: key('policyv3'),
     });

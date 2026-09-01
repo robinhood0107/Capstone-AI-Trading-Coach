@@ -321,6 +321,19 @@ IMMUTABLE_HISTORY_CLASSIFICATIONS: Final[frozenset[str]] = frozenset(
         "EVIDENCE_ONLY",
     }
 )
+# These paths are current P1 operating/handoff documents despite living under
+# directories that otherwise default to historical classification. V116 updates
+# them without authorizing edits to ADR, contract-change, or sealed evidence bytes.
+P1_CURRENT_MUTABLE_DOCUMENTS: Final[frozenset[str]] = frozenset(
+    {
+        "docs/decision-platform/P1_ARTIFACT_IMPORTER_PROJECTION_운영_가이드.md",
+        "docs/decision-platform/P1_OWNER_선행_완료_체크리스트.md",
+        "docs/decision-platform/P1_RETURN_INFERENCE_RUNTIME_운영_가이드.md",
+        "docs/handoff/P1_TEAM_A_최종_통합_요청서.md",
+        "docs/handoff/P1_TEAM_B_최종_통합_요청서.md",
+        "docs/test/P1_TEAM_수신.md",
+    }
+)
 # 이번 addendum이 기존 v1/v2 RAG 계약 또는 exact-30 evidence를 다시 해석하지 못하게
 # base diff에서 명시적으로 고정한다. 신규 addendum 파일은 MDT filter 밖의 A이므로 허용된다.
 IMMUTABLE_PRE_S5_FROZEN_PATHS: Final[frozenset[str]] = frozenset(
@@ -942,11 +955,14 @@ def immutable_history_diff_errors(root: Path, base: str) -> list[str]:
         tuple(
             relative
             for relative in output.splitlines()
-            if relative in IMMUTABLE_PRE_S5_FROZEN_PATHS
-            or relative.startswith(IMMUTABLE_HISTORY_PATH_PREFIXES)
-            or (
-                relative.endswith(".md")
-                and classify_markdown(relative) in IMMUTABLE_HISTORY_CLASSIFICATIONS
+            if relative not in P1_CURRENT_MUTABLE_DOCUMENTS
+            and (
+                relative in IMMUTABLE_PRE_S5_FROZEN_PATHS
+                or relative.startswith(IMMUTABLE_HISTORY_PATH_PREFIXES)
+                or (
+                    relative.endswith(".md")
+                    and classify_markdown(relative) in IMMUTABLE_HISTORY_CLASSIFICATIONS
+                )
             )
         )
         if output

@@ -1,8 +1,8 @@
 # Team B exact-31 최소 구현 요청서
 
-> `DRAFT_OWNER_INPUT_RECEIPT`: Owner 코드·confidence 제거·Git Seed import·V116 daily inference는
-> 완료됐다. 다만 실제 756-session KIS input pack은 별도 물리 호출 승인이 필요하므로,
-> 아래 manifest SHA-256이 채워지기 전에는 Team B에게 전달하지 않는다.
+> `OWNER_INPUT_RECEIPT=PASS`: 실제 756 XKRX-session KIS read-only bootstrap과
+> confidence-free input pack 검증을 마쳤다. Team B는 아래 ZIP과 input manifest SHA-256만
+> 사용하며, 다른 CSV·yfinance·preview로 대체하지 않는다.
 
 이 문서 하나만 보고 `workspaces/return-engine/`만 작업해 주세요.
 
@@ -20,12 +20,19 @@ Owner가 다음 두 개를 제공합니다.
 
 ```text
 1. 파일명: `p1-return-engine-input-pack.v1.zip`
-2. manifest SHA-256: `BLOCKED_PENDING_APPROVED_KIS_INPUT_PACK`
+2. input manifest SHA-256: `8ba0b439c5ff4e39b3136c17d31d648178d7e0064c35adead46837f953c5fafd`
+3. ZIP SHA-256: `baac0ec2a3ea0df13a9451a65ee7128c69ecdbd59456eca638fbee6dd9695d42`
+4. source bootstrap manifest SHA-256: `96c85243de967c63d6d39e43b5b31c20a9600a9d04fc3dcb9de58e8540689c00`
 ```
 
 ZIP을 Git 밖 local 폴더에 압축 해제한 뒤 manifest와 모든 파일의 크기·SHA-256를
 먼저 검증해 주세요. 입력이 없거나 hash가 다르면 임의 CSV·yfinance로 대신하지 말고
 `OWNER_INPUT_PACK_REQUIRED`로 종료해 주세요.
+
+Owner의 수집·검증·Desktop ZIP 생성 절차와 known failure 해결은 repository의
+`docs/decision-platform/P1_EXACT31_INPUT_PACK_수집_및_전달.md`를 따릅니다. 이 ZIP은 31개
+symbol × 756 XKRX session = 23,436 normalized RAW_CLOSE bar를 검증했으며 provider
+credential·account·balance·order 데이터는 포함하지 않습니다.
 
 current artifact 계약은 confidence가 없는
 `p1-return-engine-artifact-manifest.v3`입니다. Team B에서 confidence 필드를 다시 추가하거나

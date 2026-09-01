@@ -120,6 +120,7 @@ PostgreSQL one-shot claim을 별도로 통과한다. 이 구조는 공개 HTTP/O
 - [Team B handoff](handoff/team-b/README.md)
 - [Owner integration handoff](handoff/owner/README.md)
 - [P1 Owner input pack·synthetic golden 운영](decision-platform/P1_OWNER_INPUT_PACK_GOLDEN_운영_가이드.md)
+- [P1 exact-31 입력 수집과 Team B 전달](decision-platform/P1_EXACT31_INPUT_PACK_수집_및_전달.md)
 - [P1 artifact importer·projection 운영](decision-platform/P1_ARTIFACT_IMPORTER_PROJECTION_운영_가이드.md)
 - [P1 Return inference runtime 운영](decision-platform/P1_RETURN_INFERENCE_RUNTIME_운영_가이드.md)
 - [통합 담당자 선행 완료 체크리스트](decision-platform/P1_OWNER_선행_완료_체크리스트.md)

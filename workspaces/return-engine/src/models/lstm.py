@@ -82,7 +82,7 @@ class LSTMModel():
         return total_loss / len(val_loader)
 
     # 데이터를 통해 예측
-    def predict(self, df, preprocessor, data_pipeline, window_size = 20):
+    def predict(self, df, preprocessor, data_pipeline):
         self.model.eval()
 
         predictions = []
@@ -101,14 +101,21 @@ class LSTMModel():
         predictions = np.array(predictions).reshape(-1,1)
         predictions = preprocessor.inverse_transform(predictions)
 
+        window_size = data_pipeline.window_size
         result = df.iloc[window_size:].copy().reset_index(drop=True)
+        if len(predictions) != len(result):
+            raise ValueError(
+                "prediction count must match the window-aligned result row count"
+            )
         result["Prediction"] = predictions
 
         return result
 
     # 최근 20일 데이터를 기반으로 다음날 가격 예측
-    def forecast(self, df, preprocessor, window_size = 20):
+    def forecast(self, df, preprocessor, data_pipeline):
         self.model.eval()
+
+        window_size = data_pipeline.window_size
 
         recent_df = df.tail(window_size)
 
@@ -138,8 +145,8 @@ class LSTMModel():
         self.model.eval()
 
     # df에 다음날 예측 레코드 생성 및 변화율 저장
-    def make_predict_record(self, df, pred_df, preprocessor, next_session, window_size = 20) :
-        prediction = self.forecast(df, preprocessor)
+    def make_predict_record(self, df, pred_df, preprocessor, data_pipeline, next_session):
+        prediction = self.forecast(df, preprocessor, data_pipeline)
 
         new_row = pred_df.iloc[-1].copy()
         new_row['Date'] = pd.Timestamp(next_session)
@@ -155,7 +162,7 @@ class LSTMModel():
         new_row['RSI'] = np.nan
 
         pred_df = pd.concat([pred_df, pd.DataFrame([new_row])], ignore_index=True)
-        pred_df['Change'] = pred_df['Prediction'].pct_change()
+        pred_df['Change'] = pred_df['Prediction'].pct_change(fill_method=None)
 
         pred_df['ActualChange'] = pred_df['Close'].pct_change(fill_method=None)
         

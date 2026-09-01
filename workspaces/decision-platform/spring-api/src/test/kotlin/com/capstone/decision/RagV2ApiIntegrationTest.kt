@@ -481,7 +481,10 @@ class RagV2ApiIntegrationTest(
         val token = login("demo-user", userPassword(), "req_rag_v2_login_detail")
         val answerId = "rag_01DETAILDECRYPTID"
         ownerJdbc.update("delete from rag_v2_answer_history where answer_id = ?", answerId)
-        val createdAt = Instant.parse("2026-08-02T02:50:00Z")
+        // Keep the row inside its contractual 30-day TTL.  The former fixed
+        // timestamp expired at 2026-09-01T02:50Z, so the same tree passed PR
+        // CI before that instant and failed main CI immediately afterwards.
+        val createdAt = Instant.now().minusSeconds(60)
         val question = "내 문서 기반 RAG는 주문 판단에 영향을 주나요?"
         val answer = "아니요. RAG v2는 설명과 근거 제공에만 사용됩니다."
         val encrypted =

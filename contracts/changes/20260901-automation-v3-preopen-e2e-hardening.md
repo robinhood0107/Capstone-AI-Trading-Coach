@@ -44,5 +44,7 @@ The provider-free E2E sequence exposed two gaps before the next market session.
   and already reserved physical-call counts. Raw KIS responses remain absent.
 - Post-cancel balance reconciliation waits a fixed five seconds before its one
   read. It does not retry or expand the seven-call brokerage cap.
+- Mock balance reconciliation excludes live mark-to-market equity and position
+  valuation. Cash and symbol quantities remain exact drift authorities.
 
 Public V1/V2/V3 OpenAPI bytes and operation counts are unchanged.

@@ -31,6 +31,9 @@ The provider-free E2E sequence exposed two gaps before the next market session.
 - V115 lets `expectedVersion=0` create the first V3 policy after immutable V1/V2
   history while continuing the internal append-only version sequence. Later V3
   updates still require the current V3 version CAS.
+- Role bootstrap reapplies the V114 helper's exact two-role EXECUTE grant after
+  an existing-volume restart, and the public seed target allowlist advances to
+  V115 without changing the sealed seed bytes.
 - The contract checks are a real `unittest.TestCase`, and the API E2E now covers
   V3 status, policy CAS, runs, positions, and owner-masked missing detail.
 

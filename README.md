@@ -1,259 +1,382 @@
-# Capstone AI Trading Coach
+# 투자 원칙 기반 AI 트레이딩 코치
 
-<!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
-> **현재 상태 (2026-08-31):** Automation V3 구현 기준 root OpenAPI는 exact-75,
-> Team A handoff는 exact-45, migration은 V115입니다. 사용자 보유 만기·Wilder ATR trailing
-> stop·MODEL_SELL 설정과, 전체 후보를 먼저 검증하는 evidence-first AI 원장, 격리 장외 전수
-> replay가 추가됐습니다. 이 구현 자체는 live grounding, KIS read-only bootstrap, 장중 KIS Mock,
-> 실제 3-session soak를 PASS로 만들지 않습니다. 기존 8월 31일 관측 영수증은 legacy 기능의
-> 역사적 증거로 보존하며 V3 현재 실행 증거로 재사용하지 않습니다. 실계좌 주문 권한은 0이고
-> `P1_FINAL=NOT_READY`입니다.
-<!-- P1_FULL_APP_V3_AUTHORITY_END -->
+사용자가 세운 투자 원칙을 기준으로 모델 신호, 위험 지표, 뉴스 근거와 주문 가능 여부를 함께
+검토하는 교육용 투자 의사결정 프로그램입니다. 실제 주문 흐름은 한국투자증권 **모의투자 계좌**로만
+연결하며, 실계좌 주문·정정·취소는 지원하지 않습니다.
 
-투자 원칙, 모델 예측, 백테스트, 위험 판정과 근거 자료를 한 화면에서 보고 한국투자증권 **모의투자**
-계좌로 주문 흐름을 검증하는 교육용 트레이딩 코치입니다. 실계좌 주문·정정·취소 경로는 코드에
-존재하지 않습니다.
+> 이 프로젝트는 투자 판단을 학습하고 검증하기 위한 도구입니다. 특정 종목의 매수·매도를 추천하거나
+> 수익을 보장하지 않습니다.
 
-## 전체 흐름
+## 무엇을 할 수 있나요?
+
+| 기능 | 설명 |
+|---|---|
+| 투자 원칙 관리 | 프리셋으로 원칙을 만들고 자금 한도, 손절·익절과 보유 기간을 조정합니다. |
+| 모델 신호 비교 | LSTM과 규칙 기반 모델의 BUY·HOLD·SELL 신호를 같은 기준으로 비교합니다. |
+| 위험 검토 | 주문 전 RiskEngine이 원칙 위반, 포트폴리오 한도와 Kill Switch를 확인합니다. |
+| 근거 있는 AI 설명 | 저장된 자료와 검증된 공개 근거를 바탕으로 설명과 출처를 함께 보여 줍니다. |
+| KIS 모의투자 | 주문 가능 금액 조회, 지정가 주문, 취소, 체결 조회와 계좌 대사를 지원합니다. |
+| 자동운용 | 검증된 후보만 대상으로 매수하고 손절, 익절, ATR trailing stop과 보유 만기를 관리합니다. |
+| 백테스트 | 거래비용을 포함한 전략 결과와 MDD, Sharpe, 손익 곡선을 확인합니다. |
+| 학습일지 | 판단, 주문, AI 답변과 자동운용 실행 기록을 하나의 일지로 연결합니다. |
+
+## 프로그램 사용 흐름
+
+```mermaid
+flowchart LR
+    A["로그인"] --> B["투자 원칙 설정"]
+    B --> C["모델 신호와 근거 확인"]
+    C --> D["주문 후보 입력"]
+    D --> E["RiskEngine 검토"]
+    E --> F["KIS 모의주문"]
+    F --> G["체결·취소·대사"]
+    G --> H["포지션 관리"]
+    H --> I["학습일지와 리포트"]
+```
+
+자동운용에서도 순서는 같습니다. AI는 후보의 순위를 조정하거나 근거가 있는 매수를 막을 수 있지만,
+새 종목을 추가하거나 주문 수량을 늘리거나 RiskEngine을 우회할 수 없습니다. 주문 수량과 청산 조건은
+항상 서버의 결정적 규칙이 계산합니다.
+
+## 시스템 구성
 
 ```mermaid
 flowchart TB
-  subgraph IN["입력"]
-    MD["시장 데이터<br/>일별 manifest"]
-    TB["Team B 산출물<br/>LSTM + 규칙 baseline, 31종목"]
-    PR["사용자 투자 원칙"]
-  end
+    UI["Experience Dashboard\nNext.js · TypeScript"]
+    API["Decision Platform\nSpring Boot · Kotlin"]
+    PY["AI·데이터·자동운용 서비스\nPython · gRPC"]
+    RE["Return Engine\nLSTM · Rule · Backtest"]
+    DB[("PostgreSQL + pgvector")]
+    CACHE[("Redis")]
+    KIS["KIS 모의투자"]
+    AI["Vertex AI · Voyage AI"]
 
-  SEL["BUY 후보 집합 봉인<br/>두 모델이 함께 BUY인 것만"]
-  ELIG["결정론적 결격 검사<br/>정지 · 관리 · 정리매매"]
-  NEWS["후보 전수 뉴스 screening<br/>저장 근거 + Google grounding"]
-  AIJ["AI 판단<br/>검증 근거가 있을 때만 순위 · 거부 · 수량 축소"]
-  SIZE["수량 산정<br/>예산 · 슬롯 · 매수가능금액"]
-  RISK["RiskEngine<br/>원칙 규칙 + 포트폴리오 지표"]
-  SUB["주문 제출<br/>KIS 모의계좌, 지정가 1건"]
-  REC["체결 대사"]
-  POS["포지션<br/>손절 · 익절 · 보유만기"]
-  PNL["실현손익<br/>왕복비용 35bp 반영"]
-
-  MD --> SEL
-  TB --> SEL
-  SEL --> ELIG --> NEWS --> AIJ --> SIZE --> RISK --> SUB --> REC --> POS --> PNL
-  PR --> RISK
-  POS -- "청산 사유 발생" --> SIZE
-  PNL --> DASH["Dashboard"]
-
-  G1{{"게이트 1<br/>Team B 실제 산출물"}} -.-> TB
-  G2{{"게이트 2<br/>online risk-balance"}} -.-> SIZE
-  G3{{"게이트 3<br/>Vertex provider"}} -.-> NEWS
-  G4{{"AI OFF<br/>screen/judge 0회"}} -.-> SIZE
+    UI -->|same-origin /api| API
+    API --> PY
+    API --> DB
+    PY --> DB
+    PY --> CACHE
+    RE -->|검증된 artifact| API
+    PY --> KIS
+    PY --> AI
 ```
 
-세션 하루는 09:30에 평가하고 09:40까지만 새 주문을 내며 15:20에 미체결을 취소합니다. 한 세션에
-논리 주문 1건, 동시 보유 5종목이 상한입니다. 모든 tick은 DB checkpoint에 CAS로 기록되므로 중간에
-꺼졌다 켜져도 같은 자리에서 이어집니다.
+기본 실행은 다음 다섯 개 컨테이너로 구성됩니다.
 
-## 지금 켜져 있는 것과 꺼져 있는 것
+1. PostgreSQL
+2. Redis
+3. 권한 발급 서비스
+4. Decision Platform
+5. Experience Dashboard
 
-| 기능 | 상태 | 비고 |
-|---|---|---|
-| Dashboard, 원칙, 위험 판정, 저널 | 동작 | 외부 호출 없음 |
-| RAG 검색·근거 표시 | 동작 | 로컬 BGE-M3 임베딩 |
-| RAG 생성형 답변(Vertex·Voyage) | 서비스계정이 있으면 동작 | 없으면 검색만 켜고 뜬다 |
-| AI 판단(근거 screening·순위·거부·수량 축소) | 구현, 기본 OFF | AI OFF는 provider 0회 규칙 경로. AI ON은 provider/credential/budget이 없으면 arm 또는 신규매수를 차단 |
-| Strong LLM 설정 화면 | 동작 | provider·모델·언어·하루 횟수. 키는 마지막 네 글자만 보인다 |
-| Team B 신호 | 미리보기 | 실제 산출물 수신 전 |
-| KIS 모의계좌 시세·잔고·주문 | 동작 | `mock` 명령으로만 |
-| 자동운용 실행 | 차단 | 위 게이트 3개 |
+임베딩과 OCR 모델이 필요하면 BGE-M3와 PaddleOCR-VL 컨테이너를 추가할 수 있습니다. 데이터베이스
+마이그레이션, Seed 적재와 초기 계정 생성은 `docker compose run --rm` 형식의 일회성 작업으로 실행됩니다.
 
-AI가 할 수 있는 것은 후보의 **순위를 바꾸고, 매수를 막고, 수량을 줄이는** 셋뿐입니다. 후보 집합
-밖의 종목을 넣거나, 수량을 늘리거나, 정책 상한을 넘거나, 주문을 직접 만들 수는 없습니다. 배분은
-언제나 코드가 정수 산술로 계산하므로 같은 입력에는 같은 수량이 나옵니다.
+## 저장소 구조
 
-**프로그램을 켜 둔다고 주문하지 않습니다.** 예약 작업은 내부 큐 처리, 상태 집계, 오래된 RAG 이력
-정리뿐입니다. 실제 주문을 내는 명령은 `./capstone mock certify` 하나입니다.
+```text
+Capstone-AI-Trading-Coach/
+├── capstone                         # Linux·WSL 통합 실행 명령
+├── capstone.ps1                     # Windows PowerShell 실행 명령
+├── deploy/p1/                       # Docker Compose와 배포 스크립트
+├── workspaces/
+│   ├── decision-platform/           # Spring API, Python AI·데이터·자동운용
+│   ├── return-engine/               # LSTM, 규칙 모델, 백테스트
+│   └── experience-dashboard/        # Next.js Dashboard
+├── contracts/                       # OpenAPI, JSON Schema, protobuf 계약
+├── capstone-rag/                    # 공개 RAG 자료와 source card
+├── docs/                            # 설계, API와 운영 문서
+└── artifacts/                       # 검증 가능한 소형 결과와 예시
+```
 
-## 5분 실행
+처음 프로젝트를 살펴본다면 `workspaces/`보다 아래의 **빠른 실행**부터 따라 하는 것이 가장 쉽습니다.
 
-### 준비물
+## 빠른 실행
 
-| 무엇 | 왜 | 확인 |
-|---|---|---|
-| Git | 저장소 | `git --version` |
-| Docker Engine 또는 Docker Desktop | 전체 스택 | `docker version` |
-| Docker Compose v2 | `deploy/p1/compose.yml` | `docker compose version` |
-| Python 3 (WSL/Linux) | `./capstone` 내부 스크립트 | `python3 -V` |
-| OpenSSL | 첫 실행의 비밀값 생성 | `openssl version` |
-| WSL (Windows만) | Linux 경로에서 Docker를 부른다 | `wsl -l -v` |
+### 1. 준비물
 
-기본 앱을 켜는 데 **API 키는 하나도 필요 없습니다.** `.env`도 만들지 않아도 됩니다. 첫 실행이
-`deploy/p1/.state-app/` 아래에 필요한 비밀값을 직접 만듭니다.
+- Git
+- Docker Engine 또는 Docker Desktop
+- Docker Compose v2
+- Python 3
+- OpenSSL
+- Windows에서는 WSL2 권장
 
-아래는 기본 앱을 넘어설 때만 필요합니다. 없으면 그 기능만 꺼진 채로 뜹니다.
-
-| 무엇 | 어디에 넣나 | 없으면 |
-|---|---|---|
-| KIS 모의투자 App Key · Secret · 계좌번호 | `./capstone mock configure`가 물어본다 | `mock` 명령 전체가 닫힌다 |
-| Vertex 서비스계정 JSON | `deploy/p1/.state-app/secrets/pre-s5-vertex-service-account.json` (0600) | RAG 생성형 답변과 AI 판단이 "미참여"로 간다 |
-| `STRONG_LLM_GRPC_SHARED_SECRET` | `deploy/p1/.state-app/secrets/rag-v2.env` | Strong LLM 판단 경로가 붙지 않는다 |
-| `VOYAGE_API_KEY` | 같은 파일 | RAG v2 검색이 로컬 임베딩만 쓴다 |
-
-값의 전체 목록과 형식은 [환경 변수 참고 문서](docs/decision-platform/P1_ENV_REFERENCE.md)와
-저장소 루트의 `.env.example`에 있습니다. `.env.example`을 복사해 `.env`를 만드는 것은 S1.6
-OpenDART·ECOS 같은 **수집기**를 직접 돌릴 때만 필요하고, 기본 앱과 대시보드에는 쓰이지 않습니다.
-
-### 실행
+설치 여부는 다음 명령으로 확인합니다.
 
 ```bash
+git --version
+docker version
+docker compose version
+python3 -V
+openssl version
+```
+
+### 2. 저장소 받기
+
+```bash
+git clone https://github.com/robinhood0107/Capstone-AI-Trading-Coach.git
+cd Capstone-AI-Trading-Coach
 git switch main
+```
+
+이미 저장소가 있다면 다음처럼 최신 main을 받습니다.
+
+```bash
 git pull --ff-only origin main
+```
+
+### 3. 실행 환경 확인
+
+```bash
 ./capstone doctor
+```
+
+`CAPSTONE_DOCTOR=PASS`가 출력되면 실행할 준비가 된 것입니다.
+
+### 4. 기본 프로그램 실행
+
+```bash
 ./capstone up
 ```
 
-Windows PowerShell에서는 `.\capstone.ps1 doctor`, `.\capstone.ps1 up`으로 실행합니다.
+첫 실행에서는 Docker 이미지를 만들고 데이터베이스와 공개 RAG Seed를 준비하므로 몇 분 정도 걸릴 수
+있습니다. 이후 실행부터는 Docker cache와 기존 volume을 재사용합니다.
 
-`CAPSTONE_UP=PASS`가 보이면 완료입니다. 첫 실행은 이미지를 만들고 공개 Seed DB를 준비하므로
-시간이 걸립니다.
+`CAPSTONE_UP=PASS`가 출력되면 브라우저에서 다음 주소를 엽니다.
 
-```text
-Dashboard        http://127.0.0.1:3000
-Dashboard Health http://127.0.0.1:3000/healthz
-API Health       http://127.0.0.1:18080/actuator/health
-Swagger UI       http://127.0.0.1:18080/swagger-ui.html
-```
+| 화면 | 주소 |
+|---|---|
+| Dashboard | <http://127.0.0.1:3000> |
+| Dashboard 상태 | <http://127.0.0.1:3000/healthz> |
+| API 상태 | <http://127.0.0.1:18080/actuator/health> |
+| Swagger UI | <http://127.0.0.1:18080/swagger-ui.html> |
 
-로그인 아이디는 `demo-user`이고 임시 비밀번호는 첫 실행 때 로컬에 생기는 아래 파일에서만 봅니다.
-이 파일은 Git에 올라가지 않습니다.
+기본 로그인 아이디는 `demo-user`입니다. 비밀번호는 최초 실행 시 아래 로컬 파일에 생성됩니다.
 
 ```text
 deploy/p1/.state-app/secrets/demo-user.password
 ```
 
-## 자주 쓰는 명령
+이 파일은 Git에 포함되지 않습니다.
 
-```bash
-./capstone up             # 기본 5개 컨테이너
-./capstone up --models    # 모델 포함 7개 컨테이너
-./capstone status         # 현재 모드와 상태 확인
-./capstone logs           # 민감값을 가린 로그 확인
-./capstone smoke          # 로그인과 내부 작업 흐름 확인, 외부 호출 없음
-./capstone down           # 종료하되 DB·Redis·모델 데이터는 보존
+### Windows PowerShell에서 실행
+
+```powershell
+.\capstone.ps1 doctor
+.\capstone.ps1 up
 ```
 
-기본 5개는 PostgreSQL, Redis, 권한 서비스, 통합 백엔드, Dashboard입니다. 모델 모드는 공식 BAAI
-BGE-M3 컨테이너와 공식 llama.cpp 기반 PaddleOCR-VL 컨테이너를 더합니다. 준비 작업은
-`docker compose run --rm`으로 실행하므로 끝난 컨테이너를 남기지 않습니다. 모든 서비스 정의는
-`deploy/p1/compose.yml` 하나가 기준입니다.
+Docker Desktop의 WSL integration이 켜져 있어야 합니다.
 
-## Owner만 하는 KIS 모의투자 검증
+## 실행 모드
 
-여기서 계좌와 주문은 모두 **KIS 모의투자 계좌**를 뜻합니다. 처음 한 번은 반드시 기본 앱을 먼저
-실행합니다.
+### 기본 모드
+
+```bash
+./capstone up
+```
+
+Dashboard, API, 데이터베이스, RAG와 내부 작업 처리를 실행합니다. KIS 계좌 호출은 하지 않습니다.
+
+### 로컬 모델 포함
+
+```bash
+./capstone up --models
+```
+
+기본 프로그램에 BGE-M3와 PaddleOCR-VL을 추가합니다. 모델을 처음 받을 때는 시간이 더 걸립니다.
+
+### KIS 모의투자 포함
+
+모의투자 App Key, App Secret과 계좌번호를 준비한 뒤 다음 순서로 설정합니다.
 
 ```bash
 ./capstone up
 ./capstone mock configure
 ./capstone mock doctor
+```
 
-# XKRX 거래일 09:10~15:00 KST에만 실행
+모의주문 왕복 인증은 XKRX 거래일 `09:10~15:00 KST`에만 실행합니다.
+
+```bash
 ./capstone mock certify --symbol 005930 --quantity 1
-
-# 모델이 필요 없으면 5개, 필요하면 7개
 ./capstone up --mock
+```
+
+모델까지 함께 실행하려면 다음 명령을 사용합니다.
+
+```bash
 ./capstone up --models --mock
 ```
 
-`mock doctor`는 자격증명 파일의 형식과 권한만 확인합니다. `mock certify`는 XKRX 거래시간 창과
-`--symbol 005930 --quantity 1` 범위, 물리 호출 상한을 확인한 뒤 현재가 1회와 모의계좌 작업
-7회를 수행합니다. 주문·취소는 재시도하지 않습니다. 취소 실패나 부분체결이 나오면 자동으로
-매도하거나 다시 주문하지 말고 KIS 모의투자 화면에서 직접 확인해야 합니다.
+### 검증된 모델 artifact 연결
 
-**인증 영수증이 말하는 것과 말하지 않는 것.** 영수증(`deploy/p1/.state-app/mock/certification.json`)은
-"그 시각 거래시간에 KIS 모의 원장에서 왕복이 실제로 일어났다"를 말합니다. 물리 호출 수와 세션
-날짜, 그때의 `commitSha`가 남습니다. 반면 "그 코드가 CI를 통과했다"는 말하지 않습니다. 예전에는
-PR 초록과 clean worktree를 함께 확인했지만, e2e를 한 번 돌리면 git이 추적하는 판정표 JSON이
-갱신되어 방금 받은 인증이 그 자리에서 무효가 됐기 때문에 그 조건들을 뺐습니다. 자동운용 arm의
-열쇠 역할은 그대로여서, 영수증이 없으면 `CERTIFICATION_INVALID`로 닫힙니다.
+Return Engine이 만든 artifact 묶음을 사용할 때는 절대경로와 manifest SHA-256을 지정합니다.
 
-이 인증을 통과해도 자동 주문 스케줄러가 생기지는 않습니다.
-
-## Team B 결과가 미리보기인 이유
-
-현재 화면의 Team B 결과는 받은 CSV와 PTH를 외부 네트워크 없이 실행한 미리보기입니다. 화면의
-`TEAM_B_REAL_ARTIFACT_MISSING`은 오류가 아니라 "Team B가 고정된 결과 파일 10개를 아직 전달하지
-않았다"는 뜻입니다.
-
-## 팀원에게 보낼 문서
-
-팀마다 아래 문서 하나만 전달합니다. 이전 요청서와 V3 추가계약은 역사적·기술 참고자료로 남기며
-팀원에게 따로 보낼 필요가 없습니다.
-
-- **[Team A 최종 통합 요청서](docs/handoff/P1_TEAM_A_최종_통합_요청서.md)** — 기존 API와 route는
-  살리고 9개 Dashboard 화면을 깔끔한 금융 서비스로 정리하며 빠진 사용자 흐름을 완성합니다.
-- **[Team B 최종 통합 요청서](docs/handoff/P1_TEAM_B_최종_통합_요청서.md)** — 기존 LSTM·rule·백테스트를
-  유지하면서 exact-10과 daily inference만 완성합니다.
-
-Owner는 결과를 받은 뒤
-[Team A/B 수신 후 통합 체크리스트](docs/decision-platform/P1_TEAM_A_B_수신_후_통합_체크리스트.md)를
-사용합니다.
-
-Team A와 Team B는 `mock configure`나 `mock certify`를 실행하지 않습니다.
-
-## 문제가 생기면
-
-| 증상 | 확인할 것 |
-|---|---|
-| 코드를 고쳤는데 반영이 안 됨 | `./capstone up`을 다시 실행해 이미지를 재빌드 |
-| `./capstone` 파일이 없음 | 통합 PR의 main 병합 안내를 받았는지 확인 |
-| Docker 연결 오류 | Docker를 켠 뒤 `./capstone doctor` |
-| 포트 3000 또는 18080 충돌 | 해당 포트를 쓰는 기존 프로그램 종료 |
-| Dashboard가 준비되지 않음 | `./capstone status`, `./capstone logs` |
-| 모델 첫 실행이 오래 걸림 | 고정된 모델을 처음 내려받고 검사하는 중 |
-| Team B 실제 결과 경고 | 미리보기는 정상이며 결과 수신 전까지 경고 유지 |
-| KIS 모의투자 명령 거부 | 기본 앱 실행, 자격증명, 거래일·시간(09:10~15:00 KST), `--symbol 005930 --quantity 1` 확인 |
-| Kotlin 통합 테스트 6건이 죽음 | `PATH`에 `uv`가 있는지. 없으면 `S7 DB E2E requires the frozen uv Python runtime` |
-| OpenAPI 게이트가 포트 충돌 | 스택이 18080을 쓴다. `--server-port 18099 --fixture-port 55499` |
-| `docs/` 문서를 고쳤더니 CI가 깨짐 | pre-S5 freeze는 `docs/` 하위 기존 md의 수정을 막는다. 새 파일을 만든다 |
-| AI 판단이 계속 "미참여" | Vertex 서비스계정(0600)과 `STRONG_LLM_GRPC_SHARED_SECRET`이 있는지 |
-
-자세한 복구 절차는 [동일 환경 재현 가이드](docs/decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md),
-환경값 목록은 [환경 변수 참고 문서](docs/decision-platform/P1_ENV_REFERENCE.md)에 있습니다.
-
-## 최종 배포 전에 남은 일
-
-1. Team A가 exact-45 화면 계약을 실제 Spring과 연결하고 근거 상세 UI를 증명합니다.
-2. Team B가 기존 exact-10 계약의 실제 모델·백테스트 산출물을 전달합니다.
-3. 별도 승인을 받아 exact-31 KIS Live read-only bootstrap과 historical replay를 수행합니다.
-4. 별도 승인을 받아 Google grounding probe와 실제 장중 KIS Mock 주문·대사를 수행합니다.
-5. 실제 날짜가 지난 뒤 연속 3 XKRX session soak를 별도 PASS로 닫습니다.
-6. 전체 CI, fresh clone, restore, 공급망 검증과 post-merge main CI 뒤에만 최종 배포를 승인합니다.
-
-장외 replay 명령과 게이트 구분은
-[P1 장외 전수 replay](docs/decision-platform/P1_AFTER_HOURS_FULL_REPLAY.md), V3 판단/청산 규칙은
-[Automation V3 설계](docs/decision-platform/P1_AUTOMATION_V3_AI_EVIDENCE_EXIT_POLICY.md)를 따릅니다.
-
-```text
-CODEX_SECURITY_DEEP_SCAN=NOT_RUN_USER_SCOPED_OUT
-KIS_LIVE_BROKERAGE_CALLS=0
+```bash
+./capstone artifact validate /absolute/path/to/bundle --manifest-sha256 <sha256>
+./capstone artifact import /absolute/path/to/bundle --manifest-sha256 <sha256>
 ```
 
-<!-- 보존된 Pre-S5 공개 계약 marker. 현재 주문 권한을 만들지 않는다.
+적재 후 자동운용 준비 상태를 확인하고 시작합니다.
+
+```bash
+./capstone mock gate-author
+./capstone mock readiness
+./capstone mock start
+```
+
+자동운용을 중지할 때는 다음 명령을 사용합니다. 진행 중인 체결 대사와 기록은 보존됩니다.
+
+```bash
+./capstone mock stop
+```
+
+## Dashboard 사용 방법
+
+1. **내 원칙**에서 프리셋을 선택하거나 직접 투자 한도를 설정합니다.
+2. **금융 가이드**에서 금융 개념을 질문하고 답변의 인용 출처를 확인합니다.
+3. **모델 비교**에서 LSTM과 규칙 기반 신호를 비교합니다.
+4. **주문 검토**에서 종목, 방향, 수량과 가격을 입력해 RiskEngine 판단을 받습니다.
+5. 허용된 주문만 KIS 모의계좌로 제출하고 주문 상태, 취소와 체결 내역을 확인합니다.
+6. **자동운용**에서 자금 한도, 손절·익절, ATR과 최대 보유 세션을 설정합니다.
+7. 판단과 실행 결과를 **학습일지**에 연결해 나중에 다시 검토합니다.
+
+`HOLD`, `BLOCK`, `ABSTAIN`, `HALTED` 상태에서는 주문을 제출하지 않습니다. `WARN`은 사용자가 경고를
+확인한 뒤 한 번만 제출할 수 있습니다.
+
+## 자동운용 안전 원칙
+
+- 기본 상태는 `DISARMED`입니다.
+- 한 거래 세션의 신규 주문은 최대 한 건입니다.
+- 동시에 보유할 수 있는 포지션은 최대 다섯 개입니다.
+- 고정 손절, ATR trailing stop, 모델 SELL, 익절과 최대 보유 세션을 순서대로 평가합니다.
+- 부분체결과 미확정 주문은 새 주문보다 먼저 대사합니다.
+- 계좌 상태가 예상과 다르거나 취소가 불확실하면 `HALTED`로 전환합니다.
+- KIS 장애를 내부 가상계좌로 자동 전환하지 않습니다.
+- AI는 주문을 직접 생성하거나 수량을 늘릴 권한이 없습니다.
+
+## 자주 사용하는 명령
+
+```bash
+./capstone status         # 컨테이너와 실행 모드 확인
+./capstone logs           # 민감값을 가린 최근 로그
+./capstone smoke          # 로그인·DB·내부 작업 흐름 확인
+./capstone up             # 기본 프로그램 실행 또는 재빌드
+./capstone up --models    # 로컬 모델 포함
+./capstone up --mock      # KIS 모의투자 포함
+./capstone down           # 종료, volume은 보존
+```
+
+## 주요 API
+
+전체 계약은 Swagger UI와 [`docs/API_명세서.md`](docs/API_명세서.md)에서 확인할 수 있습니다.
+
+| 영역 | 대표 API |
+|---|---|
+| 인증 | `POST /api/v1/auth/login` |
+| 투자 원칙 | `GET /api/v1/principles`, `POST /api/v1/principles` |
+| 위험 판단 | `POST /api/v1/decisions/evaluate-order` |
+| RAG | `POST /api/v2/rag/ask`, `GET /api/v2/rag/history` |
+| 모의계좌 | `GET /api/v1/brokerage/mock/accounts/{accountId}/balances` |
+| 주문 대사 | `POST /api/v1/brokerage/orders/{orderId}/reconcile` |
+| 체결 조회 | `GET /api/v1/brokerage/mock/accounts/{accountId}/fills` |
+| 내부 가상원장 체결 | `GET /api/v1/brokerage/paper/accounts/{accountId}/fills` |
+| 자동운용 | `GET /api/v3/automation/status`, `POST /api/v3/automation/arm` |
+| 학습일지 | `POST /api/v1/journals`, `GET /api/v1/journals` |
+
+## 개발 환경에서 실행
+
+전체 프로그램 사용자는 이 절을 건너뛰어도 됩니다.
+
+### Python 서비스
+
+```bash
+cd workspaces/decision-platform/python-services
+uv sync --frozen
+uv run pytest -q
+```
+
+### Spring API
+
+```bash
+cd workspaces/decision-platform/spring-api
+./gradlew test
+```
+
+### Dashboard
+
+```bash
+cd workspaces/experience-dashboard
+npm ci
+npm run typecheck
+npm run lint
+npm test
+npm run build
+```
+
+### Return Engine
+
+```bash
+cd workspaces/return-engine
+uv sync --frozen
+uv run pytest -q
+PYTHONPATH=src uv run python -m return_engine --help
+```
+
+## 데이터와 비밀값
+
+- `.env`, 비밀번호, API key, 계좌번호와 token은 Git에 올리지 않습니다.
+- KIS와 AI provider의 원본 응답은 artifact나 로그에 저장하지 않습니다.
+- 외부 기능이 필요하지 않으면 API key 없이 기본 프로그램을 실행할 수 있습니다.
+- 로컬 실행 상태는 `deploy/p1/.state-app/`에 저장됩니다.
+- 상세 환경 변수는 [`P1_ENV_REFERENCE.md`](docs/decision-platform/P1_ENV_REFERENCE.md)를 참고합니다.
+
+## 문제 해결
+
+| 증상 | 해결 방법 |
+|---|---|
+| Docker에 연결할 수 없음 | Docker Desktop 또는 Docker Engine을 실행한 뒤 `./capstone doctor`를 다시 실행합니다. |
+| 3000 또는 18080 포트 충돌 | 해당 포트를 사용 중인 프로그램을 종료한 뒤 `./capstone up`을 다시 실행합니다. |
+| 코드 변경이 화면에 보이지 않음 | `./capstone up`으로 이미지를 다시 빌드합니다. |
+| 로그인할 수 없음 | `demo-user.password` 파일과 컨테이너 상태를 확인합니다. |
+| Dashboard가 준비되지 않음 | `./capstone status`와 `./capstone logs`를 차례로 확인합니다. |
+| RAG 답변을 생성하지 못함 | 공개 근거가 부족한지, Vertex·Voyage 설정이 준비됐는지 확인합니다. |
+| 자동운용 시작이 거부됨 | `/api/v3/automation/status`의 blocker를 확인하고 누락된 입력이나 인증을 준비합니다. |
+| KIS 모의주문 인증이 거부됨 | 거래일·시간, 모의계좌 설정과 `mock doctor` 결과를 확인합니다. |
+
+## 더 자세한 문서
+
+- [최종 프로젝트 명세](docs/최종_프로젝트_명세서.md)
+- [API 명세](docs/API_명세서.md)
+- [동일 환경 재현 가이드](docs/decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md)
+- [Automation V3 설계](docs/decision-platform/P1_AUTOMATION_V3_AI_EVIDENCE_EXIT_POLICY.md)
+- [장외 전수 replay](docs/decision-platform/P1_AFTER_HOURS_FULL_REPLAY.md)
+
+## README를 수정할 때
+
+이 문서는 제품 소개와 실행 방법만 다룹니다. 추후 기능을 수정할 때는 다음 원칙을 지키면 README를
+쉽게 유지할 수 있습니다.
+
+1. 실행 명령이 바뀌면 **빠른 실행**과 **자주 사용하는 명령**만 함께 수정합니다.
+2. 포트가 바뀌면 주소 표만 수정합니다.
+3. 새 기능은 **무엇을 할 수 있나요?** 표에 한 줄로 추가하고 상세 내용은 `docs/`에 작성합니다.
+4. 개발 진행 상황, 임시 blocker와 테스트 영수증은 README 대신 별도 검증 문서에 기록합니다.
+5. 비밀값 예시나 개인 로컬 경로는 README에 추가하지 않습니다.
+
+<!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
+<!-- P1_FULL_APP_V3_AUTHORITY_END -->
+
+<!-- 공개 계약 검사용 비표시 marker. 사용자 안내 내용은 위 본문이 단독 소유한다.
 PRE_S5_DOC_TRUTH_FREEZE_ADDENDUM_VERIFIED
 PRE_S5_EXECUTION_OWNER=DECISION_PLATFORM
 PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES
 S4_8A=CONTRACT_LOCKED
 S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE
--->
 
-<!-- 역사적 source-development 회귀 marker. 일반 사용자는 위 ./capstone 명령만 사용한다.
 docker compose --env-file .env -f infra/docker-compose.infra.yml run --rm role-bootstrap
 ./gradlew bootRun
-market_quote_observations
-instrument_catalog_observations
-portfolio_balance_observations
-portfolio_position_observations
-provider를 직접 호출하지 않는다
-production 운영 seed는 가짜 값으로 대체하지 않으며 증거가 없으면 HOLD
 decision_fill_writer
 V6/V9/V14
 -->

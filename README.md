@@ -185,19 +185,17 @@ PR 초록과 clean worktree를 함께 확인했지만, e2e를 한 번 돌리면 
 
 ## 팀원에게 보낼 문서
 
-**먼저 이것 하나를 보냅니다.** 아래 개별 문서는 그 안에서 다시 가리킵니다.
+팀마다 아래 문서 하나만 전달합니다. 이전 요청서와 V3 추가계약은 역사적·기술 참고자료로 남기며
+팀원에게 따로 보낼 필요가 없습니다.
 
-- **[P1 최종 요청서 (2026-08-31 확정)](docs/handoff/P1_최종_요청서_2026-08-31.md)** — 현재
-  완성 상황, Team A/B 각각의 범위와 제출물, Owner가 산출물을 받은 뒤 할 일, 그리고 맨 아래에
-  전체 테스트 방법이 있습니다.
+- **[Team A 최종 통합 요청서](docs/handoff/P1_TEAM_A_최종_통합_요청서.md)** — 기존 API와 route는
+  살리고 9개 Dashboard 화면을 깔끔한 금융 서비스로 정리하며 빠진 사용자 흐름을 완성합니다.
+- **[Team B 최종 통합 요청서](docs/handoff/P1_TEAM_B_최종_통합_요청서.md)** — 기존 LSTM·rule·백테스트를
+  유지하면서 exact-10과 daily inference만 완성합니다.
 
-참고 문서:
-
-- [Team A Dashboard 완료 요청서](docs/decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md)
-- [Team B Return Engine 완료 요청서](docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md)
-- [두 팀 결과를 받은 뒤 Owner 체크리스트](docs/decision-platform/P1_TEAM_A_B_수신_후_통합_체크리스트.md)
-- [OpenAPI 61개 사용 현황](docs/decision-platform/P1_API_USAGE_MATRIX.md)
-- [자동매매와 운영 경계](docs/decision-platform/P1_운영_후속_경계.md)
+Owner는 결과를 받은 뒤
+[Team A/B 수신 후 통합 체크리스트](docs/decision-platform/P1_TEAM_A_B_수신_후_통합_체크리스트.md)를
+사용합니다.
 
 Team A와 Team B는 `mock configure`나 `mock certify`를 실행하지 않습니다.
 

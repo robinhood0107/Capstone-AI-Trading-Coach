@@ -126,6 +126,14 @@ export function validationError(
   if (PROVIDER_NEEDS_KEY[view.provider] && apiKey === '' && view.keyLast4 === null) {
     return `${PROVIDER_LABEL[view.provider]}에는 API 키가 필요합니다.`;
   }
+  if (
+    view.fallbackProvider !== '' &&
+    PROVIDER_NEEDS_KEY[view.fallbackProvider] &&
+    fallbackApiKey === '' &&
+    view.fallbackKeyLast4 === null
+  ) {
+    return `2차 ${PROVIDER_LABEL[view.fallbackProvider]}에는 API 키가 필요합니다.`;
+  }
   return null;
 }
 

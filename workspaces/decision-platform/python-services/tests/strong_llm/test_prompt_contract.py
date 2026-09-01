@@ -92,8 +92,8 @@ def test_language_is_an_explicit_value_not_a_guess() -> None:
 
 def test_candidates_are_rendered_only_in_judge_mode() -> None:
     candidates = (
-        JudgementCandidate("005930", 0.021, 0.73, "BUY", "BUY"),
-        JudgementCandidate("000660", 0.018, 0.61, "BUY", "BUY"),
+        JudgementCandidate("005930", 0.021, "BUY", "BUY"),
+        JudgementCandidate("000660", 0.018, "BUY", "BUY"),
     )
     judge = render_prompt(_request(mode="JUDGE", candidates=candidates), ())
     explain = render_prompt(_request(mode="EXPLAIN", candidates=candidates), ())

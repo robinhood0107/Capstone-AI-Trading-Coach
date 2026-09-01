@@ -47,11 +47,11 @@ def _store() -> AutomationStore:
 
 
 def _buy(symbol: str = "005930", expected_return: float = 0.05) -> SignalCandidate:
-    return SignalCandidate(symbol, "BUY", "BUY", expected_return, 0.8)
+    return SignalCandidate(symbol, "BUY", "BUY", expected_return)
 
 
 def _sell(symbol: str = "005930") -> SignalCandidate:
-    return SignalCandidate(symbol, "SELL", "SELL", -0.03, 0.8)
+    return SignalCandidate(symbol, "SELL", "SELL", -0.03)
 
 
 def _quote(symbol: str = "005930", *, fresh: bool = True) -> Quote:

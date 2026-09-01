@@ -1,5 +1,9 @@
 # AI 판단 경로
 
+> 2026-09-01 current result: confidence request/response/DB/current UI field와 수량 축소는 제거됐다.
+> 현재 경계는 `STRONG_LLM_JUDGEMENT_AUTHORITY=RANK_VETO_ABSTAIN_ONLY`와
+> `RISKENGINE_QUANTITY_AUTHORITY=1`이다. 아래 수량 축소 항목은 도입 당시 historical test 설명이다.
+
 `tests/e2e/ai_judgement_e2e.py` · 증거 `artifacts/decision-platform/e2e/ai-judgement.json`
 
 | 기능 | 방식 | 결과 |

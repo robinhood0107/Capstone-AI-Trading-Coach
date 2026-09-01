@@ -14,7 +14,8 @@ root OpenAPI exact-48은 preserved projection으로 유지되고, 새 Automation
 
 - Team B 입력은 exact-31, XKRX 4.13.2 correction generation, 최소 3년 일봉, exact 9-feature,
   fixed LSTM ABI, train-only scaler, seed 0, single-thread CPU deterministic 실행을 사용한다.
-- Team B 결과는 exact 10개 파일과 manifest v2다. golden은 같은 wire shape를 사용하되
+- Team B historical 결과는 exact 10개 파일과 manifest v2다. current confidence-free 결과는 같은
+  exact-10과 `p1-return-engine-artifact-manifest.v3`/`p1-return-engine-manifest.v3.json`을 사용한다. golden은 같은 wire shape를 사용하되
   `SYNTHETIC_GOLDEN / realTeamB=false / performanceClaimAllowed=false / orderAuthority=NONE`이다.
 - Team B news/GDELT/Vertex/Spring/account/order 호출과 feature는 0이다.
 - Vertex는 final 신규 BUY 후보 하나만 검사하고 `VETO_BUY | NO_VETO | ABSTAIN`을 반환한다.
@@ -66,6 +67,14 @@ uv run --frozen python -m unittest contracts.tests.test_p1_team_a_acceptance -v
 acceptance는 `p1-team-a-acceptance.v2`와 generated v2 client가 기존 33개에 V91 다섯 operation을
 더한 exact-38을 소유한다. v2 arm은 provider-free 환경에서 409 blocker를 검증하고, v1 arm/disarm은
 기존 200 상태 복구를 계속 증명한다.
+
+Automation v3의 historical acceptance v3 exact-45는 보존한다. 2026-09-01 current acceptance v4도
+exact-45지만 `read` v2 대신 confidence-free `readSignalV3`을 사용하며 root OpenAPI는 exact-76이다.
+
+```bash
+uv run --frozen python contracts/generate_p1_team_a_acceptance_v4.py --check
+uv run --frozen python -m unittest contracts.tests.test_p1_team_a_acceptance_v4 -v
+```
 
 ## P1 Compose, Team B OCI, and handoff preparation
 

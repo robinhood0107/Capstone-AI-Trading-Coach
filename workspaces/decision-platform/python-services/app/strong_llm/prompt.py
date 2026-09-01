@@ -98,7 +98,7 @@ _OUTPUT_JUDGE = """\
 - evidenceSpans: score나 veto에 사용한 근거의 citationId와 quote. quote는 해당 citation 아래에
   제공된 근거 문자열 전체를 첫 글자부터 마지막 글자까지 byte-for-byte 그대로 복사한다.
   부분 문자열, 요약, 번역, 말줄임은 허용하지 않는다. 근거가 없으면 빈 배열이다.
-- confidence: 이 판단 전체에 대한 확신도. 0에서 1."""
+- summary: 후보 전체 판단을 짧게 요약한다."""
 
 _FINAL_COMMON = """\
 # 최종 지침 (우선순위)
@@ -165,7 +165,6 @@ def _render_candidates(request: RunRequest) -> str:
         return "(none)"
     return "\n".join(
         f"- {item.symbol} expected_return={item.expected_return:.6f} "
-        f"model_confidence={item.model_confidence:.6f} "
         f"lstm={item.lstm_signal} baseline={item.baseline_signal}"
         for item in request.candidates
     )

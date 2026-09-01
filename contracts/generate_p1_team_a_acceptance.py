@@ -590,6 +590,18 @@ function requestId(): string {{
 def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
     openapi = object_value(json.loads(openapi_bytes), "OpenAPI")
     try:
+        operations(openapi, 76)
+    except ContractError:
+        pass
+    else:
+        from contracts.verify_p1_return_signal_v3_openapi_transition import project_pre_signal_v3
+
+        try:
+            openapi = project_pre_signal_v3(openapi)
+        except ContractValidationError as error:
+            raise ContractError(str(error)) from error
+        openapi_bytes = canonical_json_bytes(openapi)
+    try:
         operations(openapi, 75)
     except ContractError:
         pass

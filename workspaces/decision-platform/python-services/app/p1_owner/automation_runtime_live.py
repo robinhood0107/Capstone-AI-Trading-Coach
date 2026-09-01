@@ -613,7 +613,6 @@ class LiveAutomationPort:
             self.physical_calls += provider_calls
             applied = AiJudgement(
                 verdicts,
-                int(response["confidenceBps"]) / 10_000,
                 str(response["summary"]),
             )
         except (AutomationError, AutomationRuntimeError, KeyError, TypeError, ValueError):
@@ -789,7 +788,6 @@ def _evidence_candidates_payload(
                 "expectedReturn": format(item.expected_return, ".17g"),
                 "isEtfEtn": quotes[item.symbol].is_etf_etn,
                 "lowerLimitKrw": quotes[item.symbol].lower_limit_krw,
-                "modelConfidence": format(item.confidence, ".17g"),
                 "priceKrw": quotes[item.symbol].price_krw,
                 "symbol": item.symbol,
                 "upperLimitKrw": quotes[item.symbol].upper_limit_krw,

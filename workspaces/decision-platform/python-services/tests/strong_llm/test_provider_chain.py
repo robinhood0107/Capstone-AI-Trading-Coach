@@ -50,7 +50,6 @@ def _judge_json() -> str:
                     "evidenceSpans": [],
                 }
             ],
-            "confidence": 0.6,
             "summary": "후보 하나를 중립보다 조금 높게 본다.",
         },
         ensure_ascii=False,
@@ -73,7 +72,7 @@ def _request(*, google: bool = False, mode: str = "EXPLAIN") -> RunRequest:
         timezone="Asia/Seoul",
         mode=mode,
         candidates=(
-            (JudgementCandidate("005930", 0.02, 0.8, "BUY", "BUY"),) if mode == "JUDGE" else ()
+            (JudgementCandidate("005930", 0.02, "BUY", "BUY"),) if mode == "JUDGE" else ()
         ),
     )
 

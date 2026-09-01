@@ -30,7 +30,7 @@ import type {
   RagV2CorpusStatus,
   RagV2EffectiveConsent,
   RagV2ExternalConsentRequest,
-  SignalV2Runtime,
+  SignalV3Runtime,
   SystemHealthResponse,
 } from './wire';
 
@@ -140,8 +140,8 @@ export const api = {
   },
 
   /* ------------------------------------------------------------ 신호 */
-  signal(symbol: string): Promise<ApiResult<SignalV2Runtime>> {
-    return apiFetch<SignalV2Runtime>(`/api/v2/signals/${encodeURIComponent(symbol)}`);
+  signal(symbol: string): Promise<ApiResult<SignalV3Runtime>> {
+    return apiFetch<SignalV3Runtime>(`/api/v3/signals/${encodeURIComponent(symbol)}`);
   },
 
   /* -------------------------------------------------------------- RAG */

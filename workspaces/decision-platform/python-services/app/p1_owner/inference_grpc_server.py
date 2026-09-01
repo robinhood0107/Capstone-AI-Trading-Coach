@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import hashlib
 from concurrent import futures
 from dataclasses import dataclass
 from hmac import compare_digest
@@ -14,6 +15,7 @@ import grpc
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 
 from app.p1_owner.inference import ReturnInferenceError, ReturnInferenceModel
+from app.p1_owner.assets import GOLDEN_MANIFEST
 
 SERVICE_NAME = "capstone.return_inference.v1.ReturnInferenceService"
 METHOD_PATH = f"/{SERVICE_NAME}/Infer"
@@ -38,6 +40,13 @@ class ReturnInferenceSettings:
     def from_env(cls) -> ReturnInferenceSettings:
         root = os.environ.get("RETURN_INFERENCE_BUNDLE_ROOT", "").strip()
         manifest_sha = os.environ.get("RETURN_INFERENCE_MANIFEST_SHA256", "").strip()
+        if root and not manifest_sha:
+            manifest = Path(root) / GOLDEN_MANIFEST
+            if manifest.is_file() and not manifest.is_symlink():
+                manifest_sha = hashlib.sha256(manifest.read_bytes()).hexdigest()
+            else:
+                # A checkout before Team B delivery stays healthy with no model pointer.
+                root = ""
         settings = cls(
             bind_address=os.environ.get(
                 "RETURN_INFERENCE_GRPC_BIND_ADDRESS", "127.0.0.1:50057"

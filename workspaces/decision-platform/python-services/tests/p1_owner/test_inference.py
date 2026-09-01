@@ -4,6 +4,7 @@ import json
 import socket
 import tempfile
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import grpc
@@ -13,6 +14,7 @@ from grpc_health.v1 import health_pb2, health_pb2_grpc
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.p1_owner.assets import FEATURE_ORDER, build_golden_bundle
 from app.p1_owner.inference import ReturnInferenceError, ReturnInferenceModel
+from app.p1_owner.importer import validate_artifact_bundle
 from app.p1_owner.inference_grpc_server import (
     METHOD_PATH,
     ReturnInferenceSettings,
@@ -97,6 +99,33 @@ def test_inference_rejects_noncanonical_wrong_shape_and_synthetic_production_loa
             manifest_sha256=model.bundle_sha256,
             allow_synthetic=False,
         )
+
+
+def test_below_baseline_real_bundle_is_runtime_eligible_when_integrity_passes(
+    model_and_request: tuple[ReturnInferenceModel, bytes, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, _request, golden_root = model_and_request
+    validated = validate_artifact_bundle(
+        bundle_root=golden_root,
+        expected_manifest_sha256=model.bundle_sha256,
+    )
+    monkeypatch.setattr(
+        "app.p1_owner.inference.validate_artifact_bundle",
+        lambda **_kwargs: replace(
+            validated,
+            evidence_mode="REAL_TEAM_B",
+            real_team_b=True,
+            model_quality="BELOW_BASELINE",
+            mock_runtime_eligible=True,
+        ),
+    )
+    loaded = ReturnInferenceModel.load(
+        bundle_root=golden_root,
+        manifest_sha256=model.bundle_sha256,
+        allow_synthetic=False,
+    )
+    assert loaded.bundle_sha256 == model.bundle_sha256
 
 
 def test_loopback_grpc_requires_auth_deadline_and_returns_bounded_bytes(

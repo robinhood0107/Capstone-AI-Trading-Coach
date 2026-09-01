@@ -23,18 +23,16 @@ class EvidenceItem(_message.Message):
     def __init__(self, ordinal: _Optional[int] = ..., citation_id: _Optional[str] = ..., chunk_revision_id: _Optional[str] = ..., canonical_text: _Optional[str] = ..., canonical_text_sha256: _Optional[str] = ..., owner_private: _Optional[bool] = ...) -> None: ...
 
 class JudgementCandidate(_message.Message):
-    __slots__ = ("symbol", "expected_return", "model_confidence", "lstm_signal", "baseline_signal")
+    __slots__ = ("symbol", "expected_return", "lstm_signal", "baseline_signal")
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
     EXPECTED_RETURN_FIELD_NUMBER: _ClassVar[int]
-    MODEL_CONFIDENCE_FIELD_NUMBER: _ClassVar[int]
     LSTM_SIGNAL_FIELD_NUMBER: _ClassVar[int]
     BASELINE_SIGNAL_FIELD_NUMBER: _ClassVar[int]
     symbol: str
     expected_return: float
-    model_confidence: float
     lstm_signal: str
     baseline_signal: str
-    def __init__(self, symbol: _Optional[str] = ..., expected_return: _Optional[float] = ..., model_confidence: _Optional[float] = ..., lstm_signal: _Optional[str] = ..., baseline_signal: _Optional[str] = ...) -> None: ...
+    def __init__(self, symbol: _Optional[str] = ..., expected_return: _Optional[float] = ..., lstm_signal: _Optional[str] = ..., baseline_signal: _Optional[str] = ...) -> None: ...
 
 class StartRun(_message.Message):
     __slots__ = ("model_id", "question", "answer_mode", "related_symbols", "topics", "public_evidence", "owner_evidence", "google_search_enabled", "max_tool_rounds", "current_time", "timezone", "language", "mode", "candidates", "thinking_level", "grounding_discovery_only")

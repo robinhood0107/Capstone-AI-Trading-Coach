@@ -30,7 +30,7 @@
 
 작업 범위는 `workspaces/experience-dashboard/` 안쪽뿐입니다. 기존 source, component, route, test와 `package-lock.json`은 그대로 재사용해 주세요. 전면 재작성은 필요 없습니다.
 
-백엔드는 제가 exact-69 operation까지 올려 뒀고, same-origin `/api` acceptance는 38개로 고정했습니다. Seed와 reset, typed client도 준비돼 있으니 복사하거나 우회하지 말고 그대로 쓰시면 됩니다.
+백엔드는 exact-76 operation까지 올라왔고, same-origin `/api` current acceptance v4는 45개로 고정했습니다. Seed와 reset, typed client도 준비돼 있으니 복사하거나 우회하지 말고 그대로 쓰시면 됩니다.
 
 API 목록은 문서에 다시 적지 않았습니다. 아래 두 곳만 보시면 됩니다.
 
@@ -107,7 +107,7 @@ AI로 뽑은 시안은 대체로 같은 얼굴을 하고 있습니다. 보라색
 
 정리하면 이렇습니다.
 
-- 38개 catalog 밖 호출 0
+- 45개 catalog 밖 호출 0
 - 화면 진입 1회 fetch, 같은 응답 재사용
 - 자동 새로고침·폴링·백그라운드 재요청 0
 - Automation arm 요청은 UI에서 0 (acceptance에서만 1회)

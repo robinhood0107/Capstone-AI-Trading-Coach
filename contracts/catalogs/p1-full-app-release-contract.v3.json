@@ -32,9 +32,9 @@
   "kisLiveOrderCalls": 0,
   "lightgbm": "RESEARCH_ONLY_NO_SIGNAL_OR_ORDER_AUTHORITY",
   "manifestSchema": "deploy/p1/full-app-release-manifest.v3.schema.json",
-  "openApiOperationCount": 56,
+  "openApiOperationCount": 76,
   "releaseAuthority": "NONE_UNTIL_ALL_HARD_GATES_PASS",
   "releaseVersion": "1.0.0",
-  "returnEngineArtifactSchema": "contracts/schemas/p1-return-engine-artifact-manifest.v2.schema.json",
-  "teamARequiredOperationCount": 33
+  "returnEngineArtifactSchema": "contracts/schemas/p1-return-engine-artifact-manifest.v3.schema.json",
+  "teamARequiredOperationCount": 45
 }

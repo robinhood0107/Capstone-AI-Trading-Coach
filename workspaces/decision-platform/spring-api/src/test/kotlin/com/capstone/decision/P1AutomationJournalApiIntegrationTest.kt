@@ -81,6 +81,18 @@ class P1AutomationJournalApiIntegrationTest(
         )
         ownerJdbc.update(
             """
+            insert into principle_versions(
+              principle_version_id,principle_id,version,preset_id,title,mode,status,
+              rules_json,changed_fields,created_by
+            ) select ?,?,1,preset_id,'Automation fixture','GUIDE','ACTIVE',rules_json,
+              array['presetId','title','mode','status','rules'],'usr_demo_user'
+            from principle_presets where preset_id='balanced'
+            """.trimIndent(),
+            PRINCIPLE_VERSION_ID,
+            PRINCIPLE_ID,
+        )
+        ownerJdbc.update(
+            """
             insert into paper_accounts(
               account_id,user_id,name,cash_balance,currency,status,created_at,updated_at,
               owner_scope_hash,margin_requirement_krw
@@ -811,6 +823,7 @@ class P1AutomationJournalApiIntegrationTest(
         private const val KIS_ACCOUNT_ID = "acct_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         private const val KIS_ACCOUNT_SCOPE_HASH = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccccccccccccccccccccccc"
         private const val PRINCIPLE_ID = "prc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        private const val PRINCIPLE_VERSION_ID = "pvr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         private const val STRATEGY_ID = "strategy_aaaaaaaa"
         private const val OWNED_RUN_ID = "auto_run_owned_0001"
         private val postgresImage =

@@ -28,6 +28,7 @@ FULL_APP_DOCUMENTS = (
     "docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md",
     "docs/decision-platform/P1_API_USAGE_MATRIX.md",
     "docs/decision-platform/P1_API_USAGE_MATRIX_V3_ADDENDUM.md",
+    "docs/decision-platform/P1_API_USAGE_MATRIX_V4_ADDENDUM.md",
     "docs/decision-platform/P1_TEAM_A_B_수신_후_통합_체크리스트.md",
     "docs/decision-platform/P1_OWNER_선행_완료_체크리스트.md",
     "docs/decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md",
@@ -277,15 +278,25 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         addendum = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX_V3_ADDENDUM.md").read_text(
             encoding="utf-8"
         )
-        additive_rows = re.findall(
+        v3_rows = re.findall(
             r"^\|\s*(\d+)\s*\|\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s*"
             r"\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|",
             addendum,
             flags=re.MULTILINE,
         )
+        v4_addendum = (
+            ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX_V4_ADDENDUM.md"
+        ).read_text(encoding="utf-8")
+        v4_rows = re.findall(
+            r"^\|\s*(\d+)\s*\|\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s*"
+            r"\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|",
+            v4_addendum,
+            flags=re.MULTILINE,
+        )
         self.assertEqual(69, len(base_rows))
-        self.assertEqual(7, len(additive_rows))
-        rows = [*base_rows, *additive_rows]
+        self.assertEqual(6, len(v3_rows))
+        self.assertEqual(1, len(v4_rows))
+        rows = [*base_rows, *v3_rows, *v4_rows]
         self.assertEqual(76, len(rows))
         self.assertEqual(
             list(range(1, 77)), sorted(int(number) for number, _, _, _ in rows)

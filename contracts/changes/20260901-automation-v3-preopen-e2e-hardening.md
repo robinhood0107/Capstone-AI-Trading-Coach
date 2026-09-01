@@ -42,5 +42,7 @@ The provider-free E2E sequence exposed two gaps before the next market session.
   signed approval, and mock-account binding are unchanged.
 - Failed mock certification now reports only the typed failed step, reason code,
   and already reserved physical-call counts. Raw KIS responses remain absent.
+- Post-cancel balance reconciliation waits a fixed five seconds before its one
+  read. It does not retry or expand the seven-call brokerage cap.
 
 Public V1/V2/V3 OpenAPI bytes and operation counts are unchanged.

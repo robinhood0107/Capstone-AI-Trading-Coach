@@ -1,8 +1,8 @@
 # P1 API usage matrix V3 addendum
 
 기존 `P1_API_USAGE_MATRIX.md` 69개 행은 역사적 회귀로 그대로 보존한다. 아래
-7개 additive operation을 합치면 현재 root는 exact-76이다. 기존 여섯 automation 행과
-confidence-free Signal v3 한 행은 `p1-team-a-acceptance.v4`의 `Team A 필수`다.
+6개 additive operation을 합치면 현재 root는 exact-75다. 여섯 행은 모두
+`p1-team-a-acceptance.v3`의 `Team A 필수`다.
 
 | 번호 | Method | Path | 분류 | 용도 |
 |---:|---|---|---|---|
@@ -12,4 +12,3 @@ confidence-free Signal v3 한 행은 `p1-team-a-acceptance.v4`의 `Team A 필수
 | 73 | GET | `/api/v3/automation/runs` | `Team A 필수` | evidence/grounding/judge count와 settings/evidence hash를 포함한 run 목록을 읽는다 |
 | 74 | GET | `/api/v3/automation/runs/{runId}` | `Team A 필수` | 소유자 run의 bounded verified evidence 상세를 읽는다 |
 | 75 | GET | `/api/v3/automation/positions` | `Team A 필수` | entry snapshot, nullable expiry, peak와 trailing stop을 포함한 활성 V3 position을 읽는다 |
-| 76 | GET | `/api/v3/signals/{symbol}` | `Team A 필수` | confidence 없이 current exact-31 Rule+LSTM 신호와 ABSTAIN 상태를 읽는다 |

@@ -1,9 +1,5 @@
 # ADR-039: Strong LLM 판단을 자동매매 결정 입력으로 승격
 
-> 2026-09-01 current amendment: confidence-free V116은 수량 축소 권한을 폐기했다. 현재 권위는
-> `STRONG_LLM_JUDGEMENT_AUTHORITY=RANK_VETO_ABSTAIN_ONLY`이며 후보 순위 변경, 매수 차단, 기권만
-> 허용한다. 모든 수량은 RiskEngine이 단독 결정한다. 기존 본문은 도입 당시 판단 기록으로 보존한다.
-
 - 상태: Accepted
 - 결정일: 2026-08-30
 - 구현 상태: 계획 승인, 구현 진행 중

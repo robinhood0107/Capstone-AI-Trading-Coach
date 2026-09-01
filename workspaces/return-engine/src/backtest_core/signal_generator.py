@@ -31,7 +31,7 @@ class SignalGenerator:
     def from_prediction(df, buy_threshold=0.001, sell_threshold=0.001):
         result = df.copy()
 
-        pred_change = result['Prediction'].shift(1).pct_change()
+        pred_change = result['Prediction'].pct_change(fill_method=None)
 
         result['Signal'] = SignalGenerator.HOLD
         result.loc[pred_change > buy_threshold, 'Signal'] = SignalGenerator.BUY

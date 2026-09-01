@@ -15,6 +15,12 @@ from models.lstm import LSTMModel
 from models.rule_baseline import BaselineModel
 
 
+def _split_date_from_predictions(prediction_df):
+    if "Date" not in prediction_df.columns or prediction_df.empty:
+        raise ValueError("prediction output must contain at least one Date row")
+    return prediction_df["Date"].iloc[0]
+
+
 class ReturnEngine:
     INITIAL_CASH = 10000000  # 초기 자본금
 
@@ -91,7 +97,7 @@ class ReturnEngine:
         baseline_backtest_engine = BacktestEngine('baseline_model', ReturnEngine.INITIAL_CASH)
         lstm_backtest_engine = BacktestEngine('lstm_model', ReturnEngine.INITIAL_CASH)
 
-        split_date = prediction_df.iloc[0, 0]
+        split_date = _split_date_from_predictions(prediction_df)
 
         # 규칙 Baseline 모델 생성
         baseline_model = BaselineModel()
@@ -115,6 +121,7 @@ class ReturnEngine:
             df,
             prediction_df,
             preprocessor,
+            data_pipeline,
             next_session=next_session,
         )
 

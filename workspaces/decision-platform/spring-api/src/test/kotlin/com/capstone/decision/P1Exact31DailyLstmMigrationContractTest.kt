@@ -6,7 +6,8 @@ import java.nio.file.Path
 
 class P1Exact31DailyLstmMigrationContractTest {
     private val migration =
-        Path.of("src/main/resources/db/migration/V116__p1_exact31_daily_lstm.sql")
+        Path
+            .of("src/main/resources/db/migration/V116__p1_exact31_daily_lstm.sql")
             .toFile()
             .readText()
 

@@ -90,7 +90,7 @@ def _is_loopback(address: str) -> bool:
     return port.isdigit() and 1 <= int(port) <= 65_535
 
 
-def main() -> None:
+def serve() -> None:
     """수동 `--mock` 모드에서만 retry 없는 mock brokerage RPC를 제공한다."""
 
     settings = BrokerageGrpcServerSettings.from_env()
@@ -146,5 +146,9 @@ def main() -> None:
         redis_client.close()
 
 
+# Backward compatibility for direct legacy module invocation.
+main = serve
+
+
 if __name__ == "__main__":
-    main()
+    serve()

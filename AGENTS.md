@@ -32,7 +32,7 @@ Team A exact-38을 현재 기준으로 둔다. `BLOCKED_INCOMPLETE_RISK_BALANCE`
 
 2026-08-31 Automation V3는 기존 V1/V2 bytes를 보존하면서 근거 우선 screening, 사용자 ATR/보유
 정책, 장외 replay 여섯 operation을 추가한다. 현재 root OpenAPI는 exact-75, Team A acceptance v3는
-exact-45다. V110~V113 runtime은 구현됐지만 실제 KIS read-only bootstrap, Google grounding,
+exact-45다. V110~V115 runtime은 구현됐지만 실제 KIS read-only bootstrap, Google grounding,
 장중 KIS Mock, 연속 3 XKRX session soak는 별도 hard gate다. 따라서 데이터가 비어 있거나 외부 gate가
 닫힌 환경에서 V3 arm과 `P1_FINAL`을 주장하지 않는다.
 

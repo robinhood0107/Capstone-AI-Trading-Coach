@@ -2,7 +2,7 @@
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
 > **현재 상태 (2026-08-31):** Automation V3 구현 기준 root OpenAPI는 exact-75,
-> Team A handoff는 exact-45, migration은 V113입니다. 사용자 보유 만기·Wilder ATR trailing
+> Team A handoff는 exact-45, migration은 V115입니다. 사용자 보유 만기·Wilder ATR trailing
 > stop·MODEL_SELL 설정과, 전체 후보를 먼저 검증하는 evidence-first AI 원장, 격리 장외 전수
 > replay가 추가됐습니다. 이 구현 자체는 live grounding, KIS read-only bootstrap, 장중 KIS Mock,
 > 실제 3-session soak를 PASS로 만들지 않습니다. 기존 8월 31일 관측 영수증은 legacy 기능의

@@ -11,6 +11,7 @@ import re
 import stat
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -79,7 +80,7 @@ _SHA256 = r"^[0-9a-f]{64}$"
 _GIT_SHA = r"^[0-9a-f]{40}$"
 _NONCE = r"^[0-9a-f]{64}$"
 _APPROVAL_ID = r"^approval-s3-online-[a-z0-9][a-z0-9-]{3,95}$"
-_BRANCH = r"^(?:feature|fix|docs|infra|experiment)/[A-Za-z0-9._/-]{1,120}$"
+_BRANCH = r"^(?:feature|fix|docs|infra|experiment|codex)/[A-Za-z0-9._/-]{1,120}$"
 _ORDER_ID = r"^ord_mock_[0-9a-f]{32}$"
 _ACCOUNT_ID = r"^acct_[0-9a-f]{32}$"
 _SYMBOL = r"^[0-9]{6}$"
@@ -109,6 +110,7 @@ _V3_SIGNED_OPERATIONS = (
     "KIS_MOCK_POST_BALANCE",
     "KIS_MOCK_OPEN_ORDER_RECONCILIATION",
 )
+_POST_CANCEL_SETTLEMENT_SECONDS = 5.0
 _BALANCE_DIAGNOSTIC_STEPS = ("balance",)
 _APPROVAL_CONSUMED_KEY_PREFIX = "kis:mock:approval-consumed:v1:"
 _PROVIDER_CODE = re.compile(r"^[A-Z0-9][A-Z0-9_-]{0,31}$")
@@ -1404,6 +1406,10 @@ class _KISMockProbeOperations:
     def run(self, operation: str, packet: ApprovalPacket) -> None:
         """canonical operation 이름을 exact packet parameter에만 매핑한다."""
         if operation in {"balance", "preBalance", "postBalance"}:
+            if operation == "postBalance":
+                # KIS Mock may acknowledge full cancellation before reserved cash/equity settles.
+                # Wait once without retrying or expanding the physical-call cap.
+                time.sleep(_POST_CANCEL_SETTLEMENT_SECONDS)
             balance_response = self._balance_reader.probe_balance_source(packet.order.account_id)
             if balance_response is None or balance_response.account_id != packet.order.account_id:
                 raise KISMockProjectionError(

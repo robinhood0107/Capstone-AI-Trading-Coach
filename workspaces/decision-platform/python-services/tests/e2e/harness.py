@@ -213,6 +213,11 @@ SNAPSHOT_TABLES: Final[tuple[tuple[str, str], ...]] = (
     ("decision_idempotency_results", "idempotency_result_id"),
     ("automation_positions", "position_id"),
     ("automation_account_lineage", "lineage_id"),
+    ("automation_candidate_evidence", "run_id || '|' || symbol || '|' || citation_id"),
+    ("automation_candidate_screenings", "run_id || '|' || symbol"),
+    ("automation_ai_provider_operations", "run_id || '|' || phase"),
+    ("automation_ai_judgements", "run_id || '|' || checkpoint_version"),
+    ("automation_v3_usage", "run_id"),
     ("automation_runtime_events", "event_id"),
     ("automation_events", "event_id"),
     ("automation_processed_ticks", "tick_identity_hash"),
@@ -265,6 +270,16 @@ def cleanup_statements(before: dict[str, list[str]]) -> list[str]:
         # 테스트가 만든 행만 지우고 트랜잭션이 끝나면 원래대로 돌아온다.
         "set local session_replication_role = replica;",
         # automation 하위부터 지운다. FK 안전 순서다.
+        "delete from public.automation_candidate_evidence where run_id || '|' || symbol || '|' || citation_id not in "
+        f"({quoted(before['automation_candidate_evidence'])});",
+        "delete from public.automation_candidate_screenings where run_id || '|' || symbol not in "
+        f"({quoted(before['automation_candidate_screenings'])});",
+        "delete from public.automation_ai_provider_operations where run_id || '|' || phase not in "
+        f"({quoted(before['automation_ai_provider_operations'])});",
+        "delete from public.automation_ai_judgements where run_id || '|' || checkpoint_version not in "
+        f"({quoted(before['automation_ai_judgements'])});",
+        "delete from public.automation_v3_usage where run_id not in "
+        f"({quoted(before['automation_v3_usage'])});",
         "delete from public.automation_runtime_events where event_id not in "
         f"({quoted(before['automation_runtime_events'])});",
         f"delete from public.automation_events where event_id not in ({quoted(before['automation_events'])});",

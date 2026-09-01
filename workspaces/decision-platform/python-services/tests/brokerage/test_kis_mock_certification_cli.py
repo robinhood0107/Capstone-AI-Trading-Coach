@@ -38,6 +38,31 @@ def test_request_requires_all_general_security_and_ci_checks(tmp_path: Path) -> 
         certification._read_request(request_path)
 
 
+def test_request_accepts_codex_workflow_branch(tmp_path: Path) -> None:
+    request_path = tmp_path / "request.json"
+    expected = _request(request_path)
+    expected["branch"] = "codex/p1-v3-preopen-e2e-hardening-20260901"
+    request_path.write_bytes(canonical_json_bytes(expected))
+
+    assert certification._read_request(request_path) == expected
+
+
+def test_runtime_packet_accepts_codex_workflow_branch(tmp_path: Path) -> None:
+    request_path = tmp_path / "request.json"
+    request = _request(request_path)
+    request["branch"] = "codex/p1-v3-preopen-e2e-hardening-20260901"
+    approval = SimpleNamespace(expires_at=datetime.now(UTC) + timedelta(minutes=4))
+
+    packet = certification._runtime_packet(
+        request,
+        approval,
+        "acct_00000000000000000000000000000000",
+        182_000,
+    )
+
+    assert packet.repository.branch_ref == request["branch"]
+
+
 def test_certification_claims_signed_authority_before_quote_or_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -91,6 +116,54 @@ def test_certification_claims_signed_authority_before_quote_or_order(
     assert receipt["status"] == "PASS"
     assert receipt["physicalCalls"] == {"brokerage": 7, "quote": 1, "token": 1}
     assert json.loads(receipt_path.read_text(encoding="utf-8"))["status"] == "PASS"
+
+
+def test_probe_failure_preserves_typed_step_and_physical_reservations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request_path = tmp_path / "request.json"
+    approval_path = tmp_path / "approval.json"
+    receipt_path = tmp_path / "receipt.json"
+    _request(request_path)
+    approval_path.write_text("{}", encoding="utf-8")
+    approval_path.chmod(0o600)
+    approval = SimpleNamespace(expires_at=datetime.now(UTC) + timedelta(minutes=4))
+    monkeypatch.setenv(
+        "KIS_MOCK_BOUND_ACCOUNT_ID",
+        "acct_00000000000000000000000000000000",
+    )
+    monkeypatch.setattr(certification, "require_certification_window", lambda now: "2026-09-01")
+    monkeypatch.setattr(
+        certification,
+        "load_and_verify_execution_approval",
+        lambda *args, **kwargs: approval,
+    )
+    monkeypatch.setattr(certification, "claim_signed_provider_approval", lambda value: None)
+    monkeypatch.setattr(
+        certification,
+        "_read_lower_limit",
+        lambda symbol, expiry: (182_000, {"marketData": 1, "tokenP": 1}),
+    )
+    monkeypatch.setattr(certification, "_runtime_packet", lambda *args: object())
+    failure = certification.KISMockProbeFailed(
+        "preBalance",
+        {"brokerage": 1, "tokenP": 0},
+        reason_code="BALANCE_PROBE_RESPONSE_INVALID",
+    )
+    monkeypatch.setattr(
+        certification,
+        "_run_brokerage",
+        lambda packet, expiry: (_ for _ in ()).throw(failure),
+    )
+
+    with pytest.raises(certification.KISMockProbeFailed) as caught:
+        certification.certify(request_path, approval_path, receipt_path)
+
+    assert caught.value.failed_step == "preBalance"
+    assert caught.value.reason_code == "BALANCE_PROBE_RESPONSE_INVALID"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert receipt["physicalCalls"] == {"brokerage": 1, "quote": 1, "token": 1}
 
 
 def test_closed_market_rejects_before_request_approval_or_provider(

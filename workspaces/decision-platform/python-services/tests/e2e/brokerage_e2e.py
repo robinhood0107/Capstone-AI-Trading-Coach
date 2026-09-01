@@ -10,8 +10,9 @@
   4. 두 원장이 섞이지 않는다. 한쪽 계좌 ID로 다른 쪽 원장을 읽으면 열리지 않는다.
   5. 같은 멱등키로 두 번 넣으면 주문이 하나다.
 
-무엇을 확인하지 않나. KIS Live 호출은 영구 금지다. 여기서 부르는 mock은 컨테이너 안의 모의
-브로커리지이며 실제 증권사 계좌에 닿지 않는다.
+무엇을 확인하지 않나. 이 장외 runner는 실제 provider socket을 열지 않는다. 현재 등록된
+`kis-mock.env`를 읽거나 바꾸지 않고, 컨테이너 안의 결정적 모의 브로커리지로만 돈다. 실제 KIS
+모의계좌 주문·체결·취소·대사는 별도의 장중 runner가 담당한다.
 
 정리. 이 runner가 만드는 것은 판단과 주문, 그리고 그에 딸린 관측이다. 시작 시 스냅샷을 찍고
 끝에서 차집합만 지운다. 정리에 실패하면 FAIL이다.
@@ -30,6 +31,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
 from .full_pipeline_e2e import (
+    INITIAL_CASH_KRW,
+    _compose,
+    _publish_driver,
+    _start_offline_brokerage,
+    _stop_offline_brokerage,
     quiesce_rival_portfolio_contexts,
     restore_portfolio_contexts,
     seed_risk_metrics,
@@ -42,6 +48,7 @@ from .harness import (
     psql,
     require_opt_in,
     snapshot,
+    wait_healthy,
     write_report,
 )
 
@@ -49,6 +56,7 @@ _OPT_IN: Final = "P1_BROKERAGE_E2E"
 _SYMBOL: Final = "005930"
 _PRICE: Final = 70_100
 _QUANTITY: Final = 1
+_FIXTURE_ACCOUNT: Final = "acct_" + "a" * 32
 
 
 def _key() -> str:
@@ -313,8 +321,22 @@ def main(argv: list[str]) -> int:
     recorder = Recorder()
     before: dict[str, list[str]] = {}
     rivals: list[str] = []
+    platform_switched = False
     try:
         before = snapshot()
+        # 현재 배포가 KIS Mock online 모드여도 이 장외 회귀가 물리 주문을 내면 안 된다.
+        # Spring의 gRPC adapter만 켜고 production brokerage child는 끈 compose override로
+        # 재기동한 뒤, 같은 loopback 포트에는 결정적 fixture server를 붙인다.
+        _compose("up", "-d", "--no-deps", "decision-platform", offline_brokerage=True)
+        platform_switched = True
+        wait_healthy()
+        _publish_driver()
+        _start_offline_brokerage(account_id=_FIXTURE_ACCOUNT, cash_krw=INITIAL_CASH_KRW)
+        recorder.add(
+            "장외 brokerage 격리",
+            "PASS",
+            "fixture loopback; providerCalls=0; registered mock env unchanged",
+        )
         owner = Api()
         owner.login("demo-user")
         admin = Api()
@@ -333,6 +355,14 @@ def main(argv: list[str]) -> int:
         recorder.add("확인 중단", "FAIL", f"{type(error).__name__}: {error}")
     finally:
         restore_portfolio_contexts(rivals)
+        _stop_offline_brokerage()
+        if platform_switched:
+            try:
+                _compose("up", "-d", "--no-deps", "decision-platform")
+                wait_healthy()
+                recorder.add("스택 구성 복원", "PASS", "테스트 시작 시 런타임 플래그로 되돌림")
+            except Exception as error:  # noqa: BLE001 - 복원 실패는 runner 실패다
+                recorder.add("스택 구성 복원", "FAIL", f"{type(error).__name__}: {error}")
         if before:
             cleanup(before, recorder)
         else:

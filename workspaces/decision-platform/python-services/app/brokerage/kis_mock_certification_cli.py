@@ -66,7 +66,7 @@ _PROVIDER_FAMILY: Final = "KIS_MOCK"
 _MAX_FILE_BYTES: Final = 32 * 1024
 _HEAD = re.compile(r"^[0-9a-f]{40}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_BRANCH = re.compile(r"^(?:feature|fix|docs|infra|experiment)/[A-Za-z0-9._/-]{1,120}$")
+_BRANCH = re.compile(r"^(?:feature|fix|docs|infra|experiment|codex)/[A-Za-z0-9._/-]{1,120}$")
 _REQUIRED_CHECKS: Final = frozenset(
     {
         "Contract schema validation",
@@ -196,6 +196,21 @@ def certify(
         }
         _publish_new(receipt_path, canonical_json_bytes(receipt))
         return receipt
+    except KISMockProbeFailed as error:
+        physical_calls = {
+            "brokerage": error.physical_reservations.get("brokerage", 0),
+            "quote": quote_counts.get("marketData", 0),
+            "token": quote_counts.get("tokenP", 0) + error.physical_reservations.get("tokenP", 0),
+        }
+        failure = {
+            "commitSha": request["commitSha"],
+            "inputSha256": canonical_json_sha256(request),
+            "physicalCalls": physical_calls,
+            "status": "FAIL",
+            "timestamp": _instant(datetime.now(UTC)),
+        }
+        _publish_new(receipt_path, canonical_json_bytes(failure))
+        raise
     except Exception as error:
         physical_calls = {
             "brokerage": brokerage_counts.get("brokerage", 0),
@@ -489,7 +504,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KISMockCertificationError as error:
         print(str(error), file=sys.stderr)
         return 2
-    except (KISMockApprovalRejected, KISMockProbeFailed):
+    except KISMockProbeFailed as error:
+        print(
+            "KIS_MOCK_CERTIFICATION_PROVIDER_FAILED "
+            f"step={error.failed_step} reason={error.reason_code} "
+            f"brokerage={error.physical_reservations.get('brokerage', 0)} "
+            f"token={error.physical_reservations.get('tokenP', 0)}",
+            file=sys.stderr,
+        )
+        return 1
+    except KISMockApprovalRejected:
         print("KIS_MOCK_CERTIFICATION_PROVIDER_FAILED", file=sys.stderr)
         return 1
     print("KIS_MOCK_CERTIFICATION=PASS")

@@ -188,8 +188,8 @@ PR 초록과 clean worktree를 함께 확인했지만, e2e를 한 번 돌리면 
 팀마다 아래 문서 하나만 전달합니다. 이전 요청서와 V3 추가계약은 역사적·기술 참고자료로 남기며
 팀원에게 따로 보낼 필요가 없습니다.
 
-- **[Team A 최종 통합 요청서](docs/handoff/P1_TEAM_A_최종_통합_요청서.md)** — 기존 Dashboard를
-  유지하면서 빠진 주문·자동운용 V3·근거·학습일지 흐름만 연결합니다.
+- **[Team A 최종 통합 요청서](docs/handoff/P1_TEAM_A_최종_통합_요청서.md)** — 기존 API와 route는
+  살리고 9개 Dashboard 화면·새 디자인 시스템·주문·자동운용 V3·근거·학습일지 흐름을 완성합니다.
 - **[Team B 최종 통합 요청서](docs/handoff/P1_TEAM_B_최종_통합_요청서.md)** — 기존 LSTM·rule·백테스트를
   유지하면서 exact-10과 daily inference만 완성합니다.
 

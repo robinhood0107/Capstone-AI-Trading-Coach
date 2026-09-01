@@ -89,12 +89,14 @@ internal class GrpcAutomationEvidenceProvider(
         require(settings.aiJudgementEnabled && settings.provider.equals("vertex", ignoreCase = true))
         require(candidates.isNotEmpty() && candidates.size <= 31)
         val symbols = candidates.map { it.symbol }
+        val registeredDomains = sourceRegistry.keys.sorted().joinToString(",")
         val start =
             baseStart(runId, "SCREEN", settings)
                 .setQuestion(
                     "Google Search로 다음 한국 종목 후보 전체의 최근 공개 악재·공시를 조사하세요. " +
                         "각 근거 문장은 반드시 해당 6자리 symbol로 시작하고, 확인되지 않은 사실은 쓰지 마세요. " +
-                        "후보: ${symbols.joinToString(",")}",
+                        "등록 출처 도메인 안에서만 검색하세요. " +
+                        "후보: ${symbols.joinToString(",")}. 허용 도메인: $registeredDomains",
                 ).addAllRelatedSymbols(symbols)
                 .addAllTopics(listOf("AUTOMATION_NEWS_SCREEN", "PUBLIC_ADVERSE_EVIDENCE"))
                 .setGoogleSearchEnabled(true)

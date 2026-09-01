@@ -72,26 +72,26 @@ def _universe(*, as_of: date = date(2026, 9, 30)) -> UniverseManifest:
     )
 
 
-def test_plan_is_exact31_exact1260_and_uses_exact403_kis_windows() -> None:
+def test_plan_is_exact31_exact756_with_one_transient_retry_cap() -> None:
     plan = build_bootstrap_plan(_universe(), end_session=date(2026, 9, 30))
 
     assert len(plan.members) == 31
     assert plan.members[-1].symbol == "132030"
     assert plan.members[-1].rank == 31
     assert plan.members[-1].is_fixed_member is True
-    assert len(plan.sessions) == 1_260
-    assert len(plan.windows) == 403
+    assert len(plan.sessions) == 756
+    assert len(plan.windows) == 248
     assert plan.provider_caps == {
-        "kisDaily": 403,
+        "kisDaily": 496,
         "kisToken": 1,
         "krxMembership": 5,
-        "retry": 0,
+        "retry": 1,
     }
     assert all(1 <= len(window.sessions) <= 100 for window in plan.windows)
-    assert sum(len(window.sessions) for window in plan.windows) == 31 * 1_260
+    assert sum(len(window.sessions) for window in plan.windows) == 31 * 756
 
 
-def test_quick_readiness_plan_keeps_exact31_and_derives_31_call_cap() -> None:
+def test_quick_readiness_plan_keeps_exact31_and_derives_retry_bound_call_cap() -> None:
     plan = build_bootstrap_plan(
         _universe(),
         end_session=date(2026, 9, 30),
@@ -101,7 +101,7 @@ def test_quick_readiness_plan_keeps_exact31_and_derives_31_call_cap() -> None:
     assert len(plan.members) == 31
     assert len(plan.sessions) == 100
     assert len(plan.windows) == 31
-    assert plan.provider_caps["kisDaily"] == 31
+    assert plan.provider_caps["kisDaily"] == 62
     assert date(2026, 6, 3) not in plan.sessions
     assert date(2026, 7, 17) not in plan.sessions
 
@@ -153,8 +153,8 @@ def test_collection_is_manifest_last_deterministic_and_rejects_mid_gap(tmp_path:
 
     assert first.manifest_sha256 == second.manifest_sha256
     assert first.bars_sha256 == second.bars_sha256
-    assert first.row_count == second.row_count == 31 * 1_260
-    assert first_source.physical_calls == second_source.physical_calls == 403
+    assert first.row_count == second.row_count == 31 * 756
+    assert first_source.physical_calls == second_source.physical_calls == 248
     assert (first_root / "manifest.json").is_file()
     assert read_automation_bootstrap_archive(first_root).manifest_sha256 == first.manifest_sha256
 
@@ -197,7 +197,7 @@ def test_stage_is_atomic_replay_safe_and_runtime_reads_only_bounded_function(
     )
 
     assert inserted.outcome == "INSERTED"
-    assert inserted.bars == 31 * 1_260
+    assert inserted.bars == 31 * 756
     assert inserted.universes == 31
     assert inserted.provider_calls == 0
     assert replayed.outcome == "NO_OP"
@@ -205,7 +205,7 @@ def test_stage_is_atomic_replay_safe_and_runtime_reads_only_bounded_function(
     reader = PostgresAutomationMarketReader(postgres_cluster["automation_runtime_dsn"])
     inventory = reader.inventory()
     assert inventory.manifest_count >= 1
-    assert inventory.bar_count >= 31 * 1_260
+    assert inventory.bar_count >= 31 * 756
     assert inventory.current_universe_count == 31
     assert inventory.status == "READY"
     bars = reader.read_atr_bars("100001", as_of_session=date(2026, 10, 1), limit=23)

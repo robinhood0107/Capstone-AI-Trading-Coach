@@ -141,5 +141,5 @@ Team A는 아래 명령을 실행하지 않습니다. 이 단계는 Owner가 Tea
 
 ## 구현 중 필요할 때만 보는 기술 참고
 
-- [`p1-team-a-acceptance.v3` exact-45](../../contracts/catalogs/p1-team-a-acceptance.v3.json)
-- [generated V3 client](../../workspaces/experience-dashboard/src/shared/api/generated/p1-team-a-client.v3.ts)
+- [`p1-team-a-acceptance.v4` exact-45](../../contracts/catalogs/p1-team-a-acceptance.v4.json)
+- [generated V4 client](../../workspaces/experience-dashboard/src/shared/api/generated/p1-team-a-client.v4.ts)

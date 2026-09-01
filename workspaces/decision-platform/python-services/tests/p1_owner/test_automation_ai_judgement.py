@@ -22,7 +22,6 @@ from app.p1_owner.automation import (
     FixtureAutomationTransport,
     Quote,
     SignalCandidate,
-    _ai_reduced_quantity,
     _apply_judgement,
 )
 
@@ -43,7 +42,7 @@ def _store() -> AutomationStore:
 
 
 def _buy(symbol: str, expected_return: float) -> SignalCandidate:
-    return SignalCandidate(symbol, "BUY", "BUY", expected_return, 0.8)
+    return SignalCandidate(symbol, "BUY", "BUY", expected_return)
 
 
 def _transport(judgement: AiJudgement | None) -> FixtureAutomationTransport:
@@ -99,7 +98,7 @@ def _verdict(symbol: str, score: float, *, veto: bool = False) -> AiCandidateVer
 
 def test_ai_score_moves_a_lower_expected_return_candidate_to_the_front() -> None:
     # 규칙만으로는 기대수익 1등인 005930을 산다. AI가 그 후보를 낮게 보면 순위가 바뀐다.
-    judgement = AiJudgement((_verdict("005930", 0.2), _verdict("000001", 0.9)), 1.0, "요약")
+    judgement = AiJudgement((_verdict("005930", 0.2), _verdict("000001", 0.9)), "요약")
     store = _store()
     transport = _transport(judgement)
 
@@ -113,7 +112,7 @@ def test_ai_score_moves_a_lower_expected_return_candidate_to_the_front() -> None
 
 
 def test_the_rule_ranking_stands_when_the_model_agrees_with_it() -> None:
-    judgement = AiJudgement((_verdict("005930", 0.9), _verdict("000001", 0.2)), 1.0, "요약")
+    judgement = AiJudgement((_verdict("005930", 0.9), _verdict("000001", 0.2)), "요약")
     store = _store()
 
     _drive(store, _transport(judgement), _inputs(_buy("005930", 0.05), _buy("000001", 0.01)))
@@ -126,7 +125,7 @@ def test_a_candidate_the_model_did_not_score_falls_back_to_neutral_not_to_last()
     # 답을 못 받은 것이 나쁜 후보라는 뜻은 아니다. 중립 0.5보다 낮은 점수만 뒤로 밀린다.
     scored = _buy("005930", 0.05)
     unscored = _buy("000001", 0.01)
-    judgement = AiJudgement((_verdict("005930", 0.2),), 1.0, "요약")
+    judgement = AiJudgement((_verdict("005930", 0.2),), "요약")
 
     ranked = _apply_judgement((scored, unscored), judgement)
 
@@ -137,9 +136,7 @@ def test_a_candidate_the_model_did_not_score_falls_back_to_neutral_not_to_last()
 
 
 def test_a_vetoed_candidate_is_not_bought_and_the_next_one_is() -> None:
-    judgement = AiJudgement(
-        (_verdict("005930", 0.9, veto=True), _verdict("000001", 0.3)), 1.0, "요약"
-    )
+    judgement = AiJudgement((_verdict("005930", 0.9, veto=True), _verdict("000001", 0.3)), "요약")
     store = _store()
 
     _drive(store, _transport(judgement), _inputs(_buy("005930", 0.05), _buy("000001", 0.01)))
@@ -151,7 +148,7 @@ def test_a_vetoed_candidate_is_not_bought_and_the_next_one_is() -> None:
 
 def test_vetoing_every_candidate_stops_the_run_without_inventing_a_symbol() -> None:
     judgement = AiJudgement(
-        (_verdict("005930", 0.9, veto=True), _verdict("000001", 0.9, veto=True)), 1.0, "요약"
+        (_verdict("005930", 0.9, veto=True), _verdict("000001", 0.9, veto=True)), "요약"
     )
     store = _store()
 
@@ -168,7 +165,7 @@ def test_vetoing_every_candidate_stops_the_run_without_inventing_a_symbol() -> N
 def test_a_symbol_outside_the_candidate_set_cannot_enter_the_order() -> None:
     # 모델이 후보에 없는 종목을 답해도 그것은 순위에도 주문에도 닿지 않는다.
     candidates = (_buy("005930", 0.05),)
-    judgement = AiJudgement((_verdict("000009", 0.99),), 1.0, "요약")
+    judgement = AiJudgement((_verdict("000009", 0.99),), "요약")
 
     ranked = _apply_judgement(candidates, judgement)
 
@@ -178,45 +175,17 @@ def test_a_symbol_outside_the_candidate_set_cannot_enter_the_order() -> None:
 # ------------------------------------------------------------------ 수량
 
 
-@pytest.mark.parametrize(
-    ("confidence", "expected"),
-    [(1.0, 10), (0.5, 7), (0.0, 5), (None, 10)],
-)
-def test_confidence_only_shrinks_the_quantity_the_policy_already_allowed(
-    confidence: float | None, expected: int
-) -> None:
-    assert _ai_reduced_quantity(10, confidence) == expected
-
-
-def test_a_low_confidence_order_is_smaller_and_both_values_are_recorded() -> None:
-    # 판단 tick과 사이징 tick은 서로 다르다. 확신도는 저장된 판단에서 입력으로 되돌아온다.
-    judgement = AiJudgement((_verdict("005930", 0.9),), 0.0, "요약")
+def test_ai_judgement_has_no_quantity_authority() -> None:
     store = _store()
+    judgement = AiJudgement((_verdict("005930", 0.9),), "요약")
 
-    _drive(store, _transport(judgement), _inputs(_buy("005930", 0.05), ai_confidence=0.0))
+    _drive(store, _transport(judgement), _inputs(_buy("005930", 0.05)))
 
     run = store.runs[_RUN_ID]
-    assert run.ai_quantity_before is not None
-    assert run.ai_quantity_after is not None
-    assert run.ai_quantity_after < run.ai_quantity_before
     assert run.reservation is not None
-    assert run.reservation.quantity == run.ai_quantity_after
-
-
-def test_the_shrink_never_reaches_zero_because_that_would_be_a_veto_in_disguise() -> None:
-    assert _ai_reduced_quantity(1, 0.0) == 1
-
-
-def test_no_recorded_confidence_leaves_the_policy_quantity_untouched() -> None:
-    # 판단을 못 받은 run은 규칙이 정한 수량 그대로 간다. 축소는 판단이 있을 때만 일어난다.
-    store = _store()
-
-    _drive(store, _transport(None), _inputs(_buy("005930", 0.05)))
-
-    run = store.runs[_RUN_ID]
-    assert run.ai_quantity_before == run.ai_quantity_after
-    assert run.reservation is not None
-    assert run.reservation.quantity == run.ai_quantity_before
+    assert run.reservation.quantity == 10
+    assert not hasattr(run, "ai_confidence")
+    assert not hasattr(run, "ai_quantity_before")
 
 
 # ------------------------------------------------------------------ AI 없이도 돈다
@@ -276,9 +245,4 @@ def test_an_empty_reason_is_refused_because_an_unexplained_score_cannot_be_audit
 
 def test_the_same_symbol_cannot_be_judged_twice_in_one_answer() -> None:
     with pytest.raises(AutomationError):
-        AiJudgement((_verdict("005930", 0.2), _verdict("005930", 0.9)), 1.0, "요약")
-
-
-def test_a_confidence_outside_zero_to_one_is_refused() -> None:
-    with pytest.raises(AutomationError):
-        AiJudgement((_verdict("005930", 0.2),), 1.4, "요약")
+        AiJudgement((_verdict("005930", 0.2), _verdict("005930", 0.9)), "요약")

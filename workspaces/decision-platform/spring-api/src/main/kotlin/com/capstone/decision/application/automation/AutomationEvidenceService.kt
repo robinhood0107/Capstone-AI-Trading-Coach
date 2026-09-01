@@ -24,7 +24,6 @@ import java.util.HexFormat
 data class AutomationEvidenceCandidate(
     val symbol: String,
     val expectedReturn: String,
-    val modelConfidence: String,
     val priceKrw: Long,
     val lowerLimitKrw: Long,
     val upperLimitKrw: Long,
@@ -86,7 +85,6 @@ data class RawAutomationJudgeVerdict(
 
 data class RawAutomationJudgement(
     val candidates: List<RawAutomationJudgeVerdict>,
-    val confidenceBps: Int,
     val summary: String,
     val providerCallCount: Int,
 )
@@ -172,7 +170,6 @@ class FixtureAutomationEvidenceProvider : AutomationEvidenceProvider {
                         evidenceSpans = spans.map { it.citationId to it.boundedQuote },
                     )
                 },
-            confidenceBps = 7_500,
             summary = "fixture-only judgement",
             providerCallCount = 0,
         ).also { require(settings.aiJudgementEnabled) }
@@ -327,7 +324,7 @@ class AutomationEvidenceService(
                     requestEvidence,
                     runContext.settings,
                 )
-            if (raw.providerCallCount !in 0..2 || raw.confidenceBps !in 0..10_000 || raw.summary.isBlank()) {
+            if (raw.providerCallCount !in 0..2 || raw.summary.isBlank()) {
                 throw AutomationEvidenceUnavailableException()
             }
             if (
@@ -342,7 +339,6 @@ class AutomationEvidenceService(
                         raw.candidates.map { verdict ->
                             validateJudgeVerdict(verdict, requestEvidence[verdict.symbol].orEmpty())
                         },
-                    "confidenceBps" to raw.confidenceBps,
                     "providerCallCount" to raw.providerCallCount,
                     "summary" to raw.summary.take(1_000),
                 )
@@ -617,7 +613,6 @@ class AutomationEvidenceService(
             }
         return mapOf(
             "candidates" to candidates,
-            "confidenceBps" to root.path("confidenceBps").intValue(),
             "providerCallCount" to root.path("providerCallCount").intValue(),
             "summary" to root.path("summary").stringValue(),
         )
@@ -736,7 +731,6 @@ class AutomationEvidenceService(
                         AutomationEvidenceCandidate(
                             symbol = item.path("symbol").stringValue().also { require(SYMBOL.matches(it)) },
                             expectedReturn = decimalField(item, "expectedReturn", BigDecimal("-1"), BigDecimal.ONE),
-                            modelConfidence = decimalField(item, "modelConfidence", BigDecimal.ZERO, BigDecimal.ONE),
                             priceKrw = positiveLongField(item, "priceKrw"),
                             lowerLimitKrw = positiveLongField(item, "lowerLimitKrw"),
                             upperLimitKrw = positiveLongField(item, "upperLimitKrw"),
@@ -1034,7 +1028,6 @@ class AutomationEvidenceService(
                 "expectedReturn",
                 "isEtfEtn",
                 "lowerLimitKrw",
-                "modelConfidence",
                 "priceKrw",
                 "symbol",
                 "upperLimitKrw",

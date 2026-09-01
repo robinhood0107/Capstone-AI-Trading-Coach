@@ -196,6 +196,10 @@ class P1V91AutomationContractTest(unittest.TestCase):
         v3_additive = json.loads(
             (ROOT / "contracts/openapi/p1-automation-v3.v1.openapi.json").read_text(encoding="utf-8")
         )
+        from contracts.verify_p1_return_signal_v3_openapi_transition import project_pre_signal_v3
+
+        self.assertEqual(76, len(operations(root)))
+        root = project_pre_signal_v3(root)
         self.assertEqual(75, len(operations(root)))
         root = project_pre_v3_openapi(root, v3_additive)
         self.assertEqual(69, len(operations(root)))

@@ -1,0 +1,90 @@
+{
+  "artifacts": [
+    {
+      "path": "model.safetensors",
+      "semanticSchema": "contracts/schemas/p1-return-model-safetensors.v2.schema.json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sizeBytes": 1024
+    },
+    {
+      "path": "scaler.json",
+      "semanticSchema": "contracts/schemas/p1-return-scaler.v2.schema.json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sizeBytes": 1024
+    },
+    {
+      "path": "config.json",
+      "semanticSchema": "contracts/schemas/p1-return-config.v2.schema.json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sizeBytes": 1024
+    },
+    {
+      "path": "lstm_signals.parquet",
+      "semanticSchema": "contracts/schemas/p1-return-lstm-signals.v3.schema.json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sizeBytes": 1024
+    },
+    {
+      "path": "rule_baseline_signals.parquet",
+      "semanticSchema": "contracts/schemas/p1-return-rule-baseline-signals.v3.schema.json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sizeBytes": 1024
+    },
+    {
+      "path": "backtest_result.json",
+      "semanticSchema": "contracts/schemas/p1-return-backtest-result.v2.schema.json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sizeBytes": 1024
+    },
+    {
+      "path": "trade_log.parquet",
+      "semanticSchema": "contracts/schemas/p1-return-trade-log.v2.schema.json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sizeBytes": 1024
+    },
+    {
+      "path": "equity_log.parquet",
+      "semanticSchema": "contracts/schemas/p1-return-equity-log.v2.schema.json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sizeBytes": 1024
+    },
+    {
+      "path": "golden_output.json",
+      "semanticSchema": "contracts/schemas/p1-return-golden-output.v2.schema.json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sizeBytes": 1024
+    },
+    {
+      "path": "model_report.md",
+      "semanticSchema": "contracts/schemas/p1-return-model-report.v2.schema.json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sizeBytes": 1024
+    }
+  ],
+  "contractId": "p1-return-engine-artifact-manifest.v3",
+  "evidenceMode": "REAL_TEAM_B",
+  "furtherTuningRequired": false,
+  "inputPackSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "mockRuntimeEligible": true,
+  "modelQuality": "BELOW_BASELINE",
+  "orderAuthority": "NONE",
+  "performanceClaimAllowed": false,
+  "producer": {
+    "accountCalls": 0,
+    "commitSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "configSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "dependencyLockSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "dockerfileSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "featureOrderSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "goldenOutputSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "networkCalls": 0,
+    "orderCalls": 0,
+    "seed": 0,
+    "splitSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "springCalls": 0,
+    "trainingCodeSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "realTeamB": true,
+  "runId": "run_team_b_exact31_v1",
+  "unexpected": true
+}

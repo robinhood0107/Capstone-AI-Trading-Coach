@@ -27,7 +27,12 @@ from psycopg.rows import dict_row
 
 from app.data._shared.canonical_json import canonical_json_bytes, canonical_json_sha256
 from app.data.calendar.xkrx_policy import corrected_calendar
-from app.data.kis.http_client import KISHttpClient
+from app.data.kis.http_client import (
+    KISHttpClient,
+    KISDistributionRetryableStatus,
+    KISRetryableStatus,
+    KISTransportError,
+)
 from app.data.kis.market_client import KISMarketClient
 from app.data.kis.parsers import DailyBar
 from app.data.kis.settings import KISSettings
@@ -37,10 +42,11 @@ from app.rag.safe_io import RagSafeIoError, read_approved_regular_file, write_ap
 CONTRACT_ID = "p1-automation-market-bootstrap.v1"
 MANIFEST_FILENAME = "manifest.json"
 BAR_PATH = "bars/automation-bars-v1.parquet"
-SESSION_COUNT = 1_260
+SESSION_COUNT = 756
+MAX_SESSION_COUNT = 1_260
 WINDOW_SIZE = 100
 UNIVERSE_SIZE = 31
-KIS_DAILY_PHYSICAL_MAX = 403
+KIS_DAILY_PHYSICAL_MAX = 496
 KIS_TOKEN_PHYSICAL_MAX = 1
 KRX_MEMBERSHIP_PHYSICAL_MAX = 5
 _MAX_MANIFEST_BYTES = 256 * 1024
@@ -155,13 +161,13 @@ def build_bootstrap_plan(
     end_session: date,
     session_count: int = SESSION_COUNT,
 ) -> AutomationBootstrapPlan:
-    """Build exact-31 and up-to-1,260 fixed-100-session request windows with no I/O."""
+    """Build the exact-31 three-year RAW_CLOSE request windows with no I/O."""
 
     if version("exchange-calendars") != "4.13.2":
         raise AutomationBootstrapError("automation bootstrap XKRX version drifted")
     if universe.limit != 30 or len(universe.symbols) != 30:
         raise AutomationBootstrapError("automation bootstrap requires exact 30 ranked KRX members")
-    if isinstance(session_count, bool) or not 23 <= session_count <= SESSION_COUNT:
+    if isinstance(session_count, bool) or not 23 <= session_count <= MAX_SESSION_COUNT:
         raise AutomationBootstrapError("automation bootstrap session count is invalid")
     ranks = [item.rank for item in universe.symbols]
     symbols = [item.symbol for item in universe.symbols]
@@ -204,13 +210,13 @@ def build_bootstrap_plan(
         for ordinal, offset in enumerate(range(0, session_count, WINDOW_SIZE), start=1)
     )
     expected_kis_calls = UNIVERSE_SIZE * ((session_count + WINDOW_SIZE - 1) // WINDOW_SIZE)
-    if len(windows) != expected_kis_calls or expected_kis_calls > KIS_DAILY_PHYSICAL_MAX:
+    if len(windows) != expected_kis_calls or expected_kis_calls * 2 > KIS_DAILY_PHYSICAL_MAX:
         raise AutomationBootstrapError("automation bootstrap KIS window cap drifted")
     provider_caps = {
-        "kisDaily": expected_kis_calls,
+        "kisDaily": expected_kis_calls * 2,
         "kisToken": KIS_TOKEN_PHYSICAL_MAX,
         "krxMembership": KRX_MEMBERSHIP_PHYSICAL_MAX,
-        "retry": 0,
+        "retry": 1,
     }
     plan_value = {
         "contractId": "p1-automation-market-bootstrap-plan.v1",
@@ -309,7 +315,7 @@ def collect_automation_bootstrap(
     bars_sha = hashlib.sha256(payload).hexdigest()
     manifest_without_sha: dict[str, object] = {
         "accountCalls": 0,
-        "adjustmentMode": "ADJUSTED",
+        "adjustmentMode": "RAW_CLOSE",
         "bars": {
             "relativePath": BAR_PATH,
             "rowCount": table.num_rows,
@@ -614,16 +620,22 @@ class KisAutomationBootstrapSource:
         return cls(KISMarketClient(settings, http, page_size=100))
 
     def fetch(self, window: BootstrapWindow) -> tuple[DailyBar, ...]:
-        if self.physical_calls >= KIS_DAILY_PHYSICAL_MAX:
-            raise AutomationBootstrapError("automation bootstrap KIS call cap exhausted")
-        self.physical_calls += 1
-        return tuple(
-            self._client.daily_bars(
-                window.symbol,
-                window.start_session,
-                window.end_session,
-            )
-        )
+        for attempt in range(2):
+            if self.physical_calls >= KIS_DAILY_PHYSICAL_MAX:
+                raise AutomationBootstrapError("automation bootstrap KIS call cap exhausted")
+            self.physical_calls += 1
+            try:
+                return tuple(
+                    self._client.daily_bars(
+                        window.symbol,
+                        window.start_session,
+                        window.end_session,
+                    )
+                )
+            except (KISDistributionRetryableStatus, KISRetryableStatus, KISTransportError):
+                if attempt == 1:
+                    raise
+        raise AssertionError("bounded KIS retry loop fell through")
 
     def close(self) -> None:
         self._client.close()

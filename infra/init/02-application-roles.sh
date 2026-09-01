@@ -1083,6 +1083,15 @@ BEGIN
             read_p1_return_signal_v2(text,boolean)
         TO decision_app;
     END IF;
+    IF to_regprocedure('public.import_p1_return_bundle_v2(text,text)') IS NOT NULL
+       AND to_regprocedure('public.p1_read_return_signal_v3(text)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            import_p1_return_bundle_v2(text,text)
+        TO decision_worker;
+        GRANT EXECUTE ON FUNCTION
+            p1_read_return_signal_v3(text)
+        TO decision_app;
+    END IF;
 END
 $p1_return_artifact_privileges$;
 
@@ -2592,6 +2601,27 @@ BEGIN
             GRANT EXECUTE ON FUNCTION
                 public.p1_automation_ai_judgement_runtime_scope_v1(text)
             TO decision_app, decision_automation_runtime;
+        END IF;
+        IF to_regprocedure('public.p1_read_automation_runtime_state_v4(text,text)') IS NOT NULL THEN
+            REVOKE ALL PRIVILEGES ON FUNCTION
+                public.p1_read_daily_inference_context_v1(date),
+                public.p1_commit_daily_signal_batch_v1(text,text),
+                public.p1_read_automation_runtime_state_v4(text,text),
+                public.p1_record_automation_ai_judgement_v3(
+                    text,text,integer,text,text,text,text,text,integer,integer,integer,text,text,text,
+                    integer,integer,integer
+                )
+            FROM PUBLIC, decision_app, decision_worker, decision_replay,
+                decision_replay_authorizer, decision_automation_runtime;
+            GRANT EXECUTE ON FUNCTION
+                public.p1_read_daily_inference_context_v1(date),
+                public.p1_commit_daily_signal_batch_v1(text,text),
+                public.p1_read_automation_runtime_state_v4(text,text),
+                public.p1_record_automation_ai_judgement_v3(
+                    text,text,integer,text,text,text,text,text,integer,integer,integer,text,text,text,
+                    integer,integer,integer
+                )
+            TO decision_automation_runtime;
         END IF;
 
         REVOKE ALL PRIVILEGES ON FUNCTION

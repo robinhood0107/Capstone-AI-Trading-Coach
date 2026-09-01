@@ -31,10 +31,17 @@ Team A exact-38을 현재 기준으로 둔다. `BLOCKED_INCOMPLETE_RISK_BALANCE`
 자동매매 활성화는 0이다. LightGBM은 계속 연구 전용이고 KIS Live order와 GDELT outbound는 0이다.
 
 2026-08-31 Automation V3는 기존 V1/V2 bytes를 보존하면서 근거 우선 screening, 사용자 ATR/보유
-정책, 장외 replay 여섯 operation을 추가한다. 현재 root OpenAPI는 exact-75, Team A acceptance v3는
-exact-45다. V110~V115 runtime은 구현됐지만 실제 KIS read-only bootstrap, Google grounding,
+정책, 장외 replay 여섯 operation을 추가한다. 2026-09-01 confidence-free Signal v3 한 operation을
+additive로 더해 현재 root OpenAPI는 exact-76, Team A acceptance v4는 exact-45다. V110~V116 runtime은
+구현됐지만 실제 KIS read-only bootstrap, Google grounding,
 장중 KIS Mock, 연속 3 XKRX session soak는 별도 hard gate다. 따라서 데이터가 비어 있거나 외부 gate가
 닫힌 환경에서 V3 arm과 `P1_FINAL`을 주장하지 않는다.
+
+V116 current Return 계약은 `p1-return-engine-artifact-manifest.v3`와 confidence 없는 LSTM/rule schema다.
+`deploy/p1/seed/team-b/` exact-10은 `./capstone up`에서 migration 뒤 자동 import되고, existing
+`AutomationRuntimeService.serve()`가 claim 전에 daily Rule+LSTM exact-31을 원자 materialize한다.
+Team B seed가 없거나 756-session market input receipt가 없으면 pointer를 꾸미지 않는다. 후보 기본
+정렬은 `expectedReturn DESC, symbol ASC`, Strong LLM은 rank/veto/abstain만, 수량은 RiskEngine만 소유한다.
 
 ## 현재 단계
 

@@ -130,6 +130,11 @@ def build_catalog(
 
 def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
     openapi = object_value(json.loads(openapi_bytes), "OpenAPI")
+    if len(v3_root_operations(openapi)) == 76:
+        from contracts.verify_p1_return_signal_v3_openapi_transition import project_pre_signal_v3
+
+        openapi = project_pre_signal_v3(openapi)
+        openapi_bytes = canonical_json_bytes(openapi)
     if len(v3_root_operations(openapi)) == 75:
         additive = object_value(
             json.loads(

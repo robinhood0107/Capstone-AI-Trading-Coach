@@ -14,6 +14,7 @@ from app.p1_owner.assets import build_golden_bundle
 from app.p1_owner.importer import (
     P1ArtifactImportError,
     _validate_manifest_truth,
+    main,
     validate_artifact_bundle,
 )
 from tests.p1_owner.test_assets import _build_input
@@ -30,7 +31,7 @@ def _golden(root: Path) -> tuple[Path, str]:
 
 
 def _rewrite_manifest(golden_root: Path, artifact_name: str) -> str:
-    manifest_path = golden_root / "p1-return-engine-manifest.v2.json"
+    manifest_path = golden_root / "p1-return-engine-manifest.v3.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     content = (golden_root / artifact_name).read_bytes()
     for item in manifest["artifacts"]:
@@ -184,6 +185,9 @@ def test_capstone_artifact_command_is_outside_certification_heredoc_and_uses_one
 
     compose = (repository / "deploy/p1/compose.yml").read_text(encoding="utf-8")
     assert "artifact-importer:" in compose
+    assert "team-b-seed-import:" in compose
+    assert "./seed/team-b:/opt/capstone/team-b-seed:ro" in compose
+    assert "--git-seed" in compose
     assert 'entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "artifact-import"]' in compose
     assert 'P1_OPERATOR_UID: "${P1_OPERATOR_UID}"' in compose
     assert "/owner/${P1_ARTIFACT_BUNDLE_NAME:-disabled}" in compose
@@ -197,3 +201,31 @@ def test_capstone_artifact_command_is_outside_certification_heredoc_and_uses_one
 
     entrypoint = (repository / "deploy/p1/docker/secret-entrypoint.sh").read_text(encoding="utf-8")
     assert 'profile" = certification ] || [ "$profile" = artifact-import' in entrypoint
+
+
+def test_git_seed_absence_is_an_explicit_noop_before_database_access(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    archive = tmp_path / "archive"
+    archive.mkdir()
+    assert (
+        main(
+            [
+                "--bundle-root",
+                str(seed),
+                "--archive-parent",
+                str(archive),
+                "--git-seed",
+            ]
+        )
+        == 0
+    )
+    output = json.loads(capsys.readouterr().out)
+    assert output == {
+        "databaseOutcome": "NOT_RUN_SEED_ABSENT",
+        "providerCalls": 0,
+        "status": "SKIPPED_SEED_ABSENT",
+    }

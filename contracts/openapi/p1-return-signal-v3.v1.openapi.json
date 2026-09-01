@@ -1,0 +1,156 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "P1 confidence-free Return Signal v3",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v3/signals/{symbol}": {
+      "get": {
+        "operationId": "readSignalV3",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-Z._:-]{1,20}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalV3RuntimeSuccessResponse"
+                }
+              }
+            }
+          },
+          "400": {"description": "Validation error"},
+          "401": {"description": "Authentication required"},
+          "503": {"description": "Signal evidence unavailable"}
+        },
+        "security": [{"bearerAuth": []}]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "SignalV3RuntimeResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["symbol", "timeframe", "composite", "components", "warnings"],
+        "properties": {
+          "symbol": {"type": "string", "pattern": "^[0-9A-Z._:-]{1,20}$"},
+          "asOf": {"type": "string", "format": "date-time"},
+          "timeframe": {"const": "1d"},
+          "modelReportId": {"type": "string"},
+          "composite": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["status", "signal"],
+                "properties": {
+                  "status": {"const": "AVAILABLE"},
+                  "signal": {"enum": ["BUY", "HOLD", "SELL"]},
+                  "predictedReturn": {"type": ["number", "null"]}
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["status", "reason"],
+                "properties": {
+                  "status": {"const": "ABSTAIN"},
+                  "reason": {"const": "REQUIRED_COMPONENT_UNAVAILABLE"}
+                }
+              }
+            ]
+          },
+          "components": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ruleBaseline", "lstm", "lightgbm", "hmmRegime"],
+            "properties": {
+              "ruleBaseline": {"$ref": "#/components/schemas/SignalV3PredictiveComponent"},
+              "lstm": {"$ref": "#/components/schemas/SignalV3PredictiveComponent"},
+              "lightgbm": {"$ref": "#/components/schemas/SignalV3PredictiveComponent"},
+              "hmmRegime": {"$ref": "#/components/schemas/SignalV3RegimeComponent"}
+            }
+          },
+          "warnings": {"type": "array", "items": {"type": "string"}, "maxItems": 10}
+        }
+      },
+      "SignalV3PredictiveComponent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "producer", "sourceWorkspace", "asOf", "signal"],
+            "properties": {
+              "status": {"const": "AVAILABLE"},
+              "producer": {"enum": ["RULE_BASELINE", "LSTM", "LIGHTGBM"]},
+              "sourceWorkspace": {"enum": ["return-engine", "decision-platform"]},
+              "asOf": {"type": "string", "format": "date-time"},
+              "signal": {"enum": ["BUY", "HOLD", "SELL"]},
+              "predictedReturn": {"type": ["number", "null"]},
+              "modelVersion": {"type": "string"},
+              "modelReportId": {"type": "string"}
+            }
+          },
+          {"$ref": "#/components/schemas/SignalV3AbstainComponent"}
+        ]
+      },
+      "SignalV3RegimeComponent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "producer", "sourceWorkspace", "asOf", "state"],
+            "properties": {
+              "status": {"const": "AVAILABLE"},
+              "producer": {"const": "HMM"},
+              "sourceWorkspace": {"const": "decision-platform"},
+              "asOf": {"type": "string", "format": "date-time"},
+              "state": {"enum": ["NORMAL", "SIDEWAYS", "HIGH_VOLATILITY", "RISK_OFF", "RISK_ON"]},
+              "modelVersion": {"type": "string"},
+              "modelReportId": {"type": "string"}
+            }
+          },
+          {"$ref": "#/components/schemas/SignalV3AbstainComponent"}
+        ]
+      },
+      "SignalV3AbstainComponent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "producer", "sourceWorkspace", "reason"],
+        "properties": {
+          "status": {"const": "ABSTAIN"},
+          "producer": {"enum": ["RULE_BASELINE", "LSTM", "LIGHTGBM", "HMM"]},
+          "sourceWorkspace": {"enum": ["return-engine", "decision-platform"]},
+          "reason": {"enum": ["ARTIFACT_DRIFT", "CALIBRATION_FAILED", "MISSING_EVIDENCE", "POSTERIOR_BELOW_THRESHOLD", "PRODUCER_FAILED", "STALE_EVIDENCE", "UNIDENTIFIABLE_OUTPUT"]},
+          "modelVersion": {"type": "string"},
+          "modelReportId": {"type": "string"},
+          "warnings": {"type": "array", "items": {"type": "string"}}
+        }
+      },
+      "SignalV3RuntimeSuccessResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["success", "requestId", "data", "warnings", "error"],
+        "properties": {
+          "success": {"const": true},
+          "requestId": {"type": "string"},
+          "data": {"$ref": "#/components/schemas/SignalV3RuntimeResponse"},
+          "warnings": {"type": "array", "items": {"type": "object"}},
+          "error": {"type": "null"}
+        }
+      }
+    }
+  }
+}

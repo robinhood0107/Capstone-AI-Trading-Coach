@@ -149,23 +149,23 @@ class P1V3AutomationContractTest(unittest.TestCase):
                 "createdAt": "2026-08-31T18:00:00+09:00",
                 "membershipMonth": "2026-08",
                 "membership": [f"{value:06d}" for value in range(1, 31)] + ["132030"],
-                "requestedSessionCount": 1260,
+                "requestedSessionCount": 756,
                 "firstSessionDate": "2021-07-01",
                 "lastSessionDate": "2026-08-31",
-                "adjustmentMode": "ADJUSTED",
+                "adjustmentMode": "RAW_CLOSE",
                 "bars": {
                     "relativePath": "bars/automation-bars-v1.parquet",
                     "sha256": "6" * 64,
-                    "rowCount": 38_000,
+                    "rowCount": 23_436,
                 },
                 "providerCaps": {
-                    "kisDaily": 403,
+                    "kisDaily": 496,
                     "kisToken": 1,
                     "krxMembership": 5,
-                    "retry": 0,
+                    "retry": 1,
                 },
                 "providerPhysicalCalls": {
-                    "kisDaily": 400,
+                    "kisDaily": 248,
                     "kisToken": 1,
                     "krxMembership": 1,
                 },
@@ -242,13 +242,13 @@ class P1V3AutomationContractTest(unittest.TestCase):
     def test_bootstrap_caps_and_call_accounting_are_fail_closed(self) -> None:
         fixture = {
             "providerCaps": {
-                "kisDaily": 403,
+                "kisDaily": 496,
                 "kisToken": 1,
                 "krxMembership": 5,
-                "retry": 0,
+                "retry": 1,
             },
             "providerPhysicalCalls": {
-                "kisDaily": 403,
+                "kisDaily": 496,
                 "kisToken": 1,
                 "krxMembership": 5,
             },
@@ -258,7 +258,7 @@ class P1V3AutomationContractTest(unittest.TestCase):
         }
         validate_bootstrap_semantics(fixture)
         invalid = copy.deepcopy(fixture)
-        invalid["providerPhysicalCalls"]["kisDaily"] = 404
+        invalid["providerPhysicalCalls"]["kisDaily"] = 497
         with self.assertRaises(ContractValidationError):
             validate_bootstrap_semantics(invalid)
 
@@ -268,6 +268,18 @@ class P1V3AutomationContractTest(unittest.TestCase):
         root_path = ROOT / "contracts/openapi/openapi.json"
         root = json.loads(root_path.read_text(encoding="utf-8"))
         additive = json.loads(ADDITIVE_OPENAPI_PATH.read_text(encoding="utf-8"))
+        root["paths"].pop("/api/v3/signals/{symbol}")
+        for name in (
+            "SignalV3AbstainComponent",
+            "SignalV3PredictiveComponent",
+            "SignalV3RegimeComponent",
+            "SignalV3RuntimeComponentResponse",
+            "SignalV3RuntimeComponentsResponse",
+            "SignalV3RuntimeCompositeResponse",
+            "SignalV3RuntimeResponse",
+            "SignalV3RuntimeSuccessResponse",
+        ):
+            root["components"]["schemas"].pop(name, None)
         self.assertEqual(75, len(operations(root)))
         projected = project_pre_v3_openapi(root, additive)
         self.assertEqual(69, len(operations(projected)))

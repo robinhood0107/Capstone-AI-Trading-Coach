@@ -445,7 +445,6 @@ class SignalCandidate:
     lstm_signal: Signal
     baseline_signal: Signal
     expected_return: float
-    confidence: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -467,15 +466,12 @@ class AiCandidateVerdict:
 
 @dataclass(frozen=True, slots=True)
 class AiJudgement:
-    """한 번의 판단 전체. 이 값으로 순위·차단·수량이 결정론적으로 계산된다."""
+    """한 번의 판단 전체. 이 값으로 순위 변경과 차단만 결정론적으로 계산된다."""
 
     verdicts: tuple[AiCandidateVerdict, ...]
-    confidence: float
     summary: str
 
     def __post_init__(self) -> None:
-        if not 0.0 <= self.confidence <= 1.0 or not math.isfinite(self.confidence):
-            raise AutomationError("automation ai confidence is invalid")
         symbols = [item.symbol for item in self.verdicts]
         if len(symbols) != len(set(symbols)):
             raise AutomationError("automation ai verdict symbols are duplicated")
@@ -579,9 +575,6 @@ class AutomationInputs:
     ai_judgement_enabled: bool = False
     ai_thinking_level: Literal["minimal", "low", "medium"] = "low"
     ai_settings_sha256: str | None = None
-    # 이 run에서 이미 받은 판단의 확신도. AI_JUDGING과 ORDER_SIZING은 서로 다른 tick이라
-    # run 객체로는 건너오지 못한다. 저장된 판단을 상태가 다시 실어 온다.
-    ai_confidence: float | None = None
     manual_position_symbols: frozenset[str] = frozenset()
     signals: tuple[SignalCandidate, ...] = ()
     atr_histories: Mapping[str, tuple[CompletedDailyBar, ...]] = field(default_factory=dict)
@@ -763,13 +756,10 @@ class AutomationRun:
     unfilled_terminated_quantity: int = 0
     # AI 판단의 흔적. 무엇이 바뀌었는지 사후에 말할 수 없으면 이 승격은 검증 불가능해진다.
     ai_participation: str = "NOT_PARTICIPATED"
-    ai_confidence: float | None = None
     ai_judge_call_count: int = 0
     ai_baseline_symbol: str | None = None
     ai_candidate_count: int = 0
     ai_vetoed_symbols: tuple[str, ...] = ()
-    ai_quantity_before: int | None = None
-    ai_quantity_after: int | None = None
     candidate_screenings: tuple[CandidateScreening, ...] = ()
     candidate_quotes: dict[str, Quote] = field(default_factory=dict)
     screening_provider_call_count: int = 0
@@ -1169,10 +1159,13 @@ class AutomationEngine:
         if not inputs.account_complete or not inputs.no_open_order:
             self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
             return
-        if not (
-            inputs.release_active
-            and inputs.daily_shard_fresh_complete
-            and inputs.principle_active_current
+        if not (inputs.daily_shard_fresh_complete and inputs.principle_active_current):
+            self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
+            return
+        if (
+            not inputs.release_active
+            and not inputs.unfinished_previous_order
+            and not any(position.status == "OPEN" for position in self.store.positions)
         ):
             self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
             return
@@ -1386,7 +1379,6 @@ class AutomationEngine:
             if candidate.lstm_signal == candidate.baseline_signal == "BUY"
             and candidate.symbol not in held
             and math.isfinite(candidate.expected_return)
-            and math.isfinite(candidate.confidence)
         )
         if require_atr:
             candidates = (
@@ -1399,7 +1391,6 @@ class AutomationEngine:
                 candidates,
                 key=lambda candidate: (
                     -candidate.expected_return,
-                    -candidate.confidence,
                     candidate.symbol,
                 ),
             )
@@ -1587,7 +1578,6 @@ class AutomationEngine:
             # 1차도 2차도 답하지 못했다. 기존 규칙만으로 계속한다.
             return None
         run.ai_participation = "APPLIED"
-        run.ai_confidence = judgement.confidence
         return judgement
 
     def _size_order(
@@ -1643,10 +1633,6 @@ class AutomationEngine:
             )
         else:
             quantity = _variable_buy_quantity(inputs, limit_price)
-            # 확신도는 수량을 줄이기만 한다. 상한은 정책이 이미 정했고 AI가 그것을 넘지 못한다.
-            run.ai_quantity_before = quantity
-            quantity = _ai_reduced_quantity(quantity, inputs.ai_confidence)
-            run.ai_quantity_after = quantity
             policy = inputs.policy
             if quantity < 1:
                 self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
@@ -1979,19 +1965,13 @@ def _projection_integer(value: object) -> int:
     raise AutomationError("automation account lineage number is invalid")
 
 
-# 확신도가 0이어도 절반까지만 줄인다. 후보가 2-of-2 합의와 정책 상한을 이미 통과했는데
-# 모델의 확신이 낮다는 이유만으로 0으로 만들면 그것은 축소가 아니라 거부권이고, 거부권은
-# veto가 따로 표현한다.
-_AI_SIZE_FLOOR_BPS = 5_000
-
-
 def _apply_judgement(
     candidates: tuple[SignalCandidate, ...], judgement: AiJudgement | None
 ) -> tuple[SignalCandidate, ...]:
     """차단을 걷어내고 점수로 다시 세운다. 후보를 더하지 않는다.
 
-    모델은 점수와 차단만 낸다. 무엇을 사고 얼마나 살지는 이 함수와 `_ai_reduced_quantity`가
-    정수 산술로 계산한다. 같은 판단에 같은 결과가 나오고 그 계산은 감사 가능하다.
+    모델은 점수와 차단만 낸다. 후보 집합은 Return Engine이, 최종 수량은 RiskEngine이
+    결정한다. 같은 판단에 같은 결과가 나오고 그 계산은 감사 가능하다.
     """
 
     if judgement is None:
@@ -2012,7 +1992,6 @@ def _apply_judgement(
                 if candidate.symbol in verdicts
                 else -5_000,
                 -candidate.expected_return,
-                -candidate.confidence,
                 candidate.symbol,
             ),
         )
@@ -2035,7 +2014,6 @@ def _candidate_set_sha256(candidates: tuple[SignalCandidate, ...]) -> str:
                     "baselineSignal": item.baseline_signal,
                     "expectedReturn": format(item.expected_return, ".17g"),
                     "lstmSignal": item.lstm_signal,
-                    "modelConfidence": format(item.confidence, ".17g"),
                     "symbol": item.symbol,
                 }
                 for item in sorted(candidates, key=lambda value: value.symbol)
@@ -2051,15 +2029,6 @@ def _physical_call_cap(run: AutomationRun) -> int:
         if policy is not None and policy.is_v3
         else _LEGACY_MAX_PHYSICAL_CALLS
     )
-
-
-def _ai_reduced_quantity(quantity: int, confidence: float | None) -> int:
-    """확신도로 수량을 줄인다. 절대 늘리지 않는다."""
-
-    if confidence is None or quantity < 1:
-        return quantity
-    scale = _AI_SIZE_FLOOR_BPS + round(confidence * (10_000 - _AI_SIZE_FLOOR_BPS))
-    return max(1, min(quantity, quantity * scale // 10_000))
 
 
 def _variable_buy_quantity(inputs: AutomationInputs, limit_price_krw: int) -> int:

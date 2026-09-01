@@ -1,9 +1,9 @@
 # API 명세서
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
-> **현재 상태 (2026-08-31):** Owner-First full-app v3 API는 아직 release되지 않았다. root
-> OpenAPI는 exact-69이고 Team A versioned 표면은 exact-38이다. 69의 마지막 하나는 Strong LLM
-> 설정 쓰기(`PUT /api/v2/strong-llm/settings`)이며 API 키는 요청으로만 들어가고 어떤 응답 DTO에도
+> **현재 상태 (2026-09-01):** Owner-First full-app v3 API는 아직 release되지 않았다. root
+> OpenAPI는 exact-76이고 Team A current v4 표면은 exact-45다. 마지막 additive operation은
+> confidence-free `GET /api/v3/signals/{symbol}`이며 API 키는 요청으로만 들어가고 어떤 응답 DTO에도
 > 실리지 않는다. v2 arm은 `BLOCKED_INCOMPLETE_RISK_BALANCE` 409이고 실계좌 주문 권한은 0이다.
 > 공개 endpoint는 OpenAPI SSOT와 별도 contract-change가 함께 병합된 경우에만 구현된 것으로 본다.
 > 이 문서에서 현재 권위에 연결되지 않은 placeholder, LightGBM production, `NOT_MATERIALIZED`
@@ -4149,3 +4149,35 @@ ID/type/hash/failure code/source topic/attempt만 허용하며 secret/token/acco
 네 Dashboard API는 server/OpenAPI/schema/example/mock이 준비된 `DASHBOARD_HANDOFF_READY` 상태지만
 Team A workspace integration은 수행하지 않았다. model/backtest 실물 artifact가 없으므로 synthetic
 projection만 검증됐고 `P1_OVERALL=INCOMPLETE_EXTERNAL_ARTIFACT`다.
+
+## P1 exact-31 confidence-free Signal v3 / V116 overlay (2026-09-01)
+
+`GET /api/v3/signals/{symbol}`은 기존 `/api/v2/signals/{symbol}`을 삭제하지 않는 additive current
+projection이다. response의 predictive/regime/composite 어디에도 confidence가 없으며 Team A current
+acceptance v4와 generated client도 이 endpoint를 사용한다. root OpenAPI는 exact-76, Team A current
+acceptance는 exact-45다.
+
+V116 internal functions are:
+
+```text
+import_p1_return_bundle_v2(text,text)
+p1_read_daily_inference_context_v1(date)
+p1_commit_daily_signal_batch_v1(text,text)
+p1_read_automation_runtime_state_v4(text,text)
+p1_read_return_signal_v3(text)
+p1_record_automation_ai_judgement_v3(...)
+```
+
+DB current objects separate the base model seed from daily signals:
+
+```text
+p1_return_model_seed_signal
+p1_return_daily_signal_batch
+p1_return_daily_signal_projection
+current_p1_return_model_pointer
+```
+
+daily projection fields are `producer,symbol,signal,expectedReturn`; model/market/source/target identities are
+batch metadata. confidence, quantity, account, order and provider raw response are forbidden. current model
+eligibility is `REAL_TEAM_B && modelQuality in {PASS,BELOW_BASELINE} && mockRuntimeEligible=true`; this is
+technical mock eligibility and not a performance claim.

@@ -11,7 +11,7 @@
   "lightgbmResearchSchema": "contracts/schemas/p1-lightgbm-research-evaluation.v1.schema.json",
   "providerPhysicalCallsDuringContractLock": 0,
   "returnEngine": {
-    "artifactManifestSchema": "contracts/schemas/p1-return-engine-artifact-manifest.v2.schema.json",
+    "artifactManifestSchema": "contracts/schemas/p1-return-engine-artifact-manifest.v3.schema.json",
     "artifactNames": [
       "model.safetensors",
       "scaler.json",
@@ -28,8 +28,8 @@
       "contracts/schemas/p1-return-model-safetensors.v2.schema.json",
       "contracts/schemas/p1-return-scaler.v2.schema.json",
       "contracts/schemas/p1-return-config.v2.schema.json",
-      "contracts/schemas/p1-return-lstm-signals.v2.schema.json",
-      "contracts/schemas/p1-return-rule-baseline-signals.v2.schema.json",
+      "contracts/schemas/p1-return-lstm-signals.v3.schema.json",
+      "contracts/schemas/p1-return-rule-baseline-signals.v3.schema.json",
       "contracts/schemas/p1-return-backtest-result.v2.schema.json",
       "contracts/schemas/p1-return-trade-log.v2.schema.json",
       "contracts/schemas/p1-return-equity-log.v2.schema.json",

@@ -1,4 +1,4 @@
-"""Validate, archive, and project a P1 Return Engine v2 artifact bundle.
+"""Validate, archive, and project a P1 Return Engine v3 artifact bundle.
 
 The importer reads one owner-approved local directory.  It has no provider,
 account, or order transport.  Files are validated before an immutable archive
@@ -37,7 +37,11 @@ from app.p1_owner.assets import (
     _publish_directory,
     _validate_repository_schema,
 )
-from app.rag.safe_io import RagSafeIoError, list_approved_regular_files
+from app.rag.safe_io import (
+    RagSafeIoError,
+    list_approved_regular_files,
+    read_approved_regular_file,
+)
 
 _EXPECTED_INVENTORY = frozenset((*ARTIFACT_NAMES, GOLDEN_MANIFEST))
 _MAX_FILE_BYTES = 128 * 1024 * 1024
@@ -46,7 +50,6 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SYMBOL = re.compile(r"^[0-9]{6}$")
 _SCENARIOS = ("BASELINE", "GUIDE", "STRICT")
 _SIGNAL_COLUMNS = (
-    "confidence",
     "currentClose",
     "expectedReturn",
     "forecastClose",
@@ -141,7 +144,7 @@ def validate_artifact_bundle(
     if manifest_sha != expected_sha:
         raise P1ArtifactImportError("manifest SHA-256 does not match the approved argument")
     manifest = _object(manifest_bytes, "artifact manifest")
-    _schema("contracts/schemas/p1-return-engine-artifact-manifest.v2.schema.json", manifest)
+    _schema("contracts/schemas/p1-return-engine-artifact-manifest.v3.schema.json", manifest)
     _validate_manifest_truth(manifest)
     artifacts = cast(list[dict[str, Any]], manifest["artifacts"])
     if [item["path"] for item in artifacts] != list(ARTIFACT_NAMES):
@@ -254,7 +257,7 @@ def import_artifact_bundle(
         with psycopg.connect(database_dsn, connect_timeout=5) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "SELECT outcome,artifact_id,run_id FROM import_p1_return_bundle_v1(%s,%s)",
+                    "SELECT outcome,artifact_id,run_id FROM import_p1_return_bundle_v2(%s,%s)",
                     (packet_text, validated.import_packet_sha256),
                 )
                 row = cursor.fetchone()
@@ -388,15 +391,12 @@ def _validate_signals(content: bytes, producer: str) -> dict[str, Any]:
         current = row["currentClose"]
         forecast = row["forecastClose"]
         expected = row["expectedReturn"]
-        confidence = row["confidence"]
         if (
             not _finite_number(current)
             or float(current) <= 0
             or not _finite_number(forecast)
             or float(forecast) < 0
             or not _finite_number(expected)
-            or not _finite_number(confidence)
-            or not 0 <= float(confidence) <= 1
         ):
             raise P1ArtifactImportError(f"{producer} signal row contains invalid numbers")
         recalculated = float(forecast) / float(current) - 1.0
@@ -406,7 +406,7 @@ def _validate_signals(content: bytes, producer: str) -> dict[str, Any]:
         if row["signal"] != expected_signal:
             raise P1ArtifactImportError(f"{producer} signal classification mismatch")
     schema_id = (
-        "p1-return-lstm-signals.v2" if producer == "LSTM" else "p1-return-rule-baseline-signals.v2"
+        "p1-return-lstm-signals.v3" if producer == "LSTM" else "p1-return-rule-baseline-signals.v3"
     )
     semantic = {
         "finite": True,
@@ -722,13 +722,17 @@ def _build_import_packet(
     run_id = cast(str, manifest["runId"])
     fixture = manifest["evidenceMode"] == "SYNTHETIC_GOLDEN"
     model_version = cast(dict[str, Any], manifest["producer"])["trainingCodeSha256"][:32]
+    model_sha256 = next(
+        cast(str, item["sha256"])
+        for item in cast(list[dict[str, Any]], manifest["artifacts"])
+        if item["path"] == "model.safetensors"
+    )
     report_id = f"mrp_p1_{manifest_sha256[:24]}"
     signals: list[dict[str, Any]] = []
     for producer, rows in (("LSTM", lstm_rows), ("RULE_BASELINE", baseline_rows)):
         for row in rows:
             signal = {
                 "asOf": _instant(as_of),
-                "confidence": row["confidence"],
                 "modelReportId": report_id,
                 "modelVersion": model_version,
                 "predictedReturn": row["expectedReturn"],
@@ -817,6 +821,7 @@ def _build_import_packet(
         "manifestFileName": GOLDEN_MANIFEST,
         "manifestSha256": manifest_sha256,
         "mockRuntimeEligible": cast(bool, manifest["mockRuntimeEligible"]),
+        "modelSha256": model_sha256,
         "modelProjectionSha256": _digest(model_projection_text.encode("utf-8")),
         "modelProjectionText": model_projection_text,
         "modelQuality": cast(str, manifest["modelQuality"]),
@@ -954,17 +959,41 @@ def _date_instant(value: date) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="P1 Return Engine v2 artifact importer")
+    parser = argparse.ArgumentParser(description="P1 Return Engine v3 artifact importer")
     parser.add_argument("--bundle-root", type=Path, required=True)
-    parser.add_argument("--manifest-sha256", required=True)
+    parser.add_argument("--manifest-sha256")
     parser.add_argument("--archive-parent", type=Path, required=True)
     parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--git-seed", action="store_true")
     args = parser.parse_args(argv)
     try:
+        manifest_sha256 = args.manifest_sha256
+        if args.git_seed:
+            manifest_path = args.bundle_root / GOLDEN_MANIFEST
+            if not manifest_path.is_file() or manifest_path.is_symlink():
+                print(
+                    canonical_json_bytes(
+                        {
+                            "databaseOutcome": "NOT_RUN_SEED_ABSENT",
+                            "providerCalls": 0,
+                            "status": "SKIPPED_SEED_ABSENT",
+                        }
+                    ).decode("utf-8"),
+                    end="",
+                )
+                return 0
+            manifest_content = read_approved_regular_file(
+                approved_root=args.bundle_root,
+                relative_path=GOLDEN_MANIFEST,
+                max_bytes=1_048_576,
+            ).content
+            manifest_sha256 = _digest(manifest_content)
+        if manifest_sha256 is None:
+            raise P1ArtifactImportError("artifact manifest SHA-256 is required")
         if args.validate_only:
             validated = validate_artifact_bundle(
                 bundle_root=args.bundle_root,
-                expected_manifest_sha256=args.manifest_sha256,
+                expected_manifest_sha256=manifest_sha256,
             )
             output = {
                 "artifactId": validated.artifact_id,
@@ -980,7 +1009,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise P1ArtifactImportError("artifact importer database DSN is unavailable")
             result = import_artifact_bundle(
                 bundle_root=args.bundle_root,
-                expected_manifest_sha256=args.manifest_sha256,
+                expected_manifest_sha256=manifest_sha256,
                 archive_parent=args.archive_parent,
                 database_dsn=dsn,
             )
@@ -993,7 +1022,7 @@ def main(argv: list[str] | None = None) -> int:
                 "runId": result.run_id,
                 "status": "IMPORTED",
             }
-    except (P1ArtifactImportError, OSError) as error:
+    except (P1ArtifactImportError, RagSafeIoError, OSError) as error:
         print(f"P1_ARTIFACT_IMPORT_FAILED: {error}", file=sys.stderr)
         return 1
     print(canonical_json_bytes(output).decode("utf-8"), end="")

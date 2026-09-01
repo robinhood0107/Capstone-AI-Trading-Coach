@@ -175,6 +175,40 @@ services:
     restart: "no"
     networks: [p1-data]
 
+  team-b-seed-import:
+    profiles: [owner]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "artifact-import"]
+    command:
+      - python
+      - -m
+      - app.p1_owner.importer
+      - --bundle-root
+      - /opt/capstone/team-b-seed
+      - --archive-parent
+      - /archive
+      - --git-seed
+    environment:
+      P1_OPERATOR_UID: "${P1_OPERATOR_UID}"
+    user: "${P1_OPERATOR_UID}:${P1_SECRET_GID}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 1g
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    secrets: [artifact_import_env]
+    volumes:
+      - ./seed/team-b:/opt/capstone/team-b-seed:ro
+      - ${P1_ARTIFACT_ARCHIVE_DIR:-/nonexistent}:/archive
+      - ./docker/secret-entrypoint.sh:/usr/local/bin/p1-secret-entrypoint:ro
+    depends_on:
+      identity-bootstrap: {condition: service_completed_successfully}
+    networks: [p1-data]
+    restart: "no"
+
   dashboard-preview-seed:
     profiles: [preview]
     image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
@@ -255,6 +289,8 @@ services:
       ASYNC_WORKER_GRPC_BIND_ADDRESS: 127.0.0.1:50056
       ASYNC_WORKER_GRPC_TARGET: 127.0.0.1:50056
       RETURN_INFERENCE_GRPC_BIND_ADDRESS: 127.0.0.1:50057
+      RETURN_INFERENCE_GRPC_TARGET: 127.0.0.1:50057
+      RETURN_INFERENCE_BUNDLE_ROOT: /opt/capstone/team-b-seed
       RETURN_INFERENCE_ALLOW_SYNTHETIC: "false"
       RAG_ANSWERER: FIXTURE_ONLY
       RAG_GRPC_ENABLED: "false"
@@ -315,6 +351,7 @@ services:
     volumes:
       # 읽기 전용이다. entrypoint가 컨테이너 tmpfs로 복사해 소유권과 mode를 맞춘다.
       - ${P1_RAG_RUNTIME_DIR}:/run/rag-runtime:ro
+      - ./seed/team-b:/opt/capstone/team-b-seed:ro
     ports:
       - "127.0.0.1:${P1_API_PORT:-18080}:8080"
     depends_on:

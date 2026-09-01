@@ -58,7 +58,7 @@ def _store() -> AutomationStore:
 
 
 def _buy() -> SignalCandidate:
-    return SignalCandidate("005930", "BUY", "BUY", 0.05, 0.8)
+    return SignalCandidate("005930", "BUY", "BUY", 0.05)
 
 
 def _drive(
@@ -248,7 +248,7 @@ def test_v3_exit_priority_pairs_use_the_first_true_rule(
     inputs = AutomationInputs(
         session_date=_SESSION,
         policy=_policy(),
-        signals=((SignalCandidate("005930", "SELL", "SELL", -0.1, 0.8),) if model else ()),
+        signals=((SignalCandidate("005930", "SELL", "SELL", -0.1),) if model else ()),
         atr_histories={"005930": bars},
         atr_expected_sessions=expected_sessions,
     )
@@ -291,7 +291,7 @@ def test_model_sell_off_skips_only_model_branch() -> None:
     inputs = AutomationInputs(
         session_date=_SESSION,
         policy=_policy(),
-        signals=(SignalCandidate("005930", "SELL", "SELL", -0.1, 0.8),),
+        signals=(SignalCandidate("005930", "SELL", "SELL", -0.1),),
         atr_histories={"005930": bars},
         atr_expected_sessions=expected_sessions,
     )
@@ -338,7 +338,7 @@ def test_pre_entry_high_does_not_poison_position_peak_and_sell_keeps_v3_snapshot
     inputs = AutomationInputs(
         session_date=_SESSION,
         policy=_policy(),
-        signals=(SignalCandidate("005930", "SELL", "SELL", -0.1, 0.8),),
+        signals=(SignalCandidate("005930", "SELL", "SELL", -0.1),),
         atr_histories={"005930": poisoned},
         atr_expected_sessions=expected_sessions,
     )

@@ -24,7 +24,7 @@ message EvidenceItem {
 message JudgementCandidate {
   string symbol = 1;
   double expected_return = 2;
-  double model_confidence = 3;
+  reserved 3;
   string lstm_signal = 4;
   string baseline_signal = 5;
 }

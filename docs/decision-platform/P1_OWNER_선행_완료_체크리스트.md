@@ -2,11 +2,11 @@
 
 ## 현재 결론
 
-아직 “내가 할 수 있는 일을 모두 끝낸 뒤 팀에 요청하는 상태”는 아닙니다.
+Owner 코드 선행 작업은 완료됐고, 실제 input pack 물리 수집 승인만 남았습니다.
 
 - Team A 요청 내용은 코드와 OpenAPI 기준으로 정리됐습니다.
-- Team B 요청 내용은 정리됐지만, 실제 입력 bundle과 해시 규칙을 Owner가 더 고정해야 합니다.
-- 통합 실행 흐름은 아직 열린 PR에 있고 main에 병합되지 않았습니다.
+- Team B 요청 내용과 입력 파일명은 고정됐지만, 실제 manifest SHA-256은 승인된 756-session 수집 뒤 채웁니다.
+- confidence-free artifact v3, Git Seed auto import, V116 daily inference는 구현·focused 검증됐습니다.
 - KIS 모의투자 수동 인증은 실행하지 않았습니다.
 - 자동 주문 scheduler는 없으며 지금 추가하면 안 됩니다.
 
@@ -44,15 +44,15 @@
 
 ## 두 팀 결과를 받은 뒤 Owner가 할 일
 
-1. 각 PR, commit, lockfile과 결과 해시 검증
-2. Team B 결과 10개와 manifest 독립 검증
-3. Team B 결과를 Signal, 모델 평가, 백테스트 API에 적재하는 adapter 구현
-4. Team A 27개 API의 실제 Spring Playwright 검증
-5. 단일 Compose 전체 E2E와 새 PC 재현
-6. XKRX 거래시간에 삼성전자 1주 매수·즉시취소 수동 인증 한 번
-7. PR 병합 후 main CI와 fresh clone 확인
+1. Team A exact-45 UI와 Team B manifest v3·exact-10을 독립 검증
+2. `./capstone up`의 V116 Git Seed importer로 `REAL_TEAM_B` bundle 자동 적재
+3. 단일 Compose·Team A acceptance·provider-free 관통 E2E·fresh checkout 재현
+4. 장외 historical replay를 중간 증거로 확인
+5. 별도 승인 후 KIS read-only·Vertex grounding·장중 KIS Mock 실행
+6. 연속 3 XKRX session soak와 대사
+7. 16개 release hard gate 모두 PASS 후만 1.0.0 승인
 
-자동 모의투자 scheduler는 위 작업과 Team B 실제 신호 검증이 모두 끝난 뒤 별도 계약으로 구현합니다.
-24시간 서비스는 유지하지만 주문은 XKRX session 안에서만 허용하고, KIS 실계좌 주문은 계속 0입니다.
+자동운용 V3 runtime과 adapter는 이미 구현됐으며 기본값은 `DISARMED`입니다. Team B 실제 신호,
+readiness, certification과 account baseline이 없으면 활성화하지 않습니다. KIS 실계좌 주문은 계속 0입니다.
 
-상세 순서는 [두 팀 결과를 받은 뒤 통합 확인표](P1_TEAM_A_B_수신_후_통합_체크리스트.md)를 따릅니다.
+상세 순서는 [Team A·B 완료 후 Owner 최종 실행표](P1_TEAM_A_B_완료_후_OWNER_최종_실행.md)를 따릅니다.

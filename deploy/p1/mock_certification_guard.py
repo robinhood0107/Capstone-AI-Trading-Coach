@@ -19,7 +19,7 @@ from typing import Final, NoReturn, cast
 _MAX_FILE_BYTES: Final = 32 * 1024
 _HEAD: Final = re.compile(r"^[0-9a-f]{40}$")
 _SHA256: Final = re.compile(r"^[0-9a-f]{64}$")
-_BRANCH: Final = re.compile(r"^(?:feature|fix|docs|infra|experiment)/[A-Za-z0-9._/-]{1,120}$")
+_BRANCH: Final = re.compile(r"^(?:feature|fix|docs|infra|experiment|codex)/[A-Za-z0-9._/-]{1,120}$")
 _TIMESTAMP: Final = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
 _REQUIRED_CHECKS: Final = frozenset(
     {

@@ -33,7 +33,14 @@ from typing import Any, Final
 import grpc
 
 from app.brokerage.brokerage_rpc import BrokerageServicer
-from app.brokerage.kis_mock_order_gateway import KISMockOrderGateway
+from app.brokerage.kis_mock_order_gateway import (
+    ORDER_CANCEL_PATH,
+    KISMockOrderGateway,
+)
+from app.brokerage.mock_order_reference_store import (
+    MockOrderReferenceIntent,
+    MockProviderOrderReference,
+)
 from app.generated import brokerage_pb2, brokerage_pb2_grpc
 
 _OPT_IN: Final = "P1_FULL_PIPELINE_E2E"
@@ -62,7 +69,16 @@ class OfflineKisTransport:
     ) -> dict[str, Any]:
         del params
         self.calls += 1
-        if method != "POST" or path != _ORDER_CASH_PATH or json_body is None:
+        if method != "POST" or json_body is None:
+            raise OfflineBrokerageError(f"unexpected KIS request: {method} {path}")
+        if path == ORDER_CANCEL_PATH:
+            return {
+                "rt_cd": "0",
+                "msg_cd": "APBK0013",
+                "msg1": "OFFLINE MOCK CANCELLED",
+                "output": {"ORD_TMD": datetime.now(UTC).strftime("%H%M%S")},
+            }
+        if path != _ORDER_CASH_PATH:
             raise OfflineBrokerageError(f"unexpected KIS request: {method} {path}")
         # provider 주문번호는 결정적이어야 재실행이 같은 결과를 낸다.
         ordinal = f"{self.calls:08d}"
@@ -76,6 +92,47 @@ class OfflineKisTransport:
                 "ORD_TMD": datetime.now(UTC).strftime("%H%M%S"),
             },
         }
+
+
+class OfflineReferenceStore:
+    """취소까지 production gateway 경계를 타게 하는 process-local reference store."""
+
+    def __init__(self) -> None:
+        self._pending: dict[tuple[str, str], MockOrderReferenceIntent] = {}
+        self._committed: dict[tuple[str, str], MockProviderOrderReference] = {}
+
+    def prepare(
+        self,
+        order_id: str,
+        account_id: str,
+        intent: MockOrderReferenceIntent,
+    ) -> None:
+        self._pending[(order_id, account_id)] = intent
+
+    def commit(
+        self,
+        order_id: str,
+        account_id: str,
+        reference: MockProviderOrderReference,
+    ) -> None:
+        key = (order_id, account_id)
+        if key not in self._pending:
+            raise OfflineBrokerageError("offline reference was not prepared")
+        self._committed[key] = reference
+
+    def get(self, order_id: str, account_id: str) -> MockProviderOrderReference | None:
+        return self._committed.get((order_id, account_id))
+
+    def get_for_recovery(
+        self,
+        order_id: str,
+        account_id: str,
+        approval_anchor: str,
+    ) -> MockProviderOrderReference | None:
+        reference = self.get(order_id, account_id)
+        if reference is None or reference.approval_anchor != approval_anchor:
+            return None
+        return reference
 
 
 class CashOnlyBalanceReader:
@@ -149,8 +206,9 @@ def serve(cash_krw: int, account_id: str) -> None:
         raise OfflineBrokerageError("the offline brokerage account id is invalid")
 
     transport = OfflineKisTransport()
+    reference_store = OfflineReferenceStore()
     servicer = BrokerageServicer(
-        KISMockOrderGateway(transport, mode="mock", reference_store=None),
+        KISMockOrderGateway(transport, mode="mock", reference_store=reference_store),
         shared_secret,
         bound_account_id=bound_account_id,
         balance_reader=CashOnlyBalanceReader(account_id=bound_account_id, cash_krw=cash_krw),

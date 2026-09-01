@@ -1,5 +1,8 @@
 # Team B Return Engine handoff
 
+> 새 작업은 [Team B 최종 통합 요청서](../P1_TEAM_B_최종_통합_요청서.md)를 먼저 따릅니다. 이 파일은
+> 계약 경계를 빠르게 확인하는 요약본입니다.
+
 ## 1. 최종 프로그램 목표
 
 Owner가 봉인한 exact-31 가격 입력에서 재현 가능한 LSTM과 규칙 baseline 결과를 만들고, 주문 권한 없는

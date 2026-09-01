@@ -14,6 +14,21 @@
 새 route나 backend를 만드는 작업은 아닙니다. 이미 있는 화면과 component는 쓸 만한 부분만
 재사용해도 됩니다.
 
+## 지금 연결하면 되는 backend 상태
+
+Owner 쪽 RAG V2·Vertex·KIS Mock brokerage·Automation V3 runtime은 구현돼 있습니다. Team A는
+아래 API를 새로 설계하지 않고 현재 generated client와 same-origin `/api`로 연결하면 됩니다.
+
+- RAG 질문은 실제 `ANSWERED`와 citation까지 검증됐습니다.
+- KIS Mock 주문가능 조회와 주문·취소·체결·대사 경로는 backend가 소유합니다.
+- Automation runtime은 켜져 있어도 control은 기본 `DISARMED`입니다.
+- 실제 Team B bundle이 들어오기 전 `canArm=false`와 blocker가 보이는 것이 정상입니다.
+- `sourceVersion=p1-representative-test-only-v1`인 잔고는 화면 연결용 대표 데이터이므로 반드시
+  `테스트 데이터`로 표시하고 실제 계좌 잔고처럼 표현하지 마세요.
+
+Team A 결과가 들어오면 Owner가 실제 Team B import와 mock start를 수행합니다. 따라서 Team A가
+완료된 뒤 추가 backend나 임시 mock을 만들어 통합을 맞출 필요는 없습니다.
+
 ## 현재 부족한 것 — 아래 5개가 이번 필수 작업의 전부입니다
 
 현재 9개 route와 조회 화면, 원칙 수정, RAG 질문, 모델·백테스트 표시는 동작합니다. 하지만 실제
@@ -108,6 +123,21 @@ npm run build
 
 완료 후에는 PR URL, commit SHA, 테스트 결과, 대표 desktop·mobile 화면, 남은 blocker만 보내 주세요.
 별도 디자인 문서나 발표자료는 필요하지 않습니다.
+
+## 전달 뒤 Owner가 하는 일
+
+Team A는 아래 명령을 실행하지 않습니다. 이 단계는 Owner가 Team A 결과와 Team B bundle을 받은 뒤
+수행합니다.
+
+```bash
+./capstone team-a acceptance
+./capstone artifact validate <team-b-bundle> --manifest-sha256 <sha256>
+./capstone artifact import <team-b-bundle> --manifest-sha256 <sha256>
+./capstone up --mock
+./capstone mock start
+```
+
+즉 Team A 완료 시 넘길 것은 UI PR 하나이며, 계좌·provider·artifact gate를 직접 열 책임은 없습니다.
 
 ## 구현 중 필요할 때만 보는 기술 참고
 

@@ -398,7 +398,10 @@ up_app() {
   fi
   export P1_KIS_MOCK_ONLINE_ENABLED=$([[ $mock == 1 ]] && printf true || printf false)
   export P1_KIS_OFFLINE=$([[ $mock == 1 ]] && printf 0 || printf 1)
-  export P1_AUTOMATION_RUNTIME_ENABLED=false
+  # mock mode에서는 control이 DISARMED여도 runtime process 자체는 항상 띄운다. 실제 신규 주문은
+  # DB의 certification/REAL_TEAM_B/release/account gate와 arm CAS가 계속 막으므로 capability를
+  # 켜는 것과 자동 arm은 분리된다. 재배포 때 runtime flag가 다시 꺼지는 운영 drift도 방지한다.
+  export P1_AUTOMATION_RUNTIME_ENABLED=$([[ $mock == 1 ]] && printf true || printf false)
   require_command openssl
   require_command python3
   [[ -n $DOCKER_BIN ]] || die MISSING_COMMAND_docker

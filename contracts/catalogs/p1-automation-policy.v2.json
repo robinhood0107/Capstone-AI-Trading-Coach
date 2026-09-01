@@ -51,12 +51,12 @@
     "accountCalls": 0,
     "currentUniverseSize": 31,
     "fixedMember": "132030",
-    "kisDailyPhysicalMax": 403,
+    "kisDailyPhysicalMax": 496,
     "kisTokenPhysicalMax": 1,
     "krxMembershipPhysicalMax": 5,
     "orderCalls": 0,
-    "researchSessionMax": 1260,
-    "retryMax": 0
+    "researchSessionMax": 756,
+    "retryMax": 1
   },
   "operations": [
     {

@@ -268,10 +268,9 @@ def _vertex_response_schema(mode: str = "EXPLAIN") -> dict[str, object]:
                         "required": ["symbol", "score", "veto", "reason", "evidenceSpans"],
                     },
                 },
-                "confidence": {"type": "number"},
                 "summary": {"type": "string"},
             },
-            "required": ["candidates", "confidence", "summary"],
+            "required": ["candidates", "summary"],
         }
 
     citation_ids: dict[str, object] = {"type": "array", "items": {"type": "string"}}
@@ -395,7 +394,6 @@ def _grounding_discovery_result(message: AIMessage, *, request: RunRequest) -> P
                 }
                 for candidate in request.candidates
             ],
-            "confidence": 0.0,
             "summary": "검증된 공개 근거가 없습니다.",
         }
     else:

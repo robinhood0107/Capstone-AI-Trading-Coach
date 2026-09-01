@@ -297,7 +297,6 @@ def test_invalid_ai_usage_counts_never_move_the_physical_ledger_backwards() -> N
             if operation == "JUDGE":
                 return {
                     "providerCallCount": 3,
-                    "confidenceBps": 5_000,
                     "summary": "invalid usage",
                     "candidates": [],
                 }
@@ -311,7 +310,7 @@ def test_invalid_ai_usage_counts_never_move_the_physical_ledger_backwards() -> N
         FakeExecutionSource(),
         FailClosedVertexVetoTransport(),
     )
-    candidate = SignalCandidate("005930", "BUY", "BUY", 0.03, 0.8)
+    candidate = SignalCandidate("005930", "BUY", "BUY", 0.03)
     quote = port.quote(candidate.symbol)
     before = port.physical_calls
 

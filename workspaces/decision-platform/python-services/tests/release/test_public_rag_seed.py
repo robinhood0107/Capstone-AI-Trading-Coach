@@ -58,6 +58,7 @@ def test_sealed_v87_seed_allows_only_declared_additive_targets() -> None:
             "113",
             "114",
             "115",
+            "116",
         }
     )
 

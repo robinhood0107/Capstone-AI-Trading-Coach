@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -18,8 +19,6 @@ from contracts.generate_p1_team_a_acceptance import (  # noqa: E402
     CLIENT_PARAMETER_OVERRIDES,
     OPENAPI_PATH,
     ContractError,
-    canonical_json,
-    generate_client,
     object_value,
     operations,
     sha256,
@@ -48,6 +47,10 @@ EXPECTED_OPERATIONS_V3: Final = (
     *V3_OPERATIONS,
     *EXPECTED_OPERATIONS_V2[-2:],
 )
+FROZEN_V3_SHA256: Final = {
+    CATALOG_PATH: "45e5df5676a2786fac91eaafd1d9df56db60fbe6d793d2d80a2ba2c9620d5e9b",
+    CLIENT_PATH: "f4defc0ca7b4d3385052d4a113495a86ecefe2e6f186394b62378dade70bf409",
+}
 
 
 def build_catalog(openapi: dict[str, Any], openapi_bytes: bytes, badge_bytes: bytes) -> dict[str, Any]:
@@ -113,18 +116,12 @@ def build_catalog(openapi: dict[str, Any], openapi_bytes: bytes, badge_bytes: by
 
 
 def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
-    openapi = object_value(json.loads(openapi_bytes), "OpenAPI")
-    operations(openapi, 75)
-    badge_bytes = BADGE_PATH.read_bytes()
-    return {
-        CATALOG_PATH: canonical_json(build_catalog(openapi, openapi_bytes, badge_bytes)),
-        CLIENT_PATH: generate_client(
-            openapi,
-            expected_operations=EXPECTED_OPERATIONS_V3,
-            expected_root_count=75,
-            generated_by="contracts/generate_p1_team_a_acceptance_v3.py",
-        ),
-    }
+    del openapi_bytes
+    artifacts = {path: path.read_bytes() for path in FROZEN_V3_SHA256}
+    for path, payload in artifacts.items():
+        if hashlib.sha256(payload).hexdigest() != FROZEN_V3_SHA256[path]:
+            raise ContractError(f"historical Team A v3 bytes changed: {path.relative_to(ROOT)}")
+    return artifacts
 
 
 def main(argv: list[str] | None = None) -> int:

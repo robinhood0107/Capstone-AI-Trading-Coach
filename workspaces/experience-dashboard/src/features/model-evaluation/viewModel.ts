@@ -12,7 +12,7 @@ import type {
   DashboardMetrics,
   DashboardModelEvaluationView,
   DashboardModelId,
-  SignalV2Runtime,
+  SignalV3Runtime,
 } from '@/shared/api/wire';
 import { fromDashboard, type ViewState } from '@/shared/lib/viewState';
 
@@ -79,7 +79,6 @@ export type SignalSlot =
       status: 'AVAILABLE';
       signal: 'BUY' | 'HOLD' | 'SELL' | null;
       regimeState: string | null;
-      confidence: number;
       predictedReturn: number | null;
       asOf: string;
       sourceWorkspace: string;
@@ -97,7 +96,7 @@ export interface SignalView {
   timeframe: string;
   asOf: string | null;
   composite:
-    | { status: 'AVAILABLE'; signal: 'BUY' | 'HOLD' | 'SELL'; confidence: number }
+    | { status: 'AVAILABLE'; signal: 'BUY' | 'HOLD' | 'SELL' }
     | { status: 'ABSTAIN'; reason: string };
   slots: SignalSlot[];
   disagrees: boolean;
@@ -109,7 +108,7 @@ const ABSTAIN_REASON_KR: Record<string, string> = {
   MISSING_EVIDENCE: '검증된 근거가 아직 없습니다',
   ARTIFACT_DRIFT: '학습 시점과 입력 분포가 달라졌습니다',
   CALIBRATION_FAILED: '보정 검증을 통과하지 못했습니다',
-  POSTERIOR_BELOW_THRESHOLD: '확신도가 기준에 못 미칩니다',
+  POSTERIOR_BELOW_THRESHOLD: '판정 기준에 못 미칩니다',
   PRODUCER_FAILED: '생성 과정이 실패했습니다',
   STALE_EVIDENCE: '근거가 허용 지연을 넘었습니다',
   UNIDENTIFIABLE_OUTPUT: '출력을 식별할 수 없습니다',
@@ -120,14 +119,14 @@ export function readAbstainReason(reason: string): string {
   return ABSTAIN_REASON_KR[reason] ?? reason;
 }
 
-const SLOT_NAMES: [keyof SignalV2Runtime['components'], string][] = [
+const SLOT_NAMES: [keyof SignalV3Runtime['components'], string][] = [
   ['ruleBaseline', '규칙 baseline'],
   ['lstm', 'LSTM'],
   ['lightgbm', 'LightGBM'],
   ['hmmRegime', 'HMM 시장국면'],
 ];
 
-export function toSignalView(signal: SignalV2Runtime): SignalView {
+export function toSignalView(signal: SignalV3Runtime): SignalView {
   const slots: SignalSlot[] = SLOT_NAMES.map(([key, displayName]) => {
     const component = signal.components[key];
     if (component.status === 'ABSTAIN') {
@@ -146,7 +145,6 @@ export function toSignalView(signal: SignalV2Runtime): SignalView {
       status: 'AVAILABLE',
       signal: isRegime ? null : component.signal,
       regimeState: isRegime ? component.state : null,
-      confidence: component.confidence,
       predictedReturn: isRegime ? null : (component.predictedReturn ?? null),
       asOf: component.asOf,
       sourceWorkspace: component.sourceWorkspace,
@@ -169,7 +167,6 @@ export function toSignalView(signal: SignalV2Runtime): SignalView {
         ? {
             status: 'AVAILABLE',
             signal: signal.composite.signal,
-            confidence: signal.composite.confidence,
           }
         : { status: 'ABSTAIN', reason: readAbstainReason(signal.composite.reason) },
     slots,

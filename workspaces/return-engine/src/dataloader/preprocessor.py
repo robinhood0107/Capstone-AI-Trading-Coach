@@ -1,9 +1,8 @@
-import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
-import matplotlib.pyplot as plt
 import joblib
-import matplotlib.dates as mdates
 import numpy as np
+import pandas as pd
+from pathlib import Path
+from sklearn.preprocessing import MinMaxScaler
 
 class Preprocessor:
     def __init__(self, df=None, features=None, target=None):
@@ -94,11 +93,17 @@ class Preprocessor:
         return np.array(X_seq), np.array(y_seq)
     
     # 학습된 스케일러를 파일 형태로 저장
-    def save_scaler(self):
-        scaler_model_location = "..//models//"
-        scaler_model_name = "stock_price_scaler"
-        scaler_model_ext = "gz"
+    def save_scaler(self, path=None):
+        destination = (
+            Path(path)
+            if path is not None
+            else Path(__file__).resolve().parents[2] / "data" / "model" / "stock_price_scaler.gz"
+        )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(
+            {"x_scaler": self.x_scaler, "y_scaler": self.y_scaler},
+            destination,
+        )
+        return destination
 
-        joblib.dump(self.scaler, scaler_model_location + scaler_model_name + "." + scaler_model_ext)
-
-    
+# Consumers must verify artifact manifest and SHA-256 before deserialization.

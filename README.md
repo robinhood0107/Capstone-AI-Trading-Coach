@@ -1,11 +1,11 @@
 # 투자 원칙 기반 AI 자동매매 봇·트레이딩 코치
 
-한국투자증권 **모의투자 계좌를 직접 등록**해 모델 신호와 뉴스 근거를 검토하고, 사용자 원칙을
+한국투자증권 **투자계좌를 직접 등록**해 모델 신호와 뉴스 근거를 검토하고, 사용자 원칙을
 통과한 종목의 매수부터 청산·취소·체결 대사까지 수행하는 AI 자동매매 봇입니다. 내부 숫자만 바꾸는
 화면 데모가 아니라 KIS 모의투자 API로 주문 가능 금액과 계좌를 조회하고 실제 모의주문을 전송합니다.
 
-현금이 오가는 KIS 실계좌 주문·정정·취소는 지원하지 않습니다. 여기서 말하는 계좌와 실제 주문은
-모두 KIS Developers에서 발급한 **모의투자 계좌와 모의주문**을 뜻합니다.
+계좌 연동은 시작할 때 `KIS_BROKERAGE_MODE=mock|live` 중 하나만 선택합니다. 두 모드는 같은 주문,
+RiskEngine, 취소, 체결과 대사 로직을 사용하며 동시에 실행하거나 실패 시 서로 전환하지 않습니다.
 
 > 이 프로젝트는 자동매매로 수익을 약속하는 프로그램이 아닙니다. 모의투자 과정을 통해 투자 판단의
 > 근거, 위험과 결과를 직접 확인하고 학습할 수 있도록 돕는 트레이딩 코치입니다.
@@ -18,7 +18,7 @@
 
 ### 1. 실제 흐름을 경험하는 AI 자동매매 봇
 
-사용자가 등록한 KIS 모의계좌에서 후보 선정, 위험 검토, 주문, 취소, 체결 대사와 청산까지 하나의
+사용자가 등록한 KIS 투자계좌에서 후보 선정, 위험 검토, 주문, 취소, 체결 대사와 청산까지 하나의
 폐루프로 실행합니다. 단순한 수익률 계산을 넘어 실제 거래 시스템이 어떤 안전장치를 거치는지 직접
 확인할 수 있습니다.
 
@@ -32,7 +32,7 @@
 
 이를 통해 사용자가 AI 추천을 그대로 따르기보다 **근거를 확인하고, 위험을 이해하고, 자신의 투자
 원칙으로 최종 판단하는 습관**을 기르는 것이 이 프로젝트의 공익적·교육적 목표입니다. 실제 자금의
-손실 위험 없이 모의계좌에서 경험하도록 제한한 것도 같은 이유입니다.
+손실 위험이 없는 Mock 모드를 기본 학습 경로로 제공하는 것도 같은 이유입니다.
 
 ## 무엇을 할 수 있나요?
 
@@ -43,23 +43,23 @@
 | 모델 신호 비교 | LSTM과 규칙 기반 모델의 BUY·HOLD·SELL 신호를 같은 기준으로 비교합니다. |
 | 위험 검토 | 주문 전 RiskEngine이 원칙 위반, 포트폴리오 한도와 Kill Switch를 확인합니다. |
 | 근거 있는 AI 설명 | 저장된 자료와 검증된 공개 근거를 바탕으로 설명과 출처를 함께 보여 줍니다. |
-| KIS 모의계좌 연결 | 사용자의 App Key·Secret·계좌번호로 주문 가능 금액, 잔고와 체결 내역을 조회합니다. |
+| KIS 투자계좌 연결 | 사용자의 App Key·Secret·계좌번호로 주문 가능 금액, 잔고와 체결 내역을 조회합니다. |
 | AI 자동매매 봇 | 검증된 후보만 자동 매수하고 손절, 익절, ATR trailing stop과 보유 만기를 관리합니다. |
 | 백테스트 | 거래비용을 포함한 전략 결과와 MDD, Sharpe, 손익 곡선을 확인합니다. |
 | 학습일지 | 판단, 주문, AI 답변과 자동운용 실행 기록을 하나의 일지로 연결합니다. |
 
-## KIS 모의계좌로 실제 자동매매하기
+## KIS 투자계좌로 실제 자동매매하기
 
-KIS Developers에서 모의투자 계좌를 만든 뒤 다음 세 값을 프로그램에 직접 입력할 수 있습니다.
+KIS Developers에서 투자계좌를 만든 뒤 다음 세 값을 프로그램에 직접 입력할 수 있습니다.
 
 ```text
 KIS 모의투자 App Key
 KIS 모의투자 App Secret
-KIS 모의투자 계좌번호 10자리
+KIS 투자계좌번호 10자리
 ```
 
-입력값은 로컬의 `deploy/p1/.state-app/secrets/kis-mock.env`에만 보관되며 Git이나 Dashboard 응답에
-포함되지 않습니다. 계좌를 연결하면 자동매매 봇은 다음 작업을 수행합니다.
+입력값은 로컬 private runtime volume의 env 파일에만 보관되며 Git이나 Dashboard 응답에 포함되지
+않습니다. 계좌를 연결하면 자동매매 봇은 다음 작업을 수행합니다.
 
 1. 거래일의 LSTM·규칙 신호에서 BUY 후보를 찾습니다.
 2. 거래정지·관리종목 같은 결격 조건과 검증된 뉴스 근거를 확인합니다.
@@ -69,8 +69,16 @@ KIS 모의투자 계좌번호 10자리
 6. 손절·ATR trailing stop·모델 SELL·익절·보유 만기 조건으로 포지션을 청산합니다.
 7. 주문 전후 계좌 상태를 대사하고 불일치가 있으면 자동으로 중지합니다.
 
-계좌 등록부터 자동매매 시작까지의 전체 명령은 아래 **KIS 모의계좌 연결과 자동매매 시작** 절에서
+계좌 등록부터 자동매매 시작까지의 전체 명령은 아래 **KIS 투자계좌 연결과 자동매매 시작** 절에서
 순서대로 설명합니다.
+
+### KIS Mock/Live 단일 어댑터
+
+`mock`은 `KIS_MOCK_*`와 `VTTC/VTSC`, `live`는 `KIS_LIVE_*`와 `TTTC/CTSC` profile을 같은 client에
+주입합니다. Dashboard는 두 profile의 설정 상태만 관리하며, 모드 변경은 DISARM·미체결·대사 확인 후
+env 변경과 재시작으로만 수행합니다. Live 주문은 명시적 enable, 최신 COMPLETE 잔고, 기존 안전 gate,
+자금 상한과 `X-KIS-Live-Consent: CASH_LIVE`를 모두 통과할 때만 허용합니다. 비밀값은 응답·DB·Git·로그에
+남기지 않으며 저장한 설정은 프로세스를 재시작한 뒤에만 적용합니다.
 
 ## 프로그램 사용 흐름
 
@@ -80,7 +88,7 @@ flowchart LR
     B --> C["모델 신호와 근거 확인"]
     C --> D["주문 후보 입력"]
     D --> E["RiskEngine 검토"]
-    E --> F["실제 KIS 모의투자 주문"]
+    E --> F["선택한 KIS 모드로 주문"]
     F --> G["체결·취소·대사"]
     G --> H["포지션 관리"]
     H --> I["학습일지와 리포트"]
@@ -100,7 +108,7 @@ flowchart TB
     RE["Return Engine\nLSTM · Rule · Backtest"]
     DB[("PostgreSQL + pgvector")]
     CACHE[("Redis")]
-    KIS["KIS 모의투자 API\n잔고 · 주문 · 취소 · 체결"]
+    KIS["KIS Brokerage API\nMock 또는 Live 단일 모드"]
     AI["Vertex AI · Voyage AI"]
 
     UI -->|same-origin /api| API
@@ -239,7 +247,7 @@ Dashboard, API, 데이터베이스, RAG와 내부 작업 처리를 실행합니�
 
 기본 프로그램에 BGE-M3와 PaddleOCR-VL을 추가합니다. 모델을 처음 받을 때는 시간이 더 걸립니다.
 
-### KIS 모의계좌 연결과 자동매매 시작
+### KIS 투자계좌 연결과 자동매매 시작
 
 KIS Developers에서 발급받은 모의투자 App Key, App Secret과 하이픈을 제외한 10자리 계좌번호를
 준비합니다. 기본 프로그램을 실행한 뒤 `mock configure`를 실행하면 세 값을 차례로 묻습니다.
@@ -255,7 +263,7 @@ KIS Developers에서 발급받은 모의투자 App Key, App Secret과 하이픈�
 ```text
 KIS 모의투자 App Key:
 KIS 모의투자 App Secret:
-KIS 모의투자 계좌번호(하이픈 제외):
+KIS 투자계좌번호(하이픈 제외):
 ```
 
 `mock doctor`는 로컬 credential 파일의 형식과 권한을 검사하며 계좌나 주문 API는 호출하지 않습니다.
@@ -307,7 +315,7 @@ Dashboard의 **자동운용** 화면에서도 봇의 control 상태, blocker, �
 2. **금융 가이드**에서 금융 개념을 질문하고 답변의 인용 출처를 확인합니다.
 3. **모델 비교**에서 LSTM과 규칙 기반 신호를 비교합니다.
 4. **주문 검토**에서 종목, 방향, 수량과 가격을 입력해 RiskEngine 판단을 받습니다.
-5. 허용된 주문만 KIS 모의계좌로 제출하고 주문 상태, 취소와 체결 내역을 확인합니다.
+5. 허용된 주문만 KIS 투자계좌로 제출하고 주문 상태, 취소와 체결 내역을 확인합니다.
 6. **자동운용**에서 자금 한도, 손절·익절, ATR과 최대 보유 세션을 설정합니다.
 7. 판단과 실행 결과를 **학습일지**에 연결해 나중에 다시 검토합니다.
 
@@ -323,6 +331,8 @@ Dashboard의 **자동운용** 화면에서도 봇의 control 상태, blocker, �
 - 부분체결과 미확정 주문은 새 주문보다 먼저 대사합니다.
 - 계좌 상태가 예상과 다르거나 취소가 불확실하면 `HALTED`로 전환합니다.
 - KIS 장애를 내부 가상계좌로 자동 전환하지 않습니다.
+- Mock과 Live를 동시에 사용하거나 한쪽 실패를 다른 쪽으로 자동 전환하지 않습니다.
+- Live는 이전 모드의 OPEN 주문·포지션·미해결 대사가 하나라도 있으면 provider 호출 전에 차단합니다.
 - AI는 주문을 직접 생성하거나 수량을 늘릴 권한이 없습니다.
 
 ## 자주 사용하는 명령
@@ -350,7 +360,7 @@ Dashboard의 **자동운용** 화면에서도 봇의 control 상태, blocker, �
 | 투자 원칙 | `GET /api/v1/principles`, `POST /api/v1/principles` |
 | 위험 판단 | `POST /api/v1/decisions/evaluate-order` |
 | RAG | `POST /api/v2/rag/ask`, `GET /api/v2/rag/history` |
-| 모의계좌 | `GET /api/v1/brokerage/mock/accounts/{accountId}/balances` |
+| 투자계좌 | `GET /api/v1/brokerage/mock/accounts/{accountId}/balances` |
 | 주문 대사 | `POST /api/v1/brokerage/orders/{orderId}/reconcile` |
 | 체결 조회 | `GET /api/v1/brokerage/mock/accounts/{accountId}/fills` |
 | 내부 가상원장 체결 | `GET /api/v1/brokerage/paper/accounts/{accountId}/fills` |
@@ -415,7 +425,7 @@ PYTHONPATH=src uv run python -m return_engine --help
 | Dashboard가 준비되지 않음 | `./capstone status`와 `./capstone logs`를 차례로 확인합니다. |
 | RAG 답변을 생성하지 못함 | 공개 근거가 부족한지, Vertex·Voyage 설정이 준비됐는지 확인합니다. |
 | 자동운용 시작이 거부됨 | `/api/v3/automation/status`의 blocker를 확인하고 누락된 입력이나 인증을 준비합니다. |
-| KIS 모의주문 인증이 거부됨 | 거래일·시간, 모의계좌 설정과 `mock doctor` 결과를 확인합니다. |
+| KIS 모의주문 인증이 거부됨 | 거래일·시간, 투자계좌 설정과 `mock doctor` 결과를 확인합니다. |
 
 ## 더 자세한 문서
 

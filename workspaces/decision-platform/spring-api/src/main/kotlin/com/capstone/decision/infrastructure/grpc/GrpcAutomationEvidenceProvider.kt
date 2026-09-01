@@ -180,7 +180,6 @@ internal class GrpcAutomationEvidenceProvider(
                             .newBuilder()
                             .setSymbol(it.symbol)
                             .setExpectedReturn(it.expectedReturn.toDouble())
-                            .setModelConfidence(it.modelConfidence.toDouble())
                             .setLstmSignal("BUY")
                             .setBaselineSignal("BUY")
                             .build()
@@ -201,7 +200,6 @@ internal class GrpcAutomationEvidenceProvider(
             }
         return RawAutomationJudgement(
             candidates = verdicts,
-            confidenceBps = scoreBps(root.path("confidence")),
             summary = root.path("summary").stringValue().also { require(it.isNotBlank()) },
             providerCallCount = completed.vertexGenerateCallCount,
         )

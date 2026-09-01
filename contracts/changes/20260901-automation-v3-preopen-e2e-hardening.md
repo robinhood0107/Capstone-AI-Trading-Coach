@@ -36,5 +36,8 @@ The provider-free E2E sequence exposed two gaps before the next market session.
   V115 without changing the sealed seed bytes.
 - The contract checks are a real `unittest.TestCase`, and the API E2E now covers
   V3 status, policy CAS, runs, positions, and owner-masked missing detail.
+- Mock certification accepts the repository's safe `codex/*` workflow
+  branches; operation scope, call caps, canonical request,
+  signed approval, and mock-account binding are unchanged.
 
 Public V1/V2/V3 OpenAPI bytes and operation counts are unchanged.

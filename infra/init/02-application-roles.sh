@@ -2584,6 +2584,16 @@ BEGIN
             )
         TO decision_automation_runtime;
 
+        IF to_regprocedure('public.p1_automation_ai_judgement_runtime_scope_v1(text)') IS NOT NULL THEN
+            REVOKE ALL PRIVILEGES ON FUNCTION
+                public.p1_automation_ai_judgement_runtime_scope_v1(text)
+            FROM PUBLIC, decision_app, decision_worker, decision_replay,
+                decision_replay_authorizer, decision_automation_runtime;
+            GRANT EXECUTE ON FUNCTION
+                public.p1_automation_ai_judgement_runtime_scope_v1(text)
+            TO decision_app, decision_automation_runtime;
+        END IF;
+
         REVOKE ALL PRIVILEGES ON FUNCTION
             public.p1_read_after_hours_replay_bars_v1(text)
         FROM PUBLIC, decision_app, decision_worker, decision_replay,

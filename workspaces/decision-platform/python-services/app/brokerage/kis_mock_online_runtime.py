@@ -69,7 +69,11 @@ class KISMockBalanceSourceProbe:
     margin_requirement_krw: int = 0
 
     def reconciliation_digest(self) -> str:
-        """완전한 sanitized balance projection만 pre/post 비교용 digest로 만든다."""
+        """주문이 바꿀 수 있는 현금과 보유수량만 pre/post digest로 만든다.
+
+        장중 평가총액과 종목별 평가액은 기존 보유종목 시세만 움직여도 변한다. 그것을 주문
+        대사에 넣으면 전량취소·미체결이어도 거짓 drift가 된다.
+        """
 
         if not self.positions_complete:
             raise KISMockProjectionError(
@@ -79,8 +83,7 @@ class KISMockBalanceSourceProbe:
         payload = {
             "accountId": self.account_id,
             "cashKrw": self.cash_krw,
-            "portfolioEquityKrw": self.portfolio_equity_krw,
-            "positions": self.positions,
+            "positions": tuple((symbol, quantity) for symbol, quantity, _ in self.positions),
             "schemaVersion": 1,
         }
         return hashlib.sha256(

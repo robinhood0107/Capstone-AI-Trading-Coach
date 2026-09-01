@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -227,6 +228,38 @@ def test_v3_rejects_any_weakened_final_reconciliation_contract(
 
     with pytest.raises(probe.KISMockApprovalRejected, match="contract"):
         probe.parse_approval_packet(document)
+
+
+def test_v3_post_balance_waits_once_without_a_provider_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sleeps: list[float] = []
+
+    class Balance:
+        account_id = "acct_" + "0" * 32
+
+        @staticmethod
+        def reconciliation_digest() -> str:
+            return "a" * 64
+
+    class Reader:
+        calls = 0
+
+        def probe_balance_source(self, account_id: str) -> Balance:
+            assert account_id == Balance.account_id
+            self.calls += 1
+            return Balance()
+
+    operations = probe._KISMockProbeOperations.__new__(probe._KISMockProbeOperations)
+    operations._balance_reader = Reader()
+    operations._pre_balance_digest = "a" * 64
+    packet = SimpleNamespace(order=SimpleNamespace(account_id=Balance.account_id))
+    monkeypatch.setattr(probe.time, "sleep", sleeps.append)
+
+    operations.run("postBalance", packet)
+
+    assert sleeps == [probe._POST_CANCEL_SETTLEMENT_SECONDS]
+    assert operations._balance_reader.calls == 1
 
 
 def test_v1_history_stays_hard_locked_when_v2_allows_dynamic_pr(

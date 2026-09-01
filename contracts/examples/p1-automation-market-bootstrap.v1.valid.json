@@ -1,9 +1,9 @@
 {
   "accountCalls": 0,
-  "adjustmentMode": "ADJUSTED",
+  "adjustmentMode": "RAW_CLOSE",
   "bars": {
     "relativePath": "bars/automation-bars-v1.parquet",
-    "rowCount": 38000,
+    "rowCount": 23436,
     "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
   },
   "complete": true,
@@ -22,17 +22,17 @@
   "orderCalls": 0,
   "performanceClaimAllowed": false,
   "providerCaps": {
-    "kisDaily": 403,
+    "kisDaily": 496,
     "kisToken": 1,
     "krxMembership": 5,
-    "retry": 0
+    "retry": 1
   },
   "providerPhysicalCalls": {
-    "kisDaily": 400,
+    "kisDaily": 248,
     "kisToken": 1,
     "krxMembership": 1
   },
   "rawProviderResponseStored": false,
-  "requestedSessionCount": 1260,
+  "requestedSessionCount": 756,
   "sourcePathPersisted": false
 }

@@ -13,12 +13,12 @@ _SCRIPT_ROOT = Path(__file__).resolve().parents[1]
 if str(_SCRIPT_ROOT) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_ROOT))
 
-from contracts.generate_principle_contracts import (
+from contracts.generate_principle_contracts import (  # noqa: E402
     ContractValidationError,
     canonical_json_bytes,
     load_json_bytes_strict,
 )
-from contracts.verify_s5_signal_runtime_transition import verify_openapi_transition
+from contracts.verify_s5_signal_runtime_transition import verify_openapi_transition  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -114,6 +114,13 @@ def project_pre_p1_openapi(
     """exact P1 additive fragment를 제거하고 검증된 exact-48 projection을 반환한다."""
 
     current_operations = _operations(current)
+    if len(current_operations) == 76:
+        from contracts.verify_p1_return_signal_v3_openapi_transition import (
+            project_pre_signal_v3,
+        )
+
+        current = project_pre_signal_v3(current)
+        current_operations = _operations(current)
     if len(current_operations) == 75:
         from contracts.verify_p1_v3_automation_openapi_transition import (
             ADDITIVE_PATH as V3_ADDITIVE_PATH,

@@ -54,10 +54,19 @@ ARTIFACT_SCHEMA_IDS: Final[tuple[str, ...]] = (
     "p1-return-golden-output.v2",
     "p1-return-model-report.v2",
 )
+CURRENT_ARTIFACT_SCHEMA_IDS: Final[tuple[str, ...]] = (
+    *ARTIFACT_SCHEMA_IDS[:3],
+    "p1-return-lstm-signals.v3",
+    "p1-return-rule-baseline-signals.v3",
+    *ARTIFACT_SCHEMA_IDS[5:],
+)
 SCHEMA_IDS: Final[tuple[str, ...]] = (
     "p1-return-engine-input-pack.v1",
     "p1-return-engine-artifact-manifest.v2",
     *ARTIFACT_SCHEMA_IDS,
+    "p1-return-lstm-signals.v3",
+    "p1-return-rule-baseline-signals.v3",
+    "p1-return-engine-artifact-manifest.v3",
     "p1-scenario-replay-policy.v1",
     "vertex-news-veto.v1",
     "automation-control.v1",
@@ -439,6 +448,33 @@ def _artifact_manifest_schema() -> dict[str, Any]:
     )
 
 
+def _artifact_manifest_schema_v3() -> dict[str, Any]:
+    artifact = _closed(
+        ["path", "semanticSchema", "sizeBytes", "sha256"],
+        {
+            "path": {"enum": list(ARTIFACT_NAMES)},
+            "semanticSchema": {
+                "enum": [SCHEMA_PATHS[item] for item in CURRENT_ARTIFACT_SCHEMA_IDS]
+            },
+            "sizeBytes": {"type": "integer", "minimum": 1},
+            "sha256": _sha256(),
+        },
+    )
+    schema = copy.deepcopy(_artifact_manifest_schema())
+    schema["$id"] = SCHEMA_PATHS["p1-return-engine-artifact-manifest.v3"]
+    schema["title"] = "p1-return-engine-artifact-manifest.v3"
+    schema["properties"]["contractId"] = {
+        "const": "p1-return-engine-artifact-manifest.v3"
+    }
+    schema["properties"]["artifacts"] = {
+        "type": "array",
+        "minItems": 10,
+        "maxItems": 10,
+        "items": artifact,
+    }
+    return schema
+
+
 def _artifact_semantic_schemas() -> dict[str, dict[str, Any]]:
     signal_row = _closed(
         [
@@ -679,6 +715,25 @@ def _artifact_semantic_schemas() -> dict[str, dict[str, Any]]:
             },
         ),
     )
+    signal_row_v3 = copy.deepcopy(signal_row)
+    signal_row_v3["required"].remove("confidence")
+    del signal_row_v3["properties"]["confidence"]
+    for schema_id, file_name in zip(
+        CURRENT_ARTIFACT_SCHEMA_IDS[3:5], ARTIFACT_NAMES[3:5], strict=True
+    ):
+        add(
+            schema_id,
+            file_name,
+            _closed(
+                ["rowSchema", "symbols", "rowCount", "finite"],
+                {
+                    "rowSchema": signal_row_v3,
+                    "symbols": _symbol_array(),
+                    "rowCount": {"const": 31},
+                    "finite": {"const": True},
+                },
+            ),
+        )
     return base
 
 
@@ -1127,6 +1182,7 @@ def build_schemas() -> dict[str, dict[str, Any]]:
         "p1-return-engine-input-pack.v1": _input_pack_schema(),
         "p1-return-engine-artifact-manifest.v2": _artifact_manifest_schema(),
         **_artifact_semantic_schemas(),
+        "p1-return-engine-artifact-manifest.v3": _artifact_manifest_schema_v3(),
         "p1-scenario-replay-policy.v1": _scenario_schema(),
         "vertex-news-veto.v1": _vertex_schema(),
         **_automation_schemas(),
@@ -1397,6 +1453,30 @@ def _fixtures() -> dict[str, dict[str, Any]]:
             "fileName": name,
             "semantic": semantic,
         }
+    for schema_id, name, semantic in zip(
+        CURRENT_ARTIFACT_SCHEMA_IDS[3:5], ARTIFACT_NAMES[3:5], artifact_semantics[3:5], strict=True
+    ):
+        current_semantic = copy.deepcopy(semantic)
+        current_semantic["rowSchema"].pop("confidence")
+        fixtures[schema_id] = {
+            "contractId": schema_id,
+            "fileName": name,
+            "semantic": current_semantic,
+        }
+    current_manifest = copy.deepcopy(manifest)
+    current_manifest["contractId"] = "p1-return-engine-artifact-manifest.v3"
+    current_manifest["artifacts"] = [
+        {
+            "path": name,
+            "semanticSchema": SCHEMA_PATHS[schema_id],
+            "sizeBytes": 1024,
+            "sha256": sha,
+        }
+        for name, schema_id in zip(
+            ARTIFACT_NAMES, CURRENT_ARTIFACT_SCHEMA_IDS, strict=True
+        )
+    ]
+    fixtures["p1-return-engine-artifact-manifest.v3"] = current_manifest
     fixtures["p1-scenario-replay-policy.v1"] = {
         "contractId": "p1-scenario-replay-policy.v1",
         "scenarios": [
@@ -1544,11 +1624,11 @@ def _catalog() -> dict[str, Any]:
         "returnEngine": {
             "inputPackSchema": SCHEMA_PATHS["p1-return-engine-input-pack.v1"],
             "artifactManifestSchema": SCHEMA_PATHS[
-                "p1-return-engine-artifact-manifest.v2"
+                "p1-return-engine-artifact-manifest.v3"
             ],
             "artifactNames": list(ARTIFACT_NAMES),
             "artifactSemanticSchemas": [
-                SCHEMA_PATHS[item] for item in ARTIFACT_SCHEMA_IDS
+                SCHEMA_PATHS[item] for item in CURRENT_ARTIFACT_SCHEMA_IDS
             ],
             "featureOrder": list(FEATURE_ORDER),
             "newsFeatures": 0,
@@ -1597,10 +1677,10 @@ def _release_catalog_v3() -> dict[str, Any]:
         ],
         "hardGates": list(RELEASE_V3_HARD_GATES),
         "returnEngineArtifactSchema": SCHEMA_PATHS[
-            "p1-return-engine-artifact-manifest.v2"
+            "p1-return-engine-artifact-manifest.v3"
         ],
-        "teamARequiredOperationCount": 33,
-        "openApiOperationCount": 56,
+        "teamARequiredOperationCount": 45,
+        "openApiOperationCount": 76,
         "lightgbm": "RESEARCH_ONLY_NO_SIGNAL_OR_ORDER_AUTHORITY",
         "kisLiveOrderCalls": 0,
         "gdeltCalls": 0,
@@ -1845,11 +1925,19 @@ def validate_semantics(schema_id: str, payload: dict[str, Any]) -> None:
             )
         if [item["symbol"] for item in payload["coverage"]] != symbols:
             raise ContractValidationError("coverage must match universe order exactly")
-    elif schema_id == "p1-return-engine-artifact-manifest.v2":
+    elif schema_id in {
+        "p1-return-engine-artifact-manifest.v2",
+        "p1-return-engine-artifact-manifest.v3",
+    }:
         paths = [item["path"] for item in payload["artifacts"]]
         schemas = [item["semanticSchema"] for item in payload["artifacts"]]
+        schema_ids = (
+            CURRENT_ARTIFACT_SCHEMA_IDS
+            if schema_id.endswith(".v3")
+            else ARTIFACT_SCHEMA_IDS
+        )
         if paths != list(ARTIFACT_NAMES) or schemas != [
-            SCHEMA_PATHS[item] for item in ARTIFACT_SCHEMA_IDS
+            SCHEMA_PATHS[item] for item in schema_ids
         ]:
             raise ContractValidationError(
                 "artifact manifest must bind exact ordered 10 files and schemas"

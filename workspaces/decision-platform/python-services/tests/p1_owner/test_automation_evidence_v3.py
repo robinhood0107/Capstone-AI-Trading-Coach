@@ -85,7 +85,7 @@ def _drive(
 
 
 def _candidate(symbol: str, expected: float) -> SignalCandidate:
-    return SignalCandidate(symbol, "BUY", "BUY", expected, 0.8)
+    return SignalCandidate(symbol, "BUY", "BUY", expected)
 
 
 def test_zero_evidence_skips_judge_and_preserves_rule_rank() -> None:
@@ -211,7 +211,6 @@ def test_judge_receives_only_post_screening_survivors() -> None:
                 ),
                 AiCandidateVerdict("000003", 0.5, False, "neutral"),
             ),
-            0.7,
             "fixture",
         ),
     )

@@ -8,7 +8,7 @@ import {
   type TeamAOperationId,
   type TeamARequests,
   type TeamAResult,
-} from '../../src/shared/api/generated/p1-team-a-client.v3';
+} from '../../src/shared/api/generated/p1-team-a-client.v4';
 
 const USER_ID = 'usr_demo_user';
 const PAPER_ACCOUNT_ID = 'acct_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -133,7 +133,7 @@ test('owner backend satisfies the exact Team A 45-operation live Spring catalog'
     });
     client.setAccessToken(userToken);
 
-    await call('read', { path: { symbol: '005930' } });
+    await call('readSignalV3', { path: { symbol: '005930' } });
     await call('listSources', {});
     await call('record', {
       body: {

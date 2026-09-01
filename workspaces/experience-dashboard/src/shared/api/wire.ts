@@ -420,7 +420,6 @@ export interface PredictiveAvailable {
   sourceWorkspace: string;
   asOf: string;
   signal: 'BUY' | 'HOLD' | 'SELL';
-  confidence: number;
   predictedReturn?: number | null;
   modelReportId?: string;
   modelVersion?: string;
@@ -433,7 +432,6 @@ export interface RegimeAvailable {
   sourceWorkspace: string;
   asOf: string;
   state: RegimeState;
-  confidence: number;
   modelReportId?: string;
   modelVersion?: string;
 }
@@ -453,10 +451,10 @@ export type RegimeComponent = RegimeAvailable | ComponentAbstain;
 
 /** composite AVAILABLE에는 asOf가 없다. 최상위 asOf만 존재한다. */
 export type CompositeSignal =
-  | { status: 'AVAILABLE'; signal: 'BUY' | 'HOLD' | 'SELL'; confidence: number; predictedReturn?: number | null }
+  | { status: 'AVAILABLE'; signal: 'BUY' | 'HOLD' | 'SELL'; predictedReturn?: number | null }
   | { status: 'ABSTAIN'; reason: 'REQUIRED_COMPONENT_UNAVAILABLE' };
 
-export interface SignalV2Runtime {
+export interface SignalV3Runtime {
   symbol: string;
   timeframe: string;
   asOf?: string;

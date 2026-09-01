@@ -16,6 +16,7 @@ import shutil
 import stat
 import struct
 import sys
+import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -63,8 +64,8 @@ ARTIFACT_SCHEMA_IDS = (
     "p1-return-model-safetensors.v2",
     "p1-return-scaler.v2",
     "p1-return-config.v2",
-    "p1-return-lstm-signals.v2",
-    "p1-return-rule-baseline-signals.v2",
+    "p1-return-lstm-signals.v3",
+    "p1-return-rule-baseline-signals.v3",
     "p1-return-backtest-result.v2",
     "p1-return-trade-log.v2",
     "p1-return-equity-log.v2",
@@ -72,10 +73,10 @@ ARTIFACT_SCHEMA_IDS = (
     "p1-return-model-report.v2",
 )
 INPUT_MANIFEST = "manifest.json"
-GOLDEN_MANIFEST = "p1-return-engine-manifest.v2.json"
+GOLDEN_MANIFEST = "p1-return-engine-manifest.v3.json"
 CALENDAR_CATALOG = "contracts/catalogs/s5-bootstrap-calendar-recovery-lock.v1.json"
 INPUT_SCHEMA = "contracts/schemas/p1-return-engine-input-pack.v1.schema.json"
-MANIFEST_SCHEMA = "contracts/schemas/p1-return-engine-artifact-manifest.v2.schema.json"
+MANIFEST_SCHEMA = "contracts/schemas/p1-return-engine-artifact-manifest.v3.schema.json"
 SCENARIO_POLICY = "contracts/examples/p1-scenario-replay-policy.v1.valid.json"
 MAX_MANIFEST_BYTES = 1_048_576
 MAX_ARCHIVE_ARTIFACT_BYTES = 256 * 1024 * 1024
@@ -175,6 +176,46 @@ def verify_input_pack(root: Path) -> str:
             raise P1OwnerAssetError(f"input pack file binding mismatch: {relative}")
     _verify_input_pack_tables(root, manifest)
     return _digest(manifest_bytes)
+
+
+def write_input_pack_zip(root: Path, output_zip: Path) -> str:
+    """Write one deterministic ZIP after the directory pack has been fully verified."""
+
+    verify_input_pack(root)
+    if not output_zip.is_absolute() or output_zip.exists() or output_zip.is_symlink():
+        raise P1OwnerAssetError("input pack ZIP target must be a new absolute path")
+    parent = output_zip.parent
+    if not parent.is_dir() or parent.is_symlink():
+        raise P1OwnerAssetError("input pack ZIP parent is unsafe")
+    names = (
+        "corporate_action_exclusions.json",
+        "daily_ohlcv.parquet",
+        "ecos_macro.parquet",
+        INPUT_MANIFEST,
+        "scenario_policy.json",
+        "universe.parquet",
+        "xkrx_sessions.json",
+    )
+    try:
+        with (
+            output_zip.open("xb") as raw,
+            zipfile.ZipFile(
+                raw, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
+            ) as archive,
+        ):
+            for name in names:
+                content = _read_regular(root, name, MAX_ARCHIVE_ARTIFACT_BYTES)
+                info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.create_system = 3
+                info.external_attr = 0o600 << 16
+                archive.writestr(info, content)
+        os.chmod(output_zip, 0o600)
+        return _digest(output_zip.read_bytes())
+    except Exception:
+        if output_zip.is_file() and not output_zip.is_symlink():
+            output_zip.unlink()
+        raise
 
 
 def build_golden_bundle(*, input_pack_manifest: Path, output_root: Path) -> AssetBuildResult:
@@ -460,7 +501,6 @@ def _golden_payloads(
         signal = "BUY" if forecast > current else "SELL" if forecast < current else "HOLD"
         lstm_rows.append(
             {
-                "confidence": 0.5,
                 "currentClose": current,
                 "expectedReturn": expected,
                 "forecastClose": forecast,
@@ -471,7 +511,6 @@ def _golden_payloads(
         )
         rule_rows.append(
             {
-                "confidence": 0.5,
                 "currentClose": current,
                 "expectedReturn": 0.0,
                 "forecastClose": current,
@@ -628,7 +667,7 @@ def _golden_manifest(*, input_pack_sha256: str, payloads: dict[str, bytes]) -> d
             }
             for name, schema_id in zip(ARTIFACT_NAMES, ARTIFACT_SCHEMA_IDS, strict=True)
         ],
-        "contractId": "p1-return-engine-artifact-manifest.v2",
+        "contractId": "p1-return-engine-artifact-manifest.v3",
         "evidenceMode": "SYNTHETIC_GOLDEN",
         "furtherTuningRequired": False,
         "inputPackSha256": input_pack_sha256,
@@ -994,6 +1033,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     input_parser.add_argument("--archive-root", type=Path, required=True)
     input_parser.add_argument("--archive-manifest-sha256", required=True)
     input_parser.add_argument("--output-root", type=Path, required=True)
+    input_parser.add_argument("--zip-output", type=Path)
     golden_parser = subcommands.add_parser("golden")
     golden_parser.add_argument("--input-pack-manifest", type=Path, required=True)
     golden_parser.add_argument("--output-root", type=Path, required=True)
@@ -1016,6 +1056,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "providerCalls": 0,
                 "status": "INPUT_PACK_VERIFIED",
             }
+            if args.zip_output is not None:
+                payload["zipPath"] = args.zip_output.name
+                payload["zipSha256"] = write_input_pack_zip(args.output_root, args.zip_output)
         elif args.command == "golden":
             result = build_golden_bundle(
                 input_pack_manifest=args.input_pack_manifest,

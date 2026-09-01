@@ -1,0 +1,93 @@
+{
+  "$id": "contracts/schemas/p1-return-rule-baseline-signals.v3.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractId": {
+      "const": "p1-return-rule-baseline-signals.v3"
+    },
+    "fileName": {
+      "const": "rule_baseline_signals.parquet"
+    },
+    "semantic": {
+      "additionalProperties": false,
+      "properties": {
+        "finite": {
+          "const": true
+        },
+        "rowCount": {
+          "const": 31
+        },
+        "rowSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "currentClose": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "expectedReturn": {
+              "type": "number"
+            },
+            "forecastClose": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "sessionDate": {
+              "format": "date",
+              "type": "string"
+            },
+            "signal": {
+              "enum": [
+                "BUY",
+                "HOLD",
+                "SELL"
+              ]
+            },
+            "symbol": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "symbol",
+            "sessionDate",
+            "signal",
+            "currentClose",
+            "forecastClose",
+            "expectedReturn"
+          ],
+          "type": "object"
+        },
+        "symbols": {
+          "contains": {
+            "const": "132030"
+          },
+          "items": {
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          },
+          "maxContains": 1,
+          "maxItems": 31,
+          "minContains": 1,
+          "minItems": 31,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "rowSchema",
+        "symbols",
+        "rowCount",
+        "finite"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "contractId",
+    "fileName",
+    "semantic"
+  ],
+  "title": "p1-return-rule-baseline-signals.v3",
+  "type": "object"
+}

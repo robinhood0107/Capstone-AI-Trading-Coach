@@ -11,7 +11,7 @@ interface PanelProps {
 
 export function Panel({ contract, title, hint, actions, children }: PanelProps) {
   return (
-    <section className="border border-line bg-panel">
+    <section className="min-w-0 border border-line bg-panel">
       <header className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
         <div className="min-w-0">
           {contract ? (
@@ -22,7 +22,7 @@ export function Panel({ contract, title, hint, actions, children }: PanelProps) 
         </div>
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </header>
-      <div className="px-5 py-5">{children}</div>
+      <div className="min-w-0 px-5 py-5">{children}</div>
     </section>
   );
 }

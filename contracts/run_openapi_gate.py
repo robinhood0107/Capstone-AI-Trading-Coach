@@ -66,7 +66,7 @@ def _explicit_process_environment(values: Mapping[str, str]) -> dict[str, str]:
     environment.update(
         {
             "SPRING_PROFILES_ACTIVE": "openapi",
-            "SERVER_PORT": "18080",
+            "SERVER_PORT": values.get("OPENAPI_SERVER_PORT", "18080"),
             "COMPOSE_DISABLE_ENV_FILE": "1",
         }
     )

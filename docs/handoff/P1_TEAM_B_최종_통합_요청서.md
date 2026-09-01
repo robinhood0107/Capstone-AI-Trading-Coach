@@ -104,7 +104,7 @@ OCI packaging, SBOM, 서명, artifact import와 KIS Mock 연결은 Owner가 담�
 cd workspaces/return-engine
 uv sync --frozen
 uv run pytest -q
-uv run python -m return_engine --help
+PYTHONPATH=src uv run python -m return_engine --help
 docker build --platform linux/amd64 -t capstone-return-engine:p1-local .
 ```
 

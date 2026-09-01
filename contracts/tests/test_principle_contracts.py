@@ -330,6 +330,7 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             line.split("=", 1)[0]: line.split("=", 1)[1][1:-1]
             for line in self.valid_environment_text().splitlines()
         }
+        values["OPENAPI_SERVER_PORT"] = "18081"
         with patch.dict(
             os.environ,
             {
@@ -342,6 +343,7 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             environment = _explicit_process_environment(values)
 
         self.assertNotIn("UNSAFE_INHERITED_NAME", environment)
+        self.assertEqual("18081", environment["SERVER_PORT"])
         self.assertEqual(
             ":".join((*values, "COMPOSE_DISABLE_ENV_FILE")),
             environment["WSLENV"],

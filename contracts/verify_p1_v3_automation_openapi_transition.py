@@ -167,6 +167,13 @@ def verify_transition(
     current = _load(openapi_path)
     additive = _load(additive_path)
     count = len(operations(current))
+    if count == 76:
+        from contracts.verify_p1_return_signal_v3_openapi_transition import (
+            project_pre_signal_v3,
+        )
+
+        current = project_pre_signal_v3(current)
+        count = len(operations(current))
     if count == 69:
         merged = merge_v3_openapi(current, additive)
         project_pre_v3_openapi(merged, additive)

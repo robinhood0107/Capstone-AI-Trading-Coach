@@ -211,15 +211,18 @@ def test_git_seed_absence_is_an_explicit_noop_before_database_access(
     seed.mkdir()
     archive = tmp_path / "archive"
     archive.mkdir()
-    assert main(
-        [
-            "--bundle-root",
-            str(seed),
-            "--archive-parent",
-            str(archive),
-            "--git-seed",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "--bundle-root",
+                str(seed),
+                "--archive-parent",
+                str(archive),
+                "--git-seed",
+            ]
+        )
+        == 0
+    )
     output = json.loads(capsys.readouterr().out)
     assert output == {
         "databaseOutcome": "NOT_RUN_SEED_ABSENT",

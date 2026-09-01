@@ -87,6 +87,31 @@ def test_middle_gap_rejects_the_entire_symbol_but_edge_trim_is_allowed() -> None
     assert accepted["rejectedRowCount"] == 0
 
 
+def test_krx_alphanumeric_issue_code_is_accepted() -> None:
+    rows = tuple(
+        ReplayBar(
+            "0126Z0",
+            row.session_date,
+            row.open_price_krw,
+            row.high_price_krw,
+            row.low_price_krw,
+            row.close_price_krw,
+            row.volume,
+        )
+        for row in _rows(1)
+    )
+
+    report = build_replay_report(
+        rows,
+        manifest_sha256="1" * 64,
+        today=date(2026, 8, 31),
+    )
+
+    assert report["acceptedRowCount"] == len(rows)
+    assert report["rejectedRowCount"] == 0
+    assert report["symbolCount"] == 1
+
+
 def test_union270_needs_the_sealed_exact_1072_session_axis() -> None:
     report = build_replay_report(
         _rows(270),

@@ -11,7 +11,11 @@ import pytest
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.p1_owner.assets import build_golden_bundle
-from app.p1_owner.importer import P1ArtifactImportError, validate_artifact_bundle
+from app.p1_owner.importer import (
+    P1ArtifactImportError,
+    _validate_manifest_truth,
+    validate_artifact_bundle,
+)
 from tests.p1_owner.test_assets import _build_input
 
 
@@ -65,6 +69,19 @@ def test_importer_validates_exact_ten_bundle_and_builds_bounded_projection_packe
         assert model_projection["data"]["performanceClaimAllowed"] is False
         assert backtest_projection["data"]["performanceClaimAllowed"] is False
         assert backtest_projection["data"]["view"]["fixtureClass"] == ("SYNTHETIC_FAKE_E2E")
+
+
+def test_real_below_baseline_bundle_remains_eligible_for_honest_mock_runtime() -> None:
+    _validate_manifest_truth(
+        {
+            "evidenceMode": "REAL_TEAM_B",
+            "realTeamB": True,
+            "modelQuality": "BELOW_BASELINE",
+            "mockRuntimeEligible": True,
+            "performanceClaimAllowed": False,
+            "orderAuthority": "NONE",
+        }
+    )
 
 
 def test_importer_rejects_extra_file_and_hard_link_before_content_parsing() -> None:

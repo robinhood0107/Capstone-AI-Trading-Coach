@@ -141,6 +141,22 @@ class BrokerageOnlineServiceTest {
     }
 
     @Test
+    fun `online balance uses the complete stored observation when provider risk fields are unavailable`() {
+        every { persistence.findOwnedBalance(ACTOR.userId, ACCOUNT_ID) } returns storedBalance()
+        every { gatewayProvider.getIfAvailable() } returns gateway
+        every { gateway.getMockBalance(any()) } throws BrokerageUnavailableException("risk fields unavailable")
+
+        val result = service.getOwnedBalance(ACTOR, ACCOUNT_ID)
+
+        assertEquals(1_000_000, result.cashKrw)
+        assertEquals("stored-kis-mock-v1", result.sourceVersion)
+        verifyOrder {
+            persistence.findOwnedBalance(ACTOR.userId, ACCOUNT_ID)
+            gateway.getMockBalance(match { it.accountId == ACCOUNT_ID })
+        }
+    }
+
+    @Test
     fun `online buyable uses exact query after stored owner anchor is found`() {
         every { persistence.findOwnedBalance(ACTOR.userId, ACCOUNT_ID) } returns storedBalance()
         every { gatewayProvider.getIfAvailable() } returns gateway

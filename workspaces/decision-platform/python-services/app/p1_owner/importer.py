@@ -286,8 +286,11 @@ def _validate_manifest_truth(manifest: dict[str, Any]) -> None:
     elif evidence == "REAL_TEAM_B":
         if real is not True or quality not in {"PASS", "BELOW_BASELINE"}:
             raise P1ArtifactImportError("real Team B manifest truth markers conflict")
-        if quality != "PASS" and eligible is not False:
-            raise P1ArtifactImportError("below-baseline bundle cannot be mock-runtime eligible")
+        # 모의운용 적격성은 수익 우월성이 아니라 input binding, leakage, deterministic bytes,
+        # cost/metric 재계산과 schema integrity가 정한다. 낮은 성능은 BELOW_BASELINE으로 공개하되
+        # 그것만으로 mock closed loop를 막지 않는다.
+        if eligible is not True:
+            raise P1ArtifactImportError("real Team B bundle must be mock-runtime eligible")
     else:
         raise P1ArtifactImportError("unsupported artifact evidence mode")
     if (

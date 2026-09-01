@@ -849,6 +849,24 @@ class RagV2RuntimeServiceTest {
         verify(exactly = 0) { evaluation.evaluate(any(), any()) }
     }
 
+    @Test
+    fun `reasoning answers preserve the exact citations selected by the validated generator`() {
+        val retrieved = retrievalOnly(scope()).citations
+        val selected =
+            service(
+                provider = mockk(relaxed = true),
+                crypto = mockk(relaxed = true),
+                evaluation = mockk(relaxed = true),
+            ).selectedStrongLlmCitations(
+                retrieved = retrieved,
+                webCitations = emptyList(),
+                citationIds = listOf("cit_1"),
+                basis = StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING,
+            )
+
+        assertThat(selected).containsExactly(retrieved.single())
+    }
+
     private fun service(
         provider: ObjectProvider<NamedParameterJdbcTemplate>,
         crypto: RagHistoryCryptoPort,

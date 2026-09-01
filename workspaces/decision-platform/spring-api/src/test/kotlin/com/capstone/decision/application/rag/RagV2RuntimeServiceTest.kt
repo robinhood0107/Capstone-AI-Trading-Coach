@@ -867,6 +867,23 @@ class RagV2RuntimeServiceTest {
         assertThat(selected).containsExactly(retrieved.single())
     }
 
+    @Test
+    fun `reasoning history and API share the required reasoning marker`() {
+        val service =
+            service(
+                provider = mockk(relaxed = true),
+                crypto = mockk(relaxed = true),
+                evaluation = mockk(relaxed = true),
+            )
+
+        assertThat(
+            service.strongLlmGuardrailFlags(
+                StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING,
+                listOf("SINGLE_SOURCE"),
+            ),
+        ).containsExactly("REASONING_SENTENCES_PRESENT", "SINGLE_SOURCE")
+    }
+
     private fun service(
         provider: ObjectProvider<NamedParameterJdbcTemplate>,
         crypto: RagHistoryCryptoPort,

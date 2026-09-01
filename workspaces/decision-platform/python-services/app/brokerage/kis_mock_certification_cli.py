@@ -66,7 +66,7 @@ _PROVIDER_FAMILY: Final = "KIS_MOCK"
 _MAX_FILE_BYTES: Final = 32 * 1024
 _HEAD = re.compile(r"^[0-9a-f]{40}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_BRANCH = re.compile(r"^(?:feature|fix|docs|infra|experiment)/[A-Za-z0-9._/-]{1,120}$")
+_BRANCH = re.compile(r"^(?:feature|fix|docs|infra|experiment|codex)/[A-Za-z0-9._/-]{1,120}$")
 _REQUIRED_CHECKS: Final = frozenset(
     {
         "Contract schema validation",

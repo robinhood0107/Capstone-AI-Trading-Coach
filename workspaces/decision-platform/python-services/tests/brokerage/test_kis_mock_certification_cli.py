@@ -47,6 +47,22 @@ def test_request_accepts_codex_workflow_branch(tmp_path: Path) -> None:
     assert certification._read_request(request_path) == expected
 
 
+def test_runtime_packet_accepts_codex_workflow_branch(tmp_path: Path) -> None:
+    request_path = tmp_path / "request.json"
+    request = _request(request_path)
+    request["branch"] = "codex/p1-v3-preopen-e2e-hardening-20260901"
+    approval = SimpleNamespace(expires_at=datetime.now(UTC) + timedelta(minutes=4))
+
+    packet = certification._runtime_packet(
+        request,
+        approval,
+        "acct_00000000000000000000000000000000",
+        182_000,
+    )
+
+    assert packet.repository.branch_ref == request["branch"]
+
+
 def test_certification_claims_signed_authority_before_quote_or_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

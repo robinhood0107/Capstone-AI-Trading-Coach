@@ -704,6 +704,36 @@ def test_grounding_metadata_accepts_google_camel_case_projection() -> None:
     ]
 
 
+def test_grounding_null_domain_uses_only_hostname_shaped_title() -> None:
+    message = AIMessage(
+        content=_answer(),
+        response_metadata={
+            "grounding_metadata": {
+                "web_search_queries": ["site:reuters.com 005930"],
+                "grounding_chunks": [
+                    {
+                        "web": {
+                            "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/id",
+                            "title": "reuters.com",
+                            "domain": None,
+                        }
+                    }
+                ],
+                "grounding_supports": [
+                    {
+                        "segment": {"text": "005930 public evidence"},
+                        "grounding_chunk_indices": [0],
+                    }
+                ],
+            }
+        },
+    )
+
+    result = _provider_result(message)
+
+    assert result["grounding_roots"][0]["domain"] == "reuters.com"
+
+
 def test_langchain_content_block_citation_is_the_grounding_fallback() -> None:
     answer = {
         "basis": "EVIDENCE",

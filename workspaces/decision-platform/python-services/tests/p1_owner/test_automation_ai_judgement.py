@@ -136,9 +136,7 @@ def test_a_candidate_the_model_did_not_score_falls_back_to_neutral_not_to_last()
 
 
 def test_a_vetoed_candidate_is_not_bought_and_the_next_one_is() -> None:
-    judgement = AiJudgement(
-        (_verdict("005930", 0.9, veto=True), _verdict("000001", 0.3)), "요약"
-    )
+    judgement = AiJudgement((_verdict("005930", 0.9, veto=True), _verdict("000001", 0.3)), "요약")
     store = _store()
 
     _drive(store, _transport(judgement), _inputs(_buy("005930", 0.05), _buy("000001", 0.01)))

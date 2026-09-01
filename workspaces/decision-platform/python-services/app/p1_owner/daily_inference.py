@@ -123,7 +123,7 @@ class ReturnInferenceClient:
     def infer(self, request_bytes: bytes) -> bytes:
         for attempt in range(2):
             try:
-                return cast(bytes, self._call(request_bytes, timeout=5, metadata=self._metadata))
+                return self._call(request_bytes, timeout=5, metadata=self._metadata)
             except grpc.RpcError as error:
                 if attempt == 1:
                     raise DailyInferenceError("DAILY_INFERENCE_MODEL_FAILED") from error
@@ -208,7 +208,9 @@ class DailyInferenceService:
             }
             for item in cast(list[dict[str, Any]], response["predictions"])
         ]
-        signals = sorted((*lstm_rows, *rule_rows), key=lambda item: (item["producer"], item["symbol"]))
+        signals = sorted(
+            (*lstm_rows, *rule_rows), key=lambda item: (item["producer"], item["symbol"])
+        )
         packet = {
             "artifactId": context["artifactId"],
             "bundleSha256": context["bundleSha256"],
@@ -350,7 +352,11 @@ def _validated_response(
 
 
 def _finite(value: object) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    )
 
 
 def _sha(content: bytes) -> str:

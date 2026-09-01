@@ -4,7 +4,7 @@
 서버를 따로 켜지 말고 저장소 루트의 [README](../../README.md)를 따라 `./capstone up`을 실행하세요.
 
 Team A가 완료해야 할 정확한 API 목록, 화면 순서, 테스트와 제출물은
-[Team A 대시보드 완료 요청](../../docs/decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md)에 있습니다.
+[Team A 최종 통합 요청서](../../docs/handoff/P1_TEAM_A_최종_통합_요청서.md)에 있습니다.
 
 ## 현재 구조
 

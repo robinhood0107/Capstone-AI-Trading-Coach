@@ -10,6 +10,54 @@
 뉴스, AI 판단, 자금·수량·손절·익절과 주문은 Owner가 처리합니다. Team B는 후보와
 BUY·HOLD·SELL 신호까지만 담당합니다.
 
+## 이전 세션 없이 시작하는 방법
+
+이전에 진행하던 대화나 개발 세션이 없다는 전제로 시작해도 됩니다. 과거 진행 내용을 복원하려고
+할 필요 없이 현재 `main`과 아래 순서만 따라가면 됩니다.
+
+1. 이 요청서를 끝까지 한 번 읽습니다.
+2. [`workspaces/return-engine/README.md`](../../workspaces/return-engine/README.md) 상단의 현재 통합 상태와
+   기존 코드 구조를 확인합니다.
+3. [Owner input pack 운영 가이드](../decision-platform/P1_OWNER_INPUT_PACK_GOLDEN_운영_가이드.md)에서
+   입력이 어떻게 봉인되는지만 확인합니다. pack 생성은 Owner가 합니다.
+4. [`p1-owner-phase-a-contract-lock.v1`](../../contracts/catalogs/p1-owner-phase-a-contract-lock.v1.json)에서
+   exact-10 파일명과 feature 순서를 확인합니다.
+5. [input pack schema](../../contracts/schemas/p1-return-engine-input-pack.v1.schema.json)와
+   [artifact manifest v2 schema](../../contracts/schemas/p1-return-engine-artifact-manifest.v2.schema.json)를
+   실제 입출력의 기준으로 사용합니다.
+
+Owner에게 처음 받을 것은 딱 두 가지입니다.
+
+```text
+1. owner-private input pack root
+2. manifest.json SHA-256
+```
+
+두 값이 없으면 임의 CSV나 yfinance로 production 실행을 대신하지 말고, 기존 preview 코드와 테스트만
+정리해 두고 입력을 기다리면 됩니다. Decision Platform 전체 구조를 이해해야 시작할 필요는 없습니다.
+
+### 현재 코드에서 무엇을 참고하면 되는가
+
+| 현재 파일 | 활용 방법 |
+|---|---|
+| `src/models/lstm.py` | 기존 LSTM 구조를 출발점으로 재사용 가능 |
+| `src/models/rule_baseline.py` | rule signal 계산을 재사용하고 exact-31 출력으로 확장 |
+| `src/backtest_core/` | 비용 35bps와 공통 split을 적용하도록 보완해 재사용 |
+| `src/dataloader/` | feature 계산 아이디어는 재사용하되 production 입력을 sealed pack reader로 교체 |
+| `src/preview_cli.py`, `preview_contract.py` | 실행·검증 방식 참고용. production artifact producer로 승격하지 않음 |
+| `data/model/*.pth`, `data/stock/*.csv` | 역사적 preview 입력. exact-10에 복사하거나 REAL_TEAM_B 근거로 사용하지 않음 |
+| `workspaces/decision-platform/python-services/tests/e2e/team_b_bundle.py` | Owner의 test-only bundle shape 참고용. 실행 결과를 실제 Team B 결과로 제출하지 않음 |
+
+권장 구현 순서는 `input 검증 → production train → exact-10 export → 두 번 실행 byte 비교 → daily
+inference`입니다. 모델 성능 개선부터 시작하면 계약·재현성 작업이 뒤로 밀리므로 마지막에 둡니다.
+
+CLI 이름은 내부에서 정해도 되지만 다음처럼 역할이 분리되면 Owner가 연결하기 쉽습니다.
+
+```text
+train-production --input-root ... --manifest-sha256 ... --output-root ...
+infer-daily --bundle-root ... --daily-shard ... --output-root ...
+```
+
 ## 현재 부족한 것 — 아래 4개가 이번 필수 작업의 전부입니다
 
 현재 저장소에는 005930 preview, 기존 LSTM·rule·backtest 코드가 있지만 결과는
@@ -85,8 +133,9 @@ performanceClaimAllowed=false
 orderAuthority=NONE
 ```
 
-baseline보다 낮으면 `modelQuality=BELOW_BASELINE`을 그대로 기록하고 현재 validator 규칙에 따라
-`mockRuntimeEligible=false`로 둡니다.
+baseline보다 낮으면 `modelQuality=BELOW_BASELINE`을 그대로 기록합니다. 성능을 숨기지 않는 대신
+input binding, leakage 0, 재현성, 35bps 비용과 독립 metric 재계산이 통과하면
+`mockRuntimeEligible=true`로 둡니다. 이는 모의운용 적격성일 뿐 수익·우월성 주장이 아닙니다.
 
 ## 꼭 지켜 주세요
 
@@ -114,7 +163,26 @@ docker build --platform linux/amd64 -t capstone-return-engine:p1-local .
 완료 후에는 PR URL과 commit SHA, 두 실행의 manifest SHA-256, exact-10 hash 표, 테스트 결과,
 daily inference 실행 명령만 보내 주세요. 별도 발표자료는 필요하지 않습니다.
 
+## 제출 뒤에는 어떻게 연결되는가
+
+Team B는 DB나 자동매매를 직접 켜지 않습니다. bundle과 manifest SHA를 보내면 Owner가 아래 순서로
+검증·적재·활성화합니다.
+
+```bash
+./capstone artifact validate <team-b-bundle> --manifest-sha256 <sha256>
+./capstone artifact import <team-b-bundle> --manifest-sha256 <sha256>
+./capstone up --mock
+./capstone mock gate-author
+./capstone mock readiness
+./capstone mock start
+```
+
+실제 bundle이 정상이라면 `REAL_TEAM_B_POINTER`, release/source binding, certification과 account baseline은
+Owner gate가 다시 계산합니다. Team B가 이 값들을 manifest에 임의로 넣거나 DB를 수정할 필요가 없습니다.
+막히면 마지막 명령의 blocker 이름과 manifest SHA만 Owner에게 전달해 주세요.
+
 ## 구현 중 필요할 때만 보는 기술 참고
 
 - [artifact manifest v2 schema](../../contracts/schemas/p1-return-engine-artifact-manifest.v2.schema.json)
 - [exact-10 semantic schema 목록](../../contracts/catalogs/p1-owner-phase-a-contract-lock.v1.json)
+- [valid input pack 예시](../../contracts/examples/p1-return-engine-input-pack.v1.valid.json)

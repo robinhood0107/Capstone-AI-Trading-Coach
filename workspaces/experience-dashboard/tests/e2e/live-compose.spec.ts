@@ -33,6 +33,13 @@ test('live Compose login and primary screens use the Spring API', async ({ page 
     await expect(page.getByRole('heading', { name: heading })).toBeVisible();
   }
 
+  await page.setViewportSize({ width: 390, height: 844 });
+  await navRail.getByRole('link', { name: /^백테스트 리포트/ }).click();
+  await expect(page.getByRole('heading', { name: 'Baseline / Guide / Strict 비교' })).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+  ).toBe(true);
+
   expect(apiResponses.some((response) => new URL(response.url()).pathname === '/api/v1/auth/login')).toBe(true);
   expect(apiResponses.length).toBeGreaterThan(1);
   expect(

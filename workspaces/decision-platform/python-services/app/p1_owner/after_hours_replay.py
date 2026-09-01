@@ -43,6 +43,7 @@ from app.p1_owner.automation_atr import (
 )
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_KRX_ISSUE_CODE = re.compile(r"[0-9A-Z]{6}", flags=re.ASCII)
 
 
 class AfterHoursReplayError(RuntimeError):
@@ -387,7 +388,11 @@ def _intrinsic_row_rejection(
     today: date,
     calendar: Any,
 ) -> str | None:
-    if not re.fullmatch(r"[0-9]{6}", row.symbol):
+    # KRX short issue codes are six uppercase alphanumeric characters.  Most
+    # equities are numeric, but the sealed research union also contains valid
+    # codes such as 0126Z0; rejecting those makes a complete archive look
+    # incomplete during replay.
+    if _KRX_ISSUE_CODE.fullmatch(row.symbol) is None:
         return "INVALID_SYMBOL"
     if row.session_date > today:
         return "FUTURE_BAR"

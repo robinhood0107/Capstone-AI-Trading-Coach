@@ -48,6 +48,8 @@ FORWARD_COMPATIBLE_TARGET_SCHEMA_VERSIONS = frozenset(
         "111",
         "112",
         "113",
+        "114",
+        "115",
     }
 )
 EMBEDDING_DIMENSION = 1024

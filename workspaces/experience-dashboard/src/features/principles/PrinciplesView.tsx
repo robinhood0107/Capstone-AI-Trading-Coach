@@ -9,6 +9,7 @@ import { api } from '@/shared/api/endpoints';
 import { ready, type ViewState } from '@/shared/lib/viewState';
 import { RULE_LABELS } from '@/shared/lib/ruleLabels';
 import { formatCount, formatKrw, formatKstDateTime, formatRatio } from '@/shared/lib/format';
+import { matchesPreset } from './preset';
 import type {
   PrincipleCurrent,
   PrinciplePreset,
@@ -109,7 +110,7 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
               <PresetCard
                 key={preset.presetId}
                 preset={preset}
-                selected={data.current?.presetId === preset.presetId}
+                selected={matchesPreset(draft, preset.defaultRules)}
                 onApply={() => setDraft(preset.defaultRules)}
               />
             ))}

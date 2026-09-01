@@ -18,9 +18,12 @@ function randomToken(byteLength: number): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** X-Request-Id: 서버 패턴 ^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$ 을 만족해야 한다. */
+/**
+ * X-Request-Id는 공통 HTTP 경계뿐 아니라 RAG의 scope/history/provider 원장에서도 같은 값이
+ * 이어진다. 모든 하위 경계가 공유하는 canonical ``req_`` 형식의 교집합만 생성한다.
+ */
 export function newRequestId(): string {
-  return `fe.${randomToken(12)}`;
+  return `req_${randomToken(16)}`;
 }
 
 /** X-Idempotency-Key: 16~128자, [A-Za-z0-9._~-] 만 허용. */

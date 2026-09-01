@@ -38,6 +38,15 @@ def test_request_requires_all_general_security_and_ci_checks(tmp_path: Path) -> 
         certification._read_request(request_path)
 
 
+def test_request_accepts_codex_workflow_branch(tmp_path: Path) -> None:
+    request_path = tmp_path / "request.json"
+    expected = _request(request_path)
+    expected["branch"] = "codex/p1-v3-preopen-e2e-hardening-20260901"
+    request_path.write_bytes(canonical_json_bytes(expected))
+
+    assert certification._read_request(request_path) == expected
+
+
 def test_certification_claims_signed_authority_before_quote_or_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

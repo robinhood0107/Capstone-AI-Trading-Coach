@@ -8,7 +8,8 @@
 단건 조회와 감사, 대시보드 ViewModel 4종, ADMIN 관측 3종, 신호 조회 — 은 한 번도 스택에서
 불린 적이 없다. 여기서 그것들을 부른다.
 
-무엇을 확인하지 않나. 화면 렌더링(Playwright가 담당)과 v2 자동운용 상태기(관통 테스트가 담당).
+무엇을 확인하지 않나. 화면 렌더링(Playwright가 담당)과 자동운용 상태 전이(관통·V3 전용
+runner가 담당). V3 HTTP 정책·목록·소유자 마스킹 자체는 여기서 확인한다.
 
 정리. 이 runner가 만드는 것은 원칙·원칙버전·일지·동의·관측뿐이다. 시작 시 스냅샷을 찍고 끝에서
 차집합만 지운다. kill switch는 켠 값을 반드시 원래대로 되돌린다. 정리에 실패하면 FAIL이다.
@@ -411,6 +412,77 @@ def check_rag_v1(recorder: Recorder, owner: Api) -> None:
     )
 
 
+def check_automation_v3(recorder: Recorder, owner: Api) -> None:
+    """V3 공개 표면과 실제 DB/RLS 연결을 더미 값으로 끝까지 확인한다."""
+
+    status_code, status_body = owner.request("GET", "/api/v3/automation/status")
+    status_data = status_body.get("data") or {}
+    current_policy = status_data.get("policy") or {}
+    expected_version = int(current_policy.get("version") or 0)
+    policy_code, policy_body = owner.request(
+        "PUT",
+        "/api/v3/automation/policy",
+        {
+            "capitalLimitKrw": 10_000_000,
+            "stopLossBps": 500,
+            "takeProfitBps": 1_000,
+            "maxHoldingSessions": 60,
+            "atrPeriod": 22,
+            "atrMultiplierMilli": 3_000,
+            "modelSellEnabled": True,
+            "expectedVersion": expected_version,
+        },
+        idempotency_key=_unknown_id("idem"),
+    )
+    policy_data = policy_body.get("data") or {}
+    stale_code, stale_body = owner.request(
+        "PUT",
+        "/api/v3/automation/policy",
+        {
+            "capitalLimitKrw": 10_000_000,
+            "stopLossBps": 500,
+            "takeProfitBps": 1_000,
+            "maxHoldingSessions": 60,
+            "atrPeriod": 22,
+            "atrMultiplierMilli": 3_000,
+            "modelSellEnabled": True,
+            "expectedVersion": expected_version,
+        },
+        idempotency_key=_unknown_id("idem"),
+    )
+    runs_code, runs_body = owner.request("GET", "/api/v3/automation/runs")
+    positions_code, positions_body = owner.request("GET", "/api/v3/automation/positions")
+    missing_code, missing_body = owner.request(
+        "GET",
+        f"/api/v3/automation/runs/{_unknown_id('auto_run')}",
+    )
+    recorder.add(
+        "Automation V3 상태·정책 CAS",
+        "PASS"
+        if status_code == 200
+        and status_data.get("contractId") == "automation-status.v3"
+        and policy_code == 200
+        and policy_data.get("atrPeriod") == 22
+        and policy_data.get("maxHoldingSessions") == 60
+        and stale_code == 409
+        else "FAIL",
+        f"status={status_code} policy={policy_code} stale={stale_code} "
+        f"staleCode={(stale_body.get('error') or {}).get('code')}",
+    )
+    recorder.add(
+        "Automation V3 run·position 소유자 읽기",
+        "PASS"
+        if runs_code == 200
+        and isinstance((runs_body.get("data") or {}).get("items"), list)
+        and positions_code == 200
+        and isinstance((positions_body.get("data") or {}).get("items"), list)
+        and missing_code == 404
+        and (missing_body.get("error") or {}).get("code") == "NOT_FOUND"
+        else "FAIL",
+        f"runs={runs_code} positions={positions_code} missing={missing_code}",
+    )
+
+
 def main(argv: list[str]) -> int:
     require_opt_in(_OPT_IN)
     parser = argparse.ArgumentParser(description=__doc__)
@@ -440,6 +512,7 @@ def main(argv: list[str]) -> int:
         decision = check_decisions(recorder, owner, principle)
         check_dashboard_view_models(recorder, owner, decision)
         check_rag_v1(recorder, owner)
+        check_automation_v3(recorder, owner)
     except HarnessError as error:
         recorder.add("확인 중단", "FAIL", str(error))
     except Exception as error:  # noqa: BLE001 - 어떤 실패든 정리는 반드시 돈다

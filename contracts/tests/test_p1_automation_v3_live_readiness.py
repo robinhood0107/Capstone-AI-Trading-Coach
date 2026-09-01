@@ -130,6 +130,13 @@ class P1AutomationV3LiveReadinessTest(unittest.TestCase):
         self.assertNotIn(
             "GRANT SELECT ON public.automation_runtime_checkpoint", migration
         )
+        role_bootstrap = (ROOT / "infra/init/02-application-roles.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "public.p1_automation_ai_judgement_runtime_scope_v1(text)", role_bootstrap
+        )
+        self.assertIn("TO decision_app, decision_automation_runtime;", role_bootstrap)
 
     def test_v115_allows_first_v3_policy_after_legacy_history_with_expected_zero(
         self,

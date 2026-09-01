@@ -12,10 +12,12 @@ import pytest
 
 import app.p1_owner.assets as owner_assets
 from app.data.market_data.archive import MarketDataArchive
+from app.data.market_data.automation_bootstrap import AutomationBootstrapArchive
 from app.p1_owner.assets import (
     P1OwnerAssetError,
     build_golden_bundle,
     build_input_pack,
+    build_input_pack_from_automation_bootstrap,
     verify_golden_bundle,
     verify_input_pack,
 )
@@ -134,6 +136,59 @@ def _build_input(root: Path) -> Path:
     assert result.no_op is False
     assert result.file_count == 6
     return output
+
+
+def _bootstrap_archive(root: Path) -> AutomationBootstrapArchive:
+    symbols = _symbols()
+    sessions = [date(2023, 1, 2) + timedelta(days=index * 2) for index in range(756)]
+    bars = pa.Table.from_pylist(
+        [
+            {
+                "close": 10_000 + symbol_index,
+                "currency": "KRW",
+                "high": 10_100 + symbol_index,
+                "low": 9_900 + symbol_index,
+                "market": "KOSPI",
+                "open": 10_000 + symbol_index,
+                "sessionDate": session,
+                "sourceReceiptSha256": "a" * 64,
+                "symbol": symbol,
+                "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+                "volume": 1_000 + symbol_index,
+            }
+            for symbol_index, symbol in enumerate(symbols)
+            for session in sessions
+        ]
+    )
+    manifest_sha256 = "d" * 64
+    return AutomationBootstrapArchive(
+        root=root,
+        manifest_sha256=manifest_sha256,
+        bars_sha256="e" * 64,
+        row_count=bars.num_rows,
+        manifest={
+            "adjustmentMode": "RAW_CLOSE",
+            "membership": symbols,
+            "membershipMonth": "2026-09",
+            "requestedSessionCount": 756,
+        },
+        bars=bars,
+    )
+
+
+def test_input_pack_from_verified_automation_bootstrap_is_provider_free(tmp_path: Path) -> None:
+    archive = _bootstrap_archive(tmp_path / "bootstrap")
+    output = tmp_path / "input-pack"
+    with mock.patch("app.p1_owner.assets.read_automation_bootstrap_archive", return_value=archive):
+        result = build_input_pack_from_automation_bootstrap(
+            archive_root=archive.root,
+            expected_archive_manifest_sha256=archive.manifest_sha256,
+            output_root=output,
+        )
+
+    assert result.manifest_sha256 == verify_input_pack(output)
+    exclusions = json.loads((output / "corporate_action_exclusions.json").read_text())
+    assert exclusions["sourceArchiveManifestSha256"] == archive.manifest_sha256
 
 
 def test_input_pack_and_golden_bundle_roundtrip_is_provider_free_and_idempotent() -> None:

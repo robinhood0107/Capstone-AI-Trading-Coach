@@ -572,6 +572,7 @@ class RagV2RuntimeService(
                 generation.citationIds,
                 basis,
             )
+        val guardrailFlags = strongLlmGuardrailFlags(basis, generation.warnings)
         return inDatabaseTransaction {
             setActor(ownerUserId, "PERSIST_STRONG_LLM_HISTORY", "RAG_REQUEST", requestId)
             val createdAt = databaseNow()
@@ -590,7 +591,7 @@ class RagV2RuntimeService(
                     scope,
                     basis,
                     generation.citationCoverage,
-                    generation.warnings,
+                    guardrailFlags,
                     citedEvidence,
                     encrypted,
                 )
@@ -602,18 +603,7 @@ class RagV2RuntimeService(
                 citationCoverage = generation.citationCoverage,
                 citations = canonicalCitations,
                 retrievalFailure = false,
-                guardrailFlags =
-                    buildList {
-                        if (generation.answerBasis == StrongLlmAnswerBasis.MODEL_KNOWLEDGE) {
-                            add("MODEL_KNOWLEDGE_ONLY")
-                        }
-                        // 화면이 근거 문장과 추론 문장을 구분해 보여줄 수 있어야 한다.
-                        // guardrailFlags는 이미 문자열 배열이라 계약을 넓히지 않는다.
-                        if (generation.answerBasis == StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING) {
-                            add("REASONING_SENTENCES_PRESENT")
-                        }
-                        addAll(generation.warnings)
-                    },
+                guardrailFlags = guardrailFlags,
             )
         }
     }
@@ -1268,6 +1258,21 @@ class RagV2RuntimeService(
             requireNotNull(byCitationId[citationId]).copy(citationId = "cit_${index + 1}")
         }
     }
+
+    internal fun strongLlmGuardrailFlags(
+        basis: StrongLlmAnswerBasis,
+        warnings: List<String>,
+    ): List<String> =
+        buildList {
+            if (basis == StrongLlmAnswerBasis.MODEL_KNOWLEDGE) {
+                add("MODEL_KNOWLEDGE_ONLY")
+            }
+            // V107의 저장 함수와 API 응답이 같은 표식을 사용해야 reasoning 답변이 원자적으로 남는다.
+            if (basis == StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING) {
+                add("REASONING_SENTENCES_PRESENT")
+            }
+            addAll(warnings)
+        }
 
     /** 검색 결과 0건만 Strong LLM의 citation-free 교육 답변 또는 MCP web research로 넘긴다. */
     private fun isInsufficientRetrieval(evaluation: RagV2EvaluationResult): Boolean =

@@ -3,7 +3,7 @@
 > **현재 통합 상태:** 아래 긴 본문은 처음 받은 코드의 설명을 원본 기록으로 보존한 것입니다. 현재
 > 기본 Compose는 `yfinance`를 호출하지 않고, 받은 CSV와 PTH를 `refresh=False`로 실행한
 > `LEGACY_RECEIVED_PREVIEW`만 만듭니다. 실제 Team B 완료 조건은
-> [Team B 예측·백테스트 엔진 완료 요청](../../docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md)을
+> [Team B 최종 통합 요청서](../../docs/handoff/P1_TEAM_B_최종_통합_요청서.md)를
 > 우선해서 따라 주세요.
 
 전체 앱을 보는 사람은 이 폴더를 직접 실행하지 말고 저장소 루트의 [README](../../README.md)에 따라

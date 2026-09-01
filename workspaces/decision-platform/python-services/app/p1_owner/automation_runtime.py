@@ -42,6 +42,7 @@ from app.p1_owner.automation import (
     SignalCandidate,
 )
 from app.p1_owner.automation_atr import AtrHistoryError, CompletedDailyBar
+from app.p1_owner.daily_inference import DailyInferenceError, DailyInferenceService
 
 _KST = ZoneInfo("Asia/Seoul")
 _OPEN_BOUNDARY = time(9, 30)
@@ -141,24 +142,17 @@ class AccountLineageAdvance:
 
 @dataclass(frozen=True, slots=True)
 class AiJudgementRecord:
-    """AI가 무엇을 바꿨는지 남길 한 줄. 확신도는 basis point 정수로만 오간다.
-
-    부동소수로 저장하면 같은 판단이 저장 왕복에서 달라지고, 그러면 "이 수량이 왜 이렇게
-    나왔나"를 재현할 수 없다.
-    """
+    """AI가 바꾼 순위와 VETO만 남기는 current 판단 기록."""
 
     checkpoint_version: int
     participation: str
     provider_id: str
     prompt_version: str
-    confidence_bps: int | None
     baseline_symbol: str | None
     selected_symbol: str | None
     vetoed_symbol_count: int
     judge_call_count: int
     candidate_count: int
-    quantity_before: int | None
-    quantity_after: int | None
     verdicts_json: str
     ai_settings_sha256: str
     evidence_set_sha256: str | None
@@ -226,6 +220,12 @@ class AutomationRuntimePort(Protocol):
 
 class AutomationRuntimePortFactory(Protocol):
     def build(self, claim: RuntimeClaim, state: dict[str, Any]) -> AutomationRuntimePort: ...
+
+
+class DailyInferencePort(Protocol):
+    def ensure_daily_signals(self, target_session: date) -> object: ...
+
+    def close(self) -> None: ...
 
 
 class PostgresAutomationRuntimeRepository:
@@ -371,7 +371,7 @@ class PostgresAutomationRuntimeRepository:
     def read_state(self, claim: RuntimeClaim) -> dict[str, Any]:
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(
-                "select p1_read_automation_runtime_state_v3(%s,%s)",
+                "select p1_read_automation_runtime_state_v4(%s,%s)",
                 (claim.run_id, claim.claim_token_hash),
             )
             row = cursor.fetchone()
@@ -519,10 +519,10 @@ class PostgresAutomationRuntimeRepository:
         record: AiJudgementRecord,
     ) -> None:
         cursor.execute(
-            "select p1_record_automation_ai_judgement_v2("
-            "%s::text,%s::text,%s::integer,%s::text,%s::text,%s::text,%s::integer,"
-            "%s::text,%s::text,%s::integer,%s::integer,%s::integer,%s::integer,"
-            "%s::integer,%s::text,%s::text,%s::text,%s::integer,%s::integer,%s::integer)",
+            "select p1_record_automation_ai_judgement_v3("
+            "%s::text,%s::text,%s::integer,%s::text,%s::text,%s::text,"
+            "%s::text,%s::text,%s::integer,%s::integer,%s::integer,"
+            "%s::text,%s::text,%s::text,%s::integer,%s::integer,%s::integer)",
             (
                 claim.run_id,
                 claim.claim_token_hash,
@@ -530,14 +530,11 @@ class PostgresAutomationRuntimeRepository:
                 record.participation,
                 record.provider_id,
                 record.prompt_version,
-                record.confidence_bps,
                 record.baseline_symbol,
                 record.selected_symbol,
                 record.vetoed_symbol_count,
                 record.judge_call_count,
                 record.candidate_count,
-                record.quantity_before,
-                record.quantity_after,
                 record.verdicts_json,
                 record.ai_settings_sha256,
                 record.evidence_set_sha256,
@@ -769,17 +766,6 @@ class PersistentAutomationRunner:
         return result
 
 
-def _ai_confidence(value: object) -> float | None:
-    """저장된 basis point를 다시 0~1로 편다. 경계 밖 값은 없는 것으로 본다."""
-
-    if not isinstance(value, dict):
-        return None
-    raw = value.get("confidenceBps")
-    if not isinstance(raw, int) or not 0 <= raw <= 10_000:
-        return None
-    return raw / 10_000
-
-
 def _ai_judgement_record(
     checkpoint_version: int,
     run: AutomationRun,
@@ -794,14 +780,11 @@ def _ai_judgement_record(
         # environment value in Python must not be allowed to rewrite history.
         provider_id="spring_bridge" if v3 and run.ai_judge_call_count else "",
         prompt_version="vertex-news-screen-v2" if v3 else PROMPT_CONTRACT_ID,
-        confidence_bps=(None if run.ai_confidence is None else round(run.ai_confidence * 10_000)),
         baseline_symbol=run.ai_baseline_symbol,
         selected_symbol=run.selected_symbol,
         vetoed_symbol_count=len(run.ai_vetoed_symbols),
         judge_call_count=run.ai_judge_call_count,
         candidate_count=run.ai_candidate_count,
-        quantity_before=run.ai_quantity_before,
-        quantity_after=run.ai_quantity_after,
         verdicts_json=verdicts if isinstance(verdicts, str) and verdicts else "{}",
         ai_settings_sha256=run.ai_settings_sha256 or _LEGACY_AI_SETTINGS_SHA256,
         evidence_set_sha256=run.evidence_set_sha256,
@@ -858,6 +841,7 @@ class AutomationRuntimeService:
         port_factory: AutomationRuntimePortFactory,
         shared_secret: str,
         planner: XkrxBoundaryPlanner | None = None,
+        daily_inference: DailyInferencePort | None = None,
     ) -> None:
         if not re.fullmatch(r"[A-Za-z0-9._~:-]{32,256}", shared_secret):
             raise AutomationRuntimeError("AUTOMATION_RUNTIME_SECRET_INVALID")
@@ -866,6 +850,7 @@ class AutomationRuntimeService:
         self._shared_secret = shared_secret.encode()
         self._planner = planner or XkrxBoundaryPlanner()
         self._runner = PersistentAutomationRunner(repository)
+        self._daily_inference = daily_inference
         self._stop = threading.Event()
 
     def stop(self) -> None:
@@ -873,24 +858,40 @@ class AutomationRuntimeService:
 
     def serve(self) -> None:
         self._repository.preflight()
-        while not self._stop.is_set():
-            now = datetime.now(UTC).astimezone(_KST)
-            wakeup = self._planner.next_wakeup(now)
-            if wakeup > now and self._stop.wait((wakeup - now).total_seconds()):
-                return
-            session_date = self._planner.current_or_next_session(wakeup)
-            claim_hash = _claim_hash(self._shared_secret, session_date)
-            claim = self._repository.claim(session_date, claim_hash)
-            if claim is None:
-                next_wakeup = datetime.combine(
-                    self._planner.next_session(session_date), _OPEN_BOUNDARY, _KST
-                )
-                if self._stop.wait(
-                    max(0.0, (next_wakeup - datetime.now(UTC).astimezone(_KST)).total_seconds())
-                ):
+        daily_inference = self._daily_inference or DailyInferenceService.from_environment()
+        try:
+            while not self._stop.is_set():
+                now = datetime.now(UTC).astimezone(_KST)
+                wakeup = self._planner.next_wakeup(now)
+                if wakeup > now and self._stop.wait((wakeup - now).total_seconds()):
                     return
-                continue
-            self._drive_claim(claim)
+                session_date = self._planner.current_or_next_session(wakeup)
+                # 실패해도 기존 포지션 청산·대사 경로를 살리기 위해 claim은 계속한다. DB에
+                # complete daily batch가 없으므로 신규 BUY 후보만 자연스럽게 0이 된다.
+                try:
+                    daily_inference.ensure_daily_signals(session_date)
+                except DailyInferenceError:
+                    pass
+                claim_hash = _claim_hash(self._shared_secret, session_date)
+                claim = self._repository.claim(session_date, claim_hash)
+                if claim is None:
+                    next_wakeup = datetime.combine(
+                        self._planner.next_session(session_date), _OPEN_BOUNDARY, _KST
+                    )
+                    if self._stop.wait(
+                        max(
+                            0.0,
+                            (
+                                next_wakeup
+                                - datetime.now(UTC).astimezone(_KST)
+                            ).total_seconds(),
+                        )
+                    ):
+                        return
+                    continue
+                self._drive_claim(claim)
+        finally:
+            daily_inference.close()
 
     def _drive_claim(self, claim: RuntimeClaim) -> None:
         state = self._repository.read_state(claim)
@@ -1090,7 +1091,6 @@ def inputs_from_state(
             lstm_signal=cast(Any, str(item["lstmSignal"])),
             baseline_signal=cast(Any, str(item["baselineSignal"])),
             expected_return=float(item["expectedReturn"]),
-            confidence=float(item["confidence"]),
         )
         for item in raw_signals
         if isinstance(item, dict)
@@ -1134,7 +1134,6 @@ def inputs_from_state(
         ai_judgement_enabled=state.get("aiJudgementEnabled") is True,
         ai_thinking_level=cast(Any, str(state.get("thinkingLevel", "low"))),
         ai_settings_sha256=_optional_text(state.get("aiSettingsSha256")),
-        ai_confidence=_ai_confidence(state.get("aiJudgement")),
         manual_position_symbols=frozenset(cast(list[str], manual)),
         signals=signals,
         atr_histories=atr_histories,

@@ -156,7 +156,7 @@ def test_input_pack_and_golden_bundle_roundtrip_is_provider_free_and_idempotent(
         assert second.no_op is True
         assert first.manifest_sha256 == second.manifest_sha256 == golden_sha
         assert len(input_sha) == 64
-        manifest = json.loads((golden_root / "p1-return-engine-manifest.v2.json").read_text())
+        manifest = json.loads((golden_root / "p1-return-engine-manifest.v3.json").read_text())
         assert manifest["evidenceMode"] == "SYNTHETIC_GOLDEN"
         assert manifest["realTeamB"] is False
         assert manifest["performanceClaimAllowed"] is False

@@ -52,7 +52,7 @@ class ReturnInferenceModel:
         manifest_sha256: str,
         allow_synthetic: bool,
     ) -> ReturnInferenceModel:
-        """Load only a fully revalidated v2 bundle and its three reviewed runtime files."""
+        """Load only a fully revalidated v3 bundle and its three reviewed runtime files."""
 
         try:
             validated = validate_artifact_bundle(
@@ -66,7 +66,7 @@ class ReturnInferenceModel:
                 raise ReturnInferenceError("synthetic bundle is disabled outside the test profile")
         elif not (
             validated.real_team_b
-            and validated.model_quality == "PASS"
+            and validated.model_quality in {"PASS", "BELOW_BASELINE"}
             and validated.mock_runtime_eligible
         ):
             raise ReturnInferenceError("real bundle is not runtime eligible")

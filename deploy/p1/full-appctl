@@ -262,11 +262,13 @@ upgrade_state() {
 }
 
 run_initializers() {
+  export P1_ARTIFACT_ARCHIVE_DIR=$STATE_DIR/artifacts
   compose up -d --wait postgres redis
   compose run --rm --no-deps role-bootstrap
   compose run --rm --no-deps migrate
   compose run --rm --no-deps seed-import
   compose run --rm --no-deps identity-bootstrap
+  compose --profile owner run --rm --no-deps team-b-seed-import
   compose --profile preview run --rm --no-deps dashboard-preview-seed
   compose --profile preview run --rm --no-deps return-engine-preview-prepare
 }
@@ -534,7 +536,7 @@ team_a_acceptance() {
   # 검증이 쓰는 catalog 에서 읽는다. 상수로 두면 catalog 가 늘어날 때 영수증만 옛 수를
   # 찍고, 그 수가 곧 사람이 증거로 인용하는 값이 된다.
   local acceptance_catalog acceptance_count
-  acceptance_catalog="$REPO_ROOT/contracts/catalogs/p1-team-a-acceptance.v3.json"
+  acceptance_catalog="$REPO_ROOT/contracts/catalogs/p1-team-a-acceptance.v4.json"
   acceptance_count=$(python3 -c 'import json,sys
 print(json.load(open(sys.argv[1]))["acceptanceOperationCount"])' "$acceptance_catalog")
   printf 'TEAM_A_ACCEPTANCE_OPERATION_COUNT=%s\n' "$acceptance_count"
@@ -838,7 +840,7 @@ market_data_universe_refresh() {
 }
 
 market_data_bootstrap_plan() {
-  local manifest=${1:-} end_session=${2:-} session_count=${3:-1260} parent name
+  local manifest=${1:-} end_session=${2:-} session_count=${3:-756} parent name
   [[ $# == 3 ]] || die MARKET_DATA_PLAN_ARGUMENTS
   [[ $manifest == /* && -f $manifest && ! -L $manifest ]] || die MARKET_DATA_UNIVERSE_MANIFEST
   [[ $end_session =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die MARKET_DATA_END_SESSION
@@ -854,7 +856,7 @@ market_data_bootstrap_plan() {
 }
 
 market_data_bootstrap_run() {
-  local packet=${1:-} manifest=${2:-} end_session=${3:-} session_count=${4:-1260} output_root=${5:-}
+  local packet=${1:-} manifest=${2:-} end_session=${3:-} session_count=${4:-756} output_root=${5:-}
   local packet_parent packet_name manifest_parent manifest_name output_parent output_name kis_mode
   [[ $# == 5 ]] || die MARKET_DATA_RUN_ARGUMENTS
   [[ $packet == /* && -f $packet && ! -L $packet ]] || die MARKET_DATA_APPROVAL_PACKET
@@ -1003,7 +1005,7 @@ case $command in
             shift; manifest=${1:-}; shift || true
             [[ ${1:-} == --end-session ]] || die MARKET_DATA_END_ARGUMENT_REQUIRED
             shift; end_session=${1:-}; shift || true
-            session_count=1260
+            session_count=756
             if [[ ${1:-} == --session-count ]]; then
               shift; session_count=${1:-}; shift || true
             fi
@@ -1017,7 +1019,7 @@ case $command in
             shift; manifest=${1:-}; shift || true
             [[ ${1:-} == --end-session ]] || die MARKET_DATA_END_ARGUMENT_REQUIRED
             shift; end_session=${1:-}; shift || true
-            session_count=1260
+            session_count=756
             if [[ ${1:-} == --session-count ]]; then
               shift; session_count=${1:-}; shift || true
             fi

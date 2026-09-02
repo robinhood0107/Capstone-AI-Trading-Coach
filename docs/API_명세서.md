@@ -185,8 +185,11 @@ Strong LLM 내부 결과 의미는 다음과 같다.
 | `MODEL_KNOWLEDGE` | timeless 교육 설명만, citation 0, coverage 0, `MODEL_KNOWLEDGE_ONLY` |
 | `INSUFFICIENT_EVIDENCE` | answer/citation 없이 public `RETRIEVAL_ONLY` + flag |
 
-validator는 응답을 고쳐 쓰지 않는다. 위조 citation/quote, quote에 없는 숫자, owner scope 위반, schema 위반,
-직접 매수·매도 조언은 invalid다. 단일/오래된/상충/낮은 관련성/2차 출처는 warning이다.
+validator는 응답을 고쳐 쓰지 않는다. 위조 citation/quote, 인용을 가진 문장에서 quote에 없는 숫자,
+owner scope 위반, schema 위반, 답에 담긴 PII는 invalid다. 단일/오래된/상충/낮은 관련성/2차 출처는
+warning이다. 직접 매수·매도 조언 표현은 invalid 사유가 아니다 - 다 만들어진 설명을 사후에 버리는 것은
+조언 경계를 지키는 방법이 아니라 사용자가 아무것도 읽지 못하게 하는 방법이었다. 그 경계는 생성
+프롬프트의 '할 수 없는 것'과 동의 화면의 고지가 세운다.
 
 Streamable HTTP `POST /mcp`는 OAuth bearer token을 요구하고 정확히 다음 다섯 tool만 노출한다.
 
@@ -270,23 +273,38 @@ flowchart LR
   SPRING --> REDIS["Redis"]
   SPRING --> ASYNC["Async Job/Status"]
   SPRING --> GRPC["Python gRPC Services"]
-  GRPC --> RAG["RAG Pipeline"]
-  GRPC --> RETURN["Return Engine: LSTM/Rule Baseline/Backtest"]
-  GRPC --> DECISION_MODEL["Decision Model: LightGBM/HMM/FE Calculators"]
+  GRPC --> RAG["RAG Pipeline (v1 exact-30 / v2 Voyage profile)"]
+  GRPC --> LLM["StrongLlmAgentService: LangGraph + Vertex (설명·후보 판단)"]
+  GRPC --> RETURN["ReturnInferenceService: exact-31 Rule+LSTM daily batch"]
+  GRPC --> DECISION_MODEL["FE Calculators + HMM. LightGBM은 연구 전용"]
   GRPC --> KIS["KIS Adapter"]
-  GRPC --> DATA["KIS/OpenDART/ECOS + fixture-first GDELT aggregate"]
+  GRPC --> DATA["KIS/OpenDART/ECOS + offline-reference GDELT aggregate"]
   KIS --> MOCK["KIS Mock"]
-  KIS -. 후순위 .-> LIVE["KIS Live"]
+  KIS -. 비활성 .-> LIVE["KIS Live"]
+  SPRING --> MCP["MCP + OAuth (외부 LLM client)"]
 ```
 
 | 계층 | 외부 노출 | 핵심 책임 |
 |---|---:|---|
 | Next.js Dashboard | 사용자 브라우저 | 화면, 차트, 원칙 설정, 주문 검토, 학습일지 |
 | Spring/Kotlin API | 노출 | BFF, 인증, 원칙, RiskEngine, 주문 상태, 감사로그 |
-| Python gRPC/FastAPI | 내부 | RAG, 모델 신호, 백테스트, 금융공학 계산, KIS Adapter |
+| Python gRPC/FastAPI | 내부 | RAG, Strong LLM agent, Return 추론, 공시 관측, async worker, 금융공학 계산, KIS Adapter. 백테스트 service는 계획(13절 표) |
 | PostgreSQL/pgvector | 내부 | 사용자/원칙/주문/일지/RAG metadata/vector |
 | Redis | 내부 | cache, lock, 임시 상태, idempotency key, rate limit |
 | Async Job/Status | 내부 | 비동기 작업 상태, 감사 상태, 화면용 metric |
+
+**root OpenAPI 밖의 실행 표면.** `contracts/openapi/openapi.json`의 exact-76은 springdoc이 노출하는
+표면이다. 아래 route는 실제로 존재하지만 `@Hidden`이거나 별도 surface 문서를 갖기 때문에 그 76에
+포함되지 않는다. 이 목록에 없는 route를 새로 만들면 승인된 OpenAPI 전이 사슬을 먼저 통과해야 한다.
+
+| route | 성격 | 절 |
+|---|---|---|
+| `POST /api/v1/financial-engineering/options/{black-scholes,greeks,implied-volatility}` | `@Hidden` 교육·수치검증 계산 | 12.1~12.3 |
+| `GET /api/v2/market-evidence/{symbol}/foreign-news-sentiment` | `@Hidden`, `foreign-news-sentiment.v1` 별도 surface | 7.11 |
+| `POST /api/v2/rag/{import-tickets,delete-tickets,vertex-preparations}` | `@Hidden` owner 문서 control plane | 7.7.1 |
+| `POST /internal/automation-runtime/command` | `@Hidden` loopback bridge, shared-secret. browser/JWT route 아님 | 11.1B |
+| `POST /mcp`, `/.well-known/oauth-*`, `/oauth2/{authorize,token,revoke}` | Spring Authorization Server + MCP transport | 0.4 |
+| `/api/v1/system/health`, `/swagger-ui/**`, `/v3/api-docs/**` | 운영·문서 표면(health는 76에 포함) | 2.7 |
 
 ---
 
@@ -515,6 +533,12 @@ Idempotency HMAC key rotation 중에는 active와 previous version의 scope dige
 ```
 
 Risk API의 `dataFreshness`는 리스크 수치 관점, 이 API는 가용성 관점으로 역할을 분리한다. 프론트 상단 상태 배지와 fail-closed 시연의 근거 API다.
+
+**현재 구현 상태.** `SystemHealthController`는 S0.3 walking skeleton 이후 위 응답 shape만 고정한
+상태로, `pythonService`/`brokerage`/`killSwitchActive`/`dataFreshness`를 실제 의존성에서 관측하지
+않고 고정 `UP`/`true`/빈 목록으로 반환한다. 따라서 이 route의 200을 구성요소 가용성 증거로
+해석하지 않는다. 실제 관측은 각 gRPC service의 `grpc.health.v1`, Actuator, 그리고 자동운용
+status의 `blockers`가 소유한다. 실측 상태 노출은 별도 계약으로 남긴다.
 
 USER health 응답은 `UP`/`DEGRADED`, stale 여부, 기능별 사용 가능 여부처럼 행동에 필요한 coarse 상태만 제공한다. provider별 인증 방식, 환경변수 이름, credential configured 여부, 계정·quota 수치, 내부 host/port, exception은 반환하지 않는다. 상세 운영 상태는 ADMIN 권한과 내부 관측 채널로 제한하더라도 secret 존재 여부나 값을 노출하지 않는다.
 
@@ -959,8 +983,11 @@ Schema Draft 2020-12다. canonical catalog bytes의 lowercase SHA-256을 generat
 `x-s2-1-contract-sha256`에 넣고 `x-s2-1-contract-id=s2-1-principle-contract/v1`과 함께 CI에서
 검증한다. S2.3 catalog도 `x-s2-3-contract-id=s2-3-decision-contract/v1`과
 `x-s2-3-contract-sha256=d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18`로
-고정한다. Spring generator가 내는 root `3.1.0`에서 tracked `3.1.1`로의 patch 한 field와
-deterministic formatting만 normalizer가 바꿀 수 있으며 paths/components/dialect drift는 실패한다.
+고정한다. 같은 방식으로 `x-s3-2-contract-id=s3-2-internal-paper-contract/v1`과
+`x-s3-3-contract-id=s3-3-fill-contract/v1`도 각자의 catalog SHA-256과 함께 root extension에 들어
+있으므로, 현재 root의 contract extension은 네 쌍이다. Spring generator가 내는 root `3.1.0`에서
+tracked `3.1.1`로의 patch 한 field와 deterministic formatting만 normalizer가 바꿀 수 있으며
+paths/components/dialect drift는 실패한다.
 
 ---
 
@@ -1462,7 +1489,10 @@ canonical domain이다.
 
 ## 7. RAG API
 
-RAG는 v1 핵심 구현이다. 단, RAG 답변은 매수/매도 지시가 아니라 근거 기반 설명으로 제한한다. 런타임 RAG corpus는 공식자료, 공시/API 문서, 프로젝트 산출물, 금융공학 source card로 제한한다. 뉴스 원문과 기사 metadata는 RAG corpus에 포함하지 않고, Decision Platform이 만든 검증된 `news_sentiment_summary.v2`만 설명 근거 후보로 연결한다.
+RAG는 v1 핵심 구현이다. 단, RAG 답변은 매수/매도 지시가 아니라 설명으로 제한한다. 설명은 근거가
+있으면 인용과 함께 제시하고, 근거가 없으면 `MODEL_KNOWLEDGE` basis로 인용 없이 제시한다. 근거가
+없다는 것은 설명을 하지 않을 이유가 아니라 인용을 붙이지 않을 이유일 뿐이다. 어떤 질문에도 설명은
+생성하며, 조언성 질문을 질문 단계에서 차단하지 않는다. 런타임 RAG corpus는 공식자료, 공시/API 문서, 프로젝트 산출물, 금융공학 source card로 제한한다. 뉴스 원문과 기사 metadata는 RAG corpus에 포함하지 않고, Decision Platform이 만든 검증된 `news_sentiment_summary.v2`만 설명 근거 후보로 연결한다.
 
 **S4.4 — ask·feedback·history·consent.** 아래 계약은
 `FIXTURE_ONLY` answerer, owner-scoped PostgreSQL functions, Redis rate limit,
@@ -1559,6 +1589,8 @@ append-only 관리자 승인 transition이 소유한다.
 
 `generationStatus`는 `ANSWERED`, `RETRIEVAL_ONLY`, `RETRIEVAL_FAILURE`,
 `BLOCKED_SENSITIVE`, `BLOCKED_ADVICE`, `GENERATION_UNAVAILABLE`의 typed 상태를 사용한다.
+`BLOCKED_ADVICE`는 wire 계약 호환을 위해 enum에 남아 있으나 서버가 더 이상 생성하지 않는다.
+`ANSWERED`는 `citations`가 비고 `citationCoverage`가 `0`인 조합을 허용한다 - 인용 없는 설명이다.
 응답에서 relevance `confidence`, RRF/vector/lexical score, raw chunk/snippet, provider usage,
 model/profile/policy, 내부 hash/path를 노출하지 않는다. answer는 최대 8KiB, citation은 최대
 5개, 전체 Spring response는 최대 32KiB다.
@@ -1658,6 +1690,9 @@ control plane은 `OFFLINE_ONLY`로 owner-bound local DB event·effective read·t
 ### 7.6 Admin embedding profile status
 
 `GET /api/v1/admin/rag/embedding-profiles`
+
+> 상태: 계획. 현재 Spring route와 root OpenAPI 등록이 없다. active profile은 7.9
+> `GET /api/v2/rag/corpus-status`가 노출한다.
 
 Admin 전용 read API이며 다음만 반환한다.
 
@@ -1883,6 +1918,41 @@ local sanitized runtime이며 physical call은 계속 0이다.
 
 ---
 
+### 7.12 Strong LLM 설정 쓰기 표면
+
+```text
+PUT /api/v2/strong-llm/settings
+```
+
+`contracts/openapi/p1-strong-llm-settings.v1.openapi.json`이 잠근 additive operation 하나이며 이
+전환으로 root는 exact-68에서 exact-69가 됐다. **읽기 endpoint는 없다.** 현재 설정과 키의 마지막 네
+글자는 `GET /api/v2/rag/corpus-status`(7.9) 응답의 평평한 필드
+(`strongLlmProvider`, `strongLlmFallbackProvider`, `strongLlmModelId`, `strongLlmFallbackModelId`,
+`strongLlmBaseUrl`, `strongLlmFallbackBaseUrl`, `strongLlmAnswerLanguage`,
+`strongLlmDailyGenerateCallCap`, `strongLlmKeyLast4`, `strongLlmFallbackKeyLast4`)로만 읽는다. 읽기
+route를 따로 두면 승인된 OpenAPI 전이 사슬에 operation이 하나 더 늘기 때문이다.
+
+body는 unknown field를 거부하는 strict parser가 다음 열두 필드만 받는다.
+
+| 필드 | 필수 | 계약 |
+|---|---:|---|
+| `provider` | 예 | `vertex\|openai\|anthropic\|google_genai\|custom` |
+| `fallbackProvider` | 아니오 | 같은 enum |
+| `modelId`, `fallbackModelId` | 아니오 | `^[a-z][a-z0-9._-]{2,127}$` |
+| `baseUrl`, `fallbackBaseUrl` | 아니오 | `https://`로 시작하는 3~256자. `provider=custom`이면 해당 baseUrl 필수 |
+| `answerLanguage` | 예 | `ko\|en` |
+| `dailyGenerateCallCap` | 예 | `1..500` |
+| `apiKey`, `fallbackApiKey` | 아니오 | `^[A-Za-z0-9._:/+=-]{8,4096}$`. 빈 문자열은 "삭제", 필드 부재는 "그대로 둔다" |
+| `aiJudgementEnabled` | 아니오 | boolean. 자동운용 `AI_JUDGING` 참여 여부 |
+| `thinkingLevel` | 아니오 | `minimal\|low\|medium` |
+
+응답 본문은 없다(`200 OK`, body 0). 키를 담을 수 있는 응답 스키마를 아예 만들지 않는 것이 응답에서
+키를 지우는 것보다 확실하기 때문이다. query string은 거부하고 body는 16 KiB·nesting depth 2로
+제한한다. `aiJudgementEnabled`/`thinkingLevel`은 arm 시점에 봉인되어 run의 `aiSettingsSha256`으로만
+사후 확인한다.
+
+---
+
 ## 8. Signal API
 
 Return Engine과 Decision Platform이 생성한 모델 신호를 Spring에서 조회한다. 팀원 B는
@@ -1892,10 +1962,14 @@ LSTM/규칙 baseline artifact를, 팀원 1은 LightGBM artifact를 계약에 맞
 `hmmRegime`으로 요구하므로 component unavailable을 정직하게 표현하지 못한다. 따라서 v1
 payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view를 만들지 않는다.
 
-- `/api/v1/signals/{symbol}`: 기존 계약과 fixture의 legacy read 경계다. 새 S5/S6 artifact를
-  이 형식으로 active publication하지 않는다.
-- `/api/v2/signals/{symbol}`: S5 runtime transition이 허용한 유일한 새 path다. 인증된 GET과
-  server-defined symbol path만 받고 query/artifact/user/account 식별자는 받지 않는다.
+- `/api/v1/signals/{symbol}`: 기존 계약과 fixture의 legacy read 경계다. 구현된 Spring route는
+  없고 root OpenAPI에도 없다. 새 S5/S6 artifact를 이 형식으로 active publication하지 않는다.
+- `/api/v2/signals/{symbol}`: S5 runtime transition이 허용했던 새 path다. 인증된 GET과
+  server-defined symbol path만 받고 query/artifact/user/account 식별자는 받지 않는다. 삭제하지
+  않고 유지한다.
+- `/api/v3/signals/{symbol}`: **current 표면이다.** confidence가 응답 어디에도 없는 additive
+  projection이며 Team A acceptance v4와 생성 client가 이 endpoint를 쓴다. 계약은
+  `contracts/openapi/p1-return-signal-v3.v1.openapi.json`, 상세는 이 문서 끝의 V116 overlay다.
 - S5.0 historical bytes는 유지한다. S5.5는 safe artifact ingest와 production-only DB reader를
   소유하지만 RiskDecision/order response 연결은 `NO_GO`다.
 
@@ -2096,6 +2170,12 @@ Experience Dashboard는 Spring API와 계약된 artifact를 기반으로 모델 
 ---
 
 ## 9. Backtest API
+
+> 상태: 계획(`CONTRACT_ONLY` 이전 단계). `/api/v1/backtests*` route와 `BacktestService` gRPC는
+> 아직 없다(13절 표). 현재 백테스트 결과는 Dashboard projection
+> `GET /api/v1/dashboard/backtests/{runId}`(18.1)가 저장된 artifact 요약으로만 제공하며, 실제
+> Return Engine artifact가 없으면 synthetic demo projection이다. 이 절의 스키마는 후속 구현
+> 계약이다.
 
 ### 9.1 백테스트 실행 요청
 
@@ -2649,11 +2729,17 @@ S3.1에서는 runtime route를 만들지 않는다. 아래 shape는 Live trading
 
 `liveEnabled`는 서버가 배포 gate·운영자 account allowlist·사용자 동의·Kill Switch·reconciliation 상태를 결합해 계산하는 read-only 결과다. 이 API와 consent API는 provider credential, 계좌번호, gate 변경 기능을 노출하지 않으며 v1에는 Live trading 활성화 endpoint를 두지 않는다.
 
-### 10.6 Live 동의 이력 (설계 계약)
+### 10.6 Live 동의 이력 (설계 계약 — 미구현)
 
 최종 명세서 8.5의 3단계 동의 흐름에 대응하는 계약이다. v1에서는 비활성 게이트와 함께 계약만 두고 실제 Live 활성화에는 사용하지 않는다. 동의는 배포 운영자의 immutable OFF gate나 account allowlist를 변경할 수 없다.
 
-`POST /api/v1/consents`
+**현재 구현과의 차이를 분명히 한다.** 구현된 `POST /api/v1/consents`는 7.5의 RAG external-AI
+consent 전용이며 body는 `consentType=EXTERNAL_AI_RAG_V1`, `action=GRANT|REVOKE`,
+`policyVersion=EXTERNAL_AI_RAG_V1` 세 필드만 받는다. 아래 LIVE event shape는 아직 서버가 거부하고
+`GET /api/v1/consents`는 존재하지 않는다. Live consent를 실제로 열려면 별도 contract-change와
+OpenAPI 전이가 먼저 필요하다.
+
+계획 shape(미구현):
 
 ```json
 {
@@ -2663,7 +2749,9 @@ S3.1에서는 runtime route를 만들지 않는다. 아래 shape는 Live trading
 }
 ```
 
-`GET /api/v1/consents?type=LIVE`
+```text
+GET /api/v1/consents?type=LIVE   # 계획, 현재 route 없음
+```
 
 동의 이력의 행위자와 시각은 인증 principal과 서버 clock으로 생성해 append-only로 저장한다. 원칙/주문 상한/universe/RiskEngine 기준이 변경되면 기존 동의는 무효 처리되어 재동의가 필요하다.
 
@@ -2793,9 +2881,10 @@ S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. �
 
 **표면 경계.** 아래 8개 operation은
 `contracts/openapi/p1-automation-journal.v1.openapi.json`에서 잠근 method/path/operationId와 같다.
-이 여덟은 root OpenAPI가 exact-56이던 시점에 들어왔고 그 뒤 Automation v2 다섯, RAG v2 공개 일곱,
-Strong LLM 설정 하나가 더해져 root는 현재 exact-69다. 각 전환은 앞 단계의 bytes를 보존한다.
-`/error`는 제품 operation이 아니다.
+이 여덟은 root OpenAPI가 exact-56이던 시점에 들어왔다. 그 뒤 Automation v2 다섯, RAG v2 공개 일곱,
+Strong LLM 설정 하나로 exact-69가 됐고, 다시 Automation V3 여섯(11.1B)과 confidence-free Signal v3
+하나가 더해져 root는 현재 exact-76이다. 각 전환은 앞 단계의 bytes를 보존한다. `/error`는 제품
+operation이 아니며 exact-76 집계에는 Spring 기본 error handler 일곱 항목이 함께 들어 있다.
 
 ### 11.1 Automation
 
@@ -2855,6 +2944,69 @@ positions는 `OPEN|EXIT_PENDING` active bot-owned row만 최대 5개 반환하�
 잔여수량이다. runs는 정책 version, 주문/체결/잔여수량, LIMIT 가격·예상금액, exit reason을 제공한다.
 실제 주문수량은 자금 슬롯·총 잔여한도·Principle 한도·KIS 무미수 매수가능금액/수량의 최솟값이며
 AI/LSTM은 수량 권한이 없다.
+
+### 11.1B Automation V3 — 근거 우선 screening·ATR/보유 정책 (current)
+
+`contracts/openapi/p1-automation-v3.v1.openapi.json`이 잠근 current 표면이다. v1 네 개와 v2 다섯 개의
+schema bytes를 삭제하거나 변경하지 않는 additive 여섯 operation이며, 이 전환으로 root는 exact-69에서
+exact-75가 됐다(그 뒤 Signal v3 하나로 exact-76).
+
+```text
+GET  /api/v3/automation/status
+PUT  /api/v3/automation/policy
+POST /api/v3/automation/arm
+GET  /api/v3/automation/runs
+GET  /api/v3/automation/runs/{runId}
+GET  /api/v3/automation/positions
+```
+
+policy PUT body는 `capitalLimitKrw`, `stopLossBps`, `takeProfitBps`, `maxHoldingSessions`, `atrPeriod`,
+`atrMultiplierMilli`, `modelSellEnabled`, `expectedVersion` 정확히 여덟 필드다. v2의 금액·손절·익절
+경계는 그대로이고(1만원~100억원의 1만원 단위, 손절 100~1,500bps, 익절 200~3,000bps, 익절 > 손절),
+V3가 추가한 세 사용자 정책은 `maxHoldingSessions` `0..1260`, `atrPeriod` `5..100`,
+`atrMultiplierMilli` `1000..10000`, 그리고 boolean `modelSellEnabled`다. `presetId`는 서버가
+`conservative|balanced|aggressive|custom`으로 파생하며 client가 보내지 않는다.
+
+arm body는 v2와 같은 `accountId`, `policyId`, `expectedPolicyVersion`, `expectedControlVersion` 네
+필드다. Principle과 REAL_TEAM_B strategy는 서버 snapshot이고 client 선택은 없다.
+
+status는 `controlState` `DISARMED|ARMED|HALTED`, `projectionState` `DISARMED|ARMED|RUNNING|HALTED`,
+sealed `policy`, `aiJudgementEnabled`, `thinkingLevel` `minimal|low|medium`, `marketHistoryStatus`
+`EMPTY|PARTIAL|READY|CATCHUP_REQUIRED`, `certificationStatus` `REQUIRED|VALID|EXPIRED|INVALID`,
+`killSwitchActive`, `openPositionCount`/`legacyOpenPositionCount` `0..5`,
+`unresolvedReconciliation`, `canArm`, `blockers`를 반환한다. `thinkingLevel`과
+`aiJudgementEnabled`는 `PUT /api/v2/strong-llm/settings`(7.12)가 쓴 설정의 읽기 투영이며 API 키는
+어떤 응답에도 실리지 않는다.
+
+runs는 `updatedAt DESC, runId DESC` bounded cursor page이고 `GET /api/v3/automation/runs/{runId}`만
+`candidateScreenings`를 함께 준다. screening 항목은 `symbol,status,verdict,score,reason`과 후보별
+evidence이며 evidence는 `citationId,sourceId,sourceType(OFFICIAL_PRIMARY|REGISTERED_INDEPENDENT),
+sourceEventDate,ageWarning,uriSha256,boundedQuote,quoteSha256,verified`다. 원문 URL, 기사 제목,
+provider 원문과 raw model request/response는 응답·DB·로그에 넣지 않는다.
+
+run projection은 결정 회계를 함께 노출한다. `evidenceCount` `0..155`, `groundingQueryCount` `0..32`,
+`judgeCallCount` `0..2`, `screeningProviderCallCount` `0..1`, `providerCalls` `0..64`,
+`physicalSubmitCount` `0..1`, `evidenceSetSha256`, `aiSettingsSha256`이다. run `state`는
+`SCHEDULED, PRECHECK, RECONCILING_PREVIOUS, EXIT_SELECTED, NEWS_SCREENING, AI_JUDGING,
+BUY_CANDIDATE_SELECTED, NEWS_CHECKING, NEWS_VETOED, ORDER_SIZING, RISK_CHECKING, ORDER_SUBMITTING,
+ORDER_SUBMITTED, PENDING_RECONCILIATION, CANCELLED_UNFILLED, COMPLETED, SKIPPED_NO_ACTION,
+SKIPPED_DATA_UNAVAILABLE, SKIPPED_LATE_START, HALTED` 스무 개다.
+
+positions는 active bot-owned row 최대 5개이며 `status`는 `OPEN|EXIT_PENDING|CLOSED|HALTED_MISMATCH`,
+`exitReason`은 `STOP_LOSS|ATR_TRAILING|MODEL_SELL|TAKE_PROFIT|MAX_HOLDING_SESSIONS`다. ATR 추적손절은
+`peakPriceKrw`, `atrAsOfSession`, `trailingStopKrw`로 관측 가능하게 남긴다.
+
+**AI 판단은 confidence를 갖지 않는다.** V116의 `p1_record_automation_ai_judgement_v3`는
+participation, provider/prompt 식별자, `baselineSymbol`, `selectedSymbol`, vetoed 후보 수,
+judge/grounding 호출 수, candidate 수, verdict 원장과 두 hash만 기록한다. 모델 출력은 후보별
+`score`(0..1)와 `veto`, `reason`뿐이므로 실제 효과는 **후보 재순위와 차단 두 가지**다. 수량은
+자금 슬롯·총 잔여한도·Principle 한도·무미수 매수가능금액/수량의 결정적 최솟값이며 모델은 수량
+권한이 없다. 모델이 응답하지 않으면 `AI_NOT_PARTICIPATED`로 남기고 규칙만으로 완결한다.
+
+V3 write 경계는 11.3과 같다. 장외 시간의 재현 검증은 public route가 아니라 `@Hidden`
+`POST /internal/automation-runtime/command`와 `p1-after-hours-observed-anchors.v1`의 receipt 여덟
+개(KIS_MOCK 왕복 1, exit 네 종류, AI rerank 세 종류)로 수행한다. 이 receipt는 기술 재현 증거이며
+성과 주장이 아니다.
 
 ### 11.2 Journal
 
@@ -3341,7 +3493,25 @@ canonical/conflict/transition audit retention은 별도 owner가 맡으며 승�
 
 ## 13. Python gRPC 계약
 
-proto 파일은 `contracts/proto/`에 둔다.
+공개 proto는 `contracts/proto/`, 내부 전용 proto는 `contracts/internal/proto/`에 둔다. 현재 실제로
+존재하는 service 정의와 runtime은 다음과 같고, 이 절의 나머지 소절 중 표에 없는 service는 계획
+스키마(`CONTRACT_ONLY` 이전 단계)다.
+
+| service | proto | Python runtime | 상태 |
+|---|---|---|---|
+| `RagService` | `contracts/proto/rag.proto`, `rag_v2.proto` | `app/rag/rag_rpc.py`, `app/rag/rag_v2_rpc.py` | `MERGED` |
+| `BrokerageService` | `contracts/proto/brokerage.proto` | `app/brokerage/brokerage_grpc_server.py` | `MERGED` |
+| `FinancialEngineeringService` | `contracts/proto/financial_engineering.proto` | `app/financial_engineering/grpc_service.py` | `MERGED` |
+| `DisclosureObservationService` | `contracts/proto/disclosure_observation.proto` | `app/disclosure_rpc.py` | `MERGED` (13.5.1) |
+| `AsyncWorkerService` | `contracts/proto/async_worker.proto` | `app/async_worker/grpc_server.py` | `MERGED` (18.4) |
+| `StrongLlmAgentService` | `contracts/internal/proto/strong_llm_agent.proto` | `app/strong_llm/grpc_server.py` | `MERGED`, loopback bidi 전용 (0.4) |
+| `capstone.return_inference.v1.ReturnInferenceService` | proto 없음. opaque bytes generic handler | `app/p1_owner/inference_grpc_server.py` | `MERGED`, Decision Platform 내부 process |
+| `SignalService`, `BacktestService`, `MarketDataService`, `SourceRegistryService` | 없음 | 없음 | 계획. 13.2/13.3/13.5/13.7의 proto 블록은 설계안이며 생성된 stub이 없다 |
+
+`AsyncWorkerService`는 `Process(AsyncWorkRequest)` 하나, `DisclosureObservationService`는
+`GetDisclosureEvents` 하나, `StrongLlmAgentService`는 `Generate(stream HostEvent) returns (stream
+AgentEvent)` 하나다. `ReturnInferenceService.Infer`는 proto 대신 shared-secret과 opaque byte
+payload를 쓰므로 root OpenAPI와 `contracts/proto/` 어디에도 표면이 없다.
 
 ### 13.0 공통 운영 계약
 

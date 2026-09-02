@@ -171,10 +171,15 @@ class BoundedStrongLlmGraph:
         )
         call_count += 1
         result = discovered
-        has_grounding = bool(discovered["grounding_roots"] and discovered["grounding_supports"])
-        if not request.grounding_discovery_only and (
-            request.owner_evidence or request.public_evidence or has_grounding
-        ):
+        # 검색도 근거도 아무것도 못 건졌을 때 최종 호출 자체를 건너뛰던 조건을 뺐다. 그
+        # 조건 때문에 discovery placeholder(INSUFFICIENT_EVIDENCE)가 그대로 답이 되었고,
+        # 화면에는 설명 대신 빈 칸이 남았다. 근거가 없다는 것은 인용을 붙이지 못한다는
+        # 뜻일 뿐이므로 최종 호출은 언제나 한 번 한다. 인용 없이 답하는 처리는
+        # provider의 정규화가 이미 소유한다.
+        #
+        # grounding_discovery_only는 그대로 남는다. NEWS_SCREEN은 support 원장만 필요하고
+        # 구조화 최종판단은 별도 JUDGE phase가 소유하기 때문이다.
+        if not request.grounding_discovery_only:
             state["permit"]("grounded_final", "GROUNDED_FINAL", False)
             result = chain.current.invoke_google(request, include_owner=True)
             result["prompt_tokens"] += discovered["prompt_tokens"]

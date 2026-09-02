@@ -53,21 +53,35 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
                 invalid["unexpected"] = True
                 self.assertNotEqual([], list(validator.iter_errors(invalid)))
 
-    def test_input_pack_locks_exact31_model_abi_cost_and_no_news(self) -> None:
-        payload = self.fixtures["p1-return-engine-input-pack.v1"]
-        self.assertEqual(31, len(payload["universe"]["symbols"]))
-        self.assertEqual(1, payload["universe"]["symbols"].count("132030"))
-        self.assertEqual(list(FEATURE_ORDER), payload["featureOrder"])
-        self.assertEqual(35, payload["costModel"]["roundTripCostBps"])
-        self.assertEqual(0, payload["modelConfig"]["hyperparameterSearchCount"])
-        self.assertFalse(payload["costModel"]["actualKisFeeClaim"])
-        self.assertEqual(0, payload["dataPolicy"]["newsFeatures"])
-        self.assertEqual(0, payload["dataPolicy"]["gdeltInputs"])
+    def test_universe_catalog_locks_exact31_and_yfinance_tickers(self) -> None:
+        """봉인 input pack 계약을 지우면서 exact-31 잠금을 유니버스 카탈로그로 옮겼다.
 
-        invalid = copy.deepcopy(payload)
-        invalid["universe"]["symbols"][-1] = invalid["universe"]["symbols"][0]
-        with self.assertRaises(ContractValidationError):
-            validate_semantics("p1-return-engine-input-pack.v1", invalid)
+        수집이 yfinance 런타임으로 바뀌어 입력을 사전 봉인하지 않으므로, 계약으로 남길 것은
+        "무엇을 수집하는가"(종목 집합)뿐이다. 티커 접미사도 함께 고정해 KOSDAQ(.KQ) 분기가
+        조용히 끼어들지 않게 한다.
+        """
+        payload = json.loads(
+            (ROOT / "contracts/catalogs/p1-return-universe.v1.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        symbols = payload["symbols"]
+        self.assertEqual("p1-return-universe.v1", payload["contractId"])
+        self.assertEqual(31, payload["symbolCount"])
+        self.assertEqual(31, len(symbols))
+        self.assertEqual(31, len({item["symbol"] for item in symbols}))
+        self.assertEqual(
+            1, sum(1 for item in symbols if item["symbol"] == "132030")
+        )
+        self.assertEqual(
+            1, sum(1 for item in symbols if item["isFixedMember"])
+        )
+        self.assertEqual(list(range(1, 32)), [item["rank"] for item in symbols])
+        for item in symbols:
+            with self.subTest(symbol=item["symbol"]):
+                self.assertRegex(item["symbol"], r"^[0-9]{6}$")
+                self.assertEqual("KOSPI", item["market"])
+                self.assertEqual(f"{item['symbol']}.KS", item["yfinanceTicker"])
 
     def test_manifest_binds_exact_ten_ordered_files_and_synthetic_truth(self) -> None:
         payload = self.fixtures["p1-return-engine-artifact-manifest.v2"]

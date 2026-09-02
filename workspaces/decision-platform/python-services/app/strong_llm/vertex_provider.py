@@ -299,11 +299,14 @@ def _vertex_response_schema(mode: str = "EXPLAIN") -> dict[str, object]:
         "properties": {
             "basis": {
                 "type": "string",
+                # 모델이 고를 수 있는 basis에서 빈 답을 없앤다. 근거가 없다는 것은 설명을
+                # 하지 않을 이유가 아니라 인용을 붙이지 않을 이유일 뿐이므로 그 경우는
+                # MODEL_KNOWLEDGE로 답한다. 호스트가 직접 만드는 placeholder JSON은
+                # 이 스키마의 구속을 받지 않으므로 그대로 둔다.
                 "enum": [
                     "EVIDENCE",
                     "EVIDENCE_WITH_REASONING",
                     "MODEL_KNOWLEDGE",
-                    "INSUFFICIENT_EVIDENCE",
                 ],
             },
             "answer": {"type": "string", "nullable": True},
@@ -353,7 +356,15 @@ def _provider_result(
             "grounding_roots": [],
             "grounding_supports": [],
         }
-    text = _canonical_answer_json(_message_text(message))
+    raw_text = _message_text(message)
+    try:
+        text = _canonical_answer_json(raw_text)
+    except ValueError:
+        # 구조화 출력이 깨졌다고 해서 모델이 실제로 쓴 설명까지 버릴 이유는 없다. 여기서
+        # 통째로 닫으면 화면에는 "설명 문장이 생성되지 않았습니다"만 남고, 사용자가 얻는
+        # 것은 답이 아니라 빈 칸이다. 본문을 인용 없는 설명으로 되살리고 그 사실을 basis로
+        # 드러낸다. 이 경로는 최후 안전망이며 상시 경로가 아니다.
+        text = _plaintext_answer_json(raw_text, mode=mode)
     roots, supports, queries = _grounding_projection(message)
     usage: dict[str, Any] = dict(message.usage_metadata or {})
     normalized = (
@@ -627,6 +638,71 @@ def _canonical_answer_json(value: str) -> str:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
+def _split_sentences(text: str) -> list[str]:
+    """평문을 Kotlin의 개행 계약에 맞는 문장 목록으로 나눈다."""
+
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if not normalized:
+        return []
+    parts = [part.strip() for part in re.split(r"(?<=[.!?。])\s+|(?<=[다요])\.\s+", normalized)]
+    return [part for part in parts if part]
+
+
+def _plaintext_answer_json(raw_text: str, *, mode: str) -> str:
+    """구조화 출력이 깨졌을 때 모델 본문을 인용 없는 설명으로 되살린다.
+
+    JUDGE는 점수와 veto가 곧 계약이라 평문으로 복원할 수 있는 것이 없다. 설명 모드만
+    되살리고, 본문이 정말로 비었을 때만 빈 답으로 닫는다.
+    """
+
+    if mode == "JUDGE":
+        raise ValueError("STRONG_LLM_PROVIDER_JUDGE_PLAINTEXT_FORBIDDEN")
+    sentences = _split_sentences(raw_text)
+    if not sentences:
+        raise ValueError("STRONG_LLM_PROVIDER_TEXT_MISSING")
+    payload = {
+        "basis": "MODEL_KNOWLEDGE",
+        "answer": "\n".join(sentences),
+        "sentences": [
+            {"text": sentence, "citationIds": [], "evidenceSpans": [], "numericSpans": []}
+            for sentence in sentences
+        ],
+        "warnings": [],
+    }
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _demote_to_model_knowledge(payload: dict[str, object]) -> None:
+    """문장은 그대로 두고 인용만 떼어 근거 없는 설명으로 표시한다."""
+
+    payload["basis"] = "MODEL_KNOWLEDGE"
+    payload["warnings"] = []
+    sentences = payload.get("sentences")
+    if not isinstance(sentences, list) or not sentences:
+        answer = payload.get("answer")
+        texts = _split_sentences(answer) if isinstance(answer, str) else []
+        payload["answer"] = "\n".join(texts) if texts else None
+        payload["sentences"] = [
+            {"text": text, "citationIds": [], "evidenceSpans": [], "numericSpans": []}
+            for text in texts
+        ]
+        return
+    for sentence in sentences:
+        if not isinstance(sentence, dict):
+            continue
+        sentence["citationIds"] = []
+        sentence["evidenceSpans"] = []
+        sentence["numericSpans"] = []
+    texts = [
+        str(sentence["text"])
+        for sentence in sentences
+        if isinstance(sentence, dict) and isinstance(sentence.get("text"), str)
+    ]
+    payload["answer"] = "\n".join(texts) if texts else None
+    if not texts:
+        payload["sentences"] = []
+
+
 def _grounding_evidence(result: ProviderResult) -> str:
     payload = {
         "queries": result["google_queries"],
@@ -658,13 +734,11 @@ def _normalize_grounded_answer(
         # Google citation ID는 provider metadata를 받은 뒤 host가 부여한다. 임시/빈 label은
         # 최종 schema 검증 전에 제거하고, 결속 가능한 근거가 없으면 명시적 부족 상태로 닫는다.
         _bind_provider_grounding_citations(payload, [], {}, allowed)
-        if payload.get("basis") == "EVIDENCE" and not _has_bound_evidence(payload):
-            payload = {
-                "basis": "INSUFFICIENT_EVIDENCE",
-                "answer": None,
-                "sentences": [],
-                "warnings": [],
-            }
+        if not _has_bound_evidence(payload):
+            # 결속할 근거가 없다. 예전에는 여기서 답을 통째로 비웠지만, 근거가 없다는 것은
+            # 설명이 틀렸다는 뜻이 아니라 인용을 붙일 수 없다는 뜻일 뿐이다. 문장은 그대로
+            # 두고 인용만 떼어 낸 뒤 basis로 근거 없음을 밝힌다.
+            _demote_to_model_knowledge(payload)
         answer = StrongLlmAnswer.model_validate(payload)
         if any(
             citation_id not in allowed
@@ -701,7 +775,7 @@ def _normalize_grounded_answer(
         return answer_json
     _bind_provider_grounding_citations(payload, supports, root_by_index, allowed)
     answer = StrongLlmAnswer.model_validate(payload)
-    normalized_sentences = []
+    normalized_sentences: list[dict[str, object]] = []
     used_google = False
     for sentence in answer.sentences:
         supporting = [
@@ -738,14 +812,29 @@ def _normalize_grounded_answer(
                 used_google = True
         spans = list({(span["citationId"], span["quote"]): span for span in spans}.values())
         numeric = []
+        unsupported_numeric = False
         for match in _NUMERIC_TOKEN.finditer(sentence.text):
             value = match.group(0)
             citation_ids = list(
                 dict.fromkeys(span["citationId"] for span in spans if value in span["quote"])
             )
             if not citation_ids:
-                raise ValueError("STRONG_LLM_PROVIDER_NUMERIC_UNSUPPORTED")
+                # 인용이 뒷받침하지 못하는 숫자가 하나 있다고 답 전체를 버리지 않는다.
+                # 그 문장만 인용 없는 설명 문장으로 내리면 숫자가 근거를 가진 척하는 일도
+                # 없고, 사용자가 읽을 문장도 사라지지 않는다.
+                unsupported_numeric = True
+                break
             numeric.append({"value": value, "citationIds": citation_ids})
+        if unsupported_numeric:
+            normalized_sentences.append(
+                {
+                    "text": sentence.text,
+                    "citationIds": [],
+                    "evidenceSpans": [],
+                    "numericSpans": [],
+                }
+            )
+            continue
         normalized_sentences.append(
             {
                 "text": sentence.text,
@@ -760,6 +849,13 @@ def _normalize_grounded_answer(
     payload["sentences"] = normalized_sentences
     if used_google:
         payload["warnings"] = list(dict.fromkeys([*answer.warnings, "GOOGLE_GROUNDING_ONLY"]))
+    grounded = [item for item in normalized_sentences if item["citationIds"]]
+    if not grounded:
+        # 결속된 인용이 하나도 남지 않았다. 인용 없는 문장만 모인 답은 추론이 아니라
+        # 근거 없는 설명이므로 basis를 그대로 말한다.
+        _demote_to_model_knowledge(payload)
+    elif len(grounded) != len(normalized_sentences):
+        payload["basis"] = "EVIDENCE_WITH_REASONING"
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 

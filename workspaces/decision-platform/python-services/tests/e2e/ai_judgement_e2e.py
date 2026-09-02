@@ -164,8 +164,7 @@ def check_size_only_shrinks(recorder: Recorder) -> None:
     """V3 writer signature has no confidence or quantity parameter."""
 
     argument_count = psql(
-        "select pronargs from pg_proc"
-        " where proname = 'p1_record_automation_ai_judgement_v3';"
+        "select pronargs from pg_proc where proname = 'p1_record_automation_ai_judgement_v3';"
     ).strip()
     recorder.add(
         "현재 V3 writer는 confidence·수량 인자를 받지 않는다",

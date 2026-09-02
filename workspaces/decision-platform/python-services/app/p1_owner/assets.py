@@ -16,7 +16,6 @@ import shutil
 import stat
 import struct
 import sys
-import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -24,21 +23,10 @@ from pathlib import Path
 from typing import Any, cast
 
 import pyarrow as pa
-import pyarrow.compute as pc
 import pyarrow.parquet as pq
 from jsonschema import Draft202012Validator, FormatChecker
 
 from app.data._shared.canonical_json import canonical_json_bytes
-from app.data.market_data.archive import (
-    MarketDataArchiveError,
-    read_artifact_table,
-    read_market_data_archive,
-)
-from app.data.market_data.automation_bootstrap import (
-    AutomationBootstrapArchive,
-    AutomationBootstrapError,
-    read_automation_bootstrap_archive,
-)
 from app.p1_owner.model_shape import classify_signal, resolve_shape
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
 
@@ -77,7 +65,6 @@ ARTIFACT_SCHEMA_IDS = (
     "p1-return-golden-output.v2",
     "p1-return-model-report.v2",
 )
-INPUT_MANIFEST = "manifest.json"
 GOLDEN_MANIFEST = "p1-return-engine-manifest.v3.json"
 # SYNTHETIC_GOLDEN 번들의 학습 설정. 실제 Team B 번들은 자기 config.json으로 형상을 선언한다.
 _GOLDEN_CONFIG: dict[str, Any] = {
@@ -97,11 +84,9 @@ _GOLDEN_CONFIG: dict[str, Any] = {
     "windowSize": 20,
 }
 CALENDAR_CATALOG = "contracts/catalogs/s5-bootstrap-calendar-recovery-lock.v1.json"
-INPUT_SCHEMA = "contracts/schemas/p1-return-engine-input-pack.v1.schema.json"
 MANIFEST_SCHEMA = "contracts/schemas/p1-return-engine-artifact-manifest.v3.schema.json"
 SCENARIO_POLICY = "contracts/examples/p1-scenario-replay-policy.v1.valid.json"
 MAX_MANIFEST_BYTES = 1_048_576
-MAX_ARCHIVE_ARTIFACT_BYTES = 256 * 1024 * 1024
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SYMBOL = re.compile(r"^[0-9]{6}$")
 
@@ -118,190 +103,33 @@ class AssetBuildResult:
     no_op: bool
 
 
-def build_input_pack(
-    *, archive_root: Path, expected_archive_manifest_sha256: str, output_root: Path
+def build_golden_bundle(
+    *, universe_catalog: Path, session_date: str, output_root: Path
 ) -> AssetBuildResult:
-    """검증된 S5.7 archive를 exact-31 Team B 입력 pack으로 provider 0에서 변환한다."""
+    """Create the exact-ten synthetic bundle with the real wire shape and zero authority.
 
-    archive = read_market_data_archive(archive_root)
-    if archive.manifest_sha256 != _sha(expected_archive_manifest_sha256, "archive manifest"):
-        raise P1OwnerAssetError("archive manifest SHA-256 does not match the approved input")
-    bars = read_artifact_table(archive, "BARS")
-    macro = read_artifact_table(archive, "MACRO")
-    universes = read_artifact_table(archive, "UNIVERSES")
-    indices = read_artifact_table(archive, "INDICES")
-    tables, metadata = _materialize_input_tables(
-        bars=bars,
-        macro=macro,
-        universes=universes,
-        indices=indices,
+    입력이 봉인 ZIP 에서 커밋된 유니버스 카탈로그로 바뀌었다. 수집이 yfinance 런타임이라
+    사전 봉인할 입력이 없고, 골든 번들에 필요한 것은 종목 집합과 세션 날짜뿐이다.
+    inputPackSha256 은 실제로 읽은 카탈로그 바이트의 정직한 해시로 채운다 —
+    기대값을 외부에서 주입받지 않는다.
+    """
+
+    catalog_bytes = _read_regular(
+        universe_catalog.parent, universe_catalog.name, MAX_MANIFEST_BYTES
     )
-    payloads: dict[str, bytes] = {
-        "daily_ohlcv.parquet": _parquet_bytes(tables["bars"]),
-        "ecos_macro.parquet": _parquet_bytes(tables["macro"]),
-        "universe.parquet": _parquet_bytes(tables["universe"]),
-        "xkrx_sessions.json": canonical_json_bytes(metadata["sessions"]),
-        "scenario_policy.json": _read_repository_json_bytes(SCENARIO_POLICY),
-        "corporate_action_exclusions.json": canonical_json_bytes(
-            {
-                "basis": "NORMALIZED_ARCHIVE_NO_DECLARED_EXCLUSION_ROWS",
-                "contractId": "p1-corporate-action-exclusions.v1",
-                "exclusions": [],
-                "performanceClaimAllowed": False,
-                "priceBasis": "RAW_CLOSE",
-                "sourceArchiveManifestSha256": archive.manifest_sha256,
-            }
-        ),
-    }
-    manifest = _input_manifest(
-        source_manifest_sha256=archive.manifest_sha256,
-        metadata=metadata,
-        payloads=payloads,
-    )
-    _validate_repository_schema(INPUT_SCHEMA, manifest)
-    manifest_bytes = canonical_json_bytes(manifest)
-    no_op = _publish_directory(
-        output_root=output_root,
-        payloads=payloads,
-        manifest_name=INPUT_MANIFEST,
-        manifest_bytes=manifest_bytes,
-    )
-    verified = verify_input_pack(output_root)
-    return AssetBuildResult(output_root, verified, len(payloads), no_op)
-
-
-def build_input_pack_from_automation_bootstrap(
-    *, archive_root: Path, expected_archive_manifest_sha256: str, output_root: Path
-) -> AssetBuildResult:
-    """Convert one approved exact-31 KIS bootstrap into the Team B input pack without I/O."""
-
-    archive = read_automation_bootstrap_archive(archive_root)
-    if archive.manifest_sha256 != _sha(expected_archive_manifest_sha256, "archive manifest"):
-        raise P1OwnerAssetError("archive manifest SHA-256 does not match the approved input")
-    tables, metadata = _materialize_automation_bootstrap_tables(archive)
-    payloads: dict[str, bytes] = {
-        "daily_ohlcv.parquet": _parquet_bytes(tables["bars"]),
-        "ecos_macro.parquet": _parquet_bytes(tables["macro"]),
-        "universe.parquet": _parquet_bytes(tables["universe"]),
-        "xkrx_sessions.json": canonical_json_bytes(metadata["sessions"]),
-        "scenario_policy.json": _read_repository_json_bytes(SCENARIO_POLICY),
-        "corporate_action_exclusions.json": canonical_json_bytes(
-            {
-                "basis": "AUTOMATION_BOOTSTRAP_NO_DECLARED_EXCLUSION_ROWS",
-                "contractId": "p1-corporate-action-exclusions.v1",
-                "exclusions": [],
-                "performanceClaimAllowed": False,
-                "priceBasis": "RAW_CLOSE",
-                "sourceArchiveManifestSha256": archive.manifest_sha256,
-            }
-        ),
-    }
-    manifest = _input_manifest(
-        source_manifest_sha256=archive.manifest_sha256,
-        metadata=metadata,
-        payloads=payloads,
-    )
-    _validate_repository_schema(INPUT_SCHEMA, manifest)
-    manifest_bytes = canonical_json_bytes(manifest)
-    no_op = _publish_directory(
-        output_root=output_root,
-        payloads=payloads,
-        manifest_name=INPUT_MANIFEST,
-        manifest_bytes=manifest_bytes,
-    )
-    verified = verify_input_pack(output_root)
-    return AssetBuildResult(output_root, verified, len(payloads), no_op)
-
-
-def verify_input_pack(root: Path) -> str:
-    """Rebind every input-pack file to the closed manifest and return manifest SHA-256."""
-
-    manifest_bytes = _read_regular(root, INPUT_MANIFEST, MAX_MANIFEST_BYTES)
-    manifest = _json_object(manifest_bytes, "input pack manifest")
-    _validate_repository_schema(INPUT_SCHEMA, manifest)
-    files = manifest.get("files")
-    if not isinstance(files, list) or len(files) != 6:
-        raise P1OwnerAssetError("input pack must bind exactly six payload files")
-    expected = {
-        "daily_ohlcv.parquet",
-        "ecos_macro.parquet",
-        "universe.parquet",
-        "xkrx_sessions.json",
-        "scenario_policy.json",
-        "corporate_action_exclusions.json",
-    }
-    if {cast(str, item.get("path")) for item in files if isinstance(item, dict)} != expected:
-        raise P1OwnerAssetError("input pack file inventory drifted")
-    for item in files:
-        if not isinstance(item, dict):
-            raise P1OwnerAssetError("input pack file receipt is invalid")
-        relative = _text(item.get("path"), "input file path")
-        content = _read_regular(root, relative, MAX_ARCHIVE_ARTIFACT_BYTES)
-        if len(content) != item.get("sizeBytes") or _digest(content) != item.get("sha256"):
-            raise P1OwnerAssetError(f"input pack file binding mismatch: {relative}")
-    _verify_input_pack_tables(root, manifest)
-    return _digest(manifest_bytes)
-
-
-def write_input_pack_zip(root: Path, output_zip: Path) -> str:
-    """Write one deterministic ZIP after the directory pack has been fully verified."""
-
-    verify_input_pack(root)
-    if not output_zip.is_absolute() or output_zip.exists() or output_zip.is_symlink():
-        raise P1OwnerAssetError("input pack ZIP target must be a new absolute path")
-    parent = output_zip.parent
-    if not parent.is_dir() or parent.is_symlink():
-        raise P1OwnerAssetError("input pack ZIP parent is unsafe")
-    names = (
-        "corporate_action_exclusions.json",
-        "daily_ohlcv.parquet",
-        "ecos_macro.parquet",
-        INPUT_MANIFEST,
-        "scenario_policy.json",
-        "universe.parquet",
-        "xkrx_sessions.json",
-    )
-    try:
-        with (
-            output_zip.open("xb") as raw,
-            zipfile.ZipFile(
-                raw, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
-            ) as archive,
-        ):
-            for name in names:
-                content = _read_regular(root, name, MAX_ARCHIVE_ARTIFACT_BYTES)
-                info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
-                info.compress_type = zipfile.ZIP_DEFLATED
-                info.create_system = 3
-                info.external_attr = 0o600 << 16
-                archive.writestr(info, content)
-        os.chmod(output_zip, 0o600)
-        return _digest(output_zip.read_bytes())
-    except Exception:
-        if output_zip.is_file() and not output_zip.is_symlink():
-            output_zip.unlink()
-        raise
-
-
-def build_golden_bundle(*, input_pack_manifest: Path, output_root: Path) -> AssetBuildResult:
-    """Create the exact-ten synthetic bundle with the real wire shape and zero authority."""
-
-    input_root = input_pack_manifest.parent
-    input_manifest_sha256 = verify_input_pack(input_root)
-    if input_pack_manifest.name != INPUT_MANIFEST or input_pack_manifest.is_symlink():
-        raise P1OwnerAssetError("golden input must be the canonical input-pack manifest")
-    input_manifest = _json_object(
-        _read_regular(input_root, INPUT_MANIFEST, MAX_MANIFEST_BYTES),
-        "input pack manifest",
-    )
-    symbols = cast(list[str], cast(dict[str, Any], input_manifest["universe"])["symbols"])
-    if len(symbols) != 31 or symbols.count("132030") != 1:
+    catalog = _json_object(catalog_bytes, "universe catalog")
+    entries = catalog.get("symbols")
+    if not isinstance(entries, list):
+        raise P1OwnerAssetError("universe catalog symbols must be a list")
+    symbols = [
+        _text(cast(dict[str, Any], item).get("symbol"), "universe symbol")
+        for item in entries
+        if isinstance(item, dict)
+    ]
+    if len(symbols) != 31 or len(set(symbols)) != 31 or symbols.count("132030") != 1:
         raise P1OwnerAssetError("golden bundle requires the exact-31 input universe")
-    sessions = _json_list(
-        _read_regular(input_root, "xkrx_sessions.json", MAX_MANIFEST_BYTES),
-        "XKRX sessions",
-    )
-    session_date = _text(sessions[-1], "last XKRX session")
+    input_manifest_sha256 = _digest(catalog_bytes)
+    session_date = _golden_session_date(session_date)
     payloads = _golden_payloads(
         symbols=symbols,
         session_date=session_date,
@@ -320,6 +148,20 @@ def build_golden_bundle(*, input_pack_manifest: Path, output_root: Path) -> Asse
     )
     verified = verify_golden_bundle(output_root)
     return AssetBuildResult(output_root, verified, len(payloads), no_op)
+
+
+def _golden_session_date(value: str) -> str:
+    """골든 번들은 회귀 기준선이므로 세션 날짜를 호출자가 명시한다. 오늘 날짜로 흔들리면
+    두 번 실행 byte determinism 이 깨진다."""
+
+    text = str(value)
+    try:
+        parsed = date.fromisoformat(text)
+    except ValueError:
+        raise P1OwnerAssetError("golden session date must be an ISO date") from None
+    if parsed.isoformat() != text:
+        raise P1OwnerAssetError("golden session date must be an ISO date")
+    return text
 
 
 def verify_golden_bundle(root: Path) -> str:
@@ -348,293 +190,6 @@ def verify_golden_bundle(root: Path) -> str:
     _verify_safetensors_header(_read_regular(root, "model.safetensors", 128 * 1024 * 1024))
     _verify_golden_json_and_parquet(root)
     return _digest(manifest_bytes)
-
-
-def _materialize_input_tables(
-    *,
-    bars: pa.Table,
-    macro: pa.Table,
-    universes: pa.Table,
-    indices: pa.Table | None = None,
-    session_dates: list[date] | None = None,
-) -> tuple[dict[str, pa.Table], dict[str, Any]]:
-    months = sorted(set(cast(list[str], universes["membershipMonth"].to_pylist())))
-    if not months:
-        raise P1OwnerAssetError("market-data archive has no monthly universe")
-    membership_month = months[-1]
-    current = universes.filter(
-        pc.equal(  # type: ignore[attr-defined]
-            universes["membershipMonth"], membership_month
-        )
-    ).sort_by([("rank", "ascending")])
-    symbols = cast(list[str], current["symbol"].to_pylist())
-    if (
-        current.num_rows != 31
-        or len(set(symbols)) != 31
-        or symbols.count("132030") != 1
-        or symbols[-1] != "132030"
-    ):
-        raise P1OwnerAssetError("latest universe is not exact-31 with fixed 132030")
-    filtered_bars = bars.filter(
-        pc.is_in(  # type: ignore[attr-defined]
-            bars["symbol"], value_set=pa.array(symbols)
-        )
-    ).sort_by([("symbol", "ascending"), ("sessionDate", "ascending")])
-    bar_projection = pa.table(
-        {
-            "symbol": filtered_bars["symbol"],
-            "sessionDate": filtered_bars["sessionDate"],
-            "open": filtered_bars["open"],
-            "high": filtered_bars["high"],
-            "low": filtered_bars["low"],
-            "raw_close": filtered_bars["close"],
-            "volume": filtered_bars["volume"],
-        }
-    )
-    if session_dates is None:
-        if indices is None:
-            raise P1OwnerAssetError("input pack session source is missing")
-        session_dates = sorted(set(cast(list[date], indices["sessionDate"].to_pylist())))
-    else:
-        session_dates = sorted(set(session_dates))
-    if len(session_dates) < 756:
-        raise P1OwnerAssetError("input pack does not contain a minimum three-year session window")
-    coverage = _coverage(symbols=symbols, bars=bar_projection, sessions=session_dates)
-    split_train = max(1, int(len(session_dates) * 0.60))
-    split_validation = max(split_train + 1, int(len(session_dates) * 0.80))
-    series = sorted(set(cast(list[str], macro["seriesId"].to_pylist())))
-    if len(series) > 2:
-        raise P1OwnerAssetError("input pack ECOS snapshot exceeds two series")
-    return (
-        {"bars": bar_projection, "macro": macro, "universe": current},
-        {
-            "membershipMonth": membership_month,
-            "symbols": symbols,
-            "coverage": coverage,
-            "sessions": [value.isoformat() for value in session_dates],
-            "firstSession": session_dates[0].isoformat(),
-            "lastSession": session_dates[-1].isoformat(),
-            "minimumYears": round((session_dates[-1] - session_dates[0]).days / 365.25, 6),
-            "trainEnd": session_dates[split_train - 1].isoformat(),
-            "validationEnd": session_dates[split_validation - 1].isoformat(),
-            "testStart": session_dates[split_validation].isoformat(),
-            "seriesCount": len(series),
-        },
-    )
-
-
-def _materialize_automation_bootstrap_tables(
-    archive: AutomationBootstrapArchive,
-) -> tuple[dict[str, pa.Table], dict[str, Any]]:
-    """Derive pack-only calendar and universe metadata from a verified KIS bootstrap."""
-
-    manifest = archive.manifest
-    membership = manifest.get("membership")
-    if (
-        manifest.get("adjustmentMode") != "RAW_CLOSE"
-        or manifest.get("requestedSessionCount") != 756
-        or not isinstance(membership, list)
-        or len(membership) != 31
-        or membership[-1] != "132030"
-    ):
-        raise P1OwnerAssetError("automation bootstrap is not the exact-31 RAW_CLOSE input")
-    symbols = [str(symbol) for symbol in membership]
-    if len(set(symbols)) != 31 or any(not _SYMBOL.fullmatch(symbol) for symbol in symbols):
-        raise P1OwnerAssetError("automation bootstrap membership is invalid")
-    bars = archive.bars.select(
-        [
-            "symbol",
-            "sessionDate",
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-            "currency",
-            "temporalQuality",
-            "sourceReceiptSha256",
-        ]
-    )
-    markets = {
-        str(row["symbol"]): str(row["market"])
-        for row in archive.bars.select(["symbol", "market"]).to_pylist()
-    }
-    sessions = sorted(set(cast(list[date], bars["sessionDate"].to_pylist())))
-    if len(sessions) != 756 or set(markets) != set(symbols):
-        raise P1OwnerAssetError("automation bootstrap history coverage is incomplete")
-    quality = str(archive.manifest.get("temporalQuality", "RECONSTRUCTED_FIXED_LAG"))
-    universes = pa.Table.from_pylist(
-        [
-            {
-                "effectiveFromSession": sessions[0],
-                "instrumentId": symbol,
-                "isFixedMember": symbol == "132030",
-                "market": markets[symbol],
-                "membershipMonth": str(manifest["membershipMonth"]),
-                "rank": rank,
-                "selectionSession": sessions[-1],
-                "sourceReceiptSha256": archive.manifest_sha256,
-                "symbol": symbol,
-                "temporalQuality": quality,
-            }
-            for rank, symbol in enumerate(symbols, start=1)
-        ]
-    )
-    macro = pa.Table.from_pylist(
-        [],
-        schema=pa.schema(
-            [
-                ("seriesId", pa.string()),
-                ("observationDate", pa.date32()),
-                ("availableAt", pa.timestamp("us", tz="UTC")),
-                ("value", pa.string()),
-                ("temporalQuality", pa.string()),
-                ("sourceReceiptSha256", pa.string()),
-            ]
-        ),
-    )
-    return _materialize_input_tables(
-        bars=bars,
-        macro=macro,
-        universes=universes,
-        session_dates=sessions,
-    )
-
-
-def _coverage(*, symbols: list[str], bars: pa.Table, sessions: list[date]) -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
-    session_index = {value: index for index, value in enumerate(sessions)}
-    for symbol in symbols:
-        table = bars.filter(pc.equal(bars["symbol"], symbol))  # type: ignore[attr-defined]
-        dates = cast(list[date], table["sessionDate"].to_pylist())
-        if not dates:
-            raise P1OwnerAssetError(f"input pack symbol has no bars: {symbol}")
-        unique_dates = sorted(set(dates))
-        if len(unique_dates) != len(dates):
-            raise P1OwnerAssetError(f"input pack symbol has duplicate bars: {symbol}")
-        first = unique_dates[0]
-        last = unique_dates[-1]
-        expected = sessions[session_index[first] : session_index[last] + 1]
-        missing_middle = len(set(expected) - set(unique_dates))
-        if missing_middle:
-            raise P1OwnerAssetError(f"input pack symbol has middle-session gaps: {symbol}")
-        status = "COMPLETE" if first == sessions[0] and last == sessions[-1] else "EDGE_TRUNCATED"
-        result.append(
-            {
-                "firstSession": first.isoformat(),
-                "lastSession": last.isoformat(),
-                "missingMiddleSessions": 0,
-                "status": status,
-                "symbol": symbol,
-            }
-        )
-    return result
-
-
-def _input_manifest(
-    *, source_manifest_sha256: str, metadata: dict[str, Any], payloads: dict[str, bytes]
-) -> dict[str, Any]:
-    sessions_sha = _digest(payloads["xkrx_sessions.json"])
-    macro_sha = _digest(payloads["ecos_macro.parquet"])
-    calendar = _repository_json(CALENDAR_CATALOG)
-    correction_sha = _text(
-        cast(dict[str, Any], calendar["calendar"])["correctionSetSha256"],
-        "calendar correction SHA-256",
-    )
-    files = [
-        {
-            "contentType": "PARQUET" if name.endswith(".parquet") else "JSON",
-            "path": name,
-            "sha256": _digest(payload),
-            "sizeBytes": len(payload),
-        }
-        for name, payload in sorted(payloads.items())
-    ]
-    preimage: dict[str, Any] = {
-        "calendar": {
-            "calendarVersion": "exchange-calendars-4.13.2",
-            "correctionGenerationSha256": correction_sha,
-            "mic": "XKRX",
-            "sessionsSha256": sessions_sha,
-            "timezone": "Asia/Seoul",
-        },
-        "contractId": "p1-return-engine-input-pack.v1",
-        "costModel": {
-            "actualKisFeeClaim": False,
-            "appliesIdenticallyToScenarios": True,
-            "costModelId": "CONSERVATIVE_FIXED_35BPS_V1",
-            "roundTripCostBps": 35,
-        },
-        "coverage": metadata["coverage"],
-        "dataPolicy": {
-            "accountOrderDataIncluded": False,
-            "corporateActionExclusionsSha256": _digest(
-                payloads["corporate_action_exclusions.json"]
-            ),
-            "gdeltInputs": 0,
-            "globalSplitSha256": _digest(
-                canonical_json_bytes(
-                    {
-                        "testStart": metadata["testStart"],
-                        "trainEnd": metadata["trainEnd"],
-                        "validationEnd": metadata["validationEnd"],
-                    }
-                )
-            ),
-            "intradayFeatures": 0,
-            "minimumDailyYears": 3,
-            "newsFeatures": 0,
-            "priceBasis": "RAW_CLOSE",
-            "providerCredentialsIncluded": False,
-        },
-        "featureOrder": list(FEATURE_ORDER),
-        "files": files,
-        "macroSnapshot": {
-            "availableAtBound": True,
-            "contractId": "ecos_macro_snapshot",
-            "manifestSha256": macro_sha,
-            "seriesCount": metadata["seriesCount"],
-        },
-        "modelConfig": {
-            "cpuDeterministic": True,
-            "dropout": 0.2,
-            "finalTestReviewCount": 0,
-            "hiddenSize": 128,
-            "hyperparameterSearchCount": 0,
-            "layerCount": 3,
-            "learningRate": 0.0005,
-            "loss": "SmoothL1",
-            "optimizer": "Adam",
-            "outputSize": 1,
-            "perSymbolIndependent": True,
-            "seed": 0,
-            "threadCount": 1,
-            "windowSize": 20,
-        },
-        "ownerRiskEvaluator": {
-            "contractId": "s2-2-system-rule-catalog/v1",
-            "orderAuthority": "NONE",
-            "providerCalls": 0,
-        },
-        "period": {
-            "firstSession": metadata["firstSession"],
-            "lastSession": metadata["lastSession"],
-            "minimumYears": metadata["minimumYears"],
-            "testStart": metadata["testStart"],
-            "trainEnd": metadata["trainEnd"],
-            "validationEnd": metadata["validationEnd"],
-        },
-        "universe": {
-            "domesticStockCount": 30,
-            "goldEtfSymbol": "132030",
-            "symbols": metadata["symbols"],
-            "universeId": "P1_EXACT_31_V1",
-        },
-    }
-    preimage["canonicalManifestSha256"] = _digest(canonical_json_bytes(preimage))
-    if not _SHA256.fullmatch(source_manifest_sha256):
-        raise P1OwnerAssetError("input source manifest SHA-256 is invalid")
-    return preimage
 
 
 def _golden_payloads(
@@ -894,19 +449,6 @@ def _verify_safetensors_header(content: bytes) -> None:
         raise P1OwnerAssetError("safetensors data extent is invalid")
 
 
-def _verify_input_pack_tables(root: Path, manifest: dict[str, Any]) -> None:
-    bars = pq.read_table(root / "daily_ohlcv.parquet")  # type: ignore[no-untyped-call]
-    expected_columns = ["symbol", "sessionDate", "open", "high", "low", "raw_close", "volume"]
-    if bars.column_names != expected_columns:
-        raise P1OwnerAssetError("input OHLCV columns drifted")
-    symbols = cast(list[str], cast(dict[str, Any], manifest["universe"])["symbols"])
-    if sorted(set(cast(list[str], bars["symbol"].to_pylist()))) != sorted(symbols):
-        raise P1OwnerAssetError("input OHLCV symbol set drifted")
-    macro = pq.read_table(root / "ecos_macro.parquet")  # type: ignore[no-untyped-call]
-    if len(set(cast(list[str], macro["seriesId"].to_pylist()))) > 2:
-        raise P1OwnerAssetError("input macro series set drifted")
-
-
 def _verify_golden_json_and_parquet(root: Path) -> None:
     config = _json_object(_read_regular(root, "config.json", MAX_MANIFEST_BYTES), "config")
     scaler = _json_object(_read_regular(root, "scaler.json", 4 * 1024 * 1024), "scaler")
@@ -1151,51 +693,18 @@ def _digest(content: bytes) -> str:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="P1 Owner provider-free input/golden asset tool")
     subcommands = parser.add_subparsers(dest="command", required=True)
-    input_parser = subcommands.add_parser("input-pack")
-    input_parser.add_argument("--archive-root", type=Path)
-    input_parser.add_argument("--bootstrap-archive-root", type=Path)
-    input_parser.add_argument("--archive-manifest-sha256", required=True)
-    input_parser.add_argument("--output-root", type=Path, required=True)
-    input_parser.add_argument("--zip-output", type=Path)
     golden_parser = subcommands.add_parser("golden")
-    golden_parser.add_argument("--input-pack-manifest", type=Path, required=True)
+    golden_parser.add_argument("--universe-catalog", type=Path, required=True)
+    golden_parser.add_argument("--session-date", required=True)
     golden_parser.add_argument("--output-root", type=Path, required=True)
-    verify_input_parser = subcommands.add_parser("verify-input-pack")
-    verify_input_parser.add_argument("--root", type=Path, required=True)
     verify_golden_parser = subcommands.add_parser("verify-golden")
     verify_golden_parser.add_argument("--root", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        if args.command == "input-pack":
-            if (args.archive_root is None) == (args.bootstrap_archive_root is None):
-                raise P1OwnerAssetError(
-                    "input pack requires exactly one standard or automation bootstrap archive root"
-                )
-            if args.bootstrap_archive_root is not None:
-                result = build_input_pack_from_automation_bootstrap(
-                    archive_root=args.bootstrap_archive_root,
-                    expected_archive_manifest_sha256=args.archive_manifest_sha256,
-                    output_root=args.output_root,
-                )
-            else:
-                result = build_input_pack(
-                    archive_root=args.archive_root,
-                    expected_archive_manifest_sha256=args.archive_manifest_sha256,
-                    output_root=args.output_root,
-                )
-            payload = {
-                "fileCount": result.file_count,
-                "manifestSha256": result.manifest_sha256,
-                "noOp": result.no_op,
-                "providerCalls": 0,
-                "status": "INPUT_PACK_VERIFIED",
-            }
-            if args.zip_output is not None:
-                payload["zipPath"] = args.zip_output.name
-                payload["zipSha256"] = write_input_pack_zip(args.output_root, args.zip_output)
-        elif args.command == "golden":
+        if args.command == "golden":
             result = build_golden_bundle(
-                input_pack_manifest=args.input_pack_manifest,
+                universe_catalog=args.universe_catalog,
+                session_date=args.session_date,
                 output_root=args.output_root,
             )
             payload = {
@@ -1206,12 +715,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "realTeamB": False,
                 "status": "SYNTHETIC_GOLDEN_VERIFIED",
             }
-        elif args.command == "verify-input-pack":
-            payload = {
-                "manifestSha256": verify_input_pack(args.root),
-                "providerCalls": 0,
-                "status": "INPUT_PACK_VERIFIED",
-            }
         else:
             payload = {
                 "manifestSha256": verify_golden_bundle(args.root),
@@ -1219,7 +722,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "realTeamB": False,
                 "status": "SYNTHETIC_GOLDEN_VERIFIED",
             }
-    except (AutomationBootstrapError, MarketDataArchiveError, P1OwnerAssetError, OSError) as error:
+    except (P1OwnerAssetError, OSError) as error:
         print(f"P1_OWNER_ASSET_FAILED: {error}", file=sys.stderr)
         return 1
     print(canonical_json_bytes(payload).decode(), end="")

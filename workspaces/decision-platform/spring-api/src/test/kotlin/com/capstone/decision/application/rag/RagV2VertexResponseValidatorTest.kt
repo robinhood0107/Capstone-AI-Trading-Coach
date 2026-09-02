@@ -84,7 +84,7 @@ class RagV2VertexResponseValidatorTest {
     }
 
     @Test
-    fun `timeless model knowledge is citation free but current or numeric claims are rejected`() {
+    fun `model knowledge is citation free and may carry numbers and time words`() {
         val result =
             validator.validate(
                 """{"basis":"MODEL_KNOWLEDGE","answer":"분산투자는 서로 다른 위험 요인을 가진 자산을 함께 구성하는 일반적인 위험 관리 개념입니다.","sentences":[{"text":"분산투자는 서로 다른 위험 요인을 가진 자산을 함께 구성하는 일반적인 위험 관리 개념입니다.","citationIds":[],"evidenceSpans":[],"numericSpans":[]}],"warnings":[]}""",
@@ -93,15 +93,21 @@ class RagV2VertexResponseValidatorTest {
         assertThat(result.citationIds).isEmpty()
         assertThat(result.citationCoverage).isZero()
 
-        listOf("현재 가장 좋은 자산은 채권입니다.", "주식 비중은 60%가 적절합니다.").forEach { answer ->
-            val numeric = Regex("[-+]?\\d+(?:\\.\\d+)?%?").findAll(answer).map { it.value }.toList()
-            val numericJson = numeric.joinToString(",") { "{\"value\":\"$it\",\"citationIds\":[]}" }
-            assertThatThrownBy {
+        // 숫자와 시점 표현을 막던 규칙은 뺐다. 그 규칙이 실제로 막은 것은 조작된 수치가
+        // 아니라 롤오버는 만기 3개월 전에 한다 같은 평범한 설명이었고, 그때마다 답이
+        // 통째로 사라졌다. 이 basis는 인용이 없다는 사실을 스스로 밝히므로 읽는 사람은
+        // 그 문장이 근거에 결속되지 않았음을 안다.
+        listOf("최근 채권 비중을 늘리는 논의가 있습니다.", "주식 비중 60%는 흔히 쓰이는 예시입니다.").forEach { answer ->
+            val plain =
                 validator.validate(
-                    """{"basis":"MODEL_KNOWLEDGE","answer":"$answer","sentences":[{"text":"$answer","citationIds":[],"evidenceSpans":[],"numericSpans":[$numericJson]}],"warnings":[]}""",
+                    """{"basis":"MODEL_KNOWLEDGE","answer":"$answer","sentences":[{"text":"$answer","citationIds":[],"evidenceSpans":[],"numericSpans":[]}],"warnings":[]}""",
                     evidence,
                 )
-            }.isInstanceOf(RagV2VertexResponseValidationException::class.java)
+
+            assertThat(plain.basis).isEqualTo(StrongLlmAnswerBasis.MODEL_KNOWLEDGE)
+            assertThat(plain.answer).isEqualTo(answer)
+            assertThat(plain.citationIds).isEmpty()
+            assertThat(plain.citationCoverage).isZero()
         }
     }
 
@@ -148,14 +154,19 @@ class RagV2VertexResponseValidatorTest {
     }
 
     @Test
-    fun `direct personalized trading advice remains invalid even with a real quote`() {
+    fun `advice phrasing no longer discards a properly cited answer`() {
+        // 다 만들어진 설명을 사후에 통째로 버리는 것은 조언 경계를 지키는 방법이 아니라
+        // 사용자가 아무것도 못 읽게 하는 방법이었다. 그 경계는 프롬프트가 세우고 동의
+        // 고지가 말한다. 여기 남는 검사는 PII 유출 방지 하나다.
         val adviceEvidence = listOf(evidence(1, "d", "지금 이 종목을 매수해야 합니다."))
-        assertThatThrownBy {
+        val result =
             validator.validate(
                 """{"basis":"EVIDENCE","answer":"지금 이 종목을 매수해야 합니다.","sentences":[{"text":"지금 이 종목을 매수해야 합니다.","citationIds":["cit_1"],"evidenceSpans":[{"citationId":"cit_1","quote":"지금 이 종목을 매수해야 합니다."}],"numericSpans":[]}],"warnings":[]}""",
                 adviceEvidence,
             )
-        }.isInstanceOf(RagV2VertexResponseValidationException::class.java)
+
+        assertThat(result.basis).isEqualTo(StrongLlmAnswerBasis.EVIDENCE)
+        assertThat(result.citationIds).containsExactly("cit_1")
     }
 
     @Test
@@ -271,9 +282,12 @@ class RagV2VertexResponseValidatorTest {
     }
 
     @Test
-    fun `a reasoning sentence cannot introduce a number no citation proved`() {
-        // 인용 없는 문장에 숫자를 허용하면 그것이 곧 조작된 수치가 답으로 들어오는 통로가 된다.
-        assertThatThrownBy {
+    fun `a reasoning sentence may carry a number or a time word`() {
+        // 인용 없는 문장의 숫자·시점 제약을 뺐다. 그 문장은 citationIds가 비어 있다는
+        // 사실로 이미 근거에 결속되지 않았음을 말하고 있고, 여기서 닫으면 인용을 제대로
+        // 갖춘 근거 문장까지 포함한 답 전체가 사라졌다. 근거 문장이 quote·숫자 검증을
+        // 그대로 통과해야 하는 규칙은 남아 있다.
+        val numeric =
             validator.validate(
                 """
                 {
@@ -300,13 +314,11 @@ class RagV2VertexResponseValidatorTest {
                 """.trimIndent(),
                 evidence,
             )
-        }.isInstanceOf(RagV2VertexResponseValidationException::class.java)
-    }
 
-    @Test
-    fun `a reasoning sentence cannot claim what is true right now`() {
-        // 시점 주장은 인용 없이 확인할 방법이 없다. 근거가 오래됐는지조차 말할 수 없다.
-        assertThatThrownBy {
+        assertThat(numeric.basis).isEqualTo(StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING)
+        assertThat(numeric.citationIds).containsExactly("cit_2")
+
+        val timely =
             validator.validate(
                 """
                 {
@@ -333,7 +345,9 @@ class RagV2VertexResponseValidatorTest {
                 """.trimIndent(),
                 evidence,
             )
-        }.isInstanceOf(RagV2VertexResponseValidationException::class.java)
+
+        assertThat(timely.basis).isEqualTo(StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING)
+        assertThat(timely.citationIds).containsExactly("cit_2")
     }
 
     @Test

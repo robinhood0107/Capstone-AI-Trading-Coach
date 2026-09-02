@@ -67,7 +67,10 @@ def test_explain_and_judge_share_one_template_and_keep_section_order() -> None:
     # 역할과 출력 계약만 갈린다.
     assert "설명 전용" in explain.system
     assert "매수 후보 심사자" in judge.system
-    assert "INSUFFICIENT_EVIDENCE" in explain.system
+    # 설명 계약은 답을 비우는 basis를 더 이상 제시하지 않는다.
+    assert "MODEL_KNOWLEDGE" in explain.system
+    assert "INSUFFICIENT_EVIDENCE" not in explain.system
+    assert "답을 비우는 basis는 없다" in explain.system
     assert "candidates:" in judge.system
 
 

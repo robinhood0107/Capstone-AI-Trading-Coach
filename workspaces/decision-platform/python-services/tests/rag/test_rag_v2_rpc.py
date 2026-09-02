@@ -121,7 +121,14 @@ def test_bge_v2_engine_returns_retrieval_only_public_and_owner_metadata_without_
     assert all("Canonical content" not in str(item) for item in result.citations)
 
 
-def test_bge_v2_engine_blocks_advice_before_scope_or_retrieval() -> None:
+def test_bge_v2_engine_retrieves_for_advice_question_instead_of_blocking() -> None:
+    """조언성 질문도 검색까지 그대로 태운다.
+
+    예전에는 여기서 scope와 retrieval을 밟기 전에 닫았고, 화면에는 설명도 출처도 남지
+    않았다. 조언이 아니라는 사실은 동의 고지가 말하고, 무엇을 사고 팔지 말하지 않는
+    경계는 생성 프롬프트가 세운다. 검색을 막을 이유는 그 어디에도 없다.
+    """
+
     scope = _scope(owner_generation=False)
     reader = _ScopeReader(scope)
     retrieval = _Retrieval(
@@ -133,11 +140,11 @@ def test_bge_v2_engine_blocks_advice_before_scope_or_retrieval() -> None:
 
     result = engine.ask(_request(question="나는 지금 005930을 몇 주 매수해야 하나요?"))
 
-    assert result.status is RagV2RpcStatus.BLOCKED_ADVICE
-    assert result.failure_code == "PERSONALIZED_TRADING_ADVICE"
-    assert result.guardrail_flags == ("PERSONALIZED_TRADING_ADVICE",)
-    assert reader.calls == 0
-    assert retrieval.calls == 0
+    assert result.status is RagV2RpcStatus.RETRIEVAL_ONLY
+    assert result.failure_code == ""
+    assert len(result.citations) == 2
+    assert reader.calls == 1
+    assert retrieval.calls == 1
 
 
 def test_bge_v2_engine_maps_scope_or_retrieval_failure_without_fabricating_citations() -> None:

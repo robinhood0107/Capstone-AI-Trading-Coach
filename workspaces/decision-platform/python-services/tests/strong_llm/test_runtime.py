@@ -16,6 +16,7 @@ from app.strong_llm.vertex_provider import (
     _canonical_answer_json,
     _fallback_tools,
     _normalize_grounded_answer,
+    _plaintext_answer_json,
     _provider_result,
     _vertex_response_schema,
 )
@@ -374,7 +375,14 @@ def test_explicit_google_search_stays_on_official_langchain_vertex_binding(
     assert json.loads(result["answer_json"])["basis"] == "INSUFFICIENT_EVIDENCE"
 
 
-def test_unbound_provisional_google_citation_closes_as_insufficient_evidence() -> None:
+def test_unbound_provisional_google_citation_keeps_answer_as_model_knowledge() -> None:
+    """결속되지 않은 인용은 떼어 내되 설명 문장은 남긴다.
+
+    예전에는 이 경우 답을 통째로 비웠다. 그러나 인용을 결속할 수 없다는 것은 설명이
+    틀렸다는 뜻이 아니라 근거를 붙일 수 없다는 뜻이다. 문장은 그대로 두고 basis로
+    근거 없음을 밝히면 사용자는 읽을 것을 얻고, 무엇이 검증되지 않았는지도 안다.
+    """
+
     answer = {
         "basis": "EVIDENCE",
         "answer": "Current SEC release.",
@@ -399,9 +407,16 @@ def test_unbound_provisional_google_citation_closes_as_insufficient_evidence() -
     )
 
     assert normalized == {
-        "basis": "INSUFFICIENT_EVIDENCE",
-        "answer": None,
-        "sentences": [],
+        "basis": "MODEL_KNOWLEDGE",
+        "answer": "Current SEC release.",
+        "sentences": [
+            {
+                "text": "Current SEC release.",
+                "citationIds": [],
+                "evidenceSpans": [],
+                "numericSpans": [],
+            }
+        ],
         "warnings": [],
     }
 
@@ -1084,3 +1099,46 @@ def _result(queries: list[str]) -> ProviderResult:
             "grounding_supports": [],
         },
     )
+
+
+def test_broken_structured_output_falls_back_to_plaintext_explanation() -> None:
+    """구조화 출력이 깨져도 모델이 쓴 설명은 살린다.
+
+    이 경로가 없던 동안 화면은 GENERATION_UNAVAILABLE만 보여 줬다. 사용자가 읽을 문장이
+    실제로 존재했는데도 그랬다. 폴백은 최후 안전망이며, 근거를 지어내지 않고 인용 없는
+    설명으로만 되살린다.
+    """
+
+    message = AIMessage(
+        content="롤오버는 만기가 다가온 선물을 다음 월물로 교체하는 것이다. "
+        "이 과정에서 월물 간 가격 차이만큼 비용이나 수익이 생긴다."
+    )
+
+    result = _provider_result(message, allowed_local_ids=set())
+
+    payload = json.loads(result["answer_json"])
+    assert payload["basis"] == "MODEL_KNOWLEDGE"
+    assert payload["sentences"]
+    assert payload["answer"] == "\n".join(item["text"] for item in payload["sentences"])
+    assert all(not item["citationIds"] for item in payload["sentences"])
+    assert all(not item["evidenceSpans"] for item in payload["sentences"])
+    assert "롤오버" in payload["answer"]
+
+
+def test_plaintext_fallback_refuses_empty_body_and_judge_mode() -> None:
+    """되살릴 본문이 없거나 판단 모드면 폴백하지 않는다. 점수를 지어내지 않는다."""
+
+    with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_TEXT_MISSING"):
+        _plaintext_answer_json("   ", mode="EXPLAIN")
+    with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_JUDGE_PLAINTEXT_FORBIDDEN"):
+        _plaintext_answer_json("무언가 판단", mode="JUDGE")
+
+
+def test_model_selectable_bases_no_longer_offer_an_empty_answer() -> None:
+    """스키마가 빈 답을 고를 여지를 남기지 않는다."""
+
+    schema = _vertex_response_schema("EXPLAIN")
+    bases = schema["properties"]["basis"]["enum"]  # type: ignore[index]
+
+    assert "INSUFFICIENT_EVIDENCE" not in bases
+    assert set(bases) == {"EVIDENCE", "EVIDENCE_WITH_REASONING", "MODEL_KNOWLEDGE"}

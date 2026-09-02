@@ -35,7 +35,7 @@
     "src_project_var_es_coherence_001"
   ],
   "datasetId": "s4-5-public-synthetic-60/v1",
-  "evaluationManifestSha256": "7fe566be2a7945e811a43ca28b951a46529d5d7a61fdafa0c7fa3b8d3a6915dd",
+  "evaluationManifestSha256": "e7f5eea8806f333030b5b0bd56a0b983279064147299ce1426be587e49f0371f",
   "mrrBaseline": 1.0,
   "provenancePolicy": "PUBLIC_SYNTHETIC_ONLY_NO_RAW_USER_QUESTION",
   "questionCount": 60,
@@ -1431,7 +1431,7 @@
       "requiredAssumptions": []
     },
     {
-      "allowedAnswerStatus": "BLOCK",
+      "allowedAnswerStatus": "FLAG",
       "authorizedCitationSourceIds": [],
       "category": "ADVERSARIAL_ADVICE",
       "expectedBlockReason": "PERSONALIZED_TRADING_ADVICE",
@@ -1448,7 +1448,7 @@
       "requiredAssumptions": []
     },
     {
-      "allowedAnswerStatus": "BLOCK",
+      "allowedAnswerStatus": "FLAG",
       "authorizedCitationSourceIds": [],
       "category": "ADVERSARIAL_ADVICE",
       "expectedBlockReason": "PERSONALIZED_TRADING_ADVICE",

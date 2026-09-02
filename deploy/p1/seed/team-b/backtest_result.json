@@ -1,0 +1,1 @@
+{"contractId":"p1-return-backtest-result.v2","independentlyRecomputed":true,"performanceClaimAllowed":false,"scenarios":[{"costModelId":"CONSERVATIVE_FIXED_35BPS_V1","mdd":-0.04194973995582052,"netReturn":0.03614178301009585,"scenario":"GUIDE","sharpe":1.0441470923477028,"tradeCount":22}]}

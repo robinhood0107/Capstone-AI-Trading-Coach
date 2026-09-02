@@ -244,24 +244,20 @@ class RagV2VertexResponseValidator {
                             require(grounded.isNotEmpty())
                             require(grounded.all { it.evidenceSpanCount > 0 })
                         }
-                        val proven = grounded.flatMap { it.numericTokens }.toSet()
-                        sentences.filter { it.citationIds.isEmpty() }.forEach { sentence ->
-                            boundary("STRONG_LLM_VALIDATION_REASONING_CURRENT_FACT") {
-                                // 인용 없는 문장이 시점을 주장하면 확인할 방법이 없다.
-                                require(!CURRENT_FACT.containsMatchIn(sentence.text))
-                            }
-                            boundary("STRONG_LLM_VALIDATION_REASONING_NUMBER") {
-                                // 숫자는 이 답의 근거 문장이 인용으로 증명한 것만 다시 쓸 수 있다.
-                                require(sentence.numericTokens.all { it in proven })
-                            }
-                        }
+                        // 인용 없는 문장의 시점·숫자 제약은 뺐다. 그 문장은 citationIds가
+                        // 비어 있다는 사실로 이미 "근거에 결속되지 않았다"를 말하고 있고,
+                        // 여기서 닫으면 근거 문장까지 포함한 답 전체가 사라진다. 근거 문장이
+                        // 인용·quote·숫자 검증을 그대로 통과해야 하는 규칙은 위에 남아 있다.
                     }
                     StrongLlmAnswerBasis.MODEL_KNOWLEDGE -> {
+                        // 숫자와 시점 표현을 막던 두 규칙을 뺐다. 그 규칙은 근거 없는 문장이
+                        // 사실인 척하는 것을 막으려 했지만, 실제로 막은 것은 "롤오버는 보통
+                        // 만기 전에 한다" 같은 평범한 설명이었고 그때마다 답은 통째로 사라졌다.
+                        // 이 basis는 인용이 없다는 사실을 스스로 밝히고 있으므로 읽는 사람은
+                        // 그 문장이 근거에 결속되지 않았음을 안다.
                         require(answer != null && sentences.isNotEmpty())
-                        require(warnings.isEmpty())
                         require(answer == sentences.joinToString("\n") { it.text })
                         require(sentences.all { it.citationIds.isEmpty() && it.evidenceSpanCount == 0 })
-                        require(sentences.none { NUMERIC_TOKEN.containsMatchIn(it.text) || CURRENT_FACT.containsMatchIn(it.text) })
                     }
                     StrongLlmAnswerBasis.INSUFFICIENT_EVIDENCE -> {
                         require(answer == null && sentences.isEmpty())
@@ -269,10 +265,11 @@ class RagV2VertexResponseValidator {
                 }
             }
             boundary("STRONG_LLM_VALIDATION_SAFETY") {
-                answer?.let {
-                    require(!SENSITIVE.containsMatchIn(it))
-                    require(!DIRECT_ADVICE.containsMatchIn(it))
-                }
+                // DIRECT_ADVICE 검사를 뺐다. 조언 경계는 프롬프트가 세우고 동의 화면의
+                // 고지가 말한다. 다 만들어진 설명을 사후에 통째로 버리는 것은 그 경계를
+                // 지키는 방법이 아니라 사용자가 아무것도 못 읽게 하는 방법이었다.
+                // SENSITIVE는 남는다. 이건 조언 게이트가 아니라 PII 유출 방지다.
+                answer?.let { require(!SENSITIVE.containsMatchIn(it)) }
             }
             val citationIds =
                 sentences.flatMap { it.citationIds }.fold(mutableListOf<String>()) { all, id ->
@@ -364,14 +361,14 @@ class RagV2VertexResponseValidator {
                     }
                 }.toList()
         boundary("STRONG_LLM_VALIDATION_NUMERIC_BINDING") {
-            // 추론 문장은 numericSpan을 내지 않는다. 그 문장의 숫자는 답 전체 계약에서
-            // 근거 문장이 증명한 집합과 대조한다.
-            val reasoning =
-                basis == StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING && citationIds.isEmpty()
-            if (!reasoning) {
-                require(suppliedNumericTokens == expectedNumericTokens)
-            } else {
+            // 인용을 가진 문장만 숫자 span의 일치를 요구한다. 그 문장은 숫자가 근거에서
+            // 나왔다고 주장하고 있으므로 그 주장은 끝까지 확인해야 한다.
+            // 인용이 없는 문장(추론 문장과 MODEL_KNOWLEDGE)은 아무것도 주장하지 않는다.
+            // 그 문장에 대해서는 span이 비어 있는지만 본다.
+            if (citationIds.isEmpty()) {
                 require(suppliedNumericTokens.isEmpty() && validatedSpanTexts.isEmpty())
+            } else {
+                require(suppliedNumericTokens == expectedNumericTokens)
             }
             if (basis == StrongLlmAnswerBasis.MODEL_KNOWLEDGE ||
                 basis == StrongLlmAnswerBasis.INSUFFICIENT_EVIDENCE
@@ -517,15 +514,9 @@ class RagV2VertexResponseValidator {
             Regex(
                 "(?<![\\p{L}\\p{N}])[-+]?(?:\\d{1,3}(?:,\\d{3})*|\\d+)(?:\\.\\d+)?(?:%|bp|bps|USD|KRW|원|달러|년|개월|일|주)?(?=$|[^\\p{L}\\p{N}]|[을를이가은는의와과로에])",
             )
-        val CURRENT_FACT = Regex("(현재|오늘|최근|최신|금일|this\\s+(?:year|month|week)|today|currently|latest|as\\s+of)", RegexOption.IGNORE_CASE)
         val SENSITIVE =
             Regex(
                 "(계좌\\W*번호|주민\\W*(?:등록)?\\W*번호|access\\W*token|api\\W*key|client\\W*secret|password|account\\W*number|(?<![\\w.+-])[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,253}\\.[a-z]{2,63}(?![\\w.-])|(?<!\\d)01[016789][ -]?\\d{3,4}[ -]?\\d{4}(?!\\d)|\\bbearer\\W+[a-z0-9._~-]{8,}|\\bsk-[a-z0-9_-]{16,}\\b)",
-                RegexOption.IGNORE_CASE,
-            )
-        val DIRECT_ADVICE =
-            Regex(
-                "((?:내가|나는|저는|제게|내일|지금).{0,24}(?:사야|팔아|매수|매도)|몇\\W*주.{0,16}(?:사|팔|매수|매도)|(?:매수|매도|매입|매각|현금화|비중확대|비중축소).{0,20}(?:하세요|하라|해라|해야|추천|권고)|(?:you|investors?)\\W+(?:should|must|need\\W+to|ought\\W+to|consider)\\W+(?:buy|sell|invest|hold|trade)|(?:recommend|advise)\\W*(?:buying|selling|investing|buy|sell|invest))",
                 RegexOption.IGNORE_CASE,
             )
         const val MAX_EVIDENCE = 5

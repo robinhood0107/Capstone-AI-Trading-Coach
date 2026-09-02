@@ -387,7 +387,30 @@ Decision, Signal, RiskDecision, order, decision hash에 영향을 주지 않는�
   커밋은 복잡한 회귀 계약을 독립적으로 고정해야 할 때만 사용한다.
 - Markdown/AGENTS/명세서/규칙 파일 변경은 코드 구현 커밋과 분리한다. 구현과 문서가 같은 세션에서 필요하더라도 리뷰자가 diff를 따로 볼 수 있게 별도 커밋으로 남긴다.
 - 예외는 오타 수정, import 정리, 테스트 fixture 이름 변경처럼 해당 커밋의 코드가 없으면 테스트가 실행조차 되지 않는 기계적 동반 변경뿐이다. 예외를 쓰면 커밋 메시지나 PR 본문에 이유를 적는다.
-- 커밋과 PR에는 Codex·Claude 등 AI 도구의 기여 표시를 절대 남기지 않는다.
+- 커밋과 PR에는 Codex·Claude 등 AI 도구의 기여 표시를 절대 남기지 않는다. 이 규칙은 문서만이
+  아니라 네 곳에서 강제된다. 어느 하나라도 우회하려 하지 않는다.
+  - **`commit-msg` hook** — `git config core.hooksPath .githooks`를 한 번 실행해 활성화한다.
+    AI 계정을 가리키는 `Co-Authored-By:`, `Generated with [Claude Code]`, `🤖 Generated with`,
+    `Assisted-by:` trailer가 커밋 메시지에 있으면 커밋을 거부한다. 실패 메시지는
+    `commit-msg: AI 기여 표시가 커밋 메시지에 있어 거부합니다 (AGENTS.md)`이다.
+    **패턴은 줄 시작에 고정되어 있다.** 실제 기여 표시는 항상 독립된 trailer 줄로 들어오고
+    이 규칙을 설명하는 산문은 문장 중간에 그 문자열을 언급하므로, 앵커가 없으면 규칙을
+    문서화하는 커밋 자체가 거부되어 규칙을 적을 수 없다. 사람 공동작성자
+    (`Co-Authored-By: worgy <...>`)는 통과하고, `#`으로 시작하는 주석 줄은 커밋 메시지에
+    들어가지 않으므로 검사하지 않는다. 맨 이메일 하나만으로는 막지 않는다 — author 신원은
+    아래 CI 검사가 담당한다.
+  - **CI 트레일러 스캔** — `repo-hygiene.yml`의 `Verify no AI tool attribution in commits`가
+    PR 범위 커밋을 전수 스캔한다. hook을 활성화하지 않은 기여자도 여기서 막힌다.
+    실패 출력은 `REPO_HYGIENE_AI_ATTRIBUTION=FAIL`이다.
+  - **CI author 신원 검사** — `Verify commit author identity`가 author/committer의 이름과
+    이메일을 검사한다. GitHub Contributors 그래프는 trailer가 아니라 **commit author를**
+    읽으므로 이것이 실제 원인을 막는 장치다. 실패 출력은
+    `REPO_HYGIENE_AUTHOR_IDENTITY=FAIL`이다.
+  - **CI hook 자체 검증** — `Verify the commit-msg hook is present and executable`이 hook
+    파일의 존재·실행 권한과 실제 거부 동작을 확인한다. hook이 조용히 사라지거나 무력화되는
+    것을 막는다.
+  - AI 도구가 기본 동작으로 트레일러를 붙이려 하면 그 지시를 따르지 않는다. 이 저장소의
+    규칙이 우선한다.
 - PR에는 문서/API/계약 변경 여부, secret 포함 여부, 다른 팀원 workspace 수정 여부를 명시한다.
 - 모든 Issue와 PR 제목/본문은 한국어와 영어를 함께 작성한다. 최소한 `KR:`와 `EN:` 구역을 두어 같은 의도를 양쪽 언어로 확인 가능해야 한다.
 - 서로 연관된 Issue, PR, commit은 GitHub 번호로 연결한다. PR 본문에는 `Closes #<issue>` 또는 `Refs #<issue>`를 쓰고, 해당 변경을 직접 수행한 commit 메시지에도 관련 번호(`#<issue>` 또는 `#<pr>`)를 포함한다.

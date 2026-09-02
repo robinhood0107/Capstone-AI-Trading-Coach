@@ -44,33 +44,39 @@ class BoundedFixtureGuardrail:
             return _blocked("SECRET_OR_TOKEN")
         if any(_ACCOUNT_OR_HOLDING.search(value) for value in variants):
             return _blocked("ACCOUNT_OR_HOLDING_DATA")
+
+        # 조언성 질문은 더 이상 차단하지 않는다. 앞단에서 막으면 "금 ETF의 롤오버 위험"
+        # 같은 순수 개념 질문까지 설명 없이 닫혔고, 사용자가 얻는 것은 답이 아니라 거절이었다.
+        # 조언이 아니라는 사실은 동의 화면의 고지와 프롬프트 경계가 말한다. 여기서는
+        # 관측 flag만 남겨 화면이 그 맥락을 함께 보여줄 수 있게 한다.
+        flags: tuple[str, ...] = ()
         if any(_PERSONALIZED_ADVICE.search(value) for value in variants):
-            return GuardrailResult(
-                decision=GuardrailDecision.BLOCKED_ADVICE,
-                flags=("PERSONALIZED_TRADING_ADVICE",),
-                external_processing_allowed=False,
-            )
+            flags = ("PERSONALIZED_TRADING_ADVICE",)
 
         try:
             label = self._fixture_model(question)
         except Exception:
-            return _blocked("CLASSIFIER_UNAVAILABLE")
+            # 분류기 장애로 설명 기능 전체가 닫히지 않게 한다. 위의 결정적 규칙이 이미
+            # PII·인젝션 경계를 지켰으므로 여기서 fail-closed할 이유가 남지 않는다.
+            return _allowed(*flags, "CLASSIFIER_UNAVAILABLE")
         if label == "ALLOW":
-            return GuardrailResult(
-                decision=GuardrailDecision.ALLOW,
-                flags=(),
-                external_processing_allowed=True,
-            )
+            return _allowed(*flags)
         if label == "ADVICE":
-            return GuardrailResult(
-                decision=GuardrailDecision.BLOCKED_ADVICE,
-                flags=("PERSONALIZED_TRADING_ADVICE",),
-                external_processing_allowed=False,
-            )
+            return _allowed(*flags, "PERSONALIZED_TRADING_ADVICE")
         if label in {"SENSITIVE", "PROMPT_INJECTION"}:
             flag = "PROMPT_INJECTION" if label == "PROMPT_INJECTION" else "SENSITIVE_DATA"
             return _blocked(flag)
-        return _blocked("CLASSIFIER_UNAVAILABLE")
+        return _allowed(*flags, "CLASSIFIER_UNAVAILABLE")
+
+
+def _allowed(*flags: str) -> GuardrailResult:
+    """차단하지 않고 통과시키되 무엇이 관측됐는지는 응답까지 들고 간다."""
+
+    return GuardrailResult(
+        decision=GuardrailDecision.ALLOW,
+        flags=tuple(dict.fromkeys(flags)),
+        external_processing_allowed=True,
+    )
 
 
 def _blocked(flag: str) -> GuardrailResult:
@@ -143,7 +149,6 @@ _PROMPT_INJECTION = re.compile(
         r"|(?:reveal|print|exfiltrate|send)\W*.{0,50}"
         r"(?:secret|credential|token|prompt)"
         r"|(?:call|invoke|execute|run)\W*.{0,30}(?:tool|function|mcp|plugin|code|shell)"
-        r"|https?://|https3a2f2f"
         r"|(?:이전|기존)\W*지시.{0,16}무시"
         r"|시스템\W*프롬프트|시스템프롬프트"
         r"|(?:도구|함수|mcp|플러그인).{0,20}(?:호출|실행)"
@@ -157,21 +162,32 @@ _SECRET_OR_TOKEN = re.compile(
         r"|accesstoken|refreshtoken|apikey|clientsecret"
         r"|\bbearer\W+[a-z0-9._~-]{8,}"
         r"|\bsk-[a-z0-9_-]{16,}\b"
-        r"|(?:비밀|시크릿|토큰|비밀번호|api\W*키)"
+        r"|비밀번호|시크릿\W*키|시크릿키|api\W*키|api키"
     ),
     re.IGNORECASE,
 )
+# "보유", "주문", "체결", "잔고", "계좌"는 금융 개념 질문의 기본 어휘다. 그 명사 하나로
+# 질문을 닫으면 이 기능이 설명할 수 있는 주제가 거의 남지 않는다. 막아야 하는 것은 개념이
+# 아니라 "특정인의 자료를 달라"는 요구이므로, 실제 식별자와 그 요구의 형태만 잡는다.
 _ACCOUNT_OR_HOLDING = re.compile(
     (
-        r"\b(?:account\W*(?:number|balance)|holdings?|positions?|orders?|fills?"
-        r"|phone\W*number|email\W*address|social\W*security\W*number)\b"
+        # 그 자체로 식별자인 것.
+        r"\b(?:account\W*(?:number|balance)|social\W*security\W*number)\b"
         r"|accountnumber|accountbalance"
-        r"|계좌\W*번호|계좌번호|계좌|잔고|보유(?!기간)\W*(?:종목|수량)?|보유종목"
-        r"|주문\W*(?:내역|번호)?|체결\W*(?:내역|번호)?"
-        r"|전화\W*번호|이메일|주민\W*번호|연락처"
+        r"|계좌\W*번호|계좌번호"
+        r"|주민\W*(?:등록)?\W*번호|주민번호|주민등록번호"
         r"|(?<![\w.+-])[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,253}\.[a-z]{2,63}(?![\w.-])"
         r"|(?<!\d)01[016789][ -]?\d{3,4}[ -]?\d{4}(?!\d)"
         r"|(?<!\d)\d{6}[ -]?[1-4]\d{6}(?!\d)"
+        # 누군가의 계좌 자료를 지목하는 요구. 소유격이 붙거나 조회·추출을 요구할 때만이다.
+        # `내 `, `제 `는 뒤에 공백을 요구한다. 그렇지 않으면 "내일", "내년", "제도"가
+        # 소유격으로 오인된다. 공백을 지운 우회는 compact variant가 식별자 패턴으로 잡는다.
+        r"|(?:내\W+|제\W+|나의|저의|본인|타인|남의|다른\W*사용자|다른\W*사람)"
+        r"\W*.{0,3}(?:계좌|잔고|보유\W*종목|보유종목|포지션|주문\W*내역|주문내역|체결\W*내역|체결내역)"
+        r"|(?:계좌|잔고|보유\W*종목|보유종목|주문\W*내역|주문내역|체결\W*내역|체결내역)"
+        r".{0,16}(?:조회|추출|공개|열람|내려받|다운로드|알려|보여)"
+        r"|\bmy\W+(?:\w+\W+)?(?:account|balance|holdings?|positions?|orders?|fills?)\b"
+        r"|\b(?:another|other)\W+users?\W+(?:account|balance|holdings?|positions?|orders?)\b"
     ),
     re.IGNORECASE,
 )

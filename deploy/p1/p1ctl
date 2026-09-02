@@ -25,10 +25,27 @@ docker() {
 }
 
 die() { printf 'P1_ERROR=%s\n' "$1" >&2; exit 1; }
+# 부분 실패한 초기화는 재개할 수 없다. 오류 코드만으로는 복구 방법을 알 수 없어 신규 clone이
+# 여기서 막힌다. 확인 명령을 함께 주되 무조건 삭제를 안내하지는 않는다 — mock/ 에는 재발급이
+# 장중에만 가능한 KIS Mock 인증이, artifacts/ 에는 재수집이 필요한 시장데이터가 들어 있을 수 있다.
+die_state_init_resume() {
+  printf 'P1_ERROR=%s\n' "$1" >&2
+  printf 'P1_HINT=partial_state_cannot_resume\n' >&2
+  printf 'P1_INSPECT=ls -A %s\n' "$STATE_DIR" >&2
+  printf 'P1_RECOVERY=%s\n' \
+    "위 경로에 mock/ 나 artifacts/ 가 없으면 지우고 다시 up 하세요. 있으면 지우지 말고 문의하세요." >&2
+  exit 1
+}
 require_command() { command -v "$1" >/dev/null 2>&1 || die "missing_$1"; }
 random_secret() { openssl rand -hex 32; }
 # Fernet은 padding을 포함한 44자 urlsafe base64만 받는다. padding을 지우면 안 된다.
 base64url_key() { openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n'; }
+# 반대로 demo credential separation key는 padding이 없는 43자만 받는다.
+# DemoCredentialBundlePolicy.decodeSeparationKey()가 canonical unpadded Base64url을 요구하고
+# 디코드 후 재인코딩 결과까지 대조하므로(DemoCredentialBundle.kt:132-141) 44자는 거부된다.
+# 같은 생성자를 두 소비자가 나눠 쓰면 신규 clone이 `demo credential author failed: invalid_input`
+# 으로 전부 막히므로 소비자별로 분리한다.
+base64url_key_unpadded() { base64url_key | tr -d '='; }
 generate_actor_tls() {
   local server_password=$1 client_password=$2
   (
@@ -234,15 +251,15 @@ prepare_initial_state() {
     python3 "$RELEASE_GUARD" state-init "$STATE_DIR" || die state_init
     return
   fi
-  python3 "$RELEASE_GUARD" state-check "$STATE_DIR" || die state_init_resume_boundary
+  python3 "$RELEASE_GUARD" state-check "$STATE_DIR" || die_state_init_resume state_init_resume_boundary
   [[ ! -e $RUNTIME_ENV ]] || die already_initialized
   local inventory
   inventory=$(find "$STATE_DIR" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
-  [[ $inventory == secrets || $inventory == $'full-app-stage\nsecrets' ]] || die state_init_resume_inventory
-  [[ -z $(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -print -quit) ]] || die state_init_resume_secrets
+  [[ $inventory == secrets || $inventory == $'full-app-stage\nsecrets' ]] || die_state_init_resume state_init_resume_inventory
+  [[ -z $(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -print -quit) ]] || die_state_init_resume state_init_resume_secrets
   if [[ -e $STATE_DIR/full-app-stage ]]; then
     [[ -f $STATE_DIR/full-app-stage && ! -L $STATE_DIR/full-app-stage && $(stat -c '%a' "$STATE_DIR/full-app-stage") == 600 ]] \
-      || die state_init_resume_marker
+      || die_state_init_resume state_init_resume_marker
   fi
 }
 
@@ -258,7 +275,7 @@ init_state() {
   local user_password admin_password separation_key broker_digest
   user_password=$(random_secret)
   admin_password=$(random_secret)
-  separation_key=$(base64url_key)
+  separation_key=$(base64url_key_unpadded)
   broker_digest=$(random_secret | sha256sum | awk '{print $1}')
   printf '%s' "$user_password" | state_write_file "$SECRETS_DIR/demo-user.password" 0640
   printf '%s' "$admin_password" | state_write_file "$SECRETS_DIR/demo-admin.password" 0640

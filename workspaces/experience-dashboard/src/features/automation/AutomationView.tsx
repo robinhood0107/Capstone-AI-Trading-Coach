@@ -7,6 +7,7 @@ import { formatKrw, formatKstDateTime } from '@/shared/lib/format';
 import { ready, type ViewState } from '@/shared/lib/viewState';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
+import { Button } from '@/shared/ui/Button';
 import type {
   AutomationPolicyV2,
   AutomationPositionV2,
@@ -229,9 +230,9 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
       >
         <div className="grid gap-px bg-line md:grid-cols-3">
           {AUTOMATION_PRESETS.map((preset) => (
-            <button
+            <Button
               key={preset.presetId}
-              type="button"
+              variant="secondary"
               disabled={locked}
               aria-pressed={selectedPreset === preset.presetId}
               onClick={() => applyPreset(preset.stopLossBps, preset.takeProfitBps)}
@@ -246,7 +247,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
                 </span>
               </div>
               <p className="mt-2 text-[12px] leading-5 text-muted">{preset.description}</p>
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -326,35 +327,32 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
             {locked ? '자동운용 중에는 정책을 변경할 수 없습니다.' : '저장 뒤 최신 정책만 시작에 사용할 수 있습니다.'}
           </p>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={!dirty || busy || locked || errors.length > 0}
+            <Button
+                            disabled={!dirty || busy || locked || errors.length > 0}
               onClick={() => void savePolicy()}
               className="border border-line px-3 py-1.5 text-[13px] text-ink disabled:bg-line disabled:text-faint"
             >
               {busy ? '처리 중' : '정책 저장'}
-            </button>
+            </Button>
             {data.status.controlState === 'DISARMED' ? (
-              <button
-                type="button"
-                disabled={
+              <Button
+                                disabled={
                   busy || dirty || !saved || !data.status.canArm || data.status.blockers.length > 0
                 }
                 onClick={() => void arm()}
                 title={data.status.blockers.map((item) => AUTOMATION_BLOCKER_LABELS[item]).join(' ')}
-                className="border border-navy bg-navy px-4 py-1.5 text-[13px] font-medium text-white disabled:border-line disabled:bg-line disabled:text-faint"
+                variant="primary"
               >
                 자동운용 시작
-              </button>
+              </Button>
             ) : (
-              <button
-                type="button"
-                disabled={busy}
+              <Button
+                                disabled={busy}
                 onClick={() => void disarm()}
                 className="border border-block bg-block px-4 py-1.5 text-[13px] font-medium text-white disabled:border-line disabled:bg-line disabled:text-faint"
               >
                 신규 주문 중지
-              </button>
+              </Button>
             )}
           </div>
         </div>

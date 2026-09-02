@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
+import { Button } from '@/shared/ui/Button';
 import { DecisionBadge } from '@/shared/ui/Decision';
 import { useResource, toErrorState } from '@/shared/lib/useResource';
 import { api } from '@/shared/api/endpoints';
@@ -155,23 +156,21 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
               보내지 않습니다.
             </p>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={!dirty || saving}
+              <Button
+                                disabled={!dirty || saving}
                 onClick={() => setDraft(data.current?.rules ?? [])}
                 className="border border-line px-3 py-1.5 text-[13px] text-muted disabled:text-faint"
               >
                 되돌리기
-              </button>
-              <button
-                type="button"
-                disabled={!dirty || saving}
+              </Button>
+              <Button
+                                disabled={!dirty || saving}
                 onClick={() => void save()}
-                className="border border-navy bg-navy px-4 py-1.5 text-[13px] font-medium text-white disabled:border-line disabled:bg-line disabled:text-faint"
+                variant="primary"
                 title={`expectedVersion=${data.current.version}으로 저장합니다.`}
               >
                 {saving ? '저장 중' : '변경 사항 저장'}
-              </button>
+              </Button>
             </div>
           </div>
         </Panel>
@@ -202,9 +201,8 @@ function PresetCard({
   const loss = preset.defaultRules.find((rule) => rule.ruleId === 'daily_loss_guard');
   const orders = preset.defaultRules.find((rule) => rule.ruleId === 'max_daily_orders');
   return (
-    <button
-      type="button"
-      onClick={onApply}
+    <Button
+            onClick={onApply}
       aria-pressed={selected}
       className={`bg-panel px-4 py-4 text-left ${selected ? 'ring-2 ring-inset ring-navy' : ''}`}
     >
@@ -225,7 +223,7 @@ function PresetCard({
           </dd>
         </div>
       </dl>
-    </button>
+    </Button>
   );
 }
 

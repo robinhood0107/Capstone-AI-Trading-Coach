@@ -38,11 +38,8 @@ class RagFixtureEvaluationAdapter : RagEvaluationPort {
                     status = RagGenerationStatus.BLOCKED_SENSITIVE,
                     flag = "SENSITIVE_DATA",
                 )
-            variants.any(::isAdvice) ->
-                blocked(
-                    status = RagGenerationStatus.BLOCKED_ADVICE,
-                    flag = "PERSONALIZED_TRADING_ADVICE",
-                )
+            // 조언성 질문을 막던 분기를 뺐다. 개념과 위험은 설명하고, 조언이 아니라는
+            // 사실은 동의 고지가 말한다. Python guard와 같은 결정을 여기서도 한다.
             else ->
                 RagEvaluationResult(
                     generationStatus = RagGenerationStatus.RETRIEVAL_ONLY,
@@ -153,34 +150,32 @@ class RagFixtureEvaluationAdapter : RagEvaluationPort {
 
     private fun isSensitive(value: String): Boolean = SENSITIVE.containsMatchIn(value)
 
-    private fun isAdvice(value: String): Boolean = ADVICE.containsMatchIn(value)
-
     private companion object {
         val PROMPT_INJECTION =
             Regex(
                 "(ignore\\W*(?:previous|prior)|ignoreprevious|system\\W*prompt|systemprompt|" +
                     "이전\\W*지시.{0,16}무시|시스템\\W*프롬프트|" +
-                    "(?:call|invoke|호출|실행).{0,20}(?:tool|function|mcp|도구|함수)|" +
-                    "https?://|https3a2f2f)",
+                    "(?:call|invoke|호출|실행).{0,20}(?:tool|function|mcp|도구|함수))",
                 RegexOption.IGNORE_CASE,
             )
+
+        // 일반 금융 명사로 질문을 닫지 않는다. 막아야 하는 것은 개념이 아니라 특정인의
+        // 자료를 달라는 요구다. `내 `, `제 `는 뒤에 공백을 요구해 `내일`, `제도`를 배제한다.
         val SENSITIVE =
             Regex(
-                "(계좌|잔고|보유종목|보유수량|주문내역|체결내역|연락처|전화번호|이메일|" +
-                    "주민번호|access\\W*token|api\\W*key|client\\W*secret|password|" +
-                    "holdings?|positions?|orders?|fills?|account\\W*(?:number|balance)|" +
-                    "phone\\W*number|email\\W*address|" +
+                "(계좌\\W*번호|계좌번호|주민\\W*(?:등록)?\\W*번호|주민번호|" +
+                    "access\\W*token|api\\W*key|client\\W*secret|password|" +
+                    "account\\W*(?:number|balance)|" +
+                    "(?:내\\W+|제\\W+|나의|저의|본인|타인|남의|다른\\W*사용자|다른\\W*사람)" +
+                    "\\W*.{0,3}(?:계좌|잔고|보유\\W*종목|보유종목|포지션|주문\\W*내역|주문내역|체결\\W*내역|체결내역)|" +
+                    "(?:계좌|잔고|보유\\W*종목|보유종목|주문\\W*내역|주문내역|체결\\W*내역|체결내역)" +
+                    ".{0,16}(?:조회|추출|공개|열람|내려받|다운로드|알려|보여)|" +
+                    "\\bmy\\W+(?:\\w+\\W+)?(?:account|balance|holdings?|positions?|orders?|fills?)\\b|" +
+                    "\\b(?:another|other)\\W+users?\\W+(?:account|balance|holdings?|positions?|orders?)\\b|" +
                     "(?<![\\w.+-])[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,253}\\.[a-z]{2,63}(?![\\w.-])|" +
                     "(?<!\\d)01[016789][ -]?\\d{3,4}[ -]?\\d{4}(?!\\d)|" +
                     "(?<!\\d)\\d{6}[ -]?[1-4]\\d{6}(?!\\d)|" +
                     "\\bbearer\\W+[a-z0-9._~-]{8,}|\\bsk-[a-z0-9_-]{16,}\\b)",
-                RegexOption.IGNORE_CASE,
-            )
-        val ADVICE =
-            Regex(
-                "((?:내가|나는|저는|제게|내일|지금).{0,24}(?:사야|팔아|매수|매도)|" +
-                    "몇\\W*주.{0,16}(?:사|팔|매수|매도)|should\\W*i\\W*(?:buy|sell)|" +
-                    "how\\W*many\\W*shares)",
                 RegexOption.IGNORE_CASE,
             )
         val BASE64 = Regex("^[A-Za-z0-9+/]+={0,2}$")

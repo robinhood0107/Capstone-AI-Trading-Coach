@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
+import { Button } from '@/shared/ui/Button';
 import { Numeric } from '@/shared/ui/Numeric';
 import { useResource, toErrorState } from '@/shared/lib/useResource';
 import { formatKstDate, formatRatio } from '@/shared/lib/format';
@@ -100,22 +101,20 @@ export function RagGuideView() {
         <p className="mt-2 text-[13px] leading-6 text-muted">{EXTERNAL_POLICY}</p>
         <p className="mt-2 font-mono text-[11px] text-faint">처리자: {EXTERNAL_PROCESSORS}</p>
         <div className="mt-3 flex gap-2">
-          <button
-            type="button"
-            onClick={() => void changeConsent('GRANT')}
+          <Button
+                        onClick={() => void changeConsent('GRANT')}
             disabled={consentPending || consentGranted === true}
-            className="border border-navy bg-navy px-3 py-1.5 text-[13px] text-white disabled:border-line disabled:bg-line disabled:text-faint"
+            variant="primary"
           >
             동의
-          </button>
-          <button
-            type="button"
-            onClick={() => void changeConsent('REVOKE')}
+          </Button>
+          <Button
+                        onClick={() => void changeConsent('REVOKE')}
             disabled={consentPending || consentGranted !== true}
             className="border border-line px-3 py-1.5 text-[13px] text-muted hover:border-navy hover:text-navy disabled:text-faint"
           >
             철회
-          </button>
+          </Button>
         </div>
       </Panel>
 
@@ -142,9 +141,9 @@ export function RagGuideView() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               {(['CONCISE', 'DETAILED'] as const).map((mode) => (
-                <button
+                <Button
                   key={mode}
-                  type="button"
+                  variant="secondary"
                   onClick={() => setAnswerMode(mode)}
                   className={`border px-3 py-1.5 text-[13px] ${
                     answerMode === mode
@@ -153,24 +152,24 @@ export function RagGuideView() {
                   }`}
                 >
                   {mode === 'CONCISE' ? '짧게' : '자세히'}
-                </button>
+                </Button>
               ))}
               <span className="tnum font-mono text-[11px] text-faint">{question.length}/1000</span>
             </div>
-            <button
-              type="button"
-              onClick={() => void submit(question)}
+            <Button
+                            onClick={() => void submit(question)}
               disabled={pending || consentGranted !== true || question.trim().length === 0}
-              className="border border-navy bg-navy px-4 py-1.5 text-[13px] font-medium text-white disabled:border-line disabled:bg-line disabled:text-faint"
+              variant="primary"
             >
               {pending ? '찾는 중' : '물어보기'}
-            </button>
+            </Button>
           </div>
           <div className="flex flex-wrap gap-2 pt-1">
             {EXAMPLES.map((example) => (
-              <button
+              <Button
                 key={example}
-                type="button"
+                variant="secondary"
+                size="sm"
                 onClick={() => {
                   setQuestion(example);
                   void submit(example);
@@ -178,7 +177,7 @@ export function RagGuideView() {
                 className="border border-line px-2.5 py-1 text-[12px] text-muted hover:border-navy hover:text-navy"
               >
                 {example}
-              </button>
+              </Button>
             ))}
           </div>
         </div>

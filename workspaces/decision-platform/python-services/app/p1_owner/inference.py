@@ -14,10 +14,17 @@ import numpy as np
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.p1_owner.assets import FEATURE_ORDER
 from app.p1_owner.importer import P1ArtifactImportError, validate_artifact_bundle
+from app.p1_owner.model_shape import (
+    WINDOW_SIZE,
+    ModelShape,
+    ModelShapeError,
+    classify_signal,
+    resolve_shape,
+)
 
 _REQUEST_FIELDS = frozenset({"artifactId", "bundleSha256", "contractId", "rows", "sessionDate"})
 _ROW_FIELDS = frozenset({"currentClose", "features", "sessionDate", "symbol"})
-_WINDOW_SIZE = 20
+_WINDOW_SIZE = WINDOW_SIZE
 _FEATURE_COUNT = len(FEATURE_ORDER)
 _MAX_REQUEST_BYTES = 256 * 1024
 _SIGNALS = ("BUY", "HOLD", "SELL")
@@ -43,6 +50,7 @@ class ReturnInferenceModel:
     symbols: tuple[str, ...]
     scaler: dict[str, tuple[np.ndarray, np.ndarray]]
     tensors: dict[str, np.ndarray]
+    shape: ModelShape
 
     @classmethod
     def load(
@@ -90,28 +98,15 @@ class ReturnInferenceModel:
             ):
                 raise ReturnInferenceError("scaler values violate the fixed feature ABI")
             scaler[symbol] = (mean, scale)
-        tensors = _read_safetensors(validated.payloads["model.safetensors"])
-        expected_names = {
-            f"{symbol}.{suffix}"
-            for symbol in symbols
-            for suffix in (
-                "weight_ih_l0",
-                "weight_hh_l0",
-                "bias_ih_l0",
-                "bias_hh_l0",
-                "weight_ih_l1",
-                "weight_hh_l1",
-                "bias_ih_l1",
-                "bias_hh_l1",
-                "weight_ih_l2",
-                "weight_hh_l2",
-                "bias_ih_l2",
-                "bias_hh_l2",
-                "head.weight",
-                "head.bias",
+        # 모델 형상의 진실 소스는 번들의 config.json 하나다.
+        try:
+            shape = resolve_shape(
+                _object(validated.payloads["config.json"], "config"), FEATURE_ORDER
             )
-        }
-        if set(tensors) != expected_names:
+        except ModelShapeError as error:
+            raise ReturnInferenceError(f"config model shape is unusable: {error}") from error
+        tensors = _read_safetensors(validated.payloads["model.safetensors"])
+        if set(tensors) != shape.tensor_names(symbols):
             raise ReturnInferenceError("model tensor namespace differs from scaler symbols")
         return cls(
             artifact_id=validated.artifact_id,
@@ -120,6 +115,7 @@ class ReturnInferenceModel:
             symbols=symbols,
             scaler=scaler,
             tensors=tensors,
+            shape=shape,
         )
 
     def infer_bytes(self, request_bytes: bytes) -> bytes:
@@ -205,20 +201,25 @@ class ReturnInferenceModel:
     ) -> ReturnPrediction:
         mean, scale = self.scaler[symbol]
         values = (features - mean) / scale
+        hidden_size = self.shape.hidden_size
+        gate_width = self.shape.gate_width
         hidden: np.ndarray | None = None
-        for layer in range(3):
-            input_size = _FEATURE_COUNT if layer == 0 else 128
+        for layer in range(self.shape.layer_count):
+            input_size = self.shape.layer_input_size(layer)
             layer_input = values if hidden is None else hidden
-            h = np.zeros(128, dtype=np.float64)
-            c = np.zeros(128, dtype=np.float64)
+            h = np.zeros(hidden_size, dtype=np.float64)
+            c = np.zeros(hidden_size, dtype=np.float64)
             weight_ih = self.tensors[f"{symbol}.weight_ih_l{layer}"].astype(np.float64, copy=False)
             weight_hh = self.tensors[f"{symbol}.weight_hh_l{layer}"].astype(np.float64, copy=False)
             bias = self.tensors[f"{symbol}.bias_ih_l{layer}"].astype(
                 np.float64, copy=False
             ) + self.tensors[f"{symbol}.bias_hh_l{layer}"].astype(np.float64, copy=False)
-            if weight_ih.shape != (512, input_size) or weight_hh.shape != (512, 128):
+            if weight_ih.shape != (gate_width, input_size) or weight_hh.shape != (
+                gate_width,
+                hidden_size,
+            ):
                 raise ReturnInferenceError("runtime tensor shape drifted")
-            outputs = np.empty((_WINDOW_SIZE, 128), dtype=np.float64)
+            outputs = np.empty((_WINDOW_SIZE, hidden_size), dtype=np.float64)
             for index in range(_WINDOW_SIZE):
                 gates = weight_ih @ layer_input[index] + bias + weight_hh @ h
                 input_gate, forget_gate, cell_gate, output_gate = np.split(gates, 4)
@@ -240,13 +241,7 @@ class ReturnInferenceModel:
             scaled_forecast * float(scale[raw_close_index]) + float(mean[raw_close_index]),
         )
         expected_return = forecast_close / current_close - 1.0
-        signal = (
-            "BUY"
-            if forecast_close > current_close
-            else "SELL"
-            if forecast_close < current_close
-            else "HOLD"
-        )
+        signal = classify_signal(expected_return)
         if signal not in _SIGNALS or not all(
             math.isfinite(value) for value in (forecast_close, expected_return)
         ):

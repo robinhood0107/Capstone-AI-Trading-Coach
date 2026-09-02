@@ -58,7 +58,7 @@
             "type": "object"
           },
           "maxItems": 3,
-          "minItems": 3,
+          "minItems": 1,
           "type": "array"
         }
       },

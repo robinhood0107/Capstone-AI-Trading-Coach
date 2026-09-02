@@ -564,14 +564,17 @@ def _artifact_semantic_schemas() -> dict[str, dict[str, Any]]:
                 "deterministicAlgorithms",
             ],
             {
+                # windowSize와 outputSize는 daily inference의 20행 창과 head shape가 의존하므로
+                # 계속 고정한다. 학습 용량 파라미터는 Owner runtime이 config에서 파생하므로
+                # const가 아니라 범위로 둔다.
                 "windowSize": {"const": 20},
-                "hiddenSize": {"const": 128},
-                "layerCount": {"const": 3},
-                "dropout": {"const": 0.2},
+                "hiddenSize": {"type": "integer", "minimum": 8, "maximum": 1024},
+                "layerCount": {"type": "integer", "minimum": 1, "maximum": 8},
+                "dropout": {"type": "number", "minimum": 0, "exclusiveMaximum": 1},
                 "outputSize": {"const": 1},
                 "loss": {"const": "SmoothL1"},
                 "optimizer": {"const": "Adam"},
-                "learningRate": {"const": 0.0005},
+                "learningRate": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
                 "seed": {"const": 0},
                 "threadCount": {"const": 1},
                 "deterministicAlgorithms": {"const": True},
@@ -621,9 +624,11 @@ def _artifact_semantic_schemas() -> dict[str, dict[str, Any]]:
         _closed(
             ["scenarios", "independentlyRecomputed", "finite"],
             {
+                # 요청서는 시나리오 개수를 규정하지 않는다. BASELINE/GUIDE/STRICT의 순서를
+                # 보존한 부분집합이면 받아들인다.
                 "scenarios": {
                     "type": "array",
-                    "minItems": 3,
+                    "minItems": 1,
                     "maxItems": 3,
                     "items": metric,
                 },
@@ -668,7 +673,8 @@ def _artifact_semantic_schemas() -> dict[str, dict[str, Any]]:
                 "columns": {
                     "const": ["scenario", "sessionDate", "equityKrw", "drawdown"]
                 },
-                "rowCount": {"type": "integer", "minimum": 3},
+                # 시나리오 개수가 계약으로 고정되지 않으므로 곡선 최소 길이도 1로 둔다.
+                "rowCount": {"type": "integer", "minimum": 1},
                 "initialCapitalKrw": {"type": "integer", "minimum": 1},
                 "finite": {"const": True},
             },
@@ -700,15 +706,21 @@ def _artifact_semantic_schemas() -> dict[str, dict[str, Any]]:
             ],
             {
                 "encoding": {"const": "UTF-8"},
+                # 요청서는 report의 절 구성을 규정하지 않는다. 실제로 존재하는 절만 기록한다.
                 "requiredSections": {
-                    "const": [
-                        "Data",
-                        "Model ABI",
-                        "Split",
-                        "Reproducibility",
-                        "Model quality",
-                        "Limitations",
-                    ]
+                    "type": "array",
+                    "uniqueItems": True,
+                    "maxItems": 6,
+                    "items": {
+                        "enum": [
+                            "Data",
+                            "Model ABI",
+                            "Split",
+                            "Reproducibility",
+                            "Model quality",
+                            "Limitations",
+                        ]
+                    },
                 },
                 "performanceClaimAllowed": {"const": False},
                 "orderAuthority": {"const": "NONE"},

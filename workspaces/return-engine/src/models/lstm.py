@@ -25,9 +25,9 @@ class StockLSTM(nn.Module):
     
 
 class LSTMModel():
-    def __init__(self, input_size, hidden_size=64, num_layers=2, learning_rate=0.001):
+    def __init__(self, input_size, hidden_size=64, num_layers=2, learning_rate=0.001, dropout=0.2):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model = StockLSTM(input_size, hidden_size, num_layers).to(self.device)
+        self.model = StockLSTM(input_size, hidden_size, num_layers, dropout=dropout).to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
         self.criterion = nn.SmoothL1Loss()
 
@@ -60,8 +60,8 @@ class LSTMModel():
             train_losses.append(train_loss)
             val_losses.append(val_loss)
 
-            if (epoch+1) % 5 == 0:
-                print(f'[{epoch+1}/{epochs}] Loss:{train_loss:.5f}, Val_loss:{val_loss:.5f}')
+            if ((epoch+1) % 5 == 0) :
+                print(f'[{epoch+1}/{epochs}] Loss:{train_loss:.5f}, Val_loss:{val_loss:.5f}', flush=True)
 
     # 검증용 데이터를 통해 Loss를 평가
     def validate(self, val_loader):

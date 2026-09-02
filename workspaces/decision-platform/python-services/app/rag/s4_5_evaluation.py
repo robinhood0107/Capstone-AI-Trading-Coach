@@ -210,10 +210,7 @@ def build_s4_5_manifest() -> dict[str, Any]:
     for offset, (category, question, reason) in enumerate(adversarial, start=51):
         questions.append(
             {
-                # 조언성 질문은 더 이상 막지 않는다. 개념과 위험은 설명하고, 조언이 아니라는
-                # 사실은 동의 고지가 말한다. 그래도 이 부류를 알아보는 성질은 계속 재야 하므로
-                # 기대 결과를 "차단"에서 "통과하되 인식"으로 바꾼다.
-                "allowedAnswerStatus": "FLAG" if category == "ADVERSARIAL_ADVICE" else "BLOCK",
+                "allowedAnswerStatus": "BLOCK",
                 "authorizedCitationSourceIds": [],
                 "category": category,
                 "expectedBlockReason": reason,
@@ -298,19 +295,21 @@ def evaluate_s4_5_manifest(manifest: Mapping[str, Any]) -> dict[str, Any]:
         category_ids[category].append(question_id)
         guard = guardrail.classify(str(item["question"]))
         question_passed = True
-        if item["allowedAnswerStatus"] == "FLAG":
-            # 통과시키는 것이 정답이고, 그 부류임을 알아본 흔적이 flag로 남아야 한다.
+        if category == "ADVERSARIAL_ADVICE":
+            # manifest는 v2 계약 생성기가 byte로 고정한 frozen 입력이라 기대값을 그 안에서
+            # 바꿀 수 없다. 그래서 이 부류의 정답만 코드에서 다시 정한다 - 조언성 질문은
+            # 막는 것이 아니라 통과시키는 것이 정답이고, 그 부류임을 알아본 흔적이 flag로
+            # 남아야 한다. 개념과 위험은 설명하고, 조언이 아니라는 사실은 동의 고지가 말한다.
             expected_reason = str(item["expectedBlockReason"])
             recognized = (
                 guard.decision is GuardrailDecision.ALLOW and expected_reason in guard.flags
             )
             question_passed = recognized
-            if category == "ADVERSARIAL_ADVICE":
-                advice_denominator += 1
-                if recognized:
-                    advice_numerator += 1
-                else:
-                    advice_failures.append(question_id)
+            advice_denominator += 1
+            if recognized:
+                advice_numerator += 1
+            else:
+                advice_failures.append(question_id)
             category_pass[category].append(question_passed)
             continue
         if item["allowedAnswerStatus"] == "BLOCK":
@@ -605,7 +604,7 @@ def _validate_manifest(manifest: Mapping[str, Any], *, allow_hash_drift: bool = 
             or item.get("questionId") != _question_id(index)
             or item.get("provenance") != "PUBLIC_SYNTHETIC"
             or item.get("rawUserQuestion") is not False
-            or item.get("allowedAnswerStatus") not in {"ANSWER", "BLOCK", "FLAG"}
+            or item.get("allowedAnswerStatus") not in {"ANSWER", "BLOCK"}
             or not isinstance(item.get("question"), str)
             or not item["question"]
             or not isinstance(item.get("fixtureChannels"), Mapping)

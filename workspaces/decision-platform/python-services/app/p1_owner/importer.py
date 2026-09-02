@@ -433,7 +433,8 @@ def _validate_safetensors(content: bytes, symbols: tuple[str, ...], shape: Model
     # __metadata__는 요청서에 없는 필드다. 있으면 검증하고 없으면 통과시킨다.
     metadata = header.pop("__metadata__", None)
     if metadata is not None and (
-        not isinstance(metadata, dict) or metadata.get("symbolCount") not in (None, str(len(symbols)))
+        not isinstance(metadata, dict)
+        or metadata.get("symbolCount") not in (None, str(len(symbols)))
     ):
         raise P1ArtifactImportError("safetensors metadata is invalid")
     expected_names = shape.tensor_names(symbols)

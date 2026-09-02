@@ -242,9 +242,7 @@ def test_backtest_accepts_an_ordered_scenario_subset_that_keeps_guide() -> None:
 
         backtest_path = golden_root / "backtest_result.json"
         backtest = json.loads(backtest_path.read_text(encoding="utf-8"))
-        backtest["scenarios"] = [
-            row for row in backtest["scenarios"] if row["scenario"] == "GUIDE"
-        ]
+        backtest["scenarios"] = [row for row in backtest["scenarios"] if row["scenario"] == "GUIDE"]
         backtest_path.write_bytes(canonical_json_bytes(backtest))
 
         for name in ("trade_log.parquet", "equity_log.parquet"):
@@ -263,8 +261,7 @@ def test_backtest_accepts_an_ordered_scenario_subset_that_keeps_guide() -> None:
 
         backtest_projection = json.loads(result.import_packet["backtestProjectionText"])
         strategies = {
-            row["strategy"]: row
-            for row in backtest_projection["data"]["view"]["strategies"]
+            row["strategy"]: row for row in backtest_projection["data"]["view"]["strategies"]
         }
         assert strategies["Guide"]["metrics"]["mdd"] is not None
         # 선언되지 않은 시나리오는 지표 없이 투영된다.

@@ -100,7 +100,9 @@ class ReturnInferenceModel:
             scaler[symbol] = (mean, scale)
         # 모델 형상의 진실 소스는 번들의 config.json 하나다.
         try:
-            shape = resolve_shape(_object(validated.payloads["config.json"], "config"), FEATURE_ORDER)
+            shape = resolve_shape(
+                _object(validated.payloads["config.json"], "config"), FEATURE_ORDER
+            )
         except ModelShapeError as error:
             raise ReturnInferenceError(f"config model shape is unusable: {error}") from error
         tensors = _read_safetensors(validated.payloads["model.safetensors"])

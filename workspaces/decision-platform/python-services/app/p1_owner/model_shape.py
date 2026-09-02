@@ -36,6 +36,14 @@ _MAX_LAYER_COUNT = 8
 _LAYER_SUFFIX_TEMPLATES = ("weight_ih_l{0}", "weight_hh_l{0}", "bias_ih_l{0}", "bias_hh_l{0}")
 _HEAD_SUFFIXES = ("head.weight", "head.bias")
 
+# 모델이 무엇을 예측하는지. 이 값이 forecastClose 재구성 방법을 정한다.
+#   RAW_CLOSE  - 출력이 종가의 z-score. forecast = scaled*scale[raw_close] + mean[raw_close]
+#   LOG_RETURN - 출력이 로그수익률의 z-score. forecast = currentClose * exp(scaled*scale + mean)
+# 기본값은 RAW_CLOSE 다. 선언하지 않은 기존 번들(SYNTHETIC_GOLDEN 포함)이 그대로 통과한다.
+TARGET_RAW_CLOSE = "RAW_CLOSE"
+TARGET_LOG_RETURN = "LOG_RETURN"
+_TARGET_TRANSFORMS = (TARGET_RAW_CLOSE, TARGET_LOG_RETURN)
+
 
 class ModelShapeError(ValueError):
     """config.json이 파생 가능한 모델 형상을 기술하지 못한다."""
@@ -51,6 +59,7 @@ class ModelShape:
     gate_width: int
     suffixes: tuple[str, ...]
     shapes: dict[str, tuple[int, ...]]
+    target_transform: str = TARGET_RAW_CLOSE
 
     def tensor_count(self, symbol_count: int) -> int:
         return symbol_count * len(self.suffixes)
@@ -101,6 +110,11 @@ def resolve_shape(config: Any, expected_feature_order: tuple[str, ...]) -> Model
         raise ModelShapeError("config featureOrder drifted from the fixed feature ABI")
     feature_count = len(expected_feature_order)
 
+    # 선언하지 않으면 RAW_CLOSE 다. 값을 준 경우에만 열거형을 강제한다.
+    target_transform = config.get("targetTransform", TARGET_RAW_CLOSE)
+    if target_transform not in _TARGET_TRANSFORMS:
+        raise ModelShapeError(f"targetTransform is unsupported: {target_transform!r}")
+
     gate_width = _GATE_GROUPS * hidden_size
     suffixes: list[str] = []
     shapes: dict[str, tuple[int, ...]] = {}
@@ -126,6 +140,7 @@ def resolve_shape(config: Any, expected_feature_order: tuple[str, ...]) -> Model
         gate_width=gate_width,
         suffixes=tuple(suffixes),
         shapes=shapes,
+        target_transform=target_transform,
     )
 
 

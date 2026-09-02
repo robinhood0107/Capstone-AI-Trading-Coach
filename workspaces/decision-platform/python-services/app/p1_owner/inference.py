@@ -15,6 +15,7 @@ from app.data._shared.canonical_json import canonical_json_bytes
 from app.p1_owner.assets import FEATURE_ORDER
 from app.p1_owner.importer import P1ArtifactImportError, validate_artifact_bundle
 from app.p1_owner.model_shape import (
+    TARGET_LOG_RETURN,
     WINDOW_SIZE,
     ModelShape,
     ModelShapeError,
@@ -51,6 +52,8 @@ class ReturnInferenceModel:
     scaler: dict[str, tuple[np.ndarray, np.ndarray]]
     tensors: dict[str, np.ndarray]
     shape: ModelShape
+    # targetTransform=LOG_RETURN 번들만 채운다. RAW_CLOSE 면 비어 있다.
+    target_scaler: dict[str, tuple[float, float]]
 
     @classmethod
     def load(
@@ -84,9 +87,20 @@ class ReturnInferenceModel:
             raise ReturnInferenceError("scaler symbol map is unavailable")
         symbols = tuple(symbols_payload)
         scaler: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+        target_scaler: dict[str, tuple[float, float]] = {}
         for symbol, parameters in symbols_payload.items():
             if not isinstance(parameters, dict):
                 raise ReturnInferenceError("scaler parameter object is invalid")
+            target = parameters.get("target")
+            if target is not None:
+                if (
+                    not isinstance(target, dict)
+                    or not _finite_number(target.get("mean"))
+                    or not _finite_number(target.get("scale"))
+                    or float(target["scale"]) <= 0
+                ):
+                    raise ReturnInferenceError("scaler target values are unusable")
+                target_scaler[symbol] = (float(target["mean"]), float(target["scale"]))
             mean = np.asarray(parameters.get("mean"), dtype=np.float64)
             scale = np.asarray(parameters.get("scale"), dtype=np.float64)
             if (
@@ -105,6 +119,10 @@ class ReturnInferenceModel:
             )
         except ModelShapeError as error:
             raise ReturnInferenceError(f"config model shape is unusable: {error}") from error
+        if shape.target_transform == TARGET_LOG_RETURN and set(target_scaler) != set(symbols):
+            raise ReturnInferenceError(
+                "LOG_RETURN bundle must publish a target scaler for every symbol"
+            )
         tensors = _read_safetensors(validated.payloads["model.safetensors"])
         if set(tensors) != shape.tensor_names(symbols):
             raise ReturnInferenceError("model tensor namespace differs from scaler symbols")
@@ -116,6 +134,7 @@ class ReturnInferenceModel:
             scaler=scaler,
             tensors=tensors,
             shape=shape,
+            target_scaler=target_scaler,
         )
 
     def infer_bytes(self, request_bytes: bytes) -> bytes:
@@ -235,11 +254,22 @@ class ReturnInferenceModel:
         head_weight = self.tensors[f"{symbol}.head.weight"].astype(np.float64, copy=False)
         head_bias = self.tensors[f"{symbol}.head.bias"].astype(np.float64, copy=False)
         scaled_forecast = float((head_weight @ hidden[-1] + head_bias)[0])
-        raw_close_index = FEATURE_ORDER.index("raw_close")
-        forecast_close = max(
-            0.0,
-            scaled_forecast * float(scale[raw_close_index]) + float(mean[raw_close_index]),
-        )
+        if self.shape.target_transform == TARGET_LOG_RETURN:
+            # 모델이 로그수익률을 낸다. 가격을 현재가에서 재구성하므로 학습 구간의 가격
+            # 범위에 갇히지 않는다. 절대가 타깃은 test 가 train 최대를 넘으면 역변환이
+            # 학습 평균 근처로 주저앉아 expectedReturn -85% 를 만든다.
+            target_mean, target_scale = self.target_scaler[symbol]
+            log_return = scaled_forecast * target_scale + target_mean
+            try:
+                forecast_close = current_close * math.exp(log_return)
+            except OverflowError:
+                raise ReturnInferenceError("model produced a non-finite prediction") from None
+        else:
+            raw_close_index = FEATURE_ORDER.index("raw_close")
+            forecast_close = max(
+                0.0,
+                scaled_forecast * float(scale[raw_close_index]) + float(mean[raw_close_index]),
+            )
         expected_return = forecast_close / current_close - 1.0
         signal = classify_signal(expected_return)
         if signal not in _SIGNALS or not all(

@@ -229,6 +229,162 @@ deploy/p1/.state-app/secrets/demo-user.password
 
 Docker Desktop의 WSL integration이 켜져 있어야 합니다.
 
+## 환경 변수 설정
+
+환경 변수는 **최소 설정**과 **전체 설정** 두 단계로 나뉩니다.
+
+이 프로그램의 비밀값은 대부분 `./capstone up`이 스스로 만듭니다. 사람이 반드시 넣어야 하는 값은
+다섯 개뿐이고, 그 다섯 개가 곧 최소 설정입니다. 모두 외부 서비스에서 발급받는 값이라 프로그램이
+대신 만들 수 없습니다.
+
+### 최소 설정 — AI 자동매매와 RAG 답변 생성까지 동작하는 최소 입력
+
+| # | 입력 | 발급처 | 넣는 방법 |
+|---|---|---|---|
+| 1 | `KIS_MOCK_APP_KEY` | KIS Developers 모의투자 | `./capstone mock configure` |
+| 2 | `KIS_MOCK_APP_SECRET` | KIS Developers 모의투자 | `./capstone mock configure` |
+| 3 | `KIS_MOCK_ACCOUNT_NO` | KIS 모의투자 계좌(하이픈 제외 10자리) | `./capstone mock configure` |
+| 4 | `VOYAGE_API_KEY` | Voyage AI | `secrets/rag-v2.env`에 한 줄 추가 |
+| 5 | Google 서비스계정 JSON | Google Cloud(Vertex AI) | `secrets/pre-s5-vertex-service-account.json`으로 저장 |
+
+이 다섯 개가 E2E 자동매매와 RAG 답변 생성에 필요한 API 입력 전부입니다. 다른 provider key는
+없어도 됩니다.
+
+`secrets`는 `deploy/p1/.state-app/secrets/`입니다. 세 KIS 값은 명령이 물어보므로 파일을 직접
+편집하지 않습니다. 나머지 두 개만 파일로 둡니다.
+
+```bash
+# 1) 먼저 한 번 띄워 자동 생성 비밀값과 secrets 폴더를 만든다
+./capstone doctor
+./capstone up
+
+# 2) KIS 모의투자 계좌 세 값 입력
+./capstone mock configure
+./capstone mock doctor
+
+# 3) Voyage key 추가
+printf 'VOYAGE_API_KEY=%s\n' "<발급받은 key>" >> deploy/p1/.state-app/secrets/rag-v2.env
+chmod 640 deploy/p1/.state-app/secrets/rag-v2.env
+
+# 4) Google 서비스계정 JSON 배치
+install -m 640 <다운로드한 파일>.json \
+  deploy/p1/.state-app/secrets/pre-s5-vertex-service-account.json
+
+# 5) 모의주문 왕복 인증 후 자동매매 모드로 재기동
+#    XKRX 거래일 09:10~15:00 KST에만 실행됩니다
+./capstone mock certify --symbol 005930 --quantity 1
+./capstone up --mock
+./capstone mock readiness
+./capstone mock start
+```
+
+다섯 값이 모두 들어가면 다음이 켜집니다. 상태는 `./capstone up` 출력으로 확인합니다.
+
+| 확인 줄 | 의미 |
+|---|---|
+| `CAPSTONE_RAG_DEFAULT=ON_WITH_GENERATION` | RAG 검색과 답변 생성, Strong LLM 판단 활성 |
+| `KIS_BROKERAGE_MODE=KIS_MOCK` | KIS 모의투자 어댑터 활성 |
+| `KIS_MOCK_RUNTIME=ENABLED` | 자동매매 봇 실행 |
+
+값이 빠지면 그 기능만 꺼진 채 뜨고, 무엇이 없어서 꺼졌는지 다음처럼 표시됩니다.
+
+```text
+CAPSTONE_RAG_DEFAULT=OFF_MISSING_voyage-key
+CAPSTONE_RAG_DEFAULT=ON_RETRIEVAL_ONLY     # Voyage는 있고 Vertex 서비스계정이 없을 때
+```
+
+RAG 답변 생성에는 `P1_RAG_RUNTIME_DIR` 아래에 Voyage query runtime과 tokenizer artifact도 있어야
+합니다. 기본 경로는 `deploy/p1/.state-app/rag-v2-root`이고, 준비 절차는
+[`P1_GIT_PULL_동일환경_재현_가이드.md`](docs/decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md)를
+따릅니다.
+
+다음 값은 **직접 넣지 않습니다.** 데이터베이스 역할별 비밀번호, JWT secret, 각종 HMAC key, Redis
+비밀번호, `STRONG_LLM_GRPC_SHARED_SECRET`, 데모 계정 자격증명은 `./capstone up`이 처음 한 번
+생성해 owner-only 권한으로 저장합니다. 전체 목록은
+[`P1_ENV_REFERENCE.md`](docs/decision-platform/P1_ENV_REFERENCE.md)에 있습니다.
+
+실계좌 App Key와 실주문 TR은 어느 목록에도 없습니다.
+
+### 전체 설정 — 선택값까지 모두 지정할 때
+
+최소 설정 다섯 개 외에는 전부 선택입니다. 지정하지 않으면 기본값을 사용합니다.
+
+#### 실행 위치와 포트
+
+| 변수 | 용도 | 기본값 |
+|---|---|---|
+| `P1_API_PORT` | API 호스트 포트 | `18080` |
+| `P1_DASHBOARD_PORT` | Dashboard 호스트 포트 | `3000` |
+| `P1_PROJECT_NAME` | Docker Compose 프로젝트 이름 | `capstone-p1` |
+| `P1_STATE_DIR` | 비밀값과 실행 상태 경로 | `deploy/p1/.state-app` |
+| `P1_SECRETS_DIR` | secret 파일 경로 | `<state>/secrets` |
+| `P1_RAG_RUNTIME_DIR` | RAG 로컬 artifact 루트 | `<state>/rag-v2-root` |
+| `P1_KIS_MOCK_RUNTIME_DIR` | 모의투자 인증 영수증 경로 | `<state>/mock` |
+
+```bash
+P1_API_PORT=18081 P1_DASHBOARD_PORT=3001 ./capstone up
+```
+
+#### 기능 스위치
+
+기본값은 재료가 있으면 켜고 없으면 끄는 자동 판단입니다. 아래 값을 직접 지정하면 자동 판단을
+끄고 강제합니다. `true`로 강제했는데 재료가 없으면 기동이 닫힙니다.
+
+| 변수 | 값 | 설명 |
+|---|---|---|
+| `P1_RAG_V2_ENABLED` | `true`/`false` | RAG v2 검색 |
+| `P1_RAG_V2_VERTEX_ENABLED` | `true`/`false` | RAG 답변 생성 |
+| `P1_RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED` | `true`/`false` | Vertex 자동 활성화 정책 |
+| `P1_STRONG_LLM_ENABLED` | `true`/`false` | Strong LLM 판단 |
+| `P1_AUTOMATION_RUNTIME_ENABLED` | `true`/`false` | 자동운용 runtime 프로세스 |
+| `P1_KIS_MOCK_ONLINE_ENABLED` | `true`/`false` | KIS 모의투자 어댑터 |
+
+`--mock` 옵션이 뒤의 세 값을 함께 맞추므로 보통은 직접 지정하지 않습니다.
+
+#### 이미지 태그
+
+| 변수 | 기본값 |
+|---|---|
+| `P1_SPRING_IMAGE` | `capstone-decision-platform:p1-local` |
+| `P1_PYTHON_IMAGE` | `capstone-decision-platform:p1-local` |
+| `P1_POSTGRES_IMAGE` | `capstone-postgres-pgvector:p1-local` |
+| `P1_KAFKA_IMAGE` | Kafka를 쓸 때만 지정 |
+
+#### 실행 옵션
+
+값이 아니라 명령 옵션으로 켭니다.
+
+```bash
+./capstone up --models        # BGE-M3, PaddleOCR-VL 두 컨테이너 추가
+./capstone up --mock          # KIS 모의투자 포함
+./capstone up --models --mock # 둘 다
+```
+
+#### 선택 provider key
+
+다음 값은 저장소 루트의 `.env`에 있으면 `./capstone up`이 읽어 시장데이터 collector에만 전달합니다.
+없어도 exact-31 자동매매 E2E는 그대로 동작합니다.
+
+| 변수 | 용도 |
+|---|---|
+| `KRX_OPENAPI_AUTH_KEY` | KRX OpenAPI 기반 universe 갱신 |
+| `KIS_LIVE_APP_KEY` | 실계좌 읽기전용 시장데이터 |
+| `KIS_LIVE_APP_SECRET` | 실계좌 읽기전용 시장데이터 |
+
+실계좌 주문 경로는 어떤 설정으로도 열리지 않습니다.
+
+#### 개발용 인프라만 따로 띄울 때
+
+`./capstone`을 쓰지 않고 `infra/docker-compose.infra.yml`로 PostgreSQL과 Redis만 직접 띄우는 개발
+경로에서만 저장소 루트의 `.env`가 필요합니다.
+
+```bash
+cp .env.example .env
+```
+
+`CHANGE_ME_`로 시작하는 값을 실행 전에 모두 교체합니다. 전체 프로그램 사용자는 이 절이
+필요하지 않습니다.
+
 ## 실행 모드
 
 ### 기본 모드

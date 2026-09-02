@@ -342,8 +342,21 @@ def _validate_scaler(content: bytes) -> tuple[str, ...]:
     symbols = tuple(symbols_value)
     _require_symbols(symbols)
     for symbol, parameters in symbols_value.items():
-        if not isinstance(parameters, dict) or set(parameters) != {"mean", "scale"}:
+        # feature scaler 는 필수다. `target` 은 targetTransform=LOG_RETURN 번들만 싣는
+        # 선택 항목이라 존재하면 검증하고 없으면 통과시킨다.
+        if not isinstance(parameters, dict) or not {"mean", "scale"} <= set(parameters):
             raise P1ArtifactImportError(f"scaler parameters are invalid: {symbol}")
+        if not set(parameters) <= {"mean", "scale", "target"}:
+            raise P1ArtifactImportError(f"scaler parameters are invalid: {symbol}")
+        target = parameters.get("target")
+        if target is not None and (
+            not isinstance(target, dict)
+            or set(target) != {"mean", "scale"}
+            or not _finite_number(target["mean"])
+            or not _finite_number(target["scale"])
+            or float(target["scale"]) <= 0
+        ):
+            raise P1ArtifactImportError(f"scaler target parameters are invalid: {symbol}")
         mean = parameters["mean"]
         scale = parameters["scale"]
         if (

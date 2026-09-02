@@ -46,6 +46,10 @@ def test_train_production_reads_parquet_input_and_writes_seed_bundle(tmp_path: P
             expected_sha,
             "--output-root",
             str(output_root),
+            # 파서가 --stock-code 를 required 로 선언하는데 이 호출이 넘기지 않아 SystemExit(2)
+            # 였다. 검증 내용은 그대로 두고 누락된 인자만 채운다.
+            "--stock-code",
+            "005930",
         ]
     )
 

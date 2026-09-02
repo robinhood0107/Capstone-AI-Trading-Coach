@@ -22,14 +22,19 @@
           "const": false
         },
         "requiredSections": {
-          "const": [
-            "Data",
-            "Model ABI",
-            "Split",
-            "Reproducibility",
-            "Model quality",
-            "Limitations"
-          ]
+          "items": {
+            "enum": [
+              "Data",
+              "Model ABI",
+              "Split",
+              "Reproducibility",
+              "Model quality",
+              "Limitations"
+            ]
+          },
+          "maxItems": 6,
+          "type": "array",
+          "uniqueItems": true
         }
       },
       "required": [

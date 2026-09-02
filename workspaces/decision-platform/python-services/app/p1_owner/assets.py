@@ -39,6 +39,7 @@ from app.data.market_data.automation_bootstrap import (
     AutomationBootstrapError,
     read_automation_bootstrap_archive,
 )
+from app.p1_owner.model_shape import classify_signal, resolve_shape
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
 
 FEATURE_ORDER = (
@@ -78,6 +79,23 @@ ARTIFACT_SCHEMA_IDS = (
 )
 INPUT_MANIFEST = "manifest.json"
 GOLDEN_MANIFEST = "p1-return-engine-manifest.v3.json"
+# SYNTHETIC_GOLDEN 번들의 학습 설정. 실제 Team B 번들은 자기 config.json으로 형상을 선언한다.
+_GOLDEN_CONFIG: dict[str, Any] = {
+    "contractId": "p1-return-config.v2",
+    "deterministicAlgorithms": True,
+    "dropout": 0.2,
+    "featureOrder": list(FEATURE_ORDER),
+    "hiddenSize": 128,
+    "layerCount": 3,
+    "learningRate": 0.0005,
+    "loss": "SmoothL1",
+    "optimizer": "Adam",
+    "outputSize": 1,
+    "perSymbolIndependent": True,
+    "seed": 0,
+    "threadCount": 1,
+    "windowSize": 20,
+}
 CALENDAR_CATALOG = "contracts/catalogs/s5-bootstrap-calendar-recovery-lock.v1.json"
 INPUT_SCHEMA = "contracts/schemas/p1-return-engine-input-pack.v1.schema.json"
 MANIFEST_SCHEMA = "contracts/schemas/p1-return-engine-artifact-manifest.v3.schema.json"
@@ -627,9 +645,10 @@ def _golden_payloads(
     predictions: list[dict[str, Any]] = []
     for index, symbol in enumerate(symbols):
         current = 10_000 + index * 10
-        forecast = current + (1 if index % 3 == 0 else -1 if index % 3 == 1 else 0)
+        # ±200원은 최저가 10,300원에서도 1.9%로 signal deadband(±0.5%) 밖이다.
+        forecast = current + (200 if index % 3 == 0 else -200 if index % 3 == 1 else 0)
         expected = (forecast / current) - 1
-        signal = "BUY" if forecast > current else "SELL" if forecast < current else "HOLD"
+        signal = classify_signal(expected)
         lstm_rows.append(
             {
                 "currentClose": current,
@@ -658,22 +677,7 @@ def _golden_payloads(
                 "symbol": symbol,
             }
         )
-    config = {
-        "contractId": "p1-return-config.v2",
-        "deterministicAlgorithms": True,
-        "dropout": 0.2,
-        "featureOrder": list(FEATURE_ORDER),
-        "hiddenSize": 128,
-        "layerCount": 3,
-        "learningRate": 0.0005,
-        "loss": "SmoothL1",
-        "optimizer": "Adam",
-        "outputSize": 1,
-        "perSymbolIndependent": True,
-        "seed": 0,
-        "threadCount": 1,
-        "windowSize": 20,
-    }
+    config = dict(_GOLDEN_CONFIG)
     scaler = {
         "contractId": "p1-return-scaler.v2",
         "featureOrder": list(FEATURE_ORDER),
@@ -829,22 +833,9 @@ def _golden_manifest(*, input_pack_sha256: str, payloads: dict[str, bytes]) -> d
 def _safetensors_bytes(symbols: list[str]) -> bytes:
     tensors: dict[str, dict[str, Any]] = {}
     offset = 0
-    shapes = {
-        "weight_ih_l0": [512, 9],
-        "weight_hh_l0": [512, 128],
-        "bias_ih_l0": [512],
-        "bias_hh_l0": [512],
-        "weight_ih_l1": [512, 128],
-        "weight_hh_l1": [512, 128],
-        "bias_ih_l1": [512],
-        "bias_hh_l1": [512],
-        "weight_ih_l2": [512, 128],
-        "weight_hh_l2": [512, 128],
-        "bias_ih_l2": [512],
-        "bias_hh_l2": [512],
-        "head.weight": [1, 128],
-        "head.bias": [1],
-    }
+    # 골든 번들은 계약 기준 형상(hidden 128 / 3층)을 유지한다. 일반화 경로의 회귀 기준선이다.
+    model_shape = resolve_shape(_GOLDEN_CONFIG, FEATURE_ORDER)
+    shapes = {suffix: list(model_shape.shapes[suffix]) for suffix in model_shape.suffixes}
     for symbol in symbols:
         for suffix, shape in shapes.items():
             length = 4
@@ -884,7 +875,7 @@ def _verify_safetensors_header(content: bytes) -> None:
     if not isinstance(metadata, dict) or metadata.get("symbolCount") != "31":
         raise P1OwnerAssetError("safetensors metadata is not exact-31")
     tensor_names = [name for name in header if name != "__metadata__"]
-    if len(tensor_names) != 31 * 14:
+    if len(tensor_names) != resolve_shape(_GOLDEN_CONFIG, FEATURE_ORDER).tensor_count(31):
         raise P1OwnerAssetError("safetensors tensor inventory is incomplete")
     end = 0
     symbols: set[str] = set()

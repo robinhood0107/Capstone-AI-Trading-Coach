@@ -37,6 +37,7 @@ from app.p1_owner.assets import (
     _publish_directory,
     _validate_repository_schema,
 )
+from app.p1_owner.model_shape import ModelShape, ModelShapeError, classify_signal, resolve_shape
 from app.rag.safe_io import (
     RagSafeIoError,
     list_approved_regular_files,
@@ -71,22 +72,6 @@ _TRADE_COLUMNS = (
     "netReturn",
 )
 _EQUITY_COLUMNS = ("scenario", "sessionDate", "equityKrw", "drawdown")
-_TENSOR_SHAPES: dict[str, tuple[int, ...]] = {
-    "weight_ih_l0": (512, 9),
-    "weight_hh_l0": (512, 128),
-    "bias_ih_l0": (512,),
-    "bias_hh_l0": (512,),
-    "weight_ih_l1": (512, 128),
-    "weight_hh_l1": (512, 128),
-    "bias_ih_l1": (512,),
-    "bias_hh_l1": (512,),
-    "weight_ih_l2": (512, 128),
-    "weight_hh_l2": (512, 128),
-    "bias_ih_l2": (512,),
-    "bias_hh_l2": (512,),
-    "head.weight": (1, 128),
-    "head.bias": (1,),
-}
 
 
 class P1ArtifactImportError(ValueError):
@@ -157,7 +142,7 @@ def validate_artifact_bundle(
         if item["sizeBytes"] != len(content) or item["sha256"] != _digest(content):
             raise P1ArtifactImportError(f"artifact byte binding mismatch: {name}")
 
-    config = _validate_config(payloads["config.json"])
+    config, model_shape = _validate_config(payloads["config.json"])
     scaler_symbols = _validate_scaler(payloads["scaler.json"])
     lstm = _validate_signals(payloads["lstm_signals.parquet"], "LSTM")
     baseline = _validate_signals(payloads["rule_baseline_signals.parquet"], "RULE_BASELINE")
@@ -169,7 +154,7 @@ def validate_artifact_bundle(
         raise P1ArtifactImportError("LSTM and rule baseline session dates differ")
     session_date = date.fromisoformat(cast(str, lstm["sessionDate"]))
     _validate_xkrx_session(session_date)
-    _validate_safetensors(payloads["model.safetensors"], scaler_symbols)
+    _validate_safetensors(payloads["model.safetensors"], scaler_symbols, model_shape)
     _validate_golden_output(
         payloads["golden_output.json"],
         manifest=manifest,
@@ -303,9 +288,11 @@ def _validate_manifest_truth(manifest: dict[str, Any]) -> None:
         raise P1ArtifactImportError("artifact attempted performance or order authority")
 
 
-def _validate_config(content: bytes) -> dict[str, Any]:
+def _validate_config(content: bytes) -> tuple[dict[str, Any], ModelShape]:
     value = _object(content, "config")
-    expected = {
+    # 요청서가 config에 나열하지 않은 키(epochs, batchSize, roundTripCostBps 등)가 실려 와도
+    # 거부하지 않는다. 필수 키의 존재와 값만 검증하고 초과 키는 무시한다.
+    required = {
         "contractId",
         "deterministicAlgorithms",
         "dropout",
@@ -321,11 +308,12 @@ def _validate_config(content: bytes) -> dict[str, Any]:
         "threadCount",
         "windowSize",
     }
-    if set(value) != expected or value.get("contractId") != "p1-return-config.v2":
-        raise P1ArtifactImportError("config closed field set drifted")
+    missing = sorted(required.difference(value))
+    if missing or value.get("contractId") != "p1-return-config.v2":
+        raise P1ArtifactImportError(f"config required field set drifted: {', '.join(missing)}")
     semantic = {
         key: value[key]
-        for key in expected
+        for key in required
         if key not in {"contractId", "featureOrder", "perSymbolIndependent"}
     }
     _schema(
@@ -334,7 +322,12 @@ def _validate_config(content: bytes) -> dict[str, Any]:
     )
     if value["perSymbolIndependent"] is not True or value["featureOrder"] != list(FEATURE_ORDER):
         raise P1ArtifactImportError("config fixed ABI drifted")
-    return value
+    # 모델 형상의 진실 소스는 config.json 하나다.
+    try:
+        shape = resolve_shape(value, FEATURE_ORDER)
+    except ModelShapeError as error:
+        raise P1ArtifactImportError(f"config model shape is unusable: {error}") from error
+    return value, shape
 
 
 def _validate_scaler(content: bytes) -> tuple[str, ...]:
@@ -402,7 +395,7 @@ def _validate_signals(content: bytes, producer: str) -> dict[str, Any]:
         recalculated = float(forecast) / float(current) - 1.0
         if not math.isclose(float(expected), recalculated, rel_tol=0.0, abs_tol=1e-12):
             raise P1ArtifactImportError(f"{producer} forecast arithmetic mismatch")
-        expected_signal = "BUY" if forecast > current else "SELL" if forecast < current else "HOLD"
+        expected_signal = classify_signal(recalculated)
         if row["signal"] != expected_signal:
             raise P1ArtifactImportError(f"{producer} signal classification mismatch")
     schema_id = (
@@ -425,7 +418,7 @@ def _validate_signals(content: bytes, producer: str) -> dict[str, Any]:
     return {"rows": rows, "sessionDate": next(iter(session_dates)), "symbols": symbols}
 
 
-def _validate_safetensors(content: bytes, symbols: tuple[str, ...]) -> None:
+def _validate_safetensors(content: bytes, symbols: tuple[str, ...], shape: ModelShape) -> None:
     if len(content) < 16:
         raise P1ArtifactImportError("safetensors file is truncated")
     header_length = struct.unpack("<Q", content[:8])[0]
@@ -437,10 +430,13 @@ def _validate_safetensors(content: bytes, symbols: tuple[str, ...]) -> None:
         raise P1ArtifactImportError("safetensors header JSON is invalid") from error
     if not isinstance(header, dict):
         raise P1ArtifactImportError("safetensors header is not an object")
+    # __metadata__는 요청서에 없는 필드다. 있으면 검증하고 없으면 통과시킨다.
     metadata = header.pop("__metadata__", None)
-    if not isinstance(metadata, dict) or metadata.get("symbolCount") != "31":
+    if metadata is not None and (
+        not isinstance(metadata, dict) or metadata.get("symbolCount") not in (None, str(len(symbols)))
+    ):
         raise P1ArtifactImportError("safetensors metadata is invalid")
-    expected_names = {f"{symbol}.{suffix}" for symbol in symbols for suffix in _TENSOR_SHAPES}
+    expected_names = shape.tensor_names(symbols)
     if set(header) != expected_names:
         raise P1ArtifactImportError("safetensors exact tensor inventory drifted")
     data = memoryview(content)[8 + header_length :]
@@ -449,16 +445,16 @@ def _validate_safetensors(content: bytes, symbols: tuple[str, ...]) -> None:
         if not isinstance(descriptor, dict) or descriptor.get("dtype") != "F32":
             raise P1ArtifactImportError(f"safetensors dtype drifted: {name}")
         suffix = name.split(".", maxsplit=1)[1]
-        shape = descriptor.get("shape")
+        tensor_shape = descriptor.get("shape")
         offsets = descriptor.get("data_offsets")
         if (
-            shape != list(_TENSOR_SHAPES[suffix])
+            tensor_shape != list(shape.shapes[suffix])
             or not isinstance(offsets, list)
             or len(offsets) != 2
         ):
             raise P1ArtifactImportError(f"safetensors tensor descriptor drifted: {name}")
         start, end = offsets
-        expected_bytes = math.prod(_TENSOR_SHAPES[suffix]) * 4
+        expected_bytes = math.prod(shape.shapes[suffix]) * 4
         if (
             not isinstance(start, int)
             or not isinstance(end, int)
@@ -506,8 +502,12 @@ def _validate_golden_output(
         "performanceClaimAllowed",
         "predictions",
     }
-    if set(value) != expected or value.get("contractId") != "p1-return-golden-output.v2":
-        raise P1ArtifactImportError("golden output closed field set drifted")
+    # 요청서는 golden_output.json의 필드를 규정하지 않는다. 필수 키만 요구하고 초과 키는 무시한다.
+    missing = sorted(expected.difference(value))
+    if missing or value.get("contractId") != "p1-return-golden-output.v2":
+        raise P1ArtifactImportError(
+            f"golden output required field set drifted: {', '.join(missing)}"
+        )
     if (
         value["costModelId"] != "CONSERVATIVE_FIXED_35BPS_V1"
         or value["forecastFormula"] != "forecastClose/currentClose-1"
@@ -575,7 +575,8 @@ def _validate_backtest(
         if (
             row["scenario"] not in _SCENARIOS
             or row["side"] not in {"LONG", "BUY_SELL"}
-            or not isinstance(row["quantity"], int)
+            # 기존 백테스트 엔진의 `cash // price`가 float를 만들므로 정수값 float도 받는다.
+            or not _integral_number(row["quantity"])
             or row["quantity"] <= 0
             or not all(
                 _finite_number(row[name])
@@ -592,8 +593,28 @@ def _validate_backtest(
             float(row["netReturn"]), net, abs_tol=1e-12
         ):
             raise P1ArtifactImportError("trade return arithmetic mismatch")
+    # 요청서는 시나리오 개수를 규정하지 않는다. 선언된 시나리오가 `_SCENARIOS`의 순서를 보존한
+    # 비어 있지 않은 부분집합이면 받아들이고, 그 집합에 대해서만 독립 재계산한다.
+    scenarios = backtest.get("scenarios")
+    if not isinstance(scenarios, list) or not scenarios:
+        raise P1ArtifactImportError("backtest scenario list is missing")
+    declared = [row.get("scenario") for row in scenarios if isinstance(row, dict)]
+    if len(declared) != len(scenarios) or len(set(declared)) != len(declared):
+        raise P1ArtifactImportError("backtest scenario entries are invalid or duplicated")
+    if declared != [name for name in _SCENARIOS if name in declared]:
+        raise P1ArtifactImportError("backtest scenario order drifted")
+    # GUIDE는 LSTM 산출물이 매핑되는 시나리오이고 dashboard metric card가 의존하므로 필수다.
+    # BASELINE과 STRICT는 없으면 해당 전략을 ABSTAIN으로 투영한다.
+    if "GUIDE" not in declared:
+        raise P1ArtifactImportError("backtest must declare the GUIDE scenario")
+    declared_scenarios = cast(list[str], declared)
+    unknown_trade = {row["scenario"] for row in trade_rows}.difference(declared_scenarios)
+    unknown_equity = {row["scenario"] for row in equity_rows}.difference(declared_scenarios)
+    if unknown_trade or unknown_equity:
+        raise P1ArtifactImportError("backtest log references an undeclared scenario")
     recomputed: dict[str, dict[str, float | int]] = {}
-    for scenario in _SCENARIOS:
+    sharpe_alternatives: dict[str, float] = {}
+    for scenario in declared_scenarios:
         curve = sorted(
             (row for row in equity_rows if row["scenario"] == scenario),
             key=lambda row: cast(date, row["sessionDate"]),
@@ -619,6 +640,7 @@ def _validate_backtest(
             previous = equity
         mdd = min(peaks)
         sharpe = _annualized_sharpe(returns)
+        sharpe_alternatives[scenario] = _annualized_sharpe(returns, sessions_per_year=253.0)
         net_return = final / initial - 1.0
         count = sum(1 for row in trade_rows if row["scenario"] == scenario)
         recomputed[scenario] = {
@@ -627,11 +649,6 @@ def _validate_backtest(
             "sharpe": sharpe,
             "tradeCount": count,
         }
-    scenarios = backtest.get("scenarios")
-    if not isinstance(scenarios, list) or [
-        row.get("scenario") for row in scenarios if isinstance(row, dict)
-    ] != list(_SCENARIOS):
-        raise P1ArtifactImportError("backtest scenario order drifted")
     for row in scenarios:
         if not isinstance(row, dict) or set(row) != {
             "scenario",
@@ -646,8 +663,16 @@ def _validate_backtest(
         if row["costModelId"] != "CONSERVATIVE_FIXED_35BPS_V1":
             raise P1ArtifactImportError("backtest cost model drifted")
         for metric in ("netReturn", "mdd", "sharpe"):
-            if not _finite_number(row[metric]) or not math.isclose(
-                float(row[metric]), float(recomputed[scenario][metric]), abs_tol=1e-12
+            if not _finite_number(row[metric]):
+                raise P1ArtifactImportError(f"backtest {metric} independent recomputation mismatch")
+            candidates = [float(recomputed[scenario][metric])]
+            if metric == "sharpe":
+                # 연율화 계수는 요청서에 없다. return-engine 현행 sqrt(252)를 캐논으로 두고
+                # 기존 골든 번들의 sqrt(253)도 함께 통과시킨다.
+                candidates.append(sharpe_alternatives[scenario])
+            if not any(
+                math.isclose(float(row[metric]), candidate, abs_tol=1e-12)
+                for candidate in candidates
             ):
                 raise P1ArtifactImportError(f"backtest {metric} independent recomputation mismatch")
         if row["tradeCount"] != recomputed[scenario]["tradeCount"]:
@@ -691,14 +716,15 @@ def _validate_report(content: bytes) -> None:
         text = content.decode("utf-8")
     except UnicodeDecodeError as error:
         raise P1ArtifactImportError("model report is not UTF-8") from error
-    sections = ["Data", "Model ABI", "Split", "Reproducibility", "Model quality", "Limitations"]
-    if any(f"## {section}" not in text for section in sections):
-        raise P1ArtifactImportError("model report required section is missing")
+    # 요청서는 report의 절 구성을 규정하지 않는다. UTF-8이고 비어 있지 않은지만 확인한다.
+    if not text.strip():
+        raise P1ArtifactImportError("model report is empty")
+    known = ["Data", "Model ABI", "Split", "Reproducibility", "Model quality", "Limitations"]
     semantic = {
         "encoding": "UTF-8",
         "orderAuthority": "NONE",
         "performanceClaimAllowed": False,
-        "requiredSections": sections,
+        "requiredSections": [section for section in known if f"## {section}" in text],
     }
     _schema(
         "contracts/schemas/p1-return-model-report.v2.schema.json",
@@ -747,7 +773,7 @@ def _build_import_packet(
     fixture_class = "SYNTHETIC_FAKE_E2E" if fixture else "REAL_ARTIFACT"
     request_id = f"req_p1_{manifest_sha256[:24]}"
     metrics_by_model = {
-        "BASELINE": scenarios["BASELINE"],
+        "BASELINE": scenarios.get("BASELINE"),
         "LSTM": scenarios["GUIDE"],
     }
     models = []
@@ -782,7 +808,11 @@ def _build_import_packet(
             if row["scenario"] == scenario
         ][:2000]
         strategies.append(
-            {"curve": curve, "metrics": _dashboard_metrics(scenarios[scenario]), "strategy": label}
+            {
+                "curve": curve,
+                "metrics": _dashboard_metrics(scenarios.get(scenario)),
+                "strategy": label,
+            }
         )
     backtest_view = {
         "fixtureClass": fixture_class,
@@ -888,14 +918,24 @@ def _require_symbols(symbols: tuple[str, ...]) -> None:
         raise P1ArtifactImportError("artifact symbol format is invalid")
 
 
-def _annualized_sharpe(returns: list[float]) -> float:
+def _annualized_sharpe(returns: list[float], *, sessions_per_year: float = 252.0) -> float:
+    """표본표준편차(ddof=1)로 연율화한다. pandas `std()` 기본값과 같은 정의다."""
+
     if len(returns) < 2:
         return 0.0
     values = np.asarray(returns, dtype=np.float64)
     standard_deviation = float(np.std(values, ddof=1))
     if standard_deviation == 0.0:
         return 0.0
-    return float(np.mean(values) / standard_deviation * math.sqrt(253.0))
+    return float(np.mean(values) / standard_deviation * math.sqrt(sessions_per_year))
+
+
+def _integral_number(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    return isinstance(value, float) and math.isfinite(value) and value.is_integer()
 
 
 def _parquet(content: bytes, label: str) -> pa.Table:

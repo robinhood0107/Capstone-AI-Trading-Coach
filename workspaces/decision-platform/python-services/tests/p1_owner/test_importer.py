@@ -19,14 +19,14 @@ from app.p1_owner.importer import (
     main,
     validate_artifact_bundle,
 )
-from tests.p1_owner.test_assets import _build_input
+from tests.p1_owner.test_assets import GOLDEN_SESSION_DATE, universe_catalog
 
 
 def _golden(root: Path) -> tuple[Path, str]:
-    input_root = _build_input(root)
     golden_root = root / "golden"
     result = build_golden_bundle(
-        input_pack_manifest=input_root / "manifest.json",
+        universe_catalog=universe_catalog(),
+        session_date=GOLDEN_SESSION_DATE,
         output_root=golden_root,
     )
     return golden_root, result.manifest_sha256

@@ -7,6 +7,8 @@ import struct
 import tempfile
 from pathlib import Path
 
+import pyarrow.compute as pc
+import pyarrow.parquet as pq
 import pytest
 
 from app.data._shared.canonical_json import canonical_json_bytes
@@ -229,3 +231,42 @@ def test_git_seed_absence_is_an_explicit_noop_before_database_access(
         "providerCalls": 0,
         "status": "SKIPPED_SEED_ABSENT",
     }
+
+
+def test_backtest_accepts_an_ordered_scenario_subset_that_keeps_guide() -> None:
+    """요청서는 시나리오 개수를 규정하지 않는다. GUIDE만 낸 번들도 적재 가능해야 한다."""
+
+    with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
+        root = Path(temporary)
+        golden_root, _ = _golden(root)
+
+        backtest_path = golden_root / "backtest_result.json"
+        backtest = json.loads(backtest_path.read_text(encoding="utf-8"))
+        backtest["scenarios"] = [
+            row for row in backtest["scenarios"] if row["scenario"] == "GUIDE"
+        ]
+        backtest_path.write_bytes(canonical_json_bytes(backtest))
+
+        for name in ("trade_log.parquet", "equity_log.parquet"):
+            table = pq.read_table(golden_root / name)
+            kept = table.filter(pc.equal(table["scenario"], "GUIDE"))
+            pq.write_table(kept, golden_root / name)
+
+        _rewrite_manifest(golden_root, "backtest_result.json")
+        _rewrite_manifest(golden_root, "trade_log.parquet")
+        manifest_sha = _rewrite_manifest(golden_root, "equity_log.parquet")
+
+        result = validate_artifact_bundle(
+            bundle_root=golden_root,
+            expected_manifest_sha256=manifest_sha,
+        )
+
+        backtest_projection = json.loads(result.import_packet["backtestProjectionText"])
+        strategies = {
+            row["strategy"]: row
+            for row in backtest_projection["data"]["view"]["strategies"]
+        }
+        assert strategies["Guide"]["metrics"]["mdd"] is not None
+        # 선언되지 않은 시나리오는 지표 없이 투영된다.
+        assert strategies["Baseline"]["metrics"]["mdd"] is None
+        assert strategies["Strict"]["metrics"]["mdd"] is None

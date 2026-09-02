@@ -1001,15 +1001,16 @@ class RagV2RuntimeService(
                             StrongLlmAnswerBasis.MODEL_KNOWLEDGE,
                         ),
                 )
-                // 추론 문장이 섞이면 모든 문장이 인용을 갖지는 않는다. 인용 비율 하한을 낮추되
-                // 인용이 하나도 없는 답은 여전히 이 basis로 나올 수 없다.
-                val groundedCoverageFloor =
-                    if (generation.answerBasis == StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING) 0.2 else 0.8
+                // 인용 비율 하한(EVIDENCE 0.8, EVIDENCE_WITH_REASONING 0.2)을 뺐다. 연결률은
+                // 이제 답을 통과시킬지 정하는 문턱이 아니라 화면이 보여 주는 지표다. 하한을
+                // 두면 근거가 얇을 때 설명까지 함께 사라졌고, 사용자는 낮은 연결률을 보고
+                // 스스로 판단할 기회조차 얻지 못했다. 인용이 붙을 때 그 인용이 진짜인지
+                // 확인하는 규칙(quote·숫자·owner 경계)은 validator에 그대로 남아 있다.
                 if (generation.answerBasis != StrongLlmAnswerBasis.MODEL_KNOWLEDGE) {
                     require(
                         (evidence.isNotEmpty() || generation.webCitations.isNotEmpty()) &&
                             generation.citationIds.isNotEmpty() &&
-                            generation.citationCoverage in groundedCoverageFloor..1.0,
+                            generation.citationCoverage in 0.0..1.0,
                     )
                 } else {
                     require(generation.citationIds.isEmpty() && generation.citationCoverage == 0.0)

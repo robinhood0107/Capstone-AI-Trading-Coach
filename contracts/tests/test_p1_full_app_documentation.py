@@ -393,7 +393,10 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertNotIn("p1-return-engine-manifest.v1.json", request)
         self.assertIn("p1-return-engine-manifest.v3.json", request)
         self.assertIn("p1-return-engine-input-pack.v1.zip", request)
-        self.assertIn("BLOCKED_PENDING_APPROVED_KIS_INPUT_PACK", request)
+        self.assertIn(
+            "8ba0b439c5ff4e39b3136c17d31d648178d7e0064c35adead46837f953c5fafd",
+            request,
+        )
         self.assertIn("KIS·KRX·ECOS·yfinance 수집", request)
         self.assertIn("daily inference scheduler와 자동매매 runtime", request)
 

@@ -30,10 +30,14 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.market_data.archive import (
-    MarketDataArchive,
     MarketDataArchiveError,
     read_artifact_table,
     read_market_data_archive,
+)
+from app.data.market_data.automation_bootstrap import (
+    AutomationBootstrapArchive,
+    AutomationBootstrapError,
+    read_automation_bootstrap_archive,
 )
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
 
@@ -132,7 +136,50 @@ def build_input_pack(
         ),
     }
     manifest = _input_manifest(
-        archive=archive,
+        source_manifest_sha256=archive.manifest_sha256,
+        metadata=metadata,
+        payloads=payloads,
+    )
+    _validate_repository_schema(INPUT_SCHEMA, manifest)
+    manifest_bytes = canonical_json_bytes(manifest)
+    no_op = _publish_directory(
+        output_root=output_root,
+        payloads=payloads,
+        manifest_name=INPUT_MANIFEST,
+        manifest_bytes=manifest_bytes,
+    )
+    verified = verify_input_pack(output_root)
+    return AssetBuildResult(output_root, verified, len(payloads), no_op)
+
+
+def build_input_pack_from_automation_bootstrap(
+    *, archive_root: Path, expected_archive_manifest_sha256: str, output_root: Path
+) -> AssetBuildResult:
+    """Convert one approved exact-31 KIS bootstrap into the Team B input pack without I/O."""
+
+    archive = read_automation_bootstrap_archive(archive_root)
+    if archive.manifest_sha256 != _sha(expected_archive_manifest_sha256, "archive manifest"):
+        raise P1OwnerAssetError("archive manifest SHA-256 does not match the approved input")
+    tables, metadata = _materialize_automation_bootstrap_tables(archive)
+    payloads: dict[str, bytes] = {
+        "daily_ohlcv.parquet": _parquet_bytes(tables["bars"]),
+        "ecos_macro.parquet": _parquet_bytes(tables["macro"]),
+        "universe.parquet": _parquet_bytes(tables["universe"]),
+        "xkrx_sessions.json": canonical_json_bytes(metadata["sessions"]),
+        "scenario_policy.json": _read_repository_json_bytes(SCENARIO_POLICY),
+        "corporate_action_exclusions.json": canonical_json_bytes(
+            {
+                "basis": "AUTOMATION_BOOTSTRAP_NO_DECLARED_EXCLUSION_ROWS",
+                "contractId": "p1-corporate-action-exclusions.v1",
+                "exclusions": [],
+                "performanceClaimAllowed": False,
+                "priceBasis": "RAW_CLOSE",
+                "sourceArchiveManifestSha256": archive.manifest_sha256,
+            }
+        ),
+    }
+    manifest = _input_manifest(
+        source_manifest_sha256=archive.manifest_sha256,
         metadata=metadata,
         payloads=payloads,
     )
@@ -286,7 +333,12 @@ def verify_golden_bundle(root: Path) -> str:
 
 
 def _materialize_input_tables(
-    *, bars: pa.Table, macro: pa.Table, universes: pa.Table, indices: pa.Table
+    *,
+    bars: pa.Table,
+    macro: pa.Table,
+    universes: pa.Table,
+    indices: pa.Table | None = None,
+    session_dates: list[date] | None = None,
 ) -> tuple[dict[str, pa.Table], dict[str, Any]]:
     months = sorted(set(cast(list[str], universes["membershipMonth"].to_pylist())))
     if not months:
@@ -321,7 +373,12 @@ def _materialize_input_tables(
             "volume": filtered_bars["volume"],
         }
     )
-    session_dates = sorted(set(cast(list[date], indices["sessionDate"].to_pylist())))
+    if session_dates is None:
+        if indices is None:
+            raise P1OwnerAssetError("input pack session source is missing")
+        session_dates = sorted(set(cast(list[date], indices["sessionDate"].to_pylist())))
+    else:
+        session_dates = sorted(set(session_dates))
     if len(session_dates) < 756:
         raise P1OwnerAssetError("input pack does not contain a minimum three-year session window")
     coverage = _coverage(symbols=symbols, bars=bar_projection, sessions=session_dates)
@@ -345,6 +402,84 @@ def _materialize_input_tables(
             "testStart": session_dates[split_validation].isoformat(),
             "seriesCount": len(series),
         },
+    )
+
+
+def _materialize_automation_bootstrap_tables(
+    archive: AutomationBootstrapArchive,
+) -> tuple[dict[str, pa.Table], dict[str, Any]]:
+    """Derive pack-only calendar and universe metadata from a verified KIS bootstrap."""
+
+    manifest = archive.manifest
+    membership = manifest.get("membership")
+    if (
+        manifest.get("adjustmentMode") != "RAW_CLOSE"
+        or manifest.get("requestedSessionCount") != 756
+        or not isinstance(membership, list)
+        or len(membership) != 31
+        or membership[-1] != "132030"
+    ):
+        raise P1OwnerAssetError("automation bootstrap is not the exact-31 RAW_CLOSE input")
+    symbols = [str(symbol) for symbol in membership]
+    if len(set(symbols)) != 31 or any(not _SYMBOL.fullmatch(symbol) for symbol in symbols):
+        raise P1OwnerAssetError("automation bootstrap membership is invalid")
+    bars = archive.bars.select(
+        [
+            "symbol",
+            "sessionDate",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "currency",
+            "temporalQuality",
+            "sourceReceiptSha256",
+        ]
+    )
+    markets = {
+        str(row["symbol"]): str(row["market"])
+        for row in archive.bars.select(["symbol", "market"]).to_pylist()
+    }
+    sessions = sorted(set(cast(list[date], bars["sessionDate"].to_pylist())))
+    if len(sessions) != 756 or set(markets) != set(symbols):
+        raise P1OwnerAssetError("automation bootstrap history coverage is incomplete")
+    quality = str(archive.manifest.get("temporalQuality", "RECONSTRUCTED_FIXED_LAG"))
+    universes = pa.Table.from_pylist(
+        [
+            {
+                "effectiveFromSession": sessions[0],
+                "instrumentId": symbol,
+                "isFixedMember": symbol == "132030",
+                "market": markets[symbol],
+                "membershipMonth": str(manifest["membershipMonth"]),
+                "rank": rank,
+                "selectionSession": sessions[-1],
+                "sourceReceiptSha256": archive.manifest_sha256,
+                "symbol": symbol,
+                "temporalQuality": quality,
+            }
+            for rank, symbol in enumerate(symbols, start=1)
+        ]
+    )
+    macro = pa.Table.from_pylist(
+        [],
+        schema=pa.schema(
+            [
+                ("seriesId", pa.string()),
+                ("observationDate", pa.date32()),
+                ("availableAt", pa.timestamp("us", tz="UTC")),
+                ("value", pa.string()),
+                ("temporalQuality", pa.string()),
+                ("sourceReceiptSha256", pa.string()),
+            ]
+        ),
+    )
+    return _materialize_input_tables(
+        bars=bars,
+        macro=macro,
+        universes=universes,
+        session_dates=sessions,
     )
 
 
@@ -379,7 +514,7 @@ def _coverage(*, symbols: list[str], bars: pa.Table, sessions: list[date]) -> li
 
 
 def _input_manifest(
-    *, archive: MarketDataArchive, metadata: dict[str, Any], payloads: dict[str, bytes]
+    *, source_manifest_sha256: str, metadata: dict[str, Any], payloads: dict[str, bytes]
 ) -> dict[str, Any]:
     sessions_sha = _digest(payloads["xkrx_sessions.json"])
     macro_sha = _digest(payloads["ecos_macro.parquet"])
@@ -479,12 +614,8 @@ def _input_manifest(
         },
     }
     preimage["canonicalManifestSha256"] = _digest(canonical_json_bytes(preimage))
-    # source archive identity is intentionally reflected only by file hashes and the binding preimage.
-    if (
-        archive.manifest_sha256
-        != "e3f26485c93d5e8bd9cdbd7f9ea7cc46cf3f446cf42e9d65b28f1f5b89bd9a5c"
-    ):
-        raise P1OwnerAssetError("unexpected market-data archive generation")
+    if not _SHA256.fullmatch(source_manifest_sha256):
+        raise P1OwnerAssetError("input source manifest SHA-256 is invalid")
     return preimage
 
 
@@ -1030,7 +1161,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="P1 Owner provider-free input/golden asset tool")
     subcommands = parser.add_subparsers(dest="command", required=True)
     input_parser = subcommands.add_parser("input-pack")
-    input_parser.add_argument("--archive-root", type=Path, required=True)
+    input_parser.add_argument("--archive-root", type=Path)
+    input_parser.add_argument("--bootstrap-archive-root", type=Path)
     input_parser.add_argument("--archive-manifest-sha256", required=True)
     input_parser.add_argument("--output-root", type=Path, required=True)
     input_parser.add_argument("--zip-output", type=Path)
@@ -1044,11 +1176,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "input-pack":
-            result = build_input_pack(
-                archive_root=args.archive_root,
-                expected_archive_manifest_sha256=args.archive_manifest_sha256,
-                output_root=args.output_root,
-            )
+            if (args.archive_root is None) == (args.bootstrap_archive_root is None):
+                raise P1OwnerAssetError(
+                    "input pack requires exactly one standard or automation bootstrap archive root"
+                )
+            if args.bootstrap_archive_root is not None:
+                result = build_input_pack_from_automation_bootstrap(
+                    archive_root=args.bootstrap_archive_root,
+                    expected_archive_manifest_sha256=args.archive_manifest_sha256,
+                    output_root=args.output_root,
+                )
+            else:
+                result = build_input_pack(
+                    archive_root=args.archive_root,
+                    expected_archive_manifest_sha256=args.archive_manifest_sha256,
+                    output_root=args.output_root,
+                )
             payload = {
                 "fileCount": result.file_count,
                 "manifestSha256": result.manifest_sha256,
@@ -1085,7 +1228,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "realTeamB": False,
                 "status": "SYNTHETIC_GOLDEN_VERIFIED",
             }
-    except (MarketDataArchiveError, P1OwnerAssetError, OSError) as error:
+    except (AutomationBootstrapError, MarketDataArchiveError, P1OwnerAssetError, OSError) as error:
         print(f"P1_OWNER_ASSET_FAILED: {error}", file=sys.stderr)
         return 1
     print(canonical_json_bytes(payload).decode(), end="")

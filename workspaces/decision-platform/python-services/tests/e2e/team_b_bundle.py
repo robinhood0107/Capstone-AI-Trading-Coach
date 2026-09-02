@@ -7,7 +7,7 @@
 golden output 등 10개 파일의 형태는 Team B의 입력 계약이고 `app/p1_owner/importer.py`의
 `validate_artifact_bundle`과 그 전용 테스트가 이미 담당한다. 여기서는 그 검증을 통과한 뒤의
 산출물, 즉 **import packet**을 production 코드(`_build_import_packet`)로 만들어
-`import_p1_return_bundle_v1`에 넣는다. 즉 DB 적재부터 아래로가 이 테스트의 범위다.
+`import_p1_return_bundle_v2`에 넣는다. 즉 DB 적재부터 아래로가 이 테스트의 범위다.
 
 packet을 손으로 쓰지 않고 production 함수로 만드는 이유는 계약이 바뀌면 테스트가 같이 깨지게
 하기 위해서다.
@@ -40,6 +40,18 @@ UNIVERSE: Final[tuple[str, ...]] = (
 )
 
 _FILLER: Final = "b" * 64
+_ARTIFACTS: Final[tuple[str, ...]] = (
+    "model.safetensors",
+    "scaler.json",
+    "config.json",
+    "lstm_signals.parquet",
+    "rule_baseline_signals.parquet",
+    "backtest_result.json",
+    "trade_log.parquet",
+    "equity_log.parquet",
+    "golden_output.json",
+    "model_report.md",
+)
 _SCENARIO_METRICS: Final[dict[str, dict[str, float | int]]] = {
     "BASELINE": {"netReturn": 0.021, "mdd": -0.048, "sharpe": 0.44, "tradeCount": 18},
     "GUIDE": {"netReturn": 0.037, "mdd": -0.041, "sharpe": 0.61, "tradeCount": 22},
@@ -70,7 +82,6 @@ def _signal_rows(session_date: date, buy_symbols: frozenset[str]) -> list[dict[s
             {
                 "symbol": symbol,
                 "signal": "BUY" if buy else "HOLD",
-                "confidence": 0.82 if buy else 0.30 + (index % 7) / 100,
                 "expectedReturn": 0.031 if buy else -0.004 + (index % 5) / 1000,
             }
         )
@@ -85,7 +96,6 @@ def _sell_rows(session_date: date, sell_symbols: frozenset[str]) -> list[dict[st
             {
                 "symbol": symbol,
                 "signal": "SELL" if sell else "HOLD",
-                "confidence": 0.79 if sell else 0.30 + (index % 7) / 100,
                 "expectedReturn": -0.026 if sell else -0.004 + (index % 5) / 1000,
             }
         )
@@ -149,6 +159,7 @@ def build_packet(
         "realTeamB": True,
         "runId": f"run_p1_e2e_{manifest_sha256[:24]}",
         "producer": {"trainingCodeSha256": _FILLER},
+        "artifacts": [{"path": path, "sha256": _FILLER} for path in _ARTIFACTS],
     }
     packet = importer._build_import_packet(
         manifest=manifest,
@@ -180,7 +191,7 @@ def import_packet(
         with psycopg.connect(database_dsn, connect_timeout=5) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "SELECT outcome,artifact_id,run_id FROM import_p1_return_bundle_v1(%s,%s)",
+                    "SELECT outcome,artifact_id,run_id FROM import_p1_return_bundle_v2(%s,%s)",
                     (packet_text, packet_sha256),
                 )
                 row = cursor.fetchone()

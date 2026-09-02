@@ -221,10 +221,19 @@ export function RagGuideView() {
                     RETRIEVAL_FAILURE
                   </span>
                 ) : null}
+                {/*
+                  답이 나온 응답에도 flag가 붙는다. 조언성 질문을 막지 않고 설명으로
+                  답하기 때문이다. 그 경우 flag는 차단이 아니라 맥락이므로 차단 색을
+                  쓰지 않는다.
+                */}
                 {view.guardrailFlags.map((flag) => (
                   <span
                     key={flag}
-                    className="border border-block px-2 py-0.5 font-mono text-[11px] text-block"
+                    className={
+                      view.generationStatus === 'ANSWERED'
+                        ? 'border border-line px-2 py-0.5 font-mono text-[11px] text-muted'
+                        : 'border border-block px-2 py-0.5 font-mono text-[11px] text-block'
+                    }
                   >
                     {flag}
                   </span>

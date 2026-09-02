@@ -230,7 +230,6 @@ class RealKisAutomationTransport:
                     strong_llm_agent_pb2.JudgementCandidate(
                         symbol=item.symbol,
                         expected_return=item.expected_return,
-                        model_confidence=item.confidence,
                         lstm_signal=item.lstm_signal,
                         baseline_signal=item.baseline_signal,
                     )
@@ -249,7 +248,6 @@ class RealKisAutomationTransport:
         if not verdicts:
             return None
         self.last_judgement = {
-            "confidence": judgement.confidence,
             "summary": judgement.summary,
             "verdicts": [
                 {"symbol": v.symbol, "score": v.score, "veto": v.veto, "reason": v.reason}
@@ -258,11 +256,10 @@ class RealKisAutomationTransport:
         }
         print(
             "  AI 판단: "
-            + " ".join(f"{v.symbol}={v.score:.4f}{'(veto)' if v.veto else ''}" for v in verdicts)
-            + f" confidence={judgement.confidence:.4f}",
+            + " ".join(f"{v.symbol}={v.score:.4f}{'(veto)' if v.veto else ''}" for v in verdicts),
             file=sys.stderr,
         )
-        return AiJudgement(verdicts, judgement.confidence, judgement.summary)
+        return AiJudgement(verdicts, judgement.summary)
 
     def __init__(self, market: KISHttpClient, client: KISMockBrokerageHttpClient) -> None:
         self._market = market
@@ -596,7 +593,6 @@ def main() -> int:
                         lstm_signal="BUY",
                         baseline_signal="BUY",
                         expected_return=0.05,
-                        confidence=0.9,
                     ),
                 )
                 if _SCENARIO != "AI_RERANK"
@@ -608,15 +604,13 @@ def main() -> int:
                         lstm_signal="BUY",
                         baseline_signal="BUY",
                         expected_return=0.0400,
-                        confidence=0.51,
                     ),
-                    # 기대수익은 근소하게 낮지만 확신도가 훨씬 높다. AI가 순위를 바꾼다면 여기다.
+                    # 기대수익만 근소하게 낮다. AI가 근거로 순위를 바꾼다면 여기다.
                     SignalCandidate(
                         symbol=_RIVAL_SYMBOL,
                         lstm_signal="BUY",
                         baseline_signal="BUY",
                         expected_return=0.0399,
-                        confidence=0.93,
                     ),
                 ),
             )
@@ -640,7 +634,7 @@ def main() -> int:
             if _SCENARIO == "AI_RERANK":
                 rule_top = min(
                     buy_inputs.signals,
-                    key=lambda item: (-item.expected_return, -item.confidence, item.symbol),
+                    key=lambda item: (-item.expected_return, item.symbol),
                 ).symbol
                 steps.append(
                     {
@@ -678,7 +672,6 @@ def main() -> int:
                         lstm_signal="SELL",
                         baseline_signal="SELL",
                         expected_return=-0.03,
-                        confidence=0.8,
                     ),
                 )
             elif _SCENARIO == "THREE_SESSION_SOAK":
@@ -804,7 +797,6 @@ def main() -> int:
                         lstm_signal="SELL",
                         baseline_signal="SELL",
                         expected_return=-0.03,
-                        confidence=0.8,
                     ),
                 )
                 close_quote = transport.quote(position.symbol)

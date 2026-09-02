@@ -121,11 +121,21 @@ def main() -> int:
     )
     settings = VertexProviderSettings.from_env()
     registry = _registry()
+    # 등록 도메인 제한은 프롬프트로 강제할 수 없다. Vertex Google Search grounding은 모델이 쓴
+    # site: 연산자를 질의에서 제거하고 자체 질의로 검색한다(관측: site: 절을 명시해도 실제
+    # webSearchQueries는 "삼성전자 악재 공시"로 정규화되고 등록 밖 도메인이 돌아온다).
+    # 그래서 출처 제한은 프롬프트가 아니라 host의 registry 필터가 소유한다. 프롬프트는 등록
+    # 여부와 무관하게 host가 쓸 수 있는 형태 - 문장마다 symbol로 시작하는 사실 - 만 요구한다.
     screen_question = (
         "Google Search로 다음 한국 종목 후보 전체의 최근 공개 악재·공시를 조사하세요. "
-        "각 근거 문장은 반드시 해당 6자리 symbol로 시작하고, 확인되지 않은 사실은 쓰지 마세요. "
-        "등록 출처 도메인 안에서만 검색하세요. 후보: 005930,000660. 허용 도메인: "
-        + ",".join(sorted(registry))
+        "후보: 005930(삼성전자), 000660(SK하이닉스).\n"
+        "다음 출처를 우선 인용하세요: 연합뉴스, 한국경제, 매일경제, 이데일리, 서울경제, DART 공시.\n"
+        "출력 규칙:\n"
+        "- 모든 문장을 해당 6자리 symbol로 시작한다. 이어지는 문장도 예외가 없다.\n"
+        '- "또한", "그리고", "이에" 같은 접속사로 문장을 시작하지 않는다. '
+        "한 문장이 어느 후보의 사실인지 문장만 보고 알 수 있어야 한다.\n"
+        "- 후보마다 최소 한 문장을 쓴다. 악재가 없으면 그 사실을 symbol로 시작해 쓴다.\n"
+        "- 확인되지 않은 사실은 쓰지 않는다."
     )
     screen_request = _request(
         run_suffix="1",
@@ -154,19 +164,26 @@ def main() -> int:
         domain = _registered_domain(root.domain, registry)
         if domain is None:
             continue
-        support = next(
-            (
-                item
-                for item in screen_result.grounding_supports
-                if root.chunk_index in item.chunk_indices and item.text.strip()
-            ),
-            None,
-        )
-        if support is None:
+        # 한 root는 여러 support에 걸린다. 첫 support만 보면 모델이 쓴 "또한, ..." 같은
+        # 이어지는 문장에 걸려 symbol이 없다는 이유로 등록 출처가 통째로 버려진다.
+        # 그 root에 걸린 support를 모두 보고 symbol을 담은 것을 쓴다.
+        supports = [
+            item
+            for item in screen_result.grounding_supports
+            if root.chunk_index in item.chunk_indices and item.text.strip()
+        ]
+        if not supports:
             continue
-        quote = _twenty_word_prefix(support.text.strip())
         for symbol in _SYMBOLS:
-            if _contains_symbol(quote, symbol):
+            quote = next(
+                (
+                    candidate
+                    for candidate in (_twenty_word_prefix(item.text.strip()) for item in supports)
+                    if _contains_symbol(candidate, symbol)
+                ),
+                None,
+            )
+            if quote is not None:
                 evidence_by_symbol[symbol].append(
                     {
                         "citationId": root.citation_id,
@@ -225,8 +242,8 @@ def main() -> int:
         for index, item in enumerate(canonical, start=1)
     )
     candidates = (
-        JudgementCandidate("005930", 0.0400, 0.51, "BUY", "BUY"),
-        JudgementCandidate("000660", 0.0399, 0.93, "BUY", "BUY"),
+        JudgementCandidate("005930", 0.0400, "BUY", "BUY"),
+        JudgementCandidate("000660", 0.0399, "BUY", "BUY"),
     )
     judge_question = (
         "제공된 검증 근거만 사용해 각 후보를 평가하세요. score 또는 veto에 근거를 사용하면 "
@@ -294,7 +311,6 @@ def main() -> int:
         "evidence": evidence_by_symbol,
         "judge": {
             "applied": applied,
-            "confidence": judgement.confidence,
             "projectedCandidates": projected,
             "rawSummary": judgement.summary,
             "scoreDifference": score_difference,

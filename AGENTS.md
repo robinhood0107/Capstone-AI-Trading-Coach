@@ -576,5 +576,10 @@ Gradle build), `python-ci.yml`(Python 3.12 품질 게이트)이다. 아래 시�
   해당 모듈 focused test와 Ruff/mypy 또는 ktlint, DB migration·ACL은 migration contract와 RLS/security
   integration, provider transport는 deterministic fixture와 socket 0 preflight, 공개 계약은 generator와
   OpenAPI/proto byte parity다. release 후보만 전체 local gate와 required CI를 각각 한 번 수행한다.
+- CI를 시작하는 `push`, 수동 재실행, merge 후 필수 검사 실행 직후에는 사용자에게 시작 사실만 짧게
+  알리고 현재 대화를 종료한다. 종료와 함께 CI 완료 예약 모니터링을 등록하고, 모든 CI가 terminal 상태가
+  되면 task를 자동 재개한다. 재개한 turn에서만 결과를 확인·분석·수정한다. CI 실행 중 polling, 추가 코드
+  변경, 중간 결과 보고는 하지 않는다. 이 규칙은 불필요한 대화·토큰 사용을 막기 위한 것이며, 실패 job만
+  자동 재개 turn에서 재실행한다.
 - 구현과 관련 테스트는 같은 기능 커밋에 둘 수 있지만 Markdown·AGENTS·명세서·규칙 변경은 코드와
   분리한다. 리뷰에서는 PR 본문과 검증 evidence로 구현 범위와 통과한 테스트를 명확히 연결한다.

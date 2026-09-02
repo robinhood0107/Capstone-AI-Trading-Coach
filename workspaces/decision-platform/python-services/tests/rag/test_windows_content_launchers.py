@@ -62,7 +62,7 @@ def test_ocr_subprojects_have_independent_frozen_locks_and_ignore_venvs() -> Non
         "openvino==2026.2.1",
         "torch==2.8.0",
         "torchvision==0.23.0",
-        "transformers==5.5.0",
+        "transformers==5.10.1",
         "nncf==2.18.0",
     ):
         assert dependency in intel

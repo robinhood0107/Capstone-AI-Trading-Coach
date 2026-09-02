@@ -1,3 +1,19 @@
+# 셸 진입점은 Windows clone에서 CRLF가 되면 `$'\r': command not found`로 실행 자체가 막힌다.
+# 확장자 없는 진입점이 많아 개별 지정이 필요하다.
+*.sh text eol=lf
+capstone text eol=lf
 gradlew text eol=lf
-infra/**/*.sh text eol=lf
+deploy/p1/assemble-offline-bundle text eol=lf
+deploy/p1/backup text eol=lf
+deploy/p1/full-appctl text eol=lf
+deploy/p1/p1ctl text eol=lf
+deploy/p1/restore-test text eol=lf
+deploy/p1/verify-* text eol=lf
+
+# 바이너리는 개행 변환 대상이 아니다. seed 아래에는 public-rag gz part가 이미 있고
+# team-b exact-10의 model.safetensors와 parquet가 들어올 자리다.
 contracts/proto/*.pb binary
+*.gz binary
+deploy/p1/seed/**/*.part-* binary
+deploy/p1/seed/**/*.parquet binary
+deploy/p1/seed/**/*.safetensors binary

@@ -1,0 +1,226 @@
+{
+  "contractId": "p1-return-universe.v1",
+  "membershipMonth": "2026-08",
+  "source": "market_data_operational_universe (ACCEPTED market-data bootstrap)",
+  "symbolCount": 31,
+  "symbols": [
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 1,
+      "symbol": "005930",
+      "yfinanceTicker": "005930.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 2,
+      "symbol": "000660",
+      "yfinanceTicker": "000660.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 3,
+      "symbol": "005935",
+      "yfinanceTicker": "005935.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 4,
+      "symbol": "402340",
+      "yfinanceTicker": "402340.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 5,
+      "symbol": "009150",
+      "yfinanceTicker": "009150.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 6,
+      "symbol": "373220",
+      "yfinanceTicker": "373220.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 7,
+      "symbol": "005380",
+      "yfinanceTicker": "005380.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 8,
+      "symbol": "207940",
+      "yfinanceTicker": "207940.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 9,
+      "symbol": "032830",
+      "yfinanceTicker": "032830.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 10,
+      "symbol": "105560",
+      "yfinanceTicker": "105560.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 11,
+      "symbol": "028260",
+      "yfinanceTicker": "028260.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 12,
+      "symbol": "012450",
+      "yfinanceTicker": "012450.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 13,
+      "symbol": "034020",
+      "yfinanceTicker": "034020.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 14,
+      "symbol": "055550",
+      "yfinanceTicker": "055550.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 15,
+      "symbol": "000270",
+      "yfinanceTicker": "000270.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 16,
+      "symbol": "329180",
+      "yfinanceTicker": "329180.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 17,
+      "symbol": "006400",
+      "yfinanceTicker": "006400.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 18,
+      "symbol": "068270",
+      "yfinanceTicker": "068270.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 19,
+      "symbol": "012330",
+      "yfinanceTicker": "012330.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 20,
+      "symbol": "034730",
+      "yfinanceTicker": "034730.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 21,
+      "symbol": "086790",
+      "yfinanceTicker": "086790.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 22,
+      "symbol": "035420",
+      "yfinanceTicker": "035420.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 23,
+      "symbol": "066570",
+      "yfinanceTicker": "066570.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 24,
+      "symbol": "010120",
+      "yfinanceTicker": "010120.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 25,
+      "symbol": "000810",
+      "yfinanceTicker": "000810.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 26,
+      "symbol": "298040",
+      "yfinanceTicker": "298040.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 27,
+      "symbol": "267260",
+      "yfinanceTicker": "267260.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 28,
+      "symbol": "010130",
+      "yfinanceTicker": "010130.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 29,
+      "symbol": "042660",
+      "yfinanceTicker": "042660.KS"
+    },
+    {
+      "isFixedMember": false,
+      "market": "KOSPI",
+      "rank": 30,
+      "symbol": "005490",
+      "yfinanceTicker": "005490.KS"
+    },
+    {
+      "isFixedMember": true,
+      "market": "KOSPI",
+      "rank": 31,
+      "symbol": "132030",
+      "yfinanceTicker": "132030.KS"
+    }
+  ],
+  "tickerSuffixRule": "KOSPI 6-digit code + \".KS\""
+}

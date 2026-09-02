@@ -7,6 +7,8 @@ import unittest
 from app.p1_owner.assets import FEATURE_ORDER
 from app.p1_owner.model_shape import (
     SIGNAL_DEADBAND,
+    TARGET_LOG_RETURN,
+    TARGET_RAW_CLOSE,
     ModelShapeError,
     classify_signal,
     resolve_shape,
@@ -133,3 +135,33 @@ class SignalDeadbandTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TargetTransformTest(unittest.TestCase):
+    """모델이 무엇을 예측하는지가 forecastClose 재구성 방법을 정한다."""
+
+    def test_absent_target_transform_defaults_to_raw_close(self) -> None:
+        """선언하지 않은 기존 번들(SYNTHETIC_GOLDEN 포함)이 그대로 통과해야 한다."""
+
+        shape = resolve_shape(_config(), FEATURE_ORDER)
+        self.assertEqual(TARGET_RAW_CLOSE, shape.target_transform)
+
+    def test_declared_transforms_are_derived(self) -> None:
+        for value in (TARGET_RAW_CLOSE, TARGET_LOG_RETURN):
+            with self.subTest(targetTransform=value):
+                shape = resolve_shape(_config(targetTransform=value), FEATURE_ORDER)
+                self.assertEqual(value, shape.target_transform)
+
+    def test_unknown_transform_fails_closed(self) -> None:
+        for value in ("LOG_PRICE", "raw_close", "", None, 0):
+            with self.subTest(targetTransform=value):
+                with self.assertRaises(ModelShapeError):
+                    resolve_shape(_config(targetTransform=value), FEATURE_ORDER)
+
+    def test_target_transform_does_not_change_the_tensor_inventory(self) -> None:
+        """타깃을 바꿔도 텐서 집합은 같다. 형상은 hidden/layer/feature 만으로 파생된다."""
+
+        raw = resolve_shape(_config(targetTransform=TARGET_RAW_CLOSE), FEATURE_ORDER)
+        log_return = resolve_shape(_config(targetTransform=TARGET_LOG_RETURN), FEATURE_ORDER)
+        self.assertEqual(raw.suffixes, log_return.suffixes)
+        self.assertEqual(raw.shapes, log_return.shapes)

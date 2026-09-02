@@ -2,7 +2,7 @@
   "adversarialQuestionCount": 10,
   "allowedQuestionCount": 50,
   "corpusManifestSha256": "bdc42bfb735b411156ec2f79626d6fd2cf56662c57d83e2cdb960fb74e7b0e04",
-  "evaluationManifestSha256": "7fe566be2a7945e811a43ca28b951a46529d5d7a61fdafa0c7fa3b8d3a6915dd",
+  "evaluationManifestSha256": "e7f5eea8806f333030b5b0bd56a0b983279064147299ce1426be587e49f0371f",
   "judge": "DETERMINISTIC_FIXTURE_NO_LIVE_LLM",
   "metrics": {
     "citationCoverage": {

@@ -132,7 +132,7 @@ def main() -> int:
         "다음 출처를 우선 인용하세요: 연합뉴스, 한국경제, 매일경제, 이데일리, 서울경제, DART 공시.\n"
         "출력 규칙:\n"
         "- 모든 문장을 해당 6자리 symbol로 시작한다. 이어지는 문장도 예외가 없다.\n"
-        "- \"또한\", \"그리고\", \"이에\" 같은 접속사로 문장을 시작하지 않는다. "
+        '- "또한", "그리고", "이에" 같은 접속사로 문장을 시작하지 않는다. '
         "한 문장이 어느 후보의 사실인지 문장만 보고 알 수 있어야 한다.\n"
         "- 후보마다 최소 한 문장을 쓴다. 악재가 없으면 그 사실을 symbol로 시작해 쓴다.\n"
         "- 확인되지 않은 사실은 쓰지 않는다."
@@ -178,9 +178,7 @@ def main() -> int:
             quote = next(
                 (
                     candidate
-                    for candidate in (
-                        _twenty_word_prefix(item.text.strip()) for item in supports
-                    )
+                    for candidate in (_twenty_word_prefix(item.text.strip()) for item in supports)
                     if _contains_symbol(candidate, symbol)
                 ),
                 None,

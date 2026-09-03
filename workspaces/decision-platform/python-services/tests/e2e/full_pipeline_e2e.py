@@ -29,6 +29,7 @@ import hashlib
 import json
 import os
 import subprocess
+import uuid
 import time
 import sys
 from datetime import UTC, date, datetime, timedelta
@@ -125,6 +126,10 @@ INITIAL_CASH_KRW: Final = 100_000_000
 # DB 에 바가 없을 때만 쓰는 최소 fallback 이다. 정상 경로는 _fixture_prices() 가
 # market_data_bars 의 마지막 종가를 읽어 exact-31 전체를 덮는다.
 _FIXTURE_PRICES: Final[dict[str, int]] = {"005930": 70_000, "000660": 180_000}
+# 호가 격자. _limit_price 가 매수 지정가에 이 값을 더한다.
+_TICK_KRW: Final = 100
+# 계약 automation-policy.v2 의 capitalLimitKrw multipleOf.
+_CAPITAL_GRANULARITY_KRW: Final = 10_000
 
 
 def _fixture_prices() -> dict[str, int]:
@@ -149,6 +154,32 @@ def _fixture_prices() -> dict[str, int]:
     for symbol, fallback in _FIXTURE_PRICES.items():
         prices.setdefault(symbol, fallback)
     return prices or dict(_FIXTURE_PRICES)
+
+
+# automation._MAX_OPEN_POSITIONS 와 같은 값이다. 정책 표의 컬럼이 아니라 런타임 상수이므로
+# 여기서 다시 적되 어긋나면 아래 검증이 잡는다.
+_SLOTS: Final = 5
+
+
+def _capital_limit_krw() -> int:
+    """유니버스 최고가가 슬롯에 들어가는 자본 한도를 만든다.
+
+    슬롯 예산은 capital_limit // 5 이고 매수 지정가는 호가 + tick 이다. 그래서 최고가 종목이
+    최상위 후보가 되는 날에도 1주 이상이 들어가려면 슬롯 예산이 (최고가 + tick) 보다 커야 한다.
+
+    상수로 두면 안 된다. 실물 seed 로 돌면 어느 종목이 뽑히는지 모델이 정하므로, 유니버스에
+    비싼 종목이 하나라도 있으면 그날 관통이 주문까지 가지 못한다. 값을 지어내지 않고
+    호가 fixture 와 같은 출처(마지막 종가)에서 파생시킨다.
+    """
+
+    prices = _fixture_prices()
+    if not prices:
+        raise PipelineError("호가 fixture 가 비어 자본 한도를 정할 수 없다")
+    slot_floor = max(prices.values()) + _TICK_KRW
+    # 3배는 여러 주가 들어가 수량이 상수가 아니라 예산·원칙에서 나오는 것을 보이게 하는 여유다.
+    raw = slot_floor * _SLOTS * 3
+    # 계약이 multipleOf 10000 을 요구한다(automation-policy.v2). 올림해서 하한을 지킨다.
+    return -(-raw // _CAPITAL_GRANULARITY_KRW) * _CAPITAL_GRANULARITY_KRW
 
 
 def _compose(*args: str, offline_brokerage: bool = False) -> str:
@@ -252,6 +283,88 @@ def _stop_offline_brokerage() -> None:
     )
 
 
+def _disarm_if_armed(api: Api, recorder: Recorder) -> dict[str, Any] | None:
+    """운영 중이면 제품 API 로 해제하고 복원에 필요한 값을 돌려준다.
+
+    정책 변경은 DISARMED 를 요구하므로 ARMED 상태에서는 관통이 시작조차 못 한다. 그래서
+    테스트가 스스로 해제한다 - 대시보드 disarm 버튼과 같은 경로다.
+
+    돌려주는 값으로 끝에서 다시 arm 한다. None 이면 원래 꺼져 있었다는 뜻이므로 복원하지 않는다.
+    """
+
+    code, body = api.request("GET", "/api/v2/automation/status")
+    facts = body.get("data") or {}
+    if code != 200 or facts.get("controlState") != "ARMED":
+        recorder.add(
+            "운영 상태 확인",
+            "PASS" if code == 200 else "FAIL",
+            f"HTTP {code} controlState={facts.get('controlState')} - 해제 불필요",
+        )
+        return None
+
+    account_id = _psql(
+        f"select account_id from public.automation_control where user_id = '{_OWNER}';"
+    ).strip()
+    policy_row = _psql(
+        "select policy_id || '|' || version from public.automation_policy_versions"
+        f" where user_id = '{_OWNER}' order by version desc limit 1;"
+    ).strip()
+    restore = {
+        "accountId": account_id,
+        "policyId": policy_row.split("|", 1)[0] if "|" in policy_row else "",
+        "policyVersion": int(policy_row.split("|", 1)[1]) if "|" in policy_row else 0,
+    }
+
+    code, body = api.request(
+        "POST",
+        "/api/v1/automation/disarm",
+        {"expectedVersion": int(facts.get("controlVersion") or 1)},
+        idempotency_key=f"e2e-disarm-{uuid.uuid4()}",
+    )
+    recorder.add(
+        "운영 중 자동운용 해제",
+        "PASS" if code == 200 else "FAIL",
+        f"HTTP {code} 정책 변경이 DISARMED 를 요구하므로 먼저 내린다. 끝에서 되돌린다",
+    )
+    if code != 200:
+        raise PipelineError("운영 중인 자동운용을 해제하지 못해 관통을 시작할 수 없다")
+    return restore
+
+
+def _rearm(api: Api, recorder: Recorder, restore: dict[str, Any]) -> None:
+    """관통이 끝난 뒤 자동운용을 원래대로 되돌린다.
+
+    정리 구문이 control 을 DISARMED 로 되돌리므로 이 단계가 없으면 테스트 한 번이 자동운용을
+    꺼 버린다. 예약 시각이 와도 아무 일도 일어나지 않고 로그에도 흔적이 남지 않는다.
+    """
+
+    try:
+        api.login()
+        code, body = api.request("GET", "/api/v2/automation/status")
+        facts = body.get("data") or {}
+        code, body = api.request(
+            "POST",
+            "/api/v2/automation/arm",
+            {
+                "accountId": restore["accountId"],
+                "expectedControlVersion": int(facts.get("controlVersion") or 1),
+                "expectedPolicyVersion": int(restore["policyVersion"]),
+                "policyId": restore["policyId"],
+            },
+            idempotency_key=f"e2e-rearm-{uuid.uuid4()}",
+        )
+        armed = body.get("data") or {}
+        recorder.add(
+            "자동운용 복원",
+            "PASS" if code == 200 and armed.get("controlState") == "ARMED" else "FAIL",
+            f"HTTP {code} controlState={armed.get('controlState')} "
+            f"brokerageMode={armed.get('brokerageMode')} "
+            f"version={armed.get('controlVersion')}",
+        )
+    except Exception as error:  # noqa: BLE001 - 복원 실패를 삼키면 자동운용이 꺼진 채 남는다
+        recorder.add("자동운용 복원", "FAIL", f"{type(error).__name__}: {error}")
+
+
 def _driver(*args: str, allow_failure: bool = False) -> dict[str, Any]:
     """컨테이너 안의 드라이버를 호출하고 그 영수증을 돌려준다.
 
@@ -266,6 +379,11 @@ def _driver(*args: str, allow_failure: bool = False) -> dict[str, Any]:
         "PYTHONPATH=/app:/tmp",
         "-e",
         f"{_OPT_IN}=1",
+        # 실물 seed 로 돌면 매수 후보를 모델이 정하므로 exact-31 전체의 호가가 있어야 한다.
+        # 드라이버는 컨테이너 안에서 market_data_bars 를 읽을 수 없으니(역할 분리) 여기서
+        # 같은 출처를 읽어 넘긴다. 셸을 거치지 않아 JSON 을 그대로 전달할 수 있다.
+        "-e",
+        f"P1_E2E_FIXTURE_PRICES={json.dumps(_fixture_prices(), separators=(',', ':'))}",
         _PLATFORM,
         "/usr/local/bin/p1-secret-entrypoint",
         "decision-platform",
@@ -817,6 +935,8 @@ def main(argv: list[str]) -> int:
 
     recorder = Recorder()
     before = snapshot()
+    # 시작 시 자동운용이 켜져 있었으면 그 복원 계획을 담는다. finally 에서 쓴다.
+    rearm_plan: dict[str, Any] | None = None
     recorder.add(
         "시작 스냅샷",
         "INFO",
@@ -953,6 +1073,9 @@ def main(argv: list[str]) -> int:
 
         api = Api(args.api)
         api.login()
+        # 운영 중(ARMED)이면 먼저 내린다. 정책 변경이 DISARMED 를 요구하므로 그러지 않으면
+        # 관통이 409 로 시작조차 못 한다. finally 에서 되돌린다.
+        rearm_plan = _disarm_if_armed(api, recorder)
         status_code, status_body = api.request("GET", "/api/v2/automation/status")
         facts = status_body.get("data") or {}
         recorder.add(
@@ -976,9 +1099,10 @@ def main(argv: list[str]) -> int:
             "PUT",
             "/api/v2/automation/policy",
             {
-                # 원칙 한도가 실제로 물리는 값으로 둔다. 보수 프리셋의 종목당 상한보다 크게 잡아
-                # 수량 산정이 상수가 아니라 원칙에서 나오는지 보이게 한다.
-                "capitalLimitKrw": 5_000_000,
+                # 유니버스 최고가가 슬롯에 들어가는 값으로 둔다. 상수로 두면 실물 seed 에서
+                # 비싼 종목이 최상위 후보가 되는 날 수량이 0 이 되어 관통이 주문까지 가지
+                # 못한다. 원칙 한도가 실제로 물리는지도 이 값이 충분히 커야 보인다.
+                "capitalLimitKrw": _capital_limit_krw(),
                 "expectedVersion": current_policy_version,
                 "stopLossBps": 500,
                 "takeProfitBps": 1000,
@@ -1094,6 +1218,10 @@ def main(argv: list[str]) -> int:
             recorder.add("정리", "INFO", "--keep 이므로 건너뛴다. 배포 증거로 쓰지 않는다")
         else:
             cleanup(before, recorder)
+        # 정리가 control 을 DISARMED 로 되돌리므로, 원래 켜져 있었다면 반드시 다시 켠다.
+        # 이 단계가 없으면 테스트 한 번이 자동운용을 조용히 꺼 버린다.
+        if rearm_plan is not None:
+            _rearm(api, recorder, rearm_plan)
 
     report = {
         "contractId": "p1-full-pipeline-e2e.v1",

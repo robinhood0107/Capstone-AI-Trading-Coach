@@ -99,9 +99,7 @@ def main() -> int:
             clamped.append(f"{year}:{type(error).__name__}")
             continue
         sessions.extend(
-            session
-            for session in built
-            if session.is_open and session.session_date not in existing
+            session for session in built if session.is_open and session.session_date not in existing
         )
     clamped_marker = ",".join(clamped) if clamped else "none"
     if not sessions:
@@ -110,8 +108,15 @@ def main() -> int:
             f"alreadyPresent={len(existing)} "
             f"clampedYears={clamped_marker} providerCalls=0"
         )
-        # 달력 밖 연도만 요청해 한 세션도 못 얻은 것은 입력 오류다. 조용히 성공으로 두지 않는다.
-        return 2 if clamped else 0
+        # clamp 는 정보다. 1년치를 요청하면 마지막 연도는 달력 핀 경계에 항상 걸리므로
+        # 캘린더가 한 번 채워진 뒤의 모든 실행이 여기로 온다 - 그것이 정상 정상상태다.
+        # 이미 clampedYears 로 적고 있으니 종료코드로 또 말하지 않는다.
+        #
+        # 실패로 남기는 경우는 하나다. 요청한 연도가 전부 달력 밖이어서 어떤 세션도 얻을
+        # 수 없는 것 - 그건 입력이 틀린 것이고 조용히 성공으로 둘 수 없다.
+        if clamped and all(entry.endswith(":outside") for entry in clamped):
+            return 2
+        return 0
 
     sessions.sort(key=lambda item: item.session_date)
     now = datetime.now(UTC)
@@ -120,9 +125,7 @@ def main() -> int:
             repository = CalendarRepository(connection)
             for session in sessions:
                 repository.upsert_trading_session(
-                    merge_trading_session(
-                        session, kis=None, kasi_reasons=[], prior=None, now=now
-                    )
+                    merge_trading_session(session, kis=None, kasi_reasons=[], prior=None, now=now)
                 )
     except (psycopg.Error, AdapterValidationError, ValueError):
         print("P1_CALENDAR_OFFLINE_SEED=WRITE_FAILED providerCalls=0")

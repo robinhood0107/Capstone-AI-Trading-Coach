@@ -184,7 +184,7 @@ services:
       - -m
       - app.p1_owner.importer
       - --bundle-root
-      - /opt/capstone/team-b-seed
+      - /opt/capstone/seed/team-b
       - --archive-parent
       - /archive
       - --git-seed
@@ -201,7 +201,9 @@ services:
       - /tmp:size=64m,mode=1777
     secrets: [artifact_import_env]
     volumes:
-      - ./seed/team-b:/opt/capstone/team-b-seed:ro
+      # safe_io 가 approved_root(=bundle_root 의 부모) 를 현재 사용자 소유로 요구한다.
+      # team-b 만 마운트하면 부모가 Docker 가 만든 root 소유 /opt/capstone 이 되어 거부된다.
+      - ./seed:/opt/capstone/seed:ro
       - ${P1_ARTIFACT_ARCHIVE_DIR:-/nonexistent}:/archive
       - ./docker/secret-entrypoint.sh:/usr/local/bin/p1-secret-entrypoint:ro
     depends_on:
@@ -290,7 +292,7 @@ services:
       ASYNC_WORKER_GRPC_TARGET: 127.0.0.1:50056
       RETURN_INFERENCE_GRPC_BIND_ADDRESS: 127.0.0.1:50057
       RETURN_INFERENCE_GRPC_TARGET: 127.0.0.1:50057
-      RETURN_INFERENCE_BUNDLE_ROOT: /opt/capstone/team-b-seed
+      RETURN_INFERENCE_BUNDLE_ROOT: /opt/capstone/seed/team-b
       RETURN_INFERENCE_ALLOW_SYNTHETIC: "false"
       RAG_ANSWERER: FIXTURE_ONLY
       RAG_GRPC_ENABLED: "false"
@@ -354,7 +356,9 @@ services:
       # 경로를 항상 기록하므로(full-appctl:235-236) 런타임 동작은 바뀌지 않는다.
       # 기본값이 없으면 신규 clone이 START_HERE 순서(doctor → up)에서 compose 검증에 막힌다.
       - ${P1_RAG_RUNTIME_DIR:-/dev/null}:/run/rag-runtime:ro
-      - ./seed/team-b:/opt/capstone/team-b-seed:ro
+      # safe_io 가 approved_root(=bundle_root 의 부모) 를 현재 사용자 소유로 요구한다.
+      # team-b 만 마운트하면 부모가 Docker 가 만든 root 소유 /opt/capstone 이 되어 거부된다.
+      - ./seed:/opt/capstone/seed:ro
     ports:
       - "127.0.0.1:${P1_API_PORT:-18080}:8080"
     depends_on:

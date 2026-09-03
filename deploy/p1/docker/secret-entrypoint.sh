@@ -177,6 +177,38 @@ if [ "$profile" = spring ] || [ "$profile" = decision-platform ]; then
   export RAG_HISTORY_CURRENT_KEK_VERSION=kek-v1
 fi
 
+if [ "$profile" = decision-platform ] && [ -n "${RETURN_INFERENCE_BUNDLE_ROOT:-}" ]; then
+  # exact-10 번들을 컨테이너 tmpfs 로 복사한다. safe_io 가 approved_root 와 각 파일이 실행
+  # uid 소유이고 group/other 쓰기가 없기를 요구하는데, host bind mount 는 host uid 를 그대로
+  # 들고 온다(이 컨테이너는 65532 로 돌고 host seed 는 1000 소유다).
+  # rag-v2-root 가 이미 쓰는 방식대로 읽기전용 원본에서 복사만 한다.
+  seed_src=$RETURN_INFERENCE_BUNDLE_ROOT
+  case "$seed_src" in
+    /tmp/*) : ;;  # 이미 tmpfs 경로면 그대로 쓴다
+    *)
+      if [ -d "$seed_src" ] && [ ! -L "$seed_src" ]; then
+        seed_dst=/tmp/team-b-seed
+        install -d -m 700 "$seed_dst" "$seed_dst/team-b"
+        seed_count=0
+        for seed_leaf in "$seed_src"/*; do
+          [ -e "$seed_leaf" ] || continue
+          if [ ! -f "$seed_leaf" ] || [ -L "$seed_leaf" ]; then
+            echo "p1 secret loading failed: team_b_seed_leaf_unsafe" >&2
+            exit 1
+          fi
+          install -m 600 "$seed_leaf" "$seed_dst/team-b/$(basename "$seed_leaf")"
+          seed_count=$((seed_count + 1))
+        done
+        if [ "$seed_count" -gt 0 ]; then
+          export RETURN_INFERENCE_BUNDLE_ROOT="$seed_dst/team-b"
+        fi
+        unset seed_dst seed_count seed_leaf
+      fi
+      ;;
+  esac
+  unset seed_src
+fi
+
 if [ "$profile" = decision-platform ] && [ "${RAG_V2_GRPC_ENABLED:-false}" = true ]; then
   # RAG v2 질의 경로의 local root를 컨테이너 안 tmpfs에 만든다. loader가 0700 디렉터리와 0600
   # 파일을, 그리고 그 소유자가 실행 uid와 같기를 요구하는데, host bind mount는 host uid를 그대로

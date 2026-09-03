@@ -267,20 +267,20 @@ services:
       start_period: 20s
 
 secrets:
-  postgres_env: {file: "${P1_SECRETS_DIR}/postgres.env"}
-  redis_env: {file: "${P1_SECRETS_DIR}/redis.env"}
-  role_bootstrap_env: {file: "${P1_SECRETS_DIR}/role-bootstrap.env"}
-  migration_env: {file: "${P1_SECRETS_DIR}/migration.env"}
-  bootstrap_env: {file: "${P1_SECRETS_DIR}/bootstrap.env"}
-  actor_capability_authority_env: {file: "${P1_SECRETS_DIR}/actor-capability-authority.env"}
-  spring_env: {file: "${P1_SECRETS_DIR}/spring.env"}
-  python_env: {file: "${P1_SECRETS_DIR}/python.env"}
-  kafka_publisher_env: {file: "${P1_SECRETS_DIR}/kafka-publisher.env"}
-  poison_recorder_env: {file: "${P1_SECRETS_DIR}/poison-recorder.env"}
-  kafka_admin_env: {file: "${P1_SECRETS_DIR}/kafka-admin.env"}
-  kafka_broker_jaas: {file: "${P1_SECRETS_DIR}/kafka-broker-jaas.conf"}
-  demo_env: {file: "${P1_SECRETS_DIR}/demo.env"}
-  rag_history_kek: {file: "${P1_SECRETS_DIR}/rag-history-kek-v1.key"}
+  postgres_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/postgres.env"}
+  redis_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/redis.env"}
+  role_bootstrap_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/role-bootstrap.env"}
+  migration_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/migration.env"}
+  bootstrap_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/bootstrap.env"}
+  actor_capability_authority_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/actor-capability-authority.env"}
+  spring_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/spring.env"}
+  python_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/python.env"}
+  kafka_publisher_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kafka-publisher.env"}
+  poison_recorder_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/poison-recorder.env"}
+  kafka_admin_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kafka-admin.env"}
+  kafka_broker_jaas: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kafka-broker-jaas.conf"}
+  demo_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/demo.env"}
+  rag_history_kek: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/rag-history-kek-v1.key"}
 
 volumes:
   p1-postgres: {}

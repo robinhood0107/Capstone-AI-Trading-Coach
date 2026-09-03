@@ -26,6 +26,12 @@ export function AutomationPersistenceNote({ status }: { status: AutomationStatus
       : '켜 둔 상태는 재기동 뒤에도 유지되고, 거래일마다 개장 전 08:55에 스스로 시작합니다. 매일 손댈 필요가 없습니다.';
 
   return (
-    <p className={`mt-3 border-t border-line pt-3 text-[12px] leading-5 ${tone}`}>{message}</p>
+    <p
+      role="note"
+      aria-label="자동운용 지속성"
+      className={`mt-3 border-t border-line pt-3 text-[12px] leading-5 ${tone}`}
+    >
+      {message}
+    </p>
   );
 }

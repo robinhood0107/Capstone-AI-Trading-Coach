@@ -27,6 +27,7 @@ Usage:
   ./capstone mock <configure|doctor|certify|readiness|gate-author|start|stop> [--symbol 005930] [--quantity 1]
   ./capstone artifact <validate|import> <bundle-directory> --manifest-sha256 <sha256>
   ./capstone market-data inventory
+  ./capstone market-data refresh
   ./capstone market-data universe refresh --as-of YYYY-MM-DD --output-root /absolute/new-root
   ./capstone market-data bootstrap <plan|run|validate|stage> ...
   ./capstone test after-hours-replay --manifest-sha256 <sha256>
@@ -446,6 +447,21 @@ up_app() {
     printf 'CAPSTONE_TRADING_CALENDAR=UNAVAILABLE\n'
   fi
   unset calendar_seed
+  # 시장데이터 일봉을 빠진 거래일만큼 채운다. 자동운용 루프는 낡은 시장데이터로도 멈추지
+  # 않으므로(소스 세션과 이력이 같은 manifest 에서 파생되어 함께 밀린다) 실패는 up 을 죽이지
+  # 않고 마커로만 남긴다. providerCalls 는 공개 일봉 피드이며 KIS·계좌·주문 호출은 0이다.
+  local daily_refresh
+  daily_refresh=$(compose --profile owner run --rm --no-deps market-data-cli \
+    python -m app.data.market_data.yfinance_daily_cli 2>&1 \
+    | grep -E '^P1_MARKET_DATA_YF_REFRESH=' | tail -1)
+  printf '%s\n' "${daily_refresh:-P1_MARKET_DATA_YF_REFRESH=NO_OUTPUT}"
+  case $daily_refresh in
+    P1_MARKET_DATA_YF_REFRESH=ADOPTED*|P1_MARKET_DATA_YF_REFRESH=UP_TO_DATE*)
+      printf 'CAPSTONE_MARKET_DATA_DAILY=FRESH\n' ;;
+    *)
+      printf 'CAPSTONE_MARKET_DATA_DAILY=STALE\n' ;;
+  esac
+  unset daily_refresh
   # up 이 매번 AUTOMATION=0 으로 덮으면 켜 둔 자동운용이 재기동마다 꺼진다. 의도는 유지한다.
   # --mock 없이 올린 경우는 brokerage 가 provider-free 이므로 의도를 되살리지 않는다.
   local desired_automation=0
@@ -864,6 +880,14 @@ artifact_validate() {
   printf '%s\nTEAM_B_LOCAL_VALIDATION=PASS\nPROVIDER_CALLS=0\n' "$result"
 }
 
+market_data_daily_refresh() {
+  state_ready || die NOT_INITIALIZED
+  upgrade_state
+  compose ps --status running --services | grep -qx postgres || die MARKET_DATA_POSTGRES_NOT_RUNNING
+  compose --profile owner run --rm --no-deps market-data-cli \
+    python -m app.data.market_data.yfinance_daily_cli
+}
+
 market_data_inventory() {
   state_ready || die NOT_INITIALIZED
   upgrade_state
@@ -1041,6 +1065,7 @@ case $command in
     subcommand=${1:-}; [[ -n $subcommand ]] || die MARKET_DATA_COMMAND_REQUIRED; shift
     case $subcommand in
       inventory) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; market_data_inventory ;;
+      refresh) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; market_data_daily_refresh ;;
       universe)
         action=${1:-}; [[ $action == refresh ]] || die MARKET_DATA_UNIVERSE_ACTION_REQUIRED; shift
         [[ ${1:-} == --as-of ]] || die MARKET_DATA_END_ARGUMENT_REQUIRED

@@ -205,6 +205,10 @@ class Api:
 
 SNAPSHOT_TABLES: Final[tuple[tuple[str, str], ...]] = (
     ("p1_return_artifact_bundle", "bundle_sha256"),
+    # 일일 신호 배치를 남기면 실제 세션이 이미 COMPLETE 인 배치를 보고 추론을 다시
+    # 하지 않는다. 그러면 그날의 결정 입력이 테스트 fixture 가 된다. 가용성이 아니라
+    # 진위 문제라서 정리 목록에 반드시 들어가야 한다.
+    ("p1_return_daily_signal_batch", "batch_sha256"),
     ("automation_runs", "run_id"),
     ("orders", "order_id"),
     ("decisions", "decision_id"),
@@ -314,6 +318,10 @@ def cleanup_statements(before: dict[str, list[str]]) -> list[str]:
         f"({quoted(before['artifact_ingest_projection'])});",
         "delete from public.dashboard_artifact_views where artifact_id not in "
         f"({quoted(before['dashboard_artifact_views'])});",
+        "delete from public.p1_return_daily_signal_projection where batch_sha256 not in "
+        f"({quoted(before['p1_return_daily_signal_batch'])});",
+        "delete from public.p1_return_daily_signal_batch where batch_sha256 not in "
+        f"({quoted(before['p1_return_daily_signal_batch'])});",
         "delete from public.p1_return_signal_projection where bundle_sha256 not in "
         f"({quoted(before['p1_return_artifact_bundle'])});",
         # bundle 로의 FK 가 ON DELETE RESTRICT 다. 정리 단계는 FK 를 끄고 지우므로 이 표를
@@ -378,6 +386,8 @@ def cleanup(before: dict[str, list[str]], recorder: Recorder) -> None:
         f" where bundle_sha256 not in ({quoted(before['p1_return_artifact_bundle'])});"
         " select 'seedSignals=' || count(*) from public.p1_return_model_seed_signal"
         f" where bundle_sha256 not in ({quoted(before['p1_return_artifact_bundle'])});"
+        " select 'dailyBatches=' || count(*) from public.p1_return_daily_signal_batch"
+        f" where batch_sha256 not in ({quoted(before['p1_return_daily_signal_batch'])});"
         " select 'runs=' || count(*) from public.automation_runs"
         f" where run_id not in ({quoted(before['automation_runs'])});"
         " select 'orders=' || count(*) from public.orders"

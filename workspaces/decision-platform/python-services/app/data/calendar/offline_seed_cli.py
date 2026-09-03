@@ -20,7 +20,8 @@ chosen_source_id에 XKRX가 그대로 기록되어 이 성질이 데이터에 �
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from typing import Any
 
 import psycopg
 
@@ -35,7 +36,7 @@ _MAX_YEARS = 3
 
 
 def main() -> int:
-    """권한 preflight를 먼저 통과한 뒤 오늘 이후의 개장일만 적재한다."""
+    """권한 preflight를 먼저 통과한 뒤 캘린더에 없는 개장일만 적재한다."""
 
     dsn = os.environ.get("P1_CALENDAR_OFFLINE_SEED_DSN", "")
     if not dsn:
@@ -57,8 +58,18 @@ def main() -> int:
         )
         return 2
 
-    # 과거 행을 덮으면 이미 확정된 이력의 chosen_source_id가 XKRX로 바뀐다. 앞으로만 채운다.
-    today = datetime.now(UTC).date()
+    # 이미 있는 행은 건드리지 않는다. 확정된 이력의 chosen_source_id를 XKRX로 바꾸지 않는
+    # 것이 목적이므로, 날짜로 자르는 대신 존재 여부로 가른다. 그래야 과거 공백도 메워진다 -
+    # LSTM의 20세션 lookback은 그 구간이 캘린더에 있어야 성립한다.
+    try:
+        with psycopg.connect(dsn, autocommit=False, connect_timeout=5) as connection:
+            existing = _existing_sessions(connection)
+    except psycopg.Error:
+        print(
+            "P1_CALENDAR_OFFLINE_SEED=AUTHORITY_UNAVAILABLE "
+            "reason=EXISTING_SESSION_SCAN_FAILED providerCalls=0"
+        )
+        return 2
     sessions: list[XKRXSession] = []
     skipped: list[str] = []
     for year in years:
@@ -72,12 +83,13 @@ def main() -> int:
         sessions.extend(
             session
             for session in built
-            if session.is_open and session.session_date >= today
+            if session.is_open and session.session_date not in existing
         )
     skipped_marker = ",".join(skipped) if skipped else "none"
     if not sessions:
         print(
             "P1_CALENDAR_OFFLINE_SEED=NO_SESSIONS seeded=0 "
+            f"alreadyPresent={len(existing)} "
             f"skippedYears={skipped_marker} providerCalls=0"
         )
         # 달력 밖 연도만 요청해 한 세션도 못 얻은 것은 입력 오류다. 조용히 성공으로 두지 않는다.
@@ -104,9 +116,17 @@ def main() -> int:
         f"firstSession={sessions[0].session_date.isoformat()} "
         f"lastSession={sessions[-1].session_date.isoformat()} "
         f"skippedYears={skipped_marker} "
+        f"alreadyPresent={len(existing)} "
         "chosenSource=XKRX degraded=false providerCalls=0"
     )
     return 0
+
+
+def _existing_sessions(connection: psycopg.Connection[Any]) -> set[date]:
+    """이미 적재된 canonical session 날짜를 읽는다. 그 행은 다시 쓰지 않는다."""
+
+    rows = connection.execute("SELECT session_date FROM public.trading_sessions").fetchall()
+    return {row[0] for row in rows}
 
 
 def _parse_years(value: str) -> tuple[int, ...]:

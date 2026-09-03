@@ -23,18 +23,20 @@ test('live Compose login and primary screens use the Spring API', async ({ page 
   const screens = [
     ['내 원칙', '내 투자 원칙'],
     ['주문 검토', '주문 검토'],
-    ['모델 비교', '모델 비교'],
-    ['백테스트 리포트', '백테스트 리포트'],
+    ['전략 검증', '모델 비교'],
     ['금융 가이드', '금융 가이드'],
   ] as const;
   const navRail = page.getByRole('navigation', { name: '주요 화면' });
   for (const [navigation, heading] of screens) {
-    await navRail.getByRole('link', { name: new RegExp(`^${navigation}`) }).click();
+    await navRail.getByRole('link', { name: new RegExp(`^(\d\d )?${navigation}`) }).click();
     await expect(page.getByRole('heading', { name: heading })).toBeVisible();
   }
 
+  // 전략 검증은 한 화면 안에서 모델 비교 ↔ 백테스트로 전환한다.
+  await page.getByRole('tab', { name: '백테스트 리포트' }).click();
+  await expect(page.getByRole('heading', { name: '백테스트 리포트' })).toBeVisible();
+
   await page.setViewportSize({ width: 390, height: 844 });
-  await navRail.getByRole('link', { name: /^백테스트 리포트/ }).click();
   await expect(page.getByRole('heading', { name: 'Baseline / Guide / Strict 비교' })).toBeVisible();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),

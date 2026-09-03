@@ -91,7 +91,7 @@ export function RagGuideView() {
         title="외부 처리 동의"
         hint="동의하기 전에는 질문이 외부로 나가지 않습니다."
         actions={
-          <span className="font-mono text-eyebrow uppercase text-faint">
+          <span className="text-eyebrow font-semibold uppercase text-faint">
             {consentGranted === null ? 'CHECKING' : consentGranted ? 'GRANTED' : 'REQUIRED'}
           </span>
         }
@@ -104,7 +104,7 @@ export function RagGuideView() {
             type="button"
             onClick={() => void changeConsent('GRANT')}
             disabled={consentPending || consentGranted === true}
-            className="border border-navy bg-navy px-3 py-1.5 text-[13px] text-white disabled:border-line disabled:bg-line disabled:text-faint"
+            className="rounded-full border border-navy bg-navy px-3 py-1.5 text-[13px] text-white disabled:border-line disabled:bg-line disabled:text-faint"
           >
             동의
           </button>
@@ -112,7 +112,7 @@ export function RagGuideView() {
             type="button"
             onClick={() => void changeConsent('REVOKE')}
             disabled={consentPending || consentGranted !== true}
-            className="border border-line px-3 py-1.5 text-[13px] text-muted hover:border-navy hover:text-navy disabled:text-faint"
+            className="rounded-full border border-line px-3 py-1.5 text-[13px] text-muted hover:border-navy hover:text-navy disabled:text-faint"
           >
             철회
           </button>
@@ -137,7 +137,7 @@ export function RagGuideView() {
             }}
             rows={3}
             placeholder="예: 금 ETF의 롤오버 위험은 무엇인가요?"
-            className="w-full resize-y border border-line bg-panel px-3 py-2.5 text-[14px] leading-6 text-ink placeholder:text-faint"
+            className="w-full resize-y rounded-tile border border-line bg-panel px-4 py-3 text-[14px] leading-6 text-ink placeholder:text-faint"
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -161,7 +161,7 @@ export function RagGuideView() {
               type="button"
               onClick={() => void submit(question)}
               disabled={pending || consentGranted !== true || question.trim().length === 0}
-              className="border border-navy bg-navy px-4 py-1.5 text-[13px] font-medium text-white disabled:border-line disabled:bg-line disabled:text-faint"
+              className="rounded-full border border-navy bg-navy px-4 py-1.5 text-[13px] font-medium text-white disabled:border-line disabled:bg-line disabled:text-faint"
             >
               {pending ? '찾는 중' : '물어보기'}
             </button>
@@ -175,7 +175,7 @@ export function RagGuideView() {
                   setQuestion(example);
                   void submit(example);
                 }}
-                className="border border-line px-2.5 py-1 text-[12px] text-muted hover:border-navy hover:text-navy"
+                className="rounded-full border border-line px-2.5 py-1 text-[12px] text-muted hover:border-navy hover:text-navy"
               >
                 {example}
               </button>
@@ -192,7 +192,7 @@ export function RagGuideView() {
               title={view.statusHeadline}
               hint={view.statusDetail}
               actions={
-                <span className="font-mono text-eyebrow uppercase text-faint">
+                <span className="text-eyebrow font-semibold uppercase text-faint">
                   {view.generationStatus}
                 </span>
               }
@@ -209,7 +209,7 @@ export function RagGuideView() {
 
               <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-line pt-4">
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-eyebrow uppercase text-faint">출처 연결률</span>
+                  <span className="text-eyebrow font-semibold uppercase text-faint">출처 연결률</span>
                   <Numeric
                     value={view.citationCoverage}
                     format={(v) => formatRatio(v, 0)}
@@ -233,14 +233,14 @@ export function RagGuideView() {
               </div>
 
               {view.sourcesUnavailableReason ? (
-                <p className="mt-4 border border-dashed border-rule px-4 py-4 text-[13px] leading-5 text-muted">
+                <p className="mt-4 rounded-tile border border-dashed border-rule px-4 py-4 text-[13px] leading-5 text-muted">
                   {view.sourcesUnavailableReason}
                 </p>
               ) : null}
 
               {view.topSources.length > 0 ? (
                 <div className="mt-5">
-                  <p className="font-mono text-eyebrow uppercase text-faint">핵심 출처</p>
+                  <p className="text-eyebrow font-semibold uppercase text-faint">핵심 출처</p>
                   <ul className="mt-2 space-y-4">
                     {view.topSources.map((source) => (
                       <SourceRow key={source.sourceId} source={source} />
@@ -303,7 +303,7 @@ function SourceRow({ source }: { source: SourceItem }) {
     <li>
       <div className="flex flex-wrap items-baseline gap-2">
         <p className="text-[13px] font-medium leading-5 text-ink">{source.title}</p>
-        <span className="border border-line px-1.5 py-0.5 font-mono text-[10px] uppercase text-faint">
+        <span className="rounded-full border border-line px-1.5 py-0.5 font-mono text-[10px] uppercase text-faint">
           {CITATION_KIND_LABEL[source.citationKind] ?? source.citationKind}
         </span>
       </div>

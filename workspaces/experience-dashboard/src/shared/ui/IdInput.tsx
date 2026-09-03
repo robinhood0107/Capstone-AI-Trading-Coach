@@ -32,8 +32,8 @@ export function IdInput({
   const valid = pattern.test(value);
 
   return (
-    <div className="border border-line bg-panel px-5 py-4">
-      <label htmlFor={inputId} className="font-mono text-eyebrow uppercase text-faint">
+    <div className="rounded-tile bg-subtle px-5 py-4">
+      <label htmlFor={inputId} className="text-eyebrow font-semibold uppercase text-faint">
         {label}
       </label>
       <p className="mt-1 text-[12px] leading-5 text-muted">{hint}</p>
@@ -45,13 +45,11 @@ export function IdInput({
         spellCheck={false}
         autoComplete="off"
         aria-invalid={touched && !valid}
-        className={`mt-3 w-full border px-3 py-2 font-mono text-[13px] text-ink ${
+        className={`mt-3 w-full rounded-full border bg-panel px-4 py-2 font-mono text-[13px] text-ink placeholder:text-faint ${
           touched && !valid ? 'border-block' : 'border-line'
         }`}
       />
-      {touched && !valid ? (
-        <p className="mt-2 text-[12px] text-block">{patternHint}</p>
-      ) : null}
+      {touched && !valid ? <p className="mt-2 text-[12px] text-block">{patternHint}</p> : null}
       {presets && presets.length > 0 ? (
         <div className="mt-3 flex flex-wrap gap-2">
           {presets.map((preset) => (
@@ -59,7 +57,7 @@ export function IdInput({
               key={preset.id}
               type="button"
               onClick={() => onChange(preset.id)}
-              className="border border-line px-2.5 py-1 text-[12px] text-muted hover:border-navy hover:text-navy"
+              className="rounded-full border border-line bg-panel px-3 py-1 text-[12px] font-medium text-muted hover:border-navy hover:text-navy"
             >
               {preset.label}
             </button>

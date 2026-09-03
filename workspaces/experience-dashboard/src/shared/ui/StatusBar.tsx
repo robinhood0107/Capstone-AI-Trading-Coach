@@ -20,19 +20,22 @@ export function StatusBar() {
   const health = state.kind === 'ready' || state.kind === 'stale' ? state.data : null;
 
   return (
-    <div className="border-b border-rule bg-panel">
+    <div className="sticky top-0 z-30 border-b border-line bg-panel/85 backdrop-blur">
       {mock ? (
-        <p className="bg-warn/10 px-6 py-1.5 text-[12px] text-ink">
-          <span className="font-mono text-eyebrow uppercase text-warn">합성 fixture</span> 화면 검증용
-          합성 데이터입니다. 실제 성과나 계좌 상태가 아니며 보고서에 성과로 인용할 수 없습니다.
+        <p className="flex items-center gap-2 bg-warn/[0.07] px-5 py-2 text-[12px] leading-5 text-ink sm:px-8">
+          <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-warn" />
+          <span>
+            <span className="font-semibold text-warn">합성 데이터</span> 화면 검증용 값입니다. 실제 성과나
+            계좌 상태가 아니며 보고서에 성과로 인용할 수 없습니다.
+          </span>
         </p>
       ) : null}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-6 py-2.5">
+      <div className="flex flex-wrap items-center gap-2 px-5 py-3 sm:px-8">
         <Chip label="연결" value={mock ? '합성 데이터' : baseUrl() || 'same-origin /api'} tone="navy" />
         <Chip
           label="자동주문"
           value={health ? (health.killSwitchActive ? '정지됨' : '작동 중') : '확인 중'}
-          tone={health?.killSwitchActive ? 'block' : 'default'}
+          tone={health?.killSwitchActive ? 'block' : health ? 'allow' : 'default'}
         />
         <Chip
           label="가격"
@@ -41,15 +44,15 @@ export function StatusBar() {
         />
         <Chip label="신호" value={freshnessLabel(health?.dataFreshness?.signalFresh)} />
         <Chip label="설명 근거" value={freshnessLabel(health?.dataFreshness?.ragFresh)} />
-        <span className="ml-auto flex items-center gap-4">
-          <span className="font-mono text-[11px] text-faint">
+        <span className="ml-auto flex items-center gap-3">
+          <span className="tnum text-[11px] text-faint">
             {health ? `기준 ${relativeAge(health.asOf) ?? '방금'}` : '상태 확인 중'}
           </span>
           {authenticated && user ? (
             <button
               type="button"
               onClick={() => session.clear()}
-              className="border border-line px-2 py-0.5 text-[12px] text-muted hover:border-navy hover:text-navy"
+              className="rounded-full border border-line px-3 py-1 text-[12px] font-medium text-muted hover:border-navy hover:text-navy"
             >
               {user.username} · 로그아웃
             </button>
@@ -66,6 +69,14 @@ function freshnessLabel(value: boolean | null | undefined): string {
   return '근거 없음';
 }
 
+const DOT: Record<string, string> = {
+  navy: 'bg-navy',
+  allow: 'bg-allow',
+  warn: 'bg-warn',
+  block: 'bg-block',
+  default: 'bg-faint',
+};
+
 function Chip({
   label,
   value,
@@ -73,22 +84,26 @@ function Chip({
 }: {
   label: string;
   value: string;
-  tone?: 'default' | 'navy' | 'warn' | 'block';
+  tone?: 'default' | 'navy' | 'allow' | 'warn' | 'block';
 }) {
+  const missing = value === '근거 없음';
   const toneClass =
     tone === 'navy'
-      ? 'text-navy'
-      : tone === 'warn'
-        ? 'text-warn'
-        : tone === 'block'
-          ? 'text-block'
-          : value === '근거 없음'
-            ? 'text-faint'
-            : 'text-ink';
+      ? 'text-ink'
+      : tone === 'allow'
+        ? 'text-allow'
+        : tone === 'warn'
+          ? 'text-warn'
+          : tone === 'block'
+            ? 'text-block'
+            : missing
+              ? 'text-faint'
+              : 'text-ink';
   return (
-    <span className="flex items-baseline gap-2">
-      <span className="font-mono text-eyebrow uppercase text-faint">{label}</span>
-      <span className={`text-[13px] font-medium ${toneClass}`}>{value}</span>
+    <span className="inline-flex items-center gap-2 rounded-full bg-subtle px-3 py-1.5">
+      <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${missing ? 'bg-line' : DOT[tone]}`} />
+      <span className="text-[11px] text-faint">{label}</span>
+      <span className={`text-[12px] font-medium ${toneClass}`}>{value}</span>
     </span>
   );
 }

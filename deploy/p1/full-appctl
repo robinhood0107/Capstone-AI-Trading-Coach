@@ -571,7 +571,33 @@ if response.status != 200 or body.get("data", {}).get("user", {}).get("userId") 
     raise SystemExit("CAPSTONE_ERROR=LOGIN_SMOKE")
 PY
   compose --profile smoke run --rm --no-deps -e P1_SMOKE_MODE=DB synthetic-async-smoke
+  automation_runtime_drift
   printf 'CAPSTONE_SMOKE=PASS\nPROVIDER_CALLS=0\n'
+}
+
+# DB 의 자동매매 의도와 실제로 도는 프로세스를 대조한다.
+#
+# 실제 사고: decision-platform 을 up_app 밖에서 재생성하니 런타임 플래그가 사라져
+# automation_runtime 프로세스가 없는데 control 은 ARMED 로 남았다. 자동매매가 켜져 있다고
+# 표시되는데 구동할 프로세스가 없는 상태이고, 예약 시각에 아무 일도 일어나지 않으면서 로그에도
+# blocker 에도 흔적이 남지 않는다.
+#
+# 플래그를 보지 않고 의도와 실제를 대조하는 것이 핵심이다 - 어느 경로로 재생성했든 잡힌다.
+automation_runtime_drift() {
+  local state
+  state=$(compose exec -T postgres psql -U postgres -d capstone_p1 -At \
+    -c "select control_state from automation_control limit 1" 2>/dev/null | tr -d '\r') || return 0
+  [[ $state == ARMED ]] || {
+    printf 'CAPSTONE_AUTOMATION_RUNTIME=NOT_REQUIRED_CONTROL_%s\n' "${state:-UNKNOWN}"
+    return 0
+  }
+  if compose exec -T decision-platform ps -o args 2>/dev/null \
+    | grep -q 'app\.p1_owner\.automation_runtime'; then
+    printf 'CAPSTONE_AUTOMATION_RUNTIME=RUNNING\n'
+    return 0
+  fi
+  printf 'CAPSTONE_AUTOMATION_RUNTIME=MISSING_WHILE_ARMED\n' >&2
+  die AUTOMATION_RUNTIME_MISSING_WHILE_ARMED
 }
 
 team_a_acceptance() {

@@ -21,6 +21,12 @@ from app.p1_owner.inference_grpc_server import METHOD_PATH
 _MAX_PACKET_BYTES = 512 * 1024
 _RAW_HISTORY_LIMIT = 40
 _WINDOW_SIZE = 20
+# MA20 이 생기려면 그 앞에 19세션이 있어야 하고, 모델은 feature 행 _WINDOW_SIZE 개를
+# 받는다. 그래서 필요한 최소 이력은 19 + _WINDOW_SIZE 다. 리터럴로 두면 window 나 MA
+# 기간이 바뀔 때 조용히 어긋나므로 파생값으로 둔다 - 다른 종목·다른 설정에도 그대로
+# 맞아야 한다.
+_MA_LONG_WARMUP = 19
+_MIN_HISTORY = _MA_LONG_WARMUP + _WINDOW_SIZE
 
 
 class DailyInferenceError(RuntimeError):
@@ -172,7 +178,12 @@ class DailyInferenceService:
         source_session = str(context.get("sourceSession"))
         for symbol in cast(list[str], symbols):
             history = self._repository.history(symbol, target_session)
-            features, rule_signal = _features_and_rule(history, source_session)
+            try:
+                features, rule_signal = _features_and_rule(history, source_session)
+            except DailyInferenceError as error:
+                # 종목을 붙여 다시 던진다. 31종목 루프 안에서 실패하면 어느 종목이 막혔는지가
+                # 곧 대처 방법이다 - 신규 상장인지, 수집이 밀린 것인지.
+                raise DailyInferenceError(f"{error} symbol={symbol}") from None
             feature_rows.append(
                 {
                     "currentClose": features[-1][FEATURE_ORDER.index("raw_close")],
@@ -233,8 +244,18 @@ class DailyInferenceService:
 def _features_and_rule(
     history: list[dict[str, Any]], expected_source_session: str
 ) -> tuple[list[list[float]], str]:
-    if len(history) < 39 or history[-1].get("sessionDate") != expected_source_session:
-        raise DailyInferenceError("DAILY_INFERENCE_HISTORY_INCOMPLETE")
+    # 이력이 짧은 것과 소스 세션이 어긋난 것은 원인도 대처도 다르므로 따로 말한다.
+    # 앞은 시간이 지나면 해결되고, 뒤는 시장데이터 수집이 밀린 것이다.
+    if len(history) < _MIN_HISTORY:
+        raise DailyInferenceError(
+            f"DAILY_INFERENCE_HISTORY_TOO_SHORT sessions={len(history)} required={_MIN_HISTORY}"
+        )
+    observed_source = history[-1].get("sessionDate")
+    if observed_source != expected_source_session:
+        raise DailyInferenceError(
+            "DAILY_INFERENCE_HISTORY_INCOMPLETE "
+            f"observedSource={observed_source} expectedSource={expected_source_session}"
+        )
     closes = [float(item["close"]) for item in history]
     feature_rows: list[list[float]] = []
     ma5_values: list[float | None] = []
@@ -266,19 +287,43 @@ def _features_and_rule(
     if len(feature_rows) < _WINDOW_SIZE:
         raise DailyInferenceError("DAILY_INFERENCE_FEATURE_WINDOW_INCOMPLETE")
     latest = len(history) - 1
-    previous = latest - 1
     ma5 = cast(float, ma5_values[latest])
     ma20 = cast(float, ma20_values[latest])
-    prior_ma5 = cast(float, ma5_values[previous])
-    prior_ma20 = cast(float, ma20_values[previous])
     rsi = cast(float, rsi_values[latest])
-    signal = (
-        "BUY"
-        if ma5 > ma20 and prior_ma5 <= prior_ma20 and rsi < 70
-        else "SELL"
-        if ma5 < ma20 and prior_ma5 >= prior_ma20 and rsi > 30
-        else "HOLD"
-    )
+    # 추세를 상태로 판정한다. 교차가 일어난 그 날만 보는 것이 아니다.
+    #
+    # 이전 판정은 prior_ma5 <= prior_ma20 을 함께 요구해 "그 날 정확히 골든크로스"만 BUY 로
+    # 인정했다. 교차는 종목당 연 5~12회뿐이라 31종목이어도 하루 평균 1종목이고, ADR-039 의
+    # 2-of-2 합의를 곱하면 평균 10거래일에 한 번만 매수 후보가 생겼다.
+    #
+    # 실측 - exact-31 의 26년 PIT 패널(158,336관측 / 6,646세션 / 2000-02~2026-09)에서
+    # Fama-MacBeth (1973) 로 쟀다. 날짜별로 "신호 종목 등가중 - 유니버스 등가중"을 만들고 그
+    # 시계열을 Newey-West (1987) 5래그로 검정한다. 같은 날 종목은 시장 성분을 공유해 강하게
+    # 상관되므로 (날짜,종목) 관측을 pooled 로 검정하면 t 가 크게 부풀려진다. 그리고 시장
+    # 성분이 매일 상쇄되므로 폭등장/급락장 편향이 구조적으로 없다.
+    #
+    #   event  BUY 0.73종목/일  후보 0인 날 55.8%  초과 -0.0751%p/일  NW t -2.02
+    #   state  BUY 9.17종목/일  후보 0인 날  1.9%  초과 -0.0143%p/일  NW t -1.11
+    #
+    # event 는 10년 구간 셋 모두와 하락 연도 6개 중 5개에서 음수로 일관되게 나쁘다. state 는
+    # 다중검정 보정(시행 4회, |t|>2.5) 후 0과 구분되지 않는다 - 알파도 해도 없는 중립 필터다.
+    # 그것이 문헌이 추세 필터에 기대하는 역할이다(알파가 아니라 위험 통제).
+    #
+    # 후보 0인 날이 1.9% 남는 것은 결함이 아니다. 유니버스 전 종목이 하락 추세인 날 매수
+    # 후보가 없는 것이 정상이다. 반대로 event 의 55.8% 는 규칙이 사건을 요구해서 생긴 것이고
+    # 짧은 표본의 산물이 아니다 - 26년에서도 같은 값이다.
+    #
+    # 밴드 변형(ma5 > ma20*1.01)은 채택하지 않았다. 26년 수치가 state 와 구분되지 않는데
+    # (-0.0149%p, t -1.00) 우리 표본에 맞춘 상수를 하나 더 들여와 범용성만 떨어진다.
+    #
+    # 상태 판정이 문헌 표준이기도 하다 - Brock, Lakonishok & LeBaron (1992, JoF) 의 이동평균
+    # 규칙은 빠른 MA 가 느린 MA 위에 있는 상태(VMA)로 판정하고, 교차 직후만 보는 것은 그들의
+    # "fixed" 변형이다. Faber (2007) 도 price > SMA 상태로 보유를 정한다.
+    #
+    # 합의는 그대로 둔다. 앙상블이 정확도를 올리려면 각 투표자가 50% 보다 나아야 하는데
+    # (Condorcet; Hansen & Salamon 1990) LSTM dir_acc 0.498, rule 승률 47% 로 둘 다 아래다.
+    # 2-of-2 의 역할은 통계가 아니라 한 생산자의 오작동을 막는 fail-safe 다.
+    signal = "BUY" if ma5 > ma20 and rsi < 70 else "SELL" if ma5 < ma20 and rsi > 30 else "HOLD"
     return feature_rows[-_WINDOW_SIZE:], signal
 
 

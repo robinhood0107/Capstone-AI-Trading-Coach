@@ -38,6 +38,45 @@ class RagAskRequestParserTest {
     }
 
     @Test
+    fun `omitted topics mean every allowed topic rather than an empty retrieval scope`() {
+        // 스키마의 required 는 question 과 answerMode 뿐이므로 topics 는 optional 이고,
+        // optional 의 뜻은 "검색 주제를 제한하지 않는다"다. 빈 목록을 그대로 넘기면 검색 범위
+        // 함수가 최소 하나를 요구해 거부하고, 그 예외가 503 RAG_UNAVAILABLE 로 매핑돼
+        // 사용자에게 "런타임이 없다"는 거짓 메시지가 보인다. 그 회귀를 잠근다.
+        val command =
+            parser.parseAsk(
+                """
+                {
+                  "question":"금 ETF의 롤오버 위험은 무엇인가요?",
+                  "answerMode":"CONCISE"
+                }
+                """.trimIndent(),
+            )
+
+        assertEquals(
+            listOf("API", "DATA", "FINANCIAL_ENGINEERING", "METHODOLOGY", "PRODUCT_RISK", "RISK"),
+            command.topics.sorted(),
+        )
+        assertTrue(command.relatedSymbols.isEmpty())
+    }
+
+    @Test
+    fun `explicit topics are not widened by the omitted-topics default`() {
+        val command =
+            parser.parseAsk(
+                """
+                {
+                  "question":"금 ETF의 롤오버 위험은 무엇인가요?",
+                  "answerMode":"DETAILED",
+                  "topics":["RISK"]
+                }
+                """.trimIndent(),
+            )
+
+        assertEquals(listOf("RISK"), command.topics)
+    }
+
+    @Test
     fun `ask parser rejects duplicate unknown profile and provider controls`() {
         listOf(
             """{"question":"q","question":"q2","answerMode":"CONCISE"}""",

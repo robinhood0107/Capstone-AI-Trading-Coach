@@ -78,10 +78,27 @@ def test_grpc_stream_opens_provider_only_after_matching_host_permit() -> None:
             ),
         )
     )
+    # discovery가 아무것도 못 건져도 최종 구조화 호출은 한 번 한다. 그래서 host는 두 번째
+    # permit을 받는다. 근거가 없다는 것은 인용을 붙이지 못한다는 뜻이지 답을 비울 이유가 아니다.
+    grounded = next(events)
+    assert grounded.WhichOneof("payload") == "provider_call_planned"
+    assert grounded.provider_call_planned.planned_call_id == "grounded_final"
+    assert provider.invocations == [("google", False)]
+
+    frames.put(
+        strong_llm_agent_pb2.HostEvent(
+            run_id=run_id,
+            sequence=3,
+            call_id="grounded_final",
+            provider_call_permit=strong_llm_agent_pb2.ProviderCallPermit(
+                planned_call_id="grounded_final"
+            ),
+        )
+    )
     completed = next(events)
     assert completed.WhichOneof("payload") == "completed"
-    assert completed.completed.vertex_generate_call_count == 1
-    assert provider.invocations == [("google", False)]
+    assert completed.completed.vertex_generate_call_count == 2
+    assert provider.invocations == [("google", False), ("google", True)]
 
 
 def test_grpc_bind_accepts_the_actual_bound_port_and_rejects_only_zero() -> None:

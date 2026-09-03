@@ -12,6 +12,7 @@ dependencies = [
   "matplotlib>=3.10,<4",
   "numpy>=2.3,<3",
   "pandas>=2.3,<3",
+  "pyarrow>=25,<26",
   "scikit-learn>=1.7,<2",
   "torch==2.13.0",
   "yfinance>=0.2.65,<0.3"

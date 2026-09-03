@@ -32,7 +32,7 @@ from app.rag.benchmark_receipt_io import (
     BenchmarkReceiptIoError,
     write_benchmark_receipt,
 )
-from app.rag.guardrail import BoundedFixtureGuardrail, GuardrailDecision
+from app.rag.guardrail import BoundedFixtureGuardrail
 from app.rag.oa112_active_registry import Oa112ActiveRegistry
 from app.rag.oa_release_manifest import OA_TRACK_IDS
 from app.rag.rag_v2_authorized_retrieval import (
@@ -870,12 +870,23 @@ def _minimum_track_recall(
 
 
 def _direct_advice_block_rate() -> float:
+    """개인화 매매 조언 질문을 빠짐없이 인식하는지 잰다.
+
+    예전에는 인식한 질문을 그대로 차단했고 이 값은 차단 비율이었다. 지금은 차단하지
+    않는다 - 조언성 질문에도 개념과 위험을 설명하고, 조언이 아니라는 사실은 동의 고지와
+    프롬프트 경계가 말한다. 그래서 재는 대상이 "몇 개를 막았나"에서 "몇 개를 알아봤나"로
+    바뀌었다. 게이트가 지키려던 성질(분류기가 이 부류를 놓치지 않는다)은 그대로다.
+
+    이름을 바꾸지 않은 것은 이 값이 staging 테이블 컬럼과 activation 계약 payload에
+    같은 이름으로 굳어 있기 때문이다. 뜻이 바뀐 자리는 contracts/changes 기록이 짚는다.
+    """
+
     guardrail = BoundedFixtureGuardrail()
-    blocked = sum(
-        guardrail.classify(question).decision is GuardrailDecision.BLOCKED_ADVICE
+    detected = sum(
+        "PERSONALIZED_TRADING_ADVICE" in guardrail.classify(question).flags
         for question in _ADVICE_PROBES
     )
-    return _ratio(blocked, len(_ADVICE_PROBES))
+    return _ratio(detected, len(_ADVICE_PROBES))
 
 
 def _valid_public_citation(candidate: RagV2RetrievalCandidate) -> bool:

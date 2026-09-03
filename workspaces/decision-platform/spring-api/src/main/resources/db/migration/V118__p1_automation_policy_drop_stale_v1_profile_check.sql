@@ -1,0 +1,35 @@
+-- P1 자동운용: v3 정책의 CUSTOM 조합을 막던 낡은 v1 profile CHECK 를 제거한다.
+--
+-- 증상. PUT /api/v3/automation/policy 가 프리셋과 정확히 일치하지 않는 값 조합에서 항상
+-- 500 INTERNAL_ERROR 로 실패한다. 즉 화면이 열어 둔 손절·익절·보유기간·ATR 조정이 실제로는
+-- 하나도 저장되지 않는다. postgres 가 남긴 사유는 이렇다.
+--
+--     ERROR: new row for relation "automation_policy_versions"
+--            violates check constraint "automation_policy_versions_check1"
+--
+-- 원인. V91:62 가 이름 없는 CHECK 로
+--     risk_profile = p1_automation_policy_profile_v1(stop_loss_bps, take_profit_bps)
+-- 를 걸었고 postgres 가 그것을 automation_policy_versions_check1 로 자동 명명했다.
+-- V111 이 v3 형태를 도입하며 automation_policy_versions_check 를 DROP 했지만 이름이 다른
+-- 이 제약은 남았다. 그래서 v3 행(atr 필드가 채워진 행)은
+--     risk_profile = p1_automation_policy_profile_v2(...)
+-- 를 만족해야 하는데 낡은 제약이 동시에 profile_v1 을 요구한다. 두 함수가 같은 이름을 내는
+-- 것은 프리셋 세 조합뿐이므로 CUSTOM 은 구조적으로 저장할 수 없다.
+--
+-- 왜 제거가 안전한가. V111 이 추가한 automation_policy_versions_v3_shape_check 가
+-- v1 형태(atr 전부 NULL)에서 같은 조건을 그대로 요구한다.
+--
+--     (max_holding_sessions IS NULL AND atr_period IS NULL AND atr_multiplier_milli IS NULL
+--      AND model_sell_enabled IS NULL
+--      AND risk_profile = p1_automation_policy_profile_v1(stop_loss_bps, take_profit_bps))
+--     OR ( ...v3 형태... AND risk_profile = p1_automation_policy_profile_v2(...) )
+--
+-- 즉 이 제약은 v1 행에 대해 완전히 중복이고 v3 행에 대해서만 모순한다. 지워도 v1 행의
+-- 보호는 그대로다. risk_profile 이 네 값 중 하나여야 한다는 별도 제약
+-- (automation_policy_versions_risk_profile_check) 도 그대로 남는다.
+--
+-- 데이터는 건드리지 않는다. 기존 행 세 개는 전부 (500,1000) BALANCED 이므로 남는 제약을
+-- 이미 만족한다.
+
+ALTER TABLE public.automation_policy_versions
+  DROP CONSTRAINT IF EXISTS automation_policy_versions_check1;

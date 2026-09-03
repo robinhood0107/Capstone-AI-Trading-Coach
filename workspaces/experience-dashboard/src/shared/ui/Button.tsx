@@ -16,6 +16,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  * disabled 표현도 파일마다 달랐다. 간격·색·상태가 섞이면 "조잡한 UI"로 읽히므로
  * 여기서만 정의하고 각 화면은 variant만 고른다.
  *
+ * 모양은 pill(rounded-full)로 고정한다. 2026-09 UI 개편이 pill을 화면 전체의 디자인
+ * 언어로 정했고(35곳), 여기서 빠지면 이 버튼들만 각지게 남아 어긋난다.
+ *
  * 위험도가 높은 동작(주문 제출, Kill Switch)은 danger를 쓰되, 잠그는 판단 자체는
  * 화면이 아니라 서버 판정(HOLD/BLOCK/canArm)이 한다. 여기서는 표현만 담당한다.
  */
@@ -46,7 +49,7 @@ export function Button({
   return (
     <button
       type={type}
-      className={`inline-flex items-center justify-center gap-2 border font-medium tracking-tight transition-colors disabled:cursor-not-allowed ${VARIANT[variant]} ${SIZE[size]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-full border font-medium tracking-tight transition-colors disabled:cursor-not-allowed ${VARIANT[variant]} ${SIZE[size]} ${className}`}
       {...rest}
     >
       {children}

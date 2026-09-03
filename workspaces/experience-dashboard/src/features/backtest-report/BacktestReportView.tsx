@@ -44,7 +44,7 @@ export function BacktestReportView({ defaultRunId = '' }: { defaultRunId?: strin
       />
 
       {!valid ? (
-        <p className="border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
+        <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
           실행 ID를 입력하면 Baseline / Guide / Strict 비교를 불러옵니다.
         </p>
       ) : (
@@ -62,7 +62,7 @@ export function BacktestReportView({ defaultRunId = '' }: { defaultRunId?: strin
                 title="원칙과 안전장치의 효과"
                 hint="Baseline과 Strict를 비교해 화면에서 계산한 값입니다. 계산식을 함께 적어 둡니다."
               >
-                <div className="grid gap-px bg-line sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-px overflow-hidden rounded-tile border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
                   {view.derivedCards.map((card) => (
                     <MetricTile key={card.key} card={card} />
                   ))}
@@ -77,7 +77,7 @@ export function BacktestReportView({ defaultRunId = '' }: { defaultRunId?: strin
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[640px] text-[13px]">
                     <thead>
-                      <tr className="border-b border-line text-left font-mono text-eyebrow uppercase text-faint">
+                      <tr className="border-b border-line text-left text-eyebrow font-semibold uppercase text-faint">
                         <th className="pb-2 font-normal">시나리오</th>
                         <th className="pb-2 text-right font-normal">CAGR</th>
                         <th className="pb-2 text-right font-normal">MDD</th>
@@ -210,7 +210,7 @@ function MetricTile({ card }: { card: DerivedCard }) {
     card.format === 'SIGNED_RATIO' ? (v: number) => formatSignedRatio(v, 1) : (v: number) => formatRatio(v, 1);
   return (
     <div className="bg-panel px-4 py-4">
-      <p className="font-mono text-eyebrow uppercase text-faint">{card.label}</p>
+      <p className="text-eyebrow font-semibold uppercase text-faint">{card.label}</p>
       <p className="mt-2">
         <Numeric value={card.value} format={format} className="text-2xl font-semibold text-ink" />
       </p>
@@ -221,8 +221,8 @@ function MetricTile({ card }: { card: DerivedCard }) {
 
 function EmptyBlock({ detail }: { detail: string }) {
   return (
-    <div className="border border-dashed border-rule px-4 py-6">
-      <p className="font-mono text-eyebrow uppercase text-faint">데이터 없음</p>
+    <div className="rounded-tile border border-dashed border-rule px-4 py-6">
+      <p className="text-eyebrow font-semibold uppercase text-faint">데이터 없음</p>
       <p className="mt-2 text-[13px] leading-5 text-muted">{detail}</p>
     </div>
   );
@@ -258,7 +258,7 @@ function Heatmap({ cells }: { cells: { month: string; return: number }[] }) {
                 if (value === undefined) {
                   return (
                     <td key={month} className="p-0.5">
-                      <div className="hatch h-8 border border-line/60" title="해당 월 데이터 없음" />
+                      <div className="hatch h-8 rounded-md border border-line/60" title="해당 월 데이터 없음" />
                     </td>
                   );
                 }
@@ -267,7 +267,7 @@ function Heatmap({ cells }: { cells: { month: string; return: number }[] }) {
                 return (
                   <td key={month} className="p-0.5">
                     <div
-                      className="tnum flex h-8 items-center justify-center border border-line/60 font-mono text-[11px]"
+                      className="tnum flex h-8 items-center justify-center rounded-md border border-line/60 font-mono text-[11px]"
                       style={{
                         backgroundColor: `rgba(${color}, ${0.12 + intensity * 0.6})`,
                         color: intensity > 0.6 ? '#FFFFFF' : '#14181D',

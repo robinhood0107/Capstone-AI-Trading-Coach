@@ -16,14 +16,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="ko">
       <head>
         {/*
-          한글 본문 가독성이 화면 인상의 대부분을 결정한다.
-          CDN이 막힌 시연 환경에서는 tailwind.config.ts의 폴백(Apple SD Gothic Neo / Malgun Gothic)으로 떨어진다.
+          한글 본문 가독성이 화면 인상의 대부분을 결정한다. 서체는 tailwind.config.ts 의
+          폴백 스택이 담당한다 - Pretendard 가 로컬에 있으면 그것을, 없으면 Apple SD Gothic
+          Neo / Malgun Gothic / Noto Sans KR 로 떨어진다.
+
+          CDN 링크는 두지 않는다. 이 앱의 CSP 는 style-src 'self' 뿐이므로(next.config.mjs)
+          외부 스타일시트는 어떤 환경에서도 로드되지 않고 콘솔 에러만 남는다. CSP 를 넓히면
+          거래 앱의 보안 헤더를 서체 하나 때문에 느슨하게 하고 시연이 외부 네트워크에
+          의존하게 된다 - 이 앱은 provider-free·오프라인 기동을 전제로 한다.
         */}
-        <link rel="preconnect" href="https://cdn.jsdelivr.net" crossOrigin="" />
-        <link
-          rel="stylesheet"
-          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
-        />
       </head>
       <body className="min-h-screen bg-surface font-sans antialiased">
         <a

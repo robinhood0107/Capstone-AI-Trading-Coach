@@ -41,60 +41,69 @@ function LoginForm() {
   }
 
   return (
-    <div className="mx-auto max-w-md py-16">
-      <p className="font-mono text-eyebrow uppercase text-navy">Sign in</p>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">로그인</h1>
-      <p className="mt-2 text-sm leading-6 text-muted">
-        서버에 연결하려면 로그인이 필요합니다. 비밀번호는 저장하지 않으며, 토큰은 이 탭의 메모리에만
-        보관합니다. 새로고침하면 다시 로그인해야 합니다.
-      </p>
-
-      <div className="mt-8 space-y-4 border border-line bg-panel px-5 py-5">
-        <div>
-          <label htmlFor="username" className="font-mono text-eyebrow uppercase text-faint">
-            아이디
-          </label>
-          <input
-            id="username"
-            value={username}
-            autoComplete="username"
-            onChange={(event) => setUsername(event.target.value)}
-            className="mt-2 w-full border border-line px-3 py-2 text-[14px] text-ink"
-          />
-        </div>
-        <div>
-          <label htmlFor="password" className="font-mono text-eyebrow uppercase text-faint">
-            비밀번호
-          </label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            autoComplete="current-password"
-            onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void submit();
-            }}
-            className="mt-2 w-full border border-line px-3 py-2 text-[14px] text-ink"
-          />
-        </div>
-
-        {error ? (
-          <p className="border-l-2 border-block bg-block/5 px-3 py-2 text-[13px] leading-6 text-ink">
-            {error}
-          </p>
-        ) : null}
-
-        <button
-          type="button"
-          onClick={() => void submit()}
-          disabled={pending}
-          className="w-full border border-navy bg-navy px-4 py-2 text-[14px] font-medium text-white disabled:border-line disabled:bg-line disabled:text-faint"
+    <div className="mx-auto max-w-[420px] py-12 sm:py-20">
+      <div className="rounded-panel bg-panel px-7 py-8 shadow-card">
+        <span
+          aria-hidden
+          className="grid h-11 w-11 place-items-center rounded-tile bg-navy text-[14px] font-semibold text-white"
         >
-          {pending ? '연결 중' : '로그인'}
-        </button>
+          AI
+        </span>
+        <h1 className="mt-5 text-[24px] font-semibold tracking-tight text-ink">로그인</h1>
+        <p className="mt-2 text-[14px] leading-6 text-muted">
+          서버에 연결하려면 로그인이 필요합니다. 비밀번호는 저장하지 않으며, 토큰은 이 탭의 메모리에만
+          보관합니다. 새로고침하면 다시 로그인해야 합니다.
+        </p>
 
-        <p className="font-mono text-[11px] text-faint">서버 {baseUrl() || 'same-origin /api'}</p>
+        <div className="mt-7 space-y-4">
+          <div>
+            <label htmlFor="username" className="text-[12px] font-medium text-muted">
+              아이디
+            </label>
+            <input
+              id="username"
+              value={username}
+              autoComplete="username"
+              onChange={(event) => setUsername(event.target.value)}
+              className="mt-1.5 w-full rounded-tile border border-line bg-subtle px-4 py-2.5 text-[15px] text-ink focus:border-navy focus:bg-panel"
+            />
+          </div>
+          <div>
+            <label htmlFor="password" className="text-[12px] font-medium text-muted">
+              비밀번호
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              autoComplete="current-password"
+              onChange={(event) => setPassword(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void submit();
+              }}
+              className="mt-1.5 w-full rounded-tile border border-line bg-subtle px-4 py-2.5 text-[15px] text-ink focus:border-navy focus:bg-panel"
+            />
+          </div>
+
+          {error ? (
+            <p className="rounded-tile bg-block/[0.06] px-4 py-2.5 text-[13px] leading-6 text-block">
+              {error}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={pending}
+            className="w-full rounded-tile bg-navy px-4 py-3 text-[15px] font-semibold text-white hover:opacity-90 disabled:bg-line disabled:text-faint"
+          >
+            {pending ? '연결 중' : '로그인'}
+          </button>
+
+          <p className="text-center font-mono text-[11px] text-faint">
+            서버 {baseUrl() || 'same-origin /api'}
+          </p>
+        </div>
       </div>
     </div>
   );

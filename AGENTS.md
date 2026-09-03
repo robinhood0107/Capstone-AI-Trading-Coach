@@ -399,6 +399,12 @@ Decision, Signal, RiskDecision, order, decision hash에 영향을 주지 않는�
     (`Co-Authored-By: worgy <...>`)는 통과하고, `#`으로 시작하는 주석 줄은 커밋 메시지에
     들어가지 않으므로 검사하지 않는다. 맨 이메일 하나만으로는 막지 않는다 — author 신원은
     아래 CI 검사가 담당한다.
+    앵커의 대가로 생기는 구멍이 하나 있었다 — trailer 가 독립된 줄이 아니라 **문자
+    그대로의 두 글자 `\n`** 뒤에 붙어 한 물리적 줄 안에 있으면 앵커에 걸리지 않는다.
+    실측으로 `116c7b95`가 그렇게 통과했다. 앵커를 빼는 대신 **리터럴 `\n`을 실제
+    줄바꿈으로 펼친 사본에 같은 패턴을 한 번 더** 건다. 정규식이 하나뿐이라 두 벌을 맞춰
+    둘 필요가 없고 산문 오탐도 늘지 않는다. hook과 CI가 같은 방식을 쓰고, CI의 hook 자체
+    검증이 이 숨은 형태까지 시험한다.
   - **CI 트레일러 스캔** — `repo-hygiene.yml`의 `Verify no AI tool attribution in commits`가
     PR 범위 커밋을 전수 스캔한다. hook을 활성화하지 않은 기여자도 여기서 막힌다.
     실패 출력은 `REPO_HYGIENE_AI_ATTRIBUTION=FAIL`이다.

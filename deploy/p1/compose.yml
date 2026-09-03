@@ -204,7 +204,7 @@ services:
       # safe_io 가 approved_root(=bundle_root 의 부모) 를 현재 사용자 소유로 요구한다.
       # team-b 만 마운트하면 부모가 Docker 가 만든 root 소유 /opt/capstone 이 되어 거부된다.
       - ./seed:/opt/capstone/seed:ro
-      - ${P1_ARTIFACT_ARCHIVE_DIR:-./.state-app/artifacts}:/archive
+      - ${P1_ARTIFACT_ARCHIVE_DIR:-/nonexistent}:/archive
       - ./docker/secret-entrypoint.sh:/usr/local/bin/p1-secret-entrypoint:ro
     depends_on:
       identity-bootstrap: {condition: service_completed_successfully}
@@ -421,7 +421,7 @@ services:
     secrets: [artifact_import_env]
     volumes:
       - ${P1_ARTIFACT_BUNDLE_PARENT:-/nonexistent}:/owner:ro
-      - ${P1_ARTIFACT_ARCHIVE_DIR:-./.state-app/artifacts}:/archive
+      - ${P1_ARTIFACT_ARCHIVE_DIR:-/nonexistent}:/archive
       - ./docker/secret-entrypoint.sh:/usr/local/bin/p1-secret-entrypoint:ro
     depends_on:
       postgres: {condition: service_healthy}

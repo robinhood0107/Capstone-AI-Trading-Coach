@@ -269,7 +269,9 @@ init_state() {
   require_command python3
   verify_release_boundary
   prepare_initial_state
-  local spring_image=${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+  # 이 레포는 spring/python 을 하나의 이미지로 빌드한다(full-appctl:75). 실제로 존재하는
+  # 이름은 이것뿐이다. 옛 이름을 기본값으로 두면 p1ctl 직접 실행이 spring_image_missing 으로 죽는다.
+  local spring_image=${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
   docker image inspect "$spring_image" >/dev/null 2>&1 || die spring_image_missing
 
   local user_password admin_password separation_key broker_digest
@@ -486,7 +488,7 @@ init_state() {
     "P1_RAG_RUNTIME_DIR=$compose_rag_runtime_dir" \
     "P1_API_PORT=${P1_API_PORT:-18080}" \
     "P1_SPRING_IMAGE=$spring_image" \
-    "P1_PYTHON_IMAGE=${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}" \
+    "P1_PYTHON_IMAGE=${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}" \
     "P1_POSTGRES_IMAGE=${P1_POSTGRES_IMAGE:-capstone-postgres-pgvector:p1-local}" \
     "P1_KAFKA_IMAGE=${P1_KAFKA_IMAGE:-capstone-kafka:p1-local}" \
     | state_write_file "$RUNTIME_ENV" 0600

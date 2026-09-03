@@ -32,6 +32,8 @@ def prepare(args: argparse.Namespace) -> None:
         stock_path=csv_path,
         model_path=pth_path,
         artifact_path=pending_path,
+        # 이 체크포인트는 SHA 로 고정된 수신본이라 구 형상이다.
+        shape=ReturnEngine.LEGACY_PREVIEW_SHAPE,
     )
     try:
         engine.run(refresh=False)

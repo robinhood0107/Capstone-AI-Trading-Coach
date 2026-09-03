@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { test, expect, type Response } from '@playwright/test';
+import { test, expect, type ConsoleMessage, type Response } from '@playwright/test';
 
 /**
  * 남은 조작 화면의 버튼이 실제 스택에서 살아 있는지 본다.
@@ -32,6 +32,15 @@ test('live Compose control screens keep their buttons visible', async ({ page })
     if (new URL(response.url()).pathname.startsWith('/api/') && response.status() >= 500) {
       failed.push(`${response.status()} ${new URL(response.url()).pathname}`);
     }
+  });
+
+  // 브라우저에서만 드러나는 결함도 잡는다. 실제로 CSP 가 막는 웹폰트 링크를 typecheck·lint·
+  // 단위 테스트·build·e2e 가 전부 통과시켰고 콘솔에만 에러가 남았다 - 사람이 브라우저를 열어야
+  // 알 수 있는 상태는 게이트가 아니다. 차단된 외부 자원, 하이드레이션 불일치, 잡히지 않은
+  // 예외가 이 그물에 걸린다.
+  const consoleErrors: string[] = [];
+  page.on('console', (message: ConsoleMessage) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
   });
 
   await page.goto('/');
@@ -72,4 +81,5 @@ test('live Compose control screens keep their buttons visible', async ({ page })
   }
 
   expect(failed).toEqual([]);
+  expect(consoleErrors).toEqual([]);
 });

@@ -316,6 +316,10 @@ def cleanup_statements(before: dict[str, list[str]]) -> list[str]:
         f"({quoted(before['dashboard_artifact_views'])});",
         "delete from public.p1_return_signal_projection where bundle_sha256 not in "
         f"({quoted(before['p1_return_artifact_bundle'])});",
+        # bundle 로의 FK 가 ON DELETE RESTRICT 다. 정리 단계는 FK 를 끄고 지우므로 이 표를
+        # 빼먹으면 bundle 만 사라지고 signal 행이 orphan 으로 남는다. bundle 보다 먼저 지운다.
+        "delete from public.p1_return_model_seed_signal where bundle_sha256 not in "
+        f"({quoted(before['p1_return_artifact_bundle'])});",
         "delete from public.p1_return_artifact_bundle where bundle_sha256 not in "
         f"({quoted(before['p1_return_artifact_bundle'])});",
         # 달력과 시장데이터 fixture
@@ -367,6 +371,8 @@ def cleanup(before: dict[str, list[str]], recorder: Recorder) -> None:
 
     residue = psql(
         "select 'bundles=' || count(*) from public.p1_return_artifact_bundle"
+        f" where bundle_sha256 not in ({quoted(before['p1_return_artifact_bundle'])});"
+        " select 'seedSignals=' || count(*) from public.p1_return_model_seed_signal"
         f" where bundle_sha256 not in ({quoted(before['p1_return_artifact_bundle'])});"
         " select 'runs=' || count(*) from public.automation_runs"
         f" where run_id not in ({quoted(before['automation_runs'])});"

@@ -11,7 +11,7 @@ services:
       poison-recorder: {condition: service_started}
 
   poison-recorder:
-    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "poison-recorder"]
     command: ["python", "-m", "app.async_worker.poison_recorder"]
     environment:
@@ -33,7 +33,7 @@ services:
     restart: on-failure:3
 
   kafka-publisher:
-    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "kafka-publisher"]
     command: ["python", "-m", "app.async_worker.kafka_publisher"]
     environment:
@@ -143,7 +143,7 @@ services:
       kafka-volume-init: {condition: service_completed_successfully}
 
   kafka-topic-init:
-    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
     platform: linux/amd64
     network_mode: service:runtime-netns
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "kafka-admin"]

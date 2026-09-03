@@ -89,7 +89,12 @@ class RagRequestParser {
             question = requireNotNull(question),
             answerMode = requireNotNull(answerMode),
             relatedSymbols = relatedSymbols,
-            topics = topics,
+            // topics는 스키마상 optional이고, optional의 뜻은 "검색 주제를 제한하지 않는다"다.
+            // 그런데 검색 범위 함수는 주제가 최소 하나이기를 요구하므로(V60의
+            // rag_v2_immutable_retrieval_topics_are_valid) 빈 목록을 그대로 넘기면 질문이
+            // 503 RAG_UNAVAILABLE로 막힌다. 런타임은 정상인데 메시지가 거짓이 된다.
+            // 생략을 전체 허용 주제로 해석해 optional이 실제로 optional이 되게 한다.
+            topics = topics.ifEmpty { TOPICS.toList() },
         )
     }
 

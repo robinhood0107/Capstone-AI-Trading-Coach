@@ -492,6 +492,23 @@ services:
     restart: "no"
     networks: [p1-data]
 
+  # XKRX 패키지 달력으로 canonical trading session 을 적재한다. provider 호출 0.
+  # arm 은 다음 XKRX 세션 행을 요구하는데(V109:92) fixture 2 행뿐이라 최초 arm 이 막힌다.
+  calendar-offline-seed:
+    profiles: [owner]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "calendar-offline-seed"]
+    command: ["python", "-m", "app.data.calendar.offline_seed_cli"]
+    environment:
+      P1_CALENDAR_OFFLINE_SEED_YEARS: "${P1_CALENDAR_OFFLINE_SEED_YEARS:-}"
+    secrets: [calendar_offline_seed_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    <<: *app-security
+    restart: "no"
+    networks: [p1-data]
+
   automation-gate-author:
     profiles: [owner]
     image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
@@ -767,6 +784,7 @@ secrets:
   return_inference_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/return-inference.env"}
   automation_runtime_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/automation-runtime.env"}
   automation_gate_author_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/automation-gate-author.env"}
+  calendar_offline_seed_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/calendar-offline-seed.env"}
   market_data_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/market-data.env"}
   market_data_provider_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/market-data-provider.env"}
   after_hours_replay_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/after-hours-replay.env"}

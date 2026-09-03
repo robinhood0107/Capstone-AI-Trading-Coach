@@ -43,7 +43,7 @@ export function ReportView() {
       >
         <table className="w-full text-[13px]">
           <thead>
-            <tr className="border-b border-line text-left font-mono text-eyebrow uppercase text-faint">
+            <tr className="border-b border-line text-left text-eyebrow font-semibold uppercase text-faint">
               <th className="pb-2 font-normal">번호</th>
               <th className="pb-2 font-normal">보고서 항목</th>
               <th className="pb-2 font-normal">캡처 위치</th>
@@ -128,10 +128,10 @@ export function ReportView() {
                 title="원칙과 안전장치의 효과"
                 hint="시장 상황과 무관하게 원칙의 효과를 보여주는 지표입니다."
               >
-                <div className="grid gap-px bg-line sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-px overflow-hidden rounded-tile border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
                   {view.derivedCards.map((card) => (
                     <div key={card.key} className="bg-panel px-4 py-4">
-                      <p className="font-mono text-eyebrow uppercase text-faint">{card.label}</p>
+                      <p className="text-eyebrow font-semibold uppercase text-faint">{card.label}</p>
                       <p className="mt-2">
                         <Numeric
                           value={card.value}
@@ -155,7 +155,7 @@ export function ReportView() {
               >
                 <table className="w-full text-[13px]">
                   <thead>
-                    <tr className="border-b border-line text-left font-mono text-eyebrow uppercase text-faint">
+                    <tr className="border-b border-line text-left text-eyebrow font-semibold uppercase text-faint">
                       <th className="pb-2 font-normal">시나리오</th>
                       <th className="pb-2 text-right font-normal">CAGR</th>
                       <th className="pb-2 text-right font-normal">MDD</th>

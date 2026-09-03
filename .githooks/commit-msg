@@ -21,7 +21,14 @@ pattern='^[[:space:]]*[Cc]o-[Aa]uthored-[Bb]y:.*\(Claude\|Codex\|Copilot\|Gemini
 pattern="$pattern\|^[[:space:]]*🤖\{0,1\}[[:space:]]*Generated with \[\{0,1\}\(Claude\|Codex\|Copilot\|Cursor\)"
 pattern="$pattern\|^[[:space:]]*Assisted-by:.*\(Claude\|Codex\|Copilot\|Gemini\)"
 
-found=$(printf '%s\n' "$body" | grep -in "$pattern" || true)
+# 실측: origin/main 의 116c7b95 는 trailer 가 독립된 줄이 아니라 문자 그대로의 두 글자
+# \n 뒤에 붙어 한 물리적 줄 안에 있었고, 줄 시작 앵커를 그대로 빠져나갔다.
+#
+# 앵커를 빼지는 않는다 - 없으면 규칙을 설명하는 산문이 규칙에 걸려 규칙을 적을 수 없다.
+# 대신 리터럴 \n 을 실제 줄바꿈으로 펼친 사본에 같은 패턴을 한 번 더 건다. 정규식이
+# 하나뿐이라 두 벌을 맞춰 둘 필요가 없다.
+unfolded=$(printf '%s\n' "$body" | sed 's/\\n/\n/g')
+found=$(printf '%s\n%s\n' "$body" "$unfolded" | grep -in "$pattern" || true)
 
 if [ -n "$found" ]; then
   echo "commit-msg: AI 기여 표시가 커밋 메시지에 있어 거부합니다 (AGENTS.md)." >&2

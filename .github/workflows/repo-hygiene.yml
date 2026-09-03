@@ -131,9 +131,14 @@ jobs:
           found=0
           while IFS= read -r sha; do
             [[ -n "${sha}" ]] || continue
-            if git log -1 --format='%B' "${sha}" | grep -qiE "${pattern}"; then
+            # 실측: 116c7b95 는 trailer 가 문자 그대로의 두 글자 \n 뒤에 붙어 한 줄 안에
+            # 있어 줄 시작 앵커를 빠져나갔다. 앵커는 그대로 두고(산문 오탐 방지) 리터럴
+            # \n 을 실제 줄바꿈으로 펼친 사본에 같은 패턴을 한 번 더 건다.
+            body=$(git log -1 --format='%B' "${sha}")
+            unfolded=$(printf '%s\n' "${body}" | sed 's/\\n/\n/g')
+            if printf '%s\n%s\n' "${body}" "${unfolded}" | grep -qiE "${pattern}"; then
               echo "::error::${sha} carries AI tool attribution (AGENTS.md)"
-              git log -1 --format='%B' "${sha}" | grep -inE "${pattern}" || true
+              printf '%s\n%s\n' "${body}" "${unfolded}" | grep -inE "${pattern}" || true
               found=1
             fi
           done < <(git rev-list "${range}")
@@ -191,6 +196,15 @@ jobs:
           printf 'fix: x\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n' > "${tmp}"
           if .githooks/commit-msg "${tmp}" >/dev/null 2>&1; then
             echo "::error::.githooks/commit-msg accepted an AI attribution trailer"
+            rm -f "${tmp}"
+            exit 1
+          fi
+          # 리터럴 두 글자 \n 뒤에 숨은 형태도 막는지 확인한다. 실측으로 116c7b95 가
+          # 이 형태로 방어선을 그대로 통과했다 - 검사가 없으면 조용히 다시 열린다.
+          printf 'docs: x\n\nbody.\\nCo-Authored-By: OpenAI Codex <noreply@openai.com>\n' \
+            > "${tmp}"
+          if .githooks/commit-msg "${tmp}" >/dev/null 2>&1; then
+            echo "::error::.githooks/commit-msg accepted a trailer hidden behind a literal newline"
             rm -f "${tmp}"
             exit 1
           fi

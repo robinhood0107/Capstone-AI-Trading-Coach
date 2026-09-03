@@ -324,6 +324,10 @@ def cleanup_statements(before: dict[str, list[str]]) -> list[str]:
         f"({quoted(before['p1_return_artifact_bundle'])});",
         # 달력과 시장데이터 fixture
         f"delete from public.trading_sessions where chosen_source_id = '{SEED_SOURCE}';",
+        # bar 의 FK 가 매니페스트를 참조하므로 매니페스트보다 먼저 지운다. 스냅샷에 없던
+        # 매니페스트의 bar 만 지우므로 기존 실측 바는 그대로 남는다.
+        "delete from public.market_data_bars where manifest_sha256 not in "
+        f"({quoted(before['market_data_manifests'])});",
         "delete from public.market_data_manifests where manifest_sha256 not in "
         f"({quoted(before['market_data_manifests'])});",
         "delete from public.portfolio_position_observations where balance_observation_id not in "

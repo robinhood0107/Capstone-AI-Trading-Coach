@@ -34,6 +34,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
+from . import team_b_bundle
 from .harness import (
     Api,
     HarnessError as PipelineError,
@@ -47,6 +48,25 @@ from .harness import (
 )
 
 _OPT_IN: Final = "P1_FULL_PIPELINE_E2E"
+
+
+def _assert_universe_matches_catalog() -> None:
+    """번들의 exact-31 이 커밋된 카탈로그와 같은지 호스트에서 대조한다.
+
+    번들 쪽 값은 컨테이너에서도 읽혀야 하므로 상수다. 그 대신 조용한 드리프트를 여기서 막는다.
+    카탈로그가 바뀌었는데 번들이 그대로면 테스트는 통과하면서 실제 명부를 검증하지 못한다.
+    """
+
+    catalog = json.loads(
+        (_REPOSITORY / "contracts/catalogs/p1-return-universe.v1.json").read_text(encoding="utf-8")
+    )
+    expected = {str(entry["symbol"]) for entry in catalog["symbols"]}
+    actual = set(team_b_bundle.UNIVERSE)
+    if actual != expected:
+        raise PipelineError(
+            "exact-31 번들 종목이 카탈로그와 다르다: "
+            f"번들만={sorted(actual - expected)} 카탈로그만={sorted(expected - actual)}"
+        )
 _REPOSITORY: Final = Path(__file__).resolve().parents[5]
 _DEPLOY: Final = _REPOSITORY / "deploy/p1"
 _STATE: Final = _DEPLOY / ".state-app"
@@ -688,6 +708,9 @@ def main(argv: list[str]) -> int:
         "INFO",
         " ".join(f"{table}={len(rows)}" for table, rows in sorted(before.items())),
     )
+
+    # 번들 종목이 커밋된 exact-31 과 같은지 먼저 본다. 다르면 이후 전부가 무의미하다.
+    _assert_universe_matches_catalog()
 
     platform_switched = False
     quiesced: list[str] = []

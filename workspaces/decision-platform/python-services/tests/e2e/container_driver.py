@@ -174,6 +174,19 @@ def _drive(args: argparse.Namespace) -> int:
     runner = PersistentAutomationRunner(repository)
     planner = XkrxBoundaryPlanner()
 
+    # production 은 claim 직전에 일일 추론을 돌린다(automation_runtime.py:872). 그 단계를
+    # 건너뛰면 signals 가 0 이라 releaseActive 가 False 가 되고 SKIPPED_DATA_UNAVAILABLE 로 끝난다.
+    # serve() 와 같이 실패해도 claim 은 계속한다 - 청산·대사 경로는 살려야 한다.
+    try:
+        from app.p1_owner.daily_inference import DailyInferenceError, DailyInferenceService
+
+        _daily = DailyInferenceService.from_environment().ensure_daily_signals(session)
+        print(f"P1_E2E_DAILY_INFERENCE {_daily}", flush=True)
+    except DailyInferenceError as error:
+        print(f"P1_E2E_DAILY_INFERENCE failed={type(error).__name__}: {error}", flush=True)
+    except Exception as error:  # noqa: BLE001 - 진단 목적으로 사유를 그대로 남긴다
+        print(f"P1_E2E_DAILY_INFERENCE error={type(error).__name__}: {error}", flush=True)
+
     claim = repository.claim(session, _claim_hash(secret.encode(), session))
     if claim is None:
         _emit({"phase": "drive", "sessionDate": args.session, "claimed": False})
@@ -201,6 +214,25 @@ def _drive(args: argparse.Namespace) -> int:
         execution_source,
         FailClosedVertexVetoTransport(),
     )
+
+    # SKIPPED_DATA_UNAVAILABLE 은 네 조건의 합이라 어느 것이 걸렸는지 남기지 않으면 추측이 된다.
+    # 첫 tick 이전 상태에 판정 입력이 다 들어 있다. 터미널 이후에는 claim 이 해제되어 읽을 수 없다.
+    _flags = {
+        key: state.get(key)
+        for key in (
+            "accountComplete",
+            "dailyShardFreshComplete",
+            "principleActiveCurrent",
+            "releaseActive",
+            "unfinishedPreviousOrder",
+            "certificationStatus",
+            "brokerageMode",
+            "controlState",
+        )
+    }
+    _signals = state.get("signals")
+    _flags["signalCount"] = len(_signals) if isinstance(_signals, list) else None
+    print(f"P1_E2E_READINESS {_flags}", flush=True)
 
     clock = datetime.combine(session, _FIRST_TICK, _KST)
     transitions: list[str] = [str(state["state"])]

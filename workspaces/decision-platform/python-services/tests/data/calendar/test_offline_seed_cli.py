@@ -92,5 +92,57 @@ class OfflineSeedYearToleranceTest(unittest.TestCase):
         self.assertIn("P1_CALENDAR_OFFLINE_SEED=NO_SESSIONS", lines)
 
 
+class OfflineSeedExistingSessionTest(unittest.TestCase):
+    """날짜로 자르지 않고 존재 여부로 가르는지 잠근다."""
+
+    def test_past_gaps_are_filled_and_existing_rows_are_left_alone(self) -> None:
+        from datetime import date
+
+        past = date(2026, 4, 3)
+        future = date(2026, 12, 30)
+        already = date(2026, 6, 23)
+
+        def session(day: date) -> mock.Mock:
+            item = mock.Mock()
+            item.is_open = True
+            item.session_date = day
+            return item
+
+        built = [session(past), session(already), session(future)]
+
+        with (
+            mock.patch.dict(
+                "os.environ",
+                {"P1_CALENDAR_OFFLINE_SEED_DSN": "postgresql://ignored",
+                 "P1_CALENDAR_OFFLINE_SEED_YEARS": "2026"},
+                clear=False,
+            ),
+            mock.patch.object(offline_seed_cli, "psycopg") as fake_psycopg,
+            mock.patch.object(offline_seed_cli, "_attest_collector_authority"),
+            mock.patch.object(offline_seed_cli, "_existing_sessions", return_value={already}),
+            mock.patch.object(offline_seed_cli, "build_xkrx_sessions", return_value=built),
+            mock.patch.object(offline_seed_cli, "merge_trading_session") as fake_merge,
+            mock.patch.object(offline_seed_cli, "CalendarRepository") as fake_repository,
+            mock.patch("builtins.print") as fake_print,
+        ):
+            fake_psycopg.Error = RuntimeError
+            fake_merge.side_effect = lambda item, **_: item
+            code = offline_seed_cli.main()
+            lines = " ".join(str(call.args[0]) for call in fake_print.call_args_list)
+
+        self.assertEqual(code, 0)
+        # 과거 공백과 미래 세션 둘 다 적재되고, 이미 있는 하루는 빠진다.
+        self.assertIn("seeded=2", lines)
+        self.assertIn(f"firstSession={past.isoformat()}", lines)
+        self.assertIn(f"lastSession={future.isoformat()}", lines)
+        self.assertIn("alreadyPresent=1", lines)
+        written = [
+            call.args[0].session_date
+            for call in fake_repository.return_value.upsert_trading_session.call_args_list
+        ]
+        self.assertEqual(written, [past, future])
+        self.assertNotIn(already, written)
+
+
 if __name__ == "__main__":
     unittest.main()

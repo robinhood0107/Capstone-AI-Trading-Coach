@@ -32,12 +32,25 @@ from app.data._shared.canonical_json import canonical_json_bytes
 TRADED_SYMBOL: Final = "005930"
 SECONDARY_SYMBOL: Final = "000660"
 GOLD_SYMBOL: Final = "132030"
-UNIVERSE: Final[tuple[str, ...]] = (
-    TRADED_SYMBOL,
-    SECONDARY_SYMBOL,
-    *(f"9{index:05d}" for index in range(28)),
-    GOLD_SYMBOL,
+# 실제 exact-31 이다. 출처는 contracts/catalogs/p1-return-universe.v1.json 이고
+# full_pipeline_e2e 가 구동 전에 그 카탈로그와 대조한다(_assert_universe_matches_catalog).
+#
+# 채움용 코드를 발명하면 안 된다. 런타임 이력 리더가 종목이 현재 명부 안에 있어야 한다고
+# 요구하므로(V110 의 p1_read_automation_atr_bars_v1 -> market_data_operational_universe)
+# 발명한 코드로는 실제 주문 경로를 한 번도 통과하지 못한다. 그러면 이 테스트가 통과해도
+# 실제 사용을 검증하지 못한다.
+#
+# 값을 파일에서 읽지 않는 이유는 이 모듈이 decision-platform 컨테이너 안에서 돌고 그
+# 이미지에 contracts/ 가 없기 때문이다. 드리프트는 호스트 대조로 막는다.
+_REST: Final[tuple[str, ...]] = (
+    "000270", "000810", "005380", "005490", "005935",
+    "006400", "009150", "010120", "010130", "012330",
+    "012450", "028260", "032830", "034020", "034730",
+    "035420", "042660", "055550", "066570", "068270",
+    "086790", "105560", "207940", "267260", "298040",
+    "329180", "373220", "402340",
 )
+UNIVERSE: Final[tuple[str, ...]] = (TRADED_SYMBOL, SECONDARY_SYMBOL, *_REST, GOLD_SYMBOL)
 
 _FILLER: Final = "b" * 64
 _ARTIFACTS: Final[tuple[str, ...]] = (

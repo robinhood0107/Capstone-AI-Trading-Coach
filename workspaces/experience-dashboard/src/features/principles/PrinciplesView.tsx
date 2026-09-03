@@ -104,7 +104,7 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
         title="어떤 방식으로 시작할까요"
         hint={data.presets.disclaimer.ko}
       >
-        <div className="grid gap-px bg-line md:grid-cols-3">
+        <div className="grid gap-px overflow-hidden rounded-tile border border-line bg-line md:grid-cols-3">
           {[...data.presets.items]
             .sort((a, b) => a.order - b.order)
             .map((preset) => (
@@ -159,7 +159,7 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
               <Button
                                 disabled={!dirty || saving}
                 onClick={() => setDraft(data.current?.rules ?? [])}
-                className="border border-line px-3 py-1.5 text-[13px] text-muted disabled:text-faint"
+                className="rounded-full border border-line px-3 py-1.5 text-[13px] text-muted disabled:text-faint"
               >
                 되돌리기
               </Button>
@@ -176,8 +176,8 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
         </Panel>
       ) : (
         <Panel contract="GET /api/v1/principles" title="내 원칙 값 조정">
-          <div className="border border-dashed border-rule px-4 py-6">
-            <p className="font-mono text-eyebrow uppercase text-faint">데이터 없음</p>
+          <div className="rounded-tile border border-dashed border-rule px-4 py-6">
+            <p className="text-eyebrow font-semibold uppercase text-faint">데이터 없음</p>
             <p className="mt-2 text-sm font-medium text-ink">아직 만든 원칙이 없습니다</p>
             <p className="mt-1 text-[13px] leading-5 text-muted">
               위 preset 중 하나를 골라 원칙을 먼저 만들어야 주문 검토를 쓸 수 있습니다.
@@ -208,7 +208,7 @@ function PresetCard({
     >
       <div className="flex items-baseline justify-between">
         <p className="text-[15px] font-semibold text-ink">{preset.nameKo}</p>
-        <span className="font-mono text-eyebrow uppercase text-faint">{preset.presetId}</span>
+        <span className="text-eyebrow font-semibold uppercase text-faint">{preset.presetId}</span>
       </div>
       <p className="mt-2 text-[13px] leading-6 text-muted">{preset.descriptionKo}</p>
       <dl className="mt-3 space-y-1 text-[12px]">
@@ -256,7 +256,7 @@ function RuleRow({
           {rule.enabled ? (
             <DecisionBadge status={rule.severity === 'BLOCK' ? 'BLOCK' : 'WARN'} size="sm" />
           ) : (
-            <span className="border border-line px-2 py-0.5 font-mono text-[11px] text-faint">
+            <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[11px] text-faint">
               사용 안 함
             </span>
           )}
@@ -289,7 +289,7 @@ function RuleRow({
             disabled={!rule.enabled}
             onChange={(event) => onThreshold(Number(event.target.value))}
             aria-label={`${meta.name} 값`}
-            className="tnum w-32 border border-line px-2 py-1 text-right font-mono text-[13px] disabled:bg-surface disabled:text-faint"
+            className="tnum w-32 rounded-full border border-line px-3 py-1 text-right font-mono text-[13px] disabled:bg-surface disabled:text-faint"
           />
         )}
         <span className="tnum w-24 text-right font-mono text-[13px] text-ink">{display}</span>

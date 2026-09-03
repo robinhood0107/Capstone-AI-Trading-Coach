@@ -194,7 +194,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
         hint="Kill Switch와 자동운용 상태는 서로 다른 값입니다. 서버가 내려준 상태를 그대로 표시합니다."
         actions={<StatusLabel status={data.status} />}
       >
-        <dl className="grid gap-px bg-line sm:grid-cols-2 lg:grid-cols-4">
+        <dl className="grid gap-px overflow-hidden rounded-tile border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
           <StatusField label="계좌 모드" value={modeLabel(data.status.brokerageMode)} />
           <StatusField label="열린 포지션" value={`${data.status.openPositionCount} / 5`} mono />
           <StatusField
@@ -229,7 +229,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
           </span>
         }
       >
-        <div className="grid gap-px bg-line md:grid-cols-3">
+        <div className="grid gap-px overflow-hidden rounded-tile border border-line bg-line md:grid-cols-3">
           {AUTOMATION_PRESETS.map((preset) => (
             <Button
               key={preset.presetId}
@@ -287,7 +287,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
 
         <div className="mt-5 grid gap-4 border-t border-line pt-5 md:grid-cols-2">
           <div>
-            <p className="font-mono text-eyebrow uppercase text-faint">종목당 기본 슬롯</p>
+            <p className="text-eyebrow font-semibold uppercase text-faint">종목당 기본 슬롯</p>
             <p className="tnum mt-1 font-mono text-[16px] text-ink">
               {values.capitalLimitKrw > 0 ? formatKrw(slotBudgetKrw(values.capitalLimitKrw)) : '—'}
             </p>
@@ -331,7 +331,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
             <Button
                             disabled={!dirty || busy || locked || errors.length > 0}
               onClick={() => void savePolicy()}
-              className="border border-line px-3 py-1.5 text-[13px] text-ink disabled:bg-line disabled:text-faint"
+              className="rounded-full border border-line px-3 py-1.5 text-[13px] text-ink disabled:bg-line disabled:text-faint"
             >
               {busy ? '처리 중' : '정책 저장'}
             </Button>
@@ -350,7 +350,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
               <Button
                                 disabled={busy}
                 onClick={() => void disarm()}
-                className="border border-block bg-block px-4 py-1.5 text-[13px] font-medium text-white disabled:border-line disabled:bg-line disabled:text-faint"
+                className="rounded-full border border-block bg-block px-4 py-1.5 text-[13px] font-medium text-white disabled:border-line disabled:bg-line disabled:text-faint"
               >
                 신규 주문 중지
               </Button>
@@ -409,7 +409,7 @@ function StatusLabel({ status }: { status: AutomationStatusV2 }) {
 function StatusField({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="bg-panel px-4 py-4">
-      <dt className="font-mono text-eyebrow uppercase text-faint">{label}</dt>
+      <dt className="text-eyebrow font-semibold uppercase text-faint">{label}</dt>
       <dd className={`mt-2 text-[14px] text-ink ${mono ? 'tnum font-mono' : ''}`}>{value}</dd>
     </div>
   );
@@ -437,7 +437,7 @@ function PolicyInput({
   return (
     <label className="block">
       <span className="text-[13px] font-medium text-ink">{label}</span>
-      <span className="mt-2 flex items-center border border-line bg-panel focus-within:border-navy">
+      <span className="mt-2 flex items-center rounded-full border border-line bg-panel focus-within:border-navy">
         <input
           type="number"
           value={value}
@@ -458,13 +458,13 @@ function PositionPanel({ positions }: { positions: AutomationPositionV2[] }) {
   return (
     <Panel contract="GET /api/v2/automation/positions" title="자동운용 포지션">
       {positions.length === 0 ? (
-        <p className="border border-dashed border-rule px-4 py-6 text-[13px] text-muted">
+        <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] text-muted">
           자동운용이 보유한 포지션이 없습니다.
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-[12px]">
-            <thead className="border-b border-line text-left font-mono text-eyebrow uppercase text-faint">
+            <thead className="border-b border-line text-left text-eyebrow font-semibold uppercase text-faint">
               <tr>
                 <th className="pb-2 font-normal">종목</th>
                 <th className="pb-2 text-right font-normal">수량</th>
@@ -495,7 +495,7 @@ function RunPanel({ runs }: { runs: AutomationRunV2[] }) {
   return (
     <Panel contract="GET /api/v2/automation/runs" title="최근 자동운용 실행">
       {runs.length === 0 ? (
-        <p className="border border-dashed border-rule px-4 py-6 text-[13px] text-muted">
+        <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] text-muted">
           기록된 자동운용 실행이 없습니다.
         </p>
       ) : (

@@ -84,7 +84,7 @@ export function ModelEvaluationView({ defaultRunId = '' }: { defaultRunId?: stri
                   }
                 >
                   {view.comparableCount === 0 ? (
-                    <p className="border border-dashed border-rule px-4 py-5 text-[13px] leading-6 text-muted">
+                    <p className="rounded-tile border border-dashed border-rule px-4 py-5 text-[13px] leading-6 text-muted">
                       이 실행의 모든 모델이 ABSTAIN입니다. 성과를 비교할 근거가 없습니다.
                     </p>
                   ) : null}
@@ -92,7 +92,7 @@ export function ModelEvaluationView({ defaultRunId = '' }: { defaultRunId?: stri
                   <div className="overflow-x-auto">
                     <table className="mt-2 w-full min-w-[680px] text-[13px]">
                       <thead>
-                        <tr className="border-b border-line text-left font-mono text-eyebrow uppercase text-faint">
+                        <tr className="border-b border-line text-left text-eyebrow font-semibold uppercase text-faint">
                           <th className="pb-2 font-normal">모델</th>
                           <th className="pb-2 font-normal">상태</th>
                           <th className="pb-2 text-right font-normal">CAGR</th>
@@ -166,8 +166,8 @@ export function ModelEvaluationView({ defaultRunId = '' }: { defaultRunId?: stri
                     hint="이 실행에 기록된 시점별 값입니다."
                   >
                     {view.timeline.length === 0 ? (
-                      <div className="border border-dashed border-rule px-4 py-6">
-                        <p className="font-mono text-eyebrow uppercase text-faint">데이터 없음</p>
+                      <div className="rounded-tile border border-dashed border-rule px-4 py-6">
+                        <p className="text-eyebrow font-semibold uppercase text-faint">데이터 없음</p>
                         <p className="mt-2 text-[13px] leading-5 text-muted">
                           이 실행에는 타임라인 값이 기록되지 않았습니다.
                         </p>
@@ -191,7 +191,7 @@ export function ModelEvaluationView({ defaultRunId = '' }: { defaultRunId?: stri
           }}
         </AsyncBoundary>
       ) : (
-        <p className="border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
+        <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
           평가 실행 ID를 입력하면 모델별 성과를 불러옵니다.
         </p>
       )}
@@ -205,7 +205,7 @@ export function ModelEvaluationView({ defaultRunId = '' }: { defaultRunId?: stri
               hint="성과 지표와 다른 축입니다. 지금 이 종목에 대해 각 모델이 무엇을 말하는지 봅니다."
               actions={
                 view.composite.status === 'AVAILABLE' ? (
-                  <span className="border border-line px-3 py-1 text-[13px]">
+                  <span className="rounded-full border border-line px-3 py-1 text-[13px]">
                     종합{' '}
                     <strong className={SIGNAL_TONE[view.composite.signal]}>
                       {SIGNAL_LABEL[view.composite.signal]}

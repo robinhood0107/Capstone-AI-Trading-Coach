@@ -8,8 +8,21 @@
 
 html,
 body {
-  background: #eef0ec;
-  color: #14181d;
+  background: #f4f5f7;
+  color: #0c0f14;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* 제목은 한 단계 좁게. 한글/숫자가 섞인 금융 화면에서 자간이 벌어지면 산만해진다. */
+h1,
+h2,
+h3 {
+  letter-spacing: -0.015em;
 }
 
 /* 모든 수치는 자릿수 정렬을 유지한다: 표/카드 간 세로 비교가 이 대시보드의 주된 읽기 방식이다. */
@@ -22,20 +35,61 @@ body {
  * ABSTAIN / 미제공 값의 시각 언어.
  * 명세: 결측을 0이나 임의 값으로 합성하지 않는다. 따라서 "빈 칸"이 아니라
  * 사선 해치로 "여기에 값이 들어올 자리가 있으나 근거가 없다"를 명시한다.
+ * 개편 후에도 의미는 그대로 두고 대비만 낮춰 카드 위에서 튀지 않게 한다.
  */
 .hatch {
   background-image: repeating-linear-gradient(
     -45deg,
-    rgba(138, 144, 153, 0.35) 0px,
-    rgba(138, 144, 153, 0.35) 1px,
+    rgba(139, 147, 159, 0.24) 0px,
+    rgba(139, 147, 159, 0.24) 1px,
     transparent 1px,
-    transparent 5px
+    transparent 6px
   );
 }
 
+/* 링크·버튼의 상태 전환은 눈에 띄지 않을 만큼만 준다. */
+a,
+button,
+input,
+textarea,
+select {
+  transition:
+    background-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 *:focus-visible {
-  outline: 2px solid #1d3557;
+  outline: 2px solid #14213d;
   outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: rgba(20, 33, 61, 0.14);
+}
+
+/* 스크롤바가 화면을 가르지 않도록 얇게. 데스크톱 시연 캡처에서 특히 차이가 난다. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #dfe3e9 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #dfe3e9;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {

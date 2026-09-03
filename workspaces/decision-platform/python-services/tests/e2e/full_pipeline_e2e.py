@@ -103,6 +103,8 @@ def _assert_universe_matches_catalog() -> None:
             "exact-31 번들 종목이 카탈로그와 다르다: "
             f"번들만={sorted(actual - expected)} 카탈로그만={sorted(expected - actual)}"
         )
+
+
 _REPOSITORY: Final = Path(__file__).resolve().parents[5]
 _DEPLOY: Final = _REPOSITORY / "deploy/p1"
 _STATE: Final = _DEPLOY / ".state-app"
@@ -419,7 +421,8 @@ def seed_source_session_bars(manifest_sha256: str, session: date) -> int:
     _psql(
         "insert into public.market_data_bars (manifest_sha256, generation, symbol, session_date,"
         " open_price, high_price, low_price, close_price, volume, currency, temporal_quality,"
-        " source_receipt_sha256) values " + ",".join(values)
+        " source_receipt_sha256) values "
+        + ",".join(values)
         + " on conflict (symbol, session_date, generation) do nothing;"
     )
     return len(values)

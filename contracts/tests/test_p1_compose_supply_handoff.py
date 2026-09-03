@@ -331,6 +331,77 @@ class P1ComposeSupplyHandoffTest(unittest.TestCase):
             receipt.symlink_to(target)
             self.assertEqual(1, main(["--receipt", str(receipt)]))
 
+    def test_daily_collector_keeps_the_default_container_count_at_five(self) -> None:
+        """기본은 5개, --models 가 2개, --mock 이 1개를 더한다.
+
+        "기본 장기 컨테이너 5개"는 계약 기록이다. 상주 수집기를 기본으로 올리면 그 문장이
+        거짓이 되므로 automation profile 뒤에 두고 --mock 에서만 띄운다.
+        """
+
+        root = Path(__file__).resolve().parents[2]
+        controller = (root / "deploy/p1/full-appctl").read_text(encoding="utf-8")
+
+        self.assertIn("local expected=5", controller)
+        self.assertIn("((models)) && expected=$((expected + 2))", controller)
+        self.assertIn("((mock)) && expected=$((expected + 1))", controller)
+        # 수집기는 --mock 에서만 올라오고 아니면 내려간다.
+        self.assertIn(
+            "compose --profile automation up -d --wait market-data-daily", controller
+        )
+        self.assertIn(
+            "compose --profile automation stop market-data-daily", controller
+        )
+
+    def test_daily_collector_is_least_privilege_and_reuses_the_stack(self) -> None:
+        """수집기는 writer DSN 하나만 들고, 새 이미지·secret 을 만들지 않는다."""
+
+        root = Path(__file__).resolve().parents[2]
+        compose = (root / "deploy/p1/compose.yml").read_text(encoding="utf-8")
+        block = compose.split("  market-data-daily:\n", 1)[1].split("\n\n", 1)[0]
+
+        # 기본 up 이 건드리지 않도록 profile 뒤에 있다.
+        self.assertIn("profiles: [automation]", block)
+        # 기존 이미지를 그대로 쓴다.
+        self.assertIn("${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}", block)
+        # secret 은 정확히 하나. 여기에 KIS 앱키나 자동운용 DSN 이 붙으면 안 된다.
+        self.assertIn("secrets: [market_data_env]", block)
+        self.assertNotIn("market_data_provider_env", block)
+        self.assertNotIn("automation_runtime_env", block)
+        # postgres 와 외부 HTTPS 둘 다 필요하다.
+        self.assertIn("networks: [p1-data, p1-app]", block)
+        # 보안 앵커를 그대로 상속한다 (read_only, cap_drop ALL, no-new-privileges).
+        self.assertIn("<<: *app-security", block)
+        # 실행은 기존 CLI 다. 새 스케줄러 코드를 만들지 않았다.
+        self.assertIn("app.data.market_data.yfinance_daily_cli", block)
+
+    def test_daily_collector_entrypoint_profile_requires_only_the_writer_dsn(self) -> None:
+        """entrypoint whitelist 가 이 컨테이너에 writer DSN 하나만 허용한다.
+
+        market-data 프로파일을 재사용하면 secret 파일 세 개가 붙어 KIS 앱키와 자동운용 DSN 이
+        함께 들어온다. 그래서 전용 항목을 두었고, 그것이 좁게 유지되는지 본다.
+        """
+
+        root = Path(__file__).resolve().parents[2]
+        entrypoint = (root / "deploy/p1/docker/secret-entrypoint.sh").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            "market-data-daily) secret_files=/run/secrets/market_data_env ;;", entrypoint
+        )
+        self.assertIn("market-data-daily:MARKET_DATA_WRITER_DSN) return 0 ;;", entrypoint)
+        self.assertIn(
+            "market-data-daily) printf '%s\\n' 'MARKET_DATA_WRITER_DSN' ;;", entrypoint
+        )
+        # 이 프로파일에 다른 키를 허용하지 않는다.
+        for forbidden in (
+            "market-data-daily:P1_AUTOMATION_DATABASE_DSN",
+            "market-data-daily:KIS_MOCK_APP_KEY",
+            "market-data-daily:KIS_LIVE_APP_KEY",
+            "market-data-daily:AUTOMATION_RUNTIME_SHARED_SECRET",
+        ):
+            self.assertNotIn(forbidden, entrypoint)
+
 
 if __name__ == "__main__":
     unittest.main()

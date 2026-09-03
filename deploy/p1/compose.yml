@@ -547,6 +547,34 @@ services:
     restart: "no"
     networks: [p1-data, p1-app]
 
+  # 자동매매 모드에서만 뜨는 일일 시장데이터 수집기.
+  #
+  # 왜 별도 컨테이너인가. 시장데이터 writer DSN 은 이 서비스와 market-data-cli 에만 붙는다.
+  # 거래하는 앱 컨테이너가 가격 원장을 위조할 수 없어야 하기 때문이다 - V76 체인 트리거와
+  # writer role 단정이 그 분리를 강제한다. 그래서 수집을 앱 쪽으로 옮기지 않았다.
+  #
+  # 왜 profile 인가. "기본 장기 컨테이너 5개"는 계약 기록이다
+  # (contracts/changes/20260826-p1-compose-functional-modules.md). plain `up` 은 그대로
+  # 5개이고, 최신성이 실제로 문제가 되는 --mock 에서만 이것이 붙는다.
+  #
+  # 왜 셸 루프인가. 새 스케줄러 코드를 만들지 않기 위해서다. 최신이면 providerCalls=0 이라
+  # 한 시간 간격의 비용이 DB 질의 하나뿐이고, CLI 가 오늘을 제외하므로 장중에 미확정 일봉을
+  # 적재할 수 없다. 실패해도 루프는 계속 돈다 - 하루 못 채운 것이 루프를 멈출 이유는 아니다.
+  market-data-daily:
+    profiles: [automation]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "market-data-daily"]
+    command:
+      - "sh"
+      - "-c"
+      - "while :; do python -m app.data.market_data.yfinance_daily_cli || true; sleep 3600; done"
+    secrets: [market_data_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    <<: *app-security
+    networks: [p1-data, p1-app]
+
   after-hours-replay:
     profiles: [owner]
     image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}

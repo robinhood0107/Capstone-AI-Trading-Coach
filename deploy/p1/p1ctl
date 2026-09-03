@@ -83,22 +83,13 @@ state_write_file() {
 write_line() {
   printf '%s=%s\n' "$1" "$2" | python3 "$RELEASE_GUARD" state-append "$STATE_DIR" "$(state_relative "$3")" 0640
 }
-docker_bind_source() {
-  local source=$1 endpoint
-  # Docker Desktop exposes a native WSL socket even when the selected Windows
-  # context reports npipe. Compose through /usr/bin/docker requires the Linux path.
-  if [[ -S /var/run/docker.sock ]]; then
-    printf '%s\n' "$source"
-    return
-  fi
-  endpoint=$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)
-  if [[ $endpoint == npipe://* ]]; then
-    require_command wslpath
-    wslpath -w "$source"
-  else
-    printf '%s\n' "$source"
-  fi
-}
+# compose 에 넘기는 호스트 경로는 프로젝트 디렉터리 기준 상대 경로로 고정한다.
+# compose 가 플랫폼마다 알아서 해석하므로 리눅스, WSL, macOS 에서 같은 파일이 그대로
+# 동작한다. 예전에는 Docker Desktop 의 socket 존재와 npipe context 를 보고 경로 표기를
+# 분기했는데, 그러면 compose 파일이 특정 데스크톱 제품 상태에 묶이고 그 상태가 어긋나면
+# 실제로 존재하는 파일에 대해 "bind source path does not exist" 가 난다.
+COMPOSE_SECRETS_DIR='./.state-app/secrets'
+COMPOSE_MOCK_RUNTIME_DIR='./.state-app/mock'
 PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-offline-demo}
 [[ $PROJECT_NAME =~ ^[a-z0-9][a-z0-9_-]{2,62}$ ]] || die invalid_project_name
 
@@ -172,15 +163,23 @@ require_state() {
 
 verify_runtime_env() {
   local expected_secrets expected_mock_runtime seen='|' key value count=0 api_port='' secret_gid='' operator_uid=''
-  expected_secrets=$(docker_bind_source "$SECRETS_DIR")
-  expected_mock_runtime=$(docker_bind_source "$STATE_DIR/mock")
+  expected_secrets=$COMPOSE_SECRETS_DIR
+  expected_mock_runtime=$COMPOSE_MOCK_RUNTIME_DIR
   while IFS='=' read -r key value || [[ -n $key$value ]]; do
     [[ $seen != *"|$key|"* ]] || die runtime_env_duplicate
     case $key in
-      P1_SECRETS_DIR) [[ $value == "$expected_secrets" ]] || die runtime_env_secrets_path ;;
+      # 새 상태는 상대 경로를 쓴다. 이미 절대 경로로 만들어진 상태도 그대로 유효하다 -
+      # compose 가 둘 다 같은 디렉터리로 해석한다.
+      P1_SECRETS_DIR)
+        [[ $value == "$expected_secrets" || $value == "$SECRETS_DIR" ]] \
+          || die runtime_env_secrets_path
+        ;;
       P1_SECRET_GID) secret_gid=$value ;;
       P1_OPERATOR_UID) operator_uid=$value ;;
-      P1_KIS_MOCK_RUNTIME_DIR) [[ $value == "$expected_mock_runtime" ]] || die runtime_env_mock_path ;;
+      P1_KIS_MOCK_RUNTIME_DIR)
+        [[ $value == "$expected_mock_runtime" || $value == "$STATE_DIR/mock" ]] \
+          || die runtime_env_mock_path
+        ;;
       # RAG v2 로컬 루트는 운영자가 다른 경로에 둘 수 있다. 위치는 고정하지 않고
       # 절대경로이며 실제 디렉터리인지만 본다.
       P1_RAG_RUNTIME_DIR) [[ $value == /* && $value != *..* && -d $value && ! -L $value ]] || die runtime_env_rag_path ;;
@@ -211,7 +210,8 @@ verify_runtime_env() {
 author_bundle() {
   local image=$1 user_id=$2 password_file=$3 output=$4
   local secrets_mount attempt bind_ready=0
-  secrets_mount=$(docker_bind_source "$SECRETS_DIR")
+  # 이건 compose 가 아니라 직접 docker run 이므로 실제 호스트 경로를 쓴다.
+  secrets_mount=$SECRETS_DIR
   # Docker Desktop may observe a newly created WSL directory a moment after Linux does.
   # Validate only the bind mount before invoking the credential author; never print secrets.
   for attempt in {1..10}; do
@@ -470,14 +470,12 @@ init_state() {
   printf '' | state_write_file "$SECRETS_DIR/demo.env" 0640
   write_line P1_DEMO_DATABASE_DSN "postgresql://decision_demo:${db[DEMO]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/demo.env"
   write_line ASYNC_PARTITION_HMAC_KEY "$partition_key" "$SECRETS_DIR/demo.env"
-  local compose_secrets_dir
-  compose_secrets_dir=$(docker_bind_source "$SECRETS_DIR")
+  local compose_secrets_dir=$COMPOSE_SECRETS_DIR
   install -d -m 0700 "$STATE_DIR/mock"
-  local compose_mock_runtime_dir
-  compose_mock_runtime_dir=$(docker_bind_source "$STATE_DIR/mock")
+  local compose_mock_runtime_dir=$COMPOSE_MOCK_RUNTIME_DIR
   install -d -m 0700 "$STATE_DIR/rag-v2-root"
-  local compose_rag_runtime_dir
-  compose_rag_runtime_dir=$(docker_bind_source "$STATE_DIR/rag-v2-root")
+  # RAG 루트는 운영자가 다른 위치에 둘 수 있어 절대 경로를 그대로 쓴다.
+  local compose_rag_runtime_dir=$STATE_DIR/rag-v2-root
   printf '%s\n' \
     "P1_SECRETS_DIR=$compose_secrets_dir" \
     "P1_SECRET_GID=$(id -g)" \

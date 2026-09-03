@@ -23,18 +23,27 @@ test('live Compose login and primary screens use the Spring API', async ({ page 
   const screens = [
     ['내 원칙', '내 투자 원칙'],
     ['주문 검토', '주문 검토'],
-    ['모델 비교', '모델 비교'],
-    ['백테스트 리포트', '백테스트 리포트'],
+    ['전략 검증', '모델 비교'],
     ['금융 가이드', '금융 가이드'],
   ] as const;
   const navRail = page.getByRole('navigation', { name: '주요 화면' });
   for (const [navigation, heading] of screens) {
-    await navRail.getByRole('link', { name: new RegExp(`^${navigation}`) }).click();
+    // 접근성 이름은 step + label + note 가 이어진 "01 내 원칙 기준 정하기" 형태다.
+    // 템플릿 리터럴에서는 백슬래시를 이스케이프해야 정규식에 \d 가 도달한다 -
+    // 하나만 쓰면 문자 d 로 붕괴해 /^(dd )?내 원칙/ 을 찾다가 영원히 타임아웃한다.
+    await navRail.getByRole('link', { name: new RegExp(`^(\\d\\d )?${navigation}`) }).click();
     await expect(page.getByRole('heading', { name: heading })).toBeVisible();
   }
 
+  // 전략 검증은 한 화면 안에서 모델 비교 ↔ 백테스트로 전환한다.
+  // 위 루프의 마지막이 '금융 가이드' 라서 지금 화면은 /rag 다. 탭은 전략 화면에만 있으므로
+  // 전략 검증으로 돌아온다 - 이 한 줄이 없으면 없는 탭을 찾다가 타임아웃한다.
+  await navRail.getByRole('link', { name: /^02 전략 검증/ }).click();
+  await expect(page.getByRole('heading', { name: '모델 비교' })).toBeVisible();
+  await page.getByRole('tab', { name: '백테스트 리포트' }).click();
+  await expect(page.getByRole('heading', { name: '백테스트 리포트' })).toBeVisible();
+
   await page.setViewportSize({ width: 390, height: 844 });
-  await navRail.getByRole('link', { name: /^백테스트 리포트/ }).click();
   await expect(page.getByRole('heading', { name: 'Baseline / Guide / Strict 비교' })).toBeVisible();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),

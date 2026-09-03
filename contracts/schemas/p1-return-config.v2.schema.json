@@ -16,16 +16,24 @@
           "const": true
         },
         "dropout": {
-          "const": 0.2
+          "exclusiveMaximum": 1,
+          "minimum": 0,
+          "type": "number"
         },
         "hiddenSize": {
-          "const": 128
+          "maximum": 1024,
+          "minimum": 8,
+          "type": "integer"
         },
         "layerCount": {
-          "const": 3
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer"
         },
         "learningRate": {
-          "const": 0.0005
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "type": "number"
         },
         "loss": {
           "const": "SmoothL1"

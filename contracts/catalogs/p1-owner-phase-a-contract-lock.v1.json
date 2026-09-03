@@ -48,7 +48,6 @@
       "rsi14"
     ],
     "gdeltCalls": 0,
-    "inputPackSchema": "contracts/schemas/p1-return-engine-input-pack.v1.schema.json",
     "newsFeatures": 0,
     "vertexCalls": 0
   },

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
+import { Button } from '@/shared/ui/Button';
 import { useResource, toErrorState } from '@/shared/lib/useResource';
 import type { ViewState } from '@/shared/lib/viewState';
 import {
@@ -147,14 +148,14 @@ function SettingsForm({ initial }: { initial: SettingsView }) {
       </Panel>
 
       <div className="flex items-center gap-3">
-        <button
-          type="button"
+        <Button
+          variant="primary"
           className="rounded bg-slate-200 px-4 py-2 text-sm font-medium text-slate-900 disabled:opacity-50"
           disabled={blocked !== null || pending}
           onClick={() => void submit()}
         >
           {pending ? '저장 중…' : '저장'}
-        </button>
+        </Button>
         {blocked !== null && <p className="text-sm text-hold">{blocked}</p>}
         {outcome?.kind === 'ready' && <p className="text-sm text-allow">{outcome.data}</p>}
         {outcome?.kind === 'error' && (

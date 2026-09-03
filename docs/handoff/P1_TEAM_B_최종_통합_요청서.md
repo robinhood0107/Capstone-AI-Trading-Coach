@@ -1,8 +1,8 @@
 # Team B exact-31 최소 구현 요청서
 
-> `DRAFT_OWNER_INPUT_RECEIPT`: Owner 코드·confidence 제거·Git Seed import·V116 daily inference는
-> 완료됐다. 다만 실제 756-session KIS input pack은 별도 물리 호출 승인이 필요하므로,
-> 아래 manifest SHA-256이 채워지기 전에는 Team B에게 전달하지 않는다.
+> `OWNER_INPUT_RECEIPT=PASS`: exact-31 종목 집합과 confidence-free artifact 계약 검증을
+> 마쳤다. 입력은 봉인 ZIP 이 아니라 커밋된 유니버스 카탈로그 + yfinance 자동 수집이다.
+> Team B는 카탈로그에 적힌 31개 티커만 수집하며 임의 종목으로 대체하지 않는다.
 
 이 문서 하나만 보고 `workspaces/return-engine/`만 작업해 주세요.
 
@@ -16,16 +16,32 @@ production 학습과 exact-10 export를 완성해 주세요.
 
 ## 시작 입력
 
-Owner가 다음 두 개를 제공합니다.
+입력은 repository 안의 유니버스 카탈로그 하나입니다.
 
 ```text
-1. 파일명: `p1-return-engine-input-pack.v1.zip`
-2. manifest SHA-256: `BLOCKED_PENDING_APPROVED_KIS_INPUT_PACK`
+contracts/catalogs/p1-return-universe.v1.json
 ```
 
-ZIP을 Git 밖 local 폴더에 압축 해제한 뒤 manifest와 모든 파일의 크기·SHA-256를
-먼저 검증해 주세요. 입력이 없거나 hash가 다르면 임의 CSV·yfinance로 대신하지 말고
-`OWNER_INPUT_PACK_REQUIRED`로 종료해 주세요.
+이 파일이 수집할 종목의 단일 진실입니다. 31개 항목에 6자리 종목코드와 그에 대응하는
+`yfinanceTicker`가 들어 있고, exact-31 전원이 KOSPI이므로 접미사는 `.KS` 하나입니다.
+`132030`(금 ETF)이 정확히 한 번 들어갑니다.
+
+```text
+가격 수집: yfinance, auto_adjust=False
+사용 컬럼: Open, High, Low, Close, Volume
+Adj Close: 사용하지 않음 (계약이 priceBasis=RAW_CLOSE)
+```
+
+기존 `StockDataLoader.download`를 그대로 재사용하시면 됩니다. 카탈로그에 없는 종목을
+넣거나 임의 CSV로 대체하지 말아 주세요. 카탈로그에 있는 티커가 수집되지 않으면 조용히
+건너뛰지 말고 실패로 종료해 주세요 — 31개 중 몇 개가 빠진 채로 학습이 끝나는 것이
+가장 찾기 어려운 결함입니다.
+
+사전 공유 SHA-256 대조는 없어졌습니다. `manifest.inputPackSha256`에는 실제로 사용한
+입력의 정직한 해시를 넣어 주세요. Owner는 그 값을 기대값과 대조하지 않고 증거로
+기록합니다.
+
+수집 결과는 Git에 커밋하지 않습니다. 런타임 수집이므로 커밋할 입력 파일이 없습니다.
 
 current artifact 계약은 confidence가 없는
 `p1-return-engine-artifact-manifest.v3`입니다. Team B에서 confidence 필드를 다시 추가하거나
@@ -39,32 +55,36 @@ current artifact 계약은 confidence가 없는
 
 ```bash
 PYTHONPATH=src uv run python -m return_engine verify-input \
-  --input-root <input-root> \
-  --manifest-sha256 <sha256>
+  --universe-catalog <repository-root>/contracts/catalogs/p1-return-universe.v1.json
 
 PYTHONPATH=src uv run python -m return_engine train-production \
-  --input-root <input-root> \
-  --manifest-sha256 <sha256> \
+  --universe-catalog <repository-root>/contracts/catalogs/p1-return-universe.v1.json \
   --output-root <repository-root>/deploy/p1/seed/team-b
 ```
 
-`train-production`은 입력 검증부터 학습·백테스트·exact-10·manifest export까지 한 번에
+`verify-input`은 카탈로그를 읽고 31개 티커가 실제로 수집되는지 확인합니다.
+`train-production`은 수집부터 학습·백테스트·exact-10·manifest export까지 한 번에
 완료해야 합니다. 기존 output을 덮어쓰지 말고 새 폴더에만 성공해야 합니다.
+
+`--manifest-sha256`과 `OWNER_INPUT_PACK_REQUIRED` 종료는 없어졌습니다. 그리고
+`_resolve_daily_ohlcv`/`_resolve_manifest_file`의 `rglob("*.csv")[0]`·`rglob("*.json")[0]`
+폴백은 제거해 주세요 — 지정한 파일이 없을 때 폴더에서 아무 파일이나 골라 조용히 학습
+입력으로 삼습니다. 이 경로는 실패해야 맞습니다.
 
 ### 2. 고정 학습 설정
 
 ```text
-universe=Owner manifest의 고정 exact-31
+universe=contracts/catalogs/p1-return-universe.v1.json 의 고정 exact-31
 priceBasis=RAW_CLOSE
 minimumHistory=756 XKRX sessions
 featureOrder=open,high,low,raw_close,volume,return_1d,ma5,ma20,rsi14
 windowSize=20
-hiddenSize=128
-layerCount=3
-dropout=0.2
+hiddenSize=64
+layerCount=1
+dropout=0
 outputSize=1
 optimizer=Adam
-learningRate=0.0005
+learningRate=0.001
 loss=SmoothL1
 batchSize=32
 epochs=10
@@ -75,6 +95,11 @@ roundTripCostBps=35
 hyperparameterSearchCount=0
 postFinalTuningCount=0
 ```
+
+`hiddenSize`·`layerCount`·`dropout`·`learningRate`는 Team B가 정한 값입니다. Owner
+런타임은 이 값들을 상수로 갖고 있었지만 `config.json`에서 파생하도록 바꿨으므로, 앞으로
+더 조정해도 Owner 쪽 재작업이 없습니다. `windowSize=20`과 `outputSize=1`은 텐서 집합과
+계약된 값이라 그대로 두셔야 합니다.
 
 - 종목별 독립 LSTM 31개
 - 모든 종목에 같은 시간 순서 split
@@ -114,7 +139,7 @@ model_report.md
 
 Team B는 다음을 구현하지 않습니다.
 
-- KIS·KRX·ECOS·yfinance 수집
+- KIS·KRX·ECOS 수집 (yfinance 가격 수집은 Team B 범위입니다)
 - daily inference scheduler와 자동매매 runtime
 - Spring·PostgreSQL·Compose·Dashboard
 - 계좌·잔고·주문·Vertex·RiskEngine
@@ -143,7 +168,7 @@ PYTHONPATH=src uv run python -m return_engine --help
 ## 제출물
 
 1. PR URL과 commit SHA
-2. input manifest SHA-256
+2. 사용한 유니버스 카탈로그 SHA-256과 수집 종목 수
 3. result manifest SHA-256
 4. exact-10 hash 표
 5. 학습 실행 시간과 결과

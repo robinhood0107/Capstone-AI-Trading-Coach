@@ -9,7 +9,7 @@ from app.strong_llm.models import Evidence, RunRequest
 
 # 프롬프트가 판단에 영향을 주므로 프롬프트 변경은 곧 매매 동작 변경이다. 조각과 그 순서를
 # 계약 테스트로 고정하고, 합쳐진 전문의 해시를 버전으로 남겨 어떤 글로 나온 판단인지 추적한다.
-PROMPT_CONTRACT_ID = "strong-llm-prompt/v2"
+PROMPT_CONTRACT_ID = "strong-llm-prompt/v3"
 
 # --------------------------------------------------------------------------------------
 # 조각. 순서가 곧 계약이다 (`_SYSTEM_ORDER`).
@@ -53,19 +53,21 @@ _STEPS_EXPLAIN = """\
 # 처리 순서
 1. 질문이 무엇을 묻는지 정한다.
 2. 주어진 근거 중 그 질문에 답이 되는 것만 고른다.
-3. 근거로 답할 수 있으면 EVIDENCE 또는 EVIDENCE_WITH_REASONING, 시대와 무관한 일반
-   교육이면 MODEL_KNOWLEDGE, 둘 다 아니면 INSUFFICIENT_EVIDENCE를 고른다.
-4. 고른 근거만으로 문장을 쓴다. 근거에 없는 사실을 덧붙이지 않는다. 근거를 잇거나 비교하거나
-   한계를 말하는 문장은 추론 문장으로 따로 쓴다."""
+3. 질문에는 언제나 답한다. 근거로 답할 수 있으면 EVIDENCE 또는 EVIDENCE_WITH_REASONING을
+   고르고, 근거가 없거나 얇으면 MODEL_KNOWLEDGE로 아는 만큼 설명한다. 답을 비우지 않는다.
+4. 근거를 쓸 때는 고른 근거만으로 문장을 쓰고 근거에 없는 사실을 그 문장에 덧붙이지 않는다.
+   근거를 잇거나 비교하거나 한계를 말하는 문장은 추론 문장으로 따로 쓴다.
+5. 개인화된 매매 지시를 요구하는 질문이라도 거절하지 않는다. 무엇을 사고 팔지는 말하지 않되
+   그 판단에 필요한 개념, 위험, 확인할 지점을 설명한다."""
 
 _STEPS_JUDGE = """\
 # 처리 순서
-1. 후보 목록을 읽는다. 각 후보의 기대수익과 모델 확신도를 확인한다.
+1. 후보 목록을 읽는다. 각 후보의 기대수익과 LSTM·baseline 신호를 확인한다.
 2. 주어진 근거에서 각 후보와 관련된 위험 신호를 찾는다.
 3. 후보마다 0에서 1 사이의 점수를 매긴다. 근거가 없으면 중립인 0.5에서 시작한다.
 4. 지금 사면 안 될 분명한 이유가 근거에 있으면 그 후보만 veto를 참으로 둔다.
    근거 없는 막연한 불안으로 veto하지 않는다.
-5. 전체 확신도를 정한다. 근거가 얇거나 서로 어긋나면 낮춘다."""
+5. summary에 후보 전체 판단을 요약한다. 근거가 얇거나 서로 어긋나면 그 사실을 그대로 쓴다."""
 
 _OUTPUT_EXPLAIN = """\
 # 출력 계약
@@ -79,12 +81,13 @@ _OUTPUT_EXPLAIN = """\
   evidenceSpans와 numericSpans를 모두 비운다. 추론 문장에는 "현재·최근·오늘" 같은 시점 주장을
   쓰지 않고, 이 답의 근거 문장이 이미 인용으로 증명한 숫자만 다시 쓸 수 있다. 근거 문장이
   하나도 없으면 이 basis를 고르지 않는다.
-- MODEL_KNOWLEDGE: 시대와 무관한 일반 교육에만 쓴다. 숫자, 날짜, 현재·회사·티커 사실,
-  citation, evidence span을 담지 않는다.
-- INSUFFICIENT_EVIDENCE: answer는 null이고 sentences는 비운다.
+- MODEL_KNOWLEDGE: 주어진 근거로 뒷받침되지 않는 설명에 쓴다. 인용과 evidence span과
+  numeric span을 담지 않는다. 그 밖의 제약은 없으며, 근거가 없다는 이유로 설명을 줄이지 않는다.
 
-basis를 고르는 규칙은 하나다. 문장 중 하나라도 citationIds가 비어 있으면 basis는 반드시
-EVIDENCE_WITH_REASONING이다. EVIDENCE는 **모든** 문장이 인용을 가질 때만 고른다. 근거를 잇거나
+근거가 하나도 없으면 MODEL_KNOWLEDGE로 답한다. 답을 비우는 basis는 없다.
+
+basis를 고르는 규칙은 하나다. 근거 문장과 추론 문장을 함께 쓸 때 문장 중 하나라도
+citationIds가 비어 있으면 basis는 반드시 EVIDENCE_WITH_REASONING이다. EVIDENCE는 **모든** 문장이 인용을 가질 때만 고른다. 근거를 잇거나
 해석하는 문장이 필요하면 그 문장을 쓰고 basis를 EVIDENCE_WITH_REASONING으로 둔다 - 인용의
 나열보다 이해되는 설명이 낫다."""
 
@@ -239,10 +242,10 @@ def require_google_grounding(prompt: StrongLlmPromptSpec) -> StrongLlmPromptSpec
     policy = (
         "MANDATORY SEARCH POLICY: Google Search is attached. If the user explicitly requests current, "
         "as-of-date, actual-web, or URL evidence, use Google Search before drafting the response. Do not answer "
-        "such a request from memory. A response without Google grounding must be INSUFFICIENT_EVIDENCE. "
+        "such a request from memory. "
         "Never invent citations or URLs. The host ignores the response body and binds only provider-observed "
         "grounding metadata. "
-        "If neither supplied canonical evidence nor Google grounding supports the answer, return "
-        "INSUFFICIENT_EVIDENCE."
+        "If neither supplied canonical evidence nor Google grounding supports the answer, still answer with "
+        "basis MODEL_KNOWLEDGE and no citations. Never return an empty answer."
     )
     return StrongLlmPromptSpec(system=policy + "\n\n" + prompt.system, user=prompt.user)

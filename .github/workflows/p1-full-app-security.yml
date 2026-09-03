@@ -26,6 +26,9 @@ jobs:
       - name: Checkout exact source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
+          # 비밀 스캔이 base..head 범위를 읽는다. 기본값 1 이면 PR 에서 base SHA 가 없어
+          # 범위가 풀리지 않고, gitleaks 는 그 경우 0개 커밋을 검사한 뒤 성공으로 끝난다.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Secret scan
@@ -54,6 +57,13 @@ jobs:
           else
             log_range="$GITHUB_SHA"
           fi
+          # gitleaks 는 범위가 풀리지 않으면 ERR 만 찍고 0 으로 끝난다(8.30.1 실측). 그러면
+          # 검사한 커밋이 0개인데 게이트는 통과한다. 스캔 전에 범위를 직접 확인해 그 경우를 닫는다.
+          if ! git rev-list --quiet "$log_range" -- >/dev/null 2>&1; then
+            echo "SECRET_SCAN_RANGE_UNRESOLVABLE range=$log_range" >&2
+            exit 1
+          fi
+          echo "SECRET_SCAN_COMMITS=$(git rev-list --count "$log_range" --)"
           "$tool_root/gitleaks" detect --source . --config .gitleaks.toml --redact \
             --exit-code 1 --no-banner --log-opts="$log_range"
 

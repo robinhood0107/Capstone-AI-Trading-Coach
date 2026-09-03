@@ -25,6 +25,7 @@ production 경로로 실제 이어지는지 본다. 구간별 검증은 이미 �
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -34,6 +35,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
+from . import team_b_bundle
 from .harness import (
     Api,
     HarnessError as PipelineError,
@@ -47,6 +49,62 @@ from .harness import (
 )
 
 _OPT_IN: Final = "P1_FULL_PIPELINE_E2E"
+
+
+def _use_real_seed() -> bool:
+    """실물 seed 포인터로 돌지 여부. 기본은 합성 번들이다.
+
+    합성 번들은 buy/sell 종목을 강제해 상태 기계만 보는 데 쓴다. 실물 seed 는 production 과
+    같은 번들·모델로 돌아 실제 사용을 검증하지만 어느 종목이 뽑히는지는 모델이 정한다.
+    """
+
+    return os.environ.get("P1_E2E_USE_REAL_SEED", "").strip() == "1"
+
+
+def _existing_pointer() -> dict[str, Any]:
+    """이미 적재된 실물 seed 포인터를 호스트에서 읽는다.
+
+    `./capstone up` 이 deploy/p1/seed/team-b 를 import 하고 그 포인터로 arm 이 열린다. 추론
+    서버도 같은 seed 를 기동 시 로드하므로 이 포인터를 쓸 때만 요청의 bundleSha256 대조가 맞는다.
+    """
+
+    row = _psql(
+        "select bundle_sha256 || '|' || artifact_id"
+        " from public.current_p1_return_model_pointer limit 1;"
+    ).strip()
+    if "|" not in row:
+        raise PipelineError(
+            "적재된 Team B 포인터가 없다. ./capstone up 이 실물 seed 를 넣어야 한다"
+        )
+    bundle_sha256, artifact_id = row.split("|", 1)
+    return {
+        "outcome": "EXISTING_POINTER",
+        "bundleSha256": bundle_sha256,
+        "artifactId": artifact_id,
+        "runId": None,
+        "packetSha256": None,
+    }
+
+
+def _assert_universe_matches_catalog() -> None:
+    """번들의 exact-31 이 커밋된 카탈로그와 같은지 호스트에서 대조한다.
+
+    번들 쪽 값은 컨테이너에서도 읽혀야 하므로 상수다. 그 대신 조용한 드리프트를 여기서 막는다.
+    카탈로그가 바뀌었는데 번들이 그대로면 테스트는 통과하면서 실제 명부를 검증하지 못한다.
+    """
+
+    catalog = json.loads(
+        (_REPOSITORY / "contracts/catalogs/p1-return-universe.v1.json").read_text(encoding="utf-8")
+    )
+    expected = {str(entry["symbol"]) for entry in catalog["symbols"]}
+    actual = set(team_b_bundle.UNIVERSE)
+    if actual != expected:
+        raise PipelineError(
+            "exact-31 번들 종목이 카탈로그와 다르다: "
+            f"번들만={sorted(actual - expected)} 카탈로그만={sorted(expected - actual)}"
+        )
+
+
 _REPOSITORY: Final = Path(__file__).resolve().parents[5]
 _DEPLOY: Final = _REPOSITORY / "deploy/p1"
 _STATE: Final = _DEPLOY / ".state-app"
@@ -64,7 +122,33 @@ _SEED_SOURCE: Final = "P1_E2E_FIXTURE"
 # 원장이 같은 계좌를 말한다.
 INITIAL_CASH_KRW: Final = 100_000_000
 # 드라이버의 FIXTURE_PRICES와 같은 값이어야 위험 판정과 주문 산정이 같은 시세를 본다.
+# DB 에 바가 없을 때만 쓰는 최소 fallback 이다. 정상 경로는 _fixture_prices() 가
+# market_data_bars 의 마지막 종가를 읽어 exact-31 전체를 덮는다.
 _FIXTURE_PRICES: Final[dict[str, int]] = {"005930": 70_000, "000660": 180_000}
+
+
+def _fixture_prices() -> dict[str, int]:
+    """exact-31 전체의 호가 기준가를 market_data_bars 의 마지막 종가에서 만든다.
+
+    실물 seed 로 돌면 매수 후보를 모델이 정하므로 특정 종목만 호가를 넣어 두면 그 후보의
+    수량을 산정할 수 없어 PRECHECK 이 SKIPPED_NO_ACTION 으로 닫힌다. 값을 지어내지 않고
+    LSTM 이 본 것과 같은 출처를 쓴다.
+    """
+
+    rows = _psql(
+        "select symbol || '|' || round(close_price)::bigint from public.market_data_bars"
+        " where session_date = (select max(session_date) from public.market_data_bars)"
+        " order by symbol;"
+    )
+    prices = {
+        line.split("|", 1)[0]: int(line.split("|", 1)[1])
+        for line in rows.splitlines()
+        if "|" in line
+    }
+    # 강제 매수 시나리오가 쓰는 두 종목은 항상 있어야 한다.
+    for symbol, fallback in _FIXTURE_PRICES.items():
+        prices.setdefault(symbol, fallback)
+    return prices or dict(_FIXTURE_PRICES)
 
 
 def _compose(*args: str, offline_brokerage: bool = False) -> str:
@@ -294,6 +378,56 @@ def seed_market_data(sessions: list[date]) -> str:
     return seed_sha
 
 
+def seed_source_session_bars(manifest_sha256: str, session: date) -> int:
+    """SEED 매니페스트 세션에 31종목 바를 넣는다.
+
+    일일 추론은 sourceSession 과 이력 마지막 바가 같기를 요구한다(daily_inference.py:236).
+    매니페스트만 앞으로 밀면 두 값이 어긋나 DAILY_INFERENCE_HISTORY_INCOMPLETE 가 된다.
+
+    값은 각 종목의 마지막 실측 바에서 종목명 해시로 뽑은 결정론적 변동(-1.0% ~ +1.0%)이다.
+    전부 같은 값이면 LogRet 이 0 이 되어 전 종목 HOLD 로 끝나고 주문 경로를 태우지 못한다.
+    합성이라는 사실은 이 매니페스트에 매여 있고 정리에서 함께 사라진다.
+    """
+
+    last = _psql("select max(session_date) from public.market_data_bars;").strip()
+    if not last:
+        raise PipelineError("기존 시장데이터 바가 없어 소스 세션 바를 만들 수 없다")
+    rows = [
+        line
+        for line in _psql(
+            "select symbol || '|' || open_price || '|' || high_price || '|' || low_price"
+            " || '|' || close_price || '|' || volume from public.market_data_bars"
+            f" where session_date = date '{last}' order by symbol;"
+        ).splitlines()
+        if line.strip()
+    ]
+    if not rows:
+        raise PipelineError(f"{last} 바를 읽지 못했다")
+
+    receipt = hashlib.sha256(f"p1-e2e-source-bar/{session}".encode()).hexdigest()
+    values = []
+    for row in rows:
+        symbol, _open, _high, _low, close, volume = row.split("|")
+        drift = (int(hashlib.sha256(symbol.encode()).hexdigest()[:8], 16) % 21 - 10) / 1000.0
+        base = float(close)
+        new_close = round(base * (1.0 + drift), 2)
+        new_open = round(base, 2)
+        new_high = round(max(new_open, new_close) * 1.002, 2)
+        new_low = round(min(new_open, new_close) * 0.998, 2)
+        values.append(
+            f"('{manifest_sha256}', 1, '{symbol}', date '{session}', {new_open}, {new_high},"
+            f" {new_low}, {new_close}, {int(float(volume))}, 'KRW', 'COLLECTION_ONLY', '{receipt}')"
+        )
+    _psql(
+        "insert into public.market_data_bars (manifest_sha256, generation, symbol, session_date,"
+        " open_price, high_price, low_price, close_price, volume, currency, temporal_quality,"
+        " source_receipt_sha256) values "
+        + ",".join(values)
+        + " on conflict (symbol, session_date, generation) do nothing;"
+    )
+    return len(values)
+
+
 def quiesce_rival_portfolio_contexts() -> list[str]:
     """자동운용 계좌 하나만 ACTIVE로 남긴다. 되돌릴 수 있게 대상 id를 돌려준다.
 
@@ -375,7 +509,7 @@ def seed_risk_metrics(
                 "priceKrw": price,
                 "symbol": symbol,
             }
-            for symbol, price in sorted(_FIXTURE_PRICES.items())
+            for symbol, price in sorted(_fixture_prices().items())
         ],
         "receivedAt": received,
         "schemaVersion": "market-quote-observation.v1",
@@ -689,6 +823,9 @@ def main(argv: list[str]) -> int:
         " ".join(f"{table}={len(rows)}" for table, rows in sorted(before.items())),
     )
 
+    # 번들 종목이 커밋된 exact-31 과 같은지 먼저 본다. 다르면 이후 전부가 무의미하다.
+    _assert_universe_matches_catalog()
+
     platform_switched = False
     quiesced: list[str] = []
     try:
@@ -736,11 +873,14 @@ def main(argv: list[str]) -> int:
             "XKRX 달력 씨딩", "PASS", f"{len(sessions) + 1}개 세션 (pinned 4.13.2 실제 날짜)"
         )
 
-        seed_market_data(sessions)
+        market_seed_sha = seed_market_data(sessions)
+        source_session = min(sessions) - timedelta(days=1)
+        seeded_bars = seed_source_session_bars(market_seed_sha, source_session)
         recorder.add(
             "시장데이터 매니페스트 씨딩",
             "PASS",
-            f"SEED 1 + DAILY {len(sessions)} (체인 가드 순서 준수)",
+            f"SEED 1 + DAILY {len(sessions)} (체인 가드 순서 준수)"
+            f" + 소스 세션 {source_session} 바 {seeded_bars}행",
         )
 
         metrics = seed_risk_metrics()
@@ -758,18 +898,25 @@ def main(argv: list[str]) -> int:
             "(둘 이상이면 RiskEngine이 CONFLICT로 전 지표를 닫는다). 정리에서 되돌린다",
         )
 
-        imported = _driver(
-            "import-bundle",
-            "--session",
-            buy_session.isoformat(),
-            "--buy",
-            "005930",
-            "--ordinal",
-            "1",
-        )
+        # 실물 seed 경로에서는 새로 import 하지 않고 이미 적재된 포인터를 쓴다. 추론 서버가
+        # 요청의 bundleSha256 을 자기가 로드한 번들과 대조하므로 그때만 추론이 성립한다.
+        # 컨테이너 안 드라이버는 decision_worker 로만 붙어 이 뷰를 못 읽으므로 호스트에서 읽는다.
+        if _use_real_seed():
+            imported = _existing_pointer()
+        else:
+            imported = _driver(
+                "import-bundle",
+                "--session",
+                buy_session.isoformat(),
+                "--buy",
+                "005930",
+                "--ordinal",
+                "1",
+            )
+        expected_outcome = "EXISTING_POINTER" if _use_real_seed() else "IMPORTED"
         recorder.add(
             "Team B 번들 적재 (매수 세션)",
-            "PASS" if imported.get("outcome") == "IMPORTED" else "FAIL",
+            "PASS" if imported.get("outcome") == expected_outcome else "FAIL",
             f"{imported.get('outcome')} run={imported.get('runId')} "
             f"bundle={str(imported.get('bundleSha256'))[:16]}",
         )

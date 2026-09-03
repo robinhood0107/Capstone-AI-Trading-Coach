@@ -92,7 +92,7 @@ class BacktestEngine:
     # 칼마 지수
     def calculate_calmar(self, profit, mmd):
         if mmd == 0:
-            return np.inf
+            return 0.0
         return profit / abs(mmd)
     
     # 샤프 지수

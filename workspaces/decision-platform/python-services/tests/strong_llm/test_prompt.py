@@ -56,4 +56,7 @@ def test_google_prompt_requires_search_for_explicit_current_web_request_and_forb
     assert "use Google Search before drafting the response" in prompt.system
     assert "Do not answer such a request from memory" in prompt.system
     assert "Never invent citations or URLs" in prompt.system
-    assert "INSUFFICIENT_EVIDENCE" in prompt.system
+    # 검색 근거가 없어도 답을 비우지 않는다. 인용만 빼고 설명은 그대로 낸다.
+    assert "basis MODEL_KNOWLEDGE and no citations" in prompt.system
+    assert "Never return an empty answer" in prompt.system
+    assert "INSUFFICIENT_EVIDENCE" not in prompt.system

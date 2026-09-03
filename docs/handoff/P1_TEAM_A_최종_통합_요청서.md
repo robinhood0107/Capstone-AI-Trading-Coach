@@ -23,6 +23,9 @@ Owner 쪽 RAG V2·Vertex·KIS Mock brokerage·Automation V3 runtime은 구현돼
 - KIS Mock 주문가능 조회와 주문·취소·체결·대사 경로는 backend가 소유합니다.
 - Automation runtime은 켜져 있어도 control은 기본 `DISARMED`입니다.
 - 실제 Team B bundle이 들어오기 전 `canArm=false`와 blocker가 보이는 것이 정상입니다.
+- P1 current signal 화면은 generated V4 client의 `GET /api/v3/signals/{symbol}`만 사용합니다.
+  `expectedReturn`, LSTM·rule signal과 freshness를 표시하되 confidence를 표시하거나 계산하지
+  마세요. V1~V3 generated client와 `/api/v2/signals`는 historical compatibility 표면입니다.
 - `sourceVersion=p1-representative-test-only-v1`인 잔고는 화면 연결용 대표 데이터이므로 반드시
   `테스트 데이터`로 표시하고 실제 계좌 잔고처럼 표현하지 마세요.
 

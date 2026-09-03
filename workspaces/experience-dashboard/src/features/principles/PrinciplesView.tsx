@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
+import { Button } from '@/shared/ui/Button';
 import { DecisionBadge } from '@/shared/ui/Decision';
 import { useResource, toErrorState } from '@/shared/lib/useResource';
 import { api } from '@/shared/api/endpoints';
@@ -103,7 +104,7 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
         title="어떤 방식으로 시작할까요"
         hint={data.presets.disclaimer.ko}
       >
-        <div className="grid gap-px bg-line md:grid-cols-3">
+        <div className="grid gap-px overflow-hidden rounded-tile border border-line bg-line md:grid-cols-3">
           {[...data.presets.items]
             .sort((a, b) => a.order - b.order)
             .map((preset) => (
@@ -155,30 +156,28 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
               보내지 않습니다.
             </p>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={!dirty || saving}
+              <Button
+                                disabled={!dirty || saving}
                 onClick={() => setDraft(data.current?.rules ?? [])}
-                className="border border-line px-3 py-1.5 text-[13px] text-muted disabled:text-faint"
+                className="rounded-full border border-line px-3 py-1.5 text-[13px] text-muted disabled:text-faint"
               >
                 되돌리기
-              </button>
-              <button
-                type="button"
-                disabled={!dirty || saving}
+              </Button>
+              <Button
+                                disabled={!dirty || saving}
                 onClick={() => void save()}
-                className="border border-navy bg-navy px-4 py-1.5 text-[13px] font-medium text-white disabled:border-line disabled:bg-line disabled:text-faint"
+                variant="primary"
                 title={`expectedVersion=${data.current.version}으로 저장합니다.`}
               >
                 {saving ? '저장 중' : '변경 사항 저장'}
-              </button>
+              </Button>
             </div>
           </div>
         </Panel>
       ) : (
         <Panel contract="GET /api/v1/principles" title="내 원칙 값 조정">
-          <div className="border border-dashed border-rule px-4 py-6">
-            <p className="font-mono text-eyebrow uppercase text-faint">데이터 없음</p>
+          <div className="rounded-tile border border-dashed border-rule px-4 py-6">
+            <p className="text-eyebrow font-semibold uppercase text-faint">데이터 없음</p>
             <p className="mt-2 text-sm font-medium text-ink">아직 만든 원칙이 없습니다</p>
             <p className="mt-1 text-[13px] leading-5 text-muted">
               위 preset 중 하나를 골라 원칙을 먼저 만들어야 주문 검토를 쓸 수 있습니다.
@@ -202,15 +201,14 @@ function PresetCard({
   const loss = preset.defaultRules.find((rule) => rule.ruleId === 'daily_loss_guard');
   const orders = preset.defaultRules.find((rule) => rule.ruleId === 'max_daily_orders');
   return (
-    <button
-      type="button"
-      onClick={onApply}
+    <Button
+            onClick={onApply}
       aria-pressed={selected}
       className={`bg-panel px-4 py-4 text-left ${selected ? 'ring-2 ring-inset ring-navy' : ''}`}
     >
       <div className="flex items-baseline justify-between">
         <p className="text-[15px] font-semibold text-ink">{preset.nameKo}</p>
-        <span className="font-mono text-eyebrow uppercase text-faint">{preset.presetId}</span>
+        <span className="text-eyebrow font-semibold uppercase text-faint">{preset.presetId}</span>
       </div>
       <p className="mt-2 text-[13px] leading-6 text-muted">{preset.descriptionKo}</p>
       <dl className="mt-3 space-y-1 text-[12px]">
@@ -225,7 +223,7 @@ function PresetCard({
           </dd>
         </div>
       </dl>
-    </button>
+    </Button>
   );
 }
 
@@ -258,7 +256,7 @@ function RuleRow({
           {rule.enabled ? (
             <DecisionBadge status={rule.severity === 'BLOCK' ? 'BLOCK' : 'WARN'} size="sm" />
           ) : (
-            <span className="border border-line px-2 py-0.5 font-mono text-[11px] text-faint">
+            <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[11px] text-faint">
               사용 안 함
             </span>
           )}
@@ -291,7 +289,7 @@ function RuleRow({
             disabled={!rule.enabled}
             onChange={(event) => onThreshold(Number(event.target.value))}
             aria-label={`${meta.name} 값`}
-            className="tnum w-32 border border-line px-2 py-1 text-right font-mono text-[13px] disabled:bg-surface disabled:text-faint"
+            className="tnum w-32 rounded-full border border-line px-3 py-1 text-right font-mono text-[13px] disabled:bg-surface disabled:text-faint"
           />
         )}
         <span className="tnum w-24 text-right font-mono text-[13px] text-ink">{display}</span>

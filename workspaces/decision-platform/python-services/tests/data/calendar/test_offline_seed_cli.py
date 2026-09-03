@@ -164,6 +164,47 @@ class OfflineSeedExistingSessionTest(_SeedRunner):
         self.assertEqual(written, [past, future])
         self.assertNotIn(already, written)
 
+    def test_already_present_calendar_is_success(self) -> None:
+        """세션이 전부 이미 있으면 성공이다.
+
+        clamp 를 실패로 셌을 때 up_app 이 pipefail 로 여기서 죽었고, 그 뒤의 시장데이터 갱신·
+        컨테이너 수 확인·CAPSTONE_UP=PASS·자동운용 리콘실러가 전부 건너뛰어졌다. 1년치를
+        요청하면 마지막 연도는 항상 clamp 되므로 캘린더가 한 번 채워진 뒤 모든 실행이 이
+        경로를 탄다 - 즉 이것이 정상 정상상태다.
+        """
+
+        bound_last = date(2027, 9, 3)
+        clamped_range = (date(2027, 1, 1), bound_last)
+        present = date(2027, 1, 4)
+
+        code, lines, written = self._run(
+            years="2027",
+            bounds=(date(2006, 9, 4), bound_last),
+            existing={present},
+            built={clamped_range: [_session(present)]},
+        )
+
+        self.assertEqual(code, 0)
+        self.assertIn("P1_CALENDAR_OFFLINE_SEED=NO_SESSIONS", lines)
+        self.assertIn("alreadyPresent=1", lines)
+        self.assertIn("clampedYears=2027:2027-01-01~2027-09-03", lines)
+        self.assertEqual(written, [])
+
+    def test_years_entirely_outside_the_calendar_stay_a_failure(self) -> None:
+        """반대 방향도 잠근다. 어떤 세션도 얻을 수 없는 입력은 조용히 성공이 되지 않는다."""
+
+        code, lines, written = self._run(
+            years="2030",
+            bounds=(date(2006, 9, 4), date(2027, 9, 3)),
+            existing=set(),
+            built={},
+        )
+
+        self.assertEqual(code, 2)
+        self.assertIn("P1_CALENDAR_OFFLINE_SEED=NO_SESSIONS", lines)
+        self.assertIn("clampedYears=2030:outside", lines)
+        self.assertEqual(written, [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -285,6 +285,26 @@ install -m 640 <다운로드한 파일>.json \
 | `CAPSTONE_RAG_DEFAULT=ON_WITH_GENERATION` | RAG 검색과 답변 생성, Strong LLM 판단 활성 |
 | `KIS_BROKERAGE_MODE=KIS_MOCK` | KIS 모의투자 어댑터 활성 |
 | `KIS_MOCK_RUNTIME=ENABLED` | 자동매매 봇 실행 |
+| `CAPSTONE_TRADING_CALENDAR=SEEDED` 또는 `PRESENT` | 거래일 달력이 채워짐 / 이미 전부 있음 |
+| `CAPSTONE_MARKET_DATA_DAILY=FRESH` | 빠진 거래일의 일봉이 채워짐 (또는 이미 최신) |
+| `CAPSTONE_AUTOMATION_RECONCILED=ARMED` | 저장된 자동매매 의도가 실제 상태로 복원됨 |
+
+### 시장데이터 일일 갱신
+
+`./capstone up` 이 빠진 거래일의 일봉을 스스로 채웁니다. 종목은 커밋된 exact-31 이고, 출처는
+공개 지연 피드입니다 — **KIS 계좌·주문 호출은 0건**이고 bar 는 `COLLECTION_ONLY` 로 기록되어
+공식 시세 vintage 라고 주장하지 않습니다.
+
+언제든 따로 부를 수 있습니다. 멱등이라 여러 번 불러도 안전합니다.
+
+```bash
+./capstone market-data refresh
+```
+
+**스택을 여러 날 켜 두는 경우에는 하루 한 번 이 명령(또는 멱등인 `./capstone up`)이
+필요합니다.** 갱신이 밀리면 자동매매 루프가 멈추지는 않지만 어제와 같은 창의 데이터로 같은
+신호를 냅니다. 상주 컨테이너를 하나 늘리면 자동화되지만 `CAPSTONE_PERSISTENT_CONTAINERS=5`
+계약이 깨지므로 그 선택은 남겨 두었습니다.
 
 값이 빠지면 그 기능만 꺼진 채 뜨고, 무엇이 없어서 꺼졌는지 다음처럼 표시됩니다.
 

@@ -24,6 +24,7 @@ import {
   slotBudgetKrw,
   validateAutomationPolicy,
 } from './policy';
+import { AutomationPersistenceNote } from './AutomationPersistenceNote';
 
 interface AutomationData {
   status: AutomationStatusV2;
@@ -357,6 +358,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
               </button>
             )}
           </div>
+          <AutomationPersistenceNote status={data.status} />
         </div>
       </Panel>
 

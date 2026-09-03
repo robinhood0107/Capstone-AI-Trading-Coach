@@ -1,10 +1,10 @@
 {
   "contractId": "p1-full-pipeline-e2e.v1",
-  "generatedAt": "2026-08-31T06:09:25.549644Z",
+  "generatedAt": "2026-09-03T09:28:22.753307Z",
   "kisCalls": 0,
   "steps": [
     {
-      "detail": "artifact_ingest_projection=1 automation_account_lineage=0 automation_activation_gate=0 automation_control_idempotency=2 automation_events=1 automation_policy_idempotency=1 automation_policy_versions=1 automation_positions=1 automation_processed_ticks=0 automation_runs=1 automation_runtime_events=0 automation_runtime_schedule=0 daily_order_count_observations=11 dashboard_artifact_views=2 decision_idempotency_results=1 decisions=1 deterministic_risk_observations=11 journal_idempotency=1 journals=1 market_data_manifests=0 market_quote_observations=23 orders=1 p1_return_artifact_bundle=0 portfolio_balance_observations=3 principle_versions=3 principles=2 rag_consent_events=38 trading_sessions=2",
+      "detail": "artifact_ingest_projection=2 automation_account_lineage=1 automation_activation_gate=1 automation_ai_judgements=2 automation_ai_provider_operations=0 automation_candidate_evidence=0 automation_candidate_screenings=0 automation_control_idempotency=0 automation_events=4 automation_policy_idempotency=0 automation_policy_versions=3 automation_positions=1 automation_processed_ticks=1 automation_runs=2 automation_runtime_events=12 automation_runtime_schedule=0 automation_v3_usage=1 daily_order_count_observations=11 dashboard_artifact_views=4 decision_idempotency_results=2 decisions=2 deterministic_risk_observations=11 journal_idempotency=2 journals=2 market_data_manifests=1 market_quote_observations=23 orders=1 p1_return_artifact_bundle=1 portfolio_balance_observations=4 principle_versions=3 principles=2 rag_consent_events=51 trading_sessions=416",
       "name": "시작 스냅샷",
       "verdict": "INFO"
     },
@@ -19,7 +19,7 @@
       "verdict": "PASS"
     },
     {
-      "detail": "인증 2026-08-31 → 매수 2026-09-01 → 매도 2026-09-02",
+      "detail": "인증 2026-09-03 → 매수 2026-09-04 → 매도 2026-09-07",
       "name": "대상 세션",
       "verdict": "INFO"
     },
@@ -29,22 +29,22 @@
       "verdict": "PASS"
     },
     {
-      "detail": "SEED 1 + DAILY 3 (체인 가드 순서 준수)",
+      "detail": "SEED 1 + DAILY 3 (체인 가드 순서 준수) + 소스 세션 2026-09-03 바 31행",
       "name": "시장데이터 매니페스트 씨딩",
       "verdict": "PASS"
     },
     {
-      "detail": "{\"inserted\":2,\"source\":\"market_quote\"} {\"inserted\":1,\"source\":\"kis_mock_portfolio\"} {\"inserted\":2,\"source\":\"deterministic_metrics\"} — 시세와 결정론 지표를 production writer로 적재",
+      "detail": "{\"inserted\":31,\"source\":\"market_quote\"} {\"inserted\":1,\"source\":\"kis_mock_portfolio\"} {\"inserted\":2,\"source\":\"deterministic_metrics\"} — 시세와 결정론 지표를 production writer로 적재",
       "name": "위험 지표 수집 (오프라인 writer)",
       "verdict": "PASS"
     },
     {
-      "detail": "다른 scope의 ACTIVE 관측 0건을 INACTIVE로 내림 (둘 이상이면 RiskEngine이 CONFLICT로 전 지표를 닫는다). 정리에서 되돌린다",
+      "detail": "다른 scope의 ACTIVE 관측 1건을 INACTIVE로 내림 (둘 이상이면 RiskEngine이 CONFLICT로 전 지표를 닫는다). 정리에서 되돌린다",
       "name": "포트폴리오 컨텍스트 단일화",
       "verdict": "PASS"
     },
     {
-      "detail": "IMPORTED run=run_p1_e2e_749ec2933f9e04c49ed6bd42 bundle=749ec2933f9e04c4",
+      "detail": "EXISTING_POINTER run=None bundle=a020ac6e536909fc",
       "name": "Team B 번들 적재 (매수 세션)",
       "verdict": "PASS"
     },
@@ -54,95 +54,40 @@
       "verdict": "PASS"
     },
     {
-      "detail": "AUTOMATION_ACTIVATION_GATE=PASS AUTOMATION_ACTIVATION_GATE_VERSION=1 STRATEGY_ELIGIBLE_FROM_SESSION=2026-09-01 PROVIDER_CALLS=0",
+      "detail": "AUTOMATION_ACTIVATION_GATE=PASS AUTOMATION_ACTIVATION_GATE_VERSION=22 STRATEGY_ELIGIBLE_FROM_SESSION=2026-09-04 PROVIDER_CALLS=0",
       "name": "activation gate 저술",
       "verdict": "PASS"
     },
     {
-      "detail": "HTTP 200 controlVersion=5 policyVersion=None blockers=[]",
+      "detail": "HTTP 200 controlVersion=18 policyVersion=None blockers=[]",
       "name": "arm 이전 상태",
       "verdict": "PASS"
     },
     {
-      "detail": "HTTP 200 {\"contractId\": \"automation-policy.v1\", \"policyId\": \"auto_pol_44dd7254dc1e9f96d9a5be80e99033be\", \"version\": 2, \"presetId\": \"balanced\", \"capitalLimitKrw\": 5000000, \"stopLossBps\": 500, \"takeProfitBps\": 1000, \"maxOpenPositions\": 5, \"maxNewOrdersPerSession\": 1, \"ev",
+      "detail": "HTTP 200 {\"contractId\": \"automation-policy.v1\", \"policyId\": \"auto_pol_44dd7254dc1e9f96d9a5be80e99033be\", \"version\": 4, \"presetId\": \"balanced\", \"capitalLimitKrw\": 5000000, \"stopLossBps\": 500, \"takeProfitBps\": 1000, \"maxOpenPositions\": 5, \"maxNewOrdersPerSession\": 1, \"ev",
       "name": "정책 설정",
       "verdict": "PASS"
     },
     {
-      "detail": "HTTP 200 {\"contractId\": \"automation-status.v2\", \"controlState\": \"ARMED\", \"projectionState\": \"ARMED\", \"controlVersion\": 6, \"brokerageMode\": \"KIS_MOCK\", \"accountId\": \"acct_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"policy\": {\"contractId\": \"automation-policy.v1\", \"policyId\": \"auto_pol_44dd7254dc1e9f96d9a5be80e99033be\"",
+      "detail": "HTTP 200 {\"contractId\": \"automation-status.v2\", \"controlState\": \"ARMED\", \"projectionState\": \"ARMED\", \"controlVersion\": 19, \"brokerageMode\": \"KIS_MOCK\", \"accountId\": \"acct_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"policy\": {\"contractId\": \"automation-policy.v1\", \"policyId\": \"auto_pol_44dd7254dc1e9f96d9a5be80e99033be",
       "name": "arm",
       "verdict": "PASS"
     },
     {
-      "detail": "COMPLETED 전이=SCHEDULED→PRECHECK→AI_JUDGING→BUY_CANDIDATE_SELECTED→NEWS_CHECKING→ORDER_SIZING→RISK_CHECKING→ORDER_SUBMITTING→ORDER_SUBMITTED→COMPLETED order=ord_mock_e55e66353b424ce18ca6ad51f1162e65 decision=dec_851d9521236f49a999614d7728b6c42e cash=99507582 pos={'005930': 7}",
-      "name": "세션 1 구동 (매수)",
-      "verdict": "PASS"
+      "detail": "command failed (1): docker exec…\nP1_E2E_DAILY_INFERENCE DailyInferenceResult(outcome='REPLAYED', target_session=datetime.date(2026, 9, 4), batch_sha256='857a01b1aa997b4908ab1f998a604ba3525d88b78761cd273bc1c114e26b7dcd')\nP1_E2E_READINESS {'accountComplete': True, 'dailyShardFreshComplete': True, 'principleActiveCurrent': True, 'releaseActive': True, 'unfinishedPreviousOrder': False, 'certificationStatus': None, 'brokerageMode': 'KIS_MOCK', 'controlState': 'ARMED', 'signalCount': 31}\nP1_E2E_RECEIPT {\"bridgeStatuses\": [], \"claimed\": true, \"decisionId\": null, \"filledOrders\": [], \"finalState\": \"SKIPPED_NO_ACTION\", \"ledgerCashKrw\": 100000000, \"ledgerPositions\": {}, \"orderId\": null, \"phase\": \"drive\", \"physicalCalls\": 0, \"quoteCalls\": 0, \"runId\": \"auto_run_c7edb1ee737e3d6dac56beb86404b9a4\", \"sessionDate\": \"2026-09-04\", \"submitCalls\": 0, \"transitions\": [\"SCHEDULED\", \"PRECHECK\", \"SKIPPED_NO_ACTION\"]}\n",
+      "name": "관통 중단",
+      "verdict": "FAIL"
     },
     {
-      "detail": "{\"inserted\":2,\"source\":\"market_quote\"} {\"inserted\":1,\"source\":\"kis_mock_portfolio\"} {\"inserted\":2,\"source\":\"deterministic_metrics\"} — 매수 체결분을 반영한 관측이 없으면 매도 판단이 BROKERAGE_UNAVAILABLE로 닫힌다",
-      "name": "체결 후 잔고 재관측",
-      "verdict": "PASS"
-    },
-    {
-      "detail": "IMPORTED bundle=fe0c061ac677f82e",
-      "name": "Team B 번들 적재 (매도 세션)",
-      "verdict": "PASS"
-    },
-    {
-      "detail": "COMPLETED 전이=SCHEDULED→PRECHECK→EXIT_SELECTED→ORDER_SIZING→RISK_CHECKING→ORDER_SUBMITTING→ORDER_SUBMITTED→COMPLETED order=ord_mock_f24c031bdce5479e84331cade462e478 cash=99995169 pos={}",
-      "name": "세션 2 구동 (매도)",
-      "verdict": "PASS"
-    },
-    {
-      "detail": "auto_run_34925c4eec8b091c21c0686913d4ba9d|COMPLETED|005930|BUY ; auto_run_25de751cc0d2b50f3611b0716f58b304|COMPLETED|005930|SELL (SKIPPED_* 도 터미널이므로 COMPLETED만 인정)",
-      "name": "run 종료 상태",
-      "verdict": "PASS"
-    },
-    {
-      "detail": "auto_run_25de751cc0d2b50f3611b0716f58b304|ord_mock_f24c031bdce5479e84331cade462e478|q7|f7|l0|u0|MATCHED ; auto_run_34925c4eec8b091c21c0686913d4ba9d|ord_mock_e55e66353b424ce18ca6ad51f1162e65|q7|f7|l0|u0|MATCHED",
-      "name": "예약 수량 보존과 대사",
-      "verdict": "PASS"
-    },
-    {
-      "detail": "ord_mock_e55e66353b424ce18ca6ad51f1162e65|005930|BUY|7|70100|ACCEPTED|KIS_MOCK ; ord_mock_f24c031bdce5479e84331cade462e478|005930|SELL|7|69900|ACCEPTED|KIS_MOCK",
-      "name": "bridge → Brokerage 실제 주문",
-      "verdict": "PASS"
-    },
-    {
-      "detail": "auto_run_25de751cc0d2b50f3611b0716f58b304|dec_bb2d9b5f604e44f79180652a1908e643|dec_bb2d9b5f604e44f79180652a1908e643 ; auto_run_34925c4eec8b091c21c0686913d4ba9d|dec_851d9521236f49a999614d7728b6c42e|dec_851d9521236f49a999614d7728b6c42e (decision_id가 null이면 위험 판정 구간을 건너뛴 것)",
-      "name": "RiskEngine 판단 결속",
-      "verdict": "PASS"
-    },
-    {
-      "detail": "005930|CLOSED|entry70100|exit69900|pnl=-3115|MODEL_SELL ; 005930|CLOSED|entry-|exit-|pnl=none|-",
-      "name": "포지션 개설·청산과 실현손익",
-      "verdict": "PASS"
-    },
-    {
-      "detail": "ARM_BASELINE → BUY_FILL → SELL_FILL",
-      "name": "기대계좌 lineage 전진",
-      "verdict": "PASS"
-    },
-    {
-      "detail": "status=200 runs=200 positions=200 realizedSummary={\"closedPositionCount\": 1, \"realizedPnlKrw\": -3115, \"realizedGrossKrw\": -1400, \"winningPositionCount\": 0, \"losingPositionCount\": 1, \"evidenceMode\": \"KIS_MOCK\", \"performanceClaimAllowed\": false}",
-      "name": "HTTP v2 노출",
-      "verdict": "PASS"
-    },
-    {
-      "detail": "signals=200 ingest-status=200 {\"items\": [{\"artifactId\": \"artifact_p1_fe0c061ac677f82eda233f46\", \"fileName\": \"p1-return-engine-manifest.v2.json\", \"producer\": \"return-engine\", \"runId\": \"run_p1_e2e_fe0c061ac677f82eda233f46\", \"fileHas",
-      "name": "상류 노출 (신호·적재 상태)",
-      "verdict": "PASS"
-    },
-    {
-      "detail": "brokerage gRPC 어댑터 OFF로 되돌림",
+      "detail": "테스트 시작 시 런타임 플래그로 되돌림",
       "name": "스택 구성 복원",
       "verdict": "PASS"
     },
     {
-      "detail": "잔여 bundles=0 runs=0 orders=0 principles=0 journal=0 calendar=0",
+      "detail": "잔여 bundles=0 seedSignals=0 runs=0 orders=0 principles=0 journal=0 calendar=0",
       "name": "정리",
       "verdict": "PASS"
     }
   ],
-  "verdict": "PASS"
+  "verdict": "FAIL"
 }

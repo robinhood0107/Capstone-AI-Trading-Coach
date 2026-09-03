@@ -60,10 +60,44 @@ _TERMINAL: Final = frozenset(
 )
 
 # 호가 격자 위의 값이다. 70,000은 tick 100의 배수이고 매수 지정가는 70,100이 된다.
-FIXTURE_PRICES: Final[dict[str, int]] = {
+# 합성 번들이 매수 종목을 강제할 때 쓰는 최소 fixture 다.
+_FORCED_PRICES: Final[dict[str, int]] = {
     team_b_bundle.TRADED_SYMBOL: 70_000,
     team_b_bundle.SECONDARY_SYMBOL: 180_000,
 }
+
+
+def _fixture_prices() -> dict[str, int]:
+    """호가 fixture. 호스트가 넘긴 exact-31 전체가 있으면 그것을 쓴다.
+
+    실물 seed 로 돌면 어느 종목이 뽑히는지 모델이 정하므로 두 종목만 넣어 두면 그 후보의
+    호가가 없어 NEWS_CHECKING 이 SKIPPED_DATA_UNAVAILABLE 로 닫힌다(LedgerQuoteSource 가
+    fixture 없는 종목에 예외를 던지고 automation._quote 가 그것을 잡는다).
+
+    드라이버는 컨테이너 안에서 market_data_bars 를 읽을 수 없다 - 어떤 role 도 그 표에
+    SELECT 권한이 없고 그것은 의도된 역할 분리다. 그래서 호스트가 같은 출처(마지막 종가)에서
+    읽어 P1_E2E_FIXTURE_PRICES 로 넘긴다. 값을 지어내지 않는다.
+    """
+
+    raw = os.environ.get("P1_E2E_FIXTURE_PRICES", "").strip()
+    if not raw:
+        return dict(_FORCED_PRICES)
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise DriverError("P1_E2E_FIXTURE_PRICES is not valid JSON") from error
+    if not isinstance(parsed, dict) or not parsed:
+        raise DriverError("P1_E2E_FIXTURE_PRICES must be a non-empty object")
+    prices = {str(symbol): int(price) for symbol, price in parsed.items()}
+    if any(price <= 0 for price in prices.values()):
+        raise DriverError("P1_E2E_FIXTURE_PRICES has a non-positive price")
+    # 강제 매수 시나리오가 쓰는 종목은 항상 있어야 한다.
+    for symbol, fallback in _FORCED_PRICES.items():
+        prices.setdefault(symbol, fallback)
+    return prices
+
+
+FIXTURE_PRICES: Final[dict[str, int]] = _fixture_prices()
 INITIAL_CASH_KRW: Final = 100_000_000
 
 
@@ -233,6 +267,25 @@ def _drive(args: argparse.Namespace) -> int:
     _signals = state.get("signals")
     _flags["signalCount"] = len(_signals) if isinstance(_signals, list) else None
     print(f"P1_E2E_READINESS {_flags}", flush=True)
+
+    # 수량 산정 입력. 여섯 상한 중 하나만 작아도 0주가 되고 상태 기계는 이유를 남기지 않는다.
+    # 어느 것이 구속했는지 보이지 않으면 SKIPPED_NO_ACTION 을 매번 다시 조사해야 한다.
+    _sizing = {
+        key: state.get(key)
+        for key in (
+            "buyableQuantity",
+            "buyableAmountKrw",
+            "openPositionMarketValueKrw",
+            "pendingBuyNotionalKrw",
+            "principleMaxSingleOrderKrw",
+            "principleAssetRemainingKrw",
+        )
+    }
+    _policy = state.get("policy")
+    if isinstance(_policy, dict):
+        _sizing["capitalLimitKrw"] = _policy.get("capitalLimitKrw")
+        _sizing["maxOpenPositions"] = _policy.get("maxOpenPositions")
+    print(f"P1_E2E_SIZING {_sizing}", flush=True)
 
     clock = datetime.combine(session, _FIRST_TICK, _KST)
     transitions: list[str] = [str(state["state"])]

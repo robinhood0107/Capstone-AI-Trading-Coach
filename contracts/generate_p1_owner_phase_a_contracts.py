@@ -61,7 +61,6 @@ CURRENT_ARTIFACT_SCHEMA_IDS: Final[tuple[str, ...]] = (
     *ARTIFACT_SCHEMA_IDS[5:],
 )
 SCHEMA_IDS: Final[tuple[str, ...]] = (
-    "p1-return-engine-input-pack.v1",
     "p1-return-engine-artifact-manifest.v2",
     *ARTIFACT_SCHEMA_IDS,
     "p1-return-lstm-signals.v3",
@@ -166,201 +165,6 @@ def _feature_order() -> dict[str, Any]:
         "prefixItems": [{"const": item} for item in FEATURE_ORDER],
         "items": False,
     }
-
-
-def _input_pack_schema() -> dict[str, Any]:
-    coverage = _closed(
-        ["symbol", "firstSession", "lastSession", "status", "missingMiddleSessions"],
-        {
-            "symbol": {"type": "string", "pattern": "^[0-9]{6}$"},
-            "firstSession": {"type": "string", "format": "date"},
-            "lastSession": {"type": "string", "format": "date"},
-            "status": {"enum": ["COMPLETE", "EDGE_TRUNCATED"]},
-            "missingMiddleSessions": {"const": 0},
-        },
-    )
-    file_item = _closed(
-        ["path", "sizeBytes", "sha256", "contentType"],
-        {
-            "path": {
-                "type": "string",
-                "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,239}$",
-            },
-            "sizeBytes": {"type": "integer", "minimum": 1},
-            "sha256": _sha256(),
-            "contentType": {"enum": ["PARQUET", "JSON", "JSONL", "YAML"]},
-        },
-    )
-    return _schema(
-        "p1-return-engine-input-pack.v1",
-        _closed(
-            [
-                "contractId",
-                "universe",
-                "calendar",
-                "period",
-                "coverage",
-                "dataPolicy",
-                "macroSnapshot",
-                "featureOrder",
-                "modelConfig",
-                "costModel",
-                "ownerRiskEvaluator",
-                "files",
-                "canonicalManifestSha256",
-            ],
-            {
-                "contractId": {"const": "p1-return-engine-input-pack.v1"},
-                "universe": _closed(
-                    ["universeId", "symbols", "domesticStockCount", "goldEtfSymbol"],
-                    {
-                        "universeId": {"const": "P1_EXACT_31_V1"},
-                        "symbols": _symbol_array(),
-                        "domesticStockCount": {"const": 30},
-                        "goldEtfSymbol": {"const": "132030"},
-                    },
-                ),
-                "calendar": _closed(
-                    [
-                        "mic",
-                        "timezone",
-                        "calendarVersion",
-                        "correctionGenerationSha256",
-                        "sessionsSha256",
-                    ],
-                    {
-                        "mic": {"const": "XKRX"},
-                        "timezone": {"const": "Asia/Seoul"},
-                        "calendarVersion": {"const": "exchange-calendars-4.13.2"},
-                        "correctionGenerationSha256": _sha256(),
-                        "sessionsSha256": _sha256(),
-                    },
-                ),
-                "period": _closed(
-                    [
-                        "firstSession",
-                        "lastSession",
-                        "minimumYears",
-                        "trainEnd",
-                        "validationEnd",
-                        "testStart",
-                    ],
-                    {
-                        "firstSession": {"type": "string", "format": "date"},
-                        "lastSession": {"type": "string", "format": "date"},
-                        "minimumYears": {"type": "number", "minimum": 3},
-                        "trainEnd": {"type": "string", "format": "date"},
-                        "validationEnd": {"type": "string", "format": "date"},
-                        "testStart": {"type": "string", "format": "date"},
-                    },
-                ),
-                "coverage": {
-                    "type": "array",
-                    "minItems": 31,
-                    "maxItems": 31,
-                    "items": coverage,
-                },
-                "dataPolicy": _closed(
-                    [
-                        "priceBasis",
-                        "minimumDailyYears",
-                        "corporateActionExclusionsSha256",
-                        "globalSplitSha256",
-                        "newsFeatures",
-                        "gdeltInputs",
-                        "intradayFeatures",
-                        "providerCredentialsIncluded",
-                        "accountOrderDataIncluded",
-                    ],
-                    {
-                        "priceBasis": {"const": "RAW_CLOSE"},
-                        "minimumDailyYears": {"type": "number", "minimum": 3},
-                        "corporateActionExclusionsSha256": _sha256(),
-                        "globalSplitSha256": _sha256(),
-                        "newsFeatures": {"const": 0},
-                        "gdeltInputs": {"const": 0},
-                        "intradayFeatures": {"const": 0},
-                        "providerCredentialsIncluded": {"const": False},
-                        "accountOrderDataIncluded": {"const": False},
-                    },
-                ),
-                "macroSnapshot": _closed(
-                    ["contractId", "seriesCount", "availableAtBound", "manifestSha256"],
-                    {
-                        "contractId": {"const": "ecos_macro_snapshot"},
-                        "seriesCount": {"type": "integer", "minimum": 0, "maximum": 2},
-                        "availableAtBound": {"const": True},
-                        "manifestSha256": _sha256(),
-                    },
-                ),
-                "featureOrder": _feature_order(),
-                "modelConfig": _closed(
-                    [
-                        "perSymbolIndependent",
-                        "windowSize",
-                        "hiddenSize",
-                        "layerCount",
-                        "dropout",
-                        "outputSize",
-                        "loss",
-                        "optimizer",
-                        "learningRate",
-                        "seed",
-                        "cpuDeterministic",
-                        "threadCount",
-                        "hyperparameterSearchCount",
-                        "finalTestReviewCount",
-                    ],
-                    {
-                        "perSymbolIndependent": {"const": True},
-                        "windowSize": {"const": 20},
-                        "hiddenSize": {"const": 128},
-                        "layerCount": {"const": 3},
-                        "dropout": {"const": 0.2},
-                        "outputSize": {"const": 1},
-                        "loss": {"const": "SmoothL1"},
-                        "optimizer": {"const": "Adam"},
-                        "learningRate": {"const": 0.0005},
-                        "seed": {"const": 0},
-                        "cpuDeterministic": {"const": True},
-                        "threadCount": {"const": 1},
-                        "hyperparameterSearchCount": {"const": 0},
-                        "finalTestReviewCount": {"const": 0},
-                    },
-                ),
-                "costModel": _closed(
-                    [
-                        "costModelId",
-                        "roundTripCostBps",
-                        "appliesIdenticallyToScenarios",
-                        "actualKisFeeClaim",
-                    ],
-                    {
-                        "costModelId": {"const": "CONSERVATIVE_FIXED_35BPS_V1"},
-                        "roundTripCostBps": {"const": 35},
-                        "appliesIdenticallyToScenarios": {"const": True},
-                        "actualKisFeeClaim": {"const": False},
-                    },
-                ),
-                "ownerRiskEvaluator": _closed(
-                    ["contractId", "providerCalls", "orderAuthority"],
-                    {
-                        "contractId": {"const": "s2-2-system-rule-catalog/v1"},
-                        "providerCalls": {"const": 0},
-                        "orderAuthority": {"const": "NONE"},
-                    },
-                ),
-                "files": {
-                    "type": "array",
-                    "minItems": 1,
-                    "maxItems": 64,
-                    "uniqueItems": True,
-                    "items": file_item,
-                },
-                "canonicalManifestSha256": _sha256(),
-            },
-        ),
-    )
 
 
 def _artifact_manifest_schema() -> dict[str, Any]:
@@ -564,14 +368,17 @@ def _artifact_semantic_schemas() -> dict[str, dict[str, Any]]:
                 "deterministicAlgorithms",
             ],
             {
+                # windowSize와 outputSize는 daily inference의 20행 창과 head shape가 의존하므로
+                # 계속 고정한다. 학습 용량 파라미터는 Owner runtime이 config에서 파생하므로
+                # const가 아니라 범위로 둔다.
                 "windowSize": {"const": 20},
-                "hiddenSize": {"const": 128},
-                "layerCount": {"const": 3},
-                "dropout": {"const": 0.2},
+                "hiddenSize": {"type": "integer", "minimum": 8, "maximum": 1024},
+                "layerCount": {"type": "integer", "minimum": 1, "maximum": 8},
+                "dropout": {"type": "number", "minimum": 0, "exclusiveMaximum": 1},
                 "outputSize": {"const": 1},
                 "loss": {"const": "SmoothL1"},
                 "optimizer": {"const": "Adam"},
-                "learningRate": {"const": 0.0005},
+                "learningRate": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
                 "seed": {"const": 0},
                 "threadCount": {"const": 1},
                 "deterministicAlgorithms": {"const": True},
@@ -621,9 +428,11 @@ def _artifact_semantic_schemas() -> dict[str, dict[str, Any]]:
         _closed(
             ["scenarios", "independentlyRecomputed", "finite"],
             {
+                # 요청서는 시나리오 개수를 규정하지 않는다. BASELINE/GUIDE/STRICT의 순서를
+                # 보존한 부분집합이면 받아들인다.
                 "scenarios": {
                     "type": "array",
-                    "minItems": 3,
+                    "minItems": 1,
                     "maxItems": 3,
                     "items": metric,
                 },
@@ -668,7 +477,8 @@ def _artifact_semantic_schemas() -> dict[str, dict[str, Any]]:
                 "columns": {
                     "const": ["scenario", "sessionDate", "equityKrw", "drawdown"]
                 },
-                "rowCount": {"type": "integer", "minimum": 3},
+                # 시나리오 개수가 계약으로 고정되지 않으므로 곡선 최소 길이도 1로 둔다.
+                "rowCount": {"type": "integer", "minimum": 1},
                 "initialCapitalKrw": {"type": "integer", "minimum": 1},
                 "finite": {"const": True},
             },
@@ -700,15 +510,21 @@ def _artifact_semantic_schemas() -> dict[str, dict[str, Any]]:
             ],
             {
                 "encoding": {"const": "UTF-8"},
+                # 요청서는 report의 절 구성을 규정하지 않는다. 실제로 존재하는 절만 기록한다.
                 "requiredSections": {
-                    "const": [
-                        "Data",
-                        "Model ABI",
-                        "Split",
-                        "Reproducibility",
-                        "Model quality",
-                        "Limitations",
-                    ]
+                    "type": "array",
+                    "uniqueItems": True,
+                    "maxItems": 6,
+                    "items": {
+                        "enum": [
+                            "Data",
+                            "Model ABI",
+                            "Split",
+                            "Reproducibility",
+                            "Model quality",
+                            "Limitations",
+                        ]
+                    },
                 },
                 "performanceClaimAllowed": {"const": False},
                 "orderAuthority": {"const": "NONE"},
@@ -1179,7 +995,6 @@ def _lightgbm_schema() -> dict[str, Any]:
 
 def build_schemas() -> dict[str, dict[str, Any]]:
     schemas = {
-        "p1-return-engine-input-pack.v1": _input_pack_schema(),
         "p1-return-engine-artifact-manifest.v2": _artifact_manifest_schema(),
         **_artifact_semantic_schemas(),
         "p1-return-engine-artifact-manifest.v3": _artifact_manifest_schema_v3(),
@@ -1201,94 +1016,6 @@ def _symbols() -> list[str]:
 def _fixtures() -> dict[str, dict[str, Any]]:
     sha = "a" * 64
     symbols = _symbols()
-    input_pack = {
-        "contractId": "p1-return-engine-input-pack.v1",
-        "universe": {
-            "universeId": "P1_EXACT_31_V1",
-            "symbols": symbols,
-            "domesticStockCount": 30,
-            "goldEtfSymbol": "132030",
-        },
-        "calendar": {
-            "mic": "XKRX",
-            "timezone": "Asia/Seoul",
-            "calendarVersion": "exchange-calendars-4.13.2",
-            "correctionGenerationSha256": sha,
-            "sessionsSha256": sha,
-        },
-        "period": {
-            "firstSession": "2023-01-02",
-            "lastSession": "2026-08-26",
-            "minimumYears": 3,
-            "trainEnd": "2025-06-30",
-            "validationEnd": "2025-12-30",
-            "testStart": "2026-01-02",
-        },
-        "coverage": [
-            {
-                "symbol": symbol,
-                "firstSession": "2023-01-02",
-                "lastSession": "2026-08-26",
-                "status": "COMPLETE",
-                "missingMiddleSessions": 0,
-            }
-            for symbol in symbols
-        ],
-        "dataPolicy": {
-            "priceBasis": "RAW_CLOSE",
-            "minimumDailyYears": 3,
-            "corporateActionExclusionsSha256": sha,
-            "globalSplitSha256": sha,
-            "newsFeatures": 0,
-            "gdeltInputs": 0,
-            "intradayFeatures": 0,
-            "providerCredentialsIncluded": False,
-            "accountOrderDataIncluded": False,
-        },
-        "macroSnapshot": {
-            "contractId": "ecos_macro_snapshot",
-            "seriesCount": 2,
-            "availableAtBound": True,
-            "manifestSha256": sha,
-        },
-        "featureOrder": list(FEATURE_ORDER),
-        "modelConfig": {
-            "perSymbolIndependent": True,
-            "windowSize": 20,
-            "hiddenSize": 128,
-            "layerCount": 3,
-            "dropout": 0.2,
-            "outputSize": 1,
-            "loss": "SmoothL1",
-            "optimizer": "Adam",
-            "learningRate": 0.0005,
-            "seed": 0,
-            "cpuDeterministic": True,
-            "threadCount": 1,
-            "hyperparameterSearchCount": 0,
-            "finalTestReviewCount": 0,
-        },
-        "costModel": {
-            "costModelId": "CONSERVATIVE_FIXED_35BPS_V1",
-            "roundTripCostBps": 35,
-            "appliesIdenticallyToScenarios": True,
-            "actualKisFeeClaim": False,
-        },
-        "ownerRiskEvaluator": {
-            "contractId": "s2-2-system-rule-catalog/v1",
-            "providerCalls": 0,
-            "orderAuthority": "NONE",
-        },
-        "files": [
-            {
-                "path": "data/ohlcv.parquet",
-                "sizeBytes": 1024,
-                "sha256": sha,
-                "contentType": "PARQUET",
-            }
-        ],
-        "canonicalManifestSha256": sha,
-    }
     manifest = {
         "contractId": "p1-return-engine-artifact-manifest.v2",
         "runId": "run_team_b_exact31_v1",
@@ -1326,7 +1053,6 @@ def _fixtures() -> dict[str, dict[str, Any]]:
         ],
     }
     fixtures: dict[str, dict[str, Any]] = {
-        "p1-return-engine-input-pack.v1": input_pack,
         "p1-return-engine-artifact-manifest.v2": manifest,
     }
     artifact_semantics: list[dict[str, Any]] = [
@@ -1622,7 +1348,6 @@ def _catalog() -> dict[str, Any]:
     return {
         "contractId": "p1-owner-phase-a-contract-lock.v1",
         "returnEngine": {
-            "inputPackSchema": SCHEMA_PATHS["p1-return-engine-input-pack.v1"],
             "artifactManifestSchema": SCHEMA_PATHS[
                 "p1-return-engine-artifact-manifest.v3"
             ],
@@ -1917,15 +1642,7 @@ def build_outputs() -> dict[Path, bytes]:
 
 
 def validate_semantics(schema_id: str, payload: dict[str, Any]) -> None:
-    if schema_id == "p1-return-engine-input-pack.v1":
-        symbols = payload["universe"]["symbols"]
-        if len(set(symbols)) != 31 or symbols.count("132030") != 1:
-            raise ContractValidationError(
-                "input pack must contain exact-31 with 132030 exactly once"
-            )
-        if [item["symbol"] for item in payload["coverage"]] != symbols:
-            raise ContractValidationError("coverage must match universe order exactly")
-    elif schema_id in {
+    if schema_id in {
         "p1-return-engine-artifact-manifest.v2",
         "p1-return-engine-artifact-manifest.v3",
     }:

@@ -20,17 +20,17 @@ from app.p1_owner.inference_grpc_server import (
     ReturnInferenceSettings,
     create_server,
 )
-from tests.p1_owner.test_assets import _build_input
+from tests.p1_owner.test_assets import GOLDEN_SESSION_DATE, universe_catalog
 
 
 @pytest.fixture(scope="module")
 def model_and_request() -> Iterator[tuple[ReturnInferenceModel, bytes, Path]]:
     with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
         root = Path(temporary)
-        input_root = _build_input(root)
         golden_root = root / "golden"
         result = build_golden_bundle(
-            input_pack_manifest=input_root / "manifest.json",
+            universe_catalog=universe_catalog(),
+            session_date=GOLDEN_SESSION_DATE,
             output_root=golden_root,
         )
         model = ReturnInferenceModel.load(

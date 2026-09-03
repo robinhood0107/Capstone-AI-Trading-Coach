@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
+import { Button } from '@/shared/ui/Button';
 import { Numeric } from '@/shared/ui/Numeric';
 import { useResource, toErrorState } from '@/shared/lib/useResource';
 import { formatKstDate, formatRatio } from '@/shared/lib/format';
@@ -91,7 +92,7 @@ export function RagGuideView() {
         title="외부 처리 동의"
         hint="동의하기 전에는 질문이 외부로 나가지 않습니다."
         actions={
-          <span className="font-mono text-eyebrow uppercase text-faint">
+          <span className="text-eyebrow font-semibold uppercase text-faint">
             {consentGranted === null ? 'CHECKING' : consentGranted ? 'GRANTED' : 'REQUIRED'}
           </span>
         }
@@ -100,22 +101,20 @@ export function RagGuideView() {
         <p className="mt-2 text-[13px] leading-6 text-muted">{EXTERNAL_POLICY}</p>
         <p className="mt-2 font-mono text-[11px] text-faint">처리자: {EXTERNAL_PROCESSORS}</p>
         <div className="mt-3 flex gap-2">
-          <button
-            type="button"
-            onClick={() => void changeConsent('GRANT')}
+          <Button
+                        onClick={() => void changeConsent('GRANT')}
             disabled={consentPending || consentGranted === true}
-            className="border border-navy bg-navy px-3 py-1.5 text-[13px] text-white disabled:border-line disabled:bg-line disabled:text-faint"
+            variant="primary"
           >
             동의
-          </button>
-          <button
-            type="button"
-            onClick={() => void changeConsent('REVOKE')}
+          </Button>
+          <Button
+                        onClick={() => void changeConsent('REVOKE')}
             disabled={consentPending || consentGranted !== true}
-            className="border border-line px-3 py-1.5 text-[13px] text-muted hover:border-navy hover:text-navy disabled:text-faint"
+            className="rounded-full border border-line px-3 py-1.5 text-[13px] text-muted hover:border-navy hover:text-navy disabled:text-faint"
           >
             철회
-          </button>
+          </Button>
         </div>
       </Panel>
 
@@ -137,14 +136,14 @@ export function RagGuideView() {
             }}
             rows={3}
             placeholder="예: 금 ETF의 롤오버 위험은 무엇인가요?"
-            className="w-full resize-y border border-line bg-panel px-3 py-2.5 text-[14px] leading-6 text-ink placeholder:text-faint"
+            className="w-full resize-y rounded-tile border border-line bg-panel px-4 py-3 text-[14px] leading-6 text-ink placeholder:text-faint"
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               {(['CONCISE', 'DETAILED'] as const).map((mode) => (
-                <button
+                <Button
                   key={mode}
-                  type="button"
+                  variant="secondary"
                   onClick={() => setAnswerMode(mode)}
                   className={`border px-3 py-1.5 text-[13px] ${
                     answerMode === mode
@@ -153,32 +152,32 @@ export function RagGuideView() {
                   }`}
                 >
                   {mode === 'CONCISE' ? '짧게' : '자세히'}
-                </button>
+                </Button>
               ))}
               <span className="tnum font-mono text-[11px] text-faint">{question.length}/1000</span>
             </div>
-            <button
-              type="button"
-              onClick={() => void submit(question)}
+            <Button
+                            onClick={() => void submit(question)}
               disabled={pending || consentGranted !== true || question.trim().length === 0}
-              className="border border-navy bg-navy px-4 py-1.5 text-[13px] font-medium text-white disabled:border-line disabled:bg-line disabled:text-faint"
+              variant="primary"
             >
               {pending ? '찾는 중' : '물어보기'}
-            </button>
+            </Button>
           </div>
           <div className="flex flex-wrap gap-2 pt-1">
             {EXAMPLES.map((example) => (
-              <button
+              <Button
                 key={example}
-                type="button"
+                variant="secondary"
+                size="sm"
                 onClick={() => {
                   setQuestion(example);
                   void submit(example);
                 }}
-                className="border border-line px-2.5 py-1 text-[12px] text-muted hover:border-navy hover:text-navy"
+                className="rounded-full border border-line px-2.5 py-1 text-[12px] text-muted hover:border-navy hover:text-navy"
               >
                 {example}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -192,7 +191,7 @@ export function RagGuideView() {
               title={view.statusHeadline}
               hint={view.statusDetail}
               actions={
-                <span className="font-mono text-eyebrow uppercase text-faint">
+                <span className="text-eyebrow font-semibold uppercase text-faint">
                   {view.generationStatus}
                 </span>
               }
@@ -209,7 +208,7 @@ export function RagGuideView() {
 
               <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-line pt-4">
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-eyebrow uppercase text-faint">출처 연결률</span>
+                  <span className="text-eyebrow font-semibold uppercase text-faint">출처 연결률</span>
                   <Numeric
                     value={view.citationCoverage}
                     format={(v) => formatRatio(v, 0)}
@@ -221,10 +220,19 @@ export function RagGuideView() {
                     RETRIEVAL_FAILURE
                   </span>
                 ) : null}
+                {/*
+                  답이 나온 응답에도 flag가 붙는다. 조언성 질문을 막지 않고 설명으로
+                  답하기 때문이다. 그 경우 flag는 차단이 아니라 맥락이므로 차단 색을
+                  쓰지 않는다.
+                */}
                 {view.guardrailFlags.map((flag) => (
                   <span
                     key={flag}
-                    className="border border-block px-2 py-0.5 font-mono text-[11px] text-block"
+                    className={
+                      view.generationStatus === 'ANSWERED'
+                        ? 'border border-line px-2 py-0.5 font-mono text-[11px] text-muted'
+                        : 'border border-block px-2 py-0.5 font-mono text-[11px] text-block'
+                    }
                   >
                     {flag}
                   </span>
@@ -233,14 +241,14 @@ export function RagGuideView() {
               </div>
 
               {view.sourcesUnavailableReason ? (
-                <p className="mt-4 border border-dashed border-rule px-4 py-4 text-[13px] leading-5 text-muted">
+                <p className="mt-4 rounded-tile border border-dashed border-rule px-4 py-4 text-[13px] leading-5 text-muted">
                   {view.sourcesUnavailableReason}
                 </p>
               ) : null}
 
               {view.topSources.length > 0 ? (
                 <div className="mt-5">
-                  <p className="font-mono text-eyebrow uppercase text-faint">핵심 출처</p>
+                  <p className="text-eyebrow font-semibold uppercase text-faint">핵심 출처</p>
                   <ul className="mt-2 space-y-4">
                     {view.topSources.map((source) => (
                       <SourceRow key={source.sourceId} source={source} />
@@ -303,7 +311,7 @@ function SourceRow({ source }: { source: SourceItem }) {
     <li>
       <div className="flex flex-wrap items-baseline gap-2">
         <p className="text-[13px] font-medium leading-5 text-ink">{source.title}</p>
-        <span className="border border-line px-1.5 py-0.5 font-mono text-[10px] uppercase text-faint">
+        <span className="rounded-full border border-line px-1.5 py-0.5 font-mono text-[10px] uppercase text-faint">
           {CITATION_KIND_LABEL[source.citationKind] ?? source.citationKind}
         </span>
       </div>

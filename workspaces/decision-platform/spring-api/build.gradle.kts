@@ -49,6 +49,17 @@ dependencyLocking {
     lockAllConfigurations()
 }
 
+// CVE-2026-65182 / CVE-2026-65905 / CVE-2026-68525 는 전부 인증·권한 우회다.
+// dependencyManagement 만으로는 runtimeClasspath 만 올라가고 배포 jar 을 만드는
+// productionRuntimeClasspath 가 취약 버전으로 남는다. 모든 configuration 에 못 박는다.
+configurations.all {
+    resolutionStrategy.force(
+        "org.apache.tomcat.embed:tomcat-embed-core:11.0.25",
+        "org.apache.tomcat.embed:tomcat-embed-el:11.0.25",
+        "org.apache.tomcat.embed:tomcat-embed-websocket:11.0.25",
+    )
+}
+
 dependencyManagement {
     imports {
         mavenBom("io.grpc:grpc-bom:1.81.0")
@@ -59,6 +70,11 @@ dependencyManagement {
         dependency("com.fasterxml.jackson.core:jackson-databind:2.21.5")
         dependency("ch.qos.logback:logback-core:1.5.35")
         dependency("ch.qos.logback:logback-classic:1.5.35")
+        // CVE-2026-65182 / CVE-2026-65905 / CVE-2026-68525 - 전부 인증·권한 우회다.
+        // JWT resource server 로 보호하는 API 를 노출하므로 미루지 않는다.
+        dependency("org.apache.tomcat.embed:tomcat-embed-core:11.0.25")
+        dependency("org.apache.tomcat.embed:tomcat-embed-el:11.0.25")
+        dependency("org.apache.tomcat.embed:tomcat-embed-websocket:11.0.25")
     }
 }
 
@@ -685,6 +701,11 @@ val verifySecurityDependencyVersions by tasks.registering {
         }
         check(selectedVersion(runtime, "com.fasterxml.jackson.core", "jackson-databind") == "2.21.5") {
             "jackson-databind must include the GHSA-5jmj-h7xm-6q6v fix"
+        }
+        check(
+            selectedVersion(runtime, "org.apache.tomcat.embed", "tomcat-embed-core") == "11.0.25",
+        ) {
+            "tomcat-embed-core must include the CVE-2026-65182 / 65905 / 68525 fixes"
         }
 
         val buildClasspath = buildscript.configurations.getByName("classpath")

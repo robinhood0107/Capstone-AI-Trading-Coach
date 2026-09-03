@@ -27,6 +27,7 @@ Usage:
   ./capstone mock <configure|doctor|certify|readiness|gate-author|start|stop> [--symbol 005930] [--quantity 1]
   ./capstone artifact <validate|import> <bundle-directory> --manifest-sha256 <sha256>
   ./capstone market-data inventory
+  ./capstone market-data refresh
   ./capstone market-data universe refresh --as-of YYYY-MM-DD --output-root /absolute/new-root
   ./capstone market-data bootstrap <plan|run|validate|stage> ...
   ./capstone test after-hours-replay --manifest-sha256 <sha256>
@@ -219,6 +220,16 @@ upgrade_state() {
     printf 'P1_AUTOMATION_GATE_AUTHOR_DSN=postgresql://decision_replay_authorizer:%s@postgres:5432/capstone_p1?sslmode=disable\n' \
       "$replay_authorizer_password" | write_state secrets/automation-gate-author.env 0640
     unset replay_authorizer_password
+  fi
+  # 오프라인 캘린더 seeding 은 나중에 붙은 기능이다. 이미 만들어진 상태에도 DSN 을 채워
+  # 재init 없이 켜지게 한다. decision_collector 는 role bootstrap 이 이미 만든 role 이다.
+  if [[ ! -e $SECRETS_DIR/calendar-offline-seed.env ]]; then
+    local collector_password
+    collector_password=$(sed -n 's/^POSTGRES_COLLECTOR_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+    [[ $collector_password =~ ^[0-9a-f]{64}$ ]] || die CALENDAR_OFFLINE_SEED_SECRET_MISSING
+    printf 'P1_CALENDAR_OFFLINE_SEED_DSN=postgresql://decision_collector:%s@postgres:5432/capstone_p1?sslmode=disable\n' \
+      "$collector_password" | write_state secrets/calendar-offline-seed.env 0640
+    unset collector_password
   fi
   unset automation_runtime_password
   install -d -m 0700 "$STATE_DIR/artifacts"
@@ -425,7 +436,44 @@ up_app() {
   # 기존 preview와 host port가 같아 cut-over 직전에만 중지한다. volume은 건드리지 않는다.
   stop_old_preview_containers
   compose up -d --wait actor-authority decision-platform experience-dashboard
-  save_active_mode "$models" "$mock" 0
+  local calendar_seed
+  # grep 으로 바로 파이프하면 seeded/skippedYears 수치가 사라져 무엇이 적재됐는지 알 수 없다.
+  # pipefail 아래에서는 캡처 실패가 up 자체를 죽인다. 캘린더가 채워지지 않은 것은
+  # 사람이 보면 되는 일이므로 마커로만 남기고 up 은 계속한다.
+  calendar_seed=$(compose --profile owner run --rm --no-deps calendar-offline-seed 2>&1 \
+    | grep -E '^P1_CALENDAR_OFFLINE_SEED=' | tail -1) || calendar_seed=''
+  printf '%s\n' "${calendar_seed:-P1_CALENDAR_OFFLINE_SEED=NO_OUTPUT}"
+  # 세 상태를 구분한다. 세션이 이미 전부 들어 있는 것은 실패가 아니라 가장 건강한 상태인데,
+  # SEEDED 만 정상으로 세면 그것이 UNAVAILABLE 로 읽혀 매번 다시 조사하게 된다.
+  case $calendar_seed in
+    P1_CALENDAR_OFFLINE_SEED=SEEDED*) printf 'CAPSTONE_TRADING_CALENDAR=SEEDED\n' ;;
+    P1_CALENDAR_OFFLINE_SEED=NO_SESSIONS*alreadyPresent=0\ *)
+      printf 'CAPSTONE_TRADING_CALENDAR=UNAVAILABLE\n' ;;
+    P1_CALENDAR_OFFLINE_SEED=NO_SESSIONS*) printf 'CAPSTONE_TRADING_CALENDAR=PRESENT\n' ;;
+    *) printf 'CAPSTONE_TRADING_CALENDAR=UNAVAILABLE\n' ;;
+  esac
+  unset calendar_seed
+  # 시장데이터 일봉을 빠진 거래일만큼 채운다. 자동운용 루프는 낡은 시장데이터로도 멈추지
+  # 않으므로(소스 세션과 이력이 같은 manifest 에서 파생되어 함께 밀린다) 실패는 up 을 죽이지
+  # 않고 마커로만 남긴다. providerCalls 는 공개 일봉 피드이며 KIS·계좌·주문 호출은 0이다.
+  local daily_refresh
+  daily_refresh=$(compose --profile owner run --rm --no-deps market-data-cli \
+    python -m app.data.market_data.yfinance_daily_cli 2>&1 \
+    | grep -E '^P1_MARKET_DATA_YF_REFRESH=' | tail -1) || daily_refresh=''
+  printf '%s\n' "${daily_refresh:-P1_MARKET_DATA_YF_REFRESH=NO_OUTPUT}"
+  case $daily_refresh in
+    P1_MARKET_DATA_YF_REFRESH=ADOPTED*|P1_MARKET_DATA_YF_REFRESH=UP_TO_DATE*)
+      printf 'CAPSTONE_MARKET_DATA_DAILY=FRESH\n' ;;
+    *)
+      printf 'CAPSTONE_MARKET_DATA_DAILY=STALE\n' ;;
+  esac
+  unset daily_refresh
+  # up 이 매번 AUTOMATION=0 으로 덮으면 켜 둔 자동운용이 재기동마다 꺼진다. 의도는 유지한다.
+  # --mock 없이 올린 경우는 brokerage 가 provider-free 이므로 의도를 되살리지 않는다.
+  local desired_automation=0
+  load_active_mode
+  ((mock)) && desired_automation=$AUTOMATION
+  save_active_mode "$models" "$mock" "$desired_automation"
   local expected=5
   ((models)) && expected=7
   local running
@@ -440,6 +488,30 @@ up_app() {
   else
     printf 'KIS_BROKERAGE_MODE=PROVIDER_FREE\n'
   fi
+  reconcile_automation_intent "$desired_automation"
+}
+
+# 저장된 의도가 ARMED 면 기동 뒤에 실제 상태를 그쪽으로 맞춘다. 한 번 켜 두면 재기동에도
+# 켜진 채로 돌아오는 것이 이 함수가 하는 일의 전부다.
+#
+# 실패를 삼키지 않는다. HALTED 이후거나 gate 인증이 무효면 mock_start 가 fail-closed 로
+# 거부하는데(V90:659-665), 그 사유가 안 보이면 운영자는 "왜 안 켜졌는지"를 알 수 없다.
+reconcile_automation_intent() {
+  local desired=${1:-0} output status=0
+  if ((desired == 0)); then
+    printf 'CAPSTONE_AUTOMATION_RECONCILED=DISARMED_BY_INTENT\n'
+    return 0
+  fi
+  output=$(mock_start 2>&1) || status=$?
+  if ((status == 0)); then
+    printf '%s\n' "$output"
+    printf 'CAPSTONE_AUTOMATION_RECONCILED=ARMED\n'
+    return 0
+  fi
+  # HALTED 는 사람이 봐야 하는 신호다. up 자체를 실패시키지 않고 이유만 남긴다.
+  printf '%s\n' "${output:-(no output)}"
+  printf 'CAPSTONE_AUTOMATION_RECONCILED=BLOCKED\n'
+  return 0
 }
 
 doctor() {
@@ -759,7 +831,9 @@ mock_stop() {
   compose --profile owner run --rm --no-deps automation-runtime-cli \
     python -m app.p1_owner.mock_automation_cli stop
   # process는 outstanding reconciliation을 위해 유지하고 control만 DISARMED로 바꾼다.
-  save_active_mode "$MODELS" "$MOCK" "$AUTOMATION"
+  # AUTOMATION 은 0 으로 내린다. 이 값이 up 의 desired state 이므로 1 로 남기면 다음 up 이
+  # 방금 내린 disarm 을 되돌린다. 끄는 것은 명시적 의도이고 재기동에 살아남아야 한다.
+  save_active_mode "$MODELS" "$MOCK" 0
   printf 'KIS_MOCK_NEW_ORDERS=DISARMED\nOUTSTANDING_RECONCILIATION=PRESERVED\n'
 }
 
@@ -810,6 +884,14 @@ artifact_validate() {
     --archive-parent /tmp/archive \
     --validate-only) || die TEAM_B_ARTIFACT_VALIDATION_FAILED
   printf '%s\nTEAM_B_LOCAL_VALIDATION=PASS\nPROVIDER_CALLS=0\n' "$result"
+}
+
+market_data_daily_refresh() {
+  state_ready || die NOT_INITIALIZED
+  upgrade_state
+  compose ps --status running --services | grep -qx postgres || die MARKET_DATA_POSTGRES_NOT_RUNNING
+  compose --profile owner run --rm --no-deps market-data-cli \
+    python -m app.data.market_data.yfinance_daily_cli
 }
 
 market_data_inventory() {
@@ -989,6 +1071,7 @@ case $command in
     subcommand=${1:-}; [[ -n $subcommand ]] || die MARKET_DATA_COMMAND_REQUIRED; shift
     case $subcommand in
       inventory) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; market_data_inventory ;;
+      refresh) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; market_data_daily_refresh ;;
       universe)
         action=${1:-}; [[ $action == refresh ]] || die MARKET_DATA_UNIVERSE_ACTION_REQUIRED; shift
         [[ ${1:-} == --as-of ]] || die MARKET_DATA_END_ARGUMENT_REQUIRED

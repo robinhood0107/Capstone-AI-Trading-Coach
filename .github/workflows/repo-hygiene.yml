@@ -101,6 +101,104 @@ jobs:
           print(f"OK {path}")
           PY
 
+      - name: Verify no AI tool attribution in commits
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          # AGENTS.md 는 커밋과 PR 에 AI 도구 기여 표시를 남기지 않도록 요구한다.
+          # commit-msg hook 이 생산 지점을 막지만 hook 을 쓰지 않는 기여자도 있으므로
+          # PR 범위 커밋을 전수 스캔한다.
+          if [[ -n "${PR_BASE_SHA:-}" && -n "${PR_HEAD_SHA:-}" ]]; then
+            range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [[ -n "${PUSH_BEFORE_SHA:-}" && "${PUSH_BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]]; then
+            range="${PUSH_BEFORE_SHA}..${GITHUB_SHA}"
+          else
+            echo "REPO_HYGIENE_AI_ATTRIBUTION=SKIPPED_NO_RANGE"
+            exit 0
+          fi
+          echo "range=${range}"
+          # 패턴을 줄 시작에 고정한다. 실제 기여 표시는 독립된 trailer 줄로 들어오고,
+          # 이 규칙을 설명하는 산문은 문장 중간에 그 문자열을 언급한다. 앵커가 없으면
+          # 규칙을 문서화하는 커밋 자체가 막혀 규칙을 적을 수 없다.
+          # 맨 이메일 하나만으로는 막지 않는다 - author 신원은 다음 스텝이 담당한다.
+          pattern='^[[:space:]]*[Cc]o-[Aa]uthored-[Bb]y:.*(Claude|Codex|Copilot|Gemini|Devin|noreply@anthropic|noreply@openai)'
+          pattern="${pattern}|^[[:space:]]*🤖?[[:space:]]*Generated with \\[?(Claude|Codex|Copilot|Cursor)"
+          pattern="${pattern}|^[[:space:]]*Assisted-by:.*(Claude|Codex|Copilot|Gemini)"
+          found=0
+          while IFS= read -r sha; do
+            [[ -n "${sha}" ]] || continue
+            if git log -1 --format='%B' "${sha}" | grep -qiE "${pattern}"; then
+              echo "::error::${sha} carries AI tool attribution (AGENTS.md)"
+              git log -1 --format='%B' "${sha}" | grep -inE "${pattern}" || true
+              found=1
+            fi
+          done < <(git rev-list "${range}")
+          if [[ "${found}" != 0 ]]; then
+            echo "REPO_HYGIENE_AI_ATTRIBUTION=FAIL"
+            exit 1
+          fi
+          echo "REPO_HYGIENE_AI_ATTRIBUTION=PASS"
+
+      - name: Verify commit author identity
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          # GitHub Contributors 그래프는 trailer 가 아니라 commit author/committer 를 읽는다.
+          # 그래서 AI 계정이 author 로 들어오는 것을 막는 것이 진짜 방어선이다.
+          # 사람 기여자와 GitHub 자체 계정만 허용한다.
+          if [[ -n "${PR_BASE_SHA:-}" && -n "${PR_HEAD_SHA:-}" ]]; then
+            range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [[ -n "${PUSH_BEFORE_SHA:-}" && "${PUSH_BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]]; then
+            range="${PUSH_BEFORE_SHA}..${GITHUB_SHA}"
+          else
+            echo "REPO_HYGIENE_AUTHOR_IDENTITY=SKIPPED_NO_RANGE"
+            exit 0
+          fi
+          denied='anthropic\\.com|openai\\.com|claude|codex|copilot|cursor\\.(sh|com)|devin'
+          found=0
+          while IFS='|' read -r sha author_email committer_email author_name committer_name; do
+            [[ -n "${sha}" ]] || continue
+            for value in "${author_email}" "${committer_email}" "${author_name}" "${committer_name}"; do
+              if printf '%s' "${value}" | grep -qiE "${denied}"; then
+                echo "::error::${sha} has a forbidden author identity: ${value}"
+                found=1
+              fi
+            done
+          done < <(git log --format='%H|%ae|%ce|%an|%cn' "${range}")
+          if [[ "${found}" != 0 ]]; then
+            echo "REPO_HYGIENE_AUTHOR_IDENTITY=FAIL"
+            exit 1
+          fi
+          echo "REPO_HYGIENE_AUTHOR_IDENTITY=PASS"
+
+      - name: Verify the commit-msg hook is present and executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          # hook 파일이 사라지면 로컬 방어선이 조용히 없어진다.
+          test -f .githooks/commit-msg
+          test -x .githooks/commit-msg
+          # hook 이 실제로 거부하는지 확인한다. 파일만 있고 동작하지 않으면 의미가 없다.
+          tmp=$(mktemp)
+          printf 'fix: x\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n' > "${tmp}"
+          if .githooks/commit-msg "${tmp}" >/dev/null 2>&1; then
+            echo "::error::.githooks/commit-msg accepted an AI attribution trailer"
+            rm -f "${tmp}"
+            exit 1
+          fi
+          printf 'fix: x\n\nRefs #1\n' > "${tmp}"
+          .githooks/commit-msg "${tmp}" >/dev/null
+          rm -f "${tmp}"
+          echo "REPO_HYGIENE_COMMIT_MSG_HOOK=PASS"
+
       - name: Verify ignore rules
         shell: bash
         run: |

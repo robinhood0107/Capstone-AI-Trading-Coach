@@ -7,7 +7,7 @@
 golden output 등 10개 파일의 형태는 Team B의 입력 계약이고 `app/p1_owner/importer.py`의
 `validate_artifact_bundle`과 그 전용 테스트가 이미 담당한다. 여기서는 그 검증을 통과한 뒤의
 산출물, 즉 **import packet**을 production 코드(`_build_import_packet`)로 만들어
-`import_p1_return_bundle_v1`에 넣는다. 즉 DB 적재부터 아래로가 이 테스트의 범위다.
+`import_p1_return_bundle_v2`에 넣는다. 즉 DB 적재부터 아래로가 이 테스트의 범위다.
 
 packet을 손으로 쓰지 않고 production 함수로 만드는 이유는 계약이 바뀌면 테스트가 같이 깨지게
 하기 위해서다.
@@ -32,14 +32,61 @@ from app.data._shared.canonical_json import canonical_json_bytes
 TRADED_SYMBOL: Final = "005930"
 SECONDARY_SYMBOL: Final = "000660"
 GOLD_SYMBOL: Final = "132030"
-UNIVERSE: Final[tuple[str, ...]] = (
-    TRADED_SYMBOL,
-    SECONDARY_SYMBOL,
-    *(f"9{index:05d}" for index in range(28)),
-    GOLD_SYMBOL,
+# 실제 exact-31 이다. 출처는 contracts/catalogs/p1-return-universe.v1.json 이고
+# full_pipeline_e2e 가 구동 전에 그 카탈로그와 대조한다(_assert_universe_matches_catalog).
+#
+# 채움용 코드를 발명하면 안 된다. 런타임 이력 리더가 종목이 현재 명부 안에 있어야 한다고
+# 요구하므로(V110 의 p1_read_automation_atr_bars_v1 -> market_data_operational_universe)
+# 발명한 코드로는 실제 주문 경로를 한 번도 통과하지 못한다. 그러면 이 테스트가 통과해도
+# 실제 사용을 검증하지 못한다.
+#
+# 값을 파일에서 읽지 않는 이유는 이 모듈이 decision-platform 컨테이너 안에서 돌고 그
+# 이미지에 contracts/ 가 없기 때문이다. 드리프트는 호스트 대조로 막는다.
+_REST: Final[tuple[str, ...]] = (
+    "000270",
+    "000810",
+    "005380",
+    "005490",
+    "005935",
+    "006400",
+    "009150",
+    "010120",
+    "010130",
+    "012330",
+    "012450",
+    "028260",
+    "032830",
+    "034020",
+    "034730",
+    "035420",
+    "042660",
+    "055550",
+    "066570",
+    "068270",
+    "086790",
+    "105560",
+    "207940",
+    "267260",
+    "298040",
+    "329180",
+    "373220",
+    "402340",
 )
+UNIVERSE: Final[tuple[str, ...]] = (TRADED_SYMBOL, SECONDARY_SYMBOL, *_REST, GOLD_SYMBOL)
 
 _FILLER: Final = "b" * 64
+_ARTIFACTS: Final[tuple[str, ...]] = (
+    "model.safetensors",
+    "scaler.json",
+    "config.json",
+    "lstm_signals.parquet",
+    "rule_baseline_signals.parquet",
+    "backtest_result.json",
+    "trade_log.parquet",
+    "equity_log.parquet",
+    "golden_output.json",
+    "model_report.md",
+)
 _SCENARIO_METRICS: Final[dict[str, dict[str, float | int]]] = {
     "BASELINE": {"netReturn": 0.021, "mdd": -0.048, "sharpe": 0.44, "tradeCount": 18},
     "GUIDE": {"netReturn": 0.037, "mdd": -0.041, "sharpe": 0.61, "tradeCount": 22},
@@ -70,7 +117,6 @@ def _signal_rows(session_date: date, buy_symbols: frozenset[str]) -> list[dict[s
             {
                 "symbol": symbol,
                 "signal": "BUY" if buy else "HOLD",
-                "confidence": 0.82 if buy else 0.30 + (index % 7) / 100,
                 "expectedReturn": 0.031 if buy else -0.004 + (index % 5) / 1000,
             }
         )
@@ -85,7 +131,6 @@ def _sell_rows(session_date: date, sell_symbols: frozenset[str]) -> list[dict[st
             {
                 "symbol": symbol,
                 "signal": "SELL" if sell else "HOLD",
-                "confidence": 0.79 if sell else 0.30 + (index % 7) / 100,
                 "expectedReturn": -0.026 if sell else -0.004 + (index % 5) / 1000,
             }
         )
@@ -149,6 +194,7 @@ def build_packet(
         "realTeamB": True,
         "runId": f"run_p1_e2e_{manifest_sha256[:24]}",
         "producer": {"trainingCodeSha256": _FILLER},
+        "artifacts": [{"path": path, "sha256": _FILLER} for path in _ARTIFACTS],
     }
     packet = importer._build_import_packet(
         manifest=manifest,
@@ -180,7 +226,7 @@ def import_packet(
         with psycopg.connect(database_dsn, connect_timeout=5) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "SELECT outcome,artifact_id,run_id FROM import_p1_return_bundle_v1(%s,%s)",
+                    "SELECT outcome,artifact_id,run_id FROM import_p1_return_bundle_v2(%s,%s)",
                     (packet_text, packet_sha256),
                 )
                 row = cursor.fetchone()

@@ -332,6 +332,18 @@ P1_CURRENT_MUTABLE_DOCUMENTS: Final[frozenset[str]] = frozenset(
         "docs/handoff/P1_TEAM_A_최종_통합_요청서.md",
         "docs/handoff/P1_TEAM_B_최종_통합_요청서.md",
         "docs/test/P1_TEAM_수신.md",
+        # 팀이 관리하는 살아있는 워크스페이스 설명서다. 봉인 대상이 아닌데
+        # classify_markdown 의 기본 catch-all(HISTORICAL_SUPERSEDED)에 걸려 팀이 자기
+        # 워크스페이스 문서를 고칠 수 없었다. 봉인의 목적은 증거를 다시 쓰지 못하게 하는
+        # 것이고 현행 UI 설명서는 그 부류가 아니다.
+        #
+        # scripts/lint-static-analysis.sh 도 같은 다섯 파일을 팀 소유로 보고 pymarkdown
+        # 대상에서 제외한다. 두 게이트의 판단을 일치시킨다.
+        "workspaces/experience-dashboard/OVERVIEW.md",
+        "workspaces/experience-dashboard/README.md",
+        "workspaces/experience-dashboard/SETUP.md",
+        "workspaces/experience-dashboard/VSCODE.md",
+        "workspaces/return-engine/README.md",
     }
 )
 # 이번 addendum이 기존 v1/v2 RAG 계약 또는 exact-30 evidence를 다시 해석하지 못하게

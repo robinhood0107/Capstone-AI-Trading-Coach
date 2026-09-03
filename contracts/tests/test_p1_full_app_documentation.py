@@ -392,9 +392,17 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertIn("deploy/p1/seed/team-b/", request)
         self.assertNotIn("p1-return-engine-manifest.v1.json", request)
         self.assertIn("p1-return-engine-manifest.v3.json", request)
-        self.assertIn("p1-return-engine-input-pack.v1.zip", request)
-        self.assertIn("BLOCKED_PENDING_APPROVED_KIS_INPUT_PACK", request)
-        self.assertIn("KIS·KRX·ECOS·yfinance 수집", request)
+        # 입력이 봉인 ZIP + 사전 공유 SHA-256 에서 커밋된 유니버스 카탈로그 + yfinance
+        # 런타임 수집으로 바뀌었다. 사람이 문서와 코드에 옮겨 적는 상수 해시를 없애는 것이
+        # 이 전환의 목적이므로, 그 흔적이 다시 들어오지 않는지 함께 잠근다.
+        self.assertIn("contracts/catalogs/p1-return-universe.v1.json", request)
+        self.assertIn("yfinance, auto_adjust=False", request)
+        self.assertNotIn("p1-return-engine-input-pack.v1.zip", request)
+        self.assertNotIn(
+            "8ba0b439c5ff4e39b3136c17d31d648178d7e0064c35adead46837f953c5fafd",
+            request,
+        )
+        self.assertIn("KIS·KRX·ECOS 수집", request)
         self.assertIn("daily inference scheduler와 자동매매 runtime", request)
 
     def test_team_handoff_checklist_has_no_stale_preview_or_api_edge_flow(self) -> None:

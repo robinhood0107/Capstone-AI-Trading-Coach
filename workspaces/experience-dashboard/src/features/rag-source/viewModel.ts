@@ -29,7 +29,9 @@ import { ready, type ViewState } from '@/shared/lib/viewState';
  */
 export const EXTERNAL_DISCLOSURE =
   '질문은 외부 임베딩 제공자(Voyage AI)로 전송되어 검색 벡터로 변환됩니다. ' +
-  '보유 종목, 잔고, 주문 내역은 전송되지 않습니다.';
+  '보유 종목, 잔고, 주문 내역은 전송되지 않습니다. ' +
+  '이 기능의 답변은 개념과 위험에 대한 설명이며 투자 조언이 아니고 정확성을 보장하지 않습니다. ' +
+  '무엇을 사고 팔지는 원칙 설정과 주문 검토 화면에서 직접 판단하세요.';
 export const EXTERNAL_POLICY =
   '전송된 질문은 답변 생성 목적으로만 사용되며 사용량 원장에 요청 1건으로 기록됩니다. ' +
   '동의는 언제든 철회할 수 있고 철회 후에는 외부 전송이 즉시 닫힙니다.';
@@ -62,10 +64,20 @@ export interface RagAnswerView {
 
 const TOP_SOURCE_COUNT = 3;
 
-const STATUS_COPY: Record<RagGenerationStatus, { headline: string; detail: string }> = {
+const STATUS_COPY: Record<
+  RagGenerationStatus | 'ANSWERED_WITHOUT_SOURCES',
+  { headline: string; detail: string }
+> = {
   ANSWERED: {
     headline: '출처를 확인한 설명',
     detail: '아래 문장은 표시된 출처에서 나온 내용입니다.',
+  },
+  // 근거 없이 답할 때도 설명은 나온다. 같은 ANSWERED라도 읽는 사람이 그 차이를
+  // 알아야 하므로 문장을 갈라 둔다.
+  ANSWERED_WITHOUT_SOURCES: {
+    headline: '출처 없이 설명합니다',
+    detail:
+      '이 답에 연결된 출처가 없습니다. 아래 설명은 모델이 아는 범위에서 쓴 것이므로 직접 확인이 필요합니다.',
   },
   RETRIEVAL_ONLY: {
     headline: '설명 문장 없이 출처만 제공합니다',
@@ -168,8 +180,11 @@ export async function askRag(
   }
 
   const items = toSourceItems(answer.citations, registry);
-  const copy = STATUS_COPY[answer.generationStatus];
   const answered = answer.generationStatus === 'ANSWERED';
+  const copy =
+    answered && items.length === 0
+      ? STATUS_COPY.ANSWERED_WITHOUT_SOURCES
+      : STATUS_COPY[answer.generationStatus];
 
   return ready<RagAnswerView>({
     answerId: answer.answerId,
@@ -184,7 +199,11 @@ export async function askRag(
     topSources: items.slice(0, TOP_SOURCE_COUNT),
     expandableSources: items.slice(TOP_SOURCE_COUNT),
     sourcesUnavailableReason:
-      items.length === 0 ? '이 질문에 연결된 출처가 없습니다.' : null,
+      items.length === 0
+        ? answered
+          ? '이 질문에 연결된 출처가 없습니다. 위 설명은 모델 지식에 기반합니다.'
+          : '이 질문에 연결된 출처가 없습니다.'
+        : null,
   });
 }
 

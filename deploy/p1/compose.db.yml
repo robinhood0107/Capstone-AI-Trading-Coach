@@ -29,7 +29,7 @@ services:
     networks: [p1-internal]
 
   api-edge:
-    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
     platform: linux/amd64
     entrypoint: ["python", "-m", "app.s8_demo.tcp_proxy"]
     user: "65532:65532"
@@ -106,7 +106,7 @@ services:
     networks: [p1-internal]
 
   role-bootstrap:
-    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "role-bootstrap"]
     command:
       - java
@@ -127,7 +127,7 @@ services:
     networks: [p1-internal]
 
   migrate:
-    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "migration"]
     command:
       - java
@@ -148,7 +148,7 @@ services:
     networks: [p1-internal]
 
   identity-bootstrap:
-    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "bootstrap"]
     command:
       - java
@@ -169,7 +169,7 @@ services:
     networks: [p1-internal]
 
   actor-capability-authority:
-    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "authority"]
     command:
       - java
@@ -188,7 +188,7 @@ services:
     restart: on-failure:3
 
   python-worker:
-    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
     environment:
       ASYNC_WORKER_GRPC_BIND_ADDRESS: 127.0.0.1:50056
       PROVIDER_LIVE_CALLS_ENABLED: "false"
@@ -202,7 +202,7 @@ services:
 
   synthetic-async-smoke:
     profiles: [smoke]
-    image: ${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
     pull_policy: missing
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "demo"]
     command: ["python", "-m", "app.s8_demo.container_async_smoke"]
@@ -216,7 +216,7 @@ services:
     restart: "no"
 
   spring-api:
-    image: ${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
     environment:
       SERVER_ADDRESS: 0.0.0.0
       SERVER_PORT: "8080"
@@ -267,20 +267,20 @@ services:
       start_period: 20s
 
 secrets:
-  postgres_env: {file: "${P1_SECRETS_DIR}/postgres.env"}
-  redis_env: {file: "${P1_SECRETS_DIR}/redis.env"}
-  role_bootstrap_env: {file: "${P1_SECRETS_DIR}/role-bootstrap.env"}
-  migration_env: {file: "${P1_SECRETS_DIR}/migration.env"}
-  bootstrap_env: {file: "${P1_SECRETS_DIR}/bootstrap.env"}
-  actor_capability_authority_env: {file: "${P1_SECRETS_DIR}/actor-capability-authority.env"}
-  spring_env: {file: "${P1_SECRETS_DIR}/spring.env"}
-  python_env: {file: "${P1_SECRETS_DIR}/python.env"}
-  kafka_publisher_env: {file: "${P1_SECRETS_DIR}/kafka-publisher.env"}
-  poison_recorder_env: {file: "${P1_SECRETS_DIR}/poison-recorder.env"}
-  kafka_admin_env: {file: "${P1_SECRETS_DIR}/kafka-admin.env"}
-  kafka_broker_jaas: {file: "${P1_SECRETS_DIR}/kafka-broker-jaas.conf"}
-  demo_env: {file: "${P1_SECRETS_DIR}/demo.env"}
-  rag_history_kek: {file: "${P1_SECRETS_DIR}/rag-history-kek-v1.key"}
+  postgres_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/postgres.env"}
+  redis_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/redis.env"}
+  role_bootstrap_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/role-bootstrap.env"}
+  migration_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/migration.env"}
+  bootstrap_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/bootstrap.env"}
+  actor_capability_authority_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/actor-capability-authority.env"}
+  spring_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/spring.env"}
+  python_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/python.env"}
+  kafka_publisher_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kafka-publisher.env"}
+  poison_recorder_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/poison-recorder.env"}
+  kafka_admin_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kafka-admin.env"}
+  kafka_broker_jaas: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kafka-broker-jaas.conf"}
+  demo_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/demo.env"}
+  rag_history_kek: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/rag-history-kek-v1.key"}
 
 volumes:
   p1-postgres: {}

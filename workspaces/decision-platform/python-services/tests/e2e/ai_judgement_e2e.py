@@ -104,7 +104,7 @@ def check_engine_and_database_agree(recorder: Recorder) -> None:
 
 
 def check_judgement_record_is_owner_readable(recorder: Recorder) -> None:
-    """기록은 소유자 화면이 읽을 수 있어야 하고, 그 안에 키 봉투는 없어야 한다."""
+    """현재 V3 기록 경로는 rank/veto 근거만 받고 legacy confidence·수량은 받지 않는다."""
 
     columns = psql(
         "select string_agg(column_name, ',' order by column_name)"
@@ -116,22 +116,26 @@ def check_judgement_record_is_owner_readable(recorder: Recorder) -> None:
         "baseline_symbol",
         "selected_symbol",
         "participation",
-        "confidence_bps",
-        "quantity_before",
-        "quantity_after",
         "vetoed_symbol_count",
+        "judge_call_count",
+        "candidate_count",
+        "verdicts_json",
     }
-    # 확신도는 정수 basis point로만 산다. 부동소수로 저장하면 같은 판단이 저장 왕복에서 달라져
-    # 그 수량이 왜 나왔는지 재현할 수 없다.
-    confidence_type = psql(
-        "select data_type from information_schema.columns"
-        " where table_name = 'automation_ai_judgements' and column_name = 'confidence_bps';"
+    # V106 table columns are immutable history. V116's current writer must instead call V2
+    # with NULL for confidence and both quantity slots, so the current runtime has no way to
+    # persist or use those values.
+    v3_source = psql(
+        "select prosrc from pg_proc where proname = 'p1_record_automation_ai_judgement_v3';"
     ).strip()
+    current_omits_legacy_values = (
+        "p_prompt_version,NULL,p_baseline_symbol" in v3_source
+        and "p_candidate_count,NULL,NULL,p_verdicts_json" in v3_source
+    )
     recorder.add(
-        "판단 기록이 무엇을 남기는가",
-        "PASS" if required <= present and confidence_type == "integer" else "FAIL",
-        f"빠진 열={sorted(required - present)} confidence 타입={confidence_type or '<없음>'}"
-        " (규칙만으로 고른 1등과 실제 선택, 축소 전후가 함께 있어야 AI가 무엇을 바꿨는지 말할 수 있다)",
+        "현재 V3 판단 기록에는 confidence·수량 입력이 없다",
+        "PASS" if required <= present and current_omits_legacy_values else "FAIL",
+        f"빠진 열={sorted(required - present)} V3 legacy-null={current_omits_legacy_values}"
+        " (V106 historical columns는 남지만 현재 writer는 score·veto·근거만 기록한다)",
     )
 
 
@@ -146,7 +150,7 @@ def check_write_path_is_definer_only(recorder: Recorder) -> None:
     routines = psql(
         "select count(*) from information_schema.routine_privileges"
         f" where grantee = '{_RUNTIME_ROLE}' and privilege_type = 'EXECUTE'"
-        " and routine_name in ('p1_record_automation_ai_judgement_v1',"
+        " and routine_name in ('p1_record_automation_ai_judgement_v3',"
         " 'p1_read_automation_ai_judgement_v1');"
     ).strip()
     recorder.add(
@@ -157,16 +161,16 @@ def check_write_path_is_definer_only(recorder: Recorder) -> None:
 
 
 def check_size_only_shrinks(recorder: Recorder) -> None:
-    """AI는 수량을 늘리지 못한다. 그 불변식이 DB 제약으로도 서 있어야 한다."""
+    """V3 writer signature has no confidence or quantity parameter."""
 
-    shrink = psql(
-        "select count(*) from pg_constraint"
-        " where conname = 'automation_ai_judgements_size_only_shrinks_check';"
+    argument_count = psql(
+        "select pronargs from pg_proc where proname = 'p1_record_automation_ai_judgement_v3';"
     ).strip()
     recorder.add(
-        "수량은 줄기만 한다",
-        "PASS" if shrink == "1" else "FAIL",
-        f"제약={shrink}/1 (코드가 실수해도 늘어난 수량은 저장되지 않는다)",
+        "현재 V3 writer는 confidence·수량 인자를 받지 않는다",
+        "PASS" if argument_count == "17" else "FAIL",
+        f"V3 인자 수={argument_count or '<없음>'}/17"
+        " (legacy V106 size-only constraint는 historical schema로 보존된다)",
     )
 
 

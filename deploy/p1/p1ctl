@@ -25,10 +25,27 @@ docker() {
 }
 
 die() { printf 'P1_ERROR=%s\n' "$1" >&2; exit 1; }
+# 부분 실패한 초기화는 재개할 수 없다. 오류 코드만으로는 복구 방법을 알 수 없어 신규 clone이
+# 여기서 막힌다. 확인 명령을 함께 주되 무조건 삭제를 안내하지는 않는다 — mock/ 에는 재발급이
+# 장중에만 가능한 KIS Mock 인증이, artifacts/ 에는 재수집이 필요한 시장데이터가 들어 있을 수 있다.
+die_state_init_resume() {
+  printf 'P1_ERROR=%s\n' "$1" >&2
+  printf 'P1_HINT=partial_state_cannot_resume\n' >&2
+  printf 'P1_INSPECT=ls -A %s\n' "$STATE_DIR" >&2
+  printf 'P1_RECOVERY=%s\n' \
+    "위 경로에 mock/ 나 artifacts/ 가 없으면 지우고 다시 up 하세요. 있으면 지우지 말고 문의하세요." >&2
+  exit 1
+}
 require_command() { command -v "$1" >/dev/null 2>&1 || die "missing_$1"; }
 random_secret() { openssl rand -hex 32; }
 # Fernet은 padding을 포함한 44자 urlsafe base64만 받는다. padding을 지우면 안 된다.
 base64url_key() { openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n'; }
+# 반대로 demo credential separation key는 padding이 없는 43자만 받는다.
+# DemoCredentialBundlePolicy.decodeSeparationKey()가 canonical unpadded Base64url을 요구하고
+# 디코드 후 재인코딩 결과까지 대조하므로(DemoCredentialBundle.kt:132-141) 44자는 거부된다.
+# 같은 생성자를 두 소비자가 나눠 쓰면 신규 clone이 `demo credential author failed: invalid_input`
+# 으로 전부 막히므로 소비자별로 분리한다.
+base64url_key_unpadded() { base64url_key | tr -d '='; }
 generate_actor_tls() {
   local server_password=$1 client_password=$2
   (
@@ -66,22 +83,13 @@ state_write_file() {
 write_line() {
   printf '%s=%s\n' "$1" "$2" | python3 "$RELEASE_GUARD" state-append "$STATE_DIR" "$(state_relative "$3")" 0640
 }
-docker_bind_source() {
-  local source=$1 endpoint
-  # Docker Desktop exposes a native WSL socket even when the selected Windows
-  # context reports npipe. Compose through /usr/bin/docker requires the Linux path.
-  if [[ -S /var/run/docker.sock ]]; then
-    printf '%s\n' "$source"
-    return
-  fi
-  endpoint=$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)
-  if [[ $endpoint == npipe://* ]]; then
-    require_command wslpath
-    wslpath -w "$source"
-  else
-    printf '%s\n' "$source"
-  fi
-}
+# compose 에 넘기는 호스트 경로는 프로젝트 디렉터리 기준 상대 경로로 고정한다.
+# compose 가 플랫폼마다 알아서 해석하므로 리눅스, WSL, macOS 에서 같은 파일이 그대로
+# 동작한다. 예전에는 Docker Desktop 의 socket 존재와 npipe context 를 보고 경로 표기를
+# 분기했는데, 그러면 compose 파일이 특정 데스크톱 제품 상태에 묶이고 그 상태가 어긋나면
+# 실제로 존재하는 파일에 대해 "bind source path does not exist" 가 난다.
+COMPOSE_SECRETS_DIR='./.state-app/secrets'
+COMPOSE_MOCK_RUNTIME_DIR='./.state-app/mock'
 PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-offline-demo}
 [[ $PROJECT_NAME =~ ^[a-z0-9][a-z0-9_-]{2,62}$ ]] || die invalid_project_name
 
@@ -155,15 +163,23 @@ require_state() {
 
 verify_runtime_env() {
   local expected_secrets expected_mock_runtime seen='|' key value count=0 api_port='' secret_gid='' operator_uid=''
-  expected_secrets=$(docker_bind_source "$SECRETS_DIR")
-  expected_mock_runtime=$(docker_bind_source "$STATE_DIR/mock")
+  expected_secrets=$COMPOSE_SECRETS_DIR
+  expected_mock_runtime=$COMPOSE_MOCK_RUNTIME_DIR
   while IFS='=' read -r key value || [[ -n $key$value ]]; do
     [[ $seen != *"|$key|"* ]] || die runtime_env_duplicate
     case $key in
-      P1_SECRETS_DIR) [[ $value == "$expected_secrets" ]] || die runtime_env_secrets_path ;;
+      # 새 상태는 상대 경로를 쓴다. 이미 절대 경로로 만들어진 상태도 그대로 유효하다 -
+      # compose 가 둘 다 같은 디렉터리로 해석한다.
+      P1_SECRETS_DIR)
+        [[ $value == "$expected_secrets" || $value == "$SECRETS_DIR" ]] \
+          || die runtime_env_secrets_path
+        ;;
       P1_SECRET_GID) secret_gid=$value ;;
       P1_OPERATOR_UID) operator_uid=$value ;;
-      P1_KIS_MOCK_RUNTIME_DIR) [[ $value == "$expected_mock_runtime" ]] || die runtime_env_mock_path ;;
+      P1_KIS_MOCK_RUNTIME_DIR)
+        [[ $value == "$expected_mock_runtime" || $value == "$STATE_DIR/mock" ]] \
+          || die runtime_env_mock_path
+        ;;
       # RAG v2 로컬 루트는 운영자가 다른 경로에 둘 수 있다. 위치는 고정하지 않고
       # 절대경로이며 실제 디렉터리인지만 본다.
       P1_RAG_RUNTIME_DIR) [[ $value == /* && $value != *..* && -d $value && ! -L $value ]] || die runtime_env_rag_path ;;
@@ -194,7 +210,8 @@ verify_runtime_env() {
 author_bundle() {
   local image=$1 user_id=$2 password_file=$3 output=$4
   local secrets_mount attempt bind_ready=0
-  secrets_mount=$(docker_bind_source "$SECRETS_DIR")
+  # 이건 compose 가 아니라 직접 docker run 이므로 실제 호스트 경로를 쓴다.
+  secrets_mount=$SECRETS_DIR
   # Docker Desktop may observe a newly created WSL directory a moment after Linux does.
   # Validate only the bind mount before invoking the credential author; never print secrets.
   for attempt in {1..10}; do
@@ -234,15 +251,15 @@ prepare_initial_state() {
     python3 "$RELEASE_GUARD" state-init "$STATE_DIR" || die state_init
     return
   fi
-  python3 "$RELEASE_GUARD" state-check "$STATE_DIR" || die state_init_resume_boundary
+  python3 "$RELEASE_GUARD" state-check "$STATE_DIR" || die_state_init_resume state_init_resume_boundary
   [[ ! -e $RUNTIME_ENV ]] || die already_initialized
   local inventory
   inventory=$(find "$STATE_DIR" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
-  [[ $inventory == secrets || $inventory == $'full-app-stage\nsecrets' ]] || die state_init_resume_inventory
-  [[ -z $(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -print -quit) ]] || die state_init_resume_secrets
+  [[ $inventory == secrets || $inventory == $'full-app-stage\nsecrets' ]] || die_state_init_resume state_init_resume_inventory
+  [[ -z $(find "$SECRETS_DIR" -mindepth 1 -maxdepth 1 -print -quit) ]] || die_state_init_resume state_init_resume_secrets
   if [[ -e $STATE_DIR/full-app-stage ]]; then
     [[ -f $STATE_DIR/full-app-stage && ! -L $STATE_DIR/full-app-stage && $(stat -c '%a' "$STATE_DIR/full-app-stage") == 600 ]] \
-      || die state_init_resume_marker
+      || die_state_init_resume state_init_resume_marker
   fi
 }
 
@@ -252,13 +269,15 @@ init_state() {
   require_command python3
   verify_release_boundary
   prepare_initial_state
-  local spring_image=${P1_SPRING_IMAGE:-capstone-spring-api:p1-local}
+  # 이 레포는 spring/python 을 하나의 이미지로 빌드한다(full-appctl:75). 실제로 존재하는
+  # 이름은 이것뿐이다. 옛 이름을 기본값으로 두면 p1ctl 직접 실행이 spring_image_missing 으로 죽는다.
+  local spring_image=${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
   docker image inspect "$spring_image" >/dev/null 2>&1 || die spring_image_missing
 
   local user_password admin_password separation_key broker_digest
   user_password=$(random_secret)
   admin_password=$(random_secret)
-  separation_key=$(base64url_key)
+  separation_key=$(base64url_key_unpadded)
   broker_digest=$(random_secret | sha256sum | awk '{print $1}')
   printf '%s' "$user_password" | state_write_file "$SECRETS_DIR/demo-user.password" 0640
   printf '%s' "$admin_password" | state_write_file "$SECRETS_DIR/demo-admin.password" 0640
@@ -394,6 +413,8 @@ init_state() {
   write_line P1_AFTER_HOURS_REPLAY_ISOLATED true "$SECRETS_DIR/after-hours-replay.env"
   printf '' | state_write_file "$SECRETS_DIR/automation-gate-author.env" 0640
   write_line P1_AUTOMATION_GATE_AUTHOR_DSN "postgresql://decision_replay_authorizer:${db[REPLAY_AUTHORIZER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/automation-gate-author.env"
+  printf '' | state_write_file "$SECRETS_DIR/calendar-offline-seed.env" 0640
+  write_line P1_CALENDAR_OFFLINE_SEED_DSN "postgresql://decision_collector:${db[COLLECTOR]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/calendar-offline-seed.env"
   printf '' | state_write_file "$SECRETS_DIR/artifact-import.env" 0640
   write_line P1_ARTIFACT_IMPORT_DATABASE_DSN "postgresql://decision_worker:${db[WORKER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/artifact-import.env"
   printf '' | state_write_file "$SECRETS_DIR/team-a-acceptance.env" 0640
@@ -453,14 +474,12 @@ init_state() {
   printf '' | state_write_file "$SECRETS_DIR/demo.env" 0640
   write_line P1_DEMO_DATABASE_DSN "postgresql://decision_demo:${db[DEMO]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/demo.env"
   write_line ASYNC_PARTITION_HMAC_KEY "$partition_key" "$SECRETS_DIR/demo.env"
-  local compose_secrets_dir
-  compose_secrets_dir=$(docker_bind_source "$SECRETS_DIR")
+  local compose_secrets_dir=$COMPOSE_SECRETS_DIR
   install -d -m 0700 "$STATE_DIR/mock"
-  local compose_mock_runtime_dir
-  compose_mock_runtime_dir=$(docker_bind_source "$STATE_DIR/mock")
+  local compose_mock_runtime_dir=$COMPOSE_MOCK_RUNTIME_DIR
   install -d -m 0700 "$STATE_DIR/rag-v2-root"
-  local compose_rag_runtime_dir
-  compose_rag_runtime_dir=$(docker_bind_source "$STATE_DIR/rag-v2-root")
+  # RAG 루트는 운영자가 다른 위치에 둘 수 있어 절대 경로를 그대로 쓴다.
+  local compose_rag_runtime_dir=$STATE_DIR/rag-v2-root
   printf '%s\n' \
     "P1_SECRETS_DIR=$compose_secrets_dir" \
     "P1_SECRET_GID=$(id -g)" \
@@ -469,7 +488,7 @@ init_state() {
     "P1_RAG_RUNTIME_DIR=$compose_rag_runtime_dir" \
     "P1_API_PORT=${P1_API_PORT:-18080}" \
     "P1_SPRING_IMAGE=$spring_image" \
-    "P1_PYTHON_IMAGE=${P1_PYTHON_IMAGE:-capstone-python-services:p1-local}" \
+    "P1_PYTHON_IMAGE=${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}" \
     "P1_POSTGRES_IMAGE=${P1_POSTGRES_IMAGE:-capstone-postgres-pgvector:p1-local}" \
     "P1_KAFKA_IMAGE=${P1_KAFKA_IMAGE:-capstone-kafka:p1-local}" \
     | state_write_file "$RUNTIME_ENV" 0600
@@ -486,6 +505,7 @@ verify_state() {
     demo-user.password kafka-admin.env kafka-broker-jaas.conf kafka-publisher.env migration.env poison-recorder.env rag-v2.env \
     kis-mock.env kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn postgres.env python.env rag-history-kek-v1.key redis.env return-inference.env role-bootstrap.env seed-import.env spring.env)
   expected+=(team-a-acceptance.env)
+  expected+=(calendar-offline-seed.env)
   # Vertex 서비스계정은 운영자가 직접 넣는 선택 secret이다. compose는 이 파일을 secret으로
   # 마운트하므로 있으면 정상이고, 없으면 Vertex 생성만 닫힌다. 목록에 넣지 않으면 파일을
   # 넣는 순간 `./capstone up`이 secret_inventory로 죽어 생성 경로를 켤 방법이 없어진다.

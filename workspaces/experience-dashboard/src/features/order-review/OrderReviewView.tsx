@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
+import { Disclosure } from '@/shared/ui/Disclosure';
 import { Panel } from '@/shared/ui/Panel';
 import { Numeric } from '@/shared/ui/Numeric';
 import { IdInput } from '@/shared/ui/IdInput';
@@ -49,7 +50,7 @@ export function OrderReviewView({ defaultDecisionId = '' }: { defaultDecisionId?
       />
 
       {!valid ? (
-        <p className="border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
+        <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
           위에 판정 ID를 입력하면 그 주문의 판정과 근거를 불러옵니다.
         </p>
       ) : (
@@ -109,7 +110,7 @@ export function OrderReviewView({ defaultDecisionId = '' }: { defaultDecisionId?
               >
                 <div className="grid gap-6 md:grid-cols-2">
                   <div>
-                    <p className="font-mono text-eyebrow uppercase text-faint">사유</p>
+                    <p className="text-eyebrow font-semibold uppercase text-faint">사유</p>
                     <ul className="mt-2 space-y-2">
                       {view.summaryReasons.length === 0 ? (
                         <li className="text-[13px] text-faint">표시할 사유가 없습니다.</li>
@@ -123,7 +124,7 @@ export function OrderReviewView({ defaultDecisionId = '' }: { defaultDecisionId?
                     </ul>
                   </div>
                   <div>
-                    <p className="font-mono text-eyebrow uppercase text-faint">관련된 내 원칙</p>
+                    <p className="text-eyebrow font-semibold uppercase text-faint">관련된 내 원칙</p>
                     <ul className="mt-2 space-y-2">
                       {view.summaryPrinciples.length === 0 ? (
                         <li className="text-[13px] text-faint">관련된 원칙이 없습니다.</li>
@@ -160,7 +161,11 @@ export function OrderReviewView({ defaultDecisionId = '' }: { defaultDecisionId?
               </Panel>
 
               {view.detail ? (
-                <>
+                <Disclosure
+                  label="판정 근거 자세히 보기"
+                  hint="네 종류의 사유, 넘어선 원칙, 판정에 쓰인 값, 해시를 모두 펼칩니다."
+                >
+                  <div className="space-y-6">
                   <Panel
                     contract="GET /api/v1/decisions/{decisionId}"
                     title="판정 근거 상세"
@@ -208,7 +213,7 @@ export function OrderReviewView({ defaultDecisionId = '' }: { defaultDecisionId?
                       ) : (
                         <table className="w-full text-[13px]">
                           <thead>
-                            <tr className="border-b border-line text-left font-mono text-eyebrow uppercase text-faint">
+                            <tr className="border-b border-line text-left text-eyebrow font-semibold uppercase text-faint">
                               <th className="pb-2 font-normal">원칙</th>
                               <th className="pb-2 text-right font-normal">현재</th>
                               <th className="pb-2 text-right font-normal">내 기준</th>
@@ -256,7 +261,8 @@ export function OrderReviewView({ defaultDecisionId = '' }: { defaultDecisionId?
                     semanticInputHash {view.detail.semanticInputHash.slice(0, 16)}… ·
                     snapshotArtifactHash {view.detail.snapshotArtifactHash.slice(0, 16)}…
                   </p>
-                </>
+                  </div>
+                </Disclosure>
               ) : null}
             </div>
           )}
@@ -269,7 +275,7 @@ export function OrderReviewView({ defaultDecisionId = '' }: { defaultDecisionId?
 function Field({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div>
-      <dt className="font-mono text-eyebrow uppercase text-faint">{label}</dt>
+      <dt className="text-eyebrow font-semibold uppercase text-faint">{label}</dt>
       <dd className={`mt-1 text-[14px] text-ink ${mono ? 'tnum font-mono' : ''}`}>{value}</dd>
     </div>
   );

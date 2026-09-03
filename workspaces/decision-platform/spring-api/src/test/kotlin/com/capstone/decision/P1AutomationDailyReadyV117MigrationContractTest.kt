@@ -72,7 +72,7 @@ class P1AutomationDailyReadyV117MigrationContractTest {
                             .toInt()
                     }.toList()
             }
-        assertThat(versions.max()).isEqualTo(117)
+        assertThat(versions.max()).isEqualTo(118)
         assertThat(versions.count { it == 117 }).isEqualTo(1)
         assertThat(migrationDirectory.resolve("V93__p1_automation_pipeline_continuity.sql")).isRegularFile()
     }

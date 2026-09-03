@@ -282,9 +282,24 @@ class ReturnEngine:
     BUY_THRESHOLD = 0.005    # LSTM 모델용 매수 역치
     SELL_THRESHOLD = 0.005   # LSTM 모델용 매도 역치
 
-    def __init__(self, stock_name, stock_code, stock_path=None, model_path=None, artifact_path=None):
+    FEATURES = ['Open', 'High', 'Low', 'Close', 'Diff', 'MA5', 'MA20', 'RSI', 'Volume']
+
+    # 커밋된 legacy preview 체크포인트는 SHA 로 고정되어 있어 학습 설정을 바꾼 뒤에도
+    # 구 형상 그대로다. 그 경로만 이 값을 넘겨 load_state_dict 가 맞도록 한다.
+    LEGACY_PREVIEW_SHAPE = {
+        'hidden_size': 128,
+        'num_layers': 3,
+        'learning_rate': 0.0005,
+        'dropout': 0.2,
+        'features': ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Diff', 'MA5', 'MA20', 'RSI', 'Volume'],
+    }
+
+    def __init__(self, stock_name, stock_code, stock_path=None, model_path=None, artifact_path=None,
+                 shape=None):
         self.stock_name = stock_name
         self.stock_code = stock_code
+        # 지정하지 않으면 Team B 가 정한 production 설정을 쓴다.
+        self.shape = dict(shape) if shape else {}
 
         BASE_DIR = Path(__file__).resolve().parent.parent
         self.stock_path = Path(stock_path) if stock_path else BASE_DIR / "data" / "stock" / f"{stock_code}.parquet"
@@ -307,7 +322,7 @@ class ReturnEngine:
             raise FileNotFoundError(f"offline price data not found: {self.stock_path}")
         df = _load_price_data(self.stock_path, self.stock_code)
 
-        features = ['Open', 'High', 'Low', 'Close', 'Diff', 'MA5', 'MA20', 'RSI', 'Volume']
+        features = self.shape.get('features', ReturnEngine.FEATURES)
         target = ['Close']
         
         preprocessor = Preprocessor(df, features, target)
@@ -328,10 +343,10 @@ class ReturnEngine:
         # LSTM 모델 생성
         lstm_model = LSTMModel(
             len(features),
-            hidden_size=ReturnEngine.HIDDEN_SIZE,
-            num_layers=ReturnEngine.NUM_LAYERS,
-            learning_rate=ReturnEngine.LEARNING_RATE,
-            dropout=ReturnEngine.DROP_OUT
+            hidden_size=self.shape.get('hidden_size', ReturnEngine.HIDDEN_SIZE),
+            num_layers=self.shape.get('num_layers', ReturnEngine.NUM_LAYERS),
+            learning_rate=self.shape.get('learning_rate', ReturnEngine.LEARNING_RATE),
+            dropout=self.shape.get('dropout', ReturnEngine.DROP_OUT)
         )
         
         if not self.model_path.exists():

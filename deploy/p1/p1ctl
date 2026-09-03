@@ -411,6 +411,8 @@ init_state() {
   write_line P1_AFTER_HOURS_REPLAY_ISOLATED true "$SECRETS_DIR/after-hours-replay.env"
   printf '' | state_write_file "$SECRETS_DIR/automation-gate-author.env" 0640
   write_line P1_AUTOMATION_GATE_AUTHOR_DSN "postgresql://decision_replay_authorizer:${db[REPLAY_AUTHORIZER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/automation-gate-author.env"
+  printf '' | state_write_file "$SECRETS_DIR/calendar-offline-seed.env" 0640
+  write_line P1_CALENDAR_OFFLINE_SEED_DSN "postgresql://decision_collector:${db[COLLECTOR]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/calendar-offline-seed.env"
   printf '' | state_write_file "$SECRETS_DIR/artifact-import.env" 0640
   write_line P1_ARTIFACT_IMPORT_DATABASE_DSN "postgresql://decision_worker:${db[WORKER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/artifact-import.env"
   printf '' | state_write_file "$SECRETS_DIR/team-a-acceptance.env" 0640
@@ -501,6 +503,7 @@ verify_state() {
     demo-user.password kafka-admin.env kafka-broker-jaas.conf kafka-publisher.env migration.env poison-recorder.env rag-v2.env \
     kis-mock.env kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn postgres.env python.env rag-history-kek-v1.key redis.env return-inference.env role-bootstrap.env seed-import.env spring.env)
   expected+=(team-a-acceptance.env)
+  expected+=(calendar-offline-seed.env)
   # Vertex 서비스계정은 운영자가 직접 넣는 선택 secret이다. compose는 이 파일을 secret으로
   # 마운트하므로 있으면 정상이고, 없으면 Vertex 생성만 닫힌다. 목록에 넣지 않으면 파일을
   # 넣는 순간 `./capstone up`이 secret_inventory로 죽어 생성 경로를 켤 방법이 없어진다.

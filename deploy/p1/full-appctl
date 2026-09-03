@@ -220,6 +220,16 @@ upgrade_state() {
       "$replay_authorizer_password" | write_state secrets/automation-gate-author.env 0640
     unset replay_authorizer_password
   fi
+  # 오프라인 캘린더 seeding 은 나중에 붙은 기능이다. 이미 만들어진 상태에도 DSN 을 채워
+  # 재init 없이 켜지게 한다. decision_collector 는 role bootstrap 이 이미 만든 role 이다.
+  if [[ ! -e $SECRETS_DIR/calendar-offline-seed.env ]]; then
+    local collector_password
+    collector_password=$(sed -n 's/^POSTGRES_COLLECTOR_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+    [[ $collector_password =~ ^[0-9a-f]{64}$ ]] || die CALENDAR_OFFLINE_SEED_SECRET_MISSING
+    printf 'P1_CALENDAR_OFFLINE_SEED_DSN=postgresql://decision_collector:%s@postgres:5432/capstone_p1?sslmode=disable\n' \
+      "$collector_password" | write_state secrets/calendar-offline-seed.env 0640
+    unset collector_password
+  fi
   unset automation_runtime_password
   install -d -m 0700 "$STATE_DIR/artifacts"
   install -d -m 0700 "$STATE_DIR/mock"
@@ -425,6 +435,17 @@ up_app() {
   # 기존 preview와 host port가 같아 cut-over 직전에만 중지한다. volume은 건드리지 않는다.
   stop_old_preview_containers
   compose up -d --wait actor-authority decision-platform experience-dashboard
+  local calendar_seed
+  # grep 으로 바로 파이프하면 seeded/skippedYears 수치가 사라져 무엇이 적재됐는지 알 수 없다.
+  calendar_seed=$(compose --profile owner run --rm --no-deps calendar-offline-seed 2>&1 \
+    | grep -E '^P1_CALENDAR_OFFLINE_SEED=' | tail -1)
+  printf '%s\n' "${calendar_seed:-P1_CALENDAR_OFFLINE_SEED=NO_OUTPUT}"
+  if [[ $calendar_seed == P1_CALENDAR_OFFLINE_SEED=SEEDED* ]]; then
+    printf 'CAPSTONE_TRADING_CALENDAR=SEEDED\n'
+  else
+    printf 'CAPSTONE_TRADING_CALENDAR=UNAVAILABLE\n'
+  fi
+  unset calendar_seed
   save_active_mode "$models" "$mock" 0
   local expected=5
   ((models)) && expected=7

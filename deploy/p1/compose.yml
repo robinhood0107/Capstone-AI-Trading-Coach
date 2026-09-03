@@ -204,7 +204,7 @@ services:
       # safe_io 가 approved_root(=bundle_root 의 부모) 를 현재 사용자 소유로 요구한다.
       # team-b 만 마운트하면 부모가 Docker 가 만든 root 소유 /opt/capstone 이 되어 거부된다.
       - ./seed:/opt/capstone/seed:ro
-      - ${P1_ARTIFACT_ARCHIVE_DIR:-/nonexistent}:/archive
+      - ${P1_ARTIFACT_ARCHIVE_DIR:-./.state-app/artifacts}:/archive
       - ./docker/secret-entrypoint.sh:/usr/local/bin/p1-secret-entrypoint:ro
     depends_on:
       identity-bootstrap: {condition: service_completed_successfully}
@@ -421,7 +421,7 @@ services:
     secrets: [artifact_import_env]
     volumes:
       - ${P1_ARTIFACT_BUNDLE_PARENT:-/nonexistent}:/owner:ro
-      - ${P1_ARTIFACT_ARCHIVE_DIR:-/nonexistent}:/archive
+      - ${P1_ARTIFACT_ARCHIVE_DIR:-./.state-app/artifacts}:/archive
       - ./docker/secret-entrypoint.sh:/usr/local/bin/p1-secret-entrypoint:ro
     depends_on:
       postgres: {condition: service_healthy}
@@ -458,7 +458,7 @@ services:
       - source: p1_provider_claim_dsn
         target: p1-provider-claim-dsn
     volumes:
-      - ${P1_KIS_MOCK_RUNTIME_DIR}:/certification
+      - ${P1_KIS_MOCK_RUNTIME_DIR:-./.state-app/mock}:/certification
     user: "${P1_OPERATOR_UID}:${P1_SECRET_GID}"
     read_only: true
     cap_drop: [ALL]
@@ -746,39 +746,39 @@ services:
     networks: [p1-app]
 
 secrets:
-  postgres_env: {file: "${P1_SECRETS_DIR}/postgres.env"}
-  redis_env: {file: "${P1_SECRETS_DIR}/redis.env"}
-  role_bootstrap_env: {file: "${P1_SECRETS_DIR}/role-bootstrap.env"}
-  migration_env: {file: "${P1_SECRETS_DIR}/migration.env"}
-  bootstrap_env: {file: "${P1_SECRETS_DIR}/bootstrap.env"}
-  actor_capability_authority_env: {file: "${P1_SECRETS_DIR}/actor-capability-authority.env"}
-  spring_env: {file: "${P1_SECRETS_DIR}/spring.env"}
-  python_env: {file: "${P1_SECRETS_DIR}/python.env"}
-  kis_mock_env: {file: "${P1_SECRETS_DIR}/kis-mock.env"}
-  kafka_publisher_env: {file: "${P1_SECRETS_DIR}/kafka-publisher.env"}
-  poison_recorder_env: {file: "${P1_SECRETS_DIR}/poison-recorder.env"}
-  kafka_admin_env: {file: "${P1_SECRETS_DIR}/kafka-admin.env"}
-  kafka_broker_jaas: {file: "${P1_SECRETS_DIR}/kafka-broker-jaas.conf"}
-  demo_env: {file: "${P1_SECRETS_DIR}/demo.env"}
-  rag_history_kek: {file: "${P1_SECRETS_DIR}/rag-history-kek-v1.key"}
-  seed_import_env: {file: "${P1_SECRETS_DIR}/seed-import.env"}
-  artifact_import_env: {file: "${P1_SECRETS_DIR}/artifact-import.env"}
-  team_a_acceptance_env: {file: "${P1_SECRETS_DIR}/team-a-acceptance.env"}
-  return_inference_env: {file: "${P1_SECRETS_DIR}/return-inference.env"}
-  automation_runtime_env: {file: "${P1_SECRETS_DIR}/automation-runtime.env"}
-  automation_gate_author_env: {file: "${P1_SECRETS_DIR}/automation-gate-author.env"}
-  market_data_env: {file: "${P1_SECRETS_DIR}/market-data.env"}
-  market_data_provider_env: {file: "${P1_SECRETS_DIR}/market-data-provider.env"}
-  after_hours_replay_env: {file: "${P1_SECRETS_DIR}/after-hours-replay.env"}
-  rag_v2_env: {file: "${P1_SECRETS_DIR}/rag-v2.env"}
-  vertex_service_account: {file: "${P1_SECRETS_DIR}/pre-s5-vertex-service-account.json"}
-  actor_tls_ca: {file: "${P1_SECRETS_DIR}/actor-tls-ca.crt"}
-  actor_server_p12: {file: "${P1_SECRETS_DIR}/actor-server.p12"}
-  actor_client_p12: {file: "${P1_SECRETS_DIR}/actor-client.p12"}
-  kis_mock_approval_private: {file: "${P1_SECRETS_DIR}/kis-mock-approval-private.pem"}
-  kis_mock_approval_public: {file: "${P1_SECRETS_DIR}/kis-mock-approval-public.pem"}
-  kis_mock_approval_trust_policy: {file: "${P1_SECRETS_DIR}/kis-mock-approval-trust-policy.json"}
-  p1_provider_claim_dsn: {file: "${P1_SECRETS_DIR}/p1-provider-claim.dsn"}
+  postgres_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/postgres.env"}
+  redis_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/redis.env"}
+  role_bootstrap_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/role-bootstrap.env"}
+  migration_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/migration.env"}
+  bootstrap_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/bootstrap.env"}
+  actor_capability_authority_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/actor-capability-authority.env"}
+  spring_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/spring.env"}
+  python_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/python.env"}
+  kis_mock_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock.env"}
+  kafka_publisher_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kafka-publisher.env"}
+  poison_recorder_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/poison-recorder.env"}
+  kafka_admin_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kafka-admin.env"}
+  kafka_broker_jaas: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kafka-broker-jaas.conf"}
+  demo_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/demo.env"}
+  rag_history_kek: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/rag-history-kek-v1.key"}
+  seed_import_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/seed-import.env"}
+  artifact_import_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/artifact-import.env"}
+  team_a_acceptance_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/team-a-acceptance.env"}
+  return_inference_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/return-inference.env"}
+  automation_runtime_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/automation-runtime.env"}
+  automation_gate_author_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/automation-gate-author.env"}
+  market_data_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/market-data.env"}
+  market_data_provider_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/market-data-provider.env"}
+  after_hours_replay_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/after-hours-replay.env"}
+  rag_v2_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/rag-v2.env"}
+  vertex_service_account: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/pre-s5-vertex-service-account.json"}
+  actor_tls_ca: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/actor-tls-ca.crt"}
+  actor_server_p12: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/actor-server.p12"}
+  actor_client_p12: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/actor-client.p12"}
+  kis_mock_approval_private: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock-approval-private.pem"}
+  kis_mock_approval_public: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock-approval-public.pem"}
+  kis_mock_approval_trust_policy: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock-approval-trust-policy.json"}
+  p1_provider_claim_dsn: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/p1-provider-claim.dsn"}
 
 volumes:
   p1-postgres-current: {}

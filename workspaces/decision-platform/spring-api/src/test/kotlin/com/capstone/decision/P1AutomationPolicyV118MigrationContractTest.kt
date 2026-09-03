@@ -58,7 +58,7 @@ class P1AutomationPolicyV118MigrationContractTest {
     }
 
     @Test
-    fun `V118 is the latest migration and V91 stays immutable`() {
+    fun `V118 is declared exactly once and V91 stays immutable`() {
         val versions =
             Files.list(migrationDirectory).use { paths ->
                 paths
@@ -71,7 +71,6 @@ class P1AutomationPolicyV118MigrationContractTest {
                             .toInt()
                     }.toList()
             }
-        assertThat(versions.max()).isEqualTo(118)
         assertThat(versions.count { it == 118 }).isEqualTo(1)
         assertThat(migrationDirectory.resolve("V91__p1_variable_quantity_policy_runtime.sql"))
             .isRegularFile()

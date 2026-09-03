@@ -446,7 +446,12 @@ up_app() {
     printf 'CAPSTONE_TRADING_CALENDAR=UNAVAILABLE\n'
   fi
   unset calendar_seed
-  save_active_mode "$models" "$mock" 0
+  # up 이 매번 AUTOMATION=0 으로 덮으면 켜 둔 자동운용이 재기동마다 꺼진다. 의도는 유지한다.
+  # --mock 없이 올린 경우는 brokerage 가 provider-free 이므로 의도를 되살리지 않는다.
+  local desired_automation=0
+  load_active_mode
+  ((mock)) && desired_automation=$AUTOMATION
+  save_active_mode "$models" "$mock" "$desired_automation"
   local expected=5
   ((models)) && expected=7
   local running
@@ -461,6 +466,30 @@ up_app() {
   else
     printf 'KIS_BROKERAGE_MODE=PROVIDER_FREE\n'
   fi
+  reconcile_automation_intent "$desired_automation"
+}
+
+# 저장된 의도가 ARMED 면 기동 뒤에 실제 상태를 그쪽으로 맞춘다. 한 번 켜 두면 재기동에도
+# 켜진 채로 돌아오는 것이 이 함수가 하는 일의 전부다.
+#
+# 실패를 삼키지 않는다. HALTED 이후거나 gate 인증이 무효면 mock_start 가 fail-closed 로
+# 거부하는데(V90:659-665), 그 사유가 안 보이면 운영자는 "왜 안 켜졌는지"를 알 수 없다.
+reconcile_automation_intent() {
+  local desired=${1:-0} output status=0
+  if ((desired == 0)); then
+    printf 'CAPSTONE_AUTOMATION_RECONCILED=DISARMED_BY_INTENT\n'
+    return 0
+  fi
+  output=$(mock_start 2>&1) || status=$?
+  if ((status == 0)); then
+    printf '%s\n' "$output"
+    printf 'CAPSTONE_AUTOMATION_RECONCILED=ARMED\n'
+    return 0
+  fi
+  # HALTED 는 사람이 봐야 하는 신호다. up 자체를 실패시키지 않고 이유만 남긴다.
+  printf '%s\n' "${output:-(no output)}"
+  printf 'CAPSTONE_AUTOMATION_RECONCILED=BLOCKED\n'
+  return 0
 }
 
 doctor() {
@@ -780,7 +809,9 @@ mock_stop() {
   compose --profile owner run --rm --no-deps automation-runtime-cli \
     python -m app.p1_owner.mock_automation_cli stop
   # process는 outstanding reconciliation을 위해 유지하고 control만 DISARMED로 바꾼다.
-  save_active_mode "$MODELS" "$MOCK" "$AUTOMATION"
+  # AUTOMATION 은 0 으로 내린다. 이 값이 up 의 desired state 이므로 1 로 남기면 다음 up 이
+  # 방금 내린 disarm 을 되돌린다. 끄는 것은 명시적 의도이고 재기동에 살아남아야 한다.
+  save_active_mode "$MODELS" "$MOCK" 0
   printf 'KIS_MOCK_NEW_ORDERS=DISARMED\nOUTSTANDING_RECONCILIATION=PRESERVED\n'
 }
 

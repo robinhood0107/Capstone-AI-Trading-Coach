@@ -14,6 +14,7 @@ export interface DerivedCard {
   value: number | null;
   format: 'RATIO' | 'SIGNED_RATIO';
   note: string;
+  emphasis?: boolean;
 }
 
 export interface EquityPoint {
@@ -49,6 +50,15 @@ export function toBacktestReportView(view: DashboardBacktestView): BacktestRepor
   const byName = new Map(view.strategies.map((entry) => [entry.strategy, entry]));
   const baseline = byName.get('Baseline')?.metrics ?? null;
   const strict = byName.get('Strict')?.metrics ?? null;
+  const bestNetReturn = view.metricCards
+    .map((card) => {
+      const match = /^(Baseline|Guide|Strict)\.netReturn$/.exec(card.metric);
+      return match && card.value !== null && Number.isFinite(card.value)
+        ? { scenario: match[1], value: card.value }
+        : null;
+    })
+    .filter((item): item is { scenario: string; value: number } => item !== null)
+    .sort((left, right) => right.value - left.value)[0] ?? null;
 
   const merged = new Map<string, EquityPoint>();
   for (const entry of view.strategies) {
@@ -61,6 +71,16 @@ export function toBacktestReportView(view: DashboardBacktestView): BacktestRepor
   const equityCurve = Array.from(merged.values()).sort((a, b) => a.at.localeCompare(b.at));
 
   const derivedCards: DerivedCard[] = [
+    {
+      key: 'best_net_return',
+      label: '이 기간 최고 관측값',
+      value: bestNetReturn?.value ?? null,
+      format: 'SIGNED_RATIO',
+      note: bestNetReturn
+        ? `${bestNetReturn.scenario}의 비용 반영 수익률입니다. 세 시나리오를 같은 DB 입력과 조건으로 계산했습니다.`
+        : '비용 반영 수익률이 저장되지 않았습니다.',
+      emphasis: true,
+    },
     {
       key: 'mdd_improvement',
       label: 'MDD 개선율',

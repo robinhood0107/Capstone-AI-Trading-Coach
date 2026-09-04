@@ -375,10 +375,10 @@ def _preserve_frozen_automation_v2_projection(document: dict[str, Any]) -> None:
     expiry = properties.get("expirySession") if isinstance(properties, dict) else None
     if not isinstance(expiry, dict) or expiry.get("format") != "date" or expiry.get("type") != ["string", "null"]:
         raise OpenApiNormalizationError("generated OpenAPI: AutomationPositionV2 expiry projection is invalid.")
-    if position.get("required") != ["expirySession"]:
+    if position.get("required") not in (None, ["expirySession"]):
         raise OpenApiNormalizationError("generated OpenAPI: AutomationPositionV2 required projection is invalid.")
     expiry["type"] = "string"
-    position.pop("required")
+    position.pop("required", None)
 
 
 def normalize_generated_openapi(

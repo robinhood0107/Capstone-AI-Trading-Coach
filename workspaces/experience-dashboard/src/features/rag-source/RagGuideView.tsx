@@ -139,7 +139,7 @@ export function RagGuideView() {
             }}
             rows={3}
             placeholder="예: 금 ETF의 롤오버 위험은 무엇인가요?"
-            className="w-full resize-y rounded-tile border border-line bg-panel px-4 py-3 text-[14px] leading-6 text-ink placeholder:text-faint"
+            className="w-full resize-y rounded-control border border-line bg-panel px-4 py-3 text-[14px] leading-6 text-ink placeholder:text-faint"
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">

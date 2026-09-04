@@ -23,8 +23,8 @@
   --c-subtle: 247 248 250;
   --c-line: 233 235 239;
   --c-rule: 223 227 233;
-  --c-navy: 20 33 61;
-  --c-brand: 20 33 61;
+  --c-navy: 43 95 217;
+  --c-brand: 43 95 217;
   --c-on-brand: 255 255 255;
   --c-allow: 6 122 70;
   --c-warn: 178 94 9;
@@ -32,8 +32,12 @@
   --c-block: 179 38 30;
   --c-abstain: 152 160 171;
 
+  /* 국내 시장 관행: 상승 적, 하락 청. 판정색(allow/block)과 토큰을 공유하지 않는다. */
+  --c-up: 214 56 62;
+  --c-down: 43 95 217;
+
   --c-scrollbar: 223 227 233;
-  --c-focus: 20 33 61;
+  --c-focus: 43 95 217;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -48,17 +52,20 @@
     --c-subtle: 31 36 45;
     --c-line: 44 50 61;
     --c-rule: 58 65 78;
-    --c-navy: 138 163 219;
-    --c-brand: 33 44 71;
-    --c-on-brand: 235 240 248;
+    --c-navy: 126 160 255;
+    --c-brand: 126 160 255;
+    --c-on-brand: 10 13 18;
     --c-allow: 62 190 126;
     --c-warn: 232 160 62;
     --c-hold: 154 163 176;
     --c-block: 240 116 106;
     --c-abstain: 128 137 150;
 
+    --c-up: 255 107 112;
+    --c-down: 126 160 255;
+
     --c-scrollbar: 58 65 78;
-    --c-focus: 138 163 219;
+    --c-focus: 126 160 255;
   }
 }
 
@@ -73,17 +80,20 @@
   --c-subtle: 31 36 45;
   --c-line: 44 50 61;
   --c-rule: 58 65 78;
-  --c-navy: 138 163 219;
-  --c-brand: 33 44 71;
-  --c-on-brand: 235 240 248;
+  --c-navy: 126 160 255;
+  --c-brand: 126 160 255;
+  --c-on-brand: 10 13 18;
   --c-allow: 62 190 126;
   --c-warn: 232 160 62;
   --c-hold: 154 163 176;
   --c-block: 240 116 106;
   --c-abstain: 128 137 150;
 
+  --c-up: 255 107 112;
+  --c-down: 126 160 255;
+
   --c-scrollbar: 58 65 78;
-  --c-focus: 138 163 219;
+  --c-focus: 126 160 255;
 }
 
 html,
@@ -138,6 +148,104 @@ select {
     border-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
     color 150ms cubic-bezier(0.4, 0, 0.2, 1),
     box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 실제로 누르는 대상에만 쓰는 탭 피드백. 누르면 살짝 눌리는 느낌을 준다. */
+.tap {
+  transition: transform 120ms cubic-bezier(0.4, 0, 0.6, 1);
+}
+.tap:active {
+  transform: scale(0.97);
+}
+
+/*
+ * 눈금자 슬라이더. OS 기본 슬라이더(둥근 회색 트랙 + 동그라미)는 화면에서 가장 티가 나는
+ * "손대지 않은 기본값"이다. 채워진 구간을 파랑으로, 나머지는 괘선색으로 — 값 자체가
+ * 보이게 만든다. --range-fill은 각 입력의 인라인 스타일에서 채워진 비율(%)로 정해준다.
+ */
+input[type='range'].ink-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(
+    to right,
+    rgb(var(--c-navy)) 0%,
+    rgb(var(--c-navy)) var(--range-fill, 0%),
+    rgb(var(--c-line)) var(--range-fill, 0%),
+    rgb(var(--c-line)) 100%
+  );
+  outline-offset: 6px;
+}
+input[type='range'].ink-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgb(var(--c-navy));
+  border: 2px solid rgb(var(--c-panel));
+  box-shadow: 0 0 0 1px rgb(var(--c-line));
+  cursor: pointer;
+  margin-top: 0;
+}
+input[type='range'].ink-slider::-moz-range-track {
+  height: 2px;
+  background: linear-gradient(
+    to right,
+    rgb(var(--c-navy)) 0%,
+    rgb(var(--c-navy)) var(--range-fill, 0%),
+    rgb(var(--c-line)) var(--range-fill, 0%),
+    rgb(var(--c-line)) 100%
+  );
+}
+input[type='range'].ink-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgb(var(--c-navy));
+  border: 2px solid rgb(var(--c-panel));
+  box-shadow: 0 0 0 1px rgb(var(--c-line));
+  cursor: pointer;
+}
+input[type='range'].ink-slider:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 체크박스. OS 기본 파란 사각형 대신 우리 파랑으로 채우는 정사각 박스. */
+.ink-checkbox {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: 1.5px solid rgb(var(--c-line));
+  border-radius: 5px;
+  background: rgb(var(--c-panel));
+  position: relative;
+  cursor: pointer;
+}
+.ink-checkbox:hover {
+  border-color: rgb(var(--c-navy));
+}
+.ink-checkbox:checked {
+  background: rgb(var(--c-navy));
+  border-color: rgb(var(--c-navy));
+}
+.ink-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid rgb(var(--c-on-brand));
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+.ink-checkbox:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 *:focus-visible {

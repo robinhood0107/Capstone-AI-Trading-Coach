@@ -28,7 +28,7 @@ export function Disclosure({
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between gap-4 rounded-tile bg-subtle px-5 py-3.5 text-left hover:bg-line/50"
+        className="tap flex w-full items-center justify-between gap-4 rounded-control bg-subtle px-5 py-3.5 text-left transition-colors hover:bg-line/50"
       >
         <span className="min-w-0">
           <span className="flex items-center gap-2 text-[14px] font-semibold text-ink">

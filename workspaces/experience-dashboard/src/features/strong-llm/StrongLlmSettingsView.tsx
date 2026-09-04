@@ -19,7 +19,7 @@ import {
 } from './viewModel';
 
 const FIELD =
-  'w-full rounded-tile border border-line bg-panel px-3 py-2 text-sm text-ink ' +
+  'w-full rounded-control border border-line bg-panel px-3 py-2 text-sm text-ink ' +
   'focus:border-navy focus:outline-none';
 const LABEL = 'block text-xs font-medium text-muted';
 
@@ -213,7 +213,7 @@ function ProviderColumn(props: ColumnProps) {
   const selected = props.provider;
   const needsKey = selected !== '' && PROVIDER_NEEDS_KEY[selected];
   return (
-    <fieldset className="space-y-3 rounded-tile border border-line p-4">
+    <fieldset className="space-y-3 rounded-card border border-line p-4">
       <legend className="px-1 text-xs font-medium text-ink">{props.heading}</legend>
       <div className="space-y-1">
         <label className={LABEL}>제공자</label>

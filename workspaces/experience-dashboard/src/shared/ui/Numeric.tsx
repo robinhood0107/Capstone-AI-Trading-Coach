@@ -21,10 +21,32 @@ export function Numeric({ value, format, missingReason, className = '' }: Numeri
   return <span className={`tnum ${className}`}>{format(value)}</span>;
 }
 
-export function Delta({ value, format }: { value: number | null; format: (v: number) => string }) {
+/**
+ * 등락 표기. 국내 시장 관행(상승 적/하락 청)을 따르며 판정색(allow/block)과는
+ * 다른 토큰(up/down)을 쓴다 — 색만으로 방향을 전달하지 않고 화살표를 같이 붙인다.
+ */
+export function Delta({
+  value,
+  format,
+  missingReason,
+  className = '',
+}: {
+  value: number | null;
+  format: (v: number) => string;
+  missingReason?: string;
+  className?: string;
+}) {
   if (value === null || !Number.isFinite(value)) {
-    return <Numeric value={null} format={format} />;
+    return <Numeric value={null} format={format} missingReason={missingReason} className={className} />;
   }
-  const tone = value > 0 ? 'text-allow' : value < 0 ? 'text-block' : 'text-muted';
-  return <span className={`tnum font-semibold ${tone}`}>{format(value)}</span>;
+  const tone = value > 0 ? 'text-up' : value < 0 ? 'text-down' : 'text-muted';
+  const arrow = value > 0 ? '↑' : value < 0 ? '↓' : '·';
+  return (
+    <span className={`tnum inline-flex items-baseline gap-1 font-semibold ${tone} ${className}`}>
+      <span aria-hidden className="text-[9px]">
+        {arrow}
+      </span>
+      {format(value)}
+    </span>
+  );
 }

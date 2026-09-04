@@ -1,0 +1,33 @@
+services:
+  postgres:
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+  actor-authority:
+    restart: unless-stopped
+
+  decision-platform:
+    ports: !reset []
+    restart: unless-stopped
+
+  experience-dashboard:
+    ports: !override
+      - "${P1_EC2_DASHBOARD_BIND:-0.0.0.0}:${P1_DASHBOARD_PORT:-3000}:3000"
+    restart: unless-stopped
+
+volumes:
+  p1-postgres-current:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "${P1_EBS_ROOT:-/srv/capstone-p1}/postgres"
+  p1-redis:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "${P1_EBS_ROOT:-/srv/capstone-p1}/redis"
+

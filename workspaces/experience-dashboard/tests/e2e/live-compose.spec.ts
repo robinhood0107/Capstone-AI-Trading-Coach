@@ -29,12 +29,19 @@ test('live Compose login and primary screens use the Spring API', async ({ page 
   for (const [navigation, heading] of screens) {
     await navRail.getByRole('link', { name: new RegExp(`^${navigation}`) }).click();
     await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+    if (navigation === '금융 Agent') {
+      await expect(page.getByRole('heading', { name: '금융 지식 라이브러리' })).toBeVisible();
+      await expect(page.getByText('KIS Open API 소개')).toHaveCount(0);
+      await expect(page.getByText('ECOS StatisticSearch DevGuide locator')).toHaveCount(0);
+    }
   }
 
   await expect(page.getByText('LightGBM')).toHaveCount(0);
   await page.getByRole('tab', { name: '백테스트 리포트' }).click();
   await expect(page.getByRole('heading', { name: '백테스트 리포트' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Baseline / Guide / Strict 비교' })).toBeVisible();
+  await expect(page.getByText('이 기간 최고 관측값')).toBeVisible();
+  await expect(page.getByText(/비용 반영 수익률입니다. 세 시나리오를 같은 DB 입력과 조건으로 계산했습니다./)).toBeVisible();
   await expect(page.getByText('demo_s8_fake_e2e_0001')).toHaveCount(0);
 
   await navRail.getByRole('link', { name: /^자동운용/ }).click();
@@ -83,6 +90,17 @@ test('RAG v2 screen gates the question behind consent and renders citations', as
   await expect(page.getByRole('heading', { name: '금융 가이드' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '외부 처리 동의' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '금융 개념 물어보기' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '금융 지식 라이브러리' })).toBeVisible();
+  await expect(page.getByText('132030 금선물 ETF의 선물·환헤지·롤오버 경계')).toBeVisible();
+  await expect(page.getByText('KIS Open API 소개')).toHaveCount(0);
+
+  const savedQuestion = page.locator('details').filter({
+    hasText: '13거래일 백테스트에서 Guide 수익률이 양수라는 결과를 과신하면 안 되는 이유는 무엇인가요?',
+  });
+  await expect(savedQuestion).toBeVisible();
+  await savedQuestion.locator('summary').click();
+  await expect(savedQuestion.locator('p')).toContainText('13거래일은');
+  expect((await savedQuestion.locator('p').textContent())?.length ?? 0).toBeGreaterThan(100);
 
   await expect(page.getByText(/^(동의 완료|동의 필요)$/)).toBeVisible();
 

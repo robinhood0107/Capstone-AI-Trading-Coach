@@ -7,17 +7,10 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from app.strong_llm.models import Evidence, RunRequest
 
-# 프롬프트가 판단에 영향을 주므로 프롬프트 변경은 곧 매매 동작 변경이다. 조각과 그 순서를
-# 계약 테스트로 고정하고, 합쳐진 전문의 해시를 버전으로 남겨 어떤 글로 나온 판단인지 추적한다.
+# Prompt fragments and ordering are hash-bound because they affect judgement behavior.
 PROMPT_CONTRACT_ID = "strong-llm-prompt/v3"
 
-# --------------------------------------------------------------------------------------
-# 조각. 순서가 곧 계약이다 (`_SYSTEM_ORDER`).
-#
-# 왜 한 벌인가. 예전에는 같은 글이 Kotlin 어댑터와 여기에 두 벌로 있었고, provider를 바꿀
-# 때마다 두 곳을 고쳐야 했다. 설명과 판단도 별개 프롬프트로 갈라지면 안전 문구가 두 곳에서
-# 어긋난다. 그래서 역할 차이만 조건부 조각으로 두고 나머지는 공유한다.
-# --------------------------------------------------------------------------------------
+# `_SYSTEM_ORDER` is the canonical prompt-fragment order for every provider.
 
 _ROLE_EXPLAIN = """\
 # 역할

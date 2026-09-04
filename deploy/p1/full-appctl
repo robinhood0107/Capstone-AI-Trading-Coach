@@ -345,23 +345,7 @@ stop_old_preview_containers() {
   fi
 }
 
-# RAG는 재료가 있는 기계에서 저절로 켜진다.
-#
-# 예전에는 기본값이 꺼짐이라 `./capstone up`만 하면 corpus는 FULL_READY라고 답하면서도 질문에는
-# 답도 인용도 오지 않았다. 그것이 이 화면의 첫인상이었다.
-#
-# 그렇다고 compose 기본값을 켜짐으로 바꿀 수는 없다. entrypoint는 켜져 있는데 로컬 루트나
-# 키가 없으면 부팅을 닫는다. 그러면 코퍼스를 아직 받지 않은 기계에서 스택 전체가 뜨지 않는다.
-# "조용히 fixture로 되돌아가지 않는다"는 그 성질은 명시적으로 켠 요청에 대한 것이라 그대로 둔다.
-#
-# 그래서 기본값을 여기서 정한다. 이 기계에 재료가 실제로 있으면 켜고, 없으면 끈 채로 뜨며
-# 무엇이 없어서 꺼졌는지 말한다. 운영자가 환경변수로 직접 켠 경우에는 손대지 않는다 - 그때는
-# 재료가 없으면 부팅이 닫히는 편이 맞다.
-# 활성화 패킷에 박히는 코드 바인딩 넷을 지금 트리에서 만든다.
-#
-# 이 값들의 뜻은 "이 패킷을 저술한 코드 상태가 무엇이었나"다. 운영자가 손으로 붙여 넣게 하면
-# 배포마다 한 번 더 손이 가고, 무엇보다 그 값이 실제로 도는 코드와 어긋나도 아무도 모른다.
-# 실제 상태에서 뽑으면 그 어긋남이 생기지 않는다. 이미 정해 둔 값이 있으면 손대지 않는다.
+# Bind provider activation to the exact source tree used by this runtime.
 bind_vertex_code_state() {
   command -v git >/dev/null 2>&1 || return 1
   local head tree
@@ -376,12 +360,10 @@ bind_vertex_code_state() {
 enable_rag_by_default() {
   [[ -z ${P1_RAG_DEFAULT_DECIDED:-} ]] || return 0
   export P1_RAG_DEFAULT_DECIDED=1
-  # 이 경로는 compose가 읽는 runtime.env에 있다. 그 파일을 통째로 불러오면 여기의 판단이
-  # 배포 전체의 환경에 섞이므로 필요한 한 줄만 읽는다.
+  # Read only the runtime root; importing the full env would leak unrelated settings.
   local root=${P1_RAG_RUNTIME_DIR:-}
   [[ -n $root ]] || root=$(sed -n 's/^P1_RAG_RUNTIME_DIR=//p' "$RUNTIME_ENV" 2>/dev/null || true)
-  # Compose 상대 경로는 deploy/p1 기준으로 해석한다. 같은 runtime.env를 CLI가 현재
-  # 작업 디렉터리 기준으로 검사하면 실제 mount는 있는데도 RAG를 OFF로 잘못 판정한다.
+  # Compose resolves this path relative to deploy/p1.
   [[ $root != /* ]] && root=$SCRIPT_DIR/$root
   local missing=()
   [[ -n ${P1_RAG_V2_ENABLED:-} ]] && return 0
@@ -395,8 +377,7 @@ enable_rag_by_default() {
     return 0
   fi
   export P1_RAG_V2_ENABLED=true
-  # 생성까지 켜려면 서비스계정과 자동 저술 정책이 더 있어야 한다. 둘 중 하나라도 없으면
-  # 검색은 켜고 생성만 닫는다. 그때 화면은 인용은 보여 주고 답만 비어 있다.
+  # Retrieval can run without enabling external generation.
   if [[ -z ${P1_RAG_V2_VERTEX_ENABLED:-} ]] &&
      [[ -f $SECRETS_DIR/pre-s5-vertex-service-account.json ]] &&
      [[ -f $root/control/pre-s5-vertex-auto-activation-policy.json ]] &&
@@ -439,9 +420,7 @@ up_app() {
   fi
   export P1_KIS_MOCK_ONLINE_ENABLED=$([[ $mock == 1 ]] && printf true || printf false)
   export P1_KIS_OFFLINE=$([[ $mock == 1 ]] && printf 0 || printf 1)
-  # mock mode에서는 control이 DISARMED여도 runtime process 자체는 항상 띄운다. 실제 신규 주문은
-  # DB의 certification/REAL_TEAM_B/release/account gate와 arm CAS가 계속 막으므로 capability를
-  # 켜는 것과 자동 arm은 분리된다. 재배포 때 runtime flag가 다시 꺼지는 운영 drift도 방지한다.
+  # Runtime availability and order authorization remain separate gates.
   export P1_AUTOMATION_RUNTIME_ENABLED=$([[ $mock == 1 ]] && printf true || printf false)
   require_command openssl
   require_command python3
@@ -457,30 +436,26 @@ up_app() {
     compose --profile models run --rm --no-deps paddleocr-vl-model-fetch
     compose --profile models up -d --wait bge-m3 paddleocr-vl
   else
-    # 모드 전환 시 모델 volume은 보존하되 정지 컨테이너도 남기지 않는다.
+    # Preserve model volumes while removing inactive containers.
     compose --profile models stop bge-m3 paddleocr-vl >/dev/null 2>&1 || true
     compose --profile models rm --force bge-m3 paddleocr-vl >/dev/null 2>&1 || true
   fi
-  # 일일 시장데이터 수집기는 자동매매 모드에서만 상주한다. plain up 의 컨테이너 수를 5개로
-  # 유지하려는 것이다 - "기본 장기 컨테이너 5개"는 계약 기록이다. --models 와 같은 형태다.
+  # The daily collector runs only with the automation profile.
   if ((mock)); then
     compose --profile automation up -d --wait market-data-daily
   else
     compose --profile automation stop market-data-daily >/dev/null 2>&1 || true
     compose --profile automation rm --force market-data-daily >/dev/null 2>&1 || true
   fi
-  # 기존 preview와 host port가 같아 cut-over 직전에만 중지한다. volume은 건드리지 않는다.
+  # Stop the preview immediately before binding the production host ports.
   stop_old_preview_containers
   compose up -d --wait actor-authority decision-platform experience-dashboard
   local calendar_seed
-  # grep 으로 바로 파이프하면 seeded/skippedYears 수치가 사라져 무엇이 적재됐는지 알 수 없다.
-  # pipefail 아래에서는 캡처 실패가 up 자체를 죽인다. 캘린더가 채워지지 않은 것은
-  # 사람이 보면 되는 일이므로 마커로만 남기고 up 은 계속한다.
+  # Calendar seed failures are reported without taking down the core stack.
   calendar_seed=$(compose --profile owner run --rm --no-deps calendar-offline-seed 2>&1 \
     | grep -E '^P1_CALENDAR_OFFLINE_SEED=' | tail -1) || calendar_seed=''
   printf '%s\n' "${calendar_seed:-P1_CALENDAR_OFFLINE_SEED=NO_OUTPUT}"
-  # 세 상태를 구분한다. 세션이 이미 전부 들어 있는 것은 실패가 아니라 가장 건강한 상태인데,
-  # SEEDED 만 정상으로 세면 그것이 UNAVAILABLE 로 읽혀 매번 다시 조사하게 된다.
+  # An already populated calendar is a healthy state.
   case $calendar_seed in
     P1_CALENDAR_OFFLINE_SEED=SEEDED*) printf 'CAPSTONE_TRADING_CALENDAR=SEEDED\n' ;;
     P1_CALENDAR_OFFLINE_SEED=NO_SESSIONS*alreadyPresent=0\ *)
@@ -489,8 +464,7 @@ up_app() {
     *) printf 'CAPSTONE_TRADING_CALENDAR=UNAVAILABLE\n' ;;
   esac
   unset calendar_seed
-  # 대시보드 출처 패널의 원천이다. 등록이 안 되면 화면이 "등록된 출처가 없습니다"로 비므로
-  # 마커를 남긴다. 캘린더와 같은 이유로 실패해도 up 은 계속한다.
+  # Source registration is reported separately from core startup.
   local rag_sources_seed
   rag_sources_seed=$(compose --profile owner run --rm --no-deps rag-source-register 2>&1 \
     | grep -E '"sourceCount"' | tail -1) || rag_sources_seed=''
@@ -501,7 +475,7 @@ up_app() {
   fi
   unset rag_sources_seed
   replay_history
-  # 공개 일봉 갱신 실패는 stale marker로 남기며 KIS 주문은 호출하지 않는다.
+  # A failed public-price refresh is recorded as stale and never calls KIS orders.
   local daily_refresh
   daily_refresh=$(compose --profile owner run --rm --no-deps market-data-cli \
     python -m app.data.market_data.yfinance_daily_cli 2>&1 \
@@ -523,12 +497,12 @@ up_app() {
     printf 'CAPSTONE_OWNER_SCENARIOS=UNAVAILABLE\n'
   fi
   unset scenario_materialization
-  # KIS Mock 재기동에서는 저장된 운용 의도를 유지한다.
+  # Preserve the stored automation intent across KIS Mock restarts.
   local desired_automation=0
   load_active_mode
   ((mock)) && desired_automation=$AUTOMATION
   save_active_mode "$models" "$mock" "$desired_automation"
-  # 기본 5개. --models 가 모델 런타임 2개, --mock 이 일일 시장데이터 수집기 1개를 더한다.
+  # Base stack: five services; models add two and mock adds one.
   local expected=5
   ((models)) && expected=$((expected + 2))
   ((mock)) && expected=$((expected + 1))
@@ -697,25 +671,18 @@ down() {
   printf 'CAPSTONE_DOWN=PASS\nCAPSTONE_VOLUMES_PRESERVED=TRUE\n'
 }
 
-# 과거 영업일 이력을 재생한다. 팀원이 clone 하고 `up` 만 해도 같은 화면에 도달해야 하므로
-# 여기서 두 단계를 순서대로 돌린다. 덤프를 커밋하지 않고 계산으로 재현한다 - 같은 코드 +
-# 같은 바 = 같은 행이고, 두 번 돌려도 멱등이다.
-#
-# 1단계는 decision-platform 안에서만 돈다(추론 서버가 그 안에만 있다). 2단계는 superuser
-# 경계에서 돈다(이력 표가 RLS FORCE 다). 한 프로세스가 둘 다 갖지 않게 나눠 둔 것이다.
+# Compute signals in the application container and persist them through the isolated seed role.
 replay_history() {
   local start=${P1_HISTORY_REPLAY_START:-2026-08-18}
   local end=${P1_HISTORY_REPLAY_END:-}
   if [[ -z $end ]]; then
     end=$(date -d 'yesterday' +%F 2>/dev/null || date +%F)
   fi
-  # seed 컨테이너가 nonroot 로 읽는다. secret 마운트와 같은 0750/0640 을 쓴다 - 0600 이면
-  # 파일은 생기지만 컨테이너가 읽지 못해 재생이 조용히 실패한다.
+  # The non-root seed container requires group-readable replay input.
   install -d -m 0750 -g "${P1_SECRET_GID:-$(id -g)}" "$STATE_DIR/replay" 2>/dev/null \
     || install -d -m 0750 "$STATE_DIR/replay"
   local signals=$STATE_DIR/replay/signals.json
-  # `compose exec` 는 entrypoint 를 거치지 않으므로 secret 이 환경에 없다. 런타임이 쓰는 것과
-  # 같은 파일을 여기서 읽어 넘긴다. 값은 그 프로세스 안에만 있고 출력되지 않는다.
+  # compose exec bypasses the entrypoint, so load only the required runtime secrets.
   if ! compose exec -T decision-platform sh -c \
       'set -a; . /run/secrets/automation_runtime_env; . /run/secrets/return_inference_env; set +a;
        exec python -m app.p1_owner.history_replay_signals --start "$0" --end "$1" --out -' \

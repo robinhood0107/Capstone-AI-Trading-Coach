@@ -10,6 +10,43 @@ RiskEngine, 취소, 체결과 대사 로직을 사용하며 동시에 실행하�
 > 이 프로젝트는 자동매매로 수익을 약속하는 프로그램이 아닙니다. 모의투자 과정을 통해 투자 판단의
 > 근거, 위험과 결과를 직접 확인하고 학습할 수 있도록 돕는 트레이딩 코치입니다.
 
+## 처음 실행하기
+
+외부 API key나 `.env` 없이도 Dashboard와 실제 PostgreSQL 기반 데모 데이터를 먼저 확인할 수 있습니다.
+
+```bash
+git clone https://github.com/robinhood0107/Capstone-AI-Trading-Coach.git
+cd Capstone-AI-Trading-Coach
+./capstone doctor
+./capstone up
+```
+
+`CAPSTONE_UP=PASS`가 출력되면 <http://127.0.0.1:3000>에 접속합니다.
+
+- 아이디: `demo-user`
+- 비밀번호: 최초 실행 때 생성되는 `deploy/p1/.state-app/secrets/demo-user.password` 파일의 값
+
+이 상태에서 홈, 금융 Agent, 투자 원칙, 전략 검증, 자동운용 현황, 주문 검토, 학습일지와 보고서를
+탐색할 수 있습니다. 화면은 synthetic 응답을 만들지 않고 DB에 적재된 최신 결과를 사용하며, 계산할
+근거가 없는 값은 `0`으로 꾸미지 않고 미제공 상태로 표시합니다.
+
+자신의 KIS 모의투자 계좌로 자동운용까지 실행하려면 KIS Developers에서 App Key, App Secret과
+하이픈을 제외한 계좌번호를 준비한 뒤 아래 순서로 진행합니다.
+
+```bash
+./capstone mock configure
+./capstone mock doctor
+./capstone up --mock
+./capstone mock gate-author
+./capstone mock readiness
+./capstone mock start
+```
+
+`MOCK_READINESS=PASS`와 `MOCK_START=PASS`가 출력되어야 다음 XKRX 세션이 예약됩니다. 처음 계좌를
+연결한 환경은 거래시간에 `mock certify`가 한 번 필요할 수 있으며, 이 명령은 실제 KIS 모의주문과
+취소를 수행합니다. 자세한 조건은 아래 **KIS 투자계좌 연결과 자동매매 시작**을 따릅니다. KIS Live는
+별도 명시적 설정 없이는 실행되지 않습니다.
+
 ## 프로젝트 목표
 
 금융 정보와 모델 결과는 초보 투자자가 이해하기 어렵고, 결과만 제시하는 자동매매 서비스는 왜 그런

@@ -90,6 +90,9 @@ def load_panel() -> pd.DataFrame:
         closes = group.Close.astype(float)
         ma5 = closes.rolling(5).mean()
         ma20 = closes.rolling(20).mean()
+        # 종목마다 볼 수 있는 최대 이력으로 장기 추세를 만든다. 200세션이 있으면 200을 쓰고
+        # 상장 이력이 20세션뿐이면 그 20으로 계산되어 종목이 배제되지 않는다.
+        ma_long = closes.rolling(200, min_periods=20).mean()
         rows.append(
             pd.DataFrame(
                 {
@@ -101,12 +104,13 @@ def load_panel() -> pd.DataFrame:
                     "rsi": relative_strength_index(closes),
                     "prior_ma5": ma5.shift(1),
                     "prior_ma20": ma20.shift(1),
+                    "ma_long": ma_long,
                     "forward": closes.shift(-1) / closes - 1.0,
                 }
             )
         )
     panel = pd.concat(rows, ignore_index=True).dropna(
-        subset=["ma5", "ma20", "rsi", "prior_ma5", "prior_ma20", "forward"]
+        subset=["ma5", "ma20", "ma_long", "rsi", "prior_ma5", "prior_ma20", "forward"]
     )
     return panel
 
@@ -135,6 +139,15 @@ def variants(panel: pd.DataFrame) -> dict[str, pd.Series]:
         "state": (panel.ma5 > panel.ma20) & (panel.rsi < 70),
         "state_band": (panel.ma5 > panel.ma20 * 1.01) & (panel.rsi < 70),
         "price_ma20": (panel.close > panel.ma20) & (panel.rsi < 70),
+        # 아래 셋은 "전체 동향을 보게 한다"를 위해 사전 확정한 변형이다. ma_long 은 종목별
+        # 최대 이력(최대 200세션)으로 만든 적응형 장기 MA 다.
+        "trend_only": (panel.close > panel.ma_long) & (panel.rsi < 70),
+        "state_trend": (panel.ma5 > panel.ma20)
+        & (panel.close > panel.ma_long)
+        & (panel.rsi < 70),
+        "state_matrend": (panel.ma5 > panel.ma20)
+        & (panel.ma20 > panel.ma_long)
+        & (panel.rsi < 70),
     }
 
 

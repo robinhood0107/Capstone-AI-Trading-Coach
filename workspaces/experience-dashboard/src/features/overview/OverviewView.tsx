@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
+import { Delta } from '@/shared/ui/Numeric';
 import { useResource } from '@/shared/lib/useResource';
 import { api } from '@/shared/api/endpoints';
 import { withFreshness } from '@/shared/lib/viewState';
@@ -48,28 +49,31 @@ export function OverviewView() {
       <AsyncBoundary state={state} onRetry={reload}>
         {(data) => (
           <>
-            <section className="rounded-panel bg-brand px-6 py-7 text-on-brand shadow-hero sm:px-8 sm:py-8">
-              <div className="flex flex-wrap items-end justify-between gap-6">
-                <div className="min-w-0">
-                  <p className="text-[13px] text-on-brand/60">평가금액</p>
-                  <p className="tnum mt-2 text-[28px] font-semibold leading-tight tracking-tight sm:text-display">
-                    {finite(data.risk.portfolioValue) ? (
-                      formatKrw(data.risk.portfolioValue)
-                    ) : (
-                      <span className="text-[22px] font-medium text-on-brand/45">확인 중</span>
-                    )}
-                  </p>
-                  {finite(data.risk.dailyPnlRate) ? (
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <HeroDelta value={data.risk.dailyPnlRate} />
-                      <span className="text-[13px] text-on-brand/50">오늘</span>
-                    </div>
-                  ) : null}
+            <section className="relative overflow-hidden rounded-panel bg-[#12151F] px-6 py-7 text-white sm:px-8 sm:py-8">
+              <HeroChartMotif />
+              <div className="relative z-10">
+                <div className="flex flex-wrap items-end justify-between gap-6">
+                  <div className="min-w-0">
+                    <p className="text-[13px] text-white/60">평가금액</p>
+                    <p className="tnum mt-2 text-[28px] font-semibold leading-tight tracking-tight sm:text-display">
+                      {finite(data.risk.portfolioValue) ? (
+                        formatKrw(data.risk.portfolioValue)
+                      ) : (
+                        <span className="text-[22px] font-medium text-white/45">확인 중</span>
+                      )}
+                    </p>
+                    {finite(data.risk.dailyPnlRate) ? (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <HeroDelta value={data.risk.dailyPnlRate} />
+                        <span className="text-[13px] text-white/50">오늘</span>
+                      </div>
+                    ) : null}
+                  </div>
+                  <AutomationHeroTile status={data.status} />
                 </div>
-                <AutomationHeroTile status={data.status} />
-              </div>
 
-              <HeroStats risk={data.risk} />
+                <HeroStats risk={data.risk} />
+              </div>
             </section>
 
             <TailRiskPanel risk={data.risk} />
@@ -84,7 +88,7 @@ export function OverviewView() {
             <li key={shortcut.href}>
               <Link
                 href={shortcut.href}
-                className="group flex h-full flex-col rounded-tile bg-subtle px-4 py-4 hover:bg-panel hover:shadow-card"
+                className="tap group flex h-full flex-col rounded-card border border-line bg-subtle px-4 py-4 transition-colors hover:border-navy/40 hover:bg-panel"
               >
                 <span className="tnum text-[12px] font-semibold text-faint">0{index + 1}</span>
                 <span className="mt-2 flex items-center gap-1.5 text-[15px] font-semibold text-ink">
@@ -100,37 +104,99 @@ export function OverviewView() {
         </ul>
       </Panel>
 
-      <Panel title="금융 Agent에게 바로 물어보기" hint="공식 자료와 검증된 출처를 바탕으로 금융 개념과 위험을 설명합니다.">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="max-w-2xl text-[13px] leading-6 text-muted">
-            어려운 용어, 백테스트 지표, ETF 구조가 궁금하면 금융 Agent에서 전체 설명과 출처를 함께 확인할 수 있습니다.
-          </p>
-          <Link href="/rag" className="rounded-full bg-brand px-4 py-2 text-[13px] font-semibold text-on-brand">
+      <section className="rounded-panel border border-navy/15 bg-navy/[0.05] px-6 py-6 sm:px-8">
+        <div className="flex flex-wrap items-center justify-between gap-6">
+          <div className="flex min-w-0 items-start gap-4">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-control bg-navy/10 text-navy">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                <path d="M4 5h16v11H9l-4 4V5Z" />
+                <path d="M8 9h8M8 12h5" />
+              </svg>
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-[16px] font-semibold tracking-tight text-ink">금융 Agent에게 바로 물어보기</h2>
+              <p className="mt-1 max-w-2xl text-[13px] leading-6 text-muted">
+                어려운 용어, 백테스트 지표, ETF 구조가 궁금하면 공식 자료와 검증된 출처를 바탕으로 전체 설명과
+                출처를 함께 확인할 수 있습니다.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/rag"
+            className="tap shrink-0 rounded-control bg-brand px-4 py-2 text-[13px] font-semibold text-on-brand hover:opacity-90"
+          >
             금융 Agent 열기
           </Link>
         </div>
-      </Panel>
+      </section>
     </div>
+  );
+}
+
+/*
+ * 순수 장식용 캔들스틱 무늬. 실제 시세·잔고를 나타내지 않는다 — 값을 합성하지 않는다는
+ * 원칙(8.4.1)을 지키기 위해 축·값·라벨을 전혀 붙이지 않고 배경 질감으로만 쓴다.
+ */
+function HeroChartMotif() {
+  const bars = [38, 52, 45, 60, 55, 70, 62, 78, 68, 82, 74, 90, 80, 95, 85, 72, 88, 76, 92, 82, 96, 86, 100, 90];
+  const w = 400;
+  const h = 100;
+  const barW = w / bars.length;
+  const points = bars.map((v, i) => `${i * barW + barW / 2},${h - v}`).join(' ');
+
+  return (
+    <svg
+      aria-hidden
+      viewBox={`0 0 ${w} ${h}`}
+      preserveAspectRatio="none"
+      className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.16]"
+    >
+      {bars.map((v, i) => (
+        <rect
+          key={i}
+          x={i * barW + barW * 0.22}
+          y={h - v}
+          width={barW * 0.56}
+          height={v}
+          fill={i % 2 === 0 ? '#FF6B70' : '#7EA0FF'}
+        />
+      ))}
+      <polyline
+        points={points}
+        fill="none"
+        stroke="white"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 
 function HeroStats({ risk }: { risk: PortfolioRisk }) {
   const stats = [
-    finite(risk.mdd) ? { label: '최대 낙폭 (MDD)', value: formatRatio(risk.mdd, 1) } : null,
-    finite(risk.annualizedVolatility20d)
-      ? { label: '연환산 변동성', value: formatRatio(risk.annualizedVolatility20d, 0) }
+    finite(risk.mdd)
+      ? { label: '최대 낙폭 (MDD)', value: formatRatio(risk.mdd, 1), tone: 'down' as const }
       : null,
-    risk.hmmRegime ? { label: '시장 국면', value: risk.hmmRegime } : null,
-  ].filter((entry): entry is { label: string; value: string } => entry !== null);
+    finite(risk.annualizedVolatility20d)
+      ? { label: '연환산 변동성', value: formatRatio(risk.annualizedVolatility20d, 0), tone: 'flat' as const }
+      : null,
+    risk.hmmRegime ? { label: '시장 국면', value: risk.hmmRegime, tone: 'flat' as const } : null,
+  ].filter((entry): entry is { label: string; value: string; tone: 'down' | 'flat' } => entry !== null);
 
   if (stats.length === 0) return null;
 
   return (
-    <div className="mt-7 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-on-brand/10 pt-5 sm:grid-cols-3">
+    <div className="mt-7 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-white/10 pt-5 sm:grid-cols-3">
       {stats.map((stat) => (
         <div key={stat.label}>
-          <p className="text-[12px] text-on-brand/50">{stat.label}</p>
-          <p className="tnum mt-1 text-[18px] font-semibold text-on-brand">{stat.value}</p>
+          <p className="text-[12px] text-white/50">{stat.label}</p>
+          <p
+            className="tnum mt-1 text-[18px] font-semibold"
+            style={{ color: stat.tone === 'down' ? '#7EA0FF' : '#FFFFFF' }}
+          >
+            {stat.value}
+          </p>
         </div>
       ))}
     </div>
@@ -143,17 +209,17 @@ function TailRiskPanel({ risk }: { risk: PortfolioRisk }) {
       ? {
           label: 'VaR 95',
           note: '하루에 5% 확률로 이 정도 넘게 잃을 수 있다는 뜻입니다.',
-          value: formatRatio(risk.var95, 1),
+          value: risk.var95,
         }
       : null,
     finite(risk.cvar95)
       ? {
           label: 'CVaR 95',
           note: '그 5%가 실제로 벌어졌을 때의 평균 손실입니다.',
-          value: formatRatio(risk.cvar95, 1),
+          value: risk.cvar95,
         }
       : null,
-  ].filter((entry): entry is { label: string; note: string; value: string } => entry !== null);
+  ].filter((entry): entry is { label: string; note: string; value: number } => entry !== null);
 
   if (tiles.length === 0) return null;
 
@@ -162,7 +228,7 @@ function TailRiskPanel({ risk }: { risk: PortfolioRisk }) {
       <div className="grid gap-3 sm:grid-cols-2">
         {tiles.map((tile) => (
           <Tile key={tile.label} label={tile.label} note={tile.note}>
-            <span className="tnum text-[22px] font-semibold text-ink">{tile.value}</span>
+            <Delta value={tile.value} format={(v) => formatRatio(v, 1)} className="text-[22px]" />
           </Tile>
         ))}
       </div>
@@ -186,10 +252,15 @@ function Tile({ label, note, children }: { label: string; note?: string; childre
 
 function HeroDelta({ value }: { value: number | null }) {
   if (!finite(value)) return null;
-  const tone = value > 0 ? 'bg-on-brand/15 text-on-brand' : value < 0 ? 'bg-on-brand/15 text-on-brand' : 'bg-on-brand/10 text-on-brand/80';
-  const arrow = value > 0 ? '▲' : value < 0 ? '▼' : '·';
+  const up = value > 0;
+  const down = value < 0;
+  const hex = up ? '#FF6B70' : down ? '#7EA0FF' : '#FFFFFF';
+  const arrow = up ? '▲' : down ? '▼' : '·';
   return (
-    <span className={`tnum inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[14px] font-semibold ${tone}`}>
+    <span
+      className="tnum inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[14px] font-semibold"
+      style={{ backgroundColor: `${hex}26`, color: hex }}
+    >
       <span aria-hidden className="text-[10px]">
         {arrow}
       </span>
@@ -205,14 +276,14 @@ function AutomationHeroTile({ status }: { status: AutomationStatusV2 }) {
         ? 'bg-red-300'
         : status.projectionState === 'ARMED'
           ? 'bg-amber-300'
-          : 'bg-on-brand/40';
+          : 'bg-white/40';
 
   return (
-    <div className="min-w-[168px] rounded-tile bg-on-brand/10 px-4 py-3">
-      <p className="text-[12px] text-on-brand/60">자동주문</p>
+    <div className="min-w-[168px] rounded-tile bg-white/10 px-4 py-3">
+      <p className="text-[12px] text-white/60">자동주문</p>
       <Link
         href="/automation"
-        className="mt-1 flex items-center gap-2 text-[16px] font-semibold text-on-brand hover:underline"
+        className="mt-1 flex items-center gap-2 text-[16px] font-semibold text-white hover:underline"
       >
         <span aria-hidden className={`h-2 w-2 rounded-full ${dot}`} />
         {AUTOMATION_STATE_LABELS[status.projectionState]}

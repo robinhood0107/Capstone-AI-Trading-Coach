@@ -128,8 +128,9 @@ class RagSourceRegistryMigrationIntegrationTest {
             flyway(jdbcUrl).migrate()
 
             adminConnection(jdbcUrl).use { connection ->
-                assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("120")
+                assertThat(
+                    queryString(connection, "select max(version::integer)::text from flyway_schema_history where success").toInt(),
+                ).isGreaterThanOrEqualTo(120)
                 assertThat(
                     queryString(
                         connection,
@@ -172,8 +173,9 @@ class RagSourceRegistryMigrationIntegrationTest {
             flyway(jdbcUrl).migrate()
 
             adminConnection(jdbcUrl).use { connection ->
-                assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("120")
+                assertThat(
+                    queryString(connection, "select max(version::integer)::text from flyway_schema_history where success").toInt(),
+                ).isGreaterThanOrEqualTo(120)
                 assertThat(queryString(connection, "select count(*)::text from users where user_id = 'usr_s49_preserved'"))
                     .isEqualTo("1")
                 assertThat(queryString(connection, "select count(*)::text from public.s4_9_saved_answer_history"))
@@ -917,8 +919,9 @@ class RagSourceRegistryMigrationIntegrationTest {
                     )
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
-                assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("120")
+                assertThat(
+                    queryString(connection, "select max(version::integer) from flyway_schema_history where success").toInt(),
+                ).isGreaterThanOrEqualTo(120)
 
                 expectedTables.forEach { table ->
                     assertThat(

@@ -46,10 +46,7 @@ def _unit() -> CollectionUnit:
 
 
 def test_unclassified_failure_fails_closed() -> None:
-    """모르는 실패를 재시도나 제외로 넘기면 승인 호출을 태우거나 데이터를 조용히 축소한다.
-
-    이번 세션에서 분류되지 않은 ValueError가 ECOS 경계를 넘어 승인 호출 2건을 태웠다.
-    """
+    """Unclassified failures must stop instead of consuming retries."""
 
     for error in (
         ValueError("page range"),

@@ -507,11 +507,25 @@ internal class GrpcStrongLlmGenerationAdapter(
             ).build()
 
     private fun failureLeaf(error: Exception): String =
-        error.message?.takeIf { it.matches(FAILURE_LEAF) } ?: error::class
-            .simpleName
-            .orEmpty()
-            .uppercase()
-            .take(96)
+        error.message?.takeIf { it.matches(FAILURE_LEAF) }
+            ?: sqlStateLeaf(error)
+            ?: error::class
+                .simpleName
+                .orEmpty()
+                .uppercase()
+                .take(96)
+
+    /** JDBC 원문·제약명은 노출하지 않고 SQLSTATE 분류만 usage ledger와 로그에 남긴다. */
+    private fun sqlStateLeaf(error: Exception): String? {
+        var current: Throwable? = error
+        while (current != null) {
+            if (current is java.sql.SQLException && current.sqlState?.matches(SQL_STATE) == true) {
+                return "SQLSTATE_${current.sqlState}"
+            }
+            current = current.cause
+        }
+        return null
+    }
 
     private fun sha256(value: String): String {
         val bytes = value.toByteArray(StandardCharsets.UTF_8)
@@ -530,6 +544,7 @@ internal class GrpcStrongLlmGenerationAdapter(
     private companion object {
         val AUTH_KEY: Metadata.Key<String> = Metadata.Key.of("x-decision-strong-llm-grpc-auth", Metadata.ASCII_STRING_MARSHALLER)
         val FAILURE_LEAF = Regex("^[A-Z0-9_]{3,96}$")
+        val SQL_STATE = Regex("^[0-9A-Z]{5}$")
         val LOGGER: org.slf4j.Logger = LoggerFactory.getLogger(GrpcStrongLlmGenerationAdapter::class.java)
     }
 }

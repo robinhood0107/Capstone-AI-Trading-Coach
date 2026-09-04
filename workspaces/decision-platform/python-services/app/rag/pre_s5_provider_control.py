@@ -31,6 +31,8 @@ _VOYAGE_DOCUMENT_BATCH_PACKET_DIRECTORY = "voyage-document-batch-packets"
 _VOYAGE_QUERY_RUNTIME_FILENAME = "pre-s5-voyage-query-runtime.json"
 _VOYAGE_QUERY_RUNTIME_RELATIVE_PATH = f"{_CONTROL_DIRECTORY}/{_VOYAGE_QUERY_RUNTIME_FILENAME}"
 _SECRETS_DIRECTORY = "secrets"
+_RAG_V2_QUERY_DATABASE_DSN_FILENAME = "rag-v2-query-database-dsn"
+_RAG_V2_QUERY_DATABASE_DSN_RELATIVE_PATH = f"{_SECRETS_DIRECTORY}/{_RAG_V2_QUERY_DATABASE_DSN_FILENAME}"
 _VOYAGE_QUERY_WRITER_DSN_FILENAME = "rag-v2-voyage-query-writer-dsn"
 _VOYAGE_QUERY_WRITER_DSN_RELATIVE_PATH = f"{_SECRETS_DIRECTORY}/{_VOYAGE_QUERY_WRITER_DSN_FILENAME}"
 _MAX_PACKET_BYTES = 32 * 1024
@@ -760,6 +762,34 @@ def load_pre_s5_voyage_query_writer_database_dsn(*, local_root: Path) -> str:
     return value
 
 
+def load_rag_v2_query_database_dsn(*, local_root: Path) -> str:
+    """Read the retrieval query-role DSN from the same owner-only local boundary."""
+
+    before = _assert_rag_v2_query_database_secret_boundary(local_root)
+    try:
+        raw = read_owner_regular_file(
+            approved_root=local_root,
+            relative_path=_RAG_V2_QUERY_DATABASE_DSN_RELATIVE_PATH,
+            max_bytes=4_096,
+        ).content
+    except OwnerFileIoError as error:
+        raise PreS5ProviderActivationError("RAG_V2_QUERY_DATABASE_SECRET_BOUNDARY") from error
+    after = _assert_rag_v2_query_database_secret_boundary(local_root)
+    if before != after or len(raw) != before[-1][2]:
+        raise PreS5ProviderActivationError("RAG_V2_QUERY_DATABASE_SECRET_BOUNDARY")
+    try:
+        value = raw.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as error:
+        raise PreS5ProviderActivationError("RAG_V2_QUERY_DATABASE_SECRET_INVALID") from error
+    if (
+        not 1 <= len(value) <= 4_096
+        or value != value.strip()
+        or any(character in value for character in ("\x00", "\r", "\n"))
+    ):
+        raise PreS5ProviderActivationError("RAG_V2_QUERY_DATABASE_SECRET_INVALID")
+    return value
+
+
 def resolve_voyage_api_key(environment: Mapping[str, object]) -> str:
     """standard `VOYAGE_API_KEY`만 읽고 legacy variable은 provider credential로 승격하지 않는다."""
 
@@ -1418,6 +1448,20 @@ def _assert_query_writer_secret_boundary(
     )
     secret = _safe_file_metadata(
         local_root / _SECRETS_DIRECTORY / _VOYAGE_QUERY_WRITER_DSN_FILENAME,
+        expected_mode=0o600,
+    )
+    return root, secrets, secret
+
+
+def _assert_rag_v2_query_database_secret_boundary(
+    local_root: Path,
+) -> tuple[tuple[int, int, int, int, int], ...]:
+    if os.name == "nt" or not local_root.is_absolute() or ".." in local_root.parts:
+        raise PreS5ProviderActivationError("RAG_V2_QUERY_DATABASE_SECRET_BOUNDARY")
+    root = _safe_directory_metadata(local_root, expected_mode=0o700)
+    secrets = _safe_directory_metadata(local_root / _SECRETS_DIRECTORY, expected_mode=0o700)
+    secret = _safe_file_metadata(
+        local_root / _SECRETS_DIRECTORY / _RAG_V2_QUERY_DATABASE_DSN_FILENAME,
         expected_mode=0o600,
     )
     return root, secrets, secret

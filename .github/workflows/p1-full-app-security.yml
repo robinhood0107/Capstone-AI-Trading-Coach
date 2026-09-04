@@ -18,6 +18,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: p1-security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   security-gates:
     name: P1 full-app security gates
@@ -68,6 +72,7 @@ jobs:
             --exit-code 1 --no-banner --log-opts="$log_range"
 
       - name: Build production images
+        if: github.event_name == 'push'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -86,6 +91,7 @@ jobs:
           exit-code: "1"
 
       - name: Decision Platform image scan
+        if: github.event_name == 'push'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: capstone-decision-platform:security
@@ -95,6 +101,7 @@ jobs:
           exit-code: "1"
 
       - name: Dashboard image scan
+        if: github.event_name == 'push'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: capstone-experience-dashboard:security
@@ -104,6 +111,7 @@ jobs:
           exit-code: "1"
 
       - name: Return Engine image scan
+        if: github.event_name == 'push'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: capstone-return-engine:security

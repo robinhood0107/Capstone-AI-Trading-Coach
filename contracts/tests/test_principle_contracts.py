@@ -510,20 +510,17 @@ class OpenApiGateCleanupTest(unittest.TestCase):
 
 
 class ContractsCiWorkflowTest(unittest.TestCase):
-    def test_openapi_fixture_task_uses_checked_in_gradle_wrapper(self) -> None:
+    def test_openapi_ci_uses_fast_normalization_tests(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
         workflow = (repo_root / ".github/workflows/contracts-ci.yml").read_text(
             encoding="utf-8"
         )
-        expected_command = (
-            "run: workspaces/decision-platform/spring-api/gradlew "
-            "-p workspaces/decision-platform/spring-api prepareOpenApiFixtureEnv"
+        self.assertIn(
+            "run: uv run --frozen python -m unittest contracts.tests.test_principle_contracts",
+            workflow,
         )
-
-        # GitHub runner의 저장소 루트에는 gradlew가 없으므로 workspace wrapper를 직접 호출한다.
-        self.assertIn(expected_command, workflow)
         self.assertNotIn(
-            "run: ./gradlew -p workspaces/decision-platform/spring-api prepareOpenApiFixtureEnv",
+            "prepareOpenApiFixtureEnv",
             workflow,
         )
 

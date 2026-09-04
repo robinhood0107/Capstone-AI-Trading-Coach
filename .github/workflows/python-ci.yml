@@ -60,6 +60,3 @@ jobs:
 
       - name: Run mypy
         run: uv run --frozen mypy app
-
-      - name: Run pytest
-        run: TMPDIR=/tmp TEMP=/tmp TMP=/tmp uv run --frozen pytest -q

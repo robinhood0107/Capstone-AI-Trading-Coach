@@ -1,5 +1,5 @@
 {
-  "predictionRows": 130722,
+  "predictionRows": 130752,
   "symbols": 31,
   "folds": 22,
   "firstTestYear": 2005,
@@ -9,8 +9,8 @@
     0.4973,
     0.5027
   ],
-  "rmseModel": 0.027337,
-  "rmseNaiveZero": 0.026238,
+  "rmseModel": 0.027346,
+  "rmseNaiveZero": 0.026245,
   "expectedReturnRangePct": [
     -4.72,
     5.15
@@ -22,102 +22,110 @@
       "label": "PIT 균등가중 (벤치마크)",
       "years": 21.3,
       "sessions": 5362,
-      "cagr": 0.2098,
-      "annualVol": 0.2291,
-      "sharpe": 0.9462,
-      "sortino": 1.3624,
+      "cagr": 0.2074,
+      "annualVol": 0.2293,
+      "sharpe": 0.9372,
+      "sortino": 1.3483,
       "mdd": -0.4938,
-      "finalEquity": 57.2365
+      "var95": -0.020503,
+      "cvar95": -0.03406,
+      "finalEquity": 54.9136
     },
     {
       "label": "LSTM 상위5 / 5일 보유",
       "years": 21.3,
       "sessions": 5362,
-      "cagr": 0.2161,
-      "annualVol": 0.2955,
-      "sharpe": 0.8094,
-      "sortino": 1.2092,
+      "cagr": 0.2131,
+      "annualVol": 0.2957,
+      "sharpe": 0.8007,
+      "sortino": 1.1951,
       "mdd": -0.5823,
-      "finalEquity": 63.6628
+      "var95": -0.02543,
+      "cvar95": -0.041419,
+      "finalEquity": 60.4096
     },
     {
       "label": "LSTM 상위5 / 20일 보유",
       "years": 21.3,
       "sessions": 5362,
-      "cagr": 0.1904,
-      "annualVol": 0.299,
-      "sharpe": 0.7324,
-      "sortino": 1.0714,
+      "cagr": 0.1875,
+      "annualVol": 0.2992,
+      "sharpe": 0.7239,
+      "sortino": 1.0581,
       "mdd": -0.6674,
-      "finalEquity": 40.4028
+      "var95": -0.02534,
+      "cvar95": -0.043034,
+      "finalEquity": 38.3382
     },
     {
       "label": "LSTM 상위5 / 60일 보유",
       "years": 21.3,
       "sessions": 5362,
-      "cagr": 0.1964,
-      "annualVol": 0.2912,
-      "sharpe": 0.7612,
-      "sortino": 1.1255,
+      "cagr": 0.1936,
+      "annualVol": 0.2914,
+      "sharpe": 0.7529,
+      "sortino": 1.1124,
       "mdd": -0.5496,
-      "finalEquity": 45.0017
+      "var95": -0.025088,
+      "cvar95": -0.041333,
+      "finalEquity": 42.8195
     }
   ],
   "deflatedSharpe": {
     "LSTM 상위5 / 5일 보유": {
-      "expectedMaxSharpe": 0.18352820650610097,
-      "sigmaSharpe": 0.21520548652682703,
-      "deflatedSharpe": 2.908252032021866,
-      "pValue": 0.0018172764478497916
+      "expectedMaxSharpe": 0.1835470958154043,
+      "sigmaSharpe": 0.21522763616298468,
+      "deflatedSharpe": 2.86744265368062,
+      "pValue": 0.0020690189479657395
     },
     "LSTM 상위5 / 20일 보유": {
-      "expectedMaxSharpe": 0.18473774548315253,
-      "sigmaSharpe": 0.21662379398476475,
-      "deflatedSharpe": 2.528172203259282,
-      "pValue": 0.005732904947904571
+      "expectedMaxSharpe": 0.18474212200348708,
+      "sigmaSharpe": 0.21662892589993912,
+      "deflatedSharpe": 2.488854504340523,
+      "pValue": 0.006407770001513047
     },
     "LSTM 상위5 / 60일 보유": {
-      "expectedMaxSharpe": 0.18418388673581143,
-      "sigmaSharpe": 0.21597433827734078,
-      "deflatedSharpe": 2.671688302724282,
-      "pValue": 0.003773535767609637
+      "expectedMaxSharpe": 0.18419439634883925,
+      "sigmaSharpe": 0.21598666186741947,
+      "deflatedSharpe": 2.6330589062034444,
+      "pValue": 0.0042309834908635935
     }
   },
   "excessOverBenchmark": {
     "LSTM 상위5 / 5일 보유": {
-      "annualExcessPct": 2.24,
+      "annualExcessPct": 2.19,
       "trackingErrorPct": 16.25,
-      "informationRatio": 0.1377,
-      "tStat": 0.64,
+      "informationRatio": 0.1346,
+      "tStat": 0.62,
       "deflatedSharpe": {
-        "expectedMaxSharpe": 0.18419582333885895,
-        "sigmaSharpe": 0.21598833515833915,
-        "deflatedSharpe": -0.21526825702073873,
-        "pValue": 0.5852209116579042
+        "expectedMaxSharpe": 0.1842110323891772,
+        "sigmaSharpe": 0.2160061693165629,
+        "deflatedSharpe": -0.2295054568250768,
+        "pValue": 0.5907619600615819
       }
     },
     "LSTM 상위5 / 20일 보유": {
-      "annualExcessPct": 0.22,
+      "annualExcessPct": 0.17,
       "trackingErrorPct": 16.11,
-      "informationRatio": 0.0134,
-      "tStat": 0.06,
+      "informationRatio": 0.0104,
+      "tStat": 0.05,
       "deflatedSharpe": {
-        "expectedMaxSharpe": 0.18487295025599226,
-        "sigmaSharpe": 0.21678233533093522,
-        "deflatedSharpe": -0.7908560285983665,
-        "pValue": 0.7854859948904962
+        "expectedMaxSharpe": 0.18488207397297726,
+        "sigmaSharpe": 0.21679303381696124,
+        "deflatedSharpe": -0.8050626699847591,
+        "pValue": 0.7896082419146652
       }
     },
     "LSTM 상위5 / 60일 보유": {
-      "annualExcessPct": 0.49,
+      "annualExcessPct": 0.45,
       "trackingErrorPct": 15.74,
-      "informationRatio": 0.031,
-      "tStat": 0.14,
+      "informationRatio": 0.0287,
+      "tStat": 0.13,
       "deflatedSharpe": {
-        "expectedMaxSharpe": 0.18480046352253954,
-        "sigmaSharpe": 0.21669733726422707,
-        "deflatedSharpe": -0.7096024857572888,
-        "pValue": 0.7610246611390875
+        "expectedMaxSharpe": 0.18480894517021107,
+        "sigmaSharpe": 0.21670728285868607,
+        "deflatedSharpe": -0.7205570387989071,
+        "pValue": 0.7644089529242675
       }
     }
   },
@@ -144,7 +152,7 @@
       "2023": 33.83,
       "2024": 31.78,
       "2025": 97.7,
-      "2026": 54.48
+      "2026": 48.21
     },
     "LSTM 상위5 / 5일 보유": {
       "2005": 76.04,
@@ -168,7 +176,7 @@
       "2023": 29.19,
       "2024": 13.46,
       "2025": 86.43,
-      "2026": 118.99
+      "2026": 107.8
     },
     "LSTM 상위5 / 20일 보유": {
       "2005": 53.0,
@@ -192,7 +200,7 @@
       "2023": 37.17,
       "2024": 28.29,
       "2025": 80.85,
-      "2026": 130.33
+      "2026": 118.56
     },
     "LSTM 상위5 / 60일 보유": {
       "2005": 54.81,
@@ -216,7 +224,7 @@
       "2023": 54.69,
       "2024": 4.16,
       "2025": 88.1,
-      "2026": 124.75
+      "2026": 113.85
     }
   },
   "verdicts": [

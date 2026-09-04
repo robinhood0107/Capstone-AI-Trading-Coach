@@ -23,4 +23,3 @@ Secrets Manager의 SecretString은 `{ "spring.env": "base64...", ... }` 모양�
 4. `systemctl daemon-reload && systemctl enable --now capstone-p1-ec2`로 부팅 재기동을 건다.
 
 실제 AWS resource 생성, 과금, domain, certificate, ALB 연결은 이 저장소 변경에 포함하지 않는다.
-

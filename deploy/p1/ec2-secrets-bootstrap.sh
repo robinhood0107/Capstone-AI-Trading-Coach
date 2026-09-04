@@ -31,4 +31,3 @@ while IFS=$'\t' read -r name encoded; do
   chmod 0600 "$temporary"
   install -m 0600 -- "$temporary" "$target"
 done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' "$bundle")
-

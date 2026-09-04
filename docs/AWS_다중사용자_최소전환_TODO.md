@@ -9,4 +9,3 @@
 3. owner별 scheduler lease와 계좌별 동시 실행 잠금을 두어 한 사용자의 실패·쿼터·주문이 다른 사용자에게 번지지 않게 한다.
 
 기존 사용자·원칙·판정·RAG history의 `user_id` 경계와 PostgreSQL RLS를 그대로 사용한다. 새 agent framework, 별도 Kafka 의존성, 마이크로서비스 분해는 이 전환의 조건이 아니다. AI provider 비용은 서비스가 제공하지 않고 사용자 key를 받는 정책으로 시작하며, 공용 유료 API 제공은 별도 제품 결정으로 남긴다.
-

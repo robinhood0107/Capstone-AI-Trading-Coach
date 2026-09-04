@@ -30,4 +30,3 @@ volumes:
       type: none
       o: bind
       device: "${P1_EBS_ROOT:-/srv/capstone-p1}/redis"
-

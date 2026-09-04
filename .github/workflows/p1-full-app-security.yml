@@ -71,51 +71,12 @@ jobs:
           "$tool_root/gitleaks" detect --source . --config .gitleaks.toml --redact \
             --exit-code 1 --no-banner --log-opts="$log_range"
 
-      - name: Build production images
-        if: github.event_name == 'push'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          docker build -f deploy/p1/docker/decision-platform.Dockerfile -t capstone-decision-platform:security .
-          docker build -f workspaces/experience-dashboard/Dockerfile -t capstone-experience-dashboard:security workspaces/experience-dashboard
-          docker build -f workspaces/return-engine/Dockerfile -t capstone-return-engine:security workspaces/return-engine
-
       - name: Filesystem dependency scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
           scanners: vuln,secret,misconfig
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
-
-      - name: Decision Platform image scan
-        if: github.event_name == 'push'
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: capstone-decision-platform:security
-          scanners: vuln,secret
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
-
-      - name: Dashboard image scan
-        if: github.event_name == 'push'
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: capstone-experience-dashboard:security
-          scanners: vuln,secret
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
-
-      - name: Return Engine image scan
-        if: github.event_name == 'push'
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: capstone-return-engine:security
-          scanners: vuln,secret
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"

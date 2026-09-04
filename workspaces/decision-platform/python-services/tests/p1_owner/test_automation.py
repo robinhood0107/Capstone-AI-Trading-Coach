@@ -158,6 +158,38 @@ def _validator(name: str) -> Draft202012Validator:
     return Draft202012Validator(schema, format_checker=FormatChecker())
 
 
+@pytest.mark.parametrize(
+    ("lstm_signal", "eligible"),
+    [("BUY", True), ("HOLD", True), ("SELL", False)],
+)
+def test_buy_needs_a_rule_buy_and_only_a_model_sell_vetoes_it(
+    lstm_signal: str, eligible: bool
+) -> None:
+    """매수 후보는 RULE BUY 가 만들고 LSTM 은 SELL 일 때만 거부한다.
+
+    2-of-2 교집합에서 RULE 주도 + LSTM 거부권으로 바꾼 판정을 고정한다. 교집합 시절에는
+    LSTM HOLD 가 매수를 막았고, 그래서 후보가 0인 날이 51.8%(최장 191세션 연속)였다.
+    근거는 `research/p1-return-profit-verification/consensus_eval.py` 의 22 fold PIT 측정.
+    """
+
+    store = _store()
+    _create(store)
+    engine = AutomationEngine(store)
+    candidate = SignalCandidate("005930", cast(Any, lstm_signal), "BUY", 0.05)
+    assert bool(engine._buy_candidates(_inputs(candidate))) is eligible
+
+
+def test_a_rule_sell_is_never_a_buy_candidate_whatever_the_model_says() -> None:
+    """거부권은 한 방향이다 - LSTM 이 BUY 여도 RULE 이 BUY 가 아니면 후보가 아니다."""
+
+    store = _store()
+    _create(store)
+    engine = AutomationEngine(store)
+    for baseline in ("HOLD", "SELL"):
+        candidate = SignalCandidate("005930", "BUY", cast(Any, baseline), 0.05)
+        assert engine._buy_candidates(_inputs(candidate)) == ()
+
+
 def test_buy_full_fill_is_restart_safe_exact_one_and_contract_valid() -> None:
     store = _store()
     _create(store)
@@ -203,46 +235,33 @@ def test_buy_full_fill_is_restart_safe_exact_one_and_contract_valid() -> None:
     assert list(_validator("automation-control.v1").iter_errors(control)) == []
 
 
-@pytest.mark.parametrize("verdict", ["VETO_BUY", "ABSTAIN"])
-def test_veto_stops_the_buy_and_never_falls_back_to_a_second_candidate(verdict: str) -> None:
-    # provider가 붙어 있으면 판단 불가도 차단으로 본다.
+@pytest.mark.parametrize("verdict", ["VETO_BUY", "ABSTAIN", "NO_VETO"])
+@pytest.mark.parametrize("provider_bound", [True, False])
+def test_news_verdict_is_advisory_and_never_stops_the_buy(
+    verdict: str, provider_bound: bool
+) -> None:
+    """뉴스 판정은 호출·집계되지만 run 을 닫지 않는다.
+
+    이전 계약은 `VETO_BUY` 와 (provider 가 붙어 있을 때의) `ABSTAIN` 을 차단으로 봤다.
+    실측으로 그것이 매수를 영구히 막았다 - 2026-09-04 세션이 `ABSTAIN /
+    VERTEX_NO_REGISTERED_EVIDENCE` 로 닫혔고, 등록 근거가 0 건인 한 어떤 세션도 통과할 수
+    없었다. 근거는 `contracts/changes/20260904-p1-news-advisory-and-intraday-buy-window.md`.
+    """
+
     store = _store()
     _create(store)
     transport = _transport(news=verdict)
     candidates = (_buy("000002", 0.04), _buy("000001", 0.05))
-    inputs = replace(_inputs(*candidates), news_veto_provider_bound=True)
+    inputs = replace(_inputs(*candidates), news_veto_provider_bound=provider_bound)
     states = _drive(store, transport, inputs)
-
-    assert states[-1] == "NEWS_VETOED"
-    assert store.runs[_RUN_ID].selected_symbol == "000001"
-    assert transport.vertex_calls == 1
-    assert transport.quote_calls == 1
-    assert transport.submit_calls == 0
-    assert store.positions == []
-    assert transport.physical_calls == 0
-
-
-def test_abstain_without_a_bound_provider_does_not_block_the_buy() -> None:
-    # provider가 없을 때의 ABSTAIN은 "물어볼 곳이 없었다"는 뜻이다. 이것만으로 매수를 막으면
-    # 자동운용이 영원히 열리지 않는다. 부정 이벤트 차단은 원칙의 공시가드가 RiskEngine에서 맡는다.
-    store = _store()
-    _create(store)
-    transport = _transport(news="ABSTAIN")
-    states = _drive(store, transport, _inputs(_buy("000001", 0.05)))
 
     assert "NEWS_VETOED" not in states
     assert states[-1] == "COMPLETED"
+    # 판정은 계속 물어본다. 자문을 없애는 것이 아니라 차단만 없앤다.
     assert transport.vertex_calls == 1
-
-
-def test_veto_buy_still_blocks_even_without_a_bound_provider() -> None:
-    store = _store()
-    _create(store)
-    transport = _transport(news="VETO_BUY")
-    states = _drive(store, transport, _inputs(_buy("000001", 0.05)))
-
-    assert states[-1] == "NEWS_VETOED"
-    assert transport.submit_calls == 0
+    # 후보 순위는 그대로다 - 뉴스가 종목을 바꾸지 않는다.
+    assert store.runs[_RUN_ID].selected_symbol == "000001"
+    assert transport.submit_calls == 1
 
 
 def test_model_sell_and_expiry_sell_never_call_vertex_and_only_bot_lot_closes() -> None:
@@ -414,7 +433,7 @@ def test_duplicate_tick_is_exact_noop_and_session_submit_cap_halts_second_run() 
     ("now", "overrides", "expected"),
     [
         (datetime(2026, 8, 17, 9, 30, tzinfo=_KST), {}, "SKIPPED_NO_ACTION"),
-        (datetime(2026, 8, 26, 9, 41, tzinfo=_KST), {}, "SKIPPED_LATE_START"),
+        (datetime(2026, 8, 26, 15, 21, tzinfo=_KST), {}, "SKIPPED_LATE_START"),
         (_NOW, {"daily_shard_fresh_complete": False}, "SKIPPED_DATA_UNAVAILABLE"),
         (_NOW, {"account_digest_matches": False}, "HALTED"),
         (_NOW, {"kill_switch_active": True}, "HALTED"),

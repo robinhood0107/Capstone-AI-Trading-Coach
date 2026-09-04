@@ -4,6 +4,7 @@ import './globals.css';
 import { NavRail } from '@/shared/ui/NavRail';
 import { StatusBar } from '@/shared/ui/StatusBar';
 import { LoginGate } from '@/shared/ui/LoginGate';
+import { THEME_BOOT_SCRIPT } from '@/shared/ui/ThemeToggle';
 
 export const metadata: Metadata = {
   title: '투자 원칙 기반 AI 트레이딩 코치',
@@ -13,23 +14,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="ko">
+    <html lang="ko" suppressHydrationWarning>
       <head>
-        {/*
-          한글 본문 가독성이 화면 인상의 대부분을 결정한다. 서체는 tailwind.config.ts 의
-          폴백 스택이 담당한다 - Pretendard 가 로컬에 있으면 그것을, 없으면 Apple SD Gothic
-          Neo / Malgun Gothic / Noto Sans KR 로 떨어진다.
-
-          CDN 링크는 두지 않는다. 이 앱의 CSP 는 style-src 'self' 뿐이므로(next.config.mjs)
-          외부 스타일시트는 어떤 환경에서도 로드되지 않고 콘솔 에러만 남는다. CSP 를 넓히면
-          거래 앱의 보안 헤더를 서체 하나 때문에 느슨하게 하고 시연이 외부 네트워크에
-          의존하게 된다 - 이 앱은 provider-free·오프라인 기동을 전제로 한다.
-        */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
       </head>
       <body className="min-h-screen bg-surface font-sans antialiased">
         <a
           href="#main"
-          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-navy focus:px-4 focus:py-2 focus:text-white"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-brand focus:px-4 focus:py-2 focus:text-on-brand"
         >
           본문으로 건너뛰기
         </a>
@@ -39,7 +31,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <div className="flex items-center gap-3 px-2">
                 <span
                   aria-hidden
-                  className="grid h-10 w-10 shrink-0 place-items-center rounded-tile bg-navy text-[13px] font-semibold tracking-tight text-white"
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-tile bg-brand text-[13px] font-semibold tracking-tight text-on-brand"
                 >
                   AI
                 </span>
@@ -54,10 +46,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <div className="mt-8 min-h-0 flex-1 overflow-y-auto">
                 <NavRail />
               </div>
-
-              <p className="mt-6 rounded-tile bg-panel/70 px-4 py-3 text-[11px] leading-5 text-faint">
-                이 화면은 판정을 만들지 않습니다. Decision Platform이 낸 결과를 읽기 쉽게 옮겨 보여줍니다.
-              </p>
             </div>
           </aside>
 

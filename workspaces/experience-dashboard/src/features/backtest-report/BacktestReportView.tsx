@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import {
   CartesianGrid,
   Legend,
@@ -14,38 +13,30 @@ import {
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
 import { Numeric } from '@/shared/ui/Numeric';
-import { IdInput } from '@/shared/ui/IdInput';
 import { useResource } from '@/shared/lib/useResource';
-import { ID_PATTERN } from '@/shared/api/endpoints';
+import { useLatestRun } from '@/shared/api/latestRun';
 import { formatDecimal, formatRatio, formatSignedRatio } from '@/shared/lib/format';
-import { loadBacktestReportView, type DerivedCard } from './viewModel';
+import { loadBacktestReportView, type DerivedCard, type StrategyRow } from './viewModel';
 
 const COLOR: Record<string, string> = {
-  Baseline: '#8A9099',
-  Guide: '#9A6510',
-  Strict: '#1D3557',
+  Baseline: 'rgb(var(--c-faint))',
+  Guide: 'rgb(var(--c-warn))',
+  Strict: 'rgb(var(--c-navy))',
 };
 
-export function BacktestReportView({ defaultRunId = '' }: { defaultRunId?: string }) {
-  const [runId, setRunId] = useState(defaultRunId);
-  const valid = ID_PATTERN.runId.test(runId);
-  const { state, reload } = useResource(() => loadBacktestReportView(runId), [runId], valid);
+export function BacktestReportView() {
+  const { runId, pending } = useLatestRun('backtests');
+  const { state, reload } = useResource(
+    () => loadBacktestReportView(runId ?? ''),
+    [runId],
+    runId !== null,
+  );
 
   return (
     <div className="space-y-6">
-      <IdInput
-        label="백테스트 실행 ID"
-        hint="백테스트 artifact가 등록된 실행 단위입니다. run_ 또는 demo_ 로 시작합니다."
-        placeholder="demo_s8_offline_0001"
-        value={runId}
-        onChange={setRunId}
-        pattern={ID_PATTERN.runId}
-        patternHint="run_ 또는 demo_ 로 시작하고 뒤에 8~96자가 와야 합니다."
-      />
-
-      {!valid ? (
+      {runId === null ? (
         <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
-          실행 ID를 입력하면 Baseline / Guide / Strict 비교를 불러옵니다.
+          {pending ? '불러오는 중입니다.' : '아직 등록된 검증 결과가 없습니다.'}
         </p>
       ) : (
         <AsyncBoundary state={state} onRetry={reload}>
@@ -53,21 +44,11 @@ export function BacktestReportView({ defaultRunId = '' }: { defaultRunId?: strin
             <div className="space-y-6">
               {view.fixtureClass === 'SYNTHETIC_FAKE_E2E' ? (
                 <p className="border-l-2 border-warn bg-warn/5 px-3 py-2 text-[13px] leading-6 text-ink">
-                  이 결과는 합성 데이터(SYNTHETIC_FAKE_E2E)입니다. 실제 성과나 승격 근거로 인용하지 마세요.
+                  이 결과는 합성 예시 데이터입니다. 실제 성과나 승격 근거로 인용하지 마세요.
                 </p>
               ) : null}
 
-              <Panel
-                contract="dashboard-backtest.v1 · 파생 지표"
-                title="원칙과 안전장치의 효과"
-                hint="Baseline과 Strict를 비교해 화면에서 계산한 값입니다. 계산식을 함께 적어 둡니다."
-              >
-                <div className="grid gap-px overflow-hidden rounded-tile border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
-                  {view.derivedCards.map((card) => (
-                    <MetricTile key={card.key} card={card} />
-                  ))}
-                </div>
-              </Panel>
+              <DerivedPanel cards={view.derivedCards} />
 
               <Panel
                 contract="dashboard-backtest.v1 · strategies"
@@ -75,44 +56,7 @@ export function BacktestReportView({ defaultRunId = '' }: { defaultRunId?: strin
                 hint="같은 조건에서 원칙 개입 정도만 바꾼 결과입니다."
               >
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[640px] text-[13px]">
-                    <thead>
-                      <tr className="border-b border-line text-left text-eyebrow font-semibold uppercase text-faint">
-                        <th className="pb-2 font-normal">시나리오</th>
-                        <th className="pb-2 text-right font-normal">CAGR</th>
-                        <th className="pb-2 text-right font-normal">MDD</th>
-                        <th className="pb-2 text-right font-normal">Sharpe</th>
-                        <th className="pb-2 text-right font-normal">Sortino</th>
-                        <th className="pb-2 text-right font-normal">VaR 95</th>
-                        <th className="pb-2 text-right font-normal">CVaR 95</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {view.strategies.map((row) => (
-                        <tr key={row.strategy} className="border-b border-line/60 last:border-0">
-                          <td className="py-3 pr-3 text-ink">{row.label}</td>
-                          <td className="py-3 text-right">
-                            <Numeric value={row.metrics.cagr} format={(v) => formatSignedRatio(v, 1)} />
-                          </td>
-                          <td className="py-3 text-right">
-                            <Numeric value={row.metrics.mdd} format={(v) => formatRatio(v, 1)} />
-                          </td>
-                          <td className="py-3 text-right">
-                            <Numeric value={row.metrics.sharpe} format={(v) => formatDecimal(v, 2)} />
-                          </td>
-                          <td className="py-3 text-right">
-                            <Numeric value={row.metrics.sortino} format={(v) => formatDecimal(v, 2)} />
-                          </td>
-                          <td className="py-3 text-right">
-                            <Numeric value={row.metrics.var95} format={(v) => formatRatio(v, 1)} />
-                          </td>
-                          <td className="py-3 text-right">
-                            <Numeric value={row.metrics.cvar95} format={(v) => formatRatio(v, 1)} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <ScenarioTable rows={view.strategies} />
                 </div>
                 <p className="mt-4 text-[12px] leading-5 text-muted">
                   Sharpe 차이는 신뢰구간과 함께 읽어야 합니다. 구간이 겹치면 우열을 단정하지 않습니다.
@@ -130,25 +74,25 @@ export function BacktestReportView({ defaultRunId = '' }: { defaultRunId?: strin
                   <div className="h-72">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={view.equityCurve} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
-                        <CartesianGrid stroke="#D5D9D1" vertical={false} />
+                        <CartesianGrid stroke="rgb(var(--c-line))" vertical={false} />
                         <XAxis
                           dataKey="at"
-                          tick={{ fontSize: 10, fill: '#8A9099' }}
-                          axisLine={{ stroke: '#BFC6BC' }}
+                          tick={{ fontSize: 10, fill: 'rgb(var(--c-faint))' }}
+                          axisLine={{ stroke: 'rgb(var(--c-rule))' }}
                           tickLine={false}
                           minTickGap={48}
                           tickFormatter={(value: string) => value.slice(0, 10)}
                         />
                         <YAxis
-                          tick={{ fontSize: 10, fill: '#8A9099' }}
+                          tick={{ fontSize: 10, fill: 'rgb(var(--c-faint))' }}
                           axisLine={false}
                           tickLine={false}
                           domain={['auto', 'auto']}
                         />
                         <Tooltip
-                          contentStyle={{ border: '1px solid #D5D9D1', borderRadius: 2, fontSize: 12 }}
+                          contentStyle={{ background: 'rgb(var(--c-panel))', border: '1px solid rgb(var(--c-line))', borderRadius: 8, fontSize: 12, color: 'rgb(var(--c-ink))' }}
                           formatter={(value: number | string) =>
-                            typeof value === 'number' ? formatDecimal(value, 4) : '근거 없음'
+                            typeof value === 'number' ? formatDecimal(value, 4) : '—'
                           }
                         />
                         <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -176,32 +120,118 @@ export function BacktestReportView({ defaultRunId = '' }: { defaultRunId?: strin
 
                 <Panel
                   contract="dashboard-backtest.v1 · metricCards"
-                  title="서버가 준 지표"
-                  hint="서버가 이름과 값만 내려줍니다. 화면에서 뜻을 임의로 붙이지 않습니다."
+                  title="거래 결과"
+                  hint="거래비용을 반영한 수익률과 실제 거래 횟수입니다."
                 >
-                  {view.serverMetricCards.length === 0 ? (
+                  {view.serverMetricCards.filter((card) => card.value !== null).length === 0 ? (
                     <EmptyBlock detail="추가 지표가 없습니다." />
                   ) : (
                     <ul className="divide-y divide-line/60">
-                      {view.serverMetricCards.map((card) => (
-                        <li key={card.metric} className="flex items-center justify-between py-2.5">
-                          <span className="font-mono text-[12px] text-muted">{card.metric}</span>
-                          <Numeric value={card.value} format={(v) => formatDecimal(v, 4)} />
-                        </li>
-                      ))}
+                      {view.serverMetricCards
+                        .filter((card) => card.value !== null)
+                        .map((card) => {
+                          const meta = metricCardMeta(card.metric);
+                          return (
+                            <li key={card.metric} className="flex items-center justify-between py-2.5">
+                              <span className="text-[12px] text-muted">{meta.label}</span>
+                              <Numeric value={card.value} format={meta.format} />
+                            </li>
+                          );
+                        })}
                     </ul>
                   )}
                 </Panel>
               </div>
 
-              <p className="font-mono text-[11px] text-faint">
-                projectionHash {view.projectionHash.slice(0, 24)}…
-              </p>
             </div>
           )}
         </AsyncBoundary>
       )}
     </div>
+  );
+}
+
+function metricCardMeta(metric: string): { label: string; format: (value: number) => string } {
+  const [scenario, name] = metric.split('.');
+  const scenarioLabel = scenario === 'Baseline' ? 'Baseline' : scenario === 'Guide' ? 'Guide' : 'Strict';
+  if (name === 'netReturn') {
+    return { label: `${scenarioLabel} 비용 반영 수익률`, format: (value) => formatSignedRatio(value, 2) };
+  }
+  if (name === 'tradeCount') {
+    return { label: `${scenarioLabel} 거래 수`, format: (value) => `${Math.trunc(value)}건` };
+  }
+  if (name === 'winRate') {
+    return { label: `${scenarioLabel} 승률`, format: (value) => formatRatio(value, 1) };
+  }
+  if (name === 'principleViolationCount') {
+    return { label: 'Strict 차단한 원칙 위반', format: (value) => `${Math.trunc(value)}건` };
+  }
+  return { label: '추가 측정값', format: (value) => formatDecimal(value, 4) };
+}
+
+const SCENARIO_COLUMNS: {
+  key: 'cagr' | 'mdd' | 'sharpe' | 'sortino' | 'var95' | 'cvar95';
+  label: string;
+  format: (value: number) => string;
+}[] = [
+  { key: 'cagr', label: 'CAGR', format: (v) => formatSignedRatio(v, 1) },
+  { key: 'mdd', label: 'MDD', format: (v) => formatRatio(v, 1) },
+  { key: 'sharpe', label: 'Sharpe', format: (v) => formatDecimal(v, 2) },
+  { key: 'sortino', label: 'Sortino', format: (v) => formatDecimal(v, 2) },
+  { key: 'var95', label: 'VaR 95', format: (v) => formatRatio(v, 1) },
+  { key: 'cvar95', label: 'CVaR 95', format: (v) => formatRatio(v, 1) },
+];
+
+function ScenarioTable({ rows }: { rows: StrategyRow[] }) {
+  const columns = SCENARIO_COLUMNS.filter((column) =>
+    rows.some((row) => {
+      const value = row.metrics[column.key];
+      return value !== null && Number.isFinite(value);
+    }),
+  );
+
+  return (
+    <table className="w-full min-w-[420px] text-[13px]">
+      <thead>
+        <tr className="border-b border-line text-left text-eyebrow font-semibold uppercase text-faint">
+          <th className="pb-2 font-normal">시나리오</th>
+          {columns.map((column) => (
+            <th key={column.key} className="pb-2 text-right font-normal">
+              {column.label}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.strategy} className="border-b border-line/60 last:border-0">
+            <td className="py-3 pr-3 text-ink">{row.label}</td>
+            {columns.map((column) => (
+              <td key={column.key} className="py-3 text-right">
+                <Numeric value={row.metrics[column.key]} format={column.format} />
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function DerivedPanel({ cards }: { cards: DerivedCard[] }) {
+  const usable = cards.filter((card) => card.value !== null && Number.isFinite(card.value));
+  if (usable.length === 0) return null;
+  return (
+    <Panel
+      title="원칙과 안전장치의 효과"
+      hint="Baseline과 Strict를 비교해 화면에서 계산한 값입니다. 계산식을 함께 적어 둡니다."
+    >
+      <div className="grid gap-px overflow-hidden rounded-tile border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
+        {usable.map((card) => (
+          <MetricTile key={card.key} card={card} />
+        ))}
+      </div>
+    </Panel>
   );
 }
 
@@ -263,14 +293,14 @@ function Heatmap({ cells }: { cells: { month: string; return: number }[] }) {
                   );
                 }
                 const intensity = Math.min(1, Math.abs(value) / max);
-                const color = value >= 0 ? '22, 101, 63' : '150, 38, 43';
+                const token = value >= 0 ? '--c-allow' : '--c-block';
                 return (
                   <td key={month} className="p-0.5">
                     <div
                       className="tnum flex h-8 items-center justify-center rounded-md border border-line/60 font-mono text-[11px]"
                       style={{
-                        backgroundColor: `rgba(${color}, ${0.12 + intensity * 0.6})`,
-                        color: intensity > 0.6 ? '#FFFFFF' : '#14181D',
+                        backgroundColor: `rgb(var(${token}) / ${0.12 + intensity * 0.6})`,
+                        color: intensity > 0.6 ? 'rgb(var(--c-panel))' : 'rgb(var(--c-ink))',
                       }}
                       title={`${year}-${month} · ${formatSignedRatio(value, 2)}`}
                     >

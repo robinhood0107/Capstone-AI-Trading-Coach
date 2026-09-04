@@ -6,7 +6,7 @@ import { Panel } from '@/shared/ui/Panel';
 import { Button } from '@/shared/ui/Button';
 import { Numeric } from '@/shared/ui/Numeric';
 import { useResource, toErrorState } from '@/shared/lib/useResource';
-import { formatKstDate, formatRatio } from '@/shared/lib/format';
+import { formatKstDate, formatKstDateTime, formatRatio } from '@/shared/lib/format';
 import type { ViewState } from '@/shared/lib/viewState';
 import {
   EXTERNAL_DISCLOSURE,
@@ -14,6 +14,7 @@ import {
   EXTERNAL_PROCESSORS,
   askRag,
   loadConsentGranted,
+  loadRecentQuestions,
   loadRegistry,
   recordConsent,
   type RagAnswerView,
@@ -48,6 +49,7 @@ export function RagGuideView() {
   const [consentGranted, setConsentGranted] = useState<boolean | null>(null);
   const [consentPending, setConsentPending] = useState(false);
   const registry = useResource(loadRegistry, []);
+  const history = useResource(loadRecentQuestions, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +80,7 @@ export function RagGuideView() {
     setAnswerState({ kind: 'loading' });
     try {
       setAnswerState(await askRag(trimmed, answerMode));
+      history.reload();
     } catch (cause) {
       setAnswerState(toErrorState<RagAnswerView>(cause));
     } finally {
@@ -93,7 +96,7 @@ export function RagGuideView() {
         hint="동의하기 전에는 질문이 외부로 나가지 않습니다."
         actions={
           <span className="text-eyebrow font-semibold uppercase text-faint">
-            {consentGranted === null ? 'CHECKING' : consentGranted ? 'GRANTED' : 'REQUIRED'}
+            {consentGranted === null ? '확인 중' : consentGranted ? '동의 완료' : '동의 필요'}
           </span>
         }
       >
@@ -147,7 +150,7 @@ export function RagGuideView() {
                   onClick={() => setAnswerMode(mode)}
                   className={`border px-3 py-1.5 text-[13px] ${
                     answerMode === mode
-                      ? 'border-navy bg-navy text-white'
+                      ? 'border-brand bg-brand text-on-brand'
                       : 'border-line bg-panel text-muted hover:border-navy hover:text-navy'
                   }`}
                 >
@@ -188,15 +191,13 @@ export function RagGuideView() {
           {(view) => (
             <Panel
               contract="rag-v2-answer.v1"
-              title={view.statusHeadline}
-              hint={view.statusDetail}
-              actions={
-                <span className="text-eyebrow font-semibold uppercase text-faint">
-                  {view.generationStatus}
-                </span>
-              }
+              title={view.answer ? '설명' : view.statusHeadline}
+              hint={view.answer ? '질문에 대한 설명입니다. 근거 정보는 아래에서 따로 확인할 수 있습니다.' : view.statusDetail}
             >
-              <div className={`border-l-2 ${STATUS_TONE[view.generationStatus] ?? 'border-line'} pl-4`}>
+              <article
+                aria-label="생성된 설명"
+                className={`border-l-2 ${STATUS_TONE[view.generationStatus] ?? 'border-line'} pl-4`}
+              >
                 {view.answer ? (
                   <p className="whitespace-pre-line text-[14px] leading-7 text-ink">{view.answer}</p>
                 ) : (
@@ -204,10 +205,11 @@ export function RagGuideView() {
                     설명 문장이 생성되지 않았습니다. 아래 출처를 직접 확인하세요.
                   </p>
                 )}
-              </div>
+              </article>
 
-              <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-line pt-4">
-                <div className="flex items-center gap-2">
+              <details className="mt-5 border-t border-line pt-4">
+                <summary className="cursor-pointer text-[13px] text-navy">근거와 출처 보기</summary>
+                <div className="mt-4 flex items-center gap-2">
                   <span className="text-eyebrow font-semibold uppercase text-faint">출처 연결률</span>
                   <Numeric
                     value={view.citationCoverage}
@@ -215,64 +217,66 @@ export function RagGuideView() {
                     missingReason="생성된 문장이 없어 출처 연결률을 계산하지 않았습니다."
                   />
                 </div>
-                {view.retrievalFailure ? (
-                  <span className="border border-hold px-2 py-0.5 font-mono text-[11px] text-hold">
-                    RETRIEVAL_FAILURE
-                  </span>
+                {view.sourcesUnavailableReason ? (
+                  <p className="mt-4 rounded-tile border border-dashed border-rule px-4 py-4 text-[13px] leading-5 text-muted">
+                    {view.sourcesUnavailableReason}
+                  </p>
                 ) : null}
-                {/*
-                  답이 나온 응답에도 flag가 붙는다. 조언성 질문을 막지 않고 설명으로
-                  답하기 때문이다. 그 경우 flag는 차단이 아니라 맥락이므로 차단 색을
-                  쓰지 않는다.
-                */}
-                {view.guardrailFlags.map((flag) => (
-                  <span
-                    key={flag}
-                    className={
-                      view.generationStatus === 'ANSWERED'
-                        ? 'border border-line px-2 py-0.5 font-mono text-[11px] text-muted'
-                        : 'border border-block px-2 py-0.5 font-mono text-[11px] text-block'
-                    }
-                  >
-                    {flag}
-                  </span>
-                ))}
-                <span className="ml-auto font-mono text-[11px] text-faint">{view.answerId}</span>
-              </div>
-
-              {view.sourcesUnavailableReason ? (
-                <p className="mt-4 rounded-tile border border-dashed border-rule px-4 py-4 text-[13px] leading-5 text-muted">
-                  {view.sourcesUnavailableReason}
-                </p>
-              ) : null}
-
-              {view.topSources.length > 0 ? (
-                <div className="mt-5">
-                  <p className="text-eyebrow font-semibold uppercase text-faint">핵심 출처</p>
-                  <ul className="mt-2 space-y-4">
-                    {view.topSources.map((source) => (
-                      <SourceRow key={source.sourceId} source={source} />
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
-              {view.expandableSources.length > 0 ? (
-                <details className="mt-5 border-t border-line pt-4">
-                  <summary className="cursor-pointer text-[13px] text-navy">
-                    관련 출처 {view.expandableSources.length}개 더 보기
-                  </summary>
-                  <ul className="mt-3 space-y-4">
-                    {view.expandableSources.map((source) => (
-                      <SourceRow key={source.sourceId} source={source} />
-                    ))}
-                  </ul>
-                </details>
-              ) : null}
+                {view.topSources.length > 0 ? (
+                  <div className="mt-5">
+                    <p className="text-eyebrow font-semibold uppercase text-faint">핵심 출처</p>
+                    <ul className="mt-2 space-y-4">
+                      {view.topSources.map((source) => (
+                        <SourceRow key={source.sourceId} source={source} />
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {view.expandableSources.length > 0 ? (
+                  <details className="mt-5 border-t border-line pt-4">
+                    <summary className="cursor-pointer text-[13px] text-navy">
+                      관련 출처 {view.expandableSources.length}개 더 보기
+                    </summary>
+                    <ul className="mt-3 space-y-4">
+                      {view.expandableSources.map((source) => (
+                        <SourceRow key={source.sourceId} source={source} />
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </details>
             </Panel>
           )}
         </AsyncBoundary>
       ) : null}
+
+      <AsyncBoundary state={history.state} onRetry={history.reload}>
+        {(items) =>
+          items.length === 0 ? (
+            <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
+              아직 저장된 질문이 없습니다.
+            </p>
+          ) : (
+            <Panel title="최근 질문" hint="내 계정에 저장된 질문과 답변을 다시 확인합니다.">
+              <div className="divide-y divide-line/60">
+                {items.map((item) => (
+                  <details key={item.answerId} className="py-3 first:pt-0 last:pb-0">
+                    <summary className="cursor-pointer text-[13px] font-medium text-ink">
+                      {item.question}
+                      <span className="ml-2 text-[11px] font-normal text-faint">
+                        {formatKstDateTime(item.createdAt) ?? '시각 미상'}
+                      </span>
+                    </summary>
+                    <p className="mt-3 whitespace-pre-line border-l-2 border-line pl-4 text-[13px] leading-6 text-muted">
+                      {item.answer ?? '이 기록에는 생성된 설명이 없습니다.'}
+                    </p>
+                  </details>
+                ))}
+              </div>
+            </Panel>
+          )
+        }
+      </AsyncBoundary>
 
       <AsyncBoundary state={registry.state} onRetry={registry.reload}>
         {(cards) => (
@@ -291,10 +295,9 @@ export function RagGuideView() {
                     <p className="mt-1 text-[12px] text-muted">
                       {card.institution} · {card.attribution}
                     </p>
-                    <p className="mt-1 font-mono text-[11px] text-faint">
-                      {card.topic}
-                      {card.lastCheckedAt ? ` · 확인 ${formatKstDate(card.lastCheckedAt)}` : ''}
-                    </p>
+                    {card.lastCheckedAt ? (
+                      <p className="mt-1 text-[11px] text-faint">확인 {formatKstDate(card.lastCheckedAt)}</p>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -316,10 +319,7 @@ function SourceRow({ source }: { source: SourceItem }) {
         </span>
       </div>
       <p className="mt-1 text-[13px] leading-6 text-muted">{source.summary}</p>
-      <p className="mt-1 font-mono text-[11px] text-faint">
-        {source.sourceId}
-        {source.institution ? ` · ${source.institution}` : ''}
-      </p>
+      {source.institution ? <p className="mt-1 text-[11px] text-faint">{source.institution}</p> : null}
       {source.href ? (
         <a
           href={source.href}

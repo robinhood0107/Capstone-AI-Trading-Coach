@@ -32,19 +32,20 @@ export interface ModelEvaluationView {
   comparableCount: number;
 }
 
-const DISPLAY: Record<DashboardModelId, string> = {
+const DISPLAY: Partial<Record<DashboardModelId, string>> = {
   BASELINE: '규칙 baseline',
   LSTM: 'LSTM',
-  LIGHTGBM: 'LightGBM',
 };
 
 export function toModelEvaluationView(view: DashboardModelEvaluationView): ModelEvaluationView {
-  const rows: ModelRow[] = view.models.map((model) => ({
-    modelId: model.modelId,
-    displayName: DISPLAY[model.modelId] ?? model.modelId,
-    status: model.status,
-    metrics: model.metrics,
-  }));
+  const rows: ModelRow[] = view.models
+    .filter((model) => model.modelId in DISPLAY)
+    .map((model) => ({
+      modelId: model.modelId,
+      displayName: DISPLAY[model.modelId] ?? model.modelId,
+      status: model.status,
+      metrics: model.metrics,
+    }));
 
   return {
     runId: view.runId,
@@ -122,7 +123,6 @@ export function readAbstainReason(reason: string): string {
 const SLOT_NAMES: [keyof SignalV3Runtime['components'], string][] = [
   ['ruleBaseline', '규칙 baseline'],
   ['lstm', 'LSTM'],
-  ['lightgbm', 'LightGBM'],
   ['hmmRegime', 'HMM 시장국면'],
 ];
 

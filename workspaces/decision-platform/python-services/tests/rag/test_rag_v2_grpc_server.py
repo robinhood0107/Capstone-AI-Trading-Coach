@@ -54,6 +54,28 @@ def test_v2_server_settings_require_dedicated_loopback_query_dsn_and_absolute_bg
     assert settings.bge_packet_root == Path("/var/lib/capstone/bge-packet")
 
 
+def test_v2_server_settings_reads_query_dsn_from_the_owner_only_runtime_leaf(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    os.chmod(tmp_path, 0o700)
+    secrets = tmp_path / "secrets"
+    secrets.mkdir(mode=0o700)
+    dsn_path = secrets / "rag-v2-query-database-dsn"
+    dsn_path.write_text("postgresql://decision_rag_query@localhost/rag", encoding="utf-8")
+    os.chmod(dsn_path, 0o600)
+    monkeypatch.setenv("RAG_V2_GRPC_SHARED_SECRET", _SECRET)
+    monkeypatch.delenv("RAG_V2_QUERY_DATABASE_DSN", raising=False)
+    monkeypatch.setenv("RAG_V2_QUERY_SECRET_FILE", str(dsn_path))
+    monkeypatch.setenv("CAPSTONE_RAG_LOCAL_ROOT", str(tmp_path))
+    monkeypatch.setenv("CAPSTONE_RAG_BGE_PACKET_ROOT", "/var/lib/capstone/bge-packet")
+    monkeypatch.setenv("RAG_V2_GRPC_ENABLE_REFLECTION", "false")
+
+    settings = RagV2GrpcServerSettings.from_env()
+
+    assert settings.query_database_dsn == "postgresql://decision_rag_query@localhost/rag"
+
+
 @pytest.mark.parametrize(
     ("name", "value", "expected"),
     [

@@ -56,49 +56,18 @@ class P1BaselineIntegrationTest {
     }
 
     @Test
-    fun `fresh database applies B86 through V119 while existing database applies V1 through V119`() {
+    fun `fresh baseline and historical paths converge on the current migration`() {
+        val baselineHistory = history(BASELINE_DB)
+        val historicalHistory = history(HISTORICAL_DB)
+        val latestVersion = historicalHistory.last().first.toInt()
+
+        assertEquals("86" to "SQL_BASELINE", baselineHistory.first())
+        assertEquals((87..latestVersion).map { it.toString() to "SQL" }, baselineHistory.drop(1))
         assertEquals(
-            listOf(
-                "86" to "SQL_BASELINE",
-                "87" to "SQL",
-                "88" to "SQL",
-                "89" to "SQL",
-                "90" to "SQL",
-                "91" to "SQL",
-                "92" to "SQL",
-                "93" to "SQL",
-                "94" to "SQL",
-                "95" to "SQL",
-                "96" to "SQL",
-                "97" to "SQL",
-                "98" to "SQL",
-                "99" to "SQL",
-                "100" to "SQL",
-                "101" to "SQL",
-                "102" to "SQL",
-                "103" to "SQL",
-                "104" to "SQL",
-                "105" to "SQL",
-                "106" to "SQL",
-                "107" to "SQL",
-                "108" to "SQL",
-                "109" to "SQL",
-                "110" to "SQL",
-                "111" to "SQL",
-                "112" to "SQL",
-                "113" to "SQL",
-                "114" to "SQL",
-                "115" to "SQL",
-                "116" to "SQL",
-                "117" to "SQL",
-                "118" to "SQL",
-                "119" to "SQL",
-            ),
-            history(BASELINE_DB),
+            (1..latestVersion).map { version -> version.toString() to if (version == 7) "JDBC" else "SQL" },
+            historicalHistory,
         )
-        assertEquals(119, history(HISTORICAL_DB).size)
-        assertEquals("119" to "SQL", history(HISTORICAL_DB).last())
-        assertEquals("119" to "SQL", history(UPGRADE_DB).last())
+        assertEquals(latestVersion.toString() to "SQL", history(UPGRADE_DB).last())
         assertTrue(history(UPGRADE_DB).none { it.second == "SQL_BASELINE" })
     }
 
@@ -130,9 +99,9 @@ class P1BaselineIntegrationTest {
     fun `historical and baseline paths install exact V87 capability constraints`() {
         listOf(HISTORICAL_DB, BASELINE_DB).forEach { database ->
             assertEquals(0L, count(database, "actor_request_capability"))
-            assertEquals(
-                "119",
-                scalar(database, "select version from flyway_schema_history where success order by installed_rank desc limit 1"),
+            assertTrue(
+                scalar(database, "select version from flyway_schema_history where success order by installed_rank desc limit 1")
+                    .toInt() >= 120,
             )
         }
     }

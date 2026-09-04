@@ -54,6 +54,10 @@ _RUN_ID = re.compile(r"^auto_run_[0-9a-f]{32}$")
 _LEGACY_AI_SETTINGS_SHA256 = hashlib.sha256(
     b'{"aiJudgementEnabled":false,"thinkingLevel":"low"}'
 ).hexdigest()
+# tick 이 일시 실패했을 때의 재시도. 창(09:30~15:20)을 다 쓰지 않으면서도 몇 분간의 브리지
+# 장애는 넘길 수 있는 크기다. 이 한도를 넘으면 run 을 그 자리에 두고 물러난다.
+_TICK_RETRY_SECONDS = 20.0
+_MAX_TICK_FAILURES = 15
 _TERMINAL_STATES = frozenset(
     {
         "NEWS_VETOED",
@@ -895,6 +899,7 @@ class AutomationRuntimeService:
         port = self._port_factory.build(claim, state)
         try:
             index = int(state["checkpointVersion"])
+            failures = 0
             while not self._stop.is_set():
                 state = self._repository.read_state(claim)
                 current = str(state["state"])
@@ -905,12 +910,33 @@ class AutomationRuntimeService:
                 if wakeup > now and self._stop.wait((wakeup - now).total_seconds()):
                     return
                 index += 1
-                result = self._runner.run_tick(
-                    claim=claim,
-                    tick_id=f"{claim.run_id}:boundary:{index}",
-                    now=wakeup,
-                    port=port,
-                )
+                try:
+                    result = self._runner.run_tick(
+                        claim=claim,
+                        tick_id=f"{claim.run_id}:boundary:{index}",
+                        now=wakeup,
+                        port=port,
+                    )
+                except Exception:
+                    # 어떤 예외든 잡는다. 처음에는 AutomationRuntimeError 만 잡았는데 실제로
+                    # 프로세스를 죽인 것은 `httpx.ReadTimeout` 이었다 - 브리지 전송 계층의
+                    # 예외라 그 그물에 걸리지 않았다. tick 하나가 실패하는 것과 런타임이
+                    # 사라지는 것은 심각도가 다르고, 뒤는 스택 전체를 끄므로 여기서는 넓게 잡는다.
+                    #
+                    # 프로세스를 끝내면 수퍼바이저가 그것을 컨테이너 실패로 올리고, 재기동한
+                    # 컨테이너가 같은 지점에서 다시 죽어 재기동 루프가 된다. 실측으로 그 루프에
+                    # 빠졌다 - ORDER_SIZING 에서 브리지가 닫히자 컨테이너가 반복해서 내려갔다.
+                    #
+                    # 같은 tick_id 로 다시 시도한다. 부분 적용은 processed_ticks 의
+                    # tick_identity_hash 가 멱등으로 흡수하므로 재시도가 상태를 겹쳐 쓰지 않는다.
+                    # 정해진 횟수를 넘기면 run 을 그 자리에 두고 물러난다 - 진행하지 못하는 것과
+                    # 프로세스가 죽는 것은 다르고, 앞은 사람이 보면 되지만 뒤는 스택 전체를 끈다.
+                    failures += 1
+                    index -= 1
+                    if failures > _MAX_TICK_FAILURES or self._stop.wait(_TICK_RETRY_SECONDS):
+                        return
+                    continue
+                failures = 0
                 next_state = str(result["state"])
                 if next_state in _TERMINAL_STATES:
                     if next_state != "HALTED":
@@ -1410,7 +1436,20 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # `python -m app.p1_owner.automation_runtime` 은 이 파일을 `__main__` 으로 실행한다.
+    # 그런데 automation_runtime_live 가 `from app.p1_owner.automation_runtime import
+    # AutomationRuntimeError` 로 같은 파일을 정규 이름으로 한 번 더 로드하므로 클래스 객체가
+    # 둘이 된다. 그러면 여기(`__main__`)의 `except AutomationRuntimeError` 가 저기서 올라온
+    # `app.p1_owner.automation_runtime.AutomationRuntimeError` 를 잡지 못한다.
+    #
+    # 실측으로 그 때문에 tick 재시도가 통째로 무력화됐다 - 브리지 실패가 except 를 스쳐
+    # 지나가 프로세스를 끝냈고 컨테이너가 재기동 루프에 빠졌다.
+    #
+    # 그래서 진입점은 정규 모듈로 위임한다. 그러면 실행되는 코드와 예외 클래스가 같은
+    # 모듈 객체에서 나온다.
+    from app.p1_owner.automation_runtime import main as _canonical_main
+
+    raise SystemExit(_canonical_main())
 
 
 def _required_price(value: int | None) -> int:

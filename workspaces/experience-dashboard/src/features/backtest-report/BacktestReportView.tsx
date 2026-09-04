@@ -66,7 +66,7 @@ export function BacktestReportView() {
               <Panel
                 contract="dashboard-backtest.v1 · strategies[].curve"
                 title="자산 곡선"
-                hint="세 시나리오를 같은 시각 축에 겹쳐 봅니다."
+                hint={`운영 시작 뒤 ${view.equityCurve.length}거래일을 같은 축에 표시합니다. 단기 표본이므로 성과를 단정하지 않습니다.`}
               >
                 {view.equityCurve.length === 0 ? (
                   <EmptyBlock detail="이 실행에는 곡선 값이 기록되지 않았습니다." />

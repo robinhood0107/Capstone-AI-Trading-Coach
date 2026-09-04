@@ -2,14 +2,10 @@
 
 import { useState, type ReactNode } from 'react';
 import { api } from '@/shared/api/endpoints';
-import { apiMode, baseUrl } from '@/shared/api/client';
+import { apiMode } from '@/shared/api/client';
 import { session, useSession } from '@/shared/api/session';
 import { toErrorState } from '@/shared/lib/useResource';
 
-/**
- * 모든 데이터 endpoint가 JWT를 요구하므로 로그인 전에는 화면을 열지 않는다.
- * 토큰은 메모리에만 두므로 새로고침하면 다시 로그인해야 한다. 이것이 의도된 동작이다.
- */
 export function LoginGate({ children }: { children: ReactNode }) {
   const { authenticated } = useSession();
 
@@ -45,14 +41,14 @@ function LoginForm() {
       <div className="rounded-panel bg-panel px-7 py-8 shadow-card">
         <span
           aria-hidden
-          className="grid h-11 w-11 place-items-center rounded-tile bg-navy text-[14px] font-semibold text-white"
+          className="grid h-11 w-11 place-items-center rounded-tile bg-brand text-[14px] font-semibold text-on-brand"
         >
           AI
         </span>
         <h1 className="mt-5 text-[24px] font-semibold tracking-tight text-ink">로그인</h1>
         <p className="mt-2 text-[14px] leading-6 text-muted">
-          서버에 연결하려면 로그인이 필요합니다. 비밀번호는 저장하지 않으며, 토큰은 이 탭의 메모리에만
-          보관합니다. 새로고침하면 다시 로그인해야 합니다.
+          서버에 연결하려면 로그인이 필요합니다. 비밀번호는 저장하지 않으며, 로그인 상태는 이 탭에서만
+          유지됩니다. 탭을 닫으면 자동으로 로그아웃됩니다.
         </p>
 
         <div className="mt-7 space-y-4">
@@ -95,14 +91,10 @@ function LoginForm() {
             type="button"
             onClick={() => void submit()}
             disabled={pending}
-            className="w-full rounded-tile bg-navy px-4 py-3 text-[15px] font-semibold text-white hover:opacity-90 disabled:bg-line disabled:text-faint"
+            className="w-full rounded-tile bg-brand px-4 py-3 text-[15px] font-semibold text-on-brand hover:opacity-90 disabled:bg-line disabled:text-faint"
           >
             {pending ? '연결 중' : '로그인'}
           </button>
-
-          <p className="text-center font-mono text-[11px] text-faint">
-            서버 {baseUrl() || 'same-origin /api'}
-          </p>
         </div>
       </div>
     </div>

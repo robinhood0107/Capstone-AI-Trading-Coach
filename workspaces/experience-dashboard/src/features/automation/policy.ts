@@ -58,7 +58,7 @@ export const AUTOMATION_EVIDENCE_LINKS = [
 ] as const;
 
 export const AUTOMATION_BLOCKER_LABELS: Record<AutomationBlocker, string> = {
-  ACCOUNT_NOT_CONFIGURED: '자동운용 계좌가 설정되지 않았습니다.',
+  ACCOUNT_NOT_CONFIGURED: 'KIS Mock 계정 설정이 필요합니다.',
   POLICY_NOT_CONFIGURED: '예산·손절·익절 정책을 먼저 저장해야 합니다.',
   POLICY_VERSION_DRIFT: '저장된 정책 버전이 바뀌었습니다. 최신 값을 다시 확인하세요.',
   PRINCIPLE_NOT_CONFIGURED: '활성 투자 원칙이 없습니다.',

@@ -196,7 +196,7 @@ data class AutomationPositionV2Response(
     val quantity: Long,
     val entryAverageFillPriceKrw: Long,
     val entrySession: LocalDate,
-    val expirySession: LocalDate,
+    val expirySession: LocalDate?,
     val policyId: String,
     val policyVersion: Int,
     val stopLossBps: Int,

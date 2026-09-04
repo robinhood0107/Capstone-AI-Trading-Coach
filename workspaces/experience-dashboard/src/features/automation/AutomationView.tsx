@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { api } from '@/shared/api/endpoints';
 import { toErrorState, useResource } from '@/shared/lib/useResource';
 import { formatKrw, formatKstDateTime } from '@/shared/lib/format';
@@ -167,25 +168,6 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
     }
   }
 
-  async function disarm() {
-    if (busy || data.status.controlState === 'DISARMED') return;
-    setBusy(true);
-    setNotice(null);
-    try {
-      await api.disarmAutomation(data.status.controlVersion);
-      setNotice({ tone: 'ok', text: '신규 주문을 중지했습니다. 미확정 주문 대사는 유지됩니다.' });
-      onReload();
-    } catch (cause) {
-      const error = toErrorState<never>(cause);
-      setNotice({
-        tone: 'error',
-        text: error.kind === 'error' ? error.message : '자동운용을 중지하지 못했습니다.',
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <div className="space-y-6">
       <Panel
@@ -204,14 +186,19 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
           <StatusField label="정책 버전" value={saved ? `v${saved.version}` : '미설정'} mono />
         </dl>
 
+        <div className="mt-4 flex justify-end">
+          <Link href="/order-review" className="text-[13px] font-semibold text-navy hover:underline">
+            최근 주문 판정 보기 →
+          </Link>
+        </div>
+
         {data.status.blockers.length > 0 ? (
           <div className="mt-5 border-l-2 border-hold bg-hold/5 px-4 py-3">
             <p className="text-[13px] font-semibold text-ink">현재 시작할 수 없습니다</p>
             <ul className="mt-2 space-y-2">
               {data.status.blockers.map((blocker) => (
                 <li key={blocker} className="text-[13px] leading-5 text-muted">
-                  <span className="font-mono text-[11px] text-hold">{blocker}</span>
-                  <span className="ml-2">{AUTOMATION_BLOCKER_LABELS[blocker]}</span>
+                  <span title={blocker}>{AUTOMATION_BLOCKER_LABELS[blocker]}</span>
                 </li>
               ))}
             </ul>
@@ -225,7 +212,9 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
         hint="세 값만 입력합니다. AI와 LSTM은 후보 순위만 정하며 주문 수량을 직접 결정하지 않습니다."
         actions={
           <span className="font-mono text-[11px] uppercase text-faint">
-            {selectedPreset === 'custom' ? '직접 입력' : `${selectedPreset} preset`}
+            {selectedPreset === 'custom'
+              ? '직접 입력'
+              : AUTOMATION_PRESETS.find((preset) => preset.presetId === selectedPreset)?.label}
           </span>
         }
       >
@@ -346,15 +335,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
               >
                 자동운용 시작
               </Button>
-            ) : (
-              <Button
-                                disabled={busy}
-                onClick={() => void disarm()}
-                className="rounded-full border border-block bg-block px-4 py-1.5 text-[13px] font-medium text-white disabled:border-line disabled:bg-line disabled:text-faint"
-              >
-                신규 주문 중지
-              </Button>
-            )}
+            ) : null}
           </div>
           <AutomationPersistenceNote status={data.status} />
         </div>
@@ -480,7 +461,15 @@ function PositionPanel({ positions }: { positions: AutomationPositionV2[] }) {
                   <td className="tnum py-2.5 text-right font-mono">
                     {formatKrw(position.entryAverageFillPriceKrw)}
                   </td>
-                  <td className="py-2.5 text-right text-muted">{position.status}</td>
+                  <td className="py-2.5 text-right text-muted">
+                    {position.status === 'OPEN'
+                      ? '보유 중'
+                      : position.status === 'EXIT_PENDING'
+                        ? '청산 대기'
+                        : position.status === 'CLOSED'
+                          ? '종료'
+                          : '대사 확인 필요'}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -504,10 +493,9 @@ function RunPanel({ runs }: { runs: AutomationRunV2[] }) {
             <li key={run.runId} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
               <div className="min-w-0">
                 <p className="font-mono text-[12px] text-ink">{run.sessionDate}</p>
-                <p className="mt-1 truncate font-mono text-[10px] text-faint">{run.runId}</p>
               </div>
               <div className="text-right">
-                <p className="font-mono text-[11px] text-muted">{run.state}</p>
+                <p className="text-[11px] text-muted">{runStateLabel(run.state)}</p>
                 <p className="mt-1 text-[11px] text-faint">
                   {run.selectedSymbol ?? '주문 없음'} · {formatKstDateTime(run.updatedAt)}
                 </p>
@@ -518,6 +506,14 @@ function RunPanel({ runs }: { runs: AutomationRunV2[] }) {
       )}
     </Panel>
   );
+}
+
+function runStateLabel(state: string): string {
+  if (state === 'COMPLETED') return '완료';
+  if (state === 'HALTED') return '안전 중단';
+  if (state.startsWith('SKIPPED_')) return '주문 없이 종료';
+  if (state.includes('FAILED')) return '실패';
+  return '진행 중';
 }
 
 function modeLabel(mode: AutomationStatusV2['brokerageMode']): string {

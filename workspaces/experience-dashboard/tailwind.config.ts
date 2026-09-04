@@ -14,21 +14,22 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: '#0C0F14',
-        muted: '#59616D',
-        faint: '#8B939F',
-        surface: '#F4F5F7',
-        panel: '#FFFFFF',
-        /** 카드 안에서 한 단계 더 들어간 영역(타일, 표 헤더)의 배경. */
-        subtle: '#F7F8FA',
-        line: '#E9EBEF',
-        rule: '#DFE3E9',
-        navy: '#14213D',
-        allow: '#067A46',
-        warn: '#B25E09',
-        hold: '#4A5462',
-        block: '#B3261E',
-        abstain: '#98A0AB',
+        ink: 'rgb(var(--c-ink) / <alpha-value>)',
+        muted: 'rgb(var(--c-muted) / <alpha-value>)',
+        faint: 'rgb(var(--c-faint) / <alpha-value>)',
+        surface: 'rgb(var(--c-surface) / <alpha-value>)',
+        panel: 'rgb(var(--c-panel) / <alpha-value>)',
+        subtle: 'rgb(var(--c-subtle) / <alpha-value>)',
+        line: 'rgb(var(--c-line) / <alpha-value>)',
+        rule: 'rgb(var(--c-rule) / <alpha-value>)',
+        navy: 'rgb(var(--c-navy) / <alpha-value>)',
+        brand: 'rgb(var(--c-brand) / <alpha-value>)',
+        'on-brand': 'rgb(var(--c-on-brand) / <alpha-value>)',
+        allow: 'rgb(var(--c-allow) / <alpha-value>)',
+        warn: 'rgb(var(--c-warn) / <alpha-value>)',
+        hold: 'rgb(var(--c-hold) / <alpha-value>)',
+        block: 'rgb(var(--c-block) / <alpha-value>)',
+        abstain: 'rgb(var(--c-abstain) / <alpha-value>)',
       },
       fontFamily: {
         sans: [

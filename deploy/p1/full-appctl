@@ -24,6 +24,7 @@ usage() {
 Usage:
   ./capstone up [--models] [--mock]
   ./capstone status|logs|smoke|down|doctor
+  ./capstone credential rotate <user|admin> /absolute/password-file
   ./capstone mock <configure|doctor|certify|readiness|gate-author|start|stop> [--symbol 005930] [--quantity 1]
   ./capstone artifact <validate|import> <bundle-directory> --manifest-sha256 <sha256>
   ./capstone market-data inventory
@@ -500,9 +501,7 @@ up_app() {
   fi
   unset rag_sources_seed
   replay_history
-  # 시장데이터 일봉을 빠진 거래일만큼 채운다. 자동운용 루프는 낡은 시장데이터로도 멈추지
-  # 않으므로(소스 세션과 이력이 같은 manifest 에서 파생되어 함께 밀린다) 실패는 up 을 죽이지
-  # 않고 마커로만 남긴다. providerCalls 는 공개 일봉 피드이며 KIS·계좌·주문 호출은 0이다.
+  # 공개 일봉 갱신 실패는 stale marker로 남기며 KIS 주문은 호출하지 않는다.
   local daily_refresh
   daily_refresh=$(compose --profile owner run --rm --no-deps market-data-cli \
     python -m app.data.market_data.yfinance_daily_cli 2>&1 \
@@ -515,8 +514,16 @@ up_app() {
       printf 'CAPSTONE_MARKET_DATA_DAILY=STALE\n' ;;
   esac
   unset daily_refresh
-  # up 이 매번 AUTOMATION=0 으로 덮으면 켜 둔 자동운용이 재기동마다 꺼진다. 의도는 유지한다.
-  # --mock 없이 올린 경우는 brokerage 가 provider-free 이므로 의도를 되살리지 않는다.
+  local scenario_materialization
+  scenario_materialization=$(compose --profile owner run --rm --no-deps owner-scenario-materializer 2>&1 \
+    | tail -1) || scenario_materialization=''
+  if [[ $scenario_materialization == *'"providerCalls":0'* && $scenario_materialization == *'"sessions":104'* ]]; then
+    printf 'CAPSTONE_OWNER_SCENARIOS=MATERIALIZED\n'
+  else
+    printf 'CAPSTONE_OWNER_SCENARIOS=UNAVAILABLE\n'
+  fi
+  unset scenario_materialization
+  # KIS Mock 재기동에서는 저장된 운용 의도를 유지한다.
   local desired_automation=0
   load_active_mode
   ((mock)) && desired_automation=$AUTOMATION
@@ -540,11 +547,6 @@ up_app() {
   reconcile_automation_intent "$desired_automation"
 }
 
-# 저장된 의도가 ARMED 면 기동 뒤에 실제 상태를 그쪽으로 맞춘다. 한 번 켜 두면 재기동에도
-# 켜진 채로 돌아오는 것이 이 함수가 하는 일의 전부다.
-#
-# 실패를 삼키지 않는다. HALTED 이후거나 gate 인증이 무효면 mock_start 가 fail-closed 로
-# 거부하는데(V90:659-665), 그 사유가 안 보이면 운영자는 "왜 안 켜졌는지"를 알 수 없다.
 reconcile_automation_intent() {
   local desired=${1:-0} output status=0
   if ((desired == 0)); then
@@ -557,7 +559,6 @@ reconcile_automation_intent() {
     printf 'CAPSTONE_AUTOMATION_RECONCILED=ARMED\n'
     return 0
   fi
-  # HALTED 는 사람이 봐야 하는 신호다. up 자체를 실패시키지 않고 이유만 남긴다.
   printf '%s\n' "${output:-(no output)}"
   printf 'CAPSTONE_AUTOMATION_RECONCILED=BLOCKED\n'
   return 0
@@ -940,7 +941,7 @@ mock_start() {
   compose --profile owner run --rm --no-deps automation-runtime-cli \
     python -m app.p1_owner.mock_automation_cli start
   if ! compose up -d --force-recreate --no-deps --wait decision-platform; then
-    # DB arm 뒤 process 시작 실패는 즉시 신규 주문만 disarm한다. reconciliation row/volume은 보존한다.
+    # 런타임 시작 실패 시 신규 주문만 즉시 중지한다.
     compose --profile owner run --rm --no-deps automation-runtime-cli \
       python -m app.p1_owner.mock_automation_cli stop >/dev/null 2>&1 || true
     die MOCK_START_RUNTIME_FAILED_DISARM_ATTEMPTED
@@ -956,12 +957,125 @@ mock_stop() {
   export P1_LOCAL_CERTIFICATION_VALID=false
   compose --profile owner run --rm --no-deps automation-runtime-cli \
     python -m app.p1_owner.mock_automation_cli stop
-  # process는 outstanding reconciliation을 위해 유지하고 control만 DISARMED로 바꾼다.
-  # AUTOMATION 은 0 으로 내린다. 이 값이 up 의 desired state 이므로 1 로 남기면 다음 up 이
-  # 방금 내린 disarm 을 되돌린다. 끄는 것은 명시적 의도이고 재기동에 살아남아야 한다.
+  # 대사 프로세스는 유지하고 재기동 의도를 함께 내린다.
   save_active_mode "$MODELS" "$MOCK" 0
   printf 'KIS_MOCK_NEW_ORDERS=DISARMED\nOUTSTANDING_RECONCILIATION=PRESERVED\n'
 }
+
+replace_env_value() {
+  local file=$1 key=$2 value=$3 line name
+  grep -q "^${key}=" "$file" || die CREDENTIAL_ROTATION_ENV_KEY_MISSING
+  while IFS= read -r line || [[ -n $line ]]; do
+    name=${line%%=*}
+    if [[ $name == "$key" ]]; then
+      printf '%s=%s\n' "$key" "$value"
+    else
+      printf '%s\n' "$line"
+    fi
+  done < "$file"
+}
+
+credential_rotate() (
+  local target=${1:-} password_file=${2:-} user_id bundle_name password_name bundle_key
+  local rotation_dir bundle_file rotation_env spring_image migration_password separation_key bundle
+  [[ $# == 2 ]] || die CREDENTIAL_ROTATION_ARGUMENTS
+  [[ $password_file == /* && -f $password_file && ! -L $password_file ]] \
+    || die CREDENTIAL_ROTATION_PASSWORD_FILE
+  [[ $(stat -c '%a' "$password_file") =~ ^(400|600|640)$ ]] \
+    || die CREDENTIAL_ROTATION_PASSWORD_FILE_MODE
+  case $target in
+    user)
+      user_id=usr_demo_user
+      bundle_name=demo-user.bundle
+      password_name=demo-user.password
+      bundle_key=DEMO_USER_CREDENTIAL_BUNDLE
+      ;;
+    admin)
+      user_id=usr_demo_admin
+      bundle_name=demo-admin.bundle
+      password_name=demo-admin.password
+      bundle_key=DEMO_ADMIN_CREDENTIAL_BUNDLE
+      ;;
+    *) die CREDENTIAL_ROTATION_TARGET ;;
+  esac
+  state_ready || die NOT_INITIALIZED
+  upgrade_state
+  compose ps --status running --services | grep -qx postgres || die CREDENTIAL_ROTATION_POSTGRES_NOT_RUNNING
+  python3 - "$password_file" "$target" <<'PY' || exit 1
+import sys
+from pathlib import Path
+
+raw = Path(sys.argv[1]).read_text(encoding="utf-8").rstrip("\r\n")
+folded = raw.casefold()
+blocked = {
+    "123456789012345", "1234567890123456", "qwertyuiop12345",
+    "passwordpassword", "letmeinletmein123", "welcome123456789",
+}
+fragments = ("capstone", "trading", "coach", "password", "passwd", "demo-user", "demo-admin")
+if not 15 <= len(raw) <= 64 or len(raw.encode("utf-8")) > 72:
+    raise SystemExit("CAPSTONE_ERROR=CREDENTIAL_ROTATION_PASSWORD_LENGTH")
+if folded in blocked or any(fragment in folded for fragment in fragments):
+    raise SystemExit("CAPSTONE_ERROR=CREDENTIAL_ROTATION_PASSWORD_BLOCKLIST")
+PY
+
+  rotation_dir=$(mktemp -d "$STATE_DIR/credential-rotation.XXXXXX")
+  trap 'rm -rf -- "$rotation_dir"' EXIT
+  bundle_file=$rotation_dir/new.bundle
+  rotation_env=$rotation_dir/rotation.env
+  spring_image=$(sed -n 's/^P1_SPRING_IMAGE=//p' "$RUNTIME_ENV")
+  [[ -n $spring_image ]] || die CREDENTIAL_ROTATION_IMAGE_MISSING
+
+  "$DOCKER_BIN" run --rm --network none --read-only --cap-drop ALL \
+    --security-opt no-new-privileges --user "$(id -u):$(id -g)" \
+    --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+    --mount "type=bind,src=$password_file,dst=/input/password,readonly" \
+    --mount "type=bind,src=$SECRETS_DIR/demo-credential-separation.key,dst=/input/separation-key,readonly" \
+    --mount "type=bind,src=$rotation_dir,dst=/output" \
+    --entrypoint java \
+    -e "DEMO_CREDENTIAL_USER_ID=$user_id" \
+    -e DEMO_CREDENTIAL_PASSWORD_FILE=/input/password \
+    -e DEMO_CREDENTIAL_SEPARATION_KEY_FILE=/input/separation-key \
+    -e DEMO_CREDENTIAL_BUNDLE_OUTPUT=/output/new.bundle \
+    "$spring_image" -Dloader.main=com.capstone.decision.infrastructure.security.DemoCredentialBundleAuthor \
+    -cp /app/app.jar org.springframework.boot.loader.launch.PropertiesLauncher >/dev/null
+
+  migration_password=$(sed -n 's/^POSTGRES_MIGRATION_PASSWORD=//p' "$SECRETS_DIR/migration.env")
+  separation_key=$(sed -n 's/^DEMO_CREDENTIAL_SEPARATION_KEY=//p' "$SECRETS_DIR/migration.env")
+  bundle=$(<"$bundle_file")
+  [[ -n $migration_password && -n $separation_key && -n $bundle ]] \
+    || die CREDENTIAL_ROTATION_INPUT_MISSING
+  printf '%s\n' \
+    'POSTGRES_HOST=127.0.0.1' \
+    'POSTGRES_PORT=5432' \
+    'POSTGRES_DB=capstone_p1' \
+    "POSTGRES_MIGRATION_PASSWORD=$migration_password" \
+    "DEMO_CREDENTIAL_USER_ID=$user_id" \
+    'DEMO_CREDENTIAL_ROTATION_ACTOR=operator-cli' \
+    "DEMO_CREDENTIAL_BUNDLE=$bundle" \
+    "DEMO_CREDENTIAL_SEPARATION_KEY=$separation_key" > "$rotation_env"
+  chmod 0600 "$rotation_env"
+
+  "$DOCKER_BIN" run --rm --network "container:${PROJECT_NAME}-postgres-1" --read-only \
+    --cap-drop ALL --security-opt no-new-privileges --env-file "$rotation_env" \
+    --entrypoint java "$spring_image" \
+    -Dloader.main=com.capstone.decision.infrastructure.security.DemoCredentialRotation \
+    -cp /app/app.jar org.springframework.boot.loader.launch.PropertiesLauncher >/dev/null
+
+  printf '%s' "$bundle" | write_state "secrets/$bundle_name" 0640
+  replace_env_value "$SECRETS_DIR/migration.env" "$bundle_key" "$bundle" \
+    | write_state secrets/migration.env 0640
+  replace_env_value "$SECRETS_DIR/bootstrap.env" "$bundle_key" "$bundle" \
+    | write_state secrets/bootstrap.env 0640
+  replace_env_value "$SECRETS_DIR/spring.env" "$bundle_key" "$bundle" \
+    | write_state secrets/spring.env 0640
+  printf '%s' "$(<"$password_file")" | write_state "secrets/$password_name" 0640
+  if [[ $target == user ]]; then
+    replace_env_value "$SECRETS_DIR/automation-runtime.env" P1_AUTOMATION_OWNER_PASSWORD "$(<"$password_file")" \
+      | write_state secrets/automation-runtime.env 0640
+  fi
+  compose up -d --force-recreate --no-deps --wait decision-platform
+  printf 'CAPSTONE_CREDENTIAL_ROTATION=PASS\nTARGET=%s\nSESSIONS_INVALIDATED=YES\n' "$target"
+)
 
 artifact_import() {
   local bundle=${1:-} manifest_sha=${2:-} bundle_parent bundle_name
@@ -1174,6 +1288,13 @@ case $command in
       start) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_start ;;
       stop) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_stop ;;
       *) die UNKNOWN_MOCK_COMMAND ;;
+    esac
+    ;;
+  credential)
+    subcommand=${1:-}; [[ -n $subcommand ]] || die CREDENTIAL_COMMAND_REQUIRED; shift
+    case $subcommand in
+      rotate) credential_rotate "$@" ;;
+      *) die UNKNOWN_CREDENTIAL_COMMAND ;;
     esac
     ;;
   artifact)

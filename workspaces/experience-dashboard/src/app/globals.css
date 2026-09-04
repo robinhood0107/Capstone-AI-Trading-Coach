@@ -2,14 +2,94 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * 테마.
+ *
+ * 밝은 테마가 기본이고 어두운 테마는 같은 이름의 변수만 다시 정의한다. 세 가지 상태를
+ * 모두 지원한다 - 사용자가 고른 값(`data-theme`)이 최우선이고, 고르지 않았으면 OS 설정
+ * (`prefers-color-scheme`)을 따른다.
+ *
+ * 어두운 테마의 상태색은 밝은 테마 값을 그대로 쓰지 않는다. #067A46 같은 진한 색은 어두운
+ * 바탕에서 대비가 무너져 읽히지 않는다. 어두운 바탕 기준으로 명도를 올려 잡았다.
+ */
 :root {
   color-scheme: light;
+
+  --c-ink: 12 15 20;
+  --c-muted: 89 97 109;
+  --c-faint: 139 147 159;
+  --c-surface: 244 245 247;
+  --c-panel: 255 255 255;
+  --c-subtle: 247 248 250;
+  --c-line: 233 235 239;
+  --c-rule: 223 227 233;
+  --c-navy: 20 33 61;
+  --c-brand: 20 33 61;
+  --c-on-brand: 255 255 255;
+  --c-allow: 6 122 70;
+  --c-warn: 178 94 9;
+  --c-hold: 74 84 98;
+  --c-block: 179 38 30;
+  --c-abstain: 152 160 171;
+
+  --c-scrollbar: 223 227 233;
+  --c-focus: 20 33 61;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --c-ink: 232 236 242;
+    --c-muted: 158 167 179;
+    --c-faint: 118 127 140;
+    --c-surface: 13 16 21;
+    --c-panel: 24 28 35;
+    --c-subtle: 31 36 45;
+    --c-line: 44 50 61;
+    --c-rule: 58 65 78;
+    --c-navy: 138 163 219;
+    --c-brand: 33 44 71;
+    --c-on-brand: 235 240 248;
+    --c-allow: 62 190 126;
+    --c-warn: 232 160 62;
+    --c-hold: 154 163 176;
+    --c-block: 240 116 106;
+    --c-abstain: 128 137 150;
+
+    --c-scrollbar: 58 65 78;
+    --c-focus: 138 163 219;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --c-ink: 232 236 242;
+  --c-muted: 158 167 179;
+  --c-faint: 118 127 140;
+  --c-surface: 13 16 21;
+  --c-panel: 24 28 35;
+  --c-subtle: 31 36 45;
+  --c-line: 44 50 61;
+  --c-rule: 58 65 78;
+  --c-navy: 138 163 219;
+  --c-brand: 33 44 71;
+  --c-on-brand: 235 240 248;
+  --c-allow: 62 190 126;
+  --c-warn: 232 160 62;
+  --c-hold: 154 163 176;
+  --c-block: 240 116 106;
+  --c-abstain: 128 137 150;
+
+  --c-scrollbar: 58 65 78;
+  --c-focus: 138 163 219;
 }
 
 html,
 body {
-  background: #f4f5f7;
-  color: #0c0f14;
+  background: rgb(var(--c-surface));
+  color: rgb(var(--c-ink));
 }
 
 body {
@@ -40,8 +120,8 @@ h3 {
 .hatch {
   background-image: repeating-linear-gradient(
     -45deg,
-    rgba(139, 147, 159, 0.24) 0px,
-    rgba(139, 147, 159, 0.24) 1px,
+    rgb(var(--c-faint) / 0.24) 0px,
+    rgb(var(--c-faint) / 0.24) 1px,
     transparent 1px,
     transparent 6px
   );
@@ -61,19 +141,19 @@ select {
 }
 
 *:focus-visible {
-  outline: 2px solid #14213d;
+  outline: 2px solid rgb(var(--c-focus));
   outline-offset: 2px;
   border-radius: 6px;
 }
 
 ::selection {
-  background: rgba(20, 33, 61, 0.14);
+  background: rgb(var(--c-navy) / 0.18);
 }
 
 /* 스크롤바가 화면을 가르지 않도록 얇게. 데스크톱 시연 캡처에서 특히 차이가 난다. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #dfe3e9 transparent;
+  scrollbar-color: rgb(var(--c-scrollbar)) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -82,7 +162,7 @@ select {
 }
 
 *::-webkit-scrollbar-thumb {
-  background-color: #dfe3e9;
+  background-color: rgb(var(--c-scrollbar));
   border: 3px solid transparent;
   border-radius: 999px;
   background-clip: content-box;

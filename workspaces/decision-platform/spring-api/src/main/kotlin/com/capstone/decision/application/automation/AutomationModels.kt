@@ -97,7 +97,8 @@ data class AutomationPositionV2Projection(
     val quantity: Long,
     val entryAverageFillPriceKrw: Long,
     val entrySession: LocalDate,
-    val expirySession: LocalDate,
+    // V2 정책은 보유 만기를 정의하지 않는다.
+    val expirySession: LocalDate?,
     val policyId: String,
     val policyVersion: Int,
     val stopLossBps: Int,

@@ -311,7 +311,8 @@ def _position_schema() -> dict[str, Any]:
                 "quantity": {"type": "integer", "minimum": 1},
                 "entryAverageFillPriceKrw": _money(),
                 "entrySession": {"type": "string", "format": "date"},
-                "expirySession": {"type": "string", "format": "date"},
+                # V2 정책은 보유 만기를 정의하지 않는다.
+                "expirySession": _nullable({"type": "string", "format": "date"}),
                 "policyId": _policy_identifier(),
                 "policyVersion": {"type": "integer", "minimum": 1},
                 "stopLossBps": {"type": "integer", "minimum": 100, "maximum": 1500},

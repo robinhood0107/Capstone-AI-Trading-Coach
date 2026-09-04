@@ -9,8 +9,11 @@ import com.capstone.decision.application.dashboard.ArtifactIngestStatusView
 import com.capstone.decision.application.dashboard.DashboardArtifactKind
 import com.capstone.decision.application.dashboard.DashboardUnavailableException
 import com.capstone.decision.application.dashboard.DashboardViewService
+import com.capstone.decision.application.dashboard.LatestArtifactRunView
+import com.capstone.decision.application.dashboard.RecentRiskResultView
 import com.capstone.decision.application.security.AppPrincipal
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Hidden
 import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.servlet.http.HttpServletRequest
@@ -47,6 +50,22 @@ class DashboardController(
         request: HttpServletRequest,
     ): ApiResponse<JsonNode> = artifact(principal, runId, DashboardArtifactKind.BACKTEST, request)
 
+    @Operation(summary = "Latest verified model evaluation run for the owner.")
+    @Hidden
+    @GetMapping("/model-evaluations/latest")
+    fun latestModelEvaluation(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        request: HttpServletRequest,
+    ): ApiResponse<LatestArtifactRunDto> = latest(principal, DashboardArtifactKind.MODEL_EVALUATION, request)
+
+    @Operation(summary = "Latest verified backtest run for the owner.")
+    @Hidden
+    @GetMapping("/backtests/latest")
+    fun latestBacktest(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        request: HttpServletRequest,
+    ): ApiResponse<LatestArtifactRunDto> = latest(principal, DashboardArtifactKind.BACKTEST, request)
+
     @Operation(summary = "Owner-scoped persisted Decision/Risk ViewModel.")
     @GetMapping("/risk-results/{decisionId}")
     fun risk(
@@ -59,6 +78,34 @@ class DashboardController(
         return success(request, protect { service.risk(principal.userId, principal.securityVersion, decisionId) })
     }
 
+    @Operation(summary = "Latest owner-scoped Decision/Risk result.")
+    @Hidden
+    @GetMapping("/risk-results/latest")
+    fun latestRisk(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        request: HttpServletRequest,
+    ): ApiResponse<RecentRiskResultDto> {
+        exactRequest(request)
+        val view = protect { service.latestRisk(principal.userId, principal.securityVersion) }
+            ?: throw ApiException(ErrorCode.NOT_FOUND)
+        return ApiResponseFactory.success(RequestIds.currentOrCreate(request), view.toDto())
+    }
+
+    @Operation(summary = "Recent owner-scoped Decision/Risk results.")
+    @Hidden
+    @GetMapping("/risk-results/recent")
+    fun recentRisks(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        request: HttpServletRequest,
+    ): ApiResponse<RecentRiskResultListDto> {
+        exactRequest(request)
+        val items = protect { service.recentRisks(principal.userId, principal.securityVersion) }
+        return ApiResponseFactory.success(
+            RequestIds.currentOrCreate(request),
+            RecentRiskResultListDto(items.map(RecentRiskResultView::toDto)),
+        )
+    }
+
     @Operation(summary = "Owner-scoped bounded RAG source ViewModel without raw content or locator.")
     @GetMapping("/rag-sources/{answerId}")
     fun rag(
@@ -69,6 +116,21 @@ class DashboardController(
         exactRequest(request)
         if (!ANSWER_ID.matches(answerId)) invalid("/path/answerId")
         return success(request, protect { service.rag(principal.userId, principal.securityVersion, answerId) })
+    }
+
+    private fun latest(
+        principal: AppPrincipal,
+        kind: DashboardArtifactKind,
+        request: HttpServletRequest,
+    ): ApiResponse<LatestArtifactRunDto> {
+        exactRequest(request)
+        val view =
+            protect { service.latestArtifactRun(principal.userId, principal.securityVersion, kind) }
+                ?: throw ApiException(ErrorCode.NOT_FOUND)
+        return ApiResponseFactory.success(
+            RequestIds.currentOrCreate(request),
+            LatestArtifactRunDto(view.runId, view.fixtureClass, view.asOf),
+        )
     }
 
     private fun artifact(
@@ -111,6 +173,26 @@ class DashboardController(
         val ANSWER_ID = Regex("^rag_[A-Za-z0-9_-]{12,96}$")
     }
 }
+
+data class LatestArtifactRunDto(
+    val runId: String,
+    val fixtureClass: String,
+    val asOf: Instant,
+)
+
+data class RecentRiskResultDto(
+    val decisionId: String,
+    val action: String,
+    val symbol: String,
+    val asOf: Instant,
+    val validUntil: Instant,
+)
+
+data class RecentRiskResultListDto(
+    val items: List<RecentRiskResultDto>,
+)
+
+private fun RecentRiskResultView.toDto() = RecentRiskResultDto(decisionId, action, symbol, asOf, validUntil)
 
 @RestController
 @RequestMapping("/api/v1/artifacts/ingest-status", produces = [MediaType.APPLICATION_JSON_VALUE])

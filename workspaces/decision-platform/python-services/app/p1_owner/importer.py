@@ -27,7 +27,7 @@ import pyarrow.parquet as pq
 import psycopg
 
 from app.data._shared.canonical_json import canonical_json_bytes
-from app.lightgbm.temporal import next_session_evidence_clock
+from app.data.calendar.evidence_clock import next_session_evidence_clock
 from app.p1_owner.assets import (
     ARTIFACT_NAMES,
     ARTIFACT_SCHEMA_IDS,

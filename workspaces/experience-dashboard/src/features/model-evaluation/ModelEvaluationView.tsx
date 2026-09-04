@@ -18,6 +18,7 @@ import { IdInput } from '@/shared/ui/IdInput';
 import { AbstainChip } from '@/shared/ui/Decision';
 import { useResource } from '@/shared/lib/useResource';
 import { ID_PATTERN } from '@/shared/api/endpoints';
+import { useLatestRun } from '@/shared/api/latestRun';
 import { formatDecimal, formatKstDateTime, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 import { loadModelEvaluationView, loadSignalView, type ModelRow, type SignalSlot } from './viewModel';
 
@@ -28,40 +29,31 @@ const SIGNAL_TONE: Record<string, string> = {
   HOLD: 'text-hold',
 };
 
-export function ModelEvaluationView({ defaultRunId = '' }: { defaultRunId?: string }) {
-  const [runId, setRunId] = useState(defaultRunId);
+export function ModelEvaluationView() {
+  const { runId, pending } = useLatestRun('model-evaluations');
   const [symbol, setSymbol] = useState('');
-
-  const runValid = ID_PATTERN.runId.test(runId);
   const symbolValid = ID_PATTERN.symbol.test(symbol);
 
-  const evaluation = useResource(() => loadModelEvaluationView(runId), [runId], runValid);
+  const evaluation = useResource(
+    () => loadModelEvaluationView(runId ?? ''),
+    [runId],
+    runId !== null,
+  );
   const signal = useResource(() => loadSignalView(symbol), [symbol], symbolValid);
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 lg:grid-cols-2">
-        <IdInput
-          label="평가 실행 ID"
-          hint="검증된 모델 평가 artifact가 등록된 실행 단위입니다."
-          placeholder="run_..."
-          value={runId}
-          onChange={setRunId}
-          pattern={ID_PATTERN.runId}
-          patternHint="등록된 실행 ID 형식을 입력하세요."
-        />
-        <IdInput
-          label="종목 코드 (선택)"
-          hint="입력하면 그 종목의 현재 신호 상태를 함께 봅니다. 성과 지표와는 다른 축입니다."
-          placeholder="005930"
-          value={symbol}
-          onChange={setSymbol}
-          pattern={ID_PATTERN.symbol}
-          patternHint="숫자 6자리여야 합니다."
-        />
-      </div>
+      <IdInput
+        label="종목 코드"
+        hint="종목을 넣으면 그 종목의 현재 신호를 함께 봅니다. 성과 지표와는 다른 축입니다."
+        placeholder="005930"
+        value={symbol}
+        onChange={setSymbol}
+        pattern={ID_PATTERN.symbol}
+        patternHint="숫자 6자리여야 합니다."
+      />
 
-      {runValid ? (
+      {runId !== null ? (
         <AsyncBoundary state={evaluation.state} onRetry={evaluation.reload}>
           {(view) => {
             const chartRows = view.rows.map((row) => ({
@@ -90,25 +82,7 @@ export function ModelEvaluationView({ defaultRunId = '' }: { defaultRunId?: stri
                   ) : null}
 
                   <div className="overflow-x-auto">
-                    <table className="mt-2 w-full min-w-[680px] text-[13px]">
-                      <thead>
-                        <tr className="border-b border-line text-left text-eyebrow font-semibold uppercase text-faint">
-                          <th className="pb-2 font-normal">모델</th>
-                          <th className="pb-2 font-normal">상태</th>
-                          <th className="pb-2 text-right font-normal">CAGR</th>
-                          <th className="pb-2 text-right font-normal">MDD</th>
-                          <th className="pb-2 text-right font-normal">Sharpe</th>
-                          <th className="pb-2 text-right font-normal">Sortino</th>
-                          <th className="pb-2 text-right font-normal">VaR 95</th>
-                          <th className="pb-2 text-right font-normal">CVaR 95</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {view.rows.map((row) => (
-                          <ModelTableRow key={row.modelId} row={row} />
-                        ))}
-                      </tbody>
-                    </table>
+                    <ModelTable rows={view.rows} />
                   </div>
 
                 </Panel>
@@ -123,28 +97,28 @@ export function ModelEvaluationView({ defaultRunId = '' }: { defaultRunId?: stri
                       <div className="h-56">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={chartRows} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
-                            <CartesianGrid stroke="#D5D9D1" vertical={false} />
+                            <CartesianGrid stroke="rgb(var(--c-line))" vertical={false} />
                             <XAxis
                               dataKey="name"
-                              tick={{ fontSize: 12, fill: '#5C6672' }}
-                              axisLine={{ stroke: '#BFC6BC' }}
+                              tick={{ fontSize: 12, fill: 'rgb(var(--c-muted))' }}
+                              axisLine={{ stroke: 'rgb(var(--c-rule))' }}
                               tickLine={false}
                             />
                             <YAxis
-                              tick={{ fontSize: 11, fill: '#8A9099' }}
+                              tick={{ fontSize: 11, fill: 'rgb(var(--c-faint))' }}
                               axisLine={false}
                               tickLine={false}
                             />
                             <Tooltip
-                              cursor={{ fill: 'rgba(29,53,87,0.06)' }}
+                              cursor={{ fill: 'rgb(var(--c-navy) / 0.08)' }}
                               formatter={(value: number | string) =>
-                                typeof value === 'number' ? formatDecimal(value, 2) : '근거 없음'
+                                typeof value === 'number' ? formatDecimal(value, 2) : '—'
                               }
-                              contentStyle={{ border: '1px solid #D5D9D1', borderRadius: 2, fontSize: 12 }}
+                              contentStyle={{ background: 'rgb(var(--c-panel))', border: '1px solid rgb(var(--c-line))', borderRadius: 8, fontSize: 12, color: 'rgb(var(--c-ink))' }}
                             />
                             <Bar dataKey="sharpe" isAnimationActive={false}>
                               {chartRows.map((row) => (
-                                <Cell key={row.name} fill="#1D3557" />
+                                <Cell key={row.name} fill="rgb(var(--c-navy))" />
                               ))}
                             </Bar>
                           </BarChart>
@@ -187,7 +161,7 @@ export function ModelEvaluationView({ defaultRunId = '' }: { defaultRunId?: stri
         </AsyncBoundary>
       ) : (
         <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
-          평가 실행 ID를 입력하면 모델별 성과를 불러옵니다.
+          {pending ? '불러오는 중입니다.' : '아직 등록된 모델 평가 결과가 없습니다.'}
         </p>
       )}
 
@@ -244,13 +218,61 @@ export function ModelEvaluationView({ defaultRunId = '' }: { defaultRunId?: stri
   );
 }
 
-function ModelTableRow({ row }: { row: ModelRow }) {
+const METRIC_COLUMNS: {
+  key: keyof ModelRow['metrics'];
+  label: string;
+  format: (value: number) => string;
+}[] = [
+  { key: 'cagr', label: 'CAGR', format: (v) => formatSignedRatio(v, 1) },
+  { key: 'mdd', label: 'MDD', format: (v) => formatRatio(v, 1) },
+  { key: 'sharpe', label: 'Sharpe', format: (v) => formatDecimal(v, 2) },
+  { key: 'sortino', label: 'Sortino', format: (v) => formatDecimal(v, 2) },
+  { key: 'var95', label: 'VaR 95', format: (v) => formatRatio(v, 1) },
+  { key: 'cvar95', label: 'CVaR 95', format: (v) => formatRatio(v, 1) },
+];
+
+function ModelTable({ rows }: { rows: ModelRow[] }) {
+  const columns = METRIC_COLUMNS.filter((column) =>
+    rows.some((row) => {
+      const value = row.metrics[column.key];
+      return value !== null && Number.isFinite(value);
+    }),
+  );
+
+  return (
+    <table className="mt-2 w-full min-w-[520px] text-[13px]">
+      <thead>
+        <tr className="border-b border-line text-left text-eyebrow font-semibold uppercase text-faint">
+          <th className="pb-2 font-normal">모델</th>
+          <th className="pb-2 font-normal">상태</th>
+          {columns.map((column) => (
+            <th key={column.key} className="pb-2 text-right font-normal">
+              {column.label}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <ModelTableRow key={row.modelId} row={row} columns={columns} />
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function ModelTableRow({
+  row,
+  columns,
+}: {
+  row: ModelRow;
+  columns: typeof METRIC_COLUMNS;
+}) {
   const abstain = row.status === 'ABSTAIN';
   return (
     <tr className="border-b border-line/60 align-top last:border-0">
       <td className="py-3 pr-3">
         <p className="font-medium text-ink">{row.displayName}</p>
-        <p className="font-mono text-[11px] uppercase tracking-[0.06em] text-faint">{row.modelId}</p>
       </td>
       <td className="py-3 pr-3">
         {abstain ? (
@@ -259,24 +281,11 @@ function ModelTableRow({ row }: { row: ModelRow }) {
           <span className="text-[12px] text-allow">사용 가능</span>
         )}
       </td>
-      <td className="py-3 text-right">
-        <Numeric value={row.metrics.cagr} format={(v) => formatSignedRatio(v, 1)} />
-      </td>
-      <td className="py-3 text-right">
-        <Numeric value={row.metrics.mdd} format={(v) => formatRatio(v, 1)} />
-      </td>
-      <td className="py-3 text-right">
-        <Numeric value={row.metrics.sharpe} format={(v) => formatDecimal(v, 2)} />
-      </td>
-      <td className="py-3 text-right">
-        <Numeric value={row.metrics.sortino} format={(v) => formatDecimal(v, 2)} />
-      </td>
-      <td className="py-3 text-right">
-        <Numeric value={row.metrics.var95} format={(v) => formatRatio(v, 1)} />
-      </td>
-      <td className="py-3 text-right">
-        <Numeric value={row.metrics.cvar95} format={(v) => formatRatio(v, 1)} />
-      </td>
+      {columns.map((column) => (
+        <td key={column.key} className="py-3 text-right">
+          <Numeric value={row.metrics[column.key]} format={column.format} />
+        </td>
+      ))}
     </tr>
   );
 }

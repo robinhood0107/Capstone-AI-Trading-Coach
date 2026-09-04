@@ -2127,10 +2127,7 @@
           },
           "expirySession": {
             "format": "date",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "policyId": {
             "type": "string"

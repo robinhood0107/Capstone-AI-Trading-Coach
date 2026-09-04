@@ -366,6 +366,21 @@ def _validate_openapi_schema(document: dict[str, Any], *, source: str) -> None:
         ) from error
 
 
+def _preserve_frozen_automation_v2_projection(document: dict[str, Any]) -> None:
+    schemas = document.get("components", {}).get("schemas", {})
+    position = schemas.get("AutomationPositionV2") if isinstance(schemas, dict) else None
+    if position is None:
+        return
+    properties = position.get("properties") if isinstance(position, dict) else None
+    expiry = properties.get("expirySession") if isinstance(properties, dict) else None
+    if not isinstance(expiry, dict) or expiry.get("format") != "date" or expiry.get("type") != ["string", "null"]:
+        raise OpenApiNormalizationError("generated OpenAPI: AutomationPositionV2 expiry projection is invalid.")
+    if position.get("required") != ["expirySession"]:
+        raise OpenApiNormalizationError("generated OpenAPI: AutomationPositionV2 required projection is invalid.")
+    expiry["type"] = "string"
+    position.pop("required")
+
+
 def normalize_generated_openapi(
     generated_bytes: bytes, catalog_bytes: bytes, *, amendment: bool
 ) -> bytes:
@@ -417,6 +432,8 @@ def normalize_generated_openapi(
 
     normalized = copy.deepcopy(generated)
     normalized["openapi"] = "3.1.1"
+    if not amendment:
+        _preserve_frozen_automation_v2_projection(normalized)
     servers = normalized.get("servers")
     if servers is not None:
         if (

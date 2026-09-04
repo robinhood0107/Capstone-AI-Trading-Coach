@@ -108,10 +108,11 @@ test('RAG v2 screen gates the question behind consent and renders citations', as
       page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v2/rag/ask'),
       page.getByRole('button', { name: '물어보기' }).click(),
     ]);
-    // 생성이 켜져 있으면 ANSWERED, 꺼져 있으면 RETRIEVAL_ONLY다. 둘 다 화면에는 나와야 한다.
-    await expect(
-      page.getByText(/ANSWERED|RETRIEVAL_ONLY|GENERATION_UNAVAILABLE/).first(),
-    ).toBeVisible();
+    // P1_RAG_LIVE_QUERY=1은 실제 Vertex 생성 경로를 명시적으로 승인한 검증이다.
+    // 상태 코드가 아니라 사람이 읽는 설명 본문이 비어 있지 않은지를 확인한다.
+    const explanation = page.getByLabel('생성된 설명');
+    await expect(explanation).toBeVisible({ timeout: 20_000 });
+    await expect(explanation).toContainText(/\S+/);
   }
 
   expect(

@@ -245,9 +245,7 @@ def replay(document: dict[str, Any], *, database_dsn: str) -> dict[str, int]:
 
                 # 1) 청산 먼저. 운영도 EXIT_SELECTED 가 진입보다 앞선다.
                 exited: list[tuple[str, str, int]] = []
-                for symbol, (entry_session, quantity, entry_price) in list(
-                    open_positions.items()
-                ):
+                for symbol, (entry_session, quantity, entry_price) in list(open_positions.items()):
                     price = session_closes.get(symbol)
                     if price is None or entry_session == session:
                         continue

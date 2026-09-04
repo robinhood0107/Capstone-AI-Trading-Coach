@@ -494,7 +494,10 @@ def test_rag_v2_query_dsn_requires_the_same_owner_only_secret_boundary(tmp_path:
     dsn_path.write_text("postgresql://decision_rag_query@localhost/rag", encoding="utf-8")
     os.chmod(dsn_path, 0o600)
 
-    assert load_rag_v2_query_database_dsn(local_root=tmp_path) == "postgresql://decision_rag_query@localhost/rag"
+    assert (
+        load_rag_v2_query_database_dsn(local_root=tmp_path)
+        == "postgresql://decision_rag_query@localhost/rag"
+    )
 
     os.chmod(dsn_path, 0o640)
     with pytest.raises(PreS5ProviderActivationError):

@@ -652,9 +652,7 @@ class LiveAutomationPort:
         )
         return applied
 
-    def _observation_quotes(
-        self, symbol: str, balance: Mapping[str, object]
-    ) -> dict[str, int]:
+    def _observation_quotes(self, symbol: str, balance: Mapping[str, object]) -> dict[str, int]:
         """관측으로 적재할 실시간 호가. 주문 종목과 보유 종목을 함께 담는다.
 
         `asset_weight` 는 보유 비중이라 보유 종목의 가격이 있어야 계산된다. 브로커가 준

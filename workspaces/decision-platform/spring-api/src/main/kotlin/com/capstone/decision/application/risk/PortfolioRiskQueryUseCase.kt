@@ -196,8 +196,6 @@ class PortfolioRiskQueryUseCase(
 
     private fun MetricCell<MetricValue>.wholeOrNull(): Long? = ((this as? MetricCell.Available)?.value as? MetricValue.Whole)?.value
 
-    private fun MetricCell<MetricValue>.decimalOrNull(): BigDecimal? = (this as? MetricCell.Available)?.value?.asBigDecimal()
-
     private fun MetricCell<MetricValue>.freshness(): Boolean? =
         when (this) {
             is MetricCell.Available -> true

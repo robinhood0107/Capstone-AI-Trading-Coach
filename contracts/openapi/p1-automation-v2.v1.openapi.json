@@ -356,15 +356,8 @@
             ]
           },
           "expirySession": {
-            "oneOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "format": "date",
+            "type": "string"
           },
           "policyId": {
             "pattern": "^auto_pol_[0-9a-f]{32}$",

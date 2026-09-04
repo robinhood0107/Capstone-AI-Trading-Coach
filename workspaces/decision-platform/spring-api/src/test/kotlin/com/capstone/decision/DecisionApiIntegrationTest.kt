@@ -42,7 +42,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
-import java.math.BigDecimal
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.time.Clock

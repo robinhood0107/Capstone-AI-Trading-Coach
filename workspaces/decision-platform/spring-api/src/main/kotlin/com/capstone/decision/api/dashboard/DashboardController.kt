@@ -9,11 +9,10 @@ import com.capstone.decision.application.dashboard.ArtifactIngestStatusView
 import com.capstone.decision.application.dashboard.DashboardArtifactKind
 import com.capstone.decision.application.dashboard.DashboardUnavailableException
 import com.capstone.decision.application.dashboard.DashboardViewService
-import com.capstone.decision.application.dashboard.LatestArtifactRunView
 import com.capstone.decision.application.dashboard.RecentRiskResultView
 import com.capstone.decision.application.security.AppPrincipal
-import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Hidden
+import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.servlet.http.HttpServletRequest
@@ -86,8 +85,9 @@ class DashboardController(
         request: HttpServletRequest,
     ): ApiResponse<RecentRiskResultDto> {
         exactRequest(request)
-        val view = protect { service.latestRisk(principal.userId, principal.securityVersion) }
-            ?: throw ApiException(ErrorCode.NOT_FOUND)
+        val view =
+            protect { service.latestRisk(principal.userId, principal.securityVersion) }
+                ?: throw ApiException(ErrorCode.NOT_FOUND)
         return ApiResponseFactory.success(RequestIds.currentOrCreate(request), view.toDto())
     }
 

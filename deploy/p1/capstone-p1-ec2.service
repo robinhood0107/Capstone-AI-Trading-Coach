@@ -1,0 +1,21 @@
+[Unit]
+Description=Capstone P1 single-user KIS Mock service
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/capstone
+EnvironmentFile=/etc/capstone-p1/ec2.env
+ExecStartPre=/usr/bin/install -d -m 0700 /srv/capstone-p1/postgres /srv/capstone-p1/redis
+ExecStartPre=/opt/capstone/deploy/p1/ec2-secrets-bootstrap.sh ${P1_AWS_SECRET_ID} /opt/capstone/deploy/p1/.state-app/secrets
+ExecStart=/usr/bin/docker compose --project-directory deploy/p1 -f deploy/p1/compose.yml -f deploy/p1/compose.ec2.yml --profile owner up -d
+ExecStop=/usr/bin/docker compose --project-directory deploy/p1 -f deploy/p1/compose.yml -f deploy/p1/compose.ec2.yml --profile owner stop
+TimeoutStartSec=900
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
+

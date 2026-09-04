@@ -43,12 +43,12 @@ export function ModelEvaluationView({ defaultRunId = '' }: { defaultRunId?: stri
       <div className="grid gap-4 lg:grid-cols-2">
         <IdInput
           label="평가 실행 ID"
-          hint="모델 평가 artifact가 등록된 실행 단위입니다. run_ 또는 demo_ 로 시작합니다."
-          placeholder="demo_s8_offline_0001"
+          hint="검증된 모델 평가 artifact가 등록된 실행 단위입니다."
+          placeholder="run_..."
           value={runId}
           onChange={setRunId}
           pattern={ID_PATTERN.runId}
-          patternHint="run_ 또는 demo_ 로 시작하고 뒤에 8~96자가 와야 합니다."
+          patternHint="등록된 실행 ID 형식을 입력하세요."
         />
         <IdInput
           label="종목 코드 (선택)"
@@ -111,11 +111,6 @@ export function ModelEvaluationView({ defaultRunId = '' }: { defaultRunId?: stri
                     </table>
                   </div>
 
-                  {view.sourceRunIds.length > 0 ? (
-                    <p className="mt-4 font-mono text-[11px] text-faint">
-                      출처 실행 {view.sourceRunIds.join(' · ')}
-                    </p>
-                  ) : null}
                 </Panel>
 
                 <div className="grid gap-6 lg:grid-cols-2">

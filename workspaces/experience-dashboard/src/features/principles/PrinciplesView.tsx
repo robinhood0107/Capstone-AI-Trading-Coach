@@ -47,6 +47,10 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(data.current?.rules ?? []);
+  const savedPreset = data.current
+    ? data.presets.items.find((preset) => matchesPreset(data.current?.rules ?? [], preset.defaultRules)) ?? null
+    : null;
+  const draftPreset = data.presets.items.find((preset) => matchesPreset(draft, preset.defaultRules)) ?? null;
 
   function updateThreshold(ruleId: string, threshold: number) {
     setDraft((rules) => rules.map((rule) => (rule.ruleId === ruleId ? { ...rule, threshold } : rule)));
@@ -112,6 +116,7 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
                 key={preset.presetId}
                 preset={preset}
                 selected={matchesPreset(draft, preset.defaultRules)}
+                current={savedPreset?.presetId === preset.presetId}
                 onApply={() => setDraft(preset.defaultRules)}
               />
             ))}
@@ -119,16 +124,33 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
       </Panel>
 
       {data.current ? (
-        <Panel
-          contract="PUT /api/v1/principles/{principleId}"
-          title="내 원칙 값 조정"
-          hint="자연어가 아니라 구조화된 값으로만 저장합니다. 저장된 값은 주문 판단과 백테스트에 같이 적용됩니다."
-          actions={
-            <span className="font-mono text-[12px] text-faint">
-              v{data.current.version} · {formatKstDateTime(data.current.updatedAt)}
-            </span>
-          }
-        >
+        <>
+          <Panel
+            contract="GET /api/v1/principles"
+            title="현재 적용 중인 원칙"
+            hint="주문 검토와 다음 자동운용 준비도는 저장된 원칙 버전을 기준으로 확인합니다."
+          >
+            <div className="grid gap-3 text-[13px] sm:grid-cols-3">
+              <StatusItem label="저장된 설정" value={savedPreset?.nameKo ?? '사용자 설정'} />
+              <StatusItem label="현재 버전" value={`v${data.current.version}`} />
+              <StatusItem
+                label="수정 상태"
+                value={dirty ? `${draftPreset?.nameKo ?? '사용자 설정'} · 저장 전` : '저장된 설정과 일치'}
+                tone={dirty ? 'warn' : 'ok'}
+              />
+            </div>
+          </Panel>
+
+          <Panel
+            contract="PUT /api/v1/principles/{principleId}"
+            title="내 원칙 값 조정"
+            hint="자연어가 아니라 구조화된 값으로만 저장합니다. 저장된 값은 주문 판단과 백테스트에 같이 적용됩니다."
+            actions={
+              <span className="font-mono text-[12px] text-faint">
+                v{data.current.version} · {formatKstDateTime(data.current.updatedAt)}
+              </span>
+            }
+          >
           <ul className="divide-y divide-line">
             {draft.map((rule) => (
               <RuleRow
@@ -173,7 +195,8 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
               </Button>
             </div>
           </div>
-        </Panel>
+          </Panel>
+        </>
       ) : (
         <Panel contract="GET /api/v1/principles" title="내 원칙 값 조정">
           <div className="rounded-tile border border-dashed border-rule px-4 py-6">
@@ -192,10 +215,12 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
 function PresetCard({
   preset,
   selected,
+  current,
   onApply,
 }: {
   preset: PrinciplePreset;
   selected: boolean;
+  current: boolean;
   onApply: () => void;
 }) {
   const loss = preset.defaultRules.find((rule) => rule.ruleId === 'daily_loss_guard');
@@ -208,7 +233,9 @@ function PresetCard({
     >
       <div className="flex items-baseline justify-between">
         <p className="text-[15px] font-semibold text-ink">{preset.nameKo}</p>
-        <span className="text-eyebrow font-semibold uppercase text-faint">{preset.presetId}</span>
+        {current ? (
+          <span className="text-eyebrow font-semibold uppercase text-allow">현재 적용</span>
+        ) : null}
       </div>
       <p className="mt-2 text-[13px] leading-6 text-muted">{preset.descriptionKo}</p>
       <dl className="mt-3 space-y-1 text-[12px]">
@@ -224,6 +251,24 @@ function PresetCard({
         </div>
       </dl>
     </Button>
+  );
+}
+
+function StatusItem({
+  label,
+  value,
+  tone = 'default',
+}: {
+  label: string;
+  value: string;
+  tone?: 'default' | 'ok' | 'warn';
+}) {
+  const toneClass = tone === 'ok' ? 'text-allow' : tone === 'warn' ? 'text-warn' : 'text-ink';
+  return (
+    <div className="rounded-tile border border-line px-4 py-3">
+      <p className="text-eyebrow font-semibold uppercase text-faint">{label}</p>
+      <p className={`mt-1 text-[14px] font-medium ${toneClass}`}>{value}</p>
+    </div>
   );
 }
 

@@ -35,12 +35,12 @@ export function BacktestReportView({ defaultRunId = '' }: { defaultRunId?: strin
     <div className="space-y-6">
       <IdInput
         label="백테스트 실행 ID"
-        hint="백테스트 artifact가 등록된 실행 단위입니다. run_ 또는 demo_ 로 시작합니다."
-        placeholder="demo_s8_offline_0001"
+        hint="검증된 백테스트 artifact가 등록된 실행 단위입니다."
+        placeholder="run_..."
         value={runId}
         onChange={setRunId}
         pattern={ID_PATTERN.runId}
-        patternHint="run_ 또는 demo_ 로 시작하고 뒤에 8~96자가 와야 합니다."
+        patternHint="등록된 실행 ID 형식을 입력하세요."
       />
 
       {!valid ? (
@@ -194,9 +194,6 @@ export function BacktestReportView({ defaultRunId = '' }: { defaultRunId?: strin
                 </Panel>
               </div>
 
-              <p className="font-mono text-[11px] text-faint">
-                projectionHash {view.projectionHash.slice(0, 24)}…
-              </p>
             </div>
           )}
         </AsyncBoundary>

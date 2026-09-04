@@ -74,11 +74,11 @@ export function ReportView() {
         <IdInput
           label="캡처할 백테스트 실행 ID"
           hint="Baseline / Guide / Strict 비교표와 지표 카드를 만듭니다."
-          placeholder="demo_s8_offline_0001"
+          placeholder="run_..."
           value={runId}
           onChange={setRunId}
           pattern={ID_PATTERN.runId}
-          patternHint="run_ 또는 demo_ 로 시작해야 합니다."
+          patternHint="등록된 실행 ID 형식을 입력하세요."
         />
       </div>
 
@@ -151,7 +151,7 @@ export function ReportView() {
               <Panel
                 contract="report/scenario-capture"
                 title="Baseline / Guide / Strict"
-                hint={`실행 ${view.runId}`}
+                hint="검증된 artifact 안의 세 시나리오를 같은 조건에서 비교합니다."
               >
                 <table className="w-full text-[13px]">
                   <thead>

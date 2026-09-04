@@ -188,15 +188,13 @@ export function RagGuideView() {
           {(view) => (
             <Panel
               contract="rag-v2-answer.v1"
-              title={view.statusHeadline}
-              hint={view.statusDetail}
-              actions={
-                <span className="text-eyebrow font-semibold uppercase text-faint">
-                  {view.generationStatus}
-                </span>
-              }
+              title={view.answer ? '설명' : view.statusHeadline}
+              hint={view.answer ? '질문에 대한 설명입니다. 근거 정보는 아래에서 따로 확인할 수 있습니다.' : view.statusDetail}
             >
-              <div className={`border-l-2 ${STATUS_TONE[view.generationStatus] ?? 'border-line'} pl-4`}>
+              <article
+                aria-label="생성된 설명"
+                className={`border-l-2 ${STATUS_TONE[view.generationStatus] ?? 'border-line'} pl-4`}
+              >
                 {view.answer ? (
                   <p className="whitespace-pre-line text-[14px] leading-7 text-ink">{view.answer}</p>
                 ) : (
@@ -204,10 +202,11 @@ export function RagGuideView() {
                     설명 문장이 생성되지 않았습니다. 아래 출처를 직접 확인하세요.
                   </p>
                 )}
-              </div>
+              </article>
 
-              <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-line pt-4">
-                <div className="flex items-center gap-2">
+              <details className="mt-5 border-t border-line pt-4">
+                <summary className="cursor-pointer text-[13px] text-navy">근거와 출처 보기</summary>
+                <div className="mt-4 flex items-center gap-2">
                   <span className="text-eyebrow font-semibold uppercase text-faint">출처 연결률</span>
                   <Numeric
                     value={view.citationCoverage}
@@ -215,60 +214,34 @@ export function RagGuideView() {
                     missingReason="생성된 문장이 없어 출처 연결률을 계산하지 않았습니다."
                   />
                 </div>
-                {view.retrievalFailure ? (
-                  <span className="border border-hold px-2 py-0.5 font-mono text-[11px] text-hold">
-                    RETRIEVAL_FAILURE
-                  </span>
+                {view.sourcesUnavailableReason ? (
+                  <p className="mt-4 rounded-tile border border-dashed border-rule px-4 py-4 text-[13px] leading-5 text-muted">
+                    {view.sourcesUnavailableReason}
+                  </p>
                 ) : null}
-                {/*
-                  답이 나온 응답에도 flag가 붙는다. 조언성 질문을 막지 않고 설명으로
-                  답하기 때문이다. 그 경우 flag는 차단이 아니라 맥락이므로 차단 색을
-                  쓰지 않는다.
-                */}
-                {view.guardrailFlags.map((flag) => (
-                  <span
-                    key={flag}
-                    className={
-                      view.generationStatus === 'ANSWERED'
-                        ? 'border border-line px-2 py-0.5 font-mono text-[11px] text-muted'
-                        : 'border border-block px-2 py-0.5 font-mono text-[11px] text-block'
-                    }
-                  >
-                    {flag}
-                  </span>
-                ))}
-                <span className="ml-auto font-mono text-[11px] text-faint">{view.answerId}</span>
-              </div>
-
-              {view.sourcesUnavailableReason ? (
-                <p className="mt-4 rounded-tile border border-dashed border-rule px-4 py-4 text-[13px] leading-5 text-muted">
-                  {view.sourcesUnavailableReason}
-                </p>
-              ) : null}
-
-              {view.topSources.length > 0 ? (
-                <div className="mt-5">
-                  <p className="text-eyebrow font-semibold uppercase text-faint">핵심 출처</p>
-                  <ul className="mt-2 space-y-4">
-                    {view.topSources.map((source) => (
-                      <SourceRow key={source.sourceId} source={source} />
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
-              {view.expandableSources.length > 0 ? (
-                <details className="mt-5 border-t border-line pt-4">
-                  <summary className="cursor-pointer text-[13px] text-navy">
-                    관련 출처 {view.expandableSources.length}개 더 보기
-                  </summary>
-                  <ul className="mt-3 space-y-4">
-                    {view.expandableSources.map((source) => (
-                      <SourceRow key={source.sourceId} source={source} />
-                    ))}
-                  </ul>
-                </details>
-              ) : null}
+                {view.topSources.length > 0 ? (
+                  <div className="mt-5">
+                    <p className="text-eyebrow font-semibold uppercase text-faint">핵심 출처</p>
+                    <ul className="mt-2 space-y-4">
+                      {view.topSources.map((source) => (
+                        <SourceRow key={source.sourceId} source={source} />
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {view.expandableSources.length > 0 ? (
+                  <details className="mt-5 border-t border-line pt-4">
+                    <summary className="cursor-pointer text-[13px] text-navy">
+                      관련 출처 {view.expandableSources.length}개 더 보기
+                    </summary>
+                    <ul className="mt-3 space-y-4">
+                      {view.expandableSources.map((source) => (
+                        <SourceRow key={source.sourceId} source={source} />
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </details>
             </Panel>
           )}
         </AsyncBoundary>

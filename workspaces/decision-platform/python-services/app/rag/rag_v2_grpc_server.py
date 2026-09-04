@@ -22,6 +22,7 @@ from app.rag.bge_runtime import load_bge_onnx_embedder
 from app.rag.pre_s5_provider_control import (
     PreS5ProviderActivationError,
     PreS5VoyageQueryRuntimeConfiguration,
+    load_rag_v2_query_database_dsn,
     load_optional_pre_s5_voyage_query_runtime_configuration,
     load_pre_s5_voyage_query_writer_database_dsn,
     resolve_voyage_api_key,
@@ -138,10 +139,22 @@ class RagV2GrpcServerSettings:
         runtime_tokenizer_sha256 = (
             os.environ.get("S4_9_VOYAGE_TOKENIZER_SHA256", "").strip() or None
         )
+        query_dsn_file = os.environ.get("RAG_V2_QUERY_SECRET_FILE", "").strip()
+        if query_dsn_file:
+            if local_root is None or query_dsn_file != str(
+                local_root / "secrets" / "rag-v2-query-database-dsn"
+            ):
+                raise ValueError("RAG_V2_QUERY_SECRET_FILE is invalid")
+            try:
+                query_database_dsn = load_rag_v2_query_database_dsn(local_root=local_root)
+            except PreS5ProviderActivationError as error:
+                raise ValueError("RAG_V2_QUERY_SECRET_FILE is invalid") from error
+        else:
+            query_database_dsn = os.environ.get("RAG_V2_QUERY_DATABASE_DSN", "").strip()
         return cls(
             bind_address=os.environ.get("RAG_V2_GRPC_BIND_ADDRESS", "127.0.0.1:50054").strip(),
             shared_secret=secret,
-            query_database_dsn=os.environ.get("RAG_V2_QUERY_DATABASE_DSN", "").strip(),
+            query_database_dsn=query_database_dsn,
             bge_packet_root=Path(bge_packet_root_text) if bge_packet_root_text else None,
             bge_enabled=(
                 voyage_query_runtime.bge_enabled if voyage_query_runtime is not None else True

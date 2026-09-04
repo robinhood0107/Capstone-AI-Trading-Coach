@@ -180,9 +180,16 @@ verify_runtime_env() {
         [[ $value == "$expected_mock_runtime" || $value == "$STATE_DIR/mock" ]] \
           || die runtime_env_mock_path
         ;;
-      # RAG v2 로컬 루트는 운영자가 다른 경로에 둘 수 있다. 위치는 고정하지 않고
-      # 절대경로이며 실제 디렉터리인지만 본다.
-      P1_RAG_RUNTIME_DIR) [[ $value == /* && $value != *..* && -d $value && ! -L $value ]] || die runtime_env_rag_path ;;
+      # RAG v2 로컬 루트는 운영자가 다른 경로에 둘 수 있다. 기존 절대 경로도 유지하되,
+      # Docker Desktop이 WSL 절대 경로를 빈 mount로 보지 않도록 레포 안의 canonical 상대
+      # 경로도 허용한다. 임의 상대 경로나 symlink는 계속 받지 않는다.
+      P1_RAG_RUNTIME_DIR)
+        if [[ $value == ../../capstone-rag/runtime/p1-rag-v2-root ]]; then
+          [[ -d $SCRIPT_DIR/$value && ! -L $SCRIPT_DIR/$value ]] || die runtime_env_rag_path
+        else
+          [[ $value == /* && $value != *..* && -d $value && ! -L $value ]] || die runtime_env_rag_path
+        fi
+        ;;
       P1_API_PORT) api_port=$value ;;
       P1_SPRING_IMAGE)
         [[ $value == capstone-spring-api:p1-local || $value == capstone-decision-platform:p1-local || $value =~ ^ghcr\.io/robinhood0107/capstone-(spring-api|decision-platform)@sha256:[0-9a-f]{64}$ ]] || die runtime_env_image
@@ -413,8 +420,26 @@ init_state() {
   write_line P1_AFTER_HOURS_REPLAY_ISOLATED true "$SECRETS_DIR/after-hours-replay.env"
   printf '' | state_write_file "$SECRETS_DIR/automation-gate-author.env" 0640
   write_line P1_AUTOMATION_GATE_AUTHOR_DSN "postgresql://decision_replay_authorizer:${db[REPLAY_AUTHORIZER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/automation-gate-author.env"
+  # 자동운용 런타임이 RiskEngine 관측 표에 잔고·위험지표를 남길 때 쓰는 좁은 writer 두 개다.
+  # automation-runtime.env 에 넣으면 그 파일을 마운트하는 market-data 와 automation-cli 까지
+  # whitelist 를 열어야 해 자격증명이 세 컨테이너로 더 퍼진다. decision-platform 만 마운트하는
+  # 전용 파일로 둬서 역할 분리를 유지한다.
+  printf '' | state_write_file "$SECRETS_DIR/automation-observation.env" 0640
+  write_line DECISION_PORTFOLIO_WRITER_DATABASE_DSN "postgresql://decision_portfolio_writer:${db[PORTFOLIO_WRITER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/automation-observation.env"
+  write_line DECISION_RISK_WRITER_DATABASE_DSN "postgresql://decision_risk_writer:${db[RISK_WRITER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/automation-observation.env"
+  # 시세 관측의 신선도 창은 관측 +5분이라 일일 수집기가 하루 한 번 넣는 값으로는 장중 판정을
+  # 만족할 수 없다. 실측으로 RiskEngine 이 PRICE_MISSING/PRICE_STALE 로 HOLD 했고 violations
+  # 는 0 건이었다 - 원칙 위반이 아니라 값이 낡은 것이었다. 주문 직전 실시간 호가를 가진
+  # 프로세스는 자동운용 런타임뿐이므로 그 좁은 writer 를 여기에 둔다.
+  write_line DECISION_MARKET_WRITER_DATABASE_DSN "postgresql://decision_market_writer:${db[MARKET_WRITER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/automation-observation.env"
   printf '' | state_write_file "$SECRETS_DIR/calendar-offline-seed.env" 0640
   write_line P1_CALENDAR_OFFLINE_SEED_DSN "postgresql://decision_collector:${db[COLLECTOR]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/calendar-offline-seed.env"
+  # S4.1 출처 registry. 대시보드의 "이 시스템이 참고하는 자료" 패널이 이 표를 읽는데
+  # 등록 CLI 가 어디에도 배선돼 있지 않아 rag_sources 가 0 행이었고 패널이 비어 있었다.
+  # seed 는 코드에 커밋돼 있으므로 provider 호출 없이 등록만 하면 된다.
+  printf '' | state_write_file "$SECRETS_DIR/rag-source-register.env" 0640
+  write_line RAG_SOURCE_WRITER_DATABASE_DSN "postgresql://decision_rag_writer:${db[RAG_WRITER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/rag-source-register.env"
+  write_line RAG_SOURCE_REGISTER_TARGET local "$SECRETS_DIR/rag-source-register.env"
   printf '' | state_write_file "$SECRETS_DIR/artifact-import.env" 0640
   write_line P1_ARTIFACT_IMPORT_DATABASE_DSN "postgresql://decision_worker:${db[WORKER]}@postgres:5432/capstone_p1?sslmode=disable" "$SECRETS_DIR/artifact-import.env"
   printf '' | state_write_file "$SECRETS_DIR/team-a-acceptance.env" 0640
@@ -505,7 +530,7 @@ verify_state() {
     demo-user.password kafka-admin.env kafka-broker-jaas.conf kafka-publisher.env migration.env poison-recorder.env rag-v2.env \
     kis-mock.env kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn postgres.env python.env rag-history-kek-v1.key redis.env return-inference.env role-bootstrap.env seed-import.env spring.env)
   expected+=(team-a-acceptance.env)
-  expected+=(calendar-offline-seed.env)
+  expected+=(calendar-offline-seed.env automation-observation.env rag-source-register.env)
   # Vertex 서비스계정은 운영자가 직접 넣는 선택 secret이다. compose는 이 파일을 secret으로
   # 마운트하므로 있으면 정상이고, 없으면 Vertex 생성만 닫힌다. 목록에 넣지 않으면 파일을
   # 넣는 순간 `./capstone up`이 secret_inventory로 죽어 생성 경로를 켤 방법이 없어진다.

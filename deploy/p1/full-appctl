@@ -103,6 +103,19 @@ upgrade_state() {
     printf 'BROKERAGE_GRPC_SHARED_SECRET=%s\n' "$(openssl rand -hex 32)" \
       | append_state secrets/spring.env 0640
   fi
+  # 자동운용 런타임이 RiskEngine 관측 표에 잔고·위험지표를 남기려면 좁은 writer 두 개가
+  # 필요하다. 이 배선이 없던 동안에는 사람이 매일 손으로 적재해야 했고 그러지 않으면 판정이
+  # 입력 부재로 HOLD 됐다. 기존 state 를 지우지 않고 없는 파일만 만든다 - 비밀 회전은 없다.
+  if [[ ! -e $SECRETS_DIR/automation-observation.env ]]; then
+    local portfolio_writer_password risk_writer_password
+    portfolio_writer_password=$(sed -n 's/^POSTGRES_PORTFOLIO_WRITER_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+    risk_writer_password=$(sed -n 's/^POSTGRES_RISK_WRITER_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+    if [[ -n $portfolio_writer_password && -n $risk_writer_password ]]; then
+      printf 'DECISION_PORTFOLIO_WRITER_DATABASE_DSN=postgresql://decision_portfolio_writer:%s@postgres:5432/capstone_p1?sslmode=disable
+DECISION_RISK_WRITER_DATABASE_DSN=postgresql://decision_risk_writer:%s@postgres:5432/capstone_p1?sslmode=disable
+'         "$portfolio_writer_password" "$risk_writer_password"         | append_state secrets/automation-observation.env 0640
+    fi
+  fi
   if [[ ! -e $SECRETS_DIR/return-inference.env ]]; then
     local return_inference_secret
     return_inference_secret=$(sed -n 's/^RETURN_INFERENCE_GRPC_SHARED_SECRET=//p' "$SECRETS_DIR/spring.env")
@@ -232,6 +245,16 @@ upgrade_state() {
       "$collector_password" | write_state secrets/calendar-offline-seed.env 0640
     unset collector_password
   fi
+  # 출처 registry 등록도 나중에 붙었다. rag-v2.env 에 이미 있는 writer 자격증명을 그대로
+  # 재사용하고 새 role 이나 새 비밀을 만들지 않는다.
+  if [[ ! -e $SECRETS_DIR/rag-source-register.env ]]; then
+    local rag_writer_dsn
+    rag_writer_dsn=$(sed -n 's/^RAG_V2_VOYAGE_QUERY_WRITER_DSN=//p' "$SECRETS_DIR/rag-v2.env")
+    [[ -n $rag_writer_dsn ]] || die RAG_SOURCE_REGISTER_SECRET_MISSING
+    printf 'RAG_SOURCE_WRITER_DATABASE_DSN=%s\nRAG_SOURCE_REGISTER_TARGET=local\n' \
+      "$rag_writer_dsn" | write_state secrets/rag-source-register.env 0640
+    unset rag_writer_dsn
+  fi
   unset automation_runtime_password
   install -d -m 0700 "$STATE_DIR/artifacts"
   install -d -m 0700 "$STATE_DIR/mock"
@@ -356,6 +379,9 @@ enable_rag_by_default() {
   # 배포 전체의 환경에 섞이므로 필요한 한 줄만 읽는다.
   local root=${P1_RAG_RUNTIME_DIR:-}
   [[ -n $root ]] || root=$(sed -n 's/^P1_RAG_RUNTIME_DIR=//p' "$RUNTIME_ENV" 2>/dev/null || true)
+  # Compose 상대 경로는 deploy/p1 기준으로 해석한다. 같은 runtime.env를 CLI가 현재
+  # 작업 디렉터리 기준으로 검사하면 실제 mount는 있는데도 RAG를 OFF로 잘못 판정한다.
+  [[ $root != /* ]] && root=$SCRIPT_DIR/$root
   local missing=()
   [[ -n ${P1_RAG_V2_ENABLED:-} ]] && return 0
   [[ -n $root && -d $root ]] || missing+=(runtime-root)
@@ -462,6 +488,18 @@ up_app() {
     *) printf 'CAPSTONE_TRADING_CALENDAR=UNAVAILABLE\n' ;;
   esac
   unset calendar_seed
+  # 대시보드 출처 패널의 원천이다. 등록이 안 되면 화면이 "등록된 출처가 없습니다"로 비므로
+  # 마커를 남긴다. 캘린더와 같은 이유로 실패해도 up 은 계속한다.
+  local rag_sources_seed
+  rag_sources_seed=$(compose --profile owner run --rm --no-deps rag-source-register 2>&1 \
+    | grep -E '"sourceCount"' | tail -1) || rag_sources_seed=''
+  if [[ -n $rag_sources_seed ]]; then
+    printf 'CAPSTONE_RAG_SOURCE_REGISTRY=REGISTERED\n'
+  else
+    printf 'CAPSTONE_RAG_SOURCE_REGISTRY=UNAVAILABLE\n'
+  fi
+  unset rag_sources_seed
+  replay_history
   # 시장데이터 일봉을 빠진 거래일만큼 채운다. 자동운용 루프는 낡은 시장데이터로도 멈추지
   # 않으므로(소스 세션과 이력이 같은 manifest 에서 파생되어 함께 밀린다) 실패는 up 을 죽이지
   # 않고 마커로만 남긴다. providerCalls 는 공개 일봉 피드이며 KIS·계좌·주문 호출은 0이다.
@@ -658,6 +696,37 @@ down() {
   printf 'CAPSTONE_DOWN=PASS\nCAPSTONE_VOLUMES_PRESERVED=TRUE\n'
 }
 
+# 과거 영업일 이력을 재생한다. 팀원이 clone 하고 `up` 만 해도 같은 화면에 도달해야 하므로
+# 여기서 두 단계를 순서대로 돌린다. 덤프를 커밋하지 않고 계산으로 재현한다 - 같은 코드 +
+# 같은 바 = 같은 행이고, 두 번 돌려도 멱등이다.
+#
+# 1단계는 decision-platform 안에서만 돈다(추론 서버가 그 안에만 있다). 2단계는 superuser
+# 경계에서 돈다(이력 표가 RLS FORCE 다). 한 프로세스가 둘 다 갖지 않게 나눠 둔 것이다.
+replay_history() {
+  local start=${P1_HISTORY_REPLAY_START:-2026-08-18}
+  local end=${P1_HISTORY_REPLAY_END:-}
+  if [[ -z $end ]]; then
+    end=$(date -d 'yesterday' +%F 2>/dev/null || date +%F)
+  fi
+  install -d -m 0700 "$STATE_DIR/replay"
+  local signals=$STATE_DIR/replay/signals.json
+  if ! compose exec -T decision-platform python -m app.p1_owner.history_replay_signals \
+      --start "$start" --end "$end" --out - > "$signals" 2>/dev/null; then
+    rm -f "$signals"
+    printf 'CAPSTONE_HISTORY_REPLAY=SIGNALS_UNAVAILABLE\n'
+    return 0
+  fi
+  local seeded
+  seeded=$(compose --profile owner run --rm --no-deps history-replay-seed 2>&1 \
+    | grep -E '^P1_HISTORY_REPLAY=' | tail -1) || seeded=''
+  if [[ -n $seeded ]]; then
+    printf '%s\n' "$seeded"
+    printf 'CAPSTONE_HISTORY_REPLAY=SEEDED\n'
+  else
+    printf 'CAPSTONE_HISTORY_REPLAY=UNAVAILABLE\n'
+  fi
+}
+
 mock_configure() {
   state_ready || die RUN_CAPSTONE_UP_FIRST
   install -d -m 0700 "$STATE_DIR/mock"
@@ -669,7 +738,19 @@ mock_configure() {
     || die KIS_MOCK_CREDENTIAL_FORMAT
   account_no="${account_no:0:8}-${account_no:8:2}"
   local bound_account reference_key
-  bound_account="acct_$(openssl rand -hex 16)"
+  # 바인딩 계좌 id 는 자동운용이 쓰는 계좌와 같아야 한다. 무작위로 만들면 그 id 가 DB 어디에도
+  # 없어 두 경계가 서로 다른 계좌를 요구하는 교착이 된다 - Spring 의 getOwnedBuyable 은
+  # findOwnedBalance 로 자기 저장소에 있는 계좌를 찾고(없으면 OrderNotFound), python 게이트웨이는
+  # KIS_MOCK_BOUND_ACCOUNT_ID 에 묶인 계좌만 받는다(아니면 PERMISSION_DENIED). 실측으로 그
+  # 교착 때문에 ORDER_SIZING 이 매번 닫혔고, KIS_MOCK 자동매매가 한 번도 주문에 도달하지 못했다.
+  #
+  # 이 id 는 KIS 자격증명이 아니다. app key/secret/계좌번호와 무관한 식별자이므로 여기서
+  # 운용 계좌에 맞춰도 자격증명 재발급이 필요하지 않다.
+  bound_account=$(compose exec -T postgres psql -U postgres -d capstone_p1 -At \
+    -c 'select account_id from automation_control limit 1' 2>/dev/null | tr -d '[:space:]')
+  if [[ ! $bound_account =~ ^acct_[0-9a-f]{32}$ ]]; then
+    die KIS_MOCK_BOUND_ACCOUNT_REQUIRES_AUTOMATION_CONTROL
+  fi
   reference_key=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')
   printf 'KIS_MOCK_CONFIGURED=true\nKIS_MOCK_APP_KEY=%s\nKIS_MOCK_APP_SECRET=%s\nKIS_MOCK_ACCOUNT_NO=%s\nKIS_MOCK_BOUND_ACCOUNT_ID=%s\nKIS_MOCK_ORDER_REFERENCE_KEY=%s\nKIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP=1\nKIS_BROKERAGE_PHYSICAL_CAP=32\n' \
     "$app_key" "$app_secret" "$account_no" "$bound_account" "$reference_key" \

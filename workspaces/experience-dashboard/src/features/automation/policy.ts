@@ -74,7 +74,7 @@ export const AUTOMATION_BLOCKER_LABELS: Record<AutomationBlocker, string> = {
 
 export const AUTOMATION_STATE_LABELS: Record<AutomationProjectionState, string> = {
   DISARMED: '꺼짐',
-  ARMED: '시작 대기',
+  ARMED: '켜짐 · 장 시작 대기',
   RUNNING: '실행 중',
   HALTED: '안전 중단',
 };

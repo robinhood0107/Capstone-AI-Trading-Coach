@@ -116,14 +116,13 @@ class RunRequest:
     max_tool_rounds: int
     current_time: str
     timezone: str
-    # 프롬프트가 "Answer in the user's language"라고 말하면서 정작 그 값을 넘기지 않았다.
-    # 모델이 질문 언어로 추측할 뿐이었고, 그래서 다국어 지원을 약속할 수 없었다.
+    # Explicit language selection keeps provider behavior deterministic.
     language: str = "ko"
-    # EXPLAIN은 근거로 설명하고, JUDGE는 후보를 평가한다. 같은 템플릿이 이 값으로 갈린다.
+    # EXPLAIN answers from evidence; JUDGE evaluates a fixed candidate set.
     mode: str = "EXPLAIN"
-    # JUDGE에서만 채운다. 후보 집합의 소유자는 Return Engine이고 모델은 이 안에서만 답한다.
+    # Populated only for JUDGE; Return Engine owns the candidate set.
     candidates: tuple[JudgementCandidate, ...] = ()
-    # arm 시점에 봉인한 사용자 설정을 provider call까지 그대로 전달한다.
+    # The arm-time setting is preserved through the provider call.
     thinking_level: str = "low"
     # NEWS_SCREEN은 Google support 원장만 필요하다. 구조화 최종판단은 별도 JUDGE phase가 소유한다.
     grounding_discovery_only: bool = False

@@ -66,7 +66,7 @@ export function BacktestReportView() {
               <Panel
                 contract="dashboard-backtest.v1 · strategies[].curve"
                 title="자산 곡선"
-                hint="세 시나리오를 같은 시각 축에 겹쳐 봅니다."
+                hint={`운영 시작 뒤 ${view.equityCurve.length}거래일을 같은 축에 표시합니다. 단기 표본이므로 성과를 단정하지 않습니다.`}
               >
                 {view.equityCurve.length === 0 ? (
                   <EmptyBlock detail="이 실행에는 곡선 값이 기록되지 않았습니다." />
@@ -226,7 +226,7 @@ function DerivedPanel({ cards }: { cards: DerivedCard[] }) {
       title="원칙과 안전장치의 효과"
       hint="Baseline과 Strict를 비교해 화면에서 계산한 값입니다. 계산식을 함께 적어 둡니다."
     >
-      <div className="grid gap-px overflow-hidden rounded-card border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-px overflow-hidden rounded-card border border-line bg-line sm:grid-cols-2 xl:grid-cols-5">
         {usable.map((card) => (
           <MetricTile key={card.key} card={card} />
         ))}
@@ -242,7 +242,11 @@ function MetricTile({ card }: { card: DerivedCard }) {
     <div className="bg-panel px-4 py-4">
       <p className="text-eyebrow font-semibold uppercase text-faint">{card.label}</p>
       <p className="mt-2">
-        <Numeric value={card.value} format={format} className="text-2xl font-semibold text-ink" />
+        <Numeric
+          value={card.value}
+          format={format}
+          className={`text-2xl font-semibold ${card.emphasis && (card.value ?? 0) > 0 ? 'text-allow' : 'text-ink'}`}
+        />
       </p>
       <p className="mt-2 text-[12px] leading-5 text-muted">{card.note}</p>
     </div>

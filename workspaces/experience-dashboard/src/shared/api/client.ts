@@ -109,11 +109,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   return unwrap(payload as ApiEnvelope<T>);
 }
 
-/**
- * v2 RAG 표면은 공통 봉투 없이 DTO를 그대로 돌려주고, 오류도 `{ code, message, requestId }`
- * 본문이다. 봉투를 기대하는 `apiFetch`로 부르면 정상 응답까지 VALIDATION_ERROR가 된다.
- * 그래서 같은 헤더 규칙을 쓰되 봉투만 벗긴 경로를 따로 둔다. 204는 undefined를 돌려준다.
- */
+/** Calls v2 endpoints that return bare DTOs instead of the shared API envelope. */
 export async function apiFetchBare<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const requestId = newRequestId();
   const method = options.method ?? 'GET';

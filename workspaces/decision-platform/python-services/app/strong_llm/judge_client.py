@@ -12,15 +12,11 @@ import grpc
 from app.generated import strong_llm_agent_pb2, strong_llm_agent_pb2_grpc
 from app.strong_llm.models import StrongLlmJudgement
 
-# 자동운용은 같은 컨테이너의 loopback agent에 직접 묻는다. RAG 설명 경로가 Kotlin host를 거치는
-# 것은 Kotlin이 근거·인용·사용량 원장을 소유하기 때문이다. 판단 경로에는 그 셋이 없다 - 근거는
-# 후보 목록뿐이고, 인용을 만들지 않으며, 호출 수는 하루 한 번이라는 일정 자체가 이미 묶는다.
-# 그래서 host를 하나 더 세우는 대신 자동운용이 그 자리를 맡는다.
+# Automation uses the loopback judge; the RAG host remains the citation and usage authority.
 _AUTH_KEY = "x-decision-strong-llm-grpc-auth"
 _RUN_ID = re.compile(r"^s49_run_[0-9a-f]{32}$")
 _SAFE_SECRET = re.compile(r"^[A-Za-z0-9._~:-]{32,256}$")
-# 판단 한 번에 허용하는 provider 호출. 1차와 2차, 그 둘뿐이다. 그 이상을 허가하면 예산이
-# 판단마다 늘어나고 우리가 세지 않는 호출이 생긴다.
+# One primary and one fallback provider call are allowed per judgement.
 _MAX_PROVIDER_CALLS = 2
 _DEADLINE_SECONDS = 60.0
 

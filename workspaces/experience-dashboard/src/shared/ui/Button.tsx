@@ -10,17 +10,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 /**
- * 화면 전체에서 button 형태를 하나로 고정한다.
- *
- * 이 컴포넌트 이전에는 같은 primary button이 화면마다 px-4/px-3으로 갈렸고
- * disabled 표현도 파일마다 달랐다. 간격·색·상태가 섞이면 "조잡한 UI"로 읽히므로
- * 여기서만 정의하고 각 화면은 variant만 고른다.
+ * 화면 전체에서 button 형태를 하나로 고정한다. authorization은 여전히 서버가 갖는다.
  *
  * 모양은 rounded-control(10px)로 고정한다. 라운드는 목록·표·패널이 아니라
  * 실제로 누르는 대상에만 쓴다는 원칙에 따라, 여기서만 정의하고 다른 곳은 각지게 둔다.
- *
- * 위험도가 높은 동작(주문 제출, Kill Switch)은 danger를 쓰되, 잠그는 판단 자체는
- * 화면이 아니라 서버 판정(HOLD/BLOCK/canArm)이 한다. 여기서는 표현만 담당한다.
  */
 const VARIANT: Record<Variant, string> = {
   primary:
@@ -57,12 +50,7 @@ export function Button({
   );
 }
 
-/**
- * 서버가 막은 동작을 화면이 조용히 감추지 않기 위한 래퍼.
- *
- * 명세상 HOLD/BLOCK/HALTED와 canArm=false는 숨기면 안 되고, 왜 막혔는지가 보여야 한다.
- * button을 사라지게 하는 대신 비활성 상태로 두고 사유를 함께 노출한다.
- */
+/** Keeps blocked actions visible with the server-provided reason. */
 export function BlockedAction({
   blocked,
   reason,

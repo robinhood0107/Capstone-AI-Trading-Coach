@@ -4,6 +4,8 @@ import com.capstone.decision.application.dashboard.ArtifactIngestStatusView
 import com.capstone.decision.application.dashboard.DashboardArtifactKind
 import com.capstone.decision.application.dashboard.DashboardUnavailableException
 import com.capstone.decision.application.dashboard.DashboardViewPort
+import com.capstone.decision.application.dashboard.LatestArtifactRunView
+import com.capstone.decision.application.dashboard.RecentRiskResultView
 import com.capstone.decision.application.security.AuthenticatedActorRef
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityIssuer
@@ -69,6 +71,39 @@ class JdbcDashboardViewAdapter(
                 }.singleOrNull()
         }
 
+    override fun latestArtifactRun(
+        actorUserId: String,
+        securityVersion: Long,
+        kind: DashboardArtifactKind,
+    ): LatestArtifactRunView? =
+        protect {
+            val binding =
+                ActorCapabilityBinding.request(
+                    "READ_DASHBOARD_ARTIFACT",
+                    "DASHBOARD_ARTIFACT",
+                    "latest",
+                    ActorCapabilityRolePolicy.OWNER,
+                    kind.name,
+                    "latest",
+                )
+            jdbc()
+                .query(
+                    "SELECT * FROM latest_dashboard_artifact_run_authorized(:capability,:actor,:version,:kind)",
+                    mapOf(
+                        "capability" to actorCapabilityIssuer.issue(AuthenticatedActorRef.current(actorUserId, securityVersion), binding),
+                        "actor" to actorUserId,
+                        "version" to securityVersion,
+                        "kind" to kind.name,
+                    ),
+                ) { result, _ ->
+                    LatestArtifactRunView(
+                        runId = result.getString("run_id"),
+                        fixtureClass = result.getString("fixture_class"),
+                        asOf = result.instant("as_of"),
+                    )
+                }.singleOrNull()
+        }
+
     override fun risk(
         actorUserId: String,
         securityVersion: Long,
@@ -112,6 +147,54 @@ class JdbcDashboardViewAdapter(
                         ),
                     )
                 }.singleOrNull()
+        }
+
+    override fun latestRisk(
+        actorUserId: String,
+        securityVersion: Long,
+    ): RecentRiskResultView? =
+        riskIndex(actorUserId, securityVersion, "latest", "LATEST_RISK", "latest_dashboard_risk_result_authorized")
+            .singleOrNull()
+
+    override fun recentRisks(
+        actorUserId: String,
+        securityVersion: Long,
+    ): List<RecentRiskResultView> =
+        riskIndex(actorUserId, securityVersion, "recent", "RECENT_RISK", "recent_dashboard_risk_results_authorized")
+
+    private fun riskIndex(
+        actorUserId: String,
+        securityVersion: Long,
+        targetId: String,
+        payloadKind: String,
+        functionName: String,
+    ): List<RecentRiskResultView> =
+        protect {
+            val binding =
+                ActorCapabilityBinding.request(
+                    "READ_DASHBOARD_RISK",
+                    "RISK_DECISION",
+                    targetId,
+                    ActorCapabilityRolePolicy.OWNER,
+                    payloadKind,
+                    targetId,
+                )
+            jdbc().query(
+                "SELECT * FROM $functionName(:capability,:actor,:version)",
+                mapOf(
+                    "capability" to actorCapabilityIssuer.issue(AuthenticatedActorRef.current(actorUserId, securityVersion), binding),
+                    "actor" to actorUserId,
+                    "version" to securityVersion,
+                ),
+            ) { result, _ ->
+                RecentRiskResultView(
+                    decisionId = result.getString("decision_id"),
+                    action = result.getString("outcome"),
+                    symbol = result.getString("symbol"),
+                    asOf = result.instant("evaluation_as_of"),
+                    validUntil = result.instant("valid_until"),
+                )
+            }
         }
 
     override fun rag(

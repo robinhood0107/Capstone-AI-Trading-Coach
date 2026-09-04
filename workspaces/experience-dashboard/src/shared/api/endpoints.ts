@@ -15,6 +15,11 @@ import type {
   DecisionProjection,
   EvaluateOrderRequest,
   KillSwitchState,
+  LatestArtifactRun,
+  JournalEntry,
+  JournalPage,
+  RecentRiskResult,
+  RecentRiskResultList,
   LoginResponse,
   PortfolioRisk,
   PrincipleCurrent,
@@ -30,6 +35,8 @@ import type {
   RagV2CorpusStatus,
   RagV2EffectiveConsent,
   RagV2ExternalConsentRequest,
+  RagV2HistoryDetail,
+  RagV2HistoryPage,
   SignalV3Runtime,
   SystemHealthResponse,
 } from './wire';
@@ -174,6 +181,14 @@ export const api = {
     return apiFetchBare<RagV2Answer>('/api/v2/rag/ask', { method: 'POST', body: request });
   },
 
+  ragV2History(limit = 5): Promise<RagV2HistoryPage> {
+    return apiFetchBare<RagV2HistoryPage>(`/api/v2/rag/history?limit=${limit}`);
+  },
+
+  ragV2HistoryDetail(answerId: string): Promise<RagV2HistoryDetail> {
+    return apiFetchBare<RagV2HistoryDetail>(`/api/v2/rag/history/${encodeURIComponent(answerId)}`);
+  },
+
   /* ------------------------------------------------------ Strong LLM 설정 */
   /**
    * 응답 본문이 없다. 키를 담을 수 있는 응답을 아예 만들지 않는 것이 키를 응답에서 지우는
@@ -188,6 +203,49 @@ export const api = {
     decisionId: string,
   ): Promise<ApiResult<DashboardEnvelope<DashboardRiskResultView>>> {
     return apiFetch(`/api/v1/dashboard/risk-results/${encodeURIComponent(decisionId)}`);
+  },
+
+  dashboardLatestRiskResult(): Promise<ApiResult<RecentRiskResult>> {
+    return apiFetch('/api/v1/dashboard/risk-results/latest');
+  },
+
+  dashboardRecentRiskResults(): Promise<ApiResult<RecentRiskResultList>> {
+    return apiFetch('/api/v1/dashboard/risk-results/recent');
+  },
+
+  journals(): Promise<ApiResult<JournalPage>> {
+    return apiFetch('/api/v1/journals?size=20');
+  },
+
+  createJournal(request: { title: string; content: string; tags: string[] }): Promise<ApiResult<JournalEntry>> {
+    return apiFetch('/api/v1/journals', {
+      method: 'POST',
+      body: { ...request, links: {} },
+      idempotencyKey: newIdempotencyKey('journal-create'),
+    });
+  },
+
+  updateJournal(
+    journalId: string,
+    request: { expectedVersion: number; title: string; content: string; tags: string[] },
+  ): Promise<ApiResult<JournalEntry>> {
+    return apiFetch(`/api/v1/journals/${encodeURIComponent(journalId)}`, {
+      method: 'PATCH',
+      body: { ...request, links: {} },
+      idempotencyKey: newIdempotencyKey('journal-update'),
+    });
+  },
+
+  deleteJournal(journalId: string, expectedVersion: number): Promise<ApiResult<JournalEntry>> {
+    return apiFetch(`/api/v1/journals/${encodeURIComponent(journalId)}`, {
+      method: 'DELETE',
+      body: { expectedVersion },
+      idempotencyKey: newIdempotencyKey('journal-delete'),
+    });
+  },
+
+  dashboardLatestRun(kind: 'model-evaluations' | 'backtests'): Promise<ApiResult<LatestArtifactRun>> {
+    return apiFetch<LatestArtifactRun>(`/api/v1/dashboard/${kind}/latest`);
   },
 
   dashboardModelEvaluation(

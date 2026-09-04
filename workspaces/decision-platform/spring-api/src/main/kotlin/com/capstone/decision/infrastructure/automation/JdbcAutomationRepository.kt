@@ -426,6 +426,11 @@ class JdbcAutomationRepository(
                              realized_pnl_krw,bot_owned,short_allowed,created_at,closed_at
                       FROM automation_positions
                       WHERE user_id=:ownerUserId AND policy_id IS NOT NULL
+                        AND account_id=(
+                          SELECT control.account_id FROM automation_control control
+                          WHERE control.user_id=:ownerUserId AND control.brokerage_mode='KIS_MOCK'
+                          LIMIT 1
+                        )
                         AND max_holding_sessions IS NULL
                         AND status IN ('OPEN','EXIT_PENDING')
                       ORDER BY entry_session,symbol,position_id LIMIT 5
@@ -438,6 +443,11 @@ class JdbcAutomationRepository(
                              realized_pnl_krw,bot_owned,short_allowed,created_at,closed_at
                       FROM automation_positions
                       WHERE user_id=:ownerUserId AND policy_id IS NOT NULL
+                        AND account_id=(
+                          SELECT control.account_id FROM automation_control control
+                          WHERE control.user_id=:ownerUserId AND control.brokerage_mode='KIS_MOCK'
+                          LIMIT 1
+                        )
                         AND max_holding_sessions IS NULL AND status='CLOSED'
                       ORDER BY closed_at DESC,position_id LIMIT 5
                     )
@@ -748,7 +758,7 @@ class JdbcAutomationRepository(
             jdbc
                 .query(
                     """
-                    SELECT control_state,version,account_id,certification_status,
+                    SELECT control_state,version,brokerage_mode,account_id,certification_status,
                            EXISTS (
                              SELECT 1 FROM automation_runs run
                              WHERE run.user_id=:ownerUserId AND run.state NOT IN (
@@ -759,7 +769,8 @@ class JdbcAutomationRepository(
                            facts.unresolved_reconciliation unresolved,
                            facts.principle_configured principle_configured,
                            (SELECT count(*) FROM automation_positions position
-                            WHERE position.user_id=:ownerUserId AND position.status IN ('OPEN','EXIT_PENDING')) open_count,
+                            WHERE position.user_id=:ownerUserId AND position.account_id=control.account_id
+                              AND position.status IN ('OPEN','EXIT_PENDING')) open_count,
                            EXISTS (
                              SELECT 1 FROM automation_activation_gate gate
                              WHERE gate.user_id=:ownerUserId AND gate.certification_status='VALID'
@@ -778,13 +789,14 @@ class JdbcAutomationRepository(
                     CROSS JOIN LATERAL p1_automation_status_facts_v2(
                       :ownerUserId,control.account_id
                     ) facts
-                    WHERE control.user_id=:ownerUserId
+                    WHERE control.user_id=:ownerUserId AND control.brokerage_mode='KIS_MOCK'
                     """.trimIndent(),
                     mapOf("ownerUserId" to ownerUserId),
                 ) { row, _ ->
                     StatusRow(
                         controlState = row.getString("control_state"),
                         version = row.getInt("version"),
+                        brokerageMode = row.getString("brokerage_mode"),
                         accountId = row.getString("account_id"),
                         certificationStatus = row.getString("certification_status"),
                         activeRun = row.getBoolean("active_run"),
@@ -847,7 +859,7 @@ class JdbcAutomationRepository(
                     else -> state
                 },
             controlVersion = control?.version ?: 1,
-            brokerageMode = "KIS_MOCK",
+            brokerageMode = control?.brokerageMode ?: "KIS_MOCK",
             accountId = accountId,
             policy = policy,
             killSwitchActive = killSwitchActive,
@@ -1145,6 +1157,7 @@ class JdbcAutomationRepository(
     private data class StatusRow(
         val controlState: String,
         val version: Int,
+        val brokerageMode: String,
         val accountId: String,
         val certificationStatus: String,
         val activeRun: Boolean,

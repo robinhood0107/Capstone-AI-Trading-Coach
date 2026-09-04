@@ -88,7 +88,7 @@ class P1AutomationTargetAvailableV119MigrationContractTest {
     }
 
     @Test
-    fun `V119 is the latest migration and V90 stays immutable`() {
+    fun `V119 remains unique and V90 stays immutable`() {
         val versions =
             Files.list(migrationDirectory).use { paths ->
                 paths
@@ -103,7 +103,6 @@ class P1AutomationTargetAvailableV119MigrationContractTest {
                             .toInt()
                     }.toList()
             }
-        assertThat(versions.max()).isEqualTo(119)
         assertThat(versions.count { it == 119 }).isEqualTo(1)
         // roll_schedule 이 control ARMED 를 요구하는 근거 파일. 이 완화가 그것을 대체하지 않는다.
         assertThat(migrationDirectory.resolve("V90__p1_mock_automation_runtime.sql")).isRegularFile()

@@ -43,10 +43,12 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Final, cast
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -58,7 +60,15 @@ from app.data.calendar.adapters.xkrx import (
     xkrx_calendar_bounds,
 )
 from app.data.market_data.daily_runtime import AcceptedDailyShard
+from app.data.decision.observation_payloads import (
+    GOLD_ETF_SYMBOLS,
+    instrument_catalog_payload,
+    market_quote_payload,
+)
+from app.data.kis.instrument_catalog_writer import append_instrument_catalog_fixture
+from app.data.kis.market_quote_observation_writer import append_market_quote_fixture
 from app.data.market_data.repository import MarketDataRepositoryError, stage_daily_shard
+from app.decision_source_cli import attest_source_writer_dsn
 
 _KST = ZoneInfo("Asia/Seoul")
 _CLOSE = time(15, 30)
@@ -69,6 +79,10 @@ _MAX_SESSIONS_CAP = 60
 # 카탈로그의 tickerSuffixRule 을 그대로 옮긴 것이다. 새 규칙을 만들지 않는다.
 _TICKER_SUFFIX = {"KOSPI": ".KS", "KOSDAQ": ".KQ"}
 _TIMEOUT_SECONDS = 20.0
+
+
+# 커밋된 유니버스 카탈로그가 정하는 사실이다. 여기서 규칙을 만들지 않는다.
+_OBSERVATION_SOURCE_VERSION: Final = "p1-daily-observation-v1"
 
 
 class DailyRefreshError(RuntimeError):
@@ -121,7 +135,11 @@ def main() -> int:
 
     calls = 0
     try:
-        frames, calls = _fetch(base_url, universe, pending[0], pending[-1])
+        # head 세션까지 함께 받는다. 적재 루프는 pending 만 돌므로 다시 적재되지 않고,
+        # provider 가 신규 세션의 종가를 아직 채우지 않아도 직전 완전한 세션의 종가로 관측을
+        # 남길 수 있다.
+        fetch_from = head_session or pending[0]
+        frames, calls = _fetch(base_url, universe, fetch_from, pending[-1])
     except DailyRefreshError as error:
         print(
             f"P1_MARKET_DATA_YF_REFRESH=PROVIDER_UNAVAILABLE reason={error} providerCalls={calls}"
@@ -130,6 +148,7 @@ def main() -> int:
 
     adopted: list[str] = []
     stopped: str | None = None
+    published = "NOT_ATTEMPTED"
     for session in pending:
         bars = [frames[symbol][session] for symbol in universe if session in frames[symbol]]
         if len(bars) != len(universe):
@@ -143,6 +162,12 @@ def main() -> int:
             break
         adopted.append(f"{session.isoformat()}:{outcome}")
 
+    complete = _newest_complete_session(frames, universe)
+    if complete is None:
+        published = "SKIPPED_NO_COMPLETE_SESSION"
+    else:
+        published = _publish_observations(dsn, [frames[symbol][complete] for symbol in universe])
+
     print(
         "P1_MARKET_DATA_YF_REFRESH="
         + ("STOPPED" if stopped and not adopted else "ADOPTED" if adopted else "STOPPED")
@@ -150,9 +175,90 @@ def main() -> int:
         + f" adopted={','.join(adopted) if adopted else 'none'}"
         + f" stoppedAt={stopped or 'none'}"
         + f" symbols={len(universe)}"
-        + f" temporalQuality=COLLECTION_ONLY providerCalls={calls}"
+        + f" temporalQuality=COLLECTION_ONLY observations={published}"
+        + f" providerCalls={calls}"
     )
     return 0 if adopted and not stopped else (1 if stopped else 0)
+
+
+def _newest_complete_session(
+    frames: dict[str, dict[date, Bar]], universe: Iterable[str]
+) -> date | None:
+    """exact-31 을 모두 덮는 가장 최근 세션. 없으면 None.
+
+    부분 커버리지는 쓰지 않는다 - 하류가 exact-31 을 가정하고, 일부 종목만 있는 시세 관측은
+    나머지 종목 판정을 PRICE_MISSING 으로 닫는다.
+    """
+
+    sessions: set[date] = set()
+    for symbol in universe:
+        sessions |= set(frames.get(symbol, {}))
+    for session in sorted(sessions, reverse=True):
+        if all(session in frames.get(symbol, {}) for symbol in universe):
+            return session
+    return None
+
+
+def _publish_observations(dsn: str, bars: list[Bar]) -> str:
+    """방금 적재한 세션의 종가를 시세·종목카탈로그 관측으로도 남긴다.
+
+    RiskEngine 은 주문을 판정할 때 관측 표에서 가격과 ETF 여부를 읽는데, 그 표를 채우는 것은
+    운영자 CLI 뿐이었고 어디에도 배선돼 있지 않았다. 그래서 자동운용이 `violations` 는 비어
+    있는데 `PRICE_MISSING` / `BROKERAGE_UNAVAILABLE` 로 HOLD 됐다. 값의 출처가 이 수집기이므로
+    여기서 함께 남기는 것이 옳다 - 표를 다시 읽지 않으므로 SELECT 권한도 새 비밀도 필요 없고,
+    같은 `MARKET_DATA_WRITER_DSN` 을 그대로 쓴다.
+
+    적재 시점에 한 번이면 충분하다. 신선도 규칙은 `observedAt >= 직전 개장일 장 마감` 이고 이
+    호출은 그 세션이 마감된 뒤에 일어나므로 다음 거래일 판정이 이 관측을 FRESH 로 본다. 이미
+    최신이면(`UP_TO_DATE`) 그날 몫은 그 세션을 적재할 때 이미 남겼다.
+
+    실패는 마커로만 남긴다. 관측이 없으면 RiskEngine 이 HOLD 하므로 결과가 이미 fail-closed 이고,
+    시장데이터 적재 자체를 되돌릴 이유가 없다.
+    """
+
+    prices = {bar.symbol: bar.close_price for bar in bars}
+    now = datetime.now(UTC)
+    try:
+        quotes = _append_observation(
+            market_quote_payload(prices, now=now, source_version=_OBSERVATION_SOURCE_VERSION),
+            append_market_quote_fixture,
+            dsn,
+        )
+        instruments = _append_observation(
+            instrument_catalog_payload(
+                sorted(prices),
+                GOLD_ETF_SYMBOLS,
+                now=now,
+                source_version=_OBSERVATION_SOURCE_VERSION,
+            ),
+            append_instrument_catalog_fixture,
+            dsn,
+        )
+    except (ValueError, OSError, psycopg.Error) as error:
+        return f"FAILED_{type(error).__name__}"
+    return f"PUBLISHED_{quotes}_{instruments}"
+
+
+def _append_observation(payload: dict[str, Any], writer: Any, dsn: str) -> int:
+    """운영자 CLI 와 같은 사전 검증을 통과한 DSN 으로만 적재한다.
+
+    DSN 이 컨테이너에 있다는 것만으로 쓰지 않는다. `attest_source_writer_dsn` 이 current_user 가
+    `decision_market_writer` 인지, 그 role 이 자기 표 두 개에만 INSERT 를 갖는지, 다른 표를
+    바꿀 수 없는지를 실제 권한으로 확인한다.
+    """
+
+    attest_source_writer_dsn(
+        dsn,
+        expected_role="decision_market_writer",
+        allowed_insert_tables=("market_quote_observations", "instrument_catalog_observations"),
+    )
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, sort_keys=True)
+        path = Path(handle.name)
+    try:
+        return int(writer(path, database_dsn=dsn))
+    finally:
+        path.unlink(missing_ok=True)
 
 
 def _max_sessions() -> int:

@@ -9,7 +9,7 @@ x-app-security: &app-security
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
   pids_limit: 256
-  restart: on-failure:3
+  restart: unless-stopped
   tmpfs:
     - /tmp:size=128m,mode=1777
 
@@ -49,7 +49,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
-    restart: on-failure:3
+    restart: unless-stopped
     networks: [p1-data]
 
   redis:
@@ -79,7 +79,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
-    restart: on-failure:3
+    restart: unless-stopped
     networks: [p1-data]
 
   role-bootstrap:
@@ -211,6 +211,37 @@ services:
     networks: [p1-data]
     restart: "no"
 
+  owner-scenario-materializer:
+    profiles: [owner]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "artifact-import"]
+    command:
+      - python
+      - -m
+      - app.p1_owner.scenario_materializer
+      - --bundle-root
+      - /opt/capstone/seed/team-b
+    environment:
+      PROVIDER_LIVE_CALLS_ENABLED: "false"
+      P1_OPERATOR_UID: "${P1_OPERATOR_UID}"
+    user: "${P1_OPERATOR_UID}:${P1_SECRET_GID}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 1g
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    secrets: [artifact_import_env]
+    volumes:
+      - ./seed:/opt/capstone/seed:ro
+      - ./docker/secret-entrypoint.sh:/usr/local/bin/p1-secret-entrypoint:ro
+    depends_on:
+      team-b-seed-import: {condition: service_completed_successfully}
+    networks: [p1-data]
+    restart: "no"
+
   dashboard-preview-seed:
     profiles: [preview]
     image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
@@ -252,7 +283,7 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
     <<: *app-security
-    restart: on-failure:3
+    restart: unless-stopped
     healthcheck:
       test:
         - CMD
@@ -273,6 +304,9 @@ services:
       context: ../..
       dockerfile: deploy/p1/docker/decision-platform.Dockerfile
     environment:
+      # attest_source_writer_dsn 이 요구하는 실행 대상 표시다. 이 스택은 로컬 배포이므로
+      # local 이 정직한 값이고, 이 값이 없으면 관측 적재가 사전 검증에서 거부된다.
+      DECISION_SOURCE_WRITER_OFFLINE_TARGET: "local"
       SERVER_ADDRESS: 0.0.0.0
       SERVER_PORT: "8080"
       SPRING_FLYWAY_ENABLED: "false"
@@ -349,7 +383,7 @@ services:
       P1_AUTOMATION_RUNTIME_ENABLED: "${P1_AUTOMATION_RUNTIME_ENABLED:-false}"
       P1_AUTOMATION_EVIDENCE_FIXTURE_ENABLED: "false"
       DEBUG: "${P1_SPRING_DEBUG:-false}"
-    secrets: [spring_env, python_env, kis_mock_env, return_inference_env, automation_runtime_env, rag_v2_env, vertex_service_account, rag_history_kek, actor_client_p12, actor_tls_ca]
+    secrets: [spring_env, python_env, kis_mock_env, return_inference_env, automation_runtime_env, automation_observation_env, rag_v2_env, vertex_service_account, rag_history_kek, actor_client_p12, actor_tls_ca]
     volumes:
       # 읽기 전용이다. entrypoint가 컨테이너 tmpfs로 복사해 소유권과 mode를 맞춘다.
       # 기본값은 `./capstone doctor`를 up 이전에 돌릴 때만 쓰인다. up은 runtime.env에 실제
@@ -509,6 +543,42 @@ services:
     restart: "no"
     networks: [p1-data]
 
+  # 대시보드의 "이 시스템이 참고하는 자료" 패널이 rag_sources 를 읽는데 등록 CLI 가 어디에도
+  # 배선돼 있지 않아 0 행이었고 패널이 비어 있었다. seed 는 코드에 커밋돼 있으므로 provider
+  # 호출 0 이고, ON CONFLICT DO NOTHING 이라 몇 번 돌려도 같은 상태다.
+  rag-source-register:
+    profiles: [owner]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "rag-source-register"]
+    command: ["python", "-m", "app.rag.register_sources_cli", "--register-db", "--json"]
+    secrets: [rag_source_register_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    <<: *app-security
+    restart: "no"
+    networks: [p1-data]
+
+  # 과거 영업일 재생 2단계. 1단계(신호 계산)는 decision-platform 안에서 돌고 그 JSON 을
+  # 여기서 superuser 로 이력 표에 적재한다. 두 자원이 서로 다른 경계에 있어 나눴다 -
+  # 추론 서버는 decision-platform 안에서만 닿고, 이력 표는 RLS FORCE 라 superuser 만 쓴다.
+  history-replay-seed:
+    profiles: [owner]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "team-a-acceptance"]
+    command: ["sh", "-c", "P1_HISTORY_REPLAY_DATABASE_DSN=$$P1_TEAM_A_ACCEPTANCE_DATABASE_DSN python -m app.p1_owner.history_replay_seed /opt/capstone/replay/signals.json"]
+    environment:
+      P1_OFFLINE_DEMO: "true"
+    secrets: [team_a_acceptance_env]
+    volumes:
+      - ${P1_STATE_DIR:-./.state-app}/replay:/opt/capstone/replay:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+    <<: *app-security
+    restart: "no"
+    networks: [p1-data]
+
   automation-gate-author:
     profiles: [owner]
     image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
@@ -599,6 +669,9 @@ services:
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "team-a-acceptance"]
     command: ["python", "-m", "app.p1_owner.team_a_acceptance_seed", "seed"]
     environment:
+      # attest_source_writer_dsn 이 요구하는 실행 대상 표시다. 이 스택은 로컬 배포이므로
+      # local 이 정직한 값이고, 이 값이 없으면 관측 적재가 사전 검증에서 거부된다.
+      DECISION_SOURCE_WRITER_OFFLINE_TARGET: "local"
       P1_OFFLINE_DEMO: "true"
       P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK: "${P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK:-}"
     secrets: [team_a_acceptance_env]
@@ -640,7 +713,7 @@ services:
       timeout: 5s
       retries: 60
       start_period: 30s
-    restart: on-failure:3
+    restart: unless-stopped
     networks: [p1-model, p1-model-fetch]
 
   paddleocr-vl-model-fetch:
@@ -724,7 +797,7 @@ services:
       timeout: 5s
       retries: 60
       start_period: 30s
-    restart: on-failure:3
+    restart: unless-stopped
     networks: [p1-model]
 
   return-engine-preview-prepare:
@@ -787,7 +860,7 @@ services:
       timeout: 3s
       retries: 12
       start_period: 10s
-    restart: on-failure:3
+    restart: unless-stopped
     networks: [p1-app]
 
 secrets:
@@ -813,6 +886,8 @@ secrets:
   automation_runtime_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/automation-runtime.env"}
   automation_gate_author_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/automation-gate-author.env"}
   calendar_offline_seed_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/calendar-offline-seed.env"}
+  rag_source_register_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/rag-source-register.env"}
+  automation_observation_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/automation-observation.env"}
   market_data_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/market-data.env"}
   market_data_provider_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/market-data-provider.env"}
   after_hours_replay_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/after-hours-replay.env"}

@@ -44,9 +44,10 @@ data class PortfolioRiskResult(
     val warnings: List<PortfolioRiskWarning>,
 )
 
-/**
- * owner-scoped context가 하나로 결정될 때만 기존 MetricSnapshotAssembler를 호출하고 없는 producer 값은 null로 둔다.
- */
+// 실제 계좌 관측이 내부 장부보다 우선한다.
+private val PORTFOLIO_SOURCE_PRECEDENCE =
+    listOf(PortfolioSource.KIS_MOCK, PortfolioSource.INTERNAL_PAPER)
+
 class PortfolioRiskQueryUseCase(
     private val portfolioContextPort: PortfolioContextPort,
     private val snapshotAssembler: MetricSnapshotAssembler,
@@ -95,18 +96,17 @@ class PortfolioRiskQueryUseCase(
             buildList {
                 contextSelection.warning?.let(::add)
                 unavailableWarning(assembly.portfolioValue, listOf("portfolioValue"))?.let(::add)
-                unavailableWarning(
-                    cells = listOf(assembly.dailyPnlRate, assembly.maxDrawdown, assembly.annualizedVolatility),
-                    fields = listOf("dailyPnlRate", "mdd", "annualizedVolatility20d"),
-                )?.let(::add)
                 add(
                     PortfolioRiskWarning(
                         code = "MISSING_SOURCE",
                         fields =
                             listOf(
+                                "dailyPnlRate",
+                                "mdd",
                                 "var95",
                                 "cvar95",
                                 "realizedVolatility20d",
+                                "annualizedVolatility20d",
                                 "hmmRegime",
                                 "hmmRegimeProbability",
                                 "signalFresh",
@@ -119,13 +119,16 @@ class PortfolioRiskQueryUseCase(
             projection =
                 PortfolioRiskProjection(
                     asOf = asOf,
-                    portfolioValue = assembly.portfolioValue.wholeOrNull(),
-                    dailyPnlRate = assembly.dailyPnlRate.decimalOrNull(),
-                    mdd = assembly.maxDrawdown.decimalOrNull(),
+                    portfolioValue =
+                        assembly.portfolioValue.wholeOrNull()
+                            ?: assembly.portfolioValueLastKnown.wholeOrNull(),
+                    // Runtime loss guards do not support public performance metrics.
+                    dailyPnlRate = null,
+                    mdd = null,
                     var95 = null,
                     cvar95 = null,
                     realizedVolatility20d = null,
-                    annualizedVolatility20d = assembly.annualizedVolatility.decimalOrNull(),
+                    annualizedVolatility20d = null,
                     hmmRegime = null,
                     hmmRegimeProbability = null,
                     killSwitchActive = gate.active,
@@ -151,17 +154,23 @@ class PortfolioRiskQueryUseCase(
                     resolution.reason == PortfolioContextUnavailableReason.CONFLICT
             }
         val available =
-            resolutions.mapNotNull { (_, resolution) ->
-                (resolution as? PortfolioContextResolution.Available)?.context
+            resolutions.mapNotNull { (source, resolution) ->
+                (resolution as? PortfolioContextResolution.Available)?.context?.let { source to it }
             }
         return when {
-            hasConflict || available.size > 1 ->
+            hasConflict ->
                 ContextSelection(
                     context = null,
                     warning = PortfolioRiskWarning("PORTFOLIO_CONTEXT_CONFLICT", listOf("portfolioValue")),
                 )
 
-            available.size == 1 -> ContextSelection(available.single(), null)
+            available.size > 1 ->
+                ContextSelection(
+                    available.minByOrNull { (source, _) -> PORTFOLIO_SOURCE_PRECEDENCE.indexOf(source) }!!.second,
+                    null,
+                )
+
+            available.size == 1 -> ContextSelection(available.single().second, null)
             else ->
                 ContextSelection(
                     context = null,
@@ -172,7 +181,7 @@ class PortfolioRiskQueryUseCase(
 
     private fun missingAssembly(): PortfolioRiskAssembly {
         val missing = MetricCell.Missing(MetricIssueCode.PORTFOLIO_CONTEXT_UNAVAILABLE)
-        return PortfolioRiskAssembly(missing, missing, missing, missing, missing)
+        return PortfolioRiskAssembly(missing, missing, missing, missing, missing, missing)
     }
 
     private fun unavailableWarning(
@@ -185,29 +194,7 @@ class PortfolioRiskQueryUseCase(
             PortfolioRiskWarning(cell.publicReason(), fields)
         }
 
-    private fun unavailableWarning(
-        cells: List<MetricCell<MetricValue>>,
-        fields: List<String>,
-    ): PortfolioRiskWarning? {
-        val unavailable = cells.filterNot { it is MetricCell.Available }
-        return if (unavailable.isEmpty()) {
-            null
-        } else {
-            PortfolioRiskWarning(
-                code =
-                    if (unavailable.any { it is MetricCell.Stale }) {
-                        "STALE_SOURCE"
-                    } else {
-                        "MISSING_SOURCE"
-                    },
-                fields = fields.filterIndexed { index, _ -> cells[index] !is MetricCell.Available },
-            )
-        }
-    }
-
     private fun MetricCell<MetricValue>.wholeOrNull(): Long? = ((this as? MetricCell.Available)?.value as? MetricValue.Whole)?.value
-
-    private fun MetricCell<MetricValue>.decimalOrNull(): BigDecimal? = (this as? MetricCell.Available)?.value?.asBigDecimal()
 
     private fun MetricCell<MetricValue>.freshness(): Boolean? =
         when (this) {

@@ -20,6 +20,7 @@ import type {
   RagV2Answer,
   RagV2Citation,
   RagV2CorpusStatus,
+  RagV2HistoryDetail,
 } from '@/shared/api/wire';
 import { ready, type ViewState } from '@/shared/lib/viewState';
 
@@ -210,4 +211,11 @@ export async function askRag(
 export async function loadRegistry(): Promise<ViewState<RagSourceResponse[]>> {
   const { data } = await api.ragSources();
   return ready(data.items);
+}
+
+export async function loadRecentQuestions(): Promise<ViewState<RagV2HistoryDetail[]>> {
+  const page = await api.ragV2History(10);
+  const current = page.items.filter((item) => /^rag_[0-9a-f]{32}$/.test(item.answerId)).slice(0, 5);
+  const details = await Promise.all(current.map((item) => api.ragV2HistoryDetail(item.answerId)));
+  return ready(details, details[0]?.createdAt ?? null);
 }

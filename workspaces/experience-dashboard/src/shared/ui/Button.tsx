@@ -24,13 +24,13 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  */
 const VARIANT: Record<Variant, string> = {
   primary:
-    'border-navy bg-navy text-white hover:bg-[#16293f] disabled:border-line disabled:bg-line disabled:text-faint',
+    'border-brand bg-brand text-on-brand hover:opacity-90 disabled:border-line disabled:bg-line disabled:text-faint',
   secondary:
     'border-rule bg-panel text-ink hover:bg-surface disabled:border-line disabled:bg-panel disabled:text-faint',
   quiet:
     'border-transparent bg-transparent text-navy underline underline-offset-2 hover:text-ink disabled:text-faint disabled:no-underline',
   danger:
-    'border-block bg-block text-white hover:bg-[#7d1f23] disabled:border-line disabled:bg-line disabled:text-faint',
+    'border-block bg-block text-on-brand hover:opacity-90 disabled:border-line disabled:bg-line disabled:text-faint',
 };
 
 const SIZE: Record<Size, string> = {

@@ -28,11 +28,27 @@ interface DashboardViewPort {
         runId: String,
     ): JsonNode?
 
+    fun latestArtifactRun(
+        actorUserId: String,
+        securityVersion: Long,
+        kind: DashboardArtifactKind,
+    ): LatestArtifactRunView?
+
     fun risk(
         actorUserId: String,
         securityVersion: Long,
         decisionId: String,
     ): JsonNode?
+
+    fun latestRisk(
+        actorUserId: String,
+        securityVersion: Long,
+    ): RecentRiskResultView?
+
+    fun recentRisks(
+        actorUserId: String,
+        securityVersion: Long,
+    ): List<RecentRiskResultView>
 
     fun rag(
         actorUserId: String,
@@ -56,11 +72,27 @@ class DashboardViewService(
         runId: String,
     ): JsonNode? = port.artifact(actorUserId, securityVersion, kind, runId)
 
+    fun latestArtifactRun(
+        actorUserId: String,
+        securityVersion: Long,
+        kind: DashboardArtifactKind,
+    ): LatestArtifactRunView? = port.latestArtifactRun(actorUserId, securityVersion, kind)
+
     fun risk(
         actorUserId: String,
         securityVersion: Long,
         decisionId: String,
     ): JsonNode? = port.risk(actorUserId, securityVersion, decisionId)
+
+    fun latestRisk(
+        actorUserId: String,
+        securityVersion: Long,
+    ): RecentRiskResultView? = port.latestRisk(actorUserId, securityVersion)
+
+    fun recentRisks(
+        actorUserId: String,
+        securityVersion: Long,
+    ): List<RecentRiskResultView> = port.recentRisks(actorUserId, securityVersion)
 
     fun rag(
         actorUserId: String,
@@ -73,6 +105,20 @@ class DashboardViewService(
         securityVersion: Long,
     ): List<ArtifactIngestStatusView>? = port.artifactStatuses(actorUserId, securityVersion)
 }
+
+data class LatestArtifactRunView(
+    val runId: String,
+    val fixtureClass: String,
+    val asOf: java.time.Instant,
+)
+
+data class RecentRiskResultView(
+    val decisionId: String,
+    val action: String,
+    val symbol: String,
+    val asOf: Instant,
+    val validUntil: Instant,
+)
 
 class DashboardUnavailableException(
     cause: Throwable? = null,

@@ -57,8 +57,12 @@ class AutomationRuntimeBridgeController(
         if (!authorized(request.remoteAddr, suppliedSecret)) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(mapOf("status" to "NOT_FOUND"))
         }
+        // 실패 로그가 operation 을 남길 수 있도록 catch 밖에서 붙든다. parse 자체가 실패하면
+        // 아직 operation 을 알 수 없으므로 "-" 로 남는다.
+        var failedOperation = "-"
         return try {
             val command = parser.parse(body.orEmpty())
+            failedOperation = command.operation
             val actor = users.findByUserId(command.userId)
             if (actor == null || actor.status != "ACTIVE") {
                 ResponseEntity.status(HttpStatus.NOT_FOUND).body(mapOf("status" to "NOT_FOUND"))
@@ -110,8 +114,13 @@ class AutomationRuntimeBridgeController(
             // provider body, account value, exception text와 stack trace를 internal response에 반사하지 않는다.
             // 다만 근본 원인의 **클래스 이름**은 남긴다. 바깥 예외만으로는 어느 구간이 닫혔는지
             // 알 수 없어 fail-closed를 진단할 수 없었다. 메시지와 값은 계속 남기지 않는다.
+            // 어느 operation이 닫혔는지도 남긴다. 예외 클래스만으로는 BALANCE와 BUYABLE과
+            // ORDER가 구분되지 않아, 실측에서 ORDER_SIZING이 막혔을 때 어느 호출이 원인인지
+            // 로그만으로는 끝내 알 수 없었다. operation 이름은 고정된 enum 문자열이라
+            // 계좌값이나 provider 본문을 노출하지 않는다.
             logger.warn(
-                "automation runtime bridge failed closed: {} caused by {}",
+                "automation runtime bridge failed closed: operation={} {} caused by {}",
+                failedOperation,
                 error.javaClass.simpleName,
                 generateSequence(error.cause) { it.cause }.lastOrNull()?.javaClass?.simpleName ?: "-",
             )

@@ -1,21 +1,17 @@
 'use client';
 
-import { useState } from 'react';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
 import { Numeric } from '@/shared/ui/Numeric';
-import { IdInput } from '@/shared/ui/IdInput';
 import { DecisionRail } from '@/shared/ui/Decision';
 import { useResource } from '@/shared/lib/useResource';
-import { ID_PATTERN } from '@/shared/api/endpoints';
+import { api } from '@/shared/api/endpoints';
+import { empty } from '@/shared/lib/viewState';
+import { useLatestRun } from '@/shared/api/latestRun';
 import { formatDecimal, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 import { loadBacktestReportView } from '@/features/backtest-report/viewModel';
-import { loadRiskResultView } from '@/features/order-review/viewModel';
+import { loadRiskResultView, type RiskResultView } from '@/features/order-review/viewModel';
 
-/**
- * 캡처용 화면.
- * 자동 캡처 기능은 범위 밖이므로, 여기서는 "한 화면에 들어가는 배치"와 캡처 체크리스트만 제공한다.
- */
 const CAPTURE_LIST = [
   { figure: '그림 4', title: 'RiskEngine 판단 흐름', where: '아래 판정 레일과 위반 목록' },
   { figure: '표 6', title: 'Baseline/Guide/Strict 검증 시나리오', where: '아래 시나리오 비교표' },
@@ -25,14 +21,19 @@ const CAPTURE_LIST = [
 ];
 
 export function ReportView() {
-  const [decisionId, setDecisionId] = useState('');
-  const [runId, setRunId] = useState('');
+  const { runId } = useLatestRun('backtests');
 
-  const decisionValid = ID_PATTERN.decisionId.test(decisionId);
-  const runValid = ID_PATTERN.runId.test(runId);
-
-  const decision = useResource(() => loadRiskResultView(decisionId), [decisionId], decisionValid);
-  const backtest = useResource(() => loadBacktestReportView(runId), [runId], runValid);
+  const decision = useResource<RiskResultView>(async () => {
+    const { data } = await api.dashboardRecentRiskResults();
+    const latest = data.items[0];
+    if (!latest) return empty('저장된 판정이 없습니다', '자동운용이 판정을 마치면 보고서에 표시됩니다.');
+    return loadRiskResultView(latest.decisionId);
+  }, []);
+  const backtest = useResource(
+    () => loadBacktestReportView(runId ?? ''),
+    [runId],
+    runId !== null,
+  );
 
   return (
     <div className="space-y-6">
@@ -61,29 +62,7 @@ export function ReportView() {
         </table>
       </Panel>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <IdInput
-          label="캡처할 판정 ID"
-          hint="차단이나 보류가 난 판정을 넣으면 안전장치가 동작한 화면이 만들어집니다."
-          placeholder="dec_00000000000000000001"
-          value={decisionId}
-          onChange={setDecisionId}
-          pattern={ID_PATTERN.decisionId}
-          patternHint="dec_ 로 시작해야 합니다."
-        />
-        <IdInput
-          label="캡처할 백테스트 실행 ID"
-          hint="Baseline / Guide / Strict 비교표와 지표 카드를 만듭니다."
-          placeholder="demo_s8_offline_0001"
-          value={runId}
-          onChange={setRunId}
-          pattern={ID_PATTERN.runId}
-          patternHint="run_ 또는 demo_ 로 시작해야 합니다."
-        />
-      </div>
-
-      {decisionValid ? (
-        <AsyncBoundary state={decision.state} onRetry={decision.reload}>
+      <AsyncBoundary state={decision.state} onRetry={decision.reload}>
           {(view) => (
             <Panel
               contract="report/decision-capture"
@@ -116,10 +95,9 @@ export function ReportView() {
               )}
             </Panel>
           )}
-        </AsyncBoundary>
-      ) : null}
+      </AsyncBoundary>
 
-      {runValid ? (
+      {runId !== null ? (
         <AsyncBoundary state={backtest.state} onRetry={backtest.reload}>
           {(view) => (
             <>
@@ -151,7 +129,7 @@ export function ReportView() {
               <Panel
                 contract="report/scenario-capture"
                 title="Baseline / Guide / Strict"
-                hint={`실행 ${view.runId}`}
+                hint="검증된 artifact 안의 세 시나리오를 같은 조건에서 비교합니다."
               >
                 <table className="w-full text-[13px]">
                   <thead>

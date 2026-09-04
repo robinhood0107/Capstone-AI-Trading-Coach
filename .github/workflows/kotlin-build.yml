@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: kotlin-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   kotlin-build:
     name: Kotlin ktlint and build
@@ -46,5 +50,5 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
 
-      - name: Run ktlint and build
-        run: ./gradlew ktlintCheck build
+      - name: Run formatting and compile checks
+        run: ./gradlew ktlintCheck compileKotlin

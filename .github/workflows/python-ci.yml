@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: python-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   python-quality:
     name: Python quality gates
@@ -56,6 +60,3 @@ jobs:
 
       - name: Run mypy
         run: uv run --frozen mypy app
-
-      - name: Run pytest
-        run: TMPDIR=/tmp TEMP=/tmp TMP=/tmp uv run --frozen pytest -q

@@ -16,7 +16,7 @@ const TABS: readonly [
     label: '모델 비교',
     title: '모델 비교',
     description:
-      '규칙 baseline, LSTM, LightGBM이 같은 조건에서 무엇을 말하는지 나란히 봅니다. 근거를 내지 못한 모델은 값 대신 ABSTAIN으로 남습니다.',
+      '규칙 baseline과 LSTM을 같은 조건에서 비교합니다. 근거를 내지 못한 모델은 값 대신 평가 보류로 남습니다.',
   },
   {
     id: 'backtest',
@@ -26,18 +26,7 @@ const TABS: readonly [
   },
 ] as const;
 
-/**
- * 모델 비교와 백테스트는 "이 전략이 쓸 만한가"라는 같은 질문에 답한다.
- * 화면을 갈라 두면 시연 중 탭을 오가야 하므로 한 화면 안의 전환으로 합쳤다.
- * ViewModel(최종 명세서 7.4의 7·8번)은 각각 그대로 유지한다.
- */
-export function StrategyView({
-  defaultTab = 'model',
-  defaultRunId = '',
-}: {
-  defaultTab?: StrategyTab;
-  defaultRunId?: string;
-}) {
+export function StrategyView({ defaultTab = 'model' }: { defaultTab?: StrategyTab }) {
   const [tab, setTab] = useState<StrategyTab>(defaultTab);
   const active = TABS.find((item) => item.id === tab) ?? TABS[0];
 
@@ -68,14 +57,10 @@ export function StrategyView({
         ))}
       </div>
 
-      {/*
-        display:none으로 숨기지 않고 언마운트한다.
-        recharts ResponsiveContainer는 너비 0인 컨테이너에서 다시 그리지 못한다.
-      */}
       {tab === 'model' ? (
-        <ModelEvaluationView defaultRunId={defaultRunId} />
+        <ModelEvaluationView />
       ) : (
-        <BacktestReportView defaultRunId={defaultRunId} />
+        <BacktestReportView />
       )}
     </div>
   );

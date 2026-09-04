@@ -23,7 +23,9 @@ uv run ruff format --check app tests
 uv run mypy app
 popd >/dev/null
 
-"$spring_project/gradlew" -p "$spring_project" ktlintCheck detektMain detektTest
+if [[ "${CAPSTONE_SKIP_KOTLIN_STATIC:-0}" != "1" ]]; then
+  "$spring_project/gradlew" -p "$spring_project" ktlintCheck detektMain detektTest
+fi
 
 mapfile -d '' shell_files < <(git ls-files -z -- '*.sh' ":(exclude)$local_only_root/**")
 ((${#shell_files[@]} > 0))

@@ -19,9 +19,9 @@ import {
 } from './viewModel';
 
 const FIELD =
-  'w-full rounded border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 ' +
-  'focus:border-slate-400 focus:outline-none';
-const LABEL = 'block text-xs font-medium text-slate-400';
+  'w-full rounded-tile border border-line bg-panel px-3 py-2 text-sm text-ink ' +
+  'focus:border-navy focus:outline-none';
+const LABEL = 'block text-xs font-medium text-muted';
 
 export function StrongLlmSettingsView() {
   const loaded = useResource(loadSettings, []);
@@ -36,12 +36,16 @@ function SettingsForm({ initial }: { initial: SettingsView }) {
   const [view, setView] = useState<SettingsView>(initial);
   const [apiKey, setApiKey] = useState('');
   const [fallbackApiKey, setFallbackApiKey] = useState('');
+  const [dailyCapInput, setDailyCapInput] = useState(String(initial.dailyGenerateCallCap));
   const [clearPrimary, setClearPrimary] = useState(false);
   const [clearFallback, setClearFallback] = useState(false);
   const [pending, setPending] = useState(false);
   const [outcome, setOutcome] = useState<ViewState<string> | null>(null);
 
-  const blocked = validationError(view, apiKey, fallbackApiKey);
+  const blocked =
+    dailyCapInput.trim() === ''
+      ? '하루 호출 상한을 입력하세요.'
+      : validationError(view, apiKey, fallbackApiKey);
   const patch = (next: Partial<SettingsView>) => setView((current) => ({ ...current, ...next }));
 
   async function submit() {
@@ -50,13 +54,15 @@ function SettingsForm({ initial }: { initial: SettingsView }) {
     setOutcome(null);
     try {
       await saveSettings(toRequest(view, apiKey, fallbackApiKey, clearPrimary, clearFallback));
-      // 저장된 키는 응답으로 돌아오지 않는다. 화면도 그것을 들고 있지 않는다.
       setApiKey('');
       setFallbackApiKey('');
       setClearPrimary(false);
       setClearFallback(false);
       const saved = await loadSettings();
-      if (saved.kind === 'ready') setView(saved.data);
+      if (saved.kind === 'ready') {
+        setView(saved.data);
+        setDailyCapInput(String(saved.data.dailyGenerateCallCap));
+      }
       setOutcome({ kind: 'ready', data: '저장했습니다.', asOf: null });
     } catch (error) {
       setOutcome(toErrorState(error));
@@ -137,10 +143,12 @@ function SettingsForm({ initial }: { initial: SettingsView }) {
               type="number"
               min={1}
               max={500}
-              value={view.dailyGenerateCallCap}
-              onChange={(event) =>
-                patch({ dailyGenerateCallCap: Number(event.target.value) || 0 })
-              }
+              value={dailyCapInput}
+              onChange={(event) => {
+                const next = event.target.value;
+                setDailyCapInput(next);
+                if (/^[0-9]+$/.test(next)) patch({ dailyGenerateCallCap: Number(next) });
+              }}
             />
           </div>
         </div>
@@ -150,7 +158,7 @@ function SettingsForm({ initial }: { initial: SettingsView }) {
       <div className="flex items-center gap-3">
         <Button
           variant="primary"
-          className="rounded bg-slate-200 px-4 py-2 text-sm font-medium text-slate-900 disabled:opacity-50"
+          className="rounded bg-brand px-4 py-2 text-sm font-medium text-on-brand disabled:opacity-50"
           disabled={blocked !== null || pending}
           onClick={() => void submit()}
         >
@@ -169,14 +177,15 @@ function SettingsForm({ initial }: { initial: SettingsView }) {
 function UsageLine({ view }: { view: SettingsView }) {
   if (view.effectiveDailyCap === null) {
     return (
-      <p className="mt-3 text-xs text-slate-400">
+      <p className="mt-3 text-xs text-muted">
         생성이 아직 열려 있지 않아 오늘 사용량이 없습니다. 검색과 인용만 동작합니다.
       </p>
     );
   }
   return (
-    <p className="mt-3 text-xs text-slate-400">
-      오늘 {view.usedToday ?? 0}회 사용, {view.remaining ?? 0}회 남음 (적용 중인 상한{' '}
+    <p className="mt-3 text-xs text-muted">
+      오늘 {view.usedToday === null ? '집계 없음' : `${view.usedToday}회 사용`},{' '}
+      {view.remaining === null ? '잔여 집계 없음' : `${view.remaining}회 남음`} (적용 중인 상한{' '}
       {view.effectiveDailyCap}회).
       {view.effectiveDailyCap !== view.dailyGenerateCallCap &&
         ' 배포 정책이 더 좁은 상한을 쓰고 있습니다.'}
@@ -204,8 +213,8 @@ function ProviderColumn(props: ColumnProps) {
   const selected = props.provider;
   const needsKey = selected !== '' && PROVIDER_NEEDS_KEY[selected];
   return (
-    <fieldset className="space-y-3 rounded border border-slate-700 p-4">
-      <legend className="px-1 text-xs font-medium text-slate-300">{props.heading}</legend>
+    <fieldset className="space-y-3 rounded-tile border border-line p-4">
+      <legend className="px-1 text-xs font-medium text-ink">{props.heading}</legend>
       <div className="space-y-1">
         <label className={LABEL}>제공자</label>
         <select
@@ -248,7 +257,7 @@ function ProviderColumn(props: ColumnProps) {
               <label className={LABEL}>
                 API 키
                 {props.keyLast4 !== null && (
-                  <span className="ml-2 text-slate-500">저장됨 (…{props.keyLast4})</span>
+                  <span className="ml-2 text-faint">저장됨 (…{props.keyLast4})</span>
                 )}
               </label>
               <input
@@ -261,7 +270,7 @@ function ProviderColumn(props: ColumnProps) {
                 onChange={(event) => props.onApiKey(event.target.value)}
               />
               {props.keyLast4 !== null && (
-                <label className="flex items-center gap-2 text-xs text-slate-400">
+                <label className="flex items-center gap-2 text-xs text-muted">
                   <input
                     type="checkbox"
                     checked={props.clearKey}
@@ -272,7 +281,7 @@ function ProviderColumn(props: ColumnProps) {
               )}
             </div>
           ) : (
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-muted">
               Vertex는 서버에 놓인 서비스계정으로 붙습니다. 이 화면에서 키를 받지 않습니다.
             </p>
           )}

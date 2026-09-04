@@ -6,7 +6,7 @@ const endpointsUrl = new URL('../../src/shared/api/endpoints.ts', import.meta.ur
 const overviewUrl = new URL('../../src/features/overview/OverviewView.tsx', import.meta.url);
 const automationUrl = new URL('../../src/features/automation/AutomationView.tsx', import.meta.url);
 
-test('automation policy UI uses only the approved five v2 operations and v1 disarm', async () => {
+test('automation policy UI uses the approved v2 read, policy, and arm operations', async () => {
   const endpoints = await readFile(endpointsUrl, 'utf8');
   for (const path of [
     '/api/v2/automation/status',
@@ -14,12 +14,14 @@ test('automation policy UI uses only the approved five v2 operations and v1 disa
     '/api/v2/automation/arm',
     '/api/v2/automation/runs',
     '/api/v2/automation/positions',
-    '/api/v1/automation/disarm',
   ]) {
     assert.match(endpoints, new RegExp(path.replaceAll('/', '\\/')));
   }
   assert.match(endpoints, /newIdempotencyKey\('automation-policy'\)/);
   assert.match(endpoints, /newIdempotencyKey\('automation-arm-v2'\)/);
+  const automation = await readFile(automationUrl, 'utf8');
+  assert.doesNotMatch(automation, /신규 주문 중지/);
+  assert.doesNotMatch(automation, /api\.disarmAutomation/);
 });
 
 test('overview reads actual automation status instead of inferring it from the kill switch', async () => {

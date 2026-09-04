@@ -363,6 +363,16 @@ def cleanup_statements(before: dict[str, list[str]]) -> list[str]:
         "delete from public.rag_consent_events where consent_event_id not in "
         f"({quoted(before['rag_consent_events'])});",
         # 계좌 통제를 arm 이전 상태로 되돌린다.
+        #
+        # 예약도 함께 내린다. 제품의 p1_stop_automation_runtime_v1 은 control 과 예약을 한
+        # 트랜잭션에서 같이 내리는데, 여기서 control 만 쓰면 "control DISARMED + 예약 ARMED
+        # (같은 control 버전)" 이라는 제품 경로로는 만들어질 수 없는 상태가 남는다.
+        #
+        # 그 상태에서는 재arm 이 막힌다 - readiness 의 target_available 이 현재 버전의 ARMED
+        # 행을 점유로 세는데(V119) claim 은 control ARMED 를 요구하므로 어느 쪽으로도 움직이지
+        # 않는다. 실측으로 e2e 한 번 뒤 재arm 이 닫히는 것을 확인했다.
+        "update public.automation_runtime_schedule set schedule_state='DISARMED',"
+        " updated_at=statement_timestamp() where schedule_state in ('ARMED','CLAIMED');",
         "update public.automation_control set control_state='DISARMED', brokerage_mode='INTERNAL_PAPER',"
         " certification_status='NOT_REQUIRED_INTERNAL_PAPER', policy_id=null, policy_version=null,"
         " principle_version_id=null, principle_version=null, team_b_integrity_receipt_sha256_v2=null,"

@@ -190,6 +190,33 @@ def test_rule_holds_when_the_trend_has_no_direction() -> None:
     assert flat_signal == "HOLD"
 
 
+def test_rule_uses_the_long_trend_even_when_the_short_ma_state_is_negative() -> None:
+    """RULE_BASELINE은 단기 MA 교차가 아니라 적응형 장기 추세 상태로 판정한다."""
+
+    # 마지막 20세션은 조정 중이라 MA5 < MA20 이다. 그래도 200세션 장기 평균보다 종가가
+    # 높고 RSI가 과열이 아니므로 trend_only 규칙은 BUY를 유지해야 한다.
+    closes = [100.0] * 200 + [110.0 + (index % 2) - index * 0.2 for index in range(20)]
+    history = _history(closes)
+
+    _, signal = _features_and_rule(history, history[-1]["sessionDate"])
+
+    assert sum(closes[-5:]) / 5 < sum(closes[-20:]) / 20
+    assert closes[-1] > sum(closes[-200:]) / 200
+    assert signal == "BUY"
+
+
+def test_rule_keeps_a_short_listed_symbol_when_200_sessions_are_unavailable() -> None:
+    """상장 이력 39세션도 보유한 전체 이력으로 장기 추세를 계산한다."""
+
+    closes = [100.0] * 20 + [110.0 + (index % 2) - index * 0.2 for index in range(19)]
+    history = _history(closes)
+
+    _, signal = _features_and_rule(history, history[-1]["sessionDate"])
+
+    assert len(history) == 39
+    assert signal == "BUY"
+
+
 def test_short_history_reports_the_session_count_and_requirement() -> None:
     """이력이 짧으면 몇 세션인지와 얼마가 필요한지 말한다.
 

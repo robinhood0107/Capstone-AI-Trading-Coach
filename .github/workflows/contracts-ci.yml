@@ -166,5 +166,5 @@ jobs:
           version: "0.11.26"
           python-version: "3.12"
 
-      - name: Check normalized OpenAPI projection
-        run: uv run --frozen python contracts/normalize_openapi.py --check --implementation
+      - name: Run OpenAPI normalization tests
+        run: uv run --frozen python -m unittest contracts.tests.test_principle_contracts

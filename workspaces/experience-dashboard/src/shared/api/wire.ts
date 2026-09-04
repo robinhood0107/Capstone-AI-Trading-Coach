@@ -511,18 +511,11 @@ export interface RagV2CorpusStatus {
   privateOverlayState: string;
   progressPercent: number;
   failureCode: string | null;
-  /**
-   * 오늘 남은 생성 횟수. 자동 저술이 꺼져 있으면 셋 다 null이고 그때 화면은 검색 전용이다.
-   * 상한에 닿았을 때 답이 비어 보이는 대신 이유를 말할 수 있어야 한다.
-   */
+  /** Daily generation usage; all fields are null in retrieval-only mode. */
   generationDailyCap: number | null;
   generationUsedToday: number | null;
   generationRemaining: number | null;
-  /**
-   * 소유자가 고른 Strong LLM 설정. 쓰기는 PUT /api/v2/strong-llm/settings가 하고 읽기는
-   * 여기에 실린다. 키는 마지막 네 글자만 온다 - 그것이 "키가 들어 있다"를 말하는 데 필요한
-   * 전부다.
-   */
+  /** Owner settings expose credential suffixes only. */
   strongLlmProvider: string | null;
   strongLlmFallbackProvider: string | null;
   strongLlmModelId: string | null;

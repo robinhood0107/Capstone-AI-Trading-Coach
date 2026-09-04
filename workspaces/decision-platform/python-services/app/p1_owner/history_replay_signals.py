@@ -1,30 +1,4 @@
-"""과거 영업일의 RULE·LSTM 신호를 실제 코드로 다시 계산한다 (재생 1단계).
-
-## 왜 두 단계인가
-
-대시보드의 실행 목록·보유·실현손익이 비어 있었다. 실질 거래 이력이 0건이고, 다른 팀원이
-clone 해도 같은 상태에 도달할 방법이 없었다. 그래서 과거 영업일을 재생한다.
-
-그런데 재생에 필요한 두 자원이 서로 다른 경계에 있다.
-
-    추론 서버   127.0.0.1:50057 - decision-platform 컨테이너 안에서만 닿는다
-    이력 표     RLS FORCE - superuser 만 쓸 수 있다
-
-한 프로세스가 둘 다 가지면 decision-platform 에 superuser 자격증명이 생긴다. 그래서 나눈다.
-
-    1단계 (이 파일)  decision-platform 안. 읽기 전용으로 신호를 계산해 JSON 으로 내보낸다.
-    2단계            seed 컨테이너. superuser 로 그 JSON 을 읽어 이력 표에 쓴다.
-
-## 값을 지어내지 않는다
-
-세션마다 그 시점까지의 바만 쓰고(PIT) 프로덕션 코드를 그대로 호출한다.
-
-    RULE 판정   daily_inference._features_and_rule      (그대로 import)
-    LSTM 판정   기존 추론 gRPC + model_shape.classify_signal
-    바 조회     p1_read_automation_atr_bars_v1          (런타임과 같은 함수)
-
-즉 "무엇을 언제 샀는가" 는 전부 계산 결과다.
-"""
+"""Recompute historical RULE and LSTM signals through the production readers."""
 
 from __future__ import annotations
 
@@ -51,20 +25,13 @@ _CONTRACT_ID: Final = "p1-history-replay-signals.v1"
 
 
 class HistoryReplaySignalError(RuntimeError):
-    """재생할 수 없으면 조용히 건너뛰지 않고 사유를 남기고 멈춘다."""
+    """Raised when a complete replay cannot be produced."""
 
 
 def _pointer_and_universe(
     repository: DailySignalRepository, end: date
 ) -> tuple[dict[str, str], list[str]]:
-    """모델 포인터와 exact-31 을 제품 함수에서 받는다.
-
-    `decision_automation_runtime` 은 `current_p1_return_model_pointer` 나
-    `p1_return_model_seed_signal` 을 직접 SELECT 할 권한이 없다 - 그것이 의도된 역할 분리다.
-    `p1_read_daily_inference_context_v1` 이 같은 값을 definer 경계 안에서 돌려주므로 그것을 쓴다.
-    포인터는 세션별이 아니라 현재 값이므로 아무 세션에서 받아도 같다. 배치가 이미 있는 세션은
-    REPLAYED 를 돌려주니 MATERIALIZE 가 나올 때까지 하루씩 앞으로 물러난다.
-    """
+    """Resolve the current model pointer and exact-31 universe through the runtime API."""
 
     probe = end
     for _ in range(400):
@@ -94,12 +61,7 @@ def _session_signals(
     symbols: Sequence[str],
     session: date,
 ) -> tuple[str, dict[str, dict[str, Any]]] | None:
-    """한 세션의 31종목 RULE·LSTM 신호. 이력이 모자라면 그 세션을 건너뛴다.
-
-    소스 세션은 달력이 아니라 조회된 바가 정한다 - 런타임이 쓰는
-    `p1_read_automation_atr_bars_v1` 이 대상 세션 이전의 바만 돌려주므로 그 마지막 바가 곧
-    그 시점의 PIT 소스다. 종목마다 같아야 하고 다르면 `_features_and_rule` 이 거부한다.
-    """
+    """Compute one complete point-in-time signal panel for the exact-31 universe."""
 
     probe = repository.history(symbols[0], session)
     if not probe:
@@ -113,8 +75,7 @@ def _session_signals(
         try:
             features, rule_signal = _features_and_rule(history, source_session)
         except DailyInferenceError:
-            # 이력이 짧거나 소스 세션이 어긋난 종목이 하나라도 있으면 그 세션은 재생하지
-            # 않는다. 31종목이 아닌 부분 패널로 만든 이력은 운영과 다른 것이 된다.
+            # Reject partial panels; production decisions require all 31 symbols.
             return None
         rule[symbol] = rule_signal
         closes[symbol] = int(features[-1][FEATURE_ORDER.index("raw_close")])

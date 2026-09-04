@@ -74,9 +74,7 @@ def main() -> int:
             "reason=EXISTING_SESSION_SCAN_FAILED providerCalls=0"
         )
         return 2
-    # pinned 달력은 유한하다(실측 2006-09-04 ~ 2027-09-03). 연도 전체를 요구하면 마지막 해가
-    # 통째로 거부되어 캘린더가 연말에서 끊기고 그 뒤 arm 이 다음 세션을 못 찾는다. 그래서
-    # 요청 범위를 달력 경계까지 잘라서 채운다 - 부분 연도도 유효한 base 다.
+    # Clamp requests to the finite bounds of the pinned exchange calendar.
     try:
         calendar_first, calendar_last = xkrx_calendar_bounds()
     except RuntimeError:
@@ -108,12 +106,7 @@ def main() -> int:
             f"alreadyPresent={len(existing)} "
             f"clampedYears={clamped_marker} providerCalls=0"
         )
-        # clamp 는 정보다. 1년치를 요청하면 마지막 연도는 달력 핀 경계에 항상 걸리므로
-        # 캘린더가 한 번 채워진 뒤의 모든 실행이 여기로 온다 - 그것이 정상 정상상태다.
-        # 이미 clampedYears 로 적고 있으니 종료코드로 또 말하지 않는다.
-        #
-        # 실패로 남기는 경우는 하나다. 요청한 연도가 전부 달력 밖이어서 어떤 세션도 얻을
-        # 수 없는 것 - 그건 입력이 틀린 것이고 조용히 성공으로 둘 수 없다.
+        # A fully out-of-range request is invalid; an already populated range is healthy.
         if clamped and all(entry.endswith(":outside") for entry in clamped):
             return 2
         return 0

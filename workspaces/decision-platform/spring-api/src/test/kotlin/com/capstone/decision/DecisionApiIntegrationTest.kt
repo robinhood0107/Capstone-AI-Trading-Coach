@@ -899,6 +899,7 @@ class DecisionApiIntegrationTest(
         assertTrue(json(missing).at("/warnings").size() > 0)
 
         insertCompleteStoredSources(orderCount = 0)
+        insertConflictingInternalPaperAccounts()
         jdbcTemplate.update(
             """
             update market_quote_observations
@@ -1774,6 +1775,18 @@ class DecisionApiIntegrationTest(
             """.trimIndent(),
             EVALUATION_AT,
             EVALUATION_AT,
+        )
+    }
+
+    private fun insertConflictingInternalPaperAccounts() {
+        jdbcTemplate.update(
+            """
+            insert into paper_accounts(
+              account_id,user_id,name,cash_balance,currency,status,owner_scope_hash,margin_requirement_krw
+            ) values
+              ('acct_11111111111111111111111111111111','usr_demo_user','Paper one',10000000,'KRW','ACTIVE',repeat('e',64),0),
+              ('acct_22222222222222222222222222222222','usr_demo_user','Paper two',10000000,'KRW','ACTIVE',repeat('f',64),0)
+            """.trimIndent(),
         )
     }
 

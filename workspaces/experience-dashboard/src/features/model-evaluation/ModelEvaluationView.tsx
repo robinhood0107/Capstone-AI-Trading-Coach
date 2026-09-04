@@ -131,8 +131,8 @@ export function ModelEvaluationView() {
 
                   <Panel
                     contract="dashboard-model-evaluation.v1 · timeline"
-                    title="평가 타임라인"
-                    hint="이 실행에 기록된 시점별 값입니다."
+                    title="Guide 포트폴리오 평가액"
+                    hint={`운영 시작 뒤 ${view.timeline.length}거래일의 종가 기준 값입니다. 단기 표본이므로 성과를 단정하지 않습니다.`}
                   >
                     {view.timeline.length === 0 ? (
                       <div className="rounded-tile border border-dashed border-rule px-4 py-6">
@@ -143,7 +143,7 @@ export function ModelEvaluationView() {
                       </div>
                     ) : (
                       <ul className="max-h-56 divide-y divide-line/60 overflow-y-auto">
-                        {view.timeline.slice(0, 40).map((point) => (
+                        {view.timeline.map((point) => (
                           <li key={point.at} className="flex justify-between py-2 text-[13px]">
                             <span className="font-mono text-muted">{formatKstDateTime(point.at)}</span>
                             <span className="tnum font-mono text-ink">

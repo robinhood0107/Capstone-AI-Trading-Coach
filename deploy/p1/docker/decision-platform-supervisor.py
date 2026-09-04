@@ -76,8 +76,12 @@ def main() -> int:
         close_fds=True,
     )
     brokerage: subprocess.Popen[bytes] | None = None
-    brokerage_enabled = os.environ.get("KIS_MOCK_BROKERAGE_ONLINE_ENABLED", "false").lower() == "true"
-    automation_enabled = os.environ.get("P1_AUTOMATION_RUNTIME_ENABLED", "false").lower() == "true"
+    brokerage_enabled = (
+        os.environ.get("KIS_MOCK_BROKERAGE_ONLINE_ENABLED", "false").lower() == "true"
+    )
+    automation_enabled = (
+        os.environ.get("P1_AUTOMATION_RUNTIME_ENABLED", "false").lower() == "true"
+    )
     if automation_enabled and not brokerage_enabled:
         raise RuntimeError("automation runtime requires explicit KIS_MOCK online mode")
     if brokerage_enabled:
@@ -101,25 +105,28 @@ def main() -> int:
             ["python", "-m", "app.strong_llm.grpc_server"],
             close_fds=True,
         )
-    # 자동운용은 맨 마지막이다. 같은 컨테이너의 Spring API 로 로그인한 뒤에야 판단을 진행할 수
-    # 있는데, 둘을 동시에 띄우면 예약 시각이 이미 지난 상태에서 재기동할 때 런타임이 기동 즉시
-    # claim 해서 AI_JUDGING 까지 갔다가 아직 듣지 않는 8080 에 붙지 못하고 죽고, 수퍼바이저가
-    # 그것을 컨테이너 실패로 올려 재기동 루프가 된다. 실측으로 그 루프에 빠졌다.
-    #
-    # 평소에는 run_at 이 미래라 우연히 시간이 맞아 문제가 드러나지 않았을 뿐이다. 장중
-    # 재기동에서도 같은 일이 나므로 여기서 순서를 고정한다. 대기는 다른 프로세스를 전부 띄운
-    # 뒤에 한다 - Spring health 가 그들 중 하나에 의존하면 앞에서 기다리다 교착되기 때문이다.
+    # Start automation after Spring is ready to avoid restart loops during an overdue claim.
     automation: subprocess.Popen[bytes] | None = None
     if automation_enabled:
         if not _wait_for_spring(spring):
             _terminate(
                 tuple(
                     process
-                    for process in (worker, inference, spring, brokerage, rag_v2, strong_llm)
+                    for process in (
+                        worker,
+                        inference,
+                        spring,
+                        brokerage,
+                        rag_v2,
+                        strong_llm,
+                    )
                     if process is not None
                 )
             )
-            print("decision-platform: spring did not become ready for automation", file=sys.stderr)
+            print(
+                "decision-platform: spring did not become ready for automation",
+                file=sys.stderr,
+            )
             return 1
         automation = subprocess.Popen(
             ["python", "-m", "app.p1_owner.automation_runtime"],
@@ -127,7 +134,15 @@ def main() -> int:
         )
     processes = tuple(
         process
-        for process in (worker, inference, spring, brokerage, automation, rag_v2, strong_llm)
+        for process in (
+            worker,
+            inference,
+            spring,
+            brokerage,
+            automation,
+            rag_v2,
+            strong_llm,
+        )
         if process is not None
     )
     stopping = False

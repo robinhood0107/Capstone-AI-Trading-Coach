@@ -6,7 +6,9 @@ import { Panel } from '@/shared/ui/Panel';
 import { Button } from '@/shared/ui/Button';
 import { Numeric } from '@/shared/ui/Numeric';
 import { useResource, toErrorState } from '@/shared/lib/useResource';
-import { formatKstDate, formatKstDateTime, formatRatio } from '@/shared/lib/format';
+import { formatKstDateTime, formatRatio } from '@/shared/lib/format';
+import { safeExternalUrl } from '@/shared/api/session';
+import type { RagSourceResponse } from '@/shared/api/wire';
 import type { ViewState } from '@/shared/lib/viewState';
 import {
   EXTERNAL_DISCLOSURE,
@@ -279,33 +281,63 @@ export function RagGuideView() {
       </AsyncBoundary>
 
       <AsyncBoundary state={registry.state} onRetry={registry.reload}>
-        {(cards) => (
-          <Panel
-            contract="GET /api/v1/rag/sources"
-            title="이 시스템이 참고하는 자료"
-            hint="뉴스 원문은 넣지 않습니다. 검증된 출처 카드만 사용합니다."
-          >
-            {cards.length === 0 ? (
-              <p className="text-[13px] text-muted">등록된 출처가 없습니다.</p>
-            ) : (
-              <ul className="grid gap-x-8 gap-y-4 md:grid-cols-2">
-                {cards.map((card) => (
-                  <li key={card.sourceId} className="border-t border-line pt-3">
-                    <p className="text-[13px] font-medium text-ink">{card.title}</p>
-                    <p className="mt-1 text-[12px] text-muted">
-                      {card.institution} · {card.attribution}
-                    </p>
-                    {card.lastCheckedAt ? (
-                      <p className="mt-1 text-[11px] text-faint">확인 {formatKstDate(card.lastCheckedAt)}</p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
-        )}
+        {(cards) => <FinanceLibrary cards={cards} />}
       </AsyncBoundary>
     </div>
+  );
+}
+
+function FinanceLibrary({ cards }: { cards: RagSourceResponse[] }) {
+  const featured = cards.slice(0, 4);
+  const more = cards.slice(4);
+  return (
+    <Panel
+      contract="GET /api/v1/rag/sources"
+      title="금융 지식 라이브러리"
+      hint="RAG가 실제로 검색하는 금융 개념·상품 위험·성과 검증 자료입니다. 연동 API 문서는 화면에서 제외합니다."
+    >
+      {cards.length === 0 ? (
+        <p className="text-[13px] text-muted">등록된 금융 자료가 없습니다.</p>
+      ) : (
+        <>
+          <ul className="grid gap-3 md:grid-cols-2">
+            {featured.map((card) => <RegistryCard key={card.sourceId} card={card} />)}
+          </ul>
+          {more.length > 0 ? (
+            <details className="mt-4 border-t border-line pt-4">
+              <summary className="cursor-pointer text-[13px] font-medium text-navy">
+                연구 근거 {more.length}개 더 보기
+              </summary>
+              <ul className="mt-3 grid gap-3 md:grid-cols-2">
+                {more.map((card) => <RegistryCard key={card.sourceId} card={card} />)}
+              </ul>
+            </details>
+          ) : null}
+        </>
+      )}
+    </Panel>
+  );
+}
+
+function RegistryCard({ card }: { card: RagSourceResponse }) {
+  const href = safeExternalUrl(card.canonicalUrl);
+  const content = (
+    <>
+      <span className="inline-flex rounded-full bg-navy/5 px-2 py-1 text-[10px] font-semibold text-navy">
+        {card.topic}
+      </span>
+      <span className="mt-2 block text-[13px] font-medium leading-5 text-ink">{card.title}</span>
+      <span className="mt-1 block text-[11px] leading-5 text-faint">{card.institution}</span>
+    </>
+  );
+  return (
+    <li className="rounded-tile border border-line bg-panel px-4 py-3 transition-colors hover:border-navy/40">
+      {href ? (
+        <a href={href} target="_blank" rel="noopener noreferrer" className="block">
+          {content}
+        </a>
+      ) : content}
+    </li>
   );
 }
 

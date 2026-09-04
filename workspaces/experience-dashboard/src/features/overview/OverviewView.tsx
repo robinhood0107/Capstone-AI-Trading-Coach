@@ -59,7 +59,7 @@ export function OverviewView() {
                       {finite(data.risk.portfolioValue) ? (
                         formatKrw(data.risk.portfolioValue)
                       ) : (
-                        <span className="text-[22px] font-medium text-white/45">확인 중</span>
+                        <span className="text-[18px] font-medium text-white/65">KIS Mock 계좌 연결 필요</span>
                       )}
                     </p>
                     {finite(data.risk.dailyPnlRate) ? (

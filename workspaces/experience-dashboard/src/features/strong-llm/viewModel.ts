@@ -1,12 +1,4 @@
-/**
- * Strong LLM 설정 ViewModel.
- *
- *  1) GET /api/v2/rag/corpus-status      — 현재 설정, 키 마지막 네 글자, 오늘 사용량
- *  2) PUT /api/v2/strong-llm/settings    — 설정과 키 저장 (응답 본문 없음)
- *
- * 키는 이 화면에서 서버로 한 방향으로만 간다. 저장된 키는 돌아오지 않고 마지막 네 글자만
- * 온다. 그래서 입력칸은 늘 비어 있고, 비워 둔 채 저장하면 기존 키가 그대로 남는다.
- */
+/** Strong LLM settings projection; stored credentials never return to the browser. */
 import { api } from '@/shared/api/endpoints';
 import type { PutStrongLlmSettingsRequest, RagV2CorpusStatus } from '@/shared/api/wire';
 import { ready, type ViewState } from '@/shared/lib/viewState';

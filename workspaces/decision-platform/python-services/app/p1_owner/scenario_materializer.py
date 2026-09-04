@@ -30,7 +30,10 @@ _ROUND_TRIP_COST: Final = 0.0035
 _PERIODS_PER_YEAR: Final = 252
 _KST: Final = ZoneInfo("Asia/Seoul")
 _GOLD_SYMBOLS: Final = frozenset({"132030"})
-_IMPLEMENTATION_ID: Final = "owner-scenario-replay.v1.2"
+_EVALUATION_START: Final = date(2026, 8, 18)
+_EVALUATION_END: Final = date(2026, 9, 3)
+_EVALUATION_SESSION_COUNT: Final = 13
+_IMPLEMENTATION_ID: Final = "owner-scenario-replay.v1.3"
 
 
 class ScenarioMaterializationError(RuntimeError):
@@ -110,8 +113,32 @@ def _bars_by_symbol(value: dict[str, Any]) -> tuple[list[date], dict[str, list[d
     return sessions, dict(grouped)
 
 
-def _baseline_replay(sessions: list[date], bars: dict[str, list[dict[str, Any]]]) -> ReplayResult:
-    aggregate = {session: float(_UNALLOCATED_CASH) for session in sessions}
+def _evaluation_sessions(sessions: list[date], value: dict[str, Any]) -> list[date]:
+    try:
+        start = date.fromisoformat(str(value["evaluationStart"]))
+        end = date.fromisoformat(str(value["evaluationEnd"]))
+    except (KeyError, ValueError) as error:
+        raise ScenarioMaterializationError("SCENARIO_EVALUATION_WINDOW_INVALID") from error
+    selected = [session for session in sessions if start <= session <= end]
+    if (
+        start != _EVALUATION_START
+        or end != _EVALUATION_END
+        or len(selected) != _EVALUATION_SESSION_COUNT
+        or selected[0] != start
+        or selected[-1] != end
+    ):
+        raise ScenarioMaterializationError("SCENARIO_EVALUATION_WINDOW_INVALID")
+    return selected
+
+
+def _baseline_replay(
+    sessions: list[date],
+    bars: dict[str, list[dict[str, Any]]],
+    evaluation_sessions: list[date] | None = None,
+) -> ReplayResult:
+    selected = evaluation_sessions or sessions
+    selected_set = set(selected)
+    aggregate = {session: float(_UNALLOCATED_CASH) for session in selected}
     realized: list[tuple[float, float]] = []
     for symbol in sorted(bars):
         cash = float(_SYMBOL_CAPITAL)
@@ -119,16 +146,19 @@ def _baseline_replay(sessions: list[date], bars: dict[str, list[dict[str, Any]]]
         entry_price: float | None = None
         rows = bars[symbol]
         for index, row in enumerate(rows):
+            session = sessions[index]
+            if session not in selected_set:
+                continue
             price = float(row["close"])
             signal = "HOLD"
             try:
-                _, signal = _features_and_rule(rows[: index + 1], str(row["sessionDate"]))
+                _, signal = _features_and_rule(rows[:index], str(rows[index - 1]["sessionDate"]))
             except DailyInferenceError as error:
                 if not str(error).startswith("DAILY_INFERENCE_HISTORY_TOO_SHORT"):
                     raise ScenarioMaterializationError(
                         "SCENARIO_BASELINE_SIGNAL_INVALID"
                     ) from error
-            if signal == "BUY" and shares == 0 and index < len(rows) - 1:
+            if signal == "BUY" and shares == 0 and session != selected[-1]:
                 quantity = int(cash // (price * (1.0 + _ROUND_TRIP_COST / 2.0)))
                 if quantity > 0:
                     cash -= quantity * price * (1.0 + _ROUND_TRIP_COST / 2.0)
@@ -140,13 +170,13 @@ def _baseline_replay(sessions: list[date], bars: dict[str, list[dict[str, Any]]]
                     realized.append((entry_price, price))
                 shares = 0
                 entry_price = None
-            if index == len(rows) - 1 and shares > 0:
+            if session == selected[-1] and shares > 0:
                 cash += shares * price * (1.0 - _ROUND_TRIP_COST / 2.0)
                 if entry_price is not None:
                     realized.append((entry_price, price))
                 shares = 0
                 entry_price = None
-            aggregate[sessions[index]] += cash + shares * price
+            aggregate[session] += cash + shares * price
     return ReplayResult(sorted(aggregate.items()), realized)
 
 
@@ -154,10 +184,13 @@ def _guide_replay(
     sessions: list[date],
     bars: dict[str, list[dict[str, Any]]],
     model: ReturnInferenceModel,
+    evaluation_sessions: list[date] | None = None,
 ) -> tuple[ReplayResult, list[Trade]]:
     if set(model.symbols) != set(bars):
         raise ScenarioMaterializationError("SCENARIO_GUIDE_SYMBOLS_INVALID")
-    aggregate = {session: float(_UNALLOCATED_CASH) for session in sessions}
+    selected = evaluation_sessions or sessions
+    selected_set = set(selected)
+    aggregate = {session: float(_UNALLOCATED_CASH) for session in selected}
     trades: list[Trade] = []
     for symbol in sorted(bars):
         cash = float(_SYMBOL_CAPITAL)
@@ -166,14 +199,19 @@ def _guide_replay(
         entry_price: int | None = None
         rows = bars[symbol]
         for index, row in enumerate(rows):
+            session = sessions[index]
+            if session not in selected_set:
+                continue
             price = int(row["close"])
             signal = "HOLD"
             try:
                 features, rule_signal = _features_and_rule(
-                    rows[: index + 1], str(row["sessionDate"])
+                    rows[:index], str(rows[index - 1]["sessionDate"])
                 )
                 prediction = model._infer_symbol(
-                    symbol, float(price), np.asarray(features, dtype=np.float64)
+                    symbol,
+                    float(rows[index - 1]["close"]),
+                    np.asarray(features, dtype=np.float64),
                 )
                 if rule_signal == "BUY" and prediction.signal != "SELL":
                     signal = "BUY"
@@ -184,12 +222,12 @@ def _guide_replay(
                     raise ScenarioMaterializationError("SCENARIO_GUIDE_SIGNAL_INVALID") from error
             except ReturnInferenceError as error:
                 raise ScenarioMaterializationError("SCENARIO_GUIDE_INFERENCE_INVALID") from error
-            if signal == "BUY" and shares == 0 and index < len(rows) - 1:
+            if signal == "BUY" and shares == 0 and session != selected[-1]:
                 quantity = int(cash // (price * (1.0 + _ROUND_TRIP_COST / 2.0)))
                 if quantity > 0:
                     cash -= quantity * price * (1.0 + _ROUND_TRIP_COST / 2.0)
                     shares = quantity
-                    entry_session = sessions[index]
+                    entry_session = session
                     entry_price = price
             elif (
                 signal == "SELL"
@@ -198,26 +236,22 @@ def _guide_replay(
                 and entry_price is not None
             ):
                 cash += shares * price * (1.0 - _ROUND_TRIP_COST / 2.0)
-                trades.append(
-                    Trade(symbol, entry_session, sessions[index], shares, entry_price, price)
-                )
+                trades.append(Trade(symbol, entry_session, session, shares, entry_price, price))
                 shares = 0
                 entry_session = None
                 entry_price = None
             if (
-                index == len(rows) - 1
+                session == selected[-1]
                 and shares > 0
                 and entry_session is not None
                 and entry_price is not None
             ):
                 cash += shares * price * (1.0 - _ROUND_TRIP_COST / 2.0)
-                trades.append(
-                    Trade(symbol, entry_session, sessions[index], shares, entry_price, price)
-                )
+                trades.append(Trade(symbol, entry_session, session, shares, entry_price, price))
                 shares = 0
                 entry_session = None
                 entry_price = None
-            aggregate[sessions[index]] += cash + shares * price
+            aggregate[session] += cash + shares * price
     return ReplayResult(
         sorted(aggregate.items()),
         [(float(item.entry_price), float(item.exit_price)) for item in trades],
@@ -325,20 +359,23 @@ def _strict_replay(
 
 def _metrics(result: ReplayResult) -> dict[str, float | None]:
     values = np.asarray([value for _, value in result.curve], dtype=np.float64)
-    if values.size < 2 or np.any(~np.isfinite(values)) or np.any(values <= 0):
+    if values.size < 1 or np.any(~np.isfinite(values)) or np.any(values <= 0):
         raise ScenarioMaterializationError("SCENARIO_CURVE_INVALID")
-    returns = values[1:] / values[:-1] - 1.0
-    peaks = np.maximum.accumulate(values)
-    std = float(np.std(returns, ddof=1))
+    path = np.concatenate((np.asarray([float(_INITIAL_CAPITAL)]), values))
+    returns = path[1:] / path[:-1] - 1.0
+    peaks = np.maximum.accumulate(path)
+    std = float(np.std(returns, ddof=1)) if returns.size > 1 else 0.0
     downside = np.minimum(returns, 0.0)
     downside_deviation = float(np.sqrt(np.mean(np.square(downside))))
     var95 = float(np.quantile(returns, 0.05, method="linear"))
     tail = returns[returns <= var95]
-    years = (values.size - 1) / _PERIODS_PER_YEAR
+    years = values.size / _PERIODS_PER_YEAR
     wins = sum(exit_price > entry_price for entry_price, exit_price in result.trades)
     return {
-        "cagr": float(math.expm1(math.log(values[-1] / values[0]) / years)) if years > 0 else None,
-        "mdd": float(np.min(values / peaks - 1.0)),
+        "cagr": float(math.expm1(math.log(values[-1] / _INITIAL_CAPITAL) / years))
+        if years > 0
+        else None,
+        "mdd": float(np.min(path / peaks - 1.0)),
         "sharpe": float(np.mean(returns) / std * math.sqrt(_PERIODS_PER_YEAR)) if std > 0 else None,
         "sortino": (
             float(np.mean(returns) / downside_deviation * math.sqrt(_PERIODS_PER_YEAR))
@@ -347,7 +384,7 @@ def _metrics(result: ReplayResult) -> dict[str, float | None]:
         ),
         "var95": var95,
         "cvar95": float(np.mean(tail)) if tail.size else None,
-        "netReturn": float(values[-1] / values[0] - 1.0),
+        "netReturn": float(values[-1] / _INITIAL_CAPITAL - 1.0),
         "tradeCount": float(len(result.trades)),
         "winRate": float(wins / len(result.trades)) if result.trades else None,
         "principleViolationCount": float(result.violation_count),
@@ -357,7 +394,10 @@ def _metrics(result: ReplayResult) -> dict[str, float | None]:
 def _curve_rows(result: ReplayResult) -> list[dict[str, object]]:
     return [
         {
-            "at": datetime.combine(session, time.min, UTC).isoformat().replace("+00:00", "Z"),
+            "at": datetime.combine(session, time(15, 30), _KST)
+            .astimezone(UTC)
+            .isoformat()
+            .replace("+00:00", "Z"),
             "value": value,
         }
         for session, value in result.curve
@@ -404,14 +444,15 @@ def materialize(bundle_root: Path, dsn: str) -> dict[str, object]:
     if db_input.get("bundleSha256") != validated.bundle_sha256:
         raise ScenarioMaterializationError("SCENARIO_BUNDLE_POINTER_MISMATCH")
     sessions, bars = _bars_by_symbol(db_input)
+    evaluation_sessions = _evaluation_sessions(sessions, db_input)
     inference_model = ReturnInferenceModel.load(
         bundle_root=bundle_root,
         manifest_sha256=validated.manifest_sha256,
         allow_synthetic=False,
     )
-    baseline = _baseline_replay(sessions, bars)
-    guide, guide_trades = _guide_replay(sessions, bars, inference_model)
-    strict = _strict_replay(sessions, bars, guide_trades, db_input.get("rules"))
+    baseline = _baseline_replay(sessions, bars, evaluation_sessions)
+    guide, guide_trades = _guide_replay(sessions, bars, inference_model, evaluation_sessions)
+    strict = _strict_replay(evaluation_sessions, bars, guide_trades, db_input.get("rules"))
     results = {"Baseline": baseline, "Guide": guide, "Strict": strict}
     metrics = {name: _metrics(result) for name, result in results.items()}
     identity = _sha(
@@ -423,6 +464,8 @@ def materialize(bundle_root: Path, dsn: str) -> dict[str, object]:
                 "bars": db_input["bars"],
                 "rules": db_input["rules"],
                 "costBps": 35,
+                "evaluationStart": evaluation_sessions[0].isoformat(),
+                "evaluationEnd": evaluation_sessions[-1].isoformat(),
             }
         )
     )
@@ -517,6 +560,7 @@ def materialize(bundle_root: Path, dsn: str) -> dict[str, object]:
         "status": str(row[0]) if row else "UNKNOWN",
         "runId": run_id,
         "sessions": len(sessions),
+        "evaluationSessions": len(evaluation_sessions),
         "symbols": len(bars),
         "providerCalls": 0,
     }

@@ -36,6 +36,7 @@ cd Capstone-AI-Trading-Coach
 ```bash
 ./capstone mock configure
 ./capstone mock doctor
+./capstone mock certify --symbol 005930 --quantity 1
 ./capstone up --mock
 ./capstone mock gate-author
 ./capstone mock readiness
@@ -43,7 +44,7 @@ cd Capstone-AI-Trading-Coach
 ```
 
 `MOCK_READINESS=PASS`와 `MOCK_START=PASS`가 출력되어야 다음 XKRX 세션이 예약됩니다. 처음 계좌를
-연결한 환경은 거래시간에 `mock certify`가 한 번 필요할 수 있으며, 이 명령은 실제 KIS 모의주문과
+연결한 환경은 거래시간에 `mock certify`가 한 번 필요하며, 이 명령은 실제 KIS 모의주문과
 취소를 수행합니다. 자세한 조건은 아래 **KIS 투자계좌 연결과 자동매매 시작**을 따릅니다. KIS Live는
 별도 명시적 설정 없이는 실행되지 않습니다.
 
@@ -656,6 +657,10 @@ PYTHONPATH=src uv run python -m return_engine --help
 - [동일 환경 재현 가이드](docs/decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md)
 - [Automation V3 설계](docs/decision-platform/P1_AUTOMATION_V3_AI_EVIDENCE_EXIT_POLICY.md)
 - [장외 전수 replay](docs/decision-platform/P1_AFTER_HOURS_FULL_REPLAY.md)
+- [P1 최종 종료 명세](docs/P1_최종_종료_명세_20260904.md)
+- [AWS EC2 단일 사용자 배포](docs/AWS_EC2_단일사용자_배포.md)
+- [AWS 다중 사용자 최소 전환 TODO](docs/AWS_다중사용자_최소전환_TODO.md)
+- [Kafka/S1.4X 후속 실험 프롬프트](docs/NEXT_capstone-p1-lab_Kafka_S1.4X_실행_프롬프트.md)
 
 ## README를 수정할 때
 

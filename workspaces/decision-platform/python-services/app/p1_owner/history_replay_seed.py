@@ -1,38 +1,4 @@
-"""1단계가 계산한 신호를 자동운용 이력으로 적재한다 (재생 2단계).
-
-## 무엇을 하는가
-
-`history_replay_signals` 가 낸 JSON(세션별 31종목 RULE·LSTM 신호)을 읽어 그 신호로 세션을
-순서대로 진행시키고, 결과를 자동운용 이력 표에 쓴다.
-
-    진입   RULE BUY 이고 LSTM 이 SELL 이 아닌 종목 중 expectedReturn 최상위 1종목
-           (automation._buy_candidates 와 같은 판정·같은 정렬)
-    사이징 정책 자본 한도 // 동시보유 상한. 실측으로 오늘 세션이 18주 x 550,000 =
-           9,900,000 <= 슬롯 10,000,000 이었고 같은 식이다
-    청산   손절 stop_loss_bps · 익절 take_profit_bps · 모델매도(2-of-2 SELL)
-           정책 v8 은 max_holding_sessions 가 없어 보유기간 만료 청산이 없다
-
-## 무엇을 하지 않는가
-
-- **감사 체인을 건드리지 않는다.** `market_data_manifests` 는 head 연결을 강제하는 체인이고
-  `p1_return_daily_signal_batch` 는 append-only 다. 과거 행을 끼워 넣으면 둘 다 거짓이 된다.
-- **`orders` 를 만들지 않는다.** 브로커에 실제로 나간 주문이 아니기 때문이다. 대시보드가 읽는
-  것은 `automation_runs`·`automation_order_reservations`·`automation_positions` 셋이다.
-- **`brokerage_mode` 는 전부 `INTERNAL_PAPER`** 다. 실제 KIS Mock 체결과 데이터에서 구분된다.
-
-## 체결 모형 (명시)
-
-세션 종가에 전량 체결된다고 본다. 슬리피지 0, 수수료 0이다. 과거 호가창이 없으므로 부분체결과
-미체결을 재현할 방법이 없다. 이 가정은 실현손익을 낙관적으로 만들 수 있고, 그래서
-`brokerage_mode` 로 실제 체결과 구분해 둔다.
-
-## 경계
-
-`team_a_acceptance_seed` 와 같다 - superuser + `p1_offline_demo_authority` + advisory lock.
-자동운용 표는 전부 RLS FORCE 라 superuser 만 자유 INSERT 가 가능하고 `automation_events` 는
-append-only 다. 그래서 id 를 세션일에서 결정론적으로 유도하고 `ON CONFLICT` 로 멱등하게 만든다.
-두 번 돌려도 같은 상태이고, 그것이 팀원 재현의 조건이다.
-"""
+"""Persist deterministic INTERNAL_PAPER history from computed signal panels."""
 
 from __future__ import annotations
 
@@ -61,7 +27,7 @@ _REPLAY_ACCOUNT_ID: Final = "acct_dddddddddddddddddddddddddddddddd"
 
 
 class HistoryReplaySeedError(RuntimeError):
-    """재생을 완결할 수 없으면 조용히 건너뛰지 않고 사유를 남기고 멈춘다."""
+    """Raised when a complete replay cannot be persisted."""
 
 
 def _digest(*parts: str) -> str:
@@ -73,9 +39,7 @@ def _run_id(session: date) -> str:
 
 
 def _reservation_id(session: date, symbol: str) -> str:
-    # 예약 id 는 `auto_res_` + 정확히 32 hex 만 허용한다(automation_order_reservations
-    # _reservation_id_check). 그래서 다른 id 들과 달리 접두사에 replay 를 넣지 못한다 -
-    # 재생 여부는 run_id 와 brokerage_mode 로 구분한다.
+    # Reservation IDs have a fixed prefix and 32-character hexadecimal body.
     return f"auto_res_{_digest('res', session.isoformat(), symbol)[:32]}"
 
 
@@ -84,13 +48,7 @@ def _position_id(session: date, symbol: str) -> str:
 
 
 def _entry_order_id(session: date, symbol: str) -> str:
-    """포지션 v2 형태가 요구하는 진입 주문 식별자.
-
-    `orders` 행은 만들지 않는다 - 브로커에 실제로 나간 주문이 아니기 때문이다.
-    `automation_positions.entry_order_id` 에는 FK 가 없고 형식 제약만 있으므로,
-    재생 안에서 결정론적으로 유도한 값을 쓴다. FK 가 있는
-    `automation_order_reservations.order_id` 는 NULL 로 둔다.
-    """
+    """Derive a stable entry identifier without creating a brokerage order."""
 
     return f"ord_mock_{_digest('ord', session.isoformat(), symbol)[:32]}"
 

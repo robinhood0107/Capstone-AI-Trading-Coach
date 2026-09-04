@@ -1,12 +1,6 @@
 import type { ReactNode } from 'react';
 
-/**
- * 비어 있음 / 막힘 / 오래됨을 한 가지 형태로 표현한다.
- *
- * 이전에는 같은 "데이터 없음"이 화면마다 border-dashed px-4 py-6, py-5, py-4 등
- * 5가지 마크업으로 갈려 있었다. 빈 화면은 사용자가 가장 자주 마주치는 상태이므로
- * 여기서 형태를 고정하고, 각 화면은 무엇이 없고 다음에 무엇을 하면 되는지만 채운다.
- */
+/** Shared presentation for empty, blocked, and unavailable content. */
 export function EmptyState({
   title,
   description,
@@ -38,10 +32,7 @@ const TONE: Record<Tone, string> = {
   neutral: 'border-rule text-muted',
 };
 
-/**
- * 상태 badge. 같은 상태가 화면마다 다른 색으로 보이면 신뢰를 잃으므로
- * tone 매핑을 한 곳에서만 정의한다.
- */
+/** Central status-to-color mapping. */
 export function Badge({ tone = 'neutral', children }: { tone?: Tone; children: ReactNode }) {
   return (
     <span
@@ -52,10 +43,7 @@ export function Badge({ tone = 'neutral', children }: { tone?: Tone; children: R
   );
 }
 
-/**
- * 표 껍데기. 5개 화면이 각자 table 마크업을 손으로 짜고 있어 헤더 정렬과
- * 셀 padding이 제각각이었다. 숫자 열은 우측 정렬 + tabular-nums가 기본이다.
- */
+/** Shared table layout with numeric-column alignment. */
 export function DataTable({
   caption,
   head,

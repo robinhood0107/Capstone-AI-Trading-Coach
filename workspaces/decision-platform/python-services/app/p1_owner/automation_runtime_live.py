@@ -141,14 +141,7 @@ class SpringAutomationBridgeClient:
         self._client = httpx.Client(
             base_url="http://127.0.0.1:8080",
             transport=transport or httpx.HTTPTransport(retries=0),
-            # 연결은 loopback 이라 짧게 잡아도 되지만 응답은 그렇지 않다. BALANCE·BUYABLE·SUBMIT
-            # 은 Spring 을 거쳐 KIS Mock 의 실제 HTTP 까지 가고, KIS 호출 자체가 8초의 IO 예산을
-            # 쓴다(`io_budget_seconds=8.0`). 그런데 전체 타임아웃이 2초여서 이 세 명령은 구조적으로
-            # 완주할 수 없었다.
-            #
-            # 실측으로 그 때문에 ORDER_SIZING 이 매번 `httpx.ReadTimeout` 으로 닫혔다. 전송 예외라
-            # AutomationRuntimeError 재시도에도 걸리지 않아 런타임 프로세스가 그대로 죽었다.
-            # 읽기는 KIS 예산보다 넉넉히 두고 연결·쓰기는 그대로 짧게 둔다.
+            # Read timeout exceeds the downstream KIS I/O budget; loopback connect remains short.
             timeout=httpx.Timeout(connect=2.0, read=20.0, write=5.0, pool=2.0),
             follow_redirects=False,
             trust_env=False,

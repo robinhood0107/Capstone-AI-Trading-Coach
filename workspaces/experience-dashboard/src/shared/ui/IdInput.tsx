@@ -13,10 +13,7 @@ interface IdInputProps {
   presets?: { id: string; label: string }[];
 }
 
-/**
- * 서버가 강제하는 ID 형식을 화면에서 먼저 검사한다.
- * 형식이 틀린 요청을 굳이 보내서 400을 받는 대신, 왜 틀렸는지 그 자리에서 알려주는 편이 낫다.
- */
+/** Mirrors server ID validation for immediate form feedback. */
 export function IdInput({
   label,
   hint,

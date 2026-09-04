@@ -14,9 +14,7 @@ from app.strong_llm.prompt import render_prompt
 from app.strong_llm.runtime import ProviderResult, StrongLlmProvider
 from app.strong_llm.vertex_provider import LangChainVertexProvider, VertexProviderSettings
 
-# Strong LLM은 교체 가능해야 한다. 어떤 벤더든 같은 프롬프트를 받고 같은 출력 계약을 통과한다.
-# `vertex`만 서비스계정과 Google grounding을 쓰고 나머지는 API 키 하나로 붙는다. `custom`은
-# 사용자가 직접 넣는 OpenAI 호환 endpoint다 - 모델 이름도 base_url도 우리가 알지 못한다.
+# Every provider must satisfy the same prompt and structured-output contract.
 _LANGCHAIN_PROVIDER = {
     "openai": "openai",
     "anthropic": "anthropic",
@@ -25,7 +23,7 @@ _LANGCHAIN_PROVIDER = {
 }
 SUPPORTED_PROVIDERS = ("vertex", *sorted(_LANGCHAIN_PROVIDER))
 
-# provider마다 출력 상한의 인자 이름이 다르다. 이 표가 유일한 차이라 분기 대신 표로 둔다.
+# Providers use different names for the output-token limit.
 _MAX_TOKEN_KWARG = {"google_genai": "max_output_tokens"}
 
 

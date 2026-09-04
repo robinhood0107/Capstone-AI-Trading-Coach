@@ -10,6 +10,8 @@ from app.p1_owner.scenario_materializer import (
     Trade,
     _baseline_replay,
     _bars_by_symbol,
+    _curve_rows,
+    _evaluation_sessions,
     _metrics,
     _strict_replay,
 )
@@ -73,6 +75,42 @@ def test_metrics_keep_undefined_ratios_null_instead_of_zero() -> None:
     assert metrics["sharpe"] is None
     assert metrics["sortino"] is None
     assert metrics["winRate"] is None
+
+
+def test_metrics_use_initial_capital_before_the_first_visible_session() -> None:
+    metrics = _metrics(ReplayResult([(date(2026, 8, 18), 9_000_000.0)], []))
+
+    assert metrics["netReturn"] == pytest.approx(-0.1)
+    assert metrics["mdd"] == pytest.approx(-0.1)
+
+
+def test_demo_window_starts_on_the_first_session_after_the_substitute_holiday() -> None:
+    evaluation = [
+        date(2026, 8, 18),
+        date(2026, 8, 19),
+        date(2026, 8, 20),
+        date(2026, 8, 21),
+        date(2026, 8, 24),
+        date(2026, 8, 25),
+        date(2026, 8, 26),
+        date(2026, 8, 27),
+        date(2026, 8, 28),
+        date(2026, 8, 31),
+        date(2026, 9, 1),
+        date(2026, 9, 2),
+        date(2026, 9, 3),
+    ]
+    context = [date(2026, 5, 19) + timedelta(days=index) for index in range(91)] + evaluation
+
+    selected = _evaluation_sessions(
+        context,
+        {"evaluationStart": "2026-08-18", "evaluationEnd": "2026-09-03"},
+    )
+
+    assert selected == evaluation
+    assert _curve_rows(ReplayResult([(selected[0], 10_000_000.0)], []))[0]["at"] == (
+        "2026-08-18T06:30:00Z"
+    )
 
 
 def test_strict_replay_counts_and_blocks_an_order_above_the_saved_limit() -> None:

@@ -162,9 +162,7 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
                 request.estimated_price_krw,
             )
         except Exception as error:
-            # 원인 분류만 남긴다. 계좌번호·토큰·응답 본문은 넣지 않는다. 이것이 없으면 호출자는
-            # 언제나 "unavailable" 만 보게 되고, 실측으로 그 때문에 PERMISSION_DENIED 와
-            # 전송 장애를 구분하지 못해 원인 추적이 막혔다.
+            # Preserve the error class without exposing account or provider payloads.
             _abort(
                 context,
                 grpc.StatusCode.UNAVAILABLE,

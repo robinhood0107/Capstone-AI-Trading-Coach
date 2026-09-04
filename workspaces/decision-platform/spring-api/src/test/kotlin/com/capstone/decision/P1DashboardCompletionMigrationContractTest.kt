@@ -61,4 +61,31 @@ class P1DashboardCompletionMigrationContractTest {
         )
         assertThat(migration).doesNotContain("GRANT SELECT ON", "TRUNCATE", "DROP TABLE")
     }
+
+    @Test
+    fun `V127 fixes the demo window and selects the newest published projection`() {
+        val migration = Files.readString(directory.resolve("V127__owner_demo_evaluation_window.sql"))
+
+        assertThat(migration).contains(
+            "session_date <= DATE '2026-09-03'",
+            "'evaluationStart','2026-08-18'",
+            "'evaluationEnd','2026-09-03'",
+            "item.published_at DESC",
+        )
+        assertThat(migration).doesNotContain("TRUNCATE", "DROP TABLE")
+    }
+
+    @Test
+    fun `V128 projects a bounded finance source catalog from the active RAG bundle`() {
+        val migration = Files.readString(directory.resolve("V128__rag_user_finance_source_catalog.sql"))
+
+        assertThat(migration).contains(
+            "rag_user_finance_source_catalog",
+            "rag_v2_immutable_source_revisions",
+            "rag_v2_immutable_public_bundle_pointers",
+            "NOT ('API'=ANY(source.retrieval_topics))",
+            "LIMIT 8",
+        )
+        assertThat(migration).doesNotContain("TRUNCATE", "DROP TABLE", "UPSTREAM_REFERENCE")
+    }
 }

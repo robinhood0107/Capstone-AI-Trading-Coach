@@ -45,11 +45,7 @@ export function decisionGloss(status: DecisionAction): string {
   return TONE[status].gloss;
 }
 
-/**
- * 배지는 채도 높은 면 대신 옅은 톤 + 점으로 바꿨다.
- * 한 화면에 배지가 10개 넘게 깔리는 표에서 원색 블록은 판정 자체보다 시끄러워진다.
- * 영문 토큰(ALLOW…)은 계약값이므로 지우지 않고 뒤에 작게 유지한다.
- */
+/** Shows the localized label while preserving the decision contract token. */
 export function DecisionBadge({ status, size = 'md' }: { status: DecisionAction; size?: 'sm' | 'md' }) {
   const tone = TONE[status];
   const dims = size === 'sm' ? 'px-2.5 py-0.5 text-[12px]' : 'px-3 py-1 text-[13px]';
@@ -64,11 +60,7 @@ export function DecisionBadge({ status, size = 'md' }: { status: DecisionAction;
   );
 }
 
-/**
- * 판정 레일 — 이 대시보드의 signature.
- * 4개 정지점을 우선순위 순서로 깔고 현재 판정만 점등한다.
- * 사용자가 "왜 BLOCK이 WARN을 이기는가"를 화면 구조에서 바로 읽게 하는 것이 목적이다.
- */
+/** Displays the fixed decision precedence and the active outcome. */
 export function DecisionRail({ status }: { status: DecisionAction }) {
   const activeIndex = PRECEDENCE.indexOf(status);
   return (

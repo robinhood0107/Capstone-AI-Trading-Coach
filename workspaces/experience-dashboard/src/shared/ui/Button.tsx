@@ -9,7 +9,12 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
 }
 
-/** Shared button variants; authorization remains server-owned. */
+/**
+ * 화면 전체에서 button 형태를 하나로 고정한다. authorization은 여전히 서버가 갖는다.
+ *
+ * 모양은 rounded-control(10px)로 고정한다. 라운드는 목록·표·패널이 아니라
+ * 실제로 누르는 대상에만 쓴다는 원칙에 따라, 여기서만 정의하고 다른 곳은 각지게 둔다.
+ */
 const VARIANT: Record<Variant, string> = {
   primary:
     'border-brand bg-brand text-on-brand hover:opacity-90 disabled:border-line disabled:bg-line disabled:text-faint',
@@ -37,7 +42,7 @@ export function Button({
   return (
     <button
       type={type}
-      className={`inline-flex items-center justify-center gap-2 rounded-full border font-medium tracking-tight transition-colors disabled:cursor-not-allowed ${VARIANT[variant]} ${SIZE[size]} ${className}`}
+      className={`tap inline-flex items-center justify-center gap-2 rounded-control border font-medium tracking-tight transition-colors disabled:cursor-not-allowed ${VARIANT[variant]} ${SIZE[size]} ${className}`}
       {...rest}
     >
       {children}

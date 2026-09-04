@@ -69,8 +69,8 @@ export function ThemeToggle() {
               setChoice(option.value);
               apply(option.value);
             }}
-            className={`rounded-full px-2.5 py-1 text-[12px] ${
-              active ? 'bg-panel font-semibold text-ink shadow-card' : 'font-medium text-faint hover:text-ink'
+            className={`tap rounded-full px-2.5 py-1 text-[12px] transition-colors ${
+              active ? 'bg-panel font-semibold text-navy' : 'font-medium text-faint hover:text-ink'
             }`}
           >
             {option.label}

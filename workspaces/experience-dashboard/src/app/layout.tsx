@@ -31,7 +31,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <div className="flex items-center gap-3 px-2">
                 <span
                   aria-hidden
-                  className="grid h-10 w-10 shrink-0 place-items-center rounded-tile bg-brand text-[13px] font-semibold tracking-tight text-on-brand"
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-control bg-brand text-[13px] font-semibold tracking-tight text-on-brand"
                 >
                   AI
                 </span>

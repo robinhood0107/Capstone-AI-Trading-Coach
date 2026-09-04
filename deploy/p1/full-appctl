@@ -491,7 +491,9 @@ up_app() {
   local scenario_materialization
   scenario_materialization=$(compose --profile owner run --rm --no-deps owner-scenario-materializer 2>&1 \
     | tail -1) || scenario_materialization=''
-  if [[ $scenario_materialization == *'"providerCalls":0'* && $scenario_materialization == *'"sessions":104'* ]]; then
+  if [[ $scenario_materialization == *'"providerCalls":0'* &&
+        $scenario_materialization == *'"sessions":104'* &&
+        $scenario_materialization == *'"evaluationSessions":13'* ]]; then
     printf 'CAPSTONE_OWNER_SCENARIOS=MATERIALIZED\n'
   else
     printf 'CAPSTONE_OWNER_SCENARIOS=UNAVAILABLE\n'

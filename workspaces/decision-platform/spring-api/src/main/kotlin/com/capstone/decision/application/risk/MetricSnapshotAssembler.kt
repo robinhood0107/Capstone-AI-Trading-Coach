@@ -65,6 +65,8 @@ data class PortfolioRiskAssemblyRequest(
 data class PortfolioRiskAssembly(
     val latestPrice: MetricCell<MetricValue>,
     val portfolioValue: MetricCell<MetricValue>,
+    // 읽기 화면은 stale 상태와 함께 마지막 관측을 표시한다.
+    val portfolioValueLastKnown: MetricCell<MetricValue>,
     val dailyPnlRate: MetricCell<MetricValue>,
     val maxDrawdown: MetricCell<MetricValue>,
     val annualizedVolatility: MetricCell<MetricValue>,
@@ -107,13 +109,14 @@ class MetricSnapshotAssembler(
                 },
                 MetricUnit.KRW,
             ).atAsOf(request.evaluationAsOf)
-        val balance =
+        val observedBalance =
             validateBalance(
                 sourceCallCoordinator.call(deadline, sourceError()) {
                     selectedBalancePort(request.portfolioContext.source).loadPortfolio(sourceRequest)
                 },
                 request.portfolioContext,
-            ).atAsOf(request.evaluationAsOf)
+            )
+        val balance = observedBalance.atAsOf(request.evaluationAsOf)
         val risk =
             sourceCallCoordinator.call(deadline, unavailableRisk()) {
                 riskSnapshotPort.loadPortfolio(sourceRequest)
@@ -129,6 +132,16 @@ class MetricSnapshotAssembler(
                         )
 
                     else -> unavailableMetric(balance)
+                },
+            portfolioValueLastKnown =
+                when (observedBalance) {
+                    is MetricCell.Available ->
+                        fromAvailable(
+                            observedBalance,
+                            MetricValue.Whole(observedBalance.value.portfolioEquityKrw, MetricUnit.KRW),
+                        )
+
+                    else -> unavailableMetric(observedBalance)
                 },
             dailyPnlRate =
                 validateDecimalMetric(

@@ -5,7 +5,7 @@ import { mockTransport, mockBareTransport } from '@/shared/mock/transport';
 export type ApiMode = 'mock' | 'live';
 
 export function apiMode(): ApiMode {
-  return process.env.NEXT_PUBLIC_API_MODE === 'live' ? 'live' : 'mock';
+  return process.env.NEXT_PUBLIC_API_MODE === 'mock' ? 'mock' : 'live';
 }
 
 export function baseUrl(): string {
@@ -33,7 +33,7 @@ export function newIdempotencyKey(purpose: string): string {
 }
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   /** 금융 부작용이 있는 write와 RAG ask에만 부여한다. */
   idempotencyKey?: string;

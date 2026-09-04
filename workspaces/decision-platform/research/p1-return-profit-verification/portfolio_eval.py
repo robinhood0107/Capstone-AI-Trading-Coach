@@ -144,6 +144,13 @@ def simulate(
 def describe(equity: pd.Series, label: str) -> dict[str, object]:
     rets = simple_returns(equity.to_numpy())
     years = len(equity) / 252.0
+    # VaR/CVaR 는 대시보드 모델 비교가 요구하는 지표다(dashboard-model-evaluation.v1).
+    # 여기서 같은 일별 수익률 계열로 계산해 화면과 연구가 같은 숫자를 보게 한다. 부호는
+    # 손실을 음수로 두는 이 레포의 관례(mdd 와 같은 방향)를 따른다.
+    losses = np.sort(np.asarray(rets, dtype=float))
+    var95 = float(np.quantile(losses, 0.05)) if losses.size else float("nan")
+    tail = losses[losses <= var95]
+    cvar95 = float(tail.mean()) if tail.size else var95
     return {
         "label": label,
         "years": round(years, 1),
@@ -153,6 +160,8 @@ def describe(equity: pd.Series, label: str) -> dict[str, object]:
         "sharpe": round(float(sharpe_ratio(rets)), 4),
         "sortino": round(float(sortino_ratio(rets)), 4),
         "mdd": round(float(max_drawdown(equity.to_numpy())), 4),
+        "var95": round(var95, 6),
+        "cvar95": round(cvar95, 6),
         "finalEquity": round(float(equity.iloc[-1]), 4),
     }
 

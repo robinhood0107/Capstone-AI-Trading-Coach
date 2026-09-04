@@ -932,8 +932,26 @@ def _require_schema_version(
         LIMIT 1
         """
     ).fetchone()
-    if row != (expected,) and (not row or row[0] not in compatible):
+    if row is None:
         raise PublicRagSeedError("PUBLIC_RAG_SEED_SCHEMA_VERSION")
+    applied = str(row[0])
+    if applied != expected and applied not in compatible and not _at_least(applied, expected):
+        raise PublicRagSeedError("PUBLIC_RAG_SEED_SCHEMA_VERSION")
+
+
+def _at_least(applied: str, expected: str) -> bool:
+    """적용된 버전이 기대 버전보다 오래되지 않았는가.
+
+    봉인된 Seed 는 authoring 시점의 스키마에 바이트로 묶여 있지만, 그 뒤의 추가 migration 을
+    하나씩 열거하도록 두면 migration 을 넣을 때마다 이 목록도 고쳐야 하고 잊으면 `up` 이
+    조용히 멈춘다(실제로 V120 에서 그렇게 멈췄다). 요구사항의 본질은 하한이므로 하한으로
+    검사한다. 숫자가 아닌 버전은 여기서 판정하지 않고 `compatible` 에 명시한다.
+    """
+
+    try:
+        return int(applied) >= int(expected)
+    except ValueError:
+        return False
 
 
 def _non_generated_columns(connection: psycopg.Connection[Any], table_name: str) -> tuple[str, ...]:

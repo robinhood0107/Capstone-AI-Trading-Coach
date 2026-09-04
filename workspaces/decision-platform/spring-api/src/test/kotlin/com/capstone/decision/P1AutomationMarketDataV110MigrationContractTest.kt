@@ -30,7 +30,7 @@ class P1AutomationMarketDataV110MigrationContractTest {
     }
 
     @Test
-    fun `V110 is the next migration and historical V75 stays immutable`() {
+    fun `V110 remains unique and historical V75 stays immutable`() {
         val versions =
             Files.list(migrationDirectory).use { paths ->
                 paths
@@ -43,7 +43,7 @@ class P1AutomationMarketDataV110MigrationContractTest {
                             .toInt()
                     }.toList()
             }
-        assertThat(versions.max()).isEqualTo(119)
+        assertThat(versions.count { it == 110 }).isEqualTo(1)
         assertThat(migrationDirectory.resolve("V75__s5_7b_market_data_archive.sql")).isRegularFile()
     }
 }

@@ -11,6 +11,7 @@ import pytest
 from app.rag.pre_s5_provider_control import (
     PreS5ProviderActivationError,
     PreS5ProviderBinding,
+    load_rag_v2_query_database_dsn,
     load_optional_pre_s5_voyage_query_runtime_configuration,
     load_pre_s5_voyage_activation,
     load_pre_s5_voyage_document_batch_activation,
@@ -483,6 +484,24 @@ def test_voyage_query_writer_dsn_requires_a_local_secret_leaf(tmp_path: Path) ->
     os.chmod(dsn_path, 0o640)
     with pytest.raises(PreS5ProviderActivationError):
         load_pre_s5_voyage_query_writer_database_dsn(local_root=tmp_path)
+
+
+def test_rag_v2_query_dsn_requires_the_same_owner_only_secret_boundary(tmp_path: Path) -> None:
+    _secure_root(tmp_path)
+    secrets = tmp_path / "secrets"
+    secrets.mkdir(mode=0o700)
+    dsn_path = secrets / "rag-v2-query-database-dsn"
+    dsn_path.write_text("postgresql://decision_rag_query@localhost/rag", encoding="utf-8")
+    os.chmod(dsn_path, 0o600)
+
+    assert (
+        load_rag_v2_query_database_dsn(local_root=tmp_path)
+        == "postgresql://decision_rag_query@localhost/rag"
+    )
+
+    os.chmod(dsn_path, 0o640)
+    with pytest.raises(PreS5ProviderActivationError):
+        load_rag_v2_query_database_dsn(local_root=tmp_path)
 
 
 def _packet(*, now: datetime) -> dict[str, object]:

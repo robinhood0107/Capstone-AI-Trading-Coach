@@ -2637,6 +2637,30 @@ BEGIN
 END
 $p1_v113_automation_v3_privileges$;
 
+DO $p1_dashboard_completion_privileges$
+BEGIN
+    IF to_regprocedure('public.latest_dashboard_artifact_run_authorized(text,text,bigint,text)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            public.latest_dashboard_artifact_run_authorized(text,text,bigint,text)
+        TO decision_app;
+    END IF;
+    IF to_regprocedure('public.latest_dashboard_risk_result_authorized(text,text,bigint)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            public.latest_dashboard_risk_result_authorized(text,text,bigint),
+            public.recent_dashboard_risk_results_authorized(text,text,bigint)
+        TO decision_app;
+    END IF;
+    IF to_regprocedure('public.read_owner_scenario_materialization_inputs_v1(text)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            public.read_owner_scenario_materialization_inputs_v1(text),
+            public.publish_owner_scenario_dashboard_v1(
+                text,text,text,text,text,text,text,text,timestamptz,timestamptz
+            )
+        TO decision_worker;
+    END IF;
+END
+$p1_dashboard_completion_privileges$;
+
 
 DO $block$
 BEGIN

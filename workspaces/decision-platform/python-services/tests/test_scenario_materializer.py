@@ -57,11 +57,7 @@ def test_database_input_rejects_out_of_order_sessions() -> None:
     sessions = _sessions()
     value = {
         "sessions": [session.isoformat() for session in reversed(sessions)],
-        "bars": [
-            {"symbol": symbol, **row}
-            for symbol, rows in _bars().items()
-            for row in rows
-        ],
+        "bars": [{"symbol": symbol, **row} for symbol, rows in _bars().items() for row in rows],
     }
 
     with pytest.raises(ScenarioMaterializationError, match="SCENARIO_BARS_NOT_EXACT_31_BY_104"):
@@ -105,7 +101,9 @@ def test_strict_replay_charges_exact_round_trip_35_bps() -> None:
     bars = _bars(symbols=1)
     symbol = next(iter(bars))
     entry, exit = sessions[40], sessions[41]
-    trade = Trade(symbol, entry, exit, 10, int(bars[symbol][40]["close"]), int(bars[symbol][40]["close"]))
+    trade = Trade(
+        symbol, entry, exit, 10, int(bars[symbol][40]["close"]), int(bars[symbol][40]["close"])
+    )
     rules = [
         {"ruleId": "max_position_per_asset", "enabled": True, "threshold": 1.0},
         {"ruleId": "max_gold_etf_etn_weight", "enabled": True, "threshold": 1.0},

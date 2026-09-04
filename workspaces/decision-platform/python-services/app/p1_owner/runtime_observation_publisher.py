@@ -150,9 +150,7 @@ def publish_runtime_observations(
         market_dsn = os.environ.get(_MARKET_DSN_KEY, "").strip()
         if quotes and market_dsn:
             _write(
-                market_quote_payload(
-                    dict(quotes), now=now, source_version=_QUOTE_SOURCE_VERSION
-                ),
+                market_quote_payload(dict(quotes), now=now, source_version=_QUOTE_SOURCE_VERSION),
                 append_market_quote_fixture,
                 market_dsn,
                 expected_role="decision_market_writer",

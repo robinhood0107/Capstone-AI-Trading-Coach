@@ -125,7 +125,9 @@ def _baseline_replay(sessions: list[date], bars: dict[str, list[dict[str, Any]]]
                 _, signal = _features_and_rule(rows[: index + 1], str(row["sessionDate"]))
             except DailyInferenceError as error:
                 if not str(error).startswith("DAILY_INFERENCE_HISTORY_TOO_SHORT"):
-                    raise ScenarioMaterializationError("SCENARIO_BASELINE_SIGNAL_INVALID") from error
+                    raise ScenarioMaterializationError(
+                        "SCENARIO_BASELINE_SIGNAL_INVALID"
+                    ) from error
             if signal == "BUY" and shares == 0 and index < len(rows) - 1:
                 quantity = int(cash // (price * (1.0 + _ROUND_TRIP_COST / 2.0)))
                 if quantity > 0:
@@ -167,8 +169,12 @@ def _guide_replay(
             price = int(row["close"])
             signal = "HOLD"
             try:
-                features, rule_signal = _features_and_rule(rows[: index + 1], str(row["sessionDate"]))
-                prediction = model._infer_symbol(symbol, float(price), np.asarray(features, dtype=np.float64))
+                features, rule_signal = _features_and_rule(
+                    rows[: index + 1], str(row["sessionDate"])
+                )
+                prediction = model._infer_symbol(
+                    symbol, float(price), np.asarray(features, dtype=np.float64)
+                )
                 if rule_signal == "BUY" and prediction.signal != "SELL":
                     signal = "BUY"
                 elif rule_signal == "SELL" and prediction.signal == "SELL":
@@ -185,15 +191,29 @@ def _guide_replay(
                     shares = quantity
                     entry_session = sessions[index]
                     entry_price = price
-            elif signal == "SELL" and shares > 0 and entry_session is not None and entry_price is not None:
+            elif (
+                signal == "SELL"
+                and shares > 0
+                and entry_session is not None
+                and entry_price is not None
+            ):
                 cash += shares * price * (1.0 - _ROUND_TRIP_COST / 2.0)
-                trades.append(Trade(symbol, entry_session, sessions[index], shares, entry_price, price))
+                trades.append(
+                    Trade(symbol, entry_session, sessions[index], shares, entry_price, price)
+                )
                 shares = 0
                 entry_session = None
                 entry_price = None
-            if index == len(rows) - 1 and shares > 0 and entry_session is not None and entry_price is not None:
+            if (
+                index == len(rows) - 1
+                and shares > 0
+                and entry_session is not None
+                and entry_price is not None
+            ):
                 cash += shares * price * (1.0 - _ROUND_TRIP_COST / 2.0)
-                trades.append(Trade(symbol, entry_session, sessions[index], shares, entry_price, price))
+                trades.append(
+                    Trade(symbol, entry_session, sessions[index], shares, entry_price, price)
+                )
                 shares = 0
                 entry_session = None
                 entry_price = None
@@ -256,7 +276,9 @@ def _strict_replay(
     violations = 0
 
     def equity_on(session: date) -> float:
-        return cash + sum(quantity * price[(symbol, session)] for symbol, (quantity, _) in holdings.items())
+        return cash + sum(
+            quantity * price[(symbol, session)] for symbol, (quantity, _) in holdings.items()
+        )
 
     for session in sessions:
         for trade in sorted(exits.get(session, []), key=lambda item: item.symbol):
@@ -334,7 +356,10 @@ def _metrics(result: ReplayResult) -> dict[str, float | None]:
 
 def _curve_rows(result: ReplayResult) -> list[dict[str, object]]:
     return [
-        {"at": datetime.combine(session, time.min, UTC).isoformat().replace("+00:00", "Z"), "value": value}
+        {
+            "at": datetime.combine(session, time.min, UTC).isoformat().replace("+00:00", "Z"),
+            "value": value,
+        }
         for session, value in result.curve
     ]
 
@@ -410,8 +435,22 @@ def materialize(bundle_root: Path, dsn: str) -> dict[str, object]:
     model_view = {
         "runId": run_id,
         "models": [
-            {"modelId": "BASELINE", "status": "AVAILABLE", "metrics": {key: metrics["Baseline"][key] for key in ("cagr", "mdd", "sharpe", "sortino", "var95", "cvar95")}},
-            {"modelId": "LSTM", "status": "AVAILABLE", "metrics": {key: metrics["Guide"][key] for key in ("cagr", "mdd", "sharpe", "sortino", "var95", "cvar95")}},
+            {
+                "modelId": "BASELINE",
+                "status": "AVAILABLE",
+                "metrics": {
+                    key: metrics["Baseline"][key]
+                    for key in ("cagr", "mdd", "sharpe", "sortino", "var95", "cvar95")
+                },
+            },
+            {
+                "modelId": "LSTM",
+                "status": "AVAILABLE",
+                "metrics": {
+                    key: metrics["Guide"][key]
+                    for key in ("cagr", "mdd", "sharpe", "sortino", "var95", "cvar95")
+                },
+            },
         ],
         "timeline": _curve_rows(guide),
         "sourceRunIds": [validated.run_id],
@@ -419,7 +458,10 @@ def materialize(bundle_root: Path, dsn: str) -> dict[str, object]:
     strategies = [
         {
             "strategy": name,
-            "metrics": {key: dashboard_metrics[name][key] for key in ("cagr", "mdd", "sharpe", "sortino", "var95", "cvar95")},
+            "metrics": {
+                key: dashboard_metrics[name][key]
+                for key in ("cagr", "mdd", "sharpe", "sortino", "var95", "cvar95")
+            },
             "curve": _curve_rows(results[name]),
         }
         for name in ("Baseline", "Guide", "Strict")
@@ -428,7 +470,12 @@ def materialize(bundle_root: Path, dsn: str) -> dict[str, object]:
         {"metric": f"{name}.{metric}", "value": metrics[name][metric]}
         for name in ("Baseline", "Guide", "Strict")
         for metric in ("netReturn", "tradeCount", "winRate")
-    ] + [{"metric": "Strict.principleViolationCount", "value": metrics["Strict"]["principleViolationCount"]}]
+    ] + [
+        {
+            "metric": "Strict.principleViolationCount",
+            "value": metrics["Strict"]["principleViolationCount"],
+        }
+    ]
     backtest_view = {
         "runId": run_id,
         "fixtureClass": "REAL_ARTIFACT",
@@ -439,7 +486,9 @@ def materialize(bundle_root: Path, dsn: str) -> dict[str, object]:
     }
     model_projection = _envelope(request_id, as_of, model_view)
     backtest = _envelope(request_id, as_of, backtest_view)
-    _validate_repository_schema("contracts/schemas/dashboard-model-evaluation.v1.schema.json", model_projection)
+    _validate_repository_schema(
+        "contracts/schemas/dashboard-model-evaluation.v1.schema.json", model_projection
+    )
     _validate_repository_schema("contracts/schemas/dashboard-backtest.v1.schema.json", backtest)
     model_text = canonical_json_bytes(model_projection).decode()
     backtest_text = canonical_json_bytes(backtest).decode()

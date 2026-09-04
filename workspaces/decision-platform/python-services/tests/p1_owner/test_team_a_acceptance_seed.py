@@ -51,6 +51,7 @@ def test_seed_has_no_provider_transport_or_raw_secret_output() -> None:
     assert "KIS_APP" not in source
     assert "print(dsn" not in source
     assert "PROVIDER_CALLS=0" in source
+    assert "acceptance_requires_disposable_database" in source
 
 
 def test_module_is_packaged_as_a_regular_file() -> None:

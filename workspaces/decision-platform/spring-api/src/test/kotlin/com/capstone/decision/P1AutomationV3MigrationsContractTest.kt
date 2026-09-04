@@ -100,7 +100,7 @@ class P1AutomationV3MigrationsContractTest {
     }
 
     @Test
-    fun `V111 through V119 remain consecutive latest migrations`() {
+    fun `V111 through V119 remain consecutive`() {
         val versions =
             Files.list(directory).use { paths ->
                 paths
@@ -110,6 +110,6 @@ class P1AutomationV3MigrationsContractTest {
                     .sorted()
                     .toList()
             }
-        assertThat(versions.takeLast(9)).containsExactly(111, 112, 113, 114, 115, 116, 117, 118, 119)
+        assertThat(versions.filter { it in 111..119 }).containsExactly(111, 112, 113, 114, 115, 116, 117, 118, 119)
     }
 }

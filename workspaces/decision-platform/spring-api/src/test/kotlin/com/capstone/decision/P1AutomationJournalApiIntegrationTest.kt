@@ -161,6 +161,12 @@ class P1AutomationJournalApiIntegrationTest(
                 jsonPath("$.data.items.length()") { value(0) }
             }
         mockMvc
+            .get("/api/v2/automation/positions") { bearer(token) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.data.items.length()") { value(0) }
+            }
+        mockMvc
             .get("/api/v3/automation/runs/auto_run_${"f".repeat(32)}") { bearer(token) }
             .andExpect {
                 status { isNotFound() }

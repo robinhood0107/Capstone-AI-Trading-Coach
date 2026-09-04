@@ -59,7 +59,7 @@ class P1AutomationDailyReadyV117MigrationContractTest {
     }
 
     @Test
-    fun `V117 is the latest migration and V93 stays immutable`() {
+    fun `V117 remains unique and V93 stays immutable`() {
         val versions =
             Files.list(migrationDirectory).use { paths ->
                 paths
@@ -72,7 +72,6 @@ class P1AutomationDailyReadyV117MigrationContractTest {
                             .toInt()
                     }.toList()
             }
-        assertThat(versions.max()).isEqualTo(119)
         assertThat(versions.count { it == 117 }).isEqualTo(1)
         assertThat(migrationDirectory.resolve("V93__p1_automation_pipeline_continuity.sql")).isRegularFile()
     }

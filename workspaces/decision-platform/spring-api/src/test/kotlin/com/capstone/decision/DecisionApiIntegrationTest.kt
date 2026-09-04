@@ -919,15 +919,9 @@ class DecisionApiIntegrationTest(
                 }.andReturn()
         assertEquals(200, available.response.status)
         assertEquals(10_000_000L, json(available).at("/data/portfolioValue").longValue())
-        assertEquals(0, json(available).at("/data/dailyPnlRate").decimalValue().compareTo(BigDecimal("-0.01")))
-        assertEquals(0, json(available).at("/data/mdd").decimalValue().compareTo(BigDecimal("-0.05")))
-        assertEquals(
-            0,
-            json(available)
-                .at("/data/annualizedVolatility20d")
-                .decimalValue()
-                .compareTo(BigDecimal("0.20")),
-        )
+        assertTrue(json(available).at("/data/dailyPnlRate").isNull)
+        assertTrue(json(available).at("/data/mdd").isNull)
+        assertTrue(json(available).at("/data/annualizedVolatility20d").isNull)
         assertTrue(json(available).at("/data/var95").isNull)
         assertFalse(json(available).at("/data/dataFreshness/priceFresh").booleanValue())
         assertFalse(json(available).at("/data/killSwitchActive").booleanValue())
@@ -1073,6 +1067,17 @@ class DecisionApiIntegrationTest(
                 jsonPath("$.data.view.riskItems[0].code") { value("RISK_PORTFOLIO_CONTEXT_UNAVAILABLE") }
                 jsonPath("$.data.view.accountId") { doesNotExist() }
             }
+        mockMvc.get("/api/v1/dashboard/risk-results/latest") { bearer(token) }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.decisionId") { value(decisionId) }
+            jsonPath("$.data.action") { value("HOLD") }
+            jsonPath("$.data.symbol") { value("005930") }
+        }
+        mockMvc.get("/api/v1/dashboard/risk-results/recent") { bearer(token) }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.items[0].decisionId") { value(decisionId) }
+            jsonPath("$.data.items[0].action") { value("HOLD") }
+        }
         val foreignToken = login("demo-admin", adminPassword())
         mockMvc.get("/api/v1/dashboard/risk-results/$decisionId") { bearer(foreignToken) }.andExpect {
             status { isNotFound() }

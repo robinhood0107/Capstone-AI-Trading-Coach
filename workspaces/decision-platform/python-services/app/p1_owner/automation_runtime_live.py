@@ -24,6 +24,7 @@ from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.kis._credential_transport import _build_redis_client
 from app.data.kis.http_client import CURRENT_PRICE_PATH, KISHttpClient
 from app.data.kis.settings import KISSettings
+from app.p1_owner.runtime_observation_publisher import publish_runtime_observations
 from app.p1_owner.automation import (
     AccountLineageSnapshot,
     AiCandidateVerdict,
@@ -140,7 +141,15 @@ class SpringAutomationBridgeClient:
         self._client = httpx.Client(
             base_url="http://127.0.0.1:8080",
             transport=transport or httpx.HTTPTransport(retries=0),
-            timeout=2.0,
+            # 연결은 loopback 이라 짧게 잡아도 되지만 응답은 그렇지 않다. BALANCE·BUYABLE·SUBMIT
+            # 은 Spring 을 거쳐 KIS Mock 의 실제 HTTP 까지 가고, KIS 호출 자체가 8초의 IO 예산을
+            # 쓴다(`io_budget_seconds=8.0`). 그런데 전체 타임아웃이 2초여서 이 세 명령은 구조적으로
+            # 완주할 수 없었다.
+            #
+            # 실측으로 그 때문에 ORDER_SIZING 이 매번 `httpx.ReadTimeout` 으로 닫혔다. 전송 예외라
+            # AutomationRuntimeError 재시도에도 걸리지 않아 런타임 프로세스가 그대로 죽었다.
+            # 읽기는 KIS 예산보다 넉넉히 두고 연결·쓰기는 그대로 짧게 둔다.
+            timeout=httpx.Timeout(connect=2.0, read=20.0, write=5.0, pool=2.0),
             follow_redirects=False,
             trust_env=False,
         )
@@ -494,6 +503,24 @@ class LiveAutomationPort:
                     raise AutomationRuntimeError("AUTOMATION_BUYABLE_IDENTITY_MISMATCH")
                 buyable_quantity = int(buyable.get("buyableQuantity", 0))
                 buyable_amount_krw = int(buyable.get("buyableAmountKrw", 0))
+            # 다음 tick 이 RISK_CHECKING 이고 RiskEngine 은 관측 표에서 잔고와 위험지표를
+            # 읽는다. 그 표를 채우는 것이 운영자 CLI 뿐이어서, 사람이 매일 손으로 적재하지
+            # 않으면 `violations` 는 비어 있는데 입력 부재로 HOLD 됐다. 잔고를 받는 프로세스는
+            # 이 런타임뿐이므로 여기서 같은 tick 안에 적재한다. 실패는 마커만 남기고 삼킨다 -
+            # 관측이 없으면 RiskEngine 이 HOLD 하므로 결과가 이미 fail-closed 이고, 예외를
+            # 올리면 세션이 HALTED 로 닫혀 사람이 손대야 다시 열린다.
+            runtime_state["observationPublish"] = publish_runtime_observations(
+                owner_user_id=self._claim.user_id,
+                account_id=self._claim.account_id,
+                balance=balance,
+                # 시세 관측의 신선도 창은 관측 +5분이라 일일 수집기 값으로는 장중 판정을
+                # 만족할 수 없다. 지금 주문하려는 종목과 보유 종목의 실시간 호가는 이 시점에
+                # 이 프로세스에만 있다. 그것을 같은 tick 안에 적재해야 RiskEngine 의
+                # current_price_krw / order_amount_krw / asset_weight 가 값을 갖는다.
+                quotes=self._observation_quotes(symbol, balance),
+                baseline_equity_krw=_projection_equity(expected, balance),
+                trading_date=self._claim.session_date.isoformat(),
+            )
         return inputs_from_state(
             runtime_state,
             risk_allow=risk_allow,
@@ -624,6 +651,31 @@ class LiveAutomationPort:
             separators=(",", ":"),
         )
         return applied
+
+    def _observation_quotes(
+        self, symbol: str, balance: Mapping[str, object]
+    ) -> dict[str, int]:
+        """관측으로 적재할 실시간 호가. 주문 종목과 보유 종목을 함께 담는다.
+
+        `asset_weight` 는 보유 비중이라 보유 종목의 가격이 있어야 계산된다. 브로커가 준
+        평가액을 수량으로 나눠 단가를 만든다 - 여기서 가격을 지어내지 않는다.
+        """
+
+        quotes: dict[str, int] = {}
+        cached = self._cached_quotes.get(symbol)
+        if cached is not None and cached.price_krw > 0:
+            quotes[symbol] = cached.price_krw
+        raw_positions = balance.get("positions")
+        if isinstance(raw_positions, list):
+            for item in raw_positions:
+                if not isinstance(item, Mapping):
+                    continue
+                held = str(item.get("symbol", ""))
+                quantity = int(item.get("quantity", 0) or 0)
+                market_value = int(item.get("marketValueKrw", 0) or 0)
+                if held and quantity > 0 and market_value > 0:
+                    quotes.setdefault(held, market_value // quantity)
+        return quotes
 
     def submit(self, reservation: OrderReservation) -> SubmitOutcome:
         if self.decision_id is None or reservation.intent is None:
@@ -944,6 +996,20 @@ def _vertex_veto_transport() -> VertexVetoTransport:
     if settings is None:
         return FailClosedVertexVetoTransport()
     return VertexAiVetoTransport(settings=settings)
+
+
+def _projection_equity(expected: Mapping[str, Any], balance: Mapping[str, Any]) -> int:
+    """세션 기준 자본. 위험지표의 분모다.
+
+    durable state 의 projection 은 평가액이 없는 identity(현금 + 수량)이므로 기준 현금에
+    현재 포지션 평가액을 더한다. 주문 전에는 포지션이 그대로이므로 이것이 그날 개장 자본이고,
+    매수로 현금이 포지션으로 바뀌어도 합이 유지되어 매수 자체가 손실로 잡히지 않는다.
+    """
+
+    baseline_cash = int(expected.get("cashKrw", 0))
+    equity = baseline_cash + _open_position_value(dict(balance))
+    # 분모가 0 이면 비율이 정의되지 않는다. 그 경우는 관측을 만들지 않는 편이 정직하다.
+    return equity if equity > 0 else 0
 
 
 def _open_position_value(balance: dict[str, Any]) -> int:

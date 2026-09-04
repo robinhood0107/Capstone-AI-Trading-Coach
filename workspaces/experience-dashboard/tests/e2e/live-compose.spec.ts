@@ -21,30 +21,37 @@ test('live Compose login and primary screens use the Spring API', async ({ page 
   await expect(page.getByRole('heading', { name: '오늘 상태' })).toBeVisible();
 
   const screens = [
+    ['금융 Agent', '금융 가이드'],
     ['내 원칙', '내 투자 원칙'],
-    ['주문 검토', '주문 검토'],
     ['전략 검증', '모델 비교'],
-    ['금융 가이드', '금융 가이드'],
   ] as const;
   const navRail = page.getByRole('navigation', { name: '주요 화면' });
   for (const [navigation, heading] of screens) {
-    // 접근성 이름은 step + label + note 가 이어진 "01 내 원칙 기준 정하기" 형태다.
-    // 템플릿 리터럴에서는 백슬래시를 이스케이프해야 정규식에 \d 가 도달한다 -
-    // 하나만 쓰면 문자 d 로 붕괴해 /^(dd )?내 원칙/ 을 찾다가 영원히 타임아웃한다.
-    await navRail.getByRole('link', { name: new RegExp(`^(\\d\\d )?${navigation}`) }).click();
+    await navRail.getByRole('link', { name: new RegExp(`^${navigation}`) }).click();
     await expect(page.getByRole('heading', { name: heading })).toBeVisible();
   }
 
-  // 전략 검증은 한 화면 안에서 모델 비교 ↔ 백테스트로 전환한다.
-  // 위 루프의 마지막이 '금융 가이드' 라서 지금 화면은 /rag 다. 탭은 전략 화면에만 있으므로
-  // 전략 검증으로 돌아온다 - 이 한 줄이 없으면 없는 탭을 찾다가 타임아웃한다.
-  await navRail.getByRole('link', { name: /^02 전략 검증/ }).click();
-  await expect(page.getByRole('heading', { name: '모델 비교' })).toBeVisible();
+  await expect(page.getByText('LightGBM')).toHaveCount(0);
   await page.getByRole('tab', { name: '백테스트 리포트' }).click();
   await expect(page.getByRole('heading', { name: '백테스트 리포트' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Baseline / Guide / Strict 비교' })).toBeVisible();
+  await expect(page.getByText('demo_s8_fake_e2e_0001')).toHaveCount(0);
+
+  await navRail.getByRole('link', { name: /^자동운용/ }).click();
+  await expect(page.getByRole('heading', { name: '자동운용 설정' })).toBeVisible();
+  await page.getByRole('link', { name: /최근 주문 판정 보기/ }).click();
+  await expect(page.getByRole('heading', { name: '주문 검토' })).toBeVisible();
+
+  await navRail.getByRole('link', { name: /^학습일지/ }).click();
+  await expect(page.getByRole('heading', { name: '학습일지' })).toBeVisible();
+
+  const tools = page.getByRole('navigation', { name: '도구' });
+  await tools.getByRole('link', { name: '보고서' }).click();
+  await expect(page.getByRole('heading', { name: '보고서 캡처' })).toBeVisible();
+  await tools.getByRole('link', { name: '설정' }).click();
+  await expect(page.getByRole('heading', { name: 'Strong LLM' })).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole('heading', { name: 'Baseline / Guide / Strict 비교' })).toBeVisible();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
   ).toBe(true);
@@ -55,10 +62,6 @@ test('live Compose login and primary screens use the Spring API', async ({ page 
     apiResponses.filter((response) => response.status() >= 500).map((response) => response.url()),
   ).toEqual([]);
 });
-
-
-// RAG v2 화면은 동의가 없으면 질문 자체가 열리지 않는다. 그 순서가 화면에서 지켜지는지 본다.
-// 실제 질의는 provider 물리 호출을 쓰므로 P1_RAG_LIVE_QUERY=1일 때만 보낸다.
 test('RAG v2 screen gates the question behind consent and renders citations', async ({ page }) => {
   test.skip(!passwordFile, 'P1_USER_PASSWORD_FILE must point to the local 0600 demo password file.');
   const password = readFileSync(passwordFile!, 'utf8').trimEnd();
@@ -76,15 +79,13 @@ test('RAG v2 screen gates the question behind consent and renders citations', as
   ]);
 
   const navRail = page.getByRole('navigation', { name: '주요 화면' });
-  await navRail.getByRole('link', { name: /^금융 가이드/ }).click();
+  await navRail.getByRole('link', { name: /^금융 Agent/ }).click();
   await expect(page.getByRole('heading', { name: '금융 가이드' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '외부 처리 동의' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '금융 개념 물어보기' })).toBeVisible();
 
-  // 동의 상태를 읽어 오기 전에는 두 버튼이 모두 잠겨 있다. CHECKING이 끝날 때까지 기다린다.
-  await expect(page.getByText(/^(GRANTED|REQUIRED)$/)).toBeVisible();
+  await expect(page.getByText(/^(동의 완료|동의 필요)$/)).toBeVisible();
 
-  // 동의를 철회한 상태에서는 물어보기 버튼이 열리지 않아야 한다.
   const revoke = page.getByRole('button', { name: '철회' });
   if (await revoke.isEnabled()) {
     await Promise.all([
@@ -94,7 +95,6 @@ test('RAG v2 screen gates the question behind consent and renders citations', as
   }
   await expect(page.getByRole('button', { name: '물어보기' })).toBeDisabled();
 
-  // 철회 응답이 상태에 반영된 뒤에야 동의 버튼이 열린다. 열릴 때까지 기다린 다음 누른다.
   const grant = page.getByRole('button', { name: '동의' });
   await expect(grant).toBeEnabled();
   await Promise.all([
@@ -108,8 +108,6 @@ test('RAG v2 screen gates the question behind consent and renders citations', as
       page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v2/rag/ask'),
       page.getByRole('button', { name: '물어보기' }).click(),
     ]);
-    // P1_RAG_LIVE_QUERY=1은 실제 Vertex 생성 경로를 명시적으로 승인한 검증이다.
-    // 상태 코드가 아니라 사람이 읽는 설명 본문이 비어 있지 않은지를 확인한다.
     const explanation = page.getByLabel('생성된 설명');
     await expect(explanation).toBeVisible({ timeout: 20_000 });
     await expect(explanation).toContainText(/\S+/);

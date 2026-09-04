@@ -708,14 +708,22 @@ replay_history() {
   if [[ -z $end ]]; then
     end=$(date -d 'yesterday' +%F 2>/dev/null || date +%F)
   fi
-  install -d -m 0700 "$STATE_DIR/replay"
+  # seed 컨테이너가 nonroot 로 읽는다. secret 마운트와 같은 0750/0640 을 쓴다 - 0600 이면
+  # 파일은 생기지만 컨테이너가 읽지 못해 재생이 조용히 실패한다.
+  install -d -m 0750 -g "${P1_SECRET_GID:-$(id -g)}" "$STATE_DIR/replay" 2>/dev/null \
+    || install -d -m 0750 "$STATE_DIR/replay"
   local signals=$STATE_DIR/replay/signals.json
-  if ! compose exec -T decision-platform python -m app.p1_owner.history_replay_signals \
-      --start "$start" --end "$end" --out - > "$signals" 2>/dev/null; then
+  # `compose exec` 는 entrypoint 를 거치지 않으므로 secret 이 환경에 없다. 런타임이 쓰는 것과
+  # 같은 파일을 여기서 읽어 넘긴다. 값은 그 프로세스 안에만 있고 출력되지 않는다.
+  if ! compose exec -T decision-platform sh -c \
+      'set -a; . /run/secrets/automation_runtime_env; . /run/secrets/return_inference_env; set +a;
+       exec python -m app.p1_owner.history_replay_signals --start "$0" --end "$1" --out -' \
+      "$start" "$end" > "$signals" 2>/dev/null; then
     rm -f "$signals"
     printf 'CAPSTONE_HISTORY_REPLAY=SIGNALS_UNAVAILABLE\n'
     return 0
   fi
+  chmod 0640 "$signals"
   local seeded
   seeded=$(compose --profile owner run --rm --no-deps history-replay-seed 2>&1 \
     | grep -E '^P1_HISTORY_REPLAY=' | tail -1) || seeded=''

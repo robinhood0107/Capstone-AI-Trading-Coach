@@ -74,4 +74,18 @@ class P1DashboardCompletionMigrationContractTest {
         )
         assertThat(migration).doesNotContain("TRUNCATE", "DROP TABLE")
     }
+
+    @Test
+    fun `V128 projects a bounded finance source catalog from the active RAG bundle`() {
+        val migration = Files.readString(directory.resolve("V128__rag_user_finance_source_catalog.sql"))
+
+        assertThat(migration).contains(
+            "rag_user_finance_source_catalog",
+            "rag_v2_immutable_source_revisions",
+            "rag_v2_immutable_public_bundle_pointers",
+            "NOT ('API'=ANY(source.retrieval_topics))",
+            "LIMIT 8",
+        )
+        assertThat(migration).doesNotContain("TRUNCATE", "DROP TABLE", "UPSTREAM_REFERENCE")
+    }
 }

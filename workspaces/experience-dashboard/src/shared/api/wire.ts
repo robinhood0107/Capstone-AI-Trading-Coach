@@ -356,7 +356,8 @@ export interface AutomationPositionV2 {
   quantity: number;
   entryAverageFillPriceKrw: number;
   entrySession: string;
-  expirySession: string;
+  /** 보유 만기가 아직 정해지지 않은 포지션에서는 비어 있다. */
+  expirySession: string | null;
   policyId: string;
   policyVersion: number;
   stopLossBps: number;
@@ -594,6 +595,26 @@ export interface RagV2Answer {
   guardrailFlags: string[];
 }
 
+export interface RagV2HistoryPage {
+  items: {
+    answerId: string;
+    createdAt: string;
+    expiresAt: string;
+    generationStatus: RagGenerationStatus;
+  }[];
+  nextCursor: string | null;
+}
+
+export interface RagV2HistoryDetail {
+  answerId: string;
+  question: string;
+  answer: string | null;
+  generationStatus: RagGenerationStatus;
+  citations: RagV2Citation[];
+  createdAt: string;
+  expiresAt: string;
+}
+
 export interface RagSourceResponse {
   sourceId: string;
   title: string;
@@ -633,6 +654,52 @@ export interface DashboardEnvelope<TView> {
   evidenceMode: DashboardEvidenceMode;
   performanceClaimAllowed: false;
   view: TView | null;
+}
+
+/** GET /api/v1/dashboard/{model-evaluations|backtests}/latest */
+export interface LatestArtifactRun {
+  runId: string;
+  fixtureClass: string;
+  asOf: string;
+}
+
+export interface RecentRiskResult {
+  decisionId: string;
+  action: DecisionAction;
+  symbol: string;
+  asOf: string;
+  validUntil: string;
+}
+
+export interface RecentRiskResultList {
+  items: RecentRiskResult[];
+}
+
+export interface JournalLinks {
+  decisionId: string | null;
+  backtestRunId: string | null;
+  ragAnswerId: string | null;
+  orderId: string | null;
+  automationRunId: string | null;
+}
+
+export interface JournalEntry {
+  contractId: 'journal.v1';
+  journalId: string;
+  ownerScope: string;
+  title: string;
+  content: string;
+  tags: string[];
+  links: JournalLinks;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface JournalPage {
+  items: JournalEntry[];
+  nextCursor: string | null;
 }
 
 /** dashboard-risk-result.v1 */

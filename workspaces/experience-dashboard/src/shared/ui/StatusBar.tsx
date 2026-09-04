@@ -1,23 +1,24 @@
 'use client';
 
 import { api } from '@/shared/api/endpoints';
-import { apiMode, baseUrl } from '@/shared/api/client';
+import { apiMode } from '@/shared/api/client';
 import { session, useSession } from '@/shared/api/session';
 import { useResource } from '@/shared/lib/useResource';
 import { ready } from '@/shared/lib/viewState';
 import { relativeAge } from '@/shared/lib/format';
-import type { SystemHealthResponse } from '@/shared/api/wire';
+import { UtilityNav } from '@/shared/ui/NavRail';
+import { ThemeToggle } from '@/shared/ui/ThemeToggle';
+import type { AutomationStatusV2 } from '@/shared/api/wire';
 
-/** 사용자가 지금 어느 모드인지, 데이터가 신선한지, 자동주문이 멈췄는지를 상시 표기한다. */
 export function StatusBar() {
   const { authenticated, user } = useSession();
   const mock = apiMode() === 'mock';
   const { state } = useResource(async () => {
-    const { data } = await api.health();
-    return ready<SystemHealthResponse>(data, data.asOf);
+    const { data } = await api.automationStatusV2();
+    return ready<AutomationStatusV2>(data, data.policy?.updatedAt ?? null);
   }, [authenticated], mock || authenticated);
 
-  const health = state.kind === 'ready' || state.kind === 'stale' ? state.data : null;
+  const automation = state.kind === 'ready' || state.kind === 'stale' ? state.data : null;
 
   return (
     <div className="sticky top-0 z-30 border-b border-line bg-panel/85 backdrop-blur">
@@ -30,24 +31,16 @@ export function StatusBar() {
           </span>
         </p>
       ) : null}
-      <div className="flex flex-wrap items-center gap-2 px-5 py-3 sm:px-8">
-        <Chip label="연결" value={mock ? '합성 데이터' : baseUrl() || 'same-origin /api'} tone="navy" />
-        <Chip
-          label="자동주문"
-          value={health ? (health.killSwitchActive ? '정지됨' : '작동 중') : '확인 중'}
-          tone={health?.killSwitchActive ? 'block' : health ? 'allow' : 'default'}
-        />
-        <Chip
-          label="가격"
-          value={freshnessLabel(health?.dataFreshness?.priceFresh)}
-          tone={health?.dataFreshness?.priceFresh === false ? 'warn' : 'default'}
-        />
-        <Chip label="신호" value={freshnessLabel(health?.dataFreshness?.signalFresh)} />
-        <Chip label="설명 근거" value={freshnessLabel(health?.dataFreshness?.ragFresh)} />
-        <span className="ml-auto flex items-center gap-3">
-          <span className="tnum text-[11px] text-faint">
-            {health ? `기준 ${relativeAge(health.asOf) ?? '방금'}` : '상태 확인 중'}
-          </span>
+      <div className="flex flex-wrap items-center gap-3 px-5 py-3 sm:px-8">
+        <AutomationState status={automation} />
+        {automation?.policy?.updatedAt ? (
+          <span className="tnum text-[11px] text-faint">기준 {relativeAge(automation.policy.updatedAt) ?? '방금'}</span>
+        ) : null}
+
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          <UtilityNav />
+          <span aria-hidden className="mx-1 hidden h-4 w-px bg-line sm:block" />
+          <ThemeToggle />
           {authenticated && user ? (
             <button
               type="button"
@@ -63,47 +56,25 @@ export function StatusBar() {
   );
 }
 
-function freshnessLabel(value: boolean | null | undefined): string {
-  if (value === true) return '최신';
-  if (value === false) return '지연';
-  return '근거 없음';
-}
-
-const DOT: Record<string, string> = {
-  navy: 'bg-navy',
-  allow: 'bg-allow',
-  warn: 'bg-warn',
-  block: 'bg-block',
-  default: 'bg-faint',
-};
-
-function Chip({
-  label,
-  value,
-  tone = 'default',
-}: {
-  label: string;
-  value: string;
-  tone?: 'default' | 'navy' | 'allow' | 'warn' | 'block';
-}) {
-  const missing = value === '근거 없음';
-  const toneClass =
-    tone === 'navy'
-      ? 'text-ink'
-      : tone === 'allow'
-        ? 'text-allow'
-        : tone === 'warn'
-          ? 'text-warn'
-          : tone === 'block'
-            ? 'text-block'
-            : missing
-              ? 'text-faint'
-              : 'text-ink';
+function AutomationState({ status }: { status: AutomationStatusV2 | null }) {
+  if (!status) {
+    return (
+      <span className="inline-flex items-center gap-2 rounded-full bg-subtle px-3 py-1.5">
+        <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-line" />
+        <span className="text-[12px] font-medium text-faint">상태 확인 중</span>
+      </span>
+    );
+  }
+  const halted = status.killSwitchActive || status.projectionState === 'HALTED';
+  const disarmed = status.controlState === 'DISARMED';
+  const label = halted ? '안전 중단' : disarmed ? '꺼짐' : status.controlState === 'ARMED' ? '예약됨' : '작동 중';
+  const tone = halted ? 'text-block' : disarmed ? 'text-muted' : 'text-allow';
+  const dot = halted ? 'bg-block' : disarmed ? 'bg-faint' : 'bg-allow';
   return (
     <span className="inline-flex items-center gap-2 rounded-full bg-subtle px-3 py-1.5">
-      <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${missing ? 'bg-line' : DOT[tone]}`} />
-      <span className="text-[11px] text-faint">{label}</span>
-      <span className={`text-[12px] font-medium ${toneClass}`}>{value}</span>
+      <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+      <span className="text-[11px] text-faint">자동주문</span>
+      <span className={`text-[12px] font-semibold ${tone}`}>{label}</span>
     </span>
   );
 }

@@ -1,11 +1,3 @@
-/**
- * 백테스트 리포트 ViewModel.
- * 계약: GET /api/v1/dashboard/backtests/{runId} → dashboard-backtest.v1
- *
- * strategies는 Baseline / Guide / Strict 3개 고정이며 순서도 고정이다.
- * 이 화면의 목적은 "수익률이 얼마인가"가 아니라
- * "원칙과 안전장치를 켰을 때 손실이 어떻게 달라지는가"다.
- */
 import { api } from '@/shared/api/endpoints';
 import type { DashboardBacktestView, DashboardMetrics, DashboardStrategyName } from '@/shared/api/wire';
 import { fromDashboard, type ViewState } from '@/shared/lib/viewState';
@@ -37,9 +29,7 @@ export interface BacktestReportView {
   strategies: StrategyRow[];
   equityCurve: EquityPoint[];
   heatmap: { month: string; return: number }[];
-  /** 서버가 준 지표 카드. 이름과 값만 오므로 화면이 뜻을 붙이지 않는다. */
   serverMetricCards: { metric: string; value: number | null }[];
-  /** 시나리오 비교에서 계산해 낸 카드. 계산식을 화면에 같이 적는다. */
   derivedCards: DerivedCard[];
   projectionHash: string;
 }
@@ -60,7 +50,6 @@ export function toBacktestReportView(view: DashboardBacktestView): BacktestRepor
   const baseline = byName.get('Baseline')?.metrics ?? null;
   const strict = byName.get('Strict')?.metrics ?? null;
 
-  // 세 곡선을 같은 시각 축에 맞춰 합친다. 한쪽에만 있는 시점은 null로 남긴다.
   const merged = new Map<string, EquityPoint>();
   for (const entry of view.strategies) {
     for (const point of entry.curve) {

@@ -5,13 +5,13 @@ import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Disclosure } from '@/shared/ui/Disclosure';
 import { Panel } from '@/shared/ui/Panel';
 import { Numeric } from '@/shared/ui/Numeric';
-import { IdInput } from '@/shared/ui/IdInput';
 import { DecisionBadge, DecisionRail, decisionGloss } from '@/shared/ui/Decision';
 import { useResource } from '@/shared/lib/useResource';
 import { ID_PATTERN } from '@/shared/api/endpoints';
 import { formatKstDateTime, formatRatio } from '@/shared/lib/format';
 import { loadRiskResultView, type ReasonDisposition } from './viewModel';
 import type { DecisionRiskItemProjection } from '@/shared/api/wire';
+import { api } from '@/shared/api/endpoints';
 
 const DISPOSITION_META: Record<ReasonDisposition, { title: string; note: string; accent: string }> = {
   VIOLATION: { title: '원칙 위반', note: '기준을 실제로 넘은 항목입니다.', accent: 'border-block' },
@@ -32,26 +32,51 @@ const SEVERITY_TONE: Record<string, string> = {
   BLOCK: 'text-block',
 };
 
-export function OrderReviewView({ defaultDecisionId = '' }: { defaultDecisionId?: string }) {
-  const [decisionId, setDecisionId] = useState(defaultDecisionId);
+export function OrderReviewView() {
+  const recent = useResource(async () => {
+    const { data } = await api.dashboardRecentRiskResults();
+    return { kind: 'ready' as const, data: data.items, asOf: data.items[0]?.asOf ?? null };
+  }, []);
+  const recentItems = recent.state.kind === 'ready' || recent.state.kind === 'stale' ? recent.state.data : [];
+  const [selectedDecisionId, setSelectedDecisionId] = useState('');
+  const decisionId = selectedDecisionId || recentItems[0]?.decisionId || '';
   const valid = ID_PATTERN.decisionId.test(decisionId);
   const { state, reload } = useResource(() => loadRiskResultView(decisionId), [decisionId], valid);
 
   return (
     <div className="space-y-6">
-      <IdInput
-        label="판정 ID"
-        hint="주문을 평가하면 발급되는 ID입니다. dec_ 로 시작합니다."
-        placeholder="dec_00000000000000000001"
-        value={decisionId}
-        onChange={setDecisionId}
-        pattern={ID_PATTERN.decisionId}
-        patternHint="dec_ 로 시작하고 뒤에 8~96자가 와야 합니다."
-      />
+      <AsyncBoundary state={recent.state} onRetry={recent.reload}>
+        {(items) =>
+          items.length > 0 ? (
+            <Panel title="최근 주문 판정" hint="내 계정에 저장된 최신 판정을 시간순으로 보여줍니다.">
+              <div className="flex flex-wrap gap-2">
+                {items.map((item) => (
+                  <button
+                    key={item.decisionId}
+                    type="button"
+                    onClick={() => setSelectedDecisionId(item.decisionId)}
+                    className={`rounded-full border px-3 py-1.5 text-[12px] ${
+                      item.decisionId === decisionId
+                        ? 'border-brand bg-brand text-on-brand'
+                        : 'border-line text-muted hover:border-navy hover:text-navy'
+                    }`}
+                  >
+                    {item.symbol} · {item.action} · {formatKstDateTime(item.asOf) ?? '시각 미상'}
+                  </button>
+                ))}
+              </div>
+            </Panel>
+          ) : (
+            <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
+              저장된 주문 판정이 없습니다. 자동운용이 판정을 마치면 여기에 표시됩니다.
+            </p>
+          )
+        }
+      </AsyncBoundary>
 
       {!valid ? (
         <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
-          위에 판정 ID를 입력하면 그 주문의 판정과 근거를 불러옵니다.
+          표시할 주문 판정이 아직 없습니다.
         </p>
       ) : (
         <AsyncBoundary state={state} onRetry={reload}>

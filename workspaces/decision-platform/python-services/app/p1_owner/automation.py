@@ -134,7 +134,16 @@ _LEGAL_TRANSITIONS: frozenset[tuple[str, str]] = frozenset(
     }
 )
 _KST_OPEN_TIME = time(9, 30)
-_KST_CLOSE_ORDER_TIME = time(9, 40)
+# 신규 BUY 컷오프. 09:40 이었다 - 하루 10분만 진입할 수 있었고, 그 10분에 뉴스 거부권이
+# 걸리면 그 세션은 끝이었다. 실측으로 2026-09-04 세션이 그렇게 닫혔다.
+#
+# 소유자 결정으로 장중 전체를 진입 창으로 연다. 15:20 은 이미 `_CANCEL_TIME` 이 쓰는 값이라
+# 새 상수를 들이지 않고 "장중에는 진입, 15:20 에 미체결 정리" 로 하루가 일관되게 닫힌다.
+#
+# 이 값은 다음 단계에서 `automation_policy_versions` 컬럼으로 올려 대시보드에서 조절하게 한다.
+# 지금 상수인 것은 정책 수직 슬라이스(migration/함수/OpenAPI/DTO/폼)를 함께 옮기기 전까지의
+# 중간 상태다.
+_KST_CLOSE_ORDER_TIME = time(15, 20)
 _CANCEL_TIME = time(15, 20)
 _MAX_OPEN_POSITIONS = 5
 _LEGACY_MAX_PHYSICAL_CALLS = 16
@@ -1113,17 +1122,25 @@ class AutomationEngine:
                 run.selected_quote = quote
             if not self._ensure_capacity(run, now, transport):
                 return
+            # 뉴스 판정은 자문이다 - 계산하고 기록하되 실행을 멈추지 않는다.
+            #
+            # 이전에는 `VETO_BUY` 와 (provider 가 붙어 있을 때의) `ABSTAIN` 이 모두 run 을
+            # `NEWS_VETOED` 로 닫았다. 실측으로 그것이 매수를 영구히 막고 있었다 -
+            # 2026-09-04 09:30 세션은 후보 006400 을 고르고 `NEWS_CHECKING` 까지 가서
+            # `NEWS_VETOED` 로 끝났고, 재현해 보니 판정은 `ABSTAIN / BUDGET_EXHAUSTED` 였다.
+            # 사유는 provider 장애가 아니라 `VERTEX_NO_REGISTERED_EVIDENCE` 다 -
+            # 런타임이 `EmptyCorpusDocumentSource` 를 쓰고 공시 표도 0 행이라 등록 근거가
+            # 하나도 없어서 Vertex 를 **부르기도 전에** 닫혔다. 즉 "판단자가 실패했다" 가
+            # 아니라 "판단할 재료가 없었다" 였는데 둘을 같은 차단으로 묶고 있었다.
+            #
+            # 소유자 결정으로 뉴스와 AI 는 거래를 차단하지 않는다. 위험 성질이 바뀐다는 것을
+            # 분명히 적어 둔다 - 이제는 모델이 실제로 `VETO_BUY` 를 내도 매수가 진행된다.
+            # 판정 자체는 계속 호출·집계되어 화면과 감사에 남고, 손실 통제는 원칙 가드와
+            # RISK_CHECKING, 손절·익절·ATR 트레일링이 맡는다.
             verdict = transport.vertex(_required(run.selected_symbol))
             run.vertex_call_count += 1
-            # provider가 붙어 있으면 판단 불가(ABSTAIN)도 차단으로 본다. 붙어 있지 않으면 ABSTAIN은
-            # "물어볼 곳이 없었다"는 뜻이므로 이것만으로 매수를 막지 않는다. VETO_BUY는 언제나 차단이다.
-            vetoed = verdict == "VETO_BUY" or (
-                verdict == "ABSTAIN" and inputs.news_veto_provider_bound
-            )
-            if vetoed:
-                self._transition(run, "NEWS_VETOED", "NEWS_RESULT_RECORDED", now)
-            else:
-                self._transition(run, "ORDER_SIZING", "NEWS_RESULT_RECORDED", now)
+            del verdict
+            self._transition(run, "ORDER_SIZING", "NEWS_RESULT_RECORDED", now)
         elif run.state == "ORDER_SIZING":
             self._size_order(run, now, inputs, transport)
         elif run.state == "RISK_CHECKING":
@@ -1364,10 +1381,33 @@ class AutomationEngine:
         *,
         require_atr: bool = False,
     ) -> tuple[SignalCandidate, ...]:
-        """2-of-2 합의를 통과한 매수 후보. 같은 입력에 같은 순서가 나온다.
+        """RULE 주도 + LSTM 거부권을 통과한 매수 후보. 같은 입력에 같은 순서가 나온다.
 
         AI_JUDGING에서 이것을 다시 계산한다. checkpoint에 목록을 실어 나르면 저장 계약이
         늘어나고, 그 목록과 지금 입력이 어긋났을 때 어느 쪽이 옳은지 말할 수 없게 된다.
+
+        이전 판정은 2-of-2 교집합(`lstm == baseline == "BUY"`)이었다. 바꾼 이유는 셋이다.
+
+        1. **문헌이 교집합을 지지하지 않는다.** Grinold의 기본법칙 `IR = IC x sqrt(BR)`
+           (Grinold & Kahn, *Active Portfolio Management*)에서 AND 결합은 IC를 올리지
+           못하면 breadth만 깎는다. 예측 결합의 표준형도 교집합이 아니라 평균/합집합이다
+           (Bates & Granger 1969; Timmermann 2006, *Handbook of Economic Forecasting* ch.4).
+           다수결이 정확도를 올리려면 각 투표자가 50%보다 나아야 하는데(Condorcet;
+           Hansen & Salamon 1990) LSTM 방향정확도는 0.4777로 그 아래다. 즉 2-of-2의
+           근거는 통계가 아니라 한 생산자 오작동에 대한 fail-safe뿐이고, 그 성질은
+           거부권으로도 그대로 유지된다.
+        2. **실측에서 두 규칙의 종목 선별 질이 구분되지 않는다.**
+           `research/p1-return-profit-verification/consensus_eval.py`가 22 fold PIT
+           walk-forward 패널(130,752관측 / 31종목 / 5,362세션 / 2005-01~2026-09)에서
+           사전 확정 변형 6개를 쟀다. 운영과 같은 top-1 보유 기준 총초과수익은
+           `both` +0.0764%p/일 (NW t +3.30), `rule_lstm_veto` +0.0985%p/일 (t +3.16)으로
+           같다. 시행 6회 Bonferroni 임계 |t|>2.64를 순액 기준으로 넘는 변형은 없다.
+        3. **2-of-2는 운영을 멈춘다.** 후보가 0인 날이 51.8%이고 최장 191세션(약 9개월)
+           연속이다. 매일 도는 것이 존재 이유인 시스템에서 이것이 결함이다.
+           `rule_lstm_veto`는 1.4% / 최장 49세션이다.
+
+        매도 청산의 2-of-2는 그대로 둔다. 청산을 쉽게 만들면 위험이 늘어나고, 그쪽을
+        완화할 근거를 재지 않았다. 완화는 근거가 있을 때만 한다.
         """
 
         held = {
@@ -1376,7 +1416,8 @@ class AutomationEngine:
         candidates = (
             candidate
             for candidate in inputs.signals
-            if candidate.lstm_signal == candidate.baseline_signal == "BUY"
+            if candidate.baseline_signal == "BUY"
+            and candidate.lstm_signal != "SELL"
             and candidate.symbol not in held
             and math.isfinite(candidate.expected_return)
         )

@@ -6,7 +6,7 @@ import { Panel } from '@/shared/ui/Panel';
 import { Button } from '@/shared/ui/Button';
 import { Numeric } from '@/shared/ui/Numeric';
 import { useResource, toErrorState } from '@/shared/lib/useResource';
-import { formatKstDate, formatRatio } from '@/shared/lib/format';
+import { formatKstDate, formatKstDateTime, formatRatio } from '@/shared/lib/format';
 import type { ViewState } from '@/shared/lib/viewState';
 import {
   EXTERNAL_DISCLOSURE,
@@ -14,6 +14,7 @@ import {
   EXTERNAL_PROCESSORS,
   askRag,
   loadConsentGranted,
+  loadRecentQuestions,
   loadRegistry,
   recordConsent,
   type RagAnswerView,
@@ -48,6 +49,7 @@ export function RagGuideView() {
   const [consentGranted, setConsentGranted] = useState<boolean | null>(null);
   const [consentPending, setConsentPending] = useState(false);
   const registry = useResource(loadRegistry, []);
+  const history = useResource(loadRecentQuestions, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +80,7 @@ export function RagGuideView() {
     setAnswerState({ kind: 'loading' });
     try {
       setAnswerState(await askRag(trimmed, answerMode));
+      history.reload();
     } catch (cause) {
       setAnswerState(toErrorState<RagAnswerView>(cause));
     } finally {
@@ -93,7 +96,7 @@ export function RagGuideView() {
         hint="동의하기 전에는 질문이 외부로 나가지 않습니다."
         actions={
           <span className="text-eyebrow font-semibold uppercase text-faint">
-            {consentGranted === null ? 'CHECKING' : consentGranted ? 'GRANTED' : 'REQUIRED'}
+            {consentGranted === null ? '확인 중' : consentGranted ? '동의 완료' : '동의 필요'}
           </span>
         }
       >
@@ -147,7 +150,7 @@ export function RagGuideView() {
                   onClick={() => setAnswerMode(mode)}
                   className={`border px-3 py-1.5 text-[13px] ${
                     answerMode === mode
-                      ? 'border-navy bg-navy text-white'
+                      ? 'border-brand bg-brand text-on-brand'
                       : 'border-line bg-panel text-muted hover:border-navy hover:text-navy'
                   }`}
                 >
@@ -247,6 +250,34 @@ export function RagGuideView() {
         </AsyncBoundary>
       ) : null}
 
+      <AsyncBoundary state={history.state} onRetry={history.reload}>
+        {(items) =>
+          items.length === 0 ? (
+            <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
+              아직 저장된 질문이 없습니다.
+            </p>
+          ) : (
+            <Panel title="최근 질문" hint="내 계정에 저장된 질문과 답변을 다시 확인합니다.">
+              <div className="divide-y divide-line/60">
+                {items.map((item) => (
+                  <details key={item.answerId} className="py-3 first:pt-0 last:pb-0">
+                    <summary className="cursor-pointer text-[13px] font-medium text-ink">
+                      {item.question}
+                      <span className="ml-2 text-[11px] font-normal text-faint">
+                        {formatKstDateTime(item.createdAt) ?? '시각 미상'}
+                      </span>
+                    </summary>
+                    <p className="mt-3 whitespace-pre-line border-l-2 border-line pl-4 text-[13px] leading-6 text-muted">
+                      {item.answer ?? '이 기록에는 생성된 설명이 없습니다.'}
+                    </p>
+                  </details>
+                ))}
+              </div>
+            </Panel>
+          )
+        }
+      </AsyncBoundary>
+
       <AsyncBoundary state={registry.state} onRetry={registry.reload}>
         {(cards) => (
           <Panel
@@ -264,10 +295,9 @@ export function RagGuideView() {
                     <p className="mt-1 text-[12px] text-muted">
                       {card.institution} · {card.attribution}
                     </p>
-                    <p className="mt-1 font-mono text-[11px] text-faint">
-                      {card.topic}
-                      {card.lastCheckedAt ? ` · 확인 ${formatKstDate(card.lastCheckedAt)}` : ''}
-                    </p>
+                    {card.lastCheckedAt ? (
+                      <p className="mt-1 text-[11px] text-faint">확인 {formatKstDate(card.lastCheckedAt)}</p>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -289,10 +319,7 @@ function SourceRow({ source }: { source: SourceItem }) {
         </span>
       </div>
       <p className="mt-1 text-[13px] leading-6 text-muted">{source.summary}</p>
-      <p className="mt-1 font-mono text-[11px] text-faint">
-        {source.sourceId}
-        {source.institution ? ` · ${source.institution}` : ''}
-      </p>
+      {source.institution ? <p className="mt-1 text-[11px] text-faint">{source.institution}</p> : null}
       {source.href ? (
         <a
           href={source.href}

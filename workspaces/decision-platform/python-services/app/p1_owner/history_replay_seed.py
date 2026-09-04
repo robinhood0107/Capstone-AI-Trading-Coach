@@ -57,6 +57,7 @@ _OFFLINE_DEMO_ENV: Final = "P1_OFFLINE_DEMO"
 _DSN_ENV: Final = "P1_HISTORY_REPLAY_DATABASE_DSN"
 _OPEN_TIME: Final = time(9, 30)
 _BROKERAGE_MODE: Final = "INTERNAL_PAPER"
+_REPLAY_ACCOUNT_ID: Final = "acct_dddddddddddddddddddddddddddddddd"
 
 
 class HistoryReplaySeedError(RuntimeError):
@@ -136,11 +137,16 @@ def _policy(cursor: psycopg.Cursor[Any]) -> dict[str, Any]:
 
 
 def _account_id(cursor: psycopg.Cursor[Any]) -> str:
-    cursor.execute("select account_id from automation_control where user_id=%s", (_USER_ID,))
-    row = cursor.fetchone()
-    if row is None:
-        raise HistoryReplaySeedError("HISTORY_REPLAY_CONTROL_MISSING")
-    return str(row[0])
+    cursor.execute(
+        """
+        INSERT INTO paper_accounts(
+          account_id,user_id,name,cash_balance,currency,status,owner_scope_hash,margin_requirement_krw
+        ) VALUES (%s,%s,'Offline history replay',10000000,'KRW','ACTIVE',repeat('d',64),0)
+        ON CONFLICT (account_id) DO NOTHING
+        """,
+        (_REPLAY_ACCOUNT_ID, _USER_ID),
+    )
+    return _REPLAY_ACCOUNT_ID
 
 
 def _closes(cursor: psycopg.Cursor[Any], sessions: Sequence[date]) -> dict[date, dict[str, int]]:
@@ -344,7 +350,7 @@ def replay(document: dict[str, Any], *, database_dsn: str) -> dict[str, int]:
                               exit_filled_quantity,
                               policy_id,policy_version,stop_loss_bps,take_profit_bps
                             ) VALUES (%s,%s,%s,%s,%s,%s,'OPEN',true,false,%s,%s,%s,%s,0,%s,0,%s,%s,%s,%s)
-                            ON CONFLICT (position_id) DO NOTHING
+                            ON CONFLICT (position_id) DO UPDATE SET account_id=excluded.account_id
                             """,
                             (
                                 _position_id(session, symbol),
@@ -402,7 +408,8 @@ def replay(document: dict[str, Any], *, database_dsn: str) -> dict[str, int]:
                           event_id,run_id,user_id,sequence,event_type,occurred_at,
                           payload_hash,provider_calls,order_submits,sanitized
                         ) VALUES (%s,%s,%s,%s,%s,%s,%s,0,0,true)
-                        ON CONFLICT (event_id) DO NOTHING
+                        -- event_id와 (run_id, sequence) 중복을 모두 멱등 처리한다.
+                        ON CONFLICT DO NOTHING
                         """,
                         (
                             event_id,

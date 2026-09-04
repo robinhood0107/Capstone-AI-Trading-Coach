@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 from collections.abc import Mapping
-from typing import Any, Final
+from typing import Any, Final, cast
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
@@ -37,7 +37,15 @@ _RESET_STATEMENTS = (
     "DELETE FROM automation_activation_gate WHERE user_id=%s",
     "DELETE FROM automation_control WHERE user_id=%s",
     "DELETE FROM automation_policy_idempotency WHERE user_id=%s",
-    "DELETE FROM automation_policy_versions WHERE user_id=%s",
+    # Append-only run이 참조하는 정책은 보존한다.
+    """
+    DELETE FROM automation_policy_versions policy
+     WHERE policy.user_id=%s
+       AND NOT EXISTS (
+         SELECT 1 FROM automation_runs run
+          WHERE run.policy_id=policy.policy_id AND run.policy_version=policy.version
+       )
+    """,
     "DELETE FROM order_fill_application_receipts WHERE order_id IN (SELECT order_id FROM orders WHERE user_id=%s)",
     "DELETE FROM order_fill_observations WHERE order_id IN (SELECT order_id FROM orders WHERE user_id=%s)",
     "DELETE FROM paper_order_events WHERE order_id IN (SELECT order_id FROM orders WHERE user_id=%s)",
@@ -49,8 +57,31 @@ _RESET_STATEMENTS = (
     "DELETE FROM decision_violations WHERE decision_id IN (SELECT decision_id FROM decisions WHERE user_id=%s)",
     "DELETE FROM decision_idempotency_results WHERE decision_id IN (SELECT decision_id FROM decisions WHERE user_id=%s)",
     "DELETE FROM decisions WHERE user_id=%s",
-    "DELETE FROM principle_versions WHERE principle_id IN (SELECT principle_id FROM principles WHERE user_id=%s)",
-    "DELETE FROM principles WHERE user_id=%s",
+    # 보존된 판정과 정책이 참조하는 원칙 버전은 삭제하지 않는다.
+    """
+    DELETE FROM principle_versions version
+     WHERE version.principle_id IN (SELECT principle_id FROM principles WHERE user_id=%s)
+       AND NOT EXISTS (
+         SELECT 1 FROM decisions decision
+          WHERE decision.principle_version_id=version.principle_version_id
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM automation_policy_versions policy
+          WHERE policy.principle_version_id=version.principle_version_id
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM automation_control control
+          WHERE control.principle_version_id=version.principle_version_id
+       )
+    """,
+    """
+    DELETE FROM principles owned
+     WHERE owned.user_id=%s
+       AND NOT EXISTS (
+         SELECT 1 FROM principle_versions version
+          WHERE version.principle_id=owned.principle_id
+       )
+    """,
     "DELETE FROM rag_v2_answer_history WHERE answer_id=%s AND owner_user_id=%s",
     "DELETE FROM portfolio_position_observations WHERE balance_observation_id IN (SELECT observation_id FROM portfolio_balance_observations WHERE owner_user_id=%s AND source_version='team-a-acceptance-v1')",
     "DELETE FROM portfolio_balance_observations WHERE owner_user_id=%s AND source_version='team-a-acceptance-v1'",
@@ -101,15 +132,28 @@ _APPEND_ONLY_RESET_TABLES: Final = (
 
 
 def _reset(cursor: psycopg.Cursor[object]) -> None:
-    # execute() 가 postgres superuser 세션임을 이미 확인한 뒤에만 불린다.
+    cursor.execute(
+        """
+        SELECT EXISTS (
+          SELECT 1 FROM automation_runs
+          WHERE user_id=%s AND brokerage_mode='KIS_MOCK'
+            AND run_id<>%s
+        ) OR EXISTS (
+          SELECT 1 FROM automation_positions
+          WHERE user_id=%s AND position_id NOT LIKE 'auto_pos_replay%%'
+        )
+        """,
+        (_USER_ID, _AUTOMATION_RUN_ID, _USER_ID),
+    )
+    row = cast(tuple[bool] | None, cursor.fetchone())
+    if row is None or bool(row[0]):
+        raise ValueError("acceptance_requires_disposable_database")
     for table in _APPEND_ONLY_RESET_TABLES:
         cursor.execute(f"ALTER TABLE public.{table} DISABLE TRIGGER USER")
     try:
         _reset_statements(cursor)
     finally:
-        # 되돌리기가 실패해 트랜잭션이 abort 상태면 이 ENABLE 도 실패한다. 그 실패가 원래
-        # 사유를 덮으면 무엇이 문제였는지 알 수 없다. DISABLE 자체가 트랜잭션과 함께
-        # 롤백되므로 여기서 조용히 넘어가도 트리거가 꺼진 채 남지 않는다.
+        # An aborted transaction restores trigger state on rollback.
         for table in _APPEND_ONLY_RESET_TABLES:
             try:
                 cursor.execute(f"ALTER TABLE public.{table} ENABLE TRIGGER USER")
@@ -134,6 +178,9 @@ def _seed(cursor: psycopg.Cursor[object]) -> None:
         """
         INSERT INTO principles(principle_id,user_id,preset_id,title,mode,status,current_version)
         VALUES (%s,%s,'balanced','Team A acceptance principle','GUIDE','ACTIVE',1)
+        ON CONFLICT (principle_id) DO UPDATE SET
+          user_id=excluded.user_id,preset_id=excluded.preset_id,title=excluded.title,
+          mode=excluded.mode,status=excluded.status,current_version=excluded.current_version
         """,
         (_PRINCIPLE_ID, _USER_ID),
     )
@@ -146,6 +193,10 @@ def _seed(cursor: psycopg.Cursor[object]) -> None:
         SELECT %s,%s,1,preset_id,'Team A acceptance principle','GUIDE','ACTIVE',rules_json,
                ARRAY['presetId','title','mode','status','rules'],%s
         FROM principle_presets WHERE preset_id='balanced'
+        ON CONFLICT (principle_version_id) DO UPDATE SET
+          principle_id=excluded.principle_id,version=excluded.version,
+          preset_id=excluded.preset_id,title=excluded.title,mode=excluded.mode,
+          status=excluded.status,rules_json=excluded.rules_json
         """,
         (_PRINCIPLE_VERSION_ID, _PRINCIPLE_ID, _USER_ID),
     )

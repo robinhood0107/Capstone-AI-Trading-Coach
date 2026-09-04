@@ -144,39 +144,22 @@ class PortfolioRiskQueryUseCase(
     }
 
     private fun selectSingleContext(actorUserId: String): ContextSelection {
-        val resolutions =
-            PortfolioSource.entries.map { source ->
-                source to portfolioContextPort.resolve(actorUserId, source)
+        for (source in PORTFOLIO_SOURCE_PRECEDENCE) {
+            when (val resolution = portfolioContextPort.resolve(actorUserId, source)) {
+                is PortfolioContextResolution.Available -> return ContextSelection(resolution.context, null)
+                is PortfolioContextResolution.Unavailable ->
+                    if (resolution.reason == PortfolioContextUnavailableReason.CONFLICT) {
+                        return ContextSelection(
+                            context = null,
+                            warning = PortfolioRiskWarning("PORTFOLIO_CONTEXT_CONFLICT", listOf("portfolioValue")),
+                        )
+                    }
             }
-        val hasConflict =
-            resolutions.any { (_, resolution) ->
-                resolution is PortfolioContextResolution.Unavailable &&
-                    resolution.reason == PortfolioContextUnavailableReason.CONFLICT
-            }
-        val available =
-            resolutions.mapNotNull { (source, resolution) ->
-                (resolution as? PortfolioContextResolution.Available)?.context?.let { source to it }
-            }
-        return when {
-            hasConflict ->
-                ContextSelection(
-                    context = null,
-                    warning = PortfolioRiskWarning("PORTFOLIO_CONTEXT_CONFLICT", listOf("portfolioValue")),
-                )
-
-            available.size > 1 ->
-                ContextSelection(
-                    available.minByOrNull { (source, _) -> PORTFOLIO_SOURCE_PRECEDENCE.indexOf(source) }!!.second,
-                    null,
-                )
-
-            available.size == 1 -> ContextSelection(available.single().second, null)
-            else ->
-                ContextSelection(
-                    context = null,
-                    warning = PortfolioRiskWarning("MISSING_SOURCE", listOf("portfolioValue")),
-                )
         }
+        return ContextSelection(
+            context = null,
+            warning = PortfolioRiskWarning("MISSING_SOURCE", listOf("portfolioValue")),
+        )
     }
 
     private fun missingAssembly(): PortfolioRiskAssembly {

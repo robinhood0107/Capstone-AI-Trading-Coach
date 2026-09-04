@@ -41,3 +41,14 @@ test('settings do not replace missing usage with zero', () => {
   assert.doesNotMatch(settings, /usedToday \?\? 0|remaining \?\? 0/);
   assert.match(settings, /집계 없음/);
 });
+
+test('home and evaluation views distinguish missing values from loading', () => {
+  const overview = read('src/features/overview/OverviewView.tsx');
+  const evaluation = read('src/features/model-evaluation/ModelEvaluationView.tsx');
+  const policy = read('src/features/automation/policy.ts');
+  assert.doesNotMatch(overview, />확인 중</);
+  assert.match(overview, /KIS Mock 계좌 연결 필요/);
+  assert.match(evaluation, /Guide 포트폴리오 평가액/);
+  assert.doesNotMatch(evaluation, /timeline\.slice\(0, 40\)/);
+  assert.match(policy, /켜짐 · 장 시작 대기/);
+});

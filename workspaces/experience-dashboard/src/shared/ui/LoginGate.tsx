@@ -41,7 +41,7 @@ function LoginForm() {
       <div className="rounded-panel bg-panel px-7 py-8 shadow-card">
         <span
           aria-hidden
-          className="grid h-11 w-11 place-items-center rounded-tile bg-brand text-[14px] font-semibold text-on-brand"
+          className="grid h-11 w-11 place-items-center rounded-control bg-brand text-[14px] font-semibold text-on-brand"
         >
           AI
         </span>
@@ -61,7 +61,7 @@ function LoginForm() {
               value={username}
               autoComplete="username"
               onChange={(event) => setUsername(event.target.value)}
-              className="mt-1.5 w-full rounded-tile border border-line bg-subtle px-4 py-2.5 text-[15px] text-ink focus:border-navy focus:bg-panel"
+              className="mt-1.5 w-full rounded-control border border-line bg-subtle px-4 py-2.5 text-[15px] text-ink focus:border-navy focus:bg-panel"
             />
           </div>
           <div>
@@ -77,7 +77,7 @@ function LoginForm() {
               onKeyDown={(event) => {
                 if (event.key === 'Enter') void submit();
               }}
-              className="mt-1.5 w-full rounded-tile border border-line bg-subtle px-4 py-2.5 text-[15px] text-ink focus:border-navy focus:bg-panel"
+              className="mt-1.5 w-full rounded-control border border-line bg-subtle px-4 py-2.5 text-[15px] text-ink focus:border-navy focus:bg-panel"
             />
           </div>
 
@@ -91,7 +91,7 @@ function LoginForm() {
             type="button"
             onClick={() => void submit()}
             disabled={pending}
-            className="w-full rounded-tile bg-brand px-4 py-3 text-[15px] font-semibold text-on-brand hover:opacity-90 disabled:bg-line disabled:text-faint"
+            className="tap w-full rounded-control bg-brand px-4 py-3 text-[15px] font-semibold text-on-brand hover:opacity-90 disabled:bg-line disabled:text-faint"
           >
             {pending ? '연결 중' : '로그인'}
           </button>

@@ -115,7 +115,7 @@ export function JournalView() {
             maxLength={120}
             onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
             placeholder="예: 오늘 자동주문에서 확인한 점"
-            className="w-full rounded-tile border border-line bg-panel px-4 py-2.5 text-[14px] text-ink"
+            className="w-full rounded-control border border-line bg-panel px-4 py-2.5 text-[14px] text-ink"
           />
           <textarea
             aria-label="학습일지 내용"
@@ -124,14 +124,14 @@ export function JournalView() {
             rows={10}
             onChange={(event) => setDraft((current) => ({ ...current, content: event.target.value }))}
             placeholder="판단 근거, 배운 개념, 다음에 확인할 내용을 적으세요."
-            className="w-full resize-y rounded-tile border border-line bg-panel px-4 py-3 text-[14px] leading-6 text-ink"
+            className="w-full resize-y rounded-control border border-line bg-panel px-4 py-3 text-[14px] leading-6 text-ink"
           />
           <input
             aria-label="학습일지 태그"
             value={draft.tags}
             onChange={(event) => setDraft((current) => ({ ...current, tags: event.target.value }))}
             placeholder="태그는 쉼표로 구분"
-            className="w-full rounded-tile border border-line bg-panel px-4 py-2.5 text-[14px] text-ink"
+            className="w-full rounded-control border border-line bg-panel px-4 py-2.5 text-[14px] text-ink"
           />
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="primary" disabled={busy || !draft.title.trim() || !draft.content.trim()} onClick={() => void save()}>

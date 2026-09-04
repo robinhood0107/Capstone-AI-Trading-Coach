@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
 import { Button } from '@/shared/ui/Button';
@@ -108,7 +108,7 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
         title="어떤 방식으로 시작할까요"
         hint={data.presets.disclaimer.ko}
       >
-        <div className="grid gap-px overflow-hidden rounded-tile border border-line bg-line md:grid-cols-3">
+        <div className="grid gap-px overflow-hidden rounded-card border border-line bg-line md:grid-cols-3">
           {[...data.presets.items]
             .sort((a, b) => a.order - b.order)
             .map((preset) => (
@@ -227,29 +227,31 @@ function PresetCard({
   const orders = preset.defaultRules.find((rule) => rule.ruleId === 'max_daily_orders');
   return (
     <Button
-            onClick={onApply}
+      onClick={onApply}
       aria-pressed={selected}
-      className={`bg-panel px-4 py-4 text-left ${selected ? 'ring-2 ring-inset ring-navy' : ''}`}
+      className={`h-full w-full bg-panel px-4 py-4 text-left ${selected ? 'ring-2 ring-inset ring-navy' : ''}`}
     >
-      <div className="flex items-baseline justify-between">
-        <p className="text-[15px] font-semibold text-ink">{preset.nameKo}</p>
-        {current ? (
-          <span className="text-eyebrow font-semibold uppercase text-allow">현재 적용</span>
-        ) : null}
+      <div className="w-full">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="text-[15px] font-semibold text-ink">{preset.nameKo}</p>
+          {current ? (
+            <span className="shrink-0 text-eyebrow font-semibold uppercase text-allow">현재 적용</span>
+          ) : null}
+        </div>
+        <p className="mt-2 text-[13px] leading-6 text-muted">{preset.descriptionKo}</p>
+        <dl className="mt-3 space-y-1 text-[12px]">
+          <div className="flex justify-between">
+            <dt className="text-faint">하루 손실 한도</dt>
+            <dd className="tnum font-mono text-ink">{loss ? formatRatio(loss.threshold, 0) : '—'}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-faint">하루 주문 상한</dt>
+            <dd className="tnum font-mono text-ink">
+              {orders ? `${formatCount(orders.threshold)}건` : '—'}
+            </dd>
+          </div>
+        </dl>
       </div>
-      <p className="mt-2 text-[13px] leading-6 text-muted">{preset.descriptionKo}</p>
-      <dl className="mt-3 space-y-1 text-[12px]">
-        <div className="flex justify-between">
-          <dt className="text-faint">하루 손실 한도</dt>
-          <dd className="tnum font-mono text-ink">{loss ? formatRatio(loss.threshold, 0) : '—'}</dd>
-        </div>
-        <div className="flex justify-between">
-          <dt className="text-faint">하루 주문 상한</dt>
-          <dd className="tnum font-mono text-ink">
-            {orders ? `${formatCount(orders.threshold)}건` : '—'}
-          </dd>
-        </div>
-      </dl>
     </Button>
   );
 }
@@ -286,6 +288,9 @@ function RuleRow({
 
   const isRatio = meta.unit === 'RATIO';
   const negative = rule.operator === '>=';
+  const min = negative ? -1 : 0;
+  const max = negative ? 0 : 1;
+  const fillPct = isRatio ? ((rule.threshold - min) / (max - min)) * 100 : 0;
 
   const display = isRatio
     ? formatRatio(rule.threshold, 0)
@@ -316,14 +321,15 @@ function RuleRow({
         {isRatio ? (
           <input
             type="range"
-            min={negative ? -1 : 0}
-            max={negative ? 0 : 1}
+            min={min}
+            max={max}
             step={0.0001}
             value={rule.threshold}
             disabled={!rule.enabled}
             onChange={(event) => onThreshold(Number(event.target.value))}
             aria-label={`${meta.name} 값`}
-            className="w-40 accent-navy disabled:opacity-40"
+            style={{ '--range-fill': `${fillPct}%` } as CSSProperties}
+            className="ink-slider w-40"
           />
         ) : (
           <input
@@ -334,16 +340,16 @@ function RuleRow({
             disabled={!rule.enabled}
             onChange={(event) => onThreshold(Number(event.target.value))}
             aria-label={`${meta.name} 값`}
-            className="tnum w-32 rounded-full border border-line px-3 py-1 text-right font-mono text-[13px] disabled:bg-surface disabled:text-faint"
+            className="tnum w-32 rounded-control border border-line px-3 py-1 text-right font-mono text-[13px] focus:border-navy focus:outline-none disabled:bg-surface disabled:text-faint"
           />
         )}
         <span className="tnum w-24 text-right font-mono text-[13px] text-ink">{display}</span>
-        <label className="flex items-center gap-2 text-[12px] text-muted">
+        <label className="flex items-center gap-2 whitespace-nowrap text-[12px] text-muted">
           <input
             type="checkbox"
             checked={rule.enabled}
             onChange={(event) => onToggle(event.target.checked)}
-            className="accent-navy"
+            className="ink-checkbox"
           />
           사용
         </label>

@@ -176,7 +176,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
         hint="Kill Switch와 자동운용 상태는 서로 다른 값입니다. 서버가 내려준 상태를 그대로 표시합니다."
         actions={<StatusLabel status={data.status} />}
       >
-        <dl className="grid gap-px overflow-hidden rounded-tile border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
+        <dl className="grid gap-px overflow-hidden rounded-card border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
           <StatusField label="계좌 모드" value={modeLabel(data.status.brokerageMode)} />
           <StatusField label="열린 포지션" value={`${data.status.openPositionCount} / 5`} mono />
           <StatusField
@@ -218,7 +218,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
           </span>
         }
       >
-        <div className="grid gap-px overflow-hidden rounded-tile border border-line bg-line md:grid-cols-3">
+        <div className="grid gap-px overflow-hidden rounded-card border border-line bg-line md:grid-cols-3">
           {AUTOMATION_PRESETS.map((preset) => (
             <Button
               key={preset.presetId}

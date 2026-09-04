@@ -106,7 +106,7 @@ export function ReportView() {
                 title="원칙과 안전장치의 효과"
                 hint="시장 상황과 무관하게 원칙의 효과를 보여주는 지표입니다."
               >
-                <div className="grid gap-px overflow-hidden rounded-tile border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-px overflow-hidden rounded-card border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
                   {view.derivedCards.map((card) => (
                     <div key={card.key} className="bg-panel px-4 py-4">
                       <p className="text-eyebrow font-semibold uppercase text-faint">{card.label}</p>

@@ -30,6 +30,12 @@ const config: Config = {
         hold: 'rgb(var(--c-hold) / <alpha-value>)',
         block: 'rgb(var(--c-block) / <alpha-value>)',
         abstain: 'rgb(var(--c-abstain) / <alpha-value>)',
+        /*
+         * 등락색은 판정색(allow/block)과 별개다. 국내 시장 관행은 상승 적/하락 청이며
+         * 미국식과 반대다. allow(초록)를 상승에 쓰면 국내 사용자에게 반대로 읽힌다.
+         */
+        up: 'rgb(var(--c-up) / <alpha-value>)',
+        down: 'rgb(var(--c-down) / <alpha-value>)',
       },
       fontFamily: {
         sans: [
@@ -57,14 +63,21 @@ const config: Config = {
         /** 히어로 금액 전용. 화면당 1회만 쓴다. */
         display: ['2.25rem', { lineHeight: '2.5rem', letterSpacing: '-0.025em' }],
       },
+      /*
+       * 라운드는 실제로 누르는 대상(버튼·입력·탭 카드)에만 쓴다. 목록·표·패널은 각지다 —
+       * 전부 둥글면 라운드 자체가 아무 것도 말하지 않는다. panel/tile은 하위 호환으로 0에 둔다.
+       */
       borderRadius: {
-        panel: '20px',
-        tile: '14px',
+        panel: '0px',
+        tile: '0px',
+        control: '10px',
+        card: '16px',
       },
+      /* 그림자를 쓰지 않는다. 위계는 괘선과 여백으로만 만든다. */
       boxShadow: {
-        card: '0 1px 2px 0 rgb(12 15 20 / 0.04), 0 12px 32px -18px rgb(12 15 20 / 0.18)',
-        lift: '0 2px 4px 0 rgb(12 15 20 / 0.05), 0 20px 44px -22px rgb(12 15 20 / 0.26)',
-        hero: '0 1px 2px 0 rgb(12 15 20 / 0.06), 0 28px 60px -30px rgb(20 33 61 / 0.45)',
+        card: 'none',
+        lift: 'none',
+        hero: 'none',
       },
       transitionTimingFunction: {
         smooth: 'cubic-bezier(0.4, 0, 0.2, 1)',

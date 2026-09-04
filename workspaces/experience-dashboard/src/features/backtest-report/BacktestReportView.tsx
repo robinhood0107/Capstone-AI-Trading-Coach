@@ -226,7 +226,7 @@ function DerivedPanel({ cards }: { cards: DerivedCard[] }) {
       title="원칙과 안전장치의 효과"
       hint="Baseline과 Strict를 비교해 화면에서 계산한 값입니다. 계산식을 함께 적어 둡니다."
     >
-      <div className="grid gap-px overflow-hidden rounded-tile border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-px overflow-hidden rounded-card border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
         {usable.map((card) => (
           <MetricTile key={card.key} card={card} />
         ))}

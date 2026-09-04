@@ -79,4 +79,3 @@ REVOKE ALL ON FUNCTION public.p1_automation_runtime_readiness_v1(text,date)
   FROM PUBLIC,decision_app,decision_worker,decision_replay,decision_replay_authorizer;
 GRANT EXECUTE ON FUNCTION public.p1_automation_runtime_readiness_v1(text,date)
   TO decision_automation_runtime;
-

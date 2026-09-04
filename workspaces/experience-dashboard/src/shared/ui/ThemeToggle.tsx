@@ -28,7 +28,7 @@ function apply(choice: ThemeChoice): void {
     if (choice === 'system') localStorage.removeItem(THEME_KEY);
     else localStorage.setItem(THEME_KEY, choice);
   } catch {
-    // 저장을 막아 둔 브라우저에서도 이번 세션의 전환은 동작해야 한다.
+    // Storage errors do not block theme changes.
   }
 }
 

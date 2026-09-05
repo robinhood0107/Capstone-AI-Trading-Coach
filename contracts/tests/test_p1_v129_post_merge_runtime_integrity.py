@@ -13,6 +13,7 @@ MIGRATION = (
 )
 RECOVERY_MIGRATION = MIGRATION.with_name("V130__automatic_mock_lineage_recovery.sql")
 DISPLAY_MIGRATION = MIGRATION.with_name("V131__instrument_display_and_position_adoption.sql")
+CLOSE_ADOPTION_MIGRATION = MIGRATION.with_name("V132__close_historical_position_adoption.sql")
 
 
 class P1V129PostMergeRuntimeIntegrityTest(unittest.TestCase):
@@ -21,6 +22,7 @@ class P1V129PostMergeRuntimeIntegrityTest(unittest.TestCase):
         cls.sql = MIGRATION.read_text(encoding="utf-8")
         cls.recovery_sql = RECOVERY_MIGRATION.read_text(encoding="utf-8")
         cls.display_sql = DISPLAY_MIGRATION.read_text(encoding="utf-8")
+        cls.close_adoption_sql = CLOSE_ADOPTION_MIGRATION.read_text(encoding="utf-8")
 
     def test_reasoning_answers_fit_the_persisted_history_constraint(self) -> None:
         self.assertIn("citation_coverage >= 0.2", self.sql)
@@ -76,6 +78,7 @@ class P1V129PostMergeRuntimeIntegrityTest(unittest.TestCase):
         self.assertIn("control_row.control_state<>'DISARMED'", self.display_sql)
         self.assertIn("automation adoption balance mismatch", self.display_sql)
         self.assertNotIn("SELECT public.p1_adopt_historical_mock_position_v1", self.display_sql)
+        self.assertIn("DROP FUNCTION public.p1_adopt_historical_mock_position_v1", self.close_adoption_sql)
 
 
 if __name__ == "__main__":

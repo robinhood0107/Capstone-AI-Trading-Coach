@@ -118,6 +118,17 @@ export async function mockBareTransport<T>(
     } as T;
   }
 
+  if (target === '/api/v2/rag/history') {
+    return { items: [], nextCursor: null } as T;
+  }
+
+  if (target.startsWith('/api/v2/rag/history/')) {
+    throw new ApiFailure(
+      { code: 'NOT_FOUND', message: '해당 질문 기록을 찾을 수 없습니다.' },
+      requestId,
+    );
+  }
+
   throw new ApiFailure(
     { code: 'NOT_FOUND', message: `mock 경로가 정의되지 않았습니다: ${target}` },
     requestId,
@@ -152,6 +163,10 @@ export async function mockTransport<T>(
   }
 
   if (target === '/api/v1/system/health') return ok(fixtures.health, requestId) as ApiEnvelope<T>;
+
+  if (target === '/api/v1/instruments/display' && method === 'GET') {
+    return ok(fixtures.instrumentDisplayCatalog, requestId) as ApiEnvelope<T>;
+  }
 
   if (target === '/api/v2/automation/status' && method === 'GET') {
     return ok(fixtures.automationStatus, requestId) as ApiEnvelope<T>;
@@ -299,6 +314,20 @@ export async function mockTransport<T>(
     const envelope = fixtures.dashboardRiskResults[decisionId];
     if (!envelope) return fail('NOT_FOUND', '해당 판정을 찾을 수 없습니다.', requestId);
     return ok(envelope, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v1/dashboard/model-evaluations/latest') {
+    return ok(
+      { runId: 'demo_s8_offline_0001', fixtureClass: 'DEMO_OFFLINE', asOf: fixtures.modelEvaluations.demo_s8_offline_0001.asOf },
+      requestId,
+    ) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v1/dashboard/backtests/latest') {
+    return ok(
+      { runId: 'demo_s8_offline_0001', fixtureClass: 'DEMO_OFFLINE', asOf: fixtures.backtests.demo_s8_offline_0001.asOf },
+      requestId,
+    ) as ApiEnvelope<T>;
   }
 
   if (target.startsWith('/api/v1/dashboard/model-evaluations/')) {

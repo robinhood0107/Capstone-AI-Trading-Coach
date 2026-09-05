@@ -277,6 +277,49 @@ def test_execution_optional_reader_returns_partial_snapshot_with_one_provider_pa
     assert len(client.calls) == 1
 
 
+def test_execution_recovery_requires_one_exact_filled_buy() -> None:
+    client = FakeClient(
+        {
+            "rt_cd": "0",
+            "ctx_area_fk100": "",
+            "ctx_area_nk100": "",
+            "output1": [
+                {
+                    "odno": "recovered-provider-order",
+                    "pdno": "005930",
+                    "tot_ccld_qty": "2",
+                    "rmn_qty": "0",
+                    "avg_prvs": "70,100",
+                    "cncl_cfrm_qty": "0",
+                    "rjct_qty": "0",
+                    "cncl_yn": "N",
+                    "ord_dt": "20260727",
+                    "ord_tmd": "090001",
+                }
+            ],
+        }
+    )
+    reader = KISMockExecutionReader(client)  # type: ignore[arg-type]
+
+    snapshot = reader.recover_unique_filled_buy(
+        symbol="005930",
+        quantity=2,
+        average_fill_price_krw=70_100,
+        session_date=date(2026, 7, 27),
+    )
+
+    assert snapshot is not None
+    assert (snapshot.symbol, snapshot.cumulative_quantity, snapshot.leaves_quantity) == (
+        "005930",
+        2,
+        0,
+    )
+    assert client.calls[0][3]["SLL_BUY_DVSN_CD"] == "02"
+    assert client.calls[0][3]["PDNO"] == "005930"
+    assert client.calls[0][3]["ODNO"] == ""
+    assert snapshot.average_fill_price_krw == 70_100
+
+
 def test_execution_reader_uses_reference_exchange_division() -> None:
     raw_order_no = "synthetic-provider-order"
     client = FakeClient(

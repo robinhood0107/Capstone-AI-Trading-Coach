@@ -106,7 +106,10 @@ function buildDetail(projection: DecisionProjection): NonNullable<RiskResultView
         abstention.disposition === 'NOT_APPLICABLE'
           ? '이번 주문에는 해당하지 않는 기준'
           : '근거가 없어 비교하지 않은 기준',
-      detail: abstention.message,
+      detail:
+        abstention.disposition === 'NOT_APPLICABLE'
+          ? '이 주문의 평가 대상이 아닌 기준입니다.'
+          : abstention.message,
     })),
   ];
 

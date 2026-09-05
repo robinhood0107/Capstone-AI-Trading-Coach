@@ -18,9 +18,11 @@ import type {
   LatestArtifactRun,
   JournalEntry,
   JournalPage,
+  InstrumentDisplayCatalog,
   RecentRiskResult,
   RecentRiskResultList,
   LoginResponse,
+  MockBalance,
   PortfolioRisk,
   PrincipleCurrent,
   PrincipleOwnerListData,
@@ -64,6 +66,16 @@ export const api = {
 
   riskPortfolio(): Promise<ApiResult<PortfolioRisk>> {
     return apiFetch<PortfolioRisk>('/api/v1/risk/portfolio');
+  },
+
+  mockBalance(accountId: string): Promise<ApiResult<MockBalance>> {
+    return apiFetch<MockBalance>(
+      `/api/v1/brokerage/mock/accounts/${encodeURIComponent(accountId)}/balances`,
+    );
+  },
+
+  instrumentDisplayCatalog(): Promise<ApiResult<InstrumentDisplayCatalog>> {
+    return apiFetch<InstrumentDisplayCatalog>('/api/v1/instruments/display');
   },
 
   killSwitch(): Promise<ApiResult<KillSwitchState>> {

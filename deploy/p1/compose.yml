@@ -518,13 +518,18 @@ services:
     command: ["python", "-m", "app.p1_owner.mock_automation_cli", "readiness"]
     environment:
       P1_LOCAL_CERTIFICATION_VALID: "${P1_LOCAL_CERTIFICATION_VALID:-false}"
-      KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "false"
-    secrets: [automation_runtime_env, kis_mock_env]
+      KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "true"
+      KIS_MODE: mock
+      KIS_OFFLINE: "0"
+      KIS_RETRY_ATTEMPTS: "1"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    secrets: [automation_runtime_env, kis_mock_env, redis_env]
     depends_on:
       postgres: {condition: service_healthy}
     <<: *app-security
     restart: "no"
-    networks: [p1-data]
+    networks: [p1-data, p1-app]
 
   # XKRX 패키지 달력으로 canonical trading session 을 적재한다. provider 호출 0.
   # arm 은 다음 XKRX 세션 행을 요구하는데(V109:92) fixture 2 행뿐이라 최초 arm 이 막힌다.

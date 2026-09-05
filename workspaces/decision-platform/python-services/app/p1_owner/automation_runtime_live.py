@@ -13,7 +13,6 @@ from zoneinfo import ZoneInfo
 import httpx
 from pydantic import SecretStr
 
-from app.brokerage.brokerage_grpc_server import BrokerageGrpcServerSettings
 from app.brokerage.kis_mock_online_client import KISBrokerageCallBudget, KISMockBrokerageHttpClient
 from app.brokerage.kis_mock_online_runtime import KISMockExecutionReader, KISMockOnlineBalanceReader
 from app.brokerage.mock_order_reference_store import (
@@ -265,19 +264,31 @@ class KisAutomationExecutionSource:
     """Redis ciphertext reference와 공식 체결조회만 사용하며 row가 불명확하면 UNRESOLVED다."""
 
     def __init__(self) -> None:
-        settings = BrokerageGrpcServerSettings.from_env()
+        try:
+            reference_ttl_seconds = int(
+                os.environ.get("KIS_MOCK_ORDER_REFERENCE_TTL_SECONDS", "900")
+            )
+        except ValueError:
+            raise ValueError("KIS mock order reference TTL must be an integer") from None
+        self._budget = KISBrokerageCallBudget(token_p_cap=1, brokerage_cap=2)
         self._redis = _build_redis_client()
         self._references = EncryptedRedisOrderReferenceStore(
             self._redis,
-            encryption_key=SecretStr(settings.reference_key.get_secret_value()),
-            ttl_seconds=settings.reference_ttl_seconds,
+            encryption_key=SecretStr(
+                os.environ.get("KIS_MOCK_ORDER_REFERENCE_KEY", "").strip()
+            ),
+            ttl_seconds=reference_ttl_seconds,
         )
         self._client = KISMockBrokerageHttpClient(
             settings=KISSettings(kis_mode="mock", kis_offline=False, kis_retry_attempts=1),
-            budget=KISBrokerageCallBudget(token_p_cap=1, brokerage_cap=16),
+            budget=self._budget,
         )
         self._reader = KISMockExecutionReader(self._client)
         self._balance_reader = KISMockOnlineBalanceReader(self._client)
+
+    @property
+    def physical_call_count(self) -> int:
+        return sum(self._budget.counts.values())
 
     def balance(self, account_id: str) -> dict[str, object]:
         source = self._balance_reader.probe_balance_source(account_id)
@@ -310,6 +321,31 @@ class KisAutomationExecutionSource:
             snapshot = None
         if snapshot is None:
             return ReconcileSnapshot(False, 0, reference.quantity, None)
+        return ReconcileSnapshot(
+            resolved=True,
+            cumulative_quantity=snapshot.cumulative_quantity,
+            leaves_quantity=snapshot.leaves_quantity,
+            average_fill_price_krw=snapshot.average_fill_price_krw,
+            cancelled=snapshot.cancelled,
+            rejected=snapshot.rejected,
+            provider_exec_ref_hash=snapshot.provider_exec_ref_hash,
+        )
+
+    def recover_filled_buy(
+        self,
+        symbol: str,
+        quantity: int,
+        average_fill_price_krw: int,
+        session_date: date,
+    ) -> ReconcileSnapshot:
+        snapshot = self._reader.recover_unique_filled_buy(
+            symbol=symbol,
+            quantity=quantity,
+            average_fill_price_krw=average_fill_price_krw,
+            session_date=session_date,
+        )
+        if snapshot is None:
+            return ReconcileSnapshot(False, 0, quantity, None)
         return ReconcileSnapshot(
             resolved=True,
             cumulative_quantity=snapshot.cumulative_quantity,

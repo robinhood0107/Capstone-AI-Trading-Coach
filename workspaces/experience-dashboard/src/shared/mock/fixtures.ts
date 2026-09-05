@@ -15,6 +15,7 @@ import type {
   DashboardRagSourcesView,
   DashboardRiskResultView,
   DecisionProjection,
+  InstrumentDisplayCatalog,
   PortfolioRisk,
   PrincipleCurrent,
   PrinciplePreset,
@@ -462,6 +463,45 @@ export const decisions: Record<string, DecisionProjection> = {
       ],
     },
   },
+};
+
+/* ------------------------------------------------------------ Instrument */
+
+/** contracts/catalogs/p1-return-universe.v1.json의 31개 종목과 이름을 그대로 따른다. */
+export const instrumentDisplayCatalog: InstrumentDisplayCatalog = {
+  items: [
+    { symbol: '005930', nameKo: '삼성전자', logoText: '삼성', brandColor: '#1428A0', market: 'KOSPI' },
+    { symbol: '000660', nameKo: 'SK하이닉스', logoText: 'SK', brandColor: '#EA0029', market: 'KOSPI' },
+    { symbol: '005935', nameKo: '삼성전자우', logoText: '삼성', brandColor: '#1428A0', market: 'KOSPI' },
+    { symbol: '402340', nameKo: 'SK스퀘어', logoText: 'SK', brandColor: '#EA0029', market: 'KOSPI' },
+    { symbol: '009150', nameKo: '삼성전기', logoText: '삼성', brandColor: '#1428A0', market: 'KOSPI' },
+    { symbol: '373220', nameKo: 'LG에너지솔루션', logoText: 'LG', brandColor: '#A50034', market: 'KOSPI' },
+    { symbol: '005380', nameKo: '현대차', logoText: '현대', brandColor: '#002C5F', market: 'KOSPI' },
+    { symbol: '207940', nameKo: '삼성바이오로직스', logoText: '삼성', brandColor: '#1428A0', market: 'KOSPI' },
+    { symbol: '032830', nameKo: '삼성생명', logoText: '삼성', brandColor: '#1428A0', market: 'KOSPI' },
+    { symbol: '105560', nameKo: 'KB금융', logoText: 'KB', brandColor: '#FFB81C', market: 'KOSPI' },
+    { symbol: '028260', nameKo: '삼성물산', logoText: '삼성', brandColor: '#1428A0', market: 'KOSPI' },
+    { symbol: '012450', nameKo: '한화에어로스페이스', logoText: '한화', brandColor: '#FF6600', market: 'KOSPI' },
+    { symbol: '034020', nameKo: '두산에너빌리티', logoText: '두산', brandColor: '#1A1A1A', market: 'KOSPI' },
+    { symbol: '055550', nameKo: '신한지주', logoText: '신한', brandColor: '#0046FF', market: 'KOSPI' },
+    { symbol: '000270', nameKo: '기아', logoText: '기아', brandColor: '#05141F', market: 'KOSPI' },
+    { symbol: '329180', nameKo: 'HD현대중공업', logoText: 'HD', brandColor: '#00519E', market: 'KOSPI' },
+    { symbol: '006400', nameKo: '삼성SDI', logoText: '삼성', brandColor: '#1428A0', market: 'KOSPI' },
+    { symbol: '068270', nameKo: '셀트리온', logoText: '셀트', brandColor: '#004B93', market: 'KOSPI' },
+    { symbol: '012330', nameKo: '현대모비스', logoText: '현대', brandColor: '#002C5F', market: 'KOSPI' },
+    { symbol: '034730', nameKo: 'SK', logoText: 'SK', brandColor: '#EA0029', market: 'KOSPI' },
+    { symbol: '086790', nameKo: '하나금융지주', logoText: '하나', brandColor: '#008C46', market: 'KOSPI' },
+    { symbol: '035420', nameKo: 'NAVER', logoText: 'N', brandColor: '#03C75A', market: 'KOSPI' },
+    { symbol: '066570', nameKo: 'LG전자', logoText: 'LG', brandColor: '#A50034', market: 'KOSPI' },
+    { symbol: '010120', nameKo: 'LS ELECTRIC', logoText: 'LS', brandColor: '#00447C', market: 'KOSPI' },
+    { symbol: '000810', nameKo: '삼성화재', logoText: '삼성', brandColor: '#1428A0', market: 'KOSPI' },
+    { symbol: '298040', nameKo: '효성첨단소재', logoText: '효성', brandColor: '#004EA2', market: 'KOSPI' },
+    { symbol: '267260', nameKo: 'HD현대일렉트릭', logoText: 'HD', brandColor: '#00519E', market: 'KOSPI' },
+    { symbol: '010130', nameKo: '고려아연', logoText: '고려', brandColor: '#003876', market: 'KOSPI' },
+    { symbol: '042660', nameKo: '한화오션', logoText: '한화', brandColor: '#FF6600', market: 'KOSPI' },
+    { symbol: '005490', nameKo: 'POSCO홀딩스', logoText: 'P', brandColor: '#00468B', market: 'KOSPI' },
+    { symbol: '132030', nameKo: 'KODEX 골드선물(H)', logoText: '금', brandColor: '#C9A227', market: 'ETF' },
+  ],
 };
 
 /* ---------------------------------------------------------------- Signal */

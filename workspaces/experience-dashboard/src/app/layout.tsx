@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import Image from 'next/image';
 import './globals.css';
 import { NavRail } from '@/shared/ui/NavRail';
 import { StatusBar } from '@/shared/ui/StatusBar';
@@ -31,9 +32,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <div className="flex items-center gap-3 px-2">
                 <span
                   aria-hidden
-                  className="grid h-10 w-10 shrink-0 place-items-center rounded-control bg-brand text-[13px] font-semibold tracking-tight text-on-brand"
+                  className="relative block h-10 w-10 shrink-0 overflow-hidden rounded-control"
                 >
-                  AI
+                  <Image src="/mascot.png" alt="" fill sizes="40px" quality={90} className="object-cover" priority />
                 </span>
                 <span className="min-w-0">
                   <span className="block text-[15px] font-semibold leading-tight tracking-tight text-ink">

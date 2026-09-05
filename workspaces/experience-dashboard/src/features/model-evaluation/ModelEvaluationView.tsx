@@ -14,11 +14,11 @@ import {
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
 import { Numeric } from '@/shared/ui/Numeric';
-import { IdInput } from '@/shared/ui/IdInput';
 import { AbstainChip } from '@/shared/ui/Decision';
 import { useResource } from '@/shared/lib/useResource';
-import { ID_PATTERN } from '@/shared/api/endpoints';
+import { api, ID_PATTERN } from '@/shared/api/endpoints';
 import { useLatestRun } from '@/shared/api/latestRun';
+import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentity';
 import { formatDecimal, formatKstDateTime, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 import { loadModelEvaluationView, loadSignalView, type ModelRow, type SignalSlot } from './viewModel';
 
@@ -33,6 +33,13 @@ export function ModelEvaluationView() {
   const { runId, pending } = useLatestRun('model-evaluations');
   const [symbol, setSymbol] = useState('');
   const symbolValid = ID_PATTERN.symbol.test(symbol);
+  const catalog = useResource(async () => {
+    const { data } = await api.instrumentDisplayCatalog();
+    return { kind: 'ready' as const, data, asOf: null };
+  }, []);
+  const instruments =
+    catalog.state.kind === 'ready' || catalog.state.kind === 'stale' ? catalog.state.data.items : [];
+  const bySymbol = instrumentMap(instruments);
 
   const evaluation = useResource(
     () => loadModelEvaluationView(runId ?? ''),
@@ -43,15 +50,22 @@ export function ModelEvaluationView() {
 
   return (
     <div className="space-y-6">
-      <IdInput
-        label="종목 코드"
-        hint="종목을 넣으면 그 종목의 현재 신호를 함께 봅니다. 성과 지표와는 다른 축입니다."
-        placeholder="005930"
-        value={symbol}
-        onChange={setSymbol}
-        pattern={ID_PATTERN.symbol}
-        patternHint="숫자 6자리여야 합니다."
-      />
+      <label className="block max-w-md">
+        <span className="text-[13px] font-semibold text-ink">현재 신호를 볼 종목</span>
+        <span className="mt-1 block text-[12px] text-muted">31개 운용 종목에서 이름으로 선택합니다.</span>
+        <select
+          value={symbol}
+          onChange={(event) => setSymbol(event.target.value)}
+          className="mt-2 min-h-11 w-full rounded-control border border-line bg-panel px-3 text-[14px] text-ink"
+        >
+          <option value="">종목을 선택하세요</option>
+          {instruments.map((instrument) => (
+            <option key={instrument.symbol} value={instrument.symbol}>
+              {instrument.nameKo} · {instrument.symbol}
+            </option>
+          ))}
+        </select>
+      </label>
 
       {runId !== null ? (
         <AsyncBoundary state={evaluation.state} onRetry={evaluation.reload}>
@@ -170,7 +184,7 @@ export function ModelEvaluationView() {
           {(view) => (
             <Panel
               contract="GET /api/v2/signals/{symbol}"
-              title={`${view.symbol} 현재 신호`}
+              title={`${bySymbol.get(view.symbol)?.nameKo ?? view.symbol} 현재 신호`}
               hint="성과 지표와 다른 축입니다. 지금 이 종목에 대해 각 모델이 무엇을 말하는지 봅니다."
               actions={
                 view.composite.status === 'AVAILABLE' ? (
@@ -185,6 +199,7 @@ export function ModelEvaluationView() {
                 )
               }
             >
+              <div className="mb-4"><InstrumentIdentity symbol={view.symbol} instrument={bySymbol.get(view.symbol)} /></div>
               <ul className="divide-y divide-line/60">
                 {view.slots.map((slot) => (
                   <SignalSlotRow key={slot.key} slot={slot} />

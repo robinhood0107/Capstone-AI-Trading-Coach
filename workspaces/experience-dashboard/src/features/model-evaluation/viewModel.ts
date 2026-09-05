@@ -116,6 +116,12 @@ const ABSTAIN_REASON_KR: Record<string, string> = {
   REQUIRED_COMPONENT_UNAVAILABLE: '필수 구성요소가 없어 종합하지 않았습니다',
 };
 
+function readWarning(warning: string): string {
+  return warning.includes('current P1 production authority')
+    ? '현재 운용 판단에는 규칙 baseline과 LSTM만 사용합니다.'
+    : warning;
+}
+
 export function readAbstainReason(reason: string): string {
   return ABSTAIN_REASON_KR[reason] ?? reason;
 }
@@ -172,7 +178,7 @@ export function toSignalView(signal: SignalV3Runtime): SignalView {
     slots,
     disagrees: distinct.length > 1,
     distinctSignals: distinct,
-    warnings: signal.warnings,
+    warnings: signal.warnings.map(readWarning),
   };
 }
 

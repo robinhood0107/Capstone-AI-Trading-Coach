@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
 import { Button } from '@/shared/ui/Button';
@@ -210,14 +210,18 @@ interface ColumnProps {
 }
 
 function ProviderColumn(props: ColumnProps) {
+  const id = useId();
   const selected = props.provider;
   const needsKey = selected !== '' && PROVIDER_NEEDS_KEY[selected];
   return (
     <fieldset className="space-y-3 rounded-card border border-line p-4">
       <legend className="px-1 text-xs font-medium text-ink">{props.heading}</legend>
       <div className="space-y-1">
-        <label className={LABEL}>제공자</label>
+        <label className={LABEL} htmlFor={`${id}-provider`}>
+          제공자
+        </label>
         <select
+          id={`${id}-provider`}
           className={FIELD}
           value={selected}
           onChange={(event) => props.onProvider(event.target.value as Provider | '')}
@@ -233,8 +237,11 @@ function ProviderColumn(props: ColumnProps) {
       {selected !== '' && (
         <>
           <div className="space-y-1">
-            <label className={LABEL}>모델 이름 (비우면 배포 기본값)</label>
+            <label className={LABEL} htmlFor={`${id}-model`}>
+              모델 이름 (비우면 배포 기본값)
+            </label>
             <input
+              id={`${id}-model`}
               className={FIELD}
               value={props.modelId}
               placeholder="gemini-3.5-flash"
@@ -243,8 +250,11 @@ function ProviderColumn(props: ColumnProps) {
           </div>
           {selected === 'custom' && (
             <div className="space-y-1">
-              <label className={LABEL}>https 주소</label>
+              <label className={LABEL} htmlFor={`${id}-baseurl`}>
+                https 주소
+              </label>
               <input
+                id={`${id}-baseurl`}
                 className={FIELD}
                 value={props.baseUrl}
                 placeholder="https://…/v1"
@@ -254,13 +264,14 @@ function ProviderColumn(props: ColumnProps) {
           )}
           {needsKey ? (
             <div className="space-y-1">
-              <label className={LABEL}>
+              <label className={LABEL} htmlFor={`${id}-apikey`}>
                 API 키
                 {props.keyLast4 !== null && (
                   <span className="ml-2 text-faint">저장됨 (…{props.keyLast4})</span>
                 )}
               </label>
               <input
+                id={`${id}-apikey`}
                 className={FIELD}
                 type="password"
                 autoComplete="off"

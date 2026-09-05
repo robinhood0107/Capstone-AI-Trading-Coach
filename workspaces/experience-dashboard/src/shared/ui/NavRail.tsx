@@ -20,6 +20,7 @@ const ICON_PROPS = {
   strokeWidth: 1.8,
   strokeLinecap: 'round' as const,
   strokeLinejoin: 'round' as const,
+  'aria-hidden': true as const,
 };
 
 const SECTIONS: NavItem[] = [

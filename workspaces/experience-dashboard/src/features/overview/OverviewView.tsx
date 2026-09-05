@@ -115,8 +115,8 @@ export function OverviewView() {
       <section className="rounded-panel border border-navy/15 bg-navy/[0.05] px-6 py-6 sm:px-8">
         <div className="flex flex-wrap items-center justify-between gap-6">
           <div className="flex min-w-0 items-start gap-4">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-control bg-navy/10 text-navy">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+            <span aria-hidden className="grid h-10 w-10 shrink-0 place-items-center rounded-control bg-navy/10 text-navy">
+              <svg aria-hidden viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
                 <path d="M4 5h16v11H9l-4 4V5Z" />
                 <path d="M8 9h8M8 12h5" />
               </svg>

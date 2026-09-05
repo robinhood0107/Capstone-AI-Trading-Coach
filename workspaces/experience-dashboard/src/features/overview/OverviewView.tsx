@@ -8,14 +8,17 @@ import { Delta } from '@/shared/ui/Numeric';
 import { useResource } from '@/shared/lib/useResource';
 import { api } from '@/shared/api/endpoints';
 import { withFreshness } from '@/shared/lib/viewState';
-import { formatKrw, formatRatio, formatSignedRatio } from '@/shared/lib/format';
+import { formatKrw, formatKstDateTime, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 import type {
   AutomationPositionPageV2,
   AutomationStatusV2,
+  InstrumentDisplayCatalog,
+  MockBalance,
   PortfolioRisk,
   RecentRiskResult,
 } from '@/shared/api/wire';
 import { AUTOMATION_STATE_LABELS } from '@/features/automation/policy';
+import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentity';
 
 const STEPS = [
   { href: '/principles', label: '내 원칙 정하기', detail: '먼저 기준을 정해야 주문 검토가 동작합니다.' },
@@ -25,18 +28,24 @@ const STEPS = [
 
 export function OverviewView() {
   const { state, reload } = useResource(async () => {
-    const [risk, status, positions, latestRisk] = await Promise.all([
+    const [risk, status, positions, latestRisk, instruments] = await Promise.all([
       api.riskPortfolio(),
       api.automationStatusV2(),
       api.automationPositionsV2(),
       api.dashboardLatestRiskResult().catch(() => null),
+      api.instrumentDisplayCatalog(),
     ]);
+    const balance = status.data.accountId
+      ? await api.mockBalance(status.data.accountId).then((result) => result.data).catch(() => null)
+      : null;
     return withFreshness<OverviewData>(
       {
         risk: risk.data,
         status: status.data,
         positions: positions.data,
         latestRisk: latestRisk?.data ?? null,
+        balance,
+        instruments: instruments.data,
       },
       risk.data.asOf,
       15,
@@ -50,14 +59,13 @@ export function OverviewView() {
         {(data) => (
           <>
             <section className="relative overflow-hidden rounded-panel bg-[#12151F] px-6 py-7 text-white sm:px-8 sm:py-8">
-              <HeroChartMotif />
               <div className="relative z-10">
                 <div className="flex flex-wrap items-end justify-between gap-6">
                   <div className="min-w-0">
                     <p className="text-[13px] text-white/60">평가금액</p>
                     <p className="tnum mt-2 text-[28px] font-semibold leading-tight tracking-tight sm:text-display">
-                      {finite(data.risk.portfolioValue) ? (
-                        formatKrw(data.risk.portfolioValue)
+                      {finite(data.balance?.portfolioEquityKrw ?? data.risk.portfolioValue) ? (
+                        formatKrw(data.balance?.portfolioEquityKrw ?? data.risk.portfolioValue!)
                       ) : (
                         <span className="text-[18px] font-medium text-white/65">KIS Mock 계좌 연결 필요</span>
                       )}
@@ -130,46 +138,6 @@ export function OverviewView() {
         </div>
       </section>
     </div>
-  );
-}
-
-/*
- * 순수 장식용 캔들스틱 무늬. 실제 시세·잔고를 나타내지 않는다 — 값을 합성하지 않는다는
- * 원칙(8.4.1)을 지키기 위해 축·값·라벨을 전혀 붙이지 않고 배경 질감으로만 쓴다.
- */
-function HeroChartMotif() {
-  const bars = [38, 52, 45, 60, 55, 70, 62, 78, 68, 82, 74, 90, 80, 95, 85, 72, 88, 76, 92, 82, 96, 86, 100, 90];
-  const w = 400;
-  const h = 100;
-  const barW = w / bars.length;
-  const points = bars.map((v, i) => `${i * barW + barW / 2},${h - v}`).join(' ');
-
-  return (
-    <svg
-      aria-hidden
-      viewBox={`0 0 ${w} ${h}`}
-      preserveAspectRatio="none"
-      className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.16]"
-    >
-      {bars.map((v, i) => (
-        <rect
-          key={i}
-          x={i * barW + barW * 0.22}
-          y={h - v}
-          width={barW * 0.56}
-          height={v}
-          fill={i % 2 === 0 ? '#FF6B70' : '#7EA0FF'}
-        />
-      ))}
-      <polyline
-        points={points}
-        fill="none"
-        stroke="white"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
-    </svg>
   );
 }
 
@@ -300,48 +268,188 @@ interface OverviewData {
   status: AutomationStatusV2;
   positions: AutomationPositionPageV2;
   latestRisk: RecentRiskResult | null;
+  balance: MockBalance | null;
+  instruments: InstrumentDisplayCatalog;
 }
 
 function LiveSummary({ data }: { data: OverviewData }) {
   const latest = data.latestRisk;
+  const balance = data.balance;
+  const managedSymbols = new Set(
+    data.positions.items
+      .filter((position) => position.status === 'OPEN' || position.status === 'EXIT_PENDING')
+      .map((position) => position.symbol),
+  );
+  const stockValue = balance
+    ? balance.positions.reduce((sum, position) => sum + position.marketValueKrw, 0)
+    : null;
+  const observedAt = formatKstDateTime(balance?.observedAt ?? null);
+  const policy = data.status.policy;
+  const instruments = instrumentMap(data.instruments.items);
+  const remainingCapital =
+    policy && stockValue !== null ? Math.max(0, policy.capitalLimitKrw - stockValue) : null;
+
   return (
-    <Panel title="저장된 운용 결과" hint="KIS Mock 계좌와 Decision Platform이 저장한 값만 표시합니다.">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Tile label="KIS 열린 포지션">
-          <span className="tnum text-[22px] font-semibold text-ink">{data.status.openPositionCount}개</span>
-        </Tile>
-        <Tile label="종료된 포지션">
-          <span className="tnum text-[22px] font-semibold text-ink">
-            {data.positions.realizedSummary.closedPositionCount}개
-          </span>
-        </Tile>
-        <Tile label="확정 손익">
-          <span className="tnum text-[22px] font-semibold text-ink">
-            {formatKrw(data.positions.realizedSummary.realizedPnlKrw)}
-          </span>
-        </Tile>
-        <Tile label="최근 판정">
-          {latest ? (
-            <Link href="/order-review" className="text-[18px] font-semibold text-navy hover:underline">
-              {latest.symbol} · {latest.action}
+    <div className="space-y-6">
+      <Panel
+        title="현재 KIS Mock 계좌"
+        hint={observedAt ? `${observedAt} KST에 저장된 잔고입니다.` : '저장된 최신 잔고를 표시합니다.'}
+      >
+        {balance ? (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Tile label="총 평가금액">
+                <span className="tnum text-[22px] font-semibold text-ink">
+                  {formatKrw(balance.portfolioEquityKrw)}
+                </span>
+              </Tile>
+              <Tile label="현금 잔고">
+                <span className="tnum text-[22px] font-semibold text-ink">{formatKrw(balance.cashKrw)}</span>
+              </Tile>
+              <Tile label="주식 평가금액">
+                <span className="tnum text-[22px] font-semibold text-ink">{formatKrw(stockValue ?? 0)}</span>
+              </Tile>
+              <Tile label="보유 종목">
+                <span className="tnum text-[22px] font-semibold text-ink">{balance.positions.length}개</span>
+              </Tile>
+            </div>
+
+            <ul className="mt-5 divide-y divide-line/60 border-t border-line">
+              {balance.positions.map((position) => {
+                const managed = managedSymbols.has(position.symbol);
+                return (
+                  <li
+                    key={position.symbol}
+                    className="grid gap-2 py-3 text-[13px] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                  >
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <InstrumentIdentity symbol={position.symbol} instrument={instruments.get(position.symbol)} compact />
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                          managed ? 'bg-navy/10 text-navy' : 'bg-subtle text-muted'
+                        }`}
+                      >
+                        {managed ? '자동매매 관리' : '직접 보유 · 매매 제외'}
+                      </span>
+                      {position.isGoldEtfEtn ? (
+                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
+                          금 ETF·ETN
+                        </span>
+                      ) : null}
+                    </div>
+                    <span className="tnum text-muted sm:text-right">
+                      {position.quantity}주 · 평가 {formatKrw(position.marketValueKrw)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="mt-3 text-[12px] leading-5 text-muted">
+              직접 보유 종목도 운용 한도와 위험 계산에는 포함되지만, 자동매매가 임의로 매도하지 않습니다.
+            </p>
+          </>
+        ) : (
+          <p className="text-[13px] text-muted">계좌 상세 잔고를 불러오지 못했습니다.</p>
+        )}
+      </Panel>
+
+      <Panel title="자동매매 운용 상태" hint="현재 제어 상태와 저장된 운용 정책을 그대로 표시합니다.">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Tile label="자동주문">
+            <Link href="/automation" className="text-[18px] font-semibold text-navy hover:underline">
+              {AUTOMATION_STATE_LABELS[data.status.projectionState]}
             </Link>
-          ) : (
-            <span className="text-[14px] text-muted">아직 없음</span>
-          )}
-        </Tile>
-      </div>
-      {data.positions.items.length > 0 ? (
-        <ul className="mt-5 divide-y divide-line/60 border-t border-line">
-          {data.positions.items.slice(0, 5).map((position) => (
-            <li key={position.positionId} className="flex flex-wrap items-center justify-between gap-3 py-3 text-[13px]">
-              <span className="font-medium text-ink">{position.symbol}</span>
-              <span className="tnum text-muted">
-                {position.quantity}주 · 평균 {formatKrw(position.entryAverageFillPriceKrw)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </Panel>
+          </Tile>
+          <Tile label="모의계좌 인증">
+            <span className="text-[16px] font-semibold text-ink">
+              {data.status.certificationStatus === 'VALID' ? '정상' : data.status.certificationStatus}
+            </span>
+          </Tile>
+          <Tile label="Kill Switch">
+            <span className="text-[16px] font-semibold text-ink">
+              {data.status.killSwitchActive ? '작동 중' : '꺼짐'}
+            </span>
+          </Tile>
+          <Tile label="미해결 대사">
+            <span className="text-[16px] font-semibold text-ink">
+              {data.status.unresolvedReconciliation ? '확인 필요' : '없음'}
+            </span>
+          </Tile>
+        </div>
+
+        {policy ? (
+          <div className="mt-4 rounded-tile border border-line bg-panel px-4 py-4">
+            <p className="text-[12px] font-medium text-muted">현재 운용 정책</p>
+            <div className="mt-2 grid gap-x-6 gap-y-2 text-[13px] sm:grid-cols-2 lg:grid-cols-3">
+              <SummaryPair label="운용 한도" value={formatKrw(policy.capitalLimitKrw)} />
+              <SummaryPair
+                label="계좌 주식 반영"
+                value={stockValue === null ? '잔고 없음' : `-${formatKrw(stockValue)}`}
+              />
+              <SummaryPair
+                label="남은 운용 한도"
+                value={remainingCapital === null ? '계산 불가' : formatKrw(remainingCapital)}
+              />
+              <SummaryPair label="손절 / 익절" value={`${formatRatio(policy.stopLossBps / 10_000, 1)} / ${formatRatio(policy.takeProfitBps / 10_000, 1)}`} />
+              <SummaryPair label="최대 열린 포지션" value={`${policy.maxOpenPositions}개`} />
+              <SummaryPair label="평가 / 매수 마감" value={`${policy.evaluationTimeKst} / ${policy.buyCutoffTimeKst} KST`} />
+            </div>
+          </div>
+        ) : null}
+
+        {data.positions.items.length > 0 ? (
+          <ul className="mt-5 divide-y divide-line/60 border-t border-line">
+            {data.positions.items.map((position) => (
+              <li key={position.positionId} className="grid gap-2 py-3 text-[13px] lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                  <InstrumentIdentity symbol={position.symbol} instrument={instruments.get(position.symbol)} compact />
+                  <span className="text-muted">{position.status === 'OPEN' ? '보유 중' : position.status}</span>
+                  <span className="tnum text-muted">{position.quantity}주</span>
+                </div>
+                <span className="tnum text-muted lg:text-right">
+                  평균 {formatKrw(position.entryAverageFillPriceKrw)} · 손절 {formatRatio(position.stopLossBps / 10_000, 1)} · 익절 {formatRatio(position.takeProfitBps / 10_000, 1)}
+                  {position.expirySession ? ` · 만료 ${position.expirySession}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-4 text-[13px] text-muted">자동매매가 관리하는 포지션이 없습니다.</p>
+        )}
+      </Panel>
+
+      <Panel title="저장된 운용 결과" hint="확정된 자동매매 결과와 최근 주문 판정을 표시합니다.">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Tile label="종료된 포지션">
+            <span className="tnum text-[22px] font-semibold text-ink">
+              {data.positions.realizedSummary.closedPositionCount}개
+            </span>
+          </Tile>
+          <Tile label="확정 손익">
+            <span className="tnum text-[22px] font-semibold text-ink">
+              {formatKrw(data.positions.realizedSummary.realizedPnlKrw)}
+            </span>
+          </Tile>
+          <Tile label="최근 판정">
+            {latest ? (
+              <Link href="/order-review" className="text-[18px] font-semibold text-navy hover:underline">
+                {instruments.get(latest.symbol)?.nameKo ?? latest.symbol} · {latest.action}
+              </Link>
+            ) : (
+              <span className="text-[14px] text-muted">아직 없음</span>
+            )}
+          </Tile>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function SummaryPair({ label, value }: { label: string; value: string }) {
+  return (
+    <p>
+      <span className="text-faint">{label}</span>
+      <span className="tnum ml-2 font-medium text-ink">{value}</span>
+    </p>
   );
 }

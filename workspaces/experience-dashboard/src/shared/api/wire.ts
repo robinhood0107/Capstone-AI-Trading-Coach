@@ -64,6 +64,36 @@ export interface PortfolioRisk {
   dataFreshness: DataFreshness;
 }
 
+export interface MockBalancePosition {
+  symbol: string;
+  quantity: number;
+  marketValueKrw: number;
+  isGoldEtfEtn: boolean;
+}
+
+export interface MockBalance {
+  accountId: string;
+  brokerageMode: 'KIS_MOCK';
+  cashKrw: number;
+  portfolioEquityKrw: number;
+  marginRequirementKrw: number;
+  positions: MockBalancePosition[];
+  observedAt: string;
+  sourceVersion: string;
+}
+
+export interface InstrumentDisplayItem {
+  symbol: string;
+  nameKo: string;
+  logoText: string;
+  brandColor: string;
+  market: 'KOSPI' | 'ETF';
+}
+
+export interface InstrumentDisplayCatalog {
+  items: InstrumentDisplayItem[];
+}
+
 export type KillSwitchReasonClass =
   | 'USER_MANUAL_STOP'
   | 'OPERATOR_MANUAL_STOP'

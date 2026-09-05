@@ -1,8 +1,14 @@
 import { ApiFailure, isEnvelope, type ApiEnvelope, type ApiResult } from './envelope';
 import { session } from './session';
-import { mockTransport, mockBareTransport } from '@/shared/mock/transport';
 
 export type ApiMode = 'mock' | 'live';
+
+type MockTransportModule = typeof import('@/shared/mock/transport');
+let mockModule: MockTransportModule | null = null;
+if (process.env.NODE_ENV !== 'production') {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  mockModule = require('@/shared/mock/transport') as MockTransportModule;
+}
 
 export function apiMode(): ApiMode {
   return process.env.NEXT_PUBLIC_API_MODE === 'mock' ? 'mock' : 'live';
@@ -52,7 +58,8 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   const method = options.method ?? 'GET';
 
   if (apiMode() === 'mock') {
-    return unwrap(await mockTransport<T>(path, method, options.body, requestId));
+    if (!mockModule) throw new Error('Mock API mode is unavailable in production.');
+    return unwrap(await mockModule.mockTransport<T>(path, method, options.body, requestId));
   }
 
   const headers: Record<string, string> = {
@@ -115,7 +122,8 @@ export async function apiFetchBare<T>(path: string, options: RequestOptions = {}
   const method = options.method ?? 'GET';
 
   if (apiMode() === 'mock') {
-    return mockBareTransport<T>(path, method, options.body, requestId);
+    if (!mockModule) throw new Error('Mock API mode is unavailable in production.');
+    return mockModule.mockBareTransport<T>(path, method, options.body, requestId);
   }
 
   const headers: Record<string, string> = {

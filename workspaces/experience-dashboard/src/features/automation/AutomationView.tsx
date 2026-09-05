@@ -14,7 +14,9 @@ import type {
   AutomationPositionV2,
   AutomationRunV2,
   AutomationStatusV2,
+  InstrumentDisplayCatalog,
 } from '@/shared/api/wire';
+import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentity';
 import {
   AUTOMATION_BLOCKER_LABELS,
   AUTOMATION_EVIDENCE_LINKS,
@@ -32,6 +34,7 @@ interface AutomationData {
   status: AutomationStatusV2;
   runs: AutomationRunV2[];
   positions: AutomationPositionV2[];
+  instruments: InstrumentDisplayCatalog;
 }
 
 interface Draft {
@@ -41,13 +44,14 @@ interface Draft {
 }
 
 async function load(): Promise<ViewState<AutomationData>> {
-  const [status, runs, positions] = await Promise.all([
+  const [status, runs, positions, instruments] = await Promise.all([
     api.automationStatusV2(),
     api.automationRunsV2(),
     api.automationPositionsV2(),
+    api.instrumentDisplayCatalog(),
   ]);
   return ready(
-    { status: status.data, runs: runs.data.items, positions: positions.data.items },
+    { status: status.data, runs: runs.data.items, positions: positions.data.items, instruments: instruments.data },
     status.data.policy?.updatedAt ?? null,
   );
 }
@@ -342,8 +346,8 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
       </Panel>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <PositionPanel positions={data.positions} />
-        <RunPanel runs={data.runs} />
+        <PositionPanel positions={data.positions} instruments={data.instruments} />
+        <RunPanel runs={data.runs} instruments={data.instruments} />
       </div>
 
       <Panel title="빠른 선택값의 근거" hint="연구 기반 고정 기본값이며 이 프로젝트 데이터에서 최적화한 값이나 수익 보장이 아닙니다.">
@@ -435,7 +439,8 @@ function PolicyInput({
   );
 }
 
-function PositionPanel({ positions }: { positions: AutomationPositionV2[] }) {
+function PositionPanel({ positions, instruments }: { positions: AutomationPositionV2[]; instruments: InstrumentDisplayCatalog }) {
+  const bySymbol = instrumentMap(instruments.items);
   return (
     <Panel contract="GET /api/v2/automation/positions" title="자동운용 포지션">
       {positions.length === 0 ? (
@@ -456,7 +461,7 @@ function PositionPanel({ positions }: { positions: AutomationPositionV2[] }) {
             <tbody>
               {positions.map((position) => (
                 <tr key={position.positionId} className="border-b border-line/60 last:border-0">
-                  <td className="py-2.5 font-mono text-ink">{position.symbol}</td>
+                  <td className="py-2.5"><InstrumentIdentity symbol={position.symbol} instrument={bySymbol.get(position.symbol)} compact /></td>
                   <td className="tnum py-2.5 text-right font-mono">{position.quantity}</td>
                   <td className="tnum py-2.5 text-right font-mono">
                     {formatKrw(position.entryAverageFillPriceKrw)}
@@ -480,7 +485,8 @@ function PositionPanel({ positions }: { positions: AutomationPositionV2[] }) {
   );
 }
 
-function RunPanel({ runs }: { runs: AutomationRunV2[] }) {
+function RunPanel({ runs, instruments }: { runs: AutomationRunV2[]; instruments: InstrumentDisplayCatalog }) {
+  const bySymbol = instrumentMap(instruments.items);
   return (
     <Panel contract="GET /api/v2/automation/runs" title="최근 자동운용 실행">
       {runs.length === 0 ? (
@@ -497,7 +503,7 @@ function RunPanel({ runs }: { runs: AutomationRunV2[] }) {
               <div className="text-right">
                 <p className="text-[11px] text-muted">{runStateLabel(run.state)}</p>
                 <p className="mt-1 text-[11px] text-faint">
-                  {run.selectedSymbol ?? '주문 없음'} · {formatKstDateTime(run.updatedAt)}
+                  {run.selectedSymbol ? (bySymbol.get(run.selectedSymbol)?.nameKo ?? run.selectedSymbol) : '주문 없음'} · {formatKstDateTime(run.updatedAt)}
                 </p>
               </div>
             </li>

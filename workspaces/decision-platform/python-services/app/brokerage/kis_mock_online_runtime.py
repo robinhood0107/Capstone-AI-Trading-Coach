@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, Literal, NoReturn
+from zoneinfo import ZoneInfo
 
 from app.brokerage.kis_mock_online_client import (
     BALANCE_PATH,
@@ -260,6 +261,72 @@ class KISMockExecutionReader:
         if not matches:
             return None
         return _execution_snapshot_from_rows(matches, reference)
+
+    def recover_unique_filled_buy(
+        self,
+        *,
+        symbol: str,
+        quantity: int,
+        average_fill_price_krw: int,
+        session_date: date,
+    ) -> MockExecutionSnapshot | None:
+        """Recover one expired local reference from a uniquely matching KIS buy fill."""
+
+        if _SYMBOL.fullmatch(symbol) is None or quantity <= 0 or average_fill_price_krw <= 0:
+            raise ValueError("KIS mock execution recovery input is invalid")
+        payload = self._client.request(
+            "GET",
+            EXECUTIONS_PATH,
+            MOCK_EXECUTIONS_RECENT_TR_ID,
+            params={
+                "INQR_STRT_DT": session_date.strftime("%Y%m%d"),
+                "INQR_END_DT": session_date.strftime("%Y%m%d"),
+                "SLL_BUY_DVSN_CD": "02",
+                "INQR_DVSN": "00",
+                "PDNO": symbol,
+                "CCLD_DVSN": "00",
+                "ORD_GNO_BRNO": "",
+                "ODNO": "",
+                "INQR_DVSN_3": "00",
+                "INQR_DVSN_1": "",
+                "CTX_AREA_FK100": "",
+                "CTX_AREA_NK100": "",
+                "EXCG_ID_DVSN_CD": "KRX",
+            },
+        )
+        matches: list[MockExecutionSnapshot] = []
+        for row in _execution_source_probe_rows(payload):
+            order_no = _execution_order_no(row)
+            if (
+                not isinstance(order_no, str)
+                or re.fullmatch(r"[0-9A-Za-z._:-]{1,64}", order_no) is None
+            ):
+                continue
+            try:
+                snapshot = _execution_snapshot_from_rows(
+                    [row],
+                    MockProviderOrderReference(
+                        provider_order_no=order_no,
+                        provider_org_no="recovery",
+                        order_division="00",
+                        quantity=quantity,
+                    ),
+                )
+            except ValueError:
+                continue
+            if (
+                snapshot.symbol == symbol
+                and snapshot.cumulative_quantity == quantity
+                and snapshot.leaves_quantity == 0
+                and snapshot.average_fill_price_krw == average_fill_price_krw
+                and snapshot.observed_at.astimezone(ZoneInfo("Asia/Seoul")).date() == session_date
+                and not snapshot.cancelled
+                and not snapshot.rejected
+            ):
+                matches.append(snapshot)
+        if len(matches) > 1:
+            raise ValueError("KIS mock execution recovery match is not unique")
+        return matches[0] if matches else None
 
     def probe_execution_source(
         self,

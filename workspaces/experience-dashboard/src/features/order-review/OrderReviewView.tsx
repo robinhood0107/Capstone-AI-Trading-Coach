@@ -12,6 +12,7 @@ import { formatKstDateTime, formatRatio } from '@/shared/lib/format';
 import { loadRiskResultView, type ReasonDisposition } from './viewModel';
 import type { DecisionRiskItemProjection } from '@/shared/api/wire';
 import { api } from '@/shared/api/endpoints';
+import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentity';
 
 const DISPOSITION_META: Record<ReasonDisposition, { title: string; note: string; accent: string }> = {
   VIOLATION: { title: '원칙 위반', note: '기준을 실제로 넘은 항목입니다.', accent: 'border-block' },
@@ -33,6 +34,13 @@ const SEVERITY_TONE: Record<string, string> = {
 };
 
 export function OrderReviewView() {
+  const catalog = useResource(async () => {
+    const { data } = await api.instrumentDisplayCatalog();
+    return { kind: 'ready' as const, data, asOf: null };
+  }, []);
+  const instruments = instrumentMap(
+    catalog.state.kind === 'ready' || catalog.state.kind === 'stale' ? catalog.state.data.items : [],
+  );
   const recent = useResource(async () => {
     const { data } = await api.dashboardRecentRiskResults();
     return { kind: 'ready' as const, data: data.items, asOf: data.items[0]?.asOf ?? null };
@@ -61,7 +69,8 @@ export function OrderReviewView() {
                         : 'border-line text-muted hover:border-navy hover:text-navy'
                     }`}
                   >
-                    {item.symbol} · {item.action} · {formatKstDateTime(item.asOf) ?? '시각 미상'}
+                    <InstrumentIdentity symbol={item.symbol} instrument={instruments.get(item.symbol)} compact />
+                    <span className="ml-2">{item.action} · {formatKstDateTime(item.asOf) ?? '시각 미상'}</span>
                   </button>
                 ))}
               </div>
@@ -94,7 +103,13 @@ export function OrderReviewView() {
                   <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-line pt-5 md:grid-cols-4">
                     <Field
                       label="주문 제출 가능"
-                      value={view.detail.canSubmitOrder ? '가능' : '불가'}
+                      value={
+                        view.detail.expired
+                          ? '불가 · 재평가 필요'
+                          : view.detail.canSubmitOrder
+                            ? '가능'
+                            : '불가'
+                      }
                     />
                     <Field
                       label="운영 모드"
@@ -218,9 +233,11 @@ export function OrderReviewView() {
                                     <p className="mt-0.5 text-[13px] leading-5 text-muted">
                                       {reason.detail}
                                     </p>
-                                    <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.06em] text-faint">
-                                      {reason.code}
-                                    </p>
+                                    {reason.code === 'NOT_APPLICABLE_V1' ? null : (
+                                      <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.06em] text-faint">
+                                        {reason.code}
+                                      </p>
+                                    )}
                                   </li>
                                 ))
                               )}

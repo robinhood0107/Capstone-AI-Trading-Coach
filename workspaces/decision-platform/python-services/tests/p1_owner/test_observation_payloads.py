@@ -22,7 +22,7 @@ def _payload(positions: list[dict[str, object]]) -> dict[str, object]:
     return portfolio_balance_payload(
         owner_user_id=_OWNER,
         scope_hash=owner_scope_hash(_ACCOUNT),
-        cash_krw=98_342_783,
+        cash_krw=1_000_000,
         positions=positions,
         now=_NOW,
         source_version="p1-runtime-observation-v1",
@@ -35,12 +35,12 @@ def test_every_position_carries_the_gold_flag_the_writer_requires(tmp_path) -> N
 
     적재기(`kis_mock_portfolio_writer._position`)가 이 필드를 요구한다. 그대로 흘려보내면
     보유가 하나라도 생기는 순간 ValueError 로 닫히고, 계좌가 비어 있는 동안에는 드러나지
-    않는다. 실측으로 첫 보유(000660 1주)에서 그렇게 닫혔다.
+    않는다. 보유가 생긴 fixture에서 이 경계를 검증한다.
     """
 
     payload = _payload(
         [
-            {"marketValueKrw": 1_652_000, "quantity": 1, "symbol": "000660"},
+            {"marketValueKrw": 200_000, "quantity": 2, "symbol": "000660"},
             {"marketValueKrw": 24_800, "quantity": 1, "symbol": "132030"},
         ]
     )
@@ -59,8 +59,8 @@ def test_every_position_carries_the_gold_flag_the_writer_requires(tmp_path) -> N
 def test_equity_is_cash_plus_broker_market_value() -> None:
     """평가액을 다시 곱하지 않고 브로커가 준 값을 그대로 더한다."""
 
-    payload = _payload([{"marketValueKrw": 1_652_000, "quantity": 1, "symbol": "000660"}])
-    assert payload["portfolioEquityKrw"] == 98_342_783 + 1_652_000
+    payload = _payload([{"marketValueKrw": 200_000, "quantity": 2, "symbol": "000660"}])
+    assert payload["portfolioEquityKrw"] == 1_000_000 + 200_000
 
 
 def test_negative_cash_is_rejected() -> None:

@@ -297,7 +297,10 @@ class KISMockExecutionReader:
         matches: list[MockExecutionSnapshot] = []
         for row in _execution_source_probe_rows(payload):
             order_no = _execution_order_no(row)
-            if not isinstance(order_no, str) or re.fullmatch(r"[0-9A-Za-z._:-]{1,64}", order_no) is None:
+            if (
+                not isinstance(order_no, str)
+                or re.fullmatch(r"[0-9A-Za-z._:-]{1,64}", order_no) is None
+            ):
                 continue
             try:
                 snapshot = _execution_snapshot_from_rows(

@@ -274,9 +274,7 @@ class KisAutomationExecutionSource:
         self._redis = _build_redis_client()
         self._references = EncryptedRedisOrderReferenceStore(
             self._redis,
-            encryption_key=SecretStr(
-                os.environ.get("KIS_MOCK_ORDER_REFERENCE_KEY", "").strip()
-            ),
+            encryption_key=SecretStr(os.environ.get("KIS_MOCK_ORDER_REFERENCE_KEY", "").strip()),
             ttl_seconds=reference_ttl_seconds,
         )
         self._client = KISMockBrokerageHttpClient(

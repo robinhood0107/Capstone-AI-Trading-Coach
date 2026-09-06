@@ -13,6 +13,9 @@ import * as fixtures from './fixtures';
  */
 const LATENCY_MS = 240;
 
+/** 오프라인 픽스처가 "최근 실행"으로 내보내는 실행 id. 두 대시보드 경로가 함께 쓴다. */
+const LATEST_RUN_ID = 'demo_s8_offline_0001';
+
 const ID_PATTERN = {
   decisionId: /^dec_[A-Za-z0-9_-]{8,96}$/,
   runId: /^(run|demo)_[A-Za-z0-9_-]{8,96}$/,
@@ -289,7 +292,10 @@ export async function mockTransport<T>(
     return ok(fixtures.principle, requestId) as ApiEnvelope<T>;
   }
 
-  if (target.startsWith('/api/v2/signals/')) {
+  // 화면(`api.signal`)은 v3 를 부르고 픽스처도 `SignalV3Runtime` 인데 여기만 v2 를 받고 있었다.
+  // 그래서 mock 모드에서는 신호 패널이 언제나 NOT_FOUND 였다. 백엔드에는 두 버전이 다 있으므로
+  // 둘 다 받아 준다.
+  if (target.startsWith('/api/v3/signals/') || target.startsWith('/api/v2/signals/')) {
     const symbol = target.split('/').pop() ?? '';
     const signal = fixtures.signals[symbol];
     if (!signal) return fail('NOT_FOUND', '해당 종목의 신호가 없습니다.', requestId);
@@ -317,15 +323,19 @@ export async function mockTransport<T>(
   }
 
   if (target === '/api/v1/dashboard/model-evaluations/latest') {
+    const envelope = fixtures.modelEvaluations[LATEST_RUN_ID];
+    if (!envelope) return fail('NOT_FOUND', '최근 모델 평가를 찾을 수 없습니다.', requestId);
     return ok(
-      { runId: 'demo_s8_offline_0001', fixtureClass: 'DEMO_OFFLINE', asOf: fixtures.modelEvaluations.demo_s8_offline_0001.asOf },
+      { runId: LATEST_RUN_ID, fixtureClass: 'DEMO_OFFLINE', asOf: envelope.asOf },
       requestId,
     ) as ApiEnvelope<T>;
   }
 
   if (target === '/api/v1/dashboard/backtests/latest') {
+    const envelope = fixtures.backtests[LATEST_RUN_ID];
+    if (!envelope) return fail('NOT_FOUND', '최근 백테스트를 찾을 수 없습니다.', requestId);
     return ok(
-      { runId: 'demo_s8_offline_0001', fixtureClass: 'DEMO_OFFLINE', asOf: fixtures.backtests.demo_s8_offline_0001.asOf },
+      { runId: LATEST_RUN_ID, fixtureClass: 'DEMO_OFFLINE', asOf: envelope.asOf },
       requestId,
     ) as ApiEnvelope<T>;
   }

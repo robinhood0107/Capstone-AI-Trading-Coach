@@ -1,6 +1,7 @@
 import { ApiFailure, type ApiEnvelope } from '@/shared/api/envelope';
 import type {
   AutomationPresetId,
+  JournalEntry,
   KillSwitchState,
   OrderDetail,
   OrderFill,
@@ -52,6 +53,10 @@ let mockConsentGranted = false;
  * 탭이 살아 있는 동안만 유지되는 값이다.
  */
 const mockRagHistory: RagV2HistoryDetail[] = [];
+
+/** mock 의 학습일지. 탭이 살아 있는 동안만 유지된다. */
+const mockJournals: JournalEntry[] = [...fixtures.journals];
+let mockJournalCounter = fixtures.journals.length;
 
 /** v1 통제 상태에만 있는 값. 주문 계약이 요구한다. */
 const MOCK_STRATEGY_ID = 'strategy_00000000';
@@ -460,6 +465,69 @@ export async function mockTransport<T>(
       return fail('VALIDATION_ERROR', '주문 내용이 온전하지 않습니다.', requestId);
     }
     return ok(fixtures.evaluateOrder(intent.symbol, intent.estimatedAmount), requestId) as ApiEnvelope<T>;
+  }
+
+  /* ─────────────────────────────── 학습일지 ────────────────────────────── */
+
+  if (target === '/api/v1/journals') {
+    if (method === 'POST') {
+      const request = body as { title?: string; content?: string; tags?: string[] } | undefined;
+      if (!request?.title || !request.content) {
+        return fail('VALIDATION_ERROR', '제목과 내용을 모두 적어야 합니다.', requestId);
+      }
+      const now = new Date().toISOString();
+      mockJournalCounter += 1;
+      const entry: JournalEntry = {
+        contractId: 'journal.v1',
+        journalId: `jrn_${mockJournalCounter.toString(16).padStart(32, '0')}`,
+        ownerScope: 'OWNER',
+        title: request.title,
+        content: request.content,
+        tags: request.tags ?? [],
+        links: {
+          decisionId: null,
+          backtestRunId: null,
+          ragAnswerId: null,
+          orderId: null,
+          automationRunId: null,
+        },
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      };
+      mockJournals.unshift(entry);
+      return ok(entry, requestId) as ApiEnvelope<T>;
+    }
+    return ok({ items: mockJournals, nextCursor: null }, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target.startsWith('/api/v1/journals/')) {
+    const journalId = target.slice('/api/v1/journals/'.length);
+    const index = mockJournals.findIndex((entry) => entry.journalId === journalId);
+    if (index < 0) return fail('NOT_FOUND', '해당 기록을 찾을 수 없습니다.', requestId);
+    const current = mockJournals[index]!;
+    const request = body as
+      | { expectedVersion?: number; title?: string; content?: string; tags?: string[] }
+      | undefined;
+    // 낙관적 잠금. 다른 곳에서 먼저 바뀌었으면 덮어쓰지 않는다.
+    if (request?.expectedVersion !== current.version) {
+      return fail('CONFLICT', '기록 버전이 맞지 않습니다. 최신 내용을 다시 불러오세요.', requestId);
+    }
+    if (method === 'DELETE') {
+      mockJournals.splice(index, 1);
+      return ok({ ...current, deletedAt: new Date().toISOString() }, requestId) as ApiEnvelope<T>;
+    }
+    const updated: JournalEntry = {
+      ...current,
+      title: request.title ?? current.title,
+      content: request.content ?? current.content,
+      tags: request.tags ?? current.tags,
+      version: current.version + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    mockJournals[index] = updated;
+    return ok(updated, requestId) as ApiEnvelope<T>;
   }
 
   if (target === '/api/v1/risk/kill-switch') {

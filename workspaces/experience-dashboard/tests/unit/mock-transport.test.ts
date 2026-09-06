@@ -3,7 +3,10 @@ import test from 'node:test';
 import { mockBareTransport, mockTransport } from '../../src/shared/mock/transport.ts';
 import * as fixtures from '../../src/shared/mock/fixtures.ts';
 import type {
+  AutomationPositionV3,
+  AutomationRunDetailV3,
   AutomationStatusV2,
+  AutomationStatusV3,
   PrincipleCurrent,
   PrincipleHistoryData,
   RagV2HistoryPage,
@@ -270,6 +273,68 @@ test('한도를 넘는 금액은 BLOCK 으로 판정된다', async () => {
   );
   assert.equal(evaluated.data!.riskDecision.decision, 'BLOCK');
   assert.equal(evaluated.data!.riskDecision.canSubmitOrder, false);
+});
+
+test('v3 자동운용은 v2 가 못 담는 것을 담는다', async () => {
+  const status = await mockTransport<AutomationStatusV3>(
+    '/api/v3/automation/status',
+    'GET',
+    undefined,
+    REQUEST_ID,
+  );
+  assert.equal(status.data!.contractId, 'automation-status.v3');
+  assert.equal(typeof status.data!.aiJudgementEnabled, 'boolean');
+  assert.ok(['EMPTY', 'PARTIAL', 'READY', 'CATCHUP_REQUIRED'].includes(status.data!.marketHistoryStatus));
+
+  const positions = await mockTransport<{ items: AutomationPositionV3[] }>(
+    '/api/v3/automation/positions',
+    'GET',
+    undefined,
+    REQUEST_ID,
+  );
+  const position = positions.data!.items[0]!;
+  // v2 에는 없는 것들. 이것 때문에 자동운용 화면이 v3 를 본다.
+  assert.equal(typeof position.peakPriceKrw, 'number');
+  assert.equal(typeof position.maxHoldingSessions, 'number');
+  assert.equal(typeof position.atrMultiplierMilli, 'number');
+});
+
+test('실행 상세는 AI 가 읽은 근거를 그대로 준다', async () => {
+  const runs = await mockTransport<{ items: { runId: string; evidenceCount: number }[] }>(
+    '/api/v3/automation/runs',
+    'GET',
+    undefined,
+    REQUEST_ID,
+  );
+  const judged = runs.data!.items.find((run) => run.evidenceCount > 0);
+  assert.ok(judged, '근거가 있는 실행이 하나는 있어야 한다');
+
+  const detail = await mockTransport<AutomationRunDetailV3>(
+    `/api/v3/automation/runs/${judged.runId}`,
+    'GET',
+    undefined,
+    REQUEST_ID,
+  );
+  const screening = detail.data!.candidateScreenings[0]!;
+  assert.ok(screening.evidence.length > 0);
+  for (const item of screening.evidence) {
+    // 인용문은 240자를 넘지 않고 출처가 반드시 붙는다(계약).
+    assert.ok(item.boundedQuote.length > 0 && item.boundedQuote.length <= 240);
+    assert.ok(['OFFICIAL_PRIMARY', 'REGISTERED_INDEPENDENT'].includes(item.sourceType));
+    assert.equal(item.verified, true);
+  }
+
+  // 근거 없이 끝난 실행은 빈 목록이지 404 가 아니다.
+  const skipped = runs.data!.items.find((run) => run.evidenceCount === 0);
+  assert.ok(skipped);
+  const empty = await mockTransport<AutomationRunDetailV3>(
+    `/api/v3/automation/runs/${skipped.runId}`,
+    'GET',
+    undefined,
+    REQUEST_ID,
+  );
+  assert.equal(empty.success, true);
+  assert.deepEqual(empty.data!.candidateScreenings, []);
 });
 
 test('제목이나 preset 이 빠지면 만들지 않는다', async () => {

@@ -12,15 +12,17 @@ import { Panel } from '@/shared/ui/Panel';
 import { Button } from '@/shared/ui/Button';
 import type {
   AutomationPolicyV2,
-  AutomationPositionV2,
-  AutomationRunV2,
-  AutomationStatusV2,
+  AutomationPositionV3,
+  AutomationRunV3,
+  AutomationStatusV3,
   InstrumentDisplayCatalog,
 } from '@/shared/api/wire';
 import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentity';
 import {
-  AUTOMATION_BLOCKER_LABELS,
+  AUTOMATION_BLOCKER_LABELS_V3,
   AUTOMATION_EVIDENCE_LINKS,
+  AUTOMATION_EXIT_REASON_LABELS,
+  MARKET_HISTORY_LABELS,
   AUTOMATION_PRESETS,
   AUTOMATION_STATE_LABELS,
   bpsToPercent,
@@ -122,9 +124,9 @@ function KillSwitchControl({ active, onChanged }: { active: boolean; onChanged: 
 }
 
 interface AutomationData {
-  status: AutomationStatusV2;
-  runs: AutomationRunV2[];
-  positions: AutomationPositionV2[];
+  status: AutomationStatusV3;
+  runs: AutomationRunV3[];
+  positions: AutomationPositionV3[];
   instruments: InstrumentDisplayCatalog;
 }
 
@@ -134,11 +136,18 @@ interface Draft {
   takeProfitPercent: string;
 }
 
+/**
+ * 이 화면은 v3 를 본다.
+ *
+ * v2 로는 자동운용이 **왜** 그렇게 판단했는지를 보여 줄 수 없다 — ATR 추적손절, 보유 기간,
+ * AI 판단 근거가 전부 v3 에만 있다. 현황 화면은 실현손익 요약(`realizedSummary`)이 필요한데
+ * v3 포지션 페이지에는 그 필드가 없어서 계속 v2 를 본다.
+ */
 async function load(): Promise<ViewState<AutomationData>> {
   const [status, runs, positions, instruments] = await Promise.all([
-    api.automationStatusV2(),
-    api.automationRunsV2(),
-    api.automationPositionsV2(),
+    api.automationStatusV3(),
+    api.automationRunsV3(),
+    api.automationPositionsV3(),
     api.instrumentDisplayCatalog(),
   ]);
   return ready(
@@ -266,7 +275,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
   return (
     <div className="space-y-6">
       <Panel
-        contract="GET /api/v2/automation/status"
+        contract="GET /api/v3/automation/status"
         title="현재 자동운용 상태"
         hint="Kill Switch와 자동운용 상태는 서로 다른 값입니다. 서버가 내려준 상태를 그대로 표시합니다."
         actions={<StatusLabel status={data.status} />}
@@ -279,6 +288,19 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
             value={data.status.killSwitchActive ? '작동 중' : '꺼짐'}
           />
           <StatusField label="정책 버전" value={saved ? `v${saved.version}` : '미설정'} mono />
+          <StatusField
+            label="AI 판단"
+            value={data.status.aiJudgementEnabled ? `켜짐 · ${data.status.thinkingLevel}` : '꺼짐'}
+          />
+          <StatusField
+            label="시세 이력"
+            value={MARKET_HISTORY_LABELS[data.status.marketHistoryStatus]}
+          />
+          <StatusField
+            label="봇 외 포지션"
+            value={`${data.status.legacyOpenPositionCount}건`}
+            mono
+          />
         </dl>
 
         <div className="mt-4 flex justify-end">
@@ -295,7 +317,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
             <ul className="mt-2 space-y-2">
               {data.status.blockers.map((blocker) => (
                 <li key={blocker} className="text-[13px] leading-5 text-muted">
-                  <span title={blocker}>{AUTOMATION_BLOCKER_LABELS[blocker]}</span>
+                  <span title={blocker}>{AUTOMATION_BLOCKER_LABELS_V3[blocker]}</span>
                 </li>
               ))}
             </ul>
@@ -427,7 +449,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
                   busy || dirty || !saved || !data.status.canArm || data.status.blockers.length > 0
                 }
                 onClick={() => void arm()}
-                title={data.status.blockers.map((item) => AUTOMATION_BLOCKER_LABELS[item]).join(' ')}
+                title={data.status.blockers.map((item) => AUTOMATION_BLOCKER_LABELS_V3[item]).join(' ')}
                 variant="primary"
               >
                 자동운용 시작
@@ -468,7 +490,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
   );
 }
 
-function StatusLabel({ status }: { status: AutomationStatusV2 }) {
+function StatusLabel({ status }: { status: AutomationStatusV3 }) {
   const tone =
     status.projectionState === 'RUNNING'
       ? 'text-allow'
@@ -532,10 +554,10 @@ function PolicyInput({
   );
 }
 
-function PositionPanel({ positions, instruments }: { positions: AutomationPositionV2[]; instruments: InstrumentDisplayCatalog }) {
+function PositionPanel({ positions, instruments }: { positions: AutomationPositionV3[]; instruments: InstrumentDisplayCatalog }) {
   const bySymbol = instrumentMap(instruments.items);
   return (
-    <Panel contract="GET /api/v2/automation/positions" title="자동운용 포지션">
+    <Panel contract="GET /api/v3/automation/positions" title="자동운용 포지션">
       {positions.length === 0 ? (
         <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] text-muted">
           자동운용이 보유한 포지션이 없습니다.
@@ -548,6 +570,8 @@ function PositionPanel({ positions, instruments }: { positions: AutomationPositi
                 <th className="pb-2 font-normal">종목</th>
                 <th className="pb-2 text-right font-normal">수량</th>
                 <th className="pb-2 text-right font-normal">평균체결가</th>
+                <th className="pb-2 text-right font-normal">ATR 추적손절</th>
+                <th className="pb-2 text-right font-normal">보유 한도</th>
                 <th className="pb-2 text-right font-normal">상태</th>
               </tr>
             </thead>
@@ -559,6 +583,22 @@ function PositionPanel({ positions, instruments }: { positions: AutomationPositi
                   <td className="tnum py-2.5 text-right font-mono">
                     {formatKrw(position.entryAverageFillPriceKrw)}
                   </td>
+                  <td className="tnum py-2.5 text-right font-mono">
+                    {position.trailingStopKrw === null ? (
+                      // 아직 계산되지 않았다. 0 원으로 적으면 손절선이 바닥이라는 뜻이 된다.
+                      <span className="text-faint">미산출</span>
+                    ) : (
+                      <>
+                        {formatKrw(position.trailingStopKrw)}
+                        <span className="ml-1 text-faint">
+                          ATR{position.atrPeriod}×{(position.atrMultiplierMilli / 1000).toFixed(1)}
+                        </span>
+                      </>
+                    )}
+                  </td>
+                  <td className="tnum py-2.5 text-right font-mono text-muted">
+                    {position.maxHoldingSessions}세션
+                  </td>
                   <td className="py-2.5 text-right text-muted">
                     {position.status === 'OPEN'
                       ? '보유 중'
@@ -567,6 +607,11 @@ function PositionPanel({ positions, instruments }: { positions: AutomationPositi
                         : position.status === 'CLOSED'
                           ? '종료'
                           : '대사 확인 필요'}
+                    {position.exitReason ? (
+                      <span className="ml-1.5 text-faint">
+                        · {AUTOMATION_EXIT_REASON_LABELS[position.exitReason]}
+                      </span>
+                    ) : null}
                   </td>
                 </tr>
               ))}
@@ -578,10 +623,10 @@ function PositionPanel({ positions, instruments }: { positions: AutomationPositi
   );
 }
 
-function RunPanel({ runs, instruments }: { runs: AutomationRunV2[]; instruments: InstrumentDisplayCatalog }) {
+function RunPanel({ runs, instruments }: { runs: AutomationRunV3[]; instruments: InstrumentDisplayCatalog }) {
   const bySymbol = instrumentMap(instruments.items);
   return (
-    <Panel contract="GET /api/v2/automation/runs" title="최근 자동운용 실행">
+    <Panel contract="GET /api/v3/automation/runs" title="최근 자동운용 실행">
       {runs.length === 0 ? (
         <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] text-muted">
           기록된 자동운용 실행이 없습니다.
@@ -589,21 +634,118 @@ function RunPanel({ runs, instruments }: { runs: AutomationRunV2[]; instruments:
       ) : (
         <ul className="divide-y divide-line/60">
           {runs.map((run) => (
-            <li key={run.runId} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
-              <div className="min-w-0">
-                <p className="font-mono text-[12px] text-ink">{run.sessionDate}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-[11px] text-muted">{runStateLabel(run.state)}</p>
-                <p className="mt-1 text-[11px] text-faint">
-                  {run.selectedSymbol ? (bySymbol.get(run.selectedSymbol)?.nameKo ?? run.selectedSymbol) : '주문 없음'} · {formatKstDateTime(run.updatedAt)}
-                </p>
-              </div>
-            </li>
+            <RunRow key={run.runId} run={run} bySymbol={bySymbol} />
           ))}
         </ul>
       )}
     </Panel>
+  );
+}
+
+/**
+ * 실행 한 건. 펼치면 그날 AI 가 무엇을 읽고 그렇게 정했는지를 가져온다.
+ *
+ * 근거는 펼칠 때 처음 부른다 — 목록을 여는 것만으로 실행 수만큼 상세를 당길 이유가 없다.
+ */
+function RunRow({
+  run,
+  bySymbol,
+}: {
+  run: AutomationRunV3;
+  bySymbol: ReturnType<typeof instrumentMap>;
+}) {
+  const [open, setOpen] = useState(false);
+  const detail = useResource(
+    async () => {
+      const { data } = await api.automationRunDetailV3(run.runId);
+      return ready(data, run.updatedAt);
+    },
+    [run.runId],
+    open,
+  );
+
+  return (
+    <li className="py-3 first:pt-0 last:pb-0">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="font-mono text-[12px] text-ink">{run.sessionDate}</p>
+          <p className="mt-1 text-[11px] text-faint">
+            {/* 근거가 0건이면 AI 판단 없이 넘어간 실행이다. 그 사실을 감추지 않는다. */}
+            {run.evidenceCount > 0
+              ? `판단 근거 ${run.evidenceCount}건 · AI 호출 ${run.judgeCallCount}회`
+              : 'AI 판단 근거 없음'}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-[11px] text-muted">{runStateLabel(run.state)}</p>
+          <p className="mt-1 text-[11px] text-faint">
+            {run.selectedSymbol
+              ? (bySymbol.get(run.selectedSymbol)?.nameKo ?? run.selectedSymbol)
+              : '주문 없음'}{' '}
+            · {formatKstDateTime(run.updatedAt)}
+          </p>
+          {run.exitReason ? (
+            <p className="mt-1 text-[11px] text-faint">
+              청산 · {AUTOMATION_EXIT_REASON_LABELS[run.exitReason]}
+            </p>
+          ) : null}
+          <Button
+            onClick={() => setOpen((prev) => !prev)}
+            className="mt-1.5 text-[11px] font-medium text-navy hover:underline"
+          >
+            {open ? '판단 근거 접기' : '판단 근거 보기'}
+          </Button>
+        </div>
+      </div>
+
+      {open ? (
+        <div className="mt-3 border-l-2 border-line pl-4">
+          <AsyncBoundary state={detail.state} onRetry={detail.reload}>
+            {(data) =>
+              data.candidateScreenings.length === 0 ? (
+                <p className="text-[12px] leading-6 text-muted">
+                  이 실행에는 남은 후보 심사 기록이 없습니다.
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {data.candidateScreenings.map((screening) => (
+                    <li key={screening.symbol}>
+                      <p className="text-[12px] font-semibold text-ink">
+                        <InstrumentIdentity
+                          symbol={screening.symbol}
+                          instrument={bySymbol.get(screening.symbol)}
+                          compact
+                        />
+                        <span className="tnum ml-2 font-mono text-[11px] text-faint">
+                          점수 {screening.score.toFixed(2)}
+                        </span>
+                      </p>
+                      <p className="mt-1 text-[12px] leading-6 text-muted">{screening.reason}</p>
+                      {screening.evidence.length > 0 ? (
+                        <ul className="mt-2 space-y-1.5">
+                          {screening.evidence.map((item) => (
+                            <li key={item.citationId} className="text-[12px] leading-6">
+                              <span className="text-ink">&ldquo;{item.boundedQuote}&rdquo;</span>
+                              <span className="ml-1.5 text-faint">
+                                — {item.sourceType === 'OFFICIAL_PRIMARY' ? '공식 원문' : '등록 독립'}
+                                {item.sourceEventDate ? ` · ${item.sourceEventDate}` : ''}
+                              </span>
+                              {item.ageWarning ? (
+                                <span className="ml-1.5 text-warn">오래된 근거</span>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )
+            }
+          </AsyncBoundary>
+        </div>
+      ) : null}
+    </li>
   );
 }
 
@@ -615,6 +757,6 @@ function runStateLabel(state: string): string {
   return '진행 중';
 }
 
-function modeLabel(mode: AutomationStatusV2['brokerageMode']): string {
+function modeLabel(mode: AutomationStatusV3['brokerageMode']): string {
   return mode === 'KIS_MOCK' ? 'KIS 모의계좌' : '내부 가상원장';
 }

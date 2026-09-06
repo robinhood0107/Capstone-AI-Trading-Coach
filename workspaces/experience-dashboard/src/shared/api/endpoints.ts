@@ -5,8 +5,12 @@ import type {
   AutomationControlV1,
   AutomationPolicyV2,
   AutomationPositionPageV2,
+  AutomationPositionPageV3,
+  AutomationRunDetailV3,
   AutomationRunPageV2,
+  AutomationRunPageV3,
   AutomationStatusV2,
+  AutomationStatusV3,
   DashboardBacktestView,
   DashboardEnvelope,
   DashboardModelEvaluationView,
@@ -192,6 +196,31 @@ export const api = {
 
   automationPositionsV2(): Promise<ApiResult<AutomationPositionPageV2>> {
     return apiFetch<AutomationPositionPageV2>('/api/v2/automation/positions');
+  },
+
+  /* ------------------------------------------------------- 자동운용 v3
+   *
+   * v3 는 v2 의 상위집합이 **아니다.** 포지션 페이지에서 `realizedSummary` 가 빠졌다.
+   * 그래서 v2 를 지우지 않고 화면마다 필요한 쪽을 부른다 — 실현손익 요약이 필요한 현황은
+   * v2 를, 청산 근거(ATR 추적손절·보유기간·AI 판단)가 필요한 자동운용은 v3 를 본다.
+   */
+  automationStatusV3(): Promise<ApiResult<AutomationStatusV3>> {
+    return apiFetch<AutomationStatusV3>('/api/v3/automation/status');
+  },
+
+  automationRunsV3(size = 20): Promise<ApiResult<AutomationRunPageV3>> {
+    return apiFetch<AutomationRunPageV3>(`/api/v3/automation/runs?size=${size}`);
+  },
+
+  /** 이 실행이 무엇을 읽고 그렇게 판단했는지. v2 에는 이 경로 자체가 없다. */
+  automationRunDetailV3(runId: string): Promise<ApiResult<AutomationRunDetailV3>> {
+    return apiFetch<AutomationRunDetailV3>(
+      `/api/v3/automation/runs/${encodeURIComponent(runId)}`,
+    );
+  },
+
+  automationPositionsV3(): Promise<ApiResult<AutomationPositionPageV3>> {
+    return apiFetch<AutomationPositionPageV3>('/api/v3/automation/positions');
   },
 
   /* -------------------------------------------------------------- 원칙 */

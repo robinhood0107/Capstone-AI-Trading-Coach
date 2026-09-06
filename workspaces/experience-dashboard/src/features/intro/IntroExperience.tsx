@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import styles from './intro.module.css';
+import { THEME_EVENT, syncThemeDocument } from '@/shared/lib/theme';
 import { cx } from './acts/cx';
 import { Bridge } from './acts/Bridge';
 import { LightAct1 } from './acts/LightAct1';
@@ -36,7 +37,18 @@ export function IntroExperience({
   // 서버 render 에는 창이 없다. 첫 마크업은 밝게로 맞추고 마운트 뒤에 실제 값을 반영한다.
   const [introSet, setIntroSet] = useState<IntroSet>('light');
   useEffect(() => {
-    setIntroSet(resolveIntroSet());
+    const sync = () => setIntroSet(resolveIntroSet());
+    const storageSync = () => { syncThemeDocument(); sync(); };
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    sync();
+    window.addEventListener(THEME_EVENT, sync);
+    window.addEventListener('storage', storageSync);
+    media.addEventListener('change', sync);
+    return () => {
+      window.removeEventListener(THEME_EVENT, sync);
+      window.removeEventListener('storage', storageSync);
+      media.removeEventListener('change', sync);
+    };
   }, []);
 
   const { stage, atEnd } = useIntroStage(rootRef, endRef, introSet);

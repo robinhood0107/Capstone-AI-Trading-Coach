@@ -78,7 +78,7 @@ const STATUS_COPY: Record<
   ANSWERED_WITHOUT_SOURCES: {
     headline: '출처 없이 설명합니다',
     detail:
-      '이 답에 연결된 출처가 없습니다. 아래 설명은 모델이 아는 범위에서 쓴 것이므로 직접 확인이 필요합니다.',
+      '설명은 제공하지만 출처와의 대조가 완료되지 않았습니다. 숫자와 최신 사실은 연결된 자료에서 확인해 주세요.',
   },
   RETRIEVAL_ONLY: {
     headline: '설명 문장 없이 출처만 제공합니다',

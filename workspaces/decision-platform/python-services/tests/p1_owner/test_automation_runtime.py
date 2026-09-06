@@ -537,3 +537,12 @@ def test_ai_audit_failure_cannot_advance_the_checkpoint() -> None:
     assert repository.state["state"] == "NEWS_SCREENING"
     assert repository.commands == []
     assert repository.ai_judgements == []
+
+
+def test_runtime_planner_uses_shared_kis_calendar_corrections():
+    from datetime import date
+
+    planner = XkrxBoundaryPlanner()
+    assert planner.next_session(date(2026, 6, 2)) == date(2026, 6, 4)
+    assert planner.next_session(date(2026, 7, 16)) == date(2026, 7, 20)
+    assert planner.next_session(date(2026, 8, 14)) == date(2026, 8, 18)

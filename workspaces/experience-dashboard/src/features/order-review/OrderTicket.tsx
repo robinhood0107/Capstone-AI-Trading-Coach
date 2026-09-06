@@ -60,7 +60,7 @@ export function OrderTicket() {
     // Kill Switch 는 곁다리다. 못 읽어도 화면은 뜨고, 관문이 "아직 모른다"로 남는다.
     const killSwitch = await api
       .killSwitch()
-      .then((result) => result.data.active)
+      .then((result) => result.data.effectiveActive ?? result.data.active)
       .catch(() => null);
     return ready<TicketContext>({
       status: status.data,

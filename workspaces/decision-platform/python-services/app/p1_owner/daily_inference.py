@@ -17,6 +17,7 @@ from psycopg.conninfo import conninfo_to_dict
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.p1_owner.assets import FEATURE_ORDER
 from app.p1_owner.inference_grpc_server import METHOD_PATH
+from app.p1_owner.ridge_returns import fit_forecasts
 
 _MAX_PACKET_BYTES = 512 * 1024
 # 장기 추세를 보려면 그만큼 읽어야 한다. V120 이 리더 상한을 400 으로 올렸고 여기서
@@ -105,7 +106,7 @@ class DailySignalRepository:
         try:
             with self._connect() as connection, connection.cursor() as cursor:
                 cursor.execute(
-                    "select outcome,batch_sha256 from p1_commit_daily_signal_batch_v1(%s,%s)",
+                    "select outcome,batch_sha256 from p1_commit_daily_signal_batch_v2(%s,%s)",
                     (packet_bytes.decode("utf-8"), packet_sha),
                 )
                 row = cursor.fetchone()
@@ -183,11 +184,14 @@ class DailyInferenceService:
             raise DailyInferenceError("DAILY_INFERENCE_UNIVERSE_INVALID")
         feature_rows: list[dict[str, Any]] = []
         rule_rows: list[dict[str, Any]] = []
+        ridge_rows: list[dict[str, Any]] = []
         source_session = str(context.get("sourceSession"))
         for symbol in cast(list[str], symbols):
             history = self._repository.history(symbol, target_session)
             try:
-                features, rule_signal = _features_and_rule(history, source_session)
+                features, rule_signal = _features_and_rule(
+                    history, source_session, full_history=True
+                )
             except DailyInferenceError as error:
                 # 종목을 붙여 다시 던진다. 31종목 루프 안에서 실패하면 어느 종목이 막혔는지가
                 # 곧 대처 방법이다 - 신규 상장인지, 수집이 밀린 것인지.
@@ -195,14 +199,18 @@ class DailyInferenceService:
             feature_rows.append(
                 {
                     "currentClose": features[-1][FEATURE_ORDER.index("raw_close")],
-                    "features": features,
+                    "features": features[-_WINDOW_SIZE:],
                     "sessionDate": target_session.isoformat(),
                     "symbol": symbol,
                 }
             )
+            ridge = fit_forecasts(symbol, history, features, FEATURE_ORDER)
+            if ridge["forecasts"][0]["targetSession"] != target_session.isoformat():
+                raise DailyInferenceError("RIDGE_TARGET_SESSION_MISMATCH")
+            ridge_rows.append(ridge)
             rule_rows.append(
                 {
-                    "expectedReturn": 0.0,
+                    "expectedReturn": ridge["forecasts"][0]["expectedReturn"],
                     "producer": "RULE_BASELINE",
                     "signal": rule_signal,
                     "symbol": symbol,
@@ -242,7 +250,13 @@ class DailyInferenceService:
             "sourceSession": source_session,
             "targetSession": target_session.isoformat(),
         }
-        outcome, batch_sha = self._repository.commit(packet)
+        outcome, batch_sha = self._repository.commit(
+            {
+                "contractId": "p1-return-daily-signal-batch.v2",
+                "legacyPacket": canonical_json_bytes(packet).decode(),
+                "ridge": ridge_rows,
+            }
+        )
         return DailyInferenceResult(outcome, target_session, batch_sha)
 
     def close(self) -> None:
@@ -250,7 +264,7 @@ class DailyInferenceService:
 
 
 def _features_and_rule(
-    history: list[dict[str, Any]], expected_source_session: str
+    history: list[dict[str, Any]], expected_source_session: str, *, full_history: bool = False
 ) -> tuple[list[list[float]], str]:
     # 이력이 짧은 것과 소스 세션이 어긋난 것은 원인도 대처도 다르므로 따로 말한다.
     # 앞은 시간이 지나면 해결되고, 뒤는 시장데이터 수집이 밀린 것이다.
@@ -378,7 +392,7 @@ def _features_and_rule(
         if close < ma_trend and rsi > 30
         else "HOLD"
     )
-    return feature_rows[-_WINDOW_SIZE:], signal
+    return (feature_rows if full_history else feature_rows[-_WINDOW_SIZE:]), signal
 
 
 def _rsi14(closes: list[float], index: int) -> float | None:

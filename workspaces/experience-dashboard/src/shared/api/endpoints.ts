@@ -150,19 +150,21 @@ export const api = {
     return apiFetch<InstrumentDisplayCatalog>('/api/v1/instruments/display');
   },
 
-  killSwitch(): Promise<ApiResult<KillSwitchState>> {
+  globalKillSwitch(): Promise<ApiResult<KillSwitchState>> {
     return apiFetch<KillSwitchState>('/api/v1/risk/kill-switch');
   },
-
-  /**
-   * Kill Switch 를 켜거나 끈다.
-   *
-   * **정지는 USER 도 할 수 있지만 해제는 ADMIN 만 된다**
-   * (`KillSwitchTransitionPolicy.kt:22`). USER 가 해제를 시도하면 403 이 온다 — 화면에서
-   * 먼저 막되, 서버가 최종 판단이라는 사실은 바뀌지 않는다.
-   */
-  changeKillSwitch(active: boolean, reason?: string): Promise<ApiResult<KillSwitchState>> {
+  changeGlobalKillSwitch(active: boolean): Promise<ApiResult<KillSwitchState>> {
     return apiFetch<KillSwitchState>('/api/v1/risk/kill-switch', {
+      method: 'POST', body: { active }, idempotencyKey: newIdempotencyKey('global-stop'),
+    });
+  },
+  killSwitch(): Promise<ApiResult<KillSwitchState>> {
+    return apiFetch<KillSwitchState>('/api/v2/risk/kill-switch');
+  },
+
+  /** 인증된 사용자의 개인 주문 중지를 변경한다. 전역 변경과 분리한다. */
+  changeKillSwitch(active: boolean, reason?: string): Promise<ApiResult<KillSwitchState>> {
+    return apiFetch<KillSwitchState>('/api/v2/risk/kill-switch', {
       method: 'POST',
       body: reason ? { active, reason } : { active },
       idempotencyKey: newIdempotencyKey('kill-switch'),

@@ -95,6 +95,7 @@ export interface InstrumentDisplayCatalog {
 }
 
 export type KillSwitchReasonClass =
+  | 'USER_RESUME'
   | 'USER_MANUAL_STOP'
   | 'OPERATOR_MANUAL_STOP'
   | 'DATA_FRESHNESS_STOP'
@@ -104,6 +105,8 @@ export type KillSwitchReasonClass =
   | 'INITIAL_STATE';
 
 export interface KillSwitchState {
+  globalActive?: boolean;
+  effectiveActive?: boolean;
   active: boolean;
   changedAt: string;
   reasonClass: KillSwitchReasonClass;
@@ -520,13 +523,16 @@ export interface PutAutomationPolicyV3Request extends PutAutomationPolicyV2Reque
 export interface AutomationStatusV3
   extends Omit<AutomationStatusV2, 'contractId' | 'blockers' | 'policy'> {
   contractId: 'automation-status.v3';
+  appliedPolicyVersion?: number | null;
+  policyRecoverySourceVersion?: number | null;
+  nextRunAt?: string | null;
   policy: AutomationPolicyV3 | null;
   blockers: AutomationBlockerV3[];
   /** AI 판단 단계를 켜 두었나. 꺼져 있으면 실행에 판단 근거가 남지 않는다. */
   aiJudgementEnabled: boolean;
   thinkingLevel: 'minimal' | 'low' | 'medium';
   marketHistoryStatus: MarketHistoryStatus;
-  /** 봇이 만들지 않은, 이전부터 있던 포지션 수. */
+  /** 선택 계좌에서 청산 정책을 복원할 근거도 없는 포지션 수. */
   legacyOpenPositionCount: number;
 }
 
@@ -684,7 +690,16 @@ export type AbstainReason =
 
 export type RegimeState = 'NORMAL' | 'SIDEWAYS' | 'HIGH_VOLATILITY' | 'RISK_OFF' | 'RISK_ON';
 
+export interface ReturnForecast {
+  horizonSessions: number; targetSession: string; expectedReturn: number;
+  forecastClose: number; trainSamples: number; trainedThrough: string;
+}
+
 export interface PredictiveAvailable {
+  returnForecasts?: ReturnForecast[];
+  estimator?: string;
+  sourceSession?: string;
+  qualityStatus?: string;
   status: 'AVAILABLE';
   producer: SignalProducer;
   sourceWorkspace: string;

@@ -16,6 +16,76 @@ class RagV2VertexResponseValidatorTest {
         )
 
     @Test
+    fun `one broken citation does not discard other verified citations or explanation`() {
+        val raw =
+            """
+            {"basis":"EVIDENCE","answer":"공분산은 위험에 영향을 줍니다.\n예시의 숫자는 7%입니다.",
+             "sentences":[
+              {"text":"공분산은 위험에 영향을 줍니다.","citationIds":["cit_2"],
+               "evidenceSpans":[{"citationId":"cit_2","quote":"The covariance terms"}],"numericSpans":[]},
+              {"text":"예시의 숫자는 7%입니다.","citationIds":["cit_3"],"evidenceSpans":[],"numericSpans":[]}],
+             "warnings":[]}
+            """.trimIndent()
+        val result = validator.validateForDisplay(raw, evidence)
+        assertThat(result.basis).isEqualTo(StrongLlmAnswerBasis.EVIDENCE_WITH_REASONING)
+        assertThat(result.citationIds).containsExactly("cit_2")
+        assertThat(result.answer).isEqualTo("공분산은 위험에 영향을 줍니다.\n예시의 숫자는 7%입니다.")
+        assertThat(result.citationCoverage).isEqualTo(0.5)
+    }
+
+    @Test
+    fun `display preserves generated explanation when citation metadata is invalid`() {
+        val raw =
+            """
+            {
+              "basis": "EVIDENCE",
+              "answer": "예시는 연 5%입니다.",
+              "sentences": [
+                {
+                  "text": "예시는 연 5%입니다.",
+                  "citationIds": [
+                    "cit_3"
+                  ],
+                  "evidenceSpans": [],
+                  "numericSpans": []
+                }
+              ],
+              "warnings": []
+            }
+            """.trimIndent()
+        assertThatThrownBy { validator.validate(raw, evidence) }.isInstanceOf(RagV2VertexResponseValidationException::class.java)
+        val result = validator.validateForDisplay(raw, evidence)
+        assertThat(result.answer).isEqualTo("예시는 연 5%입니다.")
+        assertThat(result.basis).isEqualTo(StrongLlmAnswerBasis.MODEL_KNOWLEDGE)
+        assertThat(result.citationIds).isEmpty()
+        assertThat(result.citationCoverage).isEqualTo(0.0)
+        assertThat(result.validationStatus).isEqualTo(StrongLlmValidationStatus.VALID_WITH_WARNINGS)
+    }
+
+    @Test
+    fun `citation recovery never bypasses sensitive content validation`() {
+        val raw =
+            """
+            {
+              "basis": "EVIDENCE",
+              "answer": "api key sk-12345678901234567890",
+              "sentences": [
+                {
+                  "text": "api key sk-12345678901234567890",
+                  "citationIds": [
+                    "cit_3"
+                  ],
+                  "evidenceSpans": [],
+                  "numericSpans": []
+                }
+              ],
+              "warnings": []
+            }
+            """.trimIndent()
+        assertThatThrownBy { validator.validateForDisplay(raw, evidence) }.isInstanceOf(RagV2VertexResponseValidationException::class.java)
+    }
+
+    @Test
     fun `paraphrase may synthesize multiple top five items when exact evidence spans support every sentence`() {
         val result =
             validator.validate(

@@ -81,6 +81,9 @@ export type SignalSlot =
       signal: 'BUY' | 'HOLD' | 'SELL' | null;
       regimeState: string | null;
       predictedReturn: number | null;
+      returnForecasts?: import('@/shared/api/wire').ReturnForecast[];
+      sourceSession?: string;
+      estimator?: string;
       asOf: string;
       sourceWorkspace: string;
     }
@@ -97,7 +100,7 @@ export interface SignalView {
   timeframe: string;
   asOf: string | null;
   composite:
-    | { status: 'AVAILABLE'; signal: 'BUY' | 'HOLD' | 'SELL' }
+    | { status: 'AVAILABLE'; signal: 'BUY' | 'HOLD' | 'SELL'; predictedReturn: number | null }
     | { status: 'ABSTAIN'; reason: string };
   slots: SignalSlot[];
   disagrees: boolean;
@@ -118,7 +121,7 @@ const ABSTAIN_REASON_KR: Record<string, string> = {
 
 function readWarning(warning: string): string {
   return warning.includes('current P1 production authority')
-    ? '현재 운용 판단에는 규칙 baseline과 LSTM만 사용합니다.'
+    ? '현재 운용은 규칙 신호와 LSTM·Ridge의 1일 예측을 함께 사용합니다.'
     : warning;
 }
 
@@ -152,6 +155,9 @@ export function toSignalView(signal: SignalV3Runtime): SignalView {
       signal: isRegime ? null : component.signal,
       regimeState: isRegime ? component.state : null,
       predictedReturn: isRegime ? null : (component.predictedReturn ?? null),
+      returnForecasts: isRegime ? undefined : component.returnForecasts,
+      sourceSession: isRegime ? undefined : component.sourceSession,
+      estimator: isRegime ? undefined : component.estimator,
       asOf: component.asOf,
       sourceWorkspace: component.sourceWorkspace,
     };
@@ -173,6 +179,7 @@ export function toSignalView(signal: SignalV3Runtime): SignalView {
         ? {
             status: 'AVAILABLE',
             signal: signal.composite.signal,
+            predictedReturn: signal.composite.predictedReturn ?? null,
           }
         : { status: 'ABSTAIN', reason: readAbstainReason(signal.composite.reason) },
     slots,

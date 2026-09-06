@@ -328,7 +328,7 @@ class RagSourceApiIntegrationTest(
     }
 
     @Test
-    fun `RAG sources excludes internal and retired cards and caps the public projection at thirty`() {
+    fun `RAG sources excludes internal and retired cards and preserves ordering within the finance library bound`() {
         val publicChunks =
             (1..31).map { ordinal ->
                 insertSourceRevisionAndChunk(
@@ -371,6 +371,8 @@ class RagSourceApiIntegrationTest(
                 retired.chunkRevisionId,
         )
 
+        // 현재 금융 라이브러리는 최대 여덟 source를 노출한다. fixture의 정렬과 제외도 유지한다.
+        val expectedIds = (1..8).map { ordinal -> "src_project_limit_card_${ordinal.toString().padStart(3, '0')}" }
         val token = login("demo-user", userPassword())
         val response =
             mockMvc
@@ -379,19 +381,14 @@ class RagSourceApiIntegrationTest(
                     header("X-Request-Id", "req-rag-sources-bounded")
                 }.andExpect {
                     status { isOk() }
-                    jsonPath("$.data.items.length()") { value(30) }
+                    jsonPath("$.data.items.length()") { value(expectedIds.size) }
                 }.andReturn()
         val sourceIds =
             json(response)
                 .at("/data/items")
                 .values()
                 .map { item -> item.path("sourceId").stringValue() }
-        assertEquals(
-            (1..30).map { ordinal ->
-                "src_project_limit_card_${ordinal.toString().padStart(3, '0')}"
-            },
-            sourceIds,
-        )
+        assertEquals(expectedIds, sourceIds)
         assertFalse("src_project_limit_card_031" in sourceIds)
         assertFalse("src_project_limit_internal_001" in sourceIds)
         assertFalse("src_project_limit_retired_001" in sourceIds)

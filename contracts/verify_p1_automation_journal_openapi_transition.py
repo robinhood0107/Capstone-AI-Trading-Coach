@@ -113,6 +113,9 @@ def project_pre_p1_openapi(
 ) -> dict[str, Any]:
     """exact P1 additive fragment를 제거하고 검증된 exact-48 projection을 반환한다."""
 
+    from contracts.generate_owner_ridge_contracts import project_previous
+
+    current = project_previous(current)
     current_operations = _operations(current)
     if len(current_operations) == 76:
         from contracts.verify_p1_return_signal_v3_openapi_transition import (

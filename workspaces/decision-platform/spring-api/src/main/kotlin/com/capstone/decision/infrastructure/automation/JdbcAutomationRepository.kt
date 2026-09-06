@@ -72,7 +72,7 @@ class JdbcAutomationRepository(
                         """
                         SELECT control_state,version,brokerage_mode,principle_id,strategy_id,
                                COALESCE(gate.certification_status,control.certification_status) certification_status,
-                               COALESCE((SELECT active FROM public.read_kill_switch_gate()),true) kill_switch_active,
+                               public.p1_automation_kill_switch_active_v1(:ownerUserId) kill_switch_active,
                                EXISTS (
                                  SELECT 1 FROM automation_runs run
                                  WHERE run.user_id=:ownerUserId AND run.state NOT IN (
@@ -103,7 +103,7 @@ class JdbcAutomationRepository(
                             certificationStatus = result.getString("certification_status"),
                         )
                     }.singleOrNull()
-            return row ?: defaultProjection(jdbc)
+            return row ?: defaultProjection(jdbc, ownerUserId)
         } catch (error: ActorCapabilityDeniedException) {
             throw AutomationAccessDeniedException(error)
         } catch (error: DataAccessException) {
@@ -608,7 +608,8 @@ class JdbcAutomationRepository(
             return jdbc.query(
                 RUN_V3_SELECT +
                     """
-                    WHERE run.user_id=:ownerUserId
+                    WHERE run.user_id=:ownerUserId AND run.brokerage_mode='KIS_MOCK'
+                      AND run.account_id=(SELECT account_id FROM automation_control WHERE user_id=:ownerUserId AND brokerage_mode='KIS_MOCK')
                       AND (CAST(:afterUpdatedAt AS timestamptz) IS NULL OR
                         (run.updated_at,run.run_id)<(:afterUpdatedAt,:afterRunId))
                     ORDER BY run.updated_at DESC,run.run_id DESC LIMIT :limit
@@ -681,8 +682,9 @@ class JdbcAutomationRepository(
                        take_profit_bps,max_holding_sessions,atr_period,atr_multiplier_milli,
                        model_sell_enabled,peak_price_krw,atr_as_of_session,trailing_stop_krw,
                        status,exit_reason,bot_owned,short_allowed,created_at,closed_at
-                FROM automation_positions
+                FROM automation_positions_effective
                 WHERE user_id=:ownerUserId AND max_holding_sessions IS NOT NULL
+                  AND account_id=(SELECT account_id FROM automation_control WHERE user_id=:ownerUserId AND brokerage_mode='KIS_MOCK')
                   AND status IN ('OPEN','EXIT_PENDING')
                 ORDER BY entry_session,symbol,position_id LIMIT 5
                 """.trimIndent(),
@@ -812,8 +814,8 @@ class JdbcAutomationRepository(
                 }.singleOrNull()
         val killSwitchActive =
             jdbc.queryForObject(
-                "SELECT COALESCE((SELECT active FROM public.read_kill_switch_gate()),true)",
-                emptyMap<String, Any>(),
+                "SELECT public.p1_automation_kill_switch_active_v1(:ownerUserId)",
+                mapOf("ownerUserId" to ownerUserId),
                 Boolean::class.java,
             ) ?: true
         val accountId = control?.accountId
@@ -890,7 +892,8 @@ class JdbcAutomationRepository(
                   count(*) FILTER (WHERE status IN ('OPEN','EXIT_PENDING')) active_count,
                   count(*) FILTER (WHERE status IN ('OPEN','EXIT_PENDING')
                     AND max_holding_sessions IS NULL) legacy_count
-                FROM automation_positions WHERE user_id=:ownerUserId
+                FROM automation_positions_effective WHERE user_id=:ownerUserId
+                  AND account_id=(SELECT account_id FROM automation_control WHERE user_id=:ownerUserId AND brokerage_mode='KIS_MOCK')
                 """.trimIndent(),
                 mapOf("ownerUserId" to ownerUserId),
             )
@@ -929,8 +932,24 @@ class JdbcAutomationRepository(
                 if (marketHistoryStatus != "READY") add("MARKET_DATA_CATCHUP_REQUIRED")
                 if (!aiProviderReady) add("AI_PROVIDER_NOT_READY")
             }.distinct()
+        val binding =
+            jdbc.queryForMap(
+                """SELECT
+             (SELECT policy_version FROM automation_control WHERE user_id=:ownerUserId) applied,
+             (SELECT max(prior.version) FROM automation_policy_versions prior
+               WHERE prior.user_id=:ownerUserId AND prior.max_holding_sessions IS NOT NULL
+                 AND prior.version < (SELECT max(version) FROM automation_policy_versions WHERE user_id=:ownerUserId)
+                 AND EXISTS(SELECT 1 FROM automation_policy_versions latest WHERE latest.user_id=:ownerUserId
+                   AND latest.version=(SELECT max(version) FROM automation_policy_versions WHERE user_id=:ownerUserId)
+                   AND latest.max_holding_sessions IS NULL)) recovered,
+             public.p1_read_automation_schedule_time_v1(:ownerUserId) next_run""",
+                mapOf("ownerUserId" to ownerUserId),
+            )
         return AutomationStatusV3Projection(
             controlState = base.controlState,
+            appliedPolicyVersion = (binding["applied"] as? Number)?.toInt(),
+            policyRecoverySourceVersion = (binding["recovered"] as? Number)?.toInt(),
+            nextRunAt = (binding["next_run"] as? java.sql.Timestamp)?.toInstant()?.atOffset(java.time.ZoneOffset.UTC),
             projectionState = base.projectionState,
             controlVersion = base.controlVersion,
             accountId = base.accountId,
@@ -984,9 +1003,9 @@ class JdbcAutomationRepository(
                 SELECT policy_id,version,risk_profile,capital_limit_krw,stop_loss_bps,
                        take_profit_bps,max_holding_sessions,atr_period,atr_multiplier_milli,
                        model_sell_enabled,created_at
-                FROM automation_policy_versions
+                FROM automation_policy_versions_effective
                 WHERE user_id=:ownerUserId
-                  AND version=(SELECT max(version) FROM automation_policy_versions WHERE user_id=:ownerUserId)
+                  AND version=(SELECT max(version) FROM automation_policy_versions_effective WHERE user_id=:ownerUserId)
                   AND max_holding_sessions IS NOT NULL
                 """.trimIndent(),
                 mapOf("ownerUserId" to ownerUserId),
@@ -1090,11 +1109,14 @@ class JdbcAutomationRepository(
         }
     }
 
-    private fun defaultProjection(jdbc: NamedParameterJdbcTemplate): AutomationControlProjection {
+    private fun defaultProjection(
+        jdbc: NamedParameterJdbcTemplate,
+        ownerUserId: String,
+    ): AutomationControlProjection {
         val active =
             jdbc.queryForObject(
-                "SELECT COALESCE((SELECT active FROM public.read_kill_switch_gate()),true)",
-                emptyMap<String, Any>(),
+                "SELECT public.p1_automation_kill_switch_active_v1(:ownerUserId)",
+                mapOf("ownerUserId" to ownerUserId),
                 Boolean::class.java,
             ) ?: true
         return AutomationControlProjection(

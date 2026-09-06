@@ -2688,5 +2688,25 @@ BEGIN
     END IF;
 END
 $block$;
+DO $owner_ridge_privileges$
+BEGIN
+ IF to_regclass('public.instrument_display_metadata') IS NOT NULL THEN
+  GRANT SELECT ON public.instrument_display_metadata TO decision_app;
+ END IF;
+ IF to_regclass('public.automation_policy_versions_effective') IS NOT NULL THEN
+  GRANT SELECT ON public.automation_policy_versions_effective,public.automation_positions_effective TO decision_app;
+ END IF;
+ IF to_regprocedure('public.owner_kill_switch_authorized(text,text,bigint,boolean,text,text)') IS NOT NULL THEN
+  GRANT EXECUTE ON FUNCTION public.owner_kill_switch_authorized(text,text,bigint,boolean,text,text) TO decision_app;
+ END IF;
+ IF to_regprocedure('public.p1_read_ridge_forecasts_v1(text)') IS NOT NULL THEN
+  GRANT EXECUTE ON FUNCTION public.p1_read_ridge_forecasts_v1(text) TO decision_app;
+  GRANT EXECUTE ON FUNCTION public.p1_commit_daily_signal_batch_v2(text,text) TO decision_automation_runtime;
+ END IF;
+ IF to_regprocedure('public.p1_read_automation_schedule_time_v1(text)') IS NOT NULL THEN
+  GRANT EXECUTE ON FUNCTION public.p1_read_automation_schedule_time_v1(text) TO decision_app;
+ END IF;
+END
+$owner_ridge_privileges$;
 COMMIT;
 SQL

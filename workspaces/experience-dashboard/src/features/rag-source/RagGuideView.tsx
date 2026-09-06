@@ -142,14 +142,14 @@ export function RagGuideView() {
             }}
             rows={3}
             placeholder="예: 금 ETF의 롤오버 위험은 무엇인가요?"
-            className="w-full resize-y rounded-control border border-line bg-panel px-4 py-3 text-[14px] leading-6 text-ink placeholder:text-faint"
+            className="w-full resize-y rounded-card border border-line bg-panel px-4 py-3 text-[14px] leading-6 text-ink placeholder:text-faint"
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               {(['CONCISE', 'DETAILED'] as const).map((mode) => (
                 <Button
                   key={mode}
-                  variant="secondary"
+                  variant={answerMode === mode ? 'primary' : 'secondary'}
                   onClick={() => setAnswerMode(mode)}
                   className={`border px-3 py-1.5 text-[13px] ${
                     answerMode === mode
@@ -163,7 +163,7 @@ export function RagGuideView() {
               <span className="tnum font-mono text-[11px] text-faint">{question.length}/1000</span>
             </div>
             <Button
-                            onClick={() => void submit(question)}
+              onClick={() => void submit(question)}
               disabled={pending || consentGranted !== true || question.trim().length === 0}
               variant="primary"
             >
@@ -205,7 +205,7 @@ export function RagGuideView() {
                   <p className="whitespace-pre-line text-[14px] leading-7 text-ink">{view.answer}</p>
                 ) : (
                   <p className="text-[13px] leading-6 text-muted">
-                    설명 문장이 생성되지 않았습니다. 아래 출처를 직접 확인하세요.
+                    {view.statusDetail} 응답 상태와 확인 가능한 자료를 아래에 남겼습니다. 잠시 후 다시 질문할 수 있습니다.
                   </p>
                 )}
               </article>

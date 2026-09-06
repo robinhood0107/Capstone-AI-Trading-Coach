@@ -19,7 +19,7 @@ from app.strong_llm.runtime import ProviderResult
 _VERTEX_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 _NUMERIC_TOKEN = re.compile(
     r"(?<![\w])[-+]?(?:\d{1,3}(?:,\d{3})*|\d+)(?:\.\d+)?"
-    r"(?:%|bp|bps|USD|KRW|원|달러|년|개월|일|주)?(?=$|[^\w]|[을를이가은는의와과로에])"
+    r"(?:%|bp|bps|USD|KRW|원|달러|년|개월|월|일|주)?(?=$|[^\w]|[가-힣])"
 )
 
 
@@ -734,6 +734,7 @@ def _normalize_grounded_answer(
         # Google citation ID는 provider metadata를 받은 뒤 host가 부여한다. 임시/빈 label은
         # 최종 schema 검증 전에 제거하고, 결속 가능한 근거가 없으면 명시적 부족 상태로 닫는다.
         _bind_provider_grounding_citations(payload, [], {}, allowed)
+        _align_bound_metadata(payload)
         if not _has_bound_evidence(payload):
             # 결속할 근거가 없다. 예전에는 여기서 답을 통째로 비웠지만, 근거가 없다는 것은
             # 설명이 틀렸다는 뜻이 아니라 인용을 붙일 수 없다는 뜻일 뿐이다. 문장은 그대로
@@ -857,6 +858,48 @@ def _normalize_grounded_answer(
     elif len(grounded) != len(normalized_sentences):
         payload["basis"] = "EVIDENCE_WITH_REASONING"
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _align_bound_metadata(payload: dict[str, object]) -> None:
+    """제출된 quote의 ID·숫자 메타데이터만 재구성한다. 원문 일치는 Kotlin이 계속 검증한다."""
+    sentences = payload.get("sentences")
+    if not isinstance(sentences, list):
+        return
+    for sentence in sentences:
+        if not isinstance(sentence, dict) or not isinstance(sentence.get("text"), str):
+            continue
+        spans = sentence.get("evidenceSpans")
+        if not isinstance(spans, list) or any(
+            not isinstance(span, dict)
+            or not isinstance(span.get("citationId"), str)
+            or not isinstance(span.get("quote"), str)
+            for span in spans
+        ):
+            continue
+        bound = list(dict.fromkeys(span["citationId"] for span in spans))
+        sentence["citationIds"] = bound
+        if not bound:
+            sentence["numericSpans"] = []
+            continue
+        numeric: list[dict[str, object]] = []
+        for token in _NUMERIC_TOKEN.findall(sentence["text"]):
+            ids = list(
+                dict.fromkeys(
+                    span["citationId"]
+                    for span in spans
+                    if token in _NUMERIC_TOKEN.findall(span["quote"])
+                )
+            )
+            if not ids:
+                # 뒷받침되지 않는 숫자는 보정하지 않는다. 최종 검증에서 거부해야 한다.
+                break
+            numeric.append({"value": token, "citationIds": ids})
+        else:
+            sentence["numericSpans"] = numeric
+    if payload.get("basis") == "EVIDENCE" and any(
+        isinstance(sentence, dict) and not sentence.get("citationIds") for sentence in sentences
+    ):
+        payload["basis"] = "EVIDENCE_WITH_REASONING"
 
 
 def _has_bound_evidence(payload: dict[str, object]) -> bool:

@@ -15,6 +15,9 @@ data class StoredSignalV3Component(
     val predictedReturn: Double,
     val modelVersion: String,
     val modelReportId: String,
+    val returnForecasts: List<RuntimeReturnForecast>? = null,
+    val sourceSession: LocalDate? = null,
+    val ridgeModelVersion: String? = null,
 )
 
 data class SignalV3ReadSnapshot(
@@ -49,13 +52,37 @@ class SignalV3RuntimeService(
         val rule = component(byProducer["RULE_BASELINE"], "RULE_BASELINE", latest)
         val lstm = component(byProducer["LSTM"], "LSTM", latest)
         val available = listOf(rule, lstm).filter { it.status == "AVAILABLE" }
+        val combined =
+            if (available.size ==
+                2
+            ) {
+                (requireNotNull(rule.predictedReturn) + requireNotNull(lstm.predictedReturn)) / 2.0
+            } else {
+                null
+            }
         val newest = available.maxByOrNull { requireNotNull(it.asOf) }
         return RuntimeSignalResponse(
             symbol = symbol,
             asOf = newest?.asOf,
             timeframe = "1d",
             modelReportId = newest?.modelReportId,
-            composite = RuntimeSignalComposite(status = "ABSTAIN", reason = "REQUIRED_COMPONENT_UNAVAILABLE"),
+            composite =
+                if (combined == null) {
+                    RuntimeSignalComposite(status = "ABSTAIN", reason = "REQUIRED_COMPONENT_UNAVAILABLE")
+                } else {
+                    RuntimeSignalComposite(
+                        status = "AVAILABLE",
+                        predictedReturn = combined,
+                        signal =
+                            if (combined > 0.005) {
+                                "BUY"
+                            } else if (combined < -0.005) {
+                                "SELL"
+                            } else {
+                                "HOLD"
+                            },
+                    )
+                },
             components =
                 RuntimeSignalComponents(
                     ruleBaseline = rule,
@@ -73,6 +100,7 @@ class SignalV3RuntimeService(
         latest: LocalDate,
     ): RuntimeSignalComponent {
         if (row == null) return abstain(producer, "return-engine", "MISSING_EVIDENCE")
+        if (row.sessionDate != latest) return abstain(producer, "return-engine", "STALE_EVIDENCE")
         if (
             row.sourceWorkspace != "return-engine" ||
             row.sessionDate != latest ||
@@ -92,7 +120,11 @@ class SignalV3RuntimeService(
             asOf = row.asOf,
             signal = row.signal,
             predictedReturn = row.predictedReturn,
-            modelVersion = row.modelVersion,
+            modelVersion = if (producer == "RULE_BASELINE") row.ridgeModelVersion ?: row.modelVersion else row.modelVersion,
+            returnForecasts = if (producer == "RULE_BASELINE") row.returnForecasts else null,
+            estimator = if (producer == "RULE_BASELINE" && row.returnForecasts != null) "RIDGE" else null,
+            sourceSession = row.sourceSession,
+            qualityStatus = if (row.returnForecasts != null) "COMPARISON_PENDING" else null,
             modelReportId = row.modelReportId,
         )
     }

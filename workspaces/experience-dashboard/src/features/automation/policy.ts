@@ -84,7 +84,7 @@ export const AUTOMATION_BLOCKER_LABELS: Record<AutomationBlocker, string> = {
 export const AUTOMATION_BLOCKER_LABELS_V3: Record<AutomationBlockerV3, string> = {
   ...AUTOMATION_BLOCKER_LABELS,
   POLICY_V3_REQUIRED: 'v3 정책을 먼저 저장해야 합니다.',
-  LEGACY_POSITION_PRESENT: '봇이 만들지 않은 포지션이 남아 있습니다. 먼저 정리해야 합니다.',
+  LEGACY_POSITION_PRESENT: '청산 정책이 지정되지 않은 보유 종목이 있습니다. 종목별 정책을 확인해야 합니다.',
   MARKET_HISTORY_EMPTY: '시세 이력이 없습니다. ATR과 추적손절을 계산할 수 없습니다.',
   MARKET_HISTORY_INSUFFICIENT: '시세 이력이 ATR 계산에 필요한 만큼 쌓이지 않았습니다.',
   MARKET_DATA_CATCHUP_REQUIRED: '시세 이력이 밀려 있습니다. 따라잡기가 끝나야 시작할 수 있습니다.',

@@ -32,17 +32,22 @@ class _Repository:
 
     def history(self, symbol: str, target_session: date) -> list[dict[str, Any]]:
         del symbol, target_session
-        first = date(2026, 7, 23)
+        from app.data.calendar.xkrx_policy import corrected_calendar
+        import pandas as pd
+
+        days = corrected_calendar().sessions_in_range(
+            pd.Timestamp("2026-03-01"), pd.Timestamp("2026-08-31")
+        )[-100:]
         return [
             {
                 "close": 10_000 + index,
                 "high": 10_100 + index,
                 "low": 9_900 + index,
                 "open": 10_000 + index,
-                "sessionDate": (first + timedelta(days=index)).isoformat(),
+                "sessionDate": session.date().isoformat(),
                 "volume": 100_000 + index,
             }
-            for index in range(40)
+            for index, session in enumerate(days)
         ]
 
     def commit(self, packet: dict[str, Any]) -> tuple[str, str]:
@@ -91,14 +96,16 @@ def test_daily_service_materializes_exact31_lstm_and_rule_without_confidence() -
     assert result.outcome == "IMPORTED"
     assert client.calls == 1
     assert repository.packet is not None
-    assert len(repository.packet["signals"]) == 62
-    assert {item["producer"] for item in repository.packet["signals"]} == {
+    assert len(repository.packet["ridge"]) == 31
+    packet = json.loads(repository.packet["legacyPacket"])
+    assert len(packet["signals"]) == 62
+    assert {item["producer"] for item in packet["signals"]} == {
         "LSTM",
         "RULE_BASELINE",
     }
-    assert all("confidence" not in item for item in repository.packet["signals"])
-    assert repository.packet["sourceSession"] == "2026-08-31"
-    assert repository.packet["targetSession"] == "2026-09-01"
+    assert all("confidence" not in item for item in packet["signals"])
+    assert packet["sourceSession"] == "2026-08-31"
+    assert packet["targetSession"] == "2026-09-01"
 
 
 def test_feature_builder_requires_verified_latest_source_session() -> None:
@@ -125,7 +132,7 @@ def test_replayed_context_does_not_call_model_or_commit() -> None:
 def _history(closes: list[float]) -> list[dict[str, object]]:
     """종가만 다른 최소 이력. rule 판정에는 종가만 쓰인다."""
 
-    from datetime import date, timedelta
+    from datetime import date
 
     start = date(2026, 6, 1)
     return [

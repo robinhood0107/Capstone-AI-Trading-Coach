@@ -40,6 +40,7 @@ usage() {
 Usage:
   ./capstone up [--models] [--mock]
   ./capstone status|logs|smoke|down|doctor
+  ./capstone demo create
   ./capstone credential rotate <user|admin> /absolute/password-file
   ./capstone mock <configure|doctor|certify|readiness|gate-author|start|stop> [--symbol 005930] [--quantity 1]
   ./capstone artifact <validate|import> <bundle-directory> --manifest-sha256 <sha256>
@@ -86,6 +87,19 @@ compose() {
 #
 # 파일 단위 복사라 두 스택이 모두 내려가 있어야 한다. 켜진 채로 복사하면 쓰는 중인
 # 페이지를 베껴 깨진 데이터 디렉터리가 된다.
+demo_create() {
+  state_ready || die NOT_INITIALIZED
+  # Desktop에서 직접 시작할 컨테이너만 만든다. 기존 데모 데이터는 교체하지 않는다.
+  local demo_project=capstone-p1-demo
+  [[ -z $("$DOCKER_BIN" ps --filter "label=com.docker.compose.project=$demo_project" -q) ]] \
+    || die DEMO_CREATE_REQUIRES_STOPPED_STACK
+  PROJECT_NAME=$demo_project
+  DEMO_STACK=true
+  compose --profile automation up --no-start --no-build --no-deps --pull never \
+    postgres redis actor-authority decision-platform experience-dashboard market-data-daily
+  printf 'CAPSTONE_DEMO_CREATED=PASS\nCAPSTONE_DEMO_STARTED=FALSE\nCAPSTONE_VOLUMES_PRESERVED=TRUE\n'
+}
+
 demo_clone() {
   [[ $DEMO_STACK == true ]] || die DEMO_CLONE_REQUIRES_DEMO_STACK
   [[ -n $DOCKER_BIN ]] || die MISSING_COMMAND_docker
@@ -387,7 +401,7 @@ load_active_mode() {
 
 remove_old_preview_containers() {
   "$DOCKER_BIN" compose --project-name capstone-p1-preview -f "$COMPOSE_FILE" \
-    --profile preview --profile models down --remove-orphans >/dev/null 2>&1 || true
+    --profile preview --profile models --profile automation down --remove-orphans >/dev/null 2>&1 || true
 }
 
 stop_old_preview_containers() {
@@ -714,7 +728,7 @@ team_a_acceptance() {
   # 검증이 쓰는 catalog 에서 읽는다. 상수로 두면 catalog 가 늘어날 때 영수증만 옛 수를
   # 찍고, 그 수가 곧 사람이 증거로 인용하는 값이 된다.
   local acceptance_catalog acceptance_count
-  acceptance_catalog="$REPO_ROOT/contracts/catalogs/p1-team-a-acceptance.v4.json"
+  acceptance_catalog="$REPO_ROOT/contracts/catalogs/p1-team-a-acceptance.v5.json"
   acceptance_count=$(python3 -c 'import json,sys
 print(json.load(open(sys.argv[1]))["acceptanceOperationCount"])' "$acceptance_catalog")
   printf 'TEAM_A_ACCEPTANCE_OPERATION_COUNT=%s\n' "$acceptance_count"
@@ -723,7 +737,10 @@ print(json.load(open(sys.argv[1]))["acceptanceOperationCount"])' "$acceptance_ca
 
 down() {
   state_ready || die NOT_INITIALIZED
-  compose --profile preview --profile models down --remove-orphans
+  # automation 프로파일까지 넘긴다. `up --mock` 이 띄우는 market-data-daily 가 이 프로파일에
+  # 있어서, 빠뜨리면 컨테이너가 남고 다음 네트워크 제거가 "Resource is still in use" 로
+  # 실패한다. 스택을 갈아 끼울 때마다 손으로 치우게 되던 자리다.
+  compose --profile preview --profile models --profile automation down --remove-orphans
   printf 'CAPSTONE_DOWN=PASS\nCAPSTONE_VOLUMES_PRESERVED=TRUE\n'
 }
 
@@ -1304,6 +1321,7 @@ case $command in
     subcommand=${1:-}; [[ -n $subcommand ]] || die DEMO_COMMAND_REQUIRED; shift
     [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT
     case $subcommand in
+      create) demo_create ;;
       clone) demo_clone ;;
       seed|purge) demo_history "$subcommand" ;;
       *) die UNKNOWN_DEMO_COMMAND ;;

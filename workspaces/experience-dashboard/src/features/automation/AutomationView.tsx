@@ -34,94 +34,48 @@ import {
 } from './policy';
 import { AutomationPersistenceNote } from './AutomationPersistenceNote';
 
-/**
- * Kill Switch 조작.
- *
- * **정지와 해제가 대칭이 아니다.** 정지는 누구나 할 수 있고, 해제는 ADMIN 만 된다
- * (`KillSwitchTransitionPolicy.kt:22` — 안전 정지는 열되 재가동은 닫는다). 그래서 USER 에게는
- * 해제 버튼을 아예 두지 않고 **왜 없는지**를 적는다. 회색 버튼만 남기면 고장으로 읽힌다.
- *
- * 화면에서 막아도 서버가 최종 판단이다. 403 이 오면 그대로 보여 준다.
- */
-function KillSwitchControl({ active, onChanged }: { active: boolean; onChanged: () => void }) {
+/** 개인 중지와 관리자 전역 중지는 서로 다른 API와 상태를 사용한다. */
+function KillSwitchControl({ onChanged }: { active: boolean; onChanged: () => void }) {
   const { user } = useSession();
-  const isAdmin = user?.role === 'ADMIN';
+  const personal = useResource(async () => ready((await api.killSwitch()).data), []);
+  const global = useResource(async () => ready((await api.globalKillSwitch()).data), [], user?.role === 'ADMIN');
   const [busy, setBusy] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  async function change(next: boolean) {
+  async function change(active: boolean, scope: 'personal' | 'global') {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      await api.changeKillSwitch(next, next ? 'USER_MANUAL_STOP' : undefined);
-      setConfirming(false);
+      if (scope === 'global') await api.changeGlobalKillSwitch(active);
+      else await api.changeKillSwitch(active);
+      personal.reload();
+      if (user?.role === 'ADMIN') global.reload();
       onChanged();
+      window.dispatchEvent(new Event('capstone-automation-changed'));
     } catch (cause) {
       const state = toErrorState<never>(cause);
-      setError(state.kind === 'error' ? state.message : 'Kill Switch 를 바꾸지 못했습니다.');
-    } finally {
-      setBusy(false);
-    }
+      setError(state.kind === 'error' ? state.message : '중지 상태를 바꾸지 못했습니다.');
+    } finally { setBusy(false); }
   }
-
-  return (
-    <div className="mt-5 border-t border-line pt-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-2xl text-[13px] leading-6 text-muted">
-          {active
-            ? 'Kill Switch가 작동 중입니다. 새 주문이 나가지 않습니다.'
-            : '문제가 보이면 Kill Switch로 새 주문을 즉시 멈출 수 있습니다. 켜는 것은 누구나 할 수 있고, 다시 끄는 것은 관리자만 할 수 있습니다.'}
-        </p>
-
-        {active ? (
-          isAdmin ? (
-            <Button
-              disabled={busy}
-              onClick={() => void change(false)}
-              className="rounded-full border border-line px-4 py-1.5 text-[13px] font-semibold text-muted hover:border-navy hover:text-navy"
-            >
-              {busy ? '해제 중' : 'Kill Switch 해제'}
-            </Button>
-          ) : (
-            <span className="text-[12px] text-faint">해제는 관리자만 할 수 있습니다.</span>
-          )
-        ) : confirming ? (
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="text-[12px] text-block">지금 즉시 새 주문이 멈춥니다.</span>
-            <Button
-              disabled={busy}
-              onClick={() => void change(true)}
-              className="rounded-full border border-block px-4 py-1.5 text-[13px] font-semibold text-block"
-            >
-              {busy ? '멈추는 중' : '멈춥니다'}
-            </Button>
-            <Button
-              disabled={busy}
-              onClick={() => setConfirming(false)}
-              className="rounded-full border border-line px-3 py-1.5 text-[13px] text-muted"
-            >
-              취소
-            </Button>
-          </span>
-        ) : (
-          <Button
-            onClick={() => setConfirming(true)}
-            className="rounded-full border border-line px-4 py-1.5 text-[13px] font-semibold text-muted hover:border-block hover:text-block"
-          >
-            Kill Switch 켜기
-          </Button>
-        )}
+  return <div className="mt-5 space-y-4 border-t border-line pt-4">
+    <p className="text-[13px] leading-6 text-muted">내 주문 중지는 직접 켜고 해제할 수 있습니다. 해제한 뒤 자동운용 시작은 별도로 선택합니다. 이미 종료된 당일 실행은 다시 시작하지 않으며, 보유 종목을 자동으로 팔거나 기존 체결을 되돌리지 않습니다.</p>
+    <AsyncBoundary state={personal.state}>{(state) => <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><p className="text-sm font-semibold">내 주문 중지 · {state.active ? '작동 중' : '꺼짐'}</p>
+        <p className="text-xs text-muted">변경 {formatKstDateTime(state.changedAt)}</p>
+        {state.globalActive ? <p className="text-sm text-block">관리자가 시스템 전체 주문을 중지했습니다. 개인 중지를 해제해도 주문은 차단됩니다.</p> : null}
       </div>
-
-      {error ? (
-        <p className="mt-3 border-l-2 border-block bg-block/5 px-3 py-2 text-[13px] leading-6 text-ink">
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
+      <Button disabled={busy} variant={state.active ? 'secondary' : 'danger'} onClick={() => void change(!state.active, 'personal')}>
+        {state.active ? '내 주문 중지 해제' : '내 주문 즉시 중지'}
+      </Button>
+    </div>}</AsyncBoundary>
+    {user?.role === 'ADMIN' ? <AsyncBoundary state={global.state}>{(state) => <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+      <p className="text-sm font-semibold">관리자 전용 · 시스템 전체 중지 {state.active ? '작동 중' : '꺼짐'}</p>
+      <Button disabled={busy} variant="danger" onClick={() => void change(!state.active, 'global')}>
+        {state.active ? '전역 중지 해제' : '전체 주문 즉시 중지'}
+      </Button>
+    </div>}</AsyncBoundary> : null}
+    {error ? <p role="alert" className="text-sm text-block">{error}</p> : null}
+  </div>;
 }
 
 interface AutomationData {
@@ -254,6 +208,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
       });
       setNotice({ tone: 'ok', text: '자동운용 정책을 새 버전으로 저장했습니다.' });
       onReload();
+      window.dispatchEvent(new Event('capstone-automation-changed'));
     } catch (cause) {
       const error = toErrorState<never>(cause);
       setNotice({
@@ -292,6 +247,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
       });
       setNotice({ tone: 'ok', text: '자동운용을 시작 대기 상태로 전환했습니다.' });
       onReload();
+      window.dispatchEvent(new Event('capstone-automation-changed'));
     } catch (cause) {
       const error = toErrorState<never>(cause);
       setNotice({
@@ -299,6 +255,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
         text: error.kind === 'error' ? error.message : '자동운용을 시작하지 못했습니다.',
       });
       onReload();
+      window.dispatchEvent(new Event('capstone-automation-changed'));
     } finally {
       setBusy(false);
     }
@@ -309,7 +266,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
       <Panel
         contract="GET /api/v3/automation/status"
         title="현재 자동운용 상태"
-        hint="Kill Switch와 자동운용 상태는 서로 다른 값입니다. 서버가 내려준 상태를 그대로 표시합니다."
+        hint="선택한 계좌의 운용 예약, 주문 중지, 보유 종목과 적용 정책을 확인합니다."
         actions={<StatusLabel status={data.status} />}
       >
         <dl className="grid gap-px overflow-hidden rounded-card border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
@@ -319,9 +276,10 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
             label="Kill Switch"
             value={data.status.killSwitchActive ? '작동 중' : '꺼짐'}
           />
-          <StatusField label="정책 버전" value={saved ? `v${saved.version}` : '미설정'} mono />
+          <StatusField label="저장된 정책" value={saved ? `v${saved.version}` : '미설정'} mono />
+          <StatusField label="적용 중인 정책" value={data.status.appliedPolicyVersion ? `v${data.status.appliedPolicyVersion}` : '미설정'} mono />
           <StatusField
-            label="AI 판단"
+            label="LLM 후보 검토"
             value={data.status.aiJudgementEnabled ? `켜짐 · ${data.status.thinkingLevel}` : '꺼짐'}
           />
           <StatusField
@@ -329,7 +287,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
             value={MARKET_HISTORY_LABELS[data.status.marketHistoryStatus]}
           />
           <StatusField
-            label="봇 외 포지션"
+            label="청산 정책 미지정 포지션"
             value={`${data.status.legacyOpenPositionCount}건`}
             mono
           />
@@ -341,6 +299,8 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
           </Link>
         </div>
 
+        {data.status.policyRecoverySourceVersion ? <p className="mt-3 text-xs text-warn">청산 기준은 이전 저장 정책 v{data.status.policyRecoverySourceVersion}의 값으로 복원했습니다. 이전 이력은 보존되어 있습니다.</p> : null}
+        <p className="mt-3 text-xs leading-6 text-muted">다음 자동평가: {data.status.nextRunAt ? formatKstDateTime(data.status.nextRunAt) : '예약 없음'} · 평가 09:30 · 신규 매수 마감 09:40 · 미체결 취소 15:20 (한국 시간)</p>
         <KillSwitchControl active={data.status.killSwitchActive} onChanged={onReload} />
 
         {data.status.blockers.length > 0 ? (
@@ -377,12 +337,12 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
               disabled={locked}
               aria-pressed={selectedPreset === preset.presetId}
               onClick={() => applyPreset(preset.stopLossBps, preset.takeProfitBps)}
-              className={`bg-panel px-4 py-4 text-left disabled:text-faint ${
+              className={`!flex !flex-col !items-stretch !justify-start !rounded-none bg-panel px-4 py-4 text-left disabled:text-faint ${
                 selectedPreset === preset.presetId ? 'ring-2 ring-inset ring-navy' : ''
               }`}
             >
               <div className="flex items-baseline justify-between gap-3">
-                <span className="text-[14px] font-semibold text-ink">{preset.label}</span>
+                <span className="shrink-0 text-[14px] font-semibold text-ink">{preset.label}</span>
                 <span className="tnum font-mono text-[12px] text-muted">
                   -{bpsToPercent(preset.stopLossBps)}% / +{bpsToPercent(preset.takeProfitBps)}%
                 </span>
@@ -623,7 +583,7 @@ function PolicyInput({
   return (
     <label className="block">
       <span className="text-[13px] font-medium text-ink">{label}</span>
-      <span className="mt-2 flex items-center rounded-full border border-line bg-panel focus-within:border-navy">
+      <span className={`mt-2 flex items-center overflow-hidden rounded-control border border-line focus-within:border-navy ${disabled ? 'bg-subtle' : 'bg-panel'}`}>
         <input
           type="number"
           value={value}
@@ -632,7 +592,7 @@ function PolicyInput({
           step={step}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
-          className="tnum min-w-0 flex-1 bg-transparent px-3 py-2 text-right font-mono text-[14px] disabled:bg-surface disabled:text-faint"
+          className="tnum min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-right font-mono text-[14px] text-ink focus:outline-none disabled:cursor-not-allowed disabled:bg-transparent disabled:text-muted"
         />
         <span className="border-l border-line px-3 text-[12px] text-muted">{suffix}</span>
       </span>

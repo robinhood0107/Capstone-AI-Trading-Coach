@@ -148,9 +148,9 @@ test('RAG 피드백은 helpful 이 boolean 일 때만 받는다', async () => {
   assert.equal(missing.success, false);
 });
 
-test('Kill Switch 는 켤 수는 있어도 끌 수는 없다', async () => {
+test('개인 중지를 전역 API로 해제할 수 없다', async () => {
   const before = await mockTransport<{ active: boolean }>(
-    '/api/v1/risk/kill-switch',
+    '/api/v2/risk/kill-switch',
     'GET',
     undefined,
     REQUEST_ID,
@@ -158,7 +158,7 @@ test('Kill Switch 는 켤 수는 있어도 끌 수는 없다', async () => {
   assert.equal(before.data!.active, false);
 
   const stopped = await mockTransport<{ active: boolean; reasonClass: string }>(
-    '/api/v1/risk/kill-switch',
+    '/api/v2/risk/kill-switch',
     'POST',
     { active: true },
     REQUEST_ID,
@@ -178,7 +178,7 @@ test('Kill Switch 는 켤 수는 있어도 끌 수는 없다', async () => {
   assert.equal(resume.error?.code, 'FORBIDDEN');
 
   const after = await mockTransport<{ active: boolean }>(
-    '/api/v1/risk/kill-switch',
+    '/api/v2/risk/kill-switch',
     'GET',
     undefined,
     REQUEST_ID,
@@ -419,4 +419,16 @@ test('제목이나 preset 이 빠지면 만들지 않는다', async () => {
     REQUEST_ID,
   );
   assert.equal(unknownPreset.success, false);
+});
+
+test('개인 중지는 USER가 정지와 해제를 하고 전역 변경은 거부된다', async () => {
+  const global = await mockTransport('/api/v1/risk/kill-switch', 'POST', { active: true }, REQUEST_ID);
+  assert.equal(global.success, false);
+  for (const active of [true, false]) {
+    const changed = await mockTransport('/api/v2/risk/kill-switch', 'POST', { active }, REQUEST_ID);
+    assert.equal(changed.success, true);
+    const state = await mockTransport('/api/v2/risk/kill-switch', 'GET', undefined, REQUEST_ID);
+    assert.equal(state.success, true);
+    if (state.success) assert.equal((state.data as { active: boolean }).active, active);
+  }
 });

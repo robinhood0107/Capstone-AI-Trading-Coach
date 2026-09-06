@@ -185,6 +185,9 @@ class P1V91AutomationContractTest(unittest.TestCase):
             (ROOT / "contracts/openapi/openapi.json").read_text(encoding="utf-8")
         )
         additive = json.loads(ADDITIVE_OPENAPI_PATH.read_text(encoding="utf-8"))
+        from contracts.generate_owner_ridge_contracts import project_previous
+
+        root = project_previous(root)
         # RAG v2 공개 표면이 앞단에 더해졌다. 그 단계를 먼저 걷어 역사적 exact-61을 복원한다.
         rag_v2_additive = json.loads(
             (ROOT / "contracts/openapi/p1-rag-v2-public.v1.openapi.json").read_text(

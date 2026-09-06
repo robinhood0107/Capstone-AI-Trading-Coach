@@ -1,7 +1,10 @@
 import type {
   AutomationBlocker,
+  AutomationBlockerV3,
+  AutomationExitReasonV3,
   AutomationPresetId,
   AutomationProjectionState,
+  MarketHistoryStatus,
 } from '@/shared/api/wire';
 
 export interface AutomationPolicyValues {
@@ -70,6 +73,38 @@ export const AUTOMATION_BLOCKER_LABELS: Record<AutomationBlocker, string> = {
   CONTROL_HALTED: '자동운용이 안전 중단 상태입니다.',
   BLOCKED_INCOMPLETE_RISK_BALANCE:
     '완전한 온라인 위험 잔고 근거가 없어 자동운용을 시작할 수 없습니다.',
+};
+
+/**
+ * v3 가 더 내려보내는 차단 사유 여섯 가지.
+ *
+ * v2 계약에는 없다 — v3 status 를 보는 화면에서만 나타난다. `Record<AutomationBlockerV3, …>`
+ * 라 새 사유가 계약에 붙으면 타입이 먼저 깨진다. 라벨 없이 빈 항목이 렌더되는 일이 없다.
+ */
+export const AUTOMATION_BLOCKER_LABELS_V3: Record<AutomationBlockerV3, string> = {
+  ...AUTOMATION_BLOCKER_LABELS,
+  POLICY_V3_REQUIRED: 'v3 정책을 먼저 저장해야 합니다.',
+  LEGACY_POSITION_PRESENT: '봇이 만들지 않은 포지션이 남아 있습니다. 먼저 정리해야 합니다.',
+  MARKET_HISTORY_EMPTY: '시세 이력이 없습니다. ATR과 추적손절을 계산할 수 없습니다.',
+  MARKET_HISTORY_INSUFFICIENT: '시세 이력이 ATR 계산에 필요한 만큼 쌓이지 않았습니다.',
+  MARKET_DATA_CATCHUP_REQUIRED: '시세 이력이 밀려 있습니다. 따라잡기가 끝나야 시작할 수 있습니다.',
+  AI_PROVIDER_NOT_READY: 'AI 판단 제공자가 준비되지 않았습니다.',
+};
+
+export const MARKET_HISTORY_LABELS: Record<MarketHistoryStatus, string> = {
+  EMPTY: '없음',
+  PARTIAL: '부족',
+  READY: '준비됨',
+  CATCHUP_REQUIRED: '따라잡기 필요',
+};
+
+/** v3 가 추가한 청산 사유까지 포함한다. */
+export const AUTOMATION_EXIT_REASON_LABELS: Record<AutomationExitReasonV3, string> = {
+  STOP_LOSS: '손절',
+  TAKE_PROFIT: '익절',
+  ATR_TRAILING: 'ATR 추적손절',
+  MAX_HOLDING_SESSIONS: '보유 기간 초과',
+  MODEL_SELL: '모델 매도 신호',
 };
 
 export const AUTOMATION_STATE_LABELS: Record<AutomationProjectionState, string> = {

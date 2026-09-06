@@ -6,9 +6,14 @@
  */
 import type {
   AutomationPolicyV2,
+  AutomationCandidateScreeningV3,
   AutomationPositionPageV2,
+  AutomationPositionV3,
+  AutomationRunDetailV3,
   AutomationRunPageV2,
+  AutomationRunV3,
   AutomationStatusV2,
+  AutomationStatusV3,
   DashboardBacktestView,
   DashboardEnvelope,
   DashboardModelEvaluationView,
@@ -456,6 +461,159 @@ export const automationPositions: AutomationPositionPageV2 = {
   items: [],
   nextCursor: null,
 };
+
+/* ----------------------------------------------------------- Automation v3
+ *
+ * v3 는 "왜 그렇게 판단했는지"를 담는다. 그래서 여기 픽스처는 v2 보다 풍부하다 — ATR 추적
+ * 손절이 걸린 보유 포지션, AI 가 근거를 읽고 넘어간 실행, 근거 없이 건너뛴 실행.
+ */
+
+export function automationStatusV3(base: AutomationStatusV2): AutomationStatusV3 {
+  return {
+    ...base,
+    contractId: 'automation-status.v3',
+    aiJudgementEnabled: true,
+    thinkingLevel: 'low',
+    marketHistoryStatus: 'READY',
+    legacyOpenPositionCount: 0,
+  };
+}
+
+export const automationRunsV3: AutomationRunV3[] = [
+  {
+    contractId: 'automation-run.v3',
+    runId: 'auto_run_v3_judged_0002',
+    sessionDate: '2026-09-03',
+    state: 'COMPLETED',
+    brokerageMode: 'KIS_MOCK',
+    policyId: automationPolicy.policyId,
+    policyVersion: automationPolicy.version,
+    selectedSymbol: '005930',
+    selectedSide: 'BUY',
+    orderQuantity: 5,
+    filledQuantity: 5,
+    leavesQuantity: 0,
+    limitPriceKrw: 71_000,
+    estimatedAmountKrw: 355_000,
+    exitReason: null,
+    physicalSubmitCount: 1,
+    providerCalls: 3,
+    evidenceCount: 2,
+    evidenceSetSha256: 'a'.repeat(64),
+    aiSettingsSha256: 'b'.repeat(64),
+    judgeCallCount: 1,
+    groundingQueryCount: 2,
+    screeningProviderCallCount: 2,
+    startedAt: '2026-09-03T09:30:00+09:00',
+    updatedAt: '2026-09-03T09:38:12+09:00',
+  },
+  {
+    contractId: 'automation-run.v3',
+    runId: 'auto_run_v3_skipped_0001',
+    sessionDate: '2026-08-27',
+    state: 'SKIPPED_DATA_UNAVAILABLE',
+    brokerageMode: 'KIS_MOCK',
+    policyId: automationPolicy.policyId,
+    policyVersion: automationPolicy.version,
+    selectedSymbol: null,
+    selectedSide: null,
+    orderQuantity: null,
+    filledQuantity: null,
+    leavesQuantity: null,
+    limitPriceKrw: null,
+    estimatedAmountKrw: null,
+    exitReason: null,
+    physicalSubmitCount: 0,
+    providerCalls: 0,
+    // 근거 0건. AI 판단까지 가지 못하고 끝난 실행이다.
+    evidenceCount: 0,
+    evidenceSetSha256: null,
+    aiSettingsSha256: null,
+    judgeCallCount: 0,
+    groundingQueryCount: 0,
+    screeningProviderCallCount: 0,
+    startedAt: '2026-08-27T09:30:00+09:00',
+    updatedAt: '2026-08-27T09:30:01+09:00',
+  },
+];
+
+export const automationPositionsV3: AutomationPositionV3[] = [
+  {
+    contractId: 'automation-position.v3',
+    positionId: 'auto_pos_v3_0001',
+    accountId: automationStatus.accountId!,
+    symbol: '005930',
+    quantity: 5,
+    entryAverageFillPriceKrw: 71_000,
+    entrySession: '2026-09-03',
+    expirySession: null,
+    policyId: automationPolicy.policyId,
+    policyVersion: automationPolicy.version,
+    stopLossBps: automationPolicy.stopLossBps,
+    takeProfitBps: automationPolicy.takeProfitBps,
+    status: 'OPEN',
+    exitReason: null,
+    peakPriceKrw: 73_400,
+    trailingStopKrw: 70_900,
+    atrPeriod: 14,
+    atrMultiplierMilli: 2500,
+    atrAsOfSession: '2026-09-05',
+    maxHoldingSessions: 60,
+    modelSellEnabled: true,
+    botOwned: true,
+    shortAllowed: false,
+    createdAt: '2026-09-03T09:38:12+09:00',
+    closedAt: null,
+  },
+];
+
+const RUN_SCREENINGS: Record<string, AutomationCandidateScreeningV3[]> = {
+  auto_run_v3_judged_0002: [
+    {
+      symbol: '005930',
+      score: 0.72,
+      reason: '분기 실적 발표에서 메모리 가격 반등이 확인됐고, 공시 위험 신호는 없었습니다.',
+      evidence: [
+        {
+          citationId: 'cit_mock_0001',
+          symbol: '005930',
+          sourceId: 'dart.fss.or.kr',
+          sourceType: 'OFFICIAL_PRIMARY',
+          sourceEventDate: '2026-09-02',
+          boundedQuote: '메모리 부문 영업이익이 전분기 대비 증가했으며 재고 수준은 정상 범위로 복귀했습니다.',
+          quoteSha256: 'c'.repeat(64),
+          uriSha256: 'd'.repeat(64),
+          ageWarning: false,
+          verified: true,
+        },
+        {
+          citationId: 'cit_mock_0002',
+          symbol: '005930',
+          sourceId: 'krx.co.kr',
+          sourceType: 'REGISTERED_INDEPENDENT',
+          sourceEventDate: '2026-08-20',
+          boundedQuote: '해당 종목에 대한 시장경보 및 투자주의 지정 이력이 없습니다.',
+          quoteSha256: 'e'.repeat(64),
+          uriSha256: 'f'.repeat(64),
+          // 2주 넘은 근거. 서버가 오래됐다고 표시한 경우다.
+          ageWarning: true,
+          verified: true,
+        },
+      ],
+    },
+  ],
+  auto_run_v3_skipped_0001: [],
+};
+
+export function automationRunDetailV3(runId: string): AutomationRunDetailV3 | null {
+  const run = automationRunsV3.find((item) => item.runId === runId);
+  if (!run) return null;
+  return {
+    contractId: 'automation-run-detail.v3',
+    run,
+    candidateScreenings: RUN_SCREENINGS[runId] ?? [],
+  };
+}
 
 /* -------------------------------------------------------------- Decision */
 

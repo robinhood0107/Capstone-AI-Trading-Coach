@@ -1,6 +1,15 @@
-import type { AutomationStatusV2 } from '@/shared/api/wire';
+import type { AutomationControlState, AutomationProjectionState } from '@/shared/api/wire';
 
-export function AutomationPersistenceNote({ status }: { status: AutomationStatusV2 }) {
+/**
+ * 재기동을 넘겨 상태가 유지되는지 알려 준다.
+ *
+ * 필요한 것은 두 상태값뿐이라 계약 버전에 묶지 않는다 — v2 든 v3 든 그대로 받는다.
+ */
+export function AutomationPersistenceNote({
+  status,
+}: {
+  status: { controlState: AutomationControlState; projectionState: AutomationProjectionState };
+}) {
   const halted = status.projectionState === 'HALTED';
   const disarmed = status.controlState === 'DISARMED';
 

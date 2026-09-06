@@ -349,6 +349,27 @@ export async function mockTransport<T>(
     return ok(fixtures.automationPositions, requestId) as ApiEnvelope<T>;
   }
 
+  /* ─────────────────────────────── 자동운용 v3 ─────────────────────────── */
+
+  if (target === '/api/v3/automation/status' && method === 'GET') {
+    return ok(fixtures.automationStatusV3(killSwitchAware(fixtures.automationStatus)), requestId) as ApiEnvelope<T>;
+  }
+
+  if (target.startsWith('/api/v3/automation/runs/')) {
+    const runId = target.slice('/api/v3/automation/runs/'.length);
+    const detail = fixtures.automationRunDetailV3(runId);
+    if (!detail) return fail('NOT_FOUND', '해당 실행을 찾을 수 없습니다.', requestId);
+    return ok(detail, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v3/automation/runs' && method === 'GET') {
+    return ok({ items: fixtures.automationRunsV3, nextCursor: null }, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v3/automation/positions' && method === 'GET') {
+    return ok({ items: fixtures.automationPositionsV3 }, requestId) as ApiEnvelope<T>;
+  }
+
   if (target === '/api/v1/automation/status' && method === 'GET') {
     return ok(
       {

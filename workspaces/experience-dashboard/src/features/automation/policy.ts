@@ -153,6 +153,36 @@ export function validateAutomationPolicy(values: AutomationPolicyValues): string
   return errors;
 }
 
+/** v3 정책이 더 요구하는 값들. 범위는 `PutAutomationPolicyV3Request` 스키마 그대로다. */
+export interface AutomationPolicyV3Values {
+  atrPeriod: number;
+  atrMultiplierMilli: number;
+  maxHoldingSessions: number;
+}
+
+export function validateAutomationPolicyV3(values: AutomationPolicyV3Values): string[] {
+  const errors: string[] = [];
+  if (!Number.isSafeInteger(values.atrPeriod) || values.atrPeriod < 5 || values.atrPeriod > 100) {
+    errors.push('ATR 기간은 5 이상 100 이하로 입력하세요.');
+  }
+  if (
+    !Number.isSafeInteger(values.atrMultiplierMilli) ||
+    values.atrMultiplierMilli < 1000 ||
+    values.atrMultiplierMilli > 10_000 ||
+    values.atrMultiplierMilli % 100 !== 0
+  ) {
+    errors.push('ATR 배수는 1.0배 이상 10.0배 이하, 0.1배 단위여야 합니다.');
+  }
+  if (
+    !Number.isSafeInteger(values.maxHoldingSessions) ||
+    values.maxHoldingSessions < 0 ||
+    values.maxHoldingSessions > 1260
+  ) {
+    errors.push('최대 보유 기간은 0 이상 1260세션 이하로 입력하세요.');
+  }
+  return errors;
+}
+
 export function bpsToPercent(value: number): number {
   return value / 100;
 }

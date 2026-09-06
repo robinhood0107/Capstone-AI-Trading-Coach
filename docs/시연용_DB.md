@@ -21,5 +21,25 @@
 P1_DEMO_STACK=true ./capstone up --mock
 ```
 
-시연이 끝나면 반대로 하면 됩니다. 시연 기록만 지우려면 `P1_DEMO_STACK=true ./capstone demo purge`
-입니다.
+시연이 끝나면 반대로 하면 됩니다.
+
+## 처음 한 번
+
+시연 스택의 DB 는 처음에 비어 있습니다. 빈 DB 는 기동 한 번으로 채워지지 않습니다 — 시세
+바가 없으면 신호를 재생할 수 없고, 재생이 없으면 포지션이 없고, 포지션이 없으면 채울 기록도
+없습니다. 그래서 처음 한 번만 실사용 DB 를 통째로 복제합니다. 파일 단위 복사라 두 스택이
+모두 내려가 있어야 하고, 켜져 있으면 명령이 거부됩니다.
+
+```bash
+./capstone down
+P1_DEMO_STACK=true ./capstone demo clone
+P1_DEMO_STACK=true ./capstone up --mock
+```
+
+이후로는 위의 두 줄짜리 전환만 쓰면 됩니다.
+
+## 지우기
+
+시연 기록만 지우려면 `P1_DEMO_STACK=true ./capstone demo purge` 입니다. 판정 식별자에 박아
+둔 표식(`dec_d00dcafe`)만 기준으로 지우므로 다른 기록은 건드리지 않습니다. 시연 스택 자체를
+버리려면 볼륨까지 내리면 됩니다.

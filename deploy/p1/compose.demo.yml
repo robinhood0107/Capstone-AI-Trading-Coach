@@ -1,0 +1,46 @@
+# 시연용 스택 오버레이.
+#
+# `compose.yml` 과 **함께** 쓴다(`-f compose.yml -f compose.demo.yml`). 복사본이 아니라
+# 오버레이인 이유는 하나다 — 복사본은 시간이 지나면 원본과 어긋나지만 오버레이는 같은
+# 이미지와 같은 빌드 컨텍스트를 그대로 쓰므로 **두 스택의 코드가 언제나 동일하다는 것이
+# 규칙이 아니라 구조상 보장**이 된다.
+#
+# 차이는 딱 하나, 시연용 DB 가 있느냐 없느냐다. compose 프로젝트 이름이 다르면
+# (`--project-name capstone-p1-demo`) 이름 있는 볼륨이 통째로 갈리므로 DB 가 물리적으로
+# 분리된다. 이 파일은 그 빈 DB 에 8/18~9/4 기록을 채워 넣는 일회성 서비스 하나만 더한다.
+#
+# 지우기: `./capstone demo purge` 가 시연 행만 지운다. 스택째 버리려면
+# `docker compose --project-name capstone-p1-demo ... down -v` 로 볼륨까지 내린다.
+
+services:
+  demo-history-seed:
+    profiles: [demo]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "team-a-acceptance"]
+    # 시드는 superuser DSN 을 받는다. acceptance 시드와 같은 경계이므로 같은 secret 을 쓴다.
+    command:
+      - sh
+      - -c
+      - >-
+        P1_DEMO_HISTORY_DATABASE_DSN=$$P1_TEAM_A_ACCEPTANCE_DATABASE_DSN
+        python -m app.p1_owner.demo_history_seed "$$P1_DEMO_HISTORY_COMMAND"
+    environment:
+      P1_OFFLINE_DEMO: "true"
+      P1_DEMO_HISTORY_COMMAND: "${P1_DEMO_HISTORY_COMMAND:-seed}"
+      P1_DEMO_HISTORY_START: "${P1_DEMO_HISTORY_START:-2026-08-18}"
+      P1_DEMO_HISTORY_END: "${P1_DEMO_HISTORY_END:-2026-09-04}"
+    secrets: [team_a_acceptance_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    group_add: ["${P1_SECRET_GID}"]
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    restart: "no"
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    networks: [p1-data]

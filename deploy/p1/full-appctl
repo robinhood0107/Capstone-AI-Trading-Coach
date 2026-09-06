@@ -10,6 +10,17 @@ RUNTIME_ENV=$STATE_DIR/runtime.env
 ACTIVE_MODE=$STATE_DIR/active-mode.env
 COMPOSE_FILE=$SCRIPT_DIR/compose.yml
 PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1}
+# 시연용 스택. 이미지도 compose 정의도 그대로 쓰고 compose 프로젝트 이름만 가른다.
+# 이름이 다르면 이름 있는 볼륨이 통째로 갈리므로 DB 가 물리적으로 분리된다 - 두 묶음의
+# 차이는 시연용 DB 가 있느냐 없느냐 그것뿐이고 코드는 언제나 같은 파일 하나다.
+DEMO_STACK=${P1_DEMO_STACK:-false}
+DEMO_COMPOSE_FILE=$SCRIPT_DIR/compose.demo.yml
+if [[ $DEMO_STACK == true ]]; then
+  PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-demo}
+  # 두 묶음이 동시에 떠 있어도 호스트 포트가 부딪히지 않게 한다.
+  export P1_DASHBOARD_PORT=${P1_DASHBOARD_PORT:-3100}
+  export P1_API_PORT=${P1_API_PORT:-18180}
+fi
 P1CTL=$SCRIPT_DIR/p1ctl
 RELEASE_GUARD=$SCRIPT_DIR/release_guard.py
 MOCK_CERTIFICATION_GUARD=$SCRIPT_DIR/mock_certification_guard.py
@@ -57,7 +68,21 @@ compose() {
     export P1_PYTHON_IMAGE=${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
   fi
   args+=(-f "$COMPOSE_FILE")
+  if [[ $DEMO_STACK == true ]]; then args+=(-f "$DEMO_COMPOSE_FILE"); fi
   "${args[@]}" "$@"
+}
+
+# 시연용 기록을 채우거나 되돌린다. 실사용 스택에서는 아무 일도 하지 않는다.
+demo_history() {
+  local action=${1:-seed} output
+  if [[ $DEMO_STACK != true ]]; then
+    printf 'CAPSTONE_DEMO_HISTORY=NOT_A_DEMO_STACK\n'
+    return 0
+  fi
+  output=$(P1_DEMO_HISTORY_COMMAND=$action \
+    compose --profile demo run --rm --no-deps demo-history-seed 2>&1 \
+    | grep -E '^P1_DEMO_HISTORY=' | tail -1) || output=''
+  printf '%s\n' "${output:-P1_DEMO_HISTORY=UNAVAILABLE}"
 }
 
 write_state() {
@@ -475,6 +500,7 @@ up_app() {
   fi
   unset rag_sources_seed
   replay_history
+  demo_history seed
   # A failed public-price refresh is recorded as stale and never calls KIS orders.
   local daily_refresh
   daily_refresh=$(compose --profile owner run --rm --no-deps market-data-cli \
@@ -1246,6 +1272,14 @@ case $command in
   logs) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; logs ;;
   smoke) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; smoke ;;
   down) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; down ;;
+  demo)
+    subcommand=${1:-}; [[ -n $subcommand ]] || die DEMO_COMMAND_REQUIRED; shift
+    [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT
+    case $subcommand in
+      seed|purge) demo_history "$subcommand" ;;
+      *) die UNKNOWN_DEMO_COMMAND ;;
+    esac
+    ;;
   mock)
     subcommand=${1:-}; [[ -n $subcommand ]] || die MOCK_COMMAND_REQUIRED; shift
     case $subcommand in

@@ -215,6 +215,26 @@ export const api = {
     return apiFetchBare<RagV2HistoryDetail>(`/api/v2/rag/history/${encodeURIComponent(answerId)}`);
   },
 
+  /** 저장된 질문 하나를 지운다. 되돌릴 수 없으므로 화면에서 한 번 더 확인받는다. */
+  ragV2DeleteHistory(answerId: string): Promise<void> {
+    return apiFetchBare<void>(`/api/v2/rag/history/${encodeURIComponent(answerId)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * 답변이 도움이 됐는지 남긴다.
+   *
+   * 경로가 v1 뿐이다(v2 에는 없다). 답변 id 체계는 두 버전이 같으므로 v2 로 받은 답변에도
+   * 그대로 쓴다.
+   */
+  ragFeedback(answerId: string, helpful: boolean): Promise<ApiResult<unknown>> {
+    return apiFetch(`/api/v1/rag/answers/${encodeURIComponent(answerId)}/feedback`, {
+      method: 'POST',
+      body: { helpful },
+    });
+  },
+
   /* ------------------------------------------------------ Strong LLM 설정 */
   /**
    * 응답 본문이 없다. 키를 담을 수 있는 응답을 아예 만들지 않는 것이 키를 응답에서 지우는

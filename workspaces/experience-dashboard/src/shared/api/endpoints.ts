@@ -4,9 +4,14 @@ import type {
   ArmAutomationV2Request,
   AutomationControlV1,
   AutomationPolicyV2,
+  AutomationPolicyV3,
   AutomationPositionPageV2,
+  AutomationPositionPageV3,
+  AutomationRunDetailV3,
   AutomationRunPageV2,
+  AutomationRunPageV3,
   AutomationStatusV2,
+  AutomationStatusV3,
   DashboardBacktestView,
   DashboardEnvelope,
   DashboardModelEvaluationView,
@@ -23,12 +28,20 @@ import type {
   RecentRiskResultList,
   LoginResponse,
   MockBalance,
+  MockBuyable,
+  MockOrderRequest,
+  MockOrderSubmitted,
+  OrderDetail,
+  OrderFillPage,
   PortfolioRisk,
+  PrincipleCreateRequest,
   PrincipleCurrent,
+  PrincipleHistoryData,
   PrincipleOwnerListData,
   PrinciplePresetListData,
   PrincipleUpdateRequest,
   PutAutomationPolicyV2Request,
+  PutAutomationPolicyV3Request,
   PutStrongLlmSettingsRequest,
   RagAnswerProjection,
   RagAskRequest,
@@ -68,6 +81,65 @@ export const api = {
     return apiFetch<PortfolioRisk>('/api/v1/risk/portfolio');
   },
 
+  /**
+   * 이 종목을 이 단가로 지금 얼마나 살 수 있나. 주문 관문 G3 이 쓴다.
+   *
+   * **`symbol` 과 `price` 가 둘 다 필수다.** OpenAPI 에는 두 쿼리 파라미터가 선언돼 있지
+   * 않지만(`BrokerageController.kt:220` 이 `HttpServletRequest` 에서 직접 읽는다) 서버는
+   * 둘 다 요구하고, 선언되지 않은 다른 파라미터는 `UNKNOWN_FIELD` 로 거절한다
+   * (`BrokerageRequestParser.kt:95`). acceptance 카탈로그도 `clientParameterOverrides` 로
+   * 같은 사실을 못박고 있다.
+   */
+  mockBuyable(accountId: string, symbol: string, price: number): Promise<ApiResult<MockBuyable>> {
+    const query = new URLSearchParams({ symbol, price: String(price) });
+    return apiFetch<MockBuyable>(
+      `/api/v1/brokerage/mock/accounts/${encodeURIComponent(accountId)}/buyable?${query}`,
+    );
+  },
+
+  /**
+   * 체결 내역. `from`/`to` 는 KST 일 경계이고 **최대 31일**이다
+   * (`BrokerageFillRequestParser.kt:20`, 넘기면 `RANGE_EXCEEDS_31_DAYS`).
+   *
+   * 체결 원장이 없는 계좌는 404 를 돌려준다(`JdbcOrderFillRepository.kt:209` 가
+   * `ACCOUNT_NOT_FOUND` 를 그렇게 옮긴다). 오류가 아니라 **빈 상태**이므로 호출부가 그렇게
+   * 다뤄야 한다.
+   */
+  mockFills(accountId: string, from: string, to: string): Promise<ApiResult<OrderFillPage>> {
+    return apiFetch<OrderFillPage>(
+      `/api/v1/brokerage/mock/accounts/${encodeURIComponent(accountId)}/fills` +
+        `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    );
+  },
+
+  order(orderId: string): Promise<ApiResult<OrderDetail>> {
+    return apiFetch<OrderDetail>(`/api/v1/brokerage/orders/${encodeURIComponent(orderId)}`);
+  },
+
+  /**
+   * 모의계좌에 주문을 낸다.
+   *
+   * **멱등키는 호출부가 준다.** 여기서 만들면 사용자가 수량을 고쳐 다시 제출할 때 같은 키가
+   * 재사용돼 두 번째 주문이 조용히 무시된다. 확인 화면에 들어갈 때마다 새로 발급한다.
+   */
+  submitMockOrder(
+    request: MockOrderRequest,
+    idempotencyKey: string,
+  ): Promise<ApiResult<MockOrderSubmitted>> {
+    return apiFetch<MockOrderSubmitted>('/api/v1/brokerage/mock/orders', {
+      method: 'POST',
+      body: request,
+      idempotencyKey,
+    });
+  },
+
+  cancelOrder(orderId: string, idempotencyKey: string): Promise<ApiResult<OrderDetail>> {
+    return apiFetch<OrderDetail>(
+      `/api/v1/brokerage/orders/${encodeURIComponent(orderId)}/cancel`,
+      { method: 'POST', idempotencyKey },
+    );
+  },
+
   mockBalance(accountId: string): Promise<ApiResult<MockBalance>> {
     return apiFetch<MockBalance>(
       `/api/v1/brokerage/mock/accounts/${encodeURIComponent(accountId)}/balances`,
@@ -78,8 +150,25 @@ export const api = {
     return apiFetch<InstrumentDisplayCatalog>('/api/v1/instruments/display');
   },
 
-  killSwitch(): Promise<ApiResult<KillSwitchState>> {
+  globalKillSwitch(): Promise<ApiResult<KillSwitchState>> {
     return apiFetch<KillSwitchState>('/api/v1/risk/kill-switch');
+  },
+  changeGlobalKillSwitch(active: boolean): Promise<ApiResult<KillSwitchState>> {
+    return apiFetch<KillSwitchState>('/api/v1/risk/kill-switch', {
+      method: 'POST', body: { active }, idempotencyKey: newIdempotencyKey('global-stop'),
+    });
+  },
+  killSwitch(): Promise<ApiResult<KillSwitchState>> {
+    return apiFetch<KillSwitchState>('/api/v2/risk/kill-switch');
+  },
+
+  /** 인증된 사용자의 개인 주문 중지를 변경한다. 전역 변경과 분리한다. */
+  changeKillSwitch(active: boolean, reason?: string): Promise<ApiResult<KillSwitchState>> {
+    return apiFetch<KillSwitchState>('/api/v2/risk/kill-switch', {
+      method: 'POST',
+      body: reason ? { active, reason } : { active },
+      idempotencyKey: newIdempotencyKey('kill-switch'),
+    });
   },
 
   automationStatusV2(): Promise<ApiResult<AutomationStatusV2>> {
@@ -104,6 +193,16 @@ export const api = {
     });
   },
 
+  /**
+   * v1 자동운용 통제 상태.
+   *
+   * v2 status 를 두고도 이걸 쓰는 이유는 하나다 — **`strategyId` 는 여기에만 있다.**
+   * 주문을 낼 때 계약이 요구하는데 v2/v3 status 에는 그 필드가 없다(계약 확인함).
+   */
+  automationControlV1(): Promise<ApiResult<AutomationControlV1>> {
+    return apiFetch<AutomationControlV1>('/api/v1/automation/status');
+  },
+
   disarmAutomation(expectedVersion: number): Promise<ApiResult<AutomationControlV1>> {
     return apiFetch<AutomationControlV1>('/api/v1/automation/disarm', {
       method: 'POST',
@@ -120,6 +219,56 @@ export const api = {
     return apiFetch<AutomationPositionPageV2>('/api/v2/automation/positions');
   },
 
+  /* ------------------------------------------------------- 자동운용 v3
+   *
+   * v3 는 v2 의 상위집합이 **아니다.** 포지션 페이지에서 `realizedSummary` 가 빠졌다.
+   * 그래서 v2 를 지우지 않고 화면마다 필요한 쪽을 부른다 — 실현손익 요약이 필요한 현황은
+   * v2 를, 청산 근거(ATR 추적손절·보유기간·AI 판단)가 필요한 자동운용은 v3 를 본다.
+   */
+  automationStatusV3(): Promise<ApiResult<AutomationStatusV3>> {
+    return apiFetch<AutomationStatusV3>('/api/v3/automation/status');
+  },
+
+  /**
+   * v3 정책 저장.
+   *
+   * **v2 로 저장하면 v3 화면이 막다른 길이 된다.** v3 상태는 정책에 ATR 값이 없으면
+   * `POLICY_V3_REQUIRED` 로 시작을 막는데, v2 저장은 그 네 값을 채우지 못한다.
+   */
+  putAutomationPolicyV3(
+    request: PutAutomationPolicyV3Request,
+  ): Promise<ApiResult<AutomationPolicyV3>> {
+    return apiFetch<AutomationPolicyV3>('/api/v3/automation/policy', {
+      method: 'PUT',
+      body: request,
+      idempotencyKey: newIdempotencyKey('automation-policy-v3'),
+    });
+  },
+
+  /** 요청 모양은 v2 와 같다(계약 확인함). 응답만 v3 상태다. */
+  armAutomationV3(request: ArmAutomationV2Request): Promise<ApiResult<AutomationStatusV3>> {
+    return apiFetch<AutomationStatusV3>('/api/v3/automation/arm', {
+      method: 'POST',
+      body: request,
+      idempotencyKey: newIdempotencyKey('automation-arm-v3'),
+    });
+  },
+
+  automationRunsV3(size = 20): Promise<ApiResult<AutomationRunPageV3>> {
+    return apiFetch<AutomationRunPageV3>(`/api/v3/automation/runs?size=${size}`);
+  },
+
+  /** 이 실행이 무엇을 읽고 그렇게 판단했는지. v2 에는 이 경로 자체가 없다. */
+  automationRunDetailV3(runId: string): Promise<ApiResult<AutomationRunDetailV3>> {
+    return apiFetch<AutomationRunDetailV3>(
+      `/api/v3/automation/runs/${encodeURIComponent(runId)}`,
+    );
+  },
+
+  automationPositionsV3(): Promise<ApiResult<AutomationPositionPageV3>> {
+    return apiFetch<AutomationPositionPageV3>('/api/v3/automation/positions');
+  },
+
   /* -------------------------------------------------------------- 원칙 */
   principlePresets(): Promise<ApiResult<PrinciplePresetListData>> {
     return apiFetch<PrinciplePresetListData>('/api/v1/principle-presets');
@@ -131,6 +280,18 @@ export const api = {
 
   principle(principleId: string): Promise<ApiResult<PrincipleCurrent>> {
     return apiFetch<PrincipleCurrent>(`/api/v1/principles/${encodeURIComponent(principleId)}`);
+  },
+
+  /** 저장할 때마다 한 버전씩 쌓인다. 무엇이 언제 바뀌었는지 되짚는 용도다. */
+  principleVersions(principleId: string): Promise<ApiResult<PrincipleHistoryData>> {
+    return apiFetch<PrincipleHistoryData>(
+      `/api/v1/principles/${encodeURIComponent(principleId)}/versions`,
+    );
+  },
+
+  /** 원칙을 처음 만든다. 이게 없으면 원칙이 하나도 없는 계정은 주문 검토를 쓸 수 없다. */
+  createPrinciple(request: PrincipleCreateRequest): Promise<ApiResult<PrincipleCurrent>> {
+    return apiFetch<PrincipleCurrent>('/api/v1/principles', { method: 'POST', body: request });
   },
 
   /** expectedVersion 기반 CAS. 409가 오면 재조회 후 사용자가 다시 선택하게 한다. */
@@ -199,6 +360,26 @@ export const api = {
 
   ragV2HistoryDetail(answerId: string): Promise<RagV2HistoryDetail> {
     return apiFetchBare<RagV2HistoryDetail>(`/api/v2/rag/history/${encodeURIComponent(answerId)}`);
+  },
+
+  /** 저장된 질문 하나를 지운다. 되돌릴 수 없으므로 화면에서 한 번 더 확인받는다. */
+  ragV2DeleteHistory(answerId: string): Promise<void> {
+    return apiFetchBare<void>(`/api/v2/rag/history/${encodeURIComponent(answerId)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * 답변이 도움이 됐는지 남긴다.
+   *
+   * 경로가 v1 뿐이다(v2 에는 없다). 답변 id 체계는 두 버전이 같으므로 v2 로 받은 답변에도
+   * 그대로 쓴다.
+   */
+  ragFeedback(answerId: string, helpful: boolean): Promise<ApiResult<unknown>> {
+    return apiFetch(`/api/v1/rag/answers/${encodeURIComponent(answerId)}/feedback`, {
+      method: 'POST',
+      body: { helpful },
+    });
   },
 
   /* ------------------------------------------------------ Strong LLM 설정 */

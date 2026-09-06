@@ -158,6 +158,9 @@ data class AutomationStatusV3Projection(
     val unresolvedReconciliation: Boolean,
     val canArm: Boolean,
     val blockers: List<String>,
+    val appliedPolicyVersion: Int? = null,
+    val policyRecoverySourceVersion: Int? = null,
+    val nextRunAt: java.time.OffsetDateTime? = null,
 )
 
 data class AutomationRunV3Projection(

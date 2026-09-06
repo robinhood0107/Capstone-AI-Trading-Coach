@@ -1,5 +1,12 @@
 import { ApiFailure, type ApiEnvelope } from '@/shared/api/envelope';
-import type { AutomationPresetId } from '@/shared/api/wire';
+import type {
+  AutomationPresetId,
+  JournalEntry,
+  KillSwitchState,
+  OrderDetail,
+  OrderFill,
+  RagV2HistoryDetail,
+} from '@/shared/api/wire';
 import * as fixtures from './fixtures';
 
 /**
@@ -12,6 +19,9 @@ import * as fixtures from './fixtures';
  * 여기서 지름길을 만들면 live 전환 시점에 화면이 깨진다.
  */
 const LATENCY_MS = 240;
+
+/** 오프라인 픽스처가 "최근 실행"으로 내보내는 실행 id. 두 대시보드 경로가 함께 쓴다. */
+const LATEST_RUN_ID = 'demo_s8_offline_0001';
 
 const ID_PATTERN = {
   decisionId: /^dec_[A-Za-z0-9_-]{8,96}$/,
@@ -34,6 +44,67 @@ function fail<T>(code: string, message: string, requestId: string): ApiEnvelope<
  * 옮겨 담는다. 값이 fixture라는 사실은 화면이 별도로 표시한다.
  */
 let mockConsentGranted = false;
+
+/**
+ * mock 의 RAG 질문 기록.
+ *
+ * 예전에는 빈 배열을 돌려주고 상세는 언제나 404 였다. 그러면 mock 에서 "최근 질문"이 늘
+ * 비어 있어 삭제도 피드백도 눌러 볼 수가 없다. 물어보면 여기에 쌓고, 지우면 여기서 뺀다 —
+ * 탭이 살아 있는 동안만 유지되는 값이다.
+ */
+const mockRagHistory: RagV2HistoryDetail[] = [];
+
+/** mock 의 학습일지. 탭이 살아 있는 동안만 유지된다. */
+const mockJournals: JournalEntry[] = [...fixtures.journals];
+let mockJournalCounter = fixtures.journals.length;
+
+/** v1 통제 상태에만 있는 값. 주문 계약이 요구한다. */
+const MOCK_STRATEGY_ID = 'strategy_00000000';
+
+/** mock 이 낸 주문. 탭이 살아 있는 동안만 유지된다. */
+const mockOrders = new Map<string, OrderDetail>();
+const mockFills: OrderFill[] = [];
+
+let mockOrderCounter = 0;
+
+function mockOrderId(): string {
+  mockOrderCounter += 1;
+  return `ord_${mockOrderCounter.toString(16).padStart(32, '0')}`;
+}
+
+/** mock 의 Kill Switch 상태. 탭이 살아 있는 동안만 유지된다. */
+let mockKillSwitch: KillSwitchState = {
+  active: false,
+  changedAt: new Date().toISOString(),
+  reasonClass: 'INITIAL_STATE',
+};
+
+/**
+ * 자동운용 상태에 지금의 Kill Switch 값을 얹는다.
+ *
+ * Kill Switch 가 켜져 있으면 시작할 수 없다 — 실제로도 DB 가 그렇게 막는다
+ * (`V93__p1_automation_pipeline_continuity.sql:128` 이 `kill_switch_inactive` 를 요구하고,
+ * `V109...:60` 이 활성 상태에서의 arm 을 거부한다). mock 도 같은 규칙을 지킨다.
+ */
+function killSwitchAware(status: typeof fixtures.automationStatus) {
+  if (!mockKillSwitch.active) return status;
+  return {
+    ...status,
+    killSwitchActive: true,
+    canArm: false,
+    blockers: status.blockers.includes('KILL_SWITCH_ACTIVE')
+      ? status.blockers
+      : [...status.blockers, 'KILL_SWITCH_ACTIVE' as const],
+  };
+}
+
+let mockRagAnswerCounter = 0;
+
+/** 화면이 받아 주는 `rag_` + 32 hex 형태로 만든다. mock 안에서만 쓴다. */
+function mockRagAnswerId(): string {
+  mockRagAnswerCounter += 1;
+  return `rag_${mockRagAnswerCounter.toString(16).padStart(32, '0')}`;
+}
 
 export async function mockBareTransport<T>(
   path: string,
@@ -96,37 +167,76 @@ export async function mockBareTransport<T>(
       throw new ApiFailure({ code: 'RAG_VALIDATION_FAILED', message: '질문을 입력하세요.' }, requestId);
     }
     const answer = fixtures.ragAnswerFor(question);
+    const generationStatus =
+      answer.citations.length > 0 ? 'RETRIEVAL_ONLY' : answer.generationStatus;
+    const citations = answer.citations.map((citation, index) => ({
+      citationId: `cit_${index + 1}`,
+      citationKind: 'PUBLIC_WEB' as const,
+      sourceId: citation.sourceId,
+      title: citation.title,
+      canonicalUrl: citation.canonicalUrl,
+      locator: { section: citation.sectionTitle },
+      chunkRevisionId: `rag_v2_chk_mock_${index + 1}`,
+      sourceRevisionId: `srv_mock_${index + 1}`,
+      generationId: 'rgr_mock',
+    }));
+
+    // 답변이 실제로 만들어졌을 때만 기록에 쌓는다. 차단된 질문은 남기지 않는다.
+    //
+    // 화면(`loadRecentQuestions`)은 `rag_` + 32 hex 형태의 id 만 받아 준다. 픽스처의 v1 id
+    // (`rag_demo_answer_000001`)는 그 형태가 아니라, v2 기록에는 형태를 맞춘 id 를 따로 만든다.
+    const v2AnswerId = answer.citations.length > 0 ? mockRagAnswerId() : null;
+    if (v2AnswerId) {
+      const now = new Date();
+      mockRagHistory.unshift({
+        answerId: v2AnswerId,
+        question,
+        answer: null,
+        generationStatus,
+        citations,
+        createdAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + 30 * 24 * 60 * 60_000).toISOString(),
+      });
+    }
+
     return {
       requestId,
-      answerId: answer.citations.length > 0 ? answer.answerId : null,
-      generationStatus: answer.citations.length > 0 ? 'RETRIEVAL_ONLY' : answer.generationStatus,
+      answerId: v2AnswerId,
+      generationStatus,
       answer: null,
       citationCoverage: answer.citations.length > 0 ? 1 : 0,
       retrievalFailure: answer.citations.length === 0 && !answer.generationStatus.startsWith('BLOCKED'),
       guardrailFlags: answer.guardrailFlags,
-      citations: answer.citations.map((citation, index) => ({
-        citationId: `cit_${index + 1}`,
-        citationKind: 'PUBLIC_WEB' as const,
-        sourceId: citation.sourceId,
-        title: citation.title,
-        canonicalUrl: citation.canonicalUrl,
-        locator: { section: citation.sectionTitle },
-        chunkRevisionId: `rag_v2_chk_mock_${index + 1}`,
-        sourceRevisionId: `srv_mock_${index + 1}`,
-        generationId: 'rgr_mock',
-      })),
+      citations,
     } as T;
   }
 
   if (target === '/api/v2/rag/history') {
-    return { items: [], nextCursor: null } as T;
+    return {
+      items: mockRagHistory.map((entry) => ({
+        answerId: entry.answerId,
+        createdAt: entry.createdAt,
+        expiresAt: entry.expiresAt,
+        generationStatus: entry.generationStatus,
+      })),
+      nextCursor: null,
+    } as T;
   }
 
   if (target.startsWith('/api/v2/rag/history/')) {
-    throw new ApiFailure(
-      { code: 'NOT_FOUND', message: '해당 질문 기록을 찾을 수 없습니다.' },
-      requestId,
-    );
+    const answerId = target.slice('/api/v2/rag/history/'.length);
+    const index = mockRagHistory.findIndex((entry) => entry.answerId === answerId);
+    if (index < 0) {
+      throw new ApiFailure(
+        { code: 'NOT_FOUND', message: '해당 질문 기록을 찾을 수 없습니다.' },
+        requestId,
+      );
+    }
+    if (method === 'DELETE') {
+      mockRagHistory.splice(index, 1);
+      return undefined as T;
+    }
+    return mockRagHistory[index] as T;
   }
 
   throw new ApiFailure(
@@ -169,7 +279,9 @@ export async function mockTransport<T>(
   }
 
   if (target === '/api/v2/automation/status' && method === 'GET') {
-    return ok(fixtures.automationStatus, requestId) as ApiEnvelope<T>;
+    // Kill Switch 는 `mockKillSwitch` 하나만 진실이다. 픽스처의 고정값을 그대로 내보내면
+    // 방금 켠 것이 자동운용 화면에는 반영되지 않아, 같은 사실이 화면 두 곳에서 어긋난다.
+    return ok(killSwitchAware(fixtures.automationStatus), requestId) as ApiEnvelope<T>;
   }
 
   if (target === '/api/v2/automation/policy' && method === 'PUT') {
@@ -237,6 +349,97 @@ export async function mockTransport<T>(
     return ok(fixtures.automationPositions, requestId) as ApiEnvelope<T>;
   }
 
+  /* ─────────────────────────────── 자동운용 v3 ─────────────────────────── */
+
+  if (target === '/api/v3/automation/policy' && method === 'PUT') {
+    const request = body as
+      | {
+          expectedVersion?: number;
+          capitalLimitKrw?: number;
+          stopLossBps?: number;
+          takeProfitBps?: number;
+          atrPeriod?: number;
+          atrMultiplierMilli?: number;
+          maxHoldingSessions?: number;
+          modelSellEnabled?: boolean;
+        }
+      | undefined;
+    if (request?.expectedVersion !== fixtures.automationPolicyV3.version) {
+      return fail('CONFLICT', '정책 버전이 맞지 않습니다.', requestId);
+    }
+    // v2 가 채우지 못하는 네 값이 전부 와야 한다. 하나라도 빠지면 v3 정책이 아니다.
+    if (
+      typeof request.atrPeriod !== 'number' ||
+      typeof request.atrMultiplierMilli !== 'number' ||
+      typeof request.maxHoldingSessions !== 'number' ||
+      typeof request.modelSellEnabled !== 'boolean'
+    ) {
+      return fail('VALIDATION_ERROR', 'v3 정책은 ATR·보유기간·모델매도 값을 모두 요구합니다.', requestId);
+    }
+    const next = {
+      ...fixtures.automationPolicyV3,
+      capitalLimitKrw: request.capitalLimitKrw ?? fixtures.automationPolicyV3.capitalLimitKrw,
+      stopLossBps: request.stopLossBps ?? fixtures.automationPolicyV3.stopLossBps,
+      takeProfitBps: request.takeProfitBps ?? fixtures.automationPolicyV3.takeProfitBps,
+      atrPeriod: request.atrPeriod,
+      atrMultiplierMilli: request.atrMultiplierMilli,
+      maxHoldingSessions: request.maxHoldingSessions,
+      modelSellEnabled: request.modelSellEnabled,
+      version: fixtures.automationPolicyV3.version + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    fixtures.replaceAutomationPolicyV3(next);
+    return ok(next, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v3/automation/arm' && method === 'POST') {
+    const request = body as { expectedPolicyVersion?: number } | undefined;
+    if (request?.expectedPolicyVersion !== fixtures.automationPolicyV3.version) {
+      return fail('CONFLICT', '정책 버전이 맞지 않습니다.', requestId);
+    }
+    const status = killSwitchAware(fixtures.automationStatus);
+    if (!status.canArm) {
+      return fail('CONFLICT', '지금은 자동운용을 시작할 수 없습니다.', requestId);
+    }
+    return ok(fixtures.automationStatusV3(status), requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v3/automation/status' && method === 'GET') {
+    return ok(fixtures.automationStatusV3(killSwitchAware(fixtures.automationStatus)), requestId) as ApiEnvelope<T>;
+  }
+
+  if (target.startsWith('/api/v3/automation/runs/')) {
+    const runId = target.slice('/api/v3/automation/runs/'.length);
+    const detail = fixtures.automationRunDetailV3(runId);
+    if (!detail) return fail('NOT_FOUND', '해당 실행을 찾을 수 없습니다.', requestId);
+    return ok(detail, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v3/automation/runs' && method === 'GET') {
+    return ok({ items: fixtures.automationRunsV3, nextCursor: null }, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v3/automation/positions' && method === 'GET') {
+    return ok({ items: fixtures.automationPositionsV3 }, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v1/automation/status' && method === 'GET') {
+    return ok(
+      {
+        contractId: 'automation-control.v1' as const,
+        controlState: fixtures.automationStatus.controlState,
+        projectionState: fixtures.automationStatus.projectionState,
+        version: fixtures.automationStatus.controlVersion,
+        brokerageMode: fixtures.automationStatus.brokerageMode,
+        principleId: fixtures.principle.principleId,
+        strategyId: MOCK_STRATEGY_ID,
+        killSwitchActive: mockKillSwitch.active,
+        certificationStatus: fixtures.automationStatus.certificationStatus,
+      },
+      requestId,
+    ) as ApiEnvelope<T>;
+  }
+
   if (target === '/api/v1/automation/disarm' && method === 'POST') {
     fixtures.automationStatus.controlState = 'DISARMED';
     fixtures.automationStatus.projectionState = 'DISARMED';
@@ -250,11 +453,186 @@ export async function mockTransport<T>(
         brokerageMode: fixtures.automationStatus.brokerageMode,
         principleId: 'prc_00000000',
         strategyId: 'strategy_00000000',
-        killSwitchActive: fixtures.automationStatus.killSwitchActive,
+        killSwitchActive: mockKillSwitch.active,
         certificationStatus: fixtures.automationStatus.certificationStatus,
       },
       requestId,
     ) as ApiEnvelope<T>;
+  }
+
+  /* ─────────────────────────────── 증권 · 주문 ─────────────────────────── */
+
+  if (target.startsWith('/api/v1/brokerage/mock/accounts/')) {
+    const rest = target.slice('/api/v1/brokerage/mock/accounts/'.length).split('/');
+    const accountId = rest[0] ?? '';
+    const leaf = rest[1] ?? '';
+    if (leaf === 'balances') return ok(fixtures.mockBalance, requestId) as ApiEnvelope<T>;
+    if (leaf === 'buyable') {
+      // 서버는 symbol 과 price 를 둘 다 요구한다(BrokerageRequestParser.kt:95). mock 이 하나만
+      // 받아 주면 live 에서만 깨지는 차이가 생긴다.
+      const query = new URLSearchParams(path.split('?')[1] ?? '');
+      const symbol = query.get('symbol') ?? '';
+      const priceParam = Number(query.get('price'));
+      if (!symbol) return fail('VALIDATION_ERROR', '종목을 지정해야 합니다.', requestId);
+      if (!Number.isInteger(priceParam) || priceParam < 1) {
+        return fail('VALIDATION_ERROR', '예상 단가를 지정해야 합니다.', requestId);
+      }
+      const price = priceParam;
+      const cash = fixtures.mockBalance.cashKrw;
+      return ok(
+        {
+          accountId,
+          brokerageMode: 'KIS_MOCK' as const,
+          symbol,
+          cashKrw: cash,
+          estimatedPrice: price,
+          buyableAmountKrw: cash,
+          buyableQuantity: Math.floor(cash / price),
+          observedAt: new Date().toISOString(),
+          sourceVersion: fixtures.mockBalance.sourceVersion,
+        },
+        requestId,
+      ) as ApiEnvelope<T>;
+    }
+    if (leaf === 'fills') {
+      // 서버는 KST 일 경계로 최대 31일만 받는다(BrokerageFillRequestParser.kt:20).
+      // mock 이 더 넓게 받아 주면 live 에서만 RANGE_EXCEEDS_31_DAYS 로 깨진다.
+      const query = new URLSearchParams(path.split('?')[1] ?? '');
+      const from = query.get('from');
+      const to = query.get('to');
+      if (!from || !to) {
+        return fail('VALIDATION_ERROR', '조회 기간을 지정해야 합니다.', requestId);
+      }
+      const spanDays = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
+      if (!Number.isFinite(spanDays) || spanDays < 0 || spanDays > 30) {
+        return fail('VALIDATION_ERROR', '조회 기간은 31일을 넘을 수 없습니다.', requestId);
+      }
+      return ok({ items: mockFills, nextCursor: null }, requestId) as ApiEnvelope<T>;
+    }
+    return fail('NOT_FOUND', `mock 경로가 정의되지 않았습니다: ${target}`, requestId);
+  }
+
+  if (target === '/api/v1/brokerage/mock/orders' && method === 'POST') {
+    const request = body as
+      | { decisionId?: string; orderIntent?: { symbol?: string; quantity?: number } }
+      | undefined;
+    if (!request?.decisionId || !ID_PATTERN.decisionId.test(request.decisionId)) {
+      return fail('VALIDATION_ERROR', '판정 근거가 필요합니다.', requestId);
+    }
+    const order = {
+      orderId: mockOrderId(),
+      accountId: fixtures.mockBalance.accountId,
+      brokerageMode: 'KIS_MOCK' as const,
+      status: 'SUBMITTED' as const,
+      submittedAt: new Date().toISOString(),
+    };
+    mockOrders.set(order.orderId, { ...order, decisionId: request.decisionId });
+    return ok(order, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target.startsWith('/api/v1/brokerage/orders/')) {
+    const rest = target.slice('/api/v1/brokerage/orders/'.length).split('/');
+    const orderId = rest[0] ?? '';
+    const existing = mockOrders.get(orderId);
+    if (!existing) return fail('NOT_FOUND', '해당 주문을 찾을 수 없습니다.', requestId);
+    if (rest[1] === 'cancel') {
+      if (existing.status !== 'SUBMITTED' && existing.status !== 'ACCEPTED') {
+        return fail('CONFLICT', '이 주문은 더 이상 취소할 수 없습니다.', requestId);
+      }
+      const cancelled = { ...existing, status: 'CANCELLED' as const };
+      mockOrders.set(orderId, cancelled);
+      return ok(cancelled, requestId) as ApiEnvelope<T>;
+    }
+    return ok(existing, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v1/decisions/evaluate-order' && method === 'POST') {
+    const request = body as
+      | { orderIntent?: { symbol?: string; quantity?: number; estimatedAmount?: number } }
+      | undefined;
+    const intent = request?.orderIntent;
+    if (!intent?.symbol || !intent.quantity || !intent.estimatedAmount) {
+      return fail('VALIDATION_ERROR', '주문 내용이 온전하지 않습니다.', requestId);
+    }
+    return ok(fixtures.evaluateOrder(intent.symbol, intent.estimatedAmount), requestId) as ApiEnvelope<T>;
+  }
+
+  /* ─────────────────────────────── 학습일지 ────────────────────────────── */
+
+  if (target === '/api/v1/journals') {
+    if (method === 'POST') {
+      const request = body as { title?: string; content?: string; tags?: string[] } | undefined;
+      if (!request?.title || !request.content) {
+        return fail('VALIDATION_ERROR', '제목과 내용을 모두 적어야 합니다.', requestId);
+      }
+      const now = new Date().toISOString();
+      mockJournalCounter += 1;
+      const entry: JournalEntry = {
+        contractId: 'journal.v1',
+        journalId: `jrn_${mockJournalCounter.toString(16).padStart(32, '0')}`,
+        ownerScope: 'OWNER',
+        title: request.title,
+        content: request.content,
+        tags: request.tags ?? [],
+        links: {
+          decisionId: null,
+          backtestRunId: null,
+          ragAnswerId: null,
+          orderId: null,
+          automationRunId: null,
+        },
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      };
+      mockJournals.unshift(entry);
+      return ok(entry, requestId) as ApiEnvelope<T>;
+    }
+    return ok({ items: mockJournals, nextCursor: null }, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target.startsWith('/api/v1/journals/')) {
+    const journalId = target.slice('/api/v1/journals/'.length);
+    const index = mockJournals.findIndex((entry) => entry.journalId === journalId);
+    if (index < 0) return fail('NOT_FOUND', '해당 기록을 찾을 수 없습니다.', requestId);
+    const current = mockJournals[index]!;
+    const request = body as
+      | { expectedVersion?: number; title?: string; content?: string; tags?: string[] }
+      | undefined;
+    // 낙관적 잠금. 다른 곳에서 먼저 바뀌었으면 덮어쓰지 않는다.
+    if (request?.expectedVersion !== current.version) {
+      return fail('CONFLICT', '기록 버전이 맞지 않습니다. 최신 내용을 다시 불러오세요.', requestId);
+    }
+    if (method === 'DELETE') {
+      mockJournals.splice(index, 1);
+      return ok({ ...current, deletedAt: new Date().toISOString() }, requestId) as ApiEnvelope<T>;
+    }
+    const updated: JournalEntry = {
+      ...current,
+      title: request.title ?? current.title,
+      content: request.content ?? current.content,
+      tags: request.tags ?? current.tags,
+      version: current.version + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    mockJournals[index] = updated;
+    return ok(updated, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v1/risk/kill-switch') {
+    return fail('FORBIDDEN', '시스템 전체 중지는 관리자 전용입니다.', requestId);
+  }
+  if (target === '/api/v2/risk/kill-switch') {
+    if (method === 'POST') {
+      const request = body as { active?: unknown; reason?: unknown } | undefined;
+      if (typeof request?.active !== 'boolean') return fail('VALIDATION_ERROR', 'active는 boolean이어야 합니다.', requestId);
+      mockKillSwitch = {
+        active: request.active, changedAt: new Date().toISOString(),
+        reasonClass: request.active ? 'USER_MANUAL_STOP' : 'USER_RESUME',
+      };
+    }
+    return ok({ ...mockKillSwitch, globalActive: false, effectiveActive: mockKillSwitch.active }, requestId) as ApiEnvelope<T>;
   }
 
   if (target === '/api/v1/risk/portfolio') {
@@ -269,12 +647,37 @@ export async function mockTransport<T>(
 
   if (target === '/api/v1/principle-presets') return ok(fixtures.presetList, requestId) as ApiEnvelope<T>;
 
-  if (target === '/api/v1/principles') return ok(fixtures.principleList, requestId) as ApiEnvelope<T>;
+  if (target === '/api/v1/principles') {
+    if (method === 'POST') {
+      const request = body as { title?: string; presetId?: string } | undefined;
+      if (!request?.title || !request.presetId) {
+        return fail('VALIDATION_ERROR', '제목과 preset 을 모두 지정해야 합니다.', requestId);
+      }
+      const preset = fixtures.presetList.items.find((item) => item.presetId === request.presetId);
+      if (!preset) return fail('VALIDATION_ERROR', '알 수 없는 preset 입니다.', requestId);
+      return ok(
+        {
+          ...fixtures.principle,
+          title: request.title,
+          presetId: preset.presetId,
+          mode: preset.mode,
+          rules: preset.defaultRules,
+          version: 1,
+        },
+        requestId,
+      ) as ApiEnvelope<T>;
+    }
+    return ok(fixtures.principleList, requestId) as ApiEnvelope<T>;
+  }
 
   if (target.startsWith('/api/v1/principles/')) {
-    const principleId = target.split('/').pop() ?? '';
+    const segments = target.slice('/api/v1/principles/'.length).split('/');
+    const principleId = segments[0] ?? '';
     if (!ID_PATTERN.principleId.test(principleId)) {
       return fail('VALIDATION_ERROR', '원칙 ID 형식이 올바르지 않습니다.', requestId);
+    }
+    if (segments[1] === 'versions') {
+      return ok(fixtures.principleHistory, requestId) as ApiEnvelope<T>;
     }
     if (method === 'PUT') {
       const request = body as { expectedVersion?: number; rules?: unknown } | undefined;
@@ -289,7 +692,10 @@ export async function mockTransport<T>(
     return ok(fixtures.principle, requestId) as ApiEnvelope<T>;
   }
 
-  if (target.startsWith('/api/v2/signals/')) {
+  // 화면(`api.signal`)은 v3 를 부르고 픽스처도 `SignalV3Runtime` 인데 여기만 v2 를 받고 있었다.
+  // 그래서 mock 모드에서는 신호 패널이 언제나 NOT_FOUND 였다. 백엔드에는 두 버전이 다 있으므로
+  // 둘 다 받아 준다.
+  if (target.startsWith('/api/v3/signals/') || target.startsWith('/api/v2/signals/')) {
     const symbol = target.split('/').pop() ?? '';
     const signal = fixtures.signals[symbol];
     if (!signal) return fail('NOT_FOUND', '해당 종목의 신호가 없습니다.', requestId);
@@ -308,6 +714,19 @@ export async function mockTransport<T>(
 
   if (target.startsWith('/api/v1/dashboard/risk-results/')) {
     const decisionId = target.split('/').pop() ?? '';
+
+    // `latest` 와 `recent` 는 판정 ID 가 아니라 별도 경로다. 그냥 두면 ID 형식 검사에 걸려
+    // VALIDATION_ERROR 가 나고, 주문 검토의 "최근 주문 판정" 패널이 통째로 뜨지 않는다.
+    if (decisionId === 'recent' || decisionId === 'latest') {
+      const items = fixtures.recentRiskResults();
+      if (decisionId === 'latest') {
+        const first = items[0];
+        if (!first) return fail('NOT_FOUND', '최근 판정이 없습니다.', requestId);
+        return ok(first, requestId) as ApiEnvelope<T>;
+      }
+      return ok({ items }, requestId) as ApiEnvelope<T>;
+    }
+
     if (!ID_PATTERN.decisionId.test(decisionId)) {
       return fail('VALIDATION_ERROR', '판정 ID 형식이 올바르지 않습니다.', requestId);
     }
@@ -317,15 +736,19 @@ export async function mockTransport<T>(
   }
 
   if (target === '/api/v1/dashboard/model-evaluations/latest') {
+    const envelope = fixtures.modelEvaluations[LATEST_RUN_ID];
+    if (!envelope) return fail('NOT_FOUND', '최근 모델 평가를 찾을 수 없습니다.', requestId);
     return ok(
-      { runId: 'demo_s8_offline_0001', fixtureClass: 'DEMO_OFFLINE', asOf: fixtures.modelEvaluations.demo_s8_offline_0001.asOf },
+      { runId: LATEST_RUN_ID, fixtureClass: 'DEMO_OFFLINE', asOf: envelope.asOf },
       requestId,
     ) as ApiEnvelope<T>;
   }
 
   if (target === '/api/v1/dashboard/backtests/latest') {
+    const envelope = fixtures.backtests[LATEST_RUN_ID];
+    if (!envelope) return fail('NOT_FOUND', '최근 백테스트를 찾을 수 없습니다.', requestId);
     return ok(
-      { runId: 'demo_s8_offline_0001', fixtureClass: 'DEMO_OFFLINE', asOf: fixtures.backtests.demo_s8_offline_0001.asOf },
+      { runId: LATEST_RUN_ID, fixtureClass: 'DEMO_OFFLINE', asOf: envelope.asOf },
       requestId,
     ) as ApiEnvelope<T>;
   }
@@ -374,6 +797,18 @@ export async function mockTransport<T>(
     fixtures.lastCitations.answerId = answer.answerId;
     fixtures.lastCitations.sourceIds = answer.citations.map((citation) => citation.sourceId);
     return ok(answer, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target.startsWith('/api/v1/rag/answers/') && target.endsWith('/feedback')) {
+    const answerId = target.slice('/api/v1/rag/answers/'.length, -'/feedback'.length);
+    if (!ID_PATTERN.answerId.test(answerId)) {
+      return fail('VALIDATION_ERROR', '답변 ID 형식이 올바르지 않습니다.', requestId);
+    }
+    const request = body as { helpful?: unknown } | undefined;
+    if (typeof request?.helpful !== 'boolean') {
+      return fail('VALIDATION_ERROR', 'helpful 은 true 또는 false 여야 합니다.', requestId);
+    }
+    return ok({ answerId, helpful: request.helpful }, requestId) as ApiEnvelope<T>;
   }
 
   return fail('NOT_FOUND', `mock 경로가 정의되지 않았습니다: ${target}`, requestId);

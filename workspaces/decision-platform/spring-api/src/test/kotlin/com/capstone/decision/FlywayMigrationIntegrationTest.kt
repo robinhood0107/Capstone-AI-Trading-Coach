@@ -289,6 +289,9 @@ class FlywayMigrationIntegrationTest(
                 statement.executeUpdate("delete from automation_runtime_schedule where user_id='$owner'")
                 statement.executeUpdate("delete from automation_runs where user_id='$owner'")
                 statement.executeUpdate("delete from automation_control where user_id='$owner'")
+                statement.executeUpdate("delete from owner_kill_switch_requests where user_id='$owner'")
+                statement.executeUpdate("delete from owner_kill_switch_events where user_id='$owner'")
+                statement.executeUpdate("delete from owner_kill_switch where user_id='$owner'")
                 statement.executeUpdate("delete from users where user_id='$owner'")
                 statement.executeUpdate(
                     "insert into users(user_id,username,password_hash,role,status,security_version) values " +
@@ -4029,6 +4032,9 @@ class FlywayMigrationIntegrationTest(
             "delete from principle_versions where principle_id in ('prn-flyway', 'prn-v10-admin')",
         )
         jdbcTemplate.update("delete from principles where principle_id in ('prn-flyway', 'prn-v10-admin')")
+        jdbcTemplate.update("delete from owner_kill_switch_requests where user_id = 'usr-flyway'")
+        jdbcTemplate.update("delete from owner_kill_switch_events where user_id = 'usr-flyway'")
+        jdbcTemplate.update("delete from owner_kill_switch where user_id = 'usr-flyway'")
         jdbcTemplate.update("delete from users where user_id = 'usr-flyway'")
     }
 
@@ -4048,6 +4054,9 @@ class FlywayMigrationIntegrationTest(
         jdbcTemplate.update("delete from decisions where decision_id in ('dec-flyway', 'dec-flyway-b')")
         jdbcTemplate.update("delete from principle_versions where principle_id = 'prn-flyway'")
         jdbcTemplate.update("delete from principles where principle_id = 'prn-flyway'")
+        jdbcTemplate.update("delete from owner_kill_switch_requests where user_id = 'usr-flyway'")
+        jdbcTemplate.update("delete from owner_kill_switch_events where user_id = 'usr-flyway'")
+        jdbcTemplate.update("delete from owner_kill_switch where user_id = 'usr-flyway'")
         jdbcTemplate.update("delete from users where user_id = 'usr-flyway'")
         jdbcTemplate.update(
             """

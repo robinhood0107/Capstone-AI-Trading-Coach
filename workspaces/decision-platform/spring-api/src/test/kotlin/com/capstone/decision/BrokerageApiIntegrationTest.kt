@@ -1426,18 +1426,18 @@ class BrokerageApiIntegrationTest(
         assertEquals("DECISION_EXPIRED", json(expired).at("/error/code").stringValue())
 
         val blockedDecision = createDecision(token, "14", orderIntent(), portfolioSource = "INTERNAL_PAPER")
-        asTestActor(actorCapabilityIssuer) {
+        asTestActor(actorCapabilityIssuer, "usr_demo_admin") {
             killSwitchMutationPort.mutate(
                 KillSwitchMutationCommand(
                     actor =
                         KillSwitchActor(
-                            userId = "usr_demo_user",
-                            role = KillSwitchActorRole.USER,
+                            userId = "usr_demo_admin",
+                            role = KillSwitchActorRole.ADMIN,
                             securityVersion = 1,
                             requestId = "req-paper-kill-switch",
                         ),
                     requestedActive = true,
-                    reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
+                    reasonClass = KillSwitchReasonClass.OPERATOR_MANUAL_STOP,
                 ),
             )
         }
@@ -1803,18 +1803,18 @@ class BrokerageApiIntegrationTest(
         assertEquals("DECISION_EXPIRED", json(expired).at("/error/code").stringValue())
 
         val invalidatedDecisionId = createDecision(token, suffix = "04", order = orderIntent())
-        asTestActor(actorCapabilityIssuer) {
+        asTestActor(actorCapabilityIssuer, "usr_demo_admin") {
             killSwitchMutationPort.mutate(
                 KillSwitchMutationCommand(
                     actor =
                         KillSwitchActor(
-                            userId = "usr_demo_user",
-                            role = KillSwitchActorRole.USER,
+                            userId = "usr_demo_admin",
+                            role = KillSwitchActorRole.ADMIN,
                             securityVersion = 1,
                             requestId = "req-brokerage-kill-switch",
                         ),
                     requestedActive = true,
-                    reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
+                    reasonClass = KillSwitchReasonClass.OPERATOR_MANUAL_STOP,
                 ),
             )
         }

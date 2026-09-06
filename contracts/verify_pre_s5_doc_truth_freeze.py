@@ -42,6 +42,7 @@ ACTIVE_PUBLIC_PATHS = frozenset(
         "docs/S4_9_MCP_Strong_LLM_운영_가이드.md",
         "docs/API_명세서.md",
         "docs/최종_프로젝트_명세서.md",
+        "docs/금융공학_공식_및_자동매매_로직_설명서.md",
         "docs/decision-platform/P1_1_0_0_FULL_APP_V2_권위_및_게이트.md",
         "docs/decision-platform/P1_1_0_0_OWNER_FIRST_V3_권위_및_게이트.md",
         "docs/decision-platform/P1_API_USAGE_MATRIX.md",

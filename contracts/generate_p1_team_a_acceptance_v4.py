@@ -97,6 +97,10 @@ def build_catalog(openapi: dict[str, Any], openapi_bytes: bytes) -> dict[str, An
 
 def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
     openapi = object_value(json.loads(openapi_bytes), "OpenAPI")
+    if "/api/v2/risk/kill-switch" in openapi.get("paths", {}):
+        from contracts.generate_owner_ridge_contracts import PREVIOUS, project_previous
+        openapi = project_previous(openapi)
+        openapi_bytes = PREVIOUS.read_bytes()
     operations(openapi, 76)
     client_openapi = copy.deepcopy(openapi)
     _remove_confidence_fields(client_openapi)

@@ -341,6 +341,9 @@ class SecurityConfig {
                         "/api/v1/artifacts/ingest-status",
                     ).hasRole("ADMIN")
                 authorize
+                    .requestMatchers("/api/v1/risk/kill-switch")
+                    .hasRole("ADMIN")
+                authorize
                     // ADMIN route는 method security와 filter-chain 양쪽에서 기능 수준 권한을 고정한다.
                     .requestMatchers(HttpMethod.POST, "/api/v1/brokerage/orders/*/reconcile")
                     .hasRole("ADMIN")

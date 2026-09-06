@@ -95,6 +95,7 @@ export interface InstrumentDisplayCatalog {
 }
 
 export type KillSwitchReasonClass =
+  | 'USER_RESUME'
   | 'USER_MANUAL_STOP'
   | 'OPERATOR_MANUAL_STOP'
   | 'DATA_FRESHNESS_STOP'
@@ -104,6 +105,8 @@ export type KillSwitchReasonClass =
   | 'INITIAL_STATE';
 
 export interface KillSwitchState {
+  globalActive?: boolean;
+  effectiveActive?: boolean;
   active: boolean;
   changedAt: string;
   reasonClass: KillSwitchReasonClass;
@@ -188,6 +191,37 @@ export interface PrincipleUpdateRequest {
   title: string;
 }
 
+/**
+ * POST /api/v1/principles — 원칙을 처음 만들 때.
+ *
+ * `rules` 를 비우면 preset 의 기본값이 그대로 쓰인다. 화면에서 값을 손봤을 때만 채운다.
+ */
+export interface PrincipleCreateRequest {
+  title: string;
+  presetId: PresetId;
+  mode?: PrincipleMode;
+  rules?: PrincipleRule[];
+}
+
+/** GET /api/v1/principles/{principleId}/versions 의 한 항목. 저장할 때마다 하나씩 쌓인다. */
+export interface PrincipleVersion {
+  principleId: string;
+  title: string;
+  presetId: PresetId;
+  mode: PrincipleMode;
+  status: 'ACTIVE' | 'ARCHIVED';
+  version: number;
+  createdAt: string;
+  /** 이 버전에서 바뀐 필드 이름들. 무엇이 달라졌는지 화면에서 그대로 보여 준다. */
+  changedFields: string[];
+  rules: PrincipleRule[];
+}
+
+export interface PrincipleHistoryData {
+  items: PrincipleVersion[];
+  nextCursor: string | null;
+}
+
 /* -------------------------------------------------------------- Decision */
 
 export interface DecisionViolationProjection {
@@ -262,20 +296,89 @@ export interface DecisionProjection {
   riskDecision: RiskDecisionProjection;
 }
 
+/** 판정과 제출이 같은 모양을 쓴다. 두 곳에서 따로 만들면 어긋난다. */
+export interface OrderIntent {
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  orderType: 'MARKET' | 'LIMIT';
+  /** 정수 원화. quantity * estimatedPrice와 정확히 일치해야 한다. */
+  quantity: number;
+  estimatedPrice: number;
+  estimatedAmount: number;
+  timeframe: '1d' | '60m';
+  strategyId: string;
+}
+
 export interface EvaluateOrderRequest {
   principleId: string;
   portfolioSource: PortfolioSource;
-  orderIntent: {
-    symbol: string;
-    side: 'BUY' | 'SELL';
-    orderType: 'MARKET' | 'LIMIT';
-    /** 정수 원화. quantity * estimatedPrice와 정확히 일치해야 한다. */
-    quantity: number;
-    estimatedPrice: number;
-    estimatedAmount: number;
-    timeframe: '1d' | '60m';
-    strategyId: string;
-  };
+  orderIntent: OrderIntent;
+}
+
+/* ------------------------------------------------------------ Brokerage */
+
+/** GET /api/v1/brokerage/mock/accounts/{accountId}/buyable */
+export interface MockBuyable {
+  accountId: string;
+  brokerageMode: 'KIS_MOCK';
+  symbol: string;
+  cashKrw: number;
+  estimatedPrice: number;
+  buyableAmountKrw: number;
+  buyableQuantity: number;
+  observedAt: string;
+  sourceVersion: string;
+}
+
+export type OrderStatus =
+  | 'SUBMITTED'
+  | 'ACCEPTED'
+  | 'PARTIALLY_FILLED'
+  | 'FILLED'
+  | 'CANCEL_REQUESTED'
+  | 'CANCELLED'
+  | 'REJECTED'
+  | 'PENDING_RECONCILIATION';
+
+/** GET /api/v1/brokerage/orders/{orderId} · POST .../cancel */
+export interface OrderDetail {
+  orderId: string;
+  accountId: string;
+  decisionId: string;
+  brokerageMode: PortfolioSource;
+  status: OrderStatus;
+  submittedAt: string;
+}
+
+/** POST /api/v1/brokerage/mock/orders */
+export interface MockOrderSubmitted {
+  orderId: string;
+  accountId: string;
+  brokerageMode: 'KIS_MOCK';
+  status: 'SUBMITTED' | 'ACCEPTED' | 'PENDING_RECONCILIATION';
+  submittedAt: string;
+}
+
+export interface MockOrderRequest {
+  decisionId: string;
+  orderIntent: OrderIntent;
+  /** 화면이 경고를 보여 주고 사용자가 받아들였다는 사실. 서버가 이걸 요구한다. */
+  userAcknowledgement: { warningsAccepted: boolean };
+}
+
+export interface OrderFill {
+  fillId: string;
+  orderId: string;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  quantity: number;
+  price: number;
+  filledAt: string;
+}
+
+export interface OrderFillPage {
+  items: OrderFill[];
+  nextCursor: string | null;
 }
 
 /* ------------------------------------------------------------ Automation */
@@ -378,6 +481,148 @@ export interface AutomationRunPageV2 {
   nextCursor: string | null;
 }
 
+/* ------------------------------------------------------- Automation v3
+ *
+ * v3 는 v2 의 상위집합이 아니다. 실행과 상태는 필드가 늘었지만 **포지션 페이지에서는
+ * `realizedSummary` 가 빠졌다.** 그래서 화면마다 필요한 쪽을 쓴다 — 실현손익 요약이 필요한
+ * 현황은 v2 를, 청산 근거(ATR 추적손절·보유기간·AI 판단)가 필요한 자동운용은 v3 를 본다.
+ */
+
+/** v3 는 ATR 추적손절을 청산 사유로 추가한다. v2 계약에는 없다(스키마 확인함). */
+export type AutomationExitReasonV3 = AutomationExitReason | 'ATR_TRAILING';
+
+/** v3 차단 사유 17종. v2 의 11종에 여섯이 더 붙는다. */
+export type AutomationBlockerV3 =
+  | AutomationBlocker
+  | 'POLICY_V3_REQUIRED'
+  | 'LEGACY_POSITION_PRESENT'
+  | 'MARKET_HISTORY_EMPTY'
+  | 'MARKET_HISTORY_INSUFFICIENT'
+  | 'MARKET_DATA_CATCHUP_REQUIRED'
+  | 'AI_PROVIDER_NOT_READY';
+
+export type MarketHistoryStatus = 'EMPTY' | 'PARTIAL' | 'READY' | 'CATCHUP_REQUIRED';
+
+/** v3 정책은 v2 에 ATR 추적손절·보유기간·모델매도 네 값을 더한다. */
+export interface AutomationPolicyV3 extends Omit<AutomationPolicyV2, 'contractId'> {
+  contractId: 'automation-policy.v3';
+  atrPeriod: number;
+  /** 1000 = 1.0배. 100 단위로만 저장된다. */
+  atrMultiplierMilli: number;
+  maxHoldingSessions: number;
+  modelSellEnabled: boolean;
+}
+
+export interface PutAutomationPolicyV3Request extends PutAutomationPolicyV2Request {
+  atrPeriod: number;
+  atrMultiplierMilli: number;
+  maxHoldingSessions: number;
+  modelSellEnabled: boolean;
+}
+
+export interface AutomationStatusV3
+  extends Omit<AutomationStatusV2, 'contractId' | 'blockers' | 'policy'> {
+  contractId: 'automation-status.v3';
+  appliedPolicyVersion?: number | null;
+  policyRecoverySourceVersion?: number | null;
+  nextRunAt?: string | null;
+  policy: AutomationPolicyV3 | null;
+  blockers: AutomationBlockerV3[];
+  /** AI 판단 단계를 켜 두었나. 꺼져 있으면 실행에 판단 근거가 남지 않는다. */
+  aiJudgementEnabled: boolean;
+  thinkingLevel: 'minimal' | 'low' | 'medium';
+  marketHistoryStatus: MarketHistoryStatus;
+  /** 선택 계좌에서 청산 정책을 복원할 근거도 없는 포지션 수. */
+  legacyOpenPositionCount: number;
+}
+
+export interface AutomationRunV3 extends Omit<AutomationRunV2, 'contractId' | 'exitReason'> {
+  contractId: 'automation-run.v3';
+  exitReason: AutomationExitReasonV3 | null;
+  /** AI 판단에 실제로 쓰인 근거 수. 0 이면 근거 없이 넘어간 실행이다. */
+  evidenceCount: number;
+  evidenceSetSha256: string | null;
+  aiSettingsSha256: string | null;
+  judgeCallCount: number;
+  groundingQueryCount: number;
+  screeningProviderCallCount: number;
+}
+
+export interface AutomationRunPageV3 {
+  items: AutomationRunV3[];
+  nextCursor: string | null;
+}
+
+export interface AutomationPositionV3 {
+  contractId: 'automation-position.v3';
+  positionId: string;
+  accountId: string;
+  symbol: string;
+  quantity: number;
+  entryAverageFillPriceKrw: number;
+  entrySession: string;
+  expirySession: string | null;
+  policyId: string;
+  policyVersion: number;
+  stopLossBps: number;
+  takeProfitBps: number;
+  status: 'OPEN' | 'EXIT_PENDING' | 'CLOSED' | 'HALTED_MISMATCH';
+  exitReason: AutomationExitReasonV3 | null;
+  /** 진입 뒤 최고가. ATR 추적손절의 기준점이다. */
+  peakPriceKrw: number;
+  /** 지금 걸려 있는 추적손절 가격. `null` 이면 아직 계산되지 않았다. */
+  trailingStopKrw: number | null;
+  atrPeriod: number;
+  /** ATR 배수를 1000배 정수로 담는다. 2500 = 2.5배. */
+  atrMultiplierMilli: number;
+  atrAsOfSession: string | null;
+  /** 이 세션을 넘기면 보유 기간 초과로 청산된다. */
+  maxHoldingSessions: number;
+  /** 모델이 매도 신호를 내면 따를 것인가. */
+  modelSellEnabled: boolean;
+  botOwned: true;
+  shortAllowed: false;
+  createdAt: string;
+  closedAt: string | null;
+}
+
+export interface AutomationPositionPageV3 {
+  items: AutomationPositionV3[];
+}
+
+/**
+ * AI 판단이 실제로 무엇을 읽고 그렇게 정했는지.
+ *
+ * 인용문은 길이가 제한돼 있고(240자) 출처와 해시가 함께 온다 — 화면은 이것을 요약하지 않고
+ * 그대로 보여 준다.
+ */
+export interface AutomationEvidenceV3 {
+  citationId: string;
+  symbol: string;
+  sourceId: string;
+  sourceType: 'OFFICIAL_PRIMARY' | 'REGISTERED_INDEPENDENT';
+  sourceEventDate: string | null;
+  boundedQuote: string;
+  quoteSha256: string;
+  uriSha256: string;
+  /** 근거가 오래됐다는 표시. 서버가 붙인다. */
+  ageWarning: boolean;
+  verified: true;
+}
+
+export interface AutomationCandidateScreeningV3 {
+  symbol: string;
+  score: number;
+  reason: string;
+  evidence: AutomationEvidenceV3[];
+}
+
+export interface AutomationRunDetailV3 {
+  contractId: 'automation-run-detail.v3';
+  run: AutomationRunV3;
+  candidateScreenings: AutomationCandidateScreeningV3[];
+}
+
 export interface AutomationPositionV2 {
   contractId: 'automation-position.v2';
   positionId: string;
@@ -445,7 +690,16 @@ export type AbstainReason =
 
 export type RegimeState = 'NORMAL' | 'SIDEWAYS' | 'HIGH_VOLATILITY' | 'RISK_OFF' | 'RISK_ON';
 
+export interface ReturnForecast {
+  horizonSessions: number; targetSession: string; expectedReturn: number;
+  forecastClose: number; trainSamples: number; trainedThrough: string;
+}
+
 export interface PredictiveAvailable {
+  returnForecasts?: ReturnForecast[];
+  estimator?: string;
+  sourceSession?: string;
+  qualityStatus?: string;
   status: 'AVAILABLE';
   producer: SignalProducer;
   sourceWorkspace: string;

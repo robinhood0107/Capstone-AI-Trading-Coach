@@ -58,16 +58,16 @@ export function OverviewView() {
       <AsyncBoundary state={state} onRetry={reload}>
         {(data) => (
           <>
-            <section className="relative overflow-hidden rounded-panel bg-[#12151F] px-6 py-7 text-white sm:px-8 sm:py-8">
+            <section className="relative overflow-hidden rounded-panel overview-hero px-6 py-7 text-white sm:px-8 sm:py-8">
               <div className="relative z-10">
                 <div className="flex flex-wrap items-end justify-between gap-6">
                   <div className="min-w-0">
                     <p className="text-[13px] text-white/60">평가금액</p>
-                    <p className="tnum mt-2 text-[28px] font-semibold leading-tight tracking-tight sm:text-display">
+                    <p className="hero-number tnum mt-2 text-[28px] font-semibold leading-tight tracking-tight sm:text-display">
                       {finite(data.balance?.portfolioEquityKrw ?? data.risk.portfolioValue) ? (
                         formatKrw(data.balance?.portfolioEquityKrw ?? data.risk.portfolioValue!)
                       ) : (
-                        <span className="text-[18px] font-medium text-white/65">KIS Mock 계좌 연결 필요</span>
+                        <span className="text-[18px] font-medium text-white/65">KIS 계좌 연결 필요</span>
                       )}
                     </p>
                     {finite(data.risk.dailyPnlRate) ? (
@@ -292,25 +292,25 @@ function LiveSummary({ data }: { data: OverviewData }) {
   return (
     <div className="space-y-6">
       <Panel
-        title="현재 KIS Mock 계좌"
+        title="현재 연결된 계좌"
         hint={observedAt ? `${observedAt} KST에 저장된 잔고입니다.` : '저장된 최신 잔고를 표시합니다.'}
       >
         {balance ? (
           <>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Tile label="총 평가금액">
-                <span className="tnum text-[22px] font-semibold text-ink">
+                <span className="hero-number tnum text-[22px] font-semibold text-ink">
                   {formatKrw(balance.portfolioEquityKrw)}
                 </span>
               </Tile>
               <Tile label="현금 잔고">
-                <span className="tnum text-[22px] font-semibold text-ink">{formatKrw(balance.cashKrw)}</span>
+                <span className="hero-number tnum text-[22px] font-semibold text-ink">{formatKrw(balance.cashKrw)}</span>
               </Tile>
               <Tile label="주식 평가금액">
-                <span className="tnum text-[22px] font-semibold text-ink">{formatKrw(stockValue ?? 0)}</span>
+                <span className="hero-number tnum text-[22px] font-semibold text-ink">{formatKrw(stockValue ?? 0)}</span>
               </Tile>
               <Tile label="보유 종목">
-                <span className="tnum text-[22px] font-semibold text-ink">{balance.positions.length}개</span>
+                <span className="hero-number tnum text-[22px] font-semibold text-ink">{balance.positions.length}개</span>
               </Tile>
             </div>
 
@@ -421,12 +421,12 @@ function LiveSummary({ data }: { data: OverviewData }) {
       <Panel title="저장된 운용 결과" hint="확정된 자동매매 결과와 최근 주문 판정을 표시합니다.">
         <div className="grid gap-3 sm:grid-cols-3">
           <Tile label="종료된 포지션">
-            <span className="tnum text-[22px] font-semibold text-ink">
+            <span className="hero-number tnum text-[22px] font-semibold text-ink">
               {data.positions.realizedSummary.closedPositionCount}개
             </span>
           </Tile>
           <Tile label="확정 손익">
-            <span className="tnum text-[22px] font-semibold text-ink">
+            <span className="hero-number tnum text-[22px] font-semibold text-ink">
               {formatKrw(data.positions.realizedSummary.realizedPnlKrw)}
             </span>
           </Tile>

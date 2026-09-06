@@ -53,6 +53,9 @@ data class AutomationStatusV3Response(
     val unresolvedReconciliation: Boolean,
     val canArm: Boolean,
     val blockers: List<String>,
+    val appliedPolicyVersion: Int? = null,
+    val policyRecoverySourceVersion: Int? = null,
+    val nextRunAt: java.time.OffsetDateTime? = null,
 )
 
 @Schema(name = "AutomationRunV3", additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
@@ -202,6 +205,9 @@ fun AutomationStatusV3Projection.toV3Response() =
         unresolvedReconciliation = unresolvedReconciliation,
         canArm = canArm,
         blockers = blockers,
+        appliedPolicyVersion = appliedPolicyVersion,
+        policyRecoverySourceVersion = policyRecoverySourceVersion,
+        nextRunAt = nextRunAt,
     )
 
 fun AutomationRunV3Projection.toV3Response() =

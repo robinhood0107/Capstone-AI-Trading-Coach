@@ -32,6 +32,7 @@ import java.time.OffsetDateTime
 class JdbcKillSwitchRepository(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val actorCapabilityIssuer: ActorCapabilityIssuer,
+    private val ownerStop: JdbcOwnerKillSwitchRepository,
 ) : KillSwitchQueryPort,
     KillSwitchGatePort,
     KillSwitchMutationPort {
@@ -52,7 +53,50 @@ class JdbcKillSwitchRepository(
                 )
             }.single()
 
-    override fun readGate(): KillSwitchGate =
+    override fun readEffectiveActive(actorUserId: String): Boolean {
+        val principal =
+            org.springframework.security.core.context.SecurityContextHolder
+                .getContext()
+                .authentication
+                ?.principal
+        if (principal !is com.capstone.decision.application.security.AppPrincipal || principal.userId != actorUserId) {
+            throw KillSwitchUnauthorizedException()
+        }
+        return ownerStop
+            .access(
+                principal,
+                null,
+                null,
+                "req_risk_" +
+                    java.util.UUID
+                        .randomUUID()
+                        .toString(),
+            ).effectiveActive
+    }
+
+    override fun readGate(): KillSwitchGate {
+        val principal =
+            org.springframework.security.core.context.SecurityContextHolder
+                .getContext()
+                .authentication
+                ?.principal
+        if (principal is com.capstone.decision.application.security.AppPrincipal) {
+            val state =
+                ownerStop.access(
+                    principal,
+                    null,
+                    null,
+                    "req_gate_" +
+                        java.util.UUID
+                            .randomUUID()
+                            .toString(),
+                )
+            return KillSwitchGate(state.effectiveActive, state.globalGeneration)
+        }
+        return readGlobalGate()
+    }
+
+    private fun readGlobalGate(): KillSwitchGate =
         jdbc()
             .query(
                 "SELECT active, generation FROM read_kill_switch_gate()",
@@ -67,20 +111,16 @@ class JdbcKillSwitchRepository(
     @Transactional
     override fun mutate(command: KillSwitchMutationCommand): KillSwitchMutationResult {
         val jdbc = jdbc()
-        if (!command.requestedActive && command.actor.role.name != "ADMIN") {
+        if (command.actor.role.name != "ADMIN") {
             throw KillSwitchForbiddenException()
         }
-        val observedGeneration = readGate().generation
+        val observedGeneration = readGlobalGate().generation
         val binding =
             ActorCapabilityBinding.request(
                 "TRANSITION_KILL_SWITCH",
                 "KILL_SWITCH",
                 "GLOBAL",
-                if (command.requestedActive) {
-                    ActorCapabilityRolePolicy.OWNER
-                } else {
-                    ActorCapabilityRolePolicy.ADMIN_ONLY
-                },
+                ActorCapabilityRolePolicy.ADMIN_ONLY,
                 command.actor.userId,
                 command.actor.securityVersion.toString(),
                 command.requestedActive.toString(),

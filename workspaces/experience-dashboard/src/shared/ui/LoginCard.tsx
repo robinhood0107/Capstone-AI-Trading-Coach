@@ -1,21 +1,17 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { api } from '@/shared/api/endpoints';
-import { apiMode } from '@/shared/api/client';
-import { session, useSession } from '@/shared/api/session';
+import { session } from '@/shared/api/session';
 import { toErrorState } from '@/shared/lib/useResource';
 
-export function LoginGate({ children }: { children: ReactNode }) {
-  const { authenticated } = useSession();
-
-  // mock 모드는 서버가 없으므로 로그인 화면을 건너뛴다.
-  if (apiMode() === 'mock' || authenticated) return <>{children}</>;
-
-  return <LoginForm />;
-}
-
-function LoginForm() {
+/**
+ * 로그인 카드.
+ *
+ * 소개 페이지의 마지막 화면으로 뜬다. 로그인 여부 판단은 바깥(`AppShell`)이 하고, 여기서는
+ * 폼만 그린다.
+ */
+export function LoginCard() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
@@ -37,8 +33,8 @@ function LoginForm() {
   }
 
   return (
-    <div className="mx-auto max-w-[420px] py-12 sm:py-20">
-      <div className="rounded-panel bg-panel px-7 py-8 shadow-card">
+    <div className="mx-auto w-full max-w-[420px]">
+      <div className="rounded-panel border border-line bg-panel px-7 py-8 shadow-card">
         <span
           aria-hidden
           className="grid h-11 w-11 place-items-center rounded-control bg-brand text-[14px] font-semibold text-on-brand"
@@ -47,8 +43,7 @@ function LoginForm() {
         </span>
         <h1 className="mt-5 text-[24px] font-semibold tracking-tight text-ink">로그인</h1>
         <p className="mt-2 text-[14px] leading-6 text-muted">
-          서버에 연결하려면 로그인이 필요합니다. 비밀번호는 저장하지 않으며, 로그인 상태는 이 탭에서만
-          유지됩니다. 탭을 닫으면 자동으로 로그아웃됩니다.
+          내 투자 원칙과 운용 현황을 확인하세요. 로그인 상태는 이 탭에서만 유지됩니다.
         </p>
 
         <div className="mt-7 space-y-4">

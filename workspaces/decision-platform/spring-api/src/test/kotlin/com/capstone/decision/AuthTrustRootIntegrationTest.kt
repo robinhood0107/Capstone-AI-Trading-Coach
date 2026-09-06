@@ -179,6 +179,9 @@ class AuthTrustRootIntegrationTest(
         jdbcTemplate.update("update users set security_version = 1, role = 'ADMIN' where user_id = 'usr_demo_user'")
         assertUnauthorized(token, "req-role-token")
 
+        jdbcTemplate.update("delete from owner_kill_switch_requests where user_id = 'usr_demo_user'")
+        jdbcTemplate.update("delete from owner_kill_switch_events where user_id = 'usr_demo_user'")
+        jdbcTemplate.update("delete from owner_kill_switch where user_id = 'usr_demo_user'")
         jdbcTemplate.update("delete from users where user_id = 'usr_demo_user'")
         assertUnauthorized(token, "req-missing-token")
     }
@@ -345,6 +348,9 @@ class AuthTrustRootIntegrationTest(
     }
 
     private fun restoreDemoUsers() {
+        jdbcTemplate.update("delete from owner_kill_switch_requests where user_id in ('usr_demo_user', 'usr_demo_admin')")
+        jdbcTemplate.update("delete from owner_kill_switch_events where user_id in ('usr_demo_user', 'usr_demo_admin')")
+        jdbcTemplate.update("delete from owner_kill_switch where user_id in ('usr_demo_user', 'usr_demo_admin')")
         jdbcTemplate.update("delete from users where user_id in ('usr_demo_user', 'usr_demo_admin')")
         jdbcTemplate.update(
             """

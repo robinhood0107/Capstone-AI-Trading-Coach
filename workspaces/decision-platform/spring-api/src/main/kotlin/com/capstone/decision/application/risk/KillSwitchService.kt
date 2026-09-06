@@ -23,7 +23,7 @@ class KillSwitchService(
         active: Boolean,
         rawReason: String?,
     ): KillSwitchMutationResult {
-        if (!active && actor.role != KillSwitchActorRole.ADMIN) {
+        if (actor.role != KillSwitchActorRole.ADMIN) {
             throw KillSwitchForbiddenException()
         }
         val reasonClass =

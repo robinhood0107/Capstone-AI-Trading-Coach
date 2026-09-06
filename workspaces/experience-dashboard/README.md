@@ -54,14 +54,34 @@ Owner runner는 실제 same-origin Spring exact-33, `skip 0`, 4xx/5xx 실패, pr
 JWT/password/raw response를 report/trace에 남기지 않으며 종료 시 Kill Switch와 automation을 복구합니다.
 이 테스트는 backend prerequisite일 뿐 Team A production UI 완료 증거가 아닙니다.
 
+## 붙인 것
+
+- 원칙 만들기(`POST /principles`)와 버전 이력(`/versions`). 원칙이 없으면 주문 검토에 들어갈
+  수 없는 막다른 길이었다.
+- 주문 흐름 전체 — 평가(`evaluate-order`) → 확인 → 모의주문 제출(`brokerage/mock/orders`) →
+  상태 조회·취소. 제출까지 여섯 관문을 순서대로 지나며, 막힌 관문은 이유와 함께 화면에 남는다
+  (`src/features/order-review/orderGates.ts`).
+- Kill Switch 조작. 정지는 누구나, 해제는 ADMIN 만(`KillSwitchTransitionPolicy.kt:22`).
+- 자동운용 v3 — ATR 추적손절·보유 기간·모델 매도와 AI 판단 근거(인용문·출처)를 화면에 낸다.
+  정책 저장도 v3 다(v2 로 저장하면 `POLICY_V3_REQUIRED` 를 풀 수 없다).
+- RAG 답변 평가와 질문 기록 삭제.
+- 시스템 상태(`/system/health`)를 설정 화면에.
+- 로그인 전 소개 페이지(`src/features/intro/`). 인증되면 기존 대시보드가 그대로 뜬다.
+
 ## 현재 남은 핵심 작업
 
-- 기존 화면 API 15개의 정확한 성공 검증
-- 명세가 Team A에 배정한 추가 API 18개의 화면 연결
-- 주문 전 판정 → 주문 차단 확인 → 명시적 모의주문 → 조회·취소 흐름
-- “자동주문 작동 중”처럼 실제와 다른 문구 수정
-- Team B 미리보기와 실제 결과 구분
-- OpenAPI에 없는 온보딩·학습일지·자동매매 예약 기능은 `OWNER_API_MISSING`으로 보고
+- `POST /api/v1/consents` — RAG v2 가 자체 동의 경로(`/api/v2/rag/consents`)를 쓰고 있어 화면에
+  필요한 자리를 아직 찾지 못했다. 필요 없다고 판단되면 목록에서 뺀다.
+- 자동운용 중지(disarm) — 계약 테스트와 e2e 가 그 버튼의 부재를 못박고 있다(cdd0f5b8). 확인해
+  보니 우회 대상이 아니라 설계였다. 비상 정지 수단은 Kill Switch 이고 DB 가 그렇게 강제한다
+  (`V93__p1_automation_pipeline_continuity.sql:128`, `V109__...:60`).
+- 런타임 관찰 가능성 — `P1_AUTOMATION_RUNTIME_ENABLED=false` 로 자동매매 프로세스가 안 떠
+  있어도 화면은 `ARMED` 로 보인다. 런타임 생사·다음 경계를 알려주는 엔드포인트가 백엔드에
+  없어 화면에서 구분할 방법이 없다.
+- 계약 드리프트 — 화면이 쓰는 5개 경로가 컨트롤러 `@Hidden` 때문에 OpenAPI 에 없다. 동작은
+  정상이지만 `./capstone team-a acceptance` 가 이 5개를 대상에 넣지 못한다. 다만
+  `contracts/openapi/openapi.json` 은 pre-S5 문서 진실 동결에서 **IMMUTABLE** 이므로
+  (`contracts/verify_pre_s5_doc_truth_freeze.py`) 재생성은 그 동결을 먼저 푸는 결정이 필요하다.
 
 `SETUP.md`와 `OVERVIEW.md`에는 처음 수신한 설계·개발 기록이 포함되어 있습니다. 현재 통합 실행
 명령과 완료 판정은 루트 README와 Team A 완료 요청서를 우선합니다.

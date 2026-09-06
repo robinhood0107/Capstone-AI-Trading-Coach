@@ -21,13 +21,22 @@ class KillSwitchApplicationTest {
     }
 
     @Test
+    fun `USER global stop also fails before mutation`() {
+        val port = RecordingPort()
+        assertThrows(KillSwitchForbiddenException::class.java) {
+            KillSwitchService(port, port).change(actor(KillSwitchActorRole.USER), active = true, rawReason = null)
+        }
+        assertEquals(0, port.mutationCount)
+    }
+
+    @Test
     fun `manual free text is discarded before persistence and only enum is passed`() {
         val port = RecordingPort()
         val service = KillSwitchService(port, port)
 
-        val result = service.change(actor(KillSwitchActorRole.USER), active = true, rawReason = "안전 정지")
+        val result = service.change(actor(KillSwitchActorRole.ADMIN), active = true, rawReason = "안전 정지")
 
-        assertEquals(KillSwitchReasonClass.USER_MANUAL_STOP, port.lastCommand?.reasonClass)
+        assertEquals(KillSwitchReasonClass.OPERATOR_MANUAL_STOP, port.lastCommand?.reasonClass)
         assertFalse(result.state.active)
     }
 

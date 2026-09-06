@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/shared/api/endpoints';
+import { useSession } from '@/shared/api/session';
 import { toErrorState, useResource } from '@/shared/lib/useResource';
 import { formatKrw, formatKstDateTime } from '@/shared/lib/format';
 import { ready, type ViewState } from '@/shared/lib/viewState';
@@ -10,16 +11,18 @@ import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
 import { Button } from '@/shared/ui/Button';
 import type {
-  AutomationPolicyV2,
-  AutomationPositionV2,
-  AutomationRunV2,
-  AutomationStatusV2,
+  AutomationPolicyV3,
+  AutomationPositionV3,
+  AutomationRunV3,
+  AutomationStatusV3,
   InstrumentDisplayCatalog,
 } from '@/shared/api/wire';
 import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentity';
 import {
-  AUTOMATION_BLOCKER_LABELS,
+  AUTOMATION_BLOCKER_LABELS_V3,
   AUTOMATION_EVIDENCE_LINKS,
+  AUTOMATION_EXIT_REASON_LABELS,
+  MARKET_HISTORY_LABELS,
   AUTOMATION_PRESETS,
   AUTOMATION_STATE_LABELS,
   bpsToPercent,
@@ -27,13 +30,58 @@ import {
   presetFor,
   slotBudgetKrw,
   validateAutomationPolicy,
+  validateAutomationPolicyV3,
 } from './policy';
 import { AutomationPersistenceNote } from './AutomationPersistenceNote';
 
+/** 개인 중지와 관리자 전역 중지는 서로 다른 API와 상태를 사용한다. */
+function KillSwitchControl({ onChanged }: { active: boolean; onChanged: () => void }) {
+  const { user } = useSession();
+  const personal = useResource(async () => ready((await api.killSwitch()).data), []);
+  const global = useResource(async () => ready((await api.globalKillSwitch()).data), [], user?.role === 'ADMIN');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function change(active: boolean, scope: 'personal' | 'global') {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (scope === 'global') await api.changeGlobalKillSwitch(active);
+      else await api.changeKillSwitch(active);
+      personal.reload();
+      if (user?.role === 'ADMIN') global.reload();
+      onChanged();
+      window.dispatchEvent(new Event('capstone-automation-changed'));
+    } catch (cause) {
+      const state = toErrorState<never>(cause);
+      setError(state.kind === 'error' ? state.message : '중지 상태를 바꾸지 못했습니다.');
+    } finally { setBusy(false); }
+  }
+  return <div className="mt-5 space-y-4 border-t border-line pt-4">
+    <p className="text-[13px] leading-6 text-muted">내 주문 중지는 직접 켜고 해제할 수 있습니다. 해제한 뒤 자동운용 시작은 별도로 선택합니다. 이미 종료된 당일 실행은 다시 시작하지 않으며, 보유 종목을 자동으로 팔거나 기존 체결을 되돌리지 않습니다.</p>
+    <AsyncBoundary state={personal.state}>{(state) => <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><p className="text-sm font-semibold">내 주문 중지 · {state.active ? '작동 중' : '꺼짐'}</p>
+        <p className="text-xs text-muted">변경 {formatKstDateTime(state.changedAt)}</p>
+        {state.globalActive ? <p className="text-sm text-block">관리자가 시스템 전체 주문을 중지했습니다. 개인 중지를 해제해도 주문은 차단됩니다.</p> : null}
+      </div>
+      <Button disabled={busy} variant={state.active ? 'secondary' : 'danger'} onClick={() => void change(!state.active, 'personal')}>
+        {state.active ? '내 주문 중지 해제' : '내 주문 즉시 중지'}
+      </Button>
+    </div>}</AsyncBoundary>
+    {user?.role === 'ADMIN' ? <AsyncBoundary state={global.state}>{(state) => <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+      <p className="text-sm font-semibold">관리자 전용 · 시스템 전체 중지 {state.active ? '작동 중' : '꺼짐'}</p>
+      <Button disabled={busy} variant="danger" onClick={() => void change(!state.active, 'global')}>
+        {state.active ? '전역 중지 해제' : '전체 주문 즉시 중지'}
+      </Button>
+    </div>}</AsyncBoundary> : null}
+    {error ? <p role="alert" className="text-sm text-block">{error}</p> : null}
+  </div>;
+}
+
 interface AutomationData {
-  status: AutomationStatusV2;
-  runs: AutomationRunV2[];
-  positions: AutomationPositionV2[];
+  status: AutomationStatusV3;
+  runs: AutomationRunV3[];
+  positions: AutomationPositionV3[];
   instruments: InstrumentDisplayCatalog;
 }
 
@@ -41,13 +89,25 @@ interface Draft {
   capitalLimitKrw: string;
   stopLossPercent: string;
   takeProfitPercent: string;
+  /* ── v3 정책이 더 요구하는 값 ── */
+  atrPeriod: string;
+  atrMultiplier: string;
+  maxHoldingSessions: string;
+  modelSellEnabled: boolean;
 }
 
+/**
+ * 이 화면은 v3 를 본다.
+ *
+ * v2 로는 자동운용이 **왜** 그렇게 판단했는지를 보여 줄 수 없다 — ATR 추적손절, 보유 기간,
+ * AI 판단 근거가 전부 v3 에만 있다. 현황 화면은 실현손익 요약(`realizedSummary`)이 필요한데
+ * v3 포지션 페이지에는 그 필드가 없어서 계속 v2 를 본다.
+ */
 async function load(): Promise<ViewState<AutomationData>> {
   const [status, runs, positions, instruments] = await Promise.all([
-    api.automationStatusV2(),
-    api.automationRunsV2(),
-    api.automationPositionsV2(),
+    api.automationStatusV3(),
+    api.automationRunsV3(),
+    api.automationPositionsV3(),
     api.instrumentDisplayCatalog(),
   ]);
   return ready(
@@ -56,11 +116,21 @@ async function load(): Promise<ViewState<AutomationData>> {
   );
 }
 
-function draftFrom(policy: AutomationPolicyV2 | null): Draft {
+/**
+ * 저장된 정책에서 편집 초안을 만든다.
+ *
+ * 아직 v3 정책이 없으면(= v2 로만 저장돼 있으면) ATR 값들이 비어 있다. 기본값은 계약이
+ * 허용하는 범위 안에서 흔히 쓰는 값으로 채워 두되, 사용자가 저장을 눌러야 실제로 반영된다.
+ */
+function draftFrom(policy: AutomationPolicyV3 | null): Draft {
   return {
     capitalLimitKrw: policy ? String(policy.capitalLimitKrw) : '',
     stopLossPercent: String(bpsToPercent(policy?.stopLossBps ?? 500)),
     takeProfitPercent: String(bpsToPercent(policy?.takeProfitBps ?? 1000)),
+    atrPeriod: String(policy?.atrPeriod ?? 14),
+    atrMultiplier: String((policy?.atrMultiplierMilli ?? 2500) / 1000),
+    maxHoldingSessions: String(policy?.maxHoldingSessions ?? 60),
+    modelSellEnabled: policy?.modelSellEnabled ?? true,
   };
 }
 
@@ -69,6 +139,15 @@ function numericDraft(draft: Draft) {
     capitalLimitKrw: draft.capitalLimitKrw.trim() === '' ? 0 : Number(draft.capitalLimitKrw),
     stopLossBps: percentToBps(Number(draft.stopLossPercent)),
     takeProfitBps: percentToBps(Number(draft.takeProfitPercent)),
+  };
+}
+
+function numericDraftV3(draft: Draft) {
+  return {
+    atrPeriod: Number(draft.atrPeriod),
+    // 0.1배 단위를 정수 milli 로. 부동소수 반올림을 남기지 않는다.
+    atrMultiplierMilli: Math.round(Number(draft.atrMultiplier) * 1000),
+    maxHoldingSessions: Number(draft.maxHoldingSessions),
   };
 }
 
@@ -92,14 +171,19 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const values = numericDraft(draft);
-  const errors = validateAutomationPolicy(values);
+  const valuesV3 = numericDraftV3(draft);
+  const errors = [...validateAutomationPolicy(values), ...validateAutomationPolicyV3(valuesV3)];
   const selectedPreset = presetFor(values.stopLossBps, values.takeProfitBps);
   const saved = data.status.policy;
   const dirty =
     !saved ||
     saved.capitalLimitKrw !== values.capitalLimitKrw ||
     saved.stopLossBps !== values.stopLossBps ||
-    saved.takeProfitBps !== values.takeProfitBps;
+    saved.takeProfitBps !== values.takeProfitBps ||
+    saved.atrPeriod !== valuesV3.atrPeriod ||
+    saved.atrMultiplierMilli !== valuesV3.atrMultiplierMilli ||
+    saved.maxHoldingSessions !== valuesV3.maxHoldingSessions ||
+    saved.modelSellEnabled !== draft.modelSellEnabled;
   const locked = data.status.controlState !== 'DISARMED';
 
   function applyPreset(stopLossBps: number, takeProfitBps: number) {
@@ -116,12 +200,15 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
     setBusy(true);
     setNotice(null);
     try {
-      await api.putAutomationPolicyV2({
+      await api.putAutomationPolicyV3({
         expectedVersion: saved?.version ?? 0,
         ...values,
+        ...valuesV3,
+        modelSellEnabled: draft.modelSellEnabled,
       });
       setNotice({ tone: 'ok', text: '자동운용 정책을 새 버전으로 저장했습니다.' });
       onReload();
+      window.dispatchEvent(new Event('capstone-automation-changed'));
     } catch (cause) {
       const error = toErrorState<never>(cause);
       setNotice({
@@ -152,7 +239,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
     setBusy(true);
     setNotice(null);
     try {
-      await api.armAutomationV2({
+      await api.armAutomationV3({
         accountId: data.status.accountId,
         policyId: saved.policyId,
         expectedPolicyVersion: saved.version,
@@ -160,6 +247,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
       });
       setNotice({ tone: 'ok', text: '자동운용을 시작 대기 상태로 전환했습니다.' });
       onReload();
+      window.dispatchEvent(new Event('capstone-automation-changed'));
     } catch (cause) {
       const error = toErrorState<never>(cause);
       setNotice({
@@ -167,6 +255,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
         text: error.kind === 'error' ? error.message : '자동운용을 시작하지 못했습니다.',
       });
       onReload();
+      window.dispatchEvent(new Event('capstone-automation-changed'));
     } finally {
       setBusy(false);
     }
@@ -175,9 +264,9 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
   return (
     <div className="space-y-6">
       <Panel
-        contract="GET /api/v2/automation/status"
+        contract="GET /api/v3/automation/status"
         title="현재 자동운용 상태"
-        hint="Kill Switch와 자동운용 상태는 서로 다른 값입니다. 서버가 내려준 상태를 그대로 표시합니다."
+        hint="선택한 계좌의 운용 예약, 주문 중지, 보유 종목과 적용 정책을 확인합니다."
         actions={<StatusLabel status={data.status} />}
       >
         <dl className="grid gap-px overflow-hidden rounded-card border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
@@ -187,7 +276,21 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
             label="Kill Switch"
             value={data.status.killSwitchActive ? '작동 중' : '꺼짐'}
           />
-          <StatusField label="정책 버전" value={saved ? `v${saved.version}` : '미설정'} mono />
+          <StatusField label="저장된 정책" value={saved ? `v${saved.version}` : '미설정'} mono />
+          <StatusField label="적용 중인 정책" value={data.status.appliedPolicyVersion ? `v${data.status.appliedPolicyVersion}` : '미설정'} mono />
+          <StatusField
+            label="LLM 후보 검토"
+            value={data.status.aiJudgementEnabled ? `켜짐 · ${data.status.thinkingLevel}` : '꺼짐'}
+          />
+          <StatusField
+            label="시세 이력"
+            value={MARKET_HISTORY_LABELS[data.status.marketHistoryStatus]}
+          />
+          <StatusField
+            label="청산 정책 미지정 포지션"
+            value={`${data.status.legacyOpenPositionCount}건`}
+            mono
+          />
         </dl>
 
         <div className="mt-4 flex justify-end">
@@ -196,13 +299,17 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
           </Link>
         </div>
 
+        {data.status.policyRecoverySourceVersion ? <p className="mt-3 text-xs text-warn">청산 기준은 이전 저장 정책 v{data.status.policyRecoverySourceVersion}의 값으로 복원했습니다. 이전 이력은 보존되어 있습니다.</p> : null}
+        <p className="mt-3 text-xs leading-6 text-muted">다음 자동평가: {data.status.nextRunAt ? formatKstDateTime(data.status.nextRunAt) : '예약 없음'} · 평가 09:30 · 신규 매수 마감 09:40 · 미체결 취소 15:20 (한국 시간)</p>
+        <KillSwitchControl active={data.status.killSwitchActive} onChanged={onReload} />
+
         {data.status.blockers.length > 0 ? (
           <div className="mt-5 border-l-2 border-hold bg-hold/5 px-4 py-3">
             <p className="text-[13px] font-semibold text-ink">현재 시작할 수 없습니다</p>
             <ul className="mt-2 space-y-2">
               {data.status.blockers.map((blocker) => (
                 <li key={blocker} className="text-[13px] leading-5 text-muted">
-                  <span title={blocker}>{AUTOMATION_BLOCKER_LABELS[blocker]}</span>
+                  <span title={blocker}>{AUTOMATION_BLOCKER_LABELS_V3[blocker]}</span>
                 </li>
               ))}
             </ul>
@@ -230,12 +337,12 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
               disabled={locked}
               aria-pressed={selectedPreset === preset.presetId}
               onClick={() => applyPreset(preset.stopLossBps, preset.takeProfitBps)}
-              className={`bg-panel px-4 py-4 text-left disabled:text-faint ${
+              className={`!flex !flex-col !items-stretch !justify-start !rounded-none bg-panel px-4 py-4 text-left disabled:text-faint ${
                 selectedPreset === preset.presetId ? 'ring-2 ring-inset ring-navy' : ''
               }`}
             >
               <div className="flex items-baseline justify-between gap-3">
-                <span className="text-[14px] font-semibold text-ink">{preset.label}</span>
+                <span className="shrink-0 text-[14px] font-semibold text-ink">{preset.label}</span>
                 <span className="tnum font-mono text-[12px] text-muted">
                   -{bpsToPercent(preset.stopLossBps)}% / +{bpsToPercent(preset.takeProfitBps)}%
                 </span>
@@ -276,6 +383,60 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
             disabled={locked}
             onChange={(value) => setDraft((current) => ({ ...current, takeProfitPercent: value }))}
           />
+        </div>
+
+        <div className="mt-6 border-t border-line pt-5">
+          <p className="text-eyebrow font-semibold uppercase text-faint">청산 기준</p>
+          <p className="mt-1.5 text-[12px] leading-5 text-muted">
+            손절·익절 외에 두 가지가 더 청산을 만든다 — 최고가에서 ATR 배수만큼 밀리면 추적손절,
+            보유 기간을 넘기면 기간 초과. 모델 매도 신호를 따를지도 여기서 정한다.
+          </p>
+          <div className="mt-4 grid gap-5 md:grid-cols-3">
+            <PolicyInput
+              label="ATR 기간"
+              value={draft.atrPeriod}
+              min={5}
+              max={100}
+              step={1}
+              suffix="세션"
+              disabled={locked}
+              onChange={(value) => setDraft((current) => ({ ...current, atrPeriod: value }))}
+            />
+            <PolicyInput
+              label="ATR 배수"
+              value={draft.atrMultiplier}
+              min={1}
+              max={10}
+              step={0.1}
+              suffix="배"
+              disabled={locked}
+              onChange={(value) => setDraft((current) => ({ ...current, atrMultiplier: value }))}
+            />
+            <PolicyInput
+              label="최대 보유 기간"
+              value={draft.maxHoldingSessions}
+              min={0}
+              max={1260}
+              step={1}
+              suffix="세션"
+              disabled={locked}
+              onChange={(value) =>
+                setDraft((current) => ({ ...current, maxHoldingSessions: value }))
+              }
+            />
+          </div>
+          <label className="mt-4 flex items-center gap-2 text-[13px] text-ink">
+            <input
+              type="checkbox"
+              className="ink-checkbox"
+              checked={draft.modelSellEnabled}
+              disabled={locked}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, modelSellEnabled: event.target.checked }))
+              }
+            />
+            모델이 매도 신호를 내면 따른다
+          </label>
         </div>
 
         <div className="mt-5 grid gap-4 border-t border-line pt-5 md:grid-cols-2">
@@ -334,7 +495,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
                   busy || dirty || !saved || !data.status.canArm || data.status.blockers.length > 0
                 }
                 onClick={() => void arm()}
-                title={data.status.blockers.map((item) => AUTOMATION_BLOCKER_LABELS[item]).join(' ')}
+                title={data.status.blockers.map((item) => AUTOMATION_BLOCKER_LABELS_V3[item]).join(' ')}
                 variant="primary"
               >
                 자동운용 시작
@@ -375,7 +536,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
   );
 }
 
-function StatusLabel({ status }: { status: AutomationStatusV2 }) {
+function StatusLabel({ status }: { status: AutomationStatusV3 }) {
   const tone =
     status.projectionState === 'RUNNING'
       ? 'text-allow'
@@ -422,7 +583,7 @@ function PolicyInput({
   return (
     <label className="block">
       <span className="text-[13px] font-medium text-ink">{label}</span>
-      <span className="mt-2 flex items-center rounded-full border border-line bg-panel focus-within:border-navy">
+      <span className={`mt-2 flex items-center overflow-hidden rounded-control border border-line focus-within:border-navy ${disabled ? 'bg-subtle' : 'bg-panel'}`}>
         <input
           type="number"
           value={value}
@@ -431,7 +592,7 @@ function PolicyInput({
           step={step}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
-          className="tnum min-w-0 flex-1 bg-transparent px-3 py-2 text-right font-mono text-[14px] disabled:bg-surface disabled:text-faint"
+          className="tnum min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-right font-mono text-[14px] text-ink focus:outline-none disabled:cursor-not-allowed disabled:bg-transparent disabled:text-muted"
         />
         <span className="border-l border-line px-3 text-[12px] text-muted">{suffix}</span>
       </span>
@@ -439,10 +600,10 @@ function PolicyInput({
   );
 }
 
-function PositionPanel({ positions, instruments }: { positions: AutomationPositionV2[]; instruments: InstrumentDisplayCatalog }) {
+function PositionPanel({ positions, instruments }: { positions: AutomationPositionV3[]; instruments: InstrumentDisplayCatalog }) {
   const bySymbol = instrumentMap(instruments.items);
   return (
-    <Panel contract="GET /api/v2/automation/positions" title="자동운용 포지션">
+    <Panel contract="GET /api/v3/automation/positions" title="자동운용 포지션">
       {positions.length === 0 ? (
         <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] text-muted">
           자동운용이 보유한 포지션이 없습니다.
@@ -455,6 +616,8 @@ function PositionPanel({ positions, instruments }: { positions: AutomationPositi
                 <th className="pb-2 font-normal">종목</th>
                 <th className="pb-2 text-right font-normal">수량</th>
                 <th className="pb-2 text-right font-normal">평균체결가</th>
+                <th className="pb-2 text-right font-normal">ATR 추적손절</th>
+                <th className="pb-2 text-right font-normal">보유 한도</th>
                 <th className="pb-2 text-right font-normal">상태</th>
               </tr>
             </thead>
@@ -466,6 +629,22 @@ function PositionPanel({ positions, instruments }: { positions: AutomationPositi
                   <td className="tnum py-2.5 text-right font-mono">
                     {formatKrw(position.entryAverageFillPriceKrw)}
                   </td>
+                  <td className="tnum py-2.5 text-right font-mono">
+                    {position.trailingStopKrw === null ? (
+                      // 아직 계산되지 않았다. 0 원으로 적으면 손절선이 바닥이라는 뜻이 된다.
+                      <span className="text-faint">미산출</span>
+                    ) : (
+                      <>
+                        {formatKrw(position.trailingStopKrw)}
+                        <span className="ml-1 text-faint">
+                          ATR{position.atrPeriod}×{(position.atrMultiplierMilli / 1000).toFixed(1)}
+                        </span>
+                      </>
+                    )}
+                  </td>
+                  <td className="tnum py-2.5 text-right font-mono text-muted">
+                    {position.maxHoldingSessions}세션
+                  </td>
                   <td className="py-2.5 text-right text-muted">
                     {position.status === 'OPEN'
                       ? '보유 중'
@@ -474,6 +653,11 @@ function PositionPanel({ positions, instruments }: { positions: AutomationPositi
                         : position.status === 'CLOSED'
                           ? '종료'
                           : '대사 확인 필요'}
+                    {position.exitReason ? (
+                      <span className="ml-1.5 text-faint">
+                        · {AUTOMATION_EXIT_REASON_LABELS[position.exitReason]}
+                      </span>
+                    ) : null}
                   </td>
                 </tr>
               ))}
@@ -485,10 +669,10 @@ function PositionPanel({ positions, instruments }: { positions: AutomationPositi
   );
 }
 
-function RunPanel({ runs, instruments }: { runs: AutomationRunV2[]; instruments: InstrumentDisplayCatalog }) {
+function RunPanel({ runs, instruments }: { runs: AutomationRunV3[]; instruments: InstrumentDisplayCatalog }) {
   const bySymbol = instrumentMap(instruments.items);
   return (
-    <Panel contract="GET /api/v2/automation/runs" title="최근 자동운용 실행">
+    <Panel contract="GET /api/v3/automation/runs" title="최근 자동운용 실행">
       {runs.length === 0 ? (
         <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] text-muted">
           기록된 자동운용 실행이 없습니다.
@@ -496,21 +680,118 @@ function RunPanel({ runs, instruments }: { runs: AutomationRunV2[]; instruments:
       ) : (
         <ul className="divide-y divide-line/60">
           {runs.map((run) => (
-            <li key={run.runId} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
-              <div className="min-w-0">
-                <p className="font-mono text-[12px] text-ink">{run.sessionDate}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-[11px] text-muted">{runStateLabel(run.state)}</p>
-                <p className="mt-1 text-[11px] text-faint">
-                  {run.selectedSymbol ? (bySymbol.get(run.selectedSymbol)?.nameKo ?? run.selectedSymbol) : '주문 없음'} · {formatKstDateTime(run.updatedAt)}
-                </p>
-              </div>
-            </li>
+            <RunRow key={run.runId} run={run} bySymbol={bySymbol} />
           ))}
         </ul>
       )}
     </Panel>
+  );
+}
+
+/**
+ * 실행 한 건. 펼치면 그날 AI 가 무엇을 읽고 그렇게 정했는지를 가져온다.
+ *
+ * 근거는 펼칠 때 처음 부른다 — 목록을 여는 것만으로 실행 수만큼 상세를 당길 이유가 없다.
+ */
+function RunRow({
+  run,
+  bySymbol,
+}: {
+  run: AutomationRunV3;
+  bySymbol: ReturnType<typeof instrumentMap>;
+}) {
+  const [open, setOpen] = useState(false);
+  const detail = useResource(
+    async () => {
+      const { data } = await api.automationRunDetailV3(run.runId);
+      return ready(data, run.updatedAt);
+    },
+    [run.runId],
+    open,
+  );
+
+  return (
+    <li className="py-3 first:pt-0 last:pb-0">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="font-mono text-[12px] text-ink">{run.sessionDate}</p>
+          <p className="mt-1 text-[11px] text-faint">
+            {/* 근거가 0건이면 AI 판단 없이 넘어간 실행이다. 그 사실을 감추지 않는다. */}
+            {run.evidenceCount > 0
+              ? `판단 근거 ${run.evidenceCount}건 · AI 호출 ${run.judgeCallCount}회`
+              : 'AI 판단 근거 없음'}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-[11px] text-muted">{runStateLabel(run.state)}</p>
+          <p className="mt-1 text-[11px] text-faint">
+            {run.selectedSymbol
+              ? (bySymbol.get(run.selectedSymbol)?.nameKo ?? run.selectedSymbol)
+              : '주문 없음'}{' '}
+            · {formatKstDateTime(run.updatedAt)}
+          </p>
+          {run.exitReason ? (
+            <p className="mt-1 text-[11px] text-faint">
+              청산 · {AUTOMATION_EXIT_REASON_LABELS[run.exitReason]}
+            </p>
+          ) : null}
+          <Button
+            onClick={() => setOpen((prev) => !prev)}
+            className="mt-1.5 text-[11px] font-medium text-navy hover:underline"
+          >
+            {open ? '판단 근거 접기' : '판단 근거 보기'}
+          </Button>
+        </div>
+      </div>
+
+      {open ? (
+        <div className="mt-3 border-l-2 border-line pl-4">
+          <AsyncBoundary state={detail.state} onRetry={detail.reload}>
+            {(data) =>
+              data.candidateScreenings.length === 0 ? (
+                <p className="text-[12px] leading-6 text-muted">
+                  이 실행에는 남은 후보 심사 기록이 없습니다.
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {data.candidateScreenings.map((screening) => (
+                    <li key={screening.symbol}>
+                      <p className="text-[12px] font-semibold text-ink">
+                        <InstrumentIdentity
+                          symbol={screening.symbol}
+                          instrument={bySymbol.get(screening.symbol)}
+                          compact
+                        />
+                        <span className="tnum ml-2 font-mono text-[11px] text-faint">
+                          점수 {screening.score.toFixed(2)}
+                        </span>
+                      </p>
+                      <p className="mt-1 text-[12px] leading-6 text-muted">{screening.reason}</p>
+                      {screening.evidence.length > 0 ? (
+                        <ul className="mt-2 space-y-1.5">
+                          {screening.evidence.map((item) => (
+                            <li key={item.citationId} className="text-[12px] leading-6">
+                              <span className="text-ink">&ldquo;{item.boundedQuote}&rdquo;</span>
+                              <span className="ml-1.5 text-faint">
+                                — {item.sourceType === 'OFFICIAL_PRIMARY' ? '공식 원문' : '등록 독립'}
+                                {item.sourceEventDate ? ` · ${item.sourceEventDate}` : ''}
+                              </span>
+                              {item.ageWarning ? (
+                                <span className="ml-1.5 text-warn">오래된 근거</span>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )
+            }
+          </AsyncBoundary>
+        </div>
+      ) : null}
+    </li>
   );
 }
 
@@ -522,6 +803,6 @@ function runStateLabel(state: string): string {
   return '진행 중';
 }
 
-function modeLabel(mode: AutomationStatusV2['brokerageMode']): string {
+function modeLabel(mode: AutomationStatusV3['brokerageMode']): string {
   return mode === 'KIS_MOCK' ? 'KIS 모의계좌' : '내부 가상원장';
 }

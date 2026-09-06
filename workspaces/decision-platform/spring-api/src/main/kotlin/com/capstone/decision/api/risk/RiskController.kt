@@ -93,7 +93,14 @@ class RiskController(
         ],
     )
     @GetMapping("/kill-switch")
-    fun getKillSwitch(request: HttpServletRequest): ApiResponse<KillSwitchStateDto> {
+    fun getKillSwitch(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        request: HttpServletRequest,
+    ): ApiResponse<KillSwitchStateDto> {
+        if (principal.role != "ADMIN") {
+            throw com.capstone.decision.application.risk
+                .KillSwitchForbiddenException()
+        }
         parser.requireNoQuery(request)
         return ApiResponseFactory.success(
             requestId = RequestIds.currentOrCreate(request),

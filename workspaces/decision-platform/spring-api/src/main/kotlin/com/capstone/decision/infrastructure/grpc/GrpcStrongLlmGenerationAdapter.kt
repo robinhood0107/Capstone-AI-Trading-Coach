@@ -289,7 +289,7 @@ internal class GrpcStrongLlmGenerationAdapter(
                 ).sortedBy { it.citationId.removePrefix("cit_").toInt() }
                     .take(5)
                     .mapIndexed { index, evidence -> evidence.copy(ordinal = index + 1) }
-            val validated = validator.validate(result.answerJson, validationEvidence)
+            val validated = validator.validateForDisplay(result.answerJson, validationEvidence)
             val usage =
                 S49StrongLlmUsageV2(
                     result.promptTokenCount,

@@ -14,7 +14,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 
-@RestControllerAdvice(assignableTypes = [RiskController::class])
+@RestControllerAdvice(assignableTypes = [RiskController::class, OwnerKillSwitchController::class])
 class RiskExceptionHandler {
     @ExceptionHandler(RiskValidationException::class)
     fun handleValidation(

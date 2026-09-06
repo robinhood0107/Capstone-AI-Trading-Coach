@@ -184,6 +184,9 @@ class P1OwnerPhaseAContractTest(unittest.TestCase):
         root = json.loads(
             (ROOT / "contracts/openapi/openapi.json").read_text(encoding="utf-8")
         )
+        from contracts.generate_owner_ridge_contracts import project_previous
+
+        root = project_previous(root)
         root_operations = {
             (path, method)
             for path, path_item in root["paths"].items()

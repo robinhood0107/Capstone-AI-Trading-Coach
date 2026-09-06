@@ -130,6 +130,11 @@ def build_catalog(
 
 def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
     openapi = object_value(json.loads(openapi_bytes), "OpenAPI")
+    if "/api/v2/risk/kill-switch" in openapi.get("paths", {}):
+        from contracts.generate_owner_ridge_contracts import PREVIOUS, project_previous
+
+        openapi = project_previous(openapi)
+        openapi_bytes = PREVIOUS.read_bytes()
     if len(v3_root_operations(openapi)) == 76:
         from contracts.verify_p1_return_signal_v3_openapi_transition import project_pre_signal_v3
 

@@ -22,6 +22,14 @@ import { fromDashboard, type ViewState } from '@/shared/lib/viewState';
 export type ReasonDisposition = 'VIOLATION' | 'ISSUE' | 'WARNING' | 'ABSTENTION';
 
 export interface ReasonRow {
+  /**
+   * 목록 키로 쓸 고유값.
+   *
+   * `code` 는 고유하지 않다 — 실제 판정 하나에서 `BALANCE_STALE` 이 2번,
+   * `RISK_SNAPSHOT_MISSING` 이 3번, `NOT_APPLICABLE_V1` 이 6번 왔다(규칙마다 하나씩 나온다).
+   * `code + detail` 도 겹친다(문구가 같다). 그래서 여기서 만들어 들고 다닌다.
+   */
+  id: string;
   disposition: ReasonDisposition;
   code: string;
   headline: string;
@@ -78,7 +86,8 @@ function buildDetail(projection: DecisionProjection): NonNullable<RiskResultView
   const risk = projection.riskDecision;
 
   const reasons: ReasonRow[] = [
-    ...risk.violations.map<ReasonRow>((violation) => ({
+    ...risk.violations.map<ReasonRow>((violation, index) => ({
+      id: `VIOLATION:${violation.ruleId}:${index}`,
       disposition: 'VIOLATION',
       code: violation.ruleId,
       headline: `${ruleName(violation.ruleId)} 기준을 넘었습니다`,
@@ -87,19 +96,23 @@ function buildDetail(projection: DecisionProjection): NonNullable<RiskResultView
         violation.threshold,
       )}`,
     })),
-    ...risk.issues.map<ReasonRow>((issue) => ({
+    ...risk.issues.map<ReasonRow>((issue, index) => ({
+      // 같은 code 가 규칙마다 하나씩 온다. ruleId 로 갈리고, 그것도 없으면 순번으로 갈린다.
+      id: `ISSUE:${issue.ruleId ?? ''}:${issue.code}:${index}`,
       disposition: 'ISSUE',
       code: issue.code,
       headline: '필수 근거가 없어 판단을 미뤘습니다',
       detail: issue.message,
     })),
-    ...risk.warnings.map<ReasonRow>((warning) => ({
+    ...risk.warnings.map<ReasonRow>((warning, index) => ({
+      id: `WARNING:${warning.code}:${index}`,
       disposition: 'WARNING',
       code: warning.code,
       headline: '확인이 필요한 사항',
       detail: warning.message,
     })),
-    ...risk.abstentions.map<ReasonRow>((abstention) => ({
+    ...risk.abstentions.map<ReasonRow>((abstention, index) => ({
+      id: `ABSTENTION:${abstention.ruleId ?? ''}:${abstention.code}:${index}`,
       disposition: 'ABSTENTION',
       code: abstention.code,
       headline:

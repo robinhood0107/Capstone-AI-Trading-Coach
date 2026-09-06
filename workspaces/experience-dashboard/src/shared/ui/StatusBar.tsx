@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { api } from '@/shared/api/endpoints';
 import { apiMode } from '@/shared/api/client';
 import { session, useSession } from '@/shared/api/session';
@@ -13,10 +14,15 @@ import type { AutomationStatusV2 } from '@/shared/api/wire';
 export function StatusBar() {
   const { authenticated, user } = useSession();
   const mock = apiMode() === 'mock';
-  const { state } = useResource(async () => {
+  const { state, reload } = useResource(async () => {
     const { data } = await api.automationStatusV2();
     return ready<AutomationStatusV2>(data, data.policy?.updatedAt ?? null);
   }, [authenticated], mock || authenticated);
+
+  useEffect(() => {
+    window.addEventListener('capstone-automation-changed', reload);
+    return () => window.removeEventListener('capstone-automation-changed', reload);
+  }, [reload]);
 
   const automation = state.kind === 'ready' || state.kind === 'stale' ? state.data : null;
 
@@ -33,6 +39,7 @@ export function StatusBar() {
       ) : null}
       <div className="flex flex-wrap items-center gap-3 px-5 py-3 sm:px-8">
         <AutomationState status={automation} />
+        <BrokerageMode status={automation} />
         {automation?.policy?.updatedAt ? (
           <span className="tnum text-[11px] text-faint">기준 {relativeAge(automation.policy.updatedAt) ?? '방금'}</span>
         ) : null}
@@ -53,6 +60,29 @@ export function StatusBar() {
         </span>
       </div>
     </div>
+  );
+}
+
+/**
+ * 지금 붙어 있는 계좌 종류.
+ *
+ * 화면 문구에는 "모의"를 박아 두지 않는다. 계좌가 어떤 것인지는 실행 중인 시스템이 알고
+ * 있고(`brokerageMode`), 화면은 그 값을 그대로 비춘다. 값이 아직 없으면 배지를 감춘다 —
+ * 모르는 것을 추측해서 채우지 않는다.
+ */
+function BrokerageMode({ status }: { status: AutomationStatusV2 | null }) {
+  if (!status) return null;
+  const label =
+    status.brokerageMode === 'KIS_MOCK'
+      ? 'KIS 모의계좌'
+      : status.brokerageMode === 'INTERNAL_PAPER'
+        ? '내부 가상원장'
+        : status.brokerageMode;
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full bg-subtle px-3 py-1.5">
+      <span className="text-[11px] text-faint">계좌</span>
+      <span className="text-[12px] font-semibold text-ink">{label}</span>
+    </span>
   );
 }
 

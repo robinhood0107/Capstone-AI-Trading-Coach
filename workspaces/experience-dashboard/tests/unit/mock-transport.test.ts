@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mockTransport } from '../../src/shared/mock/transport.ts';
+import { mockBareTransport, mockTransport } from '../../src/shared/mock/transport.ts';
 import * as fixtures from '../../src/shared/mock/fixtures.ts';
 import type {
   PrincipleCurrent,
   PrincipleHistoryData,
+  RagV2HistoryPage,
   SignalV3Runtime,
 } from '../../src/shared/api/wire.ts';
 
@@ -79,6 +80,68 @@ test('원칙 생성은 고른 preset 의 기본값으로 v1 을 만든다', asyn
   assert.equal(envelope.data!.presetId, preset.presetId);
   assert.equal(envelope.data!.version, 1);
   assert.deepEqual(envelope.data!.rules, preset.defaultRules);
+});
+
+test('RAG 질문 기록은 쌓이고 지우면 사라진다', async () => {
+  await mockBareTransport('/api/v2/rag/consents', 'POST', { action: 'GRANT' }, REQUEST_ID);
+
+  const before = (await mockBareTransport<RagV2HistoryPage>(
+    '/api/v2/rag/history',
+    'GET',
+    undefined,
+    REQUEST_ID,
+  )).items.length;
+
+  const answer = await mockBareTransport<{ answerId: string | null }>(
+    '/api/v2/rag/ask',
+    'POST',
+    { question: '금 ETF의 롤오버 위험은 무엇인가요?' },
+    REQUEST_ID,
+  );
+  assert.ok(answer.answerId, '답변이 만들어져야 기록에 쌓인다');
+  // 화면(`loadRecentQuestions`)이 받아 주는 형태여야 한다. 아니면 기록이 늘 비어 보인다.
+  assert.match(answer.answerId, /^rag_[0-9a-f]{32}$/);
+
+  const after = await mockBareTransport<RagV2HistoryPage>(
+    '/api/v2/rag/history',
+    'GET',
+    undefined,
+    REQUEST_ID,
+  );
+  assert.equal(after.items.length, before + 1);
+
+  await mockBareTransport(
+    `/api/v2/rag/history/${answer.answerId}`,
+    'DELETE',
+    undefined,
+    REQUEST_ID,
+  );
+  const removed = await mockBareTransport<RagV2HistoryPage>(
+    '/api/v2/rag/history',
+    'GET',
+    undefined,
+    REQUEST_ID,
+  );
+  assert.equal(removed.items.length, before);
+});
+
+test('RAG 피드백은 helpful 이 boolean 일 때만 받는다', async () => {
+  const answerId = `rag_${'a'.repeat(32)}`;
+  const okEnvelope = await mockTransport(
+    `/api/v1/rag/answers/${answerId}/feedback`,
+    'POST',
+    { helpful: true },
+    REQUEST_ID,
+  );
+  assert.equal(okEnvelope.success, true);
+
+  const missing = await mockTransport(
+    `/api/v1/rag/answers/${answerId}/feedback`,
+    'POST',
+    {},
+    REQUEST_ID,
+  );
+  assert.equal(missing.success, false);
 });
 
 test('제목이나 preset 이 빠지면 만들지 않는다', async () => {

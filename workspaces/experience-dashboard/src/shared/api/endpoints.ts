@@ -24,7 +24,9 @@ import type {
   LoginResponse,
   MockBalance,
   PortfolioRisk,
+  PrincipleCreateRequest,
   PrincipleCurrent,
+  PrincipleHistoryData,
   PrincipleOwnerListData,
   PrinciplePresetListData,
   PrincipleUpdateRequest,
@@ -131,6 +133,18 @@ export const api = {
 
   principle(principleId: string): Promise<ApiResult<PrincipleCurrent>> {
     return apiFetch<PrincipleCurrent>(`/api/v1/principles/${encodeURIComponent(principleId)}`);
+  },
+
+  /** 저장할 때마다 한 버전씩 쌓인다. 무엇이 언제 바뀌었는지 되짚는 용도다. */
+  principleVersions(principleId: string): Promise<ApiResult<PrincipleHistoryData>> {
+    return apiFetch<PrincipleHistoryData>(
+      `/api/v1/principles/${encodeURIComponent(principleId)}/versions`,
+    );
+  },
+
+  /** 원칙을 처음 만든다. 이게 없으면 원칙이 하나도 없는 계정은 주문 검토를 쓸 수 없다. */
+  createPrinciple(request: PrincipleCreateRequest): Promise<ApiResult<PrincipleCurrent>> {
+    return apiFetch<PrincipleCurrent>('/api/v1/principles', { method: 'POST', body: request });
   },
 
   /** expectedVersion 기반 CAS. 409가 오면 재조회 후 사용자가 다시 선택하게 한다. */

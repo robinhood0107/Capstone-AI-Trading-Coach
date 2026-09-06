@@ -9,17 +9,22 @@ SECRETS_DIR=$STATE_DIR/secrets
 RUNTIME_ENV=$STATE_DIR/runtime.env
 ACTIVE_MODE=$STATE_DIR/active-mode.env
 COMPOSE_FILE=$SCRIPT_DIR/compose.yml
-PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1}
-# 시연용 스택. 이미지도 compose 정의도 그대로 쓰고 compose 프로젝트 이름만 가른다.
-# 이름이 다르면 이름 있는 볼륨이 통째로 갈리므로 DB 가 물리적으로 분리된다 - 두 묶음의
-# 차이는 시연용 DB 가 있느냐 없느냐 그것뿐이고 코드는 언제나 같은 파일 하나다.
+# 시연용 스택. 이미지도 compose 정의도 상태 디렉터리도 그대로 쓰고 compose 프로젝트
+# 이름만 가른다. 이름이 다르면 이름 있는 볼륨이 통째로 갈리므로 DB 가 물리적으로
+# 분리된다 - 두 묶음의 차이는 시연용 DB 가 있느냐 없느냐 그것뿐이고 코드는 언제나
+# 같은 파일 하나다.
+#
+# 상태 디렉터리와 호스트 포트를 함께 쓰는 것은 **한 번에 하나만 띄운다**는 전제 위에
+# 서 있다. 그 전제 덕에 시연 스택도 같은 KIS 자격증명과 인증을 그대로 물려받아
+# 추가 설정 없이 실제로 거래한다. 둘을 동시에 띄우면 포트가 부딪히고, 설령 포트를
+# 옮기더라도 같은 모의계좌에 두 스택이 무장해 초당 1건 슬롯을 뺏고 같은 종목에
+# 주문을 두 번 낸다.
 DEMO_STACK=${P1_DEMO_STACK:-false}
 DEMO_COMPOSE_FILE=$SCRIPT_DIR/compose.demo.yml
 if [[ $DEMO_STACK == true ]]; then
   PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1-demo}
-  # 두 묶음이 동시에 떠 있어도 호스트 포트가 부딪히지 않게 한다.
-  export P1_DASHBOARD_PORT=${P1_DASHBOARD_PORT:-3100}
-  export P1_API_PORT=${P1_API_PORT:-18180}
+else
+  PROJECT_NAME=${P1_PROJECT_NAME:-capstone-p1}
 fi
 P1CTL=$SCRIPT_DIR/p1ctl
 RELEASE_GUARD=$SCRIPT_DIR/release_guard.py
@@ -75,10 +80,9 @@ compose() {
 # 시연용 기록을 채우거나 되돌린다. 실사용 스택에서는 아무 일도 하지 않는다.
 demo_history() {
   local action=${1:-seed} output
-  if [[ $DEMO_STACK != true ]]; then
-    printf 'CAPSTONE_DEMO_HISTORY=NOT_A_DEMO_STACK\n'
-    return 0
-  fi
+  # 실사용 스택에서는 아무것도 하지 않고 출력도 남기지 않는다. 기동 출력은 계약이라
+  # 줄 하나가 늘어나는 것도 변경이다.
+  [[ $DEMO_STACK == true ]] || return 0
   output=$(P1_DEMO_HISTORY_COMMAND=$action \
     compose --profile demo run --rm --no-deps demo-history-seed 2>&1 \
     | grep -E '^P1_DEMO_HISTORY=' | tail -1) || output=''

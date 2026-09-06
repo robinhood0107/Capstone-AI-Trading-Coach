@@ -1,5 +1,5 @@
 import { ApiFailure, type ApiEnvelope } from '@/shared/api/envelope';
-import type { AutomationPresetId, RagV2HistoryDetail } from '@/shared/api/wire';
+import type { AutomationPresetId, KillSwitchState, RagV2HistoryDetail } from '@/shared/api/wire';
 import * as fixtures from './fixtures';
 
 /**
@@ -46,6 +46,32 @@ let mockConsentGranted = false;
  * 탭이 살아 있는 동안만 유지되는 값이다.
  */
 const mockRagHistory: RagV2HistoryDetail[] = [];
+
+/** mock 의 Kill Switch 상태. 탭이 살아 있는 동안만 유지된다. */
+let mockKillSwitch: KillSwitchState = {
+  active: false,
+  changedAt: new Date().toISOString(),
+  reasonClass: 'INITIAL_STATE',
+};
+
+/**
+ * 자동운용 상태에 지금의 Kill Switch 값을 얹는다.
+ *
+ * Kill Switch 가 켜져 있으면 시작할 수 없다 — 실제로도 DB 가 그렇게 막는다
+ * (`V93__p1_automation_pipeline_continuity.sql:128` 이 `kill_switch_inactive` 를 요구하고,
+ * `V109...:60` 이 활성 상태에서의 arm 을 거부한다). mock 도 같은 규칙을 지킨다.
+ */
+function killSwitchAware(status: typeof fixtures.automationStatus) {
+  if (!mockKillSwitch.active) return status;
+  return {
+    ...status,
+    killSwitchActive: true,
+    canArm: false,
+    blockers: status.blockers.includes('KILL_SWITCH_ACTIVE')
+      ? status.blockers
+      : [...status.blockers, 'KILL_SWITCH_ACTIVE' as const],
+  };
+}
 
 let mockRagAnswerCounter = 0;
 
@@ -228,7 +254,9 @@ export async function mockTransport<T>(
   }
 
   if (target === '/api/v2/automation/status' && method === 'GET') {
-    return ok(fixtures.automationStatus, requestId) as ApiEnvelope<T>;
+    // Kill Switch 는 `mockKillSwitch` 하나만 진실이다. 픽스처의 고정값을 그대로 내보내면
+    // 방금 켠 것이 자동운용 화면에는 반영되지 않아, 같은 사실이 화면 두 곳에서 어긋난다.
+    return ok(killSwitchAware(fixtures.automationStatus), requestId) as ApiEnvelope<T>;
   }
 
   if (target === '/api/v2/automation/policy' && method === 'PUT') {
@@ -309,11 +337,32 @@ export async function mockTransport<T>(
         brokerageMode: fixtures.automationStatus.brokerageMode,
         principleId: 'prc_00000000',
         strategyId: 'strategy_00000000',
-        killSwitchActive: fixtures.automationStatus.killSwitchActive,
+        killSwitchActive: mockKillSwitch.active,
         certificationStatus: fixtures.automationStatus.certificationStatus,
       },
       requestId,
     ) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v1/risk/kill-switch') {
+    if (method === 'POST') {
+      const request = body as { active?: unknown; reason?: unknown } | undefined;
+      if (typeof request?.active !== 'boolean') {
+        return fail('VALIDATION_ERROR', 'active 는 true 또는 false 여야 합니다.', requestId);
+      }
+      // 해제는 ADMIN 만 된다(KillSwitchTransitionPolicy.kt:22). mock 은 USER 로 동작하므로
+      // 서버와 같은 자리에서 같은 이유로 막는다.
+      if (!request.active) {
+        return fail('FORBIDDEN', 'Kill Switch 해제는 관리자만 할 수 있습니다.', requestId);
+      }
+      mockKillSwitch = {
+        active: true,
+        changedAt: new Date().toISOString(),
+        reasonClass: 'USER_MANUAL_STOP',
+      };
+      return ok(mockKillSwitch, requestId) as ApiEnvelope<T>;
+    }
+    return ok(mockKillSwitch, requestId) as ApiEnvelope<T>;
   }
 
   if (target === '/api/v1/risk/portfolio') {

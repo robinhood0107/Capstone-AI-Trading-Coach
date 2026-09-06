@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/shared/api/endpoints';
+import { useSession } from '@/shared/api/session';
 import { toErrorState, useResource } from '@/shared/lib/useResource';
 import { formatKrw, formatKstDateTime } from '@/shared/lib/format';
 import { ready, type ViewState } from '@/shared/lib/viewState';
@@ -29,6 +30,96 @@ import {
   validateAutomationPolicy,
 } from './policy';
 import { AutomationPersistenceNote } from './AutomationPersistenceNote';
+
+/**
+ * Kill Switch 조작.
+ *
+ * **정지와 해제가 대칭이 아니다.** 정지는 누구나 할 수 있고, 해제는 ADMIN 만 된다
+ * (`KillSwitchTransitionPolicy.kt:22` — 안전 정지는 열되 재가동은 닫는다). 그래서 USER 에게는
+ * 해제 버튼을 아예 두지 않고 **왜 없는지**를 적는다. 회색 버튼만 남기면 고장으로 읽힌다.
+ *
+ * 화면에서 막아도 서버가 최종 판단이다. 403 이 오면 그대로 보여 준다.
+ */
+function KillSwitchControl({ active, onChanged }: { active: boolean; onChanged: () => void }) {
+  const { user } = useSession();
+  const isAdmin = user?.role === 'ADMIN';
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function change(next: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.changeKillSwitch(next, next ? 'USER_MANUAL_STOP' : undefined);
+      setConfirming(false);
+      onChanged();
+    } catch (cause) {
+      const state = toErrorState<never>(cause);
+      setError(state.kind === 'error' ? state.message : 'Kill Switch 를 바꾸지 못했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-5 border-t border-line pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-2xl text-[13px] leading-6 text-muted">
+          {active
+            ? 'Kill Switch가 작동 중입니다. 새 주문이 나가지 않습니다.'
+            : '문제가 보이면 Kill Switch로 새 주문을 즉시 멈출 수 있습니다. 켜는 것은 누구나 할 수 있고, 다시 끄는 것은 관리자만 할 수 있습니다.'}
+        </p>
+
+        {active ? (
+          isAdmin ? (
+            <Button
+              disabled={busy}
+              onClick={() => void change(false)}
+              className="rounded-full border border-line px-4 py-1.5 text-[13px] font-semibold text-muted hover:border-navy hover:text-navy"
+            >
+              {busy ? '해제 중' : 'Kill Switch 해제'}
+            </Button>
+          ) : (
+            <span className="text-[12px] text-faint">해제는 관리자만 할 수 있습니다.</span>
+          )
+        ) : confirming ? (
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-[12px] text-block">지금 즉시 새 주문이 멈춥니다.</span>
+            <Button
+              disabled={busy}
+              onClick={() => void change(true)}
+              className="rounded-full border border-block px-4 py-1.5 text-[13px] font-semibold text-block"
+            >
+              {busy ? '멈추는 중' : '멈춥니다'}
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+              className="rounded-full border border-line px-3 py-1.5 text-[13px] text-muted"
+            >
+              취소
+            </Button>
+          </span>
+        ) : (
+          <Button
+            onClick={() => setConfirming(true)}
+            className="rounded-full border border-line px-4 py-1.5 text-[13px] font-semibold text-muted hover:border-block hover:text-block"
+          >
+            Kill Switch 켜기
+          </Button>
+        )}
+      </div>
+
+      {error ? (
+        <p className="mt-3 border-l-2 border-block bg-block/5 px-3 py-2 text-[13px] leading-6 text-ink">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 interface AutomationData {
   status: AutomationStatusV2;
@@ -195,6 +286,8 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
             최근 주문 판정 보기 →
           </Link>
         </div>
+
+        <KillSwitchControl active={data.status.killSwitchActive} onChanged={onReload} />
 
         {data.status.blockers.length > 0 ? (
           <div className="mt-5 border-l-2 border-hold bg-hold/5 px-4 py-3">

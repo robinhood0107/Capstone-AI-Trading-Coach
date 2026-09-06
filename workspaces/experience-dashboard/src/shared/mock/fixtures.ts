@@ -14,8 +14,10 @@ import type {
   DashboardModelEvaluationView,
   DashboardRagSourcesView,
   DashboardRiskResultView,
+  DecisionAction,
   DecisionProjection,
   InstrumentDisplayCatalog,
+  MockBalance,
   PortfolioRisk,
   PrincipleCurrent,
   PrinciplePreset,
@@ -24,6 +26,7 @@ import type {
   PrincipleOwnerListData,
   PrincipleRule,
   PrincipleRuleId,
+  RecentRiskResult,
   RagAnswerProjection,
   RagSourceListResponse,
   SignalV3Runtime,
@@ -238,6 +241,126 @@ export const automationStatus: AutomationStatusV2 = {
   canArm: false,
   blockers: ['BLOCKED_INCOMPLETE_RISK_BALANCE'],
 };
+
+/**
+ * "최근 주문 판정" 목록.
+ *
+ * 저장된 판정 픽스처에서 뽑아 쓴다 — 목록과 상세가 다른 데이터를 보면 목록을 눌렀을 때
+ * 상세가 없다고 나온다. 최신이 앞이다.
+ */
+export function recentRiskResults(): RecentRiskResult[] {
+  const items: RecentRiskResult[] = [];
+  for (const envelope of Object.values(dashboardRiskResults)) {
+    // 판정 내용이나 시각이 없는 봉투는 목록에 올리지 않는다. 없는 값을 지어내지 않는다.
+    if (!envelope.view || !envelope.asOf || !envelope.freshUntil) continue;
+    items.push({
+      decisionId: envelope.view.decisionId,
+      action: envelope.view.action,
+      symbol: RISK_RESULT_SYMBOLS[envelope.view.decisionId] ?? '005930',
+      asOf: envelope.asOf,
+      validUntil: envelope.freshUntil,
+    });
+  }
+  return items.sort((a, b) => Date.parse(b.asOf) - Date.parse(a.asOf));
+}
+
+/** 판정별 종목. 화면이 종목 배지를 그리는 데 쓴다. */
+const RISK_RESULT_SYMBOLS: Record<string, string> = {
+  dec_demo_warn_000001: '005930',
+  dec_demo_hold_000001: '000660',
+  dec_demo_block_000001: '132030',
+};
+
+/* ─────────────────────────────── 증권 · 주문 ──────────────────────────── */
+
+export const mockBalance: MockBalance = {
+  accountId: automationStatus.accountId!,
+  brokerageMode: 'KIS_MOCK',
+  cashKrw: 4_820_000,
+  portfolioEquityKrw: 10_000_000,
+  marginRequirementKrw: 0,
+  positions: [
+    { symbol: '005930', quantity: 40, marketValueKrw: 2_840_000, isGoldEtfEtn: false },
+    { symbol: '132030', quantity: 90, marketValueKrw: 1_200_000, isGoldEtfEtn: true },
+  ],
+  observedAt: new Date(Date.now() - 3 * 60_000).toISOString(),
+  sourceVersion: 'kis-mock-2026-09',
+};
+
+/** 종목별 예상 단가. 없는 종목은 만들어 내지 않고 하나의 기본값으로 둔다. */
+const MOCK_PRICES: Record<string, number> = {
+  '005930': 71_000,
+  '000660': 183_500,
+  '132030': 13_400,
+};
+
+export function mockPriceFor(symbol: string): number {
+  return MOCK_PRICES[symbol] ?? 50_000;
+}
+
+/**
+ * evaluate-order 의 mock 판정.
+ *
+ * 화면 검증용으로 **규칙 하나만** 본다 — 1회 주문 최대 금액. 금액이 한도를 넘으면 BLOCK,
+ * 80% 이상이면 WARN, 아니면 ALLOW. 실제 판정은 서버가 열네 줄을 전부 본다.
+ */
+export function evaluateOrder(symbol: string, estimatedAmount: number): DecisionProjection {
+  const limit =
+    principle.rules.find((rule) => rule.ruleId === 'max_single_order_amount')?.threshold ?? 400_000;
+  const ratio = estimatedAmount / limit;
+  const action: DecisionAction = ratio > 1 ? 'BLOCK' : ratio >= 0.8 ? 'WARN' : 'ALLOW';
+
+  evaluateCounter += 1;
+  const decisionId = `dec_${evaluateCounter.toString(16).padStart(32, '0')}`;
+  const validUntil = new Date(Date.now() + 5 * 60_000).toISOString();
+  const violations =
+    action === 'ALLOW'
+      ? []
+      : [
+          {
+            ruleId: 'max_single_order_amount' as const,
+            message: '1회 주문 최대 금액 기준에 걸렸습니다.',
+            metricValue: estimatedAmount,
+            threshold: limit,
+            severity: (action === 'BLOCK' ? 'BLOCK' : 'WARN') as 'BLOCK' | 'WARN',
+          },
+        ];
+
+  return {
+    decisionId,
+    createdAt: new Date().toISOString(),
+    enforcementAction: action,
+    mode: principle.mode,
+    portfolioSource: 'KIS_MOCK',
+    principleId: principle.principleId,
+    principleVersion: principle.version,
+    principleVersionId: 'pv_mock',
+    validUntil,
+    riskDecision: {
+      decisionId,
+      evaluationId: `evl_${decisionId.slice(4)}`,
+      decision: action,
+      canSubmitOrder: action === 'ALLOW',
+      mode: principle.mode,
+      portfolioSource: 'KIS_MOCK',
+      principleVersion: principle.version,
+      principleVersionId: 'pv_mock',
+      catalogVersion: 1,
+      readinessPolicyVersion: 'rp_v1',
+      schemaVersion: '1.0.0',
+      semanticInputHash: symbol.padEnd(64, '0'),
+      snapshotArtifactHash: symbol.padEnd(64, '0'),
+      validUntil,
+      violations,
+      issues: [],
+      warnings: [],
+      abstentions: [],
+      riskItems: [],
+    },
+  };
+}
+
+let evaluateCounter = 0;
 
 export function replaceAutomationPolicy(policy: AutomationPolicyV2): void {
   automationPolicy = policy;

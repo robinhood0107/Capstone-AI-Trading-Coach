@@ -201,13 +201,22 @@ test('주문은 평가 → 제출 → 취소까지 한 바퀴 돈다', async () 
   const accountId = fixtures.mockBalance.accountId;
 
   const buyable = await mockTransport<{ buyableQuantity: number }>(
-    `/api/v1/brokerage/mock/accounts/${accountId}/buyable?symbol=005930`,
+    `/api/v1/brokerage/mock/accounts/${accountId}/buyable?symbol=005930&price=71000`,
     'GET',
     undefined,
     REQUEST_ID,
   );
   assert.equal(buyable.success, true);
   assert.ok(buyable.data!.buyableQuantity > 0);
+
+  // 서버는 symbol 과 price 를 둘 다 요구한다. 하나만 보내면 mock 도 거절해야 live 와 어긋나지 않는다.
+  const noPrice = await mockTransport(
+    `/api/v1/brokerage/mock/accounts/${accountId}/buyable?symbol=005930`,
+    'GET',
+    undefined,
+    REQUEST_ID,
+  );
+  assert.equal(noPrice.success, false);
 
   const evaluated = await mockTransport<{ decisionId: string; riskDecision: { decision: string } }>(
     '/api/v1/decisions/evaluate-order',
@@ -335,6 +344,68 @@ test('실행 상세는 AI 가 읽은 근거를 그대로 준다', async () => {
   );
   assert.equal(empty.success, true);
   assert.deepEqual(empty.data!.candidateScreenings, []);
+});
+
+test('v3 정책은 ATR·보유기간·모델매도가 다 와야 저장된다', async () => {
+  const before = await mockTransport<AutomationStatusV3>(
+    '/api/v3/automation/status',
+    'GET',
+    undefined,
+    REQUEST_ID,
+  );
+  const policy = before.data!.policy!;
+
+  // v2 모양으로만 보내면 거절한다. 그래야 v3 화면이 막다른 길로 가지 않는다.
+  const v2Shape = await mockTransport(
+    '/api/v3/automation/policy',
+    'PUT',
+    {
+      expectedVersion: policy.version,
+      capitalLimitKrw: policy.capitalLimitKrw,
+      stopLossBps: policy.stopLossBps,
+      takeProfitBps: policy.takeProfitBps,
+    },
+    REQUEST_ID,
+  );
+  assert.equal(v2Shape.success, false);
+
+  const saved = await mockTransport<{ version: number; atrPeriod: number }>(
+    '/api/v3/automation/policy',
+    'PUT',
+    {
+      expectedVersion: policy.version,
+      capitalLimitKrw: policy.capitalLimitKrw,
+      stopLossBps: policy.stopLossBps,
+      takeProfitBps: policy.takeProfitBps,
+      atrPeriod: 20,
+      atrMultiplierMilli: 3000,
+      maxHoldingSessions: 40,
+      modelSellEnabled: false,
+    },
+    REQUEST_ID,
+  );
+  assert.equal(saved.success, true);
+  assert.equal(saved.data!.atrPeriod, 20);
+  assert.equal(saved.data!.version, policy.version + 1, '저장하면 버전이 오른다');
+
+  // 낡은 버전으로 다시 저장하면 덮어쓰지 않는다.
+  const stale = await mockTransport(
+    '/api/v3/automation/policy',
+    'PUT',
+    {
+      expectedVersion: policy.version,
+      capitalLimitKrw: policy.capitalLimitKrw,
+      stopLossBps: policy.stopLossBps,
+      takeProfitBps: policy.takeProfitBps,
+      atrPeriod: 14,
+      atrMultiplierMilli: 2500,
+      maxHoldingSessions: 60,
+      modelSellEnabled: true,
+    },
+    REQUEST_ID,
+  );
+  assert.equal(stale.success, false);
+  assert.equal(stale.error?.code, 'CONFLICT');
 });
 
 test('제목이나 preset 이 빠지면 만들지 않는다', async () => {

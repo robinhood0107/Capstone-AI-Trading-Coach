@@ -34,6 +34,21 @@ test('blocked risk balance is visible and prevents the UI arm call', async () =>
   const automation = await readFile(automationUrl, 'utf8');
   assert.match(automation, /data\.status\.blockers\.length > 0/);
   assert.match(automation, /!data\.status\.canArm/);
-  assert.match(automation, /api\.armAutomationV2/);
+  // 자동운용 화면은 v3 를 본다 — 청산 근거(ATR·보유기간·AI 판단)가 v3 에만 있다.
+  // 지키려는 것은 "차단 사유가 있으면 arm 을 부르지 않는다"이지 특정 버전이 아니다.
+  assert.match(automation, /api\.armAutomationV3/);
   assert.match(automation, /KIS 모의계좌 전용입니다\. 실제 계좌 주문은 실행하지 않습니다\./);
+});
+
+test('v3 정책 저장은 v2 가 못 채우는 네 값을 함께 보낸다', async () => {
+  const automation = await readFile(automationUrl, 'utf8');
+  const endpoints = await readFile(endpointsUrl, 'utf8');
+  // v2 로 저장하면 v3 상태가 POLICY_V3_REQUIRED 로 시작을 막고 화면에서 풀 방법이 없다.
+  assert.match(automation, /api\.putAutomationPolicyV3/);
+  assert.doesNotMatch(automation, /api\.putAutomationPolicyV2/);
+  for (const field of ['atrPeriod', 'atrMultiplierMilli', 'maxHoldingSessions', 'modelSellEnabled']) {
+    assert.match(automation, new RegExp(field));
+  }
+  assert.match(endpoints, /newIdempotencyKey\('automation-policy-v3'\)/);
+  assert.match(endpoints, /newIdempotencyKey\('automation-arm-v3'\)/);
 });

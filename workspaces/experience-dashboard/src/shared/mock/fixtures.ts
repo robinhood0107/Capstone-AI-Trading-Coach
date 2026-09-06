@@ -7,6 +7,7 @@
 import type {
   AutomationPolicyV2,
   AutomationCandidateScreeningV3,
+  AutomationPolicyV3,
   AutomationPositionPageV2,
   AutomationPositionV3,
   AutomationRunDetailV3,
@@ -468,10 +469,25 @@ export const automationPositions: AutomationPositionPageV2 = {
  * 손절이 걸린 보유 포지션, AI 가 근거를 읽고 넘어간 실행, 근거 없이 건너뛴 실행.
  */
 
+/** v3 정책. v2 저장이 채우지 못하는 네 값이 여기 있다. */
+export let automationPolicyV3: AutomationPolicyV3 = {
+  ...automationPolicy,
+  contractId: 'automation-policy.v3',
+  atrPeriod: 14,
+  atrMultiplierMilli: 2500,
+  maxHoldingSessions: 60,
+  modelSellEnabled: true,
+};
+
+export function replaceAutomationPolicyV3(policy: AutomationPolicyV3): void {
+  automationPolicyV3 = policy;
+}
+
 export function automationStatusV3(base: AutomationStatusV2): AutomationStatusV3 {
   return {
     ...base,
     contractId: 'automation-status.v3',
+    policy: automationPolicyV3,
     aiJudgementEnabled: true,
     thinkingLevel: 'low',
     marketHistoryStatus: 'READY',

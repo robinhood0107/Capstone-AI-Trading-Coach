@@ -112,16 +112,17 @@ function Ticket({ context }: { context: TicketContext }) {
     setSubmitted(null);
   }, [intentKey]);
 
-  // 주문가능금액은 종목이 정해지면 읽는다.
+  // 주문가능금액은 종목과 단가가 둘 다 정해져야 읽을 수 있다 — 서버가 둘 다 요구한다.
+  const priceNumber = Number(price);
   useEffect(() => {
     const target = symbol.trim().toUpperCase();
-    if (!target || !status.accountId || side !== 'BUY') {
+    if (!target || !status.accountId || side !== 'BUY' || !Number.isInteger(priceNumber) || priceNumber < 1) {
       setBuyable(null);
       return;
     }
     let alive = true;
     api
-      .mockBuyable(status.accountId, target)
+      .mockBuyable(status.accountId, target, priceNumber)
       .then((result) => {
         if (alive) setBuyable(result.data);
       })
@@ -131,7 +132,7 @@ function Ticket({ context }: { context: TicketContext }) {
     return () => {
       alive = false;
     };
-  }, [symbol, side, status.accountId]);
+  }, [symbol, side, priceNumber, status.accountId]);
 
   const action = decision?.riskDecision.decision ?? null;
   const decisionExpired = decision ? Date.parse(decision.validUntil) <= Date.now() : false;

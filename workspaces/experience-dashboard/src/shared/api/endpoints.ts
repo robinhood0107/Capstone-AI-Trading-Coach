@@ -4,6 +4,7 @@ import type {
   ArmAutomationV2Request,
   AutomationControlV1,
   AutomationPolicyV2,
+  AutomationPolicyV3,
   AutomationPositionPageV2,
   AutomationPositionPageV3,
   AutomationRunDetailV3,
@@ -40,6 +41,7 @@ import type {
   PrinciplePresetListData,
   PrincipleUpdateRequest,
   PutAutomationPolicyV2Request,
+  PutAutomationPolicyV3Request,
   PutStrongLlmSettingsRequest,
   RagAnswerProjection,
   RagAskRequest,
@@ -79,10 +81,19 @@ export const api = {
     return apiFetch<PortfolioRisk>('/api/v1/risk/portfolio');
   },
 
-  /** 이 종목을 지금 얼마나 살 수 있나. 주문 관문 G3 이 쓴다. */
-  mockBuyable(accountId: string, symbol: string): Promise<ApiResult<MockBuyable>> {
+  /**
+   * 이 종목을 이 단가로 지금 얼마나 살 수 있나. 주문 관문 G3 이 쓴다.
+   *
+   * **`symbol` 과 `price` 가 둘 다 필수다.** OpenAPI 에는 두 쿼리 파라미터가 선언돼 있지
+   * 않지만(`BrokerageController.kt:220` 이 `HttpServletRequest` 에서 직접 읽는다) 서버는
+   * 둘 다 요구하고, 선언되지 않은 다른 파라미터는 `UNKNOWN_FIELD` 로 거절한다
+   * (`BrokerageRequestParser.kt:95`). acceptance 카탈로그도 `clientParameterOverrides` 로
+   * 같은 사실을 못박고 있다.
+   */
+  mockBuyable(accountId: string, symbol: string, price: number): Promise<ApiResult<MockBuyable>> {
+    const query = new URLSearchParams({ symbol, price: String(price) });
     return apiFetch<MockBuyable>(
-      `/api/v1/brokerage/mock/accounts/${encodeURIComponent(accountId)}/buyable?symbol=${encodeURIComponent(symbol)}`,
+      `/api/v1/brokerage/mock/accounts/${encodeURIComponent(accountId)}/buyable?${query}`,
     );
   },
 
@@ -206,6 +217,31 @@ export const api = {
    */
   automationStatusV3(): Promise<ApiResult<AutomationStatusV3>> {
     return apiFetch<AutomationStatusV3>('/api/v3/automation/status');
+  },
+
+  /**
+   * v3 정책 저장.
+   *
+   * **v2 로 저장하면 v3 화면이 막다른 길이 된다.** v3 상태는 정책에 ATR 값이 없으면
+   * `POLICY_V3_REQUIRED` 로 시작을 막는데, v2 저장은 그 네 값을 채우지 못한다.
+   */
+  putAutomationPolicyV3(
+    request: PutAutomationPolicyV3Request,
+  ): Promise<ApiResult<AutomationPolicyV3>> {
+    return apiFetch<AutomationPolicyV3>('/api/v3/automation/policy', {
+      method: 'PUT',
+      body: request,
+      idempotencyKey: newIdempotencyKey('automation-policy-v3'),
+    });
+  },
+
+  /** 요청 모양은 v2 와 같다(계약 확인함). 응답만 v3 상태다. */
+  armAutomationV3(request: ArmAutomationV2Request): Promise<ApiResult<AutomationStatusV3>> {
+    return apiFetch<AutomationStatusV3>('/api/v3/automation/arm', {
+      method: 'POST',
+      body: request,
+      idempotencyKey: newIdempotencyKey('automation-arm-v3'),
+    });
   },
 
   automationRunsV3(size = 20): Promise<ApiResult<AutomationRunPageV3>> {

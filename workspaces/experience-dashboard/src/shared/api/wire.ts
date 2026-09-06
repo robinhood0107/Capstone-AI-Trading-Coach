@@ -500,8 +500,27 @@ export type AutomationBlockerV3 =
 
 export type MarketHistoryStatus = 'EMPTY' | 'PARTIAL' | 'READY' | 'CATCHUP_REQUIRED';
 
-export interface AutomationStatusV3 extends Omit<AutomationStatusV2, 'contractId' | 'blockers'> {
+/** v3 정책은 v2 에 ATR 추적손절·보유기간·모델매도 네 값을 더한다. */
+export interface AutomationPolicyV3 extends Omit<AutomationPolicyV2, 'contractId'> {
+  contractId: 'automation-policy.v3';
+  atrPeriod: number;
+  /** 1000 = 1.0배. 100 단위로만 저장된다. */
+  atrMultiplierMilli: number;
+  maxHoldingSessions: number;
+  modelSellEnabled: boolean;
+}
+
+export interface PutAutomationPolicyV3Request extends PutAutomationPolicyV2Request {
+  atrPeriod: number;
+  atrMultiplierMilli: number;
+  maxHoldingSessions: number;
+  modelSellEnabled: boolean;
+}
+
+export interface AutomationStatusV3
+  extends Omit<AutomationStatusV2, 'contractId' | 'blockers' | 'policy'> {
   contractId: 'automation-status.v3';
+  policy: AutomationPolicyV3 | null;
   blockers: AutomationBlockerV3[];
   /** AI 판단 단계를 켜 두었나. 꺼져 있으면 실행에 판단 근거가 남지 않는다. */
   aiJudgementEnabled: boolean;

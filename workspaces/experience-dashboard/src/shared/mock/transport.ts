@@ -351,6 +351,59 @@ export async function mockTransport<T>(
 
   /* ─────────────────────────────── 자동운용 v3 ─────────────────────────── */
 
+  if (target === '/api/v3/automation/policy' && method === 'PUT') {
+    const request = body as
+      | {
+          expectedVersion?: number;
+          capitalLimitKrw?: number;
+          stopLossBps?: number;
+          takeProfitBps?: number;
+          atrPeriod?: number;
+          atrMultiplierMilli?: number;
+          maxHoldingSessions?: number;
+          modelSellEnabled?: boolean;
+        }
+      | undefined;
+    if (request?.expectedVersion !== fixtures.automationPolicyV3.version) {
+      return fail('CONFLICT', '정책 버전이 맞지 않습니다.', requestId);
+    }
+    // v2 가 채우지 못하는 네 값이 전부 와야 한다. 하나라도 빠지면 v3 정책이 아니다.
+    if (
+      typeof request.atrPeriod !== 'number' ||
+      typeof request.atrMultiplierMilli !== 'number' ||
+      typeof request.maxHoldingSessions !== 'number' ||
+      typeof request.modelSellEnabled !== 'boolean'
+    ) {
+      return fail('VALIDATION_ERROR', 'v3 정책은 ATR·보유기간·모델매도 값을 모두 요구합니다.', requestId);
+    }
+    const next = {
+      ...fixtures.automationPolicyV3,
+      capitalLimitKrw: request.capitalLimitKrw ?? fixtures.automationPolicyV3.capitalLimitKrw,
+      stopLossBps: request.stopLossBps ?? fixtures.automationPolicyV3.stopLossBps,
+      takeProfitBps: request.takeProfitBps ?? fixtures.automationPolicyV3.takeProfitBps,
+      atrPeriod: request.atrPeriod,
+      atrMultiplierMilli: request.atrMultiplierMilli,
+      maxHoldingSessions: request.maxHoldingSessions,
+      modelSellEnabled: request.modelSellEnabled,
+      version: fixtures.automationPolicyV3.version + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    fixtures.replaceAutomationPolicyV3(next);
+    return ok(next, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v3/automation/arm' && method === 'POST') {
+    const request = body as { expectedPolicyVersion?: number } | undefined;
+    if (request?.expectedPolicyVersion !== fixtures.automationPolicyV3.version) {
+      return fail('CONFLICT', '정책 버전이 맞지 않습니다.', requestId);
+    }
+    const status = killSwitchAware(fixtures.automationStatus);
+    if (!status.canArm) {
+      return fail('CONFLICT', '지금은 자동운용을 시작할 수 없습니다.', requestId);
+    }
+    return ok(fixtures.automationStatusV3(status), requestId) as ApiEnvelope<T>;
+  }
+
   if (target === '/api/v3/automation/status' && method === 'GET') {
     return ok(fixtures.automationStatusV3(killSwitchAware(fixtures.automationStatus)), requestId) as ApiEnvelope<T>;
   }
@@ -415,9 +468,16 @@ export async function mockTransport<T>(
     const leaf = rest[1] ?? '';
     if (leaf === 'balances') return ok(fixtures.mockBalance, requestId) as ApiEnvelope<T>;
     if (leaf === 'buyable') {
-      const symbol = new URLSearchParams(path.split('?')[1] ?? '').get('symbol') ?? '';
+      // 서버는 symbol 과 price 를 둘 다 요구한다(BrokerageRequestParser.kt:95). mock 이 하나만
+      // 받아 주면 live 에서만 깨지는 차이가 생긴다.
+      const query = new URLSearchParams(path.split('?')[1] ?? '');
+      const symbol = query.get('symbol') ?? '';
+      const priceParam = Number(query.get('price'));
       if (!symbol) return fail('VALIDATION_ERROR', '종목을 지정해야 합니다.', requestId);
-      const price = fixtures.mockPriceFor(symbol);
+      if (!Number.isInteger(priceParam) || priceParam < 1) {
+        return fail('VALIDATION_ERROR', '예상 단가를 지정해야 합니다.', requestId);
+      }
+      const price = priceParam;
       const cash = fixtures.mockBalance.cashKrw;
       return ok(
         {

@@ -11,7 +11,7 @@ import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
 import { Button } from '@/shared/ui/Button';
 import type {
-  AutomationPolicyV2,
+  AutomationPolicyV3,
   AutomationPositionV3,
   AutomationRunV3,
   AutomationStatusV3,
@@ -30,6 +30,7 @@ import {
   presetFor,
   slotBudgetKrw,
   validateAutomationPolicy,
+  validateAutomationPolicyV3,
 } from './policy';
 import { AutomationPersistenceNote } from './AutomationPersistenceNote';
 
@@ -134,6 +135,11 @@ interface Draft {
   capitalLimitKrw: string;
   stopLossPercent: string;
   takeProfitPercent: string;
+  /* ── v3 정책이 더 요구하는 값 ── */
+  atrPeriod: string;
+  atrMultiplier: string;
+  maxHoldingSessions: string;
+  modelSellEnabled: boolean;
 }
 
 /**
@@ -156,11 +162,21 @@ async function load(): Promise<ViewState<AutomationData>> {
   );
 }
 
-function draftFrom(policy: AutomationPolicyV2 | null): Draft {
+/**
+ * 저장된 정책에서 편집 초안을 만든다.
+ *
+ * 아직 v3 정책이 없으면(= v2 로만 저장돼 있으면) ATR 값들이 비어 있다. 기본값은 계약이
+ * 허용하는 범위 안에서 흔히 쓰는 값으로 채워 두되, 사용자가 저장을 눌러야 실제로 반영된다.
+ */
+function draftFrom(policy: AutomationPolicyV3 | null): Draft {
   return {
     capitalLimitKrw: policy ? String(policy.capitalLimitKrw) : '',
     stopLossPercent: String(bpsToPercent(policy?.stopLossBps ?? 500)),
     takeProfitPercent: String(bpsToPercent(policy?.takeProfitBps ?? 1000)),
+    atrPeriod: String(policy?.atrPeriod ?? 14),
+    atrMultiplier: String((policy?.atrMultiplierMilli ?? 2500) / 1000),
+    maxHoldingSessions: String(policy?.maxHoldingSessions ?? 60),
+    modelSellEnabled: policy?.modelSellEnabled ?? true,
   };
 }
 
@@ -169,6 +185,15 @@ function numericDraft(draft: Draft) {
     capitalLimitKrw: draft.capitalLimitKrw.trim() === '' ? 0 : Number(draft.capitalLimitKrw),
     stopLossBps: percentToBps(Number(draft.stopLossPercent)),
     takeProfitBps: percentToBps(Number(draft.takeProfitPercent)),
+  };
+}
+
+function numericDraftV3(draft: Draft) {
+  return {
+    atrPeriod: Number(draft.atrPeriod),
+    // 0.1배 단위를 정수 milli 로. 부동소수 반올림을 남기지 않는다.
+    atrMultiplierMilli: Math.round(Number(draft.atrMultiplier) * 1000),
+    maxHoldingSessions: Number(draft.maxHoldingSessions),
   };
 }
 
@@ -192,14 +217,19 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const values = numericDraft(draft);
-  const errors = validateAutomationPolicy(values);
+  const valuesV3 = numericDraftV3(draft);
+  const errors = [...validateAutomationPolicy(values), ...validateAutomationPolicyV3(valuesV3)];
   const selectedPreset = presetFor(values.stopLossBps, values.takeProfitBps);
   const saved = data.status.policy;
   const dirty =
     !saved ||
     saved.capitalLimitKrw !== values.capitalLimitKrw ||
     saved.stopLossBps !== values.stopLossBps ||
-    saved.takeProfitBps !== values.takeProfitBps;
+    saved.takeProfitBps !== values.takeProfitBps ||
+    saved.atrPeriod !== valuesV3.atrPeriod ||
+    saved.atrMultiplierMilli !== valuesV3.atrMultiplierMilli ||
+    saved.maxHoldingSessions !== valuesV3.maxHoldingSessions ||
+    saved.modelSellEnabled !== draft.modelSellEnabled;
   const locked = data.status.controlState !== 'DISARMED';
 
   function applyPreset(stopLossBps: number, takeProfitBps: number) {
@@ -216,9 +246,11 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
     setBusy(true);
     setNotice(null);
     try {
-      await api.putAutomationPolicyV2({
+      await api.putAutomationPolicyV3({
         expectedVersion: saved?.version ?? 0,
         ...values,
+        ...valuesV3,
+        modelSellEnabled: draft.modelSellEnabled,
       });
       setNotice({ tone: 'ok', text: '자동운용 정책을 새 버전으로 저장했습니다.' });
       onReload();
@@ -252,7 +284,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
     setBusy(true);
     setNotice(null);
     try {
-      await api.armAutomationV2({
+      await api.armAutomationV3({
         accountId: data.status.accountId,
         policyId: saved.policyId,
         expectedPolicyVersion: saved.version,
@@ -391,6 +423,60 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
             disabled={locked}
             onChange={(value) => setDraft((current) => ({ ...current, takeProfitPercent: value }))}
           />
+        </div>
+
+        <div className="mt-6 border-t border-line pt-5">
+          <p className="text-eyebrow font-semibold uppercase text-faint">청산 기준</p>
+          <p className="mt-1.5 text-[12px] leading-5 text-muted">
+            손절·익절 외에 두 가지가 더 청산을 만든다 — 최고가에서 ATR 배수만큼 밀리면 추적손절,
+            보유 기간을 넘기면 기간 초과. 모델 매도 신호를 따를지도 여기서 정한다.
+          </p>
+          <div className="mt-4 grid gap-5 md:grid-cols-3">
+            <PolicyInput
+              label="ATR 기간"
+              value={draft.atrPeriod}
+              min={5}
+              max={100}
+              step={1}
+              suffix="세션"
+              disabled={locked}
+              onChange={(value) => setDraft((current) => ({ ...current, atrPeriod: value }))}
+            />
+            <PolicyInput
+              label="ATR 배수"
+              value={draft.atrMultiplier}
+              min={1}
+              max={10}
+              step={0.1}
+              suffix="배"
+              disabled={locked}
+              onChange={(value) => setDraft((current) => ({ ...current, atrMultiplier: value }))}
+            />
+            <PolicyInput
+              label="최대 보유 기간"
+              value={draft.maxHoldingSessions}
+              min={0}
+              max={1260}
+              step={1}
+              suffix="세션"
+              disabled={locked}
+              onChange={(value) =>
+                setDraft((current) => ({ ...current, maxHoldingSessions: value }))
+              }
+            />
+          </div>
+          <label className="mt-4 flex items-center gap-2 text-[13px] text-ink">
+            <input
+              type="checkbox"
+              className="ink-checkbox"
+              checked={draft.modelSellEnabled}
+              disabled={locked}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, modelSellEnabled: event.target.checked }))
+              }
+            />
+            모델이 매도 신호를 내면 따른다
+          </label>
         </div>
 
         <div className="mt-5 grid gap-4 border-t border-line pt-5 md:grid-cols-2">

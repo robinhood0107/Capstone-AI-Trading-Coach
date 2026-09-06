@@ -194,6 +194,84 @@ test('Kill Switch 는 켤 수는 있어도 끌 수는 없다', async () => {
   assert.ok(status.data!.blockers.includes('KILL_SWITCH_ACTIVE'));
 });
 
+test('주문은 평가 → 제출 → 취소까지 한 바퀴 돈다', async () => {
+  const accountId = fixtures.mockBalance.accountId;
+
+  const buyable = await mockTransport<{ buyableQuantity: number }>(
+    `/api/v1/brokerage/mock/accounts/${accountId}/buyable?symbol=005930`,
+    'GET',
+    undefined,
+    REQUEST_ID,
+  );
+  assert.equal(buyable.success, true);
+  assert.ok(buyable.data!.buyableQuantity > 0);
+
+  const evaluated = await mockTransport<{ decisionId: string; riskDecision: { decision: string } }>(
+    '/api/v1/decisions/evaluate-order',
+    'POST',
+    { orderIntent: { symbol: '005930', quantity: 1, estimatedAmount: 71_000 } },
+    REQUEST_ID,
+  );
+  assert.equal(evaluated.success, true);
+  assert.equal(evaluated.data!.riskDecision.decision, 'ALLOW');
+
+  const submitted = await mockTransport<{ orderId: string; status: string }>(
+    '/api/v1/brokerage/mock/orders',
+    'POST',
+    {
+      decisionId: evaluated.data!.decisionId,
+      orderIntent: { symbol: '005930', quantity: 1 },
+      userAcknowledgement: { warningsAccepted: true },
+    },
+    REQUEST_ID,
+  );
+  assert.equal(submitted.success, true);
+  assert.equal(submitted.data!.status, 'SUBMITTED');
+
+  const orderId = submitted.data!.orderId;
+  const cancelled = await mockTransport<{ status: string }>(
+    `/api/v1/brokerage/orders/${orderId}/cancel`,
+    'POST',
+    undefined,
+    REQUEST_ID,
+  );
+  assert.equal(cancelled.data!.status, 'CANCELLED');
+
+  // 두 번째 취소는 막힌다 — 이미 취소된 주문이다.
+  const again = await mockTransport(
+    `/api/v1/brokerage/orders/${orderId}/cancel`,
+    'POST',
+    undefined,
+    REQUEST_ID,
+  );
+  assert.equal(again.success, false);
+  assert.equal(again.error?.code, 'CONFLICT');
+});
+
+test('판정 근거 없는 주문은 받지 않는다', async () => {
+  const envelope = await mockTransport(
+    '/api/v1/brokerage/mock/orders',
+    'POST',
+    { orderIntent: { symbol: '005930', quantity: 1 }, userAcknowledgement: { warningsAccepted: true } },
+    REQUEST_ID,
+  );
+  assert.equal(envelope.success, false);
+});
+
+test('한도를 넘는 금액은 BLOCK 으로 판정된다', async () => {
+  const limit =
+    fixtures.principle.rules.find((rule) => rule.ruleId === 'max_single_order_amount')?.threshold ?? 0;
+  assert.ok(limit > 0);
+  const evaluated = await mockTransport<{ riskDecision: { decision: string; canSubmitOrder: boolean } }>(
+    '/api/v1/decisions/evaluate-order',
+    'POST',
+    { orderIntent: { symbol: '005930', quantity: 1, estimatedAmount: limit * 2 } },
+    REQUEST_ID,
+  );
+  assert.equal(evaluated.data!.riskDecision.decision, 'BLOCK');
+  assert.equal(evaluated.data!.riskDecision.canSubmitOrder, false);
+});
+
 test('제목이나 preset 이 빠지면 만들지 않는다', async () => {
   const noTitle = await mockTransport('/api/v1/principles', 'POST', { presetId: 'balanced' }, REQUEST_ID);
   assert.equal(noTitle.success, false);

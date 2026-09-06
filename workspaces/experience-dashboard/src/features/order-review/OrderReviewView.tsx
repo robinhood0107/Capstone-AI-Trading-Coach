@@ -10,6 +10,7 @@ import { useResource } from '@/shared/lib/useResource';
 import { ID_PATTERN } from '@/shared/api/endpoints';
 import { formatKstDateTime, formatRatio } from '@/shared/lib/format';
 import { loadRiskResultView, type ReasonDisposition } from './viewModel';
+import { OrderTicket } from './OrderTicket';
 import type { DecisionRiskItemProjection } from '@/shared/api/wire';
 import { api } from '@/shared/api/endpoints';
 import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentity';
@@ -53,6 +54,8 @@ export function OrderReviewView() {
 
   return (
     <div className="space-y-6">
+      <OrderTicket />
+
       <AsyncBoundary state={recent.state} onRetry={recent.reload}>
         {(items) =>
           items.length > 0 ? (

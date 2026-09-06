@@ -1,5 +1,11 @@
 import { ApiFailure, type ApiEnvelope } from '@/shared/api/envelope';
-import type { AutomationPresetId, KillSwitchState, RagV2HistoryDetail } from '@/shared/api/wire';
+import type {
+  AutomationPresetId,
+  KillSwitchState,
+  OrderDetail,
+  OrderFill,
+  RagV2HistoryDetail,
+} from '@/shared/api/wire';
 import * as fixtures from './fixtures';
 
 /**
@@ -46,6 +52,20 @@ let mockConsentGranted = false;
  * 탭이 살아 있는 동안만 유지되는 값이다.
  */
 const mockRagHistory: RagV2HistoryDetail[] = [];
+
+/** v1 통제 상태에만 있는 값. 주문 계약이 요구한다. */
+const MOCK_STRATEGY_ID = 'strategy_00000000';
+
+/** mock 이 낸 주문. 탭이 살아 있는 동안만 유지된다. */
+const mockOrders = new Map<string, OrderDetail>();
+const mockFills: OrderFill[] = [];
+
+let mockOrderCounter = 0;
+
+function mockOrderId(): string {
+  mockOrderCounter += 1;
+  return `ord_${mockOrderCounter.toString(16).padStart(32, '0')}`;
+}
 
 /** mock 의 Kill Switch 상태. 탭이 살아 있는 동안만 유지된다. */
 let mockKillSwitch: KillSwitchState = {
@@ -324,6 +344,23 @@ export async function mockTransport<T>(
     return ok(fixtures.automationPositions, requestId) as ApiEnvelope<T>;
   }
 
+  if (target === '/api/v1/automation/status' && method === 'GET') {
+    return ok(
+      {
+        contractId: 'automation-control.v1' as const,
+        controlState: fixtures.automationStatus.controlState,
+        projectionState: fixtures.automationStatus.projectionState,
+        version: fixtures.automationStatus.controlVersion,
+        brokerageMode: fixtures.automationStatus.brokerageMode,
+        principleId: fixtures.principle.principleId,
+        strategyId: MOCK_STRATEGY_ID,
+        killSwitchActive: mockKillSwitch.active,
+        certificationStatus: fixtures.automationStatus.certificationStatus,
+      },
+      requestId,
+    ) as ApiEnvelope<T>;
+  }
+
   if (target === '/api/v1/automation/disarm' && method === 'POST') {
     fixtures.automationStatus.controlState = 'DISARMED';
     fixtures.automationStatus.projectionState = 'DISARMED';
@@ -342,6 +379,87 @@ export async function mockTransport<T>(
       },
       requestId,
     ) as ApiEnvelope<T>;
+  }
+
+  /* ─────────────────────────────── 증권 · 주문 ─────────────────────────── */
+
+  if (target.startsWith('/api/v1/brokerage/mock/accounts/')) {
+    const rest = target.slice('/api/v1/brokerage/mock/accounts/'.length).split('/');
+    const accountId = rest[0] ?? '';
+    const leaf = rest[1] ?? '';
+    if (leaf === 'balances') return ok(fixtures.mockBalance, requestId) as ApiEnvelope<T>;
+    if (leaf === 'buyable') {
+      const symbol = new URLSearchParams(path.split('?')[1] ?? '').get('symbol') ?? '';
+      if (!symbol) return fail('VALIDATION_ERROR', '종목을 지정해야 합니다.', requestId);
+      const price = fixtures.mockPriceFor(symbol);
+      const cash = fixtures.mockBalance.cashKrw;
+      return ok(
+        {
+          accountId,
+          brokerageMode: 'KIS_MOCK' as const,
+          symbol,
+          cashKrw: cash,
+          estimatedPrice: price,
+          buyableAmountKrw: cash,
+          buyableQuantity: Math.floor(cash / price),
+          observedAt: new Date().toISOString(),
+          sourceVersion: fixtures.mockBalance.sourceVersion,
+        },
+        requestId,
+      ) as ApiEnvelope<T>;
+    }
+    if (leaf === 'fills') {
+      return ok(
+        { items: mockFills, nextCursor: null },
+        requestId,
+      ) as ApiEnvelope<T>;
+    }
+    return fail('NOT_FOUND', `mock 경로가 정의되지 않았습니다: ${target}`, requestId);
+  }
+
+  if (target === '/api/v1/brokerage/mock/orders' && method === 'POST') {
+    const request = body as
+      | { decisionId?: string; orderIntent?: { symbol?: string; quantity?: number } }
+      | undefined;
+    if (!request?.decisionId || !ID_PATTERN.decisionId.test(request.decisionId)) {
+      return fail('VALIDATION_ERROR', '판정 근거가 필요합니다.', requestId);
+    }
+    const order = {
+      orderId: mockOrderId(),
+      accountId: fixtures.mockBalance.accountId,
+      brokerageMode: 'KIS_MOCK' as const,
+      status: 'SUBMITTED' as const,
+      submittedAt: new Date().toISOString(),
+    };
+    mockOrders.set(order.orderId, { ...order, decisionId: request.decisionId });
+    return ok(order, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target.startsWith('/api/v1/brokerage/orders/')) {
+    const rest = target.slice('/api/v1/brokerage/orders/'.length).split('/');
+    const orderId = rest[0] ?? '';
+    const existing = mockOrders.get(orderId);
+    if (!existing) return fail('NOT_FOUND', '해당 주문을 찾을 수 없습니다.', requestId);
+    if (rest[1] === 'cancel') {
+      if (existing.status !== 'SUBMITTED' && existing.status !== 'ACCEPTED') {
+        return fail('CONFLICT', '이 주문은 더 이상 취소할 수 없습니다.', requestId);
+      }
+      const cancelled = { ...existing, status: 'CANCELLED' as const };
+      mockOrders.set(orderId, cancelled);
+      return ok(cancelled, requestId) as ApiEnvelope<T>;
+    }
+    return ok(existing, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v1/decisions/evaluate-order' && method === 'POST') {
+    const request = body as
+      | { orderIntent?: { symbol?: string; quantity?: number; estimatedAmount?: number } }
+      | undefined;
+    const intent = request?.orderIntent;
+    if (!intent?.symbol || !intent.quantity || !intent.estimatedAmount) {
+      return fail('VALIDATION_ERROR', '주문 내용이 온전하지 않습니다.', requestId);
+    }
+    return ok(fixtures.evaluateOrder(intent.symbol, intent.estimatedAmount), requestId) as ApiEnvelope<T>;
   }
 
   if (target === '/api/v1/risk/kill-switch') {
@@ -444,6 +562,19 @@ export async function mockTransport<T>(
 
   if (target.startsWith('/api/v1/dashboard/risk-results/')) {
     const decisionId = target.split('/').pop() ?? '';
+
+    // `latest` 와 `recent` 는 판정 ID 가 아니라 별도 경로다. 그냥 두면 ID 형식 검사에 걸려
+    // VALIDATION_ERROR 가 나고, 주문 검토의 "최근 주문 판정" 패널이 통째로 뜨지 않는다.
+    if (decisionId === 'recent' || decisionId === 'latest') {
+      const items = fixtures.recentRiskResults();
+      if (decisionId === 'latest') {
+        const first = items[0];
+        if (!first) return fail('NOT_FOUND', '최근 판정이 없습니다.', requestId);
+        return ok(first, requestId) as ApiEnvelope<T>;
+      }
+      return ok({ items }, requestId) as ApiEnvelope<T>;
+    }
+
     if (!ID_PATTERN.decisionId.test(decisionId)) {
       return fail('VALIDATION_ERROR', '판정 ID 형식이 올바르지 않습니다.', requestId);
     }

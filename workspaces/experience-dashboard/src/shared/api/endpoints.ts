@@ -23,6 +23,11 @@ import type {
   RecentRiskResultList,
   LoginResponse,
   MockBalance,
+  MockBuyable,
+  MockOrderRequest,
+  MockOrderSubmitted,
+  OrderDetail,
+  OrderFillPage,
   PortfolioRisk,
   PrincipleCreateRequest,
   PrincipleCurrent,
@@ -68,6 +73,48 @@ export const api = {
 
   riskPortfolio(): Promise<ApiResult<PortfolioRisk>> {
     return apiFetch<PortfolioRisk>('/api/v1/risk/portfolio');
+  },
+
+  /** 이 종목을 지금 얼마나 살 수 있나. 주문 관문 G3 이 쓴다. */
+  mockBuyable(accountId: string, symbol: string): Promise<ApiResult<MockBuyable>> {
+    return apiFetch<MockBuyable>(
+      `/api/v1/brokerage/mock/accounts/${encodeURIComponent(accountId)}/buyable?symbol=${encodeURIComponent(symbol)}`,
+    );
+  },
+
+  mockFills(accountId: string, from: string, to: string): Promise<ApiResult<OrderFillPage>> {
+    return apiFetch<OrderFillPage>(
+      `/api/v1/brokerage/mock/accounts/${encodeURIComponent(accountId)}/fills` +
+        `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    );
+  },
+
+  order(orderId: string): Promise<ApiResult<OrderDetail>> {
+    return apiFetch<OrderDetail>(`/api/v1/brokerage/orders/${encodeURIComponent(orderId)}`);
+  },
+
+  /**
+   * 모의계좌에 주문을 낸다.
+   *
+   * **멱등키는 호출부가 준다.** 여기서 만들면 사용자가 수량을 고쳐 다시 제출할 때 같은 키가
+   * 재사용돼 두 번째 주문이 조용히 무시된다. 확인 화면에 들어갈 때마다 새로 발급한다.
+   */
+  submitMockOrder(
+    request: MockOrderRequest,
+    idempotencyKey: string,
+  ): Promise<ApiResult<MockOrderSubmitted>> {
+    return apiFetch<MockOrderSubmitted>('/api/v1/brokerage/mock/orders', {
+      method: 'POST',
+      body: request,
+      idempotencyKey,
+    });
+  },
+
+  cancelOrder(orderId: string, idempotencyKey: string): Promise<ApiResult<OrderDetail>> {
+    return apiFetch<OrderDetail>(
+      `/api/v1/brokerage/orders/${encodeURIComponent(orderId)}/cancel`,
+      { method: 'POST', idempotencyKey },
+    );
   },
 
   mockBalance(accountId: string): Promise<ApiResult<MockBalance>> {
@@ -119,6 +166,16 @@ export const api = {
       body: request,
       idempotencyKey: newIdempotencyKey('automation-arm-v2'),
     });
+  },
+
+  /**
+   * v1 자동운용 통제 상태.
+   *
+   * v2 status 를 두고도 이걸 쓰는 이유는 하나다 — **`strategyId` 는 여기에만 있다.**
+   * 주문을 낼 때 계약이 요구하는데 v2/v3 status 에는 그 필드가 없다(계약 확인함).
+   */
+  automationControlV1(): Promise<ApiResult<AutomationControlV1>> {
+    return apiFetch<AutomationControlV1>('/api/v1/automation/status');
   },
 
   disarmAutomation(expectedVersion: number): Promise<ApiResult<AutomationControlV1>> {

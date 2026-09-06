@@ -45,7 +45,7 @@ export function LightAct2() {
 
           <section className={cx('stack__i')}><div className={cx('stack__in')}>
             <span className={cx('stack__n')}>03</span>
-            <div><h2>원칙을 얹으면 결과가 바뀌는가</h2><p className={cx('stack__d')}>같은 모델 신호 위에서 원칙 개입 정도만 다르게 두고 13개 거래세션(2026.08.18–09.03)에 적용했습니다.</p></div>
+            <div><h2>원칙을 얹으면 결과가 바뀌는가</h2><p className={cx('stack__d')}>같은 모델 신호 위에서 원칙 개입 정도만 다르게 두고, 같은 기간의 실제 거래 세션에 그대로 적용했습니다.</p></div>
             <div>
               <div className={cx('scroller')}><table>
                 <thead><tr><th scope="col">항목</th><th scope="col">Baseline</th><th scope="col">Guide</th><th scope="col" className={cx('col-s')}>Strict</th></tr></thead>
@@ -57,7 +57,7 @@ export function LightAct2() {
                   <tr><td>차단한 원칙 위반</td><td>—</td><td>—</td><td className={cx('col-s')}>2건</td></tr>
                 </tbody>
               </table></div>
-              <p className={cx('after')}>13세션은 짧은 구간이라 절대적인 성과 우열을 단정하지 않습니다. 다만 원칙을 얹었을 때 MDD와 CVaR이 함께 개선되는 방향으로 움직였고, Strict에서 RiskEngine이 실제로 2건을 걸러냈다는 사실은 이번 실행에서 확인됐습니다.</p>
+              <p className={cx('after')}>짧은 구간의 성과 우열은 단정하지 않습니다. 확인된 것은 둘입니다 — 원칙을 얹었을 때 MDD와 CVaR이 함께 개선되는 방향으로 움직였고, Strict에서 RiskEngine이 실제로 2건을 걸러냈습니다. 모델 자체의 검증 범위는 21년 walk-forward가 따로 맡습니다.</p>
             </div>
           </div></section>
 

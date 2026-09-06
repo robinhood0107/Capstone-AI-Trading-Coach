@@ -34,7 +34,7 @@ export function LightAct1() {
           </div>
 
           <div className={cx('t-stats')}>
-            <div className={cx('t-st')}><span className={cx('t-st__n')}>2</span><span className={cx('t-st__k', 'lab')}>BLOCKED VIOLATIONS</span><p className={cx('t-st__d')}>13세션 Strict 실행에서 RiskEngine이 실제로 걸러낸 원칙 위반 주문.</p></div>
+            <div className={cx('t-st')}><span className={cx('t-st__n')}>2</span><span className={cx('t-st__k', 'lab')}>BLOCKED VIOLATIONS</span><p className={cx('t-st__d')}>실계좌와 같은 경로로 돌린 운용에서 RiskEngine이 실제로 걸러낸 원칙 위반 주문.</p></div>
             <div className={cx('t-st')}><span className={cx('t-st__n')}>2</span><span className={cx('t-st__k', 'lab')}>AI POWERS</span><p className={cx('t-st__d')}>재순위 조정과 매수 거부. 수량 관련 필드는 판단 결과에 존재하지 않습니다.</p></div>
             <div className={cx('t-st')}><span className={cx('t-st__n')}>21</span><span className={cx('t-st__k', 'lab')}>YEARS WALK-FORWARD</span><p className={cx('t-st__d')}>2005–2026 구간을 걸어가며 검증한 백테스트 범위.</p></div>
           </div>

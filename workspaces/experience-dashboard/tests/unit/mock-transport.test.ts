@@ -3,6 +3,7 @@ import test from 'node:test';
 import { mockBareTransport, mockTransport } from '../../src/shared/mock/transport.ts';
 import * as fixtures from '../../src/shared/mock/fixtures.ts';
 import type {
+  AutomationStatusV2,
   PrincipleCurrent,
   PrincipleHistoryData,
   RagV2HistoryPage,
@@ -142,6 +143,55 @@ test('RAG 피드백은 helpful 이 boolean 일 때만 받는다', async () => {
     REQUEST_ID,
   );
   assert.equal(missing.success, false);
+});
+
+test('Kill Switch 는 켤 수는 있어도 끌 수는 없다', async () => {
+  const before = await mockTransport<{ active: boolean }>(
+    '/api/v1/risk/kill-switch',
+    'GET',
+    undefined,
+    REQUEST_ID,
+  );
+  assert.equal(before.data!.active, false);
+
+  const stopped = await mockTransport<{ active: boolean; reasonClass: string }>(
+    '/api/v1/risk/kill-switch',
+    'POST',
+    { active: true },
+    REQUEST_ID,
+  );
+  assert.equal(stopped.success, true);
+  assert.equal(stopped.data!.active, true);
+  assert.equal(stopped.data!.reasonClass, 'USER_MANUAL_STOP');
+
+  // 해제는 ADMIN 만 된다(KillSwitchTransitionPolicy.kt:22). mock 은 USER 다.
+  const resume = await mockTransport(
+    '/api/v1/risk/kill-switch',
+    'POST',
+    { active: false },
+    REQUEST_ID,
+  );
+  assert.equal(resume.success, false);
+  assert.equal(resume.error?.code, 'FORBIDDEN');
+
+  const after = await mockTransport<{ active: boolean }>(
+    '/api/v1/risk/kill-switch',
+    'GET',
+    undefined,
+    REQUEST_ID,
+  );
+  assert.equal(after.data!.active, true, '거부된 해제가 상태를 바꾸면 안 된다');
+
+  // 같은 사실이 화면 두 곳에서 어긋나면 안 된다. 자동운용 상태도 같은 값을 봐야 한다.
+  const status = await mockTransport<AutomationStatusV2>(
+    '/api/v2/automation/status',
+    'GET',
+    undefined,
+    REQUEST_ID,
+  );
+  assert.equal(status.data!.killSwitchActive, true);
+  assert.equal(status.data!.canArm, false, 'Kill Switch 가 켜져 있으면 시작할 수 없다');
+  assert.ok(status.data!.blockers.includes('KILL_SWITCH_ACTIVE'));
 });
 
 test('제목이나 preset 이 빠지면 만들지 않는다', async () => {

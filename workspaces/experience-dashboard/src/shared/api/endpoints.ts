@@ -84,6 +84,21 @@ export const api = {
     return apiFetch<KillSwitchState>('/api/v1/risk/kill-switch');
   },
 
+  /**
+   * Kill Switch 를 켜거나 끈다.
+   *
+   * **정지는 USER 도 할 수 있지만 해제는 ADMIN 만 된다**
+   * (`KillSwitchTransitionPolicy.kt:22`). USER 가 해제를 시도하면 403 이 온다 — 화면에서
+   * 먼저 막되, 서버가 최종 판단이라는 사실은 바뀌지 않는다.
+   */
+  changeKillSwitch(active: boolean, reason?: string): Promise<ApiResult<KillSwitchState>> {
+    return apiFetch<KillSwitchState>('/api/v1/risk/kill-switch', {
+      method: 'POST',
+      body: reason ? { active, reason } : { active },
+      idempotencyKey: newIdempotencyKey('kill-switch'),
+    });
+  },
+
   automationStatusV2(): Promise<ApiResult<AutomationStatusV2>> {
     return apiFetch<AutomationStatusV2>('/api/v2/automation/status');
   },

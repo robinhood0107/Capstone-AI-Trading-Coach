@@ -1,21 +1,17 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { api } from '@/shared/api/endpoints';
-import { apiMode } from '@/shared/api/client';
-import { session, useSession } from '@/shared/api/session';
+import { session } from '@/shared/api/session';
 import { toErrorState } from '@/shared/lib/useResource';
 
-export function LoginGate({ children }: { children: ReactNode }) {
-  const { authenticated } = useSession();
-
-  // mock 모드는 서버가 없으므로 로그인 화면을 건너뛴다.
-  if (apiMode() === 'mock' || authenticated) return <>{children}</>;
-
-  return <LoginForm />;
-}
-
-function LoginForm() {
+/**
+ * 로그인 카드.
+ *
+ * 소개 페이지의 마지막 화면으로 뜬다. 로그인 여부 판단은 바깥(`AppShell`)이 하고, 여기서는
+ * 폼만 그린다.
+ */
+export function LoginCard() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
@@ -37,7 +33,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="mx-auto max-w-[420px] py-12 sm:py-20">
+    <div className="mx-auto w-full max-w-[420px]">
       <div className="rounded-panel bg-panel px-7 py-8 shadow-card">
         <span
           aria-hidden

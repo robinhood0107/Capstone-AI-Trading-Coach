@@ -14,6 +14,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ko" suppressHydrationWarning>
       <head>
+        {/* 소개를 거치지 않은 직접 접속에도 같은 로컬 글꼴을 제공한다. */}
+        {/* eslint-disable-next-line @next/next/no-css-tags */}
+        <link rel="stylesheet" href="/ui-fonts.css" />
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
       </head>
       <body className="min-h-screen bg-surface font-sans antialiased">

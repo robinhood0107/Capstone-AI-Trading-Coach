@@ -73,6 +73,8 @@ TEAM_A_REQUIRED_OPERATIONS = frozenset(
         ("POST", "/api/v1/rag/answers/{answerId}/feedback"),
         ("POST", "/api/v1/principles"),
         ("POST", "/api/v1/decisions/evaluate-order"),
+        ("GET", "/api/v2/risk/kill-switch"),
+        ("POST", "/api/v2/risk/kill-switch"),
         ("GET", "/api/v1/risk/kill-switch"),
         ("POST", "/api/v1/risk/kill-switch"),
         ("GET", "/api/v1/automation/status"),
@@ -255,7 +257,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             for method in path_item
             if method in methods
         ]
-        self.assertEqual(76, len(operations))
+        self.assertEqual(78, len(operations))
         operation_ids = [operation_id for _, _, operation_id in operations]
         self.assertTrue(
             all(
@@ -263,7 +265,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
                 for operation_id in operation_ids
             )
         )
-        self.assertEqual(76, len(set(operation_ids)))
+        self.assertEqual(78, len(set(operation_ids)))
         expected = {(method, path) for method, path, _ in operations}
 
         matrix = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX.md").read_text(
@@ -296,12 +298,19 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertEqual(69, len(base_rows))
         self.assertEqual(6, len(v3_rows))
         self.assertEqual(1, len(v4_rows))
-        rows = [*base_rows, *v3_rows, *v4_rows]
-        self.assertEqual(76, len(rows))
-        self.assertEqual(
-            list(range(1, 77)), sorted(int(number) for number, _, _, _ in rows)
+        owner_matrix = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX_V5_ADDENDUM.md").read_text(encoding="utf-8")
+        owner_rows = re.findall(
+            r"^\|\s*(\d+)\s*\|\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s*"
+            r"\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|",
+            owner_matrix, flags=re.MULTILINE,
         )
-        self.assertEqual(76, len({(method, path) for _, method, path, _ in rows}))
+        self.assertEqual(2, len(owner_rows))
+        rows = [*base_rows, *v3_rows, *v4_rows, *owner_rows]
+        self.assertEqual(78, len(rows))
+        self.assertEqual(
+            list(range(1, 79)), sorted(int(number) for number, _, _, _ in rows)
+        )
+        self.assertEqual(78, len({(method, path) for _, method, path, _ in rows}))
         self.assertEqual(expected, {(method, path) for _, method, path, _ in rows})
 
         observed_by_classification = {

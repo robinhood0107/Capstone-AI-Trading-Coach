@@ -193,6 +193,67 @@ class RagV2VertexResponseValidator {
                     .build(),
             ).build()
 
+    /** 생성된 설명은 인용 메타데이터 결함만으로 버리지 않는다. 민감정보·크기 검증은 다시 수행한다. */
+    fun validateForDisplay(
+        rawResponseText: String,
+        evidence: List<RagV2VertexEvidence>,
+    ): StrongLlmValidatedAnswer {
+        try {
+            return validate(rawResponseText, evidence)
+        } catch (error: RagV2VertexResponseValidationException) {
+            val recoverable =
+                setOf(
+                    "STRONG_LLM_VALIDATION_EVIDENCE_BINDING",
+                    "STRONG_LLM_VALIDATION_EVIDENCE_SPAN",
+                    "STRONG_LLM_VALIDATION_NUMERIC_BINDING",
+                    "STRONG_LLM_VALIDATION_NUMERIC_SPAN",
+                    "STRONG_LLM_VALIDATION_SENTENCE_CITATIONS",
+                    "STRONG_LLM_VALIDATION_REASONING_UNGROUNDED",
+                )
+            if (error.message !in recoverable) throw error
+            val root = mapper.readTree(rawResponseText)
+            val answer = root.path("answer").stringValue()
+            val evidenceById = validateEvidence(evidence)
+            val originalBasis = StrongLlmAnswerBasis.valueOf(root.path("basis").stringValue())
+            val sentences =
+                root
+                    .path("sentences")
+                    .values()
+                    .asSequence()
+                    .map { node ->
+                        try {
+                            val sentence = validateSentence(node, originalBasis, evidenceById)
+                            (node as Any) to sentence.citationIds.isNotEmpty()
+                        } catch (invalid: RagV2VertexResponseValidationException) {
+                            if (invalid.message !in recoverable) throw invalid
+                            mapOf(
+                                "text" to node.path("text").stringValue(),
+                                "citationIds" to emptyList<String>(),
+                                "evidenceSpans" to emptyList<String>(),
+                                "numericSpans" to emptyList<String>(),
+                            ) to false
+                        }
+                    }.toList()
+            val recoveredBasis =
+                when {
+                    sentences.none { it.second } -> "MODEL_KNOWLEDGE"
+                    sentences.all { it.second } -> "EVIDENCE"
+                    else -> "EVIDENCE_WITH_REASONING"
+                }
+            val recovered =
+                mapper.writeValueAsString(
+                    mapOf(
+                        "basis" to recoveredBasis,
+                        "answer" to answer,
+                        "sentences" to sentences.map { it.first },
+                        "warnings" to listOf("LOW_RELEVANCE"),
+                    ),
+                )
+            // 회복된 설명을 검증된 인용처럼 표시하지 않으며 safety/JSON/원문 불변 검증도 생략하지 않는다.
+            return validate(recovered, evidence)
+        }
+    }
+
     fun validate(
         rawResponseText: String,
         evidence: List<RagV2VertexEvidence>,
@@ -512,7 +573,7 @@ class RagV2VertexResponseValidator {
         // 한국어 조사(예: `5%를`) 앞에서도 단위까지 한 token으로 잡되 영문 식별자 내부 숫자는 거부한다.
         val NUMERIC_TOKEN =
             Regex(
-                "(?<![\\p{L}\\p{N}])[-+]?(?:\\d{1,3}(?:,\\d{3})*|\\d+)(?:\\.\\d+)?(?:%|bp|bps|USD|KRW|원|달러|년|개월|일|주)?(?=$|[^\\p{L}\\p{N}]|[을를이가은는의와과로에])",
+                "(?<![\\p{L}\\p{N}])[-+]?(?:\\d{1,3}(?:,\\d{3})*|\\d+)(?:\\.\\d+)?(?:%|bp|bps|USD|KRW|원|달러|년|개월|월|일|주)?(?=$|[^\\p{L}\\p{N}]|[가-힣])",
             )
         val SENSITIVE =
             Regex(

@@ -463,6 +463,7 @@ class OpenApiConfig {
         }
 
     @Bean
+    @org.springframework.core.annotation.Order(100)
     fun p1AutomationV3Overlay(): OpenApiCustomizer =
         OpenApiCustomizer { openApi ->
             val resource = ClassPathResource(P1_AUTOMATION_V3_OPENAPI_RESOURCE)
@@ -472,9 +473,27 @@ class OpenApiConfig {
         }
 
     @Bean
+    @org.springframework.core.annotation.Order(110)
     fun p1ReturnSignalV3Overlay(): OpenApiCustomizer =
         OpenApiCustomizer { openApi ->
             val resource = ClassPathResource(P1_RETURN_SIGNAL_V3_OPENAPI_RESOURCE)
+            val overlay = resource.inputStream.use { Json31.mapper().readValue(it, OpenAPI::class.java) }
+            overlay.paths.forEach { (path, item) -> openApi.paths.addPathItem(path, item) }
+            overlay.components.schemas.forEach { (name, schema) -> openApi.components.addSchemas(name, schema) }
+        }
+
+    @Bean
+    @org.springframework.core.annotation.Order(120)
+    fun ownerRidgeOverlay(): OpenApiCustomizer =
+        OpenApiCustomizer { openApi ->
+            // Swagger의 Map null 생략 때문에 오류 예제의 data:null이 사라지지 않게 한다.
+            Json31.mapper().setDefaultPropertyInclusion(
+                com.fasterxml.jackson.annotation.JsonInclude.Value.construct(
+                    com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL,
+                    com.fasterxml.jackson.annotation.JsonInclude.Include.ALWAYS,
+                ),
+            )
+            val resource = ClassPathResource("contracts/p1-owner-ridge.v1.openapi.json")
             val overlay = resource.inputStream.use { Json31.mapper().readValue(it, OpenAPI::class.java) }
             overlay.paths.forEach { (path, item) -> openApi.paths.addPathItem(path, item) }
             overlay.components.schemas.forEach { (name, schema) -> openApi.components.addSchemas(name, schema) }
@@ -749,7 +768,6 @@ class OpenApiConfig {
                 linkedMapOf(
                     "success" to false,
                     "requestId" to "req_20260723_example",
-                    "data" to null,
                     "warnings" to emptyList<Any>(),
                     "error" to
                         linkedMapOf(

@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { api } from '@/shared/api/endpoints';
 import { apiMode } from '@/shared/api/client';
 import { session, useSession } from '@/shared/api/session';
@@ -13,10 +14,15 @@ import type { AutomationStatusV2 } from '@/shared/api/wire';
 export function StatusBar() {
   const { authenticated, user } = useSession();
   const mock = apiMode() === 'mock';
-  const { state } = useResource(async () => {
+  const { state, reload } = useResource(async () => {
     const { data } = await api.automationStatusV2();
     return ready<AutomationStatusV2>(data, data.policy?.updatedAt ?? null);
   }, [authenticated], mock || authenticated);
+
+  useEffect(() => {
+    window.addEventListener('capstone-automation-changed', reload);
+    return () => window.removeEventListener('capstone-automation-changed', reload);
+  }, [reload]);
 
   const automation = state.kind === 'ready' || state.kind === 'stale' ? state.data : null;
 

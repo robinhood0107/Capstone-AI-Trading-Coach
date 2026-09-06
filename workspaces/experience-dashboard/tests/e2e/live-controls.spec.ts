@@ -13,7 +13,7 @@ const passwordFile = process.env.P1_USER_PASSWORD_FILE;
  * 이 단정이 지키려는 것은 "우리 코드가 서버 오류를 만들지 않는다"이므로, 문서화된 rate
  * limiter 가 낸 503 은 세지 않는다. 그 밖의 5xx 는 그대로 실패로 남는다.
  */
-const KIS_METERED = /\/api\/v1\/brokerage\/mock\/accounts\/[^/]+\/(balances|buyable|fills)/;
+
 
 test('live Compose control screens keep their buttons visible', async ({ page }) => {
   test.skip(!passwordFile, 'P1_USER_PASSWORD_FILE must point to the local 0600 demo password file.');
@@ -23,7 +23,8 @@ test('live Compose control screens keep their buttons visible', async ({ page })
     const { pathname } = new URL(response.url());
     if (!pathname.startsWith('/api/')) return;
     if (response.status() < 500) return;
-    if (KIS_METERED.test(pathname)) return;
+    // 유량 제한도 이번 E2E의 연결 성공으로 세지 않는다.
+    // 서버 오류는 실제 원인을 확인하고, 호출 간격은 테스트 흐름에서 조절한다.
     failed.push(`${response.status()} ${pathname}`);
   });
 

@@ -267,6 +267,9 @@ class P1V3AutomationContractTest(unittest.TestCase):
     ) -> None:
         root_path = ROOT / "contracts/openapi/openapi.json"
         root = json.loads(root_path.read_text(encoding="utf-8"))
+        from contracts.generate_owner_ridge_contracts import project_previous
+
+        root = project_previous(root)
         additive = json.loads(ADDITIVE_OPENAPI_PATH.read_text(encoding="utf-8"))
         root["paths"].pop("/api/v3/signals/{symbol}")
         for name in (

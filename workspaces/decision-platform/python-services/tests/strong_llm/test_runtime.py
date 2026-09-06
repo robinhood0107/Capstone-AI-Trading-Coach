@@ -896,6 +896,7 @@ def test_google_grounding_rebuilds_mismatched_duplicate_sentence_contract() -> N
             "evidenceSpans": [{"citationId": "cit_1", "quote": "2026년 8월 15일 최신 보도자료"}],
             "numericSpans": [
                 {"value": "2026년", "citationIds": ["cit_1"]},
+                {"value": "8월", "citationIds": ["cit_1"]},
                 {"value": "15일", "citationIds": ["cit_1"]},
             ],
         }

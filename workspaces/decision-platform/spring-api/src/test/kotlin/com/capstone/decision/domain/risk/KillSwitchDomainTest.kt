@@ -15,9 +15,9 @@ class KillSwitchDomainTest {
         val off = KillSwitchState(false, KillSwitchReasonClass.INITIAL_STATE, 1, changedAt)
         val on = KillSwitchState(true, KillSwitchReasonClass.USER_MANUAL_STOP, 2, changedAt)
 
-        assertApplied(policy.decide(off, true, KillSwitchActorRole.USER), KillSwitchReasonClass.USER_MANUAL_STOP)
+        assertSame(KillSwitchTransition.ResumeRequiresAdmin, policy.decide(off, true, KillSwitchActorRole.USER))
         assertApplied(policy.decide(off, true, KillSwitchActorRole.ADMIN), KillSwitchReasonClass.OPERATOR_MANUAL_STOP)
-        assertSame(KillSwitchTransition.NoOp, policy.decide(on, true, KillSwitchActorRole.USER))
+        assertSame(KillSwitchTransition.ResumeRequiresAdmin, policy.decide(on, true, KillSwitchActorRole.USER))
         assertSame(KillSwitchTransition.NoOp, policy.decide(on, true, KillSwitchActorRole.ADMIN))
         assertSame(KillSwitchTransition.ResumeRequiresAdmin, policy.decide(on, false, KillSwitchActorRole.USER))
         assertApplied(policy.decide(on, false, KillSwitchActorRole.ADMIN), KillSwitchReasonClass.ADMIN_RESUME)

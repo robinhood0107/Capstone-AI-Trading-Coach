@@ -11,7 +11,7 @@ sealed interface KillSwitchTransition {
     data object ResumeRequiresAdmin : KillSwitchTransition
 }
 
-// 안전 정지는 USER에게도 열되 재가동 요청은 현재 값과 무관하게 ADMIN만 허용한다.
+// 전역 중지는 정지·해제 모두 ADMIN만 허용한다. 개인 중지는 별도 owner 권위가 소유한다.
 class KillSwitchTransitionPolicy {
     fun decide(
         current: KillSwitchState,
@@ -19,7 +19,7 @@ class KillSwitchTransitionPolicy {
         actorRole: KillSwitchActorRole,
         rawReason: String? = null,
     ): KillSwitchTransition {
-        if (!requestedActive && actorRole != KillSwitchActorRole.ADMIN) {
+        if (actorRole != KillSwitchActorRole.ADMIN) {
             return KillSwitchTransition.ResumeRequiresAdmin
         }
         if (current.active == requestedActive) {

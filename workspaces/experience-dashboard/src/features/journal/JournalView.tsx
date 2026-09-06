@@ -124,7 +124,7 @@ export function JournalView() {
             rows={10}
             onChange={(event) => setDraft((current) => ({ ...current, content: event.target.value }))}
             placeholder="판단 근거, 배운 개념, 다음에 확인할 내용을 적으세요."
-            className="w-full resize-y rounded-control border border-line bg-panel px-4 py-3 text-[14px] leading-6 text-ink"
+            className="w-full resize-y rounded-card border border-line bg-panel px-4 py-3 text-[14px] leading-6 text-ink"
           />
           <input
             aria-label="학습일지 태그"

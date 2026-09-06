@@ -8,7 +8,7 @@ import {
   type TeamAOperationId,
   type TeamARequests,
   type TeamAResult,
-} from '../../src/shared/api/generated/p1-team-a-client.v4';
+} from '../../src/shared/api/generated/p1-team-a-client.v5';
 
 const USER_ID = 'usr_demo_user';
 const PAPER_ACCOUNT_ID = 'acct_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -69,9 +69,9 @@ test('owner backend satisfies the exact Team A 45-operation live Spring catalog'
   const client = new TeamAClient({ baseUrl: dashboardUrl });
   const tracker = new AcceptanceTracker();
   let userToken: string | null = null;
-  let adminToken: string | null = null;
   let initialKillSwitchActive: boolean | null = null;
   let automationVersion: number | null = null;
+  let mutationStarted = false;
 
   async function call<K extends TeamAOperationId>(
     operationId: K,
@@ -90,6 +90,12 @@ test('owner backend satisfies the exact Team A 45-operation live Spring catalog'
     userToken = loggedIn.accessToken;
     client.setAccessToken(userToken);
 
+    const preflight = await client.call('getAutomationStatusV3', {});
+    const safeState = data<Components['AutomationStatusV3']>(preflight.body, 'getAutomationStatusV3');
+    if (safeState.controlState !== 'DISARMED' || safeState.openPositionCount !== 0) {
+      throw new Error('Acceptance mutations require an isolated, disarmed account without open positions.');
+    }
+    mutationStarted = true;
     await call('health', {});
     const presets = await call('listPrinciplePresets', {});
     const presetData = data<Components['PrinciplePresetListData']>(presets.body, 'listPrinciplePresets');
@@ -114,9 +120,9 @@ test('owner backend satisfies the exact Team A 45-operation live Spring catalog'
     const currentPrinciple = data<Components['PrincipleCurrent']>(updated.body, 'updatePrinciple');
 
     await call('getPortfolio', {});
-    const initialKill = await call('getKillSwitch', {});
-    initialKillSwitchActive = data<Components['S24KillSwitchState']>(initialKill.body, 'getKillSwitch').active;
-    await call('changeKillSwitch', {
+    const initialKill = await call('readOwnerKillSwitch', {});
+    initialKillSwitchActive = data<Components['OwnerKillSwitchDto']>(initialKill.body, 'readOwnerKillSwitch').active;
+    await call('changeOwnerKillSwitch', {
       body: { active: true, reason: 'Team A acceptance safety check' },
       idempotencyKey: key('killon'),
     });
@@ -125,9 +131,8 @@ test('owner backend satisfies the exact Team A 45-operation live Spring catalog'
     const adminLogin = await call('login', { body: { username: 'demo-admin', password: adminPassword } });
     const admin = data<Components['LoginResponse']>(adminLogin.body, 'login');
     if (typeof admin.accessToken !== 'string') throw new Error('admin login omitted its access token.');
-    adminToken = admin.accessToken;
-    client.setAccessToken(adminToken);
-    await call('changeKillSwitch', {
+    client.setAccessToken(userToken);
+    await call('changeOwnerKillSwitch', {
       body: { active: false },
       idempotencyKey: key('killoff'),
     });
@@ -327,7 +332,7 @@ test('owner backend satisfies the exact Team A 45-operation live Spring catalog'
     await call('listJournals', { query: { size: 20 } });
     tracker.verify();
   } finally {
-    if (userToken) {
+    if (mutationStarted && userToken) {
       client.setAccessToken(userToken);
       const status = await client.call('getAutomationStatus', {});
       const control = data<Components['AutomationControl']>(status.body, 'getAutomationStatus');
@@ -345,9 +350,9 @@ test('owner backend satisfies the exact Team A 45-operation live Spring catalog'
         },
       });
     }
-    if (initialKillSwitchActive !== null && userToken && adminToken) {
-      client.setAccessToken(initialKillSwitchActive ? userToken : adminToken);
-      await client.call('changeKillSwitch', {
+    if (mutationStarted && initialKillSwitchActive !== null && userToken) {
+      client.setAccessToken(userToken);
+      await client.call('changeOwnerKillSwitch', {
         body: { active: initialKillSwitchActive, ...(initialKillSwitchActive ? { reason: 'Team A acceptance state restore' } : {}) },
         idempotencyKey: key('finallykill'),
       });

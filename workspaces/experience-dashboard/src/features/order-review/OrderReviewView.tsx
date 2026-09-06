@@ -118,7 +118,7 @@ export function OrderReviewView() {
                     <Field
                       label="계좌 구분"
                       value={
-                        view.detail.portfolioSource === 'KIS_MOCK' ? 'KIS 모의투자' : '내부 페이퍼'
+                        view.detail.portfolioSource === 'KIS_MOCK' ? 'KIS 모의계좌' : '내부 가상원장'
                       }
                     />
                     <Field label="원칙 버전" value={`v${view.detail.principleVersion}`} mono />

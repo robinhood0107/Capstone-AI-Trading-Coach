@@ -1,5 +1,5 @@
 import { ApiFailure, type ApiEnvelope } from '@/shared/api/envelope';
-import type { AutomationPresetId } from '@/shared/api/wire';
+import type { AutomationPresetId, RagV2HistoryDetail } from '@/shared/api/wire';
 import * as fixtures from './fixtures';
 
 /**
@@ -37,6 +37,23 @@ function fail<T>(code: string, message: string, requestId: string): ApiEnvelope<
  * 옮겨 담는다. 값이 fixture라는 사실은 화면이 별도로 표시한다.
  */
 let mockConsentGranted = false;
+
+/**
+ * mock 의 RAG 질문 기록.
+ *
+ * 예전에는 빈 배열을 돌려주고 상세는 언제나 404 였다. 그러면 mock 에서 "최근 질문"이 늘
+ * 비어 있어 삭제도 피드백도 눌러 볼 수가 없다. 물어보면 여기에 쌓고, 지우면 여기서 뺀다 —
+ * 탭이 살아 있는 동안만 유지되는 값이다.
+ */
+const mockRagHistory: RagV2HistoryDetail[] = [];
+
+let mockRagAnswerCounter = 0;
+
+/** 화면이 받아 주는 `rag_` + 32 hex 형태로 만든다. mock 안에서만 쓴다. */
+function mockRagAnswerId(): string {
+  mockRagAnswerCounter += 1;
+  return `rag_${mockRagAnswerCounter.toString(16).padStart(32, '0')}`;
+}
 
 export async function mockBareTransport<T>(
   path: string,
@@ -99,37 +116,76 @@ export async function mockBareTransport<T>(
       throw new ApiFailure({ code: 'RAG_VALIDATION_FAILED', message: '질문을 입력하세요.' }, requestId);
     }
     const answer = fixtures.ragAnswerFor(question);
+    const generationStatus =
+      answer.citations.length > 0 ? 'RETRIEVAL_ONLY' : answer.generationStatus;
+    const citations = answer.citations.map((citation, index) => ({
+      citationId: `cit_${index + 1}`,
+      citationKind: 'PUBLIC_WEB' as const,
+      sourceId: citation.sourceId,
+      title: citation.title,
+      canonicalUrl: citation.canonicalUrl,
+      locator: { section: citation.sectionTitle },
+      chunkRevisionId: `rag_v2_chk_mock_${index + 1}`,
+      sourceRevisionId: `srv_mock_${index + 1}`,
+      generationId: 'rgr_mock',
+    }));
+
+    // 답변이 실제로 만들어졌을 때만 기록에 쌓는다. 차단된 질문은 남기지 않는다.
+    //
+    // 화면(`loadRecentQuestions`)은 `rag_` + 32 hex 형태의 id 만 받아 준다. 픽스처의 v1 id
+    // (`rag_demo_answer_000001`)는 그 형태가 아니라, v2 기록에는 형태를 맞춘 id 를 따로 만든다.
+    const v2AnswerId = answer.citations.length > 0 ? mockRagAnswerId() : null;
+    if (v2AnswerId) {
+      const now = new Date();
+      mockRagHistory.unshift({
+        answerId: v2AnswerId,
+        question,
+        answer: null,
+        generationStatus,
+        citations,
+        createdAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + 30 * 24 * 60 * 60_000).toISOString(),
+      });
+    }
+
     return {
       requestId,
-      answerId: answer.citations.length > 0 ? answer.answerId : null,
-      generationStatus: answer.citations.length > 0 ? 'RETRIEVAL_ONLY' : answer.generationStatus,
+      answerId: v2AnswerId,
+      generationStatus,
       answer: null,
       citationCoverage: answer.citations.length > 0 ? 1 : 0,
       retrievalFailure: answer.citations.length === 0 && !answer.generationStatus.startsWith('BLOCKED'),
       guardrailFlags: answer.guardrailFlags,
-      citations: answer.citations.map((citation, index) => ({
-        citationId: `cit_${index + 1}`,
-        citationKind: 'PUBLIC_WEB' as const,
-        sourceId: citation.sourceId,
-        title: citation.title,
-        canonicalUrl: citation.canonicalUrl,
-        locator: { section: citation.sectionTitle },
-        chunkRevisionId: `rag_v2_chk_mock_${index + 1}`,
-        sourceRevisionId: `srv_mock_${index + 1}`,
-        generationId: 'rgr_mock',
-      })),
+      citations,
     } as T;
   }
 
   if (target === '/api/v2/rag/history') {
-    return { items: [], nextCursor: null } as T;
+    return {
+      items: mockRagHistory.map((entry) => ({
+        answerId: entry.answerId,
+        createdAt: entry.createdAt,
+        expiresAt: entry.expiresAt,
+        generationStatus: entry.generationStatus,
+      })),
+      nextCursor: null,
+    } as T;
   }
 
   if (target.startsWith('/api/v2/rag/history/')) {
-    throw new ApiFailure(
-      { code: 'NOT_FOUND', message: '해당 질문 기록을 찾을 수 없습니다.' },
-      requestId,
-    );
+    const answerId = target.slice('/api/v2/rag/history/'.length);
+    const index = mockRagHistory.findIndex((entry) => entry.answerId === answerId);
+    if (index < 0) {
+      throw new ApiFailure(
+        { code: 'NOT_FOUND', message: '해당 질문 기록을 찾을 수 없습니다.' },
+        requestId,
+      );
+    }
+    if (method === 'DELETE') {
+      mockRagHistory.splice(index, 1);
+      return undefined as T;
+    }
+    return mockRagHistory[index] as T;
   }
 
   throw new ApiFailure(
@@ -409,6 +465,18 @@ export async function mockTransport<T>(
     fixtures.lastCitations.answerId = answer.answerId;
     fixtures.lastCitations.sourceIds = answer.citations.map((citation) => citation.sourceId);
     return ok(answer, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target.startsWith('/api/v1/rag/answers/') && target.endsWith('/feedback')) {
+    const answerId = target.slice('/api/v1/rag/answers/'.length, -'/feedback'.length);
+    if (!ID_PATTERN.answerId.test(answerId)) {
+      return fail('VALIDATION_ERROR', '답변 ID 형식이 올바르지 않습니다.', requestId);
+    }
+    const request = body as { helpful?: unknown } | undefined;
+    if (typeof request?.helpful !== 'boolean') {
+      return fail('VALIDATION_ERROR', 'helpful 은 true 또는 false 여야 합니다.', requestId);
+    }
+    return ok({ answerId, helpful: request.helpful }, requestId) as ApiEnvelope<T>;
   }
 
   return fail('NOT_FOUND', `mock 경로가 정의되지 않았습니다: ${target}`, requestId);

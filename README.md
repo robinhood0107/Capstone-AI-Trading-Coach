@@ -673,6 +673,8 @@ PYTHONPATH=src uv run python -m return_engine --help
 4. 개발 진행 상황, 임시 blocker와 테스트 영수증은 README 대신 별도 검증 문서에 기록합니다.
 5. 비밀값 예시나 개인 로컬 경로는 README에 추가하지 않습니다.
 
+<sub>시연용 DB로 띄우려면 `P1_DEMO_STACK=true ./capstone up --mock` — [설명](docs/시연용_DB.md).</sub>
+
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
 <!-- P1_FULL_APP_V3_AUTHORITY_END -->
 

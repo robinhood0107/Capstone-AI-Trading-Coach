@@ -2,6 +2,8 @@ package com.capstone.decision.application.risk
 
 interface KillSwitchQueryPort {
     fun readPublicState(): KillSwitchPublicState
+
+    fun readEffectiveActive(actorUserId: String): Boolean = readPublicState().active
 }
 
 interface KillSwitchGatePort {

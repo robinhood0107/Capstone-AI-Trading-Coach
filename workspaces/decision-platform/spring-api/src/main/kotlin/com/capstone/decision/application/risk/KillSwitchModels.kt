@@ -46,7 +46,7 @@ data class KillSwitchMutationResult(
     val invalidatedDecisionCount: Int,
 )
 
-class KillSwitchForbiddenException : RuntimeException("Kill Switch resume requires a current ADMIN.")
+class KillSwitchForbiddenException : RuntimeException("Global Kill Switch control requires a current ADMIN.")
 
 class KillSwitchUnauthorizedException : RuntimeException("Kill Switch actor is no longer authenticated.")
 

@@ -131,7 +131,8 @@ class S7AsyncMigrationIntegrationTest {
                     }
                     statement.executeQuery("select count(*) from async_event_registry").use { rows ->
                         assertTrue(rows.next())
-                        assertEquals(12, rows.getInt(1))
+                        // V129가 S3 주문/체결 event 다섯 개를 등록한다. 기존 12개도 유지한다.
+                        assertEquals(17, rows.getInt(1))
                     }
                     statement
                         .executeQuery(

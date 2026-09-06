@@ -8,7 +8,8 @@ import { Numeric } from '@/shared/ui/Numeric';
 import { useResource, toErrorState } from '@/shared/lib/useResource';
 import { formatKstDateTime, formatRatio } from '@/shared/lib/format';
 import { safeExternalUrl } from '@/shared/api/session';
-import type { RagSourceResponse } from '@/shared/api/wire';
+import { api } from '@/shared/api/endpoints';
+import type { RagSourceResponse, RagV2HistoryDetail } from '@/shared/api/wire';
 import type { ViewState } from '@/shared/lib/viewState';
 import {
   EXTERNAL_DISCLOSURE,
@@ -141,14 +142,14 @@ export function RagGuideView() {
             }}
             rows={3}
             placeholder="예: 금 ETF의 롤오버 위험은 무엇인가요?"
-            className="w-full resize-y rounded-control border border-line bg-panel px-4 py-3 text-[14px] leading-6 text-ink placeholder:text-faint"
+            className="w-full resize-y rounded-card border border-line bg-panel px-4 py-3 text-[14px] leading-6 text-ink placeholder:text-faint"
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               {(['CONCISE', 'DETAILED'] as const).map((mode) => (
                 <Button
                   key={mode}
-                  variant="secondary"
+                  variant={answerMode === mode ? 'primary' : 'secondary'}
                   onClick={() => setAnswerMode(mode)}
                   className={`border px-3 py-1.5 text-[13px] ${
                     answerMode === mode
@@ -162,7 +163,7 @@ export function RagGuideView() {
               <span className="tnum font-mono text-[11px] text-faint">{question.length}/1000</span>
             </div>
             <Button
-                            onClick={() => void submit(question)}
+              onClick={() => void submit(question)}
               disabled={pending || consentGranted !== true || question.trim().length === 0}
               variant="primary"
             >
@@ -204,7 +205,7 @@ export function RagGuideView() {
                   <p className="whitespace-pre-line text-[14px] leading-7 text-ink">{view.answer}</p>
                 ) : (
                   <p className="text-[13px] leading-6 text-muted">
-                    설명 문장이 생성되지 않았습니다. 아래 출처를 직접 확인하세요.
+                    {view.statusDetail} 응답 상태와 확인 가능한 자료를 아래에 남겼습니다. 잠시 후 다시 질문할 수 있습니다.
                   </p>
                 )}
               </article>
@@ -262,17 +263,7 @@ export function RagGuideView() {
             <Panel title="최근 질문" hint="내 계정에 저장된 질문과 답변을 다시 확인합니다.">
               <div className="divide-y divide-line/60">
                 {items.map((item) => (
-                  <details key={item.answerId} className="py-3 first:pt-0 last:pb-0">
-                    <summary className="cursor-pointer text-[13px] font-medium text-ink">
-                      {item.question}
-                      <span className="ml-2 text-[11px] font-normal text-faint">
-                        {formatKstDateTime(item.createdAt) ?? '시각 미상'}
-                      </span>
-                    </summary>
-                    <p className="mt-3 whitespace-pre-line border-l-2 border-line pl-4 text-[13px] leading-6 text-muted">
-                      {item.answer ?? '이 기록에는 생성된 설명이 없습니다.'}
-                    </p>
-                  </details>
+                  <HistoryEntry key={item.answerId} item={item} onChanged={history.reload} />
                 ))}
               </div>
             </Panel>
@@ -284,6 +275,125 @@ export function RagGuideView() {
         {(cards) => <FinanceLibrary cards={cards} />}
       </AsyncBoundary>
     </div>
+  );
+}
+
+/**
+ * 저장된 질문 한 건.
+ *
+ * 도움이 됐는지 남기는 것과 기록을 지우는 것 둘 다 쓰기다. `useResource` 를 쓰지 않고
+ * 직접 상태를 든다(기존 쓰기들과 같은 방식). **자동으로 다시 보내지 않는다** — 실패는
+ * 그 자리에 적고 사용자가 다시 누르게 한다.
+ */
+function HistoryEntry({ item, onChanged }: { item: RagV2HistoryDetail; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState<boolean | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function sendFeedback(helpful: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.ragFeedback(item.answerId, helpful);
+      setSent(helpful);
+    } catch (cause) {
+      const state = toErrorState<never>(cause);
+      setError(state.kind === 'error' ? state.message : '평가를 남기지 못했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.ragV2DeleteHistory(item.answerId);
+      onChanged();
+    } catch (cause) {
+      const state = toErrorState<never>(cause);
+      setError(state.kind === 'error' ? state.message : '기록을 지우지 못했습니다.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <details className="py-3 first:pt-0 last:pb-0">
+      <summary className="cursor-pointer text-[13px] font-medium text-ink">
+        {item.question}
+        <span className="ml-2 text-[11px] font-normal text-faint">
+          {formatKstDateTime(item.createdAt) ?? '시각 미상'}
+        </span>
+      </summary>
+      <p className="mt-3 whitespace-pre-line border-l-2 border-line pl-4 text-[13px] leading-6 text-muted">
+        {item.answer ?? '이 기록에는 생성된 설명이 없습니다.'}
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 pl-4">
+        {sent === null ? (
+          <>
+            <span className="text-[12px] text-faint">도움이 됐나요?</span>
+            <Button
+              disabled={busy}
+              onClick={() => void sendFeedback(true)}
+              className="rounded-full border border-line px-3 py-1 text-[12px] text-muted hover:border-navy hover:text-navy"
+            >
+              도움 됨
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={() => void sendFeedback(false)}
+              className="rounded-full border border-line px-3 py-1 text-[12px] text-muted hover:border-navy hover:text-navy"
+            >
+              아니오
+            </Button>
+          </>
+        ) : (
+          <span className="text-[12px] text-muted">
+            {sent ? '도움이 됐다고 남겼습니다.' : '도움이 되지 않았다고 남겼습니다.'}
+          </span>
+        )}
+
+        <span aria-hidden className="mx-1 h-4 w-px bg-line" />
+
+        {confirming ? (
+          <>
+            <span className="text-[12px] text-block">지우면 되돌릴 수 없습니다.</span>
+            <Button
+              disabled={busy}
+              onClick={() => void remove()}
+              className="rounded-full border border-block px-3 py-1 text-[12px] font-semibold text-block"
+            >
+              {busy ? '지우는 중' : '지웁니다'}
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+              className="rounded-full border border-line px-3 py-1 text-[12px] text-muted"
+            >
+              취소
+            </Button>
+          </>
+        ) : (
+          <Button
+            disabled={busy}
+            onClick={() => setConfirming(true)}
+            className="rounded-full border border-line px-3 py-1 text-[12px] text-muted hover:border-block hover:text-block"
+          >
+            기록 지우기
+          </Button>
+        )}
+      </div>
+
+      {error ? (
+        <p className="mt-2 border-l-2 border-block bg-block/5 px-3 py-2 text-[13px] leading-6 text-ink">
+          {error}
+        </p>
+      ) : null}
+    </details>
   );
 }
 

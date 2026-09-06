@@ -4351,3 +4351,47 @@ daily projection fields are `producer,symbol,signal,expectedReturn`; model/marke
 batch metadata. confidence, quantity, account, order and provider raw response are forbidden. current model
 eligibility is `REAL_TEAM_B && modelQuality in {PASS,BELOW_BASELINE} && mockRuntimeEligible=true`; this is
 technical mock eligibility and not a performance claim.
+
+## 2026-09-07 개인 중지·Ridge current amendment
+
+이 절은 앞선 S2.4 전역 정지 USER 허용 설명을 대체한다. `GET/POST /api/v1/risk/kill-switch`는
+모두 ADMIN 전용이다. `GET/POST /api/v2/risk/kill-switch`는 인증된 본인만 제어하고
+`active,globalActive,effectiveActive,reasonClass,changedAt`을 반환한다. `active`는 개인 상태,
+`effectiveActive`는 개인/전역 OR다. POST의 body는 `active`와 선택적 `reason`이며
+`X-Idempotency-Key`가 필수다. 다른 userId·scope는 받지 않는다. 해제는 재무장이 아니다.
+
+root OpenAPI는 exact-78이며 이전 exact-76은 별도 원형으로 보존한다. 현재 Signal v3의
+baseline은 규칙 방향과 Ridge의 `returnForecasts`를 함께 제공한다. 항목은 `horizonSessions`
+1/5/20, `targetSession`, `expectedReturn`, `forecastClose`, `trainSamples`, `trainedThrough`다.
+`estimator=RIDGE`, `sourceSession`, `qualityStatus` 메타데이터를 제공하고 1일
+`predictedReturn`과 일치시킨다. `ruleBaseline.signal`은 기존 규칙이 정한 BUY/HOLD/SELL이고,
+`ruleBaseline.predictedReturn`은 Ridge 1일 추정치다. 규칙 방향으로 수익률을 만들지 않으므로
+규칙 BUY와 음수 추정 수익률이 함께 나올 수 있다. 실제 계산된 0은 0으로 표시한다.
+`modelVersion`은 baseline에서 Ridge 모델 해시이며, 봉인된 Team B 원본 수익률은 덮어쓰지 않는다.
+
+예측값은 소수 비율이다(`0.01 = 1%`). `sourceSession`의 종가 대비 `targetSession` 종가의
+누적 수익률이며, 기간은 XKRX 거래일 1/5/20일이다. `trainedThrough`는 정답까지 관측한
+학습 종료일이고 `trainSamples`는 해당 기간의 정답이 완성된 학습 행 수다. LSTM은 현재
+1일 `predictedReturn`만 지원한다. 입력 20거래일을 20일 예측으로 표시하지 않는다.
+
+composite는 동일 종목·출처 세션·대상 거래일의 LSTM/Ridge 1일 추정치 평균이다.
+`(lstm.predictedReturn + ruleBaseline.predictedReturn) / 2`를 사용하며 5/20일은 주문에 쓰지 않는다.
+한쪽이 없거나 오래됐거나 유효하지 않으면 단독 모델로 대체하지 않고 `ABSTAIN`과 사유를
+반환한다. 예측값이 없는 상태를 고정 0이나 ±0.55%로 채우지 않는다. 화면에는 1일 결합 비율을 고정 50:50으로 표시한다.
+예측 수익률은 실제 백테스트·계좌 수익률과 구분한다.
+
+자동운용은 기존 `규칙 BUY AND LSTM != SELL`을 유지하고 결합값 내림차순·종목코드 오름차순으로
+후보를 정렬한다. API composite의 방향만으로 주문을 승인하지 않는다. 판단에는 구성 수익률,
+Ridge 모델 해시와 `combinationMethod=EQUAL_WEIGHT_50_50`을 결속한다. 신규 매수 시
+`예상 종가 = 기준 종가 × (1 + 결합 수익률)`,
+`잔여 기대수익 = 예상 종가 / 현재 매수 지정가 - 1 - 0.0035`를 적용한다.
+기존 왕복 비용 35bps를 뺀 값이 0 이하이면 매수 후보에서 제외하며 주문 수량 결정 시 재확인한다.
+기존 청산 우선순위·RiskEngine 수량·횟수/자금 한도·Strong LLM 순위 조정/거부 권한은 유지한다.
+
+Automation v3 상태에는 `appliedPolicyVersion`, `policyRecoverySourceVersion`, `nextRunAt`을
+추가한다. 저장/적용 정책과 이전 저장 정책에서 복원한 청산 기준을 구분한다. 포지션과 legacy
+집계는 선택된 owner/account에 한정하고 replay 계좌를 합산하지 않는다.
+
+RAG 표시 경로는 인용 메타데이터 오류가 있어도 생성된 설명을 보존한다. 복구되지 않은 인용은
+검증된 출처로 표시하지 않고 MODEL_KNOWLEDGE/출처 대조 미완료로 제공한다. strict MCP 검증과
+민감정보·크기·JSON 검증은 유지한다. 실제 생성 실패에는 명확한 상태·안내를 반환한다.

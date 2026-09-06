@@ -86,7 +86,7 @@ class PortfolioRiskQueryUseCase(
             } ?: missingAssembly()
         val gate =
             try {
-                killSwitchQueryPort.readPublicState()
+                killSwitchQueryPort.readEffectiveActive(actorUserId)
             } catch (exception: KillSwitchUnavailableException) {
                 throw exception
             } catch (exception: Exception) {
@@ -131,7 +131,7 @@ class PortfolioRiskQueryUseCase(
                     annualizedVolatility20d = null,
                     hmmRegime = null,
                     hmmRegimeProbability = null,
-                    killSwitchActive = gate.active,
+                    killSwitchActive = gate,
                     dataFreshness =
                         PortfolioRiskFreshness(
                             priceFresh = assembly.latestPrice.freshness(),

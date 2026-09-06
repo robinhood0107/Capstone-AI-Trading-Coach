@@ -272,12 +272,37 @@ export async function mockTransport<T>(
 
   if (target === '/api/v1/principle-presets') return ok(fixtures.presetList, requestId) as ApiEnvelope<T>;
 
-  if (target === '/api/v1/principles') return ok(fixtures.principleList, requestId) as ApiEnvelope<T>;
+  if (target === '/api/v1/principles') {
+    if (method === 'POST') {
+      const request = body as { title?: string; presetId?: string } | undefined;
+      if (!request?.title || !request.presetId) {
+        return fail('VALIDATION_ERROR', '제목과 preset 을 모두 지정해야 합니다.', requestId);
+      }
+      const preset = fixtures.presetList.items.find((item) => item.presetId === request.presetId);
+      if (!preset) return fail('VALIDATION_ERROR', '알 수 없는 preset 입니다.', requestId);
+      return ok(
+        {
+          ...fixtures.principle,
+          title: request.title,
+          presetId: preset.presetId,
+          mode: preset.mode,
+          rules: preset.defaultRules,
+          version: 1,
+        },
+        requestId,
+      ) as ApiEnvelope<T>;
+    }
+    return ok(fixtures.principleList, requestId) as ApiEnvelope<T>;
+  }
 
   if (target.startsWith('/api/v1/principles/')) {
-    const principleId = target.split('/').pop() ?? '';
+    const segments = target.slice('/api/v1/principles/'.length).split('/');
+    const principleId = segments[0] ?? '';
     if (!ID_PATTERN.principleId.test(principleId)) {
       return fail('VALIDATION_ERROR', '원칙 ID 형식이 올바르지 않습니다.', requestId);
+    }
+    if (segments[1] === 'versions') {
+      return ok(fixtures.principleHistory, requestId) as ApiEnvelope<T>;
     }
     if (method === 'PUT') {
       const request = body as { expectedVersion?: number; rules?: unknown } | undefined;

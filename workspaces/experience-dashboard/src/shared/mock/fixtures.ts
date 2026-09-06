@@ -20,6 +20,7 @@ import type {
   PrincipleCurrent,
   PrinciplePreset,
   PrinciplePresetListData,
+  PrincipleHistoryData,
   PrincipleOwnerListData,
   PrincipleRule,
   PrincipleRuleId,
@@ -128,6 +129,51 @@ export const principleList: PrincipleOwnerListData = {
       version: principle.version,
       createdAt: principle.createdAt,
       updatedAt: principle.updatedAt,
+    },
+  ],
+  nextCursor: null,
+};
+
+/**
+ * 저장할 때마다 한 버전씩 쌓인다. 최신이 앞이다.
+ *
+ * `changedFields` 는 그 버전에서 실제로 달라진 것만 담는다 — 화면이 "무엇이 바뀌었는지"를
+ * 지어내지 않고 그대로 보여 준다.
+ */
+export const principleHistory: PrincipleHistoryData = {
+  items: [
+    {
+      principleId: PRINCIPLE_ID,
+      title: principle.title,
+      presetId: principle.presetId,
+      mode: principle.mode,
+      status: 'ACTIVE',
+      version: 3,
+      createdAt: principle.updatedAt,
+      changedFields: ['rules.daily_loss_guard.threshold'],
+      rules: principle.rules,
+    },
+    {
+      principleId: PRINCIPLE_ID,
+      title: principle.title,
+      presetId: 'balanced',
+      mode: 'GUIDE',
+      status: 'ARCHIVED',
+      version: 2,
+      createdAt: '2026-08-11T14:05:00+09:00',
+      changedFields: ['mode', 'rules.max_daily_orders.threshold'],
+      rules: buildRules([0.18, 0.3, 400000, -0.05, -0.12, 5, 0.7, 0.7], 'WARN'),
+    },
+    {
+      principleId: PRINCIPLE_ID,
+      title: principle.title,
+      presetId: 'balanced',
+      mode: 'GUIDE',
+      status: 'ARCHIVED',
+      version: 1,
+      createdAt: principle.createdAt,
+      changedFields: [],
+      rules: buildRules([0.2, 0.3, 500000, -0.05, -0.12, 5, 0.7, 0.7], 'WARN'),
     },
   ],
   nextCursor: null,

@@ -188,6 +188,37 @@ export interface PrincipleUpdateRequest {
   title: string;
 }
 
+/**
+ * POST /api/v1/principles — 원칙을 처음 만들 때.
+ *
+ * `rules` 를 비우면 preset 의 기본값이 그대로 쓰인다. 화면에서 값을 손봤을 때만 채운다.
+ */
+export interface PrincipleCreateRequest {
+  title: string;
+  presetId: PresetId;
+  mode?: PrincipleMode;
+  rules?: PrincipleRule[];
+}
+
+/** GET /api/v1/principles/{principleId}/versions 의 한 항목. 저장할 때마다 하나씩 쌓인다. */
+export interface PrincipleVersion {
+  principleId: string;
+  title: string;
+  presetId: PresetId;
+  mode: PrincipleMode;
+  status: 'ACTIVE' | 'ARCHIVED';
+  version: number;
+  createdAt: string;
+  /** 이 버전에서 바뀐 필드 이름들. 무엇이 달라졌는지 화면에서 그대로 보여 준다. */
+  changedFields: string[];
+  rules: PrincipleRule[];
+}
+
+export interface PrincipleHistoryData {
+  items: PrincipleVersion[];
+  nextCursor: string | null;
+}
+
 /* -------------------------------------------------------------- Decision */
 
 export interface DecisionViolationProjection {

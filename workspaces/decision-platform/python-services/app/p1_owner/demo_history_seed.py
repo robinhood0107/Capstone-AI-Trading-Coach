@@ -135,9 +135,7 @@ def _control(cursor: psycopg.Cursor[Any]) -> dict[str, Any]:
     }
 
 
-def _positions(
-    cursor: psycopg.Cursor[Any], start: date, end: date
-) -> list[dict[str, Any]]:
+def _positions(cursor: psycopg.Cursor[Any], start: date, end: date) -> list[dict[str, Any]]:
     cursor.execute(
         "select entry_session, symbol, entry_filled_quantity, entry_average_fill_price_krw,"
         " status, exit_reason, exit_filled_quantity, exit_average_fill_price_krw,"
@@ -581,9 +579,7 @@ def _insert_journal(
             f"{session.isoformat()} 자동운용 기록",
             body,
             sorted(set(tags)),
-            json.dumps(
-                {"origin": "DEMO_HISTORY", "contractId": "journal.v1"}, ensure_ascii=False
-            ),
+            json.dumps({"origin": "DEMO_HISTORY", "contractId": "journal.v1"}, ensure_ascii=False),
             at,
             at,
             _digest("owner-scope", _USER_ID),
@@ -748,7 +744,9 @@ def purge(*, database_dsn: str) -> dict[str, int]:
                 (f"{_DECISION_PREFIX}%",),
             )
             counts["fills"] = cursor.rowcount
-            cursor.execute("DELETE FROM orders WHERE decision_id LIKE %s", (f"{_DECISION_PREFIX}%",))
+            cursor.execute(
+                "DELETE FROM orders WHERE decision_id LIKE %s", (f"{_DECISION_PREFIX}%",)
+            )
             counts["orders"] = cursor.rowcount
             cursor.execute(
                 "DELETE FROM decision_artifacts WHERE decision_id LIKE %s",

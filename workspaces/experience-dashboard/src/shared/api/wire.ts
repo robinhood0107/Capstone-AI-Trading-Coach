@@ -293,20 +293,89 @@ export interface DecisionProjection {
   riskDecision: RiskDecisionProjection;
 }
 
+/** 판정과 제출이 같은 모양을 쓴다. 두 곳에서 따로 만들면 어긋난다. */
+export interface OrderIntent {
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  orderType: 'MARKET' | 'LIMIT';
+  /** 정수 원화. quantity * estimatedPrice와 정확히 일치해야 한다. */
+  quantity: number;
+  estimatedPrice: number;
+  estimatedAmount: number;
+  timeframe: '1d' | '60m';
+  strategyId: string;
+}
+
 export interface EvaluateOrderRequest {
   principleId: string;
   portfolioSource: PortfolioSource;
-  orderIntent: {
-    symbol: string;
-    side: 'BUY' | 'SELL';
-    orderType: 'MARKET' | 'LIMIT';
-    /** 정수 원화. quantity * estimatedPrice와 정확히 일치해야 한다. */
-    quantity: number;
-    estimatedPrice: number;
-    estimatedAmount: number;
-    timeframe: '1d' | '60m';
-    strategyId: string;
-  };
+  orderIntent: OrderIntent;
+}
+
+/* ------------------------------------------------------------ Brokerage */
+
+/** GET /api/v1/brokerage/mock/accounts/{accountId}/buyable */
+export interface MockBuyable {
+  accountId: string;
+  brokerageMode: 'KIS_MOCK';
+  symbol: string;
+  cashKrw: number;
+  estimatedPrice: number;
+  buyableAmountKrw: number;
+  buyableQuantity: number;
+  observedAt: string;
+  sourceVersion: string;
+}
+
+export type OrderStatus =
+  | 'SUBMITTED'
+  | 'ACCEPTED'
+  | 'PARTIALLY_FILLED'
+  | 'FILLED'
+  | 'CANCEL_REQUESTED'
+  | 'CANCELLED'
+  | 'REJECTED'
+  | 'PENDING_RECONCILIATION';
+
+/** GET /api/v1/brokerage/orders/{orderId} · POST .../cancel */
+export interface OrderDetail {
+  orderId: string;
+  accountId: string;
+  decisionId: string;
+  brokerageMode: PortfolioSource;
+  status: OrderStatus;
+  submittedAt: string;
+}
+
+/** POST /api/v1/brokerage/mock/orders */
+export interface MockOrderSubmitted {
+  orderId: string;
+  accountId: string;
+  brokerageMode: 'KIS_MOCK';
+  status: 'SUBMITTED' | 'ACCEPTED' | 'PENDING_RECONCILIATION';
+  submittedAt: string;
+}
+
+export interface MockOrderRequest {
+  decisionId: string;
+  orderIntent: OrderIntent;
+  /** 화면이 경고를 보여 주고 사용자가 받아들였다는 사실. 서버가 이걸 요구한다. */
+  userAcknowledgement: { warningsAccepted: boolean };
+}
+
+export interface OrderFill {
+  fillId: string;
+  orderId: string;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  quantity: number;
+  price: number;
+  filledAt: string;
+}
+
+export interface OrderFillPage {
+  items: OrderFill[];
+  nextCursor: string | null;
 }
 
 /* ------------------------------------------------------------ Automation */

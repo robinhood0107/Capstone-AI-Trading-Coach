@@ -23,6 +23,50 @@ Owner backend acceptance는 versioned `p1-team-a-acceptance.v2`와 generated cli
 근거가 없으므로 `BLOCKED_INCOMPLETE_RISK_BALANCE` 409가 expected status이며 나머지는 성공 상태다.
 Team A는 같은 exact-38 matrix와 blocker가 보이는 실제 사용자 화면을 통과시켜야 합니다.
 
+## 화면 연결 현황 (갱신)
+
+`Team A 필수` 로 분류된 것 가운데 아래는 화면에 붙었습니다. 새 엔드포인트를 만든 것이 아니라
+이미 있던 것을 부르는 자리를 만든 것입니다.
+
+| 붙은 것 | 화면 |
+|---|---|
+| `POST /principles`, `GET /principles/{id}/versions` | 내 원칙 — 원칙 만들기, 바뀐 기록 |
+| `POST /decisions/evaluate-order` | 주문 검토 — 주문 내기(관문 G4) |
+| `GET /brokerage/mock/accounts/{id}/buyable` | 주문 검토 — 주문 내기(관문 G3) |
+| `POST /brokerage/mock/orders` | 주문 검토 — 확인 뒤 제출(관문 G5) |
+| `GET /brokerage/orders/{id}`, `POST /{id}/cancel` | 주문 검토 — 제출 결과와 취소 |
+| `GET /brokerage/mock/accounts/{id}/balances`, `/fills` | 현황, 주문 검토 |
+| `GET/POST /risk/kill-switch` | 자동운용 — 정지는 USER, 해제는 ADMIN |
+| `GET /system/health` | 설정 — 시스템 상태 |
+| `POST /rag/answers/{id}/feedback`, `DELETE /rag/history/{id}` | 금융 Agent — 답변 평가, 기록 삭제 |
+| `GET /journals`, `POST /journals` 외 | 학습일지 (이미 붙어 있었음) |
+| `/api/v3/automation/{status,policy,arm,runs,runs/{runId},positions}` | 자동운용 — ATR 추적손절·보유기간·AI 판단 근거 |
+
+**아직 안 붙은 것**
+
+- `POST /api/v1/consents` — RAG v2 가 자체 동의 경로(`/api/v2/rag/consents`)를 쓰고 있어 화면에서
+  이 경로가 필요한 자리를 찾지 못했습니다. 필요 없다고 판단되면 분류에서 빼야 합니다.
+- `POST /api/v1/automation/disarm` — 계약 테스트와 e2e 가 이 버튼의 부재를 못박고 있습니다.
+  비상 정지 수단은 Kill Switch 이며 DB 가 그렇게 강제합니다
+  (`V93__p1_automation_pipeline_continuity.sql:128`, `V109__p1_automation_current_session_arm.sql:60`).
+
+**acceptance 가 아직 덮지 못하는 것** — 화면이 쓰는 아래 5개는 컨트롤러 `@Hidden` 때문에
+`contracts/openapi/openapi.json` 에 없고, 따라서 `./capstone team-a acceptance` 대상이 아닙니다.
+동작 자체는 정상이며 Spring 통합테스트가 검증합니다.
+
+| 경로 | 컨트롤러 |
+|---|---|
+| `GET /api/v1/dashboard/model-evaluations/latest` | `DashboardController.kt:53` |
+| `GET /api/v1/dashboard/backtests/latest` | `DashboardController.kt:61` |
+| `GET /api/v1/dashboard/risk-results/latest` | `DashboardController.kt:81` |
+| `GET /api/v1/dashboard/risk-results/recent` | `DashboardController.kt:95` |
+| `GET /api/v1/instruments/display` | `InstrumentDisplayController.kt:30` |
+
+`@Hidden` 을 떼면 OpenAPI 가 바뀌는데, `contracts/openapi/openapi.json` 은 pre-S5 문서 진실
+동결에서 **IMMUTABLE** 입니다(`contracts/verify_pre_s5_doc_truth_freeze.py` 의
+`IMMUTABLE_PRE_S5_FROZEN_PATHS`). 재생성은 그 동결을 먼저 푸는 결정이 필요하므로 이 문서에
+사실만 남기고 변경은 보류합니다.
+
 ## 전체 목록
 
 | No. | Method | Path | 구분 | 사용 주체/설명 |

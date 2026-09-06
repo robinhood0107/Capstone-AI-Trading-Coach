@@ -612,3 +612,12 @@ Gradle build), `python-ci.yml`(Python 3.12 품질 게이트)이다. 아래 시�
   자동 재개 turn에서 재실행한다.
 - 구현과 관련 테스트는 같은 기능 커밋에 둘 수 있지만 Markdown·AGENTS·명세서·규칙 변경은 코드와
   분리한다. 리뷰에서는 PR 본문과 검증 evidence로 구현 범위와 통과한 테스트를 명확히 연결한다.
+
+## 2026-09-07 current owner stop / Ridge amendment
+
+이 절은 전역 USER 정지 허용과 baseline 고정 수익률에 관한 이전 설명을 대체한다.
+전역 Kill Switch 조회·정지·해제는 ADMIN 전용이며 개인 `/api/v2/risk/kill-switch`는
+본인만 대칭 제어한다. 주문 guard는 개인/전역 OR이며 해제만으로 재무장하지 않는다.
+현재 root OpenAPI는 exact-78이다. Ridge 1/5/20일 추정과 LSTM 1일의 고정 50:50은
+`COMPARISON_PENDING`이며 성능 우위 주장을 하지 않는다. 비교 연구, LSTM 다기간,
+실시간 시세·계좌와 UI는 `docs/자동운용_후속_TODO.md`의 후속 작업이다.

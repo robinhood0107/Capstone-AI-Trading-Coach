@@ -17,6 +17,7 @@ import type {
   DecisionAction,
   DecisionProjection,
   InstrumentDisplayCatalog,
+  JournalEntry,
   MockBalance,
   PortfolioRisk,
   PrincipleCurrent,
@@ -32,6 +33,9 @@ import type {
   SignalV3Runtime,
   SystemHealthResponse,
 } from '@/shared/api/wire';
+
+/** N분 전. 픽스처 시각을 실행 시점 기준으로 만든다. */
+const iso = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
 
 const RULE_SHAPE: Record<
   PrincipleRuleId,
@@ -271,6 +275,51 @@ const RISK_RESULT_SYMBOLS: Record<string, string> = {
   dec_demo_block_000001: '132030',
 };
 
+/**
+ * 학습일지.
+ *
+ * 화면 검증용 기록 둘. 판정과 이어 붙인 것 하나, 그냥 메모 하나 — 링크가 있는 경우와 없는
+ * 경우가 화면에서 다르게 보이므로 둘 다 둔다.
+ */
+const NO_LINKS = {
+  decisionId: null,
+  backtestRunId: null,
+  ragAnswerId: null,
+  orderId: null,
+  automationRunId: null,
+};
+
+export const journals: JournalEntry[] = [
+  {
+    contractId: 'journal.v1',
+    journalId: 'jrn_1a2b3c4d5e6f708192a3b4c5d6e7f809',
+    ownerScope: 'OWNER',
+    title: '하루 주문 횟수 상한을 3건으로 낮춘 이유',
+    content:
+      '같은 종목을 하루에 네 번 두드린 날 수수료만 남았습니다. 상한을 3건으로 내리고 나서 판정이 한 번 BLOCK을 냈는데, 그 주문은 안 냈어야 하는 것이 맞았습니다.',
+    tags: ['원칙', '되돌아보기'],
+    links: { ...NO_LINKS, decisionId: 'dec_demo_warn_000001' },
+    version: 2,
+    createdAt: iso(48),
+    updatedAt: iso(20),
+    deletedAt: null,
+  },
+  {
+    contractId: 'journal.v1',
+    journalId: 'jrn_2b3c4d5e6f708192a3b4c5d6e7f8091a',
+    ownerScope: 'OWNER',
+    title: 'MDD와 CVaR을 같이 봐야 하는 이유',
+    content:
+      '수익률만 보면 Guide가 가장 좋아 보였지만 MDD와 CVaR을 함께 놓고 보니 Strict 쪽이 더 견딜 만했습니다. 13세션은 짧아 단정하지는 않습니다.',
+    tags: ['지표'],
+    links: { ...NO_LINKS },
+    version: 1,
+    createdAt: iso(6),
+    updatedAt: iso(6),
+    deletedAt: null,
+  },
+];
+
 /* ─────────────────────────────── 증권 · 주문 ──────────────────────────── */
 
 export const mockBalance: MockBalance = {
@@ -410,7 +459,6 @@ export const automationPositions: AutomationPositionPageV2 = {
 
 /* -------------------------------------------------------------- Decision */
 
-const iso = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
 
 export const dashboardRiskResults: Record<string, DashboardEnvelope<DashboardRiskResultView>> = {
   dec_demo_warn_000001: {

@@ -97,6 +97,14 @@ export const api = {
     );
   },
 
+  /**
+   * 체결 내역. `from`/`to` 는 KST 일 경계이고 **최대 31일**이다
+   * (`BrokerageFillRequestParser.kt:20`, 넘기면 `RANGE_EXCEEDS_31_DAYS`).
+   *
+   * 체결 원장이 없는 계좌는 404 를 돌려준다(`JdbcOrderFillRepository.kt:209` 가
+   * `ACCOUNT_NOT_FOUND` 를 그렇게 옮긴다). 오류가 아니라 **빈 상태**이므로 호출부가 그렇게
+   * 다뤄야 한다.
+   */
   mockFills(accountId: string, from: string, to: string): Promise<ApiResult<OrderFillPage>> {
     return apiFetch<OrderFillPage>(
       `/api/v1/brokerage/mock/accounts/${encodeURIComponent(accountId)}/fills` +

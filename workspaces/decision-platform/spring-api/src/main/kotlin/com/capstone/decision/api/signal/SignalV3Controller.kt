@@ -34,6 +34,10 @@ data class SignalV3RuntimeComponentResponse(
     val reason: String? = null,
     val modelVersion: String? = null,
     val modelReportId: String? = null,
+    val returnForecasts: List<com.capstone.decision.application.signal.RuntimeReturnForecast>? = null,
+    val estimator: String? = null,
+    val sourceSession: java.time.LocalDate? = null,
+    val qualityStatus: String? = null,
 )
 
 @Schema(name = "SignalV3RuntimeComponentsResponse", additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
@@ -131,6 +135,10 @@ private fun RuntimeSignalComponent.toV3Dto(): SignalV3RuntimeComponentResponse =
         reason = reason,
         modelVersion = modelVersion,
         modelReportId = modelReportId,
+        returnForecasts = returnForecasts,
+        estimator = estimator,
+        sourceSession = sourceSession,
+        qualityStatus = qualityStatus,
     )
 
 private fun RuntimeSignalComposite.toV3Dto(): SignalV3RuntimeCompositeResponse =

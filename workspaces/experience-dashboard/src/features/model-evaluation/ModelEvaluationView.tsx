@@ -19,7 +19,7 @@ import { useResource } from '@/shared/lib/useResource';
 import { api, ID_PATTERN } from '@/shared/api/endpoints';
 import { useLatestRun } from '@/shared/api/latestRun';
 import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentity';
-import { formatDecimal, formatKstDateTime, formatRatio, formatSignedRatio } from '@/shared/lib/format';
+import { formatDecimal, formatKrw, formatKstDateTime, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 import { loadModelEvaluationView, loadSignalView, type ModelRow, type SignalSlot } from './viewModel';
 
 const SIGNAL_LABEL: Record<string, string> = { BUY: '매수', SELL: '매도', HOLD: '보류' };
@@ -161,7 +161,7 @@ export function ModelEvaluationView() {
                           <li key={point.at} className="flex justify-between py-2 text-[13px]">
                             <span className="font-mono text-muted">{formatKstDateTime(point.at)}</span>
                             <span className="tnum font-mono text-ink">
-                              {formatDecimal(point.value, 4)}
+                              {formatKrw(point.value)}
                             </span>
                           </li>
                         ))}
@@ -185,13 +185,13 @@ export function ModelEvaluationView() {
             <Panel
               contract="GET /api/v2/signals/{symbol}"
               title={`${bySymbol.get(view.symbol)?.nameKo ?? view.symbol} 현재 신호`}
-              hint="성과 지표와 다른 축입니다. 지금 이 종목에 대해 각 모델이 무엇을 말하는지 봅니다."
+              hint="추정 수익률은 기준 종가 대비입니다. 실제 주문은 현재 가격·비용·위험 한도를 다시 확인합니다."
               actions={
                 view.composite.status === 'AVAILABLE' ? (
-                  <span className="rounded-full border border-line px-3 py-1 text-[13px]">
-                    종합{' '}
-                    <strong className={SIGNAL_TONE[view.composite.signal]}>
-                      {SIGNAL_LABEL[view.composite.signal]}
+                  <span className="inline-flex flex-wrap items-center gap-2 rounded-full border border-line px-3 py-1 text-[13px]">
+                    1일 결합예측 · 고정 50:50 · 비교 검증 예정{' '}
+                    <strong className="text-ink">
+                      <Numeric value={view.composite.predictedReturn} format={(v) => formatSignedRatio(v, 2)} />
                     </strong>
                   </span>
                 ) : (
@@ -310,7 +310,7 @@ function SignalSlotRow({ slot }: { slot: SignalSlot }) {
     <li className="flex flex-wrap items-center justify-between gap-3 py-3">
       <div className="min-w-0">
         <p className="text-[13px] font-medium text-ink">{slot.displayName}</p>
-        <p className="font-mono text-[11px] text-faint">{slot.sourceWorkspace}</p>
+        <p className="text-[11px] text-faint">{slot.status === 'AVAILABLE' && slot.estimator === 'RIDGE' ? 'Ridge 수익률 추정 · 비교 검증 예정' : '일일 모델 신호'}</p>
       </div>
       {slot.status === 'ABSTAIN' ? (
         <div className="flex items-center gap-3">
@@ -326,7 +326,13 @@ function SignalSlotRow({ slot }: { slot: SignalSlot }) {
               {SIGNAL_LABEL[slot.signal ?? 'HOLD']}
             </span>
           )}
-          <Numeric value={slot.predictedReturn} format={(v) => formatSignedRatio(v, 2)} />
+          {slot.returnForecasts?.length ? <div className="flex flex-wrap gap-5">
+            {slot.returnForecasts.map((forecast) => <div key={forecast.horizonSessions}>
+              <p className="text-[11px] text-muted">{forecast.horizonSessions}거래일 · {forecast.targetSession}</p>
+              <Numeric className="forecast-number text-[24px]" value={forecast.expectedReturn} format={(v) => formatSignedRatio(v, 2)} />
+              <p className="text-[10px] text-faint">학습 {forecast.trainSamples}건 · 기준 {forecast.trainedThrough}</p>
+            </div>)}
+          </div> : <Numeric value={slot.predictedReturn} format={(v) => formatSignedRatio(v, 2)} />}
         </div>
       )}
     </li>

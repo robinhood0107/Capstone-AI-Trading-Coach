@@ -243,7 +243,19 @@ def test_compose_supervisor_health_and_secret_boundary_include_return_inference(
     full_app = (repository / "deploy/p1/full-appctl").read_text()
     entrypoint = (repository / "deploy/p1/docker/secret-entrypoint.sh").read_text()
     assert '"app.p1_owner.inference_grpc_server"' in supervisor
-    assert "worker, inference, spring" in supervisor
+    import ast
+
+    tree = ast.parse(supervisor)
+    assignment = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "processes" for target in node.targets
+        )
+    )
+    names = {node.id for node in ast.walk(assignment.value) if isinstance(node, ast.Name)}
+    assert {"worker", "inference", "spring"} <= names
     assert "RETURN_INFERENCE_SERVICE" in health
     assert "127.0.0.1:50057" in health
     assert "RETURN_INFERENCE_GRPC_BIND_ADDRESS: 127.0.0.1:50057" in compose

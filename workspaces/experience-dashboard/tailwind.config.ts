@@ -39,8 +39,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: [
-          'Pretendard Variable',
-          'Pretendard',
+          'var(--font-body)',
           '-apple-system',
           'BlinkMacSystemFont',
           'Apple SD Gothic Neo',
@@ -70,8 +69,8 @@ const config: Config = {
       borderRadius: {
         panel: '0px',
         tile: '0px',
-        control: '10px',
-        card: '16px',
+        control: 'var(--radius-control)',
+        card: 'var(--radius-card)',
       },
       /* 그림자를 쓰지 않는다. 위계는 괘선과 여백으로만 만든다. */
       boxShadow: {

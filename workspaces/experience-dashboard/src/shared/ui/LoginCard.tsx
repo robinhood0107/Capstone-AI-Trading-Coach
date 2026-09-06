@@ -34,7 +34,7 @@ export function LoginCard() {
 
   return (
     <div className="mx-auto w-full max-w-[420px]">
-      <div className="rounded-panel bg-panel px-7 py-8 shadow-card">
+      <div className="rounded-panel border border-line bg-panel px-7 py-8 shadow-card">
         <span
           aria-hidden
           className="grid h-11 w-11 place-items-center rounded-control bg-brand text-[14px] font-semibold text-on-brand"
@@ -43,8 +43,7 @@ export function LoginCard() {
         </span>
         <h1 className="mt-5 text-[24px] font-semibold tracking-tight text-ink">로그인</h1>
         <p className="mt-2 text-[14px] leading-6 text-muted">
-          서버에 연결하려면 로그인이 필요합니다. 비밀번호는 저장하지 않으며, 로그인 상태는 이 탭에서만
-          유지됩니다. 탭을 닫으면 자동으로 로그아웃됩니다.
+          내 투자 원칙과 운용 현황을 확인하세요. 로그인 상태는 이 탭에서만 유지됩니다.
         </p>
 
         <div className="mt-7 space-y-4">

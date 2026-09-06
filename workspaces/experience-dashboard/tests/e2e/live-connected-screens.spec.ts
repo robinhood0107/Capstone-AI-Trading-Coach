@@ -25,7 +25,7 @@ const passwordFile = process.env.P1_USER_PASSWORD_FILE;
  * - `balances`, `buyable` — KIS 를 타고 모의 계좌는 1건/초라 화면을 여러 개 돌면 503 이 섞인다.
  * - `fills` — 체결 원장이 없는 계좌는 404 다(`JdbcOrderFillRepository.kt:209`). 빈 상태다.
  */
-const KIS_METERED = /\/api\/v1\/brokerage\/mock\/accounts\/[^/]+\/(balances|buyable|fills)/;
+
 
 test('newly connected screens render against the live Spring API', async ({ page }) => {
   test.skip(!passwordFile, 'P1_USER_PASSWORD_FILE must point to the local 0600 demo password file.');
@@ -36,7 +36,8 @@ test('newly connected screens render against the live Spring API', async ({ page
     const { pathname } = new URL(response.url());
     if (!pathname.startsWith('/api/')) return;
     if (response.status() < 500) return;
-    if (KIS_METERED.test(pathname)) return;
+    // 유량 제한도 이번 E2E의 연결 성공으로 세지 않는다.
+    // 서버 오류는 실제 원인을 확인하고, 호출 간격은 테스트 흐름에서 조절한다.
     serverFailures.push(`${response.status()} ${pathname}`);
   });
 
@@ -76,7 +77,7 @@ test('newly connected screens render against the live Spring API', async ({ page
   // ── 자동운용: v3 상태 필드와 Kill Switch 조작 ────────────────────────────────
   await navRail.getByRole('link', { name: /^자동운용/ }).click();
   await expect(page.getByRole('heading', { name: '자동운용 설정' })).toBeVisible();
-  for (const label of ['AI 판단', '시세 이력', '봇 외 포지션']) {
+  for (const label of ['LLM 후보 검토', '시세 이력', '청산 정책 미지정 포지션']) {
     await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
   }
   // 청산 기준 — v3 정책이 요구하는 네 값.
@@ -88,9 +89,9 @@ test('newly connected screens render against the live Spring API', async ({ page
   // Kill Switch — 켜져 있으면 해제 안내, 꺼져 있으면 켜기 버튼. 정확히 하나다.
   await expect(
     page
-      .getByRole('button', { name: 'Kill Switch 켜기' })
-      .or(page.getByRole('button', { name: 'Kill Switch 해제' }))
-      .or(page.getByText('해제는 관리자만 할 수 있습니다.')),
+      .getByRole('button', { name: '내 주문 즉시 중지' })
+      .or(page.getByRole('button', { name: '내 주문 중지 해제' }))
+,
   ).toHaveCount(1);
   // v3 실행 목록의 판단 근거 토글
   await expect(page.getByRole('button', { name: '판단 근거 보기' }).first()).toBeVisible();

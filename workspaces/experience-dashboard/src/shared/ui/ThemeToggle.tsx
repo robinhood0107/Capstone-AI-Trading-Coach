@@ -11,26 +11,8 @@ import { useEffect, useState } from 'react';
  * 실제 적용은 `<html data-theme>` 하나로 끝난다. 값이 없으면 속성을 지워 OS 설정
  * (`prefers-color-scheme`)으로 돌아간다. 이 규칙은 globals.css 와 짝이다.
  */
-export type ThemeChoice = 'light' | 'dark' | 'system';
-
-export const THEME_KEY = 'capstone.theme.v1';
-
-/** 첫 paint 전에 실행돼 어두운 테마 사용자가 흰 화면을 스치지 않게 한다. */
-export const THEME_BOOT_SCRIPT = `(function(){try{var v=localStorage.getItem(${JSON.stringify(
-  THEME_KEY,
-)});if(v==='dark'||v==='light'){document.documentElement.setAttribute('data-theme',v);}}catch(e){}})();`;
-
-function apply(choice: ThemeChoice): void {
-  const root = document.documentElement;
-  if (choice === 'system') root.removeAttribute('data-theme');
-  else root.setAttribute('data-theme', choice);
-  try {
-    if (choice === 'system') localStorage.removeItem(THEME_KEY);
-    else localStorage.setItem(THEME_KEY, choice);
-  } catch {
-    // Storage errors do not block theme changes.
-  }
-}
+export { THEME_BOOT_SCRIPT } from '@/shared/lib/theme';
+import { applyTheme, syncThemeDocument, THEME_EVENT, type ThemeChoice } from '@/shared/lib/theme';
 
 const OPTIONS: { value: ThemeChoice; label: string }[] = [
   { value: 'light', label: '밝게' },
@@ -43,12 +25,14 @@ export function ThemeToggle() {
 
   // 서버 render 에는 localStorage 가 없다. mount 뒤에 맞춰 hydration 을 어긋내지 않는다.
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(THEME_KEY);
-      if (stored === 'dark' || stored === 'light') setChoice(stored);
-    } catch {
-      /* 무시 */
-    }
+    const sync = (event?: Event) => setChoice(event instanceof CustomEvent ? event.detail : syncThemeDocument());
+    sync();
+    window.addEventListener(THEME_EVENT, sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener(THEME_EVENT, sync);
+      window.removeEventListener('storage', sync);
+    };
   }, []);
 
   return (
@@ -67,7 +51,7 @@ export function ThemeToggle() {
             aria-checked={active}
             onClick={() => {
               setChoice(option.value);
-              apply(option.value);
+              applyTheme(option.value);
             }}
             className={`tap rounded-full px-2.5 py-1 text-[12px] transition-colors ${
               active ? 'bg-panel font-semibold text-navy' : 'font-medium text-faint hover:text-ink'

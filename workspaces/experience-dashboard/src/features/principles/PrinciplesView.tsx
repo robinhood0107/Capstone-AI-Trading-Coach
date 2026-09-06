@@ -545,7 +545,7 @@ function RuleRow({
             disabled={!rule.enabled}
             onChange={(event) => onThreshold(Number(event.target.value))}
             aria-label={`${meta.name} 값`}
-            className="tnum w-32 rounded-control border border-line px-3 py-1 text-right font-mono text-[13px] focus:border-navy focus:outline-none disabled:bg-surface disabled:text-faint"
+            className="tnum w-32 rounded-control border border-line bg-panel px-3 py-1 text-right font-mono text-[13px] text-ink focus:border-navy focus:outline-none disabled:bg-subtle disabled:text-muted"
           />
         )}
         <span className="tnum w-24 text-right font-mono text-[13px] text-ink">{display}</span>

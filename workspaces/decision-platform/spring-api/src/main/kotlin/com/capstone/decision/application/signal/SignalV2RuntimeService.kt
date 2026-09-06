@@ -48,6 +48,10 @@ data class RuntimeSignalComponent(
     val reason: String? = null,
     val modelVersion: String? = null,
     val modelReportId: String? = null,
+    val returnForecasts: List<RuntimeReturnForecast>? = null,
+    val estimator: String? = null,
+    val sourceSession: java.time.LocalDate? = null,
+    val qualityStatus: String? = null,
 )
 
 /** 네 required component를 exact field set으로 고정한다. */
@@ -238,3 +242,13 @@ class SignalV2RuntimeService(
             )
     }
 }
+
+/** 누적 종가 수익률의 기간과 학습 종료 경계를 함께 표시한다. */
+data class RuntimeReturnForecast(
+    val horizonSessions: Int,
+    val targetSession: java.time.LocalDate,
+    val expectedReturn: Double,
+    val forecastClose: Double,
+    val trainSamples: Int,
+    val trainedThrough: java.time.LocalDate,
+)

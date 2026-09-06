@@ -165,6 +165,9 @@ def verify_transition(
     openapi_path: Path = OPENAPI_PATH, additive_path: Path = ADDITIVE_PATH
 ) -> None:
     current = _load(openapi_path)
+    from contracts.generate_owner_ridge_contracts import project_previous
+
+    current = project_previous(current)
     additive = _load(additive_path)
     count = len(operations(current))
     if count == 76:

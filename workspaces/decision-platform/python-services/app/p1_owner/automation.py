@@ -16,8 +16,9 @@ from datetime import date, datetime, time, timedelta
 from importlib.metadata import version
 from typing import Any, Literal, Mapping, Protocol, cast
 
-import exchange_calendars as xcals
 import pandas as pd
+
+from app.data.calendar.xkrx_policy import corrected_calendar
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.p1_owner.automation_atr import (
@@ -446,6 +447,11 @@ class SignalCandidate:
     lstm_signal: Signal
     baseline_signal: Signal
     expected_return: float
+    forecast_close: float | None = None
+    lstm_expected_return: float | None = None
+    ridge_expected_return: float | None = None
+    ridge_model_sha256: str | None = None
+    combination_method: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1480,6 +1486,11 @@ class AutomationEngine:
             if run.state == "HALTED":
                 return
             if quote is not None and quote.hard_eligible:
+                if (
+                    candidate.forecast_close is not None
+                    and remaining_expected_return(candidate, _limit_price(quote, "BUY")) <= 0
+                ):
+                    continue
                 eligible.append(candidate)
                 quotes[candidate.symbol] = quote
         if not eligible:
@@ -1600,6 +1611,14 @@ class AutomationEngine:
             run.selected_quote = quote
         side = cast(Side, _required(run.selected_side))
         limit_price = _limit_price(quote, side)
+        if side == "BUY":
+            candidate = next((item for item in inputs.signals if item.symbol == quote.symbol), None)
+            if candidate is not None and candidate.forecast_close is not None:
+                # 전일 종가 대비 상승분이 이미 가격에 반영됐으면 새 주문의 이익으로 세지 않는다.
+                net = remaining_expected_return(candidate, limit_price)
+                if not math.isfinite(net) or net <= 0:
+                    self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
+                    return
         if side == "SELL":
             matches = [
                 item
@@ -2005,6 +2024,11 @@ def _candidate_set_sha256(candidates: tuple[SignalCandidate, ...]) -> str:
                 {
                     "baselineSignal": item.baseline_signal,
                     "expectedReturn": format(item.expected_return, ".17g"),
+                    "forecastClose": item.forecast_close,
+                    "lstmExpectedReturn": item.lstm_expected_return,
+                    "ridgeExpectedReturn": item.ridge_expected_return,
+                    "ridgeModelSha256": item.ridge_model_sha256,
+                    "combinationMethod": item.combination_method,
                     "lstmSignal": item.lstm_signal,
                     "symbol": item.symbol,
                 }
@@ -2051,6 +2075,17 @@ def _variable_buy_quantity(inputs: AutomationInputs, limit_price_krw: int) -> in
         inputs.buyable_amount_krw,
     )
     return min(order_budget // limit_price_krw, inputs.buyable_quantity)
+
+
+def remaining_expected_return(candidate: SignalCandidate, buy_limit_price: int) -> float:
+    """예측 종가에서 실제 매수가와 기존 비용을 반영한 잔여 수익률을 계산한다."""
+    if (
+        candidate.forecast_close is None
+        or buy_limit_price <= 0
+        or not math.isfinite(candidate.forecast_close)
+    ):
+        raise AutomationError("remaining return input unavailable")
+    return candidate.forecast_close / buy_limit_price - 1.0 - _ROUND_TRIP_COST_BPS / 10_000
 
 
 def _estimated_net_return_bps(entry_average_fill_price_krw: int, sell_limit_price_krw: int) -> int:
@@ -2161,7 +2196,11 @@ def _session_distance(start: date, end: date) -> int:
 def _calendar(*, start: date | None = None, end: date | None = None) -> Any:
     if version("exchange-calendars") != "4.13.2":
         raise AutomationError("XKRX calendar version drifted")
-    return xcals.get_calendar("XKRX", start=start, end=end)
+    # 운영과 회귀·예측이 같은 휴장일 correction 권위를 사용한다.
+    calendar = corrected_calendar()
+    return (
+        type(calendar)(start=start, end=end) if start is not None or end is not None else calendar
+    )
 
 
 def _required(value: str | None) -> str:

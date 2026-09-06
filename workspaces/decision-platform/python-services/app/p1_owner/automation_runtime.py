@@ -16,8 +16,9 @@ from importlib.metadata import version
 from typing import Any, Protocol, cast
 from zoneinfo import ZoneInfo
 
-import exchange_calendars as xcals
 import pandas as pd
+
+from app.data.calendar.xkrx_policy import corrected_calendar
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
@@ -804,7 +805,7 @@ class XkrxBoundaryPlanner:
     def __init__(self) -> None:
         if version("exchange-calendars") != "4.13.2":
             raise AutomationRuntimeError("XKRX_CALENDAR_VERSION_DRIFT")
-        self._calendar = xcals.get_calendar("XKRX")
+        self._calendar = corrected_calendar()
 
     def current_or_next_session(self, now: datetime) -> date:
         local = _kst(now)
@@ -1096,12 +1097,34 @@ def inputs_from_state(
     raw_signals = state.get("signals")
     if not isinstance(raw_signals, list):
         raise AutomationRuntimeError("AUTOMATION_SIGNALS_INVALID")
+    for item in raw_signals:
+        if isinstance(item, dict) and "combinationMethod" in item:
+            if item["combinationMethod"] != "EQUAL_WEIGHT_50_50" or not {
+                "forecastClose",
+                "lstmExpectedReturn",
+                "ridgeExpectedReturn",
+                "ridgeModelSha256",
+            }.issubset(item):
+                raise AutomationRuntimeError("AUTOMATION_RETURN_COMBINATION_INVALID")
     signals = tuple(
         SignalCandidate(
             symbol=str(item["symbol"]),
             lstm_signal=cast(Any, str(item["lstmSignal"])),
             baseline_signal=cast(Any, str(item["baselineSignal"])),
             expected_return=float(item["expectedReturn"]),
+            forecast_close=float(item["forecastClose"]) if "forecastClose" in item else None,
+            lstm_expected_return=float(item["lstmExpectedReturn"])
+            if "lstmExpectedReturn" in item
+            else None,
+            ridge_expected_return=float(item["ridgeExpectedReturn"])
+            if "ridgeExpectedReturn" in item
+            else None,
+            combination_method=str(item["combinationMethod"])
+            if "combinationMethod" in item
+            else None,
+            ridge_model_sha256=str(item["ridgeModelSha256"])
+            if "ridgeModelSha256" in item
+            else None,
         )
         for item in raw_signals
         if isinstance(item, dict)
@@ -1306,7 +1329,7 @@ def _screenings_from_state(
 
 
 def _expected_atr_sessions(as_of_session: date, limit: int) -> tuple[date, ...]:
-    calendar = xcals.get_calendar("XKRX")
+    calendar = corrected_calendar()
     stamp = pd.Timestamp(as_of_session)
     anchor = (
         calendar.previous_session(stamp)

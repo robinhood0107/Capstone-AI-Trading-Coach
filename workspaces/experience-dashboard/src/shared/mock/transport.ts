@@ -621,24 +621,18 @@ export async function mockTransport<T>(
   }
 
   if (target === '/api/v1/risk/kill-switch') {
+    return fail('FORBIDDEN', '시스템 전체 중지는 관리자 전용입니다.', requestId);
+  }
+  if (target === '/api/v2/risk/kill-switch') {
     if (method === 'POST') {
       const request = body as { active?: unknown; reason?: unknown } | undefined;
-      if (typeof request?.active !== 'boolean') {
-        return fail('VALIDATION_ERROR', 'active 는 true 또는 false 여야 합니다.', requestId);
-      }
-      // 해제는 ADMIN 만 된다(KillSwitchTransitionPolicy.kt:22). mock 은 USER 로 동작하므로
-      // 서버와 같은 자리에서 같은 이유로 막는다.
-      if (!request.active) {
-        return fail('FORBIDDEN', 'Kill Switch 해제는 관리자만 할 수 있습니다.', requestId);
-      }
+      if (typeof request?.active !== 'boolean') return fail('VALIDATION_ERROR', 'active는 boolean이어야 합니다.', requestId);
       mockKillSwitch = {
-        active: true,
-        changedAt: new Date().toISOString(),
-        reasonClass: 'USER_MANUAL_STOP',
+        active: request.active, changedAt: new Date().toISOString(),
+        reasonClass: request.active ? 'USER_MANUAL_STOP' : 'USER_RESUME',
       };
-      return ok(mockKillSwitch, requestId) as ApiEnvelope<T>;
     }
-    return ok(mockKillSwitch, requestId) as ApiEnvelope<T>;
+    return ok({ ...mockKillSwitch, globalActive: false, effectiveActive: mockKillSwitch.active }, requestId) as ApiEnvelope<T>;
   }
 
   if (target === '/api/v1/risk/portfolio') {

@@ -75,7 +75,7 @@ internal class S49VertexStrongLlmGenerationAdapter(
                 totalPromptTokens += turn.promptTokens
                 totalOutputTokens += turn.outputTokens
                 if (turn.generatedJson != null) {
-                    val validated = validator.validate(turn.generatedJson, session.evidence())
+                    val validated = validator.validateForDisplay(turn.generatedJson, session.evidence())
                     val usage =
                         S49StrongLlmUsage(
                             totalPromptTokens,

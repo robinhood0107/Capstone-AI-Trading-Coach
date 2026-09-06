@@ -83,6 +83,10 @@ class DecisionApiIntegrationTest(
 
     @BeforeEach
     fun setUp() {
+        // 격리 테스트 DB의 개인 상태도 초기화한다. 운영 데이터 정리 경로가 아니다.
+        jdbcTemplate.update("delete from owner_kill_switch_requests")
+        jdbcTemplate.update("delete from owner_kill_switch_events")
+        jdbcTemplate.update("update owner_kill_switch set active=false,generation=1,reason_class='INITIAL_STATE'")
         removeFailureTriggers()
         redisTemplate.keys("decision-idempotency:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
         redisTemplate.keys("idempotency:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
@@ -127,8 +131,65 @@ class DecisionApiIntegrationTest(
     }
 
     @Test
-    fun `Kill Switch public API enforces asymmetric authority exact projection and idempotent replay`() {
+    fun `owner stop rejects foreign scope and maps malformed input to 400`() {
+        val token = login("demo-user", userPassword())
+        for (body in listOf("""{"active":true,"userId":"usr_demo_admin"}""", """{"active":true,"scope":"GLOBAL"}""")) {
+            val response =
+                mockMvc
+                    .post("/api/v2/risk/kill-switch") {
+                        bearer(token)
+                        header("X-Idempotency-Key", "owner-stop-invalid-0001")
+                        contentType = MediaType.APPLICATION_JSON
+                        content = body
+                    }.andReturn()
+            assertEquals(400, response.response.status, response.response.contentAsString)
+            assertEquals("VALIDATION_ERROR", json(response).at("/error/code").stringValue())
+        }
+        assertEquals(
+            false,
+            jdbcTemplate.queryForObject("select active from owner_kill_switch where user_id='usr_demo_user'", Boolean::class.java),
+        )
+    }
+
+    @Test
+    fun `personal stop is symmetric isolated and USER cannot access global controls`() {
         val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        for (active in listOf(true, false)) {
+            val changed =
+                mockMvc
+                    .post("/api/v2/risk/kill-switch") {
+                        bearer(userToken)
+                        header("X-Idempotency-Key", "owner-stop-change-$active-0001")
+                        header("X-Request-Id", "req-owner-stop-$active")
+                        contentType = MediaType.APPLICATION_JSON
+                        content = """{"active":$active}"""
+                    }.andReturn()
+            assertEquals(200, changed.response.status, changed.response.contentAsString)
+            assertEquals(active, json(changed).at("/data/active").booleanValue())
+            assertEquals(false, json(changed).at("/data/globalActive").booleanValue())
+            val other = mockMvc.get("/api/v2/risk/kill-switch") { bearer(adminToken) }.andReturn()
+            assertEquals(200, other.response.status)
+            assertEquals(false, json(other).at("/data/active").booleanValue())
+        }
+        val forbidden =
+            mockMvc
+                .post("/api/v1/risk/kill-switch") {
+                    bearer(userToken)
+                    header("X-Idempotency-Key", "test-owner-denied-0001")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = """{"active":true}"""
+                }.andReturn()
+        assertEquals(403, forbidden.response.status)
+        val forbiddenRead = mockMvc.get("/api/v1/risk/kill-switch") { bearer(userToken) }.andReturn()
+        assertEquals(403, forbiddenRead.response.status)
+        assertEquals(false, jdbcTemplate.queryForObject("select active from risk_kill_switch", Boolean::class.java))
+    }
+
+    @Test
+    fun `Kill Switch public API enforces global admin authority exact projection and idempotent replay`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
         val activationMetricBefore =
             meterRegistry
                 .find("risk.kill_switch.changed")
@@ -138,14 +199,14 @@ class DecisionApiIntegrationTest(
                     "next",
                     "true",
                     "reasonClass",
-                    "USER_MANUAL_STOP",
+                    "OPERATOR_MANUAL_STOP",
                     "actorRole",
-                    "USER",
+                    "ADMIN",
                 ).counter()
                 ?.count() ?: 0.0
         val activation =
             changeKillSwitch(
-                token = userToken,
+                token = adminToken,
                 idempotencyHeader = "risk-kill-activate-0001",
                 requestId = "req-risk-kill-activate",
                 active = true,
@@ -162,7 +223,7 @@ class DecisionApiIntegrationTest(
                 .toSet(),
         )
         assertTrue(json(activation).at("/data/active").booleanValue())
-        assertEquals("USER_MANUAL_STOP", json(activation).at("/data/reasonClass").stringValue())
+        assertEquals("OPERATOR_MANUAL_STOP", json(activation).at("/data/reasonClass").stringValue())
         assertEquals(2L, jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
         assertEquals(1, count("select count(*) from risk_kill_switch_transitions"))
         assertEquals(
@@ -175,9 +236,9 @@ class DecisionApiIntegrationTest(
                     "next",
                     "true",
                     "reasonClass",
-                    "USER_MANUAL_STOP",
+                    "OPERATOR_MANUAL_STOP",
                     "actorRole",
-                    "USER",
+                    "ADMIN",
                 ).counter()
                 ?.count(),
         )
@@ -223,7 +284,7 @@ class DecisionApiIntegrationTest(
 
         val replay =
             changeKillSwitch(
-                token = userToken,
+                token = adminToken,
                 idempotencyHeader = "risk-kill-activate-0001",
                 requestId = "req-risk-kill-replay",
                 active = true,
@@ -234,7 +295,7 @@ class DecisionApiIntegrationTest(
 
         val conflict =
             changeKillSwitch(
-                token = userToken,
+                token = adminToken,
                 idempotencyHeader = "risk-kill-activate-0001",
                 requestId = "req-risk-kill-conflict",
                 active = false,
@@ -254,7 +315,6 @@ class DecisionApiIntegrationTest(
         assertEquals(403, userResume.response.status)
         assertEquals("FORBIDDEN", json(userResume).at("/error/code").stringValue())
 
-        val adminToken = login("demo-admin", adminPassword())
         val adminResume =
             changeKillSwitch(
                 token = adminToken,
@@ -299,8 +359,8 @@ class DecisionApiIntegrationTest(
     }
 
     @Test
-    fun `Kill Switch USER GET returns only the sanitized state and rejects query fields`() {
-        val token = login("demo-user", userPassword())
+    fun `Kill Switch ADMIN GET returns only the sanitized state and rejects query fields`() {
+        val token = login("demo-admin", adminPassword())
         val state =
             mockMvc
                 .get("/api/v1/risk/kill-switch") {
@@ -334,10 +394,9 @@ class DecisionApiIntegrationTest(
 
     @Test
     fun `Kill Switch resume revalidates current admin status role and security version without writes`() {
-        val userToken = login("demo-user", userPassword())
         val activation =
             changeKillSwitch(
-                token = userToken,
+                token = login("demo-admin", adminPassword()),
                 idempotencyHeader = "risk-kill-revalidate-on1",
                 requestId = "req-risk-kill-revalidate-on",
                 active = true,
@@ -398,7 +457,7 @@ class DecisionApiIntegrationTest(
 
     @Test
     fun `Kill Switch reason injection matrix is rejected without side effects`() {
-        val token = login("demo-user", userPassword())
+        val token = login("demo-admin", adminPassword())
         val invalidReasons =
             listOf(
                 "' OR 1=1",
@@ -430,7 +489,7 @@ class DecisionApiIntegrationTest(
 
     @Test
     fun `Kill Switch accepts schema valid ordinary reason text and discards it before persistence`() {
-        val token = login("demo-user", userPassword())
+        val token = login("demo-admin", adminPassword())
         val response =
             changeKillSwitch(
                 token = token,
@@ -441,7 +500,7 @@ class DecisionApiIntegrationTest(
             )
 
         assertEquals(200, response.response.status)
-        assertEquals("USER_MANUAL_STOP", json(response).at("/data/reasonClass").stringValue())
+        assertEquals("OPERATOR_MANUAL_STOP", json(response).at("/data/reasonClass").stringValue())
         assertFalse(response.response.contentAsString.contains("safe and sound"))
         assertFalse(
             requireNotNull(
@@ -455,7 +514,7 @@ class DecisionApiIntegrationTest(
 
     @Test
     fun `Kill Switch validation authentication and idempotency failures make no database writes`() {
-        val token = login("demo-user", userPassword())
+        val token = login("demo-admin", adminPassword())
         val missingKey =
             changeKillSwitch(
                 token = token,
@@ -497,7 +556,7 @@ class DecisionApiIntegrationTest(
 
     @Test
     fun `Kill Switch idempotency key uses the canonical alphabet and 16 to 128 bounds`() {
-        val token = login("demo-user", userPassword())
+        val token = login("demo-admin", adminPassword())
         val minimum =
             changeKillSwitch(
                 token = token,
@@ -540,7 +599,7 @@ class DecisionApiIntegrationTest(
 
     @Test
     fun `Kill Switch transaction rollback leaves state history invalidations audit and outbox unchanged`() {
-        val token = login("demo-user", userPassword())
+        val token = login("demo-admin", adminPassword())
         installGraphFailureTrigger("event_outbox")
 
         val failed =
@@ -564,7 +623,6 @@ class DecisionApiIntegrationTest(
 
     @Test
     fun `concurrent stop and resume serialize to one valid singleton history`() {
-        val userToken = login("demo-user", userPassword())
         val adminToken = login("demo-admin", adminPassword())
         val start = CountDownLatch(1)
         val executor = Executors.newFixedThreadPool(2)
@@ -573,7 +631,7 @@ class DecisionApiIntegrationTest(
                 executor.submit<MvcResult> {
                     start.await()
                     changeKillSwitch(
-                        userToken,
+                        adminToken,
                         "risk-kill-concurrent-on1",
                         "req-risk-kill-concurrent-on",
                         true,
@@ -626,20 +684,20 @@ class DecisionApiIntegrationTest(
                     """.trimIndent(),
                     Boolean::class.java,
                     actorCapabilityIssuer.issue(
-                        actorCapabilityIssuer.actorRef("usr_demo_user"),
+                        actorCapabilityIssuer.actorRef("usr_demo_admin"),
                         com.capstone.decision.infrastructure.security.ActorCapabilityBinding.request(
                             "TRANSITION_KILL_SWITCH",
                             "KILL_SWITCH",
                             "GLOBAL",
-                            com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy.OWNER,
-                            "usr_demo_user",
+                            com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy.ADMIN_ONLY,
+                            "usr_demo_admin",
                             "1",
                             "true",
                             "2",
                             "req-risk-kill-stale-generation",
                         ),
                     ),
-                    "usr_demo_user",
+                    "usr_demo_admin",
                     1L,
                     true,
                     2L,
@@ -662,18 +720,18 @@ class DecisionApiIntegrationTest(
             storedFuture,
         )
         val result =
-            asTestActor(actorCapabilityIssuer) {
+            asTestActor(actorCapabilityIssuer, "usr_demo_admin") {
                 killSwitchMutationPort.mutate(
                     KillSwitchMutationCommand(
                         actor =
                             KillSwitchActor(
-                                userId = "usr_demo_user",
-                                role = KillSwitchActorRole.USER,
+                                userId = "usr_demo_admin",
+                                role = KillSwitchActorRole.ADMIN,
                                 securityVersion = 1,
                                 requestId = "req-risk-kill-clock-behind",
                             ),
                         requestedActive = true,
-                        reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
+                        reasonClass = KillSwitchReasonClass.OPERATOR_MANUAL_STOP,
                     ),
                 )
             }
@@ -691,13 +749,13 @@ class DecisionApiIntegrationTest(
     @Test
     fun `Kill Switch mutation derives the reason class without trusting the request value`() {
         val result =
-            asTestActor(actorCapabilityIssuer) {
+            asTestActor(actorCapabilityIssuer, "usr_demo_admin") {
                 killSwitchMutationPort.mutate(
                     KillSwitchMutationCommand(
                         actor =
                             KillSwitchActor(
-                                userId = "usr_demo_user",
-                                role = KillSwitchActorRole.USER,
+                                userId = "usr_demo_admin",
+                                role = KillSwitchActorRole.ADMIN,
                                 securityVersion = 1,
                                 requestId = "req-risk-kill-policy-drift",
                             ),
@@ -707,7 +765,7 @@ class DecisionApiIntegrationTest(
                 )
             }
         assertTrue(result.changed)
-        assertEquals(KillSwitchReasonClass.USER_MANUAL_STOP, result.state.reasonClass)
+        assertEquals(KillSwitchReasonClass.OPERATOR_MANUAL_STOP, result.state.reasonClass)
 
         assertEquals(true, jdbcTemplate.queryForObject("select active from risk_kill_switch", Boolean::class.java))
         assertEquals(1, count("select count(*) from risk_kill_switch_transitions"))
@@ -737,7 +795,7 @@ class DecisionApiIntegrationTest(
 
         val activation =
             changeKillSwitch(
-                token = token,
+                token = login("demo-admin", adminPassword()),
                 idempotencyHeader = "risk-kill-invalidate-01",
                 requestId = "req-risk-kill-invalidate",
                 active = true,
@@ -819,6 +877,7 @@ class DecisionApiIntegrationTest(
     fun `Kill Switch activation lock wait is bounded without partial mutation`() {
         val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "912")
         val token = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
         installSlowDecisionTrigger()
         val executor = Executors.newSingleThreadExecutor()
         try {
@@ -835,7 +894,7 @@ class DecisionApiIntegrationTest(
 
             val activation =
                 changeKillSwitch(
-                    token = token,
+                    token = adminToken,
                     idempotencyHeader = "risk-kill-race-000001",
                     requestId = "req-risk-kill-race",
                     active = true,

@@ -971,6 +971,40 @@
         },
         "type": "object"
       },
+      "ApiResponseOwnerKillSwitchDto": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OwnerKillSwitchDto"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
       "ApiResponsePaperBalanceProjection": {
         "properties": {
           "data": {
@@ -3416,6 +3450,13 @@
           "aiJudgementEnabled": {
             "type": "boolean"
           },
+          "appliedPolicyVersion": {
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "blockers": {
             "items": {
               "enum": [
@@ -3483,6 +3524,13 @@
               "PARTIAL",
               "READY",
               "CATCHUP_REQUIRED"
+            ]
+          },
+          "nextRunAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "openPositionCount": {
@@ -3598,6 +3646,13 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "policyRecoverySourceVersion": {
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
             ]
           },
           "projectionState": {
@@ -4548,6 +4603,40 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "OwnerKillSwitchDto": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "changedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "effectiveActive": {
+            "type": "boolean"
+          },
+          "globalActive": {
+            "type": "boolean"
+          },
+          "reasonClass": {
+            "enum": [
+              "INITIAL_STATE",
+              "USER_MANUAL_STOP",
+              "USER_RESUME"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "changedAt",
+          "effectiveActive",
+          "globalActive",
+          "reasonClass"
+        ],
         "type": "object"
       },
       "P1AutomationErrorResponse": {
@@ -7246,6 +7335,47 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "RuntimeReturnForecast": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedReturn": {
+            "type": "number"
+          },
+          "forecastClose": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "horizonSessions": {
+            "enum": [
+              1,
+              5,
+              20
+            ],
+            "type": "integer"
+          },
+          "targetSession": {
+            "format": "date",
+            "type": "string"
+          },
+          "trainSamples": {
+            "minimum": 40,
+            "type": "integer"
+          },
+          "trainedThrough": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedReturn",
+          "forecastClose",
+          "horizonSessions",
+          "targetSession",
+          "trainSamples",
+          "trainedThrough"
+        ],
         "type": "object"
       },
       "S23Decision": {
@@ -12155,6 +12285,12 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "estimator": {
+                "enum": [
+                  "RIDGE"
+                ],
+                "type": "string"
+              },
               "modelReportId": {
                 "type": "string"
               },
@@ -12174,12 +12310,30 @@
                   "LIGHTGBM"
                 ]
               },
+              "qualityStatus": {
+                "enum": [
+                  "COMPARISON_PENDING"
+                ],
+                "type": "string"
+              },
+              "returnForecasts": {
+                "items": {
+                  "$ref": "#/components/schemas/RuntimeReturnForecast"
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": "array"
+              },
               "signal": {
                 "enum": [
                   "BUY",
                   "HOLD",
                   "SELL"
                 ]
+              },
+              "sourceSession": {
+                "format": "date",
+                "type": "string"
               },
               "sourceWorkspace": {
                 "enum": [
@@ -12263,6 +12417,12 @@
               "null"
             ]
           },
+          "estimator": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "modelReportId": {
             "type": [
               "string",
@@ -12285,13 +12445,35 @@
           "producer": {
             "type": "string"
           },
+          "qualityStatus": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "reason": {
             "type": [
               "string",
               "null"
             ]
           },
+          "returnForecasts": {
+            "items": {
+              "$ref": "#/components/schemas/RuntimeReturnForecast"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "signal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceSession": {
+            "format": "date",
             "type": [
               "string",
               "null"
@@ -15652,6 +15834,7 @@
     },
     "/api/v1/risk/kill-switch": {
       "get": {
+        "description": "관리자 전용 전역 비상정지. 조회·정지·해제 모두 현재 ADMIN 권한을 검증한다.",
         "operationId": "getKillSwitch",
         "responses": {
           "200": {
@@ -15688,9 +15871,11 @@
         "summary": "현재 GLOBAL Kill Switch의 sanitized 상태를 DB에서 직접 조회한다.",
         "tags": [
           "risk-controller"
-        ]
+        ],
+        "x-required-role": "ADMIN"
       },
       "post": {
+        "description": "관리자 전용 전역 비상정지. 조회·정지·해제 모두 현재 ADMIN 권한을 검증한다.",
         "operationId": "changeKillSwitch",
         "parameters": [
           {
@@ -15781,7 +15966,8 @@
         "summary": "Kill Switch를 변경한다. USER는 활성화만, ADMIN은 활성화와 해제가 가능하다.",
         "tags": [
           "risk-controller"
-        ]
+        ],
+        "x-required-role": "ADMIN"
       }
     },
     "/api/v1/risk/portfolio": {
@@ -16415,6 +16601,142 @@
         },
         "tags": [
           "rag-v-2-controller"
+        ]
+      }
+    },
+    "/api/v2/risk/kill-switch": {
+      "get": {
+        "description": "인증된 본인만 제어한다. 전역 중지는 해제하지 않으며 해제 후 자동 재무장하지 않는다.",
+        "operationId": "readOwnerKillSwitch",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOwnerKillSwitchDto"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
+                }
+              }
+            },
+            "description": "Risk authority is unavailable."
+          }
+        },
+        "summary": "본인 주문 중지 조회",
+        "tags": [
+          "risk-controller"
+        ]
+      },
+      "post": {
+        "description": "인증된 본인만 제어한다. 전역 중지는 해제하지 않으며 해제 후 자동 재무장하지 않는다.",
+        "operationId": "changeOwnerKillSwitch",
+        "parameters": [
+          {
+            "description": "16-128 bounded ASCII identifier. Raw value is handled only by the idempotency filter.",
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/S24KillSwitchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOwnerKillSwitchDto"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid body or idempotency key."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
+                }
+              }
+            },
+            "description": "Only a current ADMIN can resume."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
+                }
+              }
+            },
+            "description": "Concurrent generation conflict."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
+                }
+              }
+            },
+            "description": "Risk authority is unavailable."
+          }
+        },
+        "summary": "본인 주문 중지 변경",
+        "tags": [
+          "risk-controller"
         ]
       }
     },

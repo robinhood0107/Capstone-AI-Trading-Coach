@@ -14,6 +14,11 @@
  */
 :root {
   color-scheme: light;
+  --font-body: "Gothic A1";
+  --font-numeric: "Figtree";
+  /* 두 테마는 동일한 모양과 레이아웃을 공유한다. */
+  --radius-control: 10px;
+  --radius-card: 16px;
 
   --c-ink: 12 15 20;
   --c-muted: 89 97 109;
@@ -43,57 +48,69 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
+  --font-body: "Noto Sans KR";
+  --font-numeric: "Instrument Serif";
+  --hero-background: linear-gradient(#f3f5fa0d 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(90deg, #f3f5fa0d 1px, transparent 1px) 0 0 / 48px 48px,
+    radial-gradient(58% 70% at 82% 20%, #ffac661f, transparent 66%), #0b0e15;
+  --hero-art-opacity: 0;
 
-    --c-ink: 232 236 242;
-    --c-muted: 158 167 179;
-    --c-faint: 118 127 140;
-    --c-surface: 13 16 21;
-    --c-panel: 24 28 35;
-    --c-subtle: 31 36 45;
+    --c-ink: 243 245 249;
+    --c-muted: 174 177 184;
+    --c-faint: 137 140 146;
+    --c-surface: 13 15 21;
+    --c-panel: 21 24 31;
+    --c-subtle: 30 34 41;
     --c-line: 44 50 61;
     --c-rule: 58 65 78;
-    --c-navy: 126 160 255;
-    --c-brand: 126 160 255;
-    --c-on-brand: 10 13 18;
+    --c-navy: 255 156 86;
+    --c-brand: 255 156 86;
+    --c-on-brand: 32 19 8;
     --c-allow: 62 190 126;
-    --c-warn: 232 160 62;
+    --c-warn: 252 190 84;
     --c-hold: 154 163 176;
     --c-block: 240 116 106;
     --c-abstain: 128 137 150;
 
-    --c-up: 255 107 112;
-    --c-down: 126 160 255;
+    --c-up: 255 111 105;
+    --c-down: 115 182 250;
 
     --c-scrollbar: 58 65 78;
-    --c-focus: 126 160 255;
+    --c-focus: 255 156 86;
   }
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
+  --font-body: "Noto Sans KR";
+  --font-numeric: "Instrument Serif";
+  --hero-background: linear-gradient(#f3f5fa0d 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(90deg, #f3f5fa0d 1px, transparent 1px) 0 0 / 48px 48px,
+    radial-gradient(58% 70% at 82% 20%, #ffac661f, transparent 66%), #0b0e15;
+  --hero-art-opacity: 0;
 
-  --c-ink: 232 236 242;
-  --c-muted: 158 167 179;
-  --c-faint: 118 127 140;
-  --c-surface: 13 16 21;
-  --c-panel: 24 28 35;
-  --c-subtle: 31 36 45;
+  --c-ink: 243 245 249;
+  --c-muted: 174 177 184;
+  --c-faint: 137 140 146;
+  --c-surface: 13 15 21;
+  --c-panel: 21 24 31;
+  --c-subtle: 30 34 41;
   --c-line: 44 50 61;
   --c-rule: 58 65 78;
-  --c-navy: 126 160 255;
-  --c-brand: 126 160 255;
-  --c-on-brand: 10 13 18;
+  --c-navy: 255 156 86;
+  --c-brand: 255 156 86;
+  --c-on-brand: 32 19 8;
   --c-allow: 62 190 126;
-  --c-warn: 232 160 62;
+  --c-warn: 252 190 84;
   --c-hold: 154 163 176;
   --c-block: 240 116 106;
   --c-abstain: 128 137 150;
 
-  --c-up: 255 107 112;
-  --c-down: 126 160 255;
+  --c-up: 255 111 105;
+  --c-down: 115 182 250;
 
   --c-scrollbar: 58 65 78;
-  --c-focus: 126 160 255;
+  --c-focus: 255 156 86;
 }
 
 html,
@@ -288,3 +305,12 @@ input[type='range'].ink-slider:disabled {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Cinder의 주요 수치는 서체로 위계를 주고 작은 표는 가독성을 유지한다. */
+.forecast-number, .hero-number { font-family: var(--font-numeric), var(--font-body), serif; font-weight: 400; }
+
+.overview-hero { background: var(--hero-background, #12151f); }
+.overview-hero > svg { opacity: var(--hero-art-opacity, 1); }
+
+/* 한글 단어를 중간에서 끊지 않고 긴 식별자만 필요할 때 줄바꿈한다. */
+body { word-break: keep-all; overflow-wrap: anywhere; }

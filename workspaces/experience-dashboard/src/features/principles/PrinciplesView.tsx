@@ -13,23 +13,36 @@ import { formatCount, formatKrw, formatKstDateTime, formatRatio } from '@/shared
 import { matchesPreset } from './preset';
 import type {
   PrincipleCurrent,
+  PrincipleHistoryData,
   PrinciplePreset,
   PrinciplePresetListData,
   PrincipleRule,
   PrincipleSummary,
+  PrincipleVersion,
 } from '@/shared/api/wire';
 
 interface PrinciplesData {
   presets: PrinciplePresetListData;
   summaries: PrincipleSummary[];
   current: PrincipleCurrent | null;
+  history: PrincipleHistoryData | null;
 }
 
 async function load(): Promise<ViewState<PrinciplesData>> {
   const [presets, list] = await Promise.all([api.principlePresets(), api.principles()]);
   const active = list.data.items.find((item) => item.status === 'ACTIVE') ?? list.data.items[0];
   const current = active ? (await api.principle(active.principleId)).data : null;
-  return ready({ presets: presets.data, summaries: list.data.items, current }, current?.updatedAt ?? null);
+  // 이력은 곁다리다. 못 받아 와도 원칙 화면 자체는 떠야 하므로 실패를 여기서 흡수한다.
+  const history = active
+    ? await api
+        .principleVersions(active.principleId)
+        .then((result) => result.data)
+        .catch(() => null)
+    : null;
+  return ready(
+    { presets: presets.data, summaries: list.data.items, current, history },
+    current?.updatedAt ?? null,
+  );
 }
 
 export function PrinciplesView() {
@@ -196,19 +209,211 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
             </div>
           </div>
           </Panel>
+
+          <VersionHistory history={data.history} currentVersion={data.current.version} />
         </>
       ) : (
-        <Panel contract="GET /api/v1/principles" title="내 원칙 값 조정">
-          <div className="rounded-tile border border-dashed border-rule px-4 py-6">
-            <p className="text-eyebrow font-semibold uppercase text-faint">데이터 없음</p>
-            <p className="mt-2 text-sm font-medium text-ink">아직 만든 원칙이 없습니다</p>
-            <p className="mt-1 text-[13px] leading-5 text-muted">
-              위 preset 중 하나를 골라 원칙을 먼저 만들어야 주문 검토를 쓸 수 있습니다.
-            </p>
-          </div>
-        </Panel>
+        <CreatePrinciple presets={data.presets} draftPreset={draftPreset} onCreated={onSaved} />
       )}
     </div>
+  );
+}
+
+/**
+ * 원칙을 처음 만든다.
+ *
+ * 예전에는 "preset 을 골라 원칙을 먼저 만들어야 한다"고 안내만 하고 만들 방법이 없었다.
+ * 원칙이 하나도 없는 계정은 주문 검토에 아예 들어갈 수 없는 막다른 길이었다.
+ */
+function CreatePrinciple({
+  presets,
+  draftPreset,
+  onCreated,
+}: {
+  presets: PrinciplePresetListData;
+  draftPreset: PrinciplePreset | null;
+  onCreated: () => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [presetId, setPresetId] = useState<PrincipleCurrent['presetId'] | null>(
+    draftPreset?.presetId ?? null,
+  );
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+
+  const chosen = presets.items.find((preset) => preset.presetId === presetId) ?? null;
+  const canSubmit = title.trim().length > 0 && chosen !== null && !busy;
+
+  async function create() {
+    if (!canSubmit || !chosen) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await api.createPrinciple({ title: title.trim(), presetId: chosen.presetId, mode: chosen.mode });
+      setNotice({ tone: 'ok', text: '원칙을 만들었습니다.' });
+      onCreated();
+    } catch (cause) {
+      const errorState = toErrorState<never>(cause);
+      setNotice({
+        tone: 'error',
+        text: errorState.kind === 'error' ? errorState.message : '원칙을 만들지 못했습니다.',
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel
+      contract="POST /api/v1/principles"
+      title="원칙 만들기"
+      hint="원칙이 있어야 주문 검토와 자동운용이 동작합니다. 값은 만든 뒤에 언제든 바꿀 수 있습니다."
+    >
+      <div className="space-y-4">
+        <div>
+          <label htmlFor="principle-title" className="text-[12px] font-medium text-muted">
+            이름
+          </label>
+          <input
+            id="principle-title"
+            value={title}
+            placeholder="예: 내 균형형 원칙"
+            onChange={(event) => setTitle(event.target.value)}
+            className="mt-1.5 w-full max-w-[420px] rounded-control border border-line bg-subtle px-4 py-2.5 text-[15px] text-ink placeholder:text-faint focus:border-navy focus:bg-panel"
+          />
+        </div>
+
+        <div>
+          <p className="text-[12px] font-medium text-muted">시작할 preset</p>
+          <div className="mt-1.5 flex flex-wrap gap-2">
+            {[...presets.items]
+              .sort((a, b) => a.order - b.order)
+              .map((preset) => (
+                <Button
+                  key={preset.presetId}
+                  aria-pressed={preset.presetId === presetId}
+                  onClick={() => setPresetId(preset.presetId)}
+                  className={`rounded-full border px-3.5 py-1.5 text-[13px] ${
+                    preset.presetId === presetId
+                      ? 'border-navy font-semibold text-navy'
+                      : 'border-line text-muted hover:border-navy/40'
+                  }`}
+                >
+                  {preset.nameKo}
+                </Button>
+              ))}
+          </div>
+          {chosen ? (
+            <p className="mt-2 text-[13px] leading-6 text-muted">{chosen.descriptionKo}</p>
+          ) : null}
+        </div>
+
+        {notice ? (
+          <p
+            className={`border-l-2 px-3 py-2 text-[13px] leading-6 ${
+              notice.tone === 'ok' ? 'border-allow bg-allow/5 text-ink' : 'border-block bg-block/5 text-ink'
+            }`}
+          >
+            {notice.text}
+          </p>
+        ) : null}
+
+        <div className="border-t border-line pt-4">
+          <Button disabled={!canSubmit} onClick={() => void create()} variant="primary">
+            {busy ? '만드는 중' : '이 원칙으로 시작하기'}
+          </Button>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+/**
+ * 버전 이력.
+ *
+ * 저장은 덮어쓰기가 아니라 새 버전을 쌓는 것이므로, 무엇이 언제 바뀌었는지 되짚을 수 있어야
+ * 다음 원칙을 더 낫게 고칠 수 있다. 바뀐 항목은 백엔드가 준 `changedFields` 를 그대로 쓴다 —
+ * 화면에서 지어내지 않는다.
+ */
+function VersionHistory({
+  history,
+  currentVersion,
+}: {
+  history: PrincipleHistoryData | null;
+  currentVersion: number;
+}) {
+  if (!history) {
+    return (
+      <Panel contract="GET /api/v1/principles/{principleId}/versions" title="바뀐 기록">
+        <p className="text-[13px] leading-6 text-muted">이력을 불러오지 못했습니다.</p>
+      </Panel>
+    );
+  }
+  if (history.items.length === 0) {
+    return (
+      <Panel contract="GET /api/v1/principles/{principleId}/versions" title="바뀐 기록">
+        <p className="text-[13px] leading-6 text-muted">아직 쌓인 버전이 없습니다.</p>
+      </Panel>
+    );
+  }
+  return (
+    <Panel
+      contract="GET /api/v1/principles/{principleId}/versions"
+      title="바뀐 기록"
+      hint="저장할 때마다 한 버전씩 쌓입니다. 이전 버전은 지워지지 않습니다."
+    >
+      <ul className="divide-y divide-line">
+        {history.items.map((version) => (
+          <VersionRow key={version.version} version={version} current={version.version === currentVersion} />
+        ))}
+      </ul>
+    </Panel>
+  );
+}
+
+/** 규칙 안의 어떤 항목이 바뀌었는지. 백엔드가 쓰는 이름 그대로만 옮긴다. */
+const CHANGED_FIELD_NAMES: Record<string, string> = {
+  threshold: '기준값',
+  severity: '위반 시 처리',
+  enabled: '사용 여부',
+  evidenceRequirement: '근거 요구',
+};
+
+/**
+ * `changedFields` 한 항목을 사람이 읽는 말로 옮긴다.
+ *
+ * 백엔드는 `rules.<ruleId>.<field>` 같은 경로를 준다. 아는 형태면 규칙 이름으로 풀고,
+ * 모르는 형태면 **원문을 그대로 보여 준다** — 지어내는 것보다 낫다.
+ */
+function changedFieldLabel(field: string): string {
+  const parts = field.split('.');
+  if (parts[0] !== 'rules' || parts.length < 2) return field;
+  const ruleId = parts[1] as keyof typeof RULE_LABELS;
+  const rule = RULE_LABELS[ruleId];
+  if (!rule) return field;
+  const attr = parts[2] ? CHANGED_FIELD_NAMES[parts[2]] ?? parts[2] : null;
+  return attr ? `${rule.name} ${attr}` : rule.name;
+}
+
+function VersionRow({ version, current }: { version: PrincipleVersion; current: boolean }) {
+  return (
+    <li className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3 first:pt-0 last:pb-0">
+      <span className="flex items-baseline gap-2">
+        <span className="tnum text-[14px] font-semibold text-ink">v{version.version}</span>
+        {current ? (
+          <span className="rounded-full border border-navy px-2 py-0.5 text-[11px] font-medium text-navy">
+            적용 중
+          </span>
+        ) : null}
+        <span className="text-[12px] text-faint">{version.mode}</span>
+      </span>
+      <span className="min-w-0 flex-1 text-[13px] leading-6 text-muted">
+        {version.changedFields.length > 0
+          ? version.changedFields.map(changedFieldLabel).join(' · ')
+          : '처음 만든 버전'}
+      </span>
+      <span className="tnum shrink-0 text-[12px] text-faint">{formatKstDateTime(version.createdAt)}</span>
+    </li>
   );
 }
 
@@ -340,7 +545,7 @@ function RuleRow({
             disabled={!rule.enabled}
             onChange={(event) => onThreshold(Number(event.target.value))}
             aria-label={`${meta.name} 값`}
-            className="tnum w-32 rounded-control border border-line px-3 py-1 text-right font-mono text-[13px] focus:border-navy focus:outline-none disabled:bg-surface disabled:text-faint"
+            className="tnum w-32 rounded-control border border-line bg-panel px-3 py-1 text-right font-mono text-[13px] text-ink focus:border-navy focus:outline-none disabled:bg-subtle disabled:text-muted"
           />
         )}
         <span className="tnum w-24 text-right font-mono text-[13px] text-ink">{display}</span>

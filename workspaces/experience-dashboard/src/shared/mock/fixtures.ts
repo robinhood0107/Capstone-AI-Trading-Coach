@@ -6,28 +6,42 @@
  */
 import type {
   AutomationPolicyV2,
+  AutomationCandidateScreeningV3,
+  AutomationPolicyV3,
   AutomationPositionPageV2,
+  AutomationPositionV3,
+  AutomationRunDetailV3,
   AutomationRunPageV2,
+  AutomationRunV3,
   AutomationStatusV2,
+  AutomationStatusV3,
   DashboardBacktestView,
   DashboardEnvelope,
   DashboardModelEvaluationView,
   DashboardRagSourcesView,
   DashboardRiskResultView,
+  DecisionAction,
   DecisionProjection,
   InstrumentDisplayCatalog,
+  JournalEntry,
+  MockBalance,
   PortfolioRisk,
   PrincipleCurrent,
   PrinciplePreset,
   PrinciplePresetListData,
+  PrincipleHistoryData,
   PrincipleOwnerListData,
   PrincipleRule,
   PrincipleRuleId,
+  RecentRiskResult,
   RagAnswerProjection,
   RagSourceListResponse,
   SignalV3Runtime,
   SystemHealthResponse,
 } from '@/shared/api/wire';
+
+/** N분 전. 픽스처 시각을 실행 시점 기준으로 만든다. */
+const iso = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
 
 const RULE_SHAPE: Record<
   PrincipleRuleId,
@@ -133,6 +147,51 @@ export const principleList: PrincipleOwnerListData = {
   nextCursor: null,
 };
 
+/**
+ * 저장할 때마다 한 버전씩 쌓인다. 최신이 앞이다.
+ *
+ * `changedFields` 는 그 버전에서 실제로 달라진 것만 담는다 — 화면이 "무엇이 바뀌었는지"를
+ * 지어내지 않고 그대로 보여 준다.
+ */
+export const principleHistory: PrincipleHistoryData = {
+  items: [
+    {
+      principleId: PRINCIPLE_ID,
+      title: principle.title,
+      presetId: principle.presetId,
+      mode: principle.mode,
+      status: 'ACTIVE',
+      version: 3,
+      createdAt: principle.updatedAt,
+      changedFields: ['rules.daily_loss_guard.threshold'],
+      rules: principle.rules,
+    },
+    {
+      principleId: PRINCIPLE_ID,
+      title: principle.title,
+      presetId: 'balanced',
+      mode: 'GUIDE',
+      status: 'ARCHIVED',
+      version: 2,
+      createdAt: '2026-08-11T14:05:00+09:00',
+      changedFields: ['mode', 'rules.max_daily_orders.threshold'],
+      rules: buildRules([0.18, 0.3, 400000, -0.05, -0.12, 5, 0.7, 0.7], 'WARN'),
+    },
+    {
+      principleId: PRINCIPLE_ID,
+      title: principle.title,
+      presetId: 'balanced',
+      mode: 'GUIDE',
+      status: 'ARCHIVED',
+      version: 1,
+      createdAt: principle.createdAt,
+      changedFields: [],
+      rules: buildRules([0.2, 0.3, 500000, -0.05, -0.12, 5, 0.7, 0.7], 'WARN'),
+    },
+  ],
+  nextCursor: null,
+};
+
 export const health: SystemHealthResponse = {
   asOf: new Date().toISOString(),
   pythonService: 'UP',
@@ -193,6 +252,171 @@ export const automationStatus: AutomationStatusV2 = {
   blockers: ['BLOCKED_INCOMPLETE_RISK_BALANCE'],
 };
 
+/**
+ * "최근 주문 판정" 목록.
+ *
+ * 저장된 판정 픽스처에서 뽑아 쓴다 — 목록과 상세가 다른 데이터를 보면 목록을 눌렀을 때
+ * 상세가 없다고 나온다. 최신이 앞이다.
+ */
+export function recentRiskResults(): RecentRiskResult[] {
+  const items: RecentRiskResult[] = [];
+  for (const envelope of Object.values(dashboardRiskResults)) {
+    // 판정 내용이나 시각이 없는 봉투는 목록에 올리지 않는다. 없는 값을 지어내지 않는다.
+    if (!envelope.view || !envelope.asOf || !envelope.freshUntil) continue;
+    items.push({
+      decisionId: envelope.view.decisionId,
+      action: envelope.view.action,
+      symbol: RISK_RESULT_SYMBOLS[envelope.view.decisionId] ?? '005930',
+      asOf: envelope.asOf,
+      validUntil: envelope.freshUntil,
+    });
+  }
+  return items.sort((a, b) => Date.parse(b.asOf) - Date.parse(a.asOf));
+}
+
+/** 판정별 종목. 화면이 종목 배지를 그리는 데 쓴다. */
+const RISK_RESULT_SYMBOLS: Record<string, string> = {
+  dec_demo_warn_000001: '005930',
+  dec_demo_hold_000001: '000660',
+  dec_demo_block_000001: '132030',
+};
+
+/**
+ * 학습일지.
+ *
+ * 화면 검증용 기록 둘. 판정과 이어 붙인 것 하나, 그냥 메모 하나 — 링크가 있는 경우와 없는
+ * 경우가 화면에서 다르게 보이므로 둘 다 둔다.
+ */
+const NO_LINKS = {
+  decisionId: null,
+  backtestRunId: null,
+  ragAnswerId: null,
+  orderId: null,
+  automationRunId: null,
+};
+
+export const journals: JournalEntry[] = [
+  {
+    contractId: 'journal.v1',
+    journalId: 'jrn_1a2b3c4d5e6f708192a3b4c5d6e7f809',
+    ownerScope: 'OWNER',
+    title: '하루 주문 횟수 상한을 3건으로 낮춘 이유',
+    content:
+      '같은 종목을 하루에 네 번 두드린 날 수수료만 남았습니다. 상한을 3건으로 내리고 나서 판정이 한 번 BLOCK을 냈는데, 그 주문은 안 냈어야 하는 것이 맞았습니다.',
+    tags: ['원칙', '되돌아보기'],
+    links: { ...NO_LINKS, decisionId: 'dec_demo_warn_000001' },
+    version: 2,
+    createdAt: iso(48),
+    updatedAt: iso(20),
+    deletedAt: null,
+  },
+  {
+    contractId: 'journal.v1',
+    journalId: 'jrn_2b3c4d5e6f708192a3b4c5d6e7f8091a',
+    ownerScope: 'OWNER',
+    title: 'MDD와 CVaR을 같이 봐야 하는 이유',
+    content:
+      '수익률만 보면 Guide가 가장 좋아 보였지만 MDD와 CVaR을 함께 놓고 보니 Strict 쪽이 더 견딜 만했습니다. 13세션은 짧아 단정하지는 않습니다.',
+    tags: ['지표'],
+    links: { ...NO_LINKS },
+    version: 1,
+    createdAt: iso(6),
+    updatedAt: iso(6),
+    deletedAt: null,
+  },
+];
+
+/* ─────────────────────────────── 증권 · 주문 ──────────────────────────── */
+
+export const mockBalance: MockBalance = {
+  accountId: automationStatus.accountId!,
+  brokerageMode: 'KIS_MOCK',
+  cashKrw: 4_820_000,
+  portfolioEquityKrw: 10_000_000,
+  marginRequirementKrw: 0,
+  positions: [
+    { symbol: '005930', quantity: 40, marketValueKrw: 2_840_000, isGoldEtfEtn: false },
+    { symbol: '132030', quantity: 90, marketValueKrw: 1_200_000, isGoldEtfEtn: true },
+  ],
+  observedAt: new Date(Date.now() - 3 * 60_000).toISOString(),
+  sourceVersion: 'kis-mock-2026-09',
+};
+
+/** 종목별 예상 단가. 없는 종목은 만들어 내지 않고 하나의 기본값으로 둔다. */
+const MOCK_PRICES: Record<string, number> = {
+  '005930': 71_000,
+  '000660': 183_500,
+  '132030': 13_400,
+};
+
+export function mockPriceFor(symbol: string): number {
+  return MOCK_PRICES[symbol] ?? 50_000;
+}
+
+/**
+ * evaluate-order 의 mock 판정.
+ *
+ * 화면 검증용으로 **규칙 하나만** 본다 — 1회 주문 최대 금액. 금액이 한도를 넘으면 BLOCK,
+ * 80% 이상이면 WARN, 아니면 ALLOW. 실제 판정은 서버가 열네 줄을 전부 본다.
+ */
+export function evaluateOrder(symbol: string, estimatedAmount: number): DecisionProjection {
+  const limit =
+    principle.rules.find((rule) => rule.ruleId === 'max_single_order_amount')?.threshold ?? 400_000;
+  const ratio = estimatedAmount / limit;
+  const action: DecisionAction = ratio > 1 ? 'BLOCK' : ratio >= 0.8 ? 'WARN' : 'ALLOW';
+
+  evaluateCounter += 1;
+  const decisionId = `dec_${evaluateCounter.toString(16).padStart(32, '0')}`;
+  const validUntil = new Date(Date.now() + 5 * 60_000).toISOString();
+  const violations =
+    action === 'ALLOW'
+      ? []
+      : [
+          {
+            ruleId: 'max_single_order_amount' as const,
+            message: '1회 주문 최대 금액 기준에 걸렸습니다.',
+            metricValue: estimatedAmount,
+            threshold: limit,
+            severity: (action === 'BLOCK' ? 'BLOCK' : 'WARN') as 'BLOCK' | 'WARN',
+          },
+        ];
+
+  return {
+    decisionId,
+    createdAt: new Date().toISOString(),
+    enforcementAction: action,
+    mode: principle.mode,
+    portfolioSource: 'KIS_MOCK',
+    principleId: principle.principleId,
+    principleVersion: principle.version,
+    principleVersionId: 'pv_mock',
+    validUntil,
+    riskDecision: {
+      decisionId,
+      evaluationId: `evl_${decisionId.slice(4)}`,
+      decision: action,
+      canSubmitOrder: action === 'ALLOW',
+      mode: principle.mode,
+      portfolioSource: 'KIS_MOCK',
+      principleVersion: principle.version,
+      principleVersionId: 'pv_mock',
+      catalogVersion: 1,
+      readinessPolicyVersion: 'rp_v1',
+      schemaVersion: '1.0.0',
+      semanticInputHash: symbol.padEnd(64, '0'),
+      snapshotArtifactHash: symbol.padEnd(64, '0'),
+      validUntil,
+      violations,
+      issues: [],
+      warnings: [],
+      abstentions: [],
+      riskItems: [],
+    },
+  };
+}
+
+let evaluateCounter = 0;
+
 export function replaceAutomationPolicy(policy: AutomationPolicyV2): void {
   automationPolicy = policy;
   automationStatus.policy = policy;
@@ -239,9 +463,176 @@ export const automationPositions: AutomationPositionPageV2 = {
   nextCursor: null,
 };
 
+/* ----------------------------------------------------------- Automation v3
+ *
+ * v3 는 "왜 그렇게 판단했는지"를 담는다. 그래서 여기 픽스처는 v2 보다 풍부하다 — ATR 추적
+ * 손절이 걸린 보유 포지션, AI 가 근거를 읽고 넘어간 실행, 근거 없이 건너뛴 실행.
+ */
+
+/** v3 정책. v2 저장이 채우지 못하는 네 값이 여기 있다. */
+export let automationPolicyV3: AutomationPolicyV3 = {
+  ...automationPolicy,
+  contractId: 'automation-policy.v3',
+  atrPeriod: 14,
+  atrMultiplierMilli: 2500,
+  maxHoldingSessions: 60,
+  modelSellEnabled: true,
+};
+
+export function replaceAutomationPolicyV3(policy: AutomationPolicyV3): void {
+  automationPolicyV3 = policy;
+}
+
+export function automationStatusV3(base: AutomationStatusV2): AutomationStatusV3 {
+  return {
+    ...base,
+    contractId: 'automation-status.v3',
+    policy: automationPolicyV3,
+    aiJudgementEnabled: true,
+    thinkingLevel: 'low',
+    marketHistoryStatus: 'READY',
+    legacyOpenPositionCount: 0,
+  };
+}
+
+export const automationRunsV3: AutomationRunV3[] = [
+  {
+    contractId: 'automation-run.v3',
+    runId: 'auto_run_v3_judged_0002',
+    sessionDate: '2026-09-03',
+    state: 'COMPLETED',
+    brokerageMode: 'KIS_MOCK',
+    policyId: automationPolicy.policyId,
+    policyVersion: automationPolicy.version,
+    selectedSymbol: '005930',
+    selectedSide: 'BUY',
+    orderQuantity: 5,
+    filledQuantity: 5,
+    leavesQuantity: 0,
+    limitPriceKrw: 71_000,
+    estimatedAmountKrw: 355_000,
+    exitReason: null,
+    physicalSubmitCount: 1,
+    providerCalls: 3,
+    evidenceCount: 2,
+    evidenceSetSha256: 'a'.repeat(64),
+    aiSettingsSha256: 'b'.repeat(64),
+    judgeCallCount: 1,
+    groundingQueryCount: 2,
+    screeningProviderCallCount: 2,
+    startedAt: '2026-09-03T09:30:00+09:00',
+    updatedAt: '2026-09-03T09:38:12+09:00',
+  },
+  {
+    contractId: 'automation-run.v3',
+    runId: 'auto_run_v3_skipped_0001',
+    sessionDate: '2026-08-27',
+    state: 'SKIPPED_DATA_UNAVAILABLE',
+    brokerageMode: 'KIS_MOCK',
+    policyId: automationPolicy.policyId,
+    policyVersion: automationPolicy.version,
+    selectedSymbol: null,
+    selectedSide: null,
+    orderQuantity: null,
+    filledQuantity: null,
+    leavesQuantity: null,
+    limitPriceKrw: null,
+    estimatedAmountKrw: null,
+    exitReason: null,
+    physicalSubmitCount: 0,
+    providerCalls: 0,
+    // 근거 0건. AI 판단까지 가지 못하고 끝난 실행이다.
+    evidenceCount: 0,
+    evidenceSetSha256: null,
+    aiSettingsSha256: null,
+    judgeCallCount: 0,
+    groundingQueryCount: 0,
+    screeningProviderCallCount: 0,
+    startedAt: '2026-08-27T09:30:00+09:00',
+    updatedAt: '2026-08-27T09:30:01+09:00',
+  },
+];
+
+export const automationPositionsV3: AutomationPositionV3[] = [
+  {
+    contractId: 'automation-position.v3',
+    positionId: 'auto_pos_v3_0001',
+    accountId: automationStatus.accountId!,
+    symbol: '005930',
+    quantity: 5,
+    entryAverageFillPriceKrw: 71_000,
+    entrySession: '2026-09-03',
+    expirySession: null,
+    policyId: automationPolicy.policyId,
+    policyVersion: automationPolicy.version,
+    stopLossBps: automationPolicy.stopLossBps,
+    takeProfitBps: automationPolicy.takeProfitBps,
+    status: 'OPEN',
+    exitReason: null,
+    peakPriceKrw: 73_400,
+    trailingStopKrw: 70_900,
+    atrPeriod: 14,
+    atrMultiplierMilli: 2500,
+    atrAsOfSession: '2026-09-05',
+    maxHoldingSessions: 60,
+    modelSellEnabled: true,
+    botOwned: true,
+    shortAllowed: false,
+    createdAt: '2026-09-03T09:38:12+09:00',
+    closedAt: null,
+  },
+];
+
+const RUN_SCREENINGS: Record<string, AutomationCandidateScreeningV3[]> = {
+  auto_run_v3_judged_0002: [
+    {
+      symbol: '005930',
+      score: 0.72,
+      reason: '분기 실적 발표에서 메모리 가격 반등이 확인됐고, 공시 위험 신호는 없었습니다.',
+      evidence: [
+        {
+          citationId: 'cit_mock_0001',
+          symbol: '005930',
+          sourceId: 'dart.fss.or.kr',
+          sourceType: 'OFFICIAL_PRIMARY',
+          sourceEventDate: '2026-09-02',
+          boundedQuote: '메모리 부문 영업이익이 전분기 대비 증가했으며 재고 수준은 정상 범위로 복귀했습니다.',
+          quoteSha256: 'c'.repeat(64),
+          uriSha256: 'd'.repeat(64),
+          ageWarning: false,
+          verified: true,
+        },
+        {
+          citationId: 'cit_mock_0002',
+          symbol: '005930',
+          sourceId: 'krx.co.kr',
+          sourceType: 'REGISTERED_INDEPENDENT',
+          sourceEventDate: '2026-08-20',
+          boundedQuote: '해당 종목에 대한 시장경보 및 투자주의 지정 이력이 없습니다.',
+          quoteSha256: 'e'.repeat(64),
+          uriSha256: 'f'.repeat(64),
+          // 2주 넘은 근거. 서버가 오래됐다고 표시한 경우다.
+          ageWarning: true,
+          verified: true,
+        },
+      ],
+    },
+  ],
+  auto_run_v3_skipped_0001: [],
+};
+
+export function automationRunDetailV3(runId: string): AutomationRunDetailV3 | null {
+  const run = automationRunsV3.find((item) => item.runId === runId);
+  if (!run) return null;
+  return {
+    contractId: 'automation-run-detail.v3',
+    run,
+    candidateScreenings: RUN_SCREENINGS[runId] ?? [],
+  };
+}
+
 /* -------------------------------------------------------------- Decision */
 
-const iso = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
 
 export const dashboardRiskResults: Record<string, DashboardEnvelope<DashboardRiskResultView>> = {
   dec_demo_warn_000001: {

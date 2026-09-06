@@ -140,6 +140,7 @@ PostgreSQL one-shot claim을 별도로 통과한다. 이 구조는 공개 HTTP/O
 - [중간보고서 작성용 초기설계](중간보고서_작성용_초기설계.md) — 역사적 초안이며 현재 상태 권위가 아님
 - [S1.4X 격리 수치 parity ADR](adr/ADR-027-s1-4x-isolated-numeric-parity.md)
 - [S6 금융공학 실행·검증](decision-platform/S6_금융공학_실행_및_검증.md)
+- [금융공학 공식과 자동매매 로직 설명서](금융공학_공식_및_자동매매_로직_설명서.md)
 
 ## 외부 종결 순서
 
@@ -198,3 +199,5 @@ TEAMMATE_ARTIFACT_ABSENCE=NOT_AVAILABLE_OR_ABSTAIN
 <!-- PRE_S5_SOLO_ROLE_CATALOG_END -->
 
 </div>
+
+- [자동운용 후속 TODO](자동운용_후속_TODO.md): 모델 비교, LSTM 다기간 예측, 실시간 계좌·주가와 UI.

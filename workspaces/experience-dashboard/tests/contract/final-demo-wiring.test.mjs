@@ -57,7 +57,9 @@ test('home and evaluation views distinguish missing values from loading', () => 
   const evaluation = read('src/features/model-evaluation/ModelEvaluationView.tsx');
   const policy = read('src/features/automation/policy.ts');
   assert.doesNotMatch(overview, />확인 중</);
-  assert.match(overview, /KIS Mock 계좌 연결 필요/);
+  // 계좌가 아직 없는 빈 상태다. 계좌 종류(모의/실계좌)는 붙고 나서 값으로 정해지므로
+  // 여기서 미리 못박지 않는다 — 다만 "확인 중" 같은 로딩 문구로 뭉개서도 안 된다.
+  assert.match(overview, /KIS 계좌 연결 필요/);
   assert.match(evaluation, /Guide 포트폴리오 평가액/);
   assert.doesNotMatch(evaluation, /timeline\.slice\(0, 40\)/);
   assert.match(policy, /켜짐 · 장 시작 대기/);

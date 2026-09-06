@@ -67,7 +67,7 @@ export function OverviewView() {
                       {finite(data.balance?.portfolioEquityKrw ?? data.risk.portfolioValue) ? (
                         formatKrw(data.balance?.portfolioEquityKrw ?? data.risk.portfolioValue!)
                       ) : (
-                        <span className="text-[18px] font-medium text-white/65">KIS Mock 계좌 연결 필요</span>
+                        <span className="text-[18px] font-medium text-white/65">KIS 계좌 연결 필요</span>
                       )}
                     </p>
                     {finite(data.risk.dailyPnlRate) ? (
@@ -292,7 +292,7 @@ function LiveSummary({ data }: { data: OverviewData }) {
   return (
     <div className="space-y-6">
       <Panel
-        title="현재 KIS Mock 계좌"
+        title="현재 연결된 계좌"
         hint={observedAt ? `${observedAt} KST에 저장된 잔고입니다.` : '저장된 최신 잔고를 표시합니다.'}
       >
         {balance ? (

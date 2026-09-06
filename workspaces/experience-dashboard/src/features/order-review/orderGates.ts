@@ -136,6 +136,22 @@ export function firstBlocking(gates: Gate[]): Gate | null {
   return gates.find((gate) => gate.passed !== true) ?? null;
 }
 
+/**
+ * 체결 조회 창. 서버가 KST 일 경계로 **최대 31일**만 받는다
+ * (`BrokerageFillRequestParser.kt:20`). 넘기면 `RANGE_EXCEEDS_31_DAYS` 로 거절된다.
+ *
+ * 화면에서 임의로 넓히지 못하도록 여기서만 만든다.
+ */
+export const FILL_WINDOW_MAX_DAYS = 31;
+
+export function fillWindow(now = new Date()): { from: string; to: string } {
+  const day = (date: Date) => date.toISOString().slice(0, 10);
+  const from = new Date(now);
+  // inclusive 라 30일을 빼야 31일 창이 된다.
+  from.setUTCDate(from.getUTCDate() - (FILL_WINDOW_MAX_DAYS - 1));
+  return { from: day(from), to: day(now) };
+}
+
 /** 수량과 단가에서 주문 의도를 만든다. 금액은 서버가 정확히 일치하기를 요구한다. */
 export function buildIntent(fields: {
   symbol: string;

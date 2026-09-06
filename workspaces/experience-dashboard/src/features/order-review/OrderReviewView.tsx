@@ -11,6 +11,7 @@ import { ID_PATTERN } from '@/shared/api/endpoints';
 import { formatKstDateTime, formatRatio } from '@/shared/lib/format';
 import { loadRiskResultView, type ReasonDisposition } from './viewModel';
 import { OrderTicket } from './OrderTicket';
+import { FillsPanel } from './FillsPanel';
 import type { DecisionRiskItemProjection } from '@/shared/api/wire';
 import { api } from '@/shared/api/endpoints';
 import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentity';
@@ -55,6 +56,7 @@ export function OrderReviewView() {
   return (
     <div className="space-y-6">
       <OrderTicket />
+      <FillsPanel />
 
       <AsyncBoundary state={recent.state} onRetry={recent.reload}>
         {(items) =>
@@ -158,8 +160,9 @@ export function OrderReviewView() {
                       {view.summaryReasons.length === 0 ? (
                         <li className="text-[13px] text-faint">표시할 사유가 없습니다.</li>
                       ) : (
-                        view.summaryReasons.map((reason) => (
-                          <li key={reason} className="text-[13px] leading-6 text-ink">
+                        // 서버가 준 문장 목록이다. 같은 문장이 두 번 올 수 있어 순번을 섞는다.
+                        view.summaryReasons.map((reason, index) => (
+                          <li key={`${index}:${reason}`} className="text-[13px] leading-6 text-ink">
                             · {reason}
                           </li>
                         ))
@@ -172,8 +175,8 @@ export function OrderReviewView() {
                       {view.summaryPrinciples.length === 0 ? (
                         <li className="text-[13px] text-faint">관련된 원칙이 없습니다.</li>
                       ) : (
-                        view.summaryPrinciples.map((principle) => (
-                          <li key={principle} className="text-[13px] leading-6 text-ink">
+                        view.summaryPrinciples.map((principle, index) => (
+                          <li key={`${index}:${principle}`} className="text-[13px] leading-6 text-ink">
                             · {principle}
                           </li>
                         ))
@@ -184,8 +187,8 @@ export function OrderReviewView() {
 
                 {view.summaryRiskItems.length > 0 ? (
                   <ul className="mt-6 divide-y divide-line/60 border-t border-line pt-2">
-                    {view.summaryRiskItems.map((item) => (
-                      <li key={item.code} className="flex items-start justify-between gap-4 py-2.5">
+                    {view.summaryRiskItems.map((item, index) => (
+                      <li key={`${index}:${item.code}`} className="flex items-start justify-between gap-4 py-2.5">
                         <div className="min-w-0">
                           <p className="text-[13px] leading-5 text-ink">{item.summary}</p>
                           <p className="font-mono text-[11px] uppercase tracking-[0.06em] text-faint">
@@ -229,7 +232,7 @@ export function OrderReviewView() {
                                 <li className="text-[13px] text-faint">해당 없음</li>
                               ) : (
                                 rows.map((reason) => (
-                                  <li key={reason.code + reason.detail}>
+                                  <li key={reason.id}>
                                     <p className="text-[13px] font-medium leading-5 text-ink">
                                       {reason.headline}
                                     </p>
@@ -266,8 +269,8 @@ export function OrderReviewView() {
                             </tr>
                           </thead>
                           <tbody>
-                            {view.detail.violatedPrinciples.map((item) => (
-                              <tr key={item.ruleId} className="border-b border-line/60 last:border-0">
+                            {view.detail.violatedPrinciples.map((item, index) => (
+                              <tr key={`${index}:${item.ruleId}`} className="border-b border-line/60 last:border-0">
                                 <td className="py-2.5 pr-3 text-ink">{item.name}</td>
                                 <td className="tnum py-2.5 text-right font-mono text-block">
                                   {item.observed}
@@ -294,8 +297,8 @@ export function OrderReviewView() {
                         <p className="text-[13px] text-muted">기록된 근거 값이 없습니다.</p>
                       ) : (
                         <ul className="divide-y divide-line/60">
-                          {view.detail.riskItems.map((item) => (
-                            <RiskItemRow key={item.metric} item={item} />
+                          {view.detail.riskItems.map((item, index) => (
+                            <RiskItemRow key={`${index}:${item.metric}`} item={item} />
                           ))}
                         </ul>
                       )}

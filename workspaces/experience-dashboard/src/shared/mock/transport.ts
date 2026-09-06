@@ -495,10 +495,19 @@ export async function mockTransport<T>(
       ) as ApiEnvelope<T>;
     }
     if (leaf === 'fills') {
-      return ok(
-        { items: mockFills, nextCursor: null },
-        requestId,
-      ) as ApiEnvelope<T>;
+      // 서버는 KST 일 경계로 최대 31일만 받는다(BrokerageFillRequestParser.kt:20).
+      // mock 이 더 넓게 받아 주면 live 에서만 RANGE_EXCEEDS_31_DAYS 로 깨진다.
+      const query = new URLSearchParams(path.split('?')[1] ?? '');
+      const from = query.get('from');
+      const to = query.get('to');
+      if (!from || !to) {
+        return fail('VALIDATION_ERROR', '조회 기간을 지정해야 합니다.', requestId);
+      }
+      const spanDays = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
+      if (!Number.isFinite(spanDays) || spanDays < 0 || spanDays > 30) {
+        return fail('VALIDATION_ERROR', '조회 기간은 31일을 넘을 수 없습니다.', requestId);
+      }
+      return ok({ items: mockFills, nextCursor: null }, requestId) as ApiEnvelope<T>;
     }
     return fail('NOT_FOUND', `mock 경로가 정의되지 않았습니다: ${target}`, requestId);
   }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -76,6 +77,8 @@ def _drive(
         )
         if result["state"] in {
             "COMPLETED",
+            # 공시 근거 거부권이 닫는 종단 상태다. V141 이 이것을 terminal 로 취급한다.
+            "NEWS_VETOED",
             "SKIPPED_NO_ACTION",
             "SKIPPED_DATA_UNAVAILABLE",
             "HALTED",
@@ -306,3 +309,76 @@ def test_candidate_set_hash_seals_pre_eligibility_return_engine_set() -> None:
     assert _drive(store, transport, _inputs(first, second)) == "COMPLETED"
     assert store.runs[_RUN].selected_symbol == "000002"
     assert store.runs[_RUN].candidate_set_sha256 == _candidate_set_sha256((first, second))
+
+
+def test_v3_skips_the_disclosure_veto_when_its_provider_is_not_bound() -> None:
+    """거부권 provider 가 결속되지 않은 v3 세션은 vertex 를 부르지 않는다.
+
+    결속되지 않으면 transport 가 fail-closed 라 판정이 ABSTAIN 으로 고정된다 - 부르면 호출
+    하나를 버리는 것이고, 소유자가 AI 를 끈 세션에서도 provider 경로가 열린다.
+    """
+
+    candidate = _candidate("000001", 0.04)
+    screening = NewsScreeningBatch(
+        (CandidateScreening("000001", "AVAILABLE", "NO_VETO", 5_000, "NO_EVIDENCE"),), 1, 2
+    )
+    transport = FixtureAutomationTransport(
+        quotes={"000001": Quote("000001", 75_000, 52_500, 97_500)},
+        screening_batch=screening,
+        news_verdict="VETO_BUY",
+    )
+    store = _store()
+
+    assert _drive(store, transport, _inputs(candidate)) == "COMPLETED"
+    assert transport.vertex_calls == 0
+
+
+def test_v3_lets_the_disclosure_veto_stop_the_buy_when_its_provider_is_bound() -> None:
+    """결속된 v3 세션은 공시 근거 거부권을 지나고 `VETO_BUY` 에서 닫힌다.
+
+    v3 는 앞의 `NEWS_SCREENING` 에서 이미 후보 집합에 거부권을 행사하지만 그 판정은 Spring
+    bridge 가 자체 grounding 으로 내리고 요청에 근거를 넣을 자리가 없다. `NEWS_CHECKING` 은
+    등록 도메인 공시와 host 가 아는 접수일로 만든 인용을 쓰므로 다른 층이다. 두 층은 서로를
+    대체하지 않는다.
+    """
+
+    candidate = _candidate("000001", 0.04)
+    screening = NewsScreeningBatch(
+        (CandidateScreening("000001", "AVAILABLE", "NO_VETO", 5_000, "NO_EVIDENCE"),), 1, 2
+    )
+    transport = FixtureAutomationTransport(
+        quotes={"000001": Quote("000001", 75_000, 52_500, 97_500)},
+        screening_batch=screening,
+        news_verdict="VETO_BUY",
+    )
+    store = _store()
+    inputs = replace(_inputs(candidate), news_veto_provider_bound=True)
+
+    assert _drive(store, transport, inputs) == "NEWS_VETOED"
+    assert transport.vertex_calls == 1
+    assert transport.submit_calls == 0
+    assert store.runs[_RUN].logical_submit_count == 0
+
+
+def test_v3_passes_the_disclosure_veto_when_evidence_is_absent() -> None:
+    """근거가 없어 ABSTAIN 이면 매수를 막지 않는다.
+
+    실측: 2026-09-08 시점 유니버스 29종목의 최근 7일 구조화 공시가 0건이다. 즉 평시의
+    정상 경로가 ABSTAIN 이고, 그것으로 매수를 막으면 자동운용이 평시에 멈춘다.
+    """
+
+    candidate = _candidate("000001", 0.04)
+    screening = NewsScreeningBatch(
+        (CandidateScreening("000001", "AVAILABLE", "NO_VETO", 5_000, "NO_EVIDENCE"),), 1, 2
+    )
+    transport = FixtureAutomationTransport(
+        quotes={"000001": Quote("000001", 75_000, 52_500, 97_500)},
+        screening_batch=screening,
+        news_verdict="ABSTAIN",
+    )
+    store = _store()
+    inputs = replace(_inputs(candidate), news_veto_provider_bound=True)
+
+    assert _drive(store, transport, inputs) == "COMPLETED"
+    assert transport.vertex_calls == 1
+    assert transport.submit_calls == 1

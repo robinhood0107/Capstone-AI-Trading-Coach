@@ -69,6 +69,7 @@ from app.data.decision.observation_payloads import (
 from app.data.kis.instrument_catalog_writer import append_instrument_catalog_fixture
 from app.data.kis.market_quote_observation_writer import append_market_quote_fixture
 from app.data.market_data.repository import MarketDataRepositoryError, stage_daily_shard
+from app.data._shared.repository_root import repository_artifact
 from app.decision_source_cli import attest_source_writer_dsn
 
 _KST = ZoneInfo("Asia/Seoul")
@@ -296,15 +297,13 @@ def _catalog_path() -> Path:
     """커밋된 유니버스 카탈로그를 찾는다.
 
     호스트에서는 리포 루트가 다섯 단계 위이고 컨테이너에서는 /app 이 세 단계 위다. 한 상수로
-    맞출 수 없으니 위로 걸어 올라가며 찾는다.
+    맞출 수 없으니 공용 해석기가 위로 걸어 올라가며 찾는다.
     """
 
-    relative = Path("contracts/catalogs/p1-return-universe.v1.json")
-    for parent in Path(__file__).resolve().parents:
-        candidate = parent / relative
-        if candidate.is_file():
-            return candidate
-    raise DailyRefreshError("UNIVERSE_CATALOG_MISSING")
+    path = repository_artifact(__file__, "contracts/catalogs/p1-return-universe.v1.json")
+    if path is None:
+        raise DailyRefreshError("UNIVERSE_CATALOG_MISSING")
+    return path
 
 
 def _universe() -> dict[str, str]:

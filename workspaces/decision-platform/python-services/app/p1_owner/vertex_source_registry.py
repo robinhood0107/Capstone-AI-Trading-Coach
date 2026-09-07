@@ -14,11 +14,11 @@ from functools import lru_cache
 from typing import Final
 from urllib.parse import urlsplit
 
-from app.data._shared.repository_root import repository_root
+from app.data._shared.repository_root import repository_artifact
 
-_CATALOG_PATH: Final = (
-    repository_root(__file__, 5) / "contracts/catalogs/p1-vertex-news-sources.v1.json"
-)
+# 깊이 상수로는 맞출 수 없다. 리포 체크아웃과 production 이미지의 상대 깊이가 다르고, 잘못된
+# 경로는 근거를 조용히 0개로 만든다 - 실측으로 컨테이너에서 이 카탈로그를 찾지 못했다.
+_CATALOG_RELATIVE: Final = "contracts/catalogs/p1-vertex-news-sources.v1.json"
 _SOURCE_TYPES: Final = frozenset({"OFFICIAL_PRIMARY", "REGISTERED_INDEPENDENT"})
 
 
@@ -30,8 +30,11 @@ class VertexSourceRegistryError(RuntimeError):
 def registered_sources() -> dict[str, tuple[str, str]]:
     """domain -> (sourceId, sourceType). 카탈로그 자체가 단일 진실이다."""
 
+    path = repository_artifact(__file__, _CATALOG_RELATIVE)
+    if path is None:
+        raise VertexSourceRegistryError("vertex news source catalog is unavailable")
     try:
-        catalog = json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
+        catalog = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise VertexSourceRegistryError("vertex news source catalog is unavailable") from error
     entries = catalog.get("sources")

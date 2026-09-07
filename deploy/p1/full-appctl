@@ -124,7 +124,7 @@ demo_history() {
   [[ $DEMO_STACK == true ]] || return 0
   output=$(P1_DEMO_HISTORY_COMMAND=$action \
     compose --profile demo run --rm --no-deps demo-history-seed 2>&1 \
-    | grep -E '^P1_DEMO_HISTORY=' | tail -1) || output=''
+    | grep -E '^P1_DEMO_HISTORY=' | tail -1) || true  # 캡처한 표식을 지우지 않는다. 사유가 사라진다
   printf '%s\n' "${output:-P1_DEMO_HISTORY=UNAVAILABLE}"
 }
 
@@ -313,6 +313,32 @@ DECISION_RISK_WRITER_DATABASE_DSN=postgresql://decision_risk_writer:%s@postgres:
     printf 'P1_CALENDAR_OFFLINE_SEED_DSN=postgresql://decision_collector:%s@postgres:5432/capstone_p1?sslmode=disable\n' \
       "$collector_password" | write_state secrets/calendar-offline-seed.env 0640
     unset collector_password
+  fi
+  # 공시 근거 수집기도 나중에 붙었다. decision_collector 는 role bootstrap 이 이미 만든
+  # role 이고, OpenDART 인증정보는 리포 .env 에서만 온다. 시장데이터 provider 블록과 같은
+  # 이유로 매 init 마다 다시 쓴다 - .env 의 key 를 나중에 채워도 켜지게 하려면 그래야 한다.
+  local disclosure_collector_password
+  disclosure_collector_password=$(sed -n 's/^POSTGRES_COLLECTOR_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+  [[ $disclosure_collector_password =~ ^[0-9a-f]{64}$ ]] || die DISCLOSURE_COLLECTOR_SECRET_MISSING
+  {
+    printf 'P1_DISCLOSURE_COLLECTOR_DSN=postgresql://decision_collector:%s@postgres:5432/capstone_p1?sslmode=disable\n' \
+      "$disclosure_collector_password"
+    if [[ -f $REPO_ROOT/.env && ! -L $REPO_ROOT/.env ]]; then
+      grep -E '^OPENDART_API_KEY=' "$REPO_ROOT/.env" || true
+    fi
+  } | write_state secrets/disclosure-collector.env 0640
+  unset disclosure_collector_password
+  # 자동운용 런타임은 공시 투영을 읽어 거부권 근거를 만든다. decision_disclosure_reader 는
+  # 그 투영에만 SELECT 를 갖는 read-only role 이고, 없으면 근거가 0개가 되어 거부권이
+  # 조용히 ABSTAIN 한다. 이미 만들어진 상태에도 채운다.
+  if ! grep -q '^DECISION_DISCLOSURE_READER_DATABASE_DSN=' "$SECRETS_DIR/automation-runtime.env"; then
+    local disclosure_reader_password
+    disclosure_reader_password=$(sed -n 's/^POSTGRES_DISCLOSURE_READER_PASSWORD=//p' "$SECRETS_DIR/postgres.env")
+    if [[ $disclosure_reader_password =~ ^[0-9a-f]{64}$ ]]; then
+      printf 'DECISION_DISCLOSURE_READER_DATABASE_DSN=postgresql://decision_disclosure_reader:%s@postgres:5432/capstone_p1?sslmode=disable\n' \
+        "$disclosure_reader_password" | append_state secrets/automation-runtime.env 0640
+    fi
+    unset disclosure_reader_password
   fi
   # 출처 registry 등록도 나중에 붙었다. rag-v2.env 에 이미 있는 writer 자격증명을 그대로
   # 재사용하고 새 role 이나 새 비밀을 만들지 않는다.
@@ -521,7 +547,7 @@ up_app() {
   local calendar_seed
   # Calendar seed failures are reported without taking down the core stack.
   calendar_seed=$(compose --profile owner run --rm --no-deps calendar-offline-seed 2>&1 \
-    | grep -E '^P1_CALENDAR_OFFLINE_SEED=' | tail -1) || calendar_seed=''
+    | grep -E '^P1_CALENDAR_OFFLINE_SEED=' | tail -1) || true  # 캡처한 표식을 지우지 않는다. 사유가 사라진다
   printf '%s\n' "${calendar_seed:-P1_CALENDAR_OFFLINE_SEED=NO_OUTPUT}"
   # An already populated calendar is a healthy state.
   case $calendar_seed in
@@ -535,20 +561,34 @@ up_app() {
   # Source registration is reported separately from core startup.
   local rag_sources_seed
   rag_sources_seed=$(compose --profile owner run --rm --no-deps rag-source-register 2>&1 \
-    | grep -E '"sourceCount"' | tail -1) || rag_sources_seed=''
+    | grep -E '"sourceCount"' | tail -1) || true  # 캡처한 표식을 지우지 않는다. 사유가 사라진다
   if [[ -n $rag_sources_seed ]]; then
     printf 'CAPSTONE_RAG_SOURCE_REGISTRY=REGISTERED\n'
   else
     printf 'CAPSTONE_RAG_SOURCE_REGISTRY=UNAVAILABLE\n'
   fi
   unset rag_sources_seed
+  # 뉴스 거부권의 근거 코퍼스를 채운다. 이것이 비어 있으면 근거가 0개가 되고 거부권이
+  # 조용히 ABSTAIN 한다 - 그 상태가 2026-09-04 에 거부권을 자문으로 격하시킨 원인이다.
+  # provider 호출이 있는 유일한 up 단계이므로 결과를 표식으로 남기고 실패해도 up 을
+  # 멈추지 않는다. 근거가 없으면 자동운용은 거부권 없이 도는 것이 아니라 ABSTAIN 한다.
+  local disclosure_events
+  disclosure_events=$(compose --profile owner run --rm --no-deps disclosure-collector 2>&1 \
+    | grep -E '^P1_DISCLOSURE_EVENTS=' | tail -1) || true  # 캡처한 표식을 지우지 않는다. 사유가 사라진다
+  printf '%s\n' "${disclosure_events:-P1_DISCLOSURE_EVENTS=NO_OUTPUT}"
+  case $disclosure_events in
+    P1_DISCLOSURE_EVENTS=ADOPTED*) printf 'CAPSTONE_DISCLOSURE_CORPUS=COLLECTED\n' ;;
+    P1_DISCLOSURE_EVENTS=SKIPPED*) printf 'CAPSTONE_DISCLOSURE_CORPUS=OFFLINE\n' ;;
+    *) printf 'CAPSTONE_DISCLOSURE_CORPUS=UNAVAILABLE\n' ;;
+  esac
+  unset disclosure_events
   replay_history
   demo_history seed
   # A failed public-price refresh is recorded as stale and never calls KIS orders.
   local daily_refresh
   daily_refresh=$(compose --profile owner run --rm --no-deps market-data-cli \
     python -m app.data.market_data.yfinance_daily_cli 2>&1 \
-    | grep -E '^P1_MARKET_DATA_YF_REFRESH=' | tail -1) || daily_refresh=''
+    | grep -E '^P1_MARKET_DATA_YF_REFRESH=' | tail -1) || true  # 캡처한 표식을 지우지 않는다. 사유가 사라진다
   printf '%s\n' "${daily_refresh:-P1_MARKET_DATA_YF_REFRESH=NO_OUTPUT}"
   case $daily_refresh in
     P1_MARKET_DATA_YF_REFRESH=ADOPTED*|P1_MARKET_DATA_YF_REFRESH=UP_TO_DATE*)
@@ -559,7 +599,7 @@ up_app() {
   unset daily_refresh
   local scenario_materialization
   scenario_materialization=$(compose --profile owner run --rm --no-deps owner-scenario-materializer 2>&1 \
-    | tail -1) || scenario_materialization=''
+    | tail -1) || true  # 캡처한 표식을 지우지 않는다. 사유가 사라진다
   # 개수를 등식으로 보면 거래일이 하나 늘 때마다 이 게이트가 거짓이 된다. 평가 구간은
   # 데이터에서 유도되므로(V154) 하한으로 본다 - 자라는 것은 허용하고 줄어드는 것은 막는다.
   local scenario_sessions scenario_evaluation
@@ -776,7 +816,7 @@ replay_history() {
   chmod 0640 "$signals"
   local seeded
   seeded=$(compose --profile owner run --rm --no-deps history-replay-seed 2>&1 \
-    | grep -E '^P1_HISTORY_REPLAY=' | tail -1) || seeded=''
+    | grep -E '^P1_HISTORY_REPLAY=' | tail -1) || true  # 캡처한 표식을 지우지 않는다. 사유가 사라진다
   if [[ -n $seeded ]]; then
     printf '%s\n' "$seeded"
     printf 'CAPSTONE_HISTORY_REPLAY=SEEDED\n'

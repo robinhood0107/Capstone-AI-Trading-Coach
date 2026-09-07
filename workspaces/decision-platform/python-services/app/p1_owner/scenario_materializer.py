@@ -31,8 +31,11 @@ _PERIODS_PER_YEAR: Final = 252
 _KST: Final = ZoneInfo("Asia/Seoul")
 _GOLD_SYMBOLS: Final = frozenset({"132030"})
 _EVALUATION_START: Final = date(2026, 8, 18)
-_EVALUATION_END: Final = date(2026, 9, 3)
-_EVALUATION_SESSION_COUNT: Final = 13
+# 상한과 개수는 데이터에서 유도한다(V154). 여기 남는 것은 하한뿐이다 - 창이 자라는 것은
+# 허용하고 줄어드는 것(적재 소실·부분 적재)은 막는다. 두 수는 이 코드를 쓸 때 실제로 있던
+# 값이고, 그때보다 적어졌다면 그것은 자란 것이 아니라 잃은 것이다.
+_MIN_CONTEXT_SESSIONS: Final = 104
+_MIN_EVALUATION_SESSIONS: Final = 13
 _IMPLEMENTATION_ID: Final = "owner-scenario-replay.v1.3"
 
 
@@ -99,12 +102,13 @@ def _bars_by_symbol(value: dict[str, Any]) -> tuple[list[date], dict[str, list[d
             }
         )
     if (
-        len(sessions) != 104
+        len(sessions) < _MIN_CONTEXT_SESSIONS
         or sessions != sorted(set(sessions))
         or len(grouped) != 31
-        or any(len(rows) != 104 for rows in grouped.values())
+        # 세션 수를 유도했으므로 종목별 행 수도 그것과 같아야 한다. 부분 적재는 그대로 잡힌다.
+        or any(len(rows) != len(sessions) for rows in grouped.values())
     ):
-        raise ScenarioMaterializationError("SCENARIO_BARS_NOT_EXACT_31_BY_104")
+        raise ScenarioMaterializationError("SCENARIO_BARS_NOT_EXACT_31_BY_EVERY_SESSION")
     expected_sessions = [session.isoformat() for session in sessions]
     for rows in grouped.values():
         rows.sort(key=lambda item: item["sessionDate"])
@@ -122,8 +126,9 @@ def _evaluation_sessions(sessions: list[date], value: dict[str, Any]) -> list[da
     selected = [session for session in sessions if start <= session <= end]
     if (
         start != _EVALUATION_START
-        or end != _EVALUATION_END
-        or len(selected) != _EVALUATION_SESSION_COUNT
+        # 상한은 문맥의 마지막 세션이어야 한다. 이것이 곡선이 거래일마다 하나씩 자라는 이유다.
+        or end != sessions[-1]
+        or len(selected) < _MIN_EVALUATION_SESSIONS
         or selected[0] != start
         or selected[-1] != end
     ):

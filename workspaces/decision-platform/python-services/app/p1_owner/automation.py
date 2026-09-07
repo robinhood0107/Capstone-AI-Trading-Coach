@@ -1110,7 +1110,33 @@ class AutomationEngine:
         elif run.state == "AI_JUDGING":
             self._judge(run, now, inputs, transport)
         elif run.state == "BUY_CANDIDATE_SELECTED":
-            target = "ORDER_SIZING" if inputs.policy.is_v3 else "NEWS_CHECKING"
+            # v3 도 공시 근거 확인을 지난다.
+            #
+            # v3 가 이 상태를 건너뛰던 이유는 앞의 `NEWS_SCREENING` 이 후보 집합 전체에
+            # 이미 거부권을 행사하기 때문이다(`allowed` = AVAILABLE 이고 NO_VETO). 그
+            # 판정은 Spring bridge 가 자체 grounding 으로 내리고, 요청 payload 에 근거를
+            # 넣을 자리가 없다(`_evidence_candidates_payload`). 즉 그 경로의 근거는 host 가
+            # 독립적으로 날짜를 아는 값이 아니다.
+            #
+            # `NEWS_CHECKING` 은 다른 근거를 쓴다 - 등록 도메인의 공시와 host 가 아는
+            # 접수일로 만든 인용이다(`build_public_evidence`). 두 층은 서로를 대체하지
+            # 않으므로 v3 에서도 둘 다 지난다. 둘 다 매수를 막을 수만 있고 무엇도 사게
+            # 하지 못하므로 층을 더하는 방향은 보수적이다.
+            #
+            # 예산: vertex 1회다. 런 상한이 16이고 screening 이 최대 1, judge 가 최대 2를
+            # 쓴다. `_ensure_capacity` 가 그 앞에서 다시 확인한다.
+            #
+            # 다만 v3 에서는 거부권 provider 가 실제로 결속돼 있을 때만 이 상태를 지난다.
+            # 결속되지 않았는데 지나면 transport 가 fail-closed 라 판정이 ABSTAIN 으로 고정된
+            # 호출 한 번을 낭비하고, 무엇보다 소유자가 AI 를 끈 세션에서도 provider 경로가
+            # 열린다. "AI 를 끄면 provider 호출이 0"은 실제 불변식이다
+            # (`test_ai_off_v3_uses_no_screen_or_judge_and_unlimited_fill_snapshots_peak`).
+            # pre-v3 정책은 이 상태가 원래 무조건 경로였으므로 그대로 둔다.
+            target = (
+                "NEWS_CHECKING"
+                if not inputs.policy.is_v3 or inputs.news_veto_provider_bound
+                else "ORDER_SIZING"
+            )
             self._transition(run, target, "RUN_TRANSITIONED", now)
         elif run.state == "NEWS_CHECKING":
             if run.selected_quote is None:
@@ -1120,11 +1146,25 @@ class AutomationEngine:
                 run.selected_quote = quote
             if not self._ensure_capacity(run, now, transport):
                 return
-            # News judgement is advisory; deterministic risk rules retain order authority.
+            # 공시 근거로 내린 거부권을 다시 반영한다.
+            #
+            # 2026-09-04 에 이 판정을 버렸다(`del verdict`). 근거 코퍼스 구현체가 없어
+            # `EmptyCorpusDocumentSource` 가 근거 0개를 내고, 모든 세션이
+            # `VERTEX_NO_REGISTERED_EVIDENCE` 로 ABSTAIN 하면서 매수에 도달하지 못했기
+            # 때문이다. 코퍼스가 채워졌으므로 판정을 다시 반영한다.
+            #
+            # 권한 경계는 그대로다. 거부권은 매수를 **막을** 수만 있고 무엇도 사게 하지
+            # 못한다(`CANDIDATE_RANK_VETO_SIZE_ONLY`). ABSTAIN 은 통과이지 거부가 아니다 -
+            # 근거를 못 읽은 것으로 매수를 막으면 근거 조회 실패가 곧 매매 중단이 되고,
+            # 결정적 위험 규칙이 이미 주문 권한을 갖는다. 실제로 막는 것은 모델이 등록
+            # 출처의 인용을 근거로 부정 사건을 확인한 `VETO_BUY` 하나뿐이다.
             verdict = transport.vertex(_required(run.selected_symbol))
             run.vertex_call_count += 1
-            del verdict
-            self._transition(run, "ORDER_SIZING", "NEWS_RESULT_RECORDED", now)
+            if verdict == "VETO_BUY":
+                self._release_exit_pending(run)
+                self._transition(run, "NEWS_VETOED", "NEWS_RESULT_RECORDED", now)
+            else:
+                self._transition(run, "ORDER_SIZING", "NEWS_RESULT_RECORDED", now)
         elif run.state == "ORDER_SIZING":
             self._size_order(run, now, inputs, transport)
         elif run.state == "RISK_CHECKING":

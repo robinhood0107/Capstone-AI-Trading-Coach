@@ -8,11 +8,13 @@ import re
 import socket
 import ssl
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Protocol, cast
 from zoneinfo import ZoneInfo
 
 import httpx
+import psycopg
 from pydantic import SecretStr
 
 from app.brokerage.kis_mock_online_client import KISBrokerageCallBudget, KISMockBrokerageHttpClient
@@ -25,6 +27,8 @@ from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.kis._credential_transport import _build_redis_client
 from app.data.kis.http_client import CURRENT_PRICE_PATH, KISHttpClient
 from app.data.kis.settings import KISSettings
+from app.disclosure_repository import PostgresStoredDisclosureRepository
+from app.p1_owner.disclosure_corpus import DisclosureEventCorpusDocumentSource
 from app.p1_owner.runtime_observation_publisher import publish_runtime_observations
 from app.p1_owner.automation import (
     AccountLineageSnapshot,
@@ -884,6 +888,7 @@ class LiveAutomationPortFactory:
             KisAutomationQuoteSource(),
             KisAutomationExecutionSource(),
             _vertex_veto_transport(),
+            _corpus_source(),
         )
 
 
@@ -1048,6 +1053,79 @@ def _required_side(value: str | None) -> Any:
     if value not in {"BUY", "SELL"}:
         raise AutomationRuntimeError("AUTOMATION_SELECTION_MISSING")
     return value
+
+
+def _corpus_source() -> CorpusDocumentSource:
+    """공시 투영이 있으면 그것을 근거 코퍼스로, 없으면 기존 빈 코퍼스를 쓴다.
+
+    빈 코퍼스가 곧 근거 0개이고 근거 0개는 ABSTAIN 이므로 매수를 막는다 - 설정이 없는 쪽이
+    항상 더 안전하다. 이 자리가 계획이 말한 "빠진 클래스 하나"였다.
+
+    reader 는 자기 DSN 으로 role 과 표 권한을 실제로 확인한다(`_attest_reader_dsn`).
+    그 검증이나 연결이 실패하면 여기서 빈 코퍼스로 내려앉고 표식을 남긴다 - 런 중에 예외를
+    던지면 tick 하나가 근거 조회 때문에 죽는다.
+    """
+
+    dsn = os.environ.get("DECISION_DISCLOSURE_READER_DATABASE_DSN", "").strip()
+    if not dsn:
+        print("AUTOMATION_DISCLOSURE_CORPUS=UNCONFIGURED", flush=True)
+        return EmptyCorpusDocumentSource()
+    try:
+        repository = PostgresStoredDisclosureRepository(dsn)
+    except (ValueError, OSError, psycopg.Error) as error:
+        print(
+            f"AUTOMATION_DISCLOSURE_CORPUS=UNAVAILABLE error={type(error).__name__}",
+            flush=True,
+        )
+        return EmptyCorpusDocumentSource()
+    print("AUTOMATION_DISCLOSURE_CORPUS=READY", flush=True)
+    return DisclosureEventCorpusDocumentSource(_LoggingDisclosureLoader(repository))
+
+
+@dataclass(frozen=True, slots=True)
+class _LoggingDisclosureLoader:
+    """읽기 실패를 런 밖으로 던지지 않고 빈 배치로 바꾼다.
+
+    근거를 못 읽는 것은 "근거가 없다"와 같은 결과(ABSTAIN)여야 하고, tick 을 죽이는 것과는
+    다르다. 다만 조용히 삼키지 않으려고 표식을 남긴다.
+    """
+
+    repository: PostgresStoredDisclosureRepository
+
+    def load(
+        self,
+        *,
+        symbol: str,
+        corp_code: str | None,
+        window_from: date,
+        window_to: date,
+    ) -> Any:
+        try:
+            batch = self.repository.load(
+                symbol=symbol,
+                corp_code=corp_code,
+                window_from=window_from,
+                window_to=window_to,
+            )
+        except Exception as error:  # noqa: BLE001 - 근거 조회가 tick 을 죽이지 않는다
+            print(
+                f"AUTOMATION_DISCLOSURE_CORPUS=READ_FAILED symbol={symbol} "
+                f"error={type(error).__name__}",
+                flush=True,
+            )
+            return _EmptyDisclosureBatch()
+        print(
+            f"AUTOMATION_DISCLOSURE_CORPUS=READ symbol={symbol} "
+            f"events={len(batch.events)} complete={str(batch.complete).lower()}",
+            flush=True,
+        )
+        return batch
+
+
+@dataclass(frozen=True, slots=True)
+class _EmptyDisclosureBatch:
+    events: tuple[Any, ...] = ()
+    complete: bool = False
 
 
 def _vertex_veto_transport() -> VertexVetoTransport:

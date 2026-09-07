@@ -235,17 +235,21 @@ def test_buy_full_fill_is_restart_safe_exact_one_and_contract_valid() -> None:
     assert list(_validator("automation-control.v1").iter_errors(control)) == []
 
 
-@pytest.mark.parametrize("verdict", ["VETO_BUY", "ABSTAIN", "NO_VETO"])
+@pytest.mark.parametrize("verdict", ["ABSTAIN", "NO_VETO"])
 @pytest.mark.parametrize("provider_bound", [True, False])
-def test_news_verdict_is_advisory_and_never_stops_the_buy(
-    verdict: str, provider_bound: bool
-) -> None:
-    """뉴스 판정은 호출·집계되지만 run 을 닫지 않는다.
+def test_only_an_explicit_veto_stops_the_buy(verdict: str, provider_bound: bool) -> None:
+    """근거를 확인하지 못한 것으로 매수를 막지 않는다.
 
-    이전 계약은 `VETO_BUY` 와 (provider 가 붙어 있을 때의) `ABSTAIN` 을 차단으로 봤다.
-    실측으로 그것이 매수를 영구히 막았다 - 2026-09-04 세션이 `ABSTAIN /
+    이력. 최초 계약은 `VETO_BUY` 와 (provider 가 붙어 있을 때의) `ABSTAIN` 을 둘 다 차단으로
+    봤다. 실측으로 그것이 매수를 영구히 막았다 - 2026-09-04 세션이 `ABSTAIN /
     VERTEX_NO_REGISTERED_EVIDENCE` 로 닫혔고, 등록 근거가 0 건인 한 어떤 세션도 통과할 수
-    없었다. 근거는 `contracts/changes/20260904-p1-news-advisory-and-intraday-buy-window.md`.
+    없었다. 그래서 판정 자체를 버렸다
+    (`contracts/changes/20260904-p1-news-advisory-and-intraday-buy-window.md`).
+
+    근거 코퍼스를 구현한 뒤 판정을 다시 반영하는데, 되살리는 것은 `VETO_BUY` 하나다.
+    `ABSTAIN` 은 여전히 통과다 - 그것이 위 실패를 만든 조건이고, 근거를 못 읽는 것으로
+    매수를 막으면 조회 실패가 곧 매매 중단이 된다. 결정적 위험 규칙이 이미 주문 권한을
+    갖는다. 이 성질이 무너지면 9/4 상태로 되돌아간다.
     """
 
     store = _store()
@@ -257,11 +261,38 @@ def test_news_verdict_is_advisory_and_never_stops_the_buy(
 
     assert "NEWS_VETOED" not in states
     assert states[-1] == "COMPLETED"
-    # 판정은 계속 물어본다. 자문을 없애는 것이 아니라 차단만 없앤다.
     assert transport.vertex_calls == 1
     # 후보 순위는 그대로다 - 뉴스가 종목을 바꾸지 않는다.
     assert store.runs[_RUN_ID].selected_symbol == "000001"
     assert transport.submit_calls == 1
+
+
+@pytest.mark.parametrize("provider_bound", [True, False])
+def test_an_explicit_veto_closes_the_run_without_submitting(provider_bound: bool) -> None:
+    """`VETO_BUY` 는 run 을 `NEWS_VETOED` 로 닫고 주문을 내지 않는다.
+
+    거부권의 권한 경계다 - 매수를 막을 수만 있고 무엇도 사게 하지 못한다
+    (`CANDIDATE_RANK_VETO_SIZE_ONLY`). 후보 순위도 바꾸지 않는다.
+
+    `NEWS_VETOED` 는 계약 열거값에 이미 있고 `NEWS_CHECKING -> NEWS_VETOED` 전이도 DB 화이트
+    리스트(V112)에 있다. 계약을 바꾸지 않고 되살릴 수 있었던 이유다.
+    """
+
+    store = _store()
+    _create(store)
+    transport = _transport(news="VETO_BUY")
+    candidates = (_buy("000002", 0.04), _buy("000001", 0.05))
+    inputs = replace(_inputs(*candidates), news_veto_provider_bound=provider_bound)
+    states = _drive(store, transport, inputs)
+
+    assert states[-1] == "NEWS_VETOED"
+    assert transport.vertex_calls == 1
+    # 주문은 논리적으로도 물리적으로도 나가지 않는다.
+    assert transport.submit_calls == 0
+    assert transport.physical_submit_calls == 0
+    assert store.runs[_RUN_ID].logical_submit_count == 0
+    # 거부해도 고른 종목은 바꾸지 않는다.
+    assert store.runs[_RUN_ID].selected_symbol == "000001"
 
 
 def test_model_sell_and_expiry_sell_never_call_vertex_and_only_bot_lot_closes() -> None:

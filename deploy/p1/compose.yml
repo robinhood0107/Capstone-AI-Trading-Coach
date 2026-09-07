@@ -663,6 +663,38 @@ services:
     <<: *app-security
     networks: [p1-data, p1-app]
 
+  # 뉴스 거부권의 근거 코퍼스를 채운다.
+  #
+  # 왜 별도 컨테이너인가. 자동운용 런 안의 provider 상한은 V100 이 0~16 으로 못박고 있어
+  # 근거를 세션 중에 가져올 수 없다. 그리고 이 컨테이너만 OpenDART 인증정보를 든다 -
+  # 오프라인 캘린더 seeding 컨테이너에 그 값을 주지 않으려고 프로필을 나눴다.
+  #
+  # 왜 quota 상한이 여기 있나. `OpenDARTQuotaSettings` 가 네 값을 필수로 요구하고 코드
+  # 기본값을 두지 않는다. 비밀이 아니므로 리뷰되는 자리인 여기에 둔다. 예약은 lower-only
+  # 이므로(LEAST) 나중에 더 낮은 값을 주면 그것이 이긴다.
+  #
+  # 예산 근거: 종목당 endpoint 16개 x 29종목 = 464 호출이 한 바퀴다. 하루 2000 이면 네 바퀴가
+  # 되고, 어떤 계정 등급에서도 안전한 아래쪽이다. 계정 상한을 실제로 확인하면 limit 을 그
+  # 값으로 낮춘다.
+  disclosure-collector:
+    profiles: [owner]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "disclosure-collector"]
+    command: ["python", "-m", "app.data.opendart.disclosure_event_collector_cli"]
+    environment:
+      OPENDART_OFFLINE: "false"
+      OPENDART_DAILY_CALL_LIMIT: "${OPENDART_DAILY_CALL_LIMIT:-20000}"
+      OPENDART_DAILY_CALL_BUDGET: "${OPENDART_DAILY_CALL_BUDGET:-2000}"
+      OPENDART_MAX_CALLS_PER_RUN: "${OPENDART_MAX_CALLS_PER_RUN:-600}"
+      OPENDART_MAX_SYMBOLS_PER_RUN: "${OPENDART_MAX_SYMBOLS_PER_RUN:-31}"
+    secrets: [disclosure_collector_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    <<: *app-security
+    restart: "no"
+    networks: [p1-data, p1-app]
+
   after-hours-replay:
     profiles: [owner]
     image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
@@ -904,6 +936,7 @@ secrets:
   automation_runtime_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/automation-runtime.env"}
   automation_gate_author_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/automation-gate-author.env"}
   calendar_offline_seed_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/calendar-offline-seed.env"}
+  disclosure_collector_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/disclosure-collector.env"}
   rag_source_register_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/rag-source-register.env"}
   automation_observation_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/automation-observation.env"}
   market_data_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/market-data.env"}

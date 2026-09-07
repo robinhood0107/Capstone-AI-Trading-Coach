@@ -27,6 +27,14 @@ export function JournalView() {
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // 성공과 실패가 같은 회색 한 줄로 나오던 것을 구분한다. 저장이 실패했는지 사용자가 알아야 한다.
+  const [messageTone, setMessageTone] = useState<'ok' | 'error'>('ok');
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+
+  function notify(text: string, tone: 'ok' | 'error') {
+    setMessage(text);
+    setMessageTone(tone);
+  }
 
   function select(entry: JournalEntry | null) {
     setSelected(entry);
@@ -36,6 +44,8 @@ export function JournalView() {
         : EMPTY,
     );
     setMessage(null);
+    // 다른 기록을 고르면 이전 삭제 확인은 그 기록의 것이 아니다.
+    setConfirmingRemove(false);
   }
 
   async function save() {
@@ -57,10 +67,10 @@ export function JournalView() {
       else await api.createJournal({ title, content, tags });
       select(null);
       resource.reload();
-      setMessage('저장했습니다.');
+      notify('저장했습니다.', 'ok');
     } catch (cause) {
       const error = toErrorState<never>(cause);
-      setMessage(error.kind === 'error' ? error.message : '저장하지 못했습니다.');
+      notify(error.kind === 'error' ? error.message : '저장하지 못했습니다.', 'error');
     } finally {
       setBusy(false);
     }
@@ -74,10 +84,10 @@ export function JournalView() {
       await api.deleteJournal(selected.journalId, selected.version);
       select(null);
       resource.reload();
-      setMessage('삭제했습니다.');
+      notify('삭제했습니다.', 'ok');
     } catch (cause) {
       const error = toErrorState<never>(cause);
-      setMessage(error.kind === 'error' ? error.message : '삭제하지 못했습니다.');
+      notify(error.kind === 'error' ? error.message : '삭제하지 못했습니다.', 'error');
     } finally {
       setBusy(false);
     }
@@ -140,10 +150,24 @@ export function JournalView() {
             {selected ? (
               <>
                 <Button variant="secondary" disabled={busy} onClick={() => select(null)}>새 기록</Button>
-                <Button variant="secondary" disabled={busy} onClick={() => void remove()}>삭제</Button>
+                {/* 삭제는 되돌릴 수 없다. RAG 질문 기록 삭제가 이미 쓰는 2단계 확인을 따른다 -
+                    한 번 클릭으로 사라지던 것이 이 화면만 예외였다. */}
+                {confirmingRemove ? (
+                  <>
+                    <span className="text-[13px] leading-6 text-block">되돌릴 수 없습니다.</span>
+                    <Button variant="secondary" disabled={busy} onClick={() => void remove()}>삭제 확인</Button>
+                    <Button variant="secondary" disabled={busy} onClick={() => setConfirmingRemove(false)}>취소</Button>
+                  </>
+                ) : (
+                  <Button variant="secondary" disabled={busy} onClick={() => setConfirmingRemove(true)}>삭제</Button>
+                )}
               </>
             ) : null}
-            {message ? <p className="text-[13px] text-muted">{message}</p> : null}
+            {message ? (
+              <p role={messageTone === 'error' ? 'alert' : undefined} className={`text-[13px] ${messageTone === 'error' ? 'text-block' : 'text-muted'}`}>
+                {message}
+              </p>
+            ) : null}
           </div>
         </div>
       </Panel>

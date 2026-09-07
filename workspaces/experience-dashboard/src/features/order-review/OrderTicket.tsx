@@ -91,6 +91,15 @@ function Ticket({ context }: { context: TicketContext }) {
   /** 확인 화면에 들어갈 때마다 새로 만든다. 폼 단위로 잡으면 재제출이 조용히 무시된다. */
   const [submitKey, setSubmitKey] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState<OrderDetail | null>(null);
+  /**
+   * 취소 멱등키. 주문 하나당 한 번만 발급한다.
+   *
+   * 예전에는 클릭 시점에 `newIdempotencyKey('order-cancel')` 를 만들었다. 그러면 취소 요청이
+   * 타임아웃돼 사용자가 다시 누를 때 서버에는 다른 키로 온 두 번째 취소가 들어간다 - 멱등키가
+   * 막아야 할 바로 그 상황을 멱등키가 못 막았다. 제출 키(`submitKey`)가 이미 같은 이유로
+   * 호출부에서 발급된다.
+   */
+  const [cancelKey, setCancelKey] = useState<string | null>(null);
   const [busy, setBusy] = useState<'evaluate' | 'submit' | 'cancel' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,6 +119,7 @@ function Ticket({ context }: { context: TicketContext }) {
     setConfirming(false);
     setSubmitKey(null);
     setSubmitted(null);
+    setCancelKey(null);
   }, [intentKey]);
 
   // 주문가능금액은 종목과 단가가 둘 다 정해져야 읽을 수 있다 — 서버가 둘 다 요구한다.
@@ -212,7 +222,9 @@ function Ticket({ context }: { context: TicketContext }) {
     setBusy('cancel');
     setError(null);
     try {
-      const result = await api.cancelOrder(submitted.orderId, newIdempotencyKey('order-cancel'));
+      const key = cancelKey ?? newIdempotencyKey('order-cancel');
+      if (cancelKey === null) setCancelKey(key);
+      const result = await api.cancelOrder(submitted.orderId, key);
       setSubmitted(result.data);
     } catch (cause) {
       const state = toErrorState<never>(cause);
@@ -235,6 +247,7 @@ function Ticket({ context }: { context: TicketContext }) {
           onCancel={() => void cancelOrder()}
           onNew={() => {
             setSubmitted(null);
+            setCancelKey(null);
             setDecision(null);
             setQuantity('');
             setPrice('');

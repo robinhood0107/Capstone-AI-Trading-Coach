@@ -9,15 +9,15 @@ import { ready } from '@/shared/lib/viewState';
 import { relativeAge } from '@/shared/lib/format';
 import { UtilityNav } from '@/shared/ui/NavRail';
 import { ThemeToggle } from '@/shared/ui/ThemeToggle';
-import type { AutomationStatusV2 } from '@/shared/api/wire';
+import type { AutomationStatusV3 } from '@/shared/api/wire';
 
 export function StatusBar() {
   const { authenticated, user } = useSession();
   const mock = apiMode() === 'mock';
   const { state, reload } = useResource(async () => {
-    const { data } = await api.automationStatusV2();
-    return ready<AutomationStatusV2>(data, data.policy?.updatedAt ?? null);
-  }, [authenticated], mock || authenticated);
+    const { data } = await api.automationStatusV3();
+    return ready<AutomationStatusV3>(data, data.policy?.updatedAt ?? null);
+  }, [authenticated], mock || authenticated, 5_000);
 
   useEffect(() => {
     window.addEventListener('capstone-automation-changed', reload);
@@ -41,7 +41,7 @@ export function StatusBar() {
         <AutomationState status={automation} />
         <BrokerageMode status={automation} />
         {automation?.policy?.updatedAt ? (
-          <span className="tnum text-[11px] text-faint">기준 {relativeAge(automation.policy.updatedAt) ?? '방금'}</span>
+          <span className="tnum text-[11px] text-faint">정책 저장 {relativeAge(automation.policy.updatedAt) ?? '시각 미상'}</span>
         ) : null}
 
         <span className="ml-auto flex flex-wrap items-center gap-2">
@@ -70,7 +70,7 @@ export function StatusBar() {
  * 있고(`brokerageMode`), 화면은 그 값을 그대로 비춘다. 값이 아직 없으면 배지를 감춘다 —
  * 모르는 것을 추측해서 채우지 않는다.
  */
-function BrokerageMode({ status }: { status: AutomationStatusV2 | null }) {
+function BrokerageMode({ status }: { status: AutomationStatusV3 | null }) {
   if (!status) return null;
   const label =
     status.brokerageMode === 'KIS_MOCK'
@@ -86,7 +86,7 @@ function BrokerageMode({ status }: { status: AutomationStatusV2 | null }) {
   );
 }
 
-function AutomationState({ status }: { status: AutomationStatusV2 | null }) {
+function AutomationState({ status }: { status: AutomationStatusV3 | null }) {
   if (!status) {
     return (
       <span className="inline-flex items-center gap-2 rounded-full bg-subtle px-3 py-1.5">
@@ -97,7 +97,7 @@ function AutomationState({ status }: { status: AutomationStatusV2 | null }) {
   }
   const halted = status.killSwitchActive || status.projectionState === 'HALTED';
   const disarmed = status.controlState === 'DISARMED';
-  const label = halted ? '안전 중단' : disarmed ? '꺼짐' : status.controlState === 'ARMED' ? '예약됨' : '작동 중';
+  const label = halted ? '안전 중단' : disarmed ? '꺼짐' : status.projectionState === 'RUNNING' ? '작동 중' : '다음 실행 대기';
   const tone = halted ? 'text-block' : disarmed ? 'text-muted' : 'text-allow';
   const dot = halted ? 'bg-block' : disarmed ? 'bg-faint' : 'bg-allow';
   return (

@@ -33,6 +33,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import java.sql.SQLException
 
 /**
  * v2 RAG 표면 가운데 대시보드가 쓰는 일곱 operation만 public OpenAPI에 노출한다.
@@ -266,10 +267,17 @@ class RagV2ExceptionHandler {
         // 질문 본문, provider 응답, owner 문서, 예외 메시지는 남기지 않는다. 다만 어느 구간이
         // 닫혔는지는 클래스 이름으로 남긴다. 이것이 없으면 모든 실패가 구분 없는 503 하나로
         // 보여 fail-closed의 원인을 밖에서 알 방법이 없다.
+        // SQLSTATE 를 함께 남긴다. 클래스 이름만으로는 "저장소가 닫혔다"와 "저장 계약이
+        // 어긋났다"를 구분할 수 없었고, 그래서 22023(함수 인자 검증 실패)이 503
+        // RAG_UNAVAILABLE 로 보여 닷새 동안 원인을 밖에서 알 수 없었다.
         logger.warn(
-            "rag v2 failed closed: {} caused by {}",
+            "rag v2 failed closed: {} caused by {} sqlState={}",
             exception.javaClass.simpleName,
             generateSequence(exception.cause) { it.cause }.lastOrNull()?.javaClass?.simpleName ?: "-",
+            generateSequence(exception as Throwable) { it.cause }
+                .filterIsInstance<SQLException>()
+                .firstOrNull()
+                ?.sqlState ?: "-",
         )
         return error(
             request = request,

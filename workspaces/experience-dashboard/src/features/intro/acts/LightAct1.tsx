@@ -1,7 +1,7 @@
 import { cx } from './cx';
 import { ScrollCue } from './ScrollCue';
 
-/** 밝게 1막 — Tally. 통과해야 하는 규칙의 수를 숫자로 먼저 던진다. */
+/** 밝게 1막 — Tally. 숫자보다 질문을 먼저 던지고, 8+6=14라는 답은 lede에서 밝힌다. */
 export function LightAct1() {
   return (
     <section className={cx('act', 'act--1')}>
@@ -9,8 +9,8 @@ export function LightAct1() {
           <div className={cx('t1__grid')}>
             <div>
               <span className={cx('t-pill')}><i aria-hidden="true"></i><span className={cx('lab')} style={{ letterSpacing: '.07em' }}>KIS 계좌 자동매매 · 원칙 검증 후 주문</span></span>
-              <p className={cx('t-stat')}>8 <em>+</em> 6<span className={cx('t-sub')}>주문 하나가 통과해야 하는 규칙의 수.</span></p>
-              <p className={cx('lede')}>당신이 정하는 투자 원칙 8개, 시스템이 계산하는 위험 규칙 6개. LSTM이 아무리 좋은 후보를 내도 이 열네 개를 통과하지 못하면 주문은 나가지 않습니다.</p>
+              <h1 className={cx('p-h1')}>이 주문, 내도 되는 걸까?</h1>
+              <p className={cx('lede')}>AI가 아니라 열네 개의 규칙이 답합니다. 8개는 당신이 정한 원칙, 6개는 시스템이 계산하는 위험 규칙입니다. LSTM은 후보만 낼 뿐, 최종 통과 여부는 원칙이 정합니다.</p>
               <div className={cx('cta')}>
                 <a className={cx('btn', 'btn--p')} href="#introEnd">대시보드 바로 보기</a>
                 <a className={cx('btn', 'btn--g')} href="#light2">어떻게 막는지 보기</a>

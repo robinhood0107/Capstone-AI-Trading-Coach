@@ -29,7 +29,8 @@ fi
 P1CTL=$SCRIPT_DIR/p1ctl
 RELEASE_GUARD=$SCRIPT_DIR/release_guard.py
 MOCK_CERTIFICATION_GUARD=$SCRIPT_DIR/mock_certification_guard.py
-DOCKER_BIN=/usr/bin/docker
+# Use the WSL CLI so exported runtime flags reach Compose; allow an explicit operator override.
+DOCKER_BIN=${P1_DOCKER_BIN:-/usr/bin/docker}
 [[ -x $DOCKER_BIN ]] || DOCKER_BIN=$(command -v docker 2>/dev/null || true)
 
 die() { printf 'CAPSTONE_ERROR=%s\n' "$1" >&2; exit 1; }
@@ -42,7 +43,7 @@ Usage:
   ./capstone status|logs|smoke|down|doctor
   ./capstone demo create
   ./capstone credential rotate <user|admin> /absolute/password-file
-  ./capstone mock <configure|doctor|certify|readiness|gate-author|start|stop> [--symbol 005930] [--quantity 1]
+  ./capstone mock <configure|doctor|certify|readiness|gate-author|start|stop|resume> [--symbol 005930] [--quantity 1]
   ./capstone artifact <validate|import> <bundle-directory> --manifest-sha256 <sha256>
   ./capstone market-data inventory
   ./capstone market-data refresh
@@ -1002,6 +1003,17 @@ mock_stop() {
   printf 'KIS_MOCK_NEW_ORDERS=DISARMED\nOUTSTANDING_RECONCILIATION=PRESERVED\n'
 }
 
+mock_resume() {
+  state_ready || die NOT_INITIALIZED
+  mock_certified >/dev/null || die KIS_MOCK_NOT_CERTIFIED
+  load_active_mode
+  export P1_LOCAL_CERTIFICATION_VALID=true
+  compose --profile owner run --rm --no-deps automation-runtime-cli \
+    python -m app.p1_owner.mock_automation_cli resume
+  # Wake the resident loop, preserving its existing enabled mode and the original claim.
+  compose restart decision-platform
+}
+
 replace_env_value() {
   local file=$1 key=$2 value=$3 line name
   grep -q "^${key}=" "$file" || die CREDENTIAL_ROTATION_ENV_KEY_MISSING
@@ -1336,6 +1348,7 @@ case $command in
       readiness) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_readiness ;;
       gate-author) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; author_automation_gate ;;
       start) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_start ;;
+      resume) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_resume ;;
       stop) [[ $# == 0 ]] || die UNEXPECTED_ARGUMENT; mock_stop ;;
       *) die UNKNOWN_MOCK_COMMAND ;;
     esac

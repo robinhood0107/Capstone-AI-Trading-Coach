@@ -560,14 +560,22 @@ up_app() {
   local scenario_materialization
   scenario_materialization=$(compose --profile owner run --rm --no-deps owner-scenario-materializer 2>&1 \
     | tail -1) || scenario_materialization=''
+  # 개수를 등식으로 보면 거래일이 하나 늘 때마다 이 게이트가 거짓이 된다. 평가 구간은
+  # 데이터에서 유도되므로(V154) 하한으로 본다 - 자라는 것은 허용하고 줄어드는 것은 막는다.
+  local scenario_sessions scenario_evaluation
+  scenario_sessions=$(printf '%s' "$scenario_materialization" \
+    | sed -n 's/.*"sessions":\([0-9]\{1,\}\).*/\1/p')
+  scenario_evaluation=$(printf '%s' "$scenario_materialization" \
+    | sed -n 's/.*"evaluationSessions":\([0-9]\{1,\}\).*/\1/p')
   if [[ $scenario_materialization == *'"providerCalls":0'* &&
-        $scenario_materialization == *'"sessions":104'* &&
-        $scenario_materialization == *'"evaluationSessions":13'* ]]; then
-    printf 'CAPSTONE_OWNER_SCENARIOS=MATERIALIZED\n'
+        -n $scenario_sessions && $scenario_sessions -ge 104 &&
+        -n $scenario_evaluation && $scenario_evaluation -ge 13 ]]; then
+    printf 'CAPSTONE_OWNER_SCENARIOS=MATERIALIZED sessions=%s evaluationSessions=%s\n' \
+      "$scenario_sessions" "$scenario_evaluation"
   else
     printf 'CAPSTONE_OWNER_SCENARIOS=UNAVAILABLE\n'
   fi
-  unset scenario_materialization
+  unset scenario_materialization scenario_sessions scenario_evaluation
   # Preserve the stored automation intent across KIS Mock restarts.
   local desired_automation=0
   load_active_mode

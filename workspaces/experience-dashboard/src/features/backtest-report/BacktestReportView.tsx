@@ -51,7 +51,14 @@ export function BacktestReportView() {
                 <p className="border-l-2 border-warn bg-warn/5 px-3 py-2 text-[13px] leading-6 text-ink">
                   이 결과는 합성 예시 데이터입니다. 실제 성과나 승격 근거로 인용하지 마세요.
                 </p>
-              ) : null}
+              ) : (
+                /* REAL_ARTIFACT 는 "외부 팀이 준 실물 산출물"이 아니라 "이 스택이 DB 일봉으로
+                   직접 다시 계산한 값"을 뜻한다. 경고 없이 두면 화면이 전자로 읽힌다. */
+                <p className="border-l-2 border-line bg-surface px-3 py-2 text-[13px] leading-6 text-muted">
+                  이 결과는 저장된 일봉으로 이 스택이 매번 다시 계산한 값입니다. 외부에서 받은
+                  산출물이 아니며, 거래일이 늘어나면 평가 구간도 함께 늘어납니다.
+                </p>
+              )}
 
               <DerivedPanel cards={view.derivedCards} />
 

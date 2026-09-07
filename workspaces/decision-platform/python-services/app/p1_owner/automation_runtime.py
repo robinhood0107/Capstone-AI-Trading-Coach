@@ -9,7 +9,7 @@ import os
 import re
 import signal
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time
 from importlib.metadata import version
@@ -59,6 +59,7 @@ _LEGACY_AI_SETTINGS_SHA256 = hashlib.sha256(
 # 장애는 넘길 수 있는 크기다. 이 한도를 넘으면 run 을 그 자리에 두고 물러난다.
 _TICK_RETRY_SECONDS = 20.0
 _MAX_TICK_FAILURES = 15
+_WALL_CLOCK_CHECK_SECONDS = 30.0
 _TERMINAL_STATES = frozenset(
     {
         "NEWS_VETOED",
@@ -143,6 +144,7 @@ class AccountLineageAdvance:
     order_id: str
     filled_quantity: int
     average_fill_price_krw: int
+    provider_exec_ref_hash: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,23 +253,42 @@ class PostgresAutomationRuntimeRepository:
 
     def advance_account_lineage(self, claim: RuntimeClaim, lineage: AccountLineageAdvance) -> int:
         with self._connect() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                "select p1_advance_automation_account_lineage_v3(%s,%s,%s,%s::jsonb,%s,%s,%s,%s)",
-                (
-                    claim.run_id,
-                    claim.claim_token_hash,
-                    lineage.reason,
-                    canonical_json_bytes(lineage.projection).decode(),
-                    lineage.digest,
-                    lineage.order_id,
-                    lineage.filled_quantity,
-                    lineage.average_fill_price_krw,
-                ),
-            )
-            row = cursor.fetchone()
-            if row is None or not isinstance(row[0], int):
-                raise AutomationRuntimeError("AUTOMATION_ACCOUNT_LINEAGE_ADVANCE_FAILED")
-            return row[0]
+            return self._advance_account_lineage(cursor, claim, lineage)
+
+    @staticmethod
+    def _advance_account_lineage(
+        cursor: Any, claim: RuntimeClaim, lineage: AccountLineageAdvance
+    ) -> int:
+        cursor.execute(
+            "select p1_advance_automation_account_lineage_v3(%s,%s,%s,%s::jsonb,%s,%s,%s,%s)",
+            (
+                claim.run_id,
+                claim.claim_token_hash,
+                lineage.reason,
+                canonical_json_bytes(lineage.projection).decode(),
+                lineage.digest,
+                lineage.order_id,
+                lineage.filled_quantity,
+                lineage.average_fill_price_krw,
+            ),
+        )
+        row = cursor.fetchone()
+        if row is None or not isinstance(row[0], int):
+            raise AutomationRuntimeError("AUTOMATION_ACCOUNT_LINEAGE_ADVANCE_FAILED")
+        return row[0]
+
+    def advance_with_lineage(
+        self, command: AdvanceCommand, claim: RuntimeClaim, lineage: AccountLineageAdvance
+    ) -> tuple[int, bool]:
+        with self._connect() as connection, connection.cursor() as cursor:
+            result = self._advance(cursor, command)
+            self._advance_account_lineage(cursor, claim, lineage)
+            if lineage.provider_exec_ref_hash is not None:
+                cursor.execute(
+                    "select p1_sync_completed_automation_order_v1(%s,%s,%s)",
+                    (claim.run_id, claim.claim_token_hash, lineage.provider_exec_ref_hash),
+                )
+            return result
 
     def preflight(self) -> None:
         with self._connect() as connection, connection.cursor() as cursor:
@@ -349,6 +370,26 @@ class PostgresAutomationRuntimeRepository:
             if row is None or not isinstance(row[0], str):
                 raise AutomationRuntimeError("AUTOMATION_ROLL_UNAVAILABLE")
             return row[0]
+
+    def retry_at(self, user_id: str, session_date: date) -> datetime | None:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select p1_automation_data_gap_retry_at_v1(%s,%s)", (user_id, session_date)
+            )
+            row = cursor.fetchone()
+        return row[0] if row is not None and isinstance(row[0], datetime) else None
+
+    def resume_data_gap(self, user_id: str, session_date: date) -> int:
+        readiness = self.readiness(user_id, session_date)
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select p1_resume_automation_data_gap_v1(%s,%s)",
+                (user_id, readiness.current_control_version),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            raise AutomationRuntimeError("AUTOMATION_RESUME_UNAVAILABLE")
+        return int(row[0])
 
     def claim(self, session_date: date, claim_token_hash: str) -> RuntimeClaim | None:
         _require_hash(claim_token_hash)
@@ -651,6 +692,23 @@ class PersistentAutomationRunner:
         intent = reservation.intent if reservation is not None else None
         quote = run.selected_quote
         policy = run.policy_snapshot
+        lineage = None
+        if (
+            run.state == "COMPLETED"
+            and run.filled_quantity > 0
+            and run.selected_side
+            and run.selected_symbol
+        ):
+            lineage = port.account_lineage_advance(
+                symbol=run.selected_symbol,
+                side=run.selected_side,
+                filled_quantity=run.filled_quantity,
+                average_fill_price_krw=_required_price(run.average_fill_price_krw),
+            )
+            if lineage is None:
+                raise AutomationRuntimeError("AUTOMATION_ACCOUNT_LINEAGE_UNRESOLVED")
+            run.provider_call_count = port.physical_calls
+            result = run.projection()
         result_hash = _sha(canonical_json_bytes(result))
         position_state_json = canonical_json_bytes(
             [
@@ -741,6 +799,8 @@ class PersistentAutomationRunner:
                 claim,
                 _ai_judgement_record(command.expected_version + 1, run, port),
             )
+        elif lineage is not None:
+            self._repository.advance_with_lineage(command, claim, lineage)
         else:
             self._repository.advance(command)
         # durable하게 남은 뒤에만 알린다. 저널이 실패해도 tick은 계속된다.
@@ -752,22 +812,10 @@ class PersistentAutomationRunner:
                 state=run.state,
             )
         )
-        # 체결이 확정되면 기대 계좌 투영을 함께 전진시킨다. 그러지 않으면 다음 tick이
-        # 자기 체결을 외부 드리프트로 보고 ACCOUNT_DRIFT로 HALT하고, HALT는 stop으로 풀리지 않는다.
-        if (
-            run.state == "COMPLETED"
-            and run.filled_quantity > 0
-            and run.selected_side is not None
-            and run.selected_symbol is not None
-        ):
-            lineage = port.account_lineage_advance(
-                symbol=run.selected_symbol,
-                side=run.selected_side,
-                filled_quantity=run.filled_quantity,
-                average_fill_price_krw=_required_price(run.average_fill_price_krw),
-            )
-            if lineage is not None:
-                self._repository.advance_account_lineage(claim, lineage)
+        if lineage is not None:
+            publish = getattr(port, "publish_completed_observations", None)
+            if callable(publish):
+                publish()
         return result
 
 
@@ -847,6 +895,7 @@ class AutomationRuntimeService:
         shared_secret: str,
         planner: XkrxBoundaryPlanner | None = None,
         daily_inference: DailyInferencePort | None = None,
+        connectivity_check: Callable[[], bool] | None = None,
     ) -> None:
         if not re.fullmatch(r"[A-Za-z0-9._~:-]{32,256}", shared_secret):
             raise AutomationRuntimeError("AUTOMATION_RUNTIME_SECRET_INVALID")
@@ -856,7 +905,19 @@ class AutomationRuntimeService:
         self._planner = planner or XkrxBoundaryPlanner()
         self._runner = PersistentAutomationRunner(repository)
         self._daily_inference = daily_inference
+        self._connectivity_check = connectivity_check
+        self._owner_user_id = os.environ.get("P1_AUTOMATION_OWNER_USER_ID", "").strip()
         self._stop = threading.Event()
+
+    def _wait_until(self, boundary: datetime) -> bool:
+        # A long monotonic wait can miss the market after laptop suspend or a clock jump.
+        while not self._stop.is_set():
+            remaining = (boundary - datetime.now(UTC)).total_seconds()
+            if remaining <= 0:
+                return False
+            if self._stop.wait(min(remaining, _WALL_CLOCK_CHECK_SECONDS)):
+                return True
+        return True
 
     def stop(self) -> None:
         self._stop.set()
@@ -868,27 +929,64 @@ class AutomationRuntimeService:
             while not self._stop.is_set():
                 now = datetime.now(UTC).astimezone(_KST)
                 wakeup = self._planner.next_wakeup(now)
-                if wakeup > now and self._stop.wait((wakeup - now).total_seconds()):
+                if self._wait_until(wakeup):
                     return
-                session_date = self._planner.current_or_next_session(wakeup)
+                now = datetime.now(UTC).astimezone(_KST)
+                if self._planner.next_wakeup(now) > now:
+                    continue
+                if self._connectivity_check is not None and not self._connectivity_check():
+                    print("AUTOMATION_CONNECTIVITY=UNAVAILABLE SESSION_NOT_CONSUMED", flush=True)
+                    if self._stop.wait(60.0):
+                        return
+                    continue
+                session_date = self._planner.current_or_next_session(now)
                 # 실패해도 기존 포지션 청산·대사 경로를 살리기 위해 claim은 계속한다. DB에
                 # complete daily batch가 없으므로 신규 BUY 후보만 자연스럽게 0이 된다.
                 try:
                     daily_inference.ensure_daily_signals(session_date)
-                except DailyInferenceError:
-                    pass
+                except DailyInferenceError as error:
+                    # 다른 모든 분기는 표식을 남기는데 이 실패만 흔적이 없었다. 그래서
+                    # "왜 신규 매수가 0인가"를 밖에서 알 방법이 없었다 - 후보가 없어서인지
+                    # 추론이 막혀서인지 구분되지 않았다. 예외 문구·종목·provider 응답은
+                    # 담지 않고 분류만 남긴다.
+                    print(
+                        f"AUTOMATION_DAILY_INFERENCE=UNAVAILABLE error={type(error).__name__}",
+                        flush=True,
+                    )
                 claim_hash = _claim_hash(self._shared_secret, session_date)
                 claim = self._repository.claim(session_date, claim_hash)
                 if claim is None:
+                    retry_at = (
+                        self._repository.retry_at(self._owner_user_id, session_date)
+                        if self._owner_user_id
+                        else None
+                    )
+                    if retry_at is not None:
+                        if self._wait_until(retry_at):
+                            return
+                        # Recheck TLS and the actual market date on the next loop before resuming.
+                        now = datetime.now(UTC).astimezone(_KST)
+                        if now.date() != session_date or now.time() >= _CANCEL_BOUNDARY:
+                            continue
+                        if self._connectivity_check is not None and not self._connectivity_check():
+                            if self._stop.wait(60.0):
+                                return
+                            continue
+                        try:
+                            self._repository.resume_data_gap(self._owner_user_id, session_date)
+                            print("AUTOMATION_FALLBACK=RESUMED", flush=True)
+                        except (AutomationRuntimeError, psycopg.Error) as error:
+                            print(
+                                f"AUTOMATION_FALLBACK=BLOCKED error={type(error).__name__}",
+                                flush=True,
+                            )
+                            if self._stop.wait(60.0):
+                                return
+                        continue
                     next_wakeup = datetime.combine(
                         self._planner.next_session(session_date), _OPEN_BOUNDARY, _KST
                     )
-                    if self._stop.wait(
-                        max(
-                            0.0,
-                            (next_wakeup - datetime.now(UTC).astimezone(_KST)).total_seconds(),
-                        )
-                    ):
+                    if self._wait_until(next_wakeup):
                         return
                     continue
                 self._drive_claim(claim)
@@ -908,8 +1006,9 @@ class AutomationRuntimeService:
                     return
                 now = datetime.now(UTC).astimezone(_KST)
                 wakeup = self._planner.next_wakeup(now, current)
-                if wakeup > now and self._stop.wait((wakeup - now).total_seconds()):
+                if self._wait_until(wakeup):
                     return
+                wakeup = datetime.now(UTC).astimezone(_KST)
                 index += 1
                 try:
                     result = self._runner.run_tick(
@@ -918,9 +1017,14 @@ class AutomationRuntimeService:
                         now=wakeup,
                         port=port,
                     )
-                except Exception:
+                except Exception as error:
                     # Retry the same idempotent tick without terminating the supervised process.
                     failures += 1
+                    print(
+                        f"AUTOMATION_TICK_FAILED state={current} "
+                        f"error={type(error).__name__} attempt={failures}",
+                        flush=True,
+                    )
                     index -= 1
                     if failures > _MAX_TICK_FAILURES or self._stop.wait(_TICK_RETRY_SECONDS):
                         return
@@ -1437,9 +1541,17 @@ def main() -> int:
     shared_secret = os.environ.get("AUTOMATION_RUNTIME_SHARED_SECRET", "").strip()
     repository = PostgresAutomationRuntimeRepository(database_dsn)
     # import 시 provider client를 만들지 않아 disabled/default supervisor가 socket을 열 수 없다.
-    from app.p1_owner.automation_runtime_live import LiveAutomationPortFactory
+    from app.p1_owner.automation_runtime_live import (
+        LiveAutomationPortFactory,
+        kis_mock_connectivity_ready,
+    )
 
-    service = AutomationRuntimeService(repository, LiveAutomationPortFactory(), shared_secret)
+    service = AutomationRuntimeService(
+        repository,
+        LiveAutomationPortFactory(),
+        shared_secret,
+        connectivity_check=kis_mock_connectivity_ready,
+    )
     signal.signal(signal.SIGTERM, lambda _signum, _frame: service.stop())
     signal.signal(signal.SIGINT, lambda _signum, _frame: service.stop())
     service.serve()

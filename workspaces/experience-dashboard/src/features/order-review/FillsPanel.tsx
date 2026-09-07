@@ -8,6 +8,7 @@ import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
 import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentity';
 import type { OrderFill } from '@/shared/api/wire';
+import { ApiFailure } from '@/shared/api/envelope';
 import { fillWindow, FILL_WINDOW_MAX_DAYS } from './orderGates';
 
 /**
@@ -20,24 +21,30 @@ import { fillWindow, FILL_WINDOW_MAX_DAYS } from './orderGates';
  * 사용자가 고장으로 읽는다.
  */
 export function FillsPanel() {
-  const { state, reload } = useResource(async () => {
+  const { state, reload, refreshError } = useResource(async () => {
+    // 종목명 카탈로그는 표시용 곁가지다. 이것 하나가 실패해서 체결 목록이 사라지면
+    // 사용자는 주문이 실제로 어떻게 됐는지 확인할 방법을 잃는다. 없으면 코드로 표시한다.
     const [status, catalog] = await Promise.all([
       api.automationStatusV2(),
-      api.instrumentDisplayCatalog(),
+      api.instrumentDisplayCatalog().catch(() => null),
     ]);
+    const instruments = catalog?.data ?? { items: [] };
     const accountId = status.data.accountId;
-    if (!accountId) return ready<{ fills: OrderFill[]; instruments: typeof catalog.data }>({
+    if (!accountId) return ready<{ fills: OrderFill[]; instruments: typeof instruments }>({
       fills: [],
-      instruments: catalog.data,
+      instruments,
     });
 
     const { from, to } = fillWindow();
     const fills = await api
       .mockFills(accountId, from, to)
       .then((result) => result.data.items)
-      .catch(() => [] as OrderFill[]);
-    return ready({ fills, instruments: catalog.data });
-  }, []);
+      .catch((error: unknown) => {
+        if (error instanceof ApiFailure && error.code === 'NOT_FOUND') return [] as OrderFill[];
+        throw error;
+      });
+    return ready({ fills, instruments });
+  }, [], true, 5_000);
 
   return (
     <AsyncBoundary state={state} onRetry={reload}>
@@ -49,6 +56,7 @@ export function FillsPanel() {
             title="최근 체결"
             hint={`최근 ${FILL_WINDOW_MAX_DAYS}일 동안 실제로 체결된 것만 표시합니다.`}
           >
+            <p className="h-8 overflow-hidden text-[11px] text-muted" role="status">{refreshError ?? '\u00a0'}</p>
             {data.fills.length === 0 ? (
               <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
                 이 기간에 체결된 주문이 없습니다.
@@ -67,7 +75,7 @@ export function FillsPanel() {
                   </thead>
                   <tbody>
                     {data.fills.map((fill) => (
-                      <tr key={fill.fillId} className="border-b border-line/60 last:border-0">
+                      <tr key={`${fill.orderId}:${fill.execRefHash}`} className="border-b border-line/60 last:border-0">
                         <td className="py-2.5">
                           <InstrumentIdentity
                             symbol={fill.symbol}
@@ -78,9 +86,9 @@ export function FillsPanel() {
                         <td className="py-2.5 text-muted">
                           {fill.side === 'BUY' ? '매수' : '매도'}
                         </td>
-                        <td className="tnum py-2.5 text-right font-mono">{fill.quantity}</td>
+                        <td className="tnum py-2.5 text-right font-mono">{Number.isFinite(fill.fillQuantity) ? `${fill.fillQuantity}주` : '확인 필요'}</td>
                         <td className="tnum py-2.5 text-right font-mono">
-                          {formatKrw(fill.price)}
+                          {formatKrw(fill.fillPriceKrw)}
                         </td>
                         <td className="tnum py-2.5 text-right font-mono text-faint">
                           {formatKstDateTime(fill.filledAt) ?? '미상'}

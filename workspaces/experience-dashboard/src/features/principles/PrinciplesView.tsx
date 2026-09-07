@@ -254,10 +254,23 @@ function CreatePrinciple({
       onCreated();
     } catch (cause) {
       const errorState = toErrorState<never>(cause);
+      // `POST /api/v1/principles` 는 멱등키를 받지 않는다(서버 계약 확인함). 그래서 응답이
+      // 오지 않은 실패는 "만들어졌는지 알 수 없음"이고, 다시 누르면 원칙이 두 개가 될 수 있다.
+      // 안전한 재시도라고 말하지 않고 목록을 먼저 확인하라고 안내한다.
+      const uncertain =
+        errorState.kind === 'error' &&
+        (errorState.code === 'NETWORK_UNAVAILABLE' || errorState.code === 'INTERNAL_ERROR');
       setNotice({
         tone: 'error',
-        text: errorState.kind === 'error' ? errorState.message : '원칙을 만들지 못했습니다.',
+        text:
+          errorState.kind !== 'error'
+            ? '원칙을 만들지 못했습니다.'
+            : uncertain
+              ? `${errorState.message} 만들어졌는지 알 수 없으므로 아래 목록을 먼저 확인하세요. 그대로 다시 만들면 원칙이 두 개가 될 수 있습니다.`
+              : errorState.message,
       });
+      // 불확실한 실패에서는 목록을 새로 읽어 사용자가 직접 판단할 근거를 준다.
+      if (uncertain) onCreated();
     } finally {
       setBusy(false);
     }

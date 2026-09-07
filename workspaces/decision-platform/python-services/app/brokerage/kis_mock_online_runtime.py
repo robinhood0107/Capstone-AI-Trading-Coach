@@ -161,7 +161,8 @@ class KISMockOnlineBalanceReader:
         return KISMockBalanceSourceProbe(
             account_id=account_id,
             cash_krw=_nonnegative(
-                summary.get("dnca_tot_amt"),
+                # D+2 settlement cash includes today's fills; booked deposits do not.
+                summary.get("prvs_rcdl_excc_amt"),
                 "cash",
                 reason=KISMockFailureReason.BALANCE_CASH_INVALID,
             ),
@@ -270,7 +271,25 @@ class KISMockExecutionReader:
         average_fill_price_krw: int,
         session_date: date,
     ) -> MockExecutionSnapshot | None:
-        """Recover one expired local reference from a uniquely matching KIS buy fill."""
+        return self.recover_unique_filled_order(
+            symbol=symbol,
+            quantity=quantity,
+            average_fill_price_krw=average_fill_price_krw,
+            session_date=session_date,
+            side="BUY",
+        )
+
+    def recover_unique_filled_order(
+        self,
+        *,
+        symbol: str,
+        quantity: int,
+        average_fill_price_krw: int,
+        session_date: date,
+        side: Literal["BUY", "SELL"],
+        expected_order_ref_hash: str | None = None,
+    ) -> MockExecutionSnapshot | None:
+        """Recover a unique completed fill, optionally bound to its stored receipt hash."""
 
         if _SYMBOL.fullmatch(symbol) is None or quantity <= 0 or average_fill_price_krw <= 0:
             raise ValueError("KIS mock execution recovery input is invalid")
@@ -281,7 +300,7 @@ class KISMockExecutionReader:
             params={
                 "INQR_STRT_DT": session_date.strftime("%Y%m%d"),
                 "INQR_END_DT": session_date.strftime("%Y%m%d"),
-                "SLL_BUY_DVSN_CD": "02",
+                "SLL_BUY_DVSN_CD": "02" if side == "BUY" else "01",
                 "INQR_DVSN": "00",
                 "PDNO": symbol,
                 "CCLD_DVSN": "00",
@@ -300,6 +319,12 @@ class KISMockExecutionReader:
             if (
                 not isinstance(order_no, str)
                 or re.fullmatch(r"[0-9A-Za-z._:-]{1,64}", order_no) is None
+            ):
+                continue
+            if (
+                expected_order_ref_hash is not None
+                and hashlib.sha256(f"kis-mock-order-receipt/v1\0{order_no}".encode()).hexdigest()
+                != expected_order_ref_hash
             ):
                 continue
             try:

@@ -304,14 +304,20 @@ def _run_result(
         for item in source["grounding_roots"]
         if str(item.get("citation_id", ""))
     )
+    retained_indices = {root.chunk_index for root in roots}
     supports = tuple(
         GroundingSupport(
             start_index=int(cast(int, item["start_index"])),
             end_index=int(cast(int, item["end_index"])),
             text=str(item["text"]),
-            chunk_indices=tuple(cast(tuple[int, ...], item["chunk_indices"])),
+            chunk_indices=tuple(
+                index
+                for index in dict.fromkeys(cast(tuple[int, ...], item["chunk_indices"]))
+                if index in retained_indices
+            ),
         )
         for item in source["grounding_supports"]
+        if any(index in retained_indices for index in cast(tuple[int, ...], item["chunk_indices"]))
     )
     return RunResult(
         answer_json=json.dumps(

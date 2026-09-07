@@ -472,7 +472,7 @@ export const automationPositions: AutomationPositionPageV2 = {
 /** v3 정책. v2 저장이 채우지 못하는 네 값이 여기 있다. */
 export let automationPolicyV3: AutomationPolicyV3 = {
   ...automationPolicy,
-  contractId: 'automation-policy.v3',
+  contractId: 'automation-policy.v2',
   atrPeriod: 14,
   atrMultiplierMilli: 2500,
   maxHoldingSessions: 60,

@@ -59,7 +59,9 @@ function KillSwitchControl({ onChanged }: { active: boolean; onChanged: () => vo
   }
   return <div className="mt-5 space-y-4 border-t border-line pt-4">
     <p className="text-[13px] leading-6 text-muted">내 주문 중지는 직접 켜고 해제할 수 있습니다. 해제한 뒤 자동운용 시작은 별도로 선택합니다. 이미 종료된 당일 실행은 다시 시작하지 않으며, 보유 종목을 자동으로 팔거나 기존 체결을 되돌리지 않습니다.</p>
-    <AsyncBoundary state={personal.state}>{(state) => <div className="flex flex-wrap items-center justify-between gap-3">
+    {/* onRetry 가 없으면 조회가 한 번 실패한 순간 중지 UI 가 에러 카드로 대체되고 사용자가
+        할 수 있는 행동이 0개가 된다. 위험 통제 수단에서 그건 허용할 수 없다. */}
+    <AsyncBoundary state={personal.state} onRetry={personal.reload}>{(state) => <div className="flex flex-wrap items-center justify-between gap-3">
       <div><p className="text-sm font-semibold">내 주문 중지 · {state.active ? '작동 중' : '꺼짐'}</p>
         <p className="text-xs text-muted">변경 {formatKstDateTime(state.changedAt)}</p>
         {state.globalActive ? <p className="text-sm text-block">관리자가 시스템 전체 주문을 중지했습니다. 개인 중지를 해제해도 주문은 차단됩니다.</p> : null}
@@ -68,7 +70,7 @@ function KillSwitchControl({ onChanged }: { active: boolean; onChanged: () => vo
         {state.active ? '내 주문 중지 해제' : '내 주문 즉시 중지'}
       </Button>
     </div>}</AsyncBoundary>
-    {user?.role === 'ADMIN' ? <AsyncBoundary state={global.state}>{(state) => <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+    {user?.role === 'ADMIN' ? <AsyncBoundary state={global.state} onRetry={global.reload}>{(state) => <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
       <p className="text-sm font-semibold">관리자 전용 · 시스템 전체 중지 {state.active ? '작동 중' : '꺼짐'}</p>
       <Button disabled={busy} variant="danger" onClick={() => void change(!state.active, 'global')}>
         {state.active ? '전역 중지 해제' : '전체 주문 즉시 중지'}
@@ -104,14 +106,21 @@ interface Draft {
  * v3 포지션 페이지에는 그 필드가 없어서 계속 v2 를 본다.
  */
 async function load(): Promise<ViewState<AutomationData>> {
-  const [status, runs, positions, instruments] = await Promise.all([
-    api.automationStatusV3(),
-    api.automationRunsV3(),
-    api.automationPositionsV3(),
-    api.instrumentDisplayCatalog(),
+  // 상태만 있으면 정책 편집·시작·정지는 성립한다. 실행 이력이나 종목명 카탈로그가
+  // 실패했다고 중지 버튼까지 사라지면 안 된다 - 이 화면은 위험 통제 수단을 담고 있다.
+  const status = await api.automationStatusV3();
+  const [runs, positions, instruments] = await Promise.all([
+    api.automationRunsV3().catch(() => null),
+    api.automationPositionsV3().catch(() => null),
+    api.instrumentDisplayCatalog().catch(() => null),
   ]);
   return ready(
-    { status: status.data, runs: runs.data.items, positions: positions.data.items, instruments: instruments.data },
+    {
+      status: status.data,
+      runs: runs?.data.items ?? [],
+      positions: positions?.data.items ?? [],
+      instruments: instruments?.data ?? { items: [] },
+    },
     status.data.policy?.updatedAt ?? null,
   );
 }
@@ -170,6 +179,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
   const [draft, setDraft] = useState(() => draftFrom(data.status.policy));
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const [confirmingDisarm, setConfirmingDisarm] = useState(false);
   const values = numericDraft(draft);
   const valuesV3 = numericDraftV3(draft);
   const errors = [...validateAutomationPolicy(values), ...validateAutomationPolicyV3(valuesV3)];
@@ -261,6 +271,49 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
     }
   }
 
+  /**
+   * 자동운용 정지.
+   *
+   * 이 버튼은 한 번 지워졌다(`5a133675`). 지운 이유는 두 가지였다 - 옛 라벨이 주문 차단을
+   * 뜻하는 문구여서 Kill Switch 와 목적이 뒤섞였고, 정지한 뒤 재무장이 `canArm` 게이트에
+   * 막히면 시연 중 되돌릴 방법이 없었다. 그래서 라벨을 "자동운용 정지"로 바꿔 주문 차단과
+   * 구분하고, 확인 단계에서 **지금 다시 켤 수 있는지**를 함께 보여 준다. 켤 수만 있고 끌 수
+   * 없는 쪽이 더 위험하다는 판단이다.
+   *
+   * `POST /api/v1/automation/disarm` 은 control 행 하나를 보므로 v1/v2/v3 공통이다.
+   * `p1_disarm_automation_v1` 이 controlVersion CAS 와 멱등 재생을 보장하고 ARMED 가 아니면
+   * 상태를 바꾸지 않으므로 중복 클릭이 위험하지 않다. 보유 종목을 팔거나 기존 체결을
+   * 되돌리지 않는다 - 다음 세션 실행이 열리지 않는 것뿐이다.
+   */
+  async function disarm() {
+    if (busy || data.status.controlState !== 'ARMED') return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await api.disarmAutomation(data.status.controlVersion);
+      setNotice({
+        tone: 'ok',
+        text: '자동운용을 정지했습니다. 예약된 다음 실행은 열리지 않습니다. 보유 종목과 기존 체결은 그대로입니다.',
+      });
+    } catch (cause) {
+      const error = toErrorState<never>(cause);
+      setNotice({
+        tone: 'error',
+        text:
+          error.kind === 'error' && error.code === 'CONFLICT'
+            ? '다른 화면에서 상태가 먼저 바뀌었습니다. 최신 상태를 확인한 뒤 다시 정지하세요.'
+            : error.kind === 'error'
+              ? error.message
+              : '자동운용을 정지하지 못했습니다.',
+      });
+    } finally {
+      setBusy(false);
+      setConfirmingDisarm(false);
+      onReload();
+      window.dispatchEvent(new Event('capstone-automation-changed'));
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Panel
@@ -300,7 +353,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
         </div>
 
         {data.status.policyRecoverySourceVersion ? <p className="mt-3 text-xs text-warn">청산 기준은 이전 저장 정책 v{data.status.policyRecoverySourceVersion}의 값으로 복원했습니다. 이전 이력은 보존되어 있습니다.</p> : null}
-        <p className="mt-3 text-xs leading-6 text-muted">다음 자동평가: {data.status.nextRunAt ? formatKstDateTime(data.status.nextRunAt) : '예약 없음'} · 평가 09:30 · 신규 매수 마감 09:40 · 미체결 취소 15:20 (한국 시간)</p>
+        <p className="mt-3 text-xs leading-6 text-muted">다음 자동평가: {data.status.nextRunAt ? formatKstDateTime(data.status.nextRunAt) : '예약 없음'}{data.status.policy ? ` · 평가 ${data.status.policy.evaluationTimeKst} · 당일 운용 마감 ${data.status.policy.cancelTimeKst} (한국 시간)` : ''}</p>
         <KillSwitchControl active={data.status.killSwitchActive} onChanged={onReload} />
 
         {data.status.blockers.length > 0 ? (
@@ -453,7 +506,7 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
           <div className="text-[12px] leading-5 text-muted">
             <p>최대 자동운용 금액은 주문 한도이며 수익·원금 보장 금액이 아닙니다.</p>
             <p className="mt-1">
-              손절·익절은 매 XKRX 세션 09:30 KST 평가 뒤 지정가 청산을 시도하며 즉시 체결을 보장하지
+              손절·익절은 서버에 예약된 거래 세션의 평가 뒤 지정가 청산을 시도하며 즉시 체결을 보장하지
               않습니다.
             </p>
           </div>
@@ -500,7 +553,31 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
               >
                 자동운용 시작
               </Button>
-            ) : null}
+            ) : data.status.controlState !== 'ARMED' ? null : confirmingDisarm ? (
+              <>
+                <span className="text-[12px] leading-5 text-block">
+                  {data.status.canArm && data.status.blockers.length === 0
+                    ? '정지 뒤 다시 켤 수 있는 상태입니다.'
+                    : `지금 정지하면 다시 켤 수 없습니다 · ${data.status.blockers
+                        .map((item) => AUTOMATION_BLOCKER_LABELS_V3[item])
+                        .join(' · ') || '시작 조건 미충족'}`}
+                </span>
+                <Button
+                  disabled={busy}
+                  onClick={() => void disarm()}
+                  variant="danger"
+                >
+                  {busy ? '처리 중' : '정지 확인'}
+                </Button>
+                <Button disabled={busy} variant="secondary" onClick={() => setConfirmingDisarm(false)}>
+                  취소
+                </Button>
+              </>
+            ) : (
+              <Button disabled={busy} variant="secondary" onClick={() => setConfirmingDisarm(true)}>
+                자동운용 정지
+              </Button>
+            )}
           </div>
           <AutomationPersistenceNote status={data.status} />
         </div>

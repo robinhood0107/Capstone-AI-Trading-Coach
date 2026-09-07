@@ -33,6 +33,8 @@ import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityDeniedException
 import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
 import com.capstone.decision.infrastructure.security.ActorRlsScope
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.dao.DataAccessException
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
@@ -922,6 +924,14 @@ class JdbcAutomationRepository(
                     mapOf("ownerUserId" to ownerUserId),
                 ) { row, _ -> row.getString("slot") }
                 .contains("PRIMARY")
+        // vertex 는 소유자가 주입하는 API 키가 아니라 0600 서비스 계정 파일로 인증한다.
+        // 그래서 vertex 에 PRIMARY 자격증명 행을 요구하면 설계상 만족할 수 없는 조건이 된다.
+        // 이 면제는 contracts/tests/test_p1_automation_v3_live_readiness.py 가 고정한다.
+        //
+        // 알려진 어긋남: V135 의 p1_arm_automation_v3 는 provider 와 무관하게 PRIMARY 행을
+        // 요구하므로, AI 판단을 켠 vertex 사용자는 여기서 "준비됨"인데 arm 이 P1A01 로 튕긴다.
+        // 고칠 쪽은 이 면제가 아니라 DB 다 - arm 게이트도 vertex 를 면제하고 대신 Spring 이
+        // 이미 넘기는 p_provider_capability_ready(서비스 계정 구성 여부)에 의존해야 한다.
         val credentialReady = aiSettings.provider == "vertex" || primaryCredentialReady
         val aiProviderReady = !aiSettings.enabled || (credentialReady && aiSettings.dailyGenerateCallCap >= 3)
         val blockers =
@@ -1132,7 +1142,7 @@ class JdbcAutomationRepository(
     }
 
     private fun translate(error: DataAccessException): RuntimeException =
-        when (error.sqlState()) {
+        when (val state = error.sqlState()) {
             "P1B01" -> AutomationBlockedException("BLOCKED_INCOMPLETE_RISK_BALANCE", error)
             "P1L01" -> AutomationBlockedException("LEGACY_POSITION_PRESENT", error)
             "P1M01" -> AutomationBlockedException("MARKET_DATA_CATCHUP_REQUIRED", error)
@@ -1141,7 +1151,21 @@ class JdbcAutomationRepository(
             "40001" -> AutomationConflictException(error)
             "P0002" -> AutomationNotFoundException()
             "42501" -> AutomationAccessDeniedException(error)
-            else -> AutomationStorageException(error)
+            else -> {
+                // 22023(함수 인자 검증 실패)과 23514(CHECK 위반)은 저장 경계 계약이 앱 계약과
+                // 어긋났다는 뜻이고, 나머지와 섞여 INTERNAL_ERROR 하나로 나가면 원인을 화면
+                // 바깥에서 알 방법이 없다. 실제로 RAG 쪽에서 이 부류가 503 하나로 접혀 닷새를
+                // 갔다. HTTP 코드는 그대로 두고(새 error code 는 공개 계약 변경이다) SQLSTATE 만
+                // 남긴다. 값·질문·provider 응답은 남기지 않는다.
+                if (state == "22023" || state == "23514") {
+                    logger.warn(
+                        "automation storage contract violated: sqlState={} cause={}",
+                        state,
+                        error.javaClass.simpleName,
+                    )
+                }
+                AutomationStorageException(error)
+            }
         }
 
     private fun ResultSet.longOrNull(column: String): Long? = getObject(column, Long::class.javaObjectType)
@@ -1201,6 +1225,8 @@ class JdbcAutomationRepository(
     )
 
     private companion object {
+        val logger: Logger = LoggerFactory.getLogger(JdbcAutomationRepository::class.java)
+
         val RUN_V3_SELECT =
             """
             SELECT run.run_id,run.session_date,run.state,run.brokerage_mode,

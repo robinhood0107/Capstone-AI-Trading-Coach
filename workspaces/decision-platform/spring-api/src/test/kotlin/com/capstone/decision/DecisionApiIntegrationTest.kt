@@ -1058,7 +1058,13 @@ class DecisionApiIntegrationTest(
 
     @Test
     fun `complete stored source still BLOCKs an oversized order`() {
-        val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "13")
+        val principleId =
+            insertPrinciple(
+                "usr_demo_user",
+                "GUIDE",
+                suffix = "13",
+                enforceSingleOrderAmount = true,
+            )
         insertCompleteStoredSources(orderCount = 0)
         val token = login("demo-user", userPassword())
         val oversized =
@@ -1394,7 +1400,13 @@ class DecisionApiIntegrationTest(
 
     @Test
     fun `violation insert failure rolls back the complete BLOCK graph`() {
-        val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "071")
+        val principleId =
+            insertPrinciple(
+                "usr_demo_user",
+                "GUIDE",
+                suffix = "071",
+                enforceSingleOrderAmount = true,
+            )
         insertCompleteStoredSources(orderCount = 0)
         val token = login("demo-user", userPassword())
         installGraphFailureTrigger("decision_violations")
@@ -1639,6 +1651,10 @@ class DecisionApiIntegrationTest(
         mode: String,
         suffix: String,
         status: String = "ACTIVE",
+        // 건당 원화 상한을 이 원칙에서 켠다. V143 이 소유자 승인으로 프리셋 기본값의 집행을
+        // 껐으므로 그 규칙으로 BLOCK 을 확인하려는 테스트는 그 사실을 숨기지 않고 스스로
+        // 켜야 한다. 기본값에 숨어 의존하던 두 테스트가 V143 뒤로 조용히 붉었다.
+        enforceSingleOrderAmount: Boolean = false,
     ): String {
         val principleId = "prc_44" + suffix.padStart(30, '0')
         val versionId = "pvr_44" + suffix.padStart(30, '0')
@@ -1660,15 +1676,25 @@ class DecisionApiIntegrationTest(
               principle_version_id, principle_id, version, preset_id, title,
               mode, status, rules_json, changed_fields, created_by
             )
-            select ?, ?, 1, preset_id, 'S2.3 fixture', ?, ?, rules_json,
+            select ?, ?, 1, preset_id, 'S2.3 fixture', ?, ?,
+                   case when ? then (
+                     select jsonb_agg(
+                       case when rule->>'ruleId' = 'max_single_order_amount'
+                         then rule || '{"enabled":true,"severity":"BLOCK"}'::jsonb
+                         else rule end
+                       order by ordinal)
+                     from jsonb_array_elements(preset.rules_json)
+                       with ordinality as item(rule, ordinal)
+                   ) else preset.rules_json end,
                    array['presetId','title','mode','status','rules'], ?
-            from principle_presets
-            where preset_id = 'balanced'
+            from principle_presets preset
+            where preset.preset_id = 'balanced'
             """.trimIndent(),
             versionId,
             principleId,
             mode,
             status,
+            enforceSingleOrderAmount,
             ownerUserId,
         )
         return principleId

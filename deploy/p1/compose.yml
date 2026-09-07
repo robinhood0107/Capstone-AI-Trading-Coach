@@ -610,6 +610,10 @@ services:
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "market-data"]
     command: ["python", "-m", "app.data.market_data.automation_bootstrap_cli", "inventory"]
     environment:
+      # attest_source_writer_dsn 이 요구하는 실행 대상 표시다. 이 스택은 로컬 배포이므로
+      # local 이 정직한 값이고, 이 값이 없으면 관측 적재가 사전 검증에서 거부된다.
+      # 이 서비스는 `up` 이 일회성으로 일봉 수집기를 부르는 자리이기도 하다.
+      DECISION_SOURCE_WRITER_OFFLINE_TARGET: "local"
       P1_AUTOMATION_MARKET_BOOTSTRAP_ENABLED: "false"
       P1_AUTOMATION_MARKET_BOOTSTRAP_KIS_MODE: "mock"
       P1_DATA_ONLY_COLLECTOR_ENABLED: "false"

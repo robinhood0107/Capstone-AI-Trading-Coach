@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import yaml
+
 import contracts.verify_p1_compose_supply_handoff as verifier
 from contracts.verify_p1_compose_supply_handoff import (
     CATALOG_PATH,
@@ -373,6 +375,54 @@ class P1ComposeSupplyHandoffTest(unittest.TestCase):
         self.assertIn("<<: *app-security", block)
         # 실행은 기존 CLI 다. 새 스케줄러 코드를 만들지 않았다.
         self.assertIn("app.data.market_data.yfinance_daily_cli", block)
+        # 관측 적재의 사전 검증이 요구하는 실행 대상 표시. 아래 테스트가 규칙 전체를 본다.
+        self.assertIn('DECISION_SOURCE_WRITER_OFFLINE_TARGET: "local"', block)
+
+    def test_every_writer_attesting_service_declares_the_offline_target(self) -> None:
+        """`attest_source_writer_dsn` 을 지나는 서비스는 전부 실행 대상을 선언한다.
+
+        왜 이 테스트가 있나. 수집기에만 이 값이 빠져 있었고, 그래서 시세·종목카탈로그 관측이
+        한 번도 적재되지 않았다. 값이 없으면 사전 검증이 `ValueError` 로 거부하는데 CLI 가
+        그것을 마커 한 낱말로 삼켜 `observations=FAILED_ValueError` 만 남겼다. 하류에서는
+        주문이 `violations` 없이 `PRICE_MISSING` 으로 HOLD 되는 모습으로만 보였다.
+
+        인스턴스 하나가 아니라 부류를 닫는다 - 앞으로 writer 를 지나는 서비스를 추가하면
+        여기서 막힌다.
+        """
+
+        root = Path(__file__).resolve().parents[2]
+        compose = yaml.safe_load((root / "deploy/p1/compose.yml").read_text(encoding="utf-8"))
+
+        # writer 사전 검증을 부르는 모듈. 실측으로 확인한 두 곳이다.
+        attesting_modules = (
+            "app.data.market_data.yfinance_daily_cli",
+            # 상주 자동운용이 `runtime_observation_publisher` 를 통해 부른다. supervisor 가
+            # decision-platform 안에서 띄우므로 그 서비스가 선언해야 한다.
+            "app.p1_owner.automation_runtime",
+        )
+        supervisor = (root / "deploy/p1/docker/decision-platform-supervisor.py").read_text(
+            encoding="utf-8"
+        )
+
+        missing: list[str] = []
+        examined: list[str] = []
+        for name, service in (compose.get("services") or {}).items():
+            spec = json.dumps(service, ensure_ascii=False)
+            reaches = any(module in spec for module in attesting_modules)
+            # supervisor 가 대신 띄우는 경로도 같은 규칙을 받는다.
+            if name == "decision-platform" and any(m in supervisor for m in attesting_modules):
+                reaches = True
+            if not reaches:
+                continue
+            examined.append(name)
+            if (service.get("environment") or {}).get(
+                "DECISION_SOURCE_WRITER_OFFLINE_TARGET"
+            ) != "local":
+                missing.append(name)
+
+        self.assertEqual([], missing)
+        # 규칙이 빈 집합을 훑고 초록불이 되지 않게, 걸려야 하는 서비스를 이름으로 고정한다.
+        self.assertEqual(["decision-platform", "market-data-daily"], sorted(examined))
 
     def test_daily_collector_entrypoint_profile_requires_only_the_writer_dsn(self) -> None:
         """entrypoint whitelist 가 이 컨테이너에 writer DSN 하나만 허용한다.

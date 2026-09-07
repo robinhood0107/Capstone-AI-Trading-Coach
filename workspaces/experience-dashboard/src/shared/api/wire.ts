@@ -367,12 +367,14 @@ export interface MockOrderRequest {
 }
 
 export interface OrderFill {
-  fillId: string;
   orderId: string;
+  brokerageMode: 'KIS_MOCK' | 'INTERNAL_PAPER';
+  execRefHash: string;
   symbol: string;
   side: 'BUY' | 'SELL';
-  quantity: number;
-  price: number;
+  fillQuantity: number;
+  fillPriceKrw: number;
+  fillAmountKrw: number;
   filledAt: string;
 }
 
@@ -505,7 +507,7 @@ export type MarketHistoryStatus = 'EMPTY' | 'PARTIAL' | 'READY' | 'CATCHUP_REQUI
 
 /** v3 정책은 v2 에 ATR 추적손절·보유기간·모델매도 네 값을 더한다. */
 export interface AutomationPolicyV3 extends Omit<AutomationPolicyV2, 'contractId'> {
-  contractId: 'automation-policy.v3';
+  contractId: 'automation-policy.v2';
   atrPeriod: number;
   /** 1000 = 1.0배. 100 단위로만 저장된다. */
   atrMultiplierMilli: number;

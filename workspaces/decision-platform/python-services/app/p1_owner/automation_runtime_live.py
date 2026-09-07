@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
+import ssl
 from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Any, Protocol, cast
@@ -219,6 +221,17 @@ class SpringAutomationBridgeClient:
         self._client.close()
 
 
+def kis_mock_connectivity_ready() -> bool:
+    """Check the fixed Mock TLS origin without credentials or an API request."""
+    host = "openapivts.koreainvestment.com"
+    try:
+        with socket.create_connection((host, 29443), timeout=4.0) as connection:
+            with ssl.create_default_context().wrap_socket(connection, server_hostname=host):
+                return True
+    except OSError:
+        return False
+
+
 class KisAutomationQuoteSource:
     """현재가 한 번에서 price/상한가/하한가만 즉시 축약한다."""
 
@@ -266,11 +279,12 @@ class KisAutomationExecutionSource:
     def __init__(self) -> None:
         try:
             reference_ttl_seconds = int(
-                os.environ.get("KIS_MOCK_ORDER_REFERENCE_TTL_SECONDS", "900")
+                os.environ.get("KIS_MOCK_ORDER_REFERENCE_TTL_SECONDS", "604800")
             )
         except ValueError:
             raise ValueError("KIS mock order reference TTL must be an integer") from None
-        self._budget = KISBrokerageCallBudget(token_p_cap=1, brokerage_cap=2)
+        # Sizing balance + execution pages + post-fill balance share this client.
+        self._budget = KISBrokerageCallBudget(token_p_cap=1, brokerage_cap=4)
         self._redis = _build_redis_client()
         self._references = EncryptedRedisOrderReferenceStore(
             self._redis,
@@ -440,6 +454,8 @@ class LiveAutomationPort:
         self.submit_calls = int(state.get("logicalSubmitCount", 0))
         self.reconcile_calls = 0
         self.cancel_calls = 0
+        self._last_execution_ref_hash: str | None = None
+        self._completed_balance: dict[str, object] | None = None
         expected = state.get("expectedAccountProjection", state.get("baselineAccountProjection"))
         self._expected_projection: dict[str, Any] | None = (
             dict(expected) if isinstance(expected, dict) else None
@@ -474,7 +490,12 @@ class LiveAutomationPort:
                     "portfolioSource": "KIS_MOCK",
                     "orderIntent": reservation.intent.projection(),
                 },
-                idempotency_key=_idempotency(self._claim.run_id, "decision"),
+                idempotency_key=_idempotency(
+                    self._claim.run_id,
+                    "decision"
+                    if not state.get("decisionEpoch")
+                    else f"decision:revision:{int(state['decisionEpoch'])}",
+                ),
             )
             risk = decision.get("riskDecision")
             if not isinstance(risk, dict):
@@ -739,11 +760,15 @@ class LiveAutomationPort:
             return "UNRESOLVED"
         self._require_capacity(1)
         self.physical_calls += 1
-        return self._execution_source.read(
+        snapshot = self._execution_source.read(
             self.order_id,
             self._claim.account_id,
             self._claim.session_date,
         )
+        self._last_execution_ref_hash = (
+            snapshot.provider_exec_ref_hash if isinstance(snapshot, ReconcileSnapshot) else None
+        )
+        return snapshot
 
     def account_lineage_advance(
         self,
@@ -778,6 +803,7 @@ class LiveAutomationPort:
             return None
         projection = observed.projection()
         projection["schemaVersion"] = "2"
+        self._completed_balance = dict(balance)
         return AccountLineageAdvance(
             reason="BUY_FILL" if side == "BUY" else "SELL_FILL",
             projection=projection,
@@ -785,7 +811,20 @@ class LiveAutomationPort:
             order_id=self.order_id,
             filled_quantity=filled_quantity,
             average_fill_price_krw=average_fill_price_krw,
+            provider_exec_ref_hash=self._last_execution_ref_hash,
         )
+
+    def publish_completed_observations(self) -> None:
+        if self._completed_balance is not None:
+            marker = publish_runtime_observations(
+                owner_user_id=self._claim.user_id,
+                account_id=self._claim.account_id,
+                balance=self._completed_balance,
+                baseline_equity_krw=0,
+                trading_date=self._claim.session_date.isoformat(),
+                publish_risk_metrics=False,
+            )
+            print(f"AUTOMATION_COMPLETED_BALANCE={marker}", flush=True)
 
     def cancel(self, reservation: OrderReservation) -> bool:
         del reservation

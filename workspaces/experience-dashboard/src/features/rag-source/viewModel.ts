@@ -164,12 +164,18 @@ export async function askRag(
   question: string,
   answerMode: 'CONCISE' | 'DETAILED',
 ): Promise<ViewState<RagAnswerView>> {
-  const answer: RagV2Answer = await api.ragV2Ask({
+  const request: Parameters<typeof api.ragV2Ask>[0] = {
     question,
     answerMode,
     // 서버는 1~6개의 허용 주제를 요구한다. 이 화면은 개념·위험 설명이 목적이다.
     topics: ['FINANCIAL_ENGINEERING', 'RISK', 'METHODOLOGY', 'PRODUCT_RISK'],
-  });
+  };
+  let answer: RagV2Answer = await api.ragV2Ask(request);
+  // Retry once only when the server explicitly confirms that no answer was produced.
+  // Ambiguous HTTP failures and successful answers are never resubmitted.
+  if (answer.generationStatus === 'GENERATION_UNAVAILABLE' && answer.answer === null) {
+    answer = await api.ragV2Ask(request);
+  }
 
   // 출처 registry는 기관명 보강용이다. 실패해도 인용 자체는 그대로 보여준다.
   const registry = new Map<string, RagSourceResponse>();
@@ -216,6 +222,18 @@ export async function loadRegistry(): Promise<ViewState<RagSourceResponse[]>> {
 export async function loadRecentQuestions(): Promise<ViewState<RagV2HistoryDetail[]>> {
   const page = await api.ragV2History(10);
   const current = page.items.filter((item) => /^rag_[0-9a-f]{32}$/.test(item.answerId)).slice(0, 5);
-  const details = await Promise.all(current.map((item) => api.ragV2HistoryDetail(item.answerId)));
+  // 예전에는 Promise.all 이라 다섯 건 중 한 건의 상세가 503 이면 "최근 질문" 패널이 통째로
+  // 사라졌다. 읽을 수 있는 것만 보여 주는 편이 정직하고, 못 읽은 건은 목록에서 빠진다.
+  const settled = await Promise.allSettled(
+    current.map((item) => api.ragV2HistoryDetail(item.answerId)),
+  );
+  const details = settled
+    .filter((result): result is PromiseFulfilledResult<RagV2HistoryDetail> => result.status === 'fulfilled')
+    .map((result) => result.value);
+  if (details.length === 0 && current.length > 0) {
+    // 전부 실패한 것은 "질문이 없음"과 다르다. 첫 실패를 그대로 올려 보내 오류로 표시한다.
+    const failure = settled.find((result) => result.status === 'rejected');
+    throw (failure as PromiseRejectedResult).reason;
+  }
   return ready(details, details[0]?.createdAt ?? null);
 }

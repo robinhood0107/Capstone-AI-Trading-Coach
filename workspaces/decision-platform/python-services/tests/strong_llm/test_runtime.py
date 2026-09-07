@@ -9,7 +9,7 @@ import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 
 from app.strong_llm.models import Evidence, RunRequest
-from app.strong_llm.runtime import BoundedStrongLlmGraph, ProviderResult
+from app.strong_llm.runtime import BoundedStrongLlmGraph, ProviderResult, _run_result
 from app.strong_llm.vertex_provider import (
     LangChainVertexProvider,
     VertexProviderSettings,
@@ -20,6 +20,42 @@ from app.strong_llm.vertex_provider import (
     _provider_result,
     _vertex_response_schema,
 )
+
+
+def test_grounding_receipts_keep_only_edges_to_retained_sources() -> None:
+    result = ProviderResult(
+        message=AIMessage(content=""),
+        answer_json=_answer(),
+        prompt_tokens=1,
+        output_tokens=1,
+        google_queries=[],
+        google_query_count=0,
+        grounding_roots=[
+            {
+                "result_id": "google_1",
+                "title": "A",
+                "uri": "https://example.com/a",
+                "domain": "example.com",
+                "chunk_index": 0,
+                "citation_id": "cit_1",
+            },
+            {
+                "result_id": "google_2",
+                "title": "B",
+                "uri": "https://example.com/b",
+                "domain": "example.com",
+                "chunk_index": 1,
+                "citation_id": "",
+            },
+        ],
+        grounding_supports=[
+            {"start_index": 0, "end_index": 3, "text": "one", "chunk_indices": (0, 1)},
+            {"start_index": 4, "end_index": 7, "text": "two", "chunk_indices": (1,)},
+        ],
+    )
+    actual = _run_result(result, vertex_calls=2, backend="VERTEX_GOOGLE")
+    assert [support.chunk_indices for support in actual.grounding_supports] == [(0,)]
+    assert [root.chunk_index for root in actual.grounding_roots] == [0]
 
 
 def _answer() -> str:

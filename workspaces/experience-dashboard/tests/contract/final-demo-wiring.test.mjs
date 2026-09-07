@@ -38,11 +38,14 @@ test('backtest highlight is derived from stored metric cards without a fixed ret
   assert.match(model, /bestNetReturn\?\.value \?\? null/);
 });
 
-test('user automation screen has no stop action and top status reads automation state', () => {
+test('automation stop is labelled as a control change, not an order block', () => {
   const automation = read('src/features/automation/AutomationView.tsx');
   const status = read('src/shared/ui/StatusBar.tsx');
+  // disarm 은 다음 세션 실행을 열지 않는 것이고, 주문 차단은 Kill Switch 다. 옛 라벨은
+  // 두 목적을 한 문구에 섞어 사용자가 무엇을 눌렀는지 알 수 없게 만들었다.
   assert.doesNotMatch(automation, /신규 주문 중지/);
-  assert.match(status, /automationStatusV2/);
+  assert.match(automation, /자동운용 정지/);
+  assert.match(status, /automationStatusV3/);
   assert.match(status, /controlState === 'DISARMED'/);
 });
 
@@ -62,5 +65,5 @@ test('home and evaluation views distinguish missing values from loading', () => 
   assert.match(overview, /KIS 계좌 연결 필요/);
   assert.match(evaluation, /Guide 포트폴리오 평가액/);
   assert.doesNotMatch(evaluation, /timeline\.slice\(0, 40\)/);
-  assert.match(policy, /켜짐 · 장 시작 대기/);
+  assert.match(policy, /켜짐 · 다음 실행 대기/);
 });

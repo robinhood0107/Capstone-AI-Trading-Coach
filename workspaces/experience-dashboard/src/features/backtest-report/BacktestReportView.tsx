@@ -15,6 +15,7 @@ import { Panel } from '@/shared/ui/Panel';
 import { Numeric } from '@/shared/ui/Numeric';
 import { useResource } from '@/shared/lib/useResource';
 import { useLatestRun } from '@/shared/api/latestRun';
+import { LatestRunFallback } from '@/shared/ui/LatestRunFallback';
 import { formatDecimal, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 import { loadBacktestReportView, type DerivedCard, type StrategyRow } from './viewModel';
 
@@ -25,7 +26,7 @@ const COLOR: Record<string, string> = {
 };
 
 export function BacktestReportView() {
-  const { runId, pending } = useLatestRun('backtests');
+  const { runId, pending, failed, errorMessage, reload: reloadLatest } = useLatestRun('backtests');
   const { state, reload } = useResource(
     () => loadBacktestReportView(runId ?? ''),
     [runId],
@@ -35,9 +36,13 @@ export function BacktestReportView() {
   return (
     <div className="space-y-6">
       {runId === null ? (
-        <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
-          {pending ? '불러오는 중입니다.' : '아직 등록된 검증 결과가 없습니다.'}
-        </p>
+        <LatestRunFallback
+          pending={pending}
+          failed={failed}
+          errorMessage={errorMessage}
+          onRetry={reloadLatest}
+          emptyText="아직 등록된 검증 결과가 없습니다."
+        />
       ) : (
         <AsyncBoundary state={state} onRetry={reload}>
           {(view) => (

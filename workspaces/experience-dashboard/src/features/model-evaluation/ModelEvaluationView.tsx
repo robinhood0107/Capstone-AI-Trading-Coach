@@ -18,6 +18,7 @@ import { AbstainChip } from '@/shared/ui/Decision';
 import { useResource } from '@/shared/lib/useResource';
 import { api, ID_PATTERN } from '@/shared/api/endpoints';
 import { useLatestRun } from '@/shared/api/latestRun';
+import { LatestRunFallback } from '@/shared/ui/LatestRunFallback';
 import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentity';
 import { formatDecimal, formatKrw, formatKstDateTime, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 import { loadModelEvaluationView, loadSignalView, type ModelRow, type SignalSlot } from './viewModel';
@@ -30,7 +31,7 @@ const SIGNAL_TONE: Record<string, string> = {
 };
 
 export function ModelEvaluationView() {
-  const { runId, pending } = useLatestRun('model-evaluations');
+  const { runId, pending, failed, errorMessage, reload: reloadLatest } = useLatestRun('model-evaluations');
   const [symbol, setSymbol] = useState('');
   const symbolValid = ID_PATTERN.symbol.test(symbol);
   const catalog = useResource(async () => {
@@ -174,9 +175,13 @@ export function ModelEvaluationView() {
           }}
         </AsyncBoundary>
       ) : (
-        <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
-          {pending ? '불러오는 중입니다.' : '아직 등록된 모델 평가 결과가 없습니다.'}
-        </p>
+        <LatestRunFallback
+          pending={pending}
+          failed={failed}
+          errorMessage={errorMessage}
+          onRetry={reloadLatest}
+          emptyText="아직 등록된 모델 평가 결과가 없습니다."
+        />
       )}
 
       {symbolValid ? (

@@ -8,6 +8,7 @@ import { useResource } from '@/shared/lib/useResource';
 import { api } from '@/shared/api/endpoints';
 import { empty } from '@/shared/lib/viewState';
 import { useLatestRun } from '@/shared/api/latestRun';
+import { LatestRunFallback } from '@/shared/ui/LatestRunFallback';
 import { formatDecimal, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 import { loadBacktestReportView } from '@/features/backtest-report/viewModel';
 import { loadRiskResultView, type RiskResultView } from '@/features/order-review/viewModel';
@@ -21,7 +22,7 @@ const CAPTURE_LIST = [
 ];
 
 export function ReportView() {
-  const { runId } = useLatestRun('backtests');
+  const { runId, pending, failed, errorMessage, reload: reloadLatest } = useLatestRun('backtests');
 
   const decision = useResource<RiskResultView>(async () => {
     const { data } = await api.dashboardRecentRiskResults();
@@ -170,7 +171,17 @@ export function ReportView() {
             </>
           )}
         </AsyncBoundary>
-      ) : null}
+      ) : (
+        // 예전에는 `: null` 이라 조회가 503 이면 이 절이 문구 하나 없이 통째로 사라졌다.
+        // 보고서에서 절이 조용히 없어지는 것은 값이 틀린 것보다 알아채기 어렵다.
+        <LatestRunFallback
+          pending={pending}
+          failed={failed}
+          errorMessage={errorMessage}
+          onRetry={reloadLatest}
+          emptyText="아직 등록된 검증 결과가 없어 이 절을 만들지 못했습니다."
+        />
+      )}
     </div>
   );
 }

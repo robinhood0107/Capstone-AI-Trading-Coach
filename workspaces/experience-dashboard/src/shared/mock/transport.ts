@@ -125,6 +125,13 @@ export async function mockBareTransport<T>(
     } as T;
   }
 
+  // 이 경로가 없어서 mock 모드에서는 Strong LLM 설정 저장이 100% 실패했고, 화면에는
+  // 원인과 무관한 "해당 자료를 찾을 수 없습니다. ID를 다시 확인하세요."가 나왔다.
+  // 서버는 204 를 주므로 mock 도 같은 모양으로 성공시킨다. 키는 보관하지 않는다.
+  if (target === '/api/v2/strong-llm/settings' && method === 'PUT') {
+    return undefined as T;
+  }
+
   if (target === '/api/v2/rag/consent') {
     if (!mockConsentGranted) {
       throw new ApiFailure(

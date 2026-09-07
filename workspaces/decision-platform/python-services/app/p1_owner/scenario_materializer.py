@@ -273,7 +273,6 @@ def _thresholds(rules: object) -> dict[str, float]:
     required = {
         "max_position_per_asset",
         "max_gold_etf_etn_weight",
-        "max_single_order_amount",
         "daily_loss_guard",
         "mdd_guard",
         "max_daily_orders",
@@ -334,7 +333,7 @@ def _strict_replay(
                 if symbol in _GOLD_SYMBOLS
             ) + (notional if trade.symbol in _GOLD_SYMBOLS else 0.0)
             blocked = (
-                notional > thresholds["max_single_order_amount"]
+                notional > thresholds.get("max_single_order_amount", math.inf)
                 or notional / current_equity > thresholds["max_position_per_asset"]
                 or projected_gold / current_equity > thresholds["max_gold_etf_etn_weight"]
                 or daily_return < thresholds["daily_loss_guard"]

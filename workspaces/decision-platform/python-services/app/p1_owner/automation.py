@@ -1631,8 +1631,9 @@ class AutomationEngine:
             quantity = matches[0].quantity
             position = matches[0]
             policy = AutomationPolicySnapshot(
-                policy_id=position.policy_id,
-                version=position.policy_version,
+                # The run uses the active policy identity; exit terms remain those of the lot.
+                policy_id=inputs.policy.policy_id,
+                version=inputs.policy.version,
                 capital_limit_krw=inputs.policy.capital_limit_krw,
                 stop_loss_bps=position.stop_loss_bps,
                 take_profit_bps=position.take_profit_bps,

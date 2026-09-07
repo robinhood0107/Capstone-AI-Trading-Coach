@@ -10,8 +10,9 @@ import { api } from '@/shared/api/endpoints';
 import { withFreshness } from '@/shared/lib/viewState';
 import { formatKrw, formatKstDateTime, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 import type {
+  AutomationPositionPageV3,
   AutomationPositionPageV2,
-  AutomationStatusV2,
+  AutomationStatusV3,
   InstrumentDisplayCatalog,
   MockBalance,
   PortfolioRisk,
@@ -19,6 +20,7 @@ import type {
 } from '@/shared/api/wire';
 import { AUTOMATION_STATE_LABELS } from '@/features/automation/policy';
 import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentity';
+import { holdingOwnership } from './ownership';
 
 const STEPS = [
   { href: '/principles', label: '내 원칙 정하기', detail: '먼저 기준을 정해야 주문 검토가 동작합니다.' },
@@ -27,13 +29,17 @@ const STEPS = [
 ];
 
 export function OverviewView() {
-  const { state, reload } = useResource(async () => {
-    const [risk, status, positions, latestRisk, instruments] = await Promise.all([
-      api.riskPortfolio(),
-      api.automationStatusV2(),
-      api.automationPositionsV2(),
+  const { state, reload, refreshError } = useResource(async () => {
+    // 이 화면은 5초마다 일곱 endpoint 를 함께 본다. 예전에는 Promise.all 이라
+    // 종목명 카탈로그 하나가 실패해도 평가금액과 자동주문 상태까지 통째로 사라졌다.
+    // 화면이 성립하는 최소 조건은 위험 요약과 자동운용 상태 둘이고, 나머지는 없으면
+    // 그 조각만 "확인하지 못했습니다"로 남긴다.
+    const [risk, status] = await Promise.all([api.riskPortfolio(), api.automationStatusV3()]);
+    const [positions, managedPositions, latestRisk, instruments] = await Promise.all([
+      api.automationPositionsV2().catch(() => null),
+      api.automationPositionsV3().catch(() => null),
       api.dashboardLatestRiskResult().catch(() => null),
-      api.instrumentDisplayCatalog(),
+      api.instrumentDisplayCatalog().catch(() => null),
     ]);
     const balance = status.data.accountId
       ? await api.mockBalance(status.data.accountId).then((result) => result.data).catch(() => null)
@@ -42,19 +48,24 @@ export function OverviewView() {
       {
         risk: risk.data,
         status: status.data,
-        positions: positions.data,
+        positions: positions?.data ?? null,
+        // 종목명이 없으면 코드로 표시된다. 빈 목록이 화면을 죽이지는 않는다.
+        managedPositions: managedPositions?.data ?? { items: [] },
         latestRisk: latestRisk?.data ?? null,
         balance,
-        instruments: instruments.data,
+        instruments: instruments?.data ?? { items: [] },
       },
       risk.data.asOf,
       15,
       '포트폴리오 관측이 15분 넘게 갱신되지 않았습니다. 값은 참고용으로만 보세요.',
     );
-  }, []);
+  }, [], true, 5_000);
 
   return (
     <div className="space-y-6">
+      <p role="status" className="h-8 overflow-hidden text-[11px] text-muted">
+        {refreshError ?? '5초마다 자동 갱신 · 창으로 돌아오면 다시 확인합니다.'}
+      </p>
       <AsyncBoundary state={state} onRetry={reload}>
         {(data) => (
           <>
@@ -237,7 +248,7 @@ function HeroDelta({ value }: { value: number | null }) {
   );
 }
 
-function AutomationHeroTile({ status }: { status: AutomationStatusV2 }) {
+function AutomationHeroTile({ status }: { status: AutomationStatusV3 }) {
   const dot = status.projectionState === 'RUNNING'
       ? 'bg-emerald-300'
       : status.projectionState === 'HALTED'
@@ -254,8 +265,9 @@ function AutomationHeroTile({ status }: { status: AutomationStatusV2 }) {
         className="mt-1 flex items-center gap-2 text-[16px] font-semibold text-white hover:underline"
       >
         <span aria-hidden className={`h-2 w-2 rounded-full ${dot}`} />
-        {AUTOMATION_STATE_LABELS[status.projectionState]}
+        {status.projectionState === 'ARMED' ? '켜짐 · 다음 실행 대기' : AUTOMATION_STATE_LABELS[status.projectionState]}
       </Link>
+      {status.nextRunAt ? <p className="mt-1 text-[11px] text-white/70">다음 실행 {formatKstDateTime(status.nextRunAt)}</p> : null}
       {status?.killSwitchActive ? (
         <p className="mt-1 text-[11px] text-red-200">Kill Switch 작동 중</p>
       ) : null}
@@ -265,8 +277,10 @@ function AutomationHeroTile({ status }: { status: AutomationStatusV2 }) {
 
 interface OverviewData {
   risk: PortfolioRisk;
-  status: AutomationStatusV2;
-  positions: AutomationPositionPageV2;
+  status: AutomationStatusV3;
+  /** null 이면 실현손익 요약을 확인하지 못한 것이다. 0원으로 꾸미지 않는다. */
+  positions: AutomationPositionPageV2 | null;
+  managedPositions: AutomationPositionPageV3;
   latestRisk: RecentRiskResult | null;
   balance: MockBalance | null;
   instruments: InstrumentDisplayCatalog;
@@ -275,11 +289,13 @@ interface OverviewData {
 function LiveSummary({ data }: { data: OverviewData }) {
   const latest = data.latestRisk;
   const balance = data.balance;
-  const managedSymbols = new Set(
-    data.positions.items
-      .filter((position) => position.status === 'OPEN' || position.status === 'EXIT_PENDING')
-      .map((position) => position.symbol),
-  );
+  const managedQuantities = new Map<string, number>();
+  for (const position of data.managedPositions.items) {
+    if (position.accountId === data.status.accountId && position.botOwned &&
+      (position.status === 'OPEN' || position.status === 'EXIT_PENDING')) {
+      managedQuantities.set(position.symbol, (managedQuantities.get(position.symbol) ?? 0) + position.quantity);
+    }
+  }
   const stockValue = balance
     ? balance.positions.reduce((sum, position) => sum + position.marketValueKrw, 0)
     : null;
@@ -316,7 +332,8 @@ function LiveSummary({ data }: { data: OverviewData }) {
 
             <ul className="mt-5 divide-y divide-line/60 border-t border-line">
               {balance.positions.map((position) => {
-                const managed = managedSymbols.has(position.symbol);
+                const ownership = holdingOwnership(position.quantity, managedQuantities.get(position.symbol) ?? 0);
+                const managed = ownership.managed > 0;
                 return (
                   <li
                     key={position.symbol}
@@ -329,7 +346,9 @@ function LiveSummary({ data }: { data: OverviewData }) {
                           managed ? 'bg-navy/10 text-navy' : 'bg-subtle text-muted'
                         }`}
                       >
-                        {managed ? '자동매매 관리' : '직접 보유 · 매매 제외'}
+                        {ownership.mismatch ? '보유 수량 대사 필요' :
+                          managed && ownership.manual > 0 ? `자동매매 ${ownership.managed}주 · 직접 보유 ${ownership.manual}주` :
+                          managed ? '자동매매 관리' : '직접 보유 · 매매 제외'}
                       </span>
                       {position.isGoldEtfEtn ? (
                         <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
@@ -392,18 +411,18 @@ function LiveSummary({ data }: { data: OverviewData }) {
               />
               <SummaryPair label="손절 / 익절" value={`${formatRatio(policy.stopLossBps / 10_000, 1)} / ${formatRatio(policy.takeProfitBps / 10_000, 1)}`} />
               <SummaryPair label="최대 열린 포지션" value={`${policy.maxOpenPositions}개`} />
-              <SummaryPair label="평가 / 매수 마감" value={`${policy.evaluationTimeKst} / ${policy.buyCutoffTimeKst} KST`} />
+              <SummaryPair label="평가 / 당일 운용 마감" value={`${policy.evaluationTimeKst} / ${policy.cancelTimeKst} KST`} />
             </div>
           </div>
         ) : null}
 
-        {data.positions.items.length > 0 ? (
+        {data.managedPositions.items.length > 0 ? (
           <ul className="mt-5 divide-y divide-line/60 border-t border-line">
-            {data.positions.items.map((position) => (
+            {data.managedPositions.items.map((position) => (
               <li key={position.positionId} className="grid gap-2 py-3 text-[13px] lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
                 <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                   <InstrumentIdentity symbol={position.symbol} instrument={instruments.get(position.symbol)} compact />
-                  <span className="text-muted">{position.status === 'OPEN' ? '보유 중' : position.status}</span>
+                  <span className="text-muted">{position.status === 'OPEN' ? '보유 중' : position.status === 'EXIT_PENDING' ? '매도·체결 확인 중' : position.status}</span>
                   <span className="tnum text-muted">{position.quantity}주</span>
                 </div>
                 <span className="tnum text-muted lg:text-right">
@@ -418,17 +437,25 @@ function LiveSummary({ data }: { data: OverviewData }) {
         )}
       </Panel>
 
-      <Panel title="저장된 운용 결과" hint="확정된 자동매매 결과와 최근 주문 판정을 표시합니다.">
+      <Panel title="저장된 운용 결과" hint="체결된 자동매매 결과와 최근 주문 판정입니다. 손익에는 시스템의 추정 거래비용이 반영됩니다.">
         <div className="grid gap-3 sm:grid-cols-3">
           <Tile label="종료된 포지션">
-            <span className="hero-number tnum text-[22px] font-semibold text-ink">
-              {data.positions.realizedSummary.closedPositionCount}개
-            </span>
+            {data.positions ? (
+              <span className="hero-number tnum text-[22px] font-semibold text-ink">
+                {data.positions.realizedSummary.closedPositionCount}개
+              </span>
+            ) : (
+              <span className="text-[14px] text-muted">확인하지 못했습니다</span>
+            )}
           </Tile>
-          <Tile label="확정 손익">
-            <span className="hero-number tnum text-[22px] font-semibold text-ink">
-              {formatKrw(data.positions.realizedSummary.realizedPnlKrw)}
-            </span>
+          <Tile label="실현 손익 · 비용 추정 반영">
+            {data.positions ? (
+              <span className="hero-number tnum text-[22px] font-semibold text-ink">
+                {formatKrw(data.positions.realizedSummary.realizedPnlKrw)}
+              </span>
+            ) : (
+              <span className="text-[14px] text-muted">확인하지 못했습니다</span>
+            )}
           </Tile>
           <Tile label="최근 판정">
             {latest ? (

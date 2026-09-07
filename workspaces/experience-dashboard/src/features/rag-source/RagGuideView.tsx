@@ -51,6 +51,7 @@ export function RagGuideView() {
   const [pending, setPending] = useState(false);
   const [consentGranted, setConsentGranted] = useState<boolean | null>(null);
   const [consentPending, setConsentPending] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
   const registry = useResource(loadRegistry, []);
   const history = useResource(loadRecentQuestions, []);
 
@@ -64,13 +65,28 @@ export function RagGuideView() {
     };
   }, []);
 
+  /**
+   * 동의·철회.
+   *
+   * 예전에는 `try { ... } finally { ... }` 로 catch 가 없어서 실패가 unhandled rejection 이
+   * 됐다. 사용자에게는 버튼을 눌렀는데 아무 일도 일어나지 않은 것으로 보였고, 동의를 못 하면
+   * 질문 자체가 막히므로 화면이 고장 난 것과 같았다. 실패를 반드시 말한다.
+   */
   async function changeConsent(action: 'GRANT' | 'REVOKE') {
     if (consentPending) return;
     setConsentPending(true);
+    setConsentError(null);
     try {
       await recordConsent(action);
       setConsentGranted(action === 'GRANT');
       if (action === 'REVOKE') setAnswerState(null);
+    } catch (cause) {
+      const state = toErrorState<never>(cause);
+      setConsentError(
+        state.kind === 'error'
+          ? `${action === 'GRANT' ? '동의' : '철회'}를 저장하지 못했습니다. ${state.message}`
+          : '동의 상태를 바꾸지 못했습니다.',
+      );
     } finally {
       setConsentPending(false);
     }
@@ -122,6 +138,16 @@ export function RagGuideView() {
             철회
           </Button>
         </div>
+        {consentError ? (
+          <p role="alert" className="mt-3 text-[13px] leading-6 text-block">
+            {consentError}
+          </p>
+        ) : null}
+        {consentGranted === null ? (
+          <p className="mt-3 text-[13px] leading-6 text-muted">
+            동의 상태를 확인하는 중입니다. 확인되지 않으면 질문은 열리지 않습니다.
+          </p>
+        ) : null}
       </Panel>
 
       <Panel
@@ -190,7 +216,9 @@ export function RagGuideView() {
       </Panel>
 
       {answerState ? (
-        <AsyncBoundary state={answerState}>
+        // 재시도가 없으면 503 하나에 "불러오기 실패"만 남고 사용자가 할 수 있는 행동이 없다.
+        // 마지막으로 보낸 질문을 그대로 다시 보낸다.
+        <AsyncBoundary state={answerState} onRetry={() => void submit(question)}>
           {(view) => (
             <Panel
               contract="rag-v2-answer.v1"
@@ -205,7 +233,7 @@ export function RagGuideView() {
                   <p className="whitespace-pre-line text-[14px] leading-7 text-ink">{view.answer}</p>
                 ) : (
                   <p className="text-[13px] leading-6 text-muted">
-                    {view.statusDetail} 응답 상태와 확인 가능한 자료를 아래에 남겼습니다. 잠시 후 다시 질문할 수 있습니다.
+                    잠시 후 다시 질문할 수 있습니다. 확인 가능한 근거가 있으면 아래에 표시합니다.
                   </p>
                 )}
               </article>

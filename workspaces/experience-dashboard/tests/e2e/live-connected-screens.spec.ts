@@ -103,10 +103,10 @@ test('newly connected screens render against the live Spring API', async ({ page
   // 관문 라벨은 목록 항목 안에서 찾는다. '내용 확인' 은 버튼에도 같은 글자가 있어
   // 화면 전체에서 찾으면 둘이 잡힌다.
   for (const gate of [
-    '자동운용 꺼짐',
-    'Kill Switch 꺼짐',
-    '주문가능금액 충족',
-    '원칙 판정 ALLOW',
+    '자동운용 상태 확인',
+    '긴급 중지 상태 확인',
+    '주문가능금액 확인',
+    '원칙 판정 확인',
     '내용 확인',
     '모의계좌 경로',
   ]) {

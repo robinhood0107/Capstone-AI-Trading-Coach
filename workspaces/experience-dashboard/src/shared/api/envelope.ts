@@ -30,6 +30,10 @@ export const API_ERROR_CODES = [
   'BROKERAGE_UNAVAILABLE',
   'SIGNAL_UNAVAILABLE',
   'INTERNAL_ERROR',
+  // 아래 둘은 서버 ErrorCode 가 아니라 클라이언트가 만드는 코드다. 전송 실패와 응답
+  // 형식 불일치를 서버 오류와 섞으면 화면이 원인과 무관한 문구를 띄운다.
+  'NETWORK_UNAVAILABLE',
+  'RESPONSE_CONTRACT_MISMATCH',
 ] as const;
 
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
@@ -75,7 +79,22 @@ const RETRYABLE: ReadonlySet<string> = new Set<ApiErrorCode>([
   'DATA_STALE',
   'RATE_LIMITED',
   'INTERNAL_ERROR',
+  // 끊긴 연결과 프록시가 끼워 넣은 응답은 둘 다 다시 조회하면 풀릴 수 있다.
+  'NETWORK_UNAVAILABLE',
+  'RESPONSE_CONTRACT_MISMATCH',
 ]);
+
+/**
+ * 마지막 성공 값을 화면에서 지워야 하는 코드.
+ *
+ * `retryable` 과 다른 질문이다. `retryable` 은 "다시 조회 버튼을 보여도 되나"이고
+ * 이건 "이미 보여 준 값을 계속 보여도 되나"다. 두 질문을 한 값으로 묶으면 서버가
+ * 새 error code 를 하나 추가하는 것만으로 전 화면이 통째로 비워진다 - 시연 중
+ * 가장 나쁜 실패다. 권한이 회수된 경우에만 값을 지운다.
+ */
+export function revokesAccess(code: string): boolean {
+  return code === 'UNAUTHORIZED' || code === 'FORBIDDEN';
+}
 
 /** 사용자에게 보여줄 한국어 안내. 서버 message는 영어라 그대로 노출하지 않는다. */
 const KOREAN_MESSAGE: Partial<Record<ApiErrorCode, string>> = {
@@ -101,6 +120,8 @@ const KOREAN_MESSAGE: Partial<Record<ApiErrorCode, string>> = {
   BROKERAGE_UNAVAILABLE: '증권 연동 서비스에 연결하지 못했습니다.',
   SIGNAL_UNAVAILABLE: '신호 저장소를 지금 사용할 수 없습니다.',
   INTERNAL_ERROR: '요청이 안전하게 중단됐습니다.',
+  NETWORK_UNAVAILABLE: '서버에 연결하지 못했습니다. 연결 상태를 확인한 뒤 다시 조회하세요.',
+  RESPONSE_CONTRACT_MISMATCH: '서버가 예상과 다른 형식으로 응답했습니다. 다시 조회하세요.',
 };
 
 export class ApiFailure extends Error {

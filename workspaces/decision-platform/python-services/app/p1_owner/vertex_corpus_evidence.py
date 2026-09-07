@@ -18,7 +18,12 @@ from app.p1_owner.vertex_source_registry import registered_source_for_uri
 
 _FRESHNESS_CALENDAR_DAYS = 7
 _MAX_EVIDENCE_ITEMS = 8
-_MAX_QUOTE_CHARACTERS = 320
+# V112 의 automation_candidate_evidence.bounded_quote 는
+# CHECK (char_length(bounded_quote) BETWEEN 1 AND 240) 이다. 여기서 320 으로 자르면
+# 241~320 자 인용이 Python 을 통과하고 DB 에서 23514 로 터진다. 근거가 항상 0 개였던
+# 동안에는 이 경로가 실행되지 않아 드러나지 않았을 뿐이다 - 코퍼스가 채워지는 순간
+# 발화한다. DB 가 안전 경계이므로 Python 을 DB 에 맞춘다.
+_MAX_QUOTE_CHARACTERS = 240
 _MIN_QUOTE_CHARACTERS = 20
 
 

@@ -114,15 +114,24 @@ const ABSTAIN_REASON_KR: Record<string, string> = {
   CALIBRATION_FAILED: '보정 검증을 통과하지 못했습니다',
   POSTERIOR_BELOW_THRESHOLD: '판정 기준에 못 미칩니다',
   PRODUCER_FAILED: '생성 과정이 실패했습니다',
-  STALE_EVIDENCE: '근거가 허용 지연을 넘었습니다',
+  // 서버는 더 이상 이 사유로 ABSTAIN 하지 않는다(SignalV3RuntimeService). 계약 enum 에는
+  // 남아 있으므로 매핑은 유지하되, "허용 지연"이라는 시간 문턱 표현을 쓰지 않는다 —
+  // 실제 판정은 예측 대상 세션의 등가 비교였다.
+  STALE_EVIDENCE: '이 예측의 대상 세션이 지났습니다',
   UNIDENTIFIABLE_OUTPUT: '출력을 식별할 수 없습니다',
   REQUIRED_COMPONENT_UNAVAILABLE: '필수 구성요소가 없어 종합하지 않았습니다',
 };
 
 function readWarning(warning: string): string {
-  return warning.includes('current P1 production authority')
-    ? '현재 운용은 규칙 신호와 LSTM·Ridge의 1일 예측을 함께 사용합니다.'
-    : warning;
+  if (warning.includes('current P1 production authority')) {
+    return '현재 운용은 규칙 신호와 LSTM·Ridge의 1일 예측을 함께 사용합니다.';
+  }
+  // 서버가 대상 세션과 함께 보내는 경고. 지난 예측을 "현재 신호"로 읽지 않게 날짜를 남긴다.
+  const passed = /Prediction target session (\d{4}-\d{2}-\d{2}) has already passed/.exec(warning);
+  if (passed) {
+    return `아래 예측은 ${passed[1]} 세션을 대상으로 만든 값입니다. 그 세션은 이미 지났고 다음 배치는 다음 개장에 만들어집니다.`;
+  }
+  return warning;
 }
 
 export function readAbstainReason(reason: string): string {

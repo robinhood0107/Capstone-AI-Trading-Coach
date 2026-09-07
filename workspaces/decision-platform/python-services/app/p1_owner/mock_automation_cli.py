@@ -26,7 +26,7 @@ _OPEN_BOUNDARY = time(9, 30)
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="P1 KIS_MOCK automation control")
-    parser.add_argument("command", choices=("readiness", "start", "stop"))
+    parser.add_argument("command", choices=("readiness", "start", "stop", "resume"))
     return parser.parse_args(argv)
 
 
@@ -176,6 +176,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     owner = _owner()
     planner = XkrxBoundaryPlanner()
     target = _target_session(datetime.now(UTC), planner)
+    if args.command == "resume":
+        from app.p1_owner.automation_runtime_live import kis_mock_connectivity_ready
+
+        today = datetime.now(_KST).date()
+        if planner.current_or_next_session(datetime.now(_KST)) != today:
+            raise AutomationRuntimeError("AUTOMATION_RESUME_SESSION_CLOSED")
+        if not (_credential_configured() and _local_certification_valid()):
+            raise AutomationRuntimeError("AUTOMATION_RESUME_CREDENTIAL_OR_CERTIFICATION_MISSING")
+        if not kis_mock_connectivity_ready():
+            print("MOCK_RESUME=DEFERRED_KIS_CONNECTIVITY")
+            print("PROVIDER_CALLS=0")
+            return 1
+        readiness = repository.readiness(owner, today)
+        with repository._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select p1_resume_automation_data_gap_v1(%s,%s)",
+                (owner, readiness.current_control_version),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            raise AutomationRuntimeError("AUTOMATION_RESUME_UNAVAILABLE")
+        print("MOCK_RESUME=PASS")
+        print(f"CHECKPOINT_VERSION={row[0]}")
+        print("PROVIDER_CALLS=0")
+        return 0
     if args.command == "stop":
         readiness = repository.readiness(owner, target)
         version, replayed = repository.stop(owner, readiness.current_control_version)

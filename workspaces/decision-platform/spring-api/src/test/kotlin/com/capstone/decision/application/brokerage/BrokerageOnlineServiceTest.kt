@@ -114,46 +114,21 @@ class BrokerageOnlineServiceTest {
     }
 
     @Test
-    fun `online balance runs only after stored owner anchor is found`() {
+    fun `balance display reads the enriched owner scoped observation without calling the order gateway`() {
         every { persistence.findOwnedBalance(ACTOR.userId, ACCOUNT_ID) } returns storedBalance()
-        every { gatewayProvider.getIfAvailable() } returns gateway
-        every { gateway.getMockBalance(any()) } returns
-            BrokerageGatewayBalanceResult(
-                accountId = ACCOUNT_ID,
-                cashKrw = 1_000_000,
-                portfolioEquityKrw = 1_140_000,
-                marginRequirementKrw = 0,
-                positions =
-                    listOf(
-                        MockBalancePositionProjection("005930", 2, 140_000, false),
-                    ),
-                observedAt = NOW.plusSeconds(1),
-                sourceVersion = "kis-mock-balance-v1",
-            )
-
         val result = service.getOwnedBalance(ACTOR, ACCOUNT_ID)
-
         assertEquals(1_000_000, result.cashKrw)
-        verifyOrder {
-            persistence.findOwnedBalance(ACTOR.userId, ACCOUNT_ID)
-            gateway.getMockBalance(match { it.requestId == ACTOR.requestId })
-        }
+        assertEquals("stored-kis-mock-v1", result.sourceVersion)
+        verify(exactly = 1) { persistence.findOwnedBalance(ACTOR.userId, ACCOUNT_ID) }
+        verify(exactly = 0) { gatewayProvider.getIfAvailable() }
     }
 
     @Test
-    fun `online balance uses the complete stored observation when provider risk fields are unavailable`() {
+    fun `repeated dashboard refreshes cannot trip the order circuit`() {
         every { persistence.findOwnedBalance(ACTOR.userId, ACCOUNT_ID) } returns storedBalance()
-        every { gatewayProvider.getIfAvailable() } returns gateway
-        every { gateway.getMockBalance(any()) } throws BrokerageUnavailableException("risk fields unavailable")
-
-        val result = service.getOwnedBalance(ACTOR, ACCOUNT_ID)
-
-        assertEquals(1_000_000, result.cashKrw)
-        assertEquals("stored-kis-mock-v1", result.sourceVersion)
-        verifyOrder {
-            persistence.findOwnedBalance(ACTOR.userId, ACCOUNT_ID)
-            gateway.getMockBalance(match { it.accountId == ACCOUNT_ID })
-        }
+        repeat(20) { assertEquals(1_000_000, service.getOwnedBalance(ACTOR, ACCOUNT_ID).cashKrw) }
+        verify(exactly = 20) { persistence.findOwnedBalance(ACTOR.userId, ACCOUNT_ID) }
+        verify(exactly = 0) { gatewayProvider.getIfAvailable() }
     }
 
     @Test

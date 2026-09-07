@@ -60,29 +60,29 @@ export function evaluateGates(input: GateInput): Gate[] {
 
   const g1: Gate = status
     ? status.controlState === 'DISARMED'
-      ? { id: 'G1', label: '자동운용 꺼짐', passed: true, note: '' }
+      ? { id: 'G1', label: '자동운용 상태 확인', passed: true, note: '자동운용이 꺼져 있습니다.' }
       : {
           id: 'G1',
-          label: '자동운용 꺼짐',
+          label: '자동운용 상태 확인',
           passed: false,
           note: '자동운용이 켜져 있는 동안에는 손으로 주문을 내지 않습니다. 먼저 자동운용을 멈추세요.',
         }
-    : { id: 'G1', label: '자동운용 꺼짐', passed: null, note: '자동운용 상태를 아직 못 읽었습니다.' };
+    : { id: 'G1', label: '자동운용 상태 확인', passed: null, note: '자동운용 상태를 아직 못 읽었습니다.' };
 
   const g2: Gate =
     killSwitchActive === null
-      ? { id: 'G2', label: 'Kill Switch 꺼짐', passed: null, note: 'Kill Switch 상태를 아직 못 읽었습니다.' }
+      ? { id: 'G2', label: '긴급 중지 상태 확인', passed: null, note: 'Kill Switch 상태를 아직 못 읽었습니다.' }
       : killSwitchActive
         ? {
             id: 'G2',
-            label: 'Kill Switch 꺼짐',
+            label: '긴급 중지 상태 확인',
             passed: false,
             note: 'Kill Switch가 작동 중입니다. 해제 전에는 주문이 나가지 않습니다.',
           }
-        : { id: 'G2', label: 'Kill Switch 꺼짐', passed: true, note: '' };
+        : { id: 'G2', label: '긴급 중지 상태 확인', passed: true, note: '긴급 중지가 해제되어 있습니다.' };
 
   const g3: Gate = ((): Gate => {
-    const label = '주문가능금액 충족';
+    const label = '주문가능금액 확인';
     if (!intent) return { id: 'G3', label, passed: null, note: '주문 내용을 먼저 입력하세요.' };
     if (intent.side === 'SELL') {
       return { id: 'G3', label, passed: true, note: '매도는 주문가능금액을 보지 않습니다.' };
@@ -100,7 +100,7 @@ export function evaluateGates(input: GateInput): Gate[] {
   })();
 
   const g4: Gate = ((): Gate => {
-    const label = '원칙 판정 ALLOW';
+    const label = '원칙 판정 확인';
     if (action === null) return { id: 'G4', label, passed: null, note: '아직 평가하지 않았습니다.' };
     if (decisionExpired) {
       return { id: 'G4', label, passed: false, note: '판정이 만료됐습니다. 다시 평가하세요.' };

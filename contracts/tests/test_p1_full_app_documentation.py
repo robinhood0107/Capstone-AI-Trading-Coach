@@ -496,7 +496,9 @@ class P1FullAppDocumentationTest(unittest.TestCase):
         self.assertIn("--network none", controller)
         self.assertIn("--validate-only", controller)
         self.assertIn("COMPOSE_FILE=$SCRIPT_DIR/compose.yml", controller)
-        self.assertIn("DOCKER_BIN=/usr/bin/docker", controller)
+        # WSL CLI 를 기본으로 두는 것이 이 단정의 목적이다. 운영자가 다른 경로를 쓸 수 있게
+        # P1_DOCKER_BIN override 가 앞에 붙었으므로 기본값이 그대로인지만 확인한다.
+        self.assertIn("DOCKER_BIN=${P1_DOCKER_BIN:-/usr/bin/docker}", controller)
         self.assertNotIn("compose.offline", controller)
         self.assertIn("migrate: {condition: service_completed_successfully}", compose)
         self.assertIn(

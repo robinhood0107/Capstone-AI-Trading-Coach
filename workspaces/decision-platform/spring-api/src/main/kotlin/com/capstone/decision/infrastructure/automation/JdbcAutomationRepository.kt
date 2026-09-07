@@ -924,11 +924,16 @@ class JdbcAutomationRepository(
                     mapOf("ownerUserId" to ownerUserId),
                 ) { row, _ -> row.getString("slot") }
                 .contains("PRIMARY")
-        // V135의 p1_arm_automation_v3는 provider와 무관하게 PRIMARY 자격증명 행을 요구한다.
-        // 여기서 vertex를 면제하면 화면은 "준비됨"을 보여주고 시작 버튼이 열리는데 arm은
-        // P1A01로 튕긴다. 안전 경계는 DB이므로 readiness가 DB 조건을 그대로 따른다.
-        val aiProviderReady =
-            !aiSettings.enabled || (primaryCredentialReady && aiSettings.dailyGenerateCallCap >= 3)
+        // vertex 는 소유자가 주입하는 API 키가 아니라 0600 서비스 계정 파일로 인증한다.
+        // 그래서 vertex 에 PRIMARY 자격증명 행을 요구하면 설계상 만족할 수 없는 조건이 된다.
+        // 이 면제는 contracts/tests/test_p1_automation_v3_live_readiness.py 가 고정한다.
+        //
+        // 알려진 어긋남: V135 의 p1_arm_automation_v3 는 provider 와 무관하게 PRIMARY 행을
+        // 요구하므로, AI 판단을 켠 vertex 사용자는 여기서 "준비됨"인데 arm 이 P1A01 로 튕긴다.
+        // 고칠 쪽은 이 면제가 아니라 DB 다 - arm 게이트도 vertex 를 면제하고 대신 Spring 이
+        // 이미 넘기는 p_provider_capability_ready(서비스 계정 구성 여부)에 의존해야 한다.
+        val credentialReady = aiSettings.provider == "vertex" || primaryCredentialReady
+        val aiProviderReady = !aiSettings.enabled || (credentialReady && aiSettings.dailyGenerateCallCap >= 3)
         val blockers =
             buildList {
                 addAll(base.blockers)

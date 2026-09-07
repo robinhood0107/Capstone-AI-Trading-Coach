@@ -109,7 +109,7 @@ export const AUTOMATION_EXIT_REASON_LABELS: Record<AutomationExitReasonV3, strin
 
 export const AUTOMATION_STATE_LABELS: Record<AutomationProjectionState, string> = {
   DISARMED: '꺼짐',
-  ARMED: '켜짐 · 장 시작 대기',
+  ARMED: '켜짐 · 다음 실행 대기',
   RUNNING: '실행 중',
   HALTED: '안전 중단',
 };

@@ -22,6 +22,7 @@ from app.p1_owner.automation_runtime import (
     AdvanceCommand,
     AiJudgementRecord,
     AutomationRuntimeError,
+    AutomationRuntimeService,
     PersistentAutomationRunner,
     PostgresAutomationRuntimeRepository,
     RuntimeClaim,
@@ -31,6 +32,83 @@ from app.p1_owner.automation_runtime import (
 )
 
 _KST = ZoneInfo("Asia/Seoul")
+
+
+def test_wall_clock_wait_rechecks_after_suspend(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.p1_owner import automation_runtime as runtime
+
+    current = datetime(2026, 9, 7, 8, 50, tzinfo=_KST)
+
+    class Clock(datetime):
+        @staticmethod
+        def now(tz: Any) -> datetime:
+            return current.astimezone(tz)
+
+    class Stop:
+        waits: list[float] = []
+
+        def is_set(self) -> bool:
+            return False
+
+        def wait(self, seconds: float) -> bool:
+            nonlocal current
+            self.waits.append(seconds)
+            # The laptop wakes after the entire scheduled opening has passed.
+            current = datetime(2026, 9, 7, 10, 20, tzinfo=_KST)
+            return False
+
+    service = AutomationRuntimeService(cast(Any, None), cast(Any, None), "x" * 32)
+    stop = Stop()
+    service._stop = cast(Any, stop)
+    monkeypatch.setattr(runtime, "datetime", Clock)
+    assert not service._wait_until(datetime(2026, 9, 7, 9, 30, tzinfo=_KST))
+    assert stop.waits == [30.0]
+
+
+def test_connectivity_failure_does_not_consume_a_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.p1_owner import automation_runtime as runtime
+
+    class Clock(datetime):
+        @staticmethod
+        def now(tz: Any) -> datetime:
+            return datetime(2026, 9, 7, 10, 0, tzinfo=_KST).astimezone(tz)
+
+    class Repository:
+        def preflight(self) -> None:
+            pass
+
+        def claim(self, *args: Any) -> None:
+            pytest.fail("Unavailable network must not consume a daily claim")
+
+    class Daily:
+        closed = False
+
+        def ensure_daily_signals(self, session: date) -> None:
+            pytest.fail("Connectivity must be checked before materialization")
+
+        def close(self) -> None:
+            self.closed = True
+
+    class Stop:
+        def is_set(self) -> bool:
+            return False
+
+        def wait(self, seconds: float) -> bool:
+            assert seconds == 60.0
+            return True
+
+    daily = Daily()
+    service = AutomationRuntimeService(
+        cast(Any, Repository()),
+        cast(Any, None),
+        "x" * 32,
+        daily_inference=cast(Any, daily),
+        connectivity_check=lambda: False,
+    )
+    service._stop = cast(Any, Stop())
+    monkeypatch.setattr(runtime, "datetime", Clock)
+    service.serve()
+    assert daily.closed
 
 
 def _claim() -> RuntimeClaim:
@@ -268,6 +346,13 @@ class LineageRecordingRepository(FakeRepository):
         super().__init__(state)
         self.lineage: list[AccountLineageAdvance] = []
 
+    def advance_with_lineage(
+        self, command: AdvanceCommand, claim: RuntimeClaim, lineage: AccountLineageAdvance
+    ) -> tuple[int, bool]:
+        result = self.advance(command)
+        self.advance_account_lineage(claim, lineage)
+        return result
+
     def advance_account_lineage(self, claim: RuntimeClaim, lineage: AccountLineageAdvance) -> int:
         assert claim.run_id == self.state["runId"]
         self.lineage.append(lineage)
@@ -370,6 +455,26 @@ def test_a_confirmed_fill_advances_the_account_lineage_in_the_same_tick() -> Non
     assert len(repository.lineage) == 1
     assert repository.lineage[0].reason == "BUY_FILL"
     assert port.lineage_requests == [("005930", "BUY", 1, 75_100)]
+
+
+def test_lineage_failure_does_not_commit_a_completed_run() -> None:
+    class UnavailableLineagePort(LineageRuntimePort):
+        def account_lineage_advance(self, **kwargs: Any) -> AccountLineageAdvance | None:
+            raise RuntimeError("balance temporarily unavailable")
+
+    repository = LineageRecordingRepository(_state())
+    port = UnavailableLineagePort(quotes={"005930": Quote("005930", 75_000, 52_500, 97_500)})
+    runner = PersistentAutomationRunner(cast(Any, repository))
+    with pytest.raises(RuntimeError, match="balance temporarily unavailable"):
+        for index in range(1, 20):
+            runner.run_tick(
+                claim=_claim(),
+                tick_id=f"failure-{index}",
+                now=datetime(2026, 8, 28, 9, 30, tzinfo=_KST),
+                port=port,
+            )
+    assert repository.state["state"] in {"ORDER_SUBMITTED", "PENDING_RECONCILIATION"}
+    assert repository.lineage == []
 
 
 def _held_position(**overrides: Any) -> dict[str, Any]:

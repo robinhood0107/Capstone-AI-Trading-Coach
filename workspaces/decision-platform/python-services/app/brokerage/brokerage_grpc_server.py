@@ -45,7 +45,7 @@ class BrokerageGrpcServerSettings:
         try:
             token_cap = int(os.environ.get("KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP", ""))
             brokerage_cap = int(os.environ.get("KIS_BROKERAGE_PHYSICAL_CAP", ""))
-            ttl = int(os.environ.get("KIS_MOCK_ORDER_REFERENCE_TTL_SECONDS", "900"))
+            ttl = int(os.environ.get("KIS_MOCK_ORDER_REFERENCE_TTL_SECONDS", "604800"))
         except ValueError:
             raise ValueError("KIS brokerage physical caps and TTL must be integers") from None
         settings = cls(

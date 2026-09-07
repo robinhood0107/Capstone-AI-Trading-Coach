@@ -65,6 +65,7 @@ def publish_runtime_observations(
     baseline_equity_krw: int,
     trading_date: str,
     quotes: Mapping[str, int] | None = None,
+    publish_risk_metrics: bool = True,
 ) -> str:
     """Publish pre-order observations and return a bounded outcome marker."""
 
@@ -92,16 +93,20 @@ def publish_runtime_observations(
             source_version=_BALANCE_SOURCE_VERSION,
             gold_etf_symbols=GOLD_ETF_SYMBOLS,
         )
-        metrics = deterministic_metrics_payload(
-            owner_user_id=owner_user_id,
-            scope_hash=scope_hash,
-            portfolio_source=_PORTFOLIO_SOURCE,
-            equity_krw=int(portfolio["portfolioEquityKrw"]),
-            baseline_equity_krw=baseline_equity_krw,
-            daily_order_count=0,
-            trading_date=trading_date,
-            now=now,
-            source_version=_SOURCE_VERSION,
+        metrics = (
+            deterministic_metrics_payload(
+                owner_user_id=owner_user_id,
+                scope_hash=scope_hash,
+                portfolio_source=_PORTFOLIO_SOURCE,
+                equity_krw=int(portfolio["portfolioEquityKrw"]),
+                baseline_equity_krw=baseline_equity_krw,
+                daily_order_count=0,
+                trading_date=trading_date,
+                now=now,
+                source_version=_SOURCE_VERSION,
+            )
+            if publish_risk_metrics
+            else None
         )
         # Publish the current quote in the same tick as the risk check.
         market_dsn = os.environ.get(_MARKET_DSN_KEY, "").strip()
@@ -126,16 +131,17 @@ def publish_runtime_observations(
                 "portfolio_position_observations",
             ),
         )
-        _write(
-            metrics,
-            append_deterministic_metric_fixture,
-            risk_dsn,
-            expected_role="decision_risk_writer",
-            allowed_insert_tables=(
-                "deterministic_risk_observations",
-                "daily_order_count_observations",
-            ),
-        )
+        if metrics is not None:
+            _write(
+                metrics,
+                append_deterministic_metric_fixture,
+                risk_dsn,
+                expected_role="decision_risk_writer",
+                allowed_insert_tables=(
+                    "deterministic_risk_observations",
+                    "daily_order_count_observations",
+                ),
+            )
     except (KeyError, TypeError, ValueError, OSError) as error:
         return f"FAILED_{type(error).__name__}"
     except Exception as error:  # noqa: BLE001 - psycopg 오류를 여기서 삼킨다

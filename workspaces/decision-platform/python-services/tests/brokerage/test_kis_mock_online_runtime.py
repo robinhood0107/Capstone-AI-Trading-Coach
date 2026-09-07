@@ -108,6 +108,7 @@ def test_online_balance_probe_parses_source_without_fabricating_risk_fields() ->
             "output2": [
                 {
                     "dnca_tot_amt": "1,000,000",
+                    "prvs_rcdl_excc_amt": "1,000,000",
                     "tot_evlu_amt": "1,140,000",
                 }
             ],
@@ -577,7 +578,7 @@ def test_balance_probe_marks_partial_page_without_publishing_complete_positions(
                 "ctx_area_fk100": "next",
                 "ctx_area_nk100": "next",
                 "output1": [{"pdno": "005930", "hldg_qty": "1", "evlu_amt": "70,000"}],
-                "output2": [{"dnca_tot_amt": "0", "tot_evlu_amt": "0"}],
+                "output2": [{"dnca_tot_amt": "0", "prvs_rcdl_excc_amt": "0", "tot_evlu_amt": "0"}],
             }
         )  # type: ignore[arg-type]
     )

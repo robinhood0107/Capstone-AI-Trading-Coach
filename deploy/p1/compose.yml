@@ -640,6 +640,15 @@ services:
     image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
     platform: linux/amd64
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "market-data-daily"]
+    environment:
+      # attest_source_writer_dsn 이 요구하는 실행 대상 표시다. 이 스택은 로컬 배포이므로
+      # local 이 정직한 값이고, 이 값이 없으면 관측 적재가 사전 검증에서 거부된다.
+      #
+      # 이 서비스에만 빠져 있었다. 결과로 수집기가 남기려던 시세·종목카탈로그 관측이 한 번도
+      # 적재되지 않았고(`observations=FAILED_ValueError`), RiskEngine 이 가격을 읽지 못해
+      # 주문이 `violations` 없이 `PRICE_MISSING` 으로 HOLD 됐다. 그 관측을 남기는 것이
+      # `_publish_observations` 의 존재 이유이므로 값이 없으면 이 서비스의 절반이 죽는다.
+      DECISION_SOURCE_WRITER_OFFLINE_TARGET: "local"
     command:
       - "sh"
       - "-c"

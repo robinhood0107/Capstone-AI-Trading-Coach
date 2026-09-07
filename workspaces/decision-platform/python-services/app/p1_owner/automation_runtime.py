@@ -11,13 +11,17 @@ import signal
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from importlib.metadata import version
 from typing import Any, Protocol, cast
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from app.data.calendar.adapters.xkrx import (
+    build_xkrx_sessions_in_range,
+    xkrx_calendar_bounds,
+)
 from app.data.calendar.xkrx_policy import corrected_calendar
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
@@ -60,6 +64,11 @@ _LEGACY_AI_SETTINGS_SHA256 = hashlib.sha256(
 _TICK_RETRY_SECONDS = 20.0
 _MAX_TICK_FAILURES = 15
 _WALL_CLOCK_CHECK_SECONDS = 30.0
+# 다시 켰을 때 빠진 일별 배치를 한 tick 에 몇 세션까지 소급할지. 09:30 창을 먹지 않는 크기로
+# 두고 나머지는 다음 tick 들이 이어 채운다. lookback 은 그 세션 수를 담을 달력 창이다
+# (주말·휴일 때문에 세션 수보다 넉넉해야 한다).
+_MAX_CATCH_UP_SESSIONS = 5
+_CATCH_UP_LOOKBACK_DAYS = 21
 _TERMINAL_STATES = frozenset(
     {
         "NEWS_VETOED",
@@ -885,6 +894,28 @@ class XkrxBoundaryPlanner:
         return datetime.combine(next_session, _OPEN_BOUNDARY, _KST)
 
 
+def _catch_up_sessions(target_session: date) -> list[date]:
+    """target 직전까지 소급 생성할 XKRX 개장일을 오래된 순으로 돌려준다.
+
+    target 자체는 넣지 않는다 - 호출자가 그 몫을 따로 만든다. 상한을 두는 이유는 오래
+    쉬었을 때 한 번에 수십 세션을 만들며 09:30 창을 먹지 않게 하는 것이다. 나머지는 다음
+    tick 들이 이어서 채운다. 달력은 오프라인 XKRX 이므로 DB 읽기가 없다.
+
+    이미 만들어진 세션은 `ensure_daily_signals` 가 context 조회에서 `REPLAYED` 로 끊으므로
+    여기서 무엇이 남았는지 미리 알 필요가 없다.
+    """
+
+    first, last = xkrx_calendar_bounds()
+    start = max(target_session - timedelta(days=_CATCH_UP_LOOKBACK_DAYS), first)
+    end = min(target_session - timedelta(days=1), last)
+    if end < start:
+        return []
+    sessions = [
+        built.session_date for built in build_xkrx_sessions_in_range(start, end) if built.is_open
+    ]
+    return sorted(sessions)[-_MAX_CATCH_UP_SESSIONS:]
+
+
 class AutomationRuntimeService:
     """explicit enable 뒤에만 session claim을 처리하며 다음 XKRX boundary까지 block한다."""
 
@@ -940,6 +971,20 @@ class AutomationRuntimeService:
                         return
                     continue
                 session_date = self._planner.current_or_next_session(now)
+                # 한동안 쓰지 않다가 다시 켜면 그 사이 거래일의 일별 배치가 비어 있다.
+                # `ensure_daily_signals` 는 세션별로 멱등(`REPLAYED`)이고 이미 만든 세션은
+                # context 조회에서 바로 끊기므로, 빠진 구간을 오래된 순으로 상한 안에서
+                # 채운다. 새 스케줄러도 새 컨테이너도 만들지 않는다.
+                for missed in _catch_up_sessions(session_date):
+                    try:
+                        daily_inference.ensure_daily_signals(missed)
+                    except DailyInferenceError as error:
+                        # 소급은 최선 노력이다. 한 세션이 막혀도 나머지와 오늘 몫을 계속한다.
+                        print(
+                            "AUTOMATION_DAILY_CATCHUP=UNAVAILABLE "
+                            f"session={missed.isoformat()} error={type(error).__name__}",
+                            flush=True,
+                        )
                 # 실패해도 기존 포지션 청산·대사 경로를 살리기 위해 claim은 계속한다. DB에
                 # complete daily batch가 없으므로 신규 BUY 후보만 자연스럽게 0이 된다.
                 try:

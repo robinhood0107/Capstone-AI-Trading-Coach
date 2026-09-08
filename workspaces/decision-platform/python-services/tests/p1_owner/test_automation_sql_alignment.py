@@ -108,3 +108,84 @@ def test_state_exposes_the_classified_symbol_set_for_risk_completeness() -> None
     assert "'instrumentCatalogSymbols',catalog_symbols" in body
     assert "FROM public.latest_instrument_catalog_observations catalog" in body
     assert "WHERE catalog.completeness='COMPLETE'" in body
+
+
+def _latest_definition(function: str) -> tuple[int, str]:
+    """그 함수를 마지막으로 정의한 마이그레이션. 버전이 큰 정의가 런타임의 진실이다.
+
+    한 파일을 이름으로 붙들면 다음에 함수를 옮겨 쓸 때 이 대조가 조용히 옛 정의를 본다.
+    `_latest_transition_migration` 이 전이 표에 대해 하는 일과 같은 이유다.
+    """
+
+    candidates: list[tuple[int, str]] = []
+    for path in _MIGRATIONS.glob("V*__*.sql"):
+        body = path.read_text(encoding="utf-8")
+        if f"FUNCTION public.{function}(" not in body:
+            continue
+        if f"CREATE FUNCTION public.{function}(" not in body and (
+            f"CREATE OR REPLACE FUNCTION public.{function}(" not in body
+        ):
+            continue
+        match = re.match(r"V(\d+)__", path.name)
+        assert match is not None
+        candidates.append((int(match.group(1)), body))
+    assert candidates, f"{function} definition migration is missing"
+    return max(candidates, key=lambda item: item[0])
+
+
+def test_the_data_gap_retry_boundary_is_bounded_in_count_and_time() -> None:
+    """데이터 공백 재시도가 무한히 늘어나지 않는다.
+
+    이 fallback 은 `SKIPPED_DATA_UNAVAILABLE` 로 닫힌 세션을 되살린다. 상한이 없으면 하루
+    종일 같은 세션을 다시 열고, 취소 경계를 넘어 되살리면 장 마감 뒤에 주문을 낸다.
+
+    엔진 쪽 순서(`retry_at` -> 대기 -> 날짜·연결성 재확인 -> `resume_data_gap`)는
+    `test_automation_runtime.py` 가 본다. 여기서는 DB 가 그 경계를 실제로 들고 있는지 본다.
+    """
+
+    version, body = _latest_definition("p1_automation_data_gap_retry_at_v1")
+
+    assert version >= 142
+    # 두 번까지만 되살린다.
+    assert "retry.used=0" in body or "retry_count=0" in body
+    # 첫 재시도는 2분, 그다음은 5분.
+    assert "interval '2 minutes'" in body
+    assert "interval '5 minutes'" in body
+    # 취소 경계를 넘으면 재시도 시각을 주지 않는다.
+    assert "time '15:20'" in body
+    assert "RETURN NULL" in body
+    # 재시도 횟수는 durable 이벤트에서 센다. 프로세스 메모리가 아니다.
+    assert "'SESSION_RESUMED'" in body
+    # 상주 런타임 role 만 부를 수 있다.
+    assert "TO decision_automation_runtime" in body
+
+
+def test_the_resume_function_keeps_the_same_bounds_as_the_boundary() -> None:
+    """재개 함수와 경계 함수가 같은 상한을 말한다.
+
+    두 곳이 갈라지면 경계가 "지금 재개해도 된다"고 하는데 재개가 거부되거나, 반대로 경계가
+    막는 시각에 재개가 통과한다.
+    """
+
+    _, body = _latest_definition("p1_resume_automation_data_gap_v1")
+
+    assert "retry_count>=2" in body
+    assert "interval '2 minutes'" in body
+    assert "interval '5 minutes'" in body
+    assert "time '09:30'" in body
+    assert "time '15:20'" in body
+    assert "'SESSION_RESUMED'" in body
+
+
+def test_the_resume_path_never_raises_the_provider_call_cap() -> None:
+    """재개가 provider 호출 상한을 넓히지 않는다.
+
+    되살린 세션이 새 예산을 얻으면 fallback 이 상한 우회 통로가 된다.
+    """
+
+    _, body = _latest_definition("p1_advance_automation_checkpoint_v3")
+
+    # V100 이 못박은 상한이 최신 정의에도 그대로 있다.
+    assert "p_provider_call_count NOT BETWEEN 0 AND 16" in body
+    # 되돌아가는 카운터도 거부한다.
+    assert "p_provider_call_count<checkpoint_row.provider_call_count" in body

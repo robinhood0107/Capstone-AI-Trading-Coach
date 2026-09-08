@@ -1,0 +1,400 @@
+{
+  "adoptedArms": [
+    "BLEND_50_50"
+  ],
+  "anyArmBeatsCoinFlip": false,
+  "benchmarkSharpe": 0.9487,
+  "blendBeatsBothStandalone": true,
+  "blendBeatsRandomControl": true,
+  "combinationMethodInProduction": "EQUAL_WEIGHT_50_50",
+  "contractId": "p1-return-arm-comparison.v1",
+  "firstTestYear": 2005,
+  "folds": 22,
+  "holdingDays": [
+    5,
+    20,
+    60
+  ],
+  "lastTestYear": 2026,
+  "performance": [
+    {
+      "annualVol": 0.2296,
+      "cagr": 0.2109,
+      "cvar95": -0.034089,
+      "finalEquity": 58.5393,
+      "label": "PIT 균등가중 (벤치마크)",
+      "mdd": -0.4977,
+      "sessions": 5366,
+      "sharpe": 0.9487,
+      "sortino": 1.3659,
+      "var95": -0.020499,
+      "years": 21.3
+    },
+    {
+      "annualVol": 0.2964,
+      "cagr": 0.217,
+      "cvar95": -0.041474,
+      "finalEquity": 64.8276,
+      "label": "LSTM 상위5 / 5일",
+      "mdd": -0.5823,
+      "sessions": 5366,
+      "sharpe": 0.8102,
+      "sortino": 1.2104,
+      "var95": -0.025555,
+      "years": 21.3
+    },
+    {
+      "annualVol": 0.2997,
+      "cagr": 0.1953,
+      "cvar95": -0.043059,
+      "finalEquity": 44.2598,
+      "label": "LSTM 상위5 / 20일",
+      "mdd": -0.6674,
+      "sessions": 5366,
+      "sharpe": 0.7452,
+      "sortino": 1.0908,
+      "var95": -0.025367,
+      "years": 21.3
+    },
+    {
+      "annualVol": 0.2921,
+      "cagr": 0.2027,
+      "cvar95": -0.041333,
+      "finalEquity": 50.4018,
+      "label": "LSTM 상위5 / 60일",
+      "mdd": -0.5496,
+      "sessions": 5366,
+      "sharpe": 0.7776,
+      "sortino": 1.1509,
+      "var95": -0.025083,
+      "years": 21.3
+    },
+    {
+      "annualVol": 0.3033,
+      "cagr": 0.2615,
+      "cvar95": -0.042426,
+      "finalEquity": 140.0636,
+      "label": "RIDGE 상위5 / 5일",
+      "mdd": -0.5275,
+      "sessions": 5366,
+      "sharpe": 0.9173,
+      "sortino": 1.377,
+      "var95": -0.026281,
+      "years": 21.3
+    },
+    {
+      "annualVol": 0.3019,
+      "cagr": 0.2615,
+      "cvar95": -0.042646,
+      "finalEquity": 140.2445,
+      "label": "RIDGE 상위5 / 20일",
+      "mdd": -0.625,
+      "sessions": 5366,
+      "sharpe": 0.9204,
+      "sortino": 1.3729,
+      "var95": -0.02637,
+      "years": 21.3
+    },
+    {
+      "annualVol": 0.2938,
+      "cagr": 0.2202,
+      "cvar95": -0.041666,
+      "finalEquity": 69.0663,
+      "label": "RIDGE 상위5 / 60일",
+      "mdd": -0.5572,
+      "sessions": 5366,
+      "sharpe": 0.8243,
+      "sortino": 1.2239,
+      "var95": -0.026155,
+      "years": 21.3
+    },
+    {
+      "annualVol": 0.2972,
+      "cagr": 0.2993,
+      "cvar95": -0.041178,
+      "finalEquity": 261.9592,
+      "label": "BLEND_50_50 상위5 / 5일",
+      "mdd": -0.5432,
+      "sessions": 5366,
+      "sharpe": 1.0294,
+      "sortino": 1.5682,
+      "var95": -0.024531,
+      "years": 21.3
+    },
+    {
+      "annualVol": 0.3017,
+      "cagr": 0.2595,
+      "cvar95": -0.042425,
+      "finalEquity": 135.1425,
+      "label": "BLEND_50_50 상위5 / 20일",
+      "mdd": -0.634,
+      "sessions": 5366,
+      "sharpe": 0.9153,
+      "sortino": 1.368,
+      "var95": -0.025324,
+      "years": 21.3
+    },
+    {
+      "annualVol": 0.2924,
+      "cagr": 0.2259,
+      "cvar95": -0.040598,
+      "finalEquity": 75.8936,
+      "label": "BLEND_50_50 상위5 / 60일",
+      "mdd": -0.6099,
+      "sessions": 5366,
+      "sharpe": 0.8423,
+      "sortino": 1.2607,
+      "var95": -0.025231,
+      "years": 21.3
+    }
+  ],
+  "predictionAccuracy": {
+    "BLEND_50_50": {
+      "beatsCoinFlip": false,
+      "coinFlip95": [
+        0.4973,
+        0.5027
+      ],
+      "directionAccuracy": 0.4824,
+      "rmse": 0.027071,
+      "rmseNaiveZero": 0.026407,
+      "rows": 130657
+    },
+    "LSTM": {
+      "beatsCoinFlip": false,
+      "coinFlip95": [
+        0.4973,
+        0.5027
+      ],
+      "directionAccuracy": 0.4785,
+      "rmse": 0.027506,
+      "rmseNaiveZero": 0.026407,
+      "rows": 130657
+    },
+    "RIDGE": {
+      "beatsCoinFlip": false,
+      "coinFlip95": [
+        0.4973,
+        0.5027
+      ],
+      "directionAccuracy": 0.484,
+      "rmse": 0.027155,
+      "rmseNaiveZero": 0.026407,
+      "rows": 130657
+    }
+  },
+  "predictionRows": 130657,
+  "randomRankingControl": {
+    "20": {
+      "annualExcessPctMax": -0.4,
+      "annualExcessPctMean": -4.96,
+      "seeds": 8,
+      "sharpeMax": 0.7928,
+      "sharpeMean": 0.6298
+    },
+    "5": {
+      "annualExcessPctMax": -8.57,
+      "annualExcessPctMean": -14.54,
+      "seeds": 8,
+      "sharpeMax": 0.4878,
+      "sharpeMean": 0.2685
+    },
+    "60": {
+      "annualExcessPctMax": 1.63,
+      "annualExcessPctMean": -0.71,
+      "seeds": 8,
+      "sharpeMax": 0.8703,
+      "sharpeMean": 0.7837
+    }
+  },
+  "resolvedQualityStatus": "BELOW_BASELINE",
+  "roundTripCostBps": 35.0,
+  "symbols": 31,
+  "topK": 5,
+  "trialSharpeStdAnnual": 0.0884,
+  "trials": 9,
+  "unresolvedConfound": "SURVIVORSHIP_ATTRIBUTION_UNRESOLVED",
+  "unresolvedConfoundNote": "exact-31 은 오늘의 명부다. 집중 순위 전략의 초과수익을 실력과 생존편향으로 나눌 수 없다. 해소 조건은 편출·상장폐지 종목을 포함한 시점별 명부로 재측정.",
+  "verdicts": {
+    "BLEND_50_50": {
+      "adopted": true,
+      "bearYears": {
+        "detail": {
+          "2008": {
+            "armReturnPct": -9.51,
+            "benchmarkReturnPct": -24.38
+          },
+          "2011": {
+            "armReturnPct": -5.53,
+            "benchmarkReturnPct": -12.09
+          },
+          "2015": {
+            "armReturnPct": 3.84,
+            "benchmarkReturnPct": -5.13
+          },
+          "2018": {
+            "armReturnPct": 2.62,
+            "benchmarkReturnPct": -13.35
+          },
+          "2020": {
+            "armReturnPct": 37.11,
+            "benchmarkReturnPct": 45.05
+          },
+          "2022": {
+            "armReturnPct": -20.39,
+            "benchmarkReturnPct": -8.9
+          }
+        },
+        "yearsBetter": 4,
+        "yearsCompared": 6
+      },
+      "best": {
+        "annualExcessPct": 8.8,
+        "beatsBenchmarkSharpe": true,
+        "deflatedSharpe": {
+          "deflatedSharpe": 4.1678,
+          "expectedMaxSharpeAnnual": 0.1344,
+          "legacyApproximation": {
+            "deflatedSharpe": -107.635,
+            "expectedMaxSharpeAnnual": 24.1416,
+            "pValue": 1.0
+          },
+          "observedSharpe": 1.0294,
+          "pValue": 1.5e-05,
+          "trialMultiplier": 1.5208,
+          "trialSharpeStdAnnual": 0.0884
+        },
+        "holdingDays": 5,
+        "informationRatio": 0.5332,
+        "sharpe": 1.0294,
+        "tStat": 2.46,
+        "trackingErrorPct": 16.51
+      },
+      "criteria": {
+        "beatsBenchmarkSharpe": true,
+        "betterInBearYears": true,
+        "significantAfterDeflation": true
+      }
+    },
+    "LSTM": {
+      "adopted": false,
+      "bearYears": {
+        "detail": {
+          "2008": {
+            "armReturnPct": -31.5,
+            "benchmarkReturnPct": -24.38
+          },
+          "2011": {
+            "armReturnPct": -5.55,
+            "benchmarkReturnPct": -12.09
+          },
+          "2015": {
+            "armReturnPct": -3.47,
+            "benchmarkReturnPct": -5.13
+          },
+          "2018": {
+            "armReturnPct": 9.62,
+            "benchmarkReturnPct": -13.35
+          },
+          "2020": {
+            "armReturnPct": 6.86,
+            "benchmarkReturnPct": 45.05
+          },
+          "2022": {
+            "armReturnPct": -17.46,
+            "benchmarkReturnPct": -8.9
+          }
+        },
+        "yearsBetter": 3,
+        "yearsCompared": 6
+      },
+      "best": {
+        "annualExcessPct": 2.23,
+        "beatsBenchmarkSharpe": false,
+        "deflatedSharpe": {
+          "deflatedSharpe": 3.1411,
+          "expectedMaxSharpeAnnual": 0.1344,
+          "legacyApproximation": {
+            "deflatedSharpe": -108.4497,
+            "expectedMaxSharpeAnnual": 24.1416,
+            "pValue": 1.0
+          },
+          "observedSharpe": 0.8102,
+          "pValue": 0.000842,
+          "trialMultiplier": 1.5208,
+          "trialSharpeStdAnnual": 0.0884
+        },
+        "holdingDays": 5,
+        "informationRatio": 0.1373,
+        "sharpe": 0.8102,
+        "tStat": 0.63,
+        "trackingErrorPct": 16.25
+      },
+      "criteria": {
+        "beatsBenchmarkSharpe": false,
+        "betterInBearYears": false,
+        "significantAfterDeflation": true
+      }
+    },
+    "RIDGE": {
+      "adopted": false,
+      "bearYears": {
+        "detail": {
+          "2008": {
+            "armReturnPct": -4.71,
+            "benchmarkReturnPct": -24.38
+          },
+          "2011": {
+            "armReturnPct": 3.43,
+            "benchmarkReturnPct": -12.09
+          },
+          "2015": {
+            "armReturnPct": -1.3,
+            "benchmarkReturnPct": -5.13
+          },
+          "2018": {
+            "armReturnPct": -0.85,
+            "benchmarkReturnPct": -13.35
+          },
+          "2020": {
+            "armReturnPct": 29.92,
+            "benchmarkReturnPct": 45.05
+          },
+          "2022": {
+            "armReturnPct": 0.77,
+            "benchmarkReturnPct": -8.9
+          }
+        },
+        "yearsBetter": 5,
+        "yearsCompared": 6
+      },
+      "best": {
+        "annualExcessPct": 6.0,
+        "beatsBenchmarkSharpe": false,
+        "deflatedSharpe": {
+          "deflatedSharpe": 3.6419,
+          "expectedMaxSharpeAnnual": 0.1344,
+          "legacyApproximation": {
+            "deflatedSharpe": -107.6001,
+            "expectedMaxSharpeAnnual": 24.1416,
+            "pValue": 1.0
+          },
+          "observedSharpe": 0.9204,
+          "pValue": 0.000135,
+          "trialMultiplier": 1.5208,
+          "trialSharpeStdAnnual": 0.0884
+        },
+        "holdingDays": 20,
+        "informationRatio": 0.36,
+        "sharpe": 0.9204,
+        "tStat": 1.66,
+        "trackingErrorPct": 16.67
+      },
+      "criteria": {
+        "beatsBenchmarkSharpe": false,
+        "betterInBearYears": true,
+        "significantAfterDeflation": true
+      }
+    }
+  }
+}

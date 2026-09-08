@@ -651,3 +651,203 @@ def test_runtime_planner_uses_shared_kis_calendar_corrections():
     assert planner.next_session(date(2026, 6, 2)) == date(2026, 6, 4)
     assert planner.next_session(date(2026, 7, 16)) == date(2026, 7, 20)
     assert planner.next_session(date(2026, 8, 14)) == date(2026, 8, 18)
+
+
+def _fallback_service(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    retry_at: datetime | None,
+    wakes_at: datetime,
+    connectivity: bool = True,
+    resume_raises: Exception | None = None,
+    owner: str = "usr_demo_user",
+) -> tuple[Any, list[str], list[float]]:
+    """데이터 공백 fallback 경로만 도는 상주 서비스를 만든다.
+
+    함정. `_owner_user_id` 는 생성자에서 `P1_AUTOMATION_OWNER_USER_ID` 를 읽는다. 생성 전에
+    넣지 않으면 서비스가 `retry_at` 을 아예 부르지 않고 테스트가 조용히 통과한다.
+
+    `_wait_until` 은 벽시계를 실제로 기다린다. 여기서는 기다리는 대신 **시계를 `wakes_at`
+    으로 전진시킨다** - 실제 코드가 하는 일이 그것이고(경계까지 잠들었다가 다시 `now()` 를
+    읽는다), 그 전진이 없으면 "기다리는 동안 날짜가 넘어갔다"를 만들 수 없다.
+    """
+
+    from app.p1_owner import automation_runtime as runtime
+
+    monkeypatch.setenv("P1_AUTOMATION_OWNER_USER_ID", owner)
+    # 기존 `test_connectivity_failure_does_not_consume_a_session` 과 같은 개장 중 시각에서
+    # 출발한다. 이 시각이면 `serve()` 가 wakeup 경계를 지나 claim 까지 내려간다.
+    current = datetime(2026, 9, 7, 10, 0, tzinfo=_KST)
+    calls: list[str] = []
+    waits: list[float] = []
+
+    class Clock(datetime):
+        @staticmethod
+        def now(tz: Any) -> datetime:
+            return current.astimezone(tz)
+
+    class Repository:
+        def preflight(self) -> None:
+            calls.append("preflight")
+
+        def claim(self, *args: Any) -> None:
+            calls.append("claim")
+            return None
+
+        def retry_at(self, user_id: str, session_date: date) -> datetime | None:
+            calls.append(f"retry_at:{user_id}:{session_date.isoformat()}")
+            return retry_at
+
+        def resume_data_gap(self, user_id: str, session_date: date) -> int:
+            calls.append(f"resume:{user_id}:{session_date.isoformat()}")
+            if resume_raises is not None:
+                raise resume_raises
+            return 1
+
+    class Daily:
+        def ensure_daily_signals(self, session: date) -> None:
+            calls.append(f"daily:{session.isoformat()}")
+
+        def close(self) -> None:
+            calls.append("close")
+
+    class Stop:
+        """한 바퀴만 돌린다.
+
+        `serve()` 는 fallback 분기 끝에서 `continue` 하므로 정지 신호가 없으면 영원히 돈다.
+        claim 시도를 한 번 본 뒤 정지로 바꿔 한 순회의 순서만 관찰한다.
+        """
+
+        def is_set(self) -> bool:
+            return "claim" in calls
+
+        def wait(self, seconds: float) -> bool:
+            waits.append(seconds)
+            return True
+
+    def check() -> bool:
+        calls.append("connectivity")
+        return connectivity
+
+    service = AutomationRuntimeService(
+        cast(Any, Repository()),
+        cast(Any, None),
+        "x" * 32,
+        daily_inference=cast(Any, Daily()),
+        connectivity_check=check,
+    )
+    service._stop = cast(Any, Stop())
+    monkeypatch.setattr(runtime, "datetime", Clock)
+
+    def wait_until(self: Any, boundary: datetime) -> bool:
+        nonlocal current
+        calls.append("wait_until")
+        # 재시도 경계를 기다린 뒤에 깨어나는 시각을 시험이 정한다.
+        if retry_at is not None and boundary == retry_at:
+            current = wakes_at
+        return False
+
+    monkeypatch.setattr(type(service), "_wait_until", wait_until)
+    return service, calls, waits
+
+
+def test_data_gap_fallback_resumes_after_the_retry_boundary(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """claim 이 없고 DB 가 재시도 시각을 주면 그 시각 뒤에 재개한다.
+
+    순서가 중요하다 - 경계를 기다린 뒤 **날짜와 연결성을 다시 확인하고** 재개해야 한다.
+    벽시계가 다음 날로 넘어갔거나 회선이 끊긴 사이에 재개하면 지난 세션을 되살린다.
+    """
+
+    service, calls, _ = _fallback_service(
+        monkeypatch,
+        retry_at=datetime(2026, 9, 7, 10, 2, tzinfo=_KST),
+        wakes_at=datetime(2026, 9, 7, 10, 2, tzinfo=_KST),
+    )
+
+    service.serve()
+
+    assert "retry_at:usr_demo_user:2026-09-07" in calls
+    resume_index = calls.index("resume:usr_demo_user:2026-09-07")
+    # 재개 직전에 연결성을 다시 본다.
+    assert calls[resume_index - 1] == "connectivity"
+    assert "AUTOMATION_FALLBACK=RESUMED" in capsys.readouterr().out
+
+
+def test_data_gap_fallback_does_not_resume_a_session_that_already_passed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """경계를 기다리는 동안 날짜가 넘어갔으면 재개하지 않는다."""
+
+    service, calls, _ = _fallback_service(
+        monkeypatch,
+        retry_at=datetime(2026, 9, 7, 10, 2, tzinfo=_KST),
+        # 경계를 기다리는 동안 취소 경계(15:20)를 넘어 깨어난다.
+        wakes_at=datetime(2026, 9, 7, 15, 40, tzinfo=_KST),
+    )
+
+    service.serve()
+
+    assert not any(item.startswith("resume:") for item in calls)
+
+
+def test_data_gap_fallback_does_not_resume_while_the_line_is_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """회선이 끊겼으면 재개하지 않는다. 세션을 소비하지도 않는다."""
+
+    service, calls, waits = _fallback_service(
+        monkeypatch,
+        retry_at=datetime(2026, 9, 7, 10, 2, tzinfo=_KST),
+        wakes_at=datetime(2026, 9, 7, 10, 2, tzinfo=_KST),
+        connectivity=False,
+    )
+
+    service.serve()
+
+    assert not any(item.startswith("resume:") for item in calls)
+    assert waits == [60.0]
+
+
+def test_a_blocked_resume_is_recorded_and_never_looks_like_a_resume(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """재개가 DB 에서 거부되면 표식이 그것을 말한다.
+
+    조용히 넘어가면 "재개했는데 아무 일도 없었다"와 "재개가 거부됐다"가 구별되지 않는다.
+    """
+
+    service, calls, waits = _fallback_service(
+        monkeypatch,
+        retry_at=datetime(2026, 9, 7, 10, 2, tzinfo=_KST),
+        wakes_at=datetime(2026, 9, 7, 10, 2, tzinfo=_KST),
+        resume_raises=AutomationRuntimeError("AUTOMATION_RESUME_DENIED"),
+    )
+
+    service.serve()
+    output = capsys.readouterr().out
+
+    assert "AUTOMATION_FALLBACK=BLOCKED" in output
+    assert "AUTOMATION_FALLBACK=RESUMED" not in output
+    assert any(item.startswith("resume:") for item in calls)
+    assert waits == [60.0]
+
+
+def test_no_owner_user_id_means_no_fallback_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """소유자 식별자가 없으면 재시도 시각을 묻지도 않는다.
+
+    이 성질이 무너지면 위 테스트들이 `retry_at` 을 부르지 않고도 초록불이 된다.
+    """
+
+    service, calls, _ = _fallback_service(
+        monkeypatch,
+        retry_at=datetime(2026, 9, 7, 10, 2, tzinfo=_KST),
+        wakes_at=datetime(2026, 9, 7, 10, 2, tzinfo=_KST),
+        owner="",
+    )
+
+    service.serve()
+
+    assert not any(item.startswith("retry_at:") for item in calls)
+    assert not any(item.startswith("resume:") for item in calls)

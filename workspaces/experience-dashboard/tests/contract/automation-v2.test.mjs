@@ -6,7 +6,7 @@ const endpointsUrl = new URL('../../src/shared/api/endpoints.ts', import.meta.ur
 const overviewUrl = new URL('../../src/features/overview/OverviewView.tsx', import.meta.url);
 const automationUrl = new URL('../../src/features/automation/AutomationView.tsx', import.meta.url);
 
-test('automation policy UI uses the approved v2 read, policy, and arm operations', async () => {
+test('automation policy UI uses the approved v2 read, policy, arm and v1 disarm operations', async () => {
   const endpoints = await readFile(endpointsUrl, 'utf8');
   for (const path of [
     '/api/v2/automation/status',
@@ -14,19 +14,29 @@ test('automation policy UI uses the approved v2 read, policy, and arm operations
     '/api/v2/automation/arm',
     '/api/v2/automation/runs',
     '/api/v2/automation/positions',
+    '/api/v1/automation/disarm',
   ]) {
     assert.match(endpoints, new RegExp(path.replaceAll('/', '\\/')));
   }
   assert.match(endpoints, /newIdempotencyKey\('automation-policy'\)/);
   assert.match(endpoints, /newIdempotencyKey\('automation-arm-v2'\)/);
   const automation = await readFile(automationUrl, 'utf8');
+  // 옛 라벨 "신규 주문 중지"는 계속 금지한다. disarm 은 주문을 막는 것이 아니라 다음 세션
+  // 실행을 열지 않는 것이고, 주문 차단은 Kill Switch 다. 두 목적이 한 라벨에 섞이면
+  // 사용자가 어느 쪽을 눌렀는지 알 수 없다 - 이게 9/4 에 이 버튼을 지운 이유의 절반이었다.
   assert.doesNotMatch(automation, /신규 주문 중지/);
-  assert.doesNotMatch(automation, /api\.disarmAutomation/);
+  // 나머지 절반은 "정지한 뒤 재무장이 막히면 되돌릴 수 없다"였다. 버튼을 없애는 대신
+  // 확인 단계에서 지금 다시 켤 수 있는지 보여 주는 방식으로 되돌렸다. 켤 수만 있고 끌 수
+  // 없는 화면이 더 위험하다.
+  assert.match(automation, /api\.disarmAutomation/);
+  assert.match(automation, /자동운용 정지/);
+  assert.match(automation, /confirmingDisarm/);
+  assert.match(automation, /data\.status\.controlState !== 'ARMED'/);
 });
 
 test('overview reads actual automation status instead of inferring it from the kill switch', async () => {
   const overview = await readFile(overviewUrl, 'utf8');
-  assert.match(overview, /api\.automationStatusV2\(\)/);
+  assert.match(overview, /api\.automationStatusV3\(\)/);
   assert.doesNotMatch(overview, /risk\.killSwitchActive \? '정지됨' : '작동 중'/);
 });
 

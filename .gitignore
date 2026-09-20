@@ -143,3 +143,8 @@ Thumbs.db
 
 # P1 Compose credentials and runtime state are always local-only.
 /deploy/p1/.state*/
+
+# 로컬 전용 참고자료. 저장소에 올리지 않는다.
+/private-reference/
+# 도구별 디렉터리는 저장소에 두지 않는다. 작업 규칙은 AGENTS.md 가 단일 진실 소스다.
+.local-tool/

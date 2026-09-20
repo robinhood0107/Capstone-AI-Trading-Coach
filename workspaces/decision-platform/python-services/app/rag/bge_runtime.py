@@ -8,7 +8,7 @@ import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Final, Literal, Protocol, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -20,6 +20,10 @@ from app.rag.bge_artifact import (
     inspect_onnx_graph_contract,
     verify_bge_packet,
 )
+
+#: BGE 는 이 스택의 기본 경로가 아니다. 공개 코퍼스는 Voyage 하나로 통일했다(V178).
+#: 이 변수를 1 로 두지 않으면 BGE 모델을 여는 모든 경로가 거부된다.
+BGE_ENABLED_ENV: Final = "CAPSTONE_RAG_BGE_ENABLED"
 
 _TOKENIZER_SHA256 = "6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790"
 _MAX_TOKENIZER_BYTES = 20 * 1024 * 1024
@@ -315,12 +319,24 @@ def validate_embedding_batch(
     return cast(NDArray[np.float32], embedding)
 
 
+def bge_enabled() -> bool:
+    """BGE 경로가 켜져 있는지 본다. 켜는 방법은 `BGE_ENABLED_ENV` 를 1 로 두는 것뿐이다."""
+
+    return os.environ.get(BGE_ENABLED_ENV, "").strip() in {"1", "true", "TRUE"}
+
+
 def load_bge_onnx_embedder(packet_root: Path) -> BgeOnnxEmbedder:
     """검증된 packet에서만 ORT CPU session과 static tokenizer를 구성한다.
 
     graph와 참조된 external-data 파일을 O_NOFOLLOW descriptor에서 anonymous memory로 복사·재검증해
     ORT에 bytes로 전달한다. session thread 수를 각각 1로 고정해 PoC의 CPU 점유도 제한한다.
+
+    BGE 벡터를 만드는 모든 경로는 결국 여기를 지난다 - 진입점마다 가드를 다는 대신 이
+    관문 하나를 닫는다. 새 호출자가 생겨도 가드를 빠뜨릴 수 없다.
     """
+
+    if not bge_enabled():
+        raise BgeRuntimeError("BGE_DISABLED")
 
     try:
         verify_bge_packet(packet_root)

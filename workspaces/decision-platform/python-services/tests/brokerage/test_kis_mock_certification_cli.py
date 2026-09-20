@@ -15,6 +15,7 @@ def _request(path: Path) -> dict[str, object]:
     value: dict[str, object] = {
         "branch": "feature/p1-full-app-v2",
         "commitSha": "a" * 40,
+        "imageDigest": "sha256:" + "c" * 64,
         "pullRequest": 123,
         "quantity": 1,
         "requiredChecks": sorted(certification._REQUIRED_CHECKS),

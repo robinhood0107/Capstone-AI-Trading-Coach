@@ -53,7 +53,11 @@ COPY --chown=65532:65532 deploy/p1/docker/secret-entrypoint.sh /usr/local/bin/p1
 # 움직이는 편이 맞고, 이것이 없으면 첫 기동에서 RAG 코퍼스와 Team B 산출물이 비어 있다.
 COPY --chown=65532:65532 deploy/p1/seed /opt/capstone/seed
 COPY --chown=65532:65532 shared-docs/backtest_config.yaml /opt/capstone/shared-docs/backtest_config.yaml
-RUN chmod 0555 /usr/local/bin/p1-secret-entrypoint
+# 레포 없이 이미지만 받은 서버에서도 RAG 가 뜨도록 기본 런타임 트리를 굽는다.
+# entrypoint 가 마운트된 런타임 루트가 비어 있을 때만 채운다 - 기존 값은 덮지 않는다.
+COPY --chown=65532:65532 deploy/p1/rag-runtime-default /opt/capstone/rag-runtime-default
+COPY --chown=65532:65532 deploy/p1/docker/rag-runtime-seed.sh /usr/local/bin/p1-rag-runtime-seed
+RUN chmod 0555 /usr/local/bin/p1-secret-entrypoint /usr/local/bin/p1-rag-runtime-seed
 USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/p1-secret-entrypoint", "decision-platform"]

@@ -82,6 +82,30 @@ services:
     restart: unless-stopped
     networks: [p1-data]
 
+  # 이미지의 기본 트리로 RAG 런타임 루트를 채운다. 자세한 사유는 스크립트 주석에 있다.
+  rag-runtime-seed:
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    user: "0:0"
+    entrypoint: ["/usr/local/bin/p1-rag-runtime-seed"]
+    environment:
+      RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED: "${P1_RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED:-false}"
+      VERTEX_MODEL_ID: "${P1_VERTEX_MODEL_ID:-gemini-3.5-flash}"
+      P1_VERTEX_PROJECT_ID: "${P1_VERTEX_PROJECT_ID:-}"
+      P1_VERTEX_OPERATOR: "${P1_VERTEX_OPERATOR:-auto-activation}"
+      P1_VERTEX_DAILY_GENERATE_CALL_CAP: "${P1_VERTEX_DAILY_GENERATE_CALL_CAP:-50}"
+      P1_VERTEX_INPUT_TOKEN_CAP: "${P1_VERTEX_INPUT_TOKEN_CAP:-60512}"
+      P1_VERTEX_OUTPUT_TOKEN_CAP: "${P1_VERTEX_OUTPUT_TOKEN_CAP:-8192}"
+      P1_VERTEX_INPUT_BYTE_CAP: "${P1_VERTEX_INPUT_BYTE_CAP:-60000}"
+      P1_VERTEX_COST_CAP_MICROUSD: "${P1_VERTEX_COST_CAP_MICROUSD:-500000}"
+      P1_VERTEX_INPUT_MICROUSD_PER_TOKEN: "${P1_VERTEX_INPUT_MICROUSD_PER_TOKEN:-2}"
+      P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN: "${P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN:-9}"
+    secrets: [vertex_service_account]
+    volumes:
+      - ${P1_RAG_RUNTIME_DIR:-p1-rag-runtime}:/run/rag-runtime
+    restart: "no"
+    networks: [p1-data]
+
   role-bootstrap:
     image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "role-bootstrap"]
@@ -120,6 +144,7 @@ services:
     secrets: [migration_env]
     depends_on:
       role-bootstrap: {condition: service_completed_successfully}
+      rag-runtime-seed: {condition: service_completed_successfully}
     <<: *app-security
     restart: "no"
     networks: [p1-data]
@@ -394,7 +419,9 @@ services:
       # 경로를 항상 기록하므로(full-appctl:235-236) 런타임 동작은 바뀌지 않는다.
       # 기본값이 없으면 신규 clone이 START_HERE 순서(doctor → up)에서 compose 검증에 막힌다.
       # 활성화 저술자가 control 아래에 패킷을 기록한다. 읽기 전용이면 생성이 닫힌다.
-      - ${P1_RAG_RUNTIME_DIR:-/dev/null}:/run/rag-runtime
+      # 값을 주지 않으면 이름 있는 볼륨을 쓴다. 레포 없이 이미지와 .env 만 받은 서버는
+      # 호스트에 둘 트리가 없다. 볼륨이면 rag-runtime-seed 가 채울 수 있다.
+      - ${P1_RAG_RUNTIME_DIR:-p1-rag-runtime}:/run/rag-runtime
       # safe_io 가 approved_root(=bundle_root 의 부모) 를 현재 사용자 소유로 요구한다.
       # team-b 만 마운트하면 부모가 Docker 가 만든 root 소유 /opt/capstone 이 되어 거부된다.
       - ./seed:/opt/capstone/seed:ro
@@ -996,6 +1023,7 @@ secrets:
   kis_mock_approval_trust_policy: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock-approval-trust-policy.json"}
 
 volumes:
+  p1-rag-runtime: {}
   p1-postgres-current: {}
   p1-redis: {}
   p1-bge-model-cache: {}

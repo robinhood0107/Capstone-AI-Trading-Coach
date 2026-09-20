@@ -110,6 +110,11 @@ def publish_runtime_observations(
         )
         # Publish the current quote in the same tick as the risk check.
         market_dsn = os.environ.get(_MARKET_DSN_KEY, "").strip()
+        if quotes and not market_dsn:
+            # 시세 관측이 빠지면 RiskEngine 의 current_price/order_amount/asset_weight 가
+            # 비어 HOLD 된다. 이것을 PUBLISHED 로 보고하면 매일 무주문이 나는데 원인이
+            # 어디에도 남지 않는다. 부분 성공을 성공이라고 말하지 않는다.
+            return "SKIPPED_MARKET_DSN_MISSING"
         if quotes and market_dsn:
             _write(
                 market_quote_payload(dict(quotes), now=now, source_version=_QUOTE_SOURCE_VERSION),

@@ -13,6 +13,7 @@ import hashlib
 import math
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
+from decimal import ROUND_FLOOR, Decimal, localcontext
 from importlib.metadata import version
 from typing import Any, Literal, Mapping, Protocol, cast
 
@@ -138,7 +139,13 @@ _KST_OPEN_TIME = time(9, 30)
 # New entries stop when the cancellation and reconciliation window begins.
 _KST_CLOSE_ORDER_TIME = time(15, 20)
 _CANCEL_TIME = time(15, 20)
-_MAX_OPEN_POSITIONS = 5
+_MAX_OPEN_POSITIONS = 10
+#: 사용자가 화면에서 고를 수 있는 동시 보유 상한의 범위.
+_OPEN_POSITION_CAP_RANGE = range(1, 21)
+#: ATR 변동성 기반 사이징의 거래당 위험. 자본 대비 bps 이며 기본 1%.
+#: 실무 표준(0.5~2%) 안에 들어오게 범위를 묶는다.
+_DEFAULT_RISK_PER_TRADE_BPS = 100
+_RISK_PER_TRADE_BPS_RANGE = range(10, 301)
 _LEGACY_MAX_PHYSICAL_CALLS = 16
 _V3_MAX_PHYSICAL_CALLS = 64
 _ROUND_TRIP_COST_BPS = 35
@@ -174,6 +181,7 @@ class AutomationPolicySnapshot:
     atr_period: int | None = None
     atr_multiplier_milli: int | None = None
     model_sell_enabled: bool = True
+    risk_per_trade_bps: int = _DEFAULT_RISK_PER_TRADE_BPS
 
     def __post_init__(self) -> None:
         policy_suffix = self.policy_id.removeprefix("auto_pol_")
@@ -194,8 +202,10 @@ class AutomationPolicySnapshot:
             raise AutomationError("automation take profit is invalid")
         if self.take_profit_bps <= self.stop_loss_bps:
             raise AutomationError("automation exit thresholds are invalid")
-        if self.max_open_positions != _MAX_OPEN_POSITIONS:
+        if self.max_open_positions not in _OPEN_POSITION_CAP_RANGE:
             raise AutomationError("automation position cap is invalid")
+        if self.risk_per_trade_bps not in _RISK_PER_TRADE_BPS_RANGE:
+            raise AutomationError("automation risk per trade is invalid")
         v3_values = (
             self.max_holding_sessions,
             self.atr_period,
@@ -239,6 +249,7 @@ class AutomationPolicySnapshot:
         version: int,
         capital_limit_krw: int,
         preset: Literal["CONSERVATIVE", "BALANCED", "AGGRESSIVE"],
+        max_open_positions: int = _MAX_OPEN_POSITIONS,
     ) -> AutomationPolicySnapshot:
         stop_loss, take_profit = _POLICY_PRESETS[preset]
         return cls(
@@ -248,6 +259,7 @@ class AutomationPolicySnapshot:
             stop_loss_bps=stop_loss,
             take_profit_bps=take_profit,
             preset=preset,
+            max_open_positions=max_open_positions,
         )
 
     @classmethod
@@ -258,6 +270,8 @@ class AutomationPolicySnapshot:
         version: int,
         capital_limit_krw: int,
         preset: Literal["CONSERVATIVE", "BALANCED", "AGGRESSIVE"],
+        max_open_positions: int = _MAX_OPEN_POSITIONS,
+        risk_per_trade_bps: int = _DEFAULT_RISK_PER_TRADE_BPS,
     ) -> AutomationPolicySnapshot:
         stop_loss, take_profit, holding, period, multiplier, model_sell = _POLICY_V3_PRESETS[preset]
         return cls(
@@ -267,10 +281,12 @@ class AutomationPolicySnapshot:
             stop_loss_bps=stop_loss,
             take_profit_bps=take_profit,
             preset=preset,
+            max_open_positions=max_open_positions,
             max_holding_sessions=holding,
             atr_period=period,
             atr_multiplier_milli=multiplier,
             model_sell_enabled=model_sell,
+            risk_per_trade_bps=risk_per_trade_bps,
         )
 
 
@@ -533,6 +549,83 @@ class NewsScreeningBatch:
             raise AutomationError("automation grounding call accounting is invalid")
 
 
+#: 정상 거래 가능 표기. ``00`` 은 마스터 파일 계열, ``N`` 은 inquire_price 계열이다.
+_QUOTE_NORMAL_FLAGS = frozenset({"N", "00"})
+#: 명시적으로 거래를 막는 표기. 그 밖의 값은 미지값으로 다뤄 사유를 구분한다.
+_QUOTE_BLOCKED_FLAGS = frozenset({"Y", "01"})
+
+
+#: 그 세션에서만 유효한 정지 사유. control 을 잠그지 않아 다음 세션이 스스로 열린다.
+#: 계좌 불일치나 kill-switch 처럼 사람이 봐야 하는 사유는 여기 넣지 않는다.
+_RUN_ONLY_HALT_REASONS = frozenset(
+    {
+        "PROVIDER_CALL_CAP_EXHAUSTED",
+        "CANCEL_FAILED",
+    }
+)
+
+#: 종목이 아니라 세션 전체를 막는 단계의 자리표시. V166 의 symbol CHECK 를 만족한다.
+_SESSION_STAGE_SYMBOL = "000000"
+
+#: 후보가 주문까지 가는 동안 통과해야 하는 단계. V166 테이블의 stage 값과 같아야 한다.
+CandidateStage = Literal[
+    "OBSERVATION",
+    "RULE_BUY",
+    "LSTM_VETO",
+    "QUOTE_SAFETY",
+    "ATR_HISTORY",
+    "NEWS_DISCLOSURE",
+    "AI_JUDGE",
+    "RISK_ENGINE",
+    "ORDER",
+]
+
+
+#: `automation_candidate_stage_outcomes.reason_detail` 의 CHECK 와 같은 값(바이트).
+_REASON_DETAIL_MAX_BYTES = 512
+
+
+def _bounded_reason_detail(detail: str | None) -> str | None:
+    """DB 의 바이트 제약에 맞춰 자른다.
+
+    DB CHECK 는 `octet_length` 인데 파이썬 슬라이싱은 문자 단위다. 한글은 UTF-8 로
+    3바이트라 200자만 넘어도 512바이트를 넘겨 INSERT 가 CHECK 위반으로 실패하고,
+    배치 한 문장이라 **그 tick 의 단계 기록이 통째로 유실**된다. 진단을 남기려고 만든
+    표가 외부 문자열 하나로 비는 것을 막는다. 자를 때 문자 경계를 깨지 않는다.
+    """
+
+    if detail is None:
+        return None
+    encoded = detail.encode("utf-8")
+    if len(encoded) <= _REASON_DETAIL_MAX_BYTES:
+        return detail or None
+    return encoded[:_REASON_DETAIL_MAX_BYTES].decode("utf-8", "ignore") or None
+
+
+@dataclass(frozen=True, slots=True)
+class StageOutcome:
+    """한 종목이 한 단계를 통과했는지와, 빠졌다면 그 사유."""
+
+    stage: CandidateStage
+    symbol: str
+    outcome: Literal["PASS", "DROPPED"]
+    reason_code: str | None = None
+    reason_detail: str | None = None
+
+    def __post_init__(self) -> None:
+        if (self.outcome == "DROPPED") != (self.reason_code is not None):
+            raise AutomationError("automation stage outcome reason is invalid")
+
+    def projection(self) -> dict[str, object]:
+        return {
+            "stage": self.stage,
+            "symbol": self.symbol,
+            "outcome": self.outcome,
+            "reasonCode": self.reason_code,
+            "reasonDetail": _bounded_reason_detail(self.reason_detail),
+        }
+
+
 @dataclass(frozen=True, slots=True)
 class Quote:
     symbol: str
@@ -546,12 +639,32 @@ class Quote:
     liquidation_trading_yn: str = "N"
 
     @property
+    def ineligible_reason(self) -> str | None:
+        """Return the single reason this quote cannot back a BUY, or None when tradable.
+
+        KIS 는 같은 뜻을 TR 마다 다르게 표기한다. inquire_price 의
+        ``mang_issu_cls_code`` 는 코드가 아니라 관리종목 *여부* 라서 정상값이 ``N`` 이고,
+        마스터 파일 계열은 ``00`` 을 쓴다. 둘 다 정상으로 인정하지 않으면 정상 종목이
+        전부 조용히 탈락한다. 알 수 없는 값은 통과시키지 않되 거래정지와 구분해
+        ``QUOTE_FIELD_MISSING`` 으로 남겨 원인이 화면까지 도달하게 한다.
+        """
+
+        for value, blocked_reason in (
+            (self.temp_stop_yn, "TEMP_STOP"),
+            (self.management_issue_code, "MANAGEMENT_ISSUE"),
+            (self.liquidation_trading_yn, "LIQUIDATION_TRADING"),
+        ):
+            normalized = value.strip().upper()
+            if normalized in _QUOTE_NORMAL_FLAGS:
+                continue
+            if normalized in _QUOTE_BLOCKED_FLAGS:
+                return blocked_reason
+            return "QUOTE_FIELD_MISSING"
+        return None
+
+    @property
     def hard_eligible(self) -> bool:
-        return (
-            self.temp_stop_yn == "N"
-            and self.management_issue_code == "00"
-            and self.liquidation_trading_yn == "N"
-        )
+        return self.ineligible_reason is None
 
 
 @dataclass(frozen=True, slots=True)
@@ -561,6 +674,9 @@ class AutomationInputs:
     daily_shard_fresh_complete: bool = True
     principle_active_current: bool = True
     risk_allow: bool = True
+    #: 관측 적재 결과 마커. RiskEngine 은 이 표에서 잔고와 위험지표를 읽으므로
+    #: 적재가 빠지면 전부 HOLD 된다. 그 사유를 화면까지 올리려고 여기로 받는다.
+    observation_publish: str | None = None
     kill_switch_active: bool = False
     account_complete: bool = True
     account_digest_matches: bool = True
@@ -573,8 +689,8 @@ class AutomationInputs:
     policy: AutomationPolicySnapshot = field(default_factory=_default_policy)
     no_open_order: bool = True
     unfinished_previous_order: bool = False
-    # 뉴스 거부권 provider가 붙어 있는지. 붙어 있으면 ABSTAIN도 매수를 막고, 없으면 통과시킨다.
-    # 부정 이벤트 차단은 원칙의 disclosure_risk_guard가 RiskEngine에서 결정론적으로 수행한다.
+    # 뉴스 거부권 provider가 붙어 있는지. ABSTAIN/오류는 통과하고 검증된 명시적 VETO만
+    # 후보를 제외한다. 결정적 위험 규칙은 별도 RiskEngine 경계를 유지한다.
     news_veto_provider_bound: bool = False
     # Strong LLM이 붙어 있는지. 붙어 있지 않거나 답하지 못하면 판단에 AI_NOT_PARTICIPATED를
     # 남기고 기존 규칙만으로 진행한다. AI가 없다고 자동매매가 멈추지는 않는다.
@@ -775,6 +891,9 @@ class AutomationRun:
     evidence_set_sha256: str | None = None
     candidate_set_sha256: str | None = None
     ai_settings_sha256: str | None = None
+    # 어느 단계에서 어떤 종목이 왜 빠졌는지. 이게 없으면 무주문 실행은 화면에서
+    # "판단 근거 없음"으로만 보이고 원인을 되짚을 수 없다.
+    stage_outcomes: tuple[StageOutcome, ...] = ()
 
     def projection(self) -> dict[str, object]:
         reservation = self.reservation
@@ -1132,11 +1251,10 @@ class AutomationEngine:
             # 열린다. "AI 를 끄면 provider 호출이 0"은 실제 불변식이다
             # (`test_ai_off_v3_uses_no_screen_or_judge_and_unlimited_fill_snapshots_peak`).
             # pre-v3 정책은 이 상태가 원래 무조건 경로였으므로 그대로 둔다.
-            target = (
-                "NEWS_CHECKING"
-                if not inputs.policy.is_v3 or inputs.news_veto_provider_bound
-                else "ORDER_SIZING"
-            )
+            # V3는 NEWS_SCREENING에 저장 공시를 넣고 같은 Spring Strong LLM JUDGE 결과를
+            # 재사용한다. Python 전용 Vertex veto를 다시 호출하지 않는다. pre-v3 재현 경로만
+            # historical NEWS_CHECKING을 유지한다.
+            target = "ORDER_SIZING" if inputs.policy.is_v3 else "NEWS_CHECKING"
             self._transition(run, target, "RUN_TRANSITIONED", now)
         elif run.state == "NEWS_CHECKING":
             if run.selected_quote is None:
@@ -1144,8 +1262,6 @@ class AutomationEngine:
                 if quote is None:
                     return
                 run.selected_quote = quote
-            if not self._ensure_capacity(run, now, transport):
-                return
             # 공시 근거로 내린 거부권을 다시 반영한다.
             #
             # 2026-09-04 에 이 판정을 버렸다(`del verdict`). 근거 코퍼스 구현체가 없어
@@ -1158,8 +1274,17 @@ class AutomationEngine:
             # 근거를 못 읽은 것으로 매수를 막으면 근거 조회 실패가 곧 매매 중단이 되고,
             # 결정적 위험 규칙이 이미 주문 권한을 갖는다. 실제로 막는 것은 모델이 등록
             # 출처의 인용을 근거로 부정 사건을 확인한 `VETO_BUY` 하나뿐이다.
-            verdict = transport.vertex(_required(run.selected_symbol))
-            run.vertex_call_count += 1
+            verdict: NewsVerdict = "ABSTAIN"
+            if (
+                inputs.ai_judgement_enabled
+                and inputs.news_veto_provider_bound
+                and transport.physical_calls < _physical_call_cap(run)
+            ):
+                run.vertex_call_count += 1
+                try:
+                    verdict = transport.vertex(_required(run.selected_symbol))
+                except Exception:
+                    print("AUTOMATION_NEWS_CHECKING=ERROR", flush=True)
             if verdict == "VETO_BUY":
                 self._release_exit_pending(run)
                 self._transition(run, "NEWS_VETOED", "NEWS_RESULT_RECORDED", now)
@@ -1171,6 +1296,9 @@ class AutomationEngine:
             if inputs.kill_switch_active:
                 self._halt(run, now, "KILL_SWITCH")
             elif not inputs.risk_allow:
+                # RiskEngine 이 HOLD 한 이유 중 가장 흔한 것은 관측 표가 비어 있는 것이다.
+                # "위험검증 불가"로만 끝내면 사람이 원인을 찾을 수 없다.
+                self._record_observation_stage(run, inputs)
                 self._release_exit_pending(run)
                 self._transition(run, "SKIPPED_NO_ACTION", "RISK_RESULT_RECORDED", now)
             else:
@@ -1241,10 +1369,15 @@ class AutomationEngine:
                 _limit_price(quote, "SELL"),
             )
 
+        # 당일 진입분은 어떤 사유로도 청산 후보가 되지 않는다. 예전에는 이 성질이
+        # ATR 경로에만 명시돼 있었고, 하루에 run 이 하나뿐이라는 사실에만 기대고 있었다.
+        # 진입 시점을 늘리면 그 우연한 보호가 사라지므로 사유마다 대칭으로 박는다.
+        # DB 의 `expiry_session > entry_session` CHECK 가 최후 방어선이다.
+        exitable = [position for position in positions if run.session_date > position.entry_session]
         stop_exits = sorted(
             (
                 position
-                for position in positions
+                for position in exitable
                 if position.symbol in returns
                 and returns[position.symbol] <= -position.stop_loss_bps
             ),
@@ -1311,7 +1444,7 @@ class AutomationEngine:
         model_exits = sorted(
             (
                 position
-                for position in positions
+                for position in exitable
                 if position.model_sell_enabled
                 and (signal := signals.get(position.symbol)) is not None
                 and signal.lstm_signal == signal.baseline_signal == "SELL"
@@ -1321,7 +1454,7 @@ class AutomationEngine:
         profit_exits = sorted(
             (
                 position
-                for position in positions
+                for position in exitable
                 if position.symbol in returns
                 and returns[position.symbol] >= position.take_profit_bps
             ),
@@ -1334,7 +1467,7 @@ class AutomationEngine:
         expiry_exits = sorted(
             (
                 position
-                for position in positions
+                for position in exitable
                 if position.expiry_session is not None
                 and run.session_date >= position.expiry_session
             ),
@@ -1366,8 +1499,20 @@ class AutomationEngine:
             self._transition(run, "EXIT_SELECTED", "EXIT_SELECTED", now)
             return
         if len(positions) >= inputs.policy.max_open_positions:
+            # 상한 포화는 정당한 무주문이지만 사용자에게는 반드시 보여야 한다.
+            # 설정 때문에 매수가 막혔다는 사실을 화면이 말할 수 있어야 한다.
+            for candidate in inputs.signals:
+                self._record_stage(
+                    run,
+                    "RULE_BUY",
+                    candidate.symbol,
+                    "DROPPED",
+                    "POSITION_CAP_REACHED",
+                    f"보유 {len(positions)}종목 / 상한 {inputs.policy.max_open_positions}종목",
+                )
             self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
             return
+        self._record_candidate_funnel(run, inputs)
         raw_buys = self._buy_candidates(inputs, require_atr=False)
         buys = self._buy_candidates(inputs, require_atr=inputs.policy.is_v3)
         if raw_buys:
@@ -1379,25 +1524,124 @@ class AutomationEngine:
         # The judgement stage may rank only candidates produced by Return Engine.
         if inputs.policy.is_v3:
             run.ai_settings_sha256 = inputs.ai_settings_sha256
-            if inputs.ai_judgement_enabled:
-                if not inputs.ai_judgement_provider_bound:
-                    self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
-                    return
+            if inputs.ai_judgement_enabled and inputs.ai_judgement_provider_bound:
                 self._transition(run, "NEWS_SCREENING", "RUN_TRANSITIONED", now)
                 return
             for candidate in buys:
                 quote = self._candidate_quote(run, now, transport, candidate.symbol)
                 if run.state == "HALTED":
                     return
-                if quote is not None and quote.hard_eligible:
+                if self._record_quote_safety(run, candidate.symbol, quote):
                     run.selected_symbol = candidate.symbol
                     run.selected_side = "BUY"
-                    run.selected_quote = quote
+                    run.selected_quote = cast(Quote, quote)
                     self._transition(run, "BUY_CANDIDATE_SELECTED", "BUY_SELECTED", now)
                     return
             self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
             return
         self._transition(run, "AI_JUDGING", "RUN_TRANSITIONED", now)
+
+    def _record_stage(
+        self,
+        run: AutomationRun,
+        stage: CandidateStage,
+        symbol: str,
+        outcome: Literal["PASS", "DROPPED"],
+        reason_code: str | None = None,
+        reason_detail: str | None = None,
+    ) -> None:
+        """같은 (단계, 종목)은 한 번만 남긴다. 표의 기본키와 같은 성질이다."""
+
+        if any(item.stage == stage and item.symbol == symbol for item in run.stage_outcomes):
+            return
+        run.stage_outcomes += (StageOutcome(stage, symbol, outcome, reason_code, reason_detail),)
+
+    def _record_observation_stage(self, run: AutomationRun, inputs: AutomationInputs) -> None:
+        """관측 적재 결과를 세션 단계로 남긴다.
+
+        RiskEngine 은 관측 표에서 잔고와 위험지표를 읽는다. 적재가 빠지면 위반이 없는데도
+        입력 부재로 전부 HOLD 되고, 지금까지 그 사유는 로그에도 화면에도 없었다.
+        """
+
+        marker = inputs.observation_publish
+        if marker is None:
+            # 관측을 적재하지 않는 경로(fixture, legacy)에서는 이 단계가 없다.
+            return
+        if marker == "PUBLISHED":
+            self._record_stage(run, "OBSERVATION", _SESSION_STAGE_SYMBOL, "PASS")
+            return
+        self._record_stage(
+            run,
+            "OBSERVATION",
+            _SESSION_STAGE_SYMBOL,
+            "DROPPED",
+            "OBSERVATION_NOT_PUBLISHED",
+            f"관측 적재 결과 {marker}. 위험지표 입력이 없어 전 종목이 보류됐다",
+        )
+
+    def _record_quote_safety(self, run: AutomationRun, symbol: str, quote: Quote | None) -> bool:
+        """실시간 안전필터 통과 여부를 기록하고 그 결과를 돌려준다.
+
+        시세를 못 받은 것과 거래정지를 같은 침묵으로 처리하면, 전 종목이 탈락한 날에
+        무엇이 일어났는지 알 수 없다. 2026-09-08·09 가 정확히 그 상태였다.
+        """
+
+        if quote is None:
+            self._record_stage(run, "QUOTE_SAFETY", symbol, "DROPPED", "QUOTE_UNAVAILABLE")
+            return False
+        reason = quote.ineligible_reason
+        if reason is not None:
+            self._record_stage(
+                run,
+                "QUOTE_SAFETY",
+                symbol,
+                "DROPPED",
+                reason,
+                f"temp_stop={quote.temp_stop_yn} "
+                f"management={quote.management_issue_code} "
+                f"liquidation={quote.liquidation_trading_yn}",
+            )
+            return False
+        self._record_stage(run, "QUOTE_SAFETY", symbol, "PASS")
+        return True
+
+    def _record_candidate_funnel(self, run: AutomationRun, inputs: AutomationInputs) -> None:
+        """규칙/LSTM/ATR 단계의 통과와 탈락을 종목별로 남긴다.
+
+        이 세 단계는 provider 호출이 없어 지금까지 어디에도 흔적이 없었다. 그래서
+        무주문 실행이 "남은 후보 심사 기록이 없습니다"로만 보였다.
+        """
+
+        held = {
+            position.symbol for position in self.store.positions if position.status == "OPEN"
+        } | set(inputs.manual_position_symbols)
+        for candidate in inputs.signals:
+            symbol = candidate.symbol
+            if symbol in held:
+                self._record_stage(run, "RULE_BUY", symbol, "DROPPED", "ALREADY_HELD")
+                continue
+            if candidate.baseline_signal != "BUY":
+                self._record_stage(
+                    run,
+                    "RULE_BUY",
+                    symbol,
+                    "DROPPED",
+                    "RULE_NOT_BUY",
+                    f"rule={candidate.baseline_signal}",
+                )
+                continue
+            if not math.isfinite(candidate.expected_return):
+                self._record_stage(run, "RULE_BUY", symbol, "DROPPED", "FORECAST_NOT_FINITE")
+                continue
+            self._record_stage(run, "RULE_BUY", symbol, "PASS")
+            if candidate.lstm_signal == "SELL":
+                self._record_stage(run, "LSTM_VETO", symbol, "DROPPED", "MODEL_SELL")
+                continue
+            self._record_stage(run, "LSTM_VETO", symbol, "PASS")
+            if inputs.policy.is_v3 and not self._candidate_has_atr_history(symbol, inputs):
+                self._record_stage(run, "ATR_HISTORY", symbol, "DROPPED", "ATR_HISTORY_MISSING")
+                continue
+            self._record_stage(run, "ATR_HISTORY", symbol, "PASS")
 
     def _buy_candidates(
         self,
@@ -1469,9 +1713,7 @@ class AutomationEngine:
                 self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
                 return
             allowed = {
-                item.symbol
-                for item in run.candidate_screenings
-                if item.status == "AVAILABLE" and item.verdict == "NO_VETO"
+                item.symbol for item in run.candidate_screenings if not _screening_veto(item)
             }
             buys = tuple(item for item in buys if item.symbol in allowed)
         run.candidate_set_sha256 = current_candidate_set_sha256
@@ -1483,19 +1725,21 @@ class AutomationEngine:
         run.ai_baseline_symbol = buys[0].symbol
         run.ai_candidate_count = len(buys)
         judgement = self._ai_judgement(run, inputs, transport, buys)
-        if inputs.policy.is_v3 and judgement is None:
-            self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
-            return
         if (
             inputs.policy.is_v3
             and judgement is not None
             and {item.symbol for item in judgement.verdicts} != {item.symbol for item in buys}
         ):
-            self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
-            return
+            # 형식이 맞지 않는 선택적 판단은 버리고 기존 후보 순서를 사용한다.
+            judgement = None
+            run.ai_participation = "NOT_PARTICIPATED"
         ranked = _apply_judgement(buys, judgement)
         run.ai_vetoed_symbols = tuple(
-            candidate.symbol for candidate in buys if candidate not in ranked
+            sorted(
+                set(run.ai_vetoed_symbols).union(
+                    candidate.symbol for candidate in buys if candidate not in ranked
+                )
+            )
         )
         if not ranked:
             # 모든 후보가 차단됐다. 차단은 매수를 막을 뿐 다른 종목을 만들지 않는다.
@@ -1525,11 +1769,20 @@ class AutomationEngine:
             quote = self._candidate_quote(run, now, transport, candidate.symbol)
             if run.state == "HALTED":
                 return
-            if quote is not None and quote.hard_eligible:
+            if self._record_quote_safety(run, candidate.symbol, quote):
+                quote = cast(Quote, quote)
                 if (
                     candidate.forecast_close is not None
                     and remaining_expected_return(candidate, _limit_price(quote, "BUY")) <= 0
                 ):
+                    self._record_stage(
+                        run,
+                        "RISK_ENGINE",
+                        candidate.symbol,
+                        "DROPPED",
+                        "NO_REMAINING_RETURN",
+                        "예상 상승분이 이미 현재가에 반영돼 왕복 비용을 넘지 못한다",
+                    )
                     continue
                 eligible.append(candidate)
                 quotes[candidate.symbol] = quote
@@ -1539,18 +1792,41 @@ class AutomationEngine:
         run.ai_baseline_symbol = eligible[0].symbol
         run.ai_candidate_count = len(eligible)
         try:
-            batch = transport.screen(
-                tuple(eligible),
-                quotes,
-                run.candidate_set_sha256,
-            )
+            if inputs.ai_judgement_enabled and inputs.ai_judgement_provider_bound:
+                batch = transport.screen(
+                    tuple(eligible),
+                    quotes,
+                    run.candidate_set_sha256,
+                )
+            else:
+                batch = NewsScreeningBatch(
+                    tuple(
+                        CandidateScreening(
+                            item.symbol, "ABSTAIN", "NO_VETO", 5_000, "AI_DISABLED_OR_UNAVAILABLE"
+                        )
+                        for item in eligible
+                    ),
+                    0,
+                    0,
+                )
         except Exception:
-            self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
-            return
+            batch = NewsScreeningBatch((), 0, 0, failed=True)
         symbols = {item.symbol for item in eligible}
         if batch.failed or {item.symbol for item in batch.screenings} != symbols:
-            self._transition(run, "SKIPPED_DATA_UNAVAILABLE", "RUN_TRANSITIONED", now)
-            return
+            # 실패를 정상 0건으로 바꾸지 않는다. 이미 검증된 거부는 보존한다.
+            verified = {item.symbol: item for item in batch.screenings if _screening_veto(item)}
+            batch = NewsScreeningBatch(
+                tuple(
+                    verified.get(item.symbol)
+                    or CandidateScreening(
+                        item.symbol, "ABSTAIN", "NO_VETO", 5_000, "SCREENING_ERROR"
+                    )
+                    for item in eligible
+                ),
+                batch.provider_call_count,
+                batch.grounding_query_count,
+                failed=True,
+            )
         run.candidate_screenings = batch.screenings
         run.candidate_quotes = quotes
         run.screening_provider_call_count = batch.provider_call_count
@@ -1576,14 +1852,22 @@ class AutomationEngine:
             if evidence
             else None
         )
-        allowed = {
-            item.symbol
-            for item in batch.screenings
-            if item.status == "AVAILABLE" and item.verdict == "NO_VETO"
-        }
+        allowed = {item.symbol for item in batch.screenings if not _screening_veto(item)}
         run.ai_vetoed_symbols = tuple(
             item.symbol for item in eligible if item.symbol not in allowed
         )
+        for item in batch.screenings:
+            if item.symbol in allowed:
+                self._record_stage(run, "NEWS_DISCLOSURE", item.symbol, "PASS")
+            else:
+                self._record_stage(
+                    run,
+                    "NEWS_DISCLOSURE",
+                    item.symbol,
+                    "DROPPED",
+                    "DISCLOSURE_VETO",
+                    item.reason,
+                )
         surviving = tuple(item for item in eligible if item.symbol in allowed)
         if not surviving:
             self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
@@ -1608,15 +1892,20 @@ class AutomationEngine:
         transport: AutomationFixtureTransportPort,
         candidates: tuple[SignalCandidate, ...],
     ) -> AiJudgement | None:
-        if not inputs.ai_judgement_provider_bound:
+        if not inputs.ai_judgement_enabled or not inputs.ai_judgement_provider_bound:
             return None
         candidate_set_sha256 = run.candidate_set_sha256
         if candidate_set_sha256 is None:
             return None
         # V3 passes only the post-screening survivors.  Recomputing the original
         # BUY set here would re-introduce vetoed/injected candidates into JUDGE.
-        judgement = transport.judge(candidates, candidate_set_sha256)
         run.ai_judge_call_count += 1
+        try:
+            judgement = transport.judge(candidates, candidate_set_sha256)
+        except Exception:
+            # 선택적 AI 장애는 후보/가격/RiskEngine의 유효성을 바꾸지 않는다.
+            print("AUTOMATION_AI_JUDGING=ERROR", flush=True)
+            return None
         if judgement is None:
             # 1차도 2차도 답하지 못했다. 기존 규칙만으로 계속한다.
             return None
@@ -1657,6 +1946,17 @@ class AutomationEngine:
                 # 전일 종가 대비 상승분이 이미 가격에 반영됐으면 새 주문의 이익으로 세지 않는다.
                 net = remaining_expected_return(candidate, limit_price)
                 if not math.isfinite(net) or net <= 0:
+                    # 선택까지 통과한 종목이 사이징에서 조용히 죽으면 화면에는 또 "주문 없이
+                    # 종료"만 남는다. 선택 시점(`_news_screen`)과 같은 사유로 남긴다 -
+                    # 그 사이 호가가 올라 잔여 수익률이 비용 아래로 내려간 것이다.
+                    self._record_stage(
+                        run,
+                        "RISK_ENGINE",
+                        quote.symbol,
+                        "DROPPED",
+                        "NO_REMAINING_RETURN",
+                        "선택 뒤 호가가 올라 잔여 수익률이 왕복 비용 아래로 내려갔다",
+                    )
                     self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
                     return
         if side == "SELL":
@@ -1684,11 +1984,21 @@ class AutomationEngine:
                 model_sell_enabled=position.model_sell_enabled,
             )
         else:
-            quantity = _variable_buy_quantity(inputs, limit_price)
+            quantity = _variable_buy_quantity(inputs, limit_price, symbol=quote.symbol)
             policy = inputs.policy
             if quantity < 1:
+                # 설정(자본/상한/거래당 위험) 때문에 0주가 나온 것이므로 그대로 말해준다.
+                self._record_stage(
+                    run,
+                    "RISK_ENGINE",
+                    quote.symbol,
+                    "DROPPED",
+                    "SIZING_BELOW_ONE_SHARE",
+                    _sizing_block_reason(inputs, limit_price),
+                )
                 self._transition(run, "SKIPPED_NO_ACTION", "RUN_TRANSITIONED", now)
                 return
+            self._record_stage(run, "RISK_ENGINE", quote.symbol, "PASS")
         intent = ExactOrderIntent(
             symbol=quote.symbol,
             side=side,
@@ -2001,8 +2311,18 @@ class AutomationEngine:
         )
 
     def _halt(self, run: AutomationRun, now: datetime, reason: str) -> None:
-        self.store.control_state = "HALTED"
-        self.store.version += 1
+        """이 run 을 정지시키고, 사유가 세션을 넘길 성질일 때만 control 을 잠근다.
+
+        예전에는 모든 HALT 가 `control_state` 를 HALTED 로 바꿨다. 그런데 HALTED 를
+        다시 ARMED 로 되돌리는 코드가 저장소 어디에도 없어서, 그 세션에서만 유효한
+        사유(호출 예산 소진, 취소 실패)로도 시스템이 영구 정지했다. 세션 한정 사유는
+        다음 세션에 예산·상태가 새로 생기므로 control 을 잠그지 않는다. 이미 난 주문이
+        남아 있으면 다음 세션의 `no_open_order` 검사가 따로 막는다.
+        """
+
+        if reason not in _RUN_ONLY_HALT_REASONS:
+            self.store.control_state = "HALTED"
+            self.store.version += 1
         self._transition(run, "HALTED", "RUN_HALTED", now)
         self.store.append_event(run, "DRIFT_DETECTED", {"reason": reason}, now)
 
@@ -2015,6 +2335,11 @@ def _projection_integer(value: object) -> int:
     if isinstance(value, str) and value.isdigit():
         return int(value)
     raise AutomationError("automation account lineage number is invalid")
+
+
+def _screening_veto(item: CandidateScreening) -> bool:
+    """검증된 근거를 가진 명시적 거부만 후보 제외 권한을 갖는다."""
+    return item.status == "AVAILABLE" and item.verdict == "VETO_BUY" and bool(item.evidence)
 
 
 def _apply_judgement(
@@ -2088,7 +2413,44 @@ def _physical_call_cap(run: AutomationRun) -> int:
     )
 
 
-def _variable_buy_quantity(inputs: AutomationInputs, limit_price_krw: int) -> int:
+def _sizing_block_reason(inputs: AutomationInputs, limit_price_krw: int) -> str:
+    """0주가 나온 **실제로 묶인 한도**를 이름으로 말한다.
+
+    슬롯 예산만 적으면 "종목당 상한 100,000원"이라고만 보이는데, 정작 막고 있는 것이
+    "보유 평가액이 이미 자본 한도를 넘어 남은 자본이 0"인 경우가 있다. 그러면 자본
+    한도를 올리기 전까지 어떤 종목도 살 수 없는데 화면은 종목 가격 탓처럼 읽힌다.
+    """
+
+    policy = inputs.policy
+    slot_budget = policy.capital_limit_krw // policy.max_open_positions
+    capital_remaining = max(
+        0,
+        policy.capital_limit_krw
+        - inputs.open_position_market_value_krw
+        - inputs.pending_buy_notional_krw,
+    )
+    if capital_remaining < limit_price_krw:
+        return (
+            f"남은 자본 {capital_remaining}원 < 주문가 {limit_price_krw}원. "
+            f"자본 한도 {policy.capital_limit_krw}원에서 보유 평가액 "
+            f"{inputs.open_position_market_value_krw}원과 미체결 "
+            f"{inputs.pending_buy_notional_krw}원을 뺀 값입니다"
+        )
+    if slot_budget < limit_price_krw:
+        return (
+            f"종목당 상한 {slot_budget}원 < 주문가 {limit_price_krw}원. "
+            f"자본 한도 {policy.capital_limit_krw}원을 동시 보유 "
+            f"{policy.max_open_positions}개로 나눈 값입니다"
+        )
+    return (
+        f"주문가 {limit_price_krw}원, 종목당 상한 {slot_budget}원, "
+        f"거래당 위험 {policy.risk_per_trade_bps / 100:.2f}%"
+    )
+
+
+def _variable_buy_quantity(
+    inputs: AutomationInputs, limit_price_krw: int, *, symbol: str | None = None
+) -> int:
     if limit_price_krw <= 0:
         raise AutomationError("automation sizing price is invalid")
     nonnegative = (
@@ -2115,7 +2477,49 @@ def _variable_buy_quantity(inputs: AutomationInputs, limit_price_krw: int) -> in
         inputs.principle_asset_remaining_krw,
         inputs.buyable_amount_krw,
     )
-    return min(order_budget // limit_price_krw, inputs.buyable_quantity)
+    budget_quantity = min(order_budget // limit_price_krw, inputs.buyable_quantity)
+    risk_quantity = _atr_risk_quantity(inputs, symbol)
+    if risk_quantity is None:
+        return budget_quantity
+    return min(budget_quantity, risk_quantity)
+
+
+def _atr_risk_quantity(inputs: AutomationInputs, symbol: str | None) -> int | None:
+    """Return the ATR volatility-based share cap, or None when ATR sizing cannot apply.
+
+    수량 = (자본 x 거래당위험) / (ATR x 배수). 손절 거리를 ATR 트레일링 스톱과 같은 식으로
+    잡아, 변동성이 큰 종목은 적게 작은 종목은 많이 사서 종목별 위험을 균등하게 맞춘다.
+    등가중(자본/N)은 종목당 상한으로만 남는다.
+
+    ATR 이력이 없거나 v2 legacy 원칙이면 None 을 돌려 기존 등가중 동작을 그대로 둔다.
+    사이징은 이미 후보 단계에서 ATR 이력을 요구하므로 정상 경로에서는 값이 있다.
+    """
+
+    period = inputs.policy.atr_period
+    multiplier = inputs.policy.atr_multiplier_milli
+    if symbol is None or period is None or multiplier is None:
+        return None
+    try:
+        atr = wilder_atr(
+            inputs.atr_histories.get(symbol, ()),
+            period=period,
+            as_of_session=inputs.session_date,
+            expected_sessions=(inputs.atr_expected_sessions or None),
+        )
+    except AtrHistoryError:
+        return None
+    with localcontext() as context:
+        context.prec = 50
+        stop_distance = atr.value_krw * Decimal(multiplier) / Decimal(1_000)
+        if not stop_distance.is_finite() or stop_distance <= 0:
+            return None
+        risk_budget = (
+            Decimal(inputs.policy.capital_limit_krw)
+            * Decimal(inputs.policy.risk_per_trade_bps)
+            / Decimal(10_000)
+        )
+        quantity = (risk_budget / stop_distance).to_integral_value(rounding=ROUND_FLOOR)
+    return max(0, int(quantity))
 
 
 def remaining_expected_return(candidate: SignalCandidate, buy_limit_price: int) -> float:

@@ -418,7 +418,7 @@ def _citation_from_candidate(
         "chunk_revision_id": candidate.chunk_id,
         "generation_id": candidate.generation_id,
     }
-    if candidate.source_scope in {"EXACT30", "OA112"}:
+    if candidate.source_scope in {"EXACT30", "OA112", "WORLD_NEWS"}:
         if (
             candidate.owner_user_id is not None
             or candidate.sanitized_display_name is not None
@@ -471,6 +471,7 @@ def _candidate_matches_scope(
         "EXACT30": scope.exact30_generation_id,
         "OA112": scope.oa112_generation_id,
         "OWNER_PRIVATE": scope.owner_private_generation_id,
+        "WORLD_NEWS": scope.oa112_generation_id,
     }.get(candidate.source_scope)
     return (
         _SOURCE_ID.fullmatch(candidate.source_id) is not None

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from typing import Any, cast
 
 import pytest
 
@@ -13,6 +14,7 @@ from app.p1_owner.scenario_materializer import (
     _curve_rows,
     _evaluation_sessions,
     _metrics,
+    _performance_report,
     _strict_replay,
 )
 
@@ -146,6 +148,44 @@ def test_metrics_use_initial_capital_before_the_first_visible_session() -> None:
 
     assert metrics["netReturn"] == pytest.approx(-0.1)
     assert metrics["mdd"] == pytest.approx(-0.1)
+
+
+def test_performance_report_keeps_three_result_types_and_pending_forecasts_separate() -> None:
+    metrics = {
+        name: {"netReturn": value}
+        for name, value in (("Baseline", 0.01), ("Guide", 0.02), ("Strict", 0.005))
+    }
+    report = _performance_report(
+        source_generation_sha256="a" * 64,
+        source_start=date(2026, 8, 18),
+        source_end=date(2026, 9, 8),
+        model_sha256="b" * 64,
+        performance_input={
+            "principleVersionId": "pvr_" + "c" * 32,
+            "principleVersion": 3,
+            "fixedForecast": {
+                "totalCount": 10,
+                "realizedCount": 8,
+                "pendingCount": 2,
+                "sumAbsoluteError": 0.8,
+                "sumSquaredError": 0.16,
+                "sumError": -0.2,
+            },
+            "actualTrading": {
+                "closedPositionCount": 2,
+                "openPositionCount": 1,
+                "realizedPnlKrw": 12000,
+            },
+        },
+        metrics=cast(Any, metrics),
+    )
+
+    sections = cast(dict[str, Any], report["sections"])
+    assert set(sections) == {"recalculatedBacktest", "fixedDailyForecast", "actualTrading"}
+    assert sections["fixedDailyForecast"]["status"] == "PARTIAL"
+    assert sections["fixedDailyForecast"]["pendingCount"] == 2
+    assert sections["actualTrading"]["realizedPnlKrw"] == 12000
+    assert report["sourceStart"] == "2026-08-18"
 
 
 def test_demo_window_starts_on_the_first_session_after_the_substitute_holiday() -> None:

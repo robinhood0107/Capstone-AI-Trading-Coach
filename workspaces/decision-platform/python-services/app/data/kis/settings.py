@@ -88,6 +88,11 @@ class KISSettings(BaseSettings):
         return "FHKST01010100"
 
     @property
+    def asking_price_tr_id(self) -> str:
+        # 호가/예상체결도 현재가와 같이 mock/live 동일 TR 이다. 읽기 전용이고 계좌를 타지 않는다.
+        return "FHKST01010200"
+
+    @property
     def daily_itemchart_tr_id(self) -> str:
         return "FHKST03010100"
 

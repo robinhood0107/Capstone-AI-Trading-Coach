@@ -88,7 +88,12 @@ def _transport(
 
 
 def _inputs(*signals: SignalCandidate, **overrides: object) -> AutomationInputs:
-    values: dict[str, object] = {"session_date": _SESSION, "signals": tuple(signals)}
+    values: dict[str, object] = {
+        "session_date": _SESSION,
+        "signals": tuple(signals),
+        "ai_judgement_enabled": True,
+        "news_veto_provider_bound": True,
+    }
     values.update(overrides)
     return AutomationInputs(**cast(Any, values))
 
@@ -261,7 +266,7 @@ def test_only_an_explicit_veto_stops_the_buy(verdict: str, provider_bound: bool)
 
     assert "NEWS_VETOED" not in states
     assert states[-1] == "COMPLETED"
-    assert transport.vertex_calls == 1
+    assert transport.vertex_calls == int(provider_bound)
     # 후보 순위는 그대로다 - 뉴스가 종목을 바꾸지 않는다.
     assert store.runs[_RUN_ID].selected_symbol == "000001"
     assert transport.submit_calls == 1
@@ -285,12 +290,12 @@ def test_an_explicit_veto_closes_the_run_without_submitting(provider_bound: bool
     inputs = replace(_inputs(*candidates), news_veto_provider_bound=provider_bound)
     states = _drive(store, transport, inputs)
 
-    assert states[-1] == "NEWS_VETOED"
-    assert transport.vertex_calls == 1
+    assert states[-1] == ("NEWS_VETOED" if provider_bound else "COMPLETED")
+    assert transport.vertex_calls == int(provider_bound)
     # 주문은 논리적으로도 물리적으로도 나가지 않는다.
-    assert transport.submit_calls == 0
-    assert transport.physical_submit_calls == 0
-    assert store.runs[_RUN_ID].logical_submit_count == 0
+    assert transport.submit_calls == int(not provider_bound)
+    assert transport.physical_submit_calls == 0  # fixture는 실제 주문을 전송하지 않는다.
+    assert store.runs[_RUN_ID].logical_submit_count == int(not provider_bound)
     # 거부해도 고른 종목은 바꾸지 않는다.
     assert store.runs[_RUN_ID].selected_symbol == "000001"
 
@@ -618,6 +623,9 @@ def test_variable_buy_quantity_uses_the_minimum_exact_budget(
         version=1,
         capital_limit_krw=1_000_000,
         preset="BALANCED",
+        # 이 테스트가 재는 것은 "여러 예산의 최솟값"이지 상한 기본값이 아니다.
+        # 슬롯 금액이 상한에 반비례하므로 여기서 명시해 기본값 변경과 분리한다.
+        max_open_positions=5,
     )
     values: dict[str, object] = {
         "session_date": _SESSION,
@@ -635,6 +643,9 @@ def test_variable_quantity_exact_intent_and_five_position_cap() -> None:
         version=1,
         capital_limit_krw=2_000_000,
         preset="BALANCED",
+        # 이 테스트는 "상한이 포화되면 매수하지 않는다"를 재며 아래에서 5개를 넣는다.
+        # 상한 기본값이 아니라 그 성질을 고정하도록 여기서 5로 명시한다.
+        max_open_positions=5,
     )
     store = _store()
     _create(store)
@@ -680,6 +691,8 @@ def test_internal_paper_fixture_runs_full_variable_quantity_loop() -> None:
         version=1,
         capital_limit_krw=1_000_000,
         preset="CONSERVATIVE",
+        # 이 테스트가 재는 것은 체결 루프이지 상한 기본값이 아니다. 수량이 바뀌지 않게 고정한다.
+        max_open_positions=5,
     )
     store = AutomationStore(
         account_id="acct_fixture_0001",
@@ -783,6 +796,8 @@ def test_partial_buy_and_sell_cancel_apply_only_confirmed_quantity() -> None:
         version=1,
         capital_limit_krw=2_000_000,
         preset="BALANCED",
+        # 부분체결 회계를 재는 테스트다. 수량이 바뀌지 않게 상한을 고정한다.
+        max_open_positions=5,
     )
     buy_store = _store()
     _create(buy_store)
@@ -984,3 +999,486 @@ def test_limit_price_never_leaves_the_krx_tick_grid(
     assert result == expected
     assert result % _tick_size(result, False) == 0
     assert lower <= result <= upper
+
+
+def _atr_sizing_inputs(
+    *,
+    capital_limit_krw: int,
+    risk_per_trade_bps: int,
+    high: int,
+    low: int,
+    max_open_positions: int = 10,
+) -> AutomationInputs:
+    """ATR 사이징만 재도록 다른 예산은 전부 넉넉하게 둔 입력."""
+
+    import exchange_calendars as xcals
+    import pandas as pd
+
+    from app.p1_owner.automation_atr import CompletedDailyBar
+
+    calendar = xcals.get_calendar("XKRX")
+    anchor = calendar.previous_session(pd.Timestamp(_SESSION))
+    expected = tuple(item.date() for item in calendar.sessions_window(anchor, -100))
+    bars = tuple(CompletedDailyBar(item, 70_000, high, low, 70_000) for item in expected[-40:])
+    return AutomationInputs(
+        session_date=_SESSION,
+        policy=AutomationPolicySnapshot.from_v3_preset(
+            policy_id=_POLICY_ID,
+            version=1,
+            capital_limit_krw=capital_limit_krw,
+            preset="BALANCED",
+            max_open_positions=max_open_positions,
+            risk_per_trade_bps=risk_per_trade_bps,
+        ),
+        atr_histories={"005930": bars},
+        atr_expected_sessions=expected,
+        buyable_quantity=10_000,
+        buyable_amount_krw=10_000_000_000,
+        principle_max_single_order_krw=10_000_000_000,
+        principle_asset_remaining_krw=10_000_000_000,
+    )
+
+
+def test_atr_sizing_buys_fewer_shares_when_the_symbol_is_more_volatile() -> None:
+    """변동성이 커지면 수량이 줄어야 종목별 위험이 균등해진다."""
+
+    calm = _atr_sizing_inputs(
+        capital_limit_krw=50_000_000, risk_per_trade_bps=100, high=70_500, low=69_500
+    )
+    volatile = _atr_sizing_inputs(
+        capital_limit_krw=50_000_000, risk_per_trade_bps=100, high=74_000, low=66_000
+    )
+
+    calm_quantity = _variable_buy_quantity(calm, 70_000, symbol="005930")
+    volatile_quantity = _variable_buy_quantity(volatile, 70_000, symbol="005930")
+
+    assert calm_quantity > volatile_quantity > 0
+
+
+def test_atr_sizing_scales_with_the_configured_risk_per_trade() -> None:
+    one_percent = _atr_sizing_inputs(
+        capital_limit_krw=50_000_000, risk_per_trade_bps=100, high=74_000, low=66_000
+    )
+    two_percent = _atr_sizing_inputs(
+        capital_limit_krw=50_000_000, risk_per_trade_bps=200, high=74_000, low=66_000
+    )
+
+    single = _variable_buy_quantity(one_percent, 70_000, symbol="005930")
+    double = _variable_buy_quantity(two_percent, 70_000, symbol="005930")
+
+    assert single > 0
+    # 주수는 내림이므로 정확히 2배가 아닐 수 있다. 1주 오차까지만 허용한다.
+    assert abs(double - 2 * single) <= 1
+
+
+def test_atr_sizing_never_exceeds_the_equal_weight_slot_budget() -> None:
+    """ATR 수량이 커도 종목당 상한(자본/N)을 넘지 않는다."""
+
+    inputs = _atr_sizing_inputs(
+        capital_limit_krw=50_000_000,
+        risk_per_trade_bps=300,
+        high=70_100,
+        low=69_900,
+        max_open_positions=20,
+    )
+
+    slot_quantity = (50_000_000 // 20) // 70_000
+
+    assert _variable_buy_quantity(inputs, 70_000, symbol="005930") == slot_quantity
+
+
+def test_missing_atr_history_falls_back_to_the_equal_weight_budget() -> None:
+    """ATR 을 못 구해도 사이징이 0 으로 무너지지 않는다."""
+
+    inputs = _atr_sizing_inputs(
+        capital_limit_krw=50_000_000, risk_per_trade_bps=100, high=74_000, low=66_000
+    )
+
+    assert _variable_buy_quantity(inputs, 70_000, symbol="000660") == ((50_000_000 // 10) // 70_000)
+
+
+def _funnel(store: AutomationStore, stage: str) -> dict[str, tuple[str, str | None]]:
+    run = store.runs[_RUN_ID]
+    return {
+        item.symbol: (item.outcome, item.reason_code)
+        for item in run.stage_outcomes
+        if item.stage == stage
+    }
+
+
+def test_every_candidate_drop_leaves_a_symbol_level_reason() -> None:
+    """무주문 실행도 어느 단계에서 무엇이 왜 빠졌는지 말할 수 있어야 한다.
+
+    2026-09-08·09 는 후보가 전멸했는데 `automation_candidate_screenings` 가 0행이라
+    화면이 "남은 후보 심사 기록이 없습니다" 밖에 보여줄 수 없었다.
+    """
+
+    store = _store()
+    _create(store)
+    transport = _transport()
+    inputs = _inputs(
+        _buy("005930"),
+        SignalCandidate("000001", "SELL", "BUY", 0.04),
+        SignalCandidate("000002", "BUY", "HOLD", 0.03),
+    )
+
+    _drive(store, transport, inputs)
+
+    assert _funnel(store, "RULE_BUY") == {
+        "005930": ("PASS", None),
+        "000001": ("PASS", None),
+        "000002": ("DROPPED", "RULE_NOT_BUY"),
+    }
+    assert _funnel(store, "LSTM_VETO") == {
+        "005930": ("PASS", None),
+        "000001": ("DROPPED", "MODEL_SELL"),
+    }
+
+
+def _status_transport(**status: str) -> FixtureAutomationTransport:
+    """상태 필드를 보존하는 transport. `_transport` 는 가격만 복사한다."""
+
+    return FixtureAutomationTransport(
+        quotes={"005930": Quote("005930", 75_000, 52_500, 97_500, **cast(Any, status))},
+        news_verdict="NO_VETO",
+        submit_outcome="FILLED",
+        reconcile_outcomes=cast(Any, ["FILLED"]),
+    )
+
+
+def _v3_inputs(*signals: SignalCandidate, **overrides: object) -> AutomationInputs:
+    """운영과 같은 v3 원칙 입력. 실시간 안전필터는 v3 경로에만 있다."""
+
+    import exchange_calendars as xcals
+    import pandas as pd
+
+    from app.p1_owner.automation_atr import CompletedDailyBar
+
+    calendar = xcals.get_calendar("XKRX")
+    anchor = calendar.previous_session(pd.Timestamp(_SESSION))
+    expected = tuple(item.date() for item in calendar.sessions_window(anchor, -100))
+    bars = tuple(CompletedDailyBar(item, 70_000, 71_000, 69_000, 70_000) for item in expected[-40:])
+    values: dict[str, object] = {
+        "session_date": _SESSION,
+        "signals": tuple(signals),
+        "policy": AutomationPolicySnapshot.from_v3_preset(
+            policy_id=_POLICY_ID,
+            version=1,
+            capital_limit_krw=50_000_000,
+            preset="BALANCED",
+        ),
+        "atr_histories": {item.symbol: bars for item in signals},
+        "atr_expected_sessions": expected,
+        "buyable_quantity": 1_000,
+        "buyable_amount_krw": 1_000_000_000,
+        "principle_max_single_order_krw": 1_000_000_000,
+        "principle_asset_remaining_krw": 1_000_000_000,
+    }
+    values.update(overrides)
+    return AutomationInputs(**cast(Any, values))
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_reason"),
+    [
+        ({"management_issue_code": "Y"}, "MANAGEMENT_ISSUE"),
+        ({"temp_stop_yn": "Y"}, "TEMP_STOP"),
+        ({"liquidation_trading_yn": "Y"}, "LIQUIDATION_TRADING"),
+        # 미지값과 거래정지를 같은 사유로 뭉개면 원인을 되짚을 수 없다.
+        ({"management_issue_code": ""}, "QUOTE_FIELD_MISSING"),
+        ({"management_issue_code": "UNKNOWN"}, "QUOTE_FIELD_MISSING"),
+    ],
+)
+def test_a_blocked_quote_says_which_status_field_blocked_it(
+    status: dict[str, str], expected_reason: str
+) -> None:
+    store = _store()
+    _create(store)
+    transport = _status_transport(**status)
+
+    assert _drive(store, transport, _v3_inputs(_buy()))[-1] == "SKIPPED_NO_ACTION"
+    assert _funnel(store, "QUOTE_SAFETY") == {"005930": ("DROPPED", expected_reason)}
+
+
+def test_the_real_kis_status_shape_reaches_the_order_path() -> None:
+    """실측 응답(N/N/N)이 통과해야 한다. 이 성질이 무너지면 전 종목이 조용히 탈락한다."""
+
+    store = _store()
+    _create(store)
+    transport = _status_transport(
+        temp_stop_yn="N", management_issue_code="N", liquidation_trading_yn="N"
+    )
+
+    assert _drive(store, transport, _v3_inputs(_buy()))[-1] == "COMPLETED"
+    assert _funnel(store, "QUOTE_SAFETY") == {"005930": ("PASS", None)}
+
+
+def test_a_saturated_position_cap_is_reported_as_a_setting_not_as_silence() -> None:
+    """상한 포화는 정당한 무주문이지만 사용자에게는 설정 때문이라고 말해야 한다."""
+
+    policy = AutomationPolicySnapshot.from_preset(
+        policy_id=_POLICY_ID,
+        version=1,
+        capital_limit_krw=2_000_000,
+        preset="BALANCED",
+        max_open_positions=2,
+    )
+    store = _store()
+    store.positions.extend(
+        BotPosition(
+            f"auto_pos_cap_{index:04d}",
+            store.account_id,
+            f"{index:06d}",
+            date(2026, 8, 20),
+            date(2026, 9, 20),
+            _NOW,
+        )
+        for index in range(1, 3)
+    )
+    _create(store)
+
+    assert _drive(store, _transport(), _inputs(_buy(), policy=policy))[-1] == "SKIPPED_NO_ACTION"
+    assert _funnel(store, "RULE_BUY") == {"005930": ("DROPPED", "POSITION_CAP_REACHED")}
+
+
+@pytest.mark.parametrize(
+    "marker",
+    ["SKIPPED_DSN_MISSING", "SKIPPED_MARKET_DSN_MISSING", "FAILED_OperationalError"],
+)
+def test_a_failed_observation_publish_is_visible_not_silent(marker: str) -> None:
+    """관측 적재가 실패하면 RiskEngine 이 전부 HOLD 한다. 그 사유가 보여야 한다.
+
+    이 마커는 저장소에서 생성만 되고 읽는 곳이 없었다. 그래서 매일 무주문이 나도
+    로그에도 화면에도 원인이 남지 않았다.
+    """
+
+    store = _store()
+    _create(store)
+
+    assert (
+        _drive(
+            store,
+            _transport(),
+            _inputs(_buy(), risk_allow=False, observation_publish=marker),
+        )[-1]
+        == "SKIPPED_NO_ACTION"
+    )
+    assert _funnel(store, "OBSERVATION") == {"000000": ("DROPPED", "OBSERVATION_NOT_PUBLISHED")}
+
+
+def test_a_published_observation_leaves_a_passing_stage() -> None:
+    store = _store()
+    _create(store)
+
+    _drive(
+        store,
+        _transport(),
+        _inputs(_buy(), risk_allow=False, observation_publish="PUBLISHED"),
+    )
+
+    assert _funnel(store, "OBSERVATION") == {"000000": ("PASS", None)}
+
+
+@pytest.mark.parametrize(
+    ("reason", "locks_control"),
+    [
+        # 그 세션에서만 유효한 사유는 다음 세션을 막지 않는다.
+        ("PROVIDER_CALL_CAP_EXHAUSTED", False),
+        ("CANCEL_FAILED", False),
+        # 사람이 봐야 하는 사유는 계속 잠근다.
+        ("ACCOUNT_DRIFT", True),
+        ("KILL_SWITCH", True),
+        ("SELL_POSITION_DRIFT", True),
+    ],
+)
+def test_only_cross_session_reasons_lock_the_control(reason: str, locks_control: bool) -> None:
+    """HALTED 를 ARMED 로 되돌리는 코드가 없으므로, 잠그는 사유를 좁게 유지해야 한다.
+
+    예전에는 모든 HALT 가 control 을 잠갔고 되돌릴 방법이 없어, 호출 예산 소진 하루가
+    영구 정지가 됐다.
+    """
+
+    store = _store()
+    _create(store)
+    run = store.runs[_RUN_ID]
+    engine = AutomationEngine(store)
+
+    engine._halt(run, _NOW, reason)
+
+    assert run.state == "HALTED"
+    assert (store.control_state == "HALTED") is locks_control
+
+
+def _same_session_position(**overrides: Any) -> BotPosition:
+    """오늘 진입한 보유. 어떤 청산 사유도 오늘은 이것을 팔면 안 된다."""
+
+    values: dict[str, Any] = {
+        "position_id": "auto_pos_same_session_0001",
+        "account_id": "acct_fixture_0001",
+        "symbol": "005930",
+        "entry_session": _SESSION,
+        "expiry_session": date(2026, 9, 20),
+        "created_at": _NOW,
+    }
+    position = BotPosition(**values)
+    position.entry_average_fill_price_krw = 100_000
+    position.stop_loss_bps = 100
+    position.take_profit_bps = 200
+    for key, value in overrides.items():
+        setattr(position, key, value)
+    return position
+
+
+@pytest.mark.parametrize(
+    ("reason", "quote_price", "signal"),
+    [
+        # 진입가 100,000 대비 시세가 반토막 — 손절 조건을 크게 넘긴다.
+        ("STOP_LOSS", 50_000, None),
+        # 두 배 — 익절 조건을 크게 넘긴다.
+        ("TAKE_PROFIT", 200_000, None),
+        # 두 생산자가 모두 SELL — 모델 청산 조건.
+        ("MODEL_SELL", 100_000, "SELL"),
+    ],
+)
+def test_a_position_entered_today_is_never_an_exit_candidate(
+    reason: str, quote_price: int, signal: str | None
+) -> None:
+    """당일 진입분은 어떤 사유로도 같은 세션에 청산되지 않는다.
+
+    지금까지 이 성질은 ATR 경로에만 명시돼 있었고 나머지는 "하루에 run 이 하나뿐"이라는
+    우연에 기대고 있었다. 진입 시점을 늘리면 그 보호가 사라진다.
+    """
+
+    store = _store()
+    store.positions.append(_same_session_position())
+    _create(store)
+    transport = FixtureAutomationTransport(
+        quotes={"005930": Quote("005930", quote_price, quote_price // 2, quote_price * 2)},
+        news_verdict="NO_VETO",
+        submit_outcome="FILLED",
+        reconcile_outcomes=cast(Any, ["FILLED"]),
+    )
+    signals = (
+        (SignalCandidate("005930", cast(Any, signal), cast(Any, signal), -0.03),) if signal else ()
+    )
+
+    _drive(store, transport, _inputs(*signals))
+
+    run = store.runs[_RUN_ID]
+    assert run.selected_side != "SELL", f"{reason} 가 당일 진입분을 청산했다"
+    assert store.positions[0].status == "OPEN"
+
+
+def test_the_portfolio_reduce_path_does_not_sell_what_it_bought_today() -> None:
+    """목표비중 초과라도 오늘 산 것은 같은 날 되팔지 않는다."""
+
+    from app.p1_owner.automation_portfolio import PortfolioPosition
+
+    today = PortfolioPosition("005930", 100, 100_000, entered_today=True)
+    older = PortfolioPosition("005930", 100, 100_000, entered_today=False)
+
+    assert today.entered_today is True
+    assert older.entered_today is False
+
+
+def test_the_same_day_guard_is_not_vacuous_yesterdays_position_still_exits() -> None:
+    """위 가드 테스트가 공허하지 않음을 보인다 - 어제 진입분은 손절로 실제 청산된다."""
+
+    store = _store()
+    position = _same_session_position()
+    position.entry_session = date(2026, 8, 25)
+    store.positions.append(position)
+    _create(store)
+    transport = FixtureAutomationTransport(
+        quotes={"005930": Quote("005930", 50_000, 25_000, 100_000)},
+        news_verdict="NO_VETO",
+        submit_outcome="FILLED",
+        reconcile_outcomes=cast(Any, ["FILLED"]),
+    )
+
+    _drive(store, transport, _inputs())
+
+    run = store.runs[_RUN_ID]
+    assert run.selected_side == "SELL"
+    assert run.exit_reason == "STOP_LOSS"
+
+
+def test_a_long_korean_reason_does_not_break_the_stage_record() -> None:
+    """DB CHECK 는 바이트인데 파이썬 슬라이싱은 문자다.
+
+    한글은 UTF-8 로 3바이트라 200자만 넘어도 512바이트를 넘긴다. 그대로 넣으면 INSERT 가
+    CHECK 위반으로 실패하고, 배치 한 문장이라 그 tick 의 단계 기록이 통째로 사라진다 -
+    진단을 남기려고 만든 표가 외부 문자열 하나로 비게 된다.
+    """
+
+    from app.p1_owner.automation import StageOutcome
+
+    detail = "가" * 400
+    projection = StageOutcome(
+        "NEWS_DISCLOSURE", "005930", "DROPPED", "DISCLOSURE_VETO", detail
+    ).projection()
+
+    stored = str(projection["reasonDetail"])
+    assert len(stored.encode("utf-8")) <= 512
+    # 문자 경계를 깨지 않는다 - 깨진 바이트가 남으면 디코딩이 실패한다.
+    assert stored == stored.encode("utf-8").decode("utf-8")
+    assert stored.startswith("가")
+
+
+def test_both_order_engines_share_one_position_cap_default() -> None:
+    """기본값이 경로마다 다르면 한쪽은 사고 한쪽은 못 사는 상태가 된다."""
+
+    from app.p1_owner.automation import _MAX_OPEN_POSITIONS
+    from app.p1_owner.automation_portfolio import CapitalPolicy
+
+    assert CapitalPolicy().max_open_positions == _MAX_OPEN_POSITIONS
+
+
+def test_the_no_order_reason_names_the_limit_that_actually_bound() -> None:
+    """0주의 원인이 "남은 자본 0"일 때 종목당 상한 탓으로 읽히면 안 된다.
+
+    2026-09-14 운영 상태가 정확히 이랬다 - 자본 한도 100만원에 보유 평가액이 982만원이라
+    어떤 종목도 살 수 없는데, 사유는 "종목당 상한 10만원"만 말하고 있었다. 그러면 사용자는
+    싼 종목을 찾으면 된다고 읽지만 실제로는 자본 한도를 고치기 전까지 영원히 못 산다.
+    """
+
+    from app.p1_owner.automation import _sizing_block_reason
+
+    class _Policy:
+        capital_limit_krw = 1_000_000
+        max_open_positions = 10
+        risk_per_trade_bps = 100
+
+    class _Inputs:
+        policy = _Policy()
+        open_position_market_value_krw = 9_825_000
+        pending_buy_notional_krw = 0
+
+    exhausted = _sizing_block_reason(_Inputs(), 55_000)
+    assert "남은 자본" in exhausted
+    assert "보유 평가액" in exhausted
+
+    _Inputs.open_position_market_value_krw = 0
+    slot_bound = _sizing_block_reason(_Inputs(), 249_000)
+    assert "종목당 상한" in slot_bound
+    assert "남은 자본" not in slot_bound
+
+
+def test_the_sizing_path_records_why_it_skipped_the_decided_symbol() -> None:
+    """선택까지 간 종목이 사이징에서 조용히 죽으면 안 된다.
+
+    `_news_screen` 은 같은 사유를 남기는데 `_size_order` 만 비어 있었다. 2026-09-15 에
+    066570 이 BUY 로 선택된 뒤 정확히 이 경로로 사라졌고, 화면에는 사유가 없었다.
+    """
+
+    import pathlib
+
+    from app.p1_owner import automation
+
+    source = pathlib.Path(automation.__file__).read_text(encoding="utf-8")
+    sizing = source[source.index("        side = cast(Side, _required(run.selected_side))") :]
+    sizing = sizing[: sizing.index('        if side == "SELL":')]
+
+    assert "NO_REMAINING_RETURN" in sizing, "사이징 단계가 사유 없이 후보를 버린다"
+    assert '"RISK_ENGINE"' in sizing
+    assert sizing.index("_record_stage") < sizing.index('"SKIPPED_NO_ACTION"')

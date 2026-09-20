@@ -145,7 +145,7 @@ def replay(document: dict[str, Any], *, database_dsn: str) -> dict[str, int]:
 
     _assert_boundary(database_dsn)
     ordered = sorted(document["sessions"])
-    counts = {"runs": 0, "reservations": 0, "positions": 0, "closed": 0}
+    counts = {"runs": 0, "reservations": 0, "positions": 0, "closed": 0, "skippedLive": 0}
     with psycopg.connect(database_dsn, connect_timeout=5) as connection:
         with connection.cursor() as cursor:
             cursor.execute("select current_user, session_user")
@@ -158,6 +158,25 @@ def replay(document: dict[str, Any], *, database_dsn: str) -> dict[str, int]:
             sessions = [date.fromisoformat(item) for item in ordered]
             closes = _closes(cursor, sessions)
             slot_budget = policy["capital_limit_krw"] // 5
+            # 실제 운용이 이미 기록을 남긴 세션. 재생본이 덮으면 권위가 뒤집힌다.
+            cursor.execute(
+                "select distinct r.session_date"
+                "  from automation_order_reservations r"
+                "  join automation_runs u on u.run_id = r.run_id"
+                " where r.user_id=%s and u.run_id not like 'auto_run_replay%%'",
+                (_USER_ID,),
+            )
+            live_sessions = {row[0] for row in cursor.fetchall()}
+
+            # 재생본 소유 예약과 포지션을 먼저 비운다. run 과 이벤트는 건드리지 않는다 -
+            # 이벤트는 append-only 감사 기록이고 run 은 그 이벤트가 참조한다. 둘 다
+            # 삽입이 멱등이라 남아 있어도 재생 결과가 달라지지 않는다.
+            cursor.execute(
+                "delete from automation_order_reservations where run_id like 'auto_run_replay%'"
+            )
+            cursor.execute(
+                "delete from automation_positions where position_id like 'auto_pos_replay%'"
+            )
             # 보유 중인 재생 포지션. 키는 종목, 값은 (진입세션, 수량, 평균단가).
             open_positions: dict[str, tuple[date, int, int]] = {}
 
@@ -166,6 +185,9 @@ def replay(document: dict[str, Any], *, database_dsn: str) -> dict[str, int]:
                 session_closes = closes.get(session)
                 if not session_closes:
                     # 그 날의 바가 없으면 거래일이 아니다. 달력을 따로 읽지 않는다.
+                    continue
+                if session in live_sessions:
+                    counts["skippedLive"] += 1
                     continue
                 signals = document["sessions"][key]["signals"]
                 run_id = _run_id(session)

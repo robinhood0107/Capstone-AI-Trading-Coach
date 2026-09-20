@@ -58,6 +58,7 @@ def _inputs(*signals: SignalCandidate, **overrides: object) -> AutomationInputs:
         "session_date": _SESSION,
         "signals": tuple(signals),
         "ai_judgement_provider_bound": True,
+        "ai_judgement_enabled": True,
         "buyable_quantity": 10,
         "buyable_amount_krw": 100_000_000,
         "risk_allow": True,

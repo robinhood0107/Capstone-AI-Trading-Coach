@@ -1,0 +1,225 @@
+{
+  "$id": "contracts/schemas/world-news-v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "publicationStatus": {
+            "const": "MISSING"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "publishedAt": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "publicationStatus": {
+            "const": "VERIFIED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "publishedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "rightsProfile": {
+            "const": "FINNHUB_PERSONAL_LOCAL"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "externalLlmAllowed": {
+            "const": false
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "availableAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "boundedPassage": {
+      "maxLength": 1200,
+      "minLength": 1,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "boundedQuote": {
+      "maxLength": 600,
+      "minLength": 1,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "canonicalUrl": {
+      "format": "uri",
+      "pattern": "^https://",
+      "type": "string"
+    },
+    "collectionStatus": {
+      "enum": [
+        "COMPLETE",
+        "PARTIAL",
+        "COLLECTION_FAILED",
+        "NOT_COLLECTED"
+      ],
+      "type": "string"
+    },
+    "contentSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "documentId": {
+      "pattern": "^news_doc_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "documentVersionId": {
+      "pattern": "^news_ver_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "externalLlmAllowed": {
+      "type": "boolean"
+    },
+    "firstSeenAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "identityStatus": {
+      "enum": [
+        "VERIFIED",
+        "PROVIDER_ID_CONFLICT",
+        "URL_HASH_CONFLICT"
+      ],
+      "type": "string"
+    },
+    "language": {
+      "pattern": "^[a-z]{2,3}(-[A-Z]{2})?$",
+      "type": "string"
+    },
+    "lookupAllowed": {
+      "const": true
+    },
+    "promptUntrusted": {
+      "const": true
+    },
+    "provider": {
+      "enum": [
+        "GDELT_GQG",
+        "GDELT_GEMG",
+        "FINNHUB_MARKET_NEWS"
+      ],
+      "type": "string"
+    },
+    "providerDocumentId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "providerObservedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "publicationStatus": {
+      "enum": [
+        "VERIFIED",
+        "MISSING",
+        "CONFLICT"
+      ],
+      "type": "string"
+    },
+    "publishedAt": {
+      "format": "date-time",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ragRetrievalAllowed": {
+      "const": true
+    },
+    "republicationOfDocumentId": {
+      "pattern": "^news_doc_[0-9a-f]{32}$",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "rightsProfile": {
+      "enum": [
+        "GDELT_METADATA_QUOTE",
+        "FINNHUB_PERSONAL_LOCAL"
+      ],
+      "type": "string"
+    },
+    "sourceId": {
+      "pattern": "^src_[a-z0-9][a-z0-9_-]{2,95}$",
+      "type": "string"
+    },
+    "title": {
+      "maxLength": 300,
+      "minLength": 1,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "versionSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "availableAt",
+    "boundedPassage",
+    "boundedQuote",
+    "canonicalUrl",
+    "collectionStatus",
+    "contentSha256",
+    "documentId",
+    "documentVersionId",
+    "externalLlmAllowed",
+    "firstSeenAt",
+    "identityStatus",
+    "language",
+    "lookupAllowed",
+    "promptUntrusted",
+    "provider",
+    "providerDocumentId",
+    "providerObservedAt",
+    "publicationStatus",
+    "publishedAt",
+    "ragRetrievalAllowed",
+    "republicationOfDocumentId",
+    "rightsProfile",
+    "sourceId",
+    "title",
+    "versionSha256"
+  ],
+  "type": "object"
+}

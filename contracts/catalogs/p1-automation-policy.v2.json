@@ -32,7 +32,7 @@
     "zeroEvidenceVeto": false
   },
   "execution": {
-    "buyCutoffTimeKst": "09:40",
+    "buyCutoffTimeKst": "14:30",
     "cancelTimeKst": "15:20",
     "evaluationTimeKst": "09:30",
     "maxNewOrdersPerSession": 1,

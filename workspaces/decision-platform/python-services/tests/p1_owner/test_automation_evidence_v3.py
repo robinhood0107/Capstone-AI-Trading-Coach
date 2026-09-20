@@ -113,6 +113,64 @@ def test_zero_evidence_skips_judge_and_preserves_rule_rank() -> None:
     assert transport.vertex_calls == 0
 
 
+def test_resumed_screening_with_ai_off_never_calls_optional_transports() -> None:
+    candidate = _candidate("000001", 0.04)
+    store = _store()
+    store.runs[_RUN].state = "NEWS_SCREENING"
+    transport = FixtureAutomationTransport(
+        quotes={"000001": Quote("000001", 75_000, 52_500, 97_500)}
+    )
+    inputs = replace(_inputs(candidate), ai_judgement_enabled=False, news_veto_provider_bound=True)
+    assert _drive(store, transport, inputs) == "COMPLETED"
+    assert (transport.screen_calls, transport.judge_calls, transport.vertex_calls) == (0, 0, 0)
+    assert store.runs[_RUN].candidate_screenings[0].reason == "AI_DISABLED_OR_UNAVAILABLE"
+
+
+@pytest.mark.parametrize("operation", ["screen", "judge", "vertex"])
+def test_optional_transport_exception_reaches_risk_and_single_submit(operation: str) -> None:
+    candidate = _candidate("000001", 0.04)
+    span = EvidenceSpan(
+        "000001",
+        "cit_fixture_000001",
+        "src_official_dart",
+        "OFFICIAL_PRIMARY",
+        None,
+        False,
+        "d" * 64,
+        "verified neutral fixture",
+        "e" * 64,
+    )
+
+    class FailingTransport(FixtureAutomationTransport):
+        def screen(self, *args: object) -> NewsScreeningBatch:
+            if operation == "screen":
+                raise TimeoutError("fixture")
+            return NewsScreeningBatch(
+                (CandidateScreening("000001", "AVAILABLE", "NO_VETO", 5_000, "VERIFIED", (span,)),),
+                1,
+                1,
+            )
+
+        def judge(self, *args: object) -> AiJudgement | None:
+            if operation == "judge":
+                raise TimeoutError("fixture")
+            return None
+
+        def vertex(self, symbol: str) -> str:
+            if operation == "vertex":
+                raise TimeoutError("fixture")
+            return "ABSTAIN"
+
+    transport = FailingTransport(quotes={"000001": Quote("000001", 75_000, 52_500, 97_500)})
+    store = _store()
+    assert (
+        _drive(store, transport, replace(_inputs(candidate), news_veto_provider_bound=True))
+        == "COMPLETED"
+    )
+    assert store.runs[_RUN].selected_symbol == "000001"
+    assert transport.submit_calls == 1
+
+
 def test_verified_veto_with_no_surviving_evidence_skips_judge_and_selects_once() -> None:
     first = _candidate("000001", 0.05)
     second = _candidate("000002", 0.04)
@@ -224,7 +282,7 @@ def test_judge_receives_only_post_screening_survivors() -> None:
     assert store.runs[_RUN].selected_symbol == "000002"
 
 
-def test_prompt_injection_abstains_one_candidate_and_batch_failure_buys_nothing() -> None:
+def test_optional_abstention_and_batch_failure_preserve_deterministic_buy() -> None:
     first = _candidate("000001", 0.05)
     second = _candidate("000002", 0.04)
     injection = NewsScreeningBatch(
@@ -243,7 +301,8 @@ def test_prompt_injection_abstains_one_candidate_and_batch_failure_buys_nothing(
     )
     store = _store()
     assert _drive(store, transport, _inputs(first, second)) == "COMPLETED"
-    assert store.runs[_RUN].selected_symbol == "000002"
+    assert store.runs[_RUN].selected_symbol == "000001"
+    assert store.runs[_RUN].candidate_screenings[0].reason == "PROMPT_INJECTION"
 
     failed = FixtureAutomationTransport(
         quotes={
@@ -252,16 +311,25 @@ def test_prompt_injection_abstains_one_candidate_and_batch_failure_buys_nothing(
         screening_batch=NewsScreeningBatch((), 0, 0, failed=True),
     )
     failed_store = _store()
-    assert _drive(failed_store, failed, _inputs(first, second)) == "SKIPPED_DATA_UNAVAILABLE"
-    assert failed.submit_calls == 0
+    assert _drive(failed_store, failed, _inputs(first, second)) == "COMPLETED"
+    assert failed_store.runs[_RUN].selected_symbol == "000001"
+    assert all(
+        item.status == "ABSTAIN" and item.reason == "SCREENING_ERROR"
+        for item in failed_store.runs[_RUN].candidate_screenings
+    )
+    assert failed.submit_calls == 1
 
 
 @pytest.mark.parametrize(
     ("temp_stop", "management", "liquidation", "expected"),
     [
         ("N", "00", "N", "COMPLETED"),
+        # inquire_price 가 실제로 내려주는 형태. 관리종목 "여부" 는 코드가 아니라 N 이다.
+        ("N", "N", "N", "COMPLETED"),
+        ("n", "n", "n", "COMPLETED"),
         ("Y", "00", "N", "SKIPPED_NO_ACTION"),
         ("N", "01", "N", "SKIPPED_NO_ACTION"),
+        ("N", "Y", "N", "SKIPPED_NO_ACTION"),
         ("N", "00", "Y", "SKIPPED_NO_ACTION"),
         ("", "", "", "SKIPPED_NO_ACTION"),
         ("X", "UNKNOWN", "X", "SKIPPED_NO_ACTION"),
@@ -293,6 +361,40 @@ def test_hard_eligibility_requires_all_three_known_normal_codes(
     if expected != "COMPLETED":
         assert transport.screen_calls == 0
         assert transport.submit_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("temp_stop", "management", "liquidation", "reason"),
+    [
+        ("N", "N", "N", None),
+        ("N", "00", "N", None),
+        ("Y", "N", "N", "TEMP_STOP"),
+        ("N", "Y", "N", "MANAGEMENT_ISSUE"),
+        ("N", "N", "Y", "LIQUIDATION_TRADING"),
+        ("N", "", "N", "QUOTE_FIELD_MISSING"),
+        ("N", "UNKNOWN", "N", "QUOTE_FIELD_MISSING"),
+    ],
+)
+def test_quote_reports_a_distinct_reason_instead_of_failing_silently(
+    temp_stop: str,
+    management: str,
+    liquidation: str,
+    reason: str | None,
+) -> None:
+    """미지값을 거래정지와 같은 사유로 뭉개면 전 종목 탈락을 화면에서 구분할 수 없다."""
+
+    quote = Quote(
+        "000001",
+        75_000,
+        52_500,
+        97_500,
+        temp_stop_yn=temp_stop,
+        management_issue_code=management,
+        liquidation_trading_yn=liquidation,
+    )
+
+    assert quote.ineligible_reason == reason
+    assert quote.hard_eligible is (reason is None)
 
 
 def test_candidate_set_hash_seals_pre_eligibility_return_engine_set() -> None:
@@ -333,29 +435,45 @@ def test_v3_skips_the_disclosure_veto_when_its_provider_is_not_bound() -> None:
     assert transport.vertex_calls == 0
 
 
-def test_v3_lets_the_disclosure_veto_stop_the_buy_when_its_provider_is_bound() -> None:
-    """결속된 v3 세션은 공시 근거 거부권을 지나고 `VETO_BUY` 에서 닫힌다.
-
-    v3 는 앞의 `NEWS_SCREENING` 에서 이미 후보 집합에 거부권을 행사하지만 그 판정은 Spring
-    bridge 가 자체 grounding 으로 내리고 요청에 근거를 넣을 자리가 없다. `NEWS_CHECKING` 은
-    등록 도메인 공시와 host 가 아는 접수일로 만든 인용을 쓰므로 다른 층이다. 두 층은 서로를
-    대체하지 않는다.
-    """
+def test_v3_reuses_stored_disclosure_in_strong_llm_judge_without_final_vertex_call() -> None:
+    """V3 공시 근거는 Spring JUDGE에서 한 번 판단하고 Python 전용 veto를 다시 부르지 않는다."""
 
     candidate = _candidate("000001", 0.04)
+    span = EvidenceSpan(
+        "000001",
+        "cit_fixture_000001",
+        "src_official_dart",
+        "OFFICIAL_PRIMARY",
+        None,
+        False,
+        "d" * 64,
+        "verified adverse fixture",
+        "e" * 64,
+    )
     screening = NewsScreeningBatch(
-        (CandidateScreening("000001", "AVAILABLE", "NO_VETO", 5_000, "NO_EVIDENCE"),), 1, 2
+        (CandidateScreening("000001", "AVAILABLE", "NO_VETO", 5_000, "STORED", (span,)),),
+        0,
+        0,
     )
     transport = FixtureAutomationTransport(
         quotes={"000001": Quote("000001", 75_000, 52_500, 97_500)},
         screening_batch=screening,
         news_verdict="VETO_BUY",
+        ai_judgement=AiJudgement(
+            (
+                AiCandidateVerdict(
+                    "000001", 0.1, True, "verified veto", ((span.citation_id, span.bounded_quote),)
+                ),
+            ),
+            "stored evidence judgement",
+        ),
     )
     store = _store()
     inputs = replace(_inputs(candidate), news_veto_provider_bound=True)
 
-    assert _drive(store, transport, inputs) == "NEWS_VETOED"
-    assert transport.vertex_calls == 1
+    assert _drive(store, transport, inputs) == "SKIPPED_NO_ACTION"
+    assert transport.judge_calls == 1
+    assert transport.vertex_calls == 0
     assert transport.submit_calls == 0
     assert store.runs[_RUN].logical_submit_count == 0
 
@@ -380,5 +498,6 @@ def test_v3_passes_the_disclosure_veto_when_evidence_is_absent() -> None:
     inputs = replace(_inputs(candidate), news_veto_provider_bound=True)
 
     assert _drive(store, transport, inputs) == "COMPLETED"
-    assert transport.vertex_calls == 1
+    assert transport.vertex_calls == 0
+    assert transport.judge_calls == 0
     assert transport.submit_calls == 1

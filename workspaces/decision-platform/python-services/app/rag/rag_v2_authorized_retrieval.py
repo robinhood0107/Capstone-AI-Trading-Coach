@@ -32,7 +32,7 @@ _CHUNK_ID = re.compile(r"^rag_v2_chk_[0-9a-f]{32}$")
 _DOCUMENT_ID = re.compile(r"^doc_[a-z0-9][a-z0-9_-]{10,95}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _ALLOWED_PROFILES = frozenset({"bge_m3_local_1024_v1", "voyage_context_4_1024_v1"})
-_SOURCE_SCOPES = frozenset({"EXACT30", "OA112", "OWNER_PRIVATE"})
+_SOURCE_SCOPES = frozenset({"EXACT30", "OA112", "OWNER_PRIVATE", "WORLD_NEWS"})
 
 
 class RagV2RetrievalError(ValueError):
@@ -261,6 +261,18 @@ class RagV2DenseRetriever(Protocol):
         """profile별 unit vector를 별도 rank channel로 전달하고 cosine score를 섞지 않는다."""
 
 
+class RagV2WorldNewsRetriever(Protocol):
+    """availableAt과 권리 flag를 DB에서 먼저 확인한 동적 세계 뉴스 lexical channel이다."""
+
+    def retrieve_world_news(
+        self,
+        *,
+        scope: RagV2BundleScope,
+        query: NormalizedRetrievalQuery,
+    ) -> RagV2ChannelResult:
+        """현재 immutable corpus를 바꾸지 않고 bounded public citation 후보만 반환한다."""
+
+
 class RagV2RrfFusion:
     """exact/lexical/dense 결과를 application RRF(k=60)로만 결합한다."""
 
@@ -318,6 +330,7 @@ class RagV2AuthorizedHybridRetrieval:
         dense_retriever: RagV2DenseRetriever,
         rrf_fusion: RagV2RrfFusion,
         owner_query_embedder: QueryEmbedder | None = None,
+        world_news_retriever: RagV2WorldNewsRetriever | None = None,
     ) -> None:
         self._query_normalizer = query_normalizer
         self._exact_identifier_extractor = exact_identifier_extractor
@@ -326,6 +339,7 @@ class RagV2AuthorizedHybridRetrieval:
         self._exact_retriever = exact_retriever
         self._lexical_retriever = lexical_retriever
         self._dense_retriever = dense_retriever
+        self._world_news_retriever = world_news_retriever
         self._rrf_fusion = rrf_fusion
 
     def retrieve(
@@ -388,7 +402,7 @@ class RagV2AuthorizedHybridRetrieval:
             return _execution(RagV2RetrievalFailureCode.QUERY_EMBEDDING_INVALID)
 
         try:
-            channels = (
+            channels = [
                 self._exact_retriever.retrieve_exact(
                     scope=scope,
                     query=query,
@@ -401,21 +415,26 @@ class RagV2AuthorizedHybridRetrieval:
                     query_vector=vector,
                     owner_query_vector=owner_vector,
                 ),
-            )
+            ]
+            if self._world_news_retriever is not None:
+                channels.append(
+                    self._world_news_retriever.retrieve_world_news(scope=scope, query=query)
+                )
         except (ConnectionError, RuntimeError, TimeoutError):
             return _execution(
                 RagV2RetrievalFailureCode.CHANNEL_UNAVAILABLE,
                 voyage_physical_calls=receipt.voyage_physical_calls,
             )
 
-        if not _channels_are_complete(channels):
+        channel_tuple = tuple(channels)
+        if not _channels_are_complete(channel_tuple):
             return _execution(
                 RagV2RetrievalFailureCode.CHANNEL_INCOMPLETE,
                 voyage_physical_calls=receipt.voyage_physical_calls,
             )
         if any(
             not _candidate_in_scope(scope=scope, query=query, candidate=candidate)
-            for channel in channels
+            for channel in channel_tuple
             for candidate in channel.items
         ):
             # SQL channel의 owner/source filtering이 outer top-5 recheck까지 기다려서는 안 된다.
@@ -424,7 +443,7 @@ class RagV2AuthorizedHybridRetrieval:
                 voyage_physical_calls=receipt.voyage_physical_calls,
             )
 
-        fused = _select_final_evidence(self._rrf_fusion.fuse(channels))
+        fused = _select_final_evidence(self._rrf_fusion.fuse(channel_tuple))
         evidence = tuple(item.candidate for item in fused)
         if not _evidence_is_sufficient(
             evidence=evidence,
@@ -496,11 +515,16 @@ class RagV2AuthorizedHybridRetrieval:
 
 
 def _channels_are_complete(channels: tuple[RagV2ChannelResult, ...]) -> bool:
+    if len(channels) not in {3, 4}:
+        return False
+    expected_channels = ("exact", "lexical", "dense") + (
+        ("world_news",) if len(channels) == 4 else ()
+    )
     return all(
         channel.channel == expected
         and channel.complete
         and len(channel.items) <= INTERNAL_CHANNEL_LIMIT
-        for channel, expected in zip(channels, ("exact", "lexical", "dense"), strict=True)
+        for channel, expected in zip(channels, expected_channels, strict=True)
     )
 
 
@@ -514,6 +538,17 @@ def _select_final_evidence(
     """
 
     selected = list(fused[:INTERNAL_FINAL_LIMIT])
+    world_news = next(
+        (item for item in fused if item.candidate.source_scope == "WORLD_NEWS"),
+        None,
+    )
+    if (
+        world_news is not None
+        and selected
+        and all(item.candidate.source_scope != "WORLD_NEWS" for item in selected)
+    ):
+        # 질문과 실제로 lexical match한 세계 뉴스가 있으면 동적 channel의 출처 한 건을 보존한다.
+        selected[-1] = world_news
     if len({item.candidate.source_id for item in selected}) >= 2:
         return tuple(selected)
     if not selected:
@@ -552,6 +587,7 @@ def _candidate_in_scope(
         "EXACT30": scope.exact30_generation_id,
         "OA112": scope.oa112_generation_id,
         "OWNER_PRIVATE": scope.owner_private_generation_id,
+        "WORLD_NEWS": scope.oa112_generation_id,
     }.get(candidate.source_scope)
     effective_topics = set(query.topics) or set(scope.allowed_topics)
     candidate_topics = set(candidate.topics)
@@ -576,7 +612,7 @@ def _candidate_in_scope(
         or not _candidate_citation_shape_is_valid(candidate)
     ):
         return False
-    if candidate.source_scope in {"EXACT30", "OA112"}:
+    if candidate.source_scope in {"EXACT30", "OA112", "WORLD_NEWS"}:
         return candidate.owner_user_id is None
     return candidate.owner_user_id == scope.owner_user_id
 
@@ -606,7 +642,7 @@ def _candidate_content_is_valid(candidate: RagV2RetrievalCandidate) -> bool:
 
 
 def _candidate_citation_shape_is_valid(candidate: RagV2RetrievalCandidate) -> bool:
-    if candidate.source_scope in {"EXACT30", "OA112"}:
+    if candidate.source_scope in {"EXACT30", "OA112", "WORLD_NEWS"}:
         return (
             isinstance(candidate.title, str)
             and 1 <= len(candidate.title) <= 1_024

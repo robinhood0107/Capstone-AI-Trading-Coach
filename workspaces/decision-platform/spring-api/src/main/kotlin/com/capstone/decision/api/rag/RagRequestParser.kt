@@ -437,7 +437,12 @@ class RagRequestParser {
         violations: MutableList<RagFieldViolation>,
     ): List<String> {
         val node = root.get(field) ?: return emptyList()
-        if (!node.isArray || node.size() > 5) {
+        // 상한을 한 숫자로 공유하면 허용값이 그보다 많은 필드에서 "전부 선택"이 거부된다.
+        // 실제로 topics(허용 6종)가 5로 막혀 Agent 가 죽어 있었다. 허용 집합이 있으면
+        // 그 크기가 곧 상한이다 - 그보다 많이 보내는 방법은 중복뿐이고, 중복은 아래
+        // 값 검사가 잡는다. 허용 집합이 없는 필드만 종전 상한을 쓴다.
+        val maximum = allowed?.size ?: 5
+        if (!node.isArray || node.size() > maximum) {
             violations.add(RagFieldViolation("/$field", "OUT_OF_RANGE"))
             return emptyList()
         }

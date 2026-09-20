@@ -38,6 +38,44 @@ class RagAskRequestParserTest {
     }
 
     @Test
+    fun `selecting every allowed topic is accepted rather than rejected as out of range`() {
+        // 상한을 한 숫자로 공유하면 허용값이 그보다 많은 필드에서 "전부 선택"이 거부된다.
+        // 실제로 topics(허용 6종)가 5로 막혀 화면에서 주제를 모두 고른 질문이 400 으로
+        // 떨어졌고, 그 상태가 "Agent 가 죽었다"로 보였다. 같은 일이 다시 생기지 않게 잠근다.
+        val command =
+            parser.parseAsk(
+                """
+                {
+                  "question":"이 시스템의 자동매매는 하루에 몇 번 판단하나요?",
+                  "answerMode":"CONCISE",
+                  "topics":["API","DATA","FINANCIAL_ENGINEERING","METHODOLOGY","PRODUCT_RISK","RISK"]
+                }
+                """.trimIndent(),
+            )
+
+        assertEquals(
+            listOf("API", "DATA", "FINANCIAL_ENGINEERING", "METHODOLOGY", "PRODUCT_RISK", "RISK"),
+            command.topics.sorted(),
+        )
+    }
+
+    @Test
+    fun `related symbols keep their own bound because they have no allowed set`() {
+        // 상한을 허용 집합에서 끌어오되, 허용 집합이 없는 필드까지 열어 주지는 않는다.
+        assertThrows(RagValidationException::class.java) {
+            parser.parseAsk(
+                """
+                {
+                  "question":"여섯 종목을 한 번에 물어봅니다.",
+                  "answerMode":"CONCISE",
+                  "relatedSymbols":["005930","000660","035420","051910","006400","207940"]
+                }
+                """.trimIndent(),
+            )
+        }
+    }
+
+    @Test
     fun `omitted topics mean every allowed topic rather than an empty retrieval scope`() {
         // 스키마의 required 는 question 과 answerMode 뿐이므로 topics 는 optional 이고,
         // optional 의 뜻은 "검색 주제를 제한하지 않는다"다. 빈 목록을 그대로 넘기면 검색 범위

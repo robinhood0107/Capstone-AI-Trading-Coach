@@ -26,6 +26,8 @@ interface PrinciplesData {
   summaries: PrincipleSummary[];
   current: PrincipleCurrent | null;
   history: PrincipleHistoryData | null;
+  /** 자동운용이 무장 중인가. v3 status 에 원칙 버전 필드는 없으므로 상태만 본다. */
+  automationArmed: boolean;
 }
 
 async function load(): Promise<ViewState<PrinciplesData>> {
@@ -39,8 +41,22 @@ async function load(): Promise<ViewState<PrinciplesData>> {
         .then((result) => result.data)
         .catch(() => null)
     : null;
+  // 자동운용 상태도 곁다리다. 이 화면은 원칙을 보여 주는 것이 본업이므로 실패를 흡수한다.
+  // 왜 읽는가: 정책 편집은 무장 중 잠기는데 원칙 편집은 아무것도 막지 않는다. 그래서
+  // 사용자가 무장 중에 원칙을 바꾸면 그 세션은 ARM 시점 스냅샷으로 계속 돌고, 새 원칙은
+  // 다음 세션부터 적용된다. 그 사실을 여기서 말하지 않으면 알 방법이 없다.
+  const status = await api
+    .automationStatusV3()
+    .then((result) => result.data)
+    .catch(() => null);
   return ready(
-    { presets: presets.data, summaries: list.data.items, current, history },
+    {
+      presets: presets.data,
+      summaries: list.data.items,
+      current,
+      history,
+      automationArmed: status?.controlState === 'ARMED',
+    },
     current?.updatedAt ?? null,
   );
 }
@@ -116,6 +132,15 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
 
   return (
     <div className="space-y-6">
+      {data.automationArmed ? (
+        <p
+          role="status"
+          className="rounded-tile border border-warn/40 px-4 py-3 text-[13px] leading-6 text-ink"
+        >
+          자동운용이 무장 중입니다. 원칙은 지금 바꿀 수 있지만 <strong>새 원칙은 다음 세션부터</strong>{' '}
+          자동 적용됩니다. 진행 중인 세션은 시작 시점의 원칙으로 계속됩니다.
+        </p>
+      ) : null}
       <Panel
         contract="GET /api/v1/principle-presets"
         title="어떤 방식으로 시작할까요"

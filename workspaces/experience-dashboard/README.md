@@ -90,3 +90,10 @@ JWT/password/raw response를 report/trace에 남기지 않으며 종료 시 Kill
 P1 full-app v2
 DASHBOARD_UI=PARTIAL_TEAM_A_ACTION_REQUIRED
 -->
+
+## 2026-09-09 자본정책 화면 source 상태
+
+`/automation`은 `/api/v4/automation/capital-policy`와 `/capital-status`를 사용해 재투자 토글,
+전환 후 확정손익, 봇 소유 평가액, 예약금·가용현금과 목표/현재 비중을 표시한다. provider-free
+Playwright에서 12화면 normal/mobile/console과 API 화면 11개의 첫 503→retry→recovery가 PASS했다.
+이는 새 frontend source의 검증이며 설치 DB V154나 실제 KIS 다중 주문 전환 완료 증거가 아니다.

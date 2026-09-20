@@ -12,6 +12,22 @@ PREVIOUS = ROOT / "contracts/openapi/p1-owner-ridge.previous.openapi.json"
 OVERLAY = ROOT / "contracts/openapi/p1-owner-ridge.v1.openapi.json"
 
 
+
+def _refresh_buy_cutoff(status: dict) -> None:
+    """`policy.buyCutoffTimeKst` 만 현재 계약 값으로 맞춘다."""
+
+    current = json.loads(
+        (ROOT / "contracts/schemas/automation-status.v3.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    expected = current["properties"]["policy"]["oneOf"][0]["properties"]["buyCutoffTimeKst"]
+    for variant in status["properties"]["policy"]["oneOf"]:
+        properties = variant.get("properties")
+        if isinstance(properties, dict) and "buyCutoffTimeKst" in properties:
+            properties["buyCutoffTimeKst"] = copy.deepcopy(expected)
+
+
 def build():
     previous = json.loads(PREVIOUS.read_text())
     schemas = previous["components"]["schemas"]
@@ -64,6 +80,12 @@ def build():
             "nextRunAt": {"type": ["string", "null"], "format": "date-time"},
         }
     )
+    # 매수 마감 시각만 현재 계약에서 다시 읽는다. 동결된 baseline 에서 policy 를 통째로
+    # 복사하면 그 뒤에 바뀐 이 값이 영원히 옛 값으로 남고, 이 overlay 가 root OpenAPI 에
+    # 병합되므로 서비스되는 문서가 계속 옛 값을 광고한다. 나머지(필드 순서, required
+    # 순서)는 baseline 그대로 둔다 - 순서까지 바꾸면 드리프트 검사가 정당하게 걸린다.
+    _refresh_buy_cutoff(status)
+
     owner = {
         "type": "object",
         "additionalProperties": False,
@@ -131,6 +153,10 @@ def build():
 
 def project_previous(document):
     """허용한 surface만 복원해 historical verifier가 이전 계약을 계속 검증한다."""
+    if "/api/v2/rag/world-news" in document.get("paths", {}):
+        from contracts.generate_world_news_v2_contracts import project_previous as project_world_news
+
+        document = project_world_news(document)
     if "/api/v2/risk/kill-switch" not in document.get("paths", {}):
         return document
     previous = json.loads(PREVIOUS.read_text())

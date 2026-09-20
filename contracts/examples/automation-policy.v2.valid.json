@@ -1,7 +1,7 @@
 {
   "atrMultiplierMilli": 3000,
   "atrPeriod": 22,
-  "buyCutoffTimeKst": "09:40",
+  "buyCutoffTimeKst": "14:30",
   "cancelTimeKst": "15:20",
   "capitalLimitKrw": 10000000,
   "contractId": "automation-policy.v2",

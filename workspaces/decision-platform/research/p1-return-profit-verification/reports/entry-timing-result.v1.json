@@ -1,0 +1,205 @@
+{
+  "breakEvenEntryPenaltyBps": 200.0,
+  "clauses": {
+    "bearYearNotWorse": true,
+    "breakEvenPenaltyAtLeastTen": true,
+    "deflatedSharpeSignificant": false,
+    "drawdownNotWorse": true,
+    "ladderMonotone": false,
+    "neweyWestTAboveTwo": true,
+    "sharpeBeatsBaseline": true
+  },
+  "crossSection": {
+    "OPEN_T1 - CLOSE_T1": {
+      "meanDailyBps": -16.759734218823983,
+      "neweyWestT": -3.479651618448737,
+      "observations": 5360
+    },
+    "OPEN_T1 - TYPICAL_T1": {
+      "meanDailyBps": 41.201129958781635,
+      "neweyWestT": 9.11487598628676,
+      "observations": 5360
+    }
+  },
+  "decisionOnFailure": "현행 _DECISION_TIMES = (09:45, 11:00, 14:00) 유지",
+  "decisionOnPass": "상수를 바로 바꾸지 않는다. 소액 라이브 A/B 를 권고한다. 백테스트는 체결 확률을 보지 못하고, automation_runtime.py:62-71 이 09:30-09:45 를 피한 변동성 사유를 이 평가는 검정하지 않는다.",
+  "failingClauses": [
+    "deflatedSharpeSignificant",
+    "ladderMonotone"
+  ],
+  "performance": {
+    "CLOSE_T0": {
+      "annualVol": 0.2325,
+      "bearYearMean": -0.0006388553400352387,
+      "cagr": -0.0353,
+      "cvar95": -0.034986,
+      "deflatedSharpe": {
+        "deflatedSharpe": -2.8606,
+        "expectedMaxSharpeAnnual": 0.5828,
+        "legacyApproximation": {
+          "deflatedSharpe": -87.603,
+          "expectedMaxSharpeAnnual": 18.9318,
+          "pValue": 1.0
+        },
+        "observedSharpe": -0.0366,
+        "pValue": 0.997886,
+        "trialMultiplier": 1.1926,
+        "trialSharpeStdAnnual": 0.4887
+      },
+      "exitsByReason": {
+        "MAX_HOLDING_SESSIONS": 73,
+        "STOP_LOSS": 2669,
+        "TAKE_PROFIT": 1559
+      },
+      "finalEquity": 0.464,
+      "label": "CLOSE_T0",
+      "mdd": -0.8899,
+      "sessions": 5365,
+      "sharpe": -0.0366,
+      "sortino": -0.0489,
+      "trades": 4311,
+      "var95": -0.01581,
+      "years": 21.3
+    },
+    "CLOSE_T1": {
+      "annualVol": 0.1599,
+      "bearYearMean": -0.00017547471595429182,
+      "cagr": 0.1182,
+      "cvar95": -0.022979,
+      "deflatedSharpe": {
+        "deflatedSharpe": 0.9083,
+        "expectedMaxSharpeAnnual": 0.5828,
+        "legacyApproximation": {
+          "deflatedSharpe": -84.3411,
+          "expectedMaxSharpeAnnual": 18.9318,
+          "pValue": 1.0
+        },
+        "observedSharpe": 0.7783,
+        "pValue": 0.181869,
+        "trialMultiplier": 1.1926,
+        "trialSharpeStdAnnual": 0.4887
+      },
+      "exitsByReason": {
+        "MAX_HOLDING_SESSIONS": 105,
+        "STOP_LOSS": 2336,
+        "TAKE_PROFIT": 1664
+      },
+      "finalEquity": 10.7672,
+      "label": "CLOSE_T1",
+      "mdd": -0.4001,
+      "sessions": 5365,
+      "sharpe": 0.7783,
+      "sortino": 1.1492,
+      "trades": 4115,
+      "var95": -0.013046,
+      "years": 21.3
+    },
+    "MID_T1": {
+      "annualVol": 0.1829,
+      "bearYearMean": -0.0014175596607848436,
+      "cagr": -0.1124,
+      "cvar95": -0.02975,
+      "deflatedSharpe": {
+        "deflatedSharpe": -5.3931,
+        "expectedMaxSharpeAnnual": 0.5828,
+        "legacyApproximation": {
+          "deflatedSharpe": -92.0688,
+          "expectedMaxSharpeAnnual": 18.9318,
+          "pValue": 1.0
+        },
+        "observedSharpe": -0.5589,
+        "pValue": 1.0,
+        "trialMultiplier": 1.1926,
+        "trialSharpeStdAnnual": 0.4887
+      },
+      "exitsByReason": {
+        "MAX_HOLDING_SESSIONS": 88,
+        "STOP_LOSS": 2976,
+        "TAKE_PROFIT": 1393
+      },
+      "finalEquity": 0.0785,
+      "label": "MID_T1",
+      "mdd": -0.9508,
+      "sessions": 5365,
+      "sharpe": -0.5589,
+      "sortino": -0.7134,
+      "trades": 4467,
+      "var95": -0.015379,
+      "years": 21.3
+    },
+    "OPEN_T1": {
+      "annualVol": 0.1741,
+      "bearYearMean": -0.0008783598807514263,
+      "cagr": -0.02,
+      "cvar95": -0.027997,
+      "deflatedSharpe": {
+        "deflatedSharpe": -2.8198,
+        "expectedMaxSharpeAnnual": 0.5828,
+        "legacyApproximation": {
+          "deflatedSharpe": -87.641,
+          "expectedMaxSharpeAnnual": 18.9318,
+          "pValue": 1.0
+        },
+        "observedSharpe": -0.0272,
+        "pValue": 0.997598,
+        "trialMultiplier": 1.1926,
+        "trialSharpeStdAnnual": 0.4887
+      },
+      "exitsByReason": {
+        "MAX_HOLDING_SESSIONS": 125,
+        "STOP_LOSS": 2569,
+        "TAKE_PROFIT": 1474
+      },
+      "finalEquity": 0.6475,
+      "label": "OPEN_T1",
+      "mdd": -0.71,
+      "sessions": 5365,
+      "sharpe": -0.0272,
+      "sortino": -0.0348,
+      "trades": 4178,
+      "var95": -0.014588,
+      "years": 21.3
+    },
+    "TYPICAL_T1": {
+      "annualVol": 0.1751,
+      "bearYearMean": -0.0011304171096025654,
+      "cagr": -0.0472,
+      "cvar95": -0.027837,
+      "deflatedSharpe": {
+        "deflatedSharpe": -3.5734,
+        "expectedMaxSharpeAnnual": 0.5828,
+        "legacyApproximation": {
+          "deflatedSharpe": -88.6611,
+          "expectedMaxSharpeAnnual": 18.9318,
+          "pValue": 1.0
+        },
+        "observedSharpe": -0.1878,
+        "pValue": 0.999824,
+        "trialMultiplier": 1.1926,
+        "trialSharpeStdAnnual": 0.4887
+      },
+      "exitsByReason": {
+        "MAX_HOLDING_SESSIONS": 90,
+        "STOP_LOSS": 2763,
+        "TAKE_PROFIT": 1458
+      },
+      "finalEquity": 0.3556,
+      "label": "TYPICAL_T1",
+      "mdd": -0.8548,
+      "sessions": 5365,
+      "sharpe": -0.1878,
+      "sortino": -0.2472,
+      "trades": 4321,
+      "var95": -0.0148,
+      "years": 21.3
+    }
+  },
+  "protocolId": "entryTiming.v1",
+  "providerCalls": 0,
+  "splitGapDiagnostic": {
+    "rows": 130626,
+    "suspiciousOpenGaps": 11,
+    "suspiciousShare": 8.420988164683906e-05
+  },
+  "verdict": "FAIL"
+}

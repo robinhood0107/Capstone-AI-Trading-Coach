@@ -218,6 +218,55 @@ export async function mockBareTransport<T>(
     } as T;
   }
 
+  if (target === '/api/v2/rag/world-news' && method === 'GET') {
+    return {
+      items: [
+        {
+          documentId: 'news_doc_11111111111111111111111111111111',
+          documentVersionId: 'news_ver_22222222222222222222222222222222',
+          sourceId: 'src_gdelt_world_news',
+          provider: 'GDELT_GQG',
+          providerDocumentId: null,
+          canonicalUrl: 'https://example.com/world/supply-chain',
+          republicationOfDocumentId: null,
+          identityStatus: 'VERIFIED',
+          title: '세계 공급망 동향',
+          boundedQuote: '공급망 병목이 완화되고 있다고 설명했다.',
+          boundedPassage: null,
+          language: 'ko',
+          publishedAt: null,
+          publicationStatus: 'MISSING',
+          providerObservedAt: '2026-09-08T03:00:00Z',
+          firstSeenAt: '2026-09-08T03:01:00Z',
+          availableAt: '2026-09-08T03:02:00Z',
+          rightsProfile: 'GDELT_METADATA_QUOTE',
+          externalLlmAllowed: false,
+          lookupAllowed: true,
+          ragRetrievalAllowed: true,
+          promptUntrusted: true,
+          collectionStatus: 'COMPLETE',
+          contentSha256: 'a'.repeat(64),
+          versionSha256: 'b'.repeat(64),
+        },
+      ],
+      collections: [
+        {
+          provider: 'GDELT_GQG',
+          collectionStatus: 'PARTIAL',
+          startedAt: '2026-09-08T03:00:00Z',
+          completedAt: null,
+          observedThrough: '2026-09-08T03:01:00Z',
+          itemCount: 1,
+          errorCode: null,
+        },
+      ],
+      asOf: new Date().toISOString(),
+      decisionAuthority: 'NONE',
+      signalAuthority: 'NONE',
+      orderAuthority: 'NONE',
+    } as T;
+  }
+
   if (target === '/api/v2/rag/history') {
     return {
       items: mockRagHistory.map((entry) => ({
@@ -413,6 +462,33 @@ export async function mockTransport<T>(
 
   if (target === '/api/v3/automation/status' && method === 'GET') {
     return ok(fixtures.automationStatusV3(killSwitchAware(fixtures.automationStatus)), requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v4/automation/capital-policy' && method === 'GET') {
+    return ok(fixtures.automationCapitalPolicy, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v4/automation/capital-status' && method === 'GET') {
+    return ok(fixtures.automationCapitalStatus, requestId) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v4/automation/capital-policy' && method === 'PUT') {
+    const request = body as
+      | { reinvestRealizedPnl?: boolean; expectedVersion?: number }
+      | undefined;
+    if (
+      typeof request?.reinvestRealizedPnl !== 'boolean' ||
+      request.expectedVersion !== fixtures.automationCapitalPolicy.version
+    ) {
+      return fail('CONFLICT', '재투자 정책 버전이 맞지 않습니다.', requestId);
+    }
+    const next = {
+      ...fixtures.automationCapitalPolicy,
+      version: fixtures.automationCapitalPolicy.version + 1,
+      reinvestRealizedPnl: request.reinvestRealizedPnl,
+    };
+    fixtures.replaceAutomationCapitalPolicy(next);
+    return ok(next, requestId) as ApiEnvelope<T>;
   }
 
   if (target.startsWith('/api/v3/automation/runs/')) {
@@ -756,6 +832,65 @@ export async function mockTransport<T>(
     if (!envelope) return fail('NOT_FOUND', '최근 백테스트를 찾을 수 없습니다.', requestId);
     return ok(
       { runId: LATEST_RUN_ID, fixtureClass: 'DEMO_OFFLINE', asOf: envelope.asOf },
+      requestId,
+    ) as ApiEnvelope<T>;
+  }
+
+  if (target === '/api/v1/dashboard/performance-reports/latest') {
+    return ok(
+      {
+        report: {
+          contractId: 'owner-performance-report.v1',
+          reportId: 'perf_report_' + '1'.repeat(24),
+          reportVersion: 2,
+          supersedesReportId: 'perf_report_' + '0'.repeat(24),
+          correctionOfReportId: null,
+          generatedAt: '2026-09-08T06:00:00Z',
+          sourceStart: '2026-08-18',
+          sourceEnd: '2026-09-08',
+          sourceGenerationSha256: 'a'.repeat(64),
+          modelSha256: 'b'.repeat(64),
+          principleVersionId: 'pvr_' + 'c'.repeat(32),
+          principleVersion: 3,
+          costBps: 35,
+          modelAdoption: {
+            state: 'RESEARCH_EVALUATED',
+            candidateId: null,
+            currentModel: 'EQUAL_WEIGHT_50_50',
+            predictionAccepted: false,
+            performanceAccepted: false,
+            automaticActivation: false,
+            blockers: ['NO_DUAL_ACCEPTANCE_CANDIDATE'],
+          },
+          sections: {
+            recalculatedBacktest: {
+              status: 'RECALCULATED',
+              baselineNetReturn: 0.012,
+              guideNetReturn: 0.018,
+              strictNetReturn: 0.009,
+            },
+            fixedDailyForecast: {
+              status: 'PARTIAL',
+              totalCount: 62,
+              realizedCount: 31,
+              pendingCount: 31,
+              mae: 0.014,
+              rmse: 0.019,
+              bias: -0.002,
+            },
+            actualTrading: {
+              status: 'NO_REALIZED_TRADES',
+              closedPositionCount: 0,
+              openPositionCount: 1,
+              realizedPnlKrw: 0,
+              unrealizedStatus: 'OPEN',
+            },
+          },
+        },
+        lastRefreshStatus: 'SUCCESS',
+        lastFailureCode: null,
+        lastFailureAt: null,
+      },
       requestId,
     ) as ApiEnvelope<T>;
   }

@@ -12,9 +12,11 @@ from typing import Any, cast
 
 import grpc
 import psycopg
+import pandas as pd
 from psycopg.conninfo import conninfo_to_dict
 
 from app.data._shared.canonical_json import canonical_json_bytes
+from app.data.calendar.xkrx_policy import corrected_calendar
 from app.p1_owner.assets import FEATURE_ORDER
 from app.p1_owner.inference_grpc_server import METHOD_PATH
 from app.p1_owner.ridge_returns import fit_forecasts
@@ -166,7 +168,16 @@ class DailyInferenceService:
         context = self._repository.context(target_session)
         if context is None:
             return DailyInferenceResult("MODEL_OR_MARKET_DATA_UNAVAILABLE", target_session)
+        calendar = corrected_calendar()
+        try:
+            previous = calendar.previous_session(pd.Timestamp(target_session)).date()
+        except ValueError as error:
+            raise DailyInferenceError("DAILY_TARGET_NOT_XKRX_SESSION") from error
+        if context.get("sourceSession") != previous.isoformat():
+            return DailyInferenceResult("STALE_OR_UNVERIFIED_SOURCE", target_session)
         if context.get("outcome") == "REPLAYED":
+            if context.get("currentContractComplete") is not True:
+                return DailyInferenceResult("LEGACY_INCOMPLETE", target_session)
             batch = context.get("batchSha256")
             return DailyInferenceResult(
                 "REPLAYED",

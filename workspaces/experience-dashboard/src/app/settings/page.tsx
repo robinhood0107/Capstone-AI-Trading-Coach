@@ -1,15 +1,19 @@
 import { PageHeader } from '@/shared/ui/Panel';
 import { StrongLlmSettingsView } from '@/features/strong-llm/StrongLlmSettingsView';
 import { SystemHealthView } from '@/features/system/SystemHealthView';
+import { ExplainModeSettings } from '@/features/system/ExplainModeSettings';
 
 export default function Page() {
   return (
     <div className="space-y-8">
       <PageHeader
         eyebrow="설정"
-        title="Strong LLM"
-        description="판단과 설명에 쓸 모델, 실패했을 때의 2차 모델, 답변 언어, 하루 호출 상한을 정합니다. API 키는 서버에서 암호화해 보관하며 저장 후에는 마지막 네 글자만 보입니다."
+        title="설정"
+        description="화면을 어떻게 읽을지, 판단과 설명에 어떤 모델을 쓸지 정합니다. API 키는 서버에서 암호화해 보관하며 저장 후에는 마지막 네 글자만 보입니다."
       />
+      {/* 읽기 설정을 맨 위에 둔다. 모델 설정보다 먼저 만나는 것이 자연스럽고,
+          용어를 모르는 사람일수록 이 화면 아래쪽까지 내려가지 않는다. */}
+      <ExplainModeSettings />
       <StrongLlmSettingsView />
       <SystemHealthView />
     </div>

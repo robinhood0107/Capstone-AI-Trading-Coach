@@ -1,0 +1,115 @@
+{
+  "protocolId": "multitrack.v1",
+  "trials": 4,
+  "arms": [
+    {
+      "label": "CORE_ONLY",
+      "years": 21.3,
+      "sessions": 5366,
+      "cagr": 0.1263,
+      "annualVol": 0.1507,
+      "sharpe": 0.8646,
+      "sortino": 1.2919,
+      "mdd": -0.3494,
+      "var95": -0.011792,
+      "cvar95": -0.021078,
+      "finalEquity": 12.5722,
+      "deflatedSharpe": 3.1578,
+      "deflatedSharpePValue": 0.000795,
+      "trades": 3469,
+      "bearYearMean": 0.000153,
+      "exitsByReason": {
+        "TAKE_PROFIT": 1444,
+        "STOP_LOSS": 1939,
+        "MAX_HOLDING_SESSIONS": 76
+      }
+    },
+    {
+      "label": "SHORT_ONLY",
+      "years": 21.3,
+      "sessions": 5366,
+      "cagr": 0.063,
+      "annualVol": 0.158,
+      "sharpe": 0.4654,
+      "sortino": 0.6933,
+      "mdd": -0.5202,
+      "var95": -0.01172,
+      "cvar95": -0.022573,
+      "finalEquity": 3.6684,
+      "deflatedSharpe": 1.3124,
+      "deflatedSharpePValue": 0.094693,
+      "trades": 9774,
+      "bearYearMean": 5.1e-05,
+      "exitsByReason": {
+        "STOP_LOSS": 2927,
+        "MAX_HOLDING_SESSIONS": 5487,
+        "TAKE_PROFIT": 1355
+      }
+    },
+    {
+      "label": "MIXED_7_3",
+      "years": 21.3,
+      "sessions": 5366,
+      "cagr": 0.1076,
+      "annualVol": 0.1479,
+      "sharpe": 0.765,
+      "sortino": 1.1394,
+      "mdd": -0.3815,
+      "var95": -0.011351,
+      "cvar95": -0.020809,
+      "finalEquity": 8.8092,
+      "deflatedSharpe": 2.7023,
+      "deflatedSharpePValue": 0.003443,
+      "trades": 5021,
+      "bearYearMean": -1.1e-05,
+      "exitsByReason": {
+        "TAKE_PROFIT": 1434,
+        "STOP_LOSS": 2208,
+        "MAX_HOLDING_SESSIONS": 1370
+      }
+    },
+    {
+      "label": "MIXED_5_5",
+      "years": 21.3,
+      "sessions": 5366,
+      "cagr": 0.1073,
+      "annualVol": 0.1462,
+      "sharpe": 0.7702,
+      "sortino": 1.1541,
+      "mdd": -0.3673,
+      "var95": -0.011093,
+      "cvar95": -0.020643,
+      "finalEquity": 8.7561,
+      "deflatedSharpe": 2.73,
+      "deflatedSharpePValue": 0.003167,
+      "trades": 6096,
+      "bearYearMean": 0.0,
+      "exitsByReason": {
+        "TAKE_PROFIT": 1391,
+        "STOP_LOSS": 2356,
+        "MAX_HOLDING_SESSIONS": 2342
+      }
+    }
+  ],
+  "verdict": {
+    "adoptShortTrack": false,
+    "reasons": [
+      {
+        "arm": "MIXED_7_3",
+        "checks": {
+          "beatsBothSolo": false,
+          "deflatedSharpeSignificant": true,
+          "notWorseInBearYears": false
+        }
+      },
+      {
+        "arm": "MIXED_5_5",
+        "checks": {
+          "beatsBothSolo": false,
+          "deflatedSharpeSignificant": true,
+          "notWorseInBearYears": false
+        }
+      }
+    ]
+  }
+}

@@ -162,7 +162,7 @@ require_state() {
 }
 
 verify_runtime_env() {
-  local expected_secrets expected_mock_runtime seen='|' key value count=0 api_port='' secret_gid='' operator_uid=''
+  local expected_secrets expected_mock_runtime seen='|' key value count=0 api_port='' secret_gid='' operator_uid='' required
   expected_secrets=$COMPOSE_SECRETS_DIR
   expected_mock_runtime=$COMPOSE_MOCK_RUNTIME_DIR
   while IFS='=' read -r key value || [[ -n $key$value ]]; do
@@ -203,12 +203,28 @@ verify_runtime_env() {
       P1_KAFKA_IMAGE)
         [[ $value == capstone-kafka:p1-local || $value =~ ^ghcr\.io/robinhood0107/capstone-kafka@sha256:[0-9a-f]{64}$ ]] || die runtime_env_image
         ;;
+      # 런타임 기능 플래그. compose.yml 이 `${VAR:-false}` 로 읽고 full-appctl 이
+      # `--mock` 여부에 따라 다섯 개를 export 한다. 상태 파일에 적힌 값도 같은 뜻이다.
+      # 임의 키 주입을 막는 성질은 값 형태를 못박아 유지한다.
+      GDELT_WORLD_NEWS_ENABLED|P1_AUTOMATION_RUNTIME_ENABLED|P1_KIS_MOCK_ONLINE_ENABLED\
+|P1_LOCAL_CERTIFICATION_VALID|WORLD_NEWS_RETENTION_ENABLED)
+        [[ $value == true || $value == false ]] || die runtime_env_flag
+        ;;
+      P1_KIS_OFFLINE)
+        [[ $value == 0 || $value == 1 ]] || die runtime_env_flag
+        ;;
       *) die runtime_env_key ;;
     esac
     seen="$seen$key|"
     count=$((count + 1))
   done < "$RUNTIME_ENV"
-  [[ $count == 10 ]] || die runtime_env_inventory
+  # 필수 10개는 그대로 요구한다. 플래그는 선택이므로 총 개수는 10..16 이다.
+  for required in P1_SECRETS_DIR P1_SECRET_GID P1_OPERATOR_UID P1_KIS_MOCK_RUNTIME_DIR \
+    P1_RAG_RUNTIME_DIR P1_API_PORT P1_SPRING_IMAGE P1_PYTHON_IMAGE P1_POSTGRES_IMAGE \
+    P1_KAFKA_IMAGE; do
+    [[ $seen == *"|$required|"* ]] || die runtime_env_inventory
+  done
+  [[ $count -ge 10 && $count -le 16 ]] || die runtime_env_inventory
   [[ $secret_gid == "$(id -g)" ]] || die runtime_env_secret_gid
   [[ $operator_uid == "$(id -u)" ]] || die runtime_env_operator_uid
   [[ $api_port =~ ^[0-9]{4,5}$ && $api_port -ge 1024 && $api_port -le 65535 ]] || die runtime_env_api_port
@@ -531,6 +547,9 @@ verify_state() {
     kis-mock.env kis-mock-approval-private.pem kis-mock-approval-public.pem kis-mock-approval-trust-policy.json p1-provider-claim.dsn postgres.env python.env rag-history-kek-v1.key redis.env return-inference.env role-bootstrap.env seed-import.env spring.env)
   expected+=(team-a-acceptance.env)
   expected+=(calendar-offline-seed.env automation-observation.env rag-source-register.env)
+  # 공시 근거 수집기의 writer DSN 과 OpenDART 인증정보. upgrade_state 가 매 실행마다 다시
+  # 쓰므로(리포 .env 의 key 를 나중에 채워도 켜지게) 이 목록에 없으면 up 이 죽는다.
+  expected+=(disclosure-collector.env)
   # Vertex 서비스계정은 운영자가 직접 넣는 선택 secret이다. compose는 이 파일을 secret으로
   # 마운트하므로 있으면 정상이고, 없으면 Vertex 생성만 닫힌다. 목록에 넣지 않으면 파일을
   # 넣는 순간 `./capstone up`이 secret_inventory로 죽어 생성 경로를 켤 방법이 없어진다.

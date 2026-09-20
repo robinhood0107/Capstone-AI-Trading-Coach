@@ -683,3 +683,10 @@ deploy/p1/p1ctl smoke
 먼저 확인한다. 자세한 절차는
 `docs/decision-platform/P1_OFFLINE_DEMO_배포_및_검증.md`를 따른다. `p1ctl`은 reset/volume delete/
 credential rotation을 제공하지 않으며 stop, backup, 격리 restore-test만 제공한다.
+
+## 2026-09-09 world-news / capital-policy source 상태
+
+V160~V162와 Python/Spring source는 세계 뉴스 retention/cursor 수집 및 다음 세션 자본정책·주문별
+실행 원장을 제공한다. GDELT 상주 loop는 `GDELT_WORLD_NEWS_ENABLED=true`일 때만 시작하고 최신
+GQG/GEMG 두 target/cycle, redirect 포함 physical cap 4, retry 0이다. 현재 설치 앱은 미해결
+KIS_MOCK 주문 때문에 V154에 유지되어 있으며 새 migration·이미지와 다중 주문 runtime은 활성화하지 않았다.

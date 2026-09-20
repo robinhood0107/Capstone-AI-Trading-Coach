@@ -19,6 +19,27 @@ class AutomationService(
 
     fun statusV3(ownerUserId: String): AutomationStatusV3Projection = providerAware(repository.statusV3(ownerUserId))
 
+    fun capitalPolicy(ownerUserId: String): AutomationCapitalPolicyProjection? = repository.readCapitalPolicy(ownerUserId)
+
+    fun capitalStatus(ownerUserId: String): AutomationCapitalStatusProjection? = repository.readCapitalStatus(ownerUserId)
+
+    fun putCapitalPolicy(
+        ownerUserId: String,
+        rawIdempotencyKey: String,
+        command: PutAutomationCapitalPolicyCommand,
+    ): AutomationCapitalPolicyProjection =
+        repository.putCapitalPolicy(
+            ownerUserId,
+            command,
+            OwnerWriteHashes.scope(ownerUserId, rawIdempotencyKey),
+            OwnerWriteHashes.request(
+                "PUT_AUTOMATION_CAPITAL_POLICY",
+                ownerUserId,
+                command.reinvestRealizedPnl.toString(),
+                command.expectedVersion.toString(),
+            ),
+        )
+
     fun putPolicyV2(
         ownerUserId: String,
         rawIdempotencyKey: String,

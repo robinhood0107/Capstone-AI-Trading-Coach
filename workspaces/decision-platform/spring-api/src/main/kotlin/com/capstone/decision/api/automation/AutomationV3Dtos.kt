@@ -25,10 +25,13 @@ data class AutomationPolicyV3Response(
     val atrPeriod: Int,
     val atrMultiplierMilli: Int,
     val modelSellEnabled: Boolean,
-    val maxOpenPositions: Int = 5,
+    /** 사용자가 고른 동시 보유 상한. 하드코딩이 아니라 저장된 원칙값이다. */
+    val maxOpenPositions: Int,
+    /** ATR 변동성 기반 사이징의 거래당 위험(자본 대비 bps). 100 = 1%. */
+    val riskPerTradeBps: Int,
     val maxNewOrdersPerSession: Int = 1,
     val evaluationTimeKst: String = "09:30",
-    val buyCutoffTimeKst: String = "09:40",
+    val buyCutoffTimeKst: String = "14:30",
     val cancelTimeKst: String = "15:20",
     val createdAt: OffsetDateTime,
     val updatedAt: OffsetDateTime,
@@ -118,6 +121,17 @@ data class AutomationRunDetailV3Response(
     val contractId: String = "automation-run-detail.v3",
     val run: AutomationRunV3Response,
     val candidateScreenings: List<AutomationCandidateScreeningV3Response>,
+    /** 단계별 후보 통과·탈락. 화면이 무주문의 원인을 가리키는 데 쓴다. */
+    val stageOutcomes: List<AutomationStageOutcomeResponse> = emptyList(),
+)
+
+@Schema(name = "AutomationStageOutcome", additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+data class AutomationStageOutcomeResponse(
+    val stage: String,
+    val symbol: String,
+    val outcome: String,
+    val reasonCode: String?,
+    val reasonDetail: String?,
 )
 
 data class AutomationPositionV3Response(
@@ -161,6 +175,8 @@ class PutAutomationPolicyV3RequestSchema(
     val atrPeriod: Int,
     val atrMultiplierMilli: Int,
     val modelSellEnabled: Boolean,
+    val maxOpenPositions: Int,
+    val riskPerTradeBps: Int,
     val expectedVersion: Int,
 )
 
@@ -184,6 +200,8 @@ fun AutomationPolicyV3Projection.toV3Response() =
         atrPeriod = atrPeriod,
         atrMultiplierMilli = atrMultiplierMilli,
         modelSellEnabled = modelSellEnabled,
+        maxOpenPositions = maxOpenPositions,
+        riskPerTradeBps = riskPerTradeBps,
         createdAt = createdAt,
         updatedAt = updatedAt,
     )
@@ -266,6 +284,16 @@ fun AutomationRunDetailV3Projection.toV3Response() =
     AutomationRunDetailV3Response(
         run = run.toV3Response(),
         candidateScreenings = candidateScreenings.map { it.toV3Response() },
+        stageOutcomes =
+            stageOutcomes.map {
+                AutomationStageOutcomeResponse(
+                    it.stage,
+                    it.symbol,
+                    it.outcome,
+                    it.reasonCode,
+                    it.reasonDetail,
+                )
+            },
     )
 
 fun AutomationPositionV3Projection.toV3Response() =

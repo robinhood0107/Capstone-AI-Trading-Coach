@@ -120,6 +120,80 @@
         },
         "type": "object"
       },
+      "ApiResponseAutomationCapitalPolicyV1": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationCapitalPolicyV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAutomationCapitalStatusV1": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AutomationCapitalStatusV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponseAutomationControl": {
         "properties": {
           "data": {
@@ -1005,6 +1079,43 @@
         ],
         "type": "object"
       },
+      "ApiResponseOwnerPerformanceReport": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OwnerPerformanceReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponsePaperBalanceProjection": {
         "properties": {
           "data": {
@@ -1800,6 +1911,209 @@
         "title": "automation-candidate-evidence.v1",
         "type": "object"
       },
+      "AutomationCapitalPolicyV1": {
+        "additionalProperties": false,
+        "properties": {
+          "cashBufferBps": {
+            "const": 100
+          },
+          "contractId": {
+            "const": "automation-capital-policy.v1"
+          },
+          "effectiveFromSession": {
+            "format": "date",
+            "type": "string"
+          },
+          "maxOrdersPerSession": {
+            "maximum": 3,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "minimumAdjustmentKrw": {
+            "const": 10000
+          },
+          "rebalanceDeviationBps": {
+            "const": 200
+          },
+          "reinvestRealizedPnl": {
+            "default": true,
+            "type": "boolean"
+          },
+          "transitionStartedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cashBufferBps",
+          "contractId",
+          "effectiveFromSession",
+          "maxOrdersPerSession",
+          "minimumAdjustmentKrw",
+          "rebalanceDeviationBps",
+          "reinvestRealizedPnl",
+          "transitionStartedAt",
+          "version"
+        ],
+        "type": "object"
+      },
+      "AutomationCapitalStatusV1": {
+        "additionalProperties": false,
+        "properties": {
+          "allocationCapKrw": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "asOf": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "availableBuyCashKrw": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "botPositionMarketValueKrw": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "brokerBuyableCashKrw": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "configuredCapitalKrw": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "contractId": {
+            "const": "automation-capital-status.v1"
+          },
+          "existingBotPositionsAdopted": {
+            "maximum": 5,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "investableCapKrw": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "policyVersion": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "positions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "currentMarketValueKrw": {
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "currentQuantity": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "currentWeightBps": {
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "symbol": {
+                  "pattern": "^[0-9]{6}$",
+                  "type": "string"
+                },
+                "targetMarketValueKrw": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "targetQuantity": {
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "targetWeightBps": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "valuationStatus": {
+                  "enum": [
+                    "COMPLETE",
+                    "MISSING"
+                  ]
+                }
+              },
+              "required": [
+                "currentMarketValueKrw",
+                "currentQuantity",
+                "currentWeightBps",
+                "symbol",
+                "targetMarketValueKrw",
+                "targetQuantity",
+                "targetWeightBps",
+                "valuationStatus"
+              ],
+              "type": "object"
+            },
+            "maxItems": 5,
+            "type": "array"
+          },
+          "realizedPnlSinceTransitionKrw": {
+            "type": "integer"
+          },
+          "reinvestRealizedPnl": {
+            "type": "boolean"
+          },
+          "reservedBuyCashKrw": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "targetPerPositionKrw": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unusedCashReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valuationMissingCount": {
+            "maximum": 5,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "allocationCapKrw",
+          "asOf",
+          "availableBuyCashKrw",
+          "botPositionMarketValueKrw",
+          "brokerBuyableCashKrw",
+          "configuredCapitalKrw",
+          "contractId",
+          "existingBotPositionsAdopted",
+          "investableCapKrw",
+          "policyVersion",
+          "positions",
+          "realizedPnlSinceTransitionKrw",
+          "reinvestRealizedPnl",
+          "reservedBuyCashKrw",
+          "targetPerPositionKrw",
+          "unusedCashReason",
+          "valuationMissingCount"
+        ],
+        "type": "object"
+      },
       "AutomationControl": {
         "$id": "contracts/schemas/automation-control.v1.schema.json",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1873,7 +2187,7 @@
         "properties": {
           "buyCutoffTimeKst": {
             "enum": [
-              "09:40"
+              "14:30"
             ],
             "type": "string"
           },
@@ -1989,7 +2303,7 @@
             "type": "integer"
           },
           "buyCutoffTimeKst": {
-            "const": "09:40"
+            "const": "14:30"
           },
           "cancelTimeKst": {
             "const": "15:20"
@@ -2161,7 +2475,10 @@
           },
           "expirySession": {
             "format": "date",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "policyId": {
             "type": "string"
@@ -3555,7 +3872,7 @@
                     "type": "integer"
                   },
                   "buyCutoffTimeKst": {
-                    "const": "09:40"
+                    "const": "14:30"
                   },
                   "cancelTimeKst": {
                     "const": "15:20"
@@ -4636,6 +4953,301 @@
           "effectiveActive",
           "globalActive",
           "reasonClass"
+        ],
+        "type": "object"
+      },
+      "OwnerPerformanceReport": {
+        "additionalProperties": false,
+        "properties": {
+          "lastFailureAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastFailureCode": {
+            "pattern": "^[A-Z0-9_]{1,96}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastRefreshStatus": {
+            "enum": [
+              "SUCCESS",
+              "FAILED_LAST_SUCCESS_PRESERVED"
+            ]
+          },
+          "report": {
+            "additionalProperties": false,
+            "properties": {
+              "contractId": {
+                "const": "owner-performance-report.v1"
+              },
+              "correctionOfReportId": {
+                "pattern": "^perf_report_[0-9a-f]{24}$",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "costBps": {
+                "maximum": 10000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "generatedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "modelAdoption": {
+                "additionalProperties": false,
+                "properties": {
+                  "automaticActivation": {
+                    "const": false
+                  },
+                  "blockers": {
+                    "items": {
+                      "pattern": "^[A-Z0-9_]{1,96}$",
+                      "type": "string"
+                    },
+                    "maxItems": 8,
+                    "type": "array"
+                  },
+                  "candidateId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "currentModel": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "performanceAccepted": {
+                    "type": "boolean"
+                  },
+                  "predictionAccepted": {
+                    "type": "boolean"
+                  },
+                  "state": {
+                    "enum": [
+                      "RESEARCH_EVALUATED",
+                      "SHADOW_DAILY",
+                      "ACCEPTANCE_REVIEWED",
+                      "CURRENT_MODEL"
+                    ]
+                  }
+                },
+                "required": [
+                  "automaticActivation",
+                  "blockers",
+                  "candidateId",
+                  "currentModel",
+                  "performanceAccepted",
+                  "predictionAccepted",
+                  "state"
+                ],
+                "type": "object"
+              },
+              "modelSha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "principleVersion": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "principleVersionId": {
+                "pattern": "^pvr_[A-Za-z0-9_-]{8,96}$",
+                "type": "string"
+              },
+              "reportId": {
+                "pattern": "^perf_report_[0-9a-f]{24}$",
+                "type": "string"
+              },
+              "reportVersion": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "sections": {
+                "additionalProperties": false,
+                "properties": {
+                  "actualTrading": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "closedPositionCount": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "openPositionCount": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "realizedPnlKrw": {
+                        "type": "integer"
+                      },
+                      "status": {
+                        "enum": [
+                          "NO_REALIZED_TRADES",
+                          "REALIZED"
+                        ]
+                      },
+                      "unrealizedStatus": {
+                        "enum": [
+                          "NONE",
+                          "OPEN"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "closedPositionCount",
+                      "openPositionCount",
+                      "realizedPnlKrw",
+                      "status",
+                      "unrealizedStatus"
+                    ],
+                    "type": "object"
+                  },
+                  "fixedDailyForecast": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "bias": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "mae": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "pendingCount": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "realizedCount": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "rmse": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "NOT_AVAILABLE",
+                          "PARTIAL",
+                          "REALIZED"
+                        ]
+                      },
+                      "totalCount": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "bias",
+                      "mae",
+                      "pendingCount",
+                      "realizedCount",
+                      "rmse",
+                      "status",
+                      "totalCount"
+                    ],
+                    "type": "object"
+                  },
+                  "recalculatedBacktest": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "baselineNetReturn": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "guideNetReturn": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "const": "RECALCULATED"
+                      },
+                      "strictNetReturn": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "baselineNetReturn",
+                      "guideNetReturn",
+                      "status",
+                      "strictNetReturn"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "actualTrading",
+                  "fixedDailyForecast",
+                  "recalculatedBacktest"
+                ],
+                "type": "object"
+              },
+              "sourceEnd": {
+                "format": "date",
+                "type": "string"
+              },
+              "sourceGenerationSha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "sourceStart": {
+                "const": "2026-08-18"
+              },
+              "supersedesReportId": {
+                "pattern": "^perf_report_[0-9a-f]{24}$",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "contractId",
+              "correctionOfReportId",
+              "costBps",
+              "generatedAt",
+              "modelAdoption",
+              "modelSha256",
+              "principleVersion",
+              "principleVersionId",
+              "reportId",
+              "reportVersion",
+              "sections",
+              "sourceEnd",
+              "sourceGenerationSha256",
+              "sourceStart",
+              "supersedesReportId"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "lastFailureAt",
+          "lastFailureCode",
+          "lastRefreshStatus",
+          "report"
         ],
         "type": "object"
       },
@@ -6560,6 +7172,23 @@
           "requestId",
           "success",
           "warnings"
+        ],
+        "type": "object"
+      },
+      "PutAutomationCapitalPolicyV1Request": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reinvestRealizedPnl": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "reinvestRealizedPnl"
         ],
         "type": "object"
       },
@@ -12768,6 +13397,506 @@
           }
         },
         "type": "object"
+      },
+      "WorldNewsCollectionStatus": {
+        "properties": {
+          "collectionStatus": {
+            "type": "string"
+          },
+          "completedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "errorCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "itemCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "observedThrough": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WorldNewsItem": {
+        "properties": {
+          "availableAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "boundedPassage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "boundedQuote": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "canonicalUrl": {
+            "type": "string"
+          },
+          "collectionStatus": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "documentVersionId": {
+            "type": "string"
+          },
+          "externalLlmAllowed": {
+            "type": "boolean"
+          },
+          "firstSeenAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "identityStatus": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "lookupAllowed": {
+            "type": "boolean"
+          },
+          "promptUntrusted": {
+            "type": "boolean"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "providerDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "providerObservedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "publicationStatus": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ragRetrievalAllowed": {
+            "type": "boolean"
+          },
+          "republicationOfDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rightsProfile": {
+            "type": "string"
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "versionSha256": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WorldNewsPage": {
+        "properties": {
+          "asOf": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "collections": {
+            "items": {
+              "$ref": "#/components/schemas/WorldNewsCollectionStatus"
+            },
+            "type": "array"
+          },
+          "decisionAuthority": {
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorldNewsItem"
+            },
+            "type": "array"
+          },
+          "orderAuthority": {
+            "type": "string"
+          },
+          "signalAuthority": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WorldNewsV2CollectionStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "collectionStatus": {
+            "enum": [
+              "COMPLETE",
+              "PARTIAL",
+              "COLLECTION_FAILED",
+              "NOT_COLLECTED"
+            ],
+            "type": "string"
+          },
+          "completedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "errorCode": {
+            "pattern": "^[A-Z0-9_]{1,96}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "itemCount": {
+            "maximum": 100000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "observedThrough": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "enum": [
+              "GDELT_GQG",
+              "GDELT_GEMG",
+              "FINNHUB_MARKET_NEWS"
+            ],
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "collectionStatus",
+          "completedAt",
+          "errorCode",
+          "itemCount",
+          "observedThrough",
+          "provider",
+          "startedAt"
+        ],
+        "type": "object"
+      },
+      "WorldNewsV2Error": null,
+      "WorldNewsV2Item": {
+        "$id": "contracts/schemas/world-news-v2.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "publicationStatus": {
+                  "const": "MISSING"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "publishedAt": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "publicationStatus": {
+                  "const": "VERIFIED"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "publishedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "rightsProfile": {
+                  "const": "FINNHUB_PERSONAL_LOCAL"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "externalLlmAllowed": {
+                  "const": false
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "availableAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "boundedPassage": {
+            "maxLength": 1200,
+            "minLength": 1,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "boundedQuote": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "canonicalUrl": {
+            "format": "uri",
+            "pattern": "^https://",
+            "type": "string"
+          },
+          "collectionStatus": {
+            "enum": [
+              "COMPLETE",
+              "PARTIAL",
+              "COLLECTION_FAILED",
+              "NOT_COLLECTED"
+            ],
+            "type": "string"
+          },
+          "contentSha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "documentId": {
+            "pattern": "^news_doc_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "documentVersionId": {
+            "pattern": "^news_ver_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "externalLlmAllowed": {
+            "type": "boolean"
+          },
+          "firstSeenAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "identityStatus": {
+            "enum": [
+              "VERIFIED",
+              "PROVIDER_ID_CONFLICT",
+              "URL_HASH_CONFLICT"
+            ],
+            "type": "string"
+          },
+          "language": {
+            "pattern": "^[a-z]{2,3}(-[A-Z]{2})?$",
+            "type": "string"
+          },
+          "lookupAllowed": {
+            "const": true
+          },
+          "promptUntrusted": {
+            "const": true
+          },
+          "provider": {
+            "enum": [
+              "GDELT_GQG",
+              "GDELT_GEMG",
+              "FINNHUB_MARKET_NEWS"
+            ],
+            "type": "string"
+          },
+          "providerDocumentId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "providerObservedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "publicationStatus": {
+            "enum": [
+              "VERIFIED",
+              "MISSING",
+              "CONFLICT"
+            ],
+            "type": "string"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ragRetrievalAllowed": {
+            "const": true
+          },
+          "republicationOfDocumentId": {
+            "pattern": "^news_doc_[0-9a-f]{32}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rightsProfile": {
+            "enum": [
+              "GDELT_METADATA_QUOTE",
+              "FINNHUB_PERSONAL_LOCAL"
+            ],
+            "type": "string"
+          },
+          "sourceId": {
+            "pattern": "^src_[a-z0-9][a-z0-9_-]{2,95}$",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "versionSha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "availableAt",
+          "boundedPassage",
+          "boundedQuote",
+          "canonicalUrl",
+          "collectionStatus",
+          "contentSha256",
+          "documentId",
+          "documentVersionId",
+          "externalLlmAllowed",
+          "firstSeenAt",
+          "identityStatus",
+          "language",
+          "lookupAllowed",
+          "promptUntrusted",
+          "provider",
+          "providerDocumentId",
+          "providerObservedAt",
+          "publicationStatus",
+          "publishedAt",
+          "ragRetrievalAllowed",
+          "republicationOfDocumentId",
+          "rightsProfile",
+          "sourceId",
+          "title",
+          "versionSha256"
+        ],
+        "type": "object"
+      },
+      "WorldNewsV2Page": {
+        "additionalProperties": false,
+        "properties": {
+          "asOf": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "collections": {
+            "items": {
+              "$ref": "#/components/schemas/WorldNewsV2CollectionStatus"
+            },
+            "maxItems": 3,
+            "type": "array"
+          },
+          "decisionAuthority": {
+            "const": "NONE"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorldNewsV2Item"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "orderAuthority": {
+            "const": "NONE"
+          },
+          "signalAuthority": {
+            "const": "NONE"
+          }
+        },
+        "required": [
+          "asOf",
+          "collections",
+          "decisionAuthority",
+          "items",
+          "orderAuthority",
+          "signalAuthority"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -12784,7 +13913,7 @@
     "version": "0.0.1"
   },
   "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
-  "openapi": "3.1.1",
+  "openapi": "3.1.0",
   "paths": {
     "/api/v1/artifacts/ingest-status": {
       "get": {
@@ -14359,6 +15488,32 @@
           }
         },
         "summary": "Owner-scoped sanitized model evaluation ViewModel.",
+        "tags": [
+          "dashboard-controller"
+        ]
+      }
+    },
+    "/api/v1/dashboard/performance-reports/latest": {
+      "get": {
+        "operationId": "latestOwnerPerformanceReport",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOwnerPerformanceReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Latest immutable owner performance report generation.",
         "tags": [
           "dashboard-controller"
         ]
@@ -16604,6 +17759,86 @@
         ]
       }
     },
+    "/api/v2/rag/world-news": {
+      "get": {
+        "description": "발행일이 없어도 최초 관측 시각으로 조회한다. Decision, Signal, Risk, Order 권한은 없다.",
+        "operationId": "ragV2WorldNews",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorldNewsV2Page"
+                }
+              }
+            },
+            "description": "World-news page"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorldNewsV2Error"
+                }
+              }
+            },
+            "description": "Invalid query"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorldNewsV2Error"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorldNewsV2Error"
+                }
+              }
+            },
+            "description": "Lookup unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "세계 뉴스 조회",
+        "tags": [
+          "world-news-controller"
+        ]
+      }
+    },
     "/api/v2/risk/kill-switch": {
       "get": {
         "description": "인증된 본인만 제어한다. 전역 중지는 해제하지 않으며 해제 후 자동 재무장하지 않는다.",
@@ -17045,6 +18280,104 @@
           {
             "bearerAuth": []
           }
+        ]
+      }
+    },
+    "/api/v4/automation/capital-policy": {
+      "get": {
+        "operationId": "readAutomationCapitalPolicyV1",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationCapitalPolicyV1"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "다음 세션 자본·재투자 정책 조회",
+        "tags": [
+          "automation-v4-controller"
+        ]
+      },
+      "put": {
+        "operationId": "putAutomationCapitalPolicyV1",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 8,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutAutomationCapitalPolicyV1Request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationCapitalPolicyV1"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "재투자 토글을 다음 XKRX 세션부터 변경",
+        "tags": [
+          "automation-v4-controller"
+        ]
+      }
+    },
+    "/api/v4/automation/capital-status": {
+      "get": {
+        "operationId": "readAutomationCapitalStatusV1",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAutomationCapitalStatusV1"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "자본 원장과 목표·현재 비중 조회",
+        "tags": [
+          "automation-v4-controller"
         ]
       }
     },

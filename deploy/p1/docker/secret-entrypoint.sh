@@ -11,11 +11,15 @@ case "$profile" in
   automation-cli) secret_files="/run/secrets/automation_runtime_env /run/secrets/kis_mock_env /run/secrets/redis_env" ;;
   automation-gate-author) secret_files=/run/secrets/automation_gate_author_env ;;
   calendar-offline-seed) secret_files=/run/secrets/calendar_offline_seed_env ;;
+  # 공시 근거 수집기. calendar-offline-seed 를 재사용하지 않는 이유는 이 컨테이너만
+  # OpenDART 인증정보를 들기 때문이다 - 그 값을 오프라인 seeding 컨테이너에 주지 않는다.
+  disclosure-collector) secret_files=/run/secrets/disclosure_collector_env ;;
   rag-source-register) secret_files=/run/secrets/rag_source_register_env ;;
   market-data) secret_files="/run/secrets/market_data_env /run/secrets/market_data_provider_env /run/secrets/automation_runtime_env" ;;
   # 상주 일일 수집기. market-data 를 재사용하면 KIS 앱키와 자동운용 DSN 까지 들어온다.
   # 공개 일봉을 받아 적는 일에 필요한 것은 writer DSN 하나뿐이다.
   market-data-daily) secret_files=/run/secrets/market_data_env ;;
+  world-news) secret_files=/run/secrets/market_data_env ;;
   after-hours-replay) secret_files=/run/secrets/after_hours_replay_env ;;
   certification) secret_files="/run/secrets/spring_env /run/secrets/python_env /run/secrets/kis_mock_env" ;;
   authority) secret_files=/run/secrets/actor_capability_authority_env ;;
@@ -65,11 +69,16 @@ allowed_key() {
     # 자동운용 런타임이 관측 표에 append 할 때만 쓰는 좁은 writer 두 개다. 값이 있어도
     # attest_source_writer_dsn 이 role 과 표 권한을 실제로 확인한 뒤에만 적재된다.
     decision-platform:DECISION_PORTFOLIO_WRITER_DATABASE_DSN|decision-platform:DECISION_RISK_WRITER_DATABASE_DSN|decision-platform:DECISION_MARKET_WRITER_DATABASE_DSN) return 0 ;;
+    # 공시 투영에만 SELECT 를 갖는 read-only role 이다. 뉴스 거부권의 근거가 여기서 온다.
+    decision-platform:DECISION_DISCLOSURE_READER_DATABASE_DSN|automation-runtime:DECISION_DISCLOSURE_READER_DATABASE_DSN|automation-cli:DECISION_DISCLOSURE_READER_DATABASE_DSN|market-data:DECISION_DISCLOSURE_READER_DATABASE_DSN) return 0 ;;
     calendar-offline-seed:P1_CALENDAR_OFFLINE_SEED_DSN) return 0 ;;
+    # writer DSN 하나와 provider 인증정보 하나다. 자동운용 DSN 도 KIS 앱키도 들어오지 않는다.
+    disclosure-collector:P1_DISCLOSURE_COLLECTOR_DSN|disclosure-collector:OPENDART_API_KEY) return 0 ;;
     # 커밋된 S4.1 seed 를 등록만 한다. CLI 가 임의 URL 인자를 받지 않으므로 이 자격증명으로
     # 열리는 것은 자기 표 등록뿐이고 network fetch 경로가 생기지 않는다.
     rag-source-register:RAG_SOURCE_WRITER_DATABASE_DSN|rag-source-register:RAG_SOURCE_REGISTER_TARGET) return 0 ;;
     market-data-daily:MARKET_DATA_WRITER_DSN) return 0 ;;
+    world-news:MARKET_DATA_WRITER_DSN) return 0 ;;
     market-data:MARKET_DATA_WRITER_DSN|market-data:P1_AUTOMATION_DATABASE_DSN|market-data:AUTOMATION_RUNTIME_SHARED_SECRET|market-data:P1_AUTOMATION_OWNER_USER_ID|market-data:P1_AUTOMATION_OWNER_USERNAME|market-data:P1_AUTOMATION_OWNER_PASSWORD|market-data:KIS_MOCK_CONFIGURED|market-data:KIS_MOCK_APP_KEY|market-data:KIS_MOCK_APP_SECRET|market-data:KIS_LIVE_APP_KEY|market-data:KIS_LIVE_APP_SECRET|market-data:KRX_OPENAPI_AUTH_KEY|market-data:REDIS_PASSWORD) return 0 ;;
     after-hours-replay:P1_AFTER_HOURS_REPLAY_DATABASE_DSN|after-hours-replay:P1_AFTER_HOURS_REPLAY_ISOLATED) return 0 ;;
     authority:POSTGRES_IDENTITY_PASSWORD|authority:ACTOR_CAPABILITY_SHARED_SECRET|authority:ACTOR_CAPABILITY_PRIVATE_KEY|authority:ACTOR_CAPABILITY_PUBLIC_KEY|authority:ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD) return 0 ;;
@@ -105,7 +114,9 @@ required_keys() {
     automation-cli) printf '%s\n' 'P1_AUTOMATION_DATABASE_DSN AUTOMATION_RUNTIME_SHARED_SECRET P1_AUTOMATION_OWNER_USER_ID P1_AUTOMATION_OWNER_USERNAME P1_AUTOMATION_OWNER_PASSWORD KIS_MOCK_CONFIGURED KIS_MOCK_APP_KEY KIS_MOCK_APP_SECRET KIS_MOCK_ACCOUNT_NO KIS_MOCK_BOUND_ACCOUNT_ID KIS_MOCK_ORDER_REFERENCE_KEY KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP KIS_BROKERAGE_PHYSICAL_CAP REDIS_PASSWORD' ;;
     automation-gate-author) printf '%s\n' 'P1_AUTOMATION_GATE_AUTHOR_DSN' ;;
     calendar-offline-seed) printf '%s\n' 'P1_CALENDAR_OFFLINE_SEED_DSN' ;;
+    disclosure-collector) printf '%s\n' 'P1_DISCLOSURE_COLLECTOR_DSN' ;;
     market-data-daily) printf '%s\n' 'MARKET_DATA_WRITER_DSN' ;;
+    world-news) printf '%s\n' 'MARKET_DATA_WRITER_DSN' ;;
     market-data) printf '%s\n' 'MARKET_DATA_WRITER_DSN P1_AUTOMATION_DATABASE_DSN AUTOMATION_RUNTIME_SHARED_SECRET P1_AUTOMATION_OWNER_USER_ID KIS_MOCK_CONFIGURED KIS_MOCK_APP_KEY KIS_MOCK_APP_SECRET REDIS_PASSWORD' ;;
     after-hours-replay) printf '%s\n' 'P1_AFTER_HOURS_REPLAY_DATABASE_DSN P1_AFTER_HOURS_REPLAY_ISOLATED' ;;
     authority) printf '%s\n' 'POSTGRES_IDENTITY_PASSWORD ACTOR_CAPABILITY_SHARED_SECRET ACTOR_CAPABILITY_PRIVATE_KEY ACTOR_CAPABILITY_PUBLIC_KEY ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD' ;;

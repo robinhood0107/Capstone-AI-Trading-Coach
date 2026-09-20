@@ -49,8 +49,14 @@ class SignalV3RuntimeService(
         if (byProducer.size != snapshot.rows.size || byProducer.keys.any { it !in REQUIRED_PRODUCERS }) {
             throw ApiException(ErrorCode.SIGNAL_UNAVAILABLE)
         }
-        val rule = component(byProducer["RULE_BASELINE"], "RULE_BASELINE", latest)
-        val lstm = component(byProducer["LSTM"], "LSTM", latest)
+        // 한 배치가 31종목을 한꺼번에 만들므로 두 producer 행의 대상 세션은 같다.
+        val targetSession =
+            snapshot.rows
+                .map { it.sessionDate }
+                .distinct()
+                .singleOrNull()
+        val rule = component(byProducer["RULE_BASELINE"], "RULE_BASELINE")
+        val lstm = component(byProducer["LSTM"], "LSTM")
         val available = listOf(rule, lstm).filter { it.status == "AVAILABLE" }
         val combined =
             if (available.size ==
@@ -90,20 +96,32 @@ class SignalV3RuntimeService(
                     lightgbm = abstain("LIGHTGBM", "decision-platform", "MISSING_EVIDENCE"),
                     hmmRegime = abstain("HMM", "decision-platform", "MISSING_EVIDENCE"),
                 ),
-            warnings = listOf("LightGBM and HMM remain outside current P1 production authority."),
+            warnings =
+                buildList {
+                    add("LightGBM and HMM remain outside current P1 production authority.")
+                    // 대상 세션이 지난 예측을 "현재 신호"처럼 보이게 두지 않는다.
+                    if (targetSession != null && targetSession < latest) {
+                        add("Prediction target session $targetSession has already passed.")
+                    }
+                },
         )
     }
 
     private fun component(
         row: StoredSignalV3Component?,
         producer: String,
-        latest: LocalDate,
     ): RuntimeSignalComponent {
         if (row == null) return abstain(producer, "return-engine", "MISSING_EVIDENCE")
-        if (row.sessionDate != latest) return abstain(producer, "return-engine", "STALE_EVIDENCE")
+        // 예측 대상 세션이 지난 것은 "근거가 없다"가 아니다. 그 예측은 실제로 만들어졌고
+        // 그 날짜에 대해 유효했다 - 소진됐을 뿐이다. 예전에는 여기서 STALE_EVIDENCE 로
+        // ABSTAIN 했고, `latest` 가 "아직 마감되지 않은 가장 이른 세션"이라(V134 의
+        // latest_completed_session 은 이름과 의미가 어긋나 있다) 장 마감부터 다음 아침
+        // 배치까지 모델 비교 화면이 통째로 비었다. 이 endpoint 의 소비자는 대시보드
+        // 하나뿐이고 주문 경로는 p1_read_automation_runtime_state_v4 를 쓰므로,
+        // 값을 숨기는 대신 대상 세션이 지났다는 사실을 warnings 로 알린다.
+        // reason enum 은 contracts/schemas 에 고정돼 있어 새 코드를 만들 수 없다.
         if (
             row.sourceWorkspace != "return-engine" ||
-            row.sessionDate != latest ||
             row.signal !in SIGNALS ||
             !row.predictedReturn.isFinite() ||
             row.modelVersion.isEmpty() ||

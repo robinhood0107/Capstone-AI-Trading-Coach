@@ -52,7 +52,7 @@ class JdbcOrderFillRepository(
         val outcome =
             jdbc().queryForObject(
                 """
-                SELECT acquire_order_fill_reconciliation_lock_authorized_v2(
+                SELECT acquire_order_fill_reconciliation_lock_authorized_v3(
                   :capability,
                   :payloadJson
                 )

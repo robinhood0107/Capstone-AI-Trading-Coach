@@ -59,6 +59,7 @@ from app.data.calendar.adapters.xkrx import (
     build_xkrx_sessions_in_range,
     xkrx_calendar_bounds,
 )
+from app.data.calendar.models import XKRXSession
 from app.data.market_data.daily_runtime import AcceptedDailyShard
 from app.data.decision.observation_payloads import (
     GOLD_ETF_SYMBOLS,
@@ -68,10 +69,15 @@ from app.data.decision.observation_payloads import (
 from app.data.kis.instrument_catalog_writer import append_instrument_catalog_fixture
 from app.data.kis.market_quote_observation_writer import append_market_quote_fixture
 from app.data.market_data.repository import MarketDataRepositoryError, stage_daily_shard
+from app.data._shared.repository_root import repository_artifact
 from app.decision_source_cli import attest_source_writer_dsn
 
 _KST = ZoneInfo("Asia/Seoul")
 _CLOSE = time(15, 30)
+# 마감 직후 provider 가 종가를 아직 채우지 않았을 수 있으므로 오늘 봉을 확정으로 보기까지
+# 두는 여유다. 오늘을 아예 제외하던 예전 동작과 D+1 적재 사이의 중간값이고, 짧게 두면
+# 미확정 봉이 들어오고 길게 두면 따라잡기가 하루 밀린다.
+_SETTLE_AFTER_CLOSE = timedelta(minutes=90)
 _DEFAULT_BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
 _CALENDAR_REVISION = "xkrx-4.13.2"
 _SOURCE = "public-daily-ohlcv-v1"
@@ -235,8 +241,21 @@ def _publish_observations(dsn: str, bars: list[Bar]) -> str:
             dsn,
         )
     except (ValueError, OSError, psycopg.Error) as error:
-        return f"FAILED_{type(error).__name__}"
+        return f"FAILED_{type(error).__name__}_{_marker(error)}"
     return f"PUBLISHED_{quotes}_{instruments}"
+
+
+def _marker(error: Exception) -> str:
+    """예외 메시지를 한 낱말짜리 표식으로 줄인다.
+
+    타입 이름만 남기던 탓에 `FAILED_ValueError` 하나가 서로 다른 원인을 모두 덮었고, 실제
+    원인(`DECISION_SOURCE_WRITER_OFFLINE_TARGET` 누락으로 사전 검증이 거부)을 컨테이너 밖에서
+    알 방법이 없었다. 이 줄은 공백으로 나뉜 key=value 로 읽히므로 공백을 넣을 수 없고, 값에
+    비밀이 섞일 수 있으므로(DSN) 길이도 묶어 둔다. 원인을 특정할 만큼만 남긴다.
+    """
+
+    words = "".join(ch if ch.isalnum() else " " for ch in str(error)).split()
+    return "_".join(words)[:120] or "NO_MESSAGE"
 
 
 def _append_observation(payload: dict[str, Any], writer: Any, dsn: str) -> int:
@@ -278,15 +297,13 @@ def _catalog_path() -> Path:
     """커밋된 유니버스 카탈로그를 찾는다.
 
     호스트에서는 리포 루트가 다섯 단계 위이고 컨테이너에서는 /app 이 세 단계 위다. 한 상수로
-    맞출 수 없으니 위로 걸어 올라가며 찾는다.
+    맞출 수 없으니 공용 해석기가 위로 걸어 올라가며 찾는다.
     """
 
-    relative = Path("contracts/catalogs/p1-return-universe.v1.json")
-    for parent in Path(__file__).resolve().parents:
-        candidate = parent / relative
-        if candidate.is_file():
-            return candidate
-    raise DailyRefreshError("UNIVERSE_CATALOG_MISSING")
+    path = repository_artifact(__file__, "contracts/catalogs/p1-return-universe.v1.json")
+    if path is None:
+        raise DailyRefreshError("UNIVERSE_CATALOG_MISSING")
+    return path
 
 
 def _universe() -> dict[str, str]:
@@ -319,25 +336,49 @@ def _current_head(connection: psycopg.Connection[Any]) -> tuple[str, date]:
 
 
 def _pending_sessions(head_session: date, limit: int) -> list[date]:
-    """head 이후 오늘 전까지의 개장일을 오래된 순으로 돌려준다.
+    """head 이후 채울 수 있는 개장일을 오래된 순으로 돌려준다.
 
-    오늘은 넣지 않는다. 장중에는 일봉이 확정되지 않는다. 달력은 오프라인 XKRX 이므로 DB 읽기가
-    없고 trading_sessions 를 채운 출처와 같다.
+    오늘은 **마감 후 여유가 지났을 때만** 넣는다. 장중 일봉은 확정되지 않으므로 예전에는
+    오늘을 아예 제외했는데, 그 결과 세션 D 의 종가가 D+1 에만 적재됐다. 자동운용은 매일
+    09:30 에 도는데 그 시점에 오늘 봉은 아직 없으므로, 오늘을 제외하는 것 자체는 그 run 에
+    영향이 없다 - 다음 run 이 확실히 최신이 되는 효과만 있다. 그래도 넣는 이유는 한동안
+    쓰지 않다가 다시 켰을 때 빈 구간을 한 번에 따라잡게 하는 것이다.
+
+    마감 시각은 달력이 준 `close_at` 을 쓴다. 15:30 을 리터럴로 두면 반장일에 틀린다.
+    달력은 오프라인 XKRX 이므로 DB 읽기가 없고 trading_sessions 를 채운 출처와 같다.
     """
 
-    today = datetime.now(_KST).date()
+    now = datetime.now(_KST)
+    today = now.date()
     start = head_session + timedelta(days=1)
-    if start >= today:
-        return []
     calendar_first, calendar_last = xkrx_calendar_bounds()
+    if start > calendar_last:
+        return []
     start = max(start, calendar_first)
-    end = min(today - timedelta(days=1), calendar_last)
+    end = min(today, calendar_last)
     if end < start:
         return []
-    sessions = [
-        built.session_date for built in build_xkrx_sessions_in_range(start, end) if built.is_open
-    ]
+    sessions: list[date] = []
+    for built in build_xkrx_sessions_in_range(start, end):
+        if not built.is_open:
+            continue
+        if built.session_date == today and not _settled(built, now):
+            continue
+        sessions.append(built.session_date)
     return sorted(sessions)[:limit]
+
+
+def _settled(session: XKRXSession, now: datetime) -> bool:
+    """그 세션의 일봉이 확정됐다고 볼 수 있는가.
+
+    provider 가 종가를 채우는 데 시간이 걸리므로 마감 직후를 신뢰하지 않고 여유를 둔다.
+    `close_at` 이 없는 세션(달력이 시각을 주지 못한 경우)은 확정으로 보지 않는다 -
+    미확정 봉을 적재하는 쪽이 늦게 적재하는 쪽보다 나쁘다.
+    """
+
+    if session.close_at is None:
+        return False
+    return now >= session.close_at + _SETTLE_AFTER_CLOSE
 
 
 def _fetch(

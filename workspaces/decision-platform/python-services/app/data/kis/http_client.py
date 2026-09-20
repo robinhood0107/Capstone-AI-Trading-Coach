@@ -27,11 +27,15 @@ from app.data.kis.settings import KISSettings
 CURRENT_PRICE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-price"
 DAILY_ITEMCHART_PATH = "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice"
 HOLIDAY_PATH = "/uapi/domestic-stock/v1/quotations/chk-holiday"
+#: 주식현재가 호가/예상체결(v1_국내주식-011). 체결 품질을 **기록**하는 데만 쓴다 -
+#: 가격 결정에는 쓰지 않는다. 모의·실전 동일 TR 이다(KIS_API_카탈로그.md:70 "지원(동일 TR)").
+ASKING_PRICE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn"
 
 _APPROVED_ENDPOINTS = {
     (CURRENT_PRICE_PATH, "FHKST01010100"),
     (DAILY_ITEMCHART_PATH, "FHKST03010100"),
     (HOLIDAY_PATH, "CTCA0903R"),
+    (ASKING_PRICE_PATH, "FHKST01010200"),
 }
 _INTERNAL_TR_ID_HEADER = "x-kis-internal-tr-id"
 

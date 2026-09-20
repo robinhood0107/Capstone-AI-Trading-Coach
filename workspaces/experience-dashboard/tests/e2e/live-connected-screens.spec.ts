@@ -108,7 +108,8 @@ test('newly connected screens render against the live Spring API', async ({ page
     '주문가능금액 확인',
     '원칙 판정 확인',
     '내용 확인',
-    '모의계좌 경로',
+    // 화면 문구에 계좌 종류를 박지 않는다. 계좌는 서버가 준 brokerageMode 배지가 말한다.
+    '승인된 주문 경로',
   ]) {
     await expect(page.getByRole('listitem').filter({ hasText: gate }).first()).toBeVisible();
   }

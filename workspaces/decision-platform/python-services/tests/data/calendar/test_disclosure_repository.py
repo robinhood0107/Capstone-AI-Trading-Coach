@@ -15,6 +15,53 @@ from app.disclosure_repository import (
 from tests.data.calendar.conftest import PostgresTestCluster
 
 
+def test_optional_daily_coverage_is_independent_of_full_risk_coverage(
+    postgres_cluster: PostgresTestCluster,
+) -> None:
+    from app.data.opendart.disclosure_event_collector import collected_operations
+
+    operations = collected_operations()
+    assert "accnutAdtorNmNdAdtOpinion" not in operations
+    start, end = date(2026, 9, 1), date(2026, 9, 8)
+    with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                """INSERT INTO calendar_collection_cursors (
+                  source_id, operation, subject, window_from, window_to,
+                  mapping_version, next_page, completed, updated_at
+                ) VALUES ('opendart-structured-events', %s, '00999999', %s, %s,
+                  's1.6-disclosure-state-v1', 1, true, %s)""",
+                [
+                    (operation, start, end, datetime(2026, 9, 8, tzinfo=UTC))
+                    for operation in operations
+                ],
+            )
+    with PostgresStoredDisclosureRepository(
+        postgres_cluster["disclosure_reader_dsn"]
+    ) as repository:
+        args = dict(symbol="999999", corp_code="00999999", window_from=start, window_to=end)
+        optional = repository.load_optional_events(**args)
+        strict = repository.load(**args)
+        missing = repository.load_optional_events(
+            symbol="999998", corp_code=None, window_from=start, window_to=end
+        )
+    assert optional.complete and optional.events == ()
+    assert optional.collection_status == "COMPLETE_EMPTY"
+    assert not strict.complete
+    assert missing.collection_status == "UNMAPPED"
+    with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
+        connection.execute(
+            "UPDATE calendar_collection_cursors SET completed=false WHERE subject='00999999' AND operation=%s",
+            (operations[0],),
+        )
+    with PostgresStoredDisclosureRepository(
+        postgres_cluster["disclosure_reader_dsn"]
+    ) as repository:
+        failed = repository.load_optional_events(**args)
+    assert not failed.complete
+    assert failed.collection_status == "COLLECTION_FAILED"
+
+
 def test_app_role_reads_only_sanitized_stored_disclosure_projection(
     postgres_cluster: PostgresTestCluster,
 ) -> None:

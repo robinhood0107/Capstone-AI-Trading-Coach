@@ -1,0 +1,5 @@
+# 한 사람이 여러 이메일로 커밋해 Contributors 가 실제 인원보다 많게 세어지는 것을 막는다.
+# 형식: <표준 이름> <표준 이메일> <커밋에 쓰인 이메일>
+
+robinhood0107 <pjj4678@gmail.com> <pjjpj@pjjpj.localdomain>
+worgy <pjylose0313@gmail.com> <82436678+worgy@users.noreply.github.com>

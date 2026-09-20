@@ -104,6 +104,28 @@ interface AutomationEvidenceProvider {
     ): RawAutomationJudgement
 }
 
+internal fun storedEvidenceScreeningBatch(
+    candidates: List<AutomationEvidenceCandidate>,
+    evidenceBySymbol: Map<String, List<RawAutomationEvidence>>,
+): RawAutomationScreeningBatch =
+    RawAutomationScreeningBatch(
+        screenings =
+            candidates.map { candidate ->
+                val evidence = evidenceBySymbol[candidate.symbol].orEmpty()
+                RawAutomationScreening(
+                    symbol = candidate.symbol,
+                    status = if (evidence.isEmpty()) "ABSTAIN" else "AVAILABLE",
+                    verdict = "NO_VETO",
+                    scoreBps = 5_000,
+                    reason = if (evidence.isEmpty()) "NO_STORED_EVIDENCE" else "STORED_EVIDENCE_AVAILABLE",
+                    promptInjectionDetected = false,
+                    evidence = evidence,
+                )
+            },
+        providerCallCount = 0,
+        groundingQueryCount = 0,
+    )
+
 @Component
 @Primary
 @ConditionalOnProperty(
@@ -217,6 +239,9 @@ class AutomationEvidenceService(
                     mapOf(
                         "aiSettingsSha256" to runContext.settings.settingsSha256,
                         "candidateSetSha256" to candidateSetSha256,
+                        "evidenceSha256" to sha256(objectMapper.writeValueAsBytes(request.storedEvidence)),
+                        "operation" to "SCREEN",
+                        "principleVersionId" to runContext.principleVersionId,
                     ),
                 ),
             )
@@ -227,26 +252,14 @@ class AutomationEvidenceService(
             }
             return screeningResponse(jdbc, request.runId, prior)
         }
-        val transport = provider.getIfAvailable() ?: throw AutomationEvidenceUnavailableException()
         val reservation = reserveProviderOperation(ownerUserId, request.runId, "SCREEN", inputSha256, 1)
         if (!reservation.created) throw AutomationEvidenceUnavailableException()
         val raw: RawAutomationScreeningBatch
         val sanitized: List<SanitizedScreening>
         try {
-            raw = transport.screen(request.runId, request.candidates, runContext.settings)
-            if (
-                raw.providerCallCount !in 0..1 ||
-                raw.groundingQueryCount !in 0..32 ||
-                (raw.groundingQueryCount > 0 && raw.providerCallCount != 1)
-            ) {
-                throw AutomationEvidenceUnavailableException()
-            }
-            if (
-                raw.screenings.map { it.symbol }.toSet() != request.symbols ||
-                raw.screenings.size != request.symbols.size
-            ) {
-                throw AutomationEvidenceUnavailableException()
-            }
+            // 저장 근거 0건에는 외부 discovery call을 만들지 않는다. 근거가 있을 때도 SCREEN은
+            // deterministic projection만 하고 실제 판단은 기존 JUDGE bridge 한 번에 모은다.
+            raw = storedEvidenceScreeningBatch(request.candidates, request.storedEvidence)
             sanitized = raw.screenings.map { sanitizeScreening(it, request.sessionDate) }
             persistScreening(
                 ownerUserId,
@@ -294,6 +307,8 @@ class AutomationEvidenceService(
                     mapOf(
                         "candidates" to request.candidates.sortedBy { it.symbol },
                         "aiSettingsSha256" to runContext.settings.settingsSha256,
+                        "principleVersionId" to runContext.principleVersionId,
+                        "operation" to "JUDGE",
                         "evidence" to
                             requestEvidence
                                 .toSortedMap()
@@ -712,7 +727,8 @@ class AutomationEvidenceService(
 
     private fun parseCandidates(payload: JsonNode): CandidateRequest {
         require(payload.isObject)
-        require(payload.properties().map { it.key }.toSet() == REQUEST_FIELDS)
+        val requestFields = payload.properties().map { it.key }.toSet()
+        require(requestFields == REQUEST_FIELDS || requestFields == REQUEST_FIELDS + "storedEvidence")
         val runId = payload.path("runId").stringValue()
         require(RUN_ID.matches(runId))
         val candidateSetSha256 = payload.path("candidateSetSha256").stringValue()
@@ -741,7 +757,46 @@ class AutomationEvidenceService(
                     candidate
                 }.toList()
         require(candidates.map { it.symbol }.toSet().size == candidates.size)
-        return CandidateRequest(runId, sessionDate, candidateSetSha256, candidates)
+        val rawEvidence = payload.get("storedEvidence")
+        val evidenceBySymbol =
+            if (rawEvidence == null) {
+                emptyMap()
+            } else {
+                require(rawEvidence.isArray && rawEvidence.size() <= 155)
+                val pairs =
+                    (0 until rawEvidence.size()).map { index ->
+                        val item = rawEvidence[index]
+                        require(item != null && item.isObject)
+                        require(item.properties().map { it.key }.toSet() == STORED_EVIDENCE_FIELDS)
+                        val symbol =
+                            item.path("symbol").stringValue().also {
+                                require(it in candidates.map { candidate -> candidate.symbol })
+                            }
+                        val citationId = item.path("citationId").stringValue().also { require(CITATION.matches(it)) }
+                        val sourceId = item.path("sourceId").stringValue().also { require(it.length in 1..128) }
+                        val sourceType =
+                            item.path("sourceType").stringValue().also {
+                                require(it in setOf("OFFICIAL_PRIMARY", "REGISTERED_INDEPENDENT"))
+                            }
+                        val sourceEventDate = LocalDate.parse(item.path("sourceEventDate").stringValue())
+                        val uri = item.path("uri").stringValue().also { require(it.length in 9..2048) }
+                        val quote = item.path("boundedQuote").stringValue().also { require(it.length in 1..240) }
+                        require(item.path("supportObserved").isBoolean)
+                        symbol to
+                            RawAutomationEvidence(
+                                citationId,
+                                sourceId,
+                                sourceType,
+                                sourceEventDate,
+                                uri,
+                                quote,
+                                item.path("supportObserved").booleanValue(),
+                            )
+                    }
+                require(pairs.map { it.second.citationId }.distinct().size == pairs.size)
+                pairs.groupBy({ it.first }, { it.second })
+            }
+        return CandidateRequest(runId, sessionDate, candidateSetSha256, candidates, evidenceBySymbol)
     }
 
     private fun containsPromptInjection(value: String): Boolean {
@@ -785,17 +840,31 @@ class AutomationEvidenceService(
             jdbc
                 .query(
                     """
-                    SELECT ai_settings_sha256,ai_settings_snapshot_json::text settings_json
+                    SELECT ai_settings_sha256,ai_settings_snapshot_json::text settings_json,
+                           principle_version_id,principle_version
                     FROM automation_runs
                     WHERE run_id=:runId AND user_id=:ownerUserId AND state=:state
                     """.trimIndent(),
                     mapOf("runId" to runId, "ownerUserId" to ownerUserId, "state" to expectedState),
                 ) { result, _ ->
-                    result.getString("ai_settings_sha256") to result.getString("settings_json")
+                    Triple(
+                        result.getString("ai_settings_sha256") to result.getString("settings_json"),
+                        result.getString("principle_version_id"),
+                        result.getInt("principle_version"),
+                    )
                 }.singleOrNull() ?: throw AutomationEvidenceUnavailableException()
-        val settingsSha256 = row.first
-        val root = row.second?.let { objectMapper.readTree(it) }
-        if (settingsSha256 == null || !HASH.matches(settingsSha256) || root == null || !root.isObject) {
+        val settingsSha256 = row.first.first
+        val root = row.first.second?.let { objectMapper.readTree(it) }
+        val principleVersionId = row.second
+        val principleVersion = row.third
+        if (
+            settingsSha256 == null ||
+            !HASH.matches(settingsSha256) ||
+            root == null ||
+            !root.isObject ||
+            principleVersionId.isNullOrBlank() ||
+            principleVersion < 1
+        ) {
             throw AutomationEvidenceUnavailableException()
         }
         val settings =
@@ -821,7 +890,7 @@ class AutomationEvidenceService(
         ) {
             throw AutomationEvidenceUnavailableException()
         }
-        return RunEvidenceContext(settings)
+        return RunEvidenceContext(settings, principleVersionId, principleVersion)
     }
 
     private fun JsonNode.optionalString(name: String): String? {
@@ -960,6 +1029,7 @@ class AutomationEvidenceService(
         val sessionDate: LocalDate,
         val candidateSetSha256: String,
         val candidates: List<AutomationEvidenceCandidate>,
+        val storedEvidence: Map<String, List<RawAutomationEvidence>>,
     ) {
         val symbols = candidates.map { it.symbol }.toSet()
     }
@@ -972,6 +1042,8 @@ class AutomationEvidenceService(
 
     private data class RunEvidenceContext(
         val settings: AutomationEvidenceSettings,
+        val principleVersionId: String,
+        val principleVersion: Int,
     )
 
     internal data class SanitizedEvidence(
@@ -1023,6 +1095,17 @@ class AutomationEvidenceService(
                 RegexOption.IGNORE_CASE,
             )
         val REQUEST_FIELDS = setOf("candidateSetSha256", "candidates", "runId", "sessionDate")
+        val STORED_EVIDENCE_FIELDS =
+            setOf(
+                "boundedQuote",
+                "citationId",
+                "sourceEventDate",
+                "sourceId",
+                "sourceType",
+                "supportObserved",
+                "symbol",
+                "uri",
+            )
         val CANDIDATE_FIELDS =
             setOf(
                 "expectedReturn",

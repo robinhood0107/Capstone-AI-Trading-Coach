@@ -18,6 +18,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import tools.jackson.databind.ObjectMapper
+import tools.jackson.databind.node.ObjectNode
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
@@ -94,6 +95,17 @@ class PrincipleContractMigrationIntegrationTest(
 
     @Test
     fun `V8 database preset seed is semantically identical to the generated catalog fixture`() {
+        // 한 가지만 계약 픽스처와 다르고, 그 하나는 이름으로 인정한다.
+        //
+        // V143 이 소유자 승인으로 세 프리셋의 건당 원화 상한 집행을 껐다(규칙 tuple 과 8규칙
+        // 계약은 유지). 계약 카탈로그는 그대로다 - 카탈로그를 바꾸면 다이제스트가 바뀌고
+        // 전이 검증이 "Signal v3 changed root bytes outside its additive surface" 로 root
+        // OpenAPI 동결을 깬다. 그래서 계약 v1 을 동결한 채 이탈만 여기서 명시한다.
+        //
+        // 이 예외를 값으로 두지 않고 규칙 하나로 좁힌 이유: 나머지 23개 규칙의 어떤 드리프트도
+        // 계속 붉게 만들어야 한다. 근거는
+        // `contracts/changes/20260908-preset-single-order-amount-contract-sync.md`.
+        val ownerDisabledRuleId = "max_single_order_amount"
         val repositoryRoot = findRepositoryRoot()
         val fixture =
             objectMapper.readTree(
@@ -128,7 +140,30 @@ class PrincipleContractMigrationIntegrationTest(
                 .let(objectMapper::readTree)
 
         val presetItems = fixture.path("items")
+        // 승인된 이탈을 계약 쪽에 적용해 나머지 전부를 그대로 대조한다.
+        presetItems.values().forEach { preset ->
+            preset.path("defaultRules").values().forEach { rule ->
+                if (rule.path("ruleId").stringValue() == ownerDisabledRuleId) {
+                    (rule as ObjectNode).put("severity", "ALLOW").put("enabled", false)
+                }
+            }
+        }
         assertEquals(presetItems, databasePresets)
+        // 이탈이 실제로 그 하나뿐이고 지금도 꺼져 있는지 DB 에서 직접 확인한다. 그러지 않으면
+        // 위의 정규화가 규칙이 다시 켜지는 변화를 조용히 덮는다.
+        assertEquals(
+            3,
+            jdbcTemplate.queryForObject(
+                """
+                select count(*) from principle_presets
+                where jsonb_path_exists(
+                  rules_json,
+                  '${'$'}[*] ? (@.ruleId == "$ownerDisabledRuleId" && @.enabled == false && @.severity == "ALLOW")'
+                )
+                """.trimIndent(),
+                Int::class.java,
+            ),
+        )
         assertEquals(
             listOf("conservative", "balanced", "aggressive"),
             presetItems.values().map { it.path("presetId").stringValue() },

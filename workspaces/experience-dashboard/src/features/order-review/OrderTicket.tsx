@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { orderStatusLabel } from '@/shared/lib/labels';
 import { api } from '@/shared/api/endpoints';
 import { newIdempotencyKey } from '@/shared/api/client';
 import { toErrorState, useResource } from '@/shared/lib/useResource';
@@ -204,7 +205,9 @@ function Ticket({ context }: { context: TicketContext }) {
         orderId: result.data.orderId,
         accountId: result.data.accountId,
         decisionId: decision.decisionId,
-        brokerageMode: 'KIS_MOCK',
+        // 어떤 계좌로 나갔는지는 서버가 말한다. 화면이 단정하면 실제와 어긋나도
+        // 드러나지 않는다.
+        brokerageMode: result.data.brokerageMode,
         status: result.data.status,
         submittedAt: result.data.submittedAt,
       });
@@ -238,7 +241,7 @@ function Ticket({ context }: { context: TicketContext }) {
     <Panel
       contract="POST /api/v1/decisions/evaluate-order · POST /api/v1/brokerage/mock/orders"
       title="주문 내기"
-      hint="원칙 판정을 통과한 주문만 모의계좌로 나갑니다. 실계좌 경로는 이 화면에 없습니다."
+      hint="원칙 판정을 통과한 주문만 연결된 계좌로 나갑니다. 계좌 종류는 상단 배지에 표시됩니다."
     >
       {submitted ? (
         <SubmittedOrder
@@ -401,7 +404,7 @@ function ConfirmStep({
 }) {
   return (
     <div className="mt-5 border-t-2 border-navy pt-4">
-      <p className="text-[14px] font-semibold text-ink">이대로 모의계좌에 냅니다</p>
+      <p className="text-[14px] font-semibold text-ink">이대로 주문을 냅니다</p>
       <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-4">
         <Summary label="종목" value={intent.symbol} mono />
         <Summary label="구분" value={intent.side === 'BUY' ? '매수' : '매도'} />
@@ -447,7 +450,9 @@ function SubmittedOrder({
     <div>
       <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-[13px] sm:grid-cols-4">
         <Summary label="주문번호" value={order.orderId} mono />
-        <Summary label="상태" value={order.status} mono />
+        {/* 상태는 코드가 아니라 사람 말로 보여 준다. mono 를 빼는 것도 같은 이유다 -
+            고정폭 글꼴은 "이건 기계용 값"이라고 말한다. */}
+        <Summary label="상태" value={orderStatusLabel(order.status).label} />
         <Summary label="제출시각" value={formatKstDateTime(order.submittedAt) ?? '미상'} mono />
         <Summary label="판정" value={order.decisionId} mono />
       </dl>
@@ -460,9 +465,11 @@ function SubmittedOrder({
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
         <p className="text-[12px] leading-5 text-muted">
-          {cancellable
-            ? '아직 체결되지 않았습니다. 지금은 취소할 수 있습니다.'
-            : '이 주문은 더 이상 취소할 수 없습니다.'}
+          {orderStatusLabel(order.status).meaning ??
+            (cancellable
+              ? '아직 체결되지 않았습니다. 지금은 취소할 수 있습니다.'
+              : '이 주문은 더 이상 취소할 수 없습니다.')}
+          {cancellable ? ' 지금은 취소할 수 있습니다.' : ''}
         </p>
         <div className="flex items-center gap-2">
           {cancellable ? (

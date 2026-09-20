@@ -32,7 +32,6 @@ jobs:
           set -euo pipefail
           required_paths=(
             "AGENTS.md"
-            "CLAUDE.md"
             "README.md"
             ".env.example"
             ".gitignore"
@@ -105,7 +104,7 @@ jobs:
           print(f"OK {path}")
           PY
 
-      - name: Verify no AI tool attribution in commits
+      - name: Verify no tool attribution in commits
         shell: bash
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -121,7 +120,7 @@ jobs:
           elif [[ -n "${PUSH_BEFORE_SHA:-}" && "${PUSH_BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]]; then
             range="${PUSH_BEFORE_SHA}..${GITHUB_SHA}"
           else
-            echo "REPO_HYGIENE_AI_ATTRIBUTION=SKIPPED_NO_RANGE"
+            echo "REPO_HYGIENE_TOOL_ATTRIBUTION=SKIPPED_NO_RANGE"
             exit 0
           fi
           echo "range=${range}"
@@ -141,16 +140,16 @@ jobs:
             body=$(git log -1 --format='%B' "${sha}")
             unfolded=$(printf '%s\n' "${body}" | sed 's/\\n/\n/g')
             if printf '%s\n%s\n' "${body}" "${unfolded}" | grep -qiE "${pattern}"; then
-              echo "::error::${sha} carries AI tool attribution (AGENTS.md)"
+              echo "::error::${sha} carries tool attribution (AGENTS.md)"
               printf '%s\n%s\n' "${body}" "${unfolded}" | grep -inE "${pattern}" || true
               found=1
             fi
           done < <(git rev-list "${range}")
           if [[ "${found}" != 0 ]]; then
-            echo "REPO_HYGIENE_AI_ATTRIBUTION=FAIL"
+            echo "REPO_HYGIENE_TOOL_ATTRIBUTION=FAIL"
             exit 1
           fi
-          echo "REPO_HYGIENE_AI_ATTRIBUTION=PASS"
+          echo "REPO_HYGIENE_TOOL_ATTRIBUTION=PASS"
 
       - name: Verify commit author identity
         shell: bash

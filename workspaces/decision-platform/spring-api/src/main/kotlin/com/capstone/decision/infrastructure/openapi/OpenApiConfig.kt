@@ -500,6 +500,16 @@ class OpenApiConfig {
         }
 
     @Bean
+    @org.springframework.core.annotation.Order(130)
+    fun worldNewsV2Overlay(): OpenApiCustomizer =
+        OpenApiCustomizer { openApi ->
+            val resource = ClassPathResource("contracts/p1-world-news-v2.v1.openapi.json")
+            val overlay = resource.inputStream.use { Json31.mapper().readValue(it, OpenAPI::class.java) }
+            overlay.paths.forEach { (path, item) -> openApi.paths.addPathItem(path, item) }
+            overlay.components.schemas.forEach { (name, schema) -> openApi.components.addSchemas(name, schema) }
+        }
+
+    @Bean
     fun signalV2RuntimeSchemas(): OpenApiCustomizer =
         OpenApiCustomizer { openApi ->
             openApi.components.addSchemas(

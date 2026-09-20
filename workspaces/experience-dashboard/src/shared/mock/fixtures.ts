@@ -5,6 +5,8 @@
  * 이 값들은 화면 검증용이며 실제 성과나 계좌 상태가 아니다.
  */
 import type {
+  AutomationCapitalPolicy,
+  AutomationCapitalStatus,
   AutomationPolicyV2,
   AutomationCandidateScreeningV3,
   AutomationPolicyV3,
@@ -479,6 +481,53 @@ export let automationPolicyV3: AutomationPolicyV3 = {
   modelSellEnabled: true,
 };
 
+export let automationCapitalPolicy: AutomationCapitalPolicy = {
+  contractId: 'automation-capital-policy.v1',
+  version: 1,
+  reinvestRealizedPnl: true,
+  cashBufferBps: 100,
+  rebalanceDeviationBps: 200,
+  minimumAdjustmentKrw: 10000,
+  maxOrdersPerSession: 3,
+  effectiveFromSession: '2026-09-09',
+  transitionStartedAt: '2026-09-08T23:00:00+09:00',
+};
+
+export function replaceAutomationCapitalPolicy(policy: AutomationCapitalPolicy): void {
+  automationCapitalPolicy = policy;
+}
+
+export const automationCapitalStatus: AutomationCapitalStatus = {
+  contractId: 'automation-capital-status.v1',
+  policyVersion: 1,
+  reinvestRealizedPnl: true,
+  configuredCapitalKrw: 50_000_000,
+  realizedPnlSinceTransitionKrw: 320_000,
+  brokerBuyableCashKrw: 39_500_000,
+  botPositionMarketValueKrw: 10_500_000,
+  reservedBuyCashKrw: 0,
+  allocationCapKrw: 50_000_000,
+  investableCapKrw: 49_500_000,
+  availableBuyCashKrw: 39_000_000,
+  targetPerPositionKrw: 9_900_000,
+  existingBotPositionsAdopted: 1,
+  valuationMissingCount: 0,
+  unusedCashReason: 'BUFFER_OR_NO_MORE_ELIGIBLE_CANDIDATES',
+  positions: [
+    {
+      symbol: '005930',
+      currentQuantity: 150,
+      targetQuantity: 141,
+      currentMarketValueKrw: 10_500_000,
+      targetMarketValueKrw: 9_900_000,
+      currentWeightBps: 2100,
+      targetWeightBps: 1980,
+      valuationStatus: 'COMPLETE',
+    },
+  ],
+  asOf: '2026-09-09T00:00:00+09:00',
+};
+
 export function replaceAutomationPolicyV3(policy: AutomationPolicyV3): void {
   automationPolicyV3 = policy;
 }
@@ -587,6 +636,8 @@ const RUN_SCREENINGS: Record<string, AutomationCandidateScreeningV3[]> = {
   auto_run_v3_judged_0002: [
     {
       symbol: '005930',
+      status: 'AVAILABLE',
+      verdict: 'NO_VETO',
       score: 0.72,
       reason: '분기 실적 발표에서 메모리 가격 반등이 확인됐고, 공시 위험 신호는 없었습니다.',
       evidence: [

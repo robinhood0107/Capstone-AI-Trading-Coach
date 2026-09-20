@@ -58,6 +58,7 @@ import javax.sql.DataSource
 @SpringBootTest(
     properties = [
         "spring.autoconfigure.exclude=org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration",
+        "AUTOMATION_RUNTIME_SHARED_SECRET=automation-runtime-bridge-test-secret-0001",
     ],
 )
 @Import(DecisionApiFixedClockConfiguration::class)
@@ -83,6 +84,10 @@ class DecisionApiIntegrationTest(
 
     @BeforeEach
     fun setUp() {
+        jdbcTemplate.update("delete from automation_order_reservations")
+        jdbcTemplate.update("delete from automation_runtime_claim")
+        jdbcTemplate.update("delete from automation_runs")
+        jdbcTemplate.update("delete from automation_policy_versions")
         // 격리 테스트 DB의 개인 상태도 초기화한다. 운영 데이터 정리 경로가 아니다.
         jdbcTemplate.update("delete from owner_kill_switch_requests")
         jdbcTemplate.update("delete from owner_kill_switch_events")
@@ -128,6 +133,111 @@ class DecisionApiIntegrationTest(
                 .webAppContextSetup(webApplicationContext)
                 .apply<DefaultMockMvcBuilder>(springSecurity())
                 .build()
+    }
+
+    @Test
+    fun `internal evaluation persists pinned principle after edit only for the exact reservation`() {
+        val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "51")
+        insertSecondPrincipleVersion(principleId, "usr_demo_user", "GUIDE", suffix = "51")
+        val versionId =
+            jdbcTemplate.queryForObject(
+                "select principle_version_id from principle_versions where principle_id=? and version=1",
+                String::class.java,
+                principleId,
+            )!!
+        val runId = "auto_run_" + "a".repeat(32)
+        val claimHash = "sha256:" + "b".repeat(64)
+        val policyId = "auto_pol_" + "c".repeat(32)
+        val intent = orderIntent() + mapOf("strategyId" to "strategy_rule_lstm_v1", "orderType" to "LIMIT")
+        val intentJson = objectMapper.writeValueAsString(intent)
+        jdbcTemplate.update(
+            """
+            insert into automation_policy_versions(policy_id,version,user_id,capital_limit_krw,
+              stop_loss_bps,take_profit_bps,risk_profile,principle_id,principle_version_id,principle_version)
+            values (?,1,'usr_demo_user',1000000,500,1000,'BALANCED',?,?,1)
+            """.trimIndent(),
+            policyId,
+            principleId,
+            versionId,
+        )
+        jdbcTemplate.update(
+            """
+            insert into automation_runs(run_id,user_id,session_date,state,brokerage_mode,physical_submit_count,
+              vertex_call_count,provider_calls,started_at,updated_at,principle_id,principle_version_id,principle_version)
+            values (?,'usr_demo_user','2030-01-02','RISK_CHECKING','KIS_MOCK',0,0,0,now(),now(),?,?,1)
+            """.trimIndent(),
+            runId,
+            principleId,
+            versionId,
+        )
+        jdbcTemplate.update(
+            """
+            insert into automation_runtime_claim(user_id,session_date,run_id,claim_token_hash,claim_state,claimed_at)
+            values ('usr_demo_user','2030-01-02',?,?,'ACTIVE',now())
+            """.trimIndent(),
+            runId,
+            claimHash,
+        )
+        jdbcTemplate.update(
+            """
+            insert into automation_order_reservations(reservation_id,run_id,user_id,session_date,symbol,side,
+              quantity,limit_price_krw,logical_submit_count,created_at,updated_at,estimated_amount_krw,
+              strategy_id,policy_id,policy_version,principle_version_id,exact_intent_json,order_intent_sha256,leaves_quantity)
+            values ('auto_res_'||repeat('d',32),?,'usr_demo_user','2030-01-02','005930','BUY',2,70000,0,
+              now(),now(),140000,'strategy_rule_lstm_v1',?,1,?,?,encode(digest(?,'sha256'),'hex'),2)
+            """.trimIndent(),
+            runId,
+            policyId,
+            versionId,
+            intentJson,
+            intentJson,
+        )
+        jdbcTemplate.update("update principles set current_version=2 where principle_id=?", principleId)
+        val token = login("demo-user", userPassword())
+        val body =
+            mapOf(
+                "operation" to "EVALUATE",
+                "userId" to "usr_demo_user",
+                "idempotencyKey" to "pinned-reservation-fixture-0001",
+                "payload" to
+                    mapOf(
+                        "runId" to runId,
+                        "claimTokenHash" to claimHash,
+                        "evaluation" to mapOf("principleId" to principleId, "portfolioSource" to "KIS_MOCK", "orderIntent" to intent),
+                    ),
+            )
+
+        fun call(value: Map<String, Any>): MvcResult =
+            mockMvc
+                .post("/internal/automation-runtime/command") {
+                    bearer(token)
+                    header("X-Automation-Runtime-Auth", "automation-runtime-bridge-test-secret-0001")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = objectMapper.writeValueAsString(value)
+                }.andReturn()
+        val response = call(body)
+        assertEquals(200, response.response.status)
+        assertEquals(1, json(response).at("/data/principleVersion").intValue())
+        assertEquals(versionId, jdbcTemplate.queryForObject("select principle_version_id from decisions", String::class.java))
+        assertEquals(200, call(body).response.status)
+        assertEquals(1, count("select count(*) from decisions"))
+        // 고정 버전의 예외는 현재 예약과 정확히 일치하는 intent에만 적용된다.
+        @Suppress("UNCHECKED_CAST")
+        val mismatchEvaluation =
+            mapOf(
+                "principleId" to principleId,
+                "portfolioSource" to "KIS_MOCK",
+                "orderIntent" to intent + mapOf("quantity" to 1, "estimatedAmount" to 70000),
+            )
+        val mismatchPayload =
+            (body.getValue("payload") as Map<String, Any>) +
+                ("evaluation" to mismatchEvaluation)
+        val mismatched =
+            body +
+                ("idempotencyKey" to "pinned-reservation-fixture-0002") +
+                ("payload" to mismatchPayload)
+        assertEquals(503, call(mismatched).response.status)
+        assertEquals(1, count("select count(*) from decisions"))
     }
 
     @Test
@@ -1058,7 +1168,13 @@ class DecisionApiIntegrationTest(
 
     @Test
     fun `complete stored source still BLOCKs an oversized order`() {
-        val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "13")
+        val principleId =
+            insertPrinciple(
+                "usr_demo_user",
+                "GUIDE",
+                suffix = "13",
+                enforceSingleOrderAmount = true,
+            )
         insertCompleteStoredSources(orderCount = 0)
         val token = login("demo-user", userPassword())
         val oversized =
@@ -1394,7 +1510,13 @@ class DecisionApiIntegrationTest(
 
     @Test
     fun `violation insert failure rolls back the complete BLOCK graph`() {
-        val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "071")
+        val principleId =
+            insertPrinciple(
+                "usr_demo_user",
+                "GUIDE",
+                suffix = "071",
+                enforceSingleOrderAmount = true,
+            )
         insertCompleteStoredSources(orderCount = 0)
         val token = login("demo-user", userPassword())
         installGraphFailureTrigger("decision_violations")
@@ -1639,6 +1761,10 @@ class DecisionApiIntegrationTest(
         mode: String,
         suffix: String,
         status: String = "ACTIVE",
+        // 건당 원화 상한을 이 원칙에서 켠다. V143 이 소유자 승인으로 프리셋 기본값의 집행을
+        // 껐으므로 그 규칙으로 BLOCK 을 확인하려는 테스트는 그 사실을 숨기지 않고 스스로
+        // 켜야 한다. 기본값에 숨어 의존하던 두 테스트가 V143 뒤로 조용히 붉었다.
+        enforceSingleOrderAmount: Boolean = false,
     ): String {
         val principleId = "prc_44" + suffix.padStart(30, '0')
         val versionId = "pvr_44" + suffix.padStart(30, '0')
@@ -1660,15 +1786,25 @@ class DecisionApiIntegrationTest(
               principle_version_id, principle_id, version, preset_id, title,
               mode, status, rules_json, changed_fields, created_by
             )
-            select ?, ?, 1, preset_id, 'S2.3 fixture', ?, ?, rules_json,
+            select ?, ?, 1, preset_id, 'S2.3 fixture', ?, ?,
+                   case when ? then (
+                     select jsonb_agg(
+                       case when rule->>'ruleId' = 'max_single_order_amount'
+                         then rule || '{"enabled":true,"severity":"BLOCK"}'::jsonb
+                         else rule end
+                       order by ordinal)
+                     from jsonb_array_elements(preset.rules_json)
+                       with ordinality as item(rule, ordinal)
+                   ) else preset.rules_json end,
                    array['presetId','title','mode','status','rules'], ?
-            from principle_presets
-            where preset_id = 'balanced'
+            from principle_presets preset
+            where preset.preset_id = 'balanced'
             """.trimIndent(),
             versionId,
             principleId,
             mode,
             status,
+            enforceSingleOrderAmount,
             ownerUserId,
         )
         return principleId

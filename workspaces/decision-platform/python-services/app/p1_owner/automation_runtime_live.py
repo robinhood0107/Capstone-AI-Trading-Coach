@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import socket
 import ssl
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Protocol, cast
 from zoneinfo import ZoneInfo
 
 import httpx
+import psycopg
 from pydantic import SecretStr
 
 from app.brokerage.kis_mock_online_client import KISBrokerageCallBudget, KISMockBrokerageHttpClient
@@ -23,8 +26,15 @@ from app.brokerage.mock_order_reference_store import (
 )
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.kis._credential_transport import _build_redis_client
-from app.data.kis.http_client import CURRENT_PRICE_PATH, KISHttpClient
+from app.data.kis.http_client import ASKING_PRICE_PATH, CURRENT_PRICE_PATH, KISHttpClient
 from app.data.kis.settings import KISSettings
+from app.disclosure_repository import PostgresStoredDisclosureRepository
+from app.p1_owner.world_news_corpus import (
+    MergedCorpusDocumentSource,
+    StoredWorldNewsArticle,
+    WorldNewsCorpusDocumentSource,
+)
+from app.p1_owner.disclosure_corpus import DisclosureEventCorpusDocumentSource
 from app.p1_owner.runtime_observation_publisher import publish_runtime_observations
 from app.p1_owner.automation import (
     AccountLineageSnapshot,
@@ -35,6 +45,7 @@ from app.p1_owner.automation import (
     AutomationRun,
     CandidateScreening,
     EvidenceSpan,
+    ExactOrderIntent,
     NewsVerdict,
     NewsScreeningBatch,
     SignalCandidate,
@@ -50,6 +61,7 @@ from app.p1_owner.vertex_corpus_evidence import (
     EmptyCorpusDocumentSource,
     build_public_evidence,
 )
+from app.p1_owner.vertex_source_registry import registered_source_for_uri
 from app.p1_owner.vertex_transport import VertexAiVetoTransport, VertexTransportSettings
 from app.p1_owner.automation_runtime import (
     AccountLineageAdvance,
@@ -232,6 +244,77 @@ def kis_mock_connectivity_ready() -> bool:
         return False
 
 
+@dataclass(frozen=True, slots=True)
+class OrderBookTop:
+    """제출 순간의 최우선 호가. **기록 전용이다 - 가격 결정에 쓰지 않는다.**"""
+
+    best_ask_krw: int
+    best_ask_quantity: int
+    best_bid_krw: int
+    best_bid_quantity: int
+    tr_id: str
+
+    def projection(self) -> dict[str, object]:
+        return {
+            "bestAskKrw": self.best_ask_krw,
+            "bestAskQuantity": self.best_ask_quantity,
+            "bestBidKrw": self.best_bid_krw,
+            "bestBidQuantity": self.best_bid_quantity,
+            "trId": self.tr_id,
+        }
+
+
+class KisOrderBookSource:
+    """제출 순간의 최우선 호가 한 쌍만 읽는다.
+
+    체결 품질을 바꾸려면 근거가 있어야 하는데 지금은 아무 기록도 없다 - 스프레드가 얼마나
+    넓은지, `last+1tick` 이 매도호가 뒤에 서는 빈도가 얼마인지 아무도 모른다. 이 조회는 그
+    원장을 만들기 위한 것이고 **가격 결정에는 쓰이지 않는다.**
+
+    선택된 한 종목을, 제출 **뒤에** 한 번만 부른다. 그래서 간격 제한기가 지연돼도 주문을
+    늦추거나 순서를 바꾸지 못한다. 실패하면 `None` 이고 주문은 그대로 간다 -
+    **원장이 거래를 막을 수 없어야 한다.**
+    """
+
+    def __init__(self) -> None:
+        self._settings = KISSettings(kis_mode="mock", kis_offline=False, kis_retry_attempts=1)
+        self._client = KISHttpClient(self._settings)
+
+    def snapshot(self, symbol: str) -> OrderBookTop | None:
+        try:
+            payload = self._client.request(
+                "GET",
+                ASKING_PRICE_PATH,
+                self._settings.asking_price_tr_id,
+                {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": symbol},
+            )
+        except Exception:
+            return None
+        output = payload.get("output1")
+        if not isinstance(output, dict):
+            return None
+        try:
+            ask = _positive_int(output.get("askp1"))
+            bid = _positive_int(output.get("bidp1"))
+            ask_quantity = int(str(output.get("askp_rsqn1") or 0))
+            bid_quantity = int(str(output.get("bidp_rsqn1") or 0))
+        except (ValueError, TypeError):
+            return None
+        # 장 마감·ETF 등에서 호가가 0 이거나 역전돼 나올 수 있다. 그때는 기록하지 않는다.
+        if ask <= bid or ask_quantity < 0 or bid_quantity < 0:
+            return None
+        return OrderBookTop(
+            best_ask_krw=ask,
+            best_ask_quantity=ask_quantity,
+            best_bid_krw=bid,
+            best_bid_quantity=bid_quantity,
+            tr_id=self._settings.asking_price_tr_id,
+        )
+
+    def close(self) -> None:
+        self._client.close()
+
+
 class KisAutomationQuoteSource:
     """현재가 한 번에서 price/상한가/하한가만 즉시 축약한다."""
 
@@ -264,9 +347,11 @@ class KisAutomationQuoteSource:
             upper,
             fresh=True,
             is_etf_etn=False,
-            temp_stop_yn=str(output.get("temp_stop_yn", "")),
-            management_issue_code=str(output.get("mang_issu_cls_code", "")),
-            liquidation_trading_yn=str(output.get("sltr_yn", "")),
+            temp_stop_yn=_quote_flag(output, "temp_stop_yn"),
+            # inquire_price 는 관리종목 "여부" 를 mang_issu_cls_code 로, 시간외/마스터 계열은
+            # mang_issu_yn 으로 내려준다. 한쪽만 읽으면 정상 종목이 미지값으로 떨어진다.
+            management_issue_code=_quote_flag(output, "mang_issu_cls_code", "mang_issu_yn"),
+            liquidation_trading_yn=_quote_flag(output, "sltr_yn"),
         )
 
     def close(self) -> None:
@@ -284,7 +369,11 @@ class KisAutomationExecutionSource:
         except ValueError:
             raise ValueError("KIS mock order reference TTL must be an integer") from None
         # Sizing balance + execution pages + post-fill balance share this client.
-        self._budget = KISBrokerageCallBudget(token_p_cap=1, brokerage_cap=4)
+        # balance/read/post-fill을 주문별로 수행하되 세션 최대 3건을 넘지 않는다.
+        # 주문 1건이 잔고·제출·체결·사후잔고로 3~4콜을 쓴다. 12콜은 곧 3건이라
+        # `max_orders_per_session` 보다 이 예산이 먼저 세션을 묶었다. 세션 5건을
+        # 실제로 낼 수 있도록 함께 올린다. 둘 중 하나만 올리면 효과가 없다.
+        self._budget = KISBrokerageCallBudget(token_p_cap=1, brokerage_cap=20)
         self._redis = _build_redis_client()
         self._references = EncryptedRedisOrderReferenceStore(
             self._redis,
@@ -411,6 +500,7 @@ class LiveAutomationPort:
         execution_source: ExecutionSourcePort,
         vertex_transport: VertexVetoTransport,
         corpus_source: CorpusDocumentSource | None = None,
+        order_book_source: KisOrderBookSource | None = None,
     ) -> None:
         self._claim = claim
         self._corpus_source: CorpusDocumentSource = corpus_source or EmptyCorpusDocumentSource()
@@ -418,6 +508,8 @@ class LiveAutomationPort:
         self._quote_source = quote_source
         self._execution_source = execution_source
         self._vertex_transport = vertex_transport
+        # 체결 품질 원장용. 없으면 기록을 건너뛴다 - 거래에는 영향이 없다.
+        self._order_book = order_book_source
         self._cached_quotes: dict[str, Quote] = {}
         raw_screenings = state.get("screenings")
         if isinstance(raw_screenings, list):
@@ -456,6 +548,8 @@ class LiveAutomationPort:
         self.cancel_calls = 0
         self._last_execution_ref_hash: str | None = None
         self._completed_balance: dict[str, object] | None = None
+        self._latest_balance: dict[str, object] | None = None
+        self._latest_buyables: dict[str, dict[str, object]] = {}
         expected = state.get("expectedAccountProjection", state.get("baselineAccountProjection"))
         self._expected_projection: dict[str, Any] | None = (
             dict(expected) if isinstance(expected, dict) else None
@@ -486,9 +580,13 @@ class LiveAutomationPort:
                 "EVALUATE",
                 self._claim.user_id,
                 {
-                    "principleId": self._claim.principle_id,
-                    "portfolioSource": "KIS_MOCK",
-                    "orderIntent": reservation.intent.projection(),
+                    "runId": self._claim.run_id,
+                    "claimTokenHash": self._claim.claim_token_hash,
+                    "evaluation": {
+                        "principleId": self._claim.principle_id,
+                        "portfolioSource": "KIS_MOCK",
+                        "orderIntent": reservation.intent.projection(),
+                    },
                 },
                 idempotency_key=_idempotency(
                     self._claim.run_id,
@@ -511,6 +609,7 @@ class LiveAutomationPort:
             exact_limit_price = _limit_price(quote, _required_side(run.selected_side))
             self._require_capacity(1)
             balance = self._execution_source.balance(self._claim.account_id)
+            self._latest_balance = dict(balance)
             self.physical_calls += 1
             if balance.get("accountId") != self._claim.account_id:
                 raise AutomationRuntimeError("AUTOMATION_BALANCE_IDENTITY_MISMATCH")
@@ -551,6 +650,7 @@ class LiveAutomationPort:
                     raise AutomationRuntimeError("AUTOMATION_BUYABLE_IDENTITY_MISMATCH")
                 buyable_quantity = int(buyable.get("buyableQuantity", 0))
                 buyable_amount_krw = int(buyable.get("buyableAmountKrw", 0))
+                self._latest_buyables[symbol] = dict(buyable)
             # 다음 tick 이 RISK_CHECKING 이고 RiskEngine 은 관측 표에서 잔고와 위험지표를
             # 읽는다. 그 표를 채우는 것이 운영자 CLI 뿐이어서, 사람이 매일 손으로 적재하지
             # 않으면 `violations` 는 비어 있는데 입력 부재로 HOLD 됐다. 잔고를 받는 프로세스는
@@ -622,6 +722,11 @@ class LiveAutomationPort:
                 candidates,
                 quotes,
                 candidate_set_sha256,
+                _stored_evidence_payload(
+                    self._corpus_source,
+                    candidates=candidates,
+                    session_date=self._claim.session_date,
+                ),
             ),
         )
         provider_calls = int(response.get("providerCallCount", -1))
@@ -662,6 +767,11 @@ class LiveAutomationPort:
                     candidates,
                     self._cached_quotes,
                     candidate_set_sha256,
+                    _stored_evidence_payload(
+                        self._corpus_source,
+                        candidates=candidates,
+                        session_date=self._claim.session_date,
+                    ),
                 ),
             )
             raw_candidates = response.get("candidates")
@@ -750,6 +860,115 @@ class LiveAutomationPort:
         self.physical_submit_calls = 1
         self.physical_calls += 1
         return "AMBIGUOUS" if submitted.get("status") == "PENDING_RECONCILIATION" else "UNFILLED"
+
+    def portfolio_balance(self) -> dict[str, object]:
+        """추가 ordinal 계획에는 최신 KIS_MOCK balance를 새로 읽어 이전 매도대금을 추정하지 않는다."""
+
+        self._require_capacity(1)
+        balance = self._execution_source.balance(self._claim.account_id)
+        self.physical_calls += 1
+        if balance.get("accountId") != self._claim.account_id:
+            raise AutomationRuntimeError("AUTOMATION_BALANCE_IDENTITY_MISMATCH")
+        self._latest_balance = dict(balance)
+        return dict(balance)
+
+    def portfolio_quote(self, symbol: str) -> Quote:
+        return self._quote(symbol)
+
+    def portfolio_order_book(self, symbol: str) -> dict[str, object] | None:
+        """제출 순간의 최우선 호가. **기록 전용이고 가격 결정에 쓰지 않는다.**
+
+        `KISBrokerageCallBudget` 을 쓰지 않는다 - 시세는 `KISHttpClient` 로 가고 그쪽엔 예산
+        객체가 없다. 실제 비용은 공유 간격 제한기 슬롯 하나이고, 제출 뒤에 부르므로 주문을
+        늦추지 못한다. 실패하면 None 이다.
+        """
+
+        source = self._order_book
+        if source is None:
+            return None
+        snapshot = source.snapshot(symbol)
+        return snapshot.projection() if snapshot is not None else None
+
+    def portfolio_buyable(self, symbol: str, estimated_price: int) -> dict[str, object]:
+        self._require_capacity(1)
+        result = self._bridge.command(
+            "BUYABLE",
+            self._claim.user_id,
+            {
+                "accountId": self._claim.account_id,
+                "estimatedPrice": estimated_price,
+                "symbol": symbol,
+            },
+        )
+        self.physical_calls += 1
+        if (
+            result.get("accountId") != self._claim.account_id
+            or result.get("symbol") != symbol
+            or result.get("estimatedPrice") != estimated_price
+        ):
+            raise AutomationRuntimeError("AUTOMATION_BUYABLE_IDENTITY_MISMATCH")
+        self._latest_buyables[symbol] = dict(result)
+        return dict(result)
+
+    def portfolio_evaluate(self, intent: ExactOrderIntent, ordinal: int) -> str | None:
+        """각 exact intent를 기존 Decision/RiskEngine에서 다시 평가하며 HOLD는 주문으로 승격하지 않는다."""
+
+        response = self._bridge.command(
+            "EVALUATE",
+            self._claim.user_id,
+            {
+                "runId": self._claim.run_id,
+                "claimTokenHash": self._claim.claim_token_hash,
+                "evaluation": {
+                    "principleId": self._claim.principle_id,
+                    "portfolioSource": "KIS_MOCK",
+                    "orderIntent": intent.projection(),
+                },
+            },
+            idempotency_key=_idempotency(self._claim.run_id, f"portfolio-decision:{ordinal}"),
+        )
+        risk = response.get("riskDecision")
+        decision_id = response.get("decisionId")
+        if not isinstance(risk, dict) or not isinstance(decision_id, str):
+            raise AutomationRuntimeError("AUTOMATION_DECISION_INVALID")
+        return (
+            decision_id
+            if risk.get("decision") == "ALLOW" and risk.get("canSubmitOrder") is True
+            else None
+        )
+
+    def portfolio_submit(
+        self,
+        intent: ExactOrderIntent,
+        *,
+        decision_id: str,
+        ordinal: int,
+    ) -> dict[str, object]:
+        """DB begin이 SUBMIT을 반환한 ordinal만 기존 KIS_MOCK submit bridge로 한 번 보낸다."""
+
+        self._require_capacity(1)
+        response = self._bridge.command(
+            "SUBMIT",
+            self._claim.user_id,
+            {
+                "decisionId": decision_id,
+                "orderIntent": intent.projection(),
+                "userAcknowledgement": {"warningsAccepted": False},
+            },
+            idempotency_key=_idempotency(self._claim.run_id, f"portfolio-submit:{ordinal}"),
+        )
+        self.physical_calls += 1
+        return dict(response)
+
+    def portfolio_reconcile(self, order_id: str) -> ReconcileSnapshot:
+        self._require_capacity(1)
+        self.physical_calls += 1
+        result = self._execution_source.read(
+            order_id, self._claim.account_id, self._claim.session_date
+        )
+        if not isinstance(result, ReconcileSnapshot):
+            raise AutomationRuntimeError("AUTOMATION_PORTFOLIO_RECONCILIATION_INVALID")
+        return result
 
     def reconcile(
         self, reservation: OrderReservation | None
@@ -852,6 +1071,8 @@ class LiveAutomationPort:
         self._bridge.close()
         self._quote_source.close()
         self._execution_source.close()
+        if self._order_book is not None:
+            self._order_book.close()
 
     def _quote(self, symbol: str | None) -> Quote:
         selected = _required(symbol)
@@ -884,6 +1105,8 @@ class LiveAutomationPortFactory:
             KisAutomationQuoteSource(),
             KisAutomationExecutionSource(),
             _vertex_veto_transport(),
+            _corpus_source(),
+            KisOrderBookSource(),
         )
 
 
@@ -894,6 +1117,7 @@ def _evidence_candidates_payload(
     candidates: tuple[SignalCandidate, ...],
     quotes: Mapping[str, Quote],
     candidate_set_sha256: str,
+    stored_evidence: tuple[dict[str, object], ...] = (),
 ) -> dict[str, object]:
     if _SHA256.fullmatch(candidate_set_sha256) is None:
         raise AutomationRuntimeError("AUTOMATION_CANDIDATE_SET_HASH_INVALID")
@@ -913,7 +1137,58 @@ def _evidence_candidates_payload(
         ],
         "runId": claim.run_id,
         "sessionDate": claim.session_date.isoformat(),
+        "storedEvidence": list(stored_evidence),
     }
+
+
+def _stored_evidence_payload(
+    source: CorpusDocumentSource,
+    *,
+    candidates: tuple[SignalCandidate, ...],
+    session_date: date,
+) -> tuple[dict[str, object], ...]:
+    """기존 저장 공시 코퍼스를 Spring Strong LLM용 bounded evidence로 투영한다."""
+
+    output: list[dict[str, object]] = []
+    for candidate in candidates:
+        public_items = build_public_evidence(
+            source, symbol=candidate.symbol, session_date=session_date
+        )
+        documents = source.documents(symbol=candidate.symbol, session_date=session_date)
+        for evidence in public_items:
+            source_id = str(evidence["sourceId"])
+            source_type = str(evidence["sourceType"])
+            source_event_date = str(evidence["sourceEventDate"])
+            bounded_quote = str(evidence["boundedQuote"])
+            document = next(
+                (
+                    item
+                    for item in documents
+                    if registered_source_for_uri(item.uri) == (source_id, source_type)
+                    and item.published_on.isoformat() == source_event_date
+                    and " ".join(item.passage.split())[:240] == bounded_quote
+                ),
+                None,
+            )
+            if document is None:
+                continue
+            digest = hashlib.sha256(
+                f"{candidate.symbol}|{source_id}|{document.uri}|{bounded_quote}".encode()
+            ).hexdigest()
+            output.append(
+                {
+                    "boundedQuote": bounded_quote,
+                    "citationId": f"cit_stored_{digest[:32]}",
+                    "sourceEventDate": source_event_date,
+                    "sourceId": source_id,
+                    "sourceType": source_type,
+                    "supportObserved": True,
+                    "symbol": candidate.symbol,
+                    "uri": document.uri,
+                }
+            )
+    output.sort(key=lambda item: (str(item["symbol"]), str(item["citationId"])))
+    return tuple(output[:155])
 
 
 def _candidate_screening(value: dict[str, Any]) -> CandidateScreening:
@@ -1038,6 +1313,23 @@ def _positive_int(value: object) -> int:
     return parsed
 
 
+def _quote_flag(output: dict[str, Any], *keys: str) -> str:
+    """Return the first present KIS trading-status flag, or an explicit UNKNOWN.
+
+    빈 문자열로 폴백하면 판정 쪽에서 거래정지와 구별되지 않아 전 종목이 조용히
+    탈락한다. 누락은 누락으로 표기해 사유가 로그와 화면까지 도달하게 한다.
+    """
+
+    for key in keys:
+        value = output.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return "UNKNOWN"
+
+
 def _required(value: str | None) -> str:
     if not value:
         raise AutomationRuntimeError("AUTOMATION_SELECTION_MISSING")
@@ -1048,6 +1340,152 @@ def _required_side(value: str | None) -> Any:
     if value not in {"BUY", "SELL"}:
         raise AutomationRuntimeError("AUTOMATION_SELECTION_MISSING")
     return value
+
+
+def _corpus_source() -> CorpusDocumentSource:
+    """공시 투영이 있으면 그것을 근거 코퍼스로, 없으면 기존 빈 코퍼스를 쓴다.
+
+    빈 코퍼스가 곧 근거 0개이고 근거 0개는 ABSTAIN 이므로 매수를 막는다 - 설정이 없는 쪽이
+    항상 더 안전하다. 이 자리가 계획이 말한 "빠진 클래스 하나"였다.
+
+    reader 는 자기 DSN 으로 role 과 표 권한을 실제로 확인한다(`_attest_reader_dsn`).
+    그 검증이나 연결이 실패하면 여기서 빈 코퍼스로 내려앉고 표식을 남긴다 - 런 중에 예외를
+    던지면 tick 하나가 근거 조회 때문에 죽는다.
+    """
+
+    dsn = os.environ.get("DECISION_DISCLOSURE_READER_DATABASE_DSN", "").strip()
+    if not dsn:
+        print("AUTOMATION_DISCLOSURE_CORPUS=UNCONFIGURED", flush=True)
+        return EmptyCorpusDocumentSource()
+    try:
+        repository = PostgresStoredDisclosureRepository(dsn)
+    except (ValueError, OSError, psycopg.Error) as error:
+        print(
+            f"AUTOMATION_DISCLOSURE_CORPUS=UNAVAILABLE error={type(error).__name__}",
+            flush=True,
+        )
+        return EmptyCorpusDocumentSource()
+    print("AUTOMATION_DISCLOSURE_CORPUS=READY", flush=True)
+    disclosure = DisclosureEventCorpusDocumentSource(_LoggingDisclosureLoader(repository))
+    world_news = _world_news_corpus_source(dsn)
+    if world_news is None:
+        return disclosure
+    # 도메인당 한 건만 쓰이므로 공시(dart.fss)와 언론 기사가 서로를 밀어내지 않는다.
+    return MergedCorpusDocumentSource(sources=(disclosure, world_news))
+
+
+def _world_news_corpus_source(dsn: str) -> WorldNewsCorpusDocumentSource | None:
+    """세계 뉴스 근거 원천. 읽을 수 없으면 None 이고, 그러면 공시 근거만 쓴다.
+
+    근거가 줄면 ABSTAIN 쪽으로 기울 뿐이고 ABSTAIN 은 통과다 - 뉴스를 못 읽는다고 해서
+    매매가 멈추지는 않는다.
+    """
+
+    try:
+        loader = _PostgresWorldNewsLoader(dsn)
+        names = _PostgresInstrumentNameLoader(dsn)
+    except (ValueError, OSError, psycopg.Error) as error:
+        print(
+            f"AUTOMATION_WORLD_NEWS_CORPUS=UNAVAILABLE error={type(error).__name__}",
+            flush=True,
+        )
+        return None
+    print("AUTOMATION_WORLD_NEWS_CORPUS=READY", flush=True)
+    return WorldNewsCorpusDocumentSource(loader=loader, names=names)
+
+
+@dataclass(frozen=True, slots=True)
+class _PostgresWorldNewsLoader:
+    """V177 의 근거 전용 읽기만 부른다. 화면 조회 함수(lookup_allowed)는 쓰지 않는다."""
+
+    dsn: str
+
+    def load(
+        self, *, window_from: date, window_to: date, limit: int
+    ) -> tuple[StoredWorldNewsArticle, ...]:
+        with psycopg.connect(self.dsn, connect_timeout=5) as connection:
+            rows = connection.execute(
+                "select canonical_url,title,bounded_quote,bounded_passage,first_seen_at "
+                "from p1_read_world_news_evidence_v1(%s,%s,%s,%s)",
+                ("", window_from, window_to, min(limit, 500)),
+            ).fetchall()
+        return tuple(
+            StoredWorldNewsArticle(
+                canonical_url=str(row[0]),
+                title=str(row[1] or ""),
+                bounded_quote=(str(row[2]) if row[2] else None),
+                bounded_passage=(str(row[3]) if row[3] else None),
+                published_at=None,
+                publication_status="",
+                first_seen_at=row[4],
+            )
+            for row in rows
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _PostgresInstrumentNameLoader:
+    """종목의 정식 표시명. 없으면 그 종목은 뉴스 근거를 갖지 않는다."""
+
+    dsn: str
+
+    def official_name(self, *, symbol: str) -> str | None:
+        with psycopg.connect(self.dsn, connect_timeout=5) as connection:
+            row = connection.execute(
+                "select p1_read_instrument_display_name_v1(%s)",
+                (symbol,),
+            ).fetchone()
+        if row is None or not row[0]:
+            return None
+        return str(row[0])
+
+
+@dataclass(frozen=True, slots=True)
+class _LoggingDisclosureLoader:
+    """읽기 실패를 런 밖으로 던지지 않고 빈 배치로 바꾼다.
+
+    근거를 못 읽는 것은 "근거가 없다"와 같은 결과(ABSTAIN)여야 하고, tick 을 죽이는 것과는
+    다르다. 다만 조용히 삼키지 않으려고 표식을 남긴다.
+    """
+
+    repository: PostgresStoredDisclosureRepository
+
+    def load(
+        self,
+        *,
+        symbol: str,
+        corp_code: str | None,
+        window_from: date,
+        window_to: date,
+    ) -> Any:
+        try:
+            batch = self.repository.load_optional_events(
+                symbol=symbol,
+                corp_code=corp_code,
+                window_from=window_from,
+                window_to=window_to,
+            )
+        except Exception as error:  # noqa: BLE001 - 근거 조회가 tick 을 죽이지 않는다
+            print(
+                f"AUTOMATION_DISCLOSURE_CORPUS=READ_FAILED symbol={symbol} "
+                f"error={type(error).__name__}",
+                flush=True,
+            )
+            return _EmptyDisclosureBatch()
+        print(
+            f"AUTOMATION_DISCLOSURE_CORPUS=READ symbol={symbol} "
+            f"events={len(batch.events)} complete={str(batch.complete).lower()} "
+            f"collectionStatus={batch.collection_status}",
+            flush=True,
+        )
+        return batch
+
+
+@dataclass(frozen=True, slots=True)
+class _EmptyDisclosureBatch:
+    events: tuple[Any, ...] = ()
+    complete: bool = False
+    collection_status: str = "READ_FAILED"
 
 
 def _vertex_veto_transport() -> VertexVetoTransport:

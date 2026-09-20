@@ -50,7 +50,7 @@ class P1V3AutomationContractTest(unittest.TestCase):
             "maxOpenPositions": 5,
             "maxNewOrdersPerSession": 1,
             "evaluationTimeKst": "09:30",
-            "buyCutoffTimeKst": "09:40",
+            "buyCutoffTimeKst": "14:30",
             "cancelTimeKst": "15:20",
             "createdAt": "2026-08-31T18:00:00+09:00",
             "updatedAt": "2026-08-31T18:00:00+09:00",

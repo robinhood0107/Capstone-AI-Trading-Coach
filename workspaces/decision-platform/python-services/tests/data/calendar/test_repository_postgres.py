@@ -425,3 +425,95 @@ def _quota(limit: int, budget: int) -> OpenDARTQuotaConfig:
         max_calls_per_run=min(8_000, budget),
         max_symbols_per_run=10,
     )
+
+
+def test_disclosure_event_page_commit_satisfies_every_table_check(
+    postgres_cluster: PostgresTestCluster,
+) -> None:
+    """공시 수집기가 만드는 commit 을 실 Postgres 에 그대로 게시한다.
+
+    왜 이 테스트가 있나. 순수 함수 테스트만으로는 표의 CHECK 를 볼 수 없다. 실측으로 두 번
+    걸렸다 - `confidence_bps` 상한 9900 과 `calendar_source_health.status_code` 의
+    `^[A-Z][A-Z0-9_]{0,63}$`(OpenDART 응답 코드 '000' 을 그대로 넣어 거부됐다). 그 부류는
+    수집기를 실제로 돌려 보기 전까지 드러나지 않고, 드러나면 페이지가 통째로 롤백된다.
+
+    그리고 게시한 이벤트가 `disclosure_event_observation_projection` 에 실제로 나타나는지
+    본다. 그 투영이 뉴스 거부권 근거의 유일한 출처이고, source link 가 없으면 이벤트가
+    있어도 투영에 나타나지 않는다.
+    """
+
+    from app.data.opendart.disclosure_event_collector import build_page_commit
+    from app.data.opendart.disclosure_event_collector import SymbolTarget
+    from app.data.opendart.models import DisclosureRiskEvent
+
+    target = SymbolTarget(symbol="000660", corp_code="00164779")
+    event = DisclosureRiskEvent(
+        symbol="000660",
+        corp_code="00164779",
+        event_code="OPENDART:cvbdIsDecsn",
+        receipt_no="20260907000001",
+        occurred_on=date(2026, 9, 7),
+    )
+    commit = build_page_commit(
+        target=target,
+        operation="cvbdIsDecsn",
+        events=[event],
+        window_from=date(2026, 8, 17),
+        window_to=date(2026, 9, 7),
+        observed_at=datetime(2026, 9, 7, 12, 0, tzinfo=UTC),
+    )
+
+    with psycopg.connect(postgres_cluster["collector_dsn"]) as connection:
+        CalendarRepository(connection).publish_page(commit)
+        connection.commit()
+    # 투영은 읽기 전용 role 만 볼 수 있다(최소권한). 실제 읽기 경로와 같은 role 로 확인한다.
+    with psycopg.connect(postgres_cluster["disclosure_reader_dsn"]) as reader:
+        row = reader.execute(
+            """
+            SELECT symbol, event_code, receipt_no, occurred_on
+            FROM disclosure_event_observation_projection
+            WHERE receipt_no = %s
+            """,
+            (event.receipt_no,),
+        ).fetchone()
+
+    assert row is not None
+    assert row[0] == "000660"
+    assert row[1] == "OPENDART:cvbdIsDecsn"
+    assert row[3] == date(2026, 9, 7)
+
+
+def test_a_disclosure_page_without_events_still_records_a_completed_cursor(
+    postgres_cluster: PostgresTestCluster,
+) -> None:
+    """공시가 0건인 페이지도 완결 cursor 를 남긴다.
+
+    남기지 않으면 "공시가 없는 종목"과 "아직 안 본 종목"이 구별되지 않고, 완결성 판정이
+    영구히 거짓이 된다.
+    """
+
+    from app.data.opendart.disclosure_event_collector import SymbolTarget, build_page_commit
+
+    commit = build_page_commit(
+        target=SymbolTarget(symbol="005930", corp_code="00126380"),
+        operation="dfOcr",
+        events=[],
+        window_from=date(2026, 8, 17),
+        window_to=date(2026, 9, 7),
+        observed_at=datetime(2026, 9, 7, 12, 0, tzinfo=UTC),
+    )
+
+    with psycopg.connect(postgres_cluster["collector_dsn"]) as connection:
+        CalendarRepository(connection).publish_page(commit)
+        connection.commit()
+    with psycopg.connect(postgres_cluster["disclosure_reader_dsn"]) as reader:
+        row = reader.execute(
+            """
+            SELECT completed FROM disclosure_collection_status_projection
+            WHERE source_id = %s AND corp_code = %s AND operation = %s
+            """,
+            ("opendart-structured-events", "00126380", "dfOcr"),
+        ).fetchone()
+
+    assert row is not None
+    assert row[0] is True

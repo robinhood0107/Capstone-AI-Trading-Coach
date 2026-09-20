@@ -218,11 +218,9 @@ def test_query_normalizer_enforces_contract_bounds_and_forbidden_controls() -> N
             "relatedSymbols": [f"{value:06d}" for value in range(6)],
         },
         {"question": "ok", "answerMode": "CONCISE", "topics": ["INTERNAL"]},
-        {
-            "question": "ok",
-            "answerMode": "CONCISE",
-            "topics": list(ALLOWED_RAG_TOPICS),
-        },
+        # 허용 토픽을 전부 고르는 것은 유효한 요청이다. 예전에는 상한이 목록보다 작아
+        # 여기서 거부됐고, 그 탓에 금융 Agent 가 어떤 질문에도 답하지 못했다.
+        # 반대 방향 단정은 tests/rag/test_topic_bounds_regression.py 에 있다.
     )
     for payload in invalid_payloads:
         with pytest.raises(QueryValidationError):

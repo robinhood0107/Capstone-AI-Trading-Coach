@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contracts.historical_openapi_projection import project_historical_root
 import argparse
 import json
 import sys
@@ -139,7 +140,7 @@ def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
         from contracts.verify_p1_return_signal_v3_openapi_transition import project_pre_signal_v3
 
         openapi = project_pre_signal_v3(openapi)
-        openapi_bytes = canonical_json_bytes(openapi)
+        openapi_bytes = canonical_json_bytes(project_historical_root(openapi))
     if len(v3_root_operations(openapi)) == 75:
         additive = object_value(
             json.loads(
@@ -148,13 +149,17 @@ def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
             "Automation V3 additive OpenAPI",
         )
         openapi = project_pre_v3_openapi(openapi, additive)
-        openapi_bytes = canonical_json_bytes(openapi)
+        openapi_bytes = canonical_json_bytes(project_historical_root(openapi))
     operations(openapi, 69)
     badge_bytes = BADGE_PATH.read_bytes()
+    # 이 클라이언트는 exact-69 세대의 산출물이다. 이후의 제품 결정(매수 마감 09:40->14:30,
+    # 만기 세션 nullable)을 되돌려 그 세대에 고정한다 - 그래야 바이트가 안정적이다.
+    # 프런트는 이 타입을 쓰지 않는다(wire.ts 가 string 으로 받는다).
+    historical = project_historical_root(openapi)
     return {
         CATALOG_PATH: canonical_json(build_catalog(openapi, openapi_bytes, badge_bytes)),
         CLIENT_PATH: generate_client(
-            openapi,
+            historical,
             expected_operations=EXPECTED_OPERATIONS_V2,
             expected_root_count=69,
             generated_by="contracts/generate_p1_team_a_acceptance_v2.py",

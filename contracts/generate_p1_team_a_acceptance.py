@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contracts.historical_openapi_projection import project_historical_root
 import argparse
 import hashlib
 import json
@@ -605,7 +606,7 @@ def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
             openapi = project_pre_signal_v3(openapi)
         except ContractValidationError as error:
             raise ContractError(str(error)) from error
-        openapi_bytes = canonical_json_bytes(openapi)
+        openapi_bytes = canonical_json_bytes(project_historical_root(openapi))
     try:
         operations(openapi, 75)
     except ContractError:
@@ -623,7 +624,7 @@ def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
             openapi = project_pre_v3_openapi(openapi, v3_additive)
         except ContractValidationError as error:
             raise ContractError(str(error)) from error
-        openapi_bytes = canonical_json_bytes(openapi)
+        openapi_bytes = canonical_json_bytes(project_historical_root(openapi))
     try:
         operations(openapi, 69)
     except ContractError:
@@ -642,7 +643,7 @@ def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
             openapi = strip_strong_llm_settings(openapi, strong_llm_additive)
         except ContractValidationError as error:
             raise ContractError(str(error)) from error
-        openapi_bytes = canonical_json_bytes(openapi)
+        openapi_bytes = canonical_json_bytes(project_historical_root(openapi))
     try:
         operations(openapi, 68)
     except ContractError:
@@ -661,7 +662,7 @@ def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
             openapi = project_pre_rag_v2_openapi(openapi, rag_v2_additive)
         except ContractValidationError as error:
             raise ContractError(str(error)) from error
-        openapi_bytes = canonical_json_bytes(openapi)
+        openapi_bytes = canonical_json_bytes(project_historical_root(openapi))
     try:
         operations(openapi, 61)
     except ContractError:
@@ -679,7 +680,7 @@ def build_artifacts(openapi_bytes: bytes) -> dict[Path, bytes]:
             openapi = project_pre_v91_openapi(openapi, v91_additive)
         except ContractValidationError as error:
             raise ContractError(str(error)) from error
-        openapi_bytes = canonical_json_bytes(openapi)
+        openapi_bytes = canonical_json_bytes(project_historical_root(openapi))
     badge_bytes = canonical_json(badge_contract())
     catalog_bytes = canonical_json(build_catalog(openapi, openapi_bytes, badge_bytes))
     return {

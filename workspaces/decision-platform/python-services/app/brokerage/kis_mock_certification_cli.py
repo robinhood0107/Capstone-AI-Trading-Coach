@@ -189,6 +189,9 @@ def certify(
         physical_calls = _combined_counts(quote_counts, brokerage_counts)
         receipt = {
             "commitSha": request["commitSha"],
+            # 인증은 소스가 아니라 실제로 도는 이미지에 묶인다. 요청서가 들고 온 값을
+            # 그대로 옮겨 적어 영수증만 떼어 다른 이미지에 쓰지 못하게 한다.
+            "imageDigest": request["imageDigest"],
             "inputSha256": canonical_json_sha256(request),
             "physicalCalls": physical_calls,
             "status": "PASS",
@@ -204,6 +207,9 @@ def certify(
         }
         failure = {
             "commitSha": request["commitSha"],
+            # 인증은 소스가 아니라 실제로 도는 이미지에 묶인다. 요청서가 들고 온 값을
+            # 그대로 옮겨 적어 영수증만 떼어 다른 이미지에 쓰지 못하게 한다.
+            "imageDigest": request["imageDigest"],
             "inputSha256": canonical_json_sha256(request),
             "physicalCalls": physical_calls,
             "status": "FAIL",
@@ -219,6 +225,9 @@ def certify(
         }
         failure = {
             "commitSha": request["commitSha"],
+            # 인증은 소스가 아니라 실제로 도는 이미지에 묶인다. 요청서가 들고 온 값을
+            # 그대로 옮겨 적어 영수증만 떼어 다른 이미지에 쓰지 못하게 한다.
+            "imageDigest": request["imageDigest"],
             "inputSha256": canonical_json_sha256(request),
             "physicalCalls": physical_calls,
             "status": "FAIL",

@@ -19,6 +19,7 @@ from typing import Final, NoReturn, cast
 _MAX_FILE_BYTES: Final = 32 * 1024
 _HEAD: Final = re.compile(r"^[0-9a-f]{40}$")
 _SHA256: Final = re.compile(r"^[0-9a-f]{64}$")
+_IMAGE_DIGEST: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _BRANCH: Final = re.compile(r"^(?:feature|fix|docs|infra|experiment|workflow)/[A-Za-z0-9._/-]{1,120}$")
 _TIMESTAMP: Final = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
 _REQUIRED_CHECKS: Final = frozenset(
@@ -116,6 +117,7 @@ def verify_mock_certification(
     expected_request = {
         "branch",
         "commitSha",
+        "imageDigest",
         "pullRequest",
         "quantity",
         "requiredChecks",
@@ -135,6 +137,8 @@ def verify_mock_certification(
         or request.get("quantity") != 1
         or not isinstance(request.get("securityEvidenceDigest"), str)
         or _SHA256.fullmatch(cast(str, request["securityEvidenceDigest"])) is None
+        or not isinstance(request.get("imageDigest"), str)
+        or _IMAGE_DIGEST.fullmatch(cast(str, request["imageDigest"])) is None
         or not isinstance(checks, list)
         or not all(isinstance(item, str) for item in checks)
         or set(cast(list[str], checks)) != _REQUIRED_CHECKS
@@ -142,7 +146,14 @@ def verify_mock_certification(
     ):
         raise MockCertificationGuardError("KIS_MOCK_CERTIFICATION_REQUEST_INVALID")
 
-    expected_receipt = {"commitSha", "inputSha256", "physicalCalls", "status", "timestamp"}
+    expected_receipt = {
+        "commitSha",
+        "imageDigest",
+        "inputSha256",
+        "physicalCalls",
+        "status",
+        "timestamp",
+    }
     expected_calls = (
         {"brokerage": 7, "quote": 1, "token": 0},
         {"brokerage": 7, "quote": 1, "token": 1},
@@ -167,11 +178,28 @@ def verify_mock_certification(
         raise MockCertificationGuardError("KIS_MOCK_CERTIFICATION_CLOCK_INVALID")
 
     # 인증을 source tree에 묶던 두 검사(clean worktree, certified tree == HEAD tree)는
-    # 제거했다. 남겨 두면 e2e를 한 번 돌릴 때마다 git이 추적하는 판정표 JSON이 갱신되어
-    # 방금 받은 인증이 그 자리에서 무효가 된다. 대신 영수증 자체의 무결성 - canonical
-    # form, request와의 inputSha256 연결, commitSha 일치, 물리 호출 수 - 은 그대로 본다.
+    # 예전에 제거했다. e2e를 한 번 돌릴 때마다 git이 추적하는 판정표 JSON이 갱신되어
+    # 방금 받은 인증이 그 자리에서 무효가 됐기 때문이다.
+    #
+    # 남아 있던 `git cat-file -t <commitSha>` 도 제거한다. 레포를 받지 않고 이미지만
+    # 올린 서버에는 git 이력이 있을 이유가 없고, 그러면 인증을 확인할 방법이 사라져
+    # 자동 운용이 영영 무장하지 못한다.
+    #
+    # 대신 **실제로 도는 것**에 묶는다. 돌아가는 것은 source tree가 아니라 이미지다.
+    # 영수증의 imageDigest 가 지금 이 런타임이 쓰는 이미지와 같아야 한다. 영수증을 다른
+    # 코드로 만든 이미지에 가져다 쓰면 여기서 닫힌다.
+    if request["imageDigest"] != receipt["imageDigest"]:
+        raise MockCertificationGuardError("KIS_MOCK_CERTIFICATION_IMAGE_MISMATCH")
+    expected_image = os.environ.get("P1_CERTIFIED_IMAGE_DIGEST", "").strip()
+    if expected_image and expected_image != request["imageDigest"]:
+        raise MockCertificationGuardError("KIS_MOCK_CERTIFICATION_IMAGE_MISMATCH")
+
+    # git 이 있으면 커밋 실존도 덤으로 본다. 없다고 거부하지는 않는다.
     certified_commit = cast(str, request["commitSha"])
-    certified_type = _git(repository_root, "cat-file", "-t", certified_commit)
+    try:
+        certified_type = _git(repository_root, "cat-file", "-t", certified_commit)
+    except MockCertificationGuardError:
+        return
     if certified_type != "commit":
         raise MockCertificationGuardError("KIS_MOCK_CERTIFICATION_COMMIT_INVALID")
 

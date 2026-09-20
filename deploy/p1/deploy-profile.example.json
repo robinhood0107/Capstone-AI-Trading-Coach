@@ -1,6 +1,6 @@
 {
   "contractId": "p1-deploy-profile/v1",
-  "note": "공유 가능한 배포 설정. 개인정보를 담지 않는다. KIS 자격증명·계좌번호·서비스 계정은 .env 와 google.json 에만 둔다.",
+  "note": "공유 가능한 배포 설정이자 이미지에 구워지는 기본값. 개인정보를 담지 않는다. KIS 자격증명·계좌번호·서비스 계정은 .env 와 google.json 에만 둔다.",
   "automationPolicy": {
     "presetId": "balanced",
     "capitalLimitKrw": 50000000,
@@ -28,7 +28,7 @@
     "aiJudgementEnabled": true
   },
   "certification": {
-    "note": "이미 받은 KIS 모의주문 왕복 인증. 개인정보가 없다 - 브랜치·커밋·이미지·종목코드·호출수뿐이다.",
+    "note": "자리표시자다. 실제 인증이 아니다 - 부트스트랩은 이 블록을 읽지 않는다. 실제 값은 capstone mock certify 가 .state-app/mock/ 에 쓰고, export_deploy_profile.py 가 그것을 뽑아 이 자리에 채운다.",
     "request": {
       "branch": "feature/example",
       "commitSha": "0000000000000000000000000000000000000000",
@@ -50,9 +50,16 @@
       "commitSha": "0000000000000000000000000000000000000000",
       "imageDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
       "inputSha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "physicalCalls": { "brokerage": 7, "quote": 1, "token": 1 },
+      "physicalCalls": {
+        "brokerage": 7,
+        "quote": 1,
+        "token": 1
+      },
       "status": "PASS",
       "timestamp": "2026-01-01T00:00:00Z"
     }
+  },
+  "capitalPolicy": {
+    "reinvestRealizedPnl": false
   }
 }

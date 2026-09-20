@@ -637,6 +637,23 @@ services:
     restart: "no"
     networks: [p1-data]
 
+  deploy-bootstrap:
+    profiles: [owner]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-deploy-bootstrap"]
+    environment:
+      P1_DEPLOY_PROFILE: /run/deploy/deploy-profile.json
+      P1_BOOTSTRAP_BASE_URL: "http://decision-platform:8080"
+      P1_BOOTSTRAP_USERNAME: "${P1_BOOTSTRAP_USERNAME:-demo-user}"
+      P1_USER_PASSWORD_FILE: /run/secrets/demo_user_password
+    secrets: [demo_user_password]
+    volumes:
+      - ${P1_DEPLOY_PROFILE_DIR:-./.state-app/deploy}:/run/deploy:ro
+    <<: *app-security
+    restart: "no"
+    networks: [p1-app]
+
   market-data-cli:
     profiles: [owner]
     image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
@@ -998,6 +1015,7 @@ secrets:
   python_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/python.env"}
   kis_mock_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock.env"}
   demo_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/demo.env"}
+  demo_user_password: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/demo-user.password"}
   rag_history_kek: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/rag-history-kek-v1.key"}
   seed_import_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/seed-import.env"}
   p1_provider_claim_dsn: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/p1-provider-claim.dsn"}

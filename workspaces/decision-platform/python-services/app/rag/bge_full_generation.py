@@ -254,6 +254,24 @@ class BgeFullGenerationAdminPort(Protocol):
         """attestation, prior supersede와 pointer CAS를 한 transaction으로 수행한다."""
 
 
+
+#: BGE 는 이 스택의 기본 경로가 아니다. 공개 코퍼스는 Voyage 하나로 통일했고
+#: rag_embedding_policy_state 도 voyage_only_v1 로 고정돼 있다(V178). 두 벡터 공간을
+#: 동시에 살려 두면 어느 쪽으로 답했는지 매번 따져야 하고, 질의 임베딩은 한 번만
+#: 계산되므로 둘을 함께 쓰는 것도 불가능하다.
+#:
+#: 되살리려면 BGE 코퍼스를 적재해 ACTIVE 포인터를 만든 뒤 이 변수를 1 로 둔다.
+#: 절차는 docs/최종_프로젝트_명세서.md 의 임베딩 정책 절에 적어 두었다.
+_BGE_ENABLED_ENV = "CAPSTONE_RAG_BGE_ENABLED"
+
+
+def _require_bge_enabled() -> None:
+    """BGE 경로를 명시적으로 켜지 않았으면 조용히 통과시키지 않고 거부한다."""
+
+    if os.environ.get(_BGE_ENABLED_ENV, "").strip() not in {"1", "true", "TRUE"}:
+        raise BgeFullGenerationError("BGE_DISABLED")
+
+
 def prepare_bge_full_generation(
     *,
     corpus: FrozenSourceCardCorpus,
@@ -262,6 +280,7 @@ def prepare_bge_full_generation(
     batch_benchmark: BgeBatchBenchmarkReceipt,
 ) -> BgeFullGenerationPlan:
     """merged exact 30 manifest와 pinned BGE identity에서 immutable generation을 만든다."""
+    _require_bge_enabled()
 
     _validate_corpus_binding(corpus)
     _validate_artifact(artifact)
@@ -396,6 +415,7 @@ def execute_bge_full_generation(
     repository: BgeFullGenerationWriterPort,
 ) -> BgeMaterializedGeneration:
     """deterministic batches를 생성해 COPY/finalize하고 pointer 변경 없이 MATERIALIZED로 끝낸다."""
+    _require_bge_enabled()
 
     if (
         len(plan.items) != _EXPECTED_CARD_COUNT
@@ -471,6 +491,7 @@ def verify_bge_full_generation_parity(
     minimum_cosine_similarity_tolerance: float = 0.999999,
 ) -> BgeGenerationParityReceipt:
     """독립 DB projection을 reread해 membership, row hash와 float32 vector parity를 검증한다."""
+    _require_bge_enabled()
 
     expected = {row.chunk_revision_id: row for row in materialized.rows}
     if len(expected) != _EXPECTED_CARD_COUNT:
@@ -544,6 +565,7 @@ def activate_bge_full_generation(
     repository: BgeFullGenerationAdminPort,
 ) -> BgeActivationReceipt:
     """모든 local gate가 PASS일 때만 전용 admin CAS transaction을 호출한다."""
+    _require_bge_enabled()
 
     plan = materialized.plan
     if (

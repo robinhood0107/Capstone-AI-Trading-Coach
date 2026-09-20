@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 
 from app.rag.bge_artifact import BgeVerifiedPacket
 from app.rag.bge_full_generation import (
+    _BGE_ENABLED_ENV,
     BgeBatchBenchmarkReceipt,
     BgeFullGenerationError,
     BgeGenerationBenchmarkReceipt,
@@ -48,10 +49,19 @@ class _FixtureEmbedder:
         return np.stack(rows)
 
 
+
+@pytest.fixture(autouse=True)
+def _enable_bge_for_this_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    """BGE 는 제품 기본 경로가 아니다(Voyage 통일). 이 모듈만 명시적으로 켜서 검증한다."""
+
+    monkeypatch.setenv(_BGE_ENABLED_ENV, "1")
+
+
 def test_external_generation_appends_revisions_and_atomically_supersedes_internal(
     isolated_postgres_cluster: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    pytest.skip("BGE 활성화는 V178 이 rag_embedding_policy_state 를 voyage_only_v1 로 고정해 더 이상 끝까지 가지 못한다. 되살리려면 BGE 코퍼스를 적재해 ACTIVE 포인터를 만든 뒤 정책을 바꿔야 한다.")
     cluster = isolated_postgres_cluster
     monkeypatch.setenv("RAG_SOURCE_REGISTER_TARGET", "testcontainers")
     old_plan = _plan("s4_7b_internal_v1")

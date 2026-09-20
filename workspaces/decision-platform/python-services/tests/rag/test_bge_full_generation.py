@@ -12,6 +12,8 @@ from numpy.typing import NDArray
 
 from app.rag.bge_artifact import BgeVerifiedPacket
 from app.rag.bge_full_generation import (
+    _BGE_ENABLED_ENV,
+    _require_bge_enabled,
     BgeActivationRequest,
     BgeBatchBenchmarkReceipt,
     BgeFullGenerationError,
@@ -34,6 +36,14 @@ from app.rag.source_card_corpus import (
 
 _BATCH_REPORT_PATH = REPO_ROOT / "capstone-rag/reports/s4-2b-batch-memory-benchmark.v1.json"
 _FINAL_REPORT_PATH = REPO_ROOT / "capstone-rag/reports/s4-2b-full-generation-benchmark.v1.json"
+
+
+
+@pytest.fixture(autouse=True)
+def _enable_bge_for_this_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    """BGE 는 제품 기본 경로가 아니다(Voyage 통일). 이 모듈만 명시적으로 켜서 검증한다."""
+
+    monkeypatch.setenv(_BGE_ENABLED_ENV, "1")
 
 
 class _WhitespaceTokenizer:
@@ -303,6 +313,8 @@ def test_postgres_full_generation_uses_writer_reader_and_admin_boundaries(
     isolated_postgres_cluster: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    pytest.skip("BGE 활성화는 V178 이 rag_embedding_policy_state 를 voyage_only_v1 로 고정해 더 이상 끝까지 가지 못한다. 되살리려면 BGE 코퍼스를 적재해 ACTIVE 포인터를 만든 뒤 정책을 바꿔야 한다.")
+    monkeypatch.setenv(_BGE_ENABLED_ENV, "1")
     postgres_cluster = isolated_postgres_cluster
     plan = prepare_bge_full_generation(
         corpus=load_frozen_source_card_corpus(),
@@ -473,3 +485,16 @@ def _final_benchmark(*, p95_ms: float) -> BgeGenerationBenchmarkReceipt:
         openai_physical_calls=0,
         passed=p95_ms <= 1500.0,
     )
+
+
+def test_bge_entry_guard_refuses_without_explicit_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """켜지 않은 상태에서 BGE 를 부르면 조용히 지나가지 않고 거부한다."""
+
+    monkeypatch.delenv(_BGE_ENABLED_ENV, raising=False)
+    with pytest.raises(BgeFullGenerationError) as failure:
+        _require_bge_enabled()
+    assert str(failure.value) == "BGE_DISABLED"
+
+    monkeypatch.setenv(_BGE_ENABLED_ENV, "0")
+    with pytest.raises(BgeFullGenerationError):
+        _require_bge_enabled()

@@ -77,11 +77,26 @@ class BgeDocumentEmbedder(Protocol):
     def embed(self, texts: tuple[str, ...]) -> NDArray[np.float32]: ...
 
 
+
+def _require_bge_enabled() -> None:
+    """BGE 벡터를 만드는 경로는 명시적으로 켜지 않으면 거부한다.
+
+    공개 코퍼스를 Voyage 하나로 통일했고 정책도 voyage_only_v1 로 고정돼 있다(V178).
+    두 벡터 공간을 함께 두면 어느 쪽으로 답했는지 매번 따져야 하고, 질의 임베딩은 한 번만
+    계산되므로 동시 사용 자체가 불가능하다.
+    """
+
+    from app.rag.bge_full_generation import _require_bge_enabled as _guard
+
+    _guard()
+
+
 def _embed_bge_texts(
     *,
     embedder: BgeDocumentEmbedder,
     texts: tuple[str, ...],
 ) -> NDArray[np.float32]:
+    _require_bge_enabled()
     """runtime의 64-row 상한 안에서 순서를 보존한 complete document vector를 만든다."""
 
     batches: list[NDArray[np.float32]] = []
@@ -303,6 +318,7 @@ def materialize_owner_bge_document(
     embedder: BgeDocumentEmbedder,
     request: RagV2OwnerDocumentRequest,
 ) -> RagV2BgeMaterializedOwnerDocument:
+    _require_bge_enabled()
     """owner 문서를 local parser→canonical chunk→pinned BGE vector 순서로 materialize한다.
 
     이 경계는 network/provider transport를 생성하지 않는다. external-LLM eligibility와 무관하게
@@ -382,6 +398,7 @@ def materialize_public_bge_document(
     embedder: BgeDocumentEmbedder,
     request: RagV2PublicDocumentRequest,
 ) -> RagV2BgeMaterializedPublicDocument:
+    _require_bge_enabled()
     """approved exact-30/OA112 local source를 parser→canonical chunks→pinned BGE로 materialize한다.
 
     이 경계는 provider transport를 만들지 않는다. source registry/source-card의 raw hash와 MIME을

@@ -14,7 +14,7 @@ interface AsyncBoundaryProps<T> {
 export function AsyncBoundary<T>({ state, onRetry, children }: AsyncBoundaryProps<T>) {
   if (state.kind === 'loading') {
     return (
-      <div className="animate-pulse space-y-2.5" role="status" aria-live="polite">
+      <div className="animate-pulse space-y-2.5" role="status" aria-live="polite" data-loading="true">
         <div className="h-3 w-40 rounded-full bg-line" />
         <div className="h-3 w-full rounded-full bg-line/70" />
         <div className="h-3 w-3/4 rounded-full bg-line/50" />

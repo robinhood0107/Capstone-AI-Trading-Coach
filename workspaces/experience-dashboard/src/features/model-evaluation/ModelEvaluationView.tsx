@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import type { GlossaryKey } from '@/shared/lib/glossary';
+import { Term } from '@/shared/ui/Term';
 import {
   Bar,
   BarChart,
@@ -241,11 +243,13 @@ export function ModelEvaluationView() {
 const METRIC_COLUMNS: {
   key: keyof ModelRow['metrics'];
   label: string;
+  /** 사전에 있는 열만 설명 말풍선이 붙는다. 없으면 예전처럼 글자만 나온다. */
+  term?: GlossaryKey;
   format: (value: number) => string;
 }[] = [
-  { key: 'cagr', label: 'CAGR', format: (v) => formatSignedRatio(v, 1) },
-  { key: 'mdd', label: 'MDD', format: (v) => formatRatio(v, 1) },
-  { key: 'sharpe', label: 'Sharpe', format: (v) => formatDecimal(v, 2) },
+  { key: 'cagr', label: 'CAGR', term: 'cagr', format: (v) => formatSignedRatio(v, 1) },
+  { key: 'mdd', label: 'MDD', term: 'mdd', format: (v) => formatRatio(v, 1) },
+  { key: 'sharpe', label: 'Sharpe', term: 'sharpe', format: (v) => formatDecimal(v, 2) },
   { key: 'sortino', label: 'Sortino', format: (v) => formatDecimal(v, 2) },
   { key: 'var95', label: 'VaR 95', format: (v) => formatRatio(v, 1) },
   { key: 'cvar95', label: 'CVaR 95', format: (v) => formatRatio(v, 1) },
@@ -267,7 +271,7 @@ function ModelTable({ rows }: { rows: ModelRow[] }) {
           <th className="pb-2 font-normal">상태</th>
           {columns.map((column) => (
             <th key={column.key} className="pb-2 text-right font-normal">
-              {column.label}
+              {column.term ? <Term name={column.term}>{column.label}</Term> : column.label}
             </th>
           ))}
         </tr>

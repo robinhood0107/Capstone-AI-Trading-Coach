@@ -21,6 +21,7 @@ import type {
   RagV2Citation,
   RagV2CorpusStatus,
   RagV2HistoryDetail,
+  WorldNewsPage,
 } from '@/shared/api/wire';
 import { ready, type ViewState } from '@/shared/lib/viewState';
 
@@ -168,7 +169,7 @@ export async function askRag(
     question,
     answerMode,
     // 서버는 1~6개의 허용 주제를 요구한다. 이 화면은 개념·위험 설명이 목적이다.
-    topics: ['FINANCIAL_ENGINEERING', 'RISK', 'METHODOLOGY', 'PRODUCT_RISK'],
+    topics: ['DATA', 'FINANCIAL_ENGINEERING', 'RISK', 'METHODOLOGY', 'PRODUCT_RISK'],
   };
   let answer: RagV2Answer = await api.ragV2Ask(request);
   // Retry once only when the server explicitly confirms that no answer was produced.
@@ -212,6 +213,18 @@ export async function askRag(
           : '이 질문에 연결된 출처가 없습니다.'
         : null,
   });
+}
+
+export async function loadWorldNews(query = ''): Promise<ViewState<WorldNewsPage>> {
+  /*
+   * 50 은 서버 상한이다(`WorldNewsService.kt:22` 가 `1..50` 밖을 거부한다).
+   *
+   * 10 이던 것을 올린 이유: GDELT GEMG/GQG 는 일반 사건 피드라 최근 500건 중 금융 관련이
+   * 29건(5.8%)뿐이다. 10건만 뜨면 화면이 거의 항상 빈다. 넓게 떠서 화면 쪽에서 거른다.
+   * 수집 단계 필터가 자리를 잡으면 저장되는 것 자체가 금융 기사가 되고, 그때는 이 값이
+   * 곧 표시 건수가 된다.
+   */
+  return ready(await api.ragV2WorldNews(query, 50), new Date().toISOString());
 }
 
 export async function loadRegistry(): Promise<ViewState<RagSourceResponse[]>> {

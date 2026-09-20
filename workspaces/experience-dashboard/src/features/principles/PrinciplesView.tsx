@@ -138,8 +138,7 @@ function PrinciplesBody({ data, onSaved }: { data: PrinciplesData; onSaved: () =
           className="rounded-tile border border-warn/40 px-4 py-3 text-[13px] leading-6 text-ink"
         >
           자동운용이 무장 중입니다. 원칙은 지금 바꿀 수 있지만 <strong>새 원칙은 다음 세션부터</strong>{' '}
-          적용됩니다 — 진행 중인 세션은 시작 시점의 원칙으로 계속됩니다. 저장한 뒤에는 자동운용을
-          정지하고 정책을 다시 저장한 다음 재무장해야 다음 세션이 열립니다.
+          자동 적용됩니다. 진행 중인 세션은 시작 시점의 원칙으로 계속됩니다.
         </p>
       ) : null}
       <Panel

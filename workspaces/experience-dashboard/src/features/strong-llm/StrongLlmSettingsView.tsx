@@ -75,7 +75,7 @@ function SettingsForm({ initial }: { initial: SettingsView }) {
     <div className="space-y-6">
       <Panel
         contract="strong-llm-settings"
-        title="판단과 설명에 쓰는 모델"
+        title="Strong LLM · 판단과 설명에 쓰는 모델"
         hint="1차가 실패하면 2차로 넘어갑니다. 둘 다 실패하면 자동매매는 규칙만으로 계속하고 그 사실을 판단에 남깁니다."
       >
         <div className="grid gap-4 md:grid-cols-2">

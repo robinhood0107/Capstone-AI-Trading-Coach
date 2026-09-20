@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { riskCodeLabel, severityLabel } from '@/shared/lib/labels';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Disclosure } from '@/shared/ui/Disclosure';
 import { Panel } from '@/shared/ui/Panel';
@@ -15,6 +16,7 @@ import { FillsPanel } from './FillsPanel';
 import type { DecisionRiskItemProjection } from '@/shared/api/wire';
 import { api } from '@/shared/api/endpoints';
 import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentity';
+import { LIVE_REFRESH_MS } from '@/shared/lib/liveRefresh';
 
 const DISPOSITION_META: Record<ReasonDisposition, { title: string; note: string; accent: string }> = {
   VIOLATION: { title: '원칙 위반', note: '기준을 실제로 넘은 항목입니다.', accent: 'border-block' },
@@ -51,7 +53,12 @@ export function OrderReviewView() {
   const [selectedDecisionId, setSelectedDecisionId] = useState('');
   const decisionId = selectedDecisionId || recentItems[0]?.decisionId || '';
   const valid = ID_PATTERN.decisionId.test(decisionId);
-  const { state, reload } = useResource(() => loadRiskResultView(decisionId), [decisionId], valid);
+  const { state, reload } = useResource(
+    () => loadRiskResultView(decisionId),
+    [decisionId],
+    valid,
+    LIVE_REFRESH_MS,
+  );
 
   return (
     <div className="space-y-6">
@@ -191,14 +198,19 @@ export function OrderReviewView() {
                       <li key={`${index}:${item.code}`} className="flex items-start justify-between gap-4 py-2.5">
                         <div className="min-w-0">
                           <p className="text-[13px] leading-5 text-ink">{item.summary}</p>
-                          <p className="font-mono text-[11px] uppercase tracking-[0.06em] text-faint">
-                            {item.code}
+                          {/* 규칙 코드를 그대로 두면 읽는 사람이 해독해야 한다. 사전에 없는
+                              코드는 코드 그대로 나오므로 새 규칙이 조용히 사라지지 않는다. */}
+                          <p className="text-[11px] leading-5 text-faint">
+                            {riskCodeLabel(item.code).label}
+                            {riskCodeLabel(item.code).meaning
+                              ? ` · ${riskCodeLabel(item.code).meaning}`
+                              : ''}
                           </p>
                         </div>
                         <span
-                          className={`shrink-0 font-mono text-[11px] uppercase ${SEVERITY_TONE[item.severity] ?? 'text-muted'}`}
+                          className={`shrink-0 text-[12px] font-medium ${SEVERITY_TONE[item.severity] ?? 'text-muted'}`}
                         >
-                          {item.severity}
+                          {severityLabel(item.severity).label}
                         </span>
                       </li>
                     ))}

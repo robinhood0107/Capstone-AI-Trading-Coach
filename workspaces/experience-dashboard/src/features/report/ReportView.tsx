@@ -6,10 +6,11 @@ import { Numeric } from '@/shared/ui/Numeric';
 import { DecisionRail } from '@/shared/ui/Decision';
 import { useResource } from '@/shared/lib/useResource';
 import { api } from '@/shared/api/endpoints';
-import { empty } from '@/shared/lib/viewState';
+import { empty, ready } from '@/shared/lib/viewState';
+import type { OwnerPerformanceReport } from '@/shared/api/wire';
 import { useLatestRun } from '@/shared/api/latestRun';
 import { LatestRunFallback } from '@/shared/ui/LatestRunFallback';
-import { formatDecimal, formatRatio, formatSignedRatio } from '@/shared/lib/format';
+import { formatDecimal, formatKstDateTime, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 import { loadBacktestReportView } from '@/features/backtest-report/viewModel';
 import { loadRiskResultView, type RiskResultView } from '@/features/order-review/viewModel';
 
@@ -35,6 +36,10 @@ export function ReportView() {
     [runId],
     runId !== null,
   );
+  const performance = useResource<OwnerPerformanceReport>(async () => {
+    const { data } = await api.dashboardPerformanceReport();
+    return ready(data, data.report.generatedAt);
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -62,6 +67,56 @@ export function ReportView() {
           </tbody>
         </table>
       </Panel>
+
+      <AsyncBoundary state={performance.state} onRetry={performance.reload}>
+        {(data) => {
+          const report = data.report;
+          const fixed = report.sections.fixedDailyForecast;
+          const actual = report.sections.actualTrading;
+          const replay = report.sections.recalculatedBacktest;
+          return (
+            <Panel
+              contract="owner-performance-report.v1"
+              title="누적 성과 보고서"
+              hint="재계산 백테스트, 매일 고정한 예측의 실현 평가, 실제 운용 손익을 서로 섞지 않습니다."
+            >
+              {data.lastRefreshStatus === 'FAILED_LAST_SUCCESS_PRESERVED' ? (
+                <p className="mb-4 rounded-tile border border-hold/40 bg-hold/5 px-4 py-3 text-[12px] text-muted">
+                  최근 갱신 실패: {data.lastFailureCode ?? '원인 미상'} · 마지막 성공본을 표시합니다.
+                </p>
+              ) : null}
+              <dl className="grid gap-3 text-[12px] text-muted sm:grid-cols-2 xl:grid-cols-4">
+                <div><dt className="text-faint">생성 시각</dt><dd>{formatKstDateTime(report.generatedAt) ?? '미상'}</dd></div>
+                <div><dt className="text-faint">source 종료일</dt><dd>{report.sourceEnd}</dd></div>
+                <div><dt className="text-faint">원칙 버전</dt><dd>v{report.principleVersion}</dd></div>
+                <div><dt className="text-faint">거래비용</dt><dd>{report.costBps} bps</dd></div>
+              </dl>
+              <p className="mt-4 rounded-tile border border-line px-4 py-3 text-[12px] text-muted">
+                모델 채택 상태: {report.modelAdoption.state} · 현재 {report.modelAdoption.currentModel}
+                {report.modelAdoption.candidateId === null ? ' · 두 기준을 모두 통과한 후보 없음' : ''}
+                {report.modelAdoption.automaticActivation ? '' : ' · 자동 production 전환 금지'}
+              </p>
+              <div className="mt-5 grid gap-3 lg:grid-cols-3">
+                <div className="rounded-tile border border-line px-4 py-4">
+                  <p className="text-eyebrow font-semibold uppercase text-faint">재계산 백테스트</p>
+                  <p className="mt-2 text-[13px] text-muted">Guide 순수익</p>
+                  <Numeric value={replay.guideNetReturn} format={(v) => formatSignedRatio(v, 2)} className="text-xl font-semibold" />
+                </div>
+                <div className="rounded-tile border border-line px-4 py-4">
+                  <p className="text-eyebrow font-semibold uppercase text-faint">고정 예측 실현 평가</p>
+                  <p className="mt-2 text-[13px] text-muted">RMSE · 실현 {fixed.realizedCount} / 대기 {fixed.pendingCount}</p>
+                  <Numeric value={fixed.rmse} format={(v) => formatRatio(v, 2)} className="text-xl font-semibold" />
+                </div>
+                <div className="rounded-tile border border-line px-4 py-4">
+                  <p className="text-eyebrow font-semibold uppercase text-faint">실제 운용 손익</p>
+                  <p className="mt-2 text-[13px] text-muted">{actual.status} · 미실현 {actual.unrealizedStatus}</p>
+                  <Numeric value={actual.realizedPnlKrw} format={(v) => `${formatDecimal(v, 0)}원`} className="text-xl font-semibold" />
+                </div>
+              </div>
+            </Panel>
+          );
+        }}
+      </AsyncBoundary>
 
       <AsyncBoundary state={decision.state} onRetry={decision.reload}>
           {(view) => (

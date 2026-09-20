@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
 import { Button } from '@/shared/ui/Button';
@@ -9,7 +10,9 @@ import { useResource, toErrorState } from '@/shared/lib/useResource';
 import { formatKstDateTime, formatRatio } from '@/shared/lib/format';
 import { safeExternalUrl } from '@/shared/api/session';
 import { api } from '@/shared/api/endpoints';
-import type { RagSourceResponse, RagV2HistoryDetail } from '@/shared/api/wire';
+import type { RagSourceResponse, RagV2HistoryDetail, WorldNewsPage } from '@/shared/api/wire';
+import { buildNewsFeed } from './worldNewsPresentation';
+import { putJournalHandoff } from '@/shared/lib/journalHandoff';
 import type { ViewState } from '@/shared/lib/viewState';
 import {
   EXTERNAL_DISCLOSURE,
@@ -19,6 +22,7 @@ import {
   loadConsentGranted,
   loadRecentQuestions,
   loadRegistry,
+  loadWorldNews,
   recordConsent,
   type RagAnswerView,
   type SourceItem,
@@ -54,6 +58,7 @@ export function RagGuideView() {
   const [consentError, setConsentError] = useState<string | null>(null);
   const registry = useResource(loadRegistry, []);
   const history = useResource(loadRecentQuestions, []);
+  const worldNews = useResource(() => loadWorldNews(), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -282,27 +287,137 @@ export function RagGuideView() {
       ) : null}
 
       <AsyncBoundary state={history.state} onRetry={history.reload}>
-        {(items) =>
-          items.length === 0 ? (
-            <p className="rounded-tile border border-dashed border-rule px-4 py-6 text-[13px] leading-6 text-muted">
-              아직 저장된 질문이 없습니다.
-            </p>
-          ) : (
-            <Panel title="최근 질문" hint="내 계정에 저장된 질문과 답변을 다시 확인합니다.">
+        {(items) => (
+          <Panel
+            title="최근 질문"
+            hint="내 계정에 저장된 질문과 답변입니다. 제목을 누르면 전체 답변이 펼쳐집니다."
+            actions={
+              items.length > 0 ? (
+                <span className="text-[11px] text-faint">{items.length}건</span>
+              ) : null
+            }
+          >
+            {items.length === 0 ? (
+              // 빈 상태도 패널 안에 둔다. 제목이 없으면 이 문장이 무엇에 대한 말인지 모른다.
+              <p className="text-[13px] leading-6 text-muted">
+                아직 저장된 질문이 없습니다. 위에서 궁금한 개념을 물어보면 여기에 쌓입니다.
+              </p>
+            ) : (
               <div className="divide-y divide-line/60">
                 {items.map((item) => (
                   <HistoryEntry key={item.answerId} item={item} onChanged={history.reload} />
                 ))}
               </div>
-            </Panel>
-          )
-        }
+            )}
+          </Panel>
+        )}
+      </AsyncBoundary>
+
+      <AsyncBoundary state={worldNews.state} onRetry={worldNews.reload}>
+        {(page) => <WorldNewsPanel page={page} />}
       </AsyncBoundary>
 
       <AsyncBoundary state={registry.state} onRetry={registry.reload}>
         {(cards) => <FinanceLibrary cards={cards} />}
       </AsyncBoundary>
     </div>
+  );
+}
+
+function WorldNewsPanel({ page }: { page: WorldNewsPage }) {
+  /*
+   * 저장소 모양을 그대로 뿌리지 않는다. provider 코드·권리 프로필·수집 상태는 파이프라인
+   * 안에서 의미가 있는 값이고, 여기 온 사람은 기사를 읽으러 왔다. 가공은
+   * `worldNewsPresentation` 이 맡고 이 컴포넌트는 그리기만 한다.
+   */
+  const feed = buildNewsFeed(page, safeExternalUrl);
+  return (
+    <Panel
+      contract="GET /api/v2/rag/world-news"
+      title="오늘의 세계 뉴스"
+      hint="바깥 세상에서 무슨 일이 있었는지 보여 주는 참고 자료입니다. 이 목록은 종목 판단이나 주문에 쓰이지 않습니다."
+      actions={
+        feed.asOfRelative ? (
+          <span className="text-[11px] text-faint">{feed.asOfRelative} 기준</span>
+        ) : null
+      }
+    >
+      {feed.warnings.length > 0 ? (
+        <div className="mb-5 border-l-2 border-hold pl-4">
+          {feed.warnings.map((warning) => (
+            <p key={warning.label} className="text-[12px] leading-5 text-muted">
+              <span className="font-medium text-ink">{warning.label}</span> — {warning.meaning}
+            </p>
+          ))}
+        </div>
+      ) : null}
+      {feed.cards.length === 0 ? (
+        /*
+         * 왜 비었는지 갈라서 말한다. 셋은 원인이 다르다 - 들어온 기사가 전부 금융과
+         * 무관했거나, 수집이 실패했거나, 정말 새 기사가 없거나. 뭉뚱그리면 사용자는
+         * 시스템이 고장 났다고 읽는다.
+         */
+        <p className="text-[13px] leading-6 text-muted">
+          {feed.hiddenUnrelated > 0
+            ? `방금 들어온 기사 ${feed.hiddenUnrelated}건은 모두 금융과 관련이 적어 접었습니다. 이 목록은 금융 관련 기사만 모읍니다.`
+            : feed.warnings.length > 0
+              ? '지금은 보여 드릴 기사가 없습니다. 위 수집 상태를 확인하세요.'
+              : '지금은 보여 드릴 기사가 없습니다. 수집은 정상이며 새 기사가 없을 뿐입니다.'}
+        </p>
+      ) : (
+        <ul className="divide-y divide-line/60">
+          {feed.cards.map((card) => (
+            <li key={card.key} className="py-5 first:pt-0 last:pb-0">
+              <p className="text-[15px] font-medium leading-6 text-ink">{card.title}</p>
+              {card.quote ? (
+                /*
+                 * 인용은 자르지 않는다 - 길이로 자르면 뜻이 바뀐다. 대신 줄 수로 접고,
+                 * 긴 기사만 펼치게 한다.
+                 */
+                <p className="mt-2 line-clamp-3 text-[13px] leading-6 text-muted">{card.quote}</p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-faint">
+                {card.relativeTime ? (
+                  <span title={card.absoluteTime ?? undefined}>
+                    {/* 불확실한 시각에는 '약' 한 글자만 붙인다. 카드마다 같은 문장을
+                        반복하면 그 문장은 읽히지 않고 목록만 어지럽힌다. */}
+                    {card.timeUncertain ? `약 ${card.relativeTime}` : card.relativeTime}
+                  </span>
+                ) : null}
+                <span>{card.providerLabel}</span>
+                {card.duplicateCount > 0 ? (
+                  <span>다른 매체 {card.duplicateCount}곳에서도 보도</span>
+                ) : null}
+                {card.href ? (
+                  <a
+                    href={card.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-navy underline underline-offset-2"
+                  >
+                    기사 원문
+                  </a>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {feed.timeNote || feed.hiddenUnrelated > 0 ? (
+        <div className="mt-4 space-y-1 border-t border-line pt-3 text-[11px] leading-5 text-faint">
+          {feed.timeNote ? <p>{feed.timeNote}</p> : null}
+          {/*
+           * 화면이 조용히 골라내면 무엇을 숨겼는지 아무도 모른다. 몇 건을 접었는지 적는다.
+           * 수집기 쪽 필터가 자리를 잡으면 이 숫자는 0 으로 수렴한다.
+           */}
+          {feed.hiddenUnrelated > 0 ? (
+            <p>
+              금융과 관련이 적은 기사 {feed.hiddenUnrelated}건은 이 목록에서 접었습니다.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </Panel>
   );
 }
 
@@ -314,6 +429,7 @@ export function RagGuideView() {
  * 그 자리에 적고 사용자가 다시 누르게 한다.
  */
 function HistoryEntry({ item, onChanged }: { item: RagV2HistoryDetail; onChanged: () => void }) {
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<boolean | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -349,6 +465,8 @@ function HistoryEntry({ item, onChanged }: { item: RagV2HistoryDetail; onChanged
   }
 
   return (
+    // 제목 한 줄만 두고 눌러야 열린다. 접힌 상태에 답변 미리보기를 넣었더니 다섯 건이
+    // 화면 한 장을 넘겼다 - 목록은 훑는 것이고, 읽는 것은 펼친 뒤다.
     <details className="py-3 first:pt-0 last:pb-0">
       <summary className="cursor-pointer text-[13px] font-medium text-ink">
         {item.question}
@@ -406,13 +524,33 @@ function HistoryEntry({ item, onChanged }: { item: RagV2HistoryDetail; onChanged
             </Button>
           </>
         ) : (
-          <Button
-            disabled={busy}
-            onClick={() => setConfirming(true)}
-            className="rounded-full border border-line px-3 py-1 text-[12px] text-muted hover:border-block hover:text-block"
-          >
-            기록 지우기
-          </Button>
+          <>
+            {/*
+             * 이 답변을 학습일지로 넘긴다. 답변 식별자를 함께 실어 두 기록이 서로를
+             * 가리키게 한다 - 지금까지 화면에 연결을 만들 방법이 아예 없었다.
+             */}
+            <Button
+              disabled={busy}
+              onClick={() => {
+                putJournalHandoff({
+                  title: item.question.slice(0, 120),
+                  content: item.answer ?? '',
+                  ragAnswerId: item.answerId,
+                });
+                router.push('/journal');
+              }}
+              className="rounded-full border border-line px-3 py-1 text-[12px] text-muted hover:border-navy hover:text-navy"
+            >
+              학습일지로 남기기
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={() => setConfirming(true)}
+              className="rounded-full border border-line px-3 py-1 text-[12px] text-muted hover:border-block hover:text-block"
+            >
+              기록 지우기
+            </Button>
+          </>
         )}
       </div>
 

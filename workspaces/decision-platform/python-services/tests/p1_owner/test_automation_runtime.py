@@ -1163,6 +1163,31 @@ def test_a_broken_schedule_chain_recovers_without_a_human() -> None:
     assert repository.cursor_reads >= len(repository.rolled)
 
 
+def test_a_gap_with_nothing_to_settle_still_reaches_the_next_session() -> None:
+    """마감할 행이 없는 빈칸에서도 다음 거래일까지 따라가야 한다.
+
+    2026-09-20 실제 상태를 그대로 옮긴 것이다. 마지막 COMPLETED 가 09-16 이고 09-17·09-18
+    은 **행 자체가 없다**. 마감할 ARMED 가 없으니 복구 경로(`_settle_and_arm`)는 아무것도
+    하지 않고 반환한다 - 그것이 정상이다. 그 경우 연쇄를 잇는 것은 tick 루프가 직접 부르는
+    `_advance_schedule_to` 다. 이 경로가 막히면 월요일에 claim 할 행이 없어 자동 운용이
+    조용히 지나간다.
+
+    한 칸 굴릴 때마다 마감해 주지 않으면 09-17 에서 멈춘다. 그것까지 여기서 잡는다.
+    """
+
+    repository = _RecoveringRepository(settled=0, last_completed=date(2026, 9, 16))
+
+    armed = _recovery_service(repository)._advance_schedule_to(date(2026, 9, 21))
+
+    assert armed
+    assert repository.rolled, "빈칸을 메우지 못하면 월요일에 claim 할 행이 없다"
+    assert repository.rolled[0][0] == date(2026, 9, 16)
+    assert repository.rolled[-1][1] >= date(2026, 9, 21)
+    # 09-17 한 칸에서 멈추면 안 된다. 휴일을 건너 목표 세션까지 닿아야 한다.
+    assert len(repository.rolled) >= 2, repository.rolled
+    assert repository.states[date(2026, 9, 21)] == "ARMED"
+
+
 def test_recovery_does_nothing_when_the_chain_is_intact() -> None:
     """놓친 세션이 없으면 스케줄을 건드리지 않는다."""
 

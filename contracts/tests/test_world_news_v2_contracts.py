@@ -5,6 +5,8 @@ import unittest
 
 import jsonschema
 
+from contracts.historical_openapi_projection import project_historical_root
+
 from contracts.generate_world_news_v2_contracts import (
     CURRENT,
     NEGATIVE,
@@ -20,7 +22,12 @@ from contracts.generate_world_news_v2_contracts import (
 class WorldNewsV2ContractTest(unittest.TestCase):
     def test_world_news_and_performance_are_additive_and_previous_root_is_exact(self) -> None:
         current = json.loads(CURRENT.read_text(encoding="utf-8"))
-        self.assertEqual(project_previous(current), json.loads(PREVIOUS.read_text(encoding="utf-8")))
+        # PREVIOUS 는 한 세대의 바이트다. 그 뒤에 내린 제품 결정(매수 마감 09:40->14:30
+        # 등)을 되돌린 뒤 비교해야 비교가 성립한다.
+        self.assertEqual(
+            project_historical_root(project_previous(current)),
+            json.loads(PREVIOUS.read_text(encoding="utf-8")),
+        )
         self.assertIn("/api/v2/rag/world-news", current["paths"])
         self.assertIn("/api/v1/dashboard/performance-reports/latest", current["paths"])
 

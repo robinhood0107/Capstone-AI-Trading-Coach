@@ -57,7 +57,11 @@ COPY --chown=65532:65532 shared-docs/backtest_config.yaml /opt/capstone/shared-d
 # entrypoint 가 마운트된 런타임 루트가 비어 있을 때만 채운다 - 기존 값은 덮지 않는다.
 COPY --chown=65532:65532 deploy/p1/rag-runtime-default /opt/capstone/rag-runtime-default
 COPY --chown=65532:65532 deploy/p1/docker/rag-runtime-seed.sh /usr/local/bin/p1-rag-runtime-seed
-RUN chmod 0555 /usr/local/bin/p1-secret-entrypoint /usr/local/bin/p1-rag-runtime-seed
+COPY --chown=65532:65532 deploy/p1/docker/deploy-bootstrap.py /usr/local/bin/p1-deploy-bootstrap
+# 기본 프로필을 굽는다 - 새 서버가 .env 와 google.json 만으로도 정책을 세우게 한다.
+# 개인정보는 없다(export_deploy_profile 의 화이트리스트와 같은 범위다).
+COPY --chown=65532:65532 deploy/p1/deploy-profile.example.json /opt/capstone/deploy-profile-default.json
+RUN chmod 0555 /usr/local/bin/p1-secret-entrypoint /usr/local/bin/p1-rag-runtime-seed /usr/local/bin/p1-deploy-bootstrap
 USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/p1-secret-entrypoint", "decision-platform"]

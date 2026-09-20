@@ -49,6 +49,8 @@ _VERTEX_CAP_KEYS: Final = (
     "inputMicrousdPerToken",
     "outputMicrousdPerToken",
 )
+#: 자본정책에서 공유해도 되는 값. 나머지 칸(완충·리밸런싱 편차 등)은 제품이 정한다.
+_CAPITAL_POLICY_KEYS: Final = ("reinvestRealizedPnl",)
 _STRONG_LLM_KEYS: Final = (
     "provider",
     "modelId",
@@ -165,6 +167,18 @@ def build_profile(
     )
     strong_llm = _pick(json.loads(strong) if strong else {}, _STRONG_LLM_KEYS, "strongLlm")
 
+    capital_row = _psql(
+        container,
+        "select json_build_object('reinvestRealizedPnl', reinvest_realized_pnl)::text"
+        " from automation_capital_policy_versions_v1 order by version desc limit 1",
+    )
+    # 자본정책은 아직 없을 수 있다. 그때는 제품 기본값(재투자 없음)을 적는다.
+    capital_policy = _pick(
+        json.loads(capital_row) if capital_row else {"reinvestRealizedPnl": False},
+        _CAPITAL_POLICY_KEYS,
+        "capitalPolicy",
+    )
+
     request = _pick(json.loads(request_path.read_bytes()), _REQUEST_KEYS, "certification.request")
     receipt = _pick(json.loads(receipt_path.read_bytes()), _RECEIPT_KEYS, "certification.receipt")
 
@@ -172,6 +186,7 @@ def build_profile(
         "contractId": CONTRACT_ID,
         "automationPolicy": policy,
         "vertexCaps": caps,
+        "capitalPolicy": capital_policy,
         "strongLlm": strong_llm,
         "certification": {"request": request, "receipt": receipt},
     }
@@ -199,6 +214,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     arguments.out.parent.mkdir(parents=True, exist_ok=True)
     arguments.out.write_text(json.dumps(profile, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # 이 파일에는 개인정보가 없다(위 화이트리스트가 보장한다). 부트스트랩 컨테이너는
+    # 65532 로 도므로 0700 으로 두면 프로필이 없는 것으로 읽혀 조용히 건너뛴다.
+    arguments.out.parent.chmod(0o755)
+    arguments.out.chmod(0o644)
     print("P1_DEPLOY_PROFILE=EXPORTED")
     return 0
 

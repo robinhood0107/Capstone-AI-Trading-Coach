@@ -411,13 +411,13 @@ CAPSTONE_RAG_DEFAULT=ON_RETRIEVAL_ONLY     # Voyage는 있고 Vertex 서비스�
 
 RAG 답변 생성에는 `P1_RAG_RUNTIME_DIR` 아래에 Voyage query runtime과 tokenizer artifact도 있어야
 합니다. 기본 경로는 `deploy/p1/.state-app/rag-v2-root`이고, 준비 절차는
-[`P1_GIT_PULL_동일환경_재현_가이드.md`](docs/decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md)를
+`P1_GIT_PULL_동일환경_재현_가이드.md`를
 따릅니다.
 
 다음 값은 **직접 넣지 않습니다.** 데이터베이스 역할별 비밀번호, JWT secret, 각종 HMAC key, Redis
 비밀번호, `STRONG_LLM_GRPC_SHARED_SECRET`, 데모 계정 자격증명은 `./capstone up`이 처음 한 번
 생성해 owner-only 권한으로 저장합니다. 전체 목록은
-[`P1_ENV_REFERENCE.md`](docs/decision-platform/P1_ENV_REFERENCE.md)에 있습니다.
+`P1_ENV_REFERENCE.md`에 있습니다.
 
 실계좌 App Key와 실주문 TR은 어느 목록에도 없습니다.
 
@@ -693,7 +693,7 @@ PYTHONPATH=src uv run python -m return_engine --help
 - KIS와 AI provider의 원본 응답은 artifact나 로그에 저장하지 않습니다.
 - 외부 기능이 필요하지 않으면 API key 없이 기본 프로그램을 실행할 수 있습니다.
 - 로컬 실행 상태는 `deploy/p1/.state-app/`에 저장됩니다.
-- 상세 환경 변수는 [`P1_ENV_REFERENCE.md`](docs/decision-platform/P1_ENV_REFERENCE.md)를 참고합니다.
+- 상세 환경 변수는 `P1_ENV_REFERENCE.md`를 참고합니다.
 
 ## 문제 해결
 
@@ -712,10 +712,10 @@ PYTHONPATH=src uv run python -m return_engine --help
 
 - [최종 프로젝트 명세](docs/최종_프로젝트_명세서.md)
 - [API 명세](docs/API_명세서.md)
-- [동일 환경 재현 가이드](docs/decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md)
+- 동일 환경 재현 가이드
 - [금융공학 공식과 자동매매 로직](docs/금융공학_공식_및_자동매매_로직_설명서.md)
-- [환경 변수 레퍼런스](docs/decision-platform/P1_ENV_REFERENCE.md)
-- [오프라인 시연 배포와 검증](docs/decision-platform/P1_OFFLINE_DEMO_배포_및_검증.md)
+- 환경 변수 레퍼런스
+- 오프라인 시연 배포와 검증
 
 ## README를 수정할 때
 

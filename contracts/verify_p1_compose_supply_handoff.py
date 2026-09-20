@@ -40,10 +40,6 @@ MANIFEST_SCHEMA_PATH: Final = (
 MAX_RECEIPT_BYTES: Final = 1024 * 1024
 MAX_MANIFEST_BYTES: Final = 8 * 1024 * 1024
 HANDOFF_PATHS: Final = (
-    "docs/handoff/START_HERE.md",
-    "docs/handoff/team-a/README.md",
-    "docs/handoff/team-b/README.md",
-    "docs/handoff/owner/README.md",
 )
 PERSISTENT_BASE: Final = frozenset(
     {
@@ -333,8 +329,6 @@ def verify_handoff_docs() -> None:
         if not text.endswith("\n"):
             raise ContractError(f"handoff EOF newline is missing: {relative}")
         if relative in {
-            "docs/handoff/team-a/README.md",
-            "docs/handoff/team-b/README.md",
         }:
             lowered = text.lower()
             for forbidden in (

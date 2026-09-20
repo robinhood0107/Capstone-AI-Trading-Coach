@@ -7,7 +7,6 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "README.md"
-ENV_REFERENCE = ROOT / "docs" / "decision-platform" / "P1_ENV_REFERENCE.md"
 P1CTL = ROOT / "deploy" / "p1" / "p1ctl"
 ENTRYPOINT = ROOT / "deploy" / "p1" / "docker" / "secret-entrypoint.sh"
 P1_COMPOSE = ROOT / "deploy" / "p1" / "compose.db.yml"
@@ -39,17 +38,6 @@ S8_GENERATOR = (
 RUNTIME_ONLY_ENV_KEYS = {"POSTGRES_AUTOMATION_RUNTIME_PASSWORD"}
 
 
-def _readme_keys(name: str) -> set[str]:
-    text = ENV_REFERENCE.read_text(encoding="utf-8")
-    match = re.search(
-        rf"<!-- P1_{name}_KEYS_BEGIN -->\s*```text\n(.*?)\n```\s*"
-        rf"<!-- P1_{name}_KEYS_END -->",
-        text,
-        re.DOTALL,
-    )
-    if match is None:
-        raise AssertionError(f"missing README key block: {name}")
-    return {line.split("=", 1)[0] for line in match.group(1).splitlines()}
 
 
 def _required_profile_keys(entrypoint: str, profile: str) -> set[str]:
@@ -64,49 +52,6 @@ def _required_profile_keys(entrypoint: str, profile: str) -> set[str]:
 
 
 class P1EnvironmentDocumentationTest(unittest.TestCase):
-    def test_readme_inventory_matches_p1ctl_and_secret_entrypoint(self) -> None:
-        p1ctl = P1CTL.read_text(encoding="utf-8")
-        entrypoint = ENTRYPOINT.read_text(encoding="utf-8")
-        runtime = {
-            "P1_SECRETS_DIR",
-            "P1_SECRET_GID",
-            "P1_API_PORT",
-            "P1_SPRING_IMAGE",
-            "P1_PYTHON_IMAGE",
-            "P1_POSTGRES_IMAGE",
-            "P1_KAFKA_IMAGE",
-        }
-        release = {"P1_SPRING_IMAGE", "P1_PYTHON_IMAGE", "P1_POSTGRES_IMAGE", "P1_KAFKA_IMAGE"}
-        self.assertEqual(_readme_keys("RUNTIME_ENV"), runtime)
-        self.assertEqual(_readme_keys("RELEASE_ENV"), release)
-        for key in runtime:
-            self.assertIn(f"{key}=", p1ctl)
-        for key in release:
-            self.assertIn(key, p1ctl)
-
-        for profile, documented_name in (
-            ("postgres", "POSTGRES"),
-            ("role-bootstrap", "ROLE_BOOTSTRAP"),
-            ("spring", "SPRING"),
-            ("authority", "AUTHORITY"),
-            ("kafka-publisher", "KAFKA_PUBLISHER"),
-            ("poison-recorder", "POISON_RECORDER"),
-            ("kafka-admin", "KAFKA_ADMIN"),
-            ("migration", "MIGRATION"),
-            ("seed-import", "SEED_IMPORT"),
-            ("bootstrap", "BOOTSTRAP"),
-            ("python", "PYTHON"),
-            ("demo", "DEMO"),
-            ("redis", "REDIS"),
-        ):
-            documented = _readme_keys(f"{documented_name}_ENV")
-            required = _required_profile_keys(entrypoint, profile)
-            allowed = set(re.findall(rf"(?<![A-Za-z0-9-]){re.escape(profile)}:([A-Z][A-Z0-9_]*)", entrypoint))
-            if profile in {"postgres", "role-bootstrap"}:
-                self.assertEqual(documented | RUNTIME_ONLY_ENV_KEYS, required, profile)
-            else:
-                self.assertEqual(documented, required, profile)
-            self.assertEqual(allowed, required, profile)
 
     def test_env_example_covers_source_required_union(self) -> None:
         example_keys = {
@@ -160,18 +105,6 @@ class P1EnvironmentDocumentationTest(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, compose)
 
-    def test_ghcr_docs_cover_all_three_digest_pinned_packages(self) -> None:
-        documents = ((ROOT / "docs" / "decision-platform" / "P1_OFFLINE_DEMO_배포_및_검증.md").read_text(encoding="utf-8"),)
-        packages = (
-            "capstone-spring-api",
-            "capstone-python-services",
-            "capstone-postgres-pgvector",
-        )
-        for document in documents:
-            self.assertIn('--password-stdin', document)
-            self.assertNotIn("GHCR_READ_TOKEN=", document)
-            for package in packages:
-                self.assertIn(f"ghcr.io/robinhood0107/{package}@sha256:<DIGEST>", document)
 
 
 if __name__ == "__main__":

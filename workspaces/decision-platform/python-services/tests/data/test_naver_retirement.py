@@ -55,7 +55,9 @@ def test_historical_boundary_card_and_supersession_record_are_preserved() -> Non
         / "capstone-rag/source-cards/s4-7b/src_project_naver_news_discovery_boundary_001.md",
         REPO_ROOT / "contracts/changes/20260714-s1-3-ecos-naver-source-snapshots.md",
         REPO_ROOT / "contracts/changes/20260731-s1-3g-naver-retirement-gdelt-aggregate-lock.md",
-        REPO_ROOT / "docs/adr/ADR-038-naver-retirement-gdelt-aggregate.md",
+        # ADR-038 은 공개 문서를 여섯 편으로 줄이면서 private-reference/docs-archive 로
+        # 옮겼다. 저장소가 추적하지 않으므로 여기서 파일 존재를 단정하지 않는다.
+        # 퇴역 경계 자체는 아래 source card 와 contracts/changes 두 건이 지킨다.
         REPO_ROOT / "contracts/examples/rag-source-card-v2.naver-official.valid.json",
     )
     assert all(path.is_file() for path in preserved_paths)

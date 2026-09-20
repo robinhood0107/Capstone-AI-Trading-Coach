@@ -18,6 +18,9 @@ from contracts.generate_principle_contracts import (  # noqa: E402
     ContractValidationError,
     canonical_json_bytes,
 )
+from contracts.historical_openapi_projection import (  # noqa: E402
+    project_historical_root,
+)
 from contracts.verify_p1_v3_automation_openapi_transition import operations  # noqa: E402
 
 OPENAPI_PATH = ROOT / "contracts/openapi/openapi.json"
@@ -35,6 +38,18 @@ SIGNAL_V3_SCHEMAS = (
     "SignalV3RuntimeResponse",
     "SignalV3RuntimeSuccessResponse",
 )
+
+
+def _historical_digest(document: Mapping[str, Any]) -> str:
+    """동결 세대의 바이트로 되돌린 뒤 해시한다.
+
+    되돌리기를 **해시 비교에서만** 쓴다. project_pre_signal_v3 의 반환값에 적용하면
+    그 값을 받아 v3 세대를 검증하는 쪽이 깨진다 - 그쪽은 현재 바이트를 봐야 한다.
+    """
+
+    return hashlib.sha256(
+        canonical_json_bytes(project_historical_root(document))
+    ).hexdigest()
 
 
 def _object(value: object, label: str) -> dict[str, Any]:
@@ -67,10 +82,7 @@ def project_pre_signal_v3(current: Mapping[str, Any]) -> dict[str, Any]:
         raise ContractValidationError(
             "Signal v3 projection did not restore exact-75 root"
         )
-    if (
-        hashlib.sha256(canonical_json_bytes(projected)).hexdigest()
-        != HISTORICAL_ROOT_75_SHA256
-    ):
+    if _historical_digest(projected) != HISTORICAL_ROOT_75_SHA256:
         raise ContractValidationError(
             "Signal v3 changed root bytes outside its additive surface"
         )
@@ -83,10 +95,7 @@ def verify_transition(path: Path = OPENAPI_PATH) -> None:
 
     current = project_previous(current)
     if len(operations(current)) == 75:
-        if (
-            hashlib.sha256(canonical_json_bytes(current)).hexdigest()
-            != HISTORICAL_ROOT_75_SHA256
-        ):
+        if _historical_digest(current) != HISTORICAL_ROOT_75_SHA256:
             raise ContractValidationError("historical exact-75 root drifted")
         return
     project_pre_signal_v3(current)

@@ -19,6 +19,10 @@ from contracts.generate_principle_contracts import (  # noqa: E402
     load_json_bytes_strict,
 )
 from contracts.generated_artifact_io import write_generated_path  # noqa: E402
+from contracts.historical_openapi_projection import (  # noqa: E402
+    project_historical_fragment,
+    project_historical_root,
+)
 
 OPENAPI_PATH: Final = ROOT / "contracts/openapi/openapi.json"
 ADDITIVE_PATH: Final = ROOT / "contracts/openapi/p1-automation-v3.v1.openapi.json"
@@ -142,12 +146,21 @@ def project_pre_v3_openapi(
                 "V3 additive schema is missing before projection."
             )
         actual_schema = schemas.pop(name)
-        if _semantic_schema(actual_schema) != _semantic_schema(expected_schema):
+        # 두 쪽이 서로 다른 세대에 서 있다. 오버레이는 재생성되며 최신 값을 물어 오고,
+        # 루트의 AutomationStatusV3 는 owner/Ridge 투영이 이전 세대 조각으로 바꿔 놓는다.
+        # 그래서 한쪽만 되돌리면 다른 쪽이 어긋난다. 양쪽을 같은 세대로 세우고 비교한다.
+        if _semantic_schema(project_historical_fragment(actual_schema)) != _semantic_schema(
+            project_historical_fragment(expected_schema)
+        ):
             raise ContractValidationError(f"V3 additive schema drifted: {name}.")
     if len(operations(projected)) != 69:
         raise ContractValidationError("V3 projection must restore exact 69 operations.")
+    # 이 해시도 한 세대의 바이트다. 되돌린 뒤 비교한다 - 되돌리기는 비교에서만 쓰고
+    # 반환값은 현재 바이트 그대로 둔다.
     if (
-        hashlib.sha256(canonical_json_bytes(projected)).hexdigest()
+        hashlib.sha256(
+            canonical_json_bytes(project_historical_root(projected))
+        ).hexdigest()
         != CURRENT_ROOT_69_SHA256
     ):
         raise ContractValidationError(

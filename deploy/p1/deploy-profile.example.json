@@ -1,0 +1,58 @@
+{
+  "contractId": "p1-deploy-profile/v1",
+  "note": "공유 가능한 배포 설정. 개인정보를 담지 않는다. KIS 자격증명·계좌번호·서비스 계정은 .env 와 google.json 에만 둔다.",
+  "automationPolicy": {
+    "presetId": "balanced",
+    "capitalLimitKrw": 50000000,
+    "stopLossBps": 500,
+    "takeProfitBps": 1000,
+    "atrPeriod": 22,
+    "atrMultiplierMilli": 3000,
+    "maxHoldingSessions": 60,
+    "modelSellEnabled": true
+  },
+  "vertexCaps": {
+    "dailyGenerateCallCap": 50,
+    "inputTokenCap": 60512,
+    "outputTokenCap": 8192,
+    "inputByteCap": 60000,
+    "costCapMicrousd": 500000,
+    "inputMicrousdPerToken": 2,
+    "outputMicrousdPerToken": 9
+  },
+  "strongLlm": {
+    "provider": "vertex",
+    "modelId": "gemini-3.5-flash",
+    "answerLanguage": "ko",
+    "thinkingLevel": "low",
+    "aiJudgementEnabled": true
+  },
+  "certification": {
+    "note": "이미 받은 KIS 모의주문 왕복 인증. 개인정보가 없다 - 브랜치·커밋·이미지·종목코드·호출수뿐이다.",
+    "request": {
+      "branch": "feature/example",
+      "commitSha": "0000000000000000000000000000000000000000",
+      "imageDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "pullRequest": 1,
+      "quantity": 1,
+      "requiredChecks": [
+        "Contract schema validation",
+        "Kotlin ktlint and build",
+        "P1 full-app security gates",
+        "Python quality gates",
+        "Repo hygiene",
+        "Spring OpenAPI drift"
+      ],
+      "securityEvidenceDigest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "symbol": "005930"
+    },
+    "receipt": {
+      "commitSha": "0000000000000000000000000000000000000000",
+      "imageDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "inputSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "physicalCalls": { "brokerage": 7, "quote": 1, "token": 1 },
+      "status": "PASS",
+      "timestamp": "2026-01-01T00:00:00Z"
+    }
+  }
+}

@@ -21,6 +21,8 @@ import type {
 import { AUTOMATION_STATE_LABELS } from '@/features/automation/policy';
 import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentity';
 import { holdingOwnership } from './ownership';
+import { OrderProgress } from '@/features/automation/OrderProgress';
+import type { AutomationRunPageV3 } from '@/shared/api/wire';
 
 const STEPS = [
   { href: '/principles', label: '내 원칙 정하기', detail: '먼저 기준을 정해야 주문 검토가 동작합니다.' },
@@ -35,11 +37,14 @@ export function OverviewView() {
     // 화면이 성립하는 최소 조건은 위험 요약과 자동운용 상태 둘이고, 나머지는 없으면
     // 그 조각만 "확인하지 못했습니다"로 남긴다.
     const [risk, status] = await Promise.all([api.riskPortfolio(), api.automationStatusV3()]);
-    const [positions, managedPositions, latestRisk, instruments] = await Promise.all([
+    const [positions, managedPositions, latestRisk, instruments, runs] = await Promise.all([
       api.automationPositionsV2().catch(() => null),
       api.automationPositionsV3().catch(() => null),
       api.dashboardLatestRiskResult().catch(() => null),
       api.instrumentDisplayCatalog().catch(() => null),
+      // 오늘 낸 주문이 어디까지 왔는지. 이것이 없어서 45주 중 27주가 체결된 날에도
+      // 첫 화면에는 어제까지의 보유 종목만 있었다.
+      api.automationRunsV3(5).catch(() => null),
     ]);
     const balance = status.data.accountId
       ? await api.mockBalance(status.data.accountId).then((result) => result.data).catch(() => null)
@@ -54,6 +59,7 @@ export function OverviewView() {
         latestRisk: latestRisk?.data ?? null,
         balance,
         instruments: instruments?.data ?? { items: [] },
+        runs: runs?.data ?? { items: [], nextCursor: null },
       },
       risk.data.asOf,
       15,
@@ -284,9 +290,19 @@ interface OverviewData {
   latestRisk: RecentRiskResult | null;
   balance: MockBalance | null;
   instruments: InstrumentDisplayCatalog;
+  runs: AutomationRunPageV3;
 }
 
 function LiveSummary({ data }: { data: OverviewData }) {
+  /*
+   * 아직 끝나지 않은 오늘 실행. 체결을 기다리는 동안 이 화면이 비어 있으면 사용자는
+   * 주문이 나갔는지조차 알 수 없다 - 2026-09-16 에 45주를 주문해 27주가 체결됐는데
+   * 첫 화면에는 어제까지의 보유 종목만 있었다.
+   */
+  const pendingRun =
+    data.runs.items.find(
+      (run) => run.state === 'ORDER_SUBMITTED' || run.state === 'PENDING_RECONCILIATION',
+    ) ?? null;
   const latest = data.latestRisk;
   const balance = data.balance;
   const managedQuantities = new Map<string, number>();
@@ -373,13 +389,27 @@ function LiveSummary({ data }: { data: OverviewData }) {
       </Panel>
 
       <Panel title="자동매매 운용 상태" hint="현재 제어 상태와 저장된 운용 정책을 그대로 표시합니다.">
+        {pendingRun ? (
+          <div className="mb-5 border-l-2 border-hold pl-4">
+            <p className="text-[12px] font-medium text-ink">진행 중인 주문</p>
+            <p className="mt-0.5 text-[13px] text-muted">
+              {pendingRun.selectedSymbol
+                ? (instrumentMap(data.instruments.items).get(pendingRun.selectedSymbol)?.nameKo ??
+                  pendingRun.selectedSymbol)
+                : '종목 미상'}
+            </p>
+            <OrderProgress run={pendingRun} />
+          </div>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Tile label="자동주문">
             <Link href="/automation" className="text-[18px] font-semibold text-navy hover:underline">
               {AUTOMATION_STATE_LABELS[data.status.projectionState]}
             </Link>
           </Tile>
-          <Tile label="모의계좌 인증">
+          {/* 화면 문구에 계좌 종류를 박지 않는다. 어떤 계좌가 붙어 있는지는
+              서버가 준 brokerageMode 가 말한다(StatusBar 와 같은 규칙). */}
+          <Tile label="계좌 인증">
             <span className="text-[16px] font-semibold text-ink">
               {data.status.certificationStatus === 'VALID' ? '정상' : data.status.certificationStatus}
             </span>
@@ -389,9 +419,18 @@ function LiveSummary({ data }: { data: OverviewData }) {
               {data.status.killSwitchActive ? '작동 중' : '꺼짐'}
             </span>
           </Tile>
-          <Tile label="미해결 대사">
+          {/*
+            * 이 값이 true 인 흔한 이유는 장애가 아니라 **방금 낸 주문이 아직 체결을
+            * 기다리는 것**이다. "확인 필요"라고만 적으면 정상 상태가 경고로 읽힌다.
+            * 진행 중인 주문이 있으면 그렇게 말하고, 그게 아닐 때만 확인을 요청한다.
+            */}
+          <Tile label="주문 대사">
             <span className="text-[16px] font-semibold text-ink">
-              {data.status.unresolvedReconciliation ? '확인 필요' : '없음'}
+              {!data.status.unresolvedReconciliation
+                ? '모두 맞음'
+                : pendingRun
+                  ? '체결 대기 중'
+                  : '확인 필요'}
             </span>
           </Tile>
         </div>

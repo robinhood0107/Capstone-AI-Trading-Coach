@@ -1,12 +1,14 @@
 'use client';
 
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
+import { onOffLabel } from '@/shared/lib/labels';
 import { Panel } from '@/shared/ui/Panel';
 import { useResource } from '@/shared/lib/useResource';
 import { api } from '@/shared/api/endpoints';
 import { ready } from '@/shared/lib/viewState';
 import { formatKstDateTime } from '@/shared/lib/format';
 import type { SystemHealthResponse } from '@/shared/api/wire';
+import { LIVE_REFRESH_MS } from '@/shared/lib/liveRefresh';
 
 /**
  * 시스템 상태.
@@ -21,7 +23,7 @@ export function SystemHealthView() {
   const { state, reload } = useResource(async () => {
     const { data } = await api.health();
     return ready<SystemHealthResponse>(data, data.asOf);
-  }, []);
+  }, [], true, LIVE_REFRESH_MS);
 
   return (
     <AsyncBoundary state={state} onRetry={reload}>
@@ -38,8 +40,8 @@ export function SystemHealthView() {
             <ServiceRow label="Python 서비스" value={health.pythonService} />
             <ServiceRow label="증권사 연결" value={health.brokerage} />
             <ServiceRow
-              label="Kill Switch"
-              value={health.killSwitchActive ? 'ACTIVE' : 'OFF'}
+              label="긴급 정지"
+              value={onOffLabel(health.killSwitchActive).label}
               tone={health.killSwitchActive ? 'block' : 'ok'}
             />
           </div>

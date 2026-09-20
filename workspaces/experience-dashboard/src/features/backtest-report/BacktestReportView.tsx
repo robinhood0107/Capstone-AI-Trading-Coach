@@ -18,6 +18,8 @@ import { useLatestRun } from '@/shared/api/latestRun';
 import { LatestRunFallback } from '@/shared/ui/LatestRunFallback';
 import { formatDecimal, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 import { loadBacktestReportView, type DerivedCard, type StrategyRow } from './viewModel';
+import type { GlossaryKey } from '@/shared/lib/glossary';
+import { Term } from '@/shared/ui/Term';
 
 const COLOR: Record<string, string> = {
   Baseline: 'rgb(var(--c-faint))',
@@ -184,11 +186,13 @@ function metricCardMeta(metric: string): { label: string; format: (value: number
 const SCENARIO_COLUMNS: {
   key: 'cagr' | 'mdd' | 'sharpe' | 'sortino' | 'var95' | 'cvar95';
   label: string;
+  /** 사전에 있는 열만 설명 말풍선이 붙는다. */
+  term?: GlossaryKey;
   format: (value: number) => string;
 }[] = [
-  { key: 'cagr', label: 'CAGR', format: (v) => formatSignedRatio(v, 1) },
-  { key: 'mdd', label: 'MDD', format: (v) => formatRatio(v, 1) },
-  { key: 'sharpe', label: 'Sharpe', format: (v) => formatDecimal(v, 2) },
+  { key: 'cagr', label: 'CAGR', term: 'cagr', format: (v) => formatSignedRatio(v, 1) },
+  { key: 'mdd', label: 'MDD', term: 'mdd', format: (v) => formatRatio(v, 1) },
+  { key: 'sharpe', label: 'Sharpe', term: 'sharpe', format: (v) => formatDecimal(v, 2) },
   { key: 'sortino', label: 'Sortino', format: (v) => formatDecimal(v, 2) },
   { key: 'var95', label: 'VaR 95', format: (v) => formatRatio(v, 1) },
   { key: 'cvar95', label: 'CVaR 95', format: (v) => formatRatio(v, 1) },
@@ -209,7 +213,7 @@ function ScenarioTable({ rows }: { rows: StrategyRow[] }) {
           <th className="pb-2 font-normal">시나리오</th>
           {columns.map((column) => (
             <th key={column.key} className="pb-2 text-right font-normal">
-              {column.label}
+              {column.term ? <Term name={column.term}>{column.label}</Term> : column.label}
             </th>
           ))}
         </tr>

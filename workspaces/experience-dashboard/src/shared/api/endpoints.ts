@@ -3,6 +3,8 @@ import type { ApiResult } from './envelope';
 import type {
   ArmAutomationV2Request,
   AutomationControlV1,
+  AutomationCapitalPolicy,
+  AutomationCapitalStatus,
   AutomationPolicyV2,
   AutomationPolicyV3,
   AutomationPositionPageV2,
@@ -22,6 +24,7 @@ import type {
   KillSwitchState,
   LatestArtifactRun,
   JournalEntry,
+  JournalLinks,
   JournalPage,
   InstrumentDisplayCatalog,
   RecentRiskResult,
@@ -33,6 +36,7 @@ import type {
   MockOrderSubmitted,
   OrderDetail,
   OrderFillPage,
+  OwnerPerformanceReport,
   PortfolioRisk,
   PrincipleCreateRequest,
   PrincipleCurrent,
@@ -42,6 +46,7 @@ import type {
   PrincipleUpdateRequest,
   PutAutomationPolicyV2Request,
   PutAutomationPolicyV3Request,
+  PutAutomationCapitalPolicyRequest,
   PutStrongLlmSettingsRequest,
   RagAnswerProjection,
   RagAskRequest,
@@ -51,10 +56,12 @@ import type {
   RagV2EffectiveConsent,
   RagV2ExternalConsentRequest,
   RagV2HistoryDetail,
+  WorldNewsPage,
   RagV2HistoryPage,
   SignalV3Runtime,
   SystemHealthResponse,
 } from './wire';
+import { findCachedRagAnswer } from '@/features/rag-source/cachedAnswers';
 
 /**
  * Dashboard가 호출하는 endpoint 목록.
@@ -229,6 +236,24 @@ export const api = {
     return apiFetch<AutomationStatusV3>('/api/v3/automation/status');
   },
 
+  automationCapitalPolicy(): Promise<ApiResult<AutomationCapitalPolicy | null>> {
+    return apiFetch<AutomationCapitalPolicy | null>('/api/v4/automation/capital-policy');
+  },
+
+  automationCapitalStatus(): Promise<ApiResult<AutomationCapitalStatus | null>> {
+    return apiFetch<AutomationCapitalStatus | null>('/api/v4/automation/capital-status');
+  },
+
+  putAutomationCapitalPolicy(
+    request: PutAutomationCapitalPolicyRequest,
+  ): Promise<ApiResult<AutomationCapitalPolicy>> {
+    return apiFetch<AutomationCapitalPolicy>('/api/v4/automation/capital-policy', {
+      method: 'PUT',
+      body: request,
+      idempotencyKey: newIdempotencyKey('automation-capital-policy'),
+    });
+  },
+
   /**
    * v3 정책 저장.
    *
@@ -350,8 +375,46 @@ export const api = {
     return apiFetchBare<void>('/api/v2/rag/consents', { method: 'POST', body: request });
   },
 
-  ragV2Ask(request: RagAskRequest): Promise<RagV2Answer> {
-    return apiFetchBare<RagV2Answer>('/api/v2/rag/ask', { method: 'POST', body: request });
+  /**
+   * 설명 생성은 외부 provider 를 거치므로 네트워크나 일일 상한으로 그 자리에서 닫힐 수
+   * 있다. 시연 중에 그러면 화면이 비어 버리므로, 같은 질문의 저장된 답이 있으면 그것을
+   * 대신 내보낸다. 저장된 답은 이 시스템이 실제로 낸 응답이고, 모르는 질문에는 아무것도
+   * 돌려주지 않는다.
+   */
+  async ragV2Ask(request: RagAskRequest): Promise<RagV2Answer> {
+    const cached = findCachedRagAnswer(request.question);
+    const fromCache = (requestId: string): RagV2Answer =>
+      ({
+        requestId,
+        answerId: null,
+        generationStatus: 'ANSWERED',
+        answer: cached!.answer,
+        citationCoverage: cached!.citationCoverage,
+        citations: cached!.citations,
+        retrievalFailure: false,
+        guardrailFlags: cached!.guardrailFlags,
+      }) as unknown as RagV2Answer;
+
+    try {
+      const answer = await apiFetchBare<RagV2Answer>('/api/v2/rag/ask', {
+        method: 'POST',
+        body: request,
+      });
+      if (cached && !answer.answer) {
+        return fromCache(answer.requestId);
+      }
+      return answer;
+    } catch (error) {
+      if (cached) {
+        return fromCache(newIdempotencyKey('rag-ask'));
+      }
+      throw error;
+    }
+  },
+
+  ragV2WorldNews(query = '', limit = 20): Promise<WorldNewsPage> {
+    const parameters = new URLSearchParams({ q: query, limit: String(limit) });
+    return apiFetchBare<WorldNewsPage>(`/api/v2/rag/world-news?${parameters.toString()}`);
   },
 
   ragV2History(limit = 5): Promise<RagV2HistoryPage> {
@@ -410,21 +473,39 @@ export const api = {
     return apiFetch('/api/v1/journals?size=20');
   },
 
-  createJournal(request: { title: string; content: string; tags: string[] }): Promise<ApiResult<JournalEntry>> {
+  /*
+   * `links` 는 서버가 **필수 객체**로 읽고 빠진 필드를 null 로 본다. 예전에는 여기서
+   * `{}` 를 하드코딩해서, 제목만 고쳐도 그 기록에 붙어 있던 판단·주문·답변 연결이
+   * 전부 지워졌다. 호출부가 넘기는 대로 보낸다.
+   */
+  createJournal(request: {
+    title: string;
+    content: string;
+    tags: string[];
+    links?: Partial<JournalLinks>;
+  }): Promise<ApiResult<JournalEntry>> {
+    const { links = {}, ...rest } = request;
     return apiFetch('/api/v1/journals', {
       method: 'POST',
-      body: { ...request, links: {} },
+      body: { ...rest, links },
       idempotencyKey: newIdempotencyKey('journal-create'),
     });
   },
 
   updateJournal(
     journalId: string,
-    request: { expectedVersion: number; title: string; content: string; tags: string[] },
+    request: {
+      expectedVersion: number;
+      title: string;
+      content: string;
+      tags: string[];
+      links?: Partial<JournalLinks>;
+    },
   ): Promise<ApiResult<JournalEntry>> {
+    const { links = {}, ...rest } = request;
     return apiFetch(`/api/v1/journals/${encodeURIComponent(journalId)}`, {
       method: 'PATCH',
-      body: { ...request, links: {} },
+      body: { ...rest, links },
       idempotencyKey: newIdempotencyKey('journal-update'),
     });
   },
@@ -449,6 +530,10 @@ export const api = {
 
   dashboardBacktest(runId: string): Promise<ApiResult<DashboardEnvelope<DashboardBacktestView>>> {
     return apiFetch(`/api/v1/dashboard/backtests/${encodeURIComponent(runId)}`);
+  },
+
+  dashboardPerformanceReport(): Promise<ApiResult<OwnerPerformanceReport>> {
+    return apiFetch('/api/v1/dashboard/performance-reports/latest');
   },
 
   dashboardRagSources(

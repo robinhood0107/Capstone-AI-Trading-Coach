@@ -276,10 +276,8 @@ class QueryNormalizer:
         )
         topics = _bounded_string_array(
             payload.get("topics", ()),
-            # 상한이 허용 토픽 수보다 작으면 "전부 선택"이 거부된다. 실제로 여섯 종을 모두
-            # 보내는 요청이 RAG_QUERY_INVALID 로 닫혀 Agent 가 아무 질문에도 답하지 못했다.
-            # 종류가 늘어도 같은 일이 생기지 않도록 목록 길이에 묶는다.
-            maximum=len(ALLOWED_RAG_TOPICS),
+            # 상한을 적지 않는다. 허용 집합이 곧 상한이다 - 토픽이 늘어도 "전부 선택"이
+            # 막히지 않는다.
             allowed=ALLOWED_RAG_TOPICS,
             pattern=None,
             field_name="topics",
@@ -512,11 +510,29 @@ class AuthorizedHybridRetrieval:
 def _bounded_string_array(
     value: object,
     *,
-    maximum: int,
+    maximum: int | None = None,
     allowed: frozenset[str] | None,
     pattern: re.Pattern[str] | None,
     field_name: str,
 ) -> tuple[str, ...]:
+    """허용 집합이 있으면 상한은 그 집합에서 나온다.
+
+    상한을 따로 적으면 허용값이 늘 때마다 그 숫자를 같이 고쳐야 하고, 빠뜨리면
+    "전부 선택"이 조용히 거부된다. 실제로 topics 가 그렇게 막혀 Agent 가 아무 질문에도
+    답하지 못했다. 그 부류를 호출자에게 맡기지 않는다.
+
+    허용 집합보다 작은 상한을 굳이 넘기면 **사용자 오류가 아니라 프로그래밍 오류**로
+    본다. 그런 조합은 "전부 선택"을 영원히 거부하므로 의도일 수 없다.
+    """
+
+    if allowed is not None:
+        if maximum is not None and maximum < len(allowed):
+            raise ValueError(
+                f"{field_name} bound {maximum} is below its allowed set {len(allowed)}"
+            )
+        maximum = len(allowed) if maximum is None else maximum
+    if maximum is None:
+        raise ValueError(f"{field_name} needs either a bound or an allowed set")
     if not isinstance(value, (list, tuple)):
         raise QueryValidationError(f"RAG {field_name} must be an array.")
     if len(value) > maximum or any(not isinstance(item, str) for item in value):

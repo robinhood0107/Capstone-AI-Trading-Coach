@@ -333,6 +333,33 @@ class P1ComposeSupplyHandoffTest(unittest.TestCase):
             receipt.symlink_to(target)
             self.assertEqual(1, main(["--receipt", str(receipt)]))
 
+    def test_the_shipped_stack_cannot_turn_bge_on(self) -> None:
+        """배포 경로 어디에서도 BGE 관문이 열리지 않는지 본다.
+
+        공개 코퍼스는 Voyage 하나로 통일했고, 코드 쪽 관문은 ONNX 세션을 여는 한 곳에
+        있다. 그 관문을 여는 것은 CAPSTONE_RAG_BGE_ENABLED 와 런타임 제어의 bgeEnabled
+        둘뿐이다.
+
+        코드 테스트만으로는 부족하다. 누가 compose 에 그 변수를 넣거나 구워지는 기본
+        제어를 true 로 바꾸면 코드 테스트는 전부 통과한 채 제품이 BGE 로 돈다. 배포
+        산출물 쪽에서 막는 것은 여기밖에 없다.
+        """
+
+        root = Path(__file__).resolve().parents[2]
+        compose = (root / "deploy/p1/compose.yml").read_text(encoding="utf-8")
+        self.assertNotIn(
+            "CAPSTONE_RAG_BGE_ENABLED",
+            compose,
+            "compose 가 BGE 관문을 연다. Voyage 통일 결정과 어긋난다.",
+        )
+
+        control = root / "deploy/p1/rag-runtime-default/control/pre-s5-voyage-query-runtime.json"
+        self.assertIs(
+            json.loads(control.read_text(encoding="utf-8"))["bgeEnabled"],
+            False,
+            "이미지에 구워지는 기본 런타임 제어가 BGE 를 켜 둔다.",
+        )
+
     def test_daily_collector_keeps_the_default_container_count_at_five(self) -> None:
         """기본은 5개, --models 가 2개, --mock 이 1개를 더한다.
 

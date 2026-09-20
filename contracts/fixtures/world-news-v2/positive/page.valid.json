@@ -1,0 +1,36 @@
+{
+  "asOf": "2026-09-08T04:00:00Z",
+  "collections": [],
+  "decisionAuthority": "NONE",
+  "items": [
+    {
+      "availableAt": "2026-09-08T03:02:00Z",
+      "boundedPassage": null,
+      "boundedQuote": "공급망 병목이 완화되고 있다고 설명했다.",
+      "canonicalUrl": "https://example.com/world/supply-chain",
+      "collectionStatus": "COMPLETE",
+      "contentSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "documentId": "news_doc_11111111111111111111111111111111",
+      "documentVersionId": "news_ver_22222222222222222222222222222222",
+      "externalLlmAllowed": false,
+      "firstSeenAt": "2026-09-08T03:01:00Z",
+      "identityStatus": "VERIFIED",
+      "language": "ko",
+      "lookupAllowed": true,
+      "promptUntrusted": true,
+      "provider": "GDELT_GQG",
+      "providerDocumentId": null,
+      "providerObservedAt": "2026-09-08T03:00:00Z",
+      "publicationStatus": "MISSING",
+      "publishedAt": null,
+      "ragRetrievalAllowed": true,
+      "republicationOfDocumentId": null,
+      "rightsProfile": "GDELT_METADATA_QUOTE",
+      "sourceId": "src_gdelt_world_news",
+      "title": "세계 공급망 동향",
+      "versionSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "orderAuthority": "NONE",
+  "signalAuthority": "NONE"
+}

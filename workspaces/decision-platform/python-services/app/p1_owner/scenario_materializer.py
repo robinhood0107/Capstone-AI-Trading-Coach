@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import math
 import os
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
@@ -76,6 +77,21 @@ def _load_database_input(dsn: str) -> dict[str, Any]:
     value = cast(dict[str, Any], row[0])
     if value.get("contractId") != "owner-scenario-materialization-input.v1":
         raise ScenarioMaterializationError("SCENARIO_INPUT_INVALID")
+    return value
+
+
+def _load_performance_input(dsn: str) -> dict[str, Any]:
+    try:
+        with psycopg.connect(dsn, connect_timeout=5) as connection, connection.cursor() as cursor:
+            cursor.execute("select read_owner_performance_report_inputs_v1(%s)", (_OWNER,))
+            row = cursor.fetchone()
+    except psycopg.Error as error:
+        raise ScenarioMaterializationError("PERFORMANCE_INPUT_UNAVAILABLE") from error
+    if row is None or not isinstance(row[0], dict):
+        raise ScenarioMaterializationError("PERFORMANCE_INPUT_INVALID")
+    value = cast(dict[str, Any], row[0])
+    if value.get("contractId") != "owner-performance-report-input.v1":
+        raise ScenarioMaterializationError("PERFORMANCE_INPUT_INVALID")
     return value
 
 
@@ -438,13 +454,14 @@ def _envelope(request_id: str, as_of: datetime, view: dict[str, Any]) -> dict[st
     }
 
 
-def materialize(bundle_root: Path, dsn: str) -> dict[str, object]:
+def _materialize_once(bundle_root: Path, dsn: str) -> dict[str, object]:
     manifest_bytes = (bundle_root / GOLDEN_MANIFEST).read_bytes()
     validated = validate_artifact_bundle(
         bundle_root=bundle_root,
         expected_manifest_sha256=_sha(manifest_bytes),
     )
     db_input = _load_database_input(dsn)
+    performance_input = _load_performance_input(dsn)
     if db_input.get("bundleSha256") != validated.bundle_sha256:
         raise ScenarioMaterializationError("SCENARIO_BUNDLE_POINTER_MISMATCH")
     sessions, bars = _bars_by_symbol(db_input)
@@ -533,12 +550,24 @@ def materialize(bundle_root: Path, dsn: str) -> dict[str, object]:
     }
     model_projection = _envelope(request_id, as_of, model_view)
     backtest = _envelope(request_id, as_of, backtest_view)
+    performance_report = _performance_report(
+        source_generation_sha256=identity,
+        source_start=evaluation_sessions[0],
+        source_end=evaluation_sessions[-1],
+        model_sha256=str(db_input["modelSha256"]),
+        performance_input=performance_input,
+        metrics=metrics,
+    )
     _validate_repository_schema(
         "contracts/schemas/dashboard-model-evaluation.v1.schema.json", model_projection
     )
     _validate_repository_schema("contracts/schemas/dashboard-backtest.v1.schema.json", backtest)
     model_text = canonical_json_bytes(model_projection).decode()
     backtest_text = canonical_json_bytes(backtest).decode()
+    performance_text = canonical_json_bytes(performance_report).decode()
+    performance_sha256 = _sha(performance_text.encode())
+    performance_report_id = f"perf_report_{identity[:24]}"
+    generated_at = datetime.now(UTC)
     try:
         with psycopg.connect(dsn, connect_timeout=5) as connection, connection.cursor() as cursor:
             cursor.execute(
@@ -557,6 +586,24 @@ def materialize(bundle_root: Path, dsn: str) -> dict[str, object]:
                 ),
             )
             row = cursor.fetchone()
+            cursor.execute(
+                "select publish_owner_performance_report_v1(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (
+                    _OWNER,
+                    performance_report_id,
+                    identity,
+                    evaluation_sessions[0],
+                    evaluation_sessions[-1],
+                    str(db_input["modelSha256"]),
+                    str(performance_input["principleVersionId"]),
+                    int(performance_input["principleVersion"]),
+                    35,
+                    performance_text,
+                    performance_sha256,
+                    generated_at,
+                ),
+            )
+            performance_row = cursor.fetchone()
             connection.commit()
     except psycopg.Error as error:
         raise ScenarioMaterializationError("SCENARIO_PUBLISH_FAILED") from error
@@ -567,7 +614,145 @@ def materialize(bundle_root: Path, dsn: str) -> dict[str, object]:
         "evaluationSessions": len(evaluation_sessions),
         "symbols": len(bars),
         "providerCalls": 0,
+        "performanceReport": str(performance_row[0]) if performance_row else "UNKNOWN",
     }
+
+
+def _performance_report(
+    *,
+    source_generation_sha256: str,
+    source_start: date,
+    source_end: date,
+    model_sha256: str,
+    performance_input: dict[str, Any],
+    metrics: dict[str, dict[str, float | None]],
+) -> dict[str, object]:
+    fixed = performance_input.get("fixedForecast")
+    actual = performance_input.get("actualTrading")
+    if not isinstance(fixed, dict) or not isinstance(actual, dict):
+        raise ScenarioMaterializationError("PERFORMANCE_INPUT_INVALID")
+    total = int(fixed.get("totalCount", -1))
+    realized = int(fixed.get("realizedCount", -1))
+    pending = int(fixed.get("pendingCount", -1))
+    if total < 0 or realized < 0 or pending < 0 or realized + pending != total:
+        raise ScenarioMaterializationError("PERFORMANCE_FORECAST_COUNTS_INVALID")
+    sum_abs = float(fixed.get("sumAbsoluteError", 0))
+    sum_sq = float(fixed.get("sumSquaredError", 0))
+    sum_error = float(fixed.get("sumError", 0))
+    if any(
+        not math.isfinite(value) or value < 0 for value in (sum_abs, sum_sq)
+    ) or not math.isfinite(sum_error):
+        raise ScenarioMaterializationError("PERFORMANCE_FORECAST_METRICS_INVALID")
+    return {
+        "contractId": "owner-performance-report.v1",
+        "sourceStart": source_start.isoformat(),
+        "sourceEnd": source_end.isoformat(),
+        "sourceGenerationSha256": source_generation_sha256,
+        "modelSha256": model_sha256,
+        "principleVersionId": str(performance_input["principleVersionId"]),
+        "principleVersion": int(performance_input["principleVersion"]),
+        "costBps": 35,
+        "modelAdoption": {
+            "state": "RESEARCH_EVALUATED",
+            "candidateId": None,
+            "currentModel": "EQUAL_WEIGHT_50_50",
+            "predictionAccepted": False,
+            "performanceAccepted": False,
+            "automaticActivation": False,
+            "blockers": ["NO_DUAL_ACCEPTANCE_CANDIDATE"],
+        },
+        "sections": {
+            "recalculatedBacktest": {
+                "status": "RECALCULATED",
+                "baselineNetReturn": metrics["Baseline"]["netReturn"],
+                "guideNetReturn": metrics["Guide"]["netReturn"],
+                "strictNetReturn": metrics["Strict"]["netReturn"],
+            },
+            "fixedDailyForecast": {
+                "status": "NOT_AVAILABLE"
+                if total == 0
+                else ("REALIZED" if pending == 0 else "PARTIAL"),
+                "totalCount": total,
+                "realizedCount": realized,
+                "pendingCount": pending,
+                "mae": sum_abs / realized if realized else None,
+                "rmse": math.sqrt(sum_sq / realized) if realized else None,
+                "bias": sum_error / realized if realized else None,
+            },
+            "actualTrading": {
+                "status": "REALIZED"
+                if int(actual.get("closedPositionCount", 0)) > 0
+                else "NO_REALIZED_TRADES",
+                "closedPositionCount": int(actual.get("closedPositionCount", 0)),
+                "openPositionCount": int(actual.get("openPositionCount", 0)),
+                "realizedPnlKrw": int(actual.get("realizedPnlKrw", 0)),
+                "unrealizedStatus": "OPEN"
+                if int(actual.get("openPositionCount", 0)) > 0
+                else "NONE",
+            },
+        },
+    }
+
+
+def _record_failure(bundle_root: Path, dsn: str, error: BaseException) -> None:
+    """입력 generation을 식별할 수 있을 때만 실패를 append하고 마지막 성공본은 건드리지 않는다."""
+
+    try:
+        manifest_bytes = (bundle_root / GOLDEN_MANIFEST).read_bytes()
+        validated = validate_artifact_bundle(
+            bundle_root=bundle_root,
+            expected_manifest_sha256=_sha(manifest_bytes),
+        )
+        db_input = _load_database_input(dsn)
+        performance_input = _load_performance_input(dsn)
+        source_start = date.fromisoformat(str(db_input["evaluationStart"]))
+        source_end = date.fromisoformat(str(db_input["evaluationEnd"]))
+        source_generation = _sha(
+            canonical_json_bytes(
+                {
+                    "contractId": "owner-scenario-replay.v1",
+                    "implementationId": _IMPLEMENTATION_ID,
+                    "bundleSha256": validated.bundle_sha256,
+                    "bars": db_input["bars"],
+                    "rules": db_input["rules"],
+                    "costBps": 35,
+                    "evaluationStart": source_start.isoformat(),
+                    "evaluationEnd": source_end.isoformat(),
+                }
+            )
+        )
+        failure_code = re.sub(r"[^A-Z0-9_]", "_", str(error).split(maxsplit=1)[0].upper())[:96]
+        if not failure_code:
+            failure_code = "SCENARIO_MATERIALIZATION_FAILED"
+        failure_id = "perf_fail_" + _sha(f"{source_generation}|{failure_code}".encode())[:24]
+        with psycopg.connect(dsn, connect_timeout=5) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select record_owner_performance_report_failure_v1(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (
+                    _OWNER,
+                    failure_id,
+                    source_generation,
+                    source_start,
+                    source_end,
+                    str(db_input["modelSha256"]),
+                    str(performance_input["principleVersionId"]),
+                    int(performance_input["principleVersion"]),
+                    35,
+                    failure_code,
+                    datetime.now(UTC),
+                ),
+            )
+            connection.commit()
+    except (KeyError, OSError, ValueError, psycopg.Error, ScenarioMaterializationError):
+        return
+
+
+def materialize(bundle_root: Path, dsn: str) -> dict[str, object]:
+    try:
+        return _materialize_once(bundle_root, dsn)
+    except (ScenarioMaterializationError, OSError, ValueError) as error:
+        _record_failure(bundle_root, dsn, error)
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:

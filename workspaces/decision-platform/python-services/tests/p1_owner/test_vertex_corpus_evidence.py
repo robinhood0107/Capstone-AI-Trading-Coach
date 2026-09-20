@@ -50,7 +50,11 @@ def _latest_bounded_quote_bound() -> int:
     pattern = re.compile(r"char_length\(bounded_quote\)\s+BETWEEN\s+1\s+AND\s+(\d+)")
     found: list[tuple[int, int]] = []
     for path in _MIGRATIONS.glob("V*__*.sql"):
-        match = pattern.search(path.read_text(encoding="utf-8"))
+        migration = path.read_text(encoding="utf-8")
+        # 세계 뉴스처럼 다른 bounded_quote column은 이 자동운용 evidence 계약의 네 계층이 아니다.
+        if "automation_candidate_evidence" not in migration:
+            continue
+        match = pattern.search(migration)
         if match is None:
             continue
         version = int(re.match(r"V(\d+)__", path.name).group(1))  # type: ignore[union-attr]

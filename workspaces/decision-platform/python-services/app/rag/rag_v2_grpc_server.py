@@ -273,6 +273,9 @@ def _retrieval(
         exact_retriever=retrieval_adapter,  # type: ignore[arg-type]
         lexical_retriever=retrieval_adapter,  # type: ignore[arg-type]
         dense_retriever=retrieval_adapter,  # type: ignore[arg-type]
+        world_news_retriever=(
+            retrieval_adapter if hasattr(retrieval_adapter, "retrieve_world_news") else None
+        ),
         rrf_fusion=RagV2RrfFusion(),
     )
 

@@ -20,7 +20,7 @@ from app.rag.rag_v2_authorized_retrieval import (
 )
 
 _QUERY_ROLE = "decision_rag_query"
-_SOURCE_SCOPES = frozenset({"EXACT30", "OA112", "OWNER_PRIVATE"})
+_SOURCE_SCOPES = frozenset({"EXACT30", "OA112", "OWNER_PRIVATE", "WORLD_NEWS"})
 _DIRECT_READ_TABLES = (
     "public.rag_v2_immutable_source_revisions",
     "public.rag_v2_immutable_chunks",
@@ -31,6 +31,9 @@ _DIRECT_READ_TABLES = (
     "public.rag_v2_immutable_bundles",
     "public.rag_v2_immutable_owner_bundle_pointers",
     "public.rag_v2_retrieval_scope_claims",
+    "public.world_news_documents_v2",
+    "public.world_news_document_versions_v2",
+    "public.world_news_observations_v2",
 )
 _REQUIRED_FUNCTIONS = (
     "public.read_rag_v2_retrieval_scope_v2(text,text,text)",
@@ -38,6 +41,7 @@ _REQUIRED_FUNCTIONS = (
     "public.search_authorized_rag_v2_exact(text,text,text,text[],text[])",
     "public.search_authorized_rag_v2_lexical(text,text,text,text[],text)",
     "public.search_authorized_rag_v2_dense_v2(text,text,text,text[],vector,vector)",
+    "public.search_authorized_world_news_rag_v2(text,text,text,text[],text)",
 )
 
 
@@ -228,6 +232,33 @@ class PsycopgRagV2AuthorizedRetrievalAdapter:
             channel="dense", items=self._map_rows(rows, scope=scope), complete=True
         )
 
+    def retrieve_world_news(
+        self,
+        *,
+        scope: RagV2BundleScope,
+        query: NormalizedRetrievalQuery,
+    ) -> RagV2ChannelResult:
+        """동적 뉴스는 DATA topic과 현재 availableAt을 DB 함수가 확인한 뒤에만 합류한다."""
+
+        rows = self._execute(
+            """
+            SELECT *
+            FROM public.search_authorized_world_news_rag_v2(%s,%s,%s,%s,%s)
+            """,
+            (
+                scope.claim_id,
+                scope.owner_user_id,
+                scope.session_id,
+                list(_effective_topics(scope, query)),
+                query.lexical_query,
+            ),
+        )
+        return RagV2ChannelResult(
+            channel="world_news",
+            items=self._map_rows(rows, scope=scope),
+            complete=True,
+        )
+
     def _execute(
         self,
         statement: str,
@@ -368,6 +399,7 @@ def _candidate_receipt_matches(
         "EXACT30": scope.exact30_generation_id,
         "OA112": scope.oa112_generation_id,
         "OWNER_PRIVATE": scope.owner_private_generation_id,
+        "WORLD_NEWS": scope.oa112_generation_id,
     }.get(candidate.source_scope)
     if (
         candidate.source_scope not in _SOURCE_SCOPES
@@ -388,7 +420,7 @@ def _candidate_receipt_matches(
         or not set(candidate.topics).intersection(scope.allowed_topics)
     ):
         return False
-    if candidate.source_scope in {"EXACT30", "OA112"}:
+    if candidate.source_scope in {"EXACT30", "OA112", "WORLD_NEWS"}:
         return candidate.owner_user_id is None
     return candidate.owner_user_id == scope.owner_user_id
 

@@ -199,7 +199,7 @@ def _policy_body() -> dict[str, Any]:
             "maxOpenPositions": {"const": 5},
             "maxNewOrdersPerSession": {"const": 1},
             "evaluationTimeKst": {"const": "09:30"},
-            "buyCutoffTimeKst": {"const": "09:40"},
+            "buyCutoffTimeKst": {"const": "14:30"},
             "cancelTimeKst": {"const": "15:20"},
             "createdAt": _timestamp(),
             "updatedAt": _timestamp(),
@@ -711,7 +711,7 @@ def _catalog() -> dict[str, Any]:
         ],
         "execution": {
             "evaluationTimeKst": "09:30",
-            "buyCutoffTimeKst": "09:40",
+            "buyCutoffTimeKst": "14:30",
             "cancelTimeKst": "15:20",
             "maxOpenPositions": 5,
             "maxNewOrdersPerSession": 1,

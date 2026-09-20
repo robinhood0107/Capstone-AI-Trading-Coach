@@ -22,9 +22,83 @@ from app.p1_owner.automation_runtime_live import (
     FailClosedVertexVetoTransport,
     LiveAutomationPort,
     SpringAutomationBridgeClient,
+    _quote_flag,
+    _stored_evidence_payload,
 )
+from app.p1_owner.vertex_corpus_evidence import CorpusDocument
 
 _KST = ZoneInfo("Asia/Seoul")
+
+
+def test_real_kis_current_price_status_fields_survive_as_tradable() -> None:
+    """실측 035420 응답은 N/N/N 이다. 빈 문자열로 폴백하면 정상 종목이 전부 탈락한다."""
+
+    output = {"temp_stop_yn": "N", "mang_issu_cls_code": "N", "sltr_yn": "N"}
+    quote = Quote(
+        "035420",
+        200_000,
+        140_000,
+        260_000,
+        temp_stop_yn=_quote_flag(output, "temp_stop_yn"),
+        management_issue_code=_quote_flag(output, "mang_issu_cls_code", "mang_issu_yn"),
+        liquidation_trading_yn=_quote_flag(output, "sltr_yn"),
+    )
+
+    assert quote.hard_eligible is True
+
+
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        ({"mang_issu_cls_code": "N"}, "N"),
+        # 시간외/마스터 계열은 같은 뜻을 다른 키로 내려준다.
+        ({"mang_issu_yn": "N"}, "N"),
+        ({"mang_issu_cls_code": "", "mang_issu_yn": "Y"}, "Y"),
+        ({"mang_issu_cls_code": " 00 "}, "00"),
+        ({}, "UNKNOWN"),
+        ({"mang_issu_cls_code": None}, "UNKNOWN"),
+        ({"mang_issu_cls_code": ""}, "UNKNOWN"),
+    ],
+)
+def test_missing_status_flags_are_reported_as_unknown_not_empty(
+    output: dict[str, Any], expected: str
+) -> None:
+    assert _quote_flag(output, "mang_issu_cls_code", "mang_issu_yn") == expected
+
+
+def test_stored_disclosure_evidence_payload_is_bounded_and_symbol_bound() -> None:
+    class Source:
+        def documents(self, *, symbol: str, session_date: date) -> tuple[CorpusDocument, ...]:
+            assert symbol == "005930" and session_date == date(2026, 8, 26)
+            return (
+                CorpusDocument(
+                    "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260825000001",
+                    date(2026, 8, 25),
+                    "OPENDART 공식 공시 영업정지. 접수번호 20260825000001, 접수일 2026-08-25.",
+                ),
+            )
+
+    rows = _stored_evidence_payload(
+        Source(),
+        candidates=(SignalCandidate("005930", "BUY", "BUY", 0.03),),
+        session_date=date(2026, 8, 26),
+    )
+
+    assert len(rows) == 1
+    assert set(rows[0]) == {
+        "boundedQuote",
+        "citationId",
+        "sourceEventDate",
+        "sourceId",
+        "sourceType",
+        "supportObserved",
+        "symbol",
+        "uri",
+    }
+    assert rows[0]["symbol"] == "005930"
+    assert rows[0]["sourceId"] == "src_official_dart"
+    assert rows[0]["supportObserved"] is True
+    assert not any("raw" in key.lower() or "credential" in key.lower() for key in rows[0])
 
 
 class FakeBridge:
@@ -223,7 +297,10 @@ def test_live_port_reuses_one_quote_spring_risk_brokerage_and_execution_reader()
         "EVALUATE",
         "SUBMIT",
     ]
-    evaluate_intent = cast(dict[str, object], bridge.calls[1][1]["orderIntent"])
+    evaluation = cast(dict[str, object], bridge.calls[1][1]["evaluation"])
+    evaluate_intent = cast(dict[str, object], evaluation["orderIntent"])
+    assert bridge.calls[1][1]["runId"] == _claim().run_id
+    assert bridge.calls[1][1]["claimTokenHash"] == _claim().claim_token_hash
     submit_intent = cast(dict[str, object], bridge.calls[2][1]["orderIntent"])
     assert evaluate_intent == submit_intent == intent.projection()
     assert port.physical_calls == 5

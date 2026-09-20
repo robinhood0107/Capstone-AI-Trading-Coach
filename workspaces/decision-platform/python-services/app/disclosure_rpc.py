@@ -65,6 +65,7 @@ class StoredDisclosureBatch:
     complete: bool
     events: tuple[StoredDisclosureEvent, ...]
     source_refs: tuple[str, ...] = ()
+    collection_status: str = "UNKNOWN"
 
 
 class StoredDisclosureRepository(Protocol):

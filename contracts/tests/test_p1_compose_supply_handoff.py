@@ -422,7 +422,13 @@ class P1ComposeSupplyHandoffTest(unittest.TestCase):
         self.assertEqual([], missing)
         # 규칙이 빈 집합을 훑고 초록불이 되지 않게, 걸려야 하는 서비스를 이름으로 고정한다.
         self.assertEqual(
-            ["decision-platform", "market-data-cli", "market-data-daily"], sorted(examined)
+            [
+                "decision-platform",
+                "market-data-cli",
+                "market-data-daily",
+                "world-news-minute",
+            ],
+            sorted(examined),
         )
 
     def test_daily_collector_entrypoint_profile_requires_only_the_writer_dsn(self) -> None:
@@ -444,12 +450,19 @@ class P1ComposeSupplyHandoffTest(unittest.TestCase):
         self.assertIn(
             "market-data-daily) printf '%s\\n' 'MARKET_DATA_WRITER_DSN' ;;", entrypoint
         )
+        self.assertIn("world-news) secret_files=/run/secrets/market_data_env ;;", entrypoint)
+        self.assertIn("world-news:MARKET_DATA_WRITER_DSN) return 0 ;;", entrypoint)
+        self.assertIn("world-news) printf '%s\\n' 'MARKET_DATA_WRITER_DSN' ;;", entrypoint)
         # 이 프로파일에 다른 키를 허용하지 않는다.
         for forbidden in (
             "market-data-daily:P1_AUTOMATION_DATABASE_DSN",
             "market-data-daily:KIS_MOCK_APP_KEY",
             "market-data-daily:KIS_LIVE_APP_KEY",
             "market-data-daily:AUTOMATION_RUNTIME_SHARED_SECRET",
+            "world-news:P1_AUTOMATION_DATABASE_DSN",
+            "world-news:KIS_MOCK_APP_KEY",
+            "world-news:KIS_LIVE_APP_KEY",
+            "world-news:AUTOMATION_RUNTIME_SHARED_SECRET",
         ):
             self.assertNotIn(forbidden, entrypoint)
 

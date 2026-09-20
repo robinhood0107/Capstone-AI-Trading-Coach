@@ -1,0 +1,55 @@
+{
+  "lastFailureAt": null,
+  "lastFailureCode": null,
+  "lastRefreshStatus": "SUCCESS",
+  "report": {
+    "contractId": "owner-performance-report.v1",
+    "correctionOfReportId": null,
+    "costBps": 35,
+    "generatedAt": "2026-09-08T06:00:00Z",
+    "modelAdoption": {
+      "automaticActivation": false,
+      "blockers": [
+        "NO_DUAL_ACCEPTANCE_CANDIDATE"
+      ],
+      "candidateId": null,
+      "currentModel": "EQUAL_WEIGHT_50_50",
+      "performanceAccepted": false,
+      "predictionAccepted": false,
+      "state": "RESEARCH_EVALUATED"
+    },
+    "modelSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "principleVersion": 3,
+    "principleVersionId": "pvr_cccccccccccccccccccccccccccccccc",
+    "reportId": "perf_report_111111111111111111111111",
+    "reportVersion": 2,
+    "sections": {
+      "actualTrading": {
+        "closedPositionCount": 0,
+        "openPositionCount": 1,
+        "realizedPnlKrw": 0,
+        "status": "NO_REALIZED_TRADES",
+        "unrealizedStatus": "OPEN"
+      },
+      "fixedDailyForecast": {
+        "bias": -0.001,
+        "mae": 0.01,
+        "pendingCount": 31,
+        "realizedCount": 31,
+        "rmse": 0.02,
+        "status": "PARTIAL",
+        "totalCount": 62
+      },
+      "recalculatedBacktest": {
+        "baselineNetReturn": 0.01,
+        "guideNetReturn": 0.02,
+        "status": "RECALCULATED",
+        "strictNetReturn": 0.005
+      }
+    },
+    "sourceEnd": "2026-09-08",
+    "sourceGenerationSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sourceStart": "2026-08-18",
+    "supersedesReportId": "perf_report_000000000000000000000000"
+  }
+}

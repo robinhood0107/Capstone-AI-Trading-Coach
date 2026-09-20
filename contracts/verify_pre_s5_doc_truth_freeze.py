@@ -38,18 +38,9 @@ ACTIVE_PUBLIC_PATHS = frozenset(
         "AGENTS.md",
         "README.md",
         "docs/README.md",
-        "docs/RAG_외부_AI_처리_및_개인문서_동의.md",
-        "docs/S4_9_MCP_Strong_LLM_운영_가이드.md",
         "docs/API_명세서.md",
         "docs/최종_프로젝트_명세서.md",
         "docs/금융공학_공식_및_자동매매_로직_설명서.md",
-        "docs/decision-platform/P1_1_0_0_FULL_APP_V2_권위_및_게이트.md",
-        "docs/decision-platform/P1_1_0_0_OWNER_FIRST_V3_권위_및_게이트.md",
-        "docs/decision-platform/P1_API_USAGE_MATRIX.md",
-        "docs/decision-platform/P1_TEAM_A_DASHBOARD_완료_요청서.md",
-        "docs/decision-platform/P1_TEAM_B_RETURN_ENGINE_완료_요청서.md",
-        "docs/decision-platform/P1_운영_후속_경계.md",
-        "docs/decision-platform/P1_최종_테스트_증거_판정표.md",
         "contracts/README.md",
         "capstone-rag/README.md",
         "workspaces/decision-platform/README.md",
@@ -167,12 +158,6 @@ REQUIRED_PUBLIC_MARKERS = {
         "S4_8A=CONTRACT_LOCKED",
         "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
     ),
-    "docs/decision-platform/P1_1_0_0_FULL_APP_V2_권위_및_게이트.md": (
-        "TEAM_B_REAL_ARTIFACT=BLOCKED",
-        "SECURITY_RELEASE=INCOMPLETE",
-        "P1_FINAL=NOT_READY",
-        "P1_1_0_0_RELEASED=FALSE",
-    ),
     "workspaces/return-engine/README.md": (
         "P1 full-app v2",
         "TEAM_B_REAL_ARTIFACT=BLOCKED",
@@ -180,14 +165,6 @@ REQUIRED_PUBLIC_MARKERS = {
     "workspaces/experience-dashboard/README.md": (
         "P1 full-app v2",
         "DASHBOARD_UI=PARTIAL_TEAM_A_ACTION_REQUIRED",
-    ),
-    "docs/RAG_외부_AI_처리_및_개인문서_동의.md": (
-        "EXTERNAL_AI_RAG_V2",
-        "Voyage AI",
-        "Vertex AI Gemini",
-        "TARGET_NOT_ACTIVE",
-        "OA112_ACTIVE_CONTRACT_LOCKED",
-        "VERTEX_MODEL_ID",
     ),
 }
 FORBIDDEN_PUBLIC_MARKERS: Final[dict[str, tuple[str, ...]]] = {
@@ -204,9 +181,6 @@ FORBIDDEN_PUBLIC_MARKERS: Final[dict[str, tuple[str, ...]]] = {
     ),
     "docs/API_명세서.md": (
         "ACTIVE_V2_RUNTIME=STUB_FAIL_CLOSED",
-        "VERTEX_API_KEY",
-    ),
-    "docs/RAG_외부_AI_처리_및_개인문서_동의.md": (
         "VERTEX_API_KEY",
     ),
     "contracts/README.md": (
@@ -327,52 +301,9 @@ IMMUTABLE_HISTORY_CLASSIFICATIONS: Final[frozenset[str]] = frozenset(
 # them without authorizing edits to ADR, contract-change, or sealed evidence bytes.
 P1_CURRENT_MUTABLE_DOCUMENTS: Final[frozenset[str]] = frozenset(
     {
-        "docs/decision-platform/P1_ARTIFACT_IMPORTER_PROJECTION_운영_가이드.md",
-        "docs/decision-platform/P1_OWNER_선행_완료_체크리스트.md",
-        "docs/decision-platform/P1_RETURN_INFERENCE_RUNTIME_운영_가이드.md",
-        "docs/handoff/P1_TEAM_A_최종_통합_요청서.md",
-        "docs/handoff/P1_TEAM_B_최종_통합_요청서.md",
-        "docs/test/P1_TEAM_수신.md",
         # 2026-09-19 private-reference 이관분. 특정 날짜의 요청서, 한 번 쓰고 끝난
         # 검증 증거, 세션별 테스트 기록이다. 봉인의 목적은 증거를 다시 쓰지 못하게
         # 하는 것이지 저장소 밖으로 내보내지 못하게 하는 것이 아니다.
-        "docs/AWS_EC2_단일사용자_배포.md",
-        "docs/AWS_다중사용자_최소전환_TODO.md",
-        "docs/NEXT_capstone-p1-lab_Kafka_S1.4X_실행_프롬프트.md",
-        "docs/P1_최종_종료_명세_20260904.md",
-        "docs/시연용_DB.md",
-        "docs/decision-platform/P1_AFTER_HOURS_FULL_REPLAY.md",
-        "docs/decision-platform/P1_AUTOMATION_CLOSED_LOOP_FIXTURE_운영_가이드.md",
-        "docs/decision-platform/P1_AUTOMATION_MARKET_DATA_V110_운영_가이드.md",
-        "docs/decision-platform/P1_AUTOMATION_V3_AI_EVIDENCE_EXIT_POLICY.md",
-        "docs/decision-platform/P1_COMPOSE_5_7_검증_증거.md",
-        "docs/decision-platform/P1_DATA_ONLY_DAILY_COLLECTOR_운영_가이드.md",
-        "docs/decision-platform/P1_EXACT31_INPUT_PACK_수집_및_전달.md",
-        "docs/decision-platform/P1_OWNER_최소_구현_실행_프롬프트.md",
-        "docs/decision-platform/P1_TEAM_A_B_완료_후_OWNER_최종_실행.md",
-        "docs/decision-platform/P1_VERTEX_NEWS_VETO_RUNTIME.md",
-        "docs/decision-platform/P1_실물_artifact_잔여_체크리스트.md",
-        "docs/decision-platform/S6_금융공학_실행_및_검증.md",
-        "docs/decision-platform/S6_무료_API_strict_PIT_가용성_판정.md",
-        "docs/decision-platform/S7_S8_P1_문서_동기화_매니페스트.md",
-        "docs/decision-platform/S8_오프라인_시연_시나리오.md",
-        "docs/handoff/P1_TEAM_A_AUTOMATION_V3_최종_요청서_2026-09-02.md",
-        "docs/handoff/P1_TEAM_B_AUTOMATION_V3_최종_요청서_2026-09-02.md",
-        "docs/handoff/P1_최종_요청서_2026-08-31.md",
-        "docs/handoff/P1_최종_요청서_2026-08-31_V3_추가계약.md",
-        "docs/test/P1_AI_판단.md",
-        "docs/test/P1_API_표면.md",
-        "docs/test/P1_CI.md",
-        "docs/test/P1_RAG_V2.md",
-        "docs/test/P1_검증_러너.md",
-        "docs/test/P1_관통_파이프라인.md",
-        "docs/test/P1_브로커리지.md",
-        "docs/test/P1_비동기.md",
-        "docs/test/P1_비활성_기능.md",
-        "docs/test/P1_자동운용.md",
-        "docs/test/P1_장시간_의존_항목.md",
-        "docs/test/P1_장중_실물_검증_2026-08-31.md",
-        "docs/test/P1_장중_실물_검증_2026-08-31_2부.md",
         # 팀이 관리하는 살아있는 워크스페이스 설명서다. 봉인 대상이 아닌데
         # classify_markdown 의 기본 catch-all(HISTORICAL_SUPERSEDED)에 걸려 팀이 자기
         # 워크스페이스 문서를 고칠 수 없었다. 봉인의 목적은 증거를 다시 쓰지 못하게 하는

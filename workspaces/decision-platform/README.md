@@ -9,7 +9,7 @@
 `python -m app.p1_owner.assets`는 verified `market-data-seed.v1` archive를 exact-31 input pack으로 변환하고,
 wire-compatible synthetic exact-10 Team B bundle을 만든다. provider/account/order call은 0이고 output은
 Git 밖 owner-private root에만 둔다. 실행과 truth marker는
-[`P1_OWNER_INPUT_PACK_GOLDEN_운영_가이드`](../../docs/decision-platform/P1_OWNER_INPUT_PACK_GOLDEN_운영_가이드.md)를
+`P1_OWNER_INPUT_PACK_GOLDEN_운영_가이드`를
 따른다.
 
 ## P1 Return artifact importer와 projection
@@ -18,7 +18,7 @@ Git 밖 owner-private root에만 둔다. 실행과 truth marker는
 content-addressed archive에 보존하고 V88 function-only transaction으로 Signal, Model Evaluation,
 Backtest, ADMIN Ingest Status를 함께 게시한다. synthetic Signal은 명시적 test profile 전용이며 기본
 production pointer는 all-ABSTAIN이다. 자세한 경계는
-[`P1_ARTIFACT_IMPORTER_PROJECTION_운영_가이드`](../../docs/decision-platform/P1_ARTIFACT_IMPORTER_PROJECTION_운영_가이드.md)를
+`P1_ARTIFACT_IMPORTER_PROJECTION_운영_가이드`를
 따른다.
 
 ## P1 Return inference runtime
@@ -27,7 +27,7 @@ production pointer는 all-ABSTAIN이다. 자세한 경계는
 exact-31 batch, auth/deadline/size/concurrency를 강제하며 model pointer 부재는 값을 꾸미지 않고
 `FAILED_PRECONDITION`으로 닫는다. Spring·async worker와 같은 supervisor/health에 포함되며 provider,
 DB DML, order authority는 0이다. 자세한 경계는
-[`P1_RETURN_INFERENCE_RUNTIME_운영_가이드`](../../docs/decision-platform/P1_RETURN_INFERENCE_RUNTIME_운영_가이드.md)를
+`P1_RETURN_INFERENCE_RUNTIME_운영_가이드`를
 따른다.
 
 ## 구조

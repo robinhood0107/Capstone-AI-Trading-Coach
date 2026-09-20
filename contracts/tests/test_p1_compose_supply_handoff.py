@@ -226,20 +226,20 @@ class P1ComposeSupplyHandoffTest(unittest.TestCase):
                 verify_compose()
 
     def test_handoff_rejects_missing_sections_and_internal_paths(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            relative = "docs/handoff/team-a/README.md"
-            handoff = root / relative
-            handoff.parent.mkdir(parents=True)
-            handoff.write_text(
-                "\n".join(verifier.HEADINGS[:-1]) + "\n", encoding="utf-8"
-            )
-            with (
-                patch.object(verifier, "ROOT", root),
-                patch.object(verifier, "HANDOFF_PATHS", (relative,)),
-                self.assertRaises(ContractError),
-            ):
-                verify_handoff_docs()
+        for relative in verifier.HANDOFF_PATHS:
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                handoff = root / relative
+                handoff.parent.mkdir(parents=True)
+                handoff.write_text(
+                    "\n".join(verifier.HEADINGS[:-1]) + "\n", encoding="utf-8"
+                )
+                with (
+                    patch.object(verifier, "ROOT", root),
+                    patch.object(verifier, "HANDOFF_PATHS", (relative,)),
+                    self.assertRaises(ContractError),
+                ):
+                    verify_handoff_docs()
 
             handoff.write_text(
                 "\n".join(verifier.HEADINGS)

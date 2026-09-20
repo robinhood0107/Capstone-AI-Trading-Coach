@@ -237,6 +237,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 1
             if not replayed:
                 raise AutomationRuntimeError("AUTOMATION_START_WITHOUT_READINESS")
+            if not readiness.markers["target_available"]:
+                # 무장은 되어 있는데 그 세션의 예약이 없다. 이 조합에서 "이미 무장됨"은
+                # 거짓이다 - 아무것도 돌지 않는데 위층은 ARMED 를 읽는다. 실제로 예약
+                # 연쇄가 끊긴 채 ARMED 로 남아 하루가 통째로 비었다.
+                #
+                # 되살리는 길은 stop 뒤 start 다. 무장 상태에서는 readiness 가 예약이
+                # 있기를 요구하고, 예약을 만드는 것은 start 뿐이라 서로를 기다린다.
+                # 그 해제를 여기서 말없이 하지 않는다 - 매매 상태를 바꾸는 일이므로
+                # 사람이 보고 결정한다.
+                _print_readiness(
+                    readiness,
+                    local_ready=False,
+                    target_session=target,
+                    provider_calls=provider_calls,
+                )
+                print("MOCK_START=ARMED_WITHOUT_SESSION_SCHEDULE")
+                print(f"CURRENT_CONTROL_VERSION={version}")
+                print(f"PROVIDER_CALLS={provider_calls}")
+                return 1
             print("MOCK_START=NO_OP_ALREADY_ARMED")
             print("MOCK_START_REPLAYED=TRUE")
             print(f"CURRENT_CONTROL_VERSION={version}")

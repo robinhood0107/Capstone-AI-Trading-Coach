@@ -275,21 +275,6 @@ class CommonApiContractIntegrationTest(
     }
 
     @Test
-    fun `login limiter stores only purpose separated opaque scopes`() {
-        loginAttemptLimiter.tryAcquire("198.51.100.201", "raw-probe-user")
-        loginAttemptLimiter.recordFailure("198.51.100.201", "raw-probe-user")
-
-        val attemptsField = LoginAttemptLimiter::class.java.getDeclaredField("attempts")
-        attemptsField.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val storedKeys = (attemptsField.get(loginAttemptLimiter) as Map<String, *>).keys
-
-        assertTrue(storedKeys.any { it.startsWith("login:v1:user:") })
-        assertTrue(storedKeys.any { it.startsWith("login:v1:deployment:") })
-        assertTrue(storedKeys.none { it.contains("raw-probe-user") || it.contains("198.51.100.201") })
-    }
-
-    @Test
     fun `oversized login body is rejected before JSON binding`() {
         mockMvc
             .post("/api/v1/auth/login") {

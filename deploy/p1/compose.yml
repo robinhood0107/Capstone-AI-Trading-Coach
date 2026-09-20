@@ -1004,6 +1004,38 @@ services:
     restart: unless-stopped
     networks: [p1-app]
 
+  # 서버에 올릴 때만 띄운다(--profile tls). 켜지 않으면 지금 배치가 그대로다 -
+  # 전 포트가 127.0.0.1 에 묶여 있고 바깥을 보는 것이 없다.
+  tls-proxy:
+    profiles: [tls]
+    image: nginx:1.29-alpine
+    platform: linux/amd64
+    user: "65532:65532"
+    # 비공개 키는 0640 이고 운영자 그룹 소유다. 스택의 다른 서비스와 같은 방법으로
+    # 그 그룹을 더한다 - 키를 모두가 읽게 여는 대신.
+    group_add: ["${P1_SECRET_GID}"]
+    command: ["nginx", "-c", "/etc/nginx/nginx.conf", "-g", "daemon off;"]
+    ports:
+      - "${P1_TLS_BIND:-0.0.0.0}:${P1_TLS_HTTPS_PORT:-8443}:8443"
+      - "${P1_TLS_BIND:-0.0.0.0}:${P1_TLS_HTTP_PORT:-8080}:8080"
+    volumes:
+      - ./docker/tls-proxy.nginx.conf:/etc/nginx/nginx.conf:ro
+    secrets: [proxy_tls_certificate, proxy_tls_private_key]
+    depends_on:
+      decision-platform: {condition: service_healthy}
+      experience-dashboard: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "nginx", "-t", "-c", "/etc/nginx/nginx.conf"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    networks: [p1-app]
+
 secrets:
   postgres_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/postgres.env"}
   redis_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/redis.env"}
@@ -1016,6 +1048,8 @@ secrets:
   kis_mock_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock.env"}
   demo_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/demo.env"}
   demo_user_password: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/demo-user.password"}
+  proxy_tls_certificate: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/proxy-tls.crt"}
+  proxy_tls_private_key: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/proxy-tls.key"}
   rag_history_kek: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/rag-history-kek-v1.key"}
   seed_import_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/seed-import.env"}
   p1_provider_claim_dsn: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/p1-provider-claim.dsn"}

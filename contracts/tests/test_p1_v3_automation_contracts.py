@@ -23,6 +23,7 @@ from contracts.generate_p1_v3_automation_contracts import (
     validate_screen_semantics,
 )
 from contracts.generate_principle_contracts import ContractValidationError, canonical_json_bytes
+from contracts.historical_openapi_projection import historical_digest
 from contracts.verify_p1_v3_automation_openapi_transition import (
     CURRENT_ROOT_69_SHA256,
     merge_v3_openapi,
@@ -286,10 +287,8 @@ class P1V3AutomationContractTest(unittest.TestCase):
         self.assertEqual(75, len(operations(root)))
         projected = project_pre_v3_openapi(root, additive)
         self.assertEqual(69, len(operations(projected)))
-        self.assertEqual(
-            CURRENT_ROOT_69_SHA256,
-            hashlib.sha256(canonical_json_bytes(projected)).hexdigest(),
-        )
+        # 동결 해시는 그 세대의 바이트다. 이후의 제품 결정을 되돌린 뒤 비교한다.
+        self.assertEqual(CURRENT_ROOT_69_SHA256, historical_digest(projected))
         rebuilt = merge_v3_openapi(projected, additive)
         self.assertEqual(operations(root), operations(rebuilt))
 

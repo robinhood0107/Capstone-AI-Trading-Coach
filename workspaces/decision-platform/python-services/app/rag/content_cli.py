@@ -10,7 +10,12 @@ from pathlib import Path
 from typing import Final
 
 from app.rag.bge_acquisition import DEFAULT_MODEL_ROOT
-from app.rag.bge_runtime import BgeRuntimeError, BgeStaticTokenizer, load_bge_onnx_embedder
+from app.rag.bge_runtime import (
+    BgeRuntimeError,
+    BgeStaticTokenizer,
+    bge_enabled,
+    load_bge_onnx_embedder,
+)
 from app.rag.local_document_parser import DocumentParseError, LocalDocumentParser
 from app.rag.oa112_downloader import Oa112DownloadError, load_oa112_execution_binding
 from app.rag.oa_release_manifest import (
@@ -173,6 +178,11 @@ def _import_owner_document() -> int:
         if not admin_database_dsn:
             raise OwnerOverlayError("OWNER_OVERLAY_DATABASE_DSN")
         if control.embedding_profile_id == "bge_m3_local_1024_v1":
+            # BGE 는 이 스택의 경로가 아니다. 관문(load_bge_onnx_embedder)이 어차피
+            # 거부하지만 그 거부는 "재료화 실패"로 뭉뚱그려져 이유가 사라진다.
+            # 여기서 먼저 막아 왜 막혔는지를 운영자에게 그대로 말한다.
+            if not bge_enabled():
+                return _failure("OWNER_DOCUMENT_BGE_DISABLED")
             materialized = _materialize_owner_import(control=control)
             bge_staging_receipt = PsycopgRagV2OwnerBgeStagingRepository(
                 database_dsn=writer_database_dsn

@@ -69,9 +69,11 @@ class MockCertificationGuardTest(unittest.TestCase):
         self.certified_commit = _git(self.repository, "rev-parse", "HEAD")
         self.request_path = self.root / "request.json"
         self.receipt_path = self.root / "receipt.json"
+        self.image_digest = "sha256:" + "d" * 64
         self.request = {
             "branch": "feature/p1-full-app-v2",
             "commitSha": self.certified_commit,
+            "imageDigest": self.image_digest,
             "pullRequest": 163,
             "quantity": 1,
             "requiredChecks": sorted(GUARD._REQUIRED_CHECKS),
@@ -83,6 +85,7 @@ class MockCertificationGuardTest(unittest.TestCase):
         self.request_path.chmod(0o600)
         self.receipt = {
             "commitSha": self.certified_commit,
+            "imageDigest": self.image_digest,
             "inputSha256": hashlib.sha256(request_bytes).hexdigest(),
             "physicalCalls": {"brokerage": 7, "quote": 1, "token": 1},
             "status": "PASS",

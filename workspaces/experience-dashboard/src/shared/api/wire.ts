@@ -417,11 +417,21 @@ export interface AutomationPolicyV2 {
   capitalLimitKrw: number;
   stopLossBps: number;
   takeProfitBps: number;
-  maxOpenPositions: 5;
-  maxNewOrdersPerSession: 1;
-  evaluationTimeKst: '09:30';
-  buyCutoffTimeKst: '09:40';
-  cancelTimeKst: '15:20';
+  /** 사용자가 원칙에서 고르는 동시 보유 상한. 리터럴로 굳히면 화면이 실제와 어긋난다. */
+  maxOpenPositions: number;
+  /** ATR 변동성 기반 사이징의 거래당 위험(자본 대비 bps). 100 = 1%. */
+  riskPerTradeBps?: number;
+  maxNewOrdersPerSession: number;
+  evaluationTimeKst: string;
+  buyCutoffTimeKst: string;
+  /**
+   * 당일 미체결을 정리하는 경계.
+   *
+   * 이 시스템은 정규장(09:00~15:30)만 운용한다. 2026-09-14 부터 열린 KRX 애프터마켓
+   * (16:00~20:00)은 다루지 않는다 - KIS 모의계좌의 시간외 주문 지원이 확인되지 않았고
+   * 인증 창도 09:10~15:00 이다.
+   */
+  cancelTimeKst: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -520,6 +530,58 @@ export interface PutAutomationPolicyV3Request extends PutAutomationPolicyV2Reque
   atrMultiplierMilli: number;
   maxHoldingSessions: number;
   modelSellEnabled: boolean;
+  /** 동시 보유 상한(1~20). 서버가 생략을 허용하므로 옛 클라이언트도 깨지지 않는다. */
+  maxOpenPositions?: number;
+  /** ATR 사이징의 거래당 위험(10~300 bps). */
+  riskPerTradeBps?: number;
+}
+
+export interface AutomationCapitalPolicy {
+  contractId: 'automation-capital-policy.v1';
+  version: number;
+  reinvestRealizedPnl: boolean;
+  cashBufferBps: 100;
+  rebalanceDeviationBps: 200;
+  minimumAdjustmentKrw: 10000;
+  maxOrdersPerSession: 1 | 2 | 3;
+  effectiveFromSession: string;
+  transitionStartedAt: string;
+}
+
+export interface PutAutomationCapitalPolicyRequest {
+  reinvestRealizedPnl: boolean;
+  expectedVersion: number;
+}
+
+export interface AutomationCapitalPosition {
+  symbol: string;
+  currentQuantity: number;
+  targetQuantity: number | null;
+  currentMarketValueKrw: number | null;
+  targetMarketValueKrw: number;
+  currentWeightBps: number | null;
+  targetWeightBps: number;
+  valuationStatus: 'COMPLETE' | 'MISSING';
+}
+
+export interface AutomationCapitalStatus {
+  contractId: 'automation-capital-status.v1';
+  policyVersion: number;
+  reinvestRealizedPnl: boolean;
+  configuredCapitalKrw: number;
+  realizedPnlSinceTransitionKrw: number;
+  brokerBuyableCashKrw: number;
+  botPositionMarketValueKrw: number;
+  reservedBuyCashKrw: number;
+  allocationCapKrw: number;
+  investableCapKrw: number;
+  availableBuyCashKrw: number;
+  targetPerPositionKrw: number;
+  existingBotPositionsAdopted: number;
+  valuationMissingCount: number;
+  unusedCashReason: string | null;
+  positions: AutomationCapitalPosition[];
+  asOf: string;
 }
 
 export interface AutomationStatusV3
@@ -614,15 +676,39 @@ export interface AutomationEvidenceV3 {
 
 export interface AutomationCandidateScreeningV3 {
   symbol: string;
+  status: 'AVAILABLE' | 'ABSTAIN';
+  verdict: 'VETO_BUY' | 'NO_VETO' | 'ABSTAIN';
   score: number;
   reason: string;
   evidence: AutomationEvidenceV3[];
+}
+
+/** 후보가 주문까지 가는 동안 지나는 단계. 서버 CHECK 와 같은 값이어야 한다. */
+export type AutomationStageName =
+  | 'OBSERVATION'
+  | 'RULE_BUY'
+  | 'LSTM_VETO'
+  | 'ATR_HISTORY'
+  | 'QUOTE_SAFETY'
+  | 'NEWS_DISCLOSURE'
+  | 'AI_JUDGE'
+  | 'RISK_ENGINE'
+  | 'ORDER';
+
+export interface AutomationStageOutcome {
+  stage: AutomationStageName;
+  symbol: string;
+  outcome: 'PASS' | 'DROPPED';
+  reasonCode: string | null;
+  reasonDetail: string | null;
 }
 
 export interface AutomationRunDetailV3 {
   contractId: 'automation-run-detail.v3';
   run: AutomationRunV3;
   candidateScreenings: AutomationCandidateScreeningV3[];
+  /** 서버가 아직 안 내려줄 수 있다. 없으면 퍼널을 감추고 기존 표시로 되돌린다. */
+  stageOutcomes?: AutomationStageOutcome[];
 }
 
 export interface AutomationPositionV2 {
@@ -894,6 +980,54 @@ export interface RagV2HistoryDetail {
   expiresAt: string;
 }
 
+export type WorldNewsPublicationStatus = 'VERIFIED' | 'MISSING' | 'CONFLICT';
+export type WorldNewsCollectionState = 'COMPLETE' | 'PARTIAL' | 'COLLECTION_FAILED' | 'NOT_COLLECTED';
+
+export interface WorldNewsItem {
+  documentId: string;
+  documentVersionId: string;
+  sourceId: string;
+  provider: 'GDELT_GQG' | 'GDELT_GEMG' | 'FINNHUB_MARKET_NEWS';
+  providerDocumentId: string | null;
+  canonicalUrl: string;
+  republicationOfDocumentId: string | null;
+  identityStatus: 'VERIFIED' | 'PROVIDER_ID_CONFLICT' | 'URL_HASH_CONFLICT';
+  title: string | null;
+  boundedQuote: string | null;
+  boundedPassage: string | null;
+  language: string;
+  publishedAt: string | null;
+  publicationStatus: WorldNewsPublicationStatus;
+  providerObservedAt: string;
+  firstSeenAt: string;
+  availableAt: string;
+  rightsProfile: 'GDELT_METADATA_QUOTE' | 'FINNHUB_PERSONAL_LOCAL';
+  externalLlmAllowed: boolean;
+  lookupAllowed: boolean;
+  ragRetrievalAllowed: boolean;
+  promptUntrusted: true;
+  collectionStatus: WorldNewsCollectionState;
+  contentSha256: string;
+  versionSha256: string;
+}
+
+export interface WorldNewsPage {
+  items: WorldNewsItem[];
+  collections: {
+    provider: WorldNewsItem['provider'];
+    collectionStatus: WorldNewsCollectionState;
+    startedAt: string;
+    completedAt: string | null;
+    observedThrough: string | null;
+    itemCount: number;
+    errorCode: string | null;
+  }[];
+  asOf: string;
+  decisionAuthority: 'NONE';
+  signalAuthority: 'NONE';
+  orderAuthority: 'NONE';
+}
+
 export interface RagSourceResponse {
   sourceId: string;
   title: string;
@@ -1023,6 +1157,60 @@ export interface DashboardBacktestView {
   heatmap: { month: string; return: number }[];
   metricCards: { metric: string; value: number | null }[];
   projectionHash: string;
+}
+
+export interface OwnerPerformanceReport {
+  report: {
+    contractId: 'owner-performance-report.v1';
+    reportId: string;
+    reportVersion: number;
+    supersedesReportId: string | null;
+    correctionOfReportId: string | null;
+    generatedAt: string;
+    sourceStart: string;
+    sourceEnd: string;
+    sourceGenerationSha256: string;
+    modelSha256: string;
+    principleVersionId: string;
+    principleVersion: number;
+    costBps: number;
+    modelAdoption: {
+      state: 'RESEARCH_EVALUATED' | 'SHADOW_DAILY' | 'ACCEPTANCE_REVIEWED' | 'CURRENT_MODEL';
+      candidateId: string | null;
+      currentModel: string;
+      predictionAccepted: boolean;
+      performanceAccepted: boolean;
+      automaticActivation: false;
+      blockers: string[];
+    };
+    sections: {
+      recalculatedBacktest: {
+        status: 'RECALCULATED';
+        baselineNetReturn: number | null;
+        guideNetReturn: number | null;
+        strictNetReturn: number | null;
+      };
+      fixedDailyForecast: {
+        status: 'NOT_AVAILABLE' | 'PARTIAL' | 'REALIZED';
+        totalCount: number;
+        realizedCount: number;
+        pendingCount: number;
+        mae: number | null;
+        rmse: number | null;
+        bias: number | null;
+      };
+      actualTrading: {
+        status: 'NO_REALIZED_TRADES' | 'REALIZED';
+        closedPositionCount: number;
+        openPositionCount: number;
+        realizedPnlKrw: number;
+        unrealizedStatus: 'NONE' | 'OPEN';
+      };
+    };
+  };
+  lastRefreshStatus: 'SUCCESS' | 'FAILED_LAST_SUCCESS_PRESERVED';
+  lastFailureCode: string | null;
+  lastFailureAt: string | null;
 }
 
 export type RagSourceClassification = 'OFFICIAL' | 'SCHOLARLY' | 'INTERNAL_PAPER';

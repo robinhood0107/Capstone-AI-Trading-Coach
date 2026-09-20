@@ -29,6 +29,8 @@ FULL_APP_DOCUMENTS = (
     "docs/decision-platform/P1_API_USAGE_MATRIX.md",
     "docs/decision-platform/P1_API_USAGE_MATRIX_V3_ADDENDUM.md",
     "docs/decision-platform/P1_API_USAGE_MATRIX_V4_ADDENDUM.md",
+    "docs/decision-platform/P1_API_USAGE_MATRIX_V6_ADDENDUM.md",
+    "docs/decision-platform/P1_API_USAGE_MATRIX_V7_ADDENDUM.md",
     "docs/decision-platform/P1_TEAM_A_B_수신_후_통합_체크리스트.md",
     "docs/decision-platform/P1_OWNER_선행_완료_체크리스트.md",
     "docs/decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md",
@@ -96,6 +98,11 @@ TEAM_A_REQUIRED_OPERATIONS = frozenset(
         ("GET", "/api/v3/automation/runs/{runId}"),
         ("GET", "/api/v3/automation/positions"),
         ("GET", "/api/v3/signals/{symbol}"),
+        ("GET", "/api/v2/rag/world-news"),
+        ("GET", "/api/v1/dashboard/performance-reports/latest"),
+        ("GET", "/api/v4/automation/capital-policy"),
+        ("PUT", "/api/v4/automation/capital-policy"),
+        ("GET", "/api/v4/automation/capital-status"),
     }
 )
 OPTIONAL_PRODUCT_OPERATIONS = frozenset(
@@ -257,7 +264,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             for method in path_item
             if method in methods
         ]
-        self.assertEqual(78, len(operations))
+        self.assertEqual(83, len(operations))
         operation_ids = [operation_id for _, _, operation_id in operations]
         self.assertTrue(
             all(
@@ -265,7 +272,7 @@ class P1FullAppDocumentationTest(unittest.TestCase):
                 for operation_id in operation_ids
             )
         )
-        self.assertEqual(78, len(set(operation_ids)))
+        self.assertEqual(83, len(set(operation_ids)))
         expected = {(method, path) for method, path, _ in operations}
 
         matrix = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX.md").read_text(
@@ -305,12 +312,29 @@ class P1FullAppDocumentationTest(unittest.TestCase):
             owner_matrix, flags=re.MULTILINE,
         )
         self.assertEqual(2, len(owner_rows))
-        rows = [*base_rows, *v3_rows, *v4_rows, *owner_rows]
-        self.assertEqual(78, len(rows))
-        self.assertEqual(
-            list(range(1, 79)), sorted(int(number) for number, _, _, _ in rows)
+        v6_matrix = (ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX_V6_ADDENDUM.md").read_text(encoding="utf-8")
+        v6_rows = re.findall(
+            r"^\|\s*(\d+)\s*\|\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s*"
+            r"\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|",
+            v6_matrix, flags=re.MULTILINE,
         )
-        self.assertEqual(78, len({(method, path) for _, method, path, _ in rows}))
+        self.assertEqual(2, len(v6_rows))
+        v7_matrix = (
+            ROOT / "docs/decision-platform/P1_API_USAGE_MATRIX_V7_ADDENDUM.md"
+        ).read_text(encoding="utf-8")
+        v7_rows = re.findall(
+            r"^\|\s*(\d+)\s*\|\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s*"
+            r"\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|",
+            v7_matrix,
+            flags=re.MULTILINE,
+        )
+        self.assertEqual(3, len(v7_rows))
+        rows = [*base_rows, *v3_rows, *v4_rows, *owner_rows, *v6_rows, *v7_rows]
+        self.assertEqual(83, len(rows))
+        self.assertEqual(
+            list(range(1, 84)), sorted(int(number) for number, _, _, _ in rows)
+        )
+        self.assertEqual(83, len({(method, path) for _, method, path, _ in rows}))
         self.assertEqual(expected, {(method, path) for _, method, path, _ in rows})
 
         observed_by_classification = {

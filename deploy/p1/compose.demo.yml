@@ -28,8 +28,8 @@ services:
     environment:
       P1_OFFLINE_DEMO: "true"
       P1_DEMO_HISTORY_COMMAND: "${P1_DEMO_HISTORY_COMMAND:-seed}"
-      P1_DEMO_HISTORY_START: "${P1_DEMO_HISTORY_START:-2026-08-18}"
-      P1_DEMO_HISTORY_END: "${P1_DEMO_HISTORY_END:-2026-09-04}"
+      P1_DEMO_HISTORY_START: "${P1_DEMO_HISTORY_START:-2026-06-15}"
+      P1_DEMO_HISTORY_END: "${P1_DEMO_HISTORY_END:-2026-09-18}"
     secrets: [team_a_acceptance_env]
     depends_on:
       postgres: {condition: service_healthy}

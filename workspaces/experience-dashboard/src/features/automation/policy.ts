@@ -158,6 +158,8 @@ export interface AutomationPolicyV3Values {
   atrPeriod: number;
   atrMultiplierMilli: number;
   maxHoldingSessions: number;
+  maxOpenPositions: number;
+  riskPerTradeBps: number;
 }
 
 export function validateAutomationPolicyV3(values: AutomationPolicyV3Values): string[] {
@@ -180,6 +182,20 @@ export function validateAutomationPolicyV3(values: AutomationPolicyV3Values): st
   ) {
     errors.push('최대 보유 기간은 0 이상 1260세션 이하로 입력하세요.');
   }
+  if (
+    !Number.isSafeInteger(values.maxOpenPositions) ||
+    values.maxOpenPositions < 1 ||
+    values.maxOpenPositions > 20
+  ) {
+    errors.push('동시 보유 상한은 1 이상 20 이하로 입력하세요.');
+  }
+  if (
+    !Number.isSafeInteger(values.riskPerTradeBps) ||
+    values.riskPerTradeBps < 10 ||
+    values.riskPerTradeBps > 300
+  ) {
+    errors.push('거래당 위험은 0.1% 이상 3.0% 이하로 입력하세요.');
+  }
   return errors;
 }
 
@@ -191,6 +207,13 @@ export function percentToBps(value: number): number {
   return Math.round(value * 100);
 }
 
-export function slotBudgetKrw(capitalLimitKrw: number): number {
-  return Math.floor(capitalLimitKrw / 5);
+/**
+ * 종목당 투입 상한. 서버와 같은 식이어야 한다.
+ *
+ * 예전에는 5 를 박아 두었는데 상한은 사용자가 1~20 에서 고르는 값이다. 상한 10 이면
+ * 화면이 실제의 두 배를, 20 이면 네 배를 "종목당 기본 슬롯"이라고 말했다.
+ * 서버 근거: automation.py 의 `capital_limit_krw // max_open_positions`.
+ */
+export function slotBudgetKrw(capitalLimitKrw: number, maxOpenPositions: number): number {
+  return Math.floor(capitalLimitKrw / Math.max(1, maxOpenPositions));
 }

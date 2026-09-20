@@ -1,0 +1,1277 @@
+# 생성 파일이다. 손으로 고치지 않는다.
+#
+# 만드는 법:  python3 deploy/p1/generate_release_compose.py
+# 확인하는 법: python3 deploy/p1/generate_release_compose.py --check
+#
+# 개발용 compose.yml 에서 build 지시자와 이미지에 구운 정적 바인드만 덜어낸 것이다.
+# 소스 트리 없이 이미지와 비밀값 파일만으로 띄우는 용도다.
+#
+#   docker compose -f compose.release.yml --env-file release.env up -d --wait
+#
+# 운영자가 준비할 것은 두 가지뿐이다.
+#   1. 이미지 (P1_SPRING_IMAGE, P1_PYTHON_IMAGE, P1_POSTGRES_IMAGE, P1_REDIS_IMAGE,
+#      P1_DASHBOARD_IMAGE)
+#   2. 비밀값 파일 디렉터리 (P1_SECRETS_DIR)
+
+name: capstone-p1-full-app
+services:
+  postgres:
+    image: ${P1_POSTGRES_IMAGE:-capstone-postgres-pgvector:p1-local}
+    platform: linux/amd64
+    user: 70:70
+    group_add:
+    - ${P1_SECRET_GID}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - postgres
+    - docker-entrypoint.sh
+    command:
+    - postgres
+    - -c
+    - listen_addresses=*
+    - -c
+    - log_statement=none
+    environment:
+      POSTGRES_DB: capstone_p1
+      POSTGRES_USER: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    secrets:
+    - postgres_env
+    volumes:
+    - p1-postgres-current:/var/lib/postgresql/data
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.5
+    shm_size: 128m
+    tmpfs:
+    - /tmp:size=64m,mode=1777,uid=70,gid=70
+    - /var/run/postgresql:size=16m,mode=0770,uid=70,gid=70
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U postgres -d capstone_p1
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    networks:
+    - p1-data
+  redis:
+    image: ${P1_REDIS_IMAGE:-capstone-redis:p1-local}
+    platform: linux/amd64
+    user: 999:1000
+    group_add:
+    - ${P1_SECRET_GID}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - redis
+    secrets:
+    - redis_env
+    volumes:
+    - p1-redis:/data
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.5
+    tmpfs:
+    - /tmp:size=16m,mode=1777,uid=999,gid=999
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - . /run/secrets/redis_env && [ "$$(REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli --no-auth-warning
+        ping)" = PONG ]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    networks:
+    - p1-data
+  role-bootstrap:
+    platform: linux/amd64
+    group_add: &id001
+    - ${P1_SECRET_GID}
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: &id002
+    - ALL
+    security_opt: &id003
+    - no-new-privileges:true
+    pids_limit: 256
+    restart: 'no'
+    tmpfs: &id004
+    - /tmp:size=128m,mode=1777
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - role-bootstrap
+    command:
+    - java
+    - -Dloader.main=com.capstone.decision.infrastructure.security.P1DatabaseRoleBootstrap
+    - -cp
+    - /app/app.jar
+    - org.springframework.boot.loader.launch.PropertiesLauncher
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: '5432'
+      POSTGRES_DB: capstone_p1
+      P1_OFFLINE_DEMO: 'true'
+    secrets:
+    - role_bootstrap_env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+    - p1-data
+  migrate:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: 'no'
+    tmpfs: *id004
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - migration
+    command:
+    - java
+    - -Dloader.main=com.capstone.decision.infrastructure.security.P1FlywayMigrate
+    - -cp
+    - /app/app.jar
+    - org.springframework.boot.loader.launch.PropertiesLauncher
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: '5432'
+      POSTGRES_DB: capstone_p1
+      P1_OFFLINE_DEMO: 'true'
+    secrets:
+    - migration_env
+    depends_on:
+      role-bootstrap:
+        condition: service_completed_successfully
+    networks:
+    - p1-data
+  seed-import:
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - seed-import
+    command:
+    - python
+    - -m
+    - app.release.public_rag_seed_cli
+    - import
+    - --manifest
+    - /opt/capstone/seed/public-rag/public-rag-seed.v1.manifest.json
+    user: 65532:65532
+    group_add:
+    - ${P1_SECRET_GID}
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 1g
+    cpus: 1.0
+    restart: 'no'
+    tmpfs:
+    - /tmp:size=128m,mode=1777
+    secrets:
+    - seed_import_env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+    - p1-data
+  identity-bootstrap:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: 'no'
+    tmpfs: *id004
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - bootstrap
+    command:
+    - java
+    - -Dloader.main=com.capstone.decision.infrastructure.security.DemoIdentityBootstrap
+    - -cp
+    - /app/app.jar
+    - org.springframework.boot.loader.launch.PropertiesLauncher
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: '5432'
+      POSTGRES_DB: capstone_p1
+      P1_OFFLINE_DEMO: 'true'
+    secrets:
+    - bootstrap_env
+    depends_on:
+      seed-import:
+        condition: service_completed_successfully
+    networks:
+    - p1-data
+  team-b-seed-import:
+    profiles:
+    - owner
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - artifact-import
+    command:
+    - python
+    - -m
+    - app.p1_owner.importer
+    - --bundle-root
+    - /opt/capstone/seed/team-b
+    - --archive-parent
+    - /archive
+    - --git-seed
+    environment:
+      P1_OPERATOR_UID: ${P1_OPERATOR_UID}
+    user: ${P1_OPERATOR_UID}:${P1_SECRET_GID}
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 1g
+    cpus: 1.0
+    tmpfs:
+    - /tmp:size=64m,mode=1777
+    secrets:
+    - artifact_import_env
+    volumes:
+    - ${P1_ARTIFACT_ARCHIVE_DIR:-/nonexistent}:/archive
+    depends_on:
+      identity-bootstrap:
+        condition: service_completed_successfully
+    networks:
+    - p1-data
+    restart: 'no'
+  owner-scenario-materializer:
+    profiles:
+    - owner
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - artifact-import
+    command:
+    - python
+    - -m
+    - app.p1_owner.scenario_materializer
+    - --bundle-root
+    - /opt/capstone/seed/team-b
+    environment:
+      PROVIDER_LIVE_CALLS_ENABLED: 'false'
+      P1_OPERATOR_UID: ${P1_OPERATOR_UID}
+    user: ${P1_OPERATOR_UID}:${P1_SECRET_GID}
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 1g
+    cpus: 1.0
+    tmpfs:
+    - /tmp:size=64m,mode=1777
+    secrets:
+    - artifact_import_env
+    depends_on:
+      team-b-seed-import:
+        condition: service_completed_successfully
+    networks:
+    - p1-data
+    restart: 'no'
+  dashboard-preview-seed:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: 'no'
+    tmpfs: *id004
+    profiles:
+    - preview
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - demo
+    command:
+    - python
+    - -m
+    - app.s8_demo.preview_dashboard_seed
+    - --config
+    - /opt/capstone/shared-docs/backtest_config.yaml
+    environment:
+      PROVIDER_LIVE_CALLS_ENABLED: 'false'
+      KIS_OFFLINE: '1'
+    secrets:
+    - demo_env
+    depends_on:
+      identity-bootstrap:
+        condition: service_completed_successfully
+    networks:
+    - p1-data
+  actor-authority:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: unless-stopped
+    tmpfs: *id004
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - authority
+    command:
+    - java
+    - -Dloader.main=com.capstone.decision.infrastructure.security.ActorCapabilityAuthorityMain
+    - -cp
+    - /app/app.jar
+    - org.springframework.boot.loader.launch.PropertiesLauncher
+    environment:
+      ACTOR_CAPABILITY_AUTHORITY_HOST: 0.0.0.0
+      ACTOR_CAPABILITY_AUTHORITY_PORT: '18081'
+      ACTOR_IDENTITY_JDBC_URL: jdbc:postgresql://postgres:5432/capstone_p1
+      ACTOR_CAPABILITY_TLS_KEY_STORE_PATH: /run/secrets/actor_server_p12
+      ACTOR_CAPABILITY_TLS_CA_CERTIFICATE_PATH: /run/secrets/actor_tls_ca
+    secrets:
+    - actor_capability_authority_env
+    - actor_server_p12
+    - actor_tls_ca
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+      - CMD
+      - java
+      - -Dloader.main=com.capstone.decision.infrastructure.security.P1TcpHealthCheck
+      - -cp
+      - /app/app.jar
+      - org.springframework.boot.loader.launch.PropertiesLauncher
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks:
+    - p1-data
+  decision-platform:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: unless-stopped
+    tmpfs: *id004
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
+    environment:
+      DECISION_SOURCE_WRITER_OFFLINE_TARGET: local
+      SERVER_ADDRESS: 0.0.0.0
+      SERVER_PORT: '8080'
+      SPRING_FLYWAY_ENABLED: 'false'
+      ACTOR_CAPABILITY_TRANSPORT: http
+      ACTOR_CAPABILITY_AUTHORITY_URL: https://actor-authority:18081/internal/actor-capabilities/issue
+      ACTOR_CAPABILITY_TLS_KEY_STORE_PATH: /run/secrets/actor_client_p12
+      ACTOR_CAPABILITY_TLS_CA_CERTIFICATE_PATH: /run/secrets/actor_tls_ca
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: '5432'
+      POSTGRES_DB: capstone_p1
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+      ASYNC_ADAPTER: db
+      ASYNC_POLLING_ENABLED: 'true'
+      ASYNC_WORKER_ENABLED: 'true'
+      ASYNC_WORKER_GRPC_BIND_ADDRESS: 127.0.0.1:50056
+      ASYNC_WORKER_GRPC_TARGET: 127.0.0.1:50056
+      RETURN_INFERENCE_GRPC_BIND_ADDRESS: 127.0.0.1:50057
+      RETURN_INFERENCE_GRPC_TARGET: 127.0.0.1:50057
+      RETURN_INFERENCE_BUNDLE_ROOT: /opt/capstone/seed/team-b
+      RETURN_INFERENCE_ALLOW_SYNTHETIC: 'false'
+      RAG_ANSWERER: FIXTURE_ONLY
+      RAG_GRPC_ENABLED: 'false'
+      RAG_V2_GRPC_ENABLED: ${P1_RAG_V2_ENABLED:-false}
+      RAG_V2_GRPC_TARGET: 127.0.0.1:50054
+      RAG_V2_GRPC_BIND_ADDRESS: 127.0.0.1:50054
+      RAG_V2_GRPC_ENABLE_REFLECTION: 'false'
+      S4_9_RUNTIME_VOYAGE_QUERY_ENABLED: ${P1_RAG_V2_ENABLED:-false}
+      S4_9_VOYAGE_TOKENIZER_SHA256: ${P1_RAG_V2_TOKENIZER_SHA256:-c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539}
+      P1_RAG_RUNTIME_DIR_MOUNT: /run/rag-runtime
+      CAPSTONE_RAG_LOCAL_ROOT: /run/rag-runtime
+      RAG_V2_VERTEX_AUTO_ACTIVATION_POLICY_FILE: /run/rag-runtime/control/pre-s5-vertex-auto-activation-policy.json
+      RAG_V2_VERTEX_ENABLED: ${P1_RAG_V2_VERTEX_ENABLED:-false}
+      VERTEX_MODEL_ID: ${P1_VERTEX_MODEL_ID:-gemini-3.5-flash}
+      RAG_V2_VERTEX_HEAD_COMMIT: ${P1_RAG_V2_VERTEX_HEAD_COMMIT:-}
+      RAG_V2_VERTEX_TREE_DIGEST: ${P1_RAG_V2_VERTEX_TREE_DIGEST:-}
+      RAG_V2_VERTEX_CI_DIGEST: ${P1_RAG_V2_VERTEX_CI_DIGEST:-}
+      RAG_V2_VERTEX_SECURITY_DIGEST: ${P1_RAG_V2_VERTEX_SECURITY_DIGEST:-}
+      RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED: ${P1_RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED:-false}
+      RAG_WEB_ENABLED: 'false'
+      S4_9_STRONG_LLM_ENABLED: ${P1_STRONG_LLM_ENABLED:-false}
+      RAG_WEB_GOOGLE_BILLING_ACCOUNT_FINGERPRINT: ${P1_GOOGLE_BILLING_ACCOUNT_FINGERPRINT:-}
+      STRONG_LLM_GRPC_BIND_ADDRESS: 127.0.0.1:50055
+      STRONG_LLM_GRPC_TARGET: 127.0.0.1:50055
+      STRONG_LLM_PROVIDER: ${P1_STRONG_LLM_PROVIDER:-vertex}
+      STRONG_LLM_FALLBACK_PROVIDER: ${P1_STRONG_LLM_FALLBACK_PROVIDER:-}
+      S4_9_MCP_ENABLED: 'false'
+      P1_OFFLINE_DEMO: 'true'
+      P1_TEAM_A_ACCEPTANCE_ENABLED: ${P1_TEAM_A_ACCEPTANCE_ENABLED:-false}
+      P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK: ${P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK:-}
+      APP_P1_RETURN_ARTIFACT_SYNTHETIC_TEST_PROFILE: ${P1_ARTIFACT_SYNTHETIC_TEST_PROFILE:-false}
+      BROKERAGE_TICK_TABLE_VERIFICATION: ${P1_BROKERAGE_TICK_TABLE_VERIFICATION:-KRX_CASH_EQUITY_202312_ETP_UPDATE}
+      BROKERAGE_GRPC_ENABLED: ${P1_KIS_MOCK_ONLINE_ENABLED:-false}
+      BROKERAGE_GRPC_TARGET: 127.0.0.1:50052
+      PYTHON_BROKERAGE_GRPC_BIND_ADDRESS: 127.0.0.1:50052
+      FINANCIAL_ENGINEERING_GRPC_ENABLED: 'false'
+      KIS_MODE: mock
+      PROVIDER_LIVE_CALLS_ENABLED: 'false'
+      KIS_OFFLINE: ${P1_KIS_OFFLINE:-1}
+      KIS_MOCK_BROKERAGE_ONLINE_ENABLED: ${P1_KIS_MOCK_ONLINE_ENABLED:-false}
+      P1_AUTOMATION_RUNTIME_ENABLED: ${P1_AUTOMATION_RUNTIME_ENABLED:-false}
+      WORLD_NEWS_RETENTION_ENABLED: ${WORLD_NEWS_RETENTION_ENABLED:-false}
+      P1_AUTOMATION_EVIDENCE_FIXTURE_ENABLED: 'false'
+      DEBUG: ${P1_SPRING_DEBUG:-false}
+    secrets:
+    - spring_env
+    - python_env
+    - kis_mock_env
+    - return_inference_env
+    - automation_runtime_env
+    - automation_observation_env
+    - rag_v2_env
+    - vertex_service_account
+    - rag_history_kek
+    - actor_client_p12
+    - actor_tls_ca
+    volumes:
+    - ${P1_RAG_RUNTIME_DIR:-/dev/null}:/run/rag-runtime
+    ports:
+    - 127.0.0.1:${P1_API_PORT:-18080}:8080
+    depends_on:
+      actor-authority:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      seed-import:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - /app/decision-platform-health.py
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    networks:
+    - p1-data
+    - p1-app
+    - p1-model
+  synthetic-async-smoke:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: 'no'
+    tmpfs: *id004
+    profiles:
+    - smoke
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    pull_policy: missing
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - demo
+    command:
+    - python
+    - -m
+    - app.s8_demo.container_async_smoke
+    environment:
+      P1_SMOKE_MODE: DB
+      PROVIDER_LIVE_CALLS_ENABLED: 'false'
+      KIS_OFFLINE: '1'
+    secrets:
+    - demo_env
+    networks:
+    - p1-data
+  artifact-importer:
+    profiles:
+    - owner
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    pull_policy: missing
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - artifact-import
+    command:
+    - python
+    - -m
+    - app.p1_owner.importer
+    - --bundle-root
+    - /owner/${P1_ARTIFACT_BUNDLE_NAME:-disabled}
+    - --manifest-sha256
+    - ${P1_ARTIFACT_MANIFEST_SHA256:-disabled}
+    - --archive-parent
+    - /archive
+    environment:
+      P1_OPERATOR_UID: ${P1_OPERATOR_UID}
+    user: ${P1_OPERATOR_UID}:${P1_SECRET_GID}
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 1g
+    cpus: 1.0
+    tmpfs:
+    - /tmp:size=64m,mode=1777
+    secrets:
+    - artifact_import_env
+    volumes:
+    - ${P1_ARTIFACT_BUNDLE_PARENT:-/nonexistent}:/owner:ro
+    - ${P1_ARTIFACT_ARCHIVE_DIR:-/nonexistent}:/archive
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+    - p1-data
+    restart: 'no'
+  kis-mock-certification-runner:
+    profiles:
+    - owner
+    image: ${P1_SPRING_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - certification
+    command:
+    - python
+    - -m
+    - app.brokerage.kis_mock_certification_cli
+    - run
+    environment:
+      P1_OPERATOR_UID: ${P1_OPERATOR_UID}
+      KIS_MODE: mock
+      KIS_OFFLINE: '0'
+      KIS_RETRY_ATTEMPTS: '1'
+      KIS_REQUEST_INTERVAL_MILLISECONDS: '1000'
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+      KIS_MOCK_APPROVAL_ENV_FILE: /certification/approval-latch.env
+    secrets:
+    - spring_env
+    - python_env
+    - kis_mock_env
+    - kis_mock_approval_private
+    - kis_mock_approval_public
+    - kis_mock_approval_trust_policy
+    - source: p1_provider_claim_dsn
+      target: p1-provider-claim-dsn
+    volumes:
+    - ${P1_KIS_MOCK_RUNTIME_DIR:-./.state-app/mock}:/certification
+    user: ${P1_OPERATOR_UID}:${P1_SECRET_GID}
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 1.0
+    tmpfs:
+    - /tmp:size=64m,mode=1777
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: 'no'
+    networks:
+    - p1-data
+    - p1-app
+  automation-runtime-cli:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: 'no'
+    tmpfs: *id004
+    profiles:
+    - owner
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - automation-cli
+    command:
+    - python
+    - -m
+    - app.p1_owner.mock_automation_cli
+    - readiness
+    environment:
+      P1_LOCAL_CERTIFICATION_VALID: ${P1_LOCAL_CERTIFICATION_VALID:-false}
+      KIS_MOCK_BROKERAGE_ONLINE_ENABLED: 'true'
+      KIS_MODE: mock
+      KIS_OFFLINE: '0'
+      KIS_RETRY_ATTEMPTS: '1'
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+    secrets:
+    - automation_runtime_env
+    - kis_mock_env
+    - redis_env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+    - p1-data
+    - p1-app
+  calendar-offline-seed:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: 'no'
+    tmpfs: *id004
+    profiles:
+    - owner
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - calendar-offline-seed
+    command:
+    - python
+    - -m
+    - app.data.calendar.offline_seed_cli
+    environment:
+      P1_CALENDAR_OFFLINE_SEED_YEARS: ${P1_CALENDAR_OFFLINE_SEED_YEARS:-}
+    secrets:
+    - calendar_offline_seed_env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+    - p1-data
+  rag-source-register:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: 'no'
+    tmpfs: *id004
+    profiles:
+    - owner
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - rag-source-register
+    command:
+    - python
+    - -m
+    - app.rag.register_sources_cli
+    - --register-db
+    - --json
+    secrets:
+    - rag_source_register_env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+    - p1-data
+  history-replay-seed:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: 'no'
+    tmpfs: *id004
+    profiles:
+    - owner
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - team-a-acceptance
+    command:
+    - sh
+    - -c
+    - P1_HISTORY_REPLAY_DATABASE_DSN=$$P1_TEAM_A_ACCEPTANCE_DATABASE_DSN python -m app.p1_owner.history_replay_seed
+      /opt/capstone/replay/signals.json
+    environment:
+      P1_OFFLINE_DEMO: 'true'
+    secrets:
+    - team_a_acceptance_env
+    volumes:
+    - ${P1_STATE_DIR:-./.state-app}/replay:/opt/capstone/replay:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+    - p1-data
+  automation-gate-author:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: 'no'
+    tmpfs: *id004
+    profiles:
+    - owner
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - automation-gate-author
+    command:
+    - python
+    - -m
+    - app.p1_owner.automation_gate_author
+    environment:
+      P1_AUTOMATION_OWNER_USER_ID: ${P1_AUTOMATION_OWNER_USER_ID:-usr_demo_user}
+      P1_CERTIFICATION_RECEIPT_SHA256: ${P1_CERTIFICATION_RECEIPT_SHA256:-disabled}
+      P1_CERTIFICATION_SESSION_DATE: ${P1_CERTIFICATION_SESSION_DATE:-1970-01-01}
+      P1_RELEASE_BINDING_SHA256: ${P1_RELEASE_BINDING_SHA256:-disabled}
+      P1_SOURCE_BINDING_SHA256: ${P1_SOURCE_BINDING_SHA256:-disabled}
+    secrets:
+    - automation_gate_author_env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+    - p1-data
+  market-data-cli:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: 'no'
+    tmpfs: *id004
+    profiles:
+    - owner
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - market-data
+    command:
+    - python
+    - -m
+    - app.data.market_data.automation_bootstrap_cli
+    - inventory
+    environment:
+      DECISION_SOURCE_WRITER_OFFLINE_TARGET: local
+      P1_AUTOMATION_MARKET_BOOTSTRAP_ENABLED: 'false'
+      P1_AUTOMATION_MARKET_BOOTSTRAP_KIS_MODE: mock
+      P1_DATA_ONLY_COLLECTOR_ENABLED: 'false'
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+    secrets:
+    - market_data_env
+    - market_data_provider_env
+    - automation_runtime_env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+    - p1-data
+    - p1-app
+  market-data-daily:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: unless-stopped
+    tmpfs: *id004
+    profiles:
+    - automation
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - market-data-daily
+    environment:
+      DECISION_SOURCE_WRITER_OFFLINE_TARGET: local
+    command:
+    - sh
+    - -c
+    - while :; do python -m app.data.market_data.yfinance_daily_cli || true; sleep 3600; done
+    secrets:
+    - market_data_env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+    - p1-data
+    - p1-app
+  world-news-minute:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: unless-stopped
+    tmpfs: *id004
+    profiles:
+    - automation
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - world-news
+    command:
+    - python
+    - -m
+    - app.data.news.gdelt_collector_cli
+    - --loop
+    - --interval-seconds
+    - '900'
+    - --lookback-hours
+    - '24'
+    - --max-files
+    - '40'
+    - --physical-cap
+    - '40'
+    environment:
+      GDELT_WORLD_NEWS_ENABLED: ${GDELT_WORLD_NEWS_ENABLED:-false}
+      DECISION_SOURCE_WRITER_OFFLINE_TARGET: local
+    secrets:
+    - market_data_env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+    - p1-data
+    - p1-app
+  disclosure-collector:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: 'no'
+    tmpfs: *id004
+    profiles:
+    - owner
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - disclosure-collector
+    command:
+    - python
+    - -m
+    - app.data.opendart.disclosure_event_collector_cli
+    environment:
+      OPENDART_OFFLINE: 'false'
+      OPENDART_DAILY_CALL_LIMIT: ${OPENDART_DAILY_CALL_LIMIT:-20000}
+      OPENDART_DAILY_CALL_BUDGET: ${OPENDART_DAILY_CALL_BUDGET:-2000}
+      OPENDART_MAX_CALLS_PER_RUN: ${OPENDART_MAX_CALLS_PER_RUN:-600}
+      OPENDART_MAX_SYMBOLS_PER_RUN: ${OPENDART_MAX_SYMBOLS_PER_RUN:-31}
+    secrets:
+    - disclosure_collector_env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+    - p1-data
+    - p1-app
+  after-hours-replay:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: 'no'
+    tmpfs: *id004
+    profiles:
+    - owner
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - after-hours-replay
+    command:
+    - python
+    - -m
+    - app.p1_owner.after_hours_replay_cli
+    - --help
+    secrets:
+    - after_hours_replay_env
+    volumes:
+    - ${P1_AFTER_HOURS_OUTPUT_ROOT:-/nonexistent}:/replay-output
+    - ${P1_AFTER_HOURS_OBSERVED_ANCHOR_ROOT:-/nonexistent}:/observed-anchors:ro
+    - ${P1_AFTER_HOURS_OBSERVED_ANCHOR_MANIFEST:-/nonexistent}:/observed-anchor-manifest.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+    - p1-data
+  team-a-acceptance-seed:
+    platform: linux/amd64
+    group_add: *id001
+    mem_limit: 2g
+    cpus: 2.0
+    read_only: true
+    cap_drop: *id002
+    security_opt: *id003
+    pids_limit: 256
+    restart: 'no'
+    tmpfs: *id004
+    profiles:
+    - acceptance
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    entrypoint:
+    - /usr/local/bin/p1-secret-entrypoint
+    - team-a-acceptance
+    command:
+    - python
+    - -m
+    - app.p1_owner.team_a_acceptance_seed
+    - seed
+    environment:
+      DECISION_SOURCE_WRITER_OFFLINE_TARGET: local
+      P1_OFFLINE_DEMO: 'true'
+      P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK: ${P1_TEAM_A_ACCEPTANCE_FIXED_CLOCK:-}
+    secrets:
+    - team_a_acceptance_env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+    - p1-data
+  bge-m3:
+    profiles:
+    - models
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9@sha256:c26a226262ad4ff3330fb30b76653c1bb65da2fcf413b92284545a010e0a8a48
+    platform: linux/amd64
+    pull_policy: missing
+    command:
+    - --model-id
+    - BAAI/bge-m3
+    - --revision
+    - 5617a9f61b028005a4858fdac845db406aefb181
+    - --port
+    - '80'
+    - --max-client-batch-size
+    - '64'
+    - --max-batch-tokens
+    - '8192'
+    volumes:
+    - p1-bge-model-cache:/data
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 10g
+    cpus: 4.0
+    tmpfs:
+    - /tmp:size=128m,mode=1777
+    healthcheck:
+      test:
+      - CMD
+      - curl
+      - --fail
+      - --silent
+      - http://127.0.0.1:80/health
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+    - p1-model
+    - p1-model-fetch
+  paddleocr-vl-model-fetch:
+    profiles:
+    - models
+    image: ghcr.io/ggml-org/llama.cpp:server-b10524@sha256:d88f41f7675f8b30d7213a917f72a48f05d0549af4d1be7e712ebb130a235415
+    platform: linux/amd64
+    pull_policy: missing
+    entrypoint:
+    - /bin/sh
+    - -ec
+    command:
+    - "fetch() {\n  url=$$1\n  destination=$$2\n  expected=$$3\n  if [ -f \"$$destination\" ]; then\n\
+      \    printf '%s  %s\\n' \"$$expected\" \"$$destination\" | sha256sum -c -\n    return\n  fi\n  partial=$${destination}.part\n\
+      \  curl --fail --location --retry 0 --continue-at - --output \"$$partial\" \"$$url\"\n  printf '%s\
+      \  %s\\n' \"$$expected\" \"$$partial\" | sha256sum -c -\n  mv \"$$partial\" \"$$destination\"\n\
+      }\nfetch \\\n  'https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.6-GGUF/resolve/511b09642bb324401f15f97cc23bc67e8f0a291d/PaddleOCR-VL-1.6-GGUF.gguf?download=true'\
+      \ \\\n  /models/PaddleOCR-VL-1.6-GGUF.gguf \\\n  f3ae46ec885050acf4b3d31944431e1fd90d50664fb09126af4a3c050ba14ee8\n\
+      fetch \\\n  'https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.6-GGUF/resolve/511b09642bb324401f15f97cc23bc67e8f0a291d/PaddleOCR-VL-1.6-GGUF-mmproj.gguf?download=true'\
+      \ \\\n  /models/PaddleOCR-VL-1.6-GGUF-mmproj.gguf \\\n  204d757d7610d9b3faab10d506d69e5b244e32bf765e2bab2d0167e65e0a058a\n"
+    volumes:
+    - p1-paddleocr-model-cache:/models
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 1.0
+    tmpfs:
+    - /tmp:size=32m,mode=1777
+    restart: 'no'
+    networks:
+    - p1-model-fetch
+  paddleocr-vl:
+    profiles:
+    - models
+    image: ghcr.io/ggml-org/llama.cpp:server-b10524@sha256:d88f41f7675f8b30d7213a917f72a48f05d0549af4d1be7e712ebb130a235415
+    platform: linux/amd64
+    pull_policy: missing
+    environment:
+      LLAMA_CACHE: /models
+    command:
+    - --model
+    - /models/PaddleOCR-VL-1.6-GGUF.gguf
+    - --mmproj
+    - /models/PaddleOCR-VL-1.6-GGUF-mmproj.gguf
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8080'
+    - --ctx-size
+    - '8192'
+    - --parallel
+    - '1'
+    - --metrics
+    - --temp
+    - '0'
+    volumes:
+    - p1-paddleocr-model-cache:/models
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 6g
+    cpus: 4.0
+    tmpfs:
+    - /tmp:size=128m,mode=1777
+    healthcheck:
+      test:
+      - CMD
+      - curl
+      - --fail
+      - --silent
+      - http://127.0.0.1:8080/health
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+    - p1-model
+  return-engine-preview-prepare:
+    profiles:
+    - preview
+    image: ${P1_RETURN_PREVIEW_IMAGE:-capstone-return-engine-received-preview:p1-local}
+    command:
+    - python
+    - -m
+    - preview_cli
+    - prepare
+    user: 65532:65532
+    network_mode: none
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 3g
+    cpus: 2.0
+    tmpfs:
+    - /tmp:size=128m,mode=1777
+    volumes:
+    - p1-return-preview:/output
+    restart: 'no'
+  experience-dashboard:
+    image: ${P1_DASHBOARD_IMAGE:-capstone-experience-dashboard:p1-local}
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_MODE: live
+      DECISION_PLATFORM_INTERNAL_URL: http://decision-platform:8080
+      TEAM_B_PREVIEW_ARTIFACT: /artifacts/team-b/005930.KS.json
+    user: 1000:1000
+    read_only: true
+    cap_drop:
+    - ALL
+    security_opt:
+    - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    tmpfs:
+    - /tmp:size=64m,mode=1777
+    ports:
+    - 127.0.0.1:${P1_DASHBOARD_PORT:-3000}:3000
+    depends_on:
+      decision-platform:
+        condition: service_healthy
+    healthcheck:
+      test:
+      - CMD
+      - node
+      - -e
+      - fetch('http://127.0.0.1:3000/healthz') .then(async response => { const body=await response.json();
+        if (!response.ok || body.status !== 'UP') process.exit(1); }) .catch(() => process.exit(1))
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+    - p1-app
+secrets:
+  postgres_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/postgres.env
+  redis_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/redis.env
+  role_bootstrap_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/role-bootstrap.env
+  migration_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/migration.env
+  bootstrap_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/bootstrap.env
+  actor_capability_authority_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/actor-capability-authority.env
+  spring_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/spring.env
+  python_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/python.env
+  kis_mock_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock.env
+  demo_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/demo.env
+  rag_history_kek:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/rag-history-kek-v1.key
+  seed_import_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/seed-import.env
+  p1_provider_claim_dsn:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/p1-provider-claim.dsn
+  artifact_import_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/artifact-import.env
+  team_a_acceptance_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/team-a-acceptance.env
+  return_inference_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/return-inference.env
+  automation_runtime_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/automation-runtime.env
+  automation_gate_author_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/automation-gate-author.env
+  calendar_offline_seed_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/calendar-offline-seed.env
+  disclosure_collector_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/disclosure-collector.env
+  rag_source_register_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/rag-source-register.env
+  automation_observation_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/automation-observation.env
+  market_data_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/market-data.env
+  market_data_provider_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/market-data-provider.env
+  after_hours_replay_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/after-hours-replay.env
+  rag_v2_env:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/rag-v2.env
+  vertex_service_account:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/pre-s5-vertex-service-account.json
+  actor_tls_ca:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/actor-tls-ca.crt
+  actor_server_p12:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/actor-server.p12
+  actor_client_p12:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/actor-client.p12
+  kis_mock_approval_private:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock-approval-private.pem
+  kis_mock_approval_public:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock-approval-public.pem
+  kis_mock_approval_trust_policy:
+    file: ${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock-approval-trust-policy.json
+volumes:
+  p1-postgres-current: {}
+  p1-redis: {}
+  p1-bge-model-cache: {}
+  p1-paddleocr-model-cache: {}
+  p1-return-preview: {}
+networks:
+  p1-data:
+    internal: true
+  p1-app: {}
+  p1-model:
+    internal: true
+  p1-model-fetch: {}

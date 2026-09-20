@@ -1,0 +1,11 @@
+{
+  "automaticActivation": false,
+  "blockers": [
+    "NO_DUAL_ACCEPTANCE_CANDIDATE"
+  ],
+  "candidateId": null,
+  "currentModel": "EQUAL_WEIGHT_50_50",
+  "performanceAccepted": false,
+  "predictionAccepted": false,
+  "state": "RESEARCH_EVALUATED"
+}

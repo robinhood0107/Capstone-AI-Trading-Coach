@@ -119,6 +119,8 @@ def test_replayed_context_does_not_call_model_or_commit() -> None:
     repository.context = lambda _target: {  # type: ignore[method-assign]
         "batchSha256": "e" * 64,
         "outcome": "REPLAYED",
+        "sourceSession": "2026-08-31",
+        "currentContractComplete": True,
     }
     client = _Client()
     result = DailyInferenceService(repository, client).ensure_daily_signals(  # type: ignore[arg-type]
@@ -127,6 +129,30 @@ def test_replayed_context_does_not_call_model_or_commit() -> None:
     assert result.outcome == "REPLAYED"
     assert client.calls == 0
     assert repository.packet is None
+
+
+@pytest.mark.parametrize(
+    ("source", "complete", "expected"),
+    [
+        ("2026-08-31", False, "LEGACY_INCOMPLETE"),
+        ("2026-08-31", None, "LEGACY_INCOMPLETE"),
+        ("2026-08-28", True, "STALE_OR_UNVERIFIED_SOURCE"),
+    ],
+)
+def test_complete_label_is_not_current_batch_evidence(
+    source: str, complete: bool | None, expected: str
+) -> None:
+    repository = _Repository()
+    repository.context = lambda _target: {  # type: ignore[method-assign]
+        "batchSha256": "e" * 64,
+        "outcome": "REPLAYED",
+        "sourceSession": source,
+        "currentContractComplete": complete,
+    }
+    client = _Client()
+    result = DailyInferenceService(repository, client).ensure_daily_signals(date(2026, 9, 1))  # type: ignore[arg-type]
+    assert result.outcome == expected
+    assert client.calls == 0 and repository.packet is None
 
 
 def _history(closes: list[float]) -> list[dict[str, object]]:

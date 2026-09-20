@@ -67,6 +67,14 @@ class _StaticDense:
         return self.result
 
 
+class _StaticWorldNews:
+    def __init__(self, result: RagV2ChannelResult) -> None:
+        self.result = result
+
+    def retrieve_world_news(self, **_: object) -> RagV2ChannelResult:
+        return self.result
+
+
 def test_owner_bundle_scope_requires_an_explicit_owner_profile() -> None:
     with pytest.raises(ValueError, match="bundle scope is invalid"):
         RagV2BundleScope(
@@ -129,6 +137,29 @@ def test_v2_retrieval_fuses_exact_oa_and_owner_channels_to_a_bounded_top_five() 
     assert outcome.distinct_source_count == 5
     assert outcome.external_generation_permitted is False
     assert not hasattr(outcome.evidence[0], "rrf_score")
+
+
+def test_world_news_channel_keeps_one_available_dynamic_citation() -> None:
+    scope = replace(
+        _scope(owner_generation=False),
+        allowed_topics=("DATA", "FINANCIAL_ENGINEERING", "RISK"),
+    )
+    base = tuple(_candidate(index, scope, source_scope="OA112") for index in range(1, 7))
+    world_news = _candidate(30, scope, source_scope="WORLD_NEWS")
+
+    outcome = _retrieval(
+        exact=RagV2ChannelResult("exact", base[:4], complete=True),
+        lexical=RagV2ChannelResult("lexical", base, complete=True),
+        dense=RagV2ChannelResult("dense", base, complete=True),
+        world_news=RagV2ChannelResult("world_news", (world_news,), complete=True),
+    ).retrieve(
+        scope=scope,
+        payload={"question": "세계 공급망 뉴스", "answerMode": "CONCISE"},
+    )
+
+    assert outcome.failure_code is None
+    assert len(outcome.evidence) == 5
+    assert any(item.source_scope == "WORLD_NEWS" for item in outcome.evidence)
 
 
 def test_v2_retrieval_rejects_old_generation_or_other_owner_before_returning_evidence() -> None:
@@ -413,6 +444,7 @@ def _retrieval(
     query_embedder: object | None = None,
     owner_query_embedder: object | None = None,
     dense_retriever: object | None = None,
+    world_news: RagV2ChannelResult | None = None,
 ) -> RagV2AuthorizedHybridRetrieval:
     return RagV2AuthorizedHybridRetrieval(
         query_normalizer=QueryNormalizer(),
@@ -422,6 +454,7 @@ def _retrieval(
         exact_retriever=_StaticExact(exact),
         lexical_retriever=_StaticLexical(lexical),
         dense_retriever=dense_retriever or _StaticDense(dense),
+        world_news_retriever=_StaticWorldNews(world_news) if world_news is not None else None,
         rrf_fusion=RagV2RrfFusion(),
     )
 
@@ -468,6 +501,13 @@ def _candidate(
         display_name = None
         canonical_url = f"https://public.example.com/oa/{index}"
         title = f"OA source {index}"
+    elif source_scope == "WORLD_NEWS":
+        generation_id = scope.oa112_generation_id
+        owner_user_id = None
+        document_id = None
+        display_name = None
+        canonical_url = f"https://public.example.com/world-news/{index}"
+        title = f"World news {index}"
     else:
         generation_id = scope.owner_private_generation_id or "rgr_" + "3" * 32
         owner_user_id = scope.owner_user_id
@@ -500,5 +540,5 @@ def _candidate(
         source_revision_id=f"srv_v2_fixture_{index:03d}",
         source_scope=source_scope,
         title=title,
-        topics=("FINANCIAL_ENGINEERING",),
+        topics=("DATA",) if source_scope == "WORLD_NEWS" else ("FINANCIAL_ENGINEERING",),
     )

@@ -49,6 +49,10 @@ COPY --chown=65532:65532 contracts /app/contracts
 COPY --chown=65532:65532 deploy/p1/docker/decision-platform-supervisor.py /app/decision-platform-supervisor.py
 COPY --chown=65532:65532 deploy/p1/docker/decision-platform-health.py /app/decision-platform-health.py
 COPY --chown=65532:65532 deploy/p1/docker/secret-entrypoint.sh /usr/local/bin/p1-secret-entrypoint
+# 봉인된 시드와 백테스트 설정을 굽는다. 시드는 내용이 해시로 고정돼 있어 이미지와 함께
+# 움직이는 편이 맞고, 이것이 없으면 첫 기동에서 RAG 코퍼스와 Team B 산출물이 비어 있다.
+COPY --chown=65532:65532 deploy/p1/seed /opt/capstone/seed
+COPY --chown=65532:65532 shared-docs/backtest_config.yaml /opt/capstone/shared-docs/backtest_config.yaml
 RUN chmod 0555 /usr/local/bin/p1-secret-entrypoint
 USER 65532:65532
 EXPOSE 8080

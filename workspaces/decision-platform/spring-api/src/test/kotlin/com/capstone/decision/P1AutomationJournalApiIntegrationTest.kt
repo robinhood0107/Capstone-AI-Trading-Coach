@@ -57,11 +57,16 @@ class P1AutomationJournalApiIntegrationTest(
 
     @BeforeEach
     fun setUp() {
+        ownerJdbc.update("delete from automation_portfolio_order_executions_v1")
+        ownerJdbc.update("delete from automation_portfolio_session_snapshots_v1")
+        ownerJdbc.update("delete from automation_capital_policy_idempotency_v1")
+        ownerJdbc.update("delete from automation_capital_policy_versions_v1")
         ownerJdbc.update("delete from journal_idempotency")
         ownerJdbc.update("delete from journals")
         ownerJdbc.update("delete from automation_control_idempotency")
         ownerJdbc.update("delete from automation_policy_idempotency")
         ownerJdbc.update("delete from automation_positions")
+        ownerJdbc.update("delete from automation_ai_judgements")
         ownerJdbc.update("delete from automation_runs")
         ownerJdbc.update("delete from automation_control")
         ownerJdbc.update("delete from automation_activation_gate")
@@ -136,6 +141,37 @@ class P1AutomationJournalApiIntegrationTest(
                 status { isBadRequest() }
                 jsonPath("$.error.code") { value("VALIDATION_ERROR") }
             }
+    }
+
+    @Test
+    fun `optional screening failure stays visible in owned run detail`() {
+        val runId = "auto_run_" + "e".repeat(32)
+        insertRun(runId, "usr_demo_user", "COMPLETED")
+        ownerJdbc.update(
+            """
+            INSERT INTO automation_ai_judgements(run_id,checkpoint_version,participation,provider_id,
+              prompt_version,baseline_symbol,selected_symbol,vetoed_symbol_count,judge_call_count,
+              candidate_count,verdicts_json,recorded_at)
+            VALUES(?,1,'NOT_PARTICIPATED','','optional-review','005930','005930',0,0,1,?,now())
+            """.trimIndent(),
+            runId,
+            """
+            {"judgeStatus":"NOT_CALLED","screenings":[
+              {"symbol":"005930","status":"ABSTAIN","reason":"SCREENING_ERROR"}
+            ]}
+            """.trimIndent(),
+        )
+        val token = login("demo-user", userPassword())
+        mockMvc.get("/api/v3/automation/runs/$runId") { bearer(token) }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.candidateScreenings[0].status") { value("ABSTAIN") }
+            jsonPath("$.data.candidateScreenings[0].reason") { value("SCREENING_ERROR") }
+            jsonPath("$.data.candidateScreenings[0].evidence.length()") { value(0) }
+        }
+        val other = login("demo-admin", adminPassword())
+        mockMvc.get("/api/v3/automation/runs/$runId") { bearer(other) }.andExpect {
+            status { isNotFound() }
+        }
     }
 
     @Test
@@ -218,6 +254,91 @@ class P1AutomationJournalApiIntegrationTest(
             }.andExpect {
                 status { isConflict() }
                 jsonPath("$.error.code") { value("CONFLICT") }
+            }
+    }
+
+    @Test
+    fun `capital policy defaults to reinvest on and changes only from the next XKRX session`() {
+        ownerJdbc.update(
+            """
+            INSERT INTO trading_sessions(
+              exchange_mic,session_date,is_open,open_at,close_at,timezone,reason,chosen_source_id,
+              degraded,fallback_reason,as_of,confidence_bps,has_conflict,canonical_hash,
+              canonical_rule_version,confidence_rule_version
+            ) VALUES (
+              'XKRX','2099-01-05',true,'2099-01-05 09:00+09','2099-01-05 15:30+09',
+              'Asia/Seoul','TEST_FUTURE_SESSION',NULL,false,NULL,statement_timestamp(),9900,false,
+              repeat('a',64),'test-v1','test-v1'
+            ) ON CONFLICT (exchange_mic,session_date) DO NOTHING
+            """.trimIndent(),
+        )
+        val token = login("demo-user", userPassword())
+        mockMvc
+            .get("/api/v4/automation/capital-policy") { bearer(token) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.data") { doesNotExist() }
+            }
+        mockMvc
+            .put("/api/v4/automation/capital-policy") {
+                bearer(token)
+                contentType = MediaType.APPLICATION_JSON
+                header("X-Idempotency-Key", "automation-capital-policy-on")
+                content = """{"reinvestRealizedPnl":true,"expectedVersion":0}"""
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.data.contractId") { value("automation-capital-policy.v1") }
+                jsonPath("$.data.reinvestRealizedPnl") { value(true) }
+                jsonPath("$.data.cashBufferBps") { value(100) }
+                jsonPath("$.data.rebalanceDeviationBps") { value(200) }
+                jsonPath("$.data.minimumAdjustmentKrw") { value(10_000) }
+                jsonPath("$.data.maxOrdersPerSession") { value(3) }
+            }
+        mockMvc
+            .get("/api/v4/automation/capital-policy") { bearer(token) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.data.version") { value(1) }
+                jsonPath("$.data.reinvestRealizedPnl") { value(true) }
+            }
+        mockMvc
+            .put("/api/v3/automation/policy") {
+                bearer(token)
+                contentType = MediaType.APPLICATION_JSON
+                header("X-Idempotency-Key", "automation-v3-for-capital-status")
+                content = objectMapper.writeValueAsString(v3PolicyBody(expectedVersion = 0))
+            }.andExpect { status { isOk() } }
+        ownerJdbc.update(
+            """
+            INSERT INTO automation_control(
+              user_id,control_state,version,brokerage_mode,account_id,principle_id,strategy_id,
+              baseline_account_digest,certification_status,kill_switch_active
+            ) VALUES ('usr_demo_user','DISARMED',1,'KIS_MOCK',?,?,?,repeat('a',64),'VALID',false)
+            """.trimIndent(),
+            ACCOUNT_ID,
+            PRINCIPLE_ID,
+            STRATEGY_ID,
+        )
+        mockMvc
+            .get("/api/v4/automation/capital-status") { bearer(token) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.data.contractId") { value("automation-capital-status.v1") }
+                jsonPath("$.data.configuredCapitalKrw") { value(10_000_000) }
+                jsonPath("$.data.realizedPnlSinceTransitionKrw") { value(0) }
+                jsonPath("$.data.reservedBuyCashKrw") { value(0) }
+                jsonPath("$.data.existingBotPositionsAdopted") { value(0) }
+                jsonPath("$.data.positions.length()") { value(0) }
+            }
+        mockMvc
+            .put("/api/v4/automation/capital-policy") {
+                bearer(token)
+                contentType = MediaType.APPLICATION_JSON
+                header("X-Idempotency-Key", "automation-capital-policy-on")
+                content = """{"reinvestRealizedPnl":true,"expectedVersion":0}"""
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.data.version") { value(1) }
             }
     }
 

@@ -18,6 +18,17 @@ export function baseUrl(): string {
   return process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
 }
 
+/**
+ * 화면별 503 복구를 검증하려면 한 endpoint 의 첫 응답을 실패시켜야 한다. 그 스위치를
+ * 프로덕션 번들에 남기지 않는다.
+ *
+ * mock 모드에서는 언제나 허용한다(합성 데이터 화면이다). live 를 보는 QA 는
+ * `NEXT_PUBLIC_QA_FAULT_INJECTION=1` 을 켠 빌드에서만 돈다.
+ */
+function qaFaultInjectionAllowed(): boolean {
+  return apiMode() === 'mock' || process.env.NEXT_PUBLIC_QA_FAULT_INJECTION === '1';
+}
+
 function randomToken(byteLength: number): string {
   const bytes = new Uint8Array(byteLength);
   globalThis.crypto.getRandomValues(bytes);
@@ -105,6 +116,11 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   const requestId = newRequestId();
   const method = options.method ?? 'GET';
 
+  // 주입은 mock 모드 밖에서도 동작해야 한다. 예전에는 mock 분기 안에만 있어서 실제
+  // Spring 을 보는 화면의 503 복구를 한 번도 검증하지 못했다 - 12화면 QA 가 전부
+  // 통과해도 그것은 mock 예외 경로의 통과였다.
+  mockQaFailure(path, requestId);
+
   if (apiMode() === 'mock') {
     if (!mockModule) throw new Error('Mock API mode is unavailable in production.');
     return unwrap(await mockModule.mockTransport<T>(path, method, options.body, requestId));
@@ -167,6 +183,8 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 export async function apiFetchBare<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const requestId = newRequestId();
   const method = options.method ?? 'GET';
+
+  mockQaFailure(path, requestId);
 
   if (apiMode() === 'mock') {
     if (!mockModule) throw new Error('Mock API mode is unavailable in production.');
@@ -235,6 +253,40 @@ export async function apiFetchBare<T>(path: string, options: RequestOptions = {}
     );
   }
   return payload as T;
+}
+
+/**
+ * QA 가 명시적으로 심어 둔 sessionStorage 표식이 있을 때만 한 endpoint 의 첫 응답을
+ * 실패시켜 화면 자체의 retry 를 검증한다.
+ *
+ * mock 모드로 제한하지 않는다. 실제 Spring 을 보는 화면의 복구가 진짜로 검증돼야 하고,
+ * 표식이 없으면 아무 일도 하지 않으므로 일반 사용자 경로에는 영향이 없다.
+ */
+function mockQaFailure(path: string, requestId: string): void {
+  if (typeof window === 'undefined') return;
+  // 프로덕션 번들에는 장애 주입 스위치를 남기지 않는다. 남겨 두면 스크립트 실행 권한을
+  // 얻은 쪽이 sessionStorage 표식 하나로 특정 화면(예: 주문 중지)을 탭 수명 내내
+  // 실패시킬 수 있다. QA 는 개발/검증 빌드에서 돈다.
+  if (!qaFaultInjectionAllowed()) return;
+  const raw = window.sessionStorage.getItem('p1-qa-api-fault');
+  if (!raw) return;
+  try {
+    const fault = JSON.parse(raw) as { path?: string; remaining?: number };
+    if (fault.path !== path.split('?')[0] || !fault.remaining || fault.remaining < 1) return;
+    const remaining = fault.remaining - 1;
+    if (remaining) {
+      window.sessionStorage.setItem('p1-qa-api-fault', JSON.stringify({ ...fault, remaining }));
+    } else {
+      window.sessionStorage.removeItem('p1-qa-api-fault');
+    }
+    throw new ApiFailure(
+      { code: 'INTERNAL_ERROR', message: '화면별 복구 검증을 위한 일회성 503입니다.' },
+      requestId,
+    );
+  } catch (error) {
+    if (error instanceof ApiFailure) throw error;
+    window.sessionStorage.removeItem('p1-qa-api-fault');
+  }
 }
 
 function unwrap<T>(envelope: ApiEnvelope<T>): ApiResult<T> {

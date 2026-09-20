@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Term } from '@/shared/ui/Term';
 import Link from 'next/link';
 import { api } from '@/shared/api/endpoints';
 import { useSession } from '@/shared/api/session';
@@ -11,6 +12,8 @@ import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
 import { Button } from '@/shared/ui/Button';
 import type {
+  AutomationCapitalPolicy,
+  AutomationCapitalStatus,
   AutomationPolicyV3,
   AutomationPositionV3,
   AutomationRunV3,
@@ -33,12 +36,26 @@ import {
   validateAutomationPolicyV3,
 } from './policy';
 import { AutomationPersistenceNote } from './AutomationPersistenceNote';
+import { CandidateFunnel } from './CandidateFunnel';
+import { OrderProgress } from './OrderProgress';
+import { LIVE_REFRESH_MS } from '@/shared/lib/liveRefresh';
 
 /** 개인 중지와 관리자 전역 중지는 서로 다른 API와 상태를 사용한다. */
 function KillSwitchControl({ onChanged }: { active: boolean; onChanged: () => void }) {
   const { user } = useSession();
-  const personal = useResource(async () => ready((await api.killSwitch()).data), []);
-  const global = useResource(async () => ready((await api.globalKillSwitch()).data), [], user?.role === 'ADMIN');
+  // 주문 중지는 다른 기기·다른 사람이 바꿀 수 있다. 1회 로드면 화면이 거짓말한다.
+  const personal = useResource(
+    async () => ready((await api.killSwitch()).data),
+    [],
+    true,
+    LIVE_REFRESH_MS,
+  );
+  const global = useResource(
+    async () => ready((await api.globalKillSwitch()).data),
+    [],
+    user?.role === 'ADMIN',
+    LIVE_REFRESH_MS,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function change(active: boolean, scope: 'personal' | 'global') {
@@ -85,6 +102,9 @@ interface AutomationData {
   runs: AutomationRunV3[];
   positions: AutomationPositionV3[];
   instruments: InstrumentDisplayCatalog;
+  capitalPolicy: AutomationCapitalPolicy | null;
+  capitalPolicyLoaded: boolean;
+  capitalStatus: AutomationCapitalStatus | null;
 }
 
 interface Draft {
@@ -96,6 +116,9 @@ interface Draft {
   atrMultiplier: string;
   maxHoldingSessions: string;
   modelSellEnabled: boolean;
+  /* ── 사이징 ── */
+  maxOpenPositions: string;
+  riskPerTradePercent: string;
 }
 
 /**
@@ -109,10 +132,12 @@ async function load(): Promise<ViewState<AutomationData>> {
   // 상태만 있으면 정책 편집·시작·정지는 성립한다. 실행 이력이나 종목명 카탈로그가
   // 실패했다고 중지 버튼까지 사라지면 안 된다 - 이 화면은 위험 통제 수단을 담고 있다.
   const status = await api.automationStatusV3();
-  const [runs, positions, instruments] = await Promise.all([
+  const [runs, positions, instruments, capitalPolicy, capitalStatus] = await Promise.all([
     api.automationRunsV3().catch(() => null),
     api.automationPositionsV3().catch(() => null),
     api.instrumentDisplayCatalog().catch(() => null),
+    api.automationCapitalPolicy().catch(() => null),
+    api.automationCapitalStatus().catch(() => null),
   ]);
   return ready(
     {
@@ -120,6 +145,9 @@ async function load(): Promise<ViewState<AutomationData>> {
       runs: runs?.data.items ?? [],
       positions: positions?.data.items ?? [],
       instruments: instruments?.data ?? { items: [] },
+      capitalPolicy: capitalPolicy?.data ?? null,
+      capitalPolicyLoaded: capitalPolicy !== null,
+      capitalStatus: capitalStatus?.data ?? null,
     },
     status.data.policy?.updatedAt ?? null,
   );
@@ -140,6 +168,8 @@ function draftFrom(policy: AutomationPolicyV3 | null): Draft {
     atrMultiplier: String((policy?.atrMultiplierMilli ?? 2500) / 1000),
     maxHoldingSessions: String(policy?.maxHoldingSessions ?? 60),
     modelSellEnabled: policy?.modelSellEnabled ?? true,
+    maxOpenPositions: String(policy?.maxOpenPositions ?? 10),
+    riskPerTradePercent: String((policy?.riskPerTradeBps ?? 100) / 100),
   };
 }
 
@@ -157,16 +187,21 @@ function numericDraftV3(draft: Draft) {
     // 0.1배 단위를 정수 milli 로. 부동소수 반올림을 남기지 않는다.
     atrMultiplierMilli: Math.round(Number(draft.atrMultiplier) * 1000),
     maxHoldingSessions: Number(draft.maxHoldingSessions),
+    maxOpenPositions: Number(draft.maxOpenPositions),
+    // 0.01% 단위를 정수 bps 로. 1% -> 100bps.
+    riskPerTradeBps: Math.round(Number(draft.riskPerTradePercent) * 100),
   };
 }
 
 export function AutomationView() {
-  const { state, reload } = useResource(load, []);
+  // 장중에는 체결이 계속 바뀐다. `useResource` 의 폴링은 처음부터 있었는데 아무도
+  // 쓰지 않아 이 화면이 1회 로드였다 - 주문이 나가고 체결돼도 새로고침해야 보였다.
+  const { state, reload } = useResource(load, [], true, LIVE_REFRESH_MS);
   return (
     <AsyncBoundary state={state} onRetry={reload}>
       {(data) => (
         <AutomationBody
-          key={`${data.status.controlVersion}:${data.status.policy?.version ?? 0}`}
+          key={`${data.status.controlVersion}:${data.status.policy?.version ?? 0}:${data.capitalPolicy?.version ?? 0}`}
           data={data}
           onReload={reload}
         />
@@ -176,10 +211,21 @@ export function AutomationView() {
 }
 
 function AutomationBody({ data, onReload }: { data: AutomationData; onReload: () => void }) {
+  /*
+   * 아직 끝나지 않은 오늘 실행. 이 화면은 15초마다 다시 받지만 패널이 보여 주는 값들이
+   * 거의 바뀌지 않아 멈춘 것처럼 보였다 - 지금 벌어지는 일을 맨 위에 올린다.
+   */
+  const pendingRun =
+    data.runs.find(
+      (run) => run.state === 'ORDER_SUBMITTED' || run.state === 'PENDING_RECONCILIATION',
+    ) ?? null;
   const [draft, setDraft] = useState(() => draftFrom(data.status.policy));
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [confirmingDisarm, setConfirmingDisarm] = useState(false);
+  const [reinvestRealizedPnl, setReinvestRealizedPnl] = useState(
+    data.capitalPolicy?.reinvestRealizedPnl ?? true,
+  );
   const values = numericDraft(draft);
   const valuesV3 = numericDraftV3(draft);
   const errors = [...validateAutomationPolicy(values), ...validateAutomationPolicyV3(valuesV3)];
@@ -195,6 +241,8 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
     saved.maxHoldingSessions !== valuesV3.maxHoldingSessions ||
     saved.modelSellEnabled !== draft.modelSellEnabled;
   const locked = data.status.controlState !== 'DISARMED';
+  const capitalPolicyDirty =
+    data.capitalPolicy?.reinvestRealizedPnl !== reinvestRealizedPnl;
 
   function applyPreset(stopLossBps: number, takeProfitBps: number) {
     setDraft((current) => ({
@@ -229,6 +277,34 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
             : error.kind === 'error'
               ? error.message
               : '정책을 저장하지 못했습니다.',
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveCapitalPolicy() {
+    if (busy || !data.capitalPolicyLoaded || !capitalPolicyDirty) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await api.putAutomationCapitalPolicy({
+        reinvestRealizedPnl,
+        expectedVersion: data.capitalPolicy?.version ?? 0,
+      });
+      setNotice({ tone: 'ok', text: '재투자 설정을 다음 거래 세션 정책으로 저장했습니다.' });
+      onReload();
+      window.dispatchEvent(new Event('capstone-automation-changed'));
+    } catch (cause) {
+      const error = toErrorState<never>(cause);
+      setNotice({
+        tone: 'error',
+        text:
+          error.kind === 'error' && error.code === 'CONFLICT'
+            ? '재투자 정책이 다른 화면에서 먼저 바뀌었습니다. 최신 값을 다시 확인하세요.'
+            : error.kind === 'error'
+              ? error.message
+              : '재투자 정책을 저장하지 못했습니다.',
       });
     } finally {
       setBusy(false);
@@ -316,15 +392,42 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
 
   return (
     <div className="space-y-6">
+      {/* 이 화면이 스스로 갱신한다는 사실을 알린다. 모르면 사용자는 새로고침을 누른다. */}
+      <p role="status" className="h-5 overflow-hidden text-[11px] text-muted">
+        15초마다 자동 갱신 · 창으로 돌아오면 다시 확인합니다.
+      </p>
       <Panel
         contract="GET /api/v3/automation/status"
         title="현재 자동운용 상태"
         hint="선택한 계좌의 운용 예약, 주문 중지, 보유 종목과 적용 정책을 확인합니다."
         actions={<StatusLabel status={data.status} />}
       >
+        {/*
+         * 이 패널의 나머지 값(계좌 모드·포지션 수·킬스위치·정책 버전)은 거의 바뀌지
+         * 않는다. 지금 벌어지는 일을 맨 위에 올리지 않으면, 15초마다 새로 받아도
+         * 화면이 멈춰 있는 것으로 보인다.
+         */}
+        {pendingRun ? (
+          <div className="mb-4 border-l-2 border-hold pl-4">
+            <p className="text-[12px] font-medium text-ink">진행 중인 주문</p>
+            <p className="mt-0.5 text-[13px] text-muted">
+              {pendingRun.selectedSymbol
+                ? (instrumentMap(data.instruments.items).get(pendingRun.selectedSymbol)?.nameKo ??
+                  pendingRun.selectedSymbol)
+                : '종목 미상'}
+            </p>
+            <OrderProgress run={pendingRun} />
+          </div>
+        ) : null}
         <dl className="grid gap-px overflow-hidden rounded-card border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
           <StatusField label="계좌 모드" value={modeLabel(data.status.brokerageMode)} />
-          <StatusField label="열린 포지션" value={`${data.status.openPositionCount} / 5`} mono />
+          {/* 상한은 사용자가 원칙에서 고르는 값이다. 화면이 5로 단정하면 실제 상한이
+              10이어도 5로 보이고, 그러면 "왜 더 안 사는가"를 잘못 설명하게 된다. */}
+          <StatusField
+            label="열린 포지션"
+            value={`${data.status.openPositionCount} / ${saved?.maxOpenPositions ?? '—'}`}
+            mono
+          />
           <StatusField
             label="Kill Switch"
             value={data.status.killSwitchActive ? '작동 중' : '꺼짐'}
@@ -441,7 +544,9 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
         <div className="mt-6 border-t border-line pt-5">
           <p className="text-eyebrow font-semibold uppercase text-faint">청산 기준</p>
           <p className="mt-1.5 text-[12px] leading-5 text-muted">
-            손절·익절 외에 두 가지가 더 청산을 만든다 — 최고가에서 ATR 배수만큼 밀리면 추적손절,
+            <Term name="stopLoss">손절</Term>·<Term name="takeProfit">익절</Term> 외에 두 가지가
+            더 청산을 만든다 — 최고가에서 <Term name="atr" /> 배수만큼 밀리면{' '}
+            <Term name="trailingStop">추적손절</Term>,
             보유 기간을 넘기면 기간 초과. 모델 매도 신호를 따를지도 여기서 정한다.
           </p>
           <div className="mt-4 grid gap-5 md:grid-cols-3">
@@ -492,14 +597,155 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
           </label>
         </div>
 
+        <div className="mt-6 border-t border-line pt-5">
+          <p className="text-eyebrow font-semibold uppercase text-faint">동시 보유와 주문 크기</p>
+          <p className="mt-2 text-[13px] leading-6 text-muted">
+            동시에 몇 종목까지 들고 갈지, 한 거래에 자본의 몇 퍼센트까지 잃을 수 있는지를
+            정합니다. 수량은 변동성(ATR)에 맞춰 계산합니다 — 많이 흔들리는 종목은 적게, 덜
+            흔들리는 종목은 많이 사서 종목별 위험을 비슷하게 맞춥니다.
+          </p>
+          <div className="mt-4 grid gap-5 md:grid-cols-2">
+            <PolicyInput
+              label="동시 보유 상한"
+              value={draft.maxOpenPositions}
+              min={1}
+              max={20}
+              step={1}
+              suffix="종목"
+              disabled={locked}
+              onChange={(value) =>
+                setDraft((current) => ({ ...current, maxOpenPositions: value }))
+              }
+            />
+            <PolicyInput
+              label="거래당 위험"
+              value={draft.riskPerTradePercent}
+              min={0.1}
+              max={3}
+              step={0.1}
+              suffix="%"
+              disabled={locked}
+              onChange={(value) =>
+                setDraft((current) => ({ ...current, riskPerTradePercent: value }))
+              }
+            />
+          </div>
+          {/* 설정이 거래를 막을 수 있다는 사실을 화면이 먼저 말한다. 상한을 크게 잡으면
+              종목당 금액이 줄어 비싼 종목은 1주도 못 사게 된다. */}
+          <p className="mt-3 text-[12px] leading-6 text-muted">
+            현재 설정이면 종목당 최대{" "}
+            <span className="tnum font-mono text-ink">
+              {formatKrw(
+                Math.floor(
+                  (Number(draft.capitalLimitKrw) || 0) /
+                    Math.max(1, Number(draft.maxOpenPositions) || 1),
+                ),
+              )}
+            </span>{" "}
+            까지 넣습니다. 이 금액보다 비싼 종목은 살 수 없고, 거래당 위험을 낮추면 수량이
+            줄어 0주가 되는 날이 생길 수 있습니다. 그런 날에는 실행 상세의 단계별 사유에
+            이유가 남습니다.
+          </p>
+          <p className="mt-2 text-[12px] leading-6 text-faint">
+            이 시스템은 정규장(09:00~15:30)만 운용합니다. 2026-09-14 부터 열린 KRX
+            애프터마켓(16:00~20:00)은 다루지 않습니다 — 연결된 계좌의 시간외 주문 지원이
+            확인되지 않았습니다.
+          </p>
+        </div>
+
+        <div className="mt-6 border-t border-line pt-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-2xl">
+              <p className="text-eyebrow font-semibold uppercase text-faint">자본 재투자와 목표비중</p>
+              <label className="mt-3 flex items-center gap-2 text-[13px] text-ink">
+                <input
+                  type="checkbox"
+                  className="ink-checkbox"
+                  checked={reinvestRealizedPnl}
+                  disabled={!data.capitalPolicyLoaded || busy}
+                  onChange={(event) => setReinvestRealizedPnl(event.target.checked)}
+                />
+                전환 이후 확정 순손익을 다음 세션 운용자금에 반영한다
+              </label>
+              <p className="mt-2 text-[12px] leading-5 text-muted">
+                기본 ON · 현금 여유 1% · 목표비중 편차 2%p · 최소 조정 1만원/1주 · 하루 최대 3건입니다.
+                수익성 최적값이 아니며, 수동 보유와 다른 계좌는 자동 편입하지 않습니다.
+              </p>
+              <p className="mt-1 text-[12px] leading-5 text-muted">
+                {data.capitalPolicy
+                  ? `v${data.capitalPolicy.version} · ${data.capitalPolicy.effectiveFromSession} 세션부터 적용`
+                  : data.capitalPolicyLoaded
+                    ? '아직 저장된 자본정책이 없습니다. 기본 ON을 저장하면 다음 XKRX 세션부터 적용됩니다.'
+                    : '자본정책 조회에 실패해 현재 적용값을 확인할 수 없습니다.'}
+              </p>
+            </div>
+            <Button
+              disabled={busy || !data.capitalPolicyLoaded || !capitalPolicyDirty}
+              variant="secondary"
+              onClick={() => void saveCapitalPolicy()}
+            >
+              재투자 설정 저장
+            </Button>
+          </div>
+          {data.capitalStatus ? (
+            <>
+              <dl className="mt-5 grid gap-px overflow-hidden rounded-card border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
+                <StatusField label="설정 자금" value={formatKrw(data.capitalStatus.configuredCapitalKrw)} mono />
+                <StatusField label="전환 후 확정 순손익" value={formatKrw(data.capitalStatus.realizedPnlSinceTransitionKrw)} mono />
+                <StatusField label="봇 보유 평가액" value={formatKrw(data.capitalStatus.botPositionMarketValueKrw)} mono />
+                <StatusField label="주문 예약금" value={formatKrw(data.capitalStatus.reservedBuyCashKrw)} mono />
+                <StatusField label="실제 매수가능 현금" value={formatKrw(data.capitalStatus.brokerBuyableCashKrw)} mono />
+                <StatusField label="이번 정책 가용 현금" value={formatKrw(data.capitalStatus.availableBuyCashKrw)} mono />
+                <StatusField label="종목당 목표액" value={formatKrw(data.capitalStatus.targetPerPositionKrw)} mono />
+                <StatusField label="기존 봇 포지션 편입" value={`${data.capitalStatus.existingBotPositionsAdopted}건`} mono />
+              </dl>
+              {data.capitalStatus.positions.length > 0 ? (
+                <div className="mt-4 overflow-x-auto">
+                  <table className="w-full min-w-[620px] text-[12px]">
+                    <thead className="border-b border-line text-left text-eyebrow font-semibold uppercase text-faint">
+                      <tr>
+                        <th className="pb-2 font-normal">종목</th>
+                        <th className="pb-2 text-right font-normal">현재/목표 수량</th>
+                        <th className="pb-2 text-right font-normal">현재/목표 비중</th>
+                        <th className="pb-2 text-right font-normal">현재/목표 평가액</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line">
+                      {data.capitalStatus.positions.map((position) => (
+                        <tr key={position.symbol}>
+                          <td className="py-3 font-mono">{position.symbol}</td>
+                          <td className="tnum py-3 text-right font-mono">
+                            {position.currentQuantity} / {position.targetQuantity ?? '미확인'}
+                          </td>
+                          <td className="tnum py-3 text-right font-mono">
+                            {position.currentWeightBps == null ? '미확인' : `${(position.currentWeightBps / 100).toFixed(2)}%`} / {(position.targetWeightBps / 100).toFixed(2)}%
+                          </td>
+                          <td className="tnum py-3 text-right font-mono">
+                            {position.currentMarketValueKrw == null ? '미확인' : formatKrw(position.currentMarketValueKrw)} / {formatKrw(position.targetMarketValueKrw)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="mt-4 text-[12px] text-muted">편입된 자동운용 포지션이 없습니다.</p>
+              )}
+              {data.capitalStatus.valuationMissingCount > 0 ? (
+                <p className="mt-3 text-[12px] text-block">평가액을 확인하지 못한 포지션 {data.capitalStatus.valuationMissingCount}건은 비중 조정에서 제외됩니다.</p>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+
         <div className="mt-5 grid gap-4 border-t border-line pt-5 md:grid-cols-2">
           <div>
             <p className="text-eyebrow font-semibold uppercase text-faint">종목당 기본 슬롯</p>
             <p className="tnum mt-1 font-mono text-[16px] text-ink">
-              {values.capitalLimitKrw > 0 ? formatKrw(slotBudgetKrw(values.capitalLimitKrw)) : '—'}
+              {values.capitalLimitKrw > 0 ? formatKrw(slotBudgetKrw(values.capitalLimitKrw, valuesV3.maxOpenPositions)) : '—'}
             </p>
             <p className="mt-1 text-[12px] leading-5 text-muted">
-              최대 5개 포지션으로 나눈 기준입니다. 실제 수량은 원칙·잔고·매수가능수량 중 가장 작은
+              동시 보유 상한 {values.capitalLimitKrw > 0 ? valuesV3.maxOpenPositions : '—'}종목으로 나눈 기준입니다. 실제 수량은 원칙·잔고·매수가능수량 중 가장 작은
               한도로 계산합니다.
             </p>
           </div>
@@ -693,7 +939,9 @@ function PositionPanel({ positions, instruments }: { positions: AutomationPositi
                 <th className="pb-2 font-normal">종목</th>
                 <th className="pb-2 text-right font-normal">수량</th>
                 <th className="pb-2 text-right font-normal">평균체결가</th>
-                <th className="pb-2 text-right font-normal">ATR 추적손절</th>
+                <th className="pb-2 text-right font-normal">
+                  <Term name="trailingStop">ATR 추적손절</Term>
+                </th>
                 <th className="pb-2 text-right font-normal">보유 한도</th>
                 <th className="pb-2 text-right font-normal">상태</th>
               </tr>
@@ -792,11 +1040,15 @@ function RunRow({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="font-mono text-[12px] text-ink">{run.sessionDate}</p>
+          {/* 주문의 수량·지정가·체결 진행. 서버가 주고 있었는데 화면이 안 그렸다. */}
+          <OrderProgress run={run} />
           <p className="mt-1 text-[11px] text-faint">
-            {/* 근거가 0건이면 AI 판단 없이 넘어간 실행이다. 그 사실을 감추지 않는다. */}
+            {/* 근거가 0건이면 AI 판단 없이 넘어간 실행이다. 그 사실을 감추지 않되,
+                결과만 말하고 끝내지 않는다. 사용자가 알아야 하는 것은 원인이다.
+                퍼널을 펼쳐야 사유를 알 수 있으므로 여기서는 있다는 사실만 알린다. */}
             {run.evidenceCount > 0
               ? `판단 근거 ${run.evidenceCount}건 · AI 호출 ${run.judgeCallCount}회`
-              : 'AI 판단 근거 없음'}
+              : 'AI 심사 전에 후보가 정리됐습니다 · 아래에서 단계별 사유를 볼 수 있습니다'}
           </p>
         </div>
         <div className="shrink-0 text-right">
@@ -825,9 +1077,21 @@ function RunRow({
         <div className="mt-3 border-l-2 border-line pl-4">
           <AsyncBoundary state={detail.state} onRetry={detail.reload}>
             {(data) =>
-              data.candidateScreenings.length === 0 ? (
+              (data.stageOutcomes?.length ?? 0) > 0 ? (
+                <div className="space-y-3">
+                  <CandidateFunnel
+                    outcomes={data.stageOutcomes ?? []}
+                    nameOf={(symbol) => bySymbol.get(symbol)?.nameKo ?? symbol}
+                  />
+                  {data.candidateScreenings.length > 0 ? (
+                    <p className="text-[11px] text-faint">
+                      AI 심사에 도달한 후보 {data.candidateScreenings.length}종목
+                    </p>
+                  ) : null}
+                </div>
+              ) : data.candidateScreenings.length === 0 ? (
                 <p className="text-[12px] leading-6 text-muted">
-                  이 실행에는 남은 후보 심사 기록이 없습니다.
+                  이 실행에는 단계별 기록이 남아 있지 않습니다. 기록이 시작되기 전의 실행입니다.
                 </p>
               ) : (
                 <ul className="space-y-3">
@@ -840,10 +1104,20 @@ function RunRow({
                           compact
                         />
                         <span className="tnum ml-2 font-mono text-[11px] text-faint">
-                          점수 {screening.score.toFixed(2)}
+                          {screening.status === 'ABSTAIN'
+                            ? '검토 미완료 · 기본 후보 경로 사용'
+                            : screening.verdict === 'VETO_BUY'
+                              ? '근거 확인 · 매수 후보 제외'
+                              : `거부 근거 없음 · 점수 ${screening.score.toFixed(2)}`}
                         </span>
                       </p>
-                      <p className="mt-1 text-[12px] leading-6 text-muted">{screening.reason}</p>
+                      <p className="mt-1 text-[12px] leading-6 text-muted">
+                        {screening.reason === 'SCREENING_ERROR'
+                          ? '뉴스·AI 검토에 실패했습니다. 정상 0건으로 확인된 결과가 아닙니다.'
+                          : screening.reason === 'AI_DISABLED_OR_UNAVAILABLE'
+                            ? 'AI 검토가 꺼져 있거나 사용 가능한 provider가 없습니다.'
+                            : screening.reason}
+                      </p>
                       {screening.evidence.length > 0 ? (
                         <ul className="mt-2 space-y-1.5">
                           {screening.evidence.map((item) => (

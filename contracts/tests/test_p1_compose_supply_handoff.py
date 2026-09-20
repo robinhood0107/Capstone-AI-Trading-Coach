@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import yaml
+
 import contracts.verify_p1_compose_supply_handoff as verifier
 from contracts.verify_p1_compose_supply_handoff import (
     CATALOG_PATH,
@@ -373,6 +375,61 @@ class P1ComposeSupplyHandoffTest(unittest.TestCase):
         self.assertIn("<<: *app-security", block)
         # 실행은 기존 CLI 다. 새 스케줄러 코드를 만들지 않았다.
         self.assertIn("app.data.market_data.yfinance_daily_cli", block)
+        # 관측 적재의 사전 검증이 요구하는 실행 대상 표시. 아래 테스트가 규칙 전체를 본다.
+        self.assertIn('DECISION_SOURCE_WRITER_OFFLINE_TARGET: "local"', block)
+
+    def test_every_writer_attesting_service_declares_the_offline_target(self) -> None:
+        """`attest_source_writer_dsn` 을 지날 수 있는 서비스는 전부 실행 대상을 선언한다.
+
+        왜 이 테스트가 있나. 수집기에 이 값이 빠져 있었고, 그래서 시세·종목카탈로그 관측이
+        한 번도 적재되지 않았다. 값이 없으면 사전 검증이 `ValueError` 로 거부하는데 CLI 가
+        그것을 마커 한 낱말로 삼켜 `observations=FAILED_ValueError` 만 남겼다. 하류에서는
+        주문이 `violations` 없이 `PRICE_MISSING` 으로 HOLD 되는 모습으로만 보였다.
+
+        판정 기준을 무엇으로 두나. 처음에는 compose 명세에 모듈 이름이 적힌 서비스만 봤는데
+        그것이 `market-data-cli` 를 놓쳤다 - 그 서비스의 `command` 는 다른 CLI 이고 일봉
+        수집기는 `full-appctl` 이 런타임에 인자로 넘긴다. 정확한 기준은 자격이다. compose 의
+        주석이 이미 적어 뒀듯 시장데이터 writer DSN(`market_data_env`)은 두 서비스에만
+        붙으며, 그 DSN 을 든 서비스는 언제든 writer 사전 검증을 지날 수 있다.
+
+        인스턴스 하나가 아니라 부류를 닫는다 - 그 secret 을 든 서비스를 새로 추가하면
+        여기서 막힌다.
+        """
+
+        root = Path(__file__).resolve().parents[2]
+        compose = yaml.safe_load((root / "deploy/p1/compose.yml").read_text(encoding="utf-8"))
+
+        # 상주 자동운용이 `runtime_observation_publisher` 를 통해 같은 사전 검증을 부른다.
+        # supervisor 가 decision-platform 안에서 띄우므로 그 서비스도 규칙을 받는다.
+        supervisor = (root / "deploy/p1/docker/decision-platform-supervisor.py").read_text(
+            encoding="utf-8"
+        )
+        supervisor_reaches = "app.p1_owner.automation_runtime" in supervisor
+
+        missing: list[str] = []
+        examined: list[str] = []
+        for name, service in (compose.get("services") or {}).items():
+            holds_writer_dsn = "market_data_env" in (service.get("secrets") or [])
+            reaches = holds_writer_dsn or (name == "decision-platform" and supervisor_reaches)
+            if not reaches:
+                continue
+            examined.append(name)
+            if (service.get("environment") or {}).get(
+                "DECISION_SOURCE_WRITER_OFFLINE_TARGET"
+            ) != "local":
+                missing.append(name)
+
+        self.assertEqual([], missing)
+        # 규칙이 빈 집합을 훑고 초록불이 되지 않게, 걸려야 하는 서비스를 이름으로 고정한다.
+        self.assertEqual(
+            [
+                "decision-platform",
+                "market-data-cli",
+                "market-data-daily",
+                "world-news-minute",
+            ],
+            sorted(examined),
+        )
 
     def test_daily_collector_entrypoint_profile_requires_only_the_writer_dsn(self) -> None:
         """entrypoint whitelist 가 이 컨테이너에 writer DSN 하나만 허용한다.
@@ -393,12 +450,19 @@ class P1ComposeSupplyHandoffTest(unittest.TestCase):
         self.assertIn(
             "market-data-daily) printf '%s\\n' 'MARKET_DATA_WRITER_DSN' ;;", entrypoint
         )
+        self.assertIn("world-news) secret_files=/run/secrets/market_data_env ;;", entrypoint)
+        self.assertIn("world-news:MARKET_DATA_WRITER_DSN) return 0 ;;", entrypoint)
+        self.assertIn("world-news) printf '%s\\n' 'MARKET_DATA_WRITER_DSN' ;;", entrypoint)
         # 이 프로파일에 다른 키를 허용하지 않는다.
         for forbidden in (
             "market-data-daily:P1_AUTOMATION_DATABASE_DSN",
             "market-data-daily:KIS_MOCK_APP_KEY",
             "market-data-daily:KIS_LIVE_APP_KEY",
             "market-data-daily:AUTOMATION_RUNTIME_SHARED_SECRET",
+            "world-news:P1_AUTOMATION_DATABASE_DSN",
+            "world-news:KIS_MOCK_APP_KEY",
+            "world-news:KIS_LIVE_APP_KEY",
+            "world-news:AUTOMATION_RUNTIME_SHARED_SECRET",
         ):
             self.assertNotIn(forbidden, entrypoint)
 

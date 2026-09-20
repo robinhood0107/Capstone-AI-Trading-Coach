@@ -1,0 +1,809 @@
+{
+  "adoptedArms": [],
+  "anyArmBeatsCoinFlip": false,
+  "benchmarkSharpe": 1.9928,
+  "blendBeatsBothStandalone": false,
+  "blendBeatsRandomControl": true,
+  "combinationMethodInProduction": "EQUAL_WEIGHT_50_50",
+  "contractId": "p1-return-arm-comparison.v2",
+  "firstTestYear": 2005,
+  "folds": 22,
+  "historicalUniversePerformance": {
+    "filledReturnPolicy": "NONE",
+    "reason": "MISSING_TERMINAL_RETURN",
+    "status": "BLOCKED_MISSING_TERMINAL_RETURN"
+  },
+  "holdingDays": [
+    5,
+    20,
+    60
+  ],
+  "lastTestYear": 2026,
+  "performance": [
+    {
+      "annualVol": 0.3183,
+      "cagr": 0.7912,
+      "cvar95": -0.048737,
+      "finalEquity": 4.341,
+      "label": "PIT 균등가중 (벤치마크)",
+      "mdd": -0.2944,
+      "sessions": 644,
+      "sharpe": 1.9928,
+      "sortino": 2.9287,
+      "var95": -0.030143,
+      "years": 2.6
+    },
+    {
+      "annualVol": 0.491,
+      "cagr": 0.71,
+      "cvar95": -0.07307,
+      "finalEquity": 3.8915,
+      "label": "LSTM 상위5 / 5일",
+      "mdd": -0.456,
+      "sessions": 644,
+      "sharpe": 1.3357,
+      "sortino": 2.0813,
+      "var95": -0.039502,
+      "years": 2.6
+    },
+    {
+      "annualVol": 0.495,
+      "cagr": 1.077,
+      "cvar95": -0.074242,
+      "finalEquity": 6.3909,
+      "label": "LSTM 상위5 / 20일",
+      "mdd": -0.4566,
+      "sessions": 644,
+      "sharpe": 1.7226,
+      "sortino": 2.7053,
+      "var95": -0.043965,
+      "years": 2.6
+    },
+    {
+      "annualVol": 0.4964,
+      "cagr": 1.2987,
+      "cvar95": -0.07402,
+      "finalEquity": 8.2782,
+      "label": "LSTM 상위5 / 60일",
+      "mdd": -0.4557,
+      "sessions": 644,
+      "sharpe": 1.9244,
+      "sortino": 3.0209,
+      "var95": -0.040568,
+      "years": 2.6
+    },
+    {
+      "annualVol": 0.4871,
+      "cagr": 0.9418,
+      "cvar95": -0.070272,
+      "finalEquity": 5.3925,
+      "label": "RIDGE 상위5 / 5일",
+      "mdd": -0.5164,
+      "sessions": 644,
+      "sharpe": 1.6052,
+      "sortino": 2.4884,
+      "var95": -0.044354,
+      "years": 2.6
+    },
+    {
+      "annualVol": 0.4655,
+      "cagr": 1.0469,
+      "cvar95": -0.067922,
+      "finalEquity": 6.1687,
+      "label": "RIDGE 상위5 / 20일",
+      "mdd": -0.4717,
+      "sessions": 644,
+      "sharpe": 1.7727,
+      "sortino": 2.7097,
+      "var95": -0.038087,
+      "years": 2.6
+    },
+    {
+      "annualVol": 0.4621,
+      "cagr": 0.8821,
+      "cvar95": -0.06802,
+      "finalEquity": 4.9794,
+      "label": "RIDGE 상위5 / 60일",
+      "mdd": -0.4487,
+      "sessions": 644,
+      "sharpe": 1.6002,
+      "sortino": 2.4276,
+      "var95": -0.041367,
+      "years": 2.6
+    },
+    {
+      "annualVol": 0.4888,
+      "cagr": 1.1501,
+      "cvar95": -0.070321,
+      "finalEquity": 7.0308,
+      "label": "BLEND_50_50 상위5 / 5일",
+      "mdd": -0.4625,
+      "sessions": 644,
+      "sharpe": 1.8103,
+      "sortino": 2.8609,
+      "var95": -0.037231,
+      "years": 2.6
+    },
+    {
+      "annualVol": 0.4931,
+      "cagr": 1.2108,
+      "cvar95": -0.072293,
+      "finalEquity": 7.5482,
+      "label": "BLEND_50_50 상위5 / 20일",
+      "mdd": -0.4953,
+      "sessions": 644,
+      "sharpe": 1.8548,
+      "sortino": 2.9314,
+      "var95": -0.037424,
+      "years": 2.6
+    },
+    {
+      "annualVol": 0.4974,
+      "cagr": 1.2172,
+      "cvar95": -0.075486,
+      "finalEquity": 7.6042,
+      "label": "BLEND_50_50 상위5 / 60일",
+      "mdd": -0.4878,
+      "sessions": 644,
+      "sharpe": 1.8495,
+      "sortino": 2.866,
+      "var95": -0.043024,
+      "years": 2.6
+    },
+    {
+      "annualVol": 0.4603,
+      "cagr": 0.6831,
+      "cvar95": -0.066578,
+      "finalEquity": 3.7318,
+      "label": "RIDGE_H5 상위5 / 5일",
+      "mdd": -0.4707,
+      "sessions": 644,
+      "sharpe": 1.3605,
+      "sortino": 2.0932,
+      "var95": -0.037241,
+      "years": 2.6
+    },
+    {
+      "annualVol": 0.4208,
+      "cagr": 0.7795,
+      "cvar95": -0.060166,
+      "finalEquity": 4.302,
+      "label": "RIDGE_H5 상위5 / 20일",
+      "mdd": -0.4093,
+      "sessions": 644,
+      "sharpe": 1.5804,
+      "sortino": 2.4296,
+      "var95": -0.036288,
+      "years": 2.6
+    },
+    {
+      "annualVol": 0.4387,
+      "cagr": 0.9188,
+      "cvar95": -0.063048,
+      "finalEquity": 5.2142,
+      "label": "RIDGE_H5 상위5 / 60일",
+      "mdd": -0.4141,
+      "sessions": 644,
+      "sharpe": 1.7057,
+      "sortino": 2.6247,
+      "var95": -0.038463,
+      "years": 2.6
+    },
+    {
+      "annualVol": 0.441,
+      "cagr": 1.1568,
+      "cvar95": -0.0648,
+      "finalEquity": 7.0496,
+      "label": "RIDGE_H20 상위5 / 5일",
+      "mdd": -0.4591,
+      "sessions": 644,
+      "sharpe": 1.9657,
+      "sortino": 3.0045,
+      "var95": -0.03652,
+      "years": 2.6
+    },
+    {
+      "annualVol": 0.4689,
+      "cagr": 0.9386,
+      "cvar95": -0.069367,
+      "finalEquity": 5.3698,
+      "label": "RIDGE_H20 상위5 / 20일",
+      "mdd": -0.5046,
+      "sessions": 644,
+      "sharpe": 1.6457,
+      "sortino": 2.521,
+      "var95": -0.041099,
+      "years": 2.6
+    },
+    {
+      "annualVol": 0.4727,
+      "cagr": 0.916,
+      "cvar95": -0.070082,
+      "finalEquity": 5.2117,
+      "label": "RIDGE_H20 상위5 / 60일",
+      "mdd": -0.4947,
+      "sessions": 644,
+      "sharpe": 1.6115,
+      "sortino": 2.4751,
+      "var95": -0.041926,
+      "years": 2.6
+    }
+  ],
+  "performanceUniverse": {
+    "firstSession": "2024-01-02",
+    "lastSession": "2026-09-07",
+    "sessions": 644,
+    "status": "CURRENT_EXACT31_COMMON_COVERAGE",
+    "symbols": 31
+  },
+  "predictionAccuracy": {
+    "BLEND_50_50": {
+      "abstentionRows": 219,
+      "beatsCoinFlip": false,
+      "bias": -0.001583,
+      "coinFlip95": [
+        0.4973,
+        0.5027
+      ],
+      "coverage": 0.998327,
+      "directionAccuracy": 0.4824,
+      "eligibleRows": 130876,
+      "extremeAbsErrorP99": 0.094744,
+      "horizonSessions": 1,
+      "mae": 0.018346,
+      "maeDeltaBlock95": [
+        0.000368,
+        0.000718
+      ],
+      "maeNaiveZero": 0.017807,
+      "meanActual": 0.0009,
+      "meanPredicted": -0.000683,
+      "rmse": 0.027071,
+      "rmseNaiveZero": 0.026407,
+      "rows": 130657
+    },
+    "LSTM": {
+      "abstentionRows": 0,
+      "beatsCoinFlip": false,
+      "bias": -0.001897,
+      "coinFlip95": [
+        0.4973,
+        0.5027
+      ],
+      "coverage": 1.0,
+      "directionAccuracy": 0.4778,
+      "eligibleRows": 130876,
+      "extremeAbsErrorP99": 0.096547,
+      "horizonSessions": 1,
+      "mae": 0.018694,
+      "maeDeltaBlock95": [
+        0.000684,
+        0.001175
+      ],
+      "maeNaiveZero": 0.017786,
+      "meanActual": 0.000899,
+      "meanPredicted": -0.000998,
+      "rmse": 0.027499,
+      "rmseNaiveZero": 0.026402,
+      "rows": 130876
+    },
+    "RIDGE": {
+      "abstentionRows": 219,
+      "beatsCoinFlip": false,
+      "bias": -0.001268,
+      "coinFlip95": [
+        0.4973,
+        0.5027
+      ],
+      "coverage": 0.998327,
+      "directionAccuracy": 0.484,
+      "eligibleRows": 130876,
+      "extremeAbsErrorP99": 0.095408,
+      "horizonSessions": 1,
+      "mae": 0.018341,
+      "maeDeltaBlock95": [
+        0.000371,
+        0.000696
+      ],
+      "maeNaiveZero": 0.017807,
+      "meanActual": 0.0009,
+      "meanPredicted": -0.000368,
+      "rmse": 0.027155,
+      "rmseNaiveZero": 0.026407,
+      "rows": 130657
+    },
+    "RIDGE_H20": {
+      "abstentionRows": 933,
+      "beatsCoinFlip": false,
+      "bias": -0.027079,
+      "coinFlip95": [
+        0.4973,
+        0.5027
+      ],
+      "coverage": 0.992871,
+      "directionAccuracy": 0.5027,
+      "eligibleRows": 130876,
+      "extremeAbsErrorP99": 0.547337,
+      "horizonSessions": 20,
+      "mae": 0.101732,
+      "maeDeltaBlock95": [
+        0.014322,
+        0.023609
+      ],
+      "maeNaiveZero": 0.082977,
+      "meanActual": 0.017866,
+      "meanPredicted": -0.009214,
+      "rmse": 0.154385,
+      "rmseNaiveZero": 0.125985,
+      "rows": 129943
+    },
+    "RIDGE_H5": {
+      "abstentionRows": 343,
+      "beatsCoinFlip": false,
+      "bias": -0.006758,
+      "coinFlip95": [
+        0.4973,
+        0.5027
+      ],
+      "coverage": 0.997379,
+      "directionAccuracy": 0.4999,
+      "eligibleRows": 130876,
+      "extremeAbsErrorP99": 0.225514,
+      "horizonSessions": 5,
+      "mae": 0.0446,
+      "maeDeltaBlock95": [
+        0.002438,
+        0.005108
+      ],
+      "maeNaiveZero": 0.040906,
+      "meanActual": 0.004455,
+      "meanPredicted": -0.002303,
+      "rmse": 0.065711,
+      "rmseNaiveZero": 0.059037,
+      "rows": 130533
+    }
+  },
+  "predictionAccuracyExact31": {
+    "BLEND_50_50": {
+      "abstentionRows": 4,
+      "beatsCoinFlip": false,
+      "bias": -0.004866,
+      "coinFlip95": [
+        0.4931,
+        0.5069
+      ],
+      "coverage": 0.9998,
+      "directionAccuracy": 0.488,
+      "eligibleRows": 19964,
+      "extremeAbsErrorP99": 0.128001,
+      "horizonSessions": 1,
+      "mae": 0.024885,
+      "maeDeltaBlock95": [
+        0.000356,
+        0.001711
+      ],
+      "maeNaiveZero": 0.023857,
+      "meanActual": 0.002493,
+      "meanPredicted": -0.002374,
+      "rmse": 0.03676,
+      "rmseNaiveZero": 0.035473,
+      "rows": 19960
+    },
+    "LSTM": {
+      "abstentionRows": 0,
+      "beatsCoinFlip": false,
+      "bias": -0.005545,
+      "coinFlip95": [
+        0.4931,
+        0.5069
+      ],
+      "coverage": 1.0,
+      "directionAccuracy": 0.4852,
+      "eligibleRows": 19964,
+      "extremeAbsErrorP99": 0.1292,
+      "horizonSessions": 1,
+      "mae": 0.025305,
+      "maeDeltaBlock95": [
+        0.000809,
+        0.002174
+      ],
+      "maeNaiveZero": 0.023861,
+      "meanActual": 0.002487,
+      "meanPredicted": -0.003058,
+      "rmse": 0.03728,
+      "rmseNaiveZero": 0.035482,
+      "rows": 19964
+    },
+    "RIDGE": {
+      "abstentionRows": 4,
+      "beatsCoinFlip": false,
+      "bias": -0.004185,
+      "coinFlip95": [
+        0.4931,
+        0.5069
+      ],
+      "coverage": 0.9998,
+      "directionAccuracy": 0.4911,
+      "eligibleRows": 19964,
+      "extremeAbsErrorP99": 0.130284,
+      "horizonSessions": 1,
+      "mae": 0.025026,
+      "maeDeltaBlock95": [
+        0.000723,
+        0.001754
+      ],
+      "maeNaiveZero": 0.023857,
+      "meanActual": 0.002493,
+      "meanPredicted": -0.001693,
+      "rmse": 0.037093,
+      "rmseNaiveZero": 0.035473,
+      "rows": 19960
+    },
+    "RIDGE_H20": {
+      "abstentionRows": 713,
+      "beatsCoinFlip": false,
+      "bias": -0.073991,
+      "coinFlip95": [
+        0.4929,
+        0.5071
+      ],
+      "coverage": 0.964286,
+      "directionAccuracy": 0.498,
+      "eligibleRows": 19964,
+      "extremeAbsErrorP99": 0.758267,
+      "horizonSessions": 20,
+      "mae": 0.147338,
+      "maeDeltaBlock95": [
+        0.015485,
+        0.036247
+      ],
+      "maeNaiveZero": 0.11728,
+      "meanActual": 0.050496,
+      "meanPredicted": -0.023494,
+      "rmse": 0.216552,
+      "rmseNaiveZero": 0.174639,
+      "rows": 19251
+    },
+    "RIDGE_H5": {
+      "abstentionRows": 128,
+      "beatsCoinFlip": false,
+      "bias": -0.020897,
+      "coinFlip95": [
+        0.493,
+        0.507
+      ],
+      "coverage": 0.993588,
+      "directionAccuracy": 0.4991,
+      "eligibleRows": 19964,
+      "extremeAbsErrorP99": 0.364984,
+      "horizonSessions": 5,
+      "mae": 0.063455,
+      "maeDeltaBlock95": [
+        0.005925,
+        0.014055
+      ],
+      "maeNaiveZero": 0.054491,
+      "meanActual": 0.011934,
+      "meanPredicted": -0.008963,
+      "rmse": 0.096072,
+      "rmseNaiveZero": 0.078574,
+      "rows": 19836
+    }
+  },
+  "predictionRows": 130876,
+  "randomRankingControl": {
+    "20": {
+      "annualExcessPctMax": 4.91,
+      "annualExcessPctMean": -5.71,
+      "seeds": 8,
+      "sharpeMax": 1.7467,
+      "sharpeMean": 1.5494
+    },
+    "5": {
+      "annualExcessPctMax": -2.3,
+      "annualExcessPctMean": -17.69,
+      "seeds": 8,
+      "sharpeMax": 1.7116,
+      "sharpeMean": 1.2563
+    },
+    "60": {
+      "annualExcessPctMax": 1.64,
+      "annualExcessPctMean": -9.44,
+      "seeds": 8,
+      "sharpeMax": 1.6829,
+      "sharpeMean": 1.494
+    }
+  },
+  "resolvedQualityStatus": "BELOW_BASELINE",
+  "roundTripCostBps": 35.0,
+  "selectionCoverage": {
+    "BLEND_50_50:20": {
+      "availableSlots": 165,
+      "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
+      "coverage": 1.0,
+      "rebalanceCount": 33,
+      "totalSlots": 165
+    },
+    "BLEND_50_50:5": {
+      "availableSlots": 645,
+      "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
+      "coverage": 1.0,
+      "rebalanceCount": 129,
+      "totalSlots": 645
+    },
+    "BLEND_50_50:60": {
+      "availableSlots": 55,
+      "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
+      "coverage": 1.0,
+      "rebalanceCount": 11,
+      "totalSlots": 55
+    },
+    "LSTM:20": {
+      "availableSlots": 165,
+      "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
+      "coverage": 1.0,
+      "rebalanceCount": 33,
+      "totalSlots": 165
+    },
+    "LSTM:5": {
+      "availableSlots": 645,
+      "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
+      "coverage": 1.0,
+      "rebalanceCount": 129,
+      "totalSlots": 645
+    },
+    "LSTM:60": {
+      "availableSlots": 55,
+      "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
+      "coverage": 1.0,
+      "rebalanceCount": 11,
+      "totalSlots": 55
+    },
+    "RIDGE:20": {
+      "availableSlots": 165,
+      "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
+      "coverage": 1.0,
+      "rebalanceCount": 33,
+      "totalSlots": 165
+    },
+    "RIDGE:5": {
+      "availableSlots": 645,
+      "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
+      "coverage": 1.0,
+      "rebalanceCount": 129,
+      "totalSlots": 645
+    },
+    "RIDGE:60": {
+      "availableSlots": 55,
+      "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
+      "coverage": 1.0,
+      "rebalanceCount": 11,
+      "totalSlots": 55
+    },
+    "RIDGE_H20:20": {
+      "availableSlots": 160,
+      "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
+      "coverage": 0.969697,
+      "rebalanceCount": 33,
+      "totalSlots": 165
+    },
+    "RIDGE_H20:5": {
+      "availableSlots": 625,
+      "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
+      "coverage": 0.968992,
+      "rebalanceCount": 129,
+      "totalSlots": 645
+    },
+    "RIDGE_H20:60": {
+      "availableSlots": 55,
+      "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
+      "coverage": 1.0,
+      "rebalanceCount": 11,
+      "totalSlots": 55
+    },
+    "RIDGE_H5:20": {
+      "availableSlots": 160,
+      "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
+      "coverage": 0.969697,
+      "rebalanceCount": 33,
+      "totalSlots": 165
+    },
+    "RIDGE_H5:5": {
+      "availableSlots": 640,
+      "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
+      "coverage": 0.992248,
+      "rebalanceCount": 129,
+      "totalSlots": 645
+    },
+    "RIDGE_H5:60": {
+      "availableSlots": 55,
+      "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
+      "coverage": 1.0,
+      "rebalanceCount": 11,
+      "totalSlots": 55
+    }
+  },
+  "symbols": 31,
+  "topK": 5,
+  "trialSharpeStdAnnual": 0.1843,
+  "trials": 15,
+  "unresolvedConfound": "SURVIVORSHIP_ATTRIBUTION_UNRESOLVED",
+  "unresolvedConfoundNote": "exact-31 은 오늘의 명부다. 집중 순위 전략의 초과수익을 실력과 생존편향으로 나눌 수 없다. 해소 조건은 편출·상장폐지 종목을 포함한 시점별 명부로 재측정.",
+  "verdicts": {
+    "BLEND_50_50": {
+      "adopted": false,
+      "bearYears": {
+        "detail": {},
+        "yearsBetter": 0,
+        "yearsCompared": 0
+      },
+      "best": {
+        "annualExcessPct": 28.02,
+        "beatsBenchmarkSharpe": false,
+        "deflatedSharpe": {
+          "deflatedSharpe": 2.4844,
+          "expectedMaxSharpeAnnual": 0.3264,
+          "legacyApproximation": {
+            "deflatedSharpe": -42.6743,
+            "expectedMaxSharpeAnnual": 28.1087,
+            "pValue": 1.0
+          },
+          "observedSharpe": 1.8548,
+          "pValue": 0.006489,
+          "trialMultiplier": 1.7707,
+          "trialSharpeStdAnnual": 0.1843
+        },
+        "holdingDays": 20,
+        "informationRatio": 0.9844,
+        "sharpe": 1.8548,
+        "tStat": 1.57,
+        "trackingErrorPct": 28.46
+      },
+      "criteria": {
+        "beatsBenchmarkSharpe": false,
+        "betterInBearYears": false,
+        "significantAfterDeflation": true
+      }
+    },
+    "LSTM": {
+      "adopted": false,
+      "bearYears": {
+        "detail": {},
+        "yearsBetter": 0,
+        "yearsCompared": 0
+      },
+      "best": {
+        "annualExcessPct": 32.09,
+        "beatsBenchmarkSharpe": false,
+        "deflatedSharpe": {
+          "deflatedSharpe": 2.5983,
+          "expectedMaxSharpeAnnual": 0.3264,
+          "legacyApproximation": {
+            "deflatedSharpe": -42.5743,
+            "expectedMaxSharpeAnnual": 28.1087,
+            "pValue": 1.0
+          },
+          "observedSharpe": 1.9244,
+          "pValue": 0.004684,
+          "trialMultiplier": 1.7707,
+          "trialSharpeStdAnnual": 0.1843
+        },
+        "holdingDays": 60,
+        "informationRatio": 1.1321,
+        "sharpe": 1.9244,
+        "tStat": 1.81,
+        "trackingErrorPct": 28.34
+      },
+      "criteria": {
+        "beatsBenchmarkSharpe": false,
+        "betterInBearYears": false,
+        "significantAfterDeflation": true
+      }
+    },
+    "RIDGE": {
+      "adopted": false,
+      "bearYears": {
+        "detail": {},
+        "yearsBetter": 0,
+        "yearsCompared": 0
+      },
+      "best": {
+        "annualExcessPct": 19.08,
+        "beatsBenchmarkSharpe": false,
+        "deflatedSharpe": {
+          "deflatedSharpe": 2.3038,
+          "expectedMaxSharpeAnnual": 0.3264,
+          "legacyApproximation": {
+            "deflatedSharpe": -41.9501,
+            "expectedMaxSharpeAnnual": 28.1087,
+            "pValue": 1.0
+          },
+          "observedSharpe": 1.7727,
+          "pValue": 0.010617,
+          "trialMultiplier": 1.7707,
+          "trialSharpeStdAnnual": 0.1843
+        },
+        "holdingDays": 20,
+        "informationRatio": 0.7223,
+        "sharpe": 1.7727,
+        "tStat": 1.15,
+        "trackingErrorPct": 26.41
+      },
+      "criteria": {
+        "beatsBenchmarkSharpe": false,
+        "betterInBearYears": false,
+        "significantAfterDeflation": true
+      }
+    },
+    "RIDGE_H20": {
+      "adopted": false,
+      "bearYears": {
+        "detail": {},
+        "yearsBetter": 0,
+        "yearsCompared": 0
+      },
+      "best": {
+        "annualExcessPct": 23.25,
+        "beatsBenchmarkSharpe": false,
+        "deflatedSharpe": {
+          "deflatedSharpe": 2.5813,
+          "expectedMaxSharpeAnnual": 0.3264,
+          "legacyApproximation": {
+            "deflatedSharpe": -41.165,
+            "expectedMaxSharpeAnnual": 28.1087,
+            "pValue": 1.0
+          },
+          "observedSharpe": 1.9657,
+          "pValue": 0.004922,
+          "trialMultiplier": 1.7707,
+          "trialSharpeStdAnnual": 0.1843
+        },
+        "holdingDays": 5,
+        "informationRatio": 0.9405,
+        "sharpe": 1.9657,
+        "tStat": 1.5,
+        "trackingErrorPct": 24.72
+      },
+      "criteria": {
+        "beatsBenchmarkSharpe": false,
+        "betterInBearYears": false,
+        "significantAfterDeflation": true
+      }
+    },
+    "RIDGE_H5": {
+      "adopted": false,
+      "bearYears": {
+        "detail": {},
+        "yearsBetter": 0,
+        "yearsCompared": 0
+      },
+      "best": {
+        "annualExcessPct": 11.4,
+        "beatsBenchmarkSharpe": false,
+        "deflatedSharpe": {
+          "deflatedSharpe": 2.1995,
+          "expectedMaxSharpeAnnual": 0.3264,
+          "legacyApproximation": {
+            "deflatedSharpe": -42.1034,
+            "expectedMaxSharpeAnnual": 28.1087,
+            "pValue": 1.0
+          },
+          "observedSharpe": 1.7057,
+          "pValue": 0.013921,
+          "trialMultiplier": 1.7707,
+          "trialSharpeStdAnnual": 0.1843
+        },
+        "holdingDays": 60,
+        "informationRatio": 0.4894,
+        "sharpe": 1.7057,
+        "tStat": 0.78,
+        "trackingErrorPct": 23.29
+      },
+      "criteria": {
+        "beatsBenchmarkSharpe": false,
+        "betterInBearYears": false,
+        "significantAfterDeflation": true
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '@/shared/api/endpoints';
 import { toErrorState, useResource } from '@/shared/lib/useResource';
 import { ready } from '@/shared/lib/viewState';
@@ -8,7 +8,8 @@ import { formatKstDateTime } from '@/shared/lib/format';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Button } from '@/shared/ui/Button';
 import { Panel } from '@/shared/ui/Panel';
-import type { JournalEntry } from '@/shared/api/wire';
+import type { JournalEntry, JournalLinks } from '@/shared/api/wire';
+import { takeJournalHandoff } from '@/shared/lib/journalHandoff';
 
 interface Draft {
   title: string;
@@ -30,6 +31,18 @@ export function JournalView() {
   // 성공과 실패가 같은 회색 한 줄로 나오던 것을 구분한다. 저장이 실패했는지 사용자가 알아야 한다.
   const [messageTone, setMessageTone] = useState<'ok' | 'error'>('ok');
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  /*
+   * 다른 화면에서 넘어온 초안. 한 번만 읽고 지우므로 뒤로 가기로 돌아와도 같은 초안이
+   * 다시 뜨지 않는다. 연결 식별자는 저장할 때 함께 보낸다.
+   */
+  const [handoffLinks, setHandoffLinks] = useState<Partial<JournalLinks>>({});
+
+  useEffect(() => {
+    const handoff = takeJournalHandoff();
+    if (!handoff) return;
+    setDraft({ title: handoff.title, content: handoff.content, tags: '' });
+    if (handoff.ragAnswerId) setHandoffLinks({ ragAnswerId: handoff.ragAnswerId });
+  }, []);
 
   function notify(text: string, tone: 'ok' | 'error') {
     setMessage(text);
@@ -46,6 +59,8 @@ export function JournalView() {
     setMessage(null);
     // 다른 기록을 고르면 이전 삭제 확인은 그 기록의 것이 아니다.
     setConfirmingRemove(false);
+    // 인계 초안도 그 순간 끝난다. 남겨 두면 엉뚱한 기록에 연결이 붙는다.
+    setHandoffLinks({});
   }
 
   async function save() {
@@ -63,8 +78,19 @@ export function JournalView() {
     setBusy(true);
     setMessage(null);
     try {
-      if (selected) await api.updateJournal(selected.journalId, { expectedVersion: selected.version, title, content, tags });
-      else await api.createJournal({ title, content, tags });
+      if (selected) {
+        // 서버는 `links` 를 필수로 읽고 빠진 필드를 null 로 본다. 그대로 되돌려 보내지
+        // 않으면 제목만 고쳐도 판단·주문·답변 연결이 지워진다.
+        await api.updateJournal(selected.journalId, {
+          expectedVersion: selected.version,
+          title,
+          content,
+          tags,
+          links: selected.links,
+        });
+      } else {
+        await api.createJournal({ title, content, tags, links: handoffLinks });
+      }
       select(null);
       resource.reload();
       notify('저장했습니다.', 'ok');
@@ -107,7 +133,10 @@ export function JournalView() {
                     <button type="button" onClick={() => select(entry)} className="w-full py-3 text-left">
                       <p className="text-[14px] font-medium text-ink">{entry.title}</p>
                       <p className="mt-1 line-clamp-2 text-[12px] leading-5 text-muted">{entry.content}</p>
-                      <p className="mt-1 text-[11px] text-faint">{formatKstDateTime(entry.updatedAt)}</p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-[11px] text-faint">{formatKstDateTime(entry.updatedAt)}</span>
+                        <LinkChips links={entry.links} />
+                      </div>
                     </button>
                   </li>
                 ))}
@@ -119,6 +148,12 @@ export function JournalView() {
 
       <Panel title={selected ? '기록 수정' : '새 기록'} hint="제목과 내용은 내 계정에만 저장됩니다.">
         <div className="space-y-4">
+          {selected ? (
+            <div className="flex flex-wrap items-center gap-2 border-b border-line pb-4">
+              <span className="text-[12px] text-muted">연결된 기록</span>
+              <LinkChips links={selected.links} emptyText="없음" />
+            </div>
+          ) : null}
           <input
             aria-label="학습일지 제목"
             value={draft.title}
@@ -172,5 +207,40 @@ export function JournalView() {
         </div>
       </Panel>
     </div>
+  );
+}
+
+
+/**
+ * 이 기록이 무엇에 대한 것인지 보여 주는 칩.
+ *
+ * `journals` 표와 API 는 처음부터 다섯 가지 연결을 들고 있었는데 화면이 하나도 쓰지
+ * 않았다. 식별자를 통째로 보여 주면 읽히지 않으므로 **무엇에 연결됐는지**만 말하고,
+ * 실제 식별자는 마우스를 올렸을 때 보여 준다.
+ */
+function LinkChips({ links, emptyText }: { links: JournalLinks; emptyText?: string }) {
+  const chips: { label: string; id: string }[] = [
+    { label: '판단', id: links.decisionId },
+    { label: '주문', id: links.orderId },
+    { label: '금융 Agent 답변', id: links.ragAnswerId },
+    { label: '백테스트', id: links.backtestRunId },
+    { label: '자동운용 실행', id: links.automationRunId },
+  ].flatMap((chip) => (chip.id ? [{ label: chip.label, id: chip.id }] : []));
+
+  if (chips.length === 0) {
+    return emptyText ? <span className="text-[11px] text-faint">{emptyText}</span> : null;
+  }
+  return (
+    <>
+      {chips.map((chip) => (
+        <span
+          key={chip.label}
+          title={chip.id}
+          className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted"
+        >
+          {chip.label}
+        </span>
+      ))}
+    </>
   );
 }

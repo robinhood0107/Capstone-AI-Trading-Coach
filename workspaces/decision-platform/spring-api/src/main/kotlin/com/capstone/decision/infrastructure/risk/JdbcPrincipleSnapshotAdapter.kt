@@ -22,6 +22,45 @@ class JdbcPrincipleSnapshotAdapter(
     private val ruleJsonCodec: PrincipleRuleJsonCodec,
     private val actorCapabilityIssuer: ActorCapabilityIssuer,
 ) : PrincipleSnapshotPort {
+    override fun findAutomationOwned(
+        actorUserId: String,
+        principleId: PrincipleId,
+        runId: String,
+        claimHash: String,
+    ): ActivePrincipleSnapshot? =
+        jdbc()
+            .query(
+                """
+                SELECT * FROM read_automation_principle_snapshot_authorized(
+                  :capability,:actor,:principle,:run,:claim
+                )
+                """.trimIndent(),
+                mapOf(
+                    "capability" to
+                        actorCapabilityIssuer.issue(
+                            AuthenticatedActorRef.current(actorUserId),
+                            ActorCapabilityBinding.target(
+                                "READ_ACTIVE_PRINCIPLE",
+                                "PRINCIPLE",
+                                principleId.value,
+                                ActorCapabilityRolePolicy.OWNER,
+                            ),
+                        ),
+                    "actor" to actorUserId,
+                    "principle" to principleId.value,
+                    "run" to runId,
+                    "claim" to claimHash,
+                ),
+            ) { result, _ ->
+                ActivePrincipleSnapshot(
+                    PrincipleId(result.getString("principle_id")),
+                    PrincipleVersionId(result.getString("principle_version_id")),
+                    result.getInt("version"),
+                    PrincipleMode.valueOf(result.getString("mode")),
+                    ruleJsonCodec.decode(result.getString("rules_json")),
+                )
+            }.singleOrNull()
+
     override fun findActiveOwned(
         actorUserId: String,
         principleId: PrincipleId,

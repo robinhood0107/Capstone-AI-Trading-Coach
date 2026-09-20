@@ -57,6 +57,8 @@ class _Connection:
             return _Cursor(rows=[_candidate_row(rank=1, source_scope="OA112")])
         if "search_authorized_rag_v2_dense" in statement:
             return _Cursor(rows=[_candidate_row(rank=1, source_scope="OWNER_PRIVATE")])
+        if "search_authorized_world_news_rag_v2" in statement:
+            return _Cursor(rows=[_candidate_row(rank=1, source_scope="WORLD_NEWS")])
         return _Cursor()
 
 
@@ -86,6 +88,7 @@ def test_adapter_reads_only_query_role_definer_functions_and_maps_tagged_citatio
         query_vector=(1.0,) + (0.0,) * 1023,
         owner_query_vector=(0.0, 1.0) + (0.0,) * 1022,
     )
+    world_news = adapter.retrieve_world_news(scope=scope, query=query)
 
     assert scope.embedding_profile_id == "voyage_context_4_1024_v1"
     assert scope.owner_embedding_profile_id == "bge_m3_local_1024_v1"
@@ -94,6 +97,8 @@ def test_adapter_reads_only_query_role_definer_functions_and_maps_tagged_citatio
     assert dense.items[0].document_id == "doc_owner_document_0001"
     assert dense.items[0].sanitized_display_name == "Owner fixture"
     assert dense.items[0].canonical_https_url is None
+    assert world_news.items[0].source_scope == "WORLD_NEWS"
+    assert world_news.items[0].title == "World news fixture"
     assert all(
         "rag_v2_immutable_source_revisions" not in statement
         for statement, _ in connection.statements
@@ -196,7 +201,7 @@ def _scope_row() -> dict[str, object]:
         "scope_claim_id": "rvs_" + "a" * 32,
         "owner_user_id": "usr_demo_owner",
         "session_id": "req_v2_retrieval_000000000001",
-        "allowed_topics": ["FINANCIAL_ENGINEERING", "RISK"],
+        "allowed_topics": ["DATA", "FINANCIAL_ENGINEERING", "RISK"],
         "exact30_generation_id": "rgr_" + "1" * 32,
         "oa112_generation_id": "rgr_" + "2" * 32,
         "owner_private_generation_id": "rgr_" + "3" * 32,
@@ -223,7 +228,10 @@ def _candidate_row(*, rank: int, source_scope: str) -> dict[str, object]:
         ),
         "external_processing_eligible": public,
         "generation_id": "rgr_"
-        + ({"EXACT30": "1", "OA112": "2", "OWNER_PRIVATE": "3"}[source_scope] * 32),
+        + (
+            {"EXACT30": "1", "OA112": "2", "OWNER_PRIVATE": "3", "WORLD_NEWS": "2"}[source_scope]
+            * 32
+        ),
         "heading_path": ["Evidence"],
         "locator": {"section": "Evidence"},
         "candidate_owner_user_id": None if public else "usr_demo_owner",
@@ -234,8 +242,12 @@ def _candidate_row(*, rank: int, source_scope: str) -> dict[str, object]:
         "source_id": "src_v2_fixture_001",
         "source_revision_id": "srv_v2_fixture_001",
         "source_scope": source_scope,
-        "citation_title": "OA fixture"
-        if source_scope == "OA112"
-        else ("Exact fixture" if public else None),
-        "retrieval_topics": ["FINANCIAL_ENGINEERING"],
+        "citation_title": (
+            "World news fixture"
+            if source_scope == "WORLD_NEWS"
+            else (
+                "OA fixture" if source_scope == "OA112" else ("Exact fixture" if public else None)
+            )
+        ),
+        "retrieval_topics": ["DATA"] if source_scope == "WORLD_NEWS" else ["FINANCIAL_ENGINEERING"],
     }

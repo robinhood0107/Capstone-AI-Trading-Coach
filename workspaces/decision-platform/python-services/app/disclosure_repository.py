@@ -90,10 +90,48 @@ class PostgresStoredDisclosureRepository:
         window_to: date,
         cancellation: QueryCancellation | None = None,
     ) -> StoredDisclosureBatch:
+        """위험 점수용 전체 항목 완결성 계약은 그대로 유지한다."""
+        return self._load(
+            symbol=symbol,
+            corp_code=corp_code,
+            window_from=window_from,
+            window_to=window_to,
+            cancellation=cancellation,
+        )
+
+    def load_optional_events(
+        self,
+        *,
+        symbol: str,
+        corp_code: str | None,
+        window_from: date,
+        window_to: date,
+    ) -> StoredDisclosureBatch:
+        """선택적 공시 근거는 실제 일일 수집 지원집합으로 완결성을 판단한다."""
+        from app.data.opendart.disclosure_event_collector import collected_operations
+
+        return self._load(
+            symbol=symbol,
+            corp_code=corp_code,
+            window_from=window_from,
+            window_to=window_to,
+            required_operations=collected_operations(),
+        )
+
+    def _load(
+        self,
+        *,
+        symbol: str,
+        corp_code: str | None,
+        window_from: date,
+        window_to: date,
+        cancellation: QueryCancellation | None = None,
+        required_operations: tuple[str, ...] | None = None,
+    ) -> StoredDisclosureBatch:
         """event·sourceRefs·cursor completeness를 한 repeatable-read DB snapshot에서 조립한다."""
         cancellation = cancellation or QueryCancellation()
         mapping = load_default_risk_mapping()
-        required_operations = tuple(
+        required_operations = required_operations or tuple(
             sorted(
                 {
                     entry.official_endpoint
@@ -247,6 +285,19 @@ class PostgresStoredDisclosureRepository:
             complete=complete,
             events=events,
             source_refs=cursor_ref,
+            collection_status=(
+                "UNMAPPED"
+                if not resolved_corp_code
+                else "COMPLETE"
+                if complete and events
+                else "COMPLETE_EMPTY"
+                if complete
+                else "COLLECTION_FAILED"
+                if any(not bool(row["completed"]) for row in cursor_rows)
+                else "PARTIAL"
+                if cursor_rows or events
+                else "NOT_COLLECTED"
+            ),
         )
 
 

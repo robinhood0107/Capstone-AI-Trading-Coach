@@ -11,6 +11,32 @@ import tools.jackson.databind.json.JsonMapper
 import java.time.LocalDate
 
 class AutomationEvidenceServiceTest {
+    @Test
+    fun `stored evidence screening never calls a provider and zero evidence is abstain`() {
+        val candidates =
+            listOf(
+                AutomationEvidenceCandidate("005930", "0.01", 70000, 50000, 90000, false),
+                AutomationEvidenceCandidate("000660", "0.02", 150000, 100000, 200000, false),
+            )
+        val evidence =
+            RawAutomationEvidence(
+                "cit_stored_fixture",
+                "src_official_dart",
+                "OFFICIAL_PRIMARY",
+                java.time.LocalDate.parse("2026-09-08"),
+                "https://dart.fss.or.kr/fixture",
+                "검증된 저장 공시 근거 문장입니다.",
+                true,
+            )
+
+        val batch = storedEvidenceScreeningBatch(candidates, mapOf("005930" to listOf(evidence)))
+
+        assertThat(batch.providerCallCount).isZero()
+        assertThat(batch.groundingQueryCount).isZero()
+        assertThat(batch.screenings.map { it.status }).containsExactly("AVAILABLE", "ABSTAIN")
+        assertThat(batch.screenings.map { it.verdict }).containsOnly("NO_VETO")
+    }
+
     private val service =
         AutomationEvidenceService(
             StaticListableBeanFactory().getBeanProvider(NamedParameterJdbcTemplate::class.java),

@@ -1,0 +1,66 @@
+{
+  "candidateSet": [
+    "LSTM_H1_PRESERVED",
+    "LSTM_H5_NEW",
+    "LSTM_H20_NEW",
+    "RIDGE_H1_PRESERVED",
+    "RIDGE_H5_PRESERVED",
+    "RIDGE_H20_PRESERVED",
+    "BLEND_50_50_H1_PRESERVED"
+  ],
+  "contractId": "p1-return-evaluation-protocol.v3",
+  "costBpsRoundTrip": 35,
+  "data": {
+    "longHistorySha256": "6b472dee4c4e66ae2eadecfdba1d27070d3a641fccfbe2e44b30ab16cd798eb7",
+    "providerCalls": 0,
+    "quality": "LOCAL_PRESERVED_RESEARCH_INPUT"
+  },
+  "folds": {
+    "firstTestYear": 2005,
+    "method": "three-calendar-year-train then one-calendar-year-test",
+    "purge": "training label target session must be strictly before test-year boundary",
+    "testMaturity": "test row retained only when exact horizon target close exists"
+  },
+  "lstm": {
+    "batch": 32,
+    "dropout": 0.0,
+    "epochs": 10,
+    "featureOrder": ["Open", "High", "Low", "Close", "Volume", "Diff", "MA5", "MA20", "RSI"],
+    "hidden": 64,
+    "horizons": [1, 5, 20],
+    "layers": 1,
+    "learningRate": 0.001,
+    "loss": "SmoothL1",
+    "scaleFit": "per-symbol train rows only",
+    "seed": 0,
+    "target": "log(close[t+h]/close[t])",
+    "window": 20
+  },
+  "multipleTesting": {
+    "historicalTrialCount": 15,
+    "method": "deflated-sharpe-plus-familywise-review",
+    "newTrainingRunBudget": 2,
+    "totalTrialCountAfterRun": 17
+  },
+  "performanceAcceptance": {
+    "bearRegimeMajorityRequired": true,
+    "maxMddDegradationAbsolute": 0.05,
+    "netReturnAfterCostAboveBenchmark": true,
+    "randomControlFamilywiseMaximumMustBeBeaten": true,
+    "sharpeAboveBenchmark": true,
+    "sortinoNotBelowBenchmark": true
+  },
+  "predictionAcceptance": {
+    "abstentionMaximum": 0.05,
+    "blockMaeDelta95UpperBelowZero": true,
+    "coverageMinimum": 0.95,
+    "maeBelowNaiveZero": true,
+    "rmseBelowNaiveZero": true
+  },
+  "promotion": {
+    "automaticActivation": false,
+    "noPassingCandidate": "KEEP_CURRENT_50_50",
+    "requiredShadowEvidence": "unique XKRX source/target/horizon plus realized-answer receipt"
+  },
+  "registeredAt": "2026-09-09T04:55:00+09:00"
+}

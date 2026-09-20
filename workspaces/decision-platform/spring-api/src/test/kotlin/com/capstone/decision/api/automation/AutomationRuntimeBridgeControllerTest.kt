@@ -58,6 +58,28 @@ class AutomationRuntimeBridgeControllerTest {
     }
 
     @Test
+    fun `evaluation binds owner run and claim without accepting a client principle version`() {
+        every { request.remoteAddr } returns "127.0.0.1"
+        every { users.findByUserId(USER_ID) } returns
+            UserSecurityActorRecord(USER_ID, "runtime-user", DemoRole.USER, "ACTIVE", 7)
+        every { decisionService.evaluate(any(), any(), any(), any(), any()) } returns mockk(relaxed = true)
+        val runId = "auto_run_" + "a".repeat(32)
+        val claim = "sha256:" + "b".repeat(64)
+        val body =
+            """
+            {"operation":"EVALUATE","userId":"$USER_ID","idempotencyKey":"automation-fixture-key-0001",
+             "payload":{"runId":"$runId","claimTokenHash":"$claim","evaluation":{
+               "principleId":"prc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","portfolioSource":"KIS_MOCK","orderIntent":{
+                 "symbol":"005930","side":"BUY","orderType":"LIMIT","quantity":1,
+                 "estimatedPrice":75000,"estimatedAmount":75000,"timeframe":"1d","strategyId":"strategy_fixture_0001"}}}}
+            """.trimIndent()
+        assertEquals(200, controller.command(SECRET, body, request).statusCode.value())
+        verify(exactly = 1) {
+            decisionService.evaluate(match { it.userId == USER_ID }, any(), any(), runId, claim)
+        }
+    }
+
+    @Test
     fun `missing secret is hidden before user or brokerage lookup`() {
         every { request.remoteAddr } returns "127.0.0.1"
 

@@ -46,6 +46,14 @@ COPY --from=pgvector-build /usr/local/lib/postgresql/bitcode/vector.index.bc /us
 COPY --from=pgvector-build /usr/local/share/postgresql/extension/vector* /usr/local/share/postgresql/extension/
 COPY --from=pgvector-build /usr/local/share/doc/pgvector/ /usr/local/share/doc/pgvector/
 
+# 초기화 스크립트를 굽는다. 레포 없이 이미지만으로 뜨게 하는 것이 목적이다 -
+# 이 둘은 첫 기동에서만 읽히는 정적 파일이라 바인드로 받을 이유가 없다.
+COPY infra/init/01-extensions.sql /docker-entrypoint-initdb.d/01-extensions.sql
+COPY infra/init/02-application-roles.sh /docker-entrypoint-initdb.d/02-application-roles.sh
+COPY deploy/p1/docker/secret-entrypoint.sh /usr/local/bin/p1-secret-entrypoint
+RUN chmod 0444 /docker-entrypoint-initdb.d/01-extensions.sql \
+    && chmod 0555 /docker-entrypoint-initdb.d/02-application-roles.sh \
+    && chmod 0555 /usr/local/bin/p1-secret-entrypoint
 RUN rm -f /usr/local/bin/gosu
 
 USER 70:70

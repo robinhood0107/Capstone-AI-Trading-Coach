@@ -12,7 +12,11 @@ RiskEngine, 취소, 체결과 대사 로직을 사용하며 동시에 실행하�
 
 ## 처음 실행하기
 
-외부 API key나 `.env` 없이도 Dashboard와 실제 PostgreSQL 기반 데모 데이터를 먼저 확인할 수 있습니다.
+외부 API key나 `.env` 없이도 Dashboard와 실제 PostgreSQL 기반 데모 데이터를 먼저 확인할 수
+있습니다. 명령 네 줄이면 됩니다.
+
+**먼저 있어야 하는 것**: Docker(Compose v2 포함), Git, Python 3, OpenSSL. Windows 라면 WSL2
+위에서 실행합니다. 설치 여부는 아래 `doctor` 가 대신 확인해 줍니다.
 
 ```bash
 git clone https://github.com/robinhood0107/Capstone-AI-Trading-Coach.git
@@ -21,10 +25,25 @@ cd Capstone-AI-Trading-Coach
 ./capstone up
 ```
 
-`CAPSTONE_UP=PASS`가 출력되면 <http://127.0.0.1:3000>에 접속합니다.
+`./capstone up` 은 이미지를 처음 만들기 때문에 **첫 실행에 10~20분** 걸립니다. 두 번째부터는
+2~3분입니다. 중간에 컨테이너가 하나씩 healthy 로 바뀌는 로그가 지나가고, 마지막에
+`CAPSTONE_UP=PASS` 가 나오면 끝난 것입니다. 그 줄이 보이지 않으면 아직 뜨는 중입니다.
+
+접속: <http://127.0.0.1:3000>
 
 - 아이디: `demo-user`
 - 비밀번호: 최초 실행 때 생성되는 `deploy/p1/.state-app/secrets/demo-user.password` 파일의 값
+  (`cat deploy/p1/.state-app/secrets/demo-user.password`)
+
+**3개월치 매매 이력이 채워진 시연용 스택**으로 띄우려면 `P1_DEMO_STACK=true` 를 앞에 붙입니다.
+결정·주문·체결과 학습일지가 들어 있어 화면이 비어 보이지 않습니다. 볼륨이 분리돼 있어
+기본 스택과 섞이지 않습니다.
+
+```bash
+P1_DEMO_STACK=true ./capstone up
+```
+
+끝낼 때는 `./capstone down` 입니다. DB 볼륨은 지우지 않으므로 다음에 그대로 이어집니다.
 
 이 상태에서 홈, 금융 Agent, 투자 원칙, 전략 검증, 자동운용 현황, 주문 검토, 학습일지와 보고서를
 탐색할 수 있습니다. 화면은 synthetic 응답을 만들지 않고 DB에 적재된 최신 결과를 사용하며, 계산할
@@ -47,6 +66,36 @@ cd Capstone-AI-Trading-Coach
 연결한 환경은 거래시간에 `mock certify`가 한 번 필요하며, 이 명령은 실제 KIS 모의주문과
 취소를 수행합니다. 자세한 조건은 아래 **KIS 투자계좌 연결과 자동매매 시작**을 따릅니다. KIS Live는
 별도 명시적 설정 없이는 실행되지 않습니다.
+
+## 팀 구성과 분담
+
+부산대학교 정보컴퓨터공학부 졸업과제, 팀 MARS 3인입니다. 워크스페이스가 사람 단위로 갈려
+있어 누가 무엇을 만들었는지 저장소 구조에서 그대로 읽힙니다.
+
+| 구성원 | 담당 워크스페이스 | 맡은 일 |
+|---|---|---|
+| 박재영 (202055544) | `workspaces/experience-dashboard` | 모델 비교·백테스트 리포트 화면, 주문 검토·자동운용·리스크 화면, 대시보드 구조와 디자인 시스템 총괄 |
+| 박종진 (202145717) | `workspaces/decision-platform` | RiskEngine 14규칙, RAG 파이프라인과 가드레일, 투자원칙 엔진, KIS 연동 어댑터, LightGBM 연구, 랜딩페이지, 백엔드·PM |
+| 조민수 (202155607) | `workspaces/return-engine` | LSTM 가격예측(로그수익률 전환 문제 해결), 규칙 Baseline, walk-forward 백테스트 엔진 |
+
+## 소스 없이 이미지만으로 실행하기
+
+저장소를 받지 않고 컨테이너 이미지와 비밀값만으로도 같은 스택이 뜹니다. 배포용 compose 는
+개발용에서 생성한 파생물이라 두 벌이 어긋나지 않습니다.
+
+운영자가 준비할 것은 세 가지뿐입니다.
+
+1. `deploy/p1/compose.release.yml` 한 장
+2. 이미지 5개 (`P1_SPRING_IMAGE`, `P1_PYTHON_IMAGE`, `P1_POSTGRES_IMAGE`, `P1_REDIS_IMAGE`,
+   `P1_DASHBOARD_IMAGE`)
+3. 비밀값 파일 디렉터리 (`P1_SECRETS_DIR`)
+
+```bash
+docker compose -f compose.release.yml --env-file release.env up -d --wait
+```
+
+RAG 코퍼스 시드(54MB), DB 초기화 스크립트, 비밀값 로더, 백테스트 설정, 팀 B 프리뷰 산출물은
+전부 이미지 안에 있습니다. 호스트에서 마운트해야 하는 정적 파일이 없습니다.
 
 ## 프로젝트 목표
 
@@ -664,12 +713,9 @@ PYTHONPATH=src uv run python -m return_engine --help
 - [최종 프로젝트 명세](docs/최종_프로젝트_명세서.md)
 - [API 명세](docs/API_명세서.md)
 - [동일 환경 재현 가이드](docs/decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md)
-- [Automation V3 설계](docs/decision-platform/P1_AUTOMATION_V3_AI_EVIDENCE_EXIT_POLICY.md)
-- [장외 전수 replay](docs/decision-platform/P1_AFTER_HOURS_FULL_REPLAY.md)
-- [P1 최종 종료 명세](docs/P1_최종_종료_명세_20260904.md)
-- [AWS EC2 단일 사용자 배포](docs/AWS_EC2_단일사용자_배포.md)
-- [AWS 다중 사용자 최소 전환 TODO](docs/AWS_다중사용자_최소전환_TODO.md)
-- [Kafka/S1.4X 후속 실험 프롬프트](docs/NEXT_capstone-p1-lab_Kafka_S1.4X_실행_프롬프트.md)
+- [금융공학 공식과 자동매매 로직](docs/금융공학_공식_및_자동매매_로직_설명서.md)
+- [환경 변수 레퍼런스](docs/decision-platform/P1_ENV_REFERENCE.md)
+- [오프라인 시연 배포와 검증](docs/decision-platform/P1_OFFLINE_DEMO_배포_및_검증.md)
 
 ## README를 수정할 때
 
@@ -682,7 +728,7 @@ PYTHONPATH=src uv run python -m return_engine --help
 4. 개발 진행 상황, 임시 blocker와 테스트 영수증은 README 대신 별도 검증 문서에 기록합니다.
 5. 비밀값 예시나 개인 로컬 경로는 README에 추가하지 않습니다.
 
-<sub>시연용 DB로 띄우려면 `P1_DEMO_STACK=true ./capstone up --mock` — [설명](docs/시연용_DB.md).</sub>
+<sub>시연용 DB로 띄우려면 `P1_DEMO_STACK=true ./capstone up --mock`.</sub>
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
 <!-- P1_FULL_APP_V3_AUTHORITY_END -->
@@ -699,3 +745,12 @@ docker compose --env-file .env -f infra/docker-compose.infra.yml run --rm role-b
 decision_fill_writer
 V6/V9/V14
 -->
+## 2026-09-09 로컬 KIS Mock 전환 상태
+
+현재 PC는 Flyway V165와 검증된 local decision/dashboard 이미지를 사용한다. 현재 automation
+owner/account의 기존 bot position 1개는 멱등 receipt로 새 자본정책에 편입됐고 현재 계좌 미해결
+주문은 0개다. KIS Mock runtime은 1개만 ARMED이며 다음 2026-09-09 XKRX session을 기다린다.
+
+세계 뉴스 collector와 30일 복구 코드는 image에 포함됐지만 누적 physical/byte 상한의 별도 승인 전
+`GDELT_WORLD_NEWS_ENABLED=false`다. LSTM 5/20일 v3 실험은 dual 합격 후보 0으로 끝나 현재 50:50을
+유지하며, 합격 artifact가 없으므로 shadow publication과 자동 model activation은 0이다.

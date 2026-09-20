@@ -1072,6 +1072,28 @@ BEGIN
 END
 $revoke_custom_function_privileges$;
 
+-- 세계 뉴스 근거 읽기. 화면 조회 함수(lookup_allowed)가 아니라 근거 전용
+-- 함수(rag_retrieval_allowed)만 연다. 종목 정식명도 표 권한 대신 함수로 받는다 - 표를 열면
+-- 이 역할이 표시용 메타데이터 전체를 읽게 된다.
+--
+-- 회수 루프 뒤에 둬야 한다. 앞에서 주면 `$revoke_custom_function_privileges$` 가 그대로
+-- 쓸어 가고, 기존 volume 을 다시 bootstrap 한 뒤 근거 조회가 조용히 끊긴다.
+DO $p1_world_news_evidence_privileges$
+BEGIN
+    IF to_regprocedure('public.p1_read_world_news_evidence_v1(text,date,date,integer)')
+       IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            p1_read_world_news_evidence_v1(text, date, date, integer)
+        TO decision_disclosure_reader;
+    END IF;
+    IF to_regprocedure('public.p1_read_instrument_display_name_v1(text)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            p1_read_instrument_display_name_v1(text)
+        TO decision_disclosure_reader;
+    END IF;
+END
+$p1_world_news_evidence_privileges$;
+
 DO $p1_return_artifact_privileges$
 BEGIN
     IF to_regprocedure('public.import_p1_return_bundle_v1(text,text)') IS NOT NULL
@@ -2637,6 +2659,133 @@ BEGIN
 END
 $p1_v113_automation_v3_privileges$;
 
+DO $p1_v166_stage_funnel_privileges$
+BEGIN
+    -- 단계별 후보 결과표와 상한·거래당위험을 싣는 정책 저장 함수(V166), 그리고
+    -- 진입 세션을 계획 입력에 싣는 sources 함수(V167).
+    IF to_regclass('public.automation_candidate_stage_outcomes') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON TABLE
+            public.automation_candidate_stage_outcomes
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        GRANT SELECT, INSERT ON TABLE
+            public.automation_candidate_stage_outcomes
+        TO decision_app;
+    END IF;
+    IF to_regprocedure('public.p1_put_automation_policy_v3(text,text,bigint,integer,integer,integer,integer,integer,boolean,integer,integer,integer,text,text)') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_put_automation_policy_v3(
+                text,text,bigint,integer,integer,integer,integer,integer,boolean,integer,integer,
+                integer,text,text
+            )
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_put_automation_policy_v3(
+                text,text,bigint,integer,integer,integer,integer,integer,boolean,integer,integer,
+                integer,text,text
+            )
+        TO decision_app;
+    END IF;
+    IF to_regprocedure('public.p1_record_automation_stage_outcomes_v1(text,text,jsonb)') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_record_automation_stage_outcomes_v1(text,text,jsonb)
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_record_automation_stage_outcomes_v1(text,text,jsonb)
+        TO decision_automation_runtime;
+    END IF;
+END
+$p1_v166_stage_funnel_privileges$;
+
+DO $p1_v168_world_news_settled_privileges$
+BEGIN
+    -- 15분 heartbeat 라 대부분의 분에 파일이 없다. 확정 미게시 cursor 를 걸러 같은
+    -- 예산으로 더 넓은 구간을 훑게 하는 조회 함수다. 수집기(decision_market_writer)만 쓴다.
+    IF to_regprocedure('public.world_news_unpublished_cursors_v1(text,text[])') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.world_news_unpublished_cursors_v1(text,text[])
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_automation_runtime;
+        GRANT EXECUTE ON FUNCTION
+            public.world_news_unpublished_cursors_v1(text,text[])
+        TO decision_market_writer;
+    END IF;
+END
+$p1_v168_world_news_settled_privileges$;
+
+DO $p1_v169_schedule_recovery_privileges$
+BEGIN
+    -- 실행되지 않고 지나간 ARMED 스케줄을 마감해 끊긴 연쇄를 잇는다. 자동운용
+    -- runtime 만 부른다.
+    IF to_regprocedure('public.p1_settle_missed_automation_schedules_v1(text,date)') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_settle_missed_automation_schedules_v1(text,date)
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_market_writer;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_settle_missed_automation_schedules_v1(text,date)
+        TO decision_automation_runtime;
+    END IF;
+END
+$p1_v169_schedule_recovery_privileges$;
+
+DO $p1_v171_recovery_cursor_privileges$
+BEGIN
+    -- 끊긴 연쇄를 다시 이을 기준점(마지막 COMPLETED 세션, control version)을 읽는다.
+    -- runtime 역할에는 해당 테이블의 직접 SELECT 권한이 없으므로 이 함수가 유일한 통로다.
+    IF to_regprocedure('public.p1_read_automation_recovery_cursor_v1(text)') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_read_automation_recovery_cursor_v1(text)
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_market_writer;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_read_automation_recovery_cursor_v1(text)
+        TO decision_automation_runtime;
+    END IF;
+END
+$p1_v171_recovery_cursor_privileges$;
+
+DO $p1_v166_stage_outcome_owner_alignment$
+BEGIN
+    -- 퍼널 표만 소유자가 postgres 로 남아 있었다. 기록 함수(SECURITY DEFINER, 소유자
+    -- flyway)의 INSERT 가 테이블 권한에서 막혀 무주문 사유가 한 건도 남지 않았다.
+    -- 나머지 자동운용 표와 같은 소유자로 맞춘다. RLS 정책은 그대로 적용된다.
+    -- `::regclass` 캐스트는 표가 없으면 예외를 던지고, PostgreSQL 은 AND 의 단락 평가를
+    -- 보장하지 않는다. 그래서 bootstrap 이 migration 보다 먼저 도는 새 클러스터에서
+    -- 스크립트 전체가 죽었다. `to_regclass` 결과를 oid 로 직접 비교한다.
+    IF EXISTS (
+        SELECT 1 FROM pg_catalog.pg_class
+        WHERE oid = to_regclass('public.automation_candidate_stage_outcomes')
+          AND pg_catalog.pg_get_userbyid(relowner) <> 'flyway'
+    ) THEN
+        ALTER TABLE public.automation_candidate_stage_outcomes OWNER TO flyway;
+    END IF;
+END
+$p1_v166_stage_outcome_owner_alignment$;
+
+DO $p1_v174_execution_quality_privileges$
+BEGIN
+    -- 체결 품질 원장. 제출 순간의 호가를 쓰는 것은 자동운용 runtime 뿐이고, 읽는 것은
+    -- 화면(decision_app) 뿐이다. 이 원장이 marketable-limit 판단의 근거가 된다.
+    IF to_regprocedure(
+        'public.p1_record_automation_portfolio_book_v1(text,text,integer,jsonb)'
+    ) IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            public.p1_record_automation_portfolio_book_v1(text,text,integer,jsonb)
+        FROM PUBLIC, decision_app, decision_worker, decision_replay,
+            decision_replay_authorizer, decision_market_writer;
+        GRANT EXECUTE ON FUNCTION
+            public.p1_record_automation_portfolio_book_v1(text,text,integer,jsonb)
+        TO decision_automation_runtime;
+    END IF;
+    IF to_regclass('public.automation_portfolio_execution_quality_v1') IS NOT NULL THEN
+        GRANT SELECT ON public.automation_portfolio_execution_quality_v1 TO decision_app;
+    END IF;
+END
+$p1_v174_execution_quality_privileges$;
+
 DO $p1_dashboard_completion_privileges$
 BEGIN
     IF to_regprocedure('public.latest_dashboard_artifact_run_authorized(text,text,bigint,text)') IS NOT NULL THEN
@@ -2708,5 +2857,79 @@ BEGIN
  END IF;
 END
 $owner_ridge_privileges$;
+DO $p1_v155_v159_privileges$
+BEGIN
+ IF to_regprocedure('public.read_automation_principle_snapshot_authorized(text,text,text,text,text)') IS NOT NULL THEN
+  GRANT EXECUTE ON FUNCTION public.read_automation_principle_snapshot_authorized(text,text,text,text,text)
+  TO decision_app;
+ END IF;
+ IF to_regprocedure('public.append_world_news_document_v2(jsonb)') IS NOT NULL THEN
+  GRANT EXECUTE ON FUNCTION
+    public.append_world_news_document_v2(jsonb),
+    public.append_world_news_collection_v2(jsonb)
+  TO decision_market_writer;
+  GRANT EXECUTE ON FUNCTION
+    public.read_world_news_documents_v2(text,timestamptz,integer),
+    public.read_world_news_collection_status_v2()
+  TO decision_app;
+  GRANT EXECUTE ON FUNCTION
+    public.search_authorized_world_news_rag_v2(text,text,text,text[],text)
+  TO decision_rag_query;
+ END IF;
+ IF to_regprocedure('public.publish_owner_performance_report_v1(text,text,text,date,date,text,text,integer,integer,text,text,timestamptz)') IS NOT NULL THEN
+  GRANT EXECUTE ON FUNCTION
+    public.read_owner_performance_report_inputs_v1(text),
+    public.publish_owner_performance_report_v1(text,text,text,date,date,text,text,integer,integer,text,text,timestamptz),
+    public.record_owner_performance_report_failure_v1(text,text,text,date,date,text,text,integer,integer,text,timestamptz)
+  TO decision_worker;
+  GRANT EXECUTE ON FUNCTION
+    public.read_latest_owner_performance_report_authorized_v1(text,text,bigint)
+  TO decision_app;
+ END IF;
+ IF to_regprocedure('public.acquire_order_fill_reconciliation_lock_authorized_v3(text,text)') IS NOT NULL THEN
+  GRANT EXECUTE ON FUNCTION public.acquire_order_fill_reconciliation_lock_authorized_v3(text,text)
+  TO decision_app;
+ END IF;
+ IF to_regprocedure('public.p1_world_news_retention_v1(boolean,timestamptz,integer)') IS NOT NULL THEN
+  GRANT EXECUTE ON FUNCTION public.p1_world_news_retention_v1(boolean,timestamptz,integer)
+  TO decision_worker;
+ END IF;
+ IF to_regprocedure('public.world_news_collection_completed_v1(text,text)') IS NOT NULL THEN
+  GRANT EXECUTE ON FUNCTION public.world_news_collection_completed_v1(text,text)
+  TO decision_market_writer;
+ END IF;
+ IF to_regprocedure('public.append_world_news_file_batch_v1(jsonb,jsonb)') IS NOT NULL THEN
+  GRANT EXECUTE ON FUNCTION public.append_world_news_file_batch_v1(jsonb,jsonb)
+  TO decision_market_writer;
+ END IF;
+ IF to_regprocedure('public.p1_read_automation_capital_policy_v1(text)') IS NOT NULL THEN
+  GRANT EXECUTE ON FUNCTION
+    public.p1_put_automation_capital_policy_v1(text,boolean,integer,text,text),
+    public.p1_read_automation_capital_policy_v1(text),
+    public.p1_read_automation_capital_status_v1(text)
+  TO decision_app;
+  GRANT EXECUTE ON FUNCTION
+    public.p1_stage_automation_portfolio_plan_v1(text,text,jsonb,jsonb),
+    public.p1_begin_automation_portfolio_execution_v1(text,text,integer,text),
+    public.p1_finish_automation_portfolio_execution_v1(text,text,integer,text,text,text)
+  TO decision_automation_runtime;
+ END IF;
+ IF to_regprocedure('public.p1_stage_automation_portfolio_plan_v2(text,text,jsonb,jsonb)') IS NOT NULL THEN
+  GRANT EXECUTE ON FUNCTION
+    public.p1_record_automation_buyable_receipt_v1(text,text,jsonb),
+    public.p1_read_automation_portfolio_sources_v1(text,text),
+    public.p1_stage_automation_portfolio_plan_v2(text,text,jsonb,jsonb),
+    public.p1_begin_automation_portfolio_execution_v2(text,text,integer,text),
+    public.p1_read_automation_portfolio_execution_v1(text,text),
+    public.p1_finish_automation_portfolio_execution_v2(text,text,integer,text,text,text,bigint,bigint,bigint,text),
+    public.p1_adopt_automation_position_v1(text,text,text,text,date,boolean)
+  TO decision_automation_runtime;
+ END IF;
+ IF to_regprocedure('public.p1_adopt_current_automation_position_v1(text,text,date,boolean)') IS NOT NULL THEN
+  GRANT EXECUTE ON FUNCTION public.p1_adopt_current_automation_position_v1(text,text,date,boolean)
+  TO decision_automation_runtime;
+ END IF;
+END
+$p1_v155_v159_privileges$;
 COMMIT;
 SQL

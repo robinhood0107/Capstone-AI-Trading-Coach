@@ -109,13 +109,25 @@ test('RAG v2 screen gates the question behind consent and renders citations', as
   await expect(page.getByText('132030 금선물 ETF의 선물·환헤지·롤오버 경계')).toBeVisible();
   await expect(page.getByText('KIS Open API 소개')).toHaveCount(0);
 
-  const savedQuestion = page.locator('details').filter({
-    hasText: '13거래일 백테스트에서 Guide 수익률이 양수라는 결과를 과신하면 안 되는 이유는 무엇인가요?',
-  });
-  await expect(savedQuestion).toBeVisible();
-  await savedQuestion.locator('summary').click();
-  await expect(savedQuestion.locator('p')).toContainText('13거래일은');
-  expect((await savedQuestion.locator('p').textContent())?.length ?? 0).toBeGreaterThan(100);
+  // 저장된 답변이 실제로 펼쳐지고 본문이 보이는지를 본다. 특정 질문 문자열에 묶으면
+  // 그 답변은 어디에서도 seed 되지 않으므로, 사람이 한 번 물어본 이력에 의존하게 된다.
+  //
+  // 이력은 계정 소유 데이터라 0 건일 수 있다. 그때 화면 전체의 첫 details 를 집으면
+  // 라이브러리의 "연구 근거 더 보기"를 저장된 답변으로 착각해 엉뚱하게 실패한다.
+  // 0 건이면 빈 상태 문구를, 있으면 펼쳐진 본문을 검증한다 - 둘 다 화면의 계약이다.
+  // 이력은 목록 1 회 + 상세 5 회를 이어서 부른다. 기다리지 않으면 스켈레톤 상태를
+  // "이력 0 건"으로 잘못 읽는다.
+  await expect(page.locator('[data-loading="true"]')).toHaveCount(0, { timeout: 20_000 });
+  const historyPanel = page.locator('section', { has: page.getByRole('heading', { name: '최근 질문' }) });
+  if ((await historyPanel.count()) === 0) {
+    await expect(page.getByText('아직 저장된 질문이 없습니다.')).toBeVisible();
+  } else {
+    const savedQuestion = historyPanel.locator('details').first();
+    await expect(savedQuestion).toBeVisible();
+    await savedQuestion.locator('summary').click();
+    await expect(savedQuestion.locator('p').first()).toBeVisible();
+    expect((await savedQuestion.locator('p').first().textContent())?.length ?? 0).toBeGreaterThan(20);
+  }
 
   await expect(page.getByText(/^(동의 완료|동의 필요)$/)).toBeVisible();
 

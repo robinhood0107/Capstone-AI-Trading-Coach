@@ -115,8 +115,9 @@ export function evaluateGates(input: GateInput): Gate[] {
     ? { id: 'G5', label: '내용 확인', passed: true, note: '' }
     : { id: 'G5', label: '내용 확인', passed: null, note: '제출 전에 확인 화면을 한 번 거칩니다.' };
 
-  // 실계좌 경로는 이 화면에 아예 없다. 모의계좌 하나만 부른다.
-  const g6: Gate = { id: 'G6', label: '모의계좌 경로', passed: true, note: '' };
+  // 실계좌 주문 경로는 서버에서 하드 차단돼 있다(kis_mock_online_client). 화면은
+  // 그 사실을 계좌 종류로 단정하지 않고 "승인된 경로"라는 성질만 말한다.
+  const g6: Gate = { id: 'G6', label: '승인된 주문 경로', passed: true, note: '' };
 
   return [g1, g2, g3, g4, g5, g6];
 }

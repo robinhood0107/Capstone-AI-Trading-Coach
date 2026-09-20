@@ -118,8 +118,8 @@ data class AutomationPolicyV2Response(
     val maxNewOrdersPerSession: Int = 1,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = ["09:30"])
     val evaluationTimeKst: String = "09:30",
-    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = ["09:40"])
-    val buyCutoffTimeKst: String = "09:40",
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = ["14:30"])
+    val buyCutoffTimeKst: String = "14:30",
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = ["15:20"])
     val cancelTimeKst: String = "15:20",
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED, format = "date-time")

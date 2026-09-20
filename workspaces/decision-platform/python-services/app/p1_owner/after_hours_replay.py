@@ -725,14 +725,16 @@ def _synthetic_evidence_results(anchor: ReplayBar) -> dict[str, bool]:
         "evidence_zero_rule_rank": zero_state == "BUY_CANDIDATE_SELECTED"
         and zero_run.selected_symbol == "000001"
         and zero_transport.judge_calls == 0,
-        "prompt_injection_candidate_only_abstain": injection_state == "BUY_CANDIDATE_SELECTED"
-        and injection_run.selected_symbol == "000002"
+        "prompt_injection_abstains_and_rule_rank_continues": injection_state
+        == "BUY_CANDIDATE_SELECTED"
+        and injection_run.selected_symbol == "000001"
         and injection_transport.judge_calls == 0,
         "vetoed_only_evidence_skips_judge": veto_state == "BUY_CANDIDATE_SELECTED"
         and veto_run.selected_symbol == "000002"
         and veto_transport.judge_calls == 0,
-        "provider_failure_ai_on_no_buy": failed_state == "SKIPPED_DATA_UNAVAILABLE"
-        and failed_transport.submit_calls == 0,
+        "provider_failure_continues_rule_rank": failed_state == "COMPLETED"
+        and failed_run.selected_symbol == "000001"
+        and failed_transport.submit_calls == 1,
     }
 
 

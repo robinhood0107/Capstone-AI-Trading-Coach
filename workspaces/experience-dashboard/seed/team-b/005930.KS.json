@@ -1,0 +1,75 @@
+{
+  "stock_code": "005930.KS",
+  "date": "2026-08-24",
+  "prediction": {
+    "prediction": 139406.015625,
+    "prediction_change": 0.0011578798294067383
+  },
+  "recent_prediction": [
+    {
+      "date": "2026-08-14",
+      "actual": 274500.0,
+      "prediction": 138929.015625,
+      "actual_change": 0.02425373134328357,
+      "prediction_change": 0.005400538444519043
+    },
+    {
+      "date": "2026-08-18",
+      "actual": 268500.0,
+      "prediction": 139060.359375,
+      "actual_change": -0.021857923497267784,
+      "prediction_change": 0.0009454488754272461
+    },
+    {
+      "date": "2026-08-19",
+      "actual": 247500.0,
+      "prediction": 139250.296875,
+      "actual_change": -0.07821229050279332,
+      "prediction_change": 0.0013659000396728516
+    },
+    {
+      "date": "2026-08-20",
+      "actual": 271000.0,
+      "prediction": 138403.953125,
+      "actual_change": 0.0949494949494949,
+      "prediction_change": -0.006077885627746582
+    },
+    {
+      "date": "2026-08-21",
+      "actual": 281500.0,
+      "prediction": 139244.78125,
+      "actual_change": 0.03874538745387457,
+      "prediction_change": 0.006075143814086914
+    }
+  ],
+  "backtest": {
+    "baseline_model": {
+      "profit": 0.3962,
+      "mmd": -0.29351604470108306,
+      "calmar": 1.349841029656455,
+      "sharpe": 1.3352895413599886,
+      "win rate": 0.3333333333333333,
+      "max peak": 17404500.0,
+      "final asset": 13962000.0,
+      "trade count": 7
+    },
+    "lstm_model": {
+      "profit": 0.38171,
+      "mmd": -0.2948767379826418,
+      "calmar": 1.2944730825883923,
+      "sharpe": 1.2852545972695557,
+      "win rate": 0.6666666666666666,
+      "max peak": 16406600.0,
+      "final asset": 13817100.0,
+      "trade count": 19
+    }
+  },
+  "_preview": {
+    "classification": "LEGACY_RECEIVED_PREVIEW",
+    "realTeamB": false,
+    "teamBRealArtifactMissing": true,
+    "providerCalls": 0,
+    "receivedPthSha256": "220d26e99bb571e5be1a5c86d527079893eb9db67b423128116923b924d7f471",
+    "receivedCsvSha256": "386d9c2c0422ac56c160744dc61cd3990ede5cdb6f6867043f75ee8e9d8e902d"
+  }
+}

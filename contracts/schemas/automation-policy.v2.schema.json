@@ -15,7 +15,7 @@
       "type": "integer"
     },
     "buyCutoffTimeKst": {
-      "const": "09:40"
+      "const": "14:30"
     },
     "cancelTimeKst": {
       "const": "15:20"

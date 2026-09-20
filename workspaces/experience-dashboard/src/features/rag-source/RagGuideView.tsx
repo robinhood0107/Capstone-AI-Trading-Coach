@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { renderAnswerText } from './answerText';
 import { useRouter } from 'next/navigation';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
@@ -235,7 +236,7 @@ export function RagGuideView() {
                 className={`border-l-2 ${STATUS_TONE[view.generationStatus] ?? 'border-line'} pl-4`}
               >
                 {view.answer ? (
-                  <p className="whitespace-pre-line text-[14px] leading-7 text-ink">{view.answer}</p>
+                  <p className="whitespace-pre-line text-[14px] leading-7 text-ink">{renderAnswerText(view.answer)}</p>
                 ) : (
                   <p className="text-[13px] leading-6 text-muted">
                     잠시 후 다시 질문할 수 있습니다. 확인 가능한 근거가 있으면 아래에 표시합니다.
@@ -475,7 +476,7 @@ function HistoryEntry({ item, onChanged }: { item: RagV2HistoryDetail; onChanged
         </span>
       </summary>
       <p className="mt-3 whitespace-pre-line border-l-2 border-line pl-4 text-[13px] leading-6 text-muted">
-        {item.answer ?? '이 기록에는 생성된 설명이 없습니다.'}
+        {renderAnswerText(item.answer ?? '이 기록에는 생성된 설명이 없습니다.')}
       </p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2 pl-4">

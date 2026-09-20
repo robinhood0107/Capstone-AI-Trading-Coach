@@ -53,9 +53,10 @@ Usage:
   ./capstone team-a acceptance
 
 Default `up` starts five persistent containers. `--mock` adds the daily
-market-data collector for a total of six. `--models` adds the official
-BGE-M3 and llama.cpp PaddleOCR-VL runtimes for a total of seven. Brokerage is
-provider-free unless the owner explicitly selects `--mock` after certification.
+market-data collector. `GDELT_WORLD_NEWS_ENABLED=true` adds the bounded minute
+news collector independently. `--models` adds the official BGE-M3 and
+llama.cpp PaddleOCR-VL runtimes. Brokerage is provider-free unless the owner
+explicitly selects `--mock` after certification.
 EOF
 }
 
@@ -147,6 +148,9 @@ build_core_images() {
     -t capstone-decision-platform:p1-local "$REPO_ROOT"
   "$DOCKER_BIN" build -f "$SCRIPT_DIR/docker/postgres-pgvector.Dockerfile" \
     -t capstone-postgres-pgvector:p1-local "$REPO_ROOT"
+  # 공식 redis 에 비밀 로더만 얹는다. 이것이 없으면 이미지만 가진 사람은 redis 를 못 띄운다.
+  "$DOCKER_BIN" build -f "$SCRIPT_DIR/docker/redis.Dockerfile" \
+    -t capstone-redis:p1-local "$REPO_ROOT"
 }
 
 build_team_images() {
@@ -512,6 +516,12 @@ up_app() {
   if ((mock)); then
     mock_certified || die KIS_MOCK_NOT_CERTIFIED
   fi
+  # 운영자가 정하는 플래그는 상태 파일에 있고 compose 는 --env-file 로 읽는다. 그런데 이
+  # 스크립트는 셸 환경에서만 읽으므로, 값을 주지 않고 부르면 :-false 로 떨어져 수집기를
+  # 내려 버린다. 셸 값이 있으면 그것이 이기고, 없을 때만 상태 파일을 따른다.
+  if [[ -z ${GDELT_WORLD_NEWS_ENABLED:-} && -f $RUNTIME_ENV && ! -L $RUNTIME_ENV ]]; then
+    GDELT_WORLD_NEWS_ENABLED=$(sed -n 's/^GDELT_WORLD_NEWS_ENABLED=//p' "$RUNTIME_ENV")
+  fi
   export P1_KIS_MOCK_ONLINE_ENABLED=$([[ $mock == 1 ]] && printf true || printf false)
   export P1_KIS_OFFLINE=$([[ $mock == 1 ]] && printf 0 || printf 1)
   # Runtime availability and order authorization remain separate gates.
@@ -540,6 +550,12 @@ up_app() {
   else
     compose --profile automation stop market-data-daily >/dev/null 2>&1 || true
     compose --profile automation rm --force market-data-daily >/dev/null 2>&1 || true
+  fi
+  if [[ ${GDELT_WORLD_NEWS_ENABLED:-false} == true ]]; then
+    compose --profile automation up -d --wait world-news-minute
+  else
+    compose --profile automation stop world-news-minute >/dev/null 2>&1 || true
+    compose --profile automation rm --force world-news-minute >/dev/null 2>&1 || true
   fi
   # Stop the preview immediately before binding the production host ports.
   stop_old_preview_containers
@@ -625,6 +641,8 @@ up_app() {
   local expected=5
   ((models)) && expected=$((expected + 2))
   ((mock)) && expected=$((expected + 1))
+  # world-news 수집기는 자체 플래그로 뜬다. 세지 않으면 켜진 스택에서 이 검사가 죽는다.
+  [[ ${GDELT_WORLD_NEWS_ENABLED:-false} == true ]] && expected=$((expected + 1))
   local running
   running=$(compose ps --status running --services | wc -l | tr -d ' ')
   [[ $running == "$expected" ]] || die "CONTAINER_COUNT_EXPECTED_${expected}_OBSERVED_${running}"
@@ -650,10 +668,75 @@ reconcile_automation_intent() {
   if ((status == 0)); then
     printf '%s\n' "$output"
     printf 'CAPSTONE_AUTOMATION_RECONCILED=ARMED\n'
+    reconcile_ai_judgement
     return 0
   fi
   printf '%s\n' "${output:-(no output)}"
   printf 'CAPSTONE_AUTOMATION_RECONCILED=BLOCKED\n'
+  return 0
+}
+
+# AI 후보 심사가 켜져 있는지 확인하고, 꺼져 있으면 켠다.
+#
+# 이것은 기본 정책이다 - 배포할 때마다 되살아나야 한다. 설정이 꺼진 채로 조용히 돌면
+# 화면에는 "LLM 후보 검토"가 있는데 실제 판정에는 AI 가 참여하지 않고, 그 차이가
+# judgeCallCount 를 세어 보기 전까지 드러나지 않는다.
+#
+# 실패해도 배포를 멈추지 않는다. AI 심사는 매수를 **막을 수만** 있고(veto-only) 호출
+# 실패는 ABSTAIN 으로 통과하므로, 이것이 꺼져 있다고 해서 자동매매가 위험해지지 않는다.
+# 배포를 세우는 쪽이 훨씬 나쁘다. 대신 무슨 일이 있었는지는 마커로 남긴다.
+reconcile_ai_judgement() {
+  local base enabled
+  base="http://127.0.0.1:$(sed -n 's/^P1_API_PORT=//p' "$RUNTIME_ENV")"
+  enabled=$(compose exec -T postgres psql -U postgres -d capstone_p1 -At \
+    -c "select ai_judgement_enabled from strong_llm_owner_settings where owner_user_id='usr_demo_user'" \
+    2>/dev/null | tr -d '\r') || {
+    printf 'CAPSTONE_AI_JUDGEMENT=BLOCKED reason=SETTINGS_UNREADABLE\n'
+    return 0
+  }
+  if [[ $enabled == t ]]; then
+    printf 'CAPSTONE_AI_JUDGEMENT=ENABLED\n'
+    return 0
+  fi
+  if P1_BASE_URL=$base P1_USER_PASSWORD_FILE=$SECRETS_DIR/demo-user.password python3 - <<'PY'
+import json, os, urllib.request
+
+# 한 칸만 바꾸는 것이 목적이지만 이 엔드포인트는 설정 전체를 받는다. 지금 값을 읽어 오는
+# 조회 API 가 따로 없으므로, 이 스택이 쓰는 고정값을 그대로 다시 넣는다. 사람이 설정 화면에서
+# AI 심사만 켤 때 프런트가 보내는 것과 같은 본문이다.
+base = os.environ["P1_BASE_URL"]
+password = open(os.environ["P1_USER_PASSWORD_FILE"], encoding="utf-8").read()
+login = urllib.request.Request(
+    base + "/api/v1/auth/login",
+    data=json.dumps({"username": "demo-user", "password": password}).encode(),
+    headers={"Content-Type": "application/json"},
+)
+with urllib.request.urlopen(login, timeout=5) as response:
+    token = json.load(response)["data"]["accessToken"]
+settings = urllib.request.Request(
+    base + "/api/v2/strong-llm/settings",
+    method="PUT",
+    data=json.dumps(
+        {
+            "provider": "vertex",
+            "modelId": "gemini-3.5-flash",
+            "answerLanguage": "ko",
+            "dailyGenerateCallCap": 50,
+            "aiJudgementEnabled": True,
+            "thinkingLevel": "low",
+        }
+    ).encode(),
+    headers={"Content-Type": "application/json", "Authorization": "Bearer " + token},
+)
+with urllib.request.urlopen(settings, timeout=5) as response:
+    if response.status != 200:
+        raise SystemExit(1)
+PY
+  then
+    printf 'CAPSTONE_AI_JUDGEMENT=RESTORED\n'
+  else
+    printf 'CAPSTONE_AI_JUDGEMENT=BLOCKED reason=PUT_FAILED\n'
+  fi
   return 0
 }
 

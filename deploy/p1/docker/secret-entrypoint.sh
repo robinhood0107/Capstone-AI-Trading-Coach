@@ -19,6 +19,7 @@ case "$profile" in
   # 상주 일일 수집기. market-data 를 재사용하면 KIS 앱키와 자동운용 DSN 까지 들어온다.
   # 공개 일봉을 받아 적는 일에 필요한 것은 writer DSN 하나뿐이다.
   market-data-daily) secret_files=/run/secrets/market_data_env ;;
+  world-news) secret_files=/run/secrets/market_data_env ;;
   after-hours-replay) secret_files=/run/secrets/after_hours_replay_env ;;
   certification) secret_files="/run/secrets/spring_env /run/secrets/python_env /run/secrets/kis_mock_env" ;;
   authority) secret_files=/run/secrets/actor_capability_authority_env ;;
@@ -77,6 +78,7 @@ allowed_key() {
     # 열리는 것은 자기 표 등록뿐이고 network fetch 경로가 생기지 않는다.
     rag-source-register:RAG_SOURCE_WRITER_DATABASE_DSN|rag-source-register:RAG_SOURCE_REGISTER_TARGET) return 0 ;;
     market-data-daily:MARKET_DATA_WRITER_DSN) return 0 ;;
+    world-news:MARKET_DATA_WRITER_DSN) return 0 ;;
     market-data:MARKET_DATA_WRITER_DSN|market-data:P1_AUTOMATION_DATABASE_DSN|market-data:AUTOMATION_RUNTIME_SHARED_SECRET|market-data:P1_AUTOMATION_OWNER_USER_ID|market-data:P1_AUTOMATION_OWNER_USERNAME|market-data:P1_AUTOMATION_OWNER_PASSWORD|market-data:KIS_MOCK_CONFIGURED|market-data:KIS_MOCK_APP_KEY|market-data:KIS_MOCK_APP_SECRET|market-data:KIS_LIVE_APP_KEY|market-data:KIS_LIVE_APP_SECRET|market-data:KRX_OPENAPI_AUTH_KEY|market-data:REDIS_PASSWORD) return 0 ;;
     after-hours-replay:P1_AFTER_HOURS_REPLAY_DATABASE_DSN|after-hours-replay:P1_AFTER_HOURS_REPLAY_ISOLATED) return 0 ;;
     authority:POSTGRES_IDENTITY_PASSWORD|authority:ACTOR_CAPABILITY_SHARED_SECRET|authority:ACTOR_CAPABILITY_PRIVATE_KEY|authority:ACTOR_CAPABILITY_PUBLIC_KEY|authority:ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD) return 0 ;;
@@ -114,6 +116,7 @@ required_keys() {
     calendar-offline-seed) printf '%s\n' 'P1_CALENDAR_OFFLINE_SEED_DSN' ;;
     disclosure-collector) printf '%s\n' 'P1_DISCLOSURE_COLLECTOR_DSN' ;;
     market-data-daily) printf '%s\n' 'MARKET_DATA_WRITER_DSN' ;;
+    world-news) printf '%s\n' 'MARKET_DATA_WRITER_DSN' ;;
     market-data) printf '%s\n' 'MARKET_DATA_WRITER_DSN P1_AUTOMATION_DATABASE_DSN AUTOMATION_RUNTIME_SHARED_SECRET P1_AUTOMATION_OWNER_USER_ID KIS_MOCK_CONFIGURED KIS_MOCK_APP_KEY KIS_MOCK_APP_SECRET REDIS_PASSWORD' ;;
     after-hours-replay) printf '%s\n' 'P1_AFTER_HOURS_REPLAY_DATABASE_DSN P1_AFTER_HOURS_REPLAY_ISOLATED' ;;
     authority) printf '%s\n' 'POSTGRES_IDENTITY_PASSWORD ACTOR_CAPABILITY_SHARED_SECRET ACTOR_CAPABILITY_PRIVATE_KEY ACTOR_CAPABILITY_PUBLIC_KEY ACTOR_CAPABILITY_TLS_KEY_STORE_PASSWORD' ;;

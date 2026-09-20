@@ -178,6 +178,9 @@ tasks.named<ProcessResources>("processResources") {
     from(layout.projectDirectory.file("../../../contracts/openapi/p1-owner-ridge.v1.openapi.json")) {
         into("contracts")
     }
+    from(layout.projectDirectory.file("../../../contracts/openapi/p1-world-news-v2.v1.openapi.json")) {
+        into("contracts")
+    }
     from(layout.projectDirectory.file("../../../contracts/openapi/p1-return-signal-v3.v1.openapi.json")) {
         into("contracts")
     }

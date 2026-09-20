@@ -52,7 +52,7 @@ import pandas as pd
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 
-from app.p1_owner.ridge_returns import MIN_TRAIN_ROWS, predict
+from app.p1_owner.ridge_returns import MIN_TRAIN_ROWS, RidgeReturnError, predict
 
 REPO = pathlib.Path("/home/pjjpj/projects/Capstone-AI-Trading-Coach")
 CACHE = pathlib.Path("/tmp/p1exp")
@@ -64,8 +64,9 @@ SOLVER = "svd"
 # LSTM 하네스와 같은 feature 정의를 쓴다. 이름만 production 표기로 옮긴 것이다
 # (`app.p1_owner.assets.FEATURE_ORDER` = open/high/low/raw_close/volume/return_1d/ma5/ma20/rsi14).
 FEATURES = ["Open", "High", "Low", "Close", "Volume", "Diff", "MA5", "MA20", "RSI"]
-# 이 arm 이 평가하는 지평. 1일이 LSTM 과 같은 잣대이므로 비교의 축이다.
-HORIZON = 1
+# production `ridge_returns.HORIZONS` 와 같은 셋이다. 운용은 지금 1일만 읽고 5·20일을
+# 버린다 - 그 둘을 함께 만들어 "지평을 맞추면 달라지는가"를 재게 한다.
+HORIZONS = (1, 5, 20)
 
 
 def create_features(frame: pd.DataFrame) -> pd.DataFrame:
@@ -79,21 +80,22 @@ def create_features(frame: pd.DataFrame) -> pd.DataFrame:
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = (-delta.clip(upper=0)).rolling(14).mean()
     out["RSI"] = 100.0 - (100.0 / (1.0 + gain / loss.replace(0.0, np.nan)))
-    out["TargetSimpleRet"] = out["Close"].shift(-HORIZON) / out["Close"] - 1.0
+    for horizon in HORIZONS:
+        out[f"TargetSimpleRet{horizon}"] = out["Close"].shift(-horizon) / out["Close"] - 1.0
     return out
 
 
-def fit_and_predict(train: pd.DataFrame, test: pd.DataFrame) -> np.ndarray | None:
+def fit_and_predict(train: pd.DataFrame, test: pd.DataFrame, horizon: int) -> np.ndarray | None:
     """train 구간으로만 scaler 와 회귀를 fit 하고 test 각 행을 예측한다.
 
     누출 방지는 두 곳이다 - scaler 를 train 으로만 fit 하고, 타깃이 기준일까지 완성된 행만
     학습에 넣는다(마지막 `HORIZON` 행은 정답이 미래에 있으므로 제외된다).
     """
 
-    if len(train) < MIN_TRAIN_ROWS + HORIZON or test.empty:
+    if len(train) < MIN_TRAIN_ROWS + horizon or test.empty:
         return None
-    x_train = train[FEATURES].to_numpy(dtype=float)[:-HORIZON]
-    y_train = train["TargetSimpleRet"].to_numpy(dtype=float)[:-HORIZON]
+    x_train = train[FEATURES].to_numpy(dtype=float)[:-horizon]
+    y_train = train[f"TargetSimpleRet{horizon}"].to_numpy(dtype=float)[:-horizon]
     if not np.isfinite(x_train).all() or not np.isfinite(y_train).all():
         return None
     scaler = StandardScaler().fit(x_train)
@@ -114,7 +116,36 @@ def fit_and_predict(train: pd.DataFrame, test: pd.DataFrame) -> np.ndarray | Non
     x_test = test[FEATURES].to_numpy(dtype=float)
     if not np.isfinite(x_test).all():
         return None
-    return np.asarray([predict(model, row.tolist()) for row in x_test], dtype=float)
+    # production `predict` 의 출력 가드를 그대로 지난다 - `result <= -1` 이나 `> 1000` 은
+    # 거부된다. 지평이 길어지면 선형 모델이 훈련 범위를 벗어나 그런 값을 내고, 실제로
+    # 20일 지평에서 발화했다. 가드를 약화시키지 않고 그 행을 NaN 으로 두어 비교에서
+    # 제외하고, 몇 건이 그랬는지는 호출부가 센다. 값을 clipping 으로 숨기지 않는다.
+    values = np.empty(len(x_test), dtype=float)
+    for index, row in enumerate(x_test):
+        try:
+            values[index] = predict(model, row.tolist())
+        except RidgeReturnError:
+            values[index] = np.nan
+    return values
+
+
+def mature_horizon_frame(featured: pd.DataFrame, horizon: int) -> pd.DataFrame:
+    """각 지평의 label maturity만 적용해 다른 지평의 표본을 침범하지 않는다."""
+
+    if horizon not in HORIZONS:
+        raise ValueError("unsupported horizon")
+    return featured.dropna(subset=[*FEATURES, f"TargetSimpleRet{horizon}"])
+
+
+def merge_arm_predictions(lstm: pd.DataFrame, ridge: pd.DataFrame) -> pd.DataFrame:
+    """Ridge 한 arm의 거부가 LSTM이나 다른 Ridge 지평 행을 삭제하지 않는 left join이다."""
+
+    merged = lstm.merge(ridge, on=["testYear", "date", "ticker"], how="left")
+    merged["predLstmRet"] = np.exp(merged["predLogRet"]) - 1.0
+    merged["predRidgeRet"] = merged["predRidgeRet1"]
+    merged["predBlendRet"] = 0.5 * merged["predLstmRet"] + 0.5 * merged["predRidgeRet1"]
+    merged["actualSimpleRet"] = np.exp(merged["actualLogRet"]) - 1.0
+    return merged
 
 
 def main() -> int:
@@ -129,9 +160,10 @@ def main() -> int:
     lstm = pd.read_parquet(CACHE / args.predictions)
     years = sorted(int(value) for value in lstm["testYear"].unique())
 
-    rows: list[dict[str, object]] = []
+    rows_by_key: dict[tuple[int, pd.Timestamp, str], dict[str, object]] = {}
     started = time.time()
-    fitted = skipped = 0
+    fitted_by_horizon = {horizon: 0 for horizon in HORIZONS}
+    skipped_by_horizon = {horizon: 0 for horizon in HORIZONS}
 
     for test_year in years:
         train_start = pd.Timestamp(f"{test_year - 3}-01-01")
@@ -140,44 +172,57 @@ def main() -> int:
         fold_symbols = 0
         for ticker in tickers:
             frame = history[history["ticker"] == ticker].copy()
-            featured = create_features(frame).dropna(subset=[*FEATURES, "TargetSimpleRet"])
-            train = featured[
-                (featured["Date"] >= train_start) & (featured["Date"] < train_end)
-            ].reset_index(drop=True)
-            test = featured[
-                (featured["Date"] >= train_end) & (featured["Date"] < test_end)
-            ].reset_index(drop=True)
-            predictions = fit_and_predict(train, test)
-            if predictions is None:
-                skipped += 1
-                continue
-            fitted += 1
-            fold_symbols += 1
-            for offset, value in enumerate(predictions):
-                rows.append(
-                    {
-                        "testYear": test_year,
-                        "date": test["Date"].iloc[offset],
-                        "ticker": ticker,
-                        "predRidgeRet": float(value),
-                    }
-                )
+            featured = create_features(frame)
+            symbol_fitted = False
+            for horizon in HORIZONS:
+                # 각 지평은 자기 feature/label maturity로만 표본을 만든다. h20의 label이 없다는
+                # 이유로 h1/h5의 완성된 행을 함께 버리지 않는다.
+                horizon_frame = mature_horizon_frame(featured, horizon)
+                train = horizon_frame[
+                    (horizon_frame["Date"] >= train_start)
+                    & (horizon_frame["Date"] < train_end)
+                ].reset_index(drop=True)
+                test = horizon_frame[
+                    (horizon_frame["Date"] >= train_end)
+                    & (horizon_frame["Date"] < test_end)
+                ].reset_index(drop=True)
+                values = fit_and_predict(train, test, horizon)
+                if values is None:
+                    skipped_by_horizon[horizon] += 1
+                    continue
+                fitted_by_horizon[horizon] += 1
+                symbol_fitted = True
+                for offset in range(len(test)):
+                    key = (test_year, pd.Timestamp(test["Date"].iloc[offset]), ticker)
+                    row = rows_by_key.setdefault(
+                        key,
+                        {"testYear": test_year, "date": key[1], "ticker": ticker},
+                    )
+                    row[f"predRidgeRet{horizon}"] = float(values[offset])
+                    row[f"actualSimpleRet{horizon}"] = float(
+                        test[f"TargetSimpleRet{horizon}"].iloc[offset]
+                    )
+            if symbol_fitted:
+                fold_symbols += 1
         print(f"  fold {test_year}: {fold_symbols:2d}종목", flush=True)
 
-    ridge = pd.DataFrame(rows)
-    merged = lstm.merge(ridge, on=["testYear", "date", "ticker"], how="inner")
-    # 두 arm 의 단위를 맞춘다. LSTM 은 로그수익률, production Ridge 는 단순수익률이다.
-    merged["predLstmRet"] = np.exp(merged["predLogRet"]) - 1.0
-    # production 의 결합은 두 기대수익률의 산술평균이다(V134 의 EQUAL_WEIGHT_50_50).
-    merged["predBlendRet"] = 0.5 * merged["predLstmRet"] + 0.5 * merged["predRidgeRet"]
-    merged["actualSimpleRet"] = np.exp(merged["actualLogRet"]) - 1.0
+    ridge = pd.DataFrame(rows_by_key.values())
+    horizon_columns = [f"predRidgeRet{horizon}" for horizon in HORIZONS]
+    rejected = {
+        column: int(ridge[column].isna().sum()) if column in ridge else len(ridge)
+        for column in horizon_columns
+    }
+    print()
+    print(f"production predict 가드가 거부한 행: {rejected}")
+    print("거부 행은 다른 지평/arm 행을 삭제하지 않고 NaN abstention으로 보존")
+    merged = merge_arm_predictions(lstm, ridge)
 
     out = CACHE / args.out
     merged.to_parquet(out, index=False)
     print()
     print(f"저장: {out}")
-    print(f"fit {fitted}회 / 건너뜀 {skipped}회")
-    print(f"LSTM 예측 {len(lstm):,}행 / 두 arm 교집합 {len(merged):,}행")
+    print(f"지평별 fit {fitted_by_horizon} / 건너뜀 {skipped_by_horizon}")
+    print(f"LSTM 기준 {len(lstm):,}행 / left-joined arm 행 {len(merged):,}행")
     print(f"총 {time.time() - started:.0f}초 / providerCalls=0")
     return 0
 

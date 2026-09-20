@@ -7,6 +7,9 @@ import com.capstone.decision.application.automation.AutomationAccessDeniedExcept
 import com.capstone.decision.application.automation.AutomationBlockedException
 import com.capstone.decision.application.automation.AutomationCandidateEvidenceV3Projection
 import com.capstone.decision.application.automation.AutomationCandidateScreeningV3Projection
+import com.capstone.decision.application.automation.AutomationCapitalPolicyProjection
+import com.capstone.decision.application.automation.AutomationCapitalPositionProjection
+import com.capstone.decision.application.automation.AutomationCapitalStatusProjection
 import com.capstone.decision.application.automation.AutomationConflictException
 import com.capstone.decision.application.automation.AutomationControlProjection
 import com.capstone.decision.application.automation.AutomationIdempotencyConflictException
@@ -23,10 +26,12 @@ import com.capstone.decision.application.automation.AutomationRunDetailV3Project
 import com.capstone.decision.application.automation.AutomationRunProjection
 import com.capstone.decision.application.automation.AutomationRunV2Projection
 import com.capstone.decision.application.automation.AutomationRunV3Projection
+import com.capstone.decision.application.automation.AutomationStageOutcomeProjection
 import com.capstone.decision.application.automation.AutomationStatusV2Projection
 import com.capstone.decision.application.automation.AutomationStatusV3Projection
 import com.capstone.decision.application.automation.AutomationStorageException
 import com.capstone.decision.application.automation.DisarmAutomationCommand
+import com.capstone.decision.application.automation.PutAutomationCapitalPolicyCommand
 import com.capstone.decision.application.automation.PutAutomationPolicyV2Command
 import com.capstone.decision.application.automation.PutAutomationPolicyV3Command
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
@@ -435,7 +440,8 @@ class JdbcAutomationRepository(
                         )
                         AND max_holding_sessions IS NULL
                         AND status IN ('OPEN','EXIT_PENDING')
-                      ORDER BY entry_session,symbol,position_id LIMIT 5
+                      -- 열린 포지션은 자르지 않는다. v3 경로와 같은 이유다.
+                      ORDER BY entry_session,symbol,position_id
                     )
                     UNION ALL
                     (
@@ -529,10 +535,10 @@ class JdbcAutomationRepository(
             val json =
                 jdbc.queryForObject(
                     """
-                    SELECT result_json FROM p1_put_automation_policy_v2(
+                    SELECT result_json FROM p1_put_automation_policy_v3(
                       :ownerUserId,:principleId,:capitalLimitKrw,:stopLossBps,:takeProfitBps,
                       :maxHoldingSessions,:atrPeriod,:atrMultiplierMilli,:modelSellEnabled,
-                      :expectedVersion,:scopeHash,:requestHash
+                      :maxOpenPositions,:riskPerTradeBps,:expectedVersion,:scopeHash,:requestHash
                     )
                     """.trimIndent(),
                     mapOf(
@@ -545,6 +551,8 @@ class JdbcAutomationRepository(
                         "atrPeriod" to command.atrPeriod,
                         "atrMultiplierMilli" to command.atrMultiplierMilli,
                         "modelSellEnabled" to command.modelSellEnabled,
+                        "maxOpenPositions" to command.maxOpenPositions,
+                        "riskPerTradeBps" to command.riskPerTradeBps,
                         "expectedVersion" to command.expectedVersion,
                         "scopeHash" to scopeHash,
                         "requestHash" to requestHash,
@@ -655,7 +663,11 @@ class JdbcAutomationRepository(
                         mapOf("ownerUserId" to ownerUserId, "runId" to runId),
                     ) { row, _ -> row.toRunV3() }
                     .singleOrNull() ?: throw AutomationNotFoundException()
-            return AutomationRunDetailV3Projection(run, readCandidateScreeningsV3(jdbc, runId))
+            return AutomationRunDetailV3Projection(
+                run,
+                readCandidateScreeningsV3(jdbc, runId),
+                readStageOutcomes(jdbc, runId),
+            )
         } catch (error: ActorCapabilityDeniedException) {
             throw AutomationAccessDeniedException(error)
         } catch (error: DataAccessException) {
@@ -688,7 +700,10 @@ class JdbcAutomationRepository(
                 WHERE user_id=:ownerUserId AND max_holding_sessions IS NOT NULL
                   AND account_id=(SELECT account_id FROM automation_control WHERE user_id=:ownerUserId AND brokerage_mode='KIS_MOCK')
                   AND status IN ('OPEN','EXIT_PENDING')
-                ORDER BY entry_session,symbol,position_id LIMIT 5
+                -- LIMIT 을 두지 않는다. 상한과 같은 크기로 자르면 초과분이 통째로 보이지
+                -- 않아 그 포지션은 손절·익절·ATR 트레일링 어디에도 걸리지 않고,
+                -- POSITION_CAP_DRIFT 감지도 영원히 일어나지 않는다.
+                ORDER BY entry_session,symbol,position_id
                 """.trimIndent(),
                 mapOf("ownerUserId" to ownerUserId),
             ) { row, _ ->
@@ -725,6 +740,91 @@ class JdbcAutomationRepository(
             throw translate(error)
         }
     }
+
+    @Transactional
+    override fun readCapitalPolicy(ownerUserId: String): AutomationCapitalPolicyProjection? {
+        try {
+            val jdbc = jdbc()
+            actorRlsScope.open(
+                jdbc,
+                ownerUserId,
+                ActorCapabilityBinding.target(
+                    "READ_AUTOMATION_STATUS",
+                    "AUTOMATION",
+                    ownerUserId,
+                    ActorCapabilityRolePolicy.OWNER,
+                ),
+            )
+            val json =
+                jdbc.queryForObject(
+                    "SELECT public.p1_read_automation_capital_policy_v1(:ownerUserId)",
+                    mapOf("ownerUserId" to ownerUserId),
+                    String::class.java,
+                ) ?: return null
+            return decodeCapitalPolicy(json)
+        } catch (error: ActorCapabilityDeniedException) {
+            throw AutomationAccessDeniedException(error)
+        } catch (error: DataAccessException) {
+            throw translate(error)
+        }
+    }
+
+    @Transactional
+    override fun readCapitalStatus(ownerUserId: String): AutomationCapitalStatusProjection? {
+        try {
+            val jdbc = jdbc()
+            actorRlsScope.open(
+                jdbc,
+                ownerUserId,
+                ActorCapabilityBinding.target(
+                    "READ_AUTOMATION_STATUS",
+                    "AUTOMATION",
+                    ownerUserId,
+                    ActorCapabilityRolePolicy.OWNER,
+                ),
+            )
+            val json =
+                jdbc.queryForObject(
+                    "SELECT public.p1_read_automation_capital_status_v1(:ownerUserId)",
+                    mapOf("ownerUserId" to ownerUserId),
+                    String::class.java,
+                ) ?: return null
+            return decodeCapitalStatus(json)
+        } catch (error: ActorCapabilityDeniedException) {
+            throw AutomationAccessDeniedException(error)
+        } catch (error: DataAccessException) {
+            throw translate(error)
+        }
+    }
+
+    @Transactional
+    override fun putCapitalPolicy(
+        ownerUserId: String,
+        command: PutAutomationCapitalPolicyCommand,
+        scopeHash: String,
+        requestHash: String,
+    ): AutomationCapitalPolicyProjection =
+        mutate(ownerUserId, "PUT_AUTOMATION_POLICY", requestHash, "AUTOMATION_POLICY") { jdbc ->
+            val json =
+                jdbc.queryForObject(
+                    """
+                    SELECT result_json FROM public.p1_put_automation_capital_policy_v1(
+                      :ownerUserId,:reinvestRealizedPnl,:expectedVersion,:scopeHash,:requestHash
+                    )
+                    """.trimIndent(),
+                    mapOf(
+                        "ownerUserId" to ownerUserId,
+                        "reinvestRealizedPnl" to command.reinvestRealizedPnl,
+                        "expectedVersion" to command.expectedVersion,
+                        "scopeHash" to scopeHash,
+                        "requestHash" to requestHash,
+                    ),
+                    String::class.java,
+                ) ?: throw AutomationStorageException(
+                    IllegalStateException("Capital policy function returned no result."),
+                )
+            decodeCapitalPolicy(json)
+        }
 
     private fun <T> mutate(
         ownerUserId: String,
@@ -1003,6 +1103,43 @@ class JdbcAutomationRepository(
                 )
             }.singleOrNull()
 
+    /**
+     * 단계별 후보 결과를 화면 순서대로 읽는다.
+     *
+     * 정렬은 후보가 실제로 지나는 순서여야 사용자가 "어디서 끊겼는지"를 위에서 아래로
+     * 읽을 수 있다. 알파벳 순이면 그 서사가 깨진다.
+     */
+    private fun readStageOutcomes(
+        jdbc: NamedParameterJdbcTemplate,
+        runId: String,
+    ): List<AutomationStageOutcomeProjection> =
+        jdbc.query(
+            """
+            SELECT stage,symbol,outcome,reason_code,reason_detail
+            FROM automation_candidate_stage_outcomes
+            WHERE run_id=:runId
+            ORDER BY CASE stage
+              WHEN 'OBSERVATION' THEN 0
+              WHEN 'RULE_BUY' THEN 1
+              WHEN 'LSTM_VETO' THEN 2
+              WHEN 'ATR_HISTORY' THEN 3
+              WHEN 'QUOTE_SAFETY' THEN 4
+              WHEN 'NEWS_DISCLOSURE' THEN 5
+              WHEN 'AI_JUDGE' THEN 6
+              WHEN 'RISK_ENGINE' THEN 7
+              ELSE 8 END, symbol
+            """.trimIndent(),
+            mapOf("runId" to runId),
+        ) { row, _ ->
+            AutomationStageOutcomeProjection(
+                stage = row.getString("stage"),
+                symbol = row.getString("symbol"),
+                outcome = row.getString("outcome"),
+                reasonCode = row.getString("reason_code"),
+                reasonDetail = row.getString("reason_detail"),
+            )
+        }
+
     private fun readCurrentPolicyV3(
         jdbc: NamedParameterJdbcTemplate,
         ownerUserId: String,
@@ -1012,7 +1149,7 @@ class JdbcAutomationRepository(
                 """
                 SELECT policy_id,version,risk_profile,capital_limit_krw,stop_loss_bps,
                        take_profit_bps,max_holding_sessions,atr_period,atr_multiplier_milli,
-                       model_sell_enabled,created_at
+                       model_sell_enabled,max_open_positions,risk_per_trade_bps,created_at
                 FROM automation_policy_versions_effective
                 WHERE user_id=:ownerUserId
                   AND version=(SELECT max(version) FROM automation_policy_versions_effective WHERE user_id=:ownerUserId)
@@ -1032,6 +1169,8 @@ class JdbcAutomationRepository(
                     atrPeriod = row.getInt("atr_period"),
                     atrMultiplierMilli = row.getInt("atr_multiplier_milli"),
                     modelSellEnabled = row.getBoolean("model_sell_enabled"),
+                    maxOpenPositions = row.getInt("max_open_positions"),
+                    riskPerTradeBps = row.getInt("risk_per_trade_bps"),
                     createdAt = timestamp,
                     updatedAt = timestamp,
                 )
@@ -1065,8 +1204,64 @@ class JdbcAutomationRepository(
             atrPeriod = node.path("atrPeriod").intValue(),
             atrMultiplierMilli = node.path("atrMultiplierMilli").intValue(),
             modelSellEnabled = node.path("modelSellEnabled").booleanValue(),
+            // 재생(replay) 된 오래된 idempotency 결과에는 이 두 키가 없을 수 있다.
+            // 그때는 제품 기본값을 쓴다.
+            maxOpenPositions = node.path("maxOpenPositions").let { if (it.isMissingNode) 10 else it.intValue() },
+            riskPerTradeBps = node.path("riskPerTradeBps").let { if (it.isMissingNode) 100 else it.intValue() },
             createdAt = OffsetDateTime.parse(node.path("createdAt").stringValue()),
             updatedAt = OffsetDateTime.parse(node.path("updatedAt").stringValue()),
+        )
+    }
+
+    private fun decodeCapitalPolicy(json: String): AutomationCapitalPolicyProjection {
+        val node = objectMapper.readTree(json)
+        return AutomationCapitalPolicyProjection(
+            version = node.path("version").intValue(),
+            reinvestRealizedPnl = node.path("reinvestRealizedPnl").booleanValue(),
+            cashBufferBps = node.path("cashBufferBps").intValue(),
+            rebalanceDeviationBps = node.path("rebalanceDeviationBps").intValue(),
+            minimumAdjustmentKrw = node.path("minimumAdjustmentKrw").longValue(),
+            maxOrdersPerSession = node.path("maxOrdersPerSession").intValue(),
+            effectiveFromSession = LocalDate.parse(node.path("effectiveFromSession").stringValue()),
+            transitionStartedAt = OffsetDateTime.parse(node.path("transitionStartedAt").stringValue()),
+        )
+    }
+
+    private fun decodeCapitalStatus(json: String): AutomationCapitalStatusProjection {
+        val node = objectMapper.readTree(json)
+        val positions = mutableListOf<AutomationCapitalPositionProjection>()
+        node.path("positions").forEach { item ->
+            positions.add(
+                AutomationCapitalPositionProjection(
+                    symbol = item.path("symbol").stringValue(),
+                    currentQuantity = item.path("currentQuantity").longValue(),
+                    targetQuantity = item.path("targetQuantity").takeUnless { it.isNull }?.longValue(),
+                    currentMarketValueKrw =
+                        item.path("currentMarketValueKrw").takeUnless { it.isNull }?.longValue(),
+                    targetMarketValueKrw = item.path("targetMarketValueKrw").longValue(),
+                    currentWeightBps = item.path("currentWeightBps").takeUnless { it.isNull }?.longValue(),
+                    targetWeightBps = item.path("targetWeightBps").longValue(),
+                    valuationStatus = item.path("valuationStatus").stringValue(),
+                ),
+            )
+        }
+        return AutomationCapitalStatusProjection(
+            policyVersion = node.path("policyVersion").intValue(),
+            reinvestRealizedPnl = node.path("reinvestRealizedPnl").booleanValue(),
+            configuredCapitalKrw = node.path("configuredCapitalKrw").longValue(),
+            realizedPnlSinceTransitionKrw = node.path("realizedPnlSinceTransitionKrw").longValue(),
+            brokerBuyableCashKrw = node.path("brokerBuyableCashKrw").longValue(),
+            botPositionMarketValueKrw = node.path("botPositionMarketValueKrw").longValue(),
+            reservedBuyCashKrw = node.path("reservedBuyCashKrw").longValue(),
+            allocationCapKrw = node.path("allocationCapKrw").longValue(),
+            investableCapKrw = node.path("investableCapKrw").longValue(),
+            availableBuyCashKrw = node.path("availableBuyCashKrw").longValue(),
+            targetPerPositionKrw = node.path("targetPerPositionKrw").longValue(),
+            existingBotPositionsAdopted = node.path("existingBotPositionsAdopted").intValue(),
+            valuationMissingCount = node.path("valuationMissingCount").intValue(),
+            unusedCashReason = node.path("unusedCashReason").takeUnless { it.isNull }?.stringValue(),
+            positions = positions,
+            asOf = OffsetDateTime.parse(node.path("asOf").stringValue()),
         )
     }
 
@@ -1102,8 +1297,26 @@ class JdbcAutomationRepository(
                 }.groupBy { it.symbol }
         return jdbc.query(
             """
-            SELECT symbol,status,verdict,score_bps,reason
-            FROM automation_candidate_screenings WHERE run_id=:runId ORDER BY symbol
+            WITH stored AS (
+              SELECT symbol,status,verdict,score_bps,reason
+              FROM automation_candidate_screenings WHERE run_id=:runId
+            ), diagnostic AS (
+              SELECT verdicts_json::jsonb notes FROM automation_ai_judgements
+              WHERE run_id=:runId ORDER BY checkpoint_version DESC LIMIT 1
+            )
+            SELECT symbol,status,verdict,score_bps,
+              CASE WHEN (SELECT notes->>'judgeStatus' FROM diagnostic)='ABSTAIN'
+                   THEN 'AI 순위 판단 유보 · '||reason ELSE reason END AS reason
+            FROM stored
+            UNION ALL
+            SELECT item->>'symbol','ABSTAIN','NO_VETO',5000,item->>'reason'
+            FROM diagnostic CROSS JOIN LATERAL jsonb_array_elements(
+              CASE WHEN jsonb_typeof(notes->'screenings')='array' THEN notes->'screenings' ELSE '[]'::jsonb END
+            ) item
+            WHERE item->>'status'='ABSTAIN' AND item->>'symbol'~'^[0-9]{6}$'
+              AND item->>'reason' IN ('SCREENING_ERROR','AI_DISABLED_OR_UNAVAILABLE')
+              AND NOT EXISTS(SELECT 1 FROM stored WHERE symbol=item->>'symbol')
+            ORDER BY symbol
             """.trimIndent(),
             mapOf("runId" to runId),
         ) { row, _ ->

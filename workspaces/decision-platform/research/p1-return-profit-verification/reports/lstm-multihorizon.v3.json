@@ -1,0 +1,167 @@
+{
+  "acceptedCandidates": [],
+  "candidates": {
+    "LSTM_H20": {
+      "dualAccepted": false,
+      "operation": {
+        "accepted": false,
+        "bearYears": [
+          {
+            "excessPositive": false,
+            "year": 2008
+          },
+          {
+            "excessPositive": true,
+            "year": 2011
+          },
+          {
+            "excessPositive": true,
+            "year": 2014
+          },
+          {
+            "excessPositive": false,
+            "year": 2015
+          },
+          {
+            "excessPositive": true,
+            "year": 2018
+          },
+          {
+            "excessPositive": true,
+            "year": 2019
+          },
+          {
+            "excessPositive": false,
+            "year": 2021
+          },
+          {
+            "excessPositive": true,
+            "year": 2022
+          }
+        ],
+        "benchmarkMaxDrawdown": -0.5117758969074055,
+        "benchmarkNetReturn": 17.38621292142972,
+        "benchmarkSharpe": 0.7248053034437663,
+        "benchmarkSortino": 1.1952439353161157,
+        "maxDrawdown": -0.5540220713658721,
+        "meanRankIc": 0.021613002441900814,
+        "meanTopBottomSpread": 0.0022043653280982185,
+        "meanTurnover": 0.48848238482384826,
+        "netReturnAfter35Bps": 39.402566711120116,
+        "randomControlMaximumNetReturn": 65.1048610619284,
+        "rebalanceCount": 247,
+        "sharpe": 0.7458986973111202,
+        "sortino": 1.3410478852585406
+      },
+      "prediction": {
+        "abstentionRate": 0.1026527913700237,
+        "accepted": false,
+        "bias": -0.019641598187703675,
+        "coverage": 0.8973472086299763,
+        "eligibleRows": 133859,
+        "extremeAbsErrorP99": 0.48145732844536004,
+        "mae": 0.09940963979582276,
+        "maeDeltaBlock95": [
+          0.01174233300034986,
+          0.02136195056407541
+        ],
+        "rmse": 0.1462602223998395,
+        "rows": 120118,
+        "zeroBaselineMae": 0.08299075369750024,
+        "zeroBaselineRmse": 0.12644086789719053
+      }
+    },
+    "LSTM_H5": {
+      "dualAccepted": false,
+      "operation": {
+        "accepted": true,
+        "bearYears": [
+          {
+            "excessPositive": false,
+            "year": 2006
+          },
+          {
+            "excessPositive": false,
+            "year": 2008
+          },
+          {
+            "excessPositive": true,
+            "year": 2011
+          },
+          {
+            "excessPositive": true,
+            "year": 2012
+          },
+          {
+            "excessPositive": true,
+            "year": 2013
+          },
+          {
+            "excessPositive": true,
+            "year": 2014
+          },
+          {
+            "excessPositive": false,
+            "year": 2015
+          },
+          {
+            "excessPositive": true,
+            "year": 2016
+          },
+          {
+            "excessPositive": false,
+            "year": 2018
+          },
+          {
+            "excessPositive": false,
+            "year": 2019
+          },
+          {
+            "excessPositive": true,
+            "year": 2021
+          },
+          {
+            "excessPositive": true,
+            "year": 2022
+          }
+        ],
+        "benchmarkMaxDrawdown": -0.8245672290517213,
+        "benchmarkNetReturn": 0.1378629778919298,
+        "benchmarkSharpe": 0.13899919703135016,
+        "benchmarkSortino": 0.193963940634219,
+        "maxDrawdown": -0.7536872093864936,
+        "meanRankIc": 0.02195145551261157,
+        "meanTopBottomSpread": 0.000868380744463423,
+        "meanTurnover": 0.3988755984474348,
+        "netReturnAfter35Bps": 3.233492521664166,
+        "randomControlMaximumNetReturn": 2.1676050990458924,
+        "rebalanceCount": 1052,
+        "sharpe": 0.3860819563669773,
+        "sortino": 0.5756988910823231
+      },
+      "prediction": {
+        "abstentionRate": 0.10326159183587824,
+        "accepted": false,
+        "bias": -0.007400405864502802,
+        "coverage": 0.8967384081641218,
+        "eligibleRows": 142967,
+        "extremeAbsErrorP99": 0.2225715654366317,
+        "mae": 0.0453645432374951,
+        "maeDeltaBlock95": [
+          0.0031687445863876704,
+          0.0062704631178079435
+        ],
+        "rmse": 0.0652806476323281,
+        "rows": 128204,
+        "zeroBaselineMae": 0.04074466857459509,
+        "zeroBaselineRmse": 0.0589096747388121
+      }
+    }
+  },
+  "contractId": "p1-lstm-multihorizon-evaluation.v3",
+  "currentModelDisposition": "KEEP_CURRENT_50_50",
+  "inputSha256": "f3349e97e986736cb4e5b8ebbb1856e5e4b98af4e5f40b54ff6bd6358848b640",
+  "protocolSha256": "052cddebcb28a84e67a6f81699fd235947da5568e91258b6095e72a192da0bb5",
+  "providerCalls": 0,
+  "trialCount": 17
+}

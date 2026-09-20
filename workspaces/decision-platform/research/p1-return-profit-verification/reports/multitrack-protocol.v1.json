@@ -1,0 +1,63 @@
+{
+  "protocolId": "multitrack.v1",
+  "fixedAt": "2026-09-14",
+  "question": "보유 호라이즌이 다른 두 트랙(SHORT/CORE)을 한 자본에서 함께 굴리면 단독 트랙보다 나은가",
+  "whyThisIsNotObvious": [
+    "분산 이득은 호라이즌 라벨이 아니라 상관계수에서 나온다. 두 트랙이 같은 31종목 유니버스에 같은 규칙+LSTM 신호를 쓰면 상관이 높아 이득이 거의 없을 수 있다.",
+    "상관은 고변동 국면에서 수렴하는 경향이 있어, 분산이 가장 필요할 때 사라질 수 있다.",
+    "Jegadeesh & Titman(1993)의 중첩 포트폴리오는 중첩과 비중첩의 수익 차이가 유의하지 않으면서 분산 이득이 생긴다고 보고하지만, 그것은 서로 다른 형성시점의 같은 전략이다. 여기서는 청산 규칙까지 다른 두 트랙이므로 그대로 옮길 수 없다."
+  ],
+  "dataSources": {
+    "prices": "/tmp/p1exp/long_history.parquet (31종목 + 벤치마크 2, 일봉 OHLCV, auto_adjust=False)",
+    "scores": "/tmp/p1exp/predictions_arms.parquet (22 fold PIT OOS 예측)",
+    "join": "ticker + date"
+  },
+  "method": {
+    "positionStateMachine": "진입가/진입일/트레일링 상태를 갖는 포지션 객체. 캘린더 리밸런싱이 아니다.",
+    "exitPriority": "automation.py 와 동일: STOP_LOSS -> ATR_TRAILING -> MODEL_SELL -> TAKE_PROFIT -> MAX_HOLDING_SESSIONS",
+    "atrKernel": "app.p1_owner.automation_atr.wilder_atr / advance_trailing_stop 직접 호출 (프로덕션과 같은 커널)",
+    "sameSessionExitForbidden": true,
+    "costBps": 35.0,
+    "costAppliedTo": "진입과 청산 양쪽",
+    "slotFilling": "빈 슬롯을 expected_return 상위부터 채운다. 트랙별 슬롯은 분리한다."
+  },
+  "tracks": {
+    "CORE": {
+      "maxHoldingSessions": 60,
+      "stopLossBps": 500,
+      "takeProfitBps": 1000,
+      "atrPeriod": 22,
+      "atrMultiplierMilli": 3000
+    },
+    "SHORT": {
+      "maxHoldingSessions": 3,
+      "stopLossBps": 300,
+      "takeProfitBps": 600,
+      "atrPeriod": 22,
+      "atrMultiplierMilli": 2000
+    }
+  },
+  "arms": [
+    {"name": "CORE_ONLY", "coreSlots": 10, "shortSlots": 0},
+    {"name": "SHORT_ONLY", "coreSlots": 0, "shortSlots": 10},
+    {"name": "MIXED_7_3", "coreSlots": 7, "shortSlots": 3},
+    {"name": "MIXED_5_5", "coreSlots": 5, "shortSlots": 5}
+  ],
+  "trials": 4,
+  "trialsNote": "조합 목록을 실행 전에 확정한다. 사후에 늘리거나 줄이면 그것이 곧 p-hacking 이다. Deflated Sharpe 의 trials 에 이 수를 넣는다.",
+  "decisionRule": {
+    "adoptShortTrackIf": [
+      "혼합 arm 의 Sharpe 가 CORE_ONLY 와 SHORT_ONLY 각각보다 높을 것",
+      "그 혼합 arm 의 Deflated Sharpe 가 trials=4 보정 후 유의할 것",
+      "약세 연도(2008,2011,2015,2018,2020,2022) 평균에서 CORE_ONLY 에 열위가 아닐 것",
+      "35bps 를 진입·청산 양쪽에 물린 순수익 기준일 것"
+    ],
+    "ifAnyFails": "SHORT 트랙을 켜지 않는다. 임계값을 사후에 완화하지 않는다.",
+    "defaultOnFailure": "CORE 단독 유지"
+  },
+  "knownLimitations": [
+    "long_history.parquet 은 auto_adjust=False 원본 종가라 분할·배당이 가격 계열에 남아 있다. 손절과 트레일링은 가격 점프에 직접 반응하므로 수익률 기반 평가보다 이 왜곡에 민감하다. 액면분할일에 가짜 손절이 발생할 수 있다.",
+    "일봉 종가 체결을 가정한다. 실제 운용은 지정가이므로 미체결이 있다.",
+    "유니버스가 현재 31종목으로 고정돼 있어 생존편향이 남는다."
+  ]
+}

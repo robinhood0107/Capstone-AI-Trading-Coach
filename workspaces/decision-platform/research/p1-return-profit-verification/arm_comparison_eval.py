@@ -69,9 +69,13 @@ TOP_K = 5
 HOLDING_DAYS = (5, 20, 60)
 BEAR_YEARS = (2008, 2011, 2015, 2018, 2020, 2022)
 ARMS = {
-    "LSTM": "predLstmRet",
-    "RIDGE": "predRidgeRet",
-    "BLEND_50_50": "predBlendRet",
+    "LSTM": ("predLstmRet", "actualSimpleRet", 1),
+    "RIDGE": ("predRidgeRet", "actualSimpleRet", 1),
+    "BLEND_50_50": ("predBlendRet", "actualSimpleRet", 1),
+    # 지평을 맞춘 arm. 운용은 1일 예측만 읽고 5·20일을 버리는데, 보유기간은 5/20/60일이다.
+    # 그 불일치가 성과에 무엇을 하는지 같은 잣대로 잰다.
+    "RIDGE_H5": ("predRidgeRet5", "actualSimpleRet5", 5),
+    "RIDGE_H20": ("predRidgeRet20", "actualSimpleRet20", 20),
 }
 TRIALS = len(ARMS) * len(HOLDING_DAYS)
 
@@ -183,8 +187,11 @@ def simulate(predictions: pd.DataFrame, holding_days: int, *, score: str | None)
             if score is None:
                 chosen = rows["ticker"].tolist()
             else:
-                chosen = rows.nlargest(min(TOP_K, len(rows)), score)["ticker"].tolist()
-            new_weights = {ticker: 1.0 / len(chosen) for ticker in chosen} if chosen else {}
+                eligible = rows[np.isfinite(rows[score].astype(float))]
+                chosen = eligible.nlargest(min(TOP_K, len(eligible)), score)["ticker"].tolist()
+            # 거부된 슬롯을 남은 종목에 재분배하지 않는다. 빈 슬롯은 사전 정의한 현금 정책이다.
+            divisor = len(chosen) if score is None else TOP_K
+            new_weights = {ticker: 1.0 / divisor for ticker in chosen} if chosen else {}
             turnover = sum(
                 abs(new_weights.get(ticker, 0.0) - weights.get(ticker, 0.0))
                 for ticker in set(new_weights) | set(weights)
@@ -194,7 +201,11 @@ def simulate(predictions: pd.DataFrame, holding_days: int, *, score: str | None)
         else:
             cost = 0.0
         realized = dict(zip(rows["ticker"], rows["actualSimpleRet"].astype(float), strict=True))
-        gain = sum(weight * realized.get(ticker, 0.0) for ticker, weight in weights.items())
+        missing = [ticker for ticker in weights if ticker not in realized or not math.isfinite(realized[ticker])]
+        if missing:
+            # terminal return을 0이나 -100%로 채우지 않는다. 그 비교 자체를 판정 불가로 닫는다.
+            raise ValueError(f"MISSING_TERMINAL_RETURN:{','.join(sorted(missing))}")
+        gain = sum(weight * realized[ticker] for ticker, weight in weights.items())
         equity.append(equity[-1] * (1.0 + gain - cost))
 
     return pd.Series(equity[1:], index=pd.to_datetime(dates))
@@ -220,18 +231,69 @@ def describe(equity: pd.Series, label: str) -> dict[str, object]:
     }
 
 
-def _direction_accuracy(frame: pd.DataFrame, column: str) -> dict[str, object]:
-    same = np.sign(frame[column]) == np.sign(frame["actualSimpleRet"])
+def _prediction_accuracy(
+    all_rows: pd.DataFrame,
+    column: str,
+    target: str,
+    horizon: int,
+) -> dict[str, object]:
+    frame = all_rows[np.isfinite(all_rows[column]) & np.isfinite(all_rows[target])].copy()
+    same = np.sign(frame[column]) == np.sign(frame[target])
     count = int(len(frame))
     rate = float(same.mean())
     half_width = 1.959963985 * math.sqrt(0.25 / count) if count else float("nan")
     return {
+        "horizonSessions": horizon,
         "rows": count,
+        "eligibleRows": int(len(all_rows)),
+        "abstentionRows": int(len(all_rows) - count),
+        "coverage": round(count / len(all_rows), 6) if len(all_rows) else 0.0,
         "directionAccuracy": round(rate, 4),
         "coinFlip95": [round(0.5 - half_width, 4), round(0.5 + half_width, 4)],
         "beatsCoinFlip": bool(rate - half_width > 0.5),
-        "rmse": round(float(np.sqrt(((frame[column] - frame["actualSimpleRet"]) ** 2).mean())), 6),
-        "rmseNaiveZero": round(float(np.sqrt((frame["actualSimpleRet"] ** 2).mean())), 6),
+        "rmse": round(float(np.sqrt(((frame[column] - frame[target]) ** 2).mean())), 6),
+        "rmseNaiveZero": round(float(np.sqrt((frame[target] ** 2).mean())), 6),
+        "mae": round(float((frame[column] - frame[target]).abs().mean()), 6),
+        "maeNaiveZero": round(float(frame[target].abs().mean()), 6),
+        "bias": round(float((frame[column] - frame[target]).mean()), 6),
+        "extremeAbsErrorP99": round(float((frame[column] - frame[target]).abs().quantile(0.99)), 6),
+        "meanPredicted": round(float(frame[column].mean()), 6),
+        "meanActual": round(float(frame[target].mean()), 6),
+        "maeDeltaBlock95": _block_mae_delta_interval(frame, column, target),
+    }
+
+
+def _block_mae_delta_interval(frame: pd.DataFrame, column: str, target: str) -> list[float]:
+    blocks = (
+        frame.assign(delta=(frame[column] - frame[target]).abs() - frame[target].abs())
+        .groupby("testYear")["delta"]
+        .mean()
+        .to_numpy(dtype=float)
+    )
+    if len(blocks) < 2:
+        return [float("nan"), float("nan")]
+    generator = np.random.default_rng(20260908)
+    means = np.asarray(
+        [float(np.mean(generator.choice(blocks, size=len(blocks), replace=True))) for _ in range(2_000)]
+    )
+    return [round(float(np.quantile(means, 0.025)), 6), round(float(np.quantile(means, 0.975)), 6)]
+
+
+def _selection_coverage(frame: pd.DataFrame, score: str, holding: int) -> dict[str, object]:
+    dates = sorted(frame["date"].unique())
+    counts = [
+        int(np.isfinite(frame[frame["date"] == day][score].astype(float)).sum())
+        for index, day in enumerate(dates)
+        if index % holding == 0
+    ]
+    slots = len(counts) * TOP_K
+    used = sum(min(count, TOP_K) for count in counts)
+    return {
+        "rebalanceCount": len(counts),
+        "availableSlots": used,
+        "totalSlots": slots,
+        "coverage": round(used / slots, 6) if slots else 0.0,
+        "cashPolicy": "UNFILLED_TOP_K_SLOTS_STAY_CASH",
     }
 
 
@@ -270,7 +332,10 @@ def main() -> int:
     print(f"arm {len(ARMS)}개 x 보유기간 {len(HOLDING_DAYS)}개 = 시행 {TRIALS}회")
     print()
 
-    accuracy = {name: _direction_accuracy(predictions, column) for name, column in ARMS.items()}
+    accuracy = {
+        name: _prediction_accuracy(predictions, column, target, horizon)
+        for name, (column, target, horizon) in ARMS.items()
+    }
     print("=== 예측 자체 (방향 정확도·RMSE) ===")
     for name, value in accuracy.items():
         print(
@@ -280,15 +345,41 @@ def main() -> int:
         )
     print()
 
-    benchmark = simulate(predictions, 20, score=None)
+    # today's exact-31을 과거 전 구간에 있었다고 간주하지 않는다. historical available rows의
+    # 예측 오차는 위에서 그대로 보고하고, 운용 성과는 31종목과 1일 실현수익률이 모두 있는
+    # common-coverage 날짜로 따로 측정한다. historical universe 성과는 terminal return 결손으로
+    # 차단 상태를 남긴다.
+    per_date = predictions.groupby("date").agg(
+        symbols=("ticker", "nunique"),
+        realized=("actualSimpleRet", lambda values: int(np.isfinite(values.astype(float)).sum())),
+    )
+    complete_dates = per_date[(per_date["symbols"] == 31) & (per_date["realized"] == 31)].index
+    performance_predictions = predictions[predictions["date"].isin(complete_dates)].copy()
+    if performance_predictions["date"].nunique() < 252:
+        raise ValueError("EXACT31_COMMON_COVERAGE_TOO_SHORT")
+    historical_performance = {
+        "status": "BLOCKED_MISSING_TERMINAL_RETURN",
+        "reason": "MISSING_TERMINAL_RETURN",
+        "filledReturnPolicy": "NONE",
+    }
+    exact31_accuracy = {
+        name: _prediction_accuracy(performance_predictions, column, target, horizon)
+        for name, (column, target, horizon) in ARMS.items()
+    }
+
+    benchmark = simulate(performance_predictions, 20, score=None)
     rows: list[dict[str, object]] = [describe(benchmark, "PIT 균등가중 (벤치마크)")]
     equities: dict[str, pd.Series] = {"PIT 균등가중 (벤치마크)": benchmark}
-    for name, column in ARMS.items():
+    coverage: dict[str, object] = {}
+    for name, (column, _target, _horizon) in ARMS.items():
         for holding in HOLDING_DAYS:
             label = f"{name} 상위{TOP_K} / {holding}일"
-            equity = simulate(predictions, holding, score=column)
+            equity = simulate(performance_predictions, holding, score=column)
             equities[label] = equity
             rows.append(describe(equity, label))
+            coverage[f"{name}:{holding}"] = _selection_coverage(
+                performance_predictions, column, holding
+            )
 
     print("=== 성과 (walk-forward OOS, 왕복 35bps) ===")
     header = f"{'전략':28s} {'연수익':>8s} {'변동성':>8s} {'Sharpe':>8s} {'MDD':>8s}"
@@ -313,7 +404,7 @@ def main() -> int:
         f"=== 판정 (벤치마크 Sharpe {bench_sharpe:.2f}, DSR 시행 {TRIALS}회, "
         f"시행간 Sharpe 표준편차 {trial_sharpe_std:.3f}) ==="
     )
-    for name, column in ARMS.items():
+    for name, (column, _target, _horizon) in ARMS.items():
         best: dict[str, object] | None = None
         for holding in HOLDING_DAYS:
             label = f"{name} 상위{TOP_K} / {holding}일"
@@ -343,7 +434,7 @@ def main() -> int:
             if best is None or float(candidate["sharpe"]) > float(best["sharpe"]):
                 best = candidate
         assert best is not None
-        bear = _bear_year_comparison(predictions, column, int(best["holdingDays"]))
+        bear = _bear_year_comparison(performance_predictions, column, int(best["holdingDays"]))
         dsr = best["deflatedSharpe"]
         assert isinstance(dsr, dict)
         significant = bool(float(dsr["pValue"]) < 0.05)
@@ -390,7 +481,7 @@ def main() -> int:
         excesses: list[float] = []
         for seed in range(8):
             generator = np.random.default_rng(seed)
-            scored = predictions.copy()
+            scored = performance_predictions.copy()
             scored["predRandom"] = generator.standard_normal(len(scored))
             equity = simulate(scored, holding, score="predRandom")
             rets = simple_returns(equity.to_numpy())
@@ -469,7 +560,7 @@ def main() -> int:
     print(f"  미해소 교란: {unresolved}")
     print(f"  -> qualityStatus={quality}")
     report = {
-        "contractId": "p1-return-arm-comparison.v1",
+        "contractId": "p1-return-arm-comparison.v2",
         "predictionRows": int(len(predictions)),
         "symbols": int(predictions["ticker"].nunique()),
         "folds": int(predictions["testYear"].nunique()),
@@ -482,6 +573,16 @@ def main() -> int:
         "benchmarkSharpe": round(bench_sharpe, 4),
         "trialSharpeStdAnnual": round(trial_sharpe_std, 4),
         "predictionAccuracy": accuracy,
+        "predictionAccuracyExact31": exact31_accuracy,
+        "selectionCoverage": coverage,
+        "performanceUniverse": {
+            "status": "CURRENT_EXACT31_COMMON_COVERAGE",
+            "firstSession": str(min(complete_dates).date()),
+            "lastSession": str(max(complete_dates).date()),
+            "sessions": int(len(complete_dates)),
+            "symbols": 31,
+        },
+        "historicalUniversePerformance": historical_performance,
         "performance": rows,
         "verdicts": verdicts,
         "blendBeatsBothStandalone": blend_beats_both,
@@ -498,10 +599,24 @@ def main() -> int:
         "resolvedQualityStatus": quality,
     }
     REPORTS.mkdir(parents=True, exist_ok=True)
-    path = REPORTS / "arm-comparison.v1.json"
+    path = REPORTS / "arm-comparison.v2.json"
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    markdown = REPORTS / "arm-comparison.v2.md"
+    markdown.write_text(
+        "# Arm comparison v2\n\n"
+        f"- protocol: `evaluation-protocol.v2.json`\n"
+        f"- prediction rows: {report['predictionRows']:,}\n"
+        f"- performance universe: CURRENT_EXACT31_COMMON_COVERAGE "
+        f"({report['performanceUniverse']['firstSession']}~{report['performanceUniverse']['lastSession']}, "
+        f"{report['performanceUniverse']['sessions']} sessions)\n"
+        "- historical-universe performance: BLOCKED_MISSING_TERMINAL_RETURN; no 0/-100% fill\n"
+        f"- adopted arms: {', '.join(adopted_arms) if adopted_arms else 'none'}\n"
+        f"- quality status: {quality}\n",
+        encoding="utf-8",
+    )
     print()
     print(f"저장: {path}")
+    print(f"저장: {markdown}")
     print(f"채택 arm: {adopted_arms or '없음'} / qualityStatus={quality}")
     return 0
 

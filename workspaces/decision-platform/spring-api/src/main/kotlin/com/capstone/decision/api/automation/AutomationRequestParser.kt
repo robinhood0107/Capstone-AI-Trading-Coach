@@ -6,6 +6,7 @@ import com.capstone.decision.application.automation.ArmAutomationCommand
 import com.capstone.decision.application.automation.ArmAutomationV2Command
 import com.capstone.decision.application.automation.ArmAutomationV3Command
 import com.capstone.decision.application.automation.DisarmAutomationCommand
+import com.capstone.decision.application.automation.PutAutomationCapitalPolicyCommand
 import com.capstone.decision.application.automation.PutAutomationPolicyV2Command
 import com.capstone.decision.application.automation.PutAutomationPolicyV3Command
 import com.capstone.decision.application.security.IdempotencyKeyPolicy
@@ -101,6 +102,11 @@ class AutomationRequestParser {
         if (holding !in 0..1_260) invalid("/maxHoldingSessions")
         if (atrPeriod !in 5..100) invalid("/atrPeriod")
         if (atrMultiplier !in 1_000..10_000 || atrMultiplier % 100 != 0) invalid("/atrMultiplierMilli")
+        // 기존 클라이언트는 이 두 값을 보내지 않는다. 생략하면 제품 기본값을 쓴다.
+        val maxOpenPositions = optionalInt(root, "maxOpenPositions", 10)
+        val riskPerTradeBps = optionalInt(root, "riskPerTradeBps", 100)
+        if (maxOpenPositions !in 1..20) invalid("/maxOpenPositions")
+        if (riskPerTradeBps !in 10..300) invalid("/riskPerTradeBps")
         return PutAutomationPolicyV3Command(
             capitalLimitKrw = capital,
             stopLossBps = stopLoss,
@@ -109,6 +115,16 @@ class AutomationRequestParser {
             atrPeriod = atrPeriod,
             atrMultiplierMilli = atrMultiplier,
             modelSellEnabled = requiredBoolean(root, "modelSellEnabled"),
+            maxOpenPositions = maxOpenPositions,
+            riskPerTradeBps = riskPerTradeBps,
+            expectedVersion = requiredNonnegativeVersion(root, "expectedVersion"),
+        )
+    }
+
+    fun parsePutCapitalPolicy(body: String): PutAutomationCapitalPolicyCommand {
+        val root = parseObject(body, CAPITAL_POLICY_FIELDS)
+        return PutAutomationCapitalPolicyCommand(
+            reinvestRealizedPnl = requiredBoolean(root, "reinvestRealizedPnl"),
             expectedVersion = requiredNonnegativeVersion(root, "expectedVersion"),
         )
     }
@@ -210,6 +226,16 @@ class AutomationRequestParser {
         return value.intValue()
     }
 
+    /** 없으면 기본값을 쓰되, 있으면 형식을 그대로 검사한다. */
+    private fun optionalInt(
+        root: JsonNode,
+        field: String,
+        default: Int,
+    ): Int {
+        if (root.get(field) == null) return default
+        return requiredInt(root, field)
+    }
+
     private fun requiredLong(
         root: JsonNode,
         field: String,
@@ -262,8 +288,11 @@ class AutomationRequestParser {
                 "atrPeriod",
                 "atrMultiplierMilli",
                 "modelSellEnabled",
+                "maxOpenPositions",
+                "riskPerTradeBps",
                 "expectedVersion",
             )
+        val CAPITAL_POLICY_FIELDS = setOf("reinvestRealizedPnl", "expectedVersion")
         val ARM_V2_FIELDS = setOf("accountId", "policyId", "expectedPolicyVersion", "expectedControlVersion")
         val RUN_QUERY_FIELDS = setOf("size", "cursor")
         val BROKERAGE_MODES = setOf("KIS_MOCK", "INTERNAL_PAPER")

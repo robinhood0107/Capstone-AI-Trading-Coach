@@ -31,7 +31,7 @@ unfolded=$(printf '%s\n' "$body" | sed 's/\\n/\n/g')
 found=$(printf '%s\n%s\n' "$body" "$unfolded" | grep -in "$pattern" || true)
 
 if [ -n "$found" ]; then
-  echo "commit-msg: AI 기여 표시가 커밋 메시지에 있어 거부합니다 (AGENTS.md)." >&2
+  echo "commit-msg: 도구 기여 표시가 커밋 메시지에 있어 거부합니다 (AGENTS.md)." >&2
   echo "$found" >&2
   echo "" >&2
   echo "해당 줄을 지우고 다시 커밋하십시오." >&2

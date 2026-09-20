@@ -3,7 +3,7 @@
     "BLEND_50_50"
   ],
   "anyArmBeatsCoinFlip": false,
-  "benchmarkSharpe": 0.9487,
+  "benchmarkSharpe": 0.9429,
   "blendBeatsBothStandalone": true,
   "blendBeatsRandomControl": true,
   "combinationMethodInProduction": "EQUAL_WEIGHT_50_50",
@@ -18,134 +18,212 @@
   "lastTestYear": 2026,
   "performance": [
     {
-      "annualVol": 0.2296,
-      "cagr": 0.2109,
-      "cvar95": -0.034089,
-      "finalEquity": 58.5393,
+      "annualVol": 0.2292,
+      "cagr": 0.2089,
+      "cvar95": -0.033972,
+      "finalEquity": 55.7216,
       "label": "PIT 균등가중 (벤치마크)",
       "mdd": -0.4977,
-      "sessions": 5366,
-      "sharpe": 0.9487,
-      "sortino": 1.3659,
-      "var95": -0.020499,
-      "years": 21.3
+      "sessions": 5347,
+      "sharpe": 0.9429,
+      "sortino": 1.3577,
+      "var95": -0.020497,
+      "years": 21.2
     },
     {
-      "annualVol": 0.2964,
-      "cagr": 0.217,
-      "cvar95": -0.041474,
-      "finalEquity": 64.8276,
+      "annualVol": 0.2946,
+      "cagr": 0.2111,
+      "cvar95": -0.041142,
+      "finalEquity": 57.635,
       "label": "LSTM 상위5 / 5일",
       "mdd": -0.5823,
-      "sessions": 5366,
-      "sharpe": 0.8102,
-      "sortino": 1.2104,
-      "var95": -0.025555,
-      "years": 21.3
+      "sessions": 5347,
+      "sharpe": 0.797,
+      "sortino": 1.1897,
+      "var95": -0.025424,
+      "years": 21.2
     },
     {
-      "annualVol": 0.2997,
-      "cagr": 0.1953,
-      "cvar95": -0.043059,
-      "finalEquity": 44.2598,
+      "annualVol": 0.2969,
+      "cagr": 0.1882,
+      "cvar95": -0.042564,
+      "finalEquity": 38.4316,
       "label": "LSTM 상위5 / 20일",
       "mdd": -0.6674,
-      "sessions": 5366,
-      "sharpe": 0.7452,
-      "sortino": 1.0908,
-      "var95": -0.025367,
-      "years": 21.3
+      "sessions": 5347,
+      "sharpe": 0.7291,
+      "sortino": 1.0665,
+      "var95": -0.025324,
+      "years": 21.2
     },
     {
-      "annualVol": 0.2921,
-      "cagr": 0.2027,
-      "cvar95": -0.041333,
-      "finalEquity": 50.4018,
+      "annualVol": 0.2892,
+      "cagr": 0.1944,
+      "cvar95": -0.040837,
+      "finalEquity": 42.9294,
       "label": "LSTM 상위5 / 60일",
       "mdd": -0.5496,
-      "sessions": 5366,
-      "sharpe": 0.7776,
-      "sortino": 1.1509,
-      "var95": -0.025083,
-      "years": 21.3
-    },
-    {
-      "annualVol": 0.3033,
-      "cagr": 0.2615,
-      "cvar95": -0.042426,
-      "finalEquity": 140.0636,
-      "label": "RIDGE 상위5 / 5일",
-      "mdd": -0.5275,
-      "sessions": 5366,
-      "sharpe": 0.9173,
-      "sortino": 1.377,
-      "var95": -0.026281,
-      "years": 21.3
+      "sessions": 5347,
+      "sharpe": 0.7586,
+      "sortino": 1.122,
+      "var95": -0.024927,
+      "years": 21.2
     },
     {
       "annualVol": 0.3019,
-      "cagr": 0.2615,
-      "cvar95": -0.042646,
-      "finalEquity": 140.2445,
+      "cagr": 0.2552,
+      "cvar95": -0.042232,
+      "finalEquity": 123.8641,
+      "label": "RIDGE 상위5 / 5일",
+      "mdd": -0.5275,
+      "sessions": 5347,
+      "sharpe": 0.9037,
+      "sortino": 1.3551,
+      "var95": -0.026059,
+      "years": 21.2
+    },
+    {
+      "annualVol": 0.3009,
+      "cagr": 0.2576,
+      "cvar95": -0.042452,
+      "finalEquity": 129.0249,
       "label": "RIDGE 상위5 / 20일",
       "mdd": -0.625,
-      "sessions": 5366,
-      "sharpe": 0.9204,
-      "sortino": 1.3729,
-      "var95": -0.02637,
-      "years": 21.3
+      "sessions": 5347,
+      "sharpe": 0.912,
+      "sortino": 1.3604,
+      "var95": -0.026335,
+      "years": 21.2
     },
     {
-      "annualVol": 0.2938,
-      "cagr": 0.2202,
-      "cvar95": -0.041666,
-      "finalEquity": 69.0663,
+      "annualVol": 0.293,
+      "cagr": 0.2173,
+      "cvar95": -0.041474,
+      "finalEquity": 64.6241,
       "label": "RIDGE 상위5 / 60일",
       "mdd": -0.5572,
-      "sessions": 5366,
-      "sharpe": 0.8243,
-      "sortino": 1.2239,
-      "var95": -0.026155,
-      "years": 21.3
+      "sessions": 5347,
+      "sharpe": 0.8174,
+      "sortino": 1.2144,
+      "var95": -0.02612,
+      "years": 21.2
     },
     {
-      "annualVol": 0.2972,
-      "cagr": 0.2993,
-      "cvar95": -0.041178,
-      "finalEquity": 261.9592,
+      "annualVol": 0.2955,
+      "cagr": 0.2918,
+      "cvar95": -0.040889,
+      "finalEquity": 227.1199,
       "label": "BLEND_50_50 상위5 / 5일",
       "mdd": -0.5432,
-      "sessions": 5366,
-      "sharpe": 1.0294,
-      "sortino": 1.5682,
-      "var95": -0.024531,
-      "years": 21.3
+      "sessions": 5347,
+      "sharpe": 1.0137,
+      "sortino": 1.5432,
+      "var95": -0.024471,
+      "years": 21.2
     },
     {
-      "annualVol": 0.3017,
-      "cagr": 0.2595,
-      "cvar95": -0.042425,
-      "finalEquity": 135.1425,
+      "annualVol": 0.3009,
+      "cagr": 0.2542,
+      "cvar95": -0.04226,
+      "finalEquity": 121.3114,
       "label": "BLEND_50_50 상위5 / 20일",
       "mdd": -0.634,
-      "sessions": 5366,
-      "sharpe": 0.9153,
-      "sortino": 1.368,
-      "var95": -0.025324,
-      "years": 21.3
+      "sessions": 5347,
+      "sharpe": 0.9028,
+      "sortino": 1.3487,
+      "var95": -0.025317,
+      "years": 21.2
     },
     {
-      "annualVol": 0.2924,
-      "cagr": 0.2259,
-      "cvar95": -0.040598,
-      "finalEquity": 75.8936,
+      "annualVol": 0.2916,
+      "cagr": 0.2221,
+      "cvar95": -0.040395,
+      "finalEquity": 70.0292,
       "label": "BLEND_50_50 상위5 / 60일",
       "mdd": -0.6099,
-      "sessions": 5366,
-      "sharpe": 0.8423,
-      "sortino": 1.2607,
-      "var95": -0.025231,
-      "years": 21.3
+      "sessions": 5347,
+      "sharpe": 0.8333,
+      "sortino": 1.2477,
+      "var95": -0.025217,
+      "years": 21.2
+    },
+    {
+      "annualVol": 0.2962,
+      "cagr": 0.2034,
+      "cvar95": -0.041821,
+      "finalEquity": 50.6547,
+      "label": "RIDGE_H5 상위5 / 5일",
+      "mdd": -0.5835,
+      "sessions": 5347,
+      "sharpe": 0.7733,
+      "sortino": 1.139,
+      "var95": -0.02523,
+      "years": 21.2
+    },
+    {
+      "annualVol": 0.2923,
+      "cagr": 0.2443,
+      "cvar95": -0.041751,
+      "finalEquity": 102.8596,
+      "label": "RIDGE_H5 상위5 / 20일",
+      "mdd": -0.582,
+      "sessions": 5347,
+      "sharpe": 0.8941,
+      "sortino": 1.3133,
+      "var95": -0.025483,
+      "years": 21.2
+    },
+    {
+      "annualVol": 0.2927,
+      "cagr": 0.2261,
+      "cvar95": -0.041799,
+      "finalEquity": 75.2512,
+      "label": "RIDGE_H5 상위5 / 60일",
+      "mdd": -0.5963,
+      "sessions": 5347,
+      "sharpe": 0.8427,
+      "sortino": 1.2405,
+      "var95": -0.025169,
+      "years": 21.2
+    },
+    {
+      "annualVol": 0.2989,
+      "cagr": 0.1811,
+      "cvar95": -0.04279,
+      "finalEquity": 33.4528,
+      "label": "RIDGE_H20 상위5 / 5일",
+      "mdd": -0.6819,
+      "sessions": 5347,
+      "sharpe": 0.7065,
+      "sortino": 1.0328,
+      "var95": -0.026039,
+      "years": 21.2
+    },
+    {
+      "annualVol": 0.2982,
+      "cagr": 0.2514,
+      "cvar95": -0.042532,
+      "finalEquity": 114.1135,
+      "label": "RIDGE_H20 상위5 / 20일",
+      "mdd": -0.5778,
+      "sessions": 5347,
+      "sharpe": 0.9015,
+      "sortino": 1.3236,
+      "var95": -0.026161,
+      "years": 21.2
+    },
+    {
+      "annualVol": 0.2948,
+      "cagr": 0.257,
+      "cvar95": -0.042046,
+      "finalEquity": 125.4451,
+      "label": "RIDGE_H20 상위5 / 60일",
+      "mdd": -0.559,
+      "sessions": 5347,
+      "sharpe": 0.9237,
+      "sortino": 1.3608,
+      "var95": -0.025419,
+      "years": 21.2
     }
   ],
   "predictionAccuracy": {
@@ -155,10 +233,10 @@
         0.4973,
         0.5027
       ],
-      "directionAccuracy": 0.4824,
-      "rmse": 0.027071,
-      "rmseNaiveZero": 0.026407,
-      "rows": 130657
+      "directionAccuracy": 0.4821,
+      "rmse": 0.026952,
+      "rmseNaiveZero": 0.026331,
+      "rows": 129943
     },
     "LSTM": {
       "beatsCoinFlip": false,
@@ -166,10 +244,10 @@
         0.4973,
         0.5027
       ],
-      "directionAccuracy": 0.4785,
-      "rmse": 0.027506,
-      "rmseNaiveZero": 0.026407,
-      "rows": 130657
+      "directionAccuracy": 0.4782,
+      "rmse": 0.02742,
+      "rmseNaiveZero": 0.026331,
+      "rows": 129943
     },
     "RIDGE": {
       "beatsCoinFlip": false,
@@ -177,42 +255,64 @@
         0.4973,
         0.5027
       ],
-      "directionAccuracy": 0.484,
-      "rmse": 0.027155,
-      "rmseNaiveZero": 0.026407,
-      "rows": 130657
+      "directionAccuracy": 0.4837,
+      "rmse": 0.026979,
+      "rmseNaiveZero": 0.026331,
+      "rows": 129943
+    },
+    "RIDGE_H20": {
+      "beatsCoinFlip": false,
+      "coinFlip95": [
+        0.4973,
+        0.5027
+      ],
+      "directionAccuracy": 0.472,
+      "rmse": 0.092641,
+      "rmseNaiveZero": 0.026331,
+      "rows": 129943
+    },
+    "RIDGE_H5": {
+      "beatsCoinFlip": false,
+      "coinFlip95": [
+        0.4973,
+        0.5027
+      ],
+      "directionAccuracy": 0.4772,
+      "rmse": 0.03708,
+      "rmseNaiveZero": 0.026331,
+      "rows": 129943
     }
   },
-  "predictionRows": 130657,
+  "predictionRows": 129943,
   "randomRankingControl": {
     "20": {
-      "annualExcessPctMax": -0.4,
-      "annualExcessPctMean": -4.96,
+      "annualExcessPctMax": 7.23,
+      "annualExcessPctMean": -2.77,
       "seeds": 8,
-      "sharpeMax": 0.7928,
-      "sharpeMean": 0.6298
+      "sharpeMax": 1.0272,
+      "sharpeMean": 0.6973
     },
     "5": {
-      "annualExcessPctMax": -8.57,
-      "annualExcessPctMean": -14.54,
+      "annualExcessPctMax": -4.09,
+      "annualExcessPctMean": -12.05,
       "seeds": 8,
-      "sharpeMax": 0.4878,
-      "sharpeMean": 0.2685
+      "sharpeMax": 0.6454,
+      "sharpeMean": 0.3545
     },
     "60": {
-      "annualExcessPctMax": 1.63,
-      "annualExcessPctMean": -0.71,
+      "annualExcessPctMax": 3.13,
+      "annualExcessPctMean": -0.48,
       "seeds": 8,
-      "sharpeMax": 0.8703,
-      "sharpeMean": 0.7837
+      "sharpeMax": 0.9255,
+      "sharpeMean": 0.7879
     }
   },
   "resolvedQualityStatus": "BELOW_BASELINE",
   "roundTripCostBps": 35.0,
   "symbols": 31,
   "topK": 5,
-  "trialSharpeStdAnnual": 0.0884,
-  "trials": 9,
+  "trialSharpeStdAnnual": 0.0845,
+  "trials": 15,
   "unresolvedConfound": "SURVIVORSHIP_ATTRIBUTION_UNRESOLVED",
   "unresolvedConfoundNote": "exact-31 은 오늘의 명부다. 집중 순위 전략의 초과수익을 실력과 생존편향으로 나눌 수 없다. 해소 조건은 편출·상장폐지 종목을 포함한 시점별 명부로 재측정.",
   "verdicts": {
@@ -226,7 +326,7 @@
           },
           "2011": {
             "armReturnPct": -5.53,
-            "benchmarkReturnPct": -12.09
+            "benchmarkReturnPct": -12.1
           },
           "2015": {
             "armReturnPct": 3.84,
@@ -249,26 +349,26 @@
         "yearsCompared": 6
       },
       "best": {
-        "annualExcessPct": 8.8,
+        "annualExcessPct": 8.35,
         "beatsBenchmarkSharpe": true,
         "deflatedSharpe": {
-          "deflatedSharpe": 4.1678,
-          "expectedMaxSharpeAnnual": 0.1344,
+          "deflatedSharpe": 4.0174,
+          "expectedMaxSharpeAnnual": 0.1496,
           "legacyApproximation": {
-            "deflatedSharpe": -107.635,
-            "expectedMaxSharpeAnnual": 24.1416,
+            "deflatedSharpe": -125.9652,
+            "expectedMaxSharpeAnnual": 28.1087,
             "pValue": 1.0
           },
-          "observedSharpe": 1.0294,
-          "pValue": 1.5e-05,
-          "trialMultiplier": 1.5208,
-          "trialSharpeStdAnnual": 0.0884
+          "observedSharpe": 1.0137,
+          "pValue": 2.9e-05,
+          "trialMultiplier": 1.7707,
+          "trialSharpeStdAnnual": 0.0845
         },
         "holdingDays": 5,
-        "informationRatio": 0.5332,
-        "sharpe": 1.0294,
-        "tStat": 2.46,
-        "trackingErrorPct": 16.51
+        "informationRatio": 0.5095,
+        "sharpe": 1.0137,
+        "tStat": 2.35,
+        "trackingErrorPct": 16.39
       },
       "criteria": {
         "beatsBenchmarkSharpe": true,
@@ -286,7 +386,7 @@
           },
           "2011": {
             "armReturnPct": -5.55,
-            "benchmarkReturnPct": -12.09
+            "benchmarkReturnPct": -12.1
           },
           "2015": {
             "armReturnPct": -3.47,
@@ -309,26 +409,26 @@
         "yearsCompared": 6
       },
       "best": {
-        "annualExcessPct": 2.23,
+        "annualExcessPct": 1.87,
         "beatsBenchmarkSharpe": false,
         "deflatedSharpe": {
-          "deflatedSharpe": 3.1411,
-          "expectedMaxSharpeAnnual": 0.1344,
+          "deflatedSharpe": 3.0042,
+          "expectedMaxSharpeAnnual": 0.1496,
           "legacyApproximation": {
-            "deflatedSharpe": -108.4497,
-            "expectedMaxSharpeAnnual": 24.1416,
+            "deflatedSharpe": -126.7315,
+            "expectedMaxSharpeAnnual": 28.1087,
             "pValue": 1.0
           },
-          "observedSharpe": 0.8102,
-          "pValue": 0.000842,
-          "trialMultiplier": 1.5208,
-          "trialSharpeStdAnnual": 0.0884
+          "observedSharpe": 0.797,
+          "pValue": 0.001331,
+          "trialMultiplier": 1.7707,
+          "trialSharpeStdAnnual": 0.0845
         },
         "holdingDays": 5,
-        "informationRatio": 0.1373,
-        "sharpe": 0.8102,
-        "tStat": 0.63,
-        "trackingErrorPct": 16.25
+        "informationRatio": 0.1159,
+        "sharpe": 0.797,
+        "tStat": 0.53,
+        "trackingErrorPct": 16.09
       },
       "criteria": {
         "beatsBenchmarkSharpe": false,
@@ -346,7 +446,7 @@
           },
           "2011": {
             "armReturnPct": 3.43,
-            "benchmarkReturnPct": -12.09
+            "benchmarkReturnPct": -12.1
           },
           "2015": {
             "armReturnPct": -1.3,
@@ -369,26 +469,146 @@
         "yearsCompared": 6
       },
       "best": {
-        "annualExcessPct": 6.0,
+        "annualExcessPct": 5.84,
         "beatsBenchmarkSharpe": false,
         "deflatedSharpe": {
-          "deflatedSharpe": 3.6419,
-          "expectedMaxSharpeAnnual": 0.1344,
+          "deflatedSharpe": 3.5271,
+          "expectedMaxSharpeAnnual": 0.1496,
           "legacyApproximation": {
-            "deflatedSharpe": -107.6001,
-            "expectedMaxSharpeAnnual": 24.1416,
+            "deflatedSharpe": -125.8147,
+            "expectedMaxSharpeAnnual": 28.1087,
             "pValue": 1.0
           },
-          "observedSharpe": 0.9204,
-          "pValue": 0.000135,
-          "trialMultiplier": 1.5208,
-          "trialSharpeStdAnnual": 0.0884
+          "observedSharpe": 0.912,
+          "pValue": 0.00021,
+          "trialMultiplier": 1.7707,
+          "trialSharpeStdAnnual": 0.0845
         },
         "holdingDays": 20,
-        "informationRatio": 0.36,
-        "sharpe": 0.9204,
-        "tStat": 1.66,
-        "trackingErrorPct": 16.67
+        "informationRatio": 0.3509,
+        "sharpe": 0.912,
+        "tStat": 1.62,
+        "trackingErrorPct": 16.63
+      },
+      "criteria": {
+        "beatsBenchmarkSharpe": false,
+        "betterInBearYears": true,
+        "significantAfterDeflation": true
+      }
+    },
+    "RIDGE_H20": {
+      "adopted": false,
+      "bearYears": {
+        "detail": {
+          "2008": {
+            "armReturnPct": -46.87,
+            "benchmarkReturnPct": -24.38
+          },
+          "2011": {
+            "armReturnPct": 5.37,
+            "benchmarkReturnPct": -12.1
+          },
+          "2015": {
+            "armReturnPct": -3.98,
+            "benchmarkReturnPct": -5.13
+          },
+          "2018": {
+            "armReturnPct": -9.72,
+            "benchmarkReturnPct": -13.35
+          },
+          "2020": {
+            "armReturnPct": 36.06,
+            "benchmarkReturnPct": 45.05
+          },
+          "2022": {
+            "armReturnPct": 5.94,
+            "benchmarkReturnPct": -8.9
+          }
+        },
+        "yearsBetter": 4,
+        "yearsCompared": 6
+      },
+      "best": {
+        "annualExcessPct": 5.62,
+        "beatsBenchmarkSharpe": false,
+        "deflatedSharpe": {
+          "deflatedSharpe": 3.558,
+          "expectedMaxSharpeAnnual": 0.1496,
+          "legacyApproximation": {
+            "deflatedSharpe": -124.9443,
+            "expectedMaxSharpeAnnual": 28.1087,
+            "pValue": 1.0
+          },
+          "observedSharpe": 0.9237,
+          "pValue": 0.000187,
+          "trialMultiplier": 1.7707,
+          "trialSharpeStdAnnual": 0.0845
+        },
+        "holdingDays": 60,
+        "informationRatio": 0.351,
+        "sharpe": 0.9237,
+        "tStat": 1.62,
+        "trackingErrorPct": 16.01
+      },
+      "criteria": {
+        "beatsBenchmarkSharpe": false,
+        "betterInBearYears": true,
+        "significantAfterDeflation": true
+      }
+    },
+    "RIDGE_H5": {
+      "adopted": false,
+      "bearYears": {
+        "detail": {
+          "2008": {
+            "armReturnPct": -2.44,
+            "benchmarkReturnPct": -24.38
+          },
+          "2011": {
+            "armReturnPct": -7.12,
+            "benchmarkReturnPct": -12.1
+          },
+          "2015": {
+            "armReturnPct": -17.89,
+            "benchmarkReturnPct": -5.13
+          },
+          "2018": {
+            "armReturnPct": -7.11,
+            "benchmarkReturnPct": -13.35
+          },
+          "2020": {
+            "armReturnPct": 25.73,
+            "benchmarkReturnPct": 45.05
+          },
+          "2022": {
+            "armReturnPct": 7.69,
+            "benchmarkReturnPct": -8.9
+          }
+        },
+        "yearsBetter": 4,
+        "yearsCompared": 6
+      },
+      "best": {
+        "annualExcessPct": 4.53,
+        "beatsBenchmarkSharpe": false,
+        "deflatedSharpe": {
+          "deflatedSharpe": 3.4179,
+          "expectedMaxSharpeAnnual": 0.1496,
+          "legacyApproximation": {
+            "deflatedSharpe": -124.9334,
+            "expectedMaxSharpeAnnual": 28.1087,
+            "pValue": 1.0
+          },
+          "observedSharpe": 0.8941,
+          "pValue": 0.000315,
+          "trialMultiplier": 1.7707,
+          "trialSharpeStdAnnual": 0.0845
+        },
+        "holdingDays": 20,
+        "informationRatio": 0.2894,
+        "sharpe": 0.8941,
+        "tStat": 1.33,
+        "trackingErrorPct": 15.64
       },
       "criteria": {
         "beatsBenchmarkSharpe": false,

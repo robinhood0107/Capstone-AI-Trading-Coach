@@ -37,6 +37,8 @@ class DecisionService(
         actor: DecisionActor,
         rawIdempotencyKey: String,
         command: EvaluateOrderCommand,
+        automationRunId: String? = null,
+        automationClaimHash: String? = null,
     ): DecisionProjection {
         val startedAtNanos = System.nanoTime()
         var metricMode = DecisionMetricMode.UNPINNED
@@ -44,6 +46,11 @@ class DecisionService(
         val evaluationAsOf = clock.instant()
         val identity = idempotencyHasher.identity(actor.userId, rawIdempotencyKey, command)
         try {
+            val automationPinned =
+                automationRunId?.let {
+                    principleSnapshotPort.findAutomationOwned(actor.userId, command.principleId, it, requireNotNull(automationClaimHash))
+                        ?: throw DecisionNotFoundException()
+                }
             persistencePort
                 .findIdempotencyResult(
                     identity.scopeHash,
@@ -53,13 +60,17 @@ class DecisionService(
                     if (stored.requestHash != identity.requestHash) {
                         throw DecisionIdempotencyConflictException()
                     }
+                    val replay = projectionFactory.fromCanonicalJson(stored.projectionCanonicalJson)
+                    if (automationPinned != null && replay.principleVersionId != automationPinned.principleVersionId.value) {
+                        throw DecisionIdempotencyConflictException()
+                    }
                     return recordTimed(
-                        projectionFactory.fromCanonicalJson(stored.projectionCanonicalJson),
+                        replay,
                         startedAtNanos,
                     )
                 }
             val pinned =
-                principleSnapshotPort.findActiveOwned(actor.userId, command.principleId)
+                automationPinned ?: principleSnapshotPort.findActiveOwned(actor.userId, command.principleId)
                     ?: throw DecisionNotFoundException()
             metricMode = DecisionMetricMode.valueOf(pinned.mode.name)
             val claim =

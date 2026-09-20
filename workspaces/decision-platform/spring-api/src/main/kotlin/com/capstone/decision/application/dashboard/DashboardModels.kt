@@ -60,6 +60,11 @@ interface DashboardViewPort {
         actorUserId: String,
         securityVersion: Long,
     ): List<ArtifactIngestStatusView>?
+
+    fun performanceReport(
+        actorUserId: String,
+        securityVersion: Long,
+    ): JsonNode?
 }
 
 class DashboardViewService(
@@ -104,6 +109,11 @@ class DashboardViewService(
         actorUserId: String,
         securityVersion: Long,
     ): List<ArtifactIngestStatusView>? = port.artifactStatuses(actorUserId, securityVersion)
+
+    fun performanceReport(
+        actorUserId: String,
+        securityVersion: Long,
+    ): JsonNode? = port.performanceReport(actorUserId, securityVersion)
 }
 
 data class LatestArtifactRunView(

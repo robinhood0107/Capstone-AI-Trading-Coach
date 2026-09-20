@@ -74,7 +74,9 @@ class AutomationRuntimeBridgeController(
                             decisionService.evaluate(
                                 actor = DecisionActor(command.userId, actor.role.name, requestId),
                                 rawIdempotencyKey = requireNotNull(command.idempotencyKey),
-                                command = decisionParser.parseEvaluate(command.payload.toString()),
+                                command = decisionParser.parseEvaluate(command.payload.path("evaluation").toString()),
+                                automationRunId = command.text("runId"),
+                                automationClaimHash = command.text("claimTokenHash"),
                             )
                         "BALANCE" ->
                             brokerageService.getOwnedBalance(

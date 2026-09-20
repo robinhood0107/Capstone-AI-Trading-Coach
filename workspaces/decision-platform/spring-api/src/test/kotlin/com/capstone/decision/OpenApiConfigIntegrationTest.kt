@@ -612,7 +612,7 @@ class OpenApiConfigIntegrationTest(
     }
 
     @Test
-    fun `openapi exposes exactly the seven public RAG v2 routes`() {
+    fun `openapi exposes the public RAG v2 routes including world news`() {
         val document =
             objectMapper.readTree(
                 mockMvc
@@ -624,7 +624,7 @@ class OpenApiConfigIntegrationTest(
                     .contentAsByteArray,
             )
 
-        // 대시보드 RAG 화면이 쓰는 일곱 개만 공개한다.
+        // 대시보드 RAG 화면의 기존 route와 additive world-news만 공개한다.
         val exposed =
             document
                 .at("/paths")
@@ -640,6 +640,7 @@ class OpenApiConfigIntegrationTest(
                 "/api/v2/rag/corpus-status",
                 "/api/v2/rag/history",
                 "/api/v2/rag/history/{answerId}",
+                "/api/v2/rag/world-news",
             ),
             exposed,
         )

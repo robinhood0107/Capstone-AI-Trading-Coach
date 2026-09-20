@@ -1,0 +1,46 @@
+{
+  "baselineSnapshot": {
+    "armComparisonSha256": "f5b4db16c5d591a4c7460617d3c0e34de4704c98542fa2cba42b854ec5231d6b",
+    "benchmarkSharpe": 0.9429,
+    "blend50Rmse": 0.026952,
+    "blend50RmseNaiveZero": 0.026331,
+    "qualityStatus": "BELOW_BASELINE"
+  },
+  "candidateSet": [
+    "LSTM_H1",
+    "RIDGE_H1",
+    "BLEND_50_50_H1",
+    "RIDGE_H5",
+    "RIDGE_H20"
+  ],
+  "contractId": "p1-return-evaluation-protocol.v2",
+  "costBpsRoundTrip": 35,
+  "folds": "existing-22-fold-walk-forward",
+  "holdingSessions": [
+    5,
+    20,
+    60
+  ],
+  "multipleTesting": {
+    "method": "deflated-sharpe-plus-familywise-review",
+    "trialCount": 15
+  },
+  "performanceAcceptance": {
+    "bearRegimeMajorityRequired": true,
+    "maxMddDegradationAbsolute": 0.05,
+    "mustBeatRandomControlMax": true,
+    "netReturnAfterCostAboveBenchmark": true,
+    "sharpeAboveBenchmark": true,
+    "sortinoNotBelowBenchmark": true
+  },
+  "predictionAcceptance": {
+    "abstentionMaximum": 0.05,
+    "blockMaeDelta95UpperBelowZero": true,
+    "coverageMinimum": 0.95,
+    "maeBelowNaiveZero": true,
+    "rmseBelowNaiveZero": true
+  },
+  "registeredAt": "2026-09-08T16:45:00+09:00",
+  "testPeriod": "existing OOS folds only; no new provider collection",
+  "trialPolicy": "No threshold changes after candidate execution"
+}

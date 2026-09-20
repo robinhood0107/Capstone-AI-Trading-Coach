@@ -86,6 +86,127 @@ class RagV2ApiIntegrationTest(
     }
 
     @Test
+    fun `world news lookup exposes missing publication and collection failure without an envelope`() {
+        val token = login("demo-user", userPassword(), "req_world_news_login")
+        ownerJdbc.update(
+            """
+            insert into world_news_documents_v2(
+              document_id,source_id,provider,canonical_url,canonical_url_sha256
+            ) values (
+              'news_doc_11111111111111111111111111111111','src_gdelt_world_news','GDELT_GQG',
+              'https://example.com/world/supply','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+            )
+            """.trimIndent(),
+        )
+        ownerJdbc.update(
+            """
+            insert into world_news_document_versions_v2(
+              document_version_id,document_id,identity_status,title,bounded_quote,canonical_content,language,
+              published_at,publication_status,first_seen_at,available_at,rights_profile,external_llm_allowed,
+              lookup_allowed,rag_retrieval_allowed,prompt_untrusted,collection_status,content_sha256,version_sha256
+            ) values (
+              'news_ver_22222222222222222222222222222222','news_doc_11111111111111111111111111111111',
+              'VERIFIED','세계 공급망','공급망 병목이 완화되고 있다.',E'세계 공급망\n공급망 병목이 완화되고 있다.','ko',
+              null,'MISSING','2026-09-08T03:01:00Z','2026-09-08T03:02:00Z','GDELT_METADATA_QUOTE',false,
+              true,true,true,'COMPLETE','bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+              '2222222222222222222222222222222222222222222222222222222222222222'
+            )
+            """.trimIndent(),
+        )
+        ownerJdbc.update(
+            """
+            insert into world_news_observations_v2(
+              document_version_id,provider_document_id,identity_status,provider_observed_at
+            ) values ('news_ver_22222222222222222222222222222222',null,'VERIFIED','2026-09-08T03:00:00Z')
+            """.trimIndent(),
+        )
+        ownerJdbc.update(
+            """
+            insert into world_news_collection_runs_v2(
+              collection_id,provider,collection_status,started_at,completed_at,item_count,error_code
+            ) values (
+              'news_col_33333333333333333333333333333333','GDELT_GQG','COLLECTION_FAILED',
+              '2026-09-08T03:10:00Z','2026-09-08T03:10:01Z',0,'PROVIDER_UNAVAILABLE'
+            )
+            """.trimIndent(),
+        )
+
+        mockMvc
+            .get("/api/v2/rag/world-news") {
+                bearer(token)
+                header("X-Request-Id", "req_world_news_lookup")
+                param("q", "공급망")
+                param("limit", "10")
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.items.length()") { value(1) }
+                jsonPath("$.items[0].publishedAt") { doesNotExist() }
+                jsonPath("$.items[0].publicationStatus") { value("MISSING") }
+                jsonPath("$.items[0].firstSeenAt") { value("2026-09-08T03:01:00Z") }
+                jsonPath("$.items[0].providerObservedAt") { value("2026-09-08T03:00:00Z") }
+                jsonPath("$.items[0].promptUntrusted") { value(true) }
+                jsonPath("$.collections[0].collectionStatus") { value("COLLECTION_FAILED") }
+                jsonPath("$.collections[0].errorCode") { value("PROVIDER_UNAVAILABLE") }
+                jsonPath("$.decisionAuthority") { value("NONE") }
+                jsonPath("$.success") { doesNotExist() }
+            }
+    }
+
+    @Test
+    fun `latest performance report keeps three result kinds and exposes last failure separately`() {
+        val token = login("demo-user", userPassword(), "req_performance_report_login")
+        ownerJdbc.update(
+            """
+            insert into owner_performance_report_generations(
+              report_id,owner_user_id,report_version,source_generation_sha256,source_start,source_end,
+              model_sha256,principle_version_id,principle_version,cost_bps,status,report_json,
+              report_sha256,failure_code,generated_at
+            ) values (
+              'perf_report_111111111111111111111111','usr_demo_user',1,repeat('a',64),'2026-08-18','2026-09-08',
+              repeat('b',64),'pvr_cccccccccccccccccccccccccccccccc',3,35,'SUCCESS',
+              '{"contractId":"owner-performance-report.v1","sourceStart":"2026-08-18","sourceEnd":"2026-09-08",
+                "sourceGenerationSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "modelSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "principleVersionId":"pvr_cccccccccccccccccccccccccccccccc","principleVersion":3,"costBps":35,
+                "modelAdoption":{"state":"RESEARCH_EVALUATED","candidateId":null,"currentModel":"EQUAL_WEIGHT_50_50",
+                "predictionAccepted":false,"performanceAccepted":false,"automaticActivation":false,"blockers":["NO_DUAL_ACCEPTANCE_CANDIDATE"]},
+                "sections":{"recalculatedBacktest":{"status":"RECALCULATED","baselineNetReturn":0.01,"guideNetReturn":0.02,"strictNetReturn":0.005},
+                "fixedDailyForecast":{"status":"PARTIAL","totalCount":62,"realizedCount":31,"pendingCount":31,"mae":0.01,"rmse":0.02,"bias":-0.001},
+                "actualTrading":{"status":"NO_REALIZED_TRADES","closedPositionCount":0,"openPositionCount":1,"realizedPnlKrw":0,"unrealizedStatus":"OPEN"}}}'::jsonb,
+              repeat('d',64),null,'2026-09-08T06:00:00Z'
+            )
+            """.trimIndent(),
+        )
+        ownerJdbc.update(
+            """
+            insert into owner_performance_report_generations(
+              report_id,owner_user_id,report_version,source_generation_sha256,source_start,source_end,
+              model_sha256,principle_version_id,principle_version,cost_bps,status,report_json,
+              report_sha256,failure_code,supersedes_report_id,generated_at
+            ) values (
+              'perf_fail_222222222222222222222222','usr_demo_user',2,repeat('e',64),'2026-08-18','2026-09-09',
+              repeat('b',64),'pvr_cccccccccccccccccccccccccccccccc',3,35,'FAILED',null,null,
+              'SCENARIO_GUIDE_INFERENCE_INVALID','perf_report_111111111111111111111111','2026-09-08T06:10:00Z'
+            )
+            """.trimIndent(),
+        )
+
+        mockMvc
+            .get("/api/v1/dashboard/performance-reports/latest") {
+                bearer(token)
+                header("X-Request-Id", "req_performance_report_read")
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.data.report.reportVersion") { value(1) }
+                jsonPath("$.data.report.generatedAt") { value("2026-09-08T15:00:00+09:00") }
+                jsonPath("$.data.report.sections.fixedDailyForecast.status") { value("PARTIAL") }
+                jsonPath("$.data.report.sections.actualTrading.status") { value("NO_REALIZED_TRADES") }
+                jsonPath("$.data.lastRefreshStatus") { value("FAILED_LAST_SUCCESS_PRESERVED") }
+                jsonPath("$.data.lastFailureCode") { value("SCENARIO_GUIDE_INFERENCE_INVALID") }
+            }
+    }
+
+    @Test
     fun `corpus status is direct sanitized v2 payload and reflects owner private build state`() {
         val token = login("demo-user", userPassword(), "req_rag_v2_login_status")
 

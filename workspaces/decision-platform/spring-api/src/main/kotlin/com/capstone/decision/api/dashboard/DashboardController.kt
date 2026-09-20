@@ -49,6 +49,19 @@ class DashboardController(
         request: HttpServletRequest,
     ): ApiResponse<JsonNode> = artifact(principal, runId, DashboardArtifactKind.BACKTEST, request)
 
+    @Operation(
+        operationId = "latestOwnerPerformanceReport",
+        summary = "Latest immutable owner performance report generation.",
+    )
+    @GetMapping("/performance-reports/latest")
+    fun performanceReport(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        request: HttpServletRequest,
+    ): ApiResponse<JsonNode> {
+        exactRequest(request)
+        return success(request, protect { service.performanceReport(principal.userId, principal.securityVersion) })
+    }
+
     @Operation(summary = "Latest verified model evaluation run for the owner.")
     @Hidden
     @GetMapping("/model-evaluations/latest")

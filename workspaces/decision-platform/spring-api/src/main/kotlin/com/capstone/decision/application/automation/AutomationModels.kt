@@ -138,8 +138,58 @@ data class AutomationPolicyV3Projection(
     val atrPeriod: Int,
     val atrMultiplierMilli: Int,
     val modelSellEnabled: Boolean,
+    /** 동시 보유 종목 상한. 종목당 상한금액 = capitalLimitKrw / 이 값. */
+    val maxOpenPositions: Int,
+    /** ATR 변동성 기반 사이징의 거래당 위험(자본 대비 bps). 100 = 1%. */
+    val riskPerTradeBps: Int,
     val createdAt: OffsetDateTime,
     val updatedAt: OffsetDateTime,
+)
+
+data class AutomationCapitalPolicyProjection(
+    val version: Int,
+    val reinvestRealizedPnl: Boolean,
+    val cashBufferBps: Int,
+    val rebalanceDeviationBps: Int,
+    val minimumAdjustmentKrw: Long,
+    val maxOrdersPerSession: Int,
+    val effectiveFromSession: LocalDate,
+    val transitionStartedAt: OffsetDateTime,
+)
+
+data class PutAutomationCapitalPolicyCommand(
+    val reinvestRealizedPnl: Boolean,
+    val expectedVersion: Int,
+)
+
+data class AutomationCapitalPositionProjection(
+    val symbol: String,
+    val currentQuantity: Long,
+    val targetQuantity: Long?,
+    val currentMarketValueKrw: Long?,
+    val targetMarketValueKrw: Long,
+    val currentWeightBps: Long?,
+    val targetWeightBps: Long,
+    val valuationStatus: String,
+)
+
+data class AutomationCapitalStatusProjection(
+    val policyVersion: Int,
+    val reinvestRealizedPnl: Boolean,
+    val configuredCapitalKrw: Long,
+    val realizedPnlSinceTransitionKrw: Long,
+    val brokerBuyableCashKrw: Long,
+    val botPositionMarketValueKrw: Long,
+    val reservedBuyCashKrw: Long,
+    val allocationCapKrw: Long,
+    val investableCapKrw: Long,
+    val availableBuyCashKrw: Long,
+    val targetPerPositionKrw: Long,
+    val existingBotPositionsAdopted: Int,
+    val valuationMissingCount: Int,
+    val unusedCashReason: String?,
+    val positions: List<AutomationCapitalPositionProjection>,
+    val asOf: OffsetDateTime,
 )
 
 data class AutomationStatusV3Projection(
@@ -198,6 +248,19 @@ data class AutomationRunV3Page(
 data class AutomationRunDetailV3Projection(
     val run: AutomationRunV3Projection,
     val candidateScreenings: List<AutomationCandidateScreeningV3Projection>,
+    /**
+     * 후보가 어느 단계에서 왜 빠졌는지. 뉴스/AI 단계까지 간 후보만 담는 심사표와 달리
+     * 규칙·LSTM·안전필터·ATR 탈락까지 포함하므로, 무주문 실행도 원인을 말할 수 있다.
+     */
+    val stageOutcomes: List<AutomationStageOutcomeProjection> = emptyList(),
+)
+
+data class AutomationStageOutcomeProjection(
+    val stage: String,
+    val symbol: String,
+    val outcome: String,
+    val reasonCode: String?,
+    val reasonDetail: String?,
 )
 
 data class AutomationCandidateScreeningV3Projection(
@@ -257,6 +320,8 @@ data class PutAutomationPolicyV3Command(
     val atrPeriod: Int,
     val atrMultiplierMilli: Int,
     val modelSellEnabled: Boolean,
+    val maxOpenPositions: Int,
+    val riskPerTradeBps: Int,
     val expectedVersion: Int,
 )
 
@@ -369,6 +434,17 @@ interface AutomationRepository {
     ): AutomationRunDetailV3Projection
 
     fun readPositionsV3(ownerUserId: String): List<AutomationPositionV3Projection>
+
+    fun readCapitalPolicy(ownerUserId: String): AutomationCapitalPolicyProjection?
+
+    fun readCapitalStatus(ownerUserId: String): AutomationCapitalStatusProjection?
+
+    fun putCapitalPolicy(
+        ownerUserId: String,
+        command: PutAutomationCapitalPolicyCommand,
+        scopeHash: String,
+        requestHash: String,
+    ): AutomationCapitalPolicyProjection
 }
 
 class AutomationConflictException(

@@ -275,6 +275,53 @@ class JdbcDashboardViewAdapter(
             }
         }
 
+    override fun performanceReport(
+        actorUserId: String,
+        securityVersion: Long,
+    ): JsonNode? =
+        protect {
+            val binding =
+                ActorCapabilityBinding.request(
+                    "READ_DASHBOARD_ARTIFACT",
+                    "DASHBOARD_ARTIFACT",
+                    "performance-latest",
+                    ActorCapabilityRolePolicy.OWNER,
+                    "PERFORMANCE_REPORT",
+                    "latest",
+                )
+            jdbc()
+                .query(
+                    """
+                    SELECT * FROM read_latest_owner_performance_report_authorized_v1(
+                      :capability,:actor,:version
+                    )
+                    """.trimIndent(),
+                    mapOf(
+                        "capability" to
+                            actorCapabilityIssuer.issue(
+                                AuthenticatedActorRef.current(actorUserId, securityVersion),
+                                binding,
+                            ),
+                        "actor" to actorUserId,
+                        "version" to securityVersion,
+                    ),
+                ) { result, _ ->
+                    val report = objectMapper.readTree(result.getString("report_json"))
+                    require(report.path("contractId").stringValue() == "owner-performance-report.v1")
+                    require(report.path("sections").isObject)
+                    val failureCode = result.getString("last_failure_code")
+                    val failureAt = result.getObject("last_failure_at", OffsetDateTime::class.java)?.toInstant()
+                    node(
+                        mapOf(
+                            "report" to report,
+                            "lastRefreshStatus" to if (failureCode == null) "SUCCESS" else "FAILED_LAST_SUCCESS_PRESERVED",
+                            "lastFailureCode" to failureCode,
+                            "lastFailureAt" to failureAt?.toString(),
+                        ),
+                    )
+                }.singleOrNull()
+        }
+
     private fun ResultSet.instant(column: String) = getObject(column, OffsetDateTime::class.java).toInstant()
 
     private fun json(

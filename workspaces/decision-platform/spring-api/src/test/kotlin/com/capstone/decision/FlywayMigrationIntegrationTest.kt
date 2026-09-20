@@ -299,6 +299,17 @@ class FlywayMigrationIntegrationTest(
                         "'\$2b\$12\$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','USER','ACTIVE',1)",
                 )
                 statement.executeUpdate(
+                    "insert into principles(principle_id,user_id,preset_id,title,mode,status,current_version) values (" +
+                        "'prc_automation_runtime_0001','$owner','balanced','runtime fixture','GUIDE','ACTIVE',1)",
+                )
+                statement.executeUpdate(
+                    "insert into principle_versions(principle_version_id,principle_id,version,rules_json,created_by," +
+                        "preset_id,title,mode,status,changed_fields) " +
+                        "select 'pvr_${"f".repeat(32)}','prc_automation_runtime_0001',1,rules_json,'$owner'," +
+                        "'balanced','runtime fixture','GUIDE','ACTIVE',array['rules'] " +
+                        "from principle_presets where preset_id='balanced'",
+                )
+                statement.executeUpdate(
                     "insert into automation_control(" +
                         "user_id,control_state,version,brokerage_mode,account_id,principle_id,strategy_id," +
                         "baseline_account_digest,certification_status,kill_switch_active) values (" +

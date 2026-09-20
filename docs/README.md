@@ -1,7 +1,7 @@
 # 문서 색인과 현재 상태
 
 <!-- P1_FULL_APP_V3_AUTHORITY_BEGIN -->
-> **현재 상태 (2026-09-01):** Owner exact-31 최소 통합은 구현됐지만 Team A/B
+> 현재 상태 (2026-09-01): Owner exact-31 최소 통합은 구현됐지만 Team A/B
 > 실제 산출물과 physical/soak 게이트가 남아 GitHub `1.0.0` Release는 없다. 하드·비차단 게이트와
 > 증거 규칙은
 > [P1 Owner-First full-app v3 권위와 게이트](decision-platform/P1_1_0_0_OWNER_FIRST_V3_권위_및_게이트.md)가
@@ -17,7 +17,7 @@
 덮어쓰지 않는다.
 
 `docs/handoff/**`도 같다. 그 문서들은 `1.0.0` owner handoff 시점의 기록이라 동결돼 있고, 안에
-적힌 `exact-56 Spring API`와 `exact-33 acceptance`는 **그 시점의 수**다. 지금 값은 root
+적힌 `exact-56 Spring API`와 `exact-33 acceptance`는 그 시점의 수다. 지금 값은 root
 OpenAPI `exact-76`, Team A acceptance v4 `exact-45`이며 `./capstone team-a acceptance`가 그
 45개를 실제로 검증한다. 외부 팀이 무엇을 구현해야 하는지는 handoff 문서가 아니라
 [Team A 최종 요청서](handoff/P1_TEAM_A_최종_통합_요청서.md)와
@@ -68,7 +68,7 @@ Strong LLM 판단은 그 넷과 다른 경로다. 위 표가 적은 범위 안�
 후보 순위·매수 차단·기권으로 닫혀 있다. 후보 생성과 모든 수량·주문 직접 생성은 코드와 DB 제약이
 함께 막고 최종 수량은 RiskEngine만 결정한다. 근거는
 [ADR-039](adr/ADR-039-strong-llm-judgement-authority.md)와
-[AI 판단 경로 검증](test/P1_AI_판단.md)이다.
+AI 판단 경로 검증이다.
 
 live account와 live order는 별도 승인 전까지 호출하지 않는다.
 
@@ -120,26 +120,26 @@ PostgreSQL one-shot claim을 별도로 통과한다. 이 구조는 공개 HTTP/O
 - [Team B handoff](handoff/team-b/README.md)
 - [Owner integration handoff](handoff/owner/README.md)
 - [P1 Owner input pack·synthetic golden 운영](decision-platform/P1_OWNER_INPUT_PACK_GOLDEN_운영_가이드.md)
-- [P1 exact-31 입력 수집과 Team B 전달](decision-platform/P1_EXACT31_INPUT_PACK_수집_및_전달.md)
+- P1 exact-31 입력 수집과 Team B 전달
 - [P1 artifact importer·projection 운영](decision-platform/P1_ARTIFACT_IMPORTER_PROJECTION_운영_가이드.md)
 - [P1 Return inference runtime 운영](decision-platform/P1_RETURN_INFERENCE_RUNTIME_운영_가이드.md)
 - [통합 담당자 선행 완료 체크리스트](decision-platform/P1_OWNER_선행_완료_체크리스트.md)
-- [Team A·B 완료 후 Owner 최종 실행표](decision-platform/P1_TEAM_A_B_완료_후_OWNER_최종_실행.md)
-- [P1 Owner 최소 구현 실행 프롬프트](decision-platform/P1_OWNER_최소_구현_실행_프롬프트.md)
+- Team A·B 완료 후 Owner 최종 실행표
+- P1 Owner 최소 구현 실행 프롬프트
 - [새 PC에서 같은 환경 실행하기](decision-platform/P1_GIT_PULL_동일환경_재현_가이드.md)
 - [Team A 최종 통합 요청](handoff/P1_TEAM_A_최종_통합_요청서.md)
 - [Team B 최종 통합 요청](handoff/P1_TEAM_B_최종_통합_요청서.md)
 - [S7-S8/P1 구현·운영 핸드오프](decision-platform/S7_S8_P1_구현_및_운영_핸드오프.md)
 - [P1 Offline Demo 배포·검증](decision-platform/P1_OFFLINE_DEMO_배포_및_검증.md)
-- [S8 offline demo 시나리오](decision-platform/S8_오프라인_시연_시나리오.md)
+- S8 offline demo 시나리오
 - [S8 사용자 테스트 kit](decision-platform/s8-user-test-kit/README.md)
-- [외부 artifact 수신 절차](decision-platform/P1_실물_artifact_잔여_체크리스트.md)
+- 외부 artifact 수신 절차
 
 ### 공개 연구·참고
 
 - [중간보고서 작성용 초기설계](중간보고서_작성용_초기설계.md) — 역사적 초안이며 현재 상태 권위가 아님
 - [S1.4X 격리 수치 parity ADR](adr/ADR-027-s1-4x-isolated-numeric-parity.md)
-- [S6 금융공학 실행·검증](decision-platform/S6_금융공학_실행_및_검증.md)
+- S6 금융공학 실행·검증
 - [금융공학 공식과 자동매매 로직 설명서](금융공학_공식_및_자동매매_로직_설명서.md)
 
 ## 외부 종결 순서

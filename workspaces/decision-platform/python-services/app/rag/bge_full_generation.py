@@ -16,7 +16,7 @@ import psycopg
 from numpy.typing import NDArray
 
 from app.rag.bge_artifact import BgeVerifiedPacket
-from app.rag.bge_runtime import validate_embedding_batch
+from app.rag.bge_runtime import BGE_ENABLED_ENV, bge_enabled, validate_embedding_batch
 from app.rag.ingest_pipeline import (
     RagCanonicalChunk,
     RagEmbeddingInput,
@@ -262,13 +262,14 @@ class BgeFullGenerationAdminPort(Protocol):
 #:
 #: 되살리려면 BGE 코퍼스를 적재해 ACTIVE 포인터를 만든 뒤 이 변수를 1 로 둔다.
 #: 절차는 docs/최종_프로젝트_명세서.md 의 임베딩 정책 절에 적어 두었다.
-_BGE_ENABLED_ENV = "CAPSTONE_RAG_BGE_ENABLED"
+#: 이름은 `bge_runtime` 이 갖는다. 두 곳에 적으면 갈라진다.
+_BGE_ENABLED_ENV = BGE_ENABLED_ENV
 
 
 def _require_bge_enabled() -> None:
     """BGE 경로를 명시적으로 켜지 않았으면 조용히 통과시키지 않고 거부한다."""
 
-    if os.environ.get(_BGE_ENABLED_ENV, "").strip() not in {"1", "true", "TRUE"}:
+    if not bge_enabled():
         raise BgeFullGenerationError("BGE_DISABLED")
 
 

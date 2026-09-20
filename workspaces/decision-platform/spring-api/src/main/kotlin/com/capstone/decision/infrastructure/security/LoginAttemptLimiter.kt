@@ -4,7 +4,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.stereotype.Service
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
-import java.time.Duration
 import java.time.Instant
 import java.util.HexFormat
 import java.util.Locale
@@ -27,8 +26,12 @@ data class LoginAttemptLimiterProperties(
 @Service
 class LoginAttemptLimiter(
     private val properties: LoginAttemptLimiterProperties,
+    // 실패 이력은 인스턴스 밖에 둔다. 프로세스 메모리에 두면 재시작으로 잠금이 풀리고
+    // 인스턴스를 늘리면 대입 한도가 인스턴스 수만큼 늘어난다.
+    private val store: LoginAttemptStore,
 ) {
-    private val attempts = LinkedHashMap<String, Attempt>(16, 0.75f, true)
+    // 예약은 이 인스턴스의 동시성 가드다. 같은 계정에 대한 비밀번호 검증이 한 프로세스
+    // 안에서 몰리는 것을 막을 뿐이므로 공유하지 않는다.
     private val reservations = mutableMapOf<String, Int>()
     private val localReservation = ThreadLocal<Reservation>()
     private val lock = Any()
@@ -44,12 +47,11 @@ class LoginAttemptLimiter(
         synchronized(lock) {
             localReservation.remove()
             val now = Instant.now()
-            pruneExpired(now)
             val userKey = userKey(username)
             val deploymentKey = deploymentKey()
             if (
-                !allowed(userKey, USER_FAILURE_LIMIT, now) ||
-                !allowed(deploymentKey, DEPLOYMENT_FAILURE_LIMIT, now) ||
+                !store.allowed(userKey, USER_FAILURE_LIMIT, now) ||
+                !store.allowed(deploymentKey, DEPLOYMENT_FAILURE_LIMIT, now) ||
                 reservationCount(userKey) >= USER_FAILURE_LIMIT ||
                 reservationCount(deploymentKey) >= DEPLOYMENT_RESERVATION_LIMIT
             ) {
@@ -88,9 +90,8 @@ class LoginAttemptLimiter(
             release(reservation.deploymentKey)
             if (failed) {
                 val now = Instant.now()
-                increment(reservation.userKey, now)
-                increment(reservation.deploymentKey, now)
-                evictOverflow()
+                store.increment(reservation.userKey, now)
+                store.increment(reservation.deploymentKey, now)
             }
         }
     }
@@ -106,50 +107,6 @@ class LoginAttemptLimiter(
         when {
             current <= 1 -> reservations.remove(key)
             else -> reservations[key] = current - 1
-        }
-    }
-
-    private fun allowed(
-        key: String,
-        limit: Int,
-        now: Instant,
-    ): Boolean {
-        val attempt = attempts[key] ?: return true
-        if (Duration.between(attempt.startedAt, now) >= WINDOW) {
-            attempts.remove(key)
-            return true
-        }
-        return attempt.failures < limit
-    }
-
-    private fun increment(
-        key: String,
-        now: Instant,
-    ) {
-        val current = attempts[key]
-        attempts[key] =
-            if (current == null || Duration.between(current.startedAt, now) >= WINDOW) {
-                Attempt(failures = 1, startedAt = now)
-            } else {
-                current.copy(failures = current.failures + 1)
-            }
-    }
-
-    private fun pruneExpired(now: Instant) {
-        val iterator = attempts.entries.iterator()
-        while (iterator.hasNext()) {
-            if (Duration.between(iterator.next().value.startedAt, now) >= WINDOW) {
-                iterator.remove()
-            }
-        }
-    }
-
-    private fun evictOverflow() {
-        while (attempts.size > MAX_TRACKED_KEYS) {
-            val eldest = attempts.entries.iterator()
-            if (!eldest.hasNext()) return
-            eldest.next()
-            eldest.remove()
         }
     }
 
@@ -172,11 +129,6 @@ class LoginAttemptLimiter(
         return "login:$KEY_VERSION:$purpose:${HexFormat.of().formatHex(mac.doFinal())}"
     }
 
-    private data class Attempt(
-        val failures: Int,
-        val startedAt: Instant,
-    )
-
     private data class Reservation(
         val userKey: String,
         val deploymentKey: String,
@@ -185,11 +137,9 @@ class LoginAttemptLimiter(
     companion object {
         private const val USER_FAILURE_LIMIT = 5
         private const val DEPLOYMENT_RESERVATION_LIMIT = 50
-        private const val MAX_TRACKED_KEYS = 20_000
-        private const val DEPLOYMENT_FAILURE_LIMIT = MAX_TRACKED_KEYS
+        private const val DEPLOYMENT_FAILURE_LIMIT = InMemoryLoginAttemptStore.MAX_TRACKED_KEYS
         private const val KEY_VERSION = "v1"
         private const val USER_PURPOSE = "user"
         private const val DEPLOYMENT_PURPOSE = "deployment"
-        private val WINDOW: Duration = Duration.ofMinutes(15)
     }
 }

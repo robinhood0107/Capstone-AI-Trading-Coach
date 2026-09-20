@@ -3,6 +3,7 @@ package com.capstone.decision
 import com.capstone.decision.infrastructure.security.DemoAccountService
 import com.capstone.decision.infrastructure.security.DemoCredentialHashPolicy
 import com.capstone.decision.infrastructure.security.LoginAttemptLimiter
+import com.capstone.decision.infrastructure.security.LoginAttemptStore
 import io.jsonwebtoken.Jwts
 import io.jsonwebtoken.security.Keys
 import org.junit.jupiter.api.AfterEach
@@ -49,6 +50,7 @@ class AuthTrustRootIntegrationTest(
     @Autowired private val jdbcTemplate: JdbcTemplate,
     @Autowired private val demoAccountService: DemoAccountService,
     @Autowired private val loginAttemptLimiter: LoginAttemptLimiter,
+    @Autowired private val loginAttemptStore: LoginAttemptStore,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
 
@@ -341,10 +343,7 @@ class AuthTrustRootIntegrationTest(
     private fun signingKey() = Keys.hmacShaKeyFor(jwtSecret().toByteArray(StandardCharsets.UTF_8))
 
     private fun clearLoginAttempts() {
-        val attemptsField = LoginAttemptLimiter::class.java.getDeclaredField("attempts")
-        attemptsField.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        (attemptsField.get(loginAttemptLimiter) as MutableMap<String, *>).clear()
+        loginAttemptStore.clear()
     }
 
     private fun restoreDemoUsers() {

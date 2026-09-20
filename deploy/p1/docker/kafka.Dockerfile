@@ -11,7 +11,7 @@ LABEL org.opencontainers.image.title="Capstone Kafka Broker" \
       org.opencontainers.image.licenses="Apache-2.0"
 
 USER 0:0
-ADD --checksum=sha256:cbd8ae7af319512615ae546970112667136ac88e6c18dcb2059bd0dfceb877fb https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libexpat-2.8.2-r0.apk /tmp/libexpat.apk
+ADD --checksum=sha256:34fa41e3994d9a844f50a7c01cb40bb2e272fa7f506b96e92a2b4a20b23a81bc https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libexpat-2.8.4-r0.apk /tmp/libexpat.apk
 ADD --checksum=sha256:134d653aeeb4ada32746fbc3e2a7ae4201f584725de9263e4f32503658f3ddd8 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/p11-kit-0.26.2-r0.apk /tmp/p11-kit.apk
 ADD --checksum=sha256:f79c696b960d974832723215431b93e21ecb29b2449892b3fd6587713f1f2f50 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/p11-kit-trust-0.26.2-r0.apk /tmp/p11-kit-trust.apk
 RUN apk add --no-cache --no-network --allow-untrusted \

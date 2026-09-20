@@ -31,6 +31,7 @@ from contracts.verify_p1_strong_llm_settings_openapi_transition import (
     ADDITIVE_PATH as STRONG_LLM_ADDITIVE_PATH,
     strip_strong_llm_settings,
 )
+from contracts.historical_openapi_projection import historical_digest
 from contracts.verify_p1_v91_automation_openapi_transition import (
     ADDITIVE_SCHEMA_NAMES,
     HISTORICAL_ROOT_56_SHA256,
@@ -212,10 +213,8 @@ class P1V91AutomationContractTest(unittest.TestCase):
         self.assertEqual(61, len(operations(root)))
         projected = project_pre_v91_openapi(root, additive)
         self.assertEqual(56, len(operations(projected)))
-        self.assertEqual(
-            HISTORICAL_ROOT_56_SHA256,
-            hashlib.sha256(canonical_json_bytes(projected)).hexdigest(),
-        )
+        # 동결 해시는 그 세대의 바이트다. 이후의 제품 결정을 되돌린 뒤 비교한다.
+        self.assertEqual(HISTORICAL_ROOT_56_SHA256, historical_digest(projected))
         self.assertEqual(
             ADDITIVE_SCHEMA_NAMES,
             frozenset(additive["components"]["schemas"]),

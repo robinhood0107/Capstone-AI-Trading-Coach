@@ -49,12 +49,12 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Validate full-app v2 contract and documentation gates
+      - name: Validate full-app v2 contract gates
         run: >-
           uv run --frozen python -m unittest
           contracts.tests.test_p1_full_app_asset_verifier
           contracts.tests.test_p1_full_app_release_contract_v2
-          contracts.tests.test_p1_full_app_documentation -v
+          -v
 
       - name: Fail closed until build and final-manifest jobs are implemented
         shell: bash

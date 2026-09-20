@@ -12,6 +12,7 @@ _SCRIPT_ROOT = Path(__file__).resolve().parents[1]
 if str(_SCRIPT_ROOT) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_ROOT))
 
+from contracts.historical_openapi_projection import historical_digest
 from contracts.generate_principle_contracts import (
     ContractValidationError,
     canonical_json_bytes,
@@ -238,7 +239,8 @@ def verify_openapi_transition(
     additive_catalog = load_s7_s8_transition_catalog(s7_s8_catalog_path)
     _remove_s7_s8_additive_openapi(document, additive_catalog)
     projected = project_preserved_openapi(document, catalog)
-    actual = hashlib.sha256(canonical_json_bytes(projected)).hexdigest()
+    # 동결 해시는 그 세대의 바이트다. 이후의 제품 결정을 되돌린 뒤 비교한다.
+    actual = historical_digest(projected)
     if actual != catalog["historicalPreservedProjectionSha256"]:
         raise ContractValidationError(
             "current OpenAPI changed outside the approved Signal v2 transition."

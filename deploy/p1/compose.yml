@@ -19,7 +19,7 @@ services:
     platform: linux/amd64
     user: "70:70"
     group_add: ["${P1_SECRET_GID}"]
-    entrypoint: ["/opt/p1/secret-entrypoint", "postgres", "docker-entrypoint.sh"]
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "postgres", "docker-entrypoint.sh"]
     command: ["postgres", "-c", "listen_addresses=*", "-c", "log_statement=none"]
     environment:
       POSTGRES_DB: capstone_p1
@@ -33,7 +33,7 @@ services:
       - p1-postgres-current:/var/lib/postgresql/data
       - ../../infra/init/01-extensions.sql:/docker-entrypoint-initdb.d/01-extensions.sql:ro
       - ../../infra/init/02-application-roles.sh:/docker-entrypoint-initdb.d/02-application-roles.sh:ro
-      - ./docker/secret-entrypoint.sh:/opt/p1/secret-entrypoint:ro
+      - ./docker/secret-entrypoint.sh:/usr/local/bin/p1-secret-entrypoint:ro
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -53,15 +53,15 @@ services:
     networks: [p1-data]
 
   redis:
-    image: redis:7.2-alpine@sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8
+    image: ${P1_REDIS_IMAGE:-capstone-redis:p1-local}
     platform: linux/amd64
     user: "999:1000"
     group_add: ["${P1_SECRET_GID}"]
-    entrypoint: ["/opt/p1/secret-entrypoint", "redis"]
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "redis"]
     secrets: [redis_env]
     volumes:
       - p1-redis:/data
-      - ./docker/secret-entrypoint.sh:/opt/p1/secret-entrypoint:ro
+      - ./docker/secret-entrypoint.sh:/usr/local/bin/p1-secret-entrypoint:ro
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -134,7 +134,7 @@ services:
       - app.release.public_rag_seed_cli
       - import
       - --manifest
-      - /opt/capstone/public-rag-seed/public-rag-seed.v1.manifest.json
+      - /opt/capstone/seed/public-rag/public-rag-seed.v1.manifest.json
     user: "65532:65532"
     group_add: ["${P1_SECRET_GID}"]
     read_only: true
@@ -148,7 +148,7 @@ services:
       - /tmp:size=128m,mode=1777
     secrets: [seed_import_env]
     volumes:
-      - ./seed/public-rag:/opt/capstone/public-rag-seed:ro
+      - ./seed/public-rag:/opt/capstone/seed/public-rag:ro
       - ./docker/secret-entrypoint.sh:/usr/local/bin/p1-secret-entrypoint:ro
     depends_on:
       migrate: {condition: service_completed_successfully}
@@ -341,6 +341,9 @@ services:
       # 로컬 루트의 tokenizer.json이 이 해시가 아니면 기동에서 닫힌다.
       S4_9_VOYAGE_TOKENIZER_SHA256: "${P1_RAG_V2_TOKENIZER_SHA256:-c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539}"
       P1_RAG_RUNTIME_DIR_MOUNT: /run/rag-runtime
+      # 활성화 저술자가 control 디렉터리의 부모가 이 루트와 같기를 요구한다.
+      CAPSTONE_RAG_LOCAL_ROOT: /run/rag-runtime
+      RAG_V2_VERTEX_AUTO_ACTIVATION_POLICY_FILE: /run/rag-runtime/control/pre-s5-vertex-auto-activation-policy.json
       # Vertex 생성형 답변. 요청마다 5분짜리 활성화 패킷이 있어야 열리므로 기본은 off다.
       RAG_V2_VERTEX_ENABLED: "${P1_RAG_V2_VERTEX_ENABLED:-false}"
       VERTEX_MODEL_ID: "${P1_VERTEX_MODEL_ID:-gemini-3.5-flash}"
@@ -361,9 +364,7 @@ services:
       STRONG_LLM_GRPC_TARGET: 127.0.0.1:50055
       # 1차 provider와 그것이 실패했을 때의 2차. 2차가 비면 1차만 쓴다.
       STRONG_LLM_PROVIDER: "${P1_STRONG_LLM_PROVIDER:-vertex}"
-      STRONG_LLM_MODEL_ID: "${P1_STRONG_LLM_MODEL_ID:-}"
       STRONG_LLM_FALLBACK_PROVIDER: "${P1_STRONG_LLM_FALLBACK_PROVIDER:-}"
-      STRONG_LLM_FALLBACK_MODEL_ID: "${P1_STRONG_LLM_FALLBACK_MODEL_ID:-}"
       S4_9_MCP_ENABLED: "false"
       P1_OFFLINE_DEMO: "true"
       P1_TEAM_A_ACCEPTANCE_ENABLED: "${P1_TEAM_A_ACCEPTANCE_ENABLED:-false}"
@@ -381,6 +382,9 @@ services:
       KIS_OFFLINE: "${P1_KIS_OFFLINE:-1}"
       KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "${P1_KIS_MOCK_ONLINE_ENABLED:-false}"
       P1_AUTOMATION_RUNTIME_ENABLED: "${P1_AUTOMATION_RUNTIME_ENABLED:-false}"
+      # 30일이 지나 더 쓰이지 않는 세계 뉴스 버전을 지운다. 살아 있는 인용 핀이 있는
+      # 버전은 남고, 지운 뒤에도 톰스톤에 출처 해시가 남는다.
+      WORLD_NEWS_RETENTION_ENABLED: "${WORLD_NEWS_RETENTION_ENABLED:-false}"
       P1_AUTOMATION_EVIDENCE_FIXTURE_ENABLED: "false"
       DEBUG: "${P1_SPRING_DEBUG:-false}"
     secrets: [spring_env, python_env, kis_mock_env, return_inference_env, automation_runtime_env, automation_observation_env, rag_v2_env, vertex_service_account, rag_history_kek, actor_client_p12, actor_tls_ca]
@@ -389,7 +393,8 @@ services:
       # 기본값은 `./capstone doctor`를 up 이전에 돌릴 때만 쓰인다. up은 runtime.env에 실제
       # 경로를 항상 기록하므로(full-appctl:235-236) 런타임 동작은 바뀌지 않는다.
       # 기본값이 없으면 신규 clone이 START_HERE 순서(doctor → up)에서 compose 검증에 막힌다.
-      - ${P1_RAG_RUNTIME_DIR:-/dev/null}:/run/rag-runtime:ro
+      # 활성화 저술자가 control 아래에 패킷을 기록한다. 읽기 전용이면 생성이 닫힌다.
+      - ${P1_RAG_RUNTIME_DIR:-/dev/null}:/run/rag-runtime
       # safe_io 가 approved_root(=bundle_root 의 부모) 를 현재 사용자 소유로 요구한다.
       # team-b 만 마운트하면 부모가 Docker 가 만든 root 소유 /opt/capstone 이 되어 거부된다.
       - ./seed:/opt/capstone/seed:ro
@@ -399,6 +404,8 @@ services:
       actor-authority: {condition: service_healthy}
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
+      # 시드 적재와 겹치면 Hibernate 스키마 검증이 락 대기로 죽는다.
+      seed-import: {condition: service_completed_successfully}
     <<: *app-security
     healthcheck:
       test:
@@ -663,6 +670,46 @@ services:
     <<: *app-security
     networks: [p1-data, p1-app]
 
+  # GDELT v3 GQG/GEMG은 최신 두 파일을 우선하고 남은 두 슬롯으로 30일 gap을 복구한다.
+  # 완료 cursor를 자르기 전에 건너뛰고 dataset별 실패/예산을 분리한다. redirect 2회는 최초
+  # request를 포함해 target당 최대 3 sends, cycle 최대 4 files/12 sends다. raw/해제 상한은
+  # 파일당 8MiB/32MiB이고 retry는 0이다. 실제 외부 활성화는 별도 실행원장의 누적 byte/cost
+  # 상한을 확정한 뒤에만 GDELT_WORLD_NEWS_ENABLED=true로 연다.
+  world-news-minute:
+    profiles: [automation]
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "world-news"]
+    command:
+      - "python"
+      - "-m"
+      - "app.data.news.gdelt_collector_cli"
+      - "--loop"
+      # GQG/GEMG 는 15분 heartbeat 다. 1분마다 최근 2분만 보면 공백 구간을 건너지 못해
+      # 매번 404 로 끝난다. 주기를 heartbeat 에 맞추고 한 cycle 이 그 창을 덮게 한다.
+      - "--interval-seconds"
+      - "900"
+      # 30 일(720h) 전수 백필은 목표 코퍼스가 1,270 만 행이다 - 화면은 최근 20 건만
+      # 쓰고, 정상 상태 규모는 어차피 보존기간 x 일 유입으로 정해진다. 백필은 장애로
+      # 비어 버린 구간을 메우는 용도만 남긴다. 24h 면 2026-09-14 처럼 하루를 통째로
+      # 놓친 정지에서도 복구된다.
+      - "--lookback-hours"
+      - "24"
+      # 한 cycle 이 훑는 후보 수. 유예가 지난 미게시 분은 DB 가 걸러 주므로 같은 예산으로
+      # 실행이 거듭될수록 더 오래된 구간까지 나아간다.
+      - "--max-files"
+      - "40"
+      - "--physical-cap"
+      - "40"
+    environment:
+      GDELT_WORLD_NEWS_ENABLED: "${GDELT_WORLD_NEWS_ENABLED:-false}"
+      DECISION_SOURCE_WRITER_OFFLINE_TARGET: "local"
+    secrets: [market_data_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    <<: *app-security
+    networks: [p1-data, p1-app]
+
   # 뉴스 거부권의 근거 코퍼스를 채운다.
   #
   # 왜 별도 컨테이너인가. 자동운용 런 안의 provider 상한은 V100 이 0~16 으로 못박고 있어
@@ -852,7 +899,7 @@ services:
 
   return-engine-preview-prepare:
     profiles: [preview]
-    image: capstone-return-engine-received-preview:p1-local
+    image: ${P1_RETURN_PREVIEW_IMAGE:-capstone-return-engine-received-preview:p1-local}
     build:
       context: ../../workspaces/return-engine
       dockerfile: Dockerfile
@@ -872,7 +919,7 @@ services:
     restart: "no"
 
   experience-dashboard:
-    image: capstone-experience-dashboard:p1-local
+    image: ${P1_DASHBOARD_IMAGE:-capstone-experience-dashboard:p1-local}
     build:
       context: ../../workspaces/experience-dashboard
       dockerfile: Dockerfile
@@ -923,13 +970,10 @@ secrets:
   spring_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/spring.env"}
   python_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/python.env"}
   kis_mock_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock.env"}
-  kafka_publisher_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kafka-publisher.env"}
-  poison_recorder_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/poison-recorder.env"}
-  kafka_admin_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kafka-admin.env"}
-  kafka_broker_jaas: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kafka-broker-jaas.conf"}
   demo_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/demo.env"}
   rag_history_kek: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/rag-history-kek-v1.key"}
   seed_import_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/seed-import.env"}
+  p1_provider_claim_dsn: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/p1-provider-claim.dsn"}
   artifact_import_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/artifact-import.env"}
   team_a_acceptance_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/team-a-acceptance.env"}
   return_inference_env: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/return-inference.env"}
@@ -950,7 +994,6 @@ secrets:
   kis_mock_approval_private: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock-approval-private.pem"}
   kis_mock_approval_public: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock-approval-public.pem"}
   kis_mock_approval_trust_policy: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock-approval-trust-policy.json"}
-  p1_provider_claim_dsn: {file: "${P1_SECRETS_DIR:-./.state-app/secrets}/p1-provider-claim.dsn"}
 
 volumes:
   p1-postgres-current: {}

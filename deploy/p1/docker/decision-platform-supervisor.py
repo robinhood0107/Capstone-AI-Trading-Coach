@@ -105,6 +105,15 @@ def main() -> int:
             ["python", "-m", "app.strong_llm.grpc_server"],
             close_fds=True,
         )
+    # 30일이 지나 더 쓰이지 않는 세계 뉴스 버전을 실제로 지운다. DB 함수와 어댑터는
+    # V157 부터 있었지만 부르는 곳이 없어 코퍼스가 무한히 자랐다(2026-09-14 하루 15만 행).
+    # `decision_worker` DSN 은 이미 이 컨테이너에 있으므로 새 권한이 생기지 않는다.
+    retention: subprocess.Popen[bytes] | None = None
+    if os.environ.get("WORLD_NEWS_RETENTION_ENABLED", "false").lower() == "true":
+        retention = subprocess.Popen(
+            ["python", "-m", "app.data.news.retention_cli", "--loop"],
+            close_fds=True,
+        )
     # Start automation after Spring is ready to avoid restart loops during an overdue claim.
     automation: subprocess.Popen[bytes] | None = None
     if automation_enabled:
@@ -119,6 +128,7 @@ def main() -> int:
                         brokerage,
                         rag_v2,
                         strong_llm,
+                        retention,
                     )
                     if process is not None
                 )
@@ -142,6 +152,7 @@ def main() -> int:
             automation,
             rag_v2,
             strong_llm,
+            retention,
         )
         if process is not None
     )

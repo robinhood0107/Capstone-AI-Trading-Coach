@@ -95,6 +95,31 @@ services:
     restart: unless-stopped
     networks:
     - p1-data
+  rag-runtime-seed:
+    image: ${P1_PYTHON_IMAGE:-capstone-decision-platform:p1-local}
+    platform: linux/amd64
+    user: 0:0
+    entrypoint:
+    - /usr/local/bin/p1-rag-runtime-seed
+    environment:
+      RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED: ${P1_RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED:-false}
+      VERTEX_MODEL_ID: ${P1_VERTEX_MODEL_ID:-gemini-3.5-flash}
+      P1_VERTEX_PROJECT_ID: ${P1_VERTEX_PROJECT_ID:-}
+      P1_VERTEX_OPERATOR: ${P1_VERTEX_OPERATOR:-auto-activation}
+      P1_VERTEX_DAILY_GENERATE_CALL_CAP: ${P1_VERTEX_DAILY_GENERATE_CALL_CAP:-50}
+      P1_VERTEX_INPUT_TOKEN_CAP: ${P1_VERTEX_INPUT_TOKEN_CAP:-60512}
+      P1_VERTEX_OUTPUT_TOKEN_CAP: ${P1_VERTEX_OUTPUT_TOKEN_CAP:-8192}
+      P1_VERTEX_INPUT_BYTE_CAP: ${P1_VERTEX_INPUT_BYTE_CAP:-60000}
+      P1_VERTEX_COST_CAP_MICROUSD: ${P1_VERTEX_COST_CAP_MICROUSD:-500000}
+      P1_VERTEX_INPUT_MICROUSD_PER_TOKEN: ${P1_VERTEX_INPUT_MICROUSD_PER_TOKEN:-2}
+      P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN: ${P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN:-9}
+    secrets:
+    - vertex_service_account
+    volumes:
+    - ${P1_RAG_RUNTIME_DIR:-p1-rag-runtime}:/run/rag-runtime
+    restart: 'no'
+    networks:
+    - p1-data
   role-bootstrap:
     platform: linux/amd64
     group_add: &id001
@@ -162,6 +187,8 @@ services:
     - migration_env
     depends_on:
       role-bootstrap:
+        condition: service_completed_successfully
+      rag-runtime-seed:
         condition: service_completed_successfully
     networks:
     - p1-data
@@ -478,7 +505,7 @@ services:
     - actor_client_p12
     - actor_tls_ca
     volumes:
-    - ${P1_RAG_RUNTIME_DIR:-/dev/null}:/run/rag-runtime
+    - ${P1_RAG_RUNTIME_DIR:-p1-rag-runtime}:/run/rag-runtime
     ports:
     - 127.0.0.1:${P1_API_PORT:-18080}:8080
     depends_on:
@@ -1263,6 +1290,7 @@ secrets:
   kis_mock_approval_trust_policy:
     file: ${P1_SECRETS_DIR:-./.state-app/secrets}/kis-mock-approval-trust-policy.json
 volumes:
+  p1-rag-runtime: {}
   p1-postgres-current: {}
   p1-redis: {}
   p1-bge-model-cache: {}

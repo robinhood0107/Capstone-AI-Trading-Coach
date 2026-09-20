@@ -780,12 +780,3 @@ docker compose --env-file .env -f infra/docker-compose.infra.yml run --rm role-b
 decision_fill_writer
 V6/V9/V14
 -->
-## 2026-09-09 로컬 KIS Mock 전환 상태
-
-현재 PC는 Flyway V165와 검증된 local decision/dashboard 이미지를 사용한다. 현재 automation
-owner/account의 기존 bot position 1개는 멱등 receipt로 새 자본정책에 편입됐고 현재 계좌 미해결
-주문은 0개다. KIS Mock runtime은 1개만 ARMED이며 다음 2026-09-09 XKRX session을 기다린다.
-
-세계 뉴스 collector와 30일 복구 코드는 image에 포함됐지만 누적 physical/byte 상한의 별도 승인 전
-`GDELT_WORLD_NEWS_ENABLED=false`다. LSTM 5/20일 v3 실험은 dual 합격 후보 0으로 끝나 현재 50:50을
-유지하며, 합격 artifact가 없으므로 shadow publication과 자동 model activation은 0이다.

@@ -51,6 +51,36 @@ for secret_file in $secret_files; do
   fi
 done
 
+# 마운트된 RAG 런타임 루트가 비어 있으면 이미지에 구워 둔 기본 트리로 채운다.
+#
+# 레포를 받지 않고 이미지와 .env 만 가진 서버에서는 토크나이저와 질의 런타임 기술서를
+# 구할 방법이 없다. 그것이 없으면 RAG 가 조용히 꺼지고 금융 Agent 가 통째로 죽는다.
+# 이미 값이 있으면 건드리지 않는다 - 운영자가 올린 것이 항상 이긴다.
+seed_rag_runtime_root() {
+  local root=${CAPSTONE_RAG_LOCAL_ROOT:-/run/rag-runtime}
+  local seed=/opt/capstone/rag-runtime-default
+  [ -d "$seed" ] || return 0
+  [ -d "$root" ] || return 0
+  # 이름 있는 볼륨은 root 소유로 만들어진다. 컨테이너는 65532 로 도는데 볼륨이 비어 있다면
+  # 아직 아무도 쓴 적이 없다는 뜻이므로 소유권을 옮겨 받는다. 운영자가 올린 트리(비어 있지
+  # 않음)는 건드리지 않는다.
+  if [ ! -w "$root" ] && [ -z "$(ls -A "$root" 2>/dev/null)" ] && [ "$(id -u)" = 0 ]; then
+    chown 65532:65532 "$root" 2>/dev/null || true
+  fi
+  [ -w "$root" ] || return 0
+  local copied=0
+  for rel in artifacts/voyage-context-4/tokenizer.json control/pre-s5-voyage-query-runtime.json; do
+    [ -f "$seed/$rel" ] || continue
+    [ -f "$root/$rel" ] && continue
+    mkdir -p "$root/$(dirname "$rel")" || continue
+    cp "$seed/$rel" "$root/$rel" || continue
+    copied=$((copied + 1))
+  done
+  [ "$copied" -gt 0 ] && printf 'P1_RAG_RUNTIME_SEEDED=%s
+' "$copied"
+  return 0
+}
+
 allowed_key() {
   key_profile=$profile
   [ "$key_profile" != certification ] || key_profile=decision-platform
@@ -233,6 +263,12 @@ if [ "$profile" = decision-platform ] && [ -n "${RETURN_INFERENCE_BUNDLE_ROOT:-}
       ;;
   esac
   unset seed_src
+fi
+
+# 마운트가 비어 있으면 이미지에 구워 둔 기본 트리로 먼저 채운다. 아래 검사는 그 뒤에
+# 돈다 - 레포 없이 이미지만 받은 서버에서도 leaf 가 갖춰진다.
+if [ "$profile" = decision-platform ] && [ "${RAG_V2_GRPC_ENABLED:-false}" = true ]; then
+  CAPSTONE_RAG_LOCAL_ROOT=${P1_RAG_RUNTIME_DIR_MOUNT:-/run/rag-runtime} seed_rag_runtime_root
 fi
 
 if [ "$profile" = decision-platform ] && [ "${RAG_V2_GRPC_ENABLED:-false}" = true ]; then

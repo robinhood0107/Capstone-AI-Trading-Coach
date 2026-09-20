@@ -445,6 +445,16 @@ stop_old_preview_containers() {
 
 # Bind provider activation to the exact source tree used by this runtime.
 bind_vertex_code_state() {
+  # 네 값이 모두 주어졌으면 그대로 쓴다. 레포를 받지 않고 이미지와 .env 만 가진 서버에는
+  # git 이력이 있을 이유가 없고, 그때 바인딩을 못 만들면 Vertex 가 꺼져 Agent 가 죽는다.
+  # 바인딩의 목적은 "이 런타임이 어떤 소스에서 왔는지 고정"이므로 릴리스에서는 운영자가
+  # 이미지와 함께 받은 값을 넣는 것이 같은 뜻이다.
+  if [[ -n ${P1_RAG_V2_VERTEX_HEAD_COMMIT:-} && -n ${P1_RAG_V2_VERTEX_TREE_DIGEST:-} &&
+        -n ${P1_RAG_V2_VERTEX_CI_DIGEST:-} && -n ${P1_RAG_V2_VERTEX_SECURITY_DIGEST:-} ]]; then
+    export P1_RAG_V2_VERTEX_HEAD_COMMIT P1_RAG_V2_VERTEX_TREE_DIGEST
+    export P1_RAG_V2_VERTEX_CI_DIGEST P1_RAG_V2_VERTEX_SECURITY_DIGEST
+    return 0
+  fi
   command -v git >/dev/null 2>&1 || return 1
   local head tree
   head=$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null) || return 1

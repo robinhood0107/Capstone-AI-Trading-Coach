@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import hashlib
 import math
 import re
@@ -33,6 +35,9 @@ _DOCUMENT_ID = re.compile(r"^doc_[a-z0-9][a-z0-9_-]{10,95}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _ALLOWED_PROFILES = frozenset({"bge_m3_local_1024_v1", "voyage_context_4_1024_v1"})
 _SOURCE_SCOPES = frozenset({"EXACT30", "OA112", "OWNER_PRIVATE", "WORLD_NEWS"})
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class RagV2RetrievalError(ValueError):
@@ -376,7 +381,10 @@ class RagV2AuthorizedHybridRetrieval:
             )
             if len(identifiers) > 16:
                 raise QueryValidationError("RAG v2 exact identifier count is invalid.")
-        except QueryValidationError:
+        except QueryValidationError as error:
+            # 실패 코드만 남기면 어느 검증이 닫혔는지 알 수 없다. 질문 본문은 사용자 입력이라
+            # 남기지 않고, 검증기가 말한 사유만 남긴다.
+            _LOGGER.warning("rag v2 query validation rejected: %s", error)
             return _execution(RagV2RetrievalFailureCode.INVALID_QUERY)
 
         try:

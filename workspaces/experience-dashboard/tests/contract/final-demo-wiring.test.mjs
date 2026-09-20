@@ -22,7 +22,9 @@ test('product views omit LightGBM and select current dashboard records', () => {
 
 test('financial Agent renders full answers, history, and hides source identifiers', () => {
   const view = read('src/features/rag-source/RagGuideView.tsx');
-  assert.match(view, /whitespace-pre-line[^>]*>\{view\.answer\}/);
+  // 답변 전문을 자르지 않고 그대로 보여주는지 본다. 본문은 renderAnswerText 가
+  // **강조** 만 굵게 바꿔 React 요소로 만든다 - 내용은 그대로다.
+  assert.match(view, /whitespace-pre-line[^>]*>\{renderAnswerText\(view\.answer\)\}/);
   assert.match(view, /loadRecentQuestions/);
   assert.doesNotMatch(view, />\{source\.sourceId\}</);
   assert.match(view, /금융 지식 라이브러리/);

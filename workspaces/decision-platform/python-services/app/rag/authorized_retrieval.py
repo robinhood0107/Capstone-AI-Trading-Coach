@@ -276,7 +276,10 @@ class QueryNormalizer:
         )
         topics = _bounded_string_array(
             payload.get("topics", ()),
-            maximum=5,
+            # 상한이 허용 토픽 수보다 작으면 "전부 선택"이 거부된다. 실제로 여섯 종을 모두
+            # 보내는 요청이 RAG_QUERY_INVALID 로 닫혀 Agent 가 아무 질문에도 답하지 못했다.
+            # 종류가 늘어도 같은 일이 생기지 않도록 목록 길이에 묶는다.
+            maximum=len(ALLOWED_RAG_TOPICS),
             allowed=ALLOWED_RAG_TOPICS,
             pattern=None,
             field_name="topics",

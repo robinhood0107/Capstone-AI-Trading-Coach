@@ -16,6 +16,11 @@ RUN npm run typecheck && npm run lint && npm test && npm run build
 
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
 WORKDIR /app
+ARG SOURCE_REVISION=unknown
+ARG RELEASE_VERSION=dev
+LABEL org.opencontainers.image.source="https://github.com/robinhood0107/Capstone-AI-Trading-Coach" \
+      org.opencontainers.image.revision="$SOURCE_REVISION" \
+      org.opencontainers.image.version="$RELEASE_VERSION"
 RUN apk add --no-cache libcrypto3=3.5.8-r0 libssl3=3.5.8-r0 \
     && rm -rf /usr/local/lib/node_modules/npm \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx

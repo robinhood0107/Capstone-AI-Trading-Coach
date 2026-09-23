@@ -79,6 +79,20 @@ def test_online_server_requires_one_valid_bound_opaque_account(
     assert BrokerageGrpcServerSettings.from_env().bound_account_id == account_id
 
 
+def test_full_server_rejects_global_account_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "FULL")
+    monkeypatch.setenv("KIS_MOCK_BROKERAGE_ONLINE_ENABLED", "true")
+    monkeypatch.setenv("KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP", "1")
+    monkeypatch.setenv("KIS_BROKERAGE_PHYSICAL_CAP", "1")
+    monkeypatch.setenv("BROKERAGE_GRPC_SHARED_SECRET", "s" * 32)
+    monkeypatch.setenv("KIS_MOCK_ORDER_REFERENCE_KEY", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
+    monkeypatch.setenv("KIS_MOCK_BOUND_ACCOUNT_ID", "acct_" + "a" * 32)
+    with pytest.raises(ValueError, match="cannot use KIS_MOCK_BOUND_ACCOUNT_ID"):
+        BrokerageGrpcServerSettings.from_env()
+    monkeypatch.delenv("KIS_MOCK_BOUND_ACCOUNT_ID")
+    assert BrokerageGrpcServerSettings.from_env().product_mode == "FULL"
+
+
 def test_brokerage_physical_budget_fails_before_exceeding_exact_packet_cap() -> None:
     budget = KISBrokerageCallBudget(token_p_cap=1, brokerage_cap=2)
 

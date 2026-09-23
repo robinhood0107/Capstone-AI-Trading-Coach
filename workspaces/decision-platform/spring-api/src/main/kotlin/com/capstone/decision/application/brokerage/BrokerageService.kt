@@ -66,6 +66,7 @@ class BrokerageService(
                         BrokerageGatewaySubmitRequest(
                             requestId = actor.requestId,
                             orderId = projection.orderId,
+                            ownerUserId = actor.userId,
                             accountId = projection.accountId,
                             orderIntent = command.orderIntent,
                         ),
@@ -142,6 +143,7 @@ class BrokerageService(
                     BrokerageGatewayCancelRequest(
                         requestId = actor.requestId,
                         orderId = requested.orderId,
+                        ownerUserId = actor.userId,
                         accountId = requested.accountId,
                     ),
                 )
@@ -222,6 +224,7 @@ class BrokerageService(
                     gateway.getMockBuyable(
                         BrokerageGatewayBuyableRequest(
                             requestId = actor.requestId,
+                            ownerUserId = actor.userId,
                             accountId = accountId,
                             symbol = symbol,
                             estimatedPriceKrw = estimatedPrice,

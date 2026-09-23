@@ -1,7 +1,10 @@
 'use client';
 
+import { LocalPasswordLoginCard } from './LocalPasswordLoginCard';
+
 /** The full product delegates identity verification to Google's OIDC code flow. */
 export function LoginCard() {
+  if (process.env.NEXT_PUBLIC_MARS_PRODUCT !== 'full') return <LocalPasswordLoginCard />;
   return (
     <div className="mx-auto w-full max-w-[420px]">
       <div className="rounded-panel border border-line bg-panel px-7 py-8 shadow-card">

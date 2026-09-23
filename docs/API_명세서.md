@@ -383,6 +383,22 @@ root OpenAPI 밖의 실행 표면. `contracts/openapi/openapi.json`의 exact-76�
 
 로그인 attempt는 client address+username 기준 15분 5회, address 기준 15분 50회로 원자 예약하며, JSON binding 전 전역 request body 상한을 적용한다. limiter key는 private factory가 정규화한 address/username scope를 purpose/version HMAC으로 만든 digest만 사용하고 raw address·username을 저장·로그·metric label에 넣지 않는다. 주소는 socket remote address를 기준으로 하고, 배포 시 명시적으로 allowlist한 reverse proxy에서 온 경우에만 표준 forwarded header를 해석한다. 임의 `X-Forwarded-For`를 신뢰하지 않는다. demo account verifier는 평문 password가 아니라 attested bundle에서 검증된 adaptive salted password hash를 DB에 저장하고 검증 라이브러리로 비교한다. 인증 가능한 password 범위는 `1..72 UTF-8 bytes`이며 DTO의 1,024-character 상한은 JSON 입력 방어일 뿐 credential 경계가 아니다. 72 bytes를 넘는 입력은 per-process dummy로 치환해 선택 row와 peer row에 BCrypt strength-12 검증을 각각 한 번 수행한 뒤 동일한 401로 거부한다. 정상 범위의 모든 login도 두 row를 각각 한 번 검증하며, 하나의 평문이 두 row에 모두 일치하면 두 역할을 모두 fail-closed한다. 존재하지 않는 사용자와 잘못된 비밀번호도 정확히 두 번의 dummy/peer BCrypt 경로와 동일한 stable 오류를 사용한다. 현재 단일 JVM limiter는 replica 1에서만 보안 경계가 성립하며, 다중 replica 배포 전에는 공유 원자 저장소로 이전해야 한다.
 
+#### 2.4.0 MARS full Google OIDC 전환 계약 (제품 게이트 준비 중)
+
+실서비스 프로필은 `GET /api/v1/auth/oidc/start/google`에서 Google authorization-code 흐름을
+시작하고 `GET /api/v1/auth/oidc/callback/google`에서 Spring Security가 서명·issuer·audience·
+만료·state/nonce를 검증한다. 서버는 검증된 `https://accounts.google.com` + `sub`로 첫 USER를
+원자 생성한다. 이메일은 계정 키가 아니다. 운영자가 별도 보관한 정확한 subject hash와 일치할
+때만 ADMIN이며, 역할이 바뀌면 기존 세션을 폐기한다.
+
+callback은 Bearer token을 URL에 넣지 않고 같은 origin의 `/auth/complete`로 이동한다.
+`POST /api/v1/auth/oidc/exchange`는 2분 이내의 HttpOnly/Secure/SameSite=Lax 세션과
+정확한 `Origin`을 요구하고 한 번만 `LoginResponse`를 반환한다. 브라우저는 JWT를 메모리에만
+보관한다. `POST /api/v1/auth/logout`은 현재 Bearer의 DB 세션을 폐기하고 204를 반환한다.
+두 endpoint의 full 전용 schema는 [MARS 인증 OpenAPI](../contracts/openapi/mars-full-auth.v1.openapi.json)에 둔다.
+현재 개인용 password bootstrap은 공개 full/demo 프로필에서 제외하며, 내부 호출처 교체 뒤
+삭제한다. 공개 서비스의 KIS/Agent/주문은 별도 게이트가 완성되기 전까지 닫혀 있다.
+
 #### 2.4.1 S2.1 actor trust-root 선행 계약
 
 DB `users`가 demo identity의 단일 진실 소스다. checksum이 있는 V7 Java migration은 `security_version bigint NOT NULL DEFAULT 1 CHECK (security_version > 0)`과 credential evidence 열(`credential_reuse_tag`, `credential_bundle_mac`, `credential_policy_version`)을 추가하고 migration role로 아래 두 row만 seed한다. 두 고정 demo row는 32-byte tag/MAC와 policy version 1을 모두 가져야 하고, 다른 user row는 evidence가 없어도 호환된다. BCrypt hash·tag·MAC는 추적 파일이나 Flyway SQL text에 넣지 않고 검증된 배포 bundle에서 prepared statement bind parameter로만 전달한다. 기존 `user_id`/username/role/status/version/hash/evidence가 exact shape과 다르면 overwrite하지 않고 migration transaction 전체를 중단한다.

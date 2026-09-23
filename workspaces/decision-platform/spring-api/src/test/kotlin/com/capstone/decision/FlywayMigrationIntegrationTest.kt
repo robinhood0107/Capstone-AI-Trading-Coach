@@ -72,6 +72,33 @@ class FlywayMigrationIntegrationTest(
     @AfterEach
     fun revokeHistoricalS5CapabilitiesAfterTest() {
         revokeHistoricalS5Capabilities()
+        cleanupOwnerScopedRuntimeTestUsers()
+    }
+
+    private fun cleanupOwnerScopedRuntimeTestUsers() {
+        val owners = listOf("usr_automation_owner_a_0001", "usr_automation_owner_b_0001")
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                val ownerList = owners.joinToString(",") { "'$it'" }
+                statement.executeUpdate("delete from automation_runtime_events where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_events where user_id in ($ownerList)")
+                statement.executeUpdate(
+                    "delete from automation_processed_ticks where run_id in " +
+                        "(select run_id from automation_runs where user_id in ($ownerList))",
+                )
+                statement.executeUpdate("delete from automation_order_reservations where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_runtime_checkpoint where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_runtime_claim where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_runtime_schedule where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_runs where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_control_idempotency where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_control where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_activation_gate where user_id in ($ownerList)")
+                statement.executeUpdate("delete from principle_versions where principle_id in ('prc_automation_owner_a_0001','prc_automation_owner_b_0001')")
+                statement.executeUpdate("delete from principles where user_id in ($ownerList)")
+                statement.executeUpdate("delete from users where user_id in ($ownerList)")
+            }
+        }
     }
 
     @Test
@@ -479,6 +506,162 @@ class FlywayMigrationIntegrationTest(
                             rows.getString(1)
                         },
                 )
+            }
+        }
+    }
+
+    @Test
+    fun `V207 lists and claims two armed owners independently and rebinds only the matching legacy claim`() {
+        val firstOwner = "usr_automation_owner_a_0001"
+        val secondOwner = "usr_automation_owner_b_0001"
+        val owners = listOf(firstOwner, secondOwner)
+        val session = "2026-08-28"
+        val legacyHash = "sha256:${"d".repeat(64)}"
+        val firstHash = "sha256:${"a".repeat(64)}"
+        val secondHash = "sha256:${"b".repeat(64)}"
+
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.createStatement().use { statement ->
+                val ownerList = owners.joinToString(",") { "'$it'" }
+                statement.executeUpdate("delete from automation_runtime_events where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_events where user_id in ($ownerList)")
+                statement.executeUpdate(
+                    "delete from automation_processed_ticks where run_id in " +
+                        "(select run_id from automation_runs where user_id in ($ownerList))",
+                )
+                statement.executeUpdate("delete from automation_order_reservations where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_runtime_checkpoint where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_runtime_claim where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_runtime_schedule where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_runs where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_control_idempotency where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_control where user_id in ($ownerList)")
+                statement.executeUpdate("delete from automation_activation_gate where user_id in ($ownerList)")
+                statement.executeUpdate("delete from principle_versions where principle_id in ('prc_automation_owner_a_0001','prc_automation_owner_b_0001')")
+                statement.executeUpdate("delete from principles where user_id in ($ownerList)")
+                statement.executeUpdate("delete from users where user_id in ($ownerList)")
+                for ((index, owner) in owners.withIndex()) {
+                    val suffix = if (index == 0) "a" else "b"
+                    val principle = "prc_automation_owner_${suffix}_0001"
+                    val account = "acct_${suffix.repeat(32)}"
+                    val prefix = "automation_owner_${suffix}_0001"
+                    statement.executeUpdate(
+                        "insert into users(user_id,username,password_hash,role,status,security_version) values " +
+                            "('$owner','$prefix','\$2b\$12\$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','USER','ACTIVE',1)",
+                    )
+                    statement.executeUpdate(
+                        "insert into principles(principle_id,user_id,preset_id,title,mode,status,current_version) values " +
+                            "('$principle','$owner','balanced','runtime fixture','GUIDE','ACTIVE',1)",
+                    )
+                    statement.executeUpdate(
+                        "insert into principle_versions(principle_version_id,principle_id,version,rules_json,created_by," +
+                            "preset_id,title,mode,status,changed_fields) " +
+                            "select 'pvr_${suffix.repeat(32)}','$principle',1,rules_json,'$owner'," +
+                            "'balanced','runtime fixture','GUIDE','ACTIVE',array['rules'] " +
+                            "from principle_presets where preset_id='balanced'",
+                    )
+                    statement.executeUpdate(
+                        "insert into automation_control(" +
+                            "user_id,control_state,version,brokerage_mode,account_id,principle_id,strategy_id," +
+                            "baseline_account_digest,certification_status,kill_switch_active) values (" +
+                            "'$owner','ARMED',1,'KIS_MOCK','$account','$principle'," +
+                            "'strategy_automation_owner_${suffix}_0001',repeat('${suffix}',64),'VALID',false)",
+                    )
+                    statement.executeUpdate(
+                        "insert into automation_runtime_schedule(" +
+                            "schedule_id,user_id,session_date,control_version,schedule_state,run_at) values (" +
+                            "'auto_sched_${suffix.repeat(32)}','$owner','$session',1,'ARMED'," +
+                            "timestamptz '2026-08-28 08:55:00+09')",
+                    )
+                }
+            }
+        }
+
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", "app-test").use { app ->
+            app.createStatement().use { statement ->
+                assertEquals(
+                    "42501",
+                    assertThrows<SQLException> {
+                        statement.executeQuery("select user_id from p1_list_armed_automation_users_v1()")
+                    }.sqlState,
+                )
+            }
+        }
+
+        DriverManager
+            .getConnection(postgres.jdbcUrl, "decision_automation_runtime", "automation-runtime-test-0001")
+            .use { runtime ->
+                runtime.createStatement().use { statement ->
+                    val actualOwners = mutableSetOf<String>()
+                    statement.executeQuery("select user_id from p1_list_armed_automation_users_v1()").use { rows ->
+                        while (rows.next()) actualOwners += rows.getString(1)
+                    }
+                    assertTrue(actualOwners.containsAll(owners))
+
+                    val legacyRun =
+                        statement.executeQuery(
+                            "select user_id,run_id from p1_claim_automation_session_v1(date '$session','$legacyHash')",
+                        ).use { rows ->
+                            assertTrue(rows.next())
+                            assertEquals(firstOwner, rows.getString(1))
+                            rows.getString(2)
+                        }
+                    val reboundRun =
+                        statement.executeQuery(
+                            "select user_id,run_id,account_id,replayed from p1_claim_automation_session_for_owner_v1(" +
+                                "'$firstOwner',date '$session','$firstHash')",
+                        ).use { rows ->
+                            assertTrue(rows.next())
+                            assertEquals(firstOwner, rows.getString(1))
+                            assertEquals(legacyRun, rows.getString(2))
+                            assertEquals("acct_${"a".repeat(32)}", rows.getString(3))
+                            assertTrue(rows.getBoolean(4))
+                            rows.getString(2)
+                        }
+                    assertEquals(legacyRun, reboundRun)
+
+                    DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+                        admin.prepareStatement(
+                            "select schedule.schedule_state,claim.user_id from automation_runtime_schedule schedule " +
+                                "left join automation_runtime_claim claim using(user_id,session_date) where schedule.user_id=?",
+                        ).use { adminStatement ->
+                            adminStatement.setString(1, secondOwner)
+                            adminStatement.executeQuery().use { rows ->
+                                assertTrue(rows.next())
+                                assertEquals("ARMED", rows.getString(1))
+                                assertEquals(null, rows.getString(2))
+                            }
+                        }
+                    }
+
+                    statement.executeQuery(
+                        "select user_id,run_id,account_id,replayed from p1_claim_automation_session_for_owner_v1(" +
+                            "'$secondOwner',date '$session','$secondHash')",
+                    ).use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals(secondOwner, rows.getString(1))
+                        assertNotEquals(legacyRun, rows.getString(2))
+                        assertEquals("acct_${"b".repeat(32)}", rows.getString(3))
+                        assertFalse(rows.getBoolean(4))
+                    }
+                }
+            }
+
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
+            admin.prepareStatement(
+                "select user_id,claim_token_hash from automation_runtime_claim where user_id in (?,?) order by user_id",
+            ).use { statement ->
+                statement.setString(1, firstOwner)
+                statement.setString(2, secondOwner)
+                statement.executeQuery().use { rows ->
+                    assertTrue(rows.next())
+                    assertEquals(firstOwner, rows.getString(1))
+                    assertEquals(firstHash, rows.getString(2))
+                    assertTrue(rows.next())
+                    assertEquals(secondOwner, rows.getString(1))
+                    assertEquals(secondHash, rows.getString(2))
+                    assertFalse(rows.next())
+                }
             }
         }
     }

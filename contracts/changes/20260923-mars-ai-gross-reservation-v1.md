@@ -21,6 +21,7 @@ Voyage는 무료 토큰 뒤 사용량에 가격을 적용한다고 공식 문서
 [Google Cloud 예산](https://docs.cloud.google.com/billing/docs/how-to/budgets),
 [Spend Cap](https://docs.cloud.google.com/billing/docs/how-to/budgets-spend-caps)을 확인한다.
 
-이번 단계에서 기존 Pre-S5 RAG Vertex의 승인 패킷 `costCapMicrousd`를 같은 트랜잭션에
-연결했다. Strong LLM Agent·Voyage·매매 AI의 outbound 경로와 공급자별 호출/토큰
-제한은 후속 PR에서 이어 붙인다. 모두 검증되기 전에는 공개 과금 API를 열지 않는다.
+Pre-S5 RAG Vertex의 승인 `costCapMicrousd`와 S4.9 runtime Voyage query의
+authorization owner·`costCapMicrousd`를 각각 provider 호출 전에 같은 트랜잭션으로
+연결했다. Strong LLM Agent·매매 AI·데모 Agent outbound와 공급자별 호출/토큰 제한은
+후속 PR에서 이어 붙인다. 모두 검증되기 전에는 공개 과금 API를 열지 않는다.

@@ -1,7 +1,9 @@
 import { PageHeader } from '@/shared/ui/Panel';
 import { OverviewView } from '@/features/overview/OverviewView';
+import { DemoAgentView } from '@/features/demo/DemoAgentView';
 
 export default function Page() {
+  if (process.env.NEXT_PUBLIC_MARS_PRODUCT === 'demo') return <DemoAgentView />;
   return (
     <div className="space-y-8">
       <PageHeader

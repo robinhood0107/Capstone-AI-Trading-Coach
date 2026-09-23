@@ -118,9 +118,15 @@ def test_s49_runtime_reserves_shared_operator_budget_once_before_voyage_query(
     connection.execute.side_effect = execute
     monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "FULL")
     monkeypatch.setenv("MARS_AI_DAILY_HARD_CAP_USD", "1.00")
-    monkeypatch.setattr(voyage_usage_repository.psycopg, "connect", lambda *_args, **_kwargs: connection)
-    monkeypatch.setattr(voyage_usage_repository, "_attest_writer_connection", lambda _connection: None)
-    monkeypatch.setattr(voyage_usage_repository, "_set_transaction_timeouts", lambda _connection: None)
+    monkeypatch.setattr(
+        voyage_usage_repository.psycopg, "connect", lambda *_args, **_kwargs: connection
+    )
+    monkeypatch.setattr(
+        voyage_usage_repository, "_attest_writer_connection", lambda _connection: None
+    )
+    monkeypatch.setattr(
+        voyage_usage_repository, "_set_transaction_timeouts", lambda _connection: None
+    )
 
     repository = PsycopgPreS5VoyageQueryUsageRepository(database_dsn="postgresql://writer")
     activation, lease = repository.reserve_s4_9_runtime(

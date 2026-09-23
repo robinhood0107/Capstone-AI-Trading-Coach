@@ -11,7 +11,9 @@ from app.operator_ai_budget import (
 )
 
 
-def test_local_mode_does_not_install_a_public_budget_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_local_mode_does_not_install_a_public_budget_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "LOCAL")
     monkeypatch.delenv("MARS_AI_DAILY_HARD_CAP_USD", raising=False)
     assert deployment_hard_cap_microusd() is None

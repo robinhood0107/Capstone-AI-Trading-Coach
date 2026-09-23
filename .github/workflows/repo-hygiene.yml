@@ -34,7 +34,7 @@ jobs:
           if [[ "$PR_BASE" == main ]]; then
             [[ "$PR_HEAD" == develop ]]
           elif [[ "$PR_BASE" == develop ]]; then
-            [[ "$PR_HEAD" == feature/* || "$PR_HEAD" == fix/* || "$PR_HEAD" == docs/* ]]
+            [[ "$PR_HEAD" == feature/* || "$PR_HEAD" == fix/* || "$PR_HEAD" == docs/* || "$PR_HEAD" == infra/* ]]
           else
             exit 1
           fi

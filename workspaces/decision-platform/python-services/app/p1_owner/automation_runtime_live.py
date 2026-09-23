@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import hashlib
 import os
 import re
 import socket
 import ssl
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Protocol, cast
@@ -25,9 +27,14 @@ from app.brokerage.mock_order_reference_store import (
     MockProviderOrderReference,
 )
 from app.data._shared.canonical_json import canonical_json_bytes
-from app.data.kis._credential_transport import _build_redis_client
+from app.data.kis._credential_transport import _Credentials, _build_redis_client
 from app.data.kis.http_client import ASKING_PRICE_PATH, CURRENT_PRICE_PATH, KISHttpClient
 from app.data.kis.settings import KISSettings
+from app.brokerage.owner_credential_envelope import (
+    OpenedMockCredential,
+    OwnerCredentialEnvelopeOpener,
+)
+from app.generated.brokerage_pb2 import BoundMockCredentialEnvelope
 from app.disclosure_repository import PostgresStoredDisclosureRepository
 from app.operator_ai_budget import TradeAiGrossBudget
 from app.p1_owner.world_news_corpus import (
@@ -230,6 +237,58 @@ class SpringAutomationBridgeClient:
             raise AutomationRuntimeError("AUTOMATION_BRIDGE_RESPONSE_INVALID")
         return cast(dict[str, Any], parsed["data"])
 
+    def owner_mock_credential_envelope(
+        self,
+        owner_user_id: str,
+        account_id: str,
+    ) -> BoundMockCredentialEnvelope:
+        data = self.command("MOCK_CREDENTIAL", owner_user_id, {"accountId": account_id})
+        fields = {
+            "ownerUserId",
+            "accountId",
+            "revision",
+            "credentialState",
+            "kekVersion",
+            "wrapNonce",
+            "wrappedDek",
+            "wrapTag",
+            "secretNonce",
+            "secretCiphertext",
+            "secretTag",
+        }
+        if (
+            set(data) != fields
+            or data.get("ownerUserId") != owner_user_id
+            or data.get("accountId") != account_id
+            or type(data.get("revision")) is not int
+            or not isinstance(data.get("credentialState"), str)
+            or not isinstance(data.get("kekVersion"), str)
+        ):
+            raise AutomationRuntimeError("AUTOMATION_OWNER_CREDENTIAL_INVALID")
+
+        def decode(name: str, maximum: int) -> bytes:
+            raw = data.get(name)
+            if not isinstance(raw, str) or len(raw) > maximum * 2:
+                raise AutomationRuntimeError("AUTOMATION_OWNER_CREDENTIAL_INVALID")
+            try:
+                return base64.b64decode(raw, validate=True)
+            except (ValueError, binascii.Error):
+                raise AutomationRuntimeError("AUTOMATION_OWNER_CREDENTIAL_INVALID") from None
+
+        return BoundMockCredentialEnvelope(
+            owner_user_id=owner_user_id,
+            account_id=account_id,
+            revision=data["revision"],
+            credential_state=data["credentialState"],
+            kek_version=data["kekVersion"],
+            wrap_nonce=decode("wrapNonce", 12),
+            wrapped_dek=decode("wrappedDek", 32),
+            wrap_tag=decode("wrapTag", 16),
+            payload_nonce=decode("secretNonce", 12),
+            payload_ciphertext=decode("secretCiphertext", 8192),
+            payload_tag=decode("secretTag", 16),
+        )
+
     def close(self) -> None:
         self._client.close()
 
@@ -277,9 +336,9 @@ class KisOrderBookSource:
     **원장이 거래를 막을 수 없어야 한다.**
     """
 
-    def __init__(self) -> None:
+    def __init__(self, credential_provider: Callable[[], _Credentials] | None = None) -> None:
         self._settings = KISSettings(kis_mode="mock", kis_offline=False, kis_retry_attempts=1)
-        self._client = KISHttpClient(self._settings)
+        self._client = KISHttpClient(self._settings, credential_provider=credential_provider)
 
     def snapshot(self, symbol: str) -> OrderBookTop | None:
         try:
@@ -319,9 +378,9 @@ class KisOrderBookSource:
 class KisAutomationQuoteSource:
     """현재가 한 번에서 price/상한가/하한가만 즉시 축약한다."""
 
-    def __init__(self) -> None:
+    def __init__(self, credential_provider: Callable[[], _Credentials] | None = None) -> None:
         self._settings = KISSettings(kis_mode="mock", kis_offline=False, kis_retry_attempts=1)
-        self._client = KISHttpClient(self._settings)
+        self._client = KISHttpClient(self._settings, credential_provider=credential_provider)
 
     def quote(self, symbol: str) -> Quote:
         payload = self._client.request(
@@ -362,7 +421,12 @@ class KisAutomationQuoteSource:
 class KisAutomationExecutionSource:
     """Redis ciphertext reference와 공식 체결조회만 사용하며 row가 불명확하면 UNRESOLVED다."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        account_number: SecretStr | None = None,
+        credential_provider: Callable[[], _Credentials] | None = None,
+    ) -> None:
         try:
             reference_ttl_seconds = int(
                 os.environ.get("KIS_MOCK_ORDER_REFERENCE_TTL_SECONDS", "604800")
@@ -384,6 +448,8 @@ class KisAutomationExecutionSource:
         self._client = KISMockBrokerageHttpClient(
             settings=KISSettings(kis_mode="mock", kis_offline=False, kis_retry_attempts=1),
             budget=self._budget,
+            account_number=account_number,
+            credential_provider=credential_provider,
         )
         self._reader = KISMockExecutionReader(self._client)
         self._balance_reader = KISMockOnlineBalanceReader(self._client)
@@ -1099,16 +1165,55 @@ class LiveAutomationPortFactory:
 
     def build(self, claim: RuntimeClaim, state: dict[str, Any]) -> LiveAutomationPort:
         shared_secret = os.environ.get("AUTOMATION_RUNTIME_SHARED_SECRET", "").strip()
-        return LiveAutomationPort(
-            claim,
-            state,
-            SpringAutomationBridgeClient(shared_secret),
-            KisAutomationQuoteSource(),
-            KisAutomationExecutionSource(),
-            _vertex_veto_transport(owner_user_id=claim.user_id, run_id=claim.run_id),
-            _corpus_source(),
-            KisOrderBookSource(),
-        )
+        bridge = SpringAutomationBridgeClient(shared_secret)
+        opened: OpenedMockCredential | None = None
+        quote_source: KisAutomationQuoteSource | None = None
+        execution_source: KisAutomationExecutionSource | None = None
+        order_book_source: KisOrderBookSource | None = None
+        try:
+            credential_provider: Callable[[], _Credentials] | None = None
+            account_number: SecretStr | None = None
+            if os.environ.get("MARS_PUBLIC_SURFACE_MODE", "LOCAL") == "FULL":
+                envelope = bridge.owner_mock_credential_envelope(claim.user_id, claim.account_id)
+                opened = OwnerCredentialEnvelopeOpener(
+                    os.environ.get("MARS_BROKERAGE_KEK_DIRECTORY", "")
+                ).open(
+                    envelope,
+                    account_id=claim.account_id,
+                    allowed_states=frozenset({"CERTIFIED"}),
+                )
+                credentials = _Credentials(opened.app_key, opened.app_secret)
+
+                def provider() -> _Credentials:
+                    return credentials
+
+                credential_provider = provider
+                account_number = opened.account_number
+            quote_source = KisAutomationQuoteSource(credential_provider)
+            execution_source = KisAutomationExecutionSource(
+                account_number=account_number,
+                credential_provider=credential_provider,
+            )
+            order_book_source = KisOrderBookSource(credential_provider)
+            return LiveAutomationPort(
+                claim,
+                state,
+                bridge,
+                quote_source,
+                execution_source,
+                _vertex_veto_transport(owner_user_id=claim.user_id, run_id=claim.run_id),
+                _corpus_source(),
+                order_book_source,
+            )
+        except Exception:
+            bridge.close()
+            if quote_source is not None:
+                quote_source.close()
+            if execution_source is not None:
+                execution_source.close()
+            if order_book_source is not None:
+                order_book_source.close()
+            raise
 
 
 # 판단 요청의 질문은 고정이다. 사용자 문장이 여기로 들어오면 그것이 매매 판단을 바꾸는

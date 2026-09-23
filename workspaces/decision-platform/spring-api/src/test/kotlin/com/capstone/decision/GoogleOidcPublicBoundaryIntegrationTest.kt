@@ -122,6 +122,9 @@ class GoogleOidcPublicBoundaryIntegrationTest(
             registry.add("spring.flyway.user", postgres::getUsername)
             registry.add("spring.flyway.password", postgres::getPassword)
             registry.add("MARS_PUBLIC_SURFACE_MODE") { "FULL" }
+            registry.add("app.demo-credentials.user-credential-bundle") { "" }
+            registry.add("app.demo-credentials.admin-credential-bundle") { "" }
+            registry.add("app.demo-credentials.separation-key") { "" }
             registry.add("MARS_PUBLIC_ORIGIN") { "https://mars.example.test" }
             registry.add("GOOGLE_OIDC_ADMIN_SUBJECT_SHA256") { "a".repeat(64) }
             registry.add("GOOGLE_OIDC_CLIENT_ID") { "fixture-client" }

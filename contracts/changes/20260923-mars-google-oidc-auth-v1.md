@@ -22,6 +22,10 @@ password URL은 제품 게이트와 Dashboard edge에서 막는다. 내부 boots
 password 의존성을 대체한 뒤 이 임시 경로를 삭제해야 하며 최종 릴리스의 영구 호환 기능이
 아니다. root OpenAPI는 개인 실행 계약을 유지하고, full 전용 교환·로그아웃은
 `contracts/openapi/mars-full-auth.v1.openapi.json`에 둔다.
+Dashboard는 FULL 빌드에서 Google 버튼과 메모리 세션·서버 로그아웃을 쓰고,
+LOCAL 개인 체크아웃만 기존 password 폼과 탭 범위 저장을 유지한다. DEMO/FULL의
+password URL은 Next middleware에서도 404로 거부한다. LOCAL 경로는 자동운용의
+기존 내부 호출처를 바꿀 때 함께 제거할 임시 전환 경계다.
 
 이 변경만으로 공개 실서비스가 준비된 것은 아니다. KIS 개인 키 보관·계좌 격리·운영자
 AI 총량·제품별 이미지/Compose·외부 Google 설정·두 사용자 자연 세션·수용량 검증이

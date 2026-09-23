@@ -103,6 +103,29 @@ def test_submit_rpc_hashes_provider_receipt_and_uses_one_fake_transport_call() -
     assert len(transport.calls) == 1
 
 
+def test_full_rpc_requires_owner_envelope_before_any_gateway_call() -> None:
+    class UnusedOwnerFactory:
+        def open(self, *_args, **_kwargs):
+            pytest.fail("owner gateway opened without an envelope")
+
+    servicer = BrokerageServicer(None, "s" * 32, owner_factory=UnusedOwnerFactory())
+    with pytest.raises(RpcAborted) as denied:
+        servicer.SubmitMockCashOrder(
+            brokerage_pb2.SubmitMockCashOrderRequest(
+                request_id="req-owner-bound",
+                order_id="ord_mock_" + "1" * 32,
+                account_id="acct_" + "2" * 32,
+                symbol="005930",
+                side="BUY",
+                order_type="MARKET",
+                quantity=1,
+                estimated_price_krw=70000,
+            ),
+            FakeContext(),  # type: ignore[arg-type]
+        )
+    assert denied.value.code == grpc.StatusCode.PERMISSION_DENIED
+
+
 def test_rpc_auth_and_live_order_gate_fail_before_transport_side_effect() -> None:
     transport = FakeTransport()
     account_id = "acct_" + "c" * 32

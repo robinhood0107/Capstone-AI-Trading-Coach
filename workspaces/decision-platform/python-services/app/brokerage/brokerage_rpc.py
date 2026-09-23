@@ -3,9 +3,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import AbstractContextManager, contextmanager
 from datetime import UTC, datetime
-from typing import NoReturn, Protocol
+from typing import Any, NoReturn, Protocol
 
 import grpc
 
@@ -15,6 +16,7 @@ from app.brokerage.kis_mock_order_gateway import (
     MockOrderIntent,
     MockOrderRejected,
 )
+from app.brokerage.owner_credential_envelope import OwnerCredentialUnavailable
 from app.generated import brokerage_pb2, brokerage_pb2_grpc
 
 _AUTH_METADATA_KEY = "x-decision-grpc-auth"
@@ -37,28 +39,64 @@ class BalanceReadPort(Protocol):
     ) -> brokerage_pb2.GetMockBuyableResponse | None: ...
 
 
-class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
-    """KIS Mock 주문 RPC 경계.
+class OwnerBoundBrokerageFactory(Protocol):
+    def open(
+        self,
+        envelope: brokerage_pb2.BoundMockCredentialEnvelope,
+        *,
+        account_id: str,
+        allowed_states: frozenset[str],
+    ) -> AbstractContextManager[tuple[KISMockOrderGateway, BalanceReadPort]]: ...
 
-    credential·raw 계좌번호는 proto에 없고, gateway는 injected transport만 받아 테스트 기본값에서 provider 호출을 만들지 않는다.
-    """
+
+class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
+    """One mock RPC boundary; public requests require an owner-bound sealed envelope."""
 
     def __init__(
         self,
-        gateway: KISMockOrderGateway,
+        gateway: KISMockOrderGateway | None,
         shared_secret: str,
         *,
-        bound_account_id: str,
+        bound_account_id: str | None = None,
         balance_reader: BalanceReadPort | None = None,
+        owner_factory: OwnerBoundBrokerageFactory | None = None,
     ) -> None:
         if _SAFE_SECRET.fullmatch(shared_secret) is None:
             raise ValueError("Brokerage gRPC shared secret must be 32..256 safe ASCII characters")
-        if _ACCOUNT_ID.fullmatch(bound_account_id) is None:
-            raise ValueError("Brokerage gRPC bound account id is invalid")
+        if owner_factory is None:
+            if gateway is None or bound_account_id is None or _ACCOUNT_ID.fullmatch(bound_account_id) is None:
+                raise ValueError("Brokerage gRPC bound account id is invalid")
+        elif gateway is not None or bound_account_id is not None or balance_reader is not None:
+            raise ValueError("Owner-bound brokerage cannot use a deployment account")
         self._gateway = gateway
         self._shared_secret = shared_secret
         self._bound_account_id = bound_account_id
         self._balance_reader = balance_reader
+        self._owner_factory = owner_factory
+
+    @contextmanager
+    def _session(
+        self,
+        request: Any,
+        allowed_states: frozenset[str],
+    ) -> Iterator[tuple[KISMockOrderGateway, BalanceReadPort | None]]:
+        factory = self._owner_factory
+        if factory is not None:
+            if not request.HasField("credential"):
+                raise OwnerCredentialUnavailable("BROKERAGE_CREDENTIAL_UNAVAILABLE")
+            with factory.open(
+                request.credential,
+                account_id=request.account_id,
+                allowed_states=allowed_states,
+            ) as session:
+                yield session
+        else:
+            if request.HasField("credential"):
+                raise OwnerCredentialUnavailable("BROKERAGE_CREDENTIAL_UNAVAILABLE")
+            assert self._bound_account_id is not None and self._gateway is not None
+            if request.account_id != self._bound_account_id:
+                raise OwnerCredentialUnavailable("BROKERAGE_CREDENTIAL_UNAVAILABLE")
+            yield self._gateway, self._balance_reader
 
     def SubmitMockCashOrder(
         self,
@@ -67,19 +105,21 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
     ) -> brokerage_pb2.SubmitMockCashOrderResponse:
         _require_authenticated(context, self._shared_secret)
         _validate_submit_request(request, context)
-        _require_bound_account(request.account_id, self._bound_account_id, context)
         try:
-            receipt = self._gateway.submit_cash_order(
-                MockOrderIntent(
-                    symbol=request.symbol,
-                    side=request.side,  # type: ignore[arg-type]
-                    order_type=request.order_type,  # type: ignore[arg-type]
-                    quantity=request.quantity,
-                    estimated_price=request.estimated_price_krw,
-                ),
-                order_id=request.order_id,
-                account_id=request.account_id,
-            )
+            with self._session(request, frozenset({"CERTIFIED"})) as (gateway, _):
+                receipt = gateway.submit_cash_order(
+                    MockOrderIntent(
+                        symbol=request.symbol,
+                        side=request.side,  # type: ignore[arg-type]
+                        order_type=request.order_type,  # type: ignore[arg-type]
+                        quantity=request.quantity,
+                        estimated_price=request.estimated_price_krw,
+                    ),
+                    order_id=request.order_id,
+                    account_id=request.account_id,
+                )
+        except OwnerCredentialUnavailable:
+            _abort(context, grpc.StatusCode.PERMISSION_DENIED, "mock owner credential unavailable")
         except LiveOrderGateClosed:
             _abort(context, grpc.StatusCode.PERMISSION_DENIED, "live order gate is closed")
         except (MockOrderRejected, ValueError):
@@ -103,12 +143,16 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
     ) -> brokerage_pb2.CancelMockCashOrderResponse:
         _require_authenticated(context, self._shared_secret)
         _validate_order_and_account(request.order_id, request.account_id, context)
-        _require_bound_account(request.account_id, self._bound_account_id, context)
         try:
-            receipt = self._gateway.cancel_cash_order(
-                order_id=request.order_id,
-                account_id=request.account_id,
-            )
+            with self._session(
+                request, frozenset({"CERTIFIED", "DISCONNECTING"})
+            ) as (gateway, _):
+                receipt = gateway.cancel_cash_order(
+                    order_id=request.order_id,
+                    account_id=request.account_id,
+                )
+        except OwnerCredentialUnavailable:
+            _abort(context, grpc.StatusCode.PERMISSION_DENIED, "mock owner credential unavailable")
         except LiveOrderGateClosed:
             _abort(context, grpc.StatusCode.PERMISSION_DENIED, "live order gate is closed")
         except (MockOrderRejected, ValueError):
@@ -130,12 +174,15 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
     ) -> brokerage_pb2.GetMockBalanceResponse:
         _require_authenticated(context, self._shared_secret)
         _validate_account(request.account_id, context)
-        _require_bound_account(request.account_id, self._bound_account_id, context)
-        reader = self._balance_reader
-        if reader is None:
-            _abort(context, grpc.StatusCode.UNAVAILABLE, "mock balance reader is not wired")
         try:
-            response = reader.balance(request.account_id)
+            with self._session(
+                request, frozenset({"STORED", "CONNECTED", "CERTIFIED", "DISCONNECTING"})
+            ) as (_, reader):
+                if reader is None:
+                    _abort(context, grpc.StatusCode.UNAVAILABLE, "mock balance reader is not wired")
+                response = reader.balance(request.account_id)
+        except OwnerCredentialUnavailable:
+            _abort(context, grpc.StatusCode.PERMISSION_DENIED, "mock owner credential unavailable")
         except Exception:
             _abort(context, grpc.StatusCode.UNAVAILABLE, "mock balance source unavailable")
         if response is None:
@@ -149,18 +196,19 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
     ) -> brokerage_pb2.GetMockBuyableResponse:
         _require_authenticated(context, self._shared_secret)
         _validate_account(request.account_id, context)
-        _require_bound_account(request.account_id, self._bound_account_id, context)
         if not _symbol(request.symbol) or request.estimated_price_krw <= 0:
             _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "buyable query is invalid")
-        reader = self._balance_reader
-        if reader is None:
-            _abort(context, grpc.StatusCode.UNAVAILABLE, "mock buyable reader is not wired")
         try:
-            response = reader.buyable(
-                request.account_id,
-                request.symbol,
-                request.estimated_price_krw,
-            )
+            with self._session(request, frozenset({"CONNECTED", "CERTIFIED"})) as (_, reader):
+                if reader is None:
+                    _abort(context, grpc.StatusCode.UNAVAILABLE, "mock buyable reader is not wired")
+                response = reader.buyable(
+                    request.account_id,
+                    request.symbol,
+                    request.estimated_price_krw,
+                )
+        except OwnerCredentialUnavailable:
+            _abort(context, grpc.StatusCode.PERMISSION_DENIED, "mock owner credential unavailable")
         except Exception as error:
             # Preserve the error class without exposing account or provider payloads.
             _abort(

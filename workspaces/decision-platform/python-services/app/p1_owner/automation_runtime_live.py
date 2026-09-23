@@ -29,6 +29,7 @@ from app.data.kis._credential_transport import _build_redis_client
 from app.data.kis.http_client import ASKING_PRICE_PATH, CURRENT_PRICE_PATH, KISHttpClient
 from app.data.kis.settings import KISSettings
 from app.disclosure_repository import PostgresStoredDisclosureRepository
+from app.operator_ai_budget import TradeAiGrossBudget
 from app.p1_owner.world_news_corpus import (
     MergedCorpusDocumentSource,
     StoredWorldNewsArticle,
@@ -1104,7 +1105,7 @@ class LiveAutomationPortFactory:
             SpringAutomationBridgeClient(shared_secret),
             KisAutomationQuoteSource(),
             KisAutomationExecutionSource(),
-            _vertex_veto_transport(),
+            _vertex_veto_transport(owner_user_id=claim.user_id, run_id=claim.run_id),
             _corpus_source(),
             KisOrderBookSource(),
         )
@@ -1488,7 +1489,7 @@ class _EmptyDisclosureBatch:
     collection_status: str = "READ_FAILED"
 
 
-def _vertex_veto_transport() -> VertexVetoTransport:
+def _vertex_veto_transport(*, owner_user_id: str, run_id: str) -> VertexVetoTransport:
     """설정이 있으면 실 Vertex를, 없으면 기존 fail-closed transport를 쓴다.
 
     미설정이 곧 ABSTAIN이고 ABSTAIN은 매수를 막으므로, 설정이 없는 쪽이 항상 더 안전하다.
@@ -1497,7 +1498,14 @@ def _vertex_veto_transport() -> VertexVetoTransport:
     settings = VertexTransportSettings.from_environment()
     if settings is None:
         return FailClosedVertexVetoTransport()
-    return VertexAiVetoTransport(settings=settings)
+    # The budget owner and reservation identity come from the verified runtime claim,
+    # never from the model packet or a caller-provided account field.
+    return VertexAiVetoTransport(
+        settings=settings,
+        owner_user_id=owner_user_id,
+        run_id=run_id,
+        gross_budget=TradeAiGrossBudget.from_environment(),
+    )
 
 
 def _projection_equity(expected: Mapping[str, Any], balance: Mapping[str, Any]) -> int:

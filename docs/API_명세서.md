@@ -2337,7 +2337,8 @@ full 제품의 `GET/PUT /api/v1/admin/ai-budget`은 Google OIDC로 확인한 현
 NAS 비공개 `MARS_AI_DAILY_HARD_CAP_USD`보다 높을 수 없다. 경쟁 변경은 409다.
 공용 예약 원장을 모든 과금 경로에 연결하기 전에는 공개 Agent·매매 AI
 과금 호출을 열지 않는다. Pre-S5 RAG Vertex와 S4.9 runtime Voyage query는 같은
-원장에 예약하며, Strong LLM Agent·매매 AI는 연결 뒤에 연다.
+원장에 예약하며, 매매 뉴스 Vertex 판정도 owner/run 결속 예약을 완료했다.
+Strong LLM Agent와 데모 Agent는 연결 뒤에 연다.
 [full 전용 schema](../contracts/openapi/mars-full-operator-ai-budget.v1.openapi.json)와
 [변경 근거](../contracts/changes/20260923-mars-operator-ai-budget-policy.md)를 따른다.
 
@@ -2345,6 +2346,8 @@ NAS 비공개 `MARS_AI_DAILY_HARD_CAP_USD`보다 높을 수 없다. 경쟁 변�
 **공개가격 기준 최대 노출액**을 서울 날짜별로 예약한다. RAG Vertex는 기존 승인 패킷의
 요청별 `costCapMicrousd`를 전송 전에 합산한다. 다른 과금 경로가 같은 원장을
 통과하기 전에는 공개 과금 기능을 열지 않는다.
+매매 뉴스 Vertex는 요청 크기와 출력 토큰 상한의 보수적인 공개가격 환산액을 전송 전에
+예약하고, 실패하면 ABSTAIN으로 닫는다.
 [원장 계약](../contracts/changes/20260923-mars-ai-gross-reservation-v1.md)을 따른다.
 
 ### 10.0 MARS full 사용자별 KIS_MOCK 자격증명 저장 (연결·주문 검증 전)

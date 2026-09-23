@@ -19,7 +19,7 @@ import com.capstone.decision.contract.internal.s49.StrongLlmAgentServiceGrpc
 import com.capstone.decision.contract.internal.s49.ToolResult
 import com.capstone.decision.infrastructure.mcp.ResearchToolFacade
 import com.capstone.decision.infrastructure.mcp.S49SearchUnavailableException
-import com.capstone.decision.infrastructure.vertex.S49FullAgentGrossBudget
+import com.capstone.decision.infrastructure.vertex.S49PublicAgentGrossBudget
 import com.capstone.decision.infrastructure.vertex.S49GoogleGroundingBudgetPort
 import com.capstone.decision.infrastructure.vertex.S49StrongLlmCompletionPort
 import com.capstone.decision.infrastructure.vertex.S49StrongLlmProperties
@@ -53,7 +53,7 @@ internal class GrpcStrongLlmGenerationAdapter(
     private val strongLlmProperties: S49StrongLlmProperties,
     private val grpcProperties: StrongLlmAgentGrpcProperties,
     private val googleBudget: S49GoogleGroundingBudgetPort,
-    private val operatorGrossBudget: S49FullAgentGrossBudget,
+    private val operatorGrossBudget: S49PublicAgentGrossBudget,
     private val usageLedger: S49StrongLlmUsageV2Port,
     private val completion: S49StrongLlmCompletionPort,
     private val groundingProvenance: S49GroundingProvenancePort,

@@ -64,7 +64,8 @@ internal class PublicSurfaceGate(
                     "GET" to "/api/v1/admin/ai-budget",
                     "PUT" to "/api/v1/admin/ai-budget",
                     -> true
-                    else -> false
+                    else ->
+                        false
                 }
         if (mode != PublicSurfaceMode.LOCAL && !health && !fullAllowed && !fullAgentAllowed && !demoAllowed) {
             response.sendError(HttpServletResponse.SC_NOT_FOUND)

@@ -7,10 +7,12 @@ import com.capstone.decision.application.brokerage.BrokerageActor
 import com.capstone.decision.application.brokerage.BrokerageService
 import com.capstone.decision.application.decision.DecisionActor
 import com.capstone.decision.application.decision.DecisionService
+import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
 import com.capstone.decision.infrastructure.security.UserSecurityRepository
 import io.swagger.v3.oas.annotations.Hidden
 import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -27,6 +29,7 @@ import tools.jackson.core.json.JsonFactory
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
 import java.security.MessageDigest
+import java.util.Base64
 import java.util.UUID
 
 /**
@@ -43,6 +46,7 @@ class AutomationRuntimeBridgeController(
     private val brokerageParser: BrokerageRequestParser,
     private val automationEvidenceService: AutomationEvidenceService,
     private val users: UserSecurityRepository,
+    private val mockCredentials: ObjectProvider<MockCredentialSettingsService>,
     @Value("\${AUTOMATION_RUNTIME_SHARED_SECRET:}") private val configuredSecret: String,
 ) {
     private val parser = AutomationRuntimeBridgeParser()
@@ -103,6 +107,8 @@ class AutomationRuntimeBridgeController(
                                 command.userId,
                                 brokerageParser.parseOrderId(command.text("orderId")),
                             )
+                        "MOCK_CREDENTIAL" ->
+                            ownerMockCredential(command.userId, command.text("accountId"))
                         "CANCEL" ->
                             brokerageService.cancelOwnedOrder(
                                 actor = BrokerageActor(command.userId, actor.role.name, actor.securityVersion, requestId),
@@ -137,6 +143,32 @@ class AutomationRuntimeBridgeController(
         if (remoteAddress !in setOf("127.0.0.1", "0:0:0:0:0:0:0:1", "::1")) return false
         if (!SECRET.matches(configuredSecret) || suppliedSecret == null) return false
         return MessageDigest.isEqual(configuredSecret.toByteArray(), suppliedSecret.toByteArray())
+    }
+
+    private fun ownerMockCredential(
+        ownerUserId: String,
+        rawAccountId: String,
+    ): Map<String, Any> {
+        val accountId = brokerageParser.parseAccountId(rawAccountId)
+        val service = mockCredentials.ifAvailable ?: error("BROKERAGE_CREDENTIAL_UNAVAILABLE")
+        return service.resolveEnvelope(ownerUserId, accountId).use { envelope ->
+            check(envelope.state == "CERTIFIED") { "BROKERAGE_CREDENTIAL_NOT_CERTIFIED" }
+            val sealed = envelope.sealed
+            val encoder = Base64.getEncoder()
+            mapOf(
+                "ownerUserId" to ownerUserId,
+                "accountId" to envelope.accountId,
+                "revision" to envelope.revision,
+                "credentialState" to envelope.state,
+                "kekVersion" to sealed.kekVersion,
+                "wrapNonce" to encoder.encodeToString(sealed.wrapNonce),
+                "wrappedDek" to encoder.encodeToString(sealed.wrappedDek),
+                "wrapTag" to encoder.encodeToString(sealed.wrapTag),
+                "secretNonce" to encoder.encodeToString(sealed.secretNonce),
+                "secretCiphertext" to encoder.encodeToString(sealed.secretCiphertext),
+                "secretTag" to encoder.encodeToString(sealed.secretTag),
+            )
+        }
     }
 
     private companion object {
@@ -234,6 +266,7 @@ private class AutomationRuntimeBridgeParser {
                 "JUDGE",
                 "SUBMIT",
                 "ORDER",
+                "MOCK_CREDENTIAL",
                 "CANCEL",
             )
         val USER_ID = Regex("^usr_[A-Za-z0-9_-]{8,96}$")

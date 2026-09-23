@@ -15,7 +15,6 @@ class PublicSurfaceGateTest {
             listOf(
                 "/api/v1/auth/login",
                 "/api/v1/brokerage/mock/orders",
-                "/api/v2/rag/ask",
                 "/internal/automation-runtime/run",
             )
         for (mode in listOf(PublicSurfaceMode.DEMO, PublicSurfaceMode.FULL)) {
@@ -26,6 +25,48 @@ class PublicSurfaceGateTest {
                 assertEquals(404, response.status, "$mode $path")
                 assertEquals(null, chain.request, "$mode $path")
             }
+        }
+    }
+
+    @Test
+    fun `full agent permits only the owner scoped RAG routes while demo denies them`() {
+        val detail = "/api/v2/rag/history/rag_abcdefghijkl"
+        val allowed =
+            listOf(
+                "GET" to "/api/v2/rag/corpus-status",
+                "GET" to "/api/v2/rag/consent",
+                "GET" to "/api/v2/rag/world-news",
+                "GET" to "/api/v2/rag/history",
+                "POST" to "/api/v2/rag/consents",
+                "POST" to "/api/v2/rag/vertex-preparations",
+                "POST" to "/api/v2/rag/ask",
+                "GET" to detail,
+                "DELETE" to detail,
+            )
+        for ((method, path) in allowed) {
+            val fullChain = MockFilterChain()
+            PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(
+                MockHttpServletRequest(method, path),
+                MockHttpServletResponse(),
+                fullChain,
+            )
+            assertEquals(path, (fullChain.request as MockHttpServletRequest).requestURI)
+            val demoResponse = MockHttpServletResponse()
+            PublicSurfaceGate(PublicSurfaceMode.DEMO).doFilter(
+                MockHttpServletRequest(method, path),
+                demoResponse,
+                MockFilterChain(),
+            )
+            assertEquals(404, demoResponse.status)
+        }
+        for ((method, path) in listOf("GET" to "/api/v2/rag/ask", "POST" to detail, "GET" to "$detail/extra")) {
+            val response = MockHttpServletResponse()
+            PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(
+                MockHttpServletRequest(method, path),
+                response,
+                MockFilterChain(),
+            )
+            assertEquals(404, response.status)
         }
     }
 

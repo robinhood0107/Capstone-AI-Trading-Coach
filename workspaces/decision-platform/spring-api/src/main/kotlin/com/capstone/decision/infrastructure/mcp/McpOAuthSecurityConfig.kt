@@ -19,6 +19,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.Profile
 import org.springframework.core.annotation.Order
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -66,6 +67,7 @@ import java.util.HexFormat
 import java.util.UUID
 
 @Configuration
+@Profile("!mars-full & !mars-demo")
 @ConditionalOnProperty(name = ["app.s4-9.mcp-oauth.enabled"], havingValue = "true")
 @EnableConfigurationProperties(McpOAuthProperties::class)
 class McpOAuthSecurityConfig {

@@ -1,0 +1,80 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "MARS full product authentication",
+    "version": "0.1.0-draft"
+  },
+  "servers": [{"url": "https://mars.royaljellynas.org"}],
+  "paths": {
+    "/api/v1/auth/oidc/exchange": {
+      "post": {
+        "operationId": "exchangeGoogleOidcSession",
+        "summary": "Consume one validated Google login handoff",
+        "parameters": [{
+          "name": "Origin",
+          "in": "header",
+          "required": true,
+          "schema": {"type": "string", "const": "https://mars.royaljellynas.org"}
+        }],
+        "responses": {
+          "200": {
+            "description": "Bearer token and internal USER or allowlisted ADMIN",
+            "headers": {"Cache-Control": {"schema": {"type": "string", "const": "no-store"}}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoginEnvelope"}}}
+          },
+          "401": {"description": "No pending or already consumed handoff"},
+          "403": {"description": "Origin, query, or body rejected"}
+        },
+        "security": []
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "logoutActorSession",
+        "summary": "Revoke the current DB-backed Bearer session",
+        "responses": {"204": {"description": "Session revoked"}, "401": {"description": "Bearer session invalid"}},
+        "security": [{"bearerAuth": []}]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+    },
+    "schemas": {
+      "LoginEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["success", "requestId", "data", "warnings", "error"],
+        "properties": {
+          "success": {"type": "boolean", "const": true},
+          "requestId": {"type": "string"},
+          "data": {"$ref": "#/components/schemas/LoginResponse"},
+          "warnings": {"type": "array", "items": {"type": "object"}},
+          "error": {"type": "null"}
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["accessToken", "tokenType", "expiresAt", "user"],
+        "properties": {
+          "accessToken": {"type": "string", "minLength": 1},
+          "tokenType": {"type": "string", "const": "Bearer"},
+          "expiresAt": {"type": "string", "format": "date-time"},
+          "user": {"$ref": "#/components/schemas/LoginUser"}
+        }
+      },
+      "LoginUser": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["userId", "username", "role"],
+        "properties": {
+          "userId": {"type": "string", "pattern": "^usr_[A-Za-z0-9_-]{4,96}$"},
+          "username": {"type": "string", "pattern": "^oidc_[0-9a-f]{32}$"},
+          "role": {"type": "string", "enum": ["USER", "ADMIN"]}
+        }
+      }
+    }
+  }
+}

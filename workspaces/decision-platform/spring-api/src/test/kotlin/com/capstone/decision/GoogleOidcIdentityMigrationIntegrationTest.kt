@@ -142,6 +142,155 @@ class GoogleOidcIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase(
         }
     }
 
+    @Test
+    fun `only current Google ADMIN can read and change the operator AI budget`() {
+        val admin = issueSession("test-budget-admin-" + UUID.randomUUID(), operatorSubject = true)
+        val user = issueSession("test-budget-user-" + UUID.randomUUID())
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", "app-test").use { connection ->
+            val denied =
+                assertThrows(SQLException::class.java) {
+                    connection.prepareStatement("select * from read_operator_ai_budget_policy_v1(?,?)").use { statement ->
+                        statement.setString(1, user.userId)
+                        statement.setLong(2, 1)
+                        statement.executeQuery()
+                    }
+                }
+            assertEquals("42501", denied.sqlState)
+
+            val revision =
+                connection.prepareStatement("select revision from read_operator_ai_budget_policy_v1(?,?)").use { statement ->
+                    statement.setString(1, admin.userId)
+                    statement.setLong(2, 1)
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        result.getLong(1)
+                    }
+                }
+            connection.prepareStatement("select set_operator_ai_budget_policy_v1(?,?,?,?)").use { statement ->
+                statement.setString(1, admin.userId)
+                statement.setLong(2, 1)
+                statement.setLong(3, 1_230_000)
+                statement.setLong(4, revision)
+                statement.executeQuery().use { result ->
+                    assertTrue(result.next())
+                    assertEquals(revision + 1, result.getLong(1))
+                }
+            }
+            val stale =
+                assertThrows(SQLException::class.java) {
+                    connection.prepareStatement("select set_operator_ai_budget_policy_v1(?,?,?,?)").use { statement ->
+                        statement.setString(1, admin.userId)
+                        statement.setLong(2, 1)
+                        statement.setLong(3, 2_000_000)
+                        statement.setLong(4, revision)
+                        statement.executeQuery()
+                    }
+                }
+            assertEquals("40001", stale.sqlState)
+            val directRead =
+                assertThrows(SQLException::class.java) {
+                    connection.createStatement().use { statement ->
+                        statement.executeQuery("select * from operator_ai_budget_policy")
+                    }
+                }
+            assertEquals("42501", directRead.sqlState)
+        }
+    }
+
+    @Test
+    fun `two users and three provider roles share one atomic daily gross budget`() {
+        val admin = issueSession("test-gross-admin-" + UUID.randomUUID(), operatorSubject = true)
+        val users = (1..2).map { issueSession("test-gross-user-" + UUID.randomUUID()) }
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", "app-test").use { connection ->
+            val revision =
+                connection.prepareStatement("select revision from read_operator_ai_budget_policy_v1(?,?)").use { statement ->
+                    statement.setString(1, admin.userId)
+                    statement.setLong(2, 1)
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        result.getLong(1)
+                    }
+                }
+            connection.prepareStatement("select set_operator_ai_budget_policy_v1(?,?,?,?)").use { statement ->
+                statement.setString(1, admin.userId)
+                statement.setLong(2, 1)
+                statement.setLong(3, 1_000_000)
+                statement.setLong(4, revision)
+                statement.executeQuery()
+            }
+        }
+
+        fun reserve(
+            role: String,
+            password: String,
+            owner: String?,
+            source: String,
+            provider: String,
+            amount: Long,
+            id: String = "aibr_" + UUID.randomUUID().toString().replace("-", ""),
+        ): Boolean =
+            DriverManager.getConnection(postgres.jdbcUrl, role, password).use { connection ->
+                connection.prepareStatement("select reserve_operator_ai_gross_usage_v1(?,?,?,?,?,?)").use { statement ->
+                    statement.setString(1, id)
+                    statement.setString(2, owner)
+                    statement.setString(3, source)
+                    statement.setString(4, provider)
+                    statement.setLong(5, amount)
+                    statement.setLong(6, 1_000_000)
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        result.getBoolean(1)
+                    }
+                }
+            }
+
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        val outcomes =
+            try {
+                val futures =
+                    users.map { user ->
+                        executor.submit(
+                            Callable {
+                                start.await()
+                                reserve("decision_app", "app-test", user.userId, "FULL_AGENT", "VERTEX", 600_000)
+                            },
+                        )
+                    }
+                start.countDown()
+                futures.map { it.get() }
+            } finally {
+                executor.shutdownNow()
+            }
+        assertEquals(listOf(false, true), outcomes.sorted())
+        assertTrue(
+            reserve(
+                "decision_rag_writer",
+                "rag-writer-test",
+                users[0].userId,
+                "RAG_VOYAGE",
+                "VOYAGE",
+                100_000,
+            ),
+        )
+        assertTrue(
+            reserve(
+                "decision_automation_runtime",
+                "automation-runtime-test-0001",
+                users[1].userId,
+                "TRADE_AI",
+                "VERTEX",
+                100_000,
+            ),
+        )
+        assertFalse(reserve("decision_app", "app-test", users[0].userId, "FULL_AGENT", "VERTEX", 300_001))
+        val wrongSource =
+            assertThrows(SQLException::class.java) {
+                reserve("decision_rag_writer", "rag-writer-test", users[0].userId, "FULL_AGENT", "VERTEX", 1)
+            }
+        assertEquals("42501", wrongSource.sqlState)
+    }
+
     private fun revokeSession(
         handle: String,
         userId: String,

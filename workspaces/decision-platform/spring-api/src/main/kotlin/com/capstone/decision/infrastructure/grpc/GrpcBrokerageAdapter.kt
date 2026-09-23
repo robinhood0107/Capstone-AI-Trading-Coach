@@ -11,11 +11,14 @@ import com.capstone.decision.application.brokerage.BrokerageGatewaySubmitRequest
 import com.capstone.decision.application.brokerage.BrokerageGatewaySubmitResult
 import com.capstone.decision.application.brokerage.BrokerageUnavailableException
 import com.capstone.decision.application.brokerage.MockBalancePositionProjection
+import com.capstone.decision.contract.v1.BoundMockCredentialEnvelope
 import com.capstone.decision.contract.v1.BrokerageServiceGrpc
 import com.capstone.decision.contract.v1.CancelMockCashOrderRequest
 import com.capstone.decision.contract.v1.GetMockBalanceRequest
 import com.capstone.decision.contract.v1.GetMockBuyableRequest
 import com.capstone.decision.contract.v1.SubmitMockCashOrderRequest
+import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
+import com.google.protobuf.ByteString
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
 import io.grpc.ManagedChannel
 import io.grpc.Metadata
@@ -24,6 +27,7 @@ import io.grpc.StatusRuntimeException
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
 import io.grpc.stub.MetadataUtils
 import jakarta.annotation.PreDestroy
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import java.time.Instant
@@ -38,6 +42,7 @@ import java.util.concurrent.TimeUnit
 class GrpcBrokerageAdapter(
     private val properties: BrokerageGrpcProperties,
     circuitBreakerRegistry: CircuitBreakerRegistry,
+    private val credentialProvider: ObjectProvider<MockCredentialSettingsService>,
 ) : BrokerageGatewayPort,
     AutoCloseable {
     private val channel: ManagedChannel
@@ -56,7 +61,7 @@ class GrpcBrokerageAdapter(
 
     override fun submitMockOrder(request: BrokerageGatewaySubmitRequest): BrokerageGatewaySubmitResult =
         circuitBreaker.executeSupplier {
-            val rpcRequest =
+            val builder =
                 SubmitMockCashOrderRequest
                     .newBuilder()
                     .setRequestId(request.requestId)
@@ -67,7 +72,9 @@ class GrpcBrokerageAdapter(
                     .setOrderType(request.orderIntent.orderType)
                     .setQuantity(request.orderIntent.quantity)
                     .setEstimatedPriceKrw(request.orderIntent.estimatedPrice)
-                    .build()
+            boundCredential(request.ownerUserId, request.accountId, setOf("CERTIFIED"))
+                ?.let { builder.setCredential(it) }
+            val rpcRequest = builder.build()
             if (rpcRequest.serializedSize > properties.requestMaxBytes) {
                 throw BrokerageUnavailableException("Brokerage gRPC request exceeded bounded contract.")
             }
@@ -95,13 +102,15 @@ class GrpcBrokerageAdapter(
 
     override fun cancelMockOrder(request: BrokerageGatewayCancelRequest): BrokerageGatewayCancelResult =
         circuitBreaker.executeSupplier {
-            val rpcRequest =
+            val builder =
                 CancelMockCashOrderRequest
                     .newBuilder()
                     .setRequestId(request.requestId)
                     .setOrderId(request.orderId)
                     .setAccountId(request.accountId)
-                    .build()
+            boundCredential(request.ownerUserId, request.accountId, setOf("CERTIFIED", "DISCONNECTING"))
+                ?.let { builder.setCredential(it) }
+            val rpcRequest = builder.build()
             if (rpcRequest.serializedSize > properties.requestMaxBytes) {
                 throw BrokerageUnavailableException("Brokerage gRPC request exceeded bounded contract.")
             }
@@ -124,12 +133,14 @@ class GrpcBrokerageAdapter(
 
     override fun getMockBalance(request: BrokerageGatewayBalanceRequest): BrokerageGatewayBalanceResult =
         circuitBreaker.executeSupplier {
-            val rpcRequest =
+            val builder =
                 GetMockBalanceRequest
                     .newBuilder()
                     .setRequestId(request.requestId)
                     .setAccountId(request.accountId)
-                    .build()
+            boundCredential(request.ownerUserId, request.accountId, setOf("STORED", "CONNECTED", "CERTIFIED", "DISCONNECTING"))
+                ?.let { builder.setCredential(it) }
+            val rpcRequest = builder.build()
             requireBoundedRequest(rpcRequest.serializedSize)
             try {
                 val response = stub().getMockBalance(rpcRequest)
@@ -180,14 +191,16 @@ class GrpcBrokerageAdapter(
 
     override fun getMockBuyable(request: BrokerageGatewayBuyableRequest): BrokerageGatewayBuyableResult =
         circuitBreaker.executeSupplier {
-            val rpcRequest =
+            val builder =
                 GetMockBuyableRequest
                     .newBuilder()
                     .setRequestId(request.requestId)
                     .setAccountId(request.accountId)
                     .setSymbol(request.symbol)
                     .setEstimatedPriceKrw(request.estimatedPriceKrw)
-                    .build()
+            boundCredential(request.ownerUserId, request.accountId, setOf("CONNECTED", "CERTIFIED"))
+                ?.let { builder.setCredential(it) }
+            val rpcRequest = builder.build()
             requireBoundedRequest(rpcRequest.serializedSize)
             try {
                 val response = stub().getMockBuyable(rpcRequest)
@@ -224,6 +237,33 @@ class GrpcBrokerageAdapter(
             .newBlockingStub(channel)
             .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(authHeaders()))
             .withDeadlineAfter(properties.deadlineMillis, TimeUnit.MILLISECONDS)
+
+    /** Only a current owner row may supply the sealed bytes; no full-product environment fallback exists. */
+    private fun boundCredential(
+        ownerUserId: String,
+        accountId: String,
+        allowedStates: Set<String>,
+    ): BoundMockCredentialEnvelope? =
+        credentialProvider.ifAvailable?.resolveEnvelope(ownerUserId, accountId)?.use { envelope ->
+            if (envelope.state !in allowedStates) {
+                throw BrokerageUnavailableException("KIS_MOCK credential is not ready for this operation.")
+            }
+            val sealed = envelope.sealed
+            BoundMockCredentialEnvelope
+                .newBuilder()
+                .setOwnerUserId(ownerUserId)
+                .setAccountId(accountId)
+                .setRevision(envelope.revision)
+                .setCredentialState(envelope.state)
+                .setKekVersion(sealed.kekVersion)
+                .setWrapNonce(ByteString.copyFrom(sealed.wrapNonce))
+                .setWrappedDek(ByteString.copyFrom(sealed.wrappedDek))
+                .setWrapTag(ByteString.copyFrom(sealed.wrapTag))
+                .setPayloadNonce(ByteString.copyFrom(sealed.secretNonce))
+                .setPayloadCiphertext(ByteString.copyFrom(sealed.secretCiphertext))
+                .setPayloadTag(ByteString.copyFrom(sealed.secretTag))
+                .build()
+        }
 
     private fun requireBoundedRequest(serializedSize: Int) {
         if (serializedSize > properties.requestMaxBytes) {

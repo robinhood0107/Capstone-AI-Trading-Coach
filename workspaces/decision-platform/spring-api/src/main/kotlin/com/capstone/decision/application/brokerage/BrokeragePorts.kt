@@ -14,6 +14,7 @@ interface BrokerageIdempotencyIdentityPort {
 data class BrokerageGatewaySubmitRequest(
     val requestId: String,
     val orderId: String,
+    val ownerUserId: String,
     val accountId: String,
     val orderIntent: OrderIntentSnapshot,
 )
@@ -28,6 +29,7 @@ data class BrokerageGatewaySubmitResult(
 data class BrokerageGatewayCancelRequest(
     val requestId: String,
     val orderId: String,
+    val ownerUserId: String,
     val accountId: String,
 )
 
@@ -39,6 +41,7 @@ data class BrokerageGatewayCancelResult(
 
 data class BrokerageGatewayBalanceRequest(
     val requestId: String,
+    val ownerUserId: String,
     val accountId: String,
 )
 
@@ -54,6 +57,7 @@ data class BrokerageGatewayBalanceResult(
 
 data class BrokerageGatewayBuyableRequest(
     val requestId: String,
+    val ownerUserId: String,
     val accountId: String,
     val symbol: String,
     val estimatedPriceKrw: Long,

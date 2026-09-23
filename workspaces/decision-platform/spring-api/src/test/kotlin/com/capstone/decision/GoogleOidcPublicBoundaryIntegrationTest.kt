@@ -126,6 +126,7 @@ class GoogleOidcPublicBoundaryIntegrationTest(
             registry.add("GOOGLE_OIDC_CLIENT_ID") { "fixture-client" }
             registry.add("GOOGLE_OIDC_CLIENT_SECRET") { "fixture-secret" }
             registry.add("MARS_BROKERAGE_KEK_DIRECTORY") { brokerageKekDirectory.toString() }
+            registry.add("MARS_AI_DAILY_HARD_CAP_USD") { "1.00" }
             registry.add("GOOGLE_OIDC_REDIRECT_URI") {
                 "https://mars.example.test/api/v1/auth/oidc/callback/google"
             }

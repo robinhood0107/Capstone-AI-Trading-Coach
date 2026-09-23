@@ -31,6 +31,7 @@ import type {
   RecentRiskResultList,
   MockBalance,
   MockCredentialReadResponse,
+  OperatorAiBudgetPolicy,
   MockBuyable,
   MockOrderRequest,
   MockOrderSubmitted,
@@ -81,6 +82,17 @@ export const api = {
 
   putMockCredential(input: { appKey: string; appSecret: string; accountNo: string }): Promise<void> {
     return apiFetchBare<void>('/api/v1/brokerage/mock/credential', { method: 'PUT', body: input });
+  },
+
+  operatorAiBudget(): Promise<ApiResult<OperatorAiBudgetPolicy>> {
+    return apiFetch<OperatorAiBudgetPolicy>('/api/v1/admin/ai-budget');
+  },
+
+  putOperatorAiBudget(input: {
+    dailySoftCapCents: number;
+    expectedRevision: number;
+  }): Promise<ApiResult<OperatorAiBudgetPolicy>> {
+    return apiFetch<OperatorAiBudgetPolicy>('/api/v1/admin/ai-budget', { method: 'PUT', body: input });
   },
 
   /* -------------------------------------------------------------- 상태 */

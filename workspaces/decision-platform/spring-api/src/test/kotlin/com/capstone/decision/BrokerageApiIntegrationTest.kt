@@ -12,17 +12,20 @@ import com.capstone.decision.infrastructure.brokerage.BrokerageIdempotencyHasher
 import com.capstone.decision.infrastructure.brokerage.RedisPaperIdempotencyClaimAdapter
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
+import com.capstone.decision.infrastructure.security.ActorRlsScope
 import com.capstone.decision.infrastructure.security.AuthenticatedAccount
 import com.capstone.decision.infrastructure.security.DemoRole
 import com.capstone.decision.infrastructure.security.JwtService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
+import org.springframework.dao.PessimisticLockingFailureException
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
@@ -84,6 +87,112 @@ class BrokerageApiIntegrationTest(
         )
     }
     private val appJdbcTemplate: JdbcTemplate by lazy { JdbcTemplate(appDataSource) }
+
+    @Test
+    fun `disconnect retains encrypted owner credential until pending mock order is closed`() {
+        val token = login("demo-user", userPassword())
+        val decisionId = createDecision(token, "6a", orderIntent())
+        val submitted =
+            submitMockOrder(
+                token,
+                "brokerage-disconnect-pending-0001",
+                "req-brokerage-disconnect-pending",
+                decisionId,
+                orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        val accountId = json(submitted).at("/data/accountId").stringValue()
+        jdbcTemplate.update("update orders set status = 'PENDING_RECONCILIATION' where order_id = ?", orderId)
+        jdbcTemplate.update(
+            """
+            insert into user_broker_credentials(
+              owner_user_id, brokerage_mode, account_id, credential_state, revision,
+              kek_version, wrap_nonce, wrapped_dek, wrap_tag,
+              secret_nonce, secret_ciphertext, secret_tag,
+              app_key_last4, account_no_last4, created_at, updated_at
+            ) values (?, 'KIS_MOCK', ?, 'CONNECTED', 1, 'kek-v1', ?, ?, ?, ?, ?, ?, 'TEST', '1234', now(), now())
+            """.trimIndent(),
+            "usr_demo_user",
+            accountId,
+            ByteArray(12),
+            ByteArray(32),
+            ByteArray(16),
+            ByteArray(12),
+            byteArrayOf(1),
+            ByteArray(16),
+        )
+
+        val actorScope = ActorRlsScope(actorCapabilityIssuer)
+
+        fun disconnect(): String =
+            asTestActor(actorCapabilityIssuer, "usr_demo_user") {
+                appDataSource.connection.use { connection ->
+                    connection.autoCommit = false
+                    try {
+                        actorScope.open(
+                            connection,
+                            "usr_demo_user",
+                            ActorCapabilityBinding.target(
+                                "DISCONNECT_MOCK_CREDENTIAL",
+                                "BROKER_CREDENTIAL",
+                                accountId,
+                                ActorCapabilityRolePolicy.OWNER,
+                            ),
+                        )
+                        val state =
+                            connection.prepareStatement("select disconnect_bound_mock_broker_credential_v1(?,?,?)").use { statement ->
+                                statement.setString(1, "usr_demo_user")
+                                statement.setString(2, accountId)
+                                statement.setLong(3, 1)
+                                statement.executeQuery().use { result ->
+                                    assertTrue(result.next())
+                                    result.getString(1)
+                                }
+                            }
+                        connection.commit()
+                        state
+                    } catch (exception: Exception) {
+                        connection.rollback()
+                        throw exception
+                    }
+                }
+            }
+
+        assertEquals("DISCONNECTING", disconnect())
+        assertThrows(PessimisticLockingFailureException::class.java) {
+            jdbcTemplate.update(
+                "update user_broker_credentials set revision = revision + 1 where owner_user_id = ?",
+                "usr_demo_user",
+            )
+        }
+        assertEquals(
+            "DISCONNECTING",
+            jdbcTemplate.queryForObject(
+                "select credential_state from user_broker_credentials where owner_user_id = ?",
+                String::class.java,
+                "usr_demo_user",
+            ),
+        )
+        jdbcTemplate.update(
+            """
+            update orders set status='CANCELLED', leaves_quantity=0,
+              unfilled_terminated_quantity=quantity,
+              updated_at=GREATEST(submitted_at, statement_timestamp())
+            where order_id=?
+            """.trimIndent(),
+            orderId,
+        )
+        assertEquals("REMOVED", disconnect())
+        assertEquals(
+            0,
+            jdbcTemplate.queryForObject(
+                "select count(*) from user_broker_credentials where owner_user_id = ?",
+                Int::class.java,
+                "usr_demo_user",
+            ),
+        )
+    }
 
     @BeforeEach
     fun setUp() {

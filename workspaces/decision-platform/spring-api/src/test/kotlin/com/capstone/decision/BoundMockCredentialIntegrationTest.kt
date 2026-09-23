@@ -5,6 +5,7 @@ import com.capstone.decision.application.security.AppPrincipal
 import com.capstone.decision.infrastructure.brokerage.BrokerageCredentialCrypto
 import com.capstone.decision.infrastructure.brokerage.BrokerageKekFile
 import com.capstone.decision.infrastructure.brokerage.MockCredentialConnectionRepository
+import com.capstone.decision.infrastructure.brokerage.MockCredentialDisconnectRepository
 import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -48,6 +49,46 @@ class BoundMockCredentialIntegrationTest(
 ) : SpringApiIntegrationTestBase() {
     @TempDir
     lateinit var root: Path
+
+    @Test
+    fun `owner removes only their settled mock credential`() {
+        val directory = prepareKeyDirectory()
+        val service =
+            MockCredentialSettingsService(
+                context.getBeanProvider(NamedParameterJdbcTemplate::class.java),
+                actorRlsScope,
+                BrokerageCredentialCrypto(BrokerageKekFile(directory.toString())),
+            )
+        val repository =
+            MockCredentialDisconnectRepository(
+                context.getBeanProvider(NamedParameterJdbcTemplate::class.java),
+                actorRlsScope,
+            )
+        val transaction = TransactionTemplate(transactionManager)
+        asActor("usr_demo_user") {
+            transaction.executeWithoutResult {
+                service.save("usr_demo_user", "K" + "A".repeat(19), "S" + "B".repeat(39), "5" + "0".repeat(9))
+            }
+        }
+        asActor("usr_demo_admin") {
+            transaction.executeWithoutResult {
+                service.save("usr_demo_admin", "Z" + "C".repeat(19), "T" + "D".repeat(39), "6" + "1".repeat(9))
+            }
+        }
+        val own = requireNotNull(asActor("usr_demo_user") { transaction.execute { service.summary("usr_demo_user") } })
+        asActor("usr_demo_admin") {
+            assertThrows(IllegalStateException::class.java) {
+                transaction.execute { repository.disconnect("usr_demo_user", own.accountId, own.revision) }
+            }
+        }
+        val result =
+            asActor("usr_demo_user") {
+                transaction.execute { repository.disconnect("usr_demo_user", own.accountId, own.revision) }
+            }
+        assertEquals("REMOVED", result)
+        assertEquals(null, asActor("usr_demo_user") { transaction.execute { service.summary("usr_demo_user") } })
+        assertNotNull(asActor("usr_demo_admin") { transaction.execute { service.summary("usr_demo_admin") } })
+    }
 
     @Test
     fun `owner stores encrypted mock values and rotation resets connection without exposing another owner`() {
@@ -123,9 +164,10 @@ class BoundMockCredentialIntegrationTest(
                 }
             }
             val auditSql =
-                "select target_id, payload_json::text from audit_logs where user_id = ? and action = 'MOCK_CREDENTIAL_STORED'"
+                "select target_id, payload_json::text from audit_logs where user_id = ? and action = 'MOCK_CREDENTIAL_STORED' and target_id = ?"
             connection.prepareStatement(auditSql).use { statement ->
                 statement.setString(1, "usr_demo_user")
+                statement.setString(2, firstAccountId)
                 statement.executeQuery().use { result ->
                     assertTrue(result.next())
                     assertEquals(firstAccountId, result.getString("target_id"))
@@ -209,6 +251,19 @@ class BoundMockCredentialIntegrationTest(
                     }
                 }
             assertEquals("42501", envelopeDenied.sqlState)
+            connection.rollback()
+            connection.createStatement().use { statement ->
+                statement.execute("select set_config('app.actor_user_id','usr_demo_user',true)")
+            }
+            val disconnectDenied =
+                assertThrows(SQLException::class.java) {
+                    connection.createStatement().use { statement ->
+                        statement.executeQuery(
+                            "select disconnect_bound_mock_broker_credential_v1('usr_demo_user','acct_" + "0".repeat(32) + "',1)",
+                        )
+                    }
+                }
+            assertEquals("42501", disconnectDenied.sqlState)
         }
     }
 

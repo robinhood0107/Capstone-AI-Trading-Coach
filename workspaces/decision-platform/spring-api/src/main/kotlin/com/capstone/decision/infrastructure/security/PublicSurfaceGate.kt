@@ -40,6 +40,7 @@ internal class PublicSurfaceGate(
                     "POST" to "/api/v1/auth/logout",
                     "GET" to "/api/v1/brokerage/mock/credential",
                     "PUT" to "/api/v1/brokerage/mock/credential",
+                    "DELETE" to "/api/v1/brokerage/mock/credential",
                     "POST" to "/api/v1/brokerage/mock/credential/connect",
                     "GET" to "/api/v1/admin/ai-budget",
                     "PUT" to "/api/v1/admin/ai-budget",

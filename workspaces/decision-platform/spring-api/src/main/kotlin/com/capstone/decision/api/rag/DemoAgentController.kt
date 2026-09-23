@@ -47,7 +47,10 @@ data class DemoAgentAnswer(
 private enum class DemoQuestion(val id: String, val prompt: String) {
     DIVERSIFICATION("diversification", "분산투자는 위험을 어떻게 줄이나요?"),
     ASSET_ALLOCATION("asset_allocation", "자산 배분을 정할 때 무엇을 고려하나요?"),
-    PAST_PERFORMANCE("past_performance", "과거 수익과 백테스트 결과는 어떻게 해석해야 하나요?"),
+    PAST_PERFORMANCE(
+        "past_performance",
+        "과거 수익과 백테스트 결과는 어떻게 해석해야 하나요?",
+    ),
 }
 
 /** Only public example evidence crosses the anonymous demo provider boundary. */
@@ -154,8 +157,9 @@ internal class DemoAgentController(
         if (root == null || !root.isObject || root.properties().map { it.key }.toSet() != setOf("questionId")) {
             throw ApiException(ErrorCode.VALIDATION_ERROR)
         }
-        val raw = root.get("questionId")?.takeIf { it.isString }?.stringValue()
-            ?: throw ApiException(ErrorCode.VALIDATION_ERROR)
+        val raw =
+            root.get("questionId")?.takeIf { it.isString }?.stringValue()
+                ?: throw ApiException(ErrorCode.VALIDATION_ERROR)
         return DemoQuestion.entries.firstOrNull { it.id == raw }
             ?: throw ApiException(ErrorCode.VALIDATION_ERROR)
     }

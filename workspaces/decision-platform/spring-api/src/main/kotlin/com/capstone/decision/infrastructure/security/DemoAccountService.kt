@@ -1,5 +1,6 @@
 package com.capstone.decision.infrastructure.security
 
+import org.springframework.context.annotation.Profile
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets
@@ -11,6 +12,7 @@ internal val MAX_ACTOR_SESSION_TTL: Duration = Duration.ofDays(7)
 
 // demo login도 DB users를 source of truth로 사용해 이후 owner FK와 같은 user_id namespace를 보장한다.
 @Service
+@Profile("!mars-full & !mars-demo")
 class DemoAccountService(
     private val userSecurityRepository: UserSecurityRepository,
     private val passwordEncoder: PasswordEncoder,
@@ -26,7 +28,7 @@ class DemoAccountService(
     fun authenticate(
         username: String,
         password: String,
-    ): DemoAccount? =
+    ): AuthenticatedAccount? =
         authenticate(
             username = username,
             password = password,
@@ -38,7 +40,7 @@ class DemoAccountService(
         username: String,
         password: String,
         sessionTtl: Duration,
-    ): DemoAccount? {
+    ): AuthenticatedAccount? {
         require(!sessionTtl.isZero && !sessionTtl.isNegative && sessionTtl <= MAX_ACTOR_SESSION_TTL)
         val expectedIdentity = DemoAccounts.byUsername(username)
         val storedUsers = userSecurityRepository.findDemoCredentials()
@@ -92,7 +94,7 @@ class DemoAccountService(
         ) {
             return null
         }
-        return DemoAccount(
+        return AuthenticatedAccount(
             userId = session.userId,
             username = session.username,
             role = session.role,
@@ -121,16 +123,6 @@ class DemoAccountService(
             securityVersion > 0 &&
             DemoCredentialHashPolicy.isValid(passwordHash)
 }
-
-// demo 인증 결과와 JWT claim 생성에 필요한 값만 담아 민감정보 범위를 좁힌다.
-data class DemoAccount(
-    val userId: String,
-    val username: String,
-    val role: DemoRole,
-    val securityVersion: Long,
-    val sessionHandle: String,
-    val expiresAt: java.time.OffsetDateTime,
-)
 
 // S0.3 권한 테스트는 USER와 ADMIN의 최소 역할 차이만 확인한다.
 enum class DemoRole {

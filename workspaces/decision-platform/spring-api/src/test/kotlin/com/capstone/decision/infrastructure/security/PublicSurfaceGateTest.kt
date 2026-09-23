@@ -3,6 +3,7 @@ package com.capstone.decision.infrastructure.security
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
+import org.springframework.mock.env.MockEnvironment
 import org.springframework.mock.web.MockFilterChain
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
@@ -40,6 +41,25 @@ class PublicSurfaceGateTest {
     }
 
     @Test
+    fun `full mode permits only its Google handoff while demo keeps it closed`() {
+        val path = "/api/v1/auth/oidc/start/google"
+        val fullChain = MockFilterChain()
+        PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(
+            MockHttpServletRequest("GET", path),
+            MockHttpServletResponse(),
+            fullChain,
+        )
+        assertEquals(path, (fullChain.request as MockHttpServletRequest).requestURI)
+        val demoResponse = MockHttpServletResponse()
+        PublicSurfaceGate(PublicSurfaceMode.DEMO).doFilter(
+            MockHttpServletRequest("GET", path),
+            demoResponse,
+            MockFilterChain(),
+        )
+        assertEquals(404, demoResponse.status)
+    }
+
+    @Test
     fun `local mode retains current private routes and invalid public mode fails startup`() {
         val chain = MockFilterChain()
         PublicSurfaceGate(PublicSurfaceMode.LOCAL).doFilter(
@@ -49,7 +69,11 @@ class PublicSurfaceGateTest {
         )
         assertEquals("/api/v1/auth/login", (chain.request as MockHttpServletRequest).requestURI)
         assertThrows(IllegalArgumentException::class.java) {
-            PublicSurfaceGateConfiguration().publicSurfaceGate("UNKNOWN")
+            PublicSurfaceGateConfiguration().publicSurfaceGate("UNKNOWN", MockEnvironment())
+        }
+        val fullEnvironment = MockEnvironment().apply { setActiveProfiles("mars-full") }
+        assertThrows(IllegalArgumentException::class.java) {
+            PublicSurfaceGateConfiguration().publicSurfaceGate("LOCAL", fullEnvironment)
         }
     }
 }

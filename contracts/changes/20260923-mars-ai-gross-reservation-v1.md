@@ -23,5 +23,10 @@ Voyage는 무료 토큰 뒤 사용량에 가격을 적용한다고 공식 문서
 
 Pre-S5 RAG Vertex의 승인 `costCapMicrousd`와 S4.9 runtime Voyage query의
 authorization owner·`costCapMicrousd`를 각각 provider 호출 전에 같은 트랜잭션으로
-연결했다. Strong LLM Agent·매매 AI·데모 Agent outbound와 공급자별 호출/토큰 제한은
-후속 PR에서 이어 붙인다. 모두 검증되기 전에는 공개 과금 API를 열지 않는다.
+연결했다. 매매 뉴스 Vertex 판정도 검증된 자동운용 claim의 owner/run으로 예약 ID를
+만들고, 요청 JSON 바이트 수에 1,024의 여유를 더한 입력 토큰 대용치와 출력 상한
+1,024토큰을 운영자 입출력 단가로 환산해 호출 전에 같은 V201 원장에 예약한다.
+DB/정책 장애나 상한 초과는
+소켓을 열기 전에 ABSTAIN으로 닫는다. 이 수치는 실제 청구액 보장이 아니라 최대 노출액
+예약 추정치다. Strong LLM Agent·데모 Agent outbound는 후속 PR에서 연결한다.
+모두 검증되기 전에는 공개 과금 API를 열지 않는다.

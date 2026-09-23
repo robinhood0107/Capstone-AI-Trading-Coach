@@ -58,6 +58,12 @@ configurations.all {
         "org.apache.tomcat.embed:tomcat-embed-el:11.0.25",
         "org.apache.tomcat.embed:tomcat-embed-websocket:11.0.25",
     )
+    // Spring Boot BOM이 고정한 4.2.15의 SNI 취약점을 피하면서 Netty 모듈을 같은 patch로 맞춘다.
+    resolutionStrategy.eachDependency {
+        if (requested.group == "io.netty") {
+            useVersion("4.2.18.Final")
+        }
+    }
 }
 
 dependencyManagement {

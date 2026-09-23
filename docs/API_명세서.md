@@ -2338,11 +2338,13 @@ NAS 비공개 `MARS_AI_DAILY_HARD_CAP_USD`보다 높을 수 없다. 경쟁 변�
 공용 예약 원장을 모든 과금 경로에 연결하기 전에는 공개 Agent·매매 AI
 과금 호출을 열지 않는다. Pre-S5 RAG Vertex와 S4.9 runtime Voyage query는 같은
 원장에 예약하며, 매매 뉴스 Vertex 판정도 owner/run 결속 예약을 완료했다.
-Strong LLM Agent와 데모 Agent는 연결 뒤에 연다.
+full Strong LLM Agent는 Kotlin host가 provider permit을 보내기 전에 같은 V201
+원장에 `FULL_AGENT`를 예약한다. 데모 Agent는 연결 뒤에 연다.
 공개 제품의 Strong LLM provider는 운영자 Vertex 하나로 고정하며 API key·base URL·
 fallback provider 설정은 거부한다. Spring과 Python은 같은
-`RAG_LLM_MAX_OUTPUT_TOKENS`(기본 4,096)를 사용한다. 이 설정만으로 공용 예약이 완료된
-것은 아니며 [provider·상한 변경 근거](../contracts/changes/20260923-mars-public-strong-llm-provider-cap.md)를 따른다.
+`RAG_LLM_MAX_OUTPUT_TOKENS`(기본 4,096)를 사용한다.
+[provider·상한 변경 근거](../contracts/changes/20260923-mars-public-strong-llm-provider-cap.md)와
+[host 예약 근거](../contracts/changes/20260923-mars-full-agent-gross-permit.md)를 따른다.
 [full 전용 schema](../contracts/openapi/mars-full-operator-ai-budget.v1.openapi.json)와
 [변경 근거](../contracts/changes/20260923-mars-operator-ai-budget-policy.md)를 따른다.
 
@@ -2352,6 +2354,9 @@ fallback provider 설정은 거부한다. Spring과 Python은 같은
 통과하기 전에는 공개 과금 기능을 열지 않는다.
 매매 뉴스 Vertex는 요청 크기와 출력 토큰 상한의 보수적인 공개가격 환산액을 전송 전에
 예약하고, 실패하면 ABSTAIN으로 닫는다.
+full Agent는 gRPC 시작/도구 frame과 이전 출력 여유·출력 토큰 상한을 입출력 단가로
+환산하고, Google Search discovery에는 월간 정책의 최대 쿼리 수와 현재 쿼리 공개가격을
+더해 provider permit 이전에 예약한다. 실패하면 해당 permit의 Python provider 호출은 0건이다.
 현재 기본 Gemini 3.5 Flash global의 2026-09-23 공개가격을 올림한 입력 3·출력 17
 마이크로달러/토큰을 배포 기본값으로 쓴다. 모델 변경이나 기존 NAS 정책 파일 사용 시
 [단가 변경 근거](../contracts/changes/20260923-mars-vertex-gross-rate-floor.md)에 따라

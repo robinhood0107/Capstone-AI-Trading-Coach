@@ -1,0 +1,65 @@
+{
+  "openapi": "3.1.1",
+  "info": {"title": "MARS full operator AI budget policy", "version": "0.1.0-draft"},
+  "servers": [{"url": "https://mars.royaljellynas.org"}],
+  "paths": {
+    "/api/v1/admin/ai-budget": {
+      "get": {
+        "operationId": "readOperatorAiBudgetPolicy",
+        "summary": "Read the ADMIN-only daily soft cap and private deployment hard ceiling",
+        "responses": {
+          "200": {"description": "Current policy", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PolicyEnvelope"}}}},
+          "401": {"description": "Bearer session invalid"},
+          "403": {"description": "Current Google identity is not ADMIN"}
+        },
+        "security": [{"bearerAuth": []}]
+      },
+      "put": {
+        "operationId": "putOperatorAiBudgetPolicy",
+        "summary": "Set a daily soft cap no higher than the NAS environment ceiling",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PutPolicy"}}}},
+        "responses": {
+          "200": {"description": "Updated policy", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PolicyEnvelope"}}}},
+          "400": {"description": "Invalid amount or amount exceeds deployment hard cap"},
+          "401": {"description": "Bearer session invalid"},
+          "403": {"description": "Current Google identity is not ADMIN"},
+          "409": {"description": "Concurrent policy change; reload revision"}
+        },
+        "security": [{"bearerAuth": []}]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}},
+    "schemas": {
+      "PutPolicy": {
+        "type": "object", "additionalProperties": false,
+        "required": ["dailySoftCapCents", "expectedRevision"],
+        "properties": {
+          "dailySoftCapCents": {"type": "integer", "minimum": 0},
+          "expectedRevision": {"type": "integer", "minimum": 1}
+        }
+      },
+      "Policy": {
+        "type": "object", "additionalProperties": false,
+        "required": ["hardCapCents", "dailySoftCapCents", "revision"],
+        "properties": {
+          "hardCapCents": {"type": "integer", "minimum": 1},
+          "dailySoftCapCents": {"type": "integer", "minimum": 0},
+          "revision": {"type": "integer", "minimum": 1}
+        }
+      },
+      "PolicyEnvelope": {
+        "type": "object", "additionalProperties": false,
+        "required": ["success", "requestId", "data", "warnings", "error"],
+        "properties": {
+          "success": {"type": "boolean", "const": true},
+          "requestId": {"type": "string"},
+          "data": {"$ref": "#/components/schemas/Policy"},
+          "warnings": {"type": "array", "items": {"type": "object"}},
+          "error": {"type": "null"}
+        }
+      }
+    }
+  }
+}

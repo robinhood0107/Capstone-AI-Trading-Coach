@@ -65,6 +65,7 @@ class PublicSurfaceGateTest {
             listOf(
                 "GET" to "/api/v1/brokerage/mock/credential",
                 "PUT" to "/api/v1/brokerage/mock/credential",
+                "DELETE" to "/api/v1/brokerage/mock/credential",
                 "POST" to "/api/v1/brokerage/mock/credential/connect",
             )
         for ((method, path) in routes) {

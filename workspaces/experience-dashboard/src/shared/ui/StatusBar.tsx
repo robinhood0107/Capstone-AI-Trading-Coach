@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '@/shared/api/endpoints';
 import { apiMode } from '@/shared/api/client';
 import { session, useSession } from '@/shared/api/session';
@@ -13,6 +13,8 @@ import type { AutomationStatusV3 } from '@/shared/api/wire';
 
 export function StatusBar() {
   const { authenticated, user } = useSession();
+  const [logoutPending, setLogoutPending] = useState(false);
+  const [logoutFailed, setLogoutFailed] = useState(false);
   const mock = apiMode() === 'mock';
   const { state, reload } = useResource(async () => {
     const { data } = await api.automationStatusV3();
@@ -25,6 +27,20 @@ export function StatusBar() {
   }, [reload]);
 
   const automation = state.kind === 'ready' || state.kind === 'stale' ? state.data : null;
+
+  async function logout() {
+    if (logoutPending) return;
+    setLogoutPending(true);
+    setLogoutFailed(false);
+    try {
+      await api.logout();
+      session.clear();
+    } catch {
+      setLogoutFailed(true);
+    } finally {
+      setLogoutPending(false);
+    }
+  }
 
   return (
     <div className="sticky top-0 z-30 border-b border-line bg-panel/85 backdrop-blur">
@@ -48,10 +64,12 @@ export function StatusBar() {
           <UtilityNav />
           <span aria-hidden className="mx-1 hidden h-4 w-px bg-line sm:block" />
           <ThemeToggle />
+          {logoutFailed ? <span className="text-[12px] text-block">로그아웃에 실패했습니다. 다시 시도해 주세요.</span> : null}
           {authenticated && user ? (
             <button
               type="button"
-              onClick={() => session.clear()}
+              onClick={() => void logout()}
+              disabled={logoutPending}
               className="rounded-full border border-line px-3 py-1 text-[12px] font-medium text-muted hover:border-navy hover:text-navy"
             >
               {user.username} · 로그아웃

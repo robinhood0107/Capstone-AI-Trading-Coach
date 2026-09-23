@@ -2,7 +2,7 @@ package com.capstone.decision.api.financialengineering
 
 import com.capstone.decision.SpringApiIntegrationTestBase
 import com.capstone.decision.TestAuthRepositoryConfiguration
-import com.capstone.decision.infrastructure.security.DemoAccount
+import com.capstone.decision.infrastructure.security.AuthenticatedAccount
 import com.capstone.decision.infrastructure.security.DemoAccounts
 import com.capstone.decision.infrastructure.security.JwtService
 import org.hamcrest.Matchers.closeTo
@@ -230,7 +230,7 @@ class FinancialEngineeringSpringPythonE2eTest(
         val identity = requireNotNull(DemoAccounts.byUsername("demo-user"))
         return jwtService
             .issue(
-                DemoAccount(
+                AuthenticatedAccount(
                     userId = identity.userId,
                     username = identity.username,
                     role = identity.role,

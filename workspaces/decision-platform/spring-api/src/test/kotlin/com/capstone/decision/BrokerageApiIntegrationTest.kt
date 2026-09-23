@@ -12,7 +12,7 @@ import com.capstone.decision.infrastructure.brokerage.BrokerageIdempotencyHasher
 import com.capstone.decision.infrastructure.brokerage.RedisPaperIdempotencyClaimAdapter
 import com.capstone.decision.infrastructure.security.ActorCapabilityBinding
 import com.capstone.decision.infrastructure.security.ActorCapabilityRolePolicy
-import com.capstone.decision.infrastructure.security.DemoAccount
+import com.capstone.decision.infrastructure.security.AuthenticatedAccount
 import com.capstone.decision.infrastructure.security.DemoRole
 import com.capstone.decision.infrastructure.security.JwtService
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -325,7 +325,7 @@ class BrokerageApiIntegrationTest(
             val demotedToken =
                 jwtService
                     .issue(
-                        DemoAccount(
+                        AuthenticatedAccount(
                             userId = "usr_demo_admin",
                             username = "demo-admin",
                             role = DemoRole.USER,

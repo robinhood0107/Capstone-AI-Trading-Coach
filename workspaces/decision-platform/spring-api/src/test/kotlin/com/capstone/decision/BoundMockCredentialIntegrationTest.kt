@@ -4,6 +4,7 @@ import com.capstone.decision.application.security.ActorRlsScopePort
 import com.capstone.decision.application.security.AppPrincipal
 import com.capstone.decision.infrastructure.brokerage.BrokerageCredentialCrypto
 import com.capstone.decision.infrastructure.brokerage.BrokerageKekFile
+import com.capstone.decision.infrastructure.brokerage.MockCredentialConnectionRepository
 import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.io.TempDir
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.ApplicationContext
+import org.springframework.dao.PessimisticLockingFailureException
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.core.context.SecurityContextHolder
@@ -73,6 +75,11 @@ class BoundMockCredentialIntegrationTest(
         assertEquals("0000", first?.accountNoLast4)
         assertTrue(first?.accountId?.matches(Regex("^acct_[0-9a-f]{32}$")) == true)
         val firstAccountId = requireNotNull(first?.accountId)
+        val connectionRepository =
+            MockCredentialConnectionRepository(
+                context.getBeanProvider(NamedParameterJdbcTemplate::class.java),
+                actorRlsScope,
+            )
         asActor("usr_demo_user") {
             transaction.execute {
                 service.resolveEnvelope("usr_demo_user", firstAccountId).use { envelope ->
@@ -88,6 +95,23 @@ class BoundMockCredentialIntegrationTest(
                 }
             }
         }
+        asActor("usr_demo_user") {
+            transaction.executeWithoutResult {
+                connectionRepository.beginAttempt("usr_demo_user", firstAccountId, 1)
+            }
+            assertThrows(PessimisticLockingFailureException::class.java) {
+                transaction.executeWithoutResult {
+                    connectionRepository.beginAttempt("usr_demo_user", firstAccountId, 1)
+                }
+            }
+            transaction.executeWithoutResult {
+                connectionRepository.markConnected("usr_demo_user", firstAccountId, 1)
+            }
+        }
+        val connected = asActor("usr_demo_user") { transaction.execute { service.summary("usr_demo_user") } }
+        assertEquals("CONNECTED", connected?.state)
+        assertTrue(connected?.connected == true)
+        assertFalse(connected?.certified ?: true)
 
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
             connection.prepareStatement("select secret_ciphertext from user_broker_credentials where owner_user_id = ?").use { statement ->
@@ -117,6 +141,11 @@ class BoundMockCredentialIntegrationTest(
             assertThrows(IllegalStateException::class.java) {
                 transaction.execute { service.summary("usr_demo_user") }
             }
+            assertThrows(IllegalStateException::class.java) {
+                transaction.executeWithoutResult {
+                    connectionRepository.markConnected("usr_demo_user", firstAccountId, 1)
+                }
+            }
         }
         asActor("usr_demo_admin") {
             transaction.executeWithoutResult {
@@ -140,9 +169,15 @@ class BoundMockCredentialIntegrationTest(
         assertEquals(2L, rotated?.revision)
         assertNotEquals(firstAccountId, rotated?.accountId)
         assertEquals("STORED", rotated?.state)
+        assertFalse(rotated?.connected ?: true)
         asActor("usr_demo_user") {
             assertThrows(IllegalStateException::class.java) {
                 transaction.execute { service.resolveEnvelope("usr_demo_user", firstAccountId).use { } }
+            }
+            assertThrows(PessimisticLockingFailureException::class.java) {
+                transaction.executeWithoutResult {
+                    connectionRepository.markConnected("usr_demo_user", firstAccountId, 1)
+                }
             }
         }
     }

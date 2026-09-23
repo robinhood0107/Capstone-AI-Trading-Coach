@@ -61,8 +61,13 @@ class PublicSurfaceGateTest {
 
     @Test
     fun `full mode permits owner credential setup but demo has no KIS surface`() {
-        val path = "/api/v1/brokerage/mock/credential"
-        for (method in listOf("GET", "PUT")) {
+        val routes =
+            listOf(
+                "GET" to "/api/v1/brokerage/mock/credential",
+                "PUT" to "/api/v1/brokerage/mock/credential",
+                "POST" to "/api/v1/brokerage/mock/credential/connect",
+            )
+        for ((method, path) in routes) {
             val fullChain = MockFilterChain()
             PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(
                 MockHttpServletRequest(method, path),

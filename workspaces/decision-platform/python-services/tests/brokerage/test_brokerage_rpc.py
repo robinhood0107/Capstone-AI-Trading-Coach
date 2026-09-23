@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
 from typing import Any
 
 import grpc
@@ -51,6 +52,9 @@ class FakeBalanceReader:
     def balance(self, account_id: str) -> brokerage_pb2.GetMockBalanceResponse:
         self.calls.append(("balance", account_id))
         return brokerage_pb2.GetMockBalanceResponse(account_id=account_id)
+
+    def verify_connection(self, account_id: str) -> None:
+        self.calls.append(("verify", account_id))
 
     def buyable(
         self,
@@ -124,6 +128,35 @@ def test_full_rpc_requires_owner_envelope_before_any_gateway_call() -> None:
             FakeContext(),  # type: ignore[arg-type]
         )
     assert denied.value.code == grpc.StatusCode.PERMISSION_DENIED
+
+
+def test_full_connection_check_uses_only_owner_bound_read_only_session() -> None:
+    reader = FakeBalanceReader()
+    observed: list[tuple[str, frozenset[str]]] = []
+    account_id = "acct_" + "2" * 32
+
+    class OwnerFactory:
+        @contextmanager
+        def open(self, _envelope, *, account_id: str, allowed_states: frozenset[str]):
+            observed.append((account_id, allowed_states))
+            yield KISMockOrderGateway(FakeTransport()), reader
+
+    servicer = BrokerageServicer(None, "s" * 32, owner_factory=OwnerFactory())
+    response = servicer.VerifyMockConnection(
+        brokerage_pb2.VerifyMockConnectionRequest(
+            request_id="req-connection-check",
+            account_id=account_id,
+            credential=brokerage_pb2.BoundMockCredentialEnvelope(
+                owner_user_id="usr_" + "a" * 32,
+                account_id=account_id,
+                credential_state="STORED",
+            ),
+        ),
+        FakeContext(),  # type: ignore[arg-type]
+    )
+    assert response.account_id == account_id and response.connected
+    assert observed == [(account_id, frozenset({"STORED", "CONNECTED", "CERTIFIED"}))]
+    assert reader.calls == [("verify", account_id)]
 
 
 def test_rpc_auth_and_live_order_gate_fail_before_transport_side_effect() -> None:

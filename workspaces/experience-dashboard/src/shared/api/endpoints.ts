@@ -84,6 +84,10 @@ export const api = {
     return apiFetchBare<void>('/api/v1/brokerage/mock/credential', { method: 'PUT', body: input });
   },
 
+  verifyMockCredentialConnection(): Promise<void> {
+    return apiFetchBare<void>('/api/v1/brokerage/mock/credential/connect', { method: 'POST' });
+  },
+
   operatorAiBudget(): Promise<ApiResult<OperatorAiBudgetPolicy>> {
     return apiFetch<OperatorAiBudgetPolicy>('/api/v1/admin/ai-budget');
   },

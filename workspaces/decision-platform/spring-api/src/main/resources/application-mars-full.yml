@@ -25,3 +25,5 @@ mars:
   oidc:
     public-origin: ${MARS_PUBLIC_ORIGIN}
     admin-subject-sha256: ${GOOGLE_OIDC_ADMIN_SUBJECT_SHA256}
+  brokerage:
+    kek-directory: ${MARS_BROKERAGE_KEK_DIRECTORY}

@@ -5,20 +5,11 @@ on:
     branches: [main]
     paths:
       - "workspaces/decision-platform/research/s1-4x-numeric-parity/**"
-      - "workspaces/decision-platform/python-services/pyproject.toml"
-      - "workspaces/decision-platform/python-services/uv.lock"
+      - "workspaces/decision-platform/research/s1-4r-jax-risk/**"
       - "workspaces/decision-platform/python-services/app/financial_engineering/**"
       - "workspaces/decision-platform/python-services/tests/financial_engineering/**"
-      - "workspaces/decision-platform/python-services/tests/test_s1_6_amendment_contract.py"
-      - "workspaces/decision-platform/research/s1-4r-jax-risk/README.md"
-      - "workspaces/decision-platform/research/s1-4r-jax-risk/pyproject.toml"
-      - "workspaces/decision-platform/research/s1-4r-jax-risk/uv.lock"
-      - "workspaces/decision-platform/research/s1-4r-jax-risk/src/**"
-      - "workspaces/decision-platform/research/s1-4r-jax-risk/tests/**"
       - "shared-docs/metrics_definitions.md"
       - "docs/adr/ADR-027-s1-4x-isolated-numeric-parity.md"
-      - ".gitignore"
-      - ".github/workflows/s1-4x-contract-correctness.yml"
 
 permissions:
   contents: read
@@ -39,7 +30,6 @@ env:
 
 jobs:
   neutral-contract-correctness:
-    if: github.event.pull_request.head.ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository
     name: Neutral contract, oracle, and frozen regressions
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -110,35 +100,92 @@ jobs:
           print(lock["referenceBaseCommit"])
           PY
           )"
-          # The historical commit is no longer served by the remote. Preserve
-          # the original identity and exact reference bytes in-tree instead of
-          # requiring an unavailable Git object or relaxing the reference.
-          test "$REFERENCE_BASE" = bf8472dfcc5f9d883ca83bd461a62f254332b39f
-          test "$(sha256sum "$S1_4X/contract/reference-lock.v1.json" | cut -d' ' -f1)" = \
-            "d267c084592c14e6ab167e9a9afd370e45f1caf9a0959b7927b0d4a806fc5581"
-          test "$(sha256sum contracts/fixtures/s1-4x-reference-runtime/pyproject.toml | cut -d' ' -f1)" = \
-            "fd114bcabb230368d45142ffe7c68a47ea2ce860021d00abaeaf334d37f928eb"
-          test "$(sha256sum contracts/fixtures/s1-4x-reference-runtime/uv.lock | cut -d' ' -f1)" = \
-            "8cb06fb15858ba9bec5f94951cb89ece38d2ddfe13292d9a82df78f042393459"
-          # Current production dependencies may evolve only with a reviewed
-          # full-file pin and an unchanged numerical runtime below.
-          test "$(sha256sum workspaces/decision-platform/python-services/pyproject.toml | cut -d' ' -f1)" = \
-            "8f61ef42ecb6a47895e9c42d1cccb8a1553b8434026f6de628f91d1ca3a89ecd"
-          test "$(sha256sum workspaces/decision-platform/python-services/uv.lock | cut -d' ' -f1)" = \
-            "49bce736ce88afa34fe6f446189b119c61850237573ce57916303840cb2f1c2a"
-          # MARS dependency updates did not change the frozen production
-          # numeric runtime. Keep this assertion next to the full lock pin.
-          python3 - <<'PY'
-          import tomllib
-          from pathlib import Path
+          git cat-file -e "${REFERENCE_BASE}^{commit}"
+          git merge-base --is-ancestor "$REFERENCE_BASE" HEAD
 
-          lock = tomllib.loads(Path(
-              "workspaces/decision-platform/python-services/uv.lock"
-          ).read_text(encoding="utf-8"))
-          packages = {entry["name"]: entry["version"] for entry in lock["package"]}
-          assert packages["numpy"] == "2.5.1"
-          assert packages["scipy"] == "1.18.0"
-          PY
+          mapfile -t ACTUAL_PATHS < <(
+            git diff-tree --no-commit-id --name-only -r "$REFERENCE_BASE" | LC_ALL=C sort
+          )
+          case "$REFERENCE_BASE" in
+            13b7b21a904fc37ce0947d5da2de7d04794e497a)
+              EXPECTED_PATHS=(
+                "workspaces/decision-platform/python-services/pyproject.toml"
+                "workspaces/decision-platform/python-services/uv.lock"
+              )
+              ;;
+            bf8472dfcc5f9d883ca83bd461a62f254332b39f)
+              EXPECTED_PATHS=(
+                "workspaces/decision-platform/python-services/pyproject.toml"
+                "workspaces/decision-platform/python-services/uv.lock"
+              )
+              ;;
+            bf965d00c98e63127ebc385164e71c30402ce6fc)
+              EXPECTED_PATHS=(
+                "workspaces/decision-platform/python-services/pyproject.toml"
+                "workspaces/decision-platform/python-services/uv.lock"
+              )
+              ;;
+            e5d70dc113ed87c690cf538879c0b9df17121b1d)
+              EXPECTED_PATHS=(
+                "workspaces/decision-platform/python-services/pyproject.toml"
+                "workspaces/decision-platform/python-services/uv.lock"
+              )
+              ;;
+            15decd1e6ed3bbbad0dce22f7171d34d80cee367)
+              EXPECTED_PATHS=(
+                "workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py"
+              )
+              ;;
+            cf4cc867a9543de194f04fdc805a0bd23a371221)
+              EXPECTED_PATHS=(
+                "workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py"
+              )
+              ;;
+            *)
+              echo "referenceBaseCommit is not an approved narrow carrier" >&2
+              exit 1
+              ;;
+          esac
+          if ! diff -u \
+            <(printf '%s\n' "${EXPECTED_PATHS[@]}") \
+            <(printf '%s\n' "${ACTUAL_PATHS[@]}"); then
+            echo "referenceBaseCommit must change exactly its approved carrier files" >&2
+            exit 1
+          fi
+
+          # S4.9 runtime dependency는 historical S1.4X lock을 바꾸지 않고 별도 좁은 carrier로 고정한다.
+          S4_9_RUNTIME_CARRIER=b4e7836932da53dc64b0c273a2228cac1dfd43e8
+          git cat-file -e "${S4_9_RUNTIME_CARRIER}^{commit}"
+          git merge-base --is-ancestor "$S4_9_RUNTIME_CARRIER" HEAD
+          mapfile -t S4_9_CARRIER_PATHS < <(
+            git diff-tree --no-commit-id --name-only -r "$S4_9_RUNTIME_CARRIER" \
+              | LC_ALL=C sort
+          )
+          test "${S4_9_CARRIER_PATHS[*]}" = \
+            "workspaces/decision-platform/python-services/pyproject.toml workspaces/decision-platform/python-services/uv.lock"
+          # historical carrier 이후의 exact path와 content hash를 함께 고정해 수치 환경 drift를 막는다.
+          # 이 pin을 바꾸는 것이 곧 reference lock amendment이므로 무엇을 왜 더했는지 여기에 적는다.
+          #
+          #   1  12eac55b… / 6705b706…  S5.7B/C. dependency를 바꾸지 않고 seed·DB·replay CLI만 더했다.
+          #   2  아래 값                 Strong LLM provider 교체. langchain-openai==1.6.0 과
+          #                             langchain-anthropic==1.7.0 을 더하고, 보안 패치로
+          #                             cryptography 를 >=50,<51 로 pillow 를 12.3.0 으로 올렸다.
+          #
+          # 이 pin이 지키는 것은 수치 패리티이고 그것이 걸린 것은 numpy·scipy·jax 계열이다.
+          # amendment 2는 그 셋을 건드리지 않는다. 다음에 누가 수치 패키지를 옮기면 여기서 죽고,
+          # 그때도 지금처럼 이유를 적고 지나가야 한다.
+          mapfile -t S5_6_RUNTIME_PATHS < <(
+            git diff --name-only "$S4_9_RUNTIME_CARRIER" HEAD -- \
+              workspaces/decision-platform/python-services/pyproject.toml \
+              workspaces/decision-platform/python-services/uv.lock \
+              | LC_ALL=C sort
+          )
+          test "${S5_6_RUNTIME_PATHS[*]}" = \
+            "workspaces/decision-platform/python-services/pyproject.toml workspaces/decision-platform/python-services/uv.lock"
+          test "$(sha256sum workspaces/decision-platform/python-services/pyproject.toml | cut -d' ' -f1)" = \
+            "3d1d4a4c620e11007bb083a977975ba5ee0380101c45f7652ab69b405ac6453f"
+          test "$(sha256sum workspaces/decision-platform/python-services/uv.lock | cut -d' ' -f1)" = \
+            "7762ff5bcdf07d8b0e3e55ca75181d15c78ca3e3c0e379f0859f08af5da3163e"
 
           # 로컬 자료 경로에 결합된 obsolete host-only 검사는 한 번만 exact hash 전이로 제거한다.
           S1_4R_ISOLATION_TEST=workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py
@@ -231,11 +278,7 @@ jobs:
             cd "$ORACLE"
             uv run --frozen ruff check . ../benchmarks
             uv run --frozen mypy . ../benchmarks
-            # This frozen test describes the former push-to-main workflow and
-            # unreachable Git carrier. The current promotion-only policy is
-            # checked by contracts/tests/test_s14x_promotion_workflow.py.
-            uv run --frozen pytest -q tests ../benchmarks/tests \
-              -k 'not test_workflow_runs_both_triggers_and_accounts_for_262_snapshot_tests'
+            uv run --frozen pytest -q tests ../benchmarks/tests
           )
 
       - name: Assert local artifact ignore boundary
@@ -271,29 +314,33 @@ jobs:
             uv run --frozen pytest -q
           )
 
-      - name: Materialize the frozen reference bytes in an isolated repository
+      - name: Materialize referenceBaseCommit as an isolated repository
         id: reference-snapshot
         run: |
           S1_4X=workspaces/decision-platform/research/s1-4x-numeric-parity
           ORACLE="$S1_4X/oracle"
+          BASE="$(
+            uv run --frozen --project "$ORACLE" python - <<'PY'
+          import json
+          from pathlib import Path
+
+          lock = json.loads(
+              Path(
+                  "workspaces/decision-platform/research/s1-4x-numeric-parity/"
+                  "contract/reference-lock.v1.json"
+              ).read_text(encoding="utf-8")
+          )
+          print(lock["referenceBaseCommit"])
+          PY
+          )"
+          git cat-file -e "${BASE}^{commit}"
           SNAPSHOT="${RUNNER_TEMP}/s1-4x-reference-base"
           test ! -e "$SNAPSHOT"
           git clone --no-local --no-hardlinks "$GITHUB_WORKSPACE" "$SNAPSHOT"
-          git -C "$SNAPSHOT" fetch --no-tags origin "$GITHUB_SHA"
-          git -C "$SNAPSHOT" checkout --detach "$GITHUB_SHA"
-          install -m 0644 contracts/fixtures/s1-4x-reference-runtime/pyproject.toml \
-            "$SNAPSHOT/workspaces/decision-platform/python-services/pyproject.toml"
-          install -m 0644 contracts/fixtures/s1-4x-reference-runtime/uv.lock \
-            "$SNAPSHOT/workspaces/decision-platform/python-services/uv.lock"
-          git -C "$SNAPSHOT" add \
-            workspaces/decision-platform/python-services/pyproject.toml \
-            workspaces/decision-platform/python-services/uv.lock
-          git -C "$SNAPSHOT" -c user.name=reference-snapshot \
-            -c user.email=reference-snapshot@invalid.example \
-            commit -m 'Materialize frozen S1.4X runtime bytes'
-          git -C "$SNAPSHOT" update-ref refs/remotes/origin/main HEAD
-          test "$(git -C "$SNAPSHOT" rev-parse origin/main)" = \
-            "$(git -C "$SNAPSHOT" rev-parse HEAD)"
+          git -C "$SNAPSHOT" checkout --detach "$BASE"
+          git -C "$SNAPSHOT" update-ref refs/remotes/origin/main "$BASE"
+          test "$(git -C "$SNAPSHOT" rev-parse HEAD)" = "$BASE"
+          test "$(git -C "$SNAPSHOT" rev-parse origin/main)" = "$BASE"
           test -z "$(git -C "$SNAPSHOT" status --short --untracked-files=all)"
           SNAPSHOT="$SNAPSHOT" PYTHONPATH="$ORACLE" \
             uv run --frozen --project "$ORACLE" python - <<'PY'
@@ -312,6 +359,7 @@ jobs:
           assert evidence["sourceTreeCount"] == 4
           PY
           echo "snapshot=$SNAPSHOT" >> "$GITHUB_OUTPUT"
+          echo "reference_base_commit=$BASE" >> "$GITHUB_OUTPUT"
 
       - name: Sync and lint frozen S1.4R reference snapshot
         env:

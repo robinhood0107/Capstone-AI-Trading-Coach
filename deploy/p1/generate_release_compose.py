@@ -62,6 +62,13 @@ HEADER = """# 생성 파일이다. 손으로 고치지 않는다.
 """
 
 
+class IndentedSafeDumper(yaml.SafeDumper):
+    """Emit sequence children under their keys so the generated YAML lints."""
+
+    def increase_indent(self, flow: bool = False, indentless: bool = False) -> None:
+        super().increase_indent(flow, indentless=False)
+
+
 def strip_service(name: str, service: dict[str, Any]) -> dict[str, Any]:
     """한 서비스에서 build 와 구워진 바인드를 덜어낸다."""
 
@@ -97,7 +104,9 @@ def build_release_document() -> dict[str, Any]:
         raise SystemExit("compose.yml 을 읽지 못했다")
 
     # x-* 확장 키는 앵커를 펼친 뒤라 더 필요 없다.
-    document = {key: value for key, value in document.items() if not key.startswith("x-")}
+    document = {
+        key: value for key, value in document.items() if not key.startswith("x-")
+    }
     document["services"] = {
         name: strip_service(name, service)
         for name, service in document["services"].items()
@@ -106,8 +115,9 @@ def build_release_document() -> dict[str, Any]:
 
 
 def render(document: dict[str, Any]) -> str:
-    body = yaml.safe_dump(
+    body = yaml.dump(
         document,
+        Dumper=IndentedSafeDumper,
         allow_unicode=True,
         default_flow_style=False,
         sort_keys=False,

@@ -9,6 +9,7 @@ import os
 import re
 import signal
 import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
@@ -523,6 +524,52 @@ class PostgresAutomationRuntimeRepository:
                 session_date=session_date,
                 claim_token_hash=claim_token_hash,
             )
+
+    def armed_owner_user_ids(self) -> tuple[str, ...]:
+        """Return the bounded active owner set without granting the runtime table reads."""
+
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute("select user_id from p1_list_armed_automation_users_v1()")
+            rows = cursor.fetchall()
+        owners = tuple(str(row[0]) for row in rows)
+        if len(owners) > 100 or len(owners) != len(set(owners)):
+            raise AutomationRuntimeError("AUTOMATION_OWNER_ADMISSION_INVALID")
+        for owner in owners:
+            _require_user_id(owner)
+        return owners
+
+    def claim_for_owner(
+        self,
+        user_id: str,
+        session_date: date,
+        claim_token_hash: str,
+    ) -> RuntimeClaim | None:
+        """Claim exactly one user's schedule; peer rows are never eligible for this call."""
+
+        _require_user_id(user_id)
+        _require_hash(claim_token_hash)
+        with self._connect(row_factory=dict_row) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "select * from p1_claim_automation_session_for_owner_v1(%s,%s,%s)",
+                (user_id, session_date, claim_token_hash),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            return None
+        if str(row["user_id"]) != user_id:
+            raise AutomationRuntimeError("AUTOMATION_OWNER_CLAIM_MISMATCH")
+        return RuntimeClaim(
+            user_id=user_id,
+            run_id=str(row["run_id"]),
+            control_version=int(row["control_version"]),
+            account_id=str(row["account_id"]),
+            principle_id=str(row["principle_id"]),
+            strategy_id=str(row["strategy_id"]),
+            baseline_account_digest=str(row["baseline_account_digest"]),
+            replayed=bool(row["replayed"]),
+            session_date=session_date,
+            claim_token_hash=claim_token_hash,
+        )
 
     def read_state(self, claim: RuntimeClaim) -> dict[str, Any]:
         with self._connect() as connection, connection.cursor() as cursor:
@@ -1158,6 +1205,9 @@ class AutomationRuntimeService:
         # 닫지 않으면 ACTIVE claim 이 남아 다음 세션 claim 이 40001 로 거절된다.
         self._recover_stranded_session()
         try:
+            if os.environ.get("MARS_PUBLIC_SURFACE_MODE", "LOCAL") == "FULL":
+                self._serve_full_multiuser(daily_inference, report_refresh)
+                return
             while not self._stop.is_set():
                 now = datetime.now(UTC).astimezone(_KST)
                 wakeup = self._planner.preparation_wakeup(now)
@@ -1304,7 +1354,162 @@ class AutomationRuntimeService:
         finally:
             daily_inference.close()
 
-    def _recover_stranded_session(self) -> None:
+    def _serve_full_multiuser(
+        self,
+        daily_inference: DailyInferencePort,
+        report_refresh: Callable[[], object] | None,
+    ) -> None:
+        """Run each armed owner concurrently under one bounded shared scheduler."""
+
+        prepared_session: date | None = None
+        catchup_session: date | None = None
+        completed_owners: set[str] = set()
+        next_attempt: dict[str, datetime] = {}
+        active: dict[Future[tuple[str, datetime | None]], str] = {}
+        with ThreadPoolExecutor(max_workers=100, thread_name_prefix="mars-owner") as executor:
+            while not self._stop.is_set():
+                now = datetime.now(UTC).astimezone(_KST)
+                if self._wait_until(self._planner.preparation_wakeup(now)):
+                    return
+                now = datetime.now(UTC).astimezone(_KST)
+                session_date = self._planner.current_or_next_session(now)
+                if prepared_session != session_date:
+                    if self._connectivity_check is not None and not self._connectivity_check():
+                        print(
+                            "AUTOMATION_CONNECTIVITY=UNAVAILABLE SESSION_NOT_CONSUMED", flush=True
+                        )
+                        if self._stop.wait(60.0):
+                            return
+                        continue
+                    try:
+                        prepared = daily_inference.ensure_daily_signals(session_date)
+                        if getattr(prepared, "outcome", None) not in {"REPLAYED", "IMPORTED"}:
+                            raise DailyInferenceError("DAILY_PREPARATION_NOT_COMPLETE")
+                        print(
+                            "AUTOMATION_PREPARATION_ATTEMPT="
+                            f"{'ON_TIME' if now.time() <= _PREPARATION_DEADLINE else 'LATE'} "
+                            f"session={session_date.isoformat()} "
+                            f"outcome={getattr(prepared, 'outcome', 'UNKNOWN')}",
+                            flush=True,
+                        )
+                        if report_refresh is not None:
+                            try:
+                                report = report_refresh()
+                                status = (
+                                    report.get("performanceReport", "UNKNOWN")
+                                    if isinstance(report, dict)
+                                    else "UNKNOWN"
+                                )
+                                print(f"AUTOMATION_PERFORMANCE_REPORT={status}", flush=True)
+                            except (OSError, RuntimeError, ValueError) as error:
+                                print(
+                                    f"AUTOMATION_PERFORMANCE_REPORT=FAILED error={type(error).__name__}",
+                                    flush=True,
+                                )
+                    except DailyInferenceError as error:
+                        print(
+                            f"AUTOMATION_DAILY_INFERENCE=UNAVAILABLE error={type(error).__name__}",
+                            flush=True,
+                        )
+                        if now.time() < _OPEN_BOUNDARY:
+                            if self._stop.wait(60.0):
+                                return
+                            continue
+                    prepared_session = session_date
+                    completed_owners.clear()
+                    next_attempt.clear()
+                    catchup_session = None
+                if now.time() < _OPEN_BOUNDARY:
+                    if self._wait_until(datetime.combine(session_date, _OPEN_BOUNDARY, _KST)):
+                        return
+                    continue
+                if catchup_session != session_date:
+                    for missed in _catch_up_sessions(session_date):
+                        try:
+                            daily_inference.ensure_daily_signals(missed)
+                        except DailyInferenceError as error:
+                            print(
+                                "AUTOMATION_DAILY_CATCHUP=UNAVAILABLE "
+                                f"session={missed.isoformat()} error={type(error).__name__}",
+                                flush=True,
+                            )
+                    catchup_session = session_date
+
+                for future, owner_user_id in tuple(active.items()):
+                    if not future.done():
+                        continue
+                    del active[future]
+                    try:
+                        outcome, retry_at = future.result()
+                    except Exception as error:
+                        print(
+                            f"AUTOMATION_OWNER_SESSION=FAILED error={type(error).__name__}",
+                            flush=True,
+                        )
+                        outcome, retry_at = "RETRY", now + timedelta(seconds=60)
+                    if outcome == "DONE":
+                        completed_owners.add(owner_user_id)
+                        next_attempt.pop(owner_user_id, None)
+                    else:
+                        next_attempt[owner_user_id] = retry_at or now + timedelta(seconds=60)
+
+                if now.time() < _CANCEL_BOUNDARY:
+                    owners = self._repository.armed_owner_user_ids()
+                    active_owners = set(active.values())
+                    for owner_user_id in owners:
+                        if owner_user_id in active_owners or owner_user_id in completed_owners:
+                            continue
+                        if next_attempt.get(owner_user_id, now) > now:
+                            continue
+                        future = executor.submit(
+                            self._process_full_owner_session,
+                            owner_user_id,
+                            session_date,
+                        )
+                        active[future] = owner_user_id
+                        active_owners.add(owner_user_id)
+                elif not active:
+                    next_session = self._planner.next_session(session_date)
+                    if self._wait_until(
+                        datetime.combine(next_session, _PREPARATION_BOUNDARY, _KST)
+                    ):
+                        return
+                    prepared_session = None
+                    continue
+                if self._stop.wait(5.0):
+                    return
+
+    def _process_full_owner_session(
+        self,
+        owner_user_id: str,
+        session_date: date,
+    ) -> tuple[str, datetime | None]:
+        self._recover_stranded_session(owner_user_id)
+        self._settle_and_arm(session_date, owner_user_id)
+        claim_hash = _owner_claim_hash(self._shared_secret, owner_user_id, session_date)
+        claim = self._repository.claim_for_owner(owner_user_id, session_date, claim_hash)
+        if claim is None:
+            retry_at = self._repository.retry_at(owner_user_id, session_date)
+            now = datetime.now(UTC).astimezone(_KST)
+            if retry_at is not None:
+                if retry_at > now:
+                    return "RETRY", retry_at
+                if self._connectivity_check is not None and not self._connectivity_check():
+                    return "RETRY", now + timedelta(seconds=60)
+                self._repository.resume_data_gap(owner_user_id, session_date)
+                return "RETRY", now + timedelta(seconds=1)
+            if self._advance_schedule_to(session_date, owner_user_id):
+                return "RETRY", now + timedelta(seconds=1)
+            return "IDLE", now + timedelta(seconds=60)
+
+        self._drive_claim(claim)
+        state = self._repository.read_state(claim)
+        outcome = "DONE" if str(state["state"]) in _TERMINAL_STATES else "RETRY"
+        return outcome, None if outcome == "DONE" else datetime.now(UTC).astimezone(
+            _KST
+        ) + timedelta(seconds=15)
+
+    def _recover_stranded_session(self, owner_user_id: str | None = None) -> None:
         """마감을 못 끝내고 죽은 직전 세션을 이어받아 정산한다.
 
         프로세스가 15:20 정산 전에 죽으면 run 은 미terminal, claim 은 ACTIVE 로 남는다.
@@ -1323,11 +1528,12 @@ class AutomationRuntimeService:
         여기서 새로 사는 것은 없다 - `_reconcile_order` 는 주문을 내지 않는 함수다.
         """
 
-        if not self._owner_user_id:
+        owner = owner_user_id or self._owner_user_id
+        if not owner:
             return
         now = datetime.now(UTC).astimezone(_KST)
         try:
-            last_completed = self._repository.last_completed_session(self._owner_user_id)
+            last_completed = self._repository.last_completed_session(owner)
         except (AutomationRuntimeError, psycopg.Error) as error:
             print(
                 f"AUTOMATION_RECOVERY=FAILED stage=cursor error={type(error).__name__}",
@@ -1343,7 +1549,16 @@ class AutomationRuntimeService:
             print(f"AUTOMATION_RECOVERY=NONE session={candidate.isoformat()}", flush=True)
             return
         try:
-            claim = self._repository.claim(candidate, _claim_hash(self._shared_secret, candidate))
+            if owner_user_id is not None:
+                claim = self._repository.claim_for_owner(
+                    owner,
+                    candidate,
+                    _owner_claim_hash(self._shared_secret, owner, candidate),
+                )
+            else:
+                claim = self._repository.claim(
+                    candidate, _claim_hash(self._shared_secret, candidate)
+                )
         except (AutomationRuntimeError, psycopg.Error) as error:
             print(
                 f"AUTOMATION_RECOVERY=FAILED stage=claim session={candidate.isoformat()} "
@@ -1387,7 +1602,11 @@ class AutomationRuntimeService:
             flush=True,
         )
 
-    def _settle_and_arm(self, session_date: date) -> None:
+    def _settle_and_arm(
+        self,
+        session_date: date,
+        owner_user_id: str | None = None,
+    ) -> None:
         """놓친 세션을 마감하고 오늘 세션까지 스케줄을 전진시킨다.
 
         장애로 며칠 멈춰도 사람 개입 없이 거래일을 다시 따라가게 하는 것이 목적이다.
@@ -1396,10 +1615,11 @@ class AutomationRuntimeService:
         아무 일도 하지 않고 다음 경계에서 다시 시도한다.
         """
 
-        if not self._owner_user_id:
+        owner = owner_user_id or self._owner_user_id
+        if not owner:
             return
         try:
-            settled = self._repository.settle_missed_schedules(self._owner_user_id, session_date)
+            settled = self._repository.settle_missed_schedules(owner, session_date)
         except (AutomationRuntimeError, psycopg.Error, AttributeError) as error:
             print(
                 f"AUTOMATION_SCHEDULE_SETTLE=FAILED error={type(error).__name__}",
@@ -1415,9 +1635,13 @@ class AutomationRuntimeService:
         # 그래서 한 칸 굴려 만든 **과거** 세션은 실행될 일이 없어 영원히 ARMED 로 남고,
         # 그 다음 칸을 굴리려 하면 gate 가 닫힌다. 며칠 밀린 연쇄가 하루에 한 칸씩만
         # 전진해 영영 오늘을 따라잡지 못한다. 한 칸 굴릴 때마다 다시 마감해 준다.
-        self._advance_schedule_to(session_date)
+        self._advance_schedule_to(session_date, owner)
 
-    def _advance_schedule_to(self, session_date: date) -> bool:
+    def _advance_schedule_to(
+        self,
+        session_date: date,
+        owner_user_id: str | None = None,
+    ) -> bool:
         """마지막 COMPLETED 에서 목표 세션까지 스케줄을 한 칸씩 ARM 한다.
 
         한 칸이라도 굴렸으면 True. 호출자가 그걸 보고 claim 을 다시 시도한다.
@@ -1426,20 +1650,21 @@ class AutomationRuntimeService:
         막는다. 이미 ARM 된 칸을 다시 굴리면 DB gate 가 닫고 그 사실만 마커로 남는다.
         """
 
-        if not self._owner_user_id:
+        owner = owner_user_id or self._owner_user_id
+        if not owner:
             return False
         armed = False
         for _ in range(_MAX_SCHEDULE_RECOVERY_HOPS):
-            cursor = self._repository.last_completed_session(self._owner_user_id)
+            cursor = self._repository.last_completed_session(owner)
             if cursor is None or cursor >= session_date:
                 return armed
             following = self._planner.next_session(cursor)
             try:
                 self._repository.roll_schedule(
-                    self._owner_user_id,
+                    owner,
                     cursor,
                     following,
-                    self._repository.control_version(self._owner_user_id),
+                    self._repository.control_version(owner),
                 )
             except (AutomationRuntimeError, psycopg.Error) as error:
                 print(
@@ -1453,7 +1678,7 @@ class AutomationRuntimeService:
             if following >= session_date:
                 return armed
             try:
-                self._repository.settle_missed_schedules(self._owner_user_id, session_date)
+                self._repository.settle_missed_schedules(owner, session_date)
             except (AutomationRuntimeError, psycopg.Error, AttributeError) as error:
                 print(
                     f"AUTOMATION_SCHEDULE_SETTLE=FAILED error={type(error).__name__}",
@@ -2133,6 +2358,13 @@ def _reservation_id(run_id: str, reservation: OrderReservation) -> str:
 
 def _claim_hash(secret: bytes, session_date: date) -> str:
     digest = hmac.new(secret, f"p1-automation-claim/v1\0{session_date}".encode(), hashlib.sha256)
+    return f"sha256:{digest.hexdigest()}"
+
+
+def _owner_claim_hash(secret: bytes, user_id: str, session_date: date) -> str:
+    _require_user_id(user_id)
+    message = f"p1-automation-owner-claim/v1\0{user_id}\0{session_date}".encode()
+    digest = hmac.new(secret, message, hashlib.sha256)
     return f"sha256:{digest.hexdigest()}"
 
 

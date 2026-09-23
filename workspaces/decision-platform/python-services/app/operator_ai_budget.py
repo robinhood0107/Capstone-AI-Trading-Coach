@@ -12,8 +12,11 @@ class OperatorAiBudgetConfigurationError(RuntimeError):
 
 
 def deployment_hard_cap_microusd() -> int | None:
-    if os.environ.get("MARS_PUBLIC_SURFACE_MODE", "LOCAL").strip() != "FULL":
+    mode = os.environ.get("MARS_PUBLIC_SURFACE_MODE", "LOCAL").strip()
+    if mode == "LOCAL":
         return None
+    if mode not in {"FULL", "DEMO"}:
+        raise OperatorAiBudgetConfigurationError("MARS_PUBLIC_SURFACE_MODE is invalid")
     raw = os.environ.get("MARS_AI_DAILY_HARD_CAP_USD", "").strip()
     if re.fullmatch(r"[0-9]{1,8}(?:\.[0-9]{1,2})?", raw) is None:
         raise OperatorAiBudgetConfigurationError("MARS_AI_DAILY_HARD_CAP_USD is required")

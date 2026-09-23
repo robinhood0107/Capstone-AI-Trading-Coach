@@ -121,13 +121,10 @@ class ExecutionSourcePort(Protocol):
 class SpringAutomationBridgeClient:
     """numeric loopback와 per-install secret에 고정된 retry-0 internal Spring client다.
 
-    shared secret은 이 다리가 loopback runtime의 것임을 증명할 뿐, 소유자를 증명하지 않는다.
-    bridge 뒤의 brokerage·decision 서비스는 `AuthenticatedActorRef.current()`로 actor capability를
-    발급하므로 인증된 소유자 세션이 없으면 모든 명령이 닫힌다. 그래서 다른 클라이언트와 똑같이
-    소유자로 로그인해 access token을 붙인다. capability 사슬을 우회하지 않는다.
-
-    token은 만료되므로 401을 만나면 한 번만 다시 로그인하고 재시도한다. 그 이상은 재시도하지
-    않는다 — 주문 경로의 retry-0 경계를 지켜야 한다.
+    LOCAL은 기존 개인 배포 계정 세션을 사용한다. FULL은 Google OIDC 사용자마다 달라지는
+    owner ID를 body에 싣고 이 loopback service credential로만 호출한다. Spring bridge는
+    매 호출마다 활성 사용자와 owner/account 경계를 다시 확인하고 brokerage envelope를 조회한다.
+    FULL은 공용 password 계정을 만들거나 읽지 않는다.
     """
 
     def __init__(
@@ -141,6 +138,7 @@ class SpringAutomationBridgeClient:
         if _SECRET.fullmatch(shared_secret) is None:
             raise AutomationRuntimeError("AUTOMATION_BRIDGE_SECRET_INVALID")
         self._secret = shared_secret
+        self._service_to_service = os.environ.get("MARS_PUBLIC_SURFACE_MODE", "LOCAL") == "FULL"
         self._owner_username = (
             owner_username
             if owner_username is not None
@@ -185,15 +183,17 @@ class SpringAutomationBridgeClient:
         self._access_token = token
         return token
 
-    def _post_command(self, body: Mapping[str, object], token: str) -> httpx.Response:
+    def _post_command(self, body: Mapping[str, object], token: str | None) -> httpx.Response:
+        headers = {
+            "Content-Type": "application/json",
+            "X-Automation-Runtime-Auth": self._secret,
+        }
+        if token is not None:
+            headers["Authorization"] = f"Bearer {token}"
         return self._client.post(
             "/internal/automation-runtime/command",
             content=canonical_json_bytes(body),
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-                "X-Automation-Runtime-Auth": self._secret,
-            },
+            headers=headers,
         )
 
     def command(
@@ -210,9 +210,9 @@ class SpringAutomationBridgeClient:
             "payload": payload,
             "userId": user_id,
         }
-        token = self._access_token or self._login()
+        token = None if self._service_to_service else (self._access_token or self._login())
         response = self._post_command(body, token)
-        if response.status_code == 401:
+        if response.status_code == 401 and token is not None:
             # 만료된 세션은 한 번만 다시 연다. 같은 idempotency key로 다시 보내므로 중복 주문이
             # 생기지 않는다.
             response = self._post_command(body, self._login())

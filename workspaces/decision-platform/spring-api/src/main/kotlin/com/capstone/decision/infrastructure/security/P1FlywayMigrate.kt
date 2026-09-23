@@ -46,6 +46,17 @@ object P1FlywayMigrate {
     }
 
     private fun actorTrustMigration(environment: Map<String, String>): V7__s2_1_actor_trust {
+        val mode = PublicSurfaceMode.valueOf(environment["MARS_PUBLIC_SURFACE_MODE"] ?: "LOCAL")
+        if (mode != PublicSurfaceMode.LOCAL) {
+            require(
+                listOf(
+                    "DEMO_CREDENTIAL_SEPARATION_KEY",
+                    "DEMO_USER_CREDENTIAL_BUNDLE",
+                    "DEMO_ADMIN_CREDENTIAL_BUNDLE",
+                ).all { environment[it].isNullOrBlank() },
+            ) { "PUBLIC_PASSWORD_CREDENTIALS_FORBIDDEN" }
+            return PublicActorTrustMigrationFactory.create()
+        }
         val separationKey =
             DemoCredentialBundlePolicy.decodeSeparationKey(
                 required(environment, "DEMO_CREDENTIAL_SEPARATION_KEY"),

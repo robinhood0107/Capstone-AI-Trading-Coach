@@ -26,6 +26,10 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermission
+import java.security.SecureRandom
 
 /** Starts the full product security chains with an offline Google registration and isolated DB. */
 @Testcontainers
@@ -82,6 +86,18 @@ class GoogleOidcPublicBoundaryIntegrationTest(
     }
 
     companion object {
+        private val brokerageKekDirectory: Path =
+            Files.createTempDirectory("mars-oidc-brokerage-kek").also { directory ->
+                Files.setPosixFilePermissions(
+                    directory,
+                    setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE),
+                )
+                val key = ByteArray(32).also(SecureRandom()::nextBytes)
+                val file = directory.resolve("brokerage-kek-v1.key")
+                Files.write(file, key)
+                Files.setPosixFilePermissions(file, setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE))
+                key.fill(0)
+            }
         private val postgresImage =
             DockerImageName
                 .parse("pgvector/pgvector:pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb")
@@ -109,6 +125,7 @@ class GoogleOidcPublicBoundaryIntegrationTest(
             registry.add("GOOGLE_OIDC_ADMIN_SUBJECT_SHA256") { "a".repeat(64) }
             registry.add("GOOGLE_OIDC_CLIENT_ID") { "fixture-client" }
             registry.add("GOOGLE_OIDC_CLIENT_SECRET") { "fixture-secret" }
+            registry.add("MARS_BROKERAGE_KEK_DIRECTORY") { brokerageKekDirectory.toString() }
             registry.add("GOOGLE_OIDC_REDIRECT_URI") {
                 "https://mars.example.test/api/v1/auth/oidc/callback/google"
             }

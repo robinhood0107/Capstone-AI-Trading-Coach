@@ -44,6 +44,12 @@ export interface MockCredentialReadResponse {
   credential: MockCredentialSummary | null;
 }
 
+export interface OperatorAiBudgetPolicy {
+  hardCapCents: number;
+  dailySoftCapCents: number;
+  revision: number;
+}
+
 /* ---------------------------------------------------------------- Health */
 
 export interface DataFreshness {

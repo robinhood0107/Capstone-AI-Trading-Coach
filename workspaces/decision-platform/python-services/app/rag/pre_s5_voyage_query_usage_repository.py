@@ -40,6 +40,9 @@ _COMMIT_FUNCTION = (
 )
 _UNKNOWN_FUNCTION = "public.mark_rag_v2_immutable_voyage_query_usage_unknown_billing(text)"
 _S49_RUNTIME_RESERVE_FUNCTION = "public.reserve_s4_9_runtime_voyage_query_usage(text,text,text)"
+_S49_OPERATOR_GROSS_RESERVE_FUNCTION = (
+    "public.reserve_s4_9_operator_voyage_gross_usage_v1(text,text,text,bigint,bigint)"
+)
 _EVALUATION_RESERVE_FUNCTION = (
     "public.reserve_rag_v2_immutable_voyage_evaluation_batch_usage("
     "text,text,text,text,text,text,text,text,timestamptz,integer,integer,bigint,bigint)"
@@ -128,33 +131,6 @@ class PsycopgPreS5VoyageQueryUsageRepository:
                         """,
                         (scope_claim_id, question_sha256, tokenizer_sha256),
                     ).fetchone()
-                    if self._gross_budget_hard_cap_microusd is not None:
-                        if (
-                            row is None
-                            or len(row) != 9
-                            or _USAGE_EVENT_ID.fullmatch(str(row[0])) is None
-                            or type(row[7]) is not int
-                            or row[7] <= 0
-                        ):
-                            raise PreS5VoyageQueryUsageRepositoryError(
-                                "OPERATOR_AI_DAILY_GROSS_RESERVATION_INVALID"
-                            )
-                        accepted = connection.execute(
-                            """
-                            SELECT public.reserve_s4_9_operator_voyage_gross_usage_v1(%s,%s,%s,%s,%s)
-                            """,
-                            (
-                                "aibr_" + str(row[0])[-32:],
-                                scope_claim_id,
-                                question_sha256,
-                                row[7],
-                                self._gross_budget_hard_cap_microusd,
-                            ),
-                        ).fetchone()
-                        if accepted is None or accepted[0] is not True:
-                            raise PreS5VoyageQueryUsageRepositoryError(
-                                "OPERATOR_AI_DAILY_GROSS_BUDGET_EXHAUSTED"
-                            )
                     if self._gross_budget_hard_cap_microusd is not None:
                         if (
                             row is None
@@ -709,6 +685,7 @@ def _attest_writer_connection(connection: psycopg.Connection[Any]) -> None:
         _COMMIT_FUNCTION,
         _UNKNOWN_FUNCTION,
         _S49_RUNTIME_RESERVE_FUNCTION,
+        _S49_OPERATOR_GROSS_RESERVE_FUNCTION,
         _EVALUATION_RESERVE_FUNCTION,
         _EVALUATION_CLAIM_FUNCTION,
         _EVALUATION_UNKNOWN_FUNCTION,

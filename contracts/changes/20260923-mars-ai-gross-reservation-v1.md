@@ -7,8 +7,9 @@ V201은 `Asia/Seoul` 날짜의 운영자 AI 최대 노출액을 한 원장에 �
 불명확할 때 과금 여부를 추측해 예산을 되돌리지 않기 위해서다.
 
 비교 상한은 NAS `MARS_AI_DAILY_HARD_CAP_USD`와 ADMIN 웹 soft cap 중 작은 값이다.
-운영자가 첫 NAS 상한을 `$1.00/일`로 정했다. DB soft cap 기본 0은 공개 과금 정지를
-뜻하며, 관리자 설정 뒤에만 예산이 생긴다. 원장의 수치는 **실제 청구액이 아니라
+운영자가 첫 NAS 상한을 `$1.00/일`로 정했다. V203은 새 설치의 수정되지 않은 DB
+soft cap도 `$1.00/일`로 맞춘다. ADMIN이 0으로 바꾸면 추가 호출을 멈춘다.
+원장의 수치는 **실제 청구액이 아니라
 최대 공개가격 환산 사용량**이다. 무료 크레딧이나 공급자별 무료 토큰을 차감하지
 않는다. [Google Cloud Vertex 가격](https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing)과
 [Voyage 가격](https://docs.voyageai.com/docs/pricing)은 모델·시점에 따라 달라지므로

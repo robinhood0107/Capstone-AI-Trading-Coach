@@ -2364,6 +2364,9 @@ execution이 있으면 교체를 거부한다. 데모와 KIS_LIVE 입력 API는 
 내부 V202 reader는 현재 owner·KIS_MOCK·opaque account ID·actor capability가
 모두 일치할 때 암호문만 읽는다. 타인 계좌와 교체된 이전 ID는 거부하며 공개 응답은
 변하지 않는다. [reader 계약](../contracts/changes/20260923-mars-owner-mock-envelope-reader.md)을 따른다.
+기존 Spring→Python brokerage gRPC 요청은 봉인된 owner/account envelope를 전달한다.
+Python이 같은 envelope를 검증해 본인 KIS_MOCK client에 결속하기 전에는 공개 주문을
+열지 않는다. [gRPC 전송 계약](../contracts/changes/20260923-mars-owner-broker-grpc-envelope.md)을 따른다.
 
 KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재동의 조건을 충족할 때만 확장한다. S1.1의 KIS 작업은 Brokerage API가 아니라 MarketDataService 내부 구현이며, 주문·정정·취소·잔고 변경을 만들지 않는다. KIS 전체 API 목록과 모의 지원 경계는 자동 생성 부록 `KIS_API_카탈로그.md`를 참조한다.
 

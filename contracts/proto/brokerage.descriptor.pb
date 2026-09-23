@@ -1,6 +1,24 @@
 
-≠
-brokerage.protocapstone.decision.v1"å
+ñ
+brokerage.protocapstone.decision.v1"ò
+BoundMockCredentialEnvelope"
+owner_user_id (	RownerUserId
+
+account_id (	R	accountId
+revision (Rrevision)
+credential_state (	RcredentialState
+kek_version (	R
+kekVersion
+
+wrap_nonce (R	wrapNonce
+wrapped_dek (R
+wrappedDek
+wrap_tag (RwrapTag#
+payload_nonce	 (RpayloadNonce-
+payload_ciphertext
+ (RpayloadCiphertext
+payload_tag (R
+payloadTag"ﬂ
 SubmitMockCashOrderRequest
 
 request_id (	R	requestId
@@ -12,30 +30,39 @@ account_id (	R	accountId
 
 order_type (	R	orderType
 quantity (Rquantity.
-estimated_price_krw (RestimatedPriceKrw"¡
+estimated_price_krw (RestimatedPriceKrwQ
+
+credential	 (21.capstone.decision.v1.BoundMockCredentialEnvelopeR
+credential"¡
 SubmitMockCashOrderResponse
 order_id (	RorderId
 accepted (Raccepted5
 provider_order_ref_hash (	RproviderOrderRefHash
 tr_id (	RtrId
 received_at (	R
-receivedAt"u
+receivedAt"»
 CancelMockCashOrderRequest
 
 request_id (	R	requestId
 order_id (	RorderId
 
-account_id (	R	accountId"q
+account_id (	R	accountIdQ
+
+credential (21.capstone.decision.v1.BoundMockCredentialEnvelopeR
+credential"q
 CancelMockCashOrderResponse
 order_id (	RorderId
 status (	Rstatus
 received_at (	R
-receivedAt"U
+receivedAt"®
 GetMockBalanceRequest
 
 request_id (	R	requestId
 
-account_id (	R	accountId"ö
+account_id (	R	accountIdQ
+
+credential (21.capstone.decision.v1.BoundMockCredentialEnvelopeR
+credential"ö
 MockBalancePosition
 symbol (	Rsymbol
 quantity (Rquantity(
@@ -50,14 +77,17 @@ account_id (	R	accountId
 	positions (2).capstone.decision.v1.MockBalancePositionR	positions
 observed_at (	R
 observedAt%
-source_version (	RsourceVersion"ù
+source_version (	RsourceVersion"
 GetMockBuyableRequest
 
 request_id (	R	requestId
 
 account_id (	R	accountId
 symbol (	Rsymbol.
-estimated_price_krw (RestimatedPriceKrw"ª
+estimated_price_krw (RestimatedPriceKrwQ
+
+credential (21.capstone.decision.v1.BoundMockCredentialEnvelopeR
+credential"ª
 GetMockBuyableResponse
 
 account_id (	R	accountId

@@ -47,10 +47,14 @@ def test_trade_budget_requires_the_automation_role_and_operator_rates(
         "P1_AUTOMATION_DATABASE_DSN",
         "postgresql://decision_automation_runtime:fixture@localhost:5432/decision",
     )
-    monkeypatch.setenv("P1_VERTEX_INPUT_MICROUSD_PER_TOKEN", "2")
-    monkeypatch.setenv("P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN", "9")
+    monkeypatch.setenv("P1_VERTEX_INPUT_MICROUSD_PER_TOKEN", "3")
+    monkeypatch.setenv("P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN", "17")
     budget = TradeAiGrossBudget.from_environment()
     assert budget is not None and budget.hard_cap_microusd == 1_000_000
+    monkeypatch.setenv("P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN", "9")
+    with pytest.raises(OperatorAiBudgetConfigurationError, match="rate floor"):
+        TradeAiGrossBudget.from_environment()
+    monkeypatch.setenv("P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN", "17")
     monkeypatch.setenv(
         "P1_AUTOMATION_DATABASE_DSN", "postgresql://decision_app:fixture@localhost:5432/decision"
     )

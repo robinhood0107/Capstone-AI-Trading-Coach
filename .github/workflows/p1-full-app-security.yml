@@ -67,10 +67,6 @@ jobs:
           scan-type: fs
           scan-ref: .
           scanners: vuln,secret,misconfig
-          # Frozen S1.4X reference lock is a test input with historical,
-          # intentionally uninstalled versions. Gitleaks still scans it above;
-          # Docker excludes it from every runtime image.
-          skip-dirs: contracts/fixtures/s1-4x-reference-runtime
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"

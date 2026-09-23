@@ -24,9 +24,7 @@ from pathlib import Path
 import pytest
 
 _APP = Path(__file__).resolve().parents[2] / "app"
-_SPRING = (
-    Path(__file__).resolve().parents[3] / "spring-api/src/main/kotlin"
-)
+_SPRING = Path(__file__).resolve().parents[3] / "spring-api/src/main/kotlin"
 
 
 def _allowed_set_sizes(tree: ast.Module) -> dict[str, int]:
@@ -77,8 +75,8 @@ def test_no_python_call_bounds_an_allowed_set_below_its_size() -> None:
                     f"{path.name}:{node.lineno} 상한 {bound.value} < 허용 "
                     f"{allowed.id} {sizes[allowed.id]}종"
                 )
-    assert not offenders, (
-        "허용 집합보다 작은 상한이 있다. '전부 선택'이 거부된다: " + "; ".join(offenders)
+    assert not offenders, "허용 집합보다 작은 상한이 있다. '전부 선택'이 거부된다: " + "; ".join(
+        offenders
     )
 
 
@@ -90,13 +88,10 @@ def test_the_kotlin_array_bound_comes_from_its_allowed_set() -> None:
     그대로 있는지 본다 - 누가 숫자로 되돌리면 이 테스트가 먼저 깨진다.
     """
 
-    source = (
-        _SPRING
-        / "com/capstone/decision/api/rag/RagRequestParser.kt"
-    ).read_text(encoding="utf-8")
+    source = (_SPRING / "com/capstone/decision/api/rag/RagRequestParser.kt").read_text(
+        encoding="utf-8"
+    )
     assert re.search(r"val maximum = allowed\?\.size \?: \d+", source), (
         "RagRequestParser 의 배열 상한이 더 이상 허용 집합에서 나오지 않는다."
     )
-    assert "node.size() > maximum" in source, (
-        "RagRequestParser 가 유도된 상한을 쓰지 않는다."
-    )
+    assert "node.size() > maximum" in source, "RagRequestParser 가 유도된 상한을 쓰지 않는다."

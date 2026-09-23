@@ -1,0 +1,251 @@
+name: MARS Docker Hub release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+  checks: read
+
+concurrency:
+  group: mars-dockerhub-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.ref == 'develop' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact merged source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify release gate and PR checks before credentials
+        id: identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$MERGE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ $(git rev-parse HEAD) == "$MERGE_SHA" ]]
+          [[ $(git ls-remote origin refs/heads/main | cut -f1) == "$MERGE_SHA" ]]
+          [[ $(git rev-parse HEAD^2) == "$SOURCE_SHA" ]]
+          [[ $(git status --porcelain --untracked-files=all) == '' ]]
+          [[ $(jq -r '.ready' deploy/p1/mars-release-gate.json) == true ]]
+          version=$(jq -r '.version' deploy/p1/mars-release-gate.json)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          # A merged PR can be allowed by repository settings even with failed checks.
+          # Read its final rollup and demand the main-promotion gates explicitly.
+          checks=$(gh pr view "$PR_NUMBER" --json statusCheckRollup --jq '.statusCheckRollup[] | [.name // .context, .conclusion // .state] | @tsv')
+          required=(
+            'Repo hygiene'
+            'Kotlin ktlint and build'
+            'Python quality gates'
+            'Contract schema validation'
+            'Spring OpenAPI drift'
+            'Lint & Static Analysis'
+            'P1 full-app security gates'
+          )
+          for check in "${required[@]}"; do
+            printf '%s\n' "$checks" | awk -F '\t' -v name="$check" '$1==name && $2=="SUCCESS" {ok=1} END {exit !ok}'
+          done
+          tag="v${version}-${MERGE_SHA:0:12}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo MARS_RELEASE_COLLISION >&2
+            exit 1
+          fi
+          {
+            echo "sha=$MERGE_SHA"
+            echo "version=$version"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Require public Docker Hub repositories
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for product in demo full; do
+            curl --fail --silent --show-error --retry 2 \
+              "https://hub.docker.com/v2/repositories/pjjpjj111/mars-$product/" \
+              | jq -e '.is_private == false' >/dev/null
+          done
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Build both products from the same merge commit
+        shell: bash
+        env:
+          SHA: ${{ steps.identity.outputs.sha }}
+          VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+          docker buildx build --platform linux/amd64 --load \
+            --file deploy/p1/docker/decision-platform.Dockerfile \
+            --build-arg SOURCE_REVISION="$SHA" --build-arg RELEASE_VERSION="$VERSION" \
+            --tag mars-build:api .
+          docker buildx build --platform linux/amd64 --load \
+            --file deploy/p1/docker/postgres-pgvector.Dockerfile \
+            --build-arg SOURCE_REVISION="$SHA" --build-arg RELEASE_VERSION="$VERSION" \
+            --tag mars-build:postgres .
+          docker buildx build --platform linux/amd64 --load \
+            --file deploy/p1/docker/redis.Dockerfile \
+            --build-arg SOURCE_REVISION="$SHA" --build-arg RELEASE_VERSION="$VERSION" \
+            --tag mars-build:redis .
+          for product in demo full; do
+            docker buildx build --platform linux/amd64 --load \
+              --file workspaces/experience-dashboard/Dockerfile \
+              --build-arg MARS_PRODUCT="$product" \
+              --build-arg SOURCE_REVISION="$SHA" --build-arg RELEASE_VERSION="$VERSION" \
+              --tag "mars-build:${product}-web" workspaces/experience-dashboard
+          done
+          for part in api postgres redis demo-web full-web; do
+            [[ $(docker image inspect "mars-build:$part" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
+          done
+
+      - name: Scan release images before registry login
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: mars-build:api
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Scan PostgreSQL image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: mars-build:postgres
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Scan Redis image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: mars-build:redis
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Scan demo web image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: mars-build:demo-web
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Scan full web image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: mars-build:full-web
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Generate per-image SBOMs
+        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        with:
+          image: mars-build:api
+          format: spdx-json
+          output-file: mars-api.spdx.json
+          upload-artifact: false
+
+      - name: Install Syft for remaining SBOMs
+        uses: anchore/sbom-action/download-syft@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+
+      - name: Generate remaining SBOMs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for part in postgres redis demo-web full-web; do
+            syft "docker:mars-build:$part" -o spdx-json="mars-${part}.spdx.json"
+          done
+
+      - name: Log in to Docker Hub after checks and scans
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          username: pjjpjj111
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push immutable demo and full image sets
+        id: push
+        shell: bash
+        env:
+          SHA: ${{ steps.identity.outputs.sha }}
+          TAG: ${{ steps.identity.outputs.tag }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p release-build
+          printf '{"sourceSha":"%s","tag":"%s","images":{' "$SHA" "$TAG" > release-build/mars-images.json
+          separator=''
+          for product in demo full; do
+            repo="pjjpjj111/mars-$product"
+            for part in api web postgres redis; do
+              local_part=$part
+              [[ "$part" != web ]] || local_part="${product}-web"
+              ref="$repo:$TAG-$part"
+              # A retry may resume a partial release only when existing bytes
+              # match the exact locally scanned source image.
+              if ! docker buildx imagetools inspect "$ref" >/dev/null 2>&1; then
+                docker tag "mars-build:$local_part" "$ref"
+                docker push "$ref"
+              fi
+              digest="sha256:$(docker buildx imagetools inspect "$ref" --raw | sha256sum | awk '{print $1}')"
+              [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+              docker pull --platform linux/amd64 "$repo@$digest"
+              if [[ $(docker image inspect "$repo@$digest" --format '{{.Id}}') != $(docker image inspect "mars-build:$local_part" --format '{{.Id}}') ]]; then
+                echo MARS_IMAGE_TAG_COLLISION >&2
+                exit 1
+              fi
+              [[ $(docker image inspect "$repo@$digest" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
+              printf '%s"%s-%s":{"reference":"%s","digest":"%s"}' \
+                "$separator" "$product" "$part" "$ref" "$digest" >> release-build/mars-images.json
+              separator=,
+            done
+          done
+          printf '}}\n' >> release-build/mars-images.json
+          python3 -m json.tool release-build/mars-images.json >/dev/null
+
+      - name: Publish digest manifest and SBOMs as a GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.identity.outputs.tag }}
+          SHA: ${{ steps.identity.outputs.sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ $(git ls-remote origin refs/heads/main | cut -f1) == "$SHA" ]]
+          gh release create "$TAG" \
+            --target "$SHA" \
+            --title "MARS $TAG" \
+            --notes "Merged develop source $SHA. Demo and full image digests are in mars-images.json. NAS rollout is manual." \
+            release-build/mars-images.json \
+            mars-api.spdx.json mars-postgres.spdx.json mars-redis.spdx.json \
+            mars-demo-web.spdx.json mars-full-web.spdx.json
+          mkdir -p release-readback
+          gh release download "$TAG" --pattern mars-images.json --dir release-readback
+          cmp release-build/mars-images.json release-readback/mars-images.json

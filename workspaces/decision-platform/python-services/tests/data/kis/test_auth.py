@@ -83,6 +83,50 @@ def test_token_issuer_injects_credentials_only_inside_private_fixed_origin_trans
     assert app_secret not in repr(vars(issuer))
 
 
+def test_two_explicit_mock_credentials_have_separate_scope_and_never_read_global_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        _credential_transport,
+        "_read_credentials",
+        lambda _: (_ for _ in ()).throw(AssertionError("global KIS credential fallback")),
+    )
+
+    def provider(key: str, secret: str):
+        return lambda: _Credentials(app_key=SecretStr(key), app_secret=SecretStr(secret))
+
+    first = provider("validation-owner-a-key", "validation-owner-a-secret")
+    second = provider("validation-owner-b-key", "validation-owner-b-secret")
+    assert _provider_scope("mock", first) != _provider_scope("mock", second)
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.read().decode()
+        seen.append(body)
+        return httpx.Response(
+            200, json={"access_token": "validation-dummy-token", "expires_in": 86400}
+        )
+
+    class ImmediateLimiter:
+        def acquire(self) -> None:
+            return None
+
+    for supplied in (first, second):
+        issuer = _TokenIssuer(
+            KISSettings(kis_mode="mock", kis_offline=False, _env_file=None),
+            transport=httpx.MockTransport(handler),
+            rate_limiter=ImmediateLimiter(),
+            credential_provider=supplied,
+        )
+        issuer.issue()
+        issuer.close()
+
+    assert len(seen) == 2
+    assert "validation-owner-a-key" in seen[0] and "validation-owner-b-key" not in seen[0]
+    assert "validation-owner-b-key" in seen[1] and "validation-owner-a-key" not in seen[1]
+
+
 def test_token_issuer_accounting_is_separate_from_market_data(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

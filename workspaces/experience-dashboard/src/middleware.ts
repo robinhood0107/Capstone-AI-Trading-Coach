@@ -1,13 +1,22 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-/** Deny the password route before Next's same-origin API rewrite reaches Spring. */
-export function middleware() {
-  if (process.env.NEXT_PUBLIC_MARS_PRODUCT !== 'full' && process.env.NEXT_PUBLIC_MARS_PRODUCT !== 'demo') {
-    return NextResponse.next();
+/** Product paths are checked before Next's same-origin API rewrite reaches Spring. */
+export function middleware(request: NextRequest) {
+  const product = process.env.NEXT_PUBLIC_MARS_PRODUCT;
+  const path = request.nextUrl.pathname;
+  if (product === 'demo') {
+    const allowedPage = request.method === 'GET' && path === '/';
+    const allowedApi = request.method === 'POST' && path === '/api/v1/demo/agent/ask';
+    return allowedPage || allowedApi ? NextResponse.next() : new NextResponse(null, { status: 404 });
   }
-  return new NextResponse(null, { status: 404 });
+  if (product === 'full' && (path === '/api/v1/auth/login' || path.startsWith('/api/v1/demo/'))) {
+    return new NextResponse(null, { status: 404 });
+  }
+  return NextResponse.next();
 }
 
 export const config = {
-  matcher: '/api/v1/auth/login',
+  // Only known static assets and liveness bypass the product gate. New page/API
+  // paths are denied by default in DEMO, even if they contain a dot.
+  matcher: '/((?!_next/|healthz|fonts/|fonts.css|ui-fonts.css|mascot.png|icon.svg|favicon.ico).*)',
 };

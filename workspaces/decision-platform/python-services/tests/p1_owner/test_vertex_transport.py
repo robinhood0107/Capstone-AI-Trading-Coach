@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from unittest.mock import Mock
 
 import httpx
 import pytest
 
 from app.data._shared.canonical_json import canonical_json_bytes
+from app.operator_ai_budget import OperatorAiBudgetReservationError
 from app.p1_owner.vertex_transport import (
     VertexAiVetoTransport,
     VertexTransportNotConfigured,
@@ -95,6 +97,64 @@ def test_session_call_cap_stops_further_provider_calls(tmp_path: Any) -> None:
         transport.invoke(system_prompt="prompt", request_bytes=_request())
 
     assert transport.physical_calls == 0
+
+
+def test_public_full_requires_gross_reservation_before_vertex_socket(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "FULL")
+    monkeypatch.setenv("MARS_AI_DAILY_HARD_CAP_USD", "1.00")
+    transport = VertexAiVetoTransport(settings=_settings(tmp_path))
+    send = Mock()
+    monkeypatch.setattr(VertexAiVetoTransport, "_post", lambda self, payload: send(payload))
+
+    with pytest.raises(VertexBudgetExhausted):
+        transport.invoke(system_prompt="prompt", request_bytes=_request())
+
+    assert transport.physical_calls == 0
+    send.assert_not_called()
+
+
+def test_public_full_budget_failure_keeps_vertex_socket_closed(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "FULL")
+    monkeypatch.setenv("MARS_AI_DAILY_HARD_CAP_USD", "1.00")
+    budget = Mock(hard_cap_microusd=1_000_000)
+    budget.reserve.side_effect = OperatorAiBudgetReservationError("EXHAUSTED")
+    transport = VertexAiVetoTransport(
+        settings=_settings(tmp_path),
+        owner_user_id="usr_alice",
+        run_id="run_alice",
+        gross_budget=budget,
+    )
+    send = Mock()
+    monkeypatch.setattr(VertexAiVetoTransport, "_post", lambda self, payload: send(payload))
+
+    with pytest.raises(VertexBudgetExhausted):
+        transport.invoke(system_prompt="prompt", request_bytes=_request())
+
+    budget.reserve.assert_called_once()
+    assert transport.physical_calls == 0
+    send.assert_not_called()
+
+
+def test_demo_cannot_run_trade_ai_even_with_a_budget(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "DEMO")
+    monkeypatch.setenv("MARS_AI_DAILY_HARD_CAP_USD", "1.00")
+    budget = Mock(hard_cap_microusd=1_000_000)
+    transport = VertexAiVetoTransport(settings=_settings(tmp_path), gross_budget=budget)
+    send = Mock()
+    monkeypatch.setattr(VertexAiVetoTransport, "_post", lambda self, payload: send(payload))
+
+    with pytest.raises(VertexBudgetExhausted):
+        transport.invoke(system_prompt="prompt", request_bytes=_request())
+
+    budget.reserve.assert_not_called()
+    assert transport.physical_calls == 0
+    send.assert_not_called()
 
 
 def test_generate_url_pins_the_global_endpoint_the_contract_allows(tmp_path: Any) -> None:

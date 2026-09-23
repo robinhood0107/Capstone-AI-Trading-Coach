@@ -1,0 +1,27 @@
+# Only the full product activates the Google OIDC client. Missing operator values
+# stop startup; the dashboard never receives the client secret.
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_OIDC_CLIENT_ID}
+            client-secret: ${GOOGLE_OIDC_CLIENT_SECRET}
+            scope: openid,email
+            redirect-uri: ${GOOGLE_OIDC_REDIRECT_URI}
+        provider:
+          google:
+            issuer-uri: https://accounts.google.com
+server:
+  servlet:
+    session:
+      timeout: 2m
+      cookie:
+        secure: true
+        http-only: true
+        same-site: lax
+mars:
+  oidc:
+    public-origin: ${MARS_PUBLIC_ORIGIN}
+    admin-subject-sha256: ${GOOGLE_OIDC_ADMIN_SUBJECT_SHA256}

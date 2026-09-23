@@ -35,6 +35,21 @@ internal class PublicSurfaceGate(
             mode == PublicSurfaceMode.DEMO &&
                 request.method == "POST" &&
                 request.requestURI == "/api/v1/demo/agent/ask"
+        val fullAgentAllowed =
+            mode == PublicSurfaceMode.FULL &&
+                when (request.method to request.requestURI) {
+                    "GET" to "/api/v2/rag/corpus-status",
+                    "GET" to "/api/v2/rag/consent",
+                    "GET" to "/api/v2/rag/world-news",
+                    "GET" to "/api/v2/rag/history",
+                    "POST" to "/api/v2/rag/consents",
+                    "POST" to "/api/v2/rag/vertex-preparations",
+                    "POST" to "/api/v2/rag/ask",
+                    -> true
+                    else ->
+                        (request.method == "GET" || request.method == "DELETE") &&
+                            FULL_RAG_HISTORY_DETAIL.matches(request.requestURI)
+                }
         val fullAllowed =
             mode == PublicSurfaceMode.FULL &&
                 when (request.method to request.requestURI) {
@@ -51,11 +66,15 @@ internal class PublicSurfaceGate(
                     -> true
                     else -> false
                 }
-        if (mode != PublicSurfaceMode.LOCAL && !health && !fullAllowed && !demoAllowed) {
+        if (mode != PublicSurfaceMode.LOCAL && !health && !fullAllowed && !fullAgentAllowed && !demoAllowed) {
             response.sendError(HttpServletResponse.SC_NOT_FOUND)
             return
         }
         filterChain.doFilter(request, response)
+    }
+
+    private companion object {
+        val FULL_RAG_HISTORY_DETAIL = Regex("^/api/v2/rag/history/rag_[A-Za-z0-9_-]{12,96}$")
     }
 }
 

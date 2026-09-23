@@ -67,7 +67,27 @@ internal class PublicSurfaceGate(
                     else ->
                         false
                 }
-        if (mode != PublicSurfaceMode.LOCAL && !health && !fullAllowed && !fullAgentAllowed && !demoAllowed) {
+        val fullAutomationAllowed =
+            mode == PublicSurfaceMode.FULL &&
+                when (request.method to request.requestURI) {
+                    "GET" to "/api/v2/automation/status",
+                    "GET" to "/api/v2/automation/positions",
+                    "GET" to "/api/v3/automation/status",
+                    "PUT" to "/api/v3/automation/policy",
+                    "POST" to "/api/v3/automation/arm",
+                    "GET" to "/api/v3/automation/runs",
+                    "GET" to "/api/v3/automation/positions",
+                    "POST" to "/api/v1/automation/disarm",
+                    "GET" to "/api/v4/automation/capital-policy",
+                    "PUT" to "/api/v4/automation/capital-policy",
+                    "GET" to "/api/v4/automation/capital-status",
+                    -> true
+                    else -> FULL_AUTOMATION_RUN_DETAIL.matches(request.requestURI) && request.method == "GET"
+                }
+        if (
+            mode != PublicSurfaceMode.LOCAL && !health && !fullAllowed && !fullAgentAllowed &&
+            !fullAutomationAllowed && !demoAllowed
+        ) {
             response.sendError(HttpServletResponse.SC_NOT_FOUND)
             return
         }
@@ -76,6 +96,7 @@ internal class PublicSurfaceGate(
 
     private companion object {
         val FULL_RAG_HISTORY_DETAIL = Regex("^/api/v2/rag/history/rag_[A-Za-z0-9_-]{12,96}$")
+        val FULL_AUTOMATION_RUN_DETAIL = Regex("^/api/v3/automation/runs/auto_run_[A-Za-z0-9_-]{8,96}$")
     }
 }
 

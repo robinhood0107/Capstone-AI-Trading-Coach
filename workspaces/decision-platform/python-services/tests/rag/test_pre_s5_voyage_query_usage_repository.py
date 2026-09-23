@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import nullcontext
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock
 
 import psycopg
 import pytest
 
+import app.rag.pre_s5_voyage_query_usage_repository as voyage_usage_repository
 from app.rag.pre_s5_provider_control import (
     PreS5VoyageEvaluationBatchActivation,
     PreS5VoyageQueryActivation,
@@ -81,6 +84,54 @@ def test_voyage_query_usage_lease_claims_exact_packet_once_without_persisting_qu
         assert ("question",) not in columns
         assert ("scope_claim",) not in columns
         assert ("nonce",) not in columns
+
+
+def test_s49_runtime_reserves_shared_operator_budget_once_before_voyage_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_row = (
+        "rgr_vqu_" + "1" * 32,
+        "a" * 64,
+        "b" * 64,
+        "c" * 64,
+        datetime.now(UTC) + timedelta(minutes=2),
+        8_192,
+        4_194_304,
+        8_192,
+        1,
+    )
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    connection.transaction.return_value = nullcontext()
+    budget_reservations = 0
+
+    def execute(query: str, _parameters: object = None) -> MagicMock:
+        nonlocal budget_reservations
+        if "reserve_s4_9_runtime_voyage_query_usage" in query:
+            return MagicMock(fetchone=MagicMock(return_value=runtime_row))
+        if "reserve_s4_9_operator_voyage_gross_usage_v1" in query:
+            budget_reservations += 1
+            # Match the database's unique reservation ID: a repeated attempt is rejected.
+            return MagicMock(fetchone=MagicMock(return_value=(budget_reservations == 1,)))
+        raise AssertionError("unexpected database query")
+
+    connection.execute.side_effect = execute
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "FULL")
+    monkeypatch.setenv("MARS_AI_DAILY_HARD_CAP_USD", "1.00")
+    monkeypatch.setattr(voyage_usage_repository.psycopg, "connect", lambda *_args, **_kwargs: connection)
+    monkeypatch.setattr(voyage_usage_repository, "_attest_writer_connection", lambda _connection: None)
+    monkeypatch.setattr(voyage_usage_repository, "_set_transaction_timeouts", lambda _connection: None)
+
+    repository = PsycopgPreS5VoyageQueryUsageRepository(database_dsn="postgresql://writer")
+    activation, lease = repository.reserve_s4_9_runtime(
+        scope_claim_id="rvs_" + "d" * 32,
+        question_sha256="e" * 64,
+        tokenizer_sha256="f" * 64,
+    )
+
+    assert activation.provider == "VOYAGE"
+    assert lease.usage_event_id == "rgr_vqu_" + "1" * 32
+    assert budget_reservations == 1
 
 
 def test_voyage_query_usage_lease_keeps_public_evaluation_component_label_without_query_content(

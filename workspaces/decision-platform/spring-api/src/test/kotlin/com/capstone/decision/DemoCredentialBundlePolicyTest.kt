@@ -149,6 +149,56 @@ class DemoCredentialBundlePolicyTest {
                 financialEngineeringGrpcProperties = financialEngineeringGrpc,
             )
         }
+        for (publicMode in listOf("DEMO", "FULL")) {
+            assertDoesNotThrow {
+                SecurityConfig().authSecretSeparation(
+                    jwt,
+                    login,
+                    DemoCredentialBootstrapProperties(),
+                    principle,
+                    decision,
+                    brokerage,
+                    rag,
+                    decisionGrpc,
+                    brokerageGrpc,
+                    ragGrpc,
+                    financialEngineeringGrpcProperties = financialEngineeringGrpc,
+                    rawMode = publicMode,
+                )
+            }
+        }
+        assertThrows<IllegalArgumentException> {
+            SecurityConfig().authSecretSeparation(
+                jwt,
+                login,
+                properties,
+                principle,
+                decision,
+                brokerage,
+                rag,
+                decisionGrpc,
+                brokerageGrpc,
+                ragGrpc,
+                financialEngineeringGrpcProperties = financialEngineeringGrpc,
+                rawMode = "DEMO",
+            )
+        }
+        assertThrows<IllegalArgumentException> {
+            SecurityConfig().authSecretSeparation(
+                jwt,
+                login,
+                DemoCredentialBootstrapProperties(),
+                principle,
+                decision,
+                brokerage,
+                rag,
+                decisionGrpc,
+                brokerageGrpc,
+                ragGrpc,
+                financialEngineeringGrpcProperties = financialEngineeringGrpc,
+                rawMode = "LOCAL",
+            )
+        }
         financialEngineeringGrpc.sharedSecret = decisionGrpc.sharedSecret
         assertThrows<IllegalArgumentException> {
             SecurityConfig().authSecretSeparation(

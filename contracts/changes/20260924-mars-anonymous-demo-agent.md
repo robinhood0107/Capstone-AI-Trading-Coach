@@ -14,7 +14,10 @@ owner `NULL`로 V201 일일 공개가격 예산을 permit 전에 예약한다. G
 오염시킬 수 없다.
 
 데모의 visitor 질문·답변과 개인 식별자는 DB history/usage ledger에 남기지 않는다.
-HTTP 응답은 `Cache-Control: no-store`로 보낸다.
+HTTP 응답은 `Cache-Control: no-store`로 보낸다. demo 화면은 질문 ID 3개를 선택하는
+버튼과 답변·출처만 렌더하고 브라우저 저장소에 요청이나 답을 쓰지 않는다. Next 경계는
+첫 화면과 익명 ask POST 외의 화면·API를 404로 거부하며, 로그인·계좌·주문 메뉴를
+렌더하지 않는다.
 V201에는 예약 ID·일자·소스·provider·최대액만 남는다. 예산 부족은 429,
-provider·Redis 장애는 503으로 반환한다. 화면·전용 DB/secret/이미지 기동과
+provider·Redis 장애는 503으로 반환한다. 전용 DB/secret/이미지 기동과
 브라우저 저장소·실제 소켓 0/1회 검증은 별도 변경에서 완료한다.

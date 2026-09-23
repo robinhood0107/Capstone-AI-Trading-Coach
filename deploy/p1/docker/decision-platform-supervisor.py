@@ -54,12 +54,35 @@ def _wait_for_spring(spring: subprocess.Popen[bytes]) -> bool:
     return False
 
 
+def _validate_demo_runtime(environment: dict[str, str]) -> None:
+    """Reject any background/account capability in the anonymous demo."""
+
+    forbidden = (
+        "ASYNC_WORKER_ENABLED",
+        "ASYNC_POLLING_ENABLED",
+        "BROKERAGE_GRPC_ENABLED",
+        "KIS_MOCK_BROKERAGE_ONLINE_ENABLED",
+        "P1_AUTOMATION_RUNTIME_ENABLED",
+        "RAG_V2_GRPC_ENABLED",
+        "WORLD_NEWS_RETENTION_ENABLED",
+    )
+    if any(environment.get(key, "false").lower() == "true" for key in forbidden):
+        raise RuntimeError("public demo forbids owner/background capabilities")
+    if environment.get("S4_9_STRONG_LLM_ENABLED", "false").lower() != "true":
+        raise RuntimeError("public demo requires the bounded Agent provider")
+
+
 def main() -> int:
     """두 runtime을 시작하고 signal·failure를 컨테이너 단위로 전파한다."""
 
-    worker = subprocess.Popen(
-        ["python", "-m", "app.async_worker.grpc_server"],
-        close_fds=True,
+    demo = os.environ.get("MARS_PUBLIC_SURFACE_MODE", "LOCAL") == "DEMO"
+    if demo:
+        # The public demo has one bounded Agent call path. Starting the owner
+        # worker, inference, brokerage, or automation here would reintroduce
+        # account capabilities even if the HTTP gate rejected their routes.
+        _validate_demo_runtime(dict(os.environ))
+    worker = None if demo else subprocess.Popen(
+        ["python", "-m", "app.async_worker.grpc_server"], close_fds=True,
     )
     spring = subprocess.Popen(
         [
@@ -71,9 +94,8 @@ def main() -> int:
         ],
         close_fds=True,
     )
-    inference = subprocess.Popen(
-        ["python", "-m", "app.p1_owner.inference_grpc_server"],
-        close_fds=True,
+    inference = None if demo else subprocess.Popen(
+        ["python", "-m", "app.p1_owner.inference_grpc_server"], close_fds=True,
     )
     brokerage: subprocess.Popen[bytes] | None = None
     brokerage_enabled = (

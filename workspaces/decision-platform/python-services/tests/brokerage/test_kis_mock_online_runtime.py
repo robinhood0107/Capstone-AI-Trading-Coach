@@ -144,6 +144,8 @@ def test_online_balance_probe_parses_source_without_fabricating_risk_fields() ->
     assert source.positions == (("005930", 2, 140_000),)
     assert source.positions_complete is True
     assert "provider-free-text" not in repr(source)
+    balance_reader.verify_connection(account_id)
+    assert len(balance_client.calls) == 2
 
     market_value_only = replace(
         source,

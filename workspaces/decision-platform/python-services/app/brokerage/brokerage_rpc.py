@@ -34,6 +34,8 @@ class BalanceReadPort(Protocol):
 
     def balance(self, account_id: str) -> brokerage_pb2.GetMockBalanceResponse | None: ...
 
+    def verify_connection(self, account_id: str) -> None: ...
+
     def buyable(
         self, account_id: str, symbol: str, estimated_price_krw: int
     ) -> brokerage_pb2.GetMockBuyableResponse | None: ...
@@ -219,6 +221,27 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
         if response is None:
             _abort(context, grpc.StatusCode.NOT_FOUND, "mock buyable account was not found")
         return response
+
+    def VerifyMockConnection(
+        self,
+        request: brokerage_pb2.VerifyMockConnectionRequest,
+        context: grpc.ServicerContext,
+    ) -> brokerage_pb2.VerifyMockConnectionResponse:
+        _require_authenticated(context, self._shared_secret)
+        _validate_account(request.account_id, context)
+        try:
+            with self._session(request, frozenset({"STORED", "CONNECTED", "CERTIFIED"})) as (_, reader):
+                if reader is None:
+                    raise RuntimeError("BROKERAGE_CONNECTION_READER_UNAVAILABLE")
+                reader.verify_connection(request.account_id)
+        except OwnerCredentialUnavailable:
+            _abort(context, grpc.StatusCode.PERMISSION_DENIED, "mock owner credential unavailable")
+        except Exception:
+            _abort(context, grpc.StatusCode.UNAVAILABLE, "mock connection check unavailable")
+        return brokerage_pb2.VerifyMockConnectionResponse(
+            account_id=request.account_id,
+            connected=True,
+        )
 
 
 def _require_authenticated(context: grpc.ServicerContext, shared_secret: str) -> None:

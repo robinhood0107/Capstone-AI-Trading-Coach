@@ -125,6 +125,10 @@ class KISMockOnlineBalanceReader:
             "KIS mock balance risk fields are unavailable",
         )
 
+    def verify_connection(self, account_id: str) -> None:
+        """One read-only owner account probe; success proves access, not order readiness."""
+        self.probe_balance_source(account_id)
+
     def probe_balance_source(self, account_id: str) -> KISMockBalanceSourceProbe:
         """exact-approved 진단에서 cash/equity/position source shape만 bounded 검증한다.
 

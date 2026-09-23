@@ -26,3 +26,6 @@ class MarsFullMockCredentialContractTest(unittest.TestCase):
             {"accountId", "state", "revision", "appKeyLast4", "accountNoLast4", "connected", "certified"},
         )
         self.assertEqual(set(operations["put"]["responses"]), {"204", "400", "401", "409"})
+        connect = document["paths"]["/api/v1/brokerage/mock/credential/connect"]
+        self.assertEqual(set(connect), {"post"})
+        self.assertNotIn("requestBody", connect["post"])

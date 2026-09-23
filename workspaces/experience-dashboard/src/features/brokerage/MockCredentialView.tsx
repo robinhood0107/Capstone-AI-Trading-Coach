@@ -71,6 +71,23 @@ function MockCredentialForm({
     }
   }
 
+  async function verifyConnection() {
+    if (!status.registered || !status.credential || pending || status.credential.state === 'DISCONNECTING') return;
+    setPending(true);
+    setOutcome(null);
+    setError(null);
+    try {
+      await api.verifyMockCredentialConnection();
+      setOutcome('본인 모의계좌의 읽기 연결을 확인했습니다. 자동주문 인증은 아직 별도입니다.');
+      reload();
+    } catch (cause) {
+      const state = toErrorState<never>(cause);
+      setError(state.kind === 'error' ? state.message : '연결을 확인하지 못했습니다.');
+    } finally {
+      setPending(false);
+    }
+  }
+
   const credential = status.credential;
   return (
     <Panel
@@ -94,6 +111,17 @@ function MockCredentialForm({
           <p>등록된 모의계좌 정보가 없습니다.</p>
         )}
       </div>
+
+      {status.registered && credential && credential.state !== 'DISCONNECTING' ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => void verifyConnection()}
+          className="mt-4 rounded-control border border-line px-5 py-2.5 text-[14px] font-semibold text-ink hover:border-navy disabled:opacity-50"
+        >
+          {pending ? '확인 중…' : credential?.connected ? '읽기 연결 다시 확인' : '읽기 연결 확인'}
+        </button>
+      ) : null}
 
       <div className="mt-5 grid gap-4">
         <label className="text-[13px] font-medium text-muted" htmlFor={`${id}-key`}>

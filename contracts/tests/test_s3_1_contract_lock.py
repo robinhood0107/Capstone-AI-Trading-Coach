@@ -104,6 +104,7 @@ class S31BrokerageMockContractTest(unittest.TestCase):
             "rpc CancelMockCashOrder(",
             "rpc GetMockBalance(",
             "rpc GetMockBuyable(",
+            "rpc VerifyMockConnection(",
             "provider_order_ref_hash",
         ):
             self.assertIn(required, proto)

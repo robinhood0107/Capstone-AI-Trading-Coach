@@ -97,9 +97,21 @@ message GetMockBuyableResponse {
   string source_version = 8;
 }
 
+message VerifyMockConnectionRequest {
+  string request_id = 1;
+  string account_id = 2;
+  BoundMockCredentialEnvelope credential = 3;
+}
+
+message VerifyMockConnectionResponse {
+  string account_id = 1;
+  bool connected = 2;
+}
+
 service BrokerageService {
   rpc SubmitMockCashOrder(SubmitMockCashOrderRequest) returns (SubmitMockCashOrderResponse);
   rpc CancelMockCashOrder(CancelMockCashOrderRequest) returns (CancelMockCashOrderResponse);
   rpc GetMockBalance(GetMockBalanceRequest) returns (GetMockBalanceResponse);
   rpc GetMockBuyable(GetMockBuyableRequest) returns (GetMockBuyableResponse);
+  rpc VerifyMockConnection(VerifyMockConnectionRequest) returns (VerifyMockConnectionResponse);
 }

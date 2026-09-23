@@ -14,7 +14,7 @@ import java.security.MessageDigest
  */
 @Component
 @ConditionalOnProperty(name = ["app.s4-9.strong-llm.enabled"], havingValue = "true")
-internal class S49FullAgentGrossBudget(
+internal class S49PublicAgentGrossBudget(
     @Value("\${MARS_PUBLIC_SURFACE_MODE:LOCAL}") rawMode: String,
     @Value("\${P1_VERTEX_INPUT_MICROUSD_PER_TOKEN:3}") rawInputRate: String,
     @Value("\${P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN:17}") rawOutputRate: String,
@@ -24,9 +24,9 @@ internal class S49FullAgentGrossBudget(
     private val googleGroundingProperties: S49GoogleGroundingProperties,
 ) {
     private val mode = PublicSurfaceMode.valueOf(rawMode)
-    private val inputRate = if (mode == PublicSurfaceMode.FULL) parseRate(rawInputRate, 3) else 0L
-    private val outputRate = if (mode == PublicSurfaceMode.FULL) parseRate(rawOutputRate, 17) else 0L
-    private val groundingRate = if (mode == PublicSurfaceMode.FULL) parseRate(rawGroundingRate, 14_000) else 0L
+    private val inputRate = if (mode != PublicSurfaceMode.LOCAL) parseRate(rawInputRate, 3) else 0L
+    private val outputRate = if (mode != PublicSurfaceMode.LOCAL) parseRate(rawOutputRate, 17) else 0L
+    private val groundingRate = if (mode != PublicSurfaceMode.LOCAL) parseRate(rawGroundingRate, 14_000) else 0L
 
     fun reserve(
         ownerUserId: String,
@@ -38,8 +38,8 @@ internal class S49FullAgentGrossBudget(
         googleSearchAttached: Boolean,
     ) {
         if (mode == PublicSurfaceMode.LOCAL) return
-        check(mode == PublicSurfaceMode.FULL) { "FULL_AGENT_UNAVAILABLE_IN_DEMO" }
-        check(runId.isNotBlank() && plannedCallId.isNotBlank()) { "FULL_AGENT_RESERVATION_ID_INVALID" }
+        check(mode != PublicSurfaceMode.DEMO || !googleSearchAttached) { "DEMO_AGENT_GOOGLE_SEARCH_FORBIDDEN" }
+        check(runId.isNotBlank() && plannedCallId.isNotBlank()) { "PUBLIC_AGENT_RESERVATION_ID_INVALID" }
         val maxGrossMicrousd =
             quoteMaxGrossMicrousd(
                 startFrameBytes,
@@ -52,13 +52,15 @@ internal class S49FullAgentGrossBudget(
                 groundingRate,
             )
         val reservationId = "aibr_" + sha256("$runId:$plannedCallId").take(32)
-        val budget = operatorBudgetProvider.getIfAvailable() ?: error("FULL_AGENT_OPERATOR_BUDGET_UNAVAILABLE")
-        budget.reserveGrossUsage(reservationId, ownerUserId, "FULL_AGENT", "VERTEX", maxGrossMicrousd)
+        val budget = operatorBudgetProvider.getIfAvailable() ?: error("PUBLIC_AGENT_OPERATOR_BUDGET_UNAVAILABLE")
+        val source = if (mode == PublicSurfaceMode.FULL) "FULL_AGENT" else "DEMO_AGENT"
+        val chargedOwner = ownerUserId.takeIf { mode == PublicSurfaceMode.FULL }
+        budget.reserveGrossUsage(reservationId, chargedOwner, source, "VERTEX", maxGrossMicrousd)
     }
 
     private fun parseRate(raw: String, minimum: Long): Long {
-        val rate = raw.toLongOrNull() ?: error("FULL_AGENT_OPERATOR_RATE_INVALID")
-        check(rate in minimum..1_000_000L) { "FULL_AGENT_OPERATOR_RATE_INVALID" }
+        val rate = raw.toLongOrNull() ?: error("PUBLIC_AGENT_OPERATOR_RATE_INVALID")
+        check(rate in minimum..1_000_000L) { "PUBLIC_AGENT_OPERATOR_RATE_INVALID" }
         return rate
     }
 

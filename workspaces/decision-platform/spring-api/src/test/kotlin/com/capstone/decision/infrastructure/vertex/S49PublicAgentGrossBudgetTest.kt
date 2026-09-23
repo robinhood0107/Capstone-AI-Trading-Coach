@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.ObjectProvider
 
-class S49FullAgentGrossBudgetTest {
+class S49PublicAgentGrossBudgetTest {
     @Test
     fun `full agent reserves model and grounding exposure for the authenticated owner`() {
         val policy = mockk<OperatorAiBudgetPolicyService>()
@@ -37,7 +37,7 @@ class S49FullAgentGrossBudgetTest {
     }
 
     @Test
-    fun `missing budget and demo mode refuse an owner-bound Agent reservation`() {
+    fun `missing public budget refuses a provider reservation`() {
         val provider = mockk<ObjectProvider<OperatorAiBudgetPolicyService>>()
         every { provider.getIfAvailable() } returns null
         assertThrows(IllegalStateException::class.java) {
@@ -45,6 +45,22 @@ class S49FullAgentGrossBudgetTest {
         }
         assertThrows(IllegalStateException::class.java) {
             gate("DEMO", provider).reserve("usr_alice", "run_a", "call_1", 1_000, 0, 0, false)
+        }
+    }
+
+    @Test
+    fun `demo charges the shared ledger without a visitor owner or Google Search`() {
+        val policy = mockk<OperatorAiBudgetPolicyService>()
+        val provider = mockk<ObjectProvider<OperatorAiBudgetPolicyService>>()
+        every { provider.getIfAvailable() } returns policy
+        every { policy.reserveGrossUsage(any(), null, "DEMO_AGENT", "VERTEX", any()) } just Runs
+        val gate = gate("DEMO", provider)
+
+        gate.reserve("usr_internal_demo", "s49_run_${"b".repeat(32)}", "call_1", 1_000, 0, 0, false)
+
+        verify(exactly = 1) { policy.reserveGrossUsage(any(), null, "DEMO_AGENT", "VERTEX", any()) }
+        assertThrows(IllegalStateException::class.java) {
+            gate.reserve("usr_internal_demo", "s49_run_${"b".repeat(32)}", "call_2", 1_000, 0, 1, true)
         }
     }
 
@@ -64,8 +80,8 @@ class S49FullAgentGrossBudgetTest {
         provider: ObjectProvider<OperatorAiBudgetPolicyService>,
         inputRate: String = "3",
         groundingRate: String = "14000",
-    ): S49FullAgentGrossBudget =
-        S49FullAgentGrossBudget(
+    ): S49PublicAgentGrossBudget =
+        S49PublicAgentGrossBudget(
             mode,
             inputRate,
             "17",

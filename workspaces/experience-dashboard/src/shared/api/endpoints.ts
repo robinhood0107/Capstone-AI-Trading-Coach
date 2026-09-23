@@ -31,6 +31,7 @@ import type {
   RecentRiskResultList,
   LoginResponse,
   MockBalance,
+  MockCredentialReadResponse,
   MockBuyable,
   MockOrderRequest,
   MockOrderSubmitted,
@@ -77,6 +78,14 @@ export const api = {
       body: { username, password },
       anonymous: true,
     });
+  },
+
+  mockCredentialSummary(): Promise<ApiResult<MockCredentialReadResponse>> {
+    return apiFetch<MockCredentialReadResponse>('/api/v1/brokerage/mock/credential');
+  },
+
+  putMockCredential(input: { appKey: string; appSecret: string; accountNo: string }): Promise<void> {
+    return apiFetchBare<void>('/api/v1/brokerage/mock/credential', { method: 'PUT', body: input });
   },
 
   /* -------------------------------------------------------------- 상태 */

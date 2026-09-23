@@ -29,6 +29,21 @@ export interface LoginResponse {
   user: LoginUserResponse;
 }
 
+export interface MockCredentialSummary {
+  accountId: string;
+  state: 'STORED' | 'CONNECTED' | 'CERTIFIED' | 'DISCONNECTING';
+  revision: number;
+  appKeyLast4: string;
+  accountNoLast4: string;
+  connected: boolean;
+  certified: boolean;
+}
+
+export interface MockCredentialReadResponse {
+  registered: boolean;
+  credential: MockCredentialSummary | null;
+}
+
 /* ---------------------------------------------------------------- Health */
 
 export interface DataFreshness {

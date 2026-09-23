@@ -84,6 +84,15 @@ interface BrokerageGatewayPort {
     fun getMockBuyable(request: BrokerageGatewayBuyableRequest): BrokerageGatewayBuyableResult
 }
 
+/** A read-only provider proof for the exact current owner's stored KIS_MOCK account. */
+interface MockCredentialConnectionPort {
+    fun verify(
+        requestId: String,
+        ownerUserId: String,
+        accountId: String,
+    )
+}
+
 interface BrokerageOrderPersistencePort {
     fun findIdempotencyResult(
         actorUserId: String,

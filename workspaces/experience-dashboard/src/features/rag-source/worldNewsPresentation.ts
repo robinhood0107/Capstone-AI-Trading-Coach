@@ -8,7 +8,7 @@
  * 여기서 하는 일은 셋이다.
  *   1) 코드 → 사람 말 (모르는 값은 버리지 않고 그대로 보여 준다. 새 provider 가 생겼을 때
  *      화면이 비는 것보다 낯선 이름이 보이는 편이 낫다.)
- *   2) 시각 → "3시간 전" 같은 상대 표기. 절대 시각은 title 로 남긴다.
+ *   2) 최신 시각부터 정렬하고 "3시간 전" 같은 상대 표기로 바꾼다. 절대 시각은 title 로 남긴다.
  *   3) 같은 기사의 재게재본 묶기 — 같은 뉴스가 여러 줄로 반복되던 것을 한 줄로 만든다.
  *
  * **판단 로직은 여기 없다.** 이 목록은 거부권·시그널·주문에 쓰이지 않는다(서버가
@@ -81,10 +81,15 @@ export interface NewsFeed {
   hiddenUnrelated: number;
 }
 
-function relative(iso: string | null, now: number): string | null {
+function timestamp(iso: string | null): number | null {
   if (!iso) return null;
   const at = Date.parse(iso);
-  if (Number.isNaN(at)) return null;
+  return Number.isNaN(at) ? null : at;
+}
+
+function relative(iso: string | null, now: number): string | null {
+  const at = timestamp(iso);
+  if (at === null) return null;
   const minutes = Math.round((now - at) / 60_000);
   if (minutes < 0) return '방금';
   if (minutes < 1) return '방금';
@@ -253,21 +258,40 @@ export function buildNewsFeed(
     groups.set(leadId, { lead: byDocument.get(leadId) ?? item, duplicates: 0 });
   }
 
-  const cards: NewsCard[] = [...groups.values()].map(({ lead, duplicates }) => {
-    const verified = lead.publicationStatus === 'VERIFIED' ? lead.publishedAt : null;
-    const shown = verified ?? lead.firstSeenAt;
+  const sortableCards = [...groups.values()].map(({ lead, duplicates }) => {
+    const verifiedTime =
+      lead.publicationStatus === 'VERIFIED' ? timestamp(lead.publishedAt) : null;
+    const firstSeenTime = timestamp(lead.firstSeenAt);
+    const shown =
+      verifiedTime !== null
+        ? lead.publishedAt
+        : firstSeenTime !== null
+          ? lead.firstSeenAt
+          : null;
     return {
-      key: lead.documentVersionId,
-      title: tidyTitle(lead.title) ?? '제목이 확인되지 않은 기사',
-      quote: tidyQuote(lead),
-      providerLabel: PROVIDER_LABEL[lead.provider] ?? lead.provider,
-      relativeTime: relative(shown, now),
-      absoluteTime: absolute(shown),
-      timeUncertain: verified === null,
-      href: safeUrl(lead.canonicalUrl),
-      duplicateCount: duplicates,
+      sortTime: verifiedTime ?? firstSeenTime,
+      card: {
+        key: lead.documentVersionId,
+        title: tidyTitle(lead.title) ?? '제목이 확인되지 않은 기사',
+        quote: tidyQuote(lead),
+        providerLabel: PROVIDER_LABEL[lead.provider] ?? lead.provider,
+        relativeTime: relative(shown, now),
+        absoluteTime: absolute(shown),
+        timeUncertain: verifiedTime === null,
+        href: safeUrl(lead.canonicalUrl),
+        duplicateCount: duplicates,
+      },
     };
   });
+  // Order by the time presented to the reader. Verified publication time wins;
+  // first-seen time remains the fallback already shown with the uncertainty label.
+  // Missing/invalid times go last, and document-version ID breaks ties predictably.
+  sortableCards.sort((left, right) => {
+    const leftTime = left.sortTime ?? Number.NEGATIVE_INFINITY;
+    const rightTime = right.sortTime ?? Number.NEGATIVE_INFINITY;
+    return rightTime - leftTime || left.card.key.localeCompare(right.card.key);
+  });
+  const cards: NewsCard[] = sortableCards.map(({ card }) => card);
 
   /*
    * 아직 발행되지 않은 것은 경고가 아니다. 그것까지 경고로 띄우면 15분 중 14분은 화면에

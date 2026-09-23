@@ -2361,6 +2361,10 @@ execution이 있으면 교체를 거부한다. 데모와 KIS_LIVE 입력 API는 
 [full 전용 schema](../contracts/openapi/mars-full-mock-credential.v1.openapi.json)와
 [계약 변경 근거](../contracts/changes/20260923-mars-bound-mock-credential-storage.md)를 따른다.
 
+내부 V202 reader는 현재 owner·KIS_MOCK·opaque account ID·actor capability가
+모두 일치할 때 암호문만 읽는다. 타인 계좌와 교체된 이전 ID는 거부하며 공개 응답은
+변하지 않는다. [reader 계약](../contracts/changes/20260923-mars-owner-mock-envelope-reader.md)을 따른다.
+
 KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재동의 조건을 충족할 때만 확장한다. S1.1의 KIS 작업은 Brokerage API가 아니라 MarketDataService 내부 구현이며, 주문·정정·취소·잔고 변경을 만들지 않는다. KIS 전체 API 목록과 모의 지원 경계는 자동 생성 부록 `KIS_API_카탈로그.md`를 참조한다.
 
 S3.1 — KIS 모의주문. `POST /api/v1/brokerage/mock/orders`,

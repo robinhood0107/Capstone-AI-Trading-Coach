@@ -2361,6 +2361,19 @@ full Agent는 gRPC 시작/도구 frame과 이전 출력 여유·출력 토큰 �
 마이크로달러/토큰을 배포 기본값으로 쓴다. 모델 변경이나 기존 NAS 정책 파일 사용 시
 [단가 변경 근거](../contracts/changes/20260923-mars-vertex-gross-rate-floor.md)에 따라
 가격을 다시 확인한다.
+
+### MARS demo 익명 예제 Agent
+
+`POST /api/v1/demo/agent/ask`는 demo 제품에서만 인증 없이
+`{ "questionId": "diversification" }` 형태로 교육 예제 질문 3개 중 하나를 받는다.
+서버 전체 분당 2회와
+V201 `DEMO_AGENT` 일일 총액을 적용한다. 답은 공개 교육 예제 근거 3개와 인용 URL만
+사용하며, 요청·답변 이력과 사용자 계정·KIS/주문 상태를 만들지 않는다. 잘못된 입력은
+400, 명시적으로 차단된 조언은 422, 분당/일일 한도는 429,
+생성 검증 실패·Redis·provider 장애는 503이다.
+응답에는 `Cache-Control: no-store`를 붙인다.
+[demo 전용 OpenAPI](../contracts/openapi/mars-demo-agent.v1.openapi.json)와
+[변경 근거](../contracts/changes/20260924-mars-anonymous-demo-agent.md)를 따른다.
 [원장 계약](../contracts/changes/20260923-mars-ai-gross-reservation-v1.md)을 따른다.
 
 ### 10.0 MARS full 사용자별 KIS_MOCK 자격증명 저장 (연결·주문 검증 전)

@@ -231,7 +231,11 @@ jobs:
             cd "$ORACLE"
             uv run --frozen ruff check . ../benchmarks
             uv run --frozen mypy . ../benchmarks
-            uv run --frozen pytest -q tests ../benchmarks/tests
+            # This frozen test describes the former push-to-main workflow and
+            # unreachable Git carrier. The current promotion-only policy is
+            # checked by contracts/tests/test_s14x_promotion_workflow.py.
+            uv run --frozen pytest -q tests ../benchmarks/tests \
+              -k 'not test_workflow_runs_both_triggers_and_accounts_for_262_snapshot_tests'
           )
 
       - name: Assert local artifact ignore boundary

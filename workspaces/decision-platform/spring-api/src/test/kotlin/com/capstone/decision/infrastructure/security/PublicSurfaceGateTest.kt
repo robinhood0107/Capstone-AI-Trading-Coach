@@ -87,6 +87,23 @@ class PublicSurfaceGateTest {
     }
 
     @Test
+    fun `demo permits only its anonymous ask method while full cannot reach it`() {
+        val path = "/api/v1/demo/agent/ask"
+        val demoChain = MockFilterChain()
+        PublicSurfaceGate(PublicSurfaceMode.DEMO).doFilter(
+            MockHttpServletRequest("POST", path),
+            MockHttpServletResponse(),
+            demoChain,
+        )
+        assertEquals(path, (demoChain.request as MockHttpServletRequest).requestURI)
+        for ((mode, method) in listOf(PublicSurfaceMode.DEMO to "GET", PublicSurfaceMode.FULL to "POST")) {
+            val response = MockHttpServletResponse()
+            PublicSurfaceGate(mode).doFilter(MockHttpServletRequest(method, path), response, MockFilterChain())
+            assertEquals(404, response.status)
+        }
+    }
+
+    @Test
     fun `local mode retains current private routes and invalid public mode fails startup`() {
         val chain = MockFilterChain()
         PublicSurfaceGate(PublicSurfaceMode.LOCAL).doFilter(

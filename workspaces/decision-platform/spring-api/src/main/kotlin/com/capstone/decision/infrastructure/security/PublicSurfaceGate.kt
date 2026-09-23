@@ -31,6 +31,10 @@ internal class PublicSurfaceGate(
         filterChain: FilterChain,
     ) {
         val health = request.method == "GET" && request.requestURI == "/actuator/health"
+        val demoAllowed =
+            mode == PublicSurfaceMode.DEMO &&
+                request.method == "POST" &&
+                request.requestURI == "/api/v1/demo/agent/ask"
         val fullAllowed =
             mode == PublicSurfaceMode.FULL &&
                 when (request.method to request.requestURI) {
@@ -47,7 +51,7 @@ internal class PublicSurfaceGate(
                     -> true
                     else -> false
                 }
-        if (mode != PublicSurfaceMode.LOCAL && !health && !fullAllowed) {
+        if (mode != PublicSurfaceMode.LOCAL && !health && !fullAllowed && !demoAllowed) {
             response.sendError(HttpServletResponse.SC_NOT_FOUND)
             return
         }

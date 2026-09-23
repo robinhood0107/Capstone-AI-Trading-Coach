@@ -331,6 +331,9 @@ class SecurityConfig {
                     .requestMatchers("/actuator/health")
                     .permitAll()
                 authorize
+                    .requestMatchers(HttpMethod.POST, "/api/v1/demo/agent/ask")
+                    .permitAll()
+                authorize
                     .requestMatchers("/actuator/**")
                     .hasRole("ADMIN")
                 authorize

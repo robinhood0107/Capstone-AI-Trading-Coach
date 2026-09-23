@@ -60,6 +60,27 @@ class PublicSurfaceGateTest {
     }
 
     @Test
+    fun `full mode permits owner credential setup but demo has no KIS surface`() {
+        val path = "/api/v1/brokerage/mock/credential"
+        for (method in listOf("GET", "PUT")) {
+            val fullChain = MockFilterChain()
+            PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(
+                MockHttpServletRequest(method, path),
+                MockHttpServletResponse(),
+                fullChain,
+            )
+            assertEquals(path, (fullChain.request as MockHttpServletRequest).requestURI)
+            val demoResponse = MockHttpServletResponse()
+            PublicSurfaceGate(PublicSurfaceMode.DEMO).doFilter(
+                MockHttpServletRequest(method, path),
+                demoResponse,
+                MockFilterChain(),
+            )
+            assertEquals(404, demoResponse.status)
+        }
+    }
+
+    @Test
     fun `local mode retains current private routes and invalid public mode fails startup`() {
         val chain = MockFilterChain()
         PublicSurfaceGate(PublicSurfaceMode.LOCAL).doFilter(

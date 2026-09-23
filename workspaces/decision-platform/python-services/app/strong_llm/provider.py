@@ -60,7 +60,25 @@ class ProviderChainSettings:
 
     @classmethod
     def from_env(cls) -> ProviderChainSettings:
-        return cls(primary=_spec_from_env(""), secondary=_optional_spec_from_env("FALLBACK_"))
+        mode = os.environ.get("MARS_PUBLIC_SURFACE_MODE", "LOCAL").strip()
+        if mode not in {"LOCAL", "FULL", "DEMO"}:
+            raise ValueError("STRONG_LLM_PUBLIC_MODE_INVALID")
+        primary = _spec_from_env("")
+        if mode != "LOCAL":
+            if (
+                primary.provider != "vertex"
+                or primary.api_key
+                or primary.base_url
+                or any(
+                    os.environ.get(f"STRONG_LLM_FALLBACK_{name}", "").strip()
+                    for name in ("PROVIDER", "MODEL_ID", "API_KEY", "BASE_URL")
+                )
+            ):
+                # Public products use one operator service account; per-user keys and
+                # a second provider would escape the V201 VERTEX-only reservation.
+                raise ValueError("STRONG_LLM_PUBLIC_VERTEX_ONLY")
+            return cls(primary=primary)
+        return cls(primary=primary, secondary=_optional_spec_from_env("FALLBACK_"))
 
 
 def _spec_from_env(prefix: str) -> ProviderSpec:

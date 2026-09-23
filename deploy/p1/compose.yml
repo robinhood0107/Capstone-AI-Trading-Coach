@@ -376,6 +376,8 @@ services:
       # Vertex 생성형 답변. 요청마다 5분짜리 활성화 패킷이 있어야 열리므로 기본은 off다.
       RAG_V2_VERTEX_ENABLED: "${P1_RAG_V2_VERTEX_ENABLED:-false}"
       VERTEX_MODEL_ID: "${P1_VERTEX_MODEL_ID:-gemini-3.5-flash}"
+      # Spring and the loopback Python Agent must enforce the same generation cap.
+      RAG_LLM_MAX_OUTPUT_TOKENS: "${RAG_LLM_MAX_OUTPUT_TOKENS:-4096}"
       # RAG activation and the trade-AI reservation use the same operator rate assumptions.
       P1_VERTEX_INPUT_MICROUSD_PER_TOKEN: "${P1_VERTEX_INPUT_MICROUSD_PER_TOKEN:-2}"
       P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN: "${P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN:-9}"

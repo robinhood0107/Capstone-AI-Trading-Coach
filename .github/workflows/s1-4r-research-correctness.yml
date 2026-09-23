@@ -2,6 +2,7 @@ name: S1.4R Research Correctness
 
 on:
   pull_request:
+    branches: [main]
     paths:
       - "workspaces/decision-platform/research/s1-4r-jax-risk/**"
       - ".github/workflows/s1-4r-research-correctness.yml"
@@ -28,6 +29,7 @@ env:
 
 jobs:
   native-correctness:
+    if: github.event.pull_request.head.ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository
     name: Native Linux CPU x64 correctness
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -86,6 +88,7 @@ jobs:
         run: uv run --frozen pytest -q
 
   oci-correctness:
+    if: github.event.pull_request.head.ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository
     name: OCI CPU x64 correctness
     runs-on: ubuntu-latest
     timeout-minutes: 45

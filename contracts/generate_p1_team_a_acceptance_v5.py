@@ -13,6 +13,10 @@ if str(ROOT) not in sys.path:
 from contracts.generate_p1_team_a_acceptance import canonical_json, generate_client, sha256
 from contracts.generate_p1_team_a_acceptance_v4 import EXPECTED_OPERATIONS_V4, _remove_confidence_fields
 
+# The V4 client was updated after V5 froze. Its digest here records the V5
+# snapshot, while current V4 byte validation remains V4's own responsibility.
+FROZEN_V4_CLIENT_SHA256 = 'd44b0d3e484b91d68dd39c967c9a9d72d25651866f4e5f7c6a6c72c03dd5828f'
+
 EXPECTED_OPERATIONS_V5 = tuple(
  (category,method,'/api/v2/risk/kill-switch', 'readOwnerKillSwitch' if method=='GET' else 'changeOwnerKillSwitch',statuses)
  if path=='/api/v1/risk/kill-switch' else (category,method,path,operation,statuses)
@@ -21,7 +25,10 @@ EXPECTED_OPERATIONS_V5 = tuple(
 
 
 def artifacts():
-    raw=(ROOT/'contracts/openapi/openapi.json').read_bytes()
+    # V5 was frozen against this byte-identical OpenAPI snapshot. The live root
+    # has gained later endpoints; regenerating a historical client from it
+    # would silently change the V5 contract instead of checking its bytes.
+    raw=(ROOT/'contracts/openapi/p1-world-news-v2.previous.openapi.json').read_bytes()
     document=json.loads(raw)
     client_document=copy.deepcopy(document)
     _remove_confidence_fields(client_document)
@@ -29,7 +36,7 @@ def artifacts():
       'contractId':'p1-team-a-acceptance.v5','acceptanceOperationCount':45,'sameOriginPrefix':'/api',
       'rootOpenApi':{'path':'contracts/openapi/openapi.json','operationCount':78,'sha256':sha256(raw)},
       'preservedV4':{'catalogSha256':sha256((ROOT/'contracts/catalogs/p1-team-a-acceptance.v4.json').read_bytes()),
-                     'clientSha256':sha256((ROOT/'workspaces/experience-dashboard/src/shared/api/generated/p1-team-a-client.v4.ts').read_bytes())},
+                     'clientSha256':FROZEN_V4_CLIENT_SHA256},
       'operations':[{'sequence':index,'category':c,'method':m,'path':p,'operationId':o,'expectedStatuses':list(s)}
                     for index,(c,m,p,o,s) in enumerate(EXPECTED_OPERATIONS_V5,1)]}
     return {

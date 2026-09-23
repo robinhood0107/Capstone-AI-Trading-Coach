@@ -10,9 +10,11 @@ from contracts.historical_openapi_projection import project_historical_root
 from contracts.generate_world_news_v2_contracts import (
     CURRENT,
     NEGATIVE,
+    OVERLAY,
     POSITIVE,
     PERFORMANCE_POSITIVE,
     PREVIOUS,
+    error_schema,
     item_schema,
     performance_report_schema,
     project_previous,
@@ -40,6 +42,13 @@ class WorldNewsV2ContractTest(unittest.TestCase):
                 jsonschema.Draft202012Validator(schema).validate(
                     json.loads(path.read_text(encoding="utf-8"))
                 )
+
+    def test_error_component_resolves_in_overlay_and_root(self) -> None:
+        for path in (OVERLAY, CURRENT):
+            document = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                error_schema(), document["components"]["schemas"]["WorldNewsV2Error"]
+            )
 
     def test_performance_report_fixture_separates_all_three_sections(self) -> None:
         value = json.loads(PERFORMANCE_POSITIVE.read_text(encoding="utf-8"))

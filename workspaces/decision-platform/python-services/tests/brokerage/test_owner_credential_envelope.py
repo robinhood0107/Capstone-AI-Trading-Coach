@@ -14,7 +14,9 @@ from app.brokerage.owner_credential_envelope import (
 from app.generated.brokerage_pb2 import BoundMockCredentialEnvelope
 
 
-def _sealed(directory: Path, owner: str, account_id: str) -> tuple[BoundMockCredentialEnvelope, tuple[str, str, str]]:
+def _sealed(
+    directory: Path, owner: str, account_id: str
+) -> tuple[BoundMockCredentialEnvelope, tuple[str, str, str]]:
     key = ("K" + secrets.token_urlsafe(24)).replace("=", "")
     secret = "S" + secrets.token_urlsafe(48)
     account_no = "".join(str(secrets.randbelow(10)) for _ in range(10))
@@ -61,8 +63,12 @@ def test_owner_envelope_opens_only_matching_account_and_state(tmp_path: Path) ->
     envelope_a, values_a = _sealed(directory, owner_a, account_a)
     envelope_b, values_b = _sealed(directory, owner_b, account_b)
 
-    opened_a = opener.open(envelope_a, account_id=account_a, allowed_states=frozenset({"CERTIFIED"}))
-    opened_b = opener.open(envelope_b, account_id=account_b, allowed_states=frozenset({"CERTIFIED"}))
+    opened_a = opener.open(
+        envelope_a, account_id=account_a, allowed_states=frozenset({"CERTIFIED"})
+    )
+    opened_b = opener.open(
+        envelope_b, account_id=account_b, allowed_states=frozenset({"CERTIFIED"})
+    )
     assert opened_a.app_key.get_secret_value() == values_a[0]
     assert opened_b.app_secret.get_secret_value() == values_b[1]
     assert opened_a.account_number.get_secret_value() == values_a[2][:8] + "-" + values_a[2][8:]

@@ -184,8 +184,7 @@ class VertexAiVetoTransport:
                 raise VertexBudgetExhausted("TRADE_AI_UNAVAILABLE_IN_DEMO")
             public_hard_cap = deployment_hard_cap_microusd()
             if public_hard_cap is not None and (
-                self.gross_budget is None
-                or self.gross_budget.hard_cap_microusd != public_hard_cap
+                self.gross_budget is None or self.gross_budget.hard_cap_microusd != public_hard_cap
             ):
                 raise VertexBudgetExhausted("VERTEX_OPERATOR_BUDGET_NOT_CONFIGURED")
             if self.gross_budget is not None:

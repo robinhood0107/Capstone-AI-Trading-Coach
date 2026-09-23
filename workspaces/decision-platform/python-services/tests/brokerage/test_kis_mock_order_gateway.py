@@ -175,8 +175,12 @@ def test_online_mock_brokerage_uses_each_explicit_credential_and_account(
 
     monkeypatch.setattr(online, "_build_redis_client", FakeRedis)
     monkeypatch.setattr(online, "KISTokenManager", FakeTokenManager)
-    monkeypatch.setattr(online, "RedisIntervalLimiter", lambda *_args, **_kwargs: RecordingLimiter())
-    monkeypatch.setattr(online.httpx, "HTTPTransport", lambda **_kwargs: httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        online, "RedisIntervalLimiter", lambda *_args, **_kwargs: RecordingLimiter()
+    )
+    monkeypatch.setattr(
+        online.httpx, "HTTPTransport", lambda **_kwargs: httpx.MockTransport(handler)
+    )
     monkeypatch.setattr(
         online, "_KISMockBrokerageSecrets", lambda: pytest.fail("global account fallback")
     )
@@ -184,7 +188,10 @@ def test_online_mock_brokerage_uses_each_explicit_credential_and_account(
     settings = online.KISSettings(
         kis_mode="mock", kis_offline=False, kis_data_dir=tmp_path, _env_file=None
     )
-    for account, app_key in (("00000000-01", "synthetic-key-a"), ("11111111-02", "synthetic-key-b")):
+    for account, app_key in (
+        ("00000000-01", "synthetic-key-a"),
+        ("11111111-02", "synthetic-key-b"),
+    ):
         client = online.KISMockBrokerageHttpClient(
             settings=settings,
             budget=online.KISBrokerageCallBudget(token_p_cap=0, brokerage_cap=1),
@@ -195,7 +202,9 @@ def test_online_mock_brokerage_uses_each_explicit_credential_and_account(
         )
         try:
             client.request(
-                "POST", ORDER_CASH_PATH, MOCK_BUY_TR_ID,
+                "POST",
+                ORDER_CASH_PATH,
+                MOCK_BUY_TR_ID,
                 json_body={"PDNO": "005930", "ORD_DVSN": "00", "ORD_QTY": "1", "ORD_UNPR": "70000"},
             )
         finally:
@@ -222,8 +231,11 @@ def test_online_mock_brokerage_requires_credential_and_account_pair(tmp_path: Pa
         )
     with pytest.raises(online.KISCredentialError, match="identity is incomplete"):
         online.KISMockBrokerageHttpClient(
-            settings=settings, budget=budget,
-            credential_provider=lambda: _Credentials(SecretStr("synthetic"), SecretStr("synthetic")),
+            settings=settings,
+            budget=budget,
+            credential_provider=lambda: _Credentials(
+                SecretStr("synthetic"), SecretStr("synthetic")
+            ),
         )
 
 

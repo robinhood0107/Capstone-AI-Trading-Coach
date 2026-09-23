@@ -122,9 +122,7 @@ class OwnerBoundGatewayFactory:
         account_id: str,
         allowed_states: frozenset[str],
     ) -> Iterator[tuple[KISMockOrderGateway, BalanceReadPort]]:
-        opened = self._opener.open(
-            envelope, account_id=account_id, allowed_states=allowed_states
-        )
+        opened = self._opener.open(envelope, account_id=account_id, allowed_states=allowed_states)
         credentials = _Credentials(opened.app_key, opened.app_secret)
 
         def credential_provider() -> _Credentials:

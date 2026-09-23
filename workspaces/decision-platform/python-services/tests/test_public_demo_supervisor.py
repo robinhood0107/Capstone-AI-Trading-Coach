@@ -29,6 +29,4 @@ def test_demo_requires_provider_and_rejects_owner_capabilities() -> None:
         "WORLD_NEWS_RETENTION_ENABLED",
     ):
         with pytest.raises(RuntimeError, match="forbids owner/background capabilities"):
-            supervisor._validate_demo_runtime(
-                {"S4_9_STRONG_LLM_ENABLED": "true", key: "true"}
-            )
+            supervisor._validate_demo_runtime({"S4_9_STRONG_LLM_ENABLED": "true", key: "true"})

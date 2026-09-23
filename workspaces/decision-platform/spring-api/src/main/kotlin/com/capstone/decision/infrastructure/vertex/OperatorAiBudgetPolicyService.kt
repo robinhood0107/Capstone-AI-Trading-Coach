@@ -19,17 +19,20 @@ data class OperatorAiBudgetPolicy(
 
 /** The private NAS value is immutable at runtime; only ADMIN may lower its database-backed soft cap. */
 @Service
-@Profile("mars-full")
+@Profile("mars-full", "mars-demo")
 class OperatorAiBudgetPolicyService(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     @Value("\${MARS_AI_DAILY_HARD_CAP_USD:}") rawHardCapUsd: String,
 ) {
     private val hardCapCents = parseHardCap(rawHardCapUsd)
 
-    /** A successful reservation is never refunded: uncertain provider billing retains its full worst-case share. */
+    /**
+     * A successful reservation is never refunded because provider billing can be uncertain.
+     * V201 permits a null owner only for DEMO_AGENT; authenticated sources must supply their owner.
+     */
     fun reserveGrossUsage(
         reservationId: String,
-        ownerUserId: String,
+        ownerUserId: String?,
         source: String,
         provider: String,
         maxGrossMicrousd: Long,
@@ -104,7 +107,7 @@ class OperatorAiBudgetPolicyService(
     private fun jdbc(): NamedParameterJdbcTemplate = jdbcProvider.getIfAvailable() ?: error("OPERATOR_AI_BUDGET_DATABASE_UNAVAILABLE")
 
     private fun parseHardCap(value: String): Long {
-        require(HARD_CAP_PATTERN.matches(value)) { "MARS_AI_DAILY_HARD_CAP_USD must be set for mars-full." }
+        require(HARD_CAP_PATTERN.matches(value)) { "MARS_AI_DAILY_HARD_CAP_USD must be set for a public MARS product." }
         val cents = value.toBigDecimal().movePointRight(2).longValueExact()
         require(cents > 0) { "MARS_AI_DAILY_HARD_CAP_USD must be positive." }
         return cents

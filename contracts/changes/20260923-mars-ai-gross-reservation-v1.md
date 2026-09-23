@@ -28,5 +28,8 @@ authorization owner·`costCapMicrousd`를 각각 provider 호출 전에 같은 �
 1,024토큰을 운영자 입출력 단가로 환산해 호출 전에 같은 V201 원장에 예약한다.
 DB/정책 장애나 상한 초과는
 소켓을 열기 전에 ABSTAIN으로 닫는다. 이 수치는 실제 청구액 보장이 아니라 최대 노출액
-예약 추정치다. Strong LLM Agent·데모 Agent outbound는 후속 PR에서 연결한다.
+예약 추정치다. full Strong LLM Agent도 Kotlin host의 provider permit 전에 검증된
+owner/run별 `FULL_AGENT` 최대 노출액을 예약한다
+([변경 근거](20260923-mars-full-agent-gross-permit.md)). 데모 Agent outbound는 후속
+작업에서 연결한다.
 모두 검증되기 전에는 공개 과금 API를 열지 않는다.

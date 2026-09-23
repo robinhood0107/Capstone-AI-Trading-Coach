@@ -85,7 +85,9 @@ def test_full_server_rejects_global_account_binding(monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP", "1")
     monkeypatch.setenv("KIS_BROKERAGE_PHYSICAL_CAP", "1")
     monkeypatch.setenv("BROKERAGE_GRPC_SHARED_SECRET", "s" * 32)
-    monkeypatch.setenv("KIS_MOCK_ORDER_REFERENCE_KEY", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
+    monkeypatch.setenv(
+        "KIS_MOCK_ORDER_REFERENCE_KEY", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
+    )
     monkeypatch.setenv("KIS_MOCK_BOUND_ACCOUNT_ID", "acct_" + "a" * 32)
     with pytest.raises(ValueError, match="cannot use KIS_MOCK_BOUND_ACCOUNT_ID"):
         BrokerageGrpcServerSettings.from_env()

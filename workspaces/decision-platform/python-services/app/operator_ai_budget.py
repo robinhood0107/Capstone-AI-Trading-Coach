@@ -114,16 +114,23 @@ class TradeAiGrossBudget:
         # The sent JSON is text-only. Escaped byte length plus a fixed protocol allowance
         # conservatively reserves input exposure; maxOutputTokens bounds the output side.
         max_gross_microusd = (
-            (len(payload_bytes) + _INPUT_OVERHEAD_TOKEN_CAP) * self.input_microusd_per_token
-            + output_token_cap * self.output_microusd_per_token
-        )
+            len(payload_bytes) + _INPUT_OVERHEAD_TOKEN_CAP
+        ) * self.input_microusd_per_token + output_token_cap * self.output_microusd_per_token
         if max_gross_microusd > self.hard_cap_microusd:
             raise OperatorAiBudgetReservationError("OPERATOR_AI_DAILY_GROSS_BUDGET_EXHAUSTED")
-        reservation_id = "aibr_" + hashlib.sha256(
-            b"TRADE_AI\0" + run_id.encode("utf-8") + b"\0" + hashlib.sha256(payload_bytes).digest()
-        ).hexdigest()[:32]
+        reservation_id = (
+            "aibr_"
+            + hashlib.sha256(
+                b"TRADE_AI\0"
+                + run_id.encode("utf-8")
+                + b"\0"
+                + hashlib.sha256(payload_bytes).digest()
+            ).hexdigest()[:32]
+        )
         try:
-            with psycopg.connect(self.database_dsn, autocommit=False, connect_timeout=2) as connection:
+            with psycopg.connect(
+                self.database_dsn, autocommit=False, connect_timeout=2
+            ) as connection:
                 with connection.transaction():
                     connection.execute("SET LOCAL statement_timeout = '5s'")
                     connection.execute("SET LOCAL lock_timeout = '500ms'")

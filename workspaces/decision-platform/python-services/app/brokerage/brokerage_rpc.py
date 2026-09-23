@@ -66,7 +66,11 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
         if _SAFE_SECRET.fullmatch(shared_secret) is None:
             raise ValueError("Brokerage gRPC shared secret must be 32..256 safe ASCII characters")
         if owner_factory is None:
-            if gateway is None or bound_account_id is None or _ACCOUNT_ID.fullmatch(bound_account_id) is None:
+            if (
+                gateway is None
+                or bound_account_id is None
+                or _ACCOUNT_ID.fullmatch(bound_account_id) is None
+            ):
                 raise ValueError("Brokerage gRPC bound account id is invalid")
         elif gateway is not None or bound_account_id is not None or balance_reader is not None:
             raise ValueError("Owner-bound brokerage cannot use a deployment account")
@@ -146,9 +150,7 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
         _require_authenticated(context, self._shared_secret)
         _validate_order_and_account(request.order_id, request.account_id, context)
         try:
-            with self._session(
-                request, frozenset({"CERTIFIED", "DISCONNECTING"})
-            ) as (gateway, _):
+            with self._session(request, frozenset({"CERTIFIED", "DISCONNECTING"})) as (gateway, _):
                 receipt = gateway.cancel_cash_order(
                     order_id=request.order_id,
                     account_id=request.account_id,
@@ -230,7 +232,10 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
         _require_authenticated(context, self._shared_secret)
         _validate_account(request.account_id, context)
         try:
-            with self._session(request, frozenset({"STORED", "CONNECTED", "CERTIFIED"})) as (_, reader):
+            with self._session(request, frozenset({"STORED", "CONNECTED", "CERTIFIED"})) as (
+                _,
+                reader,
+            ):
                 if reader is None:
                     raise RuntimeError("BROKERAGE_CONNECTION_READER_UNAVAILABLE")
                 reader.verify_connection(request.account_id)

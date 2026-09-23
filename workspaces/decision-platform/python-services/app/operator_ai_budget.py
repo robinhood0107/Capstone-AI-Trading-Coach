@@ -14,6 +14,11 @@ from psycopg.conninfo import conninfo_to_dict
 _OWNER_ID = re.compile(r"^usr_[A-Za-z0-9_-]{4,96}$")
 _RATE = re.compile(r"[1-9][0-9]{0,5}")
 _INPUT_OVERHEAD_TOKEN_CAP = 1_024
+# Default global Gemini 3.5 Flash list rates on 2026-09-23 are $2.70/$16.20
+# per million input/output tokens. Round up per token; a model change requires
+# an operator review and possibly higher rates before public provider calls.
+_MIN_VERTEX_INPUT_MICROUSD_PER_TOKEN = 3
+_MIN_VERTEX_OUTPUT_MICROUSD_PER_TOKEN = 17
 
 
 class OperatorAiBudgetConfigurationError(RuntimeError):
@@ -42,11 +47,14 @@ def deployment_hard_cap_microusd() -> int | None:
     return microusd
 
 
-def _microusd_per_token(name: str) -> int:
+def _microusd_per_token(name: str, minimum: int) -> int:
     raw = os.environ.get(name, "").strip()
     if _RATE.fullmatch(raw) is None:
         raise OperatorAiBudgetConfigurationError(f"{name} is required")
-    return int(raw)
+    value = int(raw)
+    if value < minimum:
+        raise OperatorAiBudgetConfigurationError(f"{name} is below the public rate floor")
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,8 +87,12 @@ class TradeAiGrossBudget:
         return cls(
             database_dsn=database_dsn,
             hard_cap_microusd=hard_cap,
-            input_microusd_per_token=_microusd_per_token("P1_VERTEX_INPUT_MICROUSD_PER_TOKEN"),
-            output_microusd_per_token=_microusd_per_token("P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN"),
+            input_microusd_per_token=_microusd_per_token(
+                "P1_VERTEX_INPUT_MICROUSD_PER_TOKEN", _MIN_VERTEX_INPUT_MICROUSD_PER_TOKEN
+            ),
+            output_microusd_per_token=_microusd_per_token(
+                "P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN", _MIN_VERTEX_OUTPUT_MICROUSD_PER_TOKEN
+            ),
         )
 
     def reserve(

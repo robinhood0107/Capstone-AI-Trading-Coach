@@ -110,8 +110,11 @@ jobs:
           print(lock["referenceBaseCommit"])
           PY
           )"
+          # The reference snapshot predates the current main lineage. Fetch
+          # its content-addressed commit explicitly; ancestry is not evidence
+          # after the project history was re-based onto the new main root.
+          git fetch --no-tags origin "$REFERENCE_BASE"
           git cat-file -e "${REFERENCE_BASE}^{commit}"
-          git merge-base --is-ancestor "$REFERENCE_BASE" HEAD
 
           mapfile -t ACTUAL_PATHS < <(
             git diff-tree --no-commit-id --name-only -r "$REFERENCE_BASE" | LC_ALL=C sort
@@ -165,8 +168,8 @@ jobs:
 
           # S4.9 runtime dependency는 historical S1.4X lock을 바꾸지 않고 별도 좁은 carrier로 고정한다.
           S4_9_RUNTIME_CARRIER=b4e7836932da53dc64b0c273a2228cac1dfd43e8
+          git fetch --no-tags origin "$S4_9_RUNTIME_CARRIER"
           git cat-file -e "${S4_9_RUNTIME_CARRIER}^{commit}"
-          git merge-base --is-ancestor "$S4_9_RUNTIME_CARRIER" HEAD
           mapfile -t S4_9_CARRIER_PATHS < <(
             git diff-tree --no-commit-id --name-only -r "$S4_9_RUNTIME_CARRIER" \
               | LC_ALL=C sort
@@ -193,9 +196,22 @@ jobs:
           test "${S5_6_RUNTIME_PATHS[*]}" = \
             "workspaces/decision-platform/python-services/pyproject.toml workspaces/decision-platform/python-services/uv.lock"
           test "$(sha256sum workspaces/decision-platform/python-services/pyproject.toml | cut -d' ' -f1)" = \
-            "3d1d4a4c620e11007bb083a977975ba5ee0380101c45f7652ab69b405ac6453f"
+            "8f61ef42ecb6a47895e9c42d1cccb8a1553b8434026f6de628f91d1ca3a89ecd"
           test "$(sha256sum workspaces/decision-platform/python-services/uv.lock | cut -d' ' -f1)" = \
-            "7762ff5bcdf07d8b0e3e55ca75181d15c78ca3e3c0e379f0859f08af5da3163e"
+            "49bce736ce88afa34fe6f446189b119c61850237573ce57916303840cb2f1c2a"
+          # MARS dependency updates did not change the frozen production
+          # numeric runtime. Keep this assertion next to the full lock pin.
+          python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          lock = tomllib.loads(Path(
+              "workspaces/decision-platform/python-services/uv.lock"
+          ).read_text(encoding="utf-8"))
+          packages = {entry["name"]: entry["version"] for entry in lock["package"]}
+          assert packages["numpy"] == "2.5.1"
+          assert packages["scipy"] == "1.18.0"
+          PY
 
           # 로컬 자료 경로에 결합된 obsolete host-only 검사는 한 번만 exact hash 전이로 제거한다.
           S1_4R_ISOLATION_TEST=workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py
@@ -347,6 +363,8 @@ jobs:
           SNAPSHOT="${RUNNER_TEMP}/s1-4x-reference-base"
           test ! -e "$SNAPSHOT"
           git clone --no-local --no-hardlinks "$GITHUB_WORKSPACE" "$SNAPSHOT"
+          git -C "$SNAPSHOT" fetch --no-tags \
+            "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git" "$BASE"
           git -C "$SNAPSHOT" checkout --detach "$BASE"
           git -C "$SNAPSHOT" update-ref refs/remotes/origin/main "$BASE"
           test "$(git -C "$SNAPSHOT" rev-parse HEAD)" = "$BASE"

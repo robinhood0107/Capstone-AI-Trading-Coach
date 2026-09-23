@@ -95,11 +95,7 @@ internal class GrpcStrongLlmGenerationAdapter(
 
     override fun generate(command: RagV2VertexGenerationCommand): RagV2VertexGenerationResult {
         if (demoMode) {
-            // The anonymous route supplies a fixed example corpus; no authenticated
-            // owner, private evidence, tool root, or visitor history may cross here.
-            require(command.ownerUserId == DEMO_INTERNAL_OWNER_USER_ID)
-            require(command.question.isNotBlank() && command.question.length <= 500)
-            require(command.evidence.size in 1..5 && command.evidence.none { it.ownerPrivate })
+            DemoAgentRuntimeBoundary.requireInput(command)
         }
         if (command.evidence.any { it.ownerPrivate }) {
             require(command.consent.effective)
@@ -309,13 +305,7 @@ internal class GrpcStrongLlmGenerationAdapter(
                 check(result.providerId == "vertex") { "PUBLIC_AGENT_PROVIDER_MISMATCH" }
             }
             if (demoMode) {
-                check(
-                    result.googleGroundingQueryCount == 0 &&
-                        result.groundingRootsCount == 0 &&
-                        result.groundingSupportsCount == 0 &&
-                        hostBudget.searchCalls == 0 &&
-                        hostBudget.readCalls == 0,
-                ) { "DEMO_AGENT_EXTERNAL_EVIDENCE_FORBIDDEN" }
+                DemoAgentRuntimeBoundary.requireOutput(result, hostBudget)
             }
             registerGrounding(runId, result.groundingRootsList, researchTools)
             if (result.groundingRootsCount > 0) {
@@ -347,9 +337,7 @@ internal class GrpcStrongLlmGenerationAdapter(
                     .mapIndexed { index, evidence -> evidence.copy(ordinal = index + 1) }
             val validated = validator.validateForDisplay(result.answerJson, validationEvidence)
             if (demoMode) {
-                check(validated.basis != StrongLlmAnswerBasis.MODEL_KNOWLEDGE) {
-                    "DEMO_AGENT_UNGROUNDED_ANSWER_FORBIDDEN"
-                }
+                DemoAgentRuntimeBoundary.requireBasis(validated.basis)
             }
             val usage =
                 S49StrongLlmUsageV2(
@@ -621,6 +609,34 @@ internal class GrpcStrongLlmGenerationAdapter(
         val FAILURE_LEAF = Regex("^[A-Z0-9_]{3,96}$")
         val SQL_STATE = Regex("^[0-9A-Z]{5}$")
         val LOGGER: org.slf4j.Logger = LoggerFactory.getLogger(GrpcStrongLlmGenerationAdapter::class.java)
+    }
+}
+
+/** The anonymous product has no actor RLS scope, web tools, or model-only answers. */
+internal object DemoAgentRuntimeBoundary {
+    fun requireInput(command: RagV2VertexGenerationCommand) {
+        require(command.ownerUserId == DEMO_INTERNAL_OWNER_USER_ID)
+        require(command.question.isNotBlank() && command.question.length <= 500)
+        require(command.evidence.size in 1..5 && command.evidence.none { it.ownerPrivate })
+    }
+
+    fun requireOutput(
+        result: Completed,
+        hostBudget: StrongLlmHostBudget,
+    ) {
+        check(
+            result.googleGroundingQueryCount == 0 &&
+                result.groundingRootsCount == 0 &&
+                result.groundingSupportsCount == 0 &&
+                hostBudget.searchCalls == 0 &&
+                hostBudget.readCalls == 0,
+        ) { "DEMO_AGENT_EXTERNAL_EVIDENCE_FORBIDDEN" }
+    }
+
+    fun requireBasis(basis: StrongLlmAnswerBasis) {
+        check(basis != StrongLlmAnswerBasis.MODEL_KNOWLEDGE) {
+            "DEMO_AGENT_UNGROUNDED_ANSWER_FORBIDDEN"
+        }
     }
 }
 

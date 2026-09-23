@@ -72,6 +72,22 @@ class BoundMockCredentialIntegrationTest(
         assertEquals("AAAA", first?.appKeyLast4)
         assertEquals("0000", first?.accountNoLast4)
         assertTrue(first?.accountId?.matches(Regex("^acct_[0-9a-f]{32}$")) == true)
+        val firstAccountId = requireNotNull(first?.accountId)
+        asActor("usr_demo_user") {
+            transaction.execute {
+                service.resolveEnvelope("usr_demo_user", firstAccountId).use { envelope ->
+                    assertEquals("STORED", envelope.state)
+                    assertEquals(1L, envelope.revision)
+                    BrokerageCredentialCrypto(BrokerageKekFile(directory.toString()))
+                        .open("usr_demo_user", firstAccountId, envelope.sealed)
+                        .use { opened ->
+                            assertEquals(key, opened.appKey.toString(Charsets.US_ASCII))
+                            assertEquals(secret, opened.appSecret.toString(Charsets.US_ASCII))
+                            assertEquals(accountNo, opened.accountNo.toString(Charsets.US_ASCII))
+                        }
+                }
+            }
+        }
 
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
             connection.prepareStatement("select secret_ciphertext from user_broker_credentials where owner_user_id = ?").use { statement ->
@@ -88,7 +104,7 @@ class BoundMockCredentialIntegrationTest(
                 statement.setString(1, "usr_demo_user")
                 statement.executeQuery().use { result ->
                     assertTrue(result.next())
-                    assertEquals(first?.accountId, result.getString("target_id"))
+                    assertEquals(firstAccountId, result.getString("target_id"))
                     val payload = result.getString(2)
                     assertFalse(payload.contains(key))
                     assertFalse(payload.contains(secret))
@@ -102,13 +118,33 @@ class BoundMockCredentialIntegrationTest(
                 transaction.execute { service.summary("usr_demo_user") }
             }
         }
+        asActor("usr_demo_admin") {
+            transaction.executeWithoutResult {
+                service.save("usr_demo_admin", "Z" + "C".repeat(19), "T" + "D".repeat(39), "6" + "1".repeat(9))
+            }
+        }
+        val otherAccountId =
+            asActor("usr_demo_admin") {
+                transaction.execute { service.summary("usr_demo_admin")?.accountId }
+            }
+        assertNotNull(otherAccountId)
+        asActor("usr_demo_user") {
+            assertThrows(IllegalStateException::class.java) {
+                transaction.execute { service.resolveEnvelope("usr_demo_user", requireNotNull(otherAccountId)).use { } }
+            }
+        }
         asActor("usr_demo_user") {
             transaction.executeWithoutResult { service.save("usr_demo_user", key, secret, accountNo) }
         }
         val rotated = asActor("usr_demo_user") { transaction.execute { service.summary("usr_demo_user") } }
         assertEquals(2L, rotated?.revision)
-        assertNotEquals(first?.accountId, rotated?.accountId)
+        assertNotEquals(firstAccountId, rotated?.accountId)
         assertEquals("STORED", rotated?.state)
+        asActor("usr_demo_user") {
+            assertThrows(IllegalStateException::class.java) {
+                transaction.execute { service.resolveEnvelope("usr_demo_user", firstAccountId).use { } }
+            }
+        }
     }
 
     @Test
@@ -125,6 +161,19 @@ class BoundMockCredentialIntegrationTest(
                     }
                 }
             assertEquals("42501", denied.sqlState)
+            connection.rollback()
+            connection.createStatement().use { statement ->
+                statement.execute("select set_config('app.actor_user_id','usr_demo_user',true)")
+            }
+            val envelopeDenied =
+                assertThrows(SQLException::class.java) {
+                    connection.createStatement().use { statement ->
+                        statement.executeQuery(
+                            "select * from read_bound_mock_broker_envelope_v3('usr_demo_user','acct_" + "0".repeat(32) + "')",
+                        )
+                    }
+                }
+            assertEquals("42501", envelopeDenied.sqlState)
         }
     }
 

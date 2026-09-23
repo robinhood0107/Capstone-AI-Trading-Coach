@@ -58,6 +58,7 @@ jobs:
             'Spring OpenAPI drift'
             'Lint & Static Analysis'
             'P1 full-app security gates'
+            'MARS product image build'
           )
           for check in "${required[@]}"; do
             printf '%s\n' "$checks" | awk -F '\t' -v name="$check" '$1==name && $2=="SUCCESS" {ok=1} END {exit !ok}'

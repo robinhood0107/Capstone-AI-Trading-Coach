@@ -44,7 +44,10 @@ data class DemoAgentAnswer(
     val generationStatus: String,
 )
 
-private enum class DemoQuestion(val id: String, val prompt: String) {
+private enum class DemoQuestion(
+    val id: String,
+    val prompt: String,
+) {
     DIVERSIFICATION("diversification", "분산투자는 위험을 어떻게 줄이나요?"),
     ASSET_ALLOCATION("asset_allocation", "자산 배분을 정할 때 무엇을 고려하나요?"),
     PAST_PERFORMANCE(

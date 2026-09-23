@@ -18,3 +18,9 @@
 로컬 이미지 ID와 source revision을 검증하고, 두 제품의 digest manifest와 SBOM을
 GitHub Release에 첨부한다. 재시도 시 기존 태그가 동일 이미지 ID가 아니면 중단한다.
 NAS에서 이미지를 pull하거나 Compose를 바꾸는 단계는 포함하지 않는다.
+
+`develop → main` PR에는 별도의 `MARS product image build` 검사를 둔다. 같은
+후보 커밋에서 API·PostgreSQL·Redis와 DEMO/FULL 웹 번들을 실제로 빌드하고
+제품 표시값과 source revision을 확인한 뒤 로컬 이미지 ID 목록을 Actions artifact로
+남긴다. 이 단계는 Docker Hub에 로그인하거나 이미지를 발행하지 않는다.
+발행 워크플로는 이 빌드 검사의 성공도 요구한다.

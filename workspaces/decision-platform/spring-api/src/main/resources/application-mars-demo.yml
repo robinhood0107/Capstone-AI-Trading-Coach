@@ -1,0 +1,8 @@
+# Public demo has one shared anonymous rate bucket and no Google Search/tool access.
+app:
+  rag:
+    rate-limit-per-minute: 2
+  rag-v2:
+    web:
+      vertex-google-search:
+        enabled: false

@@ -16,7 +16,7 @@ class MarsFullMockCredentialContractTest(unittest.TestCase):
         validate(document)
         operations = document["paths"]["/api/v1/brokerage/mock/credential"]
         request = document["components"]["schemas"]["PutMockCredential"]
-        self.assertEqual(set(operations), {"get", "put"})
+        self.assertEqual(set(operations), {"get", "put", "delete"})
         self.assertEqual(set(request["properties"]), {"appKey", "appSecret", "accountNo"})
         self.assertFalse(request["additionalProperties"])
         self.assertTrue(all(value["writeOnly"] for value in request["properties"].values()))
@@ -26,6 +26,7 @@ class MarsFullMockCredentialContractTest(unittest.TestCase):
             {"accountId", "state", "revision", "appKeyLast4", "accountNoLast4", "connected", "certified"},
         )
         self.assertEqual(set(operations["put"]["responses"]), {"204", "400", "401", "409"})
+        self.assertEqual(set(operations["delete"]["responses"]), {"200", "204", "400", "401", "409"})
         connect = document["paths"]["/api/v1/brokerage/mock/credential/connect"]
         self.assertEqual(set(connect), {"post"})
         self.assertNotIn("requestBody", connect["post"])

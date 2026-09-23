@@ -2339,6 +2339,10 @@ NAS 비공개 `MARS_AI_DAILY_HARD_CAP_USD`보다 높을 수 없다. 경쟁 변�
 과금 호출을 열지 않는다. Pre-S5 RAG Vertex와 S4.9 runtime Voyage query는 같은
 원장에 예약하며, 매매 뉴스 Vertex 판정도 owner/run 결속 예약을 완료했다.
 Strong LLM Agent와 데모 Agent는 연결 뒤에 연다.
+공개 제품의 Strong LLM provider는 운영자 Vertex 하나로 고정하며 API key·base URL·
+fallback provider 설정은 거부한다. Spring과 Python은 같은
+`RAG_LLM_MAX_OUTPUT_TOKENS`(기본 4,096)를 사용한다. 이 설정만으로 공용 예약이 완료된
+것은 아니며 [provider·상한 변경 근거](../contracts/changes/20260923-mars-public-strong-llm-provider-cap.md)를 따른다.
 [full 전용 schema](../contracts/openapi/mars-full-operator-ai-budget.v1.openapi.json)와
 [변경 근거](../contracts/changes/20260923-mars-operator-ai-budget-policy.md)를 따른다.
 

@@ -24,6 +24,16 @@ import { IntroExperience } from '@/features/intro/IntroExperience';
 const BARE_ROUTES = new Set(['/intro', '/auth/complete']);
 
 export function AppShell({ children }: { children: ReactNode }) {
+  if (process.env.NEXT_PUBLIC_MARS_PRODUCT === 'demo') return <DemoShell>{children}</DemoShell>;
+  return <AuthenticatedAppShell>{children}</AuthenticatedAppShell>;
+}
+
+function DemoShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  return pathname === '/' ? <>{children}</> : null;
+}
+
+function AuthenticatedAppShell({ children }: { children: ReactNode }) {
   const { authenticated } = useSession();
   const pathname = usePathname();
 

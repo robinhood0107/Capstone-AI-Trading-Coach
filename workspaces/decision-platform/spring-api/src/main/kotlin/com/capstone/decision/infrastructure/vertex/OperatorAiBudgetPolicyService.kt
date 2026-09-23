@@ -26,6 +26,30 @@ class OperatorAiBudgetPolicyService(
 ) {
     private val hardCapCents = parseHardCap(rawHardCapUsd)
 
+    /** A successful reservation is never refunded: uncertain provider billing retains its full worst-case share. */
+    fun reserveGrossUsage(
+        reservationId: String,
+        ownerUserId: String,
+        source: String,
+        provider: String,
+        maxGrossMicrousd: Long,
+    ) {
+        val accepted =
+            jdbc().queryForObject(
+                "SELECT reserve_operator_ai_gross_usage_v1(:id, :owner, :source, :provider, :cost, :hardCap)",
+                mapOf(
+                    "id" to reservationId,
+                    "owner" to ownerUserId,
+                    "source" to source,
+                    "provider" to provider,
+                    "cost" to maxGrossMicrousd,
+                    "hardCap" to Math.multiplyExact(hardCapCents, MICROUSD_PER_CENT),
+                ),
+                Boolean::class.java,
+            ) == true
+        if (!accepted) throw IllegalStateException("OPERATOR_AI_DAILY_GROSS_BUDGET_EXHAUSTED")
+    }
+
     @Transactional(readOnly = true)
     fun read(actor: AppPrincipal): OperatorAiBudgetPolicy {
         requireAdmin(actor)

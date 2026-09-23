@@ -396,8 +396,11 @@ callback은 Bearer token을 URL에 넣지 않고 같은 origin의 `/auth/complet
 정확한 `Origin`을 요구하고 한 번만 `LoginResponse`를 반환한다. 브라우저는 JWT를 메모리에만
 보관한다. `POST /api/v1/auth/logout`은 현재 Bearer의 DB 세션을 폐기하고 204를 반환한다.
 두 endpoint의 full 전용 schema는 [MARS 인증 OpenAPI](../contracts/openapi/mars-full-auth.v1.openapi.json)에 둔다.
-현재 개인용 password bootstrap은 공개 full/demo 프로필에서 제외하며, 내부 호출처 교체 뒤
-삭제한다. 공개 서비스의 KIS/Agent/주문은 별도 게이트가 완성되기 전까지 닫혀 있다.
+현재 개인용 password bootstrap은 공개 full/demo 프로필에서 제외한다. 공개 모드는
+고정 데모 계정의 password bundle 주입을 거부하고 password 로그인 API를 제공하지 않는다.
+기존 V7 migration의 두 고정 행은 새 DB 구성 시 메모리에서 만든 임시 암호 증거로만
+생성하며, [전환 경계](../contracts/changes/20260924-mars-public-password-runtime.md)에 따라
+내부 호출처 교체 후 제거한다. 공개 서비스의 KIS/Agent/주문은 별도 게이트가 완성되기 전까지 닫혀 있다.
 
 #### 2.4.1 S2.1 actor trust-root 선행 계약
 

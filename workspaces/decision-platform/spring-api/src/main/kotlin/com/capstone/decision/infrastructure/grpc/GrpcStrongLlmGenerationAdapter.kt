@@ -19,6 +19,7 @@ import com.capstone.decision.contract.internal.s49.StrongLlmAgentServiceGrpc
 import com.capstone.decision.contract.internal.s49.ToolResult
 import com.capstone.decision.infrastructure.mcp.ResearchToolFacade
 import com.capstone.decision.infrastructure.mcp.S49SearchUnavailableException
+import com.capstone.decision.infrastructure.vertex.S49FullAgentGrossBudget
 import com.capstone.decision.infrastructure.vertex.S49GoogleGroundingBudgetPort
 import com.capstone.decision.infrastructure.vertex.S49StrongLlmCompletionPort
 import com.capstone.decision.infrastructure.vertex.S49StrongLlmProperties
@@ -52,6 +53,7 @@ internal class GrpcStrongLlmGenerationAdapter(
     private val strongLlmProperties: S49StrongLlmProperties,
     private val grpcProperties: StrongLlmAgentGrpcProperties,
     private val googleBudget: S49GoogleGroundingBudgetPort,
+    private val operatorGrossBudget: S49FullAgentGrossBudget,
     private val usageLedger: S49StrongLlmUsageV2Port,
     private val completion: S49StrongLlmCompletionPort,
     private val groundingProvenance: S49GroundingProvenancePort,
@@ -98,7 +100,8 @@ internal class GrpcStrongLlmGenerationAdapter(
         var requestObserver: StreamObserver<HostEvent>? = null
         var outboundSequence = 1L
         var inboundSequence = 0L
-        var providerAttempted = false
+        var sentProviderPermits = 0
+        var contextBytesFromEvents = 0L
         val hostBudget = StrongLlmHostBudget()
         var completed: Completed? = null
         val readEvidence = mutableListOf<RagV2VertexEvidence>()
@@ -120,7 +123,8 @@ internal class GrpcStrongLlmGenerationAdapter(
                             override fun onCompleted() = Unit
                         },
                     )
-            requestObserver.onNext(startEvent(runId, command, googlePermit.googleEnabled))
+            val startFrame = startEvent(runId, command, googlePermit.googleEnabled)
+            requestObserver.onNext(startFrame)
             val deadline = System.nanoTime() + Duration.ofMillis(grpcProperties.deadlineMillis).toNanos()
             while (completed == null) {
                 terminalError.get()?.let { throw it }
@@ -130,8 +134,26 @@ internal class GrpcStrongLlmGenerationAdapter(
                 require(event.runId == runId && event.sequence == ++inboundSequence)
                 when (event.payloadCase) {
                     AgentEvent.PayloadCase.PROVIDER_CALL_PLANNED -> {
+                        check(
+                            event.providerCallPlanned.googleSearchAttached ==
+                                (event.providerCallPlanned.phase == "GOOGLE_DISCOVERY"),
+                        ) { "STRONG_LLM_GOOGLE_PHASE_MISMATCH" }
+                        check(!event.providerCallPlanned.googleSearchAttached || googlePermit.googleEnabled) {
+                            "STRONG_LLM_GOOGLE_BUDGET_PERMIT_MISSING"
+                        }
                         hostBudget.permitProvider(event.providerCallPlanned.phase)
-                        providerAttempted = true
+                        operatorGrossBudget.reserve(
+                            command.ownerUserId,
+                            runId,
+                            event.providerCallPlanned.plannedCallId,
+                            startFrame.serializedSize,
+                            contextBytesFromEvents,
+                            sentProviderPermits,
+                            event.providerCallPlanned.googleSearchAttached,
+                        )
+                        // A denied reservation never sends ProviderCallPermit, so Python
+                        // cannot open its Vertex socket or move to a fallback provider.
+                        sentProviderPermits += 1
                         requestObserver.onNext(
                             hostEvent(
                                 runId,
@@ -170,7 +192,7 @@ internal class GrpcStrongLlmGenerationAdapter(
                             results.size,
                             "COMMITTED",
                         )
-                        requestObserver.onNext(
+                        val toolFrame =
                             toolResultEvent(
                                 runId,
                                 ++outboundSequence,
@@ -181,8 +203,9 @@ internal class GrpcStrongLlmGenerationAdapter(
                                         "results" to results,
                                     ),
                                 ),
-                            ),
-                        )
+                            )
+                        contextBytesFromEvents += toolFrame.serializedSize
+                        requestObserver.onNext(toolFrame)
                     }
                     AgentEvent.PayloadCase.WEB_READ -> {
                         val tools = researchTools ?: throw S49SearchUnavailableException("S4_9_READ_DISABLED")
@@ -232,7 +255,7 @@ internal class GrpcStrongLlmGenerationAdapter(
                                     provenanceResultId = result.source.resultId,
                                 )
                         }
-                        requestObserver.onNext(
+                        val toolFrame =
                             toolResultEvent(
                                 runId,
                                 ++outboundSequence,
@@ -248,11 +271,14 @@ internal class GrpcStrongLlmGenerationAdapter(
                                         "discoveredLinks" to result.discoveredLinks,
                                     ),
                                 ),
-                            ),
-                        )
+                            )
+                        contextBytesFromEvents += toolFrame.serializedSize
+                        requestObserver.onNext(toolFrame)
                     }
-                    AgentEvent.PayloadCase.REGISTER_GROUNDING_ROOTS ->
+                    AgentEvent.PayloadCase.REGISTER_GROUNDING_ROOTS -> {
+                        contextBytesFromEvents += event.serializedSize
                         registerGrounding(runId, event.registerGroundingRoots.rootsList, researchTools)
+                    }
                     AgentEvent.PayloadCase.COMPLETED -> completed = event.completed
                     AgentEvent.PayloadCase.FAILED -> throw IllegalStateException(event.failed.failureLeaf)
                     else -> throw IllegalStateException("STRONG_LLM_GRPC_EVENT_INVALID")
@@ -337,7 +363,7 @@ internal class GrpcStrongLlmGenerationAdapter(
             )
             googlePermit.reservationId?.let { reservation ->
                 runCatching {
-                    if (providerAttempted) {
+                    if (sentProviderPermits > 0) {
                         googleBudget.unknown(
                             command.ownerUserId,
                             reservation,
@@ -354,7 +380,7 @@ internal class GrpcStrongLlmGenerationAdapter(
                     hostBudget.toolRounds,
                     hostBudget.searchCalls,
                     hostBudget.readCalls,
-                    hostBudget.providerCalls,
+                    sentProviderPermits,
                     0,
                     "NONE",
                     "NONE",
@@ -367,7 +393,7 @@ internal class GrpcStrongLlmGenerationAdapter(
                     command.evidence,
                     usage,
                     failureLeaf(error),
-                    providerAttempted,
+                    sentProviderPermits > 0,
                 )
             }
             LOGGER.warn("s4_9_strong_llm_grpc_failed leaf={}", failureLeaf(error))

@@ -1,0 +1,218 @@
+# Standalone anonymous MARS demo. Use a separate Compose project, secret root,
+# and named volumes. The historical compose.demo.yml is an internal history seed.
+name: mars-public-demo
+
+x-app-security: &app-security
+  platform: linux/amd64
+  user: "65532:65532"
+  group_add: ["${MARS_DEMO_SECRET_GID:?set MARS_DEMO_SECRET_GID}"]
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 256
+  tmpfs: [/tmp:size=128m,mode=1777]
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: pjjpjj111/mars-demo:${MARS_DEMO_TAG:?set MARS_DEMO_TAG}-postgres
+    platform: linux/amd64
+    user: "70:70"
+    group_add: ["${MARS_DEMO_SECRET_GID}"]
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "postgres", "docker-entrypoint.sh"]
+    command: ["postgres", "-c", "listen_addresses=*", "-c", "log_statement=none"]
+    environment:
+      POSTGRES_DB: capstone_p1
+      POSTGRES_USER: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    secrets: [postgres_env]
+    volumes: [demo-postgres:/var/lib/postgresql/data]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    shm_size: 128m
+    tmpfs:
+      - /tmp:size=64m,mode=1777,uid=70,gid=70
+      - /var/run/postgresql:size=16m,mode=0770,uid=70,gid=70
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d capstone_p1"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    networks: [demo-data]
+
+  redis:
+    image: pjjpjj111/mars-demo:${MARS_DEMO_TAG}-redis
+    platform: linux/amd64
+    user: "999:1000"
+    group_add: ["${MARS_DEMO_SECRET_GID}"]
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "redis"]
+    secrets: [redis_env]
+    volumes: [demo-redis:/data]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    tmpfs: [/tmp:size=16m,mode=1777,uid=999,gid=999]
+    healthcheck:
+      test: ["CMD-SHELL", ". /run/secrets/redis_env && [ \"$$(REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli --no-auth-warning ping)\" = PONG ]"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    networks: [demo-data]
+
+  role-bootstrap:
+    image: pjjpjj111/mars-demo:${MARS_DEMO_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "role-bootstrap"]
+    command: ["java", "-Dloader.main=com.capstone.decision.infrastructure.security.P1DatabaseRoleBootstrap", "-cp", "/app/app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: capstone_p1
+    secrets: [role_bootstrap_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    <<: *app-security
+    restart: "no"
+    networks: [demo-data]
+
+  migrate:
+    image: pjjpjj111/mars-demo:${MARS_DEMO_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "migration"]
+    command: ["java", "-Dloader.main=com.capstone.decision.infrastructure.security.P1FlywayMigrate", "-cp", "/app/app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: capstone_p1
+      MARS_PUBLIC_SURFACE_MODE: DEMO
+    secrets: [migration_env]
+    depends_on:
+      role-bootstrap: {condition: service_completed_successfully}
+    <<: *app-security
+    restart: "no"
+    networks: [demo-data]
+
+  actor-authority:
+    image: pjjpjj111/mars-demo:${MARS_DEMO_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "authority"]
+    command: ["java", "-Dloader.main=com.capstone.decision.infrastructure.security.ActorCapabilityAuthorityMain", "-cp", "/app/app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
+    environment:
+      ACTOR_CAPABILITY_AUTHORITY_HOST: 0.0.0.0
+      ACTOR_CAPABILITY_AUTHORITY_PORT: "18081"
+      ACTOR_IDENTITY_JDBC_URL: jdbc:postgresql://postgres:5432/capstone_p1
+      ACTOR_CAPABILITY_TLS_KEY_STORE_PATH: /run/secrets/actor_server_p12
+      ACTOR_CAPABILITY_TLS_CA_CERTIFICATE_PATH: /run/secrets/actor_tls_ca
+    secrets: [actor_capability_authority_env, actor_server_p12, actor_tls_ca]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    <<: *app-security
+    healthcheck:
+      test: ["CMD", "java", "-Dloader.main=com.capstone.decision.infrastructure.security.P1TcpHealthCheck", "-cp", "/app/app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [demo-data]
+
+  api:
+    image: pjjpjj111/mars-demo:${MARS_DEMO_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "public-demo"]
+    command: ["python", "/app/decision-platform-supervisor.py"]
+    environment:
+      MARS_PUBLIC_SURFACE_MODE: DEMO
+      SPRING_PROFILES_ACTIVE: mars-demo
+      SPRING_FLYWAY_ENABLED: "false"
+      MARS_AI_DAILY_HARD_CAP_USD: "${MARS_DEMO_AI_DAILY_HARD_CAP_USD:?set demo AI cap}"
+      SERVER_ADDRESS: 0.0.0.0
+      SERVER_PORT: "8080"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: capstone_p1
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      ACTOR_CAPABILITY_TRANSPORT: http
+      ACTOR_CAPABILITY_AUTHORITY_URL: https://actor-authority:18081/internal/actor-capabilities/issue
+      ACTOR_CAPABILITY_TLS_KEY_STORE_PATH: /run/secrets/actor_client_p12
+      ACTOR_CAPABILITY_TLS_CA_CERTIFICATE_PATH: /run/secrets/actor_tls_ca
+      ASYNC_ADAPTER: db
+      ASYNC_POLLING_ENABLED: "false"
+      ASYNC_WORKER_ENABLED: "false"
+      BROKERAGE_GRPC_ENABLED: "false"
+      KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "false"
+      P1_AUTOMATION_RUNTIME_ENABLED: "false"
+      RAG_V2_GRPC_ENABLED: "false"
+      WORLD_NEWS_RETENTION_ENABLED: "false"
+      S4_9_STRONG_LLM_ENABLED: "true"
+      STRONG_LLM_PROVIDER: vertex
+      STRONG_LLM_FALLBACK_PROVIDER: ""
+      STRONG_LLM_GRPC_BIND_ADDRESS: 127.0.0.1:50055
+      STRONG_LLM_GRPC_TARGET: 127.0.0.1:50055
+      VERTEX_MODEL_ID: "${MARS_VERTEX_MODEL_ID:?set Vertex model}"
+      RAG_LLM_MAX_OUTPUT_TOKENS: "4096"
+      P1_VERTEX_INPUT_MICROUSD_PER_TOKEN: "3"
+      P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN: "17"
+      RAG_WEB_ENABLED: "false"
+      S4_9_MCP_ENABLED: "false"
+      KIS_MODE: mock
+      KIS_OFFLINE: "1"
+      PROVIDER_LIVE_CALLS_ENABLED: "false"
+    secrets: [mars_public_demo_env, rag_history_kek, vertex_service_account, actor_client_p12, actor_tls_ca]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      actor-authority: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    <<: *app-security
+    healthcheck:
+      test: ["CMD", "python", "/app/decision-platform-health.py"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    networks: [demo-data, demo-web]
+
+  web:
+    image: pjjpjj111/mars-demo:${MARS_DEMO_TAG}-web
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_MODE: live
+      NEXT_PUBLIC_MARS_PRODUCT: demo
+      DECISION_PLATFORM_INTERNAL_URL: http://api:8080
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    tmpfs: [/tmp:size=64m,mode=1777]
+    ports: ["127.0.0.1:${MARS_DEMO_PORT:-3001}:3000"]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r => {if (!r.ok) process.exit(1)}).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks: [demo-web]
+
+secrets:
+  postgres_env: {file: "${MARS_DEMO_SECRETS_DIR:?set demo secret directory}/postgres.env"}
+  redis_env: {file: "${MARS_DEMO_SECRETS_DIR}/redis.env"}
+  role_bootstrap_env: {file: "${MARS_DEMO_SECRETS_DIR}/role-bootstrap.env"}
+  migration_env: {file: "${MARS_DEMO_SECRETS_DIR}/migration.env"}
+  actor_capability_authority_env: {file: "${MARS_DEMO_SECRETS_DIR}/actor-capability-authority.env"}
+  actor_server_p12: {file: "${MARS_DEMO_SECRETS_DIR}/actor-server.p12"}
+  actor_client_p12: {file: "${MARS_DEMO_SECRETS_DIR}/actor-client.p12"}
+  actor_tls_ca: {file: "${MARS_DEMO_SECRETS_DIR}/actor-tls-ca.crt"}
+  mars_public_demo_env: {file: "${MARS_DEMO_SECRETS_DIR}/mars-public-demo.env"}
+  rag_history_kek: {file: "${MARS_DEMO_SECRETS_DIR}/rag-history-kek-v1.key"}
+  vertex_service_account: {file: "${MARS_DEMO_SECRETS_DIR}/vertex-service-account.json"}
+
+volumes:
+  demo-postgres: {}
+  demo-redis: {}
+
+networks:
+  demo-data: {internal: true}
+  demo-web: {}

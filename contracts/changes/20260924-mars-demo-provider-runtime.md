@@ -26,3 +26,12 @@ transport key. It rejects fixed password bundles, KIS credentials, automation
 credentials, and Google OIDC values. Public migration needs only its database
 password and brokerage capability digest; historical V7 evidence is generated
 in memory by the migration process.
+
+`deploy/p1/compose.public-demo.yml` is a standalone public stack. It requires
+`MARS_DEMO_TAG`, `MARS_DEMO_SECRET_GID`, `MARS_DEMO_SECRETS_DIR`,
+`MARS_DEMO_AI_DAILY_HARD_CAP_USD`, and `MARS_VERTEX_MODEL_ID`. The secret root
+contains separate PostgreSQL, Redis, role-bootstrap, migration, actor authority,
+demo runtime, RAG history, and Vertex files. PostgreSQL/Redis volumes belong to
+this Compose project; only the web container binds a loopback port. The image
+tag contract is `pjjpjj111/mars-demo:<tag>-{api,web,postgres,redis}`. No image
+is considered published until the develop-to-main release gate verifies digests.

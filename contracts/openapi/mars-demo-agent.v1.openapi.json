@@ -1,0 +1,69 @@
+{
+  "openapi": "3.1.1",
+  "info": {"title": "MARS anonymous demo Agent", "version": "0.1.0-draft"},
+  "servers": [{"url": "/"}],
+  "paths": {
+    "/api/v1/demo/agent/ask": {
+      "post": {
+        "operationId": "askDemoAgent",
+        "summary": "Generate from one of three fixed investor-education questions without login or visitor history",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Ask"}}}
+        },
+        "responses": {
+          "200": {"description": "Bounded example answer; Cache-Control: no-store", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AnswerEnvelope"}}}},
+          "400": {"description": "Invalid or unknown request field"},
+          "422": {"description": "Advice or sensitive output explicitly blocked"},
+          "429": {"description": "Shared minute or daily operator budget exhausted"},
+          "503": {"description": "Redis, provider, or validation boundary unavailable"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Ask": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["questionId"],
+        "properties": {
+          "questionId": {"type": "string", "enum": ["diversification", "asset_allocation", "past_performance"]}
+        }
+      },
+      "Citation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["citationId", "title", "url"],
+        "properties": {
+          "citationId": {"type": "string", "pattern": "^cit_[1-3]$"},
+          "title": {"type": "string"},
+          "url": {"type": "string", "format": "uri"}
+        }
+      },
+      "Answer": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["answer", "citations", "generationStatus"],
+        "properties": {
+          "answer": {"type": "string", "minLength": 1, "maxLength": 8192},
+          "citations": {"type": "array", "items": {"$ref": "#/components/schemas/Citation"}, "maxItems": 3},
+          "generationStatus": {"type": "string", "enum": ["ANSWERED", "RETRIEVAL_ONLY"]}
+        }
+      },
+      "AnswerEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["success", "requestId", "data", "warnings", "error"],
+        "properties": {
+          "success": {"type": "boolean", "const": true},
+          "requestId": {"type": "string"},
+          "data": {"$ref": "#/components/schemas/Answer"},
+          "warnings": {"type": "array", "items": {"type": "object"}},
+          "error": {"type": "null"}
+        }
+      }
+    }
+  }
+}

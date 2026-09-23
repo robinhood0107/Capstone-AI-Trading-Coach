@@ -1,0 +1,121 @@
+# S4.7D parser/OCR runtime 의존성 변경은 S1.4X reference lock amendment로 추적한다.
+[project]
+name = "decision-platform-services"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.111",
+  "uvicorn>=0.30",
+  "grpcio>=1.81.1",
+  "grpcio-health-checking>=1.81.1",
+  "protobuf>=4.25",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  "httpx>=0.27",
+  "tenacity>=8.3",
+  "cryptography>=45,<47",
+  "PyYAML>=6.0",
+  "defusedxml>=0.7.1,<0.8",
+  "jsonschema[format]==4.26.0",
+  "numpy==2.5.1",
+  "pandas>=2.2",
+  "pyarrow>=16",
+  "exchange-calendars==4.13.2",
+  "lightgbm>=4.3",
+  "scikit-learn>=1.5",
+  "hmmlearn>=0.3",
+  "statsmodels>=0.14",
+  "scipy>=1.13",
+  "psycopg[binary]>=3.1",
+  "psycopg_pool>=3.2",
+  "pgvector>=0.2",
+  "redis>=5.0",
+  "confluent-kafka>=2.4",
+  # S4.2A BGE ONNX runtime 의존성은 S1.4X reference lock에 함께 고정한다.
+  "onnxruntime==1.28.0",
+  "tokenizers==0.23.1",
+  "pymupdf==1.27.2.2",
+  "python-docx==1.2.0",
+  "python-pptx==1.0.2",
+  "openpyxl==3.1.5",
+  "pillow==12.1.1",
+]
+
+[project.scripts]
+# S3-online KIS_MOCK runtime entrypoints are included in the S1.4X dependency reference lock.
+kis-backfill = "app.data.kis.backfill_cli:main"
+kis-data-quality-report = "app.data.quality.cli:main"
+kis-universe-refresh = "app.data.kis.universe_refresh_cli:main"
+krx-openapi-universe-refresh = "app.data.krx.universe_refresh_cli:main"
+krx-openapi-service-probe = "app.data.krx.service_probe_cli:main"
+ecos-macro-collect = "app.data.ecos.collect_cli:main"
+ecos-registry-preflight = "app.data.ecos.registry_preflight_cli:main"
+source-snapshot-retention = "app.data.source_snapshot_retention_cli:main"
+gdelt-aggregate-collect = "app.data.gdelt.cli:main"
+decision-market-quote-append = "app.decision_source_cli:market_quote_main"
+decision-instrument-catalog-append = "app.decision_source_cli:instrument_catalog_main"
+decision-kis-mock-portfolio-append = "app.decision_source_cli:kis_mock_portfolio_main"
+decision-deterministic-metrics-append = "app.decision_source_cli:deterministic_metrics_main"
+decision-corporation-registry-append = "app.decision_source_cli:corporation_registry_main"
+decision-disclosure-grpc = "app.grpc_server:serve"
+decision-brokerage-grpc = "app.brokerage.brokerage_grpc_server:serve"
+kis-mock-brokerage-probe = "app.brokerage.kis_mock_approval_probe:main"
+kis-mock-brokerage-approval-author = "app.brokerage.kis_mock_approval_author:main"
+rag-source-register = "app.rag.register_sources_cli:main"
+rag-source-card-validate = "app.rag.source_card:main"
+rag-official-evidence-validate = "app.rag.official_evidence:main"
+rag-bge-artifact-acquire = "app.rag.bge_acquisition:main"
+rag-bge-five-card-poc = "app.rag.bge_poc_cli:main"
+rag-content = "app.rag.content_cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "pytest-asyncio",
+  "testcontainers[postgres]==4.14.2",
+  "fakeredis>=2.23",
+  "ruff>=0.5",
+  "mypy>=1.10",
+  "grpcio-tools>=1.81.1",
+  "grpcio-reflection>=1.81.1",
+  "types-grpcio>=1.0.0.20260614",
+  "types-grpcio-health-checking>=1.0.0.20260518",
+  "types-grpcio-reflection>=1.0.0.20260508",
+  "types-PyYAML>=6.0",
+  "types-defusedxml>=0.7",
+  "pandas-stubs>=2.2",
+  "types-openpyxl==3.1.5.20260724",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["app/generated"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+addopts = ["--capture=no"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+exclude = ["^app/generated/"]
+
+[[tool.mypy.overrides]]
+module = ["exchange_calendars.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["jsonschema", "jsonschema.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["fitz", "fitz.*"]
+ignore_missing_imports = true

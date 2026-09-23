@@ -13,3 +13,9 @@ grounding provenance 쓰기를 건너뛴다. provider permit 직전 V201의 `DEM
 
 이 변경은 provider runtime 경계다. 익명 HTTP ask, 입력·분당 제한, 공개 인용 응답,
 전용 이미지/DB/secret과 무이력 end-to-end 검증은 뒤이은 변경에서 연결한다.
+# Public process boundary
+
+The public DEMO supervisor starts Spring and the bounded StrongLLM gRPC provider.
+It rejects async worker, return inference, brokerage, automation, RAG v2, and
+world-news retention flags before starting a child process. Demo Compose must
+set these flags off; an incompatible override fails startup.

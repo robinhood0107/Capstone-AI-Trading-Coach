@@ -8,7 +8,10 @@ Spring은 검증된 `BrokerageActor.userId`와 opaque `accountId`로 V202 내부
 `STORED|CONNECTED|CERTIFIED|DISCONNECTING`, 주문가능 조회 시
 `CONNECTED|CERTIFIED`로 제한한다.
 
-이 PR은 Java/Kotlin의 전송과 생성물을 맞춘다. Python 기존 servicer가 암호문을
-검증·복호화해 해당 계좌의 KIS_MOCK client만 생성하는 다음 변경 전까지 full 공개
-주문 경로는 열지 않는다. 기존 LOCAL 개인 실행의 고정 계좌 경로는 전환 중 유지하며,
-full 제품에서 전역 KIS 환경변수로 fallback하지 않도록 다음 변경에서 닫는다.
+Python 기존 servicer는 FULL에서 envelope가 없으면 요청을 거부하고,
+`MARS_BROKERAGE_KEK_DIRECTORY`의 별도 KEK로 owner/account AAD를 검증한다.
+요청별 KIS_MOCK client는 복호화한 App Key·Secret·계좌번호 한 쌍만 받는다.
+FULL에서는 전역 `KIS_MOCK_BOUND_ACCOUNT_ID`를 설정하면 기동을 거부하며,
+전역 KIS App Key·Secret·계좌번호로 fallback하지 않는다. 기존 LOCAL 개인 실행의
+고정 계좌 경로는 독립 제품 모드로 유지한다. 연결 확인·장중 인증·자동운용 대사가
+아직 없으므로 full 공개 주문 경로는 계속 닫는다.

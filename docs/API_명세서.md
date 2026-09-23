@@ -2352,6 +2352,10 @@ fallback provider 설정은 거부한다. Spring과 Python은 같은
 통과하기 전에는 공개 과금 기능을 열지 않는다.
 매매 뉴스 Vertex는 요청 크기와 출력 토큰 상한의 보수적인 공개가격 환산액을 전송 전에
 예약하고, 실패하면 ABSTAIN으로 닫는다.
+현재 기본 Gemini 3.5 Flash global의 2026-09-23 공개가격을 올림한 입력 3·출력 17
+마이크로달러/토큰을 배포 기본값으로 쓴다. 모델 변경이나 기존 NAS 정책 파일 사용 시
+[단가 변경 근거](../contracts/changes/20260923-mars-vertex-gross-rate-floor.md)에 따라
+가격을 다시 확인한다.
 [원장 계약](../contracts/changes/20260923-mars-ai-gross-reservation-v1.md)을 따른다.
 
 ### 10.0 MARS full 사용자별 KIS_MOCK 자격증명 저장 (연결·주문 검증 전)

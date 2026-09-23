@@ -2335,9 +2335,15 @@ full 제품의 `GET/PUT /api/v1/admin/ai-budget`은 Google OIDC로 확인한 현
 사용한다. GET은 `hardCapCents`, `dailySoftCapCents`, `revision`을 주고 PUT은
 `dailySoftCapCents`와 `expectedRevision`만 받는다. 0은 추가 과금 정지이며 설정값은
 NAS 비공개 `MARS_AI_DAILY_HARD_CAP_USD`보다 높을 수 없다. 경쟁 변경은 409다.
-값 자체는 아직 운영자가 정하지 않았고, 예약 원장 연결 전에는 공개 Agent·매매 AI
+공용 예약 원장을 모든 과금 경로에 연결하기 전에는 공개 Agent·매매 AI
 과금 호출을 열지 않는다. [full 전용 schema](../contracts/openapi/mars-full-operator-ai-budget.v1.openapi.json)와
 [변경 근거](../contracts/changes/20260923-mars-operator-ai-budget-policy.md)를 따른다.
+
+운영자는 첫 NAS 절대 상한을 `$1.00/일`로 정했다. V201은 공급자 무료분 차감 없이
+**공개가격 기준 최대 노출액**을 서울 날짜별로 예약한다. RAG Vertex는 기존 승인 패킷의
+요청별 `costCapMicrousd`를 전송 전에 합산한다. 다른 과금 경로가 같은 원장을
+통과하기 전에는 공개 과금 기능을 열지 않는다.
+[원장 계약](../contracts/changes/20260923-mars-ai-gross-reservation-v1.md)을 따른다.
 
 ### 10.0 MARS full 사용자별 KIS_MOCK 자격증명 저장 (연결·주문 검증 전)
 

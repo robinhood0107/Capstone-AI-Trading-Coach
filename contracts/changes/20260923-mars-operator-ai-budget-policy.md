@@ -2,7 +2,7 @@
 
 full 제품의 절대 상한은 NAS의 비공개 `MARS_AI_DAILY_HARD_CAP_USD`로 주입한다.
 값이 없거나 양의 USD 금액(센트 단위)이 아니면 full API는 기동하지 않는다. 사용자가
-아직 금액을 결정하지 않았으므로 저장소에 초기 금액을 넣지 않는다.
+첫 절대 상한은 `$1.00/일`로 정했다. NAS의 비공개 환경에도 이 값을 주입한다.
 
 Google ADMIN만 `GET/PUT /api/v1/admin/ai-budget`으로 일일 soft cap을 확인·변경한다.
 PUT은 센트 정수와 직전 revision만 받으며, NAS 상한 초과와 경쟁 갱신을 거부한다.

@@ -299,3 +299,22 @@ def test_the_chain_reads_the_second_provider_only_when_it_is_declared(
     assert settings.primary.provider == "vertex"
     assert settings.secondary is not None
     assert settings.secondary.provider == "anthropic"
+
+
+@pytest.mark.parametrize("product_mode", ["FULL", "DEMO"])
+def test_public_products_reject_user_keys_and_provider_fallback(
+    monkeypatch: pytest.MonkeyPatch, product_mode: str
+) -> None:
+    for name in [key for key in os.environ if key.startswith("STRONG_LLM_")]:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", product_mode)
+    assert ProviderChainSettings.from_env().primary.provider == "vertex"
+
+    monkeypatch.setenv("STRONG_LLM_FALLBACK_API_KEY", "fixture-only")
+    with pytest.raises(ValueError, match="STRONG_LLM_PUBLIC_VERTEX_ONLY"):
+        ProviderChainSettings.from_env()
+    monkeypatch.delenv("STRONG_LLM_FALLBACK_API_KEY")
+    monkeypatch.setenv("STRONG_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("STRONG_LLM_API_KEY", "fixture-only")
+    with pytest.raises(ValueError, match="STRONG_LLM_PUBLIC_VERTEX_ONLY"):
+        ProviderChainSettings.from_env()

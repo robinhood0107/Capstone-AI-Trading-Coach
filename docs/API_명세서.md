@@ -2329,6 +2329,16 @@ artifact 다운로드 URL은 공개 링크가 아니며 다른 API와 동일한 
 
 ## 10. Brokerage API
 
+### MARS full 운영자 AI 일일 한도 설정
+
+full 제품의 `GET/PUT /api/v1/admin/ai-budget`은 Google OIDC로 확인한 현재 ADMIN만
+사용한다. GET은 `hardCapCents`, `dailySoftCapCents`, `revision`을 주고 PUT은
+`dailySoftCapCents`와 `expectedRevision`만 받는다. 0은 추가 과금 정지이며 설정값은
+NAS 비공개 `MARS_AI_DAILY_HARD_CAP_USD`보다 높을 수 없다. 경쟁 변경은 409다.
+값 자체는 아직 운영자가 정하지 않았고, 예약 원장 연결 전에는 공개 Agent·매매 AI
+과금 호출을 열지 않는다. [full 전용 schema](../contracts/openapi/mars-full-operator-ai-budget.v1.openapi.json)와
+[변경 근거](../contracts/changes/20260923-mars-operator-ai-budget-policy.md)를 따른다.
+
 ### 10.0 MARS full 사용자별 KIS_MOCK 자격증명 저장 (연결·주문 검증 전)
 
 full 제품의 `GET/PUT /api/v1/brokerage/mock/credential`은 Bearer로 확인한 본인만

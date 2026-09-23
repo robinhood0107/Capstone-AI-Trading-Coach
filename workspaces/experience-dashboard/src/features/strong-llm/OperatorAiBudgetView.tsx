@@ -77,8 +77,8 @@ function OperatorAiBudgetForm({
   return (
     <Panel
       contract="operator-ai-budget"
-      title="운영자 AI 비용 한도"
-      hint="Agent와 매매 AI가 함께 쓰는 하루 한도입니다. NAS 환경변수의 절대 상한보다 높일 수 없습니다."
+      title="운영자 AI 사용량 한도"
+      hint="Agent와 매매 AI의 하루 공개가격 환산 사용량 한도입니다. 무료 제공량도 계산하며 NAS 절대 상한보다 높일 수 없습니다."
     >
       <p className="text-[13px] text-muted">
         NAS 절대 상한: ${centsToUsd(policy.hardCapCents)} / 일 · 현재 웹 설정: ${centsToUsd(policy.dailySoftCapCents)} / 일
@@ -95,7 +95,10 @@ function OperatorAiBudgetForm({
           className="mt-1.5 w-full max-w-xs rounded-control border border-line bg-panel px-4 py-2.5 text-[14px] text-ink focus:border-navy focus:outline-none"
         />
       </label>
-      <p className="mt-2 text-[12px] text-muted">0.00을 저장하면 추가 과금 호출을 중단합니다.</p>
+      <p className="mt-2 text-[12px] leading-5 text-muted">
+        0.00을 저장하면 추가 AI 호출을 중단합니다. Vertex와 Voyage의 무료 토큰·속도 제한은 각 공급자 계정에서 별도로 관리합니다.
+        이 화면의 금액은 실제 청구액이 아닙니다.
+      </p>
       <button
         type="button"
         disabled={!valid || pending}

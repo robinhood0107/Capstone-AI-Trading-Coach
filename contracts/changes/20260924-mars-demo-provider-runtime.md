@@ -19,3 +19,10 @@ The public DEMO supervisor starts Spring and the bounded StrongLLM gRPC provider
 It rejects async worker, return inference, brokerage, automation, RAG v2, and
 world-news retention flags before starting a child process. Demo Compose must
 set these flags off; an incompatible override fails startup.
+
+The `public-demo` secret entrypoint accepts only its dedicated
+`mars_public_demo_env` file, with the Spring runtime keys and one StrongLLM
+transport key. It rejects fixed password bundles, KIS credentials, automation
+credentials, and Google OIDC values. Public migration needs only its database
+password and brokerage capability digest; historical V7 evidence is generated
+in memory by the migration process.

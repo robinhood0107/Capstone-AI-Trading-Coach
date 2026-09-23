@@ -31,17 +31,19 @@ internal class PublicSurfaceGate(
         filterChain: FilterChain,
     ) {
         val health = request.method == "GET" && request.requestURI == "/actuator/health"
-        val fullAuth =
+        val fullAllowed =
             mode == PublicSurfaceMode.FULL &&
                 when (request.method to request.requestURI) {
                     "GET" to "/api/v1/auth/oidc/start/google",
                     "GET" to "/api/v1/auth/oidc/callback/google",
                     "POST" to "/api/v1/auth/oidc/exchange",
                     "POST" to "/api/v1/auth/logout",
+                    "GET" to "/api/v1/brokerage/mock/credential",
+                    "PUT" to "/api/v1/brokerage/mock/credential",
                     -> true
                     else -> false
                 }
-        if (mode != PublicSurfaceMode.LOCAL && !health && !fullAuth) {
+        if (mode != PublicSurfaceMode.LOCAL && !health && !fullAllowed) {
             response.sendError(HttpServletResponse.SC_NOT_FOUND)
             return
         }

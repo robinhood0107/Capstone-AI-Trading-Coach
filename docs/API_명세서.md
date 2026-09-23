@@ -2329,6 +2329,22 @@ artifact 다운로드 URL은 공개 링크가 아니며 다른 API와 동일한 
 
 ## 10. Brokerage API
 
+### 10.0 MARS full 사용자별 KIS_MOCK 자격증명 저장 (연결·주문 검증 전)
+
+full 제품의 `GET/PUT /api/v1/brokerage/mock/credential`은 Bearer로 확인한 본인만
+사용한다. PUT body는 `appKey`(8~256 ASCII), `appSecret`(8~512 printable ASCII),
+`accountNo`(하이픈 없는 숫자 10자리) 세 필드만 받으며 owner/account/mode나 추가 필드를
+거부한다. 서버가 opaque `accountId`를 만들고 brokerage 전용 KEK로 계정에 결속해
+암호화한다. PUT 204는 저장만 뜻한다. GET은 등록 여부·opaque ID·상태·revision과
+App Key/계좌의 끝 4자리만 주며 원문은 응답하지 않는다.
+
+`STORED`, `CONNECTED`, `CERTIFIED`, 자동운용 `ARMED`와 broker 체결·대사는 각각 다른
+증거다. 현재 저장 단계는 상태를 STORED로 설정하며 연결 확인·인증·사용자별 provider
+reader·주문은 후속 구현이 통과하기 전까지 완료로 보지 않는다. ARMED나 미완료 주문·
+execution이 있으면 교체를 거부한다. 데모와 KIS_LIVE 입력 API는 없다.
+[full 전용 schema](../contracts/openapi/mars-full-mock-credential.v1.openapi.json)와
+[계약 변경 근거](../contracts/changes/20260923-mars-bound-mock-credential-storage.md)를 따른다.
+
 KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재동의 조건을 충족할 때만 확장한다. S1.1의 KIS 작업은 Brokerage API가 아니라 MarketDataService 내부 구현이며, 주문·정정·취소·잔고 변경을 만들지 않는다. KIS 전체 API 목록과 모의 지원 경계는 자동 생성 부록 `KIS_API_카탈로그.md`를 참조한다.
 
 S3.1 — KIS 모의주문. `POST /api/v1/brokerage/mock/orders`,

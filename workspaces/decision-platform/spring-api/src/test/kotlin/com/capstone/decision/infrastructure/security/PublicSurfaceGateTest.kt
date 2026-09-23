@@ -16,6 +16,7 @@ class PublicSurfaceGateTest {
                 "/api/v1/auth/login",
                 "/api/v1/brokerage/mock/orders",
                 "/internal/automation-runtime/run",
+                "/api/v3/automation/arm",
             )
         for (mode in listOf(PublicSurfaceMode.DEMO, PublicSurfaceMode.FULL)) {
             for (path in paths) {

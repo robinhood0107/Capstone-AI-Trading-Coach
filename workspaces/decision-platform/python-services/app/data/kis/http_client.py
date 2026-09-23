@@ -10,6 +10,7 @@ import httpx
 
 from app.data.kis._credential_transport import (
     KISCredentialError,
+    _Credentials,
     _build_redis_client,
     _CredentialTransport,
     _provider_scope,
@@ -84,12 +85,15 @@ class KISHttpClient:
         accounting: CollectionRunRecorder | None = None,
         require_cached_token: bool = False,
         deadline_guard: Callable[[], None] | None = None,
+        credential_provider: Callable[[], _Credentials] | None = None,
     ) -> None:
         if not settings.offline and any(
             dependency is not None for dependency in (token_provider, transport, rate_limiter)
         ):
             # online dependency는 이 모듈의 private runtime wiring만 만들며 caller transport/no-op limiter를 거부한다.
             raise ValueError("KIS online private dependencies cannot be overridden")
+        if credential_provider is not None and (settings.offline or settings.mode != "mock"):
+            raise ValueError("owner-bound market credentials are mock-only")
 
         self._token_issuer: _TokenIssuer | None = None
         self._token_manager: KISTokenManager | None = None
@@ -104,7 +108,7 @@ class KISHttpClient:
             redis_client = _build_redis_client()
             token_issuer: _TokenIssuer | None = None
             try:
-                scope = _provider_scope(settings.mode)
+                scope = _provider_scope(settings.mode, credential_provider)
                 request_limiter = RedisIntervalLimiter(
                     redis_client,
                     key=f"kis:rest:v3:{scope}",
@@ -125,6 +129,7 @@ class KISHttpClient:
                         settings,
                         rate_limiter=token_limiter,
                         accounting=accounting,
+                        credential_provider=credential_provider,
                     )
                 else:
                     token_issuer = _TokenIssuer(
@@ -132,6 +137,7 @@ class KISHttpClient:
                         rate_limiter=token_limiter,
                         accounting=accounting,
                         deadline_guard=deadline_guard,
+                        credential_provider=credential_provider,
                     )
                 token_manager = KISTokenManager(
                     mode=settings.mode,
@@ -166,6 +172,7 @@ class KISHttpClient:
                     rate_limiter=request_limiter,
                     accounting=accounting,
                     deadline_guard=deadline_guard,
+                    credential_provider=credential_provider,
                 ),
                 timeout=settings.kis_timeout_seconds,
                 follow_redirects=False,

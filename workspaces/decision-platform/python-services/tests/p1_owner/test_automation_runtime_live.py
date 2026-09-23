@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 import pytest
 from datetime import date, datetime
@@ -421,8 +422,7 @@ def test_spring_bridge_client_is_fixed_loopback_secret_bound_and_retry_zero() ->
     client.close()
 
     assert result == {"accountId": "acct_test"}
-    # 소유자 세션을 먼저 열고 그 토큰으로 명령을 보낸다. shared secret만으로는 bridge 뒤의
-    # actor capability가 발급되지 않는다.
+    # LOCAL mode opens its historical private owner session before sending commands.
     assert len(observed) == 2
     assert observed[0].url == httpx.URL("http://127.0.0.1:8080/api/v1/auth/login")
     assert observed[1].url == httpx.URL("http://127.0.0.1:8080/internal/automation-runtime/command")
@@ -432,6 +432,37 @@ def test_spring_bridge_client_is_fixed_loopback_secret_bound_and_retry_zero() ->
     assert observed[1].headers["authorization"] == "Bearer owner-access-token"
     payload = json.loads(observed[1].content)
     assert payload["operation"] == "BALANCE"
+
+
+def test_full_spring_bridge_uses_service_secret_without_password_login() -> None:
+    observed: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed.append(request)
+        return httpx.Response(200, json={"status": "OK", "data": {"accountId": "acct_test"}})
+
+    with patch.dict("os.environ", {"MARS_PUBLIC_SURFACE_MODE": "FULL"}):
+        client = SpringAutomationBridgeClient(
+            "automation-runtime-bridge-test-secret-0001",
+            transport=httpx.MockTransport(handler),
+            owner_username="",
+            owner_password="",
+        )
+        result = client.command(
+            "BALANCE",
+            "usr_google_owner_0001",
+            {"accountId": "acct_test"},
+        )
+        client.close()
+
+    assert result == {"accountId": "acct_test"}
+    assert len(observed) == 1
+    assert observed[0].url.path == "/internal/automation-runtime/command"
+    assert "authorization" not in observed[0].headers
+    assert observed[0].headers["x-automation-runtime-auth"] == (
+        "automation-runtime-bridge-test-secret-0001"
+    )
+    assert json.loads(observed[0].content)["userId"] == "usr_google_owner_0001"
 
 
 def test_spring_bridge_client_refuses_to_command_without_an_owner_session() -> None:

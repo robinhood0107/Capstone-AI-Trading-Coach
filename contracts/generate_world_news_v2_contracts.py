@@ -139,6 +139,12 @@ def error_schema() -> dict[str, object]:
         "message": {"type": "string", "minLength": 1, "maxLength": 256},
         "requestId": {"type": "string", "minLength": 1, "maxLength": 128},
     }
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": properties,
+        "required": sorted(properties),
+    }
 
 
 def capital_policy_schema() -> dict[str, object]:

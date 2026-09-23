@@ -8,6 +8,9 @@ CREATE TABLE public.operator_ai_budget_policy (
   changed_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE public.operator_ai_budget_policy OWNER TO flyway;
+-- Flyway applies this seed with its migration login, before forced RLS limits
+-- the table to later decision_app SECURITY DEFINER calls.
+INSERT INTO public.operator_ai_budget_policy(singleton) VALUES (true);
 ALTER TABLE public.operator_ai_budget_policy ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.operator_ai_budget_policy FORCE ROW LEVEL SECURITY;
 CREATE POLICY operator_ai_budget_policy_definer_v200 ON public.operator_ai_budget_policy
@@ -15,7 +18,6 @@ CREATE POLICY operator_ai_budget_policy_definer_v200 ON public.operator_ai_budge
   WITH CHECK (current_user = 'flyway' AND session_user = 'decision_app');
 REVOKE ALL ON public.operator_ai_budget_policy FROM PUBLIC, decision_app, decision_auth,
   decision_identity, decision_worker, decision_replay;
-INSERT INTO public.operator_ai_budget_policy(singleton) VALUES (true);
 
 -- V198 permits only decision_auth to inspect identities. This definer-only
 -- policy lets the budget function prove ADMIN came from Google OIDC, while

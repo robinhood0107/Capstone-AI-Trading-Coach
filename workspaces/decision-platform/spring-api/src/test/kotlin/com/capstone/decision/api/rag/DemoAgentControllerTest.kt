@@ -56,7 +56,10 @@ class DemoAgentControllerTest {
         assertEquals(3, command.captured.evidence.size)
         assertEquals(
             "https://www.investor.gov/introduction-investing/getting-started/asset-allocation",
-            response.data?.citations?.single()?.url,
+            response.data
+                ?.citations
+                ?.single()
+                ?.url,
         )
         val publicJson = JsonMapper.builder().build().writeValueAsString(response)
         assertTrue(!publicJson.contains("historyId") && !publicJson.contains("question"))

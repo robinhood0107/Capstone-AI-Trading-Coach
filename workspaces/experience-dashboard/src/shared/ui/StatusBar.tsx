@@ -33,7 +33,7 @@ export function StatusBar() {
     setLogoutPending(true);
     setLogoutFailed(false);
     try {
-      await api.logout();
+      if (process.env.NEXT_PUBLIC_MARS_PRODUCT === 'full') await api.logout();
       session.clear();
     } catch {
       setLogoutFailed(true);

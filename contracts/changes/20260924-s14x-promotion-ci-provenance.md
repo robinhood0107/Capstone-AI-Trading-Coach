@@ -23,3 +23,8 @@ S1.4R의 host-only 두 테스트는 연구 브랜치가 제품 코드를 바꾸�
 제품 변경을 묶어 승격하는 `develop → main`에서는 해당 두 테스트를 제외하고
 나머지 native correctness를 실행한다. OCI snapshot job은 원래의 전체 테스트를
 계속 실행한다. 연구 소스나 테스트 파일은 수정하지 않는다.
+
+S1.4X benchmark의 과거 workflow 모양 검사 한 건은 `push → main`과 더 이상 원격에
+없는 Git carrier를 요구한다. 그 검사만 승격 CI에서 제외하고, 현재 정책인
+`develop → main` PR 한정 실행·내용 hash·262개 snapshot 회귀를 별도 계약 검사로
+대체한다. 수치·oracle·benchmark 본체 검사는 제외하지 않는다.

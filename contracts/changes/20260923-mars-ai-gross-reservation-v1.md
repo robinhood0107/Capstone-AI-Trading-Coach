@@ -13,6 +13,12 @@ V201은 `Asia/Seoul` 날짜의 운영자 AI 최대 노출액을 한 원장에 �
 않는다. [Google Cloud Vertex 가격](https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing)과
 [Voyage 가격](https://docs.voyageai.com/docs/pricing)은 모델·시점에 따라 달라지므로
 provider 경로가 사용하는 모델/토큰 상한으로 보수적인 최대값을 계산해야 한다.
+Voyage는 무료 토큰 뒤 사용량에 가격을 적용한다고 공식 문서에 명시한다. Google Cloud의
+일반 예산 알림은 자동 차단이 아니며, 지원되는 서비스의 Spend Cap도 처리 지연 중 초과
+청구가 가능하다. 따라서 공급자 콘솔의 무료 제공량·속도 제한은 MARS 원장을 대체하지
+않는다. [Voyage 요금](https://docs.voyageai.com/docs/pricing),
+[Google Cloud 예산](https://docs.cloud.google.com/billing/docs/how-to/budgets),
+[Spend Cap](https://docs.cloud.google.com/billing/docs/how-to/budgets-spend-caps)을 확인한다.
 
 이번 단계에서 기존 Pre-S5 RAG Vertex의 승인 패킷 `costCapMicrousd`를 같은 트랜잭션에
 연결했다. Strong LLM Agent·Voyage·매매 AI의 outbound 경로와 공급자별 호출/토큰

@@ -99,13 +99,19 @@ def _read_credentials(mode: KISMode) -> _Credentials:
     return _Credentials(app_key=app_key, app_secret=app_secret)
 
 
-def _provider_scope(mode: KISMode) -> str:
-    """단일 credential slot의 mode별 cache/REST scope를 비가역 HMAC으로 파생한다.
+def _provider_scope(
+    mode: KISMode,
+    credential_provider: Callable[[], _Credentials] | None = None,
+) -> str:
+    """고정한 한 credential의 mode별 cache/REST scope를 비가역 HMAC으로 파생한다.
 
     실제 key를 Redis나 공개 객체에 두지 않기 위한 private 초기화 예외이며, outbound header/body에는
-    각 send 직전에 다시 읽은 credential만 사용한다.
+    각 send 직전에 다시 읽은 credential만 사용한다. full 제품은 user run/account/revision에 결속한
+    provider를 넘겨야 한다. provider가 없을 때의 환경변수 경로는 개인 실행 전환 동안만 쓴다.
     """
-    credentials = _read_credentials(mode)
+    credentials = (
+        credential_provider() if credential_provider is not None else _read_credentials(mode)
+    )
     app_key = credentials.app_key.get_secret_value()
     app_secret = credentials.app_secret.get_secret_value()
     try:
@@ -138,7 +144,7 @@ def _build_redis_client() -> redis.Redis:
 
 
 class _CredentialTransport(httpx.BaseTransport):
-    """공식 KIS origin의 실제 send attempt에만 API credential과 bearer token을 부착한다."""
+    """공식 KIS origin의 실제 send attempt에만 지정된 credential과 bearer token을 부착한다."""
 
     def __init__(
         self,
@@ -152,6 +158,7 @@ class _CredentialTransport(httpx.BaseTransport):
         max_json_depth: int = _MAX_JSON_DEPTH,
         sensitive_values: Callable[[], tuple[str, ...]] | None = None,
         deadline_guard: Callable[[], None] | None = None,
+        credential_provider: Callable[[], _Credentials] | None = None,
     ) -> None:
         self._inner = inner
         self._mode = settings.mode
@@ -164,6 +171,7 @@ class _CredentialTransport(httpx.BaseTransport):
         self._max_json_depth = max_json_depth
         self._sensitive_values = sensitive_values
         self._deadline_guard = deadline_guard
+        self._credential_provider = credential_provider or (lambda: _read_credentials(self._mode))
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         _ensure_origin(request.url, self._origin)
@@ -198,7 +206,7 @@ class _CredentialTransport(httpx.BaseTransport):
                 self._require_before_handoff()
                 self._rate_limiter.acquire()
                 self._require_before_handoff()
-                credentials = _read_credentials(self._mode)
+                credentials = self._credential_provider()
                 app_key = credentials.app_key.get_secret_value()
                 app_secret = credentials.app_secret.get_secret_value()
                 candidates = (app_key, app_secret, token, *additional)
@@ -293,6 +301,7 @@ class _TokenIssuer:
         rate_limiter: RateLimiter | None = None,
         accounting: CollectionRunRecorder | None = None,
         deadline_guard: Callable[[], None] | None = None,
+        credential_provider: Callable[[], _Credentials] | None = None,
     ) -> None:
         if rate_limiter is None:
             # tokenP도 app process마다 local bucket을 만들면 동시 cache miss에서 공식 1/s를 우회한다.
@@ -308,6 +317,7 @@ class _TokenIssuer:
         self._rate_limiter = rate_limiter
         self._accounting = accounting
         self._deadline_guard = deadline_guard
+        self._credential_provider = credential_provider or (lambda: _read_credentials(self._mode))
 
     def issue(self) -> dict[str, Any]:
         credentials: _Credentials | None = None
@@ -327,7 +337,7 @@ class _TokenIssuer:
             self._require_before_handoff()
             self._rate_limiter.acquire()
             self._require_before_handoff()
-            credentials = _read_credentials(self._mode)
+            credentials = self._credential_provider()
             app_key = credentials.app_key.get_secret_value()
             app_secret = credentials.app_secret.get_secret_value()
             body.update(

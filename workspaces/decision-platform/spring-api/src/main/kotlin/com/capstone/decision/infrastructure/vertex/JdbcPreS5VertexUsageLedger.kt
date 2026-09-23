@@ -48,6 +48,7 @@ internal class JdbcPreS5VertexUsageLedger(
     transactionManager: PlatformTransactionManager,
     private val questionFingerprintPort: RagV2VertexQuestionFingerprintPort,
     private val actorRlsScope: ActorRlsScope,
+    private val operatorBudgetProvider: ObjectProvider<OperatorAiBudgetPolicyService>,
 ) {
     private val requiresNew =
         TransactionTemplate(transactionManager).apply {
@@ -126,6 +127,15 @@ internal class JdbcPreS5VertexUsageLedger(
                     }.singleOrNull()
                     ?: throw RagV2VertexUsageLedgerException()
             require(reservation.first == usageEventId && reservation.second == activation.expiresAt)
+            // In mars-full, the same transaction reserves list-price exposure before token or
+            // generateContent can be claimed. Local research has no public operator budget bean.
+            operatorBudgetProvider.ifAvailable?.reserveGrossUsage(
+                reservationId = "aibr_" + usageEventId.takeLast(32),
+                ownerUserId = command.ownerUserId,
+                source = "RAG_VERTEX",
+                provider = "VERTEX",
+                maxGrossMicrousd = activation.costCapMicrousd,
+            )
             PreS5VertexUsageLease(usageEventId, command.ownerUserId, reservation.second)
         }
     }

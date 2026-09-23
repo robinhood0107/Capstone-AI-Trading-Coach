@@ -51,6 +51,7 @@ class JdbcPreS5VertexUsageLedgerTest {
             TestTransactionManager(),
             fingerprintPort,
             mockk<ActorRlsScope>(relaxed = true),
+            mockk<ObjectProvider<OperatorAiBudgetPolicyService>> { every { getIfAvailable() } returns null },
         ).reserve(command(), activation)
 
         assertThat(parameters.captured["expiresAt"])

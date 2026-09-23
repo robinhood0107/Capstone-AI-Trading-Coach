@@ -4437,6 +4437,9 @@ canonical HTTPS URL, `publishedAt`, `publicationStatus`, `providerObservedAt`, `
 `availableAt` 뒤의 문서만 반환한다. collection 상태는 문서가 0건이어도 COMPLETE, PARTIAL,
 COLLECTION_FAILED, NOT_COLLECTED를 구분한다. 세계 뉴스는 Decision, Signal, RiskDecision, order,
 decision hash와 종목 VETO 권한이 모두 `NONE`이다.
+400/401/503 응답의 `WorldNewsV2Error`는 `code`, `message`, `requestId`가 필수인
+object schema다. 기존 OpenAPI의 `null` component를 [forward 수정](../contracts/changes/20260923-world-news-error-schema.md)했으며
+HTTP 상태와 런타임 오류 본문은 바뀌지 않는다.
 
 ### 누적 성과 보고서
 

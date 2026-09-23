@@ -55,6 +55,7 @@ class GoogleOidcPublicBoundaryIntegrationTest(
     @Test
     fun `public password and account routes are closed while Google start uses state`() {
         mvc.post("/api/v1/auth/login").andExpect { status { isNotFound() } }
+        mvc.post("/api/v1/brokerage/mock/credential/connect").andExpect { status { isUnauthorized() } }
         mvc.get("/api/v1/auth/oidc/start/google").andExpect {
             status { isFound() }
             header { string("Location", org.hamcrest.Matchers.containsString("accounts.google.com")) }

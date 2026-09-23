@@ -163,3 +163,21 @@ class GetMockBuyableResponse(_message.Message):
     observed_at: str
     source_version: str
     def __init__(self, account_id: _Optional[str] = ..., symbol: _Optional[str] = ..., estimated_price_krw: _Optional[int] = ..., buyable_quantity: _Optional[int] = ..., buyable_amount_krw: _Optional[int] = ..., cash_krw: _Optional[int] = ..., observed_at: _Optional[str] = ..., source_version: _Optional[str] = ...) -> None: ...
+
+class VerifyMockConnectionRequest(_message.Message):
+    __slots__ = ("request_id", "account_id", "credential")
+    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
+    ACCOUNT_ID_FIELD_NUMBER: _ClassVar[int]
+    CREDENTIAL_FIELD_NUMBER: _ClassVar[int]
+    request_id: str
+    account_id: str
+    credential: BoundMockCredentialEnvelope
+    def __init__(self, request_id: _Optional[str] = ..., account_id: _Optional[str] = ..., credential: _Optional[_Union[BoundMockCredentialEnvelope, _Mapping]] = ...) -> None: ...
+
+class VerifyMockConnectionResponse(_message.Message):
+    __slots__ = ("account_id", "connected")
+    ACCOUNT_ID_FIELD_NUMBER: _ClassVar[int]
+    CONNECTED_FIELD_NUMBER: _ClassVar[int]
+    account_id: str
+    connected: bool
+    def __init__(self, account_id: _Optional[str] = ..., connected: _Optional[bool] = ...) -> None: ...

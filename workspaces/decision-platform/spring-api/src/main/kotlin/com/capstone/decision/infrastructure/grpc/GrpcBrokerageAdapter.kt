@@ -11,12 +11,14 @@ import com.capstone.decision.application.brokerage.BrokerageGatewaySubmitRequest
 import com.capstone.decision.application.brokerage.BrokerageGatewaySubmitResult
 import com.capstone.decision.application.brokerage.BrokerageUnavailableException
 import com.capstone.decision.application.brokerage.MockBalancePositionProjection
+import com.capstone.decision.application.brokerage.MockCredentialConnectionPort
 import com.capstone.decision.contract.v1.BoundMockCredentialEnvelope
 import com.capstone.decision.contract.v1.BrokerageServiceGrpc
 import com.capstone.decision.contract.v1.CancelMockCashOrderRequest
 import com.capstone.decision.contract.v1.GetMockBalanceRequest
 import com.capstone.decision.contract.v1.GetMockBuyableRequest
 import com.capstone.decision.contract.v1.SubmitMockCashOrderRequest
+import com.capstone.decision.contract.v1.VerifyMockConnectionRequest
 import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
 import com.google.protobuf.ByteString
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
@@ -44,6 +46,7 @@ class GrpcBrokerageAdapter(
     circuitBreakerRegistry: CircuitBreakerRegistry,
     private val credentialProvider: ObjectProvider<MockCredentialSettingsService>,
 ) : BrokerageGatewayPort,
+    MockCredentialConnectionPort,
     AutoCloseable {
     private val channel: ManagedChannel
     private val circuitBreaker = circuitBreakerRegistry.circuitBreaker(properties.circuitBreakerName)
@@ -231,6 +234,32 @@ class GrpcBrokerageAdapter(
                 throw mapStatus(exception)
             }
         }
+
+    override fun verify(
+        requestId: String,
+        ownerUserId: String,
+        accountId: String,
+    ) {
+        circuitBreaker.executeRunnable {
+            val builder =
+                VerifyMockConnectionRequest
+                    .newBuilder()
+                    .setRequestId(requestId)
+                    .setAccountId(accountId)
+            boundCredential(ownerUserId, accountId, setOf("STORED", "CONNECTED", "CERTIFIED"))
+                ?.let { builder.setCredential(it) }
+            val request = builder.build()
+            requireBoundedRequest(request.serializedSize)
+            try {
+                val response = stub().verifyMockConnection(request)
+                if (!response.connected || response.accountId != accountId) {
+                    throw BrokerageUnavailableException("KIS_MOCK connection proof did not match the owner account.")
+                }
+            } catch (exception: StatusRuntimeException) {
+                throw mapStatus(exception)
+            }
+        }
+    }
 
     private fun stub(): BrokerageServiceGrpc.BrokerageServiceBlockingStub =
         BrokerageServiceGrpc

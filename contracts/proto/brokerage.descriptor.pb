@@ -1,5 +1,5 @@
 
-–
+£
 brokerage.protocapstone.decision.v1"˜
 BoundMockCredentialEnvelope"
 owner_user_id (	RownerUserId
@@ -98,10 +98,23 @@ account_id (	R	accountId
 cash_krw (RcashKrw
 observed_at (	R
 observedAt%
-source_version (	RsourceVersion2ä
+source_version (	RsourceVersion"®
+VerifyMockConnectionRequest
+
+request_id (	R	requestId
+
+account_id (	R	accountIdQ
+
+credential (21.capstone.decision.v1.BoundMockCredentialEnvelopeR
+credential"[
+VerifyMockConnectionResponse
+
+account_id (	R	accountId
+	connected (R	connected2ã
 BrokerageServicez
 SubmitMockCashOrder0.capstone.decision.v1.SubmitMockCashOrderRequest1.capstone.decision.v1.SubmitMockCashOrderResponsez
 CancelMockCashOrder0.capstone.decision.v1.CancelMockCashOrderRequest1.capstone.decision.v1.CancelMockCashOrderResponsek
 GetMockBalance+.capstone.decision.v1.GetMockBalanceRequest,.capstone.decision.v1.GetMockBalanceResponsek
-GetMockBuyable+.capstone.decision.v1.GetMockBuyableRequest,.capstone.decision.v1.GetMockBuyableResponseB8
+GetMockBuyable+.capstone.decision.v1.GetMockBuyableRequest,.capstone.decision.v1.GetMockBuyableResponse}
+VerifyMockConnection1.capstone.decision.v1.VerifyMockConnectionRequest2.capstone.decision.v1.VerifyMockConnectionResponseB8
 !com.capstone.decision.contract.v1BBrokerageContractPbproto3

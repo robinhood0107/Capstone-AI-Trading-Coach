@@ -142,6 +142,61 @@ class GoogleOidcIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase(
         }
     }
 
+    @Test
+    fun `only current Google ADMIN can read and change the operator AI budget`() {
+        val admin = issueSession("test-budget-admin-" + UUID.randomUUID(), operatorSubject = true)
+        val user = issueSession("test-budget-user-" + UUID.randomUUID())
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", "app-test").use { connection ->
+            val denied =
+                assertThrows(SQLException::class.java) {
+                    connection.prepareStatement("select * from read_operator_ai_budget_policy_v1(?,?)").use { statement ->
+                        statement.setString(1, user.userId)
+                        statement.setLong(2, 1)
+                        statement.executeQuery()
+                    }
+                }
+            assertEquals("42501", denied.sqlState)
+
+            val revision =
+                connection.prepareStatement("select revision from read_operator_ai_budget_policy_v1(?,?)").use { statement ->
+                    statement.setString(1, admin.userId)
+                    statement.setLong(2, 1)
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        result.getLong(1)
+                    }
+                }
+            connection.prepareStatement("select set_operator_ai_budget_policy_v1(?,?,?,?)").use { statement ->
+                statement.setString(1, admin.userId)
+                statement.setLong(2, 1)
+                statement.setLong(3, 1_230_000)
+                statement.setLong(4, revision)
+                statement.executeQuery().use { result ->
+                    assertTrue(result.next())
+                    assertEquals(revision + 1, result.getLong(1))
+                }
+            }
+            val stale =
+                assertThrows(SQLException::class.java) {
+                    connection.prepareStatement("select set_operator_ai_budget_policy_v1(?,?,?,?)").use { statement ->
+                        statement.setString(1, admin.userId)
+                        statement.setLong(2, 1)
+                        statement.setLong(3, 2_000_000)
+                        statement.setLong(4, revision)
+                        statement.executeQuery()
+                    }
+                }
+            assertEquals("40001", stale.sqlState)
+            val directRead =
+                assertThrows(SQLException::class.java) {
+                    connection.createStatement().use { statement ->
+                        statement.executeQuery("select * from operator_ai_budget_policy")
+                    }
+                }
+            assertEquals("42501", directRead.sqlState)
+        }
+    }
+
     private fun revokeSession(
         handle: String,
         userId: String,

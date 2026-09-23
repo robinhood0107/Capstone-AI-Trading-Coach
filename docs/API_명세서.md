@@ -2329,6 +2329,22 @@ artifact 다운로드 URL은 공개 링크가 아니며 다른 API와 동일한 
 
 ## 10. Brokerage API
 
+### MARS full 운영자 AI 일일 한도 설정
+
+full 제품의 `GET/PUT /api/v1/admin/ai-budget`은 Google OIDC로 확인한 현재 ADMIN만
+사용한다. GET은 `hardCapCents`, `dailySoftCapCents`, `revision`을 주고 PUT은
+`dailySoftCapCents`와 `expectedRevision`만 받는다. 0은 추가 과금 정지이며 설정값은
+NAS 비공개 `MARS_AI_DAILY_HARD_CAP_USD`보다 높을 수 없다. 경쟁 변경은 409다.
+공용 예약 원장을 모든 과금 경로에 연결하기 전에는 공개 Agent·매매 AI
+과금 호출을 열지 않는다. [full 전용 schema](../contracts/openapi/mars-full-operator-ai-budget.v1.openapi.json)와
+[변경 근거](../contracts/changes/20260923-mars-operator-ai-budget-policy.md)를 따른다.
+
+운영자는 첫 NAS 절대 상한을 `$1.00/일`로 정했다. V201은 공급자 무료분 차감 없이
+**공개가격 기준 최대 노출액**을 서울 날짜별로 예약한다. RAG Vertex는 기존 승인 패킷의
+요청별 `costCapMicrousd`를 전송 전에 합산한다. 다른 과금 경로가 같은 원장을
+통과하기 전에는 공개 과금 기능을 열지 않는다.
+[원장 계약](../contracts/changes/20260923-mars-ai-gross-reservation-v1.md)을 따른다.
+
 ### 10.0 MARS full 사용자별 KIS_MOCK 자격증명 저장 (연결·주문 검증 전)
 
 full 제품의 `GET/PUT /api/v1/brokerage/mock/credential`은 Bearer로 확인한 본인만
@@ -2344,6 +2360,14 @@ reader·주문은 후속 구현이 통과하기 전까지 완료로 보지 않�
 execution이 있으면 교체를 거부한다. 데모와 KIS_LIVE 입력 API는 없다.
 [full 전용 schema](../contracts/openapi/mars-full-mock-credential.v1.openapi.json)와
 [계약 변경 근거](../contracts/changes/20260923-mars-bound-mock-credential-storage.md)를 따른다.
+
+내부 V202 reader는 현재 owner·KIS_MOCK·opaque account ID·actor capability가
+모두 일치할 때 암호문만 읽는다. 타인 계좌와 교체된 이전 ID는 거부하며 공개 응답은
+변하지 않는다. [reader 계약](../contracts/changes/20260923-mars-owner-mock-envelope-reader.md)을 따른다.
+기존 Spring→Python brokerage gRPC 요청은 봉인된 owner/account envelope를 전달한다.
+Python은 같은 envelope의 owner/account AAD를 검증해 그 요청만의 KIS_MOCK client에
+결속한다. 연결 확인·장중 인증·자동운용 대사 완료 전에는 공개 주문을 열지 않는다.
+[gRPC 전송 계약](../contracts/changes/20260923-mars-owner-broker-grpc-envelope.md)을 따른다.
 
 KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재동의 조건을 충족할 때만 확장한다. S1.1의 KIS 작업은 Brokerage API가 아니라 MarketDataService 내부 구현이며, 주문·정정·취소·잔고 변경을 만들지 않는다. KIS 전체 API 목록과 모의 지원 경계는 자동 생성 부록 `KIS_API_카탈로그.md`를 참조한다.
 

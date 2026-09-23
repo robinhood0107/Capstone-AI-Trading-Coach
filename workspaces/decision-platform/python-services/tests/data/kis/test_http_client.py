@@ -80,6 +80,37 @@ def _assert_traceback_locals_do_not_contain(error: BaseException, marker: str) -
         traceback = traceback.tb_next
 
 
+def test_explicit_owner_credentials_are_used_only_for_that_transport(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        _credential_transport,
+        "_read_credentials",
+        lambda _: (_ for _ in ()).throw(AssertionError("global KIS credential fallback")),
+    )
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers["appkey"])
+        return httpx.Response(200, json={"output": {"value": "ok"}})
+
+    for key in ("validation-owner-a-key", "validation-owner-b-key"):
+        transport = _CredentialTransport(
+            httpx.MockTransport(handler),
+            settings=_settings(tmp_path, offline=False),
+            token_provider=lambda: "validation-dummy-token",
+            rate_limiter=TokenBucket(rate_per_second=1000),
+            credential_provider=lambda selected=key: _Credentials(
+                app_key=SecretStr(selected),
+                app_secret=SecretStr("validation-owner-secret"),
+            ),
+        )
+        with httpx.Client(transport=transport, trust_env=False) as client:
+            _private_transport_get(client)
+    assert seen == ["validation-owner-a-key", "validation-owner-b-key"]
+
+
 def test_private_credential_settings_hide_values_from_repr_and_serialization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

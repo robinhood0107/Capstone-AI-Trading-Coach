@@ -6,6 +6,22 @@ option java_multiple_files = true;
 option java_outer_classname = "BrokerageContract";
 option java_package = "com.capstone.decision.contract.v1";
 
+// Internal only. Ciphertext is read with an exact owner/account DB capability;
+// neither raw KIS keys nor the account number travel in this contract.
+message BoundMockCredentialEnvelope {
+  string owner_user_id = 1;
+  string account_id = 2;
+  int64 revision = 3;
+  string credential_state = 4;
+  string kek_version = 5;
+  bytes wrap_nonce = 6;
+  bytes wrapped_dek = 7;
+  bytes wrap_tag = 8;
+  bytes payload_nonce = 9;
+  bytes payload_ciphertext = 10;
+  bytes payload_tag = 11;
+}
+
 message SubmitMockCashOrderRequest {
   string request_id = 1;
   string order_id = 2;
@@ -15,6 +31,7 @@ message SubmitMockCashOrderRequest {
   string order_type = 6;
   int64 quantity = 7;
   int64 estimated_price_krw = 8;
+  BoundMockCredentialEnvelope credential = 9;
 }
 
 message SubmitMockCashOrderResponse {
@@ -29,6 +46,7 @@ message CancelMockCashOrderRequest {
   string request_id = 1;
   string order_id = 2;
   string account_id = 3;
+  BoundMockCredentialEnvelope credential = 4;
 }
 
 message CancelMockCashOrderResponse {
@@ -40,6 +58,7 @@ message CancelMockCashOrderResponse {
 message GetMockBalanceRequest {
   string request_id = 1;
   string account_id = 2;
+  BoundMockCredentialEnvelope credential = 3;
 }
 
 message MockBalancePosition {
@@ -64,6 +83,7 @@ message GetMockBuyableRequest {
   string account_id = 2;
   string symbol = 3;
   int64 estimated_price_krw = 4;
+  BoundMockCredentialEnvelope credential = 5;
 }
 
 message GetMockBuyableResponse {

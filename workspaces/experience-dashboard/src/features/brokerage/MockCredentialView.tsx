@@ -88,6 +88,31 @@ function MockCredentialForm({
     }
   }
 
+  async function disconnect() {
+    if (!status.registered || !status.credential || pending) return;
+    if (
+      status.credential.state !== 'DISCONNECTING' &&
+      !window.confirm('모의계좌 연결을 해제할까요? 새 주문은 중단되고 미대사 주문이 있으면 복구용 암호문은 보존됩니다.')
+    ) return;
+    setPending(true);
+    setOutcome(null);
+    setError(null);
+    try {
+      const result = await api.disconnectMockCredential();
+      setOutcome(
+        result?.state === 'DISCONNECTING'
+          ? '새 주문을 중단했습니다. 미대사 주문이 정리된 뒤 해제 완료를 다시 확인해 주세요.'
+          : '모의계좌 연결 정보를 삭제했습니다.',
+      );
+      reload();
+    } catch (cause) {
+      const state = toErrorState<never>(cause);
+      setError(state.kind === 'error' ? state.message : '연결을 해제하지 못했습니다.');
+    } finally {
+      setPending(false);
+    }
+  }
+
   const credential = status.credential;
   return (
     <Panel
@@ -100,7 +125,9 @@ function MockCredentialForm({
           <>
             <p className="font-medium">저장됨 · App Key 끝 4자리 {credential.appKeyLast4} · 계좌 끝 4자리 {credential.accountNoLast4}</p>
             <p className="text-muted">
-              {credential.certified
+              {credential.state === 'DISCONNECTING'
+                ? '연결 해제 중 · 새 주문 중단 · 미대사 주문 확인 필요'
+                : credential.certified
                 ? '모의주문 인증 완료'
                 : credential.connected
                   ? '연결 확인됨 · 모의주문 인증 전'
@@ -120,6 +147,16 @@ function MockCredentialForm({
           className="mt-4 rounded-control border border-line px-5 py-2.5 text-[14px] font-semibold text-ink hover:border-navy disabled:opacity-50"
         >
           {pending ? '확인 중…' : credential?.connected ? '읽기 연결 다시 확인' : '읽기 연결 확인'}
+        </button>
+      ) : null}
+      {status.registered && credential ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => void disconnect()}
+          className="ml-3 mt-4 rounded-control border border-line px-5 py-2.5 text-[14px] font-semibold text-block hover:border-block disabled:opacity-50"
+        >
+          {pending ? '처리 중…' : credential.state === 'DISCONNECTING' ? '해제 완료 확인' : '연결 해제'}
         </button>
       ) : null}
 

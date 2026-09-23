@@ -88,6 +88,10 @@ export const api = {
     return apiFetchBare<void>('/api/v1/brokerage/mock/credential/connect', { method: 'POST' });
   },
 
+  disconnectMockCredential(): Promise<{ state: 'DISCONNECTING' } | void> {
+    return apiFetchBare<{ state: 'DISCONNECTING' } | void>('/api/v1/brokerage/mock/credential', { method: 'DELETE' });
+  },
+
   operatorAiBudget(): Promise<ApiResult<OperatorAiBudgetPolicy>> {
     return apiFetch<OperatorAiBudgetPolicy>('/api/v1/admin/ai-budget');
   },

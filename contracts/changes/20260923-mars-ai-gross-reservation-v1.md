@@ -33,6 +33,7 @@ owner/run별 `FULL_AGENT` 최대 노출액을 예약한다
 ([변경 근거](20260923-mars-full-agent-gross-permit.md)). 데모 Agent outbound는 후속
 작업에서 연결한다.
 공개 데모용 예산 helper는 `DEMO_AGENT` 예약에서 owner를 `NULL`로 보내며 Google Search
-grounding을 거부한다. 익명 ask API·빈 DB 기동·이력 비저장 검증 전에는 데모 Agent를
-공개하지 않는다.
+grounding을 거부한다. [익명 ask API](20260924-mars-anonymous-demo-agent.md)는 예제
+근거와 분당 제한을 연결했다. 빈 DB·전용 이미지 기동과 이력 비저장 end-to-end 검증 전에는
+데모 Agent를 배포하지 않는다.
 모두 검증되기 전에는 공개 과금 API를 열지 않는다.

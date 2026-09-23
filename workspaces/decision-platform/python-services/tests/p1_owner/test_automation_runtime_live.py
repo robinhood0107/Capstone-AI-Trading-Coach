@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from unittest.mock import patch
 
@@ -463,6 +464,41 @@ def test_full_spring_bridge_uses_service_secret_without_password_login() -> None
         "automation-runtime-bridge-test-secret-0001"
     )
     assert json.loads(observed[0].content)["userId"] == "usr_google_owner_0001"
+
+
+def test_full_spring_bridge_accepts_only_owner_bound_encrypted_credential_fields() -> None:
+    owner = "usr_google_owner_0001"
+    account = "acct_" + "a" * 32
+    values = {
+        "ownerUserId": owner,
+        "accountId": account,
+        "revision": 2,
+        "credentialState": "CERTIFIED",
+        "kekVersion": "kek-v1",
+        "wrapNonce": base64.b64encode(b"w" * 12).decode(),
+        "wrappedDek": base64.b64encode(b"d" * 32).decode(),
+        "wrapTag": base64.b64encode(b"t" * 16).decode(),
+        "secretNonce": base64.b64encode(b"n" * 12).decode(),
+        "secretCiphertext": base64.b64encode(b"c" * 64).decode(),
+        "secretTag": base64.b64encode(b"g" * 16).decode(),
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/internal/automation-runtime/command"
+        return httpx.Response(200, json={"status": "OK", "data": values})
+
+    with patch.dict("os.environ", {"MARS_PUBLIC_SURFACE_MODE": "FULL"}):
+        client = SpringAutomationBridgeClient(
+            "automation-runtime-bridge-test-secret-0001",
+            transport=httpx.MockTransport(handler),
+        )
+        envelope = client.owner_mock_credential_envelope(owner, account)
+        client.close()
+    assert envelope.owner_user_id == owner
+    assert envelope.account_id == account
+    assert envelope.credential_state == "CERTIFIED"
+    assert envelope.payload_ciphertext == b"c" * 64
+    assert envelope.wrap_tag == b"t" * 16
 
 
 def test_spring_bridge_client_refuses_to_command_without_an_owner_session() -> None:

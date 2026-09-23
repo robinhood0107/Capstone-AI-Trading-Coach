@@ -64,6 +64,10 @@ class PublicFullComposeTest(unittest.TestCase):
         self.assertEqual(port["target"], 3000)
         for secret in config["secrets"].values():
             self.assertTrue(secret["file"].startswith("/tmp/mars-full-contract-secrets/"))
+        secret_entrypoint = (ROOT / "deploy/p1/docker/secret-entrypoint.sh").read_text()
+        self.assertIn("public-full) secret_files=/run/secrets/mars_public_full_env", secret_entrypoint)
+        self.assertIn("KIS_MOCK_ORDER_REFERENCE_KEY) return 0", secret_entrypoint)
+        self.assertIn("KIS_*|P1_AUTOMATION_*) return 1", secret_entrypoint)
 
 
 if __name__ == "__main__":

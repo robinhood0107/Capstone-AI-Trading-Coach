@@ -20,6 +20,7 @@ import psycopg
 from numpy.typing import NDArray
 from psycopg.types.json import Jsonb
 
+from app.operator_ai_budget import deployment_hard_cap_microusd
 from app.rag.pre_s5_provider_control import (
     PreS5VoyageEvaluationBatchActivation,
     PreS5VoyageQueryActivation,
@@ -73,10 +74,21 @@ class PreS5VoyageQueryUsageRepositoryError(ValueError):
 class PsycopgPreS5VoyageQueryUsageRepository:
     """Create a writer-role lease for one exact query/scope packet before a fixed-origin provider call."""
 
-    def __init__(self, *, database_dsn: str) -> None:
+    def __init__(
+        self,
+        *,
+        database_dsn: str,
+        gross_budget_hard_cap_microusd: int | None = None,
+    ) -> None:
         if not isinstance(database_dsn, str) or not 1 <= len(database_dsn) <= 4_096:
             raise PreS5VoyageQueryUsageRepositoryError("PRE_S5_VOYAGE_QUERY_LEASE_DATABASE_DSN")
         self._database_dsn = database_dsn
+        self._gross_budget_hard_cap_microusd = deployment_hard_cap_microusd()
+        if gross_budget_hard_cap_microusd is None:
+            gross_budget_hard_cap_microusd = deployment_hard_cap_microusd()
+        if gross_budget_hard_cap_microusd is not None and gross_budget_hard_cap_microusd <= 0:
+            raise PreS5VoyageQueryUsageRepositoryError("OPERATOR_AI_DAILY_HARD_CAP_INVALID")
+        self._gross_budget_hard_cap_microusd = gross_budget_hard_cap_microusd
 
     def reserve_s4_9_runtime(
         self,
@@ -116,6 +128,60 @@ class PsycopgPreS5VoyageQueryUsageRepository:
                         """,
                         (scope_claim_id, question_sha256, tokenizer_sha256),
                     ).fetchone()
+                    if self._gross_budget_hard_cap_microusd is not None:
+                        if (
+                            row is None
+                            or len(row) != 9
+                            or _USAGE_EVENT_ID.fullmatch(str(row[0])) is None
+                            or type(row[7]) is not int
+                            or row[7] <= 0
+                        ):
+                            raise PreS5VoyageQueryUsageRepositoryError(
+                                "OPERATOR_AI_DAILY_GROSS_RESERVATION_INVALID"
+                            )
+                        accepted = connection.execute(
+                            """
+                            SELECT public.reserve_s4_9_operator_voyage_gross_usage_v1(%s,%s,%s,%s,%s)
+                            """,
+                            (
+                                "aibr_" + str(row[0])[-32:],
+                                scope_claim_id,
+                                question_sha256,
+                                row[7],
+                                self._gross_budget_hard_cap_microusd,
+                            ),
+                        ).fetchone()
+                        if accepted is None or accepted[0] is not True:
+                            raise PreS5VoyageQueryUsageRepositoryError(
+                                "OPERATOR_AI_DAILY_GROSS_BUDGET_EXHAUSTED"
+                            )
+                    if self._gross_budget_hard_cap_microusd is not None:
+                        if (
+                            row is None
+                            or len(row) != 9
+                            or _USAGE_EVENT_ID.fullmatch(str(row[0])) is None
+                            or type(row[7]) is not int
+                            or row[7] <= 0
+                        ):
+                            raise PreS5VoyageQueryUsageRepositoryError(
+                                "OPERATOR_AI_DAILY_GROSS_RESERVATION_INVALID"
+                            )
+                        accepted = connection.execute(
+                            """
+                            SELECT public.reserve_s4_9_operator_voyage_gross_usage_v1(%s,%s,%s,%s,%s)
+                            """,
+                            (
+                                "aibr_" + str(row[0])[-32:],
+                                scope_claim_id,
+                                question_sha256,
+                                row[7],
+                                self._gross_budget_hard_cap_microusd,
+                            ),
+                        ).fetchone()
+                        if accepted is None or accepted[0] is not True:
+                            raise PreS5VoyageQueryUsageRepositoryError(
+                                "OPERATOR_AI_DAILY_GROSS_BUDGET_EXHAUSTED"
+                            )
         except PreS5VoyageQueryUsageRepositoryError:
             raise
         except psycopg.Error:

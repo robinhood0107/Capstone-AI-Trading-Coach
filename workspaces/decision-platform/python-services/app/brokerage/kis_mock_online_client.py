@@ -17,6 +17,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.data.kis._credential_transport import (
     KISCredentialError,
     KISResponseTooLargeError,
+    _Credentials,
     _build_redis_client,
     _CredentialTransport,
     _provider_scope,
@@ -283,13 +284,16 @@ class KISMockBrokerageHttpClient:
         rate_limiter: RateLimiter | None = None,
         token_provider: Callable[[], str] | None = None,
         approval_deadline_guard: Callable[[], None] | None = None,
+        credential_provider: Callable[[], _Credentials] | None = None,
     ) -> None:
         if settings.mode != "mock":
             raise KISMockLiveOrderGateClosed("KIS live brokerage allowlist is empty")
         if not settings.offline and any(
-            value is not None for value in (account_number, transport, rate_limiter, token_provider)
+            value is not None for value in (transport, rate_limiter, token_provider)
         ):
             raise ValueError("KIS online private dependencies cannot be overridden")
+        if not settings.offline and (account_number is None) != (credential_provider is None):
+            raise KISCredentialError("KIS mock brokerage identity is incomplete")
 
         self._budget = budget
         self._token_issuer: _TokenIssuer | None = None
@@ -304,14 +308,20 @@ class KISMockBrokerageHttpClient:
                 rate_per_second=1 / settings.request_interval_seconds
             )
         else:
-            try:
-                selected_account = _KISMockBrokerageSecrets().kis_mock_account_no  # type: ignore[call-arg]
-            except ValidationError:
-                raise KISCredentialError("KIS mock brokerage account is unavailable") from None
+            if credential_provider is None:
+                try:
+                    selected_account = _KISMockBrokerageSecrets().kis_mock_account_no  # type: ignore[call-arg]
+                except ValidationError:
+                    raise KISCredentialError("KIS mock brokerage account is unavailable") from None
+            else:
+                # The full product resolves this pair from one owner-bound, encrypted DB row.
+                # Never substitute the deployment account when that row is unavailable.
+                assert account_number is not None
+                selected_account = account_number
             redis_client = _build_redis_client()
             token_issuer: _TokenIssuer | None = None
             try:
-                scope = _provider_scope("mock")
+                scope = _provider_scope("mock", credential_provider)
                 limiter = RedisIntervalLimiter(
                     redis_client,
                     key=f"kis:rest:v3:{scope}",
@@ -330,6 +340,7 @@ class KISMockBrokerageHttpClient:
                     settings,
                     rate_limiter=token_limiter,
                     deadline_guard=approval_deadline_guard,
+                    credential_provider=credential_provider,
                 )
 
                 def budgeted_issue() -> dict[str, Any]:
@@ -373,6 +384,7 @@ class KISMockBrokerageHttpClient:
                 max_json_depth=32,
                 sensitive_values=lambda: (self._cano,),
                 deadline_guard=approval_deadline_guard,
+                credential_provider=credential_provider,
             )
             budgeted_transport = _BrokerageBudgetTransport(
                 credential_transport,

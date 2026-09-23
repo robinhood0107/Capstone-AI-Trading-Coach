@@ -19,6 +19,7 @@ from app.brokerage.kis_mock_order_gateway import (
     MockOrderIntent,
     MockOrderRejected,
 )
+from app.data.kis._credential_transport import _Credentials
 
 
 class FakeTransport:
@@ -141,6 +142,89 @@ class NoSendTransport:
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.calls += 1
         return httpx.Response(200, json={"rt_cd": "0"}, request=request)
+
+
+def test_online_mock_brokerage_uses_each_explicit_credential_and_account(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    online = importlib.import_module("app.brokerage.kis_mock_online_client")
+    sent: list[tuple[str, str, str]] = []
+    scopes: list[str] = []
+
+    class FakeRedis:
+        def close(self) -> None:
+            pass
+
+    class FakeTokenManager:
+        def __init__(self, *, scope: str, **_kwargs: Any) -> None:
+            scopes.append(scope)
+
+        def get_access_token(self) -> str:
+            return "synthetic-token"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(
+            (
+                request.headers["appkey"],
+                request.headers["appsecret"],
+                request.read().decode("utf-8"),
+            )
+        )
+        return httpx.Response(200, json={"rt_cd": "0", "output": {"ODNO": "synthetic-order"}})
+
+    monkeypatch.setattr(online, "_build_redis_client", FakeRedis)
+    monkeypatch.setattr(online, "KISTokenManager", FakeTokenManager)
+    monkeypatch.setattr(online, "RedisIntervalLimiter", lambda *_args, **_kwargs: RecordingLimiter())
+    monkeypatch.setattr(online.httpx, "HTTPTransport", lambda **_kwargs: httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        online, "_KISMockBrokerageSecrets", lambda: pytest.fail("global account fallback")
+    )
+
+    settings = online.KISSettings(
+        kis_mode="mock", kis_offline=False, kis_data_dir=tmp_path, _env_file=None
+    )
+    for account, app_key in (("00000000-01", "synthetic-key-a"), ("11111111-02", "synthetic-key-b")):
+        client = online.KISMockBrokerageHttpClient(
+            settings=settings,
+            budget=online.KISBrokerageCallBudget(token_p_cap=0, brokerage_cap=1),
+            account_number=SecretStr(account),
+            credential_provider=lambda key=app_key: _Credentials(
+                app_key=SecretStr(key), app_secret=SecretStr(f"{key}-secret")
+            ),
+        )
+        try:
+            client.request(
+                "POST", ORDER_CASH_PATH, MOCK_BUY_TR_ID,
+                json_body={"PDNO": "005930", "ORD_DVSN": "00", "ORD_QTY": "1", "ORD_UNPR": "70000"},
+            )
+        finally:
+            client.close()
+
+    assert len(scopes) == 2 and scopes[0] != scopes[1]
+    assert sent[0][0:2] == ("synthetic-key-a", "synthetic-key-a-secret")
+    assert sent[1][0:2] == ("synthetic-key-b", "synthetic-key-b-secret")
+    assert '"CANO":"00000000"' in sent[0][2]
+    assert '"ACNT_PRDT_CD":"01"' in sent[0][2]
+    assert '"CANO":"11111111"' in sent[1][2]
+    assert '"ACNT_PRDT_CD":"02"' in sent[1][2]
+
+
+def test_online_mock_brokerage_requires_credential_and_account_pair(tmp_path: Path) -> None:
+    online = importlib.import_module("app.brokerage.kis_mock_online_client")
+    settings = online.KISSettings(
+        kis_mode="mock", kis_offline=False, kis_data_dir=tmp_path, _env_file=None
+    )
+    budget = online.KISBrokerageCallBudget(token_p_cap=0, brokerage_cap=0)
+    with pytest.raises(online.KISCredentialError, match="identity is incomplete"):
+        online.KISMockBrokerageHttpClient(
+            settings=settings, budget=budget, account_number=SecretStr("00000000-01")
+        )
+    with pytest.raises(online.KISCredentialError, match="identity is incomplete"):
+        online.KISMockBrokerageHttpClient(
+            settings=settings, budget=budget,
+            credential_provider=lambda: _Credentials(SecretStr("synthetic"), SecretStr("synthetic")),
+        )
 
 
 def test_mock_cash_order_maps_buy_sell_tr_ids_and_does_not_retry() -> None:

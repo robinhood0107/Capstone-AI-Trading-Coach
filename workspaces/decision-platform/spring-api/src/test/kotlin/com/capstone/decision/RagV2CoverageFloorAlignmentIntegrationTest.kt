@@ -15,6 +15,7 @@ import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.time.OffsetDateTime
+import java.util.Locale
 import kotlin.io.path.readText
 
 /**
@@ -55,7 +56,7 @@ class RagV2CoverageFloorAlignmentIntegrationTest {
         // 앱은 EVIDENCE 0.8, EVIDENCE_WITH_REASONING 0.2 하한을 제거했다. 예전 CHECK 는
         // 0.2 미만을 거부했고 그래서 이 값들이 한 건도 저장되지 못했다.
         for ((index, coverage) in listOf(0.0, 0.1, 0.19, 0.5, 0.79, 1.0).withIndex()) {
-            insertAnswered(answerId = "rag_${"c".repeat(28)}${"%04d".format(index)}", coverage = coverage)
+            insertAnswered(answerId = "rag_${"c".repeat(28)}${"%04d".format(Locale.ROOT, index)}", coverage = coverage)
         }
         flyway().use { connection ->
             connection.createStatement().use { statement ->

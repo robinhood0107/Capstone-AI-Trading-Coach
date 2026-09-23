@@ -2,17 +2,6 @@ name: P1 full-app security
 
 on:
   pull_request:
-    paths:
-      - ".github/workflows/p1-full-app-security.yml"
-      - "deploy/p1/**"
-      - "workspaces/decision-platform/**"
-      - "workspaces/experience-dashboard/**"
-      - "workspaces/return-engine/**"
-      - "contracts/**"
-      - "README.md"
-      - "capstone"
-      - "capstone.ps1"
-  push:
     branches: [main]
 
 permissions:
@@ -24,6 +13,7 @@ concurrency:
 
 jobs:
   security-gates:
+    if: github.event.pull_request.head.ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository
     name: P1 full-app security gates
     runs-on: ubuntu-24.04
     steps:

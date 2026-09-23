@@ -1,37 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { api } from '@/shared/api/endpoints';
-import { session } from '@/shared/api/session';
-import { toErrorState } from '@/shared/lib/useResource';
-
-/**
- * 로그인 카드.
- *
- * 소개 페이지의 마지막 화면으로 뜬다. 로그인 여부 판단은 바깥(`AppShell`)이 하고, 여기서는
- * 폼만 그린다.
- */
+/** The full product delegates identity verification to Google's OIDC code flow. */
 export function LoginCard() {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    if (pending || username.length === 0 || password.length === 0) return;
-    setPending(true);
-    setError(null);
-    try {
-      const { data } = await api.login(username, password);
-      session.set(data.accessToken, data.expiresAt, data.user);
-    } catch (cause) {
-      const state = toErrorState<never>(cause);
-      setError(state.kind === 'error' ? state.message : '로그인하지 못했습니다.');
-    } finally {
-      setPending(false);
-    }
-  }
-
   return (
     <div className="mx-auto w-full max-w-[420px]">
       <div className="rounded-panel border border-line bg-panel px-7 py-8 shadow-card">
@@ -41,56 +11,16 @@ export function LoginCard() {
         >
           AI
         </span>
-        <h1 className="mt-5 text-[24px] font-semibold tracking-tight text-ink">로그인</h1>
+        <h1 className="mt-5 text-[24px] font-semibold tracking-tight text-ink">시작하기</h1>
         <p className="mt-2 text-[14px] leading-6 text-muted">
-          내 투자 원칙과 운용 현황을 확인하세요. 로그인 상태는 이 탭에서만 유지됩니다.
+          Google 계정으로 로그인하면 본인 투자 원칙과 운용 현황을 볼 수 있습니다.
         </p>
-
-        <div className="mt-7 space-y-4">
-          <div>
-            <label htmlFor="username" className="text-[12px] font-medium text-muted">
-              아이디
-            </label>
-            <input
-              id="username"
-              value={username}
-              autoComplete="username"
-              onChange={(event) => setUsername(event.target.value)}
-              className="mt-1.5 w-full rounded-control border border-line bg-subtle px-4 py-2.5 text-[15px] text-ink focus:border-navy focus:bg-panel"
-            />
-          </div>
-          <div>
-            <label htmlFor="password" className="text-[12px] font-medium text-muted">
-              비밀번호
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              autoComplete="current-password"
-              onChange={(event) => setPassword(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') void submit();
-              }}
-              className="mt-1.5 w-full rounded-control border border-line bg-subtle px-4 py-2.5 text-[15px] text-ink focus:border-navy focus:bg-panel"
-            />
-          </div>
-
-          {error ? (
-            <p className="rounded-tile bg-block/[0.06] px-4 py-2.5 text-[13px] leading-6 text-block">
-              {error}
-            </p>
-          ) : null}
-
-          <button
-            type="button"
-            onClick={() => void submit()}
-            disabled={pending}
-            className="tap w-full rounded-control bg-brand px-4 py-3 text-[15px] font-semibold text-on-brand hover:opacity-90 disabled:bg-line disabled:text-faint"
-          >
-            {pending ? '연결 중' : '로그인'}
-          </button>
-        </div>
+        <a
+          href="/api/v1/auth/oidc/start/google"
+          className="tap mt-7 block w-full rounded-control bg-brand px-4 py-3 text-center text-[15px] font-semibold text-on-brand hover:opacity-90"
+        >
+          Google로 계속
+        </a>
       </div>
     </div>
   );

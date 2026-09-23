@@ -29,7 +29,6 @@ import type {
   InstrumentDisplayCatalog,
   RecentRiskResult,
   RecentRiskResultList,
-  LoginResponse,
   MockBalance,
   MockBuyable,
   MockOrderRequest,
@@ -71,12 +70,8 @@ import { findCachedRagAnswer } from '@/features/rag-source/cachedAnswers';
  */
 export const api = {
   /* -------------------------------------------------------------- 인증 */
-  login(username: string, password: string): Promise<ApiResult<LoginResponse>> {
-    return apiFetch<LoginResponse>('/api/v1/auth/login', {
-      method: 'POST',
-      body: { username, password },
-      anonymous: true,
-    });
+  logout(): Promise<void> {
+    return apiFetchBare<void>('/api/v1/auth/logout', { method: 'POST' });
   },
 
   /* -------------------------------------------------------------- 상태 */

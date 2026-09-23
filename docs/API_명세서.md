@@ -2372,6 +2372,9 @@ Python은 같은 envelope의 owner/account AAD를 검증해 그 요청만의 KIS
 KIS_MOCK 계좌 probe가 성공한 뒤, 현재 계좌·revision만 CONNECTED로 전이한다.
 204는 주문 인증을 의미하지 않는다. 교체 경쟁·해제 중 상태는 거부한다.
 [연결 확인 계약](../contracts/changes/20260923-mars-mock-connection-proof.md)을 따른다.
+`DELETE /api/v1/brokerage/mock/credential`은 즉시 새 요청을 막고, 미대사 주문이 있으면
+암호문을 보존해 200 `DISCONNECTING`을 반환한다. 사용자는 대사 후 다시 눌러 204 삭제를
+확인한다. [연결 해제 계약](../contracts/changes/20260923-mars-owner-mock-disconnect.md)을 따른다.
 
 KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재동의 조건을 충족할 때만 확장한다. S1.1의 KIS 작업은 Brokerage API가 아니라 MarketDataService 내부 구현이며, 주문·정정·취소·잔고 변경을 만들지 않는다. KIS 전체 API 목록과 모의 지원 경계는 자동 생성 부록 `KIS_API_카탈로그.md`를 참조한다.
 

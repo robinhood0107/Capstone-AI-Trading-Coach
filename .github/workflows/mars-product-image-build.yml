@@ -1,0 +1,97 @@
+name: MARS product image build
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mars-image-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  product-images:
+    if: github.event.pull_request.head.ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository
+    name: MARS product image build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact promotion candidate
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Build API and shared infrastructure
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          source_sha=$(git rev-parse HEAD)
+          for part in api postgres redis; do
+            case "$part" in
+              api) file=deploy/p1/docker/decision-platform.Dockerfile ;;
+              postgres) file=deploy/p1/docker/postgres-pgvector.Dockerfile ;;
+              redis) file=deploy/p1/docker/redis.Dockerfile ;;
+            esac
+            docker buildx build --platform linux/amd64 --load \
+              --file "$file" \
+              --build-arg SOURCE_REVISION="$source_sha" \
+              --build-arg RELEASE_VERSION=0.1.0-candidate \
+              --tag "mars-candidate:$part" .
+            [[ $(docker image inspect "mars-candidate:$part" \
+              --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$source_sha" ]]
+          done
+
+      - name: Build both product web images
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          source_sha=$(git rev-parse HEAD)
+          for product in demo full; do
+            docker buildx build --platform linux/amd64 --load \
+              --file workspaces/experience-dashboard/Dockerfile \
+              --build-arg MARS_PRODUCT="$product" \
+              --build-arg SOURCE_REVISION="$source_sha" \
+              --build-arg RELEASE_VERSION=0.1.0-candidate \
+              --tag "mars-candidate:${product}-web" workspaces/experience-dashboard
+            [[ $(docker image inspect "mars-candidate:${product}-web" \
+              --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$source_sha" ]]
+            [[ $(docker image inspect "mars-candidate:${product}-web" \
+              --format '{{index .Config.Env}}') == *"NEXT_PUBLIC_MARS_PRODUCT=$product"* ]]
+          done
+
+      - name: Export candidate identities for review
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p mars-candidate
+          source_sha=$(git rev-parse HEAD)
+          python3 - "$source_sha" <<'PY' > mars-candidate/identities.json
+          import json
+          import subprocess
+          import sys
+
+          source = sys.argv[1]
+          images = {}
+          for part in ("api", "postgres", "redis", "demo-web", "full-web"):
+              image = f"mars-candidate:{part}"
+              identity = subprocess.check_output(
+                  ["docker", "image", "inspect", image, "--format", "{{.Id}}"],
+                  text=True,
+              ).strip()
+              assert identity.startswith("sha256:")
+              images[part] = {"localConfigId": identity, "productImage": image}
+          print(json.dumps({"sourceSha": source, "images": images}, sort_keys=True, indent=2))
+          PY
+          python3 -m json.tool mars-candidate/identities.json >/dev/null
+
+      - name: Upload candidate image identities
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mars-product-candidate-${{ github.sha }}
+          path: mars-candidate/identities.json
+          if-no-files-found: error
+          retention-days: 14

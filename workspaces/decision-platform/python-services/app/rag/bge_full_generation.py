@@ -254,7 +254,6 @@ class BgeFullGenerationAdminPort(Protocol):
         """attestation, prior supersede와 pointer CAS를 한 transaction으로 수행한다."""
 
 
-
 #: BGE 는 이 스택의 기본 경로가 아니다. 공개 코퍼스는 Voyage 하나로 통일했고
 #: rag_embedding_policy_state 도 voyage_only_v1 로 고정돼 있다(V178). 두 벡터 공간을
 #: 동시에 살려 두면 어느 쪽으로 답했는지 매번 따져야 하고, 질의 임베딩은 한 번만

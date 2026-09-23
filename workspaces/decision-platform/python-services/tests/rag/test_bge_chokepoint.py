@@ -18,7 +18,12 @@ from pathlib import Path
 
 import pytest
 
-from app.rag.bge_runtime import BGE_ENABLED_ENV, BgeRuntimeError, bge_enabled, load_bge_onnx_embedder
+from app.rag.bge_runtime import (
+    BGE_ENABLED_ENV,
+    BgeRuntimeError,
+    bge_enabled,
+    load_bge_onnx_embedder,
+)
 
 _APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 
@@ -32,9 +37,7 @@ def test_the_loader_refuses_while_bge_is_off(monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.parametrize("value", ["", "0", "false", "no", " "])
-def test_only_an_explicit_one_opens_the_gate(
-    monkeypatch: pytest.MonkeyPatch, value: str
-) -> None:
+def test_only_an_explicit_one_opens_the_gate(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
     monkeypatch.setenv(BGE_ENABLED_ENV, value)
     assert bge_enabled() is False
     with pytest.raises(BgeRuntimeError, match="BGE_DISABLED"):

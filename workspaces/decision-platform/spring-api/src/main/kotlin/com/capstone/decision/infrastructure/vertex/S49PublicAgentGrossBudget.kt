@@ -58,7 +58,10 @@ internal class S49PublicAgentGrossBudget(
         budget.reserveGrossUsage(reservationId, chargedOwner, source, "VERTEX", maxGrossMicrousd)
     }
 
-    private fun parseRate(raw: String, minimum: Long): Long {
+    private fun parseRate(
+        raw: String,
+        minimum: Long,
+    ): Long {
         val rate = raw.toLongOrNull() ?: error("PUBLIC_AGENT_OPERATOR_RATE_INVALID")
         check(rate in minimum..1_000_000L) { "PUBLIC_AGENT_OPERATOR_RATE_INVALID" }
         return rate

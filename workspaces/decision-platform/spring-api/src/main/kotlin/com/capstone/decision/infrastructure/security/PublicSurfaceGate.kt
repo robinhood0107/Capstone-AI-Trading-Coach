@@ -8,6 +8,8 @@ import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.Ordered
+import org.springframework.core.env.Environment
+import org.springframework.core.env.Profiles
 import org.springframework.web.filter.OncePerRequestFilter
 
 /**
@@ -42,8 +44,14 @@ internal class PublicSurfaceGateConfiguration {
     @Bean
     fun publicSurfaceGate(
         @Value("\${MARS_PUBLIC_SURFACE_MODE:LOCAL}") rawMode: String,
+        environment: Environment,
     ): FilterRegistrationBean<PublicSurfaceGate> {
         val mode = PublicSurfaceMode.valueOf(rawMode)
+        val fullProfile = environment.acceptsProfiles(Profiles.of("mars-full"))
+        val demoProfile = environment.acceptsProfiles(Profiles.of("mars-demo"))
+        require(!(fullProfile && demoProfile)) { "Only one MARS product profile can start." }
+        require(fullProfile == (mode == PublicSurfaceMode.FULL)) { "FULL mode requires the matching product profile." }
+        require(demoProfile == (mode == PublicSurfaceMode.DEMO)) { "DEMO mode requires the matching product profile." }
         return FilterRegistrationBean(PublicSurfaceGate(mode)).apply {
             order = Ordered.HIGHEST_PRECEDENCE
             addUrlPatterns("/*")

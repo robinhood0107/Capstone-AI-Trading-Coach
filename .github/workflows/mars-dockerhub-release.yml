@@ -5,22 +5,28 @@ on:
     types: [closed]
     branches: [main]
 
-permissions:
-  contents: write
-  pull-requests: read
-  checks: read
+permissions: {}
 
 concurrency:
   group: mars-dockerhub-release
   cancel-in-progress: false
 
 jobs:
-  publish:
+  build-scan-push:
     if: >-
       github.event.pull_request.merged == true &&
       github.event.pull_request.head.ref == 'develop' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    outputs:
+      sha: ${{ steps.identity.outputs.sha }}
+      version: ${{ steps.identity.outputs.version }}
+      tag: ${{ steps.identity.outputs.tag }}
+      service_ready: ${{ steps.identity.outputs.service_ready }}
     steps:
       - name: Checkout exact merged source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -29,7 +35,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify release gate and PR checks before credentials
+      - name: Verify image gate and PR checks before credentials
         id: identity
         shell: bash
         env:
@@ -44,9 +50,11 @@ jobs:
           [[ $(git ls-remote origin refs/heads/main | cut -f1) == "$MERGE_SHA" ]]
           [[ $(git rev-parse HEAD^2) == "$SOURCE_SHA" ]]
           [[ $(git status --porcelain --untracked-files=all) == '' ]]
-          [[ $(jq -r '.ready' deploy/p1/mars-release-gate.json) == true ]]
+          [[ $(jq -r '.imagePublicationReady' deploy/p1/mars-release-gate.json) == true ]]
           version=$(jq -r '.version' deploy/p1/mars-release-gate.json)
+          service_ready=$(jq -r '.serviceReady' deploy/p1/mars-release-gate.json)
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$service_ready" == true || "$service_ready" == false ]]
           # A merged PR can be allowed by repository settings even with failed checks.
           # Read its final rollup and demand the main-promotion gates explicitly.
           checks=$(gh pr view "$PR_NUMBER" --json statusCheckRollup --jq '.statusCheckRollup[] | [.name // .context, .conclusion // .state] | @tsv')
@@ -72,6 +80,7 @@ jobs:
             echo "sha=$MERGE_SHA"
             echo "version=$version"
             echo "tag=$tag"
+            echo "service_ready=$service_ready"
           } >> "$GITHUB_OUTPUT"
 
       - name: Require public Docker Hub repositories
@@ -117,7 +126,7 @@ jobs:
             [[ $(docker image inspect "mars-build:$part" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
           done
 
-      - name: Scan release images before registry login
+      - name: Scan API image before registry login
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
@@ -167,23 +176,27 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
 
-      - name: Generate per-image SBOMs
+      - name: Prepare release asset directory
+        run: mkdir -p release-assets
+
+      - name: Generate API SBOM
         uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
         with:
           image: mars-build:api
           format: spdx-json
-          output-file: mars-api.spdx.json
+          output-file: release-assets/mars-api.spdx.json
           upload-artifact: false
 
-      - name: Install Syft for remaining SBOMs
+      - name: Install Syft and generate remaining SBOMs
         uses: anchore/sbom-action/download-syft@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
 
       - name: Generate remaining SBOMs
         shell: bash
         run: |
           set -Eeuo pipefail
+          mkdir -p release-assets
           for part in postgres redis demo-web full-web; do
-            syft "docker:mars-build:$part" -o spdx-json="mars-${part}.spdx.json"
+            syft "docker:mars-build:$part" -o spdx-json="release-assets/mars-${part}.spdx.json"
           done
 
       - name: Log in to Docker Hub after checks and scans
@@ -192,16 +205,15 @@ jobs:
           username: pjjpjj111
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Push immutable demo and full image sets
-        id: push
+      - name: Push immutable demo and full image sets and verify digests
         shell: bash
         env:
           SHA: ${{ steps.identity.outputs.sha }}
           TAG: ${{ steps.identity.outputs.tag }}
         run: |
           set -Eeuo pipefail
-          mkdir -p release-build
-          printf '{"sourceSha":"%s","tag":"%s","images":{' "$SHA" "$TAG" > release-build/mars-images.json
+          mkdir -p release-assets
+          printf '{"sourceSha":"%s","tag":"%s","images":{' "$SHA" "$TAG" > release-assets/mars-images.json
           separator=''
           for product in demo full; do
             repo="pjjpjj111/mars-$product"
@@ -224,29 +236,154 @@ jobs:
               fi
               [[ $(docker image inspect "$repo@$digest" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$SHA" ]]
               printf '%s"%s-%s":{"reference":"%s","digest":"%s"}' \
-                "$separator" "$product" "$part" "$ref" "$digest" >> release-build/mars-images.json
+                "$separator" "$product" "$part" "$ref" "$digest" >> release-assets/mars-images.json
               separator=,
             done
           done
-          printf '}}\n' >> release-build/mars-images.json
-          python3 -m json.tool release-build/mars-images.json >/dev/null
+          printf '}}\n' >> release-assets/mars-images.json
+          python3 -m json.tool release-assets/mars-images.json >/dev/null
+          for product in demo full; do
+            python3 deploy/p1/render_mars_release_compose.py \
+              --product "$product" \
+              --images release-assets/mars-images.json \
+              --output "release-assets/mars-public-${product}.compose.yml"
+            if grep -E '^[[:space:]]*image:' "release-assets/mars-public-${product}.compose.yml" | grep -v '@sha256:'; then
+              echo MARS_RELEASE_COMPOSE_UNPINNED_IMAGE >&2
+              exit 1
+            fi
+          done
 
-      - name: Publish digest manifest and SBOMs as a GitHub Release
+      - name: Upload verified release assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mars-release-assets-${{ steps.identity.outputs.tag }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-release:
+    needs: build-scan-push
+    if: >-
+      needs.build-scan-push.result == 'success' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.ref == 'develop' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      checks: read
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Checkout exact merged source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.build-scan-push.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download image, Compose, and SBOM assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: mars-release-assets-${{ needs.build-scan-push.outputs.tag }}
+          path: release-assets
+
+      - name: Recheck release identity, assets, and service readiness boundary
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.identity.outputs.tag }}
-          SHA: ${{ steps.identity.outputs.sha }}
+          SHA: ${{ needs.build-scan-push.outputs.sha }}
+          VERSION: ${{ needs.build-scan-push.outputs.version }}
+          TAG: ${{ needs.build-scan-push.outputs.tag }}
+          SERVICE_READY: ${{ needs.build-scan-push.outputs.service_ready }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -Eeuo pipefail
+          [[ $(git rev-parse HEAD) == "$SHA" ]]
+          [[ $(git ls-remote origin refs/heads/main | cut -f1) == "$SHA" ]]
+          [[ $(git rev-parse HEAD^2) == "${{ github.event.pull_request.head.sha }}" ]]
+          [[ $(jq -r '.imagePublicationReady' deploy/p1/mars-release-gate.json) == true ]]
+          [[ $(jq -r '.serviceReady' deploy/p1/mars-release-gate.json) == "$SERVICE_READY" ]]
+          [[ $(jq -r '.version' deploy/p1/mars-release-gate.json) == "$VERSION" ]]
+          [[ $(git status --porcelain --untracked-files=all) == '' ]]
+          checks=$(gh pr view "$PR_NUMBER" --json statusCheckRollup --jq '.statusCheckRollup[] | [.name // .context, .conclusion // .state] | @tsv')
+          for check in 'Repo hygiene' 'Kotlin ktlint and build' 'Python quality gates' \
+                       'Contract schema validation' 'Spring OpenAPI drift' 'Lint & Static Analysis' \
+                       'P1 full-app security gates' 'MARS product image build'; do
+            printf '%s\n' "$checks" | awk -F '\t' -v name="$check" '$1==name && $2=="SUCCESS" {ok=1} END {exit !ok}'
+          done
+          [[ $(jq -r '.sourceSha' release-assets/mars-images.json) == "$SHA" ]]
+          [[ $(jq -r '.tag' release-assets/mars-images.json) == "$TAG" ]]
+          for asset in mars-images.json mars-public-demo.compose.yml mars-public-full.compose.yml \
+                       mars-api.spdx.json mars-postgres.spdx.json mars-redis.spdx.json \
+                       mars-demo-web.spdx.json mars-full-web.spdx.json; do
+            [[ -s "release-assets/$asset" ]]
+          done
+          python3 - "$SHA" "$TAG" release-assets/mars-images.json \
+              release-assets/mars-public-demo.compose.yml release-assets/mars-public-full.compose.yml <<'PY'
+          import json
+          from pathlib import Path
+          import re
+          import sys
+
+          sha, tag = sys.argv[1:3]
+          manifest = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
+          assert manifest["sourceSha"] == sha and manifest["tag"] == tag
+          assert set(manifest["images"]) == {
+              f"{product}-{part}"
+              for product in ("demo", "full")
+              for part in ("api", "web", "postgres", "redis")
+          }
+          digest = re.compile(r"^sha256:[0-9a-f]{64}$")
+          for product in ("demo", "full"):
+              for part in ("api", "web", "postgres", "redis"):
+                  entry = manifest["images"][f"{product}-{part}"]
+                  assert entry["reference"] == f"pjjpjj111/mars-{product}:{tag}-{part}"
+                  assert digest.fullmatch(entry["digest"])
+              compose = Path(sys.argv[3 + (1 if product == "demo" else 2)]).read_text(encoding="utf-8")
+              image_lines = [line for line in compose.splitlines() if line.lstrip().startswith("image:")]
+              assert image_lines and all("@sha256:" in line for line in image_lines)
+              assert all(f"pjjpjj111/mars-{product}@sha256:" in line for line in image_lines)
+          PY
+
+      - name: Publish image digest manifest, Compose files, and SBOMs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.build-scan-push.outputs.sha }}
+          TAG: ${{ needs.build-scan-push.outputs.tag }}
+          SERVICE_READY: ${{ needs.build-scan-push.outputs.service_ready }}
         run: |
           set -Eeuo pipefail
           [[ $(git ls-remote origin refs/heads/main | cut -f1) == "$SHA" ]]
+          notes_file=$(mktemp /tmp/mars-release-notes.XXXXXX)
+          trap 'rm -f -- "$notes_file"' EXIT
+          cat > "$notes_file" <<EOF
+          Merged develop source: $SHA
+
+          The attached image manifest records Docker Hub digests for the demo and full image sets.
+          The attached Compose files pin every image by digest.
+          Service readiness: $SERVICE_READY. No NAS deployment or N-user capacity test is included.
+          A false service readiness value means these image artifacts are published for review and
+          controlled side-loading; it does not claim a live site, a natural KIS order, or measured
+          production capacity.
+          EOF
           gh release create "$TAG" \
             --target "$SHA" \
             --title "MARS $TAG" \
-            --notes "Merged develop source $SHA. Demo and full image digests are in mars-images.json. NAS rollout is manual." \
-            release-build/mars-images.json \
-            mars-api.spdx.json mars-postgres.spdx.json mars-redis.spdx.json \
-            mars-demo-web.spdx.json mars-full-web.spdx.json
+            --notes-file "$notes_file" \
+            release-assets/mars-images.json \
+            release-assets/mars-public-demo.compose.yml \
+            release-assets/mars-public-full.compose.yml \
+            release-assets/mars-api.spdx.json \
+            release-assets/mars-postgres.spdx.json \
+            release-assets/mars-redis.spdx.json \
+            release-assets/mars-demo-web.spdx.json \
+            release-assets/mars-full-web.spdx.json
           mkdir -p release-readback
-          gh release download "$TAG" --pattern mars-images.json --dir release-readback
-          cmp release-build/mars-images.json release-readback/mars-images.json
+          gh release download "$TAG" --dir release-readback
+          for asset in mars-images.json mars-public-demo.compose.yml mars-public-full.compose.yml \
+                       mars-api.spdx.json mars-postgres.spdx.json mars-redis.spdx.json \
+                       mars-demo-web.spdx.json mars-full-web.spdx.json; do
+            cmp "release-assets/$asset" "release-readback/$asset"
+          done

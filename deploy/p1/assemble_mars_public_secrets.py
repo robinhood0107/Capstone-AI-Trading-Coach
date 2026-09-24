@@ -76,6 +76,8 @@ EXTERNAL_FULL = frozenset(
         "MARS_VERTEX_PROJECT_ID",
         "GOOGLE_OIDC_CLIENT_ID",
         "GOOGLE_OIDC_CLIENT_SECRET",
+        "KAKAO_OAUTH_CLIENT_ID",
+        "KAKAO_OAUTH_CLIENT_SECRET",
         "VOYAGE_API_KEY",
     }
 )
@@ -181,7 +183,13 @@ def main() -> int:
     if args.product == "full":
         for key, filename in FULL_FROM_BASE.items():
             merged[key] = env_file(base / filename)[key]
-        for key in ("GOOGLE_OIDC_CLIENT_ID", "GOOGLE_OIDC_CLIENT_SECRET", "VOYAGE_API_KEY"):
+        for key in (
+            "GOOGLE_OIDC_CLIENT_ID",
+            "GOOGLE_OIDC_CLIENT_SECRET",
+            "KAKAO_OAUTH_CLIENT_ID",
+            "KAKAO_OAUTH_CLIENT_SECRET",
+            "VOYAGE_API_KEY",
+        ):
             merged[key] = external[key]
         # No person is an admin before the operator verifies a real Google sub.
         merged["GOOGLE_OIDC_ADMIN_SUBJECT_SHA256"] = external.get(

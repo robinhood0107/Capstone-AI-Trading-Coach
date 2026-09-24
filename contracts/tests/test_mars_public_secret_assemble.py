@@ -53,6 +53,8 @@ class MarsPublicSecretAssembleTest(unittest.TestCase):
             b"MARS_VERTEX_PROJECT_ID=test-project\n"
             b"GOOGLE_OIDC_CLIENT_ID=example-client\n"
             b"GOOGLE_OIDC_CLIENT_SECRET=example-secret\n"
+            b"KAKAO_OAUTH_CLIENT_ID=example-kakao-client\n"
+            b"KAKAO_OAUTH_CLIENT_SECRET=example-kakao-secret\n"
             b"VOYAGE_API_KEY=example-voyage\n",
         )
 
@@ -117,7 +119,14 @@ class MarsPublicSecretAssembleTest(unittest.TestCase):
             full_keys,
             demo_keys
             | set(MODULE.FULL_FROM_BASE)
-            | {"GOOGLE_OIDC_CLIENT_ID", "GOOGLE_OIDC_CLIENT_SECRET", "VOYAGE_API_KEY", "GOOGLE_OIDC_ADMIN_SUBJECT_SHA256"},
+            | {
+                "GOOGLE_OIDC_CLIENT_ID",
+                "GOOGLE_OIDC_CLIENT_SECRET",
+                "KAKAO_OAUTH_CLIENT_ID",
+                "KAKAO_OAUTH_CLIENT_SECRET",
+                "VOYAGE_API_KEY",
+                "GOOGLE_OIDC_ADMIN_SUBJECT_SHA256",
+            },
         )
         self.assertEqual((full_dir / "mars-public-full.env").stat().st_mode & 0o777, 0o640)
         self.assertEqual((self.release / "full-kek/brokerage-kek-v1.key").stat().st_mode & 0o777, 0o600)

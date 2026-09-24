@@ -1,6 +1,6 @@
 package com.capstone.decision.infrastructure.security
 
-import com.capstone.decision.api.auth.GoogleOidcExchangeController
+import com.capstone.decision.api.auth.SocialLoginExchangeController
 import com.capstone.decision.api.common.ApiException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -14,34 +14,38 @@ import java.security.MessageDigest
 import java.time.OffsetDateTime
 import java.util.HexFormat
 
-class GoogleOidcHandoffTest {
+class SocialLoginHandoffTest {
     @Test
     fun `only the configured exact Google subject receives operator eligibility`() {
         val hash =
             HexFormat
                 .of()
                 .formatHex(MessageDigest.getInstance("SHA-256").digest("subject-A".toByteArray()))
-        val properties = GoogleOidcProperties("https://mars.example.test", hash)
+        val properties = FullSocialLoginProperties("https://mars.example.test", hash)
         assertEquals("https://mars.example.test", properties.validatedOrigin())
-        assertTrue(properties.isOperatorSubject("subject-A"))
-        assertFalse(properties.isOperatorSubject("subject-B"))
+        assertTrue(properties.isGoogleAdminSubject("subject-A"))
+        assertFalse(properties.isGoogleAdminSubject("subject-B"))
         assertThrows(IllegalArgumentException::class.java) {
-            GoogleOidcProperties("http://mars.example.test", hash).validatedOrigin()
+            FullSocialLoginProperties("http://mars.example.test", hash).validatedOrigin()
         }
     }
 
     @Test
     fun `verified subject reaches one use exchange with no token in the redirect URL`() {
         val repository = RecordingRepository()
-        val handoff = handoff(repository)
+        val handoff = SocialLoginHandoff(repository, jwtService(), jwtProperties())
         val session = MockHttpSession()
-        handoff.stage(GoogleOidcHandoff.GOOGLE_ISSUER, "subject-A", false, session)
+        handoff.stage(SocialLoginHandoff.GOOGLE_ISSUER, "subject-A", false, session)
         assertThrows(IllegalArgumentException::class.java) {
-            handoff.stage(GoogleOidcHandoff.GOOGLE_ISSUER, "subject-A", false, session)
+            handoff.stage(SocialLoginHandoff.GOOGLE_ISSUER, "subject-A", false, session)
         }
         assertEquals(1, repository.calls)
 
-        val controller = GoogleOidcExchangeController(handoff, GoogleOidcProperties("https://mars.example.test", "a".repeat(64)))
+        val controller =
+            SocialLoginExchangeController(
+                handoff,
+                FullSocialLoginProperties("https://mars.example.test", "a".repeat(64)),
+            )
         val rejected =
             MockHttpServletRequest("POST", "/api/v1/auth/oidc/exchange").apply {
                 addHeader("Origin", "https://other.example.test")
@@ -60,14 +64,20 @@ class GoogleOidcHandoffTest {
         assertTrue(result.data?.accessToken?.isNotBlank() == true)
         assertEquals("no-store", response.getHeader("Cache-Control"))
         assertThrows(IllegalStateException::class.java) { handoff.consume(session) }
+
+        val kakaoSession = MockHttpSession()
+        handoff.stage(SocialLoginHandoff.KAKAO_ISSUER, "123456", false, kakaoSession)
+        assertEquals(2, repository.calls)
+        assertThrows(IllegalArgumentException::class.java) {
+            handoff.stage(SocialLoginHandoff.KAKAO_ISSUER, "123456", true, MockHttpSession())
+        }
     }
 
-    private fun handoff(repository: GoogleOidcSessionRepository): GoogleOidcHandoff {
-        val jwtProperties = JwtProperties(secret = "j" + "s".repeat(63), issuer = "test", audience = "test")
-        return GoogleOidcHandoff(repository, JwtService(jwtProperties, EmptyUserSecurityRepository), jwtProperties)
-    }
+    private fun jwtProperties() = JwtProperties(secret = "j" + "s".repeat(63), issuer = "test", audience = "test")
 
-    private class RecordingRepository : GoogleOidcSessionRepository {
+    private fun jwtService() = JwtService(jwtProperties(), EmptyUserSecurityRepository)
+
+    private class RecordingRepository : SocialLoginSessionRepository {
         var calls = 0
 
         override fun createSession(
@@ -77,8 +87,8 @@ class GoogleOidcHandoffTest {
             ttlSeconds: Int,
         ): AuthenticatedAccount {
             calls++
-            assertEquals(GoogleOidcHandoff.GOOGLE_ISSUER, issuer)
-            assertEquals("subject-A", subject)
+            assertTrue(issuer in setOf(SocialLoginHandoff.GOOGLE_ISSUER, SocialLoginHandoff.KAKAO_ISSUER))
+            assertEquals(if (issuer == SocialLoginHandoff.GOOGLE_ISSUER) "subject-A" else "123456", subject)
             assertFalse(operatorSubject)
             assertEquals(43_200, ttlSeconds)
             return AuthenticatedAccount(

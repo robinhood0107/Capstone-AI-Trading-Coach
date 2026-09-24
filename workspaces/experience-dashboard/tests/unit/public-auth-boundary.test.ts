@@ -31,6 +31,7 @@ test('FULL rejects password and demo APIs while LOCAL keeps its private login', 
     assert.equal(middleware(request('/api/v1/auth/login', 'POST')).status, 404);
     assert.equal(middleware(request('/api/v1/demo/agent/ask', 'POST')).status, 404);
     assert.equal(middleware(request('/api/v1/auth/oidc/start/google')).status, 200);
+    assert.equal(middleware(request('/api/v1/auth/oidc/start/kakao')).status, 200);
     delete process.env.NEXT_PUBLIC_MARS_PRODUCT;
     assert.equal(middleware(request('/api/v1/auth/login', 'POST')).status, 200);
   } finally {

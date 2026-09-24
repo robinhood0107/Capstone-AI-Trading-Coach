@@ -266,10 +266,10 @@ class OwnerMockCredentialCertifier:
         )
         if snapshot is None:
             self._execution_reader.require_no_open_order(
-                        reference=reference,
-                        start=window_start,
-                        end=window_start,
-                        recent=recent,
+                reference=reference,
+                start=window_start,
+                end=window_start,
+                recent=recent,
             )
             return self._result("RECOVERY_REQUIRED", "TEST_ORDER_UNCERTAIN")
         if snapshot.cumulative_quantity > 0 or snapshot.rejected:
@@ -339,7 +339,9 @@ class OwnerMockCredentialCertifier:
     def _quote_counts(self) -> dict[str, int]:
         summary = self._quote_accounting.snapshot(
             completed_at=max(self._now(), datetime.now(UTC)),
-            status=CollectionRunStatus.SUCCESS if self._quote_succeeded else CollectionRunStatus.FAILED,
+            status=CollectionRunStatus.SUCCESS
+            if self._quote_succeeded
+            else CollectionRunStatus.FAILED,
         )
         counts = {item.channel.value: item.attempts for item in summary.physical_attempts}
         return {"marketData": counts.get("marketData", 0), "tokenP": counts.get("tokenP", 0)}

@@ -203,7 +203,9 @@ def test_certification_rpc_uses_owner_envelope_and_contains_no_order_parameters(
             session_date: str,
             recovery: bool,
         ) -> OwnerMockCertificationResult:
-            observed.append((envelope.owner_user_id, owner_user_id, account_id, session_date, recovery))
+            observed.append(
+                (envelope.owner_user_id, owner_user_id, account_id, session_date, recovery)
+            )
             return OwnerMockCertificationResult(
                 state="PASS",
                 certification_id=certification_id,

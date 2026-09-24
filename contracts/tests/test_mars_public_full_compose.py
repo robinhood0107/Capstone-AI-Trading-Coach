@@ -45,6 +45,11 @@ class PublicFullComposeTest(unittest.TestCase):
         self.assertEqual(api["environment"]["BROKERAGE_GRPC_ENABLED"], "true")
         self.assertEqual(api["environment"]["P1_AUTOMATION_RUNTIME_ENABLED"], "true")
         self.assertEqual(api["environment"]["RAG_V2_GRPC_ENABLED"], "true")
+        self.assertEqual(api["environment"]["RAG_V2_VERTEX_ENABLED"], "true")
+        self.assertEqual(
+            services["rag-runtime-seed"]["environment"]["RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED"],
+            "true",
+        )
         self.assertEqual(api["environment"]["MARS_BROKERAGE_KEK_DIRECTORY"], "/run/brokerage-kek")
         self.assertEqual(services["migrate"]["environment"]["MARS_PUBLIC_SURFACE_MODE"], "FULL")
         self.assertEqual(

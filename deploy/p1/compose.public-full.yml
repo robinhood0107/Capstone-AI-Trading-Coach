@@ -145,6 +145,55 @@ services:
       retries: 20
     networks: [full-data]
 
+  market-data-daily:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "market-data-daily"]
+    command: ["sh", "-c", "while :; do python -m app.data.market_data.yfinance_daily_cli || true; sleep 3600; done"]
+    environment:
+      DECISION_SOURCE_WRITER_OFFLINE_TARGET: local
+    secrets: [market_data_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    mem_limit: 2g
+    cpus: 2.0
+    <<: *app-security
+    networks: [full-data, full-web]
+
+  world-news-minute:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "world-news"]
+    command: ["python", "-m", "app.data.news.gdelt_collector_cli", "--loop", "--interval-seconds", "900", "--lookback-hours", "24", "--max-files", "40", "--physical-cap", "40"]
+    environment:
+      GDELT_WORLD_NEWS_ENABLED: "true"
+      DECISION_SOURCE_WRITER_OFFLINE_TARGET: local
+    secrets: [market_data_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    mem_limit: 2g
+    cpus: 2.0
+    <<: *app-security
+    networks: [full-data, full-web]
+
+  disclosure-collector:
+    profiles: [collectors]
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "disclosure-collector"]
+    command: ["python", "-m", "app.data.opendart.disclosure_event_collector_cli"]
+    environment:
+      OPENDART_OFFLINE: "false"
+      OPENDART_DAILY_CALL_LIMIT: "${OPENDART_DAILY_CALL_LIMIT:-20000}"
+      OPENDART_DAILY_CALL_BUDGET: "${OPENDART_DAILY_CALL_BUDGET:-2000}"
+      OPENDART_MAX_CALLS_PER_RUN: "${OPENDART_MAX_CALLS_PER_RUN:-600}"
+      OPENDART_MAX_SYMBOLS_PER_RUN: "${OPENDART_MAX_SYMBOLS_PER_RUN:-31}"
+    secrets: [disclosure_collector_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    mem_limit: 2g
+    cpus: 2.0
+    <<: *app-security
+    restart: "no"
+    networks: [full-data, full-web]
+
   api:
     image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "public-full"]
@@ -261,6 +310,8 @@ secrets:
   return_inference_env: {file: "${MARS_FULL_SECRETS_DIR}/return-inference.env"}
   rag_history_kek: {file: "${MARS_FULL_SECRETS_DIR}/rag-history-kek-v1.key"}
   vertex_service_account: {file: "${MARS_FULL_SECRETS_DIR}/vertex-service-account.json"}
+  market_data_env: {file: "${MARS_FULL_SECRETS_DIR}/market-data.env"}
+  disclosure_collector_env: {file: "${MARS_FULL_SECRETS_DIR}/disclosure-collector.env"}
 
 volumes:
   full-postgres: {}

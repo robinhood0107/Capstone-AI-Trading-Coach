@@ -1821,9 +1821,10 @@ enabled target인데 이 header가 없을 때의 동작은 자동 활성화 설�
   운영자가 저술할 때와 똑같이 강제된다. 바뀌는 것은 승인의 위치뿐이다 — 호출마다의 사람 승인이
   배포 시점의 정책 승인으로 내려간다.
 
-자동 활성화에서 사람이 곧 호출 한도이던 자리를 대신하려고 소유자별 하루 생성 상한을 정책에서
-읽는다. 상한에 닿으면 생성만 닫히고(`GENERATION_UNAVAILABLE`) 검색 경로는 그대로 산다. 남은 횟수는
-`GET /api/v2/rag/corpus-status`가 알려 준다.
+자동 활성화 정책은 요청별 계약·동의·모델·evidence·기술 한계를 검증한다. 생성 요청 예약 수는
+`GET /api/v2/rag/corpus-status`에 best-effort 계측값으로 표시하며, 상한으로 호출을 막지 않는다.
+계측 DB 조회가 실패하면 사용량 필드만 `null`이고 Vertex 호출은 계속 가능하다. provider 자체의
+계정·무료 사용량 제한은 provider 응답에 따른다.
 이 control plane은 provider 호출을 만들지 않으며 `EXTERNAL_AI_RAG_V2` 동의만으로 provider outbound가
 활성화되지 않는다.
 
@@ -1865,15 +1866,16 @@ private overlay state, 0~100 progress, active embedding profile, target generato
 code만 반환한다. 파일명·로컬 경로·내부 접근 정보·무결성 검증값은 노출하지 않는다. 현재 OA112
 metadata validation은 `CORE_READY`의 전제일 뿐 `FULL_READY` 증거가 아니다.
 
-자동 활성화가 켜져 있으면 생성형 답변의 오늘 상한과 남은 횟수를 함께 반환한다. 꺼져 있으면 세 필드는
-모두 `null`이고, 그 배포에서 화면은 검색 전용으로 동작한다. 세 값은 개수일 뿐이라 질문·근거·비용
-내역을 담지 않는다.
+자동 활성화가 켜져 있으면 오늘 생성 요청 예약 수를 best-effort로 반환한다. 이 값은 계측 표시 전용이며
+한도나 생성 가능 여부를 뜻하지 않는다. `generationDailyCap`과 `generationRemaining`은 기존 wire
+형태와의 호환을 위해 항상 `null`이다. 자동 활성화가 꺼져 있거나 계측 조회에 실패하면 사용량도
+`null`이다. 질문·근거·비용 내역은 담지 않는다.
 
 ```json
 {
   "failureCode": null,
-  "generationDailyCap": 50,
-  "generationRemaining": 47,
+  "generationDailyCap": null,
+  "generationRemaining": null,
   "generationUsedToday": 3,
   "privateOverlayState": "BUILDING",
   "progressPercent": 42,

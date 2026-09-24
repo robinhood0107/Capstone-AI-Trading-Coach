@@ -175,20 +175,10 @@ function SettingsForm({ initial }: { initial: SettingsView }) {
 }
 
 function UsageLine({ view }: { view: SettingsView }) {
-  if (view.effectiveDailyCap === null) {
-    return (
-      <p className="mt-3 text-xs text-muted">
-        생성이 아직 열려 있지 않아 오늘 사용량이 없습니다. 검색과 인용만 동작합니다.
-      </p>
-    );
-  }
   return (
     <p className="mt-3 text-xs text-muted">
-      오늘 {view.usedToday === null ? '집계 없음' : `${view.usedToday}회 사용`},{' '}
-      {view.remaining === null ? '잔여 집계 없음' : `${view.remaining}회 남음`} (적용 중인 상한{' '}
-      {view.effectiveDailyCap}회).
-      {view.effectiveDailyCap !== view.dailyGenerateCallCap &&
-        ' 배포 정책이 더 좁은 상한을 쓰고 있습니다.'}
+      Vertex 생성 요청 예약 계측: {view.usedToday === null ? '집계 없음' : `${view.usedToday}회`}. 이 계측은
+      provider 호출을 제한하지 않습니다.
     </p>
   );
 }

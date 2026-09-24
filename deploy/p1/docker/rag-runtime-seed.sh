@@ -17,10 +17,8 @@ for rel in artifacts/voyage-context-4/tokenizer.json control/pre-s5-voyage-query
   copied=$((copied + 1))
 done
 
-# Vertex 자동 활성화 정책. 상한은 운영자가 정하는 값이라 이미지에 굽지 않고 .env 에서 만든다.
-# 켜 두고 정책이 없으면 부팅이 닫히므로(상한 없는 자동 호출보다 안 뜨는 편이 낫다),
-# 레포 없는 서버에서는 여기서 만들어야 Agent 가 산다. 승인 증거 해시는 실제 파일에서 계산해
-# 상수 복사보다 강하게 묶는다.
+# Vertex 자동 활성화 정책. 누적 사용량은 계측만 하고, 정책은 요청 단위 승인·기술 경계만 둔다.
+# 승인 증거 해시는 실제 파일에서 계산해 상수 복사보다 강하게 묶는다.
 policy=$root/control/pre-s5-vertex-auto-activation-policy.json
 if [ "${RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED:-false}" = true ] && [ ! -f "$policy" ]; then
   account=/run/secrets/vertex_service_account
@@ -35,7 +33,6 @@ if [ "${RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED:-false}" = true ] && [ ! -f "$poli
   "contractId": "pre-s5-vertex-auto-activation-policy/v1",
   "projectId": "${P1_VERTEX_PROJECT_ID}",
   "operator": "${P1_VERTEX_OPERATOR:-auto-activation}",
-  "dailyGenerateCallCap": ${P1_VERTEX_DAILY_GENERATE_CALL_CAP:-50},
   "inputTokenCap": ${P1_VERTEX_INPUT_TOKEN_CAP:-60512},
   "outputTokenCap": ${P1_VERTEX_OUTPUT_TOKEN_CAP:-8192},
   "inputByteCap": ${P1_VERTEX_INPUT_BYTE_CAP:-60000},

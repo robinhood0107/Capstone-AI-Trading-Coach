@@ -11,12 +11,17 @@ import com.capstone.decision.application.brokerage.BrokerageGatewaySubmitRequest
 import com.capstone.decision.application.brokerage.BrokerageGatewaySubmitResult
 import com.capstone.decision.application.brokerage.BrokerageUnavailableException
 import com.capstone.decision.application.brokerage.MockBalancePositionProjection
+import com.capstone.decision.application.brokerage.MockCredentialCertificationPort
+import com.capstone.decision.application.brokerage.MockCredentialCertificationProof
+import com.capstone.decision.application.brokerage.MockCredentialCertificationStatus
 import com.capstone.decision.application.brokerage.MockCredentialConnectionPort
 import com.capstone.decision.contract.v1.BoundMockCredentialEnvelope
 import com.capstone.decision.contract.v1.BrokerageServiceGrpc
 import com.capstone.decision.contract.v1.CancelMockCashOrderRequest
+import com.capstone.decision.contract.v1.CertifyMockCredentialRequest
 import com.capstone.decision.contract.v1.GetMockBalanceRequest
 import com.capstone.decision.contract.v1.GetMockBuyableRequest
+import com.capstone.decision.contract.v1.MockCredentialCertificationState
 import com.capstone.decision.contract.v1.SubmitMockCashOrderRequest
 import com.capstone.decision.contract.v1.VerifyMockConnectionRequest
 import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
@@ -47,6 +52,7 @@ class GrpcBrokerageAdapter(
     private val credentialProvider: ObjectProvider<MockCredentialSettingsService>,
 ) : BrokerageGatewayPort,
     MockCredentialConnectionPort,
+    MockCredentialCertificationPort,
     AutoCloseable {
     private val channel: ManagedChannel
     private val circuitBreaker = circuitBreakerRegistry.circuitBreaker(properties.circuitBreakerName)
@@ -261,6 +267,78 @@ class GrpcBrokerageAdapter(
         }
     }
 
+    override fun certify(
+        requestId: String,
+        ownerUserId: String,
+        accountId: String,
+        certificationId: String,
+        sessionDate: String,
+        recovery: Boolean,
+    ): MockCredentialCertificationProof =
+        circuitBreaker.executeSupplier {
+            val builder =
+                CertifyMockCredentialRequest
+                    .newBuilder()
+                    .setRequestId(requestId)
+                    .setOwnerUserId(ownerUserId)
+                    .setAccountId(accountId)
+                    .setCertificationId(certificationId)
+                    .setSessionDate(sessionDate)
+                    .setRecovery(recovery)
+            boundCredential(ownerUserId, accountId, setOf("CONNECTED"))
+                ?.let { builder.setCredential(it) }
+            val request = builder.build()
+            requireBoundedRequest(request.serializedSize)
+            try {
+                val response = stub().certifyMockCredential(request)
+                val status =
+                    when (response.state) {
+                        MockCredentialCertificationState.MOCK_CREDENTIAL_CERTIFICATION_PASS ->
+                            MockCredentialCertificationStatus.PASS
+                        MockCredentialCertificationState.MOCK_CREDENTIAL_CERTIFICATION_FAILED ->
+                            MockCredentialCertificationStatus.FAILED
+                        MockCredentialCertificationState.MOCK_CREDENTIAL_CERTIFICATION_RECOVERY_REQUIRED ->
+                            MockCredentialCertificationStatus.RECOVERY_REQUIRED
+                        else -> throw BrokerageUnavailableException(
+                            "KIS_MOCK certification response had an unknown state.",
+                        )
+                    }
+                if (
+                    response.accountId != accountId ||
+                    response.certificationId != certificationId ||
+                    !SESSION_DATE.matches(response.sessionDate) ||
+                    response.quoteCalls !in 0..1 ||
+                    response.brokerageCalls !in 0..7 ||
+                    response.tokenCalls !in 0..1 ||
+                    response.failureCode !in SAFE_CERTIFICATION_FAILURES ||
+                    (
+                        status == MockCredentialCertificationStatus.PASS &&
+                            (
+                                !HASH.matches(response.receiptSha256) ||
+                                    response.quoteCalls != 1 ||
+                                    response.brokerageCalls != 7
+                            )
+                    ) ||
+                    (status != MockCredentialCertificationStatus.PASS && response.receiptSha256.isNotEmpty())
+                ) {
+                    throw BrokerageUnavailableException("KIS_MOCK certification response violated its contract.")
+                }
+                MockCredentialCertificationProof(
+                    accountId = response.accountId,
+                    certificationId = response.certificationId,
+                    status = status,
+                    receiptSha256 = response.receiptSha256,
+                    sessionDate = response.sessionDate,
+                    quoteCalls = response.quoteCalls,
+                    brokerageCalls = response.brokerageCalls,
+                    tokenCalls = response.tokenCalls,
+                    failureCode = response.failureCode,
+                )
+            } catch (exception: StatusRuntimeException) {
+                throw mapStatus(exception)
+            }
+        }
+
     private fun stub(): BrokerageServiceGrpc.BrokerageServiceBlockingStub =
         BrokerageServiceGrpc
             .newBlockingStub(channel)
@@ -337,6 +415,19 @@ class GrpcBrokerageAdapter(
             Metadata.Key.of("x-decision-grpc-auth", Metadata.ASCII_STRING_MARSHALLER)
         val HASH = Regex("^[0-9a-f]{64}$")
         val SYMBOL = Regex("^[0-9]{6}$")
+        val SESSION_DATE = Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
         val CANCEL_STATUSES = setOf("CANCEL_REQUESTED", "CANCELLED")
+        val SAFE_CERTIFICATION_FAILURES =
+            setOf(
+                "",
+                "MARKET_CLOSED",
+                "QUOTE_INVALID",
+                "BUYABLE_UNAVAILABLE",
+                "PROVIDER_FAILED",
+                "TEST_ORDER_RECOVERED",
+                "TEST_ORDER_UNCERTAIN",
+                "EXECUTION_FILLED",
+                "BALANCE_CHANGED",
+            )
     }
 }

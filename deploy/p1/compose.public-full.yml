@@ -102,7 +102,7 @@ services:
       P1_RAG_RUNTIME_DIR_MOUNT: /run/rag-runtime
       P1_VERTEX_PROJECT_ID: "${MARS_VERTEX_PROJECT_ID:?set Vertex project}"
       VERTEX_MODEL_ID: "${MARS_VERTEX_MODEL_ID:-gemini-3.5-flash}"
-      RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED: "false"
+      RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED: "true"
     secrets: [vertex_service_account]
     volumes: [full-rag-runtime:/run/rag-runtime]
     <<: *app-security
@@ -179,7 +179,7 @@ services:
       S4_9_RUNTIME_VOYAGE_QUERY_ENABLED: "true"
       P1_RAG_RUNTIME_DIR_MOUNT: /run/rag-runtime
       CAPSTONE_RAG_LOCAL_ROOT: /run/rag-runtime
-      RAG_V2_VERTEX_ENABLED: "false"
+      RAG_V2_VERTEX_ENABLED: "true"
       S4_9_VOYAGE_TOKENIZER_SHA256: "${P1_RAG_V2_TOKENIZER_SHA256:-c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539}"
       KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP: "1"
       KIS_BROKERAGE_PHYSICAL_CAP: "20"

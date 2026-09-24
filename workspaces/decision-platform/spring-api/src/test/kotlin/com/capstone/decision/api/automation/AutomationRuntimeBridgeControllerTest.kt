@@ -6,6 +6,7 @@ import com.capstone.decision.application.automation.AutomationEvidenceService
 import com.capstone.decision.application.brokerage.BrokerageService
 import com.capstone.decision.application.brokerage.MockBalanceProjection
 import com.capstone.decision.application.decision.DecisionService
+import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
 import com.capstone.decision.infrastructure.security.DemoRole
 import com.capstone.decision.infrastructure.security.UserSecurityActorRecord
 import com.capstone.decision.infrastructure.security.UserSecurityRepository
@@ -15,12 +16,14 @@ import io.mockk.verify
 import jakarta.servlet.http.HttpServletRequest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.ObjectProvider
 import java.time.Instant
 
 class AutomationRuntimeBridgeControllerTest {
     private val decisionService = mockk<DecisionService>()
     private val brokerageService = mockk<BrokerageService>()
     private val users = mockk<UserSecurityRepository>()
+    private val mockCredentials = mockk<ObjectProvider<MockCredentialSettingsService>>(relaxed = true)
     private val evidenceService = mockk<AutomationEvidenceService>()
     private val request = mockk<HttpServletRequest>()
     private val controller =
@@ -31,6 +34,7 @@ class AutomationRuntimeBridgeControllerTest {
             BrokerageRequestParser(),
             evidenceService,
             users,
+            mockCredentials,
             SECRET,
         )
 

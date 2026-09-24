@@ -20,7 +20,6 @@ class PublicDemoComposeTest(unittest.TestCase):
             **os.environ,
             "MARS_DEMO_SECRET_GID": "1000",
             "MARS_DEMO_TAG": "test-source-api",
-            "MARS_DEMO_AI_DAILY_HARD_CAP_USD": "0.20",
             "MARS_VERTEX_MODEL_ID": "test-model",
             "MARS_DEMO_SECRETS_DIR": "/tmp/mars-demo-contract-secrets",
         }

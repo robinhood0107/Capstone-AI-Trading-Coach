@@ -61,8 +61,6 @@ internal class PublicSurfaceGate(
                     "PUT" to "/api/v1/brokerage/mock/credential",
                     "DELETE" to "/api/v1/brokerage/mock/credential",
                     "POST" to "/api/v1/brokerage/mock/credential/connect",
-                    "GET" to "/api/v1/admin/ai-budget",
-                    "PUT" to "/api/v1/admin/ai-budget",
                     -> true
                     else ->
                         false
@@ -85,8 +83,12 @@ internal class PublicSurfaceGate(
                     else -> FULL_AUTOMATION_RUN_DETAIL.matches(request.requestURI) && request.method == "GET"
                 }
         if (
-            mode != PublicSurfaceMode.LOCAL && !health && !fullAllowed && !fullAgentAllowed &&
-            !fullAutomationAllowed && !demoAllowed
+            mode != PublicSurfaceMode.LOCAL &&
+            !health &&
+            !fullAllowed &&
+            !fullAgentAllowed &&
+            !fullAutomationAllowed &&
+            !demoAllowed
         ) {
             response.sendError(HttpServletResponse.SC_NOT_FOUND)
             return

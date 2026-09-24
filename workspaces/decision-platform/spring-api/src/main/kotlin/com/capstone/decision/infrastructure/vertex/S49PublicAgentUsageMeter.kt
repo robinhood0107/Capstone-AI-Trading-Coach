@@ -9,17 +9,17 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
 /**
- * The Kotlin host owns the permit, so it must reserve the operator's worst-case
- * list-price share before Python can open a provider socket. No prompt text is stored.
+ * The Kotlin host owns the permit and records a conservative list-price estimate
+ * before Python can open a provider socket. No prompt text is stored.
  */
 @Component
 @ConditionalOnProperty(name = ["app.s4-9.strong-llm.enabled"], havingValue = "true")
-internal class S49PublicAgentGrossBudget(
+internal class S49PublicAgentUsageMeter(
     @Value("\${MARS_PUBLIC_SURFACE_MODE:LOCAL}") rawMode: String,
     @Value("\${P1_VERTEX_INPUT_MICROUSD_PER_TOKEN:3}") rawInputRate: String,
     @Value("\${P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN:17}") rawOutputRate: String,
     @Value("\${P1_VERTEX_GROUNDING_MICROUSD_PER_QUERY:14000}") rawGroundingRate: String,
-    private val operatorBudgetProvider: ObjectProvider<OperatorAiBudgetPolicyService>,
+    private val operatorUsageMeterProvider: ObjectProvider<OperatorAiUsageMeter>,
     private val strongLlmProperties: S49StrongLlmProperties,
     private val googleGroundingProperties: S49GoogleGroundingProperties,
 ) {
@@ -28,7 +28,7 @@ internal class S49PublicAgentGrossBudget(
     private val outputRate = if (mode != PublicSurfaceMode.LOCAL) parseRate(rawOutputRate, 17) else 0L
     private val groundingRate = if (mode != PublicSurfaceMode.LOCAL) parseRate(rawGroundingRate, 14_000) else 0L
 
-    fun reserve(
+    fun record(
         ownerUserId: String,
         runId: String,
         plannedCallId: String,
@@ -39,32 +39,35 @@ internal class S49PublicAgentGrossBudget(
     ) {
         if (mode == PublicSurfaceMode.LOCAL) return
         check(mode != PublicSurfaceMode.DEMO || !googleSearchAttached) { "DEMO_AGENT_GOOGLE_SEARCH_FORBIDDEN" }
-        check(runId.isNotBlank() && plannedCallId.isNotBlank()) { "PUBLIC_AGENT_RESERVATION_ID_INVALID" }
+        if (runId.isBlank() || plannedCallId.isBlank()) return
         val maxGrossMicrousd =
-            quoteMaxGrossMicrousd(
-                startFrameBytes,
-                contextBytesFromEvents,
-                priorProviderCalls,
-                strongLlmProperties.maxOutputTokens,
-                inputRate,
-                outputRate,
-                if (googleSearchAttached) googleGroundingProperties.reservePerPrompt else 0,
-                groundingRate,
-            )
+            runCatching {
+                quoteMaxGrossMicrousd(
+                    startFrameBytes,
+                    contextBytesFromEvents,
+                    priorProviderCalls,
+                    strongLlmProperties.maxOutputTokens,
+                    inputRate,
+                    outputRate,
+                    if (googleSearchAttached) googleGroundingProperties.reservePerPrompt else 0,
+                    groundingRate,
+                )
+            }.getOrNull() ?: return
         val reservationId = "aibr_" + sha256("$runId:$plannedCallId").take(32)
-        val budget = operatorBudgetProvider.getIfAvailable() ?: error("PUBLIC_AGENT_OPERATOR_BUDGET_UNAVAILABLE")
+        val meter = operatorUsageMeterProvider.getIfAvailable() ?: return
         val source = if (mode == PublicSurfaceMode.FULL) "FULL_AGENT" else "DEMO_AGENT"
         val chargedOwner = ownerUserId.takeIf { mode == PublicSurfaceMode.FULL }
-        budget.reserveGrossUsage(reservationId, chargedOwner, source, "VERTEX", maxGrossMicrousd)
+        runCatching {
+            meter.recordGrossEstimate(reservationId, chargedOwner, source, "VERTEX", maxGrossMicrousd)
+        }
     }
 
     private fun parseRate(
         raw: String,
         minimum: Long,
     ): Long {
-        val rate = raw.toLongOrNull() ?: error("PUBLIC_AGENT_OPERATOR_RATE_INVALID")
-        check(rate in minimum..1_000_000L) { "PUBLIC_AGENT_OPERATOR_RATE_INVALID" }
-        return rate
+        val rate = raw.toLongOrNull() ?: return minimum
+        return rate.takeIf { it in minimum..1_000_000L } ?: minimum
     }
 
     private fun sha256(value: String): String =

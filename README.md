@@ -142,21 +142,176 @@ docs/                              공개 명세와 검증 문서
 
 ### 5.1. 설치 절차 및 실행 방법
 
-Docker Engine·Compose v2와 제품별 별도의 비밀 파일 디렉터리가 필요합니다. 공개 이미지는 `linux/amd64`입니다. 비밀값 파일은 Compose가 자동 생성하지 않습니다.
+이 절은 Docker를 처음 쓰는 사람이 **DEMO 또는 FULL 하나를 선택해** 시작하는 절차입니다. 두 제품 모두 Linux/WSL2, Docker Engine과 Compose v2, Git, GitHub CLI(`gh`), `jq`, Python 3, OpenSSL이 필요합니다. 이미지는 `linux/amd64`용입니다. secret과 DB 볼륨을 Windows 공유 드라이브(`/mnt/c`) 대신 WSL/Linux 홈 디렉터리에 둡니다.
 
-1. [최신 Release](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/latest)의 `mars-images.json`과 실행할 제품의 `mars-public-*.compose.yml`을 **같은 Release**에서 받습니다.
-2. manifest의 `sourceSha`·이미지 8개 `digest`와 Compose의 `@sha256:`를 대조합니다. 태그는 탐색용이며 실행 기준은 digest입니다.
-3. [DEMO Compose](deploy/p1/compose.public-demo.yml) 또는 [FULL Compose](deploy/p1/compose.public-full.yml)의 `secrets`·`environment`에 명시된 파일·설정을 운영자만 준비합니다. 비밀값·계좌번호·OAuth secret을 Git·채팅·로그에 남기지 않습니다.
-4. 비밀이 아닌 `.env`에 DEMO는 `MARS_DEMO_SECRET_GID`, `MARS_DEMO_SECRETS_DIR`, `MARS_VERTEX_MODEL_ID`; FULL은 `MARS_FULL_SECRET_GID`, `MARS_FULL_SECRETS_DIR`, `MARS_FULL_BROKERAGE_KEK_DIR`, `MARS_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256`, `MARS_VERTEX_MODEL_ID`, `MARS_VERTEX_PROJECT_ID`를 설정합니다. 파일 소유자·그룹은 Compose의 읽기 권한과 일치해야 합니다.
-5. 선택 제품을 실행합니다.
+#### 5.1.1. Release 파일 받기
+
+한 Release 안의 manifest와 Compose를 함께 써야 합니다. Release asset의 Compose는 모든 이미지를 해당 버전의 SHA-256 digest에 고정합니다.
 
 ```bash
-docker compose --env-file .env -f mars-public-demo.compose.yml config --quiet
-docker compose --env-file .env -f mars-public-demo.compose.yml up -d --wait
-# FULL 사용 시 파일명을 mars-public-full.compose.yml로 바꿉니다.
+mkdir -p "$HOME/mars-release"
+cd "$HOME/mars-release"
+TAG="$(gh release view --repo robinhood0107/Capstone-AI-Trading-Coach --json tagName --jq .tagName)"
+gh release download "$TAG" --repo robinhood0107/Capstone-AI-Trading-Coach \
+  --pattern mars-images.json \
+  --pattern mars-public-demo.compose.yml \
+  --pattern mars-public-full.compose.yml
+jq -r '.tag, .sourceSha' mars-images.json
 ```
 
-기본 웹 포트는 DEMO `127.0.0.1:3001`, FULL `127.0.0.1:3002`입니다. 외부 접속에는 별도 TLS reverse proxy가 필요합니다. 제품별 Compose 프로젝트·secret·볼륨은 분리합니다. 볼륨을 유지하려면 `docker compose down`만 사용하고 `-v`는 사용하지 않습니다. FULL의 `disclosure-collector`는 `collectors` profile을 명시할 때만 실행됩니다.
+`mars-images.json`에는 이미지 8개의 태그·digest, 원본 main commit과 Release tag가 들어 있습니다. 다른 버전에서 파일을 섞지 마세요.
+
+#### 5.1.2. 안전한 기초 secret 만들기
+
+저장소를 같은 Release의 코드로 받고, 그 Release의 API 이미지를 이용해 `p1ctl init`을 **제품마다 따로 한 번씩** 실행합니다. 이 명령은 로컬 secret을 만들고 사용자 자격증명 bundle을 서명합니다. 서비스를 시작하거나 DB 볼륨을 만들지 않습니다.
+
+```bash
+SOURCE_SHA="$(jq -r '.sourceSha' mars-images.json)"
+git clone https://github.com/robinhood0107/Capstone-AI-Trading-Coach.git mars-source
+git -C mars-source fetch origin "$SOURCE_SHA"
+git -C mars-source checkout --detach "$SOURCE_SHA"
+
+DEMO_API_IMAGE="$(jq -r '.images["demo-api"].reference' mars-images.json)"
+FULL_API_IMAGE="$(jq -r '.images["full-api"].reference' mars-images.json)"
+docker pull "$DEMO_API_IMAGE"
+docker pull "$FULL_API_IMAGE"
+
+P1_STATE_DIR="$HOME/.local/share/mars-demo-base" \
+P1_SPRING_IMAGE="$DEMO_API_IMAGE" \
+  mars-source/deploy/p1/p1ctl init
+
+P1_STATE_DIR="$HOME/.local/share/mars-full-base" \
+P1_SPRING_IMAGE="$FULL_API_IMAGE" \
+  mars-source/deploy/p1/p1ctl init
+```
+
+두 `P1_STATE_DIR` 경로는 서로 달라야 합니다. 이 폴더에는 제품별로 새로 만든 DB 암호와 서명 키가 들어갑니다. 출력에 표시되는 `demo-user.password`·`demo-admin.password` 경로는 과거 개발용 계정 파일이며 공개 DEMO/FULL 로그인에 사용하지 않습니다.
+
+#### 5.1.3. 외부 계정 파일을 로컬에서 준비하기
+
+Vertex 서비스 계정 JSON은 Google Cloud에서 발급받습니다. 아래 파일은 저장소에 넣지 말고 권한을 잠급니다.
+
+```bash
+chmod 600 /secure/path/vertex-service-account.json
+umask 077
+install -d -m 700 "$HOME/.config/mars"
+install -m 600 /dev/null "$HOME/.config/mars/demo-operator.env"
+${EDITOR:-vi} "$HOME/.config/mars/demo-operator.env"
+chmod 600 "$HOME/.config/mars/demo-operator.env"
+```
+
+편집기 안에 아래 키를 기록하고 `MARS_VERTEX_MODEL_ID` 값을 본인이 선택한 모델 ID로 바꿉니다.
+
+~~~text
+MARS_VERTEX_MODEL_ID=<Google Cloud Vertex model ID>
+~~~
+
+FULL은 Vertex 프로젝트, Google Web OAuth client ID·Secret, Voyage API key가 더 필요합니다. Google OAuth의 redirect URI는 `https://mars.royaljellynas.org/api/v1/auth/oidc/callback/google`입니다. 해당 HTTPS 도메인에서 TLS reverse proxy가 FULL 웹의 로컬 포트로 연결되어야 합니다. 단순히 `localhost:3002`로 접속하면 등록된 redirect URI와 맞지 않아 실제 Google callback은 완료되지 않습니다.
+
+```bash
+umask 077
+install -d -m 700 "$HOME/.config/mars"
+install -m 600 /dev/null "$HOME/.config/mars/full-operator.env"
+${EDITOR:-vi} "$HOME/.config/mars/full-operator.env"
+chmod 600 "$HOME/.config/mars/full-operator.env"
+```
+
+편집기 안에 아래 키를 적고 괄호의 설명을 본인 계정 값으로 바꿉니다. 서비스 계정의 `project_id`와 `MARS_VERTEX_PROJECT_ID`는 같아야 합니다.
+
+~~~text
+MARS_VERTEX_MODEL_ID=<Google Cloud Vertex model ID>
+MARS_VERTEX_PROJECT_ID=<Vertex service account project_id>
+GOOGLE_OIDC_CLIENT_ID=<Google OAuth client ID>
+GOOGLE_OIDC_CLIENT_SECRET=<Google OAuth client secret>
+VOYAGE_API_KEY=<Voyage API key>
+~~~
+
+이 파일이나 서비스 계정 JSON을 채팅·Git·공개 이슈·로그에 붙이지 않습니다. shell 명령 인자로 비밀값을 넣지 않습니다.
+
+#### 5.1.4. DEMO/FULL secret 파일 만들기
+
+Release 폴더에서 조립 도구를 실행합니다. 기존 base secret을 덮어쓰지 않으며, DEMO와 FULL에 같은 base bundle을 재사용하면 거부합니다.
+
+```bash
+python3 mars-source/deploy/p1/assemble_mars_public_secrets.py \
+  --product demo \
+  --base-secrets "$HOME/.local/share/mars-demo-base/secrets" \
+  --release-dir "$PWD" \
+  --vertex-json /secure/path/vertex-service-account.json \
+  --operator-env "$HOME/.config/mars/demo-operator.env"
+
+python3 mars-source/deploy/p1/assemble_mars_public_secrets.py \
+  --product full \
+  --base-secrets "$HOME/.local/share/mars-full-base/secrets" \
+  --release-dir "$PWD" \
+  --vertex-json /secure/path/vertex-service-account.json \
+  --operator-env "$HOME/.config/mars/full-operator.env"
+```
+
+도구는 제품별 비밀 디렉터리와 `demo.env` 또는 `full.env`를 생성합니다. Compose가 참조하는 비밀 파일은 아래와 같습니다.
+
+| 제품 | 생성 파일 | 사용하는 곳 |
+|---|---|---|
+| DEMO | `postgres.env`, `redis.env` | DB·Redis 시작 암호 |
+| DEMO | `role-bootstrap.env`, `migration.env` | DB 역할 생성·Flyway |
+| DEMO | `actor-capability-authority.env`, `actor-server.p12`, `actor-client.p12`, `actor-tls-ca.crt` | 내부 actor 인증서와 키 |
+| DEMO | `mars-public-demo.env` | API·JWT·내부 RPC 공유 암호 |
+| DEMO | `rag-history-kek-v1.key`, `vertex-service-account.json` | 기록 암호화·Agent provider |
+| FULL | 공통 파일과 `mars-public-full.env` | Google OIDC·사용자별 KIS·자동운용·RAG 설정 |
+| FULL | `seed-import.env`, `return-inference.env`, `market-data.env`, `disclosure-collector.env` | 초기 근거자료·모델 호출·시세/공시 writer |
+| FULL | `full-kek/brokerage-kek-v1.key` | 사용자 KIS 자격증명 전용 암호화 키 |
+
+FULL의 KIS 암호화 키는 컨테이너 전용 UID `65532`가 읽도록 소유권을 지정합니다.
+
+```bash
+sudo chown -R 65532:65532 full-kek
+sudo chmod 700 full-kek
+sudo chmod 600 full-kek/brokerage-kek-v1.key
+```
+
+기초 DB/API 비밀번호 파일은 소유자와 현재 사용자의 그룹만 읽을 수 있도록 도구가 `0640`으로 생성합니다. 운영 전에 권한을 확인합니다.
+
+```bash
+find demo-secrets -maxdepth 1 -type f -printf '%m %f\\n'
+find full-secrets -maxdepth 1 -type f -printf '%m %f\\n'
+stat -c '%a %u:%g %n' full-kek full-kek/brokerage-kek-v1.key
+```
+
+#### 5.1.5. 컨테이너 시작·확인·종료
+
+각 제품은 자체 Compose project와 named volume을 씁니다. 기본 이름과 데이터 경로는 다음과 같습니다.
+
+| 제품 | Docker volume | 컨테이너 경로 | 저장 내용 |
+|---|---|---|---|
+| DEMO | `mars-public-demo_demo-postgres` | PostgreSQL `/var/lib/postgresql/data` | DEMO 계정·Agent 기록 |
+| DEMO | `mars-public-demo_demo-redis` | Redis `/data` | DEMO rate limit·임시 상태 |
+| FULL | `mars-public-full_full-postgres` | PostgreSQL `/var/lib/postgresql/data` | USER·KIS 암호문·운용·대사·수집 자료 |
+| FULL | `mars-public-full_full-redis` | Redis `/data` | 세션·rate limit·작업 상태 |
+| FULL | `mars-public-full_full-rag-runtime` | API `/run/rag-runtime` | RAG 검색 runtime seed |
+
+`up`이 named volume을 자동 생성합니다. 같은 기본 Compose 이름으로 다시 실행하면 기존 볼륨을 그대로 연결합니다. `docker compose down`은 컨테이너와 네트워크만 내리고 named volume은 남깁니다. `down -v`, `docker volume rm`, `docker volume prune`은 데이터를 삭제하므로 쓰지 않습니다.
+
+```bash
+# DEMO: release 폴더에서
+docker compose --env-file demo.env -f mars-public-demo.compose.yml config --quiet
+docker compose --env-file demo.env -f mars-public-demo.compose.yml up -d --wait
+docker compose --env-file demo.env -f mars-public-demo.compose.yml ps
+curl -fsS http://127.0.0.1:3001/healthz
+
+# FULL: 같은 release 폴더에서
+docker compose --env-file full.env -f mars-public-full.compose.yml config --quiet
+docker compose --env-file full.env -f mars-public-full.compose.yml up -d --wait
+docker compose --env-file full.env -f mars-public-full.compose.yml ps
+curl -fsS http://127.0.0.1:3002/healthz
+
+# 정상 종료: 볼륨 유지
+docker compose --env-file demo.env -f mars-public-demo.compose.yml down
+docker compose --env-file full.env -f mars-public-full.compose.yml down
+```
+
+DEMO 기본 포트는 loopback `127.0.0.1:3001`, FULL은 `127.0.0.1:3002`입니다. `demo.env`·`full.env`에서 `MARS_DEMO_PORT`·`MARS_FULL_PORT`로 호스트 포트를 바꿀 수 있습니다. FULL의 OpenDART one-shot collector는 기본 중지입니다. 유효한 `OPENDART_API_KEY`를 `full-secrets/disclosure-collector.env`에 운영자가 직접 넣은 뒤에만 `--profile collectors`로 켭니다. DB quota를 확인하고 호출합니다.
+
+처음으로 외부 공개하기 전에 HTTPS reverse proxy가 `mars.royaljellynas.org`로 요청을 받아 `127.0.0.1:3002`로 전달하는지, Google Cloud OAuth client에 위 redirect URI와 테스트 사용자가 등록됐는지 확인합니다. Compose는 TLS 인증서나 DNS를 만들지 않습니다.
 
 **Google 로그인**: Google Cloud의 Web OAuth client에 origin `https://mars.royaljellynas.org`, redirect URI `https://mars.royaljellynas.org/api/v1/auth/oidc/callback/google`를 정확히 등록합니다. Client ID·Secret은 서버의 `mars-public-full.env`에 `GOOGLE_OIDC_CLIENT_ID`·`GOOGLE_OIDC_CLIENT_SECRET`으로 보관합니다. 첫 로그인 때 일반 USER가 생성됩니다. [Google OAuth 안내](https://developers.google.com/identity/protocols/oauth2/web-server)에 따라 테스트 사용자와 공개 범위를 확인합니다.
 
@@ -192,6 +347,8 @@ AI provider 사용량과 추정 비용은 계측하지만 MARS 자체의 일일 
 ### 6.2. 시연 영상
 
 [팀 MARS 시연 영상](https://www.youtube.com/watch?v=CU7284u1rk0)은 당시 기능을 소개합니다. 영상은 최신 이미지의 Google/KIS 인증이나 수익성 검증 자료가 아닙니다. 화면 속 단기 손익표와 예시 차트는 서로 다른 조건이므로 합쳐 해석하지 않습니다.
+
+[![팀 MARS 시연 영상 썸네일](https://img.youtube.com/vi/CU7284u1rk0/0.jpg)](https://www.youtube.com/watch?v=CU7284u1rk0)
 
 ## 7. 팀 구성
 

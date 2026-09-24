@@ -108,6 +108,8 @@ class PublicSurfaceGateTest {
                 "PUT" to "/api/v1/brokerage/mock/credential",
                 "DELETE" to "/api/v1/brokerage/mock/credential",
                 "POST" to "/api/v1/brokerage/mock/credential/connect",
+                "POST" to "/api/v1/brokerage/mock/credential/certify",
+                "POST" to "/api/v1/brokerage/mock/credential/certify/recovery-confirm",
             )
         for ((method, path) in routes) {
             val fullChain = MockFilterChain()

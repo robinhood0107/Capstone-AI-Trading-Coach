@@ -31,6 +31,7 @@ import type {
   RecentRiskResultList,
   MockBalance,
   MockCredentialReadResponse,
+  MockCredentialCertificationOutcome,
   MockBuyable,
   MockOrderRequest,
   MockOrderSubmitted,
@@ -85,6 +86,18 @@ export const api = {
 
   verifyMockCredentialConnection(): Promise<void> {
     return apiFetchBare<void>('/api/v1/brokerage/mock/credential/connect', { method: 'POST' });
+  },
+
+  certifyMockCredential(): Promise<ApiResult<MockCredentialCertificationOutcome>> {
+    return apiFetch<MockCredentialCertificationOutcome>('/api/v1/brokerage/mock/credential/certify', {
+      method: 'POST',
+    });
+  },
+
+  acknowledgeMockCredentialCertificationRecovery(): Promise<void> {
+    return apiFetchBare<void>('/api/v1/brokerage/mock/credential/certify/recovery-confirm', {
+      method: 'POST',
+    });
   },
 
   disconnectMockCredential(): Promise<{ state: 'DISCONNECTING' } | void> {

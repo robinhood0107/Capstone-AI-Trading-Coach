@@ -164,7 +164,7 @@ class PostgresWorldNewsRepository:
         }
 
     def was_completed(self, *, provider: str, cursor_sha256: str) -> bool:
-        """완료 file cursor만 재사용한다. PARTIAL/실패는 gap으로 남겨 다시 처리할 수 있다."""
+        """DB에 commit한 COMPLETE/PARTIAL 파일을 재사용한다. 전송·저장 실패는 재시도한다."""
 
         with psycopg.connect(self._database_dsn) as connection:
             self._attest_writer(connection)

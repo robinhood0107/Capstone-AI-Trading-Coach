@@ -1,6 +1,9 @@
 package com.capstone.decision.infrastructure.security
 
 import org.flywaydb.core.Flyway
+import org.flywaydb.core.api.callback.BaseCallback
+import org.flywaydb.core.api.callback.Context
+import org.flywaydb.core.api.callback.Event
 import java.sql.DriverManager
 import kotlin.system.exitProcess
 
@@ -40,7 +43,24 @@ object P1FlywayMigrate {
                     "brokerageDbCapabilityTokenSha256" to capabilityDigest,
                 ),
             ).javaMigrations(actorTrustMigration(environment))
-            .load()
+            .callbacks(
+                object : BaseCallback() {
+                    override fun supports(
+                        event: Event,
+                        context: Context?,
+                    ): Boolean = event == Event.BEFORE_EACH_MIGRATE
+
+                    override fun handle(
+                        event: Event,
+                        context: Context,
+                    ) {
+                        // B86 is a pg_dump baseline and leaves row_security=off on Flyway's
+                        // connection. Restore enforcement before each later migration so
+                        // FORCE RLS tables can be updated under their explicit policies.
+                        context.connection.createStatement().use { it.execute("SET row_security = on") }
+                    }
+                },
+            ).load()
             .migrate()
         ensureBrokerageCapability(jdbcUrl, password, capabilityDigest)
     }

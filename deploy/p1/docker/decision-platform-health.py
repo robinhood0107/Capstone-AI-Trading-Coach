@@ -31,13 +31,15 @@ def main() -> None:
             ),
         )
     else:
-        services = (
-            (
-                "127.0.0.1:50056",
-                async_worker_pb2.DESCRIPTOR.services_by_name["AsyncWorkerService"].full_name,
-            ),
-            ("127.0.0.1:50057", RETURN_INFERENCE_SERVICE),
-        )
+        services = []
+        if os.environ.get("ASYNC_WORKER_ENABLED", "true").lower() == "true":
+            services.append(
+                (
+                    "127.0.0.1:50056",
+                    async_worker_pb2.DESCRIPTOR.services_by_name["AsyncWorkerService"].full_name,
+                )
+            )
+        services.append(("127.0.0.1:50057", RETURN_INFERENCE_SERVICE))
     for target, service in services:
         channel = grpc.insecure_channel(target)
         try:

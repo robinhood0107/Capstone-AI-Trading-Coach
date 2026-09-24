@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import nextConfig from '../../next.config.mjs';
 
 const clientUrl = new URL('../../src/shared/api/client.ts', import.meta.url);
 const configUrl = new URL('../../next.config.mjs', import.meta.url);
@@ -14,10 +15,32 @@ test('live browser calls stay on the same origin', async () => {
   assert.doesNotMatch(client, /127\.0\.0\.1:8080/);
 });
 
-test('Next forwards only the /api namespace to decision-platform', async () => {
+test('Next forwards only the /api namespace to the matching Compose API service', async () => {
   const config = await readFile(configUrl, 'utf8');
   assert.match(config, /source: '\/api\/:path\*'/);
   assert.match(config, /http:\/\/decision-platform:8080/);
+  assert.match(config, /http:\/\/api:8080/);
+
+  const previousProduct = process.env.NEXT_PUBLIC_MARS_PRODUCT;
+  const previousUpstream = process.env.DECISION_PLATFORM_INTERNAL_URL;
+  try {
+    delete process.env.DECISION_PLATFORM_INTERNAL_URL;
+    for (const product of ['demo', 'full']) {
+      process.env.NEXT_PUBLIC_MARS_PRODUCT = product;
+      assert.deepEqual(await nextConfig.rewrites(), [
+        { source: '/api/:path*', destination: 'http://api:8080/api/:path*' },
+      ]);
+    }
+    process.env.NEXT_PUBLIC_MARS_PRODUCT = 'local';
+    assert.deepEqual(await nextConfig.rewrites(), [
+      { source: '/api/:path*', destination: 'http://decision-platform:8080/api/:path*' },
+    ]);
+  } finally {
+    if (previousProduct === undefined) delete process.env.NEXT_PUBLIC_MARS_PRODUCT;
+    else process.env.NEXT_PUBLIC_MARS_PRODUCT = previousProduct;
+    if (previousUpstream === undefined) delete process.env.DECISION_PLATFORM_INTERNAL_URL;
+    else process.env.DECISION_PLATFORM_INTERNAL_URL = previousUpstream;
+  }
 });
 
 test('protected health is requested only after live authentication', async () => {

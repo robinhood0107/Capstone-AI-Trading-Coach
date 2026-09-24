@@ -20,12 +20,7 @@ from typing import Any, Final
 
 import httpx
 
-from app.operator_ai_budget import (
-    OperatorAiBudgetConfigurationError,
-    OperatorAiBudgetReservationError,
-    TradeAiGrossBudget,
-    deployment_hard_cap_microusd,
-)
+from app.operator_ai_usage_meter import TradeAiUsageMeter
 from app.p1_owner.vertex_veto import (
     MODEL_ID,
     VerifiedGroundingSource,
@@ -155,7 +150,7 @@ class VertexAiVetoTransport:
     settings: VertexTransportSettings
     owner_user_id: str = ""
     run_id: str = ""
-    gross_budget: TradeAiGrossBudget | None = field(default=None, repr=False)
+    usage_meter: TradeAiUsageMeter | None = field(default=None, repr=False)
     session_call_cap: int = 8
     physical_calls: int = 0
     logical_calls: int = 0
@@ -179,23 +174,19 @@ class VertexAiVetoTransport:
                 "maxOutputTokens": _MAX_OUTPUT_TOKENS,
             },
         }
+        if os.environ.get("MARS_PUBLIC_SURFACE_MODE", "LOCAL").strip() == "DEMO":
+            raise VertexBudgetExhausted("TRADE_AI_UNAVAILABLE_IN_DEMO")
         try:
-            if os.environ.get("MARS_PUBLIC_SURFACE_MODE", "LOCAL").strip() == "DEMO":
-                raise VertexBudgetExhausted("TRADE_AI_UNAVAILABLE_IN_DEMO")
-            public_hard_cap = deployment_hard_cap_microusd()
-            if public_hard_cap is not None and (
-                self.gross_budget is None or self.gross_budget.hard_cap_microusd != public_hard_cap
-            ):
-                raise VertexBudgetExhausted("VERTEX_OPERATOR_BUDGET_NOT_CONFIGURED")
-            if self.gross_budget is not None:
-                self.gross_budget.reserve(
+            if self.usage_meter is not None:
+                self.usage_meter.record(
                     owner_user_id=self.owner_user_id,
                     run_id=self.run_id,
                     payload_bytes=json.dumps(payload, ensure_ascii=True).encode("utf-8"),
                     output_token_cap=_MAX_OUTPUT_TOKENS,
                 )
-        except (OperatorAiBudgetConfigurationError, OperatorAiBudgetReservationError):
-            raise VertexBudgetExhausted("VERTEX_OPERATOR_BUDGET_UNAVAILABLE") from None
+        except Exception:
+            # Usage accounting is observational; its failure must not stop the trading decision.
+            pass
         self.physical_calls += 1
         try:
             response = self._post(payload)

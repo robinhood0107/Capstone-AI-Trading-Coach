@@ -2332,34 +2332,20 @@ artifact 다운로드 URL은 공개 링크가 아니며 다른 API와 동일한 
 
 ## 10. Brokerage API
 
-### MARS full 운영자 AI 일일 한도 설정
+### 운영자 AI 사용량 계측
 
-full 제품의 `GET/PUT /api/v1/admin/ai-budget`은 Google OIDC로 확인한 현재 ADMIN만
-사용한다. GET은 `hardCapCents`, `dailySoftCapCents`, `revision`을 주고 PUT은
-`dailySoftCapCents`와 `expectedRevision`만 받는다. 0은 추가 과금 정지이며 설정값은
-NAS 비공개 `MARS_AI_DAILY_HARD_CAP_USD`보다 높을 수 없다. 경쟁 변경은 409다.
-공용 예약 원장을 모든 과금 경로에 연결하기 전에는 공개 Agent·매매 AI
-과금 호출을 열지 않는다. Pre-S5 RAG Vertex와 S4.9 runtime Voyage query는 같은
-원장에 예약하며, 매매 뉴스 Vertex 판정도 owner/run 결속 예약을 완료했다.
-full Strong LLM Agent는 Kotlin host가 provider permit을 보내기 전에 같은 V201
-원장에 `FULL_AGENT`를 예약한다. 데모 Agent는 연결 뒤에 연다.
+운영자 AI 일일 달러 상한과 `/api/v1/admin/ai-budget` 설정 API는 제거했다. Agent,
+매매 AI, RAG Vertex, Voyage의 기존 계측 경로는 보수적인 공개가격 추정치를
+`operator_ai_gross_usage_reservations`에 기록하지만, 누적액·날짜별 합계·계측 DB
+장애로 provider 호출을 거부하지 않는다. 기록은 실제 청구액이나 provider 무료량 잔액이 아니다.
+공급자의 rate limit, 승인 packet, 요청당 byte/token·physical-call 경계와 인증·주문 안전
+검증은 별도 계약으로 계속 적용한다.
+
 공개 제품의 Strong LLM provider는 운영자 Vertex 하나로 고정하며 API key·base URL·
 fallback provider 설정은 거부한다. Spring과 Python은 같은
 `RAG_LLM_MAX_OUTPUT_TOKENS`(기본 4,096)를 사용한다.
-[provider·상한 변경 근거](../contracts/changes/20260923-mars-public-strong-llm-provider-cap.md)와
-[host 예약 근거](../contracts/changes/20260923-mars-full-agent-gross-permit.md)를 따른다.
-[full 전용 schema](../contracts/openapi/mars-full-operator-ai-budget.v1.openapi.json)와
-[변경 근거](../contracts/changes/20260923-mars-operator-ai-budget-policy.md)를 따른다.
-
-운영자는 첫 NAS 절대 상한을 `$1.00/일`로 정했다. V201은 공급자 무료분 차감 없이
-**공개가격 기준 최대 노출액**을 서울 날짜별로 예약한다. RAG Vertex는 기존 승인 패킷의
-요청별 `costCapMicrousd`를 전송 전에 합산한다. 다른 과금 경로가 같은 원장을
-통과하기 전에는 공개 과금 기능을 열지 않는다.
-매매 뉴스 Vertex는 요청 크기와 출력 토큰 상한의 보수적인 공개가격 환산액을 전송 전에
-예약하고, 실패하면 ABSTAIN으로 닫는다.
-full Agent는 gRPC 시작/도구 frame과 이전 출력 여유·출력 토큰 상한을 입출력 단가로
-환산하고, Google Search discovery에는 월간 정책의 최대 쿼리 수와 현재 쿼리 공개가격을
-더해 provider permit 이전에 예약한다. 실패하면 해당 permit의 Python provider 호출은 0건이다.
+[provider·요청 상한 근거](../contracts/changes/20260923-mars-public-strong-llm-provider-cap.md)와
+[meter 변경 근거](../contracts/changes/20260924-mars-ai-usage-metering.md)를 따른다.
 현재 기본 Gemini 3.5 Flash global의 2026-09-23 공개가격을 올림한 입력 3·출력 17
 마이크로달러/토큰을 배포 기본값으로 쓴다. 모델 변경이나 기존 NAS 정책 파일 사용 시
 [단가 변경 근거](../contracts/changes/20260923-mars-vertex-gross-rate-floor.md)에 따라

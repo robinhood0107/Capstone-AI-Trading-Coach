@@ -62,9 +62,10 @@ class P1BaselineIntegrationTest {
         val latestVersion = historicalHistory.last().first.toInt()
 
         assertEquals("86" to "SQL_BASELINE", baselineHistory.first())
-        assertEquals((87..latestVersion).map { it.toString() to "SQL" }, baselineHistory.drop(1))
+        val publishedVersions = (1..latestVersion).filterNot { it in 185..197 }
+        assertEquals(publishedVersions.dropWhile { it < 87 }.map { it.toString() to "SQL" }, baselineHistory.drop(1))
         assertEquals(
-            (1..latestVersion).map { version -> version.toString() to if (version == 7) "JDBC" else "SQL" },
+            publishedVersions.map { version -> version.toString() to if (version == 7) "JDBC" else "SQL" },
             historicalHistory,
         )
         assertEquals(latestVersion.toString() to "SQL", history(UPGRADE_DB).last())

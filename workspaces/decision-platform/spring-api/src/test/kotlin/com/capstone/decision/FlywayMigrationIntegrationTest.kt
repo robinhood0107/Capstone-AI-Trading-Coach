@@ -94,7 +94,9 @@ class FlywayMigrationIntegrationTest(
                 statement.executeUpdate("delete from automation_control_idempotency where user_id in ($ownerList)")
                 statement.executeUpdate("delete from automation_control where user_id in ($ownerList)")
                 statement.executeUpdate("delete from automation_activation_gate where user_id in ($ownerList)")
-                statement.executeUpdate("delete from principle_versions where principle_id in ('prc_automation_owner_a_0001','prc_automation_owner_b_0001')")
+                statement.executeUpdate(
+                    "delete from principle_versions where principle_id in ('prc_automation_owner_a_0001','prc_automation_owner_b_0001')",
+                )
                 statement.executeUpdate("delete from principles where user_id in ($ownerList)")
                 statement.executeUpdate("delete from users where user_id in ($ownerList)")
             }
@@ -537,7 +539,9 @@ class FlywayMigrationIntegrationTest(
                 statement.executeUpdate("delete from automation_control_idempotency where user_id in ($ownerList)")
                 statement.executeUpdate("delete from automation_control where user_id in ($ownerList)")
                 statement.executeUpdate("delete from automation_activation_gate where user_id in ($ownerList)")
-                statement.executeUpdate("delete from principle_versions where principle_id in ('prc_automation_owner_a_0001','prc_automation_owner_b_0001')")
+                statement.executeUpdate(
+                    "delete from principle_versions where principle_id in ('prc_automation_owner_a_0001','prc_automation_owner_b_0001')",
+                )
                 statement.executeUpdate("delete from principles where user_id in ($ownerList)")
                 statement.executeUpdate("delete from users where user_id in ($ownerList)")
                 for ((index, owner) in owners.withIndex()) {
@@ -565,7 +569,7 @@ class FlywayMigrationIntegrationTest(
                             "user_id,control_state,version,brokerage_mode,account_id,principle_id,strategy_id," +
                             "baseline_account_digest,certification_status,kill_switch_active) values (" +
                             "'$owner','ARMED',1,'KIS_MOCK','$account','$principle'," +
-                            "'strategy_automation_owner_${suffix}_0001',repeat('${suffix}',64),'VALID',false)",
+                            "'strategy_automation_owner_${suffix}_0001',repeat('$suffix',64),'VALID',false)",
                     )
                     statement.executeUpdate(
                         "insert into automation_runtime_schedule(" +
@@ -599,70 +603,75 @@ class FlywayMigrationIntegrationTest(
                     assertTrue(actualOwners.containsAll(owners))
 
                     val legacyRun =
-                        statement.executeQuery(
-                            "select user_id,run_id from p1_claim_automation_session_v1(date '$session','$legacyHash')",
-                        ).use { rows ->
-                            assertTrue(rows.next())
-                            assertEquals(firstOwner, rows.getString(1))
-                            rows.getString(2)
-                        }
+                        statement
+                            .executeQuery(
+                                "select user_id,run_id from p1_claim_automation_session_v1(date '$session','$legacyHash')",
+                            ).use { rows ->
+                                assertTrue(rows.next())
+                                assertEquals(firstOwner, rows.getString(1))
+                                rows.getString(2)
+                            }
                     val reboundRun =
-                        statement.executeQuery(
-                            "select user_id,run_id,account_id,replayed from p1_claim_automation_session_for_owner_v1(" +
-                                "'$firstOwner',date '$session','$firstHash')",
-                        ).use { rows ->
-                            assertTrue(rows.next())
-                            assertEquals(firstOwner, rows.getString(1))
-                            assertEquals(legacyRun, rows.getString(2))
-                            assertEquals("acct_${"a".repeat(32)}", rows.getString(3))
-                            assertTrue(rows.getBoolean(4))
-                            rows.getString(2)
-                        }
+                        statement
+                            .executeQuery(
+                                "select user_id,run_id,account_id,replayed from p1_claim_automation_session_for_owner_v1(" +
+                                    "'$firstOwner',date '$session','$firstHash')",
+                            ).use { rows ->
+                                assertTrue(rows.next())
+                                assertEquals(firstOwner, rows.getString(1))
+                                assertEquals(legacyRun, rows.getString(2))
+                                assertEquals("acct_${"a".repeat(32)}", rows.getString(3))
+                                assertTrue(rows.getBoolean(4))
+                                rows.getString(2)
+                            }
                     assertEquals(legacyRun, reboundRun)
 
                     DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
-                        admin.prepareStatement(
-                            "select schedule.schedule_state,claim.user_id from automation_runtime_schedule schedule " +
-                                "left join automation_runtime_claim claim using(user_id,session_date) where schedule.user_id=?",
-                        ).use { adminStatement ->
-                            adminStatement.setString(1, secondOwner)
-                            adminStatement.executeQuery().use { rows ->
-                                assertTrue(rows.next())
-                                assertEquals("ARMED", rows.getString(1))
-                                assertEquals(null, rows.getString(2))
+                        admin
+                            .prepareStatement(
+                                "select schedule.schedule_state,claim.user_id from automation_runtime_schedule schedule " +
+                                    "left join automation_runtime_claim claim using(user_id,session_date) where schedule.user_id=?",
+                            ).use { adminStatement ->
+                                adminStatement.setString(1, secondOwner)
+                                adminStatement.executeQuery().use { rows ->
+                                    assertTrue(rows.next())
+                                    assertEquals("ARMED", rows.getString(1))
+                                    assertEquals(null, rows.getString(2))
+                                }
                             }
-                        }
                     }
 
-                    statement.executeQuery(
-                        "select user_id,run_id,account_id,replayed from p1_claim_automation_session_for_owner_v1(" +
-                            "'$secondOwner',date '$session','$secondHash')",
-                    ).use { rows ->
-                        assertTrue(rows.next())
-                        assertEquals(secondOwner, rows.getString(1))
-                        assertNotEquals(legacyRun, rows.getString(2))
-                        assertEquals("acct_${"b".repeat(32)}", rows.getString(3))
-                        assertFalse(rows.getBoolean(4))
-                    }
+                    statement
+                        .executeQuery(
+                            "select user_id,run_id,account_id,replayed from p1_claim_automation_session_for_owner_v1(" +
+                                "'$secondOwner',date '$session','$secondHash')",
+                        ).use { rows ->
+                            assertTrue(rows.next())
+                            assertEquals(secondOwner, rows.getString(1))
+                            assertNotEquals(legacyRun, rows.getString(2))
+                            assertEquals("acct_${"b".repeat(32)}", rows.getString(3))
+                            assertFalse(rows.getBoolean(4))
+                        }
                 }
             }
 
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
-            admin.prepareStatement(
-                "select user_id,claim_token_hash from automation_runtime_claim where user_id in (?,?) order by user_id",
-            ).use { statement ->
-                statement.setString(1, firstOwner)
-                statement.setString(2, secondOwner)
-                statement.executeQuery().use { rows ->
-                    assertTrue(rows.next())
-                    assertEquals(firstOwner, rows.getString(1))
-                    assertEquals(firstHash, rows.getString(2))
-                    assertTrue(rows.next())
-                    assertEquals(secondOwner, rows.getString(1))
-                    assertEquals(secondHash, rows.getString(2))
-                    assertFalse(rows.next())
+            admin
+                .prepareStatement(
+                    "select user_id,claim_token_hash from automation_runtime_claim where user_id in (?,?) order by user_id",
+                ).use { statement ->
+                    statement.setString(1, firstOwner)
+                    statement.setString(2, secondOwner)
+                    statement.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals(firstOwner, rows.getString(1))
+                        assertEquals(firstHash, rows.getString(2))
+                        assertTrue(rows.next())
+                        assertEquals(secondOwner, rows.getString(1))
+                        assertEquals(secondHash, rows.getString(2))
+                        assertFalse(rows.next())
+                    }
                 }
-            }
         }
     }
 

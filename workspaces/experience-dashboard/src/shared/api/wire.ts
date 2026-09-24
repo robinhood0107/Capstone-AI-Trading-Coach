@@ -37,11 +37,24 @@ export interface MockCredentialSummary {
   accountNoLast4: string;
   connected: boolean;
   certified: boolean;
+  certificationStatus: 'NOT_STARTED' | 'RUNNING' | 'RECOVERY_REQUIRED' | 'PASS' | 'FAILED';
+  certificationFailureCode: string | null;
+  certificationSessionDate: string | null;
 }
 
 export interface MockCredentialReadResponse {
   registered: boolean;
   credential: MockCredentialSummary | null;
+}
+
+export interface MockCredentialCertificationOutcome {
+  status: 'PASS' | 'FAILED' | 'RECOVERY_REQUIRED';
+  certificationId: string | null;
+  sessionDate: string | null;
+  quoteCalls: number;
+  brokerageCalls: number;
+  tokenCalls: number;
+  failureCode: string | null;
 }
 
 /* ---------------------------------------------------------------- Health */

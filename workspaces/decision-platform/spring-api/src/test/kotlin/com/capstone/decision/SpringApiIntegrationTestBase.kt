@@ -94,6 +94,13 @@ abstract class SpringApiIntegrationTestBase {
         @DynamicPropertySource
         @JvmStatic
         fun registerApplicationProperties(registry: DynamicPropertyRegistry) {
+            registerSharedApplicationProperties(registry, includeDemoPasswordBundles = true)
+        }
+
+        internal fun registerSharedApplicationProperties(
+            registry: DynamicPropertyRegistry,
+            includeDemoPasswordBundles: Boolean,
+        ) {
             registry.add("app.actor-capability.transport") { "test" }
             registry.add("app.jwt.secret") { TEST_JWT_SECRET }
             registry.add("app.jwt.issuer") { TEST_JWT_ISSUER }
@@ -132,9 +139,15 @@ abstract class SpringApiIntegrationTestBase {
             registry.add("spring.flyway.locations") { "classpath:db/migration" }
             registry.add("app.decision.grpc.shared-secret") { TEST_GRPC_SHARED_SECRET }
             registry.add("app.rag.grpc.shared-secret") { TEST_RAG_GRPC_SHARED_SECRET }
-            registry.add("app.demo-credentials.user-credential-bundle") { TEST_USER_CREDENTIAL_BUNDLE }
-            registry.add("app.demo-credentials.admin-credential-bundle") { TEST_ADMIN_CREDENTIAL_BUNDLE }
-            registry.add("app.demo-credentials.separation-key") { TEST_CREDENTIAL_SEPARATION_KEY }
+            registry.add("app.demo-credentials.user-credential-bundle") {
+                if (includeDemoPasswordBundles) TEST_USER_CREDENTIAL_BUNDLE else ""
+            }
+            registry.add("app.demo-credentials.admin-credential-bundle") {
+                if (includeDemoPasswordBundles) TEST_ADMIN_CREDENTIAL_BUNDLE else ""
+            }
+            registry.add("app.demo-credentials.separation-key") {
+                if (includeDemoPasswordBundles) TEST_CREDENTIAL_SEPARATION_KEY else ""
+            }
             registry.add("spring.data.redis.password") { redisPasswordValue }
         }
 

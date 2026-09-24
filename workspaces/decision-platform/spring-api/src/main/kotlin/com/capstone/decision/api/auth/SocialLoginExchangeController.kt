@@ -5,8 +5,8 @@ import com.capstone.decision.api.common.ApiResponse
 import com.capstone.decision.api.common.ApiResponseFactory
 import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.api.common.RequestIds
-import com.capstone.decision.infrastructure.security.GoogleOidcHandoff
-import com.capstone.decision.infrastructure.security.GoogleOidcProperties
+import com.capstone.decision.infrastructure.security.FullSocialLoginProperties
+import com.capstone.decision.infrastructure.security.SocialLoginHandoff
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
 import jakarta.servlet.http.HttpServletRequest
@@ -16,17 +16,17 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-/** Same-origin, one-use handoff after Spring Security has consumed Google's code, state, and nonce. */
+/** Same-origin, one-use handoff after Spring Security has consumed a provider authorization code. */
 @RestController
 @Profile("mars-full")
 @RequestMapping("/api/v1/auth/oidc")
-class GoogleOidcExchangeController(
-    private val handoff: GoogleOidcHandoff,
-    properties: GoogleOidcProperties,
+class SocialLoginExchangeController(
+    private val handoff: SocialLoginHandoff,
+    properties: FullSocialLoginProperties,
 ) {
     private val publicOrigin = properties.validatedOrigin()
 
-    @Operation(operationId = "exchangeGoogleOidcSession")
+    @Operation(operationId = "exchangeSocialLoginSession")
     @SecurityRequirements
     @PostMapping("/exchange")
     fun exchange(

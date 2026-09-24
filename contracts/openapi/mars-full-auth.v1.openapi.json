@@ -2,14 +2,62 @@
   "openapi": "3.1.1",
   "info": {
     "title": "MARS full product authentication",
-    "version": "0.1.0-draft"
+    "version": "0.2.0-draft"
   },
   "servers": [{"url": "https://mars.royaljellynas.org"}],
   "paths": {
+    "/api/v1/auth/oidc/start/google": {
+      "get": {
+        "operationId": "startGoogleLogin",
+        "summary": "Start Google authorization-code login",
+        "responses": {"302": {"description": "Redirect to Google's authorization endpoint"}},
+        "security": []
+      }
+    },
+    "/api/v1/auth/oidc/callback/google": {
+      "get": {
+        "operationId": "completeGoogleAuthorization",
+        "summary": "Consume the Google authorization response",
+        "parameters": [
+          {"name": "state", "in": "query", "required": true, "schema": {"type": "string"}},
+          {"name": "code", "in": "query", "required": false, "schema": {"type": "string"}},
+          {"name": "error", "in": "query", "required": false, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "302": {"description": "Redirect to the same-origin one-use handoff page"},
+          "401": {"description": "Invalid state or provider response"}
+        },
+        "security": []
+      }
+    },
+    "/api/v1/auth/oidc/start/kakao": {
+      "get": {
+        "operationId": "startKakaoLogin",
+        "summary": "Start Kakao authorization-code login",
+        "responses": {"302": {"description": "Redirect to Kakao's authorization endpoint"}},
+        "security": []
+      }
+    },
+    "/api/v1/auth/oidc/callback/kakao": {
+      "get": {
+        "operationId": "completeKakaoAuthorization",
+        "summary": "Consume the Kakao authorization response",
+        "parameters": [
+          {"name": "state", "in": "query", "required": true, "schema": {"type": "string"}},
+          {"name": "code", "in": "query", "required": false, "schema": {"type": "string"}},
+          {"name": "error", "in": "query", "required": false, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "302": {"description": "Redirect to the same-origin one-use handoff page"},
+          "401": {"description": "Invalid state or provider response"}
+        },
+        "security": []
+      }
+    },
     "/api/v1/auth/oidc/exchange": {
       "post": {
-        "operationId": "exchangeGoogleOidcSession",
-        "summary": "Consume one validated Google login handoff",
+        "operationId": "exchangeSocialLoginSession",
+        "summary": "Consume one validated Google or Kakao login handoff",
         "parameters": [{
           "name": "Origin",
           "in": "header",
@@ -18,7 +66,7 @@
         }],
         "responses": {
           "200": {
-            "description": "Bearer token and internal USER or allowlisted ADMIN",
+            "description": "Bearer token and internal USER or Google-allowlisted ADMIN",
             "headers": {"Cache-Control": {"schema": {"type": "string", "const": "no-store"}}},
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoginEnvelope"}}}
           },

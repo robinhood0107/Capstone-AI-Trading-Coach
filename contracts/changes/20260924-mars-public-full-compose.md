@@ -2,7 +2,7 @@
 
 `compose.public-full.yml`은 `mars-full` API·웹, PostgreSQL, Redis, actor authority,
 마이그레이션, 초기 공개 RAG 적재와 RAG 런타임 seed를 독립 프로젝트·볼륨·secret root로
-구성한다. Google OIDC와 Operator Vertex/Voyage 설정은 별도 full secret 파일에 두며,
+구성한다. Google/Kakao 로그인과 Operator Vertex/Voyage 설정은 별도 full secret 파일에 두며,
 사용자 KIS key·secret·계좌번호는 환경 파일에 두지 않는다. full API는 owner-bound KIS
 brokerage gRPC와 전용 host KEK 디렉터리만 사용하고 실전 mode는 mock으로 고정한다.
 자동운용 bridge는 [owner-bound credential 계약](20260924-mars-owner-kis-runtime-credential.md)을

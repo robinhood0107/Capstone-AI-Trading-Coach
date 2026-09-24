@@ -55,6 +55,8 @@ internal class PublicSurfaceGate(
                 when (request.method to request.requestURI) {
                     "GET" to "/api/v1/auth/oidc/start/google",
                     "GET" to "/api/v1/auth/oidc/callback/google",
+                    "GET" to "/api/v1/auth/oidc/start/kakao",
+                    "GET" to "/api/v1/auth/oidc/callback/kakao",
                     "POST" to "/api/v1/auth/oidc/exchange",
                     "POST" to "/api/v1/auth/logout",
                     "GET" to "/api/v1/brokerage/mock/credential",

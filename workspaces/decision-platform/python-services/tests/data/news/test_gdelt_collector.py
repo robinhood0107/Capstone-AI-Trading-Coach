@@ -21,7 +21,7 @@ from app.data.news.gdelt_collector import (
     run_cycle,
 )
 from app.data.news.gdelt_transport import GdeltHttpClient
-from app.data.news.gdelt_collector_cli import _select_targets
+from app.data.news.gdelt_collector_cli import _has_actionable_failure, _select_targets
 
 
 NOW = datetime(2026, 9, 8, 3, 6, tzinfo=UTC)
@@ -199,6 +199,7 @@ def test_an_unpublished_newest_file_does_not_stop_the_recovery_of_older_files() 
 
     assert receipt.failure_codes == ("GDELT_NOT_PUBLISHED",)
     assert receipt.stopped_after_failure is False
+    assert _has_actionable_failure((receipt,)) is False
     # 미게시를 건너뛰고 더 오래된 파일을 실제로 받아야 한다.
     assert receipt.completed_files == 1
     assert receipt.stored_documents == 1
@@ -223,6 +224,7 @@ def test_a_real_transport_failure_still_stops_the_dataset() -> None:
     assert receipt.failure_codes == ("GDELT_HTTP_STATUS",)
     assert receipt.stopped_after_failure is True
     assert receipt.physical_calls == 1
+    assert _has_actionable_failure((receipt,)) is True
 
 
 class SettlingRepository(Repository):

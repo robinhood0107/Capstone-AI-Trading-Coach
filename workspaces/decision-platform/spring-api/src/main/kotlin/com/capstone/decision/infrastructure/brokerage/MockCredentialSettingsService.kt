@@ -17,6 +17,9 @@ data class MockCredentialSummary(
     val accountNoLast4: String,
     val connected: Boolean,
     val certified: Boolean,
+    val certificationStatus: String,
+    val certificationFailureCode: String?,
+    val certificationSessionDate: String?,
 )
 
 class BoundMockCredentialEnvelope(
@@ -83,7 +86,7 @@ class MockCredentialSettingsService(
         actorRlsScope.open(jdbc, ownerUserId, "READ_MOCK_CREDENTIAL_SUMMARY", "OWNER", ownerUserId)
         return jdbc
             .query(
-                "SELECT * FROM read_bound_mock_broker_summary_v2(:owner)",
+                "SELECT * FROM read_bound_mock_broker_summary_v3(:owner)",
                 mapOf("owner" to ownerUserId),
             ) { row, _ ->
                 val state = row.getString("credential_state")
@@ -95,6 +98,9 @@ class MockCredentialSettingsService(
                     accountNoLast4 = row.getString("account_no_last4"),
                     connected = state == "CONNECTED" || state == "CERTIFIED",
                     certified = state == "CERTIFIED",
+                    certificationStatus = row.getString("certification_status"),
+                    certificationFailureCode = row.getString("certification_failure_code"),
+                    certificationSessionDate = row.getDate("certification_session_date")?.toLocalDate()?.toString(),
                 )
             }.singleOrNull()
     }

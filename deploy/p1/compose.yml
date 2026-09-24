@@ -339,7 +339,6 @@ services:
       # PublicSurfaceGate rejects a public mode unless the matching Spring profile is active.
       SPRING_PROFILES_ACTIVE: "${SPRING_PROFILES_ACTIVE:-}"
       MARS_PUBLIC_SURFACE_MODE: "${MARS_PUBLIC_SURFACE_MODE:-LOCAL}"
-      MARS_AI_DAILY_HARD_CAP_USD: "${MARS_AI_DAILY_HARD_CAP_USD:-}"
       SPRING_FLYWAY_ENABLED: "false"
       ACTOR_CAPABILITY_TRANSPORT: http
       ACTOR_CAPABILITY_AUTHORITY_URL: https://actor-authority:18081/internal/actor-capabilities/issue

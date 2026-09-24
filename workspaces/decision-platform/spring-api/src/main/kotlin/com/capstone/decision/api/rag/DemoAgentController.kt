@@ -117,9 +117,6 @@ internal class DemoAgentController(
             } catch (_: Exception) {
                 throw ApiException(ErrorCode.PYTHON_SERVICE_UNAVAILABLE)
             }
-        if (result.failureCode == "DEMO_AI_BUDGET_EXHAUSTED") {
-            throw ApiException(ErrorCode.RATE_LIMITED)
-        }
         when (result.generationStatus) {
             RagGenerationStatus.ANSWERED, RagGenerationStatus.RETRIEVAL_ONLY -> Unit
             RagGenerationStatus.BLOCKED_ADVICE, RagGenerationStatus.BLOCKED_SENSITIVE ->

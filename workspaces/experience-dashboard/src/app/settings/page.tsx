@@ -3,7 +3,6 @@ import { StrongLlmSettingsView } from '@/features/strong-llm/StrongLlmSettingsVi
 import { SystemHealthView } from '@/features/system/SystemHealthView';
 import { ExplainModeSettings } from '@/features/system/ExplainModeSettings';
 import { MockCredentialView } from '@/features/brokerage/MockCredentialView';
-import { OperatorAiBudgetView } from '@/features/strong-llm/OperatorAiBudgetView';
 
 export default function Page() {
   const fullProduct = process.env.NEXT_PUBLIC_MARS_PRODUCT === 'full';
@@ -22,7 +21,6 @@ export default function Page() {
           용어를 모르는 사람일수록 이 화면 아래쪽까지 내려가지 않는다. */}
       <ExplainModeSettings />
       {fullProduct ? <MockCredentialView /> : <StrongLlmSettingsView />}
-      {fullProduct ? <OperatorAiBudgetView /> : null}
       <SystemHealthView />
     </div>
   );

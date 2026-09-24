@@ -20,7 +20,6 @@ class PublicFullComposeTest(unittest.TestCase):
             **os.environ,
             "MARS_FULL_SECRET_GID": "1000",
             "MARS_FULL_TAG": "candidate",
-            "MARS_AI_DAILY_HARD_CAP_USD": "1.00",
             "MARS_FULL_SECRETS_DIR": "/tmp/mars-full-contract-secrets",
             "MARS_FULL_BROKERAGE_KEK_DIR": "/tmp/mars-full-contract-kek",
             "MARS_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256": "a" * 64,

@@ -149,7 +149,6 @@ services:
       MARS_PUBLIC_SURFACE_MODE: FULL
       SPRING_PROFILES_ACTIVE: mars-full
       SPRING_FLYWAY_ENABLED: "false"
-      MARS_AI_DAILY_HARD_CAP_USD: "${MARS_AI_DAILY_HARD_CAP_USD:?set NAS AI daily hard cap}"
       MARS_PUBLIC_ORIGIN: https://mars.royaljellynas.org
       GOOGLE_OIDC_REDIRECT_URI: https://mars.royaljellynas.org/api/v1/auth/oidc/callback/google
       MARS_BROKERAGE_KEK_DIRECTORY: /run/brokerage-kek

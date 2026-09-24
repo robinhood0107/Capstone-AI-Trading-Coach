@@ -1,103 +1,99 @@
 from __future__ import annotations
 
-import pytest
 import psycopg
+import pytest
 
-from app.operator_ai_budget import (
-    OperatorAiBudgetConfigurationError,
-    OperatorAiBudgetReservationError,
-    TradeAiGrossBudget,
-    deployment_hard_cap_microusd,
-)
+from app.operator_ai_usage_meter import TradeAiUsageMeter
 
 
-def test_local_mode_does_not_install_a_public_budget_ceiling(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "LOCAL")
-    monkeypatch.delenv("MARS_AI_DAILY_HARD_CAP_USD", raising=False)
-    assert deployment_hard_cap_microusd() is None
-
-
-@pytest.mark.parametrize("product_mode", ["FULL", "DEMO"])
-def test_public_mode_requires_exact_positive_dollar_ceiling(
-    monkeypatch: pytest.MonkeyPatch, product_mode: str
-) -> None:
-    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", product_mode)
-    monkeypatch.setenv("MARS_AI_DAILY_HARD_CAP_USD", "1.00")
-    assert deployment_hard_cap_microusd() == 1_000_000
-    monkeypatch.setenv("MARS_AI_DAILY_HARD_CAP_USD", "0")
-    with pytest.raises(OperatorAiBudgetConfigurationError):
-        deployment_hard_cap_microusd()
-    monkeypatch.delenv("MARS_AI_DAILY_HARD_CAP_USD")
-    with pytest.raises(OperatorAiBudgetConfigurationError):
-        deployment_hard_cap_microusd()
-
-
-def test_unknown_product_mode_cannot_disable_the_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "UNKNOWN")
-    with pytest.raises(OperatorAiBudgetConfigurationError, match="MARS_PUBLIC_SURFACE_MODE"):
-        deployment_hard_cap_microusd()
-
-
-def test_trade_budget_requires_the_automation_role_and_operator_rates(
+def test_full_meter_does_not_require_or_read_a_daily_dollar_cap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "FULL")
-    monkeypatch.setenv("MARS_AI_DAILY_HARD_CAP_USD", "1.00")
+    monkeypatch.delenv("MARS_AI_DAILY_HARD_CAP_USD", raising=False)
     monkeypatch.setenv(
         "P1_AUTOMATION_DATABASE_DSN",
         "postgresql://decision_automation_runtime:fixture@localhost:5432/decision",
     )
-    monkeypatch.setenv("P1_VERTEX_INPUT_MICROUSD_PER_TOKEN", "3")
-    monkeypatch.setenv("P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN", "17")
-    budget = TradeAiGrossBudget.from_environment()
-    assert budget is not None and budget.hard_cap_microusd == 1_000_000
-    monkeypatch.setenv("P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN", "9")
-    with pytest.raises(OperatorAiBudgetConfigurationError, match="rate floor"):
-        TradeAiGrossBudget.from_environment()
-    monkeypatch.setenv("P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN", "17")
-    monkeypatch.setenv(
-        "P1_AUTOMATION_DATABASE_DSN", "postgresql://decision_app:fixture@localhost:5432/decision"
+    meter = TradeAiUsageMeter.from_environment()
+
+    assert meter is not None
+    assert meter.input_microusd_per_token == 3
+    assert meter.output_microusd_per_token == 17
+
+
+def test_meter_configuration_failure_disables_only_measurement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "FULL")
+    monkeypatch.setenv("P1_AUTOMATION_DATABASE_DSN", "not-a-dsn")
+
+    assert TradeAiUsageMeter.from_environment() is None
+
+
+def test_usage_database_failure_does_not_raise_or_reject_the_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    meter = TradeAiUsageMeter("postgresql://decision_automation_runtime:fixture@localhost/decision")
+
+    def unavailable(*_args: object, **_kwargs: object) -> None:
+        raise psycopg.OperationalError("usage database unavailable")
+
+    monkeypatch.setattr("app.operator_ai_usage_meter.psycopg.connect", unavailable)
+
+    assert not meter.record(
+        owner_user_id="usr_alice",
+        run_id="auto_run_abc",
+        payload_bytes=b'{"candidate":1}',
+        output_token_cap=1_024,
     )
-    with pytest.raises(OperatorAiBudgetConfigurationError, match="role"):
-        TradeAiGrossBudget.from_environment()
 
 
-def test_trade_and_rag_owners_share_one_database_cost_ceiling(
+def test_all_users_keep_operating_past_the_former_daily_amount(
     isolated_postgres_cluster: dict[str, str],
 ) -> None:
-    # This fixture applies migrations with SET ROLE flyway, leaving session_user as
-    # its test superuser; V203's real flyway-login seed therefore needs this setup.
-    with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
-        connection.execute(
-            "UPDATE operator_ai_budget_policy SET daily_soft_cap_microusd = 1000000 WHERE singleton"
-        )
-    budget = TradeAiGrossBudget(
+    meter = TradeAiUsageMeter(
         database_dsn=isolated_postgres_cluster["automation_runtime_dsn"],
-        hard_cap_microusd=30_000,
         input_microusd_per_token=10,
         output_microusd_per_token=10,
     )
-    budget.reserve(
-        owner_user_id="usr_alice",
-        run_id="run_alice",
-        payload_bytes=b'{"candidate":1}',
-        output_token_cap=512,
-    )
-    with pytest.raises(OperatorAiBudgetReservationError, match="EXHAUSTED"):
-        budget.reserve(
-            owner_user_id="usr_bob1",
-            run_id="run_bob1",
-            payload_bytes=b'{"candidate":2}',
-            output_token_cap=512,
+
+    for owner, run in (("usr_alice", "run_alice"), ("usr_bob1", "run_bob1")):
+        assert meter.record(
+            owner_user_id=owner,
+            run_id=run,
+            payload_bytes=b'{"candidate":1}',
+            output_token_cap=100_000,
         )
-    with psycopg.connect(isolated_postgres_cluster["app_dsn"]) as connection:
-        assert connection.execute(
-            "SELECT public.reserve_operator_ai_gross_usage_v1(%s, %s, 'RAG_VERTEX', 'VERTEX', %s, %s)",
-            ("aibr_" + "c" * 32, "usr_bob1", 15_000, 30_000),
-        ).fetchone() == (False,)
+
+    with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
+        rows = connection.execute(
+            "SELECT owner_user_id, source, provider, max_gross_microusd "
+            "FROM operator_ai_gross_usage_reservations ORDER BY owner_user_id"
+        ).fetchall()
+    assert [row[:3] for row in rows] == [
+        ("usr_alice", "TRADE_AI", "VERTEX"),
+        ("usr_bob1", "TRADE_AI", "VERTEX"),
+    ]
+    assert all(row[3] > 1_000_000 for row in rows)
+
+
+def test_repeated_meter_identity_is_idempotent_and_not_a_gate(
+    isolated_postgres_cluster: dict[str, str],
+) -> None:
+    meter = TradeAiUsageMeter(isolated_postgres_cluster["automation_runtime_dsn"])
+    fields = {
+        "owner_user_id": "usr_alice",
+        "run_id": "run_repeated",
+        "payload_bytes": b'{"candidate":1}',
+        "output_token_cap": 1_024,
+    }
+
+    assert meter.record(**fields)
+    assert meter.record(**fields)
+
     with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
         assert connection.execute(
-            "SELECT owner_user_id, source, provider FROM operator_ai_gross_usage_reservations"
-        ).fetchall() == [("usr_alice", "TRADE_AI", "VERTEX")]
+            "SELECT count(*) FROM operator_ai_gross_usage_reservations "
+            "WHERE owner_user_id = 'usr_alice' AND source = 'TRADE_AI'"
+        ).fetchone() == (1,)

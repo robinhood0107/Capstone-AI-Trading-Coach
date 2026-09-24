@@ -36,7 +36,7 @@ from app.brokerage.owner_credential_envelope import (
 )
 from app.generated.brokerage_pb2 import BoundMockCredentialEnvelope
 from app.disclosure_repository import PostgresStoredDisclosureRepository
-from app.operator_ai_budget import TradeAiGrossBudget
+from app.operator_ai_usage_meter import TradeAiUsageMeter
 from app.p1_owner.world_news_corpus import (
     MergedCorpusDocumentSource,
     StoredWorldNewsArticle,
@@ -1603,13 +1603,13 @@ def _vertex_veto_transport(*, owner_user_id: str, run_id: str) -> VertexVetoTran
     settings = VertexTransportSettings.from_environment()
     if settings is None:
         return FailClosedVertexVetoTransport()
-    # The budget owner and reservation identity come from the verified runtime claim,
+    # The usage owner and observation identity come from the verified runtime claim,
     # never from the model packet or a caller-provided account field.
     return VertexAiVetoTransport(
         settings=settings,
         owner_user_id=owner_user_id,
         run_id=run_id,
-        gross_budget=TradeAiGrossBudget.from_environment(),
+        usage_meter=TradeAiUsageMeter.from_environment(),
     )
 
 

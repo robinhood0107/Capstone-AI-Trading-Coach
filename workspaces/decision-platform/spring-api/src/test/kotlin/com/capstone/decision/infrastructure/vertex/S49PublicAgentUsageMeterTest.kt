@@ -6,30 +6,31 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.ObjectProvider
 
-class S49PublicAgentGrossBudgetTest {
+class S49PublicAgentUsageMeterTest {
     @Test
-    fun `full agent reserves model and grounding exposure for the authenticated owner`() {
-        val policy = mockk<OperatorAiBudgetPolicyService>()
-        val provider = mockk<ObjectProvider<OperatorAiBudgetPolicyService>>()
+    fun `full agent records estimated provider use for the authenticated owner`() {
+        val meter = mockk<OperatorAiUsageMeter>()
+        val provider = provider(meter)
         val reservationId = slot<String>()
-        val gross = slot<Long>()
-        every { provider.getIfAvailable() } returns policy
+        val estimate = slot<Long>()
         every {
-            policy.reserveGrossUsage(capture(reservationId), "usr_alice", "FULL_AGENT", "VERTEX", capture(gross))
+            meter.recordGrossEstimate(capture(reservationId), "usr_alice", "FULL_AGENT", "VERTEX", capture(estimate))
         } just Runs
-        val gate = gate("FULL", provider)
 
-        gate.reserve("usr_alice", "s49_run_${"a".repeat(32)}", "call_1", 1_000, 0, 0, true)
+        gate("FULL", provider).record("usr_alice", "s49_run_${"a".repeat(32)}", "call_1", 1_000, 0, 0, true)
 
-        verify(exactly = 1) { policy.reserveGrossUsage(any(), "usr_alice", "FULL_AGENT", "VERTEX", any()) }
+        verify(exactly = 1) {
+            meter.recordGrossEstimate(any(), "usr_alice", "FULL_AGENT", "VERTEX", any())
+        }
         assertTrue(reservationId.captured.matches(Regex("^aibr_[0-9a-f]{32}$")))
-        assertEquals((1_000L + 8_192L) * 3L + 4_096L * 17L + 8L * 14_000L, gross.captured)
+        assertEquals((1_000L + 8_192L) * 3L + 4_096L * 17L + 8L * 14_000L, estimate.captured)
         assertTrue(
             quoteMaxGrossMicrousd(1_000, 0, 1, 4_096, 3, 17, 0, 14_000) >
                 quoteMaxGrossMicrousd(1_000, 0, 0, 4_096, 3, 17, 0, 14_000),
@@ -37,55 +38,65 @@ class S49PublicAgentGrossBudgetTest {
     }
 
     @Test
-    fun `missing public budget refuses a provider reservation`() {
-        val provider = mockk<ObjectProvider<OperatorAiBudgetPolicyService>>()
-        every { provider.getIfAvailable() } returns null
-        assertThrows(IllegalStateException::class.java) {
-            gate("FULL", provider).reserve("usr_alice", "run_a", "call_1", 1_000, 0, 0, false)
+    fun `missing or failing meter never blocks a provider call`() {
+        assertDoesNotThrow {
+            gate("FULL", provider(null)).record("usr_alice", "run_a", "call_1", 1_000, 0, 0, false)
         }
-        assertThrows(IllegalStateException::class.java) {
-            gate("DEMO", provider).reserve("usr_alice", "run_a", "call_1", 1_000, 0, 0, false)
+
+        val meter = mockk<OperatorAiUsageMeter>()
+        val provider = provider(meter)
+        every { meter.recordGrossEstimate(any(), any(), any(), any(), any()) } throws IllegalStateException("db down")
+        assertDoesNotThrow {
+            gate("FULL", provider).record("usr_alice", "run_b", "call_2", 1_000, 0, 0, false)
         }
     }
 
     @Test
-    fun `demo charges the shared ledger without a visitor owner or Google Search`() {
-        val policy = mockk<OperatorAiBudgetPolicyService>()
-        val provider = mockk<ObjectProvider<OperatorAiBudgetPolicyService>>()
-        every { provider.getIfAvailable() } returns policy
-        every { policy.reserveGrossUsage(any(), null, "DEMO_AGENT", "VERTEX", any()) } just Runs
+    fun `demo records anonymously and still rejects Google Search`() {
+        val meter = mockk<OperatorAiUsageMeter>()
+        val provider = provider(meter)
+        every { meter.recordGrossEstimate(any(), null, "DEMO_AGENT", "VERTEX", any()) } just Runs
         val gate = gate("DEMO", provider)
 
-        gate.reserve("usr_internal_demo", "s49_run_${"b".repeat(32)}", "call_1", 1_000, 0, 0, false)
-
-        verify(exactly = 1) { policy.reserveGrossUsage(any(), null, "DEMO_AGENT", "VERTEX", any()) }
+        assertDoesNotThrow { gate.record("usr_internal_demo", "run_demo", "call_1", 1_000, 0, 0, false) }
+        verify(exactly = 1) { meter.recordGrossEstimate(any(), null, "DEMO_AGENT", "VERTEX", any()) }
         assertThrows(IllegalStateException::class.java) {
-            gate.reserve("usr_internal_demo", "s49_run_${"b".repeat(32)}", "call_2", 1_000, 0, 1, true)
+            gate.record("usr_internal_demo", "run_demo", "call_2", 1_000, 0, 1, true)
         }
     }
 
     @Test
-    fun `public rate assumptions below the current list price fail closed`() {
-        val provider = mockk<ObjectProvider<OperatorAiBudgetPolicyService>>()
-        assertThrows(IllegalStateException::class.java) {
-            gate("FULL", provider, inputRate = "2")
-        }
-        assertThrows(IllegalStateException::class.java) {
-            gate("FULL", provider, groundingRate = "13999")
-        }
+    fun `invalid price assumptions only skip an estimate`() {
+        val meter = mockk<OperatorAiUsageMeter>()
+        val gate =
+            S49PublicAgentUsageMeter(
+                "FULL",
+                "invalid",
+                "17",
+                "13999",
+                provider(meter),
+                S49StrongLlmProperties(maxOutputTokens = 4_096),
+                S49GoogleGroundingProperties(reservePerPrompt = 8),
+            )
+
+        assertDoesNotThrow { gate.record("usr_alice", "run_a", "call_1", 1_000, 0, 0, false) }
+        verify(exactly = 1) { meter.recordGrossEstimate(any(), "usr_alice", "FULL_AGENT", "VERTEX", any()) }
     }
+
+    private fun provider(meter: OperatorAiUsageMeter?): ObjectProvider<OperatorAiUsageMeter> =
+        mockk<ObjectProvider<OperatorAiUsageMeter>> {
+            every { getIfAvailable() } returns meter
+        }
 
     private fun gate(
         mode: String,
-        provider: ObjectProvider<OperatorAiBudgetPolicyService>,
-        inputRate: String = "3",
-        groundingRate: String = "14000",
-    ): S49PublicAgentGrossBudget =
-        S49PublicAgentGrossBudget(
+        provider: ObjectProvider<OperatorAiUsageMeter>,
+    ): S49PublicAgentUsageMeter =
+        S49PublicAgentUsageMeter(
             mode,
-            inputRate,
+            "3",
             "17",
-            groundingRate,
+            "14000",
             provider,
             S49StrongLlmProperties(maxOutputTokens = 4_096),
             S49GoogleGroundingProperties(reservePerPrompt = 8),

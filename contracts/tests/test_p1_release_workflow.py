@@ -192,6 +192,14 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
         self.assertIn("COSIGN_POSTGRES_MANIFEST", verifier)
         self.assertIn("GITHUB_POSTGRES", verifier)
 
+    def test_redis_image_pins_fixed_alpine_openssl_packages(self) -> None:
+        dockerfile = (REPOSITORY_ROOT / "deploy" / "p1" / "docker" / "redis.Dockerfile").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("redis:7.2-alpine@sha256:", dockerfile)
+        self.assertIn("libcrypto3=3.3.7-r1", dockerfile)
+        self.assertIn("libssl3=3.3.7-r1", dockerfile)
+
     def test_runtime_images_and_secret_boundary_are_pinned(self) -> None:
         python_dockerfile = (
             REPOSITORY_ROOT / "deploy" / "p1" / "docker" / "python-services.Dockerfile"

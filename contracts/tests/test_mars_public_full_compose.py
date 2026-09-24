@@ -19,6 +19,7 @@ class PublicFullComposeTest(unittest.TestCase):
     def test_full_stack_has_its_own_state_and_uses_owner_kis_envelopes(self) -> None:
         environment = {
             **os.environ,
+            "COMPOSE_PROFILES": "collectors",
             "MARS_FULL_SECRET_GID": "1000",
             "MARS_FULL_TAG": "candidate",
             "MARS_FULL_SECRETS_DIR": "/tmp/mars-full-contract-secrets",
@@ -38,7 +39,19 @@ class PublicFullComposeTest(unittest.TestCase):
         services = config["services"]
         self.assertEqual(
             set(services),
-            {"postgres", "redis", "role-bootstrap", "migrate", "seed-import", "rag-runtime-seed", "actor-authority", "api", "web"},
+            {
+                "postgres", "redis", "role-bootstrap", "migrate", "seed-import",
+                "rag-runtime-seed", "actor-authority", "market-data-daily",
+                "world-news-minute", "disclosure-collector", "api", "web",
+            },
+        )
+        self.assertIn("app.data.market_data.yfinance_daily_cli", " ".join(services["market-data-daily"]["command"]))
+        self.assertIn("app.data.news.gdelt_collector_cli", " ".join(services["world-news-minute"]["command"]))
+        self.assertEqual(services["world-news-minute"]["environment"]["GDELT_WORLD_NEWS_ENABLED"], "true")
+        self.assertEqual(services["disclosure-collector"]["profiles"], ["collectors"])
+        self.assertEqual(
+            {secret["source"] for secret in services["disclosure-collector"]["secrets"]},
+            {"disclosure_collector_env"},
         )
         api = services["api"]
         self.assertEqual(api["environment"]["MARS_PUBLIC_SURFACE_MODE"], "FULL")

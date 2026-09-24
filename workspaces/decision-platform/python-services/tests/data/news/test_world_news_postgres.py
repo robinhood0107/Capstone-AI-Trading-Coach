@@ -157,7 +157,7 @@ def test_collection_empty_failure_and_resume_are_distinct(
         completed_at=NOW + timedelta(minutes=1, seconds=1),
         observed_through=NOW,
         item_count=0,
-        cursor_sha256="a" * 64,
+        cursor_sha256="c" * 64,
         error_code="PROVIDER_UNAVAILABLE",
         previous_collection_id=empty.collection_id,
     )
@@ -179,6 +179,8 @@ def test_collection_empty_failure_and_resume_are_distinct(
     assert repository.append_collection(empty) == "NO_OP"
     assert repository.append_collection(failed) == "INSERTED"
     assert repository.append_collection(resumed) == "INSERTED"
+    assert repository.was_completed(provider="GDELT_GQG", cursor_sha256="c" * 64) is False
+    assert repository.was_completed(provider="GDELT_GQG", cursor_sha256="b" * 64) is True
     with psycopg.connect(cluster["admin_dsn"]) as db:
         assert db.execute(
             "SELECT collection_status,item_count,error_code FROM world_news_collection_runs_v2 ORDER BY started_at"

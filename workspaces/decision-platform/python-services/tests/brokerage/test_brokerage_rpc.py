@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import grpc
 import pytest
 
 from app.brokerage.brokerage_rpc import BrokerageServicer, _now, metadata
+from app.brokerage.kis_mock_owner_certification import OwnerMockCertificationResult
 from app.brokerage.kis_mock_order_gateway import KISMockOrderGateway
 from app.generated import brokerage_pb2
 
@@ -38,9 +41,12 @@ class FakeTransport:
         method: str,
         path: str,
         tr_id: str,
-        json_body: dict[str, str],
+        *,
+        params: dict[str, str] | None = None,
+        json_body: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        self.calls.append((method, path, tr_id, json_body))
+        del params
+        self.calls.append((method, path, tr_id, json_body or {}))
         return {"rt_cd": "0", "output": {"ODNO": "raw-provider-order-no"}}
 
 
@@ -51,6 +57,9 @@ class FakeBalanceReader:
     def balance(self, account_id: str) -> brokerage_pb2.GetMockBalanceResponse:
         self.calls.append(("balance", account_id))
         return brokerage_pb2.GetMockBalanceResponse(account_id=account_id)
+
+    def verify_connection(self, account_id: str) -> None:
+        self.calls.append(("verify", account_id))
 
     def buyable(
         self,
@@ -101,6 +110,154 @@ def test_submit_rpc_hashes_provider_receipt_and_uses_one_fake_transport_call() -
     assert response.provider_order_ref_hash != "raw-provider-order-no"
     assert len(response.provider_order_ref_hash) == 64
     assert len(transport.calls) == 1
+
+
+def test_full_rpc_requires_owner_envelope_before_any_gateway_call() -> None:
+    class UnusedOwnerFactory:
+        def open(
+            self,
+            *_args: object,
+            **_kwargs: object,
+        ) -> Iterator[tuple[KISMockOrderGateway, FakeBalanceReader]]:
+            pytest.fail("owner gateway opened without an envelope")
+
+        def certify(self, *_args: object, **_kwargs: object) -> OwnerMockCertificationResult:
+            pytest.fail("owner certifier opened without a valid envelope")
+
+    servicer = BrokerageServicer(None, "s" * 32, owner_factory=UnusedOwnerFactory())
+    with pytest.raises(RpcAborted) as denied:
+        servicer.SubmitMockCashOrder(
+            brokerage_pb2.SubmitMockCashOrderRequest(
+                request_id="req-owner-bound",
+                order_id="ord_mock_" + "1" * 32,
+                account_id="acct_" + "2" * 32,
+                symbol="005930",
+                side="BUY",
+                order_type="MARKET",
+                quantity=1,
+                estimated_price_krw=70000,
+            ),
+            FakeContext(),  # type: ignore[arg-type]
+        )
+    assert denied.value.code == grpc.StatusCode.PERMISSION_DENIED
+
+
+def test_full_connection_check_uses_only_owner_bound_read_only_session() -> None:
+    reader = FakeBalanceReader()
+    observed: list[tuple[str, frozenset[str]]] = []
+    account_id = "acct_" + "2" * 32
+
+    class OwnerFactory:
+        @contextmanager
+        def open(
+            self,
+            _envelope: brokerage_pb2.BoundMockCredentialEnvelope,
+            *,
+            account_id: str,
+            allowed_states: frozenset[str],
+        ) -> Iterator[tuple[KISMockOrderGateway, FakeBalanceReader]]:
+            observed.append((account_id, allowed_states))
+            yield KISMockOrderGateway(FakeTransport()), reader
+
+        def certify(self, *_args: object, **_kwargs: object) -> OwnerMockCertificationResult:
+            pytest.fail("connection check must not start certification")
+
+    servicer = BrokerageServicer(None, "s" * 32, owner_factory=OwnerFactory())
+    response = servicer.VerifyMockConnection(
+        brokerage_pb2.VerifyMockConnectionRequest(
+            request_id="req-connection-check",
+            account_id=account_id,
+            credential=brokerage_pb2.BoundMockCredentialEnvelope(
+                owner_user_id="usr_" + "a" * 32,
+                account_id=account_id,
+                credential_state="STORED",
+            ),
+        ),
+        FakeContext(),  # type: ignore[arg-type]
+    )
+    assert response.account_id == account_id and response.connected
+    assert observed == [(account_id, frozenset({"STORED", "CONNECTED", "CERTIFIED"}))]
+    assert reader.calls == [("verify", account_id)]
+
+
+def test_certification_rpc_uses_owner_envelope_and_contains_no_order_parameters() -> None:
+    account_id = "acct_" + "2" * 32
+    owner_user_id = "usr_" + "a" * 32
+    observed: list[tuple[str, str, str, str, bool]] = []
+
+    class OwnerFactory:
+        def open(
+            self,
+            *_args: object,
+            **_kwargs: object,
+        ) -> Iterator[tuple[KISMockOrderGateway, FakeBalanceReader]]:
+            pytest.fail("certification must use the dedicated fixed-order runner")
+
+        def certify(
+            self,
+            envelope,
+            *,
+            owner_user_id: str,
+            account_id: str,
+            certification_id: str,
+            session_date: str,
+            recovery: bool,
+        ) -> OwnerMockCertificationResult:
+            observed.append(
+                (envelope.owner_user_id, owner_user_id, account_id, session_date, recovery)
+            )
+            return OwnerMockCertificationResult(
+                state="PASS",
+                certification_id=certification_id,
+                receipt_sha256="a" * 64,
+                session_date="2026-08-26",
+                quote_calls=1,
+                brokerage_calls=7,
+                token_calls=0,
+                failure_code="",
+            )
+
+    servicer = BrokerageServicer(None, "s" * 32, owner_factory=OwnerFactory())
+    response = servicer.CertifyMockCredential(
+        brokerage_pb2.CertifyMockCredentialRequest(
+            request_id="req_certification_0001",
+            owner_user_id=owner_user_id,
+            account_id=account_id,
+            certification_id="cert_" + "c" * 32,
+            session_date="2026-08-26",
+            credential=brokerage_pb2.BoundMockCredentialEnvelope(
+                owner_user_id=owner_user_id,
+                account_id=account_id,
+                revision=2,
+                credential_state="CONNECTED",
+            ),
+        ),
+        FakeContext(),  # type: ignore[arg-type]
+    )
+
+    assert response.state == brokerage_pb2.MOCK_CREDENTIAL_CERTIFICATION_PASS
+    assert response.receipt_sha256 == "a" * 64
+    assert observed == [(owner_user_id, owner_user_id, account_id, "2026-08-26", False)]
+
+    with pytest.raises(RpcAborted) as owner_mismatch:
+        servicer.CertifyMockCredential(
+            brokerage_pb2.CertifyMockCredentialRequest(
+                request_id="req_certification_other_1",
+                owner_user_id=owner_user_id,
+                account_id=account_id,
+                certification_id="cert_" + "d" * 32,
+                session_date="2026-08-26",
+                credential=brokerage_pb2.BoundMockCredentialEnvelope(
+                    owner_user_id="usr_" + "b" * 32,
+                    account_id=account_id,
+                    revision=2,
+                    credential_state="CONNECTED",
+                ),
+            ),
+            FakeContext(),  # type: ignore[arg-type]
+        )
+    assert owner_mismatch.value.code == grpc.StatusCode.INVALID_ARGUMENT
+    assert len(observed) == 1
 
 
 def test_rpc_auth_and_live_order_gate_fail_before_transport_side_effect() -> None:

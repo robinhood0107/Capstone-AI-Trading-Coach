@@ -294,6 +294,14 @@ def test_vertex_timeout_is_bounded_inside_the_host_deadline(
 
     assert VertexProviderSettings.from_env().timeout_seconds == 50.0
     assert VertexProviderSettings.from_env().thinking_level == "low"
+    monkeypatch.setenv("RAG_LLM_MAX_OUTPUT_TOKENS", "8192")
+    assert VertexProviderSettings.from_env().max_output_tokens == 8192
+    assert VertexProviderSettings.from_env().for_thinking_level("medium").max_output_tokens == 8192
+    for invalid in ("0", "255", "32769", "not-a-number"):
+        monkeypatch.setenv("RAG_LLM_MAX_OUTPUT_TOKENS", invalid)
+        with pytest.raises(ValueError, match="STRONG_LLM_VERTEX_OUTPUT_CAP_INVALID"):
+            VertexProviderSettings.from_env()
+    monkeypatch.setenv("RAG_LLM_MAX_OUTPUT_TOKENS", "8192")
     monkeypatch.setenv("STRONG_LLM_VERTEX_TIMEOUT_SECONDS", "55")
     assert VertexProviderSettings.from_env().timeout_seconds == 55.0
 
@@ -349,6 +357,7 @@ def test_google_search_discovery_is_separate_from_native_schema_final(
     assert all("response_schema" not in call for call in constructor_calls)
     assert all(call["timeout"] == 50.0 for call in constructor_calls)
     assert all(call["thinking_level"] == "low" for call in constructor_calls)
+    assert constructor_calls[0]["max_output_tokens"] == 4_096
     assert constructor_calls[0]["temperature"] is None
     assert bind_calls[0]["response_mime_type"] == "application/json"
     assert "tools" not in bind_calls[0]

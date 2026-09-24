@@ -215,6 +215,8 @@ def _run_protoc(output_dir: Path) -> dict[Path, bytes]:
         "CancelMockCashOrder",
         "GetMockBalance",
         "GetMockBuyable",
+        "VerifyMockConnection",
+        "CertifyMockCredential",
     ]:
         raise ProtoGenerationError("brokerage rpc method order drifted")
 

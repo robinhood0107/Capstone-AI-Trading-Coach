@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import re
 from collections.abc import Mapping, Sequence
@@ -39,6 +40,9 @@ _COMMIT_FUNCTION = (
 )
 _UNKNOWN_FUNCTION = "public.mark_rag_v2_immutable_voyage_query_usage_unknown_billing(text)"
 _S49_RUNTIME_RESERVE_FUNCTION = "public.reserve_s4_9_runtime_voyage_query_usage(text,text,text)"
+_S49_OPERATOR_GROSS_METER_FUNCTION = (
+    "public.record_s4_9_operator_voyage_gross_usage_v1(text,text,text,bigint)"
+)
 _EVALUATION_RESERVE_FUNCTION = (
     "public.reserve_rag_v2_immutable_voyage_evaluation_batch_usage("
     "text,text,text,text,text,text,text,text,timestamptz,integer,integer,bigint,bigint)"
@@ -55,6 +59,7 @@ _EVALUATION_STAGE_FUNCTION = (
 _EVALUATION_LOAD_FUNCTION = (
     "public.load_rag_v2_immutable_voyage_evaluation_batch_vectors(text,text,text)"
 )
+_LOGGER = logging.getLogger(__name__)
 _WRITER_FORBIDDEN_TABLES = (
     "rag_v2_immutable_voyage_query_usage_reservations",
     "rag_v2_immutable_voyage_query_usage_attempts",
@@ -73,7 +78,11 @@ class PreS5VoyageQueryUsageRepositoryError(ValueError):
 class PsycopgPreS5VoyageQueryUsageRepository:
     """Create a writer-role lease for one exact query/scope packet before a fixed-origin provider call."""
 
-    def __init__(self, *, database_dsn: str) -> None:
+    def __init__(
+        self,
+        *,
+        database_dsn: str,
+    ) -> None:
         if not isinstance(database_dsn, str) or not 1 <= len(database_dsn) <= 4_096:
             raise PreS5VoyageQueryUsageRepositoryError("PRE_S5_VOYAGE_QUERY_LEASE_DATABASE_DSN")
         self._database_dsn = database_dsn
@@ -123,6 +132,19 @@ class PsycopgPreS5VoyageQueryUsageRepository:
                 "S4_9_VOYAGE_QUERY_LEASE_RESERVATION_REJECTED"
             ) from None
         if (
+            row is not None
+            and len(row) == 9
+            and _USAGE_EVENT_ID.fullmatch(str(row[0])) is not None
+            and type(row[7]) is int
+            and row[7] > 0
+        ):
+            self._record_s4_9_operator_usage(
+                reservation_id="aibr_" + str(row[0])[-32:],
+                scope_claim_id=scope_claim_id,
+                question_sha256=question_sha256,
+                max_gross_microusd=row[7],
+            )
+        if (
             row is None
             or len(row) != 9
             or _USAGE_EVENT_ID.fullmatch(str(row[0])) is None
@@ -159,6 +181,33 @@ class PsycopgPreS5VoyageQueryUsageRepository:
             usage_event_id=str(row[0]),
             expires_at=activation.expires_at,
         )
+
+    def _record_s4_9_operator_usage(
+        self,
+        *,
+        reservation_id: str,
+        scope_claim_id: str,
+        question_sha256: str,
+        max_gross_microusd: int,
+    ) -> None:
+        """The separate usage write is best-effort and cannot invalidate the query lease."""
+        try:
+            with psycopg.connect(
+                self._database_dsn,
+                autocommit=False,
+                connect_timeout=1,
+            ) as connection:
+                with connection.transaction():
+                    connection.execute("SET LOCAL statement_timeout = '1s'")
+                    connection.execute("SET LOCAL lock_timeout = '250ms'")
+                    connection.execute("SET LOCAL idle_in_transaction_session_timeout = '2s'")
+                    _attest_writer_connection(connection)
+                    connection.execute(
+                        f"SELECT {_S49_OPERATOR_GROSS_METER_FUNCTION}(%s,%s,%s,%s)",
+                        (reservation_id, scope_claim_id, question_sha256, max_gross_microusd),
+                    )
+        except Exception:
+            _LOGGER.warning("voyage_usage_meter_unavailable")
 
     def reserve(
         self,
@@ -643,6 +692,7 @@ def _attest_writer_connection(connection: psycopg.Connection[Any]) -> None:
         _COMMIT_FUNCTION,
         _UNKNOWN_FUNCTION,
         _S49_RUNTIME_RESERVE_FUNCTION,
+        _S49_OPERATOR_GROSS_METER_FUNCTION,
         _EVALUATION_RESERVE_FUNCTION,
         _EVALUATION_CLAIM_FUNCTION,
         _EVALUATION_UNKNOWN_FUNCTION,

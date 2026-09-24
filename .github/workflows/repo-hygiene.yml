@@ -20,6 +20,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Validate PR promotion route
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          SOURCE_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$PR_HEAD_REPO" == "$SOURCE_REPO" ]]
+          if [[ "$PR_BASE" == main ]]; then
+            [[ "$PR_HEAD" == develop ]]
+          elif [[ "$PR_BASE" == develop ]]; then
+            [[ "$PR_HEAD" == feature/* || "$PR_HEAD" == fix/* || "$PR_HEAD" == docs/* || "$PR_HEAD" == infra/* ]]
+          else
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:

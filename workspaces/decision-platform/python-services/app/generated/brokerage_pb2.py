@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0f\x62rokerage.proto\x12\x14\x63\x61pstone.decision.v1\"\xb7\x01\n\x1aSubmitMockCashOrderRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x10\n\x08order_id\x18\x02 \x01(\t\x12\x12\n\naccount_id\x18\x03 \x01(\t\x12\x0e\n\x06symbol\x18\x04 \x01(\t\x12\x0c\n\x04side\x18\x05 \x01(\t\x12\x12\n\norder_type\x18\x06 \x01(\t\x12\x10\n\x08quantity\x18\x07 \x01(\x03\x12\x1b\n\x13\x65stimated_price_krw\x18\x08 \x01(\x03\"\x86\x01\n\x1bSubmitMockCashOrderResponse\x12\x10\n\x08order_id\x18\x01 \x01(\t\x12\x10\n\x08\x61\x63\x63\x65pted\x18\x02 \x01(\x08\x12\x1f\n\x17provider_order_ref_hash\x18\x03 \x01(\t\x12\r\n\x05tr_id\x18\x04 \x01(\t\x12\x13\n\x0breceived_at\x18\x05 \x01(\t\"V\n\x1a\x43\x61ncelMockCashOrderRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x10\n\x08order_id\x18\x02 \x01(\t\x12\x12\n\naccount_id\x18\x03 \x01(\t\"T\n\x1b\x43\x61ncelMockCashOrderResponse\x12\x10\n\x08order_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x13\n\x0breceived_at\x18\x03 \x01(\t\"?\n\x15GetMockBalanceRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\naccount_id\x18\x02 \x01(\t\"j\n\x13MockBalancePosition\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x10\n\x08quantity\x18\x02 \x01(\x03\x12\x18\n\x10market_value_krw\x18\x03 \x01(\x03\x12\x17\n\x0fis_gold_etf_etn\x18\x04 \x01(\x08\"\xe7\x01\n\x16GetMockBalanceResponse\x12\x12\n\naccount_id\x18\x01 \x01(\t\x12\x10\n\x08\x63\x61sh_krw\x18\x02 \x01(\x03\x12\x1c\n\x14portfolio_equity_krw\x18\x03 \x01(\x03\x12\x1e\n\x16margin_requirement_krw\x18\x04 \x01(\x03\x12<\n\tpositions\x18\x05 \x03(\x0b\x32).capstone.decision.v1.MockBalancePosition\x12\x13\n\x0bobserved_at\x18\x06 \x01(\t\x12\x16\n\x0esource_version\x18\x07 \x01(\t\"l\n\x15GetMockBuyableRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\naccount_id\x18\x02 \x01(\t\x12\x0e\n\x06symbol\x18\x03 \x01(\t\x12\x1b\n\x13\x65stimated_price_krw\x18\x04 \x01(\x03\"\xce\x01\n\x16GetMockBuyableResponse\x12\x12\n\naccount_id\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x1b\n\x13\x65stimated_price_krw\x18\x03 \x01(\x03\x12\x18\n\x10\x62uyable_quantity\x18\x04 \x01(\x03\x12\x1a\n\x12\x62uyable_amount_krw\x18\x05 \x01(\x03\x12\x10\n\x08\x63\x61sh_krw\x18\x06 \x01(\x03\x12\x13\n\x0bobserved_at\x18\x07 \x01(\t\x12\x16\n\x0esource_version\x18\x08 \x01(\t2\xe4\x03\n\x10\x42rokerageService\x12z\n\x13SubmitMockCashOrder\x12\x30.capstone.decision.v1.SubmitMockCashOrderRequest\x1a\x31.capstone.decision.v1.SubmitMockCashOrderResponse\x12z\n\x13\x43\x61ncelMockCashOrder\x12\x30.capstone.decision.v1.CancelMockCashOrderRequest\x1a\x31.capstone.decision.v1.CancelMockCashOrderResponse\x12k\n\x0eGetMockBalance\x12+.capstone.decision.v1.GetMockBalanceRequest\x1a,.capstone.decision.v1.GetMockBalanceResponse\x12k\n\x0eGetMockBuyable\x12+.capstone.decision.v1.GetMockBuyableRequest\x1a,.capstone.decision.v1.GetMockBuyableResponseB8\n!com.capstone.decision.contract.v1B\x11\x42rokerageContractP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0f\x62rokerage.proto\x12\x14\x63\x61pstone.decision.v1\"\x8c\x02\n\x1b\x42oundMockCredentialEnvelope\x12\x15\n\rowner_user_id\x18\x01 \x01(\t\x12\x12\n\naccount_id\x18\x02 \x01(\t\x12\x10\n\x08revision\x18\x03 \x01(\x03\x12\x18\n\x10\x63redential_state\x18\x04 \x01(\t\x12\x13\n\x0bkek_version\x18\x05 \x01(\t\x12\x12\n\nwrap_nonce\x18\x06 \x01(\x0c\x12\x13\n\x0bwrapped_dek\x18\x07 \x01(\x0c\x12\x10\n\x08wrap_tag\x18\x08 \x01(\x0c\x12\x15\n\rpayload_nonce\x18\t \x01(\x0c\x12\x1a\n\x12payload_ciphertext\x18\n \x01(\x0c\x12\x13\n\x0bpayload_tag\x18\x0b \x01(\x0c\"\xfe\x01\n\x1aSubmitMockCashOrderRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x10\n\x08order_id\x18\x02 \x01(\t\x12\x12\n\naccount_id\x18\x03 \x01(\t\x12\x0e\n\x06symbol\x18\x04 \x01(\t\x12\x0c\n\x04side\x18\x05 \x01(\t\x12\x12\n\norder_type\x18\x06 \x01(\t\x12\x10\n\x08quantity\x18\x07 \x01(\x03\x12\x1b\n\x13\x65stimated_price_krw\x18\x08 \x01(\x03\x12\x45\n\ncredential\x18\t \x01(\x0b\x32\x31.capstone.decision.v1.BoundMockCredentialEnvelope\"\x86\x01\n\x1bSubmitMockCashOrderResponse\x12\x10\n\x08order_id\x18\x01 \x01(\t\x12\x10\n\x08\x61\x63\x63\x65pted\x18\x02 \x01(\x08\x12\x1f\n\x17provider_order_ref_hash\x18\x03 \x01(\t\x12\r\n\x05tr_id\x18\x04 \x01(\t\x12\x13\n\x0breceived_at\x18\x05 \x01(\t\"\x9d\x01\n\x1a\x43\x61ncelMockCashOrderRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x10\n\x08order_id\x18\x02 \x01(\t\x12\x12\n\naccount_id\x18\x03 \x01(\t\x12\x45\n\ncredential\x18\x04 \x01(\x0b\x32\x31.capstone.decision.v1.BoundMockCredentialEnvelope\"T\n\x1b\x43\x61ncelMockCashOrderResponse\x12\x10\n\x08order_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x13\n\x0breceived_at\x18\x03 \x01(\t\"\x86\x01\n\x15GetMockBalanceRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\naccount_id\x18\x02 \x01(\t\x12\x45\n\ncredential\x18\x03 \x01(\x0b\x32\x31.capstone.decision.v1.BoundMockCredentialEnvelope\"j\n\x13MockBalancePosition\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x10\n\x08quantity\x18\x02 \x01(\x03\x12\x18\n\x10market_value_krw\x18\x03 \x01(\x03\x12\x17\n\x0fis_gold_etf_etn\x18\x04 \x01(\x08\"\xe7\x01\n\x16GetMockBalanceResponse\x12\x12\n\naccount_id\x18\x01 \x01(\t\x12\x10\n\x08\x63\x61sh_krw\x18\x02 \x01(\x03\x12\x1c\n\x14portfolio_equity_krw\x18\x03 \x01(\x03\x12\x1e\n\x16margin_requirement_krw\x18\x04 \x01(\x03\x12<\n\tpositions\x18\x05 \x03(\x0b\x32).capstone.decision.v1.MockBalancePosition\x12\x13\n\x0bobserved_at\x18\x06 \x01(\t\x12\x16\n\x0esource_version\x18\x07 \x01(\t\"\xb3\x01\n\x15GetMockBuyableRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\naccount_id\x18\x02 \x01(\t\x12\x0e\n\x06symbol\x18\x03 \x01(\t\x12\x1b\n\x13\x65stimated_price_krw\x18\x04 \x01(\x03\x12\x45\n\ncredential\x18\x05 \x01(\x0b\x32\x31.capstone.decision.v1.BoundMockCredentialEnvelope\"\xce\x01\n\x16GetMockBuyableResponse\x12\x12\n\naccount_id\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x1b\n\x13\x65stimated_price_krw\x18\x03 \x01(\x03\x12\x18\n\x10\x62uyable_quantity\x18\x04 \x01(\x03\x12\x1a\n\x12\x62uyable_amount_krw\x18\x05 \x01(\x03\x12\x10\n\x08\x63\x61sh_krw\x18\x06 \x01(\x03\x12\x13\n\x0bobserved_at\x18\x07 \x01(\t\x12\x16\n\x0esource_version\x18\x08 \x01(\t\"\x8c\x01\n\x1bVerifyMockConnectionRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x12\n\naccount_id\x18\x02 \x01(\t\x12\x45\n\ncredential\x18\x03 \x01(\x0b\x32\x31.capstone.decision.v1.BoundMockCredentialEnvelope\"E\n\x1cVerifyMockConnectionResponse\x12\x12\n\naccount_id\x18\x01 \x01(\t\x12\x11\n\tconnected\x18\x02 \x01(\x08\"\xe6\x01\n\x1c\x43\x65rtifyMockCredentialRequest\x12\x12\n\nrequest_id\x18\x01 \x01(\t\x12\x15\n\rowner_user_id\x18\x02 \x01(\t\x12\x12\n\naccount_id\x18\x03 \x01(\t\x12\x18\n\x10\x63\x65rtification_id\x18\x04 \x01(\t\x12\x45\n\ncredential\x18\x05 \x01(\x0b\x32\x31.capstone.decision.v1.BoundMockCredentialEnvelope\x12\x10\n\x08recovery\x18\x06 \x01(\x08\x12\x14\n\x0csession_date\x18\x07 \x01(\t\"\x9b\x02\n\x1d\x43\x65rtifyMockCredentialResponse\x12\x12\n\naccount_id\x18\x01 \x01(\t\x12\x18\n\x10\x63\x65rtification_id\x18\x02 \x01(\t\x12\x45\n\x05state\x18\x03 \x01(\x0e\x32\x36.capstone.decision.v1.MockCredentialCertificationState\x12\x16\n\x0ereceipt_sha256\x18\x04 \x01(\t\x12\x14\n\x0csession_date\x18\x05 \x01(\t\x12\x13\n\x0bquote_calls\x18\x06 \x01(\x05\x12\x17\n\x0f\x62rokerage_calls\x18\x07 \x01(\x05\x12\x13\n\x0btoken_calls\x18\x08 \x01(\x05\x12\x14\n\x0c\x66\x61ilure_code\x18\t \x01(\t*\xd8\x01\n MockCredentialCertificationState\x12-\n)MOCK_CREDENTIAL_CERTIFICATION_UNSPECIFIED\x10\x00\x12&\n\"MOCK_CREDENTIAL_CERTIFICATION_PASS\x10\x01\x12(\n$MOCK_CREDENTIAL_CERTIFICATION_FAILED\x10\x02\x12\x33\n/MOCK_CREDENTIAL_CERTIFICATION_RECOVERY_REQUIRED\x10\x03\x32\xe6\x05\n\x10\x42rokerageService\x12z\n\x13SubmitMockCashOrder\x12\x30.capstone.decision.v1.SubmitMockCashOrderRequest\x1a\x31.capstone.decision.v1.SubmitMockCashOrderResponse\x12z\n\x13\x43\x61ncelMockCashOrder\x12\x30.capstone.decision.v1.CancelMockCashOrderRequest\x1a\x31.capstone.decision.v1.CancelMockCashOrderResponse\x12k\n\x0eGetMockBalance\x12+.capstone.decision.v1.GetMockBalanceRequest\x1a,.capstone.decision.v1.GetMockBalanceResponse\x12k\n\x0eGetMockBuyable\x12+.capstone.decision.v1.GetMockBuyableRequest\x1a,.capstone.decision.v1.GetMockBuyableResponse\x12}\n\x14VerifyMockConnection\x12\x31.capstone.decision.v1.VerifyMockConnectionRequest\x1a\x32.capstone.decision.v1.VerifyMockConnectionResponse\x12\x80\x01\n\x15\x43\x65rtifyMockCredential\x12\x32.capstone.decision.v1.CertifyMockCredentialRequest\x1a\x33.capstone.decision.v1.CertifyMockCredentialResponseB8\n!com.capstone.decision.contract.v1B\x11\x42rokerageContractP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,24 +32,36 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'brokerage_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n!com.capstone.decision.contract.v1B\021BrokerageContractP\001'
-  _globals['_SUBMITMOCKCASHORDERREQUEST']._serialized_start=42
-  _globals['_SUBMITMOCKCASHORDERREQUEST']._serialized_end=225
-  _globals['_SUBMITMOCKCASHORDERRESPONSE']._serialized_start=228
-  _globals['_SUBMITMOCKCASHORDERRESPONSE']._serialized_end=362
-  _globals['_CANCELMOCKCASHORDERREQUEST']._serialized_start=364
-  _globals['_CANCELMOCKCASHORDERREQUEST']._serialized_end=450
-  _globals['_CANCELMOCKCASHORDERRESPONSE']._serialized_start=452
-  _globals['_CANCELMOCKCASHORDERRESPONSE']._serialized_end=536
-  _globals['_GETMOCKBALANCEREQUEST']._serialized_start=538
-  _globals['_GETMOCKBALANCEREQUEST']._serialized_end=601
-  _globals['_MOCKBALANCEPOSITION']._serialized_start=603
-  _globals['_MOCKBALANCEPOSITION']._serialized_end=709
-  _globals['_GETMOCKBALANCERESPONSE']._serialized_start=712
-  _globals['_GETMOCKBALANCERESPONSE']._serialized_end=943
-  _globals['_GETMOCKBUYABLEREQUEST']._serialized_start=945
-  _globals['_GETMOCKBUYABLEREQUEST']._serialized_end=1053
-  _globals['_GETMOCKBUYABLERESPONSE']._serialized_start=1056
-  _globals['_GETMOCKBUYABLERESPONSE']._serialized_end=1262
-  _globals['_BROKERAGESERVICE']._serialized_start=1265
-  _globals['_BROKERAGESERVICE']._serialized_end=1749
+  _globals['_MOCKCREDENTIALCERTIFICATIONSTATE']._serialized_start=2556
+  _globals['_MOCKCREDENTIALCERTIFICATIONSTATE']._serialized_end=2772
+  _globals['_BOUNDMOCKCREDENTIALENVELOPE']._serialized_start=42
+  _globals['_BOUNDMOCKCREDENTIALENVELOPE']._serialized_end=310
+  _globals['_SUBMITMOCKCASHORDERREQUEST']._serialized_start=313
+  _globals['_SUBMITMOCKCASHORDERREQUEST']._serialized_end=567
+  _globals['_SUBMITMOCKCASHORDERRESPONSE']._serialized_start=570
+  _globals['_SUBMITMOCKCASHORDERRESPONSE']._serialized_end=704
+  _globals['_CANCELMOCKCASHORDERREQUEST']._serialized_start=707
+  _globals['_CANCELMOCKCASHORDERREQUEST']._serialized_end=864
+  _globals['_CANCELMOCKCASHORDERRESPONSE']._serialized_start=866
+  _globals['_CANCELMOCKCASHORDERRESPONSE']._serialized_end=950
+  _globals['_GETMOCKBALANCEREQUEST']._serialized_start=953
+  _globals['_GETMOCKBALANCEREQUEST']._serialized_end=1087
+  _globals['_MOCKBALANCEPOSITION']._serialized_start=1089
+  _globals['_MOCKBALANCEPOSITION']._serialized_end=1195
+  _globals['_GETMOCKBALANCERESPONSE']._serialized_start=1198
+  _globals['_GETMOCKBALANCERESPONSE']._serialized_end=1429
+  _globals['_GETMOCKBUYABLEREQUEST']._serialized_start=1432
+  _globals['_GETMOCKBUYABLEREQUEST']._serialized_end=1611
+  _globals['_GETMOCKBUYABLERESPONSE']._serialized_start=1614
+  _globals['_GETMOCKBUYABLERESPONSE']._serialized_end=1820
+  _globals['_VERIFYMOCKCONNECTIONREQUEST']._serialized_start=1823
+  _globals['_VERIFYMOCKCONNECTIONREQUEST']._serialized_end=1963
+  _globals['_VERIFYMOCKCONNECTIONRESPONSE']._serialized_start=1965
+  _globals['_VERIFYMOCKCONNECTIONRESPONSE']._serialized_end=2034
+  _globals['_CERTIFYMOCKCREDENTIALREQUEST']._serialized_start=2037
+  _globals['_CERTIFYMOCKCREDENTIALREQUEST']._serialized_end=2267
+  _globals['_CERTIFYMOCKCREDENTIALRESPONSE']._serialized_start=2270
+  _globals['_CERTIFYMOCKCREDENTIALRESPONSE']._serialized_end=2553
+  _globals['_BROKERAGESERVICE']._serialized_start=2775
+  _globals['_BROKERAGESERVICE']._serialized_end=3517
 # @@protoc_insertion_point(module_scope)

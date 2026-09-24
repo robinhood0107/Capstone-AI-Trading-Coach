@@ -25,7 +25,7 @@ class JwtService(
         properties.validate()
     }
 
-    fun issue(account: DemoAccount): IssuedToken {
+    fun issue(account: AuthenticatedAccount): IssuedToken {
         val now = OffsetDateTime.now(clock)
         val expiresAt = account.expiresAt
         require(expiresAt.isAfter(now) && !expiresAt.isAfter(now.plusHours(properties.ttlHours).plusSeconds(5)))

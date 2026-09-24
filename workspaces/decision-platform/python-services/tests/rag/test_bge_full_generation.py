@@ -38,7 +38,6 @@ _BATCH_REPORT_PATH = REPO_ROOT / "capstone-rag/reports/s4-2b-batch-memory-benchm
 _FINAL_REPORT_PATH = REPO_ROOT / "capstone-rag/reports/s4-2b-full-generation-benchmark.v1.json"
 
 
-
 @pytest.fixture(autouse=True)
 def _enable_bge_for_this_module(monkeypatch: pytest.MonkeyPatch) -> None:
     """BGE 는 제품 기본 경로가 아니다(Voyage 통일). 이 모듈만 명시적으로 켜서 검증한다."""
@@ -313,7 +312,9 @@ def test_postgres_full_generation_uses_writer_reader_and_admin_boundaries(
     isolated_postgres_cluster: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    pytest.skip("BGE 활성화는 V178 이 rag_embedding_policy_state 를 voyage_only_v1 로 고정해 더 이상 끝까지 가지 못한다. 되살리려면 BGE 코퍼스를 적재해 ACTIVE 포인터를 만든 뒤 정책을 바꿔야 한다.")
+    pytest.skip(
+        "BGE 활성화는 V178 이 rag_embedding_policy_state 를 voyage_only_v1 로 고정해 더 이상 끝까지 가지 못한다. 되살리려면 BGE 코퍼스를 적재해 ACTIVE 포인터를 만든 뒤 정책을 바꿔야 한다."
+    )
     monkeypatch.setenv(_BGE_ENABLED_ENV, "1")
     postgres_cluster = isolated_postgres_cluster
     plan = prepare_bge_full_generation(

@@ -26,6 +26,8 @@ import com.capstone.decision.infrastructure.web.RequestIdFilter
 import org.flywaydb.core.api.migration.JavaMigration
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -92,7 +94,16 @@ class SecurityConfig {
         ragGrpcProperties: RagGrpcProperties,
         ragV2GrpcProperties: RagV2GrpcProperties = RagV2GrpcProperties(),
         financialEngineeringGrpcProperties: FinancialEngineeringGrpcProperties = FinancialEngineeringGrpcProperties(),
+        @Value("\${MARS_PUBLIC_SURFACE_MODE:LOCAL}") rawMode: String = "LOCAL",
     ): AuthSecretSeparation {
+        val publicMode = PublicSurfaceMode.valueOf(rawMode)
+        if (publicMode != PublicSurfaceMode.LOCAL) {
+            require(
+                demoCredentialProperties.userCredentialBundle.isBlank() &&
+                    demoCredentialProperties.adminCredentialBundle.isBlank() &&
+                    demoCredentialProperties.separationKey.isBlank(),
+            ) { "PUBLIC_PASSWORD_CREDENTIALS_FORBIDDEN" }
+        }
         jwtProperties.validate()
         loginProperties.validate()
         principleProperties.validate()
@@ -119,8 +130,6 @@ class SecurityConfig {
                 "Principle cursor" to principleProperties.cursorHmacKey.toByteArray(StandardCharsets.UTF_8),
                 "Decision scope" to decisionProperties.idempotencyScopeHmacKey.toByteArray(StandardCharsets.UTF_8),
                 "Brokerage scope" to brokerageProperties.idempotencyScopeHmacKey.toByteArray(StandardCharsets.UTF_8),
-                "demo credential separation" to
-                    DemoCredentialBundlePolicy.decodeSeparationKey(demoCredentialProperties.separationKey),
                 "RAG idempotency scope" to
                     ragProperties.idempotencyScopeHmacKey.toByteArray(StandardCharsets.UTF_8),
                 "RAG request fingerprint" to
@@ -132,6 +141,12 @@ class SecurityConfig {
                 "RAG history cursor" to
                     ragProperties.historyCursorHmacKey.toByteArray(StandardCharsets.UTF_8),
             )
+        if (publicMode == PublicSurfaceMode.LOCAL) {
+            // Historical V7 password evidence is required only for the private
+            // migration/login path. Public runtime never loads those bundles.
+            secrets["demo credential separation"] =
+                DemoCredentialBundlePolicy.decodeSeparationKey(demoCredentialProperties.separationKey)
+        }
         secrets["Decision/Python gRPC"] = decisionGrpcProperties.sharedSecret.toByteArray(StandardCharsets.UTF_8)
         if (brokerageGrpcProperties.enabled) {
             secrets["Brokerage gRPC"] = brokerageGrpcProperties.sharedSecret.toByteArray(StandardCharsets.UTF_8)
@@ -160,10 +175,12 @@ class SecurityConfig {
                     }
                 }
             }
-            verifyBootstrapBundles(
-                demoCredentialProperties,
-                requireNotNull(secrets["demo credential separation"]),
-            )
+            if (publicMode == PublicSurfaceMode.LOCAL) {
+                verifyBootstrapBundles(
+                    demoCredentialProperties,
+                    requireNotNull(secrets["demo credential separation"]),
+                )
+            }
             AuthSecretSeparation
         } finally {
             secrets.values.forEach { secret -> secret.fill(0) }
@@ -257,7 +274,14 @@ class SecurityConfig {
     }
 
     @Bean
-    fun s21ActorTrustMigration(properties: DemoCredentialBootstrapProperties): JavaMigration {
+    @ConditionalOnProperty(name = ["spring.flyway.enabled"], havingValue = "true", matchIfMissing = true)
+    fun s21ActorTrustMigration(
+        properties: DemoCredentialBootstrapProperties,
+        @Value("\${MARS_PUBLIC_SURFACE_MODE:LOCAL}") rawMode: String = "LOCAL",
+    ): JavaMigration {
+        if (PublicSurfaceMode.valueOf(rawMode) != PublicSurfaceMode.LOCAL) {
+            return PublicActorTrustMigrationFactory.create()
+        }
         val separationKey = DemoCredentialBundlePolicy.decodeSeparationKey(properties.separationKey)
         return try {
             val (userBundle, adminBundle) = verifyBootstrapBundles(properties, separationKey)
@@ -329,6 +353,9 @@ class SecurityConfig {
                 authorize
                     // liveness만 공개하고 metrics/info/prometheus는 운영정보이므로 ADMIN으로 제한한다.
                     .requestMatchers("/actuator/health")
+                    .permitAll()
+                authorize
+                    .requestMatchers(HttpMethod.POST, "/api/v1/demo/agent/ask")
                     .permitAll()
                 authorize
                     .requestMatchers("/actuator/**")

@@ -13631,7 +13631,35 @@
         ],
         "type": "object"
       },
-      "WorldNewsV2Error": null,
+      "WorldNewsV2Error": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "WORLD_NEWS_VALIDATION_FAILED",
+              "WORLD_NEWS_UNAVAILABLE",
+              "UNAUTHORIZED"
+            ],
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "requestId"
+        ],
+        "type": "object"
+      },
       "WorldNewsV2Item": {
         "$id": "contracts/schemas/world-news-v2.schema.json",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -13913,7 +13941,7 @@
     "version": "0.0.1"
   },
   "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
-  "openapi": "3.1.0",
+  "openapi": "3.1.1",
   "paths": {
     "/api/v1/artifacts/ingest-status": {
       "get": {

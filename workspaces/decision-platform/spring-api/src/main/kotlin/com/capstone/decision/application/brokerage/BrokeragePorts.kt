@@ -14,6 +14,7 @@ interface BrokerageIdempotencyIdentityPort {
 data class BrokerageGatewaySubmitRequest(
     val requestId: String,
     val orderId: String,
+    val ownerUserId: String,
     val accountId: String,
     val orderIntent: OrderIntentSnapshot,
 )
@@ -28,6 +29,7 @@ data class BrokerageGatewaySubmitResult(
 data class BrokerageGatewayCancelRequest(
     val requestId: String,
     val orderId: String,
+    val ownerUserId: String,
     val accountId: String,
 )
 
@@ -39,6 +41,7 @@ data class BrokerageGatewayCancelResult(
 
 data class BrokerageGatewayBalanceRequest(
     val requestId: String,
+    val ownerUserId: String,
     val accountId: String,
 )
 
@@ -54,6 +57,7 @@ data class BrokerageGatewayBalanceResult(
 
 data class BrokerageGatewayBuyableRequest(
     val requestId: String,
+    val ownerUserId: String,
     val accountId: String,
     val symbol: String,
     val estimatedPriceKrw: Long,
@@ -78,6 +82,45 @@ interface BrokerageGatewayPort {
     fun getMockBalance(request: BrokerageGatewayBalanceRequest): BrokerageGatewayBalanceResult
 
     fun getMockBuyable(request: BrokerageGatewayBuyableRequest): BrokerageGatewayBuyableResult
+}
+
+/** A read-only provider proof for the exact current owner's stored KIS_MOCK account. */
+interface MockCredentialConnectionPort {
+    fun verify(
+        requestId: String,
+        ownerUserId: String,
+        accountId: String,
+    )
+}
+
+enum class MockCredentialCertificationStatus {
+    PASS,
+    FAILED,
+    RECOVERY_REQUIRED,
+}
+
+data class MockCredentialCertificationProof(
+    val accountId: String,
+    val certificationId: String,
+    val status: MockCredentialCertificationStatus,
+    val receiptSha256: String,
+    val sessionDate: String,
+    val quoteCalls: Int,
+    val brokerageCalls: Int,
+    val tokenCalls: Int,
+    val failureCode: String,
+)
+
+/** One server-fixed one-share KIS_MOCK test under the current user's encrypted credential. */
+interface MockCredentialCertificationPort {
+    fun certify(
+        requestId: String,
+        ownerUserId: String,
+        accountId: String,
+        certificationId: String,
+        sessionDate: String,
+        recovery: Boolean,
+    ): MockCredentialCertificationProof
 }
 
 interface BrokerageOrderPersistencePort {

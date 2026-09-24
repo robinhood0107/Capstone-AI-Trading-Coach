@@ -279,9 +279,16 @@ def verify_compose() -> None:
         for volume in service.get("volumes", []) or []:
             if "docker.sock" in str(volume):
                 raise ContractError("Docker socket mount is forbidden")
-        for port in service.get("ports", []) or []:
-            if not str(port).startswith("127.0.0.1:"):
-                raise ContractError(f"host port is not loopback-bound: {service_name}")
+        ports = service.get("ports", []) or []
+        if service_name == "tls-proxy":
+            # Only the explicit TLS profile may expose its two known listeners.
+            if service.get("profiles") != ["tls"] or set(ports) != {
+                "${P1_TLS_BIND:-0.0.0.0}:${P1_TLS_HTTPS_PORT:-8443}:8443",
+                "${P1_TLS_BIND:-0.0.0.0}:${P1_TLS_HTTP_PORT:-8080}:8080",
+            }:
+                raise ContractError("TLS proxy listener boundary drifted")
+        elif any(not str(port).startswith("127.0.0.1:") for port in ports):
+            raise ContractError(f"host port is not loopback-bound: {service_name}")
     control = CONTROL_PATH.read_text(encoding="utf-8")
     for service in (
         "migrate",

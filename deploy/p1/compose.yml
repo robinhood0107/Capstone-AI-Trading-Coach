@@ -93,13 +93,14 @@ services:
       VERTEX_MODEL_ID: "${P1_VERTEX_MODEL_ID:-gemini-3.5-flash}"
       P1_VERTEX_PROJECT_ID: "${P1_VERTEX_PROJECT_ID:-}"
       P1_VERTEX_OPERATOR: "${P1_VERTEX_OPERATOR:-auto-activation}"
-      P1_VERTEX_DAILY_GENERATE_CALL_CAP: "${P1_VERTEX_DAILY_GENERATE_CALL_CAP:-50}"
       P1_VERTEX_INPUT_TOKEN_CAP: "${P1_VERTEX_INPUT_TOKEN_CAP:-60512}"
       P1_VERTEX_OUTPUT_TOKEN_CAP: "${P1_VERTEX_OUTPUT_TOKEN_CAP:-8192}"
       P1_VERTEX_INPUT_BYTE_CAP: "${P1_VERTEX_INPUT_BYTE_CAP:-60000}"
       P1_VERTEX_COST_CAP_MICROUSD: "${P1_VERTEX_COST_CAP_MICROUSD:-500000}"
-      P1_VERTEX_INPUT_MICROUSD_PER_TOKEN: "${P1_VERTEX_INPUT_MICROUSD_PER_TOKEN:-2}"
-      P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN: "${P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN:-9}"
+      # 2026-09-23 Gemini 3.5 Flash global 공개가격 $2.70/$16.20 per 1M을
+      # 마이크로달러/토큰으로 올림했다. 모델 변경 시 두 단가도 함께 검토한다.
+      P1_VERTEX_INPUT_MICROUSD_PER_TOKEN: "${P1_VERTEX_INPUT_MICROUSD_PER_TOKEN:-3}"
+      P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN: "${P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN:-17}"
     secrets: [vertex_service_account]
     volumes:
       - ${P1_RAG_RUNTIME_DIR:-p1-rag-runtime}:/run/rag-runtime
@@ -334,6 +335,9 @@ services:
       DECISION_SOURCE_WRITER_OFFLINE_TARGET: "local"
       SERVER_ADDRESS: 0.0.0.0
       SERVER_PORT: "8080"
+      # PublicSurfaceGate rejects a public mode unless the matching Spring profile is active.
+      SPRING_PROFILES_ACTIVE: "${SPRING_PROFILES_ACTIVE:-}"
+      MARS_PUBLIC_SURFACE_MODE: "${MARS_PUBLIC_SURFACE_MODE:-LOCAL}"
       SPRING_FLYWAY_ENABLED: "false"
       ACTOR_CAPABILITY_TRANSPORT: http
       ACTOR_CAPABILITY_AUTHORITY_URL: https://actor-authority:18081/internal/actor-capabilities/issue
@@ -372,6 +376,12 @@ services:
       # Vertex 생성형 답변. 요청마다 5분짜리 활성화 패킷이 있어야 열리므로 기본은 off다.
       RAG_V2_VERTEX_ENABLED: "${P1_RAG_V2_VERTEX_ENABLED:-false}"
       VERTEX_MODEL_ID: "${P1_VERTEX_MODEL_ID:-gemini-3.5-flash}"
+      # Spring and the loopback Python Agent must enforce the same generation cap.
+      RAG_LLM_MAX_OUTPUT_TOKENS: "${RAG_LLM_MAX_OUTPUT_TOKENS:-4096}"
+      # RAG activation and the trade-AI reservation use the same operator rate assumptions.
+      P1_VERTEX_INPUT_MICROUSD_PER_TOKEN: "${P1_VERTEX_INPUT_MICROUSD_PER_TOKEN:-3}"
+      P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN: "${P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN:-17}"
+      P1_VERTEX_GROUNDING_MICROUSD_PER_QUERY: "${P1_VERTEX_GROUNDING_MICROUSD_PER_QUERY:-14000}"
       RAG_V2_VERTEX_HEAD_COMMIT: "${P1_RAG_V2_VERTEX_HEAD_COMMIT:-}"
       RAG_V2_VERTEX_TREE_DIGEST: "${P1_RAG_V2_VERTEX_TREE_DIGEST:-}"
       RAG_V2_VERTEX_CI_DIGEST: "${P1_RAG_V2_VERTEX_CI_DIGEST:-}"

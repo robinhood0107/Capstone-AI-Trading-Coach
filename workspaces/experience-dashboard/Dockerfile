@@ -2,6 +2,9 @@ FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a55
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_API_MODE=live
+ARG MARS_PRODUCT=local
+RUN case "$MARS_PRODUCT" in local|demo|full) ;; *) exit 1 ;; esac
+ENV NEXT_PUBLIC_MARS_PRODUCT=${MARS_PRODUCT}
 # 화면별 503 복구를 검증하는 QA 빌드에서만 1 로 준다. 기본은 꺼 두어 프로덕션 번들에
 # 장애 주입 스위치를 남기지 않는다.
 ARG QA_FAULT_INJECTION=0
@@ -13,12 +16,19 @@ RUN npm run typecheck && npm run lint && npm test && npm run build
 
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
 WORKDIR /app
+ARG SOURCE_REVISION=unknown
+ARG RELEASE_VERSION=dev
+LABEL org.opencontainers.image.source="https://github.com/robinhood0107/Capstone-AI-Trading-Coach" \
+      org.opencontainers.image.revision="$SOURCE_REVISION" \
+      org.opencontainers.image.version="$RELEASE_VERSION"
 RUN apk add --no-cache libcrypto3=3.5.8-r0 libssl3=3.5.8-r0 \
     && rm -rf /usr/local/lib/node_modules/npm \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_API_MODE=live
+ARG MARS_PRODUCT=local
+ENV NEXT_PUBLIC_MARS_PRODUCT=${MARS_PRODUCT}
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 COPY --from=build --chown=node:node /app/public ./public

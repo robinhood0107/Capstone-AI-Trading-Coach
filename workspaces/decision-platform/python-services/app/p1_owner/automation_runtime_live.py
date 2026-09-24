@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import hashlib
 import os
 import re
 import socket
 import ssl
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Protocol, cast
@@ -25,10 +27,16 @@ from app.brokerage.mock_order_reference_store import (
     MockProviderOrderReference,
 )
 from app.data._shared.canonical_json import canonical_json_bytes
-from app.data.kis._credential_transport import _build_redis_client
+from app.data.kis._credential_transport import _Credentials, _build_redis_client
 from app.data.kis.http_client import ASKING_PRICE_PATH, CURRENT_PRICE_PATH, KISHttpClient
 from app.data.kis.settings import KISSettings
+from app.brokerage.owner_credential_envelope import (
+    OpenedMockCredential,
+    OwnerCredentialEnvelopeOpener,
+)
+from app.generated.brokerage_pb2 import BoundMockCredentialEnvelope
 from app.disclosure_repository import PostgresStoredDisclosureRepository
+from app.operator_ai_usage_meter import TradeAiUsageMeter
 from app.p1_owner.world_news_corpus import (
     MergedCorpusDocumentSource,
     StoredWorldNewsArticle,
@@ -120,13 +128,10 @@ class ExecutionSourcePort(Protocol):
 class SpringAutomationBridgeClient:
     """numeric loopback와 per-install secret에 고정된 retry-0 internal Spring client다.
 
-    shared secret은 이 다리가 loopback runtime의 것임을 증명할 뿐, 소유자를 증명하지 않는다.
-    bridge 뒤의 brokerage·decision 서비스는 `AuthenticatedActorRef.current()`로 actor capability를
-    발급하므로 인증된 소유자 세션이 없으면 모든 명령이 닫힌다. 그래서 다른 클라이언트와 똑같이
-    소유자로 로그인해 access token을 붙인다. capability 사슬을 우회하지 않는다.
-
-    token은 만료되므로 401을 만나면 한 번만 다시 로그인하고 재시도한다. 그 이상은 재시도하지
-    않는다 — 주문 경로의 retry-0 경계를 지켜야 한다.
+    LOCAL은 기존 개인 배포 계정 세션을 사용한다. FULL은 Google OIDC 사용자마다 달라지는
+    owner ID를 body에 싣고 이 loopback service credential로만 호출한다. Spring bridge는
+    매 호출마다 활성 사용자와 owner/account 경계를 다시 확인하고 brokerage envelope를 조회한다.
+    FULL은 공용 password 계정을 만들거나 읽지 않는다.
     """
 
     def __init__(
@@ -140,6 +145,7 @@ class SpringAutomationBridgeClient:
         if _SECRET.fullmatch(shared_secret) is None:
             raise AutomationRuntimeError("AUTOMATION_BRIDGE_SECRET_INVALID")
         self._secret = shared_secret
+        self._service_to_service = os.environ.get("MARS_PUBLIC_SURFACE_MODE", "LOCAL") == "FULL"
         self._owner_username = (
             owner_username
             if owner_username is not None
@@ -184,15 +190,17 @@ class SpringAutomationBridgeClient:
         self._access_token = token
         return token
 
-    def _post_command(self, body: Mapping[str, object], token: str) -> httpx.Response:
+    def _post_command(self, body: Mapping[str, object], token: str | None) -> httpx.Response:
+        headers = {
+            "Content-Type": "application/json",
+            "X-Automation-Runtime-Auth": self._secret,
+        }
+        if token is not None:
+            headers["Authorization"] = f"Bearer {token}"
         return self._client.post(
             "/internal/automation-runtime/command",
             content=canonical_json_bytes(body),
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-                "X-Automation-Runtime-Auth": self._secret,
-            },
+            headers=headers,
         )
 
     def command(
@@ -209,9 +217,9 @@ class SpringAutomationBridgeClient:
             "payload": payload,
             "userId": user_id,
         }
-        token = self._access_token or self._login()
+        token = None if self._service_to_service else (self._access_token or self._login())
         response = self._post_command(body, token)
-        if response.status_code == 401:
+        if response.status_code == 401 and token is not None:
             # 만료된 세션은 한 번만 다시 연다. 같은 idempotency key로 다시 보내므로 중복 주문이
             # 생기지 않는다.
             response = self._post_command(body, self._login())
@@ -228,6 +236,58 @@ class SpringAutomationBridgeClient:
         ):
             raise AutomationRuntimeError("AUTOMATION_BRIDGE_RESPONSE_INVALID")
         return cast(dict[str, Any], parsed["data"])
+
+    def owner_mock_credential_envelope(
+        self,
+        owner_user_id: str,
+        account_id: str,
+    ) -> BoundMockCredentialEnvelope:
+        data = self.command("MOCK_CREDENTIAL", owner_user_id, {"accountId": account_id})
+        fields = {
+            "ownerUserId",
+            "accountId",
+            "revision",
+            "credentialState",
+            "kekVersion",
+            "wrapNonce",
+            "wrappedDek",
+            "wrapTag",
+            "secretNonce",
+            "secretCiphertext",
+            "secretTag",
+        }
+        if (
+            set(data) != fields
+            or data.get("ownerUserId") != owner_user_id
+            or data.get("accountId") != account_id
+            or type(data.get("revision")) is not int
+            or not isinstance(data.get("credentialState"), str)
+            or not isinstance(data.get("kekVersion"), str)
+        ):
+            raise AutomationRuntimeError("AUTOMATION_OWNER_CREDENTIAL_INVALID")
+
+        def decode(name: str, maximum: int) -> bytes:
+            raw = data.get(name)
+            if not isinstance(raw, str) or len(raw) > maximum * 2:
+                raise AutomationRuntimeError("AUTOMATION_OWNER_CREDENTIAL_INVALID")
+            try:
+                return base64.b64decode(raw, validate=True)
+            except (ValueError, binascii.Error):
+                raise AutomationRuntimeError("AUTOMATION_OWNER_CREDENTIAL_INVALID") from None
+
+        return BoundMockCredentialEnvelope(
+            owner_user_id=owner_user_id,
+            account_id=account_id,
+            revision=data["revision"],
+            credential_state=data["credentialState"],
+            kek_version=data["kekVersion"],
+            wrap_nonce=decode("wrapNonce", 12),
+            wrapped_dek=decode("wrappedDek", 32),
+            wrap_tag=decode("wrapTag", 16),
+            payload_nonce=decode("secretNonce", 12),
+            payload_ciphertext=decode("secretCiphertext", 8192),
+            payload_tag=decode("secretTag", 16),
+        )
 
     def close(self) -> None:
         self._client.close()
@@ -276,9 +336,9 @@ class KisOrderBookSource:
     **원장이 거래를 막을 수 없어야 한다.**
     """
 
-    def __init__(self) -> None:
+    def __init__(self, credential_provider: Callable[[], _Credentials] | None = None) -> None:
         self._settings = KISSettings(kis_mode="mock", kis_offline=False, kis_retry_attempts=1)
-        self._client = KISHttpClient(self._settings)
+        self._client = KISHttpClient(self._settings, credential_provider=credential_provider)
 
     def snapshot(self, symbol: str) -> OrderBookTop | None:
         try:
@@ -318,9 +378,9 @@ class KisOrderBookSource:
 class KisAutomationQuoteSource:
     """현재가 한 번에서 price/상한가/하한가만 즉시 축약한다."""
 
-    def __init__(self) -> None:
+    def __init__(self, credential_provider: Callable[[], _Credentials] | None = None) -> None:
         self._settings = KISSettings(kis_mode="mock", kis_offline=False, kis_retry_attempts=1)
-        self._client = KISHttpClient(self._settings)
+        self._client = KISHttpClient(self._settings, credential_provider=credential_provider)
 
     def quote(self, symbol: str) -> Quote:
         payload = self._client.request(
@@ -361,7 +421,12 @@ class KisAutomationQuoteSource:
 class KisAutomationExecutionSource:
     """Redis ciphertext reference와 공식 체결조회만 사용하며 row가 불명확하면 UNRESOLVED다."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        account_number: SecretStr | None = None,
+        credential_provider: Callable[[], _Credentials] | None = None,
+    ) -> None:
         try:
             reference_ttl_seconds = int(
                 os.environ.get("KIS_MOCK_ORDER_REFERENCE_TTL_SECONDS", "604800")
@@ -383,6 +448,8 @@ class KisAutomationExecutionSource:
         self._client = KISMockBrokerageHttpClient(
             settings=KISSettings(kis_mode="mock", kis_offline=False, kis_retry_attempts=1),
             budget=self._budget,
+            account_number=account_number,
+            credential_provider=credential_provider,
         )
         self._reader = KISMockExecutionReader(self._client)
         self._balance_reader = KISMockOnlineBalanceReader(self._client)
@@ -1098,16 +1165,55 @@ class LiveAutomationPortFactory:
 
     def build(self, claim: RuntimeClaim, state: dict[str, Any]) -> LiveAutomationPort:
         shared_secret = os.environ.get("AUTOMATION_RUNTIME_SHARED_SECRET", "").strip()
-        return LiveAutomationPort(
-            claim,
-            state,
-            SpringAutomationBridgeClient(shared_secret),
-            KisAutomationQuoteSource(),
-            KisAutomationExecutionSource(),
-            _vertex_veto_transport(),
-            _corpus_source(),
-            KisOrderBookSource(),
-        )
+        bridge = SpringAutomationBridgeClient(shared_secret)
+        opened: OpenedMockCredential | None = None
+        quote_source: KisAutomationQuoteSource | None = None
+        execution_source: KisAutomationExecutionSource | None = None
+        order_book_source: KisOrderBookSource | None = None
+        try:
+            credential_provider: Callable[[], _Credentials] | None = None
+            account_number: SecretStr | None = None
+            if os.environ.get("MARS_PUBLIC_SURFACE_MODE", "LOCAL") == "FULL":
+                envelope = bridge.owner_mock_credential_envelope(claim.user_id, claim.account_id)
+                opened = OwnerCredentialEnvelopeOpener(
+                    os.environ.get("MARS_BROKERAGE_KEK_DIRECTORY", "")
+                ).open(
+                    envelope,
+                    account_id=claim.account_id,
+                    allowed_states=frozenset({"CERTIFIED"}),
+                )
+                credentials = _Credentials(opened.app_key, opened.app_secret)
+
+                def provider() -> _Credentials:
+                    return credentials
+
+                credential_provider = provider
+                account_number = opened.account_number
+            quote_source = KisAutomationQuoteSource(credential_provider)
+            execution_source = KisAutomationExecutionSource(
+                account_number=account_number,
+                credential_provider=credential_provider,
+            )
+            order_book_source = KisOrderBookSource(credential_provider)
+            return LiveAutomationPort(
+                claim,
+                state,
+                bridge,
+                quote_source,
+                execution_source,
+                _vertex_veto_transport(owner_user_id=claim.user_id, run_id=claim.run_id),
+                _corpus_source(),
+                order_book_source,
+            )
+        except Exception:
+            bridge.close()
+            if quote_source is not None:
+                quote_source.close()
+            if execution_source is not None:
+                execution_source.close()
+            if order_book_source is not None:
+                order_book_source.close()
+            raise
 
 
 # 판단 요청의 질문은 고정이다. 사용자 문장이 여기로 들어오면 그것이 매매 판단을 바꾸는
@@ -1488,7 +1594,7 @@ class _EmptyDisclosureBatch:
     collection_status: str = "READ_FAILED"
 
 
-def _vertex_veto_transport() -> VertexVetoTransport:
+def _vertex_veto_transport(*, owner_user_id: str, run_id: str) -> VertexVetoTransport:
     """설정이 있으면 실 Vertex를, 없으면 기존 fail-closed transport를 쓴다.
 
     미설정이 곧 ABSTAIN이고 ABSTAIN은 매수를 막으므로, 설정이 없는 쪽이 항상 더 안전하다.
@@ -1497,7 +1603,14 @@ def _vertex_veto_transport() -> VertexVetoTransport:
     settings = VertexTransportSettings.from_environment()
     if settings is None:
         return FailClosedVertexVetoTransport()
-    return VertexAiVetoTransport(settings=settings)
+    # The usage owner and observation identity come from the verified runtime claim,
+    # never from the model packet or a caller-provided account field.
+    return VertexAiVetoTransport(
+        settings=settings,
+        owner_user_id=owner_user_id,
+        run_id=run_id,
+        usage_meter=TradeAiUsageMeter.from_environment(),
+    )
 
 
 def _projection_equity(expected: Mapping[str, Any], balance: Mapping[str, Any]) -> int:

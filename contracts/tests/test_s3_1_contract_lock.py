@@ -104,10 +104,21 @@ class S31BrokerageMockContractTest(unittest.TestCase):
             "rpc CancelMockCashOrder(",
             "rpc GetMockBalance(",
             "rpc GetMockBuyable(",
+            "rpc VerifyMockConnection(",
+            "rpc CertifyMockCredential(",
             "provider_order_ref_hash",
         ):
             self.assertIn(required, proto)
-        for forbidden in ("appkey", "secret", "token", "tttc0011u", "tttc0012u", "account_number"):
+        self.assertIn("int32 token_calls", proto)
+        for forbidden in (
+            "appkey",
+            "appsecret",
+            "access_token",
+            "bearer_token",
+            "tttc0011u",
+            "tttc0012u",
+            "account_number",
+        ):
             self.assertNotIn(forbidden, proto.lower())
         self.assertIn("generate_brokerage_proto.py --check", workflow)
 

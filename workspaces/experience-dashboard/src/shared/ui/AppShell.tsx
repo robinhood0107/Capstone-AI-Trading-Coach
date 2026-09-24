@@ -13,18 +13,27 @@ import { IntroExperience } from '@/features/intro/IntroExperience';
 /**
  * 로그인 상태로 갈라지는 바깥 껍데기.
  *
- * - **미인증** — 소개 페이지 한 장. 2막을 지나 관문을 넘으면 로그인 카드가 나온다.
+ * - **미인증** — 소개 페이지 한 장. 2막을 지나면 Google 로그인으로 이동한다.
  *   대시보드 크롬(좌측 내비·상단 상태바)은 아예 렌더하지 않는다. 소개는 화면 전체를
  *   쓰는 화면이라 `<main>` 의 최대 폭 안에 넣으면 레이아웃이 무너진다.
  * - **인증** 또는 **mock 모드** — 지금까지와 똑같은 대시보드.
  *
- * 예전에는 `LoginGate` 가 `<main>` 안에서 이 판단을 했다. 소개를 full-bleed 로 두려면
- * 판단이 크롬 바깥으로 올라와야 해서 여기로 옮겼다. 로그인 폼 자체는 그대로 재사용한다.
+ * OIDC callback 완료 화면은 세션 교환을 끝내기 전까지 이 로그인 판단을 통과하지 않는다.
  */
 /** 크롬도 로그인 판단도 씌우지 않고 그대로 내보내는 라우트. */
-const BARE_ROUTES = new Set(['/intro']);
+const BARE_ROUTES = new Set(['/intro', '/auth/complete']);
 
 export function AppShell({ children }: { children: ReactNode }) {
+  if (process.env.NEXT_PUBLIC_MARS_PRODUCT === 'demo') return <DemoShell>{children}</DemoShell>;
+  return <AuthenticatedAppShell>{children}</AuthenticatedAppShell>;
+}
+
+function DemoShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  return pathname === '/' ? <>{children}</> : null;
+}
+
+function AuthenticatedAppShell({ children }: { children: ReactNode }) {
   const { authenticated } = useSession();
   const pathname = usePathname();
 
@@ -34,7 +43,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   // mock 모드는 서버가 없으므로 로그인 자체를 건너뛴다.
   if (apiMode() !== 'mock' && !authenticated) {
     return (
-      <IntroExperience endLabel="로그인">
+      <IntroExperience endLabel="시작하기">
         <LoginCard />
       </IntroExperience>
     );

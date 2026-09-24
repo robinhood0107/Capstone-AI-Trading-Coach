@@ -11,11 +11,21 @@ import com.capstone.decision.application.brokerage.BrokerageGatewaySubmitRequest
 import com.capstone.decision.application.brokerage.BrokerageGatewaySubmitResult
 import com.capstone.decision.application.brokerage.BrokerageUnavailableException
 import com.capstone.decision.application.brokerage.MockBalancePositionProjection
+import com.capstone.decision.application.brokerage.MockCredentialCertificationPort
+import com.capstone.decision.application.brokerage.MockCredentialCertificationProof
+import com.capstone.decision.application.brokerage.MockCredentialCertificationStatus
+import com.capstone.decision.application.brokerage.MockCredentialConnectionPort
+import com.capstone.decision.contract.v1.BoundMockCredentialEnvelope
 import com.capstone.decision.contract.v1.BrokerageServiceGrpc
 import com.capstone.decision.contract.v1.CancelMockCashOrderRequest
+import com.capstone.decision.contract.v1.CertifyMockCredentialRequest
 import com.capstone.decision.contract.v1.GetMockBalanceRequest
 import com.capstone.decision.contract.v1.GetMockBuyableRequest
+import com.capstone.decision.contract.v1.MockCredentialCertificationState
 import com.capstone.decision.contract.v1.SubmitMockCashOrderRequest
+import com.capstone.decision.contract.v1.VerifyMockConnectionRequest
+import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
+import com.google.protobuf.ByteString
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
 import io.grpc.ManagedChannel
 import io.grpc.Metadata
@@ -24,6 +34,7 @@ import io.grpc.StatusRuntimeException
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
 import io.grpc.stub.MetadataUtils
 import jakarta.annotation.PreDestroy
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import java.time.Instant
@@ -38,7 +49,10 @@ import java.util.concurrent.TimeUnit
 class GrpcBrokerageAdapter(
     private val properties: BrokerageGrpcProperties,
     circuitBreakerRegistry: CircuitBreakerRegistry,
+    private val credentialProvider: ObjectProvider<MockCredentialSettingsService>,
 ) : BrokerageGatewayPort,
+    MockCredentialConnectionPort,
+    MockCredentialCertificationPort,
     AutoCloseable {
     private val channel: ManagedChannel
     private val circuitBreaker = circuitBreakerRegistry.circuitBreaker(properties.circuitBreakerName)
@@ -56,7 +70,7 @@ class GrpcBrokerageAdapter(
 
     override fun submitMockOrder(request: BrokerageGatewaySubmitRequest): BrokerageGatewaySubmitResult =
         circuitBreaker.executeSupplier {
-            val rpcRequest =
+            val builder =
                 SubmitMockCashOrderRequest
                     .newBuilder()
                     .setRequestId(request.requestId)
@@ -67,7 +81,9 @@ class GrpcBrokerageAdapter(
                     .setOrderType(request.orderIntent.orderType)
                     .setQuantity(request.orderIntent.quantity)
                     .setEstimatedPriceKrw(request.orderIntent.estimatedPrice)
-                    .build()
+            boundCredential(request.ownerUserId, request.accountId, setOf("CERTIFIED"))
+                ?.let { builder.setCredential(it) }
+            val rpcRequest = builder.build()
             if (rpcRequest.serializedSize > properties.requestMaxBytes) {
                 throw BrokerageUnavailableException("Brokerage gRPC request exceeded bounded contract.")
             }
@@ -95,13 +111,15 @@ class GrpcBrokerageAdapter(
 
     override fun cancelMockOrder(request: BrokerageGatewayCancelRequest): BrokerageGatewayCancelResult =
         circuitBreaker.executeSupplier {
-            val rpcRequest =
+            val builder =
                 CancelMockCashOrderRequest
                     .newBuilder()
                     .setRequestId(request.requestId)
                     .setOrderId(request.orderId)
                     .setAccountId(request.accountId)
-                    .build()
+            boundCredential(request.ownerUserId, request.accountId, setOf("CERTIFIED", "DISCONNECTING"))
+                ?.let { builder.setCredential(it) }
+            val rpcRequest = builder.build()
             if (rpcRequest.serializedSize > properties.requestMaxBytes) {
                 throw BrokerageUnavailableException("Brokerage gRPC request exceeded bounded contract.")
             }
@@ -124,12 +142,14 @@ class GrpcBrokerageAdapter(
 
     override fun getMockBalance(request: BrokerageGatewayBalanceRequest): BrokerageGatewayBalanceResult =
         circuitBreaker.executeSupplier {
-            val rpcRequest =
+            val builder =
                 GetMockBalanceRequest
                     .newBuilder()
                     .setRequestId(request.requestId)
                     .setAccountId(request.accountId)
-                    .build()
+            boundCredential(request.ownerUserId, request.accountId, setOf("STORED", "CONNECTED", "CERTIFIED", "DISCONNECTING"))
+                ?.let { builder.setCredential(it) }
+            val rpcRequest = builder.build()
             requireBoundedRequest(rpcRequest.serializedSize)
             try {
                 val response = stub().getMockBalance(rpcRequest)
@@ -180,14 +200,16 @@ class GrpcBrokerageAdapter(
 
     override fun getMockBuyable(request: BrokerageGatewayBuyableRequest): BrokerageGatewayBuyableResult =
         circuitBreaker.executeSupplier {
-            val rpcRequest =
+            val builder =
                 GetMockBuyableRequest
                     .newBuilder()
                     .setRequestId(request.requestId)
                     .setAccountId(request.accountId)
                     .setSymbol(request.symbol)
                     .setEstimatedPriceKrw(request.estimatedPriceKrw)
-                    .build()
+            boundCredential(request.ownerUserId, request.accountId, setOf("CONNECTED", "CERTIFIED"))
+                ?.let { builder.setCredential(it) }
+            val rpcRequest = builder.build()
             requireBoundedRequest(rpcRequest.serializedSize)
             try {
                 val response = stub().getMockBuyable(rpcRequest)
@@ -219,11 +241,136 @@ class GrpcBrokerageAdapter(
             }
         }
 
+    override fun verify(
+        requestId: String,
+        ownerUserId: String,
+        accountId: String,
+    ) {
+        circuitBreaker.executeRunnable {
+            val builder =
+                VerifyMockConnectionRequest
+                    .newBuilder()
+                    .setRequestId(requestId)
+                    .setAccountId(accountId)
+            boundCredential(ownerUserId, accountId, setOf("STORED", "CONNECTED", "CERTIFIED"))
+                ?.let { builder.setCredential(it) }
+            val request = builder.build()
+            requireBoundedRequest(request.serializedSize)
+            try {
+                val response = stub().verifyMockConnection(request)
+                if (!response.connected || response.accountId != accountId) {
+                    throw BrokerageUnavailableException("KIS_MOCK connection proof did not match the owner account.")
+                }
+            } catch (exception: StatusRuntimeException) {
+                throw mapStatus(exception)
+            }
+        }
+    }
+
+    override fun certify(
+        requestId: String,
+        ownerUserId: String,
+        accountId: String,
+        certificationId: String,
+        sessionDate: String,
+        recovery: Boolean,
+    ): MockCredentialCertificationProof =
+        circuitBreaker.executeSupplier {
+            val builder =
+                CertifyMockCredentialRequest
+                    .newBuilder()
+                    .setRequestId(requestId)
+                    .setOwnerUserId(ownerUserId)
+                    .setAccountId(accountId)
+                    .setCertificationId(certificationId)
+                    .setSessionDate(sessionDate)
+                    .setRecovery(recovery)
+            boundCredential(ownerUserId, accountId, setOf("CONNECTED"))
+                ?.let { builder.setCredential(it) }
+            val request = builder.build()
+            requireBoundedRequest(request.serializedSize)
+            try {
+                val response = stub().certifyMockCredential(request)
+                val status =
+                    when (response.state) {
+                        MockCredentialCertificationState.MOCK_CREDENTIAL_CERTIFICATION_PASS ->
+                            MockCredentialCertificationStatus.PASS
+                        MockCredentialCertificationState.MOCK_CREDENTIAL_CERTIFICATION_FAILED ->
+                            MockCredentialCertificationStatus.FAILED
+                        MockCredentialCertificationState.MOCK_CREDENTIAL_CERTIFICATION_RECOVERY_REQUIRED ->
+                            MockCredentialCertificationStatus.RECOVERY_REQUIRED
+                        else -> throw BrokerageUnavailableException(
+                            "KIS_MOCK certification response had an unknown state.",
+                        )
+                    }
+                if (
+                    response.accountId != accountId ||
+                    response.certificationId != certificationId ||
+                    !SESSION_DATE.matches(response.sessionDate) ||
+                    response.quoteCalls !in 0..1 ||
+                    response.brokerageCalls !in 0..7 ||
+                    response.tokenCalls !in 0..1 ||
+                    response.failureCode !in SAFE_CERTIFICATION_FAILURES ||
+                    (
+                        status == MockCredentialCertificationStatus.PASS &&
+                            (
+                                !HASH.matches(response.receiptSha256) ||
+                                    response.quoteCalls != 1 ||
+                                    response.brokerageCalls != 7
+                            )
+                    ) ||
+                    (status != MockCredentialCertificationStatus.PASS && response.receiptSha256.isNotEmpty())
+                ) {
+                    throw BrokerageUnavailableException("KIS_MOCK certification response violated its contract.")
+                }
+                MockCredentialCertificationProof(
+                    accountId = response.accountId,
+                    certificationId = response.certificationId,
+                    status = status,
+                    receiptSha256 = response.receiptSha256,
+                    sessionDate = response.sessionDate,
+                    quoteCalls = response.quoteCalls,
+                    brokerageCalls = response.brokerageCalls,
+                    tokenCalls = response.tokenCalls,
+                    failureCode = response.failureCode,
+                )
+            } catch (exception: StatusRuntimeException) {
+                throw mapStatus(exception)
+            }
+        }
+
     private fun stub(): BrokerageServiceGrpc.BrokerageServiceBlockingStub =
         BrokerageServiceGrpc
             .newBlockingStub(channel)
             .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(authHeaders()))
             .withDeadlineAfter(properties.deadlineMillis, TimeUnit.MILLISECONDS)
+
+    /** Only a current owner row may supply the sealed bytes; no full-product environment fallback exists. */
+    private fun boundCredential(
+        ownerUserId: String,
+        accountId: String,
+        allowedStates: Set<String>,
+    ): BoundMockCredentialEnvelope? =
+        credentialProvider.ifAvailable?.resolveEnvelope(ownerUserId, accountId)?.use { envelope ->
+            if (envelope.state !in allowedStates) {
+                throw BrokerageUnavailableException("KIS_MOCK credential is not ready for this operation.")
+            }
+            val sealed = envelope.sealed
+            BoundMockCredentialEnvelope
+                .newBuilder()
+                .setOwnerUserId(ownerUserId)
+                .setAccountId(accountId)
+                .setRevision(envelope.revision)
+                .setCredentialState(envelope.state)
+                .setKekVersion(sealed.kekVersion)
+                .setWrapNonce(ByteString.copyFrom(sealed.wrapNonce))
+                .setWrappedDek(ByteString.copyFrom(sealed.wrappedDek))
+                .setWrapTag(ByteString.copyFrom(sealed.wrapTag))
+                .setPayloadNonce(ByteString.copyFrom(sealed.secretNonce))
+                .setPayloadCiphertext(ByteString.copyFrom(sealed.secretCiphertext))
+                .setPayloadTag(ByteString.copyFrom(sealed.secretTag))
+                .build()
+        }
 
     private fun requireBoundedRequest(serializedSize: Int) {
         if (serializedSize > properties.requestMaxBytes) {
@@ -268,6 +415,19 @@ class GrpcBrokerageAdapter(
             Metadata.Key.of("x-decision-grpc-auth", Metadata.ASCII_STRING_MARSHALLER)
         val HASH = Regex("^[0-9a-f]{64}$")
         val SYMBOL = Regex("^[0-9]{6}$")
+        val SESSION_DATE = Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
         val CANCEL_STATUSES = setOf("CANCEL_REQUESTED", "CANCELLED")
+        val SAFE_CERTIFICATION_FAILURES =
+            setOf(
+                "",
+                "MARKET_CLOSED",
+                "QUOTE_INVALID",
+                "BUYABLE_UNAVAILABLE",
+                "PROVIDER_FAILED",
+                "TEST_ORDER_RECOVERED",
+                "TEST_ORDER_UNCERTAIN",
+                "EXECUTION_FILLED",
+                "BALANCE_CHANGED",
+            )
     }
 }

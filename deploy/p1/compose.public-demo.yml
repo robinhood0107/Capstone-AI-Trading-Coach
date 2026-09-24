@@ -10,7 +10,7 @@ x-app-security: &app-security
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
   pids_limit: 256
-  tmpfs: [/tmp:size=128m,mode=1777]
+  tmpfs: ["/tmp:size=128m,mode=1777"]
   restart: unless-stopped
 
 services:
@@ -55,7 +55,7 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     pids_limit: 128
-    tmpfs: [/tmp:size=16m,mode=1777,uid=999,gid=999]
+    tmpfs: ["/tmp:size=16m,mode=1777,uid=999,gid=999"]
     healthcheck:
       test: ["CMD-SHELL", ". /run/secrets/redis_env && [ \"$$(REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli --no-auth-warning ping)\" = PONG ]"]
       interval: 3s
@@ -124,7 +124,6 @@ services:
       MARS_PUBLIC_SURFACE_MODE: DEMO
       SPRING_PROFILES_ACTIVE: mars-demo
       SPRING_FLYWAY_ENABLED: "false"
-      MARS_AI_DAILY_HARD_CAP_USD: "${MARS_DEMO_AI_DAILY_HARD_CAP_USD:?set demo AI cap}"
       SERVER_ADDRESS: 0.0.0.0
       SERVER_PORT: "8080"
       POSTGRES_HOST: postgres
@@ -184,7 +183,7 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     pids_limit: 128
-    tmpfs: [/tmp:size=64m,mode=1777]
+    tmpfs: ["/tmp:size=64m,mode=1777"]
     ports: ["127.0.0.1:${MARS_DEMO_PORT:-3001}:3000"]
     depends_on:
       api: {condition: service_healthy}

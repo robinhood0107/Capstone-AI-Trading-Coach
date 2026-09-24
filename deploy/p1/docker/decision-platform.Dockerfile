@@ -6,11 +6,13 @@ WORKDIR /source
 COPY workspaces/decision-platform/spring-api/gradlew workspaces/decision-platform/spring-api/gradlew
 COPY workspaces/decision-platform/spring-api/gradle workspaces/decision-platform/spring-api/gradle
 COPY workspaces/decision-platform/spring-api/settings.gradle.kts workspaces/decision-platform/spring-api/build.gradle.kts workspaces/decision-platform/spring-api/
+COPY workspaces/decision-platform/spring-api/gradle.properties workspaces/decision-platform/spring-api/gradle.properties
 COPY contracts contracts
 COPY workspaces/decision-platform/spring-api/src workspaces/decision-platform/spring-api/src
 RUN --mount=type=cache,target=/root/.gradle \
     workspaces/decision-platform/spring-api/gradlew \
-      -p workspaces/decision-platform/spring-api --no-daemon bootJar
+      -p workspaces/decision-platform/spring-api --no-daemon --max-workers=2 \
+      -Pkotlin.compiler.execution.strategy=in-process bootJar
 
 # hadolint ignore=DL3029
 FROM --platform=linux/amd64 ghcr.io/astral-sh/uv:0.8.13@sha256:4de5495181a281bc744845b9579acf7b221d6791f99bcc211b9ec13f417c2853 AS uv

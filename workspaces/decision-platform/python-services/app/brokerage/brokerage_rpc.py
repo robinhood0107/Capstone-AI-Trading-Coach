@@ -5,7 +5,7 @@ import hmac
 import re
 from collections.abc import Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, NoReturn, Protocol
 
 import grpc
@@ -23,6 +23,10 @@ _AUTH_METADATA_KEY = "x-decision-grpc-auth"
 _SAFE_SECRET = re.compile(r"[A-Za-z0-9._~:-]{32,256}")
 _ORDER_ID = re.compile(r"^ord_mock_[0-9a-f]{32}$")
 _ACCOUNT_ID = re.compile(r"^acct_[0-9a-f]{32}$")
+_OWNER_ID = re.compile(r"^usr_[A-Za-z0-9_-]{8,96}$")
+_CERTIFICATION_ID = re.compile(r"^cert_[0-9a-f]{32}$")
+_REQUEST_ID = re.compile(r"^req_[A-Za-z0-9_-]{8,96}$")
+_SESSION_DATE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 
 
 class BrokerageRpcProtocolError(RuntimeError):
@@ -49,6 +53,17 @@ class OwnerBoundBrokerageFactory(Protocol):
         account_id: str,
         allowed_states: frozenset[str],
     ) -> AbstractContextManager[tuple[KISMockOrderGateway, BalanceReadPort]]: ...
+
+    def certify(
+        self,
+        envelope: brokerage_pb2.BoundMockCredentialEnvelope,
+        *,
+        owner_user_id: str,
+        account_id: str,
+        certification_id: str,
+        session_date: str,
+        recovery: bool,
+    ) -> Any: ...
 
 
 class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
@@ -248,6 +263,63 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
             connected=True,
         )
 
+    def CertifyMockCredential(
+        self,
+        request: brokerage_pb2.CertifyMockCredentialRequest,
+        context: grpc.ServicerContext,
+    ) -> brokerage_pb2.CertifyMockCredentialResponse:
+        _require_authenticated(context, self._shared_secret)
+        if (
+            self._owner_factory is None
+            or not request.HasField("credential")
+            or _OWNER_ID.fullmatch(request.owner_user_id) is None
+            or _ACCOUNT_ID.fullmatch(request.account_id) is None
+            or request.credential.owner_user_id != request.owner_user_id
+            or request.credential.account_id != request.account_id
+            or request.credential.credential_state != "CONNECTED"
+            or _CERTIFICATION_ID.fullmatch(request.certification_id) is None
+            or _REQUEST_ID.fullmatch(request.request_id) is None
+            or _SESSION_DATE.fullmatch(request.session_date) is None
+        ):
+            _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "mock certification request is invalid")
+        try:
+            date.fromisoformat(request.session_date)
+        except ValueError:
+            _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "mock certification request is invalid")
+        try:
+            result = self._owner_factory.certify(
+                request.credential,
+                owner_user_id=request.owner_user_id,
+                account_id=request.account_id,
+                certification_id=request.certification_id,
+                session_date=request.session_date,
+                recovery=request.recovery,
+            )
+        except OwnerCredentialUnavailable:
+            return _certification_failure(request, "PROVIDER_FAILED")
+        except Exception:
+            # Initialization and transport failures return fixed reason codes only.
+            return _certification_failure(request, "PROVIDER_FAILED")
+        states = {
+            "PASS": brokerage_pb2.MOCK_CREDENTIAL_CERTIFICATION_PASS,
+            "FAILED": brokerage_pb2.MOCK_CREDENTIAL_CERTIFICATION_FAILED,
+            "RECOVERY_REQUIRED": brokerage_pb2.MOCK_CREDENTIAL_CERTIFICATION_RECOVERY_REQUIRED,
+        }
+        state = states.get(result.state)
+        if state is None:
+            return _certification_failure(request, "PROVIDER_FAILED")
+        return brokerage_pb2.CertifyMockCredentialResponse(
+            account_id=request.account_id,
+            certification_id=request.certification_id,
+            state=state,
+            receipt_sha256=result.receipt_sha256,
+            session_date=result.session_date,
+            quote_calls=result.quote_calls,
+            brokerage_calls=result.brokerage_calls,
+            token_calls=result.token_calls,
+            failure_code=result.failure_code,
+        )
+
 
 def _require_authenticated(context: grpc.ServicerContext, shared_secret: str) -> None:
     values = [value for key, value in context.invocation_metadata() if key == _AUTH_METADATA_KEY]
@@ -285,6 +357,19 @@ def _validate_order_and_account(
 def _validate_account(account_id: str, context: grpc.ServicerContext) -> None:
     if _ACCOUNT_ID.fullmatch(account_id) is None:
         _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "account id is invalid")
+
+
+def _certification_failure(
+    request: brokerage_pb2.CertifyMockCredentialRequest,
+    failure_code: str,
+) -> brokerage_pb2.CertifyMockCredentialResponse:
+    return brokerage_pb2.CertifyMockCredentialResponse(
+        account_id=request.account_id,
+        certification_id=request.certification_id,
+        state=brokerage_pb2.MOCK_CREDENTIAL_CERTIFICATION_FAILED,
+        session_date=request.session_date,
+        failure_code=failure_code,
+    )
 
 
 def _require_bound_account(

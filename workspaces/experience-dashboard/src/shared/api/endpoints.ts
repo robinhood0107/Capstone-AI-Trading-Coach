@@ -31,7 +31,7 @@ import type {
   RecentRiskResultList,
   MockBalance,
   MockCredentialReadResponse,
-  OperatorAiBudgetPolicy,
+  MockCredentialCertificationOutcome,
   MockBuyable,
   MockOrderRequest,
   MockOrderSubmitted,
@@ -88,19 +88,20 @@ export const api = {
     return apiFetchBare<void>('/api/v1/brokerage/mock/credential/connect', { method: 'POST' });
   },
 
+  certifyMockCredential(): Promise<ApiResult<MockCredentialCertificationOutcome>> {
+    return apiFetch<MockCredentialCertificationOutcome>('/api/v1/brokerage/mock/credential/certify', {
+      method: 'POST',
+    });
+  },
+
+  acknowledgeMockCredentialCertificationRecovery(): Promise<void> {
+    return apiFetchBare<void>('/api/v1/brokerage/mock/credential/certify/recovery-confirm', {
+      method: 'POST',
+    });
+  },
+
   disconnectMockCredential(): Promise<{ state: 'DISCONNECTING' } | void> {
     return apiFetchBare<{ state: 'DISCONNECTING' } | void>('/api/v1/brokerage/mock/credential', { method: 'DELETE' });
-  },
-
-  operatorAiBudget(): Promise<ApiResult<OperatorAiBudgetPolicy>> {
-    return apiFetch<OperatorAiBudgetPolicy>('/api/v1/admin/ai-budget');
-  },
-
-  putOperatorAiBudget(input: {
-    dailySoftCapCents: number;
-    expectedRevision: number;
-  }): Promise<ApiResult<OperatorAiBudgetPolicy>> {
-    return apiFetch<OperatorAiBudgetPolicy>('/api/v1/admin/ai-budget', { method: 'PUT', body: input });
   },
 
   /* -------------------------------------------------------------- 상태 */

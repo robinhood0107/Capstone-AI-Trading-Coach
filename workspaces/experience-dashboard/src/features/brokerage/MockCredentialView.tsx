@@ -88,6 +88,64 @@ function MockCredentialForm({
     }
   }
 
+  async function certifyMockAccount() {
+    if (!status.registered || !status.credential || pending || !status.credential.connected) return;
+    const priorFillNeedsReview =
+      status.credential.certificationStatus === 'FAILED' &&
+      status.credential.certificationFailureCode === 'EXECUTION_FILLED';
+    const confirmation = priorFillNeedsReview
+      ? '이전 1주 인증 주문이 체결된 것으로 보입니다. KIS 모의계좌에서 해당 주문과 보유수량을 확인·정리한 뒤 진행해 주세요. 새로 1주 테스트 주문을 시작할까요?'
+      : 'KIS 모의계좌에서 삼성전자 1주를 현재 하한가로 매수 주문한 뒤 즉시 취소하고 체결·잔고를 확인합니다. 하한가 주문도 체결될 수 있으며, 체결되면 계좌에 1주가 남을 수 있습니다. 진행할까요?';
+    if (
+      !window.confirm(
+        confirmation,
+      )
+    ) return;
+    setPending(true);
+    setOutcome(null);
+    setError(null);
+    try {
+      const { data } = await api.certifyMockCredential();
+      if (data.status === 'PASS') {
+        setOutcome('모의주문·취소·체결·잔고 대사가 확인됐습니다.');
+      } else if (data.status === 'RECOVERY_REQUIRED') {
+        setError('이전 인증 주문의 상태 확인이 필요합니다. 같은 인증을 다시 확인해 주세요.');
+      } else if (data.failureCode === 'TEST_ORDER_RECOVERED') {
+        setOutcome('이전 테스트 주문을 취소·대사했습니다. 새 1주 인증을 다시 진행해 주세요.');
+      } else {
+        setError(`모의주문 인증에 실패했습니다 (${data.failureCode ?? 'PROVIDER_FAILED'}).`);
+      }
+      reload();
+    } catch (cause) {
+      const state = toErrorState<never>(cause);
+      setError(state.kind === 'error' ? state.message : '모의주문 인증을 완료하지 못했습니다.');
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function confirmCertificationRecovery() {
+    if (!status.credential || pending || status.credential.certificationStatus !== 'RECOVERY_REQUIRED') return;
+    if (
+      !window.confirm(
+        'KIS 모의계좌에서 인증 주문의 체결·미체결·잔고를 직접 확인하고 정리했습니까? 확인하면 MARS의 복구 잠금만 해제됩니다. 모의주문 인증이나 자동운용을 완료 처리하지는 않습니다.',
+      )
+    ) return;
+    setPending(true);
+    setOutcome(null);
+    setError(null);
+    try {
+      await api.acknowledgeMockCredentialCertificationRecovery();
+      setOutcome('복구 잠금을 해제했습니다. 계좌를 확인한 뒤 1주 인증을 다시 진행할 수 있습니다.');
+      reload();
+    } catch (cause) {
+      const state = toErrorState<never>(cause);
+      setError(state.kind === 'error' ? state.message : '복구 상태를 변경하지 못했습니다.');
+    } finally {
+      setPending(false);
+    }
+  }
+
   async function disconnect() {
     if (!status.registered || !status.credential || pending) return;
     if (
@@ -127,10 +185,18 @@ function MockCredentialForm({
             <p className="text-muted">
               {credential.state === 'DISCONNECTING'
                 ? '연결 해제 중 · 새 주문 중단 · 미대사 주문 확인 필요'
-                : credential.certified
-                ? '모의주문 인증 완료'
+              : credential.certified
+                ? `모의주문 인증 완료${credential.certificationSessionDate ? ` · ${credential.certificationSessionDate}` : ''}`
                 : credential.connected
-                  ? '연결 확인됨 · 모의주문 인증 전'
+                  ? credential.certificationStatus === 'RECOVERY_REQUIRED'
+                    ? '이전 인증 주문 복구 확인 필요 · 자동주문은 닫혀 있음'
+                    : credential.certificationStatus === 'RUNNING'
+                      ? '모의주문 인증 중 · 자동주문은 닫혀 있음'
+                      : credential.certificationStatus === 'FAILED'
+                        ? credential.certificationFailureCode === 'TEST_ORDER_RECOVERED'
+                          ? '이전 테스트 주문 정리 완료 · 1주 인증 재시도 필요'
+                          : '모의주문 인증 실패 · 자동주문은 닫혀 있음'
+                      : '연결 확인됨 · 모의주문 인증 전'
                   : '연결 확인 전 · 자동주문 시작 전'}
             </p>
           </>
@@ -147,6 +213,37 @@ function MockCredentialForm({
           className="mt-4 rounded-control border border-line px-5 py-2.5 text-[14px] font-semibold text-ink hover:border-navy disabled:opacity-50"
         >
           {pending ? '확인 중…' : credential?.connected ? '읽기 연결 다시 확인' : '읽기 연결 확인'}
+        </button>
+      ) : null}
+      {status.registered && credential?.connected && !credential.certified ? (
+        <div className="mt-4">
+          <p className="text-[12px] leading-5 text-muted">
+            인증은 KRX 거래일 09:10~15:00 KST에만 실행할 수 있습니다. 주문은 005930 1주 하한가 지정가로 고정됩니다.
+          </p>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => void certifyMockAccount()}
+            className="mt-2 rounded-control border border-brand px-5 py-2.5 text-[14px] font-semibold text-brand hover:bg-subtle disabled:opacity-50"
+          >
+            {pending
+              ? '모의주문 확인 중…'
+              : credential.certificationStatus === 'RECOVERY_REQUIRED'
+                ? '이전 인증 주문 복구 확인'
+              : credential.certificationStatus === 'RUNNING'
+                ? '인증 상태 다시 확인'
+                  : '1주 모의주문 인증'}
+          </button>
+        </div>
+      ) : null}
+      {status.registered && credential?.certificationStatus === 'RECOVERY_REQUIRED' ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => void confirmCertificationRecovery()}
+          className="ml-3 mt-4 rounded-control border border-line px-5 py-2.5 text-[14px] font-semibold text-muted disabled:opacity-50"
+        >
+          {pending ? '복구 상태 확인 중…' : 'KIS에서 상태 확인 후 복구 잠금 해제'}
         </button>
       ) : null}
       {status.registered && credential ? (

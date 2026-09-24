@@ -37,6 +37,9 @@ export interface MockCredentialSummary {
   accountNoLast4: string;
   connected: boolean;
   certified: boolean;
+  certificationStatus: 'NOT_STARTED' | 'RUNNING' | 'RECOVERY_REQUIRED' | 'PASS' | 'FAILED';
+  certificationFailureCode: string | null;
+  certificationSessionDate: string | null;
 }
 
 export interface MockCredentialReadResponse {
@@ -44,10 +47,14 @@ export interface MockCredentialReadResponse {
   credential: MockCredentialSummary | null;
 }
 
-export interface OperatorAiBudgetPolicy {
-  hardCapCents: number;
-  dailySoftCapCents: number;
-  revision: number;
+export interface MockCredentialCertificationOutcome {
+  status: 'PASS' | 'FAILED' | 'RECOVERY_REQUIRED';
+  certificationId: string | null;
+  sessionDate: string | null;
+  quoteCalls: number;
+  brokerageCalls: number;
+  tokenCalls: number;
+  failureCode: string | null;
 }
 
 /* ---------------------------------------------------------------- Health */
@@ -904,7 +911,7 @@ export interface RagV2CorpusStatus {
   privateOverlayState: string;
   progressPercent: number;
   failureCode: string | null;
-  /** Daily generation usage; all fields are null in retrieval-only mode. */
+  /** Retired quotas stay null; generationUsedToday counts reservations for telemetry only. */
   generationDailyCap: number | null;
   generationUsedToday: number | null;
   generationRemaining: number | null;

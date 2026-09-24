@@ -15,7 +15,6 @@ class PublicSurfaceGateTest {
             listOf(
                 "/api/v1/auth/login",
                 "/api/v1/brokerage/mock/orders",
-                "/api/v2/rag/ask",
                 "/internal/automation-runtime/run",
             )
         for (mode in listOf(PublicSurfaceMode.DEMO, PublicSurfaceMode.FULL)) {
@@ -26,6 +25,48 @@ class PublicSurfaceGateTest {
                 assertEquals(404, response.status, "$mode $path")
                 assertEquals(null, chain.request, "$mode $path")
             }
+        }
+    }
+
+    @Test
+    fun `full agent permits only the owner scoped RAG routes while demo denies them`() {
+        val detail = "/api/v2/rag/history/rag_abcdefghijkl"
+        val allowed =
+            listOf(
+                "GET" to "/api/v2/rag/corpus-status",
+                "GET" to "/api/v2/rag/consent",
+                "GET" to "/api/v2/rag/world-news",
+                "GET" to "/api/v2/rag/history",
+                "POST" to "/api/v2/rag/consents",
+                "POST" to "/api/v2/rag/vertex-preparations",
+                "POST" to "/api/v2/rag/ask",
+                "GET" to detail,
+                "DELETE" to detail,
+            )
+        for ((method, path) in allowed) {
+            val fullChain = MockFilterChain()
+            PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(
+                MockHttpServletRequest(method, path),
+                MockHttpServletResponse(),
+                fullChain,
+            )
+            assertEquals(path, (fullChain.request as MockHttpServletRequest).requestURI)
+            val demoResponse = MockHttpServletResponse()
+            PublicSurfaceGate(PublicSurfaceMode.DEMO).doFilter(
+                MockHttpServletRequest(method, path),
+                demoResponse,
+                MockFilterChain(),
+            )
+            assertEquals(404, demoResponse.status)
+        }
+        for ((method, path) in listOf("GET" to "/api/v2/rag/ask", "POST" to detail, "GET" to "$detail/extra")) {
+            val response = MockHttpServletResponse()
+            PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(
+                MockHttpServletRequest(method, path),
+                response,
+                MockFilterChain(),
+            )
+            assertEquals(404, response.status)
         }
     }
 
@@ -67,6 +108,8 @@ class PublicSurfaceGateTest {
                 "PUT" to "/api/v1/brokerage/mock/credential",
                 "DELETE" to "/api/v1/brokerage/mock/credential",
                 "POST" to "/api/v1/brokerage/mock/credential/connect",
+                "POST" to "/api/v1/brokerage/mock/credential/certify",
+                "POST" to "/api/v1/brokerage/mock/credential/certify/recovery-confirm",
             )
         for ((method, path) in routes) {
             val fullChain = MockFilterChain()
@@ -83,6 +126,60 @@ class PublicSurfaceGateTest {
                 MockFilterChain(),
             )
             assertEquals(404, demoResponse.status)
+        }
+    }
+
+    @Test
+    fun `full automation surface allows exact owner routes and demo or neighboring routes stay closed`() {
+        val allowed =
+            listOf(
+                "GET" to "/api/v2/automation/status",
+                "GET" to "/api/v2/automation/positions",
+                "GET" to "/api/v3/automation/status",
+                "PUT" to "/api/v3/automation/policy",
+                "POST" to "/api/v3/automation/arm",
+                "GET" to "/api/v3/automation/runs",
+                "GET" to "/api/v3/automation/runs/auto_run_abcdefgh",
+                "GET" to "/api/v3/automation/positions",
+                "POST" to "/api/v1/automation/disarm",
+                "GET" to "/api/v4/automation/capital-policy",
+                "PUT" to "/api/v4/automation/capital-policy",
+                "GET" to "/api/v4/automation/capital-status",
+            )
+        for ((method, path) in allowed) {
+            val fullChain = MockFilterChain()
+            PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(
+                MockHttpServletRequest(method, path),
+                MockHttpServletResponse(),
+                fullChain,
+            )
+            assertEquals(path, (fullChain.request as MockHttpServletRequest).requestURI)
+            val demoResponse = MockHttpServletResponse()
+            PublicSurfaceGate(PublicSurfaceMode.DEMO).doFilter(
+                MockHttpServletRequest(method, path),
+                demoResponse,
+                MockFilterChain(),
+            )
+            assertEquals(404, demoResponse.status, "$method $path")
+        }
+        val denied =
+            listOf(
+                "POST" to "/api/v1/automation/arm",
+                "POST" to "/api/v2/automation/arm",
+                "GET" to "/api/v3/automation/arm",
+                "DELETE" to "/api/v3/automation/runs/auto_run_abcdefgh",
+                "GET" to "/api/v3/automation/runs/invalid",
+                "POST" to "/api/v4/automation/capital-policy",
+                "GET" to "/api/v3/automation/positions/extra",
+            )
+        for ((method, path) in denied) {
+            val response = MockHttpServletResponse()
+            PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(
+                MockHttpServletRequest(method, path),
+                response,
+                MockFilterChain(),
+            )
+            assertEquals(404, response.status, "$method $path")
         }
     }
 

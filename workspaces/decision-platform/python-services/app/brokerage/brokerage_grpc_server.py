@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from concurrent import futures
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 import grpc
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
@@ -15,11 +16,20 @@ from pydantic import SecretStr
 
 from app.brokerage.brokerage_rpc import BalanceReadPort, BrokerageServicer
 from app.brokerage.kis_mock_online_client import KISBrokerageCallBudget, KISMockBrokerageHttpClient
-from app.brokerage.kis_mock_online_runtime import KISMockOnlineBalanceReader
+from app.brokerage.kis_mock_online_runtime import KISMockExecutionReader, KISMockOnlineBalanceReader
+from app.brokerage.kis_mock_owner_certification import (
+    OwnerMockCertificationResult,
+    OwnerMockCredentialCertifier,
+    build_quote_accounting,
+)
 from app.brokerage.kis_mock_order_gateway import KISMockOrderGateway
 from app.brokerage.mock_order_reference_store import EncryptedRedisOrderReferenceStore
-from app.brokerage.owner_credential_envelope import OwnerCredentialEnvelopeOpener
+from app.brokerage.owner_credential_envelope import (
+    OwnerCredentialEnvelopeOpener,
+    OwnerCredentialUnavailable,
+)
 from app.data.kis._credential_transport import _Credentials, _build_redis_client
+from app.data.kis.http_client import KISHttpClient
 from app.data.kis.settings import KISSettings
 from app.generated import brokerage_pb2, brokerage_pb2_grpc
 
@@ -144,6 +154,76 @@ class OwnerBoundGatewayFactory:
             )
         finally:
             client.close()
+
+    def certify(
+        self,
+        envelope: brokerage_pb2.BoundMockCredentialEnvelope,
+        *,
+        owner_user_id: str,
+        account_id: str,
+        certification_id: str,
+        session_date: str,
+        recovery: bool,
+    ) -> OwnerMockCertificationResult:
+        """Run only the server-fixed one-share test under one sealed owner credential."""
+        if envelope.owner_user_id != owner_user_id or envelope.credential_state != "CONNECTED":
+            raise OwnerCredentialUnavailable("BROKERAGE_CREDENTIAL_UNAVAILABLE")
+        opened = self._opener.open(
+            envelope,
+            account_id=account_id,
+            allowed_states=frozenset({"CONNECTED"}),
+        )
+        credentials = _Credentials(opened.app_key, opened.app_secret)
+
+        def credential_provider() -> _Credentials:
+            return credentials
+
+        expires_at = datetime.now(UTC) + timedelta(minutes=4)
+
+        def require_before_deadline() -> None:
+            if datetime.now(UTC) >= expires_at:
+                raise TimeoutError("KIS_MOCK_CERTIFICATION_DEADLINE_EXPIRED")
+
+        budget = KISBrokerageCallBudget(token_p_cap=1, brokerage_cap=7)
+        settings = KISSettings(kis_mode="mock", kis_offline=False, kis_retry_attempts=1)
+        broker_client = KISMockBrokerageHttpClient(
+            settings=settings,
+            budget=budget,
+            account_number=opened.account_number,
+            credential_provider=credential_provider,
+            approval_deadline_guard=require_before_deadline,
+        )
+        quote_accounting = build_quote_accounting()
+        quote_client: KISHttpClient | None = None
+        try:
+            quote_client = KISHttpClient(
+                settings=settings,
+                accounting=quote_accounting,
+                deadline_guard=require_before_deadline,
+                credential_provider=credential_provider,
+            )
+            return OwnerMockCredentialCertifier(
+                account_id=account_id,
+                certification_id=certification_id,
+                session_date=session_date,
+                recovery=recovery,
+                quote_client=quote_client,
+                quote_accounting=quote_accounting,
+                broker_client=broker_client,
+                brokerage_budget=budget,
+                gateway=KISMockOrderGateway(
+                    broker_client,
+                    mode="mock",
+                    reference_store=self._reference_store,
+                ),
+                balance_reader=KISMockOnlineBalanceReader(broker_client),
+                execution_reader=KISMockExecutionReader(broker_client),
+                reference_store=self._reference_store,
+            ).run()
+        finally:
+            if quote_client is not None:
+                quote_client.close()
+            broker_client.close()
 
 
 def serve() -> None:

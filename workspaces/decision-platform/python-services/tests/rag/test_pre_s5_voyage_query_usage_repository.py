@@ -86,7 +86,7 @@ def test_voyage_query_usage_lease_claims_exact_packet_once_without_persisting_qu
         assert ("nonce",) not in columns
 
 
-def test_s49_runtime_reserves_shared_operator_budget_once_before_voyage_query(
+def test_s49_runtime_usage_measurement_failure_does_not_block_voyage_query(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runtime_row = (
@@ -100,26 +100,22 @@ def test_s49_runtime_reserves_shared_operator_budget_once_before_voyage_query(
         8_192,
         1,
     )
-    connection = MagicMock()
-    connection.__enter__.return_value = connection
-    connection.transaction.return_value = nullcontext()
-    budget_reservations = 0
+    runtime_connection = MagicMock()
+    runtime_connection.__enter__.return_value = runtime_connection
+    runtime_connection.transaction.return_value = nullcontext()
+    meter_connection = MagicMock()
+    meter_connection.__enter__.return_value = meter_connection
+    meter_connection.transaction.return_value = nullcontext()
 
-    def execute(query: str, _parameters: object = None) -> MagicMock:
-        nonlocal budget_reservations
-        if "reserve_s4_9_runtime_voyage_query_usage" in query:
-            return MagicMock(fetchone=MagicMock(return_value=runtime_row))
-        if "reserve_s4_9_operator_voyage_gross_usage_v1" in query:
-            budget_reservations += 1
-            # Match the database's unique reservation ID: a repeated attempt is rejected.
-            return MagicMock(fetchone=MagicMock(return_value=(budget_reservations == 1,)))
-        raise AssertionError("unexpected database query")
+    runtime_connection.execute.return_value = MagicMock(
+        fetchone=MagicMock(return_value=runtime_row)
+    )
+    meter_connection.execute.side_effect = psycopg.OperationalError("meter unavailable")
 
-    connection.execute.side_effect = execute
-    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "FULL")
-    monkeypatch.setenv("MARS_AI_DAILY_HARD_CAP_USD", "1.00")
     monkeypatch.setattr(
-        voyage_usage_repository.psycopg, "connect", lambda *_args, **_kwargs: connection
+        voyage_usage_repository.psycopg,
+        "connect",
+        MagicMock(side_effect=[runtime_connection, meter_connection]),
     )
     monkeypatch.setattr(
         voyage_usage_repository, "_attest_writer_connection", lambda _connection: None
@@ -137,7 +133,7 @@ def test_s49_runtime_reserves_shared_operator_budget_once_before_voyage_query(
 
     assert activation.provider == "VOYAGE"
     assert lease.usage_event_id == "rgr_vqu_" + "1" * 32
-    assert budget_reservations == 1
+    meter_connection.execute.assert_called_once()
 
 
 def test_voyage_query_usage_lease_keeps_public_evaluation_component_label_without_query_content(

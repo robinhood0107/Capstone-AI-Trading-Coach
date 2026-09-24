@@ -34,13 +34,16 @@ import java.security.SecureRandom
 /** Starts the full product security chains with an offline Google registration and isolated DB. */
 @Testcontainers
 @ActiveProfiles("mars-full")
-@Import(GoogleOidcPublicBoundaryIntegrationTest.OfflineGoogleRegistration::class)
+@Import(
+    GoogleOidcPublicBoundaryIntegrationTest.OfflineGoogleRegistration::class,
+    TestActorCapabilityConfiguration::class,
+)
 @SpringBootTest(
     properties = ["spring.autoconfigure.exclude=org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration"],
 )
 class GoogleOidcPublicBoundaryIntegrationTest(
     @Autowired private val context: WebApplicationContext,
-) : SpringApiIntegrationTestBase() {
+) {
     private lateinit var mvc: MockMvc
 
     @BeforeEach
@@ -56,6 +59,8 @@ class GoogleOidcPublicBoundaryIntegrationTest(
     fun `public password and account routes are closed while Google start uses state`() {
         mvc.post("/api/v1/auth/login").andExpect { status { isNotFound() } }
         mvc.post("/api/v1/brokerage/mock/credential/connect").andExpect { status { isUnauthorized() } }
+        mvc.post("/api/v1/brokerage/mock/credential/certify").andExpect { status { isUnauthorized() } }
+        mvc.post("/api/v1/brokerage/mock/credential/certify/recovery-confirm").andExpect { status { isUnauthorized() } }
         mvc.get("/api/v1/auth/oidc/start/google").andExpect {
             status { isFound() }
             header { string("Location", org.hamcrest.Matchers.containsString("accounts.google.com")) }
@@ -116,21 +121,21 @@ class GoogleOidcPublicBoundaryIntegrationTest(
         @DynamicPropertySource
         @JvmStatic
         fun properties(registry: DynamicPropertyRegistry) {
+            SpringApiIntegrationTestBase.registerSharedApplicationProperties(
+                registry,
+                includeDemoPasswordBundles = false,
+            )
             registry.add("spring.datasource.url", postgres::getJdbcUrl)
             registry.add("spring.datasource.username", postgres::getUsername)
             registry.add("spring.datasource.password", postgres::getPassword)
             registry.add("spring.flyway.user", postgres::getUsername)
             registry.add("spring.flyway.password", postgres::getPassword)
             registry.add("MARS_PUBLIC_SURFACE_MODE") { "FULL" }
-            registry.add("app.demo-credentials.user-credential-bundle") { "" }
-            registry.add("app.demo-credentials.admin-credential-bundle") { "" }
-            registry.add("app.demo-credentials.separation-key") { "" }
             registry.add("MARS_PUBLIC_ORIGIN") { "https://mars.example.test" }
             registry.add("GOOGLE_OIDC_ADMIN_SUBJECT_SHA256") { "a".repeat(64) }
             registry.add("GOOGLE_OIDC_CLIENT_ID") { "fixture-client" }
             registry.add("GOOGLE_OIDC_CLIENT_SECRET") { "fixture-secret" }
             registry.add("MARS_BROKERAGE_KEK_DIRECTORY") { brokerageKekDirectory.toString() }
-            registry.add("MARS_AI_DAILY_HARD_CAP_USD") { "1.00" }
             registry.add("GOOGLE_OIDC_REDIRECT_URI") {
                 "https://mars.example.test/api/v1/auth/oidc/callback/google"
             }

@@ -108,10 +108,43 @@ message VerifyMockConnectionResponse {
   bool connected = 2;
 }
 
+// Server-selected fixed KIS_MOCK test: one 005930 share at its current lower limit,
+// followed by cancellation, execution/open-order checks, and a pre/post balance digest.
+// No caller-controlled symbol, side, quantity, or price is accepted.
+message CertifyMockCredentialRequest {
+  string request_id = 1;
+  string owner_user_id = 2;
+  string account_id = 3;
+  string certification_id = 4;
+  BoundMockCredentialEnvelope credential = 5;
+  bool recovery = 6;
+  string session_date = 7;
+}
+
+enum MockCredentialCertificationState {
+  MOCK_CREDENTIAL_CERTIFICATION_UNSPECIFIED = 0;
+  MOCK_CREDENTIAL_CERTIFICATION_PASS = 1;
+  MOCK_CREDENTIAL_CERTIFICATION_FAILED = 2;
+  MOCK_CREDENTIAL_CERTIFICATION_RECOVERY_REQUIRED = 3;
+}
+
+message CertifyMockCredentialResponse {
+  string account_id = 1;
+  string certification_id = 2;
+  MockCredentialCertificationState state = 3;
+  string receipt_sha256 = 4;
+  string session_date = 5;
+  int32 quote_calls = 6;
+  int32 brokerage_calls = 7;
+  int32 token_calls = 8;
+  string failure_code = 9;
+}
+
 service BrokerageService {
   rpc SubmitMockCashOrder(SubmitMockCashOrderRequest) returns (SubmitMockCashOrderResponse);
   rpc CancelMockCashOrder(CancelMockCashOrderRequest) returns (CancelMockCashOrderResponse);
   rpc GetMockBalance(GetMockBalanceRequest) returns (GetMockBalanceResponse);
   rpc GetMockBuyable(GetMockBuyableRequest) returns (GetMockBuyableResponse);
   rpc VerifyMockConnection(VerifyMockConnectionRequest) returns (VerifyMockConnectionResponse);
+  rpc CertifyMockCredential(CertifyMockCredentialRequest) returns (CertifyMockCredentialResponse);
 }

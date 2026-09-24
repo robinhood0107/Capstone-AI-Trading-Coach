@@ -143,84 +143,10 @@ class GoogleOidcIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase(
     }
 
     @Test
-    fun `only current Google ADMIN can read and change the operator AI budget`() {
-        val admin = issueSession("test-budget-admin-" + UUID.randomUUID(), operatorSubject = true)
-        val user = issueSession("test-budget-user-" + UUID.randomUUID())
-        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", "app-test").use { connection ->
-            val denied =
-                assertThrows(SQLException::class.java) {
-                    connection.prepareStatement("select * from read_operator_ai_budget_policy_v1(?,?)").use { statement ->
-                        statement.setString(1, user.userId)
-                        statement.setLong(2, 1)
-                        statement.executeQuery()
-                    }
-                }
-            assertEquals("42501", denied.sqlState)
+    fun `provider usage estimates record past the former limit without blocking users`() {
+        val users = (1..2).map { issueSession("test-usage-user-" + UUID.randomUUID()) }
 
-            val revision =
-                connection.prepareStatement("select revision from read_operator_ai_budget_policy_v1(?,?)").use { statement ->
-                    statement.setString(1, admin.userId)
-                    statement.setLong(2, 1)
-                    statement.executeQuery().use { result ->
-                        assertTrue(result.next())
-                        result.getLong(1)
-                    }
-                }
-            connection.prepareStatement("select set_operator_ai_budget_policy_v1(?,?,?,?)").use { statement ->
-                statement.setString(1, admin.userId)
-                statement.setLong(2, 1)
-                statement.setLong(3, 1_230_000)
-                statement.setLong(4, revision)
-                statement.executeQuery().use { result ->
-                    assertTrue(result.next())
-                    assertEquals(revision + 1, result.getLong(1))
-                }
-            }
-            val stale =
-                assertThrows(SQLException::class.java) {
-                    connection.prepareStatement("select set_operator_ai_budget_policy_v1(?,?,?,?)").use { statement ->
-                        statement.setString(1, admin.userId)
-                        statement.setLong(2, 1)
-                        statement.setLong(3, 2_000_000)
-                        statement.setLong(4, revision)
-                        statement.executeQuery()
-                    }
-                }
-            assertEquals("40001", stale.sqlState)
-            val directRead =
-                assertThrows(SQLException::class.java) {
-                    connection.createStatement().use { statement ->
-                        statement.executeQuery("select * from operator_ai_budget_policy")
-                    }
-                }
-            assertEquals("42501", directRead.sqlState)
-        }
-    }
-
-    @Test
-    fun `two users and three provider roles share one atomic daily gross budget`() {
-        val admin = issueSession("test-gross-admin-" + UUID.randomUUID(), operatorSubject = true)
-        val users = (1..2).map { issueSession("test-gross-user-" + UUID.randomUUID()) }
-        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", "app-test").use { connection ->
-            val revision =
-                connection.prepareStatement("select revision from read_operator_ai_budget_policy_v1(?,?)").use { statement ->
-                    statement.setString(1, admin.userId)
-                    statement.setLong(2, 1)
-                    statement.executeQuery().use { result ->
-                        assertTrue(result.next())
-                        result.getLong(1)
-                    }
-                }
-            connection.prepareStatement("select set_operator_ai_budget_policy_v1(?,?,?,?)").use { statement ->
-                statement.setString(1, admin.userId)
-                statement.setLong(2, 1)
-                statement.setLong(3, 1_000_000)
-                statement.setLong(4, revision)
-                statement.executeQuery()
-            }
-        }
-
-        fun reserve(
+        fun record(
             role: String,
             password: String,
             owner: String?,
@@ -230,13 +156,12 @@ class GoogleOidcIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase(
             id: String = "aibr_" + UUID.randomUUID().toString().replace("-", ""),
         ): Boolean =
             DriverManager.getConnection(postgres.jdbcUrl, role, password).use { connection ->
-                connection.prepareStatement("select reserve_operator_ai_gross_usage_v1(?,?,?,?,?,?)").use { statement ->
+                connection.prepareStatement("select record_operator_ai_gross_usage_v1(?,?,?,?,?)").use { statement ->
                     statement.setString(1, id)
                     statement.setString(2, owner)
                     statement.setString(3, source)
                     statement.setString(4, provider)
                     statement.setLong(5, amount)
-                    statement.setLong(6, 1_000_000)
                     statement.executeQuery().use { result ->
                         assertTrue(result.next())
                         result.getBoolean(1)
@@ -244,51 +169,39 @@ class GoogleOidcIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase(
                 }
             }
 
-        val start = CountDownLatch(1)
-        val executor = Executors.newFixedThreadPool(2)
-        val outcomes =
-            try {
-                val futures =
-                    users.map { user ->
-                        executor.submit(
-                            Callable {
-                                start.await()
-                                reserve("decision_app", "app-test", user.userId, "FULL_AGENT", "VERTEX", 600_000)
-                            },
-                        )
-                    }
-                start.countDown()
-                futures.map { it.get() }
-            } finally {
-                executor.shutdownNow()
-            }
-        assertEquals(listOf(false, true), outcomes.sorted())
+        val sameIdentity = "aibr_" + "1".repeat(32)
+        assertTrue(record("decision_app", "app-test", users[0].userId, "FULL_AGENT", "VERTEX", 600_000_000, sameIdentity))
+        assertTrue(record("decision_app", "app-test", users[0].userId, "FULL_AGENT", "VERTEX", 600_000_000, sameIdentity))
+        assertTrue(record("decision_app", "app-test", users[1].userId, "FULL_AGENT", "VERTEX", 600_000_000))
+        assertTrue(record("decision_rag_writer", "rag-writer-test", users[0].userId, "RAG_VOYAGE", "VOYAGE", 600_000_000))
         assertTrue(
-            reserve(
-                "decision_rag_writer",
-                "rag-writer-test",
-                users[0].userId,
-                "RAG_VOYAGE",
-                "VOYAGE",
-                100_000,
-            ),
-        )
-        assertTrue(
-            reserve(
+            record(
                 "decision_automation_runtime",
                 "automation-runtime-test-0001",
                 users[1].userId,
                 "TRADE_AI",
                 "VERTEX",
-                100_000,
+                600_000_000,
             ),
         )
-        assertFalse(reserve("decision_app", "app-test", users[0].userId, "FULL_AGENT", "VERTEX", 300_001))
         val wrongSource =
             assertThrows(SQLException::class.java) {
-                reserve("decision_rag_writer", "rag-writer-test", users[0].userId, "FULL_AGENT", "VERTEX", 1)
+                record("decision_rag_writer", "rag-writer-test", users[0].userId, "FULL_AGENT", "VERTEX", 1)
             }
         assertEquals("42501", wrongSource.sqlState)
+
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement
+                    .executeQuery(
+                        "SELECT count(*), sum(max_gross_microusd) FROM operator_ai_gross_usage_reservations",
+                    ).use { result ->
+                        assertTrue(result.next())
+                        assertEquals(4L, result.getLong(1))
+                        assertTrue(result.getLong(2) > 1_000_000L)
+                    }
+            }
+        }
     }
 
     private fun revokeSession(

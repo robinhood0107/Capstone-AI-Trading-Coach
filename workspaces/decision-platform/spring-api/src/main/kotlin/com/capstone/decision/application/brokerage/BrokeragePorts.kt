@@ -93,6 +93,36 @@ interface MockCredentialConnectionPort {
     )
 }
 
+enum class MockCredentialCertificationStatus {
+    PASS,
+    FAILED,
+    RECOVERY_REQUIRED,
+}
+
+data class MockCredentialCertificationProof(
+    val accountId: String,
+    val certificationId: String,
+    val status: MockCredentialCertificationStatus,
+    val receiptSha256: String,
+    val sessionDate: String,
+    val quoteCalls: Int,
+    val brokerageCalls: Int,
+    val tokenCalls: Int,
+    val failureCode: String,
+)
+
+/** One server-fixed one-share KIS_MOCK test under the current user's encrypted credential. */
+interface MockCredentialCertificationPort {
+    fun certify(
+        requestId: String,
+        ownerUserId: String,
+        accountId: String,
+        certificationId: String,
+        sessionDate: String,
+        recovery: Boolean,
+    ): MockCredentialCertificationProof
+}
+
 interface BrokerageOrderPersistencePort {
     fun findIdempotencyResult(
         actorUserId: String,

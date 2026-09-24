@@ -4,6 +4,7 @@ import com.capstone.decision.application.security.ActorRlsScopePort
 import com.capstone.decision.application.security.AppPrincipal
 import com.capstone.decision.infrastructure.brokerage.BrokerageCredentialCrypto
 import com.capstone.decision.infrastructure.brokerage.BrokerageKekFile
+import com.capstone.decision.infrastructure.brokerage.MockCredentialCertificationRepository
 import com.capstone.decision.infrastructure.brokerage.MockCredentialConnectionRepository
 import com.capstone.decision.infrastructure.brokerage.MockCredentialDisconnectRepository
 import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
@@ -33,6 +34,7 @@ import org.testcontainers.utility.DockerImageName
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
+import java.security.MessageDigest
 import java.security.SecureRandom
 import java.sql.DriverManager
 import java.sql.SQLException
@@ -225,6 +227,168 @@ class BoundMockCredentialIntegrationTest(
     }
 
     @Test
+    fun `mock order certification is owner and credential revision bound`() {
+        val directory = prepareKeyDirectory()
+        val crypto = BrokerageCredentialCrypto(BrokerageKekFile(directory.toString()))
+        val settings =
+            MockCredentialSettingsService(
+                context.getBeanProvider(NamedParameterJdbcTemplate::class.java),
+                actorRlsScope,
+                crypto,
+            )
+        val connection =
+            MockCredentialConnectionRepository(
+                context.getBeanProvider(NamedParameterJdbcTemplate::class.java),
+                actorRlsScope,
+            )
+        val certifications =
+            MockCredentialCertificationRepository(
+                context.getBeanProvider(NamedParameterJdbcTemplate::class.java),
+                actorRlsScope,
+            )
+        val transaction = TransactionTemplate(transactionManager)
+        asActor("usr_demo_user") {
+            transaction.executeWithoutResult {
+                settings.save("usr_demo_user", "K" + "A".repeat(19), "S" + "B".repeat(39), "5" + "0".repeat(9))
+            }
+        }
+        asActor("usr_demo_admin") {
+            transaction.executeWithoutResult {
+                settings.save("usr_demo_admin", "Z" + "C".repeat(19), "T" + "D".repeat(39), "6" + "1".repeat(9))
+            }
+        }
+        val userCredential = requireNotNull(asActor("usr_demo_user") { transaction.execute { settings.summary("usr_demo_user") } })
+        val adminCredential = requireNotNull(asActor("usr_demo_admin") { transaction.execute { settings.summary("usr_demo_admin") } })
+        asActor("usr_demo_user") {
+            transaction.executeWithoutResult {
+                connection.beginAttempt("usr_demo_user", userCredential.accountId, userCredential.revision)
+                connection.markConnected("usr_demo_user", userCredential.accountId, userCredential.revision)
+            }
+        }
+        asActor("usr_demo_admin") {
+            transaction.executeWithoutResult {
+                connection.beginAttempt("usr_demo_admin", adminCredential.accountId, adminCredential.revision)
+                connection.markConnected("usr_demo_admin", adminCredential.accountId, adminCredential.revision)
+            }
+        }
+        val lease =
+            "sha256:" +
+                MessageDigest
+                    .getInstance("SHA-256")
+                    .digest("lease-alice".toByteArray())
+                    .joinToString("") { "%02x".format(it) }
+        val attempt =
+            requireNotNull(
+                asActor("usr_demo_user") {
+                    transaction.execute {
+                        certifications.begin("usr_demo_user", userCredential.accountId, userCredential.revision, lease)
+                    }
+                },
+            )
+        assertFalse(attempt.alreadyCertified)
+
+        asActor("usr_demo_user") {
+            assertThrows(Exception::class.java) {
+                transaction.executeWithoutResult {
+                    settings.save("usr_demo_user", "M" + "D".repeat(19), "N" + "E".repeat(39), "5" + "0".repeat(9))
+                }
+            }
+            transaction.executeWithoutResult {
+                certifications.complete(
+                    ownerUserId = "usr_demo_user",
+                    accountId = userCredential.accountId,
+                    revision = userCredential.revision,
+                    attempt = attempt,
+                    leaseTokenSha256 = lease,
+                    receiptSha256 = "a".repeat(64),
+                    sessionDate = attempt.sessionDate,
+                    quoteCalls = 1,
+                    brokerageCalls = 7,
+                    tokenCalls = 0,
+                )
+            }
+        }
+        val certified = requireNotNull(asActor("usr_demo_user") { transaction.execute { settings.summary("usr_demo_user") } })
+        val other = requireNotNull(asActor("usr_demo_admin") { transaction.execute { settings.summary("usr_demo_admin") } })
+        assertEquals("CERTIFIED", certified.state)
+        assertEquals("PASS", certified.certificationStatus)
+        assertEquals("CONNECTED", other.state)
+        assertEquals("NOT_STARTED", other.certificationStatus)
+
+        val recoveryLease =
+            "sha256:" +
+                MessageDigest
+                    .getInstance("SHA-256")
+                    .digest("lease-bob".toByteArray())
+                    .joinToString("") { "%02x".format(it) }
+        val recoveryAttempt =
+            requireNotNull(
+                asActor("usr_demo_admin") {
+                    transaction.execute {
+                        certifications.begin(
+                            "usr_demo_admin",
+                            adminCredential.accountId,
+                            adminCredential.revision,
+                            recoveryLease,
+                        )
+                    }
+                },
+            )
+        asActor("usr_demo_admin") {
+            transaction.executeWithoutResult {
+                certifications.finish(
+                    ownerUserId = "usr_demo_admin",
+                    accountId = adminCredential.accountId,
+                    revision = adminCredential.revision,
+                    attempt = recoveryAttempt,
+                    leaseTokenSha256 = recoveryLease,
+                    status = "RECOVERY_REQUIRED",
+                    failureCode = "TEST_ORDER_UNCERTAIN",
+                    sessionDate = recoveryAttempt.sessionDate,
+                    quoteCalls = 1,
+                    brokerageCalls = 4,
+                    tokenCalls = 0,
+                )
+            }
+        }
+        val recoverySummary = requireNotNull(asActor("usr_demo_admin") { transaction.execute { settings.summary("usr_demo_admin") } })
+        assertEquals("CONNECTED", recoverySummary.state)
+        assertEquals("RECOVERY_REQUIRED", recoverySummary.certificationStatus)
+        asActor("usr_demo_admin") {
+            assertThrows(Exception::class.java) {
+                transaction.executeWithoutResult {
+                    settings.save("usr_demo_admin", "Q" + "R".repeat(19), "S" + "T".repeat(39), "6" + "1".repeat(9))
+                }
+            }
+            transaction.executeWithoutResult {
+                certifications.acknowledgeRecovery(
+                    "usr_demo_admin",
+                    adminCredential.accountId,
+                    adminCredential.revision,
+                )
+            }
+        }
+        val acknowledged = requireNotNull(asActor("usr_demo_admin") { transaction.execute { settings.summary("usr_demo_admin") } })
+        assertEquals("CONNECTED", acknowledged.state)
+        assertEquals("FAILED", acknowledged.certificationStatus)
+
+        asActor("usr_demo_user") {
+            transaction.executeWithoutResult {
+                settings.save("usr_demo_user", "M" + "D".repeat(19), "N" + "E".repeat(39), "5" + "0".repeat(9))
+            }
+        }
+        val rotated = requireNotNull(asActor("usr_demo_user") { transaction.execute { settings.summary("usr_demo_user") } })
+        assertEquals("STORED", rotated.state)
+        assertEquals("NOT_STARTED", rotated.certificationStatus)
+        assertEquals(userCredential.revision + 1, rotated.revision)
+        asActor("usr_demo_admin") {
+            transaction.executeWithoutResult {
+                settings.save("usr_demo_admin", "Q" + "R".repeat(19), "S" + "T".repeat(39), "6" + "1".repeat(9))
+            }
+        }
+    }
+
+    @Test
     fun `decision_app cannot read a credential with a forged owner GUC`() {
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", "app-test").use { connection ->
             connection.autoCommit = false
@@ -234,7 +398,7 @@ class BoundMockCredentialIntegrationTest(
             val denied =
                 assertThrows(SQLException::class.java) {
                     connection.createStatement().use { statement ->
-                        statement.executeQuery("select * from read_bound_mock_broker_summary_v2('usr_demo_user')")
+                        statement.executeQuery("select * from read_bound_mock_broker_summary_v3('usr_demo_user')")
                     }
                 }
             assertEquals("42501", denied.sqlState)
@@ -264,6 +428,29 @@ class BoundMockCredentialIntegrationTest(
                     }
                 }
             assertEquals("42501", disconnectDenied.sqlState)
+            connection.rollback()
+            connection.createStatement().use { statement ->
+                statement.execute("select set_config('app.actor_user_id','usr_demo_user',true)")
+            }
+            val certificationAttemptDenied =
+                assertThrows(SQLException::class.java) {
+                    connection.createStatement().use { statement ->
+                        statement.executeQuery("select count(*) from user_broker_credential_certification_attempts")
+                    }
+                }
+            assertEquals("42501", certificationAttemptDenied.sqlState)
+            connection.rollback()
+            val directCertificationDenied =
+                assertThrows(SQLException::class.java) {
+                    connection
+                        .prepareStatement(
+                            "update user_broker_credentials set credential_state='CERTIFIED' where owner_user_id=?",
+                        ).use { statement ->
+                            statement.setString(1, "usr_demo_user")
+                            statement.executeUpdate()
+                        }
+                }
+            assertEquals("42501", directCertificationDenied.sqlState)
         }
     }
 

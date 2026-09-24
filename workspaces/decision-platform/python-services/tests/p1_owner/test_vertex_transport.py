@@ -107,8 +107,10 @@ def test_public_full_without_usage_meter_still_calls_vertex(
     monkeypatch.setattr(
         VertexAiVetoTransport,
         "_post",
-        lambda self, payload: send(payload)
-        and {"candidates": [{"content": {"parts": [{"text": '{"status":"ABSTAIN"}'}]}}]},
+        lambda self, payload: (
+            send(payload)
+            and {"candidates": [{"content": {"parts": [{"text": '{"status":"ABSTAIN"}'}]}}]}
+        ),
     )
 
     result = transport.invoke(system_prompt="prompt", request_bytes=_request())
@@ -134,8 +136,10 @@ def test_public_full_meter_failure_does_not_block_vertex_call(
     monkeypatch.setattr(
         VertexAiVetoTransport,
         "_post",
-        lambda self, payload: send(payload)
-        and {"candidates": [{"content": {"parts": [{"text": '{"status":"ABSTAIN"}'}]}}]},
+        lambda self, payload: (
+            send(payload)
+            and {"candidates": [{"content": {"parts": [{"text": '{"status":"ABSTAIN"}'}]}}]}
+        ),
     )
 
     result = transport.invoke(system_prompt="prompt", request_bytes=_request())

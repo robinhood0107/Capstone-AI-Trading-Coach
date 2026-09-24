@@ -281,11 +281,15 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
             or _REQUEST_ID.fullmatch(request.request_id) is None
             or _SESSION_DATE.fullmatch(request.session_date) is None
         ):
-            _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "mock certification request is invalid")
+            _abort(
+                context, grpc.StatusCode.INVALID_ARGUMENT, "mock certification request is invalid"
+            )
         try:
             date.fromisoformat(request.session_date)
         except ValueError:
-            _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "mock certification request is invalid")
+            _abort(
+                context, grpc.StatusCode.INVALID_ARGUMENT, "mock certification request is invalid"
+            )
         try:
             result = self._owner_factory.certify(
                 request.credential,

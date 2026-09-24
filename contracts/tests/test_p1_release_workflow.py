@@ -177,6 +177,9 @@ class P1ReleaseWorkflowSecurityTest(unittest.TestCase):
             dockerfile,
         )
         self.assertIn("postgres:16.14-alpine3.24@sha256:", dockerfile)
+        self.assertIn("libcrypto3=3.5.8-r0", dockerfile)
+        self.assertIn("libssl3=3.5.8-r0", dockerfile)
+        self.assertIn("libuuid=2.42.3-r1", dockerfile)
         self.assertIn("PGVECTOR_VERSION=0.8.6", dockerfile)
         self.assertIn(
             "PGVECTOR_SHA256=10bf9938906e5d643bbc4a7eea104b6f57ba4898e5b76b20e60484ea1d5a7f8f",

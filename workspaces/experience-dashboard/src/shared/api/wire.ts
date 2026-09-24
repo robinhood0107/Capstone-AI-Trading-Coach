@@ -911,7 +911,7 @@ export interface RagV2CorpusStatus {
   privateOverlayState: string;
   progressPercent: number;
   failureCode: string | null;
-  /** Daily generation usage; all fields are null in retrieval-only mode. */
+  /** Retired quotas stay null; generationUsedToday counts reservations for telemetry only. */
   generationDailyCap: number | null;
   generationUsedToday: number | null;
   generationRemaining: number | null;

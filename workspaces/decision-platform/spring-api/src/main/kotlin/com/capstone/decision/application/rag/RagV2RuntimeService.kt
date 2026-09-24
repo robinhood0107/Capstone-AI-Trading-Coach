@@ -69,7 +69,7 @@ class RagV2RuntimeService(
     @Transactional
     fun corpusStatus(ownerUserId: String): RagV2CorpusStatus {
         val jdbc = jdbc()
-        val budget = vertexActivationAuthorProvider.getIfAvailable()?.budget(ownerUserId)
+        val generationUsedToday = vertexActivationAuthorProvider.getIfAvailable()?.usedToday(ownerUserId)
         // 설정 읽기는 자기 actor scope를 연다. corpus scope를 연 뒤에 열면 두 번째가 403이 되므로
         // 순서를 지킨다.
         val settings = strongLlmSettingsProvider.getIfAvailable()?.read(ownerUserId)
@@ -88,10 +88,8 @@ class RagV2RuntimeService(
                     privateOverlayState = result.getString("private_overlay_state"),
                     progressPercent = result.getInt("progress_percent"),
                     failureCode = result.getString("failure_code"),
-                    // 자동 저술이 꺼져 있으면 예산 자체가 없다. 그때는 null이고 화면은 검색 전용이다.
-                    generationDailyCap = budget?.dailyCap,
-                    generationUsedToday = budget?.usedToday,
-                    generationRemaining = budget?.remaining,
+                    // 계측값은 운영 현황에만 쓴다. 계측 조회 실패는 null이며 생성에 영향을 주지 않는다.
+                    generationUsedToday = generationUsedToday,
                     strongLlmProvider = settings?.provider,
                     strongLlmFallbackProvider = settings?.fallbackProvider,
                     strongLlmModelId = settings?.modelId,
@@ -317,10 +315,7 @@ class RagV2RuntimeService(
             // 켜져 있으면 client가 두 단계를 밟지 않아도 서버가 같은 준비를 대신 한다. 준비의
             // 내용과 검증은 `/vertex-preparations`와 완전히 같은 경로다.
             val preparation = inDatabaseTransaction { prepareVertexGeneration(ownerUserId, requestId, command) }
-            if (!author.author(ownerUserId, preparation)) {
-                // 하루 상한에 닿았다. 생성만 닫고 검색은 그대로 태운다.
-                return vertexUnavailableAnswer(requestId)
-            }
+            author.author(preparation)
             scopeClaimId = preparation.scopeClaimId
         }
         val preparation =

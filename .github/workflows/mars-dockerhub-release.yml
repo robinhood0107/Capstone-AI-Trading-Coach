@@ -305,7 +305,8 @@ jobs:
           [[ $(jq -r '.imagePublicationReady' deploy/p1/mars-release-gate.json) == true ]]
           [[ $(jq -r '.serviceReady' deploy/p1/mars-release-gate.json) == "$SERVICE_READY" ]]
           [[ $(jq -r '.version' deploy/p1/mars-release-gate.json) == "$VERSION" ]]
-          [[ $(git status --porcelain --untracked-files=all) == '' ]]
+          # Downloaded release assets are intentionally untracked in this job.
+          [[ $(git status --porcelain --untracked-files=all -- . ':(exclude)release-assets') == '' ]]
           checks=$(gh pr view "$PR_NUMBER" --json statusCheckRollup --jq '.statusCheckRollup[] | [.name // .context, .conclusion // .state] | @tsv')
           for check in 'Repo hygiene' 'Kotlin ktlint and build' 'Python quality gates' \
                        'Contract schema validation' 'Spring OpenAPI drift' 'Lint & Static Analysis' \

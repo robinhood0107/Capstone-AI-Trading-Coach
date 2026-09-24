@@ -33,6 +33,12 @@ FROM ${POSTGRES_IMAGE}
 ARG SOURCE_REVISION=unknown
 ARG RELEASE_VERSION=0.0.0
 
+# Pin the fixed Alpine 3.24 security revisions present at the 2026-09 release gate.
+RUN apk add --no-cache --upgrade \
+    libcrypto3=3.5.8-r0 \
+    libssl3=3.5.8-r0 \
+    libuuid=2.42.3-r1
+
 LABEL org.opencontainers.image.title="Capstone P1 PostgreSQL with pgvector" \
       org.opencontainers.image.description="PostgreSQL 16 runtime with the pinned pgvector extension for P1_OFFLINE_DEMO" \
       org.opencontainers.image.source="https://github.com/robinhood0107/Capstone-AI-Trading-Coach" \

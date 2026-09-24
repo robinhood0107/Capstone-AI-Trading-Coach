@@ -51,6 +51,8 @@ class PublicFullComposeTest(unittest.TestCase):
             services["rag-runtime-seed"]["environment"]["RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED"],
             "true",
         )
+        self.assertEqual(services["rag-runtime-seed"]["user"], "0:0")
+        self.assertEqual(services["rag-runtime-seed"]["cap_add"], ["CHOWN"])
         self.assertEqual(api["environment"]["MARS_BROKERAGE_KEK_DIRECTORY"], "/run/brokerage-kek")
         self.assertEqual(services["migrate"]["environment"]["MARS_PUBLIC_SURFACE_MODE"], "FULL")
         self.assertEqual(

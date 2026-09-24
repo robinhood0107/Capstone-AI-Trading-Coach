@@ -76,6 +76,18 @@ main에 병합된 develop PR만 Docker Hub에 공개 이미지를 발행하고 G
 
 현재 공개 Release의 `imagePublicationReady`는 `true`, `serviceReady`는 `false`입니다. 이는 이미지 빌드·공개를 검증했다는 뜻이며, NAS에 실제 배포했거나 N=10/50/100 동시 부하 및 운영 준비를 검증했다는 뜻은 아닙니다. NAS 배포, 자동 배포, KIS Live는 이 범위에 포함하지 않습니다.
 
+## 소스 체크아웃에서 개발할 때
+
+공개 Docker 이미지 실행과 저장소 소스를 이용한 로컬 개발은 별도 경로입니다. 기존 로컬 DB에 애플리케이션 role을 준비한 뒤 Spring API를 실행합니다.
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.infra.yml run --rm role-bootstrap
+cd workspaces/decision-platform/spring-api
+./gradlew bootRun
+```
+
+S3.3 체결 대사에서 KIS_MOCK fill observation은 `decision_fill_writer` DB role이 추가합니다. 관련 migration 경계는 V6/V9/V14이며, 사용자별 API와 조회 한도는 [API 명세](docs/API_명세서.md)에 있습니다.
+
 ## 개발 및 계약 문서
 
 - [최종 프로젝트 명세](docs/최종_프로젝트_명세서.md)

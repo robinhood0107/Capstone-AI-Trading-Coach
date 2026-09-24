@@ -12,6 +12,11 @@ FROM ${REDIS_IMAGE}
 ARG SOURCE_REVISION=unknown
 ARG RELEASE_VERSION=0.0.0
 
+# Pin the fixed Alpine 3.21 OpenSSL revisions used by the release scan.
+RUN apk add --no-cache --upgrade \
+    libcrypto3=3.3.7-r1 \
+    libssl3=3.3.7-r1
+
 LABEL org.opencontainers.image.title="Capstone P1 Redis" \
       org.opencontainers.image.description="Redis 7.2 with the P1 secret loader entrypoint" \
       org.opencontainers.image.source="https://github.com/robinhood0107/Capstone-AI-Trading-Coach" \

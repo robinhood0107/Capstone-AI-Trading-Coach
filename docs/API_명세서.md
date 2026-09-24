@@ -383,19 +383,26 @@ root OpenAPI 밖의 실행 표면. `contracts/openapi/openapi.json`의 exact-76�
 
 로그인 attempt는 client address+username 기준 15분 5회, address 기준 15분 50회로 원자 예약하며, JSON binding 전 전역 request body 상한을 적용한다. limiter key는 private factory가 정규화한 address/username scope를 purpose/version HMAC으로 만든 digest만 사용하고 raw address·username을 저장·로그·metric label에 넣지 않는다. 주소는 socket remote address를 기준으로 하고, 배포 시 명시적으로 allowlist한 reverse proxy에서 온 경우에만 표준 forwarded header를 해석한다. 임의 `X-Forwarded-For`를 신뢰하지 않는다. demo account verifier는 평문 password가 아니라 attested bundle에서 검증된 adaptive salted password hash를 DB에 저장하고 검증 라이브러리로 비교한다. 인증 가능한 password 범위는 `1..72 UTF-8 bytes`이며 DTO의 1,024-character 상한은 JSON 입력 방어일 뿐 credential 경계가 아니다. 72 bytes를 넘는 입력은 per-process dummy로 치환해 선택 row와 peer row에 BCrypt strength-12 검증을 각각 한 번 수행한 뒤 동일한 401로 거부한다. 정상 범위의 모든 login도 두 row를 각각 한 번 검증하며, 하나의 평문이 두 row에 모두 일치하면 두 역할을 모두 fail-closed한다. 존재하지 않는 사용자와 잘못된 비밀번호도 정확히 두 번의 dummy/peer BCrypt 경로와 동일한 stable 오류를 사용한다. 현재 단일 JVM limiter는 replica 1에서만 보안 경계가 성립하며, 다중 replica 배포 전에는 공유 원자 저장소로 이전해야 한다.
 
-#### 2.4.0 MARS full Google OIDC 전환 계약 (제품 게이트 준비 중)
+#### 2.4.0 MARS full Google·Kakao 로그인 계약
 
-실서비스 프로필은 `GET /api/v1/auth/oidc/start/google`에서 Google authorization-code 흐름을
-시작하고 `GET /api/v1/auth/oidc/callback/google`에서 Spring Security가 서명·issuer·audience·
-만료·state/nonce를 검증한다. 서버는 검증된 `https://accounts.google.com` + `sub`로 첫 USER를
-원자 생성한다. 이메일은 계정 키가 아니다. 운영자가 별도 보관한 정확한 subject hash와 일치할
-때만 ADMIN이며, 역할이 바뀌면 기존 세션을 폐기한다.
+실서비스 화면에는 Google과 Kakao 버튼만 둔다. 두 버튼은 로그인과 첫 가입을 함께 처리한다.
+별도 가입 폼·비밀번호 입력·비밀번호 재설정은 없다. 첫 인증 성공 때 일반 USER를 원자 생성하고,
+다음부터 같은 제공자의 계정으로 로그인한다.
+
+Google은 `GET /api/v1/auth/oidc/start/google` →
+`GET /api/v1/auth/oidc/callback/google`에서 Spring Security가 서명·issuer·audience·만료·
+state/nonce를 확인한다. Kakao는 `GET /api/v1/auth/oidc/start/kakao` →
+`GET /api/v1/auth/oidc/callback/kakao`의 authorization-code 흐름을 사용하고, 서버가 Kakao
+사용자 정보 API에서 받은 회원번호를 subject로 사용한다. 두 identity는 검증된 issuer+subject로
+유일하게 식별한다. 이메일은 identity key나 자동 계정 연결 기준으로 사용하지 않으므로 같은
+이메일 주소라도 Google과 Kakao는 별개의 계정이다. Kakao 로그인은 ADMIN 권한을 부여하지 않는다.
+ADMIN은 운영자가 지정한 정확한 Google subject hash에만 부여하고, 역할 변경 시 기존 세션을 폐기한다.
 
 callback은 Bearer token을 URL에 넣지 않고 같은 origin의 `/auth/complete`로 이동한다.
 `POST /api/v1/auth/oidc/exchange`는 2분 이내의 HttpOnly/Secure/SameSite=Lax 세션과
 정확한 `Origin`을 요구하고 한 번만 `LoginResponse`를 반환한다. 브라우저는 JWT를 메모리에만
 보관한다. `POST /api/v1/auth/logout`은 현재 Bearer의 DB 세션을 폐기하고 204를 반환한다.
-두 endpoint의 full 전용 schema는 [MARS 인증 OpenAPI](../contracts/openapi/mars-full-auth.v1.openapi.json)에 둔다.
+인증 흐름과 full 전용 schema는 [MARS 인증 OpenAPI](../contracts/openapi/mars-full-auth.v1.openapi.json)에 둔다.
 현재 개인용 password bootstrap은 공개 full/demo 프로필에서 제외한다. 공개 모드는
 고정 데모 계정의 password bundle 주입을 거부하고 password 로그인 API를 제공하지 않는다.
 기존 V7 migration의 두 고정 행은 새 DB 구성 시 메모리에서 만든 임시 암호 증거로만

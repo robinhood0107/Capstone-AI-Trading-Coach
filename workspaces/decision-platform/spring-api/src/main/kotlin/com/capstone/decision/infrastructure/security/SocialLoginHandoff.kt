@@ -7,11 +7,11 @@ import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Service
 import java.time.Duration
 
-/** A short-lived, one-use bridge from the validated Google callback to the Bearer API. */
+/** A short-lived, one-use bridge from a validated provider callback to the Bearer API. */
 @Service
 @Profile("mars-full")
-class GoogleOidcHandoff(
-    private val sessions: GoogleOidcSessionRepository,
+class SocialLoginHandoff(
+    private val sessions: SocialLoginSessionRepository,
     private val jwtService: JwtService,
     private val jwtProperties: JwtProperties,
 ) {
@@ -21,7 +21,8 @@ class GoogleOidcHandoff(
         operatorSubject: Boolean,
         session: HttpSession,
     ) {
-        require(issuer == GOOGLE_ISSUER && subject.isNotBlank())
+        require(issuer in ALLOWED_ISSUERS && subject.isNotBlank())
+        require(!operatorSubject || issuer == GOOGLE_ISSUER)
         synchronized(session) {
             require(session.getAttribute(PENDING_KEY) == null)
             val account =
@@ -55,6 +56,8 @@ class GoogleOidcHandoff(
 
     companion object {
         const val GOOGLE_ISSUER = "https://accounts.google.com"
-        private const val PENDING_KEY = "mars.oidc.pending-session.v1"
+        const val KAKAO_ISSUER = "https://kauth.kakao.com"
+        private val ALLOWED_ISSUERS = setOf(GOOGLE_ISSUER, KAKAO_ISSUER)
+        private const val PENDING_KEY = "mars.social-login.pending-session.v1"
     }
 }

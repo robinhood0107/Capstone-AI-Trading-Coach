@@ -31,17 +31,17 @@ import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
 import java.security.SecureRandom
 
-/** Starts the full product security chains with an offline Google registration and isolated DB. */
+/** Starts the full product security chains with offline provider registrations and an isolated DB. */
 @Testcontainers
 @ActiveProfiles("mars-full")
 @Import(
-    GoogleOidcPublicBoundaryIntegrationTest.OfflineGoogleRegistration::class,
+    SocialLoginPublicBoundaryIntegrationTest.OfflineSocialLoginRegistrations::class,
     TestActorCapabilityConfiguration::class,
 )
 @SpringBootTest(
     properties = ["spring.autoconfigure.exclude=org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration"],
 )
-class GoogleOidcPublicBoundaryIntegrationTest(
+class SocialLoginPublicBoundaryIntegrationTest(
     @Autowired private val context: WebApplicationContext,
 ) {
     private lateinit var mvc: MockMvc
@@ -56,7 +56,7 @@ class GoogleOidcPublicBoundaryIntegrationTest(
     }
 
     @Test
-    fun `public password and account routes are closed while Google start uses state`() {
+    fun `public password is closed and both provider starts use state`() {
         mvc.post("/api/v1/auth/login").andExpect { status { isNotFound() } }
         mvc.post("/api/v1/brokerage/mock/credential/connect").andExpect { status { isUnauthorized() } }
         mvc.post("/api/v1/brokerage/mock/credential/certify").andExpect { status { isUnauthorized() } }
@@ -66,28 +66,48 @@ class GoogleOidcPublicBoundaryIntegrationTest(
             header { string("Location", org.hamcrest.Matchers.containsString("accounts.google.com")) }
             header { string("Location", org.hamcrest.Matchers.containsString("state=")) }
         }
+        mvc.get("/api/v1/auth/oidc/start/kakao").andExpect {
+            status { isFound() }
+            header { string("Location", org.hamcrest.Matchers.containsString("kauth.kakao.com")) }
+            header { string("Location", org.hamcrest.Matchers.containsString("state=")) }
+        }
     }
 
     @TestConfiguration
-    class OfflineGoogleRegistration {
+    class OfflineSocialLoginRegistrations {
         @Bean
         fun clientRegistrationRepository(): ClientRegistrationRepository =
             InMemoryClientRegistrationRepository(
-                ClientRegistration
-                    .withRegistrationId("google")
-                    .clientId("fixture-client")
-                    .clientSecret("fixture-secret")
-                    .clientName("Google")
-                    .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-                    .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                    .redirectUri("https://mars.example.test/api/v1/auth/oidc/callback/google")
-                    .scope("openid", "email")
-                    .authorizationUri("https://accounts.google.com/o/oauth2/v2/auth")
-                    .tokenUri("https://oauth2.googleapis.com/token")
-                    .jwkSetUri("https://www.googleapis.com/oauth2/v3/certs")
-                    .issuerUri("https://accounts.google.com")
-                    .userNameAttributeName("sub")
-                    .build(),
+                listOf(
+                    ClientRegistration
+                        .withRegistrationId("google")
+                        .clientId("fixture-client")
+                        .clientSecret("fixture-secret")
+                        .clientName("Google")
+                        .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                        .redirectUri("https://mars.example.test/api/v1/auth/oidc/callback/google")
+                        .scope("openid", "email")
+                        .authorizationUri("https://accounts.google.com/o/oauth2/v2/auth")
+                        .tokenUri("https://oauth2.googleapis.com/token")
+                        .jwkSetUri("https://www.googleapis.com/oauth2/v3/certs")
+                        .issuerUri("https://accounts.google.com")
+                        .userNameAttributeName("sub")
+                        .build(),
+                    ClientRegistration
+                        .withRegistrationId("kakao")
+                        .clientId("fixture-kakao-client")
+                        .clientSecret("fixture-kakao-secret")
+                        .clientName("Kakao")
+                        .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_POST)
+                        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                        .redirectUri("https://mars.example.test/api/v1/auth/oidc/callback/kakao")
+                        .authorizationUri("https://kauth.kakao.com/oauth/authorize")
+                        .tokenUri("https://kauth.kakao.com/oauth/token")
+                        .userInfoUri("https://kapi.kakao.com/v2/user/me")
+                        .userNameAttributeName("id")
+                        .build(),
+                ),
             )
     }
 
@@ -135,9 +155,14 @@ class GoogleOidcPublicBoundaryIntegrationTest(
             registry.add("GOOGLE_OIDC_ADMIN_SUBJECT_SHA256") { "a".repeat(64) }
             registry.add("GOOGLE_OIDC_CLIENT_ID") { "fixture-client" }
             registry.add("GOOGLE_OIDC_CLIENT_SECRET") { "fixture-secret" }
+            registry.add("KAKAO_OAUTH_CLIENT_ID") { "fixture-kakao-client" }
+            registry.add("KAKAO_OAUTH_CLIENT_SECRET") { "fixture-kakao-secret" }
             registry.add("MARS_BROKERAGE_KEK_DIRECTORY") { brokerageKekDirectory.toString() }
             registry.add("GOOGLE_OIDC_REDIRECT_URI") {
                 "https://mars.example.test/api/v1/auth/oidc/callback/google"
+            }
+            registry.add("KAKAO_OAUTH_REDIRECT_URI") {
+                "https://mars.example.test/api/v1/auth/oidc/callback/kakao"
             }
         }
     }

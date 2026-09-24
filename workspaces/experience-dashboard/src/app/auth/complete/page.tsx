@@ -26,7 +26,7 @@ function readLoginResponse(payload: unknown): LoginResponse {
   return data as LoginResponse;
 }
 
-export default function GoogleLoginComplete() {
+export default function SocialLoginComplete() {
   const router = useRouter();
   const started = useRef(false);
   const [failed, setFailed] = useState(false);
@@ -56,14 +56,14 @@ export default function GoogleLoginComplete() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-[420px] flex-col items-center justify-center px-6 text-center">
-      <h1 className="text-[22px] font-semibold text-ink">Google 로그인</h1>
+        <h1 className="text-[22px] font-semibold text-ink">로그인 확인</h1>
       {failed ? (
         <>
           <p className="mt-3 text-[14px] leading-6 text-muted">로그인을 완료하지 못했습니다. 다시 시도해 주세요.</p>
           <Link href="/" className="mt-6 rounded-control bg-brand px-5 py-3 text-on-brand">처음으로</Link>
         </>
       ) : (
-        <p className="mt-3 text-[14px] leading-6 text-muted">안전하게 연결하는 중입니다.</p>
+        <p className="mt-3 text-[14px] leading-6 text-muted">안전하게 로그인 처리 중입니다.</p>
       )}
     </main>
   );

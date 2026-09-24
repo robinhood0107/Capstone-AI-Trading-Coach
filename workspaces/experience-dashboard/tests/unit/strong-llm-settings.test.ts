@@ -17,8 +17,6 @@ const base: StrongLlmSettingsView = {
   keyLast4: null,
   fallbackKeyLast4: null,
   usedToday: 0,
-  remaining: 50,
-  effectiveDailyCap: 50,
 };
 
 test('fallback providers that require credentials cannot be saved without a key', () => {

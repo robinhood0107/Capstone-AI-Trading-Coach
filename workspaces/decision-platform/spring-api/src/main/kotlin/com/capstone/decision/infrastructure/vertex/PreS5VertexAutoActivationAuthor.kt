@@ -1,6 +1,5 @@
 package com.capstone.decision.infrastructure.vertex
 
-import com.capstone.decision.application.rag.RagV2GenerationBudget
 import com.capstone.decision.application.rag.RagV2VertexActivationAuthorPort
 import com.capstone.decision.application.rag.RagV2VertexPreparation
 import org.slf4j.Logger
@@ -10,6 +9,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Component
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.TransactionDefinition
+import org.springframework.transaction.support.TransactionTemplate
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -31,10 +33,8 @@ import kotlin.concurrent.withLock
  * 검증(계약 ID, 코드 바인딩, 비용 상한 산술, 5분 만료, 파일 권한과 단일 링크)은 운영자가 저술하든
  * 배포 정책이 저술하든 똑같이 통과해야 한다. 우회로를 새로 내지 않고 같은 문을 지나가게 한다.
  *
- * 무엇이 바뀌고 무엇이 그대로인가. 바뀌는 것은 "호출마다 사람이 승인한다"가 "배포할 때 한 번
- * 승인한다"로 내려간 것뿐이다. 모델, 비용 상한, evidence 해시, 코드 바인딩, 물리 호출 상한,
- * 단일 사용 nonce는 그대로 강제된다. 사람이 곧 호출 한도이던 자리를 대신하려고 소유자별 하루
- * 상한을 정책에서 읽어 저술 전에 확인한다.
+ * 승인 경계(모델, 비용 산술, evidence 해시, 코드 바인딩, 물리 호출 상한, 단일 사용 nonce)는
+ * 유지한다. 누적 호출 수는 운영 계측만 하며 생성 허용 여부를 제한하지 않는다.
  *
  * 동시성. 패킷 파일은 하나이므로 저술과 생성이 겹치면 서로의 패킷을 읽을 수 있다. 저술부터
  * 생성까지를 [lock]으로 감싸는 책임은 호출자(`RagV2RuntimeService`)에게 있고, 여기서는 저술
@@ -46,49 +46,44 @@ import kotlin.concurrent.withLock
 internal class PreS5VertexAutoActivationAuthor(
     private val properties: RagV2VertexProperties,
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
+    transactionManager: PlatformTransactionManager,
     private val clock: Clock = Clock.systemUTC(),
 ) : RagV2VertexActivationAuthorPort {
     private val mapper = JsonMapper.builder().build()
     private val random = SecureRandom()
     private val lock = ReentrantLock()
-
-    override fun author(
-        ownerUserId: String,
-        preparation: RagV2VertexPreparation,
-    ): Boolean =
-        lock.withLock {
-            val policy = readPolicy()
-            val reservedToday = countReservedToday(ownerUserId)
-            if (reservedToday >= policy.dailyGenerateCallCap) {
-                // 상한 자체와 도달 사실만 남긴다. 질문·소유자·근거는 남기지 않는다.
-                LOGGER.warn(
-                    "pre_s5_vertex_auto_activation_daily_cap_reached cap={} reserved={}",
-                    policy.dailyGenerateCallCap,
-                    reservedToday,
-                )
-                return@withLock false
-            }
-            writePacket(buildPacket(policy, preparation))
-            true
+    private val usageMeasurementTransaction =
+        TransactionTemplate(transactionManager).apply {
+            propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRES_NEW
+            timeout = 2
         }
 
-    override fun budget(ownerUserId: String): RagV2GenerationBudget {
-        val cap = readPolicy().dailyGenerateCallCap
-        val used = countReservedToday(ownerUserId)
-        return RagV2GenerationBudget(
-            dailyCap = cap,
-            usedToday = used,
-            remaining = maxOf(0, cap - used),
-        )
+    override fun author(preparation: RagV2VertexPreparation) {
+        lock.withLock {
+            val policy = readPolicy()
+            writePacket(buildPacket(policy, preparation))
+        }
     }
 
-    private fun countReservedToday(ownerUserId: String): Int =
-        requireNotNull(jdbcProvider.getObject())
-            .queryForObject(
-                "select public.count_rag_v2_immutable_vertex_usage_today(:ownerUserId)",
-                MapSqlParameterSource("ownerUserId", ownerUserId),
-                Int::class.java,
-            ) ?: 0
+    override fun usedToday(ownerUserId: String): Int? =
+        try {
+            usageMeasurementTransaction.execute { countReservedToday(ownerUserId) }
+        } catch (_: Exception) {
+            // 계측 저장소 장애는 API 현황 표시만 비운다. provider 실행 경로를 실패시키지 않는다.
+            LOGGER.warn("pre_s5_vertex_usage_measurement_unavailable")
+            null
+        }
+
+    private fun countReservedToday(ownerUserId: String): Int {
+        val jdbc = requireNotNull(jdbcProvider.getObject())
+        jdbc.jdbcTemplate.execute("SET LOCAL statement_timeout = '1s'")
+        jdbc.jdbcTemplate.execute("SET LOCAL lock_timeout = '250ms'")
+        return jdbc.queryForObject(
+            "select public.count_rag_v2_immutable_vertex_usage_today(:ownerUserId)",
+            MapSqlParameterSource("ownerUserId", ownerUserId),
+            Int::class.java,
+        ) ?: 0
+    }
 
     private fun buildPacket(
         policy: AutoActivationPolicy,
@@ -189,7 +184,6 @@ internal class PreS5VertexAutoActivationAuthor(
             AutoActivationPolicy(
                 projectId = text(root, "projectId"),
                 operator = text(root, "operator"),
-                dailyGenerateCallCap = integer(root, "dailyGenerateCallCap"),
                 inputTokenCap = integer(root, "inputTokenCap"),
                 outputTokenCap = integer(root, "outputTokenCap"),
                 inputByteCap = integer(root, "inputByteCap"),
@@ -202,7 +196,6 @@ internal class PreS5VertexAutoActivationAuthor(
                 modelAvailabilityEvidenceSha256 = text(root, "modelAvailabilityEvidenceSha256"),
             )
         // 읽는 쪽과 같은 산술을 저술 전에 먼저 확인한다. 여기서 막으면 패킷을 만들지 않는다.
-        require(policy.dailyGenerateCallCap in 1..10_000)
         require(policy.inputByteCap + INPUT_TOKEN_SAFETY_MARGIN <= policy.inputTokenCap)
         require(
             policy.inputTokenCap.toLong() * policy.inputMicrousdPerToken +
@@ -232,7 +225,6 @@ internal class PreS5VertexAutoActivationAuthor(
     internal data class AutoActivationPolicy(
         val projectId: String,
         val operator: String,
-        val dailyGenerateCallCap: Int,
         val inputTokenCap: Int,
         val outputTokenCap: Int,
         val inputByteCap: Int,

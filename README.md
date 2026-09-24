@@ -179,6 +179,10 @@ AI provider 사용량과 추정 비용은 계측하지만 MARS 자체의 일일 
 
 복구를 위해 DB 볼륨을 지우지 마세요. 기존 데이터 이행 전에는 백업과 migration 결과를 확인합니다.
 
+**소스 체크아웃에서 개발할 때**: 공개 이미지 실행과 달리 기존 개발 DB를 직접 이행한다면 인증용 DB role을 Flyway보다 먼저 준비합니다. 저장소 루트에서 `docker compose --env-file .env -f infra/docker-compose.infra.yml run --rm role-bootstrap`를 실행한 다음 Spring API 디렉터리에서 `./gradlew bootRun`을 실행합니다. 이 순서가 빠지면 이미 존재하는 DB의 migration이 인증 role을 찾지 못할 수 있습니다.
+
+`S3.3` 체결 대사에서 KIS_MOCK fill observation은 `decision_fill_writer` DB role이 추가합니다. 관련 migration 경계는 `V6/V9/V14`이며, 조회·대사 API 계약은 [API 명세](docs/API_명세서.md)에 있습니다. 이 개발 role을 공개 FULL의 사용자 계좌 권한으로 해석하지 않습니다.
+
 ## 6. 소개 자료 및 시연 영상
 
 ### 6.1. 프로젝트 소개 자료

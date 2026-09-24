@@ -204,7 +204,7 @@ services:
       KIS_MODE: mock
       KIS_OFFLINE: "0"
       PROVIDER_LIVE_CALLS_ENABLED: "false"
-    secrets: [mars_public_full_env, rag_history_kek, vertex_service_account, actor_client_p12, actor_tls_ca]
+    secrets: [mars_public_full_env, return_inference_env, rag_history_kek, vertex_service_account, actor_client_p12, actor_tls_ca]
     depends_on:
       migrate: {condition: service_completed_successfully}
       seed-import: {condition: service_completed_successfully}
@@ -258,6 +258,7 @@ secrets:
   actor_client_p12: {file: "${MARS_FULL_SECRETS_DIR}/actor-client.p12"}
   actor_tls_ca: {file: "${MARS_FULL_SECRETS_DIR}/actor-tls-ca.crt"}
   mars_public_full_env: {file: "${MARS_FULL_SECRETS_DIR}/mars-public-full.env"}
+  return_inference_env: {file: "${MARS_FULL_SECRETS_DIR}/return-inference.env"}
   rag_history_kek: {file: "${MARS_FULL_SECRETS_DIR}/rag-history-kek-v1.key"}
   vertex_service_account: {file: "${MARS_FULL_SECRETS_DIR}/vertex-service-account.json"}
 

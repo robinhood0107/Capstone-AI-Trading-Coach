@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import unittest
 
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "deploy/p1/compose.public-full.yml"
@@ -18,6 +19,7 @@ class PublicFullComposeTest(unittest.TestCase):
     def test_full_stack_has_its_own_state_and_uses_owner_kis_envelopes(self) -> None:
         environment = {
             **os.environ,
+            "COMPOSE_PROFILES": "collectors",
             "MARS_FULL_SECRET_GID": "1000",
             "MARS_FULL_TAG": "candidate",
             "MARS_FULL_SECRETS_DIR": "/tmp/mars-full-contract-secrets",
@@ -37,13 +39,32 @@ class PublicFullComposeTest(unittest.TestCase):
         services = config["services"]
         self.assertEqual(
             set(services),
-            {"postgres", "redis", "role-bootstrap", "migrate", "seed-import", "rag-runtime-seed", "actor-authority", "api", "web"},
+            {
+                "postgres", "redis", "role-bootstrap", "migrate", "seed-import",
+                "rag-runtime-seed", "actor-authority", "market-data-daily",
+                "world-news-minute", "disclosure-collector", "api", "web",
+            },
+        )
+        self.assertIn("app.data.market_data.yfinance_daily_cli", " ".join(services["market-data-daily"]["command"]))
+        self.assertIn("app.data.news.gdelt_collector_cli", " ".join(services["world-news-minute"]["command"]))
+        self.assertEqual(services["world-news-minute"]["environment"]["GDELT_WORLD_NEWS_ENABLED"], "true")
+        self.assertEqual(services["disclosure-collector"]["profiles"], ["collectors"])
+        self.assertEqual(
+            {secret["source"] for secret in services["disclosure-collector"]["secrets"]},
+            {"disclosure_collector_env"},
         )
         api = services["api"]
         self.assertEqual(api["environment"]["MARS_PUBLIC_SURFACE_MODE"], "FULL")
         self.assertEqual(api["environment"]["SPRING_PROFILES_ACTIVE"], "mars-full")
         self.assertEqual(api["environment"]["BROKERAGE_GRPC_ENABLED"], "true")
         self.assertEqual(api["environment"]["P1_AUTOMATION_RUNTIME_ENABLED"], "true")
+        self.assertEqual(api["environment"]["ASYNC_WORKER_ENABLED"], "false")
+        self.assertEqual(api["environment"]["RETURN_INFERENCE_BUNDLE_ROOT"], "/opt/capstone/seed/team-b")
+        self.assertEqual(api["environment"]["RETURN_INFERENCE_ALLOW_SYNTHETIC"], "false")
+        full_profile = yaml.safe_load(
+            (ROOT / "workspaces/decision-platform/spring-api/src/main/resources/application-mars-full.yml").read_text()
+        )
+        self.assertIs(full_profile["app"]["rag-v2"]["web"]["vertex-google-search"]["enabled"], False)
         self.assertEqual(api["environment"]["RAG_V2_GRPC_ENABLED"], "true")
         self.assertEqual(api["environment"]["RAG_V2_VERTEX_ENABLED"], "true")
         self.assertEqual(api["environment"]["RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED"], "true")
@@ -51,11 +72,13 @@ class PublicFullComposeTest(unittest.TestCase):
             services["rag-runtime-seed"]["environment"]["RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED"],
             "true",
         )
+        self.assertEqual(services["rag-runtime-seed"]["user"], "0:0")
+        self.assertEqual(services["rag-runtime-seed"]["cap_add"], ["CHOWN"])
         self.assertEqual(api["environment"]["MARS_BROKERAGE_KEK_DIRECTORY"], "/run/brokerage-kek")
         self.assertEqual(services["migrate"]["environment"]["MARS_PUBLIC_SURFACE_MODE"], "FULL")
         self.assertEqual(
             {secret["source"] for secret in api["secrets"]},
-            {"mars_public_full_env", "rag_history_kek", "vertex_service_account", "actor_client_p12", "actor_tls_ca"},
+            {"mars_public_full_env", "return_inference_env", "rag_history_kek", "vertex_service_account", "actor_client_p12", "actor_tls_ca"},
         )
         for service in services.values():
             self.assertTrue(service["image"].startswith("pjjpjj111/mars-full:"))
@@ -71,8 +94,13 @@ class PublicFullComposeTest(unittest.TestCase):
         for secret in config["secrets"].values():
             self.assertTrue(secret["file"].startswith("/tmp/mars-full-contract-secrets/"))
         secret_entrypoint = (ROOT / "deploy/p1/docker/secret-entrypoint.sh").read_text()
-        self.assertIn("public-full) secret_files=/run/secrets/mars_public_full_env", secret_entrypoint)
+        self.assertIn(
+            'public-full) secret_files="/run/secrets/mars_public_full_env /run/secrets/return_inference_env"',
+            secret_entrypoint,
+        )
         self.assertIn("KIS_MOCK_ORDER_REFERENCE_KEY) return 0", secret_entrypoint)
+        self.assertIn("P1_AUTOMATION_DATABASE_DSN|AUTOMATION_RUNTIME_SHARED_SECRET) return 0", secret_entrypoint)
+        self.assertIn("RETURN_INFERENCE_GRPC_SHARED_SECRET) return 0", secret_entrypoint)
         self.assertIn("KIS_*|P1_AUTOMATION_*) return 1", secret_entrypoint)
 
 

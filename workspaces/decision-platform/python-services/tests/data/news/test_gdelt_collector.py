@@ -21,7 +21,7 @@ from app.data.news.gdelt_collector import (
     run_cycle,
 )
 from app.data.news.gdelt_transport import GdeltHttpClient
-from app.data.news.gdelt_collector_cli import _select_targets
+from app.data.news.gdelt_collector_cli import _has_actionable_failure, _select_targets
 
 
 NOW = datetime(2026, 9, 8, 3, 6, tzinfo=UTC)
@@ -40,7 +40,7 @@ class Repository:
 
     def append_collection(self, collection):
         self.collections.append(collection)
-        if collection.collection_status == "COMPLETE":
+        if collection.collection_status in {"COMPLETE", "PARTIAL"}:
             self.completed.add((collection.provider, collection.cursor_sha256))
         return "INSERTED"
 
@@ -139,6 +139,51 @@ def test_cycle_reuses_completed_cursor_and_stops_after_first_failure() -> None:
     assert repository.collections[-1].error_code == "GDELT_HTTP_STATUS"
 
 
+def test_filtered_nonfinancial_rows_leave_a_reusable_partial_cursor() -> None:
+    target = latest_targets(NOW)[0]
+    body = gzip.compress(
+        b"\n".join(
+            json.dumps(item).encode()
+            for item in (
+                {
+                    "url": "https://example.com/markets/story",
+                    "lang": "English",
+                    "quotes": [{"quote": "Supply remains stable."}],
+                },
+                {
+                    "url": "https://example.com/lifestyle/wedding",
+                    "lang": "English",
+                    "quotes": [{"quote": "The wedding dress was beautiful."}],
+                },
+            )
+        )
+    )
+    repository = Repository()
+    with GdeltHttpClient(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                headers={"Content-Length": str(len(body)), "Content-Encoding": "gzip"},
+                stream=httpx.ByteStream(body),
+            )
+        ),
+        resolver=lambda _: ("8.8.8.8",),
+        physical_call_cap=1,
+    ) as client:
+        first = run_cycle(targets=(target,), client=client, repository=repository, started_at=NOW)
+    assert first.completed_files == 0 and first.excluded_rows == 1
+    assert first.stored_documents == 1
+    assert repository.collections[-1].collection_status == "PARTIAL"
+
+    with GdeltHttpClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(500)),
+        resolver=lambda _: ("8.8.8.8",),
+        physical_call_cap=1,
+    ) as client:
+        replay = run_cycle(targets=(target,), client=client, repository=repository, started_at=NOW)
+    assert replay.reused_files == 1 and replay.physical_calls == 0
+
+
 def test_completed_latest_targets_do_not_consume_the_bounded_recovery_slice() -> None:
     repository = Repository()
     latest = latest_targets(NOW)
@@ -199,6 +244,7 @@ def test_an_unpublished_newest_file_does_not_stop_the_recovery_of_older_files() 
 
     assert receipt.failure_codes == ("GDELT_NOT_PUBLISHED",)
     assert receipt.stopped_after_failure is False
+    assert _has_actionable_failure((receipt,)) is False
     # 미게시를 건너뛰고 더 오래된 파일을 실제로 받아야 한다.
     assert receipt.completed_files == 1
     assert receipt.stored_documents == 1
@@ -223,6 +269,7 @@ def test_a_real_transport_failure_still_stops_the_dataset() -> None:
     assert receipt.failure_codes == ("GDELT_HTTP_STATUS",)
     assert receipt.stopped_after_failure is True
     assert receipt.physical_calls == 1
+    assert _has_actionable_failure((receipt,)) is True
 
 
 class SettlingRepository(Repository):

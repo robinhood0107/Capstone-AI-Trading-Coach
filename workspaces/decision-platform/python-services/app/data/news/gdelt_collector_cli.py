@@ -65,7 +65,7 @@ def main() -> int:
         projection = _receipt_projection(receipts)
         print(json.dumps(projection, sort_keys=True), flush=True)
         if not args.loop:
-            return 1 if projection["failedFiles"] else 0
+            return 1 if _has_actionable_failure(receipts) else 0
         # 실행시간을 sleep에 더하지 않고 최초 monotonic cadence에 맞춰 다음 tick을 잡는다.
         next_tick += args.interval_seconds
         time.sleep(max(0.0, next_tick - time.monotonic()))
@@ -175,6 +175,14 @@ def _receipt_projection(receipts: tuple[GdeltCycleReceipt, ...]) -> dict[str, ob
     result["failureCodes"] = [code for receipt in receipts for code in receipt.failure_codes]
     result["stoppedAfterFailure"] = any(receipt.stopped_after_failure for receipt in receipts)
     return result
+
+
+def _has_actionable_failure(receipts: tuple[GdeltCycleReceipt, ...]) -> bool:
+    """15분 heartbeat의 미게시 분은 기록하되 one-shot 실패로 세지 않는다."""
+
+    return any(
+        code != "GDELT_NOT_PUBLISHED" for receipt in receipts for code in receipt.failure_codes
+    )
 
 
 def _camel(value: str) -> str:

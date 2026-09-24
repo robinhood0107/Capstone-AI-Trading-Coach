@@ -41,6 +41,10 @@ class PublicDemoComposeTest(unittest.TestCase):
         self.assertEqual(services["api"]["environment"]["P1_AUTOMATION_RUNTIME_ENABLED"], "false")
         self.assertEqual(services["api"]["environment"]["ASYNC_WORKER_ENABLED"], "false")
         self.assertEqual(services["api"]["environment"]["S4_9_STRONG_LLM_ENABLED"], "true")
+        self.assertEqual(
+            services["api"]["environment"]["CAPSTONE_RAG_LOCAL_ROOT"],
+            "/opt/capstone/rag-runtime-default",
+        )
         self.assertEqual(services["migrate"]["environment"]["MARS_PUBLIC_SURFACE_MODE"], "DEMO")
         self.assertEqual(
             {secret["source"] for secret in services["api"]["secrets"]},

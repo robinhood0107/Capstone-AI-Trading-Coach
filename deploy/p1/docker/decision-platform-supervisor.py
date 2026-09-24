@@ -81,9 +81,10 @@ def main() -> int:
         # worker, inference, brokerage, or automation here would reintroduce
         # account capabilities even if the HTTP gate rejected their routes.
         _validate_demo_runtime(dict(os.environ))
-    worker = None if demo else subprocess.Popen(
+    async_worker_enabled = os.environ.get("ASYNC_WORKER_ENABLED", "true").lower() == "true"
+    worker = subprocess.Popen(
         ["python", "-m", "app.async_worker.grpc_server"], close_fds=True,
-    )
+    ) if not demo and async_worker_enabled else None
     spring = subprocess.Popen(
         [
             "java",

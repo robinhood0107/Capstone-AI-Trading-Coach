@@ -59,6 +59,8 @@ class PublicFullComposeTest(unittest.TestCase):
         self.assertEqual(api["environment"]["BROKERAGE_GRPC_ENABLED"], "true")
         self.assertEqual(api["environment"]["P1_AUTOMATION_RUNTIME_ENABLED"], "true")
         self.assertEqual(api["environment"]["ASYNC_WORKER_ENABLED"], "false")
+        self.assertEqual(api["environment"]["RETURN_INFERENCE_BUNDLE_ROOT"], "/opt/capstone/seed/team-b")
+        self.assertEqual(api["environment"]["RETURN_INFERENCE_ALLOW_SYNTHETIC"], "false")
         full_profile = yaml.safe_load(
             (ROOT / "workspaces/decision-platform/spring-api/src/main/resources/application-mars-full.yml").read_text()
         )

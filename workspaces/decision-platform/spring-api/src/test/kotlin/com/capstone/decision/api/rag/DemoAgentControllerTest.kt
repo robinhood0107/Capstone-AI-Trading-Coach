@@ -56,7 +56,10 @@ class DemoAgentControllerTest {
         assertEquals(3, command.captured.evidence.size)
         assertEquals(
             "https://www.investor.gov/introduction-investing/getting-started/asset-allocation",
-            response.data?.citations?.single()?.url,
+            response.data
+                ?.citations
+                ?.single()
+                ?.url,
         )
         val publicJson = JsonMapper.builder().build().writeValueAsString(response)
         assertTrue(!publicJson.contains("historyId") && !publicJson.contains("question"))
@@ -108,7 +111,7 @@ class DemoAgentControllerTest {
     }
 
     @Test
-    fun `daily operator cap reports a bounded public error`() {
+    fun `provider failure is not rewritten as an application budget block`() {
         val generation = mockk<GrpcStrongLlmGenerationAdapter>()
         val rate = mockk<RagRateLimitPort>()
         every { rate.acquire(DEMO_INTERNAL_OWNER_USER_ID) } just Runs
@@ -117,7 +120,7 @@ class DemoAgentControllerTest {
                 generationStatus = RagGenerationStatus.GENERATION_UNAVAILABLE,
                 answer = null,
                 citationIds = emptyList(),
-                failureCode = "DEMO_AI_BUDGET_EXHAUSTED",
+                failureCode = "GENERATION_UNAVAILABLE",
             )
         val request = MockHttpServletRequest("POST", "/api/v1/demo/agent/ask")
 
@@ -130,6 +133,6 @@ class DemoAgentControllerTest {
                 )
             }
 
-        assertEquals(ErrorCode.RATE_LIMITED, error.errorCode)
+        assertEquals(ErrorCode.PYTHON_SERVICE_UNAVAILABLE, error.errorCode)
     }
 }

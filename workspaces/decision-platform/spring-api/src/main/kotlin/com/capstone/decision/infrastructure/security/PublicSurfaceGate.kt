@@ -35,6 +35,21 @@ internal class PublicSurfaceGate(
             mode == PublicSurfaceMode.DEMO &&
                 request.method == "POST" &&
                 request.requestURI == "/api/v1/demo/agent/ask"
+        val fullAgentAllowed =
+            mode == PublicSurfaceMode.FULL &&
+                when (request.method to request.requestURI) {
+                    "GET" to "/api/v2/rag/corpus-status",
+                    "GET" to "/api/v2/rag/consent",
+                    "GET" to "/api/v2/rag/world-news",
+                    "GET" to "/api/v2/rag/history",
+                    "POST" to "/api/v2/rag/consents",
+                    "POST" to "/api/v2/rag/vertex-preparations",
+                    "POST" to "/api/v2/rag/ask",
+                    -> true
+                    else ->
+                        (request.method == "GET" || request.method == "DELETE") &&
+                            FULL_RAG_HISTORY_DETAIL.matches(request.requestURI)
+                }
         val fullAllowed =
             mode == PublicSurfaceMode.FULL &&
                 when (request.method to request.requestURI) {
@@ -46,16 +61,47 @@ internal class PublicSurfaceGate(
                     "PUT" to "/api/v1/brokerage/mock/credential",
                     "DELETE" to "/api/v1/brokerage/mock/credential",
                     "POST" to "/api/v1/brokerage/mock/credential/connect",
-                    "GET" to "/api/v1/admin/ai-budget",
-                    "PUT" to "/api/v1/admin/ai-budget",
+                    "POST" to "/api/v1/brokerage/mock/credential/certify",
+                    "POST" to "/api/v1/brokerage/mock/credential/certify/recovery-confirm",
+                    "POST" to "/api/v1/brokerage/mock/credential/certify",
                     -> true
-                    else -> false
+                    else ->
+                        false
                 }
-        if (mode != PublicSurfaceMode.LOCAL && !health && !fullAllowed && !demoAllowed) {
+        val fullAutomationAllowed =
+            mode == PublicSurfaceMode.FULL &&
+                when (request.method to request.requestURI) {
+                    "GET" to "/api/v2/automation/status",
+                    "GET" to "/api/v2/automation/positions",
+                    "GET" to "/api/v3/automation/status",
+                    "PUT" to "/api/v3/automation/policy",
+                    "POST" to "/api/v3/automation/arm",
+                    "GET" to "/api/v3/automation/runs",
+                    "GET" to "/api/v3/automation/positions",
+                    "POST" to "/api/v1/automation/disarm",
+                    "GET" to "/api/v4/automation/capital-policy",
+                    "PUT" to "/api/v4/automation/capital-policy",
+                    "GET" to "/api/v4/automation/capital-status",
+                    -> true
+                    else -> FULL_AUTOMATION_RUN_DETAIL.matches(request.requestURI) && request.method == "GET"
+                }
+        if (
+            mode != PublicSurfaceMode.LOCAL &&
+            !health &&
+            !fullAllowed &&
+            !fullAgentAllowed &&
+            !fullAutomationAllowed &&
+            !demoAllowed
+        ) {
             response.sendError(HttpServletResponse.SC_NOT_FOUND)
             return
         }
         filterChain.doFilter(request, response)
+    }
+
+    private companion object {
+        val FULL_RAG_HISTORY_DETAIL = Regex("^/api/v2/rag/history/rag_[A-Za-z0-9_-]{12,96}$")
+        val FULL_AUTOMATION_RUN_DETAIL = Regex("^/api/v3/automation/runs/auto_run_[A-Za-z0-9_-]{8,96}$")
     }
 }
 

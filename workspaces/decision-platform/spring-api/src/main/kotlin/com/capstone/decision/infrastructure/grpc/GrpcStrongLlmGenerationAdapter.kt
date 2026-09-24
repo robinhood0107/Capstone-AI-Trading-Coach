@@ -22,7 +22,7 @@ import com.capstone.decision.infrastructure.mcp.S49SearchUnavailableException
 import com.capstone.decision.infrastructure.security.PublicSurfaceMode
 import com.capstone.decision.infrastructure.vertex.S49GoogleBudgetPermit
 import com.capstone.decision.infrastructure.vertex.S49GoogleGroundingBudgetPort
-import com.capstone.decision.infrastructure.vertex.S49PublicAgentGrossBudget
+import com.capstone.decision.infrastructure.vertex.S49PublicAgentUsageMeter
 import com.capstone.decision.infrastructure.vertex.S49StrongLlmCompletionPort
 import com.capstone.decision.infrastructure.vertex.S49StrongLlmProperties
 import com.capstone.decision.infrastructure.vertex.S49StrongLlmUsageV2
@@ -60,7 +60,7 @@ internal class GrpcStrongLlmGenerationAdapter(
     private val strongLlmProperties: S49StrongLlmProperties,
     private val grpcProperties: StrongLlmAgentGrpcProperties,
     private val googleBudget: S49GoogleGroundingBudgetPort,
-    private val operatorGrossBudget: S49PublicAgentGrossBudget,
+    private val operatorUsageMeter: S49PublicAgentUsageMeter,
     private val usageLedger: S49StrongLlmUsageV2Port,
     private val completion: S49StrongLlmCompletionPort,
     private val groundingProvenance: S49GroundingProvenancePort,
@@ -155,17 +155,17 @@ internal class GrpcStrongLlmGenerationAdapter(
                             "STRONG_LLM_GOOGLE_BUDGET_PERMIT_MISSING"
                         }
                         hostBudget.permitProvider(event.providerCallPlanned.phase)
-                        operatorGrossBudget.reserve(
-                            command.ownerUserId,
-                            runId,
-                            event.providerCallPlanned.plannedCallId,
-                            startFrame.serializedSize,
-                            contextBytesFromEvents,
-                            sentProviderPermits,
-                            event.providerCallPlanned.googleSearchAttached,
-                        )
-                        // A denied reservation never sends ProviderCallPermit, so Python
-                        // cannot open its Vertex socket or move to a fallback provider.
+                        runCatching {
+                            operatorUsageMeter.record(
+                                command.ownerUserId,
+                                runId,
+                                event.providerCallPlanned.plannedCallId,
+                                startFrame.serializedSize,
+                                contextBytesFromEvents,
+                                sentProviderPermits,
+                                event.providerCallPlanned.googleSearchAttached,
+                            )
+                        }
                         sentProviderPermits += 1
                         requestObserver.onNext(
                             hostEvent(
@@ -433,12 +433,7 @@ internal class GrpcStrongLlmGenerationAdapter(
                 generationStatus = RagGenerationStatus.GENERATION_UNAVAILABLE,
                 answer = null,
                 citationIds = emptyList(),
-                failureCode =
-                    if (demoMode && leaf == "OPERATOR_AI_DAILY_GROSS_BUDGET_EXHAUSTED") {
-                        "DEMO_AI_BUDGET_EXHAUSTED"
-                    } else {
-                        "GENERATION_UNAVAILABLE"
-                    },
+                failureCode = "GENERATION_UNAVAILABLE",
             )
         } finally {
             researchTools?.closeSession(runId)

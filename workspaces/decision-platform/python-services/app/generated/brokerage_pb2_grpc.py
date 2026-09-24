@@ -59,6 +59,11 @@ class BrokerageServiceStub:
                 request_serializer=brokerage__pb2.VerifyMockConnectionRequest.SerializeToString,
                 response_deserializer=brokerage__pb2.VerifyMockConnectionResponse.FromString,
                 _registered_method=True)
+        self.CertifyMockCredential = channel.unary_unary(
+                '/capstone.decision.v1.BrokerageService/CertifyMockCredential',
+                request_serializer=brokerage__pb2.CertifyMockCredentialRequest.SerializeToString,
+                response_deserializer=brokerage__pb2.CertifyMockCredentialResponse.FromString,
+                _registered_method=True)
 
 
 class BrokerageServiceServicer:
@@ -94,6 +99,12 @@ class BrokerageServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def CertifyMockCredential(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_BrokerageServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -121,6 +132,11 @@ def add_BrokerageServiceServicer_to_server(servicer, server):
                     servicer.VerifyMockConnection,
                     request_deserializer=brokerage__pb2.VerifyMockConnectionRequest.FromString,
                     response_serializer=brokerage__pb2.VerifyMockConnectionResponse.SerializeToString,
+            ),
+            'CertifyMockCredential': grpc.unary_unary_rpc_method_handler(
+                    servicer.CertifyMockCredential,
+                    request_deserializer=brokerage__pb2.CertifyMockCredentialRequest.FromString,
+                    response_serializer=brokerage__pb2.CertifyMockCredentialResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -258,6 +274,33 @@ class BrokerageService:
             '/capstone.decision.v1.BrokerageService/VerifyMockConnection',
             brokerage__pb2.VerifyMockConnectionRequest.SerializeToString,
             brokerage__pb2.VerifyMockConnectionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CertifyMockCredential(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/capstone.decision.v1.BrokerageService/CertifyMockCredential',
+            brokerage__pb2.CertifyMockCredentialRequest.SerializeToString,
+            brokerage__pb2.CertifyMockCredentialResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -2365,7 +2365,7 @@ V201 `DEMO_AGENT` 일일 총액을 적용한다. 답은 공개 교육 예제 근
 [변경 근거](../contracts/changes/20260924-mars-anonymous-demo-agent.md)를 따른다.
 [원장 계약](../contracts/changes/20260923-mars-ai-gross-reservation-v1.md)을 따른다.
 
-### 10.0 MARS full 사용자별 KIS_MOCK 자격증명 저장 (연결·주문 검증 전)
+### 10.0 MARS full 사용자별 KIS_MOCK 자격증명·연결·인증
 
 full 제품의 `GET/PUT /api/v1/brokerage/mock/credential`은 Bearer로 확인한 본인만
 사용한다. PUT body는 `appKey`(8~256 ASCII), `appSecret`(8~512 printable ASCII),
@@ -2375,9 +2375,9 @@ full 제품의 `GET/PUT /api/v1/brokerage/mock/credential`은 Bearer로 확인�
 App Key/계좌의 끝 4자리만 주며 원문은 응답하지 않는다.
 
 `STORED`, `CONNECTED`, `CERTIFIED`, 자동운용 `ARMED`와 broker 체결·대사는 각각 다른
-증거다. 현재 저장 단계는 상태를 STORED로 설정하며 연결 확인·인증·사용자별 provider
-reader·주문은 후속 구현이 통과하기 전까지 완료로 보지 않는다. ARMED나 미완료 주문·
-execution이 있으면 교체를 거부한다. 데모와 KIS_LIVE 입력 API는 없다.
+증거다. PUT은 STORED로 저장하고, 사용자가 누른 `POST /api/v1/brokerage/mock/credential/connect`
+읽기 전용 probe 성공 후 현재 계좌·revision만 CONNECTED로 바꾼다. 204는 주문 인증을
+뜻하지 않는다. 데모와 KIS_LIVE 입력 API는 없다.
 [full 전용 schema](../contracts/openapi/mars-full-mock-credential.v1.openapi.json)와
 [계약 변경 근거](../contracts/changes/20260923-mars-bound-mock-credential-storage.md)를 따른다.
 
@@ -2386,12 +2386,20 @@ execution이 있으면 교체를 거부한다. 데모와 KIS_LIVE 입력 API는 
 변하지 않는다. [reader 계약](../contracts/changes/20260923-mars-owner-mock-envelope-reader.md)을 따른다.
 기존 Spring→Python brokerage gRPC 요청은 봉인된 owner/account envelope를 전달한다.
 Python은 같은 envelope의 owner/account AAD를 검증해 그 요청만의 KIS_MOCK client에
-결속한다. 연결 확인·장중 인증·자동운용 대사 완료 전에는 공개 주문을 열지 않는다.
+결속한다. `POST /api/v1/brokerage/mock/credential/certify`는 body/query 없이 현재
+owner의 CONNECTED credential만 사용한다. KRX 거래일 09:10~15:00 KST에서 서버가 정한
+`005930` 1주 하한가 매수 테스트, 매수가능 확인, 1회 전량 취소, 체결·미체결·잔고 대사를
+수행한다. 브라우저는 주문 전에 체결될 수도 있음을 경고하고 사용자의 확인을 요구한다.
+주문 필드는 사용자에게 열지 않는다. PASS, 정확한 주문·취소·대사 receipt만 해당 owner와
+credential revision을 CERTIFIED로 바꾼다. RUNNING/RECOVERY_REQUIRED 중 자격증명 교체와
+해제를 막으며 복구는 동일 encrypted order reference를 사용해 중복 매수를 보내지 않는다.
+상태가 불명확할 때 소유자는 KIS 모의계좌에서 주문·체결·잔고를 확인한 뒤
+`POST /api/v1/brokerage/mock/credential/certify/recovery-confirm`으로 복구 잠금만 해제할
+수 있다. 이 확인은 자격증명을 CERTIFIED로 만들지 않는다. 자동운용 ARMED는 그 뒤의
+별도 release/source/Team B readiness gate다.
 [gRPC 전송 계약](../contracts/changes/20260923-mars-owner-broker-grpc-envelope.md)을 따른다.
-`POST /api/v1/brokerage/mock/credential/connect`는 사용자가 누른 한 번의 읽기 전용
-KIS_MOCK 계좌 probe가 성공한 뒤, 현재 계좌·revision만 CONNECTED로 전이한다.
-204는 주문 인증을 의미하지 않는다. 교체 경쟁·해제 중 상태는 거부한다.
-[연결 확인 계약](../contracts/changes/20260923-mars-mock-connection-proof.md)을 따른다.
+[연결 확인 계약](../contracts/changes/20260923-mars-mock-connection-proof.md)과
+[사용자별 인증 계약](../contracts/changes/20260924-mars-user-mock-certification.md)을 따른다.
 `DELETE /api/v1/brokerage/mock/credential`은 즉시 새 요청을 막고, 미대사 주문이 있으면
 암호문을 보존해 200 `DISCONNECTING`을 반환한다. 사용자는 대사 후 다시 눌러 204 삭제를
 확인한다. [연결 해제 계약](../contracts/changes/20260923-mars-owner-mock-disconnect.md)을 따른다.

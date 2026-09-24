@@ -66,6 +66,25 @@ class MarsDockerHubReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("org.opencontainers.image.revision", workflow)
         self.assertIn("cmp \"release-assets/$asset\" \"release-readback/$asset\"", workflow)
 
+    def test_candidate_build_scans_all_images_before_artifact_without_registry_credentials(self) -> None:
+        image_workflow = IMAGE_WORKFLOW.read_text(encoding="utf-8")
+        for image in (
+            "mars-candidate:api",
+            "mars-candidate:postgres",
+            "mars-candidate:redis",
+            "mars-candidate:demo-web",
+            "mars-candidate:full-web",
+        ):
+            self.assertIn(f"image-ref: {image}", image_workflow)
+        self.assertEqual(image_workflow.count("severity: HIGH,CRITICAL"), 5)
+        self.assertIn("scanners: vuln,secret", image_workflow)
+        self.assertIn("Upload candidate image identities", image_workflow)
+        self.assertLess(
+            image_workflow.index("Scan full web candidate image"),
+            image_workflow.index("Upload candidate image identities"),
+        )
+        self.assertNotIn("DOCKERHUB_TOKEN", image_workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

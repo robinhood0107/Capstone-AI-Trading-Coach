@@ -61,7 +61,14 @@ docker compose --env-file .env -f mars-release/mars-public-full.compose.yml up -
 
 기본 포트는 DEMO `3001`, FULL `3002`이며 둘 다 호스트 loopback에만 바인딩됩니다. 외부 접속에는 별도의 TLS reverse proxy가 필요합니다. FULL의 공개 origin과 Google OIDC redirect URI는 `https://mars.royaljellynas.org`와 `https://mars.royaljellynas.org/api/v1/auth/oidc/callback/google`입니다. Google OAuth 설정에도 같은 redirect URI를 등록해야 합니다.
 
-Compose가 참조하는 secret 파일 이름은 저장소의 [`compose.public-demo.yml`](deploy/p1/compose.public-demo.yml)과 [`compose.public-full.yml`](deploy/p1/compose.public-full.yml)에 있습니다. DEMO와 FULL은 각자 다른 Compose 프로젝트, secret 디렉터리와 데이터 볼륨으로 실행하세요. API 키, 계좌번호, 서비스 계정 JSON, OAuth secret, 암호화 키는 Git·`.env`·로그·채팅에 넣지 마세요.
+필수 secret 파일은 다음과 같습니다.
+
+- DEMO: `postgres.env`, `redis.env`, `role-bootstrap.env`, `migration.env`, `actor-capability-authority.env`, `actor-server.p12`, `actor-client.p12`, `actor-tls-ca.crt`, `mars-public-demo.env`, `rag-history-kek-v1.key`, `vertex-service-account.json`
+- FULL: 위 공통 DB·actor·RAG·Vertex 파일과 `seed-import.env`, `mars-public-full.env`
+
+Compose의 비밀이 아닌 필수 설정은 DEMO에서 `MARS_DEMO_SECRET_GID`, `MARS_DEMO_SECRETS_DIR`, `MARS_VERTEX_MODEL_ID`; FULL에서 `MARS_FULL_SECRET_GID`, `MARS_FULL_SECRETS_DIR`, `MARS_FULL_BROKERAGE_KEK_DIR`, `MARS_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256`, `MARS_VERTEX_MODEL_ID`, `MARS_VERTEX_PROJECT_ID`입니다. 포트 변수는 선택입니다. 각 설정의 세부 형식은 저장소의 [`compose.public-demo.yml`](deploy/p1/compose.public-demo.yml)과 [`compose.public-full.yml`](deploy/p1/compose.public-full.yml)에 있습니다.
+
+DEMO와 FULL은 각자 다른 Compose 프로젝트, secret 디렉터리와 데이터 볼륨으로 실행하세요. API 키, 계좌번호, 서비스 계정 JSON, OAuth secret, 암호화 키는 Git·`.env`·로그·채팅에 넣지 마세요.
 
 ## 발행과 검증 상태
 

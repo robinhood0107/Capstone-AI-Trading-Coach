@@ -143,6 +143,7 @@ services:
       P1_AUTOMATION_RUNTIME_ENABLED: "false"
       RAG_V2_GRPC_ENABLED: "false"
       WORLD_NEWS_RETENTION_ENABLED: "false"
+      CAPSTONE_RAG_LOCAL_ROOT: /opt/capstone/rag-runtime-default
       S4_9_STRONG_LLM_ENABLED: "true"
       STRONG_LLM_PROVIDER: vertex
       STRONG_LLM_FALLBACK_PROVIDER: ""

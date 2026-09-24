@@ -4530,6 +4530,9 @@ canonical HTTPS URL, `publishedAt`, `publicationStatus`, `providerObservedAt`, `
 `availableAt` 뒤의 문서만 반환한다. collection 상태는 문서가 0건이어도 COMPLETE, PARTIAL,
 COLLECTION_FAILED, NOT_COLLECTED를 구분한다. 세계 뉴스는 Decision, Signal, RiskDecision, order,
 decision hash와 종목 VETO 권한이 모두 `NONE`이다.
+분별 파일의 문서·collection이 원자 저장된 뒤에는 `COMPLETE`와 `PARTIAL` 커서를 모두 재사용한다.
+DB의 `PARTIAL` 상태와 사이클 출력의 제외 행 수는 유지하며 `COLLECTION_FAILED`/`NOT_COLLECTED`만 재시도 대상이다.
+같은 URL의 자동 재수집 대신 명시적 재처리가 필요한 이유는 [커서 변경 기록](../contracts/changes/20260924-world-news-partial-file-cursor.md)에 남겼다.
 400/401/503 응답의 `WorldNewsV2Error`는 `code`, `message`, `requestId`가 필수인
 object schema다. 기존 OpenAPI의 `null` component를 [forward 수정](../contracts/changes/20260923-world-news-error-schema.md)했으며
 HTTP 상태와 런타임 오류 본문은 바뀌지 않는다.

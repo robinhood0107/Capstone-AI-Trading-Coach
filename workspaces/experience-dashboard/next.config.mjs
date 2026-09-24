@@ -4,8 +4,13 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   async rewrites() {
+    // Next serializes rewrites during image build. Compose runtime environment
+    // cannot change the destination later: both public products name the API
+    // service `api`, while the development stack uses `decision-platform`.
+    const publicProduct = ['demo', 'full'].includes(process.env.NEXT_PUBLIC_MARS_PRODUCT ?? '');
     const decisionPlatform =
-      process.env.DECISION_PLATFORM_INTERNAL_URL ?? 'http://decision-platform:8080';
+      process.env.DECISION_PLATFORM_INTERNAL_URL ??
+      (publicProduct ? 'http://api:8080' : 'http://decision-platform:8080');
     return [{ source: '/api/:path*', destination: `${decisionPlatform}/api/:path*` }];
   },
   async headers() {

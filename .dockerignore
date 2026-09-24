@@ -1,6 +1,5 @@
 .git
 .github
-contracts/fixtures/s1-4x-reference-runtime
 .env
 .env.*
 !.env.example

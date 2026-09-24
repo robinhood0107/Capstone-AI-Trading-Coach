@@ -105,7 +105,7 @@ class RedisLoginAttemptStore(
     private fun namespaced(key: String): String = "login-attempt:v1:$key"
 
     private companion object {
-        val LOGGER = LoggerFactory.getLogger(RedisLoginAttemptStore::class.java)
+        val LOGGER: org.slf4j.Logger = LoggerFactory.getLogger(RedisLoginAttemptStore::class.java)
         val WINDOW: Duration = Duration.ofMinutes(15)
         val INCREMENT_SCRIPT =
             DefaultRedisScript(

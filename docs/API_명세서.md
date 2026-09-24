@@ -383,6 +383,25 @@ root OpenAPI 밖의 실행 표면. `contracts/openapi/openapi.json`의 exact-76�
 
 로그인 attempt는 client address+username 기준 15분 5회, address 기준 15분 50회로 원자 예약하며, JSON binding 전 전역 request body 상한을 적용한다. limiter key는 private factory가 정규화한 address/username scope를 purpose/version HMAC으로 만든 digest만 사용하고 raw address·username을 저장·로그·metric label에 넣지 않는다. 주소는 socket remote address를 기준으로 하고, 배포 시 명시적으로 allowlist한 reverse proxy에서 온 경우에만 표준 forwarded header를 해석한다. 임의 `X-Forwarded-For`를 신뢰하지 않는다. demo account verifier는 평문 password가 아니라 attested bundle에서 검증된 adaptive salted password hash를 DB에 저장하고 검증 라이브러리로 비교한다. 인증 가능한 password 범위는 `1..72 UTF-8 bytes`이며 DTO의 1,024-character 상한은 JSON 입력 방어일 뿐 credential 경계가 아니다. 72 bytes를 넘는 입력은 per-process dummy로 치환해 선택 row와 peer row에 BCrypt strength-12 검증을 각각 한 번 수행한 뒤 동일한 401로 거부한다. 정상 범위의 모든 login도 두 row를 각각 한 번 검증하며, 하나의 평문이 두 row에 모두 일치하면 두 역할을 모두 fail-closed한다. 존재하지 않는 사용자와 잘못된 비밀번호도 정확히 두 번의 dummy/peer BCrypt 경로와 동일한 stable 오류를 사용한다. 현재 단일 JVM limiter는 replica 1에서만 보안 경계가 성립하며, 다중 replica 배포 전에는 공유 원자 저장소로 이전해야 한다.
 
+#### 2.4.0 MARS full Google OIDC 전환 계약 (제품 게이트 준비 중)
+
+실서비스 프로필은 `GET /api/v1/auth/oidc/start/google`에서 Google authorization-code 흐름을
+시작하고 `GET /api/v1/auth/oidc/callback/google`에서 Spring Security가 서명·issuer·audience·
+만료·state/nonce를 검증한다. 서버는 검증된 `https://accounts.google.com` + `sub`로 첫 USER를
+원자 생성한다. 이메일은 계정 키가 아니다. 운영자가 별도 보관한 정확한 subject hash와 일치할
+때만 ADMIN이며, 역할이 바뀌면 기존 세션을 폐기한다.
+
+callback은 Bearer token을 URL에 넣지 않고 같은 origin의 `/auth/complete`로 이동한다.
+`POST /api/v1/auth/oidc/exchange`는 2분 이내의 HttpOnly/Secure/SameSite=Lax 세션과
+정확한 `Origin`을 요구하고 한 번만 `LoginResponse`를 반환한다. 브라우저는 JWT를 메모리에만
+보관한다. `POST /api/v1/auth/logout`은 현재 Bearer의 DB 세션을 폐기하고 204를 반환한다.
+두 endpoint의 full 전용 schema는 [MARS 인증 OpenAPI](../contracts/openapi/mars-full-auth.v1.openapi.json)에 둔다.
+현재 개인용 password bootstrap은 공개 full/demo 프로필에서 제외한다. 공개 모드는
+고정 데모 계정의 password bundle 주입을 거부하고 password 로그인 API를 제공하지 않는다.
+기존 V7 migration의 두 고정 행은 새 DB 구성 시 메모리에서 만든 임시 암호 증거로만
+생성하며, [전환 경계](../contracts/changes/20260924-mars-public-password-runtime.md)에 따라
+내부 호출처 교체 후 제거한다. 공개 서비스의 KIS/Agent/주문은 별도 게이트가 완성되기 전까지 닫혀 있다.
+
 #### 2.4.1 S2.1 actor trust-root 선행 계약
 
 DB `users`가 demo identity의 단일 진실 소스다. checksum이 있는 V7 Java migration은 `security_version bigint NOT NULL DEFAULT 1 CHECK (security_version > 0)`과 credential evidence 열(`credential_reuse_tag`, `credential_bundle_mac`, `credential_policy_version`)을 추가하고 migration role로 아래 두 row만 seed한다. 두 고정 demo row는 32-byte tag/MAC와 policy version 1을 모두 가져야 하고, 다른 user row는 evidence가 없어도 호환된다. BCrypt hash·tag·MAC는 추적 파일이나 Flyway SQL text에 넣지 않고 검증된 배포 bundle에서 prepared statement bind parameter로만 전달한다. 기존 `user_id`/username/role/status/version/hash/evidence가 exact shape과 다르면 overwrite하지 않고 migration transaction 전체를 중단한다.
@@ -1802,9 +1821,10 @@ enabled target인데 이 header가 없을 때의 동작은 자동 활성화 설�
   운영자가 저술할 때와 똑같이 강제된다. 바뀌는 것은 승인의 위치뿐이다 — 호출마다의 사람 승인이
   배포 시점의 정책 승인으로 내려간다.
 
-자동 활성화에서 사람이 곧 호출 한도이던 자리를 대신하려고 소유자별 하루 생성 상한을 정책에서
-읽는다. 상한에 닿으면 생성만 닫히고(`GENERATION_UNAVAILABLE`) 검색 경로는 그대로 산다. 남은 횟수는
-`GET /api/v2/rag/corpus-status`가 알려 준다.
+자동 활성화 정책은 요청별 계약·동의·모델·evidence·기술 한계를 검증한다. 생성 요청 예약 수는
+`GET /api/v2/rag/corpus-status`에 best-effort 계측값으로 표시하며, 상한으로 호출을 막지 않는다.
+계측 DB 조회가 실패하면 사용량 필드만 `null`이고 Vertex 호출은 계속 가능하다. provider 자체의
+계정·무료 사용량 제한은 provider 응답에 따른다.
 이 control plane은 provider 호출을 만들지 않으며 `EXTERNAL_AI_RAG_V2` 동의만으로 provider outbound가
 활성화되지 않는다.
 
@@ -1846,15 +1866,16 @@ private overlay state, 0~100 progress, active embedding profile, target generato
 code만 반환한다. 파일명·로컬 경로·내부 접근 정보·무결성 검증값은 노출하지 않는다. 현재 OA112
 metadata validation은 `CORE_READY`의 전제일 뿐 `FULL_READY` 증거가 아니다.
 
-자동 활성화가 켜져 있으면 생성형 답변의 오늘 상한과 남은 횟수를 함께 반환한다. 꺼져 있으면 세 필드는
-모두 `null`이고, 그 배포에서 화면은 검색 전용으로 동작한다. 세 값은 개수일 뿐이라 질문·근거·비용
-내역을 담지 않는다.
+자동 활성화가 켜져 있으면 오늘 생성 요청 예약 수를 best-effort로 반환한다. 이 값은 계측 표시 전용이며
+한도나 생성 가능 여부를 뜻하지 않는다. `generationDailyCap`과 `generationRemaining`은 기존 wire
+형태와의 호환을 위해 항상 `null`이다. 자동 활성화가 꺼져 있거나 계측 조회에 실패하면 사용량도
+`null`이다. 질문·근거·비용 내역은 담지 않는다.
 
 ```json
 {
   "failureCode": null,
-  "generationDailyCap": 50,
-  "generationRemaining": 47,
+  "generationDailyCap": null,
+  "generationRemaining": null,
   "generationUsedToday": 3,
   "privateOverlayState": "BUILDING",
   "progressPercent": 42,
@@ -2312,6 +2333,78 @@ artifact 다운로드 URL은 공개 링크가 아니며 다른 API와 동일한 
 ---
 
 ## 10. Brokerage API
+
+### 운영자 AI 사용량 계측
+
+운영자 AI 일일 달러 상한과 `/api/v1/admin/ai-budget` 설정 API는 제거했다. Agent,
+매매 AI, RAG Vertex, Voyage의 기존 계측 경로는 보수적인 공개가격 추정치를
+`operator_ai_gross_usage_reservations`에 기록하지만, 누적액·날짜별 합계·계측 DB
+장애로 provider 호출을 거부하지 않는다. 기록은 실제 청구액이나 provider 무료량 잔액이 아니다.
+공급자의 rate limit, 승인 packet, 요청당 byte/token·physical-call 경계와 인증·주문 안전
+검증은 별도 계약으로 계속 적용한다.
+
+공개 제품의 Strong LLM provider는 운영자 Vertex 하나로 고정하며 API key·base URL·
+fallback provider 설정은 거부한다. Spring과 Python은 같은
+`RAG_LLM_MAX_OUTPUT_TOKENS`(기본 4,096)를 사용한다.
+[provider·요청 상한 근거](../contracts/changes/20260923-mars-public-strong-llm-provider-cap.md)와
+[meter 변경 근거](../contracts/changes/20260924-mars-ai-usage-metering.md)를 따른다.
+현재 기본 Gemini 3.5 Flash global의 2026-09-23 공개가격을 올림한 입력 3·출력 17
+마이크로달러/토큰을 배포 기본값으로 쓴다. 모델 변경이나 기존 NAS 정책 파일 사용 시
+[단가 변경 근거](../contracts/changes/20260923-mars-vertex-gross-rate-floor.md)에 따라
+가격을 다시 확인한다.
+
+### MARS demo 익명 예제 Agent
+
+`POST /api/v1/demo/agent/ask`는 demo 제품에서만 인증 없이
+`{ "questionId": "diversification" }` 형태로 교육 예제 질문 3개 중 하나를 받는다.
+서버 전체 분당 2회와
+V201 `DEMO_AGENT` 일일 총액을 적용한다. 답은 공개 교육 예제 근거 3개와 인용 URL만
+사용하며, 요청·답변 이력과 사용자 계정·KIS/주문 상태를 만들지 않는다. 잘못된 입력은
+400, 명시적으로 차단된 조언은 422, 분당/일일 한도는 429,
+생성 검증 실패·Redis·provider 장애는 503이다.
+응답에는 `Cache-Control: no-store`를 붙인다.
+[demo 전용 OpenAPI](../contracts/openapi/mars-demo-agent.v1.openapi.json)와
+[변경 근거](../contracts/changes/20260924-mars-anonymous-demo-agent.md)를 따른다.
+[원장 계약](../contracts/changes/20260923-mars-ai-gross-reservation-v1.md)을 따른다.
+
+### 10.0 MARS full 사용자별 KIS_MOCK 자격증명·연결·인증
+
+full 제품의 `GET/PUT /api/v1/brokerage/mock/credential`은 Bearer로 확인한 본인만
+사용한다. PUT body는 `appKey`(8~256 ASCII), `appSecret`(8~512 printable ASCII),
+`accountNo`(하이픈 없는 숫자 10자리) 세 필드만 받으며 owner/account/mode나 추가 필드를
+거부한다. 서버가 opaque `accountId`를 만들고 brokerage 전용 KEK로 계정에 결속해
+암호화한다. PUT 204는 저장만 뜻한다. GET은 등록 여부·opaque ID·상태·revision과
+App Key/계좌의 끝 4자리만 주며 원문은 응답하지 않는다.
+
+`STORED`, `CONNECTED`, `CERTIFIED`, 자동운용 `ARMED`와 broker 체결·대사는 각각 다른
+증거다. PUT은 STORED로 저장하고, 사용자가 누른 `POST /api/v1/brokerage/mock/credential/connect`
+읽기 전용 probe 성공 후 현재 계좌·revision만 CONNECTED로 바꾼다. 204는 주문 인증을
+뜻하지 않는다. 데모와 KIS_LIVE 입력 API는 없다.
+[full 전용 schema](../contracts/openapi/mars-full-mock-credential.v1.openapi.json)와
+[계약 변경 근거](../contracts/changes/20260923-mars-bound-mock-credential-storage.md)를 따른다.
+
+내부 V202 reader는 현재 owner·KIS_MOCK·opaque account ID·actor capability가
+모두 일치할 때 암호문만 읽는다. 타인 계좌와 교체된 이전 ID는 거부하며 공개 응답은
+변하지 않는다. [reader 계약](../contracts/changes/20260923-mars-owner-mock-envelope-reader.md)을 따른다.
+기존 Spring→Python brokerage gRPC 요청은 봉인된 owner/account envelope를 전달한다.
+Python은 같은 envelope의 owner/account AAD를 검증해 그 요청만의 KIS_MOCK client에
+결속한다. `POST /api/v1/brokerage/mock/credential/certify`는 body/query 없이 현재
+owner의 CONNECTED credential만 사용한다. KRX 거래일 09:10~15:00 KST에서 서버가 정한
+`005930` 1주 하한가 매수 테스트, 매수가능 확인, 1회 전량 취소, 체결·미체결·잔고 대사를
+수행한다. 브라우저는 주문 전에 체결될 수도 있음을 경고하고 사용자의 확인을 요구한다.
+주문 필드는 사용자에게 열지 않는다. PASS, 정확한 주문·취소·대사 receipt만 해당 owner와
+credential revision을 CERTIFIED로 바꾼다. RUNNING/RECOVERY_REQUIRED 중 자격증명 교체와
+해제를 막으며 복구는 동일 encrypted order reference를 사용해 중복 매수를 보내지 않는다.
+상태가 불명확할 때 소유자는 KIS 모의계좌에서 주문·체결·잔고를 확인한 뒤
+`POST /api/v1/brokerage/mock/credential/certify/recovery-confirm`으로 복구 잠금만 해제할
+수 있다. 이 확인은 자격증명을 CERTIFIED로 만들지 않는다. 자동운용 ARMED는 그 뒤의
+별도 release/source/Team B readiness gate다.
+[gRPC 전송 계약](../contracts/changes/20260923-mars-owner-broker-grpc-envelope.md)을 따른다.
+[연결 확인 계약](../contracts/changes/20260923-mars-mock-connection-proof.md)과
+[사용자별 인증 계약](../contracts/changes/20260924-mars-user-mock-certification.md)을 따른다.
+`DELETE /api/v1/brokerage/mock/credential`은 즉시 새 요청을 막고, 미대사 주문이 있으면
+암호문을 보존해 200 `DISCONNECTING`을 반환한다. 사용자는 대사 후 다시 눌러 204 삭제를
+확인한다. [연결 해제 계약](../contracts/changes/20260923-mars-owner-mock-disconnect.md)을 따른다.
 
 KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재동의 조건을 충족할 때만 확장한다. S1.1의 KIS 작업은 Brokerage API가 아니라 MarketDataService 내부 구현이며, 주문·정정·취소·잔고 변경을 만들지 않는다. KIS 전체 API 목록과 모의 지원 경계는 자동 생성 부록 `KIS_API_카탈로그.md`를 참조한다.
 
@@ -4437,6 +4530,9 @@ canonical HTTPS URL, `publishedAt`, `publicationStatus`, `providerObservedAt`, `
 `availableAt` 뒤의 문서만 반환한다. collection 상태는 문서가 0건이어도 COMPLETE, PARTIAL,
 COLLECTION_FAILED, NOT_COLLECTED를 구분한다. 세계 뉴스는 Decision, Signal, RiskDecision, order,
 decision hash와 종목 VETO 권한이 모두 `NONE`이다.
+400/401/503 응답의 `WorldNewsV2Error`는 `code`, `message`, `requestId`가 필수인
+object schema다. 기존 OpenAPI의 `null` component를 [forward 수정](../contracts/changes/20260923-world-news-error-schema.md)했으며
+HTTP 상태와 런타임 오류 본문은 바뀌지 않는다.
 
 ### 누적 성과 보고서
 

@@ -1,4 +1,5 @@
 from google.protobuf.internal import containers as _containers
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
 from collections.abc import Iterable as _Iterable, Mapping as _Mapping
@@ -6,8 +7,45 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
+class MockCredentialCertificationState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    MOCK_CREDENTIAL_CERTIFICATION_UNSPECIFIED: _ClassVar[MockCredentialCertificationState]
+    MOCK_CREDENTIAL_CERTIFICATION_PASS: _ClassVar[MockCredentialCertificationState]
+    MOCK_CREDENTIAL_CERTIFICATION_FAILED: _ClassVar[MockCredentialCertificationState]
+    MOCK_CREDENTIAL_CERTIFICATION_RECOVERY_REQUIRED: _ClassVar[MockCredentialCertificationState]
+MOCK_CREDENTIAL_CERTIFICATION_UNSPECIFIED: MockCredentialCertificationState
+MOCK_CREDENTIAL_CERTIFICATION_PASS: MockCredentialCertificationState
+MOCK_CREDENTIAL_CERTIFICATION_FAILED: MockCredentialCertificationState
+MOCK_CREDENTIAL_CERTIFICATION_RECOVERY_REQUIRED: MockCredentialCertificationState
+
+class BoundMockCredentialEnvelope(_message.Message):
+    __slots__ = ("owner_user_id", "account_id", "revision", "credential_state", "kek_version", "wrap_nonce", "wrapped_dek", "wrap_tag", "payload_nonce", "payload_ciphertext", "payload_tag")
+    OWNER_USER_ID_FIELD_NUMBER: _ClassVar[int]
+    ACCOUNT_ID_FIELD_NUMBER: _ClassVar[int]
+    REVISION_FIELD_NUMBER: _ClassVar[int]
+    CREDENTIAL_STATE_FIELD_NUMBER: _ClassVar[int]
+    KEK_VERSION_FIELD_NUMBER: _ClassVar[int]
+    WRAP_NONCE_FIELD_NUMBER: _ClassVar[int]
+    WRAPPED_DEK_FIELD_NUMBER: _ClassVar[int]
+    WRAP_TAG_FIELD_NUMBER: _ClassVar[int]
+    PAYLOAD_NONCE_FIELD_NUMBER: _ClassVar[int]
+    PAYLOAD_CIPHERTEXT_FIELD_NUMBER: _ClassVar[int]
+    PAYLOAD_TAG_FIELD_NUMBER: _ClassVar[int]
+    owner_user_id: str
+    account_id: str
+    revision: int
+    credential_state: str
+    kek_version: str
+    wrap_nonce: bytes
+    wrapped_dek: bytes
+    wrap_tag: bytes
+    payload_nonce: bytes
+    payload_ciphertext: bytes
+    payload_tag: bytes
+    def __init__(self, owner_user_id: _Optional[str] = ..., account_id: _Optional[str] = ..., revision: _Optional[int] = ..., credential_state: _Optional[str] = ..., kek_version: _Optional[str] = ..., wrap_nonce: _Optional[bytes] = ..., wrapped_dek: _Optional[bytes] = ..., wrap_tag: _Optional[bytes] = ..., payload_nonce: _Optional[bytes] = ..., payload_ciphertext: _Optional[bytes] = ..., payload_tag: _Optional[bytes] = ...) -> None: ...
+
 class SubmitMockCashOrderRequest(_message.Message):
-    __slots__ = ("request_id", "order_id", "account_id", "symbol", "side", "order_type", "quantity", "estimated_price_krw")
+    __slots__ = ("request_id", "order_id", "account_id", "symbol", "side", "order_type", "quantity", "estimated_price_krw", "credential")
     REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
     ORDER_ID_FIELD_NUMBER: _ClassVar[int]
     ACCOUNT_ID_FIELD_NUMBER: _ClassVar[int]
@@ -16,6 +54,7 @@ class SubmitMockCashOrderRequest(_message.Message):
     ORDER_TYPE_FIELD_NUMBER: _ClassVar[int]
     QUANTITY_FIELD_NUMBER: _ClassVar[int]
     ESTIMATED_PRICE_KRW_FIELD_NUMBER: _ClassVar[int]
+    CREDENTIAL_FIELD_NUMBER: _ClassVar[int]
     request_id: str
     order_id: str
     account_id: str
@@ -24,7 +63,8 @@ class SubmitMockCashOrderRequest(_message.Message):
     order_type: str
     quantity: int
     estimated_price_krw: int
-    def __init__(self, request_id: _Optional[str] = ..., order_id: _Optional[str] = ..., account_id: _Optional[str] = ..., symbol: _Optional[str] = ..., side: _Optional[str] = ..., order_type: _Optional[str] = ..., quantity: _Optional[int] = ..., estimated_price_krw: _Optional[int] = ...) -> None: ...
+    credential: BoundMockCredentialEnvelope
+    def __init__(self, request_id: _Optional[str] = ..., order_id: _Optional[str] = ..., account_id: _Optional[str] = ..., symbol: _Optional[str] = ..., side: _Optional[str] = ..., order_type: _Optional[str] = ..., quantity: _Optional[int] = ..., estimated_price_krw: _Optional[int] = ..., credential: _Optional[_Union[BoundMockCredentialEnvelope, _Mapping]] = ...) -> None: ...
 
 class SubmitMockCashOrderResponse(_message.Message):
     __slots__ = ("order_id", "accepted", "provider_order_ref_hash", "tr_id", "received_at")
@@ -41,14 +81,16 @@ class SubmitMockCashOrderResponse(_message.Message):
     def __init__(self, order_id: _Optional[str] = ..., accepted: _Optional[bool] = ..., provider_order_ref_hash: _Optional[str] = ..., tr_id: _Optional[str] = ..., received_at: _Optional[str] = ...) -> None: ...
 
 class CancelMockCashOrderRequest(_message.Message):
-    __slots__ = ("request_id", "order_id", "account_id")
+    __slots__ = ("request_id", "order_id", "account_id", "credential")
     REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
     ORDER_ID_FIELD_NUMBER: _ClassVar[int]
     ACCOUNT_ID_FIELD_NUMBER: _ClassVar[int]
+    CREDENTIAL_FIELD_NUMBER: _ClassVar[int]
     request_id: str
     order_id: str
     account_id: str
-    def __init__(self, request_id: _Optional[str] = ..., order_id: _Optional[str] = ..., account_id: _Optional[str] = ...) -> None: ...
+    credential: BoundMockCredentialEnvelope
+    def __init__(self, request_id: _Optional[str] = ..., order_id: _Optional[str] = ..., account_id: _Optional[str] = ..., credential: _Optional[_Union[BoundMockCredentialEnvelope, _Mapping]] = ...) -> None: ...
 
 class CancelMockCashOrderResponse(_message.Message):
     __slots__ = ("order_id", "status", "received_at")
@@ -61,12 +103,14 @@ class CancelMockCashOrderResponse(_message.Message):
     def __init__(self, order_id: _Optional[str] = ..., status: _Optional[str] = ..., received_at: _Optional[str] = ...) -> None: ...
 
 class GetMockBalanceRequest(_message.Message):
-    __slots__ = ("request_id", "account_id")
+    __slots__ = ("request_id", "account_id", "credential")
     REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
     ACCOUNT_ID_FIELD_NUMBER: _ClassVar[int]
+    CREDENTIAL_FIELD_NUMBER: _ClassVar[int]
     request_id: str
     account_id: str
-    def __init__(self, request_id: _Optional[str] = ..., account_id: _Optional[str] = ...) -> None: ...
+    credential: BoundMockCredentialEnvelope
+    def __init__(self, request_id: _Optional[str] = ..., account_id: _Optional[str] = ..., credential: _Optional[_Union[BoundMockCredentialEnvelope, _Mapping]] = ...) -> None: ...
 
 class MockBalancePosition(_message.Message):
     __slots__ = ("symbol", "quantity", "market_value_krw", "is_gold_etf_etn")
@@ -99,16 +143,18 @@ class GetMockBalanceResponse(_message.Message):
     def __init__(self, account_id: _Optional[str] = ..., cash_krw: _Optional[int] = ..., portfolio_equity_krw: _Optional[int] = ..., margin_requirement_krw: _Optional[int] = ..., positions: _Optional[_Iterable[_Union[MockBalancePosition, _Mapping]]] = ..., observed_at: _Optional[str] = ..., source_version: _Optional[str] = ...) -> None: ...
 
 class GetMockBuyableRequest(_message.Message):
-    __slots__ = ("request_id", "account_id", "symbol", "estimated_price_krw")
+    __slots__ = ("request_id", "account_id", "symbol", "estimated_price_krw", "credential")
     REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
     ACCOUNT_ID_FIELD_NUMBER: _ClassVar[int]
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
     ESTIMATED_PRICE_KRW_FIELD_NUMBER: _ClassVar[int]
+    CREDENTIAL_FIELD_NUMBER: _ClassVar[int]
     request_id: str
     account_id: str
     symbol: str
     estimated_price_krw: int
-    def __init__(self, request_id: _Optional[str] = ..., account_id: _Optional[str] = ..., symbol: _Optional[str] = ..., estimated_price_krw: _Optional[int] = ...) -> None: ...
+    credential: BoundMockCredentialEnvelope
+    def __init__(self, request_id: _Optional[str] = ..., account_id: _Optional[str] = ..., symbol: _Optional[str] = ..., estimated_price_krw: _Optional[int] = ..., credential: _Optional[_Union[BoundMockCredentialEnvelope, _Mapping]] = ...) -> None: ...
 
 class GetMockBuyableResponse(_message.Message):
     __slots__ = ("account_id", "symbol", "estimated_price_krw", "buyable_quantity", "buyable_amount_krw", "cash_krw", "observed_at", "source_version")
@@ -129,3 +175,61 @@ class GetMockBuyableResponse(_message.Message):
     observed_at: str
     source_version: str
     def __init__(self, account_id: _Optional[str] = ..., symbol: _Optional[str] = ..., estimated_price_krw: _Optional[int] = ..., buyable_quantity: _Optional[int] = ..., buyable_amount_krw: _Optional[int] = ..., cash_krw: _Optional[int] = ..., observed_at: _Optional[str] = ..., source_version: _Optional[str] = ...) -> None: ...
+
+class VerifyMockConnectionRequest(_message.Message):
+    __slots__ = ("request_id", "account_id", "credential")
+    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
+    ACCOUNT_ID_FIELD_NUMBER: _ClassVar[int]
+    CREDENTIAL_FIELD_NUMBER: _ClassVar[int]
+    request_id: str
+    account_id: str
+    credential: BoundMockCredentialEnvelope
+    def __init__(self, request_id: _Optional[str] = ..., account_id: _Optional[str] = ..., credential: _Optional[_Union[BoundMockCredentialEnvelope, _Mapping]] = ...) -> None: ...
+
+class VerifyMockConnectionResponse(_message.Message):
+    __slots__ = ("account_id", "connected")
+    ACCOUNT_ID_FIELD_NUMBER: _ClassVar[int]
+    CONNECTED_FIELD_NUMBER: _ClassVar[int]
+    account_id: str
+    connected: bool
+    def __init__(self, account_id: _Optional[str] = ..., connected: _Optional[bool] = ...) -> None: ...
+
+class CertifyMockCredentialRequest(_message.Message):
+    __slots__ = ("request_id", "owner_user_id", "account_id", "certification_id", "credential", "recovery", "session_date")
+    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
+    OWNER_USER_ID_FIELD_NUMBER: _ClassVar[int]
+    ACCOUNT_ID_FIELD_NUMBER: _ClassVar[int]
+    CERTIFICATION_ID_FIELD_NUMBER: _ClassVar[int]
+    CREDENTIAL_FIELD_NUMBER: _ClassVar[int]
+    RECOVERY_FIELD_NUMBER: _ClassVar[int]
+    SESSION_DATE_FIELD_NUMBER: _ClassVar[int]
+    request_id: str
+    owner_user_id: str
+    account_id: str
+    certification_id: str
+    credential: BoundMockCredentialEnvelope
+    recovery: bool
+    session_date: str
+    def __init__(self, request_id: _Optional[str] = ..., owner_user_id: _Optional[str] = ..., account_id: _Optional[str] = ..., certification_id: _Optional[str] = ..., credential: _Optional[_Union[BoundMockCredentialEnvelope, _Mapping]] = ..., recovery: _Optional[bool] = ..., session_date: _Optional[str] = ...) -> None: ...
+
+class CertifyMockCredentialResponse(_message.Message):
+    __slots__ = ("account_id", "certification_id", "state", "receipt_sha256", "session_date", "quote_calls", "brokerage_calls", "token_calls", "failure_code")
+    ACCOUNT_ID_FIELD_NUMBER: _ClassVar[int]
+    CERTIFICATION_ID_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    RECEIPT_SHA256_FIELD_NUMBER: _ClassVar[int]
+    SESSION_DATE_FIELD_NUMBER: _ClassVar[int]
+    QUOTE_CALLS_FIELD_NUMBER: _ClassVar[int]
+    BROKERAGE_CALLS_FIELD_NUMBER: _ClassVar[int]
+    TOKEN_CALLS_FIELD_NUMBER: _ClassVar[int]
+    FAILURE_CODE_FIELD_NUMBER: _ClassVar[int]
+    account_id: str
+    certification_id: str
+    state: MockCredentialCertificationState
+    receipt_sha256: str
+    session_date: str
+    quote_calls: int
+    brokerage_calls: int
+    token_calls: int
+    failure_code: str
+    def __init__(self, account_id: _Optional[str] = ..., certification_id: _Optional[str] = ..., state: _Optional[_Union[MockCredentialCertificationState, str]] = ..., receipt_sha256: _Optional[str] = ..., session_date: _Optional[str] = ..., quote_calls: _Optional[int] = ..., brokerage_calls: _Optional[int] = ..., token_calls: _Optional[int] = ..., failure_code: _Optional[str] = ...) -> None: ...

@@ -29,8 +29,9 @@ import type {
   InstrumentDisplayCatalog,
   RecentRiskResult,
   RecentRiskResultList,
-  LoginResponse,
   MockBalance,
+  MockCredentialReadResponse,
+  MockCredentialCertificationOutcome,
   MockBuyable,
   MockOrderRequest,
   MockOrderSubmitted,
@@ -71,12 +72,36 @@ import { findCachedRagAnswer } from '@/features/rag-source/cachedAnswers';
  */
 export const api = {
   /* -------------------------------------------------------------- 인증 */
-  login(username: string, password: string): Promise<ApiResult<LoginResponse>> {
-    return apiFetch<LoginResponse>('/api/v1/auth/login', {
+  logout(): Promise<void> {
+    return apiFetchBare<void>('/api/v1/auth/logout', { method: 'POST' });
+  },
+
+  mockCredentialSummary(): Promise<ApiResult<MockCredentialReadResponse>> {
+    return apiFetch<MockCredentialReadResponse>('/api/v1/brokerage/mock/credential');
+  },
+
+  putMockCredential(input: { appKey: string; appSecret: string; accountNo: string }): Promise<void> {
+    return apiFetchBare<void>('/api/v1/brokerage/mock/credential', { method: 'PUT', body: input });
+  },
+
+  verifyMockCredentialConnection(): Promise<void> {
+    return apiFetchBare<void>('/api/v1/brokerage/mock/credential/connect', { method: 'POST' });
+  },
+
+  certifyMockCredential(): Promise<ApiResult<MockCredentialCertificationOutcome>> {
+    return apiFetch<MockCredentialCertificationOutcome>('/api/v1/brokerage/mock/credential/certify', {
       method: 'POST',
-      body: { username, password },
-      anonymous: true,
     });
+  },
+
+  acknowledgeMockCredentialCertificationRecovery(): Promise<void> {
+    return apiFetchBare<void>('/api/v1/brokerage/mock/credential/certify/recovery-confirm', {
+      method: 'POST',
+    });
+  },
+
+  disconnectMockCredential(): Promise<{ state: 'DISCONNECTING' } | void> {
+    return apiFetchBare<{ state: 'DISCONNECTING' } | void>('/api/v1/brokerage/mock/credential', { method: 'DELETE' });
   },
 
   /* -------------------------------------------------------------- 상태 */

@@ -58,6 +58,12 @@ configurations.all {
         "org.apache.tomcat.embed:tomcat-embed-el:11.0.25",
         "org.apache.tomcat.embed:tomcat-embed-websocket:11.0.25",
     )
+    // Spring Boot BOM이 고정한 4.2.15의 SNI 취약점을 피하면서 Netty 모듈을 같은 patch로 맞춘다.
+    resolutionStrategy.eachDependency {
+        if (requested.group == "io.netty") {
+            useVersion("4.2.18.Final")
+        }
+    }
 }
 
 dependencyManagement {
@@ -86,6 +92,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-data-redis") // Lettuce
     implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("org.springframework.boot:spring-boot-starter-oauth2-client")
     implementation("org.springframework.security:spring-security-oauth2-authorization-server")
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
     implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")

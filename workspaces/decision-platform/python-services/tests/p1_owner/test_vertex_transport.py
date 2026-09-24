@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from unittest.mock import Mock
 
 import httpx
 import pytest
@@ -95,6 +96,75 @@ def test_session_call_cap_stops_further_provider_calls(tmp_path: Any) -> None:
         transport.invoke(system_prompt="prompt", request_bytes=_request())
 
     assert transport.physical_calls == 0
+
+
+def test_public_full_without_usage_meter_still_calls_vertex(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "FULL")
+    transport = VertexAiVetoTransport(settings=_settings(tmp_path))
+    send = Mock()
+    monkeypatch.setattr(
+        VertexAiVetoTransport,
+        "_post",
+        lambda self, payload: (
+            send(payload)
+            and {"candidates": [{"content": {"parts": [{"text": '{"status":"ABSTAIN"}'}]}}]}
+        ),
+    )
+
+    result = transport.invoke(system_prompt="prompt", request_bytes=_request())
+
+    assert transport.physical_calls == 1
+    send.assert_called_once()
+    assert result.provider_call_count == 1
+
+
+def test_public_full_meter_failure_does_not_block_vertex_call(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "FULL")
+    meter = Mock()
+    meter.record.side_effect = RuntimeError("measurement unavailable")
+    transport = VertexAiVetoTransport(
+        settings=_settings(tmp_path),
+        owner_user_id="usr_alice",
+        run_id="run_alice",
+        usage_meter=meter,
+    )
+    send = Mock()
+    monkeypatch.setattr(
+        VertexAiVetoTransport,
+        "_post",
+        lambda self, payload: (
+            send(payload)
+            and {"candidates": [{"content": {"parts": [{"text": '{"status":"ABSTAIN"}'}]}}]}
+        ),
+    )
+
+    result = transport.invoke(system_prompt="prompt", request_bytes=_request())
+
+    meter.record.assert_called_once()
+    assert transport.physical_calls == 1
+    send.assert_called_once()
+    assert result.provider_call_count == 1
+
+
+def test_demo_cannot_run_trade_ai_even_with_a_usage_meter(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MARS_PUBLIC_SURFACE_MODE", "DEMO")
+    meter = Mock()
+    transport = VertexAiVetoTransport(settings=_settings(tmp_path), usage_meter=meter)
+    send = Mock()
+    monkeypatch.setattr(VertexAiVetoTransport, "_post", lambda self, payload: send(payload))
+
+    with pytest.raises(VertexBudgetExhausted):
+        transport.invoke(system_prompt="prompt", request_bytes=_request())
+
+    meter.record.assert_not_called()
+    assert transport.physical_calls == 0
+    send.assert_not_called()
 
 
 def test_generate_url_pins_the_global_endpoint_the_contract_allows(tmp_path: Any) -> None:

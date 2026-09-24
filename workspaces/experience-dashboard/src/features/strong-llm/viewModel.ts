@@ -35,9 +35,6 @@ export interface StrongLlmSettingsView {
   keyLast4: string | null;
   fallbackKeyLast4: string | null;
   usedToday: number | null;
-  remaining: number | null;
-  /** 서버가 실제로 쓰고 있는 하루 상한. 설정값과 다르면 배포 정책이 더 좁다는 뜻이다. */
-  effectiveDailyCap: number | null;
 }
 
 function asProvider(value: string | null): Provider {
@@ -59,8 +56,6 @@ export function toView(status: RagV2CorpusStatus): StrongLlmSettingsView {
     keyLast4: status.strongLlmKeyLast4,
     fallbackKeyLast4: status.strongLlmFallbackKeyLast4,
     usedToday: status.generationUsedToday,
-    remaining: status.generationRemaining,
-    effectiveDailyCap: status.generationDailyCap,
   };
 }
 

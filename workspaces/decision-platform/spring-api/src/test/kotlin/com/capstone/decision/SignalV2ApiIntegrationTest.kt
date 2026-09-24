@@ -5,7 +5,7 @@ import com.capstone.decision.application.signal.SignalStorageUnavailableExceptio
 import com.capstone.decision.application.signal.SignalV2Contract
 import com.capstone.decision.application.signal.SignalV2ProductionReadPort
 import com.capstone.decision.application.signal.StoredSignalComponent
-import com.capstone.decision.infrastructure.security.DemoAccount
+import com.capstone.decision.infrastructure.security.AuthenticatedAccount
 import com.capstone.decision.infrastructure.security.DemoAccounts
 import com.capstone.decision.infrastructure.security.JwtService
 import org.junit.jupiter.api.BeforeEach
@@ -198,7 +198,7 @@ class SignalV2ApiIntegrationTest(
         val identity = requireNotNull(DemoAccounts.byUsername("demo-user"))
         return jwtService
             .issue(
-                DemoAccount(
+                AuthenticatedAccount(
                     userId = identity.userId,
                     username = identity.username,
                     role = identity.role,

@@ -18,6 +18,7 @@ import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
+import org.springframework.context.annotation.Profile
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -27,6 +28,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse as OpenApiResponse
 
 // S0.3에서는 실제 회원가입 대신 명세의 demo 계정만 토큰 발급 경로로 노출한다.
 @RestController
+@Profile("!mars-full & !mars-demo")
 @RequestMapping("/api/v1/auth")
 class AuthController(
     private val demoAccountService: DemoAccountService,

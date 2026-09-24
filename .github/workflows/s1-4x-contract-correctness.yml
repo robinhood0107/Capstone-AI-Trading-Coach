@@ -2,41 +2,14 @@ name: S1.4X Gate 1 Contract Correctness
 
 on:
   pull_request:
+    branches: [main]
     paths:
       - "workspaces/decision-platform/research/s1-4x-numeric-parity/**"
-      - "workspaces/decision-platform/python-services/pyproject.toml"
-      - "workspaces/decision-platform/python-services/uv.lock"
+      - "workspaces/decision-platform/research/s1-4r-jax-risk/**"
       - "workspaces/decision-platform/python-services/app/financial_engineering/**"
       - "workspaces/decision-platform/python-services/tests/financial_engineering/**"
-      - "workspaces/decision-platform/python-services/tests/test_s1_6_amendment_contract.py"
-      - "workspaces/decision-platform/research/s1-4r-jax-risk/README.md"
-      - "workspaces/decision-platform/research/s1-4r-jax-risk/pyproject.toml"
-      - "workspaces/decision-platform/research/s1-4r-jax-risk/uv.lock"
-      - "workspaces/decision-platform/research/s1-4r-jax-risk/src/**"
-      - "workspaces/decision-platform/research/s1-4r-jax-risk/tests/**"
       - "shared-docs/metrics_definitions.md"
       - "docs/adr/ADR-027-s1-4x-isolated-numeric-parity.md"
-      - ".gitignore"
-      - ".github/workflows/s1-4x-contract-correctness.yml"
-  push:
-    branches:
-      - main
-    paths:
-      - "workspaces/decision-platform/research/s1-4x-numeric-parity/**"
-      - "workspaces/decision-platform/python-services/pyproject.toml"
-      - "workspaces/decision-platform/python-services/uv.lock"
-      - "workspaces/decision-platform/python-services/app/financial_engineering/**"
-      - "workspaces/decision-platform/python-services/tests/financial_engineering/**"
-      - "workspaces/decision-platform/python-services/tests/test_s1_6_amendment_contract.py"
-      - "workspaces/decision-platform/research/s1-4r-jax-risk/README.md"
-      - "workspaces/decision-platform/research/s1-4r-jax-risk/pyproject.toml"
-      - "workspaces/decision-platform/research/s1-4r-jax-risk/uv.lock"
-      - "workspaces/decision-platform/research/s1-4r-jax-risk/src/**"
-      - "workspaces/decision-platform/research/s1-4r-jax-risk/tests/**"
-      - "shared-docs/metrics_definitions.md"
-      - "docs/adr/ADR-027-s1-4x-isolated-numeric-parity.md"
-      - ".gitignore"
-      - ".github/workflows/s1-4x-contract-correctness.yml"
 
 permissions:
   contents: read

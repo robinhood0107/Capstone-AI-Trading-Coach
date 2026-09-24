@@ -62,6 +62,25 @@ class P1ComposeSupplyHandoffTest(unittest.TestCase):
             )
         )
 
+    def test_tls_proxy_exception_requires_exact_profile_and_ports(self) -> None:
+        original = verifier.COMPOSE_PATH.read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "compose.yml"
+            for changed in (
+                original.replace("profiles: [tls]", "profiles: [public]", 1),
+                original.replace(
+                    "${P1_TLS_HTTPS_PORT:-8443}:8443",
+                    "${P1_TLS_HTTPS_PORT:-8443}:9443",
+                    1,
+                ),
+            ):
+                candidate.write_text(changed, encoding="utf-8")
+                with (
+                    patch.object(verifier, "COMPOSE_PATH", candidate),
+                    self.assertRaises(ContractError),
+                ):
+                    verify_compose()
+
     def test_local_team_b_validator_is_network_none_and_validate_only(self) -> None:
         root = Path(__file__).resolve().parents[2]
         controller = (root / "deploy/p1/full-appctl").read_text(encoding="utf-8")

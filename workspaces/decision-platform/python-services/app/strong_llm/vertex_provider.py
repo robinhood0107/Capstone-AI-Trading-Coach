@@ -33,6 +33,7 @@ class VertexProviderSettings:
         location: str = "global",
         timeout_seconds: float = 50.0,
         thinking_level: str = "low",
+        max_output_tokens: int = 4_096,
     ) -> None:
         path = service_account_path
         info = path.lstat()
@@ -46,10 +47,13 @@ class VertexProviderSettings:
             raise ValueError("STRONG_LLM_VERTEX_TIMEOUT_INVALID")
         if thinking_level not in {"minimal", "low", "medium"}:
             raise ValueError("STRONG_LLM_VERTEX_THINKING_LEVEL_INVALID")
+        if not 256 <= max_output_tokens <= 32_768:
+            raise ValueError("STRONG_LLM_VERTEX_OUTPUT_CAP_INVALID")
         self.service_account_path = path
         self.location = location
         self.timeout_seconds = timeout_seconds
         self.thinking_level = thinking_level
+        self.max_output_tokens = max_output_tokens
 
     def for_thinking_level(self, thinking_level: str) -> VertexProviderSettings:
         return VertexProviderSettings(
@@ -57,6 +61,7 @@ class VertexProviderSettings:
             location=self.location,
             timeout_seconds=self.timeout_seconds,
             thinking_level=thinking_level,
+            max_output_tokens=self.max_output_tokens,
         )
 
     @classmethod
@@ -70,10 +75,14 @@ class VertexProviderSettings:
         except ValueError as error:
             raise ValueError("STRONG_LLM_VERTEX_TIMEOUT_INVALID") from error
         thinking_level = os.environ.get("STRONG_LLM_VERTEX_THINKING_LEVEL", "low")
+        raw_output_cap = os.environ.get("RAG_LLM_MAX_OUTPUT_TOKENS", "4096").strip()
+        if re.fullmatch(r"[0-9]{1,5}", raw_output_cap) is None:
+            raise ValueError("STRONG_LLM_VERTEX_OUTPUT_CAP_INVALID")
         return cls(
             service_account_path=path,
             timeout_seconds=timeout_seconds,
             thinking_level=thinking_level,
+            max_output_tokens=int(raw_output_cap),
         )
 
 
@@ -99,9 +108,9 @@ class LangChainVertexProvider:
             "max_retries": 0,
             # Google grounding은 검색 왕복을 포함하므로 host 60초 deadline 안에서 최대 55초만 기다린다.
             "timeout": settings.timeout_seconds,
-            # 통제는 상한이 아니라 호출 횟수로 한다. 상한을 좁게 두면 긴 근거를 종합하는
-            # 답이 문장 중간에서 잘리고, 그 잘린 답은 계약 위반으로 통째로 버려진다.
-            "max_output_tokens": 32_768,
+            # The Spring host uses the same deployment cap when reserving gross
+            # exposure before each provider permit. The provider must honor it.
+            "max_output_tokens": settings.max_output_tokens,
             # Gemini 3 reasoning token도 output cap을 사용하므로 RAG 종합은 low로 bounded한다.
             "thinking_level": settings.thinking_level,
             "temperature": None,

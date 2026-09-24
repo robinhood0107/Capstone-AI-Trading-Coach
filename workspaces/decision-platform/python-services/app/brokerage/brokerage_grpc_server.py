@@ -4,21 +4,34 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Iterator
 from concurrent import futures
+from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 import grpc
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 from pydantic import SecretStr
 
-from app.brokerage.brokerage_rpc import BrokerageServicer
+from app.brokerage.brokerage_rpc import BalanceReadPort, BrokerageServicer
 from app.brokerage.kis_mock_online_client import KISBrokerageCallBudget, KISMockBrokerageHttpClient
-from app.brokerage.kis_mock_online_runtime import KISMockOnlineBalanceReader
+from app.brokerage.kis_mock_online_runtime import KISMockExecutionReader, KISMockOnlineBalanceReader
+from app.brokerage.kis_mock_owner_certification import (
+    OwnerMockCertificationResult,
+    OwnerMockCredentialCertifier,
+    build_quote_accounting,
+)
 from app.brokerage.kis_mock_order_gateway import KISMockOrderGateway
 from app.brokerage.mock_order_reference_store import EncryptedRedisOrderReferenceStore
-from app.data.kis._credential_transport import _build_redis_client
+from app.brokerage.owner_credential_envelope import (
+    OwnerCredentialEnvelopeOpener,
+    OwnerCredentialUnavailable,
+)
+from app.data.kis._credential_transport import _Credentials, _build_redis_client
+from app.data.kis.http_client import KISHttpClient
 from app.data.kis.settings import KISSettings
-from app.generated import brokerage_pb2_grpc
+from app.generated import brokerage_pb2, brokerage_pb2_grpc
 
 _SAFE_SECRET = re.compile(r"^[A-Za-z0-9._~:-]{32,256}$")
 _ACCOUNT_ID = re.compile(r"^acct_[0-9a-f]{32}$")
@@ -26,7 +39,7 @@ _ACCOUNT_ID = re.compile(r"^acct_[0-9a-f]{32}$")
 
 @dataclass(frozen=True, slots=True)
 class BrokerageGrpcServerSettings:
-    """Historical configuration parser retained for closed-gate compatibility tests."""
+    """LOCAL fixed-account and FULL owner-bound modes share one mock-only server."""
 
     bind_address: str
     shared_secret: str
@@ -36,6 +49,7 @@ class BrokerageGrpcServerSettings:
     brokerage_physical_cap: int
     reference_key: SecretStr
     reference_ttl_seconds: int
+    product_mode: str = "LOCAL"
 
     @classmethod
     def from_env(cls) -> BrokerageGrpcServerSettings:
@@ -59,6 +73,7 @@ class BrokerageGrpcServerSettings:
             brokerage_physical_cap=brokerage_cap,
             reference_key=SecretStr(os.environ.get("KIS_MOCK_ORDER_REFERENCE_KEY", "").strip()),
             reference_ttl_seconds=ttl,
+            product_mode=os.environ.get("MARS_PUBLIC_SURFACE_MODE", "LOCAL").strip(),
         )
         settings.validate()
         return settings
@@ -70,8 +85,14 @@ class BrokerageGrpcServerSettings:
             raise ValueError("KIS Mock brokerage gRPC must bind to numeric loopback")
         if _SAFE_SECRET.fullmatch(self.shared_secret) is None:
             raise ValueError("BROKERAGE_GRPC_SHARED_SECRET is invalid")
-        if _ACCOUNT_ID.fullmatch(self.bound_account_id) is None:
-            raise ValueError("KIS_MOCK_BOUND_ACCOUNT_ID is invalid")
+        if self.product_mode == "FULL":
+            if self.bound_account_id:
+                raise ValueError("FULL brokerage cannot use KIS_MOCK_BOUND_ACCOUNT_ID")
+        elif self.product_mode == "LOCAL":
+            if _ACCOUNT_ID.fullmatch(self.bound_account_id) is None:
+                raise ValueError("KIS_MOCK_BOUND_ACCOUNT_ID is invalid")
+        else:
+            raise ValueError("KIS Mock brokerage is unavailable in this product mode")
         if self.token_p_physical_cap not in {0, 1}:
             raise ValueError("KIS brokerage tokenP cap must be 0 or 1")
         if not 1 <= self.brokerage_physical_cap <= 32:
@@ -90,8 +111,123 @@ def _is_loopback(address: str) -> bool:
     return port.isdigit() and 1 <= int(port) <= 65_535
 
 
+class OwnerBoundGatewayFactory:
+    """One RPC gets one credential pair and one client; scopes remain credential+mode shared in Redis."""
+
+    def __init__(
+        self,
+        settings: BrokerageGrpcServerSettings,
+        reference_store: EncryptedRedisOrderReferenceStore,
+        opener: OwnerCredentialEnvelopeOpener,
+    ) -> None:
+        self._settings = settings
+        self._reference_store = reference_store
+        self._opener = opener
+
+    @contextmanager
+    def open(
+        self,
+        envelope: brokerage_pb2.BoundMockCredentialEnvelope,
+        *,
+        account_id: str,
+        allowed_states: frozenset[str],
+    ) -> Iterator[tuple[KISMockOrderGateway, BalanceReadPort]]:
+        opened = self._opener.open(envelope, account_id=account_id, allowed_states=allowed_states)
+        credentials = _Credentials(opened.app_key, opened.app_secret)
+
+        def credential_provider() -> _Credentials:
+            return credentials
+
+        client = KISMockBrokerageHttpClient(
+            settings=KISSettings(kis_mode="mock", kis_offline=False, kis_retry_attempts=1),
+            budget=KISBrokerageCallBudget(
+                token_p_cap=self._settings.token_p_physical_cap,
+                brokerage_cap=self._settings.brokerage_physical_cap,
+            ),
+            account_number=opened.account_number,
+            credential_provider=credential_provider,
+        )
+        try:
+            yield (
+                KISMockOrderGateway(client, mode="mock", reference_store=self._reference_store),
+                KISMockOnlineBalanceReader(client),
+            )
+        finally:
+            client.close()
+
+    def certify(
+        self,
+        envelope: brokerage_pb2.BoundMockCredentialEnvelope,
+        *,
+        owner_user_id: str,
+        account_id: str,
+        certification_id: str,
+        session_date: str,
+        recovery: bool,
+    ) -> OwnerMockCertificationResult:
+        """Run only the server-fixed one-share test under one sealed owner credential."""
+        if envelope.owner_user_id != owner_user_id or envelope.credential_state != "CONNECTED":
+            raise OwnerCredentialUnavailable("BROKERAGE_CREDENTIAL_UNAVAILABLE")
+        opened = self._opener.open(
+            envelope,
+            account_id=account_id,
+            allowed_states=frozenset({"CONNECTED"}),
+        )
+        credentials = _Credentials(opened.app_key, opened.app_secret)
+
+        def credential_provider() -> _Credentials:
+            return credentials
+
+        expires_at = datetime.now(UTC) + timedelta(minutes=4)
+
+        def require_before_deadline() -> None:
+            if datetime.now(UTC) >= expires_at:
+                raise TimeoutError("KIS_MOCK_CERTIFICATION_DEADLINE_EXPIRED")
+
+        budget = KISBrokerageCallBudget(token_p_cap=1, brokerage_cap=7)
+        settings = KISSettings(kis_mode="mock", kis_offline=False, kis_retry_attempts=1)
+        broker_client = KISMockBrokerageHttpClient(
+            settings=settings,
+            budget=budget,
+            account_number=opened.account_number,
+            credential_provider=credential_provider,
+            approval_deadline_guard=require_before_deadline,
+        )
+        quote_accounting = build_quote_accounting()
+        quote_client: KISHttpClient | None = None
+        try:
+            quote_client = KISHttpClient(
+                settings=settings,
+                accounting=quote_accounting,
+                deadline_guard=require_before_deadline,
+                credential_provider=credential_provider,
+            )
+            return OwnerMockCredentialCertifier(
+                account_id=account_id,
+                certification_id=certification_id,
+                session_date=session_date,
+                recovery=recovery,
+                quote_client=quote_client,
+                quote_accounting=quote_accounting,
+                broker_client=broker_client,
+                brokerage_budget=budget,
+                gateway=KISMockOrderGateway(
+                    broker_client,
+                    mode="mock",
+                    reference_store=self._reference_store,
+                ),
+                balance_reader=KISMockOnlineBalanceReader(broker_client),
+                execution_reader=KISMockExecutionReader(broker_client),
+                reference_store=self._reference_store,
+            ).run()
+        finally:
+            if quote_client is not None:
+                quote_client.close()
+            broker_client.close()
+
+
 def serve() -> None:
-    """수동 `--mock` 모드에서만 retry 없는 mock brokerage RPC를 제공한다."""
+    """One no-retry mock RPC server; FULL never reads deployment KIS credentials."""
 
     settings = BrokerageGrpcServerSettings.from_env()
     redis_client = _build_redis_client()
@@ -103,15 +239,31 @@ def serve() -> None:
             encryption_key=settings.reference_key,
             ttl_seconds=settings.reference_ttl_seconds,
         )
-        budget = KISBrokerageCallBudget(
-            token_p_cap=settings.token_p_physical_cap,
-            brokerage_cap=settings.brokerage_physical_cap,
-        )
-        client = KISMockBrokerageHttpClient(
-            settings=KISSettings(kis_mode="mock", kis_offline=False, kis_retry_attempts=1),
-            budget=budget,
-        )
-        gateway = KISMockOrderGateway(client, mode="mock", reference_store=reference_store)
+        if settings.product_mode == "FULL":
+            opener = OwnerCredentialEnvelopeOpener(
+                os.environ.get("MARS_BROKERAGE_KEK_DIRECTORY", "")
+            )
+            servicer = BrokerageServicer(
+                None,
+                settings.shared_secret,
+                owner_factory=OwnerBoundGatewayFactory(settings, reference_store, opener),
+            )
+        else:
+            budget = KISBrokerageCallBudget(
+                token_p_cap=settings.token_p_physical_cap,
+                brokerage_cap=settings.brokerage_physical_cap,
+            )
+            client = KISMockBrokerageHttpClient(
+                settings=KISSettings(kis_mode="mock", kis_offline=False, kis_retry_attempts=1),
+                budget=budget,
+            )
+            gateway = KISMockOrderGateway(client, mode="mock", reference_store=reference_store)
+            servicer = BrokerageServicer(
+                gateway,
+                settings.shared_secret,
+                bound_account_id=settings.bound_account_id,
+                balance_reader=KISMockOnlineBalanceReader(client),
+            )
         server = grpc.server(
             futures.ThreadPoolExecutor(max_workers=4),
             options=(
@@ -121,12 +273,7 @@ def serve() -> None:
             ),
         )
         brokerage_pb2_grpc.add_BrokerageServiceServicer_to_server(  # type: ignore[no-untyped-call]
-            BrokerageServicer(
-                gateway,
-                settings.shared_secret,
-                bound_account_id=settings.bound_account_id,
-                balance_reader=KISMockOnlineBalanceReader(client),
-            ),
+            servicer,
             server,
         )
         health_service = health.HealthServicer()
@@ -144,10 +291,6 @@ def serve() -> None:
         if client is not None:
             client.close()
         redis_client.close()
-
-
-# Backward compatibility for direct legacy module invocation.
-main = serve
 
 
 if __name__ == "__main__":

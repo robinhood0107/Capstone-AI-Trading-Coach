@@ -17,8 +17,8 @@
     "outputTokenCap": 8192,
     "inputByteCap": 60000,
     "costCapMicrousd": 500000,
-    "inputMicrousdPerToken": 2,
-    "outputMicrousdPerToken": 9
+    "inputMicrousdPerToken": 3,
+    "outputMicrousdPerToken": 17
   },
   "strongLlm": {
     "provider": "vertex",

@@ -77,7 +77,6 @@ class BgeDocumentEmbedder(Protocol):
     def embed(self, texts: tuple[str, ...]) -> NDArray[np.float32]: ...
 
 
-
 def _require_bge_enabled() -> None:
     """BGE 벡터를 만드는 경로는 명시적으로 켜지 않으면 거부한다.
 

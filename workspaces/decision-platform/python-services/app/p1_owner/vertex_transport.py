@@ -20,6 +20,7 @@ from typing import Any, Final
 
 import httpx
 
+from app.operator_ai_usage_meter import TradeAiUsageMeter
 from app.p1_owner.vertex_veto import (
     MODEL_ID,
     VerifiedGroundingSource,
@@ -33,6 +34,7 @@ _SCOPE: Final = "https://www.googleapis.com/auth/cloud-platform"
 _REQUEST_TIMEOUT_SECONDS: Final = 20.0
 _MAX_RESPONSE_BYTES: Final = 256 * 1024
 _MAX_EVIDENCE_ITEMS: Final = 8
+_MAX_OUTPUT_TOKENS: Final = 1_024
 
 
 class VertexTransportNotConfigured(RuntimeError):
@@ -146,6 +148,9 @@ class VertexAiVetoTransport:
     """단발 generateContent 호출 하나만 수행한다. tool도 웹검색도 붙이지 않는다."""
 
     settings: VertexTransportSettings
+    owner_user_id: str = ""
+    run_id: str = ""
+    usage_meter: TradeAiUsageMeter | None = field(default=None, repr=False)
     session_call_cap: int = 8
     physical_calls: int = 0
     logical_calls: int = 0
@@ -166,8 +171,22 @@ class VertexAiVetoTransport:
                 "responseMimeType": "application/json",
                 "temperature": 0,
                 "candidateCount": 1,
+                "maxOutputTokens": _MAX_OUTPUT_TOKENS,
             },
         }
+        if os.environ.get("MARS_PUBLIC_SURFACE_MODE", "LOCAL").strip() == "DEMO":
+            raise VertexBudgetExhausted("TRADE_AI_UNAVAILABLE_IN_DEMO")
+        try:
+            if self.usage_meter is not None:
+                self.usage_meter.record(
+                    owner_user_id=self.owner_user_id,
+                    run_id=self.run_id,
+                    payload_bytes=json.dumps(payload, ensure_ascii=True).encode("utf-8"),
+                    output_token_cap=_MAX_OUTPUT_TOKENS,
+                )
+        except Exception:
+            # Usage accounting is observational; its failure must not stop the trading decision.
+            pass
         self.physical_calls += 1
         try:
             response = self._post(payload)
@@ -181,10 +200,6 @@ class VertexAiVetoTransport:
             provider_call_count=1,
             grounding_query_count=grounding_query_count,
         )
-
-    # 참고: Spring에는 reserve->claim->commit 사용량 원장(JdbcPreS5VertexUsageLedger)과 활성화
-    # 패킷 검증이 있지만 Python에서 재사용할 수 없다. 실운용 전에는 그 경로를 거치도록 옮겨야 하고,
-    # 지금은 세션 호출 상한만 in-process로 센다. 이 한계는 운영 경계 문서에 적어 두었다.
 
     def close(self) -> None:
         if self._client is not None:

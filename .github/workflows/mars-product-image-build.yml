@@ -22,6 +22,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Validate image publication gate and release version
+        id: identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ $(jq -r '.imagePublicationReady' deploy/p1/mars-release-gate.json) == true ]]
+          version=$(jq -r '.version' deploy/p1/mars-release-gate.json)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
@@ -39,7 +49,7 @@ jobs:
             docker buildx build --platform linux/amd64 --load \
               --file "$file" \
               --build-arg SOURCE_REVISION="$source_sha" \
-              --build-arg RELEASE_VERSION=0.1.0-candidate \
+              --build-arg RELEASE_VERSION="${{ steps.identity.outputs.version }}-candidate" \
               --tag "mars-candidate:$part" .
             [[ $(docker image inspect "mars-candidate:$part" \
               --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$source_sha" ]]
@@ -55,7 +65,7 @@ jobs:
               --file workspaces/experience-dashboard/Dockerfile \
               --build-arg MARS_PRODUCT="$product" \
               --build-arg SOURCE_REVISION="$source_sha" \
-              --build-arg RELEASE_VERSION=0.1.0-candidate \
+              --build-arg RELEASE_VERSION="${{ steps.identity.outputs.version }}-candidate" \
               --tag "mars-candidate:${product}-web" workspaces/experience-dashboard
             [[ $(docker image inspect "mars-candidate:${product}-web" \
               --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') == "$source_sha" ]]

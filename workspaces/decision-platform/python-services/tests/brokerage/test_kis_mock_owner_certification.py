@@ -78,7 +78,9 @@ class FakeExecutionReader:
 
 
 class FakeGateway:
-    def __init__(self, budget: KISBrokerageCallBudget, reference_store: "FakeReferenceStore") -> None:
+    def __init__(
+        self, budget: KISBrokerageCallBudget, reference_store: "FakeReferenceStore"
+    ) -> None:
         self.budget = budget
         self.reference_store = reference_store
         self.submit_intents: list[object] = []
@@ -148,7 +150,9 @@ def _certifier(
     return certifier, gateway, budget
 
 
-def test_owner_certification_only_submits_one_fixed_share_and_requires_full_reconciliation() -> None:
+def test_owner_certification_only_submits_one_fixed_share_and_requires_full_reconciliation() -> (
+    None
+):
     certifier, gateway, budget = _certifier()
 
     result = certifier.run()

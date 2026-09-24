@@ -23,10 +23,21 @@ class MarsFullMockCredentialContractTest(unittest.TestCase):
         summary = document["components"]["schemas"]["MockCredentialSummary"]
         self.assertEqual(
             set(summary["properties"]),
-            {"accountId", "state", "revision", "appKeyLast4", "accountNoLast4", "connected", "certified"},
+            {
+                "accountId", "state", "revision", "appKeyLast4", "accountNoLast4", "connected", "certified",
+                "certificationStatus", "certificationFailureCode", "certificationSessionDate",
+            },
         )
         self.assertEqual(set(operations["put"]["responses"]), {"204", "400", "401", "409"})
         self.assertEqual(set(operations["delete"]["responses"]), {"200", "204", "400", "401", "409"})
         connect = document["paths"]["/api/v1/brokerage/mock/credential/connect"]
         self.assertEqual(set(connect), {"post"})
         self.assertNotIn("requestBody", connect["post"])
+        certify = document["paths"]["/api/v1/brokerage/mock/credential/certify"]
+        self.assertEqual(set(certify), {"post"})
+        self.assertNotIn("requestBody", certify["post"])
+        self.assertNotIn("symbol", document["components"]["schemas"]["CertificationOutcome"]["properties"])
+        recovery = document["paths"]["/api/v1/brokerage/mock/credential/certify/recovery-confirm"]
+        self.assertEqual(set(recovery), {"post"})
+        self.assertNotIn("requestBody", recovery["post"])
+        self.assertIn("204", recovery["post"]["responses"])

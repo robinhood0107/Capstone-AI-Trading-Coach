@@ -98,6 +98,10 @@ services:
   rag-runtime-seed:
     image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
     entrypoint: ["/usr/local/bin/p1-rag-runtime-seed"]
+    # The empty named volume is root-owned. This one-shot initializer needs
+    # CHOWN to transfer the seeded files to the unprivileged API UID.
+    user: "0:0"
+    cap_add: [CHOWN]
     environment:
       P1_RAG_RUNTIME_DIR_MOUNT: /run/rag-runtime
       P1_VERTEX_PROJECT_ID: "${MARS_VERTEX_PROJECT_ID:?set Vertex project}"

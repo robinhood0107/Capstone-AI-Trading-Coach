@@ -33,6 +33,7 @@ class MarsPublicSecretAssembleTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        (self.root / ".git").mkdir()
         self.release = self.root / "release"
         self.release.mkdir(mode=0o700)
         for name in (
@@ -210,6 +211,68 @@ class MarsPublicSecretAssembleTest(unittest.TestCase):
                 MODULE.operator_values(root_env, "demo")
         finally:
             MODULE.ROOT_ENV = previous_root_env
+
+    def test_root_env_rejects_duplicate_blank_optional_settings(self) -> None:
+        root_env = self.root / ".env"
+        full_values = MODULE.env_file(self.full_operator)
+        private_file(
+            root_env,
+            (
+                "".join(f"{key}={value}\n" for key, value in full_values.items())
+                + "GOOGLE_OIDC_ADMIN_SUBJECT_SHA256=\n"
+                + "GOOGLE_OIDC_ADMIN_SUBJECT_SHA256=\n"
+            ).encode(),
+        )
+        previous_root_env = MODULE.ROOT_ENV
+        MODULE.ROOT_ENV = root_env
+        try:
+            with self.assertRaises(ValueError):
+                MODULE.operator_values(root_env, "full")
+        finally:
+            MODULE.ROOT_ENV = previous_root_env
+
+    def test_root_env_generates_dart_settings_in_scoped_outputs(self) -> None:
+        root_env = self.root / ".env"
+        full_values = MODULE.env_file(self.full_operator)
+        private_file(
+            root_env,
+            (
+                "".join(f"{key}={value}\n" for key, value in full_values.items())
+                + "OPENDART_API_KEY=example-dart-key\n"
+                + "OPENDART_DAILY_CALL_LIMIT=20000\n"
+                + "OPENDART_DAILY_CALL_BUDGET=2000\n"
+                + "OPENDART_MAX_CALLS_PER_RUN=600\n"
+                + "OPENDART_MAX_SYMBOLS_PER_RUN=31\n"
+                + "MARS_FULL_PORT=3302\n"
+                + "GOOGLE_OIDC_ADMIN_SUBJECT_SHA256=\n"
+            ).encode(),
+        )
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--product",
+                "full",
+                "--base-secrets",
+                str(self.base("root-full-base")),
+                "--release-dir",
+                str(self.release),
+                "--operator-env",
+                str(root_env),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        disclosure = MODULE.env_file(self.release / "full-secrets/disclosure-collector.env")
+        self.assertEqual(disclosure["OPENDART_API_KEY"], "example-dart-key")
+        compose = MODULE.env_file(self.release / "full.env")
+        self.assertEqual(compose["OPENDART_DAILY_CALL_BUDGET"], "2000")
+        self.assertEqual(compose["OPENDART_MAX_SYMBOLS_PER_RUN"], "31")
+        self.assertEqual(compose["MARS_FULL_PORT"], "3302")
+        full = MODULE.env_file(self.release / "full-secrets/mars-public-full.env")
+        self.assertRegex(full["GOOGLE_OIDC_ADMIN_SUBJECT_SHA256"], r"^[0-9a-f]{64}$")
 
 
 if __name__ == "__main__":

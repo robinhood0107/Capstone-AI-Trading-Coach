@@ -192,10 +192,12 @@ verify_runtime_env() {
         ;;
       P1_API_PORT) api_port=$value ;;
       P1_SPRING_IMAGE)
-        [[ $value == capstone-spring-api:p1-local || $value == capstone-decision-platform:p1-local || $value =~ ^ghcr\.io/robinhood0107/capstone-(spring-api|decision-platform)@sha256:[0-9a-f]{64}$ ]] || die runtime_env_image
+        # Public fresh-install bundle authoring may use the Docker Hub API image,
+        # but only by immutable digest. Moving tags could change the credential tool.
+        [[ $value == capstone-spring-api:p1-local || $value == capstone-decision-platform:p1-local || $value =~ ^ghcr\.io/robinhood0107/capstone-(spring-api|decision-platform)@sha256:[0-9a-f]{64}$ || $value =~ ^pjjpjj111/mars-(demo|full)@sha256:[0-9a-f]{64}$ ]] || die runtime_env_image
         ;;
       P1_PYTHON_IMAGE)
-        [[ $value == capstone-python-services:p1-local || $value == capstone-decision-platform:p1-local || $value =~ ^ghcr\.io/robinhood0107/capstone-(python-services|decision-platform)@sha256:[0-9a-f]{64}$ ]] || die runtime_env_image
+        [[ $value == capstone-python-services:p1-local || $value == capstone-decision-platform:p1-local || $value =~ ^ghcr\.io/robinhood0107/capstone-(python-services|decision-platform)@sha256:[0-9a-f]{64}$ || $value =~ ^pjjpjj111/mars-(demo|full)@sha256:[0-9a-f]{64}$ ]] || die runtime_env_image
         ;;
       P1_POSTGRES_IMAGE)
         [[ $value == capstone-postgres-pgvector:p1-local || $value =~ ^ghcr\.io/robinhood0107/capstone-postgres-pgvector@sha256:[0-9a-f]{64}$ ]] || die runtime_env_image

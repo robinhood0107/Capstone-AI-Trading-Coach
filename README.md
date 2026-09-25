@@ -1,15 +1,15 @@
 # MARS — 투자 원칙 검증형 AI 모의 자동매매
 
-부산대학교 정보컴퓨터공학부 3인 졸업과제입니다. 국내 주식·금 ETF의 가격, 공시, 뉴스, 모델 신호를 검토하고 **사용자 본인의 KIS 모의투자 계좌**에서 원칙과 위험 검사를 통과한 주문만 실행하도록 설계했습니다. 후보, 판단, 주문, 체결·잔고 대사는 각각 다른 결과로 보여 줍니다.
+부산대학교 정보컴퓨터공학부 3인 졸업과제입니다. 국내 주식·금 ETF의 가격, 공시, 뉴스, 모델 신호를 검토하고 **사용자 본인의 KIS 모의투자 계좌**에서 투자 원칙과 위험 검사를 통과한 주문만 실행하도록 설계했습니다. 후보, 판단, 주문 접수, 체결·잔고 대사는 서로 다른 결과로 기록합니다.
 
-> **검증 경계**: 이미지 발행과 컨테이너 기동은 실제 Google 로그인, KIS 계좌 인증, 주문 체결이나 수익성의 입증과 다릅니다. 릴리스의 `serviceReady=false`는 이를 명시합니다. KIS 실전투자와 NAS 자동 배포는 범위 밖입니다.
-
-| 제품 | 접근 방식 | 제공 범위 |
+| 제품 | 로그인 | 제공 범위 |
 |---|---|---|
-| [DEMO](https://hub.docker.com/r/pjjpjj111/mars-demo) | 로그인 없음 | 출처를 붙이는 제한된 금융 Agent. 계좌·주문·자동운용 없음 |
-| [FULL](https://hub.docker.com/r/pjjpjj111/mars-full) | Google OIDC | USER 자동 생성, 사용자별 암호화 KIS_MOCK 자격증명, 원칙·자동운용·대사 |
+| [DEMO](https://hub.docker.com/r/pjjpjj111/mars-demo) | 없음 | 출처를 표시하는 제한된 금융 Agent. 계좌·주문·자동운용은 제공하지 않음 |
+| [FULL](https://hub.docker.com/r/pjjpjj111/mars-full) | Google 또는 Kakao | 첫 인증에서 USER 자동 생성. 본인이 준비한 KIS_MOCK 키를 암호화 보관하고 본인 계좌에만 사용 |
 
-[GitHub 최신 Release](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/latest)의 `mars-images.json`과 `mars-public-*.compose.yml`이 이미지 세트의 기준입니다. Compose는 이동하는 태그 대신 **SHA-256 digest**로 이미지를 고정합니다. 2026-09-24 [`v0.1.0-d3248c1e7c9a`](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v0.1.0-d3248c1e7c9a)의 공개 이미지 8개 digest를 Release manifest와 대조했습니다. 이후 Release는 각 버전의 manifest로 검증해야 합니다.
+[최신 GitHub Release](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/latest)의 `mars-images.json`과 digest 고정 Compose 두 파일이 배포 이미지 세트의 기준입니다. manifest는 main 원본 commit과 8개 Docker Hub 이미지 참조·digest를 기록합니다. 이동하는 `latest` 태그 대신 SHA-256 digest가 고정된 Compose를 사용하세요.
+
+> **검증 경계**: 최신 Release의 8개 필수 CI gate와 이미지 발행은 성공했습니다. DEMO Agent와 FULL의 health·로그인 시작·미인증 차단도 확인했습니다. Google/Kakao 동의 후 callback, 실제 KIS_MOCK 자격증명 연결·주문·체결·대사, 서로 다른 두 사용자의 격리, N=10/50/100 부하는 아직 완료하지 않았습니다. 수익성, 최종 서버 사양, KIS_LIVE, NAS 실제 배포를 주장하지 않습니다.
 
 ## 1. 프로젝트 배경
 
@@ -28,7 +28,7 @@
 1. 시세·공시·뉴스의 출처, 기준 시각, 품질을 기록한다.
 2. 규칙, LSTM, 회귀 연구 결과를 같은 계약으로 비교한다. 모델에는 주문 권한을 주지 않는다.
 3. 사용자 원칙과 결정적 RiskEngine을 거쳐 주문 후보·수량·허용을 분리한다.
-4. Google 계정마다 본인 KIS_MOCK 키와 계좌를 암호화·격리한다.
+4. Google 또는 Kakao로 첫 로그인과 가입을 함께 처리하고, 사용자별 KIS_MOCK 키와 계좌를 암호화·격리한다.
 5. 제한 Agent DEMO와 계좌 기능 FULL을 별도 제품·볼륨으로 제공한다.
 
 현재 계약은 [최종 프로젝트 명세](docs/최종_프로젝트_명세서.md)와 [API 명세](docs/API_명세서.md)를 따릅니다. 계획과 아래에서 **실제로 관찰한 검증 범위**를 구분합니다.
@@ -48,7 +48,7 @@ MARS는 모델의 BUY를 주문 성공으로 표현하지 않습니다. 후보 �
 ```mermaid
 flowchart LR
   U[사용자] --> W[Next.js 웹]
-  W --> A[Spring API / Google OIDC]
+  W --> A[Spring API / Google·Kakao OAuth]
   A --> P[(PostgreSQL)]
   A --> R[(Redis)]
   D[시세·OpenDART·GDELT 수집] --> P
@@ -89,37 +89,35 @@ Decision Platform은 최종 판단과 주문을 맡고, Return Engine은 LSTM·�
 | 기능 | 입력 | 출력·권한 |
 |---|---|---|
 | DEMO Agent | 금융 질문 | 제한된 설명과 출처. 로그인·계좌·주문 없음 |
-| FULL 인증 | Google OIDC 응답 | 검증된 Google subject에 결속된 USER. 외부 password 로그인 차단 |
+| FULL 인증 | Google OIDC 또는 Kakao OAuth 응답 | 검증된 issuer+subject로 식별. 첫 로그인에 USER 생성, 외부 password 로그인 차단 |
 | KIS_MOCK 연결 | 본인 App Key·Secret·계좌번호 | 암호화 저장·연결 확인. 사용자 간 계좌 재사용 금지 |
 | 수집기 | 일봉·공시·GDELT 파일 | 시각·품질·미발행을 구분한 데이터 |
 | 예측·후보 | 완료된 feature, 규칙/LSTM/회귀 신호 | 비교 가능한 예측·후보. 모델의 주문 권한 없음 |
 | 자동운용 | 본인 정책·계좌·후보·시세 | 위험 검사 결과, 허용 주문 또는 차단 사유, 사용자별 대사 |
 | 금융 Agent | 질문·허용된 근거 | 출처를 단 설명 또는 근거 부족 응답 |
 
-**면접·보고서 수치의 정확한 뜻**
+**실험 수치와 검증 범위**
 
-| 수치 | 원본 조건과 판정 |
-|---|---|
-| `55.8% → 1.4%` | [규칙 평가](workspaces/decision-platform/research/p1-return-profit-verification/rule_baseline_eval.py)의 골든크로스 `event` → 장기 추세 `trend_only` 변경 시 **매수 후보가 없는 날**의 비율. 다른 보존 입력으로 재실행하면 `55.7% → 1.4%`였고 원래 `55.8%` 입력은 확인 전입니다. 수익률이 아닙니다. |
-| `51.8% → 1.4%` | [결합 평가](workspaces/decision-platform/research/p1-return-profit-verification/consensus_eval.py)의 `RULE BUY ∧ LSTM BUY` → `RULE BUY ∧ LSTM != SELL` 변경 시 31종목·5,362세션에서 **후보가 없는 세션**의 비율입니다. [구현 커밋](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/commit/cc91b82a3f7c1dfb54150124aa69349fefb4b120)은 확인했으나 옛 입력 스키마가 보존되지 않아 동일 재실행은 아직 못 했습니다. 수익률·정확도가 아닙니다. |
-| `BELOW_BASELINE` | [22-fold 검증](workspaces/decision-platform/research/p1-return-profit-verification/reports/profit-verification.md)의 모델 채택 판정입니다. 21년 균등가중 benchmark의 수익·Sharpe를 LSTM이나 실서비스 수익으로 쓰지 않습니다. |
-
-별도 보고서·영상의 13거래일 손익표, RAG `25.6초→416ms`, 예시 차트의 CAGR은 원본 측정 조건과 실행 자료가 충분히 대조되지 않아 이 README의 성능 근거에서 제외합니다. 후보, 주문 접수, 체결, 잔고 증감, 수익성은 각각 별도로 입증해야 합니다.
-
-**2026-09-24 발행 이미지에서 관찰한 범위**: 빌드·발행 gate는 [승격 PR #125](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/pull/125)의 검사 결과로, 이미지 신원은 [Release manifest](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v0.1.0-d3248c1e7c9a)로 확인할 수 있습니다. 컨테이너·공급자 관찰은 해당 이미지에서 수행한 단회 실행이며 장기 안정성 측정이 아닙니다.
-
-| 항목 | 확인한 결과 | 아직 입증하지 못한 결과 |
+| 수치 | 조건·정의 | 해석 한계 |
 |---|---|---|
-| 발행 | develop→main PR의 8개 gate 통과, 공개 이미지 8개 digest 대조 | NAS 운영 준비 |
-| DEMO | digest 고정 컨테이너 healthy, 제한 Agent 답변 HTTP 200·출처 1개, 계좌/주문 비인증 401 | 모든 질문의 품질 |
-| FULL | 보존한 PostgreSQL 볼륨 V184→V210 이행, API·웹·gRPC healthy, OIDC 시작 302 | 실제 Google callback 완료 |
-| Return 추론 | 이미지의 Team B 모델에 31개 합성 feature 요청 → 예측 31개, `orderAuthority=NONE` | 실거래 성과 |
-| GDELT | 한 bounded 실행에서 파일 40개 시도·물리 호출 40회·문서 350건 저장, 미발행 36건 | 전체 파일 수집 완료 |
-| OpenDART | 별도 깨끗한 DB에서 3회 호출해 법인 매핑 29행 저장 | 공시 이벤트 완주 |
-| 일일 시세 | 기존 볼륨에서 `UP_TO_DATE`, 신규 세션·호출 0 | 새 거래일의 시세 갱신 |
-| focused 테스트 | Spring 인증·계좌 격리 18개, Python 수집·자동운용 62개 통과 | 서로 다른 실제 사용자 두 명의 주문 격리 |
+| `55.8% → 1.4%` | [규칙 평가](workspaces/decision-platform/research/p1-return-profit-verification/rule_baseline_eval.py)의 기록값. 31종목, 158,336 관측, 6,646 세션(2000-02~2026-09)에서 골든크로스 `event`와 장기 추세 `trend_only`의 **매수 후보가 없던 날 비율**을 비교했습니다. 별도 수익 통계는 일 초과수익 `−0.0751%p → −0.0010%p`, Newey–West t `−2.02 → −0.08`입니다. | 수익률 개선이 아닙니다. 원본의 정확한 `55.8%` 입력은 재현되지 않았고 보존된 재실행은 `55.7% → 1.4%`였습니다. 통계적으로 유의한 초과수익을 뜻하지 않습니다. |
+| `51.8% → 1.4%` | [결합 평가](workspaces/decision-platform/research/p1-return-profit-verification/consensus_eval.py)의 31종목·5,362 세션(2005-01~2026-09) 보고값. `RULE BUY ∧ LSTM BUY`와 `RULE BUY ∧ LSTM != SELL` 사이의 **후보가 없던 세션 비율**입니다. | 원래 입력 스키마가 남아 있지 않아 같은 실험을 재실행하지 못했습니다. 수익률·정확도·수익성 개선으로 사용하지 않습니다. |
+| LSTM `BELOW_BASELINE` | [22-fold walk-forward 보고서](workspaces/decision-platform/research/p1-return-profit-verification/reports/profit-verification.md): 31종목, 130,722 예측, test 2005~2026, 왕복 거래비용 35bps. 방향 정확도 `0.4777`(동전던지기 95% 구간 `0.4973~0.5027`), RMSE `0.027337`(0 예측 기준선 `0.026238`). | 사전 기준을 통과하지 못했습니다. 21년 균등가중 benchmark의 CAGR·Sharpe는 LSTM 수익이 아니며 실서비스 성과로 주장하지 않습니다. |
 
-실제 Google 로그인, UI에서 입력한 KIS_MOCK 계좌 인증, 주문·체결·잔고 대사, N=10/50/100 동시 09:30 부하는 아직 완료 증거가 없습니다. 시험 NAS의 사양을 최종 사용자 수의 상한으로 쓰거나 측정 전 서버 사양을 단정하지 않습니다.
+면접 자료의 `51.8% → 1.4%`는 후보 생성 빈도이며 수익률이 아닙니다. 보고서의 LSTM `20.7% CAGR` 표기는 현재 연구 원본에서 같은 모델 결과로 확인되지 않아 README에서 제외했습니다. 13거래일 replay 결과도 실행 원본과 DB snapshot hash가 일치하지 않아 성과 수치로 옮기지 않았습니다. `RAG 25.6초 → 416ms`, 영상 속 차트 수익률 등도 측정 원본과 조건이 확인되지 않아 제외했습니다.
+
+**최신 공개 이미지에서 직접 확인한 항목**: main 승격 workflow의 8개 필수 gate와 Release 발행이 성공했고, Release manifest·digest Compose·Docker Hub의 이미지 참조를 대조했습니다. 런타임 점검은 DEMO와 FULL을 동시에 실행하지 않고 순서대로 진행했으며 named volume은 지우지 않았습니다.
+
+| 영역 | 관찰 결과 | 아직 확인하지 않은 것 |
+|---|---|---|
+| Docker Hub Release | DEMO/FULL 각 API·웹·PostgreSQL·Redis, 8개 이미지 참조의 OCI digest가 manifest와 일치 | NAS 설치·운영 |
+| DEMO | API·웹 healthy. `/api/v1/demo/agent/ask`는 HTTP 200과 유효 citation 반환 | 모든 질문에 대한 품질 평가 |
+| FULL | API·웹·actor-authority·PostgreSQL·Redis healthy, migration V211 적용. Google·Kakao 로그인 시작은 각각 HTTP 302. 비인증 password/KIS/자동운용 요청은 각각 404/401/401 | Google/Kakao consent callback과 실제 USER 생성 |
+| 접근 경계 | 공개 password 로그인은 404, 비인증 KIS 자격증명·자동운용 요청은 401 | 서로 다른 두 사용자의 실제 계좌 권한 격리 |
+| 수집·분석·매매 | Python·Kotlin·contract CI 통과 | 이번 릴리스 smoke에서는 GDELT/OpenDART online 호출, 새 거래일 수집, 실사용자 주문·체결·대사를 실행하지 않음 |
+| 용량 | N=10/50/100 동시 09:30 부하를 측정하지 않음 | CPU-seconds/USER, 피크 RAM, KIS/DB 대기, p95/p99와 최종 서버 사양 |
+
+GDELT는 이벤트 참고 자료이며 종목 판단·주문의 직접 입력이 아닙니다. Collector의 health는 외부 원천에서 새 자료가 완전히 수집됐음을 보장하지 않습니다. OpenDART 호출은 일일 quota를 사용하므로 해당 quota를 확인한 뒤 별도 실행해야 합니다.
 
 ### 4.3. 디렉터리 구조
 
@@ -142,201 +140,209 @@ docs/                              공개 명세와 검증 문서
 
 ### 5.1. 설치 절차 및 실행 방법
 
-이 절은 Docker를 처음 쓰는 사람이 **DEMO 또는 FULL 하나를 선택해** 시작하는 절차입니다. 두 제품 모두 Linux/WSL2, Docker Engine과 Compose v2, Git, GitHub CLI(`gh`), `jq`, Python 3, OpenSSL이 필요합니다. 이미지는 `linux/amd64`용입니다. secret과 DB 볼륨을 Windows 공유 드라이브(`/mnt/c`) 대신 WSL/Linux 홈 디렉터리에 둡니다.
+이 절은 Linux `amd64` 호스트에서 **DEMO 또는 FULL 하나만** 시작하는 절차입니다. Linux Docker Engine 또는 WSL2와 통합이 켜진 Docker Desktop, Docker Compose v2, Git, GitHub CLI(`gh`), `jq`, Python 3, OpenSSL이 필요합니다. WSL에서는 저장소·secret·named volume을 `/mnt/c`가 아닌 Linux 홈 아래에 둡니다. compose bind mount가 실패하면 Docker Desktop의 해당 Ubuntu 배포판 WSL integration을 먼저 확인하세요.
 
-#### 5.1.1. Release 파일 받기
+#### 5.1.1. 프로젝트와 최신 Release 준비
 
-한 Release 안의 manifest와 Compose를 함께 써야 합니다. Release asset의 Compose는 모든 이미지를 해당 버전의 SHA-256 digest에 고정합니다.
+저장소를 clone하고 최신 Release의 manifest와 Compose를 같은 폴더에 받습니다. 원본 코드는 manifest의 `sourceSha`와 맞춥니다.
 
 ```bash
-mkdir -p "$HOME/mars-release"
-cd "$HOME/mars-release"
+git clone https://github.com/robinhood0107/Capstone-AI-Trading-Coach.git "$HOME/mars-project"
+cd "$HOME/mars-project"
+PROJECT_ROOT="$PWD"
+RELEASE_DIR="$HOME/.local/share/mars-release"
+install -d -m 700 "$RELEASE_DIR"
 TAG="$(gh release view --repo robinhood0107/Capstone-AI-Trading-Coach --json tagName --jq .tagName)"
 gh release download "$TAG" --repo robinhood0107/Capstone-AI-Trading-Coach \
+  --dir "$RELEASE_DIR" \
   --pattern mars-images.json \
   --pattern mars-public-demo.compose.yml \
   --pattern mars-public-full.compose.yml
-jq -r '.tag, .sourceSha' mars-images.json
+SOURCE_SHA="$(jq -r '.sourceSha' "$RELEASE_DIR/mars-images.json")"
+git fetch origin "$SOURCE_SHA"
+git checkout --detach "$SOURCE_SHA"
 ```
 
-`mars-images.json`에는 이미지 8개의 태그·digest, 원본 main commit과 Release tag가 들어 있습니다. 다른 버전에서 파일을 섞지 마세요.
+manifest와 Compose 파일을 다른 Release에서 섞지 마세요. latest manifest가 원본 commit, 이미지 tag·digest, 플랫폼 정보를 기록합니다.
 
-#### 5.1.2. 안전한 기초 secret 만들기
-
-저장소를 같은 Release의 코드로 받고, 그 Release의 API 이미지를 이용해 `p1ctl init`을 **제품마다 따로 한 번씩** 실행합니다. 이 명령은 로컬 secret을 만들고 사용자 자격증명 bundle을 서명합니다. 서비스를 시작하거나 DB 볼륨을 만들지 않습니다.
+새 터미널을 열었다면 아래 경로 변수를 다시 설정하세요.
 
 ```bash
-SOURCE_SHA="$(jq -r '.sourceSha' mars-images.json)"
-git clone https://github.com/robinhood0107/Capstone-AI-Trading-Coach.git mars-source
-git -C mars-source fetch origin "$SOURCE_SHA"
-git -C mars-source checkout --detach "$SOURCE_SHA"
-
-DEMO_API_IMAGE="$(jq -r '.images["demo-api"].reference' mars-images.json)"
-FULL_API_IMAGE="$(jq -r '.images["full-api"].reference' mars-images.json)"
-docker pull "$DEMO_API_IMAGE"
-docker pull "$FULL_API_IMAGE"
-
-P1_STATE_DIR="$HOME/.local/share/mars-demo-base" \
-P1_SPRING_IMAGE="$DEMO_API_IMAGE" \
-  mars-source/deploy/p1/p1ctl init
-
-P1_STATE_DIR="$HOME/.local/share/mars-full-base" \
-P1_SPRING_IMAGE="$FULL_API_IMAGE" \
-  mars-source/deploy/p1/p1ctl init
+export PROJECT_ROOT="$HOME/mars-project"
+export RELEASE_DIR="$HOME/.local/share/mars-release"
 ```
 
-두 `P1_STATE_DIR` 경로는 서로 달라야 합니다. 이 폴더에는 제품별로 새로 만든 DB 암호와 서명 키가 들어갑니다. 출력에 표시되는 `demo-user.password`·`demo-admin.password` 경로는 과거 개발용 계정 파일이며 공개 DEMO/FULL 로그인에 사용하지 않습니다.
+#### 5.1.2. 유일한 수동 설정 파일: 프로젝트 루트 `.env`
 
-#### 5.1.3. 외부 계정 파일을 로컬에서 준비하기
+`.env.example`을 복사해 프로젝트 루트의 `.env` 하나만 직접 편집합니다. 권한은 `0600`으로 유지하고 값 뒤에 주석이나 공백을 붙이지 않습니다.
 
-Vertex 서비스 계정 JSON은 Google Cloud에서 발급받습니다. 아래 파일은 저장소에 넣지 말고 권한을 잠급니다.
+```bash
+install -m 600 .env.example .env
+${EDITOR:-vi} .env
+```
+
+| `.env` 설정 | 용도 |
+|---|---|
+| `MARS_VERTEX_MODEL_ID`, `MARS_VERTEX_PROJECT_ID`, `MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64` | DEMO/FULL Agent·RAG의 Vertex 설정 |
+| `GOOGLE_OIDC_CLIENT_ID`, `GOOGLE_OIDC_CLIENT_SECRET` | FULL Google 로그인 |
+| `KAKAO_OAUTH_CLIENT_ID`, `KAKAO_OAUTH_CLIENT_SECRET` | FULL Kakao 로그인 |
+| `VOYAGE_API_KEY` | FULL Voyage 검색 경로 |
+| `GOOGLE_OIDC_ADMIN_SUBJECT_SHA256` | 첫 Google 로그인을 마친 뒤 관리자 지정 시 입력. 처음에는 주석 처리 |
+| `OPENDART_API_KEY`와 `OPENDART_*` | 선택적인 one-shot 공시 수집기. 비어 있으면 Compose 기본 한도를 쓰고 collector는 시작되지 않음 |
+| `MARS_DEMO_PORT`, `MARS_FULL_PORT` | 선택 호스트 포트. 비어 있으면 loopback `3001`, `3002` 사용 |
+
+기존 Vertex 서비스 계정 JSON은 **한 번만 가져오기 위한 입력 파일**입니다. mode `0600`으로 보호하고 아래 importer를 실행하면 JSON 전체가 Base64 한 줄로 프로젝트 루트 `.env`에 저장됩니다. 런타임 JSON mount는 사용하지 않습니다. importer는 credential의 `project_id`도 `.env`에 반영합니다. `MARS_VERTEX_MODEL_ID`는 직접 선택합니다.
 
 ```bash
 chmod 600 /secure/path/vertex-service-account.json
-umask 077
-install -d -m 700 "$HOME/.config/mars"
-install -m 600 /dev/null "$HOME/.config/mars/demo-operator.env"
-${EDITOR:-vi} "$HOME/.config/mars/demo-operator.env"
-chmod 600 "$HOME/.config/mars/demo-operator.env"
+python3 deploy/p1/import_vertex_service_account_to_env.py /secure/path/vertex-service-account.json
+chmod 600 .env
 ```
 
-편집기 안에 아래 키를 기록하고 `MARS_VERTEX_MODEL_ID` 값을 본인이 선택한 모델 ID로 바꿉니다.
+Google Cloud Web OAuth client에 origin `https://mars.royaljellynas.org`와 redirect URI `https://mars.royaljellynas.org/api/v1/auth/oidc/callback/google`를 등록합니다. Kakao Developers에도 `https://mars.royaljellynas.org/api/v1/auth/oidc/callback/kakao`를 등록합니다. 도메인의 HTTPS reverse proxy가 FULL 웹으로 연결되어야 callback을 시험할 수 있습니다. `.env`, OAuth secret, Vertex JSON을 채팅·Git·PR·로그에 붙이지 마세요.
 
-~~~text
-MARS_VERTEX_MODEL_ID=<Google Cloud Vertex model ID>
-~~~
+#### 5.1.3. 제품별 로컬 secret 만들기
 
-FULL은 Vertex 프로젝트, Google Web OAuth client ID·Secret, Voyage API key가 더 필요합니다. Google OAuth의 redirect URI는 `https://mars.royaljellynas.org/api/v1/auth/oidc/callback/google`입니다. 해당 HTTPS 도메인에서 TLS reverse proxy가 FULL 웹의 로컬 포트로 연결되어야 합니다. 단순히 `localhost:3002`로 접속하면 등록된 redirect URI와 맞지 않아 실제 Google callback은 완료되지 않습니다.
+제품 하나를 선택해 예를 들어 `PRODUCT=full` 또는 `PRODUCT=demo`로 지정합니다. secret 초기화는 서비스를 띄우거나 Docker volume을 만들지 않습니다. 각 제품은 서로 다른 base secret을 생성해야 합니다.
 
 ```bash
-umask 077
-install -d -m 700 "$HOME/.config/mars"
-install -m 600 /dev/null "$HOME/.config/mars/full-operator.env"
-${EDITOR:-vi} "$HOME/.config/mars/full-operator.env"
-chmod 600 "$HOME/.config/mars/full-operator.env"
+PRODUCT=full  # demo 또는 full 중 하나
+API_IMAGE="$(jq -r --arg product "$PRODUCT" '.images[$product + "-api"].reference' "$RELEASE_DIR/mars-images.json")"
+BASE_DIR="$HOME/.local/share/mars-$PRODUCT-base"
+docker pull "$API_IMAGE"
+P1_STATE_DIR="$BASE_DIR" P1_SPRING_IMAGE="$API_IMAGE" \
+  "$PROJECT_ROOT/deploy/p1/p1ctl" init
+python3 "$PROJECT_ROOT/deploy/p1/assemble_mars_public_secrets.py" \
+  --product "$PRODUCT" \
+  --base-secrets "$BASE_DIR/secrets" \
+  --release-dir "$RELEASE_DIR" \
+  --operator-env "$PROJECT_ROOT/.env"
 ```
 
-편집기 안에 아래 키를 적고 괄호의 설명을 본인 계정 값으로 바꿉니다. 서비스 계정의 `project_id`와 `MARS_VERTEX_PROJECT_ID`는 같아야 합니다.
+직접 편집하는 provider 설정 파일은 `.env` 하나입니다. 생성되는 `demo.env`·`full.env`는 Compose 경로·GID와 파생 fingerprint만 담는 mode-`0600` 파일이고, `demo-secrets/`·`full-secrets/`는 컨테이너별 secret 파일입니다. 이 출력물은 수동 설정 소스가 아니며 Git에 커밋하지 않습니다. `p1ctl init`이 과거 bootstrap 형식의 password bundle 파일도 생성하지만 공개 DEMO/FULL은 이를 mount하거나 password 로그인을 제공하지 않습니다.
 
-~~~text
-MARS_VERTEX_MODEL_ID=<Google Cloud Vertex model ID>
-MARS_VERTEX_PROJECT_ID=<Vertex service account project_id>
-GOOGLE_OIDC_CLIENT_ID=<Google OAuth client ID>
-GOOGLE_OIDC_CLIENT_SECRET=<Google OAuth client secret>
-VOYAGE_API_KEY=<Voyage API key>
-~~~
+| 출력 파일 | 포함 내용과 사용처 |
+|---|---|
+| `demo-secrets/postgres.env`, `redis.env` | DEMO DB·Redis 인증 |
+| `demo-secrets/role-bootstrap.env`, `migration.env` | 최초 DB role 준비·Flyway |
+| `demo-secrets/actor-capability-authority.env`, `actor-server.p12`, `actor-client.p12`, `actor-tls-ca.crt` | 내부 서비스 간 actor capability와 TLS |
+| `demo-secrets/mars-public-demo.env`, `rag-history-kek-v1.key` | DEMO API·Vertex 및 저장 기록 암호화 |
+| `full-secrets/` 위 공통 파일과 `seed-import.env`, `market-data.env`, `disclosure-collector.env` | FULL DB·인증·시세 writer·선택 OpenDART collector |
+| `full-secrets/mars-public-full.env` | FULL API secret: Google·Kakao OAuth, Vertex, Voyage와 내부 credential |
+| `full-kek/brokerage-kek-v1.key` | 사용자가 웹에 입력한 KIS_MOCK credential 전용 암호화 |
+| `demo.env`, `full.env` | Compose 경로·GID·포트·파생 fingerprint. FULL에는 DB capability digest도 포함하므로 mode `0600` 유지 |
 
-이 파일이나 서비스 계정 JSON을 채팅·Git·공개 이슈·로그에 붙이지 않습니다. shell 명령 인자로 비밀값을 넣지 않습니다.
+`$HOME/.local/share/mars-demo-base`와 `mars-full-base`에도 초기 생성 secret이 있습니다. 이 base 디렉터리, Release 폴더의 제품 secret 출력, brokerage KEK, named volume을 모두 백업하고 보존하세요. API key를 동기화할 때 이 파일들을 다시 생성할 필요는 없습니다.
 
-#### 5.1.4. DEMO/FULL secret 파일 만들기
-
-Release 폴더에서 조립 도구를 실행합니다. 기존 base secret을 덮어쓰지 않으며, DEMO와 FULL에 같은 base bundle을 재사용하면 거부합니다.
+FULL을 선택했다면 컨테이너 UID가 brokerage encryption key를 읽도록 소유권을 설정합니다.
 
 ```bash
-python3 mars-source/deploy/p1/assemble_mars_public_secrets.py \
-  --product demo \
-  --base-secrets "$HOME/.local/share/mars-demo-base/secrets" \
-  --release-dir "$PWD" \
-  --vertex-json /secure/path/vertex-service-account.json \
-  --operator-env "$HOME/.config/mars/demo-operator.env"
-
-python3 mars-source/deploy/p1/assemble_mars_public_secrets.py \
-  --product full \
-  --base-secrets "$HOME/.local/share/mars-full-base/secrets" \
-  --release-dir "$PWD" \
-  --vertex-json /secure/path/vertex-service-account.json \
-  --operator-env "$HOME/.config/mars/full-operator.env"
+sudo chown -R 65532:65532 "$RELEASE_DIR/full-kek"
+sudo chmod 700 "$RELEASE_DIR/full-kek"
+sudo chmod 600 "$RELEASE_DIR/full-kek/brokerage-kek-v1.key"
 ```
 
-도구는 제품별 비밀 디렉터리와 `demo.env` 또는 `full.env`를 생성합니다. Compose가 참조하는 비밀 파일은 아래와 같습니다.
+#### 5.1.4. 한 번에 한 제품 실행
 
-| 제품 | 생성 파일 | 사용하는 곳 |
+기본 named volume과 내용은 다음과 같습니다. 프로젝트 이름이나 volume을 임의 변경하면 기존 데이터에 연결되지 않을 수 있습니다.
+
+| 제품 | Named volume | 저장 내용 |
 |---|---|---|
-| DEMO | `postgres.env`, `redis.env` | DB·Redis 시작 암호 |
-| DEMO | `role-bootstrap.env`, `migration.env` | DB 역할 생성·Flyway |
-| DEMO | `actor-capability-authority.env`, `actor-server.p12`, `actor-client.p12`, `actor-tls-ca.crt` | 내부 actor 인증서와 키 |
-| DEMO | `mars-public-demo.env` | API·JWT·내부 RPC 공유 암호 |
-| DEMO | `rag-history-kek-v1.key`, `vertex-service-account.json` | 기록 암호화·Agent provider |
-| FULL | 공통 파일과 `mars-public-full.env` | Google OIDC·사용자별 KIS·자동운용·RAG 설정 |
-| FULL | `seed-import.env`, `return-inference.env`, `market-data.env`, `disclosure-collector.env` | 초기 근거자료·모델 호출·시세/공시 writer |
-| FULL | `full-kek/brokerage-kek-v1.key` | 사용자 KIS 자격증명 전용 암호화 키 |
+| DEMO | `mars-public-demo_demo-postgres` | 제한 Agent 기록과 DEMO 데이터 |
+| DEMO | `mars-public-demo_demo-redis` | 임시 상태와 제한 요청 데이터 |
+| FULL | `mars-public-full_full-postgres` | USER·암호화된 KIS_MOCK 정보·운용·대사 데이터 |
+| FULL | `mars-public-full_full-redis` | 세션·rate limit·작업 상태 |
+| FULL | `mars-public-full_full-rag-runtime` | RAG 검색 runtime seed |
 
-FULL의 KIS 암호화 키는 컨테이너 전용 UID `65532`가 읽도록 소유권을 지정합니다.
+다음 중 선택한 제품 명령 하나만 실행합니다. 다른 제품으로 전환하기 전에 현재 제품을 `down`으로 내립니다. `down`은 named volume을 보존합니다. `down -v`, `docker volume rm`, `docker volume prune`은 사용하지 마세요.
 
 ```bash
-sudo chown -R 65532:65532 full-kek
-sudo chmod 700 full-kek
-sudo chmod 600 full-kek/brokerage-kek-v1.key
-```
-
-기초 DB/API 비밀번호 파일은 소유자와 현재 사용자의 그룹만 읽을 수 있도록 도구가 `0640`으로 생성합니다. 운영 전에 권한을 확인합니다.
-
-```bash
-find demo-secrets -maxdepth 1 -type f -printf '%m %f\\n'
-find full-secrets -maxdepth 1 -type f -printf '%m %f\\n'
-stat -c '%a %u:%g %n' full-kek full-kek/brokerage-kek-v1.key
-```
-
-#### 5.1.5. 컨테이너 시작·확인·종료
-
-각 제품은 자체 Compose project와 named volume을 씁니다. 기본 이름과 데이터 경로는 다음과 같습니다.
-
-| 제품 | Docker volume | 컨테이너 경로 | 저장 내용 |
-|---|---|---|---|
-| DEMO | `mars-public-demo_demo-postgres` | PostgreSQL `/var/lib/postgresql/data` | DEMO 계정·Agent 기록 |
-| DEMO | `mars-public-demo_demo-redis` | Redis `/data` | DEMO rate limit·임시 상태 |
-| FULL | `mars-public-full_full-postgres` | PostgreSQL `/var/lib/postgresql/data` | USER·KIS 암호문·운용·대사·수집 자료 |
-| FULL | `mars-public-full_full-redis` | Redis `/data` | 세션·rate limit·작업 상태 |
-| FULL | `mars-public-full_full-rag-runtime` | API `/run/rag-runtime` | RAG 검색 runtime seed |
-
-`up`이 named volume을 자동 생성합니다. 같은 기본 Compose 이름으로 다시 실행하면 기존 볼륨을 그대로 연결합니다. `docker compose down`은 컨테이너와 네트워크만 내리고 named volume은 남깁니다. `down -v`, `docker volume rm`, `docker volume prune`은 데이터를 삭제하므로 쓰지 않습니다.
-
-```bash
-# DEMO: release 폴더에서
+# DEMO를 선택한 경우
+cd "$RELEASE_DIR"
 docker compose --env-file demo.env -f mars-public-demo.compose.yml config --quiet
 docker compose --env-file demo.env -f mars-public-demo.compose.yml up -d --wait
 docker compose --env-file demo.env -f mars-public-demo.compose.yml ps
 curl -fsS http://127.0.0.1:3001/healthz
+# 종료: docker compose --env-file demo.env -f mars-public-demo.compose.yml down
+```
 
-# FULL: 같은 release 폴더에서
+```bash
+# FULL을 선택한 경우
+cd "$RELEASE_DIR"
 docker compose --env-file full.env -f mars-public-full.compose.yml config --quiet
 docker compose --env-file full.env -f mars-public-full.compose.yml up -d --wait
 docker compose --env-file full.env -f mars-public-full.compose.yml ps
 curl -fsS http://127.0.0.1:3002/healthz
-
-# 정상 종료: 볼륨 유지
-docker compose --env-file demo.env -f mars-public-demo.compose.yml down
-docker compose --env-file full.env -f mars-public-full.compose.yml down
+# 종료: docker compose --env-file full.env -f mars-public-full.compose.yml down
 ```
 
-DEMO 기본 포트는 loopback `127.0.0.1:3001`, FULL은 `127.0.0.1:3002`입니다. `demo.env`·`full.env`에서 `MARS_DEMO_PORT`·`MARS_FULL_PORT`로 호스트 포트를 바꿀 수 있습니다. FULL의 OpenDART one-shot collector는 기본 중지입니다. 유효한 `OPENDART_API_KEY`를 `full-secrets/disclosure-collector.env`에 운영자가 직접 넣은 뒤에만 `--profile collectors`로 켭니다. DB quota를 확인하고 호출합니다.
+기본 웹 포트는 DEMO `127.0.0.1:3001`, FULL `127.0.0.1:3002`입니다. 포트 충돌 시 `.env`에서 해당 `MARS_*_PORT`를 바꾸고 제품 secret 동기화 명령을 다시 실행한 뒤 web 서비스만 재생성하세요. Compose는 TLS·DNS를 만들지 않습니다. external reverse proxy를 쓸 때만 도메인 callback을 등록하세요.
 
-처음으로 외부 공개하기 전에 HTTPS reverse proxy가 `mars.royaljellynas.org`로 요청을 받아 `127.0.0.1:3002`로 전달하는지, Google Cloud OAuth client에 위 redirect URI와 테스트 사용자가 등록됐는지 확인합니다. Compose는 TLS 인증서나 DNS를 만들지 않습니다.
+#### 5.1.5. 로그인·관리자·계좌 설정
 
-**Google 로그인**: Google Cloud의 Web OAuth client에 origin `https://mars.royaljellynas.org`, redirect URI `https://mars.royaljellynas.org/api/v1/auth/oidc/callback/google`를 정확히 등록합니다. Client ID·Secret은 서버의 `mars-public-full.env`에 `GOOGLE_OIDC_CLIENT_ID`·`GOOGLE_OIDC_CLIENT_SECRET`으로 보관합니다. 첫 로그인 때 일반 USER가 생성됩니다. [Google OAuth 안내](https://developers.google.com/identity/protocols/oauth2/web-server)에 따라 테스트 사용자와 공개 범위를 확인합니다.
+Google 또는 Kakao 버튼 하나로 로그인과 첫 가입을 함께 합니다. 별도 가입 폼·password 로그인은 없습니다. 같은 이메일 주소라도 Google과 Kakao 계정은 서로 연결되지 않습니다. Kakao 계정은 ADMIN으로 승격되지 않습니다.
 
-**ADMIN 지정**: 이메일 문자열을 직접 ADMIN으로 등록하지 않습니다. 본인 Google 계정으로 먼저 로그인하고 서버 `google_oidc_identities`에서 검증된 Google subject의 SHA-256을 조회해 `GOOGLE_OIDC_ADMIN_SUBJECT_SHA256`에 설정합니다. API 재시작 후 다시 로그인합니다. subject와 해시는 채팅·PR에 붙이지 않습니다.
+**본인 Google 계정을 ADMIN으로 지정**하려면 FULL에서 먼저 Google 로그인과 callback을 완료합니다. 앱은 이메일 대신 검증된 Google `subject`에 결속하므로, 데이터베이스에서 subject를 화면이나 로그에 출력하지 않고 SHA-256만 계산합니다. 개인용 인스턴스에 Google 계정이 하나일 때:
 
-**KIS 연결**: FULL 웹의 **설정**에서 본인이 준비한 KIS_MOCK App Key·Secret·계좌번호를 입력하고 연결 확인을 합니다. 브로커리지 전용 키로 암호화되며 본인 actor에 결속됩니다. 두 사용자 격리는 서로 다른 Google USER와 서로 다른 모의계좌에서 각각 연결·운용·대사를 확인해야 최종 인증됩니다. 외부 password 로그인은 제공하지 않습니다.
+```bash
+mapfile -t GOOGLE_SUBJECTS < <(
+  docker compose --env-file "$RELEASE_DIR/full.env" \
+    -f "$RELEASE_DIR/mars-public-full.compose.yml" exec -T postgres \
+    psql -U postgres -d capstone_p1 -Atc \
+    "SELECT subject FROM social_login_identities WHERE issuer = 'https://accounts.google.com'"
+)
+if [ "${#GOOGLE_SUBJECTS[@]}" -ne 1 ]; then
+  echo 'Google identity가 하나인지 로컬에서 확인한 뒤 진행하세요.' >&2
+  exit 1
+fi
+GOOGLE_SUBJECT_HASH="$(printf '%s' "${GOOGLE_SUBJECTS[0]}" | sha256sum | awk '{print $1}')"
+unset GOOGLE_SUBJECTS
+printf '%s\n' "$GOOGLE_SUBJECT_HASH"
+```
 
-AI provider 사용량과 추정 비용은 계측하지만 MARS 자체의 일일 비용 hard cap으로 차단하지 않습니다. 실제 무료 사용량·과금·쿼터는 Vertex/Voyage 계정 설정에 따릅니다.
+출력된 hash를 프로젝트 루트 `.env`의 `GOOGLE_OIDC_ADMIN_SUBJECT_SHA256`에 넣고, 아래 명령으로 생성된 FULL runtime secret에 반영합니다. API를 재생성한 뒤 Google로 다시 로그인하면 역할이 재평가됩니다. Hash도 채팅·PR에 붙이지 마세요. DB에 Google identity가 여러 개라면 자동 선택하지 말고 어느 계정을 허용할지 먼저 식별하세요.
+
+```bash
+python3 "$PROJECT_ROOT/deploy/p1/sync_mars_public_operator_env.py" \
+  --product full --secrets-dir "$RELEASE_DIR/full-secrets"
+docker compose --env-file "$RELEASE_DIR/full.env" \
+  -f "$RELEASE_DIR/mars-public-full.compose.yml" \
+  up -d --no-deps --force-recreate api
+```
+
+**KIS_MOCK 연결**: FULL 웹에서 본인이 준비한 App Key·Secret·계좌번호를 직접 입력하고 연결 확인을 합니다. 값은 브로커리지 전용 키로 암호화해 본인 actor에 묶습니다. 별도 사용자 계정 간 권한 격리는 운영 검증이 필요합니다. `KIS_LIVE`는 제공하지 않습니다.
+
+`.env`의 provider, 포트 또는 OpenDART 설정을 변경한 뒤에는 `sync_mars_public_operator_env.py`로 기존 DB secret을 다시 만들지 않고 해당 제품의 파생 secret만 갱신합니다. DEMO와 FULL은 각 제품의 경로를 사용하고, provider 변경이면 API, 포트 변경이면 web 서비스만 재생성하세요. OpenDART는 기본으로 시작하지 않으며 DB의 일일 quota를 확인한 뒤 one-shot으로 실행합니다.
+
+```bash
+# DEMO Vertex 설정 변경 시
+python3 "$PROJECT_ROOT/deploy/p1/sync_mars_public_operator_env.py" \
+  --product demo --secrets-dir "$RELEASE_DIR/demo-secrets"+# FULL provider secret 갱신 후 API 재생성
+python3 "$PROJECT_ROOT/deploy/p1/sync_mars_public_operator_env.py" \
+  --product full --secrets-dir "$RELEASE_DIR/full-secrets"
+# OpenDART를 명시적으로 실행하는 경우만:
+docker compose --env-file "$RELEASE_DIR/full.env" \
+  -f "$RELEASE_DIR/mars-public-full.compose.yml" --profile collectors \
+  run --rm disclosure-collector
+```
+
+Vertex/Voyage 사용량은 provider 계정의 무료량·쿼터·과금 조건을 따릅니다. MARS는 호출량을 계측하지만 별도 일일 비용 hard cap으로 호출을 차단하지 않습니다.
 
 ### 5.2. 오류 발생 시 해결 방법
 
 | 증상 | 확인할 항목 |
 |---|---|
-| Compose 설정 오류 | 필수 환경변수, secret 파일 경로·권한 |
-| API unhealthy | PostgreSQL·Redis·actor-authority 상태, migration 결과 |
-| Google callback 실패 | HTTPS origin·redirect URI의 정확한 문자열, OAuth 테스트 사용자 |
-| KIS 연결 실패 | 본인 모의투자 자격증명·계좌, KIS 상태·호출 제한 |
-| 수집 0건 | 신규 거래 세션, GDELT 파일 발행, OpenDART 일일 예산 |
-| 주문 0건 | 후보·시세·계좌·원칙·RiskEngine의 단계별 사유. 0건 자체는 장애가 아님 |
+| Compose 설정 오류 | `.env` mode `0600`, 제품별 generated env·secret 경로, Docker Compose bind mount 지원 |
+| API unhealthy | PostgreSQL·Redis·actor-authority 상태와 migration 결과. volume은 삭제하지 않음 |
+| Google/Kakao callback 실패 | public HTTPS origin과 provider에 등록한 callback URI가 완전히 같은지 확인 |
+| KIS 연결 실패 | 본인이 입력한 MOCK 키·계좌, 모의투자 API 상태·호출 제한 확인 |
+| 수집 0건 | 거래 세션 여부, GDELT 발행, OpenDART profile과 quota 확인 |
+| 주문 0건 | 후보·시세·계좌·원칙·RiskEngine의 단계별 차단 사유 확인. 0건 자체는 장애가 아님 |
+| `secrets_bind_unavailable` | Docker Desktop WSL integration 또는 Linux 경로의 bind mount를 확인. 기존 volume은 건드리지 않음 |
 
-복구를 위해 DB 볼륨을 지우지 마세요. 기존 데이터 이행 전에는 백업과 migration 결과를 확인합니다.
+복구를 위해 DB volume을 지우지 마세요. migration 전에 백업을 확인하고, 서비스 종료는 `docker compose down`만 사용합니다.
 
-**소스 체크아웃에서 개발할 때**: 공개 이미지 실행과 달리 기존 개발 DB를 직접 이행한다면 인증용 DB role을 Flyway보다 먼저 준비합니다. 저장소 루트에서 `docker compose --env-file .env -f infra/docker-compose.infra.yml run --rm role-bootstrap`를 실행한 다음 Spring API 디렉터리에서 `./gradlew bootRun`을 실행합니다. 이 순서가 빠지면 이미 존재하는 DB의 migration이 인증 role을 찾지 못할 수 있습니다.
-
-`S3.3` 체결 대사에서 KIS_MOCK fill observation은 `decision_fill_writer` DB role이 추가합니다. 관련 migration 경계는 `V6/V9/V14`이며, 조회·대사 API 계약은 [API 명세](docs/API_명세서.md)에 있습니다. 이 개발 role을 공개 FULL의 사용자 계좌 권한으로 해석하지 않습니다.
+**소스 체크아웃에서 개발할 때**: 공개 이미지 실행과 달리 개발용 DB를 직접 이행한다면 인증용 DB role을 Flyway보다 먼저 준비합니다. 저장소 루트에서 `docker compose --env-file .env -f infra/docker-compose.infra.yml run --rm role-bootstrap`을 실행한 뒤 Spring API 디렉터리에서 `./gradlew bootRun`을 실행합니다. `S3.3` KIS_MOCK fill observation은 `decision_fill_writer` DB role로 적재하며, migration 경계는 `V6/V9/V14`입니다. 조회 계약의 세부사항은 [API 명세](docs/API_명세서.md)에 있습니다.
 
 ## 6. 소개 자료 및 시연 영상
 
@@ -371,6 +377,6 @@ AI provider 사용량과 추정 비용은 계측하지만 MARS 자체의 일일 
 - [부산대학교 캡스톤 README 기준](https://github.com/pnucse-capstone2026/capstone-2026-team-33)
 - [KIS Developers API](https://apiportal.koreainvestment.com/apiservice-summary), [OpenDART](https://opendart.fss.or.kr/), [GDELT 데이터](https://gdeltproject.org/data.html)
 - [프로젝트 명세](docs/최종_프로젝트_명세서.md), [API 명세](docs/API_명세서.md), [규칙 평가](workspaces/decision-platform/research/p1-return-profit-verification/rule_baseline_eval.py), [결합 평가](workspaces/decision-platform/research/p1-return-profit-verification/consensus_eval.py), [Return 판정](workspaces/decision-platform/research/p1-return-profit-verification/reports/profit-verification.md)
-- [모의 자동운용 PR](https://github.com/robinhood0107/Capstone-AI-Trading-Coach-archive/pull/175), [LSTM 런타임 PR](https://github.com/robinhood0107/Capstone-AI-Trading-Coach-archive/pull/194), [Ridge·운용 PR](https://github.com/robinhood0107/Capstone-AI-Trading-Coach-archive/pull/211), [공개 이미지 승격 PR](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/pull/125)
+- [Google Identity 브랜딩 가이드](https://developers.google.com/identity/branding-guidelines), [Kakao 로그인 버튼 디자인 가이드](https://developers.kakao.com/docs/ko/kakaologin/design-guide), [Google OAuth 문서](https://developers.google.com/identity/protocols/oauth2/web-server), [Kakao OAuth REST API](https://developers.kakao.com/docs/ko/kakaologin/rest-api)
 
-PR은 구현 이력이고 수익률 측정 원본은 아닙니다. 비공개 연구와 자소서 원본은 공개 저장소에 올리지 않습니다.
+PR은 구현 이력이지 실험 측정 원본은 아닙니다. 공개하지 않은 내부 연구 자료와 개인 지원서 원본은 저장소에 포함하지 않습니다.

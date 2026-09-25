@@ -21,12 +21,12 @@ import java.util.concurrent.Callable
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 
-/** Verifies the database boundary that the Google callback will call after ID-token validation. */
+/** Verifies provider-neutral identity creation after the provider response is validated. */
 @Testcontainers
 @SpringBootTest(
     properties = ["spring.autoconfigure.exclude=org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration"],
 )
-class GoogleOidcIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase() {
+class SocialLoginIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase() {
     @Test
     fun `concurrent first login creates one USER and separate subjects never share sessions`() {
         val subject = "test-" + UUID.randomUUID()
@@ -58,7 +58,27 @@ class GoogleOidcIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase(
         assertNotEquals(sessions[0].userId, other.userId)
         assertEquals("USER", other.role)
 
+        val google = issueSession("123456789", issuer = GOOGLE_ISSUER)
+        val kakao = issueSession("123456789", issuer = KAKAO_ISSUER)
+        assertNotEquals(google.userId, kakao.userId)
+        assertEquals("USER", kakao.role)
+
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("select to_regclass('public.google_oidc_identities') is null").use { result ->
+                    assertTrue(result.next())
+                    assertTrue(result.getBoolean(1))
+                }
+            }
+            connection
+                .prepareStatement("select count(*) from social_login_identities where subject = ?")
+                .use { statement ->
+                    statement.setString(1, "123456789")
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals(2, result.getInt(1))
+                    }
+                }
             connection.prepareStatement("select password_hash, role from users where user_id = ?").use { statement ->
                 statement.setString(1, sessions[0].userId)
                 statement.executeQuery().use { result ->
@@ -78,7 +98,7 @@ class GoogleOidcIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase(
     }
 
     @Test
-    fun `only decision_auth can issue a Google session and invalid issuer is rejected`() {
+    fun `only decision_auth can issue social sessions and Kakao cannot become an operator`() {
         val subject = "test-" + UUID.randomUUID()
         val wrongIssuer =
             assertThrows(SQLException::class.java) {
@@ -88,7 +108,7 @@ class GoogleOidcIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase(
         val wrongRole =
             assertThrows(SQLException::class.java) {
                 DriverManager.getConnection(postgres.jdbcUrl, "decision_app", "app-test").use { connection ->
-                    connection.prepareStatement("select * from authenticate_google_oidc_actor_v1(?,?,?,?)").use { statement ->
+                    connection.prepareStatement("select * from authenticate_social_login_actor_v1(?,?,?,?)").use { statement ->
                         statement.setString(1, GOOGLE_ISSUER)
                         statement.setString(2, subject)
                         statement.setBoolean(3, false)
@@ -98,6 +118,12 @@ class GoogleOidcIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase(
                 }
             }
         assertEquals("42501", wrongRole.sqlState)
+
+        val kakaoAdmin =
+            assertThrows(SQLException::class.java) {
+                issueSession("123456789", issuer = KAKAO_ISSUER, operatorSubject = true)
+            }
+        assertEquals("42501", kakaoAdmin.sqlState)
     }
 
     @Test
@@ -128,7 +154,7 @@ class GoogleOidcIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase(
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
             connection
                 .prepareStatement(
-                    "select payload_json::text from audit_logs where user_id = ? and action = 'GOOGLE_OIDC_ROLE_CHANGED'",
+                    "select payload_json::text from audit_logs where user_id = ? and action = 'SOCIAL_LOGIN_ROLE_CHANGED'",
                 ).use { statement ->
                     statement.setString(1, ordinary.userId)
                     statement.executeQuery().use { result ->
@@ -234,7 +260,7 @@ class GoogleOidcIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase(
         operatorSubject: Boolean = false,
     ): IssuedSession =
         DriverManager.getConnection(postgres.jdbcUrl, "decision_auth", "auth-test-secret-0001").use { connection ->
-            connection.prepareStatement("select * from authenticate_google_oidc_actor_v1(?,?,?,?)").use { statement ->
+            connection.prepareStatement("select * from authenticate_social_login_actor_v1(?,?,?,?)").use { statement ->
                 statement.setString(1, issuer)
                 statement.setString(2, subject)
                 statement.setBoolean(3, operatorSubject)
@@ -260,6 +286,7 @@ class GoogleOidcIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase(
 
     companion object {
         private const val GOOGLE_ISSUER = "https://accounts.google.com"
+        private const val KAKAO_ISSUER = "https://kauth.kakao.com"
         private val postgresImage =
             DockerImageName
                 .parse("pgvector/pgvector:pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb")

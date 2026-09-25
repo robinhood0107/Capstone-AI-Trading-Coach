@@ -550,11 +550,6 @@ verify_state() {
   # 공시 근거 수집기의 writer DSN 과 OpenDART 인증정보. upgrade_state 가 매 실행마다 다시
   # 쓰므로(리포 .env 의 key 를 나중에 채워도 켜지게) 이 목록에 없으면 up 이 죽는다.
   expected+=(disclosure-collector.env)
-  # Vertex 서비스계정은 운영자가 직접 넣는 선택 secret이다. compose는 이 파일을 secret으로
-  # 마운트하므로 있으면 정상이고, 없으면 Vertex 생성만 닫힌다. 목록에 넣지 않으면 파일을
-  # 넣는 순간 `./capstone up`이 secret_inventory로 죽어 생성 경로를 켤 방법이 없어진다.
-  [[ ! -e $SECRETS_DIR/pre-s5-vertex-service-account.json ]] ||
-    expected+=(pre-s5-vertex-service-account.json)
   # TLS 리버스 프록시는 --profile tls 로만 뜨는 선택 구성이다. 인증서도 같은 성격이라
   # 같은 방법으로 다룬다 - 목록에 넣지 않으면 운영자가 인증서를 두는 순간 up 이
   # secret_inventory 로 죽어 프록시를 켤 방법이 없어진다.

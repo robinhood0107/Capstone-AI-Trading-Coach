@@ -17,7 +17,18 @@ class MarsFullAuthContractTest(unittest.TestCase):
         validate(document)
         self.assertEqual(
             set(document["paths"]),
-            {"/api/v1/auth/oidc/exchange", "/api/v1/auth/logout"},
+            {
+                "/api/v1/auth/oidc/start/google",
+                "/api/v1/auth/oidc/callback/google",
+                "/api/v1/auth/oidc/start/kakao",
+                "/api/v1/auth/oidc/callback/kakao",
+                "/api/v1/auth/oidc/exchange",
+                "/api/v1/auth/logout",
+            },
+        )
+        self.assertEqual(
+            document["paths"]["/api/v1/auth/oidc/exchange"]["post"]["operationId"],
+            "exchangeSocialLoginSession",
         )
         self.assertEqual(
             document["paths"]["/api/v1/auth/oidc/exchange"]["post"]["parameters"][0]

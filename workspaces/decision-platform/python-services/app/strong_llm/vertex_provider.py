@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import re
-import stat
-from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlparse
 
@@ -24,23 +24,27 @@ _NUMERIC_TOKEN = re.compile(
 
 
 class VertexProviderSettings:
-    """서비스계정 JSON은 explicit 0600 regular file만 허용하고 API key·ADC fallback을 만들지 않는다."""
+    """서비스계정 JSON은 root .env의 canonical Base64 값에서 읽고 API key·ADC fallback을 금지한다."""
 
     def __init__(
         self,
         *,
-        service_account_path: Path,
+        service_account_info: dict[str, Any],
         location: str = "global",
         timeout_seconds: float = 50.0,
         thinking_level: str = "low",
         max_output_tokens: int = 4_096,
     ) -> None:
-        path = service_account_path
-        info = path.lstat()
-        if not path.is_absolute() or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-            raise ValueError("STRONG_LLM_CREDENTIAL_FILE_INVALID")
-        if stat.S_IMODE(info.st_mode) != 0o600:
-            raise ValueError("STRONG_LLM_CREDENTIAL_MODE_INVALID")
+        if (
+            not isinstance(service_account_info, dict)
+            or service_account_info.get("type") != "service_account"
+            or not isinstance(service_account_info.get("project_id"), str)
+            or not isinstance(service_account_info.get("client_email"), str)
+            or not isinstance(service_account_info.get("private_key"), str)
+            or not isinstance(service_account_info.get("token_uri"), str)
+            or service_account_info.get("token_uri") != "https://oauth2.googleapis.com/token"
+        ):
+            raise ValueError("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_ENV_INVALID")
         if location != "global":
             raise ValueError("STRONG_LLM_VERTEX_LOCATION_INVALID")
         if not 10.0 <= timeout_seconds <= 55.0:
@@ -49,7 +53,7 @@ class VertexProviderSettings:
             raise ValueError("STRONG_LLM_VERTEX_THINKING_LEVEL_INVALID")
         if not 256 <= max_output_tokens <= 32_768:
             raise ValueError("STRONG_LLM_VERTEX_OUTPUT_CAP_INVALID")
-        self.service_account_path = path
+        self.service_account_info = dict(service_account_info)
         self.location = location
         self.timeout_seconds = timeout_seconds
         self.thinking_level = thinking_level
@@ -57,7 +61,7 @@ class VertexProviderSettings:
 
     def for_thinking_level(self, thinking_level: str) -> VertexProviderSettings:
         return VertexProviderSettings(
-            service_account_path=self.service_account_path,
+            service_account_info=self.service_account_info,
             location=self.location,
             timeout_seconds=self.timeout_seconds,
             thinking_level=thinking_level,
@@ -68,7 +72,24 @@ class VertexProviderSettings:
     def from_env(cls) -> VertexProviderSettings:
         if os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"):
             raise ValueError("STRONG_LLM_API_KEY_FALLBACK_FORBIDDEN")
-        path = Path(os.environ.get("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_JSON", ""))
+        encoded = os.environ.get("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", "")
+        if not encoded or len(encoded) > 64 * 1024:
+            raise ValueError("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_ENV_MISSING")
+        try:
+            credential_bytes = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise ValueError("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_ENV_INVALID") from error
+        if (
+            base64.b64encode(credential_bytes).decode("ascii") != encoded
+            or len(credential_bytes) > 48 * 1024
+        ):
+            raise ValueError("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_ENV_INVALID")
+        try:
+            service_account_info = json.loads(credential_bytes)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_ENV_INVALID") from error
+        if not isinstance(service_account_info, dict):
+            raise ValueError("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_ENV_INVALID")
         raw_timeout = os.environ.get("STRONG_LLM_VERTEX_TIMEOUT_SECONDS", "50")
         try:
             timeout_seconds = float(raw_timeout)
@@ -79,7 +100,7 @@ class VertexProviderSettings:
         if re.fullmatch(r"[0-9]{1,5}", raw_output_cap) is None:
             raise ValueError("STRONG_LLM_VERTEX_OUTPUT_CAP_INVALID")
         return cls(
-            service_account_path=path,
+            service_account_info=service_account_info,
             timeout_seconds=timeout_seconds,
             thinking_level=thinking_level,
             max_output_tokens=int(raw_output_cap),
@@ -93,8 +114,9 @@ class LangChainVertexProvider:
     supports_google_search = True
 
     def __init__(self, request: RunRequest, settings: VertexProviderSettings) -> None:
-        credentials = service_account.Credentials.from_service_account_file(  # type: ignore[no-untyped-call]
-            str(settings.service_account_path), scopes=[_VERTEX_SCOPE]
+        credentials = service_account.Credentials.from_service_account_info(  # type: ignore[no-untyped-call]
+            settings.service_account_info,
+            scopes=[_VERTEX_SCOPE],
         )
         project = credentials.project_id
         if not project:

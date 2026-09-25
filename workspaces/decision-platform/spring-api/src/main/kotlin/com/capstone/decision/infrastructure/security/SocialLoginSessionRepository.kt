@@ -4,8 +4,8 @@ import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
 
-/** The Google callback passes only the issuer and subject from Spring's verified OIDC principal. */
-interface GoogleOidcSessionRepository {
+/** The callback passes only provider-verified immutable issuer and subject identifiers. */
+interface SocialLoginSessionRepository {
     fun createSession(
         issuer: String,
         subject: String,
@@ -15,9 +15,9 @@ interface GoogleOidcSessionRepository {
 }
 
 @Repository
-class JdbcGoogleOidcSessionRepository(
+class JdbcSocialLoginSessionRepository(
     private val authDatabaseProvider: ObjectProvider<AuthDatabase>,
-) : GoogleOidcSessionRepository {
+) : SocialLoginSessionRepository {
     override fun createSession(
         issuer: String,
         subject: String,
@@ -31,7 +31,7 @@ class JdbcGoogleOidcSessionRepository(
             """
             select session_handle, actor_user_id, username, actor_role,
                    actor_security_version, expires_at
-            from authenticate_google_oidc_actor_v1(?,?,?,?)
+            from authenticate_social_login_actor_v1(?,?,?,?)
             """.trimIndent(),
             { row, _ ->
                 AuthenticatedAccount(

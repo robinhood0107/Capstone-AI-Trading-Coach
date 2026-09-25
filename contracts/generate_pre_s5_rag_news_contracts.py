@@ -975,8 +975,7 @@ def _rag_policy_schema() -> dict[str, Any]:
             "ambientCredentialAllowed",
             "authentication",
             "contextCacheAllowed",
-            "credentialFileAllowed",
-            "credentialFilePath",
+            "credentialEnvKey",
             "developerApiAllowed",
             "fallbackAllowed",
             "fileUploadAllowed",
@@ -1005,7 +1004,7 @@ def _rag_policy_schema() -> dict[str, Any]:
         properties={
             "activationEvidenceRequired": {
                 "prefixItems": [
-                    {"const": "SERVICE_ACCOUNT_FILE_SECURITY"},
+                    {"const": "SERVICE_ACCOUNT_ENV_SECURITY"},
                     {"const": "DATA_GOVERNANCE_STATE"},
                     {"const": "ABUSE_MONITORING_STATE"},
                     {"const": "MODEL_AVAILABILITY"},
@@ -1024,8 +1023,7 @@ def _rag_policy_schema() -> dict[str, Any]:
             },
             "ambientCredentialAllowed": {"const": False},
             "contextCacheAllowed": {"const": False},
-            "credentialFileAllowed": {"const": True},
-            "credentialFilePath": {"const": "secrets/pre-s5-vertex-service-account.json"},
+            "credentialEnvKey": {"const": "MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64"},
             "developerApiAllowed": {"const": False},
             "fallbackAllowed": {"const": False},
             "fileUploadAllowed": {"const": False},
@@ -2039,7 +2037,7 @@ def _rag_policy_fixture() -> dict[str, Any]:
         "schemaVersion": 1,
         "vertex": {
             "activationEvidenceRequired": [
-                "SERVICE_ACCOUNT_FILE_SECURITY",
+                "SERVICE_ACCOUNT_ENV_SECURITY",
                 "DATA_GOVERNANCE_STATE",
                 "ABUSE_MONITORING_STATE",
                 "MODEL_AVAILABILITY",
@@ -2047,8 +2045,7 @@ def _rag_policy_fixture() -> dict[str, Any]:
             "ambientCredentialAllowed": False,
             "authentication": ["SERVICE_ACCOUNT_OAUTH"],
             "contextCacheAllowed": False,
-            "credentialFileAllowed": True,
-            "credentialFilePath": "secrets/pre-s5-vertex-service-account.json",
+            "credentialEnvKey": "MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64",
             "developerApiAllowed": False,
             "fallbackAllowed": False,
             "fileUploadAllowed": False,
@@ -2508,7 +2505,7 @@ def _catalog() -> dict[str, Any]:
             },
             "vertex": {
                 "activationEvidenceRequired": [
-                    "SERVICE_ACCOUNT_FILE_SECURITY",
+                    "SERVICE_ACCOUNT_ENV_SECURITY",
                     "DATA_GOVERNANCE_STATE",
                     "ABUSE_MONITORING_STATE",
                     "MODEL_AVAILABILITY",
@@ -2516,8 +2513,7 @@ def _catalog() -> dict[str, Any]:
                 "ambientCredentialAllowed": False,
                 "authentication": ["SERVICE_ACCOUNT_OAUTH"],
                 "contextCacheAllowed": False,
-                "credentialFileAllowed": True,
-                "credentialFilePath": "secrets/pre-s5-vertex-service-account.json",
+                "credentialEnvKey": "MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64",
                 "developerApiAllowed": False,
                 "fallbackAllowed": False,
                 "fileUploadAllowed": False,

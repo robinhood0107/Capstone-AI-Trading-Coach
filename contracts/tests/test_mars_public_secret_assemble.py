@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import importlib.util
 import json
 import secrets
@@ -44,16 +46,24 @@ class MarsPublicSecretAssembleTest(unittest.TestCase):
             self.vertex,
             json.dumps({"type": "service_account", "project_id": "test-project"}).encode(),
         )
+        self.vertex_b64 = base64.b64encode(self.vertex.read_bytes()).decode("ascii")
         self.demo_operator = self.root / "demo-operator.env"
-        private_file(self.demo_operator, b"MARS_VERTEX_MODEL_ID=test-model\n")
+        private_file(
+            self.demo_operator,
+            f"MARS_VERTEX_MODEL_ID=test-model\nMARS_VERTEX_SERVICE_ACCOUNT_JSON_B64={self.vertex_b64}\n".encode(),
+        )
         self.full_operator = self.root / "full-operator.env"
         private_file(
             self.full_operator,
-            b"MARS_VERTEX_MODEL_ID=test-model\n"
-            b"MARS_VERTEX_PROJECT_ID=test-project\n"
-            b"GOOGLE_OIDC_CLIENT_ID=example-client\n"
-            b"GOOGLE_OIDC_CLIENT_SECRET=example-secret\n"
-            b"VOYAGE_API_KEY=example-voyage\n",
+            (
+                f"MARS_VERTEX_MODEL_ID=test-model\nMARS_VERTEX_SERVICE_ACCOUNT_JSON_B64={self.vertex_b64}\n"
+                "MARS_VERTEX_PROJECT_ID=test-project\n"
+                "GOOGLE_OIDC_CLIENT_ID=example-client\n"
+                "GOOGLE_OIDC_CLIENT_SECRET=example-secret\n"
+                "KAKAO_OAUTH_CLIENT_ID=example-kakao-client\n"
+                "KAKAO_OAUTH_CLIENT_SECRET=example-kakao-secret\n"
+                "VOYAGE_API_KEY=example-voyage\n"
+            ).encode(),
         )
 
     def base(self, name: str) -> Path:
@@ -86,8 +96,6 @@ class MarsPublicSecretAssembleTest(unittest.TestCase):
                 str(base),
                 "--release-dir",
                 str(self.release),
-                "--vertex-json",
-                str(self.vertex),
                 "--operator-env",
                 str(self.demo_operator if product == "demo" else self.full_operator),
             ],
@@ -101,26 +109,51 @@ class MarsPublicSecretAssembleTest(unittest.TestCase):
         self.assertEqual(self.assemble("full", self.base("full-base")).returncode, 0)
         demo_dir = self.release / "demo-secrets"
         full_dir = self.release / "full-secrets"
-        self.assertEqual({p.name for p in demo_dir.iterdir()}, set(MODULE.COMMON_FILES) | {
-            "vertex-service-account.json",
-            "mars-public-demo.env",
-        })
-        self.assertEqual({p.name for p in full_dir.iterdir()}, set(MODULE.COMMON_FILES) | set(MODULE.FULL_FILES) | {
-            "disclosure-collector.env",
-            "vertex-service-account.json",
-            "mars-public-full.env",
-        })
+        self.assertEqual(
+            {p.name for p in demo_dir.iterdir()},
+            set(MODULE.COMMON_FILES) | {"mars-public-demo.env"},
+        )
+        self.assertEqual(
+            {p.name for p in full_dir.iterdir()},
+            set(MODULE.COMMON_FILES)
+            | set(MODULE.FULL_FILES)
+            | {
+                "disclosure-collector.env",
+                "mars-public-full.env",
+            },
+        )
         demo_keys = set(MODULE.env_file(demo_dir / "mars-public-demo.env"))
         full_keys = set(MODULE.env_file(full_dir / "mars-public-full.env"))
-        self.assertEqual(demo_keys, set(MODULE.SPRING_KEYS) | {"STRONG_LLM_GRPC_SHARED_SECRET"})
+        self.assertEqual(
+            demo_keys,
+            set(MODULE.SPRING_KEYS) | {"STRONG_LLM_GRPC_SHARED_SECRET", MODULE.VERTEX_ACCOUNT_B64},
+        )
         self.assertEqual(
             full_keys,
             demo_keys
             | set(MODULE.FULL_FROM_BASE)
-            | {"GOOGLE_OIDC_CLIENT_ID", "GOOGLE_OIDC_CLIENT_SECRET", "VOYAGE_API_KEY", "GOOGLE_OIDC_ADMIN_SUBJECT_SHA256"},
+            | {
+                "GOOGLE_OIDC_CLIENT_ID",
+                "GOOGLE_OIDC_CLIENT_SECRET",
+                "KAKAO_OAUTH_CLIENT_ID",
+                "KAKAO_OAUTH_CLIENT_SECRET",
+                "VOYAGE_API_KEY",
+                "GOOGLE_OIDC_ADMIN_SUBJECT_SHA256",
+            },
+        )
+        self.assertEqual(
+            (self.release / "full.env").stat().st_mode & 0o777,
+            0o600,
+        )
+        compose_values = MODULE.env_file(self.release / "full.env")
+        self.assertEqual(
+            compose_values["MARS_VERTEX_SERVICE_ACCOUNT_SHA256"],
+            hashlib.sha256(self.vertex.read_bytes()).hexdigest(),
         )
         self.assertEqual((full_dir / "mars-public-full.env").stat().st_mode & 0o777, 0o640)
-        self.assertEqual((self.release / "full-kek/brokerage-kek-v1.key").stat().st_mode & 0o777, 0o600)
+        self.assertEqual(
+            (self.release / "full-kek/brokerage-kek-v1.key").stat().st_mode & 0o777, 0o600
+        )
         self.assertEqual((self.release / "full-kek/brokerage-kek-v1.key").stat().st_size, 32)
         self.assertNotEqual(
             (demo_dir / "postgres.env").read_bytes(),
@@ -139,6 +172,44 @@ class MarsPublicSecretAssembleTest(unittest.TestCase):
         self.full_operator.chmod(0o644)
         self.assertNotEqual(self.assemble("full", self.base("full-base")).returncode, 0)
         self.assertFalse((self.release / "full-secrets").exists())
+
+    def test_root_env_operator_source_filters_unrelated_credentials(self) -> None:
+        root_env = self.root / ".env"
+        private_file(
+            root_env,
+            (
+                f"MARS_VERTEX_MODEL_ID=test-model\nMARS_VERTEX_SERVICE_ACCOUNT_JSON_B64={self.vertex_b64}\n"
+                "KIS_LIVE_APP_SECRET=must-never-enter-public-bundle\n"
+                "OPENAI_API_KEY=must-never-enter-public-bundle\n"
+                "unrelated legacy line without an env assignment\n"
+            ).encode(),
+        )
+        previous_root_env = MODULE.ROOT_ENV
+        MODULE.ROOT_ENV = root_env
+        try:
+            selected = MODULE.operator_values(root_env, "demo")
+        finally:
+            MODULE.ROOT_ENV = previous_root_env
+        self.assertEqual(set(selected), MODULE.EXTERNAL_DEMO)
+        self.assertNotIn("KIS_LIVE_APP_SECRET", selected)
+        self.assertNotIn("OPENAI_API_KEY", selected)
+
+    def test_root_env_rejects_duplicate_allowlisted_settings(self) -> None:
+        root_env = self.root / ".env"
+        private_file(
+            root_env,
+            (
+                f"MARS_VERTEX_MODEL_ID=test-model\nMARS_VERTEX_MODEL_ID=other-model\n"
+                f"MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64={self.vertex_b64}\n"
+            ).encode(),
+        )
+        previous_root_env = MODULE.ROOT_ENV
+        MODULE.ROOT_ENV = root_env
+        try:
+            with self.assertRaises(ValueError):
+                MODULE.operator_values(root_env, "demo")
+        finally:
+            MODULE.ROOT_ENV = previous_root_env
 
 
 if __name__ == "__main__":

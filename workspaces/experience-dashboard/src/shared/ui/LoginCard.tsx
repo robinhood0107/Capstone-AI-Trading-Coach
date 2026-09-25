@@ -10,45 +10,45 @@ export function LoginCard() {
   if (process.env.NEXT_PUBLIC_MARS_PRODUCT !== 'full') return <LocalPasswordLoginCard />;
   return (
     <div className="mx-auto w-full max-w-[420px]">
-      <div className="rounded-panel border border-line bg-panel px-7 py-8 shadow-card">
-        <h1 className="text-center text-[24px] font-semibold tracking-tight text-ink">계정으로 시작하기</h1>
+      <section
+        aria-labelledby="provider-login-title"
+        aria-describedby="provider-login-note"
+        className="rounded-panel border border-line bg-panel px-6 py-8 shadow-card sm:px-8"
+      >
+        <h1 id="provider-login-title" className="text-center text-[24px] font-semibold tracking-tight text-ink">
+          계정으로 계속하기
+        </h1>
         <p className="mt-2 text-center text-[14px] leading-6 text-muted">
           Google 또는 카카오 계정으로 로그인하세요.
         </p>
-        <div className="my-7 flex items-center gap-3 text-[12px] text-faint" role="separator" aria-label="간편 로그인">
-          <span className="h-px flex-1 bg-line" />
-          <span>간편 로그인</span>
-          <span className="h-px flex-1 bg-line" />
-        </div>
-        <div className="flex justify-center gap-4">
+        <div className="mt-7 grid gap-3" role="group" aria-label="로그인 제공자">
           <a
             href="/api/v1/auth/oidc/start/google"
+            data-provider="google"
             aria-label="Google로 로그인"
-            className="tap flex min-h-20 min-w-32 flex-col items-center justify-center gap-2 rounded-xl border border-line bg-white px-4 py-3 text-[12px] font-medium text-ink shadow-sm transition hover:border-muted hover:bg-canvas focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            className="tap provider-signin-button google-signin-button flex items-center justify-center rounded-full border px-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            style={{ color: 'var(--google-signin-text)' }}
           >
-            <Image
-              src="/auth/google-g-logo.png"
-              alt=""
-              width={50}
-              height={51}
-              className="h-[22px] w-auto shrink-0"
-              priority
-            />
-            <span>Google로 계속</span>
+            <span aria-hidden="true" className="absolute left-3 top-1/2 grid h-6 w-6 shrink-0 -translate-y-1/2 place-items-center rounded-full bg-white">
+              <Image src="/auth/google-g-logo.png" alt="" width={18} height={18} className="h-[18px] w-[18px]" />
+            </span>
+            <span className="w-full text-center">Google로 계속</span>
           </a>
           <a
             href="/api/v1/auth/oidc/start/kakao"
+            data-provider="kakao"
             aria-label="카카오로 로그인"
-            className="tap flex min-h-20 min-w-32 flex-col items-center justify-center gap-2 rounded-xl bg-[#FEE500] px-4 py-3 text-[12px] font-medium text-black/85 shadow-sm transition hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            className="tap provider-signin-button flex items-center justify-center gap-[10px] rounded-xl bg-[#FEE500] px-3 text-[14px] font-medium leading-[18px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            style={{ color: 'rgba(0, 0, 0, 0.85)' }}
           >
-            <Image src="/auth/kakao-talk-symbol.svg" alt="" width={24} height={24} />
-            <span>카카오로 계속</span>
+            <Image src="/auth/kakao-talk-symbol.svg" alt="" width={32} height={32} className="h-8 w-8 shrink-0" />
+            <span>카카오 로그인</span>
           </a>
         </div>
-        <p className="mt-6 text-center text-[12px] leading-5 text-muted">
-          첫 로그인에서 계정이 자동으로 만들어져 별도 회원가입이나 비밀번호가 필요하지 않습니다.
+        <p id="provider-login-note" className="mt-6 text-center text-[12px] leading-5 text-muted">
+          처음 로그인하면 MARS 계정이 자동으로 만들어집니다. 별도 가입이나 비밀번호는 필요하지 않습니다.
         </p>
-      </div>
+      </section>
     </div>
   );
 }

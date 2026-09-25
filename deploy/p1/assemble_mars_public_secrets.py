@@ -8,6 +8,7 @@ FULL so their database credentials, actor keys and RAG keys never overlap.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -31,7 +32,6 @@ COMMON_FILES = (
 )
 FULL_FILES = (
     "seed-import.env",
-    "return-inference.env",
     "market-data.env",
 )
 SPRING_KEYS = (
@@ -66,14 +66,19 @@ FULL_FROM_BASE = {
     "RAG_V2_GRPC_SHARED_SECRET": "rag-v2.env",
     "RAG_V2_QUERY_DATABASE_DSN": "rag-v2.env",
     "RAG_V2_VOYAGE_QUERY_WRITER_DSN": "rag-v2.env",
+    "RETURN_INFERENCE_GRPC_SHARED_SECRET": "return-inference.env",
     "P1_AUTOMATION_DATABASE_DSN": "automation-runtime.env",
     "AUTOMATION_RUNTIME_SHARED_SECRET": "automation-runtime.env",
 }
-EXTERNAL_DEMO = frozenset({"MARS_VERTEX_MODEL_ID"})
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+ROOT_ENV = PROJECT_ROOT / ".env"
+VERTEX_ACCOUNT_B64 = "MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64"
+EXTERNAL_DEMO = frozenset({"MARS_VERTEX_MODEL_ID", VERTEX_ACCOUNT_B64})
 EXTERNAL_FULL = frozenset(
     {
         "MARS_VERTEX_MODEL_ID",
         "MARS_VERTEX_PROJECT_ID",
+        VERTEX_ACCOUNT_B64,
         "GOOGLE_OIDC_CLIENT_ID",
         "GOOGLE_OIDC_CLIENT_SECRET",
         "KAKAO_OAUTH_CLIENT_ID",
@@ -115,6 +120,52 @@ def env_file(path: Path, *, strict_values: bool = False) -> dict[str, str]:
     return result
 
 
+def root_operator_values(path: Path, allowed: frozenset[str]) -> dict[str, str]:
+    raw = checked_file(path)
+    result: dict[str, str] = {}
+    for line in raw.decode("utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        key, separator, value = line.partition("=")
+        if key not in allowed:
+            continue
+        if not separator or key in result or not SAFE_VALUE.fullmatch(value):
+            raise ValueError("invalid or duplicate allowlisted setting in root .env")
+        result[key] = value
+    return result
+
+
+def operator_values(path: Path, product: str) -> dict[str, str]:
+    required = EXTERNAL_DEMO if product == "demo" else EXTERNAL_FULL
+    allowed = required if product == "demo" else required | OPTIONAL_FULL
+    is_root_env = path.name == ".env" and (path.parent / ".git").exists()
+    is_root_env = is_root_env or path.resolve() == ROOT_ENV.resolve()
+    values = (
+        root_operator_values(path, allowed) if is_root_env else env_file(path, strict_values=True)
+    )
+    if not required.issubset(values) or set(values) - allowed:
+        raise ValueError(
+            "root .env is missing required product keys or operator env has unexpected keys"
+        )
+    if any(not SAFE_VALUE.fullmatch(value) for value in values.values()):
+        raise ValueError("operator env values must use the supported single-line format")
+    return values
+
+
+def decode_vertex_service_account_env(external: dict[str, str]) -> tuple[bytes, dict[str, object]]:
+    encoded = external[VERTEX_ACCOUNT_B64]
+    try:
+        payload = base64.b64decode(encoded, validate=True)
+    except ValueError as error:
+        raise ValueError("Vertex service-account env value must be canonical base64") from error
+    if not payload or len(payload) > 49152 or base64.b64encode(payload).decode("ascii") != encoded:
+        raise ValueError("Vertex service-account env value must be canonical base64")
+    identity = json.loads(payload)
+    if not isinstance(identity, dict) or identity.get("type") != "service_account":
+        raise ValueError("Vertex credentials must encode a service account")
+    return payload, identity
+
+
 def write_private(path: Path, data: bytes, mode: int = 0o640) -> None:
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
     try:
@@ -129,8 +180,7 @@ def main() -> int:
     parser.add_argument("--product", choices=("demo", "full"), required=True)
     parser.add_argument("--base-secrets", type=Path, required=True)
     parser.add_argument("--release-dir", type=Path, required=True)
-    parser.add_argument("--vertex-json", type=Path, required=True)
-    parser.add_argument("--operator-env", type=Path, required=True)
+    parser.add_argument("--operator-env", type=Path, default=ROOT_ENV)
     args = parser.parse_args()
 
     release_dir = args.release_dir.resolve(strict=True)
@@ -141,19 +191,14 @@ def main() -> int:
     base = args.base_secrets.resolve(strict=True)
     if not base.is_dir():
         raise ValueError("base secrets must be a directory")
-    external = env_file(args.operator_env, strict_values=True)
-    if args.operator_env.stat().st_mode & 0o077:
+    if args.operator_env.is_symlink():
+        raise ValueError("operator env must not be a symbolic link")
+    operator_env = args.operator_env.resolve(strict=True)
+    if operator_env.stat().st_mode & 0o077:
         raise ValueError("operator env must be mode 0600")
-    required = EXTERNAL_DEMO if args.product == "demo" else EXTERNAL_FULL
-    allowed = required if args.product == "demo" else required | OPTIONAL_FULL
-    if not required.issubset(external) or set(external) - allowed:
-        raise ValueError("operator env keys do not match the selected product")
-    vertex = checked_file(args.vertex_json)
-    if args.vertex_json.stat().st_mode & 0o077:
-        raise ValueError("Vertex JSON must be mode 0600")
-    identity = json.loads(vertex)
-    if not isinstance(identity, dict) or identity.get("type") != "service_account":
-        raise ValueError("Vertex JSON must be a service account")
+    external = operator_values(operator_env, args.product)
+    vertex_payload, identity = decode_vertex_service_account_env(external)
+    vertex_sha256 = hashlib.sha256(vertex_payload).hexdigest()
     if args.product == "full" and identity.get("project_id") != external["MARS_VERTEX_PROJECT_ID"]:
         raise ValueError("Vertex project ID differs from the service account")
 
@@ -173,13 +218,16 @@ def main() -> int:
             ).encode("utf-8")
     other_product = "full" if args.product == "demo" else "demo"
     other_postgres = release_dir / f"{other_product}-secrets/postgres.env"
-    if other_postgres.exists() and hashlib.sha256(checked_file(other_postgres)).digest() == hashlib.sha256(
-        payloads["postgres.env"]
-    ).digest():
+    if (
+        other_postgres.exists()
+        and hashlib.sha256(checked_file(other_postgres)).digest()
+        == hashlib.sha256(payloads["postgres.env"]).digest()
+    ):
         raise ValueError("DEMO and FULL must use independently generated p1ctl init bundles")
     spring = env_file(base / "spring.env")
     merged = {key: spring[key] for key in SPRING_KEYS}
     merged["STRONG_LLM_GRPC_SHARED_SECRET"] = secrets.token_hex(32)
+    merged[VERTEX_ACCOUNT_B64] = external[VERTEX_ACCOUNT_B64]
     if args.product == "full":
         for key, filename in FULL_FROM_BASE.items():
             merged[key] = env_file(base / filename)[key]
@@ -203,7 +251,11 @@ def main() -> int:
     secrets_dir = release_dir / f"{args.product}-secrets"
     compose_env = release_dir / f"{args.product}.env"
     kek_dir = release_dir / "full-kek"
-    if secrets_dir.exists() or compose_env.exists() or (args.product == "full" and kek_dir.exists()):
+    if (
+        secrets_dir.exists()
+        or compose_env.exists()
+        or (args.product == "full" and kek_dir.exists())
+    ):
         raise ValueError("output already exists; never overwrite product secrets")
 
     staged = Path(tempfile.mkdtemp(prefix=f".{args.product}-secret-stage-", dir=release_dir))
@@ -211,7 +263,6 @@ def main() -> int:
     try:
         for name, data in payloads.items():
             write_private(staged / name, data)
-        write_private(staged / "vertex-service-account.json", vertex)
         lines = "".join(f"{key}={value}\n" for key, value in sorted(merged.items()))
         write_private(staged / f"mars-public-{args.product}.env", lines.encode("utf-8"))
         if args.product == "demo":
@@ -228,6 +279,7 @@ def main() -> int:
                 f"MARS_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256={merged['BROKERAGE_DB_CAPABILITY_TOKEN_SHA256']}\n"
                 f"MARS_VERTEX_MODEL_ID={external['MARS_VERTEX_MODEL_ID']}\n"
                 f"MARS_VERTEX_PROJECT_ID={external['MARS_VERTEX_PROJECT_ID']}\n"
+                f"MARS_VERTEX_SERVICE_ACCOUNT_SHA256={vertex_sha256}\n"
             )
         write_private(staged / "compose.env", compose_lines.encode("utf-8"), 0o600)
         if args.product == "full":

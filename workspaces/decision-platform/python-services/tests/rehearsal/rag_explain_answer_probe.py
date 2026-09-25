@@ -10,8 +10,10 @@
 재시도는 없다. 출력은 프로젝트 프롬프트가 낸 결과의 host 투영뿐이다.
 
 실행:
-    STRONG_LLM_VERTEX_SERVICE_ACCOUNT_JSON=<0600 절대경로> \
-      uv run --frozen python -m tests.rehearsal.rag_explain_answer_probe
+    프로젝트 루트 `.env`의 MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64를 런타임 환경에
+    주입한 뒤 uv run --frozen python -m tests.rehearsal.rag_explain_answer_probe
+
+프로브는 서비스 계정 JSON 파일 경로를 받지 않으며 provider에 canonical Base64 환경값만 전달한다.
 
 `--google` 을 주면 각 질문에 discovery + final 2단계를 태운다. 기본은 tool 없는 단일 호출이다.
 """

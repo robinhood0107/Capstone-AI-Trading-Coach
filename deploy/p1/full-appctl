@@ -67,6 +67,10 @@ compose() {
   export P1_OPERATOR_UID=${P1_OPERATOR_UID:-$(id -u)}
   export P1_KIS_MOCK_RUNTIME_DIR=${P1_KIS_MOCK_RUNTIME_DIR:-$STATE_DIR/mock}
   local args=("$DOCKER_BIN" compose --project-name "$PROJECT_NAME")
+  if [[ -e $REPO_ROOT/.env ]]; then
+    [[ -f $REPO_ROOT/.env && ! -L $REPO_ROOT/.env && $(stat -c '%a' "$REPO_ROOT/.env") == 600 ]] || die root_env_boundary
+    args+=(--env-file "$REPO_ROOT/.env")
+  fi
   if [[ -f $RUNTIME_ENV && ! -L $RUNTIME_ENV ]]; then
     args+=(--env-file "$RUNTIME_ENV")
   else
@@ -495,8 +499,7 @@ enable_rag_by_default() {
   fi
   export P1_RAG_V2_ENABLED=true
   # Retrieval can run without enabling external generation.
-  if [[ -z ${P1_RAG_V2_VERTEX_ENABLED:-} ]] &&
-     [[ -f $SECRETS_DIR/pre-s5-vertex-service-account.json ]] &&
+  if [[ -z ${P1_RAG_V2_VERTEX_ENABLED:-} ]] && vertex_credentials_ready &&
      [[ -f $root/control/pre-s5-vertex-auto-activation-policy.json ]] &&
      bind_vertex_code_state; then
     export P1_RAG_V2_VERTEX_ENABLED=true
@@ -509,17 +512,78 @@ enable_rag_by_default() {
 
 enable_strong_llm_by_default() {
   [[ -n ${P1_STRONG_LLM_ENABLED:-} ]] && return 0
-  if [[ -f $SECRETS_DIR/pre-s5-vertex-service-account.json &&
-        ! -L $SECRETS_DIR/pre-s5-vertex-service-account.json ]] &&
+  if vertex_credentials_ready &&
      grep -q '^STRONG_LLM_GRPC_SHARED_SECRET=.' "$SECRETS_DIR/rag-v2.env" 2>/dev/null; then
     export P1_STRONG_LLM_ENABLED=true
     if [[ -z ${P1_GOOGLE_BILLING_ACCOUNT_FINGERPRINT:-} ]]; then
-      P1_GOOGLE_BILLING_ACCOUNT_FINGERPRINT=$(sha256sum "$SECRETS_DIR/pre-s5-vertex-service-account.json" | cut -d' ' -f1)
+      P1_GOOGLE_BILLING_ACCOUNT_FINGERPRINT=$(vertex_account_fingerprint)
       export P1_GOOGLE_BILLING_ACCOUNT_FINGERPRINT
     fi
   else
     export P1_STRONG_LLM_ENABLED=false
   fi
+}
+
+# Read only explicitly requested keys from the single operator-edited root .env.
+# Never source the file as shell code and never print the value beyond command capture.
+root_env_value() {
+  python3 - "$REPO_ROOT/.env" "$1" <<'PY'
+import os
+import stat
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+key = sys.argv[2]
+if path.is_symlink() or not path.is_file() or stat.S_IMODE(path.stat().st_mode) != 0o600:
+    raise SystemExit(1)
+matches = []
+for line in path.read_text(encoding="utf-8").splitlines():
+    if line.partition("=")[0] == key:
+        _, separator, value = line.partition("=")
+        if not separator:
+            raise SystemExit(1)
+        matches.append(value)
+if len(matches) != 1 or not matches[0]:
+    raise SystemExit(1)
+sys.stdout.write(matches[0])
+PY
+}
+
+vertex_account_fingerprint() {
+  local encoded
+  encoded=$(root_env_value MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64) || return 1
+  P1_VERTEX_CREDENTIAL_B64="$encoded" python3 - <<'PY'
+import base64
+import hashlib
+import json
+import os
+import re
+
+encoded = os.environ["P1_VERTEX_CREDENTIAL_B64"]
+try:
+    data = base64.b64decode(encoded, validate=True)
+    identity = json.loads(data)
+except (ValueError, json.JSONDecodeError):
+    raise SystemExit(1)
+project_id = identity.get("project_id") if isinstance(identity, dict) else None
+if (
+    not isinstance(identity, dict)
+    or base64.b64encode(data).decode("ascii") != encoded
+    or identity.get("type") != "service_account"
+    or not identity.get("private_key")
+    or not isinstance(project_id, str)
+    or re.fullmatch(r"[a-z][a-z0-9-]{4,62}[a-z0-9]", project_id) is None
+):
+    raise SystemExit(1)
+print(hashlib.sha256(data).hexdigest())
+PY
+}
+
+vertex_credentials_ready() {
+  local fingerprint
+  fingerprint=$(vertex_account_fingerprint) || return 1
+  [[ $fingerprint =~ ^[0-9a-f]{64}$ ]]
 }
 
 up_app() {

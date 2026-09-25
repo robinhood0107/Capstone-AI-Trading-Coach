@@ -342,7 +342,7 @@ Vertex/Voyage 사용량은 provider 계정의 무료량·쿼터·과금 조건�
 
 복구를 위해 DB volume을 지우지 마세요. migration 전에 백업을 확인하고, 서비스 종료는 `docker compose down`만 사용합니다.
 
-**소스 체크아웃에서 개발할 때**: 공개 이미지 실행과 달리 개발용 DB를 직접 이행한다면 인증용 DB role을 Flyway보다 먼저 준비합니다. 저장소 루트에서 `docker compose --env-file .env -f infra/docker-compose.infra.yml run --rm role-bootstrap`을 실행한 뒤 Spring API 디렉터리에서 `./gradlew bootRun`을 실행합니다. `S3.3` fill observation과 조회 계약의 세부사항은 [API 명세](docs/API_명세서.md)에 있습니다.
+**소스 체크아웃에서 개발할 때**: 공개 이미지 실행과 달리 개발용 DB를 직접 이행한다면 인증용 DB role을 Flyway보다 먼저 준비합니다. 저장소 루트에서 `docker compose --env-file .env -f infra/docker-compose.infra.yml run --rm role-bootstrap`을 실행한 뒤 Spring API 디렉터리에서 `./gradlew bootRun`을 실행합니다. `S3.3` KIS_MOCK fill observation은 `decision_fill_writer` DB role로 적재하며, migration 경계는 `V6/V9/V14`입니다. 조회 계약의 세부사항은 [API 명세](docs/API_명세서.md)에 있습니다.
 
 ## 6. 소개 자료 및 시연 영상
 

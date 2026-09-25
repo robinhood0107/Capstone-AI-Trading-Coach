@@ -86,7 +86,19 @@ EXTERNAL_FULL = frozenset(
         "VOYAGE_API_KEY",
     }
 )
-OPTIONAL_FULL = frozenset({"GOOGLE_OIDC_ADMIN_SUBJECT_SHA256"})
+OPENDART_OPERATOR_KEYS = frozenset(
+    {
+        "OPENDART_API_KEY",
+        "OPENDART_DAILY_CALL_LIMIT",
+        "OPENDART_DAILY_CALL_BUDGET",
+        "OPENDART_MAX_CALLS_PER_RUN",
+        "OPENDART_MAX_SYMBOLS_PER_RUN",
+    }
+)
+OPTIONAL_DEMO = frozenset({"MARS_DEMO_PORT"})
+OPTIONAL_FULL = (
+    frozenset({"GOOGLE_OIDC_ADMIN_SUBJECT_SHA256", "MARS_FULL_PORT"}) | OPENDART_OPERATOR_KEYS
+)
 KEY_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 SAFE_VALUE = re.compile(r"^[A-Za-z0-9_./:@+=?%~-]+$")
 
@@ -120,35 +132,57 @@ def env_file(path: Path, *, strict_values: bool = False) -> dict[str, str]:
     return result
 
 
-def root_operator_values(path: Path, allowed: frozenset[str]) -> dict[str, str]:
+def root_operator_values(
+    path: Path, allowed: frozenset[str], optional: frozenset[str] = frozenset()
+) -> dict[str, str]:
     raw = checked_file(path)
     result: dict[str, str] = {}
+    seen: set[str] = set()
     for line in raw.decode("utf-8").splitlines():
         if not line or line.startswith("#"):
             continue
         key, separator, value = line.partition("=")
         if key not in allowed:
             continue
-        if not separator or key in result or not SAFE_VALUE.fullmatch(value):
+        if (
+            not separator
+            or key in seen
+            or (not value and key not in optional)
+            or (value and not SAFE_VALUE.fullmatch(value))
+        ):
             raise ValueError("invalid or duplicate allowlisted setting in root .env")
-        result[key] = value
+        seen.add(key)
+        if value:
+            result[key] = value
     return result
 
 
 def operator_values(path: Path, product: str) -> dict[str, str]:
     required = EXTERNAL_DEMO if product == "demo" else EXTERNAL_FULL
-    allowed = required if product == "demo" else required | OPTIONAL_FULL
+    allowed = required | OPTIONAL_DEMO if product == "demo" else required | OPTIONAL_FULL
     is_root_env = path.name == ".env" and (path.parent / ".git").exists()
     is_root_env = is_root_env or path.resolve() == ROOT_ENV.resolve()
     values = (
-        root_operator_values(path, allowed) if is_root_env else env_file(path, strict_values=True)
+        root_operator_values(path, allowed, allowed - required)
+        if is_root_env
+        else env_file(path, strict_values=True)
     )
+    # Optional settings in the checked-in .env.example are intentionally blank.
+    # Treat blank optional values as absent so Compose retains its bounded defaults.
+    for key in allowed - required:
+        if values.get(key) == "":
+            values.pop(key)
     if not required.issubset(values) or set(values) - allowed:
         raise ValueError(
             "root .env is missing required product keys or operator env has unexpected keys"
         )
     if any(not SAFE_VALUE.fullmatch(value) for value in values.values()):
         raise ValueError("operator env values must use the supported single-line format")
+    port_key = "MARS_DEMO_PORT" if product == "demo" else "MARS_FULL_PORT"
+    if port_key in values:
+        port = values[port_key]
+        if not port.isdecimal() or not 1024 <= int(port) <= 65535:
+            raise ValueError("public product host port must be between 1024 and 65535")
     return values
 
 
@@ -216,6 +250,15 @@ def main() -> int:
                 "P1_DISCLOSURE_COLLECTOR_DSN="
                 f"postgresql://decision_collector:{password}@postgres:5432/capstone_p1?sslmode=disable\n"
             ).encode("utf-8")
+        disclosure_lines = payloads["disclosure-collector.env"].decode("utf-8").splitlines()
+        disclosure_lines = [
+            line for line in disclosure_lines if not line.startswith("OPENDART_API_KEY=")
+        ]
+        if "OPENDART_API_KEY" in external:
+            disclosure_lines.append(f"OPENDART_API_KEY={external['OPENDART_API_KEY']}")
+        payloads["disclosure-collector.env"] = (
+            "\n".join(disclosure_lines) + "\n"
+        ).encode("utf-8")
     other_product = "full" if args.product == "demo" else "demo"
     other_postgres = release_dir / f"{other_product}-secrets/postgres.env"
     if (
@@ -271,6 +314,8 @@ def main() -> int:
                 "MARS_DEMO_SECRETS_DIR=./demo-secrets\n"
                 f"MARS_VERTEX_MODEL_ID={external['MARS_VERTEX_MODEL_ID']}\n"
             )
+            if "MARS_DEMO_PORT" in external:
+                compose_lines += f"MARS_DEMO_PORT={external['MARS_DEMO_PORT']}\n"
         else:
             compose_lines = (
                 f"MARS_FULL_SECRET_GID={os.getgid()}\n"
@@ -281,6 +326,11 @@ def main() -> int:
                 f"MARS_VERTEX_PROJECT_ID={external['MARS_VERTEX_PROJECT_ID']}\n"
                 f"MARS_VERTEX_SERVICE_ACCOUNT_SHA256={vertex_sha256}\n"
             )
+            for key in sorted(OPENDART_OPERATOR_KEYS - {"OPENDART_API_KEY"}):
+                if key in external:
+                    compose_lines += f"{key}={external[key]}\n"
+            if "MARS_FULL_PORT" in external:
+                compose_lines += f"MARS_FULL_PORT={external['MARS_FULL_PORT']}\n"
         write_private(staged / "compose.env", compose_lines.encode("utf-8"), 0o600)
         if args.product == "full":
             (staged / "kek").mkdir(mode=0o700)

@@ -203,6 +203,10 @@ select {
 .google-signin-button:hover {
   background-color: var(--google-signin-hover);
 }
+/* Kakao's custom-button guide requires the platform's default system font. */
+.kakao-signin-button {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
 .provider-signin-button {
   width: 100%;
   min-height: 56px;

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -20,6 +21,20 @@ from app.strong_llm.vertex_provider import (
     _provider_result,
     _vertex_response_schema,
 )
+
+
+def _service_account_info() -> dict[str, str]:
+    return {
+        "type": "service_account",
+        "project_id": "project-id",
+        "client_email": "vertex-test@project-id.iam.gserviceaccount.com",
+        "private_key": "fixture-private-key",
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+
+
+def _service_account_b64() -> str:
+    return base64.b64encode(json.dumps(_service_account_info()).encode()).decode()
 
 
 def test_grounding_receipts_keep_only_edges_to_retained_sources() -> None:
@@ -235,9 +250,6 @@ def test_vertex_provider_rejects_owner_evidence_with_public_tools_before_model_c
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = tmp_path / "service-account.json"
-    credential.write_text("{}", encoding="utf-8")
-    credential.chmod(0o600)
     invocations: list[object] = []
 
     class FakeCredentials:
@@ -258,14 +270,14 @@ def test_vertex_provider_rejects_owner_evidence_with_public_tools_before_model_c
             return AIMessage(content=_answer())
 
     monkeypatch.setattr(
-        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_file",
+        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_info",
         lambda *_args, **_kwargs: FakeCredentials(),
     )
     monkeypatch.setattr("app.strong_llm.vertex_provider.ChatGoogleGenerativeAI", FakeModel)
     request = _request(google=False, owner=True)
     provider = LangChainVertexProvider(
         request,
-        VertexProviderSettings(service_account_path=credential),
+        VertexProviderSettings(service_account_info=_service_account_info()),
     )
 
     with pytest.raises(ValueError, match="STRONG_LLM_OWNER_PUBLIC_DISCOVERY_FORBIDDEN"):
@@ -274,23 +286,18 @@ def test_vertex_provider_rejects_owner_evidence_with_public_tools_before_model_c
     assert invocations == []
 
 
-def test_explicit_service_account_acl_rejects_non_0600(tmp_path: Path) -> None:
-    credential = tmp_path / "service-account.json"
-    credential.write_text("{}", encoding="utf-8")
-    credential.chmod(0o644)
+def test_invalid_service_account_env_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", "not-base64")
 
-    with pytest.raises(ValueError, match="STRONG_LLM_CREDENTIAL_MODE_INVALID"):
-        VertexProviderSettings(service_account_path=credential)
+    with pytest.raises(ValueError, match="STRONG_LLM_VERTEX_SERVICE_ACCOUNT_ENV_INVALID"):
+        VertexProviderSettings.from_env()
 
 
 def test_vertex_timeout_is_bounded_inside_the_host_deadline(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = tmp_path / "service-account.json"
-    credential.write_text("{}", encoding="utf-8")
-    credential.chmod(0o600)
-    monkeypatch.setenv("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_JSON", str(credential))
+    monkeypatch.setenv("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", _service_account_b64())
 
     assert VertexProviderSettings.from_env().timeout_seconds == 50.0
     assert VertexProviderSettings.from_env().thinking_level == "low"
@@ -324,9 +331,6 @@ def test_google_search_discovery_is_separate_from_native_schema_final(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = tmp_path / "service-account.json"
-    credential.write_text("{}", encoding="utf-8")
-    credential.chmod(0o600)
     constructor_calls: list[dict[str, object]] = []
     bind_calls: list[dict[str, object]] = []
 
@@ -342,14 +346,14 @@ def test_google_search_discovery_is_separate_from_native_schema_final(
             return self
 
     monkeypatch.setattr(
-        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_file",
+        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_info",
         lambda *_args, **_kwargs: FakeCredentials(),
     )
     monkeypatch.setattr("app.strong_llm.vertex_provider.ChatGoogleGenerativeAI", FakeModel)
 
     LangChainVertexProvider(
         _request(google=True),
-        VertexProviderSettings(service_account_path=credential),
+        VertexProviderSettings(service_account_info=_service_account_info()),
     )
 
     assert len(constructor_calls) == 1
@@ -371,9 +375,6 @@ def test_explicit_google_search_stays_on_official_langchain_vertex_binding(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = tmp_path / "service-account.json"
-    credential.write_text("{}", encoding="utf-8")
-    credential.chmod(0o600)
     invocations: list[dict[str, object]] = []
 
     class FakeCredentials:
@@ -395,7 +396,7 @@ def test_explicit_google_search_stays_on_official_langchain_vertex_binding(
             return FakeBoundModel(kwargs)
 
     monkeypatch.setattr(
-        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_file",
+        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_info",
         lambda *_args, **_kwargs: FakeCredentials(),
     )
     monkeypatch.setattr("app.strong_llm.vertex_provider.ChatGoogleGenerativeAI", FakeModel)
@@ -405,7 +406,7 @@ def test_explicit_google_search_stays_on_official_langchain_vertex_binding(
     )
     provider = LangChainVertexProvider(
         request,
-        VertexProviderSettings(service_account_path=credential),
+        VertexProviderSettings(service_account_info=_service_account_info()),
     )
 
     result = provider.invoke_google(request, include_owner=False)
@@ -492,9 +493,6 @@ def test_fallback_tool_round_keeps_native_structured_output_binding(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = tmp_path / "service-account.json"
-    credential.write_text("{}", encoding="utf-8")
-    credential.chmod(0o600)
     bind_calls: list[dict[str, object]] = []
     tool_calls: list[list[dict[str, object]]] = []
 
@@ -517,14 +515,14 @@ def test_fallback_tool_round_keeps_native_structured_output_binding(
             return AIMessage(content=_answer())
 
     monkeypatch.setattr(
-        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_file",
+        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_info",
         lambda *_args, **_kwargs: FakeCredentials(),
     )
     monkeypatch.setattr("app.strong_llm.vertex_provider.ChatGoogleGenerativeAI", FakeModel)
     request = _request(google=False)
     provider = LangChainVertexProvider(
         request,
-        VertexProviderSettings(service_account_path=credential),
+        VertexProviderSettings(service_account_info=_service_account_info()),
     )
 
     result = provider.invoke_fallback(request, [], tools_enabled=True)
@@ -539,9 +537,6 @@ def test_fallback_tool_result_preserves_initial_policy_and_question(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = tmp_path / "service-account.json"
-    credential.write_text("{}", encoding="utf-8")
-    credential.chmod(0o600)
     tool_message = AIMessage(
         content="",
         tool_calls=[
@@ -571,14 +566,14 @@ def test_fallback_tool_result_preserves_initial_policy_and_question(
             return tool_message
 
     monkeypatch.setattr(
-        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_file",
+        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_info",
         lambda *_args, **_kwargs: FakeCredentials(),
     )
     monkeypatch.setattr("app.strong_llm.vertex_provider.ChatGoogleGenerativeAI", FakeModel)
     request = _request(google=False)
     provider = LangChainVertexProvider(
         request,
-        VertexProviderSettings(service_account_path=credential),
+        VertexProviderSettings(service_account_info=_service_account_info()),
     )
 
     first = provider.invoke_fallback(request, [], tools_enabled=True)
@@ -600,9 +595,6 @@ def test_fallback_final_accepts_only_host_issued_read_citation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credential = tmp_path / "service-account.json"
-    credential.write_text("{}", encoding="utf-8")
-    credential.chmod(0o600)
     answer = json.dumps(
         {
             "basis": "EVIDENCE",
@@ -639,14 +631,14 @@ def test_fallback_final_accepts_only_host_issued_read_citation(
             return AIMessage(content=answer)
 
     monkeypatch.setattr(
-        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_file",
+        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_info",
         lambda *_args, **_kwargs: FakeCredentials(),
     )
     monkeypatch.setattr("app.strong_llm.vertex_provider.ChatGoogleGenerativeAI", FakeModel)
     request = _request(google=False)
     provider = LangChainVertexProvider(
         request,
-        VertexProviderSettings(service_account_path=credential),
+        VertexProviderSettings(service_account_info=_service_account_info()),
     )
     messages: list[BaseMessage] = [
         ToolMessage(

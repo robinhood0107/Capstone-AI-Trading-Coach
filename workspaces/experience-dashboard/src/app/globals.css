@@ -43,6 +43,11 @@
 
   --c-scrollbar: 223 227 233;
   --c-focus: 43 95 217;
+
+  --google-signin-background: #ffffff;
+  --google-signin-outline: #747775;
+  --google-signin-text: #1f1f1f;
+  --google-signin-hover: #f8f9fa;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -77,6 +82,11 @@
 
     --c-scrollbar: 58 65 78;
     --c-focus: 255 156 86;
+
+    --google-signin-background: #131314;
+    --google-signin-outline: #8e918f;
+    --google-signin-text: #e3e3e3;
+    --google-signin-hover: #1d1d1f;
   }
 }
 
@@ -111,6 +121,11 @@
 
   --c-scrollbar: 58 65 78;
   --c-focus: 255 156 86;
+
+  --google-signin-background: #131314;
+  --google-signin-outline: #8e918f;
+  --google-signin-text: #e3e3e3;
+  --google-signin-hover: #1d1d1f;
 }
 
 html,
@@ -173,6 +188,25 @@ select {
 }
 .tap:active {
   transform: scale(0.97);
+}
+
+/* Google's custom sign-in button tokens. The brand G itself stays on white in both themes. */
+.google-signin-button {
+  position: relative;
+  background-color: var(--google-signin-background);
+  border-color: var(--google-signin-outline);
+  font-family: 'Google Sans', 'Noto Sans KR', Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.google-signin-button:hover {
+  background-color: var(--google-signin-hover);
+}
+.provider-signin-button {
+  width: 100%;
+  min-height: 56px;
+  aspect-ratio: 4.5 / 1;
 }
 
 /*

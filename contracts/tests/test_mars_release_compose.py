@@ -68,6 +68,7 @@ class MarsReleaseComposeTest(unittest.TestCase):
                     "MARS_FULL_SECRETS_DIR": "/tmp/mars-full-release-compose-secrets",
                     "MARS_FULL_BROKERAGE_KEK_DIR": "/tmp/mars-full-release-compose-kek",
                     "MARS_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256": "a" * 64,
+                    "MARS_VERTEX_SERVICE_ACCOUNT_SHA256": "b" * 64,
                     "MARS_VERTEX_MODEL_ID": "test-model",
                     "MARS_VERTEX_PROJECT_ID": "test-project",
                 }

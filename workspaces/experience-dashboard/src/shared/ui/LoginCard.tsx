@@ -38,7 +38,7 @@ export function LoginCard() {
             href="/api/v1/auth/oidc/start/kakao"
             data-provider="kakao"
             aria-label="카카오로 로그인"
-            className="tap provider-signin-button flex items-center justify-center gap-[10px] rounded-xl bg-[#FEE500] px-3 text-[14px] font-medium leading-[18px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            className="tap provider-signin-button kakao-signin-button flex items-center justify-center gap-[10px] rounded-xl bg-[#FEE500] px-3 text-[14px] font-medium leading-[18px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             style={{ color: 'rgba(0, 0, 0, 0.85)' }}
           >
             <Image src="/auth/kakao-talk-symbol.svg" alt="" width={32} height={32} className="h-8 w-8 shrink-0" />

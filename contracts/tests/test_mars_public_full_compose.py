@@ -25,6 +25,7 @@ class PublicFullComposeTest(unittest.TestCase):
             "MARS_FULL_SECRETS_DIR": "/tmp/mars-full-contract-secrets",
             "MARS_FULL_BROKERAGE_KEK_DIR": "/tmp/mars-full-contract-kek",
             "MARS_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256": "a" * 64,
+            "MARS_VERTEX_SERVICE_ACCOUNT_SHA256": "b" * 64,
             "MARS_VERTEX_MODEL_ID": "test-model",
             "MARS_VERTEX_PROJECT_ID": "test-project",
         }
@@ -78,7 +79,12 @@ class PublicFullComposeTest(unittest.TestCase):
         self.assertEqual(services["migrate"]["environment"]["MARS_PUBLIC_SURFACE_MODE"], "FULL")
         self.assertEqual(
             {secret["source"] for secret in api["secrets"]},
-            {"mars_public_full_env", "return_inference_env", "rag_history_kek", "vertex_service_account", "actor_client_p12", "actor_tls_ca"},
+            {"mars_public_full_env", "rag_history_kek", "actor_client_p12", "actor_tls_ca"},
+        )
+        self.assertEqual(services["rag-runtime-seed"].get("secrets", []), [])
+        self.assertEqual(
+            services["rag-runtime-seed"]["environment"]["MARS_VERTEX_SERVICE_ACCOUNT_SHA256"],
+            "b" * 64,
         )
         for service in services.values():
             self.assertTrue(service["image"].startswith("pjjpjj111/mars-full:"))
@@ -95,9 +101,10 @@ class PublicFullComposeTest(unittest.TestCase):
             self.assertTrue(secret["file"].startswith("/tmp/mars-full-contract-secrets/"))
         secret_entrypoint = (ROOT / "deploy/p1/docker/secret-entrypoint.sh").read_text()
         self.assertIn(
-            'public-full) secret_files="/run/secrets/mars_public_full_env /run/secrets/return_inference_env"',
+            'public-full) secret_files=/run/secrets/mars_public_full_env',
             secret_entrypoint,
         )
+        self.assertIn("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", secret_entrypoint)
         self.assertIn("KIS_MOCK_ORDER_REFERENCE_KEY) return 0", secret_entrypoint)
         self.assertIn("P1_AUTOMATION_DATABASE_DSN|AUTOMATION_RUNTIME_SHARED_SECRET) return 0", secret_entrypoint)
         self.assertIn("RETURN_INFERENCE_GRPC_SHARED_SECRET) return 0", secret_entrypoint)

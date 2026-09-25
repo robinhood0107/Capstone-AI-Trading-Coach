@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import json
+import os
 from typing import Any
 from unittest.mock import Mock
 
@@ -41,18 +43,41 @@ def _request(evidence: list[dict[str, Any]] | None = None) -> bytes:
     )
 
 
-def _credential(tmp_path: Any, *, mode: int = 0o600, project: str = "capstone-demo") -> Any:
-    root = tmp_path / "rag-root"
-    (root / "secrets").mkdir(parents=True, exist_ok=True)
-    key = root / "secrets" / "pre-s5-vertex-service-account.json"
-    key.write_text(json.dumps({"type": "service_account", "project_id": project}), encoding="utf-8")
-    key.chmod(mode)
-    return root, key
+def _credential_info(project: str = "capstone-demo") -> dict[str, str]:
+    return {
+        "type": "service_account",
+        "project_id": project,
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "client_email": "vertex-test@capstone-demo.iam.gserviceaccount.com",
+        "private_key_id": "a" * 40,
+        "private_key": "test-private-key",
+    }
 
 
 def _settings(tmp_path: Any) -> VertexTransportSettings:
-    _, key = _credential(tmp_path)
-    return VertexTransportSettings(service_account_path=key, project_id="capstone-demo")
+    info = _credential_info()
+    return VertexTransportSettings(service_account_info=info, project_id=info["project_id"])
+
+
+def test_vertex_settings_read_root_env_base64(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    encoded = base64.b64encode(json.dumps(_credential_info()).encode()).decode()
+    monkeypatch.setenv("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", encoded)
+
+    settings = VertexTransportSettings.from_environment()
+
+    assert settings is not None
+    assert settings.project_id == "capstone-demo"
+    assert settings.service_account_info["type"] == "service_account"
+    assert os.environ["MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64"] == encoded
+
+
+def test_vertex_settings_reject_invalid_root_env_base64(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", "not-base64")
+
+    with pytest.raises(VertexTransportNotConfigured, match="VERTEX_CREDENTIAL_ENV_INVALID"):
+        VertexTransportSettings.from_environment()
 
 
 def test_grounding_sources_come_from_the_request_not_the_model() -> None:
@@ -176,17 +201,15 @@ def test_generate_url_pins_the_global_endpoint_the_contract_allows(tmp_path: Any
     assert url.endswith(":generateContent")
 
 
-def test_settings_come_from_the_one_credential_the_repo_already_uses(
-    tmp_path: Any, monkeypatch: Any
-) -> None:
-    monkeypatch.delenv("CAPSTONE_RAG_LOCAL_ROOT", raising=False)
+def test_settings_come_from_the_project_root_env_value(monkeypatch: Any) -> None:
+    monkeypatch.delenv("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     assert VertexTransportSettings.from_environment() is None
 
-    root, _ = _credential(tmp_path)
-    monkeypatch.setenv("CAPSTONE_RAG_LOCAL_ROOT", str(root))
+    info = _credential_info()
+    monkeypatch.setenv("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", base64.b64encode(json.dumps(info).encode()).decode())
     settings = VertexTransportSettings.from_environment()
 
     assert settings is not None
@@ -194,22 +217,19 @@ def test_settings_come_from_the_one_credential_the_repo_already_uses(
     assert settings.project_id == "capstone-demo"
 
 
-def test_api_key_fallback_is_refused_outright(tmp_path: Any, monkeypatch: Any) -> None:
-    root, _ = _credential(tmp_path)
-    monkeypatch.setenv("CAPSTONE_RAG_LOCAL_ROOT", str(root))
+def test_api_key_fallback_is_refused_outright(monkeypatch: Any) -> None:
+    info = _credential_info()
+    monkeypatch.setenv("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", base64.b64encode(json.dumps(info).encode()).decode())
     monkeypatch.setenv("GOOGLE_API_KEY", "should-never-be-used")
 
     with pytest.raises(VertexTransportNotConfigured):
         VertexTransportSettings.from_environment()
 
 
-def test_group_readable_credential_is_refused(tmp_path: Any, monkeypatch: Any) -> None:
-    root, _ = _credential(tmp_path, mode=0o640)
-    monkeypatch.setenv("CAPSTONE_RAG_LOCAL_ROOT", str(root))
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+def test_invalid_service_account_env_is_refused(monkeypatch: Any) -> None:
+    monkeypatch.setenv("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", "not-base64")
 
-    with pytest.raises(VertexTransportNotConfigured):
+    with pytest.raises(VertexTransportNotConfigured, match="VERTEX_CREDENTIAL_ENV_INVALID"):
         VertexTransportSettings.from_environment()
 
 

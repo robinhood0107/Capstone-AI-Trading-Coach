@@ -209,7 +209,9 @@ def test_settings_come_from_the_project_root_env_value(monkeypatch: Any) -> None
     assert VertexTransportSettings.from_environment() is None
 
     info = _credential_info()
-    monkeypatch.setenv("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", base64.b64encode(json.dumps(info).encode()).decode())
+    monkeypatch.setenv(
+        "MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", base64.b64encode(json.dumps(info).encode()).decode()
+    )
     settings = VertexTransportSettings.from_environment()
 
     assert settings is not None
@@ -219,7 +221,9 @@ def test_settings_come_from_the_project_root_env_value(monkeypatch: Any) -> None
 
 def test_api_key_fallback_is_refused_outright(monkeypatch: Any) -> None:
     info = _credential_info()
-    monkeypatch.setenv("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", base64.b64encode(json.dumps(info).encode()).decode())
+    monkeypatch.setenv(
+        "MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", base64.b64encode(json.dumps(info).encode()).decode()
+    )
     monkeypatch.setenv("GOOGLE_API_KEY", "should-never-be-used")
 
     with pytest.raises(VertexTransportNotConfigured):

@@ -79,7 +79,10 @@ class VertexProviderSettings:
             credential_bytes = base64.b64decode(encoded, validate=True)
         except (binascii.Error, ValueError) as error:
             raise ValueError("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_ENV_INVALID") from error
-        if base64.b64encode(credential_bytes).decode("ascii") != encoded or len(credential_bytes) > 48 * 1024:
+        if (
+            base64.b64encode(credential_bytes).decode("ascii") != encoded
+            or len(credential_bytes) > 48 * 1024
+        ):
             raise ValueError("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_ENV_INVALID")
         try:
             service_account_info = json.loads(credential_bytes)

@@ -150,9 +150,11 @@ owner author/execute는 정확히 9개 format의 v2 ticket을 one request에 묶
 consent·owner profile·token/context cap을 socket 전에 검증한다. KIS quote manifest는 tokenP 최대 1회와
 current-price 1회, retry 0만 허용한다. Window B manifest는 Voyage query, Vertex activation, KIS V3 child
 packet SHA를 결박하며 각 runtime은 parent approval SHA와 자기 child SHA가 다르면 outbound 전에
-`PRE_S5_WINDOW_B_CHILD_BINDING`으로 닫힌다. Vertex credential은
-`capstone-rag/secrets/pre-s5-vertex-service-account.json`의 현재 사용자 소유 0600 regular file/link count 1
-경계와 기존 service-account OAuth만 사용한다. API key·ADC fallback은 없다. 이 control plane은 v1
+`PRE_S5_WINDOW_B_CHILD_BINDING`으로 닫힌다. Vertex credential의 수동 설정 원본은 프로젝트 루트 `.env`
+하나이며 파일 권한은 `0600`이다. 서비스 계정 JSON은 `MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64` 한 줄로
+canonical Base64 인코딩해 저장하고 런타임에서 메모리로 파싱한다. 공개 이미지 조립기는 루트 `.env`에서
+제품별 allowlist 값만 추려 각 제품의 runtime env bundle을 만든다. 루트 `.env` 전체는 컨테이너에 전달하지 않는다.
+API key·ADC fallback은 없다. 이 control plane은 v1
 OpenAPI/proto 및 ask/history/status response bytes를 변경하지 않는다.
 
 현재 synthetic owner Voyage one-shot은 exact manifest 아래 물리 호출 1회로 9개 format을 stage한 뒤
@@ -1781,10 +1783,12 @@ ordered group 0)을 허용한다. 이 sentinel은 private retrieval을 의미하
 canonical text·chunk·embedding을 provider input에 포함하지 않는다. 실제 owner-private component는
 owner-bound consent와 non-empty generation을 계속 요구한다.
 
-Vertex candidate는 local root의 `secrets/pre-s5-vertex-service-account.json`만 읽는 service-account OAuth
-route다. token endpoint는 `https://oauth2.googleapis.com/token`, generation path는
+Vertex candidate는 프로젝트 루트 `.env`에서 전달된 `MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64`만 읽는
+service-account OAuth route다. 런타임 credential 파일 mount나 JSON 경로 fallback은 없다. 모델 설정은
+루트 `.env`의 `MARS_VERTEX_MODEL_ID`를 런타임 `VERTEX_MODEL_ID`로 전달한다. token endpoint는
+`https://oauth2.googleapis.com/token`, generation path는
 `https://aiplatform.googleapis.com/v1/projects/{projectId}/locations/global/publishers/google/models/{modelId}:generateContent`다.
-`modelId`는 `VERTEX_MODEL_ID`(기본 `gemini-3.5-flash`)로 선택하지만 project/model/path는 exact packet과
+`modelId`는 `MARS_VERTEX_MODEL_ID`(기본 `gemini-3.5-flash`)로 선택하지만 project/model/path는 exact packet과
 일치해야 한다. token과 generation은 각각 physical cap 1, retry 0이며 credential/JWT/token/raw response는
 packet·DB·log에 남기지 않는다. ambient ADC, API key와 Gemini Developer API는 허용하지 않는다.
 

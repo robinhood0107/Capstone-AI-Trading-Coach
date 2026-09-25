@@ -48,7 +48,7 @@ class PublicDemoComposeTest(unittest.TestCase):
         self.assertEqual(services["migrate"]["environment"]["MARS_PUBLIC_SURFACE_MODE"], "DEMO")
         self.assertEqual(
             {secret["source"] for secret in services["api"]["secrets"]},
-            {"mars_public_demo_env", "rag_history_kek", "vertex_service_account", "actor_client_p12", "actor_tls_ca"},
+            {"mars_public_demo_env", "rag_history_kek", "actor_client_p12", "actor_tls_ca"},
         )
         for service in services.values():
             self.assertTrue(service["image"].startswith("pjjpjj111/mars-demo:"))

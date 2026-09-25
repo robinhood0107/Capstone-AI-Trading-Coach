@@ -43,7 +43,8 @@ class P1AutomationV3LiveReadinessTest(unittest.TestCase):
         self.assertIn("KRX_OPENAPI_AUTH_KEY", allowed)
         self.assertNotIn("KIS_MOCK_ACCOUNT_NO", allowed)
         self.assertNotIn("KIS_MOCK_ORDER_REFERENCE_KEY", allowed)
-        self.assertIn("/tmp/strong-llm/vertex-service-account.json", entrypoint)
+        self.assertIn("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", control)
+        self.assertIn("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", entrypoint)
 
     def test_real_automation_evidence_provider_is_distinct_from_fixture_transport(
         self,

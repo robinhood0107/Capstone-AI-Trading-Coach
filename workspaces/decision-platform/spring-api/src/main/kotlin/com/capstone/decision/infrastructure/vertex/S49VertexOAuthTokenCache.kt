@@ -34,7 +34,10 @@ internal class S49LocalVertexCredentialProvider(
 ) : S49VertexCredentialProvider {
     private val delegate =
         PreS5VertexServiceAccountCredentialProvider(
-            RagV2VertexProperties(localRoot = properties.localRoot),
+            RagV2VertexProperties(
+                localRoot = properties.localRoot,
+                serviceAccountJsonB64 = properties.serviceAccountJsonB64,
+            ),
         )
 
     override fun acquire(): PreS5VertexServiceAccountCredential = delegate.acquire()

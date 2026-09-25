@@ -11,11 +11,11 @@ ABSTAIN 사유로 이어져 fail-closed가 유지된다.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
-import stat
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Final
 
 import httpx
@@ -41,8 +41,9 @@ class VertexTransportNotConfigured(RuntimeError):
     """Vertex 설정이나 credential이 없어 실 transport를 만들 수 없다."""
 
 
-# 이 레포의 Vertex 자격증명은 한 곳뿐이다. RAG와 S4.9가 쓰는 것과 같은 파일을 쓴다.
-_CREDENTIAL_RELATIVE: Final = ("secrets", "pre-s5-vertex-service-account.json")
+# All Vertex runtimes use the same Base64 service-account value from the project-root .env.
+_CREDENTIAL_ENV: Final = "MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64"
+_MAX_CREDENTIAL_BYTES: Final = 32 * 1024
 # 승인 계약이 locations/global만 허용한다. Spring 쪽 executor의 경로 정규식도 이것만 통과시킨다.
 _LOCATION: Final = "global"
 _GENERATE_ORIGIN: Final = "https://aiplatform.googleapis.com"
@@ -50,9 +51,9 @@ _GENERATE_ORIGIN: Final = "https://aiplatform.googleapis.com"
 
 @dataclass(frozen=True, slots=True)
 class VertexTransportSettings:
-    """RAG가 이미 쓰고 있는 자격증명 경계를 그대로 따른다. 새 env 이름을 만들지 않는다."""
+    """Keep provider credentials in memory after parsing the root-env service-account value."""
 
-    service_account_path: Path
+    service_account_info: dict[str, Any]
     project_id: str
 
     @classmethod
@@ -60,24 +61,26 @@ class VertexTransportSettings:
         # API key fallback은 이 레포 전체에서 금지다. 있으면 조용히 무시하지 않고 거부한다.
         if os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"):
             raise VertexTransportNotConfigured("VERTEX_API_KEY_FALLBACK_FORBIDDEN")
-        root = os.environ.get("CAPSTONE_RAG_LOCAL_ROOT", "").strip()
-        if not root:
+        encoded = os.environ.get(_CREDENTIAL_ENV, "")
+        if not encoded:
             return None
-        path = Path(root).joinpath(*_CREDENTIAL_RELATIVE)
-        if not path.is_absolute():
-            raise VertexTransportNotConfigured("VERTEX_CREDENTIAL_PATH_INVALID")
         try:
-            info = path.lstat()
-        except OSError:
-            return None
-        # owner-only 일반 파일만 받는다. symlink, hardlink, group/other 비트는 전부 거부한다.
-        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-            raise VertexTransportNotConfigured("VERTEX_CREDENTIAL_FILE_INVALID")
-        if stat.S_IMODE(info.st_mode) != 0o600:
-            raise VertexTransportNotConfigured("VERTEX_CREDENTIAL_MODE_INVALID")
-        if info.st_size > 32 * 1024:
-            raise VertexTransportNotConfigured("VERTEX_CREDENTIAL_SIZE_INVALID")
-        return cls(service_account_path=path, project_id=_project_id(path))
+            raw = base64.b64decode(encoded, validate=True)
+            if len(raw) > _MAX_CREDENTIAL_BYTES or base64.b64encode(raw).decode("ascii") != encoded:
+                raise ValueError("noncanonical service-account env")
+            document = json.loads(raw)
+        except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+            raise VertexTransportNotConfigured("VERTEX_CREDENTIAL_ENV_INVALID") from error
+        if (
+            not isinstance(document, dict)
+            or document.get("type") != "service_account"
+            or document.get("token_uri") != "https://oauth2.googleapis.com/token"
+        ):
+            raise VertexTransportNotConfigured("VERTEX_CREDENTIAL_ENV_INVALID")
+        project = document.get("project_id")
+        if not isinstance(project, str) or not project.replace("-", "").isalnum():
+            raise VertexTransportNotConfigured("VERTEX_CREDENTIAL_PROJECT_INVALID")
+        return cls(service_account_info=document, project_id=project)
 
     @property
     def generate_url(self) -> str:
@@ -85,21 +88,6 @@ class VertexTransportSettings:
             f"{_GENERATE_ORIGIN}/v1/projects/{self.project_id}"
             f"/locations/{_LOCATION}/publishers/google/models/{MODEL_ID}:generateContent"
         )
-
-
-def _project_id(path: Path) -> str:
-    """project는 credential JSON이 진실이다. env로 따로 받으면 둘이 어긋날 수 있다."""
-
-    try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise VertexTransportNotConfigured("VERTEX_CREDENTIAL_UNREADABLE") from error
-    if not isinstance(document, dict) or document.get("type") != "service_account":
-        raise VertexTransportNotConfigured("VERTEX_CREDENTIAL_TYPE_INVALID")
-    project = document.get("project_id")
-    if not isinstance(project, str) or not project.replace("-", "").isalnum():
-        raise VertexTransportNotConfigured("VERTEX_CREDENTIAL_PROJECT_INVALID")
-    return project
 
 
 def _grounding_sources_from_request(
@@ -237,11 +225,12 @@ class VertexAiVetoTransport:
 
         try:
             # google-auth는 이 생성자에 주석이 없어 mypy가 untyped call로 본다.
-            credentials = service_account.Credentials.from_service_account_file(  # type: ignore[no-untyped-call]
-                str(self.settings.service_account_path), scopes=[_SCOPE]
+            credentials = service_account.Credentials.from_service_account_info(  # type: ignore[no-untyped-call]
+                self.settings.service_account_info,
+                scopes=[_SCOPE],
             )
-        except (OSError, ValueError) as error:
-            raise VertexBudgetExhausted("VERTEX_CREDENTIAL_UNREADABLE") from error
+        except (TypeError, ValueError) as error:
+            raise VertexBudgetExhausted("VERTEX_CREDENTIAL_ENV_INVALID") from error
         try:
             credentials.refresh(Request())
         except Exception as error:

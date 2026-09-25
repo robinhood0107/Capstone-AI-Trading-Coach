@@ -16,6 +16,7 @@ data class RagV2VertexProperties(
     var enabled: Boolean = false,
     var modelId: String = "gemini-3.5-flash",
     var localRoot: String = "",
+    var serviceAccountJsonB64: String = "",
     var headCommit: String = "",
     var treeDigest: String = "",
     var ciDigest: String = "",
@@ -36,6 +37,7 @@ data class RagV2VertexProperties(
         require(root.isAbsolute && root.normalize() == root) {
             "Vertex activation root must be an absolute normalized local path."
         }
+        require(serviceAccountJsonB64.isNotBlank()) { "Vertex service-account env is missing." }
         require(MODEL_ID.matches(modelId)) { "Vertex publisher model ID is invalid." }
         require(HEAD_COMMIT.matches(headCommit)) { "Vertex activation HEAD binding is invalid." }
         require(SHA256.matches(treeDigest)) { "Vertex activation tree binding is invalid." }

@@ -3,27 +3,14 @@ package com.capstone.decision.infrastructure.vertex
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
 import tools.jackson.databind.json.JsonMapper
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.attribute.PosixFilePermissions
 import java.security.KeyPairGenerator
 import java.util.Base64
 
 class PreS5VertexServiceAccountCredentialProviderTest {
-    @TempDir
-    lateinit var root: Path
-
     @Test
-    fun `fixed 0600 service account JSON supplies project email and signing key without ambient credentials`() {
-        secureDirectory(root)
-        val secrets = Files.createDirectory(root.resolve("secrets"), PosixFilePermissions.asFileAttribute(DIRECTORY_PERMISSIONS))
-        val credential = secrets.resolve("pre-s5-vertex-service-account.json")
-        Files.writeString(credential, credentialJson())
-        Files.setPosixFilePermissions(credential, FILE_PERMISSIONS)
-
-        val loaded = PreS5VertexServiceAccountCredentialProvider(RagV2VertexProperties(localRoot = root.toString())).acquire()
+    fun `service account JSON from Base64 env supplies project email and signing key`() {
+        val loaded = PreS5VertexServiceAccountCredentialProvider(properties(credentialJson())).acquire()
 
         assertThat(loaded.projectId).isEqualTo("project-test-123")
         assertThat(loaded.clientEmail).isEqualTo("vertex-test@project-test-123.iam.gserviceaccount.com")
@@ -31,17 +18,18 @@ class PreS5VertexServiceAccountCredentialProviderTest {
     }
 
     @Test
-    fun `group readable or linked credential fails closed`() {
-        secureDirectory(root)
-        val secrets = Files.createDirectory(root.resolve("secrets"), PosixFilePermissions.asFileAttribute(DIRECTORY_PERMISSIONS))
-        val credential = secrets.resolve("pre-s5-vertex-service-account.json")
-        Files.writeString(credential, credentialJson())
-        Files.setPosixFilePermissions(credential, PosixFilePermissions.fromString("rw-r-----"))
-
-        assertThatThrownBy {
-            PreS5VertexServiceAccountCredentialProvider(RagV2VertexProperties(localRoot = root.toString())).acquire()
-        }.isInstanceOf(PreS5VertexServiceAccountCredentialException::class.java)
+    fun `malformed or noncanonical service account env fails closed`() {
+        for (encoded in listOf("not-base64", Base64.getEncoder().encodeToString("{}".toByteArray()) + " ")) {
+            assertThatThrownBy {
+                PreS5VertexServiceAccountCredentialProvider(RagV2VertexProperties(serviceAccountJsonB64 = encoded)).acquire()
+            }.isInstanceOf(PreS5VertexServiceAccountCredentialException::class.java)
+        }
     }
+
+    private fun properties(document: String) =
+        RagV2VertexProperties(
+            serviceAccountJsonB64 = Base64.getEncoder().encodeToString(document.toByteArray()),
+        )
 
     private fun credentialJson(): String {
         val keyPair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
@@ -64,14 +52,5 @@ class PreS5VertexServiceAccountCredentialProviderTest {
                 "universe_domain" to "googleapis.com",
             ),
         )
-    }
-
-    private fun secureDirectory(path: Path) {
-        Files.setPosixFilePermissions(path, DIRECTORY_PERMISSIONS)
-    }
-
-    private companion object {
-        val DIRECTORY_PERMISSIONS: Set<java.nio.file.attribute.PosixFilePermission> = PosixFilePermissions.fromString("rwx------")
-        val FILE_PERMISSIONS: Set<java.nio.file.attribute.PosixFilePermission> = PosixFilePermissions.fromString("rw-------")
     }
 }

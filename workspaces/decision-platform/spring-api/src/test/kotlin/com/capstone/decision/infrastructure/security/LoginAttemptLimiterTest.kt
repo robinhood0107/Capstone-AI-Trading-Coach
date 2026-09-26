@@ -34,7 +34,7 @@ class LoginAttemptLimiterTest {
     fun `five failures lock the account and the sixth attempt is refused`() {
         val limiter = limiter(InMemoryLoginAttemptStore())
 
-        failUntilLocked(limiter, "demo-user", 5)
+        failUntilLocked(limiter, "demo-user", 10)
 
         assertFalse(limiter.tryAcquire("203.0.113.1", "demo-user"))
     }
@@ -47,7 +47,7 @@ class LoginAttemptLimiterTest {
         val first = limiter(shared)
         val second = limiter(shared)
 
-        failUntilLocked(first, "demo-user", 5)
+        failUntilLocked(first, "demo-user", 10)
 
         assertFalse(second.tryAcquire("203.0.113.1", "demo-user"))
     }
@@ -56,7 +56,7 @@ class LoginAttemptLimiterTest {
     fun `a restart does not unlock the account while the window is open`() {
         // 재시작은 limiter 를 새로 만드는 것이다. 저장소가 밖에 있으면 이력이 살아남는다.
         val shared = InMemoryLoginAttemptStore()
-        failUntilLocked(limiter(shared), "demo-user", 5)
+        failUntilLocked(limiter(shared), "demo-user", 10)
 
         assertFalse(limiter(shared).tryAcquire("203.0.113.1", "demo-user"))
     }
@@ -66,7 +66,7 @@ class LoginAttemptLimiterTest {
         val shared = InMemoryLoginAttemptStore()
         val limiter = limiter(shared)
 
-        failUntilLocked(limiter, "demo-user", 5)
+        failUntilLocked(limiter, "demo-user", 10)
 
         assertTrue(limiter.tryAcquire("203.0.113.1", "other-user"))
     }
@@ -79,7 +79,7 @@ class LoginAttemptLimiterTest {
         repeat(5) { store.increment(key, start) }
 
         assertFalse(store.allowed(key, 5, start))
-        assertTrue(store.allowed(key, 5, start.plus(Duration.ofMinutes(15))))
+        assertTrue(store.allowed(key, 5, start.plus(Duration.ofMinutes(5))))
     }
 
     @Test

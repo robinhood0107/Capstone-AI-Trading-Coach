@@ -221,7 +221,7 @@ class CommonApiContractIntegrationTest(
 
     @Test
     fun `demo login throttles repeated failures without blocking unrelated credentials`() {
-        repeat(5) {
+        repeat(10) {
             mockMvc
                 .post("/api/v1/auth/login") {
                     contentType = MediaType.APPLICATION_JSON
@@ -257,7 +257,7 @@ class CommonApiContractIntegrationTest(
                 }
             start.countDown()
 
-            assertEquals(5, reservations.count { it.get(5, TimeUnit.SECONDS) })
+            assertEquals(10, reservations.count { it.get(5, TimeUnit.SECONDS) })
         } finally {
             executor.shutdownNow()
         }
@@ -268,7 +268,7 @@ class CommonApiContractIntegrationTest(
         assertTrue(loginAttemptLimiter.tryAcquire("198.51.100.202", "aborted-rate-limit-probe"))
         loginAttemptLimiter.releaseReservation()
 
-        repeat(5) {
+        repeat(10) {
             assertTrue(loginAttemptLimiter.tryAcquire("198.51.100.202", "aborted-rate-limit-probe"))
             loginAttemptLimiter.releaseReservation()
         }

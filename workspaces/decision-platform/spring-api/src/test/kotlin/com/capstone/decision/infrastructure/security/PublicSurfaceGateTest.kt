@@ -112,6 +112,8 @@ class PublicSurfaceGateTest {
                 "POST" to "/api/v2/rag/ask",
                 "GET" to detail,
                 "DELETE" to detail,
+                "GET" to "/api/v1/rag/sources",
+                "POST" to "/api/v1/rag/answers/rag_ans_0123456789abcdef0123456789abcdef/feedback",
             )
         for ((method, path) in allowed) {
             val fullChain = MockFilterChain()
@@ -129,7 +131,19 @@ class PublicSurfaceGateTest {
             )
             assertEquals(404, demoResponse.status)
         }
-        for ((method, path) in listOf("GET" to "/api/v2/rag/ask", "POST" to detail, "GET" to "$detail/extra")) {
+        val deniedRag =
+            listOf(
+                "GET" to "/api/v2/rag/ask",
+                "POST" to detail,
+                "GET" to "$detail/extra",
+                "POST" to "/api/v1/rag/sources",
+                "GET" to "/api/v1/rag/answers/rag_ans_0123456789abcdef/feedback",
+                "POST" to "/api/v1/rag/answers/invalid/feedback",
+                // 웹이 호출하지 않는 비동기 작업·적재 상태 조회는 FULL에서 닫아 둔다.
+                "GET" to "/api/v1/async-jobs",
+                "GET" to "/api/v1/artifacts/ingest-status",
+            )
+        for ((method, path) in deniedRag) {
             val response = MockHttpServletResponse()
             PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(
                 MockHttpServletRequest(method, path),
@@ -211,6 +225,7 @@ class PublicSurfaceGateTest {
     fun `full automation surface allows exact owner routes and demo or neighboring routes stay closed`() {
         val allowed =
             listOf(
+                "GET" to "/api/v1/automation/status",
                 "GET" to "/api/v2/automation/status",
                 "GET" to "/api/v2/automation/positions",
                 "GET" to "/api/v3/automation/status",

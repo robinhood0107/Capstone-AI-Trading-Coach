@@ -45,10 +45,14 @@ internal class PublicSurfaceGate(
                     "POST" to "/api/v2/rag/consents",
                     "POST" to "/api/v2/rag/vertex-preparations",
                     "POST" to "/api/v2/rag/ask",
+                    "GET" to "/api/v1/rag/sources",
                     -> true
                     else ->
-                        (request.method == "GET" || request.method == "DELETE") &&
-                            FULL_RAG_HISTORY_DETAIL.matches(request.requestURI)
+                        (
+                            (request.method == "GET" || request.method == "DELETE") &&
+                                FULL_RAG_HISTORY_DETAIL.matches(request.requestURI)
+                        ) ||
+                            (request.method == "POST" && FULL_RAG_ANSWER_FEEDBACK.matches(request.requestURI))
                 }
         val fullAllowed =
             mode == PublicSurfaceMode.FULL &&
@@ -79,6 +83,7 @@ internal class PublicSurfaceGate(
         val fullAutomationAllowed =
             mode == PublicSurfaceMode.FULL &&
                 when (request.method to request.requestURI) {
+                    "GET" to "/api/v1/automation/status",
                     "GET" to "/api/v2/automation/status",
                     "GET" to "/api/v2/automation/positions",
                     "GET" to "/api/v3/automation/status",
@@ -117,6 +122,7 @@ internal class PublicSurfaceGate(
 
     private companion object {
         val FULL_RAG_HISTORY_DETAIL = Regex("^/api/v2/rag/history/rag_[A-Za-z0-9_-]{12,96}$")
+        val FULL_RAG_ANSWER_FEEDBACK = Regex("^/api/v1/rag/answers/rag_[A-Za-z0-9_-]{12,96}/feedback$")
         private val READ = setOf("GET")
         private val READ_WRITE = setOf("GET", "POST", "PUT", "PATCH", "DELETE")
         val FULL_USER_FEATURES: List<Pair<Set<String>, String>> =

@@ -64,6 +64,7 @@ compose() {
   [[ -n $DOCKER_BIN ]] || die MISSING_COMMAND_docker
   enable_rag_by_default
   enable_strong_llm_by_default
+  select_social_login_profile
   export P1_OPERATOR_UID=${P1_OPERATOR_UID:-$(id -u)}
   export P1_KIS_MOCK_RUNTIME_DIR=${P1_KIS_MOCK_RUNTIME_DIR:-$STATE_DIR/mock}
   local args=("$DOCKER_BIN" compose --project-name "$PROJECT_NAME")
@@ -81,6 +82,13 @@ compose() {
   fi
   args+=(-f "$COMPOSE_FILE")
   if [[ $DEMO_STACK == true ]]; then args+=(-f "$DEMO_COMPOSE_FILE"); fi
+  # 서버 배포는 오버레이 하나만 더 얹는다(compose.server.yml). 레포 밖 파일은 받지 않는다.
+  if [[ -n ${P1_COMPOSE_OVERLAY:-} ]]; then
+    local overlay
+    overlay=$(realpath -e -- "$P1_COMPOSE_OVERLAY") || die compose_overlay_missing
+    [[ $overlay == "$SCRIPT_DIR"/compose.*.yml && ! -L $P1_COMPOSE_OVERLAY ]] || die compose_overlay_boundary
+    args+=(-f "$overlay")
+  fi
   "${args[@]}" "$@"
 }
 
@@ -133,6 +141,34 @@ demo_history() {
   printf '%s\n' "${output:-P1_DEMO_HISTORY=UNAVAILABLE}"
 }
 
+# Google·Kakao 로그인은 선택 구성이다. 루트 .env 의 제공자 값을 spring.env 로 옮기고,
+# 두 제공자와 공개 HTTPS 주소가 모두 있을 때만 social-login 프로필을 켠다.
+SOCIAL_LOGIN_KEYS='GOOGLE_OIDC_CLIENT_ID|GOOGLE_OIDC_CLIENT_SECRET|GOOGLE_OIDC_ADMIN_SUBJECT_SHA256|KAKAO_OAUTH_CLIENT_ID|KAKAO_OAUTH_CLIENT_SECRET'
+
+sync_social_login_state() {
+  local wanted='' current
+  if [[ -f $REPO_ROOT/.env && ! -L $REPO_ROOT/.env ]]; then
+    wanted=$(grep -E "^(${SOCIAL_LOGIN_KEYS})=." "$REPO_ROOT/.env" || true)
+  fi
+  current=$(grep -E "^(${SOCIAL_LOGIN_KEYS})=" "$SECRETS_DIR/spring.env" || true)
+  [[ $wanted != "$current" ]] || return 0
+  {
+    grep -Ev "^(${SOCIAL_LOGIN_KEYS})=" "$SECRETS_DIR/spring.env" || true
+    [[ -z $wanted ]] || printf '%s\n' "$wanted"
+  } | write_state secrets/spring.env 0640
+}
+
+select_social_login_profile() {
+  [[ -z ${SPRING_PROFILES_ACTIVE:-} && -f $REPO_ROOT/.env && -f $SECRETS_DIR/spring.env ]] || return 0
+  local origin key
+  origin=$(sed -n 's/^MARS_PUBLIC_ORIGIN=//p' "$REPO_ROOT/.env" | tail -1)
+  [[ $origin == https://* ]] || return 0
+  for key in GOOGLE_OIDC_CLIENT_ID GOOGLE_OIDC_CLIENT_SECRET KAKAO_OAUTH_CLIENT_ID KAKAO_OAUTH_CLIENT_SECRET; do
+    grep -qE "^${key}=." "$SECRETS_DIR/spring.env" || return 0
+  done
+  export SPRING_PROFILES_ACTIVE=social-login
+}
+
 write_state() {
   local relative=$1 mode=$2
   python3 "$RELEASE_GUARD" state-write "$STATE_DIR" "$relative" "$mode"
@@ -174,6 +210,7 @@ initialize_state() {
 }
 
 upgrade_state() {
+  sync_social_login_state
   # 5/7 container layout 이전에 생성된 state를 지우거나 key를 회전하지 않는다.
   # 새 brokerage channel에 필요한 서로 독립적인 값만 atomic하게 보강한다.
   if ! grep -q '^BROKERAGE_GRPC_SHARED_SECRET=' "$SECRETS_DIR/spring.env"; then

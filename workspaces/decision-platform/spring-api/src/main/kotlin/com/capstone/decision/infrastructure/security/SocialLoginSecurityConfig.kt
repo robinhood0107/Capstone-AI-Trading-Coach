@@ -107,9 +107,10 @@ class SocialLoginSecurityConfig {
                 session.invalidate()
                 response.sendRedirect("$origin/auth/complete?error=provider-link")
                 return@AuthenticationSuccessHandler
-            } catch (_: RuntimeException) {
+            } catch (error: RuntimeException) {
                 session.invalidate()
-                response.sendRedirect("$origin/auth/complete?error=provider")
+                val code = if (SignupCapacity.isReached(error)) "capacity" else "provider"
+                response.sendRedirect("$origin/auth/complete?error=$code")
                 return@AuthenticationSuccessHandler
             }
             response.sendRedirect("$origin/auth/complete")

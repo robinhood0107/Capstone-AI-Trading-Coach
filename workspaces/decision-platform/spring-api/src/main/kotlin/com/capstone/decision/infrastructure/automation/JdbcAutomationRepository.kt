@@ -1360,6 +1360,8 @@ class JdbcAutomationRepository(
             "P1L01" -> AutomationBlockedException("LEGACY_POSITION_PRESENT", error)
             "P1M01" -> AutomationBlockedException("MARKET_DATA_CATCHUP_REQUIRED", error)
             "P1A01" -> AutomationBlockedException("AI_PROVIDER_NOT_READY", error)
+            // V214 운영자 상한: 새 무장만 거부하고 이미 무장한 사용자는 그대로 둔다.
+            "53400" -> AutomationBlockedException("AUTOMATION_CAPACITY_REACHED", error)
             "23505" -> AutomationIdempotencyConflictException()
             "40001" -> AutomationConflictException(error)
             "P0002" -> AutomationNotFoundException()

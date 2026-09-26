@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.testcontainers.junit.jupiter.Container
@@ -52,6 +53,7 @@ class SocialLoginIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase
         assertNotEquals(sessions[0].handle, sessions[1].handle)
         assertEquals("USER", sessions[0].role)
         assertTrue(sessions[0].userId.startsWith("usr_"))
+        assertNotEquals("usr_demo_user", sessions[0].userId)
         assertTrue(sessions[0].username.startsWith("oidc_"))
 
         val other = issueSession("test-" + UUID.randomUUID())
@@ -169,6 +171,89 @@ class SocialLoginIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase
     }
 
     @Test
+    fun `password account owns its data and can explicitly link both providers`() {
+        val email = "link-${UUID.randomUUID()}@example.test"
+        val password = "a".repeat(20)
+        val passwordEncoder = BCryptPasswordEncoder(12)
+        val passwordHash = requireNotNull(passwordEncoder.encode(password))
+        val dummyHash = requireNotNull(passwordEncoder.encode("z".repeat(20)))
+        val created = registerPasswordAccount(email, passwordHash)
+        assertTrue(created.userId.startsWith("usr_"))
+        assertTrue(created.username.startsWith("member_"))
+
+        assertNull(authenticatePasswordAccount(email, "wrong-password", dummyHash))
+        val passwordLogin = authenticatePasswordAccount(email, password, dummyHash)
+        assertEquals(created.userId, passwordLogin?.userId)
+
+        val googleSubject = "link-google-" + UUID.randomUUID()
+        val kakaoSubject = (100000000000L + kotlin.math.abs(UUID.randomUUID().mostSignificantBits % 899999999999L)).toString()
+        val googleLogin = linkSocialIdentity(created.userId, GOOGLE_ISSUER, googleSubject)
+        val kakaoLogin = linkSocialIdentity(created.userId, KAKAO_ISSUER, kakaoSubject)
+        assertEquals(created.userId, googleLogin.userId)
+        assertEquals(created.userId, kakaoLogin.userId)
+
+        val methods = authenticationMethods(created.userId)
+        assertEquals(setOf("password", "google", "kakao"), methods.map { it.first }.toSet())
+        assertEquals(email, methods.single { it.first == "password" }.second)
+
+        val otherAccount =
+            registerPasswordAccount(
+                "other-${UUID.randomUUID()}@example.test",
+                requireNotNull(passwordEncoder.encode(password)),
+            )
+        val linkedElsewhere =
+            assertThrows(SQLException::class.java) {
+                linkSocialIdentity(otherAccount.userId, GOOGLE_ISSUER, googleSubject)
+            }
+        assertEquals("23505", linkedElsewhere.sqlState)
+
+        assertTrue(unlinkSocialIdentity(created.userId, GOOGLE_ISSUER))
+        assertTrue(unlinkSocialIdentity(created.userId, KAKAO_ISSUER))
+        assertEquals(setOf("password"), authenticationMethods(created.userId).map { it.first }.toSet())
+    }
+
+    @Test
+    fun `social only account cannot unlink its last login method`() {
+        val session = issueSession("unlink-last-" + UUID.randomUUID())
+        val rejected =
+            assertThrows(SQLException::class.java) {
+                unlinkSocialIdentity(session.userId, GOOGLE_ISSUER)
+            }
+        assertEquals("23514", rejected.sqlState)
+    }
+
+    @Test
+    fun `explicit provider link keeps demo user owner rows in place`() {
+        val principleId = "manual-link-principle-" + UUID.randomUUID()
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            connection
+                .prepareStatement(
+                    "insert into principles(principle_id,user_id,preset_id,title,mode,status,current_version) " +
+                        "values (?,'usr_demo_user','balanced','manual link preservation','GUIDE','ACTIVE',1)",
+                ).use { statement ->
+                    statement.setString(1, principleId)
+                    assertEquals(1, statement.executeUpdate())
+                }
+        }
+
+        val linked = linkSocialIdentity("usr_demo_user", GOOGLE_ISSUER, "manual-link-" + UUID.randomUUID())
+        assertEquals("usr_demo_user", linked.userId)
+        assertEquals("demo-user", linked.username)
+
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            connection.prepareStatement("select user_id from principles where principle_id = ?").use { statement ->
+                statement.setString(1, principleId)
+                statement.executeQuery().use { result ->
+                    assertTrue(result.next())
+                    assertEquals("usr_demo_user", result.getString(1))
+                    assertFalse(result.next())
+                }
+            }
+        }
+        assertTrue(authenticationMethods("usr_demo_user").any { it.first == "google" })
+    }
+
+    @Test
     fun `provider usage estimates record past the former limit without blocking users`() {
         val users = (1..2).map { issueSession("test-usage-user-" + UUID.randomUUID()) }
 
@@ -273,6 +358,104 @@ class SocialLoginIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase
                         username = result.getString("username"),
                         role = result.getString("actor_role"),
                     )
+                }
+            }
+        }
+
+    private fun registerPasswordAccount(
+        email: String,
+        passwordHash: String,
+    ): IssuedSession =
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_auth", "auth-test-secret-0001").use { connection ->
+            connection.prepareStatement("select * from register_password_login_actor_v1(?,?,?)").use { statement ->
+                statement.setString(1, email)
+                statement.setString(2, passwordHash)
+                statement.setInt(3, 3_600)
+                statement.executeQuery().use { result ->
+                    assertTrue(result.next())
+                    IssuedSession(
+                        handle = result.getString("session_handle"),
+                        userId = result.getString("actor_user_id"),
+                        username = result.getString("username"),
+                        role = result.getString("actor_role"),
+                    )
+                }
+            }
+        }
+
+    private fun authenticatePasswordAccount(
+        email: String,
+        password: String,
+        dummyHash: String,
+    ): IssuedSession? =
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_auth", "auth-test-secret-0001").use { connection ->
+            connection.prepareStatement("select * from authenticate_password_login_actor_v1(?,?,?,?)").use { statement ->
+                statement.setString(1, email)
+                statement.setString(2, password)
+                statement.setString(3, dummyHash)
+                statement.setInt(4, 3_600)
+                statement.executeQuery().use { result ->
+                    if (!result.next()) {
+                        null
+                    } else {
+                        IssuedSession(
+                            handle = result.getString("session_handle"),
+                            userId = result.getString("actor_user_id"),
+                            username = result.getString("username"),
+                            role = result.getString("actor_role"),
+                        )
+                    }
+                }
+            }
+        }
+
+    private fun linkSocialIdentity(
+        userId: String,
+        issuer: String,
+        subject: String,
+    ): IssuedSession =
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_auth", "auth-test-secret-0001").use { connection ->
+            connection.prepareStatement("select * from link_social_login_actor_v1(?,?,?,?,?)").use { statement ->
+                statement.setString(1, userId)
+                statement.setString(2, issuer)
+                statement.setString(3, subject)
+                statement.setBoolean(4, false)
+                statement.setInt(5, 3_600)
+                statement.executeQuery().use { result ->
+                    assertTrue(result.next())
+                    IssuedSession(
+                        handle = result.getString("session_handle"),
+                        userId = result.getString("actor_user_id"),
+                        username = result.getString("username"),
+                        role = result.getString("actor_role"),
+                    )
+                }
+            }
+        }
+
+    private fun authenticationMethods(userId: String): List<Pair<String, String?>> =
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_auth", "auth-test-secret-0001").use { connection ->
+            connection.prepareStatement("select provider, email_normalized from read_account_auth_methods_v1(?)").use { statement ->
+                statement.setString(1, userId)
+                statement.executeQuery().use { result ->
+                    buildList {
+                        while (result.next()) add(result.getString("provider") to result.getString("email_normalized"))
+                    }
+                }
+            }
+        }
+
+    private fun unlinkSocialIdentity(
+        userId: String,
+        issuer: String,
+    ): Boolean =
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_auth", "auth-test-secret-0001").use { connection ->
+            connection.prepareStatement("select unlink_social_login_actor_v1(?,?)").use { statement ->
+                statement.setString(1, userId)
+                statement.setString(2, issuer)
+                statement.executeQuery().use { result ->
+                    assertTrue(result.next())
+                    result.getBoolean(1)
                 }
             }
         }

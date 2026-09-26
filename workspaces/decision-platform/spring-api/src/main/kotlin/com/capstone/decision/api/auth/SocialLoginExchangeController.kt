@@ -11,14 +11,14 @@ import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
-import org.springframework.context.annotation.Profile
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
 /** Same-origin, one-use handoff after Spring Security has consumed a provider authorization code. */
 @RestController
-@Profile("mars-full")
+@ConditionalOnProperty(prefix = "mars.social-login", name = ["enabled"], havingValue = "true")
 @RequestMapping("/api/v1/auth/oidc")
 class SocialLoginExchangeController(
     private val handoff: SocialLoginHandoff,

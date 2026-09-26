@@ -9,7 +9,7 @@ export function middleware(request: NextRequest) {
     const allowedApi = request.method === 'POST' && path === '/api/v1/demo/agent/ask';
     return allowedPage || allowedApi ? NextResponse.next() : new NextResponse(null, { status: 404 });
   }
-  if (product === 'full' && (path === '/api/v1/auth/login' || path.startsWith('/api/v1/demo/'))) {
+  if (product === 'full' && path.startsWith('/api/v1/demo/')) {
     return new NextResponse(null, { status: 404 });
   }
   return NextResponse.next();

@@ -1,4 +1,7 @@
 spring:
+  profiles:
+    group:
+      mars-full: social-login
   ai:
     mcp:
       server:

@@ -29,12 +29,21 @@ function readLoginResponse(payload: unknown): LoginResponse {
 export default function SocialLoginComplete() {
   const router = useRouter();
   const started = useRef(false);
-  const [failed, setFailed] = useState(false);
+  const [failedMessage, setFailedMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (started.current) return;
     started.current = true;
     async function exchange() {
+      const errorCode = new URLSearchParams(window.location.search).get('error');
+      if (errorCode) {
+        setFailedMessage(
+          errorCode === 'provider-link'
+            ? '이 로그인 계정은 다른 MARS 계정에 이미 연결되어 있습니다. 기존 계정에서 연결을 확인해 주세요.'
+            : '로그인을 완료하지 못했습니다. 다시 시도해 주세요.',
+        );
+        return;
+      }
       try {
         const response = await fetch('/api/v1/auth/oidc/exchange', {
           method: 'POST',
@@ -46,9 +55,10 @@ export default function SocialLoginComplete() {
         if (!response.ok) throw new Error('OIDC exchange failed');
         const login = readLoginResponse(await response.json());
         session.set(login.accessToken, login.expiresAt, login.user);
-        router.replace('/');
+        const returnTo = new URLSearchParams(window.location.search).get('returnTo');
+        router.replace(returnTo === '/settings' ? '/settings' : '/');
       } catch {
-        setFailed(true);
+        setFailedMessage('로그인을 완료하지 못했습니다. 다시 시도해 주세요.');
       }
     }
     void exchange();
@@ -57,9 +67,9 @@ export default function SocialLoginComplete() {
   return (
     <main className="mx-auto flex min-h-screen max-w-[420px] flex-col items-center justify-center px-6 text-center">
         <h1 className="text-[22px] font-semibold text-ink">로그인 확인</h1>
-      {failed ? (
+      {failedMessage ? (
         <>
-          <p className="mt-3 text-[14px] leading-6 text-muted">로그인을 완료하지 못했습니다. 다시 시도해 주세요.</p>
+          <p className="mt-3 text-[14px] leading-6 text-muted">{failedMessage}</p>
           <Link href="/" className="mt-6 rounded-control bg-brand px-5 py-3 text-on-brand">처음으로</Link>
         </>
       ) : (

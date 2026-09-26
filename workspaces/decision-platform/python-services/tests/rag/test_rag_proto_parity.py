@@ -11,7 +11,7 @@ from app.generated import rag_pb2
 def _repo_root() -> Path:
     current = Path(__file__).resolve()
     while current.parent != current:
-        if (current / "AGENTS.md").is_file():
+        if (current / "CONTRIBUTING.md").is_file():
             return current
         current = current.parent
     raise AssertionError("repository root was not found")

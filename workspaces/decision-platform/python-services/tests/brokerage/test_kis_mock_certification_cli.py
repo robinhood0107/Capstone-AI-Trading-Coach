@@ -39,7 +39,7 @@ def test_request_requires_all_general_security_and_ci_checks(tmp_path: Path) -> 
         certification._read_request(request_path)
 
 
-def test_request_accepts_workflow_workflow_branch(tmp_path: Path) -> None:
+def test_request_accepts_feature_workflow_branch(tmp_path: Path) -> None:
     request_path = tmp_path / "request.json"
     expected = _request(request_path)
     expected["branch"] = "feature/p1-v3-preopen-e2e-hardening-20260901"
@@ -48,7 +48,7 @@ def test_request_accepts_workflow_workflow_branch(tmp_path: Path) -> None:
     assert certification._read_request(request_path) == expected
 
 
-def test_runtime_packet_accepts_workflow_workflow_branch(tmp_path: Path) -> None:
+def test_runtime_packet_accepts_feature_workflow_branch(tmp_path: Path) -> None:
     request_path = tmp_path / "request.json"
     request = _request(request_path)
     request["branch"] = "feature/p1-v3-preopen-e2e-hardening-20260901"

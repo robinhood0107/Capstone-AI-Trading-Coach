@@ -17,8 +17,8 @@
   문장은 지우지 않고 가리키던 경로만 뺀다. 문장을 지우면 무엇을 했는지가 함께 사라진다.
 - `docs/test/README.md` 의 상태 요약 표는 이관분 11개의 색인이었다. 표를 빼고 기록이 저장소
   밖에 있다는 사실과 다시 돌릴 수 있는 실행 절차만 남긴다.
-- `.github/workflows/repo-hygiene.yml` 의 `required_paths` 에서 `RULES.md` 를 뺀다. 그 파일은
-  앞서 삭제됐고 `AGENTS.md` 가 작업 규칙의 단일 진실 소스다.
+- `.github/workflows/repo-hygiene.yml` 의 `required_paths` 에서 삭제된 규칙 파일을 뺀다.
+  `CONTRIBUTING.md` 가 작업 규칙의 단일 진실 소스다.
 
 ## 권한과 비권한
 

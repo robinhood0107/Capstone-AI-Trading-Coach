@@ -96,7 +96,7 @@ v1 proto/OpenAPI/schema bytes는 바뀌지 않는다.
 ### RAG 권한
 
 RAG·news·analyst의 Decision, Signal, RiskDecision, order, decision hash 권한은 그대로 `0`이다.
-`AGENTS.md`의 marker block은 바뀌지 않는다.
+`CONTRIBUTING.md`의 marker block은 바뀌지 않는다.
 
 ## EN
 

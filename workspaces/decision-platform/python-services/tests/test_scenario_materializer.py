@@ -259,3 +259,85 @@ def test_strict_replay_charges_exact_round_trip_35_bps() -> None:
     notional = trade.quantity * trade.entry_price
 
     assert result.curve[-1][1] == pytest.approx(10_000_000 - notional * 0.0035)
+
+
+def test_every_owner_reads_its_own_inputs_and_local_keeps_demo_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FULL 은 owner 마다 materialize 하고, 인자 없는 LOCAL 호출은 demo-user 그대로다."""
+
+    from app.p1_owner import scenario_materializer as materializer
+
+    observed: list[tuple[str, tuple[object, ...]]] = []
+
+    class Cursor:
+        def __enter__(self) -> Cursor:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        def execute(self, sql: str, params: tuple[object, ...]) -> None:
+            observed.append((sql, params))
+            self._sql = sql
+
+        def fetchone(self) -> tuple[dict[str, object]]:
+            if "performance" in self._sql:
+                return ({"contractId": "owner-performance-report-input.v1"},)
+            return ({"contractId": "owner-scenario-materialization-input.v1"},)
+
+    class Connection:
+        def __enter__(self) -> Connection:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        def cursor(self) -> Cursor:
+            return Cursor()
+
+    monkeypatch.setattr(materializer.psycopg, "connect", lambda *args, **kwargs: Connection())
+    materializer._load_database_input("dsn")
+    materializer._load_performance_input("dsn")
+    for owner in ("usr_google_owner_0001", "usr_kakao_owner_0002"):
+        materializer._load_database_input("dsn", owner)
+        materializer._load_performance_input("dsn", owner)
+
+    assert [params for _, params in observed] == [
+        ("usr_demo_user",),
+        ("usr_demo_user",),
+        ("usr_google_owner_0001",),
+        ("usr_google_owner_0001",),
+        ("usr_kakao_owner_0002",),
+        ("usr_kakao_owner_0002",),
+    ]
+
+
+def test_source_generation_keeps_demo_identity_and_separates_other_owners() -> None:
+    """run_id 는 전역 키라 같은 원칙을 쓰는 두 owner 가 서로의 행을 덮으면 안 된다."""
+
+    from app.data._shared.canonical_json import canonical_json_bytes
+    from app.p1_owner import scenario_materializer as materializer
+
+    db_input = {"bars": [{"symbol": "005930"}], "rules": {"maxPositionPct": 10}}
+    start, end = date(2026, 8, 18), date(2026, 9, 3)
+    legacy = materializer._sha(
+        canonical_json_bytes(
+            {
+                "contractId": "owner-scenario-replay.v1",
+                "implementationId": materializer._IMPLEMENTATION_ID,
+                "bundleSha256": "b" * 64,
+                "bars": db_input["bars"],
+                "rules": db_input["rules"],
+                "costBps": 35,
+                "evaluationStart": start.isoformat(),
+                "evaluationEnd": end.isoformat(),
+            }
+        )
+    )
+    demo = materializer._source_generation("usr_demo_user", "b" * 64, db_input, start, end)
+    first = materializer._source_generation("usr_google_owner_0001", "b" * 64, db_input, start, end)
+    second = materializer._source_generation("usr_kakao_owner_0002", "b" * 64, db_input, start, end)
+
+    assert demo == legacy
+    assert len({demo, first, second}) == 3

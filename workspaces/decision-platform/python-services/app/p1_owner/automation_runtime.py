@@ -1183,7 +1183,7 @@ class AutomationRuntimeService:
         planner: XkrxBoundaryPlanner | None = None,
         daily_inference: DailyInferencePort | None = None,
         connectivity_check: Callable[[], bool] | None = None,
-        performance_report_refresh: Callable[[], object] | None = None,
+        performance_report_refresh: Callable[..., object] | None = None,
         portfolio_runner: Any | None = None,
     ) -> None:
         if not re.fullmatch(r"[A-Za-z0-9._~:-]{32,256}", shared_secret):
@@ -1372,10 +1372,43 @@ class AutomationRuntimeService:
         finally:
             daily_inference.close()
 
+    def _refresh_full_owner_reports(self, report_refresh: Callable[..., object]) -> None:
+        """FULL 은 무장한 owner 마다 백테스트·모델 평가·성과 리포트를 만든다.
+
+        대시보드는 호출자 본인의 행만 읽으므로 demo-user 한 명분만 만들면 나머지는 비어 있다.
+        한 owner 의 실패가 다른 owner 의 갱신이나 주문 경계를 막지 않는다.
+        """
+
+        try:
+            owners = self._repository.armed_owner_user_ids()
+        except (AutomationRuntimeError, psycopg.Error) as error:
+            print(
+                f"AUTOMATION_PERFORMANCE_REPORT=FAILED error={type(error).__name__}",
+                flush=True,
+            )
+            return
+        for owner_user_id in owners:
+            try:
+                report = report_refresh(owner_user_id)
+                status = (
+                    report.get("performanceReport", "UNKNOWN")
+                    if isinstance(report, dict)
+                    else "UNKNOWN"
+                )
+                print(f"AUTOMATION_PERFORMANCE_REPORT={status}", flush=True)
+            except (OSError, RuntimeError, ValueError) as error:
+                if _is_already_published(error):
+                    print("AUTOMATION_PERFORMANCE_REPORT=ALREADY_CURRENT", flush=True)
+                else:
+                    print(
+                        f"AUTOMATION_PERFORMANCE_REPORT=FAILED error={type(error).__name__}",
+                        flush=True,
+                    )
+
     def _serve_full_multiuser(
         self,
         daily_inference: DailyInferencePort,
-        report_refresh: Callable[[], object] | None,
+        report_refresh: Callable[..., object] | None,
     ) -> None:
         """Run each armed owner concurrently under one bounded shared scheduler."""
 
@@ -1413,19 +1446,7 @@ class AutomationRuntimeService:
                             flush=True,
                         )
                         if report_refresh is not None:
-                            try:
-                                report = report_refresh()
-                                status = (
-                                    report.get("performanceReport", "UNKNOWN")
-                                    if isinstance(report, dict)
-                                    else "UNKNOWN"
-                                )
-                                print(f"AUTOMATION_PERFORMANCE_REPORT={status}", flush=True)
-                            except (OSError, RuntimeError, ValueError) as error:
-                                print(
-                                    f"AUTOMATION_PERFORMANCE_REPORT=FAILED error={type(error).__name__}",
-                                    flush=True,
-                                )
+                            self._refresh_full_owner_reports(report_refresh)
                     except DailyInferenceError as error:
                         print(
                             f"AUTOMATION_DAILY_INFERENCE=UNAVAILABLE error={type(error).__name__}",
@@ -2411,16 +2432,19 @@ def _optional_text(value: object) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _performance_report_refresh_from_environment() -> Callable[[], object] | None:
+def _performance_report_refresh_from_environment() -> Callable[..., object] | None:
     bundle_root = os.environ.get("RETURN_INFERENCE_BUNDLE_ROOT", "").strip()
     dsn = os.environ.get("ASYNC_WORKER_DATABASE_DSN", "").strip()
     if not bundle_root or not dsn:
         return None
 
-    def refresh() -> object:
+    def refresh(owner_user_id: str | None = None) -> object:
         from app.p1_owner.scenario_materializer import materialize
 
-        return materialize(Path(bundle_root), dsn)
+        # LOCAL 은 인자 없이 불러 materializer 기본 owner(demo-user)를 그대로 쓴다.
+        if owner_user_id is None:
+            return materialize(Path(bundle_root), dsn)
+        return materialize(Path(bundle_root), dsn, owner_user_id)
 
     return refresh
 

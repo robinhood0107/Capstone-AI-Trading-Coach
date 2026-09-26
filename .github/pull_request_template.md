@@ -14,7 +14,7 @@ EN:
 
 ## 변경 범위
 
-- [ ] 이 PR의 범위가 `AGENTS.md`에 명시된 단계별 허용 변경과 일치한다.
+- [ ] 이 PR의 범위가 `CONTRIBUTING.md`에 명시된 단계별 허용 변경과 일치한다.
 - [ ] Stage 2 PR이라면 현재 세션(S1~S8)의 DoD와 구현 범위를 PR 설명에 명시했다.
 - [ ] S1.1 KIS 작업이라면 OAuth/cache/current price/daily itemchartprice/backfill 같은 시장데이터 읽기 범위만 포함하고 주문·계좌 변경 API를 구현하지 않았다.
 - [ ] KIS 호출이 있다면 2026-04-20 공식 유량(실전 18/s, 모의 1/s, tokenP deployment-global 1/s 보수 적용, live 기본 120ms/mock 1000ms 간격)을 검증하고, 모든 물리 재시도가 account/appkey scope의 공유 limiter를 우회하지 않는다.
@@ -25,7 +25,7 @@ EN:
 
 ## 문서와 규칙
 
-- [ ] `AGENTS.md` 규칙을 확인했다.
+- [ ] `CONTRIBUTING.md` 규칙을 확인했다.
 - [ ] Issue와 PR 제목/본문을 한국어와 영어로 모두 작성했다.
 - [ ] 관련 기준 문서(`최종_프로젝트_명세서`, `API_명세서`)를 확인했다.
 - [ ] README 또는 docs 링크가 깨지지 않는다.

@@ -59,6 +59,11 @@ internal class PublicSurfaceGate(
                     "GET" to "/api/v1/auth/oidc/callback/kakao",
                     "POST" to "/api/v1/auth/oidc/exchange",
                     "POST" to "/api/v1/auth/logout",
+                    "POST" to "/api/v1/auth/login",
+                    "POST" to "/api/v1/auth/signup",
+                    "PUT" to "/api/v1/auth/password",
+                    "GET" to "/api/v1/auth/options",
+                    "GET" to "/api/v1/auth/identities",
                     "GET" to "/api/v1/brokerage/mock/credential",
                     "PUT" to "/api/v1/brokerage/mock/credential",
                     "DELETE" to "/api/v1/brokerage/mock/credential",
@@ -68,7 +73,8 @@ internal class PublicSurfaceGate(
                     "POST" to "/api/v1/brokerage/mock/credential/certify",
                     -> true
                     else ->
-                        false
+                        (request.method == "POST" && FULL_PROVIDER_LINK_START.matches(request.requestURI)) ||
+                            (request.method == "DELETE" && FULL_PROVIDER_UNLINK.matches(request.requestURI))
                 }
         val fullAutomationAllowed =
             mode == PublicSurfaceMode.FULL &&
@@ -103,6 +109,8 @@ internal class PublicSurfaceGate(
 
     private companion object {
         val FULL_RAG_HISTORY_DETAIL = Regex("^/api/v2/rag/history/rag_[A-Za-z0-9_-]{12,96}$")
+        val FULL_PROVIDER_LINK_START = Regex("^/api/v1/auth/identities/(google|kakao)/link/start$")
+        val FULL_PROVIDER_UNLINK = Regex("^/api/v1/auth/identities/(google|kakao)$")
         val FULL_AUTOMATION_RUN_DETAIL = Regex("^/api/v3/automation/runs/auto_run_[A-Za-z0-9_-]{8,96}$")
     }
 }

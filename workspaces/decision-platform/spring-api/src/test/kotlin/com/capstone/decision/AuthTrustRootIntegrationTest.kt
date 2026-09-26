@@ -251,6 +251,50 @@ class AuthTrustRootIntegrationTest(
         postInvalidLogin("demo-user", overlongPassword, "req-overlong-bcrypt-password")
     }
 
+    @Test
+    fun `local signup creates a separate owner that logs in by email beside the fixed demo accounts`() {
+        mockMvc.get("/api/v1/auth/options").andExpect {
+            status { isOk() }
+            jsonPath("$.data.signup") { value(true) }
+            jsonPath("$.data.providers.length()") { value(0) }
+        }
+        val email = "local-${Instant.now().toEpochMilli()}@example.test"
+        val password = "local-signup-password-01"
+        val signupUserId =
+            objectMapper
+                .readTree(
+                    mockMvc
+                        .post("/api/v1/auth/signup") {
+                            contentType = MediaType.APPLICATION_JSON
+                            content = objectMapper.writeValueAsString(mapOf("email" to email, "password" to password))
+                        }.andExpect {
+                            status { isOk() }
+                            jsonPath("$.data.user.role") { value("USER") }
+                        }.andReturn()
+                        .response
+                        .contentAsString,
+                ).at("/data/user/userId")
+                .stringValue()
+        assertNotEquals("usr_demo_user", signupUserId)
+
+        val token = login(email, password, signupUserId, "USER")
+        mockMvc
+            .get("/api/v1/auth/identities") {
+                header("Authorization", "Bearer $token")
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.data.length()") { value(1) }
+                jsonPath("$.data[0].provider") { value("password") }
+                jsonPath("$.data[0].email") { value(email) }
+            }
+        mockMvc
+            .post("/api/v1/auth/identities/google/link/start") {
+                header("Authorization", "Bearer $token")
+            }.andExpect { status { isNotFound() } }
+        login("demo-user", userPassword(), "usr_demo_user", "USER")
+        postInvalidLogin(email, "wrong-password-value", "req-local-email-wrong-password")
+    }
+
     private fun login(
         username: String,
         password: String,

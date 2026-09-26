@@ -1,0 +1,41 @@
+# Google and Kakao authorization-code login. FULL always includes this profile;
+# the private stack adds it only when the operator configures both providers.
+# Provider credentials are server-only; the dashboard receives neither secret.
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_OIDC_CLIENT_ID}
+            client-secret: ${GOOGLE_OIDC_CLIENT_SECRET}
+            scope: openid,email
+            redirect-uri: ${GOOGLE_OIDC_REDIRECT_URI}
+          kakao:
+            client-id: ${KAKAO_OAUTH_CLIENT_ID}
+            client-secret: ${KAKAO_OAUTH_CLIENT_SECRET}
+            client-authentication-method: client_secret_post
+            authorization-grant-type: authorization_code
+            client-name: Kakao
+            redirect-uri: ${KAKAO_OAUTH_REDIRECT_URI}
+        provider:
+          google:
+            issuer-uri: https://accounts.google.com
+          kakao:
+            authorization-uri: https://kauth.kakao.com/oauth/authorize
+            token-uri: https://kauth.kakao.com/oauth/token
+            user-info-uri: https://kapi.kakao.com/v2/user/me
+            user-name-attribute: id
+server:
+  servlet:
+    session:
+      timeout: 2m
+      cookie:
+        secure: true
+        http-only: true
+        same-site: lax
+mars:
+  social-login:
+    enabled: true
+    public-origin: ${MARS_PUBLIC_ORIGIN}
+    google-admin-subject-sha256: ${GOOGLE_OIDC_ADMIN_SUBJECT_SHA256:}

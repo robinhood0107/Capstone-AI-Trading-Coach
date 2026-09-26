@@ -7,6 +7,7 @@ import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.api.common.RequestIds
 import com.capstone.decision.infrastructure.security.DemoAccountService
 import com.capstone.decision.infrastructure.security.DemoRole
+import com.capstone.decision.infrastructure.security.FullPasswordAccountService
 import com.capstone.decision.infrastructure.security.JwtService
 import com.capstone.decision.infrastructure.security.LoginAttemptLimiter
 import io.swagger.v3.oas.annotations.Operation
@@ -26,12 +27,13 @@ import org.springframework.web.bind.annotation.RestController
 import java.time.OffsetDateTime
 import io.swagger.v3.oas.annotations.responses.ApiResponse as OpenApiResponse
 
-// S0.3에서는 실제 회원가입 대신 명세의 demo 계정만 토큰 발급 경로로 노출한다.
+// 고정 demo 계정은 아이디로, 가입 계정은 이메일로 같은 경로에서 로그인한다.
 @RestController
 @Profile("!mars-full & !mars-demo")
 @RequestMapping("/api/v1/auth")
 class AuthController(
     private val demoAccountService: DemoAccountService,
+    private val passwordAccounts: FullPasswordAccountService,
     private val jwtService: JwtService,
     private val loginAttemptLimiter: LoginAttemptLimiter,
 ) {
@@ -71,10 +73,14 @@ class AuthController(
         // 실패한 로그인도 공통 envelope의 UNAUTHORIZED로 흘려 프론트 분기 규칙을 고정한다.
         val account =
             try {
-                demoAccountService.authenticate(
-                    username = request.username,
-                    password = request.password,
-                )
+                if ('@' in request.username) {
+                    passwordAccounts.authenticateEmail(request.username, request.password)
+                } else {
+                    demoAccountService.authenticate(
+                        username = request.username,
+                        password = request.password,
+                    )
+                }
             } catch (exception: RuntimeException) {
                 loginAttemptLimiter.releaseReservation()
                 throw exception
@@ -106,8 +112,8 @@ class AuthController(
 // 로그인 DTO에서 빈 값은 controller 진입부에서 400 envelope로 검증한다.
 data class LoginRequest(
     @field:NotBlank
-    @field:Size(max = 128)
-    @field:Schema(description = "고정 demo login name", maxLength = 128)
+    @field:Size(max = 254)
+    @field:Schema(description = "고정 demo 아이디 또는 가입 이메일", maxLength = 254)
     val username: String,
     @field:NotBlank
     @field:Size(max = 1024)

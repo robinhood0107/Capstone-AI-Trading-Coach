@@ -312,6 +312,8 @@ services:
       migrate: {condition: service_completed_successfully}
       seed-import: {condition: service_completed_successfully}
       team-b-seed-import: {condition: service_completed_successfully}
+      calendar-offline-seed: {condition: service_completed_successfully}
+      rag-source-register: {condition: service_completed_successfully}
       rag-runtime-seed: {condition: service_completed_successfully}
       actor-authority: {condition: service_healthy}
       redis: {condition: service_healthy}

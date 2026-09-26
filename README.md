@@ -189,6 +189,16 @@ Capstone-AI-Trading-Coach/
 
 평가 코드: [규칙 평가](workspaces/decision-platform/research/p1-return-profit-verification/rule_baseline_eval.py), [결합 평가](workspaces/decision-platform/research/p1-return-profit-verification/consensus_eval.py), [수익성 검증 보고서](workspaces/decision-platform/research/p1-return-profit-verification/reports/profit-verification.md)
 
+### 4.6. 한계 및 향후 과제
+
+| 항목 | 현재 상태 | 향후 과제 |
+|---|---|---|
+| 개인 서버 운영 | 서버용 오버레이와 데이터 이전 절차 준비 | 도메인·TLS 인증서를 갖춘 서버로 이전하고 상시 운영 |
+| Google·Kakao 로그인 | 연결·해제 기능과 보안 규칙 구현 | 공개 HTTPS 주소에서 제공자 콘솔 등록 후 실제 동의·콜백 검증 |
+| 계정 복구 | 이메일 인증·비밀번호 재설정 메일 미제공 | 메일 발송 경로를 갖춘 뒤 인증·재설정 추가 |
+| 수용 인원 | 다중 사용자 격리 구조 구현 | 동시 사용자 10·50·100명 부하 측정과 서버 사양 산정 |
+| 수익성 | LSTM은 기준선 미달, 규칙·RiskEngine 중심 운용 | 장기 모의운용 기록으로 전략별 성과 재평가 |
+
 ## 5. 설치 및 실행 방법
 
 ### 5.1. 설치절차 및 실행 방법

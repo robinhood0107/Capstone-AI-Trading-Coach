@@ -71,9 +71,9 @@ jobs:
           for check in "${required[@]}"; do
             printf '%s\n' "$checks" | awk -F '\t' -v name="$check" '$1==name && $2=="SUCCESS" {ok=1} END {exit !ok}'
           done
-          tag="v${version}-${MERGE_SHA:0:12}"
+          tag="v${version}"
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo MARS_RELEASE_COLLISION >&2
+            echo "MARS_RELEASE_VERSION_NOT_BUMPED: $tag already exists" >&2
             exit 1
           fi
           {

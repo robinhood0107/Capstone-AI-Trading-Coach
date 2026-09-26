@@ -36,6 +36,19 @@ class MarsDockerHubReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("jq -r '.version'", image_workflow)
         self.assertNotIn("RELEASE_VERSION=0.1.0-candidate", image_workflow)
 
+    def test_each_promotion_is_one_new_semver_release_with_a_changelog_entry(self) -> None:
+        gate = json.loads(GATE.read_text(encoding="utf-8"))
+        self.assertRegex(gate["version"], r"^[0-9]+\.[0-9]+\.[0-9]+$")
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        self.assertRegex(changelog, rf"(?m)^## \[{gate['version']}\] - \d{{4}}-\d{{2}}-\d{{2}}$")
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn('tag="v${version}"', workflow)
+        self.assertNotIn("MERGE_SHA:0:12", workflow)
+        self.assertIn("MARS_RELEASE_VERSION_NOT_BUMPED", workflow)
+        image_workflow = IMAGE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn('gh release view "v${version}"', image_workflow)
+        self.assertIn("CHANGELOG.md", image_workflow)
+
     def test_only_release_publishing_job_has_github_contents_write(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         build_job = workflow.split("  build-scan-push:\n", 1)[1].split("  publish-release:\n", 1)[0]

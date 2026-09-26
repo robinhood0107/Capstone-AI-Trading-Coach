@@ -161,6 +161,19 @@ class MarsPublicSecretAssembleTest(unittest.TestCase):
             (full_dir / "postgres.env").read_bytes(),
         )
 
+    def test_full_migration_env_drops_fixed_demo_password_bundles(self) -> None:
+        base = self.base("p1-base")
+        original = MODULE.env_file(base / "migration.env")
+        private_file(
+            base / "migration.env",
+            (base / "migration.env").read_bytes()
+            + b"DEMO_CREDENTIAL_SEPARATION_KEY=x\n"
+            b"DEMO_USER_CREDENTIAL_BUNDLE=y\nDEMO_ADMIN_CREDENTIAL_BUNDLE=z\n",
+        )
+        self.assertEqual(self.assemble("full", base).returncode, 0)
+        migrated = MODULE.env_file(self.release / "full-secrets/migration.env")
+        self.assertEqual(migrated, original)
+
     def test_refuses_to_reuse_one_base_bundle_or_overwrite_secrets(self) -> None:
         base = self.base("shared-base")
         self.assertEqual(self.assemble("demo", base).returncode, 0)

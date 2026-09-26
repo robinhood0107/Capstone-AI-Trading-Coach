@@ -259,6 +259,14 @@ def main() -> int:
         payloads["disclosure-collector.env"] = (
             "\n".join(disclosure_lines) + "\n"
         ).encode("utf-8")
+        # FULL migration rejects the fixed demo password bundles; the operator keeps the
+        # password already stored in the migrated database.
+        migration_lines = [
+            line
+            for line in payloads["migration.env"].decode("utf-8").splitlines()
+            if not line.startswith("DEMO_")
+        ]
+        payloads["migration.env"] = ("\n".join(migration_lines) + "\n").encode("utf-8")
     other_product = "full" if args.product == "demo" else "demo"
     other_postgres = release_dir / f"{other_product}-secrets/postgres.env"
     if (

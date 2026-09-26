@@ -73,6 +73,9 @@ _OPEN_BOUNDARY = time(9, 30)
 _DECISION_TIMES: tuple[time, ...] = (time(9, 45), time(11, 0), time(14, 0))
 _LAST_DECISION_TIME = _DECISION_TIMES[-1]
 _CANCEL_BOUNDARY = time(15, 20)
+# 동시 자동운용 스레드 수. 관리자 상한(1..1000)을 따르되 최소 기본값을 유지한다.
+_DEFAULT_AUTOMATION_WORKERS = 100
+_MAX_AUTOMATION_WORKERS = 1000
 
 #: 매수 제출 마감. **DB 와 같은 값이어야 한다** -
 #: `p1_begin_automation_portfolio_execution_v2`(V172) 가 이 시각 이후의 BUY 를 거부한다.
@@ -532,11 +535,26 @@ class PostgresAutomationRuntimeRepository:
             cursor.execute("select user_id from p1_list_armed_automation_users_v1()")
             rows = cursor.fetchall()
         owners = tuple(str(row[0]) for row in rows)
-        if len(owners) > 100 or len(owners) != len(set(owners)):
+        # 상한은 무장 시점(DB 트리거)에서만 적용한다. 목록이 길다고 모든 사용자를 멈추지 않는다.
+        if len(owners) > _MAX_AUTOMATION_WORKERS or len(owners) != len(set(owners)):
             raise AutomationRuntimeError("AUTOMATION_OWNER_ADMISSION_INVALID")
         for owner in owners:
             _require_user_id(owner)
         return owners
+
+    def automation_worker_count(self) -> int:
+        """Size the owner pool from the operator's active-automation cap (V214)."""
+
+        try:
+            with self._connect() as connection, connection.cursor() as cursor:
+                cursor.execute("select p1_read_automation_active_cap_v1()")
+                row = cursor.fetchone()
+        except Exception:
+            return _DEFAULT_AUTOMATION_WORKERS
+        cap = row[0] if row else None
+        if not isinstance(cap, int) or cap < 1:
+            return _DEFAULT_AUTOMATION_WORKERS
+        return min(max(cap, _DEFAULT_AUTOMATION_WORKERS), _MAX_AUTOMATION_WORKERS)
 
     def claim_for_owner(
         self,
@@ -1366,7 +1384,9 @@ class AutomationRuntimeService:
         completed_owners: set[str] = set()
         next_attempt: dict[str, datetime] = {}
         active: dict[Future[tuple[str, datetime | None]], str] = {}
-        with ThreadPoolExecutor(max_workers=100, thread_name_prefix="mars-owner") as executor:
+        workers = self._repository.automation_worker_count()
+        print(f"AUTOMATION_OWNER_WORKERS={workers}", flush=True)
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="mars-owner") as executor:
             while not self._stop.is_set():
                 now = datetime.now(UTC).astimezone(_KST)
                 if self._wait_until(self._planner.preparation_wakeup(now)):

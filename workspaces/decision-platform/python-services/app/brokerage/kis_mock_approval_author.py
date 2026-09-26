@@ -34,7 +34,11 @@ from app.brokerage.mock_order_reference_store import (
     EncryptedRedisApprovalOutcomeStore,
     KISMockApprovalOutcomeUnavailable,
 )
-from app.data.kis._credential_transport import _build_redis_client, _provider_scope
+from app.data.kis._credential_transport import (
+    _build_redis_client,
+    _provider_scope,
+    _token_limiter_key,
+)
 
 _REPOSITORY_ROOT = repository_root(__file__, 5)
 _MAX_PACKET_BYTES = 64 * 1024
@@ -137,7 +141,7 @@ def _capture_redis_baseline(observed_at: datetime) -> dict[str, object]:
         redis_client = _build_redis_client()
         scope = _provider_scope("mock")
         rest_pttl = redis_client.pttl(f"kis:rest:v3:{scope}")
-        token_pttl = redis_client.pttl("kis:tokenp:v3:deployment")
+        token_pttl = redis_client.pttl(_token_limiter_key(scope))
     except Exception:
         raise KISMockApprovalAuthorRejected("Redis baseline is unavailable") from None
     finally:

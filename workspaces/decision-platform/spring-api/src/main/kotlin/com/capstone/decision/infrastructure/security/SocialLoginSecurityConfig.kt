@@ -33,8 +33,10 @@ data class FullSocialLoginProperties(
         ) {
             "Full social login requires one Google operator subject hash."
         }
+        // 브라우저는 localhost 를 보안 출처로 취급하므로, 한 대에서 운영할 때만 http 를 허용한다.
+        val loopbackHttp = uri.scheme == "http" && uri.host in LOOPBACK_HOSTS
         require(
-            uri.scheme == "https" &&
+            (uri.scheme == "https" || loopbackHttp) &&
                 uri.host != null &&
                 uri.userInfo == null &&
                 uri.path.isNullOrEmpty() &&
@@ -54,6 +56,7 @@ data class FullSocialLoginProperties(
 
     private companion object {
         val ADMIN_SUBJECT_HASH = Regex("^[0-9a-f]{64}$")
+        val LOOPBACK_HOSTS = setOf("localhost", "127.0.0.1")
     }
 }
 

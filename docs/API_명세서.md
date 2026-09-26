@@ -254,7 +254,7 @@ S4.9 result는 downstream 모델·판단·주문·hash API 입력이 아니며 �
 
 #### 0.4.2 사용자 로그인과 화면 책임
 
-일반 Capstone 화면은 기존 `POST /api/v1/auth/login`으로 API JWT를 발급받는다. 외부 external client/assistant가
+일반 Capstone 화면은 기존 `POST /api/v1/auth/login`으로 API JWT를 발급받는다. 외부 LLM 클라이언트가
 Capstone MCP를 연결할 때만 별도의 OAuth authorize 화면에서 같은 Capstone 사용자가 로그인하고 scope를
 동의한다. 이는 Google/Vertex 로그인이나 서비스계정 인증 화면이 아니다. Vertex OAuth는 서버가 0600
 service-account JSON으로 수행하며 사용자 화면에 노출하지 않는다.
@@ -381,35 +381,42 @@ root OpenAPI 밖의 실행 표면. `contracts/openapi/openapi.json`의 exact-76�
 
 ### 2.4 인증/권한
 
-`POST /api/v1/auth/login`으로 데모 계정을 인증하고 access token을 발급받는다. 로그인만 `Authorization` 헤더의 예외이며, client interceptor가 cutover 전 stale Bearer를 첨부해도 해당 header는 무시하고 새 credential을 검증한다. 그 밖의 API는 명시된 역할과 Bearer 인증을 요구한다. 토큰은 데모 기준 만료 12시간을 사용하고 payload에는 opaque `sub`, `role`, `securityVersion`처럼 검증에 필요한 최소 claim만 담는다(민감정보 금지). JWT는 허용 algorithm을 고정하고 issuer/audience/subject/issued-at/expiry/securityVersion을 검증한다. Kill Switch 해제, ADMIN replay, Live 관련 고위험 행위는 token의 role만 믿지 않고 현재 DB의 account 활성 상태·role·securityVersion을 다시 확인하며, 권한 회수 뒤 발급된 이전 token은 거부한다.
+`LOCAL`은 기존 두 고정 demo 계정 로그인을 사용한다. `FULL`은 `demo-user` ID·비밀번호 로그인, 이메일·비밀번호 가입/로그인, Google·Kakao 로그인을 제공한다. `DEMO`에는 password/회원가입/OIDC 인증 경로를 제공하지 않는다. 가입 시 저장하는 프로필은 정규화한 이메일, 사용자 ID, BCrypt 해시와 생성 시각뿐이다. 모든 투자·계좌 데이터의 owner는 JWT subject와 같은 내부 `users.user_id`로 결정한다.
 
-로그인 attempt는 client address+username 기준 15분 5회, address 기준 15분 50회로 원자 예약하며, JSON binding 전 전역 request body 상한을 적용한다. limiter key는 private factory가 정규화한 address/username scope를 purpose/version HMAC으로 만든 digest만 사용하고 raw address·username을 저장·로그·metric label에 넣지 않는다. 주소는 socket remote address를 기준으로 하고, 배포 시 명시적으로 allowlist한 reverse proxy에서 온 경우에만 표준 forwarded header를 해석한다. 임의 `X-Forwarded-For`를 신뢰하지 않는다. demo account verifier는 평문 password가 아니라 attested bundle에서 검증된 adaptive salted password hash를 DB에 저장하고 검증 라이브러리로 비교한다. 인증 가능한 password 범위는 `1..72 UTF-8 bytes`이며 DTO의 1,024-character 상한은 JSON 입력 방어일 뿐 credential 경계가 아니다. 72 bytes를 넘는 입력은 per-process dummy로 치환해 선택 row와 peer row에 BCrypt strength-12 검증을 각각 한 번 수행한 뒤 동일한 401로 거부한다. 정상 범위의 모든 login도 두 row를 각각 한 번 검증하며, 하나의 평문이 두 row에 모두 일치하면 두 역할을 모두 fail-closed한다. 존재하지 않는 사용자와 잘못된 비밀번호도 정확히 두 번의 dummy/peer BCrypt 경로와 동일한 stable 오류를 사용한다. 현재 단일 JVM limiter는 replica 1에서만 보안 경계가 성립하며, 다중 replica 배포 전에는 공유 원자 저장소로 이전해야 한다.
+`FULL`의 password 로그인은 `POST /api/v1/auth/login`, 가입은 `POST /api/v1/auth/signup`이다. 기존 `demo-user` 로그인은 기존의 `usr_demo_user`를 반환하므로 그 ID를 owner로 저장한 원칙·운용·KIS_MOCK 데이터가 그대로 보인다. `demo-admin` 고정 비밀번호는 FULL password 경로에서 거부하고 ADMIN 권한은 Google subject allowlist로만 부여한다. 신규 가입은 별도 USER와 owner ID를 만들며 `demo-user` 데이터와 합치지 않는다.
 
-#### 2.4.0 MARS full Google·Kakao 로그인 계약
+Google·Kakao의 첫 로그인은 기존 social identity가 없으면 별도 USER를 만든다. 이메일 주소가 같아도 자동 병합하지 않는다. 기존 `demo-user` 데이터에 Google/Kakao를 연결하려면 먼저 `demo-user`로 로그인한 뒤 `GET /api/v1/auth/identities`와 설정 화면의 provider link flow를 사용한다. OAuth linking은 인증된 현재 user ID에 provider issuer+subject를 연결하며, 이미 다른 user에게 묶인 identity는 가져오지 못한다. 연결된 provider는 계정 설정에서 해제할 수 있지만, 마지막 로그인 수단은 해제할 수 없다.
 
-실서비스 화면에는 Google과 Kakao 버튼만 둔다. 두 버튼은 로그인과 첫 가입을 함께 처리한다.
-별도 가입 폼·비밀번호 입력·비밀번호 재설정은 없다. 첫 인증 성공 때 일반 USER를 원자 생성하고,
-다음부터 같은 제공자의 계정으로 로그인한다.
+로그인 attempt는 기존 `LoginAttemptLimiter`의 사용자별 실패 예약과 배포별 제한을 거친다. identifier는 purpose/version HMAC 범위로 변환하며 raw email·아이디·비밀번호를 로그나 metric label로 저장하지 않는다. demo 비밀번호 verifier는 고정된 두 행의 peer BCrypt 검증을 유지한다. 가입 비밀번호는 15~64자, 최대 72 UTF-8 bytes이며 BCrypt strength 12로 저장한다. password login은 사용자 조회가 실패해도 임시 dummy hash에 BCrypt를 적용하고 잘못된 identifier/password에 동일한 401을 반환한다. DB password table은 RLS를 강제하고 `decision_auth`에 직접 table 권한을 주지 않으며 SECURITY DEFINER 함수로만 읽고 쓴다. PostgreSQL은 parameter logging을 차단한다.
+
+비밀번호는 URL·응답·audit에 기록하지 않고 비밀번호 재설정 이메일도 보내지 않는다. 이메일 주소 확인 절차도 없으므로 이를 Google/Kakao identity 자동 연결 기준으로 쓰지 않는다. 인증 토큰은 `sub`, `role`, `securityVersion` 등 최소 claim만 담고 브라우저 메모리에 유지한다. JWT는 서명·issuer/audience/expiry를 확인하며 매 요청마다 DB의 활성 상태·role·securityVersion을 재검증한다. 고위험 행위는 token role만으로 허용하지 않는다.
+
+#### 2.4.0 MARS FULL 로그인·회원가입·제공자 연결 계약
+
+로그인 화면은 이메일/아이디·비밀번호 로그인, 이메일·비밀번호 회원가입, Google 및 Kakao OAuth를 제공한다. 회원가입은 최소 사용자 row와 password credential만 생성한다. 사용자는 로그인 후 설정에서 Google/Kakao identity를 각각 연결하거나 해제할 수 있다. 별도 email verification과 password reset 메일은 구현하지 않았다.
 
 Google은 `GET /api/v1/auth/oidc/start/google` →
 `GET /api/v1/auth/oidc/callback/google`에서 Spring Security가 서명·issuer·audience·만료·
 state/nonce를 확인한다. Kakao는 `GET /api/v1/auth/oidc/start/kakao` →
 `GET /api/v1/auth/oidc/callback/kakao`의 authorization-code 흐름을 사용하고, 서버가 Kakao
-사용자 정보 API에서 받은 회원번호를 subject로 사용한다. 두 identity는 검증된 issuer+subject로
-유일하게 식별한다. 이메일은 identity key나 자동 계정 연결 기준으로 사용하지 않으므로 같은
-이메일 주소라도 Google과 Kakao는 별개의 계정이다. Kakao 로그인은 ADMIN 권한을 부여하지 않는다.
-ADMIN은 운영자가 지정한 정확한 Google subject hash에만 부여하고, 역할 변경 시 기존 세션을 폐기한다.
+사용자 정보 API에서 받은 회원번호를 subject로 사용한다. 모든 identity는 검증된 issuer+subject로
+식별한다. 한 사용자 계정은 Google과 Kakao를 각각 하나씩 연결할 수 있고, provider identity는
+동시에 여러 사용자에게 붙지 않는다. 이메일은 계정 key나 자동 연결 기준으로 사용하지 않는다.
+Kakao identity는 ADMIN 권한을 부여하지 않는다. ADMIN은 운영자가 지정한 정확한 Google subject
+hash로만 부여하고, Google role 변경 시 기존 세션을 폐기한다.
 
 callback은 Bearer token을 URL에 넣지 않고 같은 origin의 `/auth/complete`로 이동한다.
-`POST /api/v1/auth/oidc/exchange`는 2분 이내의 HttpOnly/Secure/SameSite=Lax 세션과
-정확한 `Origin`을 요구하고 한 번만 `LoginResponse`를 반환한다. 브라우저는 JWT를 메모리에만
-보관한다. `POST /api/v1/auth/logout`은 현재 Bearer의 DB 세션을 폐기하고 204를 반환한다.
+로그인 후 exchange는 2분 이내의 HttpOnly/Secure/SameSite=Lax 세션과 정확한 `Origin`을 요구하고
+한 번만 `LoginResponse`를 반환한다. 연동 시작은 Bearer 인증 뒤 5분 HttpOnly session intent를
+만들며 provider의 state/nonce를 사용한다. callback 뒤 owner ID와 새로운 bearer session을 돌려준다.
+브라우저는 JWT를 메모리에만 보관한다. `POST /api/v1/auth/logout`은 현재 Bearer의 DB 세션을
+폐기하고 204를 반환한다. 전체 path와 wire schema는 [MARS 인증 OpenAPI](../contracts/openapi/mars-full-auth.v1.openapi.json)에 둔다.
 인증 흐름과 full 전용 schema는 [MARS 인증 OpenAPI](../contracts/openapi/mars-full-auth.v1.openapi.json)에 둔다.
-현재 개인용 password bootstrap은 공개 full/demo 프로필에서 제외한다. 공개 모드는
-고정 데모 계정의 password bundle 주입을 거부하고 password 로그인 API를 제공하지 않는다.
-기존 V7 migration의 두 고정 행은 새 DB 구성 시 메모리에서 만든 임시 암호 증거로만
-생성하며, [전환 경계](../contracts/changes/20260924-mars-public-password-runtime.md)에 따라
-내부 호출처 교체 후 제거한다. 공개 서비스의 KIS/Agent/주문은 별도 게이트가 완성되기 전까지 닫혀 있다.
+공개 FULL password login은 기존 `demo-user` fixed account와 별도 `password_login_identities` table을
+사용한다. 새 가입의 이메일·해시는 `users.password_hash`의 legacy migration credential과 분리한다.
+기존 `demo-user`로 로그인한 뒤 provider를 직접 연결하면 `usr_demo_user` 소유 데이터는 이동하지 않는다.
+public DEMO는 같은 endpoint를 노출하지 않는다. 공개 서비스의 KIS/Agent/주문은 별도 게이트가
+완성되기 전까지 닫혀 있다.
 
 #### 2.4.1 S2.1 actor trust-root 선행 계약
 

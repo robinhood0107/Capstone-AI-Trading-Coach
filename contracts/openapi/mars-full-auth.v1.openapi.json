@@ -2,10 +2,102 @@
   "openapi": "3.1.1",
   "info": {
     "title": "MARS full product authentication",
-    "version": "0.2.0-draft"
+    "version": "0.3.0-draft"
   },
   "servers": [{"url": "https://mars.royaljellynas.org"}],
   "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "loginFullPasswordAccount",
+        "summary": "Login with demo-user username or a password account email",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PasswordLoginRequest"}}}},
+        "responses": {
+          "200": {"description": "DB-backed account session", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoginEnvelope"}}}},
+          "401": {"description": "Invalid identifier or password"},
+          "429": {"description": "Login attempt limit"}
+        },
+        "security": []
+      }
+    },
+    "/api/v1/auth/options": {
+      "get": {
+        "operationId": "readAuthenticationOptions",
+        "summary": "Signup availability and the provider logins this server enables",
+        "responses": {
+          "200": {"description": "Enabled authentication options", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthenticationOptionsEnvelope"}}}}
+        },
+        "security": []
+      }
+    },
+    "/api/v1/auth/signup": {
+      "post": {
+        "operationId": "registerFullPasswordAccount",
+        "summary": "Create an email and password account",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PasswordSignupRequest"}}}},
+        "responses": {
+          "200": {"description": "Created USER account and DB-backed session", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoginEnvelope"}}}},
+          "400": {"description": "Invalid email or password"},
+          "409": {"description": "Email already has a password account"},
+          "429": {"description": "Signup attempt limit"}
+        },
+        "security": []
+      }
+    },
+    "/api/v1/auth/password": {
+      "put": {
+        "operationId": "addPasswordLoginToAccount",
+        "summary": "Add email and password login to the authenticated account",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PasswordSignupRequest"}}}},
+        "responses": {
+          "200": {"description": "Password method added; current account session refreshed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoginEnvelope"}}}},
+          "401": {"description": "Bearer session invalid"},
+          "409": {"description": "Account or email already has a password method"}
+        },
+        "security": [{"bearerAuth": []}]
+      }
+    },
+    "/api/v1/auth/identities": {
+      "get": {
+        "operationId": "listAccountAuthenticationMethods",
+        "summary": "List login methods for the authenticated account without provider subject values",
+        "responses": {
+          "200": {"description": "Password and social login methods", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthenticationMethodsEnvelope"}}}},
+          "401": {"description": "Bearer session invalid"}
+        },
+        "security": [{"bearerAuth": []}]
+      }
+    },
+    "/api/v1/auth/identities/{provider}/link/start": {
+      "post": {
+        "operationId": "startAccountProviderLink",
+        "summary": "Start a provider link for the authenticated account",
+        "parameters": [
+          {"name": "provider", "in": "path", "required": true, "schema": {"type": "string", "enum": ["google", "kakao"]}},
+          {"name": "Origin", "in": "header", "required": true, "schema": {"type": "string", "const": "https://mars.royaljellynas.org"}}
+        ],
+        "responses": {
+          "200": {"description": "Short-lived same-origin authorization path", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LinkStartEnvelope"}}}},
+          "401": {"description": "Bearer session invalid"},
+          "403": {"description": "Request origin rejected"},
+          "409": {"description": "Another link flow is already pending"}
+        },
+        "security": [{"bearerAuth": []}]
+      }
+    },
+    "/api/v1/auth/identities/{provider}": {
+      "delete": {
+        "operationId": "unlinkAccountProvider",
+        "summary": "Unlink a provider from the authenticated account when another login method remains",
+        "parameters": [{"name": "provider", "in": "path", "required": true, "schema": {"type": "string", "enum": ["google", "kakao"]}}],
+        "responses": {
+          "200": {"description": "Provider unlinked", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProviderUnlinkEnvelope"}}}},
+          "401": {"description": "Bearer session invalid"},
+          "404": {"description": "Provider was not linked"},
+          "409": {"description": "Cannot remove the last login method"}
+        },
+        "security": [{"bearerAuth": []}]
+      }
+    },
     "/api/v1/auth/oidc/start/google": {
       "get": {
         "operationId": "startGoogleLogin",
@@ -119,8 +211,95 @@
         "required": ["userId", "username", "role"],
         "properties": {
           "userId": {"type": "string", "pattern": "^usr_[A-Za-z0-9_-]{4,96}$"},
-          "username": {"type": "string", "pattern": "^oidc_[0-9a-f]{32}$"},
+          "username": {"type": "string", "pattern": "^(demo-user|member_[0-9a-f]{32}|oidc_[0-9a-f]{32})$"},
           "role": {"type": "string", "enum": ["USER", "ADMIN"]}
+        }
+      },
+      "PasswordLoginRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["identifier", "password"],
+        "properties": {
+          "identifier": {"type": "string", "minLength": 1, "maxLength": 254},
+          "password": {"type": "string", "minLength": 1, "maxLength": 1024, "writeOnly": true, "format": "password"}
+        }
+      },
+      "PasswordSignupRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["email", "password"],
+        "properties": {
+          "email": {"type": "string", "format": "email", "maxLength": 254},
+          "password": {"type": "string", "minLength": 15, "maxLength": 64, "writeOnly": true, "format": "password"}
+        }
+      },
+      "AuthenticationMethod": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["provider", "email", "linkedAt"],
+        "properties": {
+          "provider": {"type": "string", "enum": ["password", "demo-password", "google", "kakao"]},
+          "email": {"type": ["string", "null"], "format": "email"},
+          "linkedAt": {"type": "string", "format": "date-time"}
+        }
+      },
+      "AuthenticationMethodsEnvelope": {
+        "type": "object",
+        "required": ["success", "requestId", "data", "warnings", "error"],
+        "properties": {
+          "success": {"type": "boolean", "const": true},
+          "requestId": {"type": "string"},
+          "data": {"type": "array", "items": {"$ref": "#/components/schemas/AuthenticationMethod"}},
+          "warnings": {"type": "array", "items": {"type": "object"}},
+          "error": {"type": "null"}
+        }
+      },
+      "AuthenticationOptionsEnvelope": {
+        "type": "object",
+        "required": ["success", "requestId", "data", "warnings", "error"],
+        "properties": {
+          "success": {"type": "boolean", "const": true},
+          "requestId": {"type": "string"},
+          "data": {
+            "type": "object",
+            "required": ["signup", "providers"],
+            "properties": {
+              "signup": {"type": "boolean"},
+              "providers": {"type": "array", "uniqueItems": true, "items": {"type": "string", "enum": ["google", "kakao"]}}
+            }
+          },
+          "warnings": {"type": "array", "items": {"type": "object"}},
+          "error": {"type": "null"}
+        }
+      },
+      "LinkStartEnvelope": {
+        "type": "object",
+        "required": ["success", "requestId", "data", "warnings", "error"],
+        "properties": {
+          "success": {"type": "boolean", "const": true},
+          "requestId": {"type": "string"},
+          "data": {
+            "type": "object",
+            "required": ["authorizationPath"],
+            "properties": {"authorizationPath": {"type": "string", "pattern": "^/api/v1/auth/oidc/start/(google|kakao)$"}}
+          },
+          "warnings": {"type": "array", "items": {"type": "object"}},
+          "error": {"type": "null"}
+        }
+      },
+      "ProviderUnlinkEnvelope": {
+        "type": "object",
+        "required": ["success", "requestId", "data", "warnings", "error"],
+        "properties": {
+          "success": {"type": "boolean", "const": true},
+          "requestId": {"type": "string"},
+          "data": {
+            "type": "object",
+            "required": ["provider", "linked"],
+            "properties": {"provider": {"type": "string", "enum": ["google", "kakao"]}, "linked": {"type": "boolean", "const": false}}
+          },
+          "warnings": {"type": "array", "items": {"type": "object"}},
+          "error": {"type": "null"}
         }
       }
     }

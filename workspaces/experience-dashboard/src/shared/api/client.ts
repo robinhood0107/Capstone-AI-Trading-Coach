@@ -104,6 +104,8 @@ export interface RequestOptions {
   idempotencyKey?: string;
   /** 로그인처럼 토큰 없이 호출하는 경우 true. */
   anonymous?: boolean;
+  /** OAuth link intent is kept in a short-lived same-origin HttpOnly session. */
+  credentials?: RequestCredentials;
   signal?: AbortSignal;
 }
 
@@ -147,7 +149,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
       headers,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
       cache: 'no-store',
-      credentials: 'omit',
+      credentials: options.credentials ?? 'omit',
       signal: options.signal ?? AbortSignal.timeout(timeoutFor(path)),
     });
   } catch (cause) {

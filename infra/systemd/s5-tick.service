@@ -1,6 +1,6 @@
 [Unit]
 Description=S5 autonomous tick (RETIRED research-only compatibility)
-Documentation=file://%h/projects/Capstone-AI-Trading-Coach/AGENTS.md
+Documentation=file://%h/projects/Capstone-AI-Trading-Coach/CONTRIBUTING.md
 # Historical unit only. Do not install or enable after the research-only transition.
 After=network-online.target
 

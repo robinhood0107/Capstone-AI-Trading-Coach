@@ -6,7 +6,7 @@ const passwordFile = process.env.P1_USER_PASSWORD_FILE;
 /**
  * KIS 유량 제한으로 503 이 정상인 경로.
  *
- * 모의 계좌 REST 는 **1건/초**다(AGENTS.md 'KIS 호출 유량 불변식'). 스펙 여러 개가 잇달아
+ * 모의 계좌 REST 는 **1건/초**다(CONTRIBUTING.md 'KIS 호출 유량 불변식'). 스펙 여러 개가 잇달아
  * `/` 를 열면 초당 하나뿐인 슬롯을 나눠 쓰게 되어 두 번째부터 503 이 온다. limiter 는
  * 설계상 fail-close 이고 유량 초과는 자동 재시도하지 않는다.
  *

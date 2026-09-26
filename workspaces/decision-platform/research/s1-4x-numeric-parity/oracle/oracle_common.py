@@ -241,13 +241,13 @@ def resolve_within(root: Path, relative: str, *, must_exist: bool = False) -> Pa
 
 
 def find_repo_root(start: Path | None = None) -> Path:
-    """cwd와 무관하게 `.git`과 `AGENTS.md`를 가진 repository root를 찾는다."""
+    """cwd와 무관하게 `.git`과 `CONTRIBUTING.md`를 가진 repository root를 찾는다."""
 
     current = (start or Path(__file__)).resolve()
     if current.is_file():
         current = current.parent
     for candidate in (current, *current.parents):
-        if (candidate / ".git").exists() and (candidate / "AGENTS.md").is_file():
+        if (candidate / ".git").exists() and (candidate / "CONTRIBUTING.md").is_file():
             return candidate
     _fail("repository root not found")
 

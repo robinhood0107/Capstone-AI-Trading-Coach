@@ -70,6 +70,3 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
-
-      - name: Record scoped security marker
-        run: echo 'SECURITY_DEEP_SCAN=NOT_RUN_USER_SCOPED_OUT'

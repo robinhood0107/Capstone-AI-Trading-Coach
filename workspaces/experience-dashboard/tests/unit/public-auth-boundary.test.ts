@@ -24,11 +24,13 @@ test('DEMO exposes only its public page and bounded ask before the API rewrite',
   }
 });
 
-test('FULL rejects password and demo APIs while LOCAL keeps its private login', () => {
+test('FULL enables account login while keeping DEMO APIs private; LOCAL keeps its private login', () => {
   const previous = process.env.NEXT_PUBLIC_MARS_PRODUCT;
   try {
     process.env.NEXT_PUBLIC_MARS_PRODUCT = 'full';
-    assert.equal(middleware(request('/api/v1/auth/login', 'POST')).status, 404);
+    assert.equal(middleware(request('/api/v1/auth/login', 'POST')).status, 200);
+    assert.equal(middleware(request('/api/v1/auth/signup', 'POST')).status, 200);
+    assert.equal(middleware(request('/api/v1/auth/identities', 'GET')).status, 200);
     assert.equal(middleware(request('/api/v1/demo/agent/ask', 'POST')).status, 404);
     assert.equal(middleware(request('/api/v1/auth/oidc/start/google')).status, 200);
     assert.equal(middleware(request('/api/v1/auth/oidc/start/kakao')).status, 200);

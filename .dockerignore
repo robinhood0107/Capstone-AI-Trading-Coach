@@ -7,8 +7,6 @@ deploy/p1/.state
 deploy/p1/.state/**
 **/.state
 private?reference
-.local-tool/
-.local-tool/
 .venv
 **/.venv
 .gradle

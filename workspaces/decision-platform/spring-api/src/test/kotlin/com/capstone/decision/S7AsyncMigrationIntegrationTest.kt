@@ -195,7 +195,7 @@ class S7AsyncMigrationIntegrationTest {
                 assertThrows<SQLException> {
                     app.createStatement().use {
                         it.executeQuery(
-                            "select * from replay_async_work('usr_demo_admin',1,'replay_${"a".repeat(32)}','EVENT'," +
+                            "select * from replay_async_work('usr_demo_user',1,'replay_${"a".repeat(32)}','EVENT'," +
                                 "array['evt_direct_denied_0001'],1,'OPERATOR_RECOVERY','sha256:${"b".repeat(64)}',false)",
                         )
                     }
@@ -204,7 +204,7 @@ class S7AsyncMigrationIntegrationTest {
 
             val mismatchedJob = "job_owner_mismatch_0001"
             val mismatchedPayload =
-                "{\"jobId\":\"$mismatchedJob\",\"ownerRef\":\"usr_demo_admin\"," +
+                "{\"jobId\":\"$mismatchedJob\",\"ownerRef\":\"${TestPeerUser.USER_ID}\"," +
                     "\"runId\":\"run_owner_mismatch_0001\",\"contentHash\":\"sha256:${"a".repeat(64)}\"}"
             val ownerMismatch =
                 assertThrows<SQLException> {
@@ -377,6 +377,8 @@ class S7AsyncMigrationIntegrationTest {
     @Test
     fun `actor capability is current owner bound one use and bounded cleanup`() {
         val jobId = "job_capability_00000001"
+        // job owner는 일반 USER peer, ADMIN capability 주체는 demo-user다.
+        ensurePeer("decision")
         connection("decision", postgres.username, postgres.password).use { owner ->
             owner
                 .prepareStatement(
@@ -384,10 +386,10 @@ class S7AsyncMigrationIntegrationTest {
                 ).use { statement ->
                     statement.setString(1, jobId)
                     statement.setString(2, "MODEL_EVAL")
-                    statement.setString(3, "usr_demo_user")
+                    statement.setString(3, TestPeerUser.USER_ID)
                     statement.setString(
                         4,
-                        "{\"jobId\":\"$jobId\",\"ownerRef\":\"usr_demo_user\"," +
+                        "{\"jobId\":\"$jobId\",\"ownerRef\":\"${TestPeerUser.USER_ID}\"," +
                             "\"runId\":\"run_capability_00000001\",\"contentHash\":\"sha256:${"a".repeat(64)}\"}",
                     )
                     statement.executeUpdate()
@@ -396,19 +398,19 @@ class S7AsyncMigrationIntegrationTest {
         val capability =
             issueCapability(
                 "decision",
-                "usr_demo_admin",
+                "usr_demo_user",
                 ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", jobId, ActorCapabilityRolePolicy.ADMIN_ONLY),
             )
         connection("decision", APP_USER, APP_PASSWORD).use { app ->
             app.prepareStatement("select * from read_async_job_status_authorized(?,?,?,?)").use { statement ->
                 statement.setString(1, capability)
-                statement.setString(2, "usr_demo_user")
-                statement.setLong(3, 1)
+                statement.setString(2, TestPeerUser.USER_ID)
+                statement.setLong(3, operatorSecurityVersion("decision"))
                 statement.setString(4, jobId)
                 statement.executeQuery().use { rows ->
                     assertFalse(rows.next())
                 }
-                statement.setString(2, "usr_demo_admin")
+                statement.setString(2, "usr_demo_user")
                 statement.executeQuery().use { rows ->
                     assertTrue(rows.next())
                     assertEquals(jobId, rows.getString("job_id"))
@@ -423,13 +425,13 @@ class S7AsyncMigrationIntegrationTest {
                 statement.executeUpdate(
                     "update actor_request_capability set issued_at=statement_timestamp()-interval '90 seconds', " +
                         "expires_at=statement_timestamp()-interval '1 minute' " +
-                        "where actor_user_id='usr_demo_admin'",
+                        "where actor_user_id='usr_demo_user'",
                 )
             }
         }
         issueCapability(
             "decision",
-            "usr_demo_admin",
+            "usr_demo_user",
             ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", jobId, ActorCapabilityRolePolicy.ADMIN_ONLY),
         )
         connection("decision", postgres.username, postgres.password).use { owner ->
@@ -478,12 +480,13 @@ class S7AsyncMigrationIntegrationTest {
                 )
             }
         }
+        val operatorVersion = operatorSecurityVersion("s7_replay")
         connection("s7_replay", REPLAY_USER, REPLAY_PASSWORD).use { app ->
             fun replay(
                 batch: String,
                 expected: Int,
                 execute: Boolean,
-                securityVersion: Long = 1,
+                securityVersion: Long = operatorVersion,
                 targetIds: Array<String> = arrayOf(sourceEvent),
             ): List<List<String?>> {
                 val packetHash = "sha256:" + sha256Hex(batch.toByteArray())
@@ -497,7 +500,7 @@ class S7AsyncMigrationIntegrationTest {
                     packetHash = packetHash,
                 )
                 return app.prepareStatement("select * from replay_async_work(?,?,?,?,?::text[],?,?,?,?)").use { statement ->
-                    statement.setString(1, "usr_demo_admin")
+                    statement.setString(1, "usr_demo_user")
                     statement.setLong(2, securityVersion)
                     statement.setString(3, batch)
                     statement.setString(4, "EVENT")
@@ -597,7 +600,7 @@ class S7AsyncMigrationIntegrationTest {
                     1,
                     issueCapability(
                         "s7_fresh",
-                        "usr_demo_admin",
+                        "usr_demo_user",
                         ActorCapabilityBinding.request(
                             "READ_STREAM_METRICS",
                             "STREAM_METRICS",
@@ -606,8 +609,8 @@ class S7AsyncMigrationIntegrationTest {
                         ),
                     ),
                 )
-                statement.setString(2, "usr_demo_admin")
-                statement.setLong(3, 1)
+                statement.setString(2, "usr_demo_user")
+                statement.setLong(3, operatorSecurityVersion("s7_fresh"))
                 statement.executeQuery().use { rows ->
                     assertTrue(rows.next())
                     assertEquals("UNAVAILABLE", rows.getString("pipeline_health"))
@@ -625,7 +628,7 @@ class S7AsyncMigrationIntegrationTest {
                     insert into principles(
                       principle_id,user_id,preset_id,title,mode,status,current_version
                     ) values (
-                      'prn-stream-metric','usr_demo_admin','balanced','Stream metric fixture','GUIDE','ACTIVE',1
+                      'prn-stream-metric','usr_demo_user','balanced','Stream metric fixture','GUIDE','ACTIVE',1
                     ) on conflict do nothing
                     """.trimIndent(),
                 )
@@ -635,7 +638,7 @@ class S7AsyncMigrationIntegrationTest {
                       principle_version_id,principle_id,version,preset_id,title,mode,status,
                       rules_json,changed_fields,created_by
                     ) select 'prv-stream-metric-v1','prn-stream-metric',1,'balanced',
-                      'Stream metric fixture','GUIDE','ACTIVE',rules_json,array['title'],'usr_demo_admin'
+                      'Stream metric fixture','GUIDE','ACTIVE',rules_json,array['title'],'usr_demo_user'
                     from principle_presets where preset_id='balanced'
                     on conflict do nothing
                     """.trimIndent(),
@@ -658,7 +661,7 @@ class S7AsyncMigrationIntegrationTest {
                           snapshot_schema_version,catalog_version,readiness_policy_version,mapping_versions_json,
                           semantic_input_hash,snapshot_artifact_hash,result_json
                         ) values (
-                          'dec-stream-$index','eval-stream-$index','usr_demo_admin','prn-stream-metric',
+                          'dec-stream-$index','eval-stream-$index','usr_demo_user','prn-stream-metric',
                           'prv-stream-metric-v1',1,'INTERNAL_PAPER','005930','BUY','$outcome','GUIDE',$canSubmit,
                           '$action',statement_timestamp(),statement_timestamp(),statement_timestamp()+interval '10 minutes',
                           'risk-decision.v1','s2.2-metric-snapshot-v2',1,'s2.3-readiness-v1','{}'::jsonb,
@@ -745,7 +748,7 @@ class S7AsyncMigrationIntegrationTest {
                     1,
                     issueCapability(
                         "decision",
-                        "usr_demo_admin",
+                        "usr_demo_user",
                         ActorCapabilityBinding.request(
                             "READ_STREAM_METRICS",
                             "STREAM_METRICS",
@@ -754,8 +757,8 @@ class S7AsyncMigrationIntegrationTest {
                         ),
                     ),
                 )
-                statement.setString(2, "usr_demo_admin")
-                statement.setLong(3, 1)
+                statement.setString(2, "usr_demo_user")
+                statement.setLong(3, operatorSecurityVersion("decision"))
                 statement.executeQuery().use { rows ->
                     assertTrue(rows.next())
                     assertEquals("DEGRADED", rows.getString("pipeline_health"))
@@ -769,7 +772,7 @@ class S7AsyncMigrationIntegrationTest {
                     1,
                     issueCapability(
                         "decision",
-                        "usr_demo_admin",
+                        "usr_demo_user",
                         ActorCapabilityBinding.request(
                             "READ_STREAM_METRICS",
                             "STREAM_METRICS",
@@ -778,7 +781,7 @@ class S7AsyncMigrationIntegrationTest {
                         ),
                     ),
                 )
-                statement.setString(2, "usr_demo_admin")
+                statement.setString(2, "usr_demo_user")
                 statement.setLong(3, 999)
                 statement.executeQuery().use { rows ->
                     assertTrue(rows.next())
@@ -1091,21 +1094,24 @@ class S7AsyncMigrationIntegrationTest {
     fun `ADMIN status read revalidates current actor and audits cross owner access`() {
         val jobId = "job_admin_view_00000001"
         val eventId = "evt_admin_view_00000001"
+        // 감사는 타 owner job 조회에만 남으므로 job owner는 일반 USER peer, ADMIN은 demo-user다.
+        ensurePeer("decision")
+        val operatorVersion = operatorSecurityVersion("decision")
         val payload =
-            "{\"jobId\":\"$jobId\",\"ownerRef\":\"usr_demo_user\"," +
+            "{\"jobId\":\"$jobId\",\"ownerRef\":\"${TestPeerUser.USER_ID}\"," +
                 "\"runId\":\"run_fixture_00000001\",\"contentHash\":\"sha256:${"f".repeat(64)}\"}"
-        createAsyncRequest("decision", jobId, eventId, payload, "hmac-sha256:${"a".repeat(64)}")
+        createAsyncRequest("decision", jobId, eventId, payload, "hmac-sha256:${"a".repeat(64)}", TestPeerUser.USER_ID)
         connection("decision", APP_USER, APP_PASSWORD).use { app ->
             app.prepareStatement("select count(*) from read_async_job_status_authorized(?,?,?,?)").use { statement ->
                 statement.setString(
                     1,
                     issueCapability(
                         "decision",
-                        "usr_demo_user",
+                        TestPeerUser.USER_ID,
                         ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", jobId, ActorCapabilityRolePolicy.OWNER),
                     ),
                 )
-                statement.setString(2, "usr_demo_user")
+                statement.setString(2, TestPeerUser.USER_ID)
                 statement.setLong(3, 1)
                 statement.setString(4, jobId)
                 statement.executeQuery().use { rows ->
@@ -1118,12 +1124,12 @@ class S7AsyncMigrationIntegrationTest {
                     1,
                     issueCapability(
                         "decision",
-                        "usr_demo_admin",
+                        "usr_demo_user",
                         ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", jobId, ActorCapabilityRolePolicy.ADMIN_ONLY),
                     ),
                 )
-                statement.setString(2, "usr_demo_admin")
-                statement.setLong(3, 1)
+                statement.setString(2, "usr_demo_user")
+                statement.setLong(3, operatorVersion)
                 statement.setString(4, jobId)
                 statement.executeQuery().use { rows ->
                     assertTrue(rows.next())
@@ -1137,7 +1143,7 @@ class S7AsyncMigrationIntegrationTest {
                     1,
                     issueCapability(
                         "decision",
-                        "usr_demo_admin",
+                        "usr_demo_user",
                         ActorCapabilityBinding.request(
                             "LIST_ASYNC_JOBS",
                             "ASYNC_JOB_LIST",
@@ -1151,8 +1157,8 @@ class S7AsyncMigrationIntegrationTest {
                         ),
                     ),
                 )
-                statement.setString(2, "usr_demo_admin")
-                statement.setLong(3, 1)
+                statement.setString(2, "usr_demo_user")
+                statement.setLong(3, operatorVersion)
                 statement.setString(4, "REQUESTED")
                 statement.setString(5, "MODEL_EVAL")
                 statement.setObject(6, null)
@@ -1169,11 +1175,11 @@ class S7AsyncMigrationIntegrationTest {
                     1,
                     issueCapability(
                         "decision",
-                        "usr_demo_admin",
+                        "usr_demo_user",
                         ActorCapabilityBinding.target("READ_ASYNC_JOB", "ASYNC_JOB", jobId, ActorCapabilityRolePolicy.ADMIN_ONLY),
                     ),
                 )
-                statement.setString(2, "usr_demo_admin")
+                statement.setString(2, "usr_demo_user")
                 statement.setLong(3, 999)
                 statement.setString(4, jobId)
                 statement.executeQuery().use { rows ->
@@ -1410,21 +1416,28 @@ class S7AsyncMigrationIntegrationTest {
     ): String {
         val sessionHandle =
             connection(databaseName, AUTH_USER, AUTH_PASSWORD).use { auth ->
-                auth.prepareStatement("select session_handle from authenticate_demo_actor_session_v1(?,?,43200)").use { statement ->
-                    statement.setString(1, if (actorUserId == "usr_demo_admin") "demo-admin" else "demo-user")
-                    statement.setString(
-                        2,
-                        if (actorUserId == "usr_demo_admin") {
-                            SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD
+                val peer = actorUserId == TestPeerUser.USER_ID
+                auth
+                    .prepareStatement(
+                        if (peer) {
+                            "select session_handle from authenticate_password_login_actor_v1(?,?,?,43200)"
                         } else {
-                            SpringApiIntegrationTestBase.TEST_USER_PASSWORD
+                            "select session_handle from authenticate_demo_actor_session_v1(?,?,43200)"
                         },
-                    )
-                    statement.executeQuery().use { rows ->
-                        assertTrue(rows.next())
-                        requireNotNull(rows.getString(1))
+                    ).use { statement ->
+                        if (peer) {
+                            statement.setString(1, TestPeerUser.EMAIL)
+                            statement.setString(2, TestPeerUser.PASSWORD)
+                            statement.setString(3, TestPeerUser.PASSWORD_HASH)
+                        } else {
+                            statement.setString(1, "demo-user")
+                            statement.setString(2, SpringApiIntegrationTestBase.TEST_USER_PASSWORD)
+                        }
+                        statement.executeQuery().use { rows ->
+                            assertTrue(rows.next())
+                            requireNotNull(rows.getString(1))
+                        }
                     }
-                }
             }
         val identityHandle =
             connection(databaseName, AUTH_USER, AUTH_PASSWORD).use { auth ->
@@ -1481,6 +1494,7 @@ class S7AsyncMigrationIntegrationTest {
         eventId: String,
         payload: String,
         partitionKey: String,
+        owner: String = "usr_demo_user",
     ) {
         connection(databaseName, APP_USER, APP_PASSWORD).use { app ->
             app.prepareStatement("select create_async_request_authorized(?,?,?,?,?,?,?,?)").use { statement ->
@@ -1488,7 +1502,7 @@ class S7AsyncMigrationIntegrationTest {
                     1,
                     issueCapability(
                         databaseName,
-                        "usr_demo_user",
+                        owner,
                         ActorCapabilityBinding.request(
                             "CREATE_ASYNC_REQUEST",
                             "ASYNC_JOB",
@@ -1499,7 +1513,7 @@ class S7AsyncMigrationIntegrationTest {
                             partitionKey,
                             jobId,
                             "MODEL_EVAL",
-                            "usr_demo_user",
+                            owner,
                             payload,
                         ),
                     ),
@@ -1509,7 +1523,7 @@ class S7AsyncMigrationIntegrationTest {
                 statement.setString(4, partitionKey)
                 statement.setString(5, jobId)
                 statement.setString(6, "MODEL_EVAL")
-                statement.setString(7, "usr_demo_user")
+                statement.setString(7, owner)
                 statement.setString(8, payload)
                 statement.executeQuery().use { rows ->
                     assertTrue(rows.next())
@@ -1570,7 +1584,7 @@ class S7AsyncMigrationIntegrationTest {
             authorizer.prepareStatement("select authorize_async_replay(?,?,?,?,?,?::text[],?,?,?,?,?)").use { statement ->
                 val issuedAt = java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC)
                 statement.setString(1, packetHash)
-                statement.setString(2, "usr_demo_admin")
+                statement.setString(2, "usr_demo_user")
                 statement.setLong(3, securityVersion)
                 statement.setString(4, batch)
                 statement.setString(5, "EVENT")
@@ -1591,6 +1605,21 @@ class S7AsyncMigrationIntegrationTest {
     private fun sha256Hex(value: ByteArray): String = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value))
 
     private fun jdbcUrl(databaseName: String): String = postgres.jdbcUrl.replace("/decision", "/$databaseName")
+
+    // V213 이후 ADMIN 운영자는 demo-user이고 security_version도 올라가므로 현재 값을 읽는다.
+    private fun operatorSecurityVersion(databaseName: String): Long =
+        connection(databaseName, postgres.username, postgres.password).use { owner ->
+            owner.createStatement().use { statement ->
+                statement.executeQuery("select security_version from users where user_id='usr_demo_user'").use { rows ->
+                    assertTrue(rows.next())
+                    rows.getLong(1)
+                }
+            }
+        }
+
+    private fun ensurePeer(databaseName: String) {
+        TestPeerUser.ensure(jdbcUrl(databaseName), postgres.username, postgres.password)
+    }
 
     @Test
     fun `V87 provider approval is atomic one-shot and replay role has no table access`() {

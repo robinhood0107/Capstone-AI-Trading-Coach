@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.springframework.beans.factory.annotation.Autowired
@@ -52,6 +53,11 @@ class BoundMockCredentialIntegrationTest(
     @TempDir
     lateinit var root: Path
 
+    @BeforeEach
+    fun ensurePeerOwner() {
+        TestPeerUser.ensure(postgres.jdbcUrl, postgres.username, postgres.password)
+    }
+
     @Test
     fun `owner removes only their settled mock credential`() {
         val directory = prepareKeyDirectory()
@@ -72,13 +78,13 @@ class BoundMockCredentialIntegrationTest(
                 service.save("usr_demo_user", "K" + "A".repeat(19), "S" + "B".repeat(39), "5" + "0".repeat(9))
             }
         }
-        asActor("usr_demo_admin") {
+        asActor(TestPeerUser.USER_ID) {
             transaction.executeWithoutResult {
-                service.save("usr_demo_admin", "Z" + "C".repeat(19), "T" + "D".repeat(39), "6" + "1".repeat(9))
+                service.save(TestPeerUser.USER_ID, "Z" + "C".repeat(19), "T" + "D".repeat(39), "6" + "1".repeat(9))
             }
         }
         val own = requireNotNull(asActor("usr_demo_user") { transaction.execute { service.summary("usr_demo_user") } })
-        asActor("usr_demo_admin") {
+        asActor(TestPeerUser.USER_ID) {
             assertThrows(IllegalStateException::class.java) {
                 transaction.execute { repository.disconnect("usr_demo_user", own.accountId, own.revision) }
             }
@@ -89,7 +95,7 @@ class BoundMockCredentialIntegrationTest(
             }
         assertEquals("REMOVED", result)
         assertEquals(null, asActor("usr_demo_user") { transaction.execute { service.summary("usr_demo_user") } })
-        assertNotNull(asActor("usr_demo_admin") { transaction.execute { service.summary("usr_demo_admin") } })
+        assertNotNull(asActor(TestPeerUser.USER_ID) { transaction.execute { service.summary(TestPeerUser.USER_ID) } })
     }
 
     @Test
@@ -181,7 +187,7 @@ class BoundMockCredentialIntegrationTest(
                 }
             }
         }
-        asActor("usr_demo_admin") {
+        asActor(TestPeerUser.USER_ID) {
             assertThrows(IllegalStateException::class.java) {
                 transaction.execute { service.summary("usr_demo_user") }
             }
@@ -191,14 +197,14 @@ class BoundMockCredentialIntegrationTest(
                 }
             }
         }
-        asActor("usr_demo_admin") {
+        asActor(TestPeerUser.USER_ID) {
             transaction.executeWithoutResult {
-                service.save("usr_demo_admin", "Z" + "C".repeat(19), "T" + "D".repeat(39), "6" + "1".repeat(9))
+                service.save(TestPeerUser.USER_ID, "Z" + "C".repeat(19), "T" + "D".repeat(39), "6" + "1".repeat(9))
             }
         }
         val otherAccountId =
-            asActor("usr_demo_admin") {
-                transaction.execute { service.summary("usr_demo_admin")?.accountId }
+            asActor(TestPeerUser.USER_ID) {
+                transaction.execute { service.summary(TestPeerUser.USER_ID)?.accountId }
             }
         assertNotNull(otherAccountId)
         asActor("usr_demo_user") {
@@ -252,23 +258,24 @@ class BoundMockCredentialIntegrationTest(
                 settings.save("usr_demo_user", "K" + "A".repeat(19), "S" + "B".repeat(39), "5" + "0".repeat(9))
             }
         }
-        asActor("usr_demo_admin") {
+        asActor(TestPeerUser.USER_ID) {
             transaction.executeWithoutResult {
-                settings.save("usr_demo_admin", "Z" + "C".repeat(19), "T" + "D".repeat(39), "6" + "1".repeat(9))
+                settings.save(TestPeerUser.USER_ID, "Z" + "C".repeat(19), "T" + "D".repeat(39), "6" + "1".repeat(9))
             }
         }
         val userCredential = requireNotNull(asActor("usr_demo_user") { transaction.execute { settings.summary("usr_demo_user") } })
-        val adminCredential = requireNotNull(asActor("usr_demo_admin") { transaction.execute { settings.summary("usr_demo_admin") } })
+        val adminCredential =
+            requireNotNull(asActor(TestPeerUser.USER_ID) { transaction.execute { settings.summary(TestPeerUser.USER_ID) } })
         asActor("usr_demo_user") {
             transaction.executeWithoutResult {
                 connection.beginAttempt("usr_demo_user", userCredential.accountId, userCredential.revision)
                 connection.markConnected("usr_demo_user", userCredential.accountId, userCredential.revision)
             }
         }
-        asActor("usr_demo_admin") {
+        asActor(TestPeerUser.USER_ID) {
             transaction.executeWithoutResult {
-                connection.beginAttempt("usr_demo_admin", adminCredential.accountId, adminCredential.revision)
-                connection.markConnected("usr_demo_admin", adminCredential.accountId, adminCredential.revision)
+                connection.beginAttempt(TestPeerUser.USER_ID, adminCredential.accountId, adminCredential.revision)
+                connection.markConnected(TestPeerUser.USER_ID, adminCredential.accountId, adminCredential.revision)
             }
         }
         val lease =
@@ -309,7 +316,7 @@ class BoundMockCredentialIntegrationTest(
             }
         }
         val certified = requireNotNull(asActor("usr_demo_user") { transaction.execute { settings.summary("usr_demo_user") } })
-        val other = requireNotNull(asActor("usr_demo_admin") { transaction.execute { settings.summary("usr_demo_admin") } })
+        val other = requireNotNull(asActor(TestPeerUser.USER_ID) { transaction.execute { settings.summary(TestPeerUser.USER_ID) } })
         assertEquals("CERTIFIED", certified.state)
         assertEquals("PASS", certified.certificationStatus)
         assertEquals("CONNECTED", other.state)
@@ -323,10 +330,10 @@ class BoundMockCredentialIntegrationTest(
                     .joinToString("") { "%02x".format(it) }
         val recoveryAttempt =
             requireNotNull(
-                asActor("usr_demo_admin") {
+                asActor(TestPeerUser.USER_ID) {
                     transaction.execute {
                         certifications.begin(
-                            "usr_demo_admin",
+                            TestPeerUser.USER_ID,
                             adminCredential.accountId,
                             adminCredential.revision,
                             recoveryLease,
@@ -334,10 +341,10 @@ class BoundMockCredentialIntegrationTest(
                     }
                 },
             )
-        asActor("usr_demo_admin") {
+        asActor(TestPeerUser.USER_ID) {
             transaction.executeWithoutResult {
                 certifications.finish(
-                    ownerUserId = "usr_demo_admin",
+                    ownerUserId = TestPeerUser.USER_ID,
                     accountId = adminCredential.accountId,
                     revision = adminCredential.revision,
                     attempt = recoveryAttempt,
@@ -351,24 +358,25 @@ class BoundMockCredentialIntegrationTest(
                 )
             }
         }
-        val recoverySummary = requireNotNull(asActor("usr_demo_admin") { transaction.execute { settings.summary("usr_demo_admin") } })
+        val recoverySummary =
+            requireNotNull(asActor(TestPeerUser.USER_ID) { transaction.execute { settings.summary(TestPeerUser.USER_ID) } })
         assertEquals("CONNECTED", recoverySummary.state)
         assertEquals("RECOVERY_REQUIRED", recoverySummary.certificationStatus)
-        asActor("usr_demo_admin") {
+        asActor(TestPeerUser.USER_ID) {
             assertThrows(Exception::class.java) {
                 transaction.executeWithoutResult {
-                    settings.save("usr_demo_admin", "Q" + "R".repeat(19), "S" + "T".repeat(39), "6" + "1".repeat(9))
+                    settings.save(TestPeerUser.USER_ID, "Q" + "R".repeat(19), "S" + "T".repeat(39), "6" + "1".repeat(9))
                 }
             }
             transaction.executeWithoutResult {
                 certifications.acknowledgeRecovery(
-                    "usr_demo_admin",
+                    TestPeerUser.USER_ID,
                     adminCredential.accountId,
                     adminCredential.revision,
                 )
             }
         }
-        val acknowledged = requireNotNull(asActor("usr_demo_admin") { transaction.execute { settings.summary("usr_demo_admin") } })
+        val acknowledged = requireNotNull(asActor(TestPeerUser.USER_ID) { transaction.execute { settings.summary(TestPeerUser.USER_ID) } })
         assertEquals("CONNECTED", acknowledged.state)
         assertEquals("FAILED", acknowledged.certificationStatus)
 
@@ -381,9 +389,9 @@ class BoundMockCredentialIntegrationTest(
         assertEquals("STORED", rotated.state)
         assertEquals("NOT_STARTED", rotated.certificationStatus)
         assertEquals(userCredential.revision + 1, rotated.revision)
-        asActor("usr_demo_admin") {
+        asActor(TestPeerUser.USER_ID) {
             transaction.executeWithoutResult {
-                settings.save("usr_demo_admin", "Q" + "R".repeat(19), "S" + "T".repeat(39), "6" + "1".repeat(9))
+                settings.save(TestPeerUser.USER_ID, "Q" + "R".repeat(19), "S" + "T".repeat(39), "6" + "1".repeat(9))
             }
         }
     }
@@ -460,20 +468,15 @@ class BoundMockCredentialIntegrationTest(
     ): T {
         val previous = SecurityContextHolder.getContext()
         val context = SecurityContextHolder.createEmptyContext()
+        val actorRef = testActorCapabilityIssuer.actorRef(userId)
         context.authentication =
             UsernamePasswordAuthenticationToken(
                 AppPrincipal(
                     userId,
                     "test-user",
-                    if (userId ==
-                        "usr_demo_admin"
-                    ) {
-                        "ADMIN"
-                    } else {
-                        "USER"
-                    },
-                    1,
-                    testActorCapabilityIssuer.actorRef(userId),
+                    if (userId == "usr_demo_user") "ADMIN" else "USER",
+                    actorRef.securityVersion,
+                    actorRef,
                 ),
                 null,
                 emptyList(),

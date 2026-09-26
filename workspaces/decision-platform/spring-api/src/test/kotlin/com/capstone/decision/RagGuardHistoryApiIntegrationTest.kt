@@ -74,7 +74,8 @@ class RagGuardHistoryApiIntegrationTest(
     @Test
     fun `fixture ask persists ciphertext replays once and keeps history owner scoped`() {
         val userToken = login("demo-user", userPassword())
-        val adminToken = login("demo-admin", adminPassword())
+        TestPeerUser.ensure(ownerJdbc)
+        val adminToken = login(TestPeerUser.EMAIL, TestPeerUser.PASSWORD)
         val idempotencyKey = "idem-rag-history-api-0001"
         val question = "VaR와 ES의 차이를 공개 근거 범위에서 설명해 주세요"
         val requestBody =

@@ -14,7 +14,8 @@ class PublicSurfaceGateTest {
         val paths =
             listOf(
                 "/api/v1/auth/identities/github/link/start",
-                "/api/v1/brokerage/mock/orders",
+                "/api/v1/async-jobs",
+                "/api/v1/rag/ask",
                 "/internal/automation-runtime/run",
             )
         for (mode in listOf(PublicSurfaceMode.DEMO, PublicSurfaceMode.FULL)) {
@@ -26,6 +27,43 @@ class PublicSurfaceGateTest {
                 assertEquals(null, chain.request, "$mode $path")
             }
         }
+    }
+
+    @Test
+    fun `full permits every owner scoped user feature and the admin console while demo denies them`() {
+        val allowed =
+            listOf(
+                "GET" to "/api/v1/principle-presets",
+                "POST" to "/api/v1/principles",
+                "PUT" to "/api/v1/principles/prc_abcdefgh",
+                "GET" to "/api/v1/dashboard/backtests/latest",
+                "GET" to "/api/v3/signals/005930",
+                "POST" to "/api/v1/decisions/evaluate-order",
+                "GET" to "/api/v1/risk/portfolio",
+                "POST" to "/api/v2/risk/kill-switch",
+                "PATCH" to "/api/v1/journals/jrn_abcdefgh",
+                "GET" to "/api/v2/market-evidence/005930/foreign-news-sentiment",
+                "POST" to "/api/v1/brokerage/mock/orders",
+                "POST" to "/api/v1/brokerage/orders/ord_abcdefgh/cancel",
+                "GET" to "/api/v1/brokerage/mock/accounts/acct_abcdefgh/balances",
+                "GET" to "/api/v1/admin/users",
+                "PUT" to "/api/v1/admin/limits",
+            )
+        for ((method, path) in allowed) {
+            val fullChain = MockFilterChain()
+            PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(MockHttpServletRequest(method, path), MockHttpServletResponse(), fullChain)
+            assertEquals(path, (fullChain.request as MockHttpServletRequest).requestURI, "$method $path")
+            val demoResponse = MockHttpServletResponse()
+            PublicSurfaceGate(PublicSurfaceMode.DEMO).doFilter(MockHttpServletRequest(method, path), demoResponse, MockFilterChain())
+            assertEquals(404, demoResponse.status, "$method $path")
+        }
+        val readOnly = MockHttpServletResponse()
+        PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(
+            MockHttpServletRequest("POST", "/api/v3/signals/005930"),
+            readOnly,
+            MockFilterChain(),
+        )
+        assertEquals(404, readOnly.status)
     }
 
     @Test

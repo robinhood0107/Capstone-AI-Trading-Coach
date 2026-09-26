@@ -151,15 +151,15 @@ class DemoCredentialRotationIntegrationTest {
     }
 
     @Test
-    fun `rotation rejects peer plaintext under a fresh salt and exact replay without mutation`() {
-        val peerPlaintextBundle =
+    fun `rotation rejects the current plaintext under a fresh salt and exact replay without mutation`() {
+        val currentPlaintextBundle =
             SpringApiIntegrationTestBase.prepareTestBundle(
                 "usr_demo_user",
-                SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD,
+                SpringApiIntegrationTestBase.TEST_USER_PASSWORD,
             )
 
         assertThrows<IllegalStateException> {
-            DemoCredentialRotation.rotate(environment(peerPlaintextBundle), auditId = "aud-peer-password-rejected")
+            DemoCredentialRotation.rotate(environment(currentPlaintextBundle), auditId = "aud-current-password-rejected")
         }
         assertEquals(1L, queryUser("usr_demo_user").securityVersion)
 

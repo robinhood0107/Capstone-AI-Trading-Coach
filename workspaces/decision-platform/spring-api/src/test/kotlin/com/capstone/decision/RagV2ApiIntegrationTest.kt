@@ -78,6 +78,7 @@ class RagV2ApiIntegrationTest(
 
     @BeforeEach
     fun setUp() {
+        TestPeerUser.ensure(ownerJdbc)
         mockMvc =
             MockMvcBuilders
                 .webAppContextSetup(webApplicationContext)
@@ -255,7 +256,7 @@ class RagV2ApiIntegrationTest(
     @Test
     fun `foreign news route is authenticated owner scoped and exposes only sanitized lane states`() {
         val userToken = login("demo-user", userPassword(), "req_foreign_news_user_login")
-        val adminToken = login("demo-admin", adminPassword(), "req_foreign_news_admin_login")
+        val adminToken = login(TestPeerUser.EMAIL, TestPeerUser.PASSWORD, "req_foreign_news_admin_login")
 
         asActor { assertNull(foreignNewsSentimentReadPort.findLatest("usr_demo_user", "005930")) }
 
@@ -386,7 +387,7 @@ class RagV2ApiIntegrationTest(
         listOf(
             listOf("RECORD_RAG_CONSENT", binding.targetKind, binding.targetId, binding.payloadHash),
             listOf(binding.operation, "RAG_CONSENT", binding.targetId, binding.payloadHash),
-            listOf(binding.operation, binding.targetKind, "usr_demo_admin", binding.payloadHash),
+            listOf(binding.operation, binding.targetKind, TestPeerUser.USER_ID, binding.payloadHash),
             listOf(binding.operation, binding.targetKind, binding.targetId, "sha256:${"0".repeat(64)}"),
         ).forEach { asserted ->
             assertThrows<DataAccessException> {
@@ -442,7 +443,7 @@ class RagV2ApiIntegrationTest(
                     "OWNER",
                     "usr_demo_user",
                     ActorCapabilityRolePolicy.OWNER,
-                ) to "usr_demo_admin",
+                ) to TestPeerUser.USER_ID,
                 ActorCapabilityBinding(
                     operation = "READ_RAG_V2_CORPUS",
                     targetKind = "OWNER",
@@ -708,7 +709,14 @@ class RagV2ApiIntegrationTest(
                 }.andReturn()
         assertSanitized(json(detail))
 
-        asActor { assertTrue(dashboardViewService.rag("usr_demo_user", 1, answerId)?.isObject == true) }
+        val securityVersion =
+            requireNotNull(
+                ownerJdbc.queryForObject(
+                    "select security_version from users where user_id = 'usr_demo_user'",
+                    Long::class.java,
+                ),
+            )
+        asActor { assertTrue(dashboardViewService.rag("usr_demo_user", securityVersion, answerId)?.isObject == true) }
 
         val dashboard =
             mockMvc
@@ -726,7 +734,7 @@ class RagV2ApiIntegrationTest(
                     jsonPath("$.data.view.topSources[0].locator") { doesNotExist() }
                 }.andReturn()
         assertFalse(dashboard.response.contentAsString.contains("example.org"))
-        val foreignToken = login("demo-admin", adminPassword(), "req_rag_v2_dashboard_foreign")
+        val foreignToken = login(TestPeerUser.EMAIL, TestPeerUser.PASSWORD, "req_rag_v2_dashboard_foreign")
         mockMvc.get("/api/v1/dashboard/rag-sources/$answerId") { bearer(foreignToken) }.andExpect {
             status { isNotFound() }
         }
@@ -735,7 +743,7 @@ class RagV2ApiIntegrationTest(
     @Test
     fun `v2 external consent is append only owner scoped and returns the effective server state`() {
         val userToken = login("demo-user", userPassword(), "req_rag_v2_consent_user_login")
-        val adminToken = login("demo-admin", adminPassword(), "req_rag_v2_consent_admin_login")
+        val adminToken = login(TestPeerUser.EMAIL, TestPeerUser.PASSWORD, "req_rag_v2_consent_admin_login")
 
         mockMvc
             .get("/api/v2/rag/consent") {
@@ -895,7 +903,7 @@ class RagV2ApiIntegrationTest(
                 bearer(userToken)
                 header("X-Request-Id", "req_rag_v2_ticket_actor_injection")
                 contentType = MediaType.APPLICATION_JSON
-                content = ticketRequest.dropLast(1) + ",\"ownerUserId\":\"usr_demo_admin\"}"
+                content = ticketRequest.dropLast(1) + ",\"ownerUserId\":\"${TestPeerUser.USER_ID}\"}"
             }.andExpect {
                 status { isBadRequest() }
                 jsonPath("$.code") { value("RAG_VALIDATION_FAILED") }
@@ -1010,7 +1018,7 @@ class RagV2ApiIntegrationTest(
                 bearer(userToken)
                 header("X-Request-Id", "req_rag_v2_delete_ticket_actor_injection")
                 contentType = MediaType.APPLICATION_JSON
-                content = ticketRequest.dropLast(1) + ",\"ownerUserId\":\"usr_demo_admin\"}"
+                content = ticketRequest.dropLast(1) + ",\"ownerUserId\":\"${TestPeerUser.USER_ID}\"}"
             }.andExpect {
                 status { isBadRequest() }
                 jsonPath("$.code") { value("RAG_VALIDATION_FAILED") }
@@ -1042,7 +1050,7 @@ class RagV2ApiIntegrationTest(
         val actorRef = testActorCapabilityIssuer.actorRef("usr_demo_user")
         context.authentication =
             UsernamePasswordAuthenticationToken(
-                AppPrincipal("usr_demo_user", "demo-user", "USER", 1, actorRef),
+                AppPrincipal("usr_demo_user", "demo-user", "ADMIN", actorRef.securityVersion, actorRef),
                 null,
                 emptyList(),
             )

@@ -141,7 +141,7 @@ class SocialLoginIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase
     }
 
     @Test
-    fun `operator allowlist changes rotate role and invalidate old sessions`() {
+    fun `operator subject grants ADMIN once and a later login never demotes`() {
         val subject = "test-" + UUID.randomUUID()
         val ordinary = issueSession(subject)
         assertEquals("USER", ordinary.role)
@@ -149,10 +149,10 @@ class SocialLoginIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase
         assertEquals(ordinary.userId, operator.userId)
         assertEquals("ADMIN", operator.role)
         assertFalse(sessionExists(ordinary.handle))
-        val demoted = issueSession(subject)
-        assertEquals(ordinary.userId, demoted.userId)
-        assertEquals("USER", demoted.role)
-        assertFalse(sessionExists(operator.handle))
+        val later = issueSession(subject)
+        assertEquals(ordinary.userId, later.userId)
+        assertEquals("ADMIN", later.role)
+        assertTrue(sessionExists(operator.handle))
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
             connection
                 .prepareStatement(
@@ -160,8 +160,6 @@ class SocialLoginIdentityMigrationIntegrationTest : SpringApiIntegrationTestBase
                 ).use { statement ->
                     statement.setString(1, ordinary.userId)
                     statement.executeQuery().use { result ->
-                        assertTrue(result.next())
-                        assertFalse(result.getString(1).contains(subject))
                         assertTrue(result.next())
                         assertFalse(result.getString(1).contains(subject))
                         assertFalse(result.next())

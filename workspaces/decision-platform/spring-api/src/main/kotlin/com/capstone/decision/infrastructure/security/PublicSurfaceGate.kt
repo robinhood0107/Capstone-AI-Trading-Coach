@@ -93,9 +93,17 @@ internal class PublicSurfaceGate(
                     -> true
                     else -> FULL_AUTOMATION_RUN_DETAIL.matches(request.requestURI) && request.method == "GET"
                 }
+        // FULL 사용자 기능(개인 스택과 같은 기능). 모두 인증이 필요하고 데이터는 owner 범위로만 읽는다.
+        // 관리자 경로는 SecurityConfig와 method security가 ADMIN을 강제한다.
+        val fullUserFeatureAllowed =
+            mode == PublicSurfaceMode.FULL &&
+                FULL_USER_FEATURES.any { (methods, prefix) ->
+                    request.method in methods && (request.requestURI == prefix || request.requestURI.startsWith("$prefix/"))
+                }
         if (
             mode != PublicSurfaceMode.LOCAL &&
             !health &&
+            !fullUserFeatureAllowed &&
             !fullAllowed &&
             !fullAgentAllowed &&
             !fullAutomationAllowed &&
@@ -109,6 +117,30 @@ internal class PublicSurfaceGate(
 
     private companion object {
         val FULL_RAG_HISTORY_DETAIL = Regex("^/api/v2/rag/history/rag_[A-Za-z0-9_-]{12,96}$")
+        private val READ = setOf("GET")
+        private val READ_WRITE = setOf("GET", "POST", "PUT", "PATCH", "DELETE")
+        val FULL_USER_FEATURES: List<Pair<Set<String>, String>> =
+            listOf(
+                READ to "/api/v1/principle-presets",
+                READ_WRITE to "/api/v1/principles",
+                READ to "/api/v1/dashboard",
+                READ to "/api/v2/signals",
+                READ to "/api/v3/signals",
+                READ_WRITE to "/api/v1/decisions",
+                READ to "/api/v1/risk/portfolio",
+                READ_WRITE to "/api/v2/risk/kill-switch",
+                READ_WRITE to "/api/v1/risk/kill-switch",
+                READ_WRITE to "/api/v1/journals",
+                READ to "/api/v1/instruments",
+                READ to "/api/v2/market-evidence",
+                READ to "/api/v1/system/health",
+                // FULL 주문·잔고·체결은 호출자 본인의 암호화된 KIS 키와 본인 계좌로만 동작한다.
+                READ_WRITE to "/api/v1/brokerage/mock/orders",
+                READ_WRITE to "/api/v1/brokerage/orders",
+                READ to "/api/v1/brokerage/mock/accounts",
+                READ_WRITE to "/api/v1/brokerage/paper",
+                READ_WRITE to "/api/v1/admin",
+            )
         val FULL_PROVIDER_LINK_START = Regex("^/api/v1/auth/identities/(google|kakao)/link/start$")
         val FULL_PROVIDER_UNLINK = Regex("^/api/v1/auth/identities/(google|kakao)$")
         val FULL_AUTOMATION_RUN_DETAIL = Regex("^/api/v3/automation/runs/auto_run_[A-Za-z0-9_-]{8,96}$")

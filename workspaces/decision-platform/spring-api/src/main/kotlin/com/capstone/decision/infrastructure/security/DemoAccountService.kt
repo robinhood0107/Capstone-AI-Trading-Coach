@@ -42,19 +42,15 @@ class DemoAccountService(
         sessionTtl: Duration,
     ): AuthenticatedAccount? {
         require(!sessionTtl.isZero && !sessionTtl.isNegative && sessionTtl <= MAX_ACTOR_SESSION_TTL)
-        val expectedIdentity = DemoAccounts.byUsername(username)
+        // V213 이후 고정 비밀번호 계정은 demo-user 하나다. 역할은 DB 행이 정하며 USER·ADMIN 모두 허용한다.
+        val operatorIdentity = requireNotNull(DemoAccounts.byUserId(DemoOperatorAccountPolicy.OPERATOR_USER_ID))
+        val expectedIdentity = operatorIdentity.takeIf { it.username == username }
         val storedUsers = userSecurityRepository.findDemoCredentials()
-        val verifiedRows =
-            DemoAccounts.identities.associateWith { identity ->
-                storedUsers
-                    .singleOrNull { it.userId == identity.userId }
-                    ?.takeIf { it.matches(identity) }
-            }
-        val storedUser = expectedIdentity?.let(verifiedRows::get)
-        val peer =
-            expectedIdentity
-                ?.let { selected -> DemoAccounts.identities.single { it.userId != selected.userId } }
-                ?.let(verifiedRows::get)
+        val operatorRow =
+            storedUsers
+                .singleOrNull { it.userId == operatorIdentity.userId }
+                ?.takeIf { it.matchesOperator(operatorIdentity) }
+        val storedUser = expectedIdentity?.let { operatorRow }
 
         // BCrypt 검증은 72-byte 초과 입력도 접두사와 일치시킬 수 있으므로 DTO의 문자 수 제한과 별도로 byte 경계를 잠근다.
         val passwordBytes = password.toByteArray(StandardCharsets.UTF_8)
@@ -66,17 +62,14 @@ class DemoAccountService(
             }
         val verificationPassword = if (passwordWithinBcryptBoundary) password else dummyPassword
 
-        // 알려진 계정, unknown 계정, overlong 입력 모두 정확히 두 번의 BCrypt cost를 지불하며 peer 일치도 fail-closed한다.
+        // 알려진 계정, unknown 계정, overlong 입력 모두 정확히 두 번의 BCrypt cost를 지불한다.
         val selectedMatches = passwordEncoder.matches(verificationPassword, storedUser?.passwordHash ?: dummyPasswordHash)
-        val peerMatches = passwordEncoder.matches(verificationPassword, peer?.passwordHash ?: dummyPasswordHash)
-        val trustRootComplete = storedUsers.size == DemoAccounts.identities.size && verifiedRows.values.all { it != null }
+        passwordEncoder.matches(verificationPassword, dummyPasswordHash)
         if (
             expectedIdentity == null ||
             storedUser == null ||
-            !trustRootComplete ||
             !passwordWithinBcryptBoundary ||
-            !selectedMatches ||
-            peerMatches
+            !selectedMatches
         ) {
             return null
         }
@@ -115,10 +108,9 @@ class DemoAccountService(
         private const val MAX_BCRYPT_PASSWORD_BYTES = 72
     }
 
-    private fun UserSecurityRecord.matches(identity: DemoAccountIdentity): Boolean =
+    private fun UserSecurityRecord.matchesOperator(identity: DemoAccountIdentity): Boolean =
         userId == identity.userId &&
             username == identity.username &&
-            role == identity.role &&
             status == ACTIVE_STATUS &&
             securityVersion > 0 &&
             DemoCredentialHashPolicy.isValid(passwordHash)

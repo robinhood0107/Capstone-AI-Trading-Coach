@@ -89,21 +89,15 @@ object AuthCutoverSmoke {
         if (healthStatus(baseUrl, oldToken) != 401) {
             throw AuthCutoverException("post_old_token_status")
         }
-        val userToken = login(baseUrl, "demo-user", userPassword, "usr_demo_user", "USER")
-        val adminToken = login(baseUrl, "demo-admin", adminPassword, "usr_demo_admin", "ADMIN")
-        if (userToken == adminToken) {
-            throw AuthCutoverException("post_token_distinct")
+        // V213 이후 demo-user가 유일한 고정 운영자(ADMIN)이고 demo-admin은 은퇴했다.
+        val operatorToken = login(baseUrl, "demo-user", userPassword, "usr_demo_user", "ADMIN")
+        if (loginStatus(baseUrl, "demo-admin", adminPassword) != 401) {
+            throw AuthCutoverException("post_retired_admin_login")
         }
-        if (healthStatus(baseUrl, userToken) != 200) {
-            throw AuthCutoverException("post_user_health_status")
+        if (healthStatus(baseUrl, operatorToken) != 200) {
+            throw AuthCutoverException("post_operator_health_status")
         }
-        if (healthStatus(baseUrl, adminToken) != 200) {
-            throw AuthCutoverException("post_admin_health_status")
-        }
-        if (authorizedGetStatus(baseUrl, ADMIN_BOUNDARY_PATH, userToken) != 403) {
-            throw AuthCutoverException("post_user_admin_boundary")
-        }
-        if (authorizedGetStatus(baseUrl, ADMIN_BOUNDARY_PATH, adminToken) != 200) {
+        if (authorizedGetStatus(baseUrl, ADMIN_BOUNDARY_PATH, operatorToken) != 200) {
             throw AuthCutoverException("post_admin_boundary")
         }
         try {
@@ -182,6 +176,23 @@ object AuthCutoverSmoke {
         }
         validateTokenIdentity(accessToken, expectedUserId, expectedRole)
         return accessToken
+    }
+
+    private fun loginStatus(
+        baseUrl: String,
+        username: String,
+        password: String,
+    ): Int {
+        val body = objectMapper.writeValueAsString(mapOf("username" to username, "password" to password))
+        return send(
+            HttpRequest
+                .newBuilder(URI.create("$baseUrl/api/v1/auth/login"))
+                .timeout(HTTP_TIMEOUT)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build(),
+            includeBody = false,
+        ).status
     }
 
     private fun healthStatus(

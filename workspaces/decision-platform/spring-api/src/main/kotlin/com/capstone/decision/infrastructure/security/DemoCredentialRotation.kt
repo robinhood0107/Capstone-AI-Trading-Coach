@@ -114,15 +114,21 @@ object DemoCredentialRotation {
         credentials: List<LockedCredential>,
         config: RotationConfig,
     ): LockedCredential {
-        check(credentials.size == DemoAccounts.identities.size) { "Approved demo credential rows are incomplete." }
+        check(credentials.any { it.userId == DemoOperatorAccountPolicy.OPERATOR_USER_ID }) {
+            "Approved demo credential rows are incomplete."
+        }
+        check(credentials.any { it.userId == config.identity.userId && it.status == ACTIVE_STATUS }) {
+            "A retired demo account cannot receive a new credential."
+        }
+        val presentIdentities = DemoAccounts.identities.filter { identity -> credentials.any { it.userId == identity.userId } }
         val verifiedStored =
-            DemoAccounts.identities.map { identity ->
+            presentIdentities.map { identity ->
                 val credential = credentials.singleOrNull { it.userId == identity.userId }
                 check(
                     credential != null &&
                         credential.username == identity.username &&
-                        credential.role == identity.role.name &&
-                        credential.status == ACTIVE_STATUS &&
+                        DemoOperatorAccountPolicy.roleAccepted(credential.userId, credential.role, identity.role) &&
+                        DemoOperatorAccountPolicy.statusAccepted(credential.userId, credential.status) &&
                         credential.securityVersion > 0,
                 ) { "Approved demo credential row is invalid." }
                 DemoCredentialBundlePolicy.verifyStored(
@@ -179,8 +185,8 @@ object DemoCredentialRotation {
                     statement.setInt(4, config.credentialBundle.policyVersion)
                     statement.setString(5, config.identity.userId)
                     statement.setString(6, config.identity.username)
-                    statement.setString(7, config.identity.role.name)
-                    statement.setString(8, ACTIVE_STATUS)
+                    statement.setString(7, current.role)
+                    statement.setString(8, current.status)
                     statement.setLong(9, current.securityVersion)
                     statement.setString(10, current.passwordHash)
                     statement.setBytes(11, currentTag)

@@ -290,7 +290,7 @@ class CommonApiContractIntegrationTest(
     @Test
     fun `actuator telemetry requires admin role`() {
         val userToken = login("demo-user", userPassword())
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = jwtService.issue(TestAuthRepositoryConfiguration.adminAccount()).token
 
         mockMvc
             .get("/actuator/metrics") {
@@ -319,16 +319,14 @@ class CommonApiContractIntegrationTest(
                 }.andExpect {
                     status { isOk() }
                     jsonPath("$.success") { value(true) }
-                    jsonPath("$.data.user.userId") {
-                        value(if (username == "demo-admin") "usr_demo_admin" else "usr_demo_user")
-                    }
+                    jsonPath("$.data.user.userId") { value("usr_demo_user") }
                 }.andReturn()
                 .response
                 .contentAsString
 
         val token = objectMapper.readTree(response).at("/data/accessToken").stringValue()
         assertEquals("Bearer", objectMapper.readTree(response).at("/data/tokenType").stringValue())
-        assertEquals(if (username == "demo-admin") "usr_demo_admin" else "usr_demo_user", jwtService.parse(token).userId)
+        assertEquals("usr_demo_user", jwtService.parse(token).userId)
         return token
     }
 }

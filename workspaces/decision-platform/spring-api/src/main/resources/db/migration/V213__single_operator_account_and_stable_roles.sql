@@ -98,6 +98,7 @@ DECLARE removed bigint;
 DECLARE has_rows boolean;
 DECLARE paused name[];
 DECLARE trigger_name name;
+DECLARE assignments text;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.users WHERE user_id='usr_demo_admin') THEN
     RETURN;
@@ -124,9 +125,24 @@ BEGIN
       FOREACH trigger_name IN ARRAY paused LOOP
         EXECUTE format('ALTER TABLE %s DISABLE TRIGGER %I', ref.tbl, trigger_name);
       END LOOP;
+      -- The same row may repeat the owner in other columns (a payload changedBy, an actor column)
+      -- and check constraints compare them, so every text and jsonb column moves in one UPDATE.
+      SELECT string_agg(
+               CASE WHEN a.atttypid = 'jsonb'::regtype
+                 THEN format('%1$I = replace(replace(%1$I::text, %2$L, %3$L), %4$L, %5$L)::jsonb',
+                             a.attname, 'usr_demo_admin', 'usr_demo_user', 'demo-admin', 'demo-user')
+                 ELSE format('%1$I = replace(replace(%1$I, %2$L, %3$L), %4$L, %5$L)',
+                             a.attname, 'usr_demo_admin', 'usr_demo_user', 'demo-admin', 'demo-user')
+               END, ', ')
+        INTO assignments
+        FROM pg_attribute a
+       WHERE a.attrelid = ref.tbl AND a.attnum > 0 AND NOT a.attisdropped AND a.attgenerated = ''
+         AND a.atttypid IN ('text'::regtype, 'jsonb'::regtype) AND a.attname <> ref.col;
       BEGIN
-        EXECUTE format('UPDATE %s SET %I = %L WHERE %I = %L',
-                       ref.tbl, ref.col, 'usr_demo_user', ref.col, 'usr_demo_admin');
+        EXECUTE format('UPDATE %s SET %I = %L%s WHERE %I = %L',
+                       ref.tbl, ref.col, 'usr_demo_user',
+                       CASE WHEN assignments IS NULL THEN '' ELSE ', ' || assignments END,
+                       ref.col, 'usr_demo_admin');
       EXCEPTION WHEN unique_violation THEN
         BEGIN
           EXECUTE format('DELETE FROM %s WHERE %I = %L', ref.tbl, ref.col, 'usr_demo_admin');
@@ -141,10 +157,19 @@ BEGIN
     END LOOP;
   END LOOP;
 
+  -- demo-user's own audit rows may still name the old account as a target or in a payload.
+  SELECT coalesce(array_agg(tgname), ARRAY[]::name[]) INTO paused
+    FROM pg_trigger WHERE tgrelid = 'public.audit_logs'::regclass AND NOT tgisinternal AND tgenabled <> 'D';
+  FOREACH trigger_name IN ARRAY paused LOOP
+    EXECUTE format('ALTER TABLE public.audit_logs DISABLE TRIGGER %I', trigger_name);
+  END LOOP;
   UPDATE public.audit_logs SET target_id='usr_demo_user' WHERE target_id='usr_demo_admin';
   UPDATE public.audit_logs
      SET payload_json = replace(replace(payload_json::text, 'usr_demo_admin', 'usr_demo_user'), 'demo-admin', 'demo-user')::jsonb
    WHERE payload_json::text LIKE '%usr_demo_admin%' OR payload_json::text LIKE '%demo-admin%';
+  FOREACH trigger_name IN ARRAY paused LOOP
+    EXECUTE format('ALTER TABLE public.audit_logs ENABLE TRIGGER %I', trigger_name);
+  END LOOP;
 
   DELETE FROM public.users WHERE user_id='usr_demo_admin';
   GET DIAGNOSTICS removed = ROW_COUNT;

@@ -77,6 +77,9 @@ import java.security.MessageDigest
     AsyncProperties::class,
 )
 class SecurityConfig {
+    @Value("\${mars.social-login.public-origin:}")
+    private var publicOrigin: String = ""
+
     @Bean
     fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder(12)
 
@@ -402,9 +405,12 @@ class SecurityConfig {
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {
         // README의 loopback 접속 주소만 열어 same-origin rewrite와 로컬 smoke를 함께 만족한다.
+        // FULL 은 사용자가 여는 공개 주소에서 같은 출처로 들어오므로 그 주소 하나를 더한다.
         val configuration =
             CorsConfiguration().apply {
-                allowedOrigins = listOf("http://localhost:3000", "http://127.0.0.1:3000")
+                allowedOrigins =
+                    listOf("http://localhost:3000", "http://127.0.0.1:3000") +
+                    listOf(publicOrigin).filter { it.isNotBlank() }
                 allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE")
                 allowedHeaders =
                     listOf(

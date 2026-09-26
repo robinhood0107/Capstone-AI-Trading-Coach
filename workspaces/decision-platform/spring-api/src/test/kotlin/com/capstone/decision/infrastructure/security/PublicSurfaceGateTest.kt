@@ -13,7 +13,7 @@ class PublicSurfaceGateTest {
     fun `public modes reject all application routes before authentication or provider code`() {
         val paths =
             listOf(
-                "/api/v1/auth/login",
+                "/api/v1/auth/identities/github/link/start",
                 "/api/v1/brokerage/mock/orders",
                 "/internal/automation-runtime/run",
             )
@@ -25,6 +25,38 @@ class PublicSurfaceGateTest {
                 assertEquals(404, response.status, "$mode $path")
                 assertEquals(null, chain.request, "$mode $path")
             }
+        }
+    }
+
+    @Test
+    fun `full permits account login signup and provider link routes while demo denies them`() {
+        val allowed =
+            listOf(
+                "POST" to "/api/v1/auth/login",
+                "POST" to "/api/v1/auth/signup",
+                "PUT" to "/api/v1/auth/password",
+                "GET" to "/api/v1/auth/options",
+                "GET" to "/api/v1/auth/identities",
+                "POST" to "/api/v1/auth/identities/google/link/start",
+                "POST" to "/api/v1/auth/identities/kakao/link/start",
+                "DELETE" to "/api/v1/auth/identities/google",
+                "DELETE" to "/api/v1/auth/identities/kakao",
+            )
+        for ((method, path) in allowed) {
+            val fullChain = MockFilterChain()
+            PublicSurfaceGate(PublicSurfaceMode.FULL).doFilter(
+                MockHttpServletRequest(method, path),
+                MockHttpServletResponse(),
+                fullChain,
+            )
+            assertEquals(path, (fullChain.request as MockHttpServletRequest).requestURI, "$method $path")
+            val demoResponse = MockHttpServletResponse()
+            PublicSurfaceGate(PublicSurfaceMode.DEMO).doFilter(
+                MockHttpServletRequest(method, path),
+                demoResponse,
+                MockFilterChain(),
+            )
+            assertEquals(404, demoResponse.status, "$method $path")
         }
     }
 

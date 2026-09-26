@@ -39,19 +39,19 @@ def test_request_requires_all_general_security_and_ci_checks(tmp_path: Path) -> 
         certification._read_request(request_path)
 
 
-def test_request_accepts_codex_workflow_branch(tmp_path: Path) -> None:
+def test_request_accepts_feature_workflow_branch(tmp_path: Path) -> None:
     request_path = tmp_path / "request.json"
     expected = _request(request_path)
-    expected["branch"] = "codex/p1-v3-preopen-e2e-hardening-20260901"
+    expected["branch"] = "feature/p1-v3-preopen-e2e-hardening-20260901"
     request_path.write_bytes(canonical_json_bytes(expected))
 
     assert certification._read_request(request_path) == expected
 
 
-def test_runtime_packet_accepts_codex_workflow_branch(tmp_path: Path) -> None:
+def test_runtime_packet_accepts_feature_workflow_branch(tmp_path: Path) -> None:
     request_path = tmp_path / "request.json"
     request = _request(request_path)
-    request["branch"] = "codex/p1-v3-preopen-e2e-hardening-20260901"
+    request["branch"] = "feature/p1-v3-preopen-e2e-hardening-20260901"
     approval = SimpleNamespace(expires_at=datetime.now(UTC) + timedelta(minutes=4))
 
     packet = certification._runtime_packet(

@@ -1,0 +1,37 @@
+# 개인 서버 배포용 오버레이. compose.yml 위에 얹는다.
+#
+#   P1_COMPOSE_OVERLAY=deploy/p1/compose.server.yml ./capstone up --mock
+#
+# 바뀌는 것은 세 가지뿐이다.
+#   1. TLS 리버스 프록시를 항상 띄우고 표준 443/80 으로 공개한다. 앱 포트는 127.0.0.1 에 남는다.
+#   2. 상시 서비스가 호스트 재부팅 뒤에도 다시 뜬다.
+#   3. 프로젝트 이름을 로컬과 같은 capstone-p1 로 고정해, 옮겨 온 DB 볼륨
+#      capstone-p1_p1-postgres-current 에 그대로 붙는다.
+#
+# 인증서는 state 의 secrets/proxy-tls.crt, secrets/proxy-tls.key 에 둔다(0640).
+# Google·Kakao 로그인을 쓰려면 루트 .env 에 MARS_PUBLIC_ORIGIN=https://<도메인> 과
+# 두 제공자 값을 넣는다. 데이터와 비밀값은 이미지·레지스트리를 거치지 않는다.
+name: capstone-p1
+
+services:
+  postgres:
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+  actor-authority:
+    restart: unless-stopped
+
+  decision-platform:
+    restart: unless-stopped
+
+  experience-dashboard:
+    restart: unless-stopped
+
+  tls-proxy:
+    profiles: !reset []
+    ports: !override
+      - "${P1_TLS_BIND:-0.0.0.0}:${P1_TLS_HTTPS_PORT:-443}:8443"
+      - "${P1_TLS_BIND:-0.0.0.0}:${P1_TLS_HTTP_PORT:-80}:8080"
+    restart: unless-stopped

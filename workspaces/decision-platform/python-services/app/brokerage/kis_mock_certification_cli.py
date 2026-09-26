@@ -66,7 +66,7 @@ _PROVIDER_FAMILY: Final = "KIS_MOCK"
 _MAX_FILE_BYTES: Final = 32 * 1024
 _HEAD = re.compile(r"^[0-9a-f]{40}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_BRANCH = re.compile(r"^(?:feature|fix|docs|infra|experiment|codex)/[A-Za-z0-9._/-]{1,120}$")
+_BRANCH = re.compile(r"^(?:feature|fix|docs|infra|experiment)/[A-Za-z0-9._/-]{1,120}$")
 #: 인증은 소스가 아니라 실제로 도는 이미지에 묶인다. 요청서가 그 다이제스트를 들고 온다.
 _IMAGE_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _REQUIRED_CHECKS: Final = frozenset(

@@ -430,6 +430,9 @@ services:
       SERVER_PORT: '8080'
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
       MARS_PUBLIC_SURFACE_MODE: ${MARS_PUBLIC_SURFACE_MODE:-LOCAL}
+      MARS_PUBLIC_ORIGIN: ${MARS_PUBLIC_ORIGIN:-}
+      GOOGLE_OIDC_REDIRECT_URI: ${MARS_PUBLIC_ORIGIN:-}/api/v1/auth/oidc/callback/google
+      KAKAO_OAUTH_REDIRECT_URI: ${MARS_PUBLIC_ORIGIN:-}/api/v1/auth/oidc/callback/kakao
       SPRING_FLYWAY_ENABLED: 'false'
       ACTOR_CAPABILITY_TRANSPORT: http
       ACTOR_CAPABILITY_AUTHORITY_URL: https://actor-authority:18081/internal/actor-capabilities/issue

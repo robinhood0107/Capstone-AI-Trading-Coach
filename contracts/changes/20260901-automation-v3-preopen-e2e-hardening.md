@@ -36,9 +36,8 @@ The provider-free E2E sequence exposed two gaps before the next market session.
   V115 without changing the sealed seed bytes.
 - The contract checks are a real `unittest.TestCase`, and the API E2E now covers
   V3 status, policy CAS, runs, positions, and owner-masked missing detail.
-- Mock certification accepts the repository's safe `codex/*` workflow
-  branches across the request, signed runtime packet, and receipt guard;
-  operation scope, call caps, canonical request,
+- Mock certification keeps one branch-prefix rule across the request,
+  signed runtime packet, and receipt guard; operation scope, call caps, canonical request,
   signed approval, and mock-account binding are unchanged.
 - Failed mock certification now reports only the typed failed step, reason code,
   and already reserved physical-call counts. Raw KIS responses remain absent.

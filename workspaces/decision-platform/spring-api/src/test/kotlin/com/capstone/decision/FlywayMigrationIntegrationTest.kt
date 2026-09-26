@@ -4566,7 +4566,7 @@ class FlywayMigrationIntegrationTest(
 
     private fun repositoryRoot(): Path {
         var current = Path.of(System.getProperty("user.dir")).toAbsolutePath()
-        while (!Files.exists(current.resolve("AGENTS.md"))) {
+        while (!Files.exists(current.resolve("CONTRIBUTING.md"))) {
             current = current.parent ?: error("repository root was not found")
         }
         return current

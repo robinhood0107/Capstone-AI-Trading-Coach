@@ -111,8 +111,8 @@ class MockCertificationGuardTest(unittest.TestCase):
     def test_exact_certified_tree_and_clean_checkout_pass(self) -> None:
         self._verify()
 
-    def test_codex_branch_is_a_valid_audit_label(self) -> None:
-        self.request["branch"] = "codex/p1-v3-preopen-e2e-hardening-20260901"
+    def test_feature_branch_is_a_valid_audit_label(self) -> None:
+        self.request["branch"] = "feature/p1-v3-preopen-e2e-hardening-20260901"
         request_bytes = _canonical(self.request)
         self.request_path.write_bytes(request_bytes)
         self.receipt["inputSha256"] = hashlib.sha256(request_bytes).hexdigest()

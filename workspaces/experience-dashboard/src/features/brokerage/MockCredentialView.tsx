@@ -1,7 +1,9 @@
 'use client';
 
+import Link from 'next/link';
 import { useId, useState } from 'react';
 import { api } from '@/shared/api/endpoints';
+import { CREDENTIAL_BLOCKER_MESSAGE, credentialChangeBlocker } from './credentialBlockers';
 import type { MockCredentialReadResponse } from '@/shared/api/wire';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
@@ -40,6 +42,7 @@ function MockCredentialForm({
   const [pending, setPending] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [armedBlock, setArmedBlock] = useState(false);
 
   const valid =
     appKey.length >= 8 &&
@@ -56,6 +59,7 @@ function MockCredentialForm({
     setPending(true);
     setOutcome(null);
     setError(null);
+    setArmedBlock(false);
     try {
       await api.putMockCredential({ appKey, appSecret, accountNo });
       setAppKey('');
@@ -64,8 +68,14 @@ function MockCredentialForm({
       setOutcome('암호화해 저장했습니다. 연결 확인과 모의주문 인증은 별도 단계입니다.');
       reload();
     } catch (cause) {
-      const state = toErrorState<never>(cause);
-      setError(state.kind === 'error' ? state.message : '저장하지 못했습니다.');
+      const blocked = credentialChangeBlocker(cause);
+      setArmedBlock(blocked === 'AUTOMATION_ARMED');
+      if (blocked) {
+        setError(CREDENTIAL_BLOCKER_MESSAGE[blocked]);
+      } else {
+        const state = toErrorState<never>(cause);
+        setError(state.kind === 'error' ? state.message : '저장하지 못했습니다.');
+      }
     } finally {
       setPending(false);
     }
@@ -308,6 +318,14 @@ function MockCredentialForm({
       </button>
       {outcome ? <p className="mt-3 text-[13px] text-allow">{outcome}</p> : null}
       {error ? <p className="mt-3 text-[13px] text-block">{error}</p> : null}
+      {armedBlock ? (
+        <Link
+          href="/automation"
+          className="mt-2 inline-block text-[13px] font-semibold text-navy underline underline-offset-2"
+        >
+          자동매매 화면에서 해제하기
+        </Link>
+      ) : null}
     </Panel>
   );
 }

@@ -242,7 +242,7 @@ export async function apiFetchBare<T>(path: string, options: RequestOptions = {}
     const nested = envelope.error && typeof envelope.error === 'object'
       ? { ...(envelope.error as object), requestId: envelope.requestId }
       : payload;
-    const error = nested as { code?: unknown; message?: unknown; requestId?: unknown };
+    const error = nested as { code?: unknown; message?: unknown; details?: unknown; requestId?: unknown };
     // code 가 없으면 이 응답은 v2 계약이 아니다(프록시·기본 error handler). status 로 분류해야
     // 재시도 가능 여부가 정확해진다.
     if (typeof error.code !== 'string') {
@@ -255,6 +255,11 @@ export async function apiFetchBare<T>(path: string, options: RequestOptions = {}
       {
         code: error.code,
         message: typeof error.message === 'string' ? error.message : '알 수 없는 오류입니다.',
+        // details 를 버리면 서버가 알려 준 사유(예: 409 details.reason)를 화면이 쓸 수 없다.
+        details:
+          error.details && typeof error.details === 'object' && !Array.isArray(error.details)
+            ? (error.details as Record<string, unknown>)
+            : undefined,
       },
       typeof error.requestId === 'string' ? error.requestId : requestId,
     );

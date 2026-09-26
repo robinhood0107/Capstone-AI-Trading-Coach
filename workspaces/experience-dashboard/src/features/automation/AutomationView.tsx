@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Term } from '@/shared/ui/Term';
 import Link from 'next/link';
 import { api } from '@/shared/api/endpoints';
+import { nullableRead } from '@/shared/api/nullableRead';
 import { useSession } from '@/shared/api/session';
 import { toErrorState, useResource } from '@/shared/lib/useResource';
 import { formatKrw, formatKstDateTime } from '@/shared/lib/format';
@@ -136,8 +137,8 @@ async function load(): Promise<ViewState<AutomationData>> {
     api.automationRunsV3().catch(() => null),
     api.automationPositionsV3().catch(() => null),
     api.instrumentDisplayCatalog().catch(() => null),
-    api.automationCapitalPolicy().catch(() => null),
-    api.automationCapitalStatus().catch(() => null),
+    nullableRead(api.automationCapitalPolicy()),
+    nullableRead(api.automationCapitalStatus()),
   ]);
   return ready(
     {

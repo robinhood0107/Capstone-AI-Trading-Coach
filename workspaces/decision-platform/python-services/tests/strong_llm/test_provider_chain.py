@@ -292,7 +292,7 @@ def test_the_chain_reads_the_second_provider_only_when_it_is_declared(
     assert ProviderChainSettings.from_env().secondary is None
 
     monkeypatch.setenv("STRONG_LLM_FALLBACK_PROVIDER", "anthropic")
-    monkeypatch.setenv("STRONG_LLM_FALLBACK_MODEL_ID", "claude")
+    monkeypatch.setenv("STRONG_LLM_FALLBACK_MODEL_ID", "fallback-model")
     monkeypatch.setenv("STRONG_LLM_FALLBACK_API_KEY", "k")
     settings = ProviderChainSettings.from_env()
 

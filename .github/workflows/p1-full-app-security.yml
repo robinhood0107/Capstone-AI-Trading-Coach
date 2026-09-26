@@ -71,5 +71,3 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
-      - name: Record scoped security marker
-        run: echo 'CODEX_SECURITY_DEEP_SCAN=NOT_RUN_USER_SCOPED_OUT'

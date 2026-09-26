@@ -13,7 +13,7 @@ import { test, expect, type ConsoleMessage, type Response } from '@playwright/te
  * 여기서는 관문과 버튼이 존재하고 이유가 보이는지까지만 본다.
  *
  * KIS 를 타는 읽기(`balances`, `buyable`)는 모의 계좌가 **1건/초**라
- * (AGENTS.md 'KIS 호출 유량 불변식') 화면을 여러 개 돌면 503 이 정상적으로 섞인다.
+ * (CONTRIBUTING.md 'KIS 호출 유량 불변식') 화면을 여러 개 돌면 503 이 정상적으로 섞인다.
  * 그래서 5xx 를 전부 금지하지 않고 **KIS 경유 경로만 예외**로 둔다.
  */
 

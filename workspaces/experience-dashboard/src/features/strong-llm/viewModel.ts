@@ -9,7 +9,7 @@ export type Provider = (typeof PROVIDERS)[number];
 export const PROVIDER_LABEL: Record<Provider, string> = {
   vertex: 'Vertex AI (Gemini)',
   openai: 'OpenAI',
-  anthropic: 'Anthropic (Claude)',
+  anthropic: 'Anthropic',
   google_genai: 'Google AI (Gemini API)',
   custom: '직접 입력 (OpenAI 호환)',
 };

@@ -33,6 +33,10 @@ COMMON_FILES = (
 FULL_FILES = (
     "seed-import.env",
     "market-data.env",
+    # 개인 스택이 up 마다 돌리는 일회성 적재 세 개(모델 번들, 거래 달력, 출처 registry).
+    "artifact-import.env",
+    "calendar-offline-seed.env",
+    "rag-source-register.env",
 )
 SPRING_KEYS = (
     "POSTGRES_APP_PASSWORD",
@@ -69,6 +73,8 @@ FULL_FROM_BASE = {
     "RETURN_INFERENCE_GRPC_SHARED_SECRET": "return-inference.env",
     "P1_AUTOMATION_DATABASE_DSN": "automation-runtime.env",
     "AUTOMATION_RUNTIME_SHARED_SECRET": "automation-runtime.env",
+    # 비동기 worker, 세계 뉴스 보존, owner 별 리포트 갱신이 쓰는 decision_worker DSN.
+    "ASYNC_WORKER_DATABASE_DSN": "python.env",
 }
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ROOT_ENV = PROJECT_ROOT / ".env"

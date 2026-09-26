@@ -126,6 +126,52 @@ services:
     restart: "no"
     networks: [full-data]
 
+  # Return Engine 번들 포인터를 DB 에 적재한다. 이것이 없으면 추론·백테스트·리포트가 모두
+  # 모델 포인터 부재로 닫힌다. 번들은 이미지의 /opt/capstone/seed(65532 소유)에 있고,
+  # 불변 보관본은 매 up 마다 다시 만들어도 되는 사본이라 tmpfs 에 둔다.
+  team-b-seed-import:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "artifact-import"]
+    command: ["python", "-m", "app.p1_owner.importer", "--bundle-root", "/opt/capstone/seed/team-b", "--archive-parent", "/archive", "--git-seed"]
+    environment:
+      P1_OPERATOR_UID: "65532"
+    secrets: [artifact_import_env]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    <<: *app-security
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /archive:size=64m,mode=0700,uid=65532,gid=65532
+    restart: "no"
+    networks: [full-data]
+
+  # XKRX 패키지 달력으로 거래 세션을 적재한다. provider 호출 0. 무장이 다음 세션 행을 요구한다.
+  # 개인 스택처럼 실패해도 up 을 멈추지 않고 표식만 남긴다.
+  calendar-offline-seed:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "calendar-offline-seed"]
+    command: ["sh", "-c", "python -m app.data.calendar.offline_seed_cli || true"]
+    environment:
+      P1_CALENDAR_OFFLINE_SEED_YEARS: "${P1_CALENDAR_OFFLINE_SEED_YEARS:-}"
+    secrets: [calendar_offline_seed_env]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    <<: *app-security
+    restart: "no"
+    networks: [full-data]
+
+  # "이 시스템이 참고하는 자료" 패널의 출처 registry. 커밋된 seed 만 등록하고 멱등이다.
+  rag-source-register:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "rag-source-register"]
+    command: ["sh", "-c", "python -m app.rag.register_sources_cli --register-db --json || true"]
+    secrets: [rag_source_register_env]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    <<: *app-security
+    restart: "no"
+    networks: [full-data]
+
   actor-authority:
     image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "authority"]
@@ -176,11 +222,12 @@ services:
     <<: *app-security
     networks: [full-data, full-web]
 
+  # 뉴스 거부권의 근거 코퍼스. 개인 스택처럼 up 마다 한 번 돈다. 비어 있으면 거부권이
+  # 조용히 ABSTAIN 하므로 프로필 뒤에 숨기지 않는다. 실패해도 up 을 멈추지 않는다.
   disclosure-collector:
-    profiles: [collectors]
     image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "disclosure-collector"]
-    command: ["python", "-m", "app.data.opendart.disclosure_event_collector_cli"]
+    command: ["sh", "-c", "python -m app.data.opendart.disclosure_event_collector_cli || true"]
     environment:
       OPENDART_OFFLINE: "false"
       OPENDART_DAILY_CALL_LIMIT: "${OPENDART_DAILY_CALL_LIMIT:-20000}"
@@ -189,7 +236,7 @@ services:
       OPENDART_MAX_SYMBOLS_PER_RUN: "${OPENDART_MAX_SYMBOLS_PER_RUN:-31}"
     secrets: [disclosure_collector_env]
     depends_on:
-      postgres: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
     mem_limit: 2g
     cpus: 2.0
     <<: *app-security
@@ -220,8 +267,10 @@ services:
       ACTOR_CAPABILITY_TLS_KEY_STORE_PATH: /run/secrets/actor_client_p12
       ACTOR_CAPABILITY_TLS_CA_CERTIFICATE_PATH: /run/secrets/actor_tls_ca
       ASYNC_ADAPTER: db
-      ASYNC_POLLING_ENABLED: "false"
-      ASYNC_WORKER_ENABLED: "false"
+      ASYNC_POLLING_ENABLED: "true"
+      ASYNC_WORKER_ENABLED: "true"
+      ASYNC_WORKER_GRPC_BIND_ADDRESS: 127.0.0.1:50056
+      ASYNC_WORKER_GRPC_TARGET: 127.0.0.1:50056
       RETURN_INFERENCE_BUNDLE_ROOT: /opt/capstone/seed/team-b
       RETURN_INFERENCE_ALLOW_SYNTHETIC: "false"
       BROKERAGE_GRPC_ENABLED: "true"
@@ -242,7 +291,7 @@ services:
       S4_9_VOYAGE_TOKENIZER_SHA256: "${P1_RAG_V2_TOKENIZER_SHA256:-c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539}"
       KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP: "1"
       KIS_BROKERAGE_PHYSICAL_CAP: "20"
-      WORLD_NEWS_RETENTION_ENABLED: "false"
+      WORLD_NEWS_RETENTION_ENABLED: "true"
       S4_9_STRONG_LLM_ENABLED: "true"
       STRONG_LLM_PROVIDER: vertex
       STRONG_LLM_FALLBACK_PROVIDER: ""
@@ -262,6 +311,7 @@ services:
     depends_on:
       migrate: {condition: service_completed_successfully}
       seed-import: {condition: service_completed_successfully}
+      team-b-seed-import: {condition: service_completed_successfully}
       rag-runtime-seed: {condition: service_completed_successfully}
       actor-authority: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -315,6 +365,9 @@ secrets:
   rag_history_kek: {file: "${MARS_FULL_SECRETS_DIR}/rag-history-kek-v1.key"}
   market_data_env: {file: "${MARS_FULL_SECRETS_DIR}/market-data.env"}
   disclosure_collector_env: {file: "${MARS_FULL_SECRETS_DIR}/disclosure-collector.env"}
+  artifact_import_env: {file: "${MARS_FULL_SECRETS_DIR}/artifact-import.env"}
+  calendar_offline_seed_env: {file: "${MARS_FULL_SECRETS_DIR}/calendar-offline-seed.env"}
+  rag_source_register_env: {file: "${MARS_FULL_SECRETS_DIR}/rag-source-register.env"}
 
 volumes:
   full-postgres: {}

@@ -73,6 +73,32 @@ class SocialLoginHandoffTest {
         }
     }
 
+    @Test
+    fun `provider link intent stays with the logged in owner through the one use exchange`() {
+        val repository = RecordingRepository()
+        val handoff = SocialLoginHandoff(repository, jwtService(), jwtProperties())
+        val session = MockHttpSession()
+        handoff.beginLink("usr_demo_user", "google", session)
+        assertEquals(SocialLoginLinkIntent("usr_demo_user", "google"), handoff.linkIntent(session))
+
+        handoff.stageLinkedIdentity("usr_demo_user", SocialLoginHandoff.GOOGLE_ISSUER, "subject-A", false, session)
+        assertEquals(null, handoff.linkIntent(session))
+        val controller =
+            SocialLoginExchangeController(
+                handoff,
+                FullSocialLoginProperties("https://mars.example.test", "a".repeat(64)),
+            )
+        val request =
+            MockHttpServletRequest("POST", "/api/v1/auth/oidc/exchange").apply {
+                addHeader("Origin", "https://mars.example.test")
+                setSession(session)
+            }
+        val result = controller.exchange(request, MockHttpServletResponse())
+        assertEquals("usr_demo_user", result.data?.user?.userId)
+        assertEquals("demo-user", result.data?.user?.username)
+        assertThrows(IllegalStateException::class.java) { handoff.consume(session) }
+    }
+
     private fun jwtProperties() = JwtProperties(secret = "j" + "s".repeat(63), issuer = "test", audience = "test")
 
     private fun jwtService() = JwtService(jwtProperties(), EmptyUserSecurityRepository)
@@ -100,6 +126,36 @@ class SocialLoginHandoffTest {
                 expiresAt = OffsetDateTime.now().plusHours(1),
             )
         }
+
+        override fun linkIdentityAndCreateSession(
+            userId: String,
+            issuer: String,
+            subject: String,
+            operatorSubject: Boolean,
+            ttlSeconds: Int,
+        ): AuthenticatedAccount {
+            calls++
+            assertEquals("usr_demo_user", userId)
+            assertEquals(SocialLoginHandoff.GOOGLE_ISSUER, issuer)
+            assertEquals("subject-A", subject)
+            assertFalse(operatorSubject)
+            assertEquals(43_200, ttlSeconds)
+            return AuthenticatedAccount(
+                userId = userId,
+                username = "demo-user",
+                role = DemoRole.USER,
+                securityVersion = 1,
+                sessionHandle = "sid1_" + "b".repeat(64),
+                expiresAt = OffsetDateTime.now().plusHours(1),
+            )
+        }
+
+        override fun listAuthenticationMethods(userId: String): List<AccountAuthenticationMethod> = emptyList()
+
+        override fun unlinkIdentity(
+            userId: String,
+            issuer: String,
+        ): Boolean = true
     }
 
     private object EmptyUserSecurityRepository : UserSecurityRepository {

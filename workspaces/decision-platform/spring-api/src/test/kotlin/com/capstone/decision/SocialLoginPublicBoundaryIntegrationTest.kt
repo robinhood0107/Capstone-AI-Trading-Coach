@@ -1,5 +1,8 @@
 package com.capstone.decision
 
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -26,6 +29,7 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
+import tools.jackson.databind.ObjectMapper
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
@@ -43,6 +47,7 @@ import java.security.SecureRandom
 )
 class SocialLoginPublicBoundaryIntegrationTest(
     @Autowired private val context: WebApplicationContext,
+    @Autowired private val objectMapper: ObjectMapper,
 ) {
     private lateinit var mvc: MockMvc
 
@@ -56,8 +61,23 @@ class SocialLoginPublicBoundaryIntegrationTest(
     }
 
     @Test
-    fun `public password is closed and both provider starts use state`() {
-        mvc.post("/api/v1/auth/login").andExpect { status { isNotFound() } }
+    fun `public password login rejects invalid credentials and both provider starts use state`() {
+        mvc
+            .post("/api/v1/auth/login") {
+                contentType = org.springframework.http.MediaType.APPLICATION_JSON
+                content = """{"identifier":"demo-user","password":"wrong"}"""
+            }.andExpect { status { isUnauthorized() } }
+        mvc
+            .post("/api/v1/auth/login") {
+                contentType = org.springframework.http.MediaType.APPLICATION_JSON
+                content = """{"identifier":"demo-admin","password":"wrong"}"""
+            }.andExpect { status { isUnauthorized() } }
+        mvc
+            .post("/api/v1/auth/signup") {
+                contentType = org.springframework.http.MediaType.APPLICATION_JSON
+                content = """{"email":"new@example.test","password":"short"}"""
+            }.andExpect { status { isBadRequest() } }
+        mvc.get("/api/v1/auth/identities").andExpect { status { isUnauthorized() } }
         mvc.post("/api/v1/brokerage/mock/credential/connect").andExpect { status { isUnauthorized() } }
         mvc.post("/api/v1/brokerage/mock/credential/certify").andExpect { status { isUnauthorized() } }
         mvc.post("/api/v1/brokerage/mock/credential/certify/recovery-confirm").andExpect { status { isUnauthorized() } }
@@ -71,6 +91,82 @@ class SocialLoginPublicBoundaryIntegrationTest(
             header { string("Location", org.hamcrest.Matchers.containsString("kauth.kakao.com")) }
             header { string("Location", org.hamcrest.Matchers.containsString("state=")) }
         }
+    }
+
+    @Test
+    fun `password signup login and authentication method reads stay owner scoped`() {
+        val firstEmail = "first-${java.util.UUID.randomUUID()}@example.test"
+        val secondEmail = "second-${java.util.UUID.randomUUID()}@example.test"
+        val password = "test-password-" + "x".repeat(15)
+
+        fun signup(email: String) =
+            mvc
+                .post("/api/v1/auth/signup") {
+                    contentType = org.springframework.http.MediaType.APPLICATION_JSON
+                    content = objectMapper.writeValueAsString(mapOf("email" to email, "password" to password))
+                }.andReturn()
+                .response
+
+        val firstResponse = signup(firstEmail)
+        assertEquals(200, firstResponse.status)
+        val firstData = objectMapper.readTree(firstResponse.contentAsString).path("data")
+        val firstUserId = firstData.path("user").path("userId").asText()
+        val firstToken = firstData.path("accessToken").asText()
+        assertTrue(firstUserId.startsWith("usr_"))
+        assertTrue(firstToken.isNotBlank())
+
+        val duplicate = signup(firstEmail)
+        assertEquals(409, duplicate.status)
+
+        val passwordLogin =
+            mvc
+                .post("/api/v1/auth/login") {
+                    contentType = org.springframework.http.MediaType.APPLICATION_JSON
+                    content = objectMapper.writeValueAsString(mapOf("identifier" to firstEmail, "password" to password))
+                }.andReturn()
+                .response
+        assertEquals(200, passwordLogin.status)
+        assertEquals(
+            firstUserId,
+            objectMapper
+                .readTree(passwordLogin.contentAsString)
+                .path("data")
+                .path("user")
+                .path("userId")
+                .asText(),
+        )
+
+        val secondResponse = signup(secondEmail)
+        assertEquals(200, secondResponse.status)
+        val secondData = objectMapper.readTree(secondResponse.contentAsString).path("data")
+        val secondUserId = secondData.path("user").path("userId").asText()
+        assertNotEquals(firstUserId, secondUserId)
+
+        val firstMethods =
+            mvc
+                .get("/api/v1/auth/identities") {
+                    header("Authorization", "Bearer $firstToken")
+                }.andReturn()
+                .response
+        assertEquals(200, firstMethods.status)
+        val firstEmailRows =
+            objectMapper.readTree(firstMethods.contentAsString).path("data").let { rows ->
+                (0 until rows.size()).map { rows.get(it).path("email").asString() }
+            }
+        assertEquals(listOf(firstEmail), firstEmailRows)
+
+        val secondMethods =
+            mvc
+                .get("/api/v1/auth/identities") {
+                    header("Authorization", "Bearer ${secondData.path("accessToken").asText()}")
+                }.andReturn()
+                .response
+        assertEquals(200, secondMethods.status)
+        val secondEmailRows =
+            objectMapper.readTree(secondMethods.contentAsString).path("data").let { rows ->
+                (0 until rows.size()).map { rows.get(it).path("email").asString() }
+            }
+        assertEquals(listOf(secondEmail), secondEmailRows)
     }
 
     @TestConfiguration

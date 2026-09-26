@@ -237,7 +237,12 @@ export async function apiFetchBare<T>(path: string, options: RequestOptions = {}
   }
 
   if (!response.ok) {
-    const error = payload as { code?: unknown; message?: unknown; requestId?: unknown };
+    // 이 경로들은 성공이면 본문이 없지만, 실패는 공통 envelope({ error: {...} })로 온다.
+    const envelope = payload as { error?: unknown; requestId?: unknown };
+    const nested = envelope.error && typeof envelope.error === 'object'
+      ? { ...(envelope.error as object), requestId: envelope.requestId }
+      : payload;
+    const error = nested as { code?: unknown; message?: unknown; requestId?: unknown };
     // code 가 없으면 이 응답은 v2 계약이 아니다(프록시·기본 error handler). status 로 분류해야
     // 재시도 가능 여부가 정확해진다.
     if (typeof error.code !== 'string') {

@@ -26,6 +26,7 @@ import com.capstone.decision.contract.v1.SubmitMockCashOrderRequest
 import com.capstone.decision.contract.v1.VerifyMockConnectionRequest
 import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
 import com.google.protobuf.ByteString
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
 import io.grpc.ManagedChannel
 import io.grpc.Metadata
@@ -57,6 +58,17 @@ class GrpcBrokerageAdapter(
     private val channel: ManagedChannel
     private val circuitBreaker = circuitBreakerRegistry.circuitBreaker(properties.circuitBreakerName)
 
+    /**
+     * 회로가 열려 호출을 거절하면 resilience4j 는 CallNotPermittedException 을 던진다. 어느 handler 도
+     * 그 타입을 모르므로 그대로 두면 500 이 된다. 공급자 불가(503)로 옮긴다.
+     */
+    internal fun <T> guarded(block: () -> T): T =
+        try {
+            circuitBreaker.executeSupplier(block)
+        } catch (exception: CallNotPermittedException) {
+            throw BrokerageUnavailableException("KIS_MOCK circuit is open.", exception)
+        }
+
     init {
         properties.validate()
         channel =
@@ -69,7 +81,7 @@ class GrpcBrokerageAdapter(
     }
 
     override fun submitMockOrder(request: BrokerageGatewaySubmitRequest): BrokerageGatewaySubmitResult =
-        circuitBreaker.executeSupplier {
+        guarded {
             val builder =
                 SubmitMockCashOrderRequest
                     .newBuilder()
@@ -110,7 +122,7 @@ class GrpcBrokerageAdapter(
         }
 
     override fun cancelMockOrder(request: BrokerageGatewayCancelRequest): BrokerageGatewayCancelResult =
-        circuitBreaker.executeSupplier {
+        guarded {
             val builder =
                 CancelMockCashOrderRequest
                     .newBuilder()
@@ -141,7 +153,7 @@ class GrpcBrokerageAdapter(
         }
 
     override fun getMockBalance(request: BrokerageGatewayBalanceRequest): BrokerageGatewayBalanceResult =
-        circuitBreaker.executeSupplier {
+        guarded {
             val builder =
                 GetMockBalanceRequest
                     .newBuilder()
@@ -199,7 +211,7 @@ class GrpcBrokerageAdapter(
         }
 
     override fun getMockBuyable(request: BrokerageGatewayBuyableRequest): BrokerageGatewayBuyableResult =
-        circuitBreaker.executeSupplier {
+        guarded {
             val builder =
                 GetMockBuyableRequest
                     .newBuilder()
@@ -246,7 +258,9 @@ class GrpcBrokerageAdapter(
         ownerUserId: String,
         accountId: String,
     ) {
-        circuitBreaker.executeRunnable {
+        // 연결 확인은 사용자가 방금 넣은 키를 시험하는 호출이다. 잘못된 키의 실패를 계정 공용 회로에
+        // 세면 한 사용자의 오타가 모든 사용자의 주문·잔고 호출을 막는다. 회로를 거치지 않는다.
+        run {
             val builder =
                 VerifyMockConnectionRequest
                     .newBuilder()
@@ -275,7 +289,7 @@ class GrpcBrokerageAdapter(
         sessionDate: String,
         recovery: Boolean,
     ): MockCredentialCertificationProof =
-        circuitBreaker.executeSupplier {
+        guarded {
             val builder =
                 CertifyMockCredentialRequest
                     .newBuilder()

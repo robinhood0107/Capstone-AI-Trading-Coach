@@ -23,6 +23,7 @@ import com.capstone.decision.infrastructure.vertex.S49StrongLlmProperties
 import com.capstone.decision.infrastructure.web.HttpRequestProperties
 import com.capstone.decision.infrastructure.web.RequestBodyLimitFilter
 import com.capstone.decision.infrastructure.web.RequestIdFilter
+import jakarta.servlet.DispatcherType
 import org.flywaydb.core.api.migration.JavaMigration
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
@@ -352,6 +353,12 @@ class SecurityConfig {
             }.authorizeHttpRequests { authorize ->
                 authorize
                     .requestMatchers(HttpMethod.OPTIONS, "/**")
+                    .permitAll()
+                authorize
+                    // 컨테이너 오류 dispatch(/error)는 JWT filter 를 다시 타지 않아 익명으로 보인다. 막으면
+                    // 로그인한 사용자의 404·405·500 이 전부 401 로 바뀌어 화면이 로그아웃된다.
+                    // /error 는 이미 정해진 status 를 envelope 로 옮길 뿐이라 열어도 권한이 늘지 않는다.
+                    .dispatcherTypeMatchers(DispatcherType.ERROR)
                     .permitAll()
                 authorize
                     // liveness만 공개하고 metrics/info/prometheus는 운영정보이므로 ADMIN으로 제한한다.

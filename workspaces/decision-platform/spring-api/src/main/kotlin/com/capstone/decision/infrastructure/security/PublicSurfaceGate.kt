@@ -74,7 +74,6 @@ internal class PublicSurfaceGate(
                     "POST" to "/api/v1/brokerage/mock/credential/connect",
                     "POST" to "/api/v1/brokerage/mock/credential/certify",
                     "POST" to "/api/v1/brokerage/mock/credential/certify/recovery-confirm",
-                    "POST" to "/api/v1/brokerage/mock/credential/certify",
                     -> true
                     else ->
                         (request.method == "POST" && FULL_PROVIDER_LINK_START.matches(request.requestURI)) ||

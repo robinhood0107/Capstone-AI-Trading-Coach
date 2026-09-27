@@ -62,6 +62,7 @@ DSM 역방향 프록시로 `https://<도메인>` → `http://localhost:<MARS_POR
 ## 시놀로지에서 알려진 차이
 
 - 커널이 CPU CFS 를 지원하지 않아 `cpus:` 제한을 두지 않는다(`NanoCPUs can not be set`). `mem_limit` 은 동작한다
+- 느린 디스크에서는 기동 시 Hibernate 스키마 검사가 `decision_app` 의 `statement_timeout`(2s)을 넘겨 API 가 unhealthy 가 된다(`SQLState 57014`, `Error accessing tables metadata`). 스택은 `SPRING_JPA_HIBERNATE_DDL_AUTO=none` 으로 검사를 끈다. 스키마는 `migrate` 가 맞춘다
 - Portainer 가 비밀 파일을 못 찾으면(`secret file not found`) Portainer 컨테이너에 `MARS_SECRETS_ROOT` 를 같은 경로로 마운트한다
 - DB 볼륨은 `@docker` 아래라 Hyper Backup 에 잡히지 않는다. `pg_dump -Fc` 를 작업 스케줄러로 공유 폴더에 떠서 백업한다
 - 같은 KIS 계좌로 두 배포를 동시에 켜지 않는다

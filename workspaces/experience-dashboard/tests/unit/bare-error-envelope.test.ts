@@ -51,3 +51,16 @@ test('bodyless endpoints surface the nested server error code, message and detai
     session.clear();
   }
 });
+
+test('KIS 대사 불가 로컬 종료 상태는 재시도 대신 구체적인 안내를 보여 준다', () => {
+  const failure =
+    new ApiFailure(
+      {
+        code: 'ORDER_RECONCILIATION_NOT_APPLICABLE',
+        message: 'This locally retired order has no verified KIS result to reconcile.',
+      },
+      'req_local_retirement',
+    );
+  assert.equal(failure.userMessage, '이 주문은 로컬 이력 종료 상태라 KIS 대사 대상이 아닙니다. KIS 결과는 확인되지 않았습니다.');
+  assert.equal(failure.retryable, false);
+});

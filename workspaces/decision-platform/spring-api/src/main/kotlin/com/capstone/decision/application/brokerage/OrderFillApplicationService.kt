@@ -89,6 +89,8 @@ class OrderFillApplicationService(
             )
         } catch (exception: BrokerageOrderNotFoundException) {
             throw exception
+        } catch (exception: OrderReconciliationNotApplicableException) {
+            throw exception
         } catch (exception: BrokerageUnavailableException) {
             throw exception
         } catch (exception: OrderFillLogicDivergenceException) {

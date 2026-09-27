@@ -142,6 +142,8 @@ class BrokerageValidationException(
 
 class BrokerageOrderNotFoundException : RuntimeException("Brokerage order was not found.")
 
+class OrderReconciliationNotApplicableException : RuntimeException("Locally retired order has no KIS result to reconcile.")
+
 class BrokerageDecisionNotFoundException : RuntimeException("Owned Decision was not found.")
 
 class DecisionExpiredException : RuntimeException("Decision is expired.")

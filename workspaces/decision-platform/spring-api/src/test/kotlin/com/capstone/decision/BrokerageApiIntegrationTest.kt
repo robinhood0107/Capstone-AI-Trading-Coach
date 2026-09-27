@@ -201,6 +201,16 @@ class BrokerageApiIntegrationTest(
         redisTemplate.keys("idempotency:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
         redisTemplate.keys("idempotency-claim:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
         redisTemplate.keys("idempotency-admission:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
+        jdbcTemplate.execute(
+            "ALTER TABLE full_owner_order_resolution_events_v219 DISABLE TRIGGER full_owner_order_resolution_events_append_only_v219",
+        )
+        try {
+            jdbcTemplate.update("delete from full_owner_order_resolution_events_v219")
+        } finally {
+            jdbcTemplate.execute(
+                "ALTER TABLE full_owner_order_resolution_events_v219 ENABLE TRIGGER full_owner_order_resolution_events_append_only_v219",
+            )
+        }
         jdbcTemplate.update("delete from order_fill_application_receipts")
         jdbcTemplate.update("delete from order_fill_observations")
         jdbcTemplate.update("delete from paper_order_events")
@@ -2378,6 +2388,160 @@ class BrokerageApiIntegrationTest(
                 }
             assertEquals("42501", denied.sqlState)
         }
+    }
+
+    @Test
+    fun `owner confirmed local retirement closes stale cancel request projection without claiming KIS cancel`() {
+        val token = login("demo-user", userPassword())
+        val decisionId = createDecision(token, "6b", orderIntent(quantity = 1))
+        val submitted =
+            submitMockOrder(
+                token,
+                "brokerage-local-retire-0001",
+                "req-brokerage-local-retire-submit",
+                decisionId,
+                orderIntent(quantity = 1),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        val accountId = json(submitted).at("/data/accountId").stringValue()
+
+        val cancelRequested =
+            cancelOrder(
+                token,
+                "brokerage-local-retire-cancel-0001",
+                "req-brokerage-local-retire-cancel",
+                orderId,
+            )
+        assertEquals(200, cancelRequested.response.status, cancelRequested.response.contentAsString)
+        assertEquals("CANCEL_REQUESTED", json(cancelRequested).at("/data/status").stringValue())
+
+        jdbcTemplate.update(
+            "UPDATE orders SET status='CANCELLED',leaves_quantity=0,unfilled_terminated_quantity=1 WHERE order_id=?",
+            orderId,
+        )
+        jdbcTemplate.update(
+            """
+            INSERT INTO full_owner_order_resolution_events_v219(
+              order_id,owner_user_id,source_account_id,prior_status,resolved_status,quantity,
+              filled_quantity,prior_leaves_quantity,unfilled_terminated_quantity,
+              broker_cancel_confirmed,resolution_code,evidence_sha256
+            ) VALUES(?, 'usr_demo_user', ?, 'SUBMITTED', 'CANCELLED', 1, 0, 1, 1, false,
+              'OWNER_CONFIRMED_LOCAL_UNRECONCILED_ORDER_RETIREMENT', ?)
+            """.trimIndent(),
+            orderId,
+            accountId,
+            "a".repeat(64),
+        )
+        val orderEvents =
+            jdbcTemplate.query(
+                "SELECT event_type,event_status FROM order_events WHERE order_id=? ORDER BY event_seq",
+                { result, _ -> result.getString("event_type") to result.getString("event_status") },
+                orderId,
+            )
+        assertEquals(
+            listOf("MOCK_ORDER_SUBMITTED" to "SUBMITTED", "MOCK_ORDER_CANCEL_REQUESTED" to "CANCEL_REQUESTED"),
+            orderEvents,
+        )
+        assertFalse(
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "SELECT broker_cancel_confirmed FROM full_owner_order_resolution_events_v219 WHERE order_id=?",
+                    Boolean::class.java,
+                    orderId,
+                ),
+            ),
+        )
+        val readProjection =
+            mockMvc
+                .get("/api/v1/brokerage/orders/$orderId") {
+                    bearer(token)
+                }.andReturn()
+        assertEquals(200, readProjection.response.status, readProjection.response.contentAsString)
+        assertEquals("LOCAL_RETIRED", json(readProjection).at("/data/status").stringValue())
+        val reconciliation =
+            reconcileOrder(
+                token,
+                "brokerage-local-retire-reconcile-0001",
+                "req-local-retire-reconcile",
+                orderId,
+            )
+        assertEquals(409, reconciliation.response.status, reconciliation.response.contentAsString)
+        assertEquals(
+            "ORDER_RECONCILIATION_NOT_APPLICABLE",
+            json(reconciliation).at("/error/code").stringValue(),
+        )
+        assertEquals(
+            "This locally retired order has no verified KIS result to reconcile.",
+            json(reconciliation).at("/error/message").stringValue(),
+        )
+        val directApplyPayload =
+            objectMapper.writeValueAsString(
+                mapOf(
+                    "actorUserId" to "usr_demo_user",
+                    "actorRole" to "ADMIN",
+                    "securityVersion" to operatorSecurityVersion(),
+                    "orderId" to orderId,
+                ),
+            )
+        val unconsumedScopesBefore = count("SELECT count(*) FROM brokerage_internal_scope WHERE consumed_at IS NULL")
+        val directApplyOutcome =
+            appJdbcTemplate.queryForObject(
+                "SELECT operation_outcome FROM apply_stored_order_fills_authorized_v2(?, ?)",
+                String::class.java,
+                capability(
+                    "usr_demo_user",
+                    "APPLY_ORDER_FILLS",
+                    "ORDER",
+                    orderId,
+                    payloadJson = directApplyPayload,
+                    admin = true,
+                ),
+                directApplyPayload,
+            )
+        assertEquals("LOCAL_RETIREMENT_NOT_RECONCILABLE", directApplyOutcome)
+        assertEquals(
+            unconsumedScopesBefore,
+            count("SELECT count(*) FROM brokerage_internal_scope WHERE consumed_at IS NULL"),
+        )
+        assertEquals(
+            "NOT_APPLICABLE",
+            jdbcTemplate.queryForObject(
+                "SELECT reconciliation_status FROM orders WHERE order_id=?",
+                String::class.java,
+                orderId,
+            ),
+        )
+        assertEquals(
+            "CANCELLED",
+            jdbcTemplate.queryForObject("SELECT status FROM orders WHERE order_id=?", String::class.java, orderId),
+        )
+        assertEquals(
+            0L,
+            jdbcTemplate.queryForObject("SELECT filled_quantity FROM orders WHERE order_id=?", Long::class.java, orderId),
+        )
+        assertEquals(
+            0L,
+            jdbcTemplate.queryForObject("SELECT leaves_quantity FROM orders WHERE order_id=?", Long::class.java, orderId),
+        )
+        assertEquals(
+            1L,
+            jdbcTemplate.queryForObject(
+                "SELECT unfilled_terminated_quantity FROM orders WHERE order_id=?",
+                Long::class.java,
+                orderId,
+            ),
+        )
+        assertEquals(0, count("SELECT count(*) FROM order_fill_observations WHERE order_id=?", orderId))
+        assertEquals(0, count("SELECT count(*) FROM order_fill_application_receipts WHERE order_id=?", orderId))
+        assertEquals(
+            orderEvents,
+            jdbcTemplate.query(
+                "SELECT event_type,event_status FROM order_events WHERE order_id=? ORDER BY event_seq",
+                { result, _ -> result.getString("event_type") to result.getString("event_status") },
+                orderId,
+            ),
+        )
     }
 
     @Test

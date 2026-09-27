@@ -11,6 +11,7 @@ import com.capstone.decision.application.brokerage.OrderFillPageRequest
 import com.capstone.decision.application.brokerage.OrderFillPersistencePort
 import com.capstone.decision.application.brokerage.OrderFillReconciliationProjection
 import com.capstone.decision.application.brokerage.OrderFillRecord
+import com.capstone.decision.application.brokerage.OrderReconciliationNotApplicableException
 import com.capstone.decision.application.brokerage.ReconciliationProjection
 import com.capstone.decision.application.brokerage.StoredFillObservation
 import com.capstone.decision.application.brokerage.StoredOrderFillState
@@ -103,6 +104,7 @@ class JdbcOrderFillRepository(
                 ?: throw BrokerageUnavailableException("Order fill state function returned no result.")
         return when (row.outcome) {
             "READY" -> parseState(requireNotNull(row.stateJson))
+            "LOCAL_RETIREMENT_NOT_RECONCILABLE" -> throw OrderReconciliationNotApplicableException()
             "ORDER_NOT_FOUND" -> throw BrokerageOrderNotFoundException()
             "ACTOR_UNAUTHORIZED", "VALIDATION_ERROR" ->
                 throw BrokerageUnavailableException("Order fill state security boundary rejected the request.")
@@ -172,6 +174,7 @@ class JdbcOrderFillRepository(
                     appliedEventCount = requireNotNull(result.appliedEventCount),
                     hasMore = requireNotNull(result.hasMore),
                 )
+            "LOCAL_RETIREMENT_NOT_RECONCILABLE" -> throw OrderReconciliationNotApplicableException()
             "ORDER_NOT_FOUND" -> throw BrokerageOrderNotFoundException()
             "ACTOR_UNAUTHORIZED", "VALIDATION_ERROR" ->
                 throw BrokerageUnavailableException("Order fill apply security boundary rejected the request.")

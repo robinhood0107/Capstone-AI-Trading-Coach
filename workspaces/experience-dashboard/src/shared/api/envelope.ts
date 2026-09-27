@@ -13,6 +13,7 @@ export const API_ERROR_CODES = [
   'FORBIDDEN',
   'NOT_FOUND',
   'CONFLICT',
+  'ORDER_RECONCILIATION_NOT_APPLICABLE',
   'VERSION_EXHAUSTED',
   'DECISION_EXPIRED',
   'IDEMPOTENCY_CONFLICT',
@@ -103,6 +104,8 @@ const KOREAN_MESSAGE: Partial<Record<ApiErrorCode, string>> = {
   FORBIDDEN: '이 자료에 접근할 권한이 없습니다.',
   NOT_FOUND: '해당 자료를 찾을 수 없습니다. ID를 다시 확인하세요.',
   CONFLICT: '다른 변경과 충돌했습니다. 최신 상태를 다시 불러오세요.',
+  ORDER_RECONCILIATION_NOT_APPLICABLE:
+    '이 주문은 로컬 이력 종료 상태라 KIS 대사 대상이 아닙니다. KIS 결과는 확인되지 않았습니다.',
   VERSION_EXHAUSTED: '원칙 버전 한도에 도달했습니다.',
   DECISION_EXPIRED: '판정 유효시간이 지났습니다. 다시 평가해야 합니다.',
   IDEMPOTENCY_CONFLICT: '같은 키로 다른 내용을 보냈습니다. 새로 요청하세요.',

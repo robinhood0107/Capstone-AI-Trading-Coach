@@ -12,6 +12,7 @@ import com.capstone.decision.application.brokerage.BrokerageUnavailableException
 import com.capstone.decision.application.brokerage.BrokerageValidationException
 import com.capstone.decision.application.brokerage.DecisionExpiredException
 import com.capstone.decision.application.brokerage.InvalidOrderFillCursorException
+import com.capstone.decision.application.brokerage.OrderReconciliationNotApplicableException
 import com.capstone.decision.application.brokerage.paper.PaperDataStaleException
 import com.capstone.decision.application.brokerage.paper.PaperIdempotencyInProgressException
 import com.capstone.decision.application.risk.KillSwitchBlockedException
@@ -69,6 +70,10 @@ class BrokerageExceptionHandler {
 
     @ExceptionHandler(BrokerageDecisionConflictException::class)
     fun handleDecisionConflict(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> = error(request, ErrorCode.CONFLICT)
+
+    @ExceptionHandler(OrderReconciliationNotApplicableException::class)
+    fun handleOrderReconciliationNotApplicable(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> =
+        error(request, ErrorCode.ORDER_RECONCILIATION_NOT_APPLICABLE)
 
     @ExceptionHandler(BrokerageIdempotencyConflictException::class)
     fun handleIdempotencyConflict(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> =

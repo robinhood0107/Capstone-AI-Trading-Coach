@@ -96,12 +96,11 @@ class AuthTrustRootIntegrationTest(
                 )
             }
 
-        assertEquals(2, users.size)
-        assertEquals(listOf("usr_demo_admin", "demo-admin", "ADMIN", "ACTIVE", "1"), users[0].take(5))
-        assertEquals(listOf("usr_demo_user", "demo-user", "USER", "ACTIVE", "1"), users[1].take(5))
+        // V213 removed demo-admin; demo-user is the only fixed operator account.
+        assertEquals(1, users.size)
+        assertEquals(listOf("usr_demo_user", "demo-user", "ADMIN", "ACTIVE", "1"), users[0].take(5))
         assertTrue(users.all { BCRYPT_12_PATTERN.matches(it.last()) })
-        assertNotEquals(userPassword(), users[1].last())
-        assertNotEquals(adminPassword(), users[0].last())
+        assertNotEquals(userPassword(), users[0].last())
         val evidenceLengths =
             jdbcTemplate.queryForList(
                 """
@@ -112,7 +111,7 @@ class AuthTrustRootIntegrationTest(
                 where user_id in ('usr_demo_user', 'usr_demo_admin')
                 """.trimIndent(),
             )
-        assertEquals(2, evidenceLengths.size)
+        assertEquals(1, evidenceLengths.size)
         assertTrue(
             evidenceLengths.all {
                 (it["tag_length"] as Number).toInt() == 32 &&
@@ -124,7 +123,7 @@ class AuthTrustRootIntegrationTest(
 
     @Test
     fun `issued JWT pins HS256 and uses internal user id subject with all required claims`() {
-        val token = login("demo-user", userPassword(), "usr_demo_user", "USER")
+        val token = login("demo-user", userPassword(), "usr_demo_user", "ADMIN")
         val parsed =
             Jwts
                 .parser()
@@ -136,7 +135,7 @@ class AuthTrustRootIntegrationTest(
 
         assertEquals("HS256", parsed.header.algorithm)
         assertEquals("usr_demo_user", parsed.payload.subject)
-        assertEquals("USER", parsed.payload["role"])
+        assertEquals("ADMIN", parsed.payload["role"])
         assertEquals(1L, (parsed.payload["securityVersion"] as Number).toLong())
         assertFalse(parsed.payload.containsKey("userId"))
         assertTrue(parsed.payload.issuedAt != null)
@@ -153,7 +152,7 @@ class AuthTrustRootIntegrationTest(
                 token(additionalAudience = "unexpected-audience"),
                 token(subject = "demo-user"),
                 token(issuedAt = now.plusSeconds(120), expiresAt = now.plusSeconds(3_600)),
-                token(role = "ADMIN"),
+                token(role = "USER"),
                 token(securityVersion = 2),
                 token(includeIssuedAt = false),
                 token(issuedAt = now.minusSeconds(7_200), expiresAt = now.minusSeconds(1)),
@@ -167,7 +166,7 @@ class AuthTrustRootIntegrationTest(
 
     @Test
     fun `DB missing locked disabled role and security version changes revoke an issued token immediately`() {
-        val token = login("demo-user", userPassword(), "usr_demo_user", "USER")
+        val token = login("demo-user", userPassword(), "usr_demo_user", "ADMIN")
 
         jdbcTemplate.update("update users set status = 'LOCKED' where user_id = 'usr_demo_user'")
         assertUnauthorized(token, "req-locked-token")
@@ -178,7 +177,7 @@ class AuthTrustRootIntegrationTest(
         jdbcTemplate.update("update users set status = 'ACTIVE', security_version = 2 where user_id = 'usr_demo_user'")
         assertUnauthorized(token, "req-version-token")
 
-        jdbcTemplate.update("update users set security_version = 1, role = 'ADMIN' where user_id = 'usr_demo_user'")
+        jdbcTemplate.update("update users set security_version = 1, role = 'USER' where user_id = 'usr_demo_user'")
         assertUnauthorized(token, "req-role-token")
 
         jdbcTemplate.update("delete from owner_kill_switch_requests where user_id = 'usr_demo_user'")
@@ -217,21 +216,15 @@ class AuthTrustRootIntegrationTest(
             }.andExpect {
                 status { isOk() }
                 jsonPath("$.data.user.userId") { value("usr_demo_user") }
-                jsonPath("$.data.user.role") { value("USER") }
+                jsonPath("$.data.user.role") { value("ADMIN") }
             }
     }
 
     @Test
-    fun `public login rejects both roles when separately salted rows accept one plaintext`() {
-        val sharedAdminHash = requireNotNull(BCryptPasswordEncoder(12).encode(userPassword()))
-        assertNotEquals(TEST_USER_PASSWORD_HASH, sharedAdminHash)
-        jdbcTemplate.update(
-            "update users set password_hash = ? where user_id = 'usr_demo_admin'",
-            sharedAdminHash,
-        )
-
-        postInvalidLogin("demo-admin", userPassword(), "req-shared-password-admin")
-        postInvalidLogin("demo-user", userPassword(), "req-shared-password-user")
+    fun `removed demo-admin cannot log in even with its former credential`() {
+        assertEquals(0, jdbcTemplate.queryForObject("select count(*) from users where user_id = 'usr_demo_admin'", Long::class.java))
+        postInvalidLogin("demo-admin", adminPassword(), "req-retired-admin-own-password")
+        login("demo-user", userPassword(), "usr_demo_user", "ADMIN")
     }
 
     @Test
@@ -247,7 +240,7 @@ class AuthTrustRootIntegrationTest(
             boundaryHash,
         )
 
-        login("demo-user", boundaryPassword, "usr_demo_user", "USER")
+        login("demo-user", boundaryPassword, "usr_demo_user", "ADMIN")
         postInvalidLogin("demo-user", overlongPassword, "req-overlong-bcrypt-password")
     }
 
@@ -291,7 +284,7 @@ class AuthTrustRootIntegrationTest(
             .post("/api/v1/auth/identities/google/link/start") {
                 header("Authorization", "Bearer $token")
             }.andExpect { status { isNotFound() } }
-        login("demo-user", userPassword(), "usr_demo_user", "USER")
+        login("demo-user", userPassword(), "usr_demo_user", "ADMIN")
         postInvalidLogin(email, "wrong-password-value", "req-local-email-wrong-password")
     }
 
@@ -391,6 +384,7 @@ class AuthTrustRootIntegrationTest(
     }
 
     private fun restoreDemoUsers() {
+        jdbcTemplate.update("delete from audit_logs where user_id in ('usr_demo_user', 'usr_demo_admin')")
         jdbcTemplate.update("delete from owner_kill_switch_requests where user_id in ('usr_demo_user', 'usr_demo_admin')")
         jdbcTemplate.update("delete from owner_kill_switch_events where user_id in ('usr_demo_user', 'usr_demo_admin')")
         jdbcTemplate.update("delete from owner_kill_switch where user_id in ('usr_demo_user', 'usr_demo_admin')")
@@ -401,17 +395,12 @@ class AuthTrustRootIntegrationTest(
                 user_id, username, role, password_hash, status, security_version,
                 credential_reuse_tag, credential_bundle_mac, credential_policy_version
             )
-            values (?, 'demo-user', 'USER', ?, 'ACTIVE', 1, ?, ?, 1),
-                   (?, 'demo-admin', 'ADMIN', ?, 'ACTIVE', 1, ?, ?, 1)
+            values (?, 'demo-user', 'ADMIN', ?, 'ACTIVE', 1, ?, ?, 1)
             """.trimIndent(),
             "usr_demo_user",
             TEST_USER_PASSWORD_HASH,
             TEST_USER_VERIFIED_BUNDLE.reuseTag,
             TEST_USER_VERIFIED_BUNDLE.bundleMac,
-            "usr_demo_admin",
-            TEST_ADMIN_PASSWORD_HASH,
-            TEST_ADMIN_VERIFIED_BUNDLE.reuseTag,
-            TEST_ADMIN_VERIFIED_BUNDLE.bundleMac,
         )
     }
 

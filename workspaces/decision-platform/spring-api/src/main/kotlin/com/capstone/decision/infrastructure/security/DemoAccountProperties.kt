@@ -15,6 +15,29 @@ object DemoAccounts {
     fun byUserId(userId: String): DemoAccountIdentity? = identities.firstOrNull { it.userId == userId }
 }
 
+// V7이 두 고정 행을 만들고 V213이 demo-admin을 삭제한다. demo-user는 운영자 계정이라 역할이
+// USER·ADMIN 어느 쪽이든 된다. demo-admin 행이 아직 남은 DB에서는 DISABLED도 허용한다.
+object DemoOperatorAccountPolicy {
+    const val OPERATOR_USER_ID = "usr_demo_user"
+    const val RETIRED_ADMIN_USER_ID = "usr_demo_admin"
+
+    fun roleAccepted(
+        userId: String,
+        storedRole: String,
+        bootstrapRole: DemoRole,
+    ): Boolean =
+        if (userId == OPERATOR_USER_ID) {
+            storedRole == DemoRole.USER.name || storedRole == DemoRole.ADMIN.name
+        } else {
+            storedRole == bootstrapRole.name
+        }
+
+    fun statusAccepted(
+        userId: String,
+        status: String,
+    ): Boolean = status == "ACTIVE" || (userId == RETIRED_ADMIN_USER_ID && status == "DISABLED")
+}
+
 data class DemoAccountIdentity(
     val userId: String,
     val username: String,

@@ -40,9 +40,14 @@ class ApiErrorController : ErrorController {
             401 -> ErrorCode.UNAUTHORIZED
             403 -> ErrorCode.FORBIDDEN
             404 -> ErrorCode.NOT_FOUND
+            // 메서드·미디어 타입 불일치는 요청 형식 문제다. CONFLICT 로 보내면 화면이 "다른 변경과
+            // 충돌"이라는 원인과 무관한 문구를 띄운다.
+            405, 415 -> ErrorCode.VALIDATION_ERROR
             409 -> ErrorCode.CONFLICT
             422 -> ErrorCode.RISK_BLOCKED
             429 -> ErrorCode.RATE_LIMITED
+            // 처리되지 않은 예외는 서버 오류다. 충돌로 보내면 재시도 안내도 사라진다.
+            500 -> ErrorCode.INTERNAL_ERROR
             503 -> ErrorCode.PYTHON_SERVICE_UNAVAILABLE
             else -> ErrorCode.CONFLICT
         }

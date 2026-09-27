@@ -440,6 +440,7 @@ def test_online_client_wires_shared_rest_and_tokenp_quota_scopes(
             *,
             rate_limiter: object,
             accounting: object = None,
+            credential_provider: object = None,
         ) -> None:
             self.rate_limiter = rate_limiter
 
@@ -452,7 +453,7 @@ def test_online_client_wires_shared_rest_and_tokenp_quota_scopes(
     monkeypatch.setattr("app.data.kis.http_client._build_redis_client", lambda: redis_client)
     monkeypatch.setattr(
         "app.data.kis.http_client._provider_scope",
-        lambda mode: ("a" if mode == "live" else "b") * 64,
+        lambda mode, credential_provider=None: ("a" if mode == "live" else "b") * 64,
     )
     monkeypatch.setattr("app.data.kis.http_client.RedisIntervalLimiter", RecordingLimiter)
     monkeypatch.setattr("app.data.kis.http_client._TokenIssuer", FakeIssuer)
@@ -468,9 +469,9 @@ def test_online_client_wires_shared_rest_and_tokenp_quota_scopes(
 
     assert reservations == [
         (f"kis:rest:v3:{'a' * 64}", 0.12),
-        ("kis:tokenp:v3:deployment", 1.0),
+        (f"kis:tokenp:v3:{'a' * 64}", 1.0),
         (f"kis:rest:v3:{'b' * 64}", 1.0),
-        ("kis:tokenp:v3:deployment", 1.0),
+        (f"kis:tokenp:v3:{'b' * 64}", 1.0),
     ]
     assert closed == ["issuer", "redis", "issuer", "redis"]
 

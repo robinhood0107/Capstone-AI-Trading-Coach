@@ -107,6 +107,7 @@ class P1AutomationJournalApiIntegrationTest(
             ACCOUNT_ID,
         )
         ownerJdbc.update("update risk_kill_switch set active=false where kill_switch_id='GLOBAL'")
+        TestPeerUser.ensure(ownerJdbc)
         mockMvc =
             MockMvcBuilders
                 .webAppContextSetup(context)
@@ -136,7 +137,7 @@ class P1AutomationJournalApiIntegrationTest(
             }
 
         mockMvc
-            .get("/api/v1/automation/status?ownerUserId=usr_demo_admin") { bearer(token) }
+            .get("/api/v1/automation/status?ownerUserId=${TestPeerUser.USER_ID}") { bearer(token) }
             .andExpect {
                 status { isBadRequest() }
                 jsonPath("$.error.code") { value("VALIDATION_ERROR") }
@@ -168,7 +169,7 @@ class P1AutomationJournalApiIntegrationTest(
             jsonPath("$.data.candidateScreenings[0].reason") { value("SCREENING_ERROR") }
             jsonPath("$.data.candidateScreenings[0].evidence.length()") { value(0) }
         }
-        val other = login("demo-admin", adminPassword())
+        val other = login(TestPeerUser.EMAIL, TestPeerUser.PASSWORD)
         mockMvc.get("/api/v3/automation/runs/$runId") { bearer(other) }.andExpect {
             status { isNotFound() }
         }
@@ -592,7 +593,7 @@ class P1AutomationJournalApiIntegrationTest(
         val token = login("demo-user", userPassword())
         insertRun(OWNED_RUN_ID, "usr_demo_user", "COMPLETED")
         insertRun("auto_run_owned_0002", "usr_demo_user", "HALTED")
-        insertRun("auto_run_foreign_0001", "usr_demo_admin", "HALTED")
+        insertRun("auto_run_foreign_0001", TestPeerUser.USER_ID, "HALTED")
 
         val first =
             mockMvc
@@ -647,9 +648,9 @@ class P1AutomationJournalApiIntegrationTest(
     @Test
     fun `Journal create replace delete are replay safe owner scoped and exclude deleted rows`() {
         val userToken = login("demo-user", userPassword())
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = login(TestPeerUser.EMAIL, TestPeerUser.PASSWORD)
         insertRun(OWNED_RUN_ID, "usr_demo_user", "COMPLETED")
-        insertRun("auto_run_foreign_0002", "usr_demo_admin", "COMPLETED")
+        insertRun("auto_run_foreign_0002", TestPeerUser.USER_ID, "COMPLETED")
         val createKey = "journal-create-key-0001"
         val createBody = journalBody("첫 기록", "근거를 확인했다.", OWNED_RUN_ID)
 

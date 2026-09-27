@@ -11,6 +11,7 @@ import pytest
 from app.brokerage.brokerage_rpc import BrokerageServicer, _now, metadata
 from app.brokerage.kis_mock_owner_certification import OwnerMockCertificationResult
 from app.brokerage.kis_mock_order_gateway import KISMockOrderGateway
+from app.brokerage.owner_credential_envelope import OwnerCredentialUnavailable
 from app.generated import brokerage_pb2
 
 
@@ -140,6 +141,69 @@ def test_full_rpc_requires_owner_envelope_before_any_gateway_call() -> None:
             FakeContext(),  # type: ignore[arg-type]
         )
     assert denied.value.code == grpc.StatusCode.PERMISSION_DENIED
+
+
+def test_connected_owner_orders_are_full_only_and_still_require_the_sealed_owner_envelope() -> None:
+    account_id = "acct_" + "a" * 32
+    owner_user_id = "usr_" + "b" * 32
+    observed: list[frozenset[str]] = []
+    transport = FakeTransport()
+    reader = FakeBalanceReader()
+
+    class OwnerFactory:
+        @contextmanager
+        def open(
+            self,
+            envelope: brokerage_pb2.BoundMockCredentialEnvelope,
+            *,
+            account_id: str,
+            allowed_states: frozenset[str],
+        ) -> Iterator[tuple[KISMockOrderGateway, FakeBalanceReader]]:
+            observed.append(allowed_states)
+            if (
+                envelope.owner_user_id != owner_user_id
+                or envelope.credential_state not in allowed_states
+            ):
+                raise OwnerCredentialUnavailable("BROKERAGE_CREDENTIAL_UNAVAILABLE")
+            yield KISMockOrderGateway(transport), reader
+
+        def certify(self, *_args: object, **_kwargs: object) -> OwnerMockCertificationResult:
+            pytest.fail("order path must not invoke optional certification")
+
+    request = brokerage_pb2.SubmitMockCashOrderRequest(
+        request_id="req-connected-owner-order",
+        order_id="ord_mock_" + "1" * 32,
+        account_id=account_id,
+        symbol="005930",
+        side="BUY",
+        order_type="LIMIT",
+        quantity=1,
+        estimated_price_krw=70_000,
+        credential=brokerage_pb2.BoundMockCredentialEnvelope(
+            owner_user_id=owner_user_id,
+            account_id=account_id,
+            revision=3,
+            credential_state="CONNECTED",
+        ),
+    )
+
+    local = BrokerageServicer(None, "s" * 32, owner_factory=OwnerFactory())
+    with pytest.raises(RpcAborted) as local_denied:
+        local.SubmitMockCashOrder(request, FakeContext())  # type: ignore[arg-type]
+    assert local_denied.value.code == grpc.StatusCode.PERMISSION_DENIED
+    assert observed == [frozenset({"CERTIFIED"})]
+    assert transport.calls == []
+
+    full = BrokerageServicer(
+        None,
+        "s" * 32,
+        owner_factory=OwnerFactory(),
+        allow_connected_credentials_for_orders=True,
+    )
+    response = full.SubmitMockCashOrder(request, FakeContext())  # type: ignore[arg-type]
+    assert response.accepted is True
+    assert observed[-1] == frozenset({"CONNECTED", "CERTIFIED"})
+    assert len(transport.calls) == 1
 
 
 def test_full_connection_check_uses_only_owner_bound_read_only_session() -> None:

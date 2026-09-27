@@ -106,6 +106,12 @@ message VerifyMockConnectionRequest {
 message VerifyMockConnectionResponse {
   string account_id = 1;
   bool connected = 2;
+  // 연결 확인이 실제로 읽은 KIS 모의계좌 잔고. 계좌번호·원문은 싣지 않는다. positions_complete 가
+  // false 면(보유 종목이 한 쪽을 넘음) host 는 이 값을 위험 잔고 관측으로 쓰지 않는다.
+  int64 cash_krw = 3;
+  int64 portfolio_equity_krw = 4;
+  repeated MockBalancePosition positions = 5;
+  bool positions_complete = 6;
 }
 
 // Server-selected fixed KIS_MOCK test: one 005930 share at its current lower limit,

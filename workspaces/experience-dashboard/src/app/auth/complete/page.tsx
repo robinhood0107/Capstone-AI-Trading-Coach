@@ -40,7 +40,9 @@ export default function SocialLoginComplete() {
         setFailedMessage(
           errorCode === 'provider-link'
             ? '이 로그인 계정은 다른 MARS 계정에 이미 연결되어 있습니다. 기존 계정에서 연결을 확인해 주세요.'
-            : '로그인을 완료하지 못했습니다. 다시 시도해 주세요.',
+            : errorCode === 'capacity'
+              ? '지금은 가입 가능 인원이 가득 차 새 계정을 만들 수 없습니다.'
+              : '로그인을 완료하지 못했습니다. 다시 시도해 주세요.',
         );
         return;
       }

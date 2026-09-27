@@ -2,6 +2,7 @@ package com.capstone.decision.application.automation
 
 import com.capstone.decision.application.security.OwnerWriteHashes
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets
 import java.time.OffsetDateTime
@@ -12,12 +13,20 @@ import java.util.Base64
 class AutomationService(
     private val repository: AutomationRepository,
     private val evidenceProvider: ObjectProvider<AutomationEvidenceProvider>,
+    private val aiProviderPolicy: AutomationAiProviderPolicy = AutomationAiProviderPolicy(),
+    @Value("\${app.automation.connected-kis-account-enabled:false}")
+    private val connectedKisAccountEnabled: Boolean = false,
 ) {
     fun status(ownerUserId: String): AutomationControlProjection = repository.status(ownerUserId)
 
     fun statusV2(ownerUserId: String): AutomationStatusV2Projection = repository.statusV2(ownerUserId)
 
-    fun statusV3(ownerUserId: String): AutomationStatusV3Projection = providerAware(repository.statusV3(ownerUserId))
+    fun statusV3(ownerUserId: String): AutomationStatusV3Projection =
+        providerAware(repository.statusV3(ownerUserId, operatorProviderReady()))
+
+    /** 상태와 arm 이 같은 값을 쓰도록 한 곳에서만 계산한다. */
+    private fun operatorProviderReady(): Boolean =
+        aiProviderPolicy.operatorProviderReady(transportReady = evidenceProvider.getIfAvailable() != null)
 
     fun capitalPolicy(ownerUserId: String): AutomationCapitalPolicyProjection? = repository.readCapitalPolicy(ownerUserId)
 
@@ -109,7 +118,8 @@ class AutomationService(
         rawIdempotencyKey: String,
         command: ArmAutomationV3Command,
     ): AutomationStatusV3Projection {
-        val current = providerAware(repository.statusV3(ownerUserId))
+        val operatorReady = operatorProviderReady()
+        val current = providerAware(repository.statusV3(ownerUserId, operatorReady))
         if (current.aiJudgementEnabled && evidenceProvider.getIfAvailable() == null) {
             throw AutomationBlockedException("AI_PROVIDER_NOT_READY")
         }
@@ -128,6 +138,8 @@ class AutomationService(
                         command.expectedControlVersion.toString(),
                     ),
                 providerCapabilityReady = evidenceProvider.getIfAvailable() != null,
+                operatorProviderReady = operatorReady,
+                connectedKisAccountEnabled = connectedKisAccountEnabled,
             ),
         )
     }

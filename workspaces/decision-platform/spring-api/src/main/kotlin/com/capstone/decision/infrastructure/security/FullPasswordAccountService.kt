@@ -63,6 +63,9 @@ class FullPasswordAccountService(
             accounts.register(email, hash, sessionTtlSeconds)
         } catch (_: DuplicateKeyException) {
             throw PasswordAccountAlreadyExistsException()
+        } catch (error: org.springframework.dao.DataAccessException) {
+            if (SignupCapacity.isReached(error)) throw SignupCapacityReachedException()
+            throw error
         }
     }
 
@@ -123,3 +126,13 @@ class FullPasswordAccountService(
 }
 
 class PasswordAccountAlreadyExistsException : RuntimeException()
+
+class SignupCapacityReachedException : RuntimeException()
+
+/** V214 가입 상한 트리거는 SQLSTATE 53400으로 새 계정 하나만 거부한다. */
+object SignupCapacity {
+    fun isReached(error: Throwable): Boolean =
+        generateSequence(error) { it.cause }
+            .filterIsInstance<java.sql.SQLException>()
+            .any { it.sqlState == "53400" }
+}

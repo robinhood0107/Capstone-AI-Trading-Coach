@@ -56,6 +56,8 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             ).javaMigrations(s21ActorTrustMigration())
             .load()
             .migrate()
+        // demo-admin 대신 타 owner 격리를 확인할 일반 USER peer다.
+        TestPeerUser.ensure(postgres.jdbcUrl, postgres.username, postgres.password)
     }
 
     @BeforeEach
@@ -422,7 +424,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         val secondTicketId = "rti_22222222222222222222222222222222"
         seedOwnerImportRun("usr_demo_user", OWNER_IMPORT_GENERATION, OWNER_IMPORT_RUN)
         seedOwnerImportRun("usr_demo_user", OWNER_SECOND_IMPORT_GENERATION, OWNER_SECOND_IMPORT_RUN)
-        seedOwnerImportRun("usr_demo_admin", OTHER_OWNER_IMPORT_GENERATION, OTHER_OWNER_IMPORT_RUN)
+        seedOwnerImportRun(TestPeerUser.USER_ID, OTHER_OWNER_IMPORT_GENERATION, OTHER_OWNER_IMPORT_RUN)
         issueTicket("usr_demo_user", ticketId, "OWNER_IMPORT")
         issueTicket("usr_demo_user", secondTicketId, "OWNER_IMPORT")
 
@@ -487,7 +489,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
 
         assertTrue(consumeTicket("usr_demo_user", ticketId, "OWNER_IMPORT", OWNER_IMPORT_RUN))
         assertFalse(consumeTicket("usr_demo_user", ticketId, "OWNER_IMPORT", OWNER_SECOND_IMPORT_RUN))
-        assertFalse(consumeTicket("usr_demo_admin", secondTicketId, "OWNER_IMPORT", OTHER_OWNER_IMPORT_RUN))
+        assertFalse(consumeTicket(TestPeerUser.USER_ID, secondTicketId, "OWNER_IMPORT", OTHER_OWNER_IMPORT_RUN))
         assertTrue(consumeTicket("usr_demo_user", secondTicketId, "OWNER_IMPORT", OWNER_SECOND_IMPORT_RUN))
 
         assertPermissionDenied("decision_app", APP_PASSWORD, "select * from rag_v2_immutable_import_tickets")
@@ -536,7 +538,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                             connection,
                             """
                             select record_rag_v2_immutable_consent_v2(
-                              'usr_demo_admin', 'cns_v2_33333333333333333333333333333333',
+                              'usr_isolation_peer_0001', 'cns_v2_33333333333333333333333333333333',
                               'rce_cross_owner_000000000001', 'GRANT', repeat('c', 64),
                               repeat('e', 64), repeat('f', 64)
                             )
@@ -603,8 +605,8 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         val crossOwner =
             assertThrows<SQLException> {
                 callAsAppWithActor(
-                    "usr_demo_admin",
-                    "select claim_rag_v2_immutable_vertex_generate_content_attempt('$usageEventId', 'usr_demo_admin')",
+                    TestPeerUser.USER_ID,
+                    "select claim_rag_v2_immutable_vertex_generate_content_attempt('$usageEventId', 'usr_isolation_peer_0001')",
                 )
             }
         assertEquals("55000", crossOwner.sqlState)
@@ -715,7 +717,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         assertEquals(scopeClaimId, callAsAppWithActor("usr_demo_user", preparedRead))
         val crossOwner =
             assertThrows<SQLException> {
-                callAsAppWithActor("usr_demo_admin", preparedRead)
+                callAsAppWithActor(TestPeerUser.USER_ID, preparedRead)
             }
         assertEquals("42501", crossOwner.sqlState)
         val topicMutation =
@@ -2577,7 +2579,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                               chunk_id, source_revision_id, owner_user_id, source_scope, chunk_ordinal,
                               heading_path, locator, canonical_text, canonical_text_sha256, token_count, contains_table
                             ) values (
-                              'rag_v2_chk_99999999999999999999999999999999', '$TARGET_SOURCE', 'usr_demo_admin', 'OWNER_PRIVATE', 2,
+                              'rag_v2_chk_99999999999999999999999999999999', '$TARGET_SOURCE', 'usr_isolation_peer_0001', 'OWNER_PRIVATE', 2,
                               array['foreign'], jsonb_build_object('section', 'foreign'), 'foreign chunk',
                               encode(digest('foreign chunk', 'sha256'), 'hex'), 400, false
                             )
@@ -2597,7 +2599,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                               owner_private_generation_id, embedding_profile_id, state, evaluation_status,
                               bundle_hash, evaluated_at
                             ) values (
-                              'rgb_99999999999999999999999999999999', 'usr_demo_admin',
+                              'rgb_99999999999999999999999999999999', 'usr_isolation_peer_0001',
                               '$EXACT_GENERATION', '$OA_GENERATION', '$OLD_OWNER_GENERATION',
                               'bge_m3_local_1024_v1', 'EVALUATED', 'PASSED', repeat('9', 64), clock_timestamp()
                             )
@@ -2678,7 +2680,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
 
         val crossOwnerRead =
             assertThrows<SQLException> {
-                readForeignNewsSentiment("usr_demo_admin", ownerUserId, "005930")
+                readForeignNewsSentiment(TestPeerUser.USER_ID, ownerUserId, "005930")
             }
         assertEquals("22023", crossOwnerRead.sqlState)
 
@@ -2978,7 +2980,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             operation = operation,
             targetKind = targetKind,
             targetId = targetId,
-            actorRole = if (actorUserId == "usr_demo_admin") "ADMIN" else "USER",
+            actorRole = if (actorUserId == "usr_demo_user") "ADMIN" else "USER",
         )
     }
 

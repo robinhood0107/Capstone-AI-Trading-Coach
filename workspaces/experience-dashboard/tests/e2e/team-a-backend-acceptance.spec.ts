@@ -11,7 +11,7 @@ import {
 } from '../../src/shared/api/generated/p1-team-a-client.v5';
 
 const USER_ID = 'usr_demo_user';
-const PAPER_ACCOUNT_ID = 'acct_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const PAPER_ACCOUNT_ID = 'acct_f1a5e315b7c8462b9338f0cf4c5a1d20';
 const KIS_ACCOUNT_ID = 'acct_cccccccccccccccccccccccccccccccc';
 const RAG_FIXTURE_ID = 'rag_team_a_fixture_0001';
 const TEAM_B_RUN_ID = 'demo_s8_fake_e2e_0001';

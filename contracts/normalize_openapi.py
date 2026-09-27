@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
+import json
 import re
 import sys
 from pathlib import Path
@@ -36,6 +37,8 @@ DEFAULT_INPUT = (
     / "openapi.json"
 )
 DEFAULT_EXPECTED = REPO_ROOT / "contracts" / "openapi" / "openapi.json"
+FULL_AUTH_OVERLAY = REPO_ROOT / "contracts" / "openapi" / "mars-full-auth.v1.openapi.json"
+FULL_ADMIN_OVERLAY = REPO_ROOT / "contracts" / "openapi" / "mars-full-admin.v1.openapi.json"
 OAS_BASE_DIALECT = "https://spec.openapis.org/oas/3.1/dialect/base"
 CANONICAL_GENERATED_SERVER = {
     "description": "Generated server url",
@@ -115,6 +118,12 @@ HTTP_METHODS = {
 
 class OpenApiNormalizationError(ValueError):
     """Generated OpenAPI가 허용된 root patch 이외의 의미 차이를 가질 때 발생한다."""
+
+
+def _object(value: object, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise OpenApiNormalizationError(f"{label} must be an object.")
+    return value
 
 
 def _load_document(raw: bytes, *, source: str) -> dict[str, Any]:
@@ -366,10 +375,130 @@ def _validate_openapi_schema(document: dict[str, Any], *, source: str) -> None:
         ) from error
 
 
+def _schema_refs(value: object) -> set[str]:
+    references: set[str] = set()
+    if isinstance(value, dict):
+        reference = value.get("$ref")
+        if isinstance(reference, str) and reference.startswith("#/components/schemas/"):
+            name = reference.removeprefix("#/components/schemas/")
+            if name and "/" not in name:
+                references.add(name)
+        for child in value.values():
+            references.update(_schema_refs(child))
+    elif isinstance(value, list):
+        for child in value:
+            references.update(_schema_refs(child))
+    return references
+
+
+def _project_full_only_operations(
+    generated: dict[str, Any], expected: dict[str, Any]
+) -> None:
+    """Keep FULL-specific auth/admin routes in their dedicated contracts.
+
+    The root OpenAPI is the private execution contract. Spring's documentation profile
+    sees some FULL controllers as well, so project those paths out before comparing the
+    root. Any overlapping operation stays only when its implementation operationId still
+    matches the root contract (for example, LOCAL's /auth/login).
+    """
+    root_paths = _object(generated.get("paths"), "generated paths")
+    expected_paths = _object(expected.get("paths"), "expected paths")
+    full_operations: set[tuple[str, str]] = set()
+    full_only_schema_roots: set[str] = set()
+    for path in (FULL_AUTH_OVERLAY, FULL_ADMIN_OVERLAY):
+        overlay = json.loads(path.read_text(encoding="utf-8"))
+        for endpoint, item in _object(overlay.get("paths"), f"{path.name} paths").items():
+            for method in item:
+                if method in HTTP_METHODS:
+                    full_operations.add((endpoint, method))
+        overlay_components = _object(
+            _object(overlay.get("components", {}), f"{path.name} components").get(
+                "schemas", {}
+            ),
+            f"{path.name} schemas",
+        )
+        full_only_schema_roots.update(overlay_components)
+
+    for path, method in full_operations:
+        item = root_paths.get(path)
+        if not isinstance(item, dict) or method not in item:
+            continue
+        root_operation = _object(item[method], f"generated {method} {path}")
+        expected_item = expected_paths.get(path)
+        expected_operation = (
+            expected_item.get(method)
+            if isinstance(expected_item, dict)
+            else None
+        )
+        if (
+            isinstance(expected_operation, dict)
+            and expected_operation.get("operationId") == root_operation.get("operationId")
+        ):
+            continue
+        full_only_schema_roots.update(_schema_refs(root_operation))
+        item.pop(method)
+        if not any(key in HTTP_METHODS for key in item):
+            full_only_schema_roots.update(_schema_refs(item))
+            root_paths.pop(path)
+
+    schemas = _object(
+        _object(generated.get("components"), "generated components").get("schemas"),
+        "generated schemas",
+    )
+    expected_schemas = _object(
+        _object(expected.get("components"), "expected components").get("schemas"),
+        "expected schemas",
+    )
+
+    # Drop only schema components reachable from the approved FULL-only operations removed
+    # above. An unrelated or newly injected generated component must fail closed below.
+    full_only_schemas: set[str] = set()
+    pending_full_only = list(full_only_schema_roots)
+    while pending_full_only:
+        name = pending_full_only.pop()
+        if name in expected_schemas or name in full_only_schemas:
+            continue
+        schema = schemas.get(name)
+        if schema is None:
+            continue
+        full_only_schemas.add(name)
+        pending_full_only.extend(_schema_refs(schema))
+
+    reachable = _schema_refs(generated["paths"])
+    visited: set[str] = set()
+    while reachable - visited:
+        name = (reachable - visited).pop()
+        visited.add(name)
+        schema = schemas.get(name)
+        if schema is not None:
+            reachable.update(_schema_refs(schema))
+    unexpected = reachable - set(expected_schemas)
+    if unexpected:
+        raise OpenApiNormalizationError(
+            "FULL route projection left uncontracted private-root schemas: "
+            + ", ".join(sorted(unexpected))
+        )
+    uncontracted = set(schemas) - set(expected_schemas) - full_only_schemas
+    if uncontracted:
+        raise OpenApiNormalizationError(
+            "Generated OpenAPI contains unapproved component schemas: "
+            + ", ".join(sorted(uncontracted))
+        )
+    for name in full_only_schemas:
+        schemas.pop(name)
+
+
 def normalize_generated_openapi(
-    generated_bytes: bytes, catalog_bytes: bytes, *, amendment: bool
+    generated_bytes: bytes,
+    catalog_bytes: bytes,
+    *,
+    amendment: bool,
+    expected_bytes: bytes | None = None,
 ) -> bytes:
     generated = _load_document(generated_bytes, source="generated OpenAPI")
+    if expected_bytes is not None:
+        expected = _load_document(expected_bytes, source="tracked OpenAPI")
+        _project_full_only_operations(generated, expected)
     digest = _catalog_digest(catalog_bytes)
     if generated.get("openapi") != "3.1.0":
         raise OpenApiNormalizationError(
@@ -453,7 +582,10 @@ def check_normalized_openapi(
     amendment: bool,
 ) -> bytes:
     normalized = normalize_generated_openapi(
-        generated_bytes, catalog_bytes, amendment=amendment
+        generated_bytes,
+        catalog_bytes,
+        amendment=amendment,
+        expected_bytes=expected_bytes,
     )
     expected = _load_document(expected_bytes, source="tracked OpenAPI")
     digest = _catalog_digest(catalog_bytes)
@@ -528,10 +660,12 @@ def main() -> int:
         generated_bytes = arguments.input.read_bytes()
         catalog_bytes = arguments.catalog.read_bytes()
         if arguments.write:
+            expected_bytes = arguments.expected.read_bytes()
             normalized = normalize_generated_openapi(
                 generated_bytes,
                 catalog_bytes,
                 amendment=not arguments.implementation,
+                expected_bytes=expected_bytes,
             )
             write_generated_path(REPO_ROOT, arguments.expected, normalized)
             print(

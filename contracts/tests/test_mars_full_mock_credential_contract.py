@@ -26,8 +26,12 @@ class MarsFullMockCredentialContractTest(unittest.TestCase):
             {
                 "accountId", "state", "revision", "appKeyLast4", "accountNoLast4", "connected", "certified",
                 "certificationStatus", "certificationFailureCode", "certificationSessionDate",
+                # 연결 확인이 KIS 에서 읽은 잔고 요약. 계좌번호 전체·종목 목록은 없다.
+                "verifiedCashKrw", "verifiedPositionCount", "verifiedAt",
             },
         )
+        # 새 요약 필드는 선택이다: 연결 확인 전 응답도 계약을 만족한다.
+        self.assertNotIn("verifiedCashKrw", summary["required"])
         self.assertEqual(set(operations["put"]["responses"]), {"204", "400", "401", "409"})
         self.assertEqual(set(operations["delete"]["responses"]), {"200", "204", "400", "401", "409"})
         connect = document["paths"]["/api/v1/brokerage/mock/credential/connect"]

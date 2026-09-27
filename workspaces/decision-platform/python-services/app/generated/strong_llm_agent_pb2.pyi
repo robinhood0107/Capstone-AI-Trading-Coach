@@ -35,7 +35,7 @@ class JudgementCandidate(_message.Message):
     def __init__(self, symbol: _Optional[str] = ..., expected_return: _Optional[float] = ..., lstm_signal: _Optional[str] = ..., baseline_signal: _Optional[str] = ...) -> None: ...
 
 class StartRun(_message.Message):
-    __slots__ = ("model_id", "question", "answer_mode", "related_symbols", "topics", "public_evidence", "owner_evidence", "google_search_enabled", "max_tool_rounds", "current_time", "timezone", "language", "mode", "candidates", "thinking_level", "grounding_discovery_only")
+    __slots__ = ("model_id", "question", "answer_mode", "related_symbols", "topics", "public_evidence", "owner_evidence", "google_search_enabled", "max_tool_rounds", "current_time", "timezone", "language", "mode", "candidates", "thinking_level", "grounding_discovery_only", "owner_vertex_service_account_json_b64")
     MODEL_ID_FIELD_NUMBER: _ClassVar[int]
     QUESTION_FIELD_NUMBER: _ClassVar[int]
     ANSWER_MODE_FIELD_NUMBER: _ClassVar[int]
@@ -52,6 +52,7 @@ class StartRun(_message.Message):
     CANDIDATES_FIELD_NUMBER: _ClassVar[int]
     THINKING_LEVEL_FIELD_NUMBER: _ClassVar[int]
     GROUNDING_DISCOVERY_ONLY_FIELD_NUMBER: _ClassVar[int]
+    OWNER_VERTEX_SERVICE_ACCOUNT_JSON_B64_FIELD_NUMBER: _ClassVar[int]
     model_id: str
     question: str
     answer_mode: str
@@ -68,7 +69,8 @@ class StartRun(_message.Message):
     candidates: _containers.RepeatedCompositeFieldContainer[JudgementCandidate]
     thinking_level: str
     grounding_discovery_only: bool
-    def __init__(self, model_id: _Optional[str] = ..., question: _Optional[str] = ..., answer_mode: _Optional[str] = ..., related_symbols: _Optional[_Iterable[str]] = ..., topics: _Optional[_Iterable[str]] = ..., public_evidence: _Optional[_Iterable[_Union[EvidenceItem, _Mapping]]] = ..., owner_evidence: _Optional[_Iterable[_Union[EvidenceItem, _Mapping]]] = ..., google_search_enabled: _Optional[bool] = ..., max_tool_rounds: _Optional[int] = ..., current_time: _Optional[str] = ..., timezone: _Optional[str] = ..., language: _Optional[str] = ..., mode: _Optional[str] = ..., candidates: _Optional[_Iterable[_Union[JudgementCandidate, _Mapping]]] = ..., thinking_level: _Optional[str] = ..., grounding_discovery_only: _Optional[bool] = ...) -> None: ...
+    owner_vertex_service_account_json_b64: str
+    def __init__(self, model_id: _Optional[str] = ..., question: _Optional[str] = ..., answer_mode: _Optional[str] = ..., related_symbols: _Optional[_Iterable[str]] = ..., topics: _Optional[_Iterable[str]] = ..., public_evidence: _Optional[_Iterable[_Union[EvidenceItem, _Mapping]]] = ..., owner_evidence: _Optional[_Iterable[_Union[EvidenceItem, _Mapping]]] = ..., google_search_enabled: _Optional[bool] = ..., max_tool_rounds: _Optional[int] = ..., current_time: _Optional[str] = ..., timezone: _Optional[str] = ..., language: _Optional[str] = ..., mode: _Optional[str] = ..., candidates: _Optional[_Iterable[_Union[JudgementCandidate, _Mapping]]] = ..., thinking_level: _Optional[str] = ..., grounding_discovery_only: _Optional[bool] = ..., owner_vertex_service_account_json_b64: _Optional[str] = ...) -> None: ...
 
 class ProviderCallPermit(_message.Message):
     __slots__ = ("planned_call_id",)

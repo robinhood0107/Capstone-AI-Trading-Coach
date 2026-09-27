@@ -124,6 +124,66 @@ export function validationError(
   return null;
 }
 
+/**
+ * FULL 에서 사용자가 붙여 넣은 Vertex 서비스 계정 JSON 을 서버가 받는 한 줄(표준 Base64)로 바꾼다.
+ * 서버와 에이전트가 같은 모양을 다시 검사한다. 여기서는 흔한 실수(다른 파일·API 키)를 저장 전에 말한다.
+ * 붙여 넣은 원문은 오류 문구에 싣지 않는다.
+ */
+export type ServiceAccountEncoding = { ok: true; value: string } | { ok: false; error: string };
+
+export function encodeServiceAccountJson(text: string): ServiceAccountEncoding {
+  const trimmed = text.trim();
+  if (trimmed === '') return { ok: false, error: '서비스 계정 JSON을 붙여 넣으세요.' };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return { ok: false, error: 'JSON 형식이 아닙니다. Google Cloud에서 받은 서비스 계정 키 파일 내용을 그대로 붙여 넣으세요.' };
+  }
+  const item = parsed as Record<string, unknown> | null;
+  if (
+    typeof item !== 'object' ||
+    item === null ||
+    item.type !== 'service_account' ||
+    typeof item.project_id !== 'string' ||
+    typeof item.client_email !== 'string' ||
+    typeof item.private_key !== 'string' ||
+    !item.private_key.includes('PRIVATE KEY') ||
+    item.token_uri !== 'https://oauth2.googleapis.com/token'
+  ) {
+    return { ok: false, error: '서비스 계정 키 파일이 아닙니다. type 이 service_account 인 JSON 이어야 합니다.' };
+  }
+  const bytes = new TextEncoder().encode(JSON.stringify(item));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  const value = btoa(binary);
+  if (value.length > 4096) return { ok: false, error: '서비스 계정 JSON이 너무 큽니다.' };
+  return { ok: true, value };
+}
+
+/** FULL 저장 요청. provider 는 Vertex 하나이고 2차 provider 는 없다. */
+export function toFullRequest(
+  view: StrongLlmSettingsView,
+  serviceAccountB64: string | null,
+  clearKey: boolean,
+  aiJudgementEnabled: boolean,
+): PutStrongLlmSettingsRequest {
+  const request: PutStrongLlmSettingsRequest = {
+    provider: 'vertex',
+    fallbackProvider: null,
+    modelId: view.modelId.trim() === '' ? null : view.modelId.trim(),
+    fallbackModelId: null,
+    baseUrl: null,
+    fallbackBaseUrl: null,
+    answerLanguage: view.answerLanguage,
+    dailyGenerateCallCap: view.dailyGenerateCallCap,
+    aiJudgementEnabled,
+  };
+  if (clearKey) request.apiKey = '';
+  else if (serviceAccountB64 !== null) request.apiKey = serviceAccountB64;
+  return request;
+}
+
 export async function saveSettings(request: PutStrongLlmSettingsRequest): Promise<void> {
   await api.putStrongLlmSettings(request);
 }

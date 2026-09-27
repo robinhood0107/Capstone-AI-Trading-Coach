@@ -5,12 +5,10 @@ import type {
   AutomationControlV1,
   AutomationCapitalPolicy,
   AutomationCapitalStatus,
-  AutomationPolicyV2,
   AutomationPolicyV3,
   AutomationPositionPageV2,
   AutomationPositionPageV3,
   AutomationRunDetailV3,
-  AutomationRunPageV2,
   AutomationRunPageV3,
   AutomationStatusV2,
   AutomationStatusV3,
@@ -45,11 +43,9 @@ import type {
   PrincipleOwnerListData,
   PrinciplePresetListData,
   PrincipleUpdateRequest,
-  PutAutomationPolicyV2Request,
   PutAutomationPolicyV3Request,
   PutAutomationCapitalPolicyRequest,
   PutStrongLlmSettingsRequest,
-  RagAnswerProjection,
   RagAskRequest,
   RagSourceListResponse,
   RagV2Answer,
@@ -100,8 +96,15 @@ export const api = {
     });
   },
 
-  disconnectMockCredential(): Promise<{ state: 'DISCONNECTING' } | void> {
-    return apiFetchBare<{ state: 'DISCONNECTING' } | void>('/api/v1/brokerage/mock/credential', { method: 'DELETE' });
+  /**
+   * 완전 삭제는 204(본문 없음)다. 미대사 주문이 남아 해제 중이면 200 인데, 서버의 공통
+   * ResponseEnvelopeAdvice 가 컨트롤러의 `{ state }` 를 `{ success, data: { state } }` 로 감싼다.
+   * 봉투를 벗기지 않으면 화면이 해제 중을 "삭제했습니다"로 잘못 알린다.
+   */
+  async disconnectMockCredential(): Promise<{ state: 'DISCONNECTING' } | void> {
+    return disconnectOutcome(
+      await apiFetchBare<unknown>('/api/v1/brokerage/mock/credential', { method: 'DELETE' }),
+    );
   },
 
   /* -------------------------------------------------------------- 상태 */
@@ -207,23 +210,8 @@ export const api = {
     return apiFetch<AutomationStatusV2>('/api/v2/automation/status');
   },
 
-  putAutomationPolicyV2(
-    request: PutAutomationPolicyV2Request,
-  ): Promise<ApiResult<AutomationPolicyV2>> {
-    return apiFetch<AutomationPolicyV2>('/api/v2/automation/policy', {
-      method: 'PUT',
-      body: request,
-      idempotencyKey: newIdempotencyKey('automation-policy'),
-    });
-  },
-
-  armAutomationV2(request: ArmAutomationV2Request): Promise<ApiResult<AutomationStatusV2>> {
-    return apiFetch<AutomationStatusV2>('/api/v2/automation/arm', {
-      method: 'POST',
-      body: request,
-      idempotencyKey: newIdempotencyKey('automation-arm-v2'),
-    });
-  },
+  // v2 정책 저장·시작·실행 목록은 화면이 쓰지 않는다(v3 가 대신한다). FULL 관문도 닫아 두었으므로
+  // 부를 수 있는 함수를 남기지 않는다. 인수 스펙은 generated client 로 v2 계약을 직접 확인한다.
 
   /**
    * v1 자동운용 통제 상태.
@@ -241,10 +229,6 @@ export const api = {
       body: { expectedVersion },
       idempotencyKey: newIdempotencyKey('automation-disarm'),
     });
-  },
-
-  automationRunsV2(size = 20): Promise<ApiResult<AutomationRunPageV2>> {
-    return apiFetch<AutomationRunPageV2>(`/api/v2/automation/runs?size=${size}`);
   },
 
   automationPositionsV2(): Promise<ApiResult<AutomationPositionPageV2>> {
@@ -379,13 +363,7 @@ export const api = {
     return apiFetch<RagSourceListResponse>('/api/v1/rag/sources');
   },
 
-  ragAsk(request: RagAskRequest): Promise<ApiResult<RagAnswerProjection>> {
-    return apiFetch<RagAnswerProjection>('/api/v1/rag/ask', {
-      method: 'POST',
-      body: request,
-      idempotencyKey: newIdempotencyKey('rag-ask'),
-    });
-  },
+  // v1 ask 는 화면이 쓰지 않는다(v2 ask 가 대신한다). FULL 관문에도 없다.
 
   /* ----------------------------------------------------------- RAG v2 */
   ragV2CorpusStatus(): Promise<RagV2CorpusStatus> {
@@ -460,8 +438,9 @@ export const api = {
   /**
    * 답변이 도움이 됐는지 남긴다.
    *
-   * 경로가 v1 뿐이다(v2 에는 없다). 답변 id 체계는 두 버전이 같으므로 v2 로 받은 답변에도
-   * 그대로 쓴다.
+   * 경로가 v1 뿐이다(v2 에는 없다). **v1 과 v2 의 답변 id 체계는 다르다** - v1 원장은 v2 로
+   * 받은 답변 id 를 모르므로 v2 답변에 이 경로를 부르면 거절된다. 그래서 v2 화면의 피드백
+   * 버튼은 숨겨 둔다(RagGuideView 의 TODO). v2 피드백 경로가 생기기 전에는 v1 답변에만 쓴다.
    */
   ragFeedback(answerId: string, helpful: boolean): Promise<ApiResult<unknown>> {
     return apiFetch(`/api/v1/rag/answers/${encodeURIComponent(answerId)}/feedback`, {
@@ -567,6 +546,14 @@ export const api = {
     return apiFetch(`/api/v1/dashboard/rag-sources/${encodeURIComponent(answerId)}`);
   },
 };
+
+/** DELETE 모의계좌 응답에서 해제 중 여부만 읽는다. 봉투든 맨 본문이든 같은 뜻으로 본다. */
+export function disconnectOutcome(payload: unknown): { state: 'DISCONNECTING' } | void {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const record = payload as { state?: unknown; data?: { state?: unknown } | null };
+  const state = record.data && typeof record.data === 'object' ? record.data.state : record.state;
+  return state === 'DISCONNECTING' ? { state: 'DISCONNECTING' } : undefined;
+}
 
 /** 서버가 강제하는 ID 형식. 화면에서 미리 걸러 불필요한 400을 줄인다. */
 export const ID_PATTERN = {

@@ -12,7 +12,7 @@ import java.time.Instant
  * 로그인 실패 이력을 어디에 두는지를 가른다.
  *
  * 프로세스 메모리에 두면 두 가지가 무너진다. 재시작하면 이력이 사라져 잠긴 계정이 풀리고,
- * 인스턴스를 늘리면 인스턴스마다 5회씩 허용된다 - 즉 대입 한도가 인스턴스 수만큼 늘어난다.
+ * 인스턴스를 늘리면 인스턴스마다 한도만큼 허용된다 - 즉 대입 한도가 인스턴스 수만큼 늘어난다.
  */
 interface LoginAttemptStore {
     /** 이 열쇠의 실패 수가 한도 미만인가. */
@@ -106,7 +106,7 @@ class RedisLoginAttemptStore(
 
     private companion object {
         val LOGGER: org.slf4j.Logger = LoggerFactory.getLogger(RedisLoginAttemptStore::class.java)
-        val WINDOW: Duration = Duration.ofMinutes(15)
+        val WINDOW: Duration = Duration.ofMinutes(5)
         val INCREMENT_SCRIPT =
             DefaultRedisScript(
                 """
@@ -194,6 +194,6 @@ class InMemoryLoginAttemptStore : LoginAttemptStore {
 
     companion object {
         const val MAX_TRACKED_KEYS = 20_000
-        val WINDOW: Duration = Duration.ofMinutes(15)
+        val WINDOW: Duration = Duration.ofMinutes(5)
     }
 }

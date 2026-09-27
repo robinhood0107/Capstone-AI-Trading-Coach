@@ -5,7 +5,9 @@ import org.springframework.stereotype.Component
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
+import java.util.HexFormat
 import javax.crypto.Cipher
+import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
@@ -53,6 +55,53 @@ class BrokerageCredentialCrypto(
     private val kekFile: BrokerageKekFile,
     private val random: SecureRandom = SecureRandom(),
 ) {
+    /**
+     * Keyed, owner-scoped identity for a real KIS account. The ten-digit account number is never
+     * persisted as a fingerprint input and cannot be recovered from this value without the
+     * dedicated brokerage KEK.
+     */
+    fun accountIdentityFingerprint(
+        ownerUserId: String,
+        accountNo: String,
+    ): String {
+        require(accountNo.matches(Regex("^[0-9]{10}$")))
+        val accountBytes = accountNo.toByteArray(StandardCharsets.US_ASCII)
+        return try {
+            accountIdentityFingerprint(ownerUserId, accountBytes)
+        } finally {
+            accountBytes.fill(0)
+        }
+    }
+
+    fun accountIdentityFingerprint(
+        ownerUserId: String,
+        accountNo: ByteArray,
+    ): String {
+        require(ownerUserId.matches(Regex("^usr_[A-Za-z0-9_-]{8,96}$")))
+        require(accountNo.size == 10 && accountNo.all { it.toInt() in '0'.code..'9'.code })
+        val kek = kekFile.load()
+        val domain = "mars-full:broker-account-identity:v1\u0000".toByteArray(StandardCharsets.US_ASCII)
+        val owner = ownerUserId.toByteArray(StandardCharsets.UTF_8)
+        val message =
+            ByteBuffer
+                .allocate(domain.size + owner.size + 1 + accountNo.size)
+                .put(domain)
+                .put(owner)
+                .put(0.toByte())
+                .put(accountNo)
+                .array()
+        return try {
+            val mac = Mac.getInstance("HmacSHA256")
+            mac.init(SecretKeySpec(kek, "HmacSHA256"))
+            HexFormat.of().formatHex(mac.doFinal(message))
+        } finally {
+            kek.fill(0)
+            domain.fill(0)
+            owner.fill(0)
+            message.fill(0)
+        }
+    }
+
     fun seal(
         ownerUserId: String,
         accountId: String,

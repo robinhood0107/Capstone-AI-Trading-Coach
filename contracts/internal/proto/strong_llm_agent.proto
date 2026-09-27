@@ -51,6 +51,9 @@ message StartRun {
   string thinking_level = 15;
   // NEWS_SCREEN은 Google support만 수집하고 tool-free JUDGE는 별도 phase에서 수행한다.
   bool grounding_discovery_only = 16;
+  // 사용자 자기 Vertex 서비스 계정(JSON 의 표준 Base64 한 줄). 비어 있으면 에이전트가 배포 비밀의 운영자
+  // 서비스 계정을 쓴다. host 가 run 마다 복호화해 넣고, 에이전트는 로그·응답에 싣지 않는다.
+  string owner_vertex_service_account_json_b64 = 17;
 }
 
 message ProviderCallPermit {

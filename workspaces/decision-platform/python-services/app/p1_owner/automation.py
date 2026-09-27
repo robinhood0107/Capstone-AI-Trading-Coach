@@ -894,6 +894,7 @@ class AutomationRun:
     # 어느 단계에서 어떤 종목이 왜 빠졌는지. 이게 없으면 무주문 실행은 화면에서
     # "판단 근거 없음"으로만 보이고 원인을 되짚을 수 없다.
     stage_outcomes: tuple[StageOutcome, ...] = ()
+    halt_reason_code: str | None = None
 
     def projection(self) -> dict[str, object]:
         reservation = self.reservation
@@ -971,6 +972,7 @@ class FixtureAutomationTransport:
     ai_judgement: AiJudgement | None = None
     screening_batch: NewsScreeningBatch | None = None
     submit_outcome: SubmitOutcome = "FILLED"
+    order_failure_reason_code: str | None = None
     reconcile_outcomes: list[ReconcileOutcome] = field(default_factory=lambda: ["FILLED"])
     reconcile_snapshots: list[ReconcileSnapshot] = field(default_factory=list)
     cancel_succeeds: bool = True
@@ -2066,6 +2068,10 @@ class AutomationEngine:
         run.logical_submit_count += 1
         run.submit_outcome = outcome
         if outcome == "AMBIGUOUS":
+            failure_reason = getattr(transport, "order_failure_reason_code", None)
+            if failure_reason in {"KIS_ORDER_RESULT_UNCERTAIN", "KIS_ORDER_REJECTED"}:
+                self._halt(run, now, failure_reason)
+                return
             self._transition(run, "PENDING_RECONCILIATION", "ORDER_OUTCOME_RECORDED", now)
         else:
             self._transition(run, "ORDER_SUBMITTED", "ORDER_OUTCOME_RECORDED", now)
@@ -2323,6 +2329,17 @@ class AutomationEngine:
         if reason not in _RUN_ONLY_HALT_REASONS:
             self.store.control_state = "HALTED"
             self.store.version += 1
+        run.halt_reason_code = reason
+        if reason in {"KIS_ORDER_RESULT_UNCERTAIN", "KIS_ORDER_REJECTED"}:
+            run.stage_outcomes += (
+                StageOutcome(
+                    "ORDER",
+                    run.selected_symbol or _SESSION_STAGE_SYMBOL,
+                    "DROPPED",
+                    reason,
+                    "KIS 주문을 확인할 수 없어 이 계좌의 자동운용을 정지했습니다. KIS 주문·체결과 잔고를 확인하세요.",
+                ),
+            )
         self._transition(run, "HALTED", "RUN_HALTED", now)
         self.store.append_event(run, "DRIFT_DETECTED", {"reason": reason}, now)
 

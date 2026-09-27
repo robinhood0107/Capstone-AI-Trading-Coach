@@ -1,5 +1,6 @@
 package com.capstone.decision
 
+import com.capstone.decision.infrastructure.security.AuthenticatedAccount
 import com.capstone.decision.infrastructure.security.DemoAccounts
 import com.capstone.decision.infrastructure.security.DemoCredentialBundlePolicy
 import com.capstone.decision.infrastructure.security.DemoRole
@@ -226,6 +227,7 @@ class TestAuthRepositoryConfiguration {
     @Bean
     @Primary
     fun testUserSecurityRepository(): UserSecurityRepository {
+        // demo-admin은 V213에서 사라졌다. 비밀번호 로그인은 demo-user만 가능하고 ADMIN은 고정 session으로만 만든다.
         val users =
             listOf(
                 UserSecurityRecord(
@@ -236,21 +238,23 @@ class TestAuthRepositoryConfiguration {
                     status = "ACTIVE",
                     securityVersion = 1,
                 ),
-                UserSecurityRecord(
-                    userId = "usr_demo_admin",
-                    username = "demo-admin",
-                    passwordHash = SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD_HASH,
-                    role = DemoRole.ADMIN,
-                    status = "ACTIVE",
-                    securityVersion = 1,
-                ),
+            )
+        val admin =
+            UserSecurityRecord(
+                userId = ADMIN_USER_ID,
+                username = ADMIN_USERNAME,
+                passwordHash = SpringApiIntegrationTestBase.TEST_USER_PASSWORD_HASH,
+                role = DemoRole.ADMIN,
+                status = "ACTIVE",
+                securityVersion = 1,
             )
         return object : UserSecurityRepository {
             private val sessions = mutableMapOf<String, UserSecuritySessionRecord>()
 
             override fun findDemoCredentials(): List<UserSecurityRecord> = users
 
-            override fun findByUserId(userId: String): UserSecurityActorRecord? = users.firstOrNull { it.userId == userId }?.toActorRecord()
+            override fun findByUserId(userId: String): UserSecurityActorRecord? =
+                (users + admin).firstOrNull { it.userId == userId }?.toActorRecord()
 
             override fun createAuthenticatedSession(
                 username: String,
@@ -258,19 +262,8 @@ class TestAuthRepositoryConfiguration {
                 ttlSeconds: Int,
             ): UserSecuritySessionRecord? {
                 val user = users.singleOrNull { it.username == username } ?: return null
-                val expectedPassword =
-                    if (username == "demo-admin") {
-                        SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD
-                    } else {
-                        SpringApiIntegrationTestBase.TEST_USER_PASSWORD
-                    }
-                if (password != expectedPassword) return null
-                val handle =
-                    if (username == "demo-admin") {
-                        "sid1_" + "a".repeat(64)
-                    } else {
-                        "sid1_" + "b".repeat(64)
-                    }
+                if (password != SpringApiIntegrationTestBase.TEST_USER_PASSWORD) return null
+                val handle = "sid1_" + "b".repeat(64)
                 return UserSecuritySessionRecord(
                     sessionHandle = handle,
                     userId = user.userId,
@@ -287,9 +280,9 @@ class TestAuthRepositoryConfiguration {
             override fun findBySessionHandle(sessionHandle: String): UserSecuritySessionRecord? =
                 sessions[sessionHandle]
                     ?: sessionHandle
-                        .takeIf { it == "sid1_" + "b".repeat(64) }
+                        .takeIf { it == "sid1_" + "b".repeat(64) || it == ADMIN_SESSION_HANDLE }
                         ?.let {
-                            val user = users.single { item -> item.userId == "usr_demo_user" }
+                            val user = if (it == ADMIN_SESSION_HANDLE) admin else users.single()
                             UserSecuritySessionRecord(
                                 sessionHandle = sessionHandle,
                                 userId = user.userId,
@@ -313,4 +306,24 @@ class TestAuthRepositoryConfiguration {
             status = status,
             securityVersion = securityVersion,
         )
+
+    companion object {
+        // DB 없는 web 계약 테스트에서 ADMIN 토큰을 발급할 때 쓰는 고정 actor다.
+        const val ADMIN_USER_ID = "usr_test_admin_0001"
+        const val ADMIN_USERNAME = "test-admin"
+        val ADMIN_SESSION_HANDLE: String = "sid1_" + "c".repeat(64)
+
+        fun adminAccount(): AuthenticatedAccount =
+            AuthenticatedAccount(
+                userId = ADMIN_USER_ID,
+                username = ADMIN_USERNAME,
+                role = DemoRole.ADMIN,
+                securityVersion = 1,
+                sessionHandle = ADMIN_SESSION_HANDLE,
+                expiresAt =
+                    java.time.OffsetDateTime
+                        .now()
+                        .plusHours(1),
+            )
+    }
 }

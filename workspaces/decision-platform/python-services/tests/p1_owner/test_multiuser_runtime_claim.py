@@ -72,9 +72,27 @@ def test_owner_list_is_bounded_and_validated(monkeypatch: pytest.MonkeyPatch) ->
     assert _repository(monkeypatch, cursor).armed_owner_user_ids() == tuple(
         row[0] for row in owners
     )
-    cursor.rows = [(f"usr_owner_{index:04d}",) for index in range(101)]
+    # More than the former fixed 100 is normal now; capacity is enforced when arming.
+    cursor.rows = [(f"usr_owner_{index:04d}",) for index in range(150)]
+    assert len(_repository(monkeypatch, cursor).armed_owner_user_ids()) == 150
+    cursor.rows = [(f"usr_owner_{index:05d}",) for index in range(1001)]
     with pytest.raises(AutomationRuntimeError, match="AUTOMATION_OWNER_ADMISSION_INVALID"):
         _repository(monkeypatch, cursor).armed_owner_user_ids()
+    cursor.rows = [("usr_owner_0001",), ("usr_owner_0001",)]
+    with pytest.raises(AutomationRuntimeError, match="AUTOMATION_OWNER_ADMISSION_INVALID"):
+        _repository(monkeypatch, cursor).armed_owner_user_ids()
+
+
+@pytest.mark.parametrize(
+    ("cap", "expected"),
+    [(20, 100), (100, 100), (250, 250), (5000, 1000), (None, 100), ("x", 100)],
+)
+def test_worker_pool_follows_the_operator_cap(
+    monkeypatch: pytest.MonkeyPatch, cap: object, expected: int
+) -> None:
+    cursor = _Cursor([], row=(cap,))
+    assert _repository(monkeypatch, cursor).automation_worker_count() == expected
+    assert "p1_read_automation_active_cap_v1" in cursor.query
 
 
 def test_claim_hash_is_user_scoped() -> None:

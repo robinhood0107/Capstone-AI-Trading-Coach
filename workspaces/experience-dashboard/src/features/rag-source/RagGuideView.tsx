@@ -429,6 +429,10 @@ function WorldNewsPanel({ page }: { page: WorldNewsPage }) {
  * 직접 상태를 든다(기존 쓰기들과 같은 방식). **자동으로 다시 보내지 않는다** — 실패는
  * 그 자리에 적고 사용자가 다시 누르게 한다.
  */
+// TODO(자동매매): 피드백은 v1 경로(rag_ans_ 형식)만 받는데 기록은 v2 answerId(rag_)를 준다.
+// v2 피드백 저장을 만들 때까지 버튼을 숨긴다.
+const RAG_FEEDBACK_ENABLED = false;
+
 function HistoryEntry({ item, onChanged }: { item: RagV2HistoryDetail; onChanged: () => void }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -480,7 +484,7 @@ function HistoryEntry({ item, onChanged }: { item: RagV2HistoryDetail; onChanged
       </p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2 pl-4">
-        {sent === null ? (
+        {!RAG_FEEDBACK_ENABLED ? null : sent === null ? (
           <>
             <span className="text-[12px] text-faint">도움이 됐나요?</span>
             <Button
@@ -504,7 +508,7 @@ function HistoryEntry({ item, onChanged }: { item: RagV2HistoryDetail; onChanged
           </span>
         )}
 
-        <span aria-hidden className="mx-1 h-4 w-px bg-line" />
+        {RAG_FEEDBACK_ENABLED && <span aria-hidden className="mx-1 h-4 w-px bg-line" />}
 
         {confirming ? (
           <>

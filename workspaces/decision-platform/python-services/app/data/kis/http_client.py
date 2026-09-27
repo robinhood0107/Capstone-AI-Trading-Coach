@@ -14,6 +14,7 @@ from app.data.kis._credential_transport import (
     _build_redis_client,
     _CredentialTransport,
     _provider_scope,
+    _token_limiter_key,
     _TokenIssuer,
 )
 from app.data.kis.accounting import (
@@ -116,10 +117,9 @@ class KISHttpClient:
                     max_wait_seconds=float(settings.kis_rate_limit_max_wait_seconds),
                     io_budget_seconds=8.0,
                 )
-                # 발급 제한 단위가 공개 공지에 없으므로 mock/live를 합친 deployment-global 1/s로 보수 적용한다.
                 token_limiter = RedisIntervalLimiter(
                     redis_client,
-                    key="kis:tokenp:v3:deployment",
+                    key=_token_limiter_key(scope),
                     interval_seconds=1.0,
                     max_wait_seconds=float(settings.kis_rate_limit_max_wait_seconds),
                     io_budget_seconds=8.0,

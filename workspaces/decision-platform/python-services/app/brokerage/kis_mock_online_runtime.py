@@ -125,9 +125,13 @@ class KISMockOnlineBalanceReader:
             "KIS mock balance risk fields are unavailable",
         )
 
-    def verify_connection(self, account_id: str) -> None:
-        """One read-only owner account probe; success proves access, not order readiness."""
-        self.probe_balance_source(account_id)
+    def verify_connection(self, account_id: str) -> KISMockBalanceSourceProbe:
+        """One read-only owner account probe; success proves access, not order readiness.
+
+        실제 잔고조회 한 번이다. 토큰 발급만으로는 계좌번호가 그 앱 키의 모의계좌인지 알 수 없다. 읽은
+        예수금·보유 종목은 host 가 소유자 계좌의 온라인 관측으로 남긴다.
+        """
+        return self.probe_balance_source(account_id)
 
     def probe_balance_source(self, account_id: str) -> KISMockBalanceSourceProbe:
         """exact-approved 진단에서 cash/equity/position source shape만 bounded 검증한다.

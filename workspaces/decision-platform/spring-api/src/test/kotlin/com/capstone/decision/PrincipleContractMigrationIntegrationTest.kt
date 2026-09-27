@@ -187,7 +187,8 @@ class PrincipleContractMigrationIntegrationTest(
         flyway(databaseUrl, target = "7").migrate()
         val actorFingerprint = actorFingerprint(databaseUrl)
 
-        flyway(databaseUrl).migrate()
+        // V213이 demo-admin을 정리하므로 V8 자체가 trust row를 건드리지 않는지는 V8까지만 올려 확인한다.
+        flyway(databaseUrl, target = "8").migrate()
 
         assertEquals(actorFingerprint, actorFingerprint(databaseUrl))
         assertEquals(3, scalarInt(databaseUrl, "select count(*) from principle_presets"))
@@ -288,7 +289,7 @@ class PrincipleContractMigrationIntegrationTest(
               audit_log_id, user_id, actor_role, action, target_type, target_id, payload_json
             )
             values (
-              'audit-auth-unrelated', 'usr_demo_admin', 'ADMIN',
+              'audit-auth-unrelated', 'usr_demo_user', 'ADMIN',
               'DEMO_CREDENTIAL_ROTATED', 'USER_SECURITY', 'usr_demo_user', '{}'::jsonb
             )
             """.trimIndent(),

@@ -1,5 +1,7 @@
 package com.capstone.decision.infrastructure.grpc
 
+import com.capstone.decision.application.automation.AutomationAiCredential
+import com.capstone.decision.application.automation.AutomationAiCredentialSource
 import com.capstone.decision.application.rag.RagGenerationStatus
 import com.capstone.decision.application.rag.RagV2VertexEvidence
 import com.capstone.decision.application.rag.RagV2VertexGenerationCommand
@@ -20,6 +22,7 @@ import com.capstone.decision.contract.internal.s49.ToolResult
 import com.capstone.decision.infrastructure.mcp.ResearchToolFacade
 import com.capstone.decision.infrastructure.mcp.S49SearchUnavailableException
 import com.capstone.decision.infrastructure.security.PublicSurfaceMode
+import com.capstone.decision.infrastructure.vertex.OwnerVertexCredentialResolver
 import com.capstone.decision.infrastructure.vertex.S49GoogleBudgetPermit
 import com.capstone.decision.infrastructure.vertex.S49GoogleGroundingBudgetPort
 import com.capstone.decision.infrastructure.vertex.S49PublicAgentUsageMeter
@@ -66,6 +69,7 @@ internal class GrpcStrongLlmGenerationAdapter(
     private val groundingProvenance: S49GroundingProvenancePort,
     private val researchToolsProvider: ObjectProvider<ResearchToolFacade>,
     private val clock: Clock = Clock.systemUTC(),
+    private val credentialResolver: ObjectProvider<OwnerVertexCredentialResolver>? = null,
 ) : RagV2VertexGenerationPort {
     private val publicMode = PublicSurfaceMode.valueOf(rawMode)
     private val demoMode = publicMode == PublicSurfaceMode.DEMO
@@ -103,6 +107,29 @@ internal class GrpcStrongLlmGenerationAdapter(
             require(command.consent.processorSetDigest == strongLlmProperties.ownerConsentProcessorSetSha256)
         }
         val runId = "s49_run_${sha256(command.requestId).take(32)}"
+        // FULL: 자동매매 AI 검토와 같은 규칙으로 자격증명을 고른다(자기 키 → 허용 시 공용). 어느 쪽도 아니면
+        // 부르지 않는다. LOCAL·DEMO 는 예전처럼 배포 서비스 계정 하나다.
+        val credential =
+            if (publicMode == PublicSurfaceMode.FULL) {
+                credentialResolver?.getIfAvailable()?.let { resolver ->
+                    resolver.resolve(command.ownerUserId) ?: throw IllegalStateException("STRONG_LLM_AI_PROVIDER_NOT_READY")
+                }
+            } else {
+                null
+            }
+        try {
+            return generateWith(command, runId, credential)
+        } finally {
+            credential?.close()
+        }
+    }
+
+    private fun generateWith(
+        command: RagV2VertexGenerationCommand,
+        runId: String,
+        credential: AutomationAiCredential?,
+    ): RagV2VertexGenerationResult {
+        val ownKey = credential?.source == AutomationAiCredentialSource.OWNER
         val researchTools = if (demoMode) null else researchToolsProvider.getIfAvailable()
         researchTools?.openSession(runId)
         researchTools?.registerUserRoots(runId, command.question)
@@ -136,7 +163,7 @@ internal class GrpcStrongLlmGenerationAdapter(
                             override fun onCompleted() = Unit
                         },
                     )
-            val startFrame = startEvent(runId, command, googlePermit.googleEnabled)
+            val startFrame = startEvent(runId, command, googlePermit.googleEnabled, credential)
             requestObserver.onNext(startFrame)
             val deadline = System.nanoTime() + Duration.ofMillis(grpcProperties.deadlineMillis).toNanos()
             while (completed == null) {
@@ -155,16 +182,19 @@ internal class GrpcStrongLlmGenerationAdapter(
                             "STRONG_LLM_GOOGLE_BUDGET_PERMIT_MISSING"
                         }
                         hostBudget.permitProvider(event.providerCallPlanned.phase)
-                        runCatching {
-                            operatorUsageMeter.record(
-                                command.ownerUserId,
-                                runId,
-                                event.providerCallPlanned.plannedCallId,
-                                startFrame.serializedSize,
-                                contextBytesFromEvents,
-                                sentProviderPermits,
-                                event.providerCallPlanned.googleSearchAttached,
-                            )
+                        // 자기 키 호출은 사용자 GCP 프로젝트로 과금된다. 운영자 비용 계측에 싣지 않는다.
+                        if (!ownKey) {
+                            runCatching {
+                                operatorUsageMeter.record(
+                                    command.ownerUserId,
+                                    runId,
+                                    event.providerCallPlanned.plannedCallId,
+                                    startFrame.serializedSize,
+                                    contextBytesFromEvents,
+                                    sentProviderPermits,
+                                    event.providerCallPlanned.googleSearchAttached,
+                                )
+                            }
                         }
                         sentProviderPermits += 1
                         requestObserver.onNext(
@@ -437,6 +467,15 @@ internal class GrpcStrongLlmGenerationAdapter(
             )
         } finally {
             researchTools?.closeSession(runId)
+            // 사용자별 AI 사용량(자기 키/공용). 실제로 허가한 provider 호출 수를 센다.
+            if (credential != null && sentProviderPermits > 0) {
+                credentialResolver?.getIfAvailable()?.recordUsage(
+                    command.ownerUserId,
+                    runId,
+                    credential.source,
+                    sentProviderPermits,
+                )
+            }
         }
     }
 
@@ -444,6 +483,7 @@ internal class GrpcStrongLlmGenerationAdapter(
         runId: String,
         command: RagV2VertexGenerationCommand,
         googleEnabled: Boolean,
+        credential: AutomationAiCredential?,
     ): HostEvent {
         val publicEvidence = command.evidence.filterNot { it.ownerPrivate }.map(::evidenceItem)
         val ownerEvidence = command.evidence.filter { it.ownerPrivate }.map(::evidenceItem)
@@ -464,7 +504,11 @@ internal class GrpcStrongLlmGenerationAdapter(
                 .setLanguage("ko")
                 .setMode("EXPLAIN")
                 .setThinkingLevel("low")
-                .build()
+                .also { builder ->
+                    credential?.ownerServiceAccountB64()?.let {
+                        builder.setOwnerVertexServiceAccountJsonB64(String(it, StandardCharsets.US_ASCII))
+                    }
+                }.build()
         return HostEvent
             .newBuilder()
             .setRunId(runId)

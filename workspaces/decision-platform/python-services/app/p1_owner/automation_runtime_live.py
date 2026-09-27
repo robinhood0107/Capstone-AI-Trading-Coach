@@ -224,7 +224,18 @@ class SpringAutomationBridgeClient:
             # 생기지 않는다.
             response = self._post_command(body, self._login())
         if response.status_code != 200 or len(response.content) > 64 * 1024:
-            raise AutomationRuntimeError("AUTOMATION_BRIDGE_FAILED")
+            failure_code = None
+            if operation == "SUBMIT" and len(response.content) <= 64 * 1024:
+                try:
+                    error_body = response.json()
+                    candidate = (
+                        error_body.get("failureCode") if isinstance(error_body, dict) else None
+                    )
+                    if candidate in {"KIS_ORDER_REJECTED", "KIS_ORDER_RESULT_UNCERTAIN"}:
+                        failure_code = str(candidate)
+                except (json.JSONDecodeError, ValueError):
+                    pass
+            raise AutomationRuntimeError("AUTOMATION_BRIDGE_FAILED", failure_code=failure_code)
         try:
             parsed = response.json()
         except json.JSONDecodeError as error:
@@ -611,6 +622,7 @@ class LiveAutomationPort:
         self.judge_calls = 0
         self.last_judgement_json: str | None = None
         self.submit_calls = int(state.get("logicalSubmitCount", 0))
+        self.order_failure_reason_code: str | None = None
         self.reconcile_calls = 0
         self.cancel_calls = 0
         self._last_execution_ref_hash: str | None = None
@@ -916,12 +928,18 @@ class LiveAutomationPort:
                 },
                 idempotency_key=_idempotency(self._claim.run_id, "submit"),
             )
-        except AutomationRuntimeError:
+        except AutomationRuntimeError as error:
             self.physical_submit_calls = 1
             self.physical_calls += 1
+            self.order_failure_reason_code = (
+                error.failure_code
+                if error.failure_code in {"KIS_ORDER_REJECTED", "KIS_ORDER_RESULT_UNCERTAIN"}
+                else "KIS_ORDER_RESULT_UNCERTAIN"
+            )
             return "AMBIGUOUS"
         order_id = submitted.get("orderId")
         if not isinstance(order_id, str) or _ORDER_ID.fullmatch(order_id) is None:
+            self.order_failure_reason_code = "KIS_ORDER_RESULT_UNCERTAIN"
             return "AMBIGUOUS"
         self.order_id = order_id
         self.physical_submit_calls = 1
@@ -1180,7 +1198,11 @@ class LiveAutomationPortFactory:
                 ).open(
                     envelope,
                     account_id=claim.account_id,
-                    allowed_states=frozenset({"CERTIFIED"}),
+                    allowed_states=(
+                        frozenset({"CONNECTED", "CERTIFIED"})
+                        if os.environ.get("MARS_PUBLIC_SURFACE_MODE", "LOCAL") == "FULL"
+                        else frozenset({"CERTIFIED"})
+                    ),
                 )
                 credentials = _Credentials(opened.app_key, opened.app_secret)
 

@@ -135,7 +135,7 @@ class LoginAttemptLimiter(
     )
 
     companion object {
-        private const val USER_FAILURE_LIMIT = 5
+        private const val USER_FAILURE_LIMIT = 10
         private const val DEPLOYMENT_RESERVATION_LIMIT = 50
         private const val DEPLOYMENT_FAILURE_LIMIT = InMemoryLoginAttemptStore.MAX_TRACKED_KEYS
         private const val KEY_VERSION = "v1"

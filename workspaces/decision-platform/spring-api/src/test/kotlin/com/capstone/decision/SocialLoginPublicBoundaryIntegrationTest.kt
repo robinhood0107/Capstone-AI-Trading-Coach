@@ -169,6 +169,36 @@ class SocialLoginPublicBoundaryIntegrationTest(
         assertEquals(listOf(secondEmail), secondEmailRows)
     }
 
+    @Test
+    fun `container error dispatch keeps its own status instead of turning into 401`() {
+        // 공개 관문의 sendError(404), 405, 처리되지 않은 예외는 모두 /error 로 다시 dispatch 된다.
+        // 그 dispatch 는 JWT filter 를 다시 타지 않으므로 익명으로 막히면 로그인한 사용자도 401 을 받는다.
+        for ((status, code) in listOf(404 to "NOT_FOUND", 405 to "VALIDATION_ERROR", 500 to "INTERNAL_ERROR")) {
+            val response =
+                mvc
+                    .get("/error") {
+                        with { request ->
+                            request.dispatcherType = jakarta.servlet.DispatcherType.ERROR
+                            request.setAttribute(jakarta.servlet.RequestDispatcher.ERROR_STATUS_CODE, status)
+                            request.setAttribute(jakarta.servlet.RequestDispatcher.ERROR_REQUEST_URI, "/api/v1/unknown")
+                            request
+                        }
+                    }.andReturn()
+                    .response
+            assertEquals(status, response.status)
+            assertEquals(
+                code,
+                objectMapper
+                    .readTree(response.contentAsString)
+                    .path("error")
+                    .path("code")
+                    .asText(),
+            )
+        }
+        // 일반 요청으로 /error 를 직접 부르는 것은 여전히 인증이 필요하다.
+        mvc.get("/error").andExpect { status { isUnauthorized() } }
+    }
+
     @TestConfiguration
     class OfflineSocialLoginRegistrations {
         @Bean

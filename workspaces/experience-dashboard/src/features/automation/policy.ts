@@ -63,7 +63,8 @@ export const AUTOMATION_EVIDENCE_LINKS = [
 export const AUTOMATION_BLOCKER_LABELS: Record<AutomationBlocker, string> = {
   ACCOUNT_NOT_CONFIGURED: 'KIS 계좌 설정이 필요합니다.',
   POLICY_NOT_CONFIGURED: '예산·손절·익절 정책을 먼저 저장해야 합니다.',
-  POLICY_VERSION_DRIFT: '저장된 정책 버전이 바뀌었습니다. 최신 값을 다시 확인하세요.',
+  POLICY_VERSION_DRIFT:
+    '정책 또는 투자 원칙 버전이 바뀌었습니다. 최신 값을 확인한 뒤 정책을 다시 저장하면 시작할 수 있습니다.',
   PRINCIPLE_NOT_CONFIGURED: '활성 투자 원칙이 없습니다.',
   REAL_TEAM_B_POINTER_INACTIVE: '검증된 Team B 실제 전략이 활성화되지 않았습니다.',
   RELEASE_BINDING_UNCLEAN: '릴리스 바인딩이 검증된 산출물과 일치하지 않습니다.',
@@ -76,7 +77,7 @@ export const AUTOMATION_BLOCKER_LABELS: Record<AutomationBlocker, string> = {
 };
 
 /**
- * v3 가 더 내려보내는 차단 사유 여섯 가지.
+ * v3 가 더 내려보내는 차단 사유 일곱 가지.
  *
  * v2 계약에는 없다 — v3 status 를 보는 화면에서만 나타난다. `Record<AutomationBlockerV3, …>`
  * 라 새 사유가 계약에 붙으면 타입이 먼저 깨진다. 라벨 없이 빈 항목이 렌더되는 일이 없다.
@@ -88,8 +89,38 @@ export const AUTOMATION_BLOCKER_LABELS_V3: Record<AutomationBlockerV3, string> =
   MARKET_HISTORY_EMPTY: '시세 이력이 없습니다. ATR과 추적손절을 계산할 수 없습니다.',
   MARKET_HISTORY_INSUFFICIENT: '시세 이력이 ATR 계산에 필요한 만큼 쌓이지 않았습니다.',
   MARKET_DATA_CATCHUP_REQUIRED: '시세 이력이 밀려 있습니다. 따라잡기가 끝나야 시작할 수 있습니다.',
-  AI_PROVIDER_NOT_READY: 'AI 판단 제공자가 준비되지 않았습니다.',
+  AI_PROVIDER_NOT_READY:
+    'AI 검토 제공자가 준비되지 않았습니다. 설정에서 내 Vertex 서비스 계정을 등록하거나, AI 검토를 끄면 규칙만으로 시작할 수 있습니다.',
+  ACCOUNT_HISTORY_UNLINKED:
+    '현재 계좌와 연결되지 않은 자동운용 기록이 있습니다. 미대사 주문·포지션·실행 이력을 확인한 뒤 다시 시작할 수 있습니다.',
 };
+
+/**
+ * v3 상태 목록에는 없지만 쓰기 응답의 `details.blocker` 로만 오는 사유. 운영자 상한은 무장 순간에만
+ * 판정되므로 상태 화면에 미리 뜨지 않는다.
+ */
+const AUTOMATION_WRITE_ONLY_BLOCKER_LABELS: Record<string, string> = {
+  AUTOMATION_CAPACITY_REACHED: '자동매매를 켤 수 있는 사용자 수가 가득 찼습니다. 운영자에게 문의하세요.',
+};
+
+/**
+ * 자동매매 쓰기(정책 저장·무장·해제·재투자 설정)가 409 로 돌려준 차단 사유를 한국어로 바꾼다.
+ * 서버는 사용자가 풀 수 있는 사유를 `details.blocker` 로 싣는다. 이유를 버리고 "다른 변경과 충돌"만
+ * 보여 주면 사용자는 최신 상태를 다시 불러와도 같은 곳에서 막힌다. 모르는 값이면 null 이다.
+ */
+export function automationBlockerMessage(cause: unknown): string | null {
+  if (typeof cause !== 'object' || cause === null) return null;
+  const failure = cause as { code?: unknown; details?: Record<string, unknown> };
+  if (failure.code !== 'CONFLICT') return null;
+  const blocker = failure.details?.blocker;
+  if (typeof blocker !== 'string') return null;
+  if (Object.hasOwn(AUTOMATION_BLOCKER_LABELS_V3, blocker)) {
+    return AUTOMATION_BLOCKER_LABELS_V3[blocker as AutomationBlockerV3];
+  }
+  return Object.hasOwn(AUTOMATION_WRITE_ONLY_BLOCKER_LABELS, blocker)
+    ? AUTOMATION_WRITE_ONLY_BLOCKER_LABELS[blocker]!
+    : null;
+}
 
 export const MARKET_HISTORY_LABELS: Record<MarketHistoryStatus, string> = {
   EMPTY: '없음',

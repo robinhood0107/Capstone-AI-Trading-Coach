@@ -2,6 +2,8 @@ package com.capstone.decision.application.strongllm
 
 import com.capstone.decision.application.security.ActorRlsScopePort
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.core.env.Environment
+import org.springframework.core.env.Profiles
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -51,7 +53,23 @@ class StrongLlmSettingsService(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val actorRlsScope: ActorRlsScopePort,
     private val crypto: StrongLlmCredentialPort,
+    private val environment: Environment? = null,
 ) {
+    /**
+     * FULL 은 사용자 자기 Vertex 서비스 계정만 받는다. 실행 경로(자동매매 AI 검토)가 Vertex 에이전트
+     * 하나뿐이라 다른 provider 키를 받아 두면 "등록됨"인데 한 번도 쓰이지 않는 키가 된다. 2차 provider 도
+     * 같은 이유로 받지 않는다. 개인 스택(LOCAL)의 규칙은 그대로다.
+     */
+    private fun requireFullProductShape(command: PutStrongLlmSettingsCommand) {
+        require(command.provider == "vertex")
+        require(command.fallbackProvider == null && command.fallbackBaseUrl == null && command.baseUrl == null)
+        require(command.fallbackApiKey.isNullOrEmpty())
+        val key = command.apiKey
+        require(key.isNullOrEmpty() || VertexServiceAccountShape.isValid(key))
+    }
+
+    private fun fullProduct(): Boolean = environment?.acceptsProfiles(Profiles.of("mars-full")) == true
+
     @Transactional
     fun read(ownerUserId: String): StrongLlmOwnerSettings {
         val jdbc = jdbc()
@@ -112,6 +130,7 @@ class StrongLlmSettingsService(
         ownerUserId: String,
         command: PutStrongLlmSettingsCommand,
     ) {
+        if (fullProduct()) requireFullProductShape(command)
         val jdbc = jdbc()
         openScope(jdbc, ownerUserId, "PUT_STRONG_LLM_SETTINGS")
         jdbc.query(
@@ -156,7 +175,8 @@ class StrongLlmSettingsService(
             ) { _, _ -> }
             return
         }
-        val sealed = crypto.seal(ownerUserId, slot, apiKey)
+        val displayLast4 = if (VertexServiceAccountShape.isValid(apiKey)) VertexServiceAccountShape.displayLast4(apiKey) else null
+        val sealed = crypto.seal(ownerUserId, slot, apiKey, displayLast4)
         jdbc.query(
             """
             SELECT put_strong_llm_owner_credential_v1(

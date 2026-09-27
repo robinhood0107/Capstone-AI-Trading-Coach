@@ -261,6 +261,9 @@ services:
       MARS_PUBLIC_SURFACE_MODE: FULL
       SPRING_PROFILES_ACTIVE: mars-full
       SPRING_FLYWAY_ENABLED: "false"
+      # 스키마는 migrate(Flyway)가 맞춘다. 기동 시 Hibernate 전체 스키마 검사는 느린 NAS 디스크에서
+      # decision_app 의 statement_timeout(2s)을 넘겨 API 를 죽인다(SQLState 57014).
+      SPRING_JPA_HIBERNATE_DDL_AUTO: none
       MARS_PUBLIC_ORIGIN: "${MARS_PUBLIC_ORIGIN:?browser origin, e.g. https://mars.example.com}"
       GOOGLE_OIDC_REDIRECT_URI: "${MARS_PUBLIC_ORIGIN}/api/v1/auth/oidc/callback/google"
       KAKAO_OAUTH_REDIRECT_URI: "${MARS_PUBLIC_ORIGIN}/api/v1/auth/oidc/callback/kakao"

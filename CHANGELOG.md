@@ -41,6 +41,17 @@
 - FULL에서 "자동운용 시작"이 "이 자료에 접근할 권한이 없습니다"로 거부되던 문제. 무장 응답이 같은 트랜잭션에서 자격증명 상태를 다시 읽을 때 스코프가 막혔음(V220)
 - 전략 검증·보고서의 Sharpe 차이를 %가 아닌 소수로 표시하고, "수익률 대가"를 부호대로 읽히는 "CAGR 차이"로 바꿈
 
+## [1.0.3] - 2026-09-28
+
+### 추가
+
+- NAS에서 Portainer 스택 하나로 FULL을 운영하는 템플릿과 안내(`deploy/p1/portainer/`). 이미지 버전·공개 주소·비밀 폴더·포트를 스택 변수로 두고, 기존 배포의 비밀 폴더와 DB 볼륨을 옮기는 스크립트를 포함
+
+### 수정
+
+- 느린 NAS 디스크에서 기동 시 Hibernate 스키마 검사가 `decision_app` statement_timeout(2s)을 넘겨 API가 unhealthy가 되던 문제. 스택에서 검사를 끄고 스키마는 Flyway가 맞춤. 시놀로지 커널이 거부하는 `cpus:` 제한 제거
+
 [1.0.0]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.0
 [1.0.1]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.1
 [1.0.2]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.2
+[1.0.3]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.3

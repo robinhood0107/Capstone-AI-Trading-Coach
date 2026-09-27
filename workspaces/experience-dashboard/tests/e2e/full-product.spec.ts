@@ -20,7 +20,7 @@
  * 예상 밖 "이 자료에 접근할 권한이 없습니다", 콘솔 오류, 처리되지 않은 페이지 예외.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { expect, test, type Page, type Response } from '@playwright/test';
 
@@ -215,13 +215,18 @@ async function credentialRoundTrip(page: Page, watch: Watch) {
 /** 형식만 맞춘 가짜 서비스 계정 JSON. Google 이 받아 주지 않는 키라 과금·호출이 생기지 않는다. */
 function fakeServiceAccountJson() {
   const keyId = randomBytes(8).toString('hex');
+  const { privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
   return {
     keyId,
     json: JSON.stringify({
       type: 'service_account',
       project_id: 'mars-e2e-dummy',
       private_key_id: keyId,
-      private_key: `-----BEGIN PRIVATE KEY-----\n${randomBytes(48).toString('base64')}\n-----END PRIVATE KEY-----\n`,
+      private_key: privateKey,
       client_email: 'e2e@mars-e2e-dummy.iam.gserviceaccount.com',
       client_id: '0',
       token_uri: 'https://oauth2.googleapis.com/token',
@@ -354,16 +359,27 @@ test('new USER: signup form, every page, every write, logout', async ({ page }) 
 
   watch.step = 'automation policy';
   const stopLoss = page.getByLabel('손절률');
-  if (await stopLoss.isEditable().catch(() => false)) {
-    // 새 계정은 정책이 없다. 빠른 선택값과 금액을 채워 저장한다.
-    await page.getByRole('button', { name: /^균형 -5%/ }).click();
-    await page.getByLabel(/최대 자동운용 금액/).fill('1000000');
-    await page.getByRole('button', { name: '정책 저장' }).click();
-    await expect(page.getByRole('button', { name: '처리 중' })).toHaveCount(0, { timeout: 20_000 });
-  }
+  await expect(stopLoss).toBeEditable();
+  // 새 계정은 정책이 없다. 빠른 선택값과 금액을 채워 저장한다.
+  await page.getByRole('button', { name: /^균형 -5%/ }).click();
+  await page.getByLabel(/최대 자동운용 금액/).fill('1000000');
+  await page.getByRole('button', { name: '정책 저장' }).click();
+  await visible(page, '자동운용 정책을 새 버전으로 저장했습니다.');
+
+  watch.step = 'automation reinvestment policy';
+  const reinvest = page.getByLabel('전환 이후 확정 순손익을 다음 세션 운용자금에 반영한다');
+  await expect(reinvest).toBeEnabled();
+  await reinvest.setChecked(false);
+  await page.getByRole('button', { name: '재투자 설정 저장' }).click();
+  await visible(page, '재투자 설정을 다음 거래 세션 정책으로 저장했습니다.');
+  await expect(page.getByText(/^v1 ·/)).toBeVisible();
+  await reinvest.setChecked(true);
+  await page.getByRole('button', { name: '재투자 설정 저장' }).click();
+  await visible(page, '재투자 설정을 다음 거래 세션 정책으로 저장했습니다.');
+  await expect(page.getByText(/^v2 ·/)).toBeVisible();
   // 인증된 KIS 모의계좌가 없으므로 시작은 막혀 있어야 한다(첫 업무 거절).
   const start = page.getByRole('button', { name: '자동운용 시작' });
-  if (await start.count()) await expect(start).toBeDisabled();
+  await expect(start).toBeDisabled();
 
   await credentialRoundTrip(page, watch);
   await ownVertexRoundTrip(page, watch);
@@ -372,7 +388,8 @@ test('new USER: signup form, every page, every write, logout', async ({ page }) 
   await go(page, '/rag');
   await settle(page);
   const grant = page.getByRole('button', { name: '동의', exact: true });
-  if (await grant.isEnabled().catch(() => false)) await grant.click();
+  await expect(grant).toBeEnabled();
+  await grant.click();
   await visible(page, '동의 완료');
   watch.step = 'rag ask';
   // Vertex 가 닫혀 있으면 서버는 503 RAG_UNAVAILABLE 을 돌려준다. 그 경우도 화면은 형식 오류 없이 끝나야 한다.
@@ -382,7 +399,9 @@ test('new USER: signup form, every page, every write, logout', async ({ page }) 
   await expect(page.getByRole('button', { name: '찾는 중' })).toHaveCount(0, { timeout: 95_000 });
   await assertNoContractText(page, '/rag ask');
   const revoke = page.getByRole('button', { name: '철회' });
-  if (await revoke.isEnabled().catch(() => false)) await revoke.click();
+  await expect(revoke).toBeEnabled();
+  await revoke.click();
+  await visible(page, '동의 필요');
 
   await logout(page, watch);
   test.info().annotations.push({ type: 'api-log', description: watch.log.join('\n') || '(no 4xx/5xx)' });
@@ -397,7 +416,8 @@ test('operator ADMIN: login form, every page, admin console, automation guard', 
   page.on('dialog', (dialog) => void dialog.accept());
 
   // 관리자 콘솔 동작은 운영자가 아니라 이번에 만든 테스트 계정에만 건다.
-  const target = await browser.newPage();
+  const targetContext = await browser.newContext({ baseURL: BASE_URL });
+  const target = await targetContext.newPage();
   const targetEmail = `e2e-target-${Date.now()}@example.test`;
   await target.goto('/');
   await target.getByRole('tab', { name: '회원가입' }).click();
@@ -405,12 +425,25 @@ test('operator ADMIN: login form, every page, admin console, automation guard', 
   await target.locator('#full-auth-password').fill(`E2e-${randomBytes(12).toString('hex')}`);
   await target.getByRole('button', { name: '가입하기' }).click();
   await expect(target.locator('#full-auth-identifier')).toHaveCount(0, { timeout: 20_000 });
-  await target.close();
+  await targetContext.close();
 
   watch.step = 'operator login';
   await loginWithForm(page, OPERATOR_ID!, readFileSync(OPERATOR_PASSWORD_FILE!, 'utf8').trim());
   watch.expect('GET', /^\/api\/v1\/dashboard\/(risk-results\/latest|performance-reports\/latest)$/, 404);
   await visitAll(page, watch, [...USER_ROUTES, '/admin']);
+
+  watch.step = 'automation account history integrity';
+  await go(page, '/automation');
+  await settle(page);
+  await visible(page, '1 / 10');
+  await visible(page, '다른 계좌 미대사');
+  await visible(page, '격리된 과거 포지션');
+  await visible(page, '내부 모의 계좌 이력');
+  await expect(page.getByText('0건').first()).toBeVisible();
+  await expect(page.getByText('열림 5 · 종료 6 · 실행 70')).toBeVisible();
+  await expect(page.getByText(/포지션 0 · 주문 1 · 실행 0/)).toBeVisible();
+  await visible(page, /미대사 주문.*확인/);
+  await expect(page.getByRole('button', { name: '자동운용 시작' })).toBeDisabled();
 
   watch.step = 'admin console';
   await go(page, '/admin');
@@ -434,14 +467,36 @@ test('operator ADMIN: login form, every page, admin console, automation guard', 
   await visible(page, 'AI 검토 (Vertex)');
   await expect(page.locator('[data-testid="admin-ai-usage-row"]').first()).toBeVisible({ timeout: 20_000 });
   const sharedToggle = page.getByTestId('admin-shared-vertex-toggle');
-  if (await sharedToggle.isEnabled()) {
-    const wasOn = await sharedToggle.isChecked();
-    await sharedToggle.click();
-    await visible(page, wasOn ? '공용 Vertex 사용을 껐습니다.' : '공용 Vertex 사용을 허용했습니다.');
-    await sharedToggle.click();
-    await visible(page, wasOn ? '공용 Vertex 사용을 허용했습니다.' : '공용 Vertex 사용을 껐습니다.');
-    await expect(sharedToggle).toBeChecked({ checked: wasOn });
-  }
+  await expect(sharedToggle).toBeEnabled();
+  const wasOn = await sharedToggle.isChecked();
+  await sharedToggle.click();
+  await visible(page, wasOn ? '공용 Vertex 사용을 껐습니다.' : '공용 Vertex 사용을 허용했습니다.');
+  await sharedToggle.click();
+  await visible(page, wasOn ? '공용 Vertex 사용을 허용했습니다.' : '공용 Vertex 사용을 껐습니다.');
+  await expect(sharedToggle).toBeChecked({ checked: wasOn });
+
+  watch.step = 'admin service limits';
+  const limitsPanel = page.locator('section[aria-labelledby="admin-limits"]');
+  const signupLimit = limitsPanel.getByLabel(/가입자 상한/);
+  const automationLimit = limitsPanel.getByLabel(/동시 자동운용 상한/);
+  const signupLimitBefore = await signupLimit.inputValue();
+  const automationLimitBefore = await automationLimit.inputValue();
+  await limitsPanel.getByRole('button', { name: '저장', exact: true }).click();
+  await visible(page, '상한을 저장했습니다. 이미 가입했거나 자동운용 중인 사용자는 영향을 받지 않습니다.');
+  await expect(signupLimit).toHaveValue(signupLimitBefore);
+  await expect(automationLimit).toHaveValue(automationLimitBefore);
+
+  watch.step = 'admin global kill switch';
+  await go(page, '/automation');
+  await settle(page);
+  const globalStop = page.getByRole('button', { name: '전체 주문 즉시 중지' });
+  await expect(globalStop).toBeEnabled();
+  await globalStop.click();
+  const globalResume = page.getByRole('button', { name: '전역 중지 해제' });
+  await expect(globalResume).toBeVisible();
+  await expect(page.getByText(/시스템 전체 중지 작동 중/)).toBeVisible();
+  await globalResume.click();
+  await expect(page.getByRole('button', { name: '전체 주문 즉시 중지' })).toBeVisible();
 
   if (OPERATOR_WRITES) {
     watch.step = 'operator automation guard';
@@ -468,33 +523,13 @@ test('operator ADMIN: login form, every page, admin console, automation guard', 
       await visible(page, '자동운용을 정지했습니다.');
     }
 
-    watch.step = 'operator arm → disarm → re-arm';
-    // AI 검토를 켠 운영자도 무장할 수 있어야 한다(자기 키가 없으면 공용 Vertex). 막히면 이유가 한국어로
-    // 보여야 하고 "다른 변경과 충돌했습니다"로 끝나면 실패다.
-    watch.expect('POST', /^\/api\/v3\/automation\/arm$/, 409);
-    for (let round = 0; round < 2; round += 1) {
-      await go(page, '/automation');
-      await settle(page);
-      const armButton = page.getByRole('button', { name: '자동운용 시작' });
-      if (!(await armButton.count())) break;
-      // 버튼이 막혀 있으면 화면이 그 이유(차단 사유)를 보여야 한다. 이유 없이 막힌 버튼은 실패다.
-      if (!(await armButton.isEnabled())) {
-        const reasons = await page.locator('[title]').allInnerTexts();
-        test.info().annotations.push({ type: 'arm-disabled', description: reasons.join(' | ').slice(0, 800) });
-        expect(round, '첫 무장 시도에서 시작 버튼이 막혔다').toBeGreaterThan(0);
-        break;
-      }
-      await armButton.click();
-      await expect(page.getByText(/자동운용을 시작 대기 상태로 전환했습니다|[가-힣].*(습니다|하세요)\./).first()).toBeVisible({
-        timeout: 30_000,
-      });
-      await expect(page.getByText('다른 변경과 충돌했습니다')).toHaveCount(0);
-      if (!(await page.getByText('자동운용을 시작 대기 상태로 전환했습니다').count())) break;
-      await page.getByRole('button', { name: '자동운용 정지' }).click();
-      await page.getByRole('button', { name: '정지 확인' }).click();
-      await visible(page, '자동운용을 정지했습니다.');
-    }
-    await credentialRoundTrip(page, watch);
+    watch.step = 'operator unlinked-order arm guard';
+    // 005930 미대사 주문은 운영자가 격리 후 확인 전 차단하기로 했다. 정지 예약/재시작은
+    // DB 통합 테스트에서 확인하고, 브라우저에서는 시작 버튼이 이 실제 blocker 를 설명하는지 본다.
+    await go(page, '/automation');
+    await settle(page);
+    await visible(page, /미대사 주문.*확인/);
+    await expect(page.getByRole('button', { name: '자동운용 시작' })).toBeDisabled();
     await ownVertexRoundTrip(page, watch);
   }
 

@@ -46,6 +46,7 @@ class PortfolioContinuationResult:
     status: str
     planned_orders: int
     completed_orders: int
+    failure_code: str | None = None
 
 
 class PortfolioContinuationRunner:
@@ -125,12 +126,25 @@ class PortfolioContinuationRunner:
                     return PortfolioContinuationResult(
                         "SUBMIT_RESPONSE_UNRESOLVED", planned_count, completed
                     )
-                submitted = port.portfolio_submit(intent, decision_id=decision_id, ordinal=ordinal)
+                try:
+                    submitted = port.portfolio_submit(intent, decision_id=decision_id, ordinal=ordinal)
+                except Exception as error:
+                    # The provider may have accepted the request before the reply was lost.
+                    # Leave the durable ordinal unresolved and stop this owner until KIS is checked.
+                    return PortfolioContinuationResult(
+                        "SUBMIT_RESPONSE_UNRESOLVED",
+                        planned_count,
+                        completed,
+                        getattr(error, "failure_code", None) or "KIS_ORDER_RESULT_UNCERTAIN",
+                    )
                 order_id = submitted.get("orderId")
                 provider_ref = submitted.get("providerOrderRefHash")
                 if not isinstance(order_id, str):
                     return PortfolioContinuationResult(
-                        "SUBMIT_RESPONSE_UNRESOLVED", planned_count, completed
+                        "SUBMIT_RESPONSE_UNRESOLVED",
+                        planned_count,
+                        completed,
+                        "KIS_ORDER_RESULT_UNCERTAIN",
                     )
                 # 제출 **뒤에** 그 한 종목의 최우선 호가를 한 번 읽어 원장에 남긴다.
                 # 가격 결정에는 쓰지 않는다 - 어떤 지정가가 실제로 체결되는지를 나중에
@@ -158,7 +172,15 @@ class PortfolioContinuationRunner:
                 return PortfolioContinuationResult(
                     "EXECUTION_STATE_INVALID", planned_count, completed
                 )
-            snapshot = port.portfolio_reconcile(order_id)
+            try:
+                snapshot = port.portfolio_reconcile(order_id)
+            except Exception as error:
+                return PortfolioContinuationResult(
+                    "SUBMIT_RESPONSE_UNRESOLVED",
+                    planned_count,
+                    completed,
+                    getattr(error, "failure_code", None) or "KIS_ORDER_RESULT_UNCERTAIN",
+                )
             if not snapshot.resolved:
                 return PortfolioContinuationResult(
                     "PENDING_RECONCILIATION", planned_count, completed

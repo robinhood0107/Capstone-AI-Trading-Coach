@@ -217,7 +217,7 @@ function MockCredentialForm({
                         ? credential.certificationFailureCode === 'TEST_ORDER_RECOVERED'
                           ? '이전 테스트 주문 정리 완료 · 1주 인증 재시도 필요'
                           : '모의주문 인증 실패 · 자동주문은 닫혀 있음'
-                      : '연결 확인됨 · 모의주문 인증 전'
+                      : '읽기 연결 확인됨 · 자동운용 가능 · 주문 시험 선택'
                   : '연결 확인 전 · 자동주문 시작 전'}
             </p>
             {credential.connected && credential.verifiedCashKrw != null ? (
@@ -247,7 +247,7 @@ function MockCredentialForm({
       {status.registered && credential?.connected && !credential.certified ? (
         <div className="mt-4">
           <p className="text-[12px] leading-5 text-muted">
-            인증은 KRX 거래일 09:10~15:00 KST에만 실행할 수 있습니다. 주문은 005930 1주 하한가 지정가로 고정됩니다.
+            잔고 읽기 연결로 자동운용을 시작할 수 있습니다. 주문 경로 시험은 선택 사항이며 KRX 거래일 09:10~15:00 KST에 005930 1주 하한가 지정가를 제출 후 취소합니다. 하한가 주문도 체결될 수 있습니다.
           </p>
           <button
             type="button"
@@ -261,7 +261,7 @@ function MockCredentialForm({
                 ? '이전 인증 주문 복구 확인'
               : credential.certificationStatus === 'RUNNING'
                 ? '인증 상태 다시 확인'
-                  : '1주 모의주문 인증'}
+                  : '선택: 주문 경로 시험'}
           </button>
         </div>
       ) : null}

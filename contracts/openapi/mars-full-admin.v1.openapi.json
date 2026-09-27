@@ -1,0 +1,933 @@
+{
+  "components": {
+    "schemas": {
+      "AdminAiReview": {
+        "properties": {
+          "deploymentAllowsShared": {
+            "type": "boolean"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/OperatorVertexStatus"
+          },
+          "sharedEffective": {
+            "type": "boolean"
+          },
+          "sharedEnabled": {
+            "type": "boolean"
+          },
+          "switchUpdatedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "switchUpdatedBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/AdminAiUsageRow"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "AdminAiUsageRow": {
+        "properties": {
+          "aiJudgementEnabled": {
+            "type": "boolean"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hasOwnKey": {
+            "type": "boolean"
+          },
+          "ownMonth": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ownToday": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sharedMonth": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sharedToday": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AdminAutomationRow": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "controlState": {
+            "type": "string"
+          },
+          "controlUpdatedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "todayClaimState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "todayRunId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "userId": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AdminLimits": {
+        "properties": {
+          "activeUserCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "armedCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "automationActiveCap": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "signupCap": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "userCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AdminLimitsRequest": {
+        "properties": {
+          "automationActiveCap": {
+            "format": "int32",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "signupCap": {
+            "format": "int32",
+            "maximum": 1000000,
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "AdminOperatorFallbackRequest": {
+        "properties": {
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "AdminUserAccess": {
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AdminUserAccessRequest": {
+        "properties": {
+          "role": {
+            "pattern": "USER|ADMIN",
+            "type": "string"
+          },
+          "status": {
+            "pattern": "ACTIVE|DISABLED",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AdminUserPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserRow"
+            },
+            "type": "array"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AdminUserRow": {
+        "properties": {
+          "automationState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "brokerState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ApiError": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAdminAiReview": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AdminAiReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAdminLimits": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AdminLimits"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAdminUserAccess": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AdminUserAccess"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseAdminUserPage": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AdminUserPage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseListAdminAutomationRow": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/AdminAutomationRow"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiWarning": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OperatorVertexStatus": {
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "modelId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "projectId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reachable": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "description": "HS256 JWT. 서버는 configured issuer/audience와 DB actor 상태/version을 검증한다.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "MARS full administration API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/admin/ai": {
+      "get": {
+        "description": "활성 ADMIN 전용.",
+        "operationId": "adminReadAiReview",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminAiReview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminAiReview"
+                }
+              }
+            },
+            "description": "인증 필요 / Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminAiReview"
+                }
+              }
+            },
+            "description": "관리자 권한 필요 / Forbidden"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin-controller"
+        ],
+        "x-required-role": "ADMIN"
+      }
+    },
+    "/api/v1/admin/ai/operator-fallback": {
+      "put": {
+        "description": "활성 ADMIN 전용.",
+        "operationId": "adminSetOperatorVertexFallback",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminOperatorFallbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminAiReview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminAiReview"
+                }
+              }
+            },
+            "description": "인증 필요 / Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminAiReview"
+                }
+              }
+            },
+            "description": "관리자 권한 필요 / Forbidden"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin-controller"
+        ],
+        "x-required-role": "ADMIN"
+      }
+    },
+    "/api/v1/admin/automation": {
+      "get": {
+        "description": "활성 ADMIN 전용.",
+        "operationId": "adminListAutomation",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListAdminAutomationRow"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListAdminAutomationRow"
+                }
+              }
+            },
+            "description": "인증 필요 / Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListAdminAutomationRow"
+                }
+              }
+            },
+            "description": "관리자 권한 필요 / Forbidden"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin-controller"
+        ],
+        "x-required-role": "ADMIN"
+      }
+    },
+    "/api/v1/admin/limits": {
+      "get": {
+        "description": "활성 ADMIN 전용.",
+        "operationId": "adminReadLimits",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminLimits"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminLimits"
+                }
+              }
+            },
+            "description": "인증 필요 / Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminLimits"
+                }
+              }
+            },
+            "description": "관리자 권한 필요 / Forbidden"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin-controller"
+        ],
+        "x-required-role": "ADMIN"
+      },
+      "put": {
+        "description": "활성 ADMIN 전용.",
+        "operationId": "adminUpdateLimits",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLimitsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminLimits"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminLimits"
+                }
+              }
+            },
+            "description": "인증 필요 / Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminLimits"
+                }
+              }
+            },
+            "description": "관리자 권한 필요 / Forbidden"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin-controller"
+        ],
+        "x-required-role": "ADMIN"
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "description": "활성 ADMIN 전용.",
+        "operationId": "adminListUsers",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminUserPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminUserPage"
+                }
+              }
+            },
+            "description": "인증 필요 / Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminUserPage"
+                }
+              }
+            },
+            "description": "관리자 권한 필요 / Forbidden"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin-controller"
+        ],
+        "x-required-role": "ADMIN"
+      }
+    },
+    "/api/v1/admin/users/{userId}/access": {
+      "put": {
+        "description": "활성 ADMIN 전용.",
+        "operationId": "adminSetUserAccess",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "pattern": "^usr_[A-Za-z0-9_-]{4,96}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserAccessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminUserAccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminUserAccess"
+                }
+              }
+            },
+            "description": "인증 필요 / Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminUserAccess"
+                }
+              }
+            },
+            "description": "관리자 권한 필요 / Forbidden"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "admin-controller"
+        ],
+        "x-required-role": "ADMIN"
+      }
+    }
+  }
+}

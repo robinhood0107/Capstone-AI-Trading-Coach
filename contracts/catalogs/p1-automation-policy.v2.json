@@ -36,7 +36,7 @@
     "cancelTimeKst": "15:20",
     "evaluationTimeKst": "09:30",
     "maxNewOrdersPerSession": 1,
-    "maxOpenPositions": 5
+    "maxOpenPositions": 10
   },
   "exitPriority": [
     "UNRESOLVED_RECONCILIATION",

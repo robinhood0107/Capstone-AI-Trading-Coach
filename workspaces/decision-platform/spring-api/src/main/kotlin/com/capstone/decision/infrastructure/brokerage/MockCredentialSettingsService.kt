@@ -6,6 +6,8 @@ import org.springframework.context.annotation.Profile
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.HexFormat
 
@@ -58,16 +60,26 @@ class MockCredentialSettingsService(
     ) {
         val jdbc = jdbc()
         actorRlsScope.open(jdbc, ownerUserId, "PUT_MOCK_CREDENTIAL", "OWNER", ownerUserId)
-        // 같은 실계좌를 다시 저장하면 기존 계좌 식별자를 그대로 쓴다. 새 무작위 식별자를 쓰면 그 계좌의
-        // 주문·보유·자동매매 이력과 잔고 관측이 옛 식별자에 남아 화면과 무장에서 사라진다.
-        // 끝 4자리가 다른 계좌는 언제나 새 식별자다(다른 실계좌의 이력을 섞지 않는다).
-        val reused =
+        // Last-four digits can collide. Reuse the current ID only after decrypting this owner's
+        // envelope and comparing the full account number; the keyed registry survives deletion.
+        val verifiedCurrentAccountId = currentEnvelopeAccountMatch(jdbc, ownerUserId, accountNo)
+        val identityFingerprint = crypto.accountIdentityFingerprint(ownerUserId, accountNo)
+        val proposedAccountId = "acct_" + HexFormat.of().formatHex(ByteArray(16).also(random::nextBytes))
+        val accountId =
             jdbc.queryForObject(
-                "SELECT resolve_bound_mock_account_reuse_v1(:owner, :accountLast4)",
-                mapOf("owner" to ownerUserId, "accountLast4" to accountNo.takeLast(4)),
+                """
+                SELECT p1_resolve_or_bind_mock_account_identity_v218(
+                  :owner,:fingerprint,:verifiedCurrentAccount,:newAccount
+                )
+                """.trimIndent(),
+                mapOf(
+                    "owner" to ownerUserId,
+                    "fingerprint" to identityFingerprint,
+                    "verifiedCurrentAccount" to verifiedCurrentAccountId,
+                    "newAccount" to proposedAccountId,
+                ),
                 String::class.java,
-            )
-        val accountId = reused ?: ("acct_" + HexFormat.of().formatHex(ByteArray(16).also(random::nextBytes)))
+            ) ?: error("BROKERAGE_ACCOUNT_IDENTITY_UNAVAILABLE")
         crypto.seal(ownerUserId, accountId, appKey, appSecret, accountNo).use { sealed ->
             jdbc.query(
                 """
@@ -165,6 +177,57 @@ class MockCredentialSettingsService(
                         ),
                 )
             }.singleOrNull() ?: error("BROKERAGE_CREDENTIAL_UNAVAILABLE")
+    }
+
+    @Transactional
+    fun fullAutomationConnectionReady(ownerUserId: String, accountId: String): Boolean {
+        val jdbc = jdbc()
+        actorRlsScope.open(jdbc, ownerUserId, "READ_MOCK_CREDENTIAL_ENVELOPE", "BROKER_CREDENTIAL", accountId)
+        return jdbc.queryForObject(
+            "SELECT public.p1_full_owner_connection_readiness_v1(:owner,:account)",
+            mapOf("owner" to ownerUserId, "account" to accountId),
+            Boolean::class.java,
+        ) == true
+    }
+
+    private fun currentEnvelopeAccountMatch(
+        jdbc: NamedParameterJdbcTemplate,
+        ownerUserId: String,
+        accountNo: String,
+    ): String? {
+        val envelope =
+            jdbc.query(
+                "SELECT * FROM p1_read_mock_credential_identity_envelope_v218(:owner)",
+                mapOf("owner" to ownerUserId),
+            ) { row, _ ->
+                BoundMockCredentialEnvelope(
+                    accountId = row.getString("account_id"),
+                    state = row.getString("credential_state"),
+                    revision = row.getLong("revision"),
+                    sealed =
+                        SealedBrokerageCredential(
+                            kekVersion = row.getString("kek_version"),
+                            wrapNonce = row.getBytes("wrap_nonce"),
+                            wrappedDek = row.getBytes("wrapped_dek"),
+                            wrapTag = row.getBytes("wrap_tag"),
+                            secretNonce = row.getBytes("secret_nonce"),
+                            secretCiphertext = row.getBytes("secret_ciphertext"),
+                            secretTag = row.getBytes("secret_tag"),
+                            appKeyLast4 = row.getString("app_key_last4"),
+                            accountNoLast4 = row.getString("account_no_last4"),
+                        ),
+                )
+            }.singleOrNull() ?: return null
+        return envelope.use { current ->
+            crypto.open(ownerUserId, current.accountId, current.sealed).use { opened ->
+                val requested = accountNo.toByteArray(StandardCharsets.US_ASCII)
+                try {
+                    current.accountId.takeIf { MessageDigest.isEqual(opened.accountNo, requested) }
+                } finally {
+                    requested.fill(0)
+                }
+            }
+        }
     }
 
     private fun jdbc(): NamedParameterJdbcTemplate =

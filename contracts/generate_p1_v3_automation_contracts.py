@@ -713,7 +713,7 @@ def _catalog() -> dict[str, Any]:
             "evaluationTimeKst": "09:30",
             "buyCutoffTimeKst": "14:30",
             "cancelTimeKst": "15:20",
-            "maxOpenPositions": 5,
+            "maxOpenPositions": 10,
             "maxNewOrdersPerSession": 1,
         },
         "evidencePolicy": {

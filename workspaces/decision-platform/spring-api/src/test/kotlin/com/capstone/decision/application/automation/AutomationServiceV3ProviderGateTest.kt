@@ -35,7 +35,7 @@ class AutomationServiceV3ProviderGateTest {
             )
         }.isInstanceOf(AutomationBlockedException::class.java)
             .hasMessageContaining("AI_PROVIDER_NOT_READY")
-        verify(exactly = 0) { repository.armV3(any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { repository.armV3(any(), any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -58,15 +58,16 @@ class AutomationServiceV3ProviderGateTest {
                 fullRepository,
                 withTransport.getBeanProvider(AutomationEvidenceProvider::class.java),
                 AutomationAiProviderPolicy(operatorVertexFallbackEnabled = true),
+                connectedKisAccountEnabled = true,
             )
         every { fullRepository.statusV3(OWNER, true) } returns status(aiEnabled = true)
-        every { fullRepository.armV3(OWNER, any(), any(), any(), true, true) } returns status(aiEnabled = true)
+        every { fullRepository.armV3(OWNER, any(), any(), any(), true, true, true) } returns status(aiEnabled = true)
 
         assertThat(full.statusV3(OWNER).blockers).doesNotContain("AI_PROVIDER_NOT_READY")
         full.armV3(OWNER, "idempotency-key-0002", ARM)
 
         verify { fullRepository.statusV3(OWNER, true) }
-        verify(exactly = 1) { fullRepository.armV3(OWNER, any(), any(), any(), true, true) }
+        verify(exactly = 1) { fullRepository.armV3(OWNER, any(), any(), any(), true, true, true) }
     }
 
     @Test
@@ -81,13 +82,13 @@ class AutomationServiceV3ProviderGateTest {
                 AutomationAiProviderPolicy(operatorVertexFallbackEnabled = false),
             )
         every { localRepository.statusV3(OWNER, false) } returns status(aiEnabled = true)
-        every { localRepository.armV3(OWNER, any(), any(), any(), true, false) } returns status(aiEnabled = true)
+        every { localRepository.armV3(OWNER, any(), any(), any(), true, false, false) } returns status(aiEnabled = true)
 
         local.statusV3(OWNER)
         local.armV3(OWNER, "idempotency-key-0003", ARM)
 
         verify { localRepository.statusV3(OWNER, false) }
-        verify(exactly = 1) { localRepository.armV3(OWNER, any(), any(), any(), true, false) }
+        verify(exactly = 1) { localRepository.armV3(OWNER, any(), any(), any(), true, false, false) }
         verify(exactly = 0) { localRepository.statusV3(OWNER, true) }
     }
 

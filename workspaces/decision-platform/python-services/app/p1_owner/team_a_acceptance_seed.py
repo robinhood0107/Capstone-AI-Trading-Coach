@@ -13,7 +13,7 @@ import psycopg
 _USER_ID = "usr_demo_user"
 _PRINCIPLE_ID = "prc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 _PRINCIPLE_VERSION_ID = "pvr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-_PAPER_ACCOUNT_ID = "acct_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+_PAPER_ACCOUNT_ID = "acct_f1a5e315b7c8462b9338f0cf4c5a1d20"
 _KIS_ACCOUNT_ID = "acct_cccccccccccccccccccccccccccccccc"
 _KIS_SCOPE = "c" * 64
 _RAG_ANSWER_ID = "rag_team_a_fixture_0001"

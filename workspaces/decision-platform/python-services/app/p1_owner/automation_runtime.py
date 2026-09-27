@@ -146,6 +146,10 @@ _PORTFOLIO_CONTINUATION_STATES = frozenset(
 class AutomationRuntimeError(RuntimeError):
     """Persistent runtime의 DB, clock, state 또는 adapter 계약이 닫혔다."""
 
+    def __init__(self, message: str, *, failure_code: str | None = None) -> None:
+        super().__init__(message)
+        self.failure_code = failure_code
+
 
 @dataclass(frozen=True, slots=True)
 class RuntimeClaim:
@@ -422,6 +426,22 @@ class PostgresAutomationRuntimeRepository:
             if row is None:
                 raise AutomationRuntimeError("AUTOMATION_STOP_UNAVAILABLE")
             return int(row[0]), bool(row[1])
+
+    def stop_full_owner_after_order_failure(
+        self,
+        claim: RuntimeClaim,
+        reason_code: str,
+    ) -> None:
+        if reason_code not in {"KIS_ORDER_REJECTED", "KIS_ORDER_RESULT_UNCERTAIN"}:
+            raise AutomationRuntimeError("FULL_OWNER_ORDER_FAILURE_CODE_INVALID")
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT public.p1_stop_full_owner_after_order_failure_v217(%s,%s,%s)",
+                (claim.run_id, claim.claim_token_hash, reason_code),
+            )
+            row = cursor.fetchone()
+        if row is None or row[0] is not True:
+            raise AutomationRuntimeError("FULL_OWNER_ORDER_FAILURE_STOP_UNAVAILABLE")
 
     def settle_missed_schedules(self, user_id: str, today: date) -> int:
         """실행되지 않은 채 지나간 ARMED 스케줄을 마감한다.
@@ -997,6 +1017,10 @@ class PersistentAutomationRunner:
             self._repository.advance_with_lineage(command, claim, lineage)
         else:
             self._repository.advance(command)
+        if run.halt_reason_code in {"KIS_ORDER_REJECTED", "KIS_ORDER_RESULT_UNCERTAIN"}:
+            stopper = getattr(self._repository, "stop_full_owner_after_order_failure", None)
+            if callable(stopper):
+                stopper(claim, run.halt_reason_code)
         # 단계별 후보 결과는 진단 기록이라 전이가 durable 해진 뒤에 남긴다.
         # 실패해도 tick 을 되돌리지 않는다 - 대신 무엇이 실패했는지는 말한다.
         if run.stage_outcomes:
@@ -1798,6 +1822,32 @@ class AutomationRuntimeService:
                 if self._stop.wait(_TICK_RETRY_SECONDS):
                     return False
             if continuation.status in {"SUBMIT_RESPONSE_UNRESOLVED", "EXECUTION_STATE_INVALID"}:
+                reason_code = continuation.failure_code or "KIS_ORDER_RESULT_UNCERTAIN"
+                if reason_code not in {"KIS_ORDER_REJECTED", "KIS_ORDER_RESULT_UNCERTAIN"}:
+                    reason_code = "KIS_ORDER_RESULT_UNCERTAIN"
+                try:
+                    stopper = getattr(self._repository, "stop_full_owner_after_order_failure", None)
+                    if callable(stopper):
+                        stopper(claim, reason_code)
+                    recorder = getattr(self._repository, "record_stage_outcomes", None)
+                    if callable(recorder):
+                        recorder(
+                            claim,
+                            (
+                                StageOutcome(
+                                    "ORDER",
+                                    _SESSION_STAGE_SYMBOL,
+                                    "DROPPED",
+                                    reason_code,
+                                    "KIS 주문 또는 대사 결과를 확인할 수 없어 이 계좌의 자동운용을 정지했습니다.",
+                                ),
+                            ),
+                        )
+                except Exception as error:
+                    print(
+                        f"AUTOMATION_ORDER_FAILURE_STOP=FAILED error={type(error).__name__}",
+                        flush=True,
+                    )
                 return False
             # 예산이 다 찼으면 남은 시점을 기다릴 이유가 없다.
             if continuation.status == "ORDER_BUDGET_EXHAUSTED":

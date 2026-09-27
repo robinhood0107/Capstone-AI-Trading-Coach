@@ -3,7 +3,9 @@ package com.capstone.decision.application.strongllm
 import tools.jackson.core.JacksonException
 import tools.jackson.databind.json.JsonMapper
 import java.nio.charset.StandardCharsets
+import java.security.KeyFactory
 import java.security.MessageDigest
+import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Base64
 import java.util.HexFormat
 
@@ -64,7 +66,7 @@ object VertexServiceAccountShape {
                 text("type") != "service_account" ||
                 text("project_id").isNullOrBlank() ||
                 text("client_email").isNullOrBlank() ||
-                !text("private_key").orEmpty().contains("PRIVATE KEY") ||
+                !isValidRsaPrivateKey(text("private_key").orEmpty()) ||
                 text("token_uri") != TOKEN_URI
             ) {
                 null
@@ -75,6 +77,28 @@ object VertexServiceAccountShape {
             null
         } finally {
             decoded.fill(0)
+        }
+    }
+
+    /** Check the PKCS#8 key material at save time; a marker string alone is not an executable key. */
+    private fun isValidRsaPrivateKey(pem: String): Boolean {
+        val begin = "-----BEGIN PRIVATE KEY-----"
+        val end = "-----END PRIVATE KEY-----"
+        val trimmed = pem.trim()
+        if (!trimmed.startsWith(begin) || !trimmed.endsWith(end)) return false
+        val body = trimmed.removePrefix(begin).removeSuffix(end).filterNot(Char::isWhitespace)
+        val der =
+            try {
+                Base64.getDecoder().decode(body)
+            } catch (_: IllegalArgumentException) {
+                return false
+            }
+        return try {
+            KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(der)).algorithm == "RSA"
+        } catch (_: Exception) {
+            false
+        } finally {
+            der.fill(0)
         }
     }
 }

@@ -2,6 +2,7 @@ package com.capstone.decision.application.automation
 
 import com.capstone.decision.application.security.OwnerWriteHashes
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets
 import java.time.OffsetDateTime
@@ -13,6 +14,8 @@ class AutomationService(
     private val repository: AutomationRepository,
     private val evidenceProvider: ObjectProvider<AutomationEvidenceProvider>,
     private val aiProviderPolicy: AutomationAiProviderPolicy = AutomationAiProviderPolicy(),
+    @Value("\${app.automation.connected-kis-account-enabled:false}")
+    private val connectedKisAccountEnabled: Boolean = false,
 ) {
     fun status(ownerUserId: String): AutomationControlProjection = repository.status(ownerUserId)
 
@@ -136,6 +139,7 @@ class AutomationService(
                     ),
                 providerCapabilityReady = evidenceProvider.getIfAvailable() != null,
                 operatorProviderReady = operatorReady,
+                connectedKisAccountEnabled = connectedKisAccountEnabled,
             ),
         )
     }

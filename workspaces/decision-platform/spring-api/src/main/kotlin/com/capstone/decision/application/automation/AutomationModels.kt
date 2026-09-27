@@ -211,6 +211,16 @@ data class AutomationStatusV3Projection(
     val appliedPolicyVersion: Int? = null,
     val policyRecoverySourceVersion: Int? = null,
     val nextRunAt: java.time.OffsetDateTime? = null,
+    val ownerConnectionReady: Boolean = false,
+    val orderPathVerified: Boolean = false,
+    val orderFailureCode: String? = null,
+    val unlinkedOpenPositionCount: Int = 0,
+    val unresolvedUnlinkedOrderCount: Int = 0,
+    val unresolvedUnlinkedRunCount: Int = 0,
+    val quarantinedPositionCount: Int = 0,
+    val historicalPaperOpenPositionCount: Int = 0,
+    val historicalPaperClosedPositionCount: Int = 0,
+    val historicalPaperRunCount: Int = 0,
 )
 
 data class AutomationRunV3Projection(
@@ -428,6 +438,7 @@ interface AutomationRepository {
         requestHash: String,
         providerCapabilityReady: Boolean,
         operatorProviderReady: Boolean = false,
+        connectedKisAccountEnabled: Boolean = false,
     ): AutomationStatusV3Projection
 
     fun listRunsV3(

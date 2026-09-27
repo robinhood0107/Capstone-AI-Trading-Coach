@@ -4,6 +4,8 @@ import com.capstone.decision.application.brokerage.MockConnectionPosition
 import com.capstone.decision.application.brokerage.MockConnectionProof
 import com.capstone.decision.application.security.ActorRlsScopePort
 import com.capstone.decision.application.security.AppPrincipal
+import com.capstone.decision.application.automation.AutomationService
+import com.capstone.decision.application.automation.DisarmAutomationCommand
 import com.capstone.decision.infrastructure.brokerage.BrokerageCredentialCrypto
 import com.capstone.decision.infrastructure.brokerage.BrokerageKekFile
 import com.capstone.decision.infrastructure.brokerage.MockCredentialCertificationRepository
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -41,6 +44,9 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.sql.DriverManager
 import java.sql.SQLException
+import java.sql.Timestamp
+import java.time.LocalDate
+import java.time.ZoneId
 
 @Testcontainers
 @SpringBootTest(
@@ -60,24 +66,52 @@ class BoundMockCredentialIntegrationTest(
         TestPeerUser.ensure(postgres.jdbcUrl, postgres.username, postgres.password)
     }
 
+    @AfterEach
+    fun leaveDemoAutomationStopped() {
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeUpdate(
+                    "update automation_runtime_claim set claim_state='RELEASED'," +
+                        "released_at=COALESCE(released_at,statement_timestamp()) " +
+                        "where user_id='usr_demo_user' and claim_state='ACTIVE'",
+                )
+                statement.executeUpdate(
+                    "update automation_runtime_schedule set schedule_state='HALTED'," +
+                        "updated_at=statement_timestamp() where user_id='usr_demo_user' " +
+                        "and schedule_state in ('ARMED','CLAIMED')",
+                )
+                statement.executeUpdate(
+                    "update automation_control set control_state='DISARMED',version=version+1," +
+                        "updated_at=statement_timestamp() where user_id='usr_demo_user' " +
+                        "and control_state<>'DISARMED'",
+                )
+            }
+        }
+    }
+
     @Test
     fun `owner removes only their settled mock credential`() {
         val directory = prepareKeyDirectory()
+        val crypto = BrokerageCredentialCrypto(BrokerageKekFile(directory.toString()))
+        val appKey = "K" + "A".repeat(19)
+        val appSecret = "S" + "B".repeat(39)
+        val accountNo = "5" + "0".repeat(9)
         val service =
             MockCredentialSettingsService(
                 context.getBeanProvider(NamedParameterJdbcTemplate::class.java),
                 actorRlsScope,
-                BrokerageCredentialCrypto(BrokerageKekFile(directory.toString())),
+                crypto,
             )
         val repository =
             MockCredentialDisconnectRepository(
                 context.getBeanProvider(NamedParameterJdbcTemplate::class.java),
                 actorRlsScope,
+                crypto,
             )
         val transaction = TransactionTemplate(transactionManager)
         asActor("usr_demo_user") {
             transaction.executeWithoutResult {
-                service.save("usr_demo_user", "K" + "A".repeat(19), "S" + "B".repeat(39), "5" + "0".repeat(9))
+                service.save("usr_demo_user", appKey, appSecret, accountNo)
             }
         }
         asActor(TestPeerUser.USER_ID) {
@@ -97,6 +131,12 @@ class BoundMockCredentialIntegrationTest(
             }
         assertEquals("REMOVED", result)
         assertEquals(null, asActor("usr_demo_user") { transaction.execute { service.summary("usr_demo_user") } })
+        asActor("usr_demo_user") {
+            transaction.executeWithoutResult { service.save("usr_demo_user", appKey, appSecret, accountNo) }
+        }
+        val readded =
+            requireNotNull(asActor("usr_demo_user") { transaction.execute { service.summary("usr_demo_user") } })
+        assertEquals(own.accountId, readded.accountId, "the same full account number must retain its internal ID after deletion")
         assertNotNull(asActor(TestPeerUser.USER_ID) { transaction.execute { service.summary(TestPeerUser.USER_ID) } })
     }
 
@@ -117,9 +157,10 @@ class BoundMockCredentialIntegrationTest(
             transaction.executeWithoutResult { service.save("usr_demo_user", key, secret, accountNo) }
         }
         val first = asActor("usr_demo_user") { transaction.execute { service.summary("usr_demo_user") } }
-        assertNotNull(first)
-        assertEquals("STORED", first?.state)
-        assertEquals(1L, first?.revision)
+        val firstSummary = requireNotNull(first)
+        val firstRevision = firstSummary.revision
+        assertEquals("STORED", firstSummary.state)
+        assertTrue(firstRevision >= 1)
         assertFalse(first?.connected ?: true)
         assertFalse(first?.certified ?: true)
         assertEquals("AAAA", first?.appKeyLast4)
@@ -135,7 +176,7 @@ class BoundMockCredentialIntegrationTest(
             transaction.execute {
                 service.resolveEnvelope("usr_demo_user", firstAccountId).use { envelope ->
                     assertEquals("STORED", envelope.state)
-                    assertEquals(1L, envelope.revision)
+                    assertEquals(firstRevision, envelope.revision)
                     BrokerageCredentialCrypto(BrokerageKekFile(directory.toString()))
                         .open("usr_demo_user", firstAccountId, envelope.sealed)
                         .use { opened ->
@@ -148,15 +189,15 @@ class BoundMockCredentialIntegrationTest(
         }
         asActor("usr_demo_user") {
             transaction.executeWithoutResult {
-                connectionRepository.beginAttempt("usr_demo_user", firstAccountId, 1)
+                connectionRepository.beginAttempt("usr_demo_user", firstAccountId, firstRevision)
             }
             assertThrows(PessimisticLockingFailureException::class.java) {
                 transaction.executeWithoutResult {
-                    connectionRepository.beginAttempt("usr_demo_user", firstAccountId, 1)
+                    connectionRepository.beginAttempt("usr_demo_user", firstAccountId, firstRevision)
                 }
             }
             transaction.executeWithoutResult {
-                connectionRepository.markConnected("usr_demo_user", firstAccountId, 1)
+                connectionRepository.markConnected("usr_demo_user", firstAccountId, firstRevision)
             }
         }
         val connected = asActor("usr_demo_user") { transaction.execute { service.summary("usr_demo_user") } }
@@ -174,7 +215,7 @@ class BoundMockCredentialIntegrationTest(
                 }
             }
             val auditSql =
-                "select target_id, payload_json::text from audit_logs where user_id = ? and action = 'MOCK_CREDENTIAL_STORED' and target_id = ?"
+                "select target_id, payload_json::text from audit_logs where user_id = ? and action = 'MOCK_CREDENTIAL_STORED' and target_id = ? order by created_at desc limit 1"
             connection.prepareStatement(auditSql).use { statement ->
                 statement.setString(1, "usr_demo_user")
                 statement.setString(2, firstAccountId)
@@ -218,8 +259,8 @@ class BoundMockCredentialIntegrationTest(
             transaction.executeWithoutResult { service.save("usr_demo_user", key, secret, accountNo) }
         }
         val rotated = asActor("usr_demo_user") { transaction.execute { service.summary("usr_demo_user") } }
-        assertEquals(2L, rotated?.revision)
-        // 같은 실계좌(끝 4자리 같음)를 다시 저장하면 계좌 식별자를 그대로 쓴다. 새 식별자를 쓰면 그 계좌의
+        assertEquals(firstRevision + 1, rotated?.revision)
+        // 같은 전체 계좌번호를 다시 저장하면 내부 식별자를 그대로 쓴다. 새 식별자를 쓰면 그 계좌의
         // 주문·보유·잔고 관측 이력이 옛 식별자에 남아 화면과 무장에서 사라진다.
         assertEquals(firstAccountId, rotated?.accountId)
         assertEquals("STORED", rotated?.state)
@@ -228,11 +269,11 @@ class BoundMockCredentialIntegrationTest(
             // 연결 상태는 초기화된다: 옛 revision 으로는 연결됨을 찍지 못한다.
             assertThrows(PessimisticLockingFailureException::class.java) {
                 transaction.executeWithoutResult {
-                    connectionRepository.markConnected("usr_demo_user", firstAccountId, 1)
+                    connectionRepository.markConnected("usr_demo_user", firstAccountId, firstRevision)
                 }
             }
         }
-        // 다른 실계좌(끝 4자리 다름)는 언제나 새 식별자다. 두 계좌의 이력을 한 식별자에 섞지 않는다.
+        // 다른 전체 계좌번호는 새 식별자를 쓴다. 두 계좌의 이력을 한 식별자에 섞지 않는다.
         asActor("usr_demo_user") {
             transaction.executeWithoutResult { service.save("usr_demo_user", key, secret, "7" + "2".repeat(9)) }
         }
@@ -567,6 +608,161 @@ class BoundMockCredentialIntegrationTest(
         assertEquals(bound, status.accountId)
     }
 
+    @Test
+    fun userDisarmClearsBothMatchingAndStaleArmedSchedules() {
+        val owner = "usr_demo_user"
+        val automation = context.getBean(AutomationService::class.java)
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            connection.prepareStatement(
+                """
+                insert into automation_control(
+                  user_id,control_state,version,brokerage_mode,account_id,principle_id,strategy_id,
+                  baseline_account_digest,certification_status,kill_switch_active
+                ) values (?,'DISARMED',1,'KIS_MOCK',?,'prc_disarm_test','strategy_disarm_test',
+                          repeat('a',64),'REQUIRED',false)
+                on conflict (user_id) do update set control_state='DISARMED',
+                  version=automation_control.version+1,updated_at=statement_timestamp()
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, owner)
+                statement.setString(2, "acct_" + "d".repeat(32))
+                statement.executeUpdate()
+            }
+        }
+        val initialVersion =
+            requireNotNull(
+                DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+                    connection.prepareStatement(
+                        "select version from automation_control where user_id = ?",
+                    ).use { statement ->
+                        statement.setString(1, owner)
+                        statement.executeQuery().use { result ->
+                            if (result.next()) result.getInt(1) else null
+                        }
+                    }
+                },
+            )
+        val armedVersion = initialVersion + 1
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            connection.prepareStatement(
+                """
+                update automation_control
+                set control_state='ARMED',version=?,updated_at=statement_timestamp()
+                where user_id=?
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setInt(1, armedVersion)
+                statement.setString(2, owner)
+                assertEquals(1, statement.executeUpdate())
+            }
+        }
+
+        fun insertSchedule(sessionDate: LocalDate, controlVersion: Int) {
+            val scheduleId = "auto_sched_" + sessionDate.toString().replace("-", "").padStart(32, '0')
+            val runAt = Timestamp.from(sessionDate.atTime(9, 30).atZone(ZoneId.of("Asia/Seoul")).toInstant())
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+                connection.prepareStatement(
+                    """
+                    insert into automation_runtime_schedule(
+                      schedule_id,user_id,session_date,control_version,schedule_state,run_at,created_at,updated_at
+                    ) values (?,?,?,?,'ARMED',?,statement_timestamp(),statement_timestamp())
+                    on conflict (user_id,session_date) do update set
+                      control_version=excluded.control_version,schedule_state='ARMED',
+                      run_at=excluded.run_at,updated_at=statement_timestamp()
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, scheduleId)
+                    statement.setString(2, owner)
+                    statement.setObject(3, sessionDate)
+                    statement.setInt(4, controlVersion)
+                    statement.setTimestamp(5, runAt)
+                    statement.executeUpdate()
+                }
+            }
+        }
+
+        val currentSession = LocalDate.of(2030, 1, 2)
+        val staleSession = LocalDate.of(2030, 1, 3)
+        insertSchedule(currentSession, armedVersion)
+        asActor(owner) {
+            automation.disarm(owner, "schedule-stop-current", DisarmAutomationCommand(armedVersion))
+        }
+        val disarmedVersion =
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+                connection.prepareStatement(
+                    "select version from automation_control where user_id = ?",
+                ).use { statement ->
+                    statement.setString(1, owner)
+                    statement.executeQuery().use { result -> check(result.next()); result.getInt(1) }
+                }
+            }
+        assertEquals(armedVersion + 1, disarmedVersion)
+
+        // Simulate the stale row that caused the live screen to report DISARMED while retaining
+        // an old ARMED schedule. A fresh manual stop must clear it without incrementing control.
+        insertSchedule(staleSession, armedVersion)
+        asActor(owner) {
+            automation.disarm(owner, "schedule-stop-stale", DisarmAutomationCommand(disarmedVersion))
+        }
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            connection.prepareStatement(
+                """
+                select count(*) from automation_runtime_schedule
+                where user_id=? and session_date in (?,?) and schedule_state='DISARMED'
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, owner)
+                statement.setObject(2, currentSession)
+                statement.setObject(3, staleSession)
+                statement.executeQuery().use { result -> check(result.next()); assertEquals(2, result.getInt(1)) }
+            }
+            connection.prepareStatement(
+                """
+                select count(*) from automation_schedule_disarm_events_v218
+                where owner_user_id=? and session_date in (?,?)
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, owner)
+                statement.setObject(2, currentSession)
+                statement.setObject(3, staleSession)
+                statement.executeQuery().use { result -> check(result.next()); assertEquals(2, result.getInt(1)) }
+            }
+        }
+    }
+
+    @Test
+    fun sameLastFourDifferentAccountNumbersNeverShareInternalAccountIds() {
+        val directory = prepareKeyDirectory()
+        val service =
+            MockCredentialSettingsService(
+                context.getBeanProvider(NamedParameterJdbcTemplate::class.java),
+                actorRlsScope,
+                BrokerageCredentialCrypto(BrokerageKekFile(directory.toString())),
+            )
+        val transaction = TransactionTemplate(transactionManager)
+        val owner = TestPeerUser.USER_ID
+        val key = "Z" + "C".repeat(19)
+        val secret = "T" + "D".repeat(39)
+        val firstAccountNo = "1111111234"
+        val otherAccountNo = "9999991234"
+
+        asActor(owner) {
+            transaction.executeWithoutResult { service.save(owner, key, secret, firstAccountNo) }
+        }
+        val firstId = requireNotNull(asActor(owner) { transaction.execute { service.summary(owner) } }).accountId
+        asActor(owner) {
+            transaction.executeWithoutResult { service.save(owner, key, secret, otherAccountNo) }
+        }
+        val otherId = requireNotNull(asActor(owner) { transaction.execute { service.summary(owner) } }).accountId
+        assertFalse(firstId == otherId)
+
+        asActor(owner) {
+            transaction.executeWithoutResult { service.save(owner, key, secret, firstAccountNo) }
+        }
+        val restoredId = requireNotNull(asActor(owner) { transaction.execute { service.summary(owner) } }).accountId
+        assertEquals(firstId, restoredId)
+    }
+
     private fun <T> asActor(
         userId: String,
         block: () -> T,
@@ -600,15 +796,14 @@ class BoundMockCredentialIntegrationTest(
             directory,
             setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE),
         )
-        val key = ByteArray(32).also(SecureRandom()::nextBytes)
         val file = directory.resolve("brokerage-kek-v1.key")
-        Files.write(file, key)
+        Files.write(file, testBrokerageKek)
         Files.setPosixFilePermissions(file, setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE))
-        key.fill(0)
         return directory
     }
 
     companion object {
+        private val testBrokerageKek = ByteArray(32).also(SecureRandom()::nextBytes)
         private val postgresImage =
             DockerImageName
                 .parse("pgvector/pgvector:pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb")

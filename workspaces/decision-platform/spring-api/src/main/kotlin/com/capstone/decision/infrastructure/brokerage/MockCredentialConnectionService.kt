@@ -35,13 +35,13 @@ class MockCredentialConnectionService(
         // 연결 확인은 KIS 잔고조회 한 번이다. 실패하면(앱 키 거부·계좌 불일치·KIS 장애) 여기서 예외가 나가고
         // 행은 CONNECTED 로 넘어가지 않는다.
         val proof = gateway.verify(requestId, ownerUserId, current.accountId)
-        // 읽은 잔고를 이 계좌의 온라인 관측으로 남긴다. 잔고 화면과 무장(위험 잔고 투영)이 같은 행을 읽는다.
-        // 보유 종목이 한 쪽을 넘으면 불완전한 잔고라 위험 근거로 남기지 않는다.
-        if (proof != null && proof.positionsComplete) {
-            repository.recordBalance(ownerUserId, current.accountId, proof)
-        }
+            ?: throw ApiException(ErrorCode.BROKERAGE_UNAVAILABLE)
+        // A successful connection proof must include the complete read-only balance. The same
+        // observation is the account-bound baseline used by automation readiness and risk sizing.
+        if (!proof.positionsComplete) throw ApiException(ErrorCode.BROKERAGE_UNAVAILABLE)
+        val observationId = repository.recordBalance(ownerUserId, current.accountId, proof)
         try {
-            repository.markConnected(ownerUserId, current.accountId, current.revision)
+            repository.markConnected(ownerUserId, current.accountId, current.revision, observationId)
         } catch (_: PessimisticLockingFailureException) {
             throw ApiException(ErrorCode.CONFLICT)
         }
@@ -73,14 +73,14 @@ class MockCredentialConnectionRepository(
         ownerUserId: String,
         accountId: String,
         proof: MockConnectionProof,
-    ) {
+    ): String {
         val jdbc = jdbcProvider.getIfAvailable() ?: error("BROKERAGE_CONNECTION_DATABASE_UNAVAILABLE")
         actorRlsScope.open(jdbc, ownerUserId, "RECORD_MOCK_BALANCE_OBSERVATION", "BROKER_CREDENTIAL", accountId)
         val positions =
             proof.positions.joinToString(prefix = "[", postfix = "]") {
                 """{"symbol":"${it.symbol}","quantity":${it.quantity},"marketValueKrw":${it.marketValueKrw}}"""
             }
-        jdbc.queryForObject(
+        return jdbc.queryForObject(
             """
             SELECT record_bound_mock_balance_observation_v1(
               :owner, :account, :cash, :equity, CAST(:positions AS jsonb)
@@ -94,7 +94,7 @@ class MockCredentialConnectionRepository(
                 "positions" to positions,
             ),
             String::class.java,
-        )
+        ) ?: error("MOCK_BALANCE_OBSERVATION_UNAVAILABLE")
     }
 
     @Transactional
@@ -102,6 +102,7 @@ class MockCredentialConnectionRepository(
         ownerUserId: String,
         accountId: String,
         revision: Long,
+        observationId: String? = null,
     ) {
         val jdbc = jdbcProvider.getIfAvailable() ?: error("BROKERAGE_CONNECTION_DATABASE_UNAVAILABLE")
         actorRlsScope.open(jdbc, ownerUserId, "MARK_MOCK_CREDENTIAL_CONNECTED", "BROKER_CREDENTIAL", accountId)
@@ -112,5 +113,16 @@ class MockCredentialConnectionRepository(
                 String::class.java,
             )
         check(state == "CONNECTED" || state == "CERTIFIED")
+        if (observationId != null) {
+            jdbc.query(
+                "SELECT record_full_owner_mock_connection_proof_v1(:owner, :account, :revision, :observation)",
+                mapOf(
+                    "owner" to ownerUserId,
+                    "account" to accountId,
+                    "revision" to revision,
+                    "observation" to observationId,
+                ),
+            ) { _, _ -> }
+        }
     }
 }

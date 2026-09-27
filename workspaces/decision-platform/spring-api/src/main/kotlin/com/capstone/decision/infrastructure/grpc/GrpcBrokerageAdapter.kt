@@ -40,6 +40,7 @@ import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
 import io.grpc.stub.MetadataUtils
 import jakarta.annotation.PreDestroy
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import java.time.Instant
@@ -55,6 +56,8 @@ class GrpcBrokerageAdapter(
     private val properties: BrokerageGrpcProperties,
     circuitBreakerRegistry: CircuitBreakerRegistry,
     private val credentialProvider: ObjectProvider<MockCredentialSettingsService>,
+    @Value("\${app.brokerage.connected-owner-orders-enabled:false}")
+    private val connectedOwnerOrdersEnabled: Boolean = false,
 ) : BrokerageGatewayPort,
     MockCredentialConnectionPort,
     MockCredentialCertificationPort,
@@ -97,8 +100,13 @@ class GrpcBrokerageAdapter(
                     .setOrderType(request.orderIntent.orderType)
                     .setQuantity(request.orderIntent.quantity)
                     .setEstimatedPriceKrw(request.orderIntent.estimatedPrice)
-            boundCredential(request.ownerUserId, request.accountId, setOf("CERTIFIED"))
-                ?.let { builder.setCredential(it) }
+            val credential = boundCredential(request.ownerUserId, request.accountId, orderCredentialStates())
+            if (credential?.credentialState == "CONNECTED" && connectedOwnerOrdersEnabled &&
+                credentialProvider.getIfAvailable()?.fullAutomationConnectionReady(request.ownerUserId, request.accountId) != true
+            ) {
+                throw BrokerageUnavailableException("KIS_MOCK read-only connection proof is not current.")
+            }
+            credential?.let { builder.setCredential(it) }
             val rpcRequest = builder.build()
             if (rpcRequest.serializedSize > properties.requestMaxBytes) {
                 throw BrokerageUnavailableException("Brokerage gRPC request exceeded bounded contract.")
@@ -133,7 +141,7 @@ class GrpcBrokerageAdapter(
                     .setRequestId(request.requestId)
                     .setOrderId(request.orderId)
                     .setAccountId(request.accountId)
-            boundCredential(request.ownerUserId, request.accountId, setOf("CERTIFIED", "DISCONNECTING"))
+            boundCredential(request.ownerUserId, request.accountId, orderCredentialStates() + "DISCONNECTING")
                 ?.let { builder.setCredential(it) }
             val rpcRequest = builder.build()
             if (rpcRequest.serializedSize > properties.requestMaxBytes) {
@@ -433,6 +441,9 @@ class GrpcBrokerageAdapter(
             throw BrokerageUnavailableException("Brokerage gRPC request exceeded bounded contract.")
         }
     }
+
+    private fun orderCredentialStates(): Set<String> =
+        if (connectedOwnerOrdersEnabled) setOf("CONNECTED", "CERTIFIED") else setOf("CERTIFIED")
 
     private fun parseInstant(value: String): Instant =
         try {

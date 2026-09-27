@@ -477,7 +477,7 @@ export interface AutomationStatusV2 {
   accountId: string | null;
   policy: AutomationPolicyV2 | null;
   killSwitchActive: boolean;
-  certificationStatus: 'NOT_REQUIRED_INTERNAL_PAPER' | 'REQUIRED' | 'VALID' | 'EXPIRED' | 'INVALID';
+  certificationStatus: 'NOT_REQUIRED_INTERNAL_PAPER' | 'REQUIRED' | 'VALID' | 'EXPIRED' | 'INVALID' | 'CONNECTED';
   openPositionCount: number;
   unresolvedReconciliation: boolean;
   canArm: boolean;
@@ -538,6 +538,7 @@ export type AutomationExitReasonV3 = AutomationExitReason | 'ATR_TRAILING';
 /** v3 차단 사유 17종. v2 의 11종에 여섯이 더 붙는다. */
 export type AutomationBlockerV3 =
   | AutomationBlocker
+  | 'ACCOUNT_HISTORY_UNLINKED'
   | 'POLICY_V3_REQUIRED'
   | 'LEGACY_POSITION_PRESENT'
   | 'MARKET_HISTORY_EMPTY'
@@ -630,6 +631,24 @@ export interface AutomationStatusV3
   marketHistoryStatus: MarketHistoryStatus;
   /** 선택 계좌에서 청산 정책을 복원할 근거도 없는 포지션 수. */
   legacyOpenPositionCount: number;
+  /** FULL owner read-only KIS connection proof matches the active credential revision. */
+  ownerConnectionReady: boolean;
+  /** A strategy order on this credential revision has been accepted and reconciled. */
+  orderPathVerified: boolean;
+  /** Safe KIS failure code when a previous uncertain/rejected strategy order stopped this owner. */
+  orderFailureCode: 'KIS_ORDER_REJECTED' | 'KIS_ORDER_RESULT_UNCERTAIN' | null;
+  /** Active bot positions kept under a different, unlinked internal account ID. */
+  unlinkedOpenPositionCount: number;
+  /** Unresolved KIS orders kept under a different, unlinked internal account ID. */
+  unresolvedUnlinkedOrderCount: number;
+  /** Submitted automation runs with incomplete order lineage under another account ID. */
+  unresolvedUnlinkedRunCount: number;
+  /** Preserved historical position rows quarantined from active counts and realized PnL. */
+  quarantinedPositionCount: number;
+  /** Offline INTERNAL_PAPER replay history, kept separate from the connected KIS account. */
+  historicalPaperOpenPositionCount: number;
+  historicalPaperClosedPositionCount: number;
+  historicalPaperRunCount: number;
 }
 
 export interface AutomationRunV3 extends Omit<AutomationRunV2, 'contractId' | 'exitReason'> {

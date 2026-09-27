@@ -573,11 +573,12 @@ class JdbcAutomationRepository(
         requestHash: String,
         providerCapabilityReady: Boolean,
         operatorProviderReady: Boolean,
+        connectedKisAccountEnabled: Boolean,
     ): AutomationStatusV3Projection =
         mutate(ownerUserId, "ARM_AUTOMATION", requestHash) { jdbc ->
             jdbc.queryForObject(
                 """
-                SELECT result_json FROM p1_arm_automation_v3(
+                SELECT result_json FROM ${if (connectedKisAccountEnabled) "p1_arm_automation_full_v1" else "p1_arm_automation_v3"}(
                   :ownerUserId,:accountId,:policyId,:expectedPolicyVersion,
                   :expectedControlVersion,:scopeHash,:requestHash,:providerCapabilityReady,
                   :operatorProviderReady
@@ -941,6 +942,18 @@ class JdbcAutomationRepository(
             } else {
                 boundAccountId ?: control?.accountId
             }
+        val ownerCredentialState =
+            jdbc.query(
+                "SELECT public.p1_read_owner_mock_credential_state_for_automation_v218(:ownerUserId)",
+                mapOf("ownerUserId" to ownerUserId),
+            ) { row, _ -> row.getString(1) }.singleOrNull()
+        val certificationStatus =
+            when (ownerCredentialState) {
+                "CONNECTED" -> "CONNECTED"
+                "CERTIFIED" -> "VALID"
+                "STORED", "DISCONNECTING" -> "REQUIRED"
+                else -> control?.certificationStatus ?: "REQUIRED"
+            }
         val riskBalanceReady =
             if (accountId == null) {
                 false
@@ -951,6 +964,12 @@ class JdbcAutomationRepository(
                     Boolean::class.java,
                 ) ?: false
             }
+        val ownerConnectionReady =
+            accountId != null && jdbc.queryForObject(
+                "SELECT public.p1_full_owner_connection_readiness_v1(:ownerUserId,:accountId)",
+                mapOf("ownerUserId" to ownerUserId, "accountId" to accountId),
+                Boolean::class.java,
+            ) == true
         val blockers =
             buildList {
                 if (accountId == null) add("ACCOUNT_NOT_CONFIGURED")
@@ -969,7 +988,7 @@ class JdbcAutomationRepository(
                 if (control != null && !control.principleConfigured) add("PRINCIPLE_NOT_CONFIGURED")
                 if (control != null && !control.realTeamBPointerActive) add("REAL_TEAM_B_POINTER_INACTIVE")
                 if (control != null && !control.releaseBindingClean) add("RELEASE_BINDING_UNCLEAN")
-                if (control != null && !control.certificationReady) add("CERTIFICATION_INVALID")
+                if (control?.certificationReady != true && !ownerConnectionReady) add("CERTIFICATION_INVALID")
                 if (killSwitchActive) add("KILL_SWITCH_ACTIVE")
                 if (control?.unresolved == true) add("UNRESOLVED_RECONCILIATION")
                 if (control?.controlState == "HALTED") add("CONTROL_HALTED")
@@ -989,7 +1008,7 @@ class JdbcAutomationRepository(
             accountId = accountId,
             policy = policy,
             killSwitchActive = killSwitchActive,
-            certificationStatus = control?.certificationStatus ?: "REQUIRED",
+            certificationStatus = certificationStatus,
             openPositionCount = control?.openCount ?: 0,
             unresolvedReconciliation = control?.unresolved ?: false,
             canArm = state == "DISARMED" && blockers.isEmpty(),
@@ -1024,6 +1043,49 @@ class JdbcAutomationRepository(
             )
         val activeCount = (counts["active_count"] as Number).toInt()
         val legacyCount = (counts["legacy_count"] as Number).toInt()
+        val ownerConnectionReady =
+            base.accountId != null && jdbc.queryForObject(
+                "SELECT public.p1_full_owner_connection_readiness_v1(:ownerUserId,:accountId)",
+                mapOf("ownerUserId" to ownerUserId, "accountId" to base.accountId),
+                Boolean::class.java,
+            ) == true
+        val orderPathVerified =
+            base.accountId != null && jdbc.queryForObject(
+                "SELECT public.p1_full_owner_order_path_verified_v1(:ownerUserId,:accountId)",
+                mapOf("ownerUserId" to ownerUserId, "accountId" to base.accountId),
+                Boolean::class.java,
+            ) == true
+        val orderFailureCode =
+            jdbc.query(
+                "SELECT public.p1_full_owner_order_failure_code_v217(:ownerUserId)",
+                mapOf("ownerUserId" to ownerUserId),
+            ) { row, _ -> row.getString(1) }.singleOrNull()
+        val accountHistory =
+            if (base.accountId == null) {
+                mapOf(
+                    "unlinked_open_position_count" to 0,
+                    "unresolved_unlinked_order_count" to 0,
+                    "unresolved_unlinked_run_count" to 0,
+                    "quarantined_position_count" to 0,
+                    "historical_paper_open_position_count" to 0,
+                    "historical_paper_closed_position_count" to 0,
+                    "historical_paper_run_count" to 0,
+                )
+            } else {
+                jdbc.queryForMap(
+                    "SELECT * FROM public.p1_full_owner_account_history_integrity_v218(:ownerUserId,:accountId)",
+                    mapOf("ownerUserId" to ownerUserId, "accountId" to base.accountId),
+                )
+            }
+        val unlinkedOpenPositionCount = (accountHistory["unlinked_open_position_count"] as Number).toInt()
+        val unresolvedUnlinkedOrderCount = (accountHistory["unresolved_unlinked_order_count"] as Number).toInt()
+        val unresolvedUnlinkedRunCount = (accountHistory["unresolved_unlinked_run_count"] as Number).toInt()
+        val quarantinedPositionCount = (accountHistory["quarantined_position_count"] as Number).toInt()
+        val historicalPaperOpenPositionCount =
+            (accountHistory["historical_paper_open_position_count"] as Number).toInt()
+        val historicalPaperClosedPositionCount =
+            (accountHistory["historical_paper_closed_position_count"] as Number).toInt()
+        val historicalPaperRunCount = (accountHistory["historical_paper_run_count"] as Number).toInt()
         val aiSettings =
             jdbc
                 .query(
@@ -1067,6 +1129,9 @@ class JdbcAutomationRepository(
                 if (policy == null) add("POLICY_V3_NOT_CONFIGURED")
                 if (policy != null && principleDrift) add("POLICY_VERSION_DRIFT")
                 if (legacyCount > 0) add("LEGACY_POSITION_PRESENT")
+                if (unlinkedOpenPositionCount + unresolvedUnlinkedOrderCount + unresolvedUnlinkedRunCount > 0) {
+                    add("ACCOUNT_HISTORY_UNLINKED")
+                }
                 if (marketHistoryStatus != "READY") add("MARKET_DATA_CATCHUP_REQUIRED")
                 if (!aiProviderReady) add("AI_PROVIDER_NOT_READY")
             }.distinct()
@@ -1102,6 +1167,16 @@ class JdbcAutomationRepository(
             unresolvedReconciliation = base.unresolvedReconciliation,
             canArm = base.controlState == "DISARMED" && blockers.isEmpty(),
             blockers = blockers,
+            ownerConnectionReady = ownerConnectionReady,
+            orderPathVerified = orderPathVerified,
+            orderFailureCode = orderFailureCode,
+            unlinkedOpenPositionCount = unlinkedOpenPositionCount,
+            unresolvedUnlinkedOrderCount = unresolvedUnlinkedOrderCount,
+            unresolvedUnlinkedRunCount = unresolvedUnlinkedRunCount,
+            quarantinedPositionCount = quarantinedPositionCount,
+            historicalPaperOpenPositionCount = historicalPaperOpenPositionCount,
+            historicalPaperClosedPositionCount = historicalPaperClosedPositionCount,
+            historicalPaperRunCount = historicalPaperRunCount,
         )
     }
 
@@ -1388,6 +1463,7 @@ class JdbcAutomationRepository(
             "P1L01" -> AutomationBlockedException("LEGACY_POSITION_PRESENT", error)
             "P1M01" -> AutomationBlockedException("MARKET_DATA_CATCHUP_REQUIRED", error)
             "P1A01" -> AutomationBlockedException("AI_PROVIDER_NOT_READY", error)
+            "P1H01" -> AutomationBlockedException("ACCOUNT_HISTORY_UNLINKED", error)
             // V216: 자격증명에 묶인 계좌와 다른 계좌로 무장하려 했다. 화면은 상태를 다시 읽어 묶인
             // 계좌로 보내면 된다.
             "P1K01" -> AutomationBlockedException("ACCOUNT_NOT_CONFIGURED", error)

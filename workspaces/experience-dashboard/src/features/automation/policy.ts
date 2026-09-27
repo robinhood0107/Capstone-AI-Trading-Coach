@@ -77,7 +77,7 @@ export const AUTOMATION_BLOCKER_LABELS: Record<AutomationBlocker, string> = {
 };
 
 /**
- * v3 가 더 내려보내는 차단 사유 여섯 가지.
+ * v3 가 더 내려보내는 차단 사유 일곱 가지.
  *
  * v2 계약에는 없다 — v3 status 를 보는 화면에서만 나타난다. `Record<AutomationBlockerV3, …>`
  * 라 새 사유가 계약에 붙으면 타입이 먼저 깨진다. 라벨 없이 빈 항목이 렌더되는 일이 없다.
@@ -91,6 +91,8 @@ export const AUTOMATION_BLOCKER_LABELS_V3: Record<AutomationBlockerV3, string> =
   MARKET_DATA_CATCHUP_REQUIRED: '시세 이력이 밀려 있습니다. 따라잡기가 끝나야 시작할 수 있습니다.',
   AI_PROVIDER_NOT_READY:
     'AI 검토 제공자가 준비되지 않았습니다. 설정에서 내 Vertex 서비스 계정을 등록하거나, AI 검토를 끄면 규칙만으로 시작할 수 있습니다.',
+  ACCOUNT_HISTORY_UNLINKED:
+    '현재 계좌와 연결되지 않은 자동운용 기록이 있습니다. 미대사 주문·포지션·실행 이력을 확인한 뒤 다시 시작할 수 있습니다.',
 };
 
 /**

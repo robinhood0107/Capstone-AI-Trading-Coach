@@ -95,6 +95,7 @@ class P1V3AutomationContractTest(unittest.TestCase):
             },
         )
         self.assertEqual(list(BLOCKERS), catalog["blockers"])
+        self.assertEqual(10, catalog["execution"]["maxOpenPositions"])
         self.assertEqual(6, len(catalog["operations"]))
         self.assertEqual(
             {
@@ -114,6 +115,11 @@ class P1V3AutomationContractTest(unittest.TestCase):
     def test_closed_schemas_accept_exact_fixtures_and_reject_unknown_fields(
         self,
     ) -> None:
+        policy_schema = self.schemas["automation-policy.v2"]
+        self.assertEqual(
+            {"const": 5},
+            policy_schema["properties"]["maxOpenPositions"],
+        )
         screening = {
             "symbol": "005930",
             "status": "AVAILABLE",

@@ -10,7 +10,7 @@ spring:
         version: 1.0.0
         protocol: STREAMABLE
         type: SYNC
-        annotation-scanner:
+      annotation-scanner:
           enabled: true
   mvc:
     throw-exception-if-no-handler-found: true
@@ -61,6 +61,8 @@ spring:
       security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
 
 app:
+  automation:
+    connected-kis-account-enabled: false
   p1:
     automation:
       evidence-fixture-enabled: ${P1_AUTOMATION_EVIDENCE_FIXTURE_ENABLED:false}

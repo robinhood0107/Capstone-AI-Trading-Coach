@@ -83,9 +83,19 @@ function KillSwitchControl({ onChanged }: { active: boolean; onChanged: () => vo
     <AsyncBoundary state={personal.state} onRetry={personal.reload}>{(state) => <div className="flex flex-wrap items-center justify-between gap-3">
       <div><p className="text-sm font-semibold">내 주문 중지 · {state.active ? '작동 중' : '꺼짐'}</p>
         <p className="text-xs text-muted">변경 {formatKstDateTime(state.changedAt)}</p>
+        {state.reasonClass === 'BROKERAGE_FAILURE_STOP' ? (
+          <p role="alert" className="mt-2 text-sm text-block">
+            KIS 자동주문 결과가 확인되지 않아 이 계좌를 정지했습니다. KIS에서 주문·체결·잔고를 확인한 뒤 정지를 해제하세요.
+          </p>
+        ) : null}
         {state.globalActive ? <p className="text-sm text-block">관리자가 시스템 전체 주문을 중지했습니다. 개인 중지를 해제해도 주문은 차단됩니다.</p> : null}
       </div>
-      <Button disabled={busy} variant={state.active ? 'secondary' : 'danger'} onClick={() => void change(!state.active, 'personal')}>
+      <Button disabled={busy} variant={state.active ? 'secondary' : 'danger'} onClick={() => {
+        if (state.active && state.reasonClass === 'BROKERAGE_FAILURE_STOP' && !window.confirm(
+          'KIS에서 자동주문의 접수·체결·잔고 상태를 확인했습니까? 확인하지 않았다면 정지를 유지하세요.',
+        )) return;
+        void change(!state.active, 'personal');
+      }}>
         {state.active ? '내 주문 중지 해제' : '내 주문 즉시 중지'}
       </Button>
     </div>}</AsyncBoundary>
@@ -453,6 +463,19 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
             value={MARKET_HISTORY_LABELS[data.status.marketHistoryStatus]}
           />
           <StatusField
+            label="다른 계좌 미대사"
+            value={'포지션 ' + data.status.unlinkedOpenPositionCount + ' · 주문 ' + data.status.unresolvedUnlinkedOrderCount + ' · 실행 ' + data.status.unresolvedUnlinkedRunCount}
+          />
+          <StatusField
+            label="격리된 과거 포지션"
+            value={data.status.quarantinedPositionCount + '건'}
+            mono
+          />
+          <StatusField
+            label="내부 모의 계좌 이력"
+            value={`열림 ${data.status.historicalPaperOpenPositionCount} · 종료 ${data.status.historicalPaperClosedPositionCount} · 실행 ${data.status.historicalPaperRunCount}`}
+          />
+          <StatusField
             label="청산 정책 미지정 포지션"
             value={`${data.status.legacyOpenPositionCount}건`}
             mono
@@ -467,6 +490,17 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
 
         {data.status.policyRecoverySourceVersion ? <p className="mt-3 text-xs text-warn">청산 기준은 이전 저장 정책 v{data.status.policyRecoverySourceVersion}의 값으로 복원했습니다. 이전 이력은 보존되어 있습니다.</p> : null}
         <p className="mt-3 text-xs leading-6 text-muted">다음 자동평가: {data.status.nextRunAt ? formatKstDateTime(data.status.nextRunAt) : '예약 없음'}{data.status.policy ? ` · 평가 ${data.status.policy.evaluationTimeKst} · 당일 운용 마감 ${data.status.policy.cancelTimeKst} (한국 시간)` : ''}</p>
+        {data.status.quarantinedPositionCount > 0 ? (
+          <p className="mt-3 text-xs leading-6 text-warn">
+            잔고·주문 증거가 없는 과거 포지션 {data.status.quarantinedPositionCount}건은 기록을 보존한 채 격리했습니다.
+            열린 포지션 수, 손익 재투자와 자동 주문에는 포함하지 않습니다.
+          </p>
+        ) : null}
+        {data.status.historicalPaperOpenPositionCount + data.status.historicalPaperClosedPositionCount > 0 ? (
+          <p className="mt-3 text-xs leading-6 text-muted">
+            내부 모의 계좌 과거 기록입니다. 현재 KIS 잔고, 자동매도와 실현손익에는 합산하지 않습니다.
+          </p>
+        ) : null}
         <KillSwitchControl active={data.status.killSwitchActive} onChanged={onReload} />
 
         {data.status.blockers.length > 0 ? (
@@ -783,6 +817,21 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
             }`}
           >
             {notice.text}
+          </p>
+        ) : null}
+
+        {data.status.orderFailureCode ? (
+          <p role="alert" data-testid="automation-order-failure" className="mt-4 border-l-2 border-block bg-block/5 px-3 py-2 text-[12px] leading-5 text-ink">
+            {data.status.orderFailureCode === 'KIS_ORDER_REJECTED'
+              ? 'KIS가 자동주문을 거절해 이 계좌를 정지했습니다. KIS 주문·체결·잔고를 확인한 뒤 내 주문 중지를 해제하세요.'
+              : 'KIS 주문 결과를 확인하지 못해 이 계좌를 정지했습니다. KIS 주문·체결·잔고를 확인한 뒤 내 주문 중지를 해제하세요.'}
+          </p>
+        ) : null}
+        {data.status.ownerConnectionReady ? (
+          <p data-testid="automation-owner-connection-ready" className="mt-4 text-[12px] leading-5 text-muted">
+            {data.status.orderPathVerified
+              ? 'KIS 읽기 연결과 실제 자동주문 접수·대사가 확인됐습니다.'
+              : '읽기 연결 확인됨 · 주문 경로는 첫 실제 전략 주문에서 확인됩니다.'}
           </p>
         ) : null}
 

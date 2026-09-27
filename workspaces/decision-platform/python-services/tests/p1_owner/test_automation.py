@@ -62,6 +62,7 @@ def _transport(
     *,
     news: str = "NO_VETO",
     submit: str = "FILLED",
+    order_failure_reason_code: str | None = None,
     reconcile: list[str] | None = None,
     cancel_succeeds: bool = True,
     quote: Quote | None = None,
@@ -82,6 +83,7 @@ def _transport(
         quotes=quotes,
         news_verdict=cast(Any, news),
         submit_outcome=cast(Any, submit),
+        order_failure_reason_code=order_failure_reason_code,
         reconcile_outcomes=cast(Any, reconcile or ["FILLED"]),
         cancel_succeeds=cancel_succeeds,
     )
@@ -433,6 +435,20 @@ def test_ambiguous_submit_reconciles_without_second_submit() -> None:
     assert transport.submit_calls == 1
     assert transport.reconcile_calls == 1
     assert len(store.positions) == 1
+
+
+def test_connected_owner_order_write_failure_halts_and_records_a_user_visible_reason() -> None:
+    store = _store()
+    _create(store)
+    transport = _transport(submit="AMBIGUOUS", order_failure_reason_code="KIS_ORDER_REJECTED")
+
+    states = _drive(store, transport, _inputs(_buy()))
+
+    assert states[-1] == "HALTED"
+    assert store.control_state == "HALTED"
+    assert transport.submit_calls == 1
+    assert store.runs[_RUN_ID].stage_outcomes[-1].reason_code == "KIS_ORDER_REJECTED"
+    assert "KIS 주문" in (store.runs[_RUN_ID].stage_outcomes[-1].reason_detail or "")
 
 
 def test_duplicate_tick_is_exact_noop_and_session_submit_cap_halts_second_run() -> None:

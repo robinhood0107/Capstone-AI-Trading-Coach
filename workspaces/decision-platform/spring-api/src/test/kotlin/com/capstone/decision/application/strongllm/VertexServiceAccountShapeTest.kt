@@ -2,15 +2,23 @@ package com.capstone.decision.application.strongllm
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.security.KeyPairGenerator
 import java.util.Base64
 
 class VertexServiceAccountShapeTest {
     private fun encode(json: String) = Base64.getEncoder().encodeToString(json.toByteArray())
 
-    private val fake =
+    private val validPrivateKey by lazy {
+        val keyPair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
+        val pem = Base64.getMimeEncoder(64, byteArrayOf('\n'.code.toByte())).encodeToString(keyPair.private.encoded)
+        "-----BEGIN PRIVATE KEY-----\n$pem\n-----END PRIVATE KEY-----\n"
+    }
+
+    private val fake by lazy {
         """{"type":"service_account","project_id":"mars-test-dummy","private_key_id":"0123456789abcdef",""" +
-            """"private_key":"-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n",""" +
+            """"private_key":"${validPrivateKey.replace("\n", "\\n")}",""" +
             """"client_email":"dummy@mars-test-dummy.iam.gserviceaccount.com","token_uri":"https://oauth2.googleapis.com/token"}"""
+    }
 
     @Test
     fun `a canonical base64 service account is accepted and shows its key id tail`() {
@@ -29,6 +37,12 @@ class VertexServiceAccountShapeTest {
         val padded = encode(fake + " ")
         if (padded.endsWith("=")) assertThat(VertexServiceAccountShape.isValid(padded.trimEnd('='))).isFalse()
         assertThat(VertexServiceAccountShape.isValid("")).isFalse()
+    }
+
+    @Test
+    fun `PEM marker without parseable PKCS8 RSA key is refused`() {
+        val malformed = fake.replace(validPrivateKey.replace("\n", "\\n"), "-----BEGIN PRIVATE KEY-----\\nAAAA\\n-----END PRIVATE KEY-----\\n")
+        assertThat(VertexServiceAccountShape.isValid(encode(malformed))).isFalse()
     }
 
     @Test

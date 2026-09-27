@@ -82,6 +82,7 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
         bound_account_id: str | None = None,
         balance_reader: BalanceReadPort | None = None,
         owner_factory: OwnerBoundBrokerageFactory | None = None,
+        allow_connected_credentials_for_orders: bool = False,
     ) -> None:
         if _SAFE_SECRET.fullmatch(shared_secret) is None:
             raise ValueError("Brokerage gRPC shared secret must be 32..256 safe ASCII characters")
@@ -99,6 +100,9 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
         self._bound_account_id = bound_account_id
         self._balance_reader = balance_reader
         self._owner_factory = owner_factory
+        self._owner_order_states = frozenset(
+            {"CONNECTED", "CERTIFIED"} if allow_connected_credentials_for_orders else {"CERTIFIED"}
+        )
 
     @contextmanager
     def _session(
@@ -132,7 +136,7 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
         _require_authenticated(context, self._shared_secret)
         _validate_submit_request(request, context)
         try:
-            with self._session(request, frozenset({"CERTIFIED"})) as (gateway, _):
+            with self._session(request, self._owner_order_states) as (gateway, _):
                 receipt = gateway.submit_cash_order(
                     MockOrderIntent(
                         symbol=request.symbol,
@@ -170,7 +174,7 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
         _require_authenticated(context, self._shared_secret)
         _validate_order_and_account(request.order_id, request.account_id, context)
         try:
-            with self._session(request, frozenset({"CERTIFIED", "DISCONNECTING"})) as (gateway, _):
+            with self._session(request, self._owner_order_states | {"DISCONNECTING"}) as (gateway, _):
                 receipt = gateway.cancel_cash_order(
                     order_id=request.order_id,
                     account_id=request.account_id,

@@ -80,25 +80,20 @@ class FlywayMigrationIntegrationTest(
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
             admin.createStatement().use { statement ->
                 val ownerList = owners.joinToString(",") { "'$it'" }
-                statement.executeUpdate("delete from automation_runtime_events where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_events where user_id in ($ownerList)")
+                // Runtime events are append-only, so keep this test's ledger rows and disarm
+                // its fixture owners. Testcontainers gives this class a disposable database.
                 statement.executeUpdate(
-                    "delete from automation_processed_ticks where run_id in " +
-                        "(select run_id from automation_runs where user_id in ($ownerList))",
+                    "update automation_runtime_claim set claim_state='RELEASED',released_at=COALESCE(released_at,statement_timestamp()) " +
+                        "where user_id in ($ownerList) and claim_state='ACTIVE'",
                 )
-                statement.executeUpdate("delete from automation_order_reservations where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_runtime_checkpoint where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_runtime_claim where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_runtime_schedule where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_runs where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_control_idempotency where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_control where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_activation_gate where user_id in ($ownerList)")
                 statement.executeUpdate(
-                    "delete from principle_versions where principle_id in ('prc_automation_owner_a_0001','prc_automation_owner_b_0001')",
+                    "update automation_runtime_schedule set schedule_state='HALTED',updated_at=statement_timestamp() " +
+                        "where user_id in ($ownerList) and schedule_state in ('ARMED','CLAIMED')",
                 )
-                statement.executeUpdate("delete from principles where user_id in ($ownerList)")
-                statement.executeUpdate("delete from users where user_id in ($ownerList)")
+                statement.executeUpdate(
+                    "update automation_control set control_state='DISARMED',version=version+1,updated_at=statement_timestamp() " +
+                        "where user_id in ($ownerList) and control_state<>'DISARMED'",
+                )
             }
         }
     }
@@ -106,8 +101,11 @@ class FlywayMigrationIntegrationTest(
     @Test
     fun `clean database applies every migration in order and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        // V7 is a Java migration and must appear alongside the SQL migrations.
-        assertEquals((1..versions.last().toInt()).map(Int::toString), versions)
+        // Version numbers are monotonic but intentionally sparse. V7 is a Java migration and
+        // must appear alongside the SQL migrations; missing numbers are not failed migrations.
+        val numericVersions = versions.map(String::toInt)
+        assertEquals(numericVersions.sorted().distinct(), numericVersions)
+        assertEquals("218", versions.last())
 
         val requiredTables =
             listOf(
@@ -238,6 +236,14 @@ class FlywayMigrationIntegrationTest(
                 "p1_return_signal_projection",
                 "automation_control",
                 "automation_activation_gate",
+                "full_owner_account_identity_v218",
+                "full_owner_account_aliases_v218",
+                "full_owner_account_link_events_v218",
+                "automation_position_history_events_v218",
+                "automation_paper_history_run_links_v218",
+                "automation_paper_account_rekey_events_v218",
+                "automation_order_integrity_events_v218",
+                "automation_schedule_disarm_events_v218",
                 "automation_runs",
                 "automation_positions",
                 "automation_events",
@@ -252,6 +258,10 @@ class FlywayMigrationIntegrationTest(
         requiredTables.forEach { tableName ->
             assertTrue(tableExists(tableName), "expected table $tableName to exist")
         }
+        assertTrue(functionExists("public.p1_full_owner_account_history_integrity_v218(text,text)"))
+        assertTrue(functionExists("public.p1_read_mock_credential_identity_envelope_v218(text)"))
+        assertTrue(functionExists("public.p1_resolve_or_bind_mock_account_identity_v218(text,text,text,text)"))
+        assertTrue(functionExists("public.p1_read_owner_mock_credential_state_for_automation_v218(text)"))
 
         assertEquals(1, countMarketCalendarRows("KRX", "2026-06-23", true))
         assertEquals(1, countMarketCalendarRows("KRX", "2026-01-01", false))
@@ -600,7 +610,7 @@ class FlywayMigrationIntegrationTest(
                     statement.executeQuery("select user_id from p1_list_armed_automation_users_v1()").use { rows ->
                         while (rows.next()) actualOwners += rows.getString(1)
                     }
-                    assertTrue(actualOwners.containsAll(owners))
+                    assertTrue(actualOwners.containsAll(owners), "armed owners returned by runtime=$actualOwners")
 
                     val legacyRun =
                         statement

@@ -30,5 +30,17 @@
 
 - 소유자가 정리를 확인한 미대사 레거시 주문에 `LOCAL_RETIRED` 상태를 적용. 화면은 로컬 이력 종료와 KIS 결과 미확인을 분리해 보여 주며, 실제 KIS 취소가 확인된 `CANCELLED`와 구분. 관리자 대사는 해당 행에서 명확한 409로 멈추며 원 주문·감사 이력은 보존. demo-user는 자동 시작되지 않음
 
+## [1.0.2] - 2026-09-28
+
+### 추가
+
+- 설정에서 이메일 계정의 비밀번호 변경. 현재 비밀번호를 확인하고, 바꾸면 다른 기기의 로그인을 모두 해제. demo-user는 운영자 서명 번들로만 회전
+
+### 수정
+
+- FULL에서 "자동운용 시작"이 "이 자료에 접근할 권한이 없습니다"로 거부되던 문제. 무장 응답이 같은 트랜잭션에서 자격증명 상태를 다시 읽을 때 스코프가 막혔음(V220)
+- 전략 검증·보고서의 Sharpe 차이를 %가 아닌 소수로 표시하고, "수익률 대가"를 부호대로 읽히는 "CAGR 차이"로 바꿈
+
 [1.0.0]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.0
 [1.0.1]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.1
+[1.0.2]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.2

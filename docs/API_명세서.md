@@ -416,6 +416,11 @@ callback은 Bearer token을 URL에 넣지 않고 같은 origin의 `/auth/complet
 공개 FULL password login은 기존 `demo-user` fixed account와 별도 `password_login_identities` table을
 사용한다. 새 가입의 이메일·해시는 `users.password_hash`의 legacy migration credential과 분리한다.
 기존 `demo-user`로 로그인한 뒤 provider를 직접 연결하면 `usr_demo_user` 소유 데이터는 이동하지 않는다.
+`POST /api/v1/auth/password`는 이메일 비밀번호 계정의 비밀번호를 바꾼다. 요청은 `currentPassword`와
+`newPassword`(15~64자)이며, 현재 비밀번호가 틀리면 로그아웃을 유발하지 않도록 401이 아닌 400을
+반환하고 로그인과 같은 시도 제한을 받는다. 성공하면 그 계정의 기존 세션을 모두 폐기하고 새
+`LoginResponse`를 준다(V221 `change_password_login_actor_v1`). `demo-user`/`demo-admin`은 운영자가
+서명한 자격증명 번들로만 회전하므로 409를 반환한다.
 public DEMO는 같은 endpoint를 노출하지 않는다. 공개 서비스의 KIS/Agent/주문은 별도 게이트가
 완성되기 전까지 닫혀 있다.
 

@@ -250,7 +250,8 @@ Google·Kakao 콘솔에는 `<MARS_PUBLIC_ORIGIN>/api/v1/auth/oidc/callback/googl
 
 - 첫 실행 때 비밀값을 생성하고 이미지를 빌드한 뒤 DB 마이그레이션까지 적용합니다. `--mock`을 빼면 자동매매가 꺼진 채로 뜹니다.
 - 출력에 `CAPSTONE_UP=PASS`와 `CAPSTONE_AUTOMATION_RECONCILED=ARMED`가 모두 보이면 기동이 끝난 것입니다.
-- 첫 로그인 비밀번호는 `deploy/p1/.state-app/secrets/demo-user.password`에 있습니다. 바꾸려면 `./capstone credential rotate user /절대경로/새비밀번호파일`을 실행합니다.
+- 첫 로그인 비밀번호는 `deploy/p1/.state-app/secrets/demo-user.password`에 있습니다. 바꾸려면 `./capstone credential rotate user /절대경로/새비밀번호파일`을 실행합니다. `demo-user`는 운영자 서명 번들로 관리되어 화면에서는 바꿀 수 없습니다.
+- 이메일로 가입한 계정은 **설정 → 로그인 방법 → 비밀번호 변경**에서 현재 비밀번호를 확인하고 바꿉니다. 바꾸면 다른 기기의 로그인은 모두 해제됩니다.
 
 | 주소 | 설명 |
 |---|---|

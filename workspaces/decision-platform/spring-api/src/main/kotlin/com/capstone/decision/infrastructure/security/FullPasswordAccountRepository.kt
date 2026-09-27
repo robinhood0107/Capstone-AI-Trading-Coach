@@ -66,6 +66,27 @@ class FullPasswordAccountRepository(
                 ttlSeconds,
             ).single()
 
+    /** 현재 비밀번호가 틀리면 null. 비밀번호 로그인이 없는 계정은 P0002 로 거부된다. */
+    fun changePassword(
+        userId: String,
+        currentPassword: String,
+        newPasswordHash: String,
+        ttlSeconds: Int,
+    ): AuthenticatedAccount? =
+        jdbcTemplate()
+            .query(
+                """
+                select session_handle, actor_user_id, username, actor_role,
+                       actor_security_version, expires_at
+                from change_password_login_actor_v1(?,?,?,?)
+                """.trimIndent(),
+                ACCOUNT_ROW_MAPPER,
+                userId,
+                currentPassword,
+                newPasswordHash,
+                ttlSeconds,
+            ).singleOrNull()
+
     private fun jdbcTemplate(): JdbcTemplate =
         JdbcTemplate(
             authDatabaseProvider.ifAvailable?.dataSource

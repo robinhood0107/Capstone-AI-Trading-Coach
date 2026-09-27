@@ -58,8 +58,15 @@
 - 시놀로지 NAS에서 API가 `BROKERAGE_KEK_UNAVAILABLE`로 기동하지 못하던 문제. 공유 폴더 ACL이 KEK 모드(0700/0600)를 깨뜨렸음. Portainer 스택은 KEK를 외부 볼륨 `mars-full_brokerage-kek`에 두고, `kek-permissions`가 매 기동마다 소유자·모드를 맞추며 키가 없으면 `KEK_MISSING`으로 먼저 멈춤
 - 느린 NAS CPU에서 헬스체크가 앱보다 먼저 포기하던 문제. 기동 유예(start_period)를 넉넉히 두고 헬스체크 응답 제한을 10초로 늘림. 먼저 healthy가 되면 즉시 통과
 
+## [1.0.5] - 2026-09-28
+
+### 문서
+
+- README에 산업체 자문 의견과 반영 사항, 최종 발표자료·자문의견서 링크, 참여 후기를 추가
+
 [1.0.0]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.0
 [1.0.1]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.1
 [1.0.2]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.2
 [1.0.3]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.3
 [1.0.4]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.4
+[1.0.5]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.5

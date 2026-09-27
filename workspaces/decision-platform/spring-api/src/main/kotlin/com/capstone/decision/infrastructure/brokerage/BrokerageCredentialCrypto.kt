@@ -59,8 +59,11 @@ class BrokerageCredentialCrypto(
      * Keyed, owner-scoped identity for a real KIS account. The ten-digit account number is never
      * persisted as a fingerprint input and cannot be recovered from this value without the
      * dedicated brokerage KEK.
-    */
-    fun accountIdentityFingerprint(ownerUserId: String, accountNo: String): String {
+     */
+    fun accountIdentityFingerprint(
+        ownerUserId: String,
+        accountNo: String,
+    ): String {
         require(accountNo.matches(Regex("^[0-9]{10}$")))
         val accountBytes = accountNo.toByteArray(StandardCharsets.US_ASCII)
         return try {
@@ -70,7 +73,10 @@ class BrokerageCredentialCrypto(
         }
     }
 
-    fun accountIdentityFingerprint(ownerUserId: String, accountNo: ByteArray): String {
+    fun accountIdentityFingerprint(
+        ownerUserId: String,
+        accountNo: ByteArray,
+    ): String {
         require(ownerUserId.matches(Regex("^usr_[A-Za-z0-9_-]{8,96}$")))
         require(accountNo.size == 10 && accountNo.all { it.toInt() in '0'.code..'9'.code })
         val kek = kekFile.load()

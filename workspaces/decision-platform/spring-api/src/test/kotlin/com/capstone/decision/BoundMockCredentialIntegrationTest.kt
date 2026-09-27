@@ -1,24 +1,24 @@
 package com.capstone.decision
 
+import com.capstone.decision.application.automation.AutomationService
+import com.capstone.decision.application.automation.DisarmAutomationCommand
 import com.capstone.decision.application.brokerage.MockConnectionPosition
 import com.capstone.decision.application.brokerage.MockConnectionProof
 import com.capstone.decision.application.security.ActorRlsScopePort
 import com.capstone.decision.application.security.AppPrincipal
-import com.capstone.decision.application.automation.AutomationService
-import com.capstone.decision.application.automation.DisarmAutomationCommand
 import com.capstone.decision.infrastructure.brokerage.BrokerageCredentialCrypto
 import com.capstone.decision.infrastructure.brokerage.BrokerageKekFile
 import com.capstone.decision.infrastructure.brokerage.MockCredentialCertificationRepository
 import com.capstone.decision.infrastructure.brokerage.MockCredentialConnectionRepository
 import com.capstone.decision.infrastructure.brokerage.MockCredentialDisconnectRepository
 import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -613,71 +613,78 @@ class BoundMockCredentialIntegrationTest(
         val owner = "usr_demo_user"
         val automation = context.getBean(AutomationService::class.java)
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
-            connection.prepareStatement(
-                """
-                insert into automation_control(
-                  user_id,control_state,version,brokerage_mode,account_id,principle_id,strategy_id,
-                  baseline_account_digest,certification_status,kill_switch_active
-                ) values (?,'DISARMED',1,'KIS_MOCK',?,'prc_disarm_test','strategy_disarm_test',
-                          repeat('a',64),'REQUIRED',false)
-                on conflict (user_id) do update set control_state='DISARMED',
-                  version=automation_control.version+1,updated_at=statement_timestamp()
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setString(1, owner)
-                statement.setString(2, "acct_" + "d".repeat(32))
-                statement.executeUpdate()
-            }
+            connection
+                .prepareStatement(
+                    """
+                    insert into automation_control(
+                      user_id,control_state,version,brokerage_mode,account_id,principle_id,strategy_id,
+                      baseline_account_digest,certification_status,kill_switch_active
+                    ) values (?,'DISARMED',1,'KIS_MOCK',?,'prc_disarm_test','strategy_disarm_test',
+                              repeat('a',64),'REQUIRED',false)
+                    on conflict (user_id) do update set control_state='DISARMED',
+                      version=automation_control.version+1,updated_at=statement_timestamp()
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, owner)
+                    statement.setString(2, "acct_" + "d".repeat(32))
+                    statement.executeUpdate()
+                }
         }
         val initialVersion =
             requireNotNull(
                 DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
-                    connection.prepareStatement(
-                        "select version from automation_control where user_id = ?",
-                    ).use { statement ->
-                        statement.setString(1, owner)
-                        statement.executeQuery().use { result ->
-                            if (result.next()) result.getInt(1) else null
+                    connection
+                        .prepareStatement(
+                            "select version from automation_control where user_id = ?",
+                        ).use { statement ->
+                            statement.setString(1, owner)
+                            statement.executeQuery().use { result ->
+                                if (result.next()) result.getInt(1) else null
+                            }
                         }
-                    }
                 },
             )
         val armedVersion = initialVersion + 1
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
-            connection.prepareStatement(
-                """
-                update automation_control
-                set control_state='ARMED',version=?,updated_at=statement_timestamp()
-                where user_id=?
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setInt(1, armedVersion)
-                statement.setString(2, owner)
-                assertEquals(1, statement.executeUpdate())
-            }
+            connection
+                .prepareStatement(
+                    """
+                    update automation_control
+                    set control_state='ARMED',version=?,updated_at=statement_timestamp()
+                    where user_id=?
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setInt(1, armedVersion)
+                    statement.setString(2, owner)
+                    assertEquals(1, statement.executeUpdate())
+                }
         }
 
-        fun insertSchedule(sessionDate: LocalDate, controlVersion: Int) {
+        fun insertSchedule(
+            sessionDate: LocalDate,
+            controlVersion: Int,
+        ) {
             val scheduleId = "auto_sched_" + sessionDate.toString().replace("-", "").padStart(32, '0')
             val runAt = Timestamp.from(sessionDate.atTime(9, 30).atZone(ZoneId.of("Asia/Seoul")).toInstant())
             DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
-                connection.prepareStatement(
-                    """
-                    insert into automation_runtime_schedule(
-                      schedule_id,user_id,session_date,control_version,schedule_state,run_at,created_at,updated_at
-                    ) values (?,?,?,?,'ARMED',?,statement_timestamp(),statement_timestamp())
-                    on conflict (user_id,session_date) do update set
-                      control_version=excluded.control_version,schedule_state='ARMED',
-                      run_at=excluded.run_at,updated_at=statement_timestamp()
-                    """.trimIndent(),
-                ).use { statement ->
-                    statement.setString(1, scheduleId)
-                    statement.setString(2, owner)
-                    statement.setObject(3, sessionDate)
-                    statement.setInt(4, controlVersion)
-                    statement.setTimestamp(5, runAt)
-                    statement.executeUpdate()
-                }
+                connection
+                    .prepareStatement(
+                        """
+                        insert into automation_runtime_schedule(
+                          schedule_id,user_id,session_date,control_version,schedule_state,run_at,created_at,updated_at
+                        ) values (?,?,?,?,'ARMED',?,statement_timestamp(),statement_timestamp())
+                        on conflict (user_id,session_date) do update set
+                          control_version=excluded.control_version,schedule_state='ARMED',
+                          run_at=excluded.run_at,updated_at=statement_timestamp()
+                        """.trimIndent(),
+                    ).use { statement ->
+                        statement.setString(1, scheduleId)
+                        statement.setString(2, owner)
+                        statement.setObject(3, sessionDate)
+                        statement.setInt(4, controlVersion)
+                        statement.setTimestamp(5, runAt)
+                        statement.executeUpdate()
+                    }
             }
         }
 
@@ -689,12 +696,16 @@ class BoundMockCredentialIntegrationTest(
         }
         val disarmedVersion =
             DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
-                connection.prepareStatement(
-                    "select version from automation_control where user_id = ?",
-                ).use { statement ->
-                    statement.setString(1, owner)
-                    statement.executeQuery().use { result -> check(result.next()); result.getInt(1) }
-                }
+                connection
+                    .prepareStatement(
+                        "select version from automation_control where user_id = ?",
+                    ).use { statement ->
+                        statement.setString(1, owner)
+                        statement.executeQuery().use { result ->
+                            check(result.next())
+                            result.getInt(1)
+                        }
+                    }
             }
         assertEquals(armedVersion + 1, disarmedVersion)
 
@@ -705,28 +716,36 @@ class BoundMockCredentialIntegrationTest(
             automation.disarm(owner, "schedule-stop-stale", DisarmAutomationCommand(disarmedVersion))
         }
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
-            connection.prepareStatement(
-                """
-                select count(*) from automation_runtime_schedule
-                where user_id=? and session_date in (?,?) and schedule_state='DISARMED'
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setString(1, owner)
-                statement.setObject(2, currentSession)
-                statement.setObject(3, staleSession)
-                statement.executeQuery().use { result -> check(result.next()); assertEquals(2, result.getInt(1)) }
-            }
-            connection.prepareStatement(
-                """
-                select count(*) from automation_schedule_disarm_events_v218
-                where owner_user_id=? and session_date in (?,?)
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setString(1, owner)
-                statement.setObject(2, currentSession)
-                statement.setObject(3, staleSession)
-                statement.executeQuery().use { result -> check(result.next()); assertEquals(2, result.getInt(1)) }
-            }
+            connection
+                .prepareStatement(
+                    """
+                    select count(*) from automation_runtime_schedule
+                    where user_id=? and session_date in (?,?) and schedule_state='DISARMED'
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, owner)
+                    statement.setObject(2, currentSession)
+                    statement.setObject(3, staleSession)
+                    statement.executeQuery().use { result ->
+                        check(result.next())
+                        assertEquals(2, result.getInt(1))
+                    }
+                }
+            connection
+                .prepareStatement(
+                    """
+                    select count(*) from automation_schedule_disarm_events_v218
+                    where owner_user_id=? and session_date in (?,?)
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, owner)
+                    statement.setObject(2, currentSession)
+                    statement.setObject(3, staleSession)
+                    statement.executeQuery().use { result ->
+                        check(result.next())
+                        assertEquals(2, result.getInt(1))
+                    }
+                }
         }
     }
 

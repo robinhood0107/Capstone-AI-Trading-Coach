@@ -41,7 +41,11 @@ class VertexServiceAccountShapeTest {
 
     @Test
     fun `PEM marker without parseable PKCS8 RSA key is refused`() {
-        val malformed = fake.replace(validPrivateKey.replace("\n", "\\n"), "-----BEGIN PRIVATE KEY-----\\nAAAA\\n-----END PRIVATE KEY-----\\n")
+        val malformed =
+            fake.replace(
+                validPrivateKey.replace("\n", "\\n"),
+                "-----BEGIN PRIVATE KEY-----\\nAAAA\\n-----END PRIVATE KEY-----\\n",
+            )
         assertThat(VertexServiceAccountShape.isValid(encode(malformed))).isFalse()
     }
 

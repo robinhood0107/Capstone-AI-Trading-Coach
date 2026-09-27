@@ -56,4 +56,5 @@ V219 배포 직전 실제 DB 읽기 확인: Flyway V218, demo-user `DISARMED v21
 - `npm run test:e2e:full-product`: 3 passed. demo-user 관리자 쓰기 허용 설정으로 실행해 상한 저장, 전역 주문 중지/해제, 개인 Vertex 등록/삭제를 포함합니다.
 - 이 E2E는 새 가입자와 demo-user 두 역할로 로그인 폼, 앱의 모든 route, 원칙·일지, 개인 킬스위치, 자동운용 정책/재투자, KIS 저장·연결 실패·삭제, Agent 동의·질문·철회, 관리자 권한·사용자 상태·상한·공용 Vertex를 검사합니다.
 - 별도 실제 provider 호출은 복제 DB에서 개인 키 1회와 공용 키 1회만 수행했습니다. 개인 호출은 `ANSWERED`; 공용 호출은 `RETRIEVAL_ONLY`로 근거는 1건 찾았으나 설명 문장은 만들지 않았습니다. 두 번째 결과를 생성 답변 성공으로 집계하지 않습니다.
-- V219 운영 적용 후 Flyway 버전·주문 상태·미대사 차단 수를 검증 결과에 추가합니다. 실전략 주문의 KIS 접수·체결·잔고 대사는 다음 유효 거래 세션에 사용자가 시작하기 전까지 확인되지 않은 상태입니다.
+- 격리 복제 DB 검증(2026-09-28): 보호된 V216 덤프를 별도 PostgreSQL에 복원하고 V217→V218→V219를 적용했습니다. 대상 행은 `CANCELLED`, 체결 0·잔량 0·미체결 종료 1이었고, V219 resolution의 `broker_cancel_confirmed=false`, 원 `SUBMITTED`/`CANCEL_REQUESTED` 이벤트 보존, control `DISARMED v21`, `ARMED`/`CLAIMED` 예약 0건, V218 계좌 이력 무결성 `0/0/0`을 확인했습니다. 이는 복제본 검증이며 운영 FULL은 아직 V218입니다. KIS 취소·체결은 이 과정에서 확인하거나 요청하지 않았습니다.
+- 발행 게이트는 `imagePublicationReady=true`, `serviceReady=false`입니다. 서비스 준비 완료는 사용자별 자연 KIS_MOCK 인증, 전략 주문 접수, 체결 및 잔고 대사, 목표 동시 사용자 용량 측정을 모두 확인하기 전에는 선언하지 않습니다. 읽기 전용 잔고 연결과 격리 DB의 마이그레이션 검증은 이 조건을 충족하지 않습니다. 현재 실제 전략 주문·체결·잔고 대사 증거는 없습니다.

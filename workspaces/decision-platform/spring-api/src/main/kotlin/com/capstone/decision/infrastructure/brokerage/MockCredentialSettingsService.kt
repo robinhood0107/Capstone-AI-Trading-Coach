@@ -180,7 +180,10 @@ class MockCredentialSettingsService(
     }
 
     @Transactional
-    fun fullAutomationConnectionReady(ownerUserId: String, accountId: String): Boolean {
+    fun fullAutomationConnectionReady(
+        ownerUserId: String,
+        accountId: String,
+    ): Boolean {
         val jdbc = jdbc()
         actorRlsScope.open(jdbc, ownerUserId, "READ_MOCK_CREDENTIAL_ENVELOPE", "BROKER_CREDENTIAL", accountId)
         return jdbc.queryForObject(
@@ -196,28 +199,29 @@ class MockCredentialSettingsService(
         accountNo: String,
     ): String? {
         val envelope =
-            jdbc.query(
-                "SELECT * FROM p1_read_mock_credential_identity_envelope_v218(:owner)",
-                mapOf("owner" to ownerUserId),
-            ) { row, _ ->
-                BoundMockCredentialEnvelope(
-                    accountId = row.getString("account_id"),
-                    state = row.getString("credential_state"),
-                    revision = row.getLong("revision"),
-                    sealed =
-                        SealedBrokerageCredential(
-                            kekVersion = row.getString("kek_version"),
-                            wrapNonce = row.getBytes("wrap_nonce"),
-                            wrappedDek = row.getBytes("wrapped_dek"),
-                            wrapTag = row.getBytes("wrap_tag"),
-                            secretNonce = row.getBytes("secret_nonce"),
-                            secretCiphertext = row.getBytes("secret_ciphertext"),
-                            secretTag = row.getBytes("secret_tag"),
-                            appKeyLast4 = row.getString("app_key_last4"),
-                            accountNoLast4 = row.getString("account_no_last4"),
-                        ),
-                )
-            }.singleOrNull() ?: return null
+            jdbc
+                .query(
+                    "SELECT * FROM p1_read_mock_credential_identity_envelope_v218(:owner)",
+                    mapOf("owner" to ownerUserId),
+                ) { row, _ ->
+                    BoundMockCredentialEnvelope(
+                        accountId = row.getString("account_id"),
+                        state = row.getString("credential_state"),
+                        revision = row.getLong("revision"),
+                        sealed =
+                            SealedBrokerageCredential(
+                                kekVersion = row.getString("kek_version"),
+                                wrapNonce = row.getBytes("wrap_nonce"),
+                                wrappedDek = row.getBytes("wrapped_dek"),
+                                wrapTag = row.getBytes("wrap_tag"),
+                                secretNonce = row.getBytes("secret_nonce"),
+                                secretCiphertext = row.getBytes("secret_ciphertext"),
+                                secretTag = row.getBytes("secret_tag"),
+                                appKeyLast4 = row.getString("app_key_last4"),
+                                accountNoLast4 = row.getString("account_no_last4"),
+                            ),
+                    )
+                }.singleOrNull() ?: return null
         return envelope.use { current ->
             crypto.open(ownerUserId, current.accountId, current.sealed).use { opened ->
                 val requested = accountNo.toByteArray(StandardCharsets.US_ASCII)

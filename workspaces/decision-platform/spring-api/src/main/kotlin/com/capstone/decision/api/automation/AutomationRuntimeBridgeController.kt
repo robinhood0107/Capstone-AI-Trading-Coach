@@ -9,9 +9,9 @@ import com.capstone.decision.application.decision.DecisionActor
 import com.capstone.decision.application.decision.DecisionService
 import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
 import com.capstone.decision.infrastructure.security.UserSecurityRepository
-import io.swagger.v3.oas.annotations.Hidden
 import io.grpc.Status
 import io.grpc.StatusRuntimeException
+import io.swagger.v3.oas.annotations.Hidden
 import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
@@ -157,9 +157,12 @@ class AutomationRuntimeBridgeController(
     }
 
     private fun safeKisOrderFailureCode(error: Throwable): String? {
-        val providerStatus = generateSequence(error) { it.cause }
-            .filterIsInstance<StatusRuntimeException>()
-            .firstOrNull()?.status?.code ?: return null
+        val providerStatus =
+            generateSequence(error) { it.cause }
+                .filterIsInstance<StatusRuntimeException>()
+                .firstOrNull()
+                ?.status
+                ?.code ?: return null
         return when (providerStatus) {
             Status.Code.FAILED_PRECONDITION, Status.Code.PERMISSION_DENIED -> "KIS_ORDER_REJECTED"
             Status.Code.DEADLINE_EXCEEDED, Status.Code.UNAVAILABLE -> "KIS_ORDER_RESULT_UNCERTAIN"
@@ -176,7 +179,8 @@ class AutomationRuntimeBridgeController(
         return service.resolveEnvelope(ownerUserId, accountId).use { envelope ->
             val certified = envelope.state == "CERTIFIED"
             val connectedForFull =
-                connectedOwnerOrdersEnabled && envelope.state == "CONNECTED" &&
+                connectedOwnerOrdersEnabled &&
+                    envelope.state == "CONNECTED" &&
                     service.fullAutomationConnectionReady(ownerUserId, accountId)
             check(certified || connectedForFull) { "BROKERAGE_CREDENTIAL_NOT_READY" }
             val sealed = envelope.sealed

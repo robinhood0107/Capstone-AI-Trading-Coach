@@ -101,7 +101,8 @@ class GrpcBrokerageAdapter(
                     .setQuantity(request.orderIntent.quantity)
                     .setEstimatedPriceKrw(request.orderIntent.estimatedPrice)
             val credential = boundCredential(request.ownerUserId, request.accountId, orderCredentialStates())
-            if (credential?.credentialState == "CONNECTED" && connectedOwnerOrdersEnabled &&
+            if (credential?.credentialState == "CONNECTED" &&
+                connectedOwnerOrdersEnabled &&
                 credentialProvider.getIfAvailable()?.fullAutomationConnectionReady(request.ownerUserId, request.accountId) != true
             ) {
                 throw BrokerageUnavailableException("KIS_MOCK read-only connection proof is not current.")

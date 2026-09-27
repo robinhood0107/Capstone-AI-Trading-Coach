@@ -34,8 +34,9 @@ class MockCredentialConnectionService(
         }
         // 연결 확인은 KIS 잔고조회 한 번이다. 실패하면(앱 키 거부·계좌 불일치·KIS 장애) 여기서 예외가 나가고
         // 행은 CONNECTED 로 넘어가지 않는다.
-        val proof = gateway.verify(requestId, ownerUserId, current.accountId)
-            ?: throw ApiException(ErrorCode.BROKERAGE_UNAVAILABLE)
+        val proof =
+            gateway.verify(requestId, ownerUserId, current.accountId)
+                ?: throw ApiException(ErrorCode.BROKERAGE_UNAVAILABLE)
         // A successful connection proof must include the complete read-only balance. The same
         // observation is the account-bound baseline used by automation readiness and risk sizing.
         if (!proof.positionsComplete) throw ApiException(ErrorCode.BROKERAGE_UNAVAILABLE)

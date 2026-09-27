@@ -943,10 +943,12 @@ class JdbcAutomationRepository(
                 boundAccountId ?: control?.accountId
             }
         val ownerCredentialState =
-            jdbc.query(
-                "SELECT public.p1_read_owner_mock_credential_state_for_automation_v218(:ownerUserId)",
-                mapOf("ownerUserId" to ownerUserId),
-            ) { row, _ -> row.getString(1) }.singleOrNull()
+            jdbc
+                .query(
+                    "SELECT public.p1_read_owner_mock_credential_state_for_automation_v218(:ownerUserId)",
+                    mapOf("ownerUserId" to ownerUserId),
+                ) { row, _ -> row.getString(1) }
+                .singleOrNull()
         val certificationStatus =
             when (ownerCredentialState) {
                 "CONNECTED" -> "CONNECTED"
@@ -965,11 +967,12 @@ class JdbcAutomationRepository(
                 ) ?: false
             }
         val ownerConnectionReady =
-            accountId != null && jdbc.queryForObject(
-                "SELECT public.p1_full_owner_connection_readiness_v1(:ownerUserId,:accountId)",
-                mapOf("ownerUserId" to ownerUserId, "accountId" to accountId),
-                Boolean::class.java,
-            ) == true
+            accountId != null &&
+                jdbc.queryForObject(
+                    "SELECT public.p1_full_owner_connection_readiness_v1(:ownerUserId,:accountId)",
+                    mapOf("ownerUserId" to ownerUserId, "accountId" to accountId),
+                    Boolean::class.java,
+                ) == true
         val blockers =
             buildList {
                 if (accountId == null) add("ACCOUNT_NOT_CONFIGURED")
@@ -1044,22 +1047,26 @@ class JdbcAutomationRepository(
         val activeCount = (counts["active_count"] as Number).toInt()
         val legacyCount = (counts["legacy_count"] as Number).toInt()
         val ownerConnectionReady =
-            base.accountId != null && jdbc.queryForObject(
-                "SELECT public.p1_full_owner_connection_readiness_v1(:ownerUserId,:accountId)",
-                mapOf("ownerUserId" to ownerUserId, "accountId" to base.accountId),
-                Boolean::class.java,
-            ) == true
+            base.accountId != null &&
+                jdbc.queryForObject(
+                    "SELECT public.p1_full_owner_connection_readiness_v1(:ownerUserId,:accountId)",
+                    mapOf("ownerUserId" to ownerUserId, "accountId" to base.accountId),
+                    Boolean::class.java,
+                ) == true
         val orderPathVerified =
-            base.accountId != null && jdbc.queryForObject(
-                "SELECT public.p1_full_owner_order_path_verified_v1(:ownerUserId,:accountId)",
-                mapOf("ownerUserId" to ownerUserId, "accountId" to base.accountId),
-                Boolean::class.java,
-            ) == true
+            base.accountId != null &&
+                jdbc.queryForObject(
+                    "SELECT public.p1_full_owner_order_path_verified_v1(:ownerUserId,:accountId)",
+                    mapOf("ownerUserId" to ownerUserId, "accountId" to base.accountId),
+                    Boolean::class.java,
+                ) == true
         val orderFailureCode =
-            jdbc.query(
-                "SELECT public.p1_full_owner_order_failure_code_v217(:ownerUserId)",
-                mapOf("ownerUserId" to ownerUserId),
-            ) { row, _ -> row.getString(1) }.singleOrNull()
+            jdbc
+                .query(
+                    "SELECT public.p1_full_owner_order_failure_code_v217(:ownerUserId)",
+                    mapOf("ownerUserId" to ownerUserId),
+                ) { row, _ -> row.getString(1) }
+                .singleOrNull()
         val accountHistory =
             if (base.accountId == null) {
                 mapOf(

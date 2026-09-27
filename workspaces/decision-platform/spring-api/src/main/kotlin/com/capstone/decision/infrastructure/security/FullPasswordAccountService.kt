@@ -84,6 +84,32 @@ class FullPasswordAccountService(
         }
     }
 
+    /**
+     * 이메일 비밀번호 계정만 바꾼다. 현재 비밀번호가 틀리면 null 을 돌려준다.
+     * demo 계정은 운영자 서명 번들로만 회전하므로 [PasswordLoginNotConfiguredException]으로 거부한다.
+     */
+    fun changePassword(
+        userId: String,
+        currentPassword: String,
+        newPassword: String,
+    ): AuthenticatedAccount? {
+        if (userId in DEMO_USER_IDS) throw PasswordLoginNotConfiguredException()
+        validateNewPassword(newPassword)
+        require(currentPassword != newPassword) { "New password must differ from the current password." }
+        if (!passwordWithinLoginBoundary(currentPassword)) return null
+        val hash = passwordEncoder.encode(newPassword) ?: error("Password encoding failed.")
+        return try {
+            accounts.changePassword(userId, currentPassword, hash, sessionTtlSeconds)
+        } catch (error: org.springframework.dao.DataAccessException) {
+            val missing =
+                generateSequence<Throwable>(error) { it.cause }
+                    .filterIsInstance<java.sql.SQLException>()
+                    .any { it.sqlState == "P0002" }
+            if (missing) throw PasswordLoginNotConfiguredException()
+            throw error
+        }
+    }
+
     private fun normalizeEmail(value: String): String? {
         val normalized = value.trim().lowercase(Locale.ROOT)
         return normalized.takeIf { normalized.length <= MAX_EMAIL_LENGTH && EMAIL.matches(normalized) }
@@ -117,6 +143,7 @@ class FullPasswordAccountService(
 
     private companion object {
         const val LEGACY_DEMO_USERNAME = "demo-user"
+        val DEMO_USER_IDS = setOf("usr_demo_user", "usr_demo_admin")
         const val MAX_EMAIL_LENGTH = 254
         const val MIN_PASSWORD_CHARACTERS = 15
         const val MAX_PASSWORD_CHARACTERS = 64
@@ -128,6 +155,8 @@ class FullPasswordAccountService(
 class PasswordAccountAlreadyExistsException : RuntimeException()
 
 class SignupCapacityReachedException : RuntimeException()
+
+class PasswordLoginNotConfiguredException : RuntimeException()
 
 /** V214 가입 상한 트리거는 SQLSTATE 53400으로 새 계정 하나만 거부한다. */
 object SignupCapacity {

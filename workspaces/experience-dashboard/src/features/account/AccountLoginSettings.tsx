@@ -21,6 +21,9 @@ export function AccountLoginSettings() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [available, setAvailable] = useState<string[]>([]);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   async function refreshMethods() {
     const { data } = await apiFetch<AuthMethod[]>('/api/v1/auth/identities');
@@ -44,6 +47,8 @@ export function AccountLoginSettings() {
 
   const linkedProviders = methods.filter((method) => method.provider === 'google' || method.provider === 'kakao');
   const hasPassword = methods.some((method) => method.provider === 'password' || method.provider === 'demo-password');
+  const hasEmailPassword = methods.some((method) => method.provider === 'password');
+  const isDemoAccount = methods.some((method) => method.provider === 'demo-password');
 
   async function startLink(provider: Provider) {
     setPending(provider);
@@ -98,6 +103,48 @@ export function AccountLoginSettings() {
     } catch (cause) {
       const state = toErrorState<never>(cause);
       setError(state.kind === 'error' ? state.message : '비밀번호 로그인을 추가하지 못했습니다.');
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function changePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending) return;
+    setError(null);
+    setNotice(null);
+    if (newPassword !== confirmPassword) {
+      setError('새 비밀번호와 확인 값이 다릅니다.');
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setError('새 비밀번호는 현재 비밀번호와 달라야 합니다.');
+      return;
+    }
+    setPending('password-change');
+    try {
+      const { data } = await apiFetch<LoginResponse>('/api/v1/auth/password', {
+        method: 'POST',
+        body: { currentPassword, newPassword },
+      });
+      // 서버가 이전 세션을 모두 닫았으므로 새 세션으로 바로 갈아 끼운다.
+      session.set(data.accessToken, data.expiresAt, data.user);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setNotice('비밀번호를 바꿨습니다. 다른 기기의 로그인은 모두 해제됐습니다.');
+    } catch (cause) {
+      const state = toErrorState<never>(cause);
+      const code = state.kind === 'error' ? state.code : undefined;
+      setError(
+        code === 'VALIDATION_ERROR'
+          ? '현재 비밀번호가 맞지 않거나 새 비밀번호가 규칙(15~64자)에 맞지 않습니다.'
+          : code === 'RATE_LIMITED'
+            ? '시도가 너무 많습니다. 잠시 뒤 다시 시도하세요.'
+            : state.kind === 'error'
+              ? state.message
+              : '비밀번호를 바꾸지 못했습니다.',
+      );
     } finally {
       setPending(null);
     }
@@ -182,6 +229,60 @@ export function AccountLoginSettings() {
             {pending === 'password' ? '저장 중' : '비밀번호 로그인 추가'}
           </button>
         </form>
+      ) : null}
+
+      {hasEmailPassword ? (
+        <form onSubmit={(event) => void changePassword(event)} className="mt-5 border-t border-line pt-5">
+          <h3 className="text-[14px] font-semibold text-ink">비밀번호 변경</h3>
+          <p className="mt-1 text-[12px] leading-5 text-muted">현재 비밀번호를 확인한 뒤 바꿉니다. 바꾸면 다른 기기의 로그인은 모두 해제됩니다.</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <label className="text-[12px] font-medium text-muted">
+              현재 비밀번호
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                required
+                maxLength={1024}
+                className="mt-1.5 w-full rounded-control border border-line bg-subtle px-3 py-2.5 text-[14px] text-ink"
+              />
+            </label>
+            <label className="text-[12px] font-medium text-muted">
+              새 비밀번호 (15~64자)
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                required
+                minLength={15}
+                maxLength={64}
+                className="mt-1.5 w-full rounded-control border border-line bg-subtle px-3 py-2.5 text-[14px] text-ink"
+              />
+            </label>
+            <label className="text-[12px] font-medium text-muted">
+              새 비밀번호 확인
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                required
+                minLength={15}
+                maxLength={64}
+                className="mt-1.5 w-full rounded-control border border-line bg-subtle px-3 py-2.5 text-[14px] text-ink"
+              />
+            </label>
+          </div>
+          <button type="submit" disabled={pending !== null} className="tap mt-3 rounded-control border border-line px-4 py-2.5 text-[13px] font-medium text-ink disabled:opacity-50">
+            {pending === 'password-change' ? '바꾸는 중' : '비밀번호 변경'}
+          </button>
+        </form>
+      ) : isDemoAccount ? (
+        <p className="mt-5 border-t border-line pt-5 text-[12px] leading-5 text-muted">
+          이 기본 계정의 비밀번호는 서버 운영자가 서명된 자격증명으로만 바꿉니다. 화면에서는 바꿀 수 없습니다.
+        </p>
       ) : null}
 
       {error ? <p role="alert" className="mt-4 rounded-tile bg-block/[0.06] px-4 py-2.5 text-[13px] leading-6 text-block">{error}</p> : null}

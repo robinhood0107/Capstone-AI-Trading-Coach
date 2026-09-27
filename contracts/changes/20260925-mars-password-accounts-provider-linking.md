@@ -26,10 +26,14 @@ The private stack started by `./capstone up` uses the same signup, account setti
 7. Provider identity rows are unique by issuer+subject and by user+issuer. Email is not stored from OAuth and is not an account merge key.
 8. The browser keeps JWTs in memory. OAuth callbacks exchange one-use server-side session state and never place the Bearer token in a URL.
 
-Email verification, password change/reset mail, and provider identity transfer between two already-created accounts are not included. The operator must have the existing `demo-user` password before linking a provider to its data.
+Email verification, password reset mail, and provider identity transfer between two already-created accounts are not included. The operator must have the existing `demo-user` password before linking a provider to its data.
+
+### Amendment 2026-09-28: authenticated password change (V221)
+
+`POST /api/v1/auth/password` changes an email password account's password after `decision_auth` verifies `currentPassword` inside `change_password_login_actor_v1`. The new password follows rule 1. A wrong current password returns 400, not 401, so the browser does not treat it as an expired session; attempts share the login limiter. Success revokes every earlier `actor_auth_session` row of that user, writes `PASSWORD_LOGIN_CHANGED` without the password, and returns a new `LoginResponse`. `demo-user`/`demo-admin` keep the operator-signed credential bundle and receive 409; the function never updates `users.password_hash`.
 
 ## Affected contracts
 
 - FULL auth OpenAPI: `contracts/openapi/mars-full-auth.v1.openapi.json`
-- Forward migration: `V212__password_accounts_and_provider_linking.sql`
+- Forward migrations: `V212__password_accounts_and_provider_linking.sql`, `V221__password_login_change.sql`
 - API and user flow: `docs/API_명세서.md`

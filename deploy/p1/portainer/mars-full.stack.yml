@@ -1,0 +1,395 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MARS FULL · Portainer / 단일 compose 스택 템플릿 (v1.0.2 release compose 기반)
+#
+# Portainer > Stacks > Environment variables 에서 바꾸는 값
+#   필수  MARS_FULL_TAG          이미지 버전. 업그레이드는 이 값만 바꾼다    예) v1.0.2
+#   필수  MARS_PUBLIC_ORIGIN     브라우저 주소와 글자까지 같아야 로그인된다  예) https://mars.example.com
+#   필수  MARS_SECRETS_ROOT      full-secrets/ 와 full-kek/ 가 든 폴더       예) /volume1/docker/mars-full
+#   필수  MARS_FULL_SECRET_GID   호스트에서 `id -g` 결과                     예) 100
+#   필수  MARS_VERTEX_PROJECT_ID               Vertex 프로젝트 ID
+#   필수  MARS_VERTEX_SERVICE_ACCOUNT_SHA256   서비스 계정 JSON 의 sha256 (sha256sum key.json)
+#   선택  MARS_PORT              NAS 에서 열 웹 포트 (기본 3002). 역방향 프록시 대상 포트와 같게
+#
+# 비밀값은 이 파일에 없다. 모든 비밀은 MARS_SECRETS_ROOT 아래 파일로만 읽는다.
+# DB 는 미리 복원한 외부 볼륨 mars-full_postgres-data 를 쓴다. 스택을 지워도 DB 는 남는다.
+# 자동매매(P1_AUTOMATION_RUNTIME_ENABLED)는 켜져 있다.
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-app-security: &app-security
+  platform: linux/amd64
+  user: "65532:65532"
+  group_add: ["${MARS_FULL_SECRET_GID:?id -g on the host}"]
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 256
+  tmpfs: ["/tmp:size=128m,mode=1777"]
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-postgres
+    platform: linux/amd64
+    user: "70:70"
+    group_add: ["${MARS_FULL_SECRET_GID}"]
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "postgres", "docker-entrypoint.sh"]
+    command: ["postgres", "-c", "listen_addresses=*", "-c", "log_statement=none"]
+    environment:
+      POSTGRES_DB: capstone_p1
+      POSTGRES_USER: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    secrets: [postgres_env]
+    volumes: [full-postgres:/var/lib/postgresql/data]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    shm_size: 128m
+    tmpfs:
+      - /tmp:size=64m,mode=1777,uid=70,gid=70
+      - /var/run/postgresql:size=16m,mode=0770,uid=70,gid=70
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d capstone_p1"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    networks: [full-data]
+
+  redis:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-redis
+    platform: linux/amd64
+    user: "999:1000"
+    group_add: ["${MARS_FULL_SECRET_GID}"]
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "redis"]
+    secrets: [redis_env]
+    volumes: [full-redis:/data]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    tmpfs: ["/tmp:size=16m,mode=1777,uid=999,gid=999"]
+    healthcheck:
+      test: ["CMD-SHELL", ". /run/secrets/redis_env && [ \"$$(REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli --no-auth-warning ping)\" = PONG ]"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    networks: [full-data]
+
+  role-bootstrap:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "role-bootstrap"]
+    command: ["java", "-Dloader.main=com.capstone.decision.infrastructure.security.P1DatabaseRoleBootstrap", "-cp", "/app/app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: capstone_p1
+    secrets: [role_bootstrap_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    <<: *app-security
+    restart: "no"
+    networks: [full-data]
+
+  migrate:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "migration"]
+    command: ["java", "-Dloader.main=com.capstone.decision.infrastructure.security.P1FlywayMigrate", "-cp", "/app/app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: capstone_p1
+      MARS_PUBLIC_SURFACE_MODE: FULL
+    secrets: [migration_env]
+    depends_on:
+      role-bootstrap: {condition: service_completed_successfully}
+    <<: *app-security
+    restart: "no"
+    networks: [full-data]
+
+  rag-runtime-seed:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-rag-runtime-seed"]
+    command: ["/usr/local/bin/p1-rag-runtime-seed"]
+    # The empty named volume is root-owned. This one-shot initializer needs
+    # CHOWN to transfer the seeded files to the unprivileged API UID.
+    user: "0:0"
+    cap_add: [CHOWN]
+    environment:
+      P1_RAG_RUNTIME_DIR_MOUNT: /run/rag-runtime
+      MARS_VERTEX_PROJECT_ID: "${MARS_VERTEX_PROJECT_ID:?Vertex project id}"
+      MARS_VERTEX_MODEL_ID: "gemini-3.5-flash"
+      MARS_VERTEX_SERVICE_ACCOUNT_SHA256: "${MARS_VERTEX_SERVICE_ACCOUNT_SHA256:?sha256 of the Vertex service account JSON}"
+      VERTEX_MODEL_ID: "gemini-3.5-flash"
+      RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED: "true"
+    volumes: [full-rag-runtime:/run/rag-runtime]
+    <<: *app-security
+    restart: "no"
+    networks: [full-data]
+
+  seed-import:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "seed-import"]
+    command: ["python", "-m", "app.release.public_rag_seed_cli", "import", "--manifest", "/opt/capstone/seed/public-rag/public-rag-seed.v1.manifest.json"]
+    secrets: [seed_import_env]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    <<: *app-security
+    restart: "no"
+    networks: [full-data]
+
+  # Return Engine 번들 포인터를 DB 에 적재한다. 이것이 없으면 추론·백테스트·리포트가 모두
+  # 모델 포인터 부재로 닫힌다. 번들은 이미지의 /opt/capstone/seed(65532 소유)에 있고,
+  # 불변 보관본은 매 up 마다 다시 만들어도 되는 사본이라 tmpfs 에 둔다.
+  team-b-seed-import:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "artifact-import"]
+    command: ["python", "-m", "app.p1_owner.importer", "--bundle-root", "/opt/capstone/seed/team-b", "--archive-parent", "/archive", "--git-seed"]
+    environment:
+      P1_OPERATOR_UID: "65532"
+    secrets: [artifact_import_env]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    <<: *app-security
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /archive:size=64m,mode=0700,uid=65532,gid=65532
+    restart: "no"
+    networks: [full-data]
+
+  # XKRX 패키지 달력으로 거래 세션을 적재한다. provider 호출 0. 무장이 다음 세션 행을 요구한다.
+  # 개인 스택처럼 실패해도 up 을 멈추지 않고 표식만 남긴다.
+  calendar-offline-seed:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "calendar-offline-seed"]
+    command: ["sh", "-c", "python -m app.data.calendar.offline_seed_cli || true"]
+    environment:
+      P1_CALENDAR_OFFLINE_SEED_YEARS: "${P1_CALENDAR_OFFLINE_SEED_YEARS:-}"
+    secrets: [calendar_offline_seed_env]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    <<: *app-security
+    restart: "no"
+    networks: [full-data]
+
+  # "이 시스템이 참고하는 자료" 패널의 출처 registry. 커밋된 seed 만 등록하고 멱등이다.
+  rag-source-register:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "rag-source-register"]
+    command: ["sh", "-c", "python -m app.rag.register_sources_cli --register-db --json || true"]
+    secrets: [rag_source_register_env]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    <<: *app-security
+    restart: "no"
+    networks: [full-data]
+
+  actor-authority:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "authority"]
+    command: ["java", "-Dloader.main=com.capstone.decision.infrastructure.security.ActorCapabilityAuthorityMain", "-cp", "/app/app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
+    environment:
+      ACTOR_CAPABILITY_AUTHORITY_HOST: 0.0.0.0
+      ACTOR_CAPABILITY_AUTHORITY_PORT: "18081"
+      ACTOR_IDENTITY_JDBC_URL: jdbc:postgresql://postgres:5432/capstone_p1
+      ACTOR_CAPABILITY_TLS_KEY_STORE_PATH: /run/secrets/actor_server_p12
+      ACTOR_CAPABILITY_TLS_CA_CERTIFICATE_PATH: /run/secrets/actor_tls_ca
+    secrets: [actor_capability_authority_env, actor_server_p12, actor_tls_ca]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    <<: *app-security
+    healthcheck:
+      test: ["CMD", "java", "-Dloader.main=com.capstone.decision.infrastructure.security.P1TcpHealthCheck", "-cp", "/app/app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [full-data]
+
+  market-data-daily:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "market-data-daily"]
+    command: ["sh", "-c", "while :; do python -m app.data.market_data.yfinance_daily_cli || true; sleep 3600; done"]
+    environment:
+      DECISION_SOURCE_WRITER_OFFLINE_TARGET: local
+    secrets: [market_data_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    mem_limit: 2g
+    <<: *app-security
+    networks: [full-data, full-web]
+
+  world-news-minute:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "world-news"]
+    command: ["python", "-m", "app.data.news.gdelt_collector_cli", "--loop", "--interval-seconds", "900", "--lookback-hours", "24", "--max-files", "40", "--physical-cap", "40"]
+    environment:
+      GDELT_WORLD_NEWS_ENABLED: "true"
+      DECISION_SOURCE_WRITER_OFFLINE_TARGET: local
+    secrets: [market_data_env]
+    depends_on:
+      postgres: {condition: service_healthy}
+    mem_limit: 2g
+    <<: *app-security
+    networks: [full-data, full-web]
+
+  # 뉴스 거부권의 근거 코퍼스. 개인 스택처럼 up 마다 한 번 돈다. 비어 있으면 거부권이
+  # 조용히 ABSTAIN 하므로 프로필 뒤에 숨기지 않는다. 실패해도 up 을 멈추지 않는다.
+  disclosure-collector:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "disclosure-collector"]
+    command: ["sh", "-c", "python -m app.data.opendart.disclosure_event_collector_cli || true"]
+    environment:
+      OPENDART_OFFLINE: "false"
+      OPENDART_DAILY_CALL_LIMIT: "${OPENDART_DAILY_CALL_LIMIT:-20000}"
+      OPENDART_DAILY_CALL_BUDGET: "${OPENDART_DAILY_CALL_BUDGET:-2000}"
+      OPENDART_MAX_CALLS_PER_RUN: "${OPENDART_MAX_CALLS_PER_RUN:-600}"
+      OPENDART_MAX_SYMBOLS_PER_RUN: "${OPENDART_MAX_SYMBOLS_PER_RUN:-31}"
+    secrets: [disclosure_collector_env]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    mem_limit: 2g
+    <<: *app-security
+    restart: "no"
+    networks: [full-data, full-web]
+
+  api:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "public-full"]
+    command: ["python", "/app/decision-platform-supervisor.py"]
+    environment:
+      MARS_PUBLIC_SURFACE_MODE: FULL
+      SPRING_PROFILES_ACTIVE: mars-full
+      SPRING_FLYWAY_ENABLED: "false"
+      # 스키마는 migrate(Flyway)가 맞춘다. 기동 시 Hibernate 전체 스키마 검사는 느린 NAS 디스크에서
+      # decision_app 의 statement_timeout(2s)을 넘겨 API 를 죽인다(SQLState 57014).
+      SPRING_JPA_HIBERNATE_DDL_AUTO: none
+      MARS_PUBLIC_ORIGIN: "${MARS_PUBLIC_ORIGIN:?browser origin, e.g. https://mars.example.com}"
+      GOOGLE_OIDC_REDIRECT_URI: "${MARS_PUBLIC_ORIGIN}/api/v1/auth/oidc/callback/google"
+      KAKAO_OAUTH_REDIRECT_URI: "${MARS_PUBLIC_ORIGIN}/api/v1/auth/oidc/callback/kakao"
+      MARS_BROKERAGE_KEK_DIRECTORY: /run/brokerage-kek
+      SERVER_ADDRESS: 0.0.0.0
+      SERVER_PORT: "8080"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: capstone_p1
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      ACTOR_CAPABILITY_TRANSPORT: http
+      ACTOR_CAPABILITY_AUTHORITY_URL: https://actor-authority:18081/internal/actor-capabilities/issue
+      ACTOR_CAPABILITY_TLS_KEY_STORE_PATH: /run/secrets/actor_client_p12
+      ACTOR_CAPABILITY_TLS_CA_CERTIFICATE_PATH: /run/secrets/actor_tls_ca
+      ASYNC_ADAPTER: db
+      ASYNC_POLLING_ENABLED: "true"
+      ASYNC_WORKER_ENABLED: "true"
+      ASYNC_WORKER_GRPC_BIND_ADDRESS: 127.0.0.1:50056
+      ASYNC_WORKER_GRPC_TARGET: 127.0.0.1:50056
+      RETURN_INFERENCE_BUNDLE_ROOT: /opt/capstone/seed/team-b
+      RETURN_INFERENCE_ALLOW_SYNTHETIC: "false"
+      BROKERAGE_GRPC_ENABLED: "true"
+      BROKERAGE_GRPC_TARGET: 127.0.0.1:50052
+      PYTHON_BROKERAGE_GRPC_BIND_ADDRESS: 127.0.0.1:50052
+      KIS_MOCK_BROKERAGE_ONLINE_ENABLED: "true"
+      P1_AUTOMATION_RUNTIME_ENABLED: "true"
+      RAG_V2_GRPC_ENABLED: "true"
+      RAG_V2_GRPC_TARGET: 127.0.0.1:50054
+      RAG_V2_GRPC_BIND_ADDRESS: 127.0.0.1:50054
+      RAG_V2_GRPC_ENABLE_REFLECTION: "false"
+      S4_9_RUNTIME_VOYAGE_QUERY_ENABLED: "true"
+      P1_RAG_RUNTIME_DIR_MOUNT: /run/rag-runtime
+      CAPSTONE_RAG_LOCAL_ROOT: /run/rag-runtime
+      RAG_V2_VERTEX_ENABLED: "true"
+      RAG_V2_VERTEX_AUTO_ACTIVATION_ENABLED: "true"
+      S4_9_VOYAGE_TOKENIZER_SHA256: "${P1_RAG_V2_TOKENIZER_SHA256:-c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539}"
+      KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP: "1"
+      KIS_BROKERAGE_PHYSICAL_CAP: "20"
+      WORLD_NEWS_RETENTION_ENABLED: "true"
+      S4_9_STRONG_LLM_ENABLED: "true"
+      STRONG_LLM_PROVIDER: vertex
+      STRONG_LLM_FALLBACK_PROVIDER: ""
+      STRONG_LLM_GRPC_BIND_ADDRESS: 127.0.0.1:50055
+      STRONG_LLM_GRPC_TARGET: 127.0.0.1:50055
+      VERTEX_MODEL_ID: "gemini-3.5-flash"
+      P1_VERTEX_PROJECT_ID: "${MARS_VERTEX_PROJECT_ID:?Vertex project id}"
+      RAG_LLM_MAX_OUTPUT_TOKENS: "4096"
+      P1_VERTEX_INPUT_MICROUSD_PER_TOKEN: "3"
+      P1_VERTEX_OUTPUT_MICROUSD_PER_TOKEN: "17"
+      RAG_WEB_ENABLED: "false"
+      S4_9_MCP_ENABLED: "false"
+      KIS_MODE: mock
+      KIS_OFFLINE: "0"
+      PROVIDER_LIVE_CALLS_ENABLED: "false"
+    secrets: [mars_public_full_env, rag_history_kek, actor_client_p12, actor_tls_ca]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      seed-import: {condition: service_completed_successfully}
+      team-b-seed-import: {condition: service_completed_successfully}
+      calendar-offline-seed: {condition: service_completed_successfully}
+      rag-source-register: {condition: service_completed_successfully}
+      rag-runtime-seed: {condition: service_completed_successfully}
+      actor-authority: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    volumes:
+      - full-rag-runtime:/run/rag-runtime
+      - "${MARS_SECRETS_ROOT}/full-kek:/run/brokerage-kek:ro"
+    <<: *app-security
+    healthcheck:
+      test: ["CMD", "python", "/app/decision-platform-health.py"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    networks: [full-data, full-web]
+
+  web:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-web
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_MODE: live
+      NEXT_PUBLIC_MARS_PRODUCT: full
+      DECISION_PLATFORM_INTERNAL_URL: http://api:8080
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    ports: ["${MARS_PORT:-3002}:3000"]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r => {if (!r.ok) process.exit(1)}).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks: [full-web]
+
+secrets:
+  postgres_env: {file: "${MARS_SECRETS_ROOT:?folder holding full-secrets/ and full-kek/}/full-secrets/postgres.env"}
+  redis_env: {file: "${MARS_SECRETS_ROOT}/full-secrets/redis.env"}
+  role_bootstrap_env: {file: "${MARS_SECRETS_ROOT}/full-secrets/role-bootstrap.env"}
+  migration_env: {file: "${MARS_SECRETS_ROOT}/full-secrets/migration.env"}
+  seed_import_env: {file: "${MARS_SECRETS_ROOT}/full-secrets/seed-import.env"}
+  actor_capability_authority_env: {file: "${MARS_SECRETS_ROOT}/full-secrets/actor-capability-authority.env"}
+  actor_server_p12: {file: "${MARS_SECRETS_ROOT}/full-secrets/actor-server.p12"}
+  actor_client_p12: {file: "${MARS_SECRETS_ROOT}/full-secrets/actor-client.p12"}
+  actor_tls_ca: {file: "${MARS_SECRETS_ROOT}/full-secrets/actor-tls-ca.crt"}
+  mars_public_full_env: {file: "${MARS_SECRETS_ROOT}/full-secrets/mars-public-full.env"}
+  rag_history_kek: {file: "${MARS_SECRETS_ROOT}/full-secrets/rag-history-kek-v1.key"}
+  market_data_env: {file: "${MARS_SECRETS_ROOT}/full-secrets/market-data.env"}
+  disclosure_collector_env: {file: "${MARS_SECRETS_ROOT}/full-secrets/disclosure-collector.env"}
+  artifact_import_env: {file: "${MARS_SECRETS_ROOT}/full-secrets/artifact-import.env"}
+  calendar_offline_seed_env: {file: "${MARS_SECRETS_ROOT}/full-secrets/calendar-offline-seed.env"}
+  rag_source_register_env: {file: "${MARS_SECRETS_ROOT}/full-secrets/rag-source-register.env"}
+
+volumes:
+  full-postgres:
+    external: true
+    name: mars-full_postgres-data
+  full-redis: {}
+  full-rag-runtime: {}
+
+networks:
+  full-data: {internal: true}
+  full-web: {}

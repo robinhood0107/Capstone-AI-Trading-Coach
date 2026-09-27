@@ -304,7 +304,7 @@ cd workspaces/decision-platform/spring-api && ./gradlew bootRun
 
 #### 공개 체험판 이미지 (선택)
 
-로그인 없는 금융 Agent 체험판 DEMO와 계좌 기능 FULL은 [Docker Hub](https://hub.docker.com/r/pjjpjj111/mars-full)와 [GitHub Release](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/latest)의 digest 고정 Compose로도 실행할 수 있습니다. 이미지에는 코드만 들어 있고 사용자 데이터는 포함되지 않습니다.
+로그인 없는 금융 Agent 체험판 DEMO와 계좌 기능 FULL은 [Docker Hub](https://hub.docker.com/r/pjjpjj111/mars-full)와 [GitHub Release](https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/latest)의 digest 고정 Compose로도 실행할 수 있습니다. 이미지에는 코드만 들어 있고 사용자 데이터는 포함되지 않습니다. NAS에서 Portainer 스택 하나로 운영하는 방법과 기존 배포를 옮기는 절차는 [deploy/p1/portainer/README.md](deploy/p1/portainer/README.md)에 있습니다.
 
 ### 5.2. 오류 발생 시 해결 방법
 

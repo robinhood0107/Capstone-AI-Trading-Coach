@@ -13,6 +13,10 @@ enum class ErrorCode(
     FORBIDDEN(HttpStatus.FORBIDDEN, "Access is denied."),
     NOT_FOUND(HttpStatus.NOT_FOUND, "Resource was not found."),
     CONFLICT(HttpStatus.CONFLICT, "Resource conflict."),
+    ORDER_RECONCILIATION_NOT_APPLICABLE(
+        HttpStatus.CONFLICT,
+        "This locally retired order has no verified KIS result to reconcile.",
+    ),
     VERSION_EXHAUSTED(HttpStatus.CONFLICT, "Principle version limit was reached."),
     DECISION_EXPIRED(HttpStatus.CONFLICT, "Decision validity window has expired."),
     IDEMPOTENCY_CONFLICT(HttpStatus.CONFLICT, "Idempotency key was reused with a different payload."),

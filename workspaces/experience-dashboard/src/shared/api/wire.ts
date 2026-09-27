@@ -369,6 +369,7 @@ export type OrderStatus =
   | 'FILLED'
   | 'CANCEL_REQUESTED'
   | 'CANCELLED'
+  | 'LOCAL_RETIRED'
   | 'REJECTED'
   | 'PENDING_RECONCILIATION';
 

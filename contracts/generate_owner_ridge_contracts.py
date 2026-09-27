@@ -211,6 +211,11 @@ def build():
 
 def project_previous(document):
     """허용한 surface만 복원해 historical verifier가 이전 계약을 계속 검증한다."""
+    from contracts.verify_s3_2_local_order_retirement_openapi_transition import (
+        project_pre_s3_2_local_order_retirement,
+    )
+
+    document = project_pre_s3_2_local_order_retirement(document)
     if "/api/v2/rag/world-news" in document.get("paths", {}):
         from contracts.generate_world_news_v2_contracts import project_previous as project_world_news
 

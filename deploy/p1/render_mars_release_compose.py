@@ -13,7 +13,9 @@ ROOT = Path(__file__).resolve().parents[2]
 PRODUCTS = ("demo", "full")
 PARTS = ("api", "web", "postgres", "redis")
 SHA = re.compile(r"^[0-9a-f]{40}$")
-SEMVER_TAG = re.compile(r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-[0-9a-f]{12}$")
+SEMVER_TAG = re.compile(
+    r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9a-f]{12}))?$"
+)
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 IMAGE_LINE = re.compile(r"^(?P<prefix>\s*image:\s*)(?P<image>.+?)(?P<suffix>\s*(?:#.*)?)$", re.MULTILINE)
 
@@ -25,7 +27,8 @@ def render_compose(product: str, source: str, manifest: dict[str, Any]) -> str:
     tag = manifest.get("tag")
     if not isinstance(source_sha, str) or SHA.fullmatch(source_sha) is None:
         raise ValueError("sourceSha")
-    if not isinstance(tag, str) or SEMVER_TAG.fullmatch(tag) is None or not tag.endswith(source_sha[:12]):
+    tag_match = SEMVER_TAG.fullmatch(tag) if isinstance(tag, str) else None
+    if tag_match is None or (tag_match.group(4) is not None and tag_match.group(4) != source_sha[:12]):
         raise ValueError("tag")
     images = manifest.get("images")
     if not isinstance(images, dict):

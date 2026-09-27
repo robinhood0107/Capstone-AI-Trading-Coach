@@ -10066,6 +10066,7 @@
                     "CANCELLED",
                     "CANCEL_REQUESTED",
                     "FILLED",
+                    "LOCAL_RETIRED",
                     "PARTIALLY_FILLED",
                     "PENDING_RECONCILIATION",
                     "REJECTED",
@@ -10136,6 +10137,7 @@
               "CANCELLED",
               "CANCEL_REQUESTED",
               "FILLED",
+              "LOCAL_RETIRED",
               "PARTIALLY_FILLED",
               "PENDING_RECONCILIATION",
               "REJECTED",
@@ -15127,6 +15129,16 @@
             },
             "description": "Order was not found."
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderFillReconciliationProjection"
+                }
+              }
+            },
+            "description": "Order state conflicts or the order has no KIS reconciliation evidence."
+          },
           "503": {
             "content": {
               "application/json": {
@@ -18614,7 +18626,7 @@
   "x-s2-3-contract-id": "s2-3-decision-contract/v1",
   "x-s2-3-contract-sha256": "d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18",
   "x-s3-2-contract-id": "s3-2-internal-paper-contract/v1",
-  "x-s3-2-contract-sha256": "d2eea9d27ea066884fa0986c89b3e4932c9293484569dbe45a99005b606f94fe",
+  "x-s3-2-contract-sha256": "f41c1497c599855322cd136a62793bccd6a549f1b372533bdc341ca18f76c1cf",
   "x-s3-3-contract-id": "s3-3-fill-contract/v1",
   "x-s3-3-contract-sha256": "937508069d35ee087e7c8cdd171f52f876396097f27b14f82528a839efae9da7"
 }

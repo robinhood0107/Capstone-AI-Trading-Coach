@@ -67,6 +67,7 @@ class BrokerageFillController(
             OasApiResponse(responseCode = "401", description = "Authentication is required."),
             OasApiResponse(responseCode = "403", description = "ADMIN role is required."),
             OasApiResponse(responseCode = "404", description = "Order was not found."),
+            OasApiResponse(responseCode = "409", description = "Order state conflicts or the order has no KIS reconciliation evidence."),
             OasApiResponse(responseCode = "503", description = "Stored reconciliation source is unavailable."),
         ],
     )

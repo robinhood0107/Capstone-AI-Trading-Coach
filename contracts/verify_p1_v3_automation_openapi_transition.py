@@ -118,6 +118,11 @@ def merge_v3_openapi(
 def project_pre_v3_openapi(
     current: Mapping[str, Any], additive: Mapping[str, Any]
 ) -> dict[str, Any]:
+    from contracts.verify_s3_2_local_order_retirement_openapi_transition import (
+        project_pre_s3_2_local_order_retirement,
+    )
+
+    current = project_pre_s3_2_local_order_retirement(current)
     current_ops = operations(current)
     additive_ops = operations(additive)
     if len(current_ops) != 75 or len(additive_ops) != 6:

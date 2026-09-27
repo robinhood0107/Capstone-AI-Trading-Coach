@@ -668,6 +668,11 @@ def build_overlay() -> dict[str, object]:
 
 
 def project_previous(document: dict[str, object]) -> dict[str, object]:
+    from contracts.verify_s3_2_local_order_retirement_openapi_transition import (
+        project_pre_s3_2_local_order_retirement,
+    )
+
+    document = project_pre_s3_2_local_order_retirement(document)
     overlay = build_overlay()
     current_paths = document.get("paths", {})
     current_schemas = document.get("components", {}).get("schemas", {})  # type: ignore[union-attr]

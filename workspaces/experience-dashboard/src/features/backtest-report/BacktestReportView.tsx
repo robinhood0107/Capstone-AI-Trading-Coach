@@ -17,7 +17,7 @@ import { useResource } from '@/shared/lib/useResource';
 import { useLatestRun } from '@/shared/api/latestRun';
 import { LatestRunFallback } from '@/shared/ui/LatestRunFallback';
 import { formatDecimal, formatRatio, formatSignedRatio } from '@/shared/lib/format';
-import { loadBacktestReportView, type DerivedCard, type StrategyRow } from './viewModel';
+import { derivedCardFormatter, loadBacktestReportView, type DerivedCard, type StrategyRow } from './viewModel';
 import type { GlossaryKey } from '@/shared/lib/glossary';
 import { Term } from '@/shared/ui/Term';
 
@@ -252,8 +252,7 @@ function DerivedPanel({ cards }: { cards: DerivedCard[] }) {
 }
 
 function MetricTile({ card }: { card: DerivedCard }) {
-  const format =
-    card.format === 'SIGNED_RATIO' ? (v: number) => formatSignedRatio(v, 1) : (v: number) => formatRatio(v, 1);
+  const format = derivedCardFormatter(card.format);
   return (
     <div className="bg-panel px-4 py-4">
       <p className="text-eyebrow font-semibold uppercase text-faint">{card.label}</p>

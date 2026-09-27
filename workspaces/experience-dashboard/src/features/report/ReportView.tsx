@@ -11,7 +11,7 @@ import type { OwnerPerformanceReport } from '@/shared/api/wire';
 import { useLatestRun } from '@/shared/api/latestRun';
 import { LatestRunFallback } from '@/shared/ui/LatestRunFallback';
 import { formatDecimal, formatKstDateTime, formatRatio, formatSignedRatio } from '@/shared/lib/format';
-import { loadBacktestReportView } from '@/features/backtest-report/viewModel';
+import { derivedCardFormatter, loadBacktestReportView } from '@/features/backtest-report/viewModel';
 import { loadRiskResultView, type RiskResultView } from '@/features/order-review/viewModel';
 
 const CAPTURE_LIST = [
@@ -169,11 +169,7 @@ export function ReportView() {
                       <p className="mt-2">
                         <Numeric
                           value={card.value}
-                          format={
-                            card.format === 'SIGNED_RATIO'
-                              ? (v) => formatSignedRatio(v, 1)
-                              : (v) => formatRatio(v, 1)
-                          }
+                          format={derivedCardFormatter(card.format)}
                           className="text-2xl font-semibold text-ink"
                         />
                       </p>

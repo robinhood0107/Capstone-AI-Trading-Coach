@@ -935,11 +935,13 @@ class JdbcAutomationRepository(
             buildList {
                 if (accountId == null) add("ACCOUNT_NOT_CONFIGURED")
                 if (policy == null) add("POLICY_NOT_CONFIGURED")
-                val boundPolicyId = control?.policyBindingId
-                if (boundPolicyId != null &&
-                    (
-                        boundPolicyId != policy?.policyId ||
-                            control.policyBindingVersion != policy.version
+                if (
+                    policyBindingDrifted(
+                        control?.controlState,
+                        control?.policyBindingId,
+                        control?.policyBindingVersion,
+                        policy?.policyId,
+                        policy?.version,
                     )
                 ) {
                     add("POLICY_VERSION_DRIFT")
@@ -1481,3 +1483,19 @@ class JdbcAutomationRepository(
         jdbcProvider.getIfAvailable()
             ?: throw AutomationStorageException(IllegalStateException("Automation JDBC is unavailable."))
 }
+
+/**
+ * 바인딩은 마지막 무장 때의 정책이다. 정지 중에 정책을 저장하면 다음 무장이 새 버전을
+ * 바인딩하므로, 어긋남은 무장 중일 때만 재무장을 막는 이유가 된다.
+ */
+internal fun policyBindingDrifted(
+    controlState: String?,
+    boundPolicyId: String?,
+    boundPolicyVersion: Int?,
+    currentPolicyId: String?,
+    currentPolicyVersion: Int?,
+): Boolean =
+    controlState != null &&
+        controlState != "DISARMED" &&
+        boundPolicyId != null &&
+        (boundPolicyId != currentPolicyId || boundPolicyVersion != currentPolicyVersion)

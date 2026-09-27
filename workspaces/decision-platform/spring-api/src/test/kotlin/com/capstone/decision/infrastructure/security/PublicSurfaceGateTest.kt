@@ -73,6 +73,7 @@ class PublicSurfaceGateTest {
                 "POST" to "/api/v1/auth/login",
                 "POST" to "/api/v1/auth/signup",
                 "PUT" to "/api/v1/auth/password",
+                "POST" to "/api/v1/auth/password",
                 "GET" to "/api/v1/auth/options",
                 "GET" to "/api/v1/auth/identities",
                 "POST" to "/api/v1/auth/identities/google/link/start",

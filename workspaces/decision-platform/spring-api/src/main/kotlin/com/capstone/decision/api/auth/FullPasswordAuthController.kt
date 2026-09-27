@@ -11,6 +11,7 @@ import com.capstone.decision.infrastructure.security.FullPasswordAccountService
 import com.capstone.decision.infrastructure.security.JwtService
 import com.capstone.decision.infrastructure.security.LoginAttemptLimiter
 import com.capstone.decision.infrastructure.security.PasswordAccountAlreadyExistsException
+import com.capstone.decision.infrastructure.security.PasswordLoginNotConfiguredException
 import com.capstone.decision.infrastructure.security.SignupCapacityReachedException
 import com.capstone.decision.infrastructure.security.SocialLoginHandoff
 import io.swagger.v3.oas.annotations.Operation
@@ -141,6 +142,43 @@ class PasswordAccountController(
         response.setHeader("Cache-Control", "no-store")
         return accountLoginResponse(jwtService, account, servletRequest)
     }
+
+    /**
+     * 현재 비밀번호를 확인한 뒤 바꾼다. 틀린 현재 비밀번호는 401 이 아니라 400 이다.
+     * 401 은 화면이 세션 만료로 읽고 로그아웃시키기 때문이다. 시도는 로그인과 같은 제한을 받는다.
+     */
+    @Operation(operationId = "changePasswordLogin")
+    @PostMapping("/password")
+    fun changePassword(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @Valid @RequestBody request: PasswordChangeRequest,
+        servletRequest: HttpServletRequest,
+        response: HttpServletResponse,
+    ): ApiResponse<LoginResponse> {
+        if (!loginAttemptLimiter.tryAcquire(servletRequest.remoteAddr, principal.userId)) {
+            throw ApiException(ErrorCode.RATE_LIMITED)
+        }
+        val account =
+            try {
+                accounts.changePassword(principal.userId, request.currentPassword, request.newPassword)
+            } catch (_: PasswordLoginNotConfiguredException) {
+                loginAttemptLimiter.releaseReservation()
+                throw ApiException(ErrorCode.CONFLICT, "This account has no email password login to change.")
+            } catch (_: IllegalArgumentException) {
+                loginAttemptLimiter.releaseReservation()
+                throw ApiException(ErrorCode.VALIDATION_ERROR)
+            } catch (error: RuntimeException) {
+                loginAttemptLimiter.releaseReservation()
+                throw error
+            }
+        if (account == null) {
+            loginAttemptLimiter.recordFailure(servletRequest.remoteAddr, principal.userId)
+            throw ApiException(ErrorCode.VALIDATION_ERROR, "Current password is incorrect.")
+        }
+        loginAttemptLimiter.recordSuccess(servletRequest.remoteAddr, principal.userId)
+        response.setHeader("Cache-Control", "no-store")
+        return accountLoginResponse(jwtService, account, servletRequest)
+    }
 }
 
 private fun accountLoginResponse(
@@ -173,6 +211,15 @@ data class FullPasswordLoginRequest(
     @field:NotBlank
     @field:Size(max = 1024)
     val password: String,
+)
+
+data class PasswordChangeRequest(
+    @field:NotBlank
+    @field:Size(max = 1024)
+    val currentPassword: String,
+    @field:NotBlank
+    @field:Size(min = 15, max = 64)
+    val newPassword: String,
 )
 
 data class FullPasswordSignupRequest(

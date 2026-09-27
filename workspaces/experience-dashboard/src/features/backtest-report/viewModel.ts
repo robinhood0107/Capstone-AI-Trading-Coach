@@ -1,6 +1,7 @@
 import { api } from '@/shared/api/endpoints';
 import type { DashboardBacktestView, DashboardMetrics, DashboardStrategyName } from '@/shared/api/wire';
 import { fromDashboard, type ViewState } from '@/shared/lib/viewState';
+import { formatDecimal, formatRatio, formatSignedRatio } from '@/shared/lib/format';
 
 export interface StrategyRow {
   strategy: DashboardStrategyName;
@@ -12,9 +13,21 @@ export interface DerivedCard {
   key: string;
   label: string;
   value: number | null;
-  format: 'RATIO' | 'SIGNED_RATIO';
+  format: 'RATIO' | 'SIGNED_RATIO' | 'SIGNED_DECIMAL';
   note: string;
   emphasis?: boolean;
+}
+
+/** 전략 검증과 보고서가 같은 카드를 같은 단위로 보이도록 포맷을 한곳에 둔다. */
+export function derivedCardFormatter(format: DerivedCard['format']): (value: number) => string {
+  switch (format) {
+    case 'SIGNED_DECIMAL':
+      return (value) => `${value > 0 ? '+' : ''}${formatDecimal(value, 2)}`;
+    case 'SIGNED_RATIO':
+      return (value) => formatSignedRatio(value, 1);
+    case 'RATIO':
+      return (value) => formatRatio(value, 1);
+  }
 }
 
 export interface EquityPoint {
@@ -102,18 +115,19 @@ export function toBacktestReportView(view: DashboardBacktestView): BacktestRepor
         strict?.sharpe !== null && strict?.sharpe !== undefined && baseline?.sharpe != null
           ? strict.sharpe - baseline.sharpe
           : null,
-      format: 'SIGNED_RATIO',
+      // Sharpe는 비율(%)이 아니라 무차원 값이라 소수로 보여 준다.
+      format: 'SIGNED_DECIMAL',
       note: 'Strict − Baseline. 신뢰구간이 0을 포함하면 우열을 단정하지 않습니다.',
     },
     {
       key: 'cagr_cost',
-      label: '수익률 대가',
+      label: 'CAGR 차이',
       value:
         strict?.cagr !== null && strict?.cagr !== undefined && baseline?.cagr != null
           ? strict.cagr - baseline.cagr
           : null,
       format: 'SIGNED_RATIO',
-      note: '안전장치를 켜면서 포기한 연환산 수익률입니다. 개선만 보지 않고 대가도 함께 봅니다.',
+      note: 'Strict − Baseline 연환산 수익률. 음수면 안전장치의 대가, 양수면 안전장치가 수익률도 지킨 것입니다.',
     },
   ];
 

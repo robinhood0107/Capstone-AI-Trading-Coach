@@ -54,6 +54,19 @@
           "409": {"description": "Account or email already has a password method"}
         },
         "security": [{"bearerAuth": []}]
+      },
+      "post": {
+        "operationId": "changePasswordLogin",
+        "summary": "Change the email password after verifying the current one; other sessions are revoked",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PasswordChangeRequest"}}}},
+        "responses": {
+          "200": {"description": "Password changed; every earlier session revoked and a new session issued", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoginEnvelope"}}}},
+          "400": {"description": "Current password incorrect or new password outside policy"},
+          "401": {"description": "Bearer session invalid"},
+          "409": {"description": "Account has no email password login (demo accounts rotate through the operator bundle)"},
+          "429": {"description": "Too many attempts"}
+        },
+        "security": [{"bearerAuth": []}]
       }
     },
     "/api/v1/auth/identities": {
@@ -231,6 +244,15 @@
         "properties": {
           "email": {"type": "string", "format": "email", "maxLength": 254},
           "password": {"type": "string", "minLength": 15, "maxLength": 64, "writeOnly": true, "format": "password"}
+        }
+      },
+      "PasswordChangeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["currentPassword", "newPassword"],
+        "properties": {
+          "currentPassword": {"type": "string", "minLength": 1, "maxLength": 1024, "writeOnly": true, "format": "password"},
+          "newPassword": {"type": "string", "minLength": 15, "maxLength": 64, "writeOnly": true, "format": "password"}
         }
       },
       "AuthenticationMethod": {

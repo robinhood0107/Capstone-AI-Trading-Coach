@@ -429,6 +429,7 @@ def _validate_catalog(catalog: object) -> dict[str, Any]:
         "CANCEL_REQUESTED",
         "CANCELLED",
         "REJECTED",
+        "LOCAL_RETIRED",
     }:
         raise ContractValidationError("S3.2 shared order statuses drifted.")
     evidence = catalog["evidence"]

@@ -362,6 +362,7 @@ root OpenAPI 밖의 실행 표면. `contracts/openapi/openapi.json`의 exact-76�
 | `FORBIDDEN` | 403 | 권한 없음 | 접근 차단 |
 | `NOT_FOUND` | 404 | 리소스 없음 | 빈 상태 표시 |
 | `CONFLICT` | 409 | 버전 충돌 | 재조회 후 재시도 |
+| `ORDER_RECONCILIATION_NOT_APPLICABLE` | 409 | 사용자 확인으로 로컬 종료된 주문에 검증된 KIS 결과가 없음 | KIS 결과가 확인되지 않았으므로 대사를 재시도하지 않음 |
 | `IDEMPOTENCY_CONFLICT` | 409 | 동일 idempotency key에 다른 payload | 요청 내용 확인 |
 | `IDEMPOTENCY_IN_PROGRESS` | 409 | 동일 idempotency key 요청이 처리 중 | 현재 요청 완료 후 동일 payload로 재조회 |
 | `PAYLOAD_TOO_LARGE` | 413 | 전역 또는 idempotency request body 상한 초과 | 요청 크기 축소 |
@@ -2671,6 +2672,10 @@ mode와 order ID prefix가 맞지 않는 row는 DB가 거부한다.
 | `PARTIALLY_FILLED` | `FILLED`, `CANCEL_REQUESTED` | 부분 체결 수량 기록 |
 | `CANCEL_REQUESTED` | `CANCELLED`, `FILLED` | 취소 접수 후에도 체결이 먼저 도착할 수 있음(race 허용) |
 | `FILLED` / `CANCELLED` / `REJECTED` | 종료 상태 | 종료 상태 이후 전이는 오류로 기록 |
+| `LOCAL_RETIRED` | 종료 조회 projection | V219의 소유자 확인 기록이 있는 행에만 owner 조회가 반환한다. DB 행의 종료 상태는 `CANCELLED`지만 KIS 취소·체결을 확인한 것이 아니며, 일반 주문 상태 전이가 아니다. |
+
+`LOCAL_RETIRED`는 해당 레거시 주문의 실제 KIS 결과를 알 수 없어 소유자 확인으로 앱의 미체결 대기에서만 제외했음을 나타낸다. 원 `SUBMITTED`·`CANCEL_REQUESTED` 이벤트와 격리 근거를 보존하며, KIS에서 취소되었거나 체결되지 않았다는 증거로 사용할 수 없다.
+상태 변경 사유와 복제 DB 검증 경계는 [계약 변경 기록](../contracts/changes/20260928-mars-local-order-retirement.md)에 정리했다.
 
 S3.3부터 저장 주문은 다음 체결 projection을 함께 유지한다.
 
@@ -2696,6 +2701,10 @@ DB transaction 안에서 현재 `status`, `role`, `securityVersion`을 다시 �
 대사 시작 시 `reconciledAt`을 한 번만 캡처하고, `observedAt <= reconciledAt`이면서
 `receivedAt <= reconciledAt`인 COMPLETE 관측만 `(observedAt, observationId)` 순으로 최대
 200개 처리하며 provider 호출을 만들지 않는다.
+
+V219의 `LOCAL_RETIRED` 기록이 있는 주문은 저장된 체결 관측이 있더라도 대사하지 않는다.
+이 route는 `409 ORDER_RECONCILIATION_NOT_APPLICABLE`을 반환하고 체결·주문 projection을
+바꾸지 않는다. 기록된 KIS 주문 참조가 없으므로 대사로 외부 주문의 취소·체결 여부를 확인할 수 없다.
 
 ```json
 {

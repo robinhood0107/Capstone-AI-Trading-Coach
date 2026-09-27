@@ -17,6 +17,14 @@ test('주문 상태는 한국어로 나오고 지금 무슨 뜻인지 함께 말
   const partial = orderStatusLabel('PARTIALLY_FILLED');
   assert.equal(partial.label, '일부 체결');
   assert.match(partial.meaning ?? '', /체결된 만큼은 이미 장부에/);
+
+  const cancelled = orderStatusLabel('CANCELLED');
+  assert.equal(cancelled.label, '취소됨');
+  assert.match(cancelled.meaning ?? '', /이 시스템에서 남은 미체결 수량을 종료했습니다/);
+
+  const locallyRetired = orderStatusLabel('LOCAL_RETIRED');
+  assert.equal(locallyRetired.label, '로컬 이력 종료');
+  assert.match(locallyRetired.meaning ?? '', /KIS 취소·체결 결과는 확인되지 않았습니다/);
 });
 
 test('모르는 코드는 빈칸이 아니라 코드 그대로 보여 준다', () => {
@@ -52,6 +60,7 @@ test('사전에 영문 코드가 라벨로 새어 들어가지 않았다', () =>
     'PARTIALLY_FILLED',
     'FILLED',
     'CANCELLED',
+    'LOCAL_RETIRED',
     'REJECTED',
     'ACCEPTED',
     'EXPIRED',

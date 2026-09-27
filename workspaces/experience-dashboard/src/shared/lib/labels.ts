@@ -26,7 +26,14 @@ const ORDER_STATUS: Record<string, CodeLabel> = {
     meaning: '주문한 수량 중 일부가 체결됐습니다. 체결된 만큼은 이미 장부에 들어갔습니다.',
   },
   FILLED: { label: '체결 완료', meaning: '주문한 수량이 모두 체결됐습니다.' },
-  CANCELLED: { label: '취소됨', meaning: '체결되지 않은 수량은 취소됐습니다.' },
+  CANCELLED: {
+    label: '취소됨',
+    meaning: '이 시스템에서 남은 미체결 수량을 종료했습니다. 실제 주문 반영 여부는 별도 대사 결과를 확인하세요.',
+  },
+  LOCAL_RETIRED: {
+    label: '로컬 이력 종료',
+    meaning: '사용자 확인으로 이 앱의 미체결 대기에서 제외했습니다. KIS 취소·체결 결과는 확인되지 않았습니다.',
+  },
   REJECTED: { label: '거부됨', meaning: '증권사가 이 주문을 받지 않았습니다.' },
   EXPIRED: { label: '기한 만료', meaning: '장이 끝날 때까지 체결되지 않아 사라졌습니다.' },
 };

@@ -174,7 +174,10 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
         _require_authenticated(context, self._shared_secret)
         _validate_order_and_account(request.order_id, request.account_id, context)
         try:
-            with self._session(request, self._owner_order_states | {"DISCONNECTING"}) as (gateway, _):
+            with self._session(request, self._owner_order_states | {"DISCONNECTING"}) as (
+                gateway,
+                _,
+            ):
                 receipt = gateway.cancel_cash_order(
                     order_id=request.order_id,
                     account_id=request.account_id,

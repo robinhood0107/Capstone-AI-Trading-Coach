@@ -11,7 +11,7 @@ spring:
         protocol: STREAMABLE
         type: SYNC
       annotation-scanner:
-          enabled: true
+        enabled: true
   mvc:
     throw-exception-if-no-handler-found: true
   datasource:

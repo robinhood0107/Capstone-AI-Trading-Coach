@@ -94,7 +94,6 @@ class VertexProviderSettings:
             max_output_tokens=int(raw_output_cap),
         )
 
-
     @classmethod
     def from_b64(
         cls,

@@ -57,10 +57,14 @@ object DemoIdentityBootstrap {
                 insertIdentity(connection, config.adminBundle)
                 insertAudit(connection, config)
             } else {
-                require(existing.size == DemoAccounts.identities.size) { "Demo identity bootstrap is incomplete." }
+                // V213 이후 demo-admin은 삭제되어 운영자 demo-user 한 행만 남을 수 있다.
+                require(existing.any { it.userId == DemoOperatorAccountPolicy.OPERATOR_USER_ID }) {
+                    "Demo identity bootstrap is incomplete."
+                }
                 listOf(config.userBundle, config.adminBundle).forEach { bundle ->
                     val row = existing.singleOrNull { it.userId == bundle.identity.userId }
-                    require(row != null && row.matches(bundle, config.separationKey)) {
+                    val retiredAbsent = row == null && bundle.identity.userId == DemoOperatorAccountPolicy.RETIRED_ADMIN_USER_ID
+                    require(retiredAbsent || (row != null && row.matches(bundle, config.separationKey))) {
                         "Demo identity bootstrap conflicts with the installed trust root."
                     }
                 }
@@ -223,8 +227,8 @@ object DemoIdentityBootstrap {
         ): Boolean =
             runCatching {
                 username == bundle.identity.username &&
-                    role == bundle.identity.role.name &&
-                    status == "ACTIVE" &&
+                    DemoOperatorAccountPolicy.roleAccepted(userId, role, bundle.identity.role) &&
+                    DemoOperatorAccountPolicy.statusAccepted(userId, status) &&
                     securityVersion >= 1L &&
                     DemoCredentialBundlePolicy
                         .verifyStored(

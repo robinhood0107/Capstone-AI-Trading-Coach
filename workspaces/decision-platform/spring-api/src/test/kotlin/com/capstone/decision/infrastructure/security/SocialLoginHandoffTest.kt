@@ -28,6 +28,10 @@ class SocialLoginHandoffTest {
         assertThrows(IllegalArgumentException::class.java) {
             FullSocialLoginProperties("http://mars.example.test", hash).validatedOrigin()
         }
+        assertEquals("http://localhost:3002", FullSocialLoginProperties("http://localhost:3002", hash).validatedOrigin())
+        assertThrows(IllegalArgumentException::class.java) {
+            FullSocialLoginProperties("http://localhost.example.test:3002", hash).validatedOrigin()
+        }
     }
 
     @Test

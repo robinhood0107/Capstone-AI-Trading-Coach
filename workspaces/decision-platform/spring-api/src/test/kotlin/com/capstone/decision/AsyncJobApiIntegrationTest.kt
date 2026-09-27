@@ -75,7 +75,8 @@ class AsyncJobApiIntegrationTest(
         ) { "decision_app users SELECT must remain revoked" }
         ownerJdbc.update("delete from event_outbox")
         ownerJdbc.update("delete from async_job")
-        ownerJdbc.update("update users set role='ADMIN',status='ACTIVE',security_version=1 where user_id='usr_demo_admin'")
+        ownerJdbc.update("update users set role='ADMIN',status='ACTIVE' where user_id='usr_demo_user'")
+        TestPeerUser.ensure(ownerJdbc)
         mockMvc =
             MockMvcBuilders
                 .webAppContextSetup(context)
@@ -88,8 +89,9 @@ class AsyncJobApiIntegrationTest(
         seed(
             "job_api_status_00000001",
             "RAG_INDEX",
-            "usr_demo_user",
-            "{\"jobId\":\"job_api_status_00000001\",\"ownerRef\":\"usr_demo_user\"," +
+            // ADMIN 감사 기록은 타 owner job 조회에만 남으므로 요청자는 peer다.
+            TestPeerUser.USER_ID,
+            "{\"jobId\":\"job_api_status_00000001\",\"ownerRef\":\"${TestPeerUser.USER_ID}\"," +
                 "\"sourceId\":\"src_fixture_00000001\",\"sourceRevisionId\":\"srv_fixture_00000001\"," +
                 "\"importTicketId\":\"rti_${"a".repeat(32)}\",\"profileId\":\"bge_m3_local_1024_v1\"}",
         )
@@ -97,7 +99,7 @@ class AsyncJobApiIntegrationTest(
         mockMvc.get("/api/v1/async-jobs/job_api_status_00000001").andExpect {
             status { isUnauthorized() }
         }
-        val userToken = login("demo-user", userPassword())
+        val userToken = login(TestPeerUser.EMAIL, TestPeerUser.PASSWORD)
         mockMvc
             .get("/api/v1/async-jobs/job_api_status_00000001") { bearer(userToken) }
             .andExpect {
@@ -105,7 +107,7 @@ class AsyncJobApiIntegrationTest(
                 jsonPath("$.error.code") { value("FORBIDDEN") }
             }
 
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = login("demo-user", userPassword())
         val result =
             mockMvc
                 .get("/api/v1/async-jobs/job_api_status_00000001") {
@@ -124,7 +126,7 @@ class AsyncJobApiIntegrationTest(
                     jsonPath("$.data.requestedBy") { doesNotExist() }
                 }.andReturn()
         val body = result.response.contentAsString
-        assertFalse("usr_demo_user" in body)
+        assertFalse(TestPeerUser.USER_ID in body)
         assertEquals(
             1,
             ownerJdbc.queryForObject(
@@ -150,7 +152,7 @@ class AsyncJobApiIntegrationTest(
             "{\"jobId\":\"job_api_list_00000002\",\"ownerRef\":\"usr_demo_user\",\"runId\":\"run_fixture_00000002\"," +
                 "\"contentHash\":\"sha256:${"c".repeat(64)}\"}",
         )
-        val token = login("demo-admin", adminPassword())
+        val token = login("demo-user", userPassword())
         val first =
             mockMvc
                 .get("/api/v1/async-jobs?status=REQUESTED&type=MODEL_EVAL&size=1") { bearer(token) }
@@ -191,8 +193,10 @@ class AsyncJobApiIntegrationTest(
             "{\"jobId\":\"job_api_drift_00000001\",\"ownerRef\":\"usr_demo_user\",\"runId\":\"run_fixture_00000003\"," +
                 "\"contentHash\":\"sha256:${"d".repeat(64)}\"}",
         )
-        val token = login("demo-admin", adminPassword())
-        ownerJdbc.update("update users set role='USER',security_version=2 where user_id='usr_demo_admin'")
+        val token = login("demo-user", userPassword())
+        ownerJdbc.update(
+            "update users set role='USER',security_version=security_version+1 where user_id='usr_demo_user'",
+        )
 
         mockMvc
             .get("/api/v1/async-jobs/job_api_drift_00000001") { bearer(token) }
@@ -210,9 +214,9 @@ class AsyncJobApiIntegrationTest(
         appJdbc.queryForObject("select aggregate_dlq_events()", Boolean::class.java)
 
         mockMvc.get("/api/v1/stream-metrics").andExpect { status { isUnauthorized() } }
-        val userToken = login("demo-user", userPassword())
+        val userToken = login(TestPeerUser.EMAIL, TestPeerUser.PASSWORD)
         mockMvc.get("/api/v1/stream-metrics") { bearer(userToken) }.andExpect { status { isForbidden() } }
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = login("demo-user", userPassword())
         mockMvc
             .get("/api/v1/stream-metrics") {
                 bearer(adminToken)
@@ -416,7 +420,7 @@ class AsyncJobApiIntegrationTest(
                 "select stage_synthetic_dashboard_view(?,?,?,?,?,?,?,?,?,?)",
                 Boolean::class.java,
                 artifactId,
-                "usr_demo_admin",
+                TestPeerUser.USER_ID,
                 runId,
                 "model-evaluation.json",
                 fileHash,
@@ -469,9 +473,10 @@ class AsyncJobApiIntegrationTest(
             ),
         )
 
-        val userToken = login("demo-user", userPassword())
+        // artifact owner는 ADMIN인 demo-user이고, owner가 아닌 일반 USER peer는 view와 ingest status 모두 막힌다.
+        val ownerToken = login("demo-user", userPassword())
         mockMvc
-            .get("/api/v1/dashboard/model-evaluations/$runId") { bearer(userToken) }
+            .get("/api/v1/dashboard/model-evaluations/$runId") { bearer(ownerToken) }
             .andExpect {
                 status { isOk() }
                 jsonPath("$.data.viewState") { value("READY") }
@@ -481,13 +486,13 @@ class AsyncJobApiIntegrationTest(
                 jsonPath("$.data.view.models[2].modelId") { value("LIGHTGBM") }
                 jsonPath("$.data.view.models[2].prediction") { doesNotExist() }
             }
-        val adminToken = login("demo-admin", adminPassword())
-        mockMvc.get("/api/v1/dashboard/model-evaluations/$runId") { bearer(adminToken) }.andExpect {
+        val peerToken = login(TestPeerUser.EMAIL, TestPeerUser.PASSWORD)
+        mockMvc.get("/api/v1/dashboard/model-evaluations/$runId") { bearer(peerToken) }.andExpect {
             status { isNotFound() }
         }
-        mockMvc.get("/api/v1/artifacts/ingest-status") { bearer(userToken) }.andExpect { status { isForbidden() } }
+        mockMvc.get("/api/v1/artifacts/ingest-status") { bearer(peerToken) }.andExpect { status { isForbidden() } }
         mockMvc
-            .get("/api/v1/artifacts/ingest-status") { bearer(adminToken) }
+            .get("/api/v1/artifacts/ingest-status") { bearer(ownerToken) }
             .andExpect {
                 status { isOk() }
                 jsonPath("$.data.items[0].artifactId") { value(artifactId) }

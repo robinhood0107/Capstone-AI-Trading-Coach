@@ -6,20 +6,22 @@ const endpointsUrl = new URL('../../src/shared/api/endpoints.ts', import.meta.ur
 const overviewUrl = new URL('../../src/features/overview/OverviewView.tsx', import.meta.url);
 const automationUrl = new URL('../../src/features/automation/AutomationView.tsx', import.meta.url);
 
-test('automation policy UI uses the approved v2 read, policy, arm and v1 disarm operations', async () => {
+test('automation policy UI uses the v2 reads, v3 policy/arm and v1 disarm operations FULL opens', async () => {
   const endpoints = await readFile(endpointsUrl, 'utf8');
   for (const path of [
     '/api/v2/automation/status',
-    '/api/v2/automation/policy',
-    '/api/v2/automation/arm',
-    '/api/v2/automation/runs',
     '/api/v2/automation/positions',
+    '/api/v3/automation/policy',
+    '/api/v3/automation/arm',
+    '/api/v3/automation/runs',
     '/api/v1/automation/disarm',
   ]) {
     assert.match(endpoints, new RegExp(path.replaceAll('/', '\\/')));
   }
-  assert.match(endpoints, /newIdempotencyKey\('automation-policy'\)/);
-  assert.match(endpoints, /newIdempotencyKey\('automation-arm-v2'\)/);
+  // v2 정책 저장·시작·실행 목록은 화면이 쓰지 않고 FULL 관문도 닫는다. 부를 수 있는 함수를 남기지 않는다.
+  for (const closed of ["'/api/v2/automation/policy'", "'/api/v2/automation/arm'", '/api/v2/automation/runs']) {
+    assert.ok(!endpoints.includes(closed), closed);
+  }
   const automation = await readFile(automationUrl, 'utf8');
   // 옛 라벨 "신규 주문 중지"는 계속 금지한다. disarm 은 주문을 막는 것이 아니라 다음 세션
   // 실행을 열지 않는 것이고, 주문 차단은 Kill Switch 다. 두 목적이 한 라벨에 섞이면

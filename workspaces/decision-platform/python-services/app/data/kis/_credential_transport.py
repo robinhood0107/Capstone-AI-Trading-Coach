@@ -99,6 +99,11 @@ def _read_credentials(mode: KISMode) -> _Credentials:
     return _Credentials(app_key=app_key, app_secret=app_secret)
 
 
+def _token_limiter_key(scope: str) -> str:
+    """접근토큰 발급 제한은 app key마다 따로 건다. 여러 사용자가 장 시작에 몰려도 서로 기다리지 않는다."""
+    return f"kis:tokenp:v3:{scope}"
+
+
 def _provider_scope(
     mode: KISMode,
     credential_provider: Callable[[], _Credentials] | None = None,

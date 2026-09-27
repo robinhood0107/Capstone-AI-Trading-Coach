@@ -541,6 +541,16 @@ export function automationStatusV3(base: AutomationStatusV2): AutomationStatusV3
     thinkingLevel: 'low',
     marketHistoryStatus: 'READY',
     legacyOpenPositionCount: 0,
+    ownerConnectionReady: false,
+    orderPathVerified: false,
+    orderFailureCode: null,
+    unlinkedOpenPositionCount: 0,
+    unresolvedUnlinkedOrderCount: 0,
+    unresolvedUnlinkedRunCount: 0,
+    quarantinedPositionCount: 0,
+    historicalPaperOpenPositionCount: 0,
+    historicalPaperClosedPositionCount: 0,
+    historicalPaperRunCount: 0,
   };
 }
 

@@ -73,11 +73,57 @@ def build():
         "qualityStatus": {"type": ["string", "null"]},
     })
     status = copy.deepcopy(schemas["AutomationStatusV3"])
+    policy_v3 = copy.deepcopy(schemas["AutomationPolicyV3"])
+    policy_v3["properties"]["maxOpenPositions"] = {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20,
+    }
     status["properties"].update(
         {
             "appliedPolicyVersion": {"type": ["integer", "null"], "minimum": 1},
             "policyRecoverySourceVersion": {"type": ["integer", "null"], "minimum": 1},
             "nextRunAt": {"type": ["string", "null"], "format": "date-time"},
+            "ownerConnectionReady": {"type": "boolean"},
+            "orderPathVerified": {"type": "boolean"},
+            "openPositionCount": {"type": "integer", "minimum": 0},
+            "orderFailureCode": {
+                "type": ["string", "null"],
+                "enum": ["KIS_ORDER_REJECTED", "KIS_ORDER_RESULT_UNCERTAIN", None],
+            },
+            "unlinkedOpenPositionCount": {"type": "integer", "minimum": 0},
+            "unresolvedUnlinkedOrderCount": {"type": "integer", "minimum": 0},
+            "unresolvedUnlinkedRunCount": {"type": "integer", "minimum": 0},
+            "quarantinedPositionCount": {"type": "integer", "minimum": 0},
+            "historicalPaperOpenPositionCount": {"type": "integer", "minimum": 0},
+            "historicalPaperClosedPositionCount": {"type": "integer", "minimum": 0},
+            "historicalPaperRunCount": {"type": "integer", "minimum": 0},
+        }
+    )
+    status["properties"]["blockers"]["items"]["enum"] = sorted(
+        set(status["properties"]["blockers"]["items"].get("enum", []))
+        | {"ACCOUNT_HISTORY_UNLINKED"}
+    )
+    status["required"] = sorted(
+        {
+            *status.get("required", []),
+            "ownerConnectionReady",
+            "orderPathVerified",
+            "orderFailureCode",
+            "unlinkedOpenPositionCount",
+            "unresolvedUnlinkedOrderCount",
+            "unresolvedUnlinkedRunCount",
+            "quarantinedPositionCount",
+            "historicalPaperOpenPositionCount",
+            "historicalPaperClosedPositionCount",
+            "historicalPaperRunCount",
+        }
+    )
+    login_request = copy.deepcopy(schemas["LoginRequest"])
+    login_request["properties"]["username"].update(
+        {
+            "description": "고정 demo 아이디 또는 가입 이메일",
+            "maxLength": 254,
         }
     )
     # 매수 마감 시각만 현재 계약에서 다시 읽는다. 동결된 baseline 에서 policy 를 통째로
@@ -85,6 +131,11 @@ def build():
     # 병합되므로 서비스되는 문서가 계속 옛 값을 광고한다. 나머지(필드 순서, required
     # 순서)는 baseline 그대로 둔다 - 순서까지 바꾸면 드리프트 검사가 정당하게 걸린다.
     _refresh_buy_cutoff(status)
+    status["properties"]["policy"]["oneOf"][0]["properties"]["maxOpenPositions"] = {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20,
+    }
 
     owner = {
         "type": "object",
@@ -96,7 +147,12 @@ def build():
             "changedAt": {"type": "string", "format": "date-time"},
             "reasonClass": {
                 "type": "string",
-                "enum": ["INITIAL_STATE", "USER_MANUAL_STOP", "USER_RESUME"],
+                "enum": [
+                    "INITIAL_STATE",
+                    "USER_MANUAL_STOP",
+                    "USER_RESUME",
+                    "BROKERAGE_FAILURE_STOP",
+                ],
             },
         },
         "required": [
@@ -144,6 +200,8 @@ def build():
                 "SignalV3PredictiveComponent": predictive,
                 "SignalV3RuntimeComponentResponse": runtime,
                 "AutomationStatusV3": status,
+                "AutomationPolicyV3": policy_v3,
+                "LoginRequest": login_request,
                 "OwnerKillSwitchDto": owner,
                 "ApiResponseOwnerKillSwitchDto": envelope,
             }

@@ -73,6 +73,9 @@ _OPEN_BOUNDARY = time(9, 30)
 _DECISION_TIMES: tuple[time, ...] = (time(9, 45), time(11, 0), time(14, 0))
 _LAST_DECISION_TIME = _DECISION_TIMES[-1]
 _CANCEL_BOUNDARY = time(15, 20)
+# 동시 자동운용 스레드 수. 관리자 상한(1..1000)을 따르되 최소 기본값을 유지한다.
+_DEFAULT_AUTOMATION_WORKERS = 100
+_MAX_AUTOMATION_WORKERS = 1000
 
 #: 매수 제출 마감. **DB 와 같은 값이어야 한다** -
 #: `p1_begin_automation_portfolio_execution_v2`(V172) 가 이 시각 이후의 BUY 를 거부한다.
@@ -142,6 +145,10 @@ _PORTFOLIO_CONTINUATION_STATES = frozenset(
 
 class AutomationRuntimeError(RuntimeError):
     """Persistent runtime의 DB, clock, state 또는 adapter 계약이 닫혔다."""
+
+    def __init__(self, message: str, *, failure_code: str | None = None) -> None:
+        super().__init__(message)
+        self.failure_code = failure_code
 
 
 @dataclass(frozen=True, slots=True)
@@ -420,6 +427,22 @@ class PostgresAutomationRuntimeRepository:
                 raise AutomationRuntimeError("AUTOMATION_STOP_UNAVAILABLE")
             return int(row[0]), bool(row[1])
 
+    def stop_full_owner_after_order_failure(
+        self,
+        claim: RuntimeClaim,
+        reason_code: str,
+    ) -> None:
+        if reason_code not in {"KIS_ORDER_REJECTED", "KIS_ORDER_RESULT_UNCERTAIN"}:
+            raise AutomationRuntimeError("FULL_OWNER_ORDER_FAILURE_CODE_INVALID")
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT public.p1_stop_full_owner_after_order_failure_v217(%s,%s,%s)",
+                (claim.run_id, claim.claim_token_hash, reason_code),
+            )
+            row = cursor.fetchone()
+        if row is None or row[0] is not True:
+            raise AutomationRuntimeError("FULL_OWNER_ORDER_FAILURE_STOP_UNAVAILABLE")
+
     def settle_missed_schedules(self, user_id: str, today: date) -> int:
         """실행되지 않은 채 지나간 ARMED 스케줄을 마감한다.
 
@@ -532,11 +555,26 @@ class PostgresAutomationRuntimeRepository:
             cursor.execute("select user_id from p1_list_armed_automation_users_v1()")
             rows = cursor.fetchall()
         owners = tuple(str(row[0]) for row in rows)
-        if len(owners) > 100 or len(owners) != len(set(owners)):
+        # 상한은 무장 시점(DB 트리거)에서만 적용한다. 목록이 길다고 모든 사용자를 멈추지 않는다.
+        if len(owners) > _MAX_AUTOMATION_WORKERS or len(owners) != len(set(owners)):
             raise AutomationRuntimeError("AUTOMATION_OWNER_ADMISSION_INVALID")
         for owner in owners:
             _require_user_id(owner)
         return owners
+
+    def automation_worker_count(self) -> int:
+        """Size the owner pool from the operator's active-automation cap (V214)."""
+
+        try:
+            with self._connect() as connection, connection.cursor() as cursor:
+                cursor.execute("select p1_read_automation_active_cap_v1()")
+                row = cursor.fetchone()
+        except Exception:
+            return _DEFAULT_AUTOMATION_WORKERS
+        cap = row[0] if row else None
+        if not isinstance(cap, int) or cap < 1:
+            return _DEFAULT_AUTOMATION_WORKERS
+        return min(max(cap, _DEFAULT_AUTOMATION_WORKERS), _MAX_AUTOMATION_WORKERS)
 
     def claim_for_owner(
         self,
@@ -979,6 +1017,10 @@ class PersistentAutomationRunner:
             self._repository.advance_with_lineage(command, claim, lineage)
         else:
             self._repository.advance(command)
+        if run.halt_reason_code in {"KIS_ORDER_REJECTED", "KIS_ORDER_RESULT_UNCERTAIN"}:
+            stopper = getattr(self._repository, "stop_full_owner_after_order_failure", None)
+            if callable(stopper):
+                stopper(claim, run.halt_reason_code)
         # 단계별 후보 결과는 진단 기록이라 전이가 durable 해진 뒤에 남긴다.
         # 실패해도 tick 을 되돌리지 않는다 - 대신 무엇이 실패했는지는 말한다.
         if run.stage_outcomes:
@@ -1165,7 +1207,7 @@ class AutomationRuntimeService:
         planner: XkrxBoundaryPlanner | None = None,
         daily_inference: DailyInferencePort | None = None,
         connectivity_check: Callable[[], bool] | None = None,
-        performance_report_refresh: Callable[[], object] | None = None,
+        performance_report_refresh: Callable[..., object] | None = None,
         portfolio_runner: Any | None = None,
     ) -> None:
         if not re.fullmatch(r"[A-Za-z0-9._~:-]{32,256}", shared_secret):
@@ -1354,10 +1396,43 @@ class AutomationRuntimeService:
         finally:
             daily_inference.close()
 
+    def _refresh_full_owner_reports(self, report_refresh: Callable[..., object]) -> None:
+        """FULL 은 무장한 owner 마다 백테스트·모델 평가·성과 리포트를 만든다.
+
+        대시보드는 호출자 본인의 행만 읽으므로 demo-user 한 명분만 만들면 나머지는 비어 있다.
+        한 owner 의 실패가 다른 owner 의 갱신이나 주문 경계를 막지 않는다.
+        """
+
+        try:
+            owners = self._repository.armed_owner_user_ids()
+        except (AutomationRuntimeError, psycopg.Error) as error:
+            print(
+                f"AUTOMATION_PERFORMANCE_REPORT=FAILED error={type(error).__name__}",
+                flush=True,
+            )
+            return
+        for owner_user_id in owners:
+            try:
+                report = report_refresh(owner_user_id)
+                status = (
+                    report.get("performanceReport", "UNKNOWN")
+                    if isinstance(report, dict)
+                    else "UNKNOWN"
+                )
+                print(f"AUTOMATION_PERFORMANCE_REPORT={status}", flush=True)
+            except (OSError, RuntimeError, ValueError) as error:
+                if _is_already_published(error):
+                    print("AUTOMATION_PERFORMANCE_REPORT=ALREADY_CURRENT", flush=True)
+                else:
+                    print(
+                        f"AUTOMATION_PERFORMANCE_REPORT=FAILED error={type(error).__name__}",
+                        flush=True,
+                    )
+
     def _serve_full_multiuser(
         self,
         daily_inference: DailyInferencePort,
-        report_refresh: Callable[[], object] | None,
+        report_refresh: Callable[..., object] | None,
     ) -> None:
         """Run each armed owner concurrently under one bounded shared scheduler."""
 
@@ -1366,7 +1441,9 @@ class AutomationRuntimeService:
         completed_owners: set[str] = set()
         next_attempt: dict[str, datetime] = {}
         active: dict[Future[tuple[str, datetime | None]], str] = {}
-        with ThreadPoolExecutor(max_workers=100, thread_name_prefix="mars-owner") as executor:
+        workers = self._repository.automation_worker_count()
+        print(f"AUTOMATION_OWNER_WORKERS={workers}", flush=True)
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="mars-owner") as executor:
             while not self._stop.is_set():
                 now = datetime.now(UTC).astimezone(_KST)
                 if self._wait_until(self._planner.preparation_wakeup(now)):
@@ -1393,19 +1470,7 @@ class AutomationRuntimeService:
                             flush=True,
                         )
                         if report_refresh is not None:
-                            try:
-                                report = report_refresh()
-                                status = (
-                                    report.get("performanceReport", "UNKNOWN")
-                                    if isinstance(report, dict)
-                                    else "UNKNOWN"
-                                )
-                                print(f"AUTOMATION_PERFORMANCE_REPORT={status}", flush=True)
-                            except (OSError, RuntimeError, ValueError) as error:
-                                print(
-                                    f"AUTOMATION_PERFORMANCE_REPORT=FAILED error={type(error).__name__}",
-                                    flush=True,
-                                )
+                            self._refresh_full_owner_reports(report_refresh)
                     except DailyInferenceError as error:
                         print(
                             f"AUTOMATION_DAILY_INFERENCE=UNAVAILABLE error={type(error).__name__}",
@@ -1757,6 +1822,32 @@ class AutomationRuntimeService:
                 if self._stop.wait(_TICK_RETRY_SECONDS):
                     return False
             if continuation.status in {"SUBMIT_RESPONSE_UNRESOLVED", "EXECUTION_STATE_INVALID"}:
+                reason_code = continuation.failure_code or "KIS_ORDER_RESULT_UNCERTAIN"
+                if reason_code not in {"KIS_ORDER_REJECTED", "KIS_ORDER_RESULT_UNCERTAIN"}:
+                    reason_code = "KIS_ORDER_RESULT_UNCERTAIN"
+                try:
+                    stopper = getattr(self._repository, "stop_full_owner_after_order_failure", None)
+                    if callable(stopper):
+                        stopper(claim, reason_code)
+                    recorder = getattr(self._repository, "record_stage_outcomes", None)
+                    if callable(recorder):
+                        recorder(
+                            claim,
+                            (
+                                StageOutcome(
+                                    "ORDER",
+                                    _SESSION_STAGE_SYMBOL,
+                                    "DROPPED",
+                                    reason_code,
+                                    "KIS 주문 또는 대사 결과를 확인할 수 없어 이 계좌의 자동운용을 정지했습니다.",
+                                ),
+                            ),
+                        )
+                except Exception as error:
+                    print(
+                        f"AUTOMATION_ORDER_FAILURE_STOP=FAILED error={type(error).__name__}",
+                        flush=True,
+                    )
                 return False
             # 예산이 다 찼으면 남은 시점을 기다릴 이유가 없다.
             if continuation.status == "ORDER_BUDGET_EXHAUSTED":
@@ -2391,16 +2482,19 @@ def _optional_text(value: object) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _performance_report_refresh_from_environment() -> Callable[[], object] | None:
+def _performance_report_refresh_from_environment() -> Callable[..., object] | None:
     bundle_root = os.environ.get("RETURN_INFERENCE_BUNDLE_ROOT", "").strip()
     dsn = os.environ.get("ASYNC_WORKER_DATABASE_DSN", "").strip()
     if not bundle_root or not dsn:
         return None
 
-    def refresh() -> object:
+    def refresh(owner_user_id: str | None = None) -> object:
         from app.p1_owner.scenario_materializer import materialize
 
-        return materialize(Path(bundle_root), dsn)
+        # LOCAL 은 인자 없이 불러 materializer 기본 owner(demo-user)를 그대로 쓴다.
+        if owner_user_id is None:
+            return materialize(Path(bundle_root), dsn)
+        return materialize(Path(bundle_root), dsn, owner_user_id)
 
     return refresh
 

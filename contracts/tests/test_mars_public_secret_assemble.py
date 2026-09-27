@@ -11,6 +11,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "deploy/p1/assemble_mars_public_secrets.py"
 SPEC = importlib.util.spec_from_file_location("assemble_mars_public_secrets", SCRIPT)
@@ -160,6 +162,37 @@ class MarsPublicSecretAssembleTest(unittest.TestCase):
             (demo_dir / "postgres.env").read_bytes(),
             (full_dir / "postgres.env").read_bytes(),
         )
+
+    def test_full_bundle_provides_every_compose_secret_and_the_worker_dsn(self) -> None:
+        base = self.base("one-shot-base")
+        self.assertEqual(self.assemble("full", base).returncode, 0)
+        full_dir = self.release / "full-secrets"
+        # 개인 스택의 일회성 적재가 쓰는 파일은 p1ctl init 원본을 그대로 옮긴다.
+        for name in ("artifact-import.env", "calendar-offline-seed.env", "rag-source-register.env"):
+            self.assertEqual((full_dir / name).read_bytes(), (base / name).read_bytes(), name)
+        self.assertEqual(
+            MODULE.env_file(full_dir / "mars-public-full.env")["ASYNC_WORKER_DATABASE_DSN"],
+            MODULE.env_file(base / "python.env")["ASYNC_WORKER_DATABASE_DSN"],
+        )
+        compose = yaml.safe_load((ROOT / "deploy/p1/compose.public-full.yml").read_text())
+        referenced = {
+            Path(entry["file"].replace("${MARS_FULL_SECRETS_DIR}", "x")).name
+            for entry in compose["secrets"].values()
+        }
+        self.assertLessEqual(referenced, {p.name for p in full_dir.iterdir()})
+
+    def test_full_migration_env_drops_fixed_demo_password_bundles(self) -> None:
+        base = self.base("p1-base")
+        original = MODULE.env_file(base / "migration.env")
+        private_file(
+            base / "migration.env",
+            (base / "migration.env").read_bytes()
+            + b"DEMO_CREDENTIAL_SEPARATION_KEY=x\n"
+            b"DEMO_USER_CREDENTIAL_BUNDLE=y\nDEMO_ADMIN_CREDENTIAL_BUNDLE=z\n",
+        )
+        self.assertEqual(self.assemble("full", base).returncode, 0)
+        migrated = MODULE.env_file(self.release / "full-secrets/migration.env")
+        self.assertEqual(migrated, original)
 
     def test_refuses_to_reuse_one_base_bundle_or_overwrite_secrets(self) -> None:
         base = self.base("shared-base")

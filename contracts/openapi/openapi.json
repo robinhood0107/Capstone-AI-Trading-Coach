@@ -2303,7 +2303,7 @@
             "type": "integer"
           },
           "buyCutoffTimeKst": {
-            "const": "14:30"
+            "const": "09:40"
           },
           "cancelTimeKst": {
             "const": "15:20"
@@ -2333,7 +2333,9 @@
             "const": 1
           },
           "maxOpenPositions": {
-            "const": 5
+            "maximum": 20,
+            "minimum": 1,
+            "type": "integer"
           },
           "modelSellEnabled": {
             "type": "boolean"
@@ -3777,23 +3779,24 @@
           "blockers": {
             "items": {
               "enum": [
+                "ACCOUNT_HISTORY_UNLINKED",
                 "ACCOUNT_NOT_CONFIGURED",
+                "AI_PROVIDER_NOT_READY",
+                "BLOCKED_INCOMPLETE_RISK_BALANCE",
+                "CERTIFICATION_INVALID",
+                "CONTROL_HALTED",
+                "KILL_SWITCH_ACTIVE",
+                "LEGACY_POSITION_PRESENT",
+                "MARKET_DATA_CATCHUP_REQUIRED",
+                "MARKET_HISTORY_EMPTY",
+                "MARKET_HISTORY_INSUFFICIENT",
                 "POLICY_NOT_CONFIGURED",
-                "POLICY_VERSION_DRIFT",
                 "POLICY_V3_REQUIRED",
+                "POLICY_VERSION_DRIFT",
                 "PRINCIPLE_NOT_CONFIGURED",
                 "REAL_TEAM_B_POINTER_INACTIVE",
                 "RELEASE_BINDING_UNCLEAN",
-                "CERTIFICATION_INVALID",
-                "KILL_SWITCH_ACTIVE",
-                "UNRESOLVED_RECONCILIATION",
-                "CONTROL_HALTED",
-                "BLOCKED_INCOMPLETE_RISK_BALANCE",
-                "LEGACY_POSITION_PRESENT",
-                "MARKET_HISTORY_EMPTY",
-                "MARKET_HISTORY_INSUFFICIENT",
-                "MARKET_DATA_CATCHUP_REQUIRED",
-                "AI_PROVIDER_NOT_READY"
+                "UNRESOLVED_RECONCILIATION"
               ]
             },
             "type": "array",
@@ -3827,6 +3830,18 @@
             "minimum": 1,
             "type": "integer"
           },
+          "historicalPaperClosedPositionCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "historicalPaperOpenPositionCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "historicalPaperRunCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
           "killSwitchActive": {
             "type": "boolean"
           },
@@ -3851,9 +3866,25 @@
             ]
           },
           "openPositionCount": {
-            "maximum": 5,
             "minimum": 0,
             "type": "integer"
+          },
+          "orderFailureCode": {
+            "enum": [
+              "KIS_ORDER_REJECTED",
+              "KIS_ORDER_RESULT_UNCERTAIN",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orderPathVerified": {
+            "type": "boolean"
+          },
+          "ownerConnectionReady": {
+            "type": "boolean"
           },
           "policy": {
             "oneOf": [
@@ -3902,7 +3933,9 @@
                     "const": 1
                   },
                   "maxOpenPositions": {
-                    "const": 5
+                    "maximum": 20,
+                    "minimum": 1,
+                    "type": "integer"
                   },
                   "modelSellEnabled": {
                     "type": "boolean"
@@ -3980,6 +4013,10 @@
               "HALTED"
             ]
           },
+          "quarantinedPositionCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
           "thinkingLevel": {
             "enum": [
               "minimal",
@@ -3987,8 +4024,20 @@
               "medium"
             ]
           },
+          "unlinkedOpenPositionCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
           "unresolvedReconciliation": {
             "type": "boolean"
+          },
+          "unresolvedUnlinkedOrderCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unresolvedUnlinkedRunCount": {
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -4001,14 +4050,24 @@
           "contractId",
           "controlState",
           "controlVersion",
+          "historicalPaperClosedPositionCount",
+          "historicalPaperOpenPositionCount",
+          "historicalPaperRunCount",
           "killSwitchActive",
           "legacyOpenPositionCount",
           "marketHistoryStatus",
           "openPositionCount",
+          "orderFailureCode",
+          "orderPathVerified",
+          "ownerConnectionReady",
           "policy",
           "projectionState",
+          "quarantinedPositionCount",
           "thinkingLevel",
-          "unresolvedReconciliation"
+          "unlinkedOpenPositionCount",
+          "unresolvedReconciliation",
+          "unresolvedUnlinkedOrderCount",
+          "unresolvedUnlinkedRunCount"
         ],
         "title": "automation-status.v3",
         "type": "object"
@@ -4639,8 +4698,8 @@
             "writeOnly": true
           },
           "username": {
-            "description": "고정 demo login name",
-            "maxLength": 128,
+            "description": "고정 demo 아이디 또는 가입 이메일",
+            "maxLength": 254,
             "minLength": 0,
             "type": "string"
           }
@@ -4942,7 +5001,8 @@
             "enum": [
               "INITIAL_STATE",
               "USER_MANUAL_STOP",
-              "USER_RESUME"
+              "USER_RESUME",
+              "BROKERAGE_FAILURE_STOP"
             ],
             "type": "string"
           }

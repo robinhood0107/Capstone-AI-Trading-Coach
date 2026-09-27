@@ -247,6 +247,7 @@ def serve() -> None:
                 None,
                 settings.shared_secret,
                 owner_factory=OwnerBoundGatewayFactory(settings, reference_store, opener),
+                allow_connected_credentials_for_orders=True,
             )
         else:
             budget = KISBrokerageCallBudget(

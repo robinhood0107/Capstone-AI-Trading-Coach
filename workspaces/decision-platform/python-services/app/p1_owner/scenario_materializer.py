@@ -65,10 +65,10 @@ def _sha(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
-def _load_database_input(dsn: str) -> dict[str, Any]:
+def _load_database_input(dsn: str, owner: str = _OWNER) -> dict[str, Any]:
     try:
         with psycopg.connect(dsn, connect_timeout=5) as connection, connection.cursor() as cursor:
-            cursor.execute("select read_owner_scenario_materialization_inputs_v1(%s)", (_OWNER,))
+            cursor.execute("select read_owner_scenario_materialization_inputs_v1(%s)", (owner,))
             row = cursor.fetchone()
     except psycopg.Error as error:
         raise ScenarioMaterializationError("SCENARIO_INPUT_UNAVAILABLE") from error
@@ -80,10 +80,10 @@ def _load_database_input(dsn: str) -> dict[str, Any]:
     return value
 
 
-def _load_performance_input(dsn: str) -> dict[str, Any]:
+def _load_performance_input(dsn: str, owner: str = _OWNER) -> dict[str, Any]:
     try:
         with psycopg.connect(dsn, connect_timeout=5) as connection, connection.cursor() as cursor:
-            cursor.execute("select read_owner_performance_report_inputs_v1(%s)", (_OWNER,))
+            cursor.execute("select read_owner_performance_report_inputs_v1(%s)", (owner,))
             row = cursor.fetchone()
     except psycopg.Error as error:
         raise ScenarioMaterializationError("PERFORMANCE_INPUT_UNAVAILABLE") from error
@@ -454,14 +454,34 @@ def _envelope(request_id: str, as_of: datetime, view: dict[str, Any]) -> dict[st
     }
 
 
-def _materialize_once(bundle_root: Path, dsn: str) -> dict[str, object]:
+def _source_generation(
+    owner: str, bundle_sha256: str, db_input: dict[str, Any], start: date, end: date
+) -> str:
+    identity: dict[str, object] = {
+        "contractId": "owner-scenario-replay.v1",
+        "implementationId": _IMPLEMENTATION_ID,
+        "bundleSha256": bundle_sha256,
+        "bars": db_input["bars"],
+        "rules": db_input["rules"],
+        "costBps": 35,
+        "evaluationStart": start.isoformat(),
+        "evaluationEnd": end.isoformat(),
+    }
+    # run_id 는 전역 키다. 다른 owner 가 같은 원칙을 쓰면 demo-user 의 run_id 와 겹치므로
+    # owner 를 해시에 넣는다. demo-user 는 넣지 않아 LOCAL 의 기존 run_id 가 그대로다.
+    if owner != _OWNER:
+        identity["ownerUserId"] = owner
+    return _sha(canonical_json_bytes(identity))
+
+
+def _materialize_once(bundle_root: Path, dsn: str, owner: str = _OWNER) -> dict[str, object]:
     manifest_bytes = (bundle_root / GOLDEN_MANIFEST).read_bytes()
     validated = validate_artifact_bundle(
         bundle_root=bundle_root,
         expected_manifest_sha256=_sha(manifest_bytes),
     )
-    db_input = _load_database_input(dsn)
-    performance_input = _load_performance_input(dsn)
+    db_input = _load_database_input(dsn, owner)
+    performance_input = _load_performance_input(dsn, owner)
     if db_input.get("bundleSha256") != validated.bundle_sha256:
         raise ScenarioMaterializationError("SCENARIO_BUNDLE_POINTER_MISMATCH")
     sessions, bars = _bars_by_symbol(db_input)
@@ -476,19 +496,8 @@ def _materialize_once(bundle_root: Path, dsn: str) -> dict[str, object]:
     strict = _strict_replay(evaluation_sessions, bars, guide_trades, db_input.get("rules"))
     results = {"Baseline": baseline, "Guide": guide, "Strict": strict}
     metrics = {name: _metrics(result) for name, result in results.items()}
-    identity = _sha(
-        canonical_json_bytes(
-            {
-                "contractId": "owner-scenario-replay.v1",
-                "implementationId": _IMPLEMENTATION_ID,
-                "bundleSha256": validated.bundle_sha256,
-                "bars": db_input["bars"],
-                "rules": db_input["rules"],
-                "costBps": 35,
-                "evaluationStart": evaluation_sessions[0].isoformat(),
-                "evaluationEnd": evaluation_sessions[-1].isoformat(),
-            }
-        )
+    identity = _source_generation(
+        owner, validated.bundle_sha256, db_input, evaluation_sessions[0], evaluation_sessions[-1]
     )
     run_id = f"run_owner_{identity[:24]}"
     artifact_id = f"artifact_owner_{identity[:24]}"
@@ -573,7 +582,7 @@ def _materialize_once(bundle_root: Path, dsn: str) -> dict[str, object]:
             cursor.execute(
                 "select publish_owner_scenario_dashboard_v1(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
-                    _OWNER,
+                    owner,
                     validated.bundle_sha256,
                     artifact_id,
                     run_id,
@@ -589,7 +598,7 @@ def _materialize_once(bundle_root: Path, dsn: str) -> dict[str, object]:
             cursor.execute(
                 "select publish_owner_performance_report_v1(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
-                    _OWNER,
+                    owner,
                     performance_report_id,
                     identity,
                     evaluation_sessions[0],
@@ -694,7 +703,7 @@ def _performance_report(
     }
 
 
-def _record_failure(bundle_root: Path, dsn: str, error: BaseException) -> None:
+def _record_failure(bundle_root: Path, dsn: str, error: BaseException, owner: str = _OWNER) -> None:
     """입력 generation을 식별할 수 있을 때만 실패를 append하고 마지막 성공본은 건드리지 않는다."""
 
     try:
@@ -703,23 +712,12 @@ def _record_failure(bundle_root: Path, dsn: str, error: BaseException) -> None:
             bundle_root=bundle_root,
             expected_manifest_sha256=_sha(manifest_bytes),
         )
-        db_input = _load_database_input(dsn)
-        performance_input = _load_performance_input(dsn)
+        db_input = _load_database_input(dsn, owner)
+        performance_input = _load_performance_input(dsn, owner)
         source_start = date.fromisoformat(str(db_input["evaluationStart"]))
         source_end = date.fromisoformat(str(db_input["evaluationEnd"]))
-        source_generation = _sha(
-            canonical_json_bytes(
-                {
-                    "contractId": "owner-scenario-replay.v1",
-                    "implementationId": _IMPLEMENTATION_ID,
-                    "bundleSha256": validated.bundle_sha256,
-                    "bars": db_input["bars"],
-                    "rules": db_input["rules"],
-                    "costBps": 35,
-                    "evaluationStart": source_start.isoformat(),
-                    "evaluationEnd": source_end.isoformat(),
-                }
-            )
+        source_generation = _source_generation(
+            owner, validated.bundle_sha256, db_input, source_start, source_end
         )
         failure_code = re.sub(r"[^A-Z0-9_]", "_", str(error).split(maxsplit=1)[0].upper())[:96]
         if not failure_code:
@@ -729,7 +727,7 @@ def _record_failure(bundle_root: Path, dsn: str, error: BaseException) -> None:
             cursor.execute(
                 "select record_owner_performance_report_failure_v1(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
-                    _OWNER,
+                    owner,
                     failure_id,
                     source_generation,
                     source_start,
@@ -747,11 +745,11 @@ def _record_failure(bundle_root: Path, dsn: str, error: BaseException) -> None:
         return
 
 
-def materialize(bundle_root: Path, dsn: str) -> dict[str, object]:
+def materialize(bundle_root: Path, dsn: str, owner: str = _OWNER) -> dict[str, object]:
     try:
-        return _materialize_once(bundle_root, dsn)
+        return _materialize_once(bundle_root, dsn, owner)
     except (ScenarioMaterializationError, OSError, ValueError) as error:
-        _record_failure(bundle_root, dsn, error)
+        _record_failure(bundle_root, dsn, error, owner)
         raise
 
 

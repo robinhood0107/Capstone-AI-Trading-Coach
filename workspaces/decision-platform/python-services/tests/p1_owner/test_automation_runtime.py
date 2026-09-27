@@ -1679,3 +1679,54 @@ def test_advancing_stops_once_the_cursor_reaches_the_target() -> None:
 
     assert repository.rolled == []
     assert armed is False
+
+
+def test_full_report_refresh_materializes_every_armed_owner(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """FULL 대시보드는 본인 행만 읽는다. 무장한 owner 마다 리포트를 만들고 한 명의 실패가
+    다른 owner 를 막지 않는다."""
+
+    refreshed: list[str] = []
+
+    class Repository:
+        def armed_owner_user_ids(self) -> tuple[str, ...]:
+            return ("usr_google_owner_0001", "usr_broken_owner_0003", "usr_kakao_owner_0002")
+
+    def refresh(owner_user_id: str) -> dict[str, str]:
+        refreshed.append(owner_user_id)
+        if owner_user_id == "usr_broken_owner_0003":
+            raise RuntimeError("SCENARIO_INPUT_UNAVAILABLE")
+        return {"performanceReport": "INSERTED"}
+
+    service = AutomationRuntimeService(cast(Any, Repository()), cast(Any, None), "x" * 32)
+    service._refresh_full_owner_reports(refresh)
+
+    assert refreshed == [
+        "usr_google_owner_0001",
+        "usr_broken_owner_0003",
+        "usr_kakao_owner_0002",
+    ]
+    output = capsys.readouterr().out
+    assert output.count("AUTOMATION_PERFORMANCE_REPORT=INSERTED") == 2
+    assert output.count("AUTOMATION_PERFORMANCE_REPORT=FAILED") == 1
+
+
+def test_environment_report_refresh_keeps_local_owner_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.p1_owner import automation_runtime as runtime
+    from app.p1_owner import scenario_materializer
+
+    calls: list[tuple[object, ...]] = []
+    monkeypatch.setenv("RETURN_INFERENCE_BUNDLE_ROOT", "/opt/bundle")
+    monkeypatch.setenv("ASYNC_WORKER_DATABASE_DSN", "postgresql://worker")
+    monkeypatch.setattr(
+        scenario_materializer, "materialize", lambda *args: calls.append(args) or {}
+    )
+    refresh = runtime._performance_report_refresh_from_environment()
+    assert refresh is not None
+    refresh()
+    refresh("usr_google_owner_0001")
+
+    assert [call[2:] for call in calls] == [(), ("usr_google_owner_0001",)]

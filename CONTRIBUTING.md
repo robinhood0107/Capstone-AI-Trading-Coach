@@ -52,6 +52,14 @@
 - Issue와 PR의 제목·본문은 한국어와 영어를 함께 적는다. 최소한 `KR:`과 `EN:` 구역을 둔다.
 - 연관된 Issue·PR·commit은 GitHub 번호로 연결한다. PR 본문에 `Closes #<issue>` 또는 `Refs #<issue>`를 쓰고, 해당 변경을 수행한 커밋 메시지에도 번호를 넣는다.
 
+## 버전과 릴리스
+
+- 버전은 유의적 버전(`MAJOR.MINOR.PATCH`)이며 단일 출처는 `deploy/p1/mars-release-gate.json`의 `version`이다.
+- `develop → main` 병합 한 번이 릴리스 한 번이다. 병합되면 GitHub Release `vX.Y.Z`와 Docker Hub `pjjpjj111/mars-{demo,full}:vX.Y.Z-{api,web,postgres,redis}`가 자동 발행된다.
+- 승격 PR 전에 버전을 올리고 `CHANGELOG.md`에 `## [X.Y.Z] - YYYY-MM-DD` 항목을 쓴다. 이미 발행된 버전이거나 항목이 없으면 `MARS product image build` 체크가 병합을 막는다.
+- 호환이 깨지는 계약·DB 변경은 MAJOR, 기능 추가는 MINOR, 버그·문서 수정은 PATCH를 올린다.
+- 발행된 태그와 Release는 수정하거나 다시 만들지 않는다. 고칠 것이 있으면 다음 PATCH로 낸다.
+
 ## CI
 
 현재 워크플로는 네 개다.

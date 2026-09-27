@@ -59,6 +59,16 @@ data class AutomationStatusV3Response(
     val appliedPolicyVersion: Int? = null,
     val policyRecoverySourceVersion: Int? = null,
     val nextRunAt: java.time.OffsetDateTime? = null,
+    val ownerConnectionReady: Boolean = false,
+    val orderPathVerified: Boolean = false,
+    val orderFailureCode: String? = null,
+    val unlinkedOpenPositionCount: Int = 0,
+    val unresolvedUnlinkedOrderCount: Int = 0,
+    val unresolvedUnlinkedRunCount: Int = 0,
+    val quarantinedPositionCount: Int = 0,
+    val historicalPaperOpenPositionCount: Int = 0,
+    val historicalPaperClosedPositionCount: Int = 0,
+    val historicalPaperRunCount: Int = 0,
 )
 
 @Schema(name = "AutomationRunV3", additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
@@ -226,6 +236,16 @@ fun AutomationStatusV3Projection.toV3Response() =
         appliedPolicyVersion = appliedPolicyVersion,
         policyRecoverySourceVersion = policyRecoverySourceVersion,
         nextRunAt = nextRunAt,
+        ownerConnectionReady = ownerConnectionReady,
+        orderPathVerified = orderPathVerified,
+        orderFailureCode = orderFailureCode,
+        unlinkedOpenPositionCount = unlinkedOpenPositionCount,
+        unresolvedUnlinkedOrderCount = unresolvedUnlinkedOrderCount,
+        unresolvedUnlinkedRunCount = unresolvedUnlinkedRunCount,
+        quarantinedPositionCount = quarantinedPositionCount,
+        historicalPaperOpenPositionCount = historicalPaperOpenPositionCount,
+        historicalPaperClosedPositionCount = historicalPaperClosedPositionCount,
+        historicalPaperRunCount = historicalPaperRunCount,
     )
 
 fun AutomationRunV3Projection.toV3Response() =

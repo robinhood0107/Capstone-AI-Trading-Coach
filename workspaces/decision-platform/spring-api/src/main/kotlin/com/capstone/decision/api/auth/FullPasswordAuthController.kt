@@ -11,6 +11,7 @@ import com.capstone.decision.infrastructure.security.FullPasswordAccountService
 import com.capstone.decision.infrastructure.security.JwtService
 import com.capstone.decision.infrastructure.security.LoginAttemptLimiter
 import com.capstone.decision.infrastructure.security.PasswordAccountAlreadyExistsException
+import com.capstone.decision.infrastructure.security.SignupCapacityReachedException
 import com.capstone.decision.infrastructure.security.SocialLoginHandoff
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirements
@@ -109,6 +110,9 @@ class PasswordAccountController(
             } catch (_: IllegalArgumentException) {
                 loginAttemptLimiter.releaseReservation()
                 throw ApiException(ErrorCode.VALIDATION_ERROR)
+            } catch (_: SignupCapacityReachedException) {
+                loginAttemptLimiter.releaseReservation()
+                throw ApiException(ErrorCode.CONFLICT, "Signup is closed because the service reached its member limit.")
             } catch (error: RuntimeException) {
                 loginAttemptLimiter.releaseReservation()
                 throw error

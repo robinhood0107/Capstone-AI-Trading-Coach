@@ -1,5 +1,13 @@
 # FULL includes the social-login profile (see spring.profiles.group in application.yml).
 app:
+  brokerage:
+    connected-owner-orders-enabled: true
+  automation:
+    connected-kis-account-enabled: true
+    ai:
+      # 자기 Vertex 키가 없는 사용자의 AI 검토를 운영자 공용 Vertex 로 대신 부른다. 사용자별 과금을
+      # 시작할 때 false 로 끄면 자기 키가 없는 사용자는 무장 단계에서 AI_PROVIDER_NOT_READY 로 멈춘다.
+      operator-vertex-fallback-enabled: ${MARS_FULL_OPERATOR_VERTEX_FALLBACK_ENABLED:true}
   rag-v2:
     web:
       vertex-google-search:

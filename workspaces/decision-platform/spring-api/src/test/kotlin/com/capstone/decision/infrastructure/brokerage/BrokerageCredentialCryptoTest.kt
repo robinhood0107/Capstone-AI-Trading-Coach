@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -51,6 +52,20 @@ class BrokerageCredentialCryptoTest {
         val file = directory.resolve("brokerage-kek-v1.key")
         Files.setPosixFilePermissions(file, setOf(PosixFilePermission.OWNER_READ))
         assertThrows(IllegalStateException::class.java) { BrokerageKekFile(directory.toString()).load() }
+    }
+
+    @Test
+    fun accountIdentityFingerprintIsStableAndOwnerScoped() {
+        val crypto = BrokerageCredentialCrypto(BrokerageKekFile(prepareKeyDirectory().toString()))
+        val first = crypto.accountIdentityFingerprint("usr_test_owner", "1234567890")
+        val sameAccount = crypto.accountIdentityFingerprint("usr_test_owner", "1234567890")
+        val sameLastFourDifferentAccount = crypto.accountIdentityFingerprint("usr_test_owner", "9876547890")
+        val differentOwner = crypto.accountIdentityFingerprint("usr_other_owner", "1234567890")
+
+        assertEquals(first, sameAccount)
+        assertFalse(first == sameLastFourDifferentAccount)
+        assertFalse(first == differentOwner)
+        assertTrue(first.matches(Regex("^[0-9a-f]{64}$")))
     }
 
     private fun prepareKeyDirectory(): Path {

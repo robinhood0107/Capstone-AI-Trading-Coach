@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { useSession } from '@/shared/api/session';
 
 interface NavItem {
   href: string;
@@ -137,11 +138,16 @@ const TOOLS: NavItem[] = [
   { href: '/settings', label: '설정', note: '연결과 옵션' },
 ];
 
+const ADMIN_TOOL: NavItem = { href: '/admin', label: '관리', note: '가입자와 자동운용 관리' };
+
 export function UtilityNav() {
   const pathname = usePathname();
+  const { user } = useSession();
+  // 관리 메뉴는 ADMIN에게만 보인다. 실제 권한은 서버가 다시 검사한다.
+  const tools = user?.role === 'ADMIN' ? [ADMIN_TOOL, ...TOOLS] : TOOLS;
   return (
     <nav aria-label="도구" className="flex items-center gap-0.5">
-      {TOOLS.map((item) => {
+      {tools.map((item) => {
         const active = pathname === item.href;
         return (
           <Link

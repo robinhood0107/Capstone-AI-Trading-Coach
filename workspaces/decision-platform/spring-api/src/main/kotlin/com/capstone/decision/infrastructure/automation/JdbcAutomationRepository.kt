@@ -497,7 +497,10 @@ class JdbcAutomationRepository(
     }
 
     @Transactional
-    override fun statusV3(ownerUserId: String): AutomationStatusV3Projection {
+    override fun statusV3(
+        ownerUserId: String,
+        operatorProviderReady: Boolean,
+    ): AutomationStatusV3Projection {
         try {
             val jdbc = jdbc()
             actorRlsScope.open(
@@ -510,7 +513,7 @@ class JdbcAutomationRepository(
                     ActorCapabilityRolePolicy.OWNER,
                 ),
             )
-            return readStatusV3(jdbc, ownerUserId)
+            return readStatusV3(jdbc, ownerUserId, operatorProviderReady)
         } catch (error: ActorCapabilityDeniedException) {
             throw AutomationAccessDeniedException(error)
         } catch (error: DataAccessException) {
@@ -569,13 +572,16 @@ class JdbcAutomationRepository(
         scopeHash: String,
         requestHash: String,
         providerCapabilityReady: Boolean,
+        operatorProviderReady: Boolean,
+        connectedKisAccountEnabled: Boolean,
     ): AutomationStatusV3Projection =
         mutate(ownerUserId, "ARM_AUTOMATION", requestHash) { jdbc ->
             jdbc.queryForObject(
                 """
-                SELECT result_json FROM p1_arm_automation_v3(
+                SELECT result_json FROM ${if (connectedKisAccountEnabled) "p1_arm_automation_full_v1" else "p1_arm_automation_v3"}(
                   :ownerUserId,:accountId,:policyId,:expectedPolicyVersion,
-                  :expectedControlVersion,:scopeHash,:requestHash,:providerCapabilityReady
+                  :expectedControlVersion,:scopeHash,:requestHash,:providerCapabilityReady,
+                  :operatorProviderReady
                 )
                 """.trimIndent(),
                 mapOf(
@@ -587,10 +593,11 @@ class JdbcAutomationRepository(
                     "scopeHash" to scopeHash,
                     "requestHash" to requestHash,
                     "providerCapabilityReady" to providerCapabilityReady,
+                    "operatorProviderReady" to operatorProviderReady,
                 ),
                 String::class.java,
             ) ?: throw AutomationStorageException(IllegalStateException("V3 arm function returned no result."))
-            readStatusV3(jdbc, ownerUserId)
+            readStatusV3(jdbc, ownerUserId, operatorProviderReady)
         }
 
     @Transactional
@@ -920,7 +927,33 @@ class JdbcAutomationRepository(
                 mapOf("ownerUserId" to ownerUserId),
                 Boolean::class.java,
             ) ?: true
-        val accountId = control?.accountId
+        // FULL 소유자의 주문은 자기 KIS 자격증명에 묶인 계좌로만 나간다. 무장 전에는 묶인 계좌를
+        // 보여 줘야 화면이 그 계좌로 무장을 보낸다. 이미 무장했거나 멈춘 제어는 그 제어가 잡은 계좌를
+        // 그대로 보여 준다(해제·대사가 같은 계좌를 봐야 한다). 개인 스택은 자격증명 행이 없어 예전과 같다.
+        val boundAccountId =
+            jdbc.queryForObject(
+                "SELECT public.p1_owner_bound_mock_account_v1(:ownerUserId)",
+                mapOf("ownerUserId" to ownerUserId),
+                String::class.java,
+            )
+        val accountId =
+            if (control?.controlState == "ARMED" || control?.controlState == "HALTED") {
+                control.accountId
+            } else {
+                boundAccountId ?: control?.accountId
+            }
+        val ownerCredentialState =
+            jdbc.query(
+                "SELECT public.p1_read_owner_mock_credential_state_for_automation_v218(:ownerUserId)",
+                mapOf("ownerUserId" to ownerUserId),
+            ) { row, _ -> row.getString(1) }.singleOrNull()
+        val certificationStatus =
+            when (ownerCredentialState) {
+                "CONNECTED" -> "CONNECTED"
+                "CERTIFIED" -> "VALID"
+                "STORED", "DISCONNECTING" -> "REQUIRED"
+                else -> control?.certificationStatus ?: "REQUIRED"
+            }
         val riskBalanceReady =
             if (accountId == null) {
                 false
@@ -931,15 +964,23 @@ class JdbcAutomationRepository(
                     Boolean::class.java,
                 ) ?: false
             }
+        val ownerConnectionReady =
+            accountId != null && jdbc.queryForObject(
+                "SELECT public.p1_full_owner_connection_readiness_v1(:ownerUserId,:accountId)",
+                mapOf("ownerUserId" to ownerUserId, "accountId" to accountId),
+                Boolean::class.java,
+            ) == true
         val blockers =
             buildList {
                 if (accountId == null) add("ACCOUNT_NOT_CONFIGURED")
                 if (policy == null) add("POLICY_NOT_CONFIGURED")
-                val boundPolicyId = control?.policyBindingId
-                if (boundPolicyId != null &&
-                    (
-                        boundPolicyId != policy?.policyId ||
-                            control.policyBindingVersion != policy.version
+                if (
+                    policyBindingDrifted(
+                        control?.controlState,
+                        control?.policyBindingId,
+                        control?.policyBindingVersion,
+                        policy?.policyId,
+                        policy?.version,
                     )
                 ) {
                     add("POLICY_VERSION_DRIFT")
@@ -947,7 +988,7 @@ class JdbcAutomationRepository(
                 if (control != null && !control.principleConfigured) add("PRINCIPLE_NOT_CONFIGURED")
                 if (control != null && !control.realTeamBPointerActive) add("REAL_TEAM_B_POINTER_INACTIVE")
                 if (control != null && !control.releaseBindingClean) add("RELEASE_BINDING_UNCLEAN")
-                if (control != null && !control.certificationReady) add("CERTIFICATION_INVALID")
+                if (control?.certificationReady != true && !ownerConnectionReady) add("CERTIFICATION_INVALID")
                 if (killSwitchActive) add("KILL_SWITCH_ACTIVE")
                 if (control?.unresolved == true) add("UNRESOLVED_RECONCILIATION")
                 if (control?.controlState == "HALTED") add("CONTROL_HALTED")
@@ -967,7 +1008,7 @@ class JdbcAutomationRepository(
             accountId = accountId,
             policy = policy,
             killSwitchActive = killSwitchActive,
-            certificationStatus = control?.certificationStatus ?: "REQUIRED",
+            certificationStatus = certificationStatus,
             openPositionCount = control?.openCount ?: 0,
             unresolvedReconciliation = control?.unresolved ?: false,
             canArm = state == "DISARMED" && blockers.isEmpty(),
@@ -978,6 +1019,7 @@ class JdbcAutomationRepository(
     private fun readStatusV3(
         jdbc: NamedParameterJdbcTemplate,
         ownerUserId: String,
+        operatorProviderReady: Boolean,
     ): AutomationStatusV3Projection {
         val base = readStatusV2(jdbc, ownerUserId)
         val policy = readCurrentPolicyV3(jdbc, ownerUserId)
@@ -1001,6 +1043,49 @@ class JdbcAutomationRepository(
             )
         val activeCount = (counts["active_count"] as Number).toInt()
         val legacyCount = (counts["legacy_count"] as Number).toInt()
+        val ownerConnectionReady =
+            base.accountId != null && jdbc.queryForObject(
+                "SELECT public.p1_full_owner_connection_readiness_v1(:ownerUserId,:accountId)",
+                mapOf("ownerUserId" to ownerUserId, "accountId" to base.accountId),
+                Boolean::class.java,
+            ) == true
+        val orderPathVerified =
+            base.accountId != null && jdbc.queryForObject(
+                "SELECT public.p1_full_owner_order_path_verified_v1(:ownerUserId,:accountId)",
+                mapOf("ownerUserId" to ownerUserId, "accountId" to base.accountId),
+                Boolean::class.java,
+            ) == true
+        val orderFailureCode =
+            jdbc.query(
+                "SELECT public.p1_full_owner_order_failure_code_v217(:ownerUserId)",
+                mapOf("ownerUserId" to ownerUserId),
+            ) { row, _ -> row.getString(1) }.singleOrNull()
+        val accountHistory =
+            if (base.accountId == null) {
+                mapOf(
+                    "unlinked_open_position_count" to 0,
+                    "unresolved_unlinked_order_count" to 0,
+                    "unresolved_unlinked_run_count" to 0,
+                    "quarantined_position_count" to 0,
+                    "historical_paper_open_position_count" to 0,
+                    "historical_paper_closed_position_count" to 0,
+                    "historical_paper_run_count" to 0,
+                )
+            } else {
+                jdbc.queryForMap(
+                    "SELECT * FROM public.p1_full_owner_account_history_integrity_v218(:ownerUserId,:accountId)",
+                    mapOf("ownerUserId" to ownerUserId, "accountId" to base.accountId),
+                )
+            }
+        val unlinkedOpenPositionCount = (accountHistory["unlinked_open_position_count"] as Number).toInt()
+        val unresolvedUnlinkedOrderCount = (accountHistory["unresolved_unlinked_order_count"] as Number).toInt()
+        val unresolvedUnlinkedRunCount = (accountHistory["unresolved_unlinked_run_count"] as Number).toInt()
+        val quarantinedPositionCount = (accountHistory["quarantined_position_count"] as Number).toInt()
+        val historicalPaperOpenPositionCount =
+            (accountHistory["historical_paper_open_position_count"] as Number).toInt()
+        val historicalPaperClosedPositionCount =
+            (accountHistory["historical_paper_closed_position_count"] as Number).toInt()
+        val historicalPaperRunCount = (accountHistory["historical_paper_run_count"] as Number).toInt()
         val aiSettings =
             jdbc
                 .query(
@@ -1024,21 +1109,29 @@ class JdbcAutomationRepository(
                     mapOf("ownerUserId" to ownerUserId),
                 ) { row, _ -> row.getString("slot") }
                 .contains("PRIMARY")
-        // vertex 는 소유자가 주입하는 API 키가 아니라 0600 서비스 계정 파일로 인증한다.
-        // 그래서 vertex 에 PRIMARY 자격증명 행을 요구하면 설계상 만족할 수 없는 조건이 된다.
-        // 이 면제는 contracts/tests/test_p1_automation_v3_live_readiness.py 가 고정한다.
-        //
-        // 알려진 어긋남: V135 의 p1_arm_automation_v3 는 provider 와 무관하게 PRIMARY 행을
-        // 요구하므로, AI 판단을 켠 vertex 사용자는 여기서 "준비됨"인데 arm 이 P1A01 로 튕긴다.
-        // 고칠 쪽은 이 면제가 아니라 DB 다 - arm 게이트도 vertex 를 면제하고 대신 Spring 이
-        // 이미 넘기는 p_provider_capability_ready(서비스 계정 구성 여부)에 의존해야 한다.
-        val credentialReady = aiSettings.provider == "vertex" || primaryCredentialReady
+        // arm(V216 p1_arm_automation_v3)과 같은 규칙이다: 소유자 PRIMARY 키가 있거나, 이 배포가
+        // 운영자 공용 Vertex 를 허용했을 때만 준비됨이다. 예전에는 여기서만 vertex 를 면제해
+        // 화면은 "시작 가능"인데 arm 이 P1A01 로 튕겼다. 버튼이 거짓말하지 않도록 두 판정을 한
+        // 규칙으로 묶는다. 이 결합은 contracts/tests/test_p1_automation_v3_live_readiness.py 가 고정한다.
+        // arm(p1_arm_automation_v2)은 정책이 묶은 원칙 버전이 지금 활성 원칙 버전과 다르면 40001 로 거부한다.
+        // 상태가 이것을 모르면 "시작 가능"인데 누르면 일반 충돌로 끝난다. 원칙을 고친 뒤 정책을 다시 저장하면 풀린다.
+        val principleDrift =
+            jdbc.queryForObject(
+                "SELECT public.p1_automation_principle_drift_v1(:ownerUserId)",
+                mapOf("ownerUserId" to ownerUserId),
+                Boolean::class.java,
+            ) == true
+        val credentialReady = primaryCredentialReady || operatorProviderReady
         val aiProviderReady = !aiSettings.enabled || (credentialReady && aiSettings.dailyGenerateCallCap >= 3)
         val blockers =
             buildList {
                 addAll(base.blockers)
                 if (policy == null) add("POLICY_V3_NOT_CONFIGURED")
+                if (policy != null && principleDrift) add("POLICY_VERSION_DRIFT")
                 if (legacyCount > 0) add("LEGACY_POSITION_PRESENT")
+                if (unlinkedOpenPositionCount + unresolvedUnlinkedOrderCount + unresolvedUnlinkedRunCount > 0) {
+                    add("ACCOUNT_HISTORY_UNLINKED")
+                }
                 if (marketHistoryStatus != "READY") add("MARKET_DATA_CATCHUP_REQUIRED")
                 if (!aiProviderReady) add("AI_PROVIDER_NOT_READY")
             }.distinct()
@@ -1074,6 +1167,16 @@ class JdbcAutomationRepository(
             unresolvedReconciliation = base.unresolvedReconciliation,
             canArm = base.controlState == "DISARMED" && blockers.isEmpty(),
             blockers = blockers,
+            ownerConnectionReady = ownerConnectionReady,
+            orderPathVerified = orderPathVerified,
+            orderFailureCode = orderFailureCode,
+            unlinkedOpenPositionCount = unlinkedOpenPositionCount,
+            unresolvedUnlinkedOrderCount = unresolvedUnlinkedOrderCount,
+            unresolvedUnlinkedRunCount = unresolvedUnlinkedRunCount,
+            quarantinedPositionCount = quarantinedPositionCount,
+            historicalPaperOpenPositionCount = historicalPaperOpenPositionCount,
+            historicalPaperClosedPositionCount = historicalPaperClosedPositionCount,
+            historicalPaperRunCount = historicalPaperRunCount,
         )
     }
 
@@ -1360,8 +1463,20 @@ class JdbcAutomationRepository(
             "P1L01" -> AutomationBlockedException("LEGACY_POSITION_PRESENT", error)
             "P1M01" -> AutomationBlockedException("MARKET_DATA_CATCHUP_REQUIRED", error)
             "P1A01" -> AutomationBlockedException("AI_PROVIDER_NOT_READY", error)
+            "P1H01" -> AutomationBlockedException("ACCOUNT_HISTORY_UNLINKED", error)
+            // V216: 자격증명에 묶인 계좌와 다른 계좌로 무장하려 했다. 화면은 상태를 다시 읽어 묶인
+            // 계좌로 보내면 된다.
+            "P1K01" -> AutomationBlockedException("ACCOUNT_NOT_CONFIGURED", error)
+            // V214 운영자 상한: 새 무장만 거부하고 이미 무장한 사용자는 그대로 둔다.
+            "53400" -> AutomationBlockedException("AUTOMATION_CAPACITY_REACHED", error)
             "23505" -> AutomationIdempotencyConflictException()
-            "40001" -> AutomationConflictException(error)
+            "40001" ->
+                // 사용자가 스스로 풀 수 있는 40001 은 이유를 싣는다. 나머지는 진짜 동시성 충돌이다.
+                if (error.mostSpecificCause.message?.contains("automation principle version drift") == true) {
+                    AutomationBlockedException("POLICY_VERSION_DRIFT", error)
+                } else {
+                    AutomationConflictException(error)
+                }
             "P0002" -> AutomationNotFoundException()
             "42501" -> AutomationAccessDeniedException(error)
             else -> {
@@ -1479,3 +1594,19 @@ class JdbcAutomationRepository(
         jdbcProvider.getIfAvailable()
             ?: throw AutomationStorageException(IllegalStateException("Automation JDBC is unavailable."))
 }
+
+/**
+ * 바인딩은 마지막 무장 때의 정책이다. 정지 중에 정책을 저장하면 다음 무장이 새 버전을
+ * 바인딩하므로, 어긋남은 무장 중일 때만 재무장을 막는 이유가 된다.
+ */
+internal fun policyBindingDrifted(
+    controlState: String?,
+    boundPolicyId: String?,
+    boundPolicyVersion: Int?,
+    currentPolicyId: String?,
+    currentPolicyVersion: Int?,
+): Boolean =
+    controlState != null &&
+        controlState != "DISARMED" &&
+        boundPolicyId != null &&
+        (boundPolicyId != currentPolicyId || boundPolicyVersion != currentPolicyVersion)

@@ -187,7 +187,9 @@ class PrincipleApiIntegrationTest(
     @Test
     fun `owner list detail and cursor hide cross owner rows and reject malformed or mismatched input`() {
         val userToken = login("demo-user", userPassword())
-        val adminToken = login("demo-admin", adminPassword())
+        TestPeerUser.ensure(ownerJdbc)
+        // 두 번째 owner는 demo-admin 대신 일반 USER peer다.
+        val adminToken = login(TestPeerUser.EMAIL, TestPeerUser.PASSWORD)
         val first = createdId(create(userToken, "req-owner-first", createBody("balanced", "첫 원칙")))
         val second = createdId(create(userToken, "req-owner-second", createBody("aggressive", "둘째 원칙")))
         val adminCreated = create(adminToken, "req-owner-admin", createBody("conservative", "관리자 원칙"))

@@ -32,6 +32,7 @@ class MockCredentialDisconnectService(
 class MockCredentialDisconnectRepository(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val actorRlsScope: ActorRlsScopePort,
+    private val crypto: BrokerageCredentialCrypto,
 ) {
     @Transactional
     fun disconnect(
@@ -41,6 +42,46 @@ class MockCredentialDisconnectRepository(
     ): String {
         val jdbc = jdbcProvider.getIfAvailable() ?: error("BROKERAGE_CREDENTIAL_DATABASE_UNAVAILABLE")
         actorRlsScope.open(jdbc, ownerUserId, "DISCONNECT_MOCK_CREDENTIAL", "BROKER_CREDENTIAL", accountId)
+        val envelope =
+            jdbc.query(
+                "SELECT * FROM p1_read_mock_credential_identity_envelope_v218(:owner)",
+                mapOf("owner" to ownerUserId),
+            ) { row, _ ->
+                BoundMockCredentialEnvelope(
+                    accountId = row.getString("account_id"),
+                    state = row.getString("credential_state"),
+                    revision = row.getLong("revision"),
+                    sealed =
+                        SealedBrokerageCredential(
+                            kekVersion = row.getString("kek_version"),
+                            wrapNonce = row.getBytes("wrap_nonce"),
+                            wrappedDek = row.getBytes("wrapped_dek"),
+                            wrapTag = row.getBytes("wrap_tag"),
+                            secretNonce = row.getBytes("secret_nonce"),
+                            secretCiphertext = row.getBytes("secret_ciphertext"),
+                            secretTag = row.getBytes("secret_tag"),
+                            appKeyLast4 = row.getString("app_key_last4"),
+                            accountNoLast4 = row.getString("account_no_last4"),
+                        ),
+                )
+            }.singleOrNull() ?: error("BROKERAGE_CREDENTIAL_UNAVAILABLE")
+        envelope.use { current ->
+            check(current.accountId == accountId && current.revision == revision)
+            crypto.open(ownerUserId, accountId, current.sealed).use { opened ->
+                val fingerprint = crypto.accountIdentityFingerprint(ownerUserId, opened.accountNo)
+                check(
+                    jdbc.queryForObject(
+                        """
+                        SELECT p1_register_mock_account_identity_before_disconnect_v218(
+                          :owner,:account,:fingerprint
+                        )
+                        """.trimIndent(),
+                        mapOf("owner" to ownerUserId, "account" to accountId, "fingerprint" to fingerprint),
+                        Boolean::class.java,
+                    ) == true,
+                )
+            }
+        }
         val result =
             jdbc.queryForObject(
                 "SELECT disconnect_bound_mock_broker_credential_v1(:owner, :account, :revision)",

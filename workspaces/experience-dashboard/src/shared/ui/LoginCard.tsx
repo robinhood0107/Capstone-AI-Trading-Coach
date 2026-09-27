@@ -122,7 +122,8 @@ function AccountAuthCard() {
               onChange={(event) => setPassword(event.target.value)}
               required
               minLength={signingUp ? 15 : 1}
-              maxLength={64}
+              // 가입은 15~64자 정책이지만, 로그인은 서버가 1024자까지 받는다(기존·운영자 비밀번호).
+              maxLength={signingUp ? 64 : 1024}
               className="mt-1.5 w-full rounded-control border border-line bg-subtle px-4 py-2.5 text-[15px] text-ink focus:border-navy focus:bg-panel"
             />
             {signingUp ? <p className="mt-1 text-[11px] leading-5 text-faint">15~64자</p> : null}

@@ -37,14 +37,14 @@ class AuthCutoverSmokeTest {
     private val now: Instant = Instant.parse("2026-07-22T10:00:00Z")
     private val clock: Clock = Clock.fixed(now, ZoneOffset.UTC)
     private val oldToken: String = jwtShapedToken(now.plus(Duration.ofHours(4)))
-    private val newUserToken: String =
+    private val newOperatorToken: String =
         jwtShapedToken(
             expiresAt = now.plus(Duration.ofHours(12)),
             subject = "usr_demo_user",
-            role = "USER",
+            role = "ADMIN",
             securityVersion = 2,
         )
-    private val newAdminToken: String =
+    private val misboundToken: String =
         jwtShapedToken(
             expiresAt = now.plus(Duration.ofHours(12)),
             subject = "usr_demo_admin",
@@ -172,7 +172,7 @@ class AuthCutoverSmokeTest {
                 )
             }
 
-        assertTrue(failure.checkCode == "post_user_login_contract")
+        assertTrue(failure.checkCode == "post_admin_login_contract")
         assertTrue(Files.exists(evidencePath))
     }
 
@@ -201,30 +201,18 @@ class AuthCutoverSmokeTest {
                 respond(exchange, if (cutoverComplete.get()) 401 else 200, "{}")
             }
 
-            path == "/api/v1/system/health" && authorization in setOf("Bearer $newUserToken", "Bearer $newAdminToken") -> {
-                respond(exchange, 200, "{}")
-            }
+            path == "/api/v1/system/health" && authorization == "Bearer $newOperatorToken" -> respond(exchange, 200, "{}")
 
-            path == "/actuator/metrics" && authorization == "Bearer $newUserToken" -> respond(exchange, 403, "{}")
+            path == "/actuator/metrics" && authorization == "Bearer $newOperatorToken" -> respond(exchange, 200, "{}")
 
-            path == "/actuator/metrics" && authorization == "Bearer $newAdminToken" -> respond(exchange, 200, "{}")
+            path == "/api/v1/auth/login" && requestBody.contains("demo-admin") -> respond(exchange, 401, "{}")
 
             path == "/api/v1/auth/login" -> {
-                val isAdmin = requestBody.contains("demo-admin")
-                val userId = if (isAdmin) "usr_demo_admin" else "usr_demo_user"
-                val role = if (isAdmin) "ADMIN" else "USER"
-                val token =
-                    if (misbindLoginTokens.get()) {
-                        newAdminToken
-                    } else if (isAdmin) {
-                        newAdminToken
-                    } else {
-                        newUserToken
-                    }
+                val token = if (misbindLoginTokens.get()) misboundToken else newOperatorToken
                 respond(
                     exchange,
                     200,
-                    """{"success":true,"data":{"accessToken":"$token","user":{"userId":"$userId","role":"$role"}}}""",
+                    """{"success":true,"data":{"accessToken":"$token","user":{"userId":"usr_demo_user","role":"ADMIN"}}}""",
                 )
             }
 

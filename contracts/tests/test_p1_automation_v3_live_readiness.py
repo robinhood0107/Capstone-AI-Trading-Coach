@@ -82,16 +82,26 @@ class P1AutomationV3LiveReadinessTest(unittest.TestCase):
         self.assertIn("string thinking_level = 15;", proto)
         self.assertIn("bool grounding_discovery_only = 16;", proto)
 
-    def test_vertex_service_account_readiness_does_not_require_an_owner_api_key(
+    def test_status_and_arm_share_one_ai_provider_readiness_rule(
         self,
     ) -> None:
+        # 상태 화면은 arm 과 같은 규칙으로 "시작 가능"을 말해야 한다: 소유자 PRIMARY 키 또는 이 배포가
+        # 허용한 운영자 공용 Vertex. 예전의 vertex 면제는 arm 에 없어서 버튼이 거짓말했다.
         repository = (
             ROOT
             / "workspaces/decision-platform/spring-api/src/main/kotlin/com/capstone/decision/infrastructure/automation/JdbcAutomationRepository.kt"
         ).read_text(encoding="utf-8")
+        migration = (
+            ROOT
+            / "workspaces/decision-platform/spring-api/src/main/resources/db/migration/V216__owner_ai_credential_and_bound_account.sql"
+        ).read_text(encoding="utf-8")
 
+        self.assertIn("primaryCredentialReady || operatorProviderReady", repository)
+        self.assertNotIn('aiSettings.provider == "vertex" || primaryCredentialReady', repository)
+        self.assertIn("OR COALESCE(p_operator_provider_ready,false)", migration)
         self.assertIn(
-            'aiSettings.provider == "vertex" || primaryCredentialReady', repository
+            "DROP FUNCTION public.p1_arm_automation_v3(text,text,text,integer,integer,text,text,boolean);",
+            migration,
         )
 
     def test_after_hours_brokerage_e2e_is_provider_free_and_restores_runtime_mode(

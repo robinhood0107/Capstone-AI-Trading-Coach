@@ -10,6 +10,8 @@ import com.capstone.decision.application.decision.DecisionService
 import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
 import com.capstone.decision.infrastructure.security.UserSecurityRepository
 import io.swagger.v3.oas.annotations.Hidden
+import io.grpc.Status
+import io.grpc.StatusRuntimeException
 import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
@@ -48,6 +50,8 @@ class AutomationRuntimeBridgeController(
     private val users: UserSecurityRepository,
     private val mockCredentials: ObjectProvider<MockCredentialSettingsService>,
     @Value("\${AUTOMATION_RUNTIME_SHARED_SECRET:}") private val configuredSecret: String,
+    @Value("\${app.brokerage.connected-owner-orders-enabled:false}")
+    private val connectedOwnerOrdersEnabled: Boolean = false,
 ) {
     private val parser = AutomationRuntimeBridgeParser()
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -132,7 +136,14 @@ class AutomationRuntimeBridgeController(
                 error.javaClass.simpleName,
                 generateSequence(error.cause) { it.cause }.lastOrNull()?.javaClass?.simpleName ?: "-",
             )
-            ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(mapOf("status" to "FAILED"))
+            val orderFailureCode = if (failedOperation == "SUBMIT") safeKisOrderFailureCode(error) else null
+            if (orderFailureCode != null) {
+                ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(
+                    mapOf("status" to "FAILED", "failureCode" to orderFailureCode),
+                )
+            } else {
+                ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(mapOf("status" to "FAILED"))
+            }
         }
     }
 
@@ -145,6 +156,17 @@ class AutomationRuntimeBridgeController(
         return MessageDigest.isEqual(configuredSecret.toByteArray(), suppliedSecret.toByteArray())
     }
 
+    private fun safeKisOrderFailureCode(error: Throwable): String? {
+        val providerStatus = generateSequence(error) { it.cause }
+            .filterIsInstance<StatusRuntimeException>()
+            .firstOrNull()?.status?.code ?: return null
+        return when (providerStatus) {
+            Status.Code.FAILED_PRECONDITION, Status.Code.PERMISSION_DENIED -> "KIS_ORDER_REJECTED"
+            Status.Code.DEADLINE_EXCEEDED, Status.Code.UNAVAILABLE -> "KIS_ORDER_RESULT_UNCERTAIN"
+            else -> null
+        }
+    }
+
     private fun ownerMockCredential(
         ownerUserId: String,
         rawAccountId: String,
@@ -152,7 +174,11 @@ class AutomationRuntimeBridgeController(
         val accountId = brokerageParser.parseAccountId(rawAccountId)
         val service = mockCredentials.ifAvailable ?: error("BROKERAGE_CREDENTIAL_UNAVAILABLE")
         return service.resolveEnvelope(ownerUserId, accountId).use { envelope ->
-            check(envelope.state == "CERTIFIED") { "BROKERAGE_CREDENTIAL_NOT_CERTIFIED" }
+            val certified = envelope.state == "CERTIFIED"
+            val connectedForFull =
+                connectedOwnerOrdersEnabled && envelope.state == "CONNECTED" &&
+                    service.fullAutomationConnectionReady(ownerUserId, accountId)
+            check(certified || connectedForFull) { "BROKERAGE_CREDENTIAL_NOT_READY" }
             val sealed = envelope.sealed
             val encoder = Base64.getEncoder()
             mapOf(

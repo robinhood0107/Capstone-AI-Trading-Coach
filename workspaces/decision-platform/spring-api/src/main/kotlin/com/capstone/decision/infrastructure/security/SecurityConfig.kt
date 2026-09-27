@@ -23,6 +23,7 @@ import com.capstone.decision.infrastructure.vertex.S49StrongLlmProperties
 import com.capstone.decision.infrastructure.web.HttpRequestProperties
 import com.capstone.decision.infrastructure.web.RequestBodyLimitFilter
 import com.capstone.decision.infrastructure.web.RequestIdFilter
+import jakarta.servlet.DispatcherType
 import org.flywaydb.core.api.migration.JavaMigration
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
@@ -77,6 +78,9 @@ import java.security.MessageDigest
     AsyncProperties::class,
 )
 class SecurityConfig {
+    @Value("\${mars.social-login.public-origin:}")
+    private var publicOrigin: String = ""
+
     @Bean
     fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder(12)
 
@@ -351,6 +355,12 @@ class SecurityConfig {
                     .requestMatchers(HttpMethod.OPTIONS, "/**")
                     .permitAll()
                 authorize
+                    // 컨테이너 오류 dispatch(/error)는 JWT filter 를 다시 타지 않아 익명으로 보인다. 막으면
+                    // 로그인한 사용자의 404·405·500 이 전부 401 로 바뀌어 화면이 로그아웃된다.
+                    // /error 는 이미 정해진 status 를 envelope 로 옮길 뿐이라 열어도 권한이 늘지 않는다.
+                    .dispatcherTypeMatchers(DispatcherType.ERROR)
+                    .permitAll()
+                authorize
                     // liveness만 공개하고 metrics/info/prometheus는 운영정보이므로 ADMIN으로 제한한다.
                     .requestMatchers("/actuator/health")
                     .permitAll()
@@ -369,6 +379,9 @@ class SecurityConfig {
                     ).hasRole("ADMIN")
                 authorize
                     .requestMatchers("/api/v1/risk/kill-switch")
+                    .hasRole("ADMIN")
+                authorize
+                    .requestMatchers("/api/v1/admin/**")
                     .hasRole("ADMIN")
                 authorize
                     // ADMIN route는 method security와 filter-chain 양쪽에서 기능 수준 권한을 고정한다.
@@ -399,9 +412,12 @@ class SecurityConfig {
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {
         // README의 loopback 접속 주소만 열어 same-origin rewrite와 로컬 smoke를 함께 만족한다.
+        // FULL 은 사용자가 여는 공개 주소에서 같은 출처로 들어오므로 그 주소 하나를 더한다.
         val configuration =
             CorsConfiguration().apply {
-                allowedOrigins = listOf("http://localhost:3000", "http://127.0.0.1:3000")
+                allowedOrigins =
+                    listOf("http://localhost:3000", "http://127.0.0.1:3000") +
+                    listOf(publicOrigin).filter { it.isNotBlank() }
                 allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE")
                 allowedHeaders =
                     listOf(

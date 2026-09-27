@@ -75,21 +75,9 @@ class VertexProviderSettings:
         encoded = os.environ.get("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", "")
         if not encoded or len(encoded) > 64 * 1024:
             raise ValueError("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_ENV_MISSING")
-        try:
-            credential_bytes = base64.b64decode(encoded, validate=True)
-        except (binascii.Error, ValueError) as error:
-            raise ValueError("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_ENV_INVALID") from error
-        if (
-            base64.b64encode(credential_bytes).decode("ascii") != encoded
-            or len(credential_bytes) > 48 * 1024
-        ):
-            raise ValueError("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_ENV_INVALID")
-        try:
-            service_account_info = json.loads(credential_bytes)
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise ValueError("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_ENV_INVALID") from error
-        if not isinstance(service_account_info, dict):
-            raise ValueError("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_ENV_INVALID")
+        service_account_info = _decode_service_account(
+            encoded, "STRONG_LLM_VERTEX_SERVICE_ACCOUNT_ENV_INVALID"
+        )
         raw_timeout = os.environ.get("STRONG_LLM_VERTEX_TIMEOUT_SECONDS", "50")
         try:
             timeout_seconds = float(raw_timeout)
@@ -105,6 +93,48 @@ class VertexProviderSettings:
             thinking_level=thinking_level,
             max_output_tokens=int(raw_output_cap),
         )
+
+
+    @classmethod
+    def from_b64(
+        cls,
+        encoded: str,
+        *,
+        timeout_seconds: float,
+        thinking_level: str,
+        max_output_tokens: int,
+    ) -> VertexProviderSettings:
+        """host가 run마다 넘긴 사용자 자기 서비스 계정. 운영자 비밀과 같은 canonical Base64 모양만 받는다."""
+        if not encoded or len(encoded) > 4_096:
+            raise ValueError("STRONG_LLM_OWNER_VERTEX_CREDENTIAL_INVALID")
+        return cls(
+            service_account_info=_decode_service_account(
+                encoded, "STRONG_LLM_OWNER_VERTEX_CREDENTIAL_INVALID"
+            ),
+            timeout_seconds=timeout_seconds,
+            thinking_level=thinking_level,
+            max_output_tokens=max_output_tokens,
+        )
+
+
+def _decode_service_account(encoded: str, failure: str) -> dict[str, Any]:
+    """오류에는 고정 leaf만 싣는다. 원문·부분 문자열은 예외 메시지에 들어가지 않는다."""
+    try:
+        credential_bytes = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError(failure) from None
+    if (
+        base64.b64encode(credential_bytes).decode("ascii") != encoded
+        or len(credential_bytes) > 48 * 1024
+    ):
+        raise ValueError(failure)
+    try:
+        service_account_info = json.loads(credential_bytes)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ValueError(failure) from None
+    if not isinstance(service_account_info, dict):
+        raise ValueError(failure)
+    return service_account_info
 
 
 class LangChainVertexProvider:

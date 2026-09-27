@@ -19,7 +19,6 @@ class PublicFullComposeTest(unittest.TestCase):
     def test_full_stack_has_its_own_state_and_uses_owner_kis_envelopes(self) -> None:
         environment = {
             **os.environ,
-            "COMPOSE_PROFILES": "collectors",
             "MARS_FULL_SECRET_GID": "1000",
             "MARS_FULL_TAG": "candidate",
             "MARS_FULL_SECRETS_DIR": "/tmp/mars-full-contract-secrets",
@@ -44,22 +43,55 @@ class PublicFullComposeTest(unittest.TestCase):
                 "postgres", "redis", "role-bootstrap", "migrate", "seed-import",
                 "rag-runtime-seed", "actor-authority", "market-data-daily",
                 "world-news-minute", "disclosure-collector", "api", "web",
+                "team-b-seed-import", "calendar-offline-seed", "rag-source-register",
             },
         )
+        # 개인 스택이 up 마다 돌리는 일회성 적재를 FULL 도 평범한 up 에서 돌린다.
+        one_shots = {
+            "team-b-seed-import": ("artifact-import", "app.p1_owner.importer", "artifact_import_env"),
+            "calendar-offline-seed": (
+                "calendar-offline-seed",
+                "app.data.calendar.offline_seed_cli",
+                "calendar_offline_seed_env",
+            ),
+            "rag-source-register": (
+                "rag-source-register",
+                "app.rag.register_sources_cli --register-db --json",
+                "rag_source_register_env",
+            ),
+            "disclosure-collector": (
+                "disclosure-collector",
+                "app.data.opendart.disclosure_event_collector_cli",
+                "disclosure_collector_env",
+            ),
+        }
+        for name, (role, module, secret) in one_shots.items():
+            service = services[name]
+            self.assertNotIn("profiles", service, name)
+            self.assertEqual(service["restart"], "no", name)
+            self.assertEqual(service["entrypoint"][-1], role, name)
+            self.assertIn(module, " ".join(service["command"]), name)
+            self.assertEqual({item["source"] for item in service["secrets"]}, {secret}, name)
+            self.assertEqual(
+                service["depends_on"]["migrate"]["condition"], "service_completed_successfully", name
+            )
+        self.assertEqual(services["team-b-seed-import"]["environment"]["P1_OPERATOR_UID"], "65532")
+        self.assertIn("/opt/capstone/seed/team-b", services["team-b-seed-import"]["command"])
         self.assertIn("app.data.market_data.yfinance_daily_cli", " ".join(services["market-data-daily"]["command"]))
         self.assertIn("app.data.news.gdelt_collector_cli", " ".join(services["world-news-minute"]["command"]))
         self.assertEqual(services["world-news-minute"]["environment"]["GDELT_WORLD_NEWS_ENABLED"], "true")
-        self.assertEqual(services["disclosure-collector"]["profiles"], ["collectors"])
-        self.assertEqual(
-            {secret["source"] for secret in services["disclosure-collector"]["secrets"]},
-            {"disclosure_collector_env"},
-        )
         api = services["api"]
+        self.assertEqual(
+            api["depends_on"]["team-b-seed-import"]["condition"], "service_completed_successfully"
+        )
         self.assertEqual(api["environment"]["MARS_PUBLIC_SURFACE_MODE"], "FULL")
         self.assertEqual(api["environment"]["SPRING_PROFILES_ACTIVE"], "mars-full")
         self.assertEqual(api["environment"]["BROKERAGE_GRPC_ENABLED"], "true")
         self.assertEqual(api["environment"]["P1_AUTOMATION_RUNTIME_ENABLED"], "true")
-        self.assertEqual(api["environment"]["ASYNC_WORKER_ENABLED"], "false")
+        self.assertEqual(api["environment"]["ASYNC_WORKER_ENABLED"], "true")
+        self.assertEqual(api["environment"]["ASYNC_POLLING_ENABLED"], "true")
+        self.assertEqual(api["environment"]["ASYNC_WORKER_GRPC_TARGET"], "127.0.0.1:50056")
+        self.assertEqual(api["environment"]["WORLD_NEWS_RETENTION_ENABLED"], "true")
         self.assertEqual(api["environment"]["RETURN_INFERENCE_BUNDLE_ROOT"], "/opt/capstone/seed/team-b")
         self.assertEqual(api["environment"]["RETURN_INFERENCE_ALLOW_SYNTHETIC"], "false")
         full_profile = yaml.safe_load(
@@ -107,7 +139,7 @@ class PublicFullComposeTest(unittest.TestCase):
         self.assertIn("MARS_VERTEX_SERVICE_ACCOUNT_JSON_B64", secret_entrypoint)
         self.assertIn("KIS_MOCK_ORDER_REFERENCE_KEY) return 0", secret_entrypoint)
         self.assertIn("P1_AUTOMATION_DATABASE_DSN|AUTOMATION_RUNTIME_SHARED_SECRET) return 0", secret_entrypoint)
-        self.assertIn("RETURN_INFERENCE_GRPC_SHARED_SECRET) return 0", secret_entrypoint)
+        self.assertIn("RETURN_INFERENCE_GRPC_SHARED_SECRET|ASYNC_WORKER_DATABASE_DSN) return 0", secret_entrypoint)
         self.assertIn("KIS_*|P1_AUTOMATION_*) return 1", secret_entrypoint)
 
 

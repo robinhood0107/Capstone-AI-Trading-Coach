@@ -43,6 +43,14 @@ test('Next forwards only the /api namespace to the matching Compose API service'
   }
 });
 
+test('same-origin POST keeps a real Origin so the API CORS check accepts login', async () => {
+  // no-referrer 는 브라우저가 같은 출처 POST 의 Origin 을 null 로 보내게 해 로그인이 403 이 된다.
+  const [{ headers }] = await nextConfig.headers();
+  const policy = headers.find((header) => header.key === 'Referrer-Policy')?.value;
+  assert.ok(policy, 'Referrer-Policy header is set');
+  assert.notEqual(policy, 'no-referrer');
+});
+
 test('protected health is requested only after live authentication', async () => {
   const endpoints = await readFile(endpointsUrl, 'utf8');
   const statusBar = await readFile(statusBarUrl, 'utf8');

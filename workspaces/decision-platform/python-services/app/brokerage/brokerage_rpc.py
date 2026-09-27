@@ -6,10 +6,12 @@ import re
 from collections.abc import Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from datetime import UTC, date, datetime
-from typing import Any, NoReturn, Protocol
+from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 
 import grpc
 
+from app.brokerage.kis_mock_online_client import KISMockBrokerageError, KISMockFailureReason
+from app.data.kis._credential_transport import KISCredentialError
 from app.brokerage.kis_mock_order_gateway import (
     KISMockOrderGateway,
     LiveOrderGateClosed,
@@ -18,6 +20,9 @@ from app.brokerage.kis_mock_order_gateway import (
 )
 from app.brokerage.owner_credential_envelope import OwnerCredentialUnavailable
 from app.generated import brokerage_pb2, brokerage_pb2_grpc
+
+if TYPE_CHECKING:
+    from app.brokerage.kis_mock_online_runtime import KISMockBalanceSourceProbe
 
 _AUTH_METADATA_KEY = "x-decision-grpc-auth"
 _SAFE_SECRET = re.compile(r"[A-Za-z0-9._~:-]{32,256}")
@@ -38,7 +43,7 @@ class BalanceReadPort(Protocol):
 
     def balance(self, account_id: str) -> brokerage_pb2.GetMockBalanceResponse | None: ...
 
-    def verify_connection(self, account_id: str) -> None: ...
+    def verify_connection(self, account_id: str) -> KISMockBalanceSourceProbe | None: ...
 
     def buyable(
         self, account_id: str, symbol: str, estimated_price_krw: int
@@ -77,6 +82,7 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
         bound_account_id: str | None = None,
         balance_reader: BalanceReadPort | None = None,
         owner_factory: OwnerBoundBrokerageFactory | None = None,
+        allow_connected_credentials_for_orders: bool = False,
     ) -> None:
         if _SAFE_SECRET.fullmatch(shared_secret) is None:
             raise ValueError("Brokerage gRPC shared secret must be 32..256 safe ASCII characters")
@@ -94,6 +100,9 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
         self._bound_account_id = bound_account_id
         self._balance_reader = balance_reader
         self._owner_factory = owner_factory
+        self._owner_order_states = frozenset(
+            {"CONNECTED", "CERTIFIED"} if allow_connected_credentials_for_orders else {"CERTIFIED"}
+        )
 
     @contextmanager
     def _session(
@@ -127,7 +136,7 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
         _require_authenticated(context, self._shared_secret)
         _validate_submit_request(request, context)
         try:
-            with self._session(request, frozenset({"CERTIFIED"})) as (gateway, _):
+            with self._session(request, self._owner_order_states) as (gateway, _):
                 receipt = gateway.submit_cash_order(
                     MockOrderIntent(
                         symbol=request.symbol,
@@ -165,7 +174,7 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
         _require_authenticated(context, self._shared_secret)
         _validate_order_and_account(request.order_id, request.account_id, context)
         try:
-            with self._session(request, frozenset({"CERTIFIED", "DISCONNECTING"})) as (gateway, _):
+            with self._session(request, self._owner_order_states | {"DISCONNECTING"}) as (gateway, _):
                 receipt = gateway.cancel_cash_order(
                     order_id=request.order_id,
                     account_id=request.account_id,
@@ -253,15 +262,16 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
             ):
                 if reader is None:
                     raise RuntimeError("BROKERAGE_CONNECTION_READER_UNAVAILABLE")
-                reader.verify_connection(request.account_id)
+                probe = reader.verify_connection(request.account_id)
         except OwnerCredentialUnavailable:
             _abort(context, grpc.StatusCode.PERMISSION_DENIED, "mock owner credential unavailable")
-        except Exception:
+        except Exception as error:
+            # 사용자가 스스로 고칠 수 있는 실패는 고정 leaf 로 이유를 알린다. KIS 원문·계좌번호는 싣지 않는다.
+            leaf = _connection_failure_leaf(error)
+            if leaf is not None:
+                _abort(context, grpc.StatusCode.FAILED_PRECONDITION, leaf)
             _abort(context, grpc.StatusCode.UNAVAILABLE, "mock connection check unavailable")
-        return brokerage_pb2.VerifyMockConnectionResponse(
-            account_id=request.account_id,
-            connected=True,
-        )
+        return _connection_response(request.account_id, probe)
 
     def CertifyMockCredential(
         self,
@@ -398,6 +408,56 @@ def _receipt_hash(provider_order_no: str) -> str:
 def _now() -> str:
     # Spring의 submittedAt보다 같은 초 안에서 과거로 잘리지 않도록 microsecond를 보존한다.
     return datetime.now(tz=UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+_CONNECTION_FAILURE_PREFIX = "MOCK_CONNECTION_"
+
+
+def _connection_failure_leaf(error: Exception) -> str | None:
+    """연결 확인 실패를 host 가 화면 문구로 바꿀 수 있는 네 갈래로만 접는다."""
+
+    if isinstance(error, KISCredentialError):
+        # 세션을 여는 단계에서 토큰 발급이 먼저 실패한 경우다.
+        return _CONNECTION_FAILURE_PREFIX + "APP_KEY_REJECTED"
+    reason = getattr(error, "reason_code", None)
+    if not isinstance(error, KISMockBrokerageError) and reason is None:
+        return None
+    if reason == KISMockFailureReason.CREDENTIAL_UNAVAILABLE.value:
+        # 토큰 발급 실패: 앱 키·시크릿이 틀렸거나 모의투자용이 아니다.
+        return _CONNECTION_FAILURE_PREFIX + "APP_KEY_REJECTED"
+    if reason == KISMockFailureReason.PROVIDER_REJECTED.value or (
+        reason == KISMockFailureReason.HTTP_ERROR.value
+        and isinstance(getattr(error, "http_status", None), int)
+        and 400 <= int(getattr(error, "http_status")) < 500
+    ):
+        # 토큰은 나왔는데 잔고조회가 거부됐다: 계좌번호가 이 앱 키의 모의계좌가 아니다.
+        return _CONNECTION_FAILURE_PREFIX + "ACCOUNT_REJECTED"
+    if reason in {
+        KISMockFailureReason.RATE_LIMIT_UNAVAILABLE.value,
+        KISMockFailureReason.CALL_BUDGET_EXCEEDED.value,
+    }:
+        return _CONNECTION_FAILURE_PREFIX + "RATE_LIMITED"
+    return _CONNECTION_FAILURE_PREFIX + "KIS_UNAVAILABLE"
+
+
+def _connection_response(
+    account_id: str, probe: KISMockBalanceSourceProbe | None
+) -> brokerage_pb2.VerifyMockConnectionResponse:
+    if probe is None:
+        return brokerage_pb2.VerifyMockConnectionResponse(account_id=account_id, connected=True)
+    return brokerage_pb2.VerifyMockConnectionResponse(
+        account_id=account_id,
+        connected=True,
+        cash_krw=probe.cash_krw,
+        portfolio_equity_krw=probe.portfolio_equity_krw,
+        positions=[
+            brokerage_pb2.MockBalancePosition(
+                symbol=symbol, quantity=quantity, market_value_krw=market_value
+            )
+            for symbol, quantity, market_value in probe.positions
+        ],
+        positions_complete=probe.positions_complete,
+    )
 
 
 def _abort(context: grpc.ServicerContext, code: grpc.StatusCode, detail: str) -> NoReturn:

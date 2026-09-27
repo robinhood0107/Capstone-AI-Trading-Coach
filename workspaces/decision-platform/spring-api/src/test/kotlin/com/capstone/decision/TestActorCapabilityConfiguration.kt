@@ -115,19 +115,32 @@ class TestActorCapabilityIssuer(
         ) ?: offlineToken(actor.expectedUserId, binding)
 
     fun actorRef(actorUserId: String): AuthenticatedActorRef {
-        val password = if (actorUserId == "usr_demo_admin") TEST_ADMIN_PASSWORD else TEST_USER_PASSWORD
+        val peer = actorUserId == TestPeerUser.USER_ID
         return requireNotNull(authDataSource)
             .connection
             .use { connection ->
                 connection
                     .prepareStatement(
-                        """
-                        select session_handle,actor_user_id,actor_security_version
-                        from authenticate_demo_actor_session_v1(?,?,43200)
-                        """.trimIndent(),
+                        if (peer) {
+                            """
+                            select session_handle,actor_user_id,actor_security_version
+                            from authenticate_password_login_actor_v1(?,?,?,43200)
+                            """.trimIndent()
+                        } else {
+                            """
+                            select session_handle,actor_user_id,actor_security_version
+                            from authenticate_demo_actor_session_v1(?,?,43200)
+                            """.trimIndent()
+                        },
                     ).use { statement ->
-                        statement.setString(1, if (actorUserId == "usr_demo_admin") "demo-admin" else "demo-user")
-                        statement.setString(2, password)
+                        if (peer) {
+                            statement.setString(1, TestPeerUser.EMAIL)
+                            statement.setString(2, TestPeerUser.PASSWORD)
+                            statement.setString(3, TestPeerUser.PASSWORD_HASH)
+                        } else {
+                            statement.setString(1, "demo-user")
+                            statement.setString(2, TEST_USER_PASSWORD)
+                        }
                         statement.executeQuery().use { result ->
                             check(result.next())
                             AuthenticatedActorRef(
@@ -149,7 +162,7 @@ class TestActorCapabilityIssuer(
         actorUserId: String,
         binding: ActorCapabilityBinding,
     ): String {
-        val actorRole = if (actorUserId == "usr_demo_admin") "ADMIN" else "USER"
+        val actorRole = if (actorUserId == "usr_demo_admin" || actorUserId == "usr_demo_user") "ADMIN" else "USER"
         if (!binding.rolePolicy.accepts(actorRole)) throw ActorCapabilityDeniedException()
         val issuedAt = Instant.now(clock).truncatedTo(ChronoUnit.SECONDS)
         return ActorCapabilityPacketCodec.sign(
@@ -177,7 +190,6 @@ class TestActorCapabilityIssuer(
         const val IDENTITY_PASSWORD = "identity-test-secret-0001"
         const val AUTH_PASSWORD = "auth-test-secret-0001"
         val TEST_USER_PASSWORD = SpringApiIntegrationTestBase.TEST_USER_PASSWORD
-        val TEST_ADMIN_PASSWORD = SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD
     }
 }
 
@@ -189,8 +201,8 @@ internal fun <T> asTestActor(
     val actorRef = issuer.actorRef(actorUserId)
     return asTestActor(
         actorRef = actorRef,
-        username = if (actorUserId == "usr_demo_admin") "demo-admin" else "demo-user",
-        role = if (actorUserId == "usr_demo_admin") "ADMIN" else "USER",
+        username = if (actorUserId == TestPeerUser.USER_ID) TestPeerUser.USERNAME else "demo-user",
+        role = if (actorUserId == "usr_demo_admin" || actorUserId == "usr_demo_user") "ADMIN" else "USER",
         block = block,
     )
 }

@@ -80,25 +80,20 @@ class FlywayMigrationIntegrationTest(
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { admin ->
             admin.createStatement().use { statement ->
                 val ownerList = owners.joinToString(",") { "'$it'" }
-                statement.executeUpdate("delete from automation_runtime_events where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_events where user_id in ($ownerList)")
+                // Runtime events are append-only, so keep this test's ledger rows and disarm
+                // its fixture owners. Testcontainers gives this class a disposable database.
                 statement.executeUpdate(
-                    "delete from automation_processed_ticks where run_id in " +
-                        "(select run_id from automation_runs where user_id in ($ownerList))",
+                    "update automation_runtime_claim set claim_state='RELEASED',released_at=COALESCE(released_at,statement_timestamp()) " +
+                        "where user_id in ($ownerList) and claim_state='ACTIVE'",
                 )
-                statement.executeUpdate("delete from automation_order_reservations where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_runtime_checkpoint where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_runtime_claim where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_runtime_schedule where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_runs where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_control_idempotency where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_control where user_id in ($ownerList)")
-                statement.executeUpdate("delete from automation_activation_gate where user_id in ($ownerList)")
                 statement.executeUpdate(
-                    "delete from principle_versions where principle_id in ('prc_automation_owner_a_0001','prc_automation_owner_b_0001')",
+                    "update automation_runtime_schedule set schedule_state='HALTED',updated_at=statement_timestamp() " +
+                        "where user_id in ($ownerList) and schedule_state in ('ARMED','CLAIMED')",
                 )
-                statement.executeUpdate("delete from principles where user_id in ($ownerList)")
-                statement.executeUpdate("delete from users where user_id in ($ownerList)")
+                statement.executeUpdate(
+                    "update automation_control set control_state='DISARMED',version=version+1,updated_at=statement_timestamp() " +
+                        "where user_id in ($ownerList) and control_state<>'DISARMED'",
+                )
             }
         }
     }
@@ -106,8 +101,11 @@ class FlywayMigrationIntegrationTest(
     @Test
     fun `clean database applies every migration in order and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        // V7 is a Java migration and must appear alongside the SQL migrations.
-        assertEquals((1..versions.last().toInt()).map(Int::toString), versions)
+        // Version numbers are monotonic but intentionally sparse. V7 is a Java migration and
+        // must appear alongside the SQL migrations; missing numbers are not failed migrations.
+        val numericVersions = versions.map(String::toInt)
+        assertEquals(numericVersions.sorted().distinct(), numericVersions)
+        assertEquals("218", versions.last())
 
         val requiredTables =
             listOf(
@@ -238,6 +236,14 @@ class FlywayMigrationIntegrationTest(
                 "p1_return_signal_projection",
                 "automation_control",
                 "automation_activation_gate",
+                "full_owner_account_identity_v218",
+                "full_owner_account_aliases_v218",
+                "full_owner_account_link_events_v218",
+                "automation_position_history_events_v218",
+                "automation_paper_history_run_links_v218",
+                "automation_paper_account_rekey_events_v218",
+                "automation_order_integrity_events_v218",
+                "automation_schedule_disarm_events_v218",
                 "automation_runs",
                 "automation_positions",
                 "automation_events",
@@ -252,6 +258,10 @@ class FlywayMigrationIntegrationTest(
         requiredTables.forEach { tableName ->
             assertTrue(tableExists(tableName), "expected table $tableName to exist")
         }
+        assertTrue(functionExists("public.p1_full_owner_account_history_integrity_v218(text,text)"))
+        assertTrue(functionExists("public.p1_read_mock_credential_identity_envelope_v218(text)"))
+        assertTrue(functionExists("public.p1_resolve_or_bind_mock_account_identity_v218(text,text,text,text)"))
+        assertTrue(functionExists("public.p1_read_owner_mock_credential_state_for_automation_v218(text)"))
 
         assertEquals(1, countMarketCalendarRows("KRX", "2026-06-23", true))
         assertEquals(1, countMarketCalendarRows("KRX", "2026-01-01", false))
@@ -600,7 +610,7 @@ class FlywayMigrationIntegrationTest(
                     statement.executeQuery("select user_id from p1_list_armed_automation_users_v1()").use { rows ->
                         while (rows.next()) actualOwners += rows.getString(1)
                     }
-                    assertTrue(actualOwners.containsAll(owners))
+                    assertTrue(actualOwners.containsAll(owners), "armed owners returned by runtime=$actualOwners")
 
                     val legacyRun =
                         statement
@@ -1638,6 +1648,7 @@ class FlywayMigrationIntegrationTest(
 
     @Test
     fun `V23 permits hash-stable fixture replay but blocks mutation snapshot writing and cross-owner reads`() {
+        TestPeerUser.ensure(jdbcTemplate)
         val storageTables =
             listOf(
                 "market_source_entitlements",
@@ -1746,7 +1757,7 @@ class FlywayMigrationIntegrationTest(
         DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             connection.createStatement().use { statement ->
-                openTestActorScope(connection, "usr_demo_admin")
+                openTestActorScope(connection, TestPeerUser.USER_ID)
                 statement.executeQuery("select count(*) from latest_cross_market_risk_snapshots").use { result ->
                     assertTrue(result.next())
                     assertEquals(0L, result.getLong(1))
@@ -2353,16 +2364,16 @@ class FlywayMigrationIntegrationTest(
         listOf(
             "'KILL_SWITCH_CHANGED', jsonb_build_object(" +
                 "'generation', 2, 'previousActive', false, 'nextActive', true, " +
-                "'reasonClass', 'OPERATOR_MANUAL_STOP', 'changedBy', 'usr_demo_admin', " +
+                "'reasonClass', 'OPERATOR_MANUAL_STOP', 'changedBy', 'usr_demo_user', " +
                 "'changedByRole', 'ADMIN', 'correlationId', 'req-audit-missing')",
             "'KILL_SWITCH_CHANGED', jsonb_build_object(" +
                 "'generation', 2, 'previousActive', false, 'nextActive', true, " +
-                "'reasonClass', 'OPERATOR_MANUAL_STOP', 'changedBy', 'usr_demo_admin', " +
+                "'reasonClass', 'OPERATOR_MANUAL_STOP', 'changedBy', 'usr_demo_user', " +
                 "'changedByRole', 'ADMIN', 'correlationId', 'req-audit-extra', " +
                 "'invalidatedDecisionCount', 0, 'rawReason', 'forbidden')",
             "'UNSAFE_ACTION', jsonb_build_object(" +
                 "'generation', 2, 'previousActive', false, 'nextActive', true, " +
-                "'reasonClass', 'OPERATOR_MANUAL_STOP', 'changedBy', 'usr_demo_admin', " +
+                "'reasonClass', 'OPERATOR_MANUAL_STOP', 'changedBy', 'usr_demo_user', " +
                 "'changedByRole', 'ADMIN', 'correlationId', 'req-audit-action', " +
                 "'invalidatedDecisionCount', 0)",
         ).forEachIndexed { index, actionAndPayload ->
@@ -2374,7 +2385,7 @@ class FlywayMigrationIntegrationTest(
                       target_id, request_id, payload_json, created_at
                     )
                     select
-                      'aud-v10-denied-$index', 'usr_demo_admin', 'ADMIN',
+                      'aud-v10-denied-$index', 'usr_demo_user', 'ADMIN',
                       unsafe.action, 'KILL_SWITCH', 'GLOBAL',
                       'req-audit-${listOf("missing", "extra", "action")[index]}',
                       unsafe.payload, now()
@@ -2394,18 +2405,18 @@ class FlywayMigrationIntegrationTest(
                 """
                 select role, status, security_version
                 from users
-                where user_id = 'usr_demo_admin'
+                where user_id = 'usr_demo_user'
                 """.trimIndent(),
             )
         val securityVersion = (original["security_version"] as Number).toLong()
         try {
             assertEquals("AUTHORIZED", revalidateKillSwitchAdmin(securityVersion))
 
-            jdbcTemplate.update("update users set role = 'USER' where user_id = 'usr_demo_admin'")
+            jdbcTemplate.update("update users set role = 'USER' where user_id = 'usr_demo_user'")
             assertEquals("FORBIDDEN", revalidateKillSwitchAdmin(securityVersion))
 
             jdbcTemplate.update(
-                "update users set role = 'ADMIN', status = 'DISABLED' where user_id = 'usr_demo_admin'",
+                "update users set role = 'ADMIN', status = 'DISABLED' where user_id = 'usr_demo_user'",
             )
             assertEquals("UNAUTHORIZED", revalidateKillSwitchAdmin(securityVersion))
 
@@ -2413,7 +2424,7 @@ class FlywayMigrationIntegrationTest(
                 """
                 update users
                 set status = 'ACTIVE', security_version = security_version + 1
-                where user_id = 'usr_demo_admin'
+                where user_id = 'usr_demo_user'
                 """.trimIndent(),
             )
             assertEquals("UNAUTHORIZED", revalidateKillSwitchAdmin(securityVersion))
@@ -2422,7 +2433,7 @@ class FlywayMigrationIntegrationTest(
                 """
                 update users
                 set role = ?, status = ?, security_version = ?
-                where user_id = 'usr_demo_admin'
+                where user_id = 'usr_demo_user'
                 """.trimIndent(),
                 original["role"],
                 original["status"],
@@ -2444,7 +2455,7 @@ class FlywayMigrationIntegrationTest(
                 set active = true,
                     reason_class = 'OPERATOR_MANUAL_STOP',
                     generation = 7,
-                    changed_by = 'usr_demo_admin',
+                    changed_by = 'usr_demo_user',
                     changed_by_role = 'ADMIN',
                     changed_at = now(),
                     request_id = 'req-v10-global-invalidation'
@@ -2516,7 +2527,7 @@ class FlywayMigrationIntegrationTest(
             jdbcTemplate.execute("grant select on table decision_invalidations to decision_app")
             try {
                 assertInvalidationOwnerScope("usr-flyway", 1)
-                assertInvalidationOwnerScope("usr_demo_admin", 1)
+                assertInvalidationOwnerScope(TestPeerUser.USER_ID, 1)
                 assertInvalidationOwnerScope("usr_demo_user", 0)
             } finally {
                 jdbcTemplate.execute("revoke select on table decision_invalidations from decision_app")
@@ -2667,7 +2678,7 @@ class FlywayMigrationIntegrationTest(
                 """
                 select user_id, username, role, status, security_version, password_hash
                 from users
-                where user_id in ('usr_demo_user', 'usr_demo_admin')
+                where user_id in ('usr_demo_user', 'usr_demo_user')
                 order by user_id
                 """.trimIndent(),
             ) { result, _ ->
@@ -2680,8 +2691,9 @@ class FlywayMigrationIntegrationTest(
                     result.getString("password_hash"),
                 )
             }
-        assertEquals(listOf("usr_demo_admin", "demo-admin", "ADMIN", "ACTIVE", "1"), users[0].take(5))
-        assertEquals(listOf("usr_demo_user", "demo-user", "USER", "ACTIVE", "1"), users[1].take(5))
+        // V213이 demo-admin을 삭제하고 demo-user를 ADMIN으로 올리며 security_version을 한 번 올린다.
+        assertEquals(1, users.size)
+        assertEquals(listOf("usr_demo_user", "demo-user", "ADMIN", "ACTIVE", "2"), users[0].take(5))
         assertTrue(users.all { Regex("^\\$2[aby]\\$12\\$[./A-Za-z0-9]{53}$").matches(it.last()) })
 
         val evidence =
@@ -2693,7 +2705,7 @@ class FlywayMigrationIntegrationTest(
                        credential_policy_version,
                        encode(credential_reuse_tag, 'hex')
                 from users
-                where user_id in ('usr_demo_user', 'usr_demo_admin')
+                where user_id in ('usr_demo_user', 'usr_demo_user')
                 order by user_id
                 """.trimIndent(),
             ) { result, _ ->
@@ -2705,11 +2717,11 @@ class FlywayMigrationIntegrationTest(
                     result.getString(5),
                 )
             }
+        assertEquals(1, evidence.size)
         assertTrue(evidence.all { it.subList(1, 4) == listOf("32", "32", "1") })
-        assertNotEquals(evidence[0].last(), evidence[1].last())
 
         val sharedPlaintextAdminBundle =
-            SpringApiIntegrationTestBase.prepareTestBundle("usr_demo_admin", TEST_USER_PASSWORD)
+            SpringApiIntegrationTestBase.prepareTestBundle("usr_demo_user", TEST_USER_PASSWORD)
         assertThrows<IllegalArgumentException> {
             s21ActorTrustMigration(adminBundle = sharedPlaintextAdminBundle)
         }
@@ -3037,6 +3049,7 @@ class FlywayMigrationIntegrationTest(
 
     @Test
     fun `source writer roles can append only their own bounded observations`() {
+        TestPeerUser.ensure(jdbcTemplate)
         assertWriterInsert(
             "decision_market_writer",
             MARKET_WRITER_PASSWORD,
@@ -3115,7 +3128,7 @@ class FlywayMigrationIntegrationTest(
               position_count, observed_at, received_at, schema_version, source_version,
               payload_json, source_ref, artifact_hash
             ) values (
-              'balance-writer-role', 'usr_demo_admin', repeat('6', 64), 'KIS_MOCK', 'ACTIVE',
+              'balance-writer-role', 'usr_isolation_peer_0001', repeat('6', 64), 'KIS_MOCK', 'ACTIVE',
               1, 1, 0, 'COMPLETE', 1, '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z',
               'portfolio-balance-observation.v1', 'fixture-v1', '{}'::jsonb,
               repeat('7', 64), repeat('8', 64)
@@ -3479,6 +3492,7 @@ class FlywayMigrationIntegrationTest(
 
     @Test
     fun `internal paper uses only explicit margin and never synthesizes position classification`() {
+        TestPeerUser.ensure(jdbcTemplate)
         jdbcTemplate.update(
             """
             insert into paper_accounts (
@@ -3487,7 +3501,7 @@ class FlywayMigrationIntegrationTest(
             )
             values (
               'acct_00000000000000000000000000000023',
-              'usr_demo_admin', 'Paper S2.3', 900000, 'KRW', 'ACTIVE',
+              'usr_isolation_peer_0001', 'Paper S2.3', 900000, 'KRW', 'ACTIVE',
               '2031-02-03T04:00:00Z', '2031-02-03T04:05:06Z',
               repeat('2', 64), null
             )
@@ -3505,13 +3519,13 @@ class FlywayMigrationIntegrationTest(
             """.trimIndent(),
         )
         val resolution =
-            asTestActor(actorCapabilityIssuer, "usr_demo_admin") {
-                portfolioContextAdapter.resolve("usr_demo_admin", PortfolioSource.INTERNAL_PAPER)
+            asTestActor(actorCapabilityIssuer, TestPeerUser.USER_ID) {
+                portfolioContextAdapter.resolve(TestPeerUser.USER_ID, PortfolioSource.INTERNAL_PAPER)
                     as PortfolioContextResolution.Available
             }
         val request =
             EvaluationSourceRequest(
-                actorUserId = "usr_demo_admin",
+                actorUserId = TestPeerUser.USER_ID,
                 portfolioContext = resolution.context,
                 orderIntent =
                     OrderIntentSnapshot(
@@ -3528,9 +3542,9 @@ class FlywayMigrationIntegrationTest(
             )
 
         assertTrue(
-            asTestActor(actorCapabilityIssuer, "usr_demo_admin") { internalPaperBalanceAdapter.load(request) } is MetricCell.Incomplete,
+            asTestActor(actorCapabilityIssuer, TestPeerUser.USER_ID) { internalPaperBalanceAdapter.load(request) } is MetricCell.Incomplete,
         )
-        assertTrue(asTestActor(actorCapabilityIssuer, "usr_demo_admin") { storedMarginAdapter.load(request) } is MetricCell.Missing)
+        assertTrue(asTestActor(actorCapabilityIssuer, TestPeerUser.USER_ID) { storedMarginAdapter.load(request) } is MetricCell.Missing)
 
         jdbcTemplate.update(
             """
@@ -3540,13 +3554,13 @@ class FlywayMigrationIntegrationTest(
             """.trimIndent(),
         )
         val explicitResolution =
-            asTestActor(actorCapabilityIssuer, "usr_demo_admin") {
-                portfolioContextAdapter.resolve("usr_demo_admin", PortfolioSource.INTERNAL_PAPER)
+            asTestActor(actorCapabilityIssuer, TestPeerUser.USER_ID) {
+                portfolioContextAdapter.resolve(TestPeerUser.USER_ID, PortfolioSource.INTERNAL_PAPER)
                     as PortfolioContextResolution.Available
             }
         val explicitRequest = request.copy(portfolioContext = explicitResolution.context)
         val explicitMargin =
-            asTestActor(actorCapabilityIssuer, "usr_demo_admin") {
+            asTestActor(actorCapabilityIssuer, TestPeerUser.USER_ID) {
                 storedMarginAdapter.load(explicitRequest)
             } as MetricCell.Available
         assertEquals(0L, (explicitMargin.value as MetricValue.Whole).value)
@@ -4098,7 +4112,7 @@ class FlywayMigrationIntegrationTest(
 
     private fun revalidateKillSwitchAdmin(securityVersion: Long): String =
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
-            connection.prepareStatement("select revalidate_kill_switch_admin('usr_demo_admin', ?)").use { statement ->
+            connection.prepareStatement("select revalidate_kill_switch_admin('usr_demo_user', ?)").use { statement ->
                 statement.setLong(1, securityVersion)
                 statement.executeQuery().use { result ->
                     assertTrue(result.next())
@@ -4154,17 +4168,18 @@ class FlywayMigrationIntegrationTest(
             operation = "TEST_APP_ACTOR_SCOPE",
             targetKind = "OWNER",
             targetId = actorUserId,
-            actorRole = if (actorUserId == "usr_demo_admin") "ADMIN" else "USER",
+            actorRole = if (actorUserId == "usr_demo_user") "ADMIN" else "USER",
         )
     }
 
     private fun insertAdminDecisionFixture() {
+        TestPeerUser.ensure(jdbcTemplate)
         jdbcTemplate.update(
             """
             insert into principles (
               principle_id, user_id, preset_id, title, mode, status, current_version
             ) values (
-              'prn-v10-admin', 'usr_demo_admin', 'balanced',
+              'prn-v10-admin', 'usr_isolation_peer_0001', 'balanced',
               'V10 Admin Principle', 'GUIDE', 'ACTIVE', 1
             )
             """.trimIndent(),
@@ -4178,7 +4193,7 @@ class FlywayMigrationIntegrationTest(
             select
               'prv-v10-admin-v1', 'prn-v10-admin', 1, 'balanced',
               'V10 Admin Principle', 'GUIDE', 'ACTIVE', rules_json,
-              array['presetId', 'title', 'mode', 'status', 'rules'], 'usr_demo_admin'
+              array['presetId', 'title', 'mode', 'status', 'rules'], 'usr_isolation_peer_0001'
             from principle_presets
             where preset_id = 'balanced'
             """.trimIndent(),
@@ -4193,7 +4208,7 @@ class FlywayMigrationIntegrationTest(
               readiness_policy_version, mapping_versions_json, semantic_input_hash,
               snapshot_artifact_hash, result_json
             ) values (
-              'dec-v10-admin', 'eval-v10-admin', 'usr_demo_admin',
+              'dec-v10-admin', 'eval-v10-admin', 'usr_isolation_peer_0001',
               'prn-v10-admin', 'prv-v10-admin-v1', 1, 'INTERNAL_PAPER',
               '005930', 'BUY', 'ALLOW', 'GUIDE', true, 'NONE',
               now(), now(), now() + interval '10 minutes',

@@ -1,7 +1,15 @@
 'use client';
 
+import Link from 'next/link';
 import { useId, useState } from 'react';
 import { api } from '@/shared/api/endpoints';
+import {
+  CONNECTION_FAILURE_MESSAGE,
+  CREDENTIAL_BLOCKER_MESSAGE,
+  connectionFailure,
+  credentialChangeBlocker,
+} from './credentialBlockers';
+import { formatKrw, formatKstDateTime } from '@/shared/lib/format';
 import type { MockCredentialReadResponse } from '@/shared/api/wire';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
@@ -40,6 +48,7 @@ function MockCredentialForm({
   const [pending, setPending] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [armedBlock, setArmedBlock] = useState(false);
 
   const valid =
     appKey.length >= 8 &&
@@ -56,6 +65,7 @@ function MockCredentialForm({
     setPending(true);
     setOutcome(null);
     setError(null);
+    setArmedBlock(false);
     try {
       await api.putMockCredential({ appKey, appSecret, accountNo });
       setAppKey('');
@@ -64,8 +74,14 @@ function MockCredentialForm({
       setOutcome('암호화해 저장했습니다. 연결 확인과 모의주문 인증은 별도 단계입니다.');
       reload();
     } catch (cause) {
-      const state = toErrorState<never>(cause);
-      setError(state.kind === 'error' ? state.message : '저장하지 못했습니다.');
+      const blocked = credentialChangeBlocker(cause);
+      setArmedBlock(blocked === 'AUTOMATION_ARMED');
+      if (blocked) {
+        setError(CREDENTIAL_BLOCKER_MESSAGE[blocked]);
+      } else {
+        const state = toErrorState<never>(cause);
+        setError(state.kind === 'error' ? state.message : '저장하지 못했습니다.');
+      }
     } finally {
       setPending(false);
     }
@@ -78,11 +94,16 @@ function MockCredentialForm({
     setError(null);
     try {
       await api.verifyMockCredentialConnection();
-      setOutcome('본인 모의계좌의 읽기 연결을 확인했습니다. 자동주문 인증은 아직 별도입니다.');
+      setOutcome('KIS에서 본인 모의계좌 잔고를 읽어 연결을 확인했습니다. 자동주문 인증은 아직 별도입니다.');
       reload();
     } catch (cause) {
-      const state = toErrorState<never>(cause);
-      setError(state.kind === 'error' ? state.message : '연결을 확인하지 못했습니다.');
+      const failure = connectionFailure(cause);
+      if (failure) {
+        setError(CONNECTION_FAILURE_MESSAGE[failure]);
+      } else {
+        const state = toErrorState<never>(cause);
+        setError(state.kind === 'error' ? state.message : '연결을 확인하지 못했습니다.');
+      }
     } finally {
       setPending(false);
     }
@@ -196,9 +217,17 @@ function MockCredentialForm({
                         ? credential.certificationFailureCode === 'TEST_ORDER_RECOVERED'
                           ? '이전 테스트 주문 정리 완료 · 1주 인증 재시도 필요'
                           : '모의주문 인증 실패 · 자동주문은 닫혀 있음'
-                      : '연결 확인됨 · 모의주문 인증 전'
+                      : '읽기 연결 확인됨 · 자동운용 가능 · 주문 시험 선택'
                   : '연결 확인 전 · 자동주문 시작 전'}
             </p>
+            {credential.connected && credential.verifiedCashKrw != null ? (
+              // 연결 확인이 KIS 에서 실제로 읽은 잔고. 계좌번호 전체와 종목 목록은 보이지 않는다.
+              <p data-testid="mock-credential-balance-confirmation" className="text-muted">
+                KIS 잔고 확인 · 계좌 끝 4자리 {credential.accountNoLast4} · 예수금 {formatKrw(credential.verifiedCashKrw)} ·
+                보유 종목 {credential.verifiedPositionCount ?? 0}개
+                {credential.verifiedAt ? ` · ${formatKstDateTime(credential.verifiedAt)}` : ''}
+              </p>
+            ) : null}
           </>
         ) : (
           <p>등록된 모의계좌 정보가 없습니다.</p>
@@ -218,7 +247,7 @@ function MockCredentialForm({
       {status.registered && credential?.connected && !credential.certified ? (
         <div className="mt-4">
           <p className="text-[12px] leading-5 text-muted">
-            인증은 KRX 거래일 09:10~15:00 KST에만 실행할 수 있습니다. 주문은 005930 1주 하한가 지정가로 고정됩니다.
+            잔고 읽기 연결로 자동운용을 시작할 수 있습니다. 주문 경로 시험은 선택 사항이며 KRX 거래일 09:10~15:00 KST에 005930 1주 하한가 지정가를 제출 후 취소합니다. 하한가 주문도 체결될 수 있습니다.
           </p>
           <button
             type="button"
@@ -232,7 +261,7 @@ function MockCredentialForm({
                 ? '이전 인증 주문 복구 확인'
               : credential.certificationStatus === 'RUNNING'
                 ? '인증 상태 다시 확인'
-                  : '1주 모의주문 인증'}
+                  : '선택: 주문 경로 시험'}
           </button>
         </div>
       ) : null}
@@ -308,6 +337,14 @@ function MockCredentialForm({
       </button>
       {outcome ? <p className="mt-3 text-[13px] text-allow">{outcome}</p> : null}
       {error ? <p className="mt-3 text-[13px] text-block">{error}</p> : null}
+      {armedBlock ? (
+        <Link
+          href="/automation"
+          className="mt-2 inline-block text-[13px] font-semibold text-navy underline underline-offset-2"
+        >
+          자동매매 화면에서 해제하기
+        </Link>
+      ) : null}
     </Panel>
   );
 }

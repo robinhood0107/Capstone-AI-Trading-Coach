@@ -74,10 +74,11 @@ class JdbcPrincipleSnapshotAdapterIntegrationTest(
     @Test
     fun `missing cross owner and inactive targets are the same not found result`() {
         insertPrincipleWithTwoVersions()
+        TestPeerUser.ensure(adminJdbc)
 
         val crossOwner =
-            asTestActor(actorCapabilityIssuer, "usr_demo_admin") {
-                adapter.findActiveOwned("usr_demo_admin", PRINCIPLE_ID)
+            asTestActor(actorCapabilityIssuer, TestPeerUser.USER_ID) {
+                adapter.findActiveOwned(TestPeerUser.USER_ID, PRINCIPLE_ID)
             }
         adminJdbc.update(
             "update principles set status = 'ARCHIVED' where principle_id = ?",

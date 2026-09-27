@@ -241,6 +241,7 @@ class BrokerageApiIntegrationTest(
         jdbcTemplate.update("delete from daily_order_count_observations")
         jdbcTemplate.update("delete from principle_versions where principle_id like 'prc_31%'")
         jdbcTemplate.update("delete from principles where principle_id like 'prc_31%'")
+        TestPeerUser.ensure(jdbcTemplate)
         mockMvc =
             MockMvcBuilders
                 .webAppContextSetup(webApplicationContext)
@@ -251,7 +252,7 @@ class BrokerageApiIntegrationTest(
     @Test
     fun `stored mock fills reconcile atomically and expose only owner scoped sanitized history`() {
         val userToken = login("demo-user", userPassword())
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = login("demo-user", userPassword())
         val decisionId =
             createDecision(
                 token = userToken,
@@ -359,7 +360,7 @@ class BrokerageApiIntegrationTest(
     @Test
     fun `demoted admin cannot replay a cached reconciliation response`() {
         val userToken = login("demo-user", userPassword())
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = login("demo-user", userPassword())
         val decisionId = createDecision(userToken, "39", orderIntent())
         val submitted =
             submitMockOrder(
@@ -391,7 +392,7 @@ class BrokerageApiIntegrationTest(
                 jdbcTemplate.queryForObject(
                     "select role from users where user_id = ?",
                     String::class.java,
-                    "usr_demo_admin",
+                    "usr_demo_user",
                 ),
             )
         val originalSecurityVersion =
@@ -399,7 +400,7 @@ class BrokerageApiIntegrationTest(
                 jdbcTemplate.queryForObject(
                     "select security_version from users where user_id = ?",
                     Long::class.java,
-                    "usr_demo_admin",
+                    "usr_demo_user",
                 ),
             )
 
@@ -410,7 +411,7 @@ class BrokerageApiIntegrationTest(
                 jdbcTemplate.update(
                     "update users set role = 'USER', security_version = ? where user_id = ?",
                     demotedSecurityVersion,
-                    "usr_demo_admin",
+                    "usr_demo_user",
                 ),
             )
             val demotedSessionHandle = "sid1_" + "d".repeat(64)
@@ -424,7 +425,7 @@ class BrokerageApiIntegrationTest(
                     ) values ('sha256:'||encode(digest(?,'sha256'),'hex'),?,?,?,?,?)
                     """.trimIndent(),
                     demotedSessionHandle,
-                    "usr_demo_admin",
+                    "usr_demo_user",
                     "USER",
                     demotedSecurityVersion,
                     OffsetDateTime.now(),
@@ -435,8 +436,8 @@ class BrokerageApiIntegrationTest(
                 jwtService
                     .issue(
                         AuthenticatedAccount(
-                            userId = "usr_demo_admin",
-                            username = "demo-admin",
+                            userId = "usr_demo_user",
+                            username = "demo-user",
                             role = DemoRole.USER,
                             securityVersion = demotedSecurityVersion,
                             sessionHandle = demotedSessionHandle,
@@ -475,7 +476,7 @@ class BrokerageApiIntegrationTest(
                 "update users set role = ?, security_version = ? where user_id = ?",
                 originalRole,
                 originalSecurityVersion,
-                "usr_demo_admin",
+                "usr_demo_user",
             )
         }
     }
@@ -483,7 +484,7 @@ class BrokerageApiIntegrationTest(
     @Test
     fun `future dated complete fill is deferred without current work or state mutation`() {
         val userToken = login("demo-user", userPassword())
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = login("demo-user", userPassword())
         val decisionId = createDecision(userToken, "3a", orderIntent())
         val submitted =
             submitMockOrder(
@@ -535,7 +536,7 @@ class BrokerageApiIntegrationTest(
     @Test
     fun `paper reconciliation reuses deterministic fill and user or invalid date requests fail closed`() {
         val userToken = login("demo-user", userPassword())
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = login("demo-user", userPassword())
         val decisionId =
             createDecision(
                 token = userToken,
@@ -555,8 +556,9 @@ class BrokerageApiIntegrationTest(
         val orderId = json(submitted).at("/data/orderId").stringValue()
         val accountId = json(submitted).at("/data/accountId").stringValue()
 
+        // demo-user는 ADMIN 운영자이므로 USER 거부는 일반 USER peer로 확인한다.
         reconcileOrder(
-            token = userToken,
+            token = login(TestPeerUser.EMAIL, TestPeerUser.PASSWORD),
             idempotencyKey = "brokerage-fill-user-denied",
             requestId = "req-brokerage-fill-user-denied",
             orderId = orderId,
@@ -603,7 +605,7 @@ class BrokerageApiIntegrationTest(
     @Test
     fun `two hundred fifty stored fills are losslessly drained and cursor stays bounded and tamper evident`() {
         val userToken = login("demo-user", userPassword())
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = login("demo-user", userPassword())
         val largeOrder = orderIntent()
         val decisionId =
             createDecision(
@@ -709,7 +711,7 @@ class BrokerageApiIntegrationTest(
     @Test
     fun `concurrent reconciliation serializes without duplicate fill events`() {
         val userToken = login("demo-user", userPassword())
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = login("demo-user", userPassword())
         val decisionId = createDecision(userToken, "36", orderIntent())
         val submitted =
             submitMockOrder(
@@ -769,7 +771,7 @@ class BrokerageApiIntegrationTest(
     @Test
     fun `duplicate and out of order observations do not mutate twice and average price floors`() {
         val userToken = login("demo-user", userPassword())
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = login("demo-user", userPassword())
         val decisionId = createDecision(userToken, "37", orderIntent())
         val submitted =
             submitMockOrder(
@@ -861,7 +863,7 @@ class BrokerageApiIntegrationTest(
     @Test
     fun `cancel requested mock order accepts a later authoritative full fill`() {
         val userToken = login("demo-user", userPassword())
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = login("demo-user", userPassword())
         val decisionId = createDecision(userToken, "38", orderIntent())
         val submitted =
             submitMockOrder(
@@ -914,7 +916,7 @@ class BrokerageApiIntegrationTest(
     @Test
     fun `cancel requested mock order rejects a partial fill without erasing cancellation intent`() {
         val userToken = login("demo-user", userPassword())
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = login("demo-user", userPassword())
         val decisionId = createDecision(userToken, "3b", orderIntent())
         val submitted =
             submitMockOrder(
@@ -984,7 +986,7 @@ class BrokerageApiIntegrationTest(
     @Test
     fun `three unit fills preserve exact notional remainder across reconciliation`() {
         val userToken = login("demo-user", userPassword())
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = login("demo-user", userPassword())
         val decisionId = createDecision(userToken, "3c", orderIntent())
         val submitted =
             submitMockOrder(
@@ -1176,7 +1178,7 @@ class BrokerageApiIntegrationTest(
         assertEquals(409, cancel.response.status)
         assertEquals(1, count("select count(*) from paper_order_events"))
 
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = login(TestPeerUser.EMAIL, TestPeerUser.PASSWORD)
         val crossOwner =
             mockMvc
                 .get("/api/v1/brokerage/paper/accounts/$accountId/balances") {
@@ -1535,14 +1537,14 @@ class BrokerageApiIntegrationTest(
         assertEquals("DECISION_EXPIRED", json(expired).at("/error/code").stringValue())
 
         val blockedDecision = createDecision(token, "14", orderIntent(), portfolioSource = "INTERNAL_PAPER")
-        asTestActor(actorCapabilityIssuer, "usr_demo_admin") {
+        asTestActor(actorCapabilityIssuer, "usr_demo_user") {
             killSwitchMutationPort.mutate(
                 KillSwitchMutationCommand(
                     actor =
                         KillSwitchActor(
-                            userId = "usr_demo_admin",
+                            userId = "usr_demo_user",
                             role = KillSwitchActorRole.ADMIN,
-                            securityVersion = 1,
+                            securityVersion = operatorSecurityVersion(),
                             requestId = "req-paper-kill-switch",
                         ),
                     requestedActive = true,
@@ -1847,7 +1849,7 @@ class BrokerageApiIntegrationTest(
         assertEquals(142, json(buyable).at("/data/buyableQuantity").intValue())
         assertEquals(9_940_000, json(buyable).at("/data/buyableAmountKrw").intValue())
 
-        val adminToken = login("demo-admin", adminPassword())
+        val adminToken = login(TestPeerUser.EMAIL, TestPeerUser.PASSWORD)
         val crossOwner =
             mockMvc
                 .get("/api/v1/brokerage/orders/$orderId") {
@@ -1912,14 +1914,14 @@ class BrokerageApiIntegrationTest(
         assertEquals("DECISION_EXPIRED", json(expired).at("/error/code").stringValue())
 
         val invalidatedDecisionId = createDecision(token, suffix = "04", order = orderIntent())
-        asTestActor(actorCapabilityIssuer, "usr_demo_admin") {
+        asTestActor(actorCapabilityIssuer, "usr_demo_user") {
             killSwitchMutationPort.mutate(
                 KillSwitchMutationCommand(
                     actor =
                         KillSwitchActor(
-                            userId = "usr_demo_admin",
+                            userId = "usr_demo_user",
                             role = KillSwitchActorRole.ADMIN,
-                            securityVersion = 1,
+                            securityVersion = operatorSecurityVersion(),
                             requestId = "req-brokerage-kill-switch",
                         ),
                     requestedActive = true,
@@ -2000,8 +2002,8 @@ class BrokerageApiIntegrationTest(
             objectMapper.writeValueAsString(
                 mapOf<String, Any?>(
                     "actorUserId" to "usr_demo_user",
-                    "actorRole" to "USER",
-                    "securityVersion" to 1,
+                    "actorRole" to "ADMIN",
+                    "securityVersion" to operatorSecurityVersion(),
                     "requestId" to "req-brokerage-stale-expiry",
                     "decisionId" to decisionId,
                     "orderId" to orderId,
@@ -2104,7 +2106,7 @@ class BrokerageApiIntegrationTest(
             listOf(
                 mapOf<String, Any?>(
                     "actorUserId" to "usr_demo_user",
-                    "actorRole" to "USER",
+                    "actorRole" to "ADMIN",
                     "securityVersion" to "not-an-integer",
                     "requestId" to "req-provider-outcome-malformed-1",
                     "orderId" to orderId,
@@ -2116,8 +2118,8 @@ class BrokerageApiIntegrationTest(
                 ),
                 mapOf<String, Any?>(
                     "actorUserId" to "usr_demo_user",
-                    "actorRole" to "USER",
-                    "securityVersion" to 1,
+                    "actorRole" to "ADMIN",
+                    "securityVersion" to operatorSecurityVersion(),
                     "requestId" to "req-provider-outcome-malformed-2",
                     "orderId" to orderId,
                     "status" to "ACCEPTED",
@@ -2149,8 +2151,8 @@ class BrokerageApiIntegrationTest(
             objectMapper.writeValueAsString(
                 mapOf<String, Any?>(
                     "actorUserId" to "usr_demo_user",
-                    "actorRole" to "USER",
-                    "securityVersion" to 1,
+                    "actorRole" to "ADMIN",
+                    "securityVersion" to operatorSecurityVersion(),
                     "requestId" to "req-provider-outcome-accepted",
                     "orderId" to orderId,
                     "status" to "ACCEPTED",
@@ -2217,8 +2219,8 @@ class BrokerageApiIntegrationTest(
         val crossOwnerPayload =
             objectMapper.writeValueAsString(
                 mapOf<String, Any?>(
-                    "actorUserId" to "usr_demo_admin",
-                    "actorRole" to "ADMIN",
+                    "actorUserId" to TestPeerUser.USER_ID,
+                    "actorRole" to "USER",
                     "securityVersion" to 1,
                     "requestId" to "req-provider-outcome-cross-owner",
                     "orderId" to orderId,
@@ -2240,7 +2242,7 @@ class BrokerageApiIntegrationTest(
                     statement.setString(
                         1,
                         capability(
-                            "usr_demo_admin",
+                            TestPeerUser.USER_ID,
                             "RECORD_MOCK_PROVIDER_OUTCOME",
                             "ORDER",
                             orderId,
@@ -2368,7 +2370,7 @@ class BrokerageApiIntegrationTest(
                         .prepareStatement(
                             "SELECT count(*) FROM read_mock_order_owner_projection(?, ?, ?)",
                         ).use { statement ->
-                            statement.setString(1, "usr_demo_admin")
+                            statement.setString(1, TestPeerUser.USER_ID)
                             statement.setString(2, orderId)
                             statement.setString(3, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
                             statement.executeQuery()
@@ -2973,6 +2975,14 @@ class BrokerageApiIntegrationTest(
         sql: String,
         vararg args: Any,
     ): Int = jdbcTemplate.queryForObject(sql, Int::class.java, *args) ?: 0
+
+    private fun operatorSecurityVersion(): Long =
+        requireNotNull(
+            jdbcTemplate.queryForObject(
+                "select security_version from users where user_id = 'usr_demo_user'",
+                Long::class.java,
+            ),
+        )
 
     private fun capability(
         actorUserId: String,

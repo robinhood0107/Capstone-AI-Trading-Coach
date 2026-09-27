@@ -35,6 +35,114 @@
         ],
         "type": "object"
       },
+      "AutomationPolicyV3": {
+        "$id": "contracts/schemas/automation-policy.v2.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "atrMultiplierMilli": {
+            "maximum": 10000,
+            "minimum": 1000,
+            "multipleOf": 100,
+            "type": "integer"
+          },
+          "atrPeriod": {
+            "maximum": 100,
+            "minimum": 5,
+            "type": "integer"
+          },
+          "buyCutoffTimeKst": {
+            "const": "09:40"
+          },
+          "cancelTimeKst": {
+            "const": "15:20"
+          },
+          "capitalLimitKrw": {
+            "maximum": 10000000000,
+            "minimum": 10000,
+            "multipleOf": 10000,
+            "type": "integer"
+          },
+          "contractId": {
+            "const": "automation-policy.v2"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "evaluationTimeKst": {
+            "const": "09:30"
+          },
+          "maxHoldingSessions": {
+            "maximum": 1260,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxNewOrdersPerSession": {
+            "const": 1
+          },
+          "maxOpenPositions": {
+            "maximum": 20,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "modelSellEnabled": {
+            "type": "boolean"
+          },
+          "policyId": {
+            "pattern": "^auto_pol_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "presetId": {
+            "enum": [
+              "conservative",
+              "balanced",
+              "aggressive",
+              "custom"
+            ]
+          },
+          "stopLossBps": {
+            "maximum": 1500,
+            "minimum": 100,
+            "type": "integer"
+          },
+          "takeProfitBps": {
+            "maximum": 3000,
+            "minimum": 200,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "atrMultiplierMilli",
+          "atrPeriod",
+          "buyCutoffTimeKst",
+          "cancelTimeKst",
+          "capitalLimitKrw",
+          "contractId",
+          "createdAt",
+          "evaluationTimeKst",
+          "maxHoldingSessions",
+          "maxNewOrdersPerSession",
+          "maxOpenPositions",
+          "modelSellEnabled",
+          "policyId",
+          "presetId",
+          "stopLossBps",
+          "takeProfitBps",
+          "updatedAt",
+          "version"
+        ],
+        "title": "automation-policy.v2",
+        "type": "object"
+      },
       "AutomationStatusV3": {
         "$id": "contracts/schemas/automation-status.v3.schema.json",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -64,23 +172,24 @@
           "blockers": {
             "items": {
               "enum": [
+                "ACCOUNT_HISTORY_UNLINKED",
                 "ACCOUNT_NOT_CONFIGURED",
+                "AI_PROVIDER_NOT_READY",
+                "BLOCKED_INCOMPLETE_RISK_BALANCE",
+                "CERTIFICATION_INVALID",
+                "CONTROL_HALTED",
+                "KILL_SWITCH_ACTIVE",
+                "LEGACY_POSITION_PRESENT",
+                "MARKET_DATA_CATCHUP_REQUIRED",
+                "MARKET_HISTORY_EMPTY",
+                "MARKET_HISTORY_INSUFFICIENT",
                 "POLICY_NOT_CONFIGURED",
-                "POLICY_VERSION_DRIFT",
                 "POLICY_V3_REQUIRED",
+                "POLICY_VERSION_DRIFT",
                 "PRINCIPLE_NOT_CONFIGURED",
                 "REAL_TEAM_B_POINTER_INACTIVE",
                 "RELEASE_BINDING_UNCLEAN",
-                "CERTIFICATION_INVALID",
-                "KILL_SWITCH_ACTIVE",
-                "UNRESOLVED_RECONCILIATION",
-                "CONTROL_HALTED",
-                "BLOCKED_INCOMPLETE_RISK_BALANCE",
-                "LEGACY_POSITION_PRESENT",
-                "MARKET_HISTORY_EMPTY",
-                "MARKET_HISTORY_INSUFFICIENT",
-                "MARKET_DATA_CATCHUP_REQUIRED",
-                "AI_PROVIDER_NOT_READY"
+                "UNRESOLVED_RECONCILIATION"
               ]
             },
             "type": "array",
@@ -114,6 +223,18 @@
             "minimum": 1,
             "type": "integer"
           },
+          "historicalPaperClosedPositionCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "historicalPaperOpenPositionCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "historicalPaperRunCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
           "killSwitchActive": {
             "type": "boolean"
           },
@@ -138,9 +259,25 @@
             ]
           },
           "openPositionCount": {
-            "maximum": 5,
             "minimum": 0,
             "type": "integer"
+          },
+          "orderFailureCode": {
+            "enum": [
+              "KIS_ORDER_REJECTED",
+              "KIS_ORDER_RESULT_UNCERTAIN",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orderPathVerified": {
+            "type": "boolean"
+          },
+          "ownerConnectionReady": {
+            "type": "boolean"
           },
           "policy": {
             "oneOf": [
@@ -189,7 +326,9 @@
                     "const": 1
                   },
                   "maxOpenPositions": {
-                    "const": 5
+                    "maximum": 20,
+                    "minimum": 1,
+                    "type": "integer"
                   },
                   "modelSellEnabled": {
                     "type": "boolean"
@@ -267,6 +406,10 @@
               "HALTED"
             ]
           },
+          "quarantinedPositionCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
           "thinkingLevel": {
             "enum": [
               "minimal",
@@ -274,8 +417,20 @@
               "medium"
             ]
           },
+          "unlinkedOpenPositionCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
           "unresolvedReconciliation": {
             "type": "boolean"
+          },
+          "unresolvedUnlinkedOrderCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unresolvedUnlinkedRunCount": {
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -288,16 +443,49 @@
           "contractId",
           "controlState",
           "controlVersion",
+          "historicalPaperClosedPositionCount",
+          "historicalPaperOpenPositionCount",
+          "historicalPaperRunCount",
           "killSwitchActive",
           "legacyOpenPositionCount",
           "marketHistoryStatus",
           "openPositionCount",
+          "orderFailureCode",
+          "orderPathVerified",
+          "ownerConnectionReady",
           "policy",
           "projectionState",
+          "quarantinedPositionCount",
           "thinkingLevel",
-          "unresolvedReconciliation"
+          "unlinkedOpenPositionCount",
+          "unresolvedReconciliation",
+          "unresolvedUnlinkedOrderCount",
+          "unresolvedUnlinkedRunCount"
         ],
         "title": "automation-status.v3",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "properties": {
+          "password": {
+            "description": "저장하거나 기록하지 않는 demo password; 인증 허용 범위는 1..72 UTF-8 bytes",
+            "format": "password",
+            "maxLength": 1024,
+            "minLength": 0,
+            "type": "string",
+            "writeOnly": true
+          },
+          "username": {
+            "description": "고정 demo 아이디 또는 가입 이메일",
+            "maxLength": 254,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "password",
+          "username"
+        ],
         "type": "object"
       },
       "OwnerKillSwitchDto": {
@@ -320,7 +508,8 @@
             "enum": [
               "INITIAL_STATE",
               "USER_MANUAL_STOP",
-              "USER_RESUME"
+              "USER_RESUME",
+              "BROKERAGE_FAILURE_STOP"
             ],
             "type": "string"
           }

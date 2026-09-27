@@ -28,7 +28,8 @@ const nextConfig = {
         headers: [
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'Referrer-Policy', value: 'no-referrer' },
+          // no-referrer 는 같은 출처 POST 의 Origin 을 null 로 바꿔 API 의 CORS 검사에 걸린다.
+          { key: 'Referrer-Policy', value: 'same-origin' },
           {
             key: 'Content-Security-Policy',
             value: `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; ${scriptSrc}; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'`,

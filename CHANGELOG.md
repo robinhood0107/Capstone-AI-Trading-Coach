@@ -51,7 +51,15 @@
 
 - 느린 NAS 디스크에서 기동 시 Hibernate 스키마 검사가 `decision_app` statement_timeout(2s)을 넘겨 API가 unhealthy가 되던 문제. 스택에서 검사를 끄고 스키마는 Flyway가 맞춤. 시놀로지 커널이 거부하는 `cpus:` 제한 제거
 
+## [1.0.4] - 2026-09-28
+
+### 수정
+
+- 시놀로지 NAS에서 API가 `BROKERAGE_KEK_UNAVAILABLE`로 기동하지 못하던 문제. 공유 폴더 ACL이 KEK 모드(0700/0600)를 깨뜨렸음. Portainer 스택은 KEK를 외부 볼륨 `mars-full_brokerage-kek`에 두고, `kek-permissions`가 매 기동마다 소유자·모드를 맞추며 키가 없으면 `KEK_MISSING`으로 먼저 멈춤
+- 느린 NAS CPU에서 헬스체크가 앱보다 먼저 포기하던 문제. 기동 유예(start_period)를 넉넉히 두고 헬스체크 응답 제한을 10초로 늘림. 먼저 healthy가 되면 즉시 통과
+
 [1.0.0]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.0
 [1.0.1]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.1
 [1.0.2]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.2
 [1.0.3]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.3
+[1.0.4]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.4

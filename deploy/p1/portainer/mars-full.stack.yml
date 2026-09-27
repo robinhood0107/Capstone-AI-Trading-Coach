@@ -4,14 +4,14 @@
 # Portainer > Stacks > Environment variables 에서 바꾸는 값
 #   필수  MARS_FULL_TAG          이미지 버전. 업그레이드는 이 값만 바꾼다    예) v1.0.2
 #   필수  MARS_PUBLIC_ORIGIN     브라우저 주소와 글자까지 같아야 로그인된다  예) https://mars.example.com
-#   필수  MARS_SECRETS_ROOT      full-secrets/ 와 full-kek/ 가 든 폴더       예) /volume1/docker/mars-full
+#   필수  MARS_SECRETS_ROOT      full-secrets/ 가 든 폴더       예) /volume1/docker/mars-full
 #   필수  MARS_FULL_SECRET_GID   호스트에서 `id -g` 결과                     예) 100
 #   필수  MARS_VERTEX_PROJECT_ID               Vertex 프로젝트 ID
 #   필수  MARS_VERTEX_SERVICE_ACCOUNT_SHA256   서비스 계정 JSON 의 sha256 (sha256sum key.json)
 #   선택  MARS_PORT              NAS 에서 열 웹 포트 (기본 3002). 역방향 프록시 대상 포트와 같게
 #
 # 비밀값은 이 파일에 없다. 모든 비밀은 MARS_SECRETS_ROOT 아래 파일로만 읽는다.
-# DB 는 미리 복원한 외부 볼륨 mars-full_postgres-data 를 쓴다. 스택을 지워도 DB 는 남는다.
+# DB 와 KEK 는 미리 만든 외부 볼륨 mars-full_postgres-data, mars-full_brokerage-kek 를 쓴다. 스택을 지워도 DB 는 남는다.
 # 자동매매(P1_AUTOMATION_RUNTIME_ENABLED)는 켜져 있다.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -48,11 +48,14 @@ services:
     tmpfs:
       - /tmp:size=64m,mode=1777,uid=70,gid=70
       - /var/run/postgresql:size=16m,mode=0770,uid=70,gid=70
+    # 느린 NAS(CPU·HDD)에서도 기동 판정이 앱보다 먼저 끝나지 않게 넉넉히 둔다. start_period 동안의
+    # 실패는 세지 않고, 먼저 healthy 가 되면 즉시 통과하므로 빠른 호스트의 기동 시간은 늘지 않는다.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d capstone_p1"]
       interval: 3s
-      timeout: 3s
+      timeout: 10s
       retries: 30
+      start_period: 300s
     restart: unless-stopped
     networks: [full-data]
 
@@ -69,11 +72,14 @@ services:
     security_opt: [no-new-privileges:true]
     pids_limit: 128
     tmpfs: ["/tmp:size=16m,mode=1777,uid=999,gid=999"]
+    # 느린 NAS(CPU·HDD)에서도 기동 판정이 앱보다 먼저 끝나지 않게 넉넉히 둔다. start_period 동안의
+    # 실패는 세지 않고, 먼저 healthy 가 되면 즉시 통과하므로 빠른 호스트의 기동 시간은 늘지 않는다.
     healthcheck:
       test: ["CMD-SHELL", ". /run/secrets/redis_env && [ \"$$(REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli --no-auth-warning ping)\" = PONG ]"]
       interval: 3s
-      timeout: 3s
+      timeout: 10s
       retries: 30
+      start_period: 60s
     restart: unless-stopped
     networks: [full-data]
 
@@ -185,6 +191,29 @@ services:
     restart: "no"
     networks: [full-data]
 
+  # API 는 KEK 폴더가 정확히 0700·uid 65532, 키가 0600·32바이트일 때만 기동한다. 시놀로지 공유 폴더는
+  # ACL 때문에 이 모드를 지키지 못하므로 KEK 는 ACL 이 없는 named volume 에 두고, 매 기동마다 맞춘다.
+  kek-permissions:
+    image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
+    platform: linux/amd64
+    user: "0:0"
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        test -f /kek/brokerage-kek-v1.key && test "$$(wc -c < /kek/brokerage-kek-v1.key)" -eq 32
+        || { echo 'KEK_MISSING: put the 32-byte brokerage-kek-v1.key into volume mars-full_brokerage-kek' >&2; exit 1; };
+        chown 65532:65532 /kek/brokerage-kek-v1.key /kek
+        && chmod 0600 /kek/brokerage-kek-v1.key
+        && chmod 0700 /kek
+        && echo KEK_PERMISSIONS_OK
+    volumes: [full-kek:/kek]
+    cap_drop: [ALL]
+    # 0700·65532 로 잠긴 폴더 안을 root 가 다시 볼 수 있어야 재기동마다 검사·보정이 된다.
+    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
+    security_opt: [no-new-privileges:true]
+    network_mode: none
+    restart: "no"
+
   actor-authority:
     image: pjjpjj111/mars-full:${MARS_FULL_TAG}-api
     entrypoint: ["/usr/local/bin/p1-secret-entrypoint", "authority"]
@@ -199,11 +228,14 @@ services:
     depends_on:
       migrate: {condition: service_completed_successfully}
     <<: *app-security
+    # 느린 NAS(CPU·HDD)에서도 기동 판정이 앱보다 먼저 끝나지 않게 넉넉히 둔다. start_period 동안의
+    # 실패는 세지 않고, 먼저 healthy 가 되면 즉시 통과하므로 빠른 호스트의 기동 시간은 늘지 않는다.
     healthcheck:
       test: ["CMD", "java", "-Dloader.main=com.capstone.decision.infrastructure.security.P1TcpHealthCheck", "-cp", "/app/app.jar", "org.springframework.boot.loader.launch.PropertiesLauncher"]
       interval: 5s
-      timeout: 3s
+      timeout: 10s
       retries: 20
+      start_period: 600s
     networks: [full-data]
 
   market-data-daily:
@@ -327,18 +359,21 @@ services:
       calendar-offline-seed: {condition: service_completed_successfully}
       rag-source-register: {condition: service_completed_successfully}
       rag-runtime-seed: {condition: service_completed_successfully}
+      kek-permissions: {condition: service_completed_successfully}
       actor-authority: {condition: service_healthy}
       redis: {condition: service_healthy}
     volumes:
       - full-rag-runtime:/run/rag-runtime
-      - "${MARS_SECRETS_ROOT}/full-kek:/run/brokerage-kek:ro"
+      - full-kek:/run/brokerage-kek:ro
     <<: *app-security
+    # 느린 NAS(CPU·HDD)에서도 기동 판정이 앱보다 먼저 끝나지 않게 넉넉히 둔다. start_period 동안의
+    # 실패는 세지 않고, 먼저 healthy 가 되면 즉시 통과하므로 빠른 호스트의 기동 시간은 늘지 않는다.
     healthcheck:
       test: ["CMD", "python", "/app/decision-platform-health.py"]
       interval: 5s
-      timeout: 3s
+      timeout: 10s
       retries: 30
-      start_period: 20s
+      start_period: 900s
     networks: [full-data, full-web]
 
   web:
@@ -357,16 +392,19 @@ services:
     ports: ["${MARS_PORT:-3002}:3000"]
     depends_on:
       api: {condition: service_healthy}
+    # 느린 NAS(CPU·HDD)에서도 기동 판정이 앱보다 먼저 끝나지 않게 넉넉히 둔다. start_period 동안의
+    # 실패는 세지 않고, 먼저 healthy 가 되면 즉시 통과하므로 빠른 호스트의 기동 시간은 늘지 않는다.
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r => {if (!r.ok) process.exit(1)}).catch(() => process.exit(1))"]
       interval: 5s
-      timeout: 3s
+      timeout: 10s
       retries: 12
+      start_period: 300s
     restart: unless-stopped
     networks: [full-web]
 
 secrets:
-  postgres_env: {file: "${MARS_SECRETS_ROOT:?folder holding full-secrets/ and full-kek/}/full-secrets/postgres.env"}
+  postgres_env: {file: "${MARS_SECRETS_ROOT:?folder holding full-secrets/}/full-secrets/postgres.env"}
   redis_env: {file: "${MARS_SECRETS_ROOT}/full-secrets/redis.env"}
   role_bootstrap_env: {file: "${MARS_SECRETS_ROOT}/full-secrets/role-bootstrap.env"}
   migration_env: {file: "${MARS_SECRETS_ROOT}/full-secrets/migration.env"}
@@ -387,6 +425,9 @@ volumes:
   full-postgres:
     external: true
     name: mars-full_postgres-data
+  full-kek:
+    external: true
+    name: mars-full_brokerage-kek
   full-redis: {}
   full-rag-runtime: {}
 

@@ -228,7 +228,9 @@ class SpringAutomationBridgeClient:
             if operation == "SUBMIT" and len(response.content) <= 64 * 1024:
                 try:
                     error_body = response.json()
-                    candidate = error_body.get("failureCode") if isinstance(error_body, dict) else None
+                    candidate = (
+                        error_body.get("failureCode") if isinstance(error_body, dict) else None
+                    )
                     if candidate in {"KIS_ORDER_REJECTED", "KIS_ORDER_RESULT_UNCERTAIN"}:
                         failure_code = str(candidate)
                 except (json.JSONDecodeError, ValueError):

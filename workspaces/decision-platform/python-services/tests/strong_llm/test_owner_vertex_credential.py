@@ -67,7 +67,9 @@ def test_owner_credential_run_uses_the_owner_factory_and_never_the_operator() ->
         return provider, None
 
     events: Iterator[strong_llm_agent_pb2.AgentEvent] = StrongLlmAgentServicer(
-        "s" * 64, operator, owner  # type: ignore[arg-type]
+        "s" * 64,
+        operator,
+        owner,  # type: ignore[arg-type]
     ).Generate(iter(_start(_OWNER_B64)), _Context())  # type: ignore[arg-type]
     first = next(events)
     assert first.WhichOneof("payload") == "provider_call_planned"
@@ -79,7 +81,8 @@ def test_owner_credential_without_an_owner_factory_fails_instead_of_using_the_op
         pytest.fail("operator key must not be substituted")
 
     events = StrongLlmAgentServicer("s" * 64, operator).Generate(  # type: ignore[arg-type]
-        iter(_start(_OWNER_B64)), _Context()  # type: ignore[arg-type]
+        iter(_start(_OWNER_B64)),
+        _Context(),  # type: ignore[arg-type]
     )
     failed = next(events)
     assert failed.WhichOneof("payload") == "failed"
@@ -88,12 +91,19 @@ def test_owner_credential_without_an_owner_factory_fails_instead_of_using_the_op
     assert _OWNER_B64 not in str(failed)
 
 
-def test_owner_service_account_decodes_with_the_same_canonical_rule_as_the_operator_secret() -> None:
+def test_owner_service_account_decodes_with_the_same_canonical_rule_as_the_operator_secret() -> (
+    None
+):
     settings = VertexProviderSettings.from_b64(
         _OWNER_B64, timeout_seconds=50.0, thinking_level="low", max_output_tokens=4096
     )
     assert settings.service_account_info["project_id"] == "mars-test-dummy"
-    for bad in ["AIzaSyFAKEFAKEFAKEFAKE", _OWNER_B64 + "\n", base64.urlsafe_b64encode(b"{}").decode(), ""]:
+    for bad in [
+        "AIzaSyFAKEFAKEFAKEFAKE",
+        _OWNER_B64 + "\n",
+        base64.urlsafe_b64encode(b"{}").decode(),
+        "",
+    ]:
         with pytest.raises(ValueError) as error:
             VertexProviderSettings.from_b64(
                 bad, timeout_seconds=50.0, thinking_level="low", max_output_tokens=4096

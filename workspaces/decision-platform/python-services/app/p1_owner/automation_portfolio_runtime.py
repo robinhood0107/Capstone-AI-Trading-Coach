@@ -127,7 +127,9 @@ class PortfolioContinuationRunner:
                         "SUBMIT_RESPONSE_UNRESOLVED", planned_count, completed
                     )
                 try:
-                    submitted = port.portfolio_submit(intent, decision_id=decision_id, ordinal=ordinal)
+                    submitted = port.portfolio_submit(
+                        intent, decision_id=decision_id, ordinal=ordinal
+                    )
                 except Exception as error:
                     # The provider may have accepted the request before the reply was lost.
                     # Leave the durable ordinal unresolved and stop this owner until KIS is checked.

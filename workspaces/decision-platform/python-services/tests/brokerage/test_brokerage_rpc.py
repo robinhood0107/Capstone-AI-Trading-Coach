@@ -160,7 +160,10 @@ def test_connected_owner_orders_are_full_only_and_still_require_the_sealed_owner
             allowed_states: frozenset[str],
         ) -> Iterator[tuple[KISMockOrderGateway, FakeBalanceReader]]:
             observed.append(allowed_states)
-            if envelope.owner_user_id != owner_user_id or envelope.credential_state not in allowed_states:
+            if (
+                envelope.owner_user_id != owner_user_id
+                or envelope.credential_state not in allowed_states
+            ):
                 raise OwnerCredentialUnavailable("BROKERAGE_CREDENTIAL_UNAVAILABLE")
             yield KISMockOrderGateway(transport), reader
 

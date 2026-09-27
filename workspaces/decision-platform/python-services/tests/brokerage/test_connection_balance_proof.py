@@ -36,7 +36,9 @@ class _Reader:
 def _servicer(reader: _Reader) -> BrokerageServicer:
     class OwnerFactory:
         @contextmanager
-        def open(self, *_args: object, **_kwargs: object) -> Iterator[tuple[KISMockOrderGateway, _Reader]]:
+        def open(
+            self, *_args: object, **_kwargs: object
+        ) -> Iterator[tuple[KISMockOrderGateway, _Reader]]:
             yield KISMockOrderGateway(FakeTransport()), reader
 
         def certify(self, *_args: object, **_kwargs: object) -> None:
@@ -76,17 +78,28 @@ def test_connection_check_returns_the_balance_it_actually_read() -> None:
 @pytest.mark.parametrize(
     ("error", "leaf"),
     [
-        (KISMockBrokerageError(KISMockFailureReason.CREDENTIAL_UNAVAILABLE), "MOCK_CONNECTION_APP_KEY_REJECTED"),
+        (
+            KISMockBrokerageError(KISMockFailureReason.CREDENTIAL_UNAVAILABLE),
+            "MOCK_CONNECTION_APP_KEY_REJECTED",
+        ),
         (KISCredentialError("KIS token issue failed"), "MOCK_CONNECTION_APP_KEY_REJECTED"),
         (
             KISMockBrokerageError(KISMockFailureReason.PROVIDER_REJECTED, provider_code="OPSQ2000"),
             "MOCK_CONNECTION_ACCOUNT_REJECTED",
         ),
-        (KISMockBrokerageError(KISMockFailureReason.RATE_LIMIT_UNAVAILABLE), "MOCK_CONNECTION_RATE_LIMITED"),
-        (KISMockBrokerageError(KISMockFailureReason.TRANSPORT_UNAVAILABLE), "MOCK_CONNECTION_KIS_UNAVAILABLE"),
+        (
+            KISMockBrokerageError(KISMockFailureReason.RATE_LIMIT_UNAVAILABLE),
+            "MOCK_CONNECTION_RATE_LIMITED",
+        ),
+        (
+            KISMockBrokerageError(KISMockFailureReason.TRANSPORT_UNAVAILABLE),
+            "MOCK_CONNECTION_KIS_UNAVAILABLE",
+        ),
     ],
 )
-def test_connection_failures_fold_into_fixed_user_facing_leaves(error: Exception, leaf: str) -> None:
+def test_connection_failures_fold_into_fixed_user_facing_leaves(
+    error: Exception, leaf: str
+) -> None:
     assert _connection_failure_leaf(error) == leaf
     with pytest.raises(RpcAborted) as aborted:
         _verify(_servicer(_Reader(error)))

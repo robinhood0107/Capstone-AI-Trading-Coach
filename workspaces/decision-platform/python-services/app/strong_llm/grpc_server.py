@@ -157,9 +157,7 @@ class StrongLlmAgentServicer(strong_llm_agent_pb2_grpc.StrongLlmAgentServiceServ
                 if owner_credential_b64:
                     if self._owner_provider_factory is None:
                         raise ValueError("STRONG_LLM_OWNER_CREDENTIAL_UNSUPPORTED")
-                    primary, secondary = self._owner_provider_factory(
-                        request, owner_credential_b64
-                    )
+                    primary, secondary = self._owner_provider_factory(request, owner_credential_b64)
                 else:
                     primary, secondary = self._provider_factory(request)
                 result = self._graph.run(

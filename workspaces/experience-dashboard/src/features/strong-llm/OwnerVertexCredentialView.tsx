@@ -145,7 +145,7 @@ function OwnerVertexForm({ initial, reload }: { initial: OwnerAiState; reload: (
             spellCheck={false}
             disabled={clearKey}
             value={json}
-            placeholder='{"type": "service_account", ...}'
+            placeholder="서비스 계정 JSON을 붙여 넣으세요"
             onChange={(event) => setJson(event.target.value)}
           />
           {keyLast4 !== null && (

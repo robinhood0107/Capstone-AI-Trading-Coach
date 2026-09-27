@@ -187,12 +187,20 @@ class VerifyMockConnectionRequest(_message.Message):
     def __init__(self, request_id: _Optional[str] = ..., account_id: _Optional[str] = ..., credential: _Optional[_Union[BoundMockCredentialEnvelope, _Mapping]] = ...) -> None: ...
 
 class VerifyMockConnectionResponse(_message.Message):
-    __slots__ = ("account_id", "connected")
+    __slots__ = ("account_id", "connected", "cash_krw", "portfolio_equity_krw", "positions", "positions_complete")
     ACCOUNT_ID_FIELD_NUMBER: _ClassVar[int]
     CONNECTED_FIELD_NUMBER: _ClassVar[int]
+    CASH_KRW_FIELD_NUMBER: _ClassVar[int]
+    PORTFOLIO_EQUITY_KRW_FIELD_NUMBER: _ClassVar[int]
+    POSITIONS_FIELD_NUMBER: _ClassVar[int]
+    POSITIONS_COMPLETE_FIELD_NUMBER: _ClassVar[int]
     account_id: str
     connected: bool
-    def __init__(self, account_id: _Optional[str] = ..., connected: _Optional[bool] = ...) -> None: ...
+    cash_krw: int
+    portfolio_equity_krw: int
+    positions: _containers.RepeatedCompositeFieldContainer[MockBalancePosition]
+    positions_complete: bool
+    def __init__(self, account_id: _Optional[str] = ..., connected: _Optional[bool] = ..., cash_krw: _Optional[int] = ..., portfolio_equity_krw: _Optional[int] = ..., positions: _Optional[_Iterable[_Union[MockBalancePosition, _Mapping]]] = ..., positions_complete: _Optional[bool] = ...) -> None: ...
 
 class CertifyMockCredentialRequest(_message.Message):
     __slots__ = ("request_id", "owner_user_id", "account_id", "certification_id", "credential", "recovery", "session_date")

@@ -164,6 +164,76 @@ class AdminConsoleIntegrationTest(
         }
     }
 
+    @Test
+    fun `only an ADMIN sees AI usage and flips the shared Vertex switch without ever seeing a user key`() {
+        val admin = login("demo-user", TEST_USER_PASSWORD, "ADMIN")
+        val peer = login(TestPeerUser.EMAIL, TestPeerUser.PASSWORD, "USER")
+        // 사용자 키가 있는 것처럼 암호문 행을 둔다. 관리자 응답에는 등록 여부만 실려야 한다.
+        jdbcTemplate.update(
+            """
+            insert into strong_llm_owner_credentials(owner_user_id, slot, kek_version, wrap_nonce, wrapped_dek, wrap_tag,
+              key_nonce, key_ciphertext, key_tag, key_last4, created_at, updated_at)
+            values (?, 'PRIMARY', 'kek-v1', decode(repeat('00',12),'hex'), decode(repeat('00',32),'hex'),
+              decode(repeat('00',16),'hex'), decode(repeat('00',12),'hex'), decode('c0ffee','hex'),
+              decode(repeat('00',16),'hex'), 'zq9x', now(), now())
+            on conflict (owner_user_id, slot) do update set key_last4 = 'zq9x'
+            """.trimIndent(),
+            TestPeerUser.USER_ID,
+        )
+        try {
+            mockMvc.get("/api/v1/admin/ai") { header("Authorization", "Bearer $peer") }.andExpect { status { isForbidden() } }
+            mockMvc
+                .put("/api/v1/admin/ai/operator-fallback") {
+                    header("Authorization", "Bearer $peer")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = """{"enabled":false}"""
+                }.andExpect { status { isForbidden() } }
+
+            val body =
+                mockMvc
+                    .get("/api/v1/admin/ai") { header("Authorization", "Bearer $admin") }
+                    .andExpect {
+                        status { isOk() }
+                        jsonPath("$.data.sharedEnabled") { value(true) }
+                        jsonPath("$.data.operator.configured") { exists() }
+                    }.andReturn()
+                    .response
+                    .contentAsString
+            val peerRow = objectMapper.readTree(body).at("/data/users").first { it["userId"].stringValue() == TestPeerUser.USER_ID }
+            assertEquals(true, peerRow["hasOwnKey"].booleanValue())
+            // 키·끝자리·암호문은 어디에도 없다.
+            assertEquals(false, body.contains("zq9x"))
+            assertEquals(false, body.contains("c0ffee"))
+
+            mockMvc
+                .put("/api/v1/admin/ai/operator-fallback") {
+                    header("Authorization", "Bearer $admin")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = """{"enabled":false}"""
+                }.andExpect {
+                    status { isOk() }
+                    jsonPath("$.data.sharedEnabled") { value(false) }
+                    jsonPath("$.data.switchUpdatedBy") { value("usr_demo_user") }
+                }
+            assertEquals(
+                1L,
+                jdbcTemplate.queryForObject(
+                    "select count(*) from audit_logs where action = 'ADMIN_OPERATOR_VERTEX_CHANGED' and payload_json->>'enabled' = 'false'",
+                    Long::class.java,
+                ),
+            )
+            mockMvc
+                .put("/api/v1/admin/ai/operator-fallback") {
+                    header("Authorization", "Bearer $admin")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = """{}"""
+                }.andExpect { status { isBadRequest() } }
+        } finally {
+            jdbcTemplate.update("update service_limits set operator_vertex_fallback_enabled = true where limits_id = 1")
+            jdbcTemplate.update("delete from strong_llm_owner_credentials where owner_user_id = ?", TestPeerUser.USER_ID)
+        }
+    }
+
     // 무장 경로 전체(KIS 인증 등)가 아니라 상한 트리거 자체를 검증한다.
     private fun armDirectly(userId: String) {
         jdbcTemplate.update(

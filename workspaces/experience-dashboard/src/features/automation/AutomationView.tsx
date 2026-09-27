@@ -25,6 +25,7 @@ import { InstrumentIdentity, instrumentMap } from '@/shared/ui/InstrumentIdentit
 import {
   AUTOMATION_BLOCKER_LABELS_V3,
   AUTOMATION_EVIDENCE_LINKS,
+  automationBlockerMessage,
   AUTOMATION_EXIT_REASON_LABELS,
   MARKET_HISTORY_LABELS,
   AUTOMATION_PRESETS,
@@ -270,14 +271,16 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
       window.dispatchEvent(new Event('capstone-automation-changed'));
     } catch (cause) {
       const error = toErrorState<never>(cause);
+      const blocked = automationBlockerMessage(cause);
       setNotice({
         tone: 'error',
         text:
-          error.kind === 'error' && error.code === 'CONFLICT'
+          blocked ??
+          (error.kind === 'error' && error.code === 'CONFLICT'
             ? '다른 화면에서 정책이 먼저 바뀌었습니다. 최신 값을 다시 불러온 뒤 직접 저장하세요.'
             : error.kind === 'error'
               ? error.message
-              : '정책을 저장하지 못했습니다.',
+              : '정책을 저장하지 못했습니다.'),
       });
     } finally {
       setBusy(false);
@@ -298,14 +301,16 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
       window.dispatchEvent(new Event('capstone-automation-changed'));
     } catch (cause) {
       const error = toErrorState<never>(cause);
+      const blocked = automationBlockerMessage(cause);
       setNotice({
         tone: 'error',
         text:
-          error.kind === 'error' && error.code === 'CONFLICT'
+          blocked ??
+          (error.kind === 'error' && error.code === 'CONFLICT'
             ? '재투자 정책이 다른 화면에서 먼저 바뀌었습니다. 최신 값을 다시 확인하세요.'
             : error.kind === 'error'
               ? error.message
-              : '재투자 정책을 저장하지 못했습니다.',
+              : '재투자 정책을 저장하지 못했습니다.'),
       });
     } finally {
       setBusy(false);
@@ -337,9 +342,11 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
       window.dispatchEvent(new Event('capstone-automation-changed'));
     } catch (cause) {
       const error = toErrorState<never>(cause);
+      // 서버가 알려 준 차단 사유(예: AI 검토 제공자 미준비)를 그대로 말한다.
+      const blocked = automationBlockerMessage(cause);
       setNotice({
         tone: 'error',
-        text: error.kind === 'error' ? error.message : '자동운용을 시작하지 못했습니다.',
+        text: blocked ?? (error.kind === 'error' ? error.message : '자동운용을 시작하지 못했습니다.'),
       });
       onReload();
       window.dispatchEvent(new Event('capstone-automation-changed'));
@@ -374,14 +381,16 @@ function AutomationBody({ data, onReload }: { data: AutomationData; onReload: ()
       });
     } catch (cause) {
       const error = toErrorState<never>(cause);
+      const blocked = automationBlockerMessage(cause);
       setNotice({
         tone: 'error',
         text:
-          error.kind === 'error' && error.code === 'CONFLICT'
+          blocked ??
+          (error.kind === 'error' && error.code === 'CONFLICT'
             ? '다른 화면에서 상태가 먼저 바뀌었습니다. 최신 상태를 확인한 뒤 다시 정지하세요.'
             : error.kind === 'error'
               ? error.message
-              : '자동운용을 정지하지 못했습니다.',
+              : '자동운용을 정지하지 못했습니다.'),
       });
     } finally {
       setBusy(false);

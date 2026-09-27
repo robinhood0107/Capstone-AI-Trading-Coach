@@ -3,7 +3,13 @@
 import Link from 'next/link';
 import { useId, useState } from 'react';
 import { api } from '@/shared/api/endpoints';
-import { CREDENTIAL_BLOCKER_MESSAGE, credentialChangeBlocker } from './credentialBlockers';
+import {
+  CONNECTION_FAILURE_MESSAGE,
+  CREDENTIAL_BLOCKER_MESSAGE,
+  connectionFailure,
+  credentialChangeBlocker,
+} from './credentialBlockers';
+import { formatKrw, formatKstDateTime } from '@/shared/lib/format';
 import type { MockCredentialReadResponse } from '@/shared/api/wire';
 import { AsyncBoundary } from '@/shared/ui/AsyncBoundary';
 import { Panel } from '@/shared/ui/Panel';
@@ -88,11 +94,16 @@ function MockCredentialForm({
     setError(null);
     try {
       await api.verifyMockCredentialConnection();
-      setOutcome('본인 모의계좌의 읽기 연결을 확인했습니다. 자동주문 인증은 아직 별도입니다.');
+      setOutcome('KIS에서 본인 모의계좌 잔고를 읽어 연결을 확인했습니다. 자동주문 인증은 아직 별도입니다.');
       reload();
     } catch (cause) {
-      const state = toErrorState<never>(cause);
-      setError(state.kind === 'error' ? state.message : '연결을 확인하지 못했습니다.');
+      const failure = connectionFailure(cause);
+      if (failure) {
+        setError(CONNECTION_FAILURE_MESSAGE[failure]);
+      } else {
+        const state = toErrorState<never>(cause);
+        setError(state.kind === 'error' ? state.message : '연결을 확인하지 못했습니다.');
+      }
     } finally {
       setPending(false);
     }
@@ -209,6 +220,14 @@ function MockCredentialForm({
                       : '연결 확인됨 · 모의주문 인증 전'
                   : '연결 확인 전 · 자동주문 시작 전'}
             </p>
+            {credential.connected && credential.verifiedCashKrw != null ? (
+              // 연결 확인이 KIS 에서 실제로 읽은 잔고. 계좌번호 전체와 종목 목록은 보이지 않는다.
+              <p data-testid="mock-credential-balance-confirmation" className="text-muted">
+                KIS 잔고 확인 · 계좌 끝 4자리 {credential.accountNoLast4} · 예수금 {formatKrw(credential.verifiedCashKrw)} ·
+                보유 종목 {credential.verifiedPositionCount ?? 0}개
+                {credential.verifiedAt ? ` · ${formatKstDateTime(credential.verifiedAt)}` : ''}
+              </p>
+            ) : null}
           </>
         ) : (
           <p>등록된 모의계좌 정보가 없습니다.</p>

@@ -58,9 +58,143 @@ export function AdminConsole() {
   return (
     <div className="space-y-8">
       <LimitsPanel />
+      <AiReviewPanel />
       <UsersPanel selfUserId={user.userId} />
       <AutomationPanel />
     </div>
+  );
+}
+
+type AdminAiUsageRow = {
+  userId: string;
+  username: string;
+  email: string | null;
+  hasOwnKey: boolean;
+  aiJudgementEnabled: boolean;
+  ownToday: number;
+  sharedToday: number;
+  ownMonth: number;
+  sharedMonth: number;
+};
+type AdminAiReview = {
+  operator: { configured: boolean; projectId: string | null; modelId: string | null; reachable: boolean };
+  deploymentAllowsShared: boolean;
+  sharedEnabled: boolean;
+  sharedEffective: boolean;
+  switchUpdatedBy: string | null;
+  switchUpdatedAt: string | null;
+  users: AdminAiUsageRow[];
+};
+
+/**
+ * 공용 Vertex 와 사용자별 AI 검토 사용량. 관리자는 사용자가 자기 키를 등록했는지만 보고, 키 값이나 끝자리는
+ * 보지 못한다. "공용 Vertex 사용 허용"을 끄면 자기 키가 없는 사용자는 AI 검토를 켠 채 자동매매를 시작할 수
+ * 없다(이미 켜진 실행은 다음 AI 호출부터 멈춘다).
+ */
+function AiReviewPanel() {
+  const [review, setReview] = useState<AdminAiReview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const { data } = await apiFetch<AdminAiReview>('/api/v1/admin/ai');
+      setReview(data);
+    } catch (cause) {
+      setError(message(cause, 'AI 검토 설정을 불러오지 못했습니다.'));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function toggle(enabled: boolean) {
+    if (
+      !enabled &&
+      !window.confirm('공용 Vertex 사용을 끄면 자기 키가 없는 사용자는 AI 검토를 켠 채 자동매매를 시작할 수 없습니다. 끌까요?')
+    ) {
+      return;
+    }
+    setPending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const { data } = await apiFetch<AdminAiReview>('/api/v1/admin/ai/operator-fallback', {
+        method: 'PUT',
+        body: { enabled },
+      });
+      setReview(data);
+      setNotice(enabled ? '공용 Vertex 사용을 허용했습니다.' : '공용 Vertex 사용을 껐습니다. 자기 키가 있는 사용자만 AI 검토를 씁니다.');
+    } catch (cause) {
+      setError(message(cause, '공용 Vertex 설정을 바꾸지 못했습니다.'));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  const operator = review?.operator;
+  return (
+    <section aria-labelledby="admin-ai" className={panel}>
+      <h2 id="admin-ai" className="text-[18px] font-semibold text-ink">AI 검토 (Vertex)</h2>
+      {review && operator ? (
+        <>
+          <dl className="mt-4 grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
+            <Stat label="공용 Vertex 구성" value={operator.configured ? '구성됨' : '없음'} />
+            <Stat label="연결" value={operator.reachable ? '정상' : '실패'} />
+            <Stat label="프로젝트" value={operator.projectId ?? '—'} />
+            <Stat label="모델" value={operator.modelId ?? '—'} />
+          </dl>
+          <label className="mt-5 flex items-center gap-2 text-[14px] text-ink">
+            <input
+              type="checkbox"
+              data-testid="admin-shared-vertex-toggle"
+              checked={review.sharedEnabled}
+              disabled={pending || !review.deploymentAllowsShared}
+              onChange={(event) => void toggle(event.target.checked)}
+            />
+            공용 Vertex 사용 허용 (자기 키가 없는 사용자의 AI 검토)
+          </label>
+          <p className="mt-2 text-[12px] leading-5 text-muted">
+            {review.deploymentAllowsShared
+              ? review.sharedEffective
+                ? '지금은 자기 키가 없는 사용자도 공용 Vertex로 AI 검토를 받습니다.'
+                : '지금은 자기 키가 있는 사용자만 AI 검토를 받습니다.'
+              : '이 배포 설정이 공용 Vertex를 막고 있어 스위치를 켤 수 없습니다.'}
+            {review.switchUpdatedAt ? ` · 마지막 변경 ${formatDate(review.switchUpdatedAt)}` : ''}
+          </p>
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[640px]">
+              <thead>
+                <tr>
+                  <th className={head}>사용자</th>
+                  <th className={head}>자기 키</th>
+                  <th className={head}>AI 검토</th>
+                  <th className={head}>오늘 (자기/공용)</th>
+                  <th className={head}>이번 달 (자기/공용)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {review.users.map((row) => (
+                  <tr key={row.userId} className="border-t border-line" data-testid="admin-ai-usage-row">
+                    <td className={cell}>
+                      {row.username}
+                      <span className="block text-[11px] text-faint">{row.email ?? row.userId}</span>
+                    </td>
+                    <td className={cell}>{row.hasOwnKey ? '등록됨' : '없음'}</td>
+                    <td className={cell}>{row.aiJudgementEnabled ? '켜짐' : '꺼짐'}</td>
+                    <td className={cell}>{`${row.ownToday} / ${row.sharedToday}`}</td>
+                    <td className={cell}>{`${row.ownMonth} / ${row.sharedMonth}`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
+      <Feedback error={error} notice={notice} />
+    </section>
   );
 }
 

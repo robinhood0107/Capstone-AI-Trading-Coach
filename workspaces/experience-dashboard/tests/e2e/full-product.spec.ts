@@ -13,7 +13,8 @@
  *       테스트 계정 권한 변경만 한다.
  *
  * 매 실행마다 새 일반 사용자를 폼으로 가입시킨다. KIS 값은 형식만 맞춘 가짜 값이라
- * 연결 확인은 "증권 연동 서비스에 연결하지 못했습니다"(503) 로 끝나는 것이 정상이다.
+ * 연결 확인(실제 KIS 잔고조회)은 "KIS가 앱 키 또는 앱 시크릿을 거부했습니다"(409) 또는 KIS 에 닿지
+ * 못했다는 503 으로 끝나는 것이 정상이다. Vertex 서비스 계정도 형식만 맞춘 가짜 값이다.
  *
  * 실패 조건: 예상 밖 4xx/5xx API 응답, 화면의 "서버가 예상과 다른 형식",
  * 예상 밖 "이 자료에 접근할 권한이 없습니다", 콘솔 오류, 처리되지 않은 페이지 예외.
@@ -192,14 +193,72 @@ async function credentialRoundTrip(page: Page, watch: Watch) {
   await visible(page, `계좌 끝 4자리 ${credential.accountNo.slice(-4)}`);
 
   watch.step = 'credential connect';
+  // 연결 확인은 실제 KIS 잔고조회다. 가짜 키는 KIS 가 거부하고(409 APP_KEY_REJECTED), KIS 에 닿지 못하면
+  // 503 이다. 어느 쪽이든 이유가 한국어로 보이고 "저장됨"에 머문다 - 일반 충돌 문구는 실패다.
+  watch.expect('POST', /^\/api\/v1\/brokerage\/mock\/credential\/connect$/, 409);
   watch.expect('POST', /^\/api\/v1\/brokerage\/mock\/credential\/connect$/, 503);
   await page.getByRole('button', { name: /읽기 연결 (다시 )?확인/ }).click();
-  await visible(page, '증권 연동 서비스에 연결하지 못했습니다.', 60_000);
+  await visible(
+    page,
+    /KIS가 앱 키 또는 앱 시크릿을 거부했습니다|KIS가 이 계좌의 잔고조회를 거부했습니다|KIS 모의투자 서버에 연결하지 못했습니다|KIS 호출 한도에 걸렸습니다|증권 연동 서비스에 연결하지 못했습니다/,
+    60_000,
+  );
+  await expect(page.getByText('다른 변경과 충돌했습니다')).toHaveCount(0);
+  await visible(page, '연결 확인 전 · 자동주문 시작 전');
 
   watch.step = 'credential delete';
   await page.getByRole('button', { name: '연결 해제' }).click();
   await visible(page, '모의계좌 연결 정보를 삭제했습니다.');
   await visible(page, '등록된 모의계좌 정보가 없습니다.');
+}
+
+/** 형식만 맞춘 가짜 서비스 계정 JSON. Google 이 받아 주지 않는 키라 과금·호출이 생기지 않는다. */
+function fakeServiceAccountJson() {
+  const keyId = randomBytes(8).toString('hex');
+  return {
+    keyId,
+    json: JSON.stringify({
+      type: 'service_account',
+      project_id: 'mars-e2e-dummy',
+      private_key_id: keyId,
+      private_key: `-----BEGIN PRIVATE KEY-----\n${randomBytes(48).toString('base64')}\n-----END PRIVATE KEY-----\n`,
+      client_email: 'e2e@mars-e2e-dummy.iam.gserviceaccount.com',
+      client_id: '0',
+      token_uri: 'https://oauth2.googleapis.com/token',
+    }),
+  };
+}
+
+/**
+ * 설정의 "내 Vertex 키": 등록 → 등록됨(키 ID 끝 네 글자) → AI 검토가 내 키로 불린다는 문장 → 삭제 →
+ * 공용 경로 문장. 키 원문은 다시 보이지 않는다.
+ */
+async function ownVertexRoundTrip(page: Page, watch: Watch) {
+  watch.step = 'own vertex save';
+  await go(page, '/settings');
+  await settle(page);
+  await visible(page, '내 Vertex 키 · 자동매매 AI 검토');
+  await visible(page, '내 Vertex 서비스 계정이 없습니다.');
+  const sa = fakeServiceAccountJson();
+  await page.getByLabel(/Vertex 서비스 계정 키 JSON/).fill(sa.json);
+  await page.getByRole('button', { name: '저장', exact: true }).last().click();
+  await visible(page, '저장했습니다. 다음 자동매매 시작(무장)부터 적용됩니다.');
+  await visible(page, `내 Vertex 서비스 계정 등록됨 (키 ID …${sa.keyId.slice(-4)})`);
+  await visible(page, 'AI 검토는 내 Vertex 서비스 계정(내 Google Cloud 프로젝트)으로 호출됩니다.');
+  await expect(page.getByText(sa.json.slice(20, 60))).toHaveCount(0);
+
+  watch.step = 'own vertex reject api key';
+  await page.getByLabel(/Vertex 서비스 계정 키 JSON/).fill('AIzaSyFAKEFAKEFAKEFAKEFAKE');
+  await visible(page, /JSON 형식이 아닙니다/);
+  await page.getByLabel(/Vertex 서비스 계정 키 JSON/).fill('');
+
+  watch.step = 'own vertex delete';
+  await page.getByLabel('등록한 서비스 계정 지우기').check();
+  await page.getByRole('button', { name: '저장', exact: true }).last().click();
+  await visible(page, '저장했습니다. 다음 자동매매 시작(무장)부터 적용됩니다.');
+  await visible(page, '내 Vertex 서비스 계정이 없습니다.');
+  await visible(page, /AI 검토는 서비스 운영자의 공용 Vertex로 호출됩니다|공용 Vertex 사용이 꺼져 있/);
+  await visible(page, /AI 검토 호출 · 오늘 내 키 \d+회 \/ 공용 \d+회/);
 }
 
 test('every app page is covered by this spec', () => {
@@ -307,6 +366,7 @@ test('new USER: signup form, every page, every write, logout', async ({ page }) 
   if (await start.count()) await expect(start).toBeDisabled();
 
   await credentialRoundTrip(page, watch);
+  await ownVertexRoundTrip(page, watch);
 
   watch.step = 'rag consent';
   await go(page, '/rag');
@@ -357,7 +417,8 @@ test('operator ADMIN: login form, every page, admin console, automation guard', 
   await settle(page);
   await page.getByPlaceholder('이메일·아이디 검색').fill(targetEmail);
   await page.getByRole('button', { name: '검색' }).click();
-  const row = page.locator('tr', { hasText: targetEmail });
+  // AI 사용량 표에도 같은 이메일이 나온다. 계정 표 안에서만 찾는다.
+  const row = page.locator('section[aria-labelledby="admin-users"] tr', { hasText: targetEmail });
   await expect(row).toHaveCount(1, { timeout: 20_000 });
   await row.getByRole('button', { name: '관리자 지정' }).click();
   await expect(row.getByRole('button', { name: '관리자 해제' })).toBeVisible({ timeout: 20_000 });
@@ -367,6 +428,20 @@ test('operator ADMIN: login form, every page, admin console, automation guard', 
   await expect(row.getByRole('button', { name: '정지 해제' })).toBeVisible({ timeout: 20_000 });
   await row.getByRole('button', { name: '정지 해제' }).click();
   await expect(row.getByRole('button', { name: '관리자 지정' })).toBeVisible({ timeout: 20_000 });
+
+  watch.step = 'admin ai review panel';
+  // 관리자는 공용 Vertex 상태와 사용자별 사용량을 보고, 사용자 키는 등록 여부만 본다.
+  await visible(page, 'AI 검토 (Vertex)');
+  await expect(page.locator('[data-testid="admin-ai-usage-row"]').first()).toBeVisible({ timeout: 20_000 });
+  const sharedToggle = page.getByTestId('admin-shared-vertex-toggle');
+  if (await sharedToggle.isEnabled()) {
+    const wasOn = await sharedToggle.isChecked();
+    await sharedToggle.click();
+    await visible(page, wasOn ? '공용 Vertex 사용을 껐습니다.' : '공용 Vertex 사용을 허용했습니다.');
+    await sharedToggle.click();
+    await visible(page, wasOn ? '공용 Vertex 사용을 허용했습니다.' : '공용 Vertex 사용을 껐습니다.');
+    await expect(sharedToggle).toBeChecked({ checked: wasOn });
+  }
 
   if (OPERATOR_WRITES) {
     watch.step = 'operator automation guard';
@@ -392,7 +467,35 @@ test('operator ADMIN: login form, every page, admin console, automation guard', 
       await page.getByRole('button', { name: '정지 확인' }).click();
       await visible(page, '자동운용을 정지했습니다.');
     }
+
+    watch.step = 'operator arm → disarm → re-arm';
+    // AI 검토를 켠 운영자도 무장할 수 있어야 한다(자기 키가 없으면 공용 Vertex). 막히면 이유가 한국어로
+    // 보여야 하고 "다른 변경과 충돌했습니다"로 끝나면 실패다.
+    watch.expect('POST', /^\/api\/v3\/automation\/arm$/, 409);
+    for (let round = 0; round < 2; round += 1) {
+      await go(page, '/automation');
+      await settle(page);
+      const armButton = page.getByRole('button', { name: '자동운용 시작' });
+      if (!(await armButton.count())) break;
+      // 버튼이 막혀 있으면 화면이 그 이유(차단 사유)를 보여야 한다. 이유 없이 막힌 버튼은 실패다.
+      if (!(await armButton.isEnabled())) {
+        const reasons = await page.locator('[title]').allInnerTexts();
+        test.info().annotations.push({ type: 'arm-disabled', description: reasons.join(' | ').slice(0, 800) });
+        expect(round, '첫 무장 시도에서 시작 버튼이 막혔다').toBeGreaterThan(0);
+        break;
+      }
+      await armButton.click();
+      await expect(page.getByText(/자동운용을 시작 대기 상태로 전환했습니다|[가-힣].*(습니다|하세요)\./).first()).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect(page.getByText('다른 변경과 충돌했습니다')).toHaveCount(0);
+      if (!(await page.getByText('자동운용을 시작 대기 상태로 전환했습니다').count())) break;
+      await page.getByRole('button', { name: '자동운용 정지' }).click();
+      await page.getByRole('button', { name: '정지 확인' }).click();
+      await visible(page, '자동운용을 정지했습니다.');
+    }
     await credentialRoundTrip(page, watch);
+    await ownVertexRoundTrip(page, watch);
   }
 
   await logout(page, watch);

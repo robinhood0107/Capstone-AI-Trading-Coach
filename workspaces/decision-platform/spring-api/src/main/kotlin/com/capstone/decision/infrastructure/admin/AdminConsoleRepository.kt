@@ -109,6 +109,46 @@ class AdminConsoleRepository(
         jdbc().query("select admin_update_limits_v1(?,?,?)", { _, _ -> }, actorUserId, signupCap, automationActiveCap)
     }
 
+    fun readOperatorVertexSwitch(actorUserId: String): AdminOperatorVertexSwitch =
+        jdbc()
+            .query(
+                "select * from admin_read_operator_vertex_v1(?)",
+                { row, _ ->
+                    AdminOperatorVertexSwitch(
+                        enabled = row.getBoolean("fallback_enabled"),
+                        updatedBy = row.getString("updated_by"),
+                        updatedAt = row.offsetDateTime("updated_at"),
+                    )
+                },
+                actorUserId,
+            ).single()
+
+    fun setOperatorVertexSwitch(
+        actorUserId: String,
+        enabled: Boolean,
+    ) {
+        jdbc().query("select admin_set_operator_vertex_fallback_v1(?,?)", { _, _ -> }, actorUserId, enabled)
+    }
+
+    fun listAiUsage(actorUserId: String): List<AdminAiUsageRow> =
+        jdbc().query(
+            "select * from admin_list_ai_usage_v1(?)",
+            { row, _ ->
+                AdminAiUsageRow(
+                    userId = row.getString("user_id"),
+                    username = row.getString("username"),
+                    email = row.getString("email"),
+                    hasOwnKey = row.getBoolean("has_own_key"),
+                    aiJudgementEnabled = row.getBoolean("ai_judgement_enabled"),
+                    ownToday = row.getLong("own_today"),
+                    sharedToday = row.getLong("shared_today"),
+                    ownMonth = row.getLong("own_month"),
+                    sharedMonth = row.getLong("shared_month"),
+                )
+            },
+            actorUserId,
+        )
+
     private fun jdbc(): JdbcTemplate =
         JdbcTemplate(
             authDatabaseProvider.ifAvailable?.dataSource
@@ -149,6 +189,25 @@ data class AdminAutomationRow(
     val controlUpdatedAt: OffsetDateTime?,
     val todayClaimState: String?,
     val todayRunId: String?,
+)
+
+data class AdminOperatorVertexSwitch(
+    val enabled: Boolean,
+    val updatedBy: String?,
+    val updatedAt: OffsetDateTime?,
+)
+
+/** 사용자별 AI 검토 호출 수. 자기 키 등록 여부만 있고 키 값·끝자리·프로젝트는 없다. */
+data class AdminAiUsageRow(
+    val userId: String,
+    val username: String,
+    val email: String?,
+    val hasOwnKey: Boolean,
+    val aiJudgementEnabled: Boolean,
+    val ownToday: Long,
+    val sharedToday: Long,
+    val ownMonth: Long,
+    val sharedMonth: Long,
 )
 
 data class AdminLimits(

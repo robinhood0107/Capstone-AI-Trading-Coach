@@ -1,6 +1,9 @@
 package com.capstone.decision.application.automation
 
 import com.capstone.decision.application.security.ActorRlsScopePort
+import com.capstone.decision.application.strongllm.StrongLlmCredentialPort
+import com.capstone.decision.application.strongllm.StrongLlmSealedCredential
+import com.capstone.decision.application.strongllm.VertexServiceAccountShape
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Primary
@@ -96,11 +99,16 @@ interface AutomationEvidenceProvider {
         settings: AutomationEvidenceSettings,
     ): RawAutomationScreeningBatch
 
+    /**
+     * `credential` 은 이번 호출에 쓸 자격증명이다. OWNER 면 사용자 자기 서비스 계정으로, OPERATOR 면
+     * 에이전트가 배포 비밀에서 읽는 운영자 서비스 계정으로 부른다.
+     */
     fun judge(
         runId: String,
         candidates: List<AutomationEvidenceCandidate>,
         evidence: Map<String, List<RawAutomationEvidence>>,
         settings: AutomationEvidenceSettings,
+        credential: AutomationAiCredential,
     ): RawAutomationJudgement
 }
 
@@ -179,6 +187,7 @@ class FixtureAutomationEvidenceProvider : AutomationEvidenceProvider {
         candidates: List<AutomationEvidenceCandidate>,
         evidence: Map<String, List<RawAutomationEvidence>>,
         settings: AutomationEvidenceSettings,
+        credential: AutomationAiCredential,
     ): RawAutomationJudgement =
         RawAutomationJudgement(
             candidates =
@@ -220,6 +229,8 @@ class AutomationEvidenceService(
     private val provider: ObjectProvider<AutomationEvidenceProvider>,
     private val objectMapper: ObjectMapper,
     private val transactionManagerProvider: ObjectProvider<PlatformTransactionManager>,
+    private val credentialPort: StrongLlmCredentialPort? = null,
+    private val aiProviderPolicy: AutomationAiProviderPolicy = AutomationAiProviderPolicy(),
 ) {
     private val sourceRegistry by lazy { loadSourceRegistry() }
 
@@ -332,13 +343,20 @@ class AutomationEvidenceService(
             throw AutomationEvidenceUnavailableException()
         }
         try {
+            // 자기 키가 있으면 그것으로, 없으면 이 배포가 허용했을 때만 운영자 공용 Vertex 로 부른다.
+            // 어느 쪽도 아니면 부르지 않는다(무장 단계가 이미 막지만, 실행 중 스위치가 꺼진 경우도 닫는다).
+            val credential = resolveCredential(jdbc, ownerUserId, runContext.settings)
+            recordCredentialSource(ownerUserId, request.runId, credential.source)
             val raw =
-                transport.judge(
-                    request.runId,
-                    request.candidates,
-                    requestEvidence,
-                    runContext.settings,
-                )
+                credential.use {
+                    transport.judge(
+                        request.runId,
+                        request.candidates,
+                        requestEvidence,
+                        runContext.settings,
+                        it,
+                    )
+                }
             if (raw.providerCallCount !in 0..2 || raw.summary.isBlank()) {
                 throw AutomationEvidenceUnavailableException()
             }
@@ -631,6 +649,76 @@ class AutomationEvidenceService(
             "providerCallCount" to root.path("providerCallCount").intValue(),
             "summary" to root.path("summary").stringValue(),
         )
+    }
+
+    /**
+     * 사용자 PRIMARY 키가 vertex 서비스 계정 모양으로 열리면 OWNER, 아니면 정책이 허용할 때만 OPERATOR.
+     * 키를 열지 못한 이유(없음·깨짐·모양 불일치)는 구분해 드러내지 않는다 - 어느 경우든 자기 키로는
+     * 부를 수 없다는 사실만 같다.
+     */
+    internal fun resolveCredential(
+        jdbc: NamedParameterJdbcTemplate,
+        ownerUserId: String,
+        settings: AutomationEvidenceSettings,
+    ): AutomationAiCredential {
+        val owned = if (settings.provider.equals("vertex", ignoreCase = true)) openOwnerServiceAccount(jdbc, ownerUserId) else null
+        return when (aiProviderPolicy.select(ownerCredentialUsable = owned != null)) {
+            AutomationAiCredentialSource.OWNER -> AutomationAiCredential.owner(requireNotNull(owned))
+            AutomationAiCredentialSource.OPERATOR -> AutomationAiCredential.operator()
+            null -> throw AutomationEvidenceUnavailableException()
+        }
+    }
+
+    private fun openOwnerServiceAccount(
+        jdbc: NamedParameterJdbcTemplate,
+        ownerUserId: String,
+    ): ByteArray? {
+        val port = credentialPort ?: return null
+        val sealed =
+            jdbc
+                .query(
+                    "SELECT * FROM read_strong_llm_owner_credential_v1(:owner,'PRIMARY')",
+                    mapOf("owner" to ownerUserId),
+                ) { row, _ ->
+                    StrongLlmSealedCredential(
+                        kekVersion = row.getString("kek_version"),
+                        wrapNonce = row.getBytes("wrap_nonce"),
+                        wrappedDek = row.getBytes("wrapped_dek"),
+                        wrapTag = row.getBytes("wrap_tag"),
+                        keyNonce = row.getBytes("key_nonce"),
+                        keyCiphertext = row.getBytes("key_ciphertext"),
+                        keyTag = row.getBytes("key_tag"),
+                        keyLast4 = "",
+                    )
+                }.singleOrNull() ?: return null
+        val opened =
+            try {
+                port.open(ownerUserId, "PRIMARY", sealed)
+            } catch (_: RuntimeException) {
+                return null
+            }
+        val encoded = String(opened, StandardCharsets.US_ASCII)
+        if (!VertexServiceAccountShape.isValid(encoded)) {
+            opened.fill(0)
+            return null
+        }
+        return opened
+    }
+
+    /** 이 실행의 AI 호출이 누구의 자격증명을 썼는지. 사용자별 과금을 붙일 때 이 열을 센다. */
+    private fun recordCredentialSource(
+        ownerUserId: String,
+        runId: String,
+        source: AutomationAiCredentialSource,
+    ) {
+        requiresNew().executeWithoutResult {
+            val jdbc = jdbc()
+            openScope(jdbc, ownerUserId, evidenceOperation("JUDGE"), runId)
+            jdbc.update(
+                "UPDATE automation_v3_usage SET ai_credential_source=:source WHERE run_id=:runId AND user_id=:owner",
+                mapOf("source" to source.name, "runId" to runId, "owner" to ownerUserId),
+            )
+        }
     }
 
     private fun evidenceOperation(phase: String) = if (phase == "SCREEN") "AUTOMATION_EVIDENCE_SCREEN" else "AUTOMATION_EVIDENCE_JUDGE"

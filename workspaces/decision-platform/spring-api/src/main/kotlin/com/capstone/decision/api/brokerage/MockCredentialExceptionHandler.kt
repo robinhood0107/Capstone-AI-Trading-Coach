@@ -5,6 +5,7 @@ import com.capstone.decision.api.common.ApiResponseFactory
 import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.api.common.RequestIds
 import com.capstone.decision.application.brokerage.BrokerageUnavailableException
+import com.capstone.decision.application.brokerage.MockConnectionRejectedException
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.dao.DataAccessException
 import org.springframework.http.ResponseEntity
@@ -32,6 +33,21 @@ class MockCredentialExceptionHandler {
     // 잡히지 않아 /error 로 넘어갔고, 화면은 "로그인이 필요합니다"(401)를 띄웠다.
     @ExceptionHandler(BrokerageUnavailableException::class)
     fun brokerage(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> = error(request, ErrorCode.BROKERAGE_UNAVAILABLE)
+
+    /**
+     * 연결 확인(실제 잔고조회)이 거부된 이유를 details.reason 으로 알린다. 사용자가 키·계좌번호를 고쳐
+     * 풀 수 있는 두 가지는 409, KIS 쪽 사정(호출 한도·장애)은 503 이다. 행은 STORED 에 머문다.
+     */
+    @ExceptionHandler(MockConnectionRejectedException::class)
+    fun connectionRejected(
+        exception: MockConnectionRejectedException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ApiResponse<Nothing>> =
+        error(
+            request,
+            if (exception.reason in USER_FIXABLE_CONNECTION_REASONS) ErrorCode.CONFLICT else ErrorCode.BROKERAGE_UNAVAILABLE,
+            mapOf("reason" to exception.reason),
+        )
 
     @ExceptionHandler(DataAccessException::class)
     fun database(
@@ -67,6 +83,8 @@ class MockCredentialExceptionHandler {
                 ?.firstOrNull()
                 ?.removePrefix("ERROR: ")
                 ?.trim()
+
+        val USER_FIXABLE_CONNECTION_REASONS = setOf("APP_KEY_REJECTED", "ACCOUNT_REJECTED")
 
         /** V199/V205 가 40001 로 올리는 사유 중 화면이 행동을 안내할 수 있는 것. */
         val CONFLICT_REASONS: Map<String, String> =

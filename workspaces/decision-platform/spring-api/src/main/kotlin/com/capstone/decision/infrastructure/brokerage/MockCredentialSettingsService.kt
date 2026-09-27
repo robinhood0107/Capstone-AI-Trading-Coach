@@ -20,6 +20,10 @@ data class MockCredentialSummary(
     val certificationStatus: String,
     val certificationFailureCode: String?,
     val certificationSessionDate: String?,
+    /** 마지막 연결 확인이 KIS 에서 읽은 예수금. 연결 확인 전이면 null 이다. */
+    val verifiedCashKrw: Long? = null,
+    val verifiedPositionCount: Int? = null,
+    val verifiedAt: String? = null,
 )
 
 class BoundMockCredentialEnvelope(
@@ -52,10 +56,19 @@ class MockCredentialSettingsService(
         appSecret: String,
         accountNo: String,
     ) {
-        val accountId = "acct_" + HexFormat.of().formatHex(ByteArray(16).also(random::nextBytes))
+        val jdbc = jdbc()
+        actorRlsScope.open(jdbc, ownerUserId, "PUT_MOCK_CREDENTIAL", "OWNER", ownerUserId)
+        // 같은 실계좌를 다시 저장하면 기존 계좌 식별자를 그대로 쓴다. 새 무작위 식별자를 쓰면 그 계좌의
+        // 주문·보유·자동매매 이력과 잔고 관측이 옛 식별자에 남아 화면과 무장에서 사라진다.
+        // 끝 4자리가 다른 계좌는 언제나 새 식별자다(다른 실계좌의 이력을 섞지 않는다).
+        val reused =
+            jdbc.queryForObject(
+                "SELECT resolve_bound_mock_account_reuse_v1(:owner, :accountLast4)",
+                mapOf("owner" to ownerUserId, "accountLast4" to accountNo.takeLast(4)),
+                String::class.java,
+            )
+        val accountId = reused ?: ("acct_" + HexFormat.of().formatHex(ByteArray(16).also(random::nextBytes)))
         crypto.seal(ownerUserId, accountId, appKey, appSecret, accountNo).use { sealed ->
-            val jdbc = jdbc()
-            actorRlsScope.open(jdbc, ownerUserId, "PUT_MOCK_CREDENTIAL", "OWNER", ownerUserId)
             jdbc.query(
                 """
                 SELECT put_bound_mock_broker_credential_v2(
@@ -84,6 +97,19 @@ class MockCredentialSettingsService(
     fun summary(ownerUserId: String): MockCredentialSummary? {
         val jdbc = jdbc()
         actorRlsScope.open(jdbc, ownerUserId, "READ_MOCK_CREDENTIAL_SUMMARY", "OWNER", ownerUserId)
+        // 연결 확인이 남긴 최근 잔고 요약. 계좌번호 전체·보유 종목 목록은 싣지 않는다.
+        val confirmation =
+            jdbc
+                .query(
+                    "SELECT cash_krw, position_count, observed_at FROM read_bound_mock_balance_confirmation_v1(:owner)",
+                    mapOf("owner" to ownerUserId),
+                ) { row, _ ->
+                    Triple(
+                        row.getLong("cash_krw"),
+                        row.getInt("position_count"),
+                        row.getObject("observed_at", java.time.OffsetDateTime::class.java).toInstant().toString(),
+                    )
+                }.singleOrNull()
         return jdbc
             .query(
                 "SELECT * FROM read_bound_mock_broker_summary_v3(:owner)",
@@ -101,6 +127,9 @@ class MockCredentialSettingsService(
                     certificationStatus = row.getString("certification_status"),
                     certificationFailureCode = row.getString("certification_failure_code"),
                     certificationSessionDate = row.getDate("certification_session_date")?.toLocalDate()?.toString(),
+                    verifiedCashKrw = confirmation?.first,
+                    verifiedPositionCount = confirmation?.second,
+                    verifiedAt = confirmation?.third,
                 )
             }.singleOrNull()
     }

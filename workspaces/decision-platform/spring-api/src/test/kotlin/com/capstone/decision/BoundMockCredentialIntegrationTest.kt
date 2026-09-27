@@ -1,5 +1,7 @@
 package com.capstone.decision
 
+import com.capstone.decision.application.brokerage.MockConnectionPosition
+import com.capstone.decision.application.brokerage.MockConnectionProof
 import com.capstone.decision.application.security.ActorRlsScopePort
 import com.capstone.decision.application.security.AppPrincipal
 import com.capstone.decision.infrastructure.brokerage.BrokerageCredentialCrypto
@@ -217,17 +219,29 @@ class BoundMockCredentialIntegrationTest(
         }
         val rotated = asActor("usr_demo_user") { transaction.execute { service.summary("usr_demo_user") } }
         assertEquals(2L, rotated?.revision)
-        assertNotEquals(firstAccountId, rotated?.accountId)
+        // 같은 실계좌(끝 4자리 같음)를 다시 저장하면 계좌 식별자를 그대로 쓴다. 새 식별자를 쓰면 그 계좌의
+        // 주문·보유·잔고 관측 이력이 옛 식별자에 남아 화면과 무장에서 사라진다.
+        assertEquals(firstAccountId, rotated?.accountId)
         assertEquals("STORED", rotated?.state)
         assertFalse(rotated?.connected ?: true)
         asActor("usr_demo_user") {
-            assertThrows(IllegalStateException::class.java) {
-                transaction.execute { service.resolveEnvelope("usr_demo_user", firstAccountId).use { } }
-            }
+            // 연결 상태는 초기화된다: 옛 revision 으로는 연결됨을 찍지 못한다.
             assertThrows(PessimisticLockingFailureException::class.java) {
                 transaction.executeWithoutResult {
                     connectionRepository.markConnected("usr_demo_user", firstAccountId, 1)
                 }
+            }
+        }
+        // 다른 실계좌(끝 4자리 다름)는 언제나 새 식별자다. 두 계좌의 이력을 한 식별자에 섞지 않는다.
+        asActor("usr_demo_user") {
+            transaction.executeWithoutResult { service.save("usr_demo_user", key, secret, "7" + "2".repeat(9)) }
+        }
+        val moved = asActor("usr_demo_user") { transaction.execute { service.summary("usr_demo_user") } }
+        assertEquals("2222", moved?.accountNoLast4)
+        assertNotEquals(firstAccountId, moved?.accountId)
+        asActor("usr_demo_user") {
+            assertThrows(IllegalStateException::class.java) {
+                transaction.execute { service.resolveEnvelope("usr_demo_user", firstAccountId).use { } }
             }
         }
     }
@@ -460,6 +474,97 @@ class BoundMockCredentialIntegrationTest(
                 }
             assertEquals("42501", directCertificationDenied.sqlState)
         }
+    }
+
+    @Test
+    fun `connection check balance becomes the owner's online observation and only for the bound account`() {
+        val directory = prepareKeyDirectory()
+        val service =
+            MockCredentialSettingsService(
+                context.getBeanProvider(NamedParameterJdbcTemplate::class.java),
+                actorRlsScope,
+                BrokerageCredentialCrypto(BrokerageKekFile(directory.toString())),
+            )
+        val connection =
+            MockCredentialConnectionRepository(
+                context.getBeanProvider(NamedParameterJdbcTemplate::class.java),
+                actorRlsScope,
+            )
+        val transaction = TransactionTemplate(transactionManager)
+        val owner = TestPeerUser.USER_ID
+        asActor(owner) {
+            transaction.executeWithoutResult { service.save(owner, "P" + "Q".repeat(19), "R" + "S".repeat(39), "8" + "6".repeat(8) + "5") }
+        }
+        val stored = requireNotNull(asActor(owner) { transaction.execute { service.summary(owner) } })
+        assertEquals(null, stored.verifiedCashKrw)
+        val proof =
+            MockConnectionProof(
+                cashKrw = 94_533_738,
+                portfolioEquityKrw = 94_533_738 + 2_700_000,
+                positions = listOf(MockConnectionPosition("055550", 45, 2_700_000)),
+                positionsComplete = true,
+            )
+        // 연결 시도 잠금(60초)은 다른 테스트와 겹칠 수 있어 여기서는 관측 기록만 본다. 저장(STORED) 행도
+        // 기록 대상이다 - 연결 확인은 기록한 뒤에 CONNECTED 로 넘어간다.
+        asActor(owner) {
+            transaction.executeWithoutResult { connection.recordBalance(owner, stored.accountId, proof) }
+        }
+        val confirmed = requireNotNull(asActor(owner) { transaction.execute { service.summary(owner) } })
+        assertEquals(94_533_738L, confirmed.verifiedCashKrw)
+        assertEquals(1, confirmed.verifiedPositionCount)
+        assertNotNull(confirmed.verifiedAt)
+
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { jdbc ->
+            jdbc
+                .prepareStatement(
+                    """
+                    select account_scope_hash, schema_version, source_version, position_count
+                    from portfolio_balance_observations where owner_user_id = ? and source_ref is not null
+                    order by observed_at desc limit 1
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, owner)
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        // 잔고 화면과 위험 잔고 투영은 계좌 식별자 앞 32자로 이 행을 찾는다.
+                        assertEquals(stored.accountId.removePrefix("acct_") + "0".repeat(32), result.getString(1))
+                        assertEquals("2", result.getString(2))
+                        assertEquals("kis-mock-online-complete-v2", result.getString(3))
+                        assertEquals(1, result.getInt(4))
+                    }
+                }
+        }
+        // 묶이지 않은 계좌나 다른 소유자의 계좌에는 관측을 남기지 못한다.
+        asActor(owner) {
+            assertThrows(Exception::class.java) {
+                transaction.executeWithoutResult { connection.recordBalance(owner, "acct_" + "f".repeat(32), proof) }
+            }
+        }
+        asActor("usr_demo_user") {
+            assertThrows(Exception::class.java) {
+                transaction.executeWithoutResult { connection.recordBalance(owner, stored.accountId, proof) }
+            }
+        }
+    }
+
+    @Test
+    fun `automation status offers the credential bound account so arm targets the account orders use`() {
+        val directory = prepareKeyDirectory()
+        val service =
+            MockCredentialSettingsService(
+                context.getBeanProvider(NamedParameterJdbcTemplate::class.java),
+                actorRlsScope,
+                BrokerageCredentialCrypto(BrokerageKekFile(directory.toString())),
+            )
+        val transaction = TransactionTemplate(transactionManager)
+        val owner = TestPeerUser.USER_ID
+        asActor(owner) {
+            transaction.executeWithoutResult { service.save(owner, "P" + "Q".repeat(19), "R" + "S".repeat(39), "8" + "6".repeat(8) + "5") }
+        }
+        val bound = requireNotNull(asActor(owner) { transaction.execute { service.summary(owner) } }).accountId
+        val automation = context.getBean(com.capstone.decision.application.automation.AutomationService::class.java)
+        val status = asActor(owner) { automation.statusV3(owner) }
+        assertEquals(bound, status.accountId)
     }
 
     private fun <T> asActor(

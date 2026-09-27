@@ -5,18 +5,24 @@ import com.capstone.decision.api.common.ApiResponse
 import com.capstone.decision.api.common.ApiResponseFactory
 import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.api.common.RequestIds
+import com.capstone.decision.application.automation.AutomationAiProviderPolicy
 import com.capstone.decision.application.security.AppPrincipal
+import com.capstone.decision.infrastructure.admin.AdminAiUsageRow
 import com.capstone.decision.infrastructure.admin.AdminAutomationRow
 import com.capstone.decision.infrastructure.admin.AdminConsoleRepository
 import com.capstone.decision.infrastructure.admin.AdminLimits
 import com.capstone.decision.infrastructure.admin.AdminUserAccess
 import com.capstone.decision.infrastructure.admin.AdminUserPage
+import com.capstone.decision.infrastructure.vertex.OperatorVertexStatus
+import com.capstone.decision.infrastructure.vertex.OperatorVertexStatusProbe
 import io.swagger.v3.oas.annotations.Operation
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
+import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Pattern
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.context.annotation.Profile
 import org.springframework.dao.DataAccessException
 import org.springframework.security.access.prepost.PreAuthorize
@@ -29,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.sql.SQLException
+import java.time.OffsetDateTime
 
 /** Operator console: accounts, running automations, and service capacity. ADMIN only. */
 @RestController
@@ -37,6 +44,8 @@ import java.sql.SQLException
 @PreAuthorize("hasRole('ADMIN')")
 class AdminController(
     private val repository: AdminConsoleRepository,
+    private val aiProviderPolicy: AutomationAiProviderPolicy,
+    private val operatorStatus: ObjectProvider<OperatorVertexStatusProbe>,
 ) {
     @Operation(operationId = "adminListUsers")
     @GetMapping("/users")
@@ -92,6 +101,42 @@ class AdminController(
             repository.readLimits(principal.userId)
         }
 
+    /**
+     * 공용 Vertex 상태와 사용자별 AI 검토 사용량. 공용 서비스 계정·토큰·사용자 키는 싣지 않는다 - 사용자가
+     * 자기 키를 등록했는지만 보인다.
+     */
+    @Operation(operationId = "adminReadAiReview")
+    @GetMapping("/ai")
+    fun ai(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        request: HttpServletRequest,
+    ): ApiResponse<AdminAiReview> = ok(request) { readAi(principal.userId) }
+
+    @Operation(operationId = "adminSetOperatorVertexFallback")
+    @PutMapping("/ai/operator-fallback")
+    fun setOperatorFallback(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @Valid @RequestBody body: AdminOperatorFallbackRequest,
+        request: HttpServletRequest,
+    ): ApiResponse<AdminAiReview> =
+        ok(request) {
+            repository.setOperatorVertexSwitch(principal.userId, requireNotNull(body.enabled))
+            readAi(principal.userId)
+        }
+
+    private fun readAi(actorUserId: String): AdminAiReview {
+        val switch = repository.readOperatorVertexSwitch(actorUserId)
+        return AdminAiReview(
+            operator = operatorStatus.ifAvailable?.status() ?: OperatorVertexStatus(false, null, null, false),
+            deploymentAllowsShared = aiProviderPolicy.deploymentCeiling(),
+            sharedEnabled = switch.enabled,
+            sharedEffective = aiProviderPolicy.deploymentCeiling() && switch.enabled,
+            switchUpdatedBy = switch.updatedBy,
+            switchUpdatedAt = switch.updatedAt,
+            users = repository.listAiUsage(actorUserId),
+        )
+    }
+
     private fun <T> ok(
         request: HttpServletRequest,
         block: () -> T,
@@ -117,6 +162,23 @@ data class AdminUserAccessRequest(
     val role: String,
     @field:Pattern(regexp = "ACTIVE|DISABLED")
     val status: String,
+)
+
+data class AdminOperatorFallbackRequest(
+    @field:NotNull
+    val enabled: Boolean?,
+)
+
+data class AdminAiReview(
+    val operator: OperatorVertexStatus,
+    /** 배포 설정이 공용 Vertex 를 허용하는가(상한). false 면 스위치를 켜도 공용 경로는 없다. */
+    val deploymentAllowsShared: Boolean,
+    /** 관리자 스위치 "공용 Vertex 사용 허용". */
+    val sharedEnabled: Boolean,
+    val sharedEffective: Boolean,
+    val switchUpdatedBy: String?,
+    val switchUpdatedAt: OffsetDateTime?,
+    val users: List<AdminAiUsageRow>,
 )
 
 data class AdminLimitsRequest(

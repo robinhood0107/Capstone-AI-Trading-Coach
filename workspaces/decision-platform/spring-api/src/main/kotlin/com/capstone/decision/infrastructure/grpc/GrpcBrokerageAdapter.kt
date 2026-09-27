@@ -11,6 +11,9 @@ import com.capstone.decision.application.brokerage.BrokerageGatewaySubmitRequest
 import com.capstone.decision.application.brokerage.BrokerageGatewaySubmitResult
 import com.capstone.decision.application.brokerage.BrokerageUnavailableException
 import com.capstone.decision.application.brokerage.MockBalancePositionProjection
+import com.capstone.decision.application.brokerage.MockConnectionPosition
+import com.capstone.decision.application.brokerage.MockConnectionProof
+import com.capstone.decision.application.brokerage.MockConnectionRejectedException
 import com.capstone.decision.application.brokerage.MockCredentialCertificationPort
 import com.capstone.decision.application.brokerage.MockCredentialCertificationProof
 import com.capstone.decision.application.brokerage.MockCredentialCertificationStatus
@@ -24,6 +27,7 @@ import com.capstone.decision.contract.v1.GetMockBuyableRequest
 import com.capstone.decision.contract.v1.MockCredentialCertificationState
 import com.capstone.decision.contract.v1.SubmitMockCashOrderRequest
 import com.capstone.decision.contract.v1.VerifyMockConnectionRequest
+import com.capstone.decision.contract.v1.VerifyMockConnectionResponse
 import com.capstone.decision.infrastructure.brokerage.MockCredentialSettingsService
 import com.google.protobuf.ByteString
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
@@ -257,28 +261,66 @@ class GrpcBrokerageAdapter(
         requestId: String,
         ownerUserId: String,
         accountId: String,
-    ) {
+    ): MockConnectionProof? {
         // 연결 확인은 사용자가 방금 넣은 키를 시험하는 호출이다. 잘못된 키의 실패를 계정 공용 회로에
         // 세면 한 사용자의 오타가 모든 사용자의 주문·잔고 호출을 막는다. 회로를 거치지 않는다.
-        run {
-            val builder =
-                VerifyMockConnectionRequest
-                    .newBuilder()
-                    .setRequestId(requestId)
-                    .setAccountId(accountId)
-            boundCredential(ownerUserId, accountId, setOf("STORED", "CONNECTED", "CERTIFIED"))
-                ?.let { builder.setCredential(it) }
-            val request = builder.build()
-            requireBoundedRequest(request.serializedSize)
-            try {
-                val response = stub().verifyMockConnection(request)
-                if (!response.connected || response.accountId != accountId) {
-                    throw BrokerageUnavailableException("KIS_MOCK connection proof did not match the owner account.")
-                }
-            } catch (exception: StatusRuntimeException) {
-                throw mapStatus(exception)
+        val builder =
+            VerifyMockConnectionRequest
+                .newBuilder()
+                .setRequestId(requestId)
+                .setAccountId(accountId)
+        boundCredential(ownerUserId, accountId, setOf("STORED", "CONNECTED", "CERTIFIED"))
+            ?.let { builder.setCredential(it) }
+        val request = builder.build()
+        requireBoundedRequest(request.serializedSize)
+        try {
+            val response = stub().verifyMockConnection(request)
+            if (!response.connected || response.accountId != accountId) {
+                throw BrokerageUnavailableException("KIS_MOCK connection proof did not match the owner account.")
             }
+            return connectionProof(response)
+        } catch (exception: StatusRuntimeException) {
+            connectionRejection(exception)?.let { throw it }
+            throw mapStatus(exception)
         }
+    }
+
+    /**
+     * 잔고를 싣지 않은 예전 응답(모든 값이 0 이고 보유 종목 없음, 완전성 false)은 증명 없음으로 본다.
+     * 계약을 벗어난 값은 관측으로 남기지 않도록 연결 자체를 실패시킨다.
+     */
+    private fun connectionProof(response: VerifyMockConnectionResponse): MockConnectionProof? {
+        val positions =
+            response.positionsList.map {
+                if (!SYMBOL.matches(it.symbol) || it.quantity < 0 || it.marketValueKrw < 0) {
+                    throw BrokerageUnavailableException("KIS_MOCK connection balance violated bounded contract.")
+                }
+                MockConnectionPosition(it.symbol, it.quantity, it.marketValueKrw)
+            }
+        if (
+            response.cashKrw < 0 ||
+            response.portfolioEquityKrw < 0 ||
+            positions.size > 1_000 ||
+            positions.map { it.symbol }.toSet().size != positions.size
+        ) {
+            throw BrokerageUnavailableException("KIS_MOCK connection balance violated bounded contract.")
+        }
+        if (!response.positionsComplete && positions.isEmpty() && response.cashKrw == 0L && response.portfolioEquityKrw == 0L) {
+            return null
+        }
+        return MockConnectionProof(
+            cashKrw = response.cashKrw,
+            portfolioEquityKrw = response.portfolioEquityKrw,
+            positions = positions,
+            positionsComplete = response.positionsComplete,
+        )
+    }
+
+    /** Python 이 고정 leaf 로 알린, 사용자가 고칠 수 있는 연결 실패만 이유와 함께 올린다. */
+    private fun connectionRejection(exception: StatusRuntimeException): MockConnectionRejectedException? {
+        if (exception.status.code != Status.Code.FAILED_PRECONDITION) return null
+        val reason = exception.status.description?.removePrefix(CONNECTION_FAILURE_PREFIX) ?: return null
+        return if (reason in CONNECTION_FAILURE_REASONS) MockConnectionRejectedException(reason, exception) else null
     }
 
     override fun certify(
@@ -443,5 +485,7 @@ class GrpcBrokerageAdapter(
                 "EXECUTION_FILLED",
                 "BALANCE_CHANGED",
             )
+        const val CONNECTION_FAILURE_PREFIX = "MOCK_CONNECTION_"
+        val CONNECTION_FAILURE_REASONS = setOf("APP_KEY_REJECTED", "ACCOUNT_REJECTED", "RATE_LIMITED", "KIS_UNAVAILABLE")
     }
 }

@@ -40,6 +40,10 @@ export interface MockCredentialSummary {
   certificationStatus: 'NOT_STARTED' | 'RUNNING' | 'RECOVERY_REQUIRED' | 'PASS' | 'FAILED';
   certificationFailureCode: string | null;
   certificationSessionDate: string | null;
+  /** 마지막 연결 확인이 KIS 에서 읽은 예수금·보유 종목 수·시각. 연결 확인 전이면 null. */
+  verifiedCashKrw?: number | null;
+  verifiedPositionCount?: number | null;
+  verifiedAt?: string | null;
 }
 
 export interface MockCredentialReadResponse {
@@ -941,6 +945,8 @@ export interface PutStrongLlmSettingsRequest {
   /** 생략하면 저장된 키를 그대로 둔다. 빈 문자열이면 지운다. */
   apiKey?: string;
   fallbackApiKey?: string;
+  /** 자동매매 AI 검토. 생략하면 그대로 둔다. */
+  aiJudgementEnabled?: boolean;
 }
 
 export interface RagV2EffectiveConsent {

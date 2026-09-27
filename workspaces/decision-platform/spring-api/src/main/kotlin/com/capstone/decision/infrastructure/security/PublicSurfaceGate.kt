@@ -46,6 +46,9 @@ internal class PublicSurfaceGate(
                     "POST" to "/api/v2/rag/vertex-preparations",
                     "POST" to "/api/v2/rag/ask",
                     "GET" to "/api/v1/rag/sources",
+                    // 사용자 자기 Vertex 서비스 계정 등록. owner 범위 쓰기이고 응답 본문이 없다.
+                    // 읽기는 corpus-status 가 마지막 네 글자만 싣는다.
+                    "PUT" to "/api/v2/strong-llm/settings",
                     -> true
                     else ->
                         (
@@ -139,6 +142,8 @@ internal class PublicSurfaceGate(
                 READ to "/api/v1/instruments",
                 READ to "/api/v2/market-evidence",
                 READ to "/api/v1/system/health",
+                // 내 Vertex 키 상태·자기 AI 검토 사용량. 호출자 본인 것만 읽는다.
+                READ to "/api/v1/ai-review",
                 // FULL 주문·잔고·체결은 호출자 본인의 암호화된 KIS 키와 본인 계좌로만 동작한다.
                 READ_WRITE to "/api/v1/brokerage/mock/orders",
                 READ_WRITE to "/api/v1/brokerage/orders",

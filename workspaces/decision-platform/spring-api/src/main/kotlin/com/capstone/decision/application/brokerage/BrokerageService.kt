@@ -20,6 +20,7 @@ class BrokerageService(
     private val killSwitchGuard: KillSwitchGuard,
     private val clock: Clock,
     private val gatewayProvider: ObjectProvider<BrokerageGatewayPort>,
+    private val balanceRefresh: ObjectProvider<OwnerBalanceRefreshPort>? = null,
 ) {
     fun submitMockOrder(
         actor: BrokerageActor,
@@ -176,6 +177,11 @@ class BrokerageService(
         accountId: String,
     ): MockBalanceProjection =
         try {
+            // FULL: 묶인 계좌의 관측이 오래됐으면 KIS 잔고조회 한 번으로 새로 남긴 뒤 읽는다. 새로 읽지
+            // 못해도(한도·장애) 화면은 마지막 관측과 그 관측 시각을 그대로 보여 준다.
+            balanceRefresh?.getIfAvailable()?.let { refresh ->
+                runCatching { refresh.refreshIfStale(actor.userId, accountId, actor.requestId) }
+            }
             val stored =
                 persistencePort.findOwnedBalance(actor.userId, accountId)
                     ?: throw BrokerageOrderNotFoundException()

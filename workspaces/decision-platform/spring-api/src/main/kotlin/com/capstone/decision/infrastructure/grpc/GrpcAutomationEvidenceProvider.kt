@@ -1,5 +1,6 @@
 package com.capstone.decision.infrastructure.grpc
 
+import com.capstone.decision.application.automation.AutomationAiCredential
 import com.capstone.decision.application.automation.AutomationEvidenceCandidate
 import com.capstone.decision.application.automation.AutomationEvidenceProvider
 import com.capstone.decision.application.automation.AutomationEvidenceSettings
@@ -156,6 +157,7 @@ internal class GrpcAutomationEvidenceProvider(
         candidates: List<AutomationEvidenceCandidate>,
         evidence: Map<String, List<RawAutomationEvidence>>,
         settings: AutomationEvidenceSettings,
+        credential: AutomationAiCredential,
     ): RawAutomationJudgement {
         require(settings.aiJudgementEnabled)
         require(candidates.isNotEmpty() && candidates.size <= 31)
@@ -187,7 +189,13 @@ internal class GrpcAutomationEvidenceProvider(
                 ).setGoogleSearchEnabled(false)
                 .setGroundingDiscoveryOnly(false)
                 .setMode("JUDGE")
-                .build()
+                .also { builder ->
+                    // OWNER 일 때만 사용자 서비스 계정을 싣는다. OPERATOR 는 빈 값이고 에이전트가 배포
+                    // 비밀의 운영자 서비스 계정을 쓴다.
+                    credential.ownerServiceAccountB64()?.let {
+                        builder.setOwnerVertexServiceAccountJsonB64(String(it, StandardCharsets.US_ASCII))
+                    }
+                }.build()
         val completed = execute(runId, "JUDGE", start, 2, setOf("FINAL"))
         require(completed.googleGroundingQueryCount == 0 && completed.groundingRootsCount == 0)
         val root = objectMapper.readTree(completed.answerJson)

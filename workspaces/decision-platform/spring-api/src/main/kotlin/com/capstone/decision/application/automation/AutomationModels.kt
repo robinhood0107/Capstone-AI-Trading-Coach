@@ -405,7 +405,14 @@ interface AutomationRepository {
 
     fun readPositionPageV2(ownerUserId: String): AutomationPositionV2Page
 
-    fun statusV3(ownerUserId: String): AutomationStatusV3Projection
+    /**
+     * `operatorProviderReady` 는 이 배포가 운영자 공용 Vertex 로 AI 검토를 대신해 줄 수 있는지다.
+     * arm 과 같은 값을 넘겨야 상태 화면의 "시작 가능"이 arm 판정과 어긋나지 않는다.
+     */
+    fun statusV3(
+        ownerUserId: String,
+        operatorProviderReady: Boolean = false,
+    ): AutomationStatusV3Projection
 
     fun putPolicyV3(
         ownerUserId: String,
@@ -420,6 +427,7 @@ interface AutomationRepository {
         scopeHash: String,
         requestHash: String,
         providerCapabilityReady: Boolean,
+        operatorProviderReady: Boolean = false,
     ): AutomationStatusV3Projection
 
     fun listRunsV3(

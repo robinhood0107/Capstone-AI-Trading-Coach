@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ApiFailure } from '../../src/shared/api/envelope';
 import {
+  CONNECTION_FAILURE_MESSAGE,
   CREDENTIAL_BLOCKER_MESSAGE,
+  connectionFailure,
   credentialChangeBlocker,
 } from '../../src/features/brokerage/credentialBlockers';
 
@@ -27,4 +29,19 @@ test('unknown reasons, other codes and plain errors keep the shared error text',
     null,
   );
   assert.equal(credentialChangeBlocker(new Error('boom')), null);
+});
+
+test('a rejected connection check tells the user whether the key or the account number is wrong', () => {
+  assert.equal(connectionFailure(conflict({ reason: 'APP_KEY_REJECTED' })), 'APP_KEY_REJECTED');
+  assert.match(CONNECTION_FAILURE_MESSAGE.APP_KEY_REJECTED, /앱 키 또는 앱 시크릿/);
+  assert.equal(connectionFailure(conflict({ reason: 'ACCOUNT_REJECTED' })), 'ACCOUNT_REJECTED');
+  assert.match(CONNECTION_FAILURE_MESSAGE.ACCOUNT_REJECTED, /계좌번호/);
+  const unavailable = new ApiFailure(
+    { code: 'BROKERAGE_UNAVAILABLE', message: 'x', details: { reason: 'RATE_LIMITED' } },
+    'r',
+  );
+  assert.equal(connectionFailure(unavailable), 'RATE_LIMITED');
+  assert.equal(connectionFailure(conflict({ reason: 'AUTOMATION_ARMED' })), null);
+  assert.equal(connectionFailure(conflict()), null);
+  assert.equal(connectionFailure(new Error('boom')), null);
 });

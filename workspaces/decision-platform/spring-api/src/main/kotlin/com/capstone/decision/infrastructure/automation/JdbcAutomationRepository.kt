@@ -497,7 +497,10 @@ class JdbcAutomationRepository(
     }
 
     @Transactional
-    override fun statusV3(ownerUserId: String): AutomationStatusV3Projection {
+    override fun statusV3(
+        ownerUserId: String,
+        operatorProviderReady: Boolean,
+    ): AutomationStatusV3Projection {
         try {
             val jdbc = jdbc()
             actorRlsScope.open(
@@ -510,7 +513,7 @@ class JdbcAutomationRepository(
                     ActorCapabilityRolePolicy.OWNER,
                 ),
             )
-            return readStatusV3(jdbc, ownerUserId)
+            return readStatusV3(jdbc, ownerUserId, operatorProviderReady)
         } catch (error: ActorCapabilityDeniedException) {
             throw AutomationAccessDeniedException(error)
         } catch (error: DataAccessException) {
@@ -569,13 +572,15 @@ class JdbcAutomationRepository(
         scopeHash: String,
         requestHash: String,
         providerCapabilityReady: Boolean,
+        operatorProviderReady: Boolean,
     ): AutomationStatusV3Projection =
         mutate(ownerUserId, "ARM_AUTOMATION", requestHash) { jdbc ->
             jdbc.queryForObject(
                 """
                 SELECT result_json FROM p1_arm_automation_v3(
                   :ownerUserId,:accountId,:policyId,:expectedPolicyVersion,
-                  :expectedControlVersion,:scopeHash,:requestHash,:providerCapabilityReady
+                  :expectedControlVersion,:scopeHash,:requestHash,:providerCapabilityReady,
+                  :operatorProviderReady
                 )
                 """.trimIndent(),
                 mapOf(
@@ -587,10 +592,11 @@ class JdbcAutomationRepository(
                     "scopeHash" to scopeHash,
                     "requestHash" to requestHash,
                     "providerCapabilityReady" to providerCapabilityReady,
+                    "operatorProviderReady" to operatorProviderReady,
                 ),
                 String::class.java,
             ) ?: throw AutomationStorageException(IllegalStateException("V3 arm function returned no result."))
-            readStatusV3(jdbc, ownerUserId)
+            readStatusV3(jdbc, ownerUserId, operatorProviderReady)
         }
 
     @Transactional
@@ -920,7 +926,21 @@ class JdbcAutomationRepository(
                 mapOf("ownerUserId" to ownerUserId),
                 Boolean::class.java,
             ) ?: true
-        val accountId = control?.accountId
+        // FULL 소유자의 주문은 자기 KIS 자격증명에 묶인 계좌로만 나간다. 무장 전에는 묶인 계좌를
+        // 보여 줘야 화면이 그 계좌로 무장을 보낸다. 이미 무장했거나 멈춘 제어는 그 제어가 잡은 계좌를
+        // 그대로 보여 준다(해제·대사가 같은 계좌를 봐야 한다). 개인 스택은 자격증명 행이 없어 예전과 같다.
+        val boundAccountId =
+            jdbc.queryForObject(
+                "SELECT public.p1_owner_bound_mock_account_v1(:ownerUserId)",
+                mapOf("ownerUserId" to ownerUserId),
+                String::class.java,
+            )
+        val accountId =
+            if (control?.controlState == "ARMED" || control?.controlState == "HALTED") {
+                control.accountId
+            } else {
+                boundAccountId ?: control?.accountId
+            }
         val riskBalanceReady =
             if (accountId == null) {
                 false
@@ -980,6 +1000,7 @@ class JdbcAutomationRepository(
     private fun readStatusV3(
         jdbc: NamedParameterJdbcTemplate,
         ownerUserId: String,
+        operatorProviderReady: Boolean,
     ): AutomationStatusV3Projection {
         val base = readStatusV2(jdbc, ownerUserId)
         val policy = readCurrentPolicyV3(jdbc, ownerUserId)
@@ -1026,20 +1047,25 @@ class JdbcAutomationRepository(
                     mapOf("ownerUserId" to ownerUserId),
                 ) { row, _ -> row.getString("slot") }
                 .contains("PRIMARY")
-        // vertex 는 소유자가 주입하는 API 키가 아니라 0600 서비스 계정 파일로 인증한다.
-        // 그래서 vertex 에 PRIMARY 자격증명 행을 요구하면 설계상 만족할 수 없는 조건이 된다.
-        // 이 면제는 contracts/tests/test_p1_automation_v3_live_readiness.py 가 고정한다.
-        //
-        // 알려진 어긋남: V135 의 p1_arm_automation_v3 는 provider 와 무관하게 PRIMARY 행을
-        // 요구하므로, AI 판단을 켠 vertex 사용자는 여기서 "준비됨"인데 arm 이 P1A01 로 튕긴다.
-        // 고칠 쪽은 이 면제가 아니라 DB 다 - arm 게이트도 vertex 를 면제하고 대신 Spring 이
-        // 이미 넘기는 p_provider_capability_ready(서비스 계정 구성 여부)에 의존해야 한다.
-        val credentialReady = aiSettings.provider == "vertex" || primaryCredentialReady
+        // arm(V216 p1_arm_automation_v3)과 같은 규칙이다: 소유자 PRIMARY 키가 있거나, 이 배포가
+        // 운영자 공용 Vertex 를 허용했을 때만 준비됨이다. 예전에는 여기서만 vertex 를 면제해
+        // 화면은 "시작 가능"인데 arm 이 P1A01 로 튕겼다. 버튼이 거짓말하지 않도록 두 판정을 한
+        // 규칙으로 묶는다. 이 결합은 contracts/tests/test_p1_automation_v3_live_readiness.py 가 고정한다.
+        // arm(p1_arm_automation_v2)은 정책이 묶은 원칙 버전이 지금 활성 원칙 버전과 다르면 40001 로 거부한다.
+        // 상태가 이것을 모르면 "시작 가능"인데 누르면 일반 충돌로 끝난다. 원칙을 고친 뒤 정책을 다시 저장하면 풀린다.
+        val principleDrift =
+            jdbc.queryForObject(
+                "SELECT public.p1_automation_principle_drift_v1(:ownerUserId)",
+                mapOf("ownerUserId" to ownerUserId),
+                Boolean::class.java,
+            ) == true
+        val credentialReady = primaryCredentialReady || operatorProviderReady
         val aiProviderReady = !aiSettings.enabled || (credentialReady && aiSettings.dailyGenerateCallCap >= 3)
         val blockers =
             buildList {
                 addAll(base.blockers)
                 if (policy == null) add("POLICY_V3_NOT_CONFIGURED")
+                if (policy != null && principleDrift) add("POLICY_VERSION_DRIFT")
                 if (legacyCount > 0) add("LEGACY_POSITION_PRESENT")
                 if (marketHistoryStatus != "READY") add("MARKET_DATA_CATCHUP_REQUIRED")
                 if (!aiProviderReady) add("AI_PROVIDER_NOT_READY")
@@ -1362,10 +1388,19 @@ class JdbcAutomationRepository(
             "P1L01" -> AutomationBlockedException("LEGACY_POSITION_PRESENT", error)
             "P1M01" -> AutomationBlockedException("MARKET_DATA_CATCHUP_REQUIRED", error)
             "P1A01" -> AutomationBlockedException("AI_PROVIDER_NOT_READY", error)
+            // V216: 자격증명에 묶인 계좌와 다른 계좌로 무장하려 했다. 화면은 상태를 다시 읽어 묶인
+            // 계좌로 보내면 된다.
+            "P1K01" -> AutomationBlockedException("ACCOUNT_NOT_CONFIGURED", error)
             // V214 운영자 상한: 새 무장만 거부하고 이미 무장한 사용자는 그대로 둔다.
             "53400" -> AutomationBlockedException("AUTOMATION_CAPACITY_REACHED", error)
             "23505" -> AutomationIdempotencyConflictException()
-            "40001" -> AutomationConflictException(error)
+            "40001" ->
+                // 사용자가 스스로 풀 수 있는 40001 은 이유를 싣는다. 나머지는 진짜 동시성 충돌이다.
+                if (error.mostSpecificCause.message?.contains("automation principle version drift") == true) {
+                    AutomationBlockedException("POLICY_VERSION_DRIFT", error)
+                } else {
+                    AutomationConflictException(error)
+                }
             "P0002" -> AutomationNotFoundException()
             "42501" -> AutomationAccessDeniedException(error)
             else -> {

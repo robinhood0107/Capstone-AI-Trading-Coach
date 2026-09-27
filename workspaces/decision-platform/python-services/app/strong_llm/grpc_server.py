@@ -43,14 +43,26 @@ class StrongLlmGrpcSettings:
 # run 하나에 1차와 선택적 2차를 함께 세운다. 둘을 따로 만들면 permit마다 다시 세우게 되고,
 # 그 사이에 credential 읽기가 실패하면 같은 run이 다른 provider로 이어질 수 있다.
 ProviderFactory = Callable[[RunRequest], tuple[StrongLlmProvider, StrongLlmProvider | None]]
+# 사용자 자기 Vertex 서비스 계정(표준 Base64 한 줄)으로 같은 chain 을 세운다.
+OwnerProviderFactory = Callable[
+    [RunRequest, str], tuple[StrongLlmProvider, StrongLlmProvider | None]
+]
 
 
 class StrongLlmAgentServicer(strong_llm_agent_pb2_grpc.StrongLlmAgentServiceServicer):
     """bidi host가 permit을 보낸 뒤에만 provider call을 수행하는 single-run stream이다."""
 
-    def __init__(self, shared_secret: str, provider_factory: ProviderFactory) -> None:
+    def __init__(
+        self,
+        shared_secret: str,
+        provider_factory: ProviderFactory,
+        owner_provider_factory: OwnerProviderFactory | None = None,
+    ) -> None:
         self._secret = shared_secret
         self._provider_factory = provider_factory
+        # 사용자 자기 Vertex 서비스 계정으로 부르는 경로. 없으면 사용자 자격증명이 실린 run 은 운영자
+        # 자격증명으로 조용히 바꾸지 않고 실패한다 - 누구의 비용으로 불렀는지가 host 기록과 어긋나면 안 된다.
+        self._owner_provider_factory = owner_provider_factory
         self._graph = BoundedStrongLlmGraph()
 
     def Generate(
@@ -81,6 +93,8 @@ class StrongLlmAgentServicer(strong_llm_agent_pb2_grpc.StrongLlmAgentServiceServ
         ):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "StartRun must be the first frame")
         request = _request(first)
+        # 비밀은 RunRequest 에 넣지 않는다. 모델 repr·검증 오류 메시지에 실려 나갈 길을 만들지 않는다.
+        owner_credential_b64 = first.start_run.owner_vertex_service_account_json_b64
         sequence = _Sequence(request.run_id)
         permitted_provider_calls = [0]
 
@@ -140,7 +154,14 @@ class StrongLlmAgentServicer(strong_llm_agent_pb2_grpc.StrongLlmAgentServiceServ
 
         def worker() -> None:
             try:
-                primary, secondary = self._provider_factory(request)
+                if owner_credential_b64:
+                    if self._owner_provider_factory is None:
+                        raise ValueError("STRONG_LLM_OWNER_CREDENTIAL_UNSUPPORTED")
+                    primary, secondary = self._owner_provider_factory(
+                        request, owner_credential_b64
+                    )
+                else:
+                    primary, secondary = self._provider_factory(request)
                 result = self._graph.run(
                     request, primary, permit, execute_tool, fallback_provider=secondary
                 )
@@ -299,6 +320,20 @@ def serve(
         )
         return build_provider_chain(request, chain_settings, effective_vertex)
 
+    def owner_factory(
+        request: RunRequest, owner_credential_b64: str
+    ) -> tuple[StrongLlmProvider, StrongLlmProvider | None]:
+        # 사용자 키는 1차 Vertex 에만 쓴다. 운영 배포 설정의 timeout·출력 상한은 운영자 설정을 따른다.
+        if vertex is None:
+            raise ValueError("STRONG_LLM_OWNER_CREDENTIAL_UNSUPPORTED")
+        owned = VertexProviderSettings.from_b64(
+            owner_credential_b64,
+            timeout_seconds=vertex.timeout_seconds,
+            thinking_level=request.thinking_level,
+            max_output_tokens=vertex.max_output_tokens,
+        )
+        return build_provider_chain(request, chain_settings, owned)
+
     factory = provider_factory or default_factory
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=8),
@@ -308,7 +343,12 @@ def serve(
         ),
     )
     strong_llm_agent_pb2_grpc.add_StrongLlmAgentServiceServicer_to_server(  # type: ignore[no-untyped-call]
-        StrongLlmAgentServicer(effective.shared_secret, factory), server
+        StrongLlmAgentServicer(
+            effective.shared_secret,
+            factory,
+            owner_factory if provider_factory is None else None,
+        ),
+        server,
     )
     health_service = health.HealthServicer()
     health_pb2_grpc.add_HealthServicer_to_server(health_service, server)

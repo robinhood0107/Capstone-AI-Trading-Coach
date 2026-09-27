@@ -28,6 +28,7 @@ class StrongLlmCredentialCrypto(
         ownerUserId: String,
         slot: String,
         apiKey: String,
+        displayLast4: String?,
     ): StrongLlmSealedCredential {
         validate(ownerUserId, slot)
         val plaintext = apiKey.toByteArray(StandardCharsets.UTF_8)
@@ -48,7 +49,7 @@ class StrongLlmCredentialCrypto(
                 keyCiphertext = sealedKey.ciphertext,
                 keyTag = sealedKey.tag,
                 // 화면이 "키가 들어 있다"를 말하는 데 필요한 전부다. 그 이상은 저장하지 않는다.
-                keyLast4 = apiKey.takeLast(4),
+                keyLast4 = displayLast4 ?: apiKey.takeLast(4),
             )
         } finally {
             dek.fill(0)

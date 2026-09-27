@@ -24,4 +24,11 @@
 - 릴리스 태그를 `v<버전>-<커밋>`에서 `v<버전>`으로 바꾸고, 같은 버전의 재발행을 막음
 - 기여 규약을 `CONTRIBUTING.md`로 옮기고 커밋 위생 검사를 일반 규칙으로 정리
 
+## [1.0.1] - 2026-09-28
+
+### 수정
+
+- 소유자가 정리를 확인한 미대사 레거시 주문에 `LOCAL_RETIRED` 상태를 적용. 화면은 로컬 이력 종료와 KIS 결과 미확인을 분리해 보여 주며, 실제 KIS 취소가 확인된 `CANCELLED`와 구분. 관리자 대사는 해당 행에서 명확한 409로 멈추며 원 주문·감사 이력은 보존. demo-user는 자동 시작되지 않음
+
 [1.0.0]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.0
+[1.0.1]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.1

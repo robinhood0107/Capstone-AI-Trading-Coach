@@ -13,6 +13,7 @@
  * RAG는 설명 기능이다. 매수·매도 지시를 하지 않으며 주문 판단에 영향을 주지 않는다.
  */
 import { api } from '@/shared/api/endpoints';
+import { ApiFailure } from '@/shared/api/envelope';
 import { safeExternalUrl } from '@/shared/api/session';
 import type {
   RagGenerationStatus,
@@ -62,9 +63,57 @@ export interface RagAnswerView {
   topSources: SourceItem[];
   expandableSources: SourceItem[];
   sourcesUnavailableReason: string | null;
+  /** True only when a preset button used its locally stored source-backed answer. */
+  fallbackUsed: boolean;
 }
 
 const TOP_SOURCE_COUNT = 3;
+
+export const RAG_EXAMPLES: readonly {
+  question: string;
+  answer: string;
+  source: SourceItem;
+}[] = [
+  {
+    question: '분산투자는 위험을 어떻게 줄이나요?',
+    answer:
+      '분산투자는 여러 투자에 자금을 나누어 한 곳에 집중되는 위험을 줄이는 방법입니다. 시장 전체가 하락할 때의 손실까지 막아 주지는 않습니다.',
+    source: {
+      sourceId: 'investor-gov-diversify',
+      title: 'Investor.gov — Diversify Your Investments',
+      citationKind: 'PUBLIC_WEB',
+      summary: '',
+      href: 'https://www.investor.gov/introduction-investing/investing-basics/save-and-invest/diversify-your-investments',
+      institution: 'Investor.gov',
+    },
+  },
+  {
+    question: '자산 배분은 무엇을 고려하나요?',
+    answer:
+      '자산 배분은 주식, 채권, 현금 같은 자산군에 투자금을 나누는 것입니다. 적절한 비율은 투자 기간과 위험 감수 성향에 따라 달라집니다.',
+    source: {
+      sourceId: 'investor-gov-asset-allocation',
+      title: 'Investor.gov — Asset Allocation and Diversification',
+      citationKind: 'PUBLIC_WEB',
+      summary: '',
+      href: 'https://www.investor.gov/introduction-investing/getting-started/asset-allocation',
+      institution: 'Investor.gov',
+    },
+  },
+  {
+    question: '과거 성과는 어떻게 읽어야 하나요?',
+    answer:
+      '과거 성과는 미래 결과를 보장하지 않습니다. 백테스트는 과거 조건을 가정해 계산한 결과이며 실제 운용 성과가 아닙니다.',
+    source: {
+      sourceId: 'investor-gov-performance-claims',
+      title: 'Investor.gov — Performance Claims',
+      citationKind: 'PUBLIC_WEB',
+      summary: '',
+      href: 'https://www.investor.gov/introduction-investing/general-resources/news-alerts/alerts-bulletins/investor-bulletins-47',
+      institution: 'Investor.gov',
+    },
+  },
+];
 
 const STATUS_COPY: Record<
   RagGenerationStatus | 'ANSWERED_WITHOUT_SOURCES',
@@ -164,19 +213,32 @@ export async function recordConsent(action: 'GRANT' | 'REVOKE'): Promise<void> {
 export async function askRag(
   question: string,
   answerMode: 'CONCISE' | 'DETAILED',
+  allowExampleFallback = false,
 ): Promise<ViewState<RagAnswerView>> {
+  const example = allowExampleFallback ? RAG_EXAMPLES.find((item) => item.question === question.trim()) : null;
+  const fallback = example ? exampleFallbackView(example) : null;
   const request: Parameters<typeof api.ragV2Ask>[0] = {
     question,
     answerMode,
     // 서버는 1~6개의 허용 주제를 요구한다. 이 화면은 개념·위험 설명이 목적이다.
     topics: ['DATA', 'FINANCIAL_ENGINEERING', 'RISK', 'METHODOLOGY', 'PRODUCT_RISK'],
   };
-  let answer: RagV2Answer = await api.ragV2Ask(request);
-  // Retry once only when the server explicitly confirms that no answer was produced.
-  // Ambiguous HTTP failures and successful answers are never resubmitted.
-  if (answer.generationStatus === 'GENERATION_UNAVAILABLE' && answer.answer === null) {
+  let answer: RagV2Answer;
+  try {
     answer = await api.ragV2Ask(request);
+    // Retry once only when the server explicitly confirms that no answer was produced.
+    // Ambiguous HTTP failures and successful answers are never resubmitted.
+    if (answer.generationStatus === 'GENERATION_UNAVAILABLE' && answer.answer === null) {
+      answer = await api.ragV2Ask(request);
+    }
+  } catch (cause) {
+    if (fallback && canUseExampleFallbackForError(cause)) return ready(fallback);
+    throw cause;
   }
+
+  // Only preset questions have a source-backed stored answer. Free text and guardrail
+  // blocks always keep the live API outcome.
+  if (fallback && canUseExampleFallbackForAnswer(answer)) return ready(fallback);
 
   // 출처 registry는 기관명 보강용이다. 실패해도 인용 자체는 그대로 보여준다.
   const registry = new Map<string, RagSourceResponse>();
@@ -212,7 +274,45 @@ export async function askRag(
           ? '이 질문에 연결된 출처가 없습니다. 위 설명은 모델 지식에 기반합니다.'
           : '이 질문에 연결된 출처가 없습니다.'
         : null,
+    fallbackUsed: false,
   });
+}
+
+function exampleFallbackView(example: (typeof RAG_EXAMPLES)[number]): RagAnswerView {
+  return {
+    answerId: null,
+    generationStatus: 'ANSWERED',
+    statusHeadline: STATUS_COPY.ANSWERED.headline,
+    statusDetail: STATUS_COPY.ANSWERED.detail,
+    answer: example.answer,
+    citationCoverage: 1,
+    retrievalFailure: false,
+    guardrailFlags: [],
+    topSources: [example.source],
+    expandableSources: [],
+    sourcesUnavailableReason: null,
+    fallbackUsed: true,
+  };
+}
+
+function canUseExampleFallbackForAnswer(answer: RagV2Answer): boolean {
+  if (answer.generationStatus === 'BLOCKED_ADVICE' || answer.generationStatus === 'BLOCKED_SENSITIVE') {
+    return false;
+  }
+  return answer.answer === null || answer.citations.length === 0;
+}
+
+function canUseExampleFallbackForError(cause: unknown): boolean {
+  if (!(cause instanceof ApiFailure)) return false;
+  return [
+    'INTERNAL_ERROR',
+    'NETWORK_UNAVAILABLE',
+    'RAG_HISTORY_PERSIST_FAILED',
+    'RAG_UNAVAILABLE',
+    'PYTHON_SERVICE_UNAVAILABLE',
+    'RATE_LIMITED',
+    'RESPONSE_CONTRACT_MISMATCH',
+  ].includes(cause.code);
 }
 
 export async function loadWorldNews(query = ''): Promise<ViewState<WorldNewsPage>> {

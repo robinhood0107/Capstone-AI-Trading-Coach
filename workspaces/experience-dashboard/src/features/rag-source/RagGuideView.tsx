@@ -25,15 +25,10 @@ import {
   loadRegistry,
   loadWorldNews,
   recordConsent,
+  RAG_EXAMPLES,
   type RagAnswerView,
   type SourceItem,
 } from './viewModel';
-
-const EXAMPLES = [
-  '금 ETF의 롤오버 위험은 무엇인가요?',
-  'ETF와 ETN은 무엇이 다른가요?',
-  '변동성 돌파 전략이 뭔가요?',
-];
 
 const STATUS_TONE: Record<string, string> = {
   ANSWERED: 'border-allow',
@@ -57,6 +52,7 @@ export function RagGuideView() {
   const [consentGranted, setConsentGranted] = useState<boolean | null>(null);
   const [consentPending, setConsentPending] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
+  const [retryWithExampleFallback, setRetryWithExampleFallback] = useState(false);
   const registry = useResource(loadRegistry, []);
   const history = useResource(loadRecentQuestions, []);
   const worldNews = useResource(() => loadWorldNews(), []);
@@ -98,13 +94,14 @@ export function RagGuideView() {
     }
   }
 
-  async function submit(text: string) {
+  async function submit(text: string, allowExampleFallback = false) {
     const trimmed = text.trim();
     if (trimmed.length === 0 || pending) return;
+    setRetryWithExampleFallback(allowExampleFallback);
     setPending(true);
     setAnswerState({ kind: 'loading' });
     try {
-      setAnswerState(await askRag(trimmed, answerMode));
+      setAnswerState(await askRag(trimmed, answerMode, allowExampleFallback));
       history.reload();
     } catch (cause) {
       setAnswerState(toErrorState<RagAnswerView>(cause));
@@ -203,18 +200,18 @@ export function RagGuideView() {
             </Button>
           </div>
           <div className="flex flex-wrap gap-2 pt-1">
-            {EXAMPLES.map((example) => (
+            {RAG_EXAMPLES.map((example) => (
               <Button
-                key={example}
+                key={example.question}
                 variant="secondary"
                 size="sm"
                 onClick={() => {
-                  setQuestion(example);
-                  void submit(example);
+                  setQuestion(example.question);
+                  void submit(example.question, true);
                 }}
                 className="rounded-full border border-line px-2.5 py-1 text-[12px] text-muted hover:border-navy hover:text-navy"
               >
-                {example}
+                {example.question}
               </Button>
             ))}
           </div>
@@ -224,12 +221,12 @@ export function RagGuideView() {
       {answerState ? (
         // 재시도가 없으면 503 하나에 "불러오기 실패"만 남고 사용자가 할 수 있는 행동이 없다.
         // 마지막으로 보낸 질문을 그대로 다시 보낸다.
-        <AsyncBoundary state={answerState} onRetry={() => void submit(question)}>
+          <AsyncBoundary state={answerState} onRetry={() => void submit(question, retryWithExampleFallback)}>
           {(view) => (
             <Panel
               contract="rag-v2-answer.v1"
-              title={view.answer ? '설명' : view.statusHeadline}
-              hint={view.answer ? '질문에 대한 설명입니다. 근거 정보는 아래에서 따로 확인할 수 있습니다.' : view.statusDetail}
+              title={view.statusHeadline}
+              hint={view.statusDetail}
             >
               <article
                 aria-label="생성된 설명"
@@ -244,7 +241,7 @@ export function RagGuideView() {
                 )}
               </article>
 
-              <details className="mt-5 border-t border-line pt-4">
+              <details open className="mt-5 border-t border-line pt-4">
                 <summary className="cursor-pointer text-[13px] text-navy">근거와 출처 보기</summary>
                 <div className="mt-4 flex items-center gap-2">
                   <span className="text-eyebrow font-semibold uppercase text-faint">출처 연결률</span>

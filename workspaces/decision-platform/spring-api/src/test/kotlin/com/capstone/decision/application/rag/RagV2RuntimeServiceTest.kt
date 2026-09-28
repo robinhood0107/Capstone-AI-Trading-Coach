@@ -428,7 +428,7 @@ class RagV2RuntimeServiceTest {
     }
 
     @Test
-    fun `enabled Strong LLM answers timeless education when retrieval has no evidence`() {
+    fun `enabled Strong LLM abstains when retrieval has no evidence`() {
         val jdbc = mockk<NamedParameterJdbcTemplate>()
         val provider = mockk<ObjectProvider<NamedParameterJdbcTemplate>>()
         val crypto = mockk<RagHistoryCryptoPort>()
@@ -484,33 +484,13 @@ class RagV2RuntimeServiceTest {
         every { vertexGeneration.generate(capture(generatedCommand)) } returns
             RagV2VertexGenerationResult(
                 generationStatus = RagGenerationStatus.ANSWERED,
-                answer = "분산투자는 서로 다른 위험 요인을 함께 구성하는 일반적인 위험 관리 개념입니다.",
+                answer = "분산투자는 여러 투자에 위험을 나누는 일반적인 개념입니다.",
                 citationIds = emptyList(),
                 failureCode = "",
                 answerBasis = StrongLlmAnswerBasis.MODEL_KNOWLEDGE,
                 validationStatus = StrongLlmValidationStatus.VALID,
                 citationCoverage = 0.0,
             )
-        every {
-            jdbc.queryForObject(
-                "SELECT transaction_timestamp()",
-                emptyMap<String, Any>(),
-                OffsetDateTime::class.java,
-            )
-        } returns OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC)
-        every {
-            crypto.encrypt(any(), command.question, any())
-        } returns
-            encrypted().copy(
-                answer = RagEncryptedFieldPayload(ByteArray(12), byteArrayOf(1), ByteArray(16)),
-            )
-        every {
-            jdbc.queryForObject(
-                match { it.contains("persist_s4_9_strong_llm_history") },
-                any<Map<String, *>>(),
-                String::class.java,
-            )
-        } returns "[]"
 
         val answer =
             service(
@@ -521,15 +501,19 @@ class RagV2RuntimeServiceTest {
                 vertexGeneration = vertexGeneration,
             ).ask("usr_demo_user", REQUEST_ID, command, scope.scopeClaimId)
 
-        assertThat(answer.generationStatus).isEqualTo(RagGenerationStatus.ANSWERED)
+        assertThat(answer.generationStatus).isEqualTo(RagGenerationStatus.RETRIEVAL_FAILURE)
+        assertThat(answer.answer).isNull()
+        assertThat(answer.citationCoverage).isZero()
+        assertThat(answer.retrievalFailure).isTrue()
         assertThat(answer.citations).isEmpty()
-        assertThat(answer.guardrailFlags).containsExactly("MODEL_KNOWLEDGE_ONLY")
         assertThat(generatedCommand.captured.evidence).isEmpty()
+        verify(exactly = 1) { vertexGeneration.generate(any()) }
         verify(exactly = 0) { vertexEvidence.resolve(any(), any(), any(), any()) }
+        verify(exactly = 0) { crypto.encrypt(any(), any(), any()) }
     }
 
     @Test
-    fun `Strong LLM failure preserves validated retrieval citations instead of returning an empty unavailable answer`() {
+    fun `model-only generation preserves retrieved citations instead of returning an ungrounded answer`() {
         val jdbc = mockk<NamedParameterJdbcTemplate>()
         val provider = mockk<ObjectProvider<NamedParameterJdbcTemplate>>()
         val crypto = mockk<RagHistoryCryptoPort>()
@@ -586,10 +570,13 @@ class RagV2RuntimeServiceTest {
             )
         every { vertexGeneration.generate(any()) } returns
             RagV2VertexGenerationResult(
-                generationStatus = RagGenerationStatus.GENERATION_UNAVAILABLE,
-                answer = null,
+                generationStatus = RagGenerationStatus.ANSWERED,
+                answer = "분산투자는 여러 투자에 위험을 나누는 일반적인 개념입니다.",
                 citationIds = emptyList(),
-                failureCode = "GENERATION_UNAVAILABLE",
+                failureCode = "",
+                answerBasis = StrongLlmAnswerBasis.MODEL_KNOWLEDGE,
+                validationStatus = StrongLlmValidationStatus.VALID,
+                citationCoverage = 0.0,
             )
         every {
             jdbc.queryForObject(

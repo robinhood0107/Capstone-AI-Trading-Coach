@@ -2,6 +2,14 @@
 
 이 문서는 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 형식을 따르고, 버전은 [유의적 버전](https://semver.org/lang/ko/)을 따릅니다. 버전 하나가 GitHub Release `vX.Y.Z` 하나와 Docker Hub 이미지 태그 `vX.Y.Z-<part>` 한 벌에 대응합니다.
 
+## [1.0.8] - 2026-09-28
+
+### 수정
+
+- FULL RAG가 검색 근거 0건일 때 모델 지식 답변을 내보내지 않고 근거 부족으로 종료. 검색 근거가 있는데 생성기가 인용하지 않으면 설명 대신 확인된 출처를 반환
+- 금융 Agent에서 답변 상태와 근거·출처를 처음부터 표시하고, 출처 목록을 펼친 상태로 보여 줌
+- 예제 질문 버튼은 FULL 검색을 먼저 시도하고, 검색 공백·일시 오류에는 Investor.gov 근거가 연결된 저장 예시로 응답. 자유 질문, 로그인·동의 거절에는 fallback을 쓰지 않음
+
 ## [1.0.7] - 2026-09-28
 
 ### 수정
@@ -98,3 +106,4 @@
 [1.0.5]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.5
 [1.0.6]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.6
 [1.0.7]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.7
+[1.0.8]: https://github.com/robinhood0107/Capstone-AI-Trading-Coach/releases/tag/v1.0.8

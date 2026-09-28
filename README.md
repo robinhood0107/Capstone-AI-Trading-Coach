@@ -204,9 +204,9 @@ Capstone-AI-Trading-Coach/
 |---|---|---|---|
 | 규칙 후보 공백 비율 | 31종목, 158,336 관측, 6,646 세션(2000-02~2026-09). 골든크로스 `event` vs 장기 추세 `trend_only` | 매수 후보가 없던 날 `55.8% → 1.4%` (재실행 `55.7% → 1.4%`) | 후보 생성 빈도 개선이며 수익률 개선이 아님. 일 초과수익 `−0.0751%p → −0.0010%p`, Newey–West t `−2.02 → −0.08` |
 | 규칙·LSTM 결합 | 31종목, 5,362 세션(2005-01~2026-09). `RULE BUY ∧ LSTM BUY` vs `RULE BUY ∧ LSTM ≠ SELL` | 후보가 없던 세션 `51.8% → 1.4%` | 후보 빈도 지표. 정확도·수익성 개선으로 해석하지 않음 |
-| LSTM walk-forward | 22-fold, 31종목, 130,722 예측(2005~2026), 왕복 비용 35bps | 방향 정확도 `0.4777`, RMSE `0.027337`(0 예측 기준 `0.026238`) | 사전 기준 미달 → `BELOW_BASELINE`. 실서비스 판단은 규칙과 RiskEngine이 담당 |
+| LSTM walk-forward | 22-fold, 31종목, 130,752 예측(2005~2026), 왕복 비용 35bps | 방향 정확도 `0.4777`, RMSE `0.027346`(0 예측 기준 `0.026245`) | 사전 기준 미달 → `BELOW_BASELINE`. 실서비스 판단은 규칙과 RiskEngine이 담당 |
 
-평가 코드: [규칙 평가](workspaces/decision-platform/research/p1-return-profit-verification/rule_baseline_eval.py), [결합 평가](workspaces/decision-platform/research/p1-return-profit-verification/consensus_eval.py), [수익성 검증 보고서](workspaces/decision-platform/research/p1-return-profit-verification/reports/profit-verification.md)
+평가 근거: [규칙 평가 코드](workspaces/decision-platform/research/p1-return-profit-verification/rule_baseline_eval.py), [결합 평가 코드](workspaces/decision-platform/research/p1-return-profit-verification/consensus_eval.py), [walk-forward 수익성 검증 보고서](workspaces/decision-platform/research/p1-return-profit-verification/reports/profit-verification.md), [기계 판독 결과](workspaces/decision-platform/research/p1-return-profit-verification/reports/profit-verification.v1.json)
 
 ### 4.6. 한계 및 향후 과제
 
@@ -336,6 +336,7 @@ DB 볼륨은 지우지 마세요. 종료는 `./capstone down`만 사용하고 `d
 | 프로젝트 명세서 | [docs/최종_프로젝트_명세서.md](docs/최종_프로젝트_명세서.md) |
 | API 명세서 | [docs/API_명세서.md](docs/API_명세서.md) |
 | 금융공학·자동매매 로직 설명서 | [docs/금융공학_공식_및_자동매매_로직_설명서.md](docs/금융공학_공식_및_자동매매_로직_설명서.md) |
+| 2026 최종보고서 | [DOCX](docs/01.보고서/03.최종보고서.docx) · [PDF](docs/01.보고서/03.최종보고서.pdf) |
 | 최종 발표자료 | [docs/03.발표자료/발표자료.pptx](docs/03.발표자료/발표자료.pptx) |
 | 산업체 자문의견서 | [docs/04.자문의견서/자문의견서.pdf](docs/04.자문의견서/자문의견서.pdf) |
 
@@ -368,5 +369,5 @@ DB 볼륨은 지우지 마세요. 종료는 `./capstone down`만 사용하고 `d
 3. The GDELT Project, [GDELT Data](https://gdeltproject.org/data.html)
 4. Google, [OAuth 2.0 for Web Server Applications](https://developers.google.com/identity/protocols/oauth2/web-server), [Sign in with Google 브랜딩 가이드](https://developers.google.com/identity/branding-guidelines)
 5. Kakao, [카카오 로그인 REST API](https://developers.kakao.com/docs/ko/kakaologin/rest-api), [디자인 가이드](https://developers.kakao.com/docs/ko/kakaologin/design-guide)
-6. Newey, W. K., & West, K. D. (1987). A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix. *Econometrica*, 55(3), 703–708.
+6. Newey, W. K., & West, K. D. (1987). [A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix](https://doi.org/10.2307/1913610). *Econometrica*, 55(3), 703–708.
 7. OWASP, [Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)

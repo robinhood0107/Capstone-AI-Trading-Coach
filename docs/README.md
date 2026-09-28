@@ -100,6 +100,8 @@ PostgreSQL one-shot claim을 별도로 통과한다. 이 구조는 공개 HTTP/O
 | `PRIVATE_CANDIDATE` | 공개 제품에 필요 없는 내부 과정 자료. 현재 tree에서 제거 |
 | `MACHINE_AUDIT` | `contracts/changes/**`, RAG source card, generated/hash-bound 감사 기록. 이동·재작성하지 않음 |
 
+저장소와 최종보고서에 넣은 UI 화면은 기능·배치 예시다. 캡처 안의 수치·시각·상태를 성과 근거로 쓰지 않으며, 성과 수치는 연결된 검증 산출물과 표를 기준으로 확인한다.
+
 분류 원장은 Git 밖의 감사 파일로만 관리한다. 로컬 전용 경로, 개인 자료, secret, raw provider data,
 계좌정보는 공개 문서와 Git history에 추가하지 않는다.
 
@@ -122,6 +124,7 @@ PostgreSQL one-shot claim을 별도로 통과한다. 이 구조는 공개 HTTP/O
 
 ### 공개 연구·참고
 
+- [2026 최종보고서 DOCX](01.보고서/03.최종보고서.docx) · [PDF](01.보고서/03.최종보고서.pdf) (화면 캡처는 기능 예시이며 성과 근거가 아님)
 - S6 금융공학 실행·검증
 - [금융공학 공식과 자동매매 로직 설명서](금융공학_공식_및_자동매매_로직_설명서.md)
 

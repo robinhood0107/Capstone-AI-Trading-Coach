@@ -126,9 +126,8 @@ const STATUS_COPY: Record<
   // 근거 없이 답할 때도 설명은 나온다. 같은 ANSWERED라도 읽는 사람이 그 차이를
   // 알아야 하므로 문장을 갈라 둔다.
   ANSWERED_WITHOUT_SOURCES: {
-    headline: '출처 없이 설명합니다',
-    detail:
-      '설명은 제공하지만 출처와의 대조가 완료되지 않았습니다. 숫자와 최신 사실은 연결된 자료에서 확인해 주세요.',
+    headline: 'Vertex AI Gemini 답변',
+    detail: 'Vertex AI Gemini가 생성한 답변입니다. 외부 문헌 인용은 연결되지 않았습니다.',
   },
   RETRIEVAL_ONLY: {
     headline: '설명 문장 없이 출처만 제공합니다',
@@ -232,13 +231,16 @@ export async function askRag(
       answer = await api.ragV2Ask(request);
     }
   } catch (cause) {
-    if (fallback && canUseExampleFallbackForError(cause)) return ready(fallback);
+    if (canUseVertexUnavailableFallbackForError(cause)) {
+      return ready(fallback ?? vertexUnavailableView([]));
+    }
     throw cause;
   }
 
   // Only preset questions have a source-backed stored answer. Free text and guardrail
   // blocks always keep the live API outcome.
   if (fallback && canUseExampleFallbackForAnswer(answer)) return ready(fallback);
+  if (canUseVertexUnavailableFallbackForAnswer(answer)) return ready(vertexUnavailableView(answer.citations));
 
   // 출처 registry는 기관명 보강용이다. 실패해도 인용 자체는 그대로 보여준다.
   const registry = new Map<string, RagSourceResponse>();
@@ -263,7 +265,7 @@ export async function askRag(
     statusDetail: copy.detail,
     answer: answer.answer,
     // 생성된 문장이 없으면 연결률은 의미가 없다. 0으로 표시하지 않는다.
-    citationCoverage: answered ? answer.citationCoverage : null,
+    citationCoverage: answered && items.length > 0 ? answer.citationCoverage : null,
     retrievalFailure: answer.retrievalFailure,
     guardrailFlags: answer.guardrailFlags,
     topSources: items.slice(0, TOP_SOURCE_COUNT),
@@ -271,11 +273,30 @@ export async function askRag(
     sourcesUnavailableReason:
       items.length === 0
         ? answered
-          ? '이 질문에 연결된 출처가 없습니다. 위 설명은 모델 지식에 기반합니다.'
+          ? '생성 모델: Google Vertex AI Gemini. 외부 문헌 인용은 연결되지 않았습니다.'
           : '이 질문에 연결된 출처가 없습니다.'
         : null,
     fallbackUsed: false,
   });
+}
+
+function vertexUnavailableView(citations: RagV2Citation[]): RagAnswerView {
+  const sources = toSourceItems(citations, new Map());
+  return {
+    answerId: null,
+    generationStatus: 'GENERATION_UNAVAILABLE',
+    statusHeadline: 'Vertex AI 응답을 가져오지 못했습니다',
+    statusDetail: 'Vertex AI가 답변을 생성하지 못해 고정 안내를 표시합니다. 잠시 후 다시 질문해 주세요.',
+    answer: 'Vertex AI 응답 생성이 일시적으로 불가능합니다. 잠시 후 다시 질문해 주세요.',
+    citationCoverage: null,
+    retrievalFailure: true,
+    guardrailFlags: ['VERTEX_UNAVAILABLE'],
+    topSources: sources.slice(0, TOP_SOURCE_COUNT),
+    expandableSources: sources.slice(TOP_SOURCE_COUNT),
+    sourcesUnavailableReason:
+      sources.length === 0 ? 'Vertex AI가 복구되면 다시 질문해 주세요.' : null,
+    fallbackUsed: true,
+  };
 }
 
 function exampleFallbackView(example: (typeof RAG_EXAMPLES)[number]): RagAnswerView {
@@ -299,10 +320,18 @@ function canUseExampleFallbackForAnswer(answer: RagV2Answer): boolean {
   if (answer.generationStatus === 'BLOCKED_ADVICE' || answer.generationStatus === 'BLOCKED_SENSITIVE') {
     return false;
   }
-  return answer.answer === null || answer.citations.length === 0;
+  return answer.answer === null;
 }
 
-function canUseExampleFallbackForError(cause: unknown): boolean {
+function canUseVertexUnavailableFallbackForAnswer(answer: RagV2Answer): boolean {
+  if (answer.answer !== null) return false;
+  if (answer.generationStatus === 'BLOCKED_ADVICE' || answer.generationStatus === 'BLOCKED_SENSITIVE') {
+    return false;
+  }
+  return ['GENERATION_UNAVAILABLE', 'RETRIEVAL_FAILURE', 'RETRIEVAL_ONLY'].includes(answer.generationStatus);
+}
+
+function canUseVertexUnavailableFallbackForError(cause: unknown): boolean {
   if (!(cause instanceof ApiFailure)) return false;
   return [
     'INTERNAL_ERROR',

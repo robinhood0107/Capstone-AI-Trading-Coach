@@ -248,7 +248,11 @@ export function RagGuideView() {
                   <Numeric
                     value={view.citationCoverage}
                     format={(v) => formatRatio(v, 0)}
-                    missingReason="생성된 문장이 없어 출처 연결률을 계산하지 않았습니다."
+                    missingReason={
+                      view.generationStatus === 'ANSWERED'
+                        ? '외부 출처 인용이 없어 연결률을 계산하지 않았습니다.'
+                        : view.sourcesUnavailableReason ?? '생성된 문장이 없어 출처 연결률을 계산하지 않았습니다.'
+                    }
                   />
                 </div>
                 {view.sourcesUnavailableReason ? (
@@ -479,6 +483,27 @@ function HistoryEntry({ item, onChanged }: { item: RagV2HistoryDetail; onChanged
       <p className="mt-3 whitespace-pre-line border-l-2 border-line pl-4 text-[13px] leading-6 text-muted">
         {renderAnswerText(item.answer ?? '이 기록에는 생성된 설명이 없습니다.')}
       </p>
+      {item.citations.length > 0 ? (
+        <ul className="mt-3 space-y-2 pl-4 text-[12px] text-muted">
+          {item.citations.map((citation) => {
+            const href = safeExternalUrl(citation.canonicalUrl);
+            return (
+              <li key={citation.citationId} className="flex flex-wrap items-baseline gap-2">
+                <span>{citation.title} · {citation.citationKind === 'PUBLIC_WEB' ? '공개 문헌' : '내 문서'}</span>
+                {href ? (
+                  <a href={href} target="_blank" rel="noreferrer" className="text-navy underline">
+                    원문 열기
+                  </a>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : item.generationStatus === 'ANSWERED' ? (
+        <p className="mt-3 pl-4 text-[12px] text-muted">
+          생성 모델: Google Vertex AI Gemini · 외부 문헌 인용 없음
+        </p>
+      ) : null}
 
       <div className="mt-3 flex flex-wrap items-center gap-2 pl-4">
         {!RAG_FEEDBACK_ENABLED ? null : sent === null ? (

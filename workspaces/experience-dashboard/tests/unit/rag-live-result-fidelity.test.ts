@@ -97,7 +97,13 @@ test('preset RAG buttons use their fixed cited answer only as a final fallback',
   const previousProduct = process.env.NEXT_PUBLIC_MARS_PRODUCT;
   const previousFetch = globalThis.fetch;
   const example = RAG_EXAMPLES[0]!;
-  let responseMode: 'NO_EVIDENCE' | 'NETWORK_ERROR' | 'BLOCKED' | 'CONSENT_BLOCK' = 'NO_EVIDENCE';
+  let responseMode:
+    | 'NO_EVIDENCE'
+    | 'MODEL_KNOWLEDGE'
+    | 'VERTEX_UNAVAILABLE'
+    | 'NETWORK_ERROR'
+    | 'BLOCKED'
+    | 'CONSENT_BLOCK' = 'NO_EVIDENCE';
   assert.deepEqual(
     RAG_EXAMPLES.map((item) => item.question),
     [
@@ -137,15 +143,29 @@ test('preset RAG buttons use their fixed cited answer only as a final fallback',
       }), { status: 409, headers: { 'Content-Type': 'application/json' } });
     }
     const blocked = responseMode === 'BLOCKED';
+    const modelKnowledge = responseMode === 'MODEL_KNOWLEDGE';
+    const vertexUnavailable = responseMode === 'VERTEX_UNAVAILABLE';
     return new Response(JSON.stringify({
       requestId: 'req_rag_00000000000000000000000000000',
-      answerId: null,
-      generationStatus: blocked ? 'BLOCKED_ADVICE' : 'RETRIEVAL_FAILURE',
-      answer: null,
+      answerId: modelKnowledge ? 'rag_fixture_vertex_answer_00000000000000000000' : null,
+      generationStatus: blocked
+        ? 'BLOCKED_ADVICE'
+        : modelKnowledge
+          ? 'ANSWERED'
+          : vertexUnavailable
+            ? 'GENERATION_UNAVAILABLE'
+            : 'RETRIEVAL_FAILURE',
+      answer: modelKnowledge ? 'Vertex AI Gemini가 만든 근거 없는 설명입니다.' : null,
       citationCoverage: 0,
       citations: [],
-      retrievalFailure: !blocked,
-      guardrailFlags: blocked ? ['DIRECT_ADVICE_BLOCKED'] : ['RAG_INSUFFICIENT_EVIDENCE'],
+      retrievalFailure: !blocked && !modelKnowledge,
+      guardrailFlags: blocked
+        ? ['DIRECT_ADVICE_BLOCKED']
+        : modelKnowledge
+          ? ['MODEL_KNOWLEDGE_ONLY']
+          : vertexUnavailable
+            ? ['GENERATION_UNAVAILABLE']
+            : ['RAG_INSUFFICIENT_EVIDENCE'],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
 
@@ -159,11 +179,38 @@ test('preset RAG buttons use their fixed cited answer only as a final fallback',
     assert.equal(noEvidenceButton.data.topSources[0]?.institution, 'Investor.gov');
     assert.equal(noEvidenceButton.data.topSources[0]?.href, example.source.href);
 
+    responseMode = 'MODEL_KNOWLEDGE';
+    const vertexAnswer = await askRag(example.question, 'CONCISE', true);
+    assert.equal(vertexAnswer.kind, 'ready');
+    if (vertexAnswer.kind === 'ready') {
+      assert.equal(vertexAnswer.data.fallbackUsed, false);
+      assert.equal(vertexAnswer.data.answer, 'Vertex AI Gemini가 만든 근거 없는 설명입니다.');
+      assert.equal(vertexAnswer.data.statusHeadline, 'Vertex AI Gemini 답변');
+      assert.equal(vertexAnswer.data.citationCoverage, null);
+      assert.match(vertexAnswer.data.sourcesUnavailableReason ?? '', /Vertex AI Gemini/);
+      assert.deepEqual(vertexAnswer.data.topSources, []);
+    }
+
     responseMode = 'NETWORK_ERROR';
     const offlineButton = await askRag(example.question, 'CONCISE', true);
     assert.equal(offlineButton.kind, 'ready');
     if (offlineButton.kind === 'ready') assert.equal(offlineButton.data.fallbackUsed, true);
-    await assert.rejects(askRag('자유 질문은 fallback 하면 안 됩니다.', 'CONCISE'));
+
+    const offlineFreeText = await askRag('자유 질문은 Vertex 장애 때 고정 안내를 받습니다.', 'CONCISE');
+    assert.equal(offlineFreeText.kind, 'ready');
+    if (offlineFreeText.kind === 'ready') {
+      assert.equal(offlineFreeText.data.fallbackUsed, true);
+      assert.equal(offlineFreeText.data.statusHeadline, 'Vertex AI 응답을 가져오지 못했습니다');
+      assert.match(offlineFreeText.data.answer ?? '', /다시 질문/);
+    }
+
+    responseMode = 'VERTEX_UNAVAILABLE';
+    const unavailableVertexButton = await askRag(example.question, 'CONCISE', true);
+    assert.equal(unavailableVertexButton.kind, 'ready');
+    if (unavailableVertexButton.kind === 'ready') {
+      assert.equal(unavailableVertexButton.data.fallbackUsed, true);
+      assert.equal(unavailableVertexButton.data.topSources[0]?.institution, 'Investor.gov');
+    }
 
     responseMode = 'BLOCKED';
     const blockedButton = await askRag(example.question, 'CONCISE', true);
